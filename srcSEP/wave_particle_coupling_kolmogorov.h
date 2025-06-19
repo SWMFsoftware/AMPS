@@ -14,9 +14,9 @@ MAIN FUNCTIONS:
 ---------------
 
 1. UpdateWaveEnergyWithParticleCoupling()
-   - Updates wave amplitudes for a single field line segment
+   - Updates integrated wave energies for a single field line segment
    - Calculates Parker growth rates from particle distribution
-   - Evolves wave amplitudes: A±^{n+1} = A±^n + Δt[2γ± A± - A±/τ_cas + Q_shock]
+   - Evolves wave energies: E±^{n+1} = E±^n + Δt[2γ± E± - E±/τ_cas + Q_shock × V_cell]
    - Redistributes energy gain/loss among particles attached to segment
 
 2. UpdateAllSegmentsWaveEnergyWithParticleCoupling()
@@ -32,9 +32,18 @@ MAIN FUNCTIONS:
 USAGE EXAMPLES:
 ---------------
 
-// Update all segments in simulation (typical main loop usage)
-UpdateAllSegmentsWaveEnergyWithParticleCoupling(
-    particle_distribution, dt, tau_cas, Q_shock, B0, density
+// Update single segment with full parameter control
+PIC::FieldLine::cFieldLineSegment* segment = "get segment";
+double E_plus_old = 1.5e12;  // 1.5 TJ outward wave energy [J]
+double E_minus_old = 0.8e12; // 0.8 TJ inward wave energy [J]
+double E_plus_new, E_minus_new;
+double dt = 10.0; // 10 second time step
+double tau_cas = 1000.0; // cascade time
+double Q_shock = 0.01; // shock injection
+
+UpdateWaveEnergyWithParticleCoupling(
+    segment, E_plus_old, E_minus_old, particle_distribution, dt,
+    tau_cas, Q_shock, E_plus_new, E_minus_new, B0, density
 );
 
 // Simplified global update with defaults
@@ -66,32 +75,32 @@ namespace IsotropicSEP {
 /**
  * @brief Update wave energy with particle coupling for a single segment
  * 
- * Main function that calculates Parker growth rates and evolves wave amplitudes
+ * Main function that calculates Parker growth rates and evolves integrated wave energies
  * while redistributing energy among particles. Uses iterative energy redistribution
  * with energy floor protection (10% minimum particle energy).
  * 
  * @param segment           Pointer to field line segment to process
- * @param A_plus_initial    Initial outward wave amplitude
- * @param A_minus_initial   Initial inward wave amplitude  
+ * @param E_plus_initial    Initial outward integrated wave energy [J]
+ * @param E_minus_initial   Initial inward integrated wave energy [J]
  * @param S_scalar          Scalar particle distribution
  * @param dt                Time step [s]
  * @param tau_cas           Cascade time [s]
  * @param Q_shock           Shock injection rate [dimensionless]
- * @param A_plus_final      Output: final outward wave amplitude
- * @param A_minus_final     Output: final inward wave amplitude
+ * @param E_plus_final      Output: final outward integrated wave energy [J]
+ * @param E_minus_final     Output: final inward integrated wave energy [J]
  * @param B0                Background magnetic field [T]
  * @param rho               Mass density [kg/m³]
  */
 void UpdateWaveEnergyWithParticleCoupling(
     PIC::FieldLine::cFieldLineSegment* segment,
-    double& A_plus_initial,
-    double& A_minus_initial,
+    double& E_plus_initial,
+    double& E_minus_initial,
     const PIC::Datum::cDatumStored& S_scalar,
     double dt,
     double tau_cas,
     double Q_shock,
-    double& A_plus_final,
-    double& A_minus_final,
+    double& E_plus_final,
+    double& E_minus_final,
     double B0,
     double rho
 );
@@ -100,21 +109,21 @@ void UpdateWaveEnergyWithParticleCoupling(
  * @brief Convenience wrapper with default parameters
  * 
  * @param segment           Pointer to field line segment to process
- * @param A_plus_initial    Initial outward wave amplitude
- * @param A_minus_initial   Initial inward wave amplitude
+ * @param E_plus_initial    Initial outward integrated wave energy [J]
+ * @param E_minus_initial   Initial inward integrated wave energy [J]
  * @param S_scalar          Scalar particle distribution
  * @param dt                Time step [s]
- * @param A_plus_final      Output: final outward wave amplitude
- * @param A_minus_final     Output: final inward wave amplitude
+ * @param E_plus_final      Output: final outward integrated wave energy [J]
+ * @param E_minus_final     Output: final inward integrated wave energy [J]
  */
 void UpdateWaveEnergyWithParticleCoupling(
     PIC::FieldLine::cFieldLineSegment* segment,
-    double& A_plus_initial,
-    double& A_minus_initial,
+    double& E_plus_initial,
+    double& E_minus_initial,
     const PIC::Datum::cDatumStored& S_scalar,
     double dt,
-    double& A_plus_final,
-    double& A_minus_final
+    double& E_plus_final,
+    double& E_minus_final
 );
 
 // ============================================================================
@@ -168,31 +177,31 @@ void UpdateAllSegmentsWaveEnergyWithParticleCoupling(
 double CalculateTotalParticleEnergyInSegment(PIC::FieldLine::cFieldLineSegment* segment);
 
 /**
- * @brief Calculate wave energy density from wave amplitudes
+ * @brief Calculate wave energy density from integrated wave energies
  * 
- * @param A_plus            Outward wave amplitude
- * @param A_minus           Inward wave amplitude
+ * @param E_plus            Integrated outward wave energy [J]
+ * @param E_minus           Integrated inward wave energy [J]
+ * @param V_segment         Segment volume [m³]
  * @param B0                Background magnetic field [T]
- * @param rho               Mass density [kg/m³]
  * @return Wave energy density [J/m³]
  */
-double CalculateWaveEnergyDensity(double A_plus, double A_minus, double B0, double rho);
+double CalculateWaveEnergyDensity(double E_plus, double E_minus, double V_segment, double B0);
 
 /**
- * @brief Convert total energy density to individual wave amplitudes
+ * @brief Convert total energy density to integrated wave energies
  * 
  * @param energy_density_total  Total wave energy density [J/m³]
- * @param amplitude_ratio       Ratio A_plus / A_minus
- * @param B0                    Background magnetic field [T]
- * @param A_plus               Output: outward wave amplitude
- * @param A_minus              Output: inward wave amplitude
+ * @param energy_ratio          Ratio E_plus / E_minus
+ * @param V_segment            Segment volume [m³]
+ * @param E_plus               Output: integrated outward wave energy [J]
+ * @param E_minus              Output: integrated inward wave energy [J]
  */
-void ConvertEnergyDensityToAmplitudes(
+void ConvertEnergyDensityToIntegratedEnergies(
     double energy_density_total,
-    double amplitude_ratio,
-    double B0,
-    double& A_plus,
-    double& A_minus
+    double energy_ratio,
+    double V_segment,
+    double& E_plus,
+    double& E_minus
 );
 
 /**

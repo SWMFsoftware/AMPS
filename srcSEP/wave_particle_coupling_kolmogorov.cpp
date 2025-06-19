@@ -16,9 +16,9 @@ MAIN FUNCTIONS:
 ---------------
 
 1. UpdateWaveEnergyWithParticleCoupling()
-   - Updates wave amplitudes for a single field line segment
+   - Updates integrated wave energies for a single field line segment
    - Calculates Parker growth rates from particle distribution
-   - Evolves wave amplitudes: A±^{n+1} = A±^n + Δt[2γ± A± - A±/τ_cas + Q_shock]
+   - Evolves integrated wave energies: E±^{n+1} = E±^n + Δt[2γ± E± - E±/τ_cas + Q_shock × V_cell]
    - Redistributes energy gain/loss among particles attached to segment
 
 2. UpdateAllSegmentsWaveEnergyWithParticleCoupling()
@@ -119,14 +119,14 @@ namespace IsotropicSEP {
 
 void UpdateWaveEnergyWithParticleCoupling(
     PIC::FieldLine::cFieldLineSegment* segment,
-    double& A_plus_initial,                    // Initial wave amplitude for outward waves
-    double& A_minus_initial,                   // Initial wave amplitude for inward waves
+    double& E_plus_initial,                    // Initial integrated outward wave energy [J]
+    double& E_minus_initial,                   // Initial integrated inward wave energy [J]
     const PIC::Datum::cDatumStored& S_scalar,  // Scalar particle distribution
     double dt,                                 // Time step [s]
     double tau_cas,                           // Cascade time [s] 
     double Q_shock,                           // Shock injection rate [dimensionless]
-    double& A_plus_final,                     // Output: final outward wave amplitude
-    double& A_minus_final,                    // Output: final inward wave amplitude
+    double& E_plus_final,                     // Output: final outward wave energy [J]
+    double& E_minus_final,                    // Output: final inward wave energy [J]
     double B0,                                // Background magnetic field [T]
     double rho                                // Mass density [kg/m³]
 ) {
@@ -135,15 +135,37 @@ void UpdateWaveEnergyWithParticleCoupling(
     // ========================================================================
     if (!segment) {
         std::cerr << "Error: Null segment pointer in UpdateWaveEnergyWithParticleCoupling" << std::endl;
-        A_plus_final = A_plus_initial;
-        A_minus_final = A_minus_initial;
+        E_plus_final = E_plus_initial;
+        E_minus_final = E_minus_initial;
         return;
     }
     
     if (dt <= 0.0 || tau_cas <= 0.0) {
         std::cerr << "Error: Invalid time parameters (dt=" << dt << ", tau_cas=" << tau_cas << ")" << std::endl;
-        A_plus_final = A_plus_initial;
-        A_minus_final = A_minus_initial;
+        E_plus_final = E_plus_initial;
+        E_minus_final = E_minus_initial;
+        return;
+    }
+    
+    // ========================================================================
+    // CALCULATE SEGMENT VOLUME
+    // ========================================================================
+    // V_cell = L_j * (A_L + sqrt(A_L * A_R) + A_R) / 3
+    
+    // Get segment length
+    double L_j = segment->GetLength();  // Segment length [m]
+    
+    // Get cross-sectional areas at segment boundaries
+    double A_L = segment->GetLeftBoundaryArea();   // Left boundary area [m²]
+    double A_R = segment->GetRightBoundaryArea();  // Right boundary area [m²]
+    
+    // Calculate cell volume using given formula
+    double V_cell = L_j * (A_L + std::sqrt(A_L * A_R) + A_R) / 3.0;  // [m³]
+    
+    if (V_cell <= 0.0) {
+        std::cerr << "Warning: Invalid cell volume (" << V_cell << ") in segment" << std::endl;
+        E_plus_final = E_plus_initial;
+        E_minus_final = E_minus_initial;
         return;
     }
     
@@ -159,57 +181,35 @@ void UpdateWaveEnergyWithParticleCoupling(
     );
     
     // ========================================================================
-    // STEP 2: WAVE AMPLITUDE ADVANCE USING GIVEN FORMULA
+    // STEP 2: INTEGRATED WAVE ENERGY EVOLUTION
     // ========================================================================
-    // A±^{n+1} = A±^n + Δt[2γ± A± - A±/τ_cas + Q_shock]
+    // From A±^{n+1} = A±^n + Δt[2γ± A± - A±/τ_cas + Q_shock]
+    // Since E± = A± * V_cell, we get:
+    // E±^{n+1} = E±^n + Δt[2γ± E± - E±/τ_cas + Q_shock * V_cell]
     
-    double dA_plus_dt = 2.0 * gamma_plus * A_plus_initial 
-                       - A_plus_initial / tau_cas 
-                       + Q_shock;
+    double dE_plus_dt = 2.0 * gamma_plus * E_plus_initial 
+                       - E_plus_initial / tau_cas 
+                       + Q_shock * V_cell;
     
-    double dA_minus_dt = 2.0 * gamma_minus * A_minus_initial 
-                        - A_minus_initial / tau_cas 
-                        + Q_shock;
+    double dE_minus_dt = 2.0 * gamma_minus * E_minus_initial 
+                        - E_minus_initial / tau_cas 
+                        + Q_shock * V_cell;
     
-    // Update wave amplitudes
-    A_plus_final = A_plus_initial + dt * dA_plus_dt;
-    A_minus_final = A_minus_initial + dt * dA_minus_dt;
+    // Update integrated wave energies directly
+    E_plus_final = E_plus_initial + dt * dE_plus_dt;
+    E_minus_final = E_minus_initial + dt * dE_minus_dt;
     
-    // Ensure non-negative amplitudes
-    A_plus_final = std::max(0.0, A_plus_final);
-    A_minus_final = std::max(0.0, A_minus_final);
-    
-    // ========================================================================
-    // STEP 3: CALCULATE CELL VOLUME
-    // ========================================================================
-    // V_cell = L_j * (A_L + sqrt(A_L * A_R) + A_R) / 3
-    
-    // Get segment length
-    double L_j = segment->GetLength();  // Segment length [m]
-    
-    // Get cross-sectional areas at segment boundaries
-    // Note: This assumes AMPS provides methods to get boundary areas
-    // You may need to adapt this based on actual AMPS interface
-    double A_L = segment->GetLeftBoundaryArea();   // Left boundary area [m²]
-    double A_R = segment->GetRightBoundaryArea();  // Right boundary area [m²]
-    
-    // Calculate cell volume using given formula
-    double V_cell = L_j * (A_L + std::sqrt(A_L * A_R) + A_R) / 3.0;  // [m³]
-    
-    if (V_cell <= 0.0) {
-        std::cerr << "Warning: Invalid cell volume (" << V_cell << ") in segment" << std::endl;
-        return;
-    }
+    // Ensure non-negative energies
+    E_plus_final = std::max(0.0, E_plus_final);
+    E_minus_final = std::max(0.0, E_minus_final);
     
     // ========================================================================
-    // STEP 4: CALCULATE WAVE ENERGY GAIN/LOSS
+    // STEP 3: CALCULATE TOTAL WAVE ENERGY CHANGE
     // ========================================================================
-    // E_wave_gain = (2γ± A± + Q_shock - A±/τ_cas) * Δt * V_cell
+    double E_wave_gain_plus = dE_plus_dt * dt;    // [J]
+    double E_wave_gain_minus = dE_minus_dt * dt;  // [J]
     
-    double E_wave_gain_plus = dA_plus_dt * dt * V_cell;   // [J] or appropriate energy units
-    double E_wave_gain_minus = dA_minus_dt * dt * V_cell; // [J] or appropriate energy units
-    
-    double total_wave_energy_change = E_wave_gain_plus + E_wave_gain_minus;
+    double total_wave_energy_change = E_wave_gain_plus + E_wave_gain_minus; // [J]
     
     // ========================================================================
     // STEP 5: DISTRIBUTE ENERGY CHANGE TO PARTICLES
@@ -366,12 +366,12 @@ void UpdateWaveEnergyWithParticleCoupling(
 
 void UpdateWaveEnergyWithParticleCoupling(
     PIC::FieldLine::cFieldLineSegment* segment,
-    double& A_plus_initial,
-    double& A_minus_initial,
+    double& E_plus_initial,
+    double& E_minus_initial,
     const PIC::Datum::cDatumStored& S_scalar,
     double dt,
-    double& A_plus_final,
-    double& A_minus_final
+    double& E_plus_final,
+    double& E_minus_final
 ) {
     // Default parameters for typical solar wind conditions
     const double tau_cas_default = 1000.0;    // 1000 s cascade time
@@ -380,8 +380,8 @@ void UpdateWaveEnergyWithParticleCoupling(
     const double rho_default = 5.0e-21;       // kg/m³
     
     UpdateWaveEnergyWithParticleCoupling(
-        segment, A_plus_initial, A_minus_initial, S_scalar, dt,
-        tau_cas_default, Q_shock_default, A_plus_final, A_minus_final,
+        segment, E_plus_initial, E_minus_initial, S_scalar, dt,
+        tau_cas_default, Q_shock_default, E_plus_final, E_minus_final,
         B0_default, rho_default
     );
 }
@@ -423,8 +423,12 @@ double CalculateTotalParticleEnergyInSegment(PIC::FieldLine::cFieldLineSegment* 
     return total_energy; // [J]
 }
 
-double CalculateWaveEnergyDensity(double A_plus, double A_minus, double B0, double rho) {
+double CalculateWaveEnergyDensity(double E_plus, double E_minus, double V_segment, double B0) {
     const double mu0 = 4.0e-7 * M_PI;
+    
+    // Convert integrated energies back to amplitudes
+    double A_plus = E_plus / V_segment;
+    double A_minus = E_minus / V_segment;
     
     // Wave energy density: ε = (B₀²/2μ₀) * (A₊² + A₋²)
     // where A± are normalized wave amplitudes
@@ -437,29 +441,27 @@ double CalculateWaveEnergyDensity(double A_plus, double A_minus, double B0, doub
 // UTILITY FUNCTION: CONVERT BETWEEN AMPLITUDE AND ENERGY DENSITY
 // ============================================================================
 
-void ConvertEnergyDensityToAmplitudes(
+void ConvertEnergyDensityToIntegratedEnergies(
     double energy_density_total,  // Total wave energy density [J/m³]
-    double amplitude_ratio,       // A_plus / A_minus
-    double B0,                    // Background field [T]
-    double& A_plus,              // Output: outward wave amplitude
-    double& A_minus              // Output: inward wave amplitude
+    double energy_ratio,          // E_plus / E_minus
+    double V_segment,             // Segment volume [m³]
+    double& E_plus,              // Output: integrated outward wave energy [J]
+    double& E_minus              // Output: integrated inward wave energy [J]
 ) {
-    const double mu0 = 4.0e-7 * M_PI;
-    
-    if (energy_density_total <= 0.0) {
-        A_plus = A_minus = 0.0;
+    if (energy_density_total <= 0.0 || V_segment <= 0.0) {
+        E_plus = E_minus = 0.0;
         return;
     }
     
-    // From: ε = (B₀²/2μ₀) * (A₊² + A₋²)
-    // And: A₊ = r * A₋, where r = amplitude_ratio
-    // Solve for A₋: ε = (B₀²/2μ₀) * A₋² * (r² + 1)
+    // Total integrated energy in segment
+    double total_integrated_energy = energy_density_total * V_segment;
     
-    double amplitude_factor = std::sqrt(2.0 * mu0 * energy_density_total / (B0 * B0));
-    double denominator = std::sqrt(amplitude_ratio * amplitude_ratio + 1.0);
+    // From: E_plus = r * E_minus, where r = energy_ratio
+    // And: total = E_plus + E_minus = r * E_minus + E_minus = E_minus * (r + 1)
+    // Solve for E_minus: E_minus = total / (r + 1)
     
-    A_minus = amplitude_factor / denominator;
-    A_plus = amplitude_ratio * A_minus;
+    E_minus = total_integrated_energy / (energy_ratio + 1.0);
+    E_plus = energy_ratio * E_minus;
 }
 
 } // namespace IsotropicSEP
