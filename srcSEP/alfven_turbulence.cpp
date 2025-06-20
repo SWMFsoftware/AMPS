@@ -4,7 +4,7 @@
 
 bool SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag=true;
 
-PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy(2,"\"W+\",\"W-\"",true);
+PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy(2,"\"W+\",\"W-\"",DATUM_DO_PRINT|DATUM_DO_DEVIDE_VOLUME_PRINT);
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyGrowthRate(2,"\"dW+/dt\",\"dW-/dt\"",true);
 
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::n_stream_intervals,"",false); 

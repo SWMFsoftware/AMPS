@@ -79,6 +79,7 @@
 #include "solar_wind.h"
 #include "parker_streaming_calculator.h"
 #include "wave_particle_coupling_kolmogorov.h"
+#include "turbulence_advection_kolmogorov.h"
 
 //define which diffution model is used in the simulation
 #define _DIFFUSION_NONE_                 0

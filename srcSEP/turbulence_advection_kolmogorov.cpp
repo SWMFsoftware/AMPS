@@ -149,8 +149,9 @@ void AdvectTurbulenceEnergyAlongFieldLine(
     int field_line_idx,                           // Field line index
     const PIC::Datum::cDatumStored& WaveEnergyDensity,  // Wave energy datum
     double dt,                                     // Time step [s]
-    bool apply_boundary_conditions = true         // Apply boundary conditions
+    bool apply_boundary_conditions          // Apply boundary conditions
 ) {
+    namespace FL=PIC::FieldLine;
     // Get pointer to field line from index
     PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
     
@@ -181,7 +182,7 @@ void AdvectTurbulenceEnergyAlongFieldLine(
         if (!segment) continue;
         
         // Read wave energy data from ALL segments (global)
-        double* wave_data = segment->GetDatum_ptr(WaveEnergyDensity);
+        double* wave_data = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
         if (wave_data) {
             E_plus_current[i] = wave_data[0];   // Total outward wave energy [J]
             E_minus_current[i] = wave_data[1];  // Total inward wave energy [J]
@@ -355,7 +356,7 @@ void AdvectTurbulenceEnergyAlongFieldLine(
             continue;  // Skip non-local segments
         }
         
-        double* wave_data = segment->GetDatum_ptr(WaveEnergyDensity);
+        double* wave_data = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
         if (wave_data) {
             // Ensure non-negative energies
             wave_data[0] = std::max(0.0, E_plus_current[i]);   // Outward wave energy
@@ -371,7 +372,7 @@ void AdvectTurbulenceEnergyAlongFieldLine(
 void AdvectTurbulenceEnergyAllFieldLines(
     const PIC::Datum::cDatumStored& WaveEnergyDensity,  // Wave energy datum
     double dt,                                          // Time step [s]
-    bool apply_boundary_conditions = true              // Apply boundary conditions
+    bool apply_boundary_conditions               // Apply boundary conditions
 ) {
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -430,7 +431,7 @@ double CalculateTotalAdvectedEnergy(const PIC::Datum::cDatumStored& WaveEnergyDe
             PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
             if (!segment || segment->Thread != PIC::ThisThread) continue;
             
-            double* wave_data = segment->GetDatum_ptr(WaveEnergyDensity);
+            double* wave_data = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
             if (wave_data) {
                 local_total_energy += wave_data[0] + wave_data[1];  // E+ + E-
             }
