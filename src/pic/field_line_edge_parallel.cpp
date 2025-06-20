@@ -914,7 +914,7 @@ void MPIAllReduceDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S)
     }
 }
 
-void MPIScatterDatumStoredAtEdge(const cDatumStored& S, int root_rank) {
+void MPIScatterDatumStoredAtEdge(cDatumStored& S, int root_rank) {
     // Get MPI info
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
