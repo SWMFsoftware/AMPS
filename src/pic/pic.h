@@ -1012,13 +1012,8 @@ void MPIAllReduceDatumStoredAtEdge(const cDatumStored& S);
 void MPIAllReduceDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S);
 
 // MPI Scatter and Gather functions based on segment->Thread assignment
-void MPIScatterDatumStoredAtEdge(cDatumStored& S, int root_rank = 0);
-
+void MPIBcastDatumStoredAtEdge(cDatumStored& S, int root_rank = 0);
 void MPIGatherDatumStoredAtEdge(cDatumStored& S, int root_rank = 0);
-
-void MPIScatterDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, int root_rank = 0);
-
-void MPIGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, int root_rank = 0);
 
 // Datatype management functions
 MPI_Datatype ConstructDatumStoredAtEdgeMPIDatatype(

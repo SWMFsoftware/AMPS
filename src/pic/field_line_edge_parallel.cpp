@@ -23,9 +23,8 @@ CORE FUNCTIONS:
    - MPIAllReduceDatumStoredAtEdge(S)
    - MPIAllReduceDatumStoredAtEdgeFieldLine(field_line_idx, S)
 
-2. SCATTER OPERATIONS (Distribute from root to all processes):
-   - MPIScatterDatumStoredAtEdge(S, root_rank)
-   - MPIScatterDatumStoredAtEdgeFieldLine(field_line_idx, S, root_rank)
+2. BROADCAST OPERATIONS (Distribute from root to all processes):
+   - MPIBcastDatumStoredAtEdge(S, root_rank)
 
 3. GATHER OPERATIONS (Collect from all processes to root):
    - MPIGatherDatumStoredAtEdge(S, root_rank)
@@ -93,7 +92,7 @@ void ScatterInitialConditions() {
     }
     
     // Scatter from root to all processes
-    PIC::FieldLine::Parallel::MPIScatterDatumStoredAtEdge(initialConditions, root_rank);
+    PIC::FieldLine::Parallel::MPIBcastDatumStoredAtEdge(initialConditions, root_rank);
     
     // After this call, each process has received its portion of the data
     std::cout << "Process " << rank << ": Received initial conditions" << std::endl;
@@ -164,7 +163,7 @@ EXAMPLE 6: MULTI-STEP SIMULATION WORKFLOW
 ```cpp
 void RunSimulationStep() {
     // Step 1: Scatter boundary conditions from rank 0
-    PIC::FieldLine::Parallel::MPIScatterDatumStoredAtEdge(boundaryConditions, 0);
+    PIC::FieldLine::Parallel::MPIBcastDatumStoredAtEdge(boundaryConditions, 0);
     
     // Step 2: Each process computes local physics
     ComputeLocalPhysics();
@@ -962,65 +961,36 @@ void MPIGatherDatumStoredAtEdge(cDatumStored& S, int root_rank) {
     }
 }
 
-void MPIScatterDatumStoredAtEdge(cDatumStored& S, int root_rank) {
+void MPIBcastDatumStoredAtEdge(cDatumStored& S, int root_rank) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     const auto& all_field_lines = DatumStoredAtEdgeMPIManager::GetCachedFieldLines();
 
-    if (rank == root_rank) {
-        // Root process: send data to all other processes
-        for (int proc = 0; proc < size; ++proc) {
-            if (proc == root_rank) continue; // Skip self
-            
-            MPI_Datatype send_datatype = GetOrCreateScatterGatherDatatype(all_field_lines, S, proc);
-            
-            if (send_datatype != MPI_DATATYPE_NULL) {
-                int result = MPI_Send(MPI_BOTTOM, 1, send_datatype, proc, 0, MPI_COMM_WORLD);
-                if (result != MPI_SUCCESS) {
-                    std::cerr << "Error: MPI_Send failed to rank " << proc 
-                              << " with code " << result << std::endl;
-                }
-            }
-        }
+    // Use unified datatype that covers ALL segments from ALL field lines
+    // This ensures root's complete dataset is broadcast to all processes
+    MPI_Datatype unified_datatype = GetOrCreateDatumStoredAtEdgeDatatype(all_field_lines, S);
+    
+    if (unified_datatype != MPI_DATATYPE_NULL) {
+        // Broadcast ALL of root's DatumStoredAtEdge data to all other processes
+        int result = MPI_Bcast(MPI_BOTTOM, 1, unified_datatype, root_rank, MPI_COMM_WORLD);
         
-        std::cout << "Successfully completed MPI scatter for DatumStoredAtEdge data" << std::endl;
+        if (result != MPI_SUCCESS) {
+            std::cerr << "Error: MPI_Bcast failed on rank " << rank 
+                      << " with code " << result << std::endl;
+        } else if (rank == root_rank) {
+            int total_segments = 0;
+            for (const auto& line : all_field_lines) {
+                total_segments += line.size();
+            }
+            std::cout << "Successfully broadcast all DatumStoredAtEdge data (" 
+                      << total_segments << " segments) from root rank " << root_rank 
+                      << " to all processes" << std::endl;
+        }
     } else {
-        // Non-root processes: receive their data from root
-        MPI_Datatype recv_datatype = GetOrCreateScatterGatherDatatype(all_field_lines, S, rank);
-        
-        if (recv_datatype != MPI_DATATYPE_NULL) {
-            int result = MPI_Recv(MPI_BOTTOM, 1, recv_datatype, root_rank, 0, 
-                                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            if (result != MPI_SUCCESS) {
-                std::cerr << "Error: MPI_Recv failed on rank " << rank 
-                          << " with code " << result << std::endl;
-            }
-        }
+        std::cerr << "Error: Failed to create unified MPI datatype for broadcast operation" << std::endl;
     }
-}
-
-void MPIGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, int root_rank) {
-    // Create single field line vector
-    std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>> single_field_line;
-    std::vector<PIC::FieldLine::cFieldLineSegment*> segments;
-
-    if (field_line_idx >= 0 && field_line_idx < PIC::FieldLine::nFieldLine) {
-        int num_segments = PIC::FieldLine::FieldLinesAll[field_line_idx].GetTotalSegmentNumber();
-        for (int seg_idx = 0; seg_idx < num_segments; ++seg_idx) {
-            PIC::FieldLine::cFieldLineSegment* seg = PIC::FieldLine::FieldLinesAll[field_line_idx].GetSegment(seg_idx);
-            if (seg) {
-                segments.push_back(seg);
-            }
-        }
-    }
-    single_field_line.push_back(segments);
-
-    // Similar implementation as MPIGatherDatumStoredAtEdge but for single field line
-    // ... (implementation details similar to above but using single_field_line)
-
-    std::cout << "MPI gather for field line " << field_line_idx << " completed" << std::endl;
 }
 
 // ============================================================================
