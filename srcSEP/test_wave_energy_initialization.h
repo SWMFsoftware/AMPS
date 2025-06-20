@@ -203,7 +203,7 @@ void TestWaveEnergyInitialization(PIC::Datum::cDatumStored& WaveEnergy);
  * Example usage:
  * TestPrintEPlusValues(WaveEnergy);  // Quick E+ diagnostic
  */
-void TestPrintEPlusValues(PIC::Datum::cDatumStored& WaveEnergy);
+void TestPrintEPlusValues(PIC::Datum::cDatumStored& WaveEnergy,int PrintThread=0);
 
 /**
  * Extended test function for multiple field lines

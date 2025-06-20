@@ -212,14 +212,14 @@ void TestWaveEnergyInitialization(PIC::Datum::cDatumStored& WaveEnergy) {
 // SIMPLIFIED TEST FUNCTION: JUST PRINT E+ VALUES
 // ============================================================================
 
-void TestPrintEPlusValues(PIC::Datum::cDatumStored& WaveEnergy) {
+void TestPrintEPlusValues(PIC::Datum::cDatumStored& WaveEnergy,int PrintThread) {
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     
     // Only rank 0 prints
-    if (rank != 0) return;
+    if (rank != PrintThread) return;
     
-    std::cout << "\n=== E+ VALUES FOR FIRST 400 SEGMENTS OF FIELD LINE 0 ===" << std::endl;
+    std::cout << "\n=== E+ VALUES FOR FIRST 400 SEGMENTS OF FIELD LINE 0 === Thread=" << PrintThread << std::endl;
     
     if (PIC::FieldLine::nFieldLine <= 0) {
         std::cout << "ERROR: No field lines found!" << std::endl;
