@@ -914,94 +914,6 @@ void MPIAllReduceDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S)
     }
 }
 
-void MPIScatterDatumStoredAtEdge(cDatumStored& S, int root_rank) {
-    // Get MPI info
-    int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-
-    // Use cached field lines - automatically handles caching and change detection
-    const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& all_field_lines =
-        DatumStoredAtEdgeMPIManager::GetCachedFieldLines();
-
-    // Create datatypes for all processes
-    std::vector<MPI_Datatype> send_datatypes(size);
-    std::vector<double*> send_bases(size, nullptr);
-    std::vector<int> send_counts(size, 0);
-
-    // Create non-const copy for GetDatum_ptr calls
-    cDatumStored S_copy = S;
-
-    // On root process, create datatypes for all target processes
-    if (rank == root_rank) {
-        for (int proc = 0; proc < size; ++proc) {
-            MPI_Datatype dt = GetOrCreateScatterGatherDatatype(all_field_lines, S, proc);
-            send_datatypes[proc] = dt;
-
-            if (dt != MPI_DATATYPE_NULL) {
-                send_counts[proc] = 1;
-
-                // Find base address for this process's segments
-                for (const auto& line : all_field_lines) {
-                    for (PIC::FieldLine::cFieldLineSegment* seg : line) {
-                        if (seg && seg->Thread == proc) {
-                            double* DatumData = seg->GetDatum_ptr(S_copy);
-                            if (DatumData) {
-                                send_bases[proc] = DatumData;
-                                break;
-                            }
-                        }
-                    }
-                    if (send_bases[proc]) break;
-                }
-            }
-        }
-    }
-
-    // Create receive datatype for current process
-    MPI_Datatype recv_datatype = GetOrCreateScatterGatherDatatype(all_field_lines, S, rank);
-
-    double* recv_base = nullptr;
-    int recv_count = 0;
-
-    if (recv_datatype != MPI_DATATYPE_NULL) {
-        recv_count = 1;
-
-        // Find base address for current process's segments
-        for (const auto& line : all_field_lines) {
-            for (PIC::FieldLine::cFieldLineSegment* seg : line) {
-                if (seg && seg->Thread == rank) {
-                    double* DatumData = seg->GetDatum_ptr(S_copy);
-                    if (DatumData) {
-                        recv_base = DatumData;
-                        break;
-                    }
-                }
-            }
-            if (recv_base) break;
-        }
-    }
-
-    // Perform MPI Scatterv using MPI_BOTTOM for absolute addressing
-    int result = MPI_Scatterv(
-        MPI_BOTTOM,                                           // Send buffer (MPI_BOTTOM for absolute addresses)
-        (rank == root_rank) ? send_counts.data() : nullptr,   // Send counts (only on root)
-        nullptr,                                              // Send displacements (using absolute addresses)
-        (rank == root_rank) ? send_datatypes.data()[0] : MPI_DATATYPE_NULL, // Send datatypes
-        MPI_BOTTOM,                                           // Receive buffer (MPI_BOTTOM for absolute addresses)
-        recv_count,                                           // Receive count
-        recv_datatype,                                        // Receive datatype
-        root_rank,                                            // Root process
-        MPI_COMM_WORLD                                        // Communicator
-    );
-
-    if (result != MPI_SUCCESS) {
-        std::cerr << "Error: MPI_Scatterv failed on rank " << rank
-                  << " with code " << result << std::endl;
-    } else if (rank == 0) {
-        std::cout << "Successfully completed MPI scatter for DatumStoredAtEdge data" << std::endl;
-    }
-}
 
 void MPIGatherDatumStoredAtEdge(cDatumStored& S, int root_rank) {
     // Get MPI info
@@ -1013,101 +925,80 @@ void MPIGatherDatumStoredAtEdge(cDatumStored& S, int root_rank) {
     const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& all_field_lines =
         DatumStoredAtEdgeMPIManager::GetCachedFieldLines();
 
-    // Create send datatype for current process
-    MPI_Datatype send_datatype = GetOrCreateScatterGatherDatatype(all_field_lines, S, rank);
-
-    double* send_base = nullptr;
-    int send_count = 0;
-
-    if (send_datatype != MPI_DATATYPE_NULL) {
-        send_count = 1;
-
-        // Find base address for current process's segments
-        for (const auto& line : all_field_lines) {
-            for (PIC::FieldLine::cFieldLineSegment* seg : line) {
-                if (seg && seg->Thread == rank) {
-                    double* DatumData = seg->GetDatum_ptr(S);
-                    if (DatumData) {
-                        send_base = DatumData;
-                        break;
-                    }
-                }
+    if (rank != root_rank) {
+        // Non-root processes: send their data to root
+        MPI_Datatype send_datatype = GetOrCreateScatterGatherDatatype(all_field_lines, S, rank);
+        
+        if (send_datatype != MPI_DATATYPE_NULL) {
+            int result = MPI_Send(MPI_BOTTOM, 1, send_datatype, root_rank, 0, MPI_COMM_WORLD);
+            if (result != MPI_SUCCESS) {
+                std::cerr << "Error: MPI_Send failed on rank " << rank 
+                          << " with code " << result << std::endl;
             }
-            if (send_base) break;
         }
-    }
-
-    // On root process, create receive datatypes for all processes
-    std::vector<MPI_Datatype> recv_datatypes(size);
-    std::vector<double*> recv_bases(size, nullptr);
-    std::vector<int> recv_counts(size, 0);
-
-    if (rank == root_rank) {
+    } else {
+        // Root process: receive data from all other processes
         for (int proc = 0; proc < size; ++proc) {
-            MPI_Datatype dt = GetOrCreateScatterGatherDatatype(all_field_lines, S, proc);
-            recv_datatypes[proc] = dt;
-
-            if (dt != MPI_DATATYPE_NULL) {
-                recv_counts[proc] = 1;
-
-                // Find base address for this process's segments
-                for (const auto& line : all_field_lines) {
-                    for (PIC::FieldLine::cFieldLineSegment* seg : line) {
-                        if (seg && seg->Thread == proc) {
-                            double* DatumData = seg->GetDatum_ptr(S);
-                            if (DatumData) {
-                                recv_bases[proc] = DatumData;
-                                break;
-                            }
-                        }
-                    }
-                    if (recv_bases[proc]) break;
+            if (proc == root_rank) {
+                // Skip self - root process already has its own data
+                continue;
+            }
+            
+            // Create receive datatype for this specific process
+            MPI_Datatype recv_datatype = GetOrCreateScatterGatherDatatype(all_field_lines, S, proc);
+            
+            if (recv_datatype != MPI_DATATYPE_NULL) {
+                int result = MPI_Recv(MPI_BOTTOM, 1, recv_datatype, proc, 0, 
+                                    MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                if (result != MPI_SUCCESS) {
+                    std::cerr << "Error: MPI_Recv failed from rank " << proc 
+                              << " with code " << result << std::endl;
                 }
             }
         }
-    }
-
-    // Perform MPI Gatherv using MPI_BOTTOM for absolute addressing
-    int result = MPI_Gatherv(
-        MPI_BOTTOM,                                           // Send buffer (MPI_BOTTOM for absolute addresses)
-        send_count,                                           // Send count
-        send_datatype,                                        // Send datatype
-        MPI_BOTTOM,                                           // Receive buffer (MPI_BOTTOM for absolute addresses)
-        (rank == root_rank) ? recv_counts.data() : nullptr,  // Receive counts (only on root)
-        nullptr,                                              // Receive displacements (using absolute addresses)
-        (rank == root_rank) ? recv_datatypes.data()[0] : MPI_DATATYPE_NULL, // Receive datatypes
-        root_rank,                                            // Root process
-        MPI_COMM_WORLD                                        // Communicator
-    );
-
-    if (result != MPI_SUCCESS) {
-        std::cerr << "Error: MPI_Gatherv failed on rank " << rank
-                  << " with code " << result << std::endl;
-    } else if (rank == 0) {
+        
+        // Success message only on root
         std::cout << "Successfully completed MPI gather for DatumStoredAtEdge data" << std::endl;
     }
 }
 
-void MPIScatterDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, int root_rank) {
-    // Create single field line vector
-    std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>> single_field_line;
-    std::vector<PIC::FieldLine::cFieldLineSegment*> segments;
+void MPIScatterDatumStoredAtEdge(cDatumStored& S, int root_rank) {
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    if (field_line_idx >= 0 && field_line_idx < PIC::FieldLine::nFieldLine) {
-        int num_segments = PIC::FieldLine::FieldLinesAll[field_line_idx].GetTotalSegmentNumber();
-        for (int seg_idx = 0; seg_idx < num_segments; ++seg_idx) {
-            PIC::FieldLine::cFieldLineSegment* seg = PIC::FieldLine::FieldLinesAll[field_line_idx].GetSegment(seg_idx);
-            if (seg) {
-                segments.push_back(seg);
+    const auto& all_field_lines = DatumStoredAtEdgeMPIManager::GetCachedFieldLines();
+
+    if (rank == root_rank) {
+        // Root process: send data to all other processes
+        for (int proc = 0; proc < size; ++proc) {
+            if (proc == root_rank) continue; // Skip self
+            
+            MPI_Datatype send_datatype = GetOrCreateScatterGatherDatatype(all_field_lines, S, proc);
+            
+            if (send_datatype != MPI_DATATYPE_NULL) {
+                int result = MPI_Send(MPI_BOTTOM, 1, send_datatype, proc, 0, MPI_COMM_WORLD);
+                if (result != MPI_SUCCESS) {
+                    std::cerr << "Error: MPI_Send failed to rank " << proc 
+                              << " with code " << result << std::endl;
+                }
+            }
+        }
+        
+        std::cout << "Successfully completed MPI scatter for DatumStoredAtEdge data" << std::endl;
+    } else {
+        // Non-root processes: receive their data from root
+        MPI_Datatype recv_datatype = GetOrCreateScatterGatherDatatype(all_field_lines, S, rank);
+        
+        if (recv_datatype != MPI_DATATYPE_NULL) {
+            int result = MPI_Recv(MPI_BOTTOM, 1, recv_datatype, root_rank, 0, 
+                                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            if (result != MPI_SUCCESS) {
+                std::cerr << "Error: MPI_Recv failed on rank " << rank 
+                          << " with code " << result << std::endl;
             }
         }
     }
-    single_field_line.push_back(segments);
-
-    // Similar implementation as MPIScatterDatumStoredAtEdge but for single field line
-    // ... (implementation details similar to above but using single_field_line)
-
-    std::cout << "MPI scatter for field line " << field_line_idx << " completed" << std::endl;
 }
 
 void MPIGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, int root_rank) {
