@@ -318,9 +318,15 @@ namespace PIC {
       int length;
       char name[_MAX_STRING_LENGTH_PIC_];
       int type;
-      bool doPrint;
+      bool doPrint,divideByVolumeOnPrint;
 
-      cDatum() {}; //default constructor
+      cDatum() {
+        offset=-1;
+	length=0;
+	type=Unset_;
+	doPrint=false;
+	divideByVolumeOnPrint=false;
+      }  //default constructor
 
       cDatum& operator = (const cDatum& v) {
         offset=v.offset;
@@ -328,6 +334,7 @@ namespace PIC {
         memcpy(name,v.name,_MAX_STRING_LENGTH_PIC_);
         type=v.type;
         doPrint=v.doPrint;
+	divideByVolumeOnPrint=v.divideByVolumeOnPrint;
 
         return *this;
       }
@@ -360,7 +367,21 @@ namespace PIC {
         type = Unset_;
         SetDatum(lengthIn,nameIn,doPrintIn);
       }
+
+      //status flags
+      //DATUM_DO_PRINT  0b0001;
+      //DATUM_DO_DEVIDE_VOLUME_PRINT 0b0010;
+
+      cDatum(int lengthIn, const char* nameIn, int StatusVector) {
+        type = Unset_;
+        SetDatum(lengthIn,nameIn);
+
+	doPrint=(StatusVector&DATUM_DO_PRINT!=0) ? true : false;
+	divideByVolumeOnPrint=(StatusVector&DATUM_DO_DEVIDE_VOLUME_PRINT!=0) ? true : false;  
+      }
+
     };
+
     // class cDatum -----------------------------------------------------------
 
     //-------------------------------------------------------------------------
@@ -396,6 +417,10 @@ namespace PIC {
 
       // constructor is inherited
       cDatumStored(int lengthIn, const char* nameIn, bool doPrintIn = true) : cDatum(lengthIn, nameIn, doPrintIn) {
+        type = Stored_;
+      }
+
+      cDatumStored(int lengthIn, const char* nameIn, int StatusVector) : cDatum(lengthIn, nameIn, StatusVector) {
         type = Stored_;
       }
 
