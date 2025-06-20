@@ -70,6 +70,14 @@ void SEP::AlfvenTurbulence_Kolmogorov::ModelInit::Init() {
     FL::cFieldLineSegment* segment = fieldLine.GetFirstSegment();
 
     while (segment != nullptr) {
+      if (segment->Thread!=PIC::ThisThread) {
+        totalSegmentsProcessed++;
+
+        // Move to next segment
+        segment = segment->GetNext();
+	continue;
+      }
+
       // Get the vertices at the beginning and end of the segment
       FL::cFieldLineVertex* beginVertex = segment->GetBegin();
       FL::cFieldLineVertex* endVertex = segment->GetEnd();
