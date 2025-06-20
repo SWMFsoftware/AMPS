@@ -118,6 +118,7 @@ namespace IsotropicSEP {
 // ============================================================================
 
 void UpdateWaveEnergyWithParticleCoupling(
+    int field_line_idx,
     PIC::FieldLine::cFieldLineSegment* segment,
     double& E_plus_initial,                    // Initial integrated outward wave energy [J]
     double& E_minus_initial,                   // Initial integrated inward wave energy [J]
@@ -139,6 +140,12 @@ void UpdateWaveEnergyWithParticleCoupling(
         E_minus_final = E_minus_initial;
         return;
     }
+
+    if (segment->Thread != PIC::ThisThread) {
+        E_plus_final = E_plus_initial;
+        E_minus_final = E_minus_initial;
+        return;
+    }
     
     if (dt <= 0.0 || tau_cas <= 0.0) {
         std::cerr << "Error: Invalid time parameters (dt=" << dt << ", tau_cas=" << tau_cas << ")" << std::endl;
@@ -150,17 +157,7 @@ void UpdateWaveEnergyWithParticleCoupling(
     // ========================================================================
     // CALCULATE SEGMENT VOLUME
     // ========================================================================
-    // V_cell = L_j * (A_L + sqrt(A_L * A_R) + A_R) / 3
-    
-    // Get segment length
-    double L_j = segment->GetLength();  // Segment length [m]
-    
-    // Get cross-sectional areas at segment boundaries
-    double A_L = segment->GetLeftBoundaryArea();   // Left boundary area [m²]
-    double A_R = segment->GetRightBoundaryArea();  // Right boundary area [m²]
-    
-    // Calculate cell volume using given formula
-    double V_cell = L_j * (A_L + std::sqrt(A_L * A_R) + A_R) / 3.0;  // [m³]
+    double V_cell = SEP::FieldLine::GetSegmentVolume(segment, field_line_idx); 
     
     if (V_cell <= 0.0) {
         std::cerr << "Warning: Invalid cell volume (" << V_cell << ") in segment" << std::endl;
@@ -365,6 +362,7 @@ void UpdateWaveEnergyWithParticleCoupling(
 // ============================================================================
 
 void UpdateWaveEnergyWithParticleCoupling(
+    int field_line_idx,
     PIC::FieldLine::cFieldLineSegment* segment,
     double& E_plus_initial,
     double& E_minus_initial,
@@ -380,7 +378,7 @@ void UpdateWaveEnergyWithParticleCoupling(
     const double rho_default = 5.0e-21;       // kg/m³
     
     UpdateWaveEnergyWithParticleCoupling(
-        segment, E_plus_initial, E_minus_initial, S_scalar, dt,
+        field_line_idx,segment, E_plus_initial, E_minus_initial, S_scalar, dt,
         tau_cas_default, Q_shock_default, E_plus_final, E_minus_final,
         B0_default, rho_default
     );
@@ -462,6 +460,191 @@ void ConvertEnergyDensityToIntegratedEnergies(
     
     E_minus = total_integrated_energy / (energy_ratio + 1.0);
     E_plus = energy_ratio * E_minus;
+}
+
+// ============================================================================
+// GLOBAL UPDATE FUNCTION FOR ALL SEGMENTS
+// ============================================================================
+
+void UpdateAllSegmentsWaveEnergyWithParticleCoupling(
+    const PIC::Datum::cDatumStored& WaveEnergyDensity,
+    const PIC::Datum::cDatumStored& S_scalar,
+    double dt,
+    double tau_cas = 1000.0,
+    double Q_shock = 0.0,
+    double B0 = 5.0e-9,
+    double rho = 5.0e-21
+) {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    int processed_segments = 0;
+
+    // Loop through all field lines
+    for (int field_line_idx = 0; field_line_idx < PIC::FieldLine::nFieldLine; ++field_line_idx) {
+        PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
+        int num_segments = field_line->GetTotalSegmentNumber();
+
+        // Loop through all segments in this field line
+        for (int seg_idx = 0; seg_idx < num_segments; ++seg_idx) {
+            PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
+
+            // Only process segments assigned to this MPI process
+            if (!segment || segment->Thread != PIC::ThisThread) {
+                continue;
+            }
+
+            // Get current wave energy data
+            double* wave_data = segment->GetDatum_ptr(WaveEnergyDensity);
+            if (!wave_data) continue;
+
+            double E_plus_initial = wave_data[0];   // Outward wave energy [J]
+            double E_minus_initial = wave_data[1];  // Inward wave energy [J]
+
+            double E_plus_final, E_minus_final;
+
+            // Update wave energy with particle coupling
+            UpdateWaveEnergyWithParticleCoupling(
+                field_line_idx, segment,
+                E_plus_initial, E_minus_initial,
+                S_scalar, dt, tau_cas, Q_shock,
+                E_plus_final, E_minus_final,
+                B0, rho
+            );
+
+            // Write updated wave energies back to segment
+            wave_data[0] = E_plus_final;
+            wave_data[1] = E_minus_final;
+
+            processed_segments++;
+        }
+    }
+
+    if (rank == 0) {
+        std::cout << "Wave-particle coupling updated for " << processed_segments
+                  << " segments" << std::endl;
+    }
+}
+
+// ============================================================================
+// DIAGNOSTIC FUNCTIONS
+// ============================================================================
+
+double CalculateTotalWaveEnergyInSystem(const PIC::Datum::cDatumStored& WaveEnergyDensity) {
+    double local_total_energy = 0.0;
+
+    // Sum energy across all segments assigned to this process
+    for (int field_line_idx = 0; field_line_idx < PIC::FieldLine::nFieldLine; ++field_line_idx) {
+        PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
+        int num_segments = field_line->GetTotalSegmentNumber();
+
+        for (int seg_idx = 0; seg_idx < num_segments; ++seg_idx) {
+            PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
+            if (!segment || segment->Thread != PIC::ThisThread) continue;
+
+            double* wave_data = segment->GetDatum_ptr(WaveEnergyDensity);
+            if (wave_data) {
+                local_total_energy += wave_data[0] + wave_data[1];  // E+ + E-
+            }
+        }
+    }
+
+    // Sum across all MPI processes
+    double total_energy = 0.0;
+    MPI_Allreduce(&local_total_energy, &total_energy, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    return total_energy;  // [J]
+}
+
+double CalculateTotalParticleEnergyInSystem() {
+    double local_total_energy = 0.0;
+
+    // Sum energy across all segments assigned to this process
+    for (int field_line_idx = 0; field_line_idx < PIC::FieldLine::nFieldLine; ++field_line_idx) {
+        PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
+        int num_segments = field_line->GetTotalSegmentNumber();
+
+        for (int seg_idx = 0; seg_idx < num_segments; ++seg_idx) {
+            PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
+            if (!segment || segment->Thread != PIC::ThisThread) continue;
+
+            local_total_energy += CalculateTotalParticleEnergyInSegment(segment);
+        }
+    }
+
+    // Sum across all MPI processes
+    double total_energy = 0.0;
+    MPI_Allreduce(&local_total_energy, &total_energy, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    return total_energy;  // [J]
+}
+
+void CheckEnergyConservation(const PIC::Datum::cDatumStored& WaveEnergyDensity,
+                           bool verbose = false) {
+    static double previous_total_energy = -1.0;
+
+    double wave_energy = CalculateTotalWaveEnergyInSystem(WaveEnergyDensity);
+    double particle_energy = CalculateTotalParticleEnergyInSystem();
+    double total_energy = wave_energy + particle_energy;
+
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    if (rank == 0) {
+        if (verbose) {
+            std::cout << "Energy Conservation Check:" << std::endl;
+            std::cout << "  Wave Energy:     " << wave_energy << " J" << std::endl;
+            std::cout << "  Particle Energy: " << particle_energy << " J" << std::endl;
+            std::cout << "  Total Energy:    " << total_energy << " J" << std::endl;
+        }
+
+        if (previous_total_energy > 0.0) {
+            double energy_change = total_energy - previous_total_energy;
+            double relative_change = energy_change / previous_total_energy;
+
+            if (std::abs(relative_change) > 1.0e-6) {
+                std::cout << "Warning: Energy conservation violation: "
+                          << relative_change * 100.0 << "%" << std::endl;
+            } else if (verbose) {
+                std::cout << "  Energy Conservation: PASS (" << relative_change * 100.0 << "%)" << std::endl;
+            }
+        }
+
+        previous_total_energy = total_energy;
+    }
+}
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+double CalculateTotalParticleEnergyInSegment(PIC::FieldLine::cFieldLineSegment* segment) {
+    if (!segment) return 0.0;
+
+    double total_energy = 0.0;
+    long int p = segment->FirstParticleIndex;
+
+    while (p != -1) {
+        double v[3];
+        PIC::ParticleBuffer::GetV(v, p);
+
+        // Relativistic kinetic energy
+        double kinetic_energy = Relativistic::Vel2E(v, PhysicsConstants::PROTON_MASS);
+
+        // Get particle statistical weight
+        double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[0] *
+                            PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+
+        // Model particle energy
+        double model_particle_energy = kinetic_energy * stat_weight;
+
+        total_energy += model_particle_energy;
+
+        // Get next particle
+        p = PIC::ParticleBuffer::GetNext(p);
+    }
+
+    return total_energy; // [J]
 }
 
 } // namespace IsotropicSEP

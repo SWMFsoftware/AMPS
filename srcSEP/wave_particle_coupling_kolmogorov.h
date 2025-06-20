@@ -92,6 +92,7 @@ namespace IsotropicSEP {
  * @param rho               Mass density [kg/m³]
  */
 void UpdateWaveEnergyWithParticleCoupling(
+    int field_line_idx,
     PIC::FieldLine::cFieldLineSegment* segment,
     double& E_plus_initial,
     double& E_minus_initial,
@@ -117,6 +118,7 @@ void UpdateWaveEnergyWithParticleCoupling(
  * @param E_minus_final     Output: final inward integrated wave energy [J]
  */
 void UpdateWaveEnergyWithParticleCoupling(
+    int field_line_idx,
     PIC::FieldLine::cFieldLineSegment* segment,
     double& E_plus_initial,
     double& E_minus_initial,
