@@ -147,12 +147,13 @@ void UpdateWaveEnergyWithParticleCoupling(
  * @param rho               Mass density [kg/m³]
  */
 void UpdateAllSegmentsWaveEnergyWithParticleCoupling(
-    const PIC::Datum::cDatumStored& S_scalar,
+    PIC::Datum::cDatumStored& WaveEnergyDensity,
+    PIC::Datum::cDatumStored& S_scalar,
     double dt,
-    double tau_cas,
-    double Q_shock,
-    double B0,
-    double rho
+    double tau_cas = 1000.0,
+    double Q_shock = 0.0,
+    double B0 = 5.0e-9,
+    double rho = 5.0e-21
 );
 
 /**

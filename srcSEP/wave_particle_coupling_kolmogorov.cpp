@@ -1,6 +1,4 @@
-// ============================================================================
-// UTILITY FUNCTION: CALCULATE WAVE ENERGY DENSITY FROM AMPLITUDE
-// ============================================================================/*
+/* 
 ================================================================================
                     WAVE-PARTICLE ENERGY COUPLING FUNCTIONS
 ================================================================================
@@ -43,7 +41,7 @@ USAGE EXAMPLES:
 ---------------
 
 // Example 1: Update single segment with full parameter control
-PIC::FieldLine::cFieldLineSegment* segment = /* get segment */;
+PIC::FieldLine::cFieldLineSegment* segment = /get segment/;
 double A_plus_old = 0.1, A_minus_old = 0.05;
 double A_plus_new, A_minus_new;
 double dt = 10.0; // 10 second time step
@@ -108,6 +106,8 @@ PERFORMANCE NOTES:
 
 ================================================================================
 */
+
+#include "sep.h"
 
 namespace SEP {
 namespace AlfvenTurbulence_Kolmogorov {
@@ -227,7 +227,7 @@ void UpdateWaveEnergyWithParticleCoupling(
         double v_magnitude = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
         
         // Relativistic kinetic energy calculation
-        double particle_mass = _H_MASS_; // [kg]
+        double particle_mass = _H__MASS_; // [kg]
         double kinetic_energy = Relativistic::Vel2E(v, particle_mass); // [J]
         
         // Get particle statistical weight
@@ -254,7 +254,7 @@ void UpdateWaveEnergyWithParticleCoupling(
         char error_msg[512];
         sprintf(error_msg, "Energy removal (%.6e J) exceeds total particle energy (%.6e J) in segment", 
                 std::abs(particle_energy_change), total_particle_energy);
-        exit(error_msg, __LINE__, __FILE__);
+        exit( __LINE__, __FILE__,error_msg);
     }
     
     // ITERATIVE ENERGY REDISTRIBUTION LOOP
@@ -273,7 +273,7 @@ void UpdateWaveEnergyWithParticleCoupling(
             PIC::ParticleBuffer::GetV(v_current, p);
             
             // Calculate current particle kinetic energy
-            double particle_mass = _H_MASS_;
+            double particle_mass = _H__MASS_;
             double kinetic_energy = Relativistic::Vel2E(v_current, particle_mass);
             
             // Get particle statistical weight
@@ -402,7 +402,7 @@ double CalculateTotalParticleEnergyInSegment(PIC::FieldLine::cFieldLineSegment* 
         double v_magnitude = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
         
         // Relativistic kinetic energy
-        double particle_mass = _H_MASS_;
+        double particle_mass = _H__MASS_;
         double kinetic_energy = Relativistic::Vel2E(v, particle_mass);
         
         // Get particle statistical weight
@@ -467,13 +467,13 @@ void ConvertEnergyDensityToIntegratedEnergies(
 // ============================================================================
 
 void UpdateAllSegmentsWaveEnergyWithParticleCoupling(
-    const PIC::Datum::cDatumStored& WaveEnergyDensity,
-    const PIC::Datum::cDatumStored& S_scalar,
+    PIC::Datum::cDatumStored& WaveEnergyDensity,
+    PIC::Datum::cDatumStored& S_scalar,
     double dt,
-    double tau_cas = 1000.0,
-    double Q_shock = 0.0,
-    double B0 = 5.0e-9,
-    double rho = 5.0e-21
+    double tau_cas,
+    double Q_shock,
+    double B0,
+    double rho
 ) {
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -530,7 +530,7 @@ void UpdateAllSegmentsWaveEnergyWithParticleCoupling(
 // DIAGNOSTIC FUNCTIONS
 // ============================================================================
 
-double CalculateTotalWaveEnergyInSystem(const PIC::Datum::cDatumStored& WaveEnergyDensity) {
+double CalculateTotalWaveEnergyInSystem(PIC::Datum::cDatumStored& WaveEnergyDensity) {
     double local_total_energy = 0.0;
 
     // Sum energy across all segments assigned to this process
@@ -579,7 +579,7 @@ double CalculateTotalParticleEnergyInSystem() {
     return total_energy;  // [J]
 }
 
-void CheckEnergyConservation(const PIC::Datum::cDatumStored& WaveEnergyDensity,
+void CheckEnergyConservation(PIC::Datum::cDatumStored& WaveEnergyDensity,
                            bool verbose = false) {
     static double previous_total_energy = -1.0;
 
@@ -612,39 +612,6 @@ void CheckEnergyConservation(const PIC::Datum::cDatumStored& WaveEnergyDensity,
 
         previous_total_energy = total_energy;
     }
-}
-
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
-
-double CalculateTotalParticleEnergyInSegment(PIC::FieldLine::cFieldLineSegment* segment) {
-    if (!segment) return 0.0;
-
-    double total_energy = 0.0;
-    long int p = segment->FirstParticleIndex;
-
-    while (p != -1) {
-        double v[3];
-        PIC::ParticleBuffer::GetV(v, p);
-
-        // Relativistic kinetic energy
-        double kinetic_energy = Relativistic::Vel2E(v, PhysicsConstants::PROTON_MASS);
-
-        // Get particle statistical weight
-        double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[0] *
-                            PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
-
-        // Model particle energy
-        double model_particle_energy = kinetic_energy * stat_weight;
-
-        total_energy += model_particle_energy;
-
-        // Get next particle
-        p = PIC::ParticleBuffer::GetNext(p);
-    }
-
-    return total_energy; // [J]
 }
 
 } // namespace IsotropicSEP
