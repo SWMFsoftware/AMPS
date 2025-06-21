@@ -807,6 +807,104 @@ MPI_Datatype GetOrCreateScatterGatherDatatype(
 // Public Interface Functions with Automatic Datatype Management
 // ============================================================================
 
+void MPIReduceDatumStoredAtEdge(cDatumStored& S, int root_rank) {
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    // Validate root_rank
+    if (root_rank < 0 || root_rank >= size) {
+        std::cerr << "Invalid root_rank " << root_rank << " for communicator size " << size << std::endl;
+        return;
+    }
+
+    const auto& all_field_lines = DatumStoredAtEdgeMPIManager::GetCachedFieldLines();
+    
+    // Count total segments and elements
+    int total_segments = 0;
+    for (const auto& line : all_field_lines) {
+        total_segments += line.size();
+    }
+    
+    if (total_segments == 0) {
+        std::cerr << "No segments found for simple reduce operation" << std::endl;
+        return;
+    }
+    
+    int total_elements = total_segments * S.length;
+    
+    // Create send buffer for all processes
+    std::vector<double> send_buffer(total_elements, 0.0);
+    
+    // Create receive buffer only on root
+    std::vector<double> recv_buffer;
+    if (rank == root_rank) {
+        recv_buffer.resize(total_elements, 0.0);
+    }
+    
+    // Pack all segment data into single contiguous send buffer
+    cDatumStored S_copy = S;
+    int element_index = 0;
+    
+    for (const auto& line : all_field_lines) {
+        for (PIC::FieldLine::cFieldLineSegment* seg : line) {
+            if (seg) {
+                double* seg_data = seg->GetDatum_ptr(S_copy);
+                if (seg_data) {
+                    for (int i = 0; i < S.length; i++) {
+                        send_buffer[element_index++] = seg_data[i];
+                    }
+                } else {
+                    element_index += S.length;  // Leave as zeros
+                }
+            } else {
+                element_index += S.length;  // Leave as zeros  
+            }
+        }
+    }
+    
+    // Single MPI_Reduce call using standard MPI_SUM
+    int result = MPI_Reduce(
+        send_buffer.data(),                           // send buffer
+        (rank == root_rank) ? recv_buffer.data() : nullptr,  // receive buffer (only on root)
+        total_elements,                               // number of elements
+        MPI_DOUBLE,                                   // element type
+        MPI_SUM,                                      // standard sum operation
+        root_rank,                                    // root process
+        MPI_COMM_WORLD                                // communicator
+    );
+    
+    if (result != MPI_SUCCESS) {
+        std::cerr << "Simple MPI_Reduce failed with code " << result << std::endl;
+        return;
+    }
+    
+    // Unpack results back to original locations (only on root)
+    if (rank == root_rank) {
+        element_index = 0;
+        for (const auto& line : all_field_lines) {
+            for (PIC::FieldLine::cFieldLineSegment* seg : line) {
+                if (seg) {
+                    double* seg_data = seg->GetDatum_ptr(S_copy);
+                    if (seg_data) {
+                        for (int i = 0; i < S.length; i++) {
+                            seg_data[i] = recv_buffer[element_index++];
+                        }
+                    } else {
+                        element_index += S.length;  // Skip
+                    }
+                } else {
+                    element_index += S.length;  // Skip
+                }
+            }
+        }
+        
+        std::cout << "Successfully completed simple MPI reduce for " 
+                  << total_segments << " segments (" 
+                  << total_elements << " total elements) to root rank " << root_rank << std::endl;
+    }
+}
+
 void MPIAllReduceDatumStoredAtEdge(const cDatumStored& S) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);

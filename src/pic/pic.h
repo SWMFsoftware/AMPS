@@ -1008,6 +1008,7 @@ namespace  DatumStoredAtEdgeMPIManager {
 
 // Main MPI collective communication functions
 void MPIAllReduceDatumStoredAtEdge(const cDatumStored& S);
+void MPIReduceDatumStoredAtEdge(const cDatumStored& S,int root_rank);
 
 void MPIAllReduceDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S);
 
