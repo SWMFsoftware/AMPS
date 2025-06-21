@@ -808,61 +808,48 @@ MPI_Datatype GetOrCreateScatterGatherDatatype(
 // ============================================================================
 
 void MPIAllReduceDatumStoredAtEdge(const cDatumStored& S) {
-    // Get MPI info
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    // Use cached field lines - automatically handles caching and change detection
-    const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& all_field_lines =
-        DatumStoredAtEdgeMPIManager::GetCachedFieldLines();
+    const auto& all_field_lines = DatumStoredAtEdgeMPIManager::GetCachedFieldLines();
 
-    // Automatically get or create MPI datatype
-    MPI_Datatype datum_datatype = GetOrCreateDatumStoredAtEdgeDatatype(all_field_lines, S);
-
-    if (datum_datatype == MPI_DATATYPE_NULL) {
-        std::cerr << "Failed to create MPI datatype for DatumStoredAtEdge" << std::endl;
-        return;
-    }
-
-    // Get first valid data pointer as base address for MPI operation
-    double* base_data = nullptr;
-    cDatumStored S_copy = S;  // Create non-const copy
+    // Collect all data pointers and perform individual all-reduce operations
+    std::vector<double*> data_pointers;
+    cDatumStored S_copy = S;  // Non-const copy for GetDatum_ptr
+    
+    // Collect all valid data pointers from all segments
     for (const auto& line : all_field_lines) {
         for (PIC::FieldLine::cFieldLineSegment* seg : line) {
             if (seg) {
-                double* DatumData = seg->GetDatum_ptr(S_copy);
-                if (DatumData) {
-                    base_data = DatumData;
-                    break;
+                double* data_ptr = seg->GetDatum_ptr(S_copy);
+                if (data_ptr) {
+                    data_pointers.push_back(data_ptr);
                 }
             }
         }
-        if (base_data) break;
     }
 
-    if (!base_data) {
+    if (data_pointers.empty()) {
         std::cerr << "No valid DatumStoredAtEdge data found for all-reduce" << std::endl;
         return;
     }
 
-    // Perform MPI all-reduce operation using MPI_BOTTOM
-    // MPI_BOTTOM tells MPI to use absolute addresses from the struct datatype
-    int result = MPI_Allreduce(MPI_IN_PLACE, MPI_BOTTOM, 1, datum_datatype, MPI_SUM, MPI_COMM_WORLD);
-
-    if (result != MPI_SUCCESS) {
-        std::cerr << "Error: MPI_Allreduce failed with code " << result << std::endl;
-        return;
+    // Perform separate MPI_Allreduce for each segment's data
+    int successful_operations = 0;
+    for (double* data_ptr : data_pointers) {
+        int result = MPI_Allreduce(MPI_IN_PLACE, data_ptr, S.length, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        
+        if (result != MPI_SUCCESS) {
+            std::cerr << "Error: MPI_Allreduce failed for segment data with code " << result << std::endl;
+        } else {
+            successful_operations++;
+        }
     }
 
-    // Optional: Print statistics
     if (rank == 0) {
-        int total_segments = 0;
-        for (const auto& line : all_field_lines) {
-            total_segments += line.size();
-        }
         std::cout << "Successfully completed MPI all-reduce for DatumStoredAtEdge data: "
-                  << total_segments << " segments across " << PIC::FieldLine::nFieldLine
+                  << successful_operations << " segments across " << PIC::FieldLine::nFieldLine
                   << " field lines (S.length=" << S.length << ")" << std::endl;
     }
 }
