@@ -48,6 +48,8 @@ int main(int argc,char **argv) {
   //setup datum to store the segment's data for the Alfven turbulence model 
   if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) { 
     PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy); 
+    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
+
     PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
     PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S_pm);
   }
@@ -78,10 +80,6 @@ int main(int argc,char **argv) {
 
   SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
 
-  //init MPI exchange of field line segent's associated data 
-  PIC::FieldLine::Parallel::InitializeDatumStoredAtEdgeMPI();
-
-
   //exchenge the initial wave energy density and output in a file
   PIC::FieldLine::Parallel::MPIGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0); 
 
@@ -98,7 +96,77 @@ int main(int argc,char **argv) {
 
 
 
-  PIC::FieldLine::Output("fl-edge-test.dat",false);
+  // Calculate turbulence wave enregy density from wave energy integrated over the segments of the magnetic tube:
+auto CalculateWaveEnergyDensity = [&]() {
+    // Focus specifically on SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy
+    auto& integrated_energy = SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy;
+    auto& energy_density = SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity;
+
+    int local_count = 0;
+
+    for (int fl = 0; fl < PIC::FieldLine::nFieldLine; fl++) {
+        auto& field_line = PIC::FieldLine::FieldLinesAll[fl];
+        int num_segs = field_line.GetTotalSegmentNumber();
+
+        for (int seg = 0; seg < num_segs; seg++) {
+            auto* segment = field_line.GetSegment(seg);
+            if (!segment) continue;
+
+            // Only process segments belonging to this thread
+            if (segment->Thread == PIC::ThisThread) {
+                // Focus on getting CellIntegratedWaveEnergy values
+                double* energy_data = segment->GetDatum_ptr(integrated_energy);
+                double* density_data = segment->GetDatum_ptr(energy_density);
+
+                // Use SEP::FieldLine::GetSegmentVolume for volume calculation
+                double volume = SEP::FieldLine::GetSegmentVolume(segment, fl);
+
+                if (energy_data && density_data && volume > 0.0) {
+                    // Process all elements using SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy.length
+                    for (int i = 0; i < SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy.length; i++) {
+                        density_data[i] = energy_data[i] / volume;
+                    }
+                    local_count++;
+                }
+            }
+        }
+    }
+
+    // MPI operations to gather and broadcast results
+   
+    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
+    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,2);
+    
+    PIC::FieldLine::Parallel::MPIGatherDatumStoredAtEdge(energy_density, 0);
+
+    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
+
+    PIC::FieldLine::Parallel::MPIBcastDatumStoredAtEdge(energy_density, 0);
+
+    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
+    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,2); 
+
+    if (PIC::ThisThread == 0) {
+        std::cout << "Compact wave energy density calculation completed with MPI operations" << std::endl;
+    }
+};
+
+
+ CalculateWaveEnergyDensity();
+
+    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
+    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,2);
+
+    PIC::FieldLine::Parallel::MPIGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity, 0);
+
+    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
+
+
+
+      //calculate the wave energy density
+      CalculateWaveEnergyDensity();
+
+        if (PIC::ThisThread==2) PIC::FieldLine::Output("fl-edge-test.dat",false); 
 
   //time step
   for (long int niter=0;niter<TotalIterations;niter++) {
@@ -109,19 +177,23 @@ int main(int argc,char **argv) {
       //reduce S
       PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
 
-      //calculate S+/-
+      //couple particles and turbulence  
+      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::UpdateAllSegmentsWaveEnergyWithParticleCoupling(
+		     SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
+		    SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S,
+		   PIC::ParticleWeightTimeStep::GlobalParticleWeight[0]); 
 
 
-      //scatter S+/-  
+      //scatter wave energy   
+      PIC::FieldLine::Parallel::MPIGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
+      PIC::FieldLine::Parallel::MPIBcastDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);  
     
+      //advect turbulence energy 
+      SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAllFieldLines(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
+			      PIC::ParticleWeightTimeStep::GlobalParticleWeight[0]);
     
-      //update Alfven turbulence energy density due to particle interaction  
-
-
-      //scatter Alfven turbulence energy density 
-
-
-      //convect Alfven turbulence energy density 
+      //calculate the wave energy density 
+      CalculateWaveEnergyDensity();
     }
 
 
