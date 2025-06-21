@@ -813,44 +813,82 @@ void MPIAllReduceDatumStoredAtEdge(const cDatumStored& S) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     const auto& all_field_lines = DatumStoredAtEdgeMPIManager::GetCachedFieldLines();
-
-    // Collect all data pointers and perform individual all-reduce operations
-    std::vector<double*> data_pointers;
-    cDatumStored S_copy = S;  // Non-const copy for GetDatum_ptr
     
-    // Collect all valid data pointers from all segments
+    // Count total segments and elements
+    int total_segments = 0;
+    for (const auto& line : all_field_lines) {
+        total_segments += line.size();
+    }
+    
+    if (total_segments == 0) {
+        std::cerr << "No segments found for simple all-reduce" << std::endl;
+        return;
+    }
+    
+    int total_elements = total_segments * S.length;
+    
+    // Create contiguous arrays
+    std::vector<double> all_data(total_elements, 0.0);
+    
+    // Pack all segment data into single contiguous array
+    cDatumStored S_copy = S;
+    int element_index = 0;
+    
     for (const auto& line : all_field_lines) {
         for (PIC::FieldLine::cFieldLineSegment* seg : line) {
             if (seg) {
-                double* data_ptr = seg->GetDatum_ptr(S_copy);
-                if (data_ptr) {
-                    data_pointers.push_back(data_ptr);
+                double* seg_data = seg->GetDatum_ptr(S_copy);
+                if (seg_data) {
+                    for (int i = 0; i < S.length; i++) {
+                        all_data[element_index++] = seg_data[i];
+                    }
+                } else {
+                    element_index += S.length;  // Leave as zeros
                 }
+            } else {
+                element_index += S.length;  // Leave as zeros  
             }
         }
     }
-
-    if (data_pointers.empty()) {
-        std::cerr << "No valid DatumStoredAtEdge data found for all-reduce" << std::endl;
+    
+    // Single MPI_Allreduce call using standard MPI_SUM
+    int result = MPI_Allreduce(
+        MPI_IN_PLACE,           // in-place operation
+        all_data.data(),        // data buffer
+        total_elements,         // number of elements
+        MPI_DOUBLE,             // element type
+        MPI_SUM,                // standard sum operation
+        MPI_COMM_WORLD          // communicator
+    );
+    
+    if (result != MPI_SUCCESS) {
+        std::cerr << "Simple MPI_Allreduce failed with code " << result << std::endl;
         return;
     }
-
-    // Perform separate MPI_Allreduce for each segment's data
-    int successful_operations = 0;
-    for (double* data_ptr : data_pointers) {
-        int result = MPI_Allreduce(MPI_IN_PLACE, data_ptr, S.length, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-        
-        if (result != MPI_SUCCESS) {
-            std::cerr << "Error: MPI_Allreduce failed for segment data with code " << result << std::endl;
-        } else {
-            successful_operations++;
+    
+    // Unpack results back to original locations
+    element_index = 0;
+    for (const auto& line : all_field_lines) {
+        for (PIC::FieldLine::cFieldLineSegment* seg : line) {
+            if (seg) {
+                double* seg_data = seg->GetDatum_ptr(S_copy);
+                if (seg_data) {
+                    for (int i = 0; i < S.length; i++) {
+                        seg_data[i] = all_data[element_index++];
+                    }
+                } else {
+                    element_index += S.length;  // Skip
+                }
+            } else {
+                element_index += S.length;  // Skip
+            }
         }
     }
-
+    
     if (rank == 0) {
-        std::cout << "Successfully completed MPI all-reduce for DatumStoredAtEdge data: "
-                  << successful_operations << " segments across " << PIC::FieldLine::nFieldLine
-                  << " field lines (S.length=" << S.length << ")" << std::endl;
+        std::cout << "Successfully completed simple MPI all-reduce for " 
+                  << total_segments << " segments (" 
+                  << total_elements << " total elements)" << std::endl;
     }
 }
 
