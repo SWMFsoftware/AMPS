@@ -133,15 +133,7 @@ auto CalculateWaveEnergyDensity = [&]() {
     }
 
     // MPI operations to gather and broadcast results
-   
-    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
-    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,2);
-    
-    PIC::FieldLine::Parallel::MPIGatherDatumStoredAtEdge(energy_density, 0);
-
-    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
-
-    PIC::FieldLine::Parallel::MPIBcastDatumStoredAtEdge(energy_density, 0);
+    PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(energy_density);
 
     SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
     SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,2); 
@@ -152,19 +144,12 @@ auto CalculateWaveEnergyDensity = [&]() {
 };
 
 
+ //calculate the wave energy density
  CalculateWaveEnergyDensity();
 
     SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
     SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,2);
 
-    PIC::FieldLine::Parallel::MPIGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity, 0);
-
-    SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
-
-
-
-      //calculate the wave energy density
-      CalculateWaveEnergyDensity();
 
         if (PIC::ThisThread==2) PIC::FieldLine::Output("fl-edge-test.dat",false); 
 
