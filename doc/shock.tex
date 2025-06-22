@@ -455,3 +455,84 @@ Compression-ratio RMS & $\pm 0.4$ & (n/a) \\
 \textit{Using these equations you can generate $r(t)$, $V_{\text{sh}}(t)$, $r_{\rho}(t)$ with a few lines of code and plug them directly into your SEP transport/turbulence solver.}
 
 
+
+
+
+
+\section*{Field Guide to \textbf{Non-MHD Shock Prescriptions} in Modern SEP Codes}
+
+Below is a \textit{field guide} to the \textbf{non-MHD shock prescriptions} that appear most often in modern SEP transport/acceleration codes. Each row tells you:
+\begin{itemize}
+\item \textbf{What the model specifies} (geometry + kinematics + jump),
+\item \textbf{How it is used} (Monte-Carlo, finite-difference Parker, or coupled wave-code),
+\item \textbf{Key tunable inputs}, and
+\item Canonical \textbf{papers / codes} you can trace for implementation details.
+\end{itemize}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|p{3.5cm}|p{3.5cm}|p{3.5cm}|p{3.5cm}|p{3.5cm}|}
+\hline
+\textbf{Label in SEP Literature} & \textbf{Geometry \& Kinematics} & \textbf{Compression–Ratio Law} & \textbf{Typical Use-Case} & \textbf{Classic References / Codes} \\
+\hline
+\textbf{Planar Constant-Speed (“moving wall”)} & Flat shock surface at position $s_{\rm sh} = s_0 + V_{\rm sh} t$ & User-supplied single value $r$ (often 3–4) & First-order Fermi test cases; benchmark for MC transport & Ellison \& Ramaty 1985; Kóta \& Jokipii 1995 \\
+\hline
+\textbf{Planar Piecewise-Speed} & Constant $V_{\rm sh}$ upstream of 1 au, slower beyond; or time table & Same fixed $r$; or $r(M_A)$ table & Reproduce SOHO / Wind shock times without MHD & Gonçalves et al. 2018; SOLPENCO \\
+\hline
+\textbf{Drag-Based Model (DBM)} & Radial piston; solves $\frac{dV}{dt} = -\gamma(V - U)$ & Either fixed $r$ or empirical $r(M_A)$ & Forecasting, real-time runs (CME input) & Vršnak \& Žic 2007; Afanasiev + Zank 2015 (MC-wave) \\
+\hline
+\textbf{Empirical Shock Arrival (ESA) line} & Single-line fit: $t_{\rm arr}(V_{\rm CME})$ and $V_{\rm sh}(1\,\text{au})$ & Fixed $r$ (2.5–4) or RH formula & Quick field-line forecast, seeds DBM & Gopalswamy et al. 2005; SOLPENCO2 \\
+\hline
+\textbf{Cone / Spherical piston} & Expanding spherical cap with CME half-width; constant or DBM speed & Rankine-Hugoniot ($\gamma = 5/3$) across curved normals & 3-D “shock nose” mapped onto 1-D field lines & Luhmann et al. 2007; iPATH; Pomoell \& Poedts 2018 \\
+\hline
+\textbf{Gasdynamic Analytic (GDA)} & Parker-spiral flow; solves 1-D gasdynamic shock ODEs (density, $B$ frozen-in) & Outputs $r(s)$ self-consistently & SEP + turbulence coupling without full MHD & Zank, Rice \& Wu 2000; Schwadron 2012 \\
+\hline
+\textbf{Hybrid / PIC-calibrated injection} & Geometry from DBM or cone; jump $r(M_A)$ from hybrid-sim table & Adds turbulence power $\eta \rho (V_{\rm sh} - U)^3$ at ramp & Coupled DSA + self-generated waves & Caprioli \& Spitkovsky 2014; Lee-Tylka 2006 \\
+\hline
+\textbf{Statistical Shock Ensemble (“Shock catalog”)} & Use observed Wind/ACE start time, speed, $r$ for each event & Direct table lookup & Re-runs of historical events & Koval \& Szabo 2018; SEPMOD (Sanders 2020) \\
+\hline
+\end{tabular}
+\caption*{}
+\end{table}
+
+\section*{How They Slot into a 1-D SEP Code}
+
+\begin{itemize}
+\item \textbf{Position / speed} $\rightarrow$ moves the split FV cell or the MC shock-plane each $\Delta t$.
+\item \textbf{Compression ratio} $r = \rho_2/\rho_1$ $\rightarrow$ assigns downstream jump in $U, B, \rho$ and governs first-order Fermi momentum kicks $\Delta p/p = 2(r-1)/3r$.
+\item \textbf{(Optional) Wave-power injection} at the ramp $\rightarrow$ extra source term for downstream $W_\pm(k)$.
+\end{itemize}
+
+\section*{Which One to Pick?}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|p{7cm}|p{6.5cm}|}
+\hline
+\textbf{Need} & \textbf{Choose} \\
+\hline
+\textbf{Real-time forecast} with coronagraph CME speed & \textbf{DBM} ($\gamma$ tunable) + $r(M_A)$ fit \\
+\hline
+\textbf{Archive replay} with measured shock catalog & \textbf{Statistical ensemble} (Wind/ACE) \\
+\hline
+\textbf{Parameter study} for theory & \textbf{Planar constant-speed} or \textbf{GDA} \\
+\hline
+\textbf{DSA + self-generated waves} & \textbf{Hybrid-calibrated injection} add-on \\
+\hline
+\end{tabular}
+\caption*{}
+\end{table}
+
+\noindent All of the above avoid full fluid MHD simulation while supplying the minimum shock attributes an SEP transport/acceleration model needs: \textbf{location, speed, and compression ratio as functions of time}.
+
+\section*{Pointers for Implementation}
+
+\begin{lstlisting}[language=C++, basicstyle=\ttfamily\small]
+// during each global step Δt
+s_sh += V_sh(t) * Δt;                     // position from chosen model
+update_jump(U1 → U2, ρ1 → ρ2, B1 → B2, r(t));  // apply compression
+if (model_has_injection) insert_wave_power(ramp, η);  // turbulence source
+apply_DSA_kick(particles, r(t));         // Δp/p = 2(r-1)/3r
+\end{lstlisting}
+
+\noindent With these ingredients you can run Monte-Carlo or finite-difference Parker solutions for SEPs along field lines \textbf{without} invoking a full 3-D MHD solution.
