@@ -1597,6 +1597,48 @@ void DeleteAttachedParticles();
         for(int i=0; i<3; i++) xOut[i] = (1-w) * xBegin[i] + w * xEnd[i];
       }
 
+      // Method to convert distance from beginning of field line to local coordinate S
+      // Returns -1 if the distance is outside the field line bounds
+      double GetS(double Distance) {
+        // Check if field line is properly initialized
+        if (status() != OK_) {
+          return -1.0;
+        }
+    
+        // Check bounds - distance must be non-negative and within total length
+        if (Distance < 0.0) {
+          return -1.0;
+        }
+    
+        // Traverse segments to find the one containing the target distance
+        double accumulatedDistance = 0.0;
+        cFieldLineSegment* currentSegment = FirstSegment;
+        int segmentIndex = 0;
+    
+        while (currentSegment != NULL && segmentIndex < nSegment) {
+          double segmentLength = currentSegment->GetLength();
+        
+          // Check if target distance falls within current segment
+          if (Distance < accumulatedDistance + segmentLength) {
+            // Calculate fractional position within the segment
+            double remainingDistance = Distance - accumulatedDistance;
+            double fractionalPosition = (segmentLength > 0.0) ? 
+                remainingDistance / segmentLength : 0.0;
+            
+            // Return S coordinate: integer part (segment index) + fractional part
+            return static_cast<double>(segmentIndex) + fractionalPosition;
+          }
+        
+          // Move to next segment
+          accumulatedDistance += segmentLength;
+          currentSegment = currentSegment->GetNext();
+          segmentIndex++;
+        }
+    
+        // If we reach here, something went wrong - distance should have been found
+        return -1.0;
+      }
+
       // add vertex with given coordinates
       cFieldLineVertex* Add(double* xIn);
       cFieldLineVertex* AddFront(double* xIn);
