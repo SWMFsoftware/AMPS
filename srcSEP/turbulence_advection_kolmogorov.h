@@ -142,7 +142,8 @@ void AdvectTurbulenceEnergyAlongFieldLine(
 void AdvectTurbulenceEnergyAllFieldLines(
     const PIC::Datum::cDatumStored& WaveEnergyDensity,
     double dt,
-    bool apply_boundary_conditions = true
+    double turbulence_level_beginning,
+    double turbulence_level_end 
 );
 
 /**
