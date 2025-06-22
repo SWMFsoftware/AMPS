@@ -94,7 +94,48 @@ int main(int argc,char **argv) {
   SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,1);
 
 
+  //set background plasma density 
+auto set_background_plasma_density = []() {
+    // reference density at 1 AU [m⁻³]
+    constexpr double n0 = 5.0e6;
+    // 1 astronomical unit in meters
+    constexpr double AU = 1.495978707e11;
 
+    // Loop over all field lines
+    for (int fldIdx = 0; fldIdx < PIC::FieldLine::nFieldLine; ++fldIdx) {
+        auto fieldLine = &PIC::FieldLine::FieldLinesAll[fldIdx];
+        if (!fieldLine) continue;
+
+        int nSeg = fieldLine->GetTotalSegmentNumber();
+        if (nSeg < 1) continue;
+
+        // Loop over all segments in this field line
+        for (int segIdx = 0; segIdx < nSeg; ++segIdx) {
+            auto seg = fieldLine->GetSegment(segIdx);
+            if (!seg) continue;
+
+            // Process both end‐points (left & right) of the segment
+            PIC::FieldLine::cFieldLineVertex* vertices[2] = { seg->GetBegin(), seg->GetEnd() };
+            for (auto vtx : vertices) {
+                if (!vtx) continue;
+
+                // get pointer to {x,y,z} [m]
+                double* X = vtx->GetX();
+                // compute radial distance from Sun [m]
+                double r = std::sqrt(X[0]*X[0] + X[1]*X[1] + X[2]*X[2]);
+
+                // scale density as n0/(r/AU)^2
+                double density = n0 / ((r/AU) * (r/AU));
+
+                // store it in the vertex
+                vtx->SetPlasmaDensity(density); //SetDatum(density, PIC::FieldLine::DatumAtVertexPlasmaDensity);
+            }
+        }
+    }
+};
+
+
+ set_background_plasma_density();
 
   // Calculate turbulence wave enregy density from wave energy integrated over the segments of the magnetic tube:
 auto CalculateWaveEnergyDensity = [&]() {
@@ -163,19 +204,18 @@ auto CalculateWaveEnergyDensity = [&]() {
       PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
 
       //couple particles and turbulence  
-      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::UpdateAllSegmentsWaveEnergyWithParticleCoupling(
-		     SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
-		    SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S,
-		   PIC::ParticleWeightTimeStep::GlobalParticleWeight[0]); 
+//      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::UpdateAllSegmentsWaveEnergyWithParticleCoupling(
+//		     SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
+//		    SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S,
+//		   PIC::ParticleWeightTimeStep::GlobalTimeStep[0]); 
 
 
       //scatter wave energy   
-      PIC::FieldLine::Parallel::MPIGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
-      PIC::FieldLine::Parallel::MPIBcastDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);  
+      PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
     
       //advect turbulence energy 
       SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAllFieldLines(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
-			      PIC::ParticleWeightTimeStep::GlobalParticleWeight[0]);
+			      PIC::ParticleWeightTimeStep::GlobalTimeStep[0],0.01,0.01);
     
       //calculate the wave energy density 
       CalculateWaveEnergyDensity();
