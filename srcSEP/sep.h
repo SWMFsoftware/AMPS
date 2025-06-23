@@ -2144,6 +2144,10 @@ end:
         void Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode);
       }
 
+      // Function to increment integrated wave energy due to shock passing
+      // r0, r1: initial and final heliocentric distances of the shock
+      // dt: time needed for shock to move from r0 to r1
+      void ShockTurbulenceEnergyInjection(double r0, double r1, double dt);  
 
       namespace Tenishev2005 {
         extern double rShock,MinFieldLineHeliocentricDistance;
