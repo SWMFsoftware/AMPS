@@ -1,281 +1,459 @@
 /*
 ================================================================================
-                    TURBULENCE ENERGY ADVECTION HEADER FILE
+              ALFVÉN WAVE TURBULENCE ENERGY ADVECTION HEADER FILE
 ================================================================================
+
+FILE: turbulence_advection_kolmogorov.h
 
 PURPOSE:
 --------
-Header file for turbulence energy advection functions in Alfvén wave turbulence 
-for solar energetic particle (SEP) transport simulations. Provides interface for 
-Alfvén wave energy transport along magnetic field lines using Lagrangian mesh 
-with spatially varying wave speeds calculated from local plasma conditions.
+Header file for Alfvén wave turbulence energy advection functions in the AMPS
+Solar Energetic Particle (SEP) simulation framework. Provides declarations for
+conservative wave energy transport along magnetic field lines with MPI 
+parallelization support and particle-wave coupling interfaces.
 
-MAIN FUNCTIONS:
----------------
-
-1. AdvectTurbulenceEnergyAlongFieldLine()
-   - Advects integrated wave energies along a single field line
-   - Calculates local Alfvén velocities from vertex magnetic field and plasma density
-   - Uses conservative upwind scheme for energy transport
-   - Applies energy updates only to segments assigned to current MPI process
-
-2. AdvectTurbulenceEnergyAllFieldLines()
-   - Global function that processes all field lines in parallel
-   - Calls single field line function for each field line with local segments
-   - MPI-aware: processes only field lines with segments assigned to current process
-
-3. CalculateTotalAdvectedEnergy()
-   - Diagnostic function to monitor total wave energy in system
-   - Sums energy across all local segments with MPI reduction
-   - Used for energy conservation verification
-
-PHYSICS:
---------
-- Lagrangian mesh: Field line segments move with solar wind plasma
-- Wave propagation: E± transport at local Alfvén speeds V_A = |B|/√(μ₀ρ)
-- Energy flux: Flux = V_A × (E_total/V_segment) × A_boundary
-- Conservative scheme: Total energy conserved during advection
-- Boundary conditions: Inward waves exit at Sun, outward waves damped at outer boundary
-
-MPI PARALLELIZATION:
---------------------
-- Global data access: Wave energies read from all segments
-- Local processing: Flux calculations only for local segments (segment->Thread == PIC::ThisThread)
-- Local updates: Energy changes applied only to local segments
-- Conservative fluxes: Energy transfer between segments properly handled across processes
-
-USAGE EXAMPLES:
----------------
-
-// Single field line advection
-int field_line_idx = 5;
-double dt = 10.0;  // seconds
-SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAlongFieldLine(
-    field_line_idx,
-    SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,
-    dt,
-    true  // apply boundary conditions
-);
-
-// All field lines advection
-SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAllFieldLines(
-    SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,
-    dt
-);
-
-// Energy conservation check
-double total_energy = SEP::AlfvenTurbulence_Kolmogorov::CalculateTotalAdvectedEnergy(
-    WaveEnergyDensity
-);
-
-REQUIREMENTS:
+DEPENDENCIES:
 -------------
-- AMPS PIC framework with field line structure
-- SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity datum
-- SEP::FieldLine::GetSegmentVolume() and SEP::FieldLine::MagneticTubeRadius()
-- FL::DatumAtVertexMagneticField and FL::DatumAtVertexPlasmaDensity
+- AMPS PIC framework (pic.h)
+- Standard C++ library containers
 - MPI parallelization support
+
+USAGE:
+------
+Include this header in source files that need turbulence energy advection:
+```cpp
+#include "turbulence_advection_kolmogorov.h"
+```
 
 ================================================================================
 */
 
-#ifndef TURBULENCE_ADVECTION_H
-#define TURBULENCE_ADVECTION_H
+#ifndef TURBULENCE_ADVECTION_KOLMOGOROV_H
+#define TURBULENCE_ADVECTION_KOLMOGOROV_H
 
-#include "pic.h"              // AMPS PIC framework
-#include <mpi.h>              // MPI parallelization
+// ============================================================================
+// SYSTEM INCLUDES
+// ============================================================================
+#include <vector>        // STL containers for DeltaE arrays
+#include <iostream>      // Standard I/O for diagnostics
+
+// ============================================================================
+// AMPS FRAMEWORK INCLUDES  
+// ============================================================================
+#include "sep.h"         // AMPS PIC framework core
 
 namespace SEP {
 namespace AlfvenTurbulence_Kolmogorov {
 
-// ============================================================================
-// TURBULENCE ENERGY ADVECTION FUNCTIONS
-// ============================================================================
+    // ========================================================================
+    // FUNCTION DECLARATIONS
+    // ========================================================================
 
-/**
- * @brief Advect turbulence energy along a single field line with local Alfvén speeds
- * 
- * Main function that handles energy transport of integrated wave energies E± along
- * a magnetic field line. Calculates local Alfvén velocities at each segment boundary
- * from vertex magnetic field and plasma density data. Uses conservative upwind scheme
- * to maintain energy conservation. Only processes segments assigned to current MPI process.
- * 
- * Algorithm:
- * 1. Read wave energy data from ALL segments (global information)
- * 2. Calculate local Alfvén velocities V_A = |B|/√(μ₀ρ) at each boundary
- * 3. Calculate energy fluxes using upwind scheme (only for local segments)
- * 4. Apply conservative energy updates (only to local segments)
- * 5. Apply boundary conditions (only to local boundary segments)
- * 6. Write updated wave energies (only to local segments)
- * 
- * @param field_line_idx        Index of field line to process
- * @param WaveEnergyDensity     Wave energy datum containing E+ and E- data
- * @param dt                    Time step [s]
- * @param apply_boundary_conditions  Enable boundary conditions at inner/outer boundaries
- * 
- * @note Wave energy data is read globally but updates applied only to local segments
- * @note Requires valid magnetic field and plasma density data at all vertices
- * @note Energy flux calculation: Flux = V_A × (E_total/V_segment) × A_boundary
- */
-void AdvectTurbulenceEnergyAlongFieldLine(
-    int field_line_idx,
-    const PIC::Datum::cDatumStored& WaveEnergyDensity,
-    double dt,
-    bool apply_boundary_conditions = true
-);
-
-/**
- * @brief Advect turbulence energy for all field lines in MPI parallel fashion
- * 
- * Global function that processes all field lines in the simulation. For each field line,
- * checks if it has segments assigned to the current MPI process and calls the single
- * field line advection function. Provides automatic load balancing across MPI processes.
- * 
- * @param WaveEnergyDensity     Wave energy datum containing E+ and E- data
- * @param dt                    Time step [s]
- * @param apply_boundary_conditions  Enable boundary conditions at inner/outer boundaries
- * 
- * @note Only processes field lines that have at least one segment assigned to current process
- * @note Automatically handles MPI load balancing
- * @note May require MPI_Barrier() depending on implementation needs
- */
-void AdvectTurbulenceEnergyAllFieldLines(
-    const PIC::Datum::cDatumStored& WaveEnergyDensity,
-    double dt,
-    double turbulence_level_beginning,
-    double turbulence_level_end 
-);
-
-/**
- * @brief Calculate total wave energy across entire simulation domain
- * 
- * Diagnostic function that sums wave energies (E+ + E-) across all segments
- * assigned to the current MPI process, then performs MPI reduction to get
- * global total. Used for monitoring energy conservation during advection.
- * 
- * @param WaveEnergyDensity     Wave energy datum containing E+ and E- data
- * @return Total wave energy in simulation [J]
- * 
- * @note Performs MPI_Allreduce to sum energy across all processes
- * @note Only counts energy from segments assigned to current process
- * @note Returns same value on all MPI processes after reduction
- */
-double CalculateTotalAdvectedEnergy(
-    const PIC::Datum::cDatumStored& WaveEnergyDensity
-);
-
-// ============================================================================
-// PHYSICS CONSTANTS AND TYPICAL VALUES
-// ============================================================================
-
-namespace PhysicsConstants {
-    constexpr double MU0            = 4.0e-7 * M_PI;      // Permeability [H/m]
-    constexpr double PROTON_MASS    = 1.67262192e-27;     // Proton mass [kg]
-    constexpr double C_LIGHT        = 2.99792458e8;       // Speed of light [m/s]
-}
-
-namespace TypicalSolarWind {
-    constexpr double B_FIELD_1AU    = 5.0e-9;             // 5 nT magnetic field at 1 AU
-    constexpr double DENSITY_1AU    = 5.0e6;              // 5 cm⁻³ number density at 1 AU
-    constexpr double V_SW_TYPICAL   = 400.0e3;            // 400 km/s solar wind speed
-    constexpr double V_A_TYPICAL    = 50.0e3;             // 50 km/s Alfvén speed (typical)
-    constexpr double ENERGY_SCALE   = 1.0e12;             // TJ scale for wave energies
-}
-
-// ============================================================================
-// ADVANCED USAGE EXAMPLES AND INTEGRATION PATTERNS
-// ============================================================================
-
-/*
-EXAMPLE 1: Basic integration in simulation timestep
--------------------------------------------------------
-void SimulationTimestep(double dt) {
-    // ... particle transport, magnetic field evolution, etc. ...
-    
-    // Advect turbulence energy
-    SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAllFieldLines(
-        SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,
-        dt,
-        true  // apply boundary conditions
+    /**
+     * @brief Advects Alfvén wave turbulence energy along all magnetic field lines
+     * 
+     * Performs conservative advection of outward (E+) and inward (E-) Alfvén wave
+     * energies along magnetic field lines using local plasma conditions. Implements
+     * turbulence level boundary conditions and tracks energy changes for 
+     * particle-wave coupling.
+     * 
+     * @param DeltaE_plus [IN/OUT] Energy changes for E+ waves [J]
+     *        Size: [field_line_idx][segment_idx]
+     *        Modified by function, used for particle-wave coupling
+     * 
+     * @param DeltaE_minus [IN/OUT] Energy changes for E- waves [J]
+     *        Size: [field_line_idx][segment_idx] 
+     *        Modified by function, used for particle-wave coupling
+     * 
+     * @param WaveEnergyDensity [IN] AMPS datum for wave energy storage
+     *        Format: wave_data[0] = E+ energy [J], wave_data[1] = E- energy [J]
+     * 
+     * @param dt [IN] Time step [s]
+     *        Must satisfy CFL condition: dt < min(Δx/V_A)
+     *        Typical range: 1-100 seconds
+     * 
+     * @param TurbulenceLevelBeginning [IN] Inner boundary turbulence level
+     *        Dimensionless fraction of magnetic field energy density B²/(2μ₀)
+     *        Typical range: 0.01-0.5 (1% to 50% of magnetic energy)
+     * 
+     * @param TurbulenceLevelEnd [IN] Outer boundary turbulence level  
+     *        Dimensionless fraction of magnetic field energy density B²/(2μ₀)
+     *        Typical range: 0.01-0.5 (1% to 50% of magnetic energy)
+     * 
+     * @note Function is MPI-parallel safe: only modifies locally-owned segments
+     * @note Memory optimized: reads wave energy data on-demand
+     * @note Energy conservative: strict conservation during interior advection
+     * 
+     * @warning Time step must satisfy CFL stability condition
+     * @warning Requires valid magnetic field and plasma density data at vertices
+     * 
+     * @see Example usage in turbulence_advection_kolmogorov.cpp
+     * 
+     * @since Version 1.0
+     */
+    void AdvectTurbulenceEnergyAllFieldLines(
+        std::vector<std::vector<double>>& DeltaE_plus,
+        std::vector<std::vector<double>>& DeltaE_minus,
+        const PIC::Datum::cDatumStored& WaveEnergyDensity,
+        double dt,
+        double TurbulenceLevelBeginning,
+        double TurbulenceLevelEnd
     );
+
+    // ========================================================================
+    // DIAGNOSTIC FUNCTIONS (OPTIONAL - IF IMPLEMENTED)
+    // ========================================================================
+
+    /**
+     * @brief Calculate total wave energy across all field lines
+     * 
+     * Diagnostic function to compute total E+ and E- wave energy across all
+     * field line segments assigned to the current MPI process. Useful for
+     * monitoring energy conservation and simulation diagnostics.
+     * 
+     * @param WaveEnergyDensity [IN] AMPS datum for wave energy storage
+     * @return Total wave energy [J] for current MPI process
+     * 
+     * @note Result is local to current MPI process
+     * @note Use MPI_Allreduce to get global total across all processes
+     * 
+     * @since Version 1.0
+     */
+    double CalculateTotalAdvectedEnergy(
+        const PIC::Datum::cDatumStored& WaveEnergyDensity
+    );
+
+    /**
+     * @brief Validate CFL stability condition for wave advection
+     * 
+     * Checks if the proposed time step satisfies the CFL stability condition
+     * dt < min(Δx/V_A) across all locally-owned field line segments.
+     * 
+     * @return Maximum stable time step [s] for current MPI process
+     * 
+     * @note Global maximum should be computed using MPI_Allreduce with MPI_MIN
+     * @note Function examines all locally-owned segments
+     * @note Uses safety factor of 0.8 for additional stability margin
+     * 
+     * @warning Violating CFL condition may cause numerical instability
+     * 
+     * @example
+     * ```cpp
+     * // Check CFL stability before advection
+     * double dt_proposed = 10.0;  // 10 second time step
+     * double dt_max_local = GetMaxStableTimeStep();
+     * double dt_max_global;
+     * MPI_Allreduce(&dt_max_local, &dt_max_global, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+     * 
+     * if (dt_proposed > dt_max_global) {
+     *     std::cerr << "Warning: dt=" << dt_proposed 
+     *               << " exceeds stable limit=" << dt_max_global << std::endl;
+     *     dt_proposed = dt_max_global * 0.9;  // Use 90% of maximum for safety
+     * }
+     * ```
+     * 
+     * @since Version 1.0
+     */
+    double GetMaxStableTimeStep();
+
+    /**
+     * @brief Get global maximum stable time step across all MPI processes
+     * 
+     * Convenience function that automatically performs MPI_Allreduce to find
+     * the global minimum time step constraint across all processes.
+     * 
+     * @return Global maximum stable time step [s] across all MPI processes
+     * 
+     * @example
+     * ```cpp
+     * // Simple way to get global CFL constraint
+     * double dt_max = GetGlobalMaxStableTimeStep();
+     * double dt_safe = dt_max * 0.8;  // Use 80% of maximum for safety
+     * ```
+     * 
+     * @since Version 1.0
+     */
+    double GetGlobalMaxStableTimeStep();
+
+    /**
+     * @brief Structure containing detailed CFL constraint analysis
+     * 
+     * Provides comprehensive statistics on Alfvén velocities, segment lengths,
+     * and time step constraints for diagnostic and optimization purposes.
+     */
+    struct CFLDiagnostics {
+        double min_alfven_velocity;   ///< Minimum Alfvén velocity found [m/s]
+        double max_alfven_velocity;   ///< Maximum Alfvén velocity found [m/s]
+        double avg_alfven_velocity;   ///< Average Alfvén velocity [m/s]
+        double min_segment_length;    ///< Minimum segment length [m]
+        double max_segment_length;    ///< Maximum segment length [m]
+        double avg_segment_length;    ///< Average segment length [m]
+        double max_stable_dt;         ///< Maximum stable time step [s]
+        double min_stable_dt;         ///< Minimum stable time step [s]
+        int segments_analyzed;        ///< Number of segments analyzed
+        int field_lines_processed;    ///< Number of field lines processed
+    };
+
+    /**
+     * @brief Analyze CFL constraints in detail across all local segments
+     * 
+     * Provides comprehensive analysis of CFL stability constraints including
+     * statistics on Alfvén velocities, segment lengths, and time step limits.
+     * Useful for performance optimization and debugging.
+     * 
+     * @return CFLDiagnostics structure with detailed analysis
+     * 
+     * @example
+     * ```cpp
+     * // Detailed CFL analysis for optimization
+     * auto cfl_info = AnalyzeCFLConstraints();
+     * 
+     * std::cout << "CFL Analysis Results:" << std::endl;
+     * std::cout << "  Segments analyzed: " << cfl_info.segments_analyzed << std::endl;
+     * std::cout << "  Alfvén velocity range: " << cfl_info.min_alfven_velocity 
+     *           << " - " << cfl_info.max_alfven_velocity << " m/s" << std::endl;
+     * std::cout << "  Segment length range: " << cfl_info.min_segment_length 
+     *           << " - " << cfl_info.max_segment_length << " m" << std::endl;
+     * std::cout << "  Stable time step range: " << cfl_info.min_stable_dt 
+     *           << " - " << cfl_info.max_stable_dt << " s" << std::endl;
+     * std::cout << "  Most restrictive dt: " << cfl_info.min_stable_dt << " s" << std::endl;
+     * ```
+     * 
+     * @since Version 1.0
+     */
+    CFLDiagnostics AnalyzeCFLConstraints();
+
+    // ========================================================================
+    // TYPE DEFINITIONS
+    // ========================================================================
     
-    // ... continue with other physics modules ...
-}
+    /// Type alias for DeltaE arrays (cleaner function signatures)
+    using DeltaEArray = std::vector<std::vector<double>>;
 
-EXAMPLE 2: Energy conservation monitoring
-------------------------------------------
-double energy_before = SEP::AlfvenTurbulence_Kolmogorov::CalculateTotalAdvectedEnergy(
-    WaveEnergyDensity
-);
-
-SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAllFieldLines(
-    WaveEnergyDensity, dt
-);
-
-double energy_after = SEP::AlfvenTurbulence_Kolmogorov::CalculateTotalAdvectedEnergy(
-    WaveEnergyDensity
-);
-
-double energy_change = energy_after - energy_before;
-double relative_change = energy_change / energy_before;
-
-if (std::abs(relative_change) > 1.0e-6) {
-    std::cout << "Warning: Energy conservation violation: " 
-              << relative_change * 100.0 << "%" << std::endl;
-}
-
-EXAMPLE 3: Adaptive time stepping with CFL condition
------------------------------------------------------
-double CalculateAdaptiveTimestep(double dx_min, double V_A_max, double CFL_factor = 0.5) {
-    return CFL_factor * dx_min / V_A_max;
-}
-
-void AdaptiveAdvection(const PIC::Datum::cDatumStored& WaveEnergyDensity, 
-                      double dt_desired) {
-    double dx_min =  calculate minimum segment length ;
-    double V_A_max =  calculate maximum Alfvén speed ;
-    double dt_stable = CalculateAdaptiveTimestep(dx_min, V_A_max);
+    // ========================================================================
+    // PHYSICAL CONSTANTS (FOR REFERENCE)
+    // ========================================================================
     
-    double dt_actual = std::min(dt_desired, dt_stable);
-    int num_substeps = static_cast<int>(std::ceil(dt_desired / dt_actual));
-    dt_actual = dt_desired / num_substeps;
+    /// Permeability of free space [H/m]
+    constexpr double MU0 = 4.0e-7 * M_PI;
     
-    for (int step = 0; step < num_substeps; ++step) {
-        SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAllFieldLines(
-            WaveEnergyDensity, dt_actual
-        );
-    }
-}
+    /// Proton mass [kg]  
+    constexpr double PROTON_MASS = 1.67262192e-27;
 
-EXAMPLE 4: Field line specific processing
-------------------------------------------
-void ProcessSpecificFieldLines(const std::vector<int>& field_line_indices,
-                               const PIC::Datum::cDatumStored& WaveEnergyDensity,
-                               double dt) {
-    for (int field_line_idx : field_line_indices) {
-        // Check if this process has segments on this field line
-        bool has_local_segments = false;
-        PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
-        int num_segments = field_line->GetTotalSegmentNumber();
+    // ========================================================================
+    // UTILITY FUNCTIONS (INLINE FOR PERFORMANCE)
+    // ========================================================================
+    
+    /**
+     * @brief Calculate Alfvén velocity from magnetic field and plasma density
+     * 
+     * @param B_field [IN] Magnetic field vector [T]
+     * @param plasma_density [IN] Plasma number density [m⁻³]
+     * @return Alfvén velocity [m/s]
+     */
+    inline double CalculateAlfvenVelocity(const double* B_field, double plasma_density) {
+        if (plasma_density <= 0.0) return 0.0;
         
-        for (int i = 0; i < num_segments; ++i) {
-            PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(i);
-            if (segment && segment->Thread == PIC::ThisThread) {
-                has_local_segments = true;
-                break;
-            }
-        }
+        double B_magnitude = std::sqrt(B_field[0]*B_field[0] + 
+                                      B_field[1]*B_field[1] + 
+                                      B_field[2]*B_field[2]);
         
-        if (has_local_segments) {
-            SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAlongFieldLine(
-                field_line_idx, WaveEnergyDensity, dt
-            );
-        }
+        double mass_density = plasma_density * PROTON_MASS;
+        return B_magnitude / std::sqrt(MU0 * mass_density);
     }
-}
-*/
+
+    /**
+     * @brief Convert turbulence level to wave energy density
+     * 
+     * @param turbulence_level [IN] Dimensionless turbulence level
+     * @param B_field [IN] Magnetic field vector [T]
+     * @return Wave energy density [J/m³]
+     */
+    inline double TurbulenceLevelToEnergyDensity(double turbulence_level, const double* B_field) {
+        double B_magnitude = std::sqrt(B_field[0]*B_field[0] + 
+                                      B_field[1]*B_field[1] + 
+                                      B_field[2]*B_field[2]);
+        
+        double magnetic_energy_density = (B_magnitude * B_magnitude) / (2.0 * MU0);
+        return turbulence_level * magnetic_energy_density;
+    }
+
+    /**
+     * @brief Calculate energy flux between segments
+     * 
+     * @param alfven_velocity [IN] Alfvén velocity at boundary [m/s]
+     * @param energy_density [IN] Wave energy density in source segment [J/m³]
+     * @param boundary_area [IN] Cross-sectional area at boundary [m²]
+     * @param dt [IN] Time step [s]
+     * @return Energy flux [J]
+     */
+    inline double CalculateEnergyFlux(double alfven_velocity, double energy_density, 
+                                     double boundary_area, double dt) {
+        return alfven_velocity * energy_density * boundary_area * dt;
+    }
 
 } // namespace AlfvenTurbulence_Kolmogorov
 } // namespace SEP
 
-#endif // TURBULENCE_ADVECTION_H
+#endif // TURBULENCE_ADVECTION_KOLMOGOROV_H
+
+/*
+================================================================================
+                                USAGE EXAMPLES
+================================================================================
+
+BASIC USAGE:
+-----------
+```cpp
+#include "turbulence_advection_kolmogorov.h"
+
+void SimulationTimeStep() {
+    using namespace SEP::AlfvenTurbulence_Kolmogorov;
+    
+    // Declare DeltaE tracking arrays
+    DeltaEArray DeltaE_plus, DeltaE_minus;
+    
+    // Advect wave energy
+    AdvectTurbulenceEnergyAllFieldLines(
+        DeltaE_plus, DeltaE_minus,
+        WaveEnergyDensity, 
+        10.0,   // 10 second time step
+        0.1,    // 10% turbulence at inner boundary
+        0.05    // 5% turbulence at outer boundary  
+    );
+    
+    // Use for particle coupling
+    ApplyParticleWaveCoupling(DeltaE_plus, DeltaE_minus);
+}
+```
+
+ADVANCED USAGE WITH CFL VALIDATION AND DIAGNOSTICS:
+--------------------------------------------------
+```cpp
+#include "turbulence_advection_kolmogorov.h"
+
+void AdvancedSimulationStep(double dt_requested) {
+    using namespace SEP::AlfvenTurbulence_Kolmogorov;
+    
+    // 1. Validate CFL stability condition
+    double dt_max_global = GetGlobalMaxStableTimeStep();
+    double dt_actual = std::min(dt_requested, dt_max_global * 0.8);  // 80% safety margin
+    
+    if (dt_actual < dt_requested) {
+        std::cout << "Time step reduced from " << dt_requested 
+                  << " to " << dt_actual << " for CFL stability" << std::endl;
+    }
+    
+    // 2. Detailed CFL analysis (optional, for debugging/optimization)
+    auto cfl_info = AnalyzeCFLConstraints();
+    if (PIC::ThisThread == 0) {  // Only master process prints
+        std::cout << "CFL Analysis - Segments: " << cfl_info.segments_analyzed
+                  << ", Alfvén range: " << cfl_info.min_alfven_velocity/1000.0 
+                  << "-" << cfl_info.max_alfven_velocity/1000.0 << " km/s" << std::endl;
+    }
+    
+    // 3. Monitor energy before advection
+    double energy_before = CalculateTotalAdvectedEnergy(WaveEnergyDensity);
+    
+    // 4. Perform wave energy advection
+    DeltaEArray DeltaE_plus, DeltaE_minus;
+    AdvectTurbulenceEnergyAllFieldLines(
+        DeltaE_plus, DeltaE_minus,
+        WaveEnergyDensity, 
+        dt_actual,
+        0.1,    // 10% turbulence at inner boundary (corona)
+        0.05    // 5% turbulence at outer boundary (heliosphere)
+    );
+    
+    // 5. Check energy conservation
+    double energy_after = CalculateTotalAdvectedEnergy(WaveEnergyDensity);
+    double energy_change_percentage = 100.0 * (energy_after - energy_before) / energy_before;
+    
+    if (PIC::ThisThread == 0) {
+        std::cout << "Wave energy change: " << energy_change_percentage 
+                  << "% (due to boundary conditions)" << std::endl;
+    }
+    
+    // 6. Apply particle-wave coupling using DeltaE arrays
+    ApplyParticleWaveCoupling(DeltaE_plus, DeltaE_minus, dt_actual);
+}
+
+// Example particle-wave coupling function
+void ApplyParticleWaveCoupling(const DeltaEArray& DeltaE_plus, 
+                              const DeltaEArray& DeltaE_minus, 
+                              double dt) {
+    for (int fl = 0; fl < PIC::FieldLine::nFieldLine; ++fl) {
+        if (fl >= DeltaE_plus.size()) continue;
+        
+        for (int seg = 0; seg < DeltaE_plus[fl].size(); ++seg) {
+            double energy_change_plus = DeltaE_plus[fl][seg];
+            double energy_change_minus = DeltaE_minus[fl][seg];
+            
+            // Apply energy changes to particle scattering, heating, etc.
+            if (std::abs(energy_change_plus) > 0.0) {
+                ApplyParticleScattering(fl, seg, energy_change_plus, dt);
+            }
+            if (std::abs(energy_change_minus) > 0.0) {
+                ApplyParticleHeating(fl, seg, energy_change_minus, dt);
+            }
+        }
+    }
+}
+```
+
+INTEGRATION IN MAIN SIMULATION LOOP:
+------------------------------------
+```cpp
+#include "turbulence_advection_kolmogorov.h"
+
+void MainSimulationLoop() {
+    using namespace SEP::AlfvenTurbulence_Kolmogorov;
+    
+    double t = 0.0;              // Current simulation time [s]
+    double t_end = 86400.0;      // End time: 1 day [s]
+    double dt_base = 10.0;       // Base time step: 10 seconds
+    
+    // Pre-allocate DeltaE arrays for efficiency
+    DeltaEArray DeltaE_plus, DeltaE_minus;
+    
+    while (t < t_end) {
+        // 1. Determine stable time step
+        double dt_max = GetGlobalMaxStableTimeStep();
+        double dt = std::min(dt_base, dt_max * 0.8);
+        
+        // 2. Ensure we don't overstep end time
+        dt = std::min(dt, t_end - t);
+        
+        // 3. Update other physics (magnetic field, solar wind, etc.)
+        UpdateMagneticField(dt);
+        UpdateSolarWindPlasma(dt);
+        
+        // 4. Advect wave turbulence energy
+        AdvectTurbulenceEnergyAllFieldLines(
+            DeltaE_plus, DeltaE_minus,
+            WaveEnergyDensity, dt,
+            GetTurbulenceLevelAtSun(t),        // Time-dependent boundary condition
+            GetTurbulenceLevelAtHeliosphere(t) // Time-dependent boundary condition
+        );
+        
+        // 5. Apply particle physics with wave coupling
+        UpdateParticleTransport(dt);
+        ApplyParticleWaveCoupling(DeltaE_plus, DeltaE_minus, dt);
+        
+        // 6. Output diagnostics every 100 time steps
+        static int step_count = 0;
+        if (++step_count % 100 == 0) {
+            double total_energy = CalculateTotalAdvectedEnergy(WaveEnergyDensity);
+            if (PIC::ThisThread == 0) {
+                std::cout << "t=" << t << "s, dt=" << dt << "s, "
+                          << "Total wave energy=" << total_energy/1e12 << " TJ" << std::endl;
+            }
+        }
+        
+        t += dt;
+    }
+}
+```
+
+================================================================================
+*/
