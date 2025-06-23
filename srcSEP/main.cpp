@@ -194,12 +194,24 @@ auto CalculateWaveEnergyDensity = [&]() {
 
         if (PIC::ThisThread==2) PIC::FieldLine::Output("fl-edge-test.dat",false); 
 
+
+  vector<vector<double> > DeltaE_plus, DeltaE_minus;
+
   //time step
   for (long int niter=0;niter<TotalIterations;niter++) {
     //SEP::InitDriftVelData();
+    
+    double rsh0=SEP::ParticleSource::ShockWave::Tenishev2005::rShock; 
+    
+    
     amps_time_step();
 
     if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
+
+      // Function to increment integrated wave energy due to shock passing
+      if (niter!=0) SEP::ParticleSource::ShockWave::ShockTurbulenceEnergyInjection(rsh0, SEP::ParticleSource::ShockWave::Tenishev2005::rShock, PIC::ParticleWeightTimeStep::GlobalTimeStep[0]); 
+
+
       //reduce S
       PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
 
@@ -210,13 +222,14 @@ auto CalculateWaveEnergyDensity = [&]() {
 //		   PIC::ParticleWeightTimeStep::GlobalTimeStep[0]); 
 
 
-      //scatter wave energy   
-      PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
-    
       //advect turbulence energy 
-      SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAllFieldLines(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
+      SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAllFieldLines(DeltaE_plus, DeltaE_minus,SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
 			      PIC::ParticleWeightTimeStep::GlobalTimeStep[0],0.01,0.01);
     
+      //scatter wave energy   
+      PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+
+
       //calculate the wave energy density 
       CalculateWaveEnergyDensity();
     }
