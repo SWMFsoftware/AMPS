@@ -84,7 +84,6 @@ namespace IsotropicSEP {
  * @param E_minus_initial   Initial inward integrated wave energy [J]
  * @param S_scalar          Scalar particle distribution
  * @param dt                Time step [s]
- * @param tau_cas           Cascade time [s]
  * @param Q_shock           Shock injection rate [dimensionless]
  * @param E_plus_final      Output: final outward integrated wave energy [J]
  * @param E_minus_final     Output: final inward integrated wave energy [J]
@@ -98,8 +97,6 @@ void UpdateWaveEnergyWithParticleCoupling(
     double& E_minus_initial,
     const PIC::Datum::cDatumStored& S_scalar,
     double dt,
-    double tau_cas,
-    double Q_shock,
     double& E_plus_final,
     double& E_minus_final,
     double B0,
@@ -141,7 +138,6 @@ void UpdateWaveEnergyWithParticleCoupling(
  * 
  * @param S_scalar          Scalar particle distribution
  * @param dt                Time step [s]
- * @param tau_cas           Cascade time [s]
  * @param Q_shock           Shock injection rate [dimensionless]
  * @param B0                Background magnetic field [T]
  * @param rho               Mass density [kg/m³]
@@ -149,22 +145,7 @@ void UpdateWaveEnergyWithParticleCoupling(
 void UpdateAllSegmentsWaveEnergyWithParticleCoupling(
     PIC::Datum::cDatumStored& WaveEnergyDensity,
     PIC::Datum::cDatumStored& S_scalar,
-    double dt,
-    double tau_cas = 1000.0,
-    double Q_shock = 0.0,
-    double B0 = 5.0e-9,
-    double rho = 5.0e-21
-);
-
-/**
- * @brief Convenience wrapper with default parameters
- * 
- * @param S_scalar          Scalar particle distribution
- * @param dt                Time step [s]
- */
-void UpdateAllSegmentsWaveEnergyWithParticleCoupling(
-    const PIC::Datum::cDatumStored& S_scalar,
-    double dt
+    double dt 
 );
 
 // ============================================================================
@@ -243,7 +224,6 @@ namespace PhysicsConstants {
 namespace TypicalSolarWind {
     constexpr double B0_TYPICAL     = 5.0e-9;          // 5 nT magnetic field
     constexpr double RHO_TYPICAL    = 5.0e-21;         // kg/m³ mass density
-    constexpr double TAU_CAS_TYPICAL = 1000.0;         // 1000 s cascade time
     constexpr double Q_SHOCK_DEFAULT = 0.0;            // No shock injection
 }
 

@@ -216,10 +216,10 @@ auto CalculateWaveEnergyDensity = [&]() {
       PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
 
       //couple particles and turbulence  
-//      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::UpdateAllSegmentsWaveEnergyWithParticleCoupling(
-//		     SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
-//		    SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S,
-//		   PIC::ParticleWeightTimeStep::GlobalTimeStep[0]); 
+      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::UpdateAllSegmentsWaveEnergyWithParticleCoupling(
+		     SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
+		    SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S,
+		   PIC::ParticleWeightTimeStep::GlobalTimeStep[0]); 
 
 
       //advect turbulence energy 
@@ -236,7 +236,7 @@ auto CalculateWaveEnergyDensity = [&]() {
 
 
 
-      if ((PIC::ThisThread==2)&&((niter+1)%1000==0))  {   
+      if ((PIC::ThisThread==2)&&((niter+1)%10==0))  {   
          char fname[300];
 	 sprintf(fname,"fl-%e.dat",rsh0/_AU_);
 	      PIC::FieldLine::Output(fname,false);

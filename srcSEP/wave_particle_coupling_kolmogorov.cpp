@@ -124,8 +124,6 @@ void UpdateWaveEnergyWithParticleCoupling(
     double& E_minus_initial,                   // Initial integrated inward wave energy [J]
     const PIC::Datum::cDatumStored& S_scalar,  // Scalar particle distribution
     double dt,                                 // Time step [s]
-    double tau_cas,                           // Cascade time [s] 
-    double Q_shock,                           // Shock injection rate [dimensionless]
     double& E_plus_final,                     // Output: final outward wave energy [J]
     double& E_minus_final,                    // Output: final inward wave energy [J]
     double B0,                                // Background magnetic field [T]
@@ -147,8 +145,8 @@ void UpdateWaveEnergyWithParticleCoupling(
         return;
     }
     
-    if (dt <= 0.0 || tau_cas <= 0.0) {
-        std::cerr << "Error: Invalid time parameters (dt=" << dt << ", tau_cas=" << tau_cas << ")" << std::endl;
+    if (dt <= 0.0) {
+        std::cerr << "Error: Invalid time parameters (dt=" << dt << ")" << std::endl;
         E_plus_final = E_plus_initial;
         E_minus_final = E_minus_initial;
         return;
@@ -180,17 +178,12 @@ void UpdateWaveEnergyWithParticleCoupling(
     // ========================================================================
     // STEP 2: INTEGRATED WAVE ENERGY EVOLUTION
     // ========================================================================
-    // From A±^{n+1} = A±^n + Δt[2γ± A± - A±/τ_cas + Q_shock]
+    // From A±^{n+1} = A±^n + Δt[2γ± A±] 
     // Since E± = A± * V_cell, we get:
-    // E±^{n+1} = E±^n + Δt[2γ± E± - E±/τ_cas + Q_shock * V_cell]
+    // E±^{n+1} = E±^n + Δt[2γ± E± ]
     
-    double dE_plus_dt = 2.0 * gamma_plus * E_plus_initial 
-                       - E_plus_initial / tau_cas 
-                       + Q_shock * V_cell;
-    
-    double dE_minus_dt = 2.0 * gamma_minus * E_minus_initial 
-                        - E_minus_initial / tau_cas 
-                        + Q_shock * V_cell;
+    double dE_plus_dt = 2.0 * gamma_plus * E_plus_initial; 
+    double dE_minus_dt = 2.0 * gamma_minus * E_minus_initial; 
     
     // Update integrated wave energies directly
     E_plus_final = E_plus_initial + dt * dE_plus_dt;
@@ -372,14 +365,13 @@ void UpdateWaveEnergyWithParticleCoupling(
     double& E_minus_final
 ) {
     // Default parameters for typical solar wind conditions
-    const double tau_cas_default = 1000.0;    // 1000 s cascade time
     const double Q_shock_default = 0.0;       // No shock injection
     const double B0_default = 5.0e-9;         // 5 nT
     const double rho_default = 5.0e-21;       // kg/m³
     
     UpdateWaveEnergyWithParticleCoupling(
         field_line_idx,segment, E_plus_initial, E_minus_initial, S_scalar, dt,
-        tau_cas_default, Q_shock_default, E_plus_final, E_minus_final,
+        E_plus_final, E_minus_final,
         B0_default, rho_default
     );
 }
@@ -469,12 +461,9 @@ void ConvertEnergyDensityToIntegratedEnergies(
 void UpdateAllSegmentsWaveEnergyWithParticleCoupling(
     PIC::Datum::cDatumStored& WaveEnergyDensity,
     PIC::Datum::cDatumStored& S_scalar,
-    double dt,
-    double tau_cas,
-    double Q_shock,
-    double B0,
-    double rho
+    double dt
 ) {
+    double B0,rho;
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
@@ -494,6 +483,10 @@ void UpdateAllSegmentsWaveEnergyWithParticleCoupling(
                 continue;
             }
 
+	    //Get background plasma parameters 
+            segment->GetPlasmaDensity(0.5,rho);  // Number density 
+            rho*=_H__MASS_; //convert to mass density
+
             // Get current wave energy data
             double* wave_data = segment->GetDatum_ptr(WaveEnergyDensity);
             if (!wave_data) continue;
@@ -507,7 +500,7 @@ void UpdateAllSegmentsWaveEnergyWithParticleCoupling(
             UpdateWaveEnergyWithParticleCoupling(
                 field_line_idx, segment,
                 E_plus_initial, E_minus_initial,
-                S_scalar, dt, tau_cas, Q_shock,
+                S_scalar, dt, 
                 E_plus_final, E_minus_final,
                 B0, rho
             );
