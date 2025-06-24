@@ -94,7 +94,7 @@ REQUIREMENTS:
 - AMPS PIC framework with field line structure
 - SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity datum for wave amplitudes
 - MPI parallelization support
-- Relativistic particle dynamics (Relativistic::Vel2E function)
+- Relativistic particle dynamics (Relativistic::Speed2E function)
 - Parker growth rate calculation functions (from parker_streaming_calculator.cpp)
 
 PERFORMANCE NOTES:
@@ -116,6 +116,34 @@ namespace IsotropicSEP {
 // ============================================================================
 // WAVE ENERGY EVOLUTION WITH PARTICLE COUPLING
 // ============================================================================
+
+
+
+// ============================================================================
+// CONVENIENCE WRAPPER WITH DEFAULT PARAMETERS
+// ============================================================================
+
+void UpdateWaveEnergyWithParticleCoupling(
+    int field_line_idx,
+    PIC::FieldLine::cFieldLineSegment* segment,
+    double& E_plus_initial,
+    double& E_minus_initial,
+    const PIC::Datum::cDatumStored& S_scalar,
+    double dt,
+    double& E_plus_final,
+    double& E_minus_final
+) {
+    // Default parameters for typical solar wind conditions
+    const double Q_shock_default = 0.0;       // No shock injection
+    const double B0_default = 5.0e-9;         // 5 nT
+    const double rho_default = 5.0e-21;       // kg/m³
+    
+    UpdateWaveEnergyWithParticleCoupling(
+        field_line_idx,segment, E_plus_initial, E_minus_initial, S_scalar, dt,
+        E_plus_final, E_minus_final,
+        B0_default, rho_default
+    );
+}
 
 void UpdateWaveEnergyWithParticleCoupling(
     int field_line_idx,
@@ -151,6 +179,9 @@ void UpdateWaveEnergyWithParticleCoupling(
         E_minus_final = E_minus_initial;
         return;
     }
+
+    static int ncall=0;
+    ncall++;
     
     // ========================================================================
     // CALCULATE SEGMENT VOLUME
@@ -213,15 +244,16 @@ void UpdateWaveEnergyWithParticleCoupling(
     long int p = segment->FirstParticleIndex;
     
     while (p != -1) {
-        double v[3];
-        PIC::ParticleBuffer::GetV(v, p);
+        // Get particle velocity components in magnetic field coordinates
+        double vParallel = PIC::ParticleBuffer::GetVParallel(p);
+        double vNormal = PIC::ParticleBuffer::GetVNormal(p);
         
-        // Calculate particle kinetic energy
-        double v_magnitude = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+        // Calculate total velocity magnitude
+        double v_magnitude = std::sqrt(vParallel*vParallel + vNormal*vNormal);
         
         // Relativistic kinetic energy calculation
         double particle_mass = _H__MASS_; // [kg]
-        double kinetic_energy = Relativistic::Vel2E(v, particle_mass); // [J]
+        double kinetic_energy = Relativistic::Speed2E(v_magnitude, particle_mass); // [J]
         
         // Get particle statistical weight
         double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[0] * 
@@ -247,7 +279,7 @@ void UpdateWaveEnergyWithParticleCoupling(
         char error_msg[512];
         sprintf(error_msg, "Energy removal (%.6e J) exceeds total particle energy (%.6e J) in segment", 
                 std::abs(particle_energy_change), total_particle_energy);
-        exit( __LINE__, __FILE__,error_msg);
+        exit( __LINE__, __FILE__, error_msg);
     }
     
     // ITERATIVE ENERGY REDISTRIBUTION LOOP
@@ -262,12 +294,15 @@ void UpdateWaveEnergyWithParticleCoupling(
         p = segment->FirstParticleIndex;
         
         while (p != -1) {
-            double v_current[3];
-            PIC::ParticleBuffer::GetV(v_current, p);
+            // Get current particle velocity components
+            double vParallel_current = PIC::ParticleBuffer::GetVParallel(p);
+            double vNormal_current = PIC::ParticleBuffer::GetVNormal(p);
             
             // Calculate current particle kinetic energy
             double particle_mass = _H__MASS_;
-            double kinetic_energy = Relativistic::Vel2E(v_current, particle_mass);
+            double v_magnitude_current = std::sqrt(vParallel_current*vParallel_current + 
+                                                  vNormal_current*vNormal_current);
+            double kinetic_energy = Relativistic::Speed2E(v_magnitude_current, particle_mass);
             
             // Get particle statistical weight
             double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[0] * 
@@ -305,26 +340,20 @@ void UpdateWaveEnergyWithParticleCoupling(
             // Convert back to single-particle kinetic energy for velocity calculation
             double new_single_particle_kinetic_energy = new_kinetic_energy / stat_weight;
             
-            // Convert back to velocity using AMPS relativistic functions
-            // Note: This requires implementing inverse of Vel2E or using iterative approach
-            // For now, using the original approach but with proper mass
-            double v_magnitude = std::sqrt(v_current[0]*v_current[0] + v_current[1]*v_current[1] + v_current[2]*v_current[2]);
+            // Convert back to velocity magnitude using relativistic relations
             double gamma_new = new_single_particle_kinetic_energy / (particle_mass * PhysicsConstants::C_LIGHT * PhysicsConstants::C_LIGHT) + 1.0;
-            
-            // Calculate new velocity magnitude
             double v_new_magnitude = PhysicsConstants::C_LIGHT * std::sqrt(1.0 - 1.0/(gamma_new*gamma_new));
             
-            if (v_magnitude > 1.0e-20) {
-                // Scale velocity to new magnitude while preserving direction
-                double scale_factor = v_new_magnitude / v_magnitude;
-                double v_new[3] = {
-                    v_current[0] * scale_factor,
-                    v_current[1] * scale_factor,
-                    v_current[2] * scale_factor
-                };
+            if (v_magnitude_current > 1.0e-20) {
+                // Scale velocity components to new magnitude while preserving direction
+                double scale_factor = v_new_magnitude / v_magnitude_current;
                 
-                // Update particle velocity in the buffer
-                PIC::ParticleBuffer::SetV(v_new, p);
+                double vParallel_new = vParallel_current * scale_factor;
+                double vNormal_new = vNormal_current * scale_factor;
+                
+                // Update particle velocity components in the buffer
+                PIC::ParticleBuffer::SetVParallel(vParallel_new, p);
+                PIC::ParticleBuffer::SetVNormal(vNormal_new, p);
             }
             
             // Get next particle
@@ -351,32 +380,6 @@ void UpdateWaveEnergyWithParticleCoupling(
 }
 
 // ============================================================================
-// CONVENIENCE WRAPPER WITH DEFAULT PARAMETERS
-// ============================================================================
-
-void UpdateWaveEnergyWithParticleCoupling(
-    int field_line_idx,
-    PIC::FieldLine::cFieldLineSegment* segment,
-    double& E_plus_initial,
-    double& E_minus_initial,
-    const PIC::Datum::cDatumStored& S_scalar,
-    double dt,
-    double& E_plus_final,
-    double& E_minus_final
-) {
-    // Default parameters for typical solar wind conditions
-    const double Q_shock_default = 0.0;       // No shock injection
-    const double B0_default = 5.0e-9;         // 5 nT
-    const double rho_default = 5.0e-21;       // kg/m³
-    
-    UpdateWaveEnergyWithParticleCoupling(
-        field_line_idx,segment, E_plus_initial, E_minus_initial, S_scalar, dt,
-        E_plus_final, E_minus_final,
-        B0_default, rho_default
-    );
-}
-
-// ============================================================================
 // UTILITY FUNCTION: CALCULATE TOTAL PARTICLE ENERGY IN SEGMENT
 // ============================================================================
 
@@ -387,15 +390,16 @@ double CalculateTotalParticleEnergyInSegment(PIC::FieldLine::cFieldLineSegment* 
     long int p = segment->FirstParticleIndex;
     
     while (p != -1) {
-        double v[3];
-        PIC::ParticleBuffer::GetV(v, p);
+        // Get particle velocity components in magnetic field coordinates
+        double vParallel = PIC::ParticleBuffer::GetVParallel(p);
+        double vNormal = PIC::ParticleBuffer::GetVNormal(p);
         
-        // Calculate particle kinetic energy
-        double v_magnitude = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+        // Calculate total velocity magnitude
+        double v_magnitude = std::sqrt(vParallel*vParallel + vNormal*vNormal);
         
         // Relativistic kinetic energy
         double particle_mass = _H__MASS_;
-        double kinetic_energy = Relativistic::Vel2E(v, particle_mass);
+        double kinetic_energy = Relativistic::Speed2E(v_magnitude, particle_mass);
         
         // Get particle statistical weight
         double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[0] * 
