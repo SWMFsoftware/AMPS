@@ -232,6 +232,15 @@ auto CalculateWaveEnergyDensity = [&]() {
 
       //calculate the wave energy density 
       CalculateWaveEnergyDensity();
+
+
+
+
+      if ((PIC::ThisThread==2)&&((niter+1)%1000==0))  {   
+         char fname[300];
+	 sprintf(fname,"fl-%e.dat",rsh0/_AU_);
+	      PIC::FieldLine::Output(fname,false);
+      }
     }
 
 
