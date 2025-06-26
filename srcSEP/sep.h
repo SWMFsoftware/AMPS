@@ -150,6 +150,7 @@ namespace SEP {
   //functions for self-consistent modeling Alfven turbulence 
   namespace AlfvenTurbulence_Kolmogorov {
     extern PIC::Datum::cDatumStored CellIntegratedWaveEnergy,WaveEnergyGrowthRate,WaveEnergyDensity;
+    extern PIC::Datum::cDatumStored G_plus_streaming,G_minus_streaming,gamma_plus_array,gamma_minus_array;
     extern bool ActiveFlag;
 
     namespace ModelInit {

@@ -8,6 +8,17 @@ PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEne
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity(2,"\"W+\",\"W-\"",true);
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyGrowthRate(2,"\"dW+/dt\",\"dW-/dt\"",true);
 
+namespace SEP {
+namespace AlfvenTurbulence_Kolmogorov {
+PIC::Datum::cDatumStored G_plus_streaming(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::NK,"",false); 
+PIC::Datum::cDatumStored G_minus_streaming(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::NK,"",false); 
+PIC::Datum::cDatumStored gamma_plus_array(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::NK,"",false); 
+PIC::Datum::cDatumStored gamma_minus_array(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::NK,"",false); 
+}
+}
+
+
+
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::n_stream_intervals,"",false); 
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S_pm(2,"\"S+\",\"S-\"",false);
 

@@ -216,10 +216,13 @@ auto CalculateWaveEnergyDensity = [&]() {
       PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
 
       //couple particles and turbulence  
-      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::UpdateAllSegmentsWaveEnergyWithParticleCoupling(
-		     SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
-		    SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S,
-		   PIC::ParticleWeightTimeStep::GlobalTimeStep[0]); 
+//      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::UpdateAllSegmentsWaveEnergyWithParticleCoupling(
+//		     SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
+//		    SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S,
+//		   PIC::ParticleWeightTimeStep::GlobalTimeStep[0]); 
+
+      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::WaveParticleCouplingManager(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
+		      PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
 
 
       //advect turbulence energy 
