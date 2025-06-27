@@ -2295,6 +2295,8 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
   int iFieldLine,spec;
   FL::cFieldLineSegment *Segment;
 
+  double totalTraversedPath=0.0;
+
   ParticleData=PB::GetParticleDataPointer(ptr);
 
   FieldLineCoord=PB::GetFieldLineCoord(ParticleData);
@@ -2494,6 +2496,8 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     if (TimeCounter + dt > dtTotal) {
       dt = dtTotal - TimeCounter;
     }
+
+    dt=dtTotal;
     
     // Calculate particle displacement accounting for diffusion and its gradient
     // Based on the solution to: ds/dt = dDxx/ds + sqrt(2*Dxx) * η(t)
@@ -2501,8 +2505,14 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     
     double stochastic_displacement = sqrt(2.0 * Dxx * dt) * Vector3D::Distribution::Normal();
     double deterministic_displacement = dDxx_ds * dt;
-    
+
     ds = deterministic_displacement + stochastic_displacement;
+
+    double debug_effective_speed=ds/dt;
+    if (fabs(debug_effective_speed)>Speed) ds*=Speed*dt/fabs(ds);
+
+    totalTraversedPath+=ds;
+
     
     // Move particle along field line
     FieldLineCoord = FL::FieldLinesAll[iFieldLine].move(FieldLineCoord, ds, Segment);
@@ -2559,6 +2569,22 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
   double s_final = FieldLineCoord;
   if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::SampleParticleData(
     s_final, s_init, Speed, ptr, dtTotal_saved, segment_start, iFieldLine);
+
+
+
+if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::AccumulateParticleFluxForWaveCoupling(
+    iFieldLine, //int field_line_idx,
+    ptr, //long int particle_index,
+    dtTotal_saved, //double dt,
+    Speed, //double speed,
+    s_init, //double s_start,
+    s_final, //double s_finish,
+    totalTraversedPath
+);
+
+
+
+
 
   // Set the new values of the normal and parallel particle velocities 
   PB::SetVParallel(vParallel, ParticleData);
