@@ -286,13 +286,27 @@ void WaveParticleCouplingManager(
 
 void AccumulateParticleFluxForWaveCoupling(
     int field_line_idx,                          // Field line index
-    long int particle_index,      // NEW: Particle index parameter
+    long int particle_index,                     // Particle index parameter
     double dt,                                   // Time step [s]
     double speed,                               // Particle speed magnitude [m/s]
     double s_start,                             // Start position along field line [m]
     double s_finish,                            // End position along field line [m]
-    double totalTraversedPath                   // Total path length [m]
+    double totalTraversedPath                   // Signed parallel path length [m] (+ outward, - inward)
 ) {
+    /*
+    BIDIRECTIONAL MOTION HANDLING:
+    - totalTraversedPath > 0: Particle moving away from Sun (outward, μ > 0)
+    - totalTraversedPath < 0: Particle moving toward Sun (inward, μ < 0)  
+    - μ = totalTraversedPath / (speed * dt) = v_parallel / v_total
+    
+    The pitch angle cosine μ determines wave-particle resonance:
+    - μ > 0: Particle moving outward, resonates differently with ± waves
+    - μ < 0: Particle moving inward, resonates differently with ± waves
+    - |μ| determines the resonant wavenumber: k_res = Ω_c / |μ v|
+    
+    Note: totalTraversedPath should be the signed parallel displacement,
+    where the sign indicates direction relative to the magnetic field.
+    */
     // ========================================================================
     // INPUT VALIDATION
     // ========================================================================
@@ -330,11 +344,14 @@ void AccumulateParticleFluxForWaveCoupling(
     double frac_finish = s_finish - seg_finish_idx;
     
     // Calculate pitch angle cosine from speed and parallel displacement
-    // speed * mu = totalTraversedPath (parallel component)
+    // Account for bidirectional motion: particles can move toward or away from Sun
     double mu = 0.0;
     if (speed > 1.0e-20) {
-        mu = totalTraversedPath / (speed*dt);
-        // Clamp μ to valid range [-1, 1]
+        // Use the provided totalTraversedPath which includes directional information
+        // μ = v_parallel / v_total, where v_parallel = totalTraversedPath / dt
+        mu = totalTraversedPath / (speed * dt);
+        
+        // Clamp μ to valid range [-1, 1] (physical constraint)
         mu = std::max(-1.0, std::min(1.0, mu));
     } else {
         return; // No movement, no contribution
@@ -408,24 +425,47 @@ void AccumulateParticleFluxForWaveCoupling(
         // ====================================================================
         double ds_seg = 0.0;
         
+        // Account for bidirectional motion (toward or away from Sun)
+        bool moving_toward_sun = (s_finish < s_start);
+        
         if (seg_start_idx == seg_finish_idx && seg_idx == seg_start_idx) {
             // Particle starts and ends in the same segment
             double segment_length = segment->GetLength();
             ds_seg = fabs(frac_finish - frac_start) * segment_length;
             
-        } else if (seg_idx == seg_start_idx) {
-            // First segment: from start position to end of segment
-            double segment_length = segment->GetLength();
-            ds_seg = (1.0 - frac_start) * segment_length;
-            
-        } else if (seg_idx == seg_finish_idx) {
-            // Last segment: from beginning of segment to finish position
-            double segment_length = segment->GetLength();
-            ds_seg = frac_finish * segment_length;
+        } else if (!moving_toward_sun) {
+            // Moving away from Sun (s_finish > s_start)
+            if (seg_idx == seg_start_idx) {
+                // First segment: from start position to end of segment
+                double segment_length = segment->GetLength();
+                ds_seg = (1.0 - frac_start) * segment_length;
+                
+            } else if (seg_idx == seg_finish_idx) {
+                // Last segment: from beginning of segment to finish position
+                double segment_length = segment->GetLength();
+                ds_seg = frac_finish * segment_length;
+                
+            } else {
+                // Middle segment: entire segment length
+                ds_seg = segment->GetLength();
+            }
             
         } else {
-            // Middle segment: entire segment length
-            ds_seg = segment->GetLength();
+            // Moving toward Sun (s_finish < s_start)
+            if (seg_idx == seg_start_idx) {
+                // First segment: from start position to beginning of segment
+                double segment_length = segment->GetLength();
+                ds_seg = frac_start * segment_length;
+                
+            } else if (seg_idx == seg_finish_idx) {
+                // Last segment: from end of segment to finish position
+                double segment_length = segment->GetLength();
+                ds_seg = (1.0 - frac_finish) * segment_length;
+                
+            } else {
+                // Middle segment: entire segment length
+                ds_seg = segment->GetLength();
+            }
         }
         
         // Skip if path length in segment is negligible
@@ -851,7 +891,7 @@ double CalculateTotalParticleEnergyInSegment(PIC::FieldLine::cFieldLineSegment* 
 // ============================================================================
 
 void OptimizedWaveParticleCouplingManager(
-    PIC::Datum::cDatumStored& WaveEnergyDensity,
+    PIC::Datum::cDatumStored& WaveEnergy,
     double dt
 ) {
     /*
@@ -887,7 +927,7 @@ void OptimizedWaveParticleCouplingManager(
             B0 = 5.0e-9;  // Default magnetic field - TODO: get from segment
 
             // Get current wave energy data from segment
-            double* wave_data = segment->GetDatum_ptr(WaveEnergyDensity);
+            double* wave_data = segment->GetDatum_ptr(WaveEnergy);
             if (!wave_data) {
                 continue;  // Skip segments without wave energy data
             }
@@ -970,12 +1010,12 @@ void SimulationTimeStep(double dt) {
     }
     
     // 3. After all particles transported: Wave-particle coupling
-    OptimizedWaveParticleCouplingManager(WaveEnergyDensity, dt);
+    OptimizedWaveParticleCouplingManager(WaveEnergy, dt);
     
     // 4. Optional: Check energy conservation
     static int step_counter = 0;
     if (++step_counter % 10 == 0) {
-        CheckEnergyConservation(WaveEnergyDensity, true);
+        CheckEnergyConservation(WaveEnergy, true);
     }
     
     // ... continue with other physics updates ...
@@ -993,7 +1033,7 @@ FUNCTION CALL SEQUENCE:
 // DIAGNOSTIC FUNCTIONS
 // ============================================================================
 
-double CalculateTotalWaveEnergyInSystem(PIC::Datum::cDatumStored& WaveEnergyDensity) {
+double CalculateTotalWaveEnergyInSystem(PIC::Datum::cDatumStored& WaveEnergy) {
     double local_total_energy = 0.0;
 
     // Sum energy across all segments assigned to this process
@@ -1005,7 +1045,7 @@ double CalculateTotalWaveEnergyInSystem(PIC::Datum::cDatumStored& WaveEnergyDens
             PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
             if (!segment || segment->Thread != PIC::ThisThread) continue;
 
-            double* wave_data = segment->GetDatum_ptr(WaveEnergyDensity);
+            double* wave_data = segment->GetDatum_ptr(WaveEnergy);
             if (wave_data) {
                 local_total_energy += wave_data[0] + wave_data[1];  // E+ + E-
             }
@@ -1042,10 +1082,10 @@ double CalculateTotalParticleEnergyInSystem() {
     return total_energy;  // [J]
 }
 
-void CheckEnergyConservation(PIC::Datum::cDatumStored& WaveEnergyDensity, bool verbose) {
+void CheckEnergyConservation(PIC::Datum::cDatumStored& WaveEnergy, bool verbose) {
     static double previous_total_energy = -1.0;
 
-    double wave_energy = CalculateTotalWaveEnergyInSystem(WaveEnergyDensity);
+    double wave_energy = CalculateTotalWaveEnergyInSystem(WaveEnergy);
     double particle_energy = CalculateTotalParticleEnergyInSystem();
     double total_energy = wave_energy + particle_energy;
 
