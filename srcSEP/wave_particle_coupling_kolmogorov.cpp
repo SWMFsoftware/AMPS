@@ -333,7 +333,7 @@ void AccumulateParticleFluxForWaveCoupling(
     // speed * mu = totalTraversedPath (parallel component)
     double mu = 0.0;
     if (speed > 1.0e-20) {
-        mu = totalTraversedPath / speed;
+        mu = totalTraversedPath / (speed*dt);
         // Clamp μ to valid range [-1, 1]
         mu = std::max(-1.0, std::min(1.0, mu));
     } else {
