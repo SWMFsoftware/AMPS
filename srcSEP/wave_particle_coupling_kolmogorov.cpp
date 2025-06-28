@@ -90,7 +90,7 @@ const double Q = 1.602e-19;   // Elementary charge [C]
 const double M = _H__MASS_;   // Proton mass [kg]
 
 // Wavenumber range: covers typical solar wind turbulence scales
-const double K_MIN = 1.0e-7; // Minimum wavenumber [m⁻¹] (large scales)
+const double K_MIN = 1.0e-8; // Minimum wavenumber [m⁻¹] (large scales)
 const double K_MAX = 1.0e-2; // Maximum wavenumber [m⁻¹] (small scales)
 
 // Momentum range: covers SEP energy range from keV to GeV
@@ -414,11 +414,6 @@ void AccumulateParticleFluxForWaveCoupling(
     
     for (int seg_idx = seg_min; seg_idx <= seg_max; ++seg_idx) {
         PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
-        
-        // Only process segments assigned to this MPI thread
-        if (!segment || segment->Thread != PIC::ThisThread) {
-            continue;
-        }
         
         // ====================================================================
         // CALCULATE PATH LENGTH WITHIN THIS SEGMENT
