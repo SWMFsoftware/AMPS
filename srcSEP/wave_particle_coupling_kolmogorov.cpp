@@ -482,6 +482,11 @@ void AccumulateParticleFluxForWaveCoupling(
         
         // For now, use default magnetic field - should be retrieved from segment data
         B0 = TypicalSolarWind::B0_TYPICAL;  // Use typical solar wind value
+
+        double B[3];
+	PIC::FieldLine::FieldLinesAll[field_line_idx].GetMagneticField(B,0.5+seg_idx);
+	B0=Vector3D::Length(B);
+
         
         // Calculate local plasma parameters
         double vAc = B0 / sqrt(4.0 * PI * rho);                  // Alfvén speed [m/s]
