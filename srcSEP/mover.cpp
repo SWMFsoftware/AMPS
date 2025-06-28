@@ -2520,8 +2520,18 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     if (Segment == NULL) {
       // The particle has left the simulation domain - sample flux before deletion
       double s_final = FieldLineCoord;
-      if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::SampleParticleData(
-        s_final, s_init, Speed, ptr, dtTotal_saved, segment_start, iFieldLine);
+
+if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::AccumulateParticleFluxForWaveCoupling(
+    iFieldLine, //int field_line_idx,
+    ptr, //long int particle_index,
+    dtTotal_saved, //double dt,
+    Speed, //double speed,
+    s_init, //double s_start,
+    s_final, //double s_finish,
+    totalTraversedPath
+);
+
+
       
       // Now delete the particle
       PIC::ParticleBuffer::DeleteParticle(ptr);
@@ -2567,9 +2577,6 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
 
   // Sample Parker flux using the final position
   double s_final = FieldLineCoord;
-  if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::SampleParticleData(
-    s_final, s_init, Speed, ptr, dtTotal_saved, segment_start, iFieldLine);
-
 
 
 if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::AccumulateParticleFluxForWaveCoupling(
