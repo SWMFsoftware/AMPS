@@ -164,6 +164,10 @@ void WaveParticleCouplingManager(
             rho *= _H__MASS_; // Convert to mass density [kg/m³]
             B0 = 5.0e-9;  // Default magnetic field - TODO: get from segment->GetMagneticField()
 
+	    double B[3];
+	    segment->GetMagneticField(0.5,B);
+            B0=Vector3D::Length(B);
+
             // Get current wave energy data from segment
             double* wave_data = segment->GetDatum_ptr(WaveEnergy);
             if (!wave_data) {
