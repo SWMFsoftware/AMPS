@@ -72,7 +72,82 @@ double E_wave_change = CalculateGrowthRatesFromAccumulatedFlux(
 RedistributeWaveEnergyToParticles(segment, E_wave_change);
 
 ================================================================================
-*/
+MORE: 
+ *========================================================================= 
+ *  QLT  Alfvén-wave growth / damping calculator
+ *  --------------------------------------------
+ *
+ *  This module fills
+ *          G_plus [k-bin][cell]   →  γ₊(k,s)  [ 1/s ]
+ *          G_minus[k-bin][cell]   →  γ₋(k,s)  [ 1/s ]
+ *  from Monte-Carlo particle data and then advances the wave spectrum
+ *          W₊(k,s),  W₋(k,s).
+ *
+ *  ──────────────  Physical definitions  ────────────────────────────────
+ *
+ *    * σ = +1  :  antisun-ward wave  W₊   (resonates with μ < 0)
+ *      σ = −1  :  sun-ward     wave  W₋   (resonates with μ > 0)
+ *
+ *    * Local QLT kernel (no v ≫ v_A assumption):
+ *          Kσ = v μ − σ v_A                    [ m s⁻¹ ]
+ *
+ *    * Bin-resolved growth / damping rate:
+ *
+ *          γσ(k)  =  (π² Ω² / B² k)
+ *                    ∫p²v ∫Kσ δ(k−Ω/vμ) f(p,μ) dμ dp     [ 1/s ]
+ *
+ *      →  on a log-uniform p-mesh (Δln p) and with a counting weight w_cnt
+ *
+ *          γσ(k_j) =  pref / (2 ΔV Δt Δln p k_j)
+ *                    Σ_segments  w_cnt p² Δs  Kσ
+ *
+ *          pref = π² Ω² / B²             (cell-local)
+ *
+ *    * Spectrum update per time step:
+ *          Wσ(k) ← Wσ(k) · exp( 2 γσ(k) Δt )
+ *
+ *    * k-integrated net rate (diagnostic):
+ *
+ *          Γσ = ∫ γσ(k) dk
+ *              = Δln k  Σ_j γσ(k_j) k_j         [ 1/s ]
+ *              (because dk = k d ln k on a log grid)
+ *
+ *  ──────────────  Variables & units  ───────────────────────────────────
+ *
+ *      w_i            counting weight               [ # real particles ]
+ *      p_i            momentum  at segment start    [ kg m s⁻¹ ]
+ *      v_i            speed     (relativistic)      [ m s⁻¹ ]
+ *      Δs_i           signed path in cell           [ m ]
+ *      μ_i            pitch-cosine  = Δs_i /(v_i Δt)
+ *
+ *      G_plus, G_minus        → accumulate γσ(k)    [ 1/s ]
+ *      gamma_plus, gamma_minus→ alias / copy of G   [ 1/s ]
+ *      W_plus,   W_minus      → wave energy / log-k [ J m⁻³ ]
+ *      Gamma_plus, Gamma_minus→ k-integrated rate   [ 1/s ]
+ *
+ *  ──────────────  Algorithm outline  ───────────────────────────────────
+ *
+ *    (1) Zero G_± arrays.
+ *    (2) For each macro-particle and for every cell segment it crosses:
+ *            • compute local   B, ρ  →  v_A, Ω, pref
+ *            • find resonant k-bin   j  via k_res = Ω / (|μ| v)
+ *            • coeff = pref *  w_cnt * p² Δs
+ *                       / (2 Δt Δln p ΔV k_j)
+ *            • G_plus [j][c]  += coeff * ( v μ −  v_A )
+ *              G_minus[j][c]  += coeff * ( v μ +  v_A )
+ *
+ *    (3) After particle loop:
+ *            gamma_±[j][c] = G_±[j][c]
+ *            W_±   *= exp( 2 γ_± Δt )
+ *
+ *    (4) Optional diagnostic:
+ *            Γ_±(c) = Δln k · Σ_j γ_±[j][c] · k_j
+ *
+ *  All expressions are cell-local, plasma-frame, and free of
+ *  assumptions about the ratio v / v_A.
+ *=========================================================================
+ */
+
 
 #include "sep.h"
 
