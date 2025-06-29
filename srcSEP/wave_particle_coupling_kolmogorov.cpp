@@ -12,7 +12,7 @@ Quasi-Linear Theory (QLT) kernel. The implementation is split into three
 functions for better integration with particle movers:
 
 1. AccumulateParticleFluxForWaveCoupling() - Called by particle mover
-2. CalculateGrowthRatesFromAccumulatedFlux() - Calculates γ± from flux data
+2. CalculateGrowthRatesFromAccumulatedFlux() - Calculates  γ± integrated ofvek (k) from flux data
 3. RedistributeWaveEnergyToParticles() - Energy conservation redistribution
 
 PHYSICS BACKGROUND:
@@ -53,8 +53,8 @@ REQUIRED DATUMS:
 The following Datums must be declared and initialized:
 - SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming   (size: NK)
 - SEP::AlfvenTurbulence_Kolmogorov::G_minus_streaming  (size: NK)
-- SEP::AlfvenTurbulence_Kolmogorov::gamma_plus_array   (size: NK)
-- SEP::AlfvenTurbulence_Kolmogorov::gamma_minus_array  (size: NK)
+- SEP::AlfvenTurbulence_Kolmogorov::gamma_plus_array   (size: NK) -- growth rate as a function of (k)
+- SEP::AlfvenTurbulence_Kolmogorov::gamma_minus_array  (size: NK) -- growth rate as a function of (k) 
 
 USAGE EXAMPLE:
 --------------
