@@ -497,55 +497,51 @@ void AccumulateParticleFluxForWaveCoupling(
         PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
         
         // ====================================================================
-        // CALCULATE PATH LENGTH WITHIN THIS SEGMENT
+        // CALCULATE DIRECTIONAL PATH LENGTH WITHIN THIS SEGMENT
         // ====================================================================
         double ds_seg = 0.0;
-        
-        // Account for bidirectional motion (toward or away from Sun)
-        bool moving_toward_sun = (s_finish < s_start);
         
         if (seg_start_idx == seg_finish_idx && seg_idx == seg_start_idx) {
             // Particle starts and ends in the same segment
             double segment_length = segment->GetLength();
-            ds_seg = fabs(frac_finish - frac_start) * segment_length;
+            ds_seg = (frac_finish - frac_start) * segment_length;  // Directional: can be negative
             
-        } else if (!moving_toward_sun) {
-            // Moving away from Sun (s_finish > s_start)
-            if (seg_idx == seg_start_idx) {
-                // First segment: from start position to end of segment
-                double segment_length = segment->GetLength();
+        } else if (seg_idx == seg_start_idx) {
+            // First segment: from start position to end of segment
+            double segment_length = segment->GetLength();
+            if (seg_start_idx < seg_finish_idx) {
+                // Moving forward: from frac_start to 1.0
                 ds_seg = (1.0 - frac_start) * segment_length;
-                
-            } else if (seg_idx == seg_finish_idx) {
-                // Last segment: from beginning of segment to finish position
-                double segment_length = segment->GetLength();
-                ds_seg = frac_finish * segment_length;
-                
             } else {
-                // Middle segment: entire segment length
-                ds_seg = segment->GetLength();
+                // Moving backward: from frac_start to 0.0
+                ds_seg = -frac_start * segment_length;
+            }
+            
+        } else if (seg_idx == seg_finish_idx) {
+            // Last segment: from beginning of segment to finish position
+            double segment_length = segment->GetLength();
+            if (seg_start_idx < seg_finish_idx) {
+                // Moving forward: from 0.0 to frac_finish
+                ds_seg = frac_finish * segment_length;
+            } else {
+                // Moving backward: from 1.0 to frac_finish
+                ds_seg = (frac_finish - 1.0) * segment_length;
             }
             
         } else {
-            // Moving toward Sun (s_finish < s_start)
-            if (seg_idx == seg_start_idx) {
-                // First segment: from start position to beginning of segment
-                double segment_length = segment->GetLength();
-                ds_seg = frac_start * segment_length;
-                
-            } else if (seg_idx == seg_finish_idx) {
-                // Last segment: from end of segment to finish position
-                double segment_length = segment->GetLength();
-                ds_seg = (1.0 - frac_finish) * segment_length;
-                
+            // Middle segment: entire segment length with direction
+            double segment_length = segment->GetLength();
+            if (seg_start_idx < seg_finish_idx) {
+                // Moving forward: positive full segment length
+                ds_seg = segment_length;
             } else {
-                // Middle segment: entire segment length
-                ds_seg = segment->GetLength();
+                // Moving backward: negative full segment length
+                ds_seg = -segment_length;
             }
         }
         
-        // Skip if path length in segment is negligible
-        if (ds_seg < 1.0e-20) {
+        // Skip if path length in segment is negligible (but keep sign)
+        if (fabs(ds_seg) < 1.0e-20) {
             continue;
         }
         
@@ -556,7 +552,7 @@ void AccumulateParticleFluxForWaveCoupling(
         segment->GetPlasmaDensity(0.5, rho);  // Get density at segment midpoint
         rho *= _H__MASS_;  // Convert number density to mass density
         
-        // For now, use default magnetic field - should be retrieved from segment data
+        // Get magnetic field from field line
         double B[3];
 	PIC::FieldLine::FieldLinesAll[field_line_idx].GetMagneticField(B,0.5+seg_idx);
 	B0=Vector3D::Length(B);
@@ -593,6 +589,7 @@ void AccumulateParticleFluxForWaveCoupling(
         // CALCULATE PARTICLE CONTRIBUTION TO STREAMING INTEGRALS
         // ====================================================================
         // Calculate coefficient following pseudo-code
+        // Note: ds_seg is now directional and can be negative
         double p2v = p_momentum * p_momentum * v_magnitude;  // p² v term
         double coeff = pref * w_i * p2v * (ds_seg / v_magnitude) / 
                       (2.0 * dt * DLNP) * Vinv / k_j;
@@ -611,6 +608,7 @@ void AccumulateParticleFluxForWaveCoupling(
         
         // Add particle contribution to streaming sums using exact QLT kernel
         // Thread-safe accumulation (assumes single-threaded access per segment)
+        // Note: coeff now includes directional ds_seg which can be positive or negative
         G_plus_data[j]  += coeff * (v_magnitude * mu - vAc);  // Outward waves (+ direction)
         G_minus_data[j] += coeff * (v_magnitude * mu + vAc);  // Inward waves (- direction)
     }
@@ -1062,54 +1060,6 @@ void OptimizedWaveParticleCouplingManager(
         std::cout << "  Time step: " << dt << " s" << std::endl;
     }
 }
-
-// ============================================================================
-// USAGE EXAMPLE AND INTEGRATION GUIDE
-// ============================================================================
-
-/*
-INTEGRATION INTO SIMULATION MAIN LOOP:
---------------------------------------
-
-void SimulationTimeStep(double dt) {
-    // 1. Initialize streaming arrays at start of time step
-    for (all segments) {
-        InitializeStreamingArraysForTimeStep(segment);
-    }
-    
-    // 2. Particle transport phase - accumulate flux data
-    // This is done inside the particle mover during transport:
-    
-    void ParticleMover::MoveParticle(particle) {
-        // ... particle transport calculations ...
-        
-        // During particle transport (called by particle mover)
-        AccumulateParticleFluxForWaveCoupling(
-            field_line_idx, particle_index, dt, particle.speed, s_start, s_finish, totalTraversedPath
-        );
-        
-        // ... continue particle transport ...
-    }
-    
-    // 3. After all particles transported: Wave-particle coupling
-    OptimizedWaveParticleCouplingManager(WaveEnergy, dt);
-    
-    // 4. Optional: Check energy conservation
-    static int step_counter = 0;
-    if (++step_counter % 10 == 0) {
-        CheckEnergyConservation(WaveEnergy, true);
-    }
-    
-    // ... continue with other physics updates ...
-}
-
-FUNCTION CALL SEQUENCE:
-----------------------
-1. InitializeStreamingArraysForTimeStep() - Once per segment per timestep
-2. AccumulateParticleFluxForWaveCoupling() - Called by particle mover for each particle step
-3. OptimizedWaveParticleCouplingManager() - Once per timestep after particle transport
-4. CheckEnergyConservation() - Optional diagnostic function
-*/
 
 // ============================================================================
 // DIAGNOSTIC FUNCTIONS
