@@ -162,7 +162,6 @@ void WaveParticleCouplingManager(
             // Get background plasma parameters for this segment
             segment->GetPlasmaDensity(0.5, rho);  // Number density at segment midpoint
             rho *= _H__MASS_; // Convert to mass density [kg/m³]
-            B0 = 5.0e-9;  // Default magnetic field - TODO: get from segment->GetMagneticField()
 
 	    double B[3];
 	    segment->GetMagneticField(0.5,B);
@@ -242,7 +241,10 @@ void WaveParticleCouplingManager(
             // Get plasma parameters again (could be optimized)
             segment->GetPlasmaDensity(0.5, rho);
             rho *= _H__MASS_;
-            B0 = 5.0e-9;
+
+	    double B[3];
+	    segment->GetMagneticField(0.5,B);
+            B0=Vector3D::Length(B);
 
             // Recalculate initial energies by working backwards
             double Gamma_plus, Gamma_minus;
@@ -480,8 +482,6 @@ void AccumulateParticleFluxForWaveCoupling(
         rho *= _H__MASS_;  // Convert number density to mass density
         
         // For now, use default magnetic field - should be retrieved from segment data
-        B0 = TypicalSolarWind::B0_TYPICAL;  // Use typical solar wind value
-
         double B[3];
 	PIC::FieldLine::FieldLinesAll[field_line_idx].GetMagneticField(B,0.5+seg_idx);
 	B0=Vector3D::Length(B);
@@ -928,7 +928,10 @@ void OptimizedWaveParticleCouplingManager(
             // Get background plasma parameters for this segment
             segment->GetPlasmaDensity(0.5, rho);  // Number density at segment midpoint
             rho *= _H__MASS_; // Convert to mass density [kg/m³]
-            B0 = 5.0e-9;  // Default magnetic field - TODO: get from segment
+
+	    double B[3];
+	    segment->GetMagneticField(0.5,B);
+            B0=Vector3D::Length(B);
 
             // Get current wave energy data from segment
             double* wave_data = segment->GetDatum_ptr(WaveEnergy);
