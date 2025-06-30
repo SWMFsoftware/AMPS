@@ -321,6 +321,24 @@ public:
   }
 };
 
+//=========================================================
+//check if the number if not inf, nan, etc 
+template <typename T>
+inline void validate_numeric(T x, int line, const char* file) {
+    static_assert(std::is_floating_point<T>::value, "validate_numeric requires a floating-point type");
+
+    if (std::isnan(x)) {
+        exit(line, file, "NaN detected");
+    }
+    if (std::isinf(x)) {
+        exit(line, file, "Infinity detected");
+    }
+    if (isfinite(x)==false) { 
+        exit(line, file, "Non-finite value (zero or subnormal) detected");
+    }
+}
+
+
 
 //=========================================================
 //Vector Rotations
