@@ -679,15 +679,26 @@ void CalculateGrowthRatesFromAccumulatedFlux(
     // CONVERT STREAMING INTEGRALS G_± TO GROWTH RATES γ_±
     // ========================================================================
     // Initialize k-grid for integration
-    std::vector<double> k(NK);
-    for (int j = 0; j < NK; ++j) {
+    static std::vector<double> k(NK);
+    static bool k_init=false;
+
+    if (k_init==false) {
+      k_init=true;
+
+      for (int j = 0; j < NK; ++j) {
         k[j] = K_MIN * exp(j * DLNK);  // k[j] = k_min * exp(j * Δln k)
+      }
     }
     
     // Direct conversion: growth rates equal streaming integrals
     for (int j = 0; j < NK; ++j) {
         gamma_plus_data[j] = G_plus_data[j];    // γ₊(k_j) = G₊(k_j)
         gamma_minus_data[j] = G_minus_data[j];  // γ₋(k_j) = G₋(k_j)
+
+        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+          validate_numeric(gamma_plus_data[j],__LINE__,__FILE__);
+	  validate_numeric(gamma_minus_data[j],__LINE__,__FILE__);
+        }
     }
     
     // ========================================================================
@@ -708,6 +719,12 @@ void CalculateGrowthRatesFromAccumulatedFlux(
     // Apply logarithmic spacing normalization
     Gamma_plus  *= DLNK;   // Γ₊ = Δln k × Σ γ₊(k_j) × k_j
     Gamma_minus *= DLNK;   // Γ₋ = Δln k × Σ γ₋(k_j) × k_j
+
+    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+      validate_numeric(Gamma_plus,__LINE__,__FILE__);
+      validate_numeric(Gamma_minus,__LINE__,__FILE__);
+    }
+
     
     // ========================================================================
     // RESET STREAMING ARRAYS FOR NEXT TIME STEP

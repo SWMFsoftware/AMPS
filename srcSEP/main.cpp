@@ -173,6 +173,10 @@ auto CalculateWaveEnergyDensity = [&]() {
                     // Process all elements using SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy.length
                     for (int i = 0; i < SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy.length; i++) {
                         density_data[i] = energy_data[i] / volume;
+
+                        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                          validate_numeric(density_data[i],__LINE__,__FILE__);
+			}
                     }
                     local_count++;
                 }

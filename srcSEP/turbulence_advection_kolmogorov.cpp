@@ -298,6 +298,11 @@ void AdvectTurbulenceEnergyAllFieldLines(
                     
                     // Limit flux to avoid negative energies
                     dE_plus = std::min(dE_plus, E_plus_i);
+
+                    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                      validate_numeric(dE_plus,__LINE__,__FILE__);
+                    }
+
                 }
             }
             
@@ -326,12 +331,23 @@ void AdvectTurbulenceEnergyAllFieldLines(
                     
                     // Limit flux to avoid negative energies
                     dE_minus = std::min(dE_minus, E_minus_i);
+
+                    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                      validate_numeric(dE_minus,__LINE__,__FILE__);
+                    }
+
                 }
             }
             
             // Decrement outward fluxes from current segment
             DeltaE_plus[field_line_idx][i] -= dE_plus;
             DeltaE_minus[field_line_idx][i] -= dE_minus;
+
+           if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+             validate_numeric(dE_plus,__LINE__,__FILE__);
+             validate_numeric(dE_minus,__LINE__,__FILE__);
+           }
+
             
             // ====================================================================
             // HANDLE INWARD FLUXES BASED ON NEIGHBOR PROCESS ASSIGNMENT
@@ -342,6 +358,11 @@ void AdvectTurbulenceEnergyAllFieldLines(
             if (segment_left && segment_left->Thread == PIC::ThisThread) {
                 // Same process: add dE- to DeltaE_minus[i-1]
                 DeltaE_minus[field_line_idx][i-1] += dE_minus;
+
+                if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                  validate_numeric(dE_minus,__LINE__,__FILE__);
+                }
+
             } else {
                 // Different process: calculate inward E+ flux from segment i-1
                 if (segment_left) {
@@ -376,6 +397,11 @@ void AdvectTurbulenceEnergyAllFieldLines(
                                 inward_flux = std::min(inward_flux, E_plus_left);
                                 
                                 DeltaE_plus[field_line_idx][i] += inward_flux;
+
+                                if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                                  validate_numeric(inward_flux,__LINE__,__FILE__);
+                                }
+
                             }
                         }
                     }
