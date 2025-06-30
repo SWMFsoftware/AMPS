@@ -265,6 +265,12 @@ void WaveParticleCouplingManager(
             // Wave energy evolution: E_±(t+Δt) = E_±(t) × exp(2 Γ_± Δt)
             double E_plus_final = E_plus_initial * exp(2.0 * Gamma_plus * dt);
             double E_minus_final = E_minus_initial * exp(2.0 * Gamma_minus * dt);
+
+	    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+              validate_numeric(E_plus_final,__LINE__,__FILE__);
+	      validate_numeric(E_minus_final,__LINE__,__FILE__);
+            }
+
             
             // Ensure non-negative energies (physical constraint)
             E_plus_final = std::max(0.0, E_plus_final);
@@ -280,6 +286,11 @@ void WaveParticleCouplingManager(
             // Update wave energy data in segment
             wave_data[0] = E_plus_final;   // Store updated outward wave energy
             wave_data[1] = E_minus_final;  // Store updated inward wave energy
+
+	    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+              validate_numeric(wave_data[0],__LINE__,__FILE__);
+              validate_numeric(wave_data[1],__LINE__,__FILE__);
+	    }
 
             processed_segments++;
         }
@@ -760,7 +771,11 @@ void RedistributeWaveEnergyToParticles(
     if (std::abs(wave_energy_change) < 1.0e-25) {
         return;
     }
-    
+   
+    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+      validate_numeric(wave_energy_change,__LINE__,__FILE__);
+    }
+
     // ========================================================================
     // ENERGY CONSERVATION PRINCIPLE
     // ========================================================================
@@ -891,6 +906,11 @@ void RedistributeWaveEnergyToParticles(
                 // Update particle velocity components in buffer
                 PIC::ParticleBuffer::SetVParallel(vParallel_new, p);
                 PIC::ParticleBuffer::SetVNormal(vNormal_new, p);
+
+               if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                  validate_numeric(vParallel_new,__LINE__,__FILE__);
+		  validate_numeric(vNormal_new,__LINE__,__FILE__);
+               }
             }
             
             // Move to next particle
