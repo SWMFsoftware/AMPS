@@ -322,7 +322,11 @@ int PackAllFieldLinesData(const cDatumStored& S, std::vector<double>& buffer) {
             double* seg_data = Segment->GetDatum_ptr(S_copy);
             if (seg_data) {
                 for (int i = 0; i < S.length; i++) {
-                    buffer[element_index++] = seg_data[i];
+                  buffer[element_index++] = seg_data[i];
+
+                  if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                    validate_numeric(seg_data[i],__LINE__,__FILE__);
+		  }
                 }
             } else {
                 // Leave as zeros if no data
@@ -347,7 +351,11 @@ void UnpackAllFieldLinesData(const cDatumStored& S, const std::vector<double>& b
             double* seg_data = Segment->GetDatum_ptr(S_copy);
             if (seg_data) {
                 for (int i = 0; i < S.length; i++) {
-                    seg_data[i] = buffer[element_index++];
+                  seg_data[i] = buffer[element_index++];
+
+                  if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                    validate_numeric(seg_data[i],__LINE__,__FILE__);
+                  }
                 }
             } else {
                 // Skip if no data pointer
