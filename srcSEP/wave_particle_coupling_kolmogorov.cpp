@@ -602,7 +602,7 @@ void AccumulateParticleFluxForWaveCoupling(
         // Calculate coefficient following pseudo-code
         // Note: ds_seg is now directional and can be negative
         double p2v = p_momentum * p_momentum * v_magnitude;  // p² v term
-        double coeff = pref * w_i * p2v * (ds_seg / v_magnitude) / 
+        double coeff = 2.0* Pi*pref * w_i * p2v * (ds_seg / v_magnitude) / 
                       (2.0 * dt * DLNP) * Vinv / k_j;
         
         // ====================================================================
@@ -622,6 +622,12 @@ void AccumulateParticleFluxForWaveCoupling(
         // Note: coeff now includes directional ds_seg which can be positive or negative
         G_plus_data[j]  += coeff * (v_magnitude * mu - vAc);  // Outward waves (+ direction)
         G_minus_data[j] += coeff * (v_magnitude * mu + vAc);  // Inward waves (- direction)
+
+        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+           validate_numeric(G_plus_data[j],10.0,__LINE__,__FILE__);
+	   validate_numeric(G_minus_data[j],10.0,__LINE__,__FILE__);
+        }
+
     }
 }
 
