@@ -325,7 +325,7 @@ void amps_init_mesh() {
   }
 
   //inject particles from the surface of the moving spherical shock 
-  if (_SPHERICAL_SHOCK_INJECTION_==_PIC_MODE_ON_) {
+  if ((_SPHERICAL_SHOCK_INJECTION_==_PIC_MODE_ON_)&&(_PIC_FIELD_LINE_MODE_ != _PIC_MODE_ON_)) {
      PIC::BC::UserDefinedParticleInjectionFunction=SEP::ParticleSource::ShockWaveSphere::InjectionModel;
   }  
 
