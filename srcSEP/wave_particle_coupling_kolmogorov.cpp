@@ -570,7 +570,7 @@ void AccumulateParticleFluxForWaveCoupling(
 
         
         // Calculate local plasma parameters
-        double vAc = B0 / sqrt(4.0 * PI * rho);                  // Alfvén speed [m/s]
+        double vAc = B0 / sqrt(VacuumPermeability * rho);                  // Alfvén speed [m/s]
         double Omega = Q * B0 / M;                               // Proton cyclotron frequency [rad/s]
         double pref = (PI * PI) * Omega * Omega / (B0 * B0);    // Normalization factor
         
