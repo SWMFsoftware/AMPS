@@ -285,7 +285,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
     if (mu > 1.0 - 1e-6) mu = 1.0 - 1e-6;
     if (mu < -1.0 + 1e-6) mu = -1.0 + 1e-6;
 
-    totalTraversedPath += fabs(ds_parallel);
+    totalTraversedPath += ds_parallel;
 
     // Move particle along field line
     FieldLineCoord = FL::FieldLinesAll[iFieldLine].move(FieldLineCoord, ds_parallel, Segment);
@@ -296,7 +296,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
       if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
         double s_final = FieldLineCoord;
         SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::AccumulateParticleFluxForWaveCoupling(
-          iFieldLine, ptr, dt_event, Speed, s_current, s_final, fabs(ds_parallel)
+          iFieldLine, ptr, dt_event, Speed, s_current, s_final, ds_parallel
         );
       }
 
