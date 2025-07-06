@@ -178,11 +178,11 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
     scatter_with_Wplus = false;
 
     // Determine which wave branch can cause scattering based on particle direction
-    if (mu > 0.0 && W_minus > 0.0) {
+    if (mu > 0.0 ) {
       // Outward moving particle - can scatter with inward wave (W-)
       Nu_scattering = Speed / MeanFreePath;
       scatter_with_Wplus = false;
-    } else if (mu < 0.0 && W_plus > 0.0) {
+    } else if (mu < 0.0 ) {
       // Inward moving particle - can scatter with outward wave (W+)
       Nu_scattering = Speed / MeanFreePath;
       scatter_with_Wplus = true;
