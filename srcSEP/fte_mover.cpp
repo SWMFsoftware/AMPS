@@ -296,7 +296,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
       if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
         double s_final = FieldLineCoord;
         SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::AccumulateParticleFluxForWaveCoupling(
-          iFieldLine, ptr, dt_event, Speed, s_current, s_final, ds_parallel
+          iFieldLine, ptr, dtTotal, Speed, s_current, s_final, ds_parallel
         );
       }
 
@@ -484,7 +484,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
       if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
         double s_scattering = FieldLineCoord;
         SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::AccumulateParticleFluxForWaveCoupling(
-          iFieldLine, ptr, dt_event, Speed, s_current, s_scattering, fabs(ds_parallel)
+          iFieldLine, ptr, dtTotal, Speed, s_current, s_scattering, fabs(ds_parallel)
         );
       }
 
@@ -523,7 +523,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
     double s_final = FieldLineCoord;
     double final_distance = fabs(s_final - s_current);
     SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::AccumulateParticleFluxForWaveCoupling(
-      iFieldLine, ptr, t_current, Speed, s_current, s_final, final_distance
+      iFieldLine, ptr, dtTotal, Speed, s_current, s_final, final_distance
     );
   }
 
