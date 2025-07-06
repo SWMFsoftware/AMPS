@@ -620,8 +620,11 @@ void AccumulateParticleFluxForWaveCoupling(
         // Add particle contribution to streaming sums using exact QLT kernel
         // Thread-safe accumulation (assumes single-threaded access per segment)
         // Note: coeff now includes directional ds_seg which can be positive or negative
-        G_plus_data[j]  += coeff * (v_magnitude * mu - vAc);  // Outward waves (+ direction)
-        G_minus_data[j] += coeff * (v_magnitude * mu + vAc);  // Inward waves (- direction)
+	
+	
+	//particles with mu>0 interactes for Inward wave; and particles with mu<0 interacts only with outward wave  
+        if (mu<0.0) G_plus_data[j]  += coeff * (v_magnitude * mu - vAc);  // Outward waves (+ direction)
+        if (mu>0.0) G_minus_data[j] += coeff * (v_magnitude * mu + vAc);  // Inward waves (- direction)
 
         if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
            validate_numeric(G_plus_data[j],10.0,__LINE__,__FILE__);
