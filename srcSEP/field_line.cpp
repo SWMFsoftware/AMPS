@@ -250,7 +250,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
     if (s>SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio) s=SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio;
 
-    double q=3.0*s/(3-1.0);
+    double q=3.0*s/(s-1.0);
     double pAbs,pmin,pmax,speed,pvect[3];
     double mass=PIC::MolecularData::GetMass(spec);
 
