@@ -348,6 +348,15 @@ inline void validate_numeric(T x, T range,int line, const char* file) {
 }
 
 
+template <typename T>
+inline void validate_numeric(T x, T vmin,T vmax,int line, const char* file) {
+    validate_numeric(x,line,file);
+
+    if ((x<vmin)||(vmax<x)) {
+      exit(__LINE__,__FILE__,"Error: out of range");
+    }
+}
+
 
 
 
