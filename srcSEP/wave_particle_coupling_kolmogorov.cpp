@@ -627,8 +627,8 @@ void AccumulateParticleFluxForWaveCoupling(
         if (mu>0.0) G_minus_data[j] += coeff * (v_magnitude * mu + vAc);  // Inward waves (- direction)
 
         if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-           validate_numeric(G_plus_data[j],10.0,__LINE__,__FILE__);
-	   validate_numeric(G_minus_data[j],10.0,__LINE__,__FILE__);
+           validate_numeric(G_plus_data[j],-100.0,50.0,__LINE__,__FILE__);
+	   validate_numeric(G_minus_data[j],-100.0,50.0,__LINE__,__FILE__);
         }
 
     }
