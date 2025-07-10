@@ -137,7 +137,7 @@ FieldLineRequestedLength=15
   DomainType=ParkerSpiral !ParkerSpiral,FLAMPA
   ParticleTrajectory=FieldLine !RelativisticBoris !RelativisticBoris,GuidingCenter,IgorFieldLine
 
-  Mover=ParticleMover_Parker_Dxx !:ParticleMover_Parker_MeanFreePath !ParticleMover_ParkerEquation !ParticleMover_Droge_2009_AJ
+  Mover=ParticleMover_FocusedTransport_EventDriven !ParticleMover_Parker_Dxx !:ParticleMover_Parker_MeanFreePath !ParticleMover_ParkerEquation !ParticleMover_Droge_2009_AJ
 
 #endblock
 
