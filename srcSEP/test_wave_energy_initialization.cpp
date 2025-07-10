@@ -255,6 +255,46 @@ void TestPrintEPlusValues(PIC::Datum::cDatumStored& WaveEnergy,int PrintThread) 
     std::cout << "==========================================" << std::endl << std::endl;
 }
 
+void TestPrintDatum(PIC::Datum::cDatumStored& Datum,int PrintThread,const char* msg) {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    // Only rank 0 prints
+    if (rank != PrintThread) return;
+
+    std::cout << "\n=== " << msg << " === Thread=" << PrintThread << std::endl;
+
+    if (PIC::FieldLine::nFieldLine <= 0) {
+        std::cout << "ERROR: No field lines found!" << std::endl;
+        return;
+    }
+
+    PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[0];
+    int num_segments = field_line->GetTotalSegmentNumber();
+    int max_segments = std::min(400, num_segments);
+
+    for (int seg_idx = 0; seg_idx < max_segments; ++seg_idx) {
+        PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
+
+        if (!segment) {
+            std::cout << std::setw(7) << seg_idx << "    NULL_SEGMENT" << std::endl;
+            continue;
+        }
+
+        double* data = segment->GetDatum_ptr(Datum);
+
+        if (data) {
+            double d = data[0];
+            std::cout << std::setw(7) << seg_idx << "    "
+                      << std::scientific << std::setprecision(6) << d << "    " << segment->Thread << std::endl;
+        } else {
+            std::cout << std::setw(7) << seg_idx << "    NO_DATA" << std::endl;
+        }
+    }
+
+    std::cout << "==========================================" << std::endl << std::endl;
+}
+
 } // namespace AlfvenTurbulence_Kolmogorov
 } // namespace SEP
 
