@@ -204,7 +204,7 @@ void TestWaveEnergyInitialization(PIC::Datum::cDatumStored& WaveEnergy);
  * TestPrintEPlusValues(WaveEnergy);  // Quick E+ diagnostic
  */
 void TestPrintEPlusValues(PIC::Datum::cDatumStored& WaveEnergy,int PrintThread=0);
-void TestPrintDatum(PIC::Datum::cDatumStored& Datum,int PrintThread,const char *msg);
+void TestPrintDatum(PIC::Datum::cDatumStored& Datum, int PrintThread, const char* msg, int field_line_idx);
 
 /**
  * Extended test function for multiple field lines
