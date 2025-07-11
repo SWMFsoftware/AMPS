@@ -237,6 +237,14 @@ void SEP::Mesh::InitFieldLineAMPS(list<SEP::cFieldLine> *field_line) {
     Vertex->SetMagneticField(it->B);
     Vertex->SetPlasmaVelocity(it->U);
 
+    //set the background plasma velocity
+    const double speed=400.0E3;
+    double v[3]; 
+
+    Vertex->GetX(v);
+    Vector3D::Normalize(v,speed);
+    Vertex->SetPlasmaVelocity(v);
+
     if (FL::DatumAtVertexPlasmaWaves.offset>=0) Vertex->SetDatum(FL::DatumAtVertexPlasmaWaves,it->Wave);
   }
   
