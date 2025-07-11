@@ -567,10 +567,10 @@ void TestPrintDatum(PIC::Datum::cDatumStored& Datum, int PrintThread, const char
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    // Only specified rank prints
-    if (rank != PrintThread) return;
+    // Only root process (rank 0) prints output
+    if (rank != 0) return;
 
-    std::cout << "\n=== " << msg << " === Thread=" << PrintThread << " === Field Line=" << field_line_idx << " ===" << std::endl;
+    std::cout << "\n=== " << msg << " === Root Process === Field Line=" << field_line_idx << " ===" << std::endl;
 
     if (PIC::FieldLine::nFieldLine <= 0) {
         std::cout << "ERROR: No field lines found!" << std::endl;
@@ -593,9 +593,11 @@ void TestPrintDatum(PIC::Datum::cDatumStored& Datum, int PrintThread, const char
     // Structure to store segment info for sorting
     struct SegmentInfo {
         int segment_idx;
-        double max_relative_value;  // max(|data[i]|/max_global)
+        double max_relative_value;  // max(|data[i]|/max_global) for ranking
+        int max_abs_element_index;  // index of element with maximum absolute value
+        double max_abs_element_value; // actual value of the maximum absolute element
         int max_element_index;      // index of element with maximum relative value
-        double max_element_value;   // actual value of the maximum element
+        double max_element_value;   // actual value of the maximum relative element
         double* data;
         int thread_id;
     };
@@ -603,6 +605,7 @@ void TestPrintDatum(PIC::Datum::cDatumStored& Datum, int PrintThread, const char
     std::vector<SegmentInfo> segment_data;
     std::vector<double> global_max_per_element(datum_length, 0.0);
     std::vector<int> global_max_segment_per_element(datum_length, -1);
+    std::vector<int> global_max_thread_per_element(datum_length, -1);
 
     // First pass: Find global maximum for each element across all segments
     for (int seg_idx = 0; seg_idx < num_segments; ++seg_idx) {
@@ -617,6 +620,7 @@ void TestPrintDatum(PIC::Datum::cDatumStored& Datum, int PrintThread, const char
             if (abs_val > global_max_per_element[elem_idx]) {
                 global_max_per_element[elem_idx] = abs_val;
                 global_max_segment_per_element[elem_idx] = seg_idx;
+                global_max_thread_per_element[elem_idx] = segment->Thread;
             }
         }
     }
@@ -637,11 +641,15 @@ void TestPrintDatum(PIC::Datum::cDatumStored& Datum, int PrintThread, const char
 
     std::cout << "Global maximum absolute values per element:" << std::endl;
     for (int elem_idx = 0; elem_idx < datum_length; ++elem_idx) {
-        std::cout << "  Element[" << elem_idx << "]: " << std::scientific << std::setprecision(6)
-                  << global_max_per_element[elem_idx] << std::endl;
+        if (global_max_per_element[elem_idx] > 0.0) {
+            std::cout << "  Element[" << elem_idx << "]: " << std::scientific << std::setprecision(6)
+                      << global_max_per_element[elem_idx]
+                      << " (segment " << global_max_segment_per_element[elem_idx]
+                      << ", thread " << global_max_thread_per_element[elem_idx] << ")" << std::endl;
+        }
     }
 
-    // Second pass: Calculate max relative value for each segment
+    // Second pass: Calculate relative values and find segment maximums
     for (int seg_idx = 0; seg_idx < num_segments; ++seg_idx) {
         PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
         if (!segment) continue;
@@ -649,9 +657,10 @@ void TestPrintDatum(PIC::Datum::cDatumStored& Datum, int PrintThread, const char
         double* data = segment->GetDatum_ptr(Datum);
         if (!data) continue;
 
+        // Find maximum relative value for segment ranking
         double max_relative = 0.0;
-        int max_element_idx = 0;
-        double max_element_val = 0.0;
+        int max_rel_element_idx = 0;
+        double max_rel_element_val = 0.0;
 
         for (int elem_idx = 0; elem_idx < datum_length; ++elem_idx) {
             // Skip elements with zero global maximum (avoid division by zero)
@@ -660,8 +669,22 @@ void TestPrintDatum(PIC::Datum::cDatumStored& Datum, int PrintThread, const char
             double relative_val = std::abs(data[elem_idx]) / global_max_per_element[elem_idx];
             if (relative_val > max_relative) {
                 max_relative = relative_val;
-                max_element_idx = elem_idx;
-                max_element_val = data[elem_idx];
+                max_rel_element_idx = elem_idx;
+                max_rel_element_val = data[elem_idx];
+            }
+        }
+
+        // Find maximum absolute value for display
+        double max_abs_value = 0.0;
+        int max_abs_element_idx = 0;
+        double max_abs_element_val = 0.0;
+
+        for (int elem_idx = 0; elem_idx < datum_length; ++elem_idx) {
+            double abs_val = std::abs(data[elem_idx]);
+            if (abs_val > max_abs_value) {
+                max_abs_value = abs_val;
+                max_abs_element_idx = elem_idx;
+                max_abs_element_val = data[elem_idx];
             }
         }
 
@@ -670,25 +693,27 @@ void TestPrintDatum(PIC::Datum::cDatumStored& Datum, int PrintThread, const char
             SegmentInfo info;
             info.segment_idx = seg_idx;
             info.max_relative_value = max_relative;
-            info.max_element_index = max_element_idx;
-            info.max_element_value = max_element_val;
+            info.max_abs_element_index = max_abs_element_idx;      // For display
+            info.max_abs_element_value = max_abs_element_val;      // For display
+            info.max_element_index = max_rel_element_idx;          // For ranking reference
+            info.max_element_value = max_rel_element_val;          // For ranking reference
             info.data = data;
             info.thread_id = segment->Thread;
             segment_data.push_back(info);
         }
     }
 
-    // Sort segments by max relative value (descending order)
+    // Sort segments by relative value (descending order)
     std::sort(segment_data.begin(), segment_data.end(),
               [](const SegmentInfo& a, const SegmentInfo& b) {
                   return a.max_relative_value > b.max_relative_value;
               });
 
-    // Print top 400 segments (or all if fewer than 400)
+    // Print top segments
     int max_segments_to_print = std::min(400, static_cast<int>(segment_data.size()));
 
     std::cout << "\nTop " << max_segments_to_print << " segments with highest relative values:" << std::endl;
-    std::cout << "Segment    MaxElem[idx]=value(rel_val)    Thread    All_Elements" << std::endl;
+    std::cout << "Segment    MaxVal[idx]=value(rel_val)    Thread    All_Elements" << std::endl;
     std::cout << std::string(100, '-') << std::endl;
 
     for (int i = 0; i < max_segments_to_print; ++i) {
@@ -697,9 +722,9 @@ void TestPrintDatum(PIC::Datum::cDatumStored& Datum, int PrintThread, const char
         // Output: 1) segment index
         std::cout << std::setw(7) << info.segment_idx << "    ";
 
-        // Output: 2) data and its index why the segment is selected
-        std::cout << "[" << info.max_element_index << "]="
-                  << std::scientific << std::setprecision(4) << info.max_element_value
+        // Output: 2) Maximum absolute value and its index (for clarity in analysis)
+        std::cout << "[" << info.max_abs_element_index << "]="
+                  << std::scientific << std::setprecision(4) << info.max_abs_element_value
                   << "(" << std::fixed << std::setprecision(4) << info.max_relative_value << ")"
                   << "    " << std::setw(6) << info.thread_id << "    ";
 
@@ -717,20 +742,24 @@ void TestPrintDatum(PIC::Datum::cDatumStored& Datum, int PrintThread, const char
     std::cout << "SUMMARY:" << std::endl;
     std::cout << "  Total segments with data: " << segment_data.size() << std::endl;
     std::cout << "  Segments printed: " << max_segments_to_print << std::endl;
+
     std::cout << "  Global maximum per element (non-zero only):" << std::endl;
     for (int elem_idx = 0; elem_idx < datum_length; ++elem_idx) {
         if (global_max_per_element[elem_idx] > 0.0) {
             std::cout << "    Element[" << elem_idx << "]: " << std::scientific << std::setprecision(6)
-                      << global_max_per_element[elem_idx] << " (segment " << global_max_segment_per_element[elem_idx] << ")" << std::endl;
+                      << global_max_per_element[elem_idx]
+                      << " (segment " << global_max_segment_per_element[elem_idx]
+                      << ", thread " << global_max_thread_per_element[elem_idx] << ")" << std::endl;
         }
     }
 
     if (max_segments_to_print > 0) {
         std::cout << "  Highest relative value: " << std::fixed << std::setprecision(6)
-                  << segment_data[0].max_relative_value << " (element " << segment_data[0].max_element_index << ")" << std::endl;
+                  << segment_data[0].max_relative_value
+                  << " (max abs element " << segment_data[0].max_abs_element_index << ")" << std::endl;
         std::cout << "  Lowest relative value (in selection): " << std::fixed << std::setprecision(6)
                   << segment_data[max_segments_to_print-1].max_relative_value
-                  << " (element " << segment_data[max_segments_to_print-1].max_element_index << ")" << std::endl;
+                  << " (max abs element " << segment_data[max_segments_to_print-1].max_abs_element_index << ")" << std::endl;
     }
 
     std::cout << "==========================================" << std::endl << std::endl;
