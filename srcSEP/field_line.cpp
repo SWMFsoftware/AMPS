@@ -4,7 +4,7 @@
 #include "amps2swmf.h"
 
 
-int SEP::FieldLine::InjectionParameters::nParticlesPerIteration=100;
+int SEP::FieldLine::InjectionParameters::nParticlesPerIteration=300;
 double SEP::FieldLine::InjectionParameters::PowerIndex=4.0;
 double SEP::FieldLine::InjectionParameters::emin=0.1,SEP::FieldLine::InjectionParameters::emax=500;
 double SEP::FieldLine::InjectionParameters::InjectionEfficiency=3.4E-4; //Sokolov-2004-AJ 
