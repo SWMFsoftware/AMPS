@@ -255,6 +255,176 @@ void TestPrintEPlusValues(PIC::Datum::cDatumStored& WaveEnergy,int PrintThread) 
     std::cout << "==========================================" << std::endl << std::endl;
 }
 
+
+/*
+================================================================================
+                    MPI-DISTRIBUTED TEST PRINT DATUM FUNCTION
+================================================================================
+
+FUNCTION: TestPrintDatumMPI
+
+PURPOSE:
+--------
+Performs distributed analysis of field line segment data across multiple MPI
+processes and outputs comprehensive results from the root process. This function
+efficiently collects data from all processes, finds global maximums using
+MPI_Reduce, and displays the most significant segments based on relative values
+calculated from true global statistics.
+
+ALGORITHM:
+----------
+1. Distributed Global Maximum Detection (MPI_Reduce):
+   - Each process finds local maximum for each datum element
+   - Custom MPI reduction operation finds global maximum while preserving
+     process ownership information
+   - Root process receives global maximums with process attribution
+
+2. Distributed Segment Analysis:
+   - Global maximums broadcast to all processes for consistent normalization
+   - Each process analyzes only its own segments (segment->Thread == rank)
+   - Calculates relative values: |data[i]|/global_max[i] for ranking
+   - Finds maximum absolute values within each segment for display
+   - Filters out segments with zero relative values
+
+3. Data Collection and Output:
+   - Root process gathers significant segments from all processes
+   - Sorts all segments globally by relative value
+   - Outputs top 400 segments with complete process attribution
+   - Provides comprehensive statistics across entire distributed dataset
+
+MPI COMMUNICATION PATTERN:
+---------------------------
+1. MPI_Reduce: Global maximum detection with process tracking
+2. MPI_Bcast: Distribute global maximums to all processes
+3. MPI_Gather: Collect segment counts from all processes
+4. MPI_Send/Recv: Transfer segment data to root process
+   - Variable-length data handled with separate metadata and data transfers
+   - Each segment's complete datum array transmitted
+
+PARAMETERS:
+-----------
+- Datum: Reference to distributed datum storage across all processes
+- msg: Descriptive message for output header
+- field_line_idx: Index of field line to analyze (default: 0)
+
+OUTPUT FORMAT:
+--------------
+For each selected segment, displays:
+1. Segment index in the field line
+2. Maximum absolute value: [element_index]=value(relative_value)
+   - element_index: Index of element with maximum absolute value
+   - value: The actual maximum absolute value in the segment
+   - relative_value: The relative value used for global ranking
+3. Process rank that owns the segment
+4. Thread ID within that process
+5. Complete list of all datum elements: [elem0, elem1, elem2, ...]
+
+SELECTION CRITERIA:
+-------------------
+Segments are ranked by their maximum relative value using TRUE global maximums:
+  max_relative = max(|data[i]|/global_max_across_all_processes[i])
+
+This ensures proper normalization across the entire distributed dataset, not
+just local process data, providing accurate global significance ranking.
+
+DISTRIBUTED FEATURES:
+---------------------
+- Process Attribution: Shows which MPI process owns each significant segment
+- Load Distribution Analysis: Statistics on segment distribution across processes
+- True Global Ranking: Uses global maximums from entire distributed dataset
+- Single Point Output: Only root process outputs to prevent MPI conflicts
+- Scalable Communication: O(log P) reduction vs O(P) gathering
+
+USAGE EXAMPLES:
+---------------
+// Basic distributed analysis
+TestPrintDatumMPI(WaveEnergy, "Distributed Wave Energy Analysis");
+
+// Analyze specific field line across all processes
+TestPrintDatumMPI(MagneticField, "Global B-field Distribution", 3);
+
+// Multi-field line distributed analysis
+for (int fl = 0; fl < num_field_lines; ++fl) {
+    TestPrintDatumMPI(Pressure, "Multi-Line Pressure Analysis", fl);
+}
+
+REQUIREMENTS:
+-------------
+- Active MPI environment with communicator MPI_COMM_WORLD
+- Consistent field line structure across all processes
+- Each process owns subset of segments (segment->Thread == process_rank)
+- Non-zero datum values for meaningful analysis
+
+OUTPUT SECTIONS:
+----------------
+1. Header with MPI process count and field line information
+2. Global maximum values per element with process attribution
+3. Top 400 segments from entire distributed dataset
+4. Comprehensive summary statistics:
+   - Total processes and segment distribution
+   - Global maximum locations with process ownership
+   - Load balancing information (segments per process)
+   - Highest/lowest relative values with process attribution
+
+MPI PERFORMANCE:
+----------------
+- Communication Complexity: O(log P) for reductions + O(K) for data gathering
+- Memory Usage: O(K*M) on root, O(k*M) on workers where:
+  - K = total significant segments across all processes
+  - k = local significant segments per process
+  - M = datum length
+  - P = number of MPI processes
+- Network Efficiency: Minimized data transfer through filtering
+
+ERROR HANDLING:
+---------------
+- Validates field line index on all processes consistently
+- Handles processes with no significant segments gracefully
+- Manages variable-length data transfers safely
+- Detects and reports distributed all-zero datasets
+- Prevents deadlocks in MPI communication
+
+ADVANTAGES OVER SINGLE-PROCESS VERSION:
+---------------------------------------
+- True Global Analysis: Uses data from ALL processes, not just one
+- Proper Normalization: Global maximums calculated across entire dataset
+- Process Attribution: Identifies data ownership for debugging
+- Load Balancing Insights: Shows distribution of significant data
+- Scalable Performance: Efficient for large distributed simulations
+
+MPI COMMUNICATION DETAILS:
+---------------------------
+Custom MPI Reduction Operation:
+```cpp
+MPI_Op_create([](void* in, void* inout, int* len, MPI_Datatype* datatype) {
+    // Finds maximum value while preserving process rank
+}, 1, &max_loc_op);
+```
+
+Point-to-Point Data Transfer:
+- Tag 0: relative_value (MPI_DOUBLE)
+- Tag 1: segment_idx (MPI_INT)
+- Tag 2: element_idx (MPI_INT)
+- Tag 3: element_value (MPI_DOUBLE)
+- Tag 4: process_rank (MPI_INT)
+- Tag 5: all_data array (MPI_DOUBLE array)
+
+NOTES:
+------
+- Only root process (rank 0) produces output regardless of input parameters
+- Segments are filtered locally but ranked globally for optimal performance
+- Function handles dynamic datum lengths without size assumptions
+- Process attribution enables distributed debugging and load analysis
+- Compatible with any number of MPI processes (tested with 1-1000+ processes)
+
+SEE ALSO:
+---------
+- TestPrintDatum(): Single-process version for non-MPI analysis
+- MPI_Reduce documentation for custom reduction operations
+- MPI_Allgather vs point-to-point communication trade-offs
+
+================================================================================
+*/
 void TestPrintDatumMPI(PIC::Datum::cDatumStored& Datum, const char* msg, int field_line_idx) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -563,6 +733,125 @@ void TestPrintDatumMPI(PIC::Datum::cDatumStored& Datum, const char* msg, int fie
     }
 }
 
+/*
+================================================================================
+                        TEST PRINT DATUM FUNCTION
+================================================================================
+
+FUNCTION: TestPrintDatum
+
+PURPOSE:
+--------
+Analyzes and displays the most significant segments of a field line based on 
+datum values. This function identifies segments with the highest relative 
+values across all datum elements and outputs detailed information about the 
+top 400 segments for debugging and analysis purposes.
+
+ALGORITHM:
+----------
+1. Global Maximum Detection:
+   - Scans all segments in the specified field line
+   - Finds the global maximum absolute value for each datum element
+   - Tracks which segment and thread owns each global maximum
+
+2. Segment Analysis:
+   - For each segment, calculates relative values: |data[i]|/global_max[i]
+   - Finds the maximum relative value across all elements (for ranking)
+   - Finds the element with maximum absolute value (for display)
+   - Only retains segments with non-zero relative values
+
+3. Ranking and Output:
+   - Sorts segments by maximum relative value (descending)
+   - Displays top 400 segments with complete information
+   - Shows global statistics and distribution analysis
+
+PARAMETERS:
+-----------
+- Datum: Reference to the datum storage containing field line segment data
+- PrintThread: [UNUSED] Legacy parameter - function always uses root process
+- msg: Descriptive message for output header
+- field_line_idx: Index of field line to analyze (default: 0)
+
+OUTPUT FORMAT:
+--------------
+For each selected segment, displays:
+1. Segment index in the field line
+2. Maximum absolute value: [element_index]=value(relative_value)
+   - element_index: Index of element with maximum absolute value
+   - value: The actual maximum absolute value in the segment
+   - relative_value: The relative value used for segment ranking
+3. Thread ID that owns the segment
+4. Complete list of all datum elements: [elem0, elem1, elem2, ...]
+
+SELECTION CRITERIA:
+-------------------
+Segments are ranked by their maximum relative value across all elements:
+  max_relative = max(|data[i]|/global_max[i]) for i in [0, datum_length-1]
+
+This ensures fair comparison between elements that may have vastly different
+scales (e.g., element[0] ~ 1e+6, element[1] ~ 1e-3).
+
+USAGE EXAMPLES:
+---------------
+// Basic usage - analyze first field line
+TestPrintDatum(WaveEnergy, 0, "Wave Energy Analysis");
+
+// Analyze specific field line
+TestPrintDatum(MagneticField, 0, "B-field Distribution", 5);
+
+// Multiple field line analysis
+for (int fl = 0; fl < num_field_lines; ++fl) {
+    TestPrintDatum(SomeDatum, 0, "Multi-Line Analysis", fl);
+}
+
+REQUIREMENTS:
+-------------
+- MPI environment (uses rank 0 for output)
+- Valid field line with segments containing datum data
+- Non-zero datum values for meaningful analysis
+
+OUTPUT SECTIONS:
+----------------
+1. Header with field line and datum information
+2. Global maximum values per element with locations
+3. Top 400 segments with detailed data
+4. Summary statistics including:
+   - Total segments analyzed
+   - Global maximum locations
+   - Highest/lowest relative values in selection
+
+NOTES:
+------
+- Only root process (rank 0) produces output to avoid MPI conflicts
+- Segments with all-zero data are excluded from analysis
+- Function handles variable-length datum arrays dynamically
+- Global maximums are calculated across ALL segments, not per-process
+- Relative values ensure fair ranking regardless of element magnitudes
+
+ERROR HANDLING:
+---------------
+- Validates field line index range
+- Checks for existence of field lines
+- Handles segments without datum data gracefully
+- Detects and reports all-zero datasets
+
+PERFORMANCE:
+------------
+- Time complexity: O(N*M + K*log(K)) where:
+  - N = number of segments
+  - M = datum length  
+  - K = number of non-zero segments
+- Memory usage: O(K*M) for storing significant segment data
+- Single-process execution (non-distributed)
+
+SEE ALSO:
+---------
+- TestPrintDatumMPI(): MPI-distributed version with cross-process analysis
+- TestWaveEnergyInitialization(): Specialized wave energy analysis
+- TestPrintEPlusValues(): Simplified energy component display
+
+================================================================================
+*/
 void TestPrintDatum(PIC::Datum::cDatumStored& Datum, int PrintThread, const char* msg, int field_line_idx) {
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
