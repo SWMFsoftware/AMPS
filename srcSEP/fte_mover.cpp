@@ -366,6 +366,18 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
       }
       double AbsB = Vector3D::Length(B);
 
+      // Sample flux for this scattering event (from s_current to current position)
+      if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
+        double s_scattering = FieldLineCoord;
+        SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::AccumulateParticleFluxForWaveCoupling(
+          iFieldLine, ptr, dtTotal, Speed, s_current, s_scattering, fabs(ds_parallel)
+        );
+      }
+
+      // Reset tracking variables for next segment
+      s_current = FieldLineCoord;
+      t_current = 0.0;
+
       // Get plasma density for Alfven velocity calculation
       double PlasmaDensity0, PlasmaDensity1, PlasmaDensity;
       VertexBegin->GetDatum(FL::DatumAtVertexPlasmaDensity, &PlasmaDensity0);
@@ -465,7 +477,20 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
       double E_final = Relativistic::Speed2E(Speed, PIC::MolecularData::GetMass(spec));
       double dE = E_final - E_initial;
 
-      // Optional: Store energy change for diagnostics
+      // Store energy change 
+      double* wave_data = Segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy); 
+      double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec] * PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr); 
+
+      if (scatter_with_Wplus) {
+        // Scattering with W+ wave (outward wave in plasma frame)
+        // This should only happen for inward moving particles (mu < 0)
+     
+        wave_data[0]-=stat_weight*dE;
+      }
+      else {
+        wave_data[1]-=stat_weight*dE; 
+      }
+
       /*if (SEP::Sampling::EnergyChange::active_flag == true) {
         // Store energy change statistics
         double ParticleWeight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
@@ -480,6 +505,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
       if (mu > 1.0 - 1e-6) mu = 1.0 - 1e-6;
       if (mu < -1.0 + 1e-6) mu = -1.0 + 1e-6;
 
+      /*
       // Sample flux for this scattering event (from s_current to current position)
       if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
         double s_scattering = FieldLineCoord;
@@ -491,6 +517,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
       // Reset tracking variables for next segment
       s_current = FieldLineCoord;
       t_current = 0.0;
+      */
     } else {
       // No scattering occurred - will sample at end of time step or next event
     }
