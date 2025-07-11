@@ -1111,3 +1111,283 @@ void SimpleTest() {
 }
 
 */
+
+
+
+
+/*
+================================================================================
+                            SET DATUM FUNCTION
+================================================================================
+
+FUNCTION: SetDatum
+
+PURPOSE:
+--------
+Sets all elements of datum data to a specified value for all segments of a
+given field line. This function is useful for initializing datum fields,
+testing, debugging, or resetting field line data to known values.
+
+ALGORITHM:
+----------
+1. Validation:
+   - Checks if field lines exist
+   - Validates field line index range
+   - Verifies datum length is valid
+
+2. Segment Iteration:
+   - Iterates through all segments in the specified field line
+   - Skips null or invalid segments
+   - Processes ALL segments regardless of Thread ownership
+
+3. Data Assignment:
+   - Gets datum pointer for each valid segment
+   - Sets all elements of the datum array to the specified value
+   - Handles variable-length datum arrays dynamically
+
+PARAMETERS:
+-----------
+- val: The value to set for all datum elements
+- Datum: Reference to the datum storage to be modified
+- field_line_idx: Index of the field line to process
+
+USAGE EXAMPLES:
+---------------
+// Set all wave energy values to zero
+SetDatum(0.0, WaveEnergy, 0);
+
+// Initialize magnetic field to uniform value
+SetDatum(1.0e-9, MagneticField, 2);
+
+// Reset all field lines
+for (int fl = 0; fl < num_field_lines; ++fl) {
+    SetDatum(0.0, SomeDatum, fl);
+}
+
+// Set test values for debugging
+SetDatum(123.456, TestDatum, 0);
+
+REQUIREMENTS:
+-------------
+- Valid field line index
+- Datum must be properly initialized
+- MPI environment (function is MPI-aware)
+
+MPI BEHAVIOR:
+-------------
+- Processes ALL segments regardless of Thread ownership
+- Function modifies segments owned by all MPI processes
+- No MPI communication required - purely local operation
+- May modify data that belongs to other processes (use with caution)
+
+ERROR HANDLING:
+---------------
+- Validates field line existence and index range
+- Handles null segments gracefully
+- Skips segments without datum data
+- Reports errors only from root process to avoid output flooding
+
+PERFORMANCE:
+------------
+- Time Complexity: O(N*M) where N = segments, M = datum length
+- Memory Usage: O(1) - no additional memory allocation
+- Processes all segments on each MPI process
+
+WARNING:
+--------
+- This function modifies ALL segments regardless of Thread ownership
+- In MPI environments, this may modify data belonging to other processes
+- Use with caution in distributed simulations
+- Consider using thread-aware version for production MPI code
+
+NOTES:
+------
+- Function modifies data in-place
+- All elements of multi-component datum are set to same value
+- Processes all segments regardless of ownership
+- Can be used for initialization, testing, or data reset
+
+SEE ALSO:
+---------
+- TestPrintDatum(): For verifying the set values
+- TestPrintDatumMPI(): For distributed verification
+- InitializeWaveEnergyFromPhysicalParameters(): Physics-based initialization
+
+================================================================================
+*/
+
+namespace SEP {
+namespace AlfvenTurbulence_Kolmogorov {
+
+void SetDatum(double val, PIC::Datum::cDatumStored& Datum, int field_line_idx) {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    // Validate field line index (only root reports errors to avoid flooding)
+    if (PIC::FieldLine::nFieldLine <= 0) {
+        if (rank == 0) {
+            std::cout << "ERROR in SetDatum: No field lines found!" << std::endl;
+        }
+        return;
+    }
+
+    if (field_line_idx >= PIC::FieldLine::nFieldLine || field_line_idx < 0) {
+        if (rank == 0) {
+            std::cout << "ERROR in SetDatum: Field line index " << field_line_idx
+                      << " out of range [0, " << (PIC::FieldLine::nFieldLine - 1) << "]!" << std::endl;
+        }
+        return;
+    }
+
+    // Get the specified field line
+    PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
+    int num_segments = field_line->GetTotalSegmentNumber();
+    int datum_length = Datum.length;
+
+    // Validate datum length
+    if (datum_length <= 0) {
+        if (rank == 0) {
+            std::cout << "ERROR in SetDatum: Invalid datum length " << datum_length << std::endl;
+        }
+        return;
+    }
+
+    // Progress tracking for large field lines
+    int segments_processed = 0;
+    int segments_modified = 0;
+    int segments_skipped_null = 0;
+    int segments_skipped_no_data = 0;
+
+    // Iterate through all segments in the field line
+    for (int seg_idx = 0; seg_idx < num_segments; ++seg_idx) {
+        PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
+
+        // Skip null segments
+        if (!segment) {
+            segments_skipped_null++;
+            continue;
+        }
+
+        segments_processed++;
+
+        // Get datum pointer for this segment
+        double* data = segment->GetDatum_ptr(Datum);
+
+        // Skip segments without datum data
+        if (!data) {
+            segments_skipped_no_data++;
+            continue;
+        }
+
+        // Set all elements of the datum to the specified value
+        for (int elem_idx = 0; elem_idx < datum_length; ++elem_idx) {
+            data[elem_idx] = val;
+        }
+
+        segments_modified++;
+    }
+
+    // Optional: Report progress for large operations (only from root process)
+    if (rank == 0 && (num_segments > 10000 || segments_modified > 1000)) {
+        std::cout << "SetDatum completed for field line " << field_line_idx << ":" << std::endl;
+        std::cout << "  Value set: " << std::scientific << val << std::endl;
+        std::cout << "  Total segments: " << num_segments << std::endl;
+        std::cout << "  Segments processed: " << segments_processed << std::endl;
+        std::cout << "  Segments modified: " << segments_modified << std::endl;
+        if (segments_skipped_null > 0) {
+            std::cout << "  Null segments skipped: " << segments_skipped_null << std::endl;
+        }
+        if (segments_skipped_no_data > 0) {
+            std::cout << "  No-data segments skipped: " << segments_skipped_no_data << std::endl;
+        }
+        std::cout << "  Datum length: " << datum_length << " elements per segment" << std::endl;
+        std::cout << "  NOTE: ALL segments processed regardless of Thread ownership" << std::endl;
+    }
+}
+
+// Convenience overload for setting multiple field lines
+void SetDatum(double val, PIC::Datum::cDatumStored& Datum, int start_field_line_idx, int end_field_line_idx) {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    if (start_field_line_idx < 0 || end_field_line_idx >= PIC::FieldLine::nFieldLine ||
+        start_field_line_idx > end_field_line_idx) {
+        if (rank == 0) {
+            std::cout << "ERROR in SetDatum: Invalid field line range ["
+                      << start_field_line_idx << ", " << end_field_line_idx << "]" << std::endl;
+        }
+        return;
+    }
+
+    if (rank == 0) {
+        std::cout << "Setting datum to " << std::scientific << val
+                  << " for field lines " << start_field_line_idx
+                  << " to " << end_field_line_idx << std::endl;
+    }
+
+    for (int fl = start_field_line_idx; fl <= end_field_line_idx; ++fl) {
+        SetDatum(val, Datum, fl);
+    }
+
+    if (rank == 0) {
+        std::cout << "Completed setting datum for "
+                  << (end_field_line_idx - start_field_line_idx + 1)
+                  << " field lines" << std::endl;
+    }
+}
+
+// Convenience overload for setting all field lines
+void SetDatumAll(double val, PIC::Datum::cDatumStored& Datum) {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    if (PIC::FieldLine::nFieldLine <= 0) {
+        if (rank == 0) {
+            std::cout << "ERROR in SetDatumAll: No field lines found!" << std::endl;
+        }
+        return;
+    }
+
+    if (rank == 0) {
+        std::cout << "Setting datum to " << std::scientific << val
+                  << " for ALL " << PIC::FieldLine::nFieldLine << " field lines" << std::endl;
+    }
+
+    for (int fl = 0; fl < PIC::FieldLine::nFieldLine; ++fl) {
+        SetDatum(val, Datum, fl);
+    }
+
+    if (rank == 0) {
+        std::cout << "Completed setting datum for all "
+                  << PIC::FieldLine::nFieldLine << " field lines" << std::endl;
+    }
+}
+
+} // namespace AlfvenTurbulence_Kolmogorov
+} // namespace SEP
+
+// Example usage:
+/*
+namespace SEP {
+namespace AlfvenTurbulence_Kolmogorov {
+
+void ExampleSetDatumUsage() {
+    // Set single field line to zero
+    SetDatum(0.0, WaveEnergy, 0);
+
+    // Initialize field line with test value
+    SetDatum(1.23e-6, MagneticField, 2);
+
+    // Set range of field lines
+    SetDatum(0.0, Pressure, 0, 4);  // Field lines 0-4
+
+    // Set all field lines
+    SetDatumAll(0.0, WaveEnergy);
+
+    // Verify the results
+    TestPrintDatumMPI(WaveEnergy, "After SetDatum", 0);
+}
+
+} // namespace AlfvenTurbulence_Kolmogorov
+} // namespace SEP
+*/

@@ -207,6 +207,11 @@ void TestPrintEPlusValues(PIC::Datum::cDatumStored& WaveEnergy,int PrintThread=0
 void TestPrintDatum(PIC::Datum::cDatumStored& Datum, int PrintThread, const char* msg, int field_line_idx);
 void TestPrintDatumMPI(PIC::Datum::cDatumStored& Datum, const char* msg, int field_line_idx);
 
+void SetDatum(double val, PIC::Datum::cDatumStored& Datum, int field_line_idx);
+void SetDatum(double val, PIC::Datum::cDatumStored& Datum, int start_field_line_idx, int end_field_line_idx); 
+void SetDatumAll(double val, PIC::Datum::cDatumStored& Datum);
+
+
 /**
  * Extended test function for multiple field lines
  * 
