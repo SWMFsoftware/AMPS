@@ -255,7 +255,6 @@ void TestPrintEPlusValues(PIC::Datum::cDatumStored& WaveEnergy,int PrintThread) 
     std::cout << "==========================================" << std::endl << std::endl;
 }
 
-
 /*
 ================================================================================
                     MPI-DISTRIBUTED TEST PRINT DATUM FUNCTION
@@ -265,9 +264,9 @@ FUNCTION: TestPrintDatumMPI
 
 PURPOSE:
 --------
-Performs distributed analysis of field line segment data across multiple MPI
+Performs distributed analysis of field line segment data across multiple MPI 
 processes and outputs comprehensive results from the root process. This function
-efficiently collects data from all processes, finds global maximums using
+efficiently collects data from all processes, finds global maximums using 
 MPI_Reduce, and displays the most significant segments based on relative values
 calculated from true global statistics.
 
@@ -275,7 +274,7 @@ ALGORITHM:
 ----------
 1. Distributed Global Maximum Detection (MPI_Reduce):
    - Each process finds local maximum for each datum element
-   - Custom MPI reduction operation finds global maximum while preserving
+   - Custom MPI reduction operation finds global maximum while preserving 
      process ownership information
    - Root process receives global maximums with process attribution
 
@@ -295,7 +294,7 @@ ALGORITHM:
 MPI COMMUNICATION PATTERN:
 ---------------------------
 1. MPI_Reduce: Global maximum detection with process tracking
-2. MPI_Bcast: Distribute global maximums to all processes
+2. MPI_Bcast: Distribute global maximums to all processes  
 3. MPI_Gather: Collect segment counts from all processes
 4. MPI_Send/Recv: Transfer segment data to root process
    - Variable-length data handled with separate metadata and data transfers
@@ -313,18 +312,17 @@ For each selected segment, displays:
 1. Segment index in the field line
 2. Maximum absolute value: [element_index]=value(relative_value)
    - element_index: Index of element with maximum absolute value
-   - value: The actual maximum absolute value in the segment
+   - value: The actual maximum absolute value in the segment  
    - relative_value: The relative value used for global ranking
 3. Process rank that owns the segment
-4. Thread ID within that process
-5. Complete list of all datum elements: [elem0, elem1, elem2, ...]
+4. Complete list of all datum elements: [elem0, elem1, elem2, ...]
 
 SELECTION CRITERIA:
 -------------------
 Segments are ranked by their maximum relative value using TRUE global maximums:
   max_relative = max(|data[i]|/global_max_across_all_processes[i])
 
-This ensures proper normalization across the entire distributed dataset, not
+This ensures proper normalization across the entire distributed dataset, not 
 just local process data, providing accurate global significance ranking.
 
 DISTRIBUTED FEATURES:
@@ -371,7 +369,7 @@ MPI PERFORMANCE:
 - Communication Complexity: O(log P) for reductions + O(K) for data gathering
 - Memory Usage: O(K*M) on root, O(k*M) on workers where:
   - K = total significant segments across all processes
-  - k = local significant segments per process
+  - k = local significant segments per process  
   - M = datum length
   - P = number of MPI processes
 - Network Efficiency: Minimized data transfer through filtering
@@ -403,7 +401,7 @@ MPI_Op_create([](void* in, void* inout, int* len, MPI_Datatype* datatype) {
 
 Point-to-Point Data Transfer:
 - Tag 0: relative_value (MPI_DOUBLE)
-- Tag 1: segment_idx (MPI_INT)
+- Tag 1: segment_idx (MPI_INT)  
 - Tag 2: element_idx (MPI_INT)
 - Tag 3: element_value (MPI_DOUBLE)
 - Tag 4: process_rank (MPI_INT)
@@ -425,19 +423,39 @@ SEE ALSO:
 
 ================================================================================
 */
+
 void TestPrintDatumMPI(PIC::Datum::cDatumStored& Datum, const char* msg, int field_line_idx) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    // Structure to hold segment data with relative values
+    struct SegmentWithRelativeValue {
+        double relative_value;
+        int segment_idx;
+        int element_idx;
+        double element_value;
+        int process_rank;
+        std::vector<double> all_data;
+        
+        SegmentWithRelativeValue() : relative_value(0.0), segment_idx(-1), element_idx(-1), 
+                                   element_value(0.0), process_rank(-1) {}
+    };
+
+    // Structure for MPI reduction to find max values per element
+    struct MaxValueData {
+        double value;
+        int rank;
+    };
+
     // Validate field line index on all processes
     if (PIC::FieldLine::nFieldLine <= 0 || field_line_idx >= PIC::FieldLine::nFieldLine || field_line_idx < 0) {
         if (rank == 0) {
-            std::cout << "\n=== " << msg << " === Root Process === Field Line=" << field_line_idx << " ===" << std::endl;
+            std::cout << "\n=== " << msg << " === Root Process (MPI_Reduce) === Field Line=" << field_line_idx << " ===" << std::endl;
             if (PIC::FieldLine::nFieldLine <= 0) {
                 std::cout << "ERROR: No field lines found!" << std::endl;
             } else {
-                std::cout << "ERROR: Field line index " << field_line_idx
+                std::cout << "ERROR: Field line index " << field_line_idx 
                           << " out of range [0, " << (PIC::FieldLine::nFieldLine - 1) << "]!" << std::endl;
             }
         }
@@ -447,25 +465,6 @@ void TestPrintDatumMPI(PIC::Datum::cDatumStored& Datum, const char* msg, int fie
     PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
     int num_segments = field_line->GetTotalSegmentNumber();
     int datum_length = Datum.length;
-
-    // Structure for segment data with relative values
-    struct SegmentWithRelativeValue {
-        double relative_value;
-        int segment_idx;
-        int element_idx;
-        double element_value;
-        int process_rank;
-        std::vector<double> all_data;
-
-        SegmentWithRelativeValue() : relative_value(0.0), segment_idx(-1), element_idx(-1),
-                                   element_value(0.0), process_rank(-1) {}
-    };
-
-    // Structure for MPI reduction to find max values per element
-    struct MaxValueData {
-        double value;
-        int rank;
-    };
 
     // Step 1: Find local maximum for each element
     std::vector<MaxValueData> local_max_per_element(datum_length);
@@ -507,7 +506,7 @@ void TestPrintDatumMPI(PIC::Datum::cDatumStored& Datum, const char* msg, int fie
     }, 1, &max_loc_op);
 
     std::vector<MaxValueData> global_max_per_element(datum_length);
-    MPI_Reduce(local_max_per_element.data(), global_max_per_element.data(),
+    MPI_Reduce(local_max_per_element.data(), global_max_per_element.data(), 
                datum_length, MPI_DOUBLE_INT, max_loc_op, 0, MPI_COMM_WORLD);
 
     MPI_Op_free(&max_loc_op);
@@ -550,7 +549,7 @@ void TestPrintDatumMPI(PIC::Datum::cDatumStored& Datum, const char* msg, int fie
             double max_abs_value = 0.0;
             int max_abs_element_idx = 0;
             double max_abs_element_val = 0.0;
-
+            
             for (int elem_idx = 0; elem_idx < datum_length; ++elem_idx) {
                 double abs_val = std::abs(data[elem_idx]);
                 if (abs_val > max_abs_value) {
@@ -567,11 +566,11 @@ void TestPrintDatumMPI(PIC::Datum::cDatumStored& Datum, const char* msg, int fie
             seg_data.element_value = max_abs_element_val;    // Actual max absolute value
             seg_data.process_rank = rank;
             seg_data.all_data.resize(datum_length);
-
+            
             for (int i = 0; i < datum_length; ++i) {
                 seg_data.all_data[i] = data[i];
             }
-
+            
             local_significant_segments.push_back(seg_data);
         }
     }
@@ -583,11 +582,11 @@ void TestPrintDatumMPI(PIC::Datum::cDatumStored& Datum, const char* msg, int fie
 
     // Step 5: Root process gathers all significant segments
     std::vector<SegmentWithRelativeValue> all_significant_segments;
-
+    
     if (rank == 0) {
         // Add root's own segments
-        all_significant_segments.insert(all_significant_segments.end(),
-                                      local_significant_segments.begin(),
+        all_significant_segments.insert(all_significant_segments.end(), 
+                                      local_significant_segments.begin(), 
                                       local_significant_segments.end());
 
         // Receive segments from other processes
@@ -597,18 +596,18 @@ void TestPrintDatumMPI(PIC::Datum::cDatumStored& Datum, const char* msg, int fie
 
             for (int i = 0; i < count; ++i) {
                 SegmentWithRelativeValue seg_data;
-
+                
                 // Receive basic data
                 MPI_Recv(&seg_data.relative_value, 1, MPI_DOUBLE, proc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(&seg_data.segment_idx, 1, MPI_INT, proc, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(&seg_data.element_idx, 1, MPI_INT, proc, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(&seg_data.element_value, 1, MPI_DOUBLE, proc, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(&seg_data.process_rank, 1, MPI_INT, proc, 4, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
+                
                 // Receive data array
                 seg_data.all_data.resize(datum_length);
                 MPI_Recv(seg_data.all_data.data(), datum_length, MPI_DOUBLE, proc, 5, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
+                
                 all_significant_segments.push_back(seg_data);
             }
         }
@@ -647,33 +646,39 @@ void TestPrintDatumMPI(PIC::Datum::cDatumStored& Datum, const char* msg, int fie
         std::cout << "Global maximum absolute values per element (via MPI_Reduce):" << std::endl;
         for (int elem_idx = 0; elem_idx < datum_length; ++elem_idx) {
             if (global_max_per_element[elem_idx].value > 0.0) {
-                std::cout << "  Element[" << elem_idx << "]: " << std::scientific << std::setprecision(6)
-                          << global_max_per_element[elem_idx].value
+                std::cout << "  Element[" << elem_idx << "]: " << std::scientific << std::setprecision(6) 
+                          << global_max_per_element[elem_idx].value 
                           << " (process " << global_max_per_element[elem_idx].rank << ")" << std::endl;
             }
         }
 
         // Sort all segments by relative value
-        std::sort(all_significant_segments.begin(), all_significant_segments.end(),
+        std::sort(all_significant_segments.begin(), all_significant_segments.end(), 
                   [](const SegmentWithRelativeValue& a, const SegmentWithRelativeValue& b) {
                       return a.relative_value > b.relative_value;
                   });
 
         // Print top segments
         int max_segments_to_print = std::min(400, static_cast<int>(all_significant_segments.size()));
-
+        
         std::cout << "\nTop " << max_segments_to_print << " segments with highest relative values (from all processes):" << std::endl;
         std::cout << "Segment    MaxElem[idx]=value(rel_val)    Process    All_Elements" << std::endl;
+        std::cout << "           |       |        |               |         |" << std::endl;
+        std::cout << "           |       |        |               |         +-- Complete datum array" << std::endl;
+        std::cout << "           |       |        |               +-- MPI process owning segment" << std::endl;
+        std::cout << "           |       |        +-- Relative value for ranking" << std::endl;
+        std::cout << "           |       +-- Maximum absolute value in segment" << std::endl;
+        std::cout << "           +-- Index of element with maximum absolute value" << std::endl;
         std::cout << std::string(100, '-') << std::endl;
 
         for (int i = 0; i < max_segments_to_print; ++i) {
             const SegmentWithRelativeValue& seg = all_significant_segments[i];
-
+            
             // Output: 1) segment index
             std::cout << std::setw(7) << seg.segment_idx << "    ";
-
+            
             // Output: 2) data and its index why the segment is selected
-            std::cout << "[" << seg.element_idx << "]="
+            std::cout << "[" << seg.element_idx << "]=" 
                       << std::scientific << std::setprecision(4) << seg.element_value
                       << "(" << std::fixed << std::setprecision(4) << seg.relative_value << ")"
                       << "    " << std::setw(7) << seg.process_rank << "    ";
@@ -693,7 +698,7 @@ void TestPrintDatumMPI(PIC::Datum::cDatumStored& Datum, const char* msg, int fie
         std::cout << "  Total processes: " << size << std::endl;
         std::cout << "  Total segments with data: " << all_significant_segments.size() << std::endl;
         std::cout << "  Segments printed: " << max_segments_to_print << std::endl;
-
+        
         // Process distribution statistics
         std::vector<int> segments_per_process(size, 0);
         for (const auto& seg : all_significant_segments) {
@@ -701,8 +706,13 @@ void TestPrintDatumMPI(PIC::Datum::cDatumStored& Datum, const char* msg, int fie
                 segments_per_process[seg.process_rank]++;
             }
         }
-
-        std::cout << "  Segments per process: ";
+        
+        // Show distribution of significant segments across MPI processes
+        // This indicates load balancing and data locality:
+        // - High numbers: Process owns many segments with significant data
+        // - Zero values: Process has no significant segments (small/zero data)
+        // - Uneven distribution may indicate load balancing issues
+        std::cout << "  Segments with data per process: ";
         for (int i = 0; i < size; ++i) {
             std::cout << "P" << i << ":" << segments_per_process[i];
             if (i < size - 1) std::cout << ", ";
@@ -712,26 +722,27 @@ void TestPrintDatumMPI(PIC::Datum::cDatumStored& Datum, const char* msg, int fie
         std::cout << "  Global maximum per element (via MPI_Reduce):" << std::endl;
         for (int elem_idx = 0; elem_idx < datum_length; ++elem_idx) {
             if (global_max_per_element[elem_idx].value > 0.0) {
-                std::cout << "    Element[" << elem_idx << "]: " << std::scientific << std::setprecision(6)
-                          << global_max_per_element[elem_idx].value
+                std::cout << "    Element[" << elem_idx << "]: " << std::scientific << std::setprecision(6) 
+                          << global_max_per_element[elem_idx].value 
                           << " (process " << global_max_per_element[elem_idx].rank << ")" << std::endl;
             }
         }
-
+        
         if (max_segments_to_print > 0) {
-            std::cout << "  Highest relative value: " << std::fixed << std::setprecision(6)
-                      << all_significant_segments[0].relative_value
-                      << " (element " << all_significant_segments[0].element_idx
+            std::cout << "  Highest relative value: " << std::fixed << std::setprecision(6) 
+                      << all_significant_segments[0].relative_value 
+                      << " (element " << all_significant_segments[0].element_idx 
                       << ", process " << all_significant_segments[0].process_rank << ")" << std::endl;
-            std::cout << "  Lowest relative value (in selection): " << std::fixed << std::setprecision(6)
-                      << all_significant_segments[max_segments_to_print-1].relative_value
-                      << " (element " << all_significant_segments[max_segments_to_print-1].element_idx
+            std::cout << "  Lowest relative value (in selection): " << std::fixed << std::setprecision(6) 
+                      << all_significant_segments[max_segments_to_print-1].relative_value 
+                      << " (element " << all_significant_segments[max_segments_to_print-1].element_idx 
                       << ", process " << all_significant_segments[max_segments_to_print-1].process_rank << ")" << std::endl;
         }
 
         std::cout << "==========================================" << std::endl << std::endl;
     }
 }
+
 
 /*
 ================================================================================
