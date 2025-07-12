@@ -233,6 +233,9 @@ auto CalculateWaveEnergyDensity = [&]() {
       SEP::AlfvenTurbulence_Kolmogorov::TestPrintDatumMPI(SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming,"g+",0);
       SEP::AlfvenTurbulence_Kolmogorov::TestPrintDatumMPI(SEP::AlfvenTurbulence_Kolmogorov::G_minus_streaming,"g-",0);
 
+//      SEP::AlfvenTurbulence_Kolmogorov::SetDatumAll(0.0,SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming);
+//      SEP::AlfvenTurbulence_Kolmogorov::TestPrintDatumMPI(SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming,"g+",0);
+
       //couple particles and turbulence  
 //      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::UpdateAllSegmentsWaveEnergyWithParticleCoupling(
 //		     SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
