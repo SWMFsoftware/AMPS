@@ -1391,3 +1391,460 @@ void ExampleSetDatumUsage() {
 } // namespace AlfvenTurbulence_Kolmogorov
 } // namespace SEP
 */
+
+/*
+================================================================================
+                    ANALYZE MAX SEGMENT PARTICLES FUNCTION
+================================================================================
+
+FUNCTION: AnalyzeMaxSegmentParticles
+
+PURPOSE:
+--------
+Finds the segment with maximum value for a specified datum element across all
+MPI processes, then performs detailed particle analysis in that segment including:
+- Total particle density
+- Directional particle densities (toward/from Sun)
+- Velocity-dependent densities (above/below local Alfven speed)
+- Background plasma density
+
+ALGORITHM:
+----------
+1. Global Maximum Detection (MPI_Reduce):
+   - Each process finds local maximum for the specified datum element
+   - Custom MPI reduction finds global maximum while preserving location info
+   - Identifies the segment and process with the maximum value
+
+2. Particle Analysis (on owning process):
+   - Only the process owning the max segment performs particle analysis
+   - Loops through all particles in the segment
+   - Calculates directional velocities relative to Sun
+   - Compares particle speeds to local Alfven velocity
+   - Computes various density categories
+
+3. Results Collection and Output:
+   - Owning process sends analysis results to root
+   - Root process outputs comprehensive analysis
+   - Includes segment location, datum info, and particle statistics
+
+PARAMETERS:
+-----------
+- Datum: Reference to datum storage for finding maximum
+- element_idx: Index of datum element to analyze (0 to Datum.length-1)
+- msg: Descriptive message for output header
+- field_line_idx: Index of field line to analyze (default: 0)
+
+OUTPUT SECTIONS:
+----------------
+1. Maximum segment identification with location and datum value
+2. Particle density analysis:
+   - Total particle density
+   - Densities moving toward/from Sun
+   - Velocity-dependent densities (above/below Alfven speed)
+3. Background plasma density
+4. Local plasma parameters (Alfven speed, magnetic field, etc.)
+
+USAGE EXAMPLES:
+---------------
+// Analyze segment with maximum wave energy element 0
+AnalyzeMaxSegmentParticles(WaveEnergy, 0, "Max Wave Energy Analysis");
+
+// Analyze maximum magnetic field component
+AnalyzeMaxSegmentParticles(MagneticField, 2, "Max B_z Analysis", 3);
+
+// Find maximum pressure and analyze particles
+AnalyzeMaxSegmentParticles(Pressure, 0, "Max Pressure Particle Analysis");
+
+REQUIREMENTS:
+-------------
+- Active MPI environment
+- Valid field line with particle data
+- Background plasma data available
+- Proper particle velocity and position data
+
+MPI COMMUNICATION:
+------------------
+1. MPI_Reduce: Find global maximum with location
+2. Point-to-point: Transfer analysis results to root process
+
+PARTICLE ANALYSIS DETAILS:
+---------------------------
+Directional Analysis:
+- Toward Sun: v_radial < 0 (inward velocity)
+- From Sun: v_radial > 0 (outward velocity)
+
+Velocity Classification:
+- Fast particles: |v| > v_Alfven
+- Slow particles: |v| < v_Alfven
+
+Density Calculations:
+- Uses particle weights and segment volume
+- Converts to physical units (particles/m³)
+
+PERFORMANCE:
+------------
+- Communication: O(log P) for reduction + O(1) for results
+- Particle loop: O(N_particles) on one process only
+- Memory: O(1) additional storage
+
+ERROR HANDLING:
+---------------
+- Validates datum element index
+- Handles zero maximum values
+- Manages missing particle or plasma data
+- Prevents division by zero in calculations
+
+NOTES:
+------
+- Only analyzes the single segment with maximum datum value
+- Particle analysis performed only on owning MPI process
+- Requires proper initialization of background plasma parameters
+- Sun direction determined from segment position
+
+SEE ALSO:
+---------
+- TestPrintDatumMPI(): For comprehensive datum analysis
+- GetBackgroundPlasmaParameters(): For plasma parameter access
+- CalculateAlfvenSpeed(): For local Alfven velocity calculation
+
+================================================================================
+*/
+
+namespace SEP {
+namespace AlfvenTurbulence_Kolmogorov {
+
+void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, int element_idx, const char* msg, int field_line_idx) {
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    // Structure for finding maximum with location info
+    struct MaxLocationData {
+        double value;
+        int segment_idx;
+        int process_rank;
+        double position[3];  // Segment position for distance calculation
+    };
+
+    // Validate inputs
+    if (PIC::FieldLine::nFieldLine <= 0 || field_line_idx >= PIC::FieldLine::nFieldLine || field_line_idx < 0) {
+        if (rank == 0) {
+            std::cout << "\n=== " << msg << " === ERROR ===" << std::endl;
+            std::cout << "Invalid field line index or no field lines found!" << std::endl;
+        }
+        return;
+    }
+
+    PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
+    int num_segments = field_line->GetTotalSegmentNumber();
+    int datum_length = Datum.length;
+
+    if (element_idx < 0 || element_idx >= datum_length) {
+        if (rank == 0) {
+            std::cout << "\n=== " << msg << " === ERROR ===" << std::endl;
+            std::cout << "Invalid element index " << element_idx
+                      << " for datum length " << datum_length << std::endl;
+        }
+        return;
+    }
+
+    // Step 1: Find local maximum for the specified element
+    MaxLocationData local_max = {0.0, -1, rank, {0.0, 0.0, 0.0}};
+
+    for (int seg_idx = 0; seg_idx < num_segments; ++seg_idx) {
+        PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
+        if (!segment) continue;
+
+        double* data = segment->GetDatum_ptr(Datum);
+        if (!data) continue;
+
+        // Only consider segments owned by this process
+        if (segment->Thread != rank) continue;
+
+        double abs_val = std::abs(data[element_idx]);
+        if (abs_val > local_max.value) {
+            local_max.value = abs_val;
+            local_max.segment_idx = seg_idx;
+            local_max.process_rank = rank;
+
+            // Get segment center position for distance calculation
+            GetSegmentCenterPosition(segment, local_max.position);
+        }
+    }
+
+    // Step 2: Find global maximum using MPI_Reduce
+    MPI_Op max_loc_op;
+    MPI_Op_create([](void* in, void* inout, int* len, MPI_Datatype* datatype) {
+        MaxLocationData* in_data = static_cast<MaxLocationData*>(in);
+        MaxLocationData* inout_data = static_cast<MaxLocationData*>(inout);
+        for (int i = 0; i < *len; ++i) {
+            if (in_data[i].value > inout_data[i].value) {
+                inout_data[i] = in_data[i];
+            }
+        }
+    }, 1, &max_loc_op);
+
+    MaxLocationData global_max;
+    MPI_Reduce(&local_max, &global_max, 1, MPI_BYTE, max_loc_op, 0, MPI_COMM_WORLD);
+    MPI_Op_free(&max_loc_op);
+
+    // Broadcast global max info to all processes for analysis
+    MPI_Bcast(&global_max, sizeof(MaxLocationData), MPI_BYTE, 0, MPI_COMM_WORLD);
+
+    // Step 3: Particle analysis (only on the process owning the max segment)
+    struct ParticleAnalysisResults {
+        // Density results
+        double total_density;
+        double density_toward_sun;
+        double density_from_sun;
+        double density_toward_sun_fast;
+        double density_toward_sun_slow;
+        double density_from_sun_fast;
+        double density_from_sun_slow;
+        double background_plasma_density;
+
+        // Local plasma parameters
+        double alfven_speed;
+        double magnetic_field_strength;
+        double segment_volume;
+
+        // Particle counts
+        int total_particles;
+        int particles_toward_sun;
+        int particles_from_sun;
+
+        // Analysis success flag
+        bool analysis_successful;
+    };
+
+    ParticleAnalysisResults results = {};
+    results.analysis_successful = false;
+
+    if (rank == global_max.process_rank && global_max.value > 0.0) {
+        // Get the segment with maximum value
+        PIC::FieldLine::cFieldLineSegment* max_segment = field_line->GetSegment(global_max.segment_idx);
+
+        if (max_segment) {
+            // Get segment center position for distance calculation only
+            double segment_position[3];
+            SEP::AlfvenTurbulence_Kolmogorov::GetSegmentCenterPosition(max_segment, segment_position);
+
+            // Get segment properties
+            results.segment_volume = SEP::FieldLine::GetSegmentVolume(max_segment, field_line_idx);
+
+            // Get local plasma parameters
+            double rho;
+            max_segment->GetPlasmaDensity(0.5, rho);  // Number density at segment midpoint
+            results.background_plasma_density = rho;  // Store number density for output
+            rho *= PIC::MolecularData::GetMass(_H_SPEC_);  // Convert to mass density [kg/m³]
+
+            // Get magnetic field from field line
+            double B[3];
+            PIC::FieldLine::FieldLinesAll[field_line_idx].GetMagneticField(B, 0.5 + global_max.segment_idx);
+            results.magnetic_field_strength = Vector3D::Length(B);
+
+            // Calculate local Alfven speed
+            results.alfven_speed = results.magnetic_field_strength / sqrt(VacuumPermeability * rho);
+
+            // Initialize counters
+            results.total_particles = 0;
+            results.particles_toward_sun = 0;
+            results.particles_from_sun = 0;
+
+            double total_weight_toward_sun = 0.0;
+            double total_weight_from_sun = 0.0;
+            double total_weight_toward_sun_fast = 0.0;
+            double total_weight_toward_sun_slow = 0.0;
+            double total_weight_from_sun_fast = 0.0;
+            double total_weight_from_sun_slow = 0.0;
+            double total_weight_all = 0.0;
+
+            // Loop through all particles in the segment using the correct method
+            long int p = max_segment->FirstParticleIndex;  // Start of particle linked list
+            while (p != -1) {
+                results.total_particles++;
+
+                // Get particle species and velocity components
+                int spec = PIC::ParticleBuffer::GetI(p);
+                double vParallel = PIC::ParticleBuffer::GetVParallel(p);
+                double vNormal = PIC::ParticleBuffer::GetVNormal(p);
+                double v_magnitude = sqrt(vParallel*vParallel + vNormal*vNormal);
+
+                // Get statistical weight (number of real particles represented)
+                double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec] *
+                                   PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+
+                total_weight_all += stat_weight;
+
+                // Classify particle direction and speed
+                // Positive vParallel = from Sun, Negative vParallel = toward Sun
+                bool moving_toward_sun = (vParallel < 0.0);
+                bool is_fast = (v_magnitude > results.alfven_speed);
+
+                if (moving_toward_sun) {
+                    results.particles_toward_sun++;
+                    total_weight_toward_sun += stat_weight;
+
+                    if (is_fast) {
+                        total_weight_toward_sun_fast += stat_weight;
+                    } else {
+                        total_weight_toward_sun_slow += stat_weight;
+                    }
+                } else {
+                    results.particles_from_sun++;
+                    total_weight_from_sun += stat_weight;
+
+                    if (is_fast) {
+                        total_weight_from_sun_fast += stat_weight;
+                    } else {
+                        total_weight_from_sun_slow += stat_weight;
+                    }
+                }
+
+                // Move to next particle in linked list
+                p = PIC::ParticleBuffer::GetNext(p);
+            }
+
+            // Convert to densities (particles per unit volume)
+            if (results.segment_volume > 0.0) {
+                results.total_density = total_weight_all / results.segment_volume;
+                results.density_toward_sun = total_weight_toward_sun / results.segment_volume;
+                results.density_from_sun = total_weight_from_sun / results.segment_volume;
+                results.density_toward_sun_fast = total_weight_toward_sun_fast / results.segment_volume;
+                results.density_toward_sun_slow = total_weight_toward_sun_slow / results.segment_volume;
+                results.density_from_sun_fast = total_weight_from_sun_fast / results.segment_volume;
+                results.density_from_sun_slow = total_weight_from_sun_slow / results.segment_volume;
+            }
+
+            results.analysis_successful = true;
+        }
+    }
+
+    // Step 4: Send results to root process for output
+    if (rank != 0 && rank == global_max.process_rank) {
+        // Non-root process with max segment sends results to root
+        MPI_Send(&results, sizeof(ParticleAnalysisResults), MPI_BYTE, 0, 100, MPI_COMM_WORLD);
+    } else if (rank == 0 && global_max.process_rank != 0) {
+        // Root process receives results from owning process
+        MPI_Recv(&results, sizeof(ParticleAnalysisResults), MPI_BYTE, global_max.process_rank, 100, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+
+    // Step 5: Output results (only from root process)
+    if (rank == 0) {
+        std::cout << "\n=== " << msg << " === Max Segment Particle Analysis ===" << std::endl;
+        std::cout << "Field Line: " << field_line_idx << ", Element: " << element_idx << std::endl;
+        std::cout << std::string(80, '=') << std::endl;
+
+        if (global_max.value == 0.0) {
+            std::cout << "No non-zero values found for element " << element_idx << std::endl;
+            return;
+        }
+
+        std::cout << "MAXIMUM SEGMENT INFORMATION:" << std::endl;
+        std::cout << "  Segment index: " << global_max.segment_idx << std::endl;
+        std::cout << "  Process owner: " << global_max.process_rank << std::endl;
+        std::cout << "  Maximum element index: " << element_idx << std::endl;
+        std::cout << "  Maximum element value: " << std::scientific << std::setprecision(6) << global_max.value << std::endl;
+
+        // Get and display all datum elements for this segment
+        if (global_max.process_rank == 0) {
+            // Root process can access the data directly
+            PIC::FieldLine::cFieldLineSegment* max_segment = field_line->GetSegment(global_max.segment_idx);
+            if (max_segment) {
+                double* datum_data = max_segment->GetDatum_ptr(Datum);
+                if (datum_data) {
+                    std::cout << "  Complete datum data: [";
+                    for (int i = 0; i < datum_length; ++i) {
+                        if (i > 0) std::cout << ", ";
+                        std::cout << std::scientific << std::setprecision(4) << datum_data[i];
+                    }
+                    std::cout << "]" << std::endl;
+                }
+            }
+        } else {
+            // Data is on another process - could be sent with results if needed
+            std::cout << "  Complete datum data: [Available on process " << global_max.process_rank << "]" << std::endl;
+        }
+
+        if (!results.analysis_successful) {
+            std::cout << "\nERROR: Particle analysis failed!" << std::endl;
+            return;
+        }
+
+        std::cout << "\nLOCAL PLASMA PARAMETERS:" << std::endl;
+        std::cout << "  Background plasma density: " << std::scientific << std::setprecision(4)
+                  << results.background_plasma_density << " m⁻³" << std::endl;
+        std::cout << "  Magnetic field strength: " << std::scientific << std::setprecision(4)
+                  << results.magnetic_field_strength << " T" << std::endl;
+        std::cout << "  Alfven speed: " << std::scientific << std::setprecision(4)
+                  << results.alfven_speed << " m/s" << std::endl;
+        std::cout << "  Segment volume: " << std::scientific << std::setprecision(4)
+                  << results.segment_volume << " m³" << std::endl;
+
+        std::cout << "\nPARTICLE ANALYSIS RESULTS:" << std::endl;
+        std::cout << "  Total particles in segment: " << results.total_particles << std::endl;
+        std::cout << "  Particles toward Sun: " << results.particles_toward_sun
+                  << " (" << std::fixed << std::setprecision(1)
+                  << (100.0 * results.particles_toward_sun / std::max(1, results.total_particles)) << "%)" << std::endl;
+        std::cout << "  Particles from Sun: " << results.particles_from_sun
+                  << " (" << std::fixed << std::setprecision(1)
+                  << (100.0 * results.particles_from_sun / std::max(1, results.total_particles)) << "%)" << std::endl;
+
+        std::cout << "\nPARTICLE DENSITIES [m⁻³]:" << std::endl;
+        std::cout << "  Total density: " << std::scientific << std::setprecision(4)
+                  << results.total_density << std::endl;
+        std::cout << "  Density toward Sun: " << std::scientific << std::setprecision(4)
+                  << results.density_toward_sun << std::endl;
+        std::cout << "  Density from Sun: " << std::scientific << std::setprecision(4)
+                  << results.density_from_sun << std::endl;
+
+        std::cout << "\nVELOCITY-DEPENDENT DENSITIES [m⁻³]:" << std::endl;
+        std::cout << "  Toward Sun (fast, |v| > v_A): " << std::scientific << std::setprecision(4)
+                  << results.density_toward_sun_fast << std::endl;
+        std::cout << "  Toward Sun (slow, |v| < v_A): " << std::scientific << std::setprecision(4)
+                  << results.density_toward_sun_slow << std::endl;
+        std::cout << "  From Sun (fast, |v| > v_A): " << std::scientific << std::setprecision(4)
+                  << results.density_from_sun_fast << std::endl;
+        std::cout << "  From Sun (slow, |v| < v_A): " << std::scientific << std::setprecision(4)
+                  << results.density_from_sun_slow << std::endl;
+
+        std::cout << "\nDENSITY RATIOS:" << std::endl;
+        if (results.background_plasma_density > 0.0) {
+            std::cout << "  Total particle/background ratio: " << std::fixed << std::setprecision(6)
+                      << (results.total_density / results.background_plasma_density) << std::endl;
+        }
+        if (results.total_density > 0.0) {
+            std::cout << "  Fast/slow particle ratio: " << std::fixed << std::setprecision(6)
+                      << ((results.density_toward_sun_fast + results.density_from_sun_fast) /
+                          (results.density_toward_sun_slow + results.density_from_sun_slow)) << std::endl;
+            std::cout << "  Outward/inward flow ratio: " << std::fixed << std::setprecision(6)
+                      << (results.density_from_sun / std::max(1e-20, results.density_toward_sun)) << std::endl;
+        }
+
+        std::cout << std::string(80, '=') << std::endl;
+        std::cout << "Analysis complete." << std::endl << std::endl;
+    }
+}
+
+} // namespace AlfvenTurbulence_Kolmogorov
+} // namespace SEP
+
+// Example usage:
+/*
+namespace SEP {
+namespace AlfvenTurbulence_Kolmogorov {
+
+void ExampleMaxSegmentAnalysis() {
+    // Analyze segment with maximum wave energy
+    AnalyzeMaxSegmentParticles(WaveEnergy, 0, "Max Wave Energy Particle Analysis");
+
+    // Analyze segment with maximum magnetic field component
+    AnalyzeMaxSegmentParticles(MagneticField, 2, "Max B_z Particle Analysis", 1);
+
+    // Analyze maximum pressure segment
+    AnalyzeMaxSegmentParticles(Pressure, 0, "Max Pressure Particle Analysis");
+}
+
+} // namespace AlfvenTurbulence_Kolmogorov
+} // namespace SEP
+*/
