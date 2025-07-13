@@ -1394,6 +1394,7 @@ void ExampleSetDatumUsage() {
 
 
 
+
 /*
 ================================================================================
                     ANALYZE MAX SEGMENT PARTICLES FUNCTION
@@ -1403,149 +1404,219 @@ FUNCTION: AnalyzeMaxSegmentParticles
 
 PURPOSE:
 --------
-Finds the segment with maximum relative value across ALL datum elements across 
-all MPI processes, then performs detailed particle analysis in that segment 
-including:
-- Total particle density
-- Directional particle densities (toward/from Sun)
-- Velocity-dependent densities (above/below local Alfven speed)
-- Background plasma density
+Performs comprehensive analysis of the field line segment with maximum relative 
+datum value across all MPI processes. This function combines datum analysis, 
+particle dynamics, and quasi-linear theory (QLT) wave-particle coupling 
+calculations to provide detailed physics insights at the most significant 
+location in the simulation.
 
-ALGORITHM:
-----------
-1. Global Maximum Detection (MPI_Allreduce):
-   - Each process finds local maximum for each datum element
-   - MPI_Allreduce finds global maximum for each element across all processes
-   - Establishes normalization factors for relative value calculation
+ALGORITHM OVERVIEW:
+-------------------
+1. Global Maximum Detection:
+   - Uses MPI_Allreduce to find global maximum for each datum element
+   - Uses MPI_MAXLOC to identify segment with maximum relative value
+   - Ensures consistent selection across all MPI processes
 
-2. Segment Selection (MPI_Reduce):
-   - For each segment, calculates relative values: |data[i]|/global_max[i]
-   - Finds segment with maximum relative value across ALL datum elements
-   - Uses custom MPI reduction to find global maximum while preserving location
+2. Particle Dynamics Analysis:
+   - Counts and categorizes particles by direction and speed
+   - Calculates particle densities with proper statistical weighting
+   - Compares particle speeds to local Alfvén velocity
 
-3. Particle Analysis (on owning process):
-   - Only the process owning the max segment performs particle analysis
-   - Loops through all particles in the segment using particle buffer methods
-   - Calculates directional velocities using vParallel (field-aligned coordinate)
-   - Compares particle speeds to local Alfven velocity
-   - Computes various density categories
+3. Wave-Particle Coupling Analysis:
+   - Computes streaming integrals S±(p) using quasi-linear theory
+   - Calculates growth rates γ±(k) for each wavenumber bin
+   - Determines integrated growth/damping rates Γ± across spectrum
 
-4. Results Collection and Output:
-   - Owning process sends analysis results to root
-   - Root process outputs comprehensive analysis
-   - Shows which element drove the selection and complete datum context
+PHYSICS BACKGROUND:
+-------------------
+The function implements resonant wave-particle interactions in magnetized 
+plasmas where particles interact with Alfvén waves through cyclotron resonance:
+
+    ω - k‖ v‖ = ±Ωc
+
+Resonant condition gives: k_res = Ωc / |μ v|, where μ = v‖/v is pitch cosine.
+
+QUASI-LINEAR THEORY IMPLEMENTATION:
+-----------------------------------
+Streaming Integrals:
+    S+(p) = 2πp²v ∫₋₁⁰ μf(p,μ) dμ = (2π/ΔV Δln p) Σ w_cnt p²ᵢvᵢμᵢ  (μᵢ < 0)
+    S-(p) = 2πp²v ∫₀⁺¹ μf(p,μ) dμ = (2π/ΔV Δln p) Σ w_cnt p²ᵢvᵢμᵢ  (μᵢ > 0)
+
+Growth Rates:
+    γ±(kⱼ) = (π²Ω²/2B²kⱼ) S±(pk)    where pk = mΩ/kⱼ
+
+Integrated Rates:
+    Γ± = Δln k × Σⱼ S±(kⱼ) × kⱼ
 
 PARAMETERS:
 -----------
 - Datum: Reference to datum storage for finding maximum across all elements
-- msg: Descriptive message for output header
+- msg: Descriptive message for output header  
 - field_line_idx: Index of field line to analyze (default: 0)
+
+SELECTION CRITERIA:
+-------------------
+Segments are ranked by maximum relative value across ALL datum elements:
+    segment_max_relative = max(|data[i]|/global_max[i]) for i ∈ [0, datum_length-1]
+
+This ensures:
+- Fair comparison between elements with different physical scales
+- Automatic selection of most physically significant segment
+- Element-agnostic analysis considering all datum components
+
+MPI COMMUNICATION PATTERN:
+---------------------------
+1. MPI_Allreduce: Find global maximum for each datum element
+2. MPI_MAXLOC: Identify process and segment with maximum relative value
+3. MPI_Bcast: Distribute segment information to all processes
+4. MPI_Bcast: Transfer analysis results from owning process to root
+
+PARTICLE ANALYSIS DETAILS:
+---------------------------
+Directional Classification (using field-aligned coordinates):
+- Toward Sun: vParallel < 0 (negative parallel velocity, μ < 0)
+- From Sun: vParallel > 0 (positive parallel velocity, μ > 0)
+
+Velocity Classification:
+- Fast particles: |v| > v_Alfvén (super-Alfvénic)
+- Slow particles: |v| < v_Alfvén (sub-Alfvénic)
+
+Statistical Weights:
+- Species-specific: GlobalParticleWeight[spec] where spec = GetI(particle)
+- Individual corrections: GetIndividualStatWeightCorrection(particle)
+
+WAVE-PARTICLE COUPLING DETAILS:
+--------------------------------
+Wavenumber Grid:
+- Range: k ∈ [10⁻⁸, 10⁻²] m⁻¹
+- Bins: NK = 128 logarithmically spaced
+- Spacing: Δln k = ln(k_max/k_min)/(NK-1)
+
+Momentum Grid (for normalization):
+- Range: p ∈ [10⁻²⁰, 10⁻¹⁷] kg⋅m/s  
+- Spacing: Δln p = ln(p_max/p_min)/(NP-1)
+
+Resonance Condition:
+- k_res = Ωc / |μ v| where Ωc = qB/m (cyclotron frequency)
+- Bin index: j = round(ln(k_res/k_min) / Δln k)
+
+Streaming Integral Coefficient:
+    coeff = 2π × (π²Ω²/B²) × (w p²vμ) × (1/ΔV) / (2 Δln p) / k
+
+Wave Coupling Logic:
+- μ < 0: Couples to outward waves (S+), kernel = vμ - v_A
+- μ > 0: Couples to inward waves (S-), kernel = vμ + v_A
 
 OUTPUT SECTIONS:
 ----------------
-1. Maximum segment identification with:
-   - Segment index and owning process
-   - Element index that achieved maximum relative value
-   - Element value and relative value
-   - Complete datum array for context
-   - Global maximum values for each element
-2. Particle density analysis:
-   - Total particle density
-   - Densities moving toward/from Sun (based on vParallel sign)
-   - Velocity-dependent densities (above/below Alfven speed)
-3. Background plasma density and local parameters
-4. Particle count statistics and density ratios
+1. Maximum Segment Information:
+   - Segment index and owning MPI process
+   - Element index achieving maximum relative value
+   - Complete datum array and global maximum context
+
+2. Local Plasma Parameters:
+   - Background plasma density, magnetic field strength
+   - Alfvén speed and segment volume
+
+3. Particle Dynamics:
+   - Total particles and directional breakdown
+   - Density calculations with statistical weighting
+   - Velocity-dependent classifications
+
+4. Wave-Particle Coupling:
+   - Streaming integrals S± statistics (max values, sums)
+   - Growth rates γ± per wavenumber bin
+   - Integrated growth/damping rates Γ± across spectrum
+   - Resonant wavenumbers for maximum interactions
+
+5. Physical Ratios:
+   - Particle/background density ratio
+   - Fast/slow particle ratio
+   - Outward/inward flow ratio
 
 USAGE EXAMPLES:
 ---------------
 // Find segment with maximum relative value across all datum elements
 AnalyzeMaxSegmentParticles(WaveEnergy, "Wave Energy Analysis");
 
-// Analyze different field line
+// Analyze specific field line
 AnalyzeMaxSegmentParticles(MagneticField, "B-field Analysis", 3);
 
-// Find maximum pressure segment and analyze particles
-AnalyzeMaxSegmentParticles(Pressure, "Pressure Analysis");
+// Multiple field line analysis loop
+for (int fl = 0; fl < num_field_lines; ++fl) {
+    AnalyzeMaxSegmentParticles(Pressure, "Multi-Line Analysis", fl);
+}
 
 REQUIREMENTS:
 -------------
-- Active MPI environment
-- Valid field line with particle data
-- Background plasma data available
-- Proper particle velocity and position data
+- Active MPI environment with MPI_COMM_WORLD
+- Valid field line with particle data and datum arrays
+- Proper initialization of:
+  * ParticleWeightTimeStep::GlobalParticleWeight[spec]
+  * PIC::ParticleBuffer particle data access functions
+  * Background plasma density and magnetic field data
 
-MPI COMMUNICATION:
-------------------
-1. MPI_Allreduce: Find global maximum for each datum element
-2. MPI_Reduce: Find segment with maximum relative value globally
-3. MPI_Bcast: Broadcast global maximum info to all processes
-4. Point-to-point: Transfer analysis results to root process
-
-PARTICLE ANALYSIS DETAILS:
----------------------------
-Directional Analysis (using field-aligned coordinates):
-- Toward Sun: vParallel < 0 (negative parallel velocity)
-- From Sun: vParallel > 0 (positive parallel velocity)
-
-Velocity Classification:
-- Fast particles: |v| > v_Alfven (supraalfvenic)
-- Slow particles: |v| < v_Alfven (subalfvenic)
-
-Statistical Weights:
-- Uses species-specific weights: GlobalParticleWeight[spec]
-- Where spec = PIC::ParticleBuffer::GetI(p)
-
-Density Calculations:
-- Uses particle statistical weights and segment volume
-- Converts to physical units (particles/m³)
-
-SELECTION CRITERIA:
--------------------
-Segments are ranked by their maximum relative value across ALL elements:
-  segment_max_relative = max(|data[i]|/global_max[i]) for i in [0, datum_length-1]
-
-This ensures:
-- Fair comparison between elements with different scales
-- Automatic selection of most significant segment
-- Element-agnostic analysis (considers all datum components)
-
-PERFORMANCE:
-------------
-- Communication: O(log P) for reductions + O(1) for results transfer
-- Element analysis: O(M) where M = datum_length
-- Particle loop: O(N_particles) on one process only
-- Memory: O(M) for global maximum storage
+PHYSICAL CONSTANTS USED:
+-------------------------
+- Elementary charge: PIC::CONST::ElementaryCharge
+- Proton mass: PIC::MolecularData::GetMass(_H_PLUS_SPEC_)
+- Light speed: PIC::CONST::LightSpeed
+- Vacuum permeability: VacuumPermeability
 
 ERROR HANDLING:
 ---------------
-- Validates field line index
+- Validates field line index on all processes
 - Handles zero maximum values across all elements
-- Manages missing particle or plasma data
-- Prevents division by zero in relative value calculations
+- Manages particles outside momentum/velocity ranges
+- Prevents division by zero in calculations
+- Gracefully handles segments without particle data
 
-NOTES:
-------
-- Analyzes ALL datum elements, not just a specified one
-- Automatically selects most significant segment across all elements
-- Particle analysis performed only on owning MPI process
-- Uses field-aligned coordinate system (vParallel) for direction determination
-- Requires proper initialization of background plasma parameters
+PERFORMANCE CHARACTERISTICS:
+-----------------------------
+- MPI Communication: O(log P) for reductions + O(1) for broadcasts
+- Element Analysis: O(M) where M = datum_length  
+- Particle Loop: O(N_particles) on owning process only
+- QLT Calculation: O(N_particles × NK) for wave-particle coupling
+- Memory Usage: O(NK + M) for analysis arrays
 
-SEE ALSO:
----------
-- TestPrintDatumMPI(): For comprehensive datum analysis across processes
-- SetDatum(): For setting datum values for testing
-- PIC::ParticleBuffer methods: For particle data access
+LIMITATIONS:
+------------
+- Analyzes only single segment (highest relative value)
+- Assumes non-relativistic cyclotron frequency (Ωc = qB/m)
+- Uses field-aligned coordinate system
+- Requires uniform k-grid spacing in log space
+
+PHYSICS VALIDATION:
+-------------------
+Expected Results:
+- Γ+ > 0: Particles drive instability in outward waves
+- Γ- > 0: Particles drive instability in inward waves  
+- Γ± < 0: Particles damp corresponding wave mode
+- |Γ±| ~ Ωc: Growth rates scale with cyclotron frequency
+
+Consistency Checks:
+- Total particle count should equal sum of directional counts
+- Density ratios should be physically reasonable (< 1 typically)
+- Resonant wavenumbers should span expected turbulence range
+
+RELATED FUNCTIONS:
+------------------
+- TestPrintDatumMPI(): Comprehensive multi-segment datum analysis
+- SetDatum(): Initialize datum values for testing
+- AccumulateParticleFluxForWaveCoupling(): Production wave-particle coupling
+- CalculateGrowthRatesFromAccumulatedFlux(): Compute γ± from accumulated data
+
+THEORETICAL REFERENCES:
+-----------------------
+- Quasi-linear theory of plasma waves (Kennel & Engelmann, 1966)
+- Alfvén wave turbulence in solar wind (Tu & Marsch, 1995)
+- Particle transport in turbulent magnetic fields (Schlickeiser, 2002)
 
 ================================================================================
 */
 
 namespace SEP {
 namespace AlfvenTurbulence_Kolmogorov {
-
-
-
-
 void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg, int field_line_idx) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -1575,6 +1646,13 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
     int G_minus_max_bin; // K-bin with maximum G_minus
     double G_plus_sum;   // Sum of all G_plus values
     double G_minus_sum;  // Sum of all G_minus values
+
+
+// Add these fields to your ParticleAnalysisResults structure:
+double gamma_plus_max;   // Maximum growth rate γ+(kj)
+double gamma_minus_max;  // Maximum growth rate γ-(kj)
+double Gamma_plus_total; // Total integrated growth rate Γ+
+double Gamma_minus_total;// Total integrated damping rate Γ-
     };
 
     // Simple structure for max location (avoid complex nested structs)
@@ -1805,34 +1883,82 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
                 }
                 
                 // ================================================================
-                // CALCULATE G_PLUS AND G_MINUS CONTRIBUTIONS (following AccumulateParticleFluxForWaveCoupling)
+                // CALCULATE G_PLUS AND G_MINUS CONTRIBUTIONS (reformulated without Δt, Δs)
+                // Following the streaming integral formulation: S±(p) = (2π/ΔV Δln p) Σ w_cnt p²v μ
                 // ================================================================
                 if (v_magnitude > 1.0e-20 && std::abs(mu) > 1.0e-10) {
                     // Calculate relativistic momentum
                     double gamma_rel = 1.0 / sqrt(1.0 - (v_magnitude*v_magnitude)/(SpeedOfLight*SpeedOfLight));
                     double p_momentum = gamma_rel * PIC::MolecularData::GetMass(_H_PLUS_SPEC_) * v_magnitude;
                     
-                    // Calculate resonant wavenumber: k_res = Ω / |μ v|
-                    double kRes = Omega / (std::abs(mu) * v_magnitude);
-                    
-                    // Find k-bin index
-                    int j = (int)(0.5 + (log(kRes/K_MIN) / DLNK));
-                    if (j >= 0 && j < NK) {
-                        double k_j = K_MIN * exp(j * DLNK);
+                    // Check if momentum is in valid range
+                    const double P_MIN = 1.0e-20;
+                    const double P_MAX = 1.0e-17;
+                    if (p_momentum >= P_MIN && p_momentum <= P_MAX) {
+                        // Calculate resonant wavenumber: k_res = Ω / |μ v|
+                        double kRes = Omega / (std::abs(mu) * v_magnitude);
                         
-                        // Calculate coefficient (assuming dt = 1.0 for analysis, ds_seg = segment_length for normalization)
-                        double ds_seg = max_segment->GetLength();  // Use segment length as reference path
-                        double p2v = p_momentum * p_momentum * v_magnitude;
-                        double coeff = 2.0 * 3.141592653589793 * pref * stat_weight * p2v * (ds_seg / v_magnitude) / 
-                                      (2.0 * 1.0 * DLNP) / results.segment_volume / k_j;  // dt = 1.0 for analysis
-                        
-                        // Add contributions following the same logic as AccumulateParticleFluxForWaveCoupling
-                        if (mu < 0.0) {  // Particles with mu<0 interact with outward waves
-                            G_plus_analysis[j] += coeff * (v_magnitude * mu - results.alfven_speed);
+                        // Find k-bin index
+                        int j = (int)(0.5 + (log(kRes/K_MIN) / DLNK));
+                        if (j >= 0 && j < NK) {
+                            double k_j = K_MIN * exp(j * DLNK);
+                            
+                            // Calculate p²vμ term (weighted momentum-velocity-pitch product)
+                            double p2vmu = stat_weight * p_momentum * p_momentum * v_magnitude * mu;
+                            
+                            // Calculate coefficient following the streaming integral formulation
+                            // coeff = 2π * (π²Ω²/B²) * (w p²vμ) * (1/ΔV) / (2 Δln p) / k
+                            double coeff = 2.0 * 3.141592653589793 * pref * p2vmu / results.segment_volume / (2.0 * DLNP) / k_j;
+                            
+                            // Add contributions following the streaming integral logic
+                            // Note: This formulation uses μ directly (not absolute value) to preserve sign
+                            if (mu < 0.0) {  // Particles with μ<0 couple to outward waves (W+)
+                                double contribution = coeff * (v_magnitude * mu - results.alfven_speed);
+                                G_plus_analysis[j] += contribution;
+                                
+                                // Debug: Print first few contributions
+                                static int debug_count_plus = 0;
+                                if (debug_count_plus < 5) {
+                                    std::cout << "DEBUG G+ contribution " << debug_count_plus << ": mu=" << mu 
+                                              << ", coeff=" << coeff << ", kernel=" << (v_magnitude * mu - results.alfven_speed)
+                                              << ", contribution=" << contribution << ", k_bin=" << j << std::endl;
+                                    debug_count_plus++;
+                                }
+                            } else {  // Particles with μ>0 couple to inward waves (W-)  
+                                double contribution = coeff * (v_magnitude * mu + results.alfven_speed);
+                                G_minus_analysis[j] += contribution;
+                                
+                                // Debug: Print first few contributions
+                                static int debug_count_minus = 0;
+                                if (debug_count_minus < 5) {
+                                    std::cout << "DEBUG G- contribution " << debug_count_minus << ": mu=" << mu 
+                                              << ", coeff=" << coeff << ", kernel=" << (v_magnitude * mu + results.alfven_speed)
+                                              << ", contribution=" << contribution << ", k_bin=" << j << std::endl;
+                                    debug_count_minus++;
+                                }
+                            }
+                        } else {
+                            // Debug: k-bin out of range
+                            static int debug_k_range = 0;
+                            if (debug_k_range < 3) {
+                                std::cout << "DEBUG: k_res=" << kRes << " gives j=" << j << " (out of range [0," << NK-1 << "])" << std::endl;
+                                debug_k_range++;
+                            }
                         }
-                        if (mu > 0.0) {  // Particles with mu>0 interact with inward waves  
-                            G_minus_analysis[j] += coeff * (v_magnitude * mu + results.alfven_speed);
+                    } else {
+                        // Debug: momentum out of range
+                        static int debug_p_range = 0;
+                        if (debug_p_range < 3) {
+                            std::cout << "DEBUG: p_momentum=" << p_momentum << " outside range [" << P_MIN << "," << P_MAX << "]" << std::endl;
+                            debug_p_range++;
                         }
+                    }
+                } else {
+                    // Debug: velocity or mu too small
+                    static int debug_vel_mu = 0;
+                    if (debug_vel_mu < 3) {
+                        std::cout << "DEBUG: v_magnitude=" << v_magnitude << ", |mu|=" << std::abs(mu) << " too small" << std::endl;
+                        debug_vel_mu++;
                     }
                 }
                 
@@ -1862,8 +1988,34 @@ results.G_minus_max_bin = -1;
 results.G_plus_sum = 0.0;
 results.G_minus_sum = 0.0;
 
+results.gamma_plus_max = 0.0;
+            results.gamma_minus_max = 0.0;
+            results.Gamma_plus_total = 0.0;
+            results.Gamma_minus_total = 0.0;
+
+
+	                // Calculate growth rates γ±(kj) = (π²Ω²/2B²kj) S±(pk) and integrated rates
+            double sumP = 0.0, sumM = 0.0;  // For integrated growth rates
+
+            // Debug: Check if we have any non-zero G values before processing
+            bool has_nonzero_G = false;
+            for (int j = 0; j < NK; ++j) {
+                if (std::abs(G_plus_analysis[j]) > 1.0e-20 || std::abs(G_minus_analysis[j]) > 1.0e-20) {
+                    has_nonzero_G = true;
+                    break;
+                }
+            }
+
 // Loop through all k-bins to extract statistics from calculated G arrays
 for (int j = 0; j < NK; ++j) {
+
+                double k_j = K_MIN * exp(j * DLNK);
+                
+                // Calculate growth rates from streaming integrals using γ±(kj) = (π²Ω²/2B²kj) S±(pk)
+                // Note: pref = π²Ω²/B², so γ = pref/(2*kj) * S±
+                double gamma_plus_j = (pref / (2.0 * k_j)) * G_plus_analysis[j];
+                double gamma_minus_j = (pref / (2.0 * k_j)) * G_minus_analysis[j];
+
     // Sum all values
     results.G_plus_sum += G_plus_analysis[j];
     results.G_minus_sum += G_minus_analysis[j];
@@ -1877,7 +2029,36 @@ for (int j = 0; j < NK; ++j) {
         results.G_minus_max = G_minus_analysis[j];
         results.G_minus_max_bin = j;
     }
+
+
+                // Find maximum growth rates
+                if (std::abs(gamma_plus_j) > std::abs(results.gamma_plus_max)) {
+                    results.gamma_plus_max = gamma_plus_j;
+                }
+                if (std::abs(gamma_minus_j) > std::abs(results.gamma_minus_max)) {
+                    results.gamma_minus_max = gamma_minus_j;
+                }
+
+		               // Accumulate for integrated growth rates: Σ γ±(kj) * kj
+                // Note: γ±(kj) = (pref/(2*kj)) * S±(kj), so γ±*kj = (pref/2) * S±(kj)
+                sumP += (pref / 2.0) * G_plus_analysis[j];   // γ+ * k = (pref/2k) * S+ * k = (pref/2) * S+
+                sumM += (pref / 2.0) * G_minus_analysis[j];  // γ- * k = (pref/2k) * S- * k = (pref/2) * S-
+
+
 }
+
+            // Calculate total integrated growth/damping rates
+            results.Gamma_plus_total = DLNK * sumP;   // Γ+ = Δln k * Σ S+(kj) * kj
+            results.Gamma_minus_total = DLNK * sumM;  // Γ- = Δln k * Σ S-(kj) * kj
+
+            // Debug output if no coupling found
+            if (!has_nonzero_G && results.total_particles > 0) {
+                // This will help us debug why coupling is zero
+                std::cout << "DEBUG: No wave-particle coupling found despite " << results.total_particles << " particles" << std::endl;
+            }
+
+            results.analysis_successful = 1;
+
             
             // Store the calculated G arrays in the results (we'll need to modify the structure)
             // For now, we'll include them in the output section
@@ -1961,6 +2142,21 @@ for (int j = 0; j < NK; ++j) {
                   << results.G_minus_max << " (k-bin " << results.G_minus_max_bin << ")" << std::endl;
         std::cout << "    Sum of G_minus values: " << std::scientific << std::setprecision(4) 
                   << results.G_minus_sum << std::endl;
+
+std::cout << "  Growth rates γ±:" << std::endl;
+std::cout << "    Maximum γ+ growth rate: " << std::scientific << std::setprecision(4) 
+          << results.gamma_plus_max << " s⁻¹" << std::endl;
+std::cout << "    Maximum γ- growth rate: " << std::scientific << std::setprecision(4) 
+          << results.gamma_minus_max << " s⁻¹" << std::endl;
+
+std::cout << "  Integrated growth/damping rates:" << std::endl;
+std::cout << "    Total Γ+ (outward waves): " << std::scientific << std::setprecision(4) 
+          << results.Gamma_plus_total << " s⁻¹" << std::endl;
+std::cout << "    Total Γ- (inward waves): " << std::scientific << std::setprecision(4) 
+          << results.Gamma_minus_total << " s⁻¹" << std::endl;
+std::cout << "    Net growth rate (Γ+ + Γ-): " << std::scientific << std::setprecision(4) 
+          << (results.Gamma_plus_total + results.Gamma_minus_total) << " s⁻¹" << std::endl;
+
         
         // Show some diagnostic information
         std::cout << "  Coupling diagnostics:" << std::endl;
