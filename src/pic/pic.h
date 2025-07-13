@@ -2300,7 +2300,13 @@ void DeleteAttachedParticles();
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ double ElectricChargeTable[_TOTAL_SPECIES_NUMBER_];
 
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline double GetMass(int spec) {return MolMass[spec];}
+    inline double GetMass(int spec) {
+      if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+	 if (spec<0) exit(__LINE__,__FILE__,"Error: outof range");     
+      }
+
+      return MolMass[spec]; 
+    }
 
     _TARGET_HOST_ _TARGET_DEVICE_
     inline double GetElectricCharge(int spec) {return ElectricChargeTable[spec];}
