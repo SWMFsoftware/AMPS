@@ -1543,6 +1543,9 @@ SEE ALSO:
 namespace SEP {
 namespace AlfvenTurbulence_Kolmogorov {
 
+
+
+
 void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg, int field_line_idx) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -1565,6 +1568,13 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
         int particles_toward_sun;
         int particles_from_sun;
         int analysis_successful;  // Use int instead of bool for MPI
+            // Wave-particle coupling arrays
+    double G_plus_max;   // Maximum value in G_plus array
+    double G_minus_max;  // Maximum value in G_minus array
+    int G_plus_max_bin;  // K-bin with maximum G_plus
+    int G_minus_max_bin; // K-bin with maximum G_minus
+    double G_plus_sum;   // Sum of all G_plus values
+    double G_minus_sum;  // Sum of all G_minus values
     };
 
     // Simple structure for max location (avoid complex nested structs)
@@ -1725,8 +1735,21 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
             PIC::FieldLine::FieldLinesAll[field_line_idx].GetMagneticField(B, 0.5 + global_max.segment_idx);
             results.magnetic_field_strength = Vector3D::Length(B);
             
-            // Calculate Alfven speed
+            // Calculate Alfven speed and other plasma parameters
             results.alfven_speed = results.magnetic_field_strength / sqrt(VacuumPermeability * rho);
+            double Omega = ElectronCharge * results.magnetic_field_strength / PIC::MolecularData::GetMass(_H_PLUS_SPEC_);  // Cyclotron frequency
+            double pref = (3.141592653589793 * 3.141592653589793) * Omega * Omega / (results.magnetic_field_strength * results.magnetic_field_strength);
+            
+            // Wave-particle coupling parameters
+            const int NK = 128;  // Number of k-bins
+            const double K_MIN = 1.0e-8;  // Minimum wavenumber [m⁻¹]
+            const double K_MAX = 1.0e-2;  // Maximum wavenumber [m⁻¹]
+            const double DLNK = log(K_MAX / K_MIN) / (NK - 1);  // log-k spacing
+            const double DLNP = log(1.0e-17 / 1.0e-20) / (96 - 1);  // log-p spacing for normalization
+            
+            // Initialize G_plus and G_minus arrays for analysis
+            std::vector<double> G_plus_analysis(NK, 0.0);
+            std::vector<double> G_minus_analysis(NK, 0.0);
             
             // Initialize counters
             results.total_particles = 0;
@@ -1756,6 +1779,10 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
                 
                 total_weight_all += stat_weight;
                 
+                // Calculate pitch angle cosine
+                double mu = (v_magnitude > 1.0e-20) ? vParallel / v_magnitude : 0.0;
+                mu = std::max(-1.0, std::min(1.0, mu));  // Clamp to [-1, 1]
+                
                 bool moving_toward_sun = (vParallel < 0.0);
                 bool is_fast = (v_magnitude > results.alfven_speed);
                 
@@ -1777,6 +1804,38 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
                     }
                 }
                 
+                // ================================================================
+                // CALCULATE G_PLUS AND G_MINUS CONTRIBUTIONS (following AccumulateParticleFluxForWaveCoupling)
+                // ================================================================
+                if (v_magnitude > 1.0e-20 && std::abs(mu) > 1.0e-10) {
+                    // Calculate relativistic momentum
+                    double gamma_rel = 1.0 / sqrt(1.0 - (v_magnitude*v_magnitude)/(SpeedOfLight*SpeedOfLight));
+                    double p_momentum = gamma_rel * PIC::MolecularData::GetMass(_H_PLUS_SPEC_) * v_magnitude;
+                    
+                    // Calculate resonant wavenumber: k_res = Ω / |μ v|
+                    double kRes = Omega / (std::abs(mu) * v_magnitude);
+                    
+                    // Find k-bin index
+                    int j = (int)(0.5 + (log(kRes/K_MIN) / DLNK));
+                    if (j >= 0 && j < NK) {
+                        double k_j = K_MIN * exp(j * DLNK);
+                        
+                        // Calculate coefficient (assuming dt = 1.0 for analysis, ds_seg = segment_length for normalization)
+                        double ds_seg = max_segment->GetLength();  // Use segment length as reference path
+                        double p2v = p_momentum * p_momentum * v_magnitude;
+                        double coeff = 2.0 * 3.141592653589793 * pref * stat_weight * p2v * (ds_seg / v_magnitude) / 
+                                      (2.0 * 1.0 * DLNP) / results.segment_volume / k_j;  // dt = 1.0 for analysis
+                        
+                        // Add contributions following the same logic as AccumulateParticleFluxForWaveCoupling
+                        if (mu < 0.0) {  // Particles with mu<0 interact with outward waves
+                            G_plus_analysis[j] += coeff * (v_magnitude * mu - results.alfven_speed);
+                        }
+                        if (mu > 0.0) {  // Particles with mu>0 interact with inward waves  
+                            G_minus_analysis[j] += coeff * (v_magnitude * mu + results.alfven_speed);
+                        }
+                    }
+                }
+                
                 p = PIC::ParticleBuffer::GetNext(p);
             }
             
@@ -1791,7 +1850,37 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
                 results.density_from_sun_slow = total_weight_from_sun_slow / results.segment_volume;
             }
             
+            // Store G_plus and G_minus analysis results in the results structure for output
+            // We'll add these arrays to the results structure
             results.analysis_successful = 1;
+
+// Process the calculated G_plus_analysis and G_minus_analysis arrays
+results.G_plus_max = 0.0;
+results.G_minus_max = 0.0;
+results.G_plus_max_bin = -1;
+results.G_minus_max_bin = -1;
+results.G_plus_sum = 0.0;
+results.G_minus_sum = 0.0;
+
+// Loop through all k-bins to extract statistics from calculated G arrays
+for (int j = 0; j < NK; ++j) {
+    // Sum all values
+    results.G_plus_sum += G_plus_analysis[j];
+    results.G_minus_sum += G_minus_analysis[j];
+
+    // Find maximum absolute values and their locations
+    if (std::abs(G_plus_analysis[j]) > std::abs(results.G_plus_max)) {
+        results.G_plus_max = G_plus_analysis[j];
+        results.G_plus_max_bin = j;
+    }
+    if (std::abs(G_minus_analysis[j]) > std::abs(results.G_minus_max)) {
+        results.G_minus_max = G_minus_analysis[j];
+        results.G_minus_max_bin = j;
+    }
+}
+            
+            // Store the calculated G arrays in the results (we'll need to modify the structure)
+            // For now, we'll include them in the output section
         }
     }
 
@@ -1860,6 +1949,39 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
                   << results.density_from_sun_fast << std::endl;
         std::cout << "  From Sun (slow, |v| < v_A): " << std::scientific << std::setprecision(4) 
                   << results.density_from_sun_slow << std::endl;
+        
+        std::cout << "\nWAVE-PARTICLE COUPLING ANALYSIS:" << std::endl;
+        std::cout << "  G_plus array statistics:" << std::endl;
+        std::cout << "    Maximum G_plus value: " << std::scientific << std::setprecision(4) 
+                  << results.G_plus_max << " (k-bin " << results.G_plus_max_bin << ")" << std::endl;
+        std::cout << "    Sum of G_plus values: " << std::scientific << std::setprecision(4) 
+                  << results.G_plus_sum << std::endl;
+        std::cout << "  G_minus array statistics:" << std::endl;
+        std::cout << "    Maximum G_minus value: " << std::scientific << std::setprecision(4) 
+                  << results.G_minus_max << " (k-bin " << results.G_minus_max_bin << ")" << std::endl;
+        std::cout << "    Sum of G_minus values: " << std::scientific << std::setprecision(4) 
+                  << results.G_minus_sum << std::endl;
+        
+        // Show some diagnostic information
+        std::cout << "  Coupling diagnostics:" << std::endl;
+        std::cout << "    Total particles analyzed for coupling: " << results.total_particles << std::endl;
+        std::cout << "    Particles with mu < 0 (contribute to G_plus): " << results.particles_toward_sun << std::endl;
+        std::cout << "    Particles with mu > 0 (contribute to G_minus): " << results.particles_from_sun << std::endl;
+        
+        if (results.G_plus_max_bin >= 0) {
+            const double K_MIN = 1.0e-8;
+            const double DLNK = log(1.0e-2 / K_MIN) / (128 - 1);
+            double k_max_plus = K_MIN * exp(results.G_plus_max_bin * DLNK);
+            std::cout << "    Resonant k for max G_plus: " << std::scientific << std::setprecision(4) 
+                      << k_max_plus << " m⁻¹" << std::endl;
+        }
+        if (results.G_minus_max_bin >= 0) {
+            const double K_MIN = 1.0e-8;
+            const double DLNK = log(1.0e-2 / K_MIN) / (128 - 1);
+            double k_max_minus = K_MIN * exp(results.G_minus_max_bin * DLNK);
+            std::cout << "    Resonant k for max G_minus: " << std::scientific << std::setprecision(4) 
+                      << k_max_minus << " m⁻¹" << std::endl;
+        }
         
         std::cout << "\nDENSITY RATIOS:" << std::endl;
         if (results.background_plasma_density > 0.0) {
