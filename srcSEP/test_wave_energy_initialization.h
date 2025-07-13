@@ -212,7 +212,7 @@ void SetDatum(double val, PIC::Datum::cDatumStored& Datum, int start_field_line_
 void SetDatumAll(double val, PIC::Datum::cDatumStored& Datum);
 
 
-void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, int element_idx, const char* msg, int field_line_idx = 0);
+void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg, int field_line_idx = 0);
 
 /**
  * Extended test function for multiple field lines
