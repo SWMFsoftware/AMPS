@@ -1656,7 +1656,12 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
         for (int elem_idx = 0; elem_idx < datum_length; ++elem_idx) {
             if (global_max_per_element[elem_idx] > 0.0) {
                 double relative_val = std::abs(data[elem_idx]) / global_max_per_element[elem_idx];
-                if (relative_val > segment_max_relative) {
+                double abs_val = std::abs(data[elem_idx]);
+                
+                // Select element with higher relative value, or if equal relative values,
+                // select the one with higher absolute value
+                if (relative_val > segment_max_relative || 
+                    (relative_val == segment_max_relative && abs_val > std::abs(best_element_value))) {
                     segment_max_relative = relative_val;
                     best_element_idx = elem_idx;
                     best_element_value = data[elem_idx];
