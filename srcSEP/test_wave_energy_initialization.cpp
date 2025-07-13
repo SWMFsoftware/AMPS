@@ -1548,34 +1548,65 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    // Structure for finding maximum with location info
-    struct MaxLocationData {
-        double max_relative_value;  // Maximum relative value across all elements
-        int segment_idx;
-        int process_rank;
-        int element_idx;            // Which element had the max relative value
-        double element_value;       // Actual value of that element
-        double position[3];         // Segment position for distance calculation
+    // Structure for particle analysis results (make it simple for MPI transfer)
+    struct ParticleAnalysisResults {
+        double total_density;
+        double density_toward_sun;
+        double density_from_sun;
+        double density_toward_sun_fast;
+        double density_toward_sun_slow;
+        double density_from_sun_fast;
+        double density_from_sun_slow;
+        double background_plasma_density;
+        double alfven_speed;
+        double magnetic_field_strength;
+        double segment_volume;
+        int total_particles;
+        int particles_toward_sun;
+        int particles_from_sun;
+        int analysis_successful;  // Use int instead of bool for MPI
     };
 
-    // Validate inputs
+    // Simple structure for max location (avoid complex nested structs)
+    struct MaxLocationData {
+        double max_relative_value;
+        int segment_idx;
+        int process_rank;
+        int element_idx;
+        double element_value;
+    };
+
+    // Initialize results
+    ParticleAnalysisResults results = {};
+    MaxLocationData global_max = {};
+    
+    // Step 1: ALL processes validate inputs together
+    int input_valid = 1;
     if (PIC::FieldLine::nFieldLine <= 0 || field_line_idx >= PIC::FieldLine::nFieldLine || field_line_idx < 0) {
+        input_valid = 0;
+    }
+
+    int all_inputs_valid = 1;
+    MPI_Allreduce(&input_valid, &all_inputs_valid, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+    
+    if (all_inputs_valid == 0) {
         if (rank == 0) {
             std::cout << "\n=== " << msg << " === ERROR ===" << std::endl;
             std::cout << "Invalid field line index or no field lines found!" << std::endl;
         }
-        return;
+        return;  // ALL processes return here
     }
 
+    // From here on, all processes have valid inputs
     PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
     int num_segments = field_line->GetTotalSegmentNumber();
     int datum_length = Datum.length;
 
-    // Step 1: Find global maximum for each element to establish normalization
+    // Step 2: Find global maximum for each element (ALL processes participate)
     std::vector<double> local_max_per_element(datum_length, 0.0);
     std::vector<double> global_max_per_element(datum_length, 0.0);
 
-    // Find local maximums for each element
+    // Each process finds its local maximums
     for (int seg_idx = 0; seg_idx < num_segments; ++seg_idx) {
         PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
         if (!segment) continue;
@@ -1583,7 +1614,7 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
         double* data = segment->GetDatum_ptr(Datum);
         if (!data) continue;
 
-        // Only consider segments owned by this process
+        // Only process segments owned by this rank
         if (segment->Thread != rank) continue;
 
         for (int elem_idx = 0; elem_idx < datum_length; ++elem_idx) {
@@ -1594,13 +1625,19 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
         }
     }
 
-    // Find global maximum for each element using MPI_Allreduce
+    // ALL processes participate in global reduction
     MPI_Allreduce(local_max_per_element.data(), global_max_per_element.data(), 
                   datum_length, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
-    // Step 2: Find segment with maximum relative value across all elements
-    MaxLocationData local_max = {0.0, -1, rank, -1, 0.0, {0.0, 0.0, 0.0}};
+    // Step 3: Find segment with maximum relative value (ALL processes participate)
+    MaxLocationData local_max = {};
+    local_max.max_relative_value = 0.0;
+    local_max.segment_idx = -1;
+    local_max.process_rank = rank;
+    local_max.element_idx = -1;
+    local_max.element_value = 0.0;
 
+    // Each process finds its best segment
     for (int seg_idx = 0; seg_idx < num_segments; ++seg_idx) {
         PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
         if (!segment) continue;
@@ -1608,7 +1645,7 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
         double* data = segment->GetDatum_ptr(Datum);
         if (!data) continue;
 
-        // Only consider segments owned by this process
+        // Only process segments owned by this rank
         if (segment->Thread != rank) continue;
 
         // Find maximum relative value across all elements in this segment
@@ -1627,91 +1664,53 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
             }
         }
 
-        // Check if this segment has the highest relative value so far
+        // Update local maximum if this segment is better
         if (segment_max_relative > local_max.max_relative_value) {
             local_max.max_relative_value = segment_max_relative;
             local_max.segment_idx = seg_idx;
             local_max.process_rank = rank;
             local_max.element_idx = best_element_idx;
             local_max.element_value = best_element_value;
-            
-            // Get segment center position for distance calculation
-            GetSegmentCenterPosition(segment, local_max.position);
         }
     }
 
-    // Step 3: Find global maximum using MPI_Reduce
-    MPI_Op max_loc_op;
-    MPI_Op_create([](void* in, void* inout, int* len, MPI_Datatype* datatype) {
-        MaxLocationData* in_data = static_cast<MaxLocationData*>(in);
-        MaxLocationData* inout_data = static_cast<MaxLocationData*>(inout);
-        for (int i = 0; i < *len; ++i) {
-            if (in_data[i].max_relative_value > inout_data[i].max_relative_value) {
-                inout_data[i] = in_data[i];
-            }
-        }
-    }, 1, &max_loc_op);
+    // Step 4: Find global maximum segment (ALL processes participate)
+    // Use simple array for MPI reduction to avoid struct issues
+    double local_data[5] = {local_max.max_relative_value, (double)local_max.segment_idx, 
+                           (double)local_max.process_rank, (double)local_max.element_idx, 
+                           local_max.element_value};
+    double global_data[5];
+    
+    // Custom reduction to find maximum relative value and preserve location
+    MPI_Allreduce(local_data, global_data, 5, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+    
+    // Reconstruct global max from reduced data
+    global_max.max_relative_value = global_data[0];
+    global_max.segment_idx = (int)global_data[1];
+    global_max.process_rank = (int)global_data[2];
+    global_max.element_idx = (int)global_data[3];
+    global_max.element_value = global_data[4];
 
-    MaxLocationData global_max;
-    MPI_Reduce(&local_max, &global_max, 1, MPI_BYTE, max_loc_op, 0, MPI_COMM_WORLD);
-    MPI_Op_free(&max_loc_op);
-
-    // Broadcast global max info to all processes for analysis
-    MPI_Bcast(&global_max, sizeof(MaxLocationData), MPI_BYTE, 0, MPI_COMM_WORLD);
-
-    // Step 4: Particle analysis (only on the process owning the max segment)
-    struct ParticleAnalysisResults {
-        // Density results
-        double total_density;
-        double density_toward_sun;
-        double density_from_sun;
-        double density_toward_sun_fast;
-        double density_toward_sun_slow;
-        double density_from_sun_fast;
-        double density_from_sun_slow;
-        double background_plasma_density;
-        
-        // Local plasma parameters
-        double alfven_speed;
-        double magnetic_field_strength;
-        double segment_volume;
-        
-        // Particle counts
-        int total_particles;
-        int particles_toward_sun;
-        int particles_from_sun;
-        
-        // Analysis success flag
-        bool analysis_successful;
-    };
-
-    ParticleAnalysisResults results = {};
-    results.analysis_successful = false;
-
+    // Step 5: Particle analysis (only on owning process)
     if (rank == global_max.process_rank && global_max.max_relative_value > 0.0) {
-        // Get the segment with maximum value
         PIC::FieldLine::cFieldLineSegment* max_segment = field_line->GetSegment(global_max.segment_idx);
         
         if (max_segment) {
-            // Get segment center position for distance calculation only
-            double segment_position[3];
-            SEP::AlfvenTurbulence_Kolmogorov::GetSegmentCenterPosition(max_segment, segment_position);
-            
             // Get segment properties
             results.segment_volume = SEP::FieldLine::GetSegmentVolume(max_segment, field_line_idx);
             
-            // Get local plasma parameters
+            // Get plasma parameters
             double rho;
-            max_segment->GetPlasmaDensity(0.5, rho);  // Number density at segment midpoint
-            results.background_plasma_density = rho;  // Store number density for output
-            rho *= PIC::MolecularData::GetMass(_H_SPEC_);  // Convert to mass density [kg/m³]
+            max_segment->GetPlasmaDensity(0.5, rho);
+            results.background_plasma_density = rho;
+            rho *= PIC::MolecularData::GetMass(_H_SPEC_);
             
-            // Get magnetic field from field line
+            // Get magnetic field
             double B[3];
             PIC::FieldLine::FieldLinesAll[field_line_idx].GetMagneticField(B, 0.5 + global_max.segment_idx);
             results.magnetic_field_strength = Vector3D::Length(B);
             
-            // Calculate local Alfven speed
+            // Calculate Alfven speed
             results.alfven_speed = results.magnetic_field_strength / sqrt(VacuumPermeability * rho);
             
             // Initialize counters
@@ -1719,40 +1718,35 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
             results.particles_toward_sun = 0;
             results.particles_from_sun = 0;
             
+            double total_weight_all = 0.0;
             double total_weight_toward_sun = 0.0;
             double total_weight_from_sun = 0.0;
             double total_weight_toward_sun_fast = 0.0;
             double total_weight_toward_sun_slow = 0.0;
             double total_weight_from_sun_fast = 0.0;
             double total_weight_from_sun_slow = 0.0;
-            double total_weight_all = 0.0;
 
-            // Loop through all particles in the segment using the correct method
-            long int p = max_segment->FirstParticleIndex;  // Start of particle linked list
+            // Loop through particles
+            long int p = max_segment->FirstParticleIndex;
             while (p != -1) {
                 results.total_particles++;
                 
-                // Get particle species and velocity components
                 int spec = PIC::ParticleBuffer::GetI(p);
                 double vParallel = PIC::ParticleBuffer::GetVParallel(p);
                 double vNormal = PIC::ParticleBuffer::GetVNormal(p);
                 double v_magnitude = sqrt(vParallel*vParallel + vNormal*vNormal);
                 
-                // Get statistical weight (number of real particles represented)
                 double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec] *
                                    PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
                 
                 total_weight_all += stat_weight;
                 
-                // Classify particle direction and speed
-                // Positive vParallel = from Sun, Negative vParallel = toward Sun
                 bool moving_toward_sun = (vParallel < 0.0);
                 bool is_fast = (v_magnitude > results.alfven_speed);
                 
                 if (moving_toward_sun) {
                     results.particles_toward_sun++;
                     total_weight_toward_sun += stat_weight;
-                    
                     if (is_fast) {
                         total_weight_toward_sun_fast += stat_weight;
                     } else {
@@ -1761,7 +1755,6 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
                 } else {
                     results.particles_from_sun++;
                     total_weight_from_sun += stat_weight;
-                    
                     if (is_fast) {
                         total_weight_from_sun_fast += stat_weight;
                     } else {
@@ -1769,11 +1762,10 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
                     }
                 }
                 
-                // Move to next particle in linked list
                 p = PIC::ParticleBuffer::GetNext(p);
             }
             
-            // Convert to densities (particles per unit volume)
+            // Convert to densities
             if (results.segment_volume > 0.0) {
                 results.total_density = total_weight_all / results.segment_volume;
                 results.density_toward_sun = total_weight_toward_sun / results.segment_volume;
@@ -1784,58 +1776,36 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
                 results.density_from_sun_slow = total_weight_from_sun_slow / results.segment_volume;
             }
             
-            results.analysis_successful = true;
+            results.analysis_successful = 1;
         }
     }
 
-    // Step 5: Send results to root process for output
-    if (rank != 0 && rank == global_max.process_rank) {
-        // Non-root process with max segment sends results to root
-        MPI_Send(&results, sizeof(ParticleAnalysisResults), MPI_BYTE, 0, 100, MPI_COMM_WORLD);
-    } else if (rank == 0 && global_max.process_rank != 0) {
-        // Root process receives results from owning process
-        MPI_Recv(&results, sizeof(ParticleAnalysisResults), MPI_BYTE, global_max.process_rank, 100, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    }
+    // Step 6: Gather results to root (use broadcast instead of point-to-point)
+    // Broadcast results from owning process to all processes
+    MPI_Bcast(&results, sizeof(ParticleAnalysisResults), MPI_BYTE, global_max.process_rank, MPI_COMM_WORLD);
 
-    // Step 6: Output results (only from root process)
+    // Step 7: Output (only root)
     if (rank == 0) {
         std::cout << "\n=== " << msg << " === Max Segment Particle Analysis ===" << std::endl;
         std::cout << "Field Line: " << field_line_idx << std::endl;
         std::cout << std::string(80, '=') << std::endl;
         
-        if (global_max.element_value == 0.0) {
-          std::cout << "No non-zero values found in any datum elements" << std::endl;
-          return;
+        if (global_max.max_relative_value == 0.0) {
+            std::cout << "No non-zero values found in any datum elements" << std::endl;
+            return;
         }
         
         std::cout << "MAXIMUM SEGMENT INFORMATION:" << std::endl;
         std::cout << "  Segment index: " << global_max.segment_idx << std::endl;
         std::cout << "  Process owner: " << global_max.process_rank << std::endl;
-        std::cout << "  Maximum element value: " << std::scientific << std::setprecision(6) << global_max.element_value << std::endl;
-	std::cout << "  Maximum element index: " << global_max.element_idx << std::endl;
+        std::cout << "  Maximum element index: " << global_max.element_idx << std::endl;
+        std::cout << "  Maximum element value: " << std::scientific << std::setprecision(6) 
+                  << global_max.element_value << std::endl;
+        std::cout << "  Maximum relative value: " << std::fixed << std::setprecision(6) 
+                  << global_max.max_relative_value << std::endl;
         
-        // Get and display all datum elements for this segment
-        if (global_max.process_rank == 0) {
-            // Root process can access the data directly
-            PIC::FieldLine::cFieldLineSegment* max_segment = field_line->GetSegment(global_max.segment_idx);
-            if (max_segment) {
-                double* datum_data = max_segment->GetDatum_ptr(Datum);
-                if (datum_data) {
-                    std::cout << "  Complete datum data: [";
-                    for (int i = 0; i < datum_length; ++i) {
-                        if (i > 0) std::cout << ", ";
-                        std::cout << std::scientific << std::setprecision(4) << datum_data[i];
-                    }
-                    std::cout << "]" << std::endl;
-                }
-            }
-        } else {
-            // Data is on another process - could be sent with results if needed
-            std::cout << "  Complete datum data: [Available on process " << global_max.process_rank << "]" << std::endl;
-        }
-        
-        if (!results.analysis_successful) {
-            std::cout << "\nERROR: Particle analysis failed!" << std::endl;
+        if (results.analysis_successful == 0) {
+            std::cout << "\nWARNING: Particle analysis was not performed!" << std::endl;
             return;
         }
         
@@ -1884,7 +1854,7 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
         if (results.total_density > 0.0) {
             std::cout << "  Fast/slow particle ratio: " << std::fixed << std::setprecision(6) 
                       << ((results.density_toward_sun_fast + results.density_from_sun_fast) / 
-                          (results.density_toward_sun_slow + results.density_from_sun_slow)) << std::endl;
+                          std::max(1e-20, results.density_toward_sun_slow + results.density_from_sun_slow)) << std::endl;
             std::cout << "  Outward/inward flow ratio: " << std::fixed << std::setprecision(6) 
                       << (results.density_from_sun / std::max(1e-20, results.density_toward_sun)) << std::endl;
         }
