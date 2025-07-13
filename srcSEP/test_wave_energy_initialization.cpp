@@ -2013,8 +2013,6 @@ for (int j = 0; j < NK; ++j) {
                 
                 // Calculate growth rates from streaming integrals using γ±(kj) = (π²Ω²/2B²kj) S±(pk)
                 // Note: pref = π²Ω²/B², so γ = pref/(2*kj) * S±
-                double gamma_plus_j = (pref / (2.0 * k_j)) * G_plus_analysis[j];
-                double gamma_minus_j = (pref / (2.0 * k_j)) * G_minus_analysis[j];
 
     // Sum all values
     results.G_plus_sum += G_plus_analysis[j];
@@ -2032,24 +2030,23 @@ for (int j = 0; j < NK; ++j) {
 
 
                 // Find maximum growth rates
-                if (std::abs(gamma_plus_j) > std::abs(results.gamma_plus_max)) {
-                    results.gamma_plus_max = gamma_plus_j;
+                if (std::abs(DLNK * G_plus_analysis[j] * k_j) > std::abs(results.gamma_plus_max)) {
+                    results.gamma_plus_max = DLNK * G_plus_analysis[j] * k_j;
                 }
-                if (std::abs(gamma_minus_j) > std::abs(results.gamma_minus_max)) {
-                    results.gamma_minus_max = gamma_minus_j;
+                if (std::abs(DLNK * G_minus_analysis[j] * k_j) > std::abs(results.gamma_minus_max)) {
+                    results.gamma_minus_max = DLNK * G_minus_analysis[j] * k_j;
                 }
 
 		               // Accumulate for integrated growth rates: Σ γ±(kj) * kj
-                // Note: γ±(kj) = (pref/(2*kj)) * S±(kj), so γ±*kj = (pref/2) * S±(kj)
-                sumP += (pref / 2.0) * G_plus_analysis[j];   // γ+ * k = (pref/2k) * S+ * k = (pref/2) * S+
-                sumM += (pref / 2.0) * G_minus_analysis[j];  // γ- * k = (pref/2k) * S- * k = (pref/2) * S-
+		sumM += G_minus_analysis[j] * k_j;
+		sumP += G_plus_analysis[j] * k_j;  
 
 
 }
 
             // Calculate total integrated growth/damping rates
-            results.Gamma_plus_total = DLNK * sumP;   // Γ+ = Δln k * Σ S+(kj) * kj
-            results.Gamma_minus_total = DLNK * sumM;  // Γ- = Δln k * Σ S-(kj) * kj
+            results.Gamma_plus_total = DLNK * sumP;   // Γ+ = Δln k * Σ [S+(kj) * kj] 
+            results.Gamma_minus_total = DLNK * sumM;  // Γ- = Δln k * Σ [S-(kj) * kj] 
 
             // Debug output if no coupling found
             if (!has_nonzero_G && results.total_particles > 0) {
