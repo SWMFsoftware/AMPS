@@ -1680,21 +1680,31 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
     }
 
     // Step 4: Find global maximum segment (ALL processes participate)
-    // Use simple array for MPI reduction to avoid struct issues
-    double local_data[5] = {local_max.max_relative_value, (double)local_max.segment_idx, 
-                           (double)local_max.process_rank, (double)local_max.element_idx, 
-                           local_max.element_value};
-    double global_data[5];
+    // Create a structure that MPI can handle properly for MAXLOC operation
+    struct {
+        double value;
+        int rank;
+    } local_maxloc, global_maxloc;
     
-    // Custom reduction to find maximum relative value and preserve location
-    MPI_Allreduce(local_data, global_data, 5, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+    local_maxloc.value = local_max.max_relative_value;
+    local_maxloc.rank = rank;
     
-    // Reconstruct global max from reduced data
-    global_max.max_relative_value = global_data[0];
-    global_max.segment_idx = (int)global_data[1];
-    global_max.process_rank = (int)global_data[2];
-    global_max.element_idx = (int)global_data[3];
-    global_max.element_value = global_data[4];
+    // Use MPI_MAXLOC to find maximum value and preserve the rank that has it
+    MPI_Allreduce(&local_maxloc, &global_maxloc, 1, MPI_DOUBLE_INT, MPI_MAXLOC, MPI_COMM_WORLD);
+    
+    // Now we need to get the complete information from the process that has the maximum
+    // Broadcast the complete local_max structure from the owning process
+    global_max.max_relative_value = global_maxloc.value;
+    global_max.process_rank = global_maxloc.rank;
+    
+    // Broadcast the rest of the data from the owning process
+    MPI_Bcast(&local_max.segment_idx, 1, MPI_INT, global_maxloc.rank, MPI_COMM_WORLD);
+    MPI_Bcast(&local_max.element_idx, 1, MPI_INT, global_maxloc.rank, MPI_COMM_WORLD);
+    MPI_Bcast(&local_max.element_value, 1, MPI_DOUBLE, global_maxloc.rank, MPI_COMM_WORLD);
+    
+    global_max.segment_idx = local_max.segment_idx;
+    global_max.element_idx = local_max.element_idx;
+    global_max.element_value = local_max.element_value;
 
     // Step 5: Particle analysis (only on owning process)
     if (rank == global_max.process_rank && global_max.max_relative_value > 0.0) {
@@ -1708,7 +1718,7 @@ void AnalyzeMaxSegmentParticles(PIC::Datum::cDatumStored& Datum, const char* msg
             double rho;
             max_segment->GetPlasmaDensity(0.5, rho);
             results.background_plasma_density = rho;
-            rho *= PIC::MolecularData::GetMass(_H_SPEC_);
+            rho *= PIC::MolecularData::GetMass(_H_PLUS_SPEC_);
             
             // Get magnetic field
             double B[3];
