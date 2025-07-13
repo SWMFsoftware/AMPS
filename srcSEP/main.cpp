@@ -233,6 +233,11 @@ auto CalculateWaveEnergyDensity = [&]() {
       SEP::AlfvenTurbulence_Kolmogorov::TestPrintDatumMPI(SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming,"g+",0);
       SEP::AlfvenTurbulence_Kolmogorov::TestPrintDatumMPI(SEP::AlfvenTurbulence_Kolmogorov::G_minus_streaming,"g-",0);
 
+
+      SEP::AlfvenTurbulence_Kolmogorov::AnalyzeMaxSegmentParticles(SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming,"G_plus_streaming" ,0);
+      SEP::AlfvenTurbulence_Kolmogorov::AnalyzeMaxSegmentParticles(SEP::AlfvenTurbulence_Kolmogorov::G_minus_streaming,"G_minus_streaming" ,0);
+
+
 //      SEP::AlfvenTurbulence_Kolmogorov::SetDatumAll(0.0,SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming);
 //      SEP::AlfvenTurbulence_Kolmogorov::TestPrintDatumMPI(SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming,"g+",0);
 
