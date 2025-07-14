@@ -358,6 +358,17 @@ void AccumulateParticleFluxForWaveCoupling(
     double totalTraversedPath
 );
 
+void AccumulateParticleFluxForWaveCoupling(
+    int field_line_idx,                          // Field line index
+    long int particle_index,                     // Particle index parameter
+    double dt,                                   // Time step [s]
+    double vParallel,                           // Particle parallel velocity [m/s] (signed: + outward, - inward)
+    double vNormal,                             // Particle gyration velocity [m/s] (perpendicular to B)
+    double s_start,                             // Start position along field line [m]
+    double s_finish,                            // End position along field line [m]
+    double totalTraversedPath                   // Signed parallel path length [m] (+ outward, - inward)
+    ); 
+
 // ----------------------------------------------------------------------------
 // PHASE 2: GROWTH RATE CALCULATION (called after particle transport)
 // ----------------------------------------------------------------------------

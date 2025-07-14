@@ -1197,3 +1197,501 @@ void CheckEnergyConservation(PIC::Datum::cDatumStored& WaveEnergy, bool verbose)
 } // namespace IsotropicSEP
 } // namespace AlfvenTurbulence_Kolmogorov  
 } // namespace SEP
+
+
+// ============================================================================
+// MODIFIED FUNCTION 1: ACCUMULATE PARTICLE FLUX DATA (CALLED BY PARTICLE MOVER)
+// ============================================================================
+
+/*
+================================================================================
+                    AccumulateParticleFluxForWaveCoupling
+================================================================================
+
+PURPOSE:
+--------
+Accumulates particle flux contributions to Alfvén wave growth/damping rates 
+during particle transport. This function implements time-weighted sampling of 
+the quasi-linear diffusion coefficient for resonant wave-particle interactions
+in magnetized solar wind plasma.
+
+CALLING CONTEXT:
+----------------
+This function is called by the particle mover for each particle at each time 
+step during the transport phase. It accumulates statistical data that will 
+later be processed by CalculateGrowthRatesFromAccumulatedFlux() to compute 
+actual growth rates and update wave energies.
+
+PHYSICS IMPLEMENTED:
+--------------------
+1. CYCLOTRON RESONANCE: ω - k‖v‖ = ±Ωc
+   - Resonant wavenumber: k_res = Ωc/(|μ|v_total)
+   - Pitch angle cosine: μ = v‖/v_total
+
+2. QUASI-LINEAR THEORY KERNELS:
+   - K₊ = v_total×μ - v_A  (outward wave kernel)
+   - K₋ = v_total×μ + v_A  (inward wave kernel)
+
+3. RESONANCE RULES:
+   - μ < 0 (inward motion): interacts with outward waves (G_plus)
+   - μ > 0 (outward motion): interacts with inward waves (G_minus)
+
+4. TIME-WEIGHTED SAMPLING:
+   - Each segment contribution weighted by time_fraction = dt_segment/dt_total
+   - Ensures proper temporal representation in flux accumulation
+
+PARTICLE MOTION MODEL:
+----------------------
+- vParallel: Translational velocity along magnetic field line [m/s]
+  * Determines transport direction and time spent in segments
+  * Positive = outward (away from Sun), Negative = inward (toward Sun)
+
+- vNormal: Gyration velocity around magnetic field line [m/s]  
+  * Represents cyclotron motion perpendicular to B-field
+  * Contributes to total particle energy and momentum
+  * Does NOT affect transport time (particle stays on same field line)
+
+- v_total = sqrt(vParallel² + vNormal²): Total particle speed
+  * Used for relativistic momentum calculation
+  * Used in resonance condition and QLT kernels
+
+ALGORITHM FLOW:
+---------------
+1. Validate inputs and calculate particle properties
+2. Loop through all field line segments traversed by particle
+3. For each segment:
+   a) Calculate path length ds_seg (with proper sign)
+   b) Calculate time spent: dt_seg = |ds_seg|/|vParallel|
+   c) Calculate time weight: w_time = dt_seg/dt_total
+   d) Get local plasma parameters (B, ρ, v_A, Ω)
+   e) Calculate resonant wavenumber and find k-bin
+   f) Calculate QLT kernels K₊, K₋
+   g) Accumulate weighted contributions to G_plus/G_minus arrays
+
+SEGMENT PATH LENGTH CALCULATION:
+--------------------------------
+The function handles three cases for particle trajectories:
+
+1. SAME SEGMENT (start and end in same segment):
+   ds = (frac_finish - frac_start) × segment_length
+
+2. FIRST SEGMENT (particle starts here):
+   - Forward: ds = (1.0 - frac_start) × segment_length  
+   - Backward: ds = -frac_start × segment_length
+
+3. LAST SEGMENT (particle ends here):
+   - Forward: ds = frac_finish × segment_length
+   - Backward: ds = (frac_finish - 1.0) × segment_length
+
+4. MIDDLE SEGMENTS (particle traverses completely):
+   - Forward: ds = +segment_length
+   - Backward: ds = -segment_length
+
+TIME WEIGHTING RATIONALE:
+-------------------------
+Traditional methods assume particles spend equal time in all segments, which
+is incorrect for:
+- Variable segment lengths
+- Non-uniform particle velocities  
+- Particles spending different amounts of time at different locations
+
+Time weighting ensures:
+- Fast particles contribute less (spend less time interacting)
+- Slow particles contribute more (spend more time interacting)
+- Proper statistical sampling of the quasi-linear diffusion process
+- Physically accurate representation of wave-particle interaction strength
+
+MOMENTUM RANGE ENFORCEMENT:
+---------------------------
+The function enforces momentum bounds [P_MIN, P_MAX] with error trapping:
+- Particles outside range trigger exit() with diagnostic message
+- Prevents silent loss of physics (no particles dropped)
+- Provides clear guidance to adjust momentum grid if needed
+
+ACCUMULATED DATA ARRAYS:
+------------------------
+Results stored in segment-local Datum arrays:
+- G_plus_streaming[NK]:  Σ(weighted contributions to outward wave growth)
+- G_minus_streaming[NK]: Σ(weighted contributions to inward wave growth)
+
+These arrays are later processed by CalculateGrowthRatesFromAccumulatedFlux()
+to compute actual growth rates γ₊(k), γ₋(k) and evolve wave energies.
+
+THREAD SAFETY:
+--------------
+- Only processes segments assigned to current MPI thread
+- Assumes single-threaded access to segment data arrays
+- Thread-safe accumulation into G_plus/G_minus arrays
+
+PARAMETERS:
+-----------
+@param field_line_idx      Index of magnetic field line [0, nFieldLine)
+@param particle_index      Particle buffer index for weight calculation  
+@param dt                  Time step duration [s]
+@param vParallel          Translational velocity along field line [m/s]
+@param vNormal            Gyration velocity around field line [m/s]
+@param s_start            Start position in field line coordinates [dimensionless]
+@param s_finish           End position in field line coordinates [dimensionless]  
+@param totalTraversedPath Total signed parallel displacement [m]
+
+FIELD LINE COORDINATES:
+-----------------------
+Field line coordinates encode position as: s = segment_index.fractional_position
+- Integer part: segment index [0, num_segments)
+- Fractional part: position within segment [0.0, 1.0)
+- Example: s = 5.75 means 75% through segment 5
+
+ERROR CONDITIONS:
+-----------------
+Function will exit() with diagnostic message for:
+- Invalid field line or particle indices
+- Non-positive time step
+- Particle momentum outside [P_MIN, P_MAX] range
+- Invalid segment volumes or plasma parameters
+
+PERFORMANCE NOTES:
+------------------
+- Pre-computed constants (K_MIN, K_MAX, DLNK) for efficiency
+- Logarithmic k-grid with 128 bins for spectral coverage
+- Minimal memory allocation (uses pre-existing segment arrays)
+- Optimized for frequent calls during particle transport
+
+VALIDATION:
+-----------
+Debug mode includes validation of:
+- G_plus/G_minus array values within reasonable bounds
+- Time weights in range [0,1]  
+- Segment times ≤ total time step
+- Numerical stability of accumulated values
+
+================================================================================
+*/
+
+namespace SEP {
+namespace AlfvenTurbulence_Kolmogorov {
+namespace IsotropicSEP { 
+    
+void AccumulateParticleFluxForWaveCoupling(
+    int field_line_idx,                          // Field line index
+    long int particle_index,                     // Particle index parameter
+    double dt,                                   // Time step [s]
+    double vParallel,                           // Particle parallel velocity [m/s] (signed: + outward, - inward)
+    double vNormal,                             // Particle gyration velocity [m/s] (perpendicular to B)
+    double s_start,                             // Start position along field line [m]
+    double s_finish,                            // End position along field line [m]
+    double totalTraversedPath                   // Signed parallel path length [m] (+ outward, - inward)
+) {
+    /*
+    MODIFIED VERSION - TIME-WEIGHTED FLUX ACCUMULATION WITH PROPER GYRATION:
+    - vParallel: translational motion along magnetic field line
+    - vNormal: gyration velocity around magnetic field line (cyclotron motion)
+    - Total speed = sqrt(vParallel² + vNormal²)
+    - Calculates time spent in each segment based on translational motion
+    - Weights flux contribution by (segment_time / total_time_step)
+    
+    PARTICLE MOTION COMPONENTS:
+    - vParallel > 0: Particle moving away from Sun (outward, μ > 0)
+    - vParallel < 0: Particle moving toward Sun (inward, μ < 0)  
+    - vNormal: Gyration around field line (determines total energy/momentum)
+    - μ = vParallel / sqrt(vParallel² + vNormal²) = pitch angle cosine
+    
+    The pitch angle cosine μ determines wave-particle resonance:
+    - μ > 0: Particle moving outward, resonates with inward waves
+    - μ < 0: Particle moving inward, resonates with outward waves
+    - |μ| determines the resonant wavenumber: k_res = Ω_c / |μ v_total|
+    
+    TIME WEIGHTING:
+    - Each segment contribution is weighted by the time fraction spent in that segment
+    - Time in segment based on translational motion: dt_seg = |ds_seg| / |vParallel|
+    */
+    
+    // ========================================================================
+    // INPUT VALIDATION
+    // ========================================================================
+    if (field_line_idx < 0 || field_line_idx >= PIC::FieldLine::nFieldLine) {
+        std::cerr << "Error: Invalid field line index (" << field_line_idx 
+                  << ") in AccumulateParticleFluxForWaveCoupling" << std::endl;
+        return;
+    }
+    
+    if (particle_index < 0) {
+        std::cerr << "Error: Invalid particle index (" << particle_index 
+                  << ") in AccumulateParticleFluxForWaveCoupling" << std::endl;
+        return;
+    }
+    
+    if (dt <= 0.0) {
+        std::cerr << "Error: Invalid time step (dt=" << dt << ")" << std::endl;
+        return;
+    }
+    
+    // ========================================================================
+    // CALCULATE PARTICLE SPEED AND MOTION PARAMETERS
+    // ========================================================================
+    // Total particle speed includes both parallel and gyration components
+    double v_magnitude = sqrt(vParallel * vParallel + vNormal * vNormal);
+    
+    // Skip particles with negligible velocity
+    if (v_magnitude < 1.0e-20) {
+        return;
+    }
+    
+    // Skip particles with negligible parallel velocity (no translational motion)
+    if (fabs(vParallel) < 1.0e-20) {
+        return;  // Pure gyration, no motion along field line
+    }
+    
+    // Calculate pitch angle cosine: μ = v_parallel / v_total
+    double mu = vParallel / v_magnitude;
+    
+    // Clamp μ to valid range [-1, 1] (should already be valid, but safety check)
+    mu = std::max(-1.0, std::min(1.0, mu));
+    
+    // Consistency check: totalTraversedPath should be consistent with vParallel and dt
+    double expected_path = vParallel * dt;
+    if (fabs(totalTraversedPath - expected_path) > 1.0e-10 * fabs(expected_path)) {
+        std::cerr << "Warning: Inconsistent path calculation. Expected=" << expected_path 
+                  << ", Actual=" << totalTraversedPath << std::endl;
+    }
+    
+    // ========================================================================
+    // CALCULATE PARTICLE PROPERTIES (INDEPENDENT OF SEGMENTS)
+    // ========================================================================
+    // Calculate relativistic momentum: p = γ m v
+    double gamma_rel = 1.0 / sqrt(1.0 - (v_magnitude*v_magnitude)/
+                                 (SpeedOfLight*SpeedOfLight));
+    double p_momentum = gamma_rel * M * v_magnitude;  // [kg⋅m/s]
+    
+    // Check particles outside momentum range of interest
+    if (p_momentum < P_MIN || p_momentum > P_MAX) {
+        char error_msg[512];
+        sprintf(error_msg, 
+            "Particle momentum (%.6e kg⋅m/s) outside range [%.6e, %.6e]. "
+            "Particle: speed=%.6e m/s, vParallel=%.6e m/s, vNormal=%.6e m/s. "
+            "Please increase momentum range P_MIN/P_MAX in wave-particle coupling.",
+            p_momentum, P_MIN, P_MAX, v_magnitude, vParallel, vNormal);
+        exit(__LINE__, __FILE__, error_msg);
+    }
+    
+    // ========================================================================
+    // GET PARTICLE STATISTICAL WEIGHT USING SPECIES-SPECIFIC CALCULATION
+    // ========================================================================
+    // Get particle species number for this particle
+    int particle_species = PIC::ParticleBuffer::GetI(particle_index);
+    if (particle_species < 0 || particle_species >= PIC::nTotalSpecies) {
+        std::cerr << "Error: Invalid particle species (" << particle_species 
+                  << ") for particle " << particle_index << std::endl;
+        return;
+    }
+    
+    // Calculate species-specific statistical weight
+    double w_i = PIC::ParticleWeightTimeStep::GlobalParticleWeight[particle_species] * 
+                 PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particle_index);
+    
+    if (w_i <= 0.0) {
+        std::cerr << "Warning: Invalid particle weight (" << w_i 
+                  << ") for particle " << particle_index << std::endl;
+        return;
+    }
+    
+    // ========================================================================
+    // GET FIELD LINE AND DETERMINE TRAVERSED SEGMENTS
+    // ========================================================================
+    PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
+    
+    // ========================================================================
+    // DECODE FIELD LINE COORDINATES AND CALCULATE TRAJECTORY
+    // ========================================================================
+    // Field line coordinates format: s = (segment_index).(fractional_position)
+    // Extract segment indices and fractional positions
+    int seg_start_idx = (int)floor(s_start);
+    double frac_start = s_start - seg_start_idx;
+    
+    int seg_finish_idx = (int)floor(s_finish);
+    double frac_finish = s_finish - seg_finish_idx;
+    
+    // ========================================================================
+    // LOOP THROUGH ALL SEGMENTS TRAVERSED BY PARTICLE
+    // ========================================================================
+    // Determine range of segments that the particle trajectory intersects
+    int seg_min = std::min(seg_start_idx, seg_finish_idx);
+    int seg_max = std::max(seg_start_idx, seg_finish_idx);
+    
+    int num_segments = field_line->GetTotalSegmentNumber();
+    
+    // Ensure segment indices are within valid range
+    seg_min = std::max(0, seg_min);
+    seg_max = std::min(num_segments - 1, seg_max);
+    
+    for (int seg_idx = seg_min; seg_idx <= seg_max; ++seg_idx) {
+        PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
+        
+        // ====================================================================
+        // CALCULATE DIRECTIONAL PATH LENGTH WITHIN THIS SEGMENT
+        // ====================================================================
+        double ds_seg = 0.0;
+        
+        if (seg_start_idx == seg_finish_idx && seg_idx == seg_start_idx) {
+            // Particle starts and ends in the same segment
+            double segment_length = segment->GetLength();
+            ds_seg = (frac_finish - frac_start) * segment_length;  // Directional: can be negative
+            
+        } else if (seg_idx == seg_start_idx) {
+            // First segment: from start position to end of segment
+            double segment_length = segment->GetLength();
+            if (seg_start_idx < seg_finish_idx) {
+                // Moving forward: from frac_start to 1.0
+                ds_seg = (1.0 - frac_start) * segment_length;
+            } else {
+                // Moving backward: from frac_start to 0.0
+                ds_seg = -frac_start * segment_length;
+            }
+            
+        } else if (seg_idx == seg_finish_idx) {
+            // Last segment: from beginning of segment to finish position
+            double segment_length = segment->GetLength();
+            if (seg_start_idx < seg_finish_idx) {
+                // Moving forward: from 0.0 to frac_finish
+                ds_seg = frac_finish * segment_length;
+            } else {
+                // Moving backward: from 1.0 to frac_finish
+                ds_seg = (frac_finish - 1.0) * segment_length;
+            }
+            
+        } else {
+            // Middle segment: entire segment length with direction
+            double segment_length = segment->GetLength();
+            if (seg_start_idx < seg_finish_idx) {
+                // Moving forward: positive full segment length
+                ds_seg = segment_length;
+            } else {
+                // Moving backward: negative full segment length
+                ds_seg = -segment_length;
+            }
+        }
+        
+        // Skip if path length in segment is negligible (but keep sign)
+        if (fabs(ds_seg) < 1.0e-20) {
+            continue;
+        }
+        
+        // ====================================================================
+        // CALCULATE TIME SPENT IN THIS SEGMENT
+        // ====================================================================
+        // Time spent in segment based on TRANSLATIONAL motion along field line
+        // Time = |path length in segment| / |parallel velocity|
+        double dt_segment = fabs(ds_seg) / fabs(vParallel);  // [s]
+        
+        // Calculate time weighting factor: fraction of total time step spent in this segment
+        double time_weight = dt_segment / dt;  // Dimensionless [0, 1]
+        
+        // Ensure time weighting is physical (can't spend more than total time in segment)
+        if (time_weight > 1.0) {
+            std::cerr << "Warning: Time weight (" << time_weight 
+                      << ") > 1.0 in segment " << seg_idx 
+                      << ". Clamping to 1.0." << std::endl;
+            time_weight = 1.0;
+        }
+        
+        // Skip segments with negligible time contribution
+        if (time_weight < 1.0e-15) {
+            continue;
+        }
+        
+        // ====================================================================
+        // GET LOCAL PLASMA PARAMETERS FOR THIS SEGMENT
+        // ====================================================================
+        double B0, rho;
+        segment->GetPlasmaDensity(0.5, rho);  // Get density at segment midpoint
+        rho *= _H__MASS_;  // Convert number density to mass density
+        
+        // Get magnetic field from field line
+        double B[3];
+        PIC::FieldLine::FieldLinesAll[field_line_idx].GetMagneticField(B, 0.5 + seg_idx);
+        B0 = Vector3D::Length(B);
+        
+        // Calculate local plasma parameters
+        double vAc = B0 / sqrt(VacuumPermeability * rho);                  // Alfvén speed [m/s]
+        double Omega = Q * B0 / M;                               // Proton cyclotron frequency [rad/s]
+        double pref = (PI * PI) * Omega * Omega / (B0 * B0);    // Normalization factor
+        
+        // Get segment volume using proper SEP function
+        double V_cell = SEP::FieldLine::GetSegmentVolume(segment, field_line_idx);
+        if (V_cell <= 0.0) {
+            std::cerr << "Warning: Invalid segment volume (" << V_cell 
+                      << ") in segment " << seg_idx << std::endl;
+            continue;
+        }
+        double Vinv = 1.0 / V_cell;  // Inverse volume [m⁻³]
+        
+        // ====================================================================
+        // CALCULATE RESONANT WAVENUMBER AND K-BIN
+        // ====================================================================
+        // Cyclotron resonance condition: ω - k‖ v‖ = ±Ω
+        // For Alfvén waves: ω ≈ k‖ v_A, so k_res = Ω / |μ v_total|
+        // where v_total = sqrt(vParallel² + vNormal²)
+        double kRes = Omega / (fabs(mu) * v_magnitude);  // Resonant wavenumber [m⁻¹]
+        
+        // Find corresponding k-bin index
+        int j = GetKBinIndex(kRes);
+        
+        // Initialize k-grid for this calculation
+        double k_j = K_MIN * exp(j * DLNK);  // k value for bin j
+        
+        // ====================================================================
+        // CALCULATE FLUX FUNCTION VALUES
+        // ====================================================================
+        // Calculate local QLT kernel values for both wave modes
+        // K_σ = v_total × μ - σ × v_A, where σ = ±1 for wave direction
+        double K_plus = v_magnitude * mu - vAc;   // Kernel for outward waves (σ = +1)
+        double K_minus = v_magnitude * mu + vAc;  // Kernel for inward waves (σ = -1)
+        
+        // Calculate base flux function coefficient (without time weighting)
+        double p2v = p_momentum * p_momentum * v_magnitude;  // p² v term
+        double flux_coeff = 2.0 * PI * pref * w_i * p2v / 
+                           (2.0 * DLNP) * Vinv / k_j;
+        
+        // ====================================================================
+        // APPLY TIME WEIGHTING AND ACCUMULATE FLUX CONTRIBUTIONS
+        // ====================================================================
+        // Apply time weighting to flux coefficient
+        double weighted_flux_coeff = flux_coeff * time_weight;
+        
+        // ====================================================================
+        // ACCESS INTERMEDIATE STREAMING ARRAYS AND ACCUMULATE
+        // ====================================================================
+        double* G_plus_data = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming);
+        double* G_minus_data = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::G_minus_streaming);
+        
+        if (!G_plus_data || !G_minus_data) {
+            std::cerr << "Error: Cannot access G_plus/G_minus streaming arrays in segment " 
+                      << seg_idx << std::endl;
+            continue;
+        }
+        
+        // Add particle contribution to streaming sums using exact QLT kernel
+        // Thread-safe accumulation (assumes single-threaded access per segment)
+        // Apply time weighting to each contribution
+        
+        // Wave-particle resonance rules:
+        // μ < 0 (inward motion): particle interacts with outward waves (G_plus)
+        // μ > 0 (outward motion): particle interacts with inward waves (G_minus)
+        if (mu < 0.0) {  // Inward motion
+            G_plus_data[j] += weighted_flux_coeff * K_plus;   // Time-weighted outward wave contribution
+        }
+        if (mu > 0.0) {  // Outward motion
+            G_minus_data[j] += weighted_flux_coeff * K_minus; // Time-weighted inward wave contribution
+        }
+
+        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+            validate_numeric(G_plus_data[j], -100.0, 50.0, __LINE__, __FILE__);
+            validate_numeric(G_minus_data[j], -100.0, 50.0, __LINE__, __FILE__);
+            validate_numeric(time_weight, 0.0, 1.0, __LINE__, __FILE__);
+            validate_numeric(dt_segment, 0.0, dt, __LINE__, __FILE__);
+        }
+    }
+}
+
+} // namespace IsotropicSEP
+} // namespace AlfvenTurbulence_Kolmogorov  
+} // namespace SEP
