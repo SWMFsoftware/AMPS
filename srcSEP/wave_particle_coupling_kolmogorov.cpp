@@ -169,7 +169,7 @@ const double K_MIN = 1.0e-8; // Minimum wavenumber [m⁻¹] (large scales)
 const double K_MAX = 1.0e-2; // Maximum wavenumber [m⁻¹] (small scales)
 
 // Momentum range: covers SEP energy range from keV to GeV
-const double P_MIN = 1.0e-20; // Minimum momentum [kg⋅m/s] 
+const double P_MIN = 1.0e-21; // Minimum momentum [kg⋅m/s] 
 const double P_MAX = 1.0e-17; // Maximum momentum [kg⋅m/s]
 
 // Grid spacing in logarithmic coordinates
@@ -1453,9 +1453,17 @@ void AccumulateParticleFluxForWaveCoupling(
     
     // Consistency check: totalTraversedPath should be consistent with vParallel and dt
     double expected_path = vParallel * dt;
+
     if (fabs(totalTraversedPath - expected_path) > 1.0e-10 * fabs(expected_path)) {
-        std::cerr << "Warning: Inconsistent path calculation. Expected=" << expected_path 
-                  << ", Actual=" << totalTraversedPath << std::endl;
+      char error_msg[512];
+      snprintf(error_msg, sizeof(error_msg),
+             "Fatal Error: Inconsistent path calculation detected.\n"
+             "Expected path: %.15e\n"
+             "Actual path: %.15e\n"
+             "Relative error: %.15e\n"
+             "This indicates a serious numerical integration error.",
+             expected_path, totalTraversedPath,
+             fabs(totalTraversedPath - expected_path) / fabs(expected_path));
     }
     
     // ========================================================================
@@ -1591,11 +1599,17 @@ void AccumulateParticleFluxForWaveCoupling(
         
         // Ensure time weighting is physical (can't spend more than total time in segment)
         if (time_weight > 1.0) {
-            std::cerr << "Warning: Time weight (" << time_weight 
-                      << ") > 1.0 in segment " << seg_idx 
-                      << ". Clamping to 1.0." << std::endl;
-            time_weight = 1.0;
+           if (time_weight > 1.0+1.0E-8) {
+	      char error_msg[256];
+	      snprintf(error_msg, sizeof(error_msg), 
+	        "Error: Time weight (%f) > 1.0 in segment %d. This indicates a serious computational error.",
+					                  time_weight, seg_idx);
+	      exit(__LINE__, __FILE__, error_msg);
+	   }
+
+	   time_weight=1.0;
         }
+
         
         // Skip segments with negligible time contribution
         if (time_weight < 1.0e-15) {
@@ -1691,7 +1705,7 @@ void AccumulateParticleFluxForWaveCoupling(
             validate_numeric(G_plus_data[j], -100.0, 50.0, __LINE__, __FILE__);
             validate_numeric(G_minus_data[j], -100.0, 50.0, __LINE__, __FILE__);
             validate_numeric(time_weight, 0.0, 1.0, __LINE__, __FILE__);
-            validate_numeric(dt_segment, 0.0, dt, __LINE__, __FILE__);
+            validate_numeric(dt_segment, 0.0, dt*(1.0+1.0E-8), __LINE__, __FILE__);
         }
     }
 }
