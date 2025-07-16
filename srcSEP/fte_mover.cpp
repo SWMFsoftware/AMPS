@@ -134,11 +134,32 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
   mu = vParallel / Speed;
 
   double TimeCounter = 0.0;
-  double totalTraversedPath = 0.0;
 
   // Initialize tracking variables for flux sampling
-  double s_current = FieldLineCoord; // Current position for flux sampling
-  double t_current = 0.0;            // Current time for flux sampling
+  double s_segment_start = FieldLineCoord;  // Start position for current segment
+  double segment_traversed_path = 0.0;      // Accumulated path in current segment
+
+  // Helper function to sample particle flux with proper parameters
+  auto SampleParticleFlux = [&](double s_start, double s_end, double traversed_path) {
+    if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag && fabs(traversed_path) > 1.0e-20) {
+      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::AccumulateParticleFluxForWaveCoupling(
+        iFieldLine,              // Field line index
+        ptr,                     // Particle index
+        dtTotal,                 // Time step
+        vParallel,              // Parallel velocity component
+        vNormal,                // Normal (gyration) velocity component
+        s_start,                // Start position along field line
+        s_end,                  // End position along field line
+        traversed_path          // Signed parallel path length
+      );
+    }
+  };
+
+  // Helper function to reset flux tracking variables
+  auto ResetFluxTracking = [&]() {
+    s_segment_start = FieldLineCoord;
+    segment_traversed_path = 0.0;
+  };
 
   // Helper function to calculate mean free path
   auto CalculateMeanFreePath = [&](int spec, double rHelio, double Speed, double AbsB) {
@@ -285,21 +306,20 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
     if (mu > 1.0 - 1e-6) mu = 1.0 - 1e-6;
     if (mu < -1.0 + 1e-6) mu = -1.0 + 1e-6;
 
-    totalTraversedPath += ds_parallel;
+    segment_traversed_path += ds_parallel;
+
+    // Reset tracking variables for next step
+    ResetFluxTracking();
 
     // Move particle along field line
     FieldLineCoord = FL::FieldLinesAll[iFieldLine].move(FieldLineCoord, ds_parallel, Segment);
 
+    // SAMPLE FLUX AFTER EACH MOVEMENT STEP
+    SampleParticleFlux(s_segment_start, FieldLineCoord,ds_parallel);
+
+
     if (Segment == NULL) {
       // Particle left the simulation domain
-      // Sample flux for wave coupling before deletion (from s_current to exit point)
-      if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
-        double s_final = FieldLineCoord;
-        SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::AccumulateParticleFluxForWaveCoupling(
-          iFieldLine, ptr, dtTotal, Speed, s_current, s_final, ds_parallel
-        );
-      }
-
       PIC::ParticleBuffer::DeleteParticle(ptr);
       return _PARTICLE_LEFT_THE_DOMAIN_;
     }
@@ -365,18 +385,6 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
         B[idim] = w0 * B0[idim] + w1 * B1[idim];
       }
       double AbsB = Vector3D::Length(B);
-
-      // Sample flux for this scattering event (from s_current to current position)
-      if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
-        double s_scattering = FieldLineCoord;
-        SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::AccumulateParticleFluxForWaveCoupling(
-          iFieldLine, ptr, dtTotal, Speed, s_current, s_scattering, fabs(ds_parallel)
-        );
-      }
-
-      // Reset tracking variables for next segment
-      s_current = FieldLineCoord;
-      t_current = 0.0;
 
       // Get plasma density for Alfven velocity calculation
       double PlasmaDensity0, PlasmaDensity1, PlasmaDensity;
@@ -484,45 +492,19 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
       if (scatter_with_Wplus) {
         // Scattering with W+ wave (outward wave in plasma frame)
         // This should only happen for inward moving particles (mu < 0)
-     
-        wave_data[0]-=stat_weight*dE;
+        wave_data[0] -= stat_weight * dE;
       }
       else {
-        wave_data[1]-=stat_weight*dE; 
+        wave_data[1] -= stat_weight * dE; 
       }
-
-      /*if (SEP::Sampling::EnergyChange::active_flag == true) {
-        // Store energy change statistics
-        double ParticleWeight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
-        ParticleWeight *= PB::GetIndividualStatWeightCorrection(ParticleData);
-
-        // Accumulate energy change statistics (if such sampling exists)
-        // SEP::Sampling::EnergyChange::AccumulateEnergyChange(dE, ParticleWeight, ...);
-      }
-      */
 
       // Apply pitch angle limits after transformation
       if (mu > 1.0 - 1e-6) mu = 1.0 - 1e-6;
       if (mu < -1.0 + 1e-6) mu = -1.0 + 1e-6;
-
-      /*
-      // Sample flux for this scattering event (from s_current to current position)
-      if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
-        double s_scattering = FieldLineCoord;
-        SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::AccumulateParticleFluxForWaveCoupling(
-          iFieldLine, ptr, dtTotal, Speed, s_current, s_scattering, fabs(ds_parallel)
-        );
-      }
-
-      // Reset tracking variables for next segment
-      s_current = FieldLineCoord;
-      t_current = 0.0;
-      */
-    } else {
-      // No scattering occurred - will sample at end of time step or next event
     }
 
     // Update velocity components based on new mu and speed
+    // NOTE: These will be used for next iteration flux sampling
     vParallel = mu * Speed;
     vNormal = sqrt(1.0 - mu*mu) * Speed;
 
@@ -542,17 +524,11 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(long int ptr, double dtTotal
     }
 
     TimeCounter += dt_event;
-    t_current += dt_event;
   }
 
-  // Sample final flux for any remaining segment (from s_current to final position)
-  if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag && t_current > 0.0) {
-    double s_final = FieldLineCoord;
-    double final_distance = fabs(s_final - s_current);
-    SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::AccumulateParticleFluxForWaveCoupling(
-      iFieldLine, ptr, dtTotal, Speed, s_current, s_final, final_distance
-    );
-  }
+  // SAMPLE FINAL FLUX BEFORE UPDATING PARTICLE PROPERTIES (CRITICAL!)
+  // This captures any remaining segment that wasn't sampled due to scattering reset
+  SampleParticleFlux(s_segment_start, FieldLineCoord, segment_traversed_path);
 
   // Set the new values of the normal and parallel particle velocities
   PB::SetVParallel(vParallel, ParticleData);
