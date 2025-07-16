@@ -1405,6 +1405,10 @@ void AccumulateParticleFluxForWaveCoupling(
     - Time in segment based on translational motion: dt_seg = |ds_seg| / |vParallel|
     */
     
+
+    static int ncall=0;
+    ncall++;
+
     // ========================================================================
     // INPUT VALIDATION
     // ========================================================================
