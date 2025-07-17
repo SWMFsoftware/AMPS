@@ -548,7 +548,9 @@ double CalculateTotalWaveEnergyInSystem(
  * MPI collective operation that sums particle energies across all processes.
  * Includes relativistic effects and statistical weights.
  */
-double CalculateTotalParticleEnergyInSystem();
+double CalculateTotalParticleEnergyInSystem(
+    double* min_energy, double* max_energy,
+    double* min_velocity, double* max_velocity);
 
 /**
  * @brief Check energy conservation across entire system

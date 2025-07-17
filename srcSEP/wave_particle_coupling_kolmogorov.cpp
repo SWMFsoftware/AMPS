@@ -191,13 +191,121 @@ int GetKBinIndex(double k_val) {
     return j;
 }
 
+
+// ============================================================================
+// UTILITY FUNCTION: CALCULATE TOTAL PARTICLE ENERGY WITH RANGE ANALYSIS
+// ============================================================================
+
+double CalculateTotalParticleEnergyInSystem(
+    double* min_energy = nullptr, double* max_energy = nullptr,
+    double* min_velocity = nullptr, double* max_velocity = nullptr) {
+    
+    double local_total_energy = 0.0;
+    double local_min_energy = std::numeric_limits<double>::max();
+    double local_max_energy = 0.0;
+    double local_min_velocity = std::numeric_limits<double>::max();
+    double local_max_velocity = 0.0;
+    bool has_particles = false;
+
+    // Sum energy across all segments assigned to this process
+    for (int field_line_idx = 0; field_line_idx < PIC::FieldLine::nFieldLine; ++field_line_idx) {
+        PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
+        int num_segments = field_line->GetTotalSegmentNumber();
+
+        for (int seg_idx = 0; seg_idx < num_segments; ++seg_idx) {
+            PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
+            if (!segment || segment->Thread != PIC::ThisThread) continue;
+
+            // Process all particles in this segment
+            long int p = segment->FirstParticleIndex;
+            
+            while (p != -1) {
+                has_particles = true;
+                
+                // Get particle velocity components in magnetic field coordinates
+                double vParallel = PIC::ParticleBuffer::GetVParallel(p);
+                double vNormal = PIC::ParticleBuffer::GetVNormal(p);
+                
+                // Calculate total velocity magnitude
+                double v_magnitude = sqrt(vParallel*vParallel + vNormal*vNormal);
+                
+                // Relativistic kinetic energy calculation for INDIVIDUAL particle
+                double individual_kinetic_energy = Relativistic::Speed2E(v_magnitude, PIC::MolecularData::GetMass(PIC::ParticleBuffer::GetI(p)));
+                
+                // Get particle statistical weight
+                double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[0] * 
+                                    PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+                
+                // Model particle energy (physical energy represented by computational particle)
+                double model_particle_energy = individual_kinetic_energy * stat_weight;
+                
+                // Accumulate total energy using model particle energy
+                local_total_energy += model_particle_energy;
+                
+                // Update energy ranges using INDIVIDUAL particle energy (not model particle energy)
+                if (individual_kinetic_energy < local_min_energy) {
+                    local_min_energy = individual_kinetic_energy;
+                }
+                if (individual_kinetic_energy > local_max_energy) {
+                    local_max_energy = individual_kinetic_energy;
+                }
+                
+                // Update velocity ranges (using individual particle velocity)
+                if (v_magnitude < local_min_velocity) {
+                    local_min_velocity = v_magnitude;
+                }
+                if (v_magnitude > local_max_velocity) {
+                    local_max_velocity = v_magnitude;
+                }
+                
+                // Get next particle in linked list
+                p = PIC::ParticleBuffer::GetNext(p);
+            }
+        }
+    }
+
+    // Handle case where no particles exist
+    if (!has_particles) {
+        local_min_energy = 0.0;
+        local_max_energy = 0.0;
+        local_min_velocity = 0.0;
+        local_max_velocity = 0.0;
+    }
+
+    // Sum total energy across all MPI processes
+    double total_energy = 0.0;
+    MPI_Allreduce(&local_total_energy, &total_energy, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    // Calculate global min/max ranges across all MPI processes (if requested)
+    if (min_energy || max_energy || min_velocity || max_velocity) {
+        double global_min_energy, global_max_energy;
+        double global_min_velocity, global_max_velocity;
+        
+        // Find global minimum and maximum energies
+        MPI_Allreduce(&local_min_energy, &global_min_energy, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+        MPI_Allreduce(&local_max_energy, &global_max_energy, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        
+        // Find global minimum and maximum velocities
+        MPI_Allreduce(&local_min_velocity, &global_min_velocity, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+        MPI_Allreduce(&local_max_velocity, &global_max_velocity, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        
+        // Return range values if pointers provided
+        if (min_energy) *min_energy = global_min_energy;
+        if (max_energy) *max_energy = global_max_energy;
+        if (min_velocity) *min_velocity = global_min_velocity;
+        if (max_velocity) *max_velocity = global_max_velocity;
+    }
+
+    return total_energy;  // [J]
+}
+
 // ============================================================================
 // OPTIMIZED WAVE-PARTICLE COUPLING MANAGER (ENHANCED DIAGNOSTICS VERSION)
 // ============================================================================
 
 /*
 ================================================================================
-                    OptimizedWaveParticleCouplingManager
+                    WaveParticleCouplingManager
 ================================================================================
 
 PURPOSE:
@@ -267,6 +375,8 @@ PRODUCTION MODE (Always Output):
 
 DEBUG MODE (_PIC_DEBUGGER_MODE_ON_):
 - Complete particle energy analysis (before/after)
+- Individual particle energy ranges in MeV
+- Velocity range analysis in m/s
 - Total system energy conservation verification
 - Energy conservation violation detection (tolerance: 1e-6)
 - Energy flow direction analysis (particles→waves or waves→particles)
@@ -319,7 +429,7 @@ PERFORMANCE CHARACTERISTICS:
 USAGE EXAMPLE:
 --------------
 // After particle transport phase
-OptimizedWaveParticleCouplingManager(
+WaveParticleCouplingManager(
     SEP::AlfvenTurbulence_Kolmogorov::WaveEnergy,  // Wave energy datum
     dt                                             // Time step [s]
 );
@@ -384,9 +494,13 @@ void WaveParticleCouplingManager(
     // Calculate initial wave energy
     initial_total_wave_energy = CalculateTotalWaveEnergyInSystem(WaveEnergy);
     
-    // Calculate initial particle energy (only in debug mode for performance)
+    // Calculate initial particle energy and ranges (only in debug mode for performance)
+    double initial_min_energy = 0.0, initial_max_energy = 0.0;
+    double initial_min_velocity = 0.0, initial_max_velocity = 0.0;
     if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-        initial_total_particle_energy = CalculateTotalParticleEnergyInSystem();
+        initial_total_particle_energy = CalculateTotalParticleEnergyInSystem(
+            &initial_min_energy, &initial_max_energy, 
+            &initial_min_velocity, &initial_max_velocity);
     }
 
     // Single loop through all segments
@@ -469,9 +583,13 @@ void WaveParticleCouplingManager(
     // Calculate final wave energy
     double final_total_wave_energy = CalculateTotalWaveEnergyInSystem(WaveEnergy);
     
-    // Calculate final particle energy (only in debug mode)
+    // Calculate final particle energy and ranges (only in debug mode)
+    double final_min_energy = 0.0, final_max_energy = 0.0;
+    double final_min_velocity = 0.0, final_max_velocity = 0.0;
     if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-        final_total_particle_energy = CalculateTotalParticleEnergyInSystem();
+        final_total_particle_energy = CalculateTotalParticleEnergyInSystem(
+            &final_min_energy, &final_max_energy, 
+            &final_min_velocity, &final_max_velocity);
     }
     
     // Sum total wave energy change across all MPI processes
@@ -561,6 +679,67 @@ void WaveParticleCouplingManager(
                       << std::fixed << std::setprecision(4) << relative_particle_energy_change * 100.0 
                       << "%)" << std::endl;
             
+            // Particle energy and velocity ranges
+            std::cout << std::endl;
+            std::cout << "Particle Energy Range Analysis (Individual Particles):" << std::endl;
+            
+            // Convert energy ranges from Joules to MeV
+            const double J_to_MeV = 1.0 / (1.602176634e-19 * 1.0e6);  // J to MeV conversion factor
+            
+            double initial_min_energy_MeV = initial_min_energy * J_to_MeV;
+            double initial_max_energy_MeV = initial_max_energy * J_to_MeV;
+            double final_min_energy_MeV = final_min_energy * J_to_MeV;
+            double final_max_energy_MeV = final_max_energy * J_to_MeV;
+            
+            std::cout << "  Initial energy range: [" << std::scientific << std::setprecision(4) 
+                      << initial_min_energy_MeV << ", " << initial_max_energy_MeV << "] MeV" << std::endl;
+            std::cout << "  Final energy range:   [" << std::scientific << std::setprecision(4) 
+                      << final_min_energy_MeV << ", " << final_max_energy_MeV << "] MeV" << std::endl;
+            
+            // Energy range changes in MeV
+            double energy_range_change_min_MeV = (final_min_energy - initial_min_energy) * J_to_MeV;
+            double energy_range_change_max_MeV = (final_max_energy - initial_max_energy) * J_to_MeV;
+            std::cout << "  Energy range changes: Min: " << std::scientific << std::setprecision(4) 
+                      << energy_range_change_min_MeV << " MeV, Max: " << energy_range_change_max_MeV << " MeV" << std::endl;
+            
+            // Energy span analysis in MeV
+            double initial_energy_span = initial_max_energy - initial_min_energy;
+            double final_energy_span = final_max_energy - final_min_energy;
+            double energy_span_change = final_energy_span - initial_energy_span;
+            double initial_energy_span_MeV = initial_energy_span * J_to_MeV;
+            double final_energy_span_MeV = final_energy_span * J_to_MeV;
+            double energy_span_change_MeV = energy_span_change * J_to_MeV;
+            std::cout << "  Energy span change: " << std::scientific << std::setprecision(4) 
+                      << energy_span_change_MeV << " MeV (" << std::fixed << std::setprecision(2) 
+                      << (energy_span_change / initial_energy_span) * 100.0 << "%)" << std::endl;
+            
+            // Additional energy statistics in MeV
+            std::cout << "  Initial energy span: " << std::scientific << std::setprecision(4) 
+                      << initial_energy_span_MeV << " MeV" << std::endl;
+            std::cout << "  Final energy span:   " << std::scientific << std::setprecision(4) 
+                      << final_energy_span_MeV << " MeV" << std::endl;
+            
+            std::cout << std::endl;
+            std::cout << "Particle Velocity Range Analysis:" << std::endl;
+            std::cout << "  Initial velocity range: [" << std::scientific << std::setprecision(4) 
+                      << initial_min_velocity << ", " << initial_max_velocity << "] m/s" << std::endl;
+            std::cout << "  Final velocity range:   [" << std::scientific << std::setprecision(4) 
+                      << final_min_velocity << ", " << final_max_velocity << "] m/s" << std::endl;
+            
+            // Velocity range changes
+            double velocity_range_change_min = final_min_velocity - initial_min_velocity;
+            double velocity_range_change_max = final_max_velocity - initial_max_velocity;
+            std::cout << "  Velocity range changes: Min: " << std::scientific << std::setprecision(4) 
+                      << velocity_range_change_min << " m/s, Max: " << velocity_range_change_max << " m/s" << std::endl;
+            
+            // Velocity span analysis
+            double initial_velocity_span = initial_max_velocity - initial_min_velocity;
+            double final_velocity_span = final_max_velocity - final_min_velocity;
+            double velocity_span_change = final_velocity_span - initial_velocity_span;
+            std::cout << "  Velocity span change: " << std::scientific << std::setprecision(4) 
+                      << velocity_span_change << " m/s (" << std::fixed << std::setprecision(2) 
+                      << (velocity_span_change / initial_velocity_span) * 100.0 << "%)" << std::endl;
+            
             // Total energy conservation check
             double initial_total_energy = initial_total_wave_energy + initial_total_particle_energy;
             double final_total_energy = final_total_wave_energy + final_total_particle_energy;
@@ -635,6 +814,7 @@ void WaveParticleCouplingManager(
         std::cout << "========================================" << std::endl;
     }
 }
+
 
 // ============================================================================
 // FUNCTION 1: ACCUMULATE PARTICLE FLUX DATA (CALLED BY PARTICLE MOVER)
@@ -1070,7 +1250,7 @@ void RedistributeWaveEnergyToParticles(
         double v_magnitude = sqrt(vParallel*vParallel + vNormal*vNormal);
         
         // Calculate relativistic kinetic energy
-        double kinetic_energy = Relativistic::Speed2E(v_magnitude, _H__MASS_);  // Single particle energy [J]
+        double kinetic_energy = Relativistic::Speed2E(v_magnitude, PIC::MolecularData::GetMass(PIC::ParticleBuffer::GetI(p)));  // Single particle energy [J]
         
         // Get statistical weight (number of real particles represented)
         double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[0] * 
@@ -1125,7 +1305,7 @@ void RedistributeWaveEnergyToParticles(
                                             vNormal_current*vNormal_current);
             
             // Calculate current particle energy
-            double kinetic_energy = Relativistic::Speed2E(v_magnitude_current, _H__MASS_);
+            double kinetic_energy = Relativistic::Speed2E(v_magnitude_current, PIC::MolecularData::GetMass(PIC::ParticleBuffer::GetI(p)));
             double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[0] * 
                                 PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
             double current_energy = kinetic_energy * stat_weight;  // Model particle energy
@@ -1255,7 +1435,7 @@ double CalculateTotalParticleEnergyInSegment(PIC::FieldLine::cFieldLineSegment* 
         double v_magnitude = sqrt(vParallel*vParallel + vNormal*vNormal);
         
         // Relativistic kinetic energy calculation
-        double kinetic_energy = Relativistic::Speed2E(v_magnitude, PIC::MolecularData::GetMass(PIC::ParticleBuffer::GetI(p)));
+        double kinetic_energy = Relativistic::Speed2E(v_magnitude, _H__MASS_);
         
         // Get particle statistical weight
         double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[0] * 
@@ -1305,34 +1485,16 @@ double CalculateTotalWaveEnergyInSystem(PIC::Datum::cDatumStored& WaveEnergy) {
     return total_energy;  // [J]
 }
 
-double CalculateTotalParticleEnergyInSystem() {
-    double local_total_energy = 0.0;
 
-    // Sum energy across all segments assigned to this process
-    for (int field_line_idx = 0; field_line_idx < PIC::FieldLine::nFieldLine; ++field_line_idx) {
-        PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
-        int num_segments = field_line->GetTotalSegmentNumber();
-
-        for (int seg_idx = 0; seg_idx < num_segments; ++seg_idx) {
-            PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
-            if (!segment || segment->Thread != PIC::ThisThread) continue;
-
-            local_total_energy += CalculateTotalParticleEnergyInSegment(segment);
-        }
-    }
-
-    // Sum across all MPI processes
-    double total_energy = 0.0;
-    MPI_Allreduce(&local_total_energy, &total_energy, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
-    return total_energy;  // [J]
-}
 
 void CheckEnergyConservation(PIC::Datum::cDatumStored& WaveEnergy, bool verbose) {
     static double previous_total_energy = -1.0;
 
+    double min_energy = 0.0, max_energy = 0.0;
+    double min_velocity = 0.0, max_velocity = 0.0;
+
     double wave_energy = CalculateTotalWaveEnergyInSystem(WaveEnergy);
-    double particle_energy = CalculateTotalParticleEnergyInSystem();
+    double particle_energy = CalculateTotalParticleEnergyInSystem(&min_energy, &max_energy,&min_velocity, &max_velocity);
     double total_energy = wave_energy + particle_energy;
 
     int rank;
