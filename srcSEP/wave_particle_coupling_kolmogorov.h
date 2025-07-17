@@ -458,10 +458,6 @@ void RedistributeWaveEnergyToParticles(
  * Performance: Single pass through all segments
  * Diagnostics: Reports processed segments and total energy change
  */
-void OptimizedWaveParticleCouplingManager(
-    PIC::Datum::cDatumStored& WaveEnergyDensity,
-    double dt
-);
 
 /**
  * @brief Complete wave-particle coupling manager (two-pass version)
