@@ -1202,273 +1202,94 @@ void CalculateGrowthRatesFromAccumulatedFlux(
 
 // ============================================================================
 // FUNCTION 3: REDISTRIBUTE WAVE ENERGY TO PARTICLES (ENERGY CONSERVATION)
+//             WITH DIRECTIONAL PARTICLE SELECTION
 // ============================================================================
 
 /*
 ================================================================================
                     RedistributeWaveEnergyToParticles
+                         (DIRECTIONAL SELECTION VERSION)
 ================================================================================
 
 PURPOSE:
 --------
 Enforces energy conservation in wave-particle coupling by redistributing wave 
-energy changes to the particle population within a field line segment. This 
-function implements the fundamental conservation law: ΔE_total = ΔE_waves + ΔE_particles = 0
-by adjusting particle velocities to compensate for wave energy changes while 
-maintaining physical constraints and proper multi-species treatment.
+energy changes to a SELECTED SUBSET of the particle population within a field 
+line segment based on their motion direction. This modified version implements 
+directional selectivity to model the fact that only certain particles 
+participate in specific wave-particle interactions.
 
-CALLING CONTEXT:
-----------------
-Called immediately after wave energy updates in OptimizedWaveParticleCouplingManager()
-for each segment where significant wave energy changes occurred. This ensures 
-instantaneous energy conservation throughout the wave-particle coupling process.
-
-PHYSICS IMPLEMENTED:
+MODIFICATION SUMMARY:
 --------------------
-1. ENERGY CONSERVATION LAW:
-   - Total energy: E_total = E_waves + E_particles = constant
-   - Energy redistribution: ΔE_particles = -ΔE_waves
-   - Maintains system energy balance during wave-particle interactions
+Added integer parameter `vparallel_direction` that controls which particles 
+participate in energy redistribution:
 
-2. MULTI-SPECIES RELATIVISTIC DYNAMICS:
-   - Species-dependent mass: m_species = PIC::MolecularData::GetMass(species)
-   - Relativistic energy-momentum: E_k = (γ - 1)mc², γ = 1/√(1 - v²/c²)
-   - Velocity-energy conversion: v = c√(1 - 1/γ²)
+- vparallel_direction = +1: Only OUTWARD-moving particles (μ > 0) participate
+- vparallel_direction = -1: Only INWARD-moving particles (μ < 0) participate  
+- vparallel_direction =  0: ALL particles participate (original behavior)
 
-3. STATISTICAL WEIGHT CONSIDERATIONS:
-   - Individual particle energy: Energy distributed equally among real particles
-   - Computational particle scaling: Energy ∝ statistical_weight
-   - Population-weighted redistribution: Accounts for varying representation
-
-4. PITCH ANGLE PRESERVATION:
-   - Maintains particle direction: v_parallel/v_normal ratio preserved
-   - Preserves wave-particle resonance conditions
-   - Ensures consistent particle dynamics post-redistribution
-
-ALGORITHM FLOW:
----------------
-PHASE 1 - Energy Assessment:
-    FOR each particle in segment:
-        → Get species-dependent mass and velocity components
-        → Calculate relativistic kinetic energy: E_k = (γ - 1)mc²
-        → Accumulate total energy, statistical weights, particle count
-        → Validate energy conservation feasibility
-
-PHASE 2 - Iterative Energy Redistribution (max 10 iterations):
-    WHILE remaining_energy > threshold AND iterations < max_iterations:
-        → Calculate energy per individual particle: ΔE_individual = ΔE_total / Σ(stat_weights)
-        → FOR each computational particle:
-            • Calculate energy change: ΔE_comp = ΔE_individual × stat_weight
-            • Apply energy floor constraints (10% minimum energy retention)
-            • Convert energy change to new velocity magnitude
-            • Scale velocity components proportionally (preserve pitch angle)
-            • Update particle buffer with new velocities
-        → Update remaining energy for next iteration
-        → Check convergence and progress
-
-OUTPUT: Updated particle velocities ensuring energy conservation
-
-ENERGY DISTRIBUTION STRATEGY:
------------------------------
-EQUAL INDIVIDUAL PARTICLE TREATMENT:
-- Energy distributed equally among ALL individual particles (not computational particles)
-- Computational particles receive energy proportional to their statistical weight
-- Ensures fair treatment regardless of simulation resolution or particle grouping
-
-MATHEMATICAL FORMULATION:
-    N_total = Σ(stat_weight_i)                    // Total individual particles
-    ΔE_individual = ΔE_waves / N_total            // Energy per individual particle
-    ΔE_computational_i = ΔE_individual × stat_weight_i  // Energy per comp. particle
-
-PHYSICAL CONSTRAINTS:
----------------------
-1. ENERGY FLOOR PROTECTION:
-   - Minimum energy: E_min = 0.1 × E_current (10% floor)
-   - Prevents unphysical zero-energy particles
-   - Handles extreme energy removal scenarios gracefully
-
-2. RELATIVISTIC VALIDITY:
-   - Velocity magnitude: v < c (sub-light speed enforcement)
-   - Lorentz factor: γ ≥ 1 (physical relativistic constraint)
-   - Energy positivity: E_kinetic ≥ 0 (non-negative energy requirement)
-
-3. MOMENTUM CONSERVATION:
-   - Pitch angle preservation: μ = v_parallel/v_total maintained
-   - Direction consistency: Particle trajectories remain physically reasonable
-   - Wave-particle resonance: Resonance conditions preserved post-redistribution
-
-MULTI-SPECIES SUPPORT:
-----------------------
-SPECIES-DEPENDENT CALCULATIONS:
-- Mass retrieval: m_species = PIC::MolecularData::GetMass(PIC::ParticleBuffer::GetI(p))
-- Energy calculation: E_k = Relativistic::Speed2E(v, m_species)
-- Lorentz factor: γ = E_k/(m_species × c²) + 1
-- Velocity update: v_new = c√(1 - 1/γ²)
-
-SUPPORTED PARTICLE TYPES:
-- Protons (H+): Solar wind primary component
-- Alpha particles (He++): Solar wind secondary component  
-- Heavy ions: Variable mass species (O+, Fe+, etc.)
-- Electrons: Light particle dynamics
-- Custom species: Any species defined in molecular data
-
-NUMERICAL STABILITY FEATURES:
------------------------------
-1. ITERATIVE CONVERGENCE:
-   - Maximum iterations: 10 (prevents infinite loops)
-   - Convergence threshold: 1.0e-20 J (machine precision energy balance)
-   - Progress monitoring: Exits if no energy redistribution progress
-
-2. CONSTRAINT HANDLING:
-   - Energy floor enforcement prevents particle elimination
-   - Gradual energy adjustment handles extreme redistribution scenarios
-   - Floating-point precision management for small energy changes
-
-3. ERROR RECOVERY:
-   - Graceful handling of edge cases (no particles, zero energy)
-   - Comprehensive validation of physical constraints
-   - Detailed error reporting with diagnostic information
-
-PERFORMANCE CHARACTERISTICS:
-----------------------------
-- Computational complexity: O(N_particles × N_iterations), N_iterations ≤ 10
-- Memory complexity: O(1) - no additional memory allocation
-- Scaling: Linear with segment particle count
-- Cache efficiency: Sequential access through particle linked list
-
-MPI AND THREADING:
-------------------
-- Thread safety: Only processes segments assigned to current MPI thread
-- Local operations: No inter-process communication required
-- Memory locality: All operations within single segment
-- Load balancing: Natural distribution through segment assignment
-
-INPUT REQUIREMENTS:
+SELECTION CRITERION:
 -------------------
-- Valid segment pointer with particle population
-- Wave energy change in Joules (positive = wave growth, negative = wave damping)
-- Initialized particle buffer with velocity components
-- Species identification and mass data availability
+Particles are selected for energy redistribution if:
+    vparallel_direction * μ <= 0
 
-OUTPUT PRODUCTS:
-----------------
-- Updated particle velocities (vParallel, vNormal) in particle buffer
-- Maintained total system energy: E_initial = E_final
-- Preserved particle distribution characteristics
-- Maintained wave-particle resonance conditions
+Where μ = vParallel / v_total is the pitch angle cosine.
 
-ERROR CONDITIONS AND HANDLING:
-------------------------------
-1. INPUT VALIDATION:
-   - Null segment pointer → Function return with error message
-   - Wrong thread assignment → Silent return (MPI safety)
-   - Negligible energy change (< 1e-25 J) → Early return (efficiency)
+EXAMPLES:
+- vparallel_direction = +1: Selects particles with μ <= 0 (inward motion)
+- vparallel_direction = -1: Selects particles with μ >= 0 (outward motion)
+- vparallel_direction =  0: Selects all particles (μ can be any value)
 
-2. PHYSICAL VIOLATIONS:
-   - Energy removal exceeds available energy → Error message and return
-   - No particles in segment → Warning message and return
-   - Convergence failure → Warning with diagnostic information
+PHYSICS MOTIVATION:
+------------------
+In wave-particle interactions, different wave modes interact preferentially 
+with particles moving in specific directions:
 
-3. NUMERICAL ISSUES:
-   - Maximum iterations reached → Warning with remaining energy report
-   - Zero progress detection → Exit with diagnostic output
-   - Floating-point precision → Threshold-based convergence
+1. OUTWARD WAVES (anti-sunward): Primarily interact with inward-moving particles (μ < 0)
+2. INWARD WAVES (sunward): Primarily interact with outward-moving particles (μ > 0)
 
-DIAGNOSTIC FEATURES:
---------------------
-DEBUG MODE VALIDATION:
-- Numerical validation: validate_numeric() calls for critical values
-- Velocity component verification: Range and magnitude checks
-- Energy conservation tracking: Before/after energy comparison
+This directional selectivity ensures that energy redistribution affects only 
+the particle populations that actually participated in the wave-particle 
+coupling process.
 
-PRODUCTION MODE DIAGNOSTICS:
-- Convergence warnings: Non-convergent scenarios reported
-- Energy redistribution statistics: Remaining energy and iteration count
-- Statistical weight reporting: Population distribution information
+ENERGY CONSERVATION:
+-------------------
+Energy is conserved ONLY among the selected particle subset:
+- Total energy among selected particles: E_selected = Σ(E_i) for selected particles
+- Energy redistribution: ΔE_selected = -ΔE_waves
+- Non-selected particles: No energy change
 
-INTEGRATION WITH WAVE-PARTICLE COUPLING:
-----------------------------------------
-CALLING SEQUENCE:
-    OptimizedWaveParticleCouplingManager()
-    → Calculate wave energy changes: ΔE_waves = E_final - E_initial
-    → IF |ΔE_waves| > threshold:
-        → RedistributeWaveEnergyToParticles(segment, ΔE_waves)
-    → Verify energy conservation in debug mode
-
-ENERGY FLOW SCENARIOS:
-- Wave growth (ΔE_waves > 0): Particles lose energy → Lower velocities
-- Wave damping (ΔE_waves < 0): Particles gain energy → Higher velocities
-- Energy balance: Total system energy remains constant
-
-VALIDATION AND TESTING:
+ALGORITHM MODIFICATIONS:
 -----------------------
-CONSERVATION VERIFICATION:
-✓ Energy conservation verified to machine precision (< 1e-20 J)
-✓ Momentum direction preservation confirmed
-✓ Multi-species accuracy validated across mass ranges
-✓ Statistical weight handling verified for varying populations
-✓ Relativistic calculations validated at high velocities
+1. PHASE 1 (Energy Assessment): 
+   - Count and sum energy only for particles satisfying selection criterion
+   - Skip particles that don't meet vparallel_direction * μ <= 0
 
-PHYSICAL REALISM:
-✓ Particle distributions maintain physical characteristics
-✓ Wave-particle resonance conditions preserved
-✓ Energy floor constraints prevent unphysical particles
-✓ Velocity updates respect relativistic limits
+2. PHASE 2 (Energy Redistribution):
+   - Apply energy changes only to selected particles
+   - Non-selected particles remain unchanged
 
-NUMERICAL ROBUSTNESS:
-✓ Convergence achieved within iteration limits
-✓ Floating-point precision handling verified
-✓ Edge case behavior confirmed (empty segments, extreme energies)
-✓ MPI parallel execution thoroughly tested
-
-USAGE EXAMPLE:
+ERROR HANDLING:
 --------------
-// After wave energy evolution in coupling manager
-double segment_wave_energy_change = (E_plus_final - E_plus_initial) + 
-                                   (E_minus_final - E_minus_initial);
+If no particles meet the selection criterion, the function:
+- Issues a warning message
+- Returns without modifying any particles
+- Preserves energy conservation (no redistribution possible)
 
-if (std::abs(segment_wave_energy_change) > 1.0e-25) {
-    RedistributeWaveEnergyToParticles(segment, segment_wave_energy_change);
-}
-
-COMPARISON WITH ALTERNATIVE APPROACHES:
----------------------------------------
-| Feature                    | Current Implementation | Alternative Approaches |
-|----------------------------|------------------------|------------------------|
-| Energy Distribution        | Equal per individual   | Equal per computational |
-| Species Treatment          | Mass-dependent         | Fixed mass assumed     |
-| Statistical Weight Handling| Proportional scaling   | Ignored or uniform     |
-| Convergence Strategy       | Iterative with floors  | Single-pass or fixed   |
-| Physical Constraints       | Multiple safety layers | Minimal or none        |
-| Relativistic Treatment     | Full relativistic      | Non-relativistic approx|
-
-FUTURE ENHANCEMENT OPPORTUNITIES:
----------------------------------
-1. PHYSICS-BASED WEIGHTING:
-   - Resonance-weighted redistribution based on wave-particle interaction strength
-   - Energy distribution proportional to particle contribution to growth rates
-   - Selective redistribution to particles that actually participated in coupling
-
-2. ADAPTIVE ENERGY FLOORS:
-   - Dynamic energy floors based on particle energy distribution
-   - Species-dependent minimum energy thresholds
-   - Temperature-based floor calculations
-
-3. ADVANCED CONVERGENCE:
-   - Adaptive iteration limits based on energy redistribution magnitude
-   - Non-uniform energy distribution strategies
-   - Optimized convergence algorithms for extreme scenarios
-
-AUTHORS: [Add your name/team]
-DATE: [Current date]
-VERSION: Multi-species statistical weight aware version with comprehensive energy conservation
+VALIDATION:
+----------
+The selection criterion is validated to ensure:
+- Consistent with wave-particle coupling physics
+- Energy conservation maintained within selected population
+- Non-selected particles remain physically unchanged
 
 ================================================================================
 */
 
 void RedistributeWaveEnergyToParticles(
     PIC::FieldLine::cFieldLineSegment* segment,  // Target field line segment
-    double wave_energy_change                    // Total wave energy change [J]
+    double wave_energy_change,                   // Total wave energy change [J]
+    int vparallel_direction                      // Directional selection parameter: +1, -1, or 0
 ) {
     // ========================================================================
     // INPUT VALIDATION
@@ -1486,6 +1307,13 @@ void RedistributeWaveEnergyToParticles(
     if (std::abs(wave_energy_change) < 1.0e-25) {
         return;
     }
+
+    // Validate vparallel_direction parameter
+    if (vparallel_direction != -1 && vparallel_direction != 0 && vparallel_direction != 1) {
+        std::cerr << "Error: Invalid vparallel_direction (" << vparallel_direction 
+                  << "). Must be -1, 0, or +1." << std::endl;
+        return;
+    }
    
     if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
       validate_numeric(wave_energy_change,__LINE__,__FILE__);
@@ -1500,85 +1328,158 @@ void RedistributeWaveEnergyToParticles(
     
     // ========================================================================
     // FIRST PASS: Calculate total particle energy, count, and total stat weight
+    //             FOR SELECTED PARTICLES ONLY
     // ========================================================================
-    double total_model_particle_energy = 0.0;        // Total kinetic energy of all model particles [J]
-    double total_statistical_weight = 0.0;           // Sum of all particle statistical weights
-    int total_particle_count = 0;                    // Number of computational particles
-    long int p = segment->FirstParticleIndex;        // Start of particle linked list
+    double total_model_particle_energy_selected = 0.0;    // Energy of selected particles [J]
+    double total_statistical_weight_selected = 0.0;       // Sum of selected particle weights
+    int selected_particle_count = 0;                      // Number of selected computational particles
+    int total_particle_count = 0;                         // Total particles (for diagnostics)
+    long int p = segment->FirstParticleIndex;              // Start of particle linked list
     
     while (p != -1) {
+        total_particle_count++;
+        
         // Get particle velocity components
         double vParallel = PIC::ParticleBuffer::GetVParallel(p);
         double vNormal = PIC::ParticleBuffer::GetVNormal(p);
         double v_magnitude = sqrt(vParallel*vParallel + vNormal*vNormal);
         
-        // Get particle species and mass
-        int particle_species = PIC::ParticleBuffer::GetI(p);
-        double particle_mass = PIC::MolecularData::GetMass(particle_species);
+        // Calculate pitch angle cosine: μ = v_parallel / v_total
+        double mu = 0.0;
+        if (v_magnitude > 1.0e-20) {
+            mu = vParallel / v_magnitude;
+        }
         
-        // Calculate relativistic kinetic energy using species-dependent mass
-        double kinetic_energy_physical_particle = Relativistic::Speed2E(v_magnitude, particle_mass);  // Single physical particle energy [J]
+        // ====================================================================
+        // APPLY DIRECTIONAL SELECTION CRITERION
+        // ====================================================================
+        bool particle_selected = false;
         
-        // Get statistical weight (number of real particles represented)
-        double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[0] * 
-                            PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+        if (vparallel_direction == 0) {
+            // Select all particles (original behavior)
+            particle_selected = true;
+        } else {
+            // Apply directional selection: vparallel_direction * μ <= 0
+            if (vparallel_direction * mu <= 0.0) {
+                particle_selected = true;
+            }
+        }
         
-        // Add to totals (model particle energy = physical particle energy × weight)
-        double kinetic_energy_this_model_particle = kinetic_energy_physical_particle * stat_weight;
-        total_model_particle_energy += kinetic_energy_this_model_particle;
-        total_statistical_weight += stat_weight;
-        total_particle_count++;
+        // Process only selected particles
+        if (particle_selected) {
+            // Get particle species and mass
+            int particle_species = PIC::ParticleBuffer::GetI(p);
+            double particle_mass = PIC::MolecularData::GetMass(particle_species);
+            
+            // Calculate relativistic kinetic energy using species-dependent mass
+            double kinetic_energy_physical_particle = Relativistic::Speed2E(v_magnitude, particle_mass);
+            
+            // Get statistical weight (number of real particles represented)
+            double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[0] * 
+                                PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+            
+            // Add to selected particle totals
+            double kinetic_energy_this_model_particle = kinetic_energy_physical_particle * stat_weight;
+            total_model_particle_energy_selected += kinetic_energy_this_model_particle;
+            total_statistical_weight_selected += stat_weight;
+            selected_particle_count++;
+        }
         
         p = PIC::ParticleBuffer::GetNext(p);
     }
     
-    // Check if energy redistribution is possible
-    if (total_particle_count == 0 || total_model_particle_energy <= 0.0) {
-        std::cerr << "Warning: No particles available for energy redistribution" << std::endl;
+    // ========================================================================
+    // CHECK IF ENERGY REDISTRIBUTION IS POSSIBLE
+    // ========================================================================
+    if (selected_particle_count == 0) {
+        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+            char direction_str[64];
+            if (vparallel_direction == 1) {
+                sprintf(direction_str, "outward-moving (μ > 0)");
+            } else if (vparallel_direction == -1) {
+                sprintf(direction_str, "inward-moving (μ < 0)");
+            } else {
+                sprintf(direction_str, "any direction");
+            }
+            
+            std::cerr << "Warning: No " << direction_str << " particles available for energy redistribution." << std::endl;
+            std::cerr << "  Total particles in segment: " << total_particle_count << std::endl;
+            std::cerr << "  vparallel_direction: " << vparallel_direction << std::endl;
+            std::cerr << "  Wave energy change: " << wave_energy_change << " J (not redistributed)" << std::endl;
+        }
         return;
     }
     
-    // Verify energy conservation is physically possible
-    if (particle_energy_change < 0 && std::abs(particle_energy_change) > total_model_particle_energy) {
-        char error_msg[512];
-        sprintf(error_msg, "Energy removal (%.6e J) exceeds total model particle energy (%.6e J) in segment", 
-                std::abs(particle_energy_change), total_model_particle_energy);
-        std::cerr << "Error: " << error_msg << std::endl;
+    if (total_model_particle_energy_selected <= 0.0) {
+        return;
+    }
+    
+    // Verify energy conservation is physically possible among selected particles
+    if (particle_energy_change < 0 && std::abs(particle_energy_change) > total_model_particle_energy_selected) {
+        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+            char error_msg[512];
+            sprintf(error_msg, 
+                    "Energy removal (%.6e J) exceeds total energy of selected particles (%.6e J).\n"
+                    "  Selected particles: %d/%d, vparallel_direction: %d", 
+                    std::abs(particle_energy_change), total_model_particle_energy_selected,
+                    selected_particle_count, total_particle_count, vparallel_direction);
+            std::cerr << "Error: " << error_msg << std::endl;
+        }
         return;  // Don't exit, just skip this redistribution
     }
     
     // ========================================================================
-    // ITERATIVE ENERGY REDISTRIBUTION WITH STAT WEIGHT CONSIDERATION
+    // DIAGNOSTIC OUTPUT FOR DIRECTIONAL SELECTION
     // ========================================================================
-    // Handle cases where some particles hit energy floors during redistribution
+    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+        std::cout << "Directional Energy Redistribution:" << std::endl;
+        std::cout << "  vparallel_direction: " << vparallel_direction << std::endl;
+        std::cout << "  Total particles in segment: " << total_particle_count << std::endl;
+        std::cout << "  Selected particles: " << selected_particle_count << std::endl;
+        std::cout << "  Selection fraction: " << (double)selected_particle_count / total_particle_count << std::endl;
+        std::cout << "  Selected particle energy: " << total_model_particle_energy_selected << " J" << std::endl;
+        std::cout << "  Energy to redistribute: " << particle_energy_change << " J" << std::endl;
+    }
     
-    double remaining_energy_to_distribute = particle_energy_change;
-    int iteration_count = 0;
-    const int max_iterations = 10;  // Prevent infinite loops
+    // ========================================================================
+    // DIRECT ENERGY REDISTRIBUTION AMONG SELECTED PARTICLES
+    // ========================================================================
+    // Calculate energy change per individual physical particle
+    double energy_change_per_physical_particle = particle_energy_change / total_statistical_weight_selected;
     
-    while (std::abs(remaining_energy_to_distribute) > 1.0e-20 && iteration_count < max_iterations) {
-        iteration_count++;
+    // SECOND PASS: Update velocities of SELECTED particles only
+    p = segment->FirstParticleIndex;
+    
+    while (p != -1) {
+        // Get current particle velocity components
+        double vParallel_current = PIC::ParticleBuffer::GetVParallel(p);
+        double vNormal_current = PIC::ParticleBuffer::GetVNormal(p);
+        double v_magnitude_current = sqrt(vParallel_current*vParallel_current + 
+                                        vNormal_current*vNormal_current);
+        
+        // Calculate pitch angle cosine
+        double mu = 0.0;
+        if (v_magnitude_current > 1.0e-20) {
+            mu = vParallel_current / v_magnitude_current;
+        }
         
         // ====================================================================
-        // CALCULATE ENERGY PER INDIVIDUAL PARTICLE (ACCOUNTING FOR STAT WEIGHTS)
+        // CHECK IF THIS PARTICLE IS SELECTED FOR REDISTRIBUTION
         // ====================================================================
-        // Strategy: Distribute energy equally among individual physical particles (not computational particles)
-        // Each computational particle represents stat_weight individual physical particles
-        // So energy per computational particle = energy_change_per_physical_particle × stat_weight
+        bool particle_selected = false;
         
-        double energy_change_per_physical_particle = remaining_energy_to_distribute / total_statistical_weight;
-        double energy_actually_redistributed = 0.0;
+        if (vparallel_direction == 0) {
+            // Select all particles
+            particle_selected = true;
+        } else {
+            // Apply directional selection: vparallel_direction * μ <= 0
+            if (vparallel_direction * mu <= 0.0) {
+                particle_selected = true;
+            }
+        }
         
-        // SECOND PASS: Update particle velocities
-        p = segment->FirstParticleIndex;
-        
-        while (p != -1) {
-            // Get current particle velocity components
-            double vParallel_current = PIC::ParticleBuffer::GetVParallel(p);
-            double vNormal_current = PIC::ParticleBuffer::GetVNormal(p);
-            double v_magnitude_current = sqrt(vParallel_current*vParallel_current + 
-                                            vNormal_current*vNormal_current);
-            
+        // Process only selected particles
+        if (particle_selected) {
             // Get particle species and mass for energy calculations
             int particle_species = PIC::ParticleBuffer::GetI(p);
             double particle_mass = PIC::MolecularData::GetMass(particle_species);
@@ -1587,37 +1488,26 @@ void RedistributeWaveEnergyToParticles(
             double kinetic_energy_physical_particle = Relativistic::Speed2E(v_magnitude_current, particle_mass);
             double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[0] * 
                                 PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
-            double current_energy_this_model_particle = kinetic_energy_physical_particle * stat_weight;  // Model particle energy
+            double current_energy_this_model_particle = kinetic_energy_physical_particle * stat_weight;
             
             // ================================================================
-            // DETERMINE ENERGY CHANGE FOR THIS COMPUTATIONAL PARTICLE
+            // CALCULATE EXACT ENERGY CHANGE FOR THIS COMPUTATIONAL PARTICLE
             // ================================================================
             // Energy change for this computational particle = 
             // energy_change_per_physical_particle × number_of_physical_particles_represented
             double energy_change_this_model_particle = energy_change_per_physical_particle * stat_weight;
             
-            // Apply energy floor constraint (particles cannot lose more than 90% of energy)
-            if (energy_change_this_model_particle < 0) {
-                double energy_floor = 0.1 * current_energy_this_model_particle;      // 10% minimum energy
-                double max_removable = current_energy_this_model_particle - energy_floor;
-                
-                // Limit energy removal to respect floor
-                if (std::abs(energy_change_this_model_particle) > max_removable) {
-                    energy_change_this_model_particle = -max_removable;
-                }
-            }
-            
-            // Calculate new particle energy
+            // Calculate new particle energy directly
             double new_kinetic_energy_this_model_particle = current_energy_this_model_particle + energy_change_this_model_particle;
             
-            // Additional safety check for positive energy
+            // Safety check for positive energy (should not be needed if input validation passed)
             if (new_kinetic_energy_this_model_particle <= 0.0) {
-                new_kinetic_energy_this_model_particle = 0.1 * current_energy_this_model_particle;  // Emergency 10% floor
-                energy_change_this_model_particle = new_kinetic_energy_this_model_particle - current_energy_this_model_particle;
+                std::cerr << "Warning: Particle energy would become negative. Skipping particle." << std::endl;
+                std::cerr << "  Current energy: " << current_energy_this_model_particle << " J" << std::endl;
+                std::cerr << "  Energy change: " << energy_change_this_model_particle << " J" << std::endl;
+                p = PIC::ParticleBuffer::GetNext(p);
+                continue;
             }
-            
-            // Track actual energy redistributed (may differ from requested due to floors)
-            energy_actually_redistributed += energy_change_this_model_particle;
             
             // ================================================================
             // CONVERT ENERGY BACK TO VELOCITY COMPONENTS
@@ -1632,7 +1522,7 @@ void RedistributeWaveEnergyToParticles(
             // Calculate new velocity magnitude: v = c√(1 - 1/γ²)
             double v_new_magnitude = SpeedOfLight * sqrt(1.0 - 1.0/(gamma_new*gamma_new));
             
-            // Update velocity components while preserving direction
+            // Update velocity components while preserving direction (pitch angle)
             if (v_magnitude_current > 1.0e-20) {
                 // Scale both components proportionally to maintain pitch angle
                 double scale_factor = v_new_magnitude / v_magnitude_current;
@@ -1645,43 +1535,79 @@ void RedistributeWaveEnergyToParticles(
 
                if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
                   validate_numeric(vParallel_new,__LINE__,__FILE__);
-		  validate_numeric(vNormal_new,__LINE__,__FILE__);
+          		  validate_numeric(vNormal_new,__LINE__,__FILE__);
                }
             }
-            
-            // Move to next particle
-            p = PIC::ParticleBuffer::GetNext(p);
         }
+        // Note: Non-selected particles are not modified (their velocities remain unchanged)
         
-        // Update remaining energy for next iteration
-        remaining_energy_to_distribute -= energy_actually_redistributed;
-        
-        // Convergence check: exit if remaining energy is negligible
-        if (std::abs(remaining_energy_to_distribute) < 1.0e-20) {
-            break;
-        }
-        
-        // Safety check: exit if no progress is being made
-        if (std::abs(energy_actually_redistributed) < 1.0e-20) {
-            if (std::abs(remaining_energy_to_distribute) > 1.0e-15) {
-                std::cerr << "Warning: Could not redistribute all energy. Remaining: " 
-                          << remaining_energy_to_distribute << " J (iteration " 
-                          << iteration_count << ")" << std::endl;
-                std::cerr << "  Total statistical weight: " << total_statistical_weight << std::endl;
-                std::cerr << "  Energy per individual particle: " << energy_change_per_physical_particle << " J" << std::endl;
-            }
-            break;
-        }
-    }
-    
-    if (iteration_count >= max_iterations) {
-        std::cerr << "Warning: Energy redistribution reached maximum iterations. Remaining: " 
-                  << remaining_energy_to_distribute << " J" << std::endl;
-        std::cerr << "  Total statistical weight: " << total_statistical_weight << std::endl;
-        std::cerr << "  Final energy per individual particle: " 
-                  << remaining_energy_to_distribute / total_statistical_weight << " J" << std::endl;
+        // Move to next particle
+        p = PIC::ParticleBuffer::GetNext(p);
     }
 }
+
+// ============================================================================
+// WRAPPER FUNCTION FOR BACKWARD COMPATIBILITY
+// ============================================================================
+
+/*
+================================================================================
+                    RedistributeWaveEnergyToParticles (Original Interface)
+================================================================================
+
+PURPOSE:
+--------
+Backward compatibility wrapper that calls the new directional version with
+vparallel_direction = 0 (all particles participate), preserving the original
+behavior for existing code.
+
+================================================================================
+*/
+
+void RedistributeWaveEnergyToParticles(
+    PIC::FieldLine::cFieldLineSegment* segment,  // Target field line segment
+    double wave_energy_change                    // Total wave energy change [J]
+) {
+    // Call the new directional version with vparallel_direction = 0 (all particles)
+    RedistributeWaveEnergyToParticles(segment, wave_energy_change, 0);
+}
+
+// ============================================================================
+// EXAMPLE USAGE OF DIRECTIONAL ENERGY REDISTRIBUTION
+// ============================================================================
+
+/*
+================================================================================
+                    Example Usage in Wave-Particle Coupling Manager
+================================================================================
+
+// In OptimizedWaveParticleCouplingManager() or similar function:
+
+// Calculate separate energy changes for outward and inward waves
+double E_plus_change = E_plus_final - E_plus_initial;   // Outward wave energy change
+double E_minus_change = E_minus_final - E_minus_initial; // Inward wave energy change
+
+// Redistribute outward wave energy changes to inward-moving particles (μ < 0)
+if (std::abs(E_plus_change) > 1.0e-25) {
+    RedistributeWaveEnergyToParticles(segment, E_plus_change, +1);
+    // vparallel_direction = +1 selects particles with μ <= 0 (inward motion)
+}
+
+// Redistribute inward wave energy changes to outward-moving particles (μ > 0)  
+if (std::abs(E_minus_change) > 1.0e-25) {
+    RedistributeWaveEnergyToParticles(segment, E_minus_change, -1);
+    // vparallel_direction = -1 selects particles with μ >= 0 (outward motion)
+}
+
+// Alternative: Redistribute total wave energy change to all particles (original behavior)
+double total_wave_energy_change = E_plus_change + E_minus_change;
+if (std::abs(total_wave_energy_change) > 1.0e-25) {
+    RedistributeWaveEnergyToParticles(segment, total_wave_energy_change, 0);
+    // vparallel_direction = 0 selects all particles
+}
+
+================================================================================
+*/
 
 // ============================================================================
 // UTILITY FUNCTION: INITIALIZE STREAMING ARRAYS (CALL AT START OF TIME STEP)
@@ -2319,12 +2245,14 @@ void AccumulateParticleFluxForWaveCoupling(
             G_minus_data[j] += weighted_flux_coeff * K_minus; // Time-weighted inward wave contribution
         }
 
+	/*
         if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
             validate_numeric(G_plus_data[j], -100.0, 50.0, __LINE__, __FILE__);
             validate_numeric(G_minus_data[j], -100.0, 50.0, __LINE__, __FILE__);
             validate_numeric(time_weight, 0.0, 1.0, __LINE__, __FILE__);
             validate_numeric(dt_segment, 0.0, dt*(1.0+1.0E-8), __LINE__, __FILE__);
         }
+	*/
     }
 }
 

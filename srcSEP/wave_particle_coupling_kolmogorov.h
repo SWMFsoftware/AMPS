@@ -434,6 +434,12 @@ void RedistributeWaveEnergyToParticles(
     double wave_energy_change
 );
 
+void RedistributeWaveEnergyToParticles(
+    PIC::FieldLine::cFieldLineSegment* segment,  // Target field line segment
+    double wave_energy_change,                   // Total wave energy change [J]
+    int vparallel_direction                      // Directional selection parameter: +1, -1, or 0
+    ); 
+
 // ----------------------------------------------------------------------------
 // MANAGER FUNCTIONS (orchestrate complete coupling process)
 // ----------------------------------------------------------------------------
