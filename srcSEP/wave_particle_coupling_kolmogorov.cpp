@@ -552,10 +552,22 @@ void WaveParticleCouplingManager(
                 validate_numeric(E_minus_final, __LINE__, __FILE__);
             }
 
-            // Calculate wave energy change for this segment
-            double segment_wave_energy_change = (E_plus_final - E_plus_initial) + 
-                                              (E_minus_final - E_minus_initial);
-            
+            // Calculate wave energy change for this segment, and redistribute it to particles for energy conservation 
+            double segment_wave_energy_change = E_plus_final - E_plus_initial; 
+	    RedistributeWaveEnergyToParticles(segment, segment_wave_energy_change,-1);
+
+            // Accumulate for diagnostics
+            total_wave_energy_change_system += segment_wave_energy_change;
+
+	    segment_wave_energy_change = E_minus_final - E_minus_initial; 
+            RedistributeWaveEnergyToParticles(segment, segment_wave_energy_change,+1);
+
+            // Accumulate for diagnostics
+            total_wave_energy_change_system += segment_wave_energy_change;
+            processed_segments++;
+
+
+
             // Update wave energy data in segment
             wave_data[0] = E_plus_final;
             wave_data[1] = E_minus_final;
@@ -564,15 +576,6 @@ void WaveParticleCouplingManager(
                 validate_numeric(wave_data[0], __LINE__, __FILE__);
                 validate_numeric(wave_data[1], __LINE__, __FILE__);
             }
-
-            // Immediately redistribute energy to particles for energy conservation
-            if (std::abs(segment_wave_energy_change) > 1.0e-25) {
-                RedistributeWaveEnergyToParticles(segment, segment_wave_energy_change);
-            }
-
-            // Accumulate for diagnostics
-            total_wave_energy_change_system += segment_wave_energy_change;
-            processed_segments++;
         }
     }
 
