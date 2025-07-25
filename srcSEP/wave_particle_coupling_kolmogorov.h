@@ -431,7 +431,7 @@ void CalculateGrowthRatesFromAccumulatedFlux(
  */
 void RedistributeWaveEnergyToParticles(
     PIC::FieldLine::cFieldLineSegment* segment,
-    double wave_energy_change
+    double particle_energy_change
 );
 
 void RedistributeWaveEnergyToParticles(
