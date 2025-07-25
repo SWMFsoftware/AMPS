@@ -266,10 +266,10 @@ double CalculateTotalParticleEnergyInSystem(
 
     // Handle case where no particles exist
     if (!has_particles) {
-        local_min_energy = 0.0;
-        local_max_energy = 0.0;
-        local_min_velocity = 0.0;
-        local_max_velocity = 0.0;
+      local_min_energy = std::numeric_limits<double>::max();      // Ignored by MPI_MIN
+      local_max_energy = -std::numeric_limits<double>::max();     // Ignored by MPI_MAX
+      local_min_velocity = std::numeric_limits<double>::max();    // Ignored by MPI_MIN
+      local_max_velocity = -std::numeric_limits<double>::max();   // Ignored by MPI_MAX
     }
 
     // Sum total energy across all MPI processes
