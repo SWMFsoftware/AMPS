@@ -355,6 +355,12 @@ namespace SEP {
 
     //output field line backgound data 
     void OutputBackgroundData(char* fname, int iFieldLine);
+
+    //the mode (const or expansing as R^2) of the magnetic tube radius
+    extern int MagneticTubeRadiusMode;
+    
+    const int MagneticTubeRadiusModeR2=0;
+    const int MagneticTubeRadiusModeConst=1; 
   }
 
   //the namespace contains the diffution models

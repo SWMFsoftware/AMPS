@@ -9,6 +9,8 @@
 int SEP::ParticleSource::ShockWave::ShockStateFlag_offset=-1;
 double SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio=3.0;
 
+int SEP::FieldLine::MagneticTubeRadiusMode=SEP::FieldLine::MagneticTubeRadiusModeR2;
+
 //condition for presence of a shock in a given cell
 bool SEP::ParticleSource::ShockWave::IsShock(PIC::Mesh::cDataCenterNode *CenterNode) {
   double density_current,density_last;
@@ -130,13 +132,22 @@ void SEP::ParticleSource::PopulateFieldLine(int iFieldLine) {
 //calcualte volume associated with a segment of the field line 
 double SEP::FieldLine::MagneticTubeRadius(double *x,int iFieldLine) {
   namespace FL = PIC::FieldLine;
-  double *x0;
+  double *x0,res;
 
+  if (MagneticTubeRadiusMode==MagneticTubeRadiusModeConst) 
   //1. the radius of the magnetic tube as the first vertex from the beginnig of the filed line is ONE
   //2. the radius increases as R^2 
   x0=FL::FieldLinesAll[iFieldLine].GetFirstSegment()->GetBegin()->GetX(); 
 
-  return Vector3D::DotProduct(x,x)/Vector3D::DotProduct(x0,x0);
+  switch (MagneticTubeRadiusMode) {
+  case MagneticTubeRadiusModeConst:
+    res=Vector3D::Length(x0);
+    break;
+  default: 
+    res=Vector3D::DotProduct(x,x)/Vector3D::DotProduct(x0,x0);
+  }
+
+  return res;
 }
 
 double SEP::FieldLine::MagneticTubeRadius(PIC::FieldLine::cFieldLineVertex* Vertex,int iFieldLine) {
