@@ -44,6 +44,18 @@ namespace SEP {
          * @return true if valid, false otherwise
          */
         bool IsPointValid(double *x);
+
+	//get solar winf density and temperature as funcrino of a heliocentric distance 
+	double SolarWindTemperature(double r_m);
+	double SolarWindNumberDensity(double r_m);
+	double SolarWindBulkVelocity(double r_m);
+
+	//inject solar wind particles 
+	long int InitializeSolarWindPopulation(int spec, int nParticlesPerFieldLine);
+        long int InitializeSolarWindFieldLine(int spec, int iFieldLine, int nParticlesPerFieldLine);
+
+	long int InjectSolarWindAtAllFieldLines(int spec, double dt);
+	long int InjectSolarWindAtFieldLineBeginning(int spec, int iFieldLine, double dt);
         
     } // namespace SolarWind
 } // namespace SEP
