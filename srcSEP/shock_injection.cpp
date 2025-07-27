@@ -134,7 +134,6 @@ double SEP::FieldLine::MagneticTubeRadius(double *x,int iFieldLine) {
   namespace FL = PIC::FieldLine;
   double *x0,res;
 
-  if (MagneticTubeRadiusMode==MagneticTubeRadiusModeConst) 
   //1. the radius of the magnetic tube as the first vertex from the beginnig of the filed line is ONE
   //2. the radius increases as R^2 
   x0=FL::FieldLinesAll[iFieldLine].GetFirstSegment()->GetBegin()->GetX(); 
