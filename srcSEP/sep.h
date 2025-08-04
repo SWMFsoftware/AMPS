@@ -82,6 +82,7 @@
 #include "turbulence_advection_kolmogorov.h"
 #include "wave_energy_initialization.h"
 #include "test_wave_energy_initialization.h"
+#include "growth_rate_validation_test.h"
 
 //define which diffution model is used in the simulation
 #define _DIFFUSION_NONE_                 0
@@ -316,6 +317,9 @@ namespace SEP {
 
   //functions related to tracing SEPs along field lines 
   namespace FieldLine {
+    //delete all model particles 
+    long int DeleteAllParticles();
+
     namespace InjectionParameters {
       extern int nParticlesPerIteration;
       extern double PowerIndex,emin,emax;
