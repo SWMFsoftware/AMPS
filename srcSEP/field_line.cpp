@@ -388,5 +388,95 @@ long int SEP::FieldLine::InjectParticles() {
 
   return res;
 }
- 
 
+//=============================================================================
+    // DeleteAllParticles
+    //=============================================================================
+    // Purpose: Delete all particles from all magnetic field lines and segments
+    //
+    // Description:
+    //   Traverses the entire field line structure and removes all particles from
+    //   every segment of every field line. This function provides a clean way to
+    //   reset the particle population, useful for restarting simulations, clearing
+    //   initialization states, or preparing for new injection scenarios.
+    //
+    // Physics:
+    //   - Removes all computational particles while preserving field line geometry
+    //   - Maintains field line structure and background plasma data
+    //   - Resets particle lists to empty state for fresh initialization
+    //
+    // Algorithm:
+    //   1. Loop through all field lines (0 to nFieldLine-1)
+    //   2. For each field line, traverse all segments
+    //   3. For each segment, delete all attached particles using PIC framework
+    //   4. Reset segment particle list pointers to -1 (empty)
+    //   5. Accumulate total count of deleted particles
+    //
+    // Parameters:
+    //   None
+    //
+    // Returns:
+    //   Total number of particles deleted across all field lines
+    //
+    // Usage:
+    //   // Clear all particles before reinitialization:
+    //   long int deletedCount = SEP::SolarWind::DeleteAllParticles();
+    //
+    //   // Then reinitialize with new parameters:
+    //   SEP::SolarWind::InitializeSolarWindPopulation(spec, nParticles);
+    //
+    // Notes:
+    //   - Only processes segments assigned to current MPI thread
+    //   - Uses PIC::ParticleBuffer::DeleteParticle() for proper memory management
+    //   - Preserves field line geometry and background plasma data
+    //   - Thread-safe operation respects MPI domain decomposition
+    //   - Resets FirstParticleIndex to -1 for each segment
+    //
+    // Warning:
+    //   This function permanently removes all particles. Make sure this is
+    //   the intended behavior before calling, especially in production runs.
+    //=============================================================================
+ 
+long int SEP::FieldLine::DeleteAllParticles() {
+    namespace FL = PIC::FieldLine;
+    namespace PB = PIC::ParticleBuffer;
+
+    long int totalDeletedParticles = 0;
+
+    // Check if field line mode is active and particles are attached to segments
+    if ((_PIC_PARTICLE_LIST_ATTACHING_ != _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) ||
+        (_PIC_FIELD_LINE_MODE_ != _PIC_MODE_ON_)) {
+        // Field line particle management not active - return 0
+        return 0;
+    }
+
+    // Loop through all field lines
+    for (int iFieldLine = 0; iFieldLine < FL::nFieldLine; iFieldLine++) {
+        FL::cFieldLineSegment* Segment = FL::FieldLinesAll[iFieldLine].GetFirstSegment();
+
+        // Loop through all segments in current field line
+        while (Segment != nullptr) {
+            // Only process segments assigned to this thread
+            if (Segment->Thread == PIC::ThisThread) {
+                long int ptr = Segment->FirstParticleIndex;
+                long int ptr_next;
+
+                // Delete all particles in this segment
+                while (ptr != -1) {
+                    ptr_next = PB::GetNext(ptr);
+                    PB::DeleteParticle(ptr);
+                    totalDeletedParticles++;
+                    ptr = ptr_next;
+                }
+
+                // Reset segment particle list pointer
+                Segment->FirstParticleIndex = -1;
+            }
+
+            // Move to next segment
+            Segment = Segment->GetNext();
+        }
+    }
+
+    return totalDeletedParticles;
+}
