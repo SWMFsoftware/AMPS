@@ -84,6 +84,8 @@
 #include "test_wave_energy_initialization.h"
 #include "growth_rate_validation_test.h"
 
+#include "kolmogorov_scatter.h"
+
 //define which diffution model is used in the simulation
 #define _DIFFUSION_NONE_                 0
 #define _DIFFUSION_ROUX2004AJ_           1 
@@ -164,6 +166,9 @@ namespace SEP {
       const int n_stream_intervals=20;
       extern double log_p_stream_min,log_p_stream_max,log_dp_stream;
     }
+
+    double GetKmin(double S);
+    double GetKmax(double S);
   }
 
 
