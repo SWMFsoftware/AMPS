@@ -206,7 +206,7 @@ inline int SelectBranchProton(
 
    NOTE: Ensuring dt_plasma ≫ 2π/Ω is recommended (gyro-averaging for QLT), but not enforced.
 =============================================================================================================== */
-inline ScatterResult ScatterStepProton(
+ScatterResult ScatterStepProton(
     double vpar, double vperp, double B, double VA,
     double W_plus_total_B2, double W_minus_total_B2,
     double kmin, double kmax, double dt_plasma,
@@ -321,13 +321,13 @@ inline ScatterResult ScatterStepProton(
 
    NOTE: We still use the SAME branch-selection logic as SDE (fully correct for all v, μ).
 =============================================================================================================== */
-inline ScatterResult ScatterStepProton_UniformMuPrime(
+ScatterResult ScatterStepProton_UniformMuPrime(
     double vpar, double vperp, double B, double VA,
     double W_plus_total_B2, double W_minus_total_B2,
     double kmin, double kmax, double /*dt_plasma*/,
-    double q = 1.602176634e-19,     // C
-    double m = 1.67262192369e-27,   // kg
-    double c = 299792458.0          // m/s
+    double q, // = 1.602176634e-19,     // C
+    double m, // = 1.67262192369e-27,   // kg
+    double c // = 299792458.0          // m/s
 ) {
     ScatterResult R{};
 
