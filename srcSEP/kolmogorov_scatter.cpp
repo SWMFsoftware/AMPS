@@ -210,9 +210,9 @@ ScatterResult ScatterStepProton(
     double vpar, double vperp, double B, double VA,
     double W_plus_total_B2, double W_minus_total_B2,
     double kmin, double kmax, double dt_plasma,
-    double q = 1.602176634e-19,     // proton charge (C)
-    double m = 1.67262192369e-27,   // proton mass (kg)
-    double c = 299792458.0          // speed of light (m/s)
+    double q,     // proton charge (C)
+    double m,   // proton mass (kg)
+    double c    // speed of light (m/s)
 ) {
     ScatterResult R{};
 
@@ -221,7 +221,7 @@ ScatterResult ScatterStepProton(
     const double beta2 = (v*v)/(c*c);
     const double gamma = 1.0/std::sqrt(std::max(1.0 - beta2, 1e-30));
     const double mu    = (v>0.0) ? (vpar/v) : 0.0;
-    const double Omega = (q*B)/(gamma*m*c);
+    const double Omega = (q*B)/(gamma*m);
 
     // Kolmogorov normalizations per branch (from integrated δB²)
     const double C_plus  = kolmo_C(W_plus_total_B2,  kmin, kmax);
