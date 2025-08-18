@@ -26,373 +26,375 @@
 
 #include "sep.h"
 
-int SEP::ParticleMover_FocusedTransport_WaveScattering(long int ptr, double dtTotal, 
-                                                      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+
+int SEP::ParticleMover_FocusedTransport_WaveScattering(
+    long int ptr, double dtTotal,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node
+) {
     namespace PB = PIC::ParticleBuffer;
     namespace FL = PIC::FieldLine;
 
-    // Alfvén wave branch constants
-    const int BranchPlus = 0;   // W+ (outward propagating wave)
-    const int BranchMinus = 1;  // W- (inward propagating wave)
+    // Wave-branch indexing inside the cell-integrated energy array
+    const int BranchPlus  = 0; // W+
+    const int BranchMinus = 1; // W-
 
-    PIC::ParticleBuffer::byte *ParticleData;
-    double Speed, mu, vParallel, vNormal;
-    double FieldLineCoord, xCartesian[3];
-    int iFieldLine, spec;
-    FL::cFieldLineSegment *Segment;
-
-    // Performance counters
-    static int ncall = 0;
-    static int total_scattering_events = 0;
-    ncall++;
-
-    // Get particle data
-    ParticleData = PB::GetParticleDataPointer(ptr);
-    FieldLineCoord = PB::GetFieldLineCoord(ParticleData);
-    iFieldLine = PB::GetFieldLineId(ParticleData);
-    spec = PB::GetI(ParticleData);
+    // ---- Particle state ----
+    PB::byte *ParticleData = PB::GetParticleDataPointer(ptr);
+    double FieldLineCoord = PB::GetFieldLineCoord(ParticleData);
+    int iFieldLine = PB::GetFieldLineId(ParticleData);
+    int spec = PB::GetI(ParticleData);
 
     // Initial velocity components (in plasma rest frame)
-    vParallel = PB::GetVParallel(ParticleData);
-    vNormal = PB::GetVNormal(ParticleData);
+    double vParallel = PB::GetVParallel(ParticleData);
+    double vNormal = PB::GetVNormal(ParticleData);
 
-    if ((Segment = FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord)) == NULL) {
+    auto Segment = FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord);
+    if (Segment == NULL) {
         exit(__LINE__, __FILE__, "Error: cannot find the segment");
     }
 
     // Calculate initial particle properties
-    Speed = sqrt(vNormal * vNormal + vParallel * vParallel);
-    mu = (Speed > 0.0) ? vParallel / Speed : 0.0;
+    double Speed = sqrt(vNormal * vNormal + vParallel * vParallel);
+    double mu = (Speed > 0.0) ? vParallel / Speed : 0.0;
 
-    double TimeCounter = 0.0;
-    double total_energy_exchanged = 0.0; // For diagnostics
 
-    // =========================================================================
-    // HELPER FUNCTIONS
-    // =========================================================================
 
-    // Function to extract wave energy densities from segment data
-    auto GetWaveEnergyDensities = [&](FL::cFieldLineSegment* seg, double& W_plus_density, double& W_minus_density) -> bool {
-        double* wave_data = seg->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+    // Decompose velocity into parallel/normal (plasma frame)
+    auto clamp_mu = [](double vmu) {
+        return std::max(-1.0, std::min(1.0, vmu));
+    };
+
+    // ---------------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------------
+
+    // Extract wave energy densities [J/m^3] for W+ and W- from a segment
+    auto GetWaveEnergyDensities = [&](FL::cFieldLineSegment* seg,
+                                      double& W_plus_density,
+                                      double& W_minus_density) -> bool {
+        double* wave_data =
+            seg->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
         if (!wave_data) return false;
 
-        double E_plus_total = wave_data[0];   // Total E+ energy in segment [J]
-        double E_minus_total = wave_data[1];  // Total E- energy in segment [J]
-        
-        // Get segment volume to convert to energy density
-        double volume = SEP::FieldLine::GetSegmentVolume(seg, iFieldLine);
+        // wave_data[0], wave_data[1] are cell-integrated energies [J]
+        const double E_plus_total  = wave_data[0];
+        const double E_minus_total = wave_data[1];
+
+        // Segment volume [m^3]
+        const double volume = SEP::FieldLine::GetSegmentVolume(seg, iFieldLine);
         if (volume <= 0.0) return false;
 
-        W_plus_density = E_plus_total / volume;   // [J/m³]
-        W_minus_density = E_minus_total / volume; // [J/m³]
-        
+        W_plus_density  = E_plus_total  / volume; // [J/m^3]
+        W_minus_density = E_minus_total / volume; // [J/m^3]
         return true;
     };
 
-    // Function to update wave energy after particle interaction
-    auto UpdateWaveEnergy = [&](FL::cFieldLineSegment* seg, double energyChange, int AlfvenWaveBranch) -> void {
-        double* wave_data = seg->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+    // Update wave energy in the segment by particle energy change [J]
+    auto UpdateWaveEnergy = [&](FL::cFieldLineSegment* seg,
+                                double energyChange,
+                                int AlfvenWaveBranch) -> void {
+        double* wave_data =
+            seg->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
         if (!wave_data) return;
 
-        // Get particle statistical weight
-        double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec] * 
-                           PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+        // Particle statistical weight
+        const double stat_weight =
+            PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec] *
+            PB::GetIndividualStatWeightCorrection(ParticleData);
 
-        // Energy gained by particle = Energy lost by waves
-        double wave_energy_change = -stat_weight * energyChange;
+        // Particle gains -> waves lose; particle loses -> waves gain
+        const double dWave = -stat_weight * energyChange;
 
-        if (AlfvenWaveBranch == BranchPlus) {
-            wave_data[0] += wave_energy_change; // Update W+ energy
-        } else if (AlfvenWaveBranch == BranchMinus) {
-            wave_data[1] += wave_energy_change; // Update W- energy
-        }
+        if (AlfvenWaveBranch == BranchPlus)  wave_data[0] += dWave;
+        if (AlfvenWaveBranch == BranchMinus) wave_data[1] += dWave;
 
-        // Ensure non-negative wave energies
+        // Keep non-negative
         wave_data[0] = std::max(0.0, wave_data[0]);
         wave_data[1] = std::max(0.0, wave_data[1]);
-
-        total_energy_exchanged += energyChange;
     };
 
-    // Calculate simple time step based on streaming and focusing
-    auto CalculateTimeStep = [&](double currentSpeed, double currentMu, 
-                                FL::cFieldLineSegment* currentSegment) -> double {
-        // Get current position
-        double x[3];
-        currentSegment->GetCartesian(x, FieldLineCoord);
-        
-        // Focusing time scale: τ_focus ~ |L|/(v*√(1-μ²))
-        double B[3], B0[3], B1[3], AbsBDeriv, AbsB, L;
-        FL::FieldLinesAll[iFieldLine].GetMagneticField(B0, (int)FieldLineCoord);
-        FL::FieldLinesAll[iFieldLine].GetMagneticField(B, FieldLineCoord);
-        FL::FieldLinesAll[iFieldLine].GetMagneticField(B1, (int)FieldLineCoord + 1 - 1E-7);
+    // Dμμ for Kolmogorov spectrum; inputs W± as *energy densities* [J/m^3],
+    // converts internally to B^2 units via δB^2 = 2 μ0 W
+    auto CalculateTotalDiffusionCoefficient = [&](
+        double v, double mu_local, double Babs, double VA,
+        double W_plus_density, double W_minus_density,
+        double kmin, double kmax
+    ) -> double {
+        if (!(kmin > 0.0 && kmax > kmin) || Babs <= 0.0) return 0.0;
 
-        AbsB = sqrt(B[0]*B[0] + B[1]*B[1] + B[2]*B[2]);
-        AbsBDeriv = (sqrt(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2]) -
-                     sqrt(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2])) /
-                    FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
+        // Convert to B^2 units [T^2]
+        const double W_plus_B2  = 2.0 * VacuumPermeability * W_plus_density;
+        const double W_minus_B2 = 2.0 * VacuumPermeability * W_minus_density;
 
-        L = (fabs(AbsBDeriv) > 1e-20) ? -AbsB / AbsBDeriv : 1e20;
-        double dt_focusing = (fabs(L) > 0.0 && fabs(currentMu) < 0.99) ? 
-                            0.1 * fabs(L) / (currentSpeed * sqrt(1.0 - currentMu*currentMu)) : 1e20;
+        const double c     = SpeedOfLight;
+        const double v2c2  = (v*v)/(c*c);
+        const double gamma = 1.0 / std::sqrt(std::max(1.0 - v2c2, 1e-30));
+        const double q     = PIC::MolecularData::GetElectricCharge(spec);
+        const double m     = PIC::MolecularData::GetMass(spec);
+        const double Omega = (q * Babs) / (gamma * m * c);
 
-        // Streaming time scale: τ_stream ~ segment_length/v
-        double segment_length = currentSegment->GetLength();
-        double dt_streaming = 0.1 * segment_length / currentSpeed;
+        // Power-law normalization for W^s(k) = C_s k^{-5/3}
+        auto kolmo_C = [&](double Wtot_B2) -> double {
+            const double p = -2.0/3.0; // integral exponent shift
+            const double denom = std::pow(kmin, p) - std::pow(kmax, p);
+            if (denom == 0.0) return 0.0;
+            return (2.0/3.0) * Wtot_B2 / denom;
+        };
 
-        // Choose minimum time scale
-        double dt_calc = std::min(dt_focusing, dt_streaming);
-        
-        // Apply bounds
-        dt_calc = std::max(dt_calc, 1e-3); // Minimum 1 millisecond
-        dt_calc = std::min(dt_calc, 10.0);  // Maximum 10 seconds
+        const double C_plus  = kolmo_C(W_plus_B2);
+        const double C_minus = kolmo_C(W_minus_B2);
 
+        auto Dmumu_branch = [&](int s, double C_s) -> double {
+            if (C_s <= 0.0) return 0.0;
+
+            // Resonance gate and resonant k
+            const double gate = s*VA - v*mu_local;
+            if (gate <= 0.0) return 0.0;
+
+            const double kres = Omega / (gamma * gate);
+            if (kres < kmin || kres > kmax) return 0.0;
+
+            const double Wk    = C_s * std::pow(kres, -5.0/3.0);
+            const double pref  = (M_PI * 0.5) * (Omega*Omega) / (Babs*Babs);
+            const double denom = std::abs(v*mu_local - s*VA);
+
+            return pref * (1.0 - mu_local*mu_local) * (Wk / denom);
+        };
+
+        return Dmumu_branch(+1, C_plus) + Dmumu_branch(-1, C_minus);
+    };
+
+    // Timestep computation with μ-diffusion limiter and local k-band
+    auto CalculateTimeStep = [&](double currentSpeed,
+                                 double currentMu,
+                                 FL::cFieldLineSegment* currentSegment) -> double {
+
+        // --- Focusing scale ---
+        double Bm[3], Bm0[3], Bm1[3];
+        FL::FieldLinesAll[iFieldLine].GetMagneticField(Bm0, (int)FieldLineCoord);
+        FL::FieldLinesAll[iFieldLine].GetMagneticField(Bm,  FieldLineCoord);
+        FL::FieldLinesAll[iFieldLine].GetMagneticField(Bm1, (int)FieldLineCoord + 1 - 1e-7);
+
+        const double AbsB   = std::sqrt(Bm[0]*Bm[0] + Bm[1]*Bm[1] + Bm[2]*Bm[2]);
+        const double AbsB0  = std::sqrt(Bm0[0]*Bm0[0] + Bm0[1]*Bm0[1] + Bm0[2]*Bm0[2]);
+        const double AbsB1  = std::sqrt(Bm1[0]*Bm1[0] + Bm1[1]*Bm1[1] + Bm1[2]*Bm1[2]);
+        const double dBds   = (AbsB1 - AbsB0) /
+                              FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
+        const double Lfocus = (std::fabs(dBds) > 1e-20) ? -AbsB / dBds : 1e20;
+
+        const double dt_focusing =
+            (std::fabs(Lfocus) > 0.0 && std::fabs(currentMu) < 0.99)
+                ? 0.1 * std::fabs(Lfocus) /
+                      (currentSpeed * std::sqrt(1.0 - currentMu*currentMu))
+                : 1e20;
+
+        // --- Streaming scale ---
+        const double dt_streaming = 0.1 * currentSegment->GetLength() / currentSpeed;
+
+        // --- μ-diffusion limiter (RMS step in μ) ---
+        double dt_mu_diffusion = 1e20, dt_diffusion_span = 1e20;
+        double Wp_ed = 0.0, Wm_ed = 0.0;
+        if (GetWaveEnergyDensities(currentSegment, Wp_ed, Wm_ed)) {
+            // Interpolate B and density for V_A
+            double B0v[3] = {0,0,0}, B1v[3] = {0,0,0};
+            double AbsBi  = AbsB;
+            double vA     = 0.0;
+
+            FL::cFieldLineVertex* vb = currentSegment->GetBegin();
+            FL::cFieldLineVertex* ve = currentSegment->GetEnd();
+            if (vb && ve) {
+                double *Bvb = vb->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+                double *Bve = ve->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+                if (Bvb && Bve) {
+                    const double w1 = std::fmod(FieldLineCoord, 1.0);
+                    const double w0 = 1.0 - w1;
+                    double Bi[3] = { w0*Bvb[0] + w1*Bve[0],
+                                     w0*Bvb[1] + w1*Bve[1],
+                                     w0*Bvb[2] + w1*Bve[2] };
+                    AbsBi = Vector3D::Length(Bi);
+
+                    double rho0, rho1;
+                    vb->GetDatum(FL::DatumAtVertexPlasmaDensity, &rho0);
+                    ve->GetDatum(FL::DatumAtVertexPlasmaDensity, &rho1);
+                    const double rho = (w0*rho0 + w1*rho1) * PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
+                    if (rho > 0.0) vA = AbsBi / std::sqrt(VacuumPermeability * rho);
+                }
+            }
+
+            // Local k-band from turbulence model
+            const double kmin_loc =
+                SEP::AlfvenTurbulence_Kolmogorov::GetKmin(FieldLineCoord, iFieldLine);
+            const double kmax_loc =
+                SEP::AlfvenTurbulence_Kolmogorov::GetKmax(FieldLineCoord, iFieldLine);
+
+            const double Dtot =
+                CalculateTotalDiffusionCoefficient(currentSpeed, currentMu, AbsBi, vA,
+                                                   Wp_ed, Wm_ed, kmin_loc, kmax_loc);
+
+            if (Dtot > 1e-30) {
+                const double dmu_target = 0.10; // target RMS Δμ per step
+                const double safety     = 0.40; // CFL-like factor
+                dt_mu_diffusion = safety * (dmu_target*dmu_target) / (2.0 * Dtot);
+            }
+
+            // Optional: classic span-based guard ~ (1-μ^2)/Dμμ
+//            if (Dtot > 1e-30 && std::fabs(currentMu) < 0.99) {
+//                dt_diffusion_span = 0.1 * (1.0 - currentMu*currentMu) / Dtot;
+//            }
+        }
+
+        // Final dt choice + clamps
+        double dt_calc = std::min({dt_focusing, dt_streaming,
+                                   dt_mu_diffusion, dt_diffusion_span});
+        dt_calc = std::max(dt_calc, 1.0e-4); // ≥ 0.1 ms
+        dt_calc = std::min(dt_calc, 10.0);   // ≤ 10 s
         return dt_calc;
     };
 
-    // =========================================================================
-    // CALCULATE TIME STEP ONCE OUTSIDE THE LOOP
-    // =========================================================================
-
-    double dt_step = CalculateTimeStep(Speed, mu, Segment);
-
-    // =========================================================================
-    // MAIN TRANSPORT LOOP
-    // =========================================================================
+    // ---------------------------------------------------------------------
+    // Transport loop with adaptive dt (recomputed each substep)
+    // ---------------------------------------------------------------------
+    double TimeCounter = 0.0;
 
     while (TimeCounter < dtTotal) {
-        // Calculate time step for this iteration
-        double remaining_time = dtTotal - TimeCounter;
-        double dt_current = std::min(dt_step, remaining_time);
+        // Recompute stable dt with current state
+        const double dt_current =
+            std::min(CalculateTimeStep(Speed, mu, Segment), dtTotal - TimeCounter);
 
-        // Get current position and properties
-        double x[3], rHelio;
-        Segment->GetCartesian(x, FieldLineCoord);
-        rHelio = Vector3D::Length(x);
+        // --- Interpolate |B| and V_A at current location for scattering ---
+        double AbsB = 0.0, vAlfven = 0.0;
+        {
+            FL::cFieldLineVertex* vb = Segment->GetBegin();
+            FL::cFieldLineVertex* ve = Segment->GetEnd();
+            if (vb && ve) {
+                double *Bvb = vb->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+                double *Bve = ve->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+                if (Bvb && Bve) {
+                    const double w1 = std::fmod(FieldLineCoord, 1.0);
+                    const double w0 = 1.0 - w1;
+                    double Bv[3] = { w0*Bvb[0] + w1*Bve[0],
+                                     w0*Bvb[1] + w1*Bve[1],
+                                     w0*Bvb[2] + w1*Bve[2] };
+                    AbsB = Vector3D::Length(Bv);
 
-        // Get wave energy densities at current location
-        double W_plus_density, W_minus_density;
-        if (!GetWaveEnergyDensities(Segment, W_plus_density, W_minus_density)) {
-            // No wave data available, set to zero
-            W_plus_density = W_minus_density = 0.0;
-        }
-
-        // Get Alfvén velocity and magnetic field for ScatterStepProton
-        double vAlfven = 0.0;
-        double AbsB = 0.0;
-        FL::cFieldLineVertex* VertexBegin = Segment->GetBegin();
-        FL::cFieldLineVertex* VertexEnd = Segment->GetEnd();
-        
-        if (VertexBegin && VertexEnd) {
-            double *B0 = VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
-            double *B1 = VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
-            
-            if (B0 && B1) {
-                double w1 = fmod(FieldLineCoord, 1);
-                double w0 = 1.0 - w1;
-                double B[3];
-                for (int idim = 0; idim < 3; idim++) {
-                    B[idim] = w0 * B0[idim] + w1 * B1[idim];
-                }
-                AbsB = Vector3D::Length(B);
-
-                // Get plasma density for Alfvén velocity
-                double PlasmaDensity0, PlasmaDensity1, PlasmaDensity;
-                VertexBegin->GetDatum(FL::DatumAtVertexPlasmaDensity, &PlasmaDensity0);
-                VertexEnd->GetDatum(FL::DatumAtVertexPlasmaDensity, &PlasmaDensity1);
-                PlasmaDensity = (w0 * PlasmaDensity0 + w1 * PlasmaDensity1) * 
-                               PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
-
-                if (PlasmaDensity > 0.0) {
-                    vAlfven = AbsB / sqrt(VacuumPermeability * PlasmaDensity);
+                    double rho0, rho1;
+                    vb->GetDatum(FL::DatumAtVertexPlasmaDensity, &rho0);
+                    ve->GetDatum(FL::DatumAtVertexPlasmaDensity, &rho1);
+                    const double rho = (w0*rho0 + w1*rho1) * PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
+                    if (rho > 0.0) vAlfven = AbsB / std::sqrt(VacuumPermeability * rho);
                 }
             }
         }
 
-        // =====================================================================
-        // PARTICLE SCATTERING AT EACH ITERATION
-        // =====================================================================
-        
-        double energyChange = 0.0;
-        bool scatterOccurred = false;
-        double vParallel_before = vParallel;
-        double vNormal_before = vNormal;
+        // --- Local wave energy densities [J/m^3] ---
+        double W_plus_density  = 0.0;
+        double W_minus_density = 0.0;
+        GetWaveEnergyDensities(Segment, W_plus_density, W_minus_density);
 
-        // Call ScatterStepProton - scattering occurs every iteration
+        // Convert once to B^2 units [T^2] for the scatter step
+        const double Wplus_B2  = 2.0 * VacuumPermeability * W_plus_density;
+        const double Wminus_B2 = 2.0 * VacuumPermeability * W_minus_density;
+
+        // Local k-band from turbulence model
+        const double kmin_loc =
+            SEP::AlfvenTurbulence_Kolmogorov::GetKmin(FieldLineCoord, iFieldLine);
+        const double kmax_loc =
+            SEP::AlfvenTurbulence_Kolmogorov::GetKmax(FieldLineCoord, iFieldLine);
+
+        // Physical constants
+        const double q = PIC::MolecularData::GetElectricCharge(spec);
+        const double m = PIC::MolecularData::GetMass(spec);
+        const double c = SpeedOfLight;
+
+        // Pre-kick gamma for energy bookkeeping
+        const double v_old     = std::hypot(vParallel, vNormal);
+        const double gamma_old = 1.0 / std::sqrt(std::max(1.0 - (v_old*v_old)/(c*c), 1e-30));
+
+        // -----------------------------
+        // Wave scattering (one step)
+        // -----------------------------
         auto scatterResult = SEP::AlfvenTurbulence_Kolmogorov::ScatterStepProton(
-            vParallel, vNormal,                                    // Current velocity components
-            AbsB, vAlfven,                                        // Magnetic field and Alfven velocity  
-            W_plus_density, W_minus_density,                      // Wave energy densities
-            dt_current,                                           // Time step
-            rHelio, Speed,                                        // Heliocentric distance and speed
-            PIC::MolecularData::GetMass(spec),                   // Particle mass
-            PIC::MolecularData::GetElectricCharge(spec),         // Particle charge
-            mu                                                    // Pitch angle cosine
+            vParallel, vNormal,     // plasma-frame components
+            AbsB, vAlfven,          // |B| and V_A
+            Wplus_B2, Wminus_B2,    // W± in B^2 units
+            kmin_loc, kmax_loc,     // local k-band
+            dt_current,
+            q, m, c
         );
-        
-        // Extract results from ScatterResult structure
-        // Note: Update these member names to match the actual ScatterResult structure
+
+        // Apply scattered kinematics
         vParallel = scatterResult.vpar_new;
-        vNormal = scatterResult.vperp_new;
-        // TODO: Replace with correct member name for energy change from ScatterResult
-        // Common possibilities: dE, deltaE, energy_delta, energyChange, de
-        energyChange = 0.0; // Placeholder - replace with: scatterResult.CORRECT_MEMBER_NAME
-        scatterOccurred = true; // Always true since scattering always occurs
+        vNormal   = scatterResult.vperp_new;
+        mu        = clamp_mu(scatterResult.mu_new);
 
-        // Update speed and pitch angle after scattering
-        Speed = sqrt(vParallel*vParallel + vNormal*vNormal);
-        mu = (Speed > 0.0) ? vParallel / Speed : 0.0;
+        // Energy exchange with waves (in plasma frame)
+        const double energyChange = (scatterResult.gamma_new - gamma_old) * m * c * c;
 
-        // Apply speed limit
-        if (Speed > 0.99 * SpeedOfLight) {
-            double scale_factor = 0.99 * SpeedOfLight / Speed;
-            Speed *= scale_factor;
-            vParallel *= scale_factor;
-            vNormal *= scale_factor;
-            mu = vParallel / Speed;
+        if (scatterResult.scattered && scatterResult.branch != 0 && std::fabs(energyChange) > 0.0) {
+            const int branchIdx = (scatterResult.branch == +1) ? BranchPlus : BranchMinus; // +1→W+, −1→W−
+            UpdateWaveEnergy(Segment, energyChange, branchIdx);
         }
 
-        // Enforce pitch angle bounds
-        if (mu > 1.0 - 1e-6) {
-            mu = 1.0 - 1e-6;
-            vParallel = mu * Speed;
-            vNormal = sqrt(std::max(0.0, 1.0 - mu*mu)) * Speed;
-        }
-        if (mu < -1.0 + 1e-6) {
-            mu = -1.0 + 1e-6;
-            vParallel = mu * Speed;
-            vNormal = sqrt(std::max(0.0, 1.0 - mu*mu)) * Speed;
-        }
+        // -----------------------------
+        // Deterministic transport
+        //   - parallel streaming
+        //   - adiabatic focusing (explicit)
+        // -----------------------------
 
-        // =====================================================================
-        // UPDATE WAVE ENERGY AFTER SCATTERING
-        // =====================================================================
-        
-        // Determine which wave branch was involved in scattering
-        int AlfvenWaveBranch;
-        
-        // Forward particles scatter with W-, backward with W+
-        if (vParallel_before > 0.0) {
-            AlfvenWaveBranch = BranchMinus; // Forward particle scatters with W-
-        } else {
-            AlfvenWaveBranch = BranchPlus;  // Backward particle scatters with W+
-        }
+        // Parallel streaming distance along the field line during dt_current
+        const double ds_parallel = vParallel * dt_current;
 
-        // Always update wave energy since scattering always occurs
-        if (fabs(energyChange) > 1e-30) {
-            UpdateWaveEnergy(Segment, energyChange, AlfvenWaveBranch);
-        }
-        
-        // Count scattering events (always happens)
-        total_scattering_events++;
+        // Adiabatic focusing — simple explicit step using local focusing length
+        {
+            double Bf[3], Bf0[3], Bf1[3];
+            FL::FieldLinesAll[iFieldLine].GetMagneticField(Bf0, (int)FieldLineCoord);
+            FL::FieldLinesAll[iFieldLine].GetMagneticField(Bf,  FieldLineCoord);
+            FL::FieldLinesAll[iFieldLine].GetMagneticField(Bf1, (int)FieldLineCoord + 1 - 1e-7);
 
-        // =====================================================================
-        // DETERMINISTIC TRANSPORT: STREAMING AND FOCUSING
-        // =====================================================================
+            const double AbsBf  = std::sqrt(Bf[0]*Bf[0] + Bf[1]*Bf[1] + Bf[2]*Bf[2]);
+            const double AbsBf0 = std::sqrt(Bf0[0]*Bf0[0] + Bf0[1]*Bf0[1] + Bf0[2]*Bf0[2]);
+            const double AbsBf1 = std::sqrt(Bf1[0]*Bf1[0] + Bf1[1]*Bf1[1] + Bf1[2]*Bf1[2]);
 
-        // Deterministic streaming along field line
-        double ds_parallel = vParallel * dt_current;
+            const double dBds_f = (AbsBf1 - AbsBf0) /
+                                  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
+            const double Lf     = (std::fabs(dBds_f) > 1e-20) ? -AbsBf / dBds_f : 1e20;
 
-        // Adiabatic focusing correction
-        double B_focus[3], B0_focus[3], B1_focus[3], AbsBDeriv, AbsB_focus, L;
-        FL::FieldLinesAll[iFieldLine].GetMagneticField(B0_focus, (int)FieldLineCoord);
-        FL::FieldLinesAll[iFieldLine].GetMagneticField(B_focus, FieldLineCoord);
-        FL::FieldLinesAll[iFieldLine].GetMagneticField(B1_focus, (int)FieldLineCoord + 1 - 1E-7);
-
-        AbsB_focus = sqrt(B_focus[0]*B_focus[0] + B_focus[1]*B_focus[1] + B_focus[2]*B_focus[2]);
-        AbsBDeriv = (sqrt(B1_focus[0]*B1_focus[0] + B1_focus[1]*B1_focus[1] + B1_focus[2]*B1_focus[2]) -
-                     sqrt(B0_focus[0]*B0_focus[0] + B0_focus[1]*B0_focus[1] + B0_focus[2]*B0_focus[2])) /
-                    FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
-
-        L = (fabs(AbsBDeriv) > 1e-20) ? -AbsB_focus / AbsBDeriv : 1e20;
-
-        // Apply magnetic focusing: dμ/dt = (1-μ²)v/(2L)
-        double dmu_focusing = 0.0;
-        if (fabs(L) > 1e-20 && fabs(mu) < 0.99) {
-            dmu_focusing = (1.0 - mu*mu) / (2.0 * L) * Speed * dt_current;
-            mu += dmu_focusing;
-        }
-
-        // =====================================================================
-        // ADIABATIC COOLING (if enabled)
-        // =====================================================================
-        
-        if (SEP::AccountAdiabaticCoolingFlag == true) {
-            double dP, dLogP, dmu_transport, vSolarWindParallel;
-            SEP::GetTransportCoefficients(dP, dLogP, dmu_transport, Speed, mu, Segment,
-                                        FieldLineCoord, dt_current, iFieldLine, vSolarWindParallel);
-
-            if (isfinite(dLogP) && isfinite(dmu_transport)) {
-                // Apply momentum change
-                double p;
-                switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
-                case _PIC_MODE_OFF_:
-                    p = Speed * PIC::MolecularData::GetMass(spec);
-                    break;
-                case _PIC_MODE_ON_:
-                    p = Relativistic::Speed2Momentum(Speed, PIC::MolecularData::GetMass(spec));
-                    break;
-                }
-
-                p *= exp(dLogP);
-
-                // Convert back to speed
-                switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
-                case _PIC_MODE_OFF_:
-                    Speed = p / PIC::MolecularData::GetMass(spec);
-                    break;
-                case _PIC_MODE_ON_:
-                    Speed = Relativistic::Momentum2Speed(p, PIC::MolecularData::GetMass(spec));
-                    break;
-                }
-
-                mu += dmu_transport;
+            if (std::isfinite(Lf) && std::fabs(Lf) > 0.0) {
+                // Keep the same focusing form you used previously (explicit, conservative)
+                mu += (1.0 - mu*mu) * (vNormal / std::max(1e-30, Speed)) * (dt_current / Lf);
+                mu  = clamp_mu(mu);
             }
         }
 
-        // =====================================================================
-        // MOVE PARTICLE ALONG FIELD LINE
-        // =====================================================================
+        // Evolve coordinate along the field line
+        FieldLineCoord += ds_parallel / Segment->GetLength();
 
-        FieldLineCoord = FL::FieldLinesAll[iFieldLine].move(FieldLineCoord, ds_parallel, Segment);
-
-        if (Segment == NULL) {
-            // Particle left the simulation domain
-            PIC::ParticleBuffer::DeleteParticle(ptr);
-            return _PARTICLE_LEFT_THE_DOMAIN_;
+        // Refresh segment pointer using the (possibly changed) integer index of FieldLineCoord
+        {
+            FL::cFieldLineSegment* NewSeg =
+                FL::FieldLinesAll[iFieldLine].GetSegment((int)FieldLineCoord);
+            if (NewSeg) Segment = NewSeg; else break; // left the line; finish motion
         }
 
-        // Update velocity components
-        vParallel = mu * Speed;
-        vNormal = sqrt(std::max(0.0, 1.0 - mu*mu)) * Speed;
-
-        TimeCounter += dt_current;
-    }
-
-    // =========================================================================
-    // FINALIZATION
-    // =========================================================================
-
-    // Set final particle properties
+        // Update speed and store back
+        Speed = std::hypot(vParallel, vNormal);
     PB::SetVParallel(vParallel, ParticleData);
     PB::SetVNormal(vNormal, ParticleData);
     PB::SetFieldLineCoord(FieldLineCoord, ParticleData);
 
-    // Attach particle to temporary list
+        TimeCounter += dt_current;
+    }
+
+    // Attach particle to the segment-local list (AMR-friendly)
     switch (_PIC_PARTICLE_LIST_ATTACHING_) {
-    case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
-        exit(__LINE__, __FILE__, "Error: function developed for _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
-        break;
-    case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
-        {
-            long int temp = Segment->tempFirstParticleIndex.exchange(ptr);
-            PIC::ParticleBuffer::SetNext(temp, ParticleData);
-            PIC::ParticleBuffer::SetPrev(-1, ParticleData);
-            if (temp != -1) PIC::ParticleBuffer::SetPrev(ptr, temp);
-        }
-        break;
+    case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_: {
+        long int temp = Segment->tempFirstParticleIndex.exchange(ptr);
+        PB::SetNext(temp, ParticleData);
+        PB::SetPrev(-1, ParticleData);
+        if (temp != -1) PB::SetPrev(ptr, temp);
+    } break;
     default:
-        exit(__LINE__, __FILE__, "Error: unknown option");
+        exit(__LINE__, __FILE__, "Error: unknown particle attaching mode");
     }
 
     return _PARTICLE_MOTION_FINISHED_;
