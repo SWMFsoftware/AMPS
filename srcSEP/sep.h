@@ -167,8 +167,8 @@ namespace SEP {
       extern double log_p_stream_min,log_p_stream_max,log_dp_stream;
     }
 
-    double GetKmin(double S);
-    double GetKmax(double S);
+    double GetKmin(double S,int iFieldLine);
+    double GetKmax(double S,int iFieldLine);
   }
 
 
