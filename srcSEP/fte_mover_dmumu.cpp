@@ -131,7 +131,7 @@ int SEP::ParticleMover_FocusedTransport_WaveScattering(
         const double gamma = 1.0 / std::sqrt(std::max(1.0 - v2c2, 1e-30));
         const double q     = PIC::MolecularData::GetElectricCharge(spec);
         const double m     = PIC::MolecularData::GetMass(spec);
-        const double Omega = (q * Babs) / (gamma * m * c);
+        const double Omega = (q * Babs) / (gamma * m);
 
         // Power-law normalization for W^s(k) = C_s k^{-5/3}
         auto kolmo_C = [&](double Wtot_B2) -> double {
