@@ -366,21 +366,21 @@ int SEP::ParticleMover_FocusedTransport_WaveScattering(
             }
         }
 
-        // Evolve coordinate along the field line
-        FieldLineCoord += ds_parallel / Segment->GetLength();
+        // Move particle along field line
+        FieldLineCoord = FL::FieldLinesAll[iFieldLine].move(FieldLineCoord, ds_parallel, Segment);
 
-        // Refresh segment pointer using the (possibly changed) integer index of FieldLineCoord
-        {
-            FL::cFieldLineSegment* NewSeg =
-                FL::FieldLinesAll[iFieldLine].GetSegment((int)FieldLineCoord);
-            if (NewSeg) Segment = NewSeg; else break; // left the line; finish motion
-        }
+    if (Segment == NULL) {
+      // Particle left the simulation domain
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+    }
+
 
         // Update speed and store back
         Speed = std::hypot(vParallel, vNormal);
-    PB::SetVParallel(vParallel, ParticleData);
-    PB::SetVNormal(vNormal, ParticleData);
-    PB::SetFieldLineCoord(FieldLineCoord, ParticleData);
+        PB::SetVParallel(vParallel, ParticleData);
+        PB::SetVNormal(vNormal, ParticleData);
+        PB::SetFieldLineCoord(FieldLineCoord, ParticleData);
 
         TimeCounter += dt_current;
     }
