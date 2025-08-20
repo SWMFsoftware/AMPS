@@ -219,6 +219,8 @@ auto CalculateWaveEnergyDensity = [&]() {
 
     if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
 
+      if (SEP::ParticleMoverPtr!=SEP::ParticleMover_FocusedTransport_WaveScattering) { // in case SEP::ParticleMover_FocusedTransport_WaveScattering(), particle/turbulence coupling is already done 
+
       // Function to increment integrated wave energy due to shock passing
       if (niter!=0) SEP::ParticleSource::ShockWave::ShockTurbulenceEnergyInjection(rsh0, SEP::ParticleSource::ShockWave::Tenishev2005::rShock, PIC::ParticleWeightTimeStep::GlobalTimeStep[0]); 
 
@@ -249,6 +251,7 @@ auto CalculateWaveEnergyDensity = [&]() {
 
       SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::WaveParticleCouplingManager(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
 		      PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
+      }
 
 
       //advect turbulence energy 
