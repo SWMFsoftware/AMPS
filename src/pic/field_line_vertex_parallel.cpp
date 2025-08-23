@@ -4,6 +4,7 @@ PURPOSE:
 MPI communication functions for DatumStoredAtVertex data across field line vertices.
 Uses direct field line traversal with no state management for maximum simplicity.
 Mirrors the functionality of the Edge-based functions but operates on vertex data.
+UPDATED: Now accounts for species-dependent data storage (PIC::nTotalSpecies).
 
 KEY FEATURES:
 -------------
@@ -12,6 +13,14 @@ KEY FEATURES:
 3. BUFFER-BASED: Uses std::vector<double> for all MPI operations
 4. ZERO SETUP: No setup/teardown required - just call the functions
 5. CONSISTENT PATTERN: All functions use same pack/MPI/unpack strategy
+6. SPECIES-AWARE: Properly handles data size scaling with PIC::nTotalSpecies
+
+DATA SIZE CALCULATION:
+---------------------
+Total elements per vertex = S->length * PIC::nTotalSpecies
+Total buffer size = total_vertices * S->length * PIC::nTotalSpecies
+
+This accounts for the fact that each vertex stores data for all species in the simulation.
 
 CORE FUNCTIONS:
 ---------------
@@ -25,55 +34,58 @@ CORE FUNCTIONS:
 USAGE EXAMPLES:
 ===============
 
-EXAMPLE 1: Sum magnetic field values across all processes
----------------------------------------------------------
+EXAMPLE 1: Sum particle density data across all processes (multi-species)
+-------------------------------------------------------------------------
 ```cpp
-// Each process has computed local magnetic field data at vertices
-PIC::Datum::cDatum* magneticFieldData;
-// ... local computation fills magneticFieldData ...
+// Each process has computed local particle density data at vertices
+// Data includes contributions from all PIC::nTotalSpecies species
+PIC::Datum::cDatum* particleDensityData;
+// ... local computation fills particleDensityData for all species ...
 
-// Sum all values across all processes (result on all processes)
-PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtVertex(magneticFieldData);
+// Sum all species data across all processes (result on all processes)
+PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtVertex(particleDensityData);
 
-// Now each process has the global sum at all vertices
-std::cout << "Global magnetic field data computed" << std::endl;
+// Now each process has the global particle density for all species at all vertices
+std::cout << "Global particle density data computed for " << PIC::nTotalSpecies 
+          << " species" << std::endl;
 ```
 
-EXAMPLE 2: Distribute plasma parameters from master process
------------------------------------------------------------
+EXAMPLE 2: Distribute initial conditions from master process (multi-species)
+---------------------------------------------------------------------------
 ```cpp
 int rank;
 MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-PIC::Datum::cDatum* plasmaParameters;
+PIC::Datum::cDatum* initialConditions;
 
 if (rank == 0) {
-    // Master process sets up plasma parameters at vertices
-    std::cout << "Setting up plasma parameters..." << std::endl;
-    // ... fill plasmaParameters with setup data ...
+    // Master process sets up initial conditions for all species at vertices
+    std::cout << "Setting up initial conditions for " << PIC::nTotalSpecies 
+              << " species..." << std::endl;
+    // ... fill initialConditions with setup data for all species ...
 }
 
 // Broadcast from rank 0 to all other processes
-PIC::FieldLine::Parallel::MPIBcastDatumStoredAtVertex(plasmaParameters, 0);
+PIC::FieldLine::Parallel::MPIBcastDatumStoredAtVertex(initialConditions, 0);
 
-// Now all processes have the plasma parameters
-std::cout << "Process " << rank << " received plasma parameters" << std::endl;
+// Now all processes have the initial conditions for all species
+std::cout << "Process " << rank << " received initial conditions for all species" << std::endl;
 ```
 
-EXAMPLE 3: Work with specific field line vertex data
-----------------------------------------------------
+EXAMPLE 3: Work with specific field line multi-species data
+----------------------------------------------------------
 ```cpp
-// Sum temperature data for field line 2 only across all processes
-PIC::Datum::cDatum* temperatureData;
-PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtVertexFieldLine(2, temperatureData);
-
-// Reduce field line 1 density data to rank 0
-PIC::Datum::cDatum* densityData;
-PIC::FieldLine::Parallel::MPIReduceDatumStoredAtVertexFieldLine(1, densityData, 0);
-
-// Broadcast field line 0 velocity data from rank 0 to all processes
+// Sum velocity data for field line 2 (all species) across all processes
 PIC::Datum::cDatum* velocityData;
-PIC::FieldLine::Parallel::MPIBcastDatumStoredAtVertexFieldLine(0, velocityData, 0);
+PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtVertexFieldLine(2, velocityData);
+
+// Reduce field line 1 pressure data (all species) to rank 0
+PIC::Datum::cDatum* pressureData;
+PIC::FieldLine::Parallel::MPIReduceDatumStoredAtVertexFieldLine(1, pressureData, 0);
+
+// Broadcast field line 0 temperature data (all species) from rank 0 to all processes
+PIC::Datum::cDatum* temperatureData;
+PIC::FieldLine::Parallel::MPIBcastDatumStoredAtVertexFieldLine(0, temperatureData, 0);
 ```
 */
 
@@ -86,8 +98,16 @@ namespace FieldLine {
 namespace Parallel {
 
 // ============================================================================
-// Helper functions for vertex buffer operations - no caching, direct traversal
+// Helper functions for vertex buffer operations - species-aware implementation
 // ============================================================================
+
+// Calculate effective data length accounting for species
+inline int GetEffectiveDataLength(PIC::Datum::cDatum* S) {
+    if (S == nullptr) {
+        return 0;
+    }
+    return S->length * PIC::nTotalSpecies;
+}
 
 // Count total vertices across all field lines
 int CountTotalVertices() {
@@ -158,14 +178,15 @@ int CountProcessVertices(int target_process) {
     return process_vertices;
 }
 
-// Pack all field line vertex data into a contiguous buffer
+// Pack all field line vertex data into a contiguous buffer (species-aware)
 int PackAllFieldLinesVertexData(PIC::Datum::cDatum* S, std::vector<double>& buffer) {
     int total_vertices = CountTotalVertices();
-    int total_elements = total_vertices * S->length;
+    int effective_data_length = GetEffectiveDataLength(S);
+    int total_elements = total_vertices * effective_data_length;
     
     buffer.resize(total_elements, 0.0);
     
-    if (total_vertices == 0) {
+    if (total_vertices == 0 || effective_data_length == 0) {
         return 0;
     }
     
@@ -177,24 +198,28 @@ int PackAllFieldLinesVertexData(PIC::Datum::cDatum* S, std::vector<double>& buff
              Segment != NULL; 
              Segment = Segment->GetNext()) {
             
-            // Pack begin vertex data
+            // Pack begin vertex data for all species
             PIC::FieldLine::cFieldLineVertex* BeginVertex = Segment->GetBegin();
             if (BeginVertex) {
                 double* vertex_data = BeginVertex->GetDatum_ptr(S,BeginVertex->GetCompletedSamplingOffset());
                 if (vertex_data) {
-                    for (int i = 0; i < S->length; i++) {
-                        buffer[element_index++] = vertex_data[i];
-                        
-                        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-                            validate_numeric(vertex_data[i], __LINE__, __FILE__);
+                    // Pack data for all species
+                    for (int species = 0; species < PIC::nTotalSpecies; species++) {
+                        for (int i = 0; i < S->length; i++) {
+                            int data_idx = species * S->length + i;
+                            buffer[element_index++] = vertex_data[data_idx];
+                            
+                            if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                                validate_numeric(vertex_data[data_idx], __LINE__, __FILE__);
+                            }
                         }
                     }
                 } else {
                     // Leave as zeros if no data
-                    element_index += S->length;
+                    element_index += effective_data_length;
                 }
             } else {
-                element_index += S->length;
+                element_index += effective_data_length;
             }
             
             // If this is the last segment, also pack end vertex
@@ -203,18 +228,22 @@ int PackAllFieldLinesVertexData(PIC::Datum::cDatum* S, std::vector<double>& buff
                 if (EndVertex) {
                     double* vertex_data = EndVertex->GetDatum_ptr(S,EndVertex->GetCompletedSamplingOffset());
                     if (vertex_data) {
-                        for (int i = 0; i < S->length; i++) {
-                            buffer[element_index++] = vertex_data[i];
-                            
-                            if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-                                validate_numeric(vertex_data[i], __LINE__, __FILE__);
+                        // Pack data for all species
+                        for (int species = 0; species < PIC::nTotalSpecies; species++) {
+                            for (int i = 0; i < S->length; i++) {
+                                int data_idx = species * S->length + i;
+                                buffer[element_index++] = vertex_data[data_idx];
+                                
+                                if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                                    validate_numeric(vertex_data[data_idx], __LINE__, __FILE__);
+                                }
                             }
                         }
                     } else {
-                        element_index += S->length;
+                        element_index += effective_data_length;
                     }
                 } else {
-                    element_index += S->length;
+                    element_index += effective_data_length;
                 }
             }
         }
@@ -223,8 +252,13 @@ int PackAllFieldLinesVertexData(PIC::Datum::cDatum* S, std::vector<double>& buff
     return total_vertices;
 }
 
-// Unpack buffer data back to field line vertices
+// Unpack buffer data back to field line vertices (species-aware)
 void UnpackAllFieldLinesVertexData(PIC::Datum::cDatum* S, const std::vector<double>& buffer) {
+    int effective_data_length = GetEffectiveDataLength(S);
+    if (effective_data_length == 0) {
+        return;
+    }
+    
     int element_index = 0;
     
     for (int iFieldLine = 0; iFieldLine < nFieldLine; iFieldLine++) {
@@ -232,24 +266,28 @@ void UnpackAllFieldLinesVertexData(PIC::Datum::cDatum* S, const std::vector<doub
              Segment != NULL; 
              Segment = Segment->GetNext()) {
             
-            // Unpack begin vertex data
+            // Unpack begin vertex data for all species
             PIC::FieldLine::cFieldLineVertex* BeginVertex = Segment->GetBegin();
             if (BeginVertex) {
                 double* vertex_data = BeginVertex->GetDatum_ptr(S,BeginVertex->GetCompletedSamplingOffset());
                 if (vertex_data) {
-                    for (int i = 0; i < S->length; i++) {
-                        vertex_data[i] = buffer[element_index++];
-                        
-                        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-                            validate_numeric(vertex_data[i], __LINE__, __FILE__);
+                    // Unpack data for all species
+                    for (int species = 0; species < PIC::nTotalSpecies; species++) {
+                        for (int i = 0; i < S->length; i++) {
+                            int data_idx = species * S->length + i;
+                            vertex_data[data_idx] = buffer[element_index++];
+                            
+                            if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                                validate_numeric(vertex_data[data_idx], __LINE__, __FILE__);
+                            }
                         }
                     }
                 } else {
                     // Skip if no data pointer
-                    element_index += S->length;
+                    element_index += effective_data_length;
                 }
             } else {
-                element_index += S->length;
+                element_index += effective_data_length;
             }
             
             // If this is the last segment, also unpack end vertex
@@ -258,25 +296,29 @@ void UnpackAllFieldLinesVertexData(PIC::Datum::cDatum* S, const std::vector<doub
                 if (EndVertex) {
                     double* vertex_data = EndVertex->GetDatum_ptr(S,EndVertex->GetCompletedSamplingOffset());
                     if (vertex_data) {
-                        for (int i = 0; i < S->length; i++) {
-                            vertex_data[i] = buffer[element_index++];
-                            
-                            if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-                                validate_numeric(vertex_data[i], __LINE__, __FILE__);
+                        // Unpack data for all species
+                        for (int species = 0; species < PIC::nTotalSpecies; species++) {
+                            for (int i = 0; i < S->length; i++) {
+                                int data_idx = species * S->length + i;
+                                vertex_data[data_idx] = buffer[element_index++];
+                                
+                                if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                                    validate_numeric(vertex_data[data_idx], __LINE__, __FILE__);
+                                }
                             }
                         }
                     } else {
-                        element_index += S->length;
+                        element_index += effective_data_length;
                     }
                 } else {
-                    element_index += S->length;
+                    element_index += effective_data_length;
                 }
             }
         }
     }
 }
 
-// Pack data for specific field line vertices
+// Pack data for specific field line vertices (species-aware)
 int PackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, std::vector<double>& buffer) {
     if (field_line_idx < 0 || field_line_idx >= nFieldLine) {
         buffer.clear();
@@ -284,11 +326,12 @@ int PackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, std::vect
     }
     
     int vertices = CountFieldLineVertices(field_line_idx);
-    int total_elements = vertices * S->length;
+    int effective_data_length = GetEffectiveDataLength(S);
+    int total_elements = vertices * effective_data_length;
     
     buffer.resize(total_elements, 0.0);
     
-    if (vertices == 0) {
+    if (vertices == 0 || effective_data_length == 0) {
         return 0;
     }
     
@@ -299,19 +342,23 @@ int PackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, std::vect
          Segment != NULL; 
          Segment = Segment->GetNext()) {
         
-        // Pack begin vertex data
+        // Pack begin vertex data for all species
         PIC::FieldLine::cFieldLineVertex* BeginVertex = Segment->GetBegin();
         if (BeginVertex) {
             double* vertex_data = BeginVertex->GetDatum_ptr(S);
             if (vertex_data) {
-                for (int i = 0; i < S->length; i++) {
-                    buffer[element_index++] = vertex_data[i];
+                // Pack data for all species
+                for (int species = 0; species < PIC::nTotalSpecies; species++) {
+                    for (int i = 0; i < S->length; i++) {
+                        int data_idx = species * S->length + i;
+                        buffer[element_index++] = vertex_data[data_idx];
+                    }
                 }
             } else {
-                element_index += S->length;  // Leave as zeros
+                element_index += effective_data_length;  // Leave as zeros
             }
         } else {
-            element_index += S->length;
+            element_index += effective_data_length;
         }
         
         // If this is the last segment, also pack end vertex
@@ -320,14 +367,18 @@ int PackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, std::vect
             if (EndVertex) {
                 double* vertex_data = EndVertex->GetDatum_ptr(S);
                 if (vertex_data) {
-                    for (int i = 0; i < S->length; i++) {
-                        buffer[element_index++] = vertex_data[i];
+                    // Pack data for all species
+                    for (int species = 0; species < PIC::nTotalSpecies; species++) {
+                        for (int i = 0; i < S->length; i++) {
+                            int data_idx = species * S->length + i;
+                            buffer[element_index++] = vertex_data[data_idx];
+                        }
                     }
                 } else {
-                    element_index += S->length;
+                    element_index += effective_data_length;
                 }
             } else {
-                element_index += S->length;
+                element_index += effective_data_length;
             }
         }
     }
@@ -335,9 +386,14 @@ int PackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, std::vect
     return vertices;
 }
 
-// Unpack data for specific field line vertices
+// Unpack data for specific field line vertices (species-aware)
 void UnpackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, const std::vector<double>& buffer) {
     if (field_line_idx < 0 || field_line_idx >= nFieldLine) {
+        return;
+    }
+    
+    int effective_data_length = GetEffectiveDataLength(S);
+    if (effective_data_length == 0) {
         return;
     }
     
@@ -347,19 +403,23 @@ void UnpackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, const 
          Segment != NULL; 
          Segment = Segment->GetNext()) {
         
-        // Unpack begin vertex data
+        // Unpack begin vertex data for all species
         PIC::FieldLine::cFieldLineVertex* BeginVertex = Segment->GetBegin();
         if (BeginVertex) {
             double* vertex_data = BeginVertex->GetDatum_ptr(S);
             if (vertex_data) {
-                for (int i = 0; i < S->length; i++) {
-                    vertex_data[i] = buffer[element_index++];
+                // Unpack data for all species
+                for (int species = 0; species < PIC::nTotalSpecies; species++) {
+                    for (int i = 0; i < S->length; i++) {
+                        int data_idx = species * S->length + i;
+                        vertex_data[data_idx] = buffer[element_index++];
+                    }
                 }
             } else {
-                element_index += S->length;  // Skip
+                element_index += effective_data_length;  // Skip
             }
         } else {
-            element_index += S->length;
+            element_index += effective_data_length;
         }
         
         // If this is the last segment, also unpack end vertex
@@ -368,21 +428,25 @@ void UnpackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, const 
             if (EndVertex) {
                 double* vertex_data = EndVertex->GetDatum_ptr(S);
                 if (vertex_data) {
-                    for (int i = 0; i < S->length; i++) {
-                        vertex_data[i] = buffer[element_index++];
+                    // Unpack data for all species
+                    for (int species = 0; species < PIC::nTotalSpecies; species++) {
+                        for (int i = 0; i < S->length; i++) {
+                            int data_idx = species * S->length + i;
+                            vertex_data[data_idx] = buffer[element_index++];
+                        }
                     }
                 } else {
-                    element_index += S->length;
+                    element_index += effective_data_length;
                 }
             } else {
-                element_index += S->length;
+                element_index += effective_data_length;
             }
         }
     }
 }
 
 // ============================================================================
-// MPI Operations for Vertex Data - Ultra-simplified implementation
+// MPI Operations for Vertex Data - Species-aware implementation
 // ============================================================================
 
 void MPIAllReduceDatumStoredAtVertex(PIC::Datum::cDatum* S) {
@@ -414,7 +478,8 @@ void MPIAllReduceDatumStoredAtVertex(PIC::Datum::cDatum* S) {
     
     if (rank == 0) {
         std::cout << "Completed MPI all-reduce for " << total_vertices 
-                  << " vertices (" << buffer.size() << " elements)" << std::endl;
+                  << " vertices (" << buffer.size() << " elements) across " 
+                  << PIC::nTotalSpecies << " species" << std::endl;
     }
 }
 
@@ -460,7 +525,8 @@ void MPIReduceDatumStoredAtVertex(PIC::Datum::cDatum* S, int root_rank) {
     if (rank == root_rank) {
         UnpackAllFieldLinesVertexData(S, recv_buffer);
         std::cout << "Completed MPI reduce for " << total_vertices 
-                  << " vertices to root rank " << root_rank << std::endl;
+                  << " vertices (" << recv_buffer.size() << " elements) across " 
+                  << PIC::nTotalSpecies << " species to root rank " << root_rank << std::endl;
     }
 }
 
@@ -499,7 +565,8 @@ void MPIBcastDatumStoredAtVertex(PIC::Datum::cDatum* S, int root_rank) {
     
     if (rank == root_rank) {
         std::cout << "Completed MPI broadcast for " << total_vertices 
-                  << " vertices from root rank " << root_rank << std::endl;
+                  << " vertices (" << buffer.size() << " elements) across " 
+                  << PIC::nTotalSpecies << " species from root rank " << root_rank << std::endl;
     }
 }
 
@@ -538,7 +605,8 @@ void MPIAllReduceDatumStoredAtVertexFieldLine(int field_line_idx, PIC::Datum::cD
     
     if (rank == 0) {
         std::cout << "Completed MPI all-reduce for field line " << field_line_idx 
-                  << " (" << vertex_count << " vertices)" << std::endl;
+                  << " (" << vertex_count << " vertices, " << buffer.size() 
+                  << " elements) across " << PIC::nTotalSpecies << " species" << std::endl;
     }
 }
 
@@ -590,7 +658,9 @@ void MPIReduceDatumStoredAtVertexFieldLine(int field_line_idx, PIC::Datum::cDatu
     if (rank == root_rank) {
         UnpackFieldLineVertexData(field_line_idx, S, recv_buffer);
         std::cout << "Completed MPI reduce for field line " << field_line_idx 
-                  << " (" << vertex_count << " vertices) to root rank " << root_rank << std::endl;
+                  << " (" << vertex_count << " vertices, " << recv_buffer.size() 
+                  << " elements) across " << PIC::nTotalSpecies << " species to root rank " 
+                  << root_rank << std::endl;
     }
 }
 
@@ -635,32 +705,37 @@ void MPIBcastDatumStoredAtVertexFieldLine(int field_line_idx, PIC::Datum::cDatum
     
     if (rank == root_rank) {
         std::cout << "Completed MPI broadcast for field line " << field_line_idx 
-                  << " (" << vertex_count << " vertices) from root rank " << root_rank << std::endl;
+                  << " (" << vertex_count << " vertices, " << buffer.size() 
+                  << " elements) across " << PIC::nTotalSpecies << " species from root rank " 
+                  << root_rank << std::endl;
     }
 }
 
 // ============================================================================
-// Utility functions for setting vertex data across all field lines
+// Utility functions for setting vertex data across all field lines (species-aware)
 // ============================================================================
 
 void SetDatumStoredAtVertex(double val, PIC::Datum::cDatum* datum) {
-    // Set a single value to all vertices across all field lines
+    // Set a single value to all vertices across all field lines for all species
     
     for (int iFieldLine = 0; iFieldLine < nFieldLine; iFieldLine++) {
         for (PIC::FieldLine::cFieldLineSegment* Segment = FieldLinesAll[iFieldLine].GetFirstSegment();
              Segment != NULL; 
              Segment = Segment->GetNext()) {
             
-            // Set begin vertex data
+            // Set begin vertex data for all species
             PIC::FieldLine::cFieldLineVertex* BeginVertex = Segment->GetBegin();
             if (BeginVertex) {
                 double* vertex_data = BeginVertex->GetDatum_ptr(datum);
                 if (vertex_data) {
-                    for (int i = 0; i < datum->length; i++) {
-                        vertex_data[i] = val;
-                        
-                        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-                            validate_numeric(vertex_data[i], __LINE__, __FILE__);
+                    for (int species = 0; species < PIC::nTotalSpecies; species++) {
+                        for (int i = 0; i < datum->length; i++) {
+                            int data_idx = species * datum->length + i;
+                            vertex_data[data_idx] = val;
+                            
+                            if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                                validate_numeric(vertex_data[data_idx], __LINE__, __FILE__);
+                            }
                         }
                     }
                 }
@@ -672,11 +747,14 @@ void SetDatumStoredAtVertex(double val, PIC::Datum::cDatum* datum) {
                 if (EndVertex) {
                     double* vertex_data = EndVertex->GetDatum_ptr(datum);
                     if (vertex_data) {
-                        for (int i = 0; i < datum->length; i++) {
-                            vertex_data[i] = val;
-                            
-                            if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-                                validate_numeric(vertex_data[i], __LINE__, __FILE__);
+                        for (int species = 0; species < PIC::nTotalSpecies; species++) {
+                            for (int i = 0; i < datum->length; i++) {
+                                int data_idx = species * datum->length + i;
+                                vertex_data[data_idx] = val;
+                                
+                                if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                                    validate_numeric(vertex_data[data_idx], __LINE__, __FILE__);
+                                }
                             }
                         }
                     }
@@ -687,7 +765,7 @@ void SetDatumStoredAtVertex(double val, PIC::Datum::cDatum* datum) {
 }
 
 void SetDatumStoredAtVertex(double* val, PIC::Datum::cDatum* datum) {
-    // Set an array of values to all vertices across all field lines
+    // Set an array of values to all vertices across all field lines for all species
     if (val == nullptr) {
         std::cerr << "Error: SetDatumStoredAtVertex received null pointer for val array" << std::endl;
         return;
@@ -698,16 +776,20 @@ void SetDatumStoredAtVertex(double* val, PIC::Datum::cDatum* datum) {
              Segment != NULL; 
              Segment = Segment->GetNext()) {
             
-            // Set begin vertex data
+            // Set begin vertex data for all species
             PIC::FieldLine::cFieldLineVertex* BeginVertex = Segment->GetBegin();
             if (BeginVertex) {
                 double* vertex_data = BeginVertex->GetDatum_ptr(datum);
                 if (vertex_data) {
-                    for (int i = 0; i < datum->length; i++) {
-                        vertex_data[i] = val[i];
-                        
-                        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-                            validate_numeric(vertex_data[i], __LINE__, __FILE__);
+                    for (int species = 0; species < PIC::nTotalSpecies; species++) {
+                        for (int i = 0; i < datum->length; i++) {
+                            int data_idx = species * datum->length + i;
+                            // Input array should contain species*length + component
+                            vertex_data[data_idx] = val[data_idx];
+                            
+                            if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                                validate_numeric(vertex_data[data_idx], __LINE__, __FILE__);
+                            }
                         }
                     }
                 }
@@ -719,11 +801,14 @@ void SetDatumStoredAtVertex(double* val, PIC::Datum::cDatum* datum) {
                 if (EndVertex) {
                     double* vertex_data = EndVertex->GetDatum_ptr(datum);
                     if (vertex_data) {
-                        for (int i = 0; i < datum->length; i++) {
-                            vertex_data[i] = val[i];
-                            
-                            if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-                                validate_numeric(vertex_data[i], __LINE__, __FILE__);
+                        for (int species = 0; species < PIC::nTotalSpecies; species++) {
+                            for (int i = 0; i < datum->length; i++) {
+                                int data_idx = species * datum->length + i;
+                                vertex_data[data_idx] = val[data_idx];
+                                
+                                if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                                    validate_numeric(vertex_data[data_idx], __LINE__, __FILE__);
+                                }
                             }
                         }
                     }
