@@ -1012,8 +1012,32 @@ namespace PIC {
     //=========================================================================
     void Output(const char* fname, bool OutputGeometryOnly) {
 
-      //swap sampling offsets
-      cFieldLineVertex::swapSamplingBuffers();
+      static int lastDataOutputFileNumber=-1;
+
+      if ((OutputGeometryOnly==false)&&(lastDataOutputFileNumber!=DataOutputFileNumber)) {
+        //swap sampling offsets
+        cFieldLineVertex::swapSamplingBuffers();
+	lastDataOutputFileNumber=DataOutputFileNumber;
+
+        PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtVertex(&PIC::FieldLine::DatumAtVertexParticleWeight);
+      
+        for(auto itrDatum = DataSampledAtVertex.begin();itrDatum!= DataSampledAtVertex.end();itrDatum++) if ((*itrDatum)->doPrint) {
+          cDatumTimed*    ptrDatumTimed;
+          cDatumWeighted* ptrDatumWeighted;
+ 
+          if ((*itrDatum)->type == PIC::Datum::cDatumSampled::Timed_) {
+            ptrDatumTimed = static_cast<cDatumTimed*> ((*itrDatum));
+	    PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtVertex(ptrDatumTimed);
+          }
+          else {
+            ptrDatumWeighted = static_cast<cDatumWeighted*> ((*itrDatum));
+	    PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtVertex(ptrDatumWeighted);
+          }
+	}
+  
+      }
+
+
       FILE* fout;
       fout = fopen(fname,"w");
       
