@@ -71,7 +71,8 @@ PICOBJ = pic.o \
 	pic_gyrokinetic.o \
 	pic_electron_impact_ionization.o \
 	pic_particle_spliting.o \
-      	field_line_edge_parallel.o	
+      	field_line_edge_parallel.o \
+	field_line_vertex_parallel.o 
 	
 ifneq ($(BATL),nobatl)	
 PICOBJ+=pic_batsrus.o \
