@@ -652,6 +652,8 @@ namespace PIC {
       long int Temp_ID;
       bool ActiveFlag; //used to prevent multiple deallocation of the Vertix 
 
+      int GetCompletedSamplingOffset() {return CompletedSamplingOffset;}
+
       cFieldLineVertex() {
         IsSet=0;
 
@@ -809,6 +811,11 @@ namespace PIC {
         if (Datum.offset>=0) Out = *(double*)(AssociatedDataPointer+Datum.offset);
       }
 
+      inline double* GetDatum_ptr(cDatum* Datum,int extra_offset=0) {
+        return (Datum->offset>=0) ? (double*)(AssociatedDataPointer+extra_offset+Datum->offset) : NULL;
+      }
+
+
       inline double* GetDatum_ptr(cDatumStored& Datum) {
         return (Datum.offset>=0) ? (double*)(AssociatedDataPointer+Datum.offset) : NULL;
       } 
@@ -935,6 +942,70 @@ void MPIReduceDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, in
 void MPIBcastDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, int root_rank);
 void MPIGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, int root_rank);
 void MPIAllGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S);
+
+
+//-----------------------------------------------------------------------------
+// Helper Functions for Vertex Data Operations
+//-----------------------------------------------------------------------------
+
+// Count total vertices across all field lines
+int CountTotalVertices();
+
+// Count vertices for a specific field line
+int CountFieldLineVertices(int field_line_idx);
+
+// Count vertices for a specific process (operates on all vertices)
+int CountProcessVertices(int target_process);
+
+// Pack all field line vertex data into contiguous buffer
+int PackAllFieldLinesVertexData(PIC::Datum::cDatum* S, std::vector<double>& buffer);
+
+// Unpack buffer data back to all field line vertices
+void UnpackAllFieldLinesVertexData(PIC::Datum::cDatum* S, const std::vector<double>& buffer);
+
+// Pack vertex data for specific field line into buffer
+int PackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, std::vector<double>& buffer);
+
+// Unpack buffer data back to specific field line vertices
+void UnpackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, const std::vector<double>& buffer);
+
+//-----------------------------------------------------------------------------
+// Global MPI Operations (All Field Lines)
+//-----------------------------------------------------------------------------
+
+// Sum vertex data across all processes (result on all processes)
+void MPIAllReduceDatumStoredAtVertex(PIC::Datum::cDatum* S);
+
+// Reduce vertex data to root process (result only on root)
+void MPIReduceDatumStoredAtVertex(PIC::Datum::cDatum* S, int root_rank);
+
+// Broadcast vertex data from root to all processes
+void MPIBcastDatumStoredAtVertex(PIC::Datum::cDatum* S, int root_rank);
+
+//-----------------------------------------------------------------------------
+// Single Field Line MPI Operations
+//-----------------------------------------------------------------------------
+
+// Sum vertex data for specific field line across all processes
+void MPIAllReduceDatumStoredAtVertexFieldLine(int field_line_idx, PIC::Datum::cDatum* S);
+
+// Reduce vertex data for specific field line to root process
+void MPIReduceDatumStoredAtVertexFieldLine(int field_line_idx, PIC::Datum::cDatum* S, int root_rank);
+
+// Broadcast vertex data for specific field line from root to all processes
+void MPIBcastDatumStoredAtVertexFieldLine(int field_line_idx, PIC::Datum::cDatum* S, int root_rank);
+
+//-----------------------------------------------------------------------------
+// Utility Functions for Setting Vertex Data
+//-----------------------------------------------------------------------------
+
+// Set single value to all components of datum at all vertices
+void SetDatumStoredAtVertex(double val, PIC::Datum::cDatum* datum);
+
+// Set array of values to datum at all vertices (val must have datum->length elements)
+void SetDatumStoredAtVertex(double* val, PIC::Datum::cDatum* datum);
+
+
         } // namespace Parallel
 
     //class cFieldLineVertex --------------------------------------------------
@@ -979,6 +1050,8 @@ void MPIAllGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S)
       //index of the first particle attached to the segment
       long int FirstParticleIndex;
       std::atomic<long int> tempFirstParticleIndex; 
+
+      int GetCompletedSamplingOffset() {return CompletedSamplingOffset;}
 
       //-----------------------------------------------------------------------
       //functions used to split and merge particles attached to a field line segment 
@@ -1065,6 +1138,12 @@ void MPIAllGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S)
             Out = *(double*)(AssociatedDataPointer + Datum.offset);
         else
             Out = 0.0;
+      }
+
+      template <class T>
+      double* GetDatum_ptr(T* Datum) {
+        return (Datum->offset >= 0 && AssociatedDataPointer != NULL) ?
+            (double*)(AssociatedDataPointer + Datum->offset) : NULL;
       }
 
       double* GetDatum_ptr(cDatumStored& Datum) {
