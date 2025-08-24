@@ -222,6 +222,7 @@ void amps_init_mesh() {
       VertexAllocationManager.PlasmaWaves=true;
       VertexAllocationManager.Fluence=true;
       VertexAllocationManager.ShockLocation=true;
+      VertexAllocationManager.DistanceToShockLocation=true;
 
 
       VertexAllocationManager.PreviousVertexData.MagneticField=true;

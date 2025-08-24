@@ -17,6 +17,9 @@ int PIC::FieldLine::cFieldLineSegment::CompletedSamplingOffset=-1;
 vector<PIC::Datum::cDatumStored*> PIC::FieldLine::cFieldLineSegment::DataStoredAtSegment;
 vector<PIC::Datum::cDatumSampled*> PIC::FieldLine::cFieldLineSegment::DataSampledAtSegment;
 
+//process data associated with a filed line before it is saved in a file
+PIC::FieldLine::fUserDefinedfDataProcessingManager PIC::FieldLine::UserDefinedfDataProcessingManager=NULL;
+
 
 //the following is used to output the distance from the beginning of the 
 //field line in units other than SI
@@ -70,6 +73,7 @@ namespace PIC {
     cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaWaves(2,"\"Wave1\",\"Wave2\"",false);
 
     cDatumStored DatumAtVertexFluence(1,"\"Fluence\"", true); 
+    cDatumStored DatumAtVertexShockLocationDistance(1,"\"Distance To Shock [AU]\"",true);
 
     cDatumTimed DatumAtVertexParticleWeight(1,"\"Particle Weight\"",false);
     cDatumTimed DatumAtVertexParticleNumber(1,"\"Particle Number\"",true);
@@ -974,6 +978,8 @@ namespace PIC {
 
       if (VertexAllocationManager.Fluence==true) DatumAtVertexFluence.activate(Offset, &DataStoredAtVertex);
 
+      if (VertexAllocationManager.DistanceToShockLocation==true) DatumAtVertexShockLocationDistance.activate(Offset, &DataStoredAtVertex);
+
       // activate data that is sampled
       long int SamplingOffset = Offset;
       Offset = 0;
@@ -1035,6 +1041,8 @@ namespace PIC {
           }
 	}
   
+        //execute a user-defined function to processes sampled data before output
+        if (UserDefinedfDataProcessingManager!=NULL) UserDefinedfDataProcessingManager();
       }
 
 

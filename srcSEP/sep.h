@@ -325,6 +325,12 @@ namespace SEP {
     //delete all model particles 
     long int DeleteAllParticles();
 
+    extern PIC::Datum::cDatumStored VertexShockLocationDistanceDatum;
+
+    // Calculate distance from each field line vertex to the shock location
+    void CalculateVertexShockDistances();
+
+
     namespace InjectionParameters {
       extern int nParticlesPerIteration;
       extern double PowerIndex,emin,emax;

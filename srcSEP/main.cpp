@@ -60,7 +60,9 @@ int main(int argc,char **argv) {
     PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::gamma_minus_array);
 
   }
-	  
+
+  //set up datum to store distance of a field line vertex to the location of the shock 
+  PIC::FieldLine::UserDefinedfDataProcessingManager=SEP::FieldLine::CalculateVertexShockDistances; 
  
   amps_init_mesh();
   amps_init();
@@ -203,7 +205,7 @@ auto CalculateWaveEnergyDensity = [&]() {
     SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,2);
 
 
-        if (PIC::ThisThread==2) PIC::FieldLine::Output("fl-edge-test.dat",false); 
+    //PIC::FieldLine::Output("fl-edge-test.dat",false); 
 
 
   vector<vector<double> > DeltaE_plus, DeltaE_minus;
@@ -268,10 +270,18 @@ auto CalculateWaveEnergyDensity = [&]() {
 
 
 
-      if ((PIC::ThisThread==2)&&((niter+1)%10==0))  {   
+      if ((niter+1)%10==0)  {   
          char fname[300];
-	 sprintf(fname,"fl-%e.dat",rsh0/_AU_);
-	      PIC::FieldLine::Output(fname,false);
+	 sprintf(fname,"fl-%i-%e.dat",PIC::ThisThread,rsh0/_AU_);
+
+	 //PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtVertex(&PIC::FieldLine::DatumAtVertexParticleWeight);
+         //PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtVertex(&PIC::FieldLine::DatumAtVertexParticleCosPitchAngle);
+
+	 //PIC::FieldLine::Output(fname,false);
+
+	 //PIC::FieldLine::Parallel::SetDatumStoredAtVertex(0.0,&PIC::FieldLine::DatumAtVertexParticleWeight);
+	 //PIC::FieldLine::Parallel::SetDatumStoredAtVertex(0.0,&PIC::FieldLine::DatumAtVertexParticleCosPitchAngle);
+
       }
     }
 

@@ -571,6 +571,7 @@ namespace PIC {
     extern cDatumTimed    DatumAtVertexParticleFlux_mu_positive,DatumAtVertexParticleFlux_mu_negative;
 
     extern cDatumStored   DatumAtVertexFluence;
+    extern cDatumStored   DatumAtVertexShockLocationDistance;
     extern cDatumStored   DatumAtVertexShockLocation;
 
     namespace DatumAtVertexPrevious {
@@ -590,6 +591,7 @@ namespace PIC {
       bool PlasmaTemperature,PlasmaPressure,MagneticFluxFunction;
       bool PlasmaWaves,Fluence;
       bool ShockLocation;
+      bool DistanceToShockLocation;
 
       class cPreviousVertexData {
       public:
@@ -609,7 +611,7 @@ namespace PIC {
         ElectricField=false,MagneticField=false,PlasmaVelocity=false,PlasmaDensity=false;
         PlasmaTemperature=false,PlasmaPressure=false,MagneticFluxFunction=false;
         PlasmaWaves=false,Fluence=true;
-        ShockLocation=false;
+        ShockLocation=false,DistanceToShockLocation=false;
       }
     };
 
