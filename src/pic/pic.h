@@ -1747,12 +1747,14 @@ void DeleteAttachedParticles();
       void GetPlasmaVelocity(double* VelOut, double S);
       double GetPlasmaDensity(double S);
  
-
       // print data stored on the field line
       void Output(FILE* fout, bool GeometryOnly);
     };
     //class cFieldLine --------------------------------------------------------
 
+    //process data associated with a filed line before it is saved in a file
+    typedef void (*fUserDefinedfDataProcessingManager)();
+    extern fUserDefinedfDataProcessingManager UserDefinedfDataProcessingManager;
 
     // max number of field line in the simulation
     const long int nFieldLineMax=100;
