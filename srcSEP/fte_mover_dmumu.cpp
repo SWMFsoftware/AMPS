@@ -330,9 +330,11 @@ int SEP::ParticleMover_FocusedTransport_WaveScattering(
         // Energy exchange with waves (in plasma frame)
         const double energyChange = (scatterResult.gamma_new - gamma_old) * m * c * c;
 
-        if (scatterResult.scattered && scatterResult.branch != 0 && std::fabs(energyChange) > 0.0) {
+	if (SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode==true) {
+          if (scatterResult.scattered && scatterResult.branch != 0 && std::fabs(energyChange) > 0.0) {
             const int branchIdx = (scatterResult.branch == +1) ? BranchPlus : BranchMinus; // +1→W+, −1→W−
             UpdateWaveEnergy(Segment, energyChange, branchIdx);
+	  }
         }
 
         // -----------------------------

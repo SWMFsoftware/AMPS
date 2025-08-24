@@ -154,7 +154,13 @@ namespace SEP {
   namespace AlfvenTurbulence_Kolmogorov {
     extern PIC::Datum::cDatumStored CellIntegratedWaveEnergy,WaveEnergyGrowthRate,WaveEnergyDensity;
     extern PIC::Datum::cDatumStored G_plus_streaming,G_minus_streaming,gamma_plus_array,gamma_minus_array;
-    extern bool ActiveFlag;
+
+    //the flag determines whether coupling of the particle and turbumence active
+    //ActiveFlag -- defines whether transport of turbulence is modeled 
+    //ParticleCouplingMode -- defines whether coupling between particle and turbulence is simulated 
+    //need both ActiveFlag==true and ParticleCouplingMode==true to model dynamics of turbulence coupled to the particles  
+    extern bool ActiveFlag; 
+    extern bool ParticleCouplingMode;
 
     namespace ModelInit {
       double dB_B(double r);
