@@ -276,8 +276,11 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     double log_pmax=log(pmax); 
 
     for (int i=0;i<nParticles;i++) {
-      pAbsTable[i]=pmin*exp(rnd()*(log_pmax-log_pmin));
-      WeightCorrectionTable[i]=pow(pAbsTable[i],1.0-q)/WeightNorm;
+      do {
+        pAbsTable[i]=pmin*exp(rnd()*(log_pmax-log_pmin));
+        WeightCorrectionTable[i]=pow(pAbsTable[i],1.0-q)/WeightNorm;
+      } 
+      while (WeightCorrectionTable[i]<1.0E-20);
     }
   }; 
 
