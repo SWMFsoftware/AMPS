@@ -234,7 +234,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   npart=(int)anpart;
   if (anpart-npart>rnd()) npart++; 
   
-  auto GetMomentum_Tenishev2005AIAA = [&] (double *pAbsTable,double *WeightCorrectionTable,int nParticles) {
+  auto GetMomentum_Tenishev2005AIAA = [&] (double *pAbsTable,double *WeightCorrectionTable,int nParticles) -> bool {
     double emin=InjectionParameters::emin*MeV2J;
     double emax=InjectionParameters::emax*MeV2J;
 
@@ -249,6 +249,8 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     }
 
     if (s>SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio) s=SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio;
+
+    if (s==1.0) return false;
 
     double q=3.0*s/(s-1.0);
     double pAbs,pmin,pmax,speed,pvect[3];
@@ -281,6 +283,8 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
       validate_numeric(WeightCorrectionTable[i],1.0E-50,1.0E10,__LINE__,__FILE__);
     }
+
+    return true;
   }; 
 
   auto GetMomentum_Sokolov2004AJ = [&] (double *pAbsTable,double *WeightCorrectionTable,int nParticles) { 
@@ -305,10 +309,11 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   double *pAbsTable=new double [npart];
   double *WeightCorrectionTable=new double [npart];
   double p_const;
+  bool shock_injects_particles=true;
 
   switch (InjectionParameters::InjectionMomentumModel) {
   case InjectionParameters::_tenishev2005aiaa: 
-    GetMomentum_Tenishev2005AIAA(pAbsTable,WeightCorrectionTable,npart);
+    shock_injects_particles=GetMomentum_Tenishev2005AIAA(pAbsTable,WeightCorrectionTable,npart);
     break;
   case InjectionParameters::_sokolov2004aj:
     GetMomentum_Sokolov2004AJ(pAbsTable,WeightCorrectionTable,npart);
@@ -327,7 +332,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     exit(__LINE__,__FILE__,"Error: the option is unknown");
   }  
 
-  for (int i=0;i<npart;i++) {
+  if (shock_injects_particles==true) for (int i=0;i<npart;i++) {
     if ((InjectionParameters::InjectionMomentumModel==InjectionParameters::_const_speed)||(InjectionParameters::InjectionMomentumModel==InjectionParameters::_const_energy)) {
       double p_parallel[3],p_norm[3];
       double l[3];
