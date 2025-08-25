@@ -306,6 +306,17 @@ namespace PIC {
       // also contains generic methods:
       // - activation of datum
       // - printing name to a file
+      /*
+      Usage Example:
+      PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity(2,"\"W+\",\"W-\"",true);  
+      
+      Usage Example when used to sample multiple bins:
+       Define a linear distribution with 5 bins from 0 to 10
+       PIC::Datum::cDatum VelocityDist("Velocity", 5, 0.0, 10.0,PIC::Datum::cDatum::DistTypeLinear);
+
+       // Determine bin index of a value
+       int idx = VelocityDist.GetBinIndex(3.7); // idx = 1 
+       */
     public:
       static const int Unset_    = 0; // basic datum
       static const int Stored_   = 1; // stored, NOT sampled
@@ -320,12 +331,24 @@ namespace PIC {
       int type;
       bool doPrint,divideByVolumeOnPrint;
 
+
+      //the following is used to sample distribution functions
+      static const int DistTypeLinear = 0;
+      static const int DistTypeLog    = 1;
+      double minVal, maxVal;
+      int nBins,distType;
+
+
       cDatum() {
         offset=-1;
-	length=0;
-	type=Unset_;
-	doPrint=false;
-	divideByVolumeOnPrint=false;
+        length=0;
+        type=Unset_;
+        doPrint=false;
+        divideByVolumeOnPrint=false;
+        minVal = maxVal = 0.0;
+        nBins = 0;
+        distType = DistTypeLinear;
+        name[0] = '\0';
       }  //default constructor
 
       cDatum& operator = (const cDatum& v) {
@@ -334,7 +357,11 @@ namespace PIC {
         memcpy(name,v.name,_MAX_STRING_LENGTH_PIC_);
         type=v.type;
         doPrint=v.doPrint;
-	divideByVolumeOnPrint=v.divideByVolumeOnPrint;
+        divideByVolumeOnPrint=v.divideByVolumeOnPrint;
+        minVal = v.minVal;
+        maxVal = v.maxVal;
+        nBins = v.nBins;
+        distType = v.distType;
 
         return *this;
       }
@@ -375,10 +402,64 @@ namespace PIC {
       cDatum(int lengthIn, const char* nameIn, int StatusVector) {
         type = Unset_;
         SetDatum(lengthIn,nameIn);
-
-	doPrint=(StatusVector&DATUM_DO_PRINT!=0) ? true : false;
-	divideByVolumeOnPrint=(StatusVector&DATUM_DO_DEVIDE_VOLUME_PRINT!=0) ? true : false;  
+        doPrint=(StatusVector&DATUM_DO_PRINT!=0) ? true : false;
+        divideByVolumeOnPrint=(StatusVector&DATUM_DO_DEVIDE_VOLUME_PRINT!=0) ? true : false;  
       }
+
+      cDatum(const char* baseName, int nBinsIn, double minValIn, double maxValIn,int distTypeIn, bool doPrintIn = true) { 
+        type = Unset_;
+        offset = -1;
+        doPrint = doPrintIn;
+        divideByVolumeOnPrint = false;
+
+        nBins = nBinsIn;
+        minVal = minValIn;
+        maxVal = maxValIn;
+        distType = distTypeIn;
+        length = nBins;
+
+        std::ostringstream ss;
+        for (int i = 0; i < nBins; i++) {
+            double v1, v2;
+            if (distType == DistTypeLinear) {
+                v1 = minVal + (maxVal - minVal) * i / nBins;
+                v2 = minVal + (maxVal - minVal) * (i + 1) / nBins;
+            } else {
+                double logMin = log10(minVal);
+                double logMax = log10(maxVal);
+                v1 = pow(10.0, logMin + (logMax - logMin) * i / nBins);
+                v2 = pow(10.0, logMin + (logMax - logMin) * (i + 1) / nBins);
+            }
+
+            ss << "\"" << baseName << "(" << v1 << "-" << v2 << ")\"";
+            if (i < nBins - 1) ss << ",";
+        }
+
+        strncpy(name, ss.str().c_str(), _MAX_STRING_LENGTH_PIC_ - 1);
+        name[_MAX_STRING_LENGTH_PIC_ - 1] = '\0';
+    }
+
+    // NEW: get the bin index for a value
+    int GetBinIndex(double value) const {
+      int idx;
+ 
+      if (value < minVal || value >= maxVal || nBins <= 0) return -1;
+
+      if (distType == DistTypeLinear) {
+         idx = static_cast<int>((value - minVal) / (maxVal - minVal) * nBins);
+         if (idx < 0 || idx >= nBins) return -1;
+      } else { // logarithmic
+         if (value <= 0.0) return -1; // invalid for log
+         double logMin = log10(minVal);
+         double logMax = log10(maxVal);
+         double frac = (log10(value) - logMin) / (logMax - logMin);
+         
+         idx = static_cast<int>(frac * nBins);
+         if (idx < 0 || idx >= nBins) return -1;
+      }
+
+      return idx;
+    }
 
     };
 
@@ -459,6 +540,10 @@ namespace PIC {
       cDatumSampled(int lengthIn, const char* nameIn, bool doPrintIn = true) : cDatum(lengthIn, nameIn, doPrintIn) {
         type = Sampled_;
       }
+
+      cDatumSampled(const char* baseName, int nBinsIn, double minValIn, double maxValIn,int distTypeIn, bool doPrintIn = true) : cDatum(baseName,nBinsIn,minValIn,maxValIn,distTypeIn,doPrintIn) {
+        type = Sampled_;
+      }
     };
 
     class cDatumTimed : public cDatumSampled {
@@ -469,6 +554,12 @@ namespace PIC {
       cDatumTimed(int lengthIn, const char* nameIn, bool doPrintIn = true) : cDatumSampled(lengthIn, nameIn, doPrintIn) {
         type = Timed_;
       }
+ 
+      cDatumTimed(const char* baseName, int nBinsIn, double minValIn, double maxValIn,int distTypeIn, bool doPrintIn = true) : cDatumSampled(baseName,nBinsIn,minValIn,maxValIn,distTypeIn,doPrintIn) {
+        type = Timed_;
+      }
+
+
     };
 
     class cDatumWeighted : public cDatumSampled {
@@ -560,6 +651,7 @@ namespace PIC {
     extern cDatumTimed    DatumAtVertexParticleWeight;
     extern cDatumTimed    DatumAtVertexParticleNumber;
     extern cDatumTimed    DatumAtVertexNumberDensity;
+    extern cDatumTimed    DatumAtVertexNumberDensityEnergyBinned;
     extern cDatumWeighted DatumAtVertexParticleEnergy;
     extern cDatumWeighted DatumAtVertexParticleSpeed;
     extern cDatumWeighted DatumAtVertexParticleCosPitchAngle;
@@ -802,6 +894,12 @@ namespace PIC {
       inline void SampleDatum(Datum::cDatumSampled& Datum, double In, int spec,double weight=1.0) {
         if (Datum.offset>=0) *(spec + (double*)(AssociatedDataPointer + CollectingSamplingOffset+Datum.offset))+= In * weight;
       }
+
+      inline void SampleDatum(Datum::cDatumSampled& Datum, double In, int spec,int idx,double weight=1.0) {
+        if (Datum.offset>=0) *(idx+Datum.length * spec + (double*)(AssociatedDataPointer + CollectingSamplingOffset+Datum.offset))+= In * weight;
+      }
+
+
 
       //.......................................................................
       //get individual stored variables
