@@ -81,6 +81,8 @@ namespace PIC {
     cDatumWeighted DatumAtVertexParticleEnergy(1,"\"Kinetic energy [MeV]\"",true);
     cDatumWeighted DatumAtVertexParticleSpeed(1,"\"Speed [m/s]\"",true);
 
+    cDatumTimed DatumAtVertexNumberDensityEnergyBinned("Number Density[1/m^3]",10,0.1,600.0,PIC::Datum::cDatum::DistTypeLog); // units for the energy limits are MeV 
+
     cDatumWeighted DatumAtVertexParticleCosPitchAngle(1,"\"Cos Pitch Angle\"",true);
     cDatumWeighted DatumAtVertexParticleAbsCosPitchAngle(1,"\"Abs Cos Pitch Angle\"",true);
 
@@ -990,6 +992,8 @@ namespace PIC {
       DatumAtVertexParticleEnergy.  activate(Offset, &DataSampledAtVertex);
       DatumAtVertexParticleSpeed.   activate(Offset, &DataSampledAtVertex); 
 
+      DatumAtVertexNumberDensityEnergyBinned.   activate(Offset, &DataSampledAtVertex);
+
       DatumAtVertexParticleCosPitchAngle.   activate(Offset, &DataSampledAtVertex);
       DatumAtVertexParticleAbsCosPitchAngle.activate(Offset, &DataSampledAtVertex);
 
@@ -1231,6 +1235,11 @@ switch (DIM) {
       V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E*J2MeV,spec, (1-w));
       V->SampleDatum(DatumAtVertexParticleSpeed,Weight*Speed,spec, (1-w));
 
+      //sample binned number density 
+      int ibin=DatumAtVertexNumberDensityEnergyBinned.GetBinIndex(E*J2MeV);
+      if (ibin>=0) V->SampleDatum(DatumAtVertexNumberDensityEnergyBinned,Weight/volume, spec, ibin,(1-w));  
+
+
       V->SampleDatum(DatumAtVertexParticleCosPitchAngle,Weight*CosPitchAngle,spec, (1-w));
       V->SampleDatum(DatumAtVertexParticleAbsCosPitchAngle,Weight*fabs(CosPitchAngle),spec, (1-w));
 
@@ -1258,6 +1267,8 @@ switch (DIM) {
       V->SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (w));
       V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E*J2MeV,spec, w);
       V->SampleDatum(DatumAtVertexParticleSpeed,Weight*Speed,spec, w);
+
+      if (ibin>=0) V->SampleDatum(DatumAtVertexNumberDensityEnergyBinned,Weight/volume, spec, ibin,w);
 
       V->SampleDatum(DatumAtVertexParticleCosPitchAngle,Weight*CosPitchAngle,spec, w);
       V->SampleDatum(DatumAtVertexParticleAbsCosPitchAngle,Weight*fabs(CosPitchAngle),spec, w);
