@@ -221,12 +221,13 @@ auto CalculateWaveEnergyDensity = [&]() {
 
     if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
 
+      // Function to increment integrated wave energy due to shock passing
+      if (niter!=0) SEP::ParticleSource::ShockWave::ShockTurbulenceEnergyInjection(rsh0, SEP::ParticleSource::ShockWave::Tenishev2005::rShock, PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
+
+
       if (SEP::ParticleMoverPtr!=SEP::ParticleMover_FocusedTransport_WaveScattering) { // in case SEP::ParticleMover_FocusedTransport_WaveScattering(), particle/turbulence coupling is already done 
 
       // Function to increment integrated wave energy due to shock passing
-      if (niter!=0) SEP::ParticleSource::ShockWave::ShockTurbulenceEnergyInjection(rsh0, SEP::ParticleSource::ShockWave::Tenishev2005::rShock, PIC::ParticleWeightTimeStep::GlobalTimeStep[0]); 
-
-
       //reduce S
       PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming);
       PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::G_minus_streaming);
