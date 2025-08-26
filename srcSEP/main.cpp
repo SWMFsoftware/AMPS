@@ -207,6 +207,10 @@ auto CalculateWaveEnergyDensity = [&]() {
 
     //PIC::FieldLine::Output("fl-edge-test.dat",false); 
 
+//hooks for calculating the magnertic tube radius and the volume of the field line segment
+PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
+
+
 
   vector<vector<double> > DeltaE_plus, DeltaE_minus;
 
