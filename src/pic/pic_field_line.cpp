@@ -17,9 +17,12 @@ int PIC::FieldLine::cFieldLineSegment::CompletedSamplingOffset=-1;
 vector<PIC::Datum::cDatumStored*> PIC::FieldLine::cFieldLineSegment::DataStoredAtSegment;
 vector<PIC::Datum::cDatumSampled*> PIC::FieldLine::cFieldLineSegment::DataSampledAtSegment;
 
+//hooks for calculating the magnertic tube radius and the volume of the field line segment
+PIC::FieldLine::fMagneticTubeRadius PIC::FieldLine::MagneticTubeRadius=NULL;
+PIC::FieldLine::fSegmentVolume PIC::FieldLine::SegmentVolume=NULL;
+
 //process data associated with a filed line before it is saved in a file
 PIC::FieldLine::fUserDefinedfDataProcessingManager PIC::FieldLine::UserDefinedfDataProcessingManager=NULL;
-
 
 //the following is used to output the distance from the beginning of the 
 //field line in units other than SI
@@ -1217,16 +1220,16 @@ switch (DIM) {
       E=Relativistic::Speed2E(Speed,m0);
 
       // volume
-      double volume = FieldLinesAll[iFieldLine].GetSegment(S)->GetLength();
-      const double R0 = 10 *_SUN__RADIUS_;
-//      const double B0 = 1.83E-6;
+      double volume = 0.0; FieldLinesAll[iFieldLine].GetSegment(S)->GetLength();
 
-
-      // FIX LATER=====================================
-      // take gyroradius of electron with 10^7 m/s speed at B0 (~30 m)
-      volume *= 3.14 * 900 * (x[0]*x[0]+x[1]*x[1]+x[2]*x[2]) / (R0*R0);
-      // FIX LATER=====================================
-
+      if (SegmentVolume!=NULL) {
+        volume=SegmentVolume(FieldLinesAll[iFieldLine].GetSegment(S),iFieldLine);
+      }
+      else {
+        exit(__LINE__,__FILE__,"Error: hook SegmentVolume is not initialized; provide a function for calculating the volumne of a segment of a field line (e.g., SEP::FieldLine::GetSegmentVolume in srcSEP/shock_injection.cpp");
+      }
+    
+       
       //sample to vertices
       cFieldLineVertex* V=FieldLinesAll[iFieldLine].GetSegment(S)->GetBegin();
       V->SampleDatum(DatumAtVertexNumberDensity,Weight/volume, spec, (1-w));

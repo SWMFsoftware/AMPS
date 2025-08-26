@@ -1852,6 +1852,14 @@ void DeleteAttachedParticles();
     };
     //class cFieldLine --------------------------------------------------------
 
+
+    //hooks for calculating the magnertic tube radius and the volume of the field line segment 
+    typedef double (*fMagneticTubeRadius)(cFieldLineVertex* Vertex,int iFieldLine);
+    typedef double (*fSegmentVolume)(cFieldLineSegment* Segment,int iFieldLine); 
+
+    extern fMagneticTubeRadius MagneticTubeRadius;
+    extern fSegmentVolume SegmentVolume;
+
     //process data associated with a filed line before it is saved in a file
     typedef void (*fUserDefinedfDataProcessingManager)();
     extern fUserDefinedfDataProcessingManager UserDefinedfDataProcessingManager;
