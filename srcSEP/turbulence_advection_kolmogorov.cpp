@@ -252,7 +252,7 @@ void AdvectTurbulenceEnergyAllFieldLines(
         // ========================================================================
         
         // Loop through all segments except the first and the last one (inner segments only)
-        for (int i = 1; i < num_segments - 1; ++i) {
+        for (int i = 0; i < num_segments ; ++i) {
             PIC::FieldLine::cFieldLineSegment* segment_i = field_line->GetSegment(i);
             if (!segment_i || segment_i->Thread != PIC::ThisThread) {
                 continue;  // Only process segments assigned to current process
