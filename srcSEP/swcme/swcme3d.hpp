@@ -146,6 +146,24 @@ class Model {
 public:
   explicit Model(const Params&);
 
+// --- Plasma+B evaluator (with sheath tangential B amplification) -------------
+// Computes n, V (radial), and B (Parker + tangential amplification in sheath).
+// Inputs: positions in meters. Outputs: SI units (n [m^-3], V [m/s], B [Tesla]).
+void evaluate_cartesian_with_B(const StepState& S,
+                               const double* x_m, const double* y_m, const double* z_m,
+                               double* n_m3, double* Vx_ms, double* Vy_ms, double* Vz_ms,
+                               double* Bx_T, double* By_T, double* Bz_T,
+                               std::size_t N) const;
+
+// --- Directional shock diagnostics ------------------------------------------
+// For a unit direction u (from Sun), returns the shock radius Rdir along u,
+// the outward normal at that surface point, the local compression ratio rc_loc,
+// and the local normal shock speed Vsh_n (m/s).
+void diagnose_direction(const StepState& S, const double u[3],
+                        double& Rdir_m, double n_hat[3],
+                        double& rc_loc, double& Vsh_n) const;
+
+
   // time-step state (~0.8s recommended for tight sync)
   StepState prepare_step(double t_s) const;
 
