@@ -1242,7 +1242,7 @@ void setFixedFloatB_corner_BC(){
 long int PrepopulateDomain() {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int iCell,jCell,kCell;
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+  //cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataCenterNode *cell;
   long int nd,nGlobalInjectedParticles,nLocalInjectedParticles=0;
   double Velocity[3];
@@ -1258,8 +1258,8 @@ long int PrepopulateDomain() {
 
 
   double ParticleWeight[PIC::nTotalSpecies];
-  for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
-    ParticleWeight[iSp]=node->block->GetLocalParticleWeight(iSp);
+  //  for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
+  //  ParticleWeight[iSp]=node->block->GetLocalParticleWeight(iSp);
     
   
   waveNumber[0]=2*Pi/lambda;
@@ -1311,6 +1311,9 @@ long int PrepopulateDomain() {
       dx[idim]=(xmaxBlock[idim]-xminBlock[idim])/nBlock[idim];
       CellVolume *= dx[idim];
     }
+
+    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
+       ParticleWeight[iSp]=node->block->GetLocalParticleWeight(iSp);
 
 
     for (kCell=0;kCell<nBlock[2];kCell++) for (jCell=0;jCell<nBlock[1];jCell++) for (iCell=0;iCell<nBlock[0];iCell++) {
