@@ -4,20 +4,12 @@
 // with spherical/ellipsoidal/cone(SSE) front options, DBM kinematics,
 // Parker spiral B-field, sheath/ejecta parameterization, and Tecplot export.
 //
-// This file provides the definitions required by demo3d_2.cpp, including:
-//   • Model::prepare_step
-//   • Model::evaluate_cartesian_fast
-//   • Model::evaluate_cartesian_with_B
-//   • Model::diagnose_direction
-//   • Model::shape_radius_normal
-//   • Model::local_oblique_rc
-//   • Model::build_shock_mesh
-//   • Model::compute_triangle_metrics
-//   • Model::default_apex_box
-//   • Model::write_tecplot_dataset_bundle
-//   • Model::write_shock_surface_center_metrics_tecplot
-//
-// Units: distance [m], time [s], velocity [m/s], density [m^-3], B [Tesla].
+// Implementation notes:
+// - Magnetic field: upstream uses Parker; in the sheath we amplify the tangential
+//   component toward the local compression ratio (rc), relaxing toward ambient
+//   across the sheath; normal component is continuous.
+// - Divergence: we provide a radial centered-difference approximation at each point.
+//   This captures compressions/expansions across the smoothed interfaces efficiently.
 
 #include "swcme3d.hpp"
 
@@ -30,19 +22,17 @@
 #include <algorithm>
 
 // =========================== Namespace-level constants =========================
-// Your header likely declared these (e.g., `extern const double AU;` etc.).
-// We provide their single ODR definitions here so the linker can find them.
 namespace swcme3d {
   const double AU = 1.495978707e11;     // Astronomical Unit [m]
   const double Rs = 6.957e8;            // Solar radius [m]
   const constexpr double PI = 3.141592653589793;  // Pi
-  // Clamp helper (declared in header or used inside namespace)
+
+  // Provide a simple clamp in-namespace so member funcs can call swcme3d::clamp01(...)
   double clamp01(double v){ return (v < 0.0) ? 0.0 : (v > 1.0 ? 1.0 : v); }
 } // namespace swcme3d
 
 // =============================== File-scope helpers ===============================
 
-// Physical constants (not exported)
 static constexpr double MU0        = 4.0e-7 * swcme3d::PI; // vacuum permeability [H/m]
 static constexpr double MP         = 1.67262192369e-27;    // proton mass [kg]
 static constexpr double KB         = 1.380649e-23;         // Boltzmann [J/K]
@@ -55,7 +45,6 @@ static inline double smoothstep01(double x){
   return x*x*(3.0 - 2.0*x);
 }
 
-// Normalize in place (safe)
 static inline void safe_normalize(double v[3]){
   const double m = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
   if (m > 0.0){ v[0] /= m; v[1] /= m; v[2] /= m; }
@@ -109,10 +98,7 @@ static inline void dbm_position_speed(double r0_m, double V0_ms, double Vsw_ms,
 // =============================== Implementation ===============================
 namespace swcme3d {
 
-Model::Model(const Params& P) : P_(P)
-{
-  // No I/O flags here (EnableIO/DisableIO not declared in header)
-}
+Model::Model(const Params& P) : P_(P) {}
 
 // Prepare all time-dependent quantities for a given time t [s]
 StepState Model::prepare_step(double t_s) const
@@ -155,16 +141,16 @@ StepState Model::prepare_step(double t_s) const
   S.w_le_m      = P_.edge_smooth_le_AU_at1AU    * scaleR * AU;
   S.w_te_m      = P_.edge_smooth_te_AU_at1AU    * scaleR * AU;
 
-  // Edges along apex direction (convenience)
+  // Convenience radii along apex
   S.r_le_m = S.r_sh_m - S.dr_sheath_m;
   S.r_te_m = S.r_le_m - S.dr_me_m;
 
-  // Downstream targets
+  // Target speeds
   S.V_sheath_LE_ms = P_.V_sheath_LE_factor * Vsw_ms;
   S.V_ME_ms        = P_.V_ME_factor        * Vsw_ms;
   S.V_dn_ms        = Vsw_ms;
 
-  // Approximate apex rc for reporting (using apex normal)
+  // Approximate apex rc (using apex normal)
   double n_hat_apex[3] = {e1[0],e1[1],e1[2]};
   double u_apex[3]     = {e1[0],e1[1],e1[2]};
   double rc_apex=1.0, Vsh_n=0.0, dummy=0.0;
@@ -292,7 +278,7 @@ void Model::local_oblique_rc(const StepState& S, const double u[3], const double
   rc_out = rc;
 }
 
-// Evaluate n and radial V at cartesian points (fast path, no B)
+// Evaluate n and V (no B)
 void Model::evaluate_cartesian_fast(const StepState& S,
                                     const double* x_m, const double* y_m, const double* z_m,
                                     double* n_m3, double* Vx_ms, double* Vy_ms, double* Vz_ms,
@@ -369,7 +355,7 @@ void Model::evaluate_cartesian_fast(const StepState& S,
   }
 }
 
-// Plasma + B (with tangential amplification in sheath)
+// Plasma + B (with tangential amplification in the sheath)
 void Model::evaluate_cartesian_with_B(const StepState& S,
                                       const double* x_m, const double* y_m, const double* z_m,
                                       double* n_m3, double* Vx_ms, double* Vy_ms, double* Vz_ms,
@@ -445,7 +431,7 @@ void Model::evaluate_cartesian_with_B(const StepState& S,
     double Bn[3] = {Bn_mag*n_hat[0], Bn_mag*n_hat[1], Bn_mag*n_hat[2]};
     double Bt[3] = {B_up[0]-Bn[0],   B_up[1]-Bn[1],   B_up[2]-Bn[2]  };
 
-    // Amplify tangential toward rc at the shock, relax to upstream at sheath LE
+    // Amplify tangential toward rc at the shock, relax to ambient at sheath LE
     const double a_shock = (rc_loc > 1.0) ? edge(r, Rdir, w_sh) : 0.0; // 0 upstream → 1 just inside
     const double amp_t   = 1.0 + (rc_loc - 1.0) * a_shock * ramp;
 
@@ -461,6 +447,41 @@ void Model::evaluate_cartesian_with_B(const StepState& S,
     Bx_T[i]  = Bv[0];
     By_T[i]  = Bv[1];
     Bz_T[i]  = Bv[2];
+  }
+}
+
+// Radial divergence estimate (centered difference along r̂)
+void Model::compute_divV_radial(const StepState& S,
+                                const double* x_m, const double* y_m, const double* z_m,
+                                double* divV, std::size_t N, double dr_frac) const
+{
+  const double rmin = 1.05 * Rs;                // avoid going under model inner boundary
+  const double dr_min = 1.0e-4 * AU;            // absolute min step (~15,000 km)
+
+  for (std::size_t i=0; i<N; ++i){
+    const double x=x_m[i], y=y_m[i], z=z_m[i];
+    const double r  = std::sqrt(std::max(1e-12, x*x + y*y + z*z));
+    const double invr = 1.0 / r;
+    const double u[3] = {x*invr, y*invr, z*invr};
+
+    const double dr = std::max(dr_min, dr_frac * r);
+    const double rp = std::max(rmin, r + dr);
+    const double rm = std::max(rmin, r - dr);
+
+    // Evaluate V at r±dr along the same direction u
+    double xp = rp*u[0], yp = rp*u[1], zp = rp*u[2];
+    double xm = rm*u[0], ym = rm*u[1], zm = rm*u[2];
+
+    double ntmp, Vxp,Vyp,Vzp, Vxm,Vym,Vzm;
+    evaluate_cartesian_fast(S, &xp,&yp,&zp, &ntmp, &Vxp,&Vyp,&Vzp, 1);
+    evaluate_cartesian_fast(S, &xm,&ym,&zm, &ntmp, &Vxm,&Vym,&Vzm, 1);
+
+    const double Vrp = Vxp*u[0] + Vyp*u[1] + Vzp*u[2];
+    const double Vrm = Vxm*u[0] + Vym*u[1] + Vzm*u[2];
+
+    // div(V r̂) = (1/r^2) d/dr(r^2 V_r)
+    const double num = ( (rp*rp)*Vrp - (rm*rm)*Vrm ) / (rp - rm);
+    divV[i] = num / (r*r);
   }
 }
 
@@ -618,7 +639,8 @@ BoxSpec Model::default_apex_box(const StepState& S, double half_AU, int N) const
   return B;
 }
 
-// Combined dataset: surface (FEPOINT + BLOCK) + structured volume (POINT)
+// Combined dataset: surface nodal, surface cell metrics, and structured volume.
+// Volume zone includes: n, V, **B**, and **divV** at each grid point.
 bool Model::write_tecplot_dataset_bundle(const ShockMesh& M, const TriMetrics& T,
                                          const StepState& S, const BoxSpec& B,
                                          const char* path) const
@@ -630,33 +652,43 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M, const TriMetrics& T
   if(!fp) return false;
   auto p=[&](const char* fmt, auto... args){ std::fprintf(fp, fmt, args...); };
 
+  // NOTE: Keep the same variable list/order across all zones
   p("TITLE = \"SW+CME dataset\"\n");
   p("VARIABLES = "
-    "\"X\",\"Y\",\"Z\",\"n\",\"Vx\",\"Vy\",\"Vz\",\"rc\",\"Vsh_n\","
+    "\"X\",\"Y\",\"Z\","
+    "\"n\",\"Vx\",\"Vy\",\"Vz\","
+    "\"Bx\",\"By\",\"Bz\",\"divV\","
+    "\"rc\",\"Vsh_n\","
     "\"nx\",\"ny\",\"nz\",\"area\",\"rc_mean\",\"Vsh_n_mean\","
     "\"tnx\",\"tny\",\"tnz\",\"cx\",\"cy\",\"cz\"\n");
 
-  // Zone 1: surface nodal (FEPOINT)
+  // ---- Zone 1: surface nodal (FEPOINT) ----
   p("ZONE T=\"surface_nodal\", N=%zu, E=%zu, F=FEPOINT, ET=TRIANGLE\n", Nv, Ne);
   for (std::size_t i=0;i<Nv;++i){
-    p("%.9e %.9e %.9e %.9e %.9e %.9e %.9e "
-      "%.6e %.6e %.6e %.6e %.6e "
-      "%.9e %.9e %.9e %.6e %.6e %.6e %.9e %.9e %.9e\n",
+    p("%.9e %.9e %.9e "   // X Y Z
+      "%.9e %.9e %.9e %.9e " // n Vx Vy Vz (undefined here)
+      "%.9e %.9e %.9e %.9e " // Bx By Bz divV (undefined here)
+      "%.6e %.6e "           // rc Vsh_n (nodal)
+      "%.6e %.6e %.6e "      // nx ny nz (nodal surface normal)
+      "%.9e %.9e %.9e "      // area rc_mean Vsh_n_mean (cell metrics; not used here)
+      "%.6e %.6e %.6e "      // tnx tny tnz (unused)
+      "%.9e %.9e %.9e\n",    // cx cy cz (unused)
       M.x[i],M.y[i],M.z[i],
-      0.0,0.0,0.0,0.0,                // n,Vx,Vy,Vz (undefined in this zone)
-      M.rc[i],M.Vsh_n[i],             // nodal shock props
+      0.0,0.0,0.0,0.0,
+      0.0,0.0,0.0,0.0,
+      M.rc[i],M.Vsh_n[i],
       M.n_hat_x[i],M.n_hat_y[i],M.n_hat_z[i],
-      0.0,0.0,0.0,                    // area, rc_mean, Vsh_n_mean
-      0.0,0.0,0.0,                    // tnx,tny,tnz (unused)
-      0.0,0.0,0.0                     // cx,cy,cz
+      0.0,0.0,0.0,
+      0.0,0.0,0.0,
+      0.0,0.0,0.0
     );
   }
   for (std::size_t e=0;e<Ne;++e)
     p("%d %d %d\n", M.tri_i[e], M.tri_j[e], M.tri_k[e]);
 
-  // Zone 2: surface cell metrics (BLOCK), with rc/Vsh_n as NODAL arrays
+  // ---- Zone 2: surface cells (BLOCK) ----
   p("ZONE T=\"surface_cells\", N=%zu, E=%zu, ZONETYPE=FETRIANGLE, DATAPACKING=BLOCK,\n", Nv, Ne);
-  p("VARLOCATION=([1-3,8-9]=NODAL, [4-7,10-21]=CELLCENTERED)\n");
+  p("VARLOCATION=([1-3,12-13]=NODAL, [4-11,14-25]=CELLCENTERED)\n");
 
   const int PER_LINE=8;
   auto dumpN_wrap = [&](const std::vector<double>& a){
@@ -669,22 +701,27 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M, const TriMetrics& T
     if (cnt) std::fprintf(fp,"\n");
   };
 
-  // BLOCK variable order:
-  // 1:X(N) 2:Y(N) 3:Z(N) 4:n(E) 5:Vx(E) 6:Vy(E) 7:Vz(E) 8:rc(N) 9:Vsh_n(N)
-  // 10:nx(E) 11:ny(E) 12:nz(E) 13:area(E) 14:rc_mean(E) 15:Vsh_n_mean(E)
-  // 16:tnx(E) 17:tny(E) 18:tnz(E) 19:cx(E) 20:cy(E) 21:cz(E)
+  // BLOCK order for 25 variables:
+  // 1:X(N) 2:Y(N) 3:Z(N)
   dumpN_wrap(M.x); dumpN_wrap(M.y); dumpN_wrap(M.z);
+  // 4..11: n, Vx, Vy, Vz, Bx, By, Bz, divV (all cell-centered here → zeros)
   dumpEzeros_wrap(Ne); dumpEzeros_wrap(Ne); dumpEzeros_wrap(Ne); dumpEzeros_wrap(Ne);
+  dumpEzeros_wrap(Ne); dumpEzeros_wrap(Ne); dumpEzeros_wrap(Ne); dumpEzeros_wrap(Ne);
+  // 12..13: rc(N), Vsh_n(N)
   dumpN_wrap(M.rc); dumpN_wrap(M.Vsh_n);
-  dumpEzeros_wrap(Ne); dumpEzeros_wrap(Ne); dumpEzeros_wrap(Ne);
+  // 14..16: nx, ny, nz (triangle normals)
+  dumpE_wrap(T.nx); dumpE_wrap(T.ny); dumpE_wrap(T.nz);
+  // 17..19: area, rc_mean, Vsh_n_mean
   dumpE_wrap(T.area); dumpE_wrap(T.rc_mean); dumpE_wrap(T.Vsh_n_mean);
-  dumpE_wrap(T.nx);   dumpE_wrap(T.ny);     dumpE_wrap(T.nz);
-  dumpE_wrap(T.cx);   dumpE_wrap(T.cy);     dumpE_wrap(T.cz);
+  // 20..22: tnx, tny, tnz (unused → zeros)
+  dumpEzeros_wrap(Ne); dumpEzeros_wrap(Ne); dumpEzeros_wrap(Ne);
+  // 23..25: cx, cy, cz (centroids)
+  dumpE_wrap(T.cx); dumpE_wrap(T.cy); dumpE_wrap(T.cz);
 
   for (std::size_t e=0;e<Ne;++e)
     p("%d %d %d\n", M.tri_i[e], M.tri_j[e], M.tri_k[e]);
 
-  // Zone 3: structured volume (POINT)
+  // ---- Zone 3: volume box (POINT) ----
   p("ZONE T=\"volume_box\", I=%d, J=%d, K=%d, DATAPACKING=POINT\n", B.Ni,B.Nj,B.Nk);
   for (int kk=0; kk<B.Nk; ++kk){
     const double zk = B.cz + (-B.hz + (2.0*B.hz) * (kk / double(B.Nk-1)));
@@ -692,14 +729,32 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M, const TriMetrics& T
       const double yj = B.cy + (-B.hy + (2.0*B.hy) * (jj / double(B.Nj-1)));
       for (int ii=0; ii<B.Ni; ++ii){
         const double xi = B.cx + (-B.hx + (2.0*B.hx) * (ii / double(B.Ni-1)));
-        double n,Vx,Vy,Vz;
-        evaluate_cartesian_fast(S, &xi,&yj,&zk, &n,&Vx,&Vy,&Vz, 1);
 
-        p("%.9e %.9e %.9e %.9e %.9e %.9e %.9e "
-          "%.9e %.9e %.9e %.9e %.9e "
-          "%.9e %.9e %.9e %.9e %.9e %.9e %.9e %.9e %.9e\n",
-          xi,yj,zk, n,Vx,Vy,Vz,
-          0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0);
+        // Evaluate plasma + B
+        double n,Vx,Vy,Vz,Bx,By,Bz;
+        evaluate_cartesian_with_B(S, &xi,&yj,&zk, &n,&Vx,&Vy,&Vz, &Bx,&By,&Bz, 1);
+
+        // Divergence (radial estimate)
+        double div;
+        compute_divV_radial(S, &xi,&yj,&zk, &div, 1, 1e-3);
+
+        p("%.9e %.9e %.9e "  // X Y Z
+          "%.9e %.9e %.9e %.9e "      // n Vx Vy Vz
+          "%.9e %.9e %.9e %.9e "      // Bx By Bz divV
+          "%.9e %.9e "                 // rc Vsh_n (NA in volume → 0)
+          "%.9e %.9e %.9e "            // nx ny nz (NA → 0)
+          "%.9e %.9e %.9e "            // area rc_mean Vsh_n_mean (NA → 0)
+          "%.9e %.9e %.9e "            // tnx tny tnz (NA → 0)
+          "%.9e %.9e %.9e\n",          // cx cy cz (NA → 0)
+          xi,yj,zk,
+          n,Vx,Vy,Vz,
+          Bx,By,Bz,div,
+          0.0,0.0,
+          0.0,0.0,0.0,
+          0.0,0.0,0.0,
+          0.0,0.0,0.0,
+          0.0,0.0,0.0
+        );
       }
     }
   }
