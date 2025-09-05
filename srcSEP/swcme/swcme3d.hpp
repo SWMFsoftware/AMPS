@@ -1,238 +1,282 @@
-#ifndef SWCME3D_HPP
-#define SWCME3D_HPP
+#pragma once
 /*
-swcme3d — Solar wind + CME forward-shock model (1D & 3D) with Tecplot writers
-=============================================================================
+  swcme3d.hpp — Solar-wind + CME kinematic/shock model (1.05 Rsun → interplanetary)
 
-WHAT
-----
-Lightweight C++17 model that returns solar-wind **density [m^-3]** and **bulk
-velocity [m/s]** at arbitrary points and times, including a 3D CME forward
-shock with oblique MHD compression. Includes triangulated shock surface and
-Tecplot ASCII writers (surface + volume).
+  # Purpose
+  Lightweight forward model for solar wind plasma and a CME-driven shock, with
+  simple geometry (sphere / ellipsoid / cone-cap SSE), drag-based kinematics (DBM),
+  ambient Parker-spiral magnetic field, and a parameterized sheath/ejecta profile
+  that blends smoothly from upstream → sheath → ejecta → ambient.
 
-PHYSICS (key formulas)
-----------------------
-(E1) Leblanc–Dulk–Bougeret (1998) density (cm^-3, r in R_sun), scaled to match n(1 AU):
-     n_cm3(r) = 3.3e5 r^-2 + 4.1e6 r^-4 + 8.0e7 r^-6;  n_m3 = 1e6 * scale * n_cm3.
-(E2) Parker spiral (Parker 1958): |B|(r) ∝ (AU/r)^2 √[1+(Ω r sinθ / V_sw)^2], with −φ̂ component.
-(E3) c_s = √(γ k_B T / m_p),  ρ = m_p n,  v_A = |B| / √(μ0 ρ).
-(E5) Fast speed (oblique): c_f(θ)^2 = ½[(c_s^2+v_A^2)+√((c_s^2+v_A^2)^2−4 c_s^2 v_A^2 cos^2θ)].
-(E7) DBM apex (Vršnak & Žic 2007; Vršnak+ 2013):
-     du/dt = −Γ u|u|, u(t)=u0/(1+Γ u0 t), u0=V0−V_sw.
-(E8) Apex radius: R_sh(t)=R0+V_sw t + (1/Γ) ln(1+Γ u0 t).
-(E9) U1n = V_sh^n − V_sw^n;  M_fn = U1n / c_f(θ_Bn).
-(E10) r_c = ((γ+1) M_fn^2)/((γ−1) M_fn^2 + 2) ≤ 4 (γ=5/3).
-(S) Regions: shock → sheath (graded compression) → ejecta (lower density) → ambient, with
-    independent C¹ smoothstep widths for the shock jump, sheath LE, and ejecta TE.
+  # Outputs
+  - Plasma number density n [m^-3], bulk velocity vector V [m/s]
+  - Magnetic field vector B [Tesla] (Parker upstream; tangentially amplified in sheath)
+  - Shock diagnostics (local radius, normal, compression ratio rc, normal shock speed Vsh_n)
+  - Surface triangulation + per-triangle metrics (area, normal, rc_mean, Vsh_n_mean)
+  - Structured-box (Tecplot POINT) volume with n, V, B, and divV (= ∇·V)
 
-COORDINATES & UNITS
--------------------
-• Heliocentric Cartesian; **Sun center is (0,0,0)**. r=|x| [m], t [s].
-• Inputs/outputs: density [m^-3], velocity [m/s].
+  # Core ingredients and equations
+  (1) Ambient density — Leblanc et al. (1998) empirical profile:
+      n_e(r) [cm^-3] = 3.3e5 (Rs/r)^2 + 4.1e6 (Rs/r)^4 + 8.0e7 (Rs/r)^6
+      Here we scale the coefficients by a single factor so that n(1 AU) = n1AU_cm3 (user param).
+      Output density n = n_e * 1e6 [m^-3].
 
-REFERENCES (titles)
--------------------
-• Parker (1958) “Dynamics of the Interplanetary Gas and Magnetic Fields,” ApJ.
-• Leblanc, Dulk & Bougeret (1998) “Tracing the Electron Density from the Corona to 1 AU,” Sol. Phys.
-• Vršnak & Žic (2007) A&A; Vršnak et al. (2013) Sol. Phys. — Drag-Based Model.
-• Priest (2014) *Magnetohydrodynamics of the Sun*, Cambridge UP.
+  (2) Ambient magnetic field — Parker spiral (Parker 1958):
+      Br ∝ r^-2 ; Bphi = - Br (Ω r sinθ / Vsw)
+      We set Br(1 AU) so that |B|(1 AU) = B1AU_nT (user param), then construct
+      B = Br r̂ + Bphi ϕ̂ with the rotation axis along +z.
 
-TIPS
-----
-• For near real-time stepping, call prepare_step(t) every ~0.8 s; per-point eval is O(1).
-• Sharper shock vs softer ejecta: decrease w_shock, increase w_te.
-• Start at 1.05 R_sun via Params::r0_Rs=1.05.
+  (3) Kinematics — Drag-Based Model (DBM; Vršnak et al. 2013):
+      dV/dt = - Γ (V - Vsw) |V - Vsw|  →  V(t) = Vsw + (V0 - Vsw) / (1 + Γ (V0 - Vsw) t)
+      r(t) = r0 + Vsw t + ln(1 + Γ (V0 - Vsw) t) / Γ
+      Γ in [km^-1] is input as Gamma_kmInv; we convert to [m^-1].
+
+  (4) Shock geometry (choose one):
+      • Sphere:               R(û) = r_sh
+      • Ellipsoid:            (x/a)^2 + (y/b)^2 + (z/c)^2 = 1, apex along ê1 = CME direction
+      • Cone-cap (SSE-like):  R(θ) = r_sh cos^m θ for θ ≤ half_width; flattened flanks via m.
+
+  (5) Sheath/ejecta parameterization (phenomenological):
+      - Behind the shock we ramp the compression ratio from a floor (≥1) up to local rc at
+        the shock, with a tunable power p and width w_sh (smoothstep C^1).
+      - Through the sheath into the ejecta (ME), we blend to target values (n, V) at the
+        leading edge (width w_LE) and relax at the trailing edge (width w_TE).
+      - The ejecta number-density factor f_ME and speed factor V_ME_factor set targets.
+
+      Blending uses the C^1 smoothstep s(x)=x^2(3−2x) on normalized offsets. Each interface
+      uses its own width so you can choose a sharper shock and a softer ejecta tail.
+
+  (6) MHD shock proxy (oblique; Priest 2014; Edmiston & Kennel 1984):
+      We estimate the (fast-mode) normal Mach number using upstream sound & Alfven speeds,
+      and obliquity θ_Bn from the Parker field vs. the local surface normal. Then:
+        M_fn = U1n / c_f  ,  c_f^2 = ½[(v_A^2 + c_s^2) + sqrt((v_A^2 + c_s^2)^2
+                                                      − 4 c_s^2 v_A^2 cos^2 θ_Bn)]
+        rc = ((γ+1)M_fn^2) / ((γ−1)M_fn^2 + 2)   (capped at 4 for γ=5/3)
+      This rc is used as the **target** compression at the shock. In the sheath interior,
+      the tangential B is amplified toward rc and then relaxes toward ambient across the
+      sheath thickness.
+
+  (7) Divergence of V — efficient radial estimate at a point:
+      For a locally radial flow along r̂ with scalar speed V(r) (and slow angular variation),
+      ∇·(V r̂) = (1/r^2) d/dr (r^2 V).
+      We evaluate V at r±δr along the same direction r̂ and use a centered difference on
+      r^2 V, i.e.
+        divV ≈ {[(r+δr)^2 V(r+δr) − (r−δr)^2 V(r−δr)] / (2 δr)} / r^2
+      with δr = max(dr_frac·r, δr_min). This captures the jump/smoothing across the shock.
+
+  # Units
+    • distance [m], time [s], velocity [m/s], density [m^-3], magnetic field [Tesla]
+
+  # References (by topic)
+    Parker spiral:           Parker, E.N. (1958), ApJ 128:664.
+    Solar rotation rate:     Howard et al. (1984), ARA&A 22:131 (for Ω; we use 2.865e-6 rad/s).
+    Density (quiet wind):    Leblanc, Dulk & Bougeret (1998), Sol. Phys. 183:165.
+    DBM (CME kinematics):    Vršnak et al. (2013), Sol. Phys. 285:295.
+    MHD shocks (oblique):    Edmiston & Kennel (1984), J. Plasma Phys. 32:429;
+                             Priest (2014), "Magnetohydrodynamics of the Sun".
+    CME sheath phenomenology: Russell & Mulligan (2002), Planet. Space Sci. 50:527;
+                             Manchester et al. (2005), ApJ 622:1225.
+
+  -------------------------------------------------------------------------------
+  This header defines the public API. See swcme3d.cpp for implementation details.
 */
 
 #include <cstddef>
-#include <cstdint>
 #include <vector>
-#include <cstdio>
 
 namespace swcme3d {
 
-// ---------- constants (SI) ----------
-extern const double PI, kB, mp, mu0, Rs, AU, Omega_sun;
+// ------------------------- physical constants (ODR-defined in .cpp) ----------
+extern const double AU;   // 1.495978707e11 m
+extern const double Rs;   // 6.957e8 m
+extern const double PI;   // 3.14159...
 
-// ---------- runtime I/O toggle ----------
-void EnableIO();
-void DisableIO();
-bool IsIOEnabled();
-
-// ---------- enums, params, state ----------
+// ------------------------- configuration & state structures -------------------
 enum class ShockShape { Sphere, Ellipsoid, ConeSSE };
 
 struct Params {
-  // Ambient
-  double V_sw_kms    = 400.0;
-  double n1AU_cm3    = 7.0;
-  double T_K         = 1.2e5;
-  double B1AU_nT     = 5.0;
-
-  // Shock initial (DBM) at r0_Rs * Rs
-  double r0_Rs       = 1.05;
-  double V0_sh_kms   = 1800.0;
-  double Gamma_kmInv = 8.0e-8;
-
-  // Thermo/geometry
-  double gamma_ad    = 5.0/3.0;
-  double sin_theta   = 1.0;
-
-  // Sheath/ejecta shaping
-  double sheath_thick_AU_at1AU = 0.12;
-  double ejecta_thick_AU_at1AU = 0.25;
-  double sheath_comp_floor     = 1.2;
-  double sheath_ramp_power     = 1.0;
-  double V_sheath_LE_factor    = 1.05;
-  double f_ME                  = 0.5;
-  double V_ME_factor           = 1.0;
-
-  // Independent smoothstep half-widths (scale ∝ R_sh)
-  double edge_smooth_shock_AU_at1AU = 0.005;
-  double edge_smooth_le_AU_at1AU    = 0.010;
-  double edge_smooth_te_AU_at1AU    = 0.020;
-
-  // 3D shock shape
+  // Geometry
   ShockShape shape = ShockShape::Sphere;
+  double axis_ratio_y = 1.0;   // ellipsoid b/a
+  double axis_ratio_z = 1.0;   // ellipsoid c/a
+  double half_width_rad = 50.0 * (PI/180.0);  // cone half-angle
+  double flank_slowdown_m = 2.0;              // cone slowdown exponent m
+
+  // Kinematics (DBM)
+  double r0_Rs = 1.05;       // starting apex radius in Rs
+  double V0_sh_kms = 1500.0; // initial apex shock speed [km/s]
+  double V_sw_kms  = 400.0;  // ambient solar-wind speed [km/s]
+  double Gamma_kmInv = 0.2e-7; // DBM drag [km^-1]
+
+  // Orientation (ê1 = CME apex direction)
   double cme_dir[3] = {1.0, 0.0, 0.0};
-  double axis_ratio_y = 0.85;  // Ellipsoid b/a
-  double axis_ratio_z = 0.70;  // Ellipsoid c/a
-  double half_width_rad = 40.0 * (3.14159265358979323846/180.0); // Cone SSE half-width
-  double flank_slowdown_m = 2.0; // Cone SSE f(θ)=cos^m θ
+
+  // Ambient density scaling (Leblanc → n(1 AU)=n1AU_cm3)
+  double n1AU_cm3 = 5.0;
+
+  // Thermodynamics for sound speed and MHD shock proxy
+  double T_K = 1.5e5;        // proton temperature [K]
+  double gamma_ad = 5.0/3.0; // adiabatic index
+
+  // Parker spiral parameters
+  double sin_theta = 1.0;    // effective sin(latitude) of footpoint (≈1 near equator)
+  double B1AU_nT   = 5.0;    // magnitude |B|(1 AU) in nT
+
+  // Sheath / ejecta thickness and smooth widths (self-similar ∝ r_sh)
+  double sheath_thick_AU_at1AU = 0.06;
+  double ejecta_thick_AU_at1AU = 0.20;
+  double edge_smooth_shock_AU_at1AU = 0.01; // sharp near the shock
+  double edge_smooth_le_AU_at1AU    = 0.03; // softer at leading edge into ME
+  double edge_smooth_te_AU_at1AU    = 0.05; // softest at trailing edge
+
+  // Sheath ramp and floor for compression
+  double sheath_ramp_power = 2.0;
+  double sheath_comp_floor = 1.2;
+
+  // Target speeds inside sheath and ME (fractions of V_sw)
+  double V_sheath_LE_factor = 1.2; // at sheath leading edge
+  double V_ME_factor        = 0.9; // inside ejecta
+
+  // Ejecta density factor relative to ambient upstream at same r
+  double f_ME = 0.6;
 };
 
 struct StepState {
-  // Apex shock
-  double t_s=0, r_sh_m=0, V_sh_ms=0, rc=1;
+  // Local orthonormal basis aligned with apex direction
+  double e1[3]{1,0,0}, e2[3]{0,1,0}, e3[3]{0,0,1};
 
-  // Up/down (apex)
-  double V_up_ms=0, V_dn_ms=0;
+  // Apex kinematics
+  double r_sh_m = 0.0;   // apex shock radius [m]
+  double V_sh_ms = 0.0;  // apex shock speed [m/s]
+  double a_m = 0.0;      // alias for semi-axis a
 
-  // Region geometry (apex-based)
-  double dr_sheath_m=0, dr_me_m=0, r_le_m=0, r_te_m=0, inv_dr_sheath=0;
+  // Self-similar thicknesses and edge widths at current scale
+  double dr_sheath_m = 0.0, dr_me_m = 0.0;
+  double w_shock_m = 0.0, w_le_m = 0.0, w_te_m = 0.0;
 
-  // Smooth widths
-  double w_shock_m=0, w_le_m=0, w_te_m=0;
+  // Convenience radii along apex
+  double r_le_m = 0.0, r_te_m = 0.0;
 
-  // Targets
-  double rc_floor=1.2, V_sheath_LE_ms=0, V_ME_ms=0;
+  // Target speeds
+  double V_sheath_LE_ms = 0.0; // speed at sheath leading edge
+  double V_ME_ms        = 0.0; // speed in ejecta (ME)
+  double V_dn_ms        = 0.0; // downstream far
 
-  // 3D frame & axes
-  double e1[3]{}, e2[3]{}, e3[3]{};
-  double a_m=0, b_m=0, c_m=0; // semi-axes (a=a_m=r_sh_m)
+  // Apex compression ratio (approximate diagnostic)
+  double rc = 1.0;
+
+  // Other cached helpers
+  double inv_dr_sheath = 0.0;
+  double rc_floor = 1.0;
 };
 
-// Surface mesh + nodal fields
 struct ShockMesh {
-  std::vector<double> x,y,z;                    // node positions
-  std::vector<double> rc, Vsh_n;                // nodal rc, normal shock speed
-  std::vector<double> n_hat_x,n_hat_y,n_hat_z;  // nodal outward normals
-  std::vector<int> tri_i,tri_j,tri_k;           // 1-based triangle connectivity
+  // Nodal positions
+  std::vector<double> x, y, z;
+  // Nodal surface normals (unit, outward)
+  std::vector<double> n_hat_x, n_hat_y, n_hat_z;
+  // Nodal shock properties
+  std::vector<double> rc;     // compression ratio
+  std::vector<double> Vsh_n;  // normal shock speed [m/s]
+  // Connectivity (1-based Tecplot indexing)
+  std::vector<int> tri_i, tri_j, tri_k;
 };
 
-// Per-triangle metrics
 struct TriMetrics {
-  std::vector<double> area, rc_mean, Vsh_n_mean;
-  std::vector<double> nx, ny, nz; // outward per-cell normal
-  std::vector<double> cx, cy, cz; // centroid
+  // Cell-centered (per triangle)
+  std::vector<double> area;        // [m^2]
+  std::vector<double> nx, ny, nz;  // triangle unit normals
+  std::vector<double> cx, cy, cz;  // centroids
+  std::vector<double> rc_mean;     // mean nodal rc per triangle
+  std::vector<double> Vsh_n_mean;  // mean nodal Vsh_n per triangle
 };
 
-// Volume sampling box
-struct BoxSpec { double cx=0,cy=0,cz=0, hx=0,hy=0,hz=0; int Ni=0,Nj=0,Nk=0; };
+struct BoxSpec {
+  // Box center and half-sizes (axis-aligned in global coordinates)
+  double cx=0, cy=0, cz=0;
+  double hx=0, hy=0, hz=0;
+  // Structured sampling counts
+  int Ni=41, Nj=41, Nk=41;
+};
 
-// ---------- model ----------
+// ------------------------- model class ----------------------------------------
 class Model {
 public:
   explicit Model(const Params&);
 
-// --- Plasma+B evaluator (with sheath tangential B amplification) -------------
-// Computes n, V (radial), and B (Parker + tangential amplification in sheath).
-// Inputs: positions in meters. Outputs: SI units (n [m^-3], V [m/s], B [Tesla]).
-void evaluate_cartesian_with_B(const StepState& S,
-                               const double* x_m, const double* y_m, const double* z_m,
-                               double* n_m3, double* Vx_ms, double* Vy_ms, double* Vz_ms,
-                               double* Bx_T, double* By_T, double* Bz_T,
-                               std::size_t N) const;
-
-// --- Directional shock diagnostics ------------------------------------------
-// For a unit direction u (from Sun), returns the shock radius Rdir along u,
-// the outward normal at that surface point, the local compression ratio rc_loc,
-// and the local normal shock speed Vsh_n (m/s).
-void diagnose_direction(const StepState& S, const double u[3],
-                        double& Rdir_m, double n_hat[3],
-                        double& rc_loc, double& Vsh_n) const;
-
-
-  // time-step state (~0.8s recommended for tight sync)
+  // Time-step preparation (build basis, DBM apex position/speed, thicknesses, etc.)
   StepState prepare_step(double t_s) const;
 
-  // evaluators
-  void evaluate_radii_fast(const StepState& S, const double* r_m,
-                           double* n_m3, double* V_ms, std::size_t N) const;
+  // Directional shock radius R(û) and outward normal n̂ for the selected shape
+  void shape_radius_normal(const StepState& S,
+                           double ux, double uy, double uz,
+                           double& Rdir_m, double n_hat[3]) const;
 
+  // Local oblique-shock proxy at direction û (returns rc, Vsh_n, θ_Bn)
+  void local_oblique_rc(const StepState& S, const double u[3], const double n_hat[3],
+                        double Rdir_m, double r_eval_m,
+                        double& rc_out, double& Vsh_n_out, double& thetaBn_out) const;
+
+  // Evaluate n and V at Cartesian points (no magnetic field)
   void evaluate_cartesian_fast(const StepState& S,
                                const double* x_m, const double* y_m, const double* z_m,
                                double* n_m3, double* Vx_ms, double* Vy_ms, double* Vz_ms,
                                std::size_t N) const;
 
-  // shock surface & metrics
-  ShockMesh build_shock_mesh(const StepState& S, std::size_t nTheta, std::size_t nPhi) const;
+  // Evaluate n, V, B **and** div(Vsw) at Cartesian points.
+  // This is a convenience wrapper around evaluate_cartesian_with_B + compute_divV_radial.
+  void evaluate_cartesian_with_B_div(const StepState& S,
+                                     const double* x_m, const double* y_m, const double* z_m,
+                                     double* n_m3, double* Vx_ms, double* Vy_ms, double* Vz_ms,
+                                     double* Bx_T, double* By_T, double* Bz_T,
+                                     double* divVsw,            // <- new output
+                                     std::size_t N,
+                                     double dr_frac = 1e-3) const;
+
+  // Evaluate n, V, and B (with shock-tangential amplification in the sheath)
+  void evaluate_cartesian_with_B(const StepState& S,
+                                 const double* x_m, const double* y_m, const double* z_m,
+                                 double* n_m3, double* Vx_ms, double* Vy_ms, double* Vz_ms,
+                                 double* Bx_T, double* By_T, double* Bz_T,
+                                 std::size_t N) const;
+
+  // Radial divergence estimate at points (centered 1D derivative along local r̂)
+  // dr_frac ∈ [~1e-4 .. 1e-2] controls δr = max(dr_frac·r, δr_min)
+  void compute_divV_radial(const StepState& S,
+                           const double* x_m, const double* y_m, const double* z_m,
+                           double* divV, std::size_t N,
+                           double dr_frac = 1e-3) const;
+
+  // Build a lat–lon triangulation of the visible cap; returns nodal arrays + 1-based tris
+  ShockMesh build_shock_mesh(const StepState& S,
+                             std::size_t nTheta, std::size_t nPhi) const;
+
+  // Per-triangle metrics from a ShockMesh
   void compute_triangle_metrics(const ShockMesh& M, TriMetrics& T) const;
 
-  // Tecplot writers (single zones)
-  bool write_shock_surface_tecplot(const ShockMesh& M, const char* path) const;
-  bool write_shock_surface_center_metrics_tecplot(const ShockMesh& M, const TriMetrics& T, const char* path) const;
-  bool write_box_tecplot(const StepState& S, const BoxSpec& B, const char* path) const;
+  // Default apex-centered box (slightly shifted outward along ê1)
+  BoxSpec default_apex_box(const StepState& S, double half_AU, int N) const;
 
-  // Tecplot bundle (3 zones in one dataset: nodal surface, cell-centered surface, volume)
+  // Tecplot writers
+  // 1) Surface with nodal rc/Vsh_n and cell-centered metrics
+  bool write_shock_surface_center_metrics_tecplot(const ShockMesh& M,
+                                                  const TriMetrics& T,
+                                                  const char* path) const;
+
+  // 2) Bundle: surface nodal, surface cell metrics, and **volume POINT** zone
+  //    Volume zone now includes n, V, **B**, and **divV** at each grid point.
   bool write_tecplot_dataset_bundle(const ShockMesh& M, const TriMetrics& T,
                                     const StepState& S, const BoxSpec& B,
                                     const char* path) const;
 
-  // convenience
-  BoxSpec default_apex_box(const StepState& S, double half_AU, int N) const;
-
-  // optional I/O helpers
-  void write_step_csv_header(std::FILE* fp=stdout) const;
-  void write_step_csv_line(const StepState& S, std::FILE* fp=stdout) const;
-
-  // accessor
-  double V_sw() const;
-
-private:
-  // internal helpers
-  double leblanc_cm3(double r_m) const;
-  double parker_norm(double r_m) const;
-  void   make_frame(const double d[3], double e1[3], double e2[3], double e3[3]) const;
-  void   shock_position_speed(double t, double& r_sh_m, double& V_sh_ms) const;
-
-  void   B_parker_vec(const double u[3], double r_m, double V_sw_ms,
-                      double B0_T, double Bout[3]) const;
-  double fast_speed_oblique(double a, double vA, double cosTheta) const;
-  double B_parker_mag(double r_m) const;
-  double v_A(double r_m) const;
-  double c_fast(double r_m) const;
-
-  void shape_radius_normal(const StepState& S, double ux, double uy, double uz,
-                           double& R, double n_hat[3]) const;
-
-  void local_oblique_rc(const StepState& S,
-                        const double u[3], const double n_hat[3],
-                        double Rdir_m, double r_eval_m,
-                        double& rc_out, double& Vsh_n_out, double& thetaBn_out) const;
+  // Directional diagnostic helper (Rdir, n̂, rc, Vsh_n)
+  void diagnose_direction(const StepState& S, const double u[3],
+                          double& Rdir_m, double n_hat[3],
+                          double& rc_loc, double& Vsh_n) const;
 
 private:
   Params P_;
-  double leb_scale_{1.0};
-  double B0_T_{0.0};
-  double c_s_{0.0};
 };
 
-// clamp helper
-double clamp01(double x);
-
 } // namespace swcme3d
-
-#endif // SWCME3D_HPP
 
