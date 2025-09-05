@@ -449,7 +449,6 @@ void SetParticleForCell_float(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int i
   int LeftorRight = iFace- 2*idim;
   ind_src[idim] = ind_src[idim] + 1 -2*LeftorRight; // Iface:0 i+1; 1: i-1; 2:j+1; 3:j-1; 4:k+1; 5:k-1
 
-  nLocalInjectedParticles=0;
   /*
   for (int idim=0; idim<3; idim++) {
     xCenter[idim]=xminBlock[idim]+(ind[idim]+0.5)*dx[idim];
@@ -632,7 +631,8 @@ long int setParticle_BC(){
 	    if (iFace==0) {
 	      SetParticleForCell_fixed(node,iBlk,i,j,k,dx,xminBlock,ParticleWeight,CellVolume, nParticleCreated);
 	    }else{
-	      SetParticleForCell_float(node,iBlk,iFace,i,j,k,dx,xminBlock,ParticleWeight,CellVolume, nParticleCreated);
+	      SetParticleForCell_fixed(node,iBlk,i,j,k,dx,xminBlock,ParticleWeight,CellVolume, nParticleCreated);
+	      //SetParticleForCell_float(node,iBlk,iFace,i,j,k,dx,xminBlock,ParticleWeight,CellVolume, nParticleCreated);
 	    }
           }//for (int i=0;i<nCells[0];i++) for (int j=0;j<nCells[1];j++) for (int k=0;k<nCells[2];k++)
           
@@ -792,7 +792,7 @@ void setFixedFloatE_BC_half(){
 	      }
 	    }
 	    
-	    if (idim==0 && LeftorRight==0){
+	    // if (idim==0 && LeftorRight==0){
 	      //left boudary is fixed
 	    //fixed boundary
 	    double Ex=0.0,Ey=0.0,Ez=0.0;
@@ -805,7 +805,7 @@ void setFixedFloatE_BC_half(){
             ((double*)(offset+OffsetE_HalfTimeStep))[EyOffsetIndex]=Ey;
             ((double*)(offset+OffsetE_HalfTimeStep))[EzOffsetIndex]=Ez;
 
-	    }else{
+	    /* }else{
 	      //float boundary
 	     PIC::Mesh::cDataCornerNode *CornerNode_src= node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(ind_src[0],ind_src[1],ind_src[2]));
 	     char *  offset_src=CornerNode_src->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
@@ -816,7 +816,7 @@ void setFixedFloatE_BC_half(){
 	     ((double*)(offset+OffsetE_HalfTimeStep))[EzOffsetIndex]= ((double*)(offset_src+OffsetE_HalfTimeStep))[EzOffsetIndex];
 	     
 
-	    }
+	     }*/
             //if (isTest) printf("test E bc: i,j,k:%d,%d,%d; x:%e %e %e; E:%e,%e,%e\n", i,j,k,x[0],x[1],x[2],Ex,Ey,Ez);
           }
         }// for (int i=iFaceMin_n[iface];i<=iFaceMax_n[iface];i++)...
@@ -922,7 +922,7 @@ void setFixedFloatE_BC_curr(){
 	      }
 	    }
 	    
-	    if (idim==0 && LeftorRight==0){
+	    //if (idim==0 && LeftorRight==0){
 	    
 	    //fixed boundary
 	    double Ex=0.0,Ey=0.0,Ez=0.0;
@@ -935,7 +935,7 @@ void setFixedFloatE_BC_curr(){
             ((double*)(offset+CurrentEOffset))[EyOffsetIndex]=Ey;
             ((double*)(offset+CurrentEOffset))[EzOffsetIndex]=Ez;
 
-	    }else{
+	    /* }else{
 	      //float boundary
 	     PIC::Mesh::cDataCornerNode *CornerNode_src= node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(ind_src[0],ind_src[1],ind_src[2]));
 	     char *  offset_src=CornerNode_src->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
@@ -946,7 +946,7 @@ void setFixedFloatE_BC_curr(){
 	     ((double*)(offset+OffsetE_HalfTimeStep))[EzOffsetIndex]= ((double*)(offset_src+CurrentEOffset))[EzOffsetIndex];
 	     
 
-	    }
+	     }*/
             //if (isTest) printf("test E bc: i,j,k:%d,%d,%d; x:%e %e %e; E:%e,%e,%e\n", i,j,k,x[0],x[1],x[2],Ex,Ey,Ez);
           }
         }// for (int i=iFaceMin_n[iface];i<=iFaceMax_n[iface];i++)...
@@ -1054,7 +1054,7 @@ void setFixedFloatB_center_BC(){
 	      }
 	    }
 	    
-	    if (idim==0 && LeftorRight==0){
+	    //if (idim==0 && LeftorRight==0){
 
 	      //fixed boundary
             double Bx=0.0,By=0.0,Bz=0.0;
@@ -1077,7 +1077,7 @@ void setFixedFloatB_center_BC(){
             ((double*)(offset+PrevBOffset))[BxOffsetIndex]=Bx;
             ((double*)(offset+PrevBOffset))[ByOffsetIndex]=By;
             ((double*)(offset+PrevBOffset))[BzOffsetIndex]=Bz;
-            }else{
+	    /* }else{
 	      //float boundary
 	      PIC::Mesh::cDataCenterNode *CenterNode_src= node->block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(ind_src[0],ind_src[1],ind_src[2]));
 	      char *  offset_src=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
@@ -1090,7 +1090,7 @@ void setFixedFloatB_center_BC(){
 	      ((double*)(offset+PrevBOffset))[ByOffsetIndex]=((double*)(offset_src+PrevBOffset))[ByOffsetIndex];
 	      ((double*)(offset+PrevBOffset))[BzOffsetIndex]=((double*)(offset_src+PrevBOffset))[BzOffsetIndex];
            	      
-	    }
+	    }*/
 	  }
 	}
     iBlock++;
@@ -1191,7 +1191,7 @@ void setFixedFloatB_corner_BC(){
 	      }
 	    }
 	    
-	    if (idim==0 && LeftorRight==0){
+	    // if (idim==0 && LeftorRight==0){
 	      //fixed boundary  
             double Bx=0.0,By=0.0,Bz=0.0;
 
@@ -1213,7 +1213,7 @@ void setFixedFloatB_corner_BC(){
             ((double*)(offset+PrevBOffset))[ByOffsetIndex]=By;
             ((double*)(offset+PrevBOffset))[BzOffsetIndex]=Bz;
 
-	    }else{
+	    /* }else{
 	      //float boundary
 	      PIC::Mesh::cDataCornerNode *CornerNode_src= node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(ind_src[0],ind_src[1],ind_src[2]));
 
@@ -1228,7 +1228,7 @@ void setFixedFloatB_corner_BC(){
 	      ((double*)(offset+PrevBOffset))[BzOffsetIndex]=((double*)(offset_src+PrevBOffset))[BzOffsetIndex];
 
 
-	    }
+	    }*/
           }//if (CornerNode!=NULL)
         }
     iBlock++;
@@ -1252,10 +1252,16 @@ long int PrepopulateDomain() {
   PIC::Mesh::cDataCenterNode *cellList[cellListLength];
   */
   //particle ejection parameters
-  double ParticleWeight;//beta=PIC::MolecularData::GetMass(spec)/(2*Kbol*Temperature);
+  //double ParticleWeight;//beta=PIC::MolecularData::GetMass(spec)/(2*Kbol*Temperature);
   double waveNumber[3]={0.0,0.0,0.0};
   double lambda=32.0;
- 
+
+
+  double ParticleWeight[PIC::nTotalSpecies];
+  for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
+    ParticleWeight[iSp]=node->block->GetLocalParticleWeight(iSp);
+    
+  
   waveNumber[0]=2*Pi/lambda;
 
   double *ParticleDataTable=NULL,*ParticleDataTable_dev=NULL;
@@ -1305,71 +1311,25 @@ long int PrepopulateDomain() {
       dx[idim]=(xmaxBlock[idim]-xminBlock[idim])/nBlock[idim];
       CellVolume *= dx[idim];
     }
-    //particle stat weight
-#ifndef _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
-#error ERROR: _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_ is used but not defined
-#endif
-#ifndef _SIMULATION_PARTICLE_WEIGHT_MODE_
-#error ERROR: _SIMULATION_PARTICLE_WEIGHT_MODE_ is used but not defined
-#endif
 
-    //assume ion and electron have the same particle weight
-    #if  _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
-    ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[ionSpec];
-    #else
-    ParticleWeight=node->block->GetLocalParticleWeight(ionSpec);
-    #endif
-
-//    double *ParticleDataTable=NULL,*ParticleDataTable_dev=NULL;
-//    int ParticleDataTableIndex=0,ParticleDataTableLength=0;
 
     for (kCell=0;kCell<nBlock[2];kCell++) for (jCell=0;jCell<nBlock[1];jCell++) for (iCell=0;iCell<nBlock[0];iCell++) {
-	  //      nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(iCell,jCell,kCell);
 
-      // cell=cellList[nd];
-      //  xMiddle=cell->GetX();
-      //offset = cell->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
 	  int ind[3]={iCell,jCell,kCell};
 	  double x[3];
 	  for (int idim=0; idim<3; idim++) x[idim]=xminBlock[idim]+(ind[idim]+0.5)*dx[idim];
-	  
-          /*
-          double waveShape =sin(waveNumber[0]*(x[0]-xmin[0])+waveNumber[1]*(x[1]-xmin[1])+waveNumber[2]*(x[2]-xmin[2]));
-          double rho = 1, ux=0.0, p=4.5e-4, Ppar=4.5e-4;
-          double Ppar1 = 4.5e-5*waveShape;
-          double p1 = 7.5e-5*waveShape;
-          double rho1 = 0.1*waveShape;
-          double rho_conv=0.0795774715459477;
-          double p_conv = 0.0795774715459477;
-          
-          rho *=rho_conv;
-          rho1 *= rho_conv;
-          p *= p_conv;
-          p1 *= p_conv;
-          
-          Ppar *=p_conv;
-          Ppar1 *=p_conv;
-          
-
-          double rho_i = (rho+rho1)*ionMass/(ionMass+electronMass);
-          double rho_e = (rho+rho1)*electronMass/(ionMass+electronMass); 
-          double ux1= 0.005*waveShape;
 
 
+	  SetParticleForCell_fixed(node, 0,
+                        iCell, jCell, kCell, dx,  xminBlock,
+			ParticleWeight, CellVolume,nLocalInjectedParticles);
 
-          double NumberDensity=(rho+rho1)/(ionMass+electronMass);
-          double kTemp_par = (Ppar+Ppar1)/NumberDensity*0.5;
-          double kTemp = (p+p1)/NumberDensity*0.5;
-          double kTemp_perp = 3*kTemp-2*kTemp_par;
-
-          
-          double pi_par=(Ppar+Ppar1)*0.5;
-          double pe_par=pi_par;
-          double pi_perp = 3*(p+p1)*0.5-2*pi_par;
-          double pe_perp = pi_perp;
-          double ionBulkVelocity[3]={0,0,0};
-          double electronBulkVelocity[3]={0,0,0};
+	  /*
+	  void SetParticleForCell_fixed(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
+                        int iCell,int jCell,int kCell,double * dx,double * xminBlock,
+                        double * ParticleWeight,double CellVolume,long & nLocalInjectedParticles){
 	  */
+	  
 	  /*
 	  double rho = 720;
 	  double p = 8.064, pe = 0.01872;
@@ -1377,87 +1337,12 @@ long int PrepopulateDomain() {
 	  */
 
 
-	  double rho_i= 1.102274e-03;
-	  double rho_e = 2.755684e-06;
-	  //double rho_conv=0.0795774715459477;
-          //double p_conv = 0.0795774715459477;
-
-	  double p = 8.221618e-07;
-	  double pe = 1.908590e-09;
-	  double ux=0.0;
-	  double ionBulkVelocity[3]={0,0,0};
-          double electronBulkVelocity[3]={0,0,0};
-
-	  /*
-	  rho *=rho_conv;
-          p *= p_conv;
-          pe *= p_conv;
-	  */
-	  //double rho_i = rho*ionMass/(ionMass+electronMass);
-          //double rho_e = rho*electronMass/(ionMass+electronMass); 
-	  double NumberDensity =rho_i/ionMass;
-	  
-          ionBulkVelocity[0] = ux;
-          electronBulkVelocity[0] = ux;
-	  
-
-          //inject particles into the cell
-          anpart=NumberDensity*CellVolume/ParticleWeight;
-          //std::cout<<"CellLoc:"<<x[0]<<" "<<x[1]<<" "<<x[2]<<" NumberDensity: "<<NumberDensity<<"cell volume: "<<CellVolume<<"anpart: "<<anpart<<std::endl;
-	  //printf("NumberDensity:%e,CellVolume:%e, ParticleWeight:%e, anpart:%e\n",NumberDensity,CellVolume, ParticleWeight,anpart );
-          npart=(int)(anpart);
-          //if (rnd()<anpart-npart) npart++;
-          nLocalInjectedParticles+=npart*2;
-          //std::cout<<"need to inject npart: "<<npart<<std::endl;
-          
-	  double uth_e, uth_i;
-	  uth_i = sqrt(p/rho_i);//35 eV
-	  uth_e = sqrt(pe/rho_e);//1.3 eV       
-
-	  //printf("uth_i:%e, uth_e:%e, p:%e, pe:%e, ni:%e\n",uth_i,uth_e, p, pe,NumberDensity);
-	  
-          while (npart-->0) {
-            double xPar[3];
-            xPar[0]=x[0]+dx[0]*(rnd()-0.5);
-            xPar[1]=x[1]+dx[1]*(rnd()-0.5);
-            
-            // xPar[0]=x[0];
-            // xPar[1]=x[1];
-            xPar[2]=x[2]+dx[2]*(rnd()-0.5);
-
-            
-            double electronVelocity[3],ionVelocity[3];
-            for (int idim=0;idim<3;idim++) { 
-              //double uth_e = idim!=1?sqrt(pe_perp/rho_e):sqrt(pe_par/rho_e);
-              //double uth_i = idim!=1?sqrt(pi_perp/rho_i):sqrt(pi_par/rho_i);
-              
-              electronVelocity[idim]=uth_e* sqrt(-2.0 * log(1.0 - .999999999 * rnd()))*cos(2*Pi*rnd())+electronBulkVelocity[idim];
-              ionVelocity[idim]=uth_i*sqrt(-2.0 * log(1.0 - .999999999 * rnd()))*cos(2*Pi*rnd())+ionBulkVelocity[idim];   
-            }
-            
-            /*  
-            for (int idim=0;idim<3;idim++) {
-              //in this test case B field is in y-direction
-              double ElectronTemp= idim!=1?kTemp_perp/electronMass:kTemp_par/electronMass; 
-              double IonTemp= idim!=1?kTemp_perp/ionMass:kTemp_par/ionMass; 
-              
-              electronVelocity[idim]=cos(2*Pi*rnd())*sqrt(-log(rnd())*(2*ElectronTemp))+electronBulkVelocity[idim];
-              ionVelocity[idim]=cos(2*Pi*rnd())*sqrt(-log(rnd())*(2*IonTemp))+ionBulkVelocity[idim];       
-              }
-            */      
-            //initiate the new particle
-            
-                  
-	    PIC::ParticleBuffer::InitiateParticle(xPar, electronVelocity,NULL,&electronSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
-            PIC::ParticleBuffer::InitiateParticle(xPar, ionVelocity,NULL,&ionSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
-            
-          }
       //end of the particle injection block
       //std::cout<<"finished injecting npart: "<<npart<<std::endl;
       
       
       
-        }
+	}
    }
 
 
