@@ -44,6 +44,79 @@
 //   ∇·V = (1/r^2) d/dr ( r^2 V_r ). We compute it with a centered FD using
 //   r±dr along the same ray; dr = max(1e-4 AU, 1e-3 r).  Numerically robust.
 //
+
+// PHYSICS OVERVIEW (1-D ALONG A HELIOCENTRIC RAY; ORIGIN = SUN CENTER)
+// --------------------------------------------------------------------
+// Upstream density n(r): Leblanc, Dulk & Bougeret (1998), Solar Phys. 183, 165
+//   n[r] ~ A (Rs/r)^2 + B (Rs/r)^4 + C (Rs/r)^6   [cm^-3]  with
+//   A=3.3e5, B=4.1e6, C=8.0e7. We scale these to match a user-given n(1 AU)
+//   and convert to SI [m^-3].  Implementation detail for speed:
+//     n(r) = C2 * r^-2 + C4 * r^-4 + C6 * r^-6   [m^-3],
+//   where C2,C4,C6 (SI) are cached in StepState and r^-k use fused multiplies.
+//
+// Upstream magnetic field B(r): Parker (1958), ApJ 128, 664
+//   In equatorial approximation (fixed sinθ), with solar rotation Ω and wind Vsw:
+//   Br ∝ r^-2, Bφ = -Br * (Ω r sinθ / Vsw).  We choose Br(1AU) so that
+//   |B|(1 AU) equals user-given B1AU.  Implementation caches Br1AU_T and
+//   k_AU = Ω AU sinθ / Vsw, so evaluation is a few mults per sample.
+//
+// CME apex kinematics: Drag-Based Model (DBM): Vršnak & Žic (2007); Vršnak et al. (2013)
+//   u(t) = Vsh − Vsw.  With drag Γ,
+//     u(t) = u0 / (1 + Γ u0 t),   r(t) = r0 + Vsw t + (ln(1+Γ u0 t))/Γ.
+//   We guard logs/denominators and convert Γ from km^-1 to m^-1.
+//
+// Regions and smoothing (self-similar):
+//   upstream → [shock at R_sh] → sheath → [leading edge at R_LE] → magnetic ejecta
+//   → [trailing edge at R_TE] → downstream ambient.
+//   Each interface uses a C¹ smoothstep s(x)=x^2(3−2x) over width w; widths scale
+//   ∝ R_sh (so they grow with distance). Sheath density uses a ramp that is steeper
+//   near the shock (power p≥1) and bounded below by a floor (rc_floor≥1).
+//
+// Oblique-MHD shock proxy (1-D quasi-radial reduction): Edmiston & Kennel (1984);
+// Priest (2014, CUP): We approximate the normal Mach number using the fast speed
+//   c_f = sqrt(c_s^2 + v_A^2) with upstream sound speed c_s and Alfven speed v_A,
+//   then take a hydrodynamic-like compression
+//     rc = ((γ+1) M_n^2) / ((γ−1) M_n^2 + 2),   1 ≤ rc ≤ 4.
+//   Downstream speed at the shock follows a continuity proxy.
+//   This rc is used as: sheath density jump and a proxy for Bt amplification.
+//
+// Divergence of bulk flow:
+//   ∇·V = (1/r^2) d/dr ( r^2 V_r ). We compute it with a centered FD using
+//   r±dr along the same ray; dr = max(1e-4 AU, 1e-3 r).  Numerically robust.
+//
+// *** POST-SHOCK BEHAVIOR (PHYSICAL SANITY) ***
+// --------------------------------------------
+// • Right at the shock (immediate downstream), a *compressive fast shock* must have
+//     – Density increase: rc = n2/n1 > 1 (≤ 4 for γ=5/3).
+//     – Flow deceleration *in the shock frame*: u2 < u1 where u = V − V_sh.
+//   In the spacecraft (Sun) frame for a forward shock (V_sh > V_sw):
+//     V2 ≈ V_sh + (V1 − V_sh)/rc,  so V2 lies typically between V_sw and V_sh.
+//   You should therefore see a **density peak** and **elevated speed** right behind
+//   the shock, followed by a **gradual decrease** through the **sheath**.
+//
+// • Through the **sheath** (shock → LE): it is physical for both **density** and
+//   **speed** to **decline** from their immediate post-shock values as compression
+//   relaxes and turbulence/expansion redistribute momentum.
+//
+// • Inside the **magnetic ejecta (ME)**: density is commonly **below ambient** and
+//   speed can be **lower than upstream wind**—a well-known depletion region.
+//
+// • **Unphysical pattern to avoid**: an *immediate* (next-sample) **drop of density
+//   below upstream** right behind the shock. That violates jump conditions for a
+//   compressive fast shock. If you see this:
+//     – Keep `sheath_comp_floor ≥ 1.0` (our default enforces ≥1).
+//     – Use a small shock blend width vs. sheath thickness:
+//         `edge_smooth_shock_AU_at1AU  <<  sheath_thick_AU_at1AU`.
+//     – Avoid over-lapping large smooth widths at shock/LE/TE.
+//     – Choose `V_sheath_LE_factor ≳ 1.05–1.2` so the sheath remains faster than ambient.
+//
+// • Optional (not enforced in this file): a **monotonicity clamp** within the sheath
+//   to guarantee `n ≥ n_up` and `V_sw ≤ V ≤ V_sh`. If desired, we can provide a
+//   compile-time or runtime switch; for now we document the physics and parameter
+//   guidance above (no behavioral change).
+
+//
+//
 // NUMERICAL / EFFICIENCY DESIGN
 // -----------------------------
 // • StepState caches: DBM state (R_sh,V_sh), Leblanc SI coefficients (C2,C4,C6),
