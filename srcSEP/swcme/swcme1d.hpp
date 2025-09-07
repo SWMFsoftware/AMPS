@@ -665,13 +665,19 @@ bool write_tecplot_radial_profile(const StepState& S,
                                   const double* n_m3, const double* V_ms,
                                   const double* Br_T, const double* Bphi_T, const double* Bmag_T,
                                   const double* divV,
-                                  std::size_t N, const char* path) const
+                                  std::size_t N, const char* path,double time_simulation = -1.0) const
 {
   if (!path || N==0) return false;
   std::FILE* fp = std::fopen(path, "w");
   if (!fp) return false;
 
-  std::fprintf(fp, "TITLE=\"1D SW+CME profile\"\n");
+  // TITLE with optional simulation time (Tecplot-safe)
+  if (time_simulation >= 0.0) {
+    std::fprintf(fp, "TITLE=\"1D SW+CME profile (Simulation time = %.3f s)\"\n", time_simulation);
+  } else {
+    std::fprintf(fp, "TITLE=\"1D SW+CME profile\"\n");
+  }
+
   std::fprintf(fp,
     "VARIABLES=\"x[m]\",\"R[AU]\",\"rSun[R_sun]\",\"n[m^-3]\",\"V[m/s]\","
     "\"Br[T]\",\"Bphi[T]\",\"Bmag[T]\",\"divV[s^-1]\",\"rc\",\"R_sh[m]\",\"R_LE[m]\",\"R_TE[m]\"\n");
@@ -701,7 +707,7 @@ bool write_tecplot_radial_profile(const StepState& S,
   // Convenience: compute and write from radii only
   bool write_tecplot_radial_profile_from_r(const StepState& S,
                                            const double* r_m, std::size_t N,
-                                           const char* path) const
+                                           const char* path,double time_simulation = -1.0) const
   {
     if (!r_m || N==0) return false;
     // stack buffers for small N; fallback to new[] if large (rare)
@@ -711,7 +717,7 @@ bool write_tecplot_radial_profile(const StepState& S,
     Bphi = new double[M]; Bmag = new double[M]; dv   = new double[M];
 
     evaluate_radii_with_B_div(S, r_m, n, V, Br, Bphi, Bmag, dv, M);
-    const bool ok = write_tecplot_radial_profile(S, r_m, n, V, Br, Bphi, Bmag, dv, M, path);
+    const bool ok = write_tecplot_radial_profile(S, r_m, n, V, Br, Bphi, Bmag, dv, M, path,time_simulation);
 
     delete [] n; delete [] V; delete [] Br; delete [] Bphi; delete [] Bmag; delete [] dv;
     return ok;

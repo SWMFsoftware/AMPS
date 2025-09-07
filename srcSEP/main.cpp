@@ -36,6 +36,11 @@ void amps_time_step();
 
 enum class CMEScenario { Fast, Slow };
 
+
+//the physical simulation time 
+double SimulationTime=0.0;
+
+
 // Configure the single model for the requested scenario (called only on change)
 static inline void configure_swcme1d(CMEScenario scenario){
   static bool inited = false;
@@ -95,7 +100,7 @@ void advance_sw1d(double dt) {
     }
 
     sprintf(fname,"sw_profile_%i.dat",ncall); 
-    SEP::sw1d.write_tecplot_radial_profile_from_r(S, r, N, fname);
+    SEP::sw1d.write_tecplot_radial_profile_from_r(S, r, N, fname,SimulationTime);
   }
 }
 
@@ -289,6 +294,7 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
     
     
     amps_time_step();
+    SimulationTime+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0]; 
 
     if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
 
