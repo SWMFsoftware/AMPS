@@ -406,7 +406,7 @@ public:
     std::fprintf(fp,"TITLE=\"SW+CME 1D radial profile\"\n");
     std::fprintf(fp,"VARIABLES=\"R[m]\",\"n[m^-3]\",\"V[m/s]\",\"Br[T]\",\"Bphi[T]\",\"Bmag[T]\",\"divV[1/s]\","
                     "\"rc[-]\",\"R_sh[m]\",\"R_LE[m]\",\"R_TE[m]\"\n");
-    std::fprintf(fp,"ZONE T=\"profile\", N=%zu, DATAPACKING=POINT\n", N);
+    std::fprintf(fp,"ZONE T=\"profile\", I=%zu, F=POINT\n", N);
     for (std::size_t i=0;i<N;++i){
       std::fprintf(fp,"%.9e %.9e %.9e %.9e %.9e %.9e %.9e %.6f %.9e %.9e %.9e\n",
         F(r_m[i]), F(n_m3[i]), F(V_ms[i]), F(Br_T[i]), F(Bphi_T[i]), F(Bmag_T[i]), F(divV[i]),
