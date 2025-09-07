@@ -657,36 +657,46 @@ public:
 
   // -------------------- Tecplot writer (POINT) --------------------
   // Writes: r[m], n[m^-3], V[m/s], Br[T], Bphi[T], Bmag[T], divV[s^-1], rc[-], R_sh[m], R_LE[m], R_TE[m]
-  bool write_tecplot_radial_profile(const StepState& S,
-                                    const double* r_m,
-                                    const double* n_m3, const double* V_ms,
-                                    const double* Br_T, const double* Bphi_T, const double* Bmag_T,
-                                    const double* divV,
-                                    std::size_t N, const char* path) const
-  {
-    if (!path || N==0) return false;
-    std::FILE* fp = std::fopen(path, "w");
-    if (!fp) return false;
+// -------------------- Tecplot writer (POINT) --------------------
+// Writes: x[m], R[AU], rSun[R_sun], n[m^-3], V[m/s], Br[T], Bphi[T], Bmag[T],
+//         divV[s^-1], rc[-], R_sh[m], R_LE[m], R_TE[m]
+bool write_tecplot_radial_profile(const StepState& S,
+                                  const double* r_m,
+                                  const double* n_m3, const double* V_ms,
+                                  const double* Br_T, const double* Bphi_T, const double* Bmag_T,
+                                  const double* divV,
+                                  std::size_t N, const char* path) const
+{
+  if (!path || N==0) return false;
+  std::FILE* fp = std::fopen(path, "w");
+  if (!fp) return false;
 
-    std::fprintf(fp, "TITLE=\"1D SW+CME profile\"\n");
-    std::fprintf(fp, "VARIABLES=\"r[m]\",\"n[m^-3]\",\"V[m/s]\",\"Br[T]\",\"Bphi[T]\",\"Bmag[T]\",\"divV[s^-1]\",\"rc\",\"R_sh[m]\",\"R_LE[m]\",\"R_TE[m]\"\n");
-    std::fprintf(fp, "ZONE T=\"snapshot\", I=%zu, F=POINT\n", N);
+  std::fprintf(fp, "TITLE=\"1D SW+CME profile\"\n");
+  std::fprintf(fp,
+    "VARIABLES=\"x[m]\",\"R[AU]\",\"rSun[R_sun]\",\"n[m^-3]\",\"V[m/s]\","
+    "\"Br[T]\",\"Bphi[T]\",\"Bmag[T]\",\"divV[s^-1]\",\"rc\",\"R_sh[m]\",\"R_LE[m]\",\"R_TE[m]\"\n");
+  std::fprintf(fp, "ZONE T=\"snapshot\", I=%zu, F=POINT\n", N);
 
-    for (std::size_t i=0;i<N;++i){
-      const double r   = safe_finite(r_m[i]);
-      const double n   = safe_nonneg(n_m3? n_m3[i] : 0.0);
-      const double V   = safe_finite(V_ms?  V_ms[i] : 0.0);
-      const double Br  = safe_finite(Br_T?  Br_T[i] : 0.0);
-      const double Bph = safe_finite(Bphi_T?Bphi_T[i]:0.0);
-      const double Bm  = safe_finite(Bmag_T?Bmag_T[i]:0.0);
-      const double dv  = safe_finite(divV?  divV[i] : 0.0);
-      std::fprintf(fp, "%.9e %.9e %.9e %.9e %.9e %.9e %.9e %.6f %.9e %.9e %.9e\n",
-                   r, n, V, Br, Bph, Bm, dv, S.rc, S.r_sh_m, S.r_le_m, S.r_te_m);
-    }
+  for (std::size_t i=0;i<N;++i){
+    const double r    = safe_finite(r_m[i]);                     // meters
+    const double R_AU = (std::isfinite(r) && AU>0.0) ? r/AU : 0.0;
+    const double r_Rs = (std::isfinite(r) && Rs>0.0) ? r/Rs : 0.0;
 
-    std::fclose(fp);
-    return true;
+    const double n    = safe_nonneg(n_m3  ? n_m3[i]   : 0.0);
+    const double V    = safe_finite( V_ms ? V_ms[i]   : 0.0);
+    const double Br   = safe_finite( Br_T ? Br_T[i]   : 0.0);
+    const double Bph  = safe_finite(Bphi_T? Bphi_T[i] : 0.0);
+    const double Bm   = safe_finite(Bmag_T? Bmag_T[i] : 0.0);
+    const double dv   = safe_finite(divV  ? divV[i]   : 0.0);
+
+    // x[m], R[AU], rSun[R_sun], n, V, Br, Bphi, Bmag, divV, rc, R_sh, R_LE, R_TE
+    std::fprintf(fp, "%.9e %.9e %.9e %.9e %.9e %.9e %.9e %.9e %.9e %.6f %.9e %.9e %.9e\n",
+                 r, R_AU, r_Rs, n, V, Br, Bph, Bm, dv, S.rc, S.r_sh_m, S.r_le_m, S.r_te_m);
   }
+
+  std::fclose(fp);
+  return true;
+}
 
   // Convenience: compute and write from radii only
   bool write_tecplot_radial_profile_from_r(const StepState& S,
