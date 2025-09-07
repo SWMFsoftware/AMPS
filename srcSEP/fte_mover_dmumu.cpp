@@ -341,10 +341,50 @@ int SEP::ParticleMover_FocusedTransport_WaveScattering(
         // Deterministic transport
         //   - parallel streaming
         //   - adiabatic focusing (explicit)
+	//   - adiabatic cooling
         // -----------------------------
 
         // Parallel streaming distance along the field line during dt_current
         const double ds_parallel = vParallel * dt_current;
+
+    // -----------------------------
+    // ADIABATIC COOLING/HEATING
+    //   dp/dt = -(p/3) ∇·V_sw
+    //   p' = p * exp( - (∇·V) Δt / 3 )
+    //   γ' = sqrt(1 + (p'/mc)^2),  v' = p'/(γ' m)
+    //   (scale v_parallel and v_perp proportionally)
+    // -----------------------------
+   
+// C++11: typed lambda (no generic lambdas yet)
+const auto clamp_scalar = [](double x, double lo, double hi) -> double {
+  return x < lo ? lo : (x > hi ? hi : x);
+};
+
+    {
+      double r_here=0.0, drds=0.0;
+      if (Segment->GetRadiusAndDrds(FieldLineCoord,r_here, drds)) {
+        double n_loc=0.0, V_loc=0.0, divV_loc=0.0;
+if (SEP::SW1DAdapter::QueryAtRadius(r_here, n_loc, V_loc, divV_loc, /*applyClamp=*/true)) {
+  // dp/dt = -(p/3) ∇·V_sw  → stable exponential update
+  const double vmag   = std::hypot(vParallel, vNormal);
+  const double gamma0 = 1.0 / std::sqrt(std::max(1.0 - (vmag*vmag)/(SpeedOfLight*SpeedOfLight), 1e-30));
+  const double m      = PIC::MolecularData::GetMass(spec);
+  const double p0     = gamma0 * m * vmag;
+
+  double dlnp = -(divV_loc * dt_current) / 3.0;
+  dlnp = clamp_scalar(dlnp, -50.0, 50.0);
+  const double p1     = p0 * std::exp(dlnp);
+  const double pmc    = p1 / (m*SpeedOfLight);
+  const double gamma1 = std::sqrt(1.0 + pmc*pmc);
+  const double v1     = (gamma1>0.0) ? (p1/(gamma1*m)) : 0.0;
+
+  const double scale  = (vmag>0.0) ? (v1/vmag) : 0.0;
+  if (std::isfinite(scale) && scale>=0.0) {
+    vParallel *= scale;
+    vNormal   *= scale;
+  }
+}
+}}
 
         // Adiabatic focusing — simple explicit step using local focusing length
         {

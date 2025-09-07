@@ -34,6 +34,70 @@ void amps_init();
 void amps_init_mesh();
 void amps_time_step();
 
+enum class CMEScenario { Fast, Slow };
+
+// Configure the single model for the requested scenario (called only on change)
+static inline void configure_swcme1d(CMEScenario scenario){
+  static bool inited = false;
+
+  if (inited==true) return;
+
+  inited=true;
+
+  if (scenario == CMEScenario::Fast){
+	  SEP::sw1d.SetAmbient(400.0, 6.0, 5.0, 1.2e5)                 // Vsw[km/s], n1AU[cm^-3], B1AU[nT], T[K]
+      .SetCME(1.05, 1900.0, 8e-8)                         // r0[Rs],   V0_sh[km/s],  Γ[1/km]
+      .SetGeometry(0.12, 0.22)                            // sheath & ME thickness @1 AU [AU]
+      .SetSmoothing(0.010, 0.020, 0.030)                  // shock/LE/TE widths @1 AU [AU]
+      .SetSheathEjecta(1.25, 2.0, 1.12, 0.50, 0.80);      // rc_floor, ramp_p, Vshe_LE, fME, VME
+  } else {
+	  SEP::sw1d.SetAmbient(380.0, 5.0, 4.5, 1.0e5)
+      .SetCME(1.05, 950.0, 3e-8)
+      .SetGeometry(0.08, 0.18)
+      .SetSmoothing(0.015, 0.030, 0.050)
+      .SetSheathEjecta(1.15, 1.5, 1.08, 0.60, 0.90);
+  }
+
+  SEP::SW1DAdapter::EnableSheathClamp(true);      // optional stability aid
+
+}
+
+/**
+ * Advance one global step:
+ *  - builds the per-time StepState for the selected scenario
+ *  - publishes it to the mover through the adapter
+ *  - uses a single static Model 'sw' (no multiple instances)
+ */
+void advance_sw1d(double dt) { 
+  static double t_since_launch=0.0;
+  static int ncall=0;
+
+  ncall++;
+
+  // Build per-time cache and publish to mover via adapter
+  swcme1d::StepState S = SEP::sw1d.prepare_step(t_since_launch);
+  SEP::SW1DAdapter::SetModelAndState(&SEP::sw1d, S);
+
+  t_since_launch+=dt;
+
+
+
+  // One call does everything: n, V, Br, Bphi, |B|, ∇·V → Tecplot POINT file
+  if ((PIC::ThisThread==0)&&(ncall%10==0)) {
+    char fname[200];
+
+    const int N = 400;
+    static double r[N];
+    const double rmin = 1.05*_SUN__RADIUS_, rmax = 2.00*_AU_;     // 0.2–2 AU
+    for (int i=0;i<N;++i){
+      double t = double(i)/(N-1);
+      r[i] = rmin*std::pow(rmax/rmin, t);            // log-spacing (nice for r^-2)
+    }
+
+    sprintf(fname,"sw_profile_%i.dat",ncall); 
+    SEP::sw1d.write_tecplot_radial_profile_from_r(S, r, N, fname);
+  }
+}
 
 int main(int argc,char **argv) {
   //      MPI_Init(&argc,&argv);
@@ -43,7 +107,10 @@ int main(int argc,char **argv) {
   if (PIC::PostCompileInputFileName!="") {
      SEP::Parser::ReadFile(PIC::PostCompileInputFileName);
   }
-  
+
+
+  //set up shock wave model 
+  configure_swcme1d(CMEScenario::Fast); 
 
   //setup datum to store the segment's data for the Alfven turbulence model 
   if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) { 
@@ -273,7 +340,9 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
       CalculateWaveEnergyDensity();
 
 
+     //advance the shock+CME model  
 
+      advance_sw1d(PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
 
       if ((niter+1)%10==0)  {   
          char fname[300];

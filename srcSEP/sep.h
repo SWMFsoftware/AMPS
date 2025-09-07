@@ -150,7 +150,11 @@ namespace SEP {
   namespace SW1DAdapter {
     void SetModelAndState(swcme1d::Model* m, const swcme1d::StepState& S);
     void EnableSheathClamp(bool on=true);
+    double DlnB_Dr_at_r(double r_m);
+    bool QueryAtRadius(double r_m, double& n_m3, double& V_ms, double& divV_sinv,bool applyClamp=true); 
   }
+
+  extern swcme1d::Model sw1d;
 
   //type of the trajectory integration method for calculation of the particle displacement along a magnetic field line
   extern int ParticleFieldLineDisplacementMethod;
