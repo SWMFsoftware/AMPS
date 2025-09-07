@@ -86,6 +86,8 @@
 
 #include "kolmogorov_scatter.h"
 
+#include "swcme/swcme1d.hpp"
+
 //define which diffution model is used in the simulation
 #define _DIFFUSION_NONE_                 0
 #define _DIFFUSION_ROUX2004AJ_           1 
@@ -143,6 +145,12 @@ public:
 
 namespace SEP {
   using namespace Exosphere;
+
+  //the model of SW + CME 
+  namespace SW1DAdapter {
+    void SetModelAndState(swcme1d::Model* m, const swcme1d::StepState& S);
+    void EnableSheathClamp(bool on=true);
+  }
 
   //type of the trajectory integration method for calculation of the particle displacement along a magnetic field line
   extern int ParticleFieldLineDisplacementMethod;
