@@ -1151,6 +1151,67 @@ void SetDatumStoredAtVertex(double* val, PIC::Datum::cDatum* datum);
       long int FirstParticleIndex;
       std::atomic<long int> tempFirstParticleIndex; 
 
+        /**
+   * @brief Compute heliocentric radius r[m] and dr/ds = t̂·r̂ at a point on this segment.
+   * @param fieldLineCoord  Segment-local coordinate: fractional part ξ∈[0,1) gives the point.
+   *                        (Integer part is ignored here; caller usually passes global coord.)
+   * @param r_m   [out] radius at the point (Sun-centered) in meters
+   * @param drds  [out] radial projection of the unit tangent, in [-1, 1]
+   * @return true on success, false if geometry data are unavailable/degenerate
+   *
+   * Geometry: position x(ξ)= (1-ξ) x_b + ξ x_e, r=|x|, r̂=x/|x|, t̂=(x_e-x_b)/|x_e-x_b|,
+   *          dr/ds = t̂ · r̂. Safe for degenerate length (returns drds=0).
+   */
+      bool GetRadiusAndDrds(double fieldLineCoord,double& r_m, double& drds) { 
+  auto* vb = GetBegin();
+  auto* ve = GetEnd();
+  if (!(vb && ve)) return false;
+
+  // End-point positions in Sun-centered meters
+  double xb[3] = {0}, xe[3] = {0};
+  vb->GetX(xb);
+  ve->GetX(xe);
+
+  // Local interpolation coordinate ξ ∈ [0,1)
+  double xi = std::fmod(fieldLineCoord, 1.0);
+  if (xi < 0.0) xi += 1.0;
+  const double w0 = 1.0 - xi, w1 = xi;
+
+  // Position along the segment
+  const double x = w0*xb[0] + w1*xe[0];
+  const double y = w0*xb[1] + w1*xe[1];
+  const double z = w0*xb[2] + w1*xe[2];
+
+  // Radius and unit radial vector
+  const double r2 = x*x + y*y + z*z;
+  const double r  = std::sqrt(r2);
+  if (!(r > 0.0) || !std::isfinite(r)) return false;
+
+  r_m = r;
+  const double invr = 1.0 / r;
+  const double rx = x*invr, ry = y*invr, rz = z*invr; // r̂
+
+  // Unit tangent t̂ (begin → end)
+  const double tx = xe[0] - xb[0];
+  const double ty = xe[1] - xb[1];
+  const double tz = xe[2] - xb[2];
+  const double L  = std::sqrt(tx*tx + ty*ty + tz*tz);
+
+  if (!(L > 0.0) || !std::isfinite(L)) {
+    drds = 0.0;            // degenerate: no defined tangent
+    return true;           // but r is valid
+  }
+
+  const double it = 1.0 / L;
+  const double thx = tx*it, thy = ty*it, thz = tz*it; // t̂
+
+  // dr/ds = t̂ · r̂  (clamp to [-1,1] and sanitize)
+  double val = thx*rx + thy*ry + thz*rz;
+  if (!std::isfinite(val)) val = 0.0;
+  drds = std::max(-1.0, std::min(1.0, val));
+  return true;
+}
+
       int GetCompletedSamplingOffset() {return CompletedSamplingOffset;}
 
       //-----------------------------------------------------------------------
