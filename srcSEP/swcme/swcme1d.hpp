@@ -670,7 +670,7 @@ public:
 
     std::fprintf(fp, "TITLE=\"1D SW+CME profile\"\n");
     std::fprintf(fp, "VARIABLES=\"r[m]\",\"n[m^-3]\",\"V[m/s]\",\"Br[T]\",\"Bphi[T]\",\"Bmag[T]\",\"divV[s^-1]\",\"rc\",\"R_sh[m]\",\"R_LE[m]\",\"R_TE[m]\"\n");
-    std::fprintf(fp, "ZONE T=\"snapshot\", N=%zu, F=POINT\n", N);
+    std::fprintf(fp, "ZONE T=\"snapshot\", I=%zu, F=POINT\n", N);
 
     for (std::size_t i=0;i<N;++i){
       const double r   = safe_finite(r_m[i]);
