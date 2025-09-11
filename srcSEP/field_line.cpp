@@ -225,6 +225,10 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     GlobalWeightCorrectionFactor=anpart/InjectionParameters::nParticlesPerIteration;
     anpart=InjectionParameters::nParticlesPerIteration;
   }
+  else if (anpart>10.0*InjectionParameters::nParticlesPerIteration) {
+    GlobalWeightCorrectionFactor=anpart/(10.0*InjectionParameters::nParticlesPerIteration);
+    anpart=10*InjectionParameters::nParticlesPerIteration;
+  }
 
   //in case particle are injected at the beginning of the field line, the actual plasma density is not used -> set the particle weight == 1
   if (InjectionParameters::InjectLocation==InjectionParameters::_InjectBegginingFL) {
@@ -246,6 +250,19 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
       break;
     default:
       s=SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio();    //InjectionParameters::PowerIndex;
+
+      switch (SEP::ShockModelType) {
+      case SEP::cShockModelType::Analytic1D:
+        s=SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio();
+        break;
+      case SEP::cShockModelType::SwCme1d:
+        s=SEP::SW1DAdapter::gState.rc;
+        break;
+      default:
+        exit(__LINE__,__FILE__,"Error: the case is not known");
+      }
+
+
     }
 
     if (s>SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio) s=SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio;
