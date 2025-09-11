@@ -53,6 +53,11 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetShockSpeed() {
   double r = rShock / _AU_;
   double res;
 
+  if (SEP::ShockModelType==SEP::cShockModelType::SwCme1d) {
+    return SEP::SW1DAdapter::gState.V_sh_ms;
+  }
+
+
   if (r < 0.1)
     res = 1800.0;
   else if (r < 0.15)
@@ -87,13 +92,34 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetSolarWindDensity() {
 }
 
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() {
-  double s,density,efficientcy,res;
+  double r_sh,s,density,efficientcy,res;
+  double n_m3, V_ms, divV;
 
   if (InitFlag==false) Init(); 
 
-  s=SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio();
+  switch (SEP::ShockModelType) {
+  case SEP::cShockModelType::Analytic1D: 
+    s=SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio();
+    density=GetSolarWindDensity();
+    break;
+  case SEP::cShockModelType::SwCme1d:
+    s=SEP::SW1DAdapter::gState.rc;
+    r_sh=SEP::SW1DAdapter::gState.r_sh_m;  
 
-  density=GetSolarWindDensity();
+    if (SEP::SW1DAdapter::QueryAtRadius(r_sh, n_m3, V_ms, divV, /*applyClamp=*/true)) {
+      density=n_m3;
+    }
+    else {
+      density=0.0;
+    }
+
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the case is not known");
+  }
+
+
+
   efficientcy=(s-1.0)/s;
   res=density*efficientcy;
 
@@ -101,11 +127,15 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() {
 }
 
 int SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(int iFieldLine,double &S,double *xInjection) {
-  double r, *x, r2 = rShock * rShock;
+  double r, *x, r_sh,r2 = rShock * rShock;
   int iSegment;
   PIC::FieldLine::cFieldLineSegment *Segment =
       PIC::FieldLine::FieldLinesAll[iFieldLine].GetFirstSegment();
 
+  if (SEP::ShockModelType==SEP::cShockModelType::SwCme1d) {
+    r_sh=SEP::SW1DAdapter::gState.r_sh_m;
+    r2=r_sh*r_sh;
+  }
 
   UpdateShockLocation();
   x = Segment->GetBegin()->GetX();
