@@ -148,6 +148,14 @@ namespace SEP {
 
   //the model of SW + CME 
   namespace SW1DAdapter {
+// ------------------------
+// Canonical adapter state
+// ------------------------
+extern swcme1d::Model*    gModel;       // published by SetModelAndState()
+extern swcme1d::StepState gState;              // last prepared time cache
+extern bool               gClampSheath;    // optional monotonic clamp flag
+
+
     void SetModelAndState(swcme1d::Model* m, const swcme1d::StepState& S);
     void EnableSheathClamp(bool on=true);
     double DlnB_Dr_at_r(double r_m);
@@ -155,6 +163,11 @@ namespace SEP {
   }
 
   extern swcme1d::Model sw1d;
+
+  //selector of the shock wave model 
+  enum class cShockModelType { Analytic1D, SwCme1d };
+  extern cShockModelType ShockModelType; 
+
 
   //type of the trajectory integration method for calculation of the particle displacement along a magnetic field line
   extern int ParticleFieldLineDisplacementMethod;
