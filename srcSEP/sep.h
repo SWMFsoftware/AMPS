@@ -85,6 +85,8 @@
 #include "growth_rate_validation_test.h"
 
 #include "kolmogorov_scatter.h"
+#include "turbulence_cascade_kolmogorov.h" 
+#include "turbulence_reflection_kolmogorov.h"
 
 #include "swcme/swcme1d.hpp"
 
