@@ -108,6 +108,8 @@ int main(int argc,char **argv) {
   //      MPI_Init(&argc,&argv);
 
 
+  SEP::ShockModelType=SEP::cShockModelType::SwCme1d;
+
   //read post-compile input file  
   if (PIC::PostCompileInputFileName!="") {
      SEP::Parser::ReadFile(PIC::PostCompileInputFileName);
