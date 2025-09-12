@@ -68,6 +68,11 @@ double xmax[3]={2*16.0*r_planet/4,2*8.0*r_planet/4,2*4.0*r_planet/4};
 
 int nCells[3] ={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
 
+double vel_bg[3]={8.8e-3,0,0};
+double b_bg[3]={0.0,0.0, 325e-9 * 31930.3280322054};
+double e_bg[3]={-vel_bg[1]*b_bg[2]+vel_bg[2]*b_bg[1], vel_bg[0]*b_bg[2]-vel_bg[2]*b_bg[0],
+		-vel_bg[0]*b_bg[1]+vel_bg[1]*b_bg[0]};//-vXB
+
 
 int CurrentCenterNodeOffset=-1,NextCenterNodeOffset=-1;
 int CurrentCornerNodeOffset=-1,NextCornerNodeOffset=-1;
@@ -274,9 +279,9 @@ void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
             
       //BulkVel[2]= PIC::CPLR::FLUID::FluidInterface.getPICUz(iBlock,
       //                                                                xPar[0],xPar[1],xPar[2],iSp);
-	  BulkVel[0]=0.0;
-	  BulkVel[1]=0.0;
-	  BulkVel[2]=0.0;
+	  BulkVel[0]=vel_bg[0];
+	  BulkVel[1]=vel_bg[1];
+	  BulkVel[2]=vel_bg[2];
 	  
             
             for (int idim=0;idim<3;idim++)
@@ -416,9 +421,9 @@ void SetParticleForCell_fixed(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int i
 	  */
           double BulkVel[3];
             
-	  BulkVel[0]=0.0;
-	  BulkVel[1]=0.0;
-	  BulkVel[2]=0.0;
+	  BulkVel[0]=vel_bg[0];
+	  BulkVel[1]=vel_bg[1];
+	  BulkVel[2]=vel_bg[2];
 	  
             
             for (int idim=0;idim<3;idim++)
@@ -795,7 +800,7 @@ void setFixedFloatE_BC_half(){
 	    // if (idim==0 && LeftorRight==0){
 	      //left boudary is fixed
 	    //fixed boundary
-	    double Ex=0.0,Ey=0.0,Ez=0.0;
+	    double Ex=e_bg[0],Ey=e_bg[1],Ez=e_bg[2];
                  
             //Ex = PIC::CPLR::FLUID::FluidInterface.getEx(iBlock,x[0],x[1],x[2]);
             //Ey = PIC::CPLR::FLUID::FluidInterface.getEy(iBlock,x[0],x[1],x[2]);
@@ -925,7 +930,7 @@ void setFixedFloatE_BC_curr(){
 	    //if (idim==0 && LeftorRight==0){
 	    
 	    //fixed boundary
-	    double Ex=0.0,Ey=0.0,Ez=0.0;
+	    double Ex=e_bg[1],Ey=e_bg[1],Ez=e_bg[2];
                  
             //Ex = PIC::CPLR::FLUID::FluidInterface.getEx(iBlock,x[0],x[1],x[2]);
             //Ey = PIC::CPLR::FLUID::FluidInterface.getEy(iBlock,x[0],x[1],x[2]);
@@ -1057,9 +1062,9 @@ void setFixedFloatB_center_BC(){
 	    //if (idim==0 && LeftorRight==0){
 
 	      //fixed boundary
-            double Bx=0.0,By=0.0,Bz=0.0;
+            double Bx=  b_bg[0], By=  b_bg[1],Bz= b_bg[2];
 
-	    Bz = 325e-9 * 31930.3280322054; 
+	    //Bz = 325e-9 * 31930.3280322054; 
             //Bx = PIC::CPLR::FLUID::FluidInterface.getBx(iBlock,x[0],x[1],x[2]);
             //By = PIC::CPLR::FLUID::FluidInterface.getBy(iBlock,x[0],x[1],x[2]);
             //Bz = PIC::CPLR::FLUID::FluidInterface.getBz(iBlock,x[0],x[1],x[2]);
@@ -1193,9 +1198,9 @@ void setFixedFloatB_corner_BC(){
 	    
 	    // if (idim==0 && LeftorRight==0){
 	      //fixed boundary  
-            double Bx=0.0,By=0.0,Bz=0.0;
+            double Bx= b_bg[0],By= b_bg[1],Bz= b_bg[2];
 
-	    Bz = 325e-9 * 31930.3280322054; 
+	    //Bz = 325e-9 * 31930.3280322054; 
             //Bx = PIC::CPLR::FLUID::FluidInterface.getBx(iBlock,x[0],x[1],x[2]);
             //By = PIC::CPLR::FLUID::FluidInterface.getBy(iBlock,x[0],x[1],x[2]);
             //Bz = PIC::CPLR::FLUID::FluidInterface.getBz(iBlock,x[0],x[1],x[2]);
@@ -1407,16 +1412,16 @@ void SetIC() {
 	     
               
 	      for (int idim=0; idim<3; idim++) x[idim]=xminBlock[idim]+ind[idim]*dx[idim];
-	      double bz = 325e-9;
-	      //double ux = 26.4e3;
-	      double ux = 0.0;
-              ((double*)(offset+CurrentEOffset))[ExOffsetIndex]=0.0;
-              ((double*)(offset+CurrentEOffset))[EyOffsetIndex]=ux*bz;
-              ((double*)(offset+CurrentEOffset))[EzOffsetIndex]=0.0;
+	      double Ex=e_bg[0], Ey=e_bg[1], Ez=e_bg[2];
+	   
+	   
+              ((double*)(offset+CurrentEOffset))[ExOffsetIndex]=Ex;
+              ((double*)(offset+CurrentEOffset))[EyOffsetIndex]=Ey;
+              ((double*)(offset+CurrentEOffset))[EzOffsetIndex]=Ez;
 	  
-              ((double*)(offset+OffsetE_HalfTimeStep))[ExOffsetIndex]=0.0;
-              ((double*)(offset+OffsetE_HalfTimeStep))[ExOffsetIndex]=ux*bz;
-              ((double*)(offset+OffsetE_HalfTimeStep))[ExOffsetIndex]=0.0;
+              ((double*)(offset+OffsetE_HalfTimeStep))[ExOffsetIndex]=Ex;
+              ((double*)(offset+OffsetE_HalfTimeStep))[ExOffsetIndex]=Ey;
+              ((double*)(offset+OffsetE_HalfTimeStep))[ExOffsetIndex]=Ez;
           
 
 	    // ((double*)(offset+CurrentCornerNodeOffset))[EzOffsetIndex]=i+j*_BLOCK_CELLS_X_+k*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_+nLocalNode*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
@@ -1435,19 +1440,19 @@ void SetIC() {
               for (int idim=0; idim<3; idim++) x[idim]=xminBlock[idim]+(ind[idim]+0.5)*dx[idim];
 
 	      //double B = 0.004*sin(waveNumber[0]*(x[0]-xmin[0])+waveNumber[1]*(x[1]-xmin[1])+waveNumber[2]*(x[2]-xmin[2]));
-              double By = 0.04;
-              double Bfactor =31930.3280322054;
-	      double Bz = 325e-9; //nT
+              double Bx = b_bg[0], By=b_bg[1], Bz=b_bg[2];
+              
+	      
 
 	      //printf("IC Bz:%e\n",Bz*Bfactor);
-              ((double*)(offset+CurrentBOffset))[BxOffsetIndex]=0.0;
-              ((double*)(offset+CurrentBOffset))[ByOffsetIndex]=0.0;
-              ((double*)(offset+CurrentBOffset))[BzOffsetIndex]=Bz*Bfactor;
+              ((double*)(offset+CurrentBOffset))[BxOffsetIndex]=Bx;
+              ((double*)(offset+CurrentBOffset))[ByOffsetIndex]=By;
+              ((double*)(offset+CurrentBOffset))[BzOffsetIndex]=Bz;
 		
 		
-              ((double*)(offset+PrevBOffset))[BxOffsetIndex]=0.0;
-              ((double*)(offset+PrevBOffset))[ByOffsetIndex]=0.0;
-              ((double*)(offset+PrevBOffset))[BzOffsetIndex]=Bz*Bfactor;
+              ((double*)(offset+PrevBOffset))[BxOffsetIndex]=Bx;
+              ((double*)(offset+PrevBOffset))[ByOffsetIndex]=By;
+              ((double*)(offset+PrevBOffset))[BzOffsetIndex]=Bz;
             }// if (CenterNode!=NULL)
 	  }//for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) 
     }
