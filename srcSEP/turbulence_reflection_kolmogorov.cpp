@@ -88,8 +88,6 @@ Implementation summary
 Inputs
 ------
 ReflectTurbulenceEnergyAllFieldLines(
-    std::vector<std::vector<double>>& DeltaE_plus,    // [line][seg] (J) OUT += ΔE+
-    std::vector<std::vector<double>>& DeltaE_minus,   // [line][seg] (J) OUT += ΔE−
     double dt,            // [s] time step
     double C_reflection,  // C_R ≈ 0.5–1.0
     double grad_floor=0,  // minimum |∂_s ln V_A| [1/m] to act upon
@@ -119,7 +117,7 @@ Reflection::SetReflectionFrequencyScale(1.0); // χ = 1
 // 3) Reflection (this module)
 const double C_R = 0.8;
 Reflection::ReflectTurbulenceEnergyAllFieldLines(
-    DeltaE_plus, DeltaE_minus, dt, C_R, / *grad_floor=* /0.0, / *log=* /true);
+    dt, C_R, / *grad_floor=* /0.0, / *log=* /true);
 ```
 
 Notes
@@ -228,8 +226,6 @@ void SetReflectionFrequencyScale(double chi) {
 //   • Accumulates ΔE± and updates stored energies in-place
 // -----------------------------------------------------------------------------
 void ReflectTurbulenceEnergyAllFieldLines(
-    std::vector<std::vector<double>>& DeltaE_plus,   // [field_line][segment] (J) OUT += ΔE+
-    std::vector<std::vector<double>>& DeltaE_minus,  // [field_line][segment] (J) OUT += ΔE−
     const double dt,                  // [s]
     const double C_reflection,        // C_R
     const double grad_floor,          // [1/m]
@@ -239,12 +235,6 @@ void ReflectTurbulenceEnergyAllFieldLines(
 
   int rank = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-  // Shape ΔE containers to #field lines
-  if (DeltaE_plus.size() != static_cast<size_t>(FL::nFieldLine)) {
-    DeltaE_plus.resize(FL::nFieldLine);
-    DeltaE_minus.resize(FL::nFieldLine);
-  }
 
   int processed_lines = 0;
   long long segments_updated = 0;
@@ -265,8 +255,6 @@ void ReflectTurbulenceEnergyAllFieldLines(
     if (!owns_any) continue;
 
     processed_lines++;
-    DeltaE_plus[fl].assign(nseg, 0.0);
-    DeltaE_minus[fl].assign(nseg, 0.0);
 
     for (int i = 0; i < nseg; ++i) {
       FL::cFieldLineSegment* seg = line->GetSegment(i);
@@ -349,9 +337,6 @@ void ReflectTurbulenceEnergyAllFieldLines(
 
       Eplus  = (EplusNew  >= 0.0) ? EplusNew  : 0.0;
       Eminus = (EminuNew >= 0.0) ? EminuNew : 0.0;
-
-      DeltaE_plus[fl][i]  += dEplus;
-      DeltaE_minus[fl][i] += dEminus;
 
       #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
         validate_numeric(Eplus, __LINE__, __FILE__);

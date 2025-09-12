@@ -111,8 +111,6 @@ void SetReflectionFrequencyScale(double chi);
  *  @param enable_logging print a per-rank summary (default false)
  */
 void ReflectTurbulenceEnergyAllFieldLines(
-    std::vector<std::vector<double>>& DeltaE_plus,
-    std::vector<std::vector<double>>& DeltaE_minus,
     double dt,
     double C_reflection,
     double grad_floor = 0.0,

@@ -339,6 +339,11 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
       //advect turbulence energy 
       SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAllFieldLines(DeltaE_plus, DeltaE_minus,SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
 			      PIC::ParticleWeightTimeStep::GlobalTimeStep[0],0.01,0.01);
+
+      //model the effect of wave reflection 
+      double C_reflection=0.6;
+      SEP::AlfvenTurbulence_Kolmogorov::Reflection::ReflectTurbulenceEnergyAllFieldLines(
+		     PIC::ParticleWeightTimeStep::GlobalTimeStep[0],C_reflection,0.0,false); 
     
       //scatter wave energy   
       PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
