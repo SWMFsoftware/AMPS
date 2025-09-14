@@ -344,6 +344,21 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
       double C_reflection=0.6;
       SEP::AlfvenTurbulence_Kolmogorov::Reflection::ReflectTurbulenceEnergyAllFieldLines(
 		     PIC::ParticleWeightTimeStep::GlobalTimeStep[0],C_reflection,0.0,false); 
+
+      // Configure cascade
+    SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetCascadeCoefficient(0.8);             // C_nl
+    SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetDefaultPerpendicularCorrelationLength(1.0e7); // 10,000 km
+    SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetDefaultEffectiveArea(1.0);           // V_cell = Δs
+    SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetElectronHeatingFraction(0.3);        // 30% to electrons
+    SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableCrossHelicityModulation(false);
+    SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableTwoSweepIMEX(false);
+  
+    // Advance cascade for all field lines (ΔE arrays accumulate changes)
+    // Optional: stronger physics
+    SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableCrossHelicityModulation(true);
+    SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableTwoSweepIMEX(true);
+    SEP::AlfvenTurbulence_Kolmogorov::Cascade::CascadeTurbulenceEnergyAllFieldLines(PIC::ParticleWeightTimeStep::GlobalTimeStep[0],/*enable_logging=*/ false);
+
     
       //scatter wave energy   
       PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
