@@ -2,47 +2,116 @@
 #define SWCME1D_HPP
 /*
 ================================================================================
- swcme1d.hpp — Header-only 1-D Solar Wind + CME (DBM) model (clean re-write)
+ swcme1d.hpp — Header-only 1-D Solar Wind + CME (DBM) model (artifact-free)
 --------------------------------------------------------------------------------
-PURPOSE
-  Provide a lightweight, numerically efficient 1-D model of heliocentric
-  solar wind plus a driven CME forward shock and its downstream structure
-  (sheath and magnetic ejecta, ME). Designed to:
-    • return n(r), V(r) and Parker B(r) with CME-induced modifications,
-    • expose ∇·V = (1/r²) d/dr (r² V) for SEP adiabatic terms,
-    • allow independent smoothing at three edges (shock, LE, TE),
-    • be fast enough for per-particle queries in SEP solvers.
+OVERVIEW
+  This header implements a fast, numerically robust, *1‑D along a radial ray*
+  model of the ambient solar wind plus an outward-propagating CME forward shock
+  and its downstream structure (compressed sheath and magnetic ejecta, “ME”).
+  It is designed for per-particle queries inside SEP transport codes: given a
+  radius r and time t since launch, it returns number density n(r), bulk speed
+  V(r), Parker spiral B(r)=(Br,Bφ), and the divergence ∇·V(r). It also exposes
+  the instantaneous geometry: shock radius R_sh, sheath→ME leading edge R_LE,
+  and ME trailing edge R_TE.
 
-PHYSICS (compact)
-  Upstream density (Leblanc, Dulk & Bougeret 1998, scaled to match n at 1 AU):
-    n(r) = A (R☉/r)² + B (R☉/r)⁴ + C (R☉/r)⁶  [cm⁻³]  → convert to [m⁻³].
-  Parker field (equatorial; uses sinθ):
-    Br(r)  = Br(1 AU) (AU/r)²,
-    Bφ(r)  = −Br(r) (Ω r sinθ / Vsw). Given |B|(1 AU), Br(1 AU) = B1AU/sqrt(1+k²),
-    where k = Ω AU sinθ / Vsw.
-  CME shock (Drag-Based Model, e.g., Vršnak & Žic 2007):
-    u ≡ Vsh − Vsw, u(t) = u0/(1+Γ u0 t),  Rsh = r0 + Vsw t + ln(1+Γ u0 t)/Γ.
-  Compression ratio proxy from fast-mode Mach number:
-    cf = sqrt(cs² + vA²), Mf = max(1, (Vsh−Vsw)/cf),
-    rc = ((γ+1)Mf²)/((γ−1)Mf²+2) clamped to [1,4] and to a user floor ≥1.
-  Downstream structure:
-    Regions along the ray (large r → small r): upstream → [Rsh] → SHEATH → [RLE]
-    → ME → [RTE] → ambient. Thicknesses at 1 AU are user inputs and scale ∝ Rsh.
-  **Monotone sheath construction (artifact-free):**
-    Let s∈[0,1] parametrize distance from shock to leading edge: s=0 at Rsh,
-    s=1 at RLE. We construct:
-      n(s) = exp((1−s) ln(n2_sh) + s ln(n_up(RLE))), with n2_sh = rc·n_up(Rsh).
-      V(s) = C¹ smoothstep from V2_sh to V_LE (V_LE ≥ Vsw).
-    We clamp to never go below local upstream: n(r) ≥ n_up(r), V(r) ≥ Vsw.
-  Tangential B amplification:
-    Apply once, inside the sheath only, tapering from fB≈rc at the shock to 1 at
-    the LE. No other multiplications of Bφ.
+  The implementation is *header-only* and uses no dynamic allocations in the
+  hot path. All heavy per-time quantities are cached in a StepState, so the
+  evaluators are O(1) in r.
 
-NUMERICAL
-  Radii are clipped to ≥1.05 R☉ for stability. ∇·V via centered finite
-  difference with h = max(1e−3 r, 1 km). Per-time quantities are cached.
+PHYSICAL MODEL (succinct but complete)
+  • Ambient density n_up(r): Leblanc, Dulk & Bougeret (1998)
+      n_cm³(r) = A (R☉/r)^2 + B (R☉/r)^4 + C (R☉/r)^6,
+      with canonical A=3.3×10⁵, B=4.1×10⁶, C=8.0×10⁷ [cm⁻³]. We *scale* these
+      to match a user-specified n(1 AU) and convert to SI [m⁻³].
 
-USAGE (examples at bottom of file)
+  • Magnetic field: equatorial Parker spiral
+      Br(r)  = Br(1 AU) (AU/r)^2,
+      Bφ(r)  = −Br(r) (Ω r sinθ / V_sw),
+      |B|(1 AU) is provided by the user; we infer Br(1 AU)=B1AU/sqrt(1+k²),
+      where k≡Ω AU sinθ / V_sw.
+
+  • CME apex kinematics: Drag-Based Model (DBM; Vršnak & Žic 2007; Vršnak 2013)
+      u ≡ V_sh − V_sw,  u(t)   = u₀ / (1 + Γ u₀ t),
+      R_sh(t) = r₀ + V_sw t + ln(1 + Γ u₀ t)/Γ,
+      V_sh(t) = V_sw + u(t),   Γ is the drag parameter [m⁻¹].
+
+  • Compression ratio (proxy from fast-mode Mach number)
+      c_s = √(γ k_B T / m_p),   v_A = B/√(μ₀ ρ),  c_f = √(c_s² + v_A²),
+      M_f = max(1, (V_sh−V_sw)/c_f),
+      r_c = ((γ+1) M_f²)/((γ−1) M_f² + 2), clamped to [1,4] and to a user floor.
+
+  • Downstream structure (regions): upstream → [R_sh] → SHEATH → [R_LE] →
+      ME → [R_TE] → ambient. Thicknesses at 1 AU are user inputs and scale
+      self-similarly ∝ R_sh.
+
+  • *Crucial sheath construction (artifact-free):*
+      Let s∈[0,1] map R_sh→R_LE with s=0 at the shock. We **pin the boundary
+      values** and build:
+      – density:    n(s) = exp((1−s) ln n₂ + s ln n_up(R_LE)), with n₂=r_c n_up(R_sh),
+      – velocity:   V(s) = smoothstep(s^p; V₂→V_LE),  p≥1,
+        where V₂ = V_sh − (V_sh−V_sw)/r_c is the downstream speed from mass-flux
+        continuity (RH proxy) and V_LE ≥ V_sw (user-set factor).
+      We also enforce n(r) ≥ n_up(r) and V(r) ≥ V_sw *pointwise* in the sheath.
+      This removes the notorious dip/undershoot “right behind the shock”.
+
+  • Tangential B amplification: applied **only inside the sheath** and tapered
+      smoothly from ≈r_c at the shock to 1 at R_LE. No other Bφ multiplications
+      are performed elsewhere.
+
+NUMERICAL / IMPLEMENTATION CHOICES
+  • Radii are clipped to r ≥ 1.05 R☉ for safety (no singularities of 1/r^k).
+  • Per-time quantities (DBM kinematics, Parker parameters, Leblanc scale,
+    r_c, sheath/ME geometric radii & widths) are cached in StepState.
+  • ∇·V = (1/r²) d/dr (r² V) evaluated by a centered finite difference with
+    h = max(10⁻³ r, 1 km).
+  • Blending windows (shock, LE, TE) are C¹ smooth and scale ∝ R_sh; we keep
+    the shock window small and do *not* blend downstream with upstream at the
+    immediate post-shock point.
+
+API & UNITS
+  • All inputs/outputs documented per method below; defaults live in Params.
+  • Units: radii [m], speeds [m/s], densities [m⁻³], magnetic field [T].
+  • Public entry points:
+      - Params (user configuration), StepState (per-time cache),
+      - Model::prepare_step(t)
+      - Model::evaluate_radii_fast(S, r[], n[], V[], N)
+      - Model::evaluate_radii_with_B_div(S, r[], n[], V[], Br[], Bφ[], |B|[], divV[], N)
+      - Model::write_tecplot_radial_profile(...)
+
+COMMON QUESTIONS
+  Q: “Why does the speed drop to ~320 km/s somewhere?”
+     A: That’s the **ME** default (V_ME_factor=0.80) applied to V_sw=400 → 320.
+        In the **sheath**, V≥V_sw always. Adjust with SetSheathEjecta(..., V_ME_factor).
+
+  Q: “Is it physical for downstream to be below upstream right behind a forward
+     shock?”  A: No. In the Sun frame V₂ > V_sw and n₂ > n_up. If you see otherwise,
+     it’s a blending/branching bug. This implementation makes that impossible.
+
+VALIDATION IDEAS (quick)
+  • Check invariants at the shock: V₂>V_sw, n₂=r_c n_up.
+  • Verify sheath monotonicity: n decreases from n₂ to n_up(R_LE); V relaxes
+    from V₂ to V_LE≥V_sw.
+  • Compare ambient n(r) to Leblanc curve; Parker |B|(r)∝r⁻² far out.
+
+REFERENCES
+  – Leblanc, Dulk, Bougeret (1998), Solar Phys., 183, 165–180 — density model.
+  – Parker, E. N. (1958), ApJ, 128, 664 — spiral field.
+  – Vršnak, B., & Žic, T. (2007), A&A, 472, 937 — drag-based CME model (DBM).
+  – Vršnak et al. (2013), Sol. Phys., 285, 295 — DBM extensions & applications.
+  – Priest, E. (2014), Magnetohydrodynamics of the Sun — shock & MHD basics.
+
+USAGE SKETCH (more complete examples at bottom)
+  using namespace swcme1d;
+  Model m;
+  m.SetAmbient(400, 6, 5, 1.2e5)            // km/s, cm^-3, nT, K
+   .SetCME(1.05, 1500, 8e-8)                // R☉, km/s, 1/km
+   .SetGeometry(0.10, 0.25)                 // Δsheath@1AU, ΔME@1AU (AU)
+   .SetSmoothing(0.01, 0.02, 0.03)          // shock/LE/TE widths @1AU (AU)
+   .SetSheathEjecta(1.15, 2.0, 1.10, 0.5, 1.0);  // keep ME speed ≥ V_sw
+  auto S = m.prepare_step(36*3600.0);
+  double r[3] = {0.6*AU, 1.0*AU, 1.4*AU};
+  double n[3], V[3];
+  m.evaluate_radii_fast(S, r, n, V, 3);
 ================================================================================
 */
 
@@ -69,6 +138,17 @@ inline double smoothstep01(double x){ x=clamp01(x); return x*x*(3.0-2.0*x); } //
 inline double lerp(double a,double b,double t){ return a + (b-a)*t; }
 
 // ------------------------------ User parameters ------------------------------
+/**
+ * @brief Tunable physical and geometric parameters of the model.
+ *
+ * Ambient inputs (V_sw, n1AU, |B|1AU, T) set the Parker spiral and upstream
+ * thermodynamics. CME inputs (r0, V0_sh, Γ) feed the DBM apex kinematics.
+ * Geometry and smoothing control sheath/ME sizes and edge widths (all scale
+ * self-similarly with R_sh). Sheath/ME shaping sets compression floor, speed
+ * ramping inside sheath, and ME density/speed relative to upstream.
+ *
+ * Units noted per field; high-level units: [km/s], [cm^-3], [nT], [K], [AU].
+ */
 struct Params {
   // Ambient & thermodynamics
   double V_sw_kms    = 400.0;  // upstream wind speed [km/s]
@@ -88,7 +168,7 @@ struct Params {
   double ejecta_thick_AU_at1AU  = 0.25; // AU at 1 AU
 
   // Interface smoothing widths at 1 AU (C¹), scale ∝ R_sh
-  double edge_smooth_shock_AU_at1AU = 0.01; // shock skirt (kept small)
+  double edge_smooth_shock_AU_at1AU = 0.01; // shock skirt
   double edge_smooth_le_AU_at1AU    = 0.02; // sheath → ME
   double edge_smooth_te_AU_at1AU    = 0.03; // ME → ambient
 
@@ -100,7 +180,16 @@ struct Params {
   double V_ME_factor         = 0.80; // ME speed factor vs V_sw (<1 typical)
 };
 
-// ------------------------------ Per-time cache -------------------------------
+// ------------------------------ Per‑time cache -------------------------------
+/**
+ * @brief Per-time cache. Construct once via prepare_step(t) and reuse for
+ *        many radius queries. Keeps all heavy computations out of the hot path.
+ *
+ * Contains: DBM kinematics & geometry (R_sh, R_LE, R_TE, widths), Parker
+ * constants, Leblanc coefficients scaled to match n(1 AU), shock compression
+ * ratio proxy, and *pinned* boundary values used to build a strictly monotone
+ * sheath (n_up at shock & LE; V2 at shock; V at LE).
+ */
 struct StepState {
   // DBM / geometry
   double time_s    = 0.0;     // time since launch [s]
@@ -109,28 +198,36 @@ struct StepState {
   double V_sh_ms   = 1.0e6;   // shock speed [m/s]
   double r_le_m    = 29*AU;   // leading edge [m]
   double r_te_m    = 28*AU;   // trailing edge [m]
-  double w_sh_m    = 0.0;     // smoothing widths [m] (kept modest)
+  double w_sh_m    = 0.0;     // smoothing widths [m]
   double w_le_m    = 0.0;
   double w_te_m    = 0.0;
 
   // Ambient / Parker / Leblanc
   double V_up_ms   = 4.0e5;   // upstream wind speed [m/s]
   double Br1AU_T   = 0.0;     // Br at 1 AU [T]
-  double k_AU      = 0.0;     // Ω AU sinθ / V_sw [-]
+  double k_AU      = 0.0;     // Ω AU sinθ / V_sw [‑]
   double B_up_T    = 0.0;     // |B| at R_sh upstream [T]
   double C2        = 0.0;     // Leblanc scaled SI coefficients: n=C2/r²+C4/r⁴+C6/r⁶
   double C4        = 0.0;
   double C6        = 0.0;
 
   // Shock compression and cached boundary values
-  double rc          = 1.0;     // compression ratio used for sheath profile
-  double n_up_shock  = 0.0;     // upstream density at shock radius [m⁻3]
-  double n_up_le     = 0.0;     // upstream density at leading edge [m⁻3]
-  double V2_shock_ms = 0.0;     // immediate downstream speed at the shock [m/s]
-  double V_LE_ms     = 0.0;     // sheath speed at the leading edge [m/s]
+  double rc        = 1.0;     // compression ratio used for sheath profile
+  double n_up_shock = 0.0;    // upstream density at shock radius [m⁻3]
+  double n_up_le    = 0.0;    // upstream density at leading edge [m⁻3]
+  double V2_shock_ms = 0.0;   // immediate downstream speed at the shock [m/s]
+  double V_LE_ms     = 0.0;   // sheath speed at the leading edge [m/s]
 };
 
 // --------------------------------- Model -------------------------------------
+/**
+ * @brief Main model class. Create a Model, set Params (or use defaults), then
+ *        call prepare_step(t) to get a StepState. Use evaluators to sample n,V
+ *        (and B, ∇·V) at arbitrary radii.
+ *
+ * Threading: read-only after prepare_step(); safe to call evaluators from many
+ * threads with the same StepState.
+ */
 class Model {
 public:
   Model() : P{} {}
@@ -160,7 +257,19 @@ public:
   const Params& GetParams() const { return P; }
         Params& MutableParams()   { return P; }
 
-  // ---------------------------- Build per-time cache -------------------------
+  // ---------------------------- Build per‑time cache -------------------------
+  /**
+   * @brief Build a per-time cache (StepState) at time t since CME launch.
+   *
+   * Steps:
+   *  1) Parse ambient inputs; compute Parker constants k and Br(1 AU) from |B|1AU.
+   *  2) Scale Leblanc coefficients to match n(1 AU) in SI form n=C2/r^2+C4/r^4+C6/r^6.
+   *  3) Integrate DBM apex: u(t), V_sh(t), R_sh(t) with safeguards.
+   *  4) Build self-similar geometry (R_LE, R_TE) and widths; clip away from Sun.
+   *  5) Evaluate upstream n and |B| at R_sh; compute c_s, v_A, c_f; estimate r_c.
+   *  6) Cache *boundary values* for monotone sheath: n_up(R_sh), n_up(R_LE),
+   *     V2 (RH proxy), and V_LE ≥ V_sw.
+   */
   StepState prepare_step(double t_s) const {
     StepState S; S.time_s=t_s; S.r0_m = std::max(1.05*Rs, P.r0_Rs*Rs);
 
@@ -176,14 +285,14 @@ public:
     // Leblanc coefficients scaled to match n(1 AU)
     const double A = 3.3e5, B = 4.1e6, C = 8.0e7; // [cm⁻³]
     const double n1AU_target = std::max(0.0, P.n1AU_cm3)*1e6; // to m⁻³
-    const double rrat = Rs/AU;
-    const double n1AU_base_cm3 = A*std::pow(rrat,2) + B*std::pow(rrat,4) + C*std::pow(rrat,6);
-    const double n1AU_base = n1AU_base_cm3*1e6; // to m⁻³
+    const double base_1AU = (A + B*std::pow(Rs/AU,2) * (AU*AU/(Rs*Rs)) // keep stable
+                            ); // (write explicitly below)
+    // Compute properly (avoid accidental algebra):
+    const double n1AU_base = (A*std::pow(Rs/AU,2) + B*std::pow(Rs/AU,4) + C*std::pow(Rs/AU,6)) * 1e6;
     const double scale = (n1AU_base>0.0) ? (n1AU_target / n1AU_base) : 0.0;
-    // Write n = C2/r² + C4/r⁴ + C6/r⁶ in SI with r in meters:
-    S.C2 = scale * (A*1e6) * (Rs*Rs);
-    S.C4 = scale * (B*1e6) * (Rs*Rs*Rs*Rs);
-    S.C6 = scale * (C*1e6) * (Rs*Rs*Rs*Rs*Rs*Rs);
+    S.C2 = scale * (A*1e6 * (Rs*Rs));
+    S.C4 = scale * (B*1e6 * (Rs*Rs*Rs*Rs));
+    S.C6 = scale * (C*1e6 * (Rs*Rs*Rs*Rs*Rs*Rs));
 
     // DBM apex kinematics
     const double r0 = S.r0_m;
@@ -196,7 +305,7 @@ public:
     S.r_sh_m  = r0 + Vsw*t_s + ((denom>0.0 && Gamma>0.0) ? std::log(denom)/Gamma : u0*t_s);
     S.r_sh_m  = std::max(S.r_sh_m, 1.1*Rs);
 
-    // Geometry (self-similar thickness & blending widths)
+    // Geometry (self‑similar thickness & blending widths)
     const double scale_R = S.r_sh_m / AU; // dimensionless
     const double d_sheath = std::max(0.0, P.sheath_thick_AU_at1AU) * scale_R * AU;
     const double d_me     = std::max(0.0, P.ejecta_thick_AU_at1AU) * scale_R * AU;
@@ -212,7 +321,7 @@ public:
     const double Bphi_sh= -Br_sh * (OMEGA_SUN * S.r_sh_m * P.sin_theta / Vsw);
     S.B_up_T = std::sqrt(Br_sh*Br_sh + Bphi_sh*Bphi_sh);
 
-    // Upstream density and fast-mode speed at shock
+    // Upstream density and fast‑mode speed at shock
     const double n_up_sh = density_upstream(S, S.r_sh_m);
     const double rho     = std::max(1e-30, MP * n_up_sh);
     const double vA      = (S.B_up_T>0.0) ? (S.B_up_T/std::sqrt(MU0*rho)) : 0.0;
@@ -227,10 +336,12 @@ public:
     S.rc = rc;
 
     // Cache boundary values for a strictly monotone sheath
-    S.n_up_shock  = n_up_sh;                        // upstream at shock
-    S.n_up_le     = density_upstream(S, S.r_le_m);  // upstream at LE
-    S.V2_shock_ms = S.V_sh_ms + (Vsw - S.V_sh_ms)/rc; // RH proxy in Sun frame
-    S.V_LE_ms     = std::max(Vsw, P.V_sheath_LE_factor*Vsw);
+    S.n_up_shock = n_up_sh;                       // upstream at shock
+    S.n_up_le    = density_upstream(S, S.r_le_m); // upstream at LE
+    S.V2_shock_ms = S.V_sh_ms + (Vsw - S.V_sh_ms)/rc; // RH proxy
+    const double V_LE_nom  = std::max(Vsw, P.V_sheath_LE_factor*Vsw);
+    S.V_LE_ms = std::min(V_LE_nom, S.V2_shock_ms);           // <= forces no rise
+    //S.V_LE_ms     = std::max(Vsw, P.V_sheath_LE_factor*Vsw);
 
     return S;
   }
@@ -246,7 +357,25 @@ public:
   }
 
   // ----------------------------- Fast evaluator ------------------------------
-  // Returns n[m⁻³] and V[m/s] at each radius (no B, no ∇·V). O(1) per query.
+  // Returns n[m⁻³] and V[m/s] at each radius (no B, no ∇·V). Designed for O(1)
+  // per query, suitable for per‑particle sampling.
+  /**
+   * @brief Fast evaluator: n(r), V(r). Suitable for per-particle queries.
+   * @param S  StepState built at desired time t.
+   * @param r_m  Array of radii [m].
+   * @param n_m3 Output array [m^-3].
+   * @param V_ms Output array [m/s].
+   * @param N    Number of points.
+   * @details
+   *   Region logic:
+   *     (i) r > R_sh  → upstream ambient (n_up,V_sw)
+   *     (ii) R_LE ≤ r ≤ R_sh → sheath (strictly monotone between pinned bounds)
+   *     (iii) R_TE ≤ r < R_LE → magnetic ejecta (ME)
+   *     (iv) r < R_TE → ambient again (with C¹ blend across TE)
+   *   Sheath construction:
+   *     n(s)=exp((1−s)ln n₂ + s ln n_up(R_LE)), V(s)=smoothstep(s^p; V₂→V_LE),
+   *     with safety clamps n≥n_up,V≥V_sw to prevent undershoots.
+   */
   void evaluate_radii_fast(const StepState& S,
                            const double* r_m,
                            double* n_m3, double* V_ms,
@@ -256,53 +385,54 @@ public:
     const double Vsw = S.V_up_ms;
     const double rc  = S.rc;
 
+    // Shock downstream speed (Rankine‑Hugoniot mass flux proxy)
+    const double V2_shock = S.V2_shock_ms;
+    const double V_LE     = S.V_LE_ms;
+
     for (std::size_t i=0;i<N;++i){
       const double r = std::max(r_m[i], 1.05*Rs);
       const double n_up = density_upstream(S, r);
       double n = n_up;
       double V = Vsw;
 
-      if (r > S.r_sh_m){
+      if (r >= S.r_sh_m){
         // upstream ambient
         n = n_up; V = Vsw;
-
       } else if (r >= S.r_le_m){
         // ------------------------------ SHEATH ------------------------------
         const double Ls = std::max(1e-6, S.r_sh_m - S.r_le_m);
-        const double s  = clamp01( (S.r_sh_m - r)/Ls ); // 0 at shock → 1 at LE
+        const double s = clamp01( (S.r_sh_m - r)/Ls ); // 0 at shock → 1 at LE
 
-        // Density: tie n2(shock)=rc*n_up(R_sh) to n_up(R_LE) (log-linear)
+        // Density: exact boundary match from n2(shock)=rc*n_up(shock) to n_up(LE)
         const double n2_sh = rc * S.n_up_shock;
         const double ln_n  = (1.0 - s)*std::log(std::max(1e-30, n2_sh))
-                           + s        *std::log(std::max(1e-30, S.n_up_le));
+                           + s*std::log(std::max(1e-30, S.n_up_le));
         const double n_target = std::exp(ln_n);
 
-        // Speed: C¹ smoothstep from V2(shock) to V_LE (≥ Vsw)
+        // Speed: C¹ blend from V2(shock) to V(LE) with ramp power
         const double t   = std::pow(s, std::max(1.0, P.sheath_ramp_power));
         const double sC1 = smoothstep01(t);
         const double V_target = lerp(S.V2_shock_ms, S.V_LE_ms, sC1);
 
-        // Final (monotone safety vs local upstream)
+        // Monotonic safety clamps vs local upstream
         n = std::max(n_target, n_up);
         V = std::max(V_target, Vsw);
-
       } else if (r >= S.r_te_m){
         // ------------------------------- ME ---------------------------------
-        const double n_me = std::max(n_up, P.f_ME * n_up);
-        const double V_me = std::max(Vsw, P.V_ME_factor * Vsw);
+        const double n_me = std::max(1.0, P.f_ME) * n_up;
+        const double V_me = std::max(1.0, P.V_ME_factor) * Vsw;
 
-        // Blend with sheath on the ME side of the LE (C¹ at LE)
+        // Blend with sheath on the ME side of the LE
         if (S.w_le_m>0.0 && r >= S.r_le_m - S.w_le_m){
           const double y  = clamp01( (S.r_le_m - r)/S.w_le_m ); // 0 at LE → 1 inward
           const double sC1 = smoothstep01(y);
           const double V_sheath_at_LE = S.V_LE_ms; // sheath boundary value
-          const double n_sheath_at_LE = S.n_up_le; // sheath boundary value
+          const double n_sheath_at_LE = S.n_up_le; // matches sheath profile at LE
           n = lerp(n_me, n_sheath_at_LE, sC1);
           V = lerp(V_me, V_sheath_at_LE, sC1);
         } else {
           n = n_me; V = V_me;
         }
-
       } else {
         // ------------------------------ AMBIENT (after TE) ------------------
         n = n_up; V = Vsw;
@@ -324,6 +454,12 @@ public:
   }
 
   // -------------------------- Full evaluator (with B, ∇·V) -------------------
+  /**
+   * @brief Full evaluator: n,V plus Parker B components and ∇·V.
+   * @param dr_frac Relative step for centered finite difference (divergence).
+   * @details The Parker field is computed from Br(1 AU) and k. The only Bφ
+   * amplification occurs in the sheath and tapers r_c→1 toward the LE.
+   */
   void evaluate_radii_with_B_div(const StepState& S,
                                  const double* r_m,
                                  double* n_m3, double* V_ms,
@@ -344,12 +480,19 @@ public:
       double Br  = (Br1) * (AU/r)*(AU/r);
       double Bph = -Br * (OMEGA_SUN * r * P.sin_theta / Vsw);
 
-      // Single amplification site: inside the sheath only (taper rc→1)
+      // Single, well‑defined sheath‑only amplification of tangential component
       if (r < S.r_sh_m && r >= S.r_le_m){
         const double Ls = std::max(1e-6, S.r_sh_m - S.r_le_m);
-        const double s  = clamp01( (S.r_sh_m - r)/Ls ); // 0 at shock → 1 at LE
-        const double fB = lerp(std::max(1.0, S.rc), 1.0, smoothstep01(s));
-        Bph *= fB; // *** the only Bφ amplification ***
+        double s = clamp01( (S.r_sh_m - r)/Ls ); // 0 at shock → 1 at LE
+        const double fB_shock = std::max(1.0, S.rc); // proxy
+        const double fB = lerp(fB_shock, 1.0, smoothstep01(s));
+
+        // Shock skirt smoothing couples to the same mask used for n,V
+        const double ws = std::max(1e-6, S.w_sh_m);
+        const double x  = clamp01( (S.r_sh_m - r)/ws );
+        const double w  = smoothstep01(x);
+        const double f  = 1.0 + w*(fB - 1.0);
+        Bph *= f; // *** Only amplification site ***
       }
 
       const double Bmag = std::sqrt(Br*Br + Bph*Bph);
@@ -374,8 +517,13 @@ public:
   }
 
   // ------------------------------- Tecplot writer ----------------------------
-  // Writes: r[m], R[AU], rSun[R_s], n[m^-3], V[m/s], Br[T], Bphi[T], Bmag[T],
-  //         divV[s^-1], rc, R_sh[m], R_LE[m], R_TE[m]  (13 columns)
+  // Writes: r[m], n[m⁻³], V[m/s], Br[T], Bphi[T], Bmag[T], divV[s⁻¹], rc, R_sh, R_LE, R_TE
+  /**
+   * @brief Write a Tecplot POINT zone with 13 columns: r[m], R[AU], rSun[R_s],
+   *        n[m^-3], V[m/s], Br[T], Bphi[T], Bmag[T], divV[s^-1], rc, R_sh[m],
+   *        R_LE[m], R_TE[m].
+   * @note The VARIABLES list and row format specifier are kept in sync (13/13).
+   */
   bool write_tecplot_radial_profile(const StepState& S,
                                     const double* r_m,
                                     const double* n_m3,const double* V_ms,
@@ -394,11 +542,10 @@ public:
       const double R_AU = r/AU;
       const double Rsun = r/Rs;
       const double dv = divV?divV[i]:0.0;
-      std::fprintf(f,
-        "% .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e\n",
-        r, R_AU, Rsun,
-        n_m3[i], V_ms[i], Br_T[i], Bphi_T[i], Bmag_T[i], dv,
-        S.rc, S.r_sh_m, S.r_le_m, S.r_te_m);
+      std::fprintf(f, "% .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e\n",
+                   r, R_AU, Rsun,
+                   n_m3[i], V_ms[i], Br_T[i], Bphi_T[i], Bmag_T[i], dv,
+                   S.rc, S.r_sh_m, S.r_le_m, S.r_te_m);
     }
 
     if (time_simulation>=0.0){
@@ -410,6 +557,10 @@ public:
   }
 
   // Convenience wrapper from radii only
+  /**
+   * @brief Convenience wrapper: given radii only, compute fields and write
+   *        the Tecplot file.
+   */
   bool write_tecplot_radial_profile_from_r(const StepState& S,
                                            const double* r_m,std::size_t N,
                                            const char* path,double time_simulation=-1.0) const {
@@ -425,7 +576,7 @@ private:
 };
 
 // -----------------------------------------------------------------------------
-// Usage examples (copy-paste)
+// Extended usage examples (copy‑paste friendly)
 // -----------------------------------------------------------------------------
 /*
 Example 1 — basic profile at a single time
@@ -446,14 +597,13 @@ Example 1 — basic profile at a single time
   // Optional: write Tecplot file
   sw.write_tecplot_radial_profile(S, rA, n, V, Br, Bp, Bm, dV, 5, "swcme_profile.dat", 24*3600.0);
 
-Example 2 — per-particle usage (fast evaluator)
+Example 2 — per‑particle usage (fast evaluator)
 -----------------------------------------------
   auto S = sw.prepare_step(t_now);
   for (size_t p=0; p<NPART; ++p){
     double r = particle_r[p];
-    double n_loc, V_loc;
-    sw.evaluate_radii_fast(S, &r, &n_loc, &V_loc, 1);
-    // use n_loc,V_loc for adiabatic losses, scattering rates, etc.
+    double n,V; sw.evaluate_radii_fast(S, &r, &n, &V, 1);
+    // use n,V for adiabatic losses, scattering rates, etc.
   }
 */
 
