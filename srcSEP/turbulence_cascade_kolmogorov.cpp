@@ -95,13 +95,13 @@ USAGE EXAMPLES
    Cascade::EnableTwoSweepIMEX(false);
 
    Cascade::CascadeTurbulenceEnergyAllFieldLines(
-       DeltaE_plus, DeltaE_minus, dt, / *enable_logging=* /true);
+       dt, / *enable_logging=* /true);
 
 2) With cross-helicity modulation and two-sweep IMEX:
    --------------------------------------------------------------------
    Cascade::EnableCrossHelicityModulation(true);
    Cascade::EnableTwoSweepIMEX(true);
-   Cascade::CascadeTurbulenceEnergyAllFieldLines(DeltaE_plus, DeltaE_minus, dt);
+   Cascade::CascadeTurbulenceEnergyAllFieldLines(dt);
 
 IMPLEMENTATION NOTES
 --------------------
@@ -199,8 +199,6 @@ void SetDensityFloor(double rho_si)                  { g.rho_floor = rho_si; }
 
 // ============================== Main cascade update ============================
 void CascadeTurbulenceEnergyAllFieldLines(
-    std::vector<std::vector<double>>& DeltaE_plus,   // [field_line][segment] (J) OUT += ΔE+
-    std::vector<std::vector<double>>& DeltaE_minus,  // [field_line][segment] (J) OUT += ΔE−
     const double dt,                   // [s]
     const bool   enable_logging)       // print summary on rank 0
 {
@@ -208,12 +206,6 @@ void CascadeTurbulenceEnergyAllFieldLines(
 
   int rank = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-  // Shape ΔE containers to #field lines
-  if (DeltaE_plus.size() != static_cast<size_t>(FL::nFieldLine)) {
-    DeltaE_plus.resize(FL::nFieldLine);
-    DeltaE_minus.resize(FL::nFieldLine);
-  }
 
   int processed_lines = 0;
   long long segments_updated = 0;
@@ -235,8 +227,6 @@ void CascadeTurbulenceEnergyAllFieldLines(
     if (!owns_any) continue;
 
     processed_lines++;
-    DeltaE_plus[fl].assign(nseg, 0.0);
-    DeltaE_minus[fl].assign(nseg, 0.0);
 
     for (int i = 0; i < nseg; ++i) {
       FL::cFieldLineSegment* seg = line->GetSegment(i);
@@ -277,8 +267,6 @@ void CascadeTurbulenceEnergyAllFieldLines(
       // Commit and accumulate deltas
       Eplus  = Eplus_new;
       Eminus = Eminus_new;
-      DeltaE_plus[fl][i]  += dEplus;
-      DeltaE_minus[fl][i] += dEminus;
 
       #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
         validate_numeric(Eplus, __LINE__, __FILE__);

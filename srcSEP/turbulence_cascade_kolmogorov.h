@@ -87,12 +87,12 @@
  *
  *  // Advance cascade for all field lines (ΔE arrays accumulate changes)
  *  Cascade::CascadeTurbulenceEnergyAllFieldLines(
- *      DeltaE_plus, DeltaE_minus, dt, / *enable_logging=* /true);
+ *      dt, / *enable_logging=* /true);
  *
  *  // Optional: stronger physics
  *  Cascade::EnableCrossHelicityModulation(true);
  *  Cascade::EnableTwoSweepIMEX(true);
- *  Cascade::CascadeTurbulenceEnergyAllFieldLines(DeltaE_plus, DeltaE_minus, dt);
+ *  Cascade::CascadeTurbulenceEnergyAllFieldLines(dt);
  *  \endcode
  */
 
@@ -134,14 +134,10 @@ void SetDensityFloor(double rho_si);  // floor for ρ [kg m^-3]
  *  accumulating ΔE^± in the provided arrays. Uses a local, unconditionally stable
  *  IMEX step per segment.
  *
- *  @param DeltaE_plus    [line][seg] accumulates ΔE^+ (J)
- *  @param DeltaE_minus   [line][seg] accumulates ΔE^− (J)
  *  @param dt             time step [s]
  *  @param enable_logging if true, prints a brief summary on rank 0
  */
 void CascadeTurbulenceEnergyAllFieldLines(
-    std::vector<std::vector<double>>& DeltaE_plus,
-    std::vector<std::vector<double>>& DeltaE_minus,
     double dt,
     bool enable_logging = false);
 
