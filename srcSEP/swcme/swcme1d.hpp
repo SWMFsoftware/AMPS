@@ -807,6 +807,60 @@ public:
     delete [] n; delete [] V; delete [] Br; delete [] Bph; delete [] Bm; delete [] dv; return ok;
   }
 
+  /**
+ * @brief Write a Tecplot POINT zone with shock kinematics vs time.
+ *
+ * Columns:
+ *   1) t[s]          — simulation time since launch [seconds]
+ *   2) R_sh[R_s]     — shock apex heliocentric distance in solar radii
+ *   3) V_sh[km/s]    — shock apex speed in km/s
+ *   4) rc            — compression ratio proxy used in the model
+ *
+ * Notes:
+ *   • The series starts at t = 0 and ends exactly at t = t_end_s.
+ *   • If the model’s gating determines there is no forward shock yet,
+ *     prepare_step() will set rc ≈ 1 (and your StepState.has_shock would be false
+ *     if you kept that flag). We still report R_sh and V_sh from DBM.
+ *
+ * @param t_end_s  End time [s] (must be ≥ 0).
+ * @param N        Number of samples (rows). If N==1, the single row is at t=t_end_s.
+ * @param path     Output path for the Tecplot .dat file.
+ * @return true on success, false on error (bad args or failed fopen).
+ */
+bool write_tecplot_shock_vs_time(double t_end_s, std::size_t N, const char* path) const {
+  if (!path || N == 0 || !(t_end_s >= 0.0)) return false;
+
+  std::FILE* f = std::fopen(path, "w");
+  if (!f) return false;
+
+  // Header
+  std::fprintf(f,
+    "TITLE=\"Shock kinematics vs time\"\n"
+    "VARIABLES=\"t[s]\",\"R_sh[R_s]\",\"V_sh[km/s]\",\"rc\"\n");
+  std::fprintf(f, "ZONE T=\"shock_vs_time\", N=%zu, F=POINT\n", N);
+
+  // Time step (include both endpoints if N>1)
+  const double dt = (N > 1) ? (t_end_s / static_cast<double>(N - 1)) : 0.0;
+
+  for (std::size_t i = 0; i < N; ++i) {
+    const double t = (N > 1) ? (i * dt) : t_end_s;
+
+    // Build per-time cache and read shock metrics
+    StepState S = prepare_step(t);
+
+    const double Rsh_Rs   = S.r_sh_m / Rs;       // [R_sun]
+    const double Vsh_kms  = S.V_sh_ms / 1.0e3;   // [km/s]
+    const double rc       = S.rc;                // compression ratio proxy
+
+    std::fprintf(f, "% .9e % .9e % .9e % .9e\n",
+                 t, Rsh_Rs, Vsh_kms, rc);
+  }
+
+  std::fclose(f);
+  return true;
+}
+
+
 private:
   Params P;
 };
@@ -841,6 +895,15 @@ Example 2 — per‑particle usage (fast evaluator)
     double n,V; sw.evaluate_radii_fast(S, &r, &n, &V, 1);
     // use n,V for adiabatic losses, scattering rates, etc.
   }
+
+  Example 3 - output shock properties 
+
+  swcme1d::Model m;
+  // (configure m’s Params as desired...)
+  const double t_end = 48.0 * 3600.0; // 48 hours
+  const std::size_t N = 241;          // e.g., every 12 minutes
+  m.write_tecplot_shock_vs_time(t_end, N, "shock_vs_time.dat");
+
 */
 
 } // namespace swcme1d

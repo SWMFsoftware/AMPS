@@ -119,6 +119,9 @@ int main(int argc,char **argv) {
   //set up shock wave model 
   configure_swcme1d(CMEScenario::Fast); 
 
+  //output parameters of the sshock 
+  SEP::sw1d.write_tecplot_shock_vs_time(2.0*24.0*3600, 200, "shock_vs_time.dat");
+
   //setup datum to store the segment's data for the Alfven turbulence model 
   if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) { 
     PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy); 
@@ -287,6 +290,8 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
 
 
   vector<vector<double> > DeltaE_plus, DeltaE_minus;
+
+
 
   //time step
   for (long int niter=0;niter<TotalIterations;niter++) {
