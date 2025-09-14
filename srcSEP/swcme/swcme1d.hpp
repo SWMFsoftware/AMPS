@@ -115,6 +115,230 @@ USAGE SKETCH (more complete examples at bottom)
 ================================================================================
 */
 
+/*
+===============================================================================
+ swcme1d.hpp — Header-only 1-D Solar Wind + CME (DBM) model
+-------------------------------------------------------------------------------
+ PURPOSE
+   Provide a lightweight, numerically efficient 1-D model of the heliocentric
+   solar wind plus a driven CME forward shock and its downstream structure
+   (sheath and magnetic ejecta, ME). Designed to:
+     • return n(r), V(r) and Parker B(r) with CME-induced modifications,
+     • expose ∇·V (for SEP adiabatic cooling/heating),
+     • offer narrow, independent smoothing at the three edges
+       (shock, sheath→ME leading edge, ME→ambient trailing edge),
+     • be fast enough for per-particle queries in SEP solvers.
+
+ PHYSICS SUMMARY (compact)
+   • Ambient wind: steady, radial, speed V_sw (km/s), density n(r) follows
+     a Leblanc (1998)-shaped r^(-2,-4,-6) profile normalized to n(1 AU).
+   • Magnetic field: Parker spiral
+        Br(r)   = Br(1 AU) (AU/r)^2
+        Bphi(r) = -Br(r) (Ω r sinθ / V_sw)
+        |B|(r)  = |Br(r)| sqrt(1 + (k r_AU)^2),  k = Ω AU sinθ / V_sw
+     with |B|(1 AU) set to B1AU; we solve Br(1 AU) = B1AU / sqrt(1+k^2).
+   • CME apex kinematics (DBM): with drag Γ and u(t)=V_sh−V_sw,
+        u(t)   = u0 / (1 + Γ u0 t),                     u0=V0_sh−V_sw
+        R_sh(t)= r0 + V_sw t + [ ln(1 + Γ u0 t) ] / Γ
+        V_sh(t)= V_sw + u(t)
+     (Here Γ is in SI 1/m; user supplies in 1/km and it is converted.)
+   • Shock compression ratio rc from a fast-mode Mach proxy:
+        c_s = sqrt(γ k_B T / m_p), v_A = B/√(μ0 ρ),
+        c_f = sqrt(c_s^2 + v_A^2),  M_f ≈ max( (V_sh−V_sw)/c_f , 1 )
+        rc  = ((γ+1) M_f^2) / ( (γ-1) M_f^2 + 2 ), capped ≤ 4 (γ=5/3).
+   • Downstream structure:
+       – Sheath (R_LE < r < R_sh): n decays from rc·n_up at shock to ~n_up at LE;
+         V goes from V_dn (shock) to V_sheath_LE_factor · V_sw at LE;
+         B amplification applied primarily to tangential component (Bphi) and
+         decays from rc (at shock) to ~1 at LE.
+       – Magnetic ejecta (R_TE < r < R_LE): n = f_ME n_up; V = V_ME_factor V_sw.
+       – Each of the three edges uses its own C^1 smoothing width (shock/LE/TE),
+         scaled ∝ R_sh (self-similar with distance).
+
+// ----------------------------------------------------------------------------
+// PHYSICS OVERVIEW (1-D ALONG A HELIOCENTRIC RAY; ORIGIN = SUN CENTER)
+// --------------------------------------------------------------------
+// Upstream density n(r): Leblanc, Dulk & Bougeret (1998), Solar Phys. 183, 165
+//   n[r] ~ A (Rs/r)^2 + B (Rs/r)^4 + C (Rs/r)^6   [cm^-3]  with
+//   A=3.3e5, B=4.1e6, C=8.0e7. We scale these to match a user-given n(1 AU)
+//   and convert to SI [m^-3].  Implementation detail for speed:
+//     n(r) = C2 * r^-2 + C4 * r^-4 + C6 * r^-6   [m^-3],
+//   where C2,C4,C6 (SI) are cached in StepState and r^-k use fused multiplies.
+//
+// Upstream magnetic field B(r): Parker (1958), ApJ 128, 664
+//   In equatorial approximation (fixed sinθ), with solar rotation Ω and wind Vsw:
+//   Br ∝ r^-2, Bφ = -Br * (Ω r sinθ / Vsw).  We choose Br(1AU) so that
+//   |B|(1 AU) equals user-given B1AU.  Implementation caches Br1AU_T and
+//   k_AU = Ω AU sinθ / Vsw, so evaluation is a few mults per sample.
+//
+// CME apex kinematics: Drag-Based Model (DBM): Vršnak & Žic (2007); Vršnak et al. (2013)
+//   u(t) = Vsh − Vsw.  With drag Γ,
+//     u(t) = u0 / (1 + Γ u0 t),   r(t) = r0 + Vsw t + (ln(1+Γ u0 t))/Γ.
+//   We guard logs/denominators and convert Γ from km^-1 to m^-1.
+//
+// Regions and smoothing (self-similar):
+//   upstream → [shock at R_sh] → sheath → [leading edge at R_LE] → magnetic ejecta
+//   → [trailing edge at R_TE] → downstream ambient.
+//   Each interface uses a C¹ smoothstep s(x)=x^2(3−2x) over width w; widths scale
+//   ∝ R_sh (so they grow with distance). Sheath density uses a ramp that is steeper
+//   near the shock (power p≥1) and bounded below by a floor (rc_floor≥1).
+//
+// Oblique-MHD shock proxy (1-D quasi-radial reduction): Edmiston & Kennel (1984);
+// Priest (2014, CUP): We approximate the normal Mach number using the fast speed
+//   c_f = sqrt(c_s^2 + v_A^2) with upstream sound speed c_s and Alfven speed v_A,
+//   then take a hydrodynamic-like compression
+//     rc = ((γ+1) M_n^2) / ((γ−1) M_n^2 + 2),   1 ≤ rc ≤ 4.
+//   Downstream speed at the shock follows a continuity proxy.
+//   This rc is used as: sheath density jump and a proxy for Bt amplification.
+//
+// Divergence of bulk flow:
+//   ∇·V = (1/r^2) d/dr ( r^2 V_r ). We compute it with a centered FD using
+//   r±dr along the same ray; dr = max(1e-4 AU, 1e-3 r).  Numerically robust.
+//
+
+// PHYSICS OVERVIEW (1-D ALONG A HELIOCENTRIC RAY; ORIGIN = SUN CENTER)
+// --------------------------------------------------------------------
+// Upstream density n(r): Leblanc, Dulk & Bougeret (1998), Solar Phys. 183, 165
+//   n[r] ~ A (Rs/r)^2 + B (Rs/r)^4 + C (Rs/r)^6   [cm^-3]  with
+//   A=3.3e5, B=4.1e6, C=8.0e7. We scale these to match a user-given n(1 AU)
+//   and convert to SI [m^-3].  Implementation detail for speed:
+//     n(r) = C2 * r^-2 + C4 * r^-4 + C6 * r^-6   [m^-3],
+//   where C2,C4,C6 (SI) are cached in StepState and r^-k use fused multiplies.
+//
+// Upstream magnetic field B(r): Parker (1958), ApJ 128, 664
+//   In equatorial approximation (fixed sinθ), with solar rotation Ω and wind Vsw:
+//   Br ∝ r^-2, Bφ = -Br * (Ω r sinθ / Vsw).  We choose Br(1AU) so that
+//   |B|(1 AU) equals user-given B1AU.  Implementation caches Br1AU_T and
+//   k_AU = Ω AU sinθ / Vsw, so evaluation is a few mults per sample.
+//
+// CME apex kinematics: Drag-Based Model (DBM): Vršnak & Žic (2007); Vršnak et al. (2013)
+//   u(t) = Vsh − Vsw.  With drag Γ,
+//     u(t) = u0 / (1 + Γ u0 t),   r(t) = r0 + Vsw t + (ln(1+Γ u0 t))/Γ.
+//   We guard logs/denominators and convert Γ from km^-1 to m^-1.
+//
+// Regions and smoothing (self-similar):
+//   upstream → [shock at R_sh] → sheath → [leading edge at R_LE] → magnetic ejecta
+//   → [trailing edge at R_TE] → downstream ambient.
+//   Each interface uses a C¹ smoothstep s(x)=x^2(3−2x) over width w; widths scale
+//   ∝ R_sh (so they grow with distance). Sheath density uses a ramp that is steeper
+//   near the shock (power p≥1) and bounded below by a floor (rc_floor≥1).
+//
+// Oblique-MHD shock proxy (1-D quasi-radial reduction): Edmiston & Kennel (1984);
+// Priest (2014, CUP): We approximate the normal Mach number using the fast speed
+//   c_f = sqrt(c_s^2 + v_A^2) with upstream sound speed c_s and Alfven speed v_A,
+//   then take a hydrodynamic-like compression
+//     rc = ((γ+1) M_n^2) / ((γ−1) M_n^2 + 2),   1 ≤ rc ≤ 4.
+//   Downstream speed at the shock follows a continuity proxy.
+//   This rc is used as: sheath density jump and a proxy for Bt amplification.
+//
+// Divergence of bulk flow:
+//   ∇·V = (1/r^2) d/dr ( r^2 V_r ). We compute it with a centered FD using
+//   r±dr along the same ray; dr = max(1e-4 AU, 1e-3 r).  Numerically robust.
+//
+
+// *** POST-SHOCK BEHAVIOR (PHYSICAL SANITY) ***
+// --------------------------------------------
+// • Right at the shock (immediate downstream), a *compressive fast shock* must have
+//     – Density increase: rc = n2/n1 > 1 (≤ 4 for γ=5/3).
+
+//     V2 ≈ V_sh + (V1 − V_sh)/rc,  so V2 lies typically between V_sw and V_sh.
+//   You should therefore see a **density peak** and **elevated speed** right behind
+//   the shock, followed by a **gradual decrease** through the **sheath**.
+//
+// • Through the **sheath** (shock → LE): it is physical for both **density** and
+//   **speed** to **decline** from their immediate post-shock values as compression
+//   relaxes and turbulence/expansion redistribute momentum.
+//
+// • Inside the **magnetic ejecta (ME)**: density is commonly **below ambient** and
+//   speed can be **lower than upstream wind**—a well-known depletion region.
+//
+// • **Unphysical pattern to avoid**: an *immediate* (next-sample) **drop of density
+//   below upstream** right behind the shock. That violates jump conditions for a
+//   compressive fast shock. If you see this:
+//     – Keep `sheath_comp_floor ≥ 1.0` (our default enforces ≥1).
+//     – Use a small shock blend width vs. sheath thickness:
+//         `edge_smooth_shock_AU_at1AU  <<  sheath_thick_AU_at1AU`.
+//     – Avoid over-lapping large smooth widths at shock/LE/TE.
+//     – Choose `V_sheath_LE_factor ≳ 1.05–1.2` so the sheath remains faster than ambient.
+//
+// • Optional (not enforced in this file): a **monotonicity clamp** within the sheath
+//   to guarantee `n ≥ n_up` and `V_sw ≤ V ≤ V_sh`. If desired, we can provide a
+//   compile-time or runtime switch; for now we document the physics and parameter
+//   guidance above (no behavioral change).
+
+
+ NUMERICAL NOTES
+   • Sanitized outputs: n, V, B, |B|, ∇·V are finite (fallbacks applied).
+   • No heap allocs in evaluators; no pow() in hot paths.
+   • ∇·V uses 1/r^2 · d/dr(r^2 V) with a small centered difference (dr_frac).
+   • Tunable widths per edge; keep shock width ≪ sheath thickness.
+
+ UNITS
+   • Inputs: V_sw [km/s], n1AU [cm^-3], B1AU [nT], T [K], r0 [R_sun], V0_sh [km/s], Γ [1/km].
+   • Outputs: r [m], n [m^-3], V [m/s], Br/Bphi/|B| [T], divV [1/s].
+   • Constants exposed: AU [m], Rs [m], PI, OMEGA_SUN [rad/s].
+
+ EXAMPLE (quick start)
+ ------------------------------------------------------------------------------
+   #include "swcme1d.hpp"
+   using namespace swcme1d;
+
+   Model sw;  // default construct with sensible defaults
+
+   sw.SetAmbient(400, 6, 5, 1.2e5)                  // V_sw[km/s], n1AU[cm^-3], B1AU[nT], T[K]
+     .SetCME(1.05, 1800, 8e-8)                      // r0[R_sun], V0_sh[km/s], Γ[1/km]
+     .SetGeometry(0.10, 0.20)                       // sheath & ME thickness at 1 AU [AU]
+     .SetSmoothing(0.01, 0.02, 0.03)                // edge widths at 1 AU [AU] (shock/LE/TE)
+     .SetSheathEjecta(1.2, 2.0, 1.10, 0.5, 0.8);    // rc_floor, ramp_p, Vshe_LE, fME, VME
+
+   StepState S = sw.prepare_step(36.0*3600.0);      // 36 hours after launch
+
+   const int N=3;
+   double r[N]   ={0.5*AU, 1.0*AU, 1.5*AU};
+   double n[N],V[N],Br[N],Bphi[N],Bmag[N],divV[N];
+
+   sw.evaluate_radii_with_B_div(S, r, n, V, Br, Bphi, Bmag, divV, N);
+   sw.write_tecplot_radial_profile(S, r, n, V, Br, Bphi, Bmag, divV, N, "profile_1d.dat");
+
+ PARAMETER GUIDE (cheat sheet)
+ ------------------------------------------------------------------------------
+   Ambient:
+     V_sw_kms   300–800      Upstream wind speed (radial)
+     n1AU_cm3   2–10         Density at 1 AU (Leblanc-normalized)
+     B1AU_nT    3–8          |B|(1 AU) for Parker normalization
+     T_K        8e4–2e5      Proton temperature (for c_s)
+     gamma_ad   5/3          Adiabatic index
+     sin_theta  0.6–1.0      sin(colat); ≈1 in ecliptic
+
+   CME apex (DBM):
+     r0_Rs      1.03–1.07    Launch radius
+     V0_sh_kms  800–2500     Initial shock speed
+     Gamma_kmInv 1e-8–2e-7   Drag Γ (↑ ⇒ stronger decel)
+
+   Geometry (at 1 AU; scales ∝ R_sh):
+     sheath_thick_AU_at1AU   0.05–0.20
+     ejecta_thick_AU_at1AU   0.10–0.40
+
+   Edge widths (at 1 AU; scales ∝ R_sh):
+     edge_smooth_shock_AU_at1AU  0.005–0.02   (keep smallest)
+     edge_smooth_le_AU_at1AU     0.01–0.05
+     edge_smooth_te_AU_at1AU     0.02–0.06
+
+   Sheath/ME targets:
+     sheath_comp_floor    ≥1.0 (1.1–1.5 typical)
+     sheath_ramp_power    1–3  (2 steeper near shock)
+     V_sheath_LE_factor   1.05–1.2
+     f_ME                 0.3–0.8
+     V_ME_factor          0.6–0.95
+
+ REFERENCES
+   Parker (1958) ApJ 128, 664 — Solar wind & spiral field.
+   Leblanc et al. (1998) Sol. Phys. 183, 165 — n_e(R) ~ R^-2,-4,-6.
+   Vršnak & Žic (2007) A&A 472, 937 — Drag-Based CME Model (DBM).
+   Priest (2014) CUP — MHD of the Sun (shock relations, wave speeds).
+===============================================================================
+*/
+
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
@@ -313,6 +537,13 @@ public:
     S.r_te_m = std::max(1.05*Rs, S.r_le_m - d_me);
 
     S.w_sh_m = std::max(0.0, P.edge_smooth_shock_AU_at1AU) * scale_R * AU;
+
+
+    // Do not let the shock smoothing exceed ~45% of the sheath thickness
+    const double Ls = std::max(1e-6, S.r_sh_m - S.r_le_m);
+    S.w_sh_m = std::min(S.w_sh_m, 0.45 * Ls);
+
+
     S.w_le_m = std::max(0.0, P.edge_smooth_le_AU_at1AU)    * scale_R * AU;
     S.w_te_m = std::max(0.0, P.edge_smooth_te_AU_at1AU)    * scale_R * AU;
 
@@ -339,9 +570,13 @@ public:
     S.n_up_shock = n_up_sh;                       // upstream at shock
     S.n_up_le    = density_upstream(S, S.r_le_m); // upstream at LE
     S.V2_shock_ms = S.V_sh_ms + (Vsw - S.V_sh_ms)/rc; // RH proxy
+
+    // Nominal LE target from user factor (≥ Vsw)
     const double V_LE_nom  = std::max(Vsw, P.V_sheath_LE_factor*Vsw);
-    S.V_LE_ms = std::min(V_LE_nom, S.V2_shock_ms);           // <= forces no rise
-    //S.V_LE_ms     = std::max(Vsw, P.V_sheath_LE_factor*Vsw);
+
+    // Enforce *no acceleration* across the sheath: V_LE ≤ V2(shock)
+    const double epsV = 1e-6;                        // 1 µm/s guard
+    S.V_LE_ms = std::min(V_LE_nom, S.V2_shock_ms - epsV);
 
     return S;
   }
@@ -412,11 +647,12 @@ public:
         // Speed: C¹ blend from V2(shock) to V(LE) with ramp power
         const double t   = std::pow(s, std::max(1.0, P.sheath_ramp_power));
         const double sC1 = smoothstep01(t);
-        const double V_target = lerp(S.V2_shock_ms, S.V_LE_ms, sC1);
+        double V_target = lerp(S.V2_shock_ms, S.V_LE_ms, sC1);
 
-        // Monotonic safety clamps vs local upstream
-        n = std::max(n_target, n_up);
-        V = std::max(V_target, Vsw);
+	// Hard guarantees: never above V2(shock), never below Vsw
+        V_target = std::min(V_target, S.V2_shock_ms);
+        n        = std::max(n_target, n_up);
+        V        = std::max(V_target, Vsw);
       } else if (r >= S.r_te_m){
         // ------------------------------- ME ---------------------------------
         const double n_me = std::max(1.0, P.f_ME) * n_up;
