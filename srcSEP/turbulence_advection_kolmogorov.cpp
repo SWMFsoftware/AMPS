@@ -189,7 +189,7 @@ Cache Efficiency: On-demand data access minimizes memory bandwidth
 #include "sep.h"
 
 //the flag determines whether coupling of the particle and turbumence active
-bool SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode=false;
+bool SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode=true;
 
 namespace SEP {
 namespace AlfvenTurbulence_Kolmogorov {
