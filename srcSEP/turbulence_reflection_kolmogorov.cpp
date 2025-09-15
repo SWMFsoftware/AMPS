@@ -139,6 +139,9 @@ namespace SEP {
 namespace AlfvenTurbulence_Kolmogorov {
 namespace Reflection {
 
+ //the flag defiend whether the model is useed in the calculations 
+ bool active=false;
+
   // Physical constants
   constexpr double MU0          = 4.0e-7 * M_PI;          // [H/m]
   constexpr double PROTON_MASS  = 1.67262192e-27;         // [kg]

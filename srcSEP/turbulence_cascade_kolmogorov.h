@@ -102,6 +102,9 @@ namespace SEP {
 namespace AlfvenTurbulence_Kolmogorov {
 namespace Cascade {
 
+  //the flag ddefined whether the model is used in the calculations
+  extern bool active;
+
 // ------------------------------- Configuration API ----------------------------
 
 /** Set cascade coefficient C_nl (O(1); default 0.8). */

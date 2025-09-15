@@ -86,6 +86,9 @@ namespace SEP {
 namespace AlfvenTurbulence_Kolmogorov {
 namespace Reflection {
 
+ //the flag defiend whether the model is useed in the calculations 
+ extern bool active;
+
 /** Enable/disable the optional frequency suppression Φ = 1 / (1 + (ω/ω_R)^2).
  *  Off by default.
  */

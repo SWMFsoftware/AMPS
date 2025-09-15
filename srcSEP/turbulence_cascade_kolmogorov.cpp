@@ -121,6 +121,9 @@ namespace SEP {
 namespace AlfvenTurbulence_Kolmogorov {
 namespace Cascade {
 
+  //the falg defined whether the model is used in the calcualtions 
+  bool active=false;
+
 namespace {
   // Physical constants
   constexpr double PROTON_MASS = 1.67262192e-27; // [kg]
