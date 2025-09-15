@@ -297,17 +297,46 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
   for (long int niter=0;niter<TotalIterations;niter++) {
     //SEP::InitDriftVelData();
     
-    double rsh0=SEP::ParticleSource::ShockWave::Tenishev2005::rShock; 
+    static double rsh0=SEP::ParticleSource::ShockWave::Tenishev2005::rShock; 
     
-    
+    if (niter==0) {
+      switch (SEP::ShockModelType) {
+      case SEP::cShockModelType::Analytic1D:
+        rsh0=SEP::ParticleSource::ShockWave::Tenishev2005::rShock; 
+        break;
+      case SEP::cShockModelType::SwCme1d:
+        rsh0=SEP::SW1DAdapter::gState.r_sh_m;
+        break;
+      }
+    }
+
+
     amps_time_step();
     SimulationTime+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0]; 
+
+    //advance the shock+CME model
+   advance_sw1d(PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
+
 
     if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
 
       // Function to increment integrated wave energy due to shock passing
-      if (niter!=0) SEP::ParticleSource::ShockWave::ShockTurbulenceEnergyInjection(rsh0, SEP::ParticleSource::ShockWave::Tenishev2005::rShock, PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
+      if (niter!=0) {
+         double rsh1;
 
+         switch (SEP::ShockModelType) {
+         case SEP::cShockModelType::Analytic1D:
+           rsh1=SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
+           break;
+         case SEP::cShockModelType::SwCme1d:
+           rsh1=SEP::SW1DAdapter::gState.r_sh_m;
+           break;
+         }
+
+	 SEP::ParticleSource::ShockWave::ShockTurbulenceEnergyInjection(rsh0, rsh1, PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
+
+	 rsh0=rsh1;
+      }
 
       if (SEP::ParticleMoverPtr!=SEP::ParticleMover_FocusedTransport_WaveScattering) { // in case SEP::ParticleMover_FocusedTransport_WaveScattering(), particle/turbulence coupling is already done 
 
@@ -346,23 +375,27 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
 			      PIC::ParticleWeightTimeStep::GlobalTimeStep[0],0.01,0.01);
 
       //model the effect of wave reflection 
-      double C_reflection=0.6;
-      SEP::AlfvenTurbulence_Kolmogorov::Reflection::ReflectTurbulenceEnergyAllFieldLines(
-		     PIC::ParticleWeightTimeStep::GlobalTimeStep[0],C_reflection,0.0,false); 
+      if (SEP::AlfvenTurbulence_Kolmogorov::Reflection::active==true) {
+        double C_reflection=0.6;
+
+        SEP::AlfvenTurbulence_Kolmogorov::Reflection::ReflectTurbulenceEnergyAllFieldLines(PIC::ParticleWeightTimeStep::GlobalTimeStep[0],C_reflection,0.0,false); 
+      }
 
       // Configure cascade
-    SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetCascadeCoefficient(0.8);             // C_nl
-    SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetDefaultPerpendicularCorrelationLength(1.0e7); // 10,000 km
-    SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetDefaultEffectiveArea(1.0);           // V_cell = Δs
-    SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetElectronHeatingFraction(0.3);        // 30% to electrons
-    SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableCrossHelicityModulation(false);
-    SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableTwoSweepIMEX(false);
+      if (SEP::AlfvenTurbulence_Kolmogorov::Cascade::active==true) { 
+        SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetCascadeCoefficient(0.8);             // C_nl
+        SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetDefaultPerpendicularCorrelationLength(1.0e7); // 10,000 km
+        SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetDefaultEffectiveArea(1.0);           // V_cell = Δs
+        SEP::AlfvenTurbulence_Kolmogorov::Cascade::SetElectronHeatingFraction(0.3);        // 30% to electrons
+        SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableCrossHelicityModulation(false);
+        SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableTwoSweepIMEX(false);
   
-    // Advance cascade for all field lines (ΔE arrays accumulate changes)
-    // Optional: stronger physics
-    SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableCrossHelicityModulation(true);
-    SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableTwoSweepIMEX(true);
-    SEP::AlfvenTurbulence_Kolmogorov::Cascade::CascadeTurbulenceEnergyAllFieldLines(PIC::ParticleWeightTimeStep::GlobalTimeStep[0],/*enable_logging=*/ false);
+        // Advance cascade for all field lines (ΔE arrays accumulate changes)
+        // Optional: stronger physics
+        SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableCrossHelicityModulation(true);
+        SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableTwoSweepIMEX(true);
+        SEP::AlfvenTurbulence_Kolmogorov::Cascade::CascadeTurbulenceEnergyAllFieldLines(PIC::ParticleWeightTimeStep::GlobalTimeStep[0],/*enable_logging=*/ false);
+      }
 
     
       //scatter wave energy   
@@ -372,24 +405,21 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
       //calculate the wave energy density 
       CalculateWaveEnergyDensity();
 
-
-     //advance the shock+CME model  
-
-      advance_sw1d(PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
-
-      if ((niter+1)%10==0)  {   
+/*
+      if ((niter+1)%2==0)  {   
          char fname[300];
 	 sprintf(fname,"fl-%i-%e.dat",PIC::ThisThread,rsh0/_AU_);
 
 	 //PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtVertex(&PIC::FieldLine::DatumAtVertexParticleWeight);
          //PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtVertex(&PIC::FieldLine::DatumAtVertexParticleCosPitchAngle);
 
-	 //PIC::FieldLine::Output(fname,false);
+	 PIC::FieldLine::Output(fname,false);
 
 	 //PIC::FieldLine::Parallel::SetDatumStoredAtVertex(0.0,&PIC::FieldLine::DatumAtVertexParticleWeight);
 	 //PIC::FieldLine::Parallel::SetDatumStoredAtVertex(0.0,&PIC::FieldLine::DatumAtVertexParticleCosPitchAngle);
-
       }
+*/
+
     }
 
 
