@@ -1633,6 +1633,8 @@ int PIC::Debugger::GetCellParticleNumber(double *x, std::vector<int>* nparticle_
     return -1;  // outside domain or no data block
   }
 
+  if (node->Thread!=PIC::ThisThread) return -1; //outside of the subdomain assigned to the currect thread
+
   // 2) Find local cell indices (i,j,k) within this node
   int i = 0, j = 0, k = 0;
   if (PIC::Mesh::mesh->FindCellIndex(x, i, j, k, node, /*CheckCornerCells=*/false) == -1) {
