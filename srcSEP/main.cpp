@@ -140,6 +140,12 @@ int main(int argc,char **argv) {
 
   //set up datum to store distance of a field line vertex to the location of the shock 
   PIC::FieldLine::UserDefinedfDataProcessingManager=SEP::FieldLine::CalculateVertexShockDistances; 
+
+  //the up the model 
+  SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode=true;
+  SEP::AlfvenTurbulence_Kolmogorov::Cascade::active=true;
+  SEP::AlfvenTurbulence_Kolmogorov::Reflection::active=true;
+
  
   amps_init_mesh();
   amps_init();
