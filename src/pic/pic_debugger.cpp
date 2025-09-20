@@ -1618,12 +1618,504 @@ void PIC::Debugger::OrderParticleLists() {
   ProcessBlock(PIC::Mesh::mesh->rootTree);
 }
 
+// int GetCellParticleNumber(double *x, vector<int>* nparticle_out=NULL)
+//
+// - Return -1 if x is outside the domain
+// - Otherwise return total particle count in the cell
+// - If nparticle_out != NULL: resize to number of species and fill per-species counts
+// - If nparticle_out == NULL: print total and per-species counts to stdout
+int PIC::Debugger::GetCellParticleNumber(double *x, std::vector<int>* nparticle_out /*=NULL*/) {
+  if (x == nullptr) return -1;
+
+  // 1) Find the AMR tree node (block) that contains x
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node = PIC::Mesh::mesh->findTreeNode(x);
+  if (node == nullptr || node->block == nullptr) {
+    return -1;  // outside domain or no data block
+  }
+
+  // 2) Find local cell indices (i,j,k) within this node
+  int i = 0, j = 0, k = 0;
+  if (PIC::Mesh::mesh->FindCellIndex(x, i, j, k, node, /*CheckCornerCells=*/false) == -1) {
+    return -1;  // outside (or could not localize cell)
+  }
+
+  // 3) Head of the linked list of particles in this cell
+  const int idx =
+      i + _BLOCK_CELLS_X_ * (j + _BLOCK_CELLS_Y_ * k);
+  const long int head = node->block->FirstCellParticleTable[idx];
+
+  // 4) Iterate the particle list and count
+  const int nSpec = PIC::nTotalSpecies;
+  long long total = 0;
+
+  // If caller wants per-species, accumulate directly into their vector
+  std::vector<int> localCounts;  // used only if nparticle_out == NULL (for printing)
+  if (nparticle_out) {
+    nparticle_out->assign(nSpec, 0);
+  } else {
+    localCounts.assign(nSpec, 0);
+  }
+
+  for (long int p = head; p != -1; p = PIC::ParticleBuffer::GetNext(p)) {
+    const int spec = PIC::ParticleBuffer::GetI(p);
+    if (spec >= 0 && spec < nSpec) {
+      if (nparticle_out) {
+        ++(*nparticle_out)[spec];
+      } else {
+        ++localCounts[spec];
+      }
+      ++total;
+    }
+  }
+
+  // 5) Output per spec if requested to print; otherwise we already filled nparticle_out
+  if (!nparticle_out) {
+    std::printf("Cell (%d,%d,%d), total particles = %lld\n", i, j, k, total);
+    for (int s = 0; s < nSpec; ++s) {
+      std::printf("  species %d: %d\n", s, localCounts[s]);
+    }
+  }
+
+  // 6) Return total (clamped to int)
+  if (total > (long long)std::numeric_limits<int>::max())
+    return std::numeric_limits<int>::max();
+  return static_cast<int>(total);
+}
 
 
 
+/*
+===============================================================================
+ BuildAndPrintCellParticleDistribution()
+-------------------------------------------------------------------------------
+ PURPOSE
+   Traverse the entire AMR mesh on all MPI ranks, compute the total number of
+   particles per cell, and build a 10-bin histogram over the global range
+   [min..max] of cell particle counts. Outputs:
 
+     • Global minimum and maximum particle counts.
+     • 10-bin histogram: [bin_low..bin_high] → number of cells.
+     • Top-10 cells with the largest particle counts: total and center (x,y,z).
+     • Top-10 cells with the smallest particle counts: total and center (x,y,z).
 
+   The function uses existing AMPS/PIC structures:
+     - cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>::block->FirstCellParticleTable[idx]
+     - PIC::ParticleBuffer::GetNext(ptr) to iterate particle lists
+     - node->xmin/xmax for cell bounding boxes
+     - _BLOCK_CELLS_X_, _BLOCK_CELLS_Y_, _BLOCK_CELLS_Z_ macros for cell indexing
+     - PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread] for
+       local node iteration
+     - MPI_COMM_WORLD for global reductions and gathers.
 
+ PARAMETERS
+   None.
+
+ RETURN
+   void — prints results to stdout on rank 0.
+
+ USAGE EXAMPLE
+ ------------------------------------------------------------------------------
+   #include "pic.h"
+
+   int main(int argc, char** argv) {
+       MPI_Init(&argc, &argv);
+
+       // Initialize AMPS/PIC mesh and particle buffer as usual
+       PIC::Init();
+       PIC::Mesh::mesh->InitMesh();
+       PIC::ParticleBuffer::Init();
+
+       // Load or generate particles, run some simulation steps...
+       PIC::RunSteps(100);
+
+       // Call the distribution builder after particles are populated
+       BuildAndPrintCellParticleDistribution();
+
+       MPI_Finalize();
+       return 0;
+   }
+
+ NOTES
+   • Ensure MPI has been initialized and the PIC mesh and particle buffers are
+     fully built and populated before calling this function.
+   • The function is collective over MPI_COMM_WORLD: all ranks must call it.
+   • Printing occurs only on rank 0.
+===============================================================================
+*/
+
+void PIC::Debugger::BuildAndPrintCellParticleDistribution() {
+  int rank = 0, nprocs = 1;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+
+  struct CellInfo { long long count; double x[3]; };
+  std::vector<CellInfo> localCells; localCells.reserve(1024);
+
+  long long localMin = std::numeric_limits<long long>::max();
+  long long localMax = std::numeric_limits<long long>::min();
+
+  // -------- Pass 1: iterate all local cells, store (count, center) ----------
+  for (auto *node = PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];
+       node != nullptr; node = node->nextNodeThisThread)
+  {
+    if (node->block == nullptr) continue;
+
+    const double dx = (node->xmax[0] - node->xmin[0]) / _BLOCK_CELLS_X_;
+#if _MESH_DIMENSION_ >= 2
+    const double dy = (node->xmax[1] - node->xmin[1]) / _BLOCK_CELLS_Y_;
+#else
+    const double dy = 0.0;
+#endif
+#if _MESH_DIMENSION_ == 3
+    const double dz = (node->xmax[2] - node->xmin[2]) / _BLOCK_CELLS_Z_;
+#else
+    const double dz = 0.0;
+#endif
+
+    for (int k = 0; k < (_MESH_DIMENSION_==3 ? _BLOCK_CELLS_Z_ : 1); ++k)
+    for (int j = 0; j < (_MESH_DIMENSION_>=2 ? _BLOCK_CELLS_Y_ : 1); ++j)
+    for (int i = 0; i < _BLOCK_CELLS_X_; ++i) {
+      const int idx = i + _BLOCK_CELLS_X_ * (j + _BLOCK_CELLS_Y_ * k);
+
+      long long total = 0;
+      for (long int p = node->block->FirstCellParticleTable[idx];
+           p != -1; p = PIC::ParticleBuffer::GetNext(p)) ++total;
+
+      CellInfo ci;
+      ci.count = total;
+      ci.x[0] = node->xmin[0] + (i + 0.5) * dx;
+#if _MESH_DIMENSION_ >= 2
+      ci.x[1] = node->xmin[1] + (j + 0.5) * dy;
+#else
+      ci.x[1] = 0.0;
+#endif
+#if _MESH_DIMENSION_ == 3
+      ci.x[2] = node->xmin[2] + (k + 0.5) * dz;
+#else
+      ci.x[2] = 0.0;
+#endif
+
+      localCells.push_back(ci);
+      localMin = std::min(localMin, total);
+      localMax = std::max(localMax, total);
+    }
+  }
+  if (localCells.empty()) { localMin = 0; localMax = 0; }
+
+  long long globalMin = 0, globalMax = 0;
+  MPI_Allreduce(&localMin, &globalMin, 1, MPI_LONG_LONG, MPI_MIN, MPI_COMM_WORLD);
+  MPI_Allreduce(&localMax, &globalMax, 1, MPI_LONG_LONG, MPI_MAX, MPI_COMM_WORLD);
+
+  // -------- 10-bin histogram over the inclusive integer global range --------
+  const int NBINS = 10;
+  std::vector<long long> localBins(NBINS, 0), globalBins(NBINS, 0);
+
+  // Inclusive integer range width
+  const long long range1 = (globalMax >= globalMin) ? (globalMax - globalMin + 1) : 1;
+
+  // Bin assignment: exact integer mapping (aligned with labels below).
+  // Maps v=globalMin -> bin 0, v=globalMax -> bin NBINS-1.
+  auto bin_index = [&](long long v)->int {
+    if (globalMax == globalMin) return NBINS - 1;
+    long long num = (v - globalMin + 1) * NBINS - 1; // make top inclusive
+    int b = (int)(num / range1);
+    if (b < 0) b = 0;
+    if (b >= NBINS) b = NBINS - 1;
+    return b;
+  };
+
+  for (const auto& ci : localCells) localBins[bin_index(ci.count)]++;
+  MPI_Reduce(localBins.data(), globalBins.data(), NBINS,
+             MPI_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+
+  // -------- Build local Top-10 max/min lists --------------------------------
+  auto cmp_max = [](const CellInfo& a, const CellInfo& b){ return a.count > b.count; };
+  auto cmp_min = [](const CellInfo& a, const CellInfo& b){ return a.count < b.count; };
+
+  std::vector<CellInfo> localTopMax = localCells;
+  std::vector<CellInfo> localTopMin = localCells;
+
+  if (!localTopMax.empty()) {
+    std::partial_sort(localTopMax.begin(),
+                      localTopMax.begin() + std::min<size_t>(10, localTopMax.size()),
+                      localTopMax.end(), cmp_max);
+    localTopMax.resize(std::min<size_t>(10, localTopMax.size()));
+  }
+  if (!localTopMin.empty()) {
+    std::partial_sort(localTopMin.begin(),
+                      localTopMin.begin() + std::min<size_t>(10, localTopMin.size()),
+                      localTopMin.end(), cmp_min);
+    localTopMin.resize(std::min<size_t>(10, localTopMin.size()));
+  }
+
+  // -------- Gather Top-10 candidates to rank 0 ------------------------------
+  int sendCountMax = (int)localTopMax.size(), sendCountMin = (int)localTopMin.size();
+  std::vector<int> recvCountsMax(nprocs), recvCountsMin(nprocs);
+
+  MPI_Gather(&sendCountMax, 1, MPI_INT, recvCountsMax.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+  MPI_Gather(&sendCountMin, 1, MPI_INT, recvCountsMin.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+  std::vector<int> displsMax, displsMin;
+  int totalRecvMax = 0, totalRecvMin = 0;
+  if (rank == 0) {
+    displsMax.resize(nprocs); displsMin.resize(nprocs);
+    for (int r = 0; r < nprocs; ++r) {
+      displsMax[r] = totalRecvMax; totalRecvMax += recvCountsMax[r];
+      displsMin[r] = totalRecvMin; totalRecvMin += recvCountsMin[r];
+    }
+  }
+
+  MPI_Datatype MPI_CellInfo;
+  {
+    int blocklen[2] = {1, 3};
+    MPI_Aint disp[2];
+    CellInfo tmp; MPI_Aint base;
+    MPI_Get_address(&tmp, &base);
+    MPI_Get_address(&tmp.count, &disp[0]);
+    MPI_Get_address(&tmp.x[0], &disp[1]);
+    disp[0] -= base; disp[1] -= base;
+    MPI_Datatype types[2] = {MPI_LONG_LONG, MPI_DOUBLE};
+    MPI_Type_create_struct(2, blocklen, disp, types, &MPI_CellInfo);
+    MPI_Type_commit(&MPI_CellInfo);
+  }
+
+  std::vector<CellInfo> globalCandidatesMax, globalCandidatesMin;
+  if (rank == 0) {
+    globalCandidatesMax.resize(totalRecvMax);
+    globalCandidatesMin.resize(totalRecvMin);
+  }
+
+  MPI_Gatherv(localTopMax.data(), sendCountMax, MPI_CellInfo,
+              rank==0 ? globalCandidatesMax.data() : nullptr,
+              rank==0 ? recvCountsMax.data() : nullptr,
+              rank==0 ? displsMax.data() : nullptr,
+              MPI_CellInfo, 0, MPI_COMM_WORLD);
+
+  MPI_Gatherv(localTopMin.data(), sendCountMin, MPI_CellInfo,
+              rank==0 ? globalCandidatesMin.data() : nullptr,
+              rank==0 ? recvCountsMin.data() : nullptr,
+              rank==0 ? displsMin.data() : nullptr,
+              MPI_CellInfo, 0, MPI_COMM_WORLD);
+
+  MPI_Type_free(&MPI_CellInfo);
+
+  // -------- Detailed per-species for GLOBAL MAX and GLOBAL MIN --------------
+  const int nSpec = PIC::nTotalSpecies;
+
+  auto collect_detail = [&](long long targetCount,
+                            long long &localCount, double localX[3],
+                            std::vector<int> &localPerSpec) {
+    localCount = -1;
+    localX[0]=localX[1]=localX[2]=0.0;
+    localPerSpec.assign(nSpec,0);
+    if (targetCount < 0) return;
+
+    // Find first local cell matching the target count
+    int tIdx = -1;
+    for (size_t t = 0; t < localCells.size(); ++t) {
+      if (localCells[t].count == targetCount) { tIdx = (int)t; break; }
+    }
+    if (tIdx < 0) return;
+
+    // Save location & count
+    localCount = localCells[tIdx].count;
+    localX[0] = localCells[tIdx].x[0];
+    localX[1] = localCells[tIdx].x[1];
+    localX[2] = localCells[tIdx].x[2];
+
+    // Re-find the matching cell and compute per-species counts
+    bool done = false;
+    for (auto *node = PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];
+         node != nullptr && !done; node = node->nextNodeThisThread)
+    {
+      if (node->block == nullptr) continue;
+
+      const double dx = (node->xmax[0] - node->xmin[0]) / _BLOCK_CELLS_X_;
+#if _MESH_DIMENSION_ >= 2
+      const double dy = (node->xmax[1] - node->xmin[1]) / _BLOCK_CELLS_Y_;
+#else
+      const double dy = 0.0;
+#endif
+#if _MESH_DIMENSION_ == 3
+      const double dz = (node->xmax[2] - node->xmin[2]) / _BLOCK_CELLS_Z_;
+#else
+      const double dz = 0.0;
+#endif
+
+      for (int k = 0; k < (_MESH_DIMENSION_==3 ? _BLOCK_CELLS_Z_ : 1) && !done; ++k)
+      for (int j = 0; j < (_MESH_DIMENSION_>=2 ? _BLOCK_CELLS_Y_ : 1) && !done; ++j)
+      for (int i = 0; i < _BLOCK_CELLS_X_ && !done; ++i) {
+        const double cx = node->xmin[0] + (i + 0.5) * dx;
+#if _MESH_DIMENSION_ >= 2
+        const double cy = node->xmin[1] + (j + 0.5) * dy;
+#else
+        const double cy = 0.0;
+#endif
+#if _MESH_DIMENSION_ == 3
+        const double cz = node->xmin[2] + (k + 0.5) * dz;
+#else
+        const double cz = 0.0;
+#endif
+        if (cx == localX[0]
+#if _MESH_DIMENSION_ >= 2
+            && cy == localX[1]
+#endif
+#if _MESH_DIMENSION_ == 3
+            && cz == localX[2]
+#endif
+            )
+        {
+          const int idx = i + _BLOCK_CELLS_X_ * (j + _BLOCK_CELLS_Y_ * k);
+          std::fill(localPerSpec.begin(), localPerSpec.end(), 0);
+          for (long int p = node->block->FirstCellParticleTable[idx];
+               p != -1; p = PIC::ParticleBuffer::GetNext(p)) {
+            int s = PIC::ParticleBuffer::GetI(p);
+            if (0 <= s && s < nSpec) ++localPerSpec[s];
+          }
+          done = true;
+        }
+      }
+    }
+  };
+
+  // Prepare local details for max and min
+  long long localMaxCount=-1, localMinCount=-1;
+  double localMaxX[3]={0,0,0}, localMinX[3]={0,0,0};
+  std::vector<int> localMaxPerSpec, localMinPerSpec;
+
+  collect_detail(globalMax, localMaxCount, localMaxX, localMaxPerSpec);
+  collect_detail(globalMin, localMinCount, localMinX, localMinPerSpec);
+
+  // Gather one candidate per rank for MAX and MIN
+  std::vector<long long> allMaxCounts, allMinCounts;
+  std::vector<double>    allMaxX,      allMinX;          // 3*nprocs each
+  std::vector<int>       allMaxPerSpec, allMinPerSpec;   // nprocs*nSpec each
+
+  if (rank == 0) {
+    allMaxCounts.resize(nprocs, -1);
+    allMinCounts.resize(nprocs, -1);
+    allMaxX.resize(3*nprocs, 0.0);
+    allMinX.resize(3*nprocs, 0.0);
+    allMaxPerSpec.resize(nprocs * nSpec, 0);
+    allMinPerSpec.resize(nprocs * nSpec, 0);
+  }
+
+  MPI_Gather(&localMaxCount, 1, MPI_LONG_LONG,
+             rank==0 ? allMaxCounts.data() : nullptr, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
+  MPI_Gather(localMaxX, 3, MPI_DOUBLE,
+             rank==0 ? allMaxX.data() : nullptr, 3, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  MPI_Gather(localMaxPerSpec.data(), nSpec, MPI_INT,
+             rank==0 ? allMaxPerSpec.data() : nullptr, nSpec, MPI_INT, 0, MPI_COMM_WORLD);
+
+  MPI_Gather(&localMinCount, 1, MPI_LONG_LONG,
+             rank==0 ? allMinCounts.data() : nullptr, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
+  MPI_Gather(localMinX, 3, MPI_DOUBLE,
+             rank==0 ? allMinX.data() : nullptr, 3, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  MPI_Gather(localMinPerSpec.data(), nSpec, MPI_INT,
+             rank==0 ? allMinPerSpec.data() : nullptr, nSpec, MPI_INT, 0, MPI_COMM_WORLD);
+
+  // -------- Rank 0: finalize and print -------------------------------------
+  if (rank == 0) {
+    // finalize top lists
+    std::sort(globalCandidatesMax.begin(), globalCandidatesMax.end(), cmp_max);
+    if (globalCandidatesMax.size() > 10) globalCandidatesMax.resize(10);
+    std::sort(globalCandidatesMin.begin(), globalCandidatesMin.end(), cmp_min);
+    if (globalCandidatesMin.size() > 10) globalCandidatesMin.resize(10);
+
+    std::printf("$PREFIX: === Cell Particle Number Distribution (Global) ===\n");
+    std::printf("$PREFIX: Global min cell count: %lld\n", globalMin);
+    std::printf("$PREFIX: Global max cell count: %lld\n", globalMax);
+
+    // Bin labels that EXACTLY match bin_index mapping (integer math)
+    auto bin_low  = [&](int b)->long long {
+      return globalMin + ( (long long)b * range1 ) / NBINS;
+    };
+    auto bin_high = [&](int b)->long long {
+      long long h = globalMin + ( (long long)(b + 1) * range1 ) / NBINS - 1; // inclusive
+      long long l = bin_low(b);
+      if (h < l) h = l; // clamp in degenerate cases (range << NBINS)
+      return h;
+    };
+
+    // Build labeled bins, then COMBINE adjacent bins with identical [low..high]
+    struct LabeledBin { int bStart, bEnd; long long low, high, count; };
+    std::vector<LabeledBin> combined;
+
+    for (int b = 0; b < NBINS; ++b) {
+      long long low  = bin_low(b);
+      long long high = bin_high(b);
+
+      if (!combined.empty() &&
+          combined.back().low  == low &&
+          combined.back().high == high)
+      {
+        combined.back().bEnd   = b;
+        combined.back().count += globalBins[b];
+      } else {
+        combined.push_back({b, b, low, high, globalBins[b]});
+      }
+    }
+
+    std::printf("$PREFIX: Histogram (10 bins over [%lld, %lld]) with merged labels:\n",
+                globalMin, globalMax);
+    for (const auto& g : combined) {
+      if (g.bStart == g.bEnd) {
+        std::printf("$PREFIX:   Bin %2d [%lld .. %lld]: %lld cells\n",
+                    g.bStart, g.low, g.high, g.count);
+      } else {
+        std::printf("$PREFIX:   Bins %2d-%2d [%lld .. %lld]: %lld cells\n",
+                    g.bStart, g.bEnd, g.low, g.high, g.count);
+      }
+    }
+
+    std::printf("$PREFIX: \nTop 10 cells by particle count (max):\n");
+    for (size_t i = 0; i < globalCandidatesMax.size(); ++i) {
+      const auto& c = globalCandidatesMax[i];
+      std::printf("$PREFIX:   #%zu: count=%lld, center=(%.6e, %.6e, %.6e)\n",
+                  i+1, c.count, c.x[0], c.x[1], c.x[2]);
+    }
+
+    std::printf("$PREFIX: \nTop 10 cells by particle count (min):\n");
+    for (size_t i = 0; i < globalCandidatesMin.size(); ++i) {
+      const auto& c = globalCandidatesMin[i];
+      std::printf("$PREFIX:   #%zu: count=%lld, center=(%.6e, %.6e, %.6e)\n",
+                  i+1, c.count, c.x[0], c.x[1], c.x[2]);
+    }
+
+    // pick contributors for global MAX and MIN
+    int pickMax = -1, pickMin = -1;
+    for (int r = 0; r < nprocs; ++r) if (allMaxCounts[r] == globalMax) { pickMax = r; break; }
+    for (int r = 0; r < nprocs; ++r) if (allMinCounts[r] == globalMin) { pickMin = r; break; }
+
+    if (pickMax >= 0) {
+      const double* x = &allMaxX[3*pickMax];
+      const int*    ps = &allMaxPerSpec[pickMax * PIC::nTotalSpecies];
+      std::printf("$PREFIX: \nGlobal MAX cell details:\n");
+      std::printf("$PREFIX:   center = (%.6e, %.6e, %.6e)\n", x[0], x[1], x[2]);
+      std::printf("$PREFIX:   total  = %lld\n", globalMax);
+      std::printf("$PREFIX:   per-species counts:\n");
+      for (int s = 0; s < PIC::nTotalSpecies; ++s)
+        std::printf("$PREFIX:     species %d: %d\n", s, ps[s]);
+    } else {
+      std::printf("$PREFIX: \nGlobal MAX cell details: not found on any rank.\n");
+    }
+
+    if (pickMin >= 0) {
+      const double* x = &allMinX[3*pickMin];
+      const int*    ps = &allMinPerSpec[pickMin * PIC::nTotalSpecies];
+      std::printf("$PREFIX: \nGlobal MIN cell details:\n");
+      std::printf("$PREFIX:   center = (%.6e, %.6e, %.6e)\n", x[0], x[1], x[2]);
+      std::printf("$PREFIX:   total  = %lld\n", globalMin);
+      std::printf("$PREFIX:   per-species counts:\n");
+      for (int s = 0; s < PIC::nTotalSpecies; ++s)
+        std::printf("$PREFIX:     species %d: %d\n", s, ps[s]);
+    } else {
+      std::printf("$PREFIX: \nGlobal MIN cell details: not found on any rank.\n");
+    }
+
+    std::printf("$PREFIX: =================================================\n\n");
+  }
+}
 
 
 

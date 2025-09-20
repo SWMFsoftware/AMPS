@@ -2032,6 +2032,21 @@ void DeleteAttachedParticles();
     //Maybe: MPI process will not wait for the semaphore but will check it in the buisy waiting loop, and if the process waits for too long (5 sec?) 
     //for the semaphore to be posted, the MPI processes will call a trap function, where it can be interseptred in the debugger     
 
+    // int GetCellParticleNumber(double *x, vector<int>* nparticle_out=NULL)
+    // - Return -1 if x is outside the domain
+    // - Otherwise return total particle count in the cell
+    // - If nparticle_out != NULL: resize to number of species and fill per-species counts
+    // - If nparticle_out == NULL: print total and per-species counts to stdout
+    int GetCellParticleNumber(double *x, std::vector<int>* nparticle_out=NULL); 
+
+    //Walk all cells on all MPI ranks, compute total particles per cell, and:
+    // • Build a 10-bin histogram over [global_min .. global_max].
+    // • Print per-bin cell counts.
+    // • Print Top-10 max and Top-10 min cells (total + center).
+    // • Print detailed breakdown for:
+    //     - GLOBAL MAX cell: center, total, per-species counts.
+    //     - GLOBAL MIN cell: center, total, per-species counts.
+    void BuildAndPrintCellParticleDistribution();
     
     namespace ConcurrentDebug {
       extern char Key[200];
