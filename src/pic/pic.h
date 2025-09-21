@@ -144,6 +144,9 @@ inline void timing_start(std::string name) {}
 inline void timing_stop(std::string name) {} 
 #endif
 
+#include "mesh_boundary_blocks.h"
+#include "mesh_boundary_cells.h"
+
 namespace PIC {
 
   //Global constants of the PIC solver

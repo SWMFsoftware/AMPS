@@ -72,7 +72,9 @@ PICOBJ = pic.o \
 	pic_electron_impact_ionization.o \
 	pic_particle_spliting.o \
       	field_line_edge_parallel.o \
-	field_line_vertex_parallel.o 
+	field_line_vertex_parallel.o \
+	mesh_boundary_blocks.o\
+	mesh_boundary_cells.o	
 	
 ifneq ($(BATL),nobatl)	
 PICOBJ+=pic_batsrus.o \
