@@ -426,8 +426,11 @@ void SetParticleForCell_fixed(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int i
 	  BulkVel[2]=vel_bg[2];
 	  
             
-            for (int idim=0;idim<3;idim++)
+            for (int idim=0;idim<3;idim++) { 
               ParVel_D[idim] = BulkVel[idim]+uth[idim];
+
+	    //  ParVel_D[idim] = 0.0;
+	    }
           
 
           PIC::ParticleBuffer::InitiateParticle(xPar, ParVel_D,&weightCorrection,&iSp,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
@@ -508,6 +511,93 @@ void SetParticleForCell_float(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int i
 
   }
 
+}
+
+// Regenerate particles in cells next to the domain boundary using
+// PIC::Mesh::InitBoundaryCellVector (no face scanning).
+// Returns: (#created - #deleted), same convention as setParticle_BC().
+long int setParticle_BC_new() {
+  using PIC::Mesh::cDataBlockAMR;
+
+  PIC::Debugger::BuildAndPrintCellParticleDistribution();
+
+  std::vector<PIC::Mesh::cBoundaryCellInfo> boundaryCells;
+  if (!PIC::Mesh::InitBoundaryCellVector(boundaryCells)) {
+    std::printf("$PREFIX: SetParticle_BC_new: ERROR: InitBoundaryCellVector failed\n");
+    return 0;
+  }
+
+  long nParticleDeleted = 0;
+  long nParticleCreated = 0;
+
+  // Walk all local boundary cells
+  for (const auto& bc : boundaryCells) {
+    auto* node = bc.node;
+    if (!node || !node->block) continue;
+
+    // Per-node geometry
+    const double* xminBlock = node->xmin;
+    const double* xmaxBlock = node->xmax;
+
+    double dx[3] = {0,0,0};
+    int nCells[3] = {_BLOCK_CELLS_X_, _BLOCK_CELLS_Y_,
+#if _MESH_DIMENSION_ == 3
+                     _BLOCK_CELLS_Z_
+#else
+                     1
+#endif
+    };
+
+    for (int d=0; d<3; ++d) {
+#if _MESH_DIMENSION_ == 1
+      if (d>0) { dx[d]=1.0; continue; }
+#endif
+#if _MESH_DIMENSION_ == 2
+      if (d==2) { dx[d]=1.0; continue; }
+#endif
+      dx[d] = (xmaxBlock[d]-xminBlock[d]) / nCells[d];
+    }
+
+    // Cell volume
+    double cellVol = 1.0;
+    for (int d=0; d<3; ++d) cellVol *= dx[d];
+
+    // Species weights local to the block
+    double ParticleWeight[PIC::nTotalSpecies];
+    for (int sp=0; sp<PIC::nTotalSpecies; ++sp)
+      ParticleWeight[sp] = node->block->GetLocalParticleWeight(sp);
+
+    // 1) Delete all particles in this cell (same deletion pattern as setParticle_BC)
+    //    (first-cell table + while-loop delete) :contentReference[oaicite:0]{index=0}
+    if (node->block->FirstCellParticleTable != nullptr) {
+      const int i = bc.i, j = bc.j, k = bc.k;
+      long* ptr = node->block->FirstCellParticleTable
+                + (i + _BLOCK_CELLS_X_ * (j + _BLOCK_CELLS_Y_ * k));
+      while (*ptr != -1) {
+        PIC::ParticleBuffer::DeleteParticle(*ptr, *ptr);
+        ++nParticleDeleted;
+      }
+    }
+
+    // 2) Regenerate according to your existing injection routine
+    //    (same call site style as setParticle_BC uses) :contentReference[oaicite:1]{index=1}
+    SetParticleForCell_fixed(
+      node, /*iBlock*/ 0,
+      bc.i, bc.j, bc.k,
+      dx,
+      const_cast<double*>(xminBlock),
+      ParticleWeight,
+      cellVol,
+      nParticleCreated
+    );
+  }
+
+  PIC::Debugger::BuildAndPrintCellParticleDistribution();
+
+  std::printf("$PREFIX: SetParticle_BC_new: boundary cells processed=%zu, deleted=%ld, created=%ld\n",
+              boundaryCells.size(), nParticleDeleted, nParticleCreated);
+
+  return nParticleCreated - nParticleDeleted;
 }
 
 
@@ -1402,7 +1492,7 @@ void SetIC() {
       for (int idim=0;idim<3;idim++) dx[idim]=(xmaxBlock[0]-xminBlock[0])/nBlocks[idim];
       
      
-      for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
+      for (k=0;k<_BLOCK_CELLS_Z_+1;k++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (i=0;i<_BLOCK_CELLS_X_+1;i++) {
 	    
             int ind[3]={i,j,k};
             
@@ -1420,8 +1510,8 @@ void SetIC() {
               ((double*)(offset+CurrentEOffset))[EzOffsetIndex]=Ez;
 	  
               ((double*)(offset+OffsetE_HalfTimeStep))[ExOffsetIndex]=Ex;
-              ((double*)(offset+OffsetE_HalfTimeStep))[ExOffsetIndex]=Ey;
-              ((double*)(offset+OffsetE_HalfTimeStep))[ExOffsetIndex]=Ez;
+              ((double*)(offset+OffsetE_HalfTimeStep))[EyOffsetIndex]=Ey;
+              ((double*)(offset+OffsetE_HalfTimeStep))[EzOffsetIndex]=Ez;
           
 
 	    // ((double*)(offset+CurrentCornerNodeOffset))[EzOffsetIndex]=i+j*_BLOCK_CELLS_X_+k*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_+nLocalNode*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
@@ -1693,6 +1783,12 @@ int main(int argc,char **argv) {
 
   PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC=
     setParticle_BC;//called every pic_time_step
+
+
+  PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC=
+    setParticle_BC_new;//called every pic_time_step
+
+
   PIC::FieldSolver::Electromagnetic::ECSIM::setE_half_BC=
     setFixedFloatE_BC_half;//called in ECSIM::TimeStep()
   PIC::FieldSolver::Electromagnetic::ECSIM::setE_curr_BC=
@@ -1736,6 +1832,7 @@ int main(int argc,char **argv) {
       printf("After cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
 
       PrepopulateDomain();
+      PIC::Debugger::BuildAndPrintCellParticleDistribution();
 
       LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
       MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
@@ -1766,6 +1863,8 @@ int main(int argc,char **argv) {
 
       //PIC::Mesh::mesh->outputMeshDataTECPLOT("2.dat",0);
 
+
+      PIC::Debugger::BuildAndPrintCellParticleDistribution();
 
       switch (_PIC_BC__PERIODIC_MODE_) {
       case _PIC_BC__PERIODIC_MODE_OFF_:
