@@ -674,7 +674,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
   Stencil.flush();
 
   //determine the aray of the cell's pointer that will be used in the interpolation stencil
-  double w[3],InterpolationWeight,totalInterpolationWeight=0.0;
+  double w[3],InterpolationWeight;
   int i,j,k,i0,j0,k0,nd;
 
   i0=(iLoc<0.5) ? -1 : (int)(iLoc-0.50);
@@ -723,7 +723,6 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
       }
 
       Stencil.AddCell(InterpolationWeight,cell,nd);
-      totalInterpolationWeight+=InterpolationWeight;
     }
   }
 
@@ -734,10 +733,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
   }
   else if (StencilTable->Length!=8) {
     //the interpolated stencil containes less that 8 elements -> the interpolation weights have to be renormalized
-    #pragma ivdep
-    for (int i=0;i<Stencil.Length;i++) {
-      Stencil.Weight[i]/=totalInterpolationWeight;
-    }
+    Stencil.Normalize();
   }
 }
 

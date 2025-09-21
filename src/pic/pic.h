@@ -7105,6 +7105,22 @@ void DeleteAttachedParticles();
       void AddCell(double w,T* c,int id) {
         if (Length==nMaxStencilLength) exit(__LINE__,__FILE__,"Error: the stencil length exeeds 'nMaxStencilLength'. Need to increase 'nMaxStencilLength'");
 	if (w<0.0) exit(__LINE__,__FILE__,"Error: found a negative interpolation weight");
+	if (c==NULL) exit(__LINE__,__FILE__,"Error: out of range");
+
+
+	// If the cell center is outside the global box, do nothing.
+	if (_PIC_BC__PERIODIC_MODE_!=_PIC_BC__PERIODIC_MODE_ON_) {
+          for (int d = 0; d < _MESH_DIMENSION_; ++d) {
+            const double xmin = PIC::Mesh::mesh->xGlobalMin[d];
+            const double xmax = PIC::Mesh::mesh->xGlobalMax[d];
+            const double x    = c->GetX()[d];
+
+            if (x < xmin || x > xmax) {
+              return; // outside domain → exit the function without adding
+            }
+          }
+	}
+		 
 
         Weight[Length]=w;
         cell[Length]=c;
