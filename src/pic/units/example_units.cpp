@@ -164,6 +164,21 @@ int main(){
   if(!almost_eq(B2_SI_rt[2], B2_SI[2], 1e-14)) std::cerr << "WARN: Case2 Bz_SI round-trip mismatch\n";
   if(!almost_eq(dt2_SI_rt,   dt2_SI,   1e-14)) std::cerr << "WARN: Case2 dt_SI round-trip mismatch\n";
 
+  // ===============================
+  // Number density example (using header helpers)
+  // ===============================
+  const double n_SI_m3 = 45.0e6; // [1/m^3]
+  const double N0_cm3 = 1.0e3; // reference number density scale [1/cm^3]
+    
+  const double n_no = si2no_n(n_SI_m3, N0_cm3); // expected 0.045 = 45e-3
+  const double n_SI_rt = no2si_n(n_no, N0_cm3); // back to [1/m^3]
+    
+  std::cout << "Number density conversion (using header helpers)\n";
+  std::cout << " n_SI = " << n_SI_m3 << " [1/m^3]    "    << " n_no = " << n_no << " (target 4.5e-2)\n";
+  std::cout << " n_SI↩ = " << n_SI_rt << " [1/m^3]\n";
+
+  if(!almost_eq(n_no, 4.5e-2, 1e-14)) std::cerr << "WARN: n_no mismatch\n";
+  if(!almost_eq(n_SI_rt, n_SI_m3, 1e-14)) std::cerr << "WARN: n_SI round-trip mismatch\n";
 
   return 0;
 }

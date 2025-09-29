@@ -259,6 +259,13 @@ inline double no2si_E  (double E_no,   const Factors& f){ return E_no   * f.No2S
 inline double no2si_L  (double L_no,   const Factors& f){ return L_no   * f.No2SiL; }
 inline double no2si_t  (double t_no,   const Factors& f){ return t_no   * f.No2SiT; }
 
+// --- Number density helpers -------------------------------------------------
+// Number density uses an explicit reference scale N0 in [1/cm^3].
+// Convert SI to cgs first: n_cm3 = n_SI_m3 / 1e6. Then normalize by N0.
+// This keeps n independent from the mass-density normalization (ρ).
+inline double si2no_n(double n_SI_m3, double N0_cm3){ return (n_SI_m3 * 1.0e-6) / N0_cm3; }
+inline double no2si_n(double n_no,     double N0_cm3){ return  n_no * N0_cm3 * 1.0e6; }
+
 // --- Vector helpers ----------------------------------------------------------
 using Vec3 = std::array<double,3>;
 
