@@ -260,11 +260,72 @@ inline double no2si_L  (double L_no,   const Factors& f){ return L_no   * f.No2S
 inline double no2si_t  (double t_no,   const Factors& f){ return t_no   * f.No2SiT; }
 
 // --- Number density helpers -------------------------------------------------
-// Number density uses an explicit reference scale N0 in [1/cm^3].
-// Convert SI to cgs first: n_cm3 = n_SI_m3 / 1e6. Then normalize by N0.
-// This keeps n independent from the mass-density normalization (ρ).
-inline double si2no_n(double n_SI_m3, double N0_cm3){ return (n_SI_m3 * 1.0e-6) / N0_cm3; }
-inline double no2si_n(double n_no,     double N0_cm3){ return  n_no * N0_cm3 * 1.0e6; }
+// These helpers convert **number density** between SI and normalized units.
+// They intentionally keep number-density normalization **independent** from the
+// mass‑density (ρ) normalization so that you can pick a convenient reference
+// number density N0 (in cm^-3) or derive it from `Factors` + species mass.
+//
+// DEFINITIONS & UNITS
+//   • n_SI_m3   : number density in SI [1/m^3]
+//   • n_no      : dimensionless (normalized) number density
+//   • N0_cm3    : chosen reference scale [1/cm^3] (not a physical constant)
+//   • 1 m^3 = 10^6 cm^3  ⇒  n_cm3 = n_SI_m3 / 1e6
+//   • Normalization then uses  n_no = n_cm3 / N0_cm3
+//
+// RATIONALE
+//   Picking N0_cm3 sets the magnitude of n_no. For example, with N0_cm3 = 1000,
+//   a typical solar‑wind value 45 cm^-3 maps to n_no = 45/1000 = 0.045 (i.e.,
+//   45e6 m^-3 → 45e-3 normalized).
+//
+// SI → normalized (explicit N0 in cm^-3)
+// Example: si2no_n(45e6, 1000) == 0.045
+inline double si2no_n(double n_SI_m3, double N0_cm3){
+    // Convert SI [1/m^3] → CGS [1/cm^3], then divide by reference N0
+    return (n_SI_m3 * 1.0e-6) / N0_cm3;
+}
+
+// normalized → SI (explicit N0 in cm^-3)
+// Example: no2si_n(0.045, 1000) == 45e6
+inline double no2si_n(double n_no, double N0_cm3){
+    // Multiply by reference N0 [1/cm^3], then convert back to [1/m^3]
+    return n_no * N0_cm3 * 1.0e6;
+}
+
+// OPTIONAL OVERLOADS (derive N0 from Factors and a species mass)
+// ------------------------------------------------------------------
+// PURPOSE
+//   Tie number-density normalization to the **mass-density normalization** so
+//   you don't have to hand-pick N0. We derive N0 from the CGS density normalizer
+//   ρ0 (in g/cm^3) and the particle mass m_species (in g):
+//       N0_cm3 = ρ0 / m_species_g   [1/cm^3]
+//   Hence the normalized number density becomes:
+//       n_no = (n_SI / 1e6) / N0_cm3 = (n_SI / 1e6) * (m_species_g / ρ0).
+//
+// WHAT IS N0?
+//   N0 is a normalization **choice** (not a constant of nature), playing the
+//   same role for number density that (L0, U0, M0) do for length/velocity/mass
+//   density. For example, if n_SI = 45e6 m^-3 = 45 cm^-3 and you choose N0=1000
+//   cm^-3, then n_no = 45/1000 = 0.045. Using the overloads below instead,
+//   N0 is computed as ρ0/m_species_g for consistency with your current scales.
+//
+// INPUTS
+//   • n_SI_m3     : number density in SI [1/m^3]
+//   • F           : Factors from build(...) (exposes ρ0 in g/cm^3)
+//   • m_species_kg: particle mass [kg] (e.g., proton 1.6726e-27 kg)
+//
+// SI → normalized using derived N0
+inline double si2no_n(double n_SI_m3, const Factors& F, double m_species_kg){
+    const double m_g     = m_species_kg * 1.0e3;   // kg → g
+    const double N0_cm3  = F.rho0 / m_g;           // [1/cm^3]
+    return (n_SI_m3 * 1.0e-6) / N0_cm3;
+}
+
+// normalized → SI using derived N0
+inline double no2si_n(double n_no, const Factors& F, double m_species_kg){
+    const double m_g     = m_species_kg * 1.0e3;   // kg → g
+    const double N0_cm3  = F.rho0 / m_g;           // [1/cm^3]
+    return n_no * N0_cm3 * 1.0e6;                  // [1/m^3]
+}
 
 // --- Vector helpers ----------------------------------------------------------
 using Vec3 = std::array<double,3>;

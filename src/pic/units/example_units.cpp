@@ -180,5 +180,54 @@ int main(){
   if(!almost_eq(n_no, 4.5e-2, 1e-14)) std::cerr << "WARN: n_no mismatch\n";
   if(!almost_eq(n_SI_rt, n_SI_m3, 1e-14)) std::cerr << "WARN: n_SI round-trip mismatch\n";
 
+// --- Number density via derived N0 from Factors + species mass (proton) -----
+{
+    // Build normalization (reuse your F if already built)
+    const double lSI = 1.0e3;                 // [m]
+    const double uSI = 3.0e6;                 // [m/s]
+    const double mSI = 1.0898097712911516e-3; // [kg]
+    auto F = build({lSI, uSI, mSI});
+
+    // Species mass (proton)
+    const double m_p_kg = 1.67262192369e-27;
+
+    // Input SI number density: 45e6 m^-3  (= 45 cm^-3)
+    const double n_SI_m3 = 45.0e6;
+
+    // Convert to normalized using derived N0 = rho0 / m_p (in cm^-3)
+    const double n_no = si2no_n(n_SI_m3, F, m_p_kg);
+
+    // Convert back to SI to verify round-trip
+    const double n_SI_back = no2si_n(n_no, F, m_p_kg);
+
+    std::cout << std::scientific << std::setprecision(6);
+    std::cout << "\n[Derived N0] n_SI = " << n_SI_m3
+              << " [1/m^3]  ->  n_no = " << n_no
+              << "  ->  n_SI_back = " << n_SI_back << " [1/m^3]\n";
+}
+
+// --- Compare explicit N0 (e.g., 1000 cm^-3) vs derived N0 from Factors ------
+{
+    // Reuse F from above or build here
+    const double lSI = 1.0e3;
+    const double uSI = 3.0e6;
+    const double mSI = 1.0898097712911516e-3;
+    auto F = build({lSI, uSI, mSI});
+
+    const double m_p_kg = 1.67262192369e-27;
+    const double n_SI_m3 = 45.0e6; // 45 cm^-3
+
+    // (A) Explicit N0 = 1000 cm^-3 (for target 0.045)
+    const double n_no_explicit = si2no_n(n_SI_m3, /*N0_cm3=*/1000.0);
+
+    // (B) Derived N0 = rho0 / m_p (cm^-3)
+    const double n_no_derived  = si2no_n(n_SI_m3, F, m_p_kg);
+
+    std::cout << std::scientific << std::setprecision(6);
+    std::cout << "\n[Explicit N0=1e3] n_no = " << n_no_explicit << "  (target ~4.5e-2)\n";
+    std::cout << "[Derived  N0     ] n_no = " << n_no_derived  << "\n";
+}
+
+
   return 0;
 }
