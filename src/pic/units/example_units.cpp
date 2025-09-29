@@ -88,7 +88,7 @@ int main(){
   si2no_v3(U1_SI, U1_no, F);
   si2no_B3(B1_SI, B1_no, F);
   const double dt1_no = si2no_t(dt1_SI, F);
-  const double Ey1_no = -(U1_no[0] * B1_no[2]);
+  const double Ey1_no = (U1_no[0] * B1_no[2]);
 
 
   std::cout << "\n\nCase 1 (targets in parentheses)\n";
