@@ -103,6 +103,22 @@ int main(){
   if(!almost_eq(B1_no[2], 0.010377357, 1e-9)) std::cerr << "WARN: Case1 Bz_no mismatch\n";
   if(!almost_eq(Ey1_no, -9.1320740e-05, 1e-9))std::cerr << "WARN: Case1 Ey_no mismatch\n";
 
+  // --- Round-trip SI comparison (Case 1) ---
+  double U1_SI_rt[3], B1_SI_rt[3];
+  no2si_v3(U1_no, U1_SI_rt, F);
+  no2si_B3(B1_no, B1_SI_rt, F);
+  const double dt1_SI_rt = no2si_t(dt1_no, F);
+
+  std::cout << "Case 1: SI round-trip checks (orig vs. reconverted)\n";
+  std::cout << "  Ux_SI: " << U1_SI[0] << " vs " << U1_SI_rt[0] << "\n";
+  std::cout << "  Bz_SI: " << B1_SI[2] << " vs " << B1_SI_rt[2] << "\n";
+  std::cout << "  dt_SI: " << dt1_SI   << " vs " << dt1_SI_rt   << "\n\n";
+
+  // Optional soft checks
+  if(!almost_eq(U1_SI_rt[0], U1_SI[0], 1e-14)) std::cerr << "WARN: Case1 Ux_SI round-trip mismatch\n";
+  if(!almost_eq(B1_SI_rt[2], B1_SI[2], 1e-14)) std::cerr << "WARN: Case1 Bz_SI round-trip mismatch\n";
+  if(!almost_eq(dt1_SI_rt,   dt1_SI,   1e-14)) std::cerr << "WARN: Case1 dt_SI round-trip mismatch\n";
+
 
   // ===============================
   // Case 2 (from user description)
@@ -131,6 +147,23 @@ int main(){
   if(!almost_eq(dt2_no, 600.0, 1e-12)) std::cerr << "WARN: Case2 dt_no mismatch\n";
   if(!almost_eq(B2_no[2], 9.5790988e-03, 1e-10)) std::cerr << "WARN: Case2 Bz_no mismatch\n";
   if(!almost_eq(Ey2_no, 9.5790987e-05, 1e-10)) std::cerr << "WARN: Case2 Ey_no mismatch\n";
+
+  // --- Round-trip SI comparison (Case 2) ---
+  double U2_SI_rt[3], B2_SI_rt[3];
+  no2si_v3(U2_no, U2_SI_rt, F);
+  no2si_B3(B2_no, B2_SI_rt, F);
+  const double dt2_SI_rt = no2si_t(dt2_no, F);
+
+  std::cout << "\nCase 2: SI round-trip checks (orig vs. reconverted)\n";
+  std::cout << "  Ux_SI: " << U2_SI[0] << " vs " << U2_SI_rt[0] << "\n";
+  std::cout << "  Bz_SI: " << B2_SI[2] << " vs " << B2_SI_rt[2] << "\n";
+  std::cout << "  dt_SI: " << dt2_SI   << " vs " << dt2_SI_rt   << "\n";
+
+  // Optional soft checks
+  if(!almost_eq(U2_SI_rt[0], U2_SI[0], 1e-14)) std::cerr << "WARN: Case2 Ux_SI round-trip mismatch\n";
+  if(!almost_eq(B2_SI_rt[2], B2_SI[2], 1e-14)) std::cerr << "WARN: Case2 Bz_SI round-trip mismatch\n";
+  if(!almost_eq(dt2_SI_rt,   dt2_SI,   1e-14)) std::cerr << "WARN: Case2 dt_SI round-trip mismatch\n";
+
 
   return 0;
 }
