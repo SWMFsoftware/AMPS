@@ -1,4 +1,5 @@
-#include "pic.h"   
+#include "pic.h"  
+
 #include <cassert>
 #include <array>
 
@@ -19,6 +20,7 @@ namespace Mesh {
 //
 // Each face also carries its two in-plane axes (t1, t2) for building (iFace,jFace).
 
+
 struct FaceDesc {
   int n;    // normal axis (0,1,2)
   int t1;   // first in-plane axis
@@ -28,23 +30,19 @@ struct FaceDesc {
 
 static inline void build_face_table(std::array<FaceDesc,6>& F, int& nFaces) {
   for (auto& e : F) { e = {-1,-1,-1, Face_None}; }
-
   // X- , X+
   F[0] = {0, (_MESH_DIMENSION_>=2?1:-1), (_MESH_DIMENSION_==3?2:-1), Face_XMin};
   F[1] = {0, (_MESH_DIMENSION_>=2?1:-1), (_MESH_DIMENSION_==3?2:-1), Face_XMax};
-
 #if _MESH_DIMENSION_ >= 2
   // Y- , Y+
   F[2] = {1, 0, (_MESH_DIMENSION_==3?2:-1), Face_YMin};
   F[3] = {1, 0, (_MESH_DIMENSION_==3?2:-1), Face_YMax};
 #endif
-
 #if _MESH_DIMENSION_ == 3
   // Z- , Z+
   F[4] = {2, 0, 1, Face_ZMin};
   F[5] = {2, 0, 1, Face_ZMax};
 #endif
-
   nFaces = 2 * _MESH_DIMENSION_;
 }
 
@@ -70,13 +68,9 @@ static inline void corner_to_face_local(const FaceDesc& fd,
                                         int& iFace, int& jFace)
 {
   if (fd.t1 < 0) { iFace = 0; jFace = 0; return; }  // 1D: no in-plane axes
-
-  const int iAxis = fd.t1;
-  iFace = clamp_to_face_index(idx[iAxis], N[iAxis]);
-
+  const int iAxis = fd.t1; iFace = clamp_to_face_index(idx[iAxis], N[iAxis]);
   if (fd.t2 >= 0) {
-    const int jAxis = fd.t2;
-    jFace = clamp_to_face_index(idx[jAxis], N[jAxis]);
+    const int jAxis = fd.t2; jFace = clamp_to_face_index(idx[jAxis], N[jAxis]);
   } else {
     jFace = 0;
   }
@@ -95,7 +89,6 @@ static inline int GetCornerBoundaryMask(cTreeNodeAMR<cDataBlockAMR>* nd, int i, 
 
   for (int f = 0; f < nFaces; ++f) {
     const auto& fd = FT[f];
-
     const int nAxis = fd.n;
     const int Nn    = N[nAxis];
     const int idxN  = idx[nAxis];
@@ -142,8 +135,8 @@ static inline void GetCornerPosition(cTreeNodeAMR<cDataBlockAMR>* nd, int i, int
 
 //=========================== Public API ======================================
 
-bool InitBoundaryCornerVector(std::vector<cBoundaryCornerInfo>& out) {
-  out.clear();
+bool InitBoundaryCornerVector(std::vector<cBoundaryCornerInfo>* out) {
+  if (out) out->clear();
 
   // Iterate *this thread's* nodes, as requested.
   for (auto* node = PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];
@@ -165,13 +158,24 @@ bool InitBoundaryCornerVector(std::vector<cBoundaryCornerInfo>& out) {
     // 1D: (i in {0,Nx}), j=k=0
     for (int ii = 0; ii < 2; ++ii) {
       const int i = iSet[ii], j = 0, k = 0;
-      const int faceMask = GetCornerBoundaryMask(node, i, j, k);
-      if (faceMask == Face_None) continue;
 
-      cBoundaryCornerInfo rec{};
-      rec.node = node; rec.i = i; rec.j = j; rec.k = k; rec.faceMask = faceMask;
-      GetCornerPosition(node, i, j, k, rec.x);
-      out.push_back(rec);
+      // Corner pointer (exists for all corners)
+      const int LocalCornerNumber = _getCornerNodeLocalNumber(i,j,k);
+      PIC::Mesh::cDataCornerNode* corner = node->block->GetCornerNode(LocalCornerNumber);
+
+      const int faceMask = GetCornerBoundaryMask(node, i, j, k);
+      const bool isBoundary = (faceMask != Face_None);
+      if (corner) corner->SetBoundaryFlag(isBoundary);
+
+      if (out && isBoundary) {
+        cBoundaryCornerInfo rec{};
+        rec.node   = node;
+        rec.i = i; rec.j = j; rec.k = k;
+        rec.faceMask = faceMask;
+        GetCornerPosition(node, i, j, k, rec.x);
+        rec.corner = corner;
+        out->push_back(rec);
+      }
     }
 
 #elif _MESH_DIMENSION_ == 2
@@ -179,13 +183,23 @@ bool InitBoundaryCornerVector(std::vector<cBoundaryCornerInfo>& out) {
     for (int ii = 0; ii < 2; ++ii) {
       for (int jj = 0; jj < 2; ++jj) {
         const int i = iSet[ii], j = jSet[jj], k = 0;
-        const int faceMask = GetCornerBoundaryMask(node, i, j, k);
-        if (faceMask == Face_None) continue;
 
-        cBoundaryCornerInfo rec{};
-        rec.node = node; rec.i = i; rec.j = j; rec.k = k; rec.faceMask = faceMask;
-        GetCornerPosition(node, i, j, k, rec.x);
-        out.push_back(rec);
+        const int LocalCornerNumber = _getCornerNodeLocalNumber(i,j,k);
+        PIC::Mesh::cDataCornerNode* corner = node->block->GetCornerNode(LocalCornerNumber);
+
+        const int faceMask = GetCornerBoundaryMask(node, i, j, k);
+        const bool isBoundary = (faceMask != Face_None);
+        if (corner) corner->SetBoundaryFlag(isBoundary);
+
+        if (out && isBoundary) {
+          cBoundaryCornerInfo rec{};
+          rec.node   = node;
+          rec.i = i; rec.j = j; rec.k = k;
+          rec.faceMask = faceMask;
+          GetCornerPosition(node, i, j, k, rec.x);
+          rec.corner = corner;
+          out->push_back(rec);
+        }
       }
     }
 
@@ -195,13 +209,23 @@ bool InitBoundaryCornerVector(std::vector<cBoundaryCornerInfo>& out) {
       for (int jj = 0; jj < 2; ++jj) {
         for (int kk = 0; kk < 2; ++kk) {
           const int i = iSet[ii], j = jSet[jj], k = kSet[kk];
-          const int faceMask = GetCornerBoundaryMask(node, i, j, k);
-          if (faceMask == Face_None) continue;
 
-          cBoundaryCornerInfo rec{};
-          rec.node = node; rec.i = i; rec.j = j; rec.k = k; rec.faceMask = faceMask;
-          GetCornerPosition(node, i, j, k, rec.x);
-          out.push_back(rec);
+          const int LocalCornerNumber = _getCornerNodeLocalNumber(i,j,k);
+          PIC::Mesh::cDataCornerNode* corner = node->block->GetCornerNode(LocalCornerNumber);
+
+          const int faceMask = GetCornerBoundaryMask(node, i, j, k);
+          const bool isBoundary = (faceMask != Face_None);
+          if (corner) corner->SetBoundaryFlag(isBoundary);
+
+          if (out && isBoundary) {
+            cBoundaryCornerInfo rec{};
+            rec.node   = node;
+            rec.i = i; rec.j = j; rec.k = k;
+            rec.faceMask = faceMask;
+            GetCornerPosition(node, i, j, k, rec.x);
+            rec.corner = corner;
+            out->push_back(rec);
+          }
         }
       }
     }
@@ -228,8 +252,13 @@ std::string FaceMaskToString(int mask) {
   return s;
 }
 
+// ----- Helpers (free functions) -----
 bool IsOnFace(int faceMask, BoundaryFaceMask face) {
   return (faceMask & static_cast<int>(face)) != 0;
+}
+
+bool IsOnFace(int faceMask) {
+  return faceMask != Face_None; // any boundary
 }
 
 void DecodeBoundaryFaces(int faceMask, int& nBoundaryFaces, int BoundaryFaceList[3]) {
