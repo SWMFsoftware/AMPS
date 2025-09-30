@@ -74,7 +74,8 @@ PICOBJ = pic.o \
       	field_line_edge_parallel.o \
 	field_line_vertex_parallel.o \
 	mesh_boundary_blocks.o\
-	mesh_boundary_cells.o	
+	mesh_boundary_cells.o \
+	mesh_boundary_corners.o	
 	
 ifneq ($(BATL),nobatl)	
 PICOBJ+=pic_batsrus.o \

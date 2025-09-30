@@ -146,6 +146,7 @@ inline void timing_stop(std::string name) {}
 
 #include "mesh_boundary_blocks.h"
 #include "mesh_boundary_cells.h"
+#include "mesh_boundary_corners.h" 
 
 namespace PIC {
 
