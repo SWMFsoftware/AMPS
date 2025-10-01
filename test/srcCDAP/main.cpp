@@ -522,7 +522,7 @@ long int setParticle_BC_new() {
   PIC::Debugger::BuildAndPrintCellParticleDistribution();
 
   std::vector<PIC::Mesh::cBoundaryCellInfo> boundaryCells;
-  if (!PIC::Mesh::InitBoundaryCellVector(boundaryCells)) {
+  if (!PIC::Mesh::InitBoundaryCellVector(&boundaryCells)) {
     std::printf("$PREFIX: SetParticle_BC_new: ERROR: InitBoundaryCellVector failed\n");
     return 0;
   }

@@ -29,7 +29,7 @@
        - (i,j,k) : cell indices within the block
        - cell : pointer to the cell center data (PIC::Mesh::cDataCenterNode*)
 
-   • bool InitBoundaryCellVector(std::vector<cBoundaryCellInfo>& out)
+   • bool InitBoundaryCellVector(std::vector<cBoundaryCellInfo>* out)
        Populates 'out' with all locally owned boundary cells. Returns false on
        setup errors; true otherwise. Uses $PREFIX: for status prints.
 
@@ -52,7 +52,7 @@
    #include "mesh_boundary_cells.h"
    ...
    std::vector<PIC::Mesh::cBoundaryCellInfo> boundaryCells;
-   if (!PIC::Mesh::InitBoundaryCellVector(boundaryCells)) {
+   if (!PIC::Mesh::InitBoundaryCellVector(&boundaryCells)) {
      printf("$PREFIX: InitBoundaryCellVector failed\n");
    } else {
      printf("$PREFIX: boundary cells on rank %d: %zu\n",
@@ -97,7 +97,7 @@ struct cBoundaryCellInfo {
 
 // Populate 'BoundaryCellVector' with all *local* cells that lie on the
 // computational domain boundary. Returns false on setup errors; true otherwise.
-bool InitBoundaryCellVector(std::vector<cBoundaryCellInfo>& BoundaryCellVector);
+bool InitBoundaryCellVector(std::vector<cBoundaryCellInfo>* BoundaryCellVector=nullptr);
 
 } // namespace Mesh
 } // namespace PIC

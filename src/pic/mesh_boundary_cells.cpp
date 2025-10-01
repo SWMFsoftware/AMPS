@@ -1,11 +1,12 @@
-
 #include "pic.h"
 
 namespace PIC {
 namespace Mesh {
 
-bool InitBoundaryCellVector(std::vector<cBoundaryCellInfo>& BoundaryCellVector) {
-  BoundaryCellVector.clear();
+bool InitBoundaryCellVector(std::vector<cBoundaryCellInfo>* BoundaryCellVector) {
+  if (BoundaryCellVector != nullptr) {
+    BoundaryCellVector->clear();
+  }
 
   if (PIC::Mesh::mesh == nullptr) {
     std::printf("$PREFIX: InitBoundaryCellVector: ERROR: mesh is null\n");
@@ -53,7 +54,21 @@ bool InitBoundaryCellVector(std::vector<cBoundaryCellInfo>& BoundaryCellVector) 
 #endif
   };
 
-  // Iterate locally owned, allocated (leaf) blocks
+  // First pass: reset all boundary flags to false
+  for (auto* node = PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];
+       node != nullptr; node = node->nextNodeThisThread)
+  {
+    if (node->block == nullptr) continue;
+
+    for (int k = 0; k < NZ; ++k)
+    for (int j = 0; j < NY; ++j)
+    for (int i = 0; i < NX; ++i) {
+      auto* c = node->block->GetCenterNode(i, j, k);
+      if (c) c->SetBoundaryFlag(false);
+    }
+  }
+
+  // Second pass: identify and mark boundary cells
   std::size_t added = 0;
   for (auto* node = PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];
        node != nullptr; node = node->nextNodeThisThread)
@@ -70,9 +85,15 @@ bool InitBoundaryCellVector(std::vector<cBoundaryCellInfo>& BoundaryCellVector) 
 
       auto* c = node->block->GetCenterNode(i, j, k);
       if (!c) return; // guard against absent/ghost allocations
-      cBoundaryCellInfo rec;
-      rec.node = node; rec.i = i; rec.j = j; rec.k = k; rec.cell = c;
-      BoundaryCellVector.push_back(rec);
+      
+      // Set boundary flag to true
+      c->SetBoundaryFlag(true);
+      
+      if (BoundaryCellVector != nullptr) {
+        cBoundaryCellInfo rec;
+        rec.node = node; rec.i = i; rec.j = j; rec.k = k; rec.cell = c;
+        BoundaryCellVector->push_back(rec);
+      }
       ++added;
     };
 
@@ -133,10 +154,9 @@ bool InitBoundaryCellVector(std::vector<cBoundaryCellInfo>& BoundaryCellVector) 
   }
 
   std::printf("$PREFIX: InitBoundaryCellVector: collected %zu boundary cells on rank %d\n",
-              static_cast<size_t>(BoundaryCellVector.size()), PIC::ThisThread);
+              added, PIC::ThisThread);
   return true;
 }
 
 } // namespace Mesh
 } // namespace PIC
-
