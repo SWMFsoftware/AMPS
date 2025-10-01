@@ -155,6 +155,11 @@ public:
     for (int idim=0;idim<_MESH_DIMENSION_;idim++) x[idim]=l[idim];
   }
 
+  //boundary node flag: true -> if the node is at the boundary of the computational domain, false -> otherwise
+  bool boundary_flag;
+
+  void SetBoundaryFlag(bool in) {boundary_flag=in;};
+  bool IsBoundaryNode() {return boundary_flag;};
 
   //clean the data buffers
   _TARGET_HOST_ _TARGET_DEVICE_
@@ -164,6 +169,8 @@ public:
     nodeDescriptor.maxRefinmentLevel=0;
     nodeDescriptor.internalMeshNode=_AMR_TRUE_;
     nodeDescriptor.nNodeConnections=0;
+
+    boundary_flag=false;
 
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
     Temp_ID=0;
