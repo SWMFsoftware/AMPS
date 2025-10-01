@@ -166,6 +166,58 @@ bool GetGradient(double* gradQ,double cellQ,double* Q,long int ncell,TMesh &grid
 }
 #endif
 
+/*
+ * Greatest Common Divisor (GCD) - Euclidean Algorithm
+ * ====================================================
+ *
+ * PURPOSE:
+ * Computes the largest positive integer that divides both a and b without remainder.
+ * Used for simplifying fractions to their lowest terms.
+ *
+ * ALGORITHM (Euclidean Algorithm):
+ * The GCD is found by repeatedly replacing the larger number with the remainder
+ * of dividing the larger by the smaller, until one number becomes zero.
+ *
+ * Mathematical basis: gcd(a, b) = gcd(b, a mod b)
+ * This works because any common divisor of a and b also divides (a - kb) for any k,
+ * and specifically divides the remainder (a mod b).
+ *
+ * COMPLEXITY: O(log min(a,b))
+ * Much faster than trial division which is O(min(a,b))
+ *
+ * EXAMPLE TRACE:
+ * gcd(48, 18):
+ *   Step 1: a=48, b=18  →  48 % 18 = 12  →  a=18, b=12
+ *   Step 2: a=18, b=12  →  18 % 12 = 6   →  a=12, b=6
+ *   Step 3: a=12, b=6   →  12 % 6  = 0   →  a=6,  b=0
+ *   Result: gcd(48, 18) = 6
+ *
+ * Verification: 48 = 6×8, 18 = 6×3, and 6 is the largest such divisor
+ * Simplified fraction: 48/18 = 8/3
+ *
+ * PROPERTIES:
+ * - gcd(a, 0) = |a|
+ * - gcd(a, b) = gcd(b, a)  (commutative)
+ * - gcd(a, b) = gcd(|a|, |b|)  (sign-independent)
+ *
+ * @param a First integer
+ * @param b Second integer
+ * @return Greatest common divisor (always positive)
+ */
+inline int GetGcd(int a, int b) {
+    a = std::abs(a);  // Work with absolute values
+    b = std::abs(b);
+
+    // Euclidean algorithm: repeatedly replace (a,b) with (b, a mod b)
+    while (b != 0) {
+        int temp = b;
+        b = a % b;  // Remainder when a is divided by b
+        a = temp;
+    }
+
+    return a;  // When b=0, a contains the GCD
+}
+
 //=========================================================
 //calculation of CRC-32
 class CRC32 {
