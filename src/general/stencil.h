@@ -552,9 +552,11 @@ public:
         int it = 0;
         for (const auto& elem : StencilData) {
             s->Data[it].a = elem.a;
-            s->Data[it].i = i.Convert2Int() + elem.i.Convert2Int();
-            s->Data[it].j = j.Convert2Int() + elem.j.Convert2Int();
-            s->Data[it].k = k.Convert2Int() + elem.k.Convert2Int();
+            // Add fractions first, then convert to ensure correct handling
+            // of fractional positions (e.g., i=1/2 + elem.i=1/2 = 1)
+            s->Data[it].i = (i + elem.i).Convert2Int();
+            s->Data[it].j = (j + elem.j).Convert2Int();
+            s->Data[it].k = (k + elem.k).Convert2Int();
             ++it;
         }
     }
