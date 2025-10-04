@@ -538,7 +538,7 @@ public:
         return static_cast<int>(StencilData.size());
     }
 
-    void ExportStencil(cStencilData* s) {
+    void ExportStencil(cStencilData* s,double scale=1.0) {
         if (s == nullptr) {
             throw std::invalid_argument("Null pointer passed to ExportStencil");
         }
@@ -551,7 +551,7 @@ public:
 
         int it = 0;
         for (const auto& elem : StencilData) {
-            s->Data[it].a = elem.a;
+            s->Data[it].a = elem.a*scale;
             // Add fractions first, then convert to ensure correct handling
             // of fractional positions (e.g., i=1/2 + elem.i=1/2 = 1)
             s->Data[it].i = (i + elem.i).Convert2Int();
@@ -640,6 +640,36 @@ public:
             StencilData.push_back(NewElement);
         }
         return *this;
+    }
+
+    cStencil& operator-=(const cStencil& rhs) {
+      cStencil tmp = rhs;
+      tmp*=-1.0;
+      return (*this += tmp);
+    }
+
+    //Clear
+    void Clear() {
+      // Remove all coefficient entries and any cached view
+      StencilData.clear();
+      StencilCache.clear();
+      // (Deliberately do NOT reset i, j, k, or symbol.)
+      // If you ever need a full reset, add a separate Reset() that also zeros i,j,k and clears symbol.
+    }
+
+    //Reset
+    void Reset() {
+      // 1) Drop all coefficient entries/caches.
+      Clear();  // calls StencilData.clear(); StencilCache.clear();
+
+      // 2) Restore reference offsets (corner/center shift) to zero.
+      //    cFrac(0,1) keeps exact zero without changing your rational arithmetic semantics.
+      i = cFrac(0,1);
+      j = cFrac(0,1);
+      k = cFrac(0,1);
+
+      // 3) Reset any identifying tag for the stencil (e.g., "curlBx", "curlBy", "curlBz", etc.).
+      symbol.clear();
     }
 
     void SwitchAxes(int Axis0, int Axis1) {
