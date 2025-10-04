@@ -1,7 +1,52 @@
 /**
  * @file    grad_div_e.cpp
  * @brief   Convergence test for ∇(∇·E) stencils (SecondOrder/compact, SecondOrder/wide, FourthOrder),
- *          with Tecplot export and per-N, per-stencil component-wise diagnostics.
+ *          with optional Tecplot ASCII volume export (Ordered 3D, BLOCK).
+ *
+ * =============================================================================
+ * 1) PURPOSE
+ * =============================================================================
+ * Verifies correctness and order of accuracy of discrete operators approximating
+ *     G(E) = ∇(∇·E) ,  E=(Ex,Ey,Ez),
+ * using three stencil families:
+ *   (A) SecondOrder/Compact  : minimal centered stencils (3-pt D2, mixed via nested D1)
+ *   (B) SecondOrder/Wide     : second-order face/edge-averaged construction
+ *   (C) FourthOrder          : 5-point 4th-order D2; mixed via composition of 4th-order D1
+ *
+ * The program runs a mesh-refinement study (periodic domain) and reports L∞ and relative L²
+ * errors with observed orders (log₂ error ratios). Optionally writes Tecplot volumes.
+ *
+ * =============================================================================
+ * 2) ANALYTIC TEST (PERIODIC)
+ * =============================================================================
+ *   Ex = sin(ax) cos(by) cos(cz)
+ *   Ey = cos(ax) sin(by) cos(cz)
+ *   Ez = cos(ax) cos(by) sin(cz)
+ *   div E = (a + b + c) cos(ax) cos(by) cos(cz)
+ *   ∇(div E) =
+ *     [ -a(a+b+c) sin(ax) cos(by) cos(cz),
+ *       -b(a+b+c) cos(ax) sin(by) cos(cz),
+ *       -c(a+b+c) cos(ax) cos(by) sin(cz) ].
+ *
+ * =============================================================================
+ * 3) GRID & NUMERICS
+ * =============================================================================
+ * - Domain [0,Lx)×[0,Ly)×[0,Lz), uniform Nx×Ny×Nz (here cubic, Nx=Ny=Nz=N).
+ * - Nodes at (i+½)dx etc. (periodic wrap; interior order preserved).
+ * - Each operator exports 3 rows S[r], each with 3 column stencils acting on (Ex,Ey,Ez).
+ * - We pre-export sparse taps **once per row** and apply them in the inner loops
+ *   (faster and avoids const-qualification issues).
+ *
+ * =============================================================================
+ * 4) OUTPUT
+ * =============================================================================
+ * - Table per operator:
+ *     N    L_inf error  Order    L2_rel error  Order
+ * - Optional single pointwise comparison at one interior node (first grid by default).
+ * - Optional Tecplot file on the finest grid: variables
+ *   x,y,z,Ex,Ey,Ez,Gx_num,Gy_num,Gz_num,Gx_ana,Gy_ana,Gz_ana,Err_mag
+ *
+ * =============================================================================
  */
 
 #include <cstdio>
