@@ -9263,6 +9263,29 @@ namespace FieldSolver {
         //Energy conserving field solver (same as used in the IPIC3D)
         namespace ECSIM {
 
+          //stencils
+	  namespace Stencil { 
+            struct cCurlBStencil {
+              cStencil Bx, By, Bz;
+            };
+
+            extern cCurlBStencil CurlBStencil[3]; 
+
+	    namespace FourthOrder {
+		    void InitCurlBStencils(cCurlBStencil* CurlBStencilSecondOrder,
+                       double dx, double dy, double dz);
+	    }
+
+	    namespace SecondOrder {
+		    void InitCurlBStencils_face_based(cCurlBStencil* CurlBStencilSecondOrder,
+                       double dx, double dy, double dz);
+		    void InitCurlBStencils_edge_based(cCurlBStencil* CurlBStencilSecondOrder,
+                       double dx, double dy, double dz);
+            }
+
+
+	  }
+
           void GetElectricField(double *E,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
           void GetMagneticField(double *B,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
           void GetMagneticFieldGradient(double *gradB,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
