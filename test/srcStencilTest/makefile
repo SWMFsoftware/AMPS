@@ -6,7 +6,7 @@ include ../../Makefile.conf
 
 MAINLIBOBJ = main_lib.o 
 
-MAINOBJ = main.o curl_b.o 
+MAINOBJ = main.o curl_b.o grad_div_e.o 
 
 lib : $(MAINLIBOBJ)
 	ar -rc mainlib.a $(MAINLIBOBJ)
