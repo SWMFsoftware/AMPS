@@ -28,6 +28,194 @@
  *     dxx *= 1/dx^2, dxy *= 1/(dx*dy), …, dzz *= 1/dz^2
  */
 
+/*
+================================================================================
+GradDivE Discretizations: Second-Order (Compact vs Wide) and Fourth-Order
+================================================================================
+
+We discretize the operator G(E) = ∇(∇·E) for E = (Ex,Ey,Ez) on a uniform,
+cell-centered, periodic Cartesian grid. The discrete operator is assembled row-
+wise as:
+
+  [Gx]   [ Dxx  Dxy  Dxz ] [Ex]
+  [Gy] = [ Dxy  Dyy  Dyz ] [Ey]
+  [Gz]   [ Dxz  Dyz  Dzz ] [Ez]
+
+All stencils are centered and symmetric. There are two second-order variants
+("compact" and "wide") which (after the fix) are algebraically identical, and a
+fourth-order variant.
+
+Notation
+--------
+• Node index (i,j,k), spacings (dx,dy,dz).
+• Offsets are (Δi,Δj,Δk) relative to (i,j,k).
+• Taps are listed UN-SCALED first, then the metric scale (1/dx², 1/(dx·dy), …)
+  is applied at the end.
+
+================================================================================
+SECOND-ORDER SCHEMES (Compact and Wide — identical after the fix)
+================================================================================
+
+A) Pure second derivatives (Dxx, Dyy, Dzz) — standard centered 3-point
+----------------------------------------------------------------------
+Unscaled taps (apply indicated metric scale at the end):
+
+  Dxx (scale 1/dx²):
+    (+1, 0, 0) : +1
+    ( 0, 0, 0) : -2
+    (-1, 0, 0) : +1
+
+  Dyy (scale 1/dy²):
+    ( 0,+1, 0) : +1
+    ( 0, 0, 0) : -2
+    ( 0,-1, 0) : +1
+
+  Dzz (scale 1/dz²):
+    ( 0, 0,+1) : +1
+    ( 0, 0, 0) : -2
+    ( 0, 0,-1) : +1
+
+These are O(h²) accurate.
+
+B) Mixed second derivatives (Dxy, Dxz, Dyz) — 4-corner “cross” in the plane
+----------------------------------------------------------------------------
+Either derived by composing centered first derivatives (COMPACT) or written
+explicitly (WIDE). After the fix, both routes give the SAME taps:
+
+  Dxy (scale 1/(dx·dy)):
+    (+1,+1,0) : +1/4
+    (+1,-1,0) : -1/4
+    (-1,+1,0) : -1/4
+    (-1,-1,0) : +1/4
+
+  Dxz (scale 1/(dx·dz)):
+    (+1,0,+1) : +1/4
+    (+1,0,-1) : -1/4
+    (-1,0,+1) : -1/4
+    (-1,0,-1) : +1/4
+
+  Dyz (scale 1/(dy·dz)):
+    (0,+1,+1) : +1/4
+    (0,+1,-1) : -1/4
+    (0,-1,+1) : -1/4
+    (0,-1,-1) : +1/4
+
+Properties (Second-Order)
+-------------------------
+• Order: O(h²) for all entries.
+• Discrete Fourier symbols (θx,θy,θz are grid wavenumbers):
+    Dxx ~ -2(1 - cos θx)/dx²
+    Dxy ~  (sin θx sin θy)/(dx·dy), etc.
+• COMPACT (via centered Dₓ∘Dᵧ) and WIDE (explicit cross) are algebraically
+  equivalent; with the corrected wide implementation, numerical outputs match
+  to round-off.
+
+================================================================================
+FOURTH-ORDER SCHEME
+================================================================================
+
+Construction:
+• Pure seconds (Dxx, Dyy, Dzz): 1D 5-point centered, 4th-order.
+• Mixed seconds (Dxy, Dxz, Dyz): composition of 4th-order centered first
+  derivatives in each axis; coefficients form an outer product (5×5 in the
+  relevant plane), yielding O(h⁴).
+
+A) Pure second derivatives (4th-order, 5-point)
+-----------------------------------------------
+Unscaled taps (apply 1/dx², 1/dy², 1/dz² after), shown for x (analogous for y,z):
+
+  Dxx (scale 1/dx²):
+    (+2,0,0) : -1/12
+    (+1,0,0) : +4/3
+    ( 0,0,0) : -5/2
+    (-1,0,0) : +4/3
+    (-2,0,0) : -1/12
+
+B) First derivatives (4th-order, 5-point) used to build mixed terms
+-------------------------------------------------------------------
+Unscaled 1D centered first-derivative weights (Δ = [+2,+1,0,-1,-2]):
+
+  c[Δ] = [ +1,  -8,   0,  +8,  -1 ]  (to be scaled by 1/(12·h_axis))
+
+Thus:
+  Dx f ≈ (1/(12·dx)) * Σ_p c[p] f_{i+Δp, j,   k}
+  Dy f ≈ (1/(12·dy)) * Σ_q c[q] f_{i,   j+Δq, k}
+  Dz f ≈ (1/(12·dz)) * Σ_r c[r] f_{i,   j,   k+Δr}
+
+C) Mixed second derivatives (4th-order) by composition (outer product)
+----------------------------------------------------------------------
+Use the outer product of the 1D weights in the two involved directions:
+
+  Dxy f ≈ (1/(144·dx·dy)) * Σ_p Σ_q c[p]·c[q] · f_{i+Δp, j+Δq, k}
+  Dxz f ≈ (1/(144·dx·dz)) * Σ_p Σ_r c[p]·c[r] · f_{i+Δp, j,     k+Δr}
+  Dyz f ≈ (1/(144·dy·dz)) * Σ_q Σ_r c[q]·c[r] · f_{i,     j+Δq, k+Δr}
+
+This yields a centered 5×5 stencil in each transverse plane for the mixed terms,
+with O(h⁴) accuracy.
+
+D) Assembling ∇(∇·E) rows (all orders)
+--------------------------------------
+  Gx = (Dxx Ex) + (Dxy Ey) + (Dxz Ez)
+  Gy = (Dxy Ex) + (Dyy Ey) + (Dyz Ez)
+  Gz = (Dxz Ex) + (Dyz Ey) + (Dzz Ez)
+
+Properties (Fourth-Order)
+-------------------------
+• Order: O(h⁴) for all entries.
+• Symbols:
+    Dx (4th) ~ (i/dx) [ (8/6) sin θx  - (1/6) sin 2θx ]
+    Dxy(4th) ~ (1/(dx·dy)) · [ (8/6) sin θx - (1/6) sin 2θx ]
+                         ·   [ (8/6) sin θy - (1/6) sin 2θy ]
+    Dxx(4th) ~ (1/dx²) [ -5/2 + (4/3) cos θx - (1/12) cos 2θx ]
+  Improved dispersion and isotropy vs. second-order, especially on coarse grids.
+
+================================================================================
+BOUNDARIES / HALOS / IMPLEMENTATION NOTES
+================================================================================
+• Periodic wrap: use wrap-around indexing; interior order is preserved.
+• Halos if non-periodic:
+    - 2nd-order pure/mixed: 1-cell halo along involved axes.
+    - 4th-order pure:       2-cell halo along the axis.
+    - 4th-order mixed:      2-cell halo in BOTH involved axes.
+• Scaling: build unscaled taps, then scale by 1/dx², 1/(dx·dy), etc.
+• Equivalence (2nd-order): Compact (Dₓ∘Dᵧ) and Wide (explicit cross) now produce
+  the same taps and, therefore, the same numerical results (up to round-off).
+• Performance: we pre-compose/export taps and apply once. 4th-order has a larger
+  but still sparse footprint (5-point on-axis; 5×5 for mixed terms).
+
+================================================================================
+SANITY CHECK (Plane-wave)
+================================================================================
+Let a,b,c ∈ 2πℤ over [0,1] and
+  Ex =  sin(ax) cos(by) cos(cz)
+  Ey =  cos(ax) sin(by) cos(cz)
+  Ez =  cos(ax) cos(by) sin(cz)
+Then:
+  ∇·E = (a+b+c) cos(ax) cos(by) cos(cz)
+  ∇(∇·E) = [ -a(a+b+c) sin(ax) cos(by) cos(cz),
+             -b(a+b+c) cos(ax) sin(by) cos(cz),
+             -c(a+b+c) cos(ax) cos(by) sin(cz) ]
+Expected convergence:
+  • Second-order: ~O(h²) in L∞ and relative L².
+  • Fourth-order: ~O(h⁴).
+
+================================================================================
+MAPPING TO CODE (what each builder creates)
+================================================================================
+• SecondOrder::InitGradDivEBStencils_compact(S,dx,dy,dz)
+    Builds: Dxx/Dyy/Dzz (3-point); Dxy/Dxz/Dyz by composing centered 1st-derivative
+    stencils → same 4-corner cross taps after composition; applies metric scaling.
+
+• SecondOrder::InitGradDivEBStencils_wide(S,dx,dy,dz)
+    Builds: Dxx/Dyy/Dzz (3-point); Dxy/Dxz/Dyz explicitly as 4-corner cross;
+    applies the same metric scaling. (Now identical to Compact.)
+
+• FourthOrder::InitGradDivEBStencils(S,dx,dy,dz)
+    Builds: Dxx/Dyy/Dzz (5-point, 4th order); Dxy/Dxz/Dyz via outer-product
+    composition of 4th-order 1D first-derivative weights; applies metric scaling.
+*/
+
+
 #include "../pic.h"
 
 namespace PIC {
@@ -146,76 +334,44 @@ void InitGradDivEBStencils_compact(cGradDivEStencil* S, double dx, double dy, do
 
 
 // ============================================================================
-// Wide (symmetric face/edge construction + rotations)
+// Wide (fixed): use standard centered cross-derivative stencils (second order)
 // ============================================================================
 void InitGradDivEBStencils_wide(cGradDivEStencil* S, double dx, double dy, double dz) {
-  using namespace Helper_Wide;
+  // --- Pure seconds (use classic centered 3-point, unscaled) ---
+  cStencil Dxx, Dyy, Dzz;
+  Dxx.add(+1.0, +1, 0, 0); Dxx.add(+1.0, -1, 0, 0); Dxx.add(-2.0, 0, 0, 0);
+  Dyy.add(+1.0,  0,+1, 0); Dyy.add(+1.0,  0,-1, 0); Dyy.add(-2.0, 0, 0, 0);
+  Dzz.add(+1.0,  0, 0,+1); Dzz.add(+1.0,  0, 0,-1); Dzz.add(-2.0, 0, 0, 0);
 
-  // ---- Corner and edge building blocks
-  cStencil Corner[2][2][2];
-  for (int I=0; I<2; ++I)
-    for (int J=0; J<2; ++J)
-      for (int K=0; K<2; ++K)
-        BuildCorner(Corner[I][J][K], I, J, K);
+  // --- Mixed seconds via 4-corner ("wide") cross stencils, unscaled ---
+  // Dxy: + at (+1,+1), (-1,-1); - at (+1,-1), (-1,+1)
+  cStencil Dxy;
+  Dxy.add(+0.25, +1, +1, 0);
+  Dxy.add(+0.25, -1, -1, 0);
+  Dxy.add(-0.25, +1, -1, 0);
+  Dxy.add(-0.25, -1, +1, 0);
 
-  cStencil Edge[12]; BuildEdges(Edge);
+  // Dxz: + at (+1,0,+1), (-1,0,-1); - at (+1,0,-1), (-1,0,+1)
+  cStencil Dxz;
+  Dxz.add(+0.25, +1, 0, +1);
+  Dxz.add(+0.25, -1, 0, -1);
+  Dxz.add(-0.25, +1, 0, -1);
+  Dxz.add(-0.25, -1, 0, +1);
 
-  // ---- Pure seconds: build along x then average and rotate
-  cStencil Dxx_face0, Dxx, Dyy, Dzz;
+  // Dyz: + at (0,+1,+1), (0,-1,-1); - at (0,+1,-1), (0,-1,+1)
+  cStencil Dyz;
+  Dyz.add(+0.25, 0, +1, +1);
+  Dyz.add(+0.25, 0, -1, -1);
+  Dyz.add(-0.25, 0, +1, -1);
+  Dyz.add(-0.25, 0, -1, +1);
 
-  // central second difference in x using an x-edge average
-  Dxx_face0.AddShifted(Edge[0], +1, 0, 0, +1.0);
-  Dxx_face0.add(-2.0, 0, 0, 0);
-  Dxx_face0.AddShifted(Edge[0], -1, 0, 0, +1.0);
-
-  // average that face over the four subfaces around the point
-  for (int j=0; j<2; ++j)
-    for (int k=0; k<2; ++k)
-      Dxx.AddShifted(Dxx_face0, 0, j, k, 0.25);
-
-  Dyy = Dxx; Dyy.SwitchAxes(0,1);
-  Dzz = Dxx; Dzz.SwitchAxes(0,2);
-
-  // ---- Mixed seconds
-  // dxy: difference of ∂/∂x taken on adjacent y-faces
-  cStencil Dxy_face, Dxy;
-  {
-    // ∂/∂x @ y-face j=0
-    cStencil dEx_y0 = Corner[1][0][0]; dEx_y0.AddShifted(Corner[0][0][0], 0,0,0, -1.0);
-    // ∂/∂x @ y-face j=1
-    cStencil dEx_y1 = Corner[1][1][0]; dEx_y1.AddShifted(Corner[0][1][0], 0,0,0, -1.0);
-
-    // centered ∂/∂y of (∂/∂x): (j=+1) − (j=0)
-    Dxy_face = dEx_y1; Dxy_face.AddShifted(dEx_y0, 0,0,0, -1.0);
-
-    // average across the two z positions to center at the node
-    for (int k=0; k<2; ++k) Dxy.AddShifted(Dxy_face, 0, 0, k, 0.5);
-  }
-
-  // dxz: difference of ∂/∂x taken on adjacent z-faces
-  cStencil Dxz_face, Dxz;
-  {
-    // ∂/∂x @ z-face k=0
-    cStencil dEx_z0 = Corner[1][0][0]; dEx_z0.AddShifted(Corner[0][0][0], 0,0,0, -1.0);
-    // ∂/∂x @ z-face k=1
-    cStencil dEx_z1 = Corner[1][0][1]; dEx_z1.AddShifted(Corner[0][0][1], 0,0,0, -1.0);
-
-    // centered ∂/∂z of (∂/∂x): (k=+1) − (k=0)
-    Dxz_face = dEx_z1; Dxz_face.AddShifted(dEx_z0, 0,0,0, -1.0);
-
-    // average across the two y positions to center at the node
-    for (int j=0; j<2; ++j) Dxz.AddShifted(Dxz_face, 0, j, 0, 0.5);
-  }
-
-  // dyz: obtain by rotation from dxy template (swap x↔z)
-  cStencil Dyz = Dxy; Dyz.SwitchAxes(0,2);
-
-  // ---- Metric scaling
+  // --- Metric scaling (∂xx→/dx^2, ∂xy→/(dx dy), …) ---
   ScaleMetric(Dxx, Dyy, Dzz, Dxy, Dxz, Dyz, dx, dy, dz);
 
-  // ---- Export to rows
+  // --- Export rows:    Gx: [dxx,dxy,dxz], Gy: [dxy,dyy,dyz], Gz: [dxz,dyz,dzz] ---
   ExportToRows(Dxx, Dyy, Dzz, Dxy, Dxz, Dyz, S);
 }
+
 
 } // namespace SecondOrder
 
