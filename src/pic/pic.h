@@ -9269,11 +9269,36 @@ namespace FieldSolver {
               cStencil Bx, By, Bz;
             };
 
+	    struct cGradDivEStencil {
+              cStencil Ex, Ey, Ez;
+            };
+
             extern cCurlBStencil CurlBStencil[3]; 
 
 	    namespace FourthOrder {
 		    void InitCurlBStencils(cCurlBStencil* CurlBStencilSecondOrder,
                        double dx, double dy, double dz);
+
+		    void InitGradDivEBStencils(cGradDivEStencil* S, double dx, double dy, double dz);
+
+                    // ---- Helper declarations (public, for reuse/testing) ----
+                    namespace Helper {
+                      /** 4th-order 1D first-derivative stencils (unscaled by 1/h). */
+                      void BuildD1_4th(cStencil& Dx, cStencil& Dy, cStencil& Dz);
+
+                      /** 4th-order 1D second-derivative stencils (unscaled by 1/h^2). */
+                      void BuildD2_4th(cStencil& Dxx, cStencil& Dyy, cStencil& Dzz);
+
+                      /** Apply metric scaling to pure/mixed blocks. */
+                      void ScaleMetric(cStencil& dxx, cStencil& dyy, cStencil& dzz,
+                        cStencil& dxy, cStencil& dxz, cStencil& dyz,
+                        double dx, double dy, double dz);
+
+                      /** Export 3×3 block set into S[0..2] rows (Gx,Gy,Gz). */
+                      void ExportToRows(const cStencil& dxx, const cStencil& dyy, const cStencil& dzz,
+                        const cStencil& dxy, const cStencil& dxz, const cStencil& dyz,
+                        cGradDivEStencil* S);
+                      }
 	    }
 
 	    namespace SecondOrder {
@@ -9281,7 +9306,26 @@ namespace FieldSolver {
                        double dx, double dy, double dz);
 		    void InitCurlBStencils_edge_based(cCurlBStencil* CurlBStencilSecondOrder,
                        double dx, double dy, double dz);
-            }
+
+		    // Compact (nested centered first/second differences).
+                    // Applies metric scaling internally: dxx *= 1/dx^2, dxy *= 1/(dx*dy), …, dzz *= 1/dz^2.
+                    void InitGradDivEBStencils_compact(cGradDivEStencil* S, double dx, double dy, double dz);
+
+                    // Wide (symmetric face/edge construction + rotations).
+                    // Applies metric scaling internally: dxx *= 1/dx^2, dxy *= 1/(dx*dy), …, dzz *= 1/dz^2.
+                    void InitGradDivEBStencils_wide   (cGradDivEStencil* S, double dx, double dy, double dz);
+
+	           // -------- Helpers for the wide builder --------
+                   // These are declared here per request and defined in the .cpp.
+                   namespace Helper_Wide {
+                     // Build 2×2×2 corner average around (0,0,0) shifted to octant (I,J,K) ∈ {0,1}³.
+                     void BuildCorner(cStencil& st, int I, int J, int K);
+
+                     // Build the 12 edge averages (each a 2×2 slab) around the reference corner.
+                     // The output array must have size 12.
+                     void BuildEdges(cStencil edges[12]);
+                     } // namespace Helper_Wide
+	    }
 
 
 	  }
