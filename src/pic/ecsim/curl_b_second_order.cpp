@@ -99,15 +99,16 @@
 
 namespace PIC {
 namespace FieldSolver {
+namespace Electromagnetic {
 namespace ECSIM {
 namespace Stencil {
 namespace SecondOrder {
 
-void InitCurlBStencils(PIC::FieldSolver::Electromagnetic::ECSIM::Stencil::cCurlBStencil CurlBStencilSecondOrder[3],
+void InitCurlBStencils_edge_based(PIC::FieldSolver::Electromagnetic::ECSIM::Stencil::cCurlBStencil* CurlBStencilSecondOrder,
                        double dx, double dy, double dz)
 {
   // Corner fractional base: (i-1/2, j-1/2, k-1/2)
-  const cFrac fi(-1,2), fj(-1,2), fk(-1,2);
+  const cFrac fi(0,1), fj(0,1), fk(0,1);
 
   auto set_base = [&](cStencil& S, const char* sym){
     S = cStencil();
@@ -218,6 +219,114 @@ void InitCurlBStencils(PIC::FieldSolver::Electromagnetic::ECSIM::Stencil::cCurlB
 } // namespace SecondOrder
 } // namespace Stencil
 } // namespace ECSIM
+} // Electromagnetic 
+} // namespace FieldSolver
+} // namespace PIC
+
+
+// ============================================================================
+// File: curlb_stencil_second_order.cpp  (excerpt)
+// Purpose: Initialize second-order curl(B) stencils at cell corners from
+//          cell-centered Bx,By,Bz using face-averaging + central differences.
+// Notes:
+//   • Builds 2×2 face-averages on opposite faces, then differences them,
+//     and scales by 1/direction spacing to approximate the derivatives.
+//   • Sets the stencil base to the cell-corner (i-1/2, j-1/2, k-1/2).
+//   • Compatible with 1D/2D/3D via _MESH_DIMENSION_.
+// ============================================================================
+namespace PIC {
+namespace FieldSolver {
+namespace Electromagnetic {
+namespace ECSIM {
+namespace Stencil {
+namespace SecondOrder {
+
+void InitCurlBStencils_face_based(PIC::FieldSolver::Electromagnetic::ECSIM::Stencil::cCurlBStencil* CurlB,
+                       double dx, double dy, double dz)
+{
+    //using PIC::FieldSolver::Electromagnetic::ECSIM::Stencil::cStencil;
+    //using PIC::FieldSolver::Electromagnetic::ECSIM::Stencil::cCurlBStencil;
+
+    cCurlBStencil& curlBx = CurlB[0];
+    cCurlBStencil& curlBy = CurlB[1];
+    cCurlBStencil& curlBz = CurlB[2];
+
+    // Zero outputs
+    curlBx.Bx.Reset(); curlBx.By.Reset(); curlBx.Bz.Reset();
+    curlBy.Bx.Reset(); curlBy.By.Reset(); curlBy.Bz.Reset();
+    curlBz.Bx.Reset(); curlBz.By.Reset(); curlBz.Bz.Reset();
+
+    // ---- Build each min-face 2x2 average ONCE --------------------------------
+    cStencil Xmin, Ymin, Zmin;
+    {
+        // Xmin (i-1/2): average over (j,k) at i-1
+        Xmin.Reset();
+        const double w = 0.25;
+        Xmin.add(w, -1, -1, -1);
+        Xmin.add(w, -1, -1,  0);
+        Xmin.add(w, -1,  0, -1);
+        Xmin.add(w, -1,  0,  0);
+        // Ymin (j-1/2): average over (i,k) at j-1
+        Ymin.Reset();
+        Ymin.add(w, -1, -1, -1);
+        Ymin.add(w,  0, -1, -1);
+        Ymin.add(w, -1, -1,  0);
+        Ymin.add(w,  0, -1,  0);
+        // Zmin (k-1/2): average over (i,j) at k-1
+        Zmin.Reset();
+        Zmin.add(w, -1, -1, -1);
+        Zmin.add(w,  0, -1, -1);
+        Zmin.add(w, -1,  0, -1);
+        Zmin.add(w,  0,  0, -1);
+    }
+
+    // Small lambda to form centered derivative from a base min-face stencil:
+    // out = ( shift(base, sdi, sdj, sdk) - base ) * scale
+    auto centered_diff = [](cStencil& out, const cStencil& base,
+                            int sdi, int sdj, int sdk, double scale) {
+        cStencil maxf = base;   // copy MIN → MAX
+        maxf.shift(sdi, sdj, sdk);
+
+        maxf -= base;           // (MAX - MIN)
+        maxf *= scale;
+        out = maxf;
+    };
+
+
+    // ============================ curl_x ======================================
+    // curl_x = dBz/dy - dBy/dz
+    centered_diff(curlBx.Bz, Ymin, 0, +1, 0, 1.0 / dy);  // ∂Bz/∂y  using Y faces
+    centered_diff(curlBx.By, Zmin, 0, 0, +1, 1.0 / dz);  //  ∂By/∂z using Z faces
+    curlBx.By *= -1.0;                                   // subtract
+    curlBx.Bx.Reset();                                   // no Bx term
+
+    // ============================ curl_y ======================================
+    // curl_y = dBx/dz - dBz/dx
+    centered_diff(curlBy.Bx, Zmin, 0, 0, +1, 1.0 / dz);  // ∂Bx/∂z using Z faces
+    centered_diff(curlBy.Bz, Xmin, +1, 0, 0, 1.0 / dx);  // ∂Bz/∂x using X faces
+    curlBy.Bz *= -1.0;                                   // subtract
+    curlBy.By.Reset();                                   // no By term
+
+    // ============================ curl_z ======================================
+    // curl_z = dBy/dx - dBx/dy
+    centered_diff(curlBz.By, Xmin, +1, 0, 0, 1.0 / dx);  // ∂By/∂x using X faces
+    centered_diff(curlBz.Bx, Ymin, 0, +1, 0, 1.0 / dy);  // ∂Bx/∂y using Y faces
+    curlBz.Bx *= -1.0;                                   // subtract
+    curlBz.Bz.Reset();                                   // no Bz term
+
+
+  // Clean up tiny duplicates / combine entries.
+  for (int c=0; c<3; ++c) {
+    CurlB[c].Bx.Simplify();
+    CurlB[c].By.Simplify();
+    CurlB[c].Bz.Simplify();
+  }
+}
+
+} // namespace SecondOrder
+} // namespace Stencil
+} // namespace ECSIM
+} // namespace Electromagnetic
 } // namespace FieldSolver
 } // namespace PIC
 
