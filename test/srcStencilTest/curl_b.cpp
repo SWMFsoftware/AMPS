@@ -39,6 +39,7 @@
 #include <string>
 #include <vector>
 
+#include "test_register.h"
 #include "test_harness.h"
 #include "test_force_link_all.h"
 #include "pic.h"                  // cStencil, cCurlBStencil, ExportStencil API
@@ -385,13 +386,15 @@ static int Run(const std::vector<std::string>& args) {
 } // namespace CurlB
 
 // Auto-register in the harness
-static TestHarness::AutoRegister _auto_reg_curlb(
+namespace CurlB {
+  int Run(const std::vector<std::string>& args); // already defined above
+}
+
+REGISTER_STENCIL_TEST(CurlB,
   "curl_b",
-  [](const std::vector<std::string>& args){ return CurlB::Run(args); },
   "Corner curl(B) stencils: build, apply, and convergence (2nd, 4th, 6th order) + component-wise comparison.");
 
-// ---- Per-suite force-link shim so this TU is retained even with dead-stripping ----
+
 namespace CurlB {
   void ForceLinkAllTests() {}
 }
-

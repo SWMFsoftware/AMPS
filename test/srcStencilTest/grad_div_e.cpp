@@ -23,13 +23,10 @@
 #include <fstream>
 
 #include "pic.h"
-
+#include "test_register.h"
+#include "test_harness.h" 
 using namespace PIC::FieldSolver::Electromagnetic::ECSIM::Stencil;
 
-// Ensure this TU is pulled in by the central force-link hook.
-namespace GradDivE {
-  void ForceLinkAllTests() {}
-}
 
 // ---------- Analytic field and ∇(∇·E) ----------
 struct Vec3 { double x,y,z; };
@@ -358,7 +355,8 @@ static void print_convergence_combined(const std::vector<int>& Ns,
 }
 
 // ---------- Entry point ----------
-int test_grad_div_e() {
+namespace GradDivE {
+int Run(const std::vector<std::string>& args) {
   const double Lx = 1.0, Ly = 1.0, Lz = 1.0;
   const double a = 2.0*M_PI, b = 2.0*M_PI, c = 2.0*M_PI;
   std::vector<int> Ns = {16, 24, 32, 48, 64};
@@ -372,4 +370,15 @@ int test_grad_div_e() {
                "  graddivE_SixthOrder_N64.dat\n";
   return 0;
 }
+} // namespace GradDivE
 
+// ---- GradDivE test registration & force-link shim (append at file end) ----
+//#include "test_harness.h"
+//#include <vector>
+
+namespace GradDivE { int Run(const std::vector<std::string>&); }
+REGISTER_STENCIL_TEST(GradDivE,
+  "grad_div_e",
+  "GradDivE stencils: build, apply, and convergence (+ component-wise comparison).");
+
+namespace GradDivE { void ForceLinkAllTests() {} }

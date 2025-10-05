@@ -22,8 +22,6 @@
 #include "test_harness.h"
 
 
-int test_grad_div_e(); 
-
 // Force-link hook implemented in each test TU group.
 // The manager calls it once to ensure tests aren't dead-stripped by the linker.
 namespace StencilTests { void ForceLinkAllTests(); }
@@ -49,7 +47,7 @@ double dx,dy,dz;
 InitGradDivEBStencils_compact(Gc, dx, dy, dz);
 InitGradDivEBStencils_wide   (Gw, dx, dy, dz);
 
-test_grad_div_e();
+//test_grad_div_e();
   }
 
   auto args = ParseArgs(argc, argv);
