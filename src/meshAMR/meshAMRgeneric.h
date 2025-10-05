@@ -156,10 +156,12 @@ public:
   }
 
   //boundary node flag: true -> if the node is at the boundary of the computational domain, false -> otherwise
-  bool boundary_flag;
+  bool boundary_distance;
 
-  void SetBoundaryFlag(bool in) {boundary_flag=in;};
-  bool IsBoundaryNode() {return boundary_flag;};
+  void SetBoundaryFlagFalse() {boundary_distance=-1;}
+  void SetBoundaryDistance(int in) {boundary_distance=in;}
+  int GetBoundaryDistance() {return boundary_distance;}
+  bool IsBoundaryNode() {return (boundary_distance==-1) ? false : true;};
 
   //clean the data buffers
   _TARGET_HOST_ _TARGET_DEVICE_
@@ -170,7 +172,7 @@ public:
     nodeDescriptor.internalMeshNode=_AMR_TRUE_;
     nodeDescriptor.nNodeConnections=0;
 
-    boundary_flag=false;
+    boundary_distance=-1;
 
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
     Temp_ID=0;
