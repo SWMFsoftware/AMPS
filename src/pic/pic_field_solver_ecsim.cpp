@@ -6302,6 +6302,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
   GradDivEcompact[1].Ez.AddShifted(dz,0,1,0,1.0/2.0);
   GradDivEcompact[1].Ez.AddShifted(dz,0,-1,0,-1.0/2.0);
 
+  GradDivEcompact[2].Ez = dzz;
+  GradDivEcompact[2].Ex.AddShifted(dx, 0,0, +1, +0.5);
+  GradDivEcompact[2].Ex.AddShifted(dx, 0,0, -1, -0.5);
+  GradDivEcompact[2].Ey.AddShifted(dy, 0,0, +1, +0.5);
+  GradDivEcompact[2].Ey.AddShifted(dy, 0,0, -1, -0.5);
+
   //curl of the magnetic field
   cStencil xp,xm,yp,ym,zp,zm;
 
