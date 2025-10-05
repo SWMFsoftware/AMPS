@@ -330,6 +330,11 @@ void InitGradDivEBStencils_compact(cGradDivEStencil* S, double dx, double dy, do
 
   // Export to rows
   ExportToRows(Dxx, Dyy, Dzz, Dxy, Dxz, Dyz, S);
+
+  //cache the composite L∞ radius
+  for (int i=0;i<3;i++) {
+    S[i].Radius = std::max({ S[i].Ex.RadiusLinf(), S[i].Ey.RadiusLinf(), S[i].Ez.RadiusLinf() });
+  }
 }
 
 
@@ -370,6 +375,11 @@ void InitGradDivEBStencils_wide(cGradDivEStencil* S, double dx, double dy, doubl
 
   // --- Export rows:    Gx: [dxx,dxy,dxz], Gy: [dxy,dyy,dyz], Gz: [dxz,dyz,dzz] ---
   ExportToRows(Dxx, Dyy, Dzz, Dxy, Dxz, Dyz, S);
+
+  //cache the composite L∞ radius
+  for (int i=0;i<3;i++) {
+    S[i].Radius = std::max({ S[i].Ex.RadiusLinf(), S[i].Ey.RadiusLinf(), S[i].Ez.RadiusLinf() });
+  }
 }
 
 

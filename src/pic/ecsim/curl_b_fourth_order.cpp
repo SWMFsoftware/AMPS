@@ -248,6 +248,9 @@ void InitCurlBStencils(cCurlBStencil* Curl, double dx, double dy, double dz) {
   addFourthOrderPartial(Curl[0].By, /*d/dz*/2, 1.0/dz, "curl_Bx_from_By_4o");
   Curl[0].By *= -1.0; // apply the minus sign
 
+  //cache the composite L∞ radius
+  Curl[0].Radius = std::max({ Curl[0].Bx.RadiusLinf(), Curl[0].By.RadiusLinf(), Curl[0].Bz.RadiusLinf() });
+
   // (curl B)_y = +∂Bx/∂z − ∂Bz/∂x
   Curl[1].By = cStencil(); // empty holder
   Curl[1].By.SetSymbol("curl_By_from_By_4o");
@@ -255,12 +258,18 @@ void InitCurlBStencils(cCurlBStencil* Curl, double dx, double dy, double dz) {
   addFourthOrderPartial(Curl[1].Bz, /*d/dx*/0, 1.0/dx, "curl_By_from_Bz_4o");
   Curl[1].Bz *= -1.0;
 
+  //cache the composite L∞ radius
+  Curl[1].Radius = std::max({ Curl[1].Bx.RadiusLinf(), Curl[1].By.RadiusLinf(), Curl[1].Bz.RadiusLinf() });
+
   // (curl B)_z = +∂By/∂x − ∂Bx/∂y
   Curl[2].Bz = cStencil(); // empty holder
   Curl[2].Bz.SetSymbol("curl_Bz_from_Bz_4o");
   addFourthOrderPartial(Curl[2].By, /*d/dx*/0, 1.0/dx, "curl_Bz_from_By_4o");
   addFourthOrderPartial(Curl[2].Bx, /*d/dy*/1, 1.0/dy, "curl_Bz_from_Bx_4o");
   Curl[2].Bx *= -1.0;
+
+  //cache the composite L∞ radius
+  Curl[2].Radius = std::max({ Curl[2].Bx.RadiusLinf(), Curl[2].By.RadiusLinf(), Curl[2].Bz.RadiusLinf() });
 }
 
 } // namespace FourthOrder

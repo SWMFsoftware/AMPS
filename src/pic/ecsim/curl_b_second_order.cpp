@@ -320,6 +320,9 @@ void InitCurlBStencils_face_based(PIC::FieldSolver::Electromagnetic::ECSIM::Sten
     CurlB[c].Bx.Simplify();
     CurlB[c].By.Simplify();
     CurlB[c].Bz.Simplify();
+
+    //cache the composite L∞ radius
+    CurlB[c].Radius = std::max({ CurlB[c].Bx.RadiusLinf(), CurlB[c].By.RadiusLinf(), CurlB[c].Bz.RadiusLinf() });
   }
 }
 

@@ -197,6 +197,11 @@ void InitGradDivEBStencils(cGradDivEStencil* S, double dx, double dy, double dz)
 
   // 4) Export rows
   ExportToRows(Dxx, Dyy, Dzz, Dxy, Dxz, Dyz, S);
+
+  //cache the composite L∞ radius
+  for (int i=0;i<3;i++) {
+    S[i].Radius = std::max({ S[i].Ex.RadiusLinf(), S[i].Ey.RadiusLinf(), S[i].Ez.RadiusLinf() });
+  }
 }
 
 } // namespace FourthOrder
