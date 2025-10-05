@@ -9267,13 +9267,58 @@ namespace FieldSolver {
 	  namespace Stencil { 
             struct cCurlBStencil {
               cStencil Bx, By, Bz;
+	      int Radius = -1;  // L∞ radius over all components (cached)
             };
 
 	    struct cGradDivEStencil {
               cStencil Ex, Ey, Ez;
+	      int Radius = -1;  // L∞ radius over all components (cached)
             };
 
             extern cCurlBStencil CurlBStencil[3]; 
+
+	    namespace SixthOrder {
+              /// Formal order and typical L∞ radius for the interior scheme
+              constexpr int kOrder  = 6;
+              constexpr int kRadius = 3;
+
+              /**
+              * @brief Initialize 6th-order grad(div E) stencils (3D, uniform Cartesian).
+              *
+              * @param[out] Rows  Array of 3 row stencils:
+              *                    Rows[0]: Gx (Ex,Ey,Ez) = (dxx, dxy, dxz)
+              *                    Rows[1]: Gy (Ex,Ey,Ez) = (dxy, dyy, dyz)
+              *                    Rows[2]: Gz (Ex,Ey,Ez) = (dxz, dyz, dzz)
+              * @param[in]  dx,dy,dz  Grid spacings along x,y,z
+              *
+              * Notes:
+              *  - Each Rows[i].Radius is set to the max L∞ radius across its three component stencils.
+              *  - Interior footprint is 3 (needs 3 ghost layers for centered application).
+              *  - Boundary closures are not handled here (use your existing boundary machinery).
+              */
+              void InitGradDivEBStencils(cGradDivEStencil* Rows, double dx, double dy, double dz);
+
+              /** @overload */
+              inline void InitGradDivEBStencils(std::array<cGradDivEStencil,3>& Rows,
+                                  double dx, double dy, double dz) {
+                InitGradDivEBStencils(Rows.data(), dx, dy, dz);
+              }
+
+	      /**
+              * @brief Initialize 6th-order curl(B) stencils at the (-1/2,-1/2,-1/2) corner.
+              *
+              * Fills:
+              *   Curl[0] → (curl B)_x from (Bx,By,Bz)
+              *   Curl[1] → (curl B)_y from (Bx,By,Bz)
+              *   Curl[2] → (curl B)_z from (Bx,By,Bz)
+              *
+              * Each Curl[r].Radius is set to the max L∞ radius across its Bx/By/Bz sub-stencils.
+              *
+              * @param[out] Curl  size-3 array of cCurlBStencil rows (x,y,z components)
+              * @param[in]  dx,dy,dz  grid spacings
+              */
+              void InitCurlBStencils(cCurlBStencil* Curl, double dx, double dy, double dz);
+            } // namespace SixthOrder
 
 	    namespace FourthOrder {
 		    void InitCurlBStencils(cCurlBStencil* CurlBStencilSecondOrder,
