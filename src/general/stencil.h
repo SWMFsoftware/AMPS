@@ -414,6 +414,32 @@ public:
           symbol(std::move(other.symbol)), StencilData(std::move(other.StencilData)),
           StencilCache(std::move(other.StencilCache)) {}
 
+    // In class cStencil
+    int RadiusLinf() const noexcept {
+      // ceil(|n/d|) without floating point
+      const auto ceil_abs = [](const cFrac& f) noexcept -> int {
+        int n = std::abs(f.nominator);
+        int d = std::abs(f.denominator);
+        if (n == 0) return 0;
+        return (n + d - 1) / d; // ceil(n/d)
+      };
+
+      int r = 0;
+
+      // If your base is stored as Base.i/j/k (cFrac), keep this line:
+      // If instead you have Base_i/Base_j/Base_k, use:
+
+      for (const auto& e : StencilData) {
+        const int rx = ceil_abs(e.i + i);
+        const int ry = ceil_abs(e.j + j);
+        const int rz = ceil_abs(e.k + k);
+        const int m  = (rx > ry ? (rx > rz ? rx : rz) : (ry > rz ? ry : rz));
+        if (m > r) r = m;
+      }
+      return r;
+    }
+
+
     void SetSymbol(const char* s) {
         symbol = s;
     }
