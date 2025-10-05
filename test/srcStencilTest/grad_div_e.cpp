@@ -26,6 +26,11 @@
 
 using namespace PIC::FieldSolver::Electromagnetic::ECSIM::Stencil;
 
+// Ensure this TU is pulled in by the central force-link hook.
+namespace GradDivE {
+  void ForceLinkAllTests() {}
+}
+
 // ---------- Analytic field and ∇(∇·E) ----------
 struct Vec3 { double x,y,z; };
 
