@@ -1,652 +1,397 @@
-/***************************************************************************************
- * curl_b.cpp — Convergence test for corner curl(B) stencils (2nd & 4th order)
- * -------------------------------------------------------------------------------------
- * ENHANCED VERSION: Added numerical curl calculation using face-center averaging
- ***************************************************************************************/
+/**
+ * @file    curl_b.cpp
+ * @brief   Convergence test for corner curl(B) stencils:
+ *          2nd-order (edge-based), 2nd-order (face-based), 4th-order, 6th-order.
+ *
+ * Analytic B (periodic, smooth):
+ *   Bx =  sin(ax) cos(by) cos(cz)
+ *   By =  cos(ax) sin(by) cos(cz)
+ *   Bz =  cos(ax) cos(by) sin(cz)
+ *
+ * Curl(B) (continuous):
+ *   (curl B)_x =  ∂Bz/∂y − ∂By/∂z
+ *   (curl B)_y =  ∂Bx/∂z − ∂Bz/∂x
+ *   (curl B)_z =  ∂By/∂x − ∂Bx/∂y
+ *
+ * Discrete target locations:
+ *   • B components are sampled at cell centers: (i+1/2, j+1/2, k+1/2).
+ *   • curl(B) is evaluated at cell corners:     (i,     j,     k    ).
+ *     All stencils below are constructed for the (-1/2,-1/2,-1/2) corner relative
+ *     to the base cell (consistent with AMPS ECSIM staggering). Periodic wrap is used.
+ *
+ * Output:
+ *   • L∞ and relative L2 errors over a refinement set N in {16, 24, 32, 48, 64}.
+ *   • Tecplot file on the finest grid for each variant.
+ *   • Component-wise interior-point comparison (numeric vs analytic), like GradDivE.
+ *
+ * IMPORTANT: Avoid a=b=c for this analytic field.
+ *   If a=b=c, the field is a gradient of ψ=-(1/a)cos(ax)cos(by)cos(cz) ⇒ curl(B)=0 identically.
+ *   We therefore use a=2π, b=3π, c=5π so the analytic curl is non-zero and the comparison is meaningful.
+ */
 
 #include <cmath>
 #include <cstdio>
-#include <vector>
-#include <array>
-#include <algorithm>
-#include <sstream>
+#include <cstdlib>
+#include <cstring>
+#include <iomanip>
 #include <iostream>
-#include <map>
+#include <fstream>
+#include <string>
+#include <vector>
 
 #include "test_harness.h"
+#include "test_force_link_all.h"
+#include "pic.h"                  // cStencil, cCurlBStencil, ExportStencil API
 
-static constexpr bool kPrintDebug = false; // master switch for verbose/debug output
-
-
-namespace StencilTests {
-namespace CurlB {
-
-// Shorthand to the production stencil namespace for readability in this TU.
 namespace EMSt = PIC::FieldSolver::Electromagnetic::ECSIM::Stencil;
 
-// ----------------------------
-// Small uniform grid container
-// ----------------------------
-struct Grid {
-  int Nx, Ny, Nz;       // number of cells in each direction
-  double dx, dy, dz;    // cell sizes (uniform)
-  std::vector<double> Bx, By, Bz; // cell-centered fields
+// -------------------- utilities --------------------
+static inline int wrap(int idx, int N) { int r = idx % N; if (r < 0) r += N; return r; }
 
-  explicit Grid(int nx,int ny,int nz):Nx(nx),Ny(ny),Nz(nz) {
-    dx = 1.0 / Nx;  dy = 1.0 / Ny;  dz = 1.0 / Nz;
-    Bx.assign(Nx*Ny*Nz, 0.0);
-    By.assign(Nx*Ny*Nz, 0.0);
-    Bz.assign(Nx*Ny*Nz, 0.0);
+struct V3 { double x,y,z; };
+
+static inline V3 analyticB(double x, double y, double z, double a, double b, double c) {
+  return {
+    std::sin(a*x)*std::cos(b*y)*std::cos(c*z),
+    std::cos(a*x)*std::sin(b*y)*std::cos(c*z),
+    std::cos(a*x)*std::cos(b*y)*std::sin(c*z)
+  };
+}
+
+static inline V3 analyticCurlB(double x, double y, double z, double a, double b, double c) {
+  const double sxa = std::sin(a*x), cxa = std::cos(a*x);
+  const double syb = std::sin(b*y), cyb = std::cos(b*y);
+  const double szc = std::sin(c*z), czc = std::cos(c*z);
+
+  const double dBz_dy = -b * cxa * syb * szc;
+  const double dBy_dz = -c * cxa * syb * szc;
+  const double dBx_dz = -c * sxa * cyb * szc;
+  const double dBz_dx = -a * sxa * cyb * szc;
+  const double dBy_dx = -a * sxa * syb * czc;
+  const double dBx_dy = -b * sxa * syb * czc;
+
+  return { dBz_dy - dBy_dz, dBx_dz - dBz_dx, dBy_dx - dBx_dy };
+}
+
+// apply an exported (integerized) stencil to a scalar field F at corner (i,j,k)
+static inline double apply_exported(const cStencil::cStencilData& S,
+                                    const std::vector<double>& F,
+                                    int i, int j, int k,
+                                    int Nx, int Ny, int Nz)
+{
+  double acc = 0.0;
+  for (int n=0; n<S.Length; ++n) {
+    const int ii = wrap(i + S.Data[n].i, Nx);
+    const int jj = wrap(j + S.Data[n].j, Ny);
+    const int kk = wrap(k + S.Data[n].k, Nz);
+    const size_t idx = (size_t)kk*Ny*Nx + (size_t)jj*Nx + (size_t)ii;
+    acc += S.Data[n].a * F[idx];
   }
-  inline int idx(int i,int j,int k) const { return (k*Ny + j)*Nx + i; }
-  
-  // Safe accessor with bounds checking
-  inline double getBx(int i, int j, int k) const {
-    if (i<0 || i>=Nx || j<0 || j>=Ny || k<0 || k>=Nz) return 0.0;
-    return Bx[idx(i,j,k)];
-  }
-  inline double getBy(int i, int j, int k) const {
-    if (i<0 || i>=Nx || j<0 || j>=Ny || k<0 || k>=Nz) return 0.0;
-    return By[idx(i,j,k)];
-  }
-  inline double getBz(int i, int j, int k) const {
-    if (i<0 || i>=Nx || j<0 || j>=Ny || k<0 || k>=Nz) return 0.0;
-    return Bz[idx(i,j,k)];
-  }
+  return acc;
+}
+
+// Pretty print: component-wise numeric vs analytic at a central interior point
+static void print_point_comparison(int N, double Lx, double Ly, double Lz,
+                                   const std::vector<double>& Cx,
+                                   const std::vector<double>& Cy,
+                                   const std::vector<double>& Cz,
+                                   const std::vector<double>& CxA,
+                                   const std::vector<double>& CyA,
+                                   const std::vector<double>& CzA,
+                                   const char* flavor_label)
+{
+  const int Nx=N, Ny=N, Nz=N;
+  const double dx=Lx/Nx, dy=Ly/Ny, dz=Lz/Nz;
+  const int ii=Nx/2, jj=Ny/2, kk=Nz/2;  // a central interior point
+  const size_t idx=(size_t)kk*Ny*Nx + (size_t)jj*Nx + (size_t)ii;
+  const double x=(ii+0.0)*dx, y=(jj+0.0)*dy, z=(kk+0.0)*dz; // corners at integers
+
+  auto line = [&](const char* name, double a_, double n_){
+    double err = std::abs(n_ - a_);
+    std::cout << "    " << std::left << std::setw(14) << name
+              << std::right << std::scientific << std::setprecision(8)
+              << std::setw(16) << a_ << "   "
+              << std::setw(16) << n_ << "   "
+              << std::setprecision(3) << std::setw(8) << err << "\n";
+  };
+
+  std::cout << "\n[" << flavor_label << "] Component-wise comparison at interior point:\n"
+            << "  Grid: N=" << N << ", (i,j,k)=(" << ii << "," << jj << "," << kk << ")"
+            << ", (x,y,z)=(" << std::fixed << std::setprecision(6)
+            << x << ", " << y << ", " << z << ")\n"
+            << "  -----------------------------------------------------------------------------\n"
+            << "    Component         Analytic               Numerical               AbsErr\n"
+            << "  -----------------------------------------------------------------------------\n";
+
+  line("(CurlB)_x", CxA[idx], Cx[idx]);
+  line("(CurlB)_y", CyA[idx], Cy[idx]);
+  line("(CurlB)_z", CzA[idx], Cz[idx]);
+}
+
+// -------------------- test driver --------------------
+namespace CurlB {
+
+using InitFn = void (*)(EMSt::cCurlBStencil*, double,double,double);
+struct Variant { const char* name; InitFn init; };
+
+static const Variant kVariants[] = {
+  { "2nd-order (edge-based)",
+    EMSt::SecondOrder::InitCurlBStencils_edge_based },
+  { "2nd-order (face-based)",
+    EMSt::SecondOrder::InitCurlBStencils_face_based },
+  { "4th-order",
+    EMSt::FourthOrder::InitCurlBStencils },
+  { "6th-order",
+    EMSt::SixthOrder::InitCurlBStencils }
 };
 
-// ----------------------------------------
-// Analytic field and exact curl at corners
-// ----------------------------------------
+struct ErrStats { double linf=0.0, l2rel=0.0; };
 
-// Fill Bx,By,Bz at cell centers with:  Bx=y^3, By=z^3, Bz=x^3
-static void FillCubic(Grid& g) {
-  for (int k=0;k<g.Nz;k++) {
-    const double zc = (k + 0.5)*g.dz;
-    for (int j=0;j<g.Ny;j++) {
-      const double yc = (j + 0.5)*g.dy;
-      for (int i=0;i<g.Nx;i++) {
-        const double xc = (i + 0.5)*g.dx;
-        g.Bx[g.idx(i,j,k)] = yc*yc*yc; // y^3
-        g.By[g.idx(i,j,k)] = zc*zc*zc; // z^3
-        g.Bz[g.idx(i,j,k)] = xc*xc*xc; // x^3
-      }
-    }
-  }
-}
-
-// Exact curl(B) at a corner location (x=i*dx, y=j*dy, z=k*dz)
-static inline std::array<double,3> CurlExactCorner(double x,double y,double z) {
-  // curl = (-3 z^2, -3 x^2, -3 y^2)
-  return { -3.0*z*z, -3.0*x*x, -3.0*y*y };
-}
-
-// -----------------------------------------------------------------------
-// NEW: Numerical curl calculation at cell corners from cell-centered B
-// -----------------------------------------------------------------------
-// Corner at (i,j,k) is at physical location (i*dx, j*dy, k*dz).
-// Cell centers are at ((i+0.5)*dx, (j+0.5)*dy, (k+0.5)*dz).
-//
-// To compute curl at corner (i,j,k), we need derivatives at that corner.
-// We'll use a 2nd-order accurate centered difference approach:
-//
-// For (curl B)_x = dBz/dy - dBy/dz at corner (i,j,k):
-//   - dBz/dy: Use cells straddling the corner in y-direction
-//   - dBy/dz: Use cells straddling the corner in z-direction
-//
-// Strategy: Average the 4 surrounding cell-centered values to get face values,
-// then take differences between faces.
-//
-// Corner (i,j,k) is surrounded by 8 cells with indices:
-//   (i-1,j-1,k-1), (i,j-1,k-1), (i-1,j,k-1), (i,j,k-1),
-//   (i-1,j-1,k),   (i,j-1,k),   (i-1,j,k),   (i,j,k)
-//
-
-// Helper to print the stencil used for face-averaging method
-static void PrintFaceAvgStencil(const Grid& g, int i, int j, int k, double dx, double dy, double dz) {
-  if (!kPrintDebug) { return; }
-
-  std::printf("\n========== FACE-AVERAGING STENCIL at corner (i,j,k)=(%d,%d,%d) ==========\n", i, j, k);
-  std::printf("Corner location: (x,y,z) = (%.6g, %.6g, %.6g)\n", i*dx, j*dy, k*dz);
-  std::printf("\nThis stencil uses 8 surrounding cell centers to compute curl via face averaging.\n");
-  std::printf("Cell centers are at (i+0.5, j+0.5, k+0.5) in index space.\n\n");
-  
-  // List the 8 surrounding cells
-  std::printf("--- 8 Surrounding Cell Centers ---\n");
-  int cells[8][3] = {
-    {i-1, j-1, k-1}, {i, j-1, k-1}, {i-1, j, k-1}, {i, j, k-1},
-    {i-1, j-1, k},   {i, j-1, k},   {i-1, j, k},   {i, j, k}
-  };
-  for (int n = 0; n < 8; ++n) {
-    int ci = cells[n][0], cj = cells[n][1], ck = cells[n][2];
-    double px = (ci+0.5)*dx, py = (cj+0.5)*dy, pz = (ck+0.5)*dz;
-    std::printf("  Cell %d: (%d,%d,%d) at (%.6g,%.6g,%.6g) | Bx=%.6g, By=%.6g, Bz=%.6g\n", 
-                n, ci, cj, ck, px, py, pz,
-                g.getBx(ci,cj,ck), g.getBy(ci,cj,ck), g.getBz(ci,cj,ck));
-  }
-  
-  // Calculate actual numerical values for derivatives
-  // dBz/dy
-  double Bz_yplus  = 0.25 * (g.getBz(i-1,j,k-1) + g.getBz(i,j,k-1) + 
-                              g.getBz(i-1,j,k)   + g.getBz(i,j,k));
-  double Bz_yminus = 0.25 * (g.getBz(i-1,j-1,k-1) + g.getBz(i,j-1,k-1) + 
-                              g.getBz(i-1,j-1,k)   + g.getBz(i,j-1,k));
-  double dBz_dy = (Bz_yplus - Bz_yminus) / dy;
-  
-  // dBy/dz
-  double By_zplus  = 0.25 * (g.getBy(i-1,j-1,k) + g.getBy(i,j-1,k) + 
-                              g.getBy(i-1,j,k)   + g.getBy(i,j,k));
-  double By_zminus = 0.25 * (g.getBy(i-1,j-1,k-1) + g.getBy(i,j-1,k-1) + 
-                              g.getBy(i-1,j,k-1)   + g.getBy(i,j,k-1));
-  double dBy_dz = (By_zplus - By_zminus) / dz;
-  
-  // dBx/dz
-  double Bx_zplus  = 0.25 * (g.getBx(i-1,j-1,k) + g.getBx(i,j-1,k) + 
-                              g.getBx(i-1,j,k)   + g.getBx(i,j,k));
-  double Bx_zminus = 0.25 * (g.getBx(i-1,j-1,k-1) + g.getBx(i,j-1,k-1) + 
-                              g.getBx(i-1,j,k-1)   + g.getBx(i,j,k-1));
-  double dBx_dz = (Bx_zplus - Bx_zminus) / dz;
-  
-  // dBz/dx
-  double Bz_xplus  = 0.25 * (g.getBz(i,j-1,k-1) + g.getBz(i,j,k-1) + 
-                              g.getBz(i,j-1,k)   + g.getBz(i,j,k));
-  double Bz_xminus = 0.25 * (g.getBz(i-1,j-1,k-1) + g.getBz(i-1,j,k-1) + 
-                              g.getBz(i-1,j-1,k)   + g.getBz(i-1,j,k));
-  double dBz_dx = (Bz_xplus - Bz_xminus) / dx;
-  
-  // dBy/dx
-  double By_xplus  = 0.25 * (g.getBy(i,j-1,k-1) + g.getBy(i,j,k-1) + 
-                              g.getBy(i,j-1,k)   + g.getBy(i,j,k));
-  double By_xminus = 0.25 * (g.getBy(i-1,j-1,k-1) + g.getBy(i-1,j,k-1) + 
-                              g.getBy(i-1,j-1,k)   + g.getBy(i-1,j,k));
-  double dBy_dx = (By_xplus - By_xminus) / dx;
-  
-  // dBx/dy
-  double Bx_yplus  = 0.25 * (g.getBx(i-1,j,k-1) + g.getBx(i,j,k-1) + 
-                              g.getBx(i-1,j,k)   + g.getBx(i,j,k));
-  double Bx_yminus = 0.25 * (g.getBx(i-1,j-1,k-1) + g.getBx(i,j-1,k-1) + 
-                              g.getBx(i-1,j-1,k)   + g.getBx(i,j-1,k));
-  double dBx_dy = (Bx_yplus - Bx_yminus) / dy;
-  
-  // Show curl_x = dBz/dy - dBy/dz
-  std::printf("\n--- Component: (curl B)_x = dBz/dy - dBy/dz ---\n");
-  std::printf("  dBz/dy:\n");
-  std::printf("    Bz at y+ face (y=%.6g): avg of cells (%d,%d,%d), (%d,%d,%d), (%d,%d,%d), (%d,%d,%d)\n",
-              j*dy + dy/2, i-1,j,k-1, i,j,k-1, i-1,j,k, i,j,k);
-  std::printf("    Bz at y- face (y=%.6g): avg of cells (%d,%d,%d), (%d,%d,%d), (%d,%d,%d), (%d,%d,%d)\n",
-              j*dy - dy/2, i-1,j-1,k-1, i,j-1,k-1, i-1,j-1,k, i,j-1,k);
-  std::printf("    => dBz/dy = (%.10g - %.10g) / %.6g = %.10g\n", Bz_yplus, Bz_yminus, dy, dBz_dy);
-  std::printf("    Contribution to curl_x:\n");
-  std::printf("      Bz[%d,%d,%d]: +%.6g  (from y+ avg)\n", i-1,j,k-1, 0.25/dy);
-  std::printf("      Bz[%d,%d,%d]: +%.6g\n", i,j,k-1, 0.25/dy);
-  std::printf("      Bz[%d,%d,%d]: +%.6g\n", i-1,j,k, 0.25/dy);
-  std::printf("      Bz[%d,%d,%d]: +%.6g\n", i,j,k, 0.25/dy);
-  std::printf("      Bz[%d,%d,%d]: %.6g  (from y- avg)\n", i-1,j-1,k-1, -0.25/dy);
-  std::printf("      Bz[%d,%d,%d]: %.6g\n", i,j-1,k-1, -0.25/dy);
-  std::printf("      Bz[%d,%d,%d]: %.6g\n", i-1,j-1,k, -0.25/dy);
-  std::printf("      Bz[%d,%d,%d]: %.6g\n", i,j-1,k, -0.25/dy);
-  
-  std::printf("  dBy/dz:\n");
-  std::printf("    By at z+ face (z=%.6g): avg of cells (%d,%d,%d), (%d,%d,%d), (%d,%d,%d), (%d,%d,%d)\n",
-              k*dz + dz/2, i-1,j-1,k, i,j-1,k, i-1,j,k, i,j,k);
-  std::printf("    By at z- face (z=%.6g): avg of cells (%d,%d,%d), (%d,%d,%d), (%d,%d,%d), (%d,%d,%d)\n",
-              k*dz - dz/2, i-1,j-1,k-1, i,j-1,k-1, i-1,j,k-1, i,j,k-1);
-  std::printf("    => dBy/dz = (%.10g - %.10g) / %.6g = %.10g\n", By_zplus, By_zminus, dz, dBy_dz);
-  std::printf("    Contribution to curl_x:\n");
-  std::printf("      By[%d,%d,%d]: %.6g  (from z+ avg, negative sign)\n", i-1,j-1,k, -0.25/dz);
-  std::printf("      By[%d,%d,%d]: %.6g\n", i,j-1,k, -0.25/dz);
-  std::printf("      By[%d,%d,%d]: %.6g\n", i-1,j,k, -0.25/dz);
-  std::printf("      By[%d,%d,%d]: %.6g\n", i,j,k, -0.25/dz);
-  std::printf("      By[%d,%d,%d]: +%.6g  (from z- avg, negative sign)\n", i-1,j-1,k-1, 0.25/dz);
-  std::printf("      By[%d,%d,%d]: +%.6g\n", i,j-1,k-1, 0.25/dz);
-  std::printf("      By[%d,%d,%d]: +%.6g\n", i-1,j,k-1, 0.25/dz);
-  std::printf("      By[%d,%d,%d]: +%.6g\n", i,j,k-1, 0.25/dz);
-  
-  // Show curl_y = dBx/dz - dBz/dx
-  std::printf("\n--- Component: (curl B)_y = dBx/dz - dBz/dx ---\n");
-  std::printf("  dBx/dz:\n");
-  std::printf("    Bx at z+ face (z=%.6g): avg of cells (%d,%d,%d), (%d,%d,%d), (%d,%d,%d), (%d,%d,%d)\n",
-              k*dz + dz/2, i-1,j-1,k, i,j-1,k, i-1,j,k, i,j,k);
-  std::printf("    Bx at z- face (z=%.6g): avg of cells (%d,%d,%d), (%d,%d,%d), (%d,%d,%d), (%d,%d,%d)\n",
-              k*dz - dz/2, i-1,j-1,k-1, i,j-1,k-1, i-1,j,k-1, i,j,k-1);
-  std::printf("    => dBx/dz = (%.10g - %.10g) / %.6g = %.10g\n", Bx_zplus, Bx_zminus, dz, dBx_dz);
-  std::printf("    => Contribution: coeff = +1/dz = %.6g\n", 1.0/dz);
-  
-  std::printf("  dBz/dx:\n");
-  std::printf("    Bz at x+ face (x=%.6g): avg of cells (%d,%d,%d), (%d,%d,%d), (%d,%d,%d), (%d,%d,%d)\n",
-              i*dx + dx/2, i,j-1,k-1, i,j,k-1, i,j-1,k, i,j,k);
-  std::printf("    Bz at x- face (x=%.6g): avg of cells (%d,%d,%d), (%d,%d,%d), (%d,%d,%d), (%d,%d,%d)\n",
-              i*dx - dx/2, i-1,j-1,k-1, i-1,j,k-1, i-1,j-1,k, i-1,j,k);
-  std::printf("    => dBz/dx = (%.10g - %.10g) / %.6g = %.10g\n", Bz_xplus, Bz_xminus, dx, dBz_dx);
-  std::printf("    => Contribution: coeff = -1/dx = %.6g\n", -1.0/dx);
-  
-  // Show curl_z = dBy/dx - dBx/dy
-  std::printf("\n--- Component: (curl B)_z = dBy/dx - dBx/dy ---\n");
-  std::printf("  dBy/dx:\n");
-  std::printf("    By at x+ face (x=%.6g): avg of cells (%d,%d,%d), (%d,%d,%d), (%d,%d,%d), (%d,%d,%d)\n",
-              i*dx + dx/2, i,j-1,k-1, i,j,k-1, i,j-1,k, i,j,k);
-  std::printf("    By at x- face (x=%.6g): avg of cells (%d,%d,%d), (%d,%d,%d), (%d,%d,%d), (%d,%d,%d)\n",
-              i*dx - dx/2, i-1,j-1,k-1, i-1,j,k-1, i-1,j-1,k, i-1,j,k);
-  std::printf("    => dBy/dx = (%.10g - %.10g) / %.6g = %.10g\n", By_xplus, By_xminus, dx, dBy_dx);
-  std::printf("    => Contribution: coeff = +1/dx = %.6g\n", 1.0/dx);
-  
-  std::printf("  dBx/dy:\n");
-  std::printf("    Bx at y+ face (y=%.6g): avg of cells (%d,%d,%d), (%d,%d,%d), (%d,%d,%d), (%d,%d,%d)\n",
-              j*dy + dy/2, i-1,j,k-1, i,j,k-1, i-1,j,k, i,j,k);
-  std::printf("    Bx at y- face (y=%.6g): avg of cells (%d,%d,%d), (%d,%d,%d), (%d,%d,%d), (%d,%d,%d)\n",
-              j*dy - dy/2, i-1,j-1,k-1, i,j-1,k-1, i-1,j-1,k, i,j-1,k);
-  std::printf("    => dBx/dy = (%.10g - %.10g) / %.6g = %.10g\n", Bx_yplus, Bx_yminus, dy, dBx_dy);
-  std::printf("    => Contribution: coeff = -1/dy = %.6g\n", -1.0/dy);
-  
-  std::printf("====================================\n\n");
-}
-
-static std::array<double,3> CurlNumericalFaceAvg(const Grid& g, int i, int j, int k, bool print_stencil = false) {
-  const double dx = g.dx, dy = g.dy, dz = g.dz;
-  
-  if (print_stencil) {
-    PrintFaceAvgStencil(g, i, j, k, dx, dy, dz);
-  }
-  
-  // Corner is at (i*dx, j*dy, k*dz)
-  // The 8 surrounding cell centers are at (i±0.5, j±0.5, k±0.5) in index space
-  
-  // ===== (curl B)_x = dBz/dy - dBy/dz =====
-  
-  // dBz/dy: Need Bz at y-faces (at y = j*dy ± dy/2)
-  // y+ face (j+0.5 in index space, j*dy+dy/2 in physical): average 4 cells in xz plane at j,j+1
-  // y- face (j-0.5 in index space, j*dy-dy/2 in physical): average 4 cells in xz plane at j-1,j
-  double Bz_yplus  = 0.25 * (g.getBz(i-1,j,k-1) + g.getBz(i,j,k-1) + 
-                              g.getBz(i-1,j,k)   + g.getBz(i,j,k));
-  double Bz_yminus = 0.25 * (g.getBz(i-1,j-1,k-1) + g.getBz(i,j-1,k-1) + 
-                              g.getBz(i-1,j-1,k)   + g.getBz(i,j-1,k));
-  double dBz_dy = (Bz_yplus - Bz_yminus) / dy;
-  
-  // dBy/dz: Need By at z-faces (at z = k*dz ± dz/2)
-  // z+ face (k+0.5 in index space): average 4 cells in xy plane at k,k+1
-  // z- face (k-0.5 in index space): average 4 cells in xy plane at k-1,k
-  double By_zplus  = 0.25 * (g.getBy(i-1,j-1,k) + g.getBy(i,j-1,k) + 
-                              g.getBy(i-1,j,k)   + g.getBy(i,j,k));
-  double By_zminus = 0.25 * (g.getBy(i-1,j-1,k-1) + g.getBy(i,j-1,k-1) + 
-                              g.getBy(i-1,j,k-1)   + g.getBy(i,j,k-1));
-  double dBy_dz = (By_zplus - By_zminus) / dz;
-  
-  double curl_x = dBz_dy - dBy_dz;
-  
-  // ===== (curl B)_y = dBx/dz - dBz/dx =====
-  
-  // dBx/dz: Need Bx at z-faces
-  double Bx_zplus  = 0.25 * (g.getBx(i-1,j-1,k) + g.getBx(i,j-1,k) + 
-                              g.getBx(i-1,j,k)   + g.getBx(i,j,k));
-  double Bx_zminus = 0.25 * (g.getBx(i-1,j-1,k-1) + g.getBx(i,j-1,k-1) + 
-                              g.getBx(i-1,j,k-1)   + g.getBx(i,j,k-1));
-  double dBx_dz = (Bx_zplus - Bx_zminus) / dz;
-  
-  // dBz/dx: Need Bz at x-faces (at x = i*dx ± dx/2)
-  // x+ face (i+0.5 in index space): average 4 cells in yz plane at i,i+1
-  // x- face (i-0.5 in index space): average 4 cells in yz plane at i-1,i
-  double Bz_xplus  = 0.25 * (g.getBz(i,j-1,k-1) + g.getBz(i,j,k-1) + 
-                              g.getBz(i,j-1,k)   + g.getBz(i,j,k));
-  double Bz_xminus = 0.25 * (g.getBz(i-1,j-1,k-1) + g.getBz(i-1,j,k-1) + 
-                              g.getBz(i-1,j-1,k)   + g.getBz(i-1,j,k));
-  double dBz_dx = (Bz_xplus - Bz_xminus) / dx;
-  
-  double curl_y = dBx_dz - dBz_dx;
-  
-  // ===== (curl B)_z = dBy/dx - dBx/dy =====
-  
-  // dBy/dx: Need By at x-faces
-  double By_xplus  = 0.25 * (g.getBy(i,j-1,k-1) + g.getBy(i,j,k-1) + 
-                              g.getBy(i,j-1,k)   + g.getBy(i,j,k));
-  double By_xminus = 0.25 * (g.getBy(i-1,j-1,k-1) + g.getBy(i-1,j,k-1) + 
-                              g.getBy(i-1,j-1,k)   + g.getBy(i-1,j,k));
-  double dBy_dx = (By_xplus - By_xminus) / dx;
-  
-  // dBx/dy: Need Bx at y-faces
-  double Bx_yplus  = 0.25 * (g.getBx(i-1,j,k-1) + g.getBx(i,j,k-1) + 
-                              g.getBx(i-1,j,k)   + g.getBx(i,j,k));
-  double Bx_yminus = 0.25 * (g.getBx(i-1,j-1,k-1) + g.getBx(i,j-1,k-1) + 
-                              g.getBx(i-1,j-1,k)   + g.getBx(i,j-1,k));
-  double dBx_dy = (Bx_yplus - Bx_yminus) / dy;
-  
-  double curl_z = dBy_dx - dBx_dy;
-  
-  return {curl_x, curl_y, curl_z};
-}
-
-// --------------------------------------------------
-// Utility: parse N-list override (e.g., "N=16,24,32")
-// --------------------------------------------------
-static std::vector<int> ParseNList(const std::vector<std::string>& args) {
-  std::vector<int> Ns = {16, 24, 32, 48, 64}; // default refinement ladder
-  for (const auto& a : args) {
-    if (a.rfind("N=",0) == 0) {
-      Ns.clear();
-      std::stringstream ss(a.substr(2));
-      while (ss.good()) {
-        int v; char sep;
-        if (ss >> v) Ns.push_back(v);
-        if (!(ss >> sep)) break;
-      }
-    }
-  }
-  return Ns;
-}
-
-// -----------------------------------------------------------------
-// Export helper: get the compact tables for each contributing field
-// -----------------------------------------------------------------
-using Compact = ::cStencil::cStencilData;
-
-static inline void ExportCurlComponentTables(EMSt::cCurlBStencil& C, Compact out[3],double scale) {
-  C.Bx.ExportStencil(&out[0],scale);
-  C.By.ExportStencil(&out[1],scale);
-  C.Bz.ExportStencil(&out[2],scale);
-}
-
-// --------------------------------------------------------
-// NEW: Print stencil in readable format
-// --------------------------------------------------------
-static void PrintStencilTables(const Compact S[3][3], const char* variantName) {
-  const char* comp_names[3] = {"(curl B)_x", "(curl B)_y", "(curl B)_z"};
-  const char* field_names[3] = {"Bx", "By", "Bz"};
-  
-  std::printf("\n========== STENCIL TABLES: %s ==========\n", variantName);
-  
-  for (int c = 0; c < 3; ++c) {
-    std::printf("\n--- Component: %s ---\n", comp_names[c]);
-    for (int f = 0; f < 3; ++f) {
-      std::printf("  Contribution from %s:\n", field_names[f]);
-      const Compact& St = S[c][f];
-      if (St.Length == 0) {
-        std::printf("    (empty)\n");
-        continue;
-      }
-      for (int n = 0; n < St.Length; ++n) {
-        std::printf("    [%2d] coeff=%+.8e  offset=(%+2d,%+2d,%+2d)\n",
-                    n, St.Data[n].a, St.Data[n].i, St.Data[n].j, St.Data[n].k);
-      }
-    }
-  }
-  std::printf("====================================\n\n");
-}
-
-// --------------------------------------------------------
-// Compute maximum reach (padding) from a 3×3 set of tables
-// --------------------------------------------------------
-static int StencilMaxPad(const Compact S[3][3]) {
-  int pad = 0;
-  for (int comp=0; comp<3; ++comp) {
-    for (int f=0; f<3; ++f) {
-      for (int n=0; n<S[comp][f].Length; ++n) {
-        const int di = std::abs(S[comp][f].Data[n].i);
-        const int dj = std::abs(S[comp][f].Data[n].j);
-        const int dk = std::abs(S[comp][f].Data[n].k);
-        pad = std::max(pad, std::max(di, std::max(dj, dk)));
-      }
-    }
-  }
-  return pad;
-}
-
-// ------------------------------------------------------
-// Apply one curl component's tables at base (i,j,k) cell
-// ------------------------------------------------------
-static inline double ApplyComponentAt(
-    const Grid& g, int i,int j,int k,
-    const Compact& SBx, const Compact& SBy, const Compact& SBz)
+static ErrStats run_one(const Variant& V,
+                        int N, double Lx, double Ly, double Lz,
+                        double a, double b, double c,
+                        bool tecplot_dump=false,
+                        // optional outputs for interior-point comparison
+                        std::vector<double>* out_Cx = nullptr,
+                        std::vector<double>* out_Cy = nullptr,
+                        std::vector<double>* out_Cz = nullptr,
+                        std::vector<double>* out_CxA = nullptr,
+                        std::vector<double>* out_CyA = nullptr,
+                        std::vector<double>* out_CzA = nullptr)
 {
-  auto accum = [&](const Compact& S, const std::vector<double>& F) {
-    double s = 0.0;
-    for (int n=0; n<S.Length; ++n) {
-      const int ii = i + S.Data[n].i;
-      const int jj = j + S.Data[n].j;
-      const int kk = k + S.Data[n].k;
-      s += S.Data[n].a * F[g.idx(ii,jj,kk)];
-    }
-    return s;
-  };
+  const int Nx=N, Ny=N, Nz=N;
+  const size_t NTc = (size_t)Nx*Ny*Nz;     // centers
+  const size_t NTk = (size_t)Nx*Ny*Nz;     // corners
+  const double dx=Lx/Nx, dy=Ly/Ny, dz=Lz/Nz;
 
-  return accum(SBx, g.Bx) + accum(SBy, g.By) + accum(SBz, g.Bz);
-}
+  // cell-centered B fields
+  std::vector<double> Bx(NTc), By(NTc), Bz(NTc);
 
-// ------------------------------------------------------
-// Apply component with detailed printing (verbose version)
-// ------------------------------------------------------
-static inline double ApplyComponentAtVerbose(
-    const Grid& g, int i, int j, int k,
-    const Compact& SBx, const Compact& SBy, const Compact& SBz,
-    const char* comp_name, const char* formula)
-{
-  const bool _print = kPrintDebug;
+  for (int k=0; k<Nz; ++k)
+    for (int j=0; j<Ny; ++j)
+      for (int i=0; i<Nx; ++i) {
+        const size_t idc = (size_t)k*Ny*Nx + (size_t)j*Nx + (size_t)i;
+        const double x=(i+0.5)*dx, y=(j+0.5)*dy, z=(k+0.5)*dz;
+        const V3 Bval = analyticB(x,y,z, a,b,c);
+        Bx[idc]=Bval.x; By[idc]=Bval.y; Bz[idc]=Bval.z;
+      }
 
-  if(_print) std::printf("\n--- Component: %s = %s ---\n", comp_name, formula);
-  
-  auto accum_verbose = [&](const Compact& S, const std::vector<double>& F, const char* field_name) {
-    double s = 0.0;
-    if (S.Length == 0) {
-      if(_print) std::printf("  No contribution from %s\n", field_name);
-      return s;
-    }
-    
-    if(_print) std::printf("  Contribution from %s (indices as i,j,k):\n", field_name);
-    
-    for (int n = 0; n < S.Length; ++n) {
-      const int ii = i + S.Data[n].i;
-      const int jj = j + S.Data[n].j;
-      const int kk = k + S.Data[n].k;
-      if(_print) std::printf("    [%d,%d,%d] coeff=%+.6g F=%e\n", ii, jj, kk, S.Data[n].a,F[g.idx(ii, jj, kk)]);
-      s += S.Data[n].a * F[g.idx(ii, jj, kk)];
-    }
-    
-    if(_print) std::printf("    Total from %s: %.10g\n", field_name, s);
-    return s;
-  };
+  // build stencils for this variant
+  EMSt::cCurlBStencil Rows[3];
+  V.init(Rows, dx,dy,dz);
 
-  double result = 0.0;
-  result += accum_verbose(SBx, g.Bx, "Bx");
-  result += accum_verbose(SBy, g.By, "By");
-  result += accum_verbose(SBz, g.Bz, "Bz");
-  
-  if(_print) std::printf("  ===> Final %s = %.10g\n", comp_name, result);
-  
-  return result;
-}
+  // export integerized taps once per row/component
+  cStencil::cStencilData SxBx, SxBy, SxBz;
+  cStencil::cStencilData SyBx, SyBy, SyBz;
+  cStencil::cStencilData SzBx, SzBy, SzBz;
 
-// ------------------------
-// Simple error accumulators
-// ------------------------
-struct Err { double l2=0, linf=0; long n=0; };
-static inline void Accum(Err& e, const double num[3], const double ex[3]) {
-  for (int c=0;c<3;c++) {
-    const double d = num[c] - ex[c];
-    e.l2 += d*d;
-    e.linf = std::max(e.linf, std::abs(d));
-    e.n++;
+  Rows[0].Bx.ExportStencil(&SxBx);
+  Rows[0].By.ExportStencil(&SxBy);
+  Rows[0].Bz.ExportStencil(&SxBz);
+
+  Rows[1].Bx.ExportStencil(&SyBx);
+  Rows[1].By.ExportStencil(&SyBy);
+  Rows[1].Bz.ExportStencil(&SyBz);
+
+  Rows[2].Bx.ExportStencil(&SzBx);
+  Rows[2].By.ExportStencil(&SzBy);
+  Rows[2].Bz.ExportStencil(&SzBz);
+
+  // numeric curl(B) at corners (i,j,k) -> position (i*dx, j*dy, k*dz)
+  std::vector<double> Cx(NTk), Cy(NTk), Cz(NTk);
+  for (int k=0; k<Nz; ++k)
+    for (int j=0; j<Ny; ++j)
+      for (int i=0; i<Nx; ++i) {
+        const size_t idk = (size_t)k*Ny*Nx + (size_t)j*Nx + (size_t)i;
+        // row 0 (curl B)_x
+        double vx = 0.0;
+        vx += apply_exported(SxBx, Bx, i,j,k, Nx,Ny,Nz);
+        vx += apply_exported(SxBy, By, i,j,k, Nx,Ny,Nz);
+        vx += apply_exported(SxBz, Bz, i,j,k, Nx,Ny,Nz);
+        Cx[idk] = vx;
+
+        // row 1 (curl B)_y
+        double vy = 0.0;
+        vy += apply_exported(SyBx, Bx, i,j,k, Nx,Ny,Nz);
+        vy += apply_exported(SyBy, By, i,j,k, Nx,Ny,Nz);
+        vy += apply_exported(SyBz, Bz, i,j,k, Nx,Ny,Nz);
+        Cy[idk] = vy;
+
+        // row 2 (curl B)_z
+        double vz = 0.0;
+        vz += apply_exported(SzBx, Bx, i,j,k, Nx,Ny,Nz);
+        vz += apply_exported(SzBy, By, i,j,k, Nx,Ny,Nz);
+        vz += apply_exported(SzBz, Bz, i,j,k, Nx,Ny,Nz);
+        Cz[idk] = vz;
+      }
+
+  // analytic curl(B) at the corners (x=i*dx, y=j*dy, z=k*dz)
+  std::vector<double> CxA(NTk), CyA(NTk), CzA(NTk);
+  for (int k=0; k<Nz; ++k)
+    for (int j=0; j<Ny; ++j)
+      for (int i=0; i<Nx; ++i) {
+        const size_t idk = (size_t)k*Ny*Nx + (size_t)j*Nx + (size_t)i;
+        const double x=i*dx, y=j*dy, z=k*dz;
+        const V3 cu = analyticCurlB(x,y,z, a,b,c);
+        CxA[idk]=cu.x; CyA[idk]=cu.y; CzA[idk]=cu.z;
+      }
+
+  // norms
+  double linf=0.0, l2num=0.0, l2den=0.0;
+  for (size_t t=0; t<NTk; ++t) {
+    const double ex = Cx[t] - CxA[t];
+    const double ey = Cy[t] - CyA[t];
+    const double ez = Cz[t] - CzA[t];
+    linf = std::max(linf, std::max(std::abs(ex), std::max(std::abs(ey), std::abs(ez))));
+    l2num += ex*ex + ey*ey + ez*ez;
+    l2den += CxA[t]*CxA[t] + CyA[t]*CyA[t] + CzA[t]*CzA[t];
   }
-}
-static inline void Finish(Err& e) {
-  e.l2 = std::sqrt(e.l2 / std::max<long>(1, e.n));
-}
 
-// ---------------------
-// The test entry point
-// ---------------------
-static int Run(const std::vector<std::string>& args) {
-  namespace EMSt = PIC::FieldSolver::Electromagnetic::ECSIM::Stencil;
+  // optional array copies for pointwise print
+  if (out_Cx)  { *out_Cx  = Cx; }
+  if (out_Cy)  { *out_Cy  = Cy; }
+  if (out_Cz)  { *out_Cz  = Cz; }
+  if (out_CxA) { *out_CxA = CxA; }
+  if (out_CyA) { *out_CyA = CyA; }
+  if (out_CzA) { *out_CzA = CzA; }
 
-  // Variant descriptor: name + builder function
-  using InitFn = void (*)(EMSt::cCurlBStencil*, double,double,double);
-  struct Variant { const char* name; InitFn init; };
-
-  // Three requested variants
-  const Variant variants[] = {
-    { "2nd-order (edge-based)",
-      PIC::FieldSolver::Electromagnetic::ECSIM::Stencil::SecondOrder::InitCurlBStencils_edge_based },
-    { "2nd-order (face-based)",
-      PIC::FieldSolver::Electromagnetic::ECSIM::Stencil::SecondOrder::InitCurlBStencils_face_based },
-    { "4th-order",
-      PIC::FieldSolver::Electromagnetic::ECSIM::Stencil::FourthOrder::InitCurlBStencils }
-  };
-
-  // Grid sizes to test
-  const auto Ns = ParseNList(args);
-
-  // Loop over stencil variants
-  for (const auto& V : variants) {
-    // (1) Build stencils with unit spacings
-    EMSt::cCurlBStencil Curl[3];
-    V.init(Curl, 1.0, 1.0, 1.0);
-
-    // (2) Export compact tables (unit scale for display)
-    Compact S_unit[3][3];
-    for (int c=0;c<3;c++) {
-      ExportCurlComponentTables(Curl[c], S_unit[c], 1.0);
-    }
-
-    // (3) Print stencil tables
-    if (kPrintDebug) PrintStencilTables(S_unit, V.name);
-
-    // (4) Determine interior pad
-    const int pad = StencilMaxPad(S_unit);
-
-    std::printf("\n=== curl_b variant: %s ===\n", V.name);
-    std::printf("Interior padding required: %d\n\n", pad);
-    std::printf("%6s %10s %16s %16s\n", "N", "h", "L2", "Linf");
-
-    double prevL2 = -1.0;
-    for (int N : Ns) {
-      // Build grid and fill analytic cell-centered B
-      Grid g(N, N, N);
-      FillCubic(g);
-
-      // Export and scale compact tables
-      Compact S[3][3];
-      for (int c=0;c<3;c++) {
-        ExportCurlComponentTables(Curl[c], S[c], N);
-      }
-
-      Err e; // L2/Linf accumulator
-
-      // Sweep interior corners
-      for (int k = pad; k < g.Nz - pad; ++k) {
-        const double z = k * g.dz;
-        for (int j = pad; j < g.Ny - pad; ++j) {
-          const double y = j * g.dy;
-          for (int i = pad; i < g.Nx - pad; ++i) {
-            const double x = i * g.dx;
-
-            // Exact curl at this corner
-            const auto ex = CurlExactCorner(x,y,z);
-
-            // Numerical curl (stencil-based)
-            double num[3];
-            num[0] = ApplyComponentAt(g, i,j,k, S[0][0], S[0][1], S[0][2]);
-            num[1] = ApplyComponentAt(g, i,j,k, S[1][0], S[1][1], S[1][2]);
-            num[2] = ApplyComponentAt(g, i,j,k, S[2][0], S[2][1], S[2][2]);
-
-            // Accumulate vector error
-            Accum(e, num, ex.data());
-          }
-        }
-      }
-
-      // Finalize norms and print
-      Finish(e);
-      std::printf("%6d %10.4g %16.3e %16.3e\n", N, g.dx, e.l2, e.linf);
-
-      // Observed order
-      if (prevL2 > 0.0) {
-        const double p = std::log(prevL2 / e.l2) / std::log(2.0);
-        std::printf("      observed L2 order ≈ %.2f\n", p);
-      }
-      prevL2 = e.l2;
-
-      // ----------------------------------------------------------------------
-      // Component-wise comparison at representative interior corner
-      // ----------------------------------------------------------------------
-      const int ic = std::min(std::max(N/2, pad), N-1-pad);
-      const int jc = std::min(std::max(N/2, pad), N-1-pad);
-      const int kc = std::min(std::max(N/2, pad), N-1-pad);
-      const double xc = ic * g.dx, yc = jc * g.dy, zc = kc * g.dz;
-
-      const auto exC = CurlExactCorner(xc, yc, zc);
-      
-      // Compute stencil-based numerical curl (quiet)
-      double numStencil[3];
-      numStencil[0] = ApplyComponentAt(g, ic,jc,kc, S[0][0], S[0][1], S[0][2]);
-      numStencil[1] = ApplyComponentAt(g, ic,jc,kc, S[1][0], S[1][1], S[1][2]);
-      numStencil[2] = ApplyComponentAt(g, ic,jc,kc, S[2][0], S[2][1], S[2][2]);
-      
-      // For the first grid size, optionally print a verbose breakdown
-      if (kPrintDebug && (N == Ns[0])) {
-        std::printf("\n========== STENCIL APPLICATION: %s, N=%d ==========%s", V.name, N, "\n");
-        std::printf("Corner: (i,j,k)=(%d,%d,%d), Physical: (x,y,z)=(%.6g,%.6g,%.6g)\n", ic, jc, kc, xc, yc, zc);
-        (void)ApplyComponentAtVerbose(g, ic,jc,kc, S[0][0], S[0][1], S[0][2], "(curl B)_x", "dBz/dy - dBy/dz");
-        (void)ApplyComponentAtVerbose(g, ic,jc,kc, S[1][0], S[1][1], S[1][2], "(curl B)_y", "dBx/dz - dBz/dx");
-        (void)ApplyComponentAtVerbose(g, ic,jc,kc, S[2][0], S[2][1], S[2][2], "(curl B)_z", "dBy/dx - dBx/dy");
-      }
-
-      
-      // Stencil-based numerical curl (verbose for first grid)
-      if (kPrintDebug && (N == Ns[0])) {
-        std::printf("\n========== STENCIL APPLICATION: %s, N=%d ==========\n", V.name, N);
-        std::printf("Corner: (i,j,k)=(%d,%d,%d), Physical: (x,y,z)=(%.6g,%.6g,%.6g)\n", 
-                    ic, jc, kc, xc, yc, zc);
-        
-        numStencil[0] = ApplyComponentAtVerbose(g, ic,jc,kc, S[0][0], S[0][1], S[0][2],
-                                                 "(curl B)_x", "dBz/dy - dBy/dz");
-        numStencil[1] = ApplyComponentAtVerbose(g, ic,jc,kc, S[1][0], S[1][1], S[1][2],
-                                                 "(curl B)_y", "dBx/dz - dBz/dx");
-        numStencil[2] = ApplyComponentAtVerbose(g, ic,jc,kc, S[2][0], S[2][1], S[2][2],
-                                                 "(curl B)_z", "dBy/dx - dBx/dy");
-        std::printf("====================================\n\n");
-      } else {
-        numStencil[0] = ApplyComponentAt(g, ic,jc,kc, S[0][0], S[0][1], S[0][2]);
-        numStencil[1] = ApplyComponentAt(g, ic,jc,kc, S[1][0], S[1][1], S[1][2]);
-        numStencil[2] = ApplyComponentAt(g, ic,jc,kc, S[2][0], S[2][1], S[2][2]);
-      }
-      
-      // Face-averaged numerical curl (print stencil for first grid only)
-      const auto numFaceAvg = CurlNumericalFaceAvg(g, ic, jc, kc, (N == Ns[0]));
-
-      auto rel = [](double a, double b){ 
-        const double d = std::max(std::abs(b), 1e-14); 
-        return std::abs(a-b)/d; 
+  // optional Tecplot on the finest grid
+  if (tecplot_dump) {
+    const std::string fn = std::string("curlB_")
+                         + V.name + "_N" + std::to_string(N) + ".dat";
+    std::ofstream out(fn.c_str());
+    if (out) {
+      out << "TITLE = \"curl(B) vs analytic\"\n";
+      out << "VARIABLES = \"x\" \"y\" \"z\" "
+             "\"Bx\" \"By\" \"Bz\" "
+             "\"Cx_num\" \"Cy_num\" \"Cz_num\" "
+             "\"Cx_ana\" \"Cy_ana\" \"Cz_ana\" "
+             "\"Err_mag\"\n";
+      out << "ZONE T=\"vol\", I="<<Nx<<", J="<<Ny<<", K="<<Nz<<", DATAPACKING=BLOCK\n";
+      auto block = [&](auto f){
+        out.setf(std::ios::scientific); out<<std::setprecision(8);
+        for (int kk=0; kk<Nz; ++kk)
+          for (int jj=0; jj<Ny; ++jj)
+            for (int ii=0; ii<Nx; ++ii) out<<f(ii,jj,kk)<<"\n";
       };
+      block([&](int i,int,  int){ return (i+0.0)*dx; });
+      block([&](int,  int j,int){ return (j+0.0)*dy; });
+      block([&](int,  int,  int k){ return (k+0.0)*dz; });
 
-      std::puts("\n    Component-wise comparison at representative interior corner:");
-      std::puts("    Component-wise comparison at representative interior corner:");
-      std::printf("      Grid: N=%d, h=%.6g\n", N, g.dx);
-      std::printf("      Corner: (i,j,k)=(%d,%d,%d), (x,y,z)=(%.6g, %.6g, %.6g)\n", 
-                  ic, jc, kc, xc, yc, zc);
-      std::puts("      ----------------------------------------------------------------------------------------------");
-      std::puts("      Component      Analytic          Stencil           RelErr      FaceAvg           RelErr");
-      std::puts("      ----------------------------------------------------------------------------------------------");
-      
-      const char* nm[3] = {"(curl B)_x", "(curl B)_y", "(curl B)_z"};
-      for (int c=0;c<3;c++) {
-        std::printf("      %-12s % .8e  % .8e  %.3e  % .8e  %.3e\n",
-                    nm[c], exC[c], numStencil[c], rel(numStencil[c], exC[c]),
-                    numFaceAvg[c], rel(numFaceAvg[c], exC[c]));
+      auto dump = [&](const std::vector<double>& A){ for (size_t t=0;t<NTk;++t) out<<A[t]<<"\n"; };
+      // keep B blank in this Tecplot for brevity
+      std::vector<double> zeros(NTk, 0.0);
+      dump(zeros); dump(zeros); dump(zeros);
+
+      dump(Cx); dump(Cy); dump(Cz);
+      dump(CxA); dump(CyA); dump(CzA);
+
+      for (size_t t=0; t<NTk; ++t) {
+        const double ex = Cx[t]-CxA[t], ey = Cy[t]-CyA[t], ez = Cz[t]-CzA[t];
+        out << std::sqrt(ex*ex + ey*ey + ez*ez) << "\n";
       }
-      std::puts("");
-    } // N
-  } // variants
+    }
+  }
 
+  ErrStats s;
+  s.linf  = linf;
+  s.l2rel = (l2den>0.0) ? std::sqrt(l2num/l2den) : std::sqrt(l2num);
+  return s;
+}
+
+static int Run(const std::vector<std::string>& args) {
+  // domain
+  double Lx=1.0, Ly=1.0, Lz=1.0;
+
+  // Use unequal wavenumbers so curl(B) ≠ 0
+  double a=2.0*M_PI, b=3.0*M_PI, c=5.0*M_PI;
+
+  std::vector<int> Ns = {16, 24, 32, 48, 64};
+  bool tecplot_on_finest = true;
+
+  for (size_t i=0; i<args.size(); ++i) {
+    if (args[i]=="--no-tecplot") tecplot_on_finest=false;
+  }
+
+  struct Row { double linf, l2; };
+  const int F = (int)(sizeof(kVariants)/sizeof(kVariants[0]));
+  std::vector<Row> err[F];
+  for (int f=0; f<F; ++f) err[f].resize(Ns.size());
+
+  std::cout << "\n=== Corner curl(B) Convergence (edge/face 2nd, 4th, 6th) ===\n"
+            << "Domain: Lx="<<Lx<<", Ly="<<Ly<<", Lz="<<Lz
+            << "  wave numbers: a="<<a<<", b="<<b<<", c="<<c<<"\n";
+
+  for (size_t t=0; t<Ns.size(); ++t) {
+    const int N = Ns[t];
+    const bool dump_tp = tecplot_on_finest && (t == Ns.size()-1);
+    std::cout << "\nN = " << N << "\n";
+    for (int f=0; f<F; ++f) {
+      // capture arrays for the component-wise interior-point comparison
+      std::vector<double> Cx, Cy, Cz, CxA, CyA, CzA;
+
+      const ErrStats s = run_one(kVariants[f], N, Lx,Ly,Lz, a,b,c, dump_tp,
+                                 &Cx, &Cy, &Cz, &CxA, &CyA, &CzA);
+      err[f][t] = Row{s.linf, s.l2rel};
+
+      std::cout << "  " << std::left << std::setw(22) << kVariants[f].name
+                << " Linf=" << std::scientific << std::setprecision(3) << s.linf
+                << "   L2=" << s.l2rel << std::fixed << "\n";
+
+      // Detailed interior-point comparison (like GradDivE)
+      print_point_comparison(N, Lx, Ly, Lz, Cx, Cy, Cz, CxA, CyA, CzA, kVariants[f].name);
+    }
+  }
+
+  // combined convergence table
+  std::cout << "\n------------------------------------------------------------------------------------------------------------------------------------------------------\n";
+  std::cout << "   N  | ";
+  for (int f=0; f<F; ++f)
+    std::cout << std::setw(22) << kVariants[f].name << " (L_inf)  Ord   "
+              << std::setw(22) << kVariants[f].name << " (L2)     Ord"
+              << (f==F-1 ? "" : "  |  ");
+  std::cout << "\n------------------------------------------------------------------------------------------------------------------------------------------------------\n";
+
+  for (size_t t=0; t<Ns.size(); ++t) {
+    std::cout << std::setw(5) << Ns[t] << " ";
+    for (int f=0; f<F; ++f) {
+      double p_inf=0.0, p_l2=0.0;
+      if (t>0) {
+        const double rN = double(Ns[t]) / double(Ns[t-1]);         // refinement ratio
+        const double den = std::log(rN);                            // log(h_{t-1}/h_t) = log(N_t/N_{t-1})
+        const double num_inf = err[f][t-1].linf / err[f][t].linf;
+        const double num_l2  = err[f][t-1].l2   / err[f][t].l2;
+        if (den > 0 && num_inf > 0) p_inf = std::log(num_inf) / den;
+        if (den > 0 && num_l2  > 0) p_l2  = std::log(num_l2 ) / den;     
+      }
+      std::cout << " | "
+        << std::scientific << std::setprecision(3) << std::setw(12) << err[f][t].linf << " "
+        << std::fixed      << std::setprecision(2) << std::setw(5)  << (t? p_inf:0.0) << "  "
+        << std::scientific << std::setprecision(3) << std::setw(12) << err[f][t].l2   << " "
+        << std::fixed      << std::setprecision(2) << std::setw(5)  << (t? p_l2 :0.0);
+    }
+    std::cout << "\n";
+  }
+  std::cout << "------------------------------------------------------------------------------------------------------------------------------------------------------\n";
+
+  if (tecplot_on_finest) {
+    std::cout << "\nTecplot files written on finest grid:\n";
+    for (int f=0; f<F; ++f)
+      std::cout << "  curlB_" << kVariants[f].name << "_N" << Ns.back() << ".dat\n";
+  }
   return 0;
 }
 
 } // namespace CurlB
 
-// ---------------------
-// Harness registration
-// ---------------------
+// Auto-register in the harness
 static TestHarness::AutoRegister _auto_reg_curlb(
   "curl_b",
   [](const std::vector<std::string>& args){ return CurlB::Run(args); },
-  "Corner curl(B) stencils: build, apply, and convergence (2nd vs 4th order) + component-wise comparison.");
+  "Corner curl(B) stencils: build, apply, and convergence (2nd, 4th, 6th order) + component-wise comparison.");
 
-void ForceLinkAllTests() {}
+// ---- Per-suite force-link shim so this TU is retained even with dead-stripping ----
+namespace CurlB {
+  void ForceLinkAllTests() {}
+}
 
-} // namespace StencilTests
