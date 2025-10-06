@@ -75,7 +75,14 @@ PICOBJ = pic.o \
 	field_line_vertex_parallel.o \
 	mesh_boundary_blocks.o\
 	mesh_boundary_cells.o \
-	mesh_boundary_corners.o	
+	mesh_boundary_corners.o \
+	ecsim/curl_b_second_order.o \
+       	ecsim/curl_b_fourth_order.o \
+ecsim/grad_div_e_second_order.o \
+ecsim/grad_div_e_fourth_order.o \
+ecsim/grad_div_e_sixth_order.o \
+ecsim/curl_b_sixth_order.o
+
 	
 ifneq ($(BATL),nobatl)	
 PICOBJ+=pic_batsrus.o \
