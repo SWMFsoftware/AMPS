@@ -134,17 +134,41 @@ static inline void GetCornerPosition(cTreeNodeAMR<cDataBlockAMR>* nd, int i, int
 }
 
 //=========================== Public API ======================================
-
 bool InitBoundaryCornerVector(std::vector<cBoundaryCornerInfo>* out) {
   if (out) out->clear();
 
-  // Iterate *this thread's* nodes, as requested.
+  std::size_t added = 0;
+
   for (auto* node = PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];
        node != nullptr; node = node->nextNodeThisThread)
   {
-    // Safety: require payload block and leaf (parents can appear in distribution lists)
     if (node->block == nullptr) continue;
-    if (node->lastBranchFlag() != _BOTTOM_BRANCH_TREE_) continue; // keep leaves only
+    if (node->lastBranchFlag() != _BOTTOM_BRANCH_TREE_) continue; // leaves only
+
+    // Which faces of THIS block are true domain boundaries?
+    const bool openXm =
+        (node->GetNeibFace(0, 0, 0, PIC::Mesh::mesh) == nullptr);
+    const bool openXp =
+        (node->GetNeibFace(1, 0, 0, PIC::Mesh::mesh) == nullptr);
+#if _MESH_DIMENSION_ >= 2
+    const bool openYm =
+        (node->GetNeibFace(2, 0, 0, PIC::Mesh::mesh) == nullptr);
+    const bool openYp =
+        (node->GetNeibFace(3, 0, 0, PIC::Mesh::mesh) == nullptr);
+#else
+    const bool openYm = false, openYp = false;
+#endif
+#if _MESH_DIMENSION_ == 3
+    const bool openZm =
+        (node->GetNeibFace(4, 0, 0, PIC::Mesh::mesh) == nullptr);
+    const bool openZp =
+        (node->GetNeibFace(5, 0, 0, PIC::Mesh::mesh) == nullptr);
+#else
+    const bool openZm = false, openZp = false;
+#endif
+
+    const bool touchesDomain =
+        openXm || openXp || openYm || openYp || openZm || openZp;
 
     const int Nx = _BLOCK_CELLS_X_;
     const int Ny = _BLOCK_CELLS_Y_;
@@ -154,86 +178,72 @@ bool InitBoundaryCornerVector(std::vector<cBoundaryCornerInfo>* out) {
     const int jSet[2] = {0, Ny};
     const int kSet[2] = {0, Nz};
 
-#if _MESH_DIMENSION_ == 1
-    // 1D: (i in {0,Nx}), j=k=0
-    for (int ii = 0; ii < 2; ++ii) {
-      const int i = iSet[ii], j = 0, k = 0;
+    // Helper to process a single corner (i,j,k)
+    auto process_corner = [&](int i, int j, int k) {
+      const int lc = _getCornerNodeLocalNumber(i, j, k);
+      auto* corner = node->block->GetCornerNode(lc);
+      if (!corner) return;
 
-      // Corner pointer (exists for all corners)
-      const int LocalCornerNumber = _getCornerNodeLocalNumber(i,j,k);
-      PIC::Mesh::cDataCornerNode* corner = node->block->GetCornerNode(LocalCornerNumber);
+      if (!touchesDomain) {
+        // Entire block is interior: clear using new API
+        corner->SetBoundaryFlagFalse();
+        return;
+      }
 
-      const int faceMask = GetCornerBoundaryMask(node, i, j, k);
-      const bool isBoundary = (faceMask != Face_None);
-      if (corner) corner->SetBoundaryFlag(isBoundary);
+      // Distance in "cell layers" to the nearest *open* face of this block
+      int dist = INT_MAX;
+      if (openXm) dist = std::min(dist, i);
+      if (openXp) dist = std::min(dist, Nx - i);
+#if _MESH_DIMENSION_ >= 2
+      if (openYm) dist = std::min(dist, j);
+      if (openYp) dist = std::min(dist, Ny - j);
+#endif
+#if _MESH_DIMENSION_ == 3
+      if (openZm) dist = std::min(dist, k);
+      if (openZp) dist = std::min(dist, Nz - k);
+#endif
 
-      if (out && isBoundary) {
+      if (dist == INT_MAX) {
+        // No open faces on this block (shouldn’t happen if touchesDomain==true),
+        // fall back to "not boundary" semantics.
+        corner->SetBoundaryFlagFalse();
+        return;
+      }
+
+      corner->SetBoundaryDistance(dist);
+
+      if (dist == 0) {
+        // As before: only emit corners that sit on an open domain face
         cBoundaryCornerInfo rec{};
-        rec.node   = node;
+        rec.node = node;
         rec.i = i; rec.j = j; rec.k = k;
-        rec.faceMask = faceMask;
+        rec.faceMask = GetCornerBoundaryMask(node, i, j, k); // keeps prior face-bit semantics
         GetCornerPosition(node, i, j, k, rec.x);
         rec.corner = corner;
-        out->push_back(rec);
+        if (out) out->push_back(rec);
+        ++added;
       }
-    }
+    };
 
+#if _MESH_DIMENSION_ == 1
+    for (int ii = 0; ii < 2; ++ii) process_corner(iSet[ii], 0, 0);
 #elif _MESH_DIMENSION_ == 2
-    // 2D: (i in {0,Nx}) × (j in {0,Ny}), k=0
-    for (int ii = 0; ii < 2; ++ii) {
-      for (int jj = 0; jj < 2; ++jj) {
-        const int i = iSet[ii], j = jSet[jj], k = 0;
-
-        const int LocalCornerNumber = _getCornerNodeLocalNumber(i,j,k);
-        PIC::Mesh::cDataCornerNode* corner = node->block->GetCornerNode(LocalCornerNumber);
-
-        const int faceMask = GetCornerBoundaryMask(node, i, j, k);
-        const bool isBoundary = (faceMask != Face_None);
-        if (corner) corner->SetBoundaryFlag(isBoundary);
-
-        if (out && isBoundary) {
-          cBoundaryCornerInfo rec{};
-          rec.node   = node;
-          rec.i = i; rec.j = j; rec.k = k;
-          rec.faceMask = faceMask;
-          GetCornerPosition(node, i, j, k, rec.x);
-          rec.corner = corner;
-          out->push_back(rec);
-        }
-      }
-    }
-
+    for (int ii = 0; ii < 2; ++ii)
+      for (int jj = 0; jj < 2; ++jj)
+        process_corner(iSet[ii], jSet[jj], 0);
 #else // _MESH_DIMENSION_ == 3
-    // 3D: (i in {0,Nx}) × (j in {0,Ny}) × (k in {0,Nz})
-    for (int ii = 0; ii < 2; ++ii) {
-      for (int jj = 0; jj < 2; ++jj) {
-        for (int kk = 0; kk < 2; ++kk) {
-          const int i = iSet[ii], j = jSet[jj], k = kSet[kk];
-
-          const int LocalCornerNumber = _getCornerNodeLocalNumber(i,j,k);
-          PIC::Mesh::cDataCornerNode* corner = node->block->GetCornerNode(LocalCornerNumber);
-
-          const int faceMask = GetCornerBoundaryMask(node, i, j, k);
-          const bool isBoundary = (faceMask != Face_None);
-          if (corner) corner->SetBoundaryFlag(isBoundary);
-
-          if (out && isBoundary) {
-            cBoundaryCornerInfo rec{};
-            rec.node   = node;
-            rec.i = i; rec.j = j; rec.k = k;
-            rec.faceMask = faceMask;
-            GetCornerPosition(node, i, j, k, rec.x);
-            rec.corner = corner;
-            out->push_back(rec);
-          }
-        }
-      }
-    }
+    for (int ii = 0; ii < 2; ++ii)
+      for (int jj = 0; jj < 2; ++jj)
+        for (int kk = 0; kk < 2; ++kk)
+          process_corner(iSet[ii], jSet[jj], kSet[kk]);
 #endif
   }
 
+  std::printf("$PREFIX: InitBoundaryCornerVector: collected %zu boundary corners on rank %d\n",
+              added, PIC::ThisThread);
   return true;
 }
+
 
 std::string FaceMaskToString(int mask) {
   std::string s;
