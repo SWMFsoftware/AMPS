@@ -9663,5 +9663,5 @@ bool ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDa
 #include "Dust.h"
 #endif
 
-
+#include "mesh/domain_boundary_bc_collectors.h"
 

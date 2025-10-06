@@ -161,7 +161,27 @@ public:
   void SetBoundaryFlagFalse() {boundary_distance=-1;}
   void SetBoundaryDistance(int in) {boundary_distance=in;}
   int GetBoundaryDistance() {return boundary_distance;}
-  bool IsBoundaryNode() {return (boundary_distance==-1) ? false : true;};
+  bool IsBoundaryNode() {return (boundary_distance!=0) ? false : true;};
+
+  //boundary descriptor for ECSIM field solver
+  struct {
+    int type;
+    int iNeib,jNeib,kNeib;
+  } bc_type;
+
+  void SetBCTypeNeumann(int type_in,int i_in, int j_in, int k_in) {
+    bc_type.type=type_in;
+    bc_type.iNeib=i_in; 
+    bc_type.jNeib=j_in;
+    bc_type.kNeib=k_in;
+
+    boundary_distance=0;
+  }
+
+  void SetBCTypeDirichlet(int type_in) {
+    bc_type.type=type_in;
+    boundary_distance=0;
+  }
 
   //clean the data buffers
   _TARGET_HOST_ _TARGET_DEVICE_
