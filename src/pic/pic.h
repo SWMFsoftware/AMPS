@@ -9320,6 +9320,25 @@ namespace FieldSolver {
               void InitCurlBStencils(cCurlBStencil* Curl, double dx, double dy, double dz);
             } // namespace SixthOrder
 
+	    namespace EighthOrder {
+             // Build 8th‑order corner curl(B) operator stencils.
+             // Arguments: Curl[3] receives rows for (curl B)_x, (curl B)_y, (curl B)_z.
+             // Grid spacings: dx, dy, dz. Each row’s Radius field is computed.
+             // -----------------------------------------------------------------------------
+             void InitCurlBStencils(cCurlBStencil* Curl, double dx, double dy, double dz);
+
+
+             // -----------------------------------------------------------------------------
+             // Build 8th‑order ∇(∇·E) operator stencils.
+             // Arguments: Rows[3] receives rows for the vector field G = ∇(∇·E).
+             // Grid spacings: dx, dy, dz. Each row’s Radius field is computed.
+             // -----------------------------------------------------------------------------
+             void InitGradDivEBStencils(cGradDivEStencil* Rows, double dx, double dy, double dz);
+
+             // Optional helper: compile‑time footprint hint for 8th‑order centered rules
+             constexpr int RequiredHaloLinf = 4;
+            }
+
 	    namespace FourthOrder {
 		    void InitCurlBStencils(cCurlBStencil* CurlBStencilSecondOrder,
                        double dx, double dy, double dz);

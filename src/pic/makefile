@@ -78,11 +78,13 @@ PICOBJ = pic.o \
 	mesh_boundary_corners.o \
 	ecsim/curl_b_second_order.o \
        	ecsim/curl_b_fourth_order.o \
-ecsim/grad_div_e_second_order.o \
-ecsim/grad_div_e_fourth_order.o \
-ecsim/grad_div_e_sixth_order.o \
-ecsim/curl_b_sixth_order.o \
-mesh/domain_boundary_bc_collectors.o
+	ecsim/grad_div_e_second_order.o \
+	ecsim/grad_div_e_fourth_order.o \
+	ecsim/grad_div_e_sixth_order.o \
+	ecsim/grad_div_e_eighth_order.o \
+	ecsim/curl_b_sixth_order.o \
+	ecsim/curl_b_eighth_order.o \
+	mesh/domain_boundary_bc_collectors.o
 
 	
 ifneq ($(BATL),nobatl)	

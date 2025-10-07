@@ -1,33 +1,58 @@
-/**
- * @file    curl_b.cpp
- * @brief   Convergence test for corner curl(B) stencils:
- *          2nd-order (edge-based), 2nd-order (face-based), 4th-order, 6th-order.
- *
- * Analytic B (periodic, smooth):
- *   Bx =  sin(ax) cos(by) cos(cz)
- *   By =  cos(ax) sin(by) cos(cz)
- *   Bz =  cos(ax) cos(by) sin(cz)
- *
- * Curl(B) (continuous):
- *   (curl B)_x =  ∂Bz/∂y − ∂By/∂z
- *   (curl B)_y =  ∂Bx/∂z − ∂Bz/∂x
- *   (curl B)_z =  ∂By/∂x − ∂Bx/∂y
- *
- * Discrete target locations:
- *   • B components are sampled at cell centers: (i+1/2, j+1/2, k+1/2).
- *   • curl(B) is evaluated at cell corners:     (i,     j,     k    ).
- *     All stencils below are constructed for the (-1/2,-1/2,-1/2) corner relative
- *     to the base cell (consistent with AMPS ECSIM staggering). Periodic wrap is used.
- *
- * Output:
- *   • L∞ and relative L2 errors over a refinement set N in {16, 24, 32, 48, 64}.
- *   • Tecplot file on the finest grid for each variant.
- *   • Component-wise interior-point comparison (numeric vs analytic), like GradDivE.
- *
- * IMPORTANT: Avoid a=b=c for this analytic field.
- *   If a=b=c, the field is a gradient of ψ=-(1/a)cos(ax)cos(by)cos(cz) ⇒ curl(B)=0 identically.
- *   We therefore use a=2π, b=3π, c=5π so the analytic curl is non-zero and the comparison is meaningful.
- */
+// ============================================================================
+// tests/curl_b.cpp — Convergence test for corner curl(B) stencils
+// ----------------------------------------------------------------------------
+// WHAT THIS TEST DOES
+//   • Builds the corner curl(B) stencils provided by the ECSIM stencil factory:
+//       - 2nd-order (edge-based)
+//       - 2nd-order (face-based)
+//       - 4th-order (corner, tensor-product midpoint+derivative)
+//       - 6th-order (corner, tensor-product midpoint+derivative)
+//       - 8th-order (NEW; corner, tensor-product midpoint+derivative)
+//   • Applies the stencils to a smooth, periodic analytic field B sampled at
+//     cell centers, and evaluates curl(B) at cell corners.
+//   • Compares with the exact analytic curl at the same corners.
+//   • Reports L_inf and relative L2 errors vs. grid resolution and estimates
+//     observed convergence rates.
+//   • Optionally writes a Tecplot volume file on the finest grid.
+//
+// WHY CORNERS? (staggering reminder)
+//   Our ECSIM staggering stores B at cell centers and evaluates curl(B) at
+//   cell corners C(i,j,k)=(i*dx,j*dy,k*dz). The high-order builders use a
+//   separable/tensor-product construction that combines midpoint interpolation
+//   (on the two transverse axes) with a half-index derivative (on the derivative
+//   axis) so that each partial derivative is evaluated *at the corner point*.
+//
+// 8TH-ORDER NOTES (NEW)
+//   - The 8th-order builder mirrors the 4th/6th-order code paths and obeys the
+//     same sign conventions: (curl B)_x = +∂_y Bz − ∂_z By, etc.
+//   - Support radius L_inf = 4 per axis; ensure 4 ghost layers in production.
+//   - This test is periodic, so halos are not required here.
+//
+// BUILD/RUN (standalone test harness)
+//   c++ -O3 -std=c++17 -o curl_b_test tests/curl_b.cpp
+//   ./curl_b_test                 # default N set below
+//   ./curl_b_test --no-tecplot    # suppress Tecplot outputs
+//
+// OUTPUT OVERVIEW
+//   1) Per-resolution block for each stencil variant with Linf/L2.
+//   2) A combined table with Linf/L2 and observed orders between successive N's.
+//   3) A component-wise numeric vs analytic print at a representative interior
+//      corner for each variant and N (helps spot sign/location mismatches).
+//   4) Tecplot files: curlB_<variant>_N<finest>.dat (corners-only fields).
+//
+// IMPLEMENTATION SKETCH
+//   • Builds stencils via EMSt::SecondOrder/ FourthOrder/ SixthOrder/ EighthOrder
+//     InitCurlBStencils(...).
+//   • Immediately ExportStencil(...) each component-row (Bx/By/Bz contributions)
+//     into integer tapped form for fast application on the periodic grid.
+//   • Applies each row to the corresponding cell-centered component field and
+//     sums to obtain (curl B)_x, (curl B)_y, (curl B)_z at corners.
+//
+// IMPORTANT ANALYTIC CHOICE
+//   If a=b=c, the chosen trigonometric B becomes a gradient of a scalar field
+//   and curl(B) = 0 identically, which is not useful for convergence. We choose
+//   unequal wavenumbers (a=2π, b=3π, c=5π) to ensure a nonzero curl.
+// ============================================================================
 
 #include <cmath>
 #include <cstdio>
@@ -38,19 +63,21 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 #include "test_register.h"
 #include "test_harness.h"
 #include "test_force_link_all.h"
-#include "pic.h"                  // cStencil, cCurlBStencil, ExportStencil API
+#include "pic.h"  // cStencil, cCurlBStencil, ExportStencil API (and stencil builders)
 
 namespace EMSt = PIC::FieldSolver::Electromagnetic::ECSIM::Stencil;
 
-// -------------------- utilities --------------------
+// ============================ small utilities ===============================
 static inline int wrap(int idx, int N) { int r = idx % N; if (r < 0) r += N; return r; }
 
 struct V3 { double x,y,z; };
 
+// Analytic B at cell centers
 static inline V3 analyticB(double x, double y, double z, double a, double b, double c) {
   return {
     std::sin(a*x)*std::cos(b*y)*std::cos(c*z),
@@ -59,6 +86,7 @@ static inline V3 analyticB(double x, double y, double z, double a, double b, dou
   };
 }
 
+// Analytic curl(B) at corners (x=i*dx, y=j*dy, z=k*dz)
 static inline V3 analyticCurlB(double x, double y, double z, double a, double b, double c) {
   const double sxa = std::sin(a*x), cxa = std::cos(a*x);
   const double syb = std::sin(b*y), cyb = std::cos(b*y);
@@ -74,7 +102,7 @@ static inline V3 analyticCurlB(double x, double y, double z, double a, double b,
   return { dBz_dy - dBy_dz, dBx_dz - dBz_dx, dBy_dx - dBx_dy };
 }
 
-// apply an exported (integerized) stencil to a scalar field F at corner (i,j,k)
+// Apply an exported (integerized) stencil to scalar field F at corner (i,j,k)
 static inline double apply_exported(const cStencil::cStencilData& S,
                                     const std::vector<double>& F,
                                     int i, int j, int k,
@@ -91,7 +119,7 @@ static inline double apply_exported(const cStencil::cStencilData& S,
   return acc;
 }
 
-// Pretty print: component-wise numeric vs analytic at a central interior point
+// Pretty print a component-wise comparison at a representative interior corner
 static void print_point_comparison(int N, double Lx, double Ly, double Lz,
                                    const std::vector<double>& Cx,
                                    const std::vector<double>& Cy,
@@ -103,7 +131,7 @@ static void print_point_comparison(int N, double Lx, double Ly, double Lz,
 {
   const int Nx=N, Ny=N, Nz=N;
   const double dx=Lx/Nx, dy=Ly/Ny, dz=Lz/Nz;
-  const int ii=Nx/2, jj=Ny/2, kk=Nz/2;  // a central interior point
+  const int ii=Nx/2, jj=Ny/2, kk=Nz/2;  // central interior point
   const size_t idx=(size_t)kk*Ny*Nx + (size_t)jj*Nx + (size_t)ii;
   const double x=(ii+0.0)*dx, y=(jj+0.0)*dy, z=(kk+0.0)*dz; // corners at integers
 
@@ -129,21 +157,19 @@ static void print_point_comparison(int N, double Lx, double Ly, double Lz,
   line("(CurlB)_z", CzA[idx], Cz[idx]);
 }
 
-// -------------------- test driver --------------------
+// =============================== test driver ================================
 namespace CurlB {
 
 using InitFn = void (*)(EMSt::cCurlBStencil*, double,double,double);
 struct Variant { const char* name; InitFn init; };
 
+// NOTE: Add/remove entries here to control which variants are exercised.
 static const Variant kVariants[] = {
-  { "2nd-order (edge-based)",
-    EMSt::SecondOrder::InitCurlBStencils_edge_based },
-  { "2nd-order (face-based)",
-    EMSt::SecondOrder::InitCurlBStencils_face_based },
-  { "4th-order",
-    EMSt::FourthOrder::InitCurlBStencils },
-  { "6th-order",
-    EMSt::SixthOrder::InitCurlBStencils }
+  { "2nd-order (edge-based)", EMSt::SecondOrder::InitCurlBStencils_edge_based },
+  { "2nd-order (face-based)", EMSt::SecondOrder::InitCurlBStencils_face_based },
+  { "4th-order",               EMSt::FourthOrder::InitCurlBStencils },
+  { "6th-order",               EMSt::SixthOrder ::InitCurlBStencils },
+  { "8th-order",               EMSt::EighthOrder::InitCurlBStencils } // NEW
 };
 
 struct ErrStats { double linf=0.0, l2rel=0.0; };
@@ -167,7 +193,6 @@ static ErrStats run_one(const Variant& V,
 
   // cell-centered B fields
   std::vector<double> Bx(NTc), By(NTc), Bz(NTc);
-
   for (int k=0; k<Nz; ++k)
     for (int j=0; j<Ny; ++j)
       for (int i=0; i<Nx; ++i) {
@@ -204,26 +229,24 @@ static ErrStats run_one(const Variant& V,
     for (int j=0; j<Ny; ++j)
       for (int i=0; i<Nx; ++i) {
         const size_t idk = (size_t)k*Ny*Nx + (size_t)j*Nx + (size_t)i;
+        double vx = 0.0, vy = 0.0, vz = 0.0;
+
         // row 0 (curl B)_x
-        double vx = 0.0;
         vx += apply_exported(SxBx, Bx, i,j,k, Nx,Ny,Nz);
         vx += apply_exported(SxBy, By, i,j,k, Nx,Ny,Nz);
         vx += apply_exported(SxBz, Bz, i,j,k, Nx,Ny,Nz);
-        Cx[idk] = vx;
 
         // row 1 (curl B)_y
-        double vy = 0.0;
         vy += apply_exported(SyBx, Bx, i,j,k, Nx,Ny,Nz);
         vy += apply_exported(SyBy, By, i,j,k, Nx,Ny,Nz);
         vy += apply_exported(SyBz, Bz, i,j,k, Nx,Ny,Nz);
-        Cy[idk] = vy;
 
         // row 2 (curl B)_z
-        double vz = 0.0;
         vz += apply_exported(SzBx, Bx, i,j,k, Nx,Ny,Nz);
         vz += apply_exported(SzBy, By, i,j,k, Nx,Ny,Nz);
         vz += apply_exported(SzBz, Bz, i,j,k, Nx,Ny,Nz);
-        Cz[idk] = vz;
+
+        Cx[idk] = vx; Cy[idk] = vy; Cz[idk] = vz;
       }
 
   // analytic curl(B) at the corners (x=i*dx, y=j*dy, z=k*dz)
@@ -258,13 +281,14 @@ static ErrStats run_one(const Variant& V,
 
   // optional Tecplot on the finest grid
   if (tecplot_dump) {
-    const std::string fn = std::string("curlB_")
-                         + V.name + "_N" + std::to_string(N) + ".dat";
+    // filename without spaces
+    std::string vname(V.name);
+    for (auto& ch : vname) if (ch==' ') ch='_';
+    const std::string fn = std::string("curlB_") + vname + "_N" + std::to_string(N) + ".dat";
     std::ofstream out(fn.c_str());
     if (out) {
       out << "TITLE = \"curl(B) vs analytic\"\n";
       out << "VARIABLES = \"x\" \"y\" \"z\" "
-             "\"Bx\" \"By\" \"Bz\" "
              "\"Cx_num\" \"Cy_num\" \"Cz_num\" "
              "\"Cx_ana\" \"Cy_ana\" \"Cz_ana\" "
              "\"Err_mag\"\n";
@@ -280,10 +304,6 @@ static ErrStats run_one(const Variant& V,
       block([&](int,  int,  int k){ return (k+0.0)*dz; });
 
       auto dump = [&](const std::vector<double>& A){ for (size_t t=0;t<NTk;++t) out<<A[t]<<"\n"; };
-      // keep B blank in this Tecplot for brevity
-      std::vector<double> zeros(NTk, 0.0);
-      dump(zeros); dump(zeros); dump(zeros);
-
       dump(Cx); dump(Cy); dump(Cz);
       dump(CxA); dump(CyA); dump(CzA);
 
@@ -291,6 +311,7 @@ static ErrStats run_one(const Variant& V,
         const double ex = Cx[t]-CxA[t], ey = Cy[t]-CyA[t], ez = Cz[t]-CzA[t];
         out << std::sqrt(ex*ex + ey*ey + ez*ez) << "\n";
       }
+      std::cout << "  Wrote Tecplot: " << fn << "\n";
     }
   }
 
@@ -301,12 +322,11 @@ static ErrStats run_one(const Variant& V,
 }
 
 static int Run(const std::vector<std::string>& args) {
-  // domain
+  // domain and wavenumbers (choose a,b,c unequal to avoid trivial curl=0)
   double Lx=1.0, Ly=1.0, Lz=1.0;
-
-  // Use unequal wavenumbers so curl(B) ≠ 0
   double a=2.0*M_PI, b=3.0*M_PI, c=5.0*M_PI;
 
+  // refinement set (non-powers-of-two included to exercise generic order calc)
   std::vector<int> Ns = {16, 24, 32, 48, 64};
   bool tecplot_on_finest = true;
 
@@ -319,7 +339,7 @@ static int Run(const std::vector<std::string>& args) {
   std::vector<Row> err[F];
   for (int f=0; f<F; ++f) err[f].resize(Ns.size());
 
-  std::cout << "\n=== Corner curl(B) Convergence (edge/face 2nd, 4th, 6th) ===\n"
+  std::cout << "\n=== Corner curl(B) Convergence (2nd: edge/face, 4th, 6th, 8th) ===\n"
             << "Domain: Lx="<<Lx<<", Ly="<<Ly<<", Lz="<<Lz
             << "  wave numbers: a="<<a<<", b="<<b<<", c="<<c<<"\n";
 
@@ -328,9 +348,7 @@ static int Run(const std::vector<std::string>& args) {
     const bool dump_tp = tecplot_on_finest && (t == Ns.size()-1);
     std::cout << "\nN = " << N << "\n";
     for (int f=0; f<F; ++f) {
-      // capture arrays for the component-wise interior-point comparison
-      std::vector<double> Cx, Cy, Cz, CxA, CyA, CzA;
-
+      std::vector<double> Cx, Cy, Cz, CxA, CyA, CzA; // for detailed print
       const ErrStats s = run_one(kVariants[f], N, Lx,Ly,Lz, a,b,c, dump_tp,
                                  &Cx, &Cy, &Cz, &CxA, &CyA, &CzA);
       err[f][t] = Row{s.linf, s.l2rel};
@@ -339,7 +357,6 @@ static int Run(const std::vector<std::string>& args) {
                 << " Linf=" << std::scientific << std::setprecision(3) << s.linf
                 << "   L2=" << s.l2rel << std::fixed << "\n";
 
-      // Detailed interior-point comparison (like GradDivE)
       print_point_comparison(N, Lx, Ly, Lz, Cx, Cy, Cz, CxA, CyA, CzA, kVariants[f].name);
     }
   }
@@ -358,12 +375,12 @@ static int Run(const std::vector<std::string>& args) {
     for (int f=0; f<F; ++f) {
       double p_inf=0.0, p_l2=0.0;
       if (t>0) {
-        const double rN = double(Ns[t]) / double(Ns[t-1]);         // refinement ratio
-        const double den = std::log(rN);                            // log(h_{t-1}/h_t) = log(N_t/N_{t-1})
+        const double rN = double(Ns[t]) / double(Ns[t-1]); // refinement ratio
+        const double den = std::log(rN);                    // log(h_{t-1}/h_t) = log(N_t/N_{t-1})
         const double num_inf = err[f][t-1].linf / err[f][t].linf;
-        const double num_l2  = err[f][t-1].l2   / err[f][t].l2;
+        const double num_l2  = err[f][t-1].l2  / err[f][t].l2;
         if (den > 0 && num_inf > 0) p_inf = std::log(num_inf) / den;
-        if (den > 0 && num_l2  > 0) p_l2  = std::log(num_l2 ) / den;     
+        if (den > 0 && num_l2  > 0) p_l2  = std::log(num_l2 ) / den;
       }
       std::cout << " | "
         << std::scientific << std::setprecision(3) << std::setw(12) << err[f][t].linf << " "
@@ -377,8 +394,10 @@ static int Run(const std::vector<std::string>& args) {
 
   if (tecplot_on_finest) {
     std::cout << "\nTecplot files written on finest grid:\n";
-    for (int f=0; f<F; ++f)
-      std::cout << "  curlB_" << kVariants[f].name << "_N" << Ns.back() << ".dat\n";
+    for (int f=0; f<F; ++f) {
+      std::string vname(kVariants[f].name); for (auto& ch : vname) if (ch==' ') ch='_';
+      std::cout << "  curlB_" << vname << "_N" << Ns.back() << ".dat\n";
+    }
   }
   return 0;
 }
@@ -386,15 +405,11 @@ static int Run(const std::vector<std::string>& args) {
 } // namespace CurlB
 
 // Auto-register in the harness
-namespace CurlB {
-  int Run(const std::vector<std::string>& args); // already defined above
-}
+namespace CurlB { int Run(const std::vector<std::string>& args); }
 
 REGISTER_STENCIL_TEST(CurlB,
   "curl_b",
-  "Corner curl(B) stencils: build, apply, and convergence (2nd, 4th, 6th order) + component-wise comparison.");
+  "Corner curl(B) stencils: build, apply, and convergence (2nd: edge/face, 4th, 6th, 8th order) + component-wise interior comparison.");
 
+namespace CurlB { void ForceLinkAllTests() {} }
 
-namespace CurlB {
-  void ForceLinkAllTests() {}
-}

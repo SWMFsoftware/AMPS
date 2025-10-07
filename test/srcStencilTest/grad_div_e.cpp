@@ -1,7 +1,7 @@
 /**
  * @file    grad_div_e.cpp
  * @brief   Convergence test for ∇(∇·E) stencils
- *          (Second/compact, Second/wide, Fourth, Sixth).
+ *          (Second/compact, Second/wide, Fourth, Sixth, Eighth).
  *
  * Analytic field (periodic):
  *   Ex = sin(ax) cos(by) cos(cz)
@@ -11,6 +11,11 @@
  *     [ -a(a+b+c) sin(ax) cos(by) cos(cz),
  *       -b(a+b+c) cos(ax) sin(by) cos(cz),
  *       -c(a+b+c) cos(ax) cos(by) sin(cz) ].
+ *
+ * Notes:
+ *   • This test applies exported integerized stencils on a periodic grid.
+ *   • Adds an 8th-order operator that mirrors the existing API used by the
+ *     6th-order builder, so it slots into the same harness.
  */
 
 #include <cstdio>
@@ -24,9 +29,8 @@
 
 #include "pic.h"
 #include "test_register.h"
-#include "test_harness.h" 
+#include "test_harness.h"
 using namespace PIC::FieldSolver::Electromagnetic::ECSIM::Stencil;
-
 
 // ---------- Analytic field and ∇(∇·E) ----------
 struct Vec3 { double x,y,z; };
@@ -120,14 +124,15 @@ static void write_tecplot_block(
 }
 
 // ---------- Driver: evaluate one operator flavor and compute errors ----------
-enum class OpFlavor { SecondCompact, SecondWide, FourthOrder, SixthOrder };
+enum class OpFlavor { SecondCompact, SecondWide, FourthOrder, SixthOrder, EighthOrder };
 
 static void build_stencil_rows(OpFlavor f, cGradDivEStencil S[3], double dx, double dy, double dz) {
   switch (f) {
     case OpFlavor::SecondCompact: SecondOrder::InitGradDivEBStencils_compact(S, dx, dy, dz); break;
     case OpFlavor::SecondWide:    SecondOrder::InitGradDivEBStencils_wide(S,    dx, dy, dz); break;
-    case OpFlavor::FourthOrder:   FourthOrder::InitGradDivEBStencils(S,        dx, dy, dz); break;
-    case OpFlavor::SixthOrder:    SixthOrder::InitGradDivEBStencils(S,         dx, dy, dz); break;
+    case OpFlavor::FourthOrder:   FourthOrder::InitGradDivEBStencils(S,         dx, dy, dz); break;
+    case OpFlavor::SixthOrder:    SixthOrder::InitGradDivEBStencils(S,          dx, dy, dz); break;
+    case OpFlavor::EighthOrder:   EighthOrder::InitGradDivEBStencils(S,         dx, dy, dz); break;
   }
 }
 
@@ -137,6 +142,7 @@ static std::string flavor_name(OpFlavor f) {
     case OpFlavor::SecondWide:    return "SecondOrder_Wide";
     case OpFlavor::FourthOrder:   return "FourthOrder";
     case OpFlavor::SixthOrder:    return "SixthOrder";
+    case OpFlavor::EighthOrder:   return "EighthOrder";
   }
   return "Unknown";
 }
@@ -167,7 +173,7 @@ static ErrStats run_case(OpFlavor flavor, int N, double Lx, double Ly, double Lz
     S[r].Ex.ExportStencil(&SX[r]);
     S[r].Ey.ExportStencil(&SY[r]);
     S[r].Ez.ExportStencil(&SZ[r]);
-  } // :contentReference[oaicite:1]{index=1}
+  }
 
   // Fields
   const size_t NT = (size_t)Nx*Ny*Nz;
@@ -282,22 +288,24 @@ static void print_convergence_combined(const std::vector<int>& Ns,
                                        double a, double b, double c,
                                        bool tecplot_on_finest = true)
 {
-  const OpFlavor flavors[4] = {
+  const std::vector<OpFlavor> flavors = {
     OpFlavor::SecondCompact,
     OpFlavor::SecondWide,
     OpFlavor::FourthOrder,
-    OpFlavor::SixthOrder
+    OpFlavor::SixthOrder,
+    OpFlavor::EighthOrder
   };
-  const char* headers[4] = {
+  const std::vector<const char*> headers = {
     "Second/Compact",
     "Second/Wide",
     "Fourth",
-    "Sixth"
+    "Sixth",
+    "Eighth"
   };
 
   struct Row { double linf=0.0, l2=0.0; };
-  std::vector<Row> err[4];
-  for (int f=0; f<4; ++f) err[f].resize(Ns.size());
+  std::vector<Row> err[5];
+  for (int f=0; f<5; ++f) err[f].resize(Ns.size());
 
   std::cout << "\n=== GradDivE Convergence (Combined run) ===\n"
             << "Domain Lx=" << Lx << ", Ly=" << Ly << ", Lz=" << Lz
@@ -307,9 +315,9 @@ static void print_convergence_combined(const std::vector<int>& Ns,
     const int N = Ns[t];
     const bool dump_tp = tecplot_on_finest && (t == Ns.size()-1);
 
-    struct Arrs { std::vector<double> Gx,Gy,Gz, GxT,GyT,GzT; } out[4];
+    struct Arrs { std::vector<double> Gx,Gy,Gz, GxT,GyT,GzT; } out[5];
 
-    for (int f=0; f<4; ++f) {
+    for (int f=0; f<5; ++f) {
       ErrStats s = run_case(flavors[f], N, Lx,Ly,Lz, a,b,c,
                             &out[f].Gx, &out[f].Gy, &out[f].Gz,
                             &out[f].GxT,&out[f].GyT,&out[f].GzT,
@@ -317,7 +325,7 @@ static void print_convergence_combined(const std::vector<int>& Ns,
       err[f][t] = Row{s.linf, s.l2};
     }
 
-    for (int f=0; f<4; ++f) {
+    for (int f=0; f<5; ++f) {
       print_point_comparison(N, Lx,Ly,Lz, a,b,c,
                              out[f].Gx, out[f].Gy, out[f].Gz,
                              out[f].GxT,out[f].GyT,out[f].GzT,
@@ -325,18 +333,20 @@ static void print_convergence_combined(const std::vector<int>& Ns,
     }
   }
 
-  std::cout << "\n----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n";
+  // header row
+  std::cout << "\n";
+  std::cout << std::string(190, '-') << "\n";
   std::cout << "   N  |  ";
-  for (int f=0; f<4; ++f) {
+  for (int f=0; f<5; ++f) {
     std::cout << std::setw(14) << headers[f] << " (L_inf)  Ord  "
               << std::setw(14) << headers[f] << " (L2)     Ord";
-    if (f != 3) std::cout << "  |  ";
+    if (f != 4) std::cout << "  |  ";
   }
-  std::cout << "\n----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n";
+  std::cout << "\n" << std::string(190, '-') << "\n";
 
   for (size_t t=0; t<Ns.size(); ++t) {
     std::cout << std::setw(5) << Ns[t] << " ";
-    for (int f=0; f<4; ++f) {
+    for (int f=0; f<5; ++f) {
       double p_inf = 0.0, p_l2 = 0.0;
       if (t > 0) {
         p_inf = std::log2(err[f][t-1].linf / err[f][t].linf);
@@ -351,7 +361,7 @@ static void print_convergence_combined(const std::vector<int>& Ns,
     std::cout << "\n";
   }
 
-  std::cout << "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n";
+  std::cout << std::string(190, '-') << "\n";
 }
 
 // ---------- Entry point ----------
@@ -367,14 +377,13 @@ int Run(const std::vector<std::string>& args) {
                "  graddivE_SecondOrder_Compact_N64.dat\n"
                "  graddivE_SecondOrder_Wide_N64.dat\n"
                "  graddivE_FourthOrder_N64.dat\n"
-               "  graddivE_SixthOrder_N64.dat\n";
+               "  graddivE_SixthOrder_N64.dat\n"
+               "  graddivE_EighthOrder_N64.dat\n";
   return 0;
 }
 } // namespace GradDivE
 
 // ---- GradDivE test registration & force-link shim (append at file end) ----
-//#include "test_harness.h"
-//#include <vector>
 
 namespace GradDivE { int Run(const std::vector<std::string>&); }
 REGISTER_STENCIL_TEST(GradDivE,
@@ -382,3 +391,4 @@ REGISTER_STENCIL_TEST(GradDivE,
   "GradDivE stencils: build, apply, and convergence (+ component-wise comparison).");
 
 namespace GradDivE { void ForceLinkAllTests() {} }
+
