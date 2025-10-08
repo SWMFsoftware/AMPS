@@ -9277,6 +9277,17 @@ namespace FieldSolver {
 
             extern cCurlBStencil CurlBStencil[3]; 
 
+
+	    struct cLaplacianStencil {
+              cStencil Ex, Ey, Ez;   // component-wise ∇² applied to E_x, E_y, E_z
+              int Radius = -1;       // L∞ radius needed by all three
+            };
+
+	    namespace SecondOrder   { void InitLaplacianStencil(cLaplacianStencil*, double dx,double dy,double dz); }
+            namespace FourthOrder   { void InitLaplacianStencil(cLaplacianStencil*, double dx,double dy,double dz); }
+            namespace SixthOrder    { void InitLaplacianStencil(cLaplacianStencil*, double dx,double dy,double dz); }
+            namespace EighthOrder   { void InitLaplacianStencil(cLaplacianStencil*, double dx,double dy,double dz); }
+
 	    namespace SixthOrder {
               /// Formal order and typical L∞ radius for the interior scheme
               constexpr int kOrder  = 6;

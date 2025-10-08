@@ -12,12 +12,14 @@
 // Declare per-suite shims (each defined in its corresponding test TU)
 namespace CurlB    { void ForceLinkAllTests(); }
 namespace GradDivE { void ForceLinkAllTests(); }
+namespace LaplacianE { void ForceLinkAllTests(); }
 
 namespace StencilTests {
   void ForceLinkAllTests() {
     // Create concrete references to each suite’s TU.
     CurlB::ForceLinkAllTests();
     GradDivE::ForceLinkAllTests();
+    LaplacianE::ForceLinkAllTests();
   }
 }
 
