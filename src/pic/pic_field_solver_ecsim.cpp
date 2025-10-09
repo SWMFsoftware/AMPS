@@ -49,6 +49,51 @@ The Maple script used for calculating the lookup tables for the previous impleme
 
 
 
+// Provide storage (definitions) for the order-specific ECSIM stencils
+// declared as 'extern' in pic.h so the linker can resolve them.
+namespace PIC {
+namespace FieldSolver {
+namespace Electromagnetic {
+namespace ECSIM {
+namespace Stencil {
+
+// Shared 3-row curl(B) storage used across tests/orders.
+cCurlBStencil CurlBStencil[3];  // extern in pic.h
+
+// ---- Second order ---- (2nd-order stencils)
+namespace SecondOrder {
+  cGradDivEStencil   GradDivEStencil;   // extern in pic.h
+  cLaplacianStencil  LaplacianStencil;  // extern in pic.h
+  cCurlBStencil      CurlBStencil;      // extern in pic.h (per-order)
+}
+
+// ---- Fourth order ---- (4th-order stencils)
+namespace FourthOrder {
+  cGradDivEStencil   GradDivEStencil;
+  cLaplacianStencil  LaplacianStencil;
+  cCurlBStencil      CurlBStencil;
+}
+
+// ---- Sixth order ---- (6th-order stencils)
+namespace SixthOrder {
+  cGradDivEStencil   GradDivEStencil;
+  cLaplacianStencil  LaplacianStencil;
+  cCurlBStencil      CurlBStencil;
+}
+
+// ---- Eighth order ---- (8th-order stencils)
+namespace EighthOrder {
+  cGradDivEStencil   GradDivEStencil;
+  cLaplacianStencil  LaplacianStencil;
+  cCurlBStencil      CurlBStencil;
+}
+
+} // namespace Stencil
+} // namespace ECSIM
+} // namespace Electromagnetic
+} // namespace FieldSolver
+} // namespace PIC
+
 
 double PIC::FieldSolver::Electromagnetic::ECSIM::corrCoeff=0.0;
 PIC::FieldSolver::Electromagnetic::ECSIM::fSetIC PIC::FieldSolver::Electromagnetic::ECSIM::SetIC=PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default;
@@ -394,6 +439,42 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
   GradDivStencil375[2]=PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[0]+6;
 
   InitDiscritizationStencil();
+
+  //init new stencils 
+  {
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM::Stencil;
+
+  const double dx = 1.0, dy = 1.0, dz = 1.0;
+
+  // ----------------- SECOND ORDER -----------------
+  // Grad(div E): 2nd-order uses the "compact" builder per pic.h
+  SecondOrder::InitGradDivEBStencils_compact(&Stencil::SecondOrder::GradDivEStencil, dx, dy, dz);
+
+  // Laplacian(E): component-wise
+  SecondOrder::InitLaplacianStencil(&Stencil::SecondOrder::LaplacianStencil, dx, dy, dz);
+
+  // curl(B): second order has explicit face/edge flavors; choose face-based here
+  SecondOrder::InitCurlBStencils_face_based(&Stencil::SecondOrder::CurlBStencil, dx, dy, dz);
+
+  // ----------------- FOURTH ORDER -----------------
+  FourthOrder::InitGradDivEBStencils(&Stencil::FourthOrder::GradDivEStencil, dx, dy, dz);
+  FourthOrder::InitLaplacianStencil(&Stencil::FourthOrder::LaplacianStencil, dx, dy, dz);
+  FourthOrder::InitCurlBStencils(&Stencil::FourthOrder::CurlBStencil, dx, dy, dz);
+
+  // ----------------- SIXTH ORDER ------------------
+  SixthOrder::InitGradDivEBStencils(&Stencil::SixthOrder::GradDivEStencil, dx, dy, dz);
+  SixthOrder::InitLaplacianStencil(&Stencil::SixthOrder::LaplacianStencil, dx, dy, dz);
+  SixthOrder::InitCurlBStencils(&Stencil::SixthOrder::CurlBStencil, dx, dy, dz);
+
+  // ----------------- EIGHTH ORDER -----------------
+  EighthOrder::InitGradDivEBStencils(&Stencil::EighthOrder::GradDivEStencil, dx, dy, dz);
+  EighthOrder::InitLaplacianStencil(&Stencil::EighthOrder::LaplacianStencil, dx, dy, dz);
+  EighthOrder::InitCurlBStencils(&Stencil::EighthOrder::CurlBStencil, dx, dy, dz);
+}
+
+
+
+
 
   CornerNodeAssociatedDataOffsetBegin=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
 

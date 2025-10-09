@@ -9293,6 +9293,10 @@ namespace FieldSolver {
               constexpr int kOrder  = 6;
               constexpr int kRadius = 3;
 
+	      extern cGradDivEStencil GradDivEStencil; 
+	      extern cLaplacianStencil LaplacianStencil;
+	      extern cCurlBStencil CurlBStencil;
+
               /**
               * @brief Initialize 6th-order grad(div E) stencils (3D, uniform Cartesian).
               *
@@ -9348,6 +9352,10 @@ namespace FieldSolver {
 
              // Optional helper: compile‑time footprint hint for 8th‑order centered rules
              constexpr int RequiredHaloLinf = 4;
+
+	      extern cGradDivEStencil GradDivEStencil;
+              extern cLaplacianStencil LaplacianStencil;
+              extern cCurlBStencil CurlBStencil;
             }
 
 	    namespace FourthOrder {
@@ -9374,6 +9382,10 @@ namespace FieldSolver {
                         const cStencil& dxy, const cStencil& dxz, const cStencil& dyz,
                         cGradDivEStencil* S);
                       }
+
+              extern cGradDivEStencil GradDivEStencil;
+              extern cLaplacianStencil LaplacianStencil;
+              extern cCurlBStencil CurlBStencil;
 	    }
 
 	    namespace SecondOrder {
@@ -9400,6 +9412,10 @@ namespace FieldSolver {
                      // The output array must have size 12.
                      void BuildEdges(cStencil edges[12]);
                      } // namespace Helper_Wide
+
+              extern cGradDivEStencil GradDivEStencil;
+              extern cLaplacianStencil LaplacianStencil;
+              extern cCurlBStencil CurlBStencil;
 	    }
 
 
