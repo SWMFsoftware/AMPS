@@ -604,8 +604,27 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
     //the limits are correct: the point i==_BLOCK_CELLS_X_ belongs to the onother block
     int kMax=_BLOCK_CELLS_Z_,jMax=_BLOCK_CELLS_Y_,iMax=_BLOCK_CELLS_X_;
+    int iStop,jStop,kStop;
 
-    for (k=0;k<kMax;k++) for (j=0;j<jMax;j++) for (i=0;i<iMax;i++) {
+    if ((_PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_) && (_PIC_BC__PERIODIC_MODE_ != _PIC_BC__PERIODIC_MODE_ON_)) { 
+      // Touches global domain boundary on MAX faces?
+      const bool touchXmax = (node->GetNeibFace(0*2 + 1, 0, 0, PIC::Mesh::mesh) == nullptr);
+      const bool touchYmax = (node->GetNeibFace(1*2 + 1, 0, 0, PIC::Mesh::mesh) == nullptr);
+      const bool touchZmax = (node->GetNeibFace(2*2 + 1, 0, 0, PIC::Mesh::mesh) == nullptr);
+
+      // Increment only if stop==max (prevents >+1 when corners belong to multiple edges).
+      if (touchXmax && iStop == iMax) ++iStop;
+      if (touchYmax && jStop == jMax) ++jStop;
+      if (touchZmax && kStop == kMax) ++kStop;
+    }
+    else {
+      iStop=iMax,jStop=jMax,kStop=kMax;
+    }
+
+    // Build over the (possibly-extended) domain
+    for (k = 0; k < kStop; ++k)
+    for (j = 0; j < jStop; ++j)
+    for (i = 0; i < iStop; ++i) {
       for (int iVar=0;iVar<NodeUnknownVariableVectorLength;iVar++) {
         int NonZeroElementsFound;
         double rhs;
