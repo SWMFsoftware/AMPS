@@ -358,13 +358,13 @@ endif
 	cp -f ${WSD}/main/mainlib.a ${WSD}/libAMPS.a
 
 ifeq ($(SPICE),nospice)
-	cd ${WSD}; ${AR} libAMPS.a general/*.o meshAMR/*.o pic/*.o species/*.o $(LINK_DIRECTORY_LIST) 
+	cd ${WSD}; ${AR} libAMPS.a general/*.o meshAMR/*.o pic/*.o pic/*/*.o species/*.o $(LINK_DIRECTORY_LIST) 
 else
 	rm -rf ${WSD}/tmpSPICE
 	mkdir ${WSD}/tmpSPICE
 	cp ${SPICE}/lib/cspice.a ${WSD}/tmpSPICE
 	cd ${WSD}/tmpSPICE; ar -x cspice.a
-	cd ${WSD}; ${AR} libAMPS.a general/*.o meshAMR/*.o pic/*.o species/*.o $(LINK_DIRECTORY_LIST) tmpSPICE/*.o
+	cd ${WSD}; ${AR} libAMPS.a general/*.o meshAMR/*.o pic/*.o pic/*/*.o species/*.o $(LINK_DIRECTORY_LIST) tmpSPICE/*.o
 endif
 
 ifeq ($(INTERFACE),on)
