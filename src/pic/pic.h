@@ -9275,9 +9275,6 @@ namespace FieldSolver {
 	      int Radius = -1;  // L∞ radius over all components (cached)
             };
 
-            extern cCurlBStencil CurlBStencil[3]; 
-
-
 	    struct cLaplacianStencil {
               cStencil Ex, Ey, Ez;   // component-wise ∇² applied to E_x, E_y, E_z
               int Radius = -1;       // L∞ radius needed by all three
@@ -9292,10 +9289,6 @@ namespace FieldSolver {
               /// Formal order and typical L∞ radius for the interior scheme
               constexpr int kOrder  = 6;
               constexpr int kRadius = 3;
-
-	      extern cGradDivEStencil GradDivEStencil; 
-	      extern cLaplacianStencil LaplacianStencil;
-	      extern cCurlBStencil CurlBStencil;
 
               /**
               * @brief Initialize 6th-order grad(div E) stencils (3D, uniform Cartesian).
@@ -9333,6 +9326,10 @@ namespace FieldSolver {
               * @param[in]  dx,dy,dz  grid spacings
               */
               void InitCurlBStencils(cCurlBStencil* Curl, double dx, double dy, double dz);
+
+	      extern cGradDivEStencil GradDivEStencil[3];
+              extern cLaplacianStencil LaplacianStencil;
+              extern cCurlBStencil CurlBStencil[3];
             } // namespace SixthOrder
 
 	    namespace EighthOrder {
@@ -9353,9 +9350,9 @@ namespace FieldSolver {
              // Optional helper: compile‑time footprint hint for 8th‑order centered rules
              constexpr int RequiredHaloLinf = 4;
 
-	      extern cGradDivEStencil GradDivEStencil;
+	      extern cGradDivEStencil GradDivEStencil[3];
               extern cLaplacianStencil LaplacianStencil;
-              extern cCurlBStencil CurlBStencil;
+              extern cCurlBStencil CurlBStencil[3];
             }
 
 	    namespace FourthOrder {
@@ -9383,9 +9380,9 @@ namespace FieldSolver {
                         cGradDivEStencil* S);
                       }
 
-              extern cGradDivEStencil GradDivEStencil;
+              extern cGradDivEStencil GradDivEStencil[3];
               extern cLaplacianStencil LaplacianStencil;
-              extern cCurlBStencil CurlBStencil;
+              extern cCurlBStencil CurlBStencil[3];
 	    }
 
 	    namespace SecondOrder {
@@ -9413,9 +9410,9 @@ namespace FieldSolver {
                      void BuildEdges(cStencil edges[12]);
                      } // namespace Helper_Wide
 
-              extern cGradDivEStencil GradDivEStencil;
+              extern cGradDivEStencil GradDivEStencil[3];
               extern cLaplacianStencil LaplacianStencil;
-              extern cCurlBStencil CurlBStencil;
+              extern cCurlBStencil CurlBStencil[3];
 	    }
 
 

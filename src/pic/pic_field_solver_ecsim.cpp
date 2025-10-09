@@ -57,35 +57,32 @@ namespace Electromagnetic {
 namespace ECSIM {
 namespace Stencil {
 
-// Shared 3-row curl(B) storage used across tests/orders.
-cCurlBStencil CurlBStencil[3];  // extern in pic.h
-
 // ---- Second order ---- (2nd-order stencils)
 namespace SecondOrder {
-  cGradDivEStencil   GradDivEStencil;   // extern in pic.h
+  cGradDivEStencil   GradDivEStencil[3];   // extern in pic.h
   cLaplacianStencil  LaplacianStencil;  // extern in pic.h
-  cCurlBStencil      CurlBStencil;      // extern in pic.h (per-order)
+  cCurlBStencil      CurlBStencil[3];      // extern in pic.h (per-order)
 }
 
 // ---- Fourth order ---- (4th-order stencils)
 namespace FourthOrder {
-  cGradDivEStencil   GradDivEStencil;
+  cGradDivEStencil   GradDivEStencil[3];
   cLaplacianStencil  LaplacianStencil;
-  cCurlBStencil      CurlBStencil;
+  cCurlBStencil      CurlBStencil[3];
 }
 
 // ---- Sixth order ---- (6th-order stencils)
 namespace SixthOrder {
-  cGradDivEStencil   GradDivEStencil;
+  cGradDivEStencil   GradDivEStencil[3];
   cLaplacianStencil  LaplacianStencil;
-  cCurlBStencil      CurlBStencil;
+  cCurlBStencil      CurlBStencil[3];
 }
 
 // ---- Eighth order ---- (8th-order stencils)
 namespace EighthOrder {
-  cGradDivEStencil   GradDivEStencil;
+  cGradDivEStencil   GradDivEStencil[3];
   cLaplacianStencil  LaplacianStencil;
-  cCurlBStencil      CurlBStencil;
+  cCurlBStencil      CurlBStencil[3];
 }
 
 } // namespace Stencil
@@ -448,28 +445,28 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
 
   // ----------------- SECOND ORDER -----------------
   // Grad(div E): 2nd-order uses the "compact" builder per pic.h
-  SecondOrder::InitGradDivEBStencils_compact(&Stencil::SecondOrder::GradDivEStencil, dx, dy, dz);
+  SecondOrder::InitGradDivEBStencils_compact(Stencil::SecondOrder::GradDivEStencil, dx, dy, dz);
 
   // Laplacian(E): component-wise
   SecondOrder::InitLaplacianStencil(&Stencil::SecondOrder::LaplacianStencil, dx, dy, dz);
 
   // curl(B): second order has explicit face/edge flavors; choose face-based here
-  SecondOrder::InitCurlBStencils_face_based(&Stencil::SecondOrder::CurlBStencil, dx, dy, dz);
+  SecondOrder::InitCurlBStencils_face_based(Stencil::SecondOrder::CurlBStencil, dx, dy, dz);
 
   // ----------------- FOURTH ORDER -----------------
-  FourthOrder::InitGradDivEBStencils(&Stencil::FourthOrder::GradDivEStencil, dx, dy, dz);
+  FourthOrder::InitGradDivEBStencils(Stencil::FourthOrder::GradDivEStencil, dx, dy, dz);
   FourthOrder::InitLaplacianStencil(&Stencil::FourthOrder::LaplacianStencil, dx, dy, dz);
-  FourthOrder::InitCurlBStencils(&Stencil::FourthOrder::CurlBStencil, dx, dy, dz);
+  FourthOrder::InitCurlBStencils(Stencil::FourthOrder::CurlBStencil, dx, dy, dz);
 
   // ----------------- SIXTH ORDER ------------------
-  SixthOrder::InitGradDivEBStencils(&Stencil::SixthOrder::GradDivEStencil, dx, dy, dz);
+  SixthOrder::InitGradDivEBStencils(Stencil::SixthOrder::GradDivEStencil, dx, dy, dz);
   SixthOrder::InitLaplacianStencil(&Stencil::SixthOrder::LaplacianStencil, dx, dy, dz);
-  SixthOrder::InitCurlBStencils(&Stencil::SixthOrder::CurlBStencil, dx, dy, dz);
+  SixthOrder::InitCurlBStencils(Stencil::SixthOrder::CurlBStencil, dx, dy, dz);
 
   // ----------------- EIGHTH ORDER -----------------
-  EighthOrder::InitGradDivEBStencils(&Stencil::EighthOrder::GradDivEStencil, dx, dy, dz);
+  EighthOrder::InitGradDivEBStencils(Stencil::EighthOrder::GradDivEStencil, dx, dy, dz);
   EighthOrder::InitLaplacianStencil(&Stencil::EighthOrder::LaplacianStencil, dx, dy, dz);
-  EighthOrder::InitCurlBStencils(&Stencil::EighthOrder::CurlBStencil, dx, dy, dz);
+  EighthOrder::InitCurlBStencils(Stencil::EighthOrder::CurlBStencil, dx, dy, dz);
 }
 
 
