@@ -13,6 +13,7 @@
 namespace CurlB    { void ForceLinkAllTests(); }
 namespace GradDivE { void ForceLinkAllTests(); }
 namespace LaplacianE { void ForceLinkAllTests(); }
+namespace CurlCurlE { void ForceLinkAllTests(); }
 
 namespace StencilTests {
   void ForceLinkAllTests() {
@@ -20,6 +21,7 @@ namespace StencilTests {
     CurlB::ForceLinkAllTests();
     GradDivE::ForceLinkAllTests();
     LaplacianE::ForceLinkAllTests();
+    CurlCurlE::ForceLinkAllTests();
   }
 }
 
