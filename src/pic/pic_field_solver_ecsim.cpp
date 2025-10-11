@@ -62,6 +62,7 @@ namespace SecondOrder {
   cGradDivEStencil   GradDivEStencil[3];   // extern in pic.h
   cLaplacianStencil  LaplacianStencil;  // extern in pic.h
   cCurlBStencil      CurlBStencil[3];      // extern in pic.h (per-order)
+  cCurlCurlEStencil CurlCurlEStencil[3];
 }
 
 // ---- Fourth order ---- (4th-order stencils)
@@ -69,6 +70,7 @@ namespace FourthOrder {
   cGradDivEStencil   GradDivEStencil[3];
   cLaplacianStencil  LaplacianStencil;
   cCurlBStencil      CurlBStencil[3];
+  cCurlCurlEStencil CurlCurlEStencil[3];
 }
 
 // ---- Sixth order ---- (6th-order stencils)
@@ -76,6 +78,7 @@ namespace SixthOrder {
   cGradDivEStencil   GradDivEStencil[3];
   cLaplacianStencil  LaplacianStencil;
   cCurlBStencil      CurlBStencil[3];
+  cCurlCurlEStencil CurlCurlEStencil[3];
 }
 
 // ---- Eighth order ---- (8th-order stencils)
@@ -83,6 +86,7 @@ namespace EighthOrder {
   cGradDivEStencil   GradDivEStencil[3];
   cLaplacianStencil  LaplacianStencil;
   cCurlBStencil      CurlBStencil[3];
+  cCurlCurlEStencil CurlCurlEStencil[3];
 }
 
 } // namespace Stencil
@@ -763,7 +767,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     //convert length
     dx[iDim] *= length_conv;
 
-    x[iDim]=node->xmin[iDim]*length_conv+index[iDim]*(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];
+    x[iDim]=node->xmin[iDim]+index[iDim]*(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];
 
     coeff[iDim] = cDt/dx[iDim]*theta; // for  test purpose
     coeffSqr[iDim] = coeff[iDim]*coeff[iDim];
