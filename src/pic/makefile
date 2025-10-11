@@ -85,6 +85,7 @@ PICOBJ = pic.o \
 	ecsim/curl_b_sixth_order.o \
 	ecsim/curl_b_eighth_order.o \
 	ecsim/laplacian_all_orders.o \
+	ecsim/curl_curl_e_all_orders.o \
 	mesh/domain_boundary_bc_collectors.o
 
 	
