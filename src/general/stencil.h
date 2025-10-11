@@ -492,6 +492,8 @@ public:
         // Create a copy for sorting without modifying original
         std::list<cStencilElement> sortedData = StencilData;
         sortedData.sort(SortList);
+
+	fprintf(fout,"%s\n",symbol.c_str());
         
         for (const auto& elem : sortedData) {
             fprintf(fout, "%i ", cnt++);
