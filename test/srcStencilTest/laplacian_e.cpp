@@ -3,14 +3,17 @@
  * @brief   Convergence test for component-wise Laplacian(E) stencils
  *          at 2nd, 4th, 6th, and 8th order on a periodic, uniform grid.
  *
- * Analytic field (periodic, cell-centered sampling):
+ * MODIFIED: Data sampled at CELL CORNERS, Laplacian computed at CELL CORNERS
+ *
+ * Analytic field (periodic, cell-corner sampling):
  *   Ex = sin(ax) cos(by) cos(cz)
  *   Ey = cos(ax) sin(by) cos(cz)
  *   Ez = cos(ax) cos(by) sin(cz)
  *   ∇²E = - (a^2 + b^2 + c^2) * E   (component-wise)
  *
- * What this does (same harness pattern as grad_div_e.cpp / curl_b.cpp):
+ * What this does:
  *   • Builds ECSIM Laplacian stencils (component-wise) for 2/4/6/8 order.
+ *   • Samples field at CELL CORNERS (i*dx, j*dy, k*dz) - no +0.5 offset
  *   • Exports integerized taps and applies them with periodic wrap.
  *   • Reports L_inf and relative L2 errors vs. resolution and estimates order.
  *   • Prints a component-wise numeric vs. analytic comparison at one interior point.
@@ -31,7 +34,7 @@
 
 using namespace PIC::FieldSolver::Electromagnetic::ECSIM::Stencil;
 
-// ---------------------- small utils (same style as other tests) ----------------------
+// ---------------------- small utils ----------------------
 static inline int wrap(int idx, int N){ int r = idx % N; if (r<0) r += N; return r; }
 
 static inline double apply_exported(const cStencil::cStencilData& S,
@@ -109,7 +112,7 @@ static Err run_one(Order ord, int N,
   Lap.Ey.ExportStencil(&SEy);
   Lap.Ez.ExportStencil(&SEz);
 
-  // Cell-centered grids (consistent with other tests)
+  // MODIFIED: Cell-CORNER grids (no +0.5 offset)
   std::vector<double> Ex(NT), Ey(NT), Ez(NT);
   std::vector<double> LxN(NT), LyN(NT), LzN(NT);
   std::vector<double> LxA(NT), LyA(NT), LzA(NT);
@@ -118,14 +121,15 @@ static Err run_one(Order ord, int N,
     for (int j=0;j<Ny;++j)
       for (int i=0;i<Nx;++i) {
         const size_t id = (size_t)k*Ny*Nx + (size_t)j*Nx + (size_t)i;
-        const double x=(i+0.5)*dx, y=(j+0.5)*dy, z=(k+0.5)*dz;
+        // CELL CORNER: no +0.5 offset
+        const double x=i*dx, y=j*dy, z=k*dz;
         const Vec3 e  = analyticE(x,y,z, a,b,c);
         const Vec3 la = analyticLapE(x,y,z, a,b,c);
         Ex[id]=e.x; Ey[id]=e.y; Ez[id]=e.z;
         LxA[id]=la.x; LyA[id]=la.y; LzA[id]=la.z;
       }
 
-  // Apply numeric Laplacian (periodic) with exported taps — same API used in grad_div_e
+  // Apply numeric Laplacian (periodic) with exported taps at cell corners
   for (int k=0;k<Nz;++k)
     for (int j=0;j<Ny;++j)
       for (int i=0;i<Nx;++i) {
@@ -168,7 +172,8 @@ static void print_point_compare(int N,double Lx,double Ly,double Lz,
   const double dx=Lx/Nx, dy=Ly/Ny, dz=Lz/Nz;
   const int ii=Nx/2, jj=Ny/2, kk=Nz/2;
   const size_t id=(size_t)kk*Ny*Nx + (size_t)jj*Nx + (size_t)ii;
-  const double x=(ii+0.5)*dx, y=(jj+0.5)*dy, z=(kk+0.5)*dz;
+  // CELL CORNER: no +0.5 offset
+  const double x=ii*dx, y=jj*dy, z=kk*dz;
 
   auto line = [&](const char* name, double a_, double n_){
     const double err = std::abs(n_ - a_);
@@ -179,10 +184,10 @@ static void print_point_compare(int N,double Lx,double Ly,double Lz,
               << std::setprecision(3) << std::setw(8) << err << "\n";
   };
 
-  std::cout << "\n[" << label << "] Component-wise comparison at interior point:\n"
+  std::cout << "\n[" << label << "] Component-wise comparison at interior CORNER point:\n"
             << "  Grid: N="<<N<<", (i,j,k)=("<<ii<<","<<jj<<","<<kk<<")"
             << ", (x,y,z)=("<<std::fixed<<std::setprecision(6)
-            << x<<", "<<y<<", "<<z<<")\n"
+            << x<<", "<<y<<", "<<z<<") [CORNER]\n"
             << "  -----------------------------------------------------------------------------\n"
             << "    Component         Analytic               Numerical               AbsErr\n"
             << "  -----------------------------------------------------------------------------\n";
@@ -206,9 +211,10 @@ static int Run(const std::vector<std::string>&) {
   std::vector<Row> err[4];
   for (int o=0;o<4;++o) err[o].resize(Ns.size());
 
-  std::cout << "\n=== Laplacian(E) Convergence (2nd, 4th, 6th, 8th) ===\n"
+  std::cout << "\n=== Laplacian(E) Convergence - CELL CORNER VERSION (2nd, 4th, 6th, 8th) ===\n"
             << "Domain Lx="<<Lx<<", Ly="<<Ly<<", Lz="<<Lz
-            << "  wavenumbers a="<<a<<", b="<<b<<", c="<<c<<"\n";
+            << "  wavenumbers a="<<a<<", b="<<b<<", c="<<c<<"\n"
+            << "Data sampled at CELL CORNERS (i*dx, j*dy, k*dz)\n";
 
   for (size_t t=0;t<Ns.size();++t) {
     const int N = Ns[t];
@@ -227,7 +233,7 @@ static int Run(const std::vector<std::string>&) {
     }
   }
 
-  // combined table (same style as existing tests)
+  // combined table
   std::cout << "\n--------------------------------------------------------------------------------------------------------------\n";
   std::cout << "   N  | "
             << " Second (L_inf)  Ord   Second (L2)     Ord  |"
@@ -262,10 +268,9 @@ static int Run(const std::vector<std::string>&) {
 
 } // namespace LaplacianE
 
-// ---- Registration & force-link shim (matches framework pattern) ----
+// ---- Registration & force-link shim ----
 namespace LaplacianE { int Run(const std::vector<std::string>&); }
 REGISTER_STENCIL_TEST(LaplacianE,
-  "laplacian_e",
-  "Laplacian(E): component-wise stencils (2nd/4th/6th/8th), periodic convergence and interior comparison.");
+  "laplacian_e_corner",
+  "Laplacian(E): component-wise stencils at CELL CORNERS (2nd/4th/6th/8th), periodic convergence.");
 namespace LaplacianE { void ForceLinkAllTests() {} }
-

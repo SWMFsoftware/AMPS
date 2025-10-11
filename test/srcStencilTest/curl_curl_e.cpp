@@ -15,64 +15,16 @@
  *     2) GD_num    := grad_div(E)         (built from cGradDivEStencil rows)
  *     3) Lap_num   := ∇²E                 (built from cLaplacianStencil, per component)
  *     4) ID_num    := GD_num − Lap_num    (pure numerical identity reconstruction)
+ *     5) CC_direct := curl(curl(E))       (direct finite-difference curl applied twice, matching stencil order)
  *
  *   Analytic references at each grid point (x,y,z):
  *     • CC_ana   = ∇(∇·E) − ∇²E
  *     • GD_ana   = ∇( (a+b+c) cos(ax)cos(by)cos(cz) )
  *     • Lap_ana  = −(a²+b²+c²) * E    (component-wise)
  *
- * FIELD (periodic on [0,L]^3)
- *   E(x,y,z) = ( sin(ax) cos(by) cos(cz),
- *                cos(ax) sin(by) cos(cz),
- *                cos(ax) cos(by) sin(cz) )
- *   with a=2π, b=3π, c=5π (unequal to avoid trivial cancellations).
- *
- * STENCIL APPLICATION
- *   Mirrors curl_b.cpp: each sub-stencil is exported via
- *     ExportStencil(cStencil::cStencilData*)
- *   then applied by looping integer offsets and multiplying by stored weights.
- *   All metric factors (1/dx, 1/dx^2, etc.) are already baked into the
- *   exported coefficients — do NOT rescale during application.
- *
- * GLOBAL METRICS (printed per variant/order)
- *   • CC vs analytic   : Linf,  RelL2   of (CC_num − CC_ana)
- *   • CC vs (GD−Lap)   : Linf,  RelL2   of (CC_num − ID_num)
- *   • GD vs analytic   : Linf,  RelL2   of (GD_num − GD_ana)
- *   • Lap vs analytic  : Linf,  RelL2   of (Lap_num − Lap_ana)
- *   (RelL2 := ||error||_2 / ||reference||_2 over the whole grid.)
- *
- * PER-POINT TABLES (component-wise, at an interior node)
- *   1) CurlCurl comparison (direct & identity, both vs analytic)
- *
- *     Component          Analytic            Num CurlCurl         Num (GD-Lap)       |Err(CC)|    |Err(ID)|
- *                         CC_ana               CC_num               ID_num          |CC-CC_ana|  |ID-CC_ana|
- *
- *     Meaning:
- *       “Analytic”     = CC_ana component from closed-form ∇(∇·E) − ∇²E
- *       “Num CurlCurl” = CC_num component (direct curl_curl stencil)
- *       “Num (GD-Lap)” = ID_num component (grad_div − laplacian, both numerical)
- *       “|Err(CC)|”    = |CC_num − CC_ana|,  “|Err(ID)|” = |ID_num − CC_ana|
- *
- *   2) GradDiv vs Analytic
- *
- *     Component          Analytic GD         Numerical GD         |Err(GD)|
- *                         GD_ana               GD_num            |GD-GD_ana|
- *
- *   3) Laplacian vs Analytic
- *
- *     Component          Analytic Lap        Numerical Lap        |Err(Lap)|
- *                         Lap_ana              Lap_num           |Lap-Lap_ana|
- *
- * EXPECTED BEHAVIOR
- *   • |Err(CC)| and |Err(ID)| decrease with order and with grid refinement.
- *   • GD and Lap errors independently converge at their formal orders.
- *   • CC_num and ID_num should be very close (consistency of the discrete identity).
- *
- * CONVERGENCE SUMMARY (added at end of run)
- *   After running across Ns = {16,24,32,48,64}, we print a compact table with
- *   L∞ and L2 (RMS) errors of CC vs analytic for 2nd-compact (“Second”), 4th, 6th, 8th,
- *   plus observed orders computed as:
- *       p = log(e_prev/e_curr) / log(N_curr/N_prev),   with h ~ 1/N.
+ * CONVERGENCE SUMMARY
+ *   After running across Ns = {16,24,32,48,64}, we print tables with
+ *   L∞ and L2 (RMS) errors for both stencil-based and direct curl(curl(E)) methods.
  ***************************************************************************************/
 
 #include <cmath>
@@ -87,17 +39,15 @@
 #include "test_harness.h"
 #include "test_register.h"
 #include "test_force_link_all.h"
-#include "pic.h"  // brings stencil types and ExportStencil
+#include "pic.h"
 
 using namespace PIC::FieldSolver::Electromagnetic::ECSIM::Stencil;
 
 namespace {
 
-// ---------- small helpers ----------
 inline int wrap(int i, int N){ int r = i % N; return (r<0)? r+N : r; }
 struct Vec3 { double x,y,z; };
 
-// Analytic field
 inline Vec3 analyticE(double x, double y, double z, double a, double b, double c){
   Vec3 v;
   v.x = std::sin(a*x)*std::cos(b*y)*std::cos(c*z);
@@ -106,7 +56,6 @@ inline Vec3 analyticE(double x, double y, double z, double a, double b, double c
   return v;
 }
 
-// Analytic pieces
 inline Vec3 analyticCurlCurlE(double x,double y,double z,double a,double b,double c){
   const double sx = std::sin(a*x), cx = std::cos(a*x);
   const double sy = std::sin(b*y), cy = std::cos(b*y);
@@ -134,9 +83,7 @@ inline Vec3 analyticGradDivE(double x,double y,double z,double a,double b,double
   const double sy = std::sin(b*y), cy = std::cos(b*y);
   const double sz = std::sin(c*z), cz = std::cos(c*z);
   const double K = (a + b + c);
-  return { K * (-a*sx)*cy*cz,
-           K * cx*(-b*sy)*cz,
-           K * cx*cy*(-c*sz) };
+  return { K * (-a*sx)*cy*cz, K * cx*(-b*sy)*cz, K * cx*cy*(-c*sz) };
 }
 
 inline Vec3 analyticLaplacianE(double x,double y,double z,double a,double b,double c){
@@ -150,7 +97,126 @@ inline Vec3 analyticLaplacianE(double x,double y,double z,double a,double b,doub
   return { -lam*Ex, -lam*Ey, -lam*Ez };
 }
 
-// Exported stencil application (curl_b.cpp style)
+// ---------- Direct numerical curl operators (various orders) ----------
+// 2nd order centered
+inline Vec3 numericalCurl_2nd(const std::vector<double>& Vx,
+                              const std::vector<double>& Vy,
+                              const std::vector<double>& Vz,
+                              int i, int j, int k,
+                              int Nx, int Ny, int Nz,
+                              double dx, double dy, double dz)
+{
+  auto idx = [&](int ii, int jj, int kk) -> size_t {
+    return (size_t)kk*Ny*Nx + (size_t)jj*Nx + (size_t)ii;
+  };
+
+  const double dVz_dy = (Vz[idx(i, wrap(j+1,Ny), k)] - Vz[idx(i, wrap(j-1,Ny), k)]) / (2.0*dy);
+  const double dVy_dz = (Vy[idx(i, j, wrap(k+1,Nz))] - Vy[idx(i, j, wrap(k-1,Nz))]) / (2.0*dz);
+  const double dVx_dz = (Vx[idx(i, j, wrap(k+1,Nz))] - Vx[idx(i, j, wrap(k-1,Nz))]) / (2.0*dz);
+  const double dVz_dx = (Vz[idx(wrap(i+1,Nx), j, k)] - Vz[idx(wrap(i-1,Nx), j, k)]) / (2.0*dx);
+  const double dVy_dx = (Vy[idx(wrap(i+1,Nx), j, k)] - Vy[idx(wrap(i-1,Nx), j, k)]) / (2.0*dx);
+  const double dVx_dy = (Vx[idx(i, wrap(j+1,Ny), k)] - Vx[idx(i, wrap(j-1,Ny), k)]) / (2.0*dy);
+
+  return { dVz_dy - dVy_dz, dVx_dz - dVz_dx, dVy_dx - dVx_dy };
+}
+
+// 4th order centered
+inline Vec3 numericalCurl_4th(const std::vector<double>& Vx,
+                              const std::vector<double>& Vy,
+                              const std::vector<double>& Vz,
+                              int i, int j, int k,
+                              int Nx, int Ny, int Nz,
+                              double dx, double dy, double dz)
+{
+  auto idx = [&](int ii, int jj, int kk) -> size_t {
+    return (size_t)kk*Ny*Nx + (size_t)jj*Nx + (size_t)ii;
+  };
+
+  // 4th order: f'(x) = [-f(x+2h) + 8f(x+h) - 8f(x-h) + f(x-2h)] / (12h)
+  const double dVz_dy = (-Vz[idx(i, wrap(j+2,Ny), k)] + 8.0*Vz[idx(i, wrap(j+1,Ny), k)]
+                        -8.0*Vz[idx(i, wrap(j-1,Ny), k)] + Vz[idx(i, wrap(j-2,Ny), k)]) / (12.0*dy);
+  const double dVy_dz = (-Vy[idx(i, j, wrap(k+2,Nz))] + 8.0*Vy[idx(i, j, wrap(k+1,Nz))]
+                        -8.0*Vy[idx(i, j, wrap(k-1,Nz))] + Vy[idx(i, j, wrap(k-2,Nz))]) / (12.0*dz);
+  const double dVx_dz = (-Vx[idx(i, j, wrap(k+2,Nz))] + 8.0*Vx[idx(i, j, wrap(k+1,Nz))]
+                        -8.0*Vx[idx(i, j, wrap(k-1,Nz))] + Vx[idx(i, j, wrap(k-2,Nz))]) / (12.0*dz);
+  const double dVz_dx = (-Vz[idx(wrap(i+2,Nx), j, k)] + 8.0*Vz[idx(wrap(i+1,Nx), j, k)]
+                        -8.0*Vz[idx(wrap(i-1,Nx), j, k)] + Vz[idx(wrap(i-2,Nx), j, k)]) / (12.0*dx);
+  const double dVy_dx = (-Vy[idx(wrap(i+2,Nx), j, k)] + 8.0*Vy[idx(wrap(i+1,Nx), j, k)]
+                        -8.0*Vy[idx(wrap(i-1,Nx), j, k)] + Vy[idx(wrap(i-2,Nx), j, k)]) / (12.0*dx);
+  const double dVx_dy = (-Vx[idx(i, wrap(j+2,Ny), k)] + 8.0*Vx[idx(i, wrap(j+1,Ny), k)]
+                        -8.0*Vx[idx(i, wrap(j-1,Ny), k)] + Vx[idx(i, wrap(j-2,Ny), k)]) / (12.0*dy);
+
+  return { dVz_dy - dVy_dz, dVx_dz - dVz_dx, dVy_dx - dVx_dy };
+}
+
+// 6th order centered
+inline Vec3 numericalCurl_6th(const std::vector<double>& Vx,
+                              const std::vector<double>& Vy,
+                              const std::vector<double>& Vz,
+                              int i, int j, int k,
+                              int Nx, int Ny, int Nz,
+                              double dx, double dy, double dz)
+{
+  auto idx = [&](int ii, int jj, int kk) -> size_t {
+    return (size_t)kk*Ny*Nx + (size_t)jj*Nx + (size_t)ii;
+  };
+
+  // 6th order: f'(x) = [f(x+3h) - 9f(x+2h) + 45f(x+h) - 45f(x-h) + 9f(x-2h) - f(x-3h)] / (60h)
+  auto deriv6 = [&](const std::vector<double>& V, int i0, int j0, int k0, 
+                    int di, int dj, int dk, double dh) -> double {
+    return (V[idx(wrap(i0+3*di,Nx), wrap(j0+3*dj,Ny), wrap(k0+3*dk,Nz))]
+           -9.0*V[idx(wrap(i0+2*di,Nx), wrap(j0+2*dj,Ny), wrap(k0+2*dk,Nz))]
+           +45.0*V[idx(wrap(i0+di,Nx), wrap(j0+dj,Ny), wrap(k0+dk,Nz))]
+           -45.0*V[idx(wrap(i0-di,Nx), wrap(j0-dj,Ny), wrap(k0-dk,Nz))]
+           +9.0*V[idx(wrap(i0-2*di,Nx), wrap(j0-2*dj,Ny), wrap(k0-2*dk,Nz))]
+           -V[idx(wrap(i0-3*di,Nx), wrap(j0-3*dj,Ny), wrap(k0-3*dk,Nz))]) / (60.0*dh);
+  };
+
+  const double dVz_dy = deriv6(Vz, i, j, k, 0, 1, 0, dy);
+  const double dVy_dz = deriv6(Vy, i, j, k, 0, 0, 1, dz);
+  const double dVx_dz = deriv6(Vx, i, j, k, 0, 0, 1, dz);
+  const double dVz_dx = deriv6(Vz, i, j, k, 1, 0, 0, dx);
+  const double dVy_dx = deriv6(Vy, i, j, k, 1, 0, 0, dx);
+  const double dVx_dy = deriv6(Vx, i, j, k, 0, 1, 0, dy);
+
+  return { dVz_dy - dVy_dz, dVx_dz - dVz_dx, dVy_dx - dVx_dy };
+}
+
+// 8th order centered
+inline Vec3 numericalCurl_8th(const std::vector<double>& Vx,
+                              const std::vector<double>& Vy,
+                              const std::vector<double>& Vz,
+                              int i, int j, int k,
+                              int Nx, int Ny, int Nz,
+                              double dx, double dy, double dz)
+{
+  auto idx = [&](int ii, int jj, int kk) -> size_t {
+    return (size_t)kk*Ny*Nx + (size_t)jj*Nx + (size_t)ii;
+  };
+
+  // 8th order: f'(x) = [-f(x+4h) + 8f(x+3h) - 36f(x+2h) + 112f(x+h) - 112f(x-h) + 36f(x-2h) - 8f(x-3h) + f(x-4h)] / (280h)
+  auto deriv8 = [&](const std::vector<double>& V, int i0, int j0, int k0, 
+                    int di, int dj, int dk, double dh) -> double {
+    return (-V[idx(wrap(i0+4*di,Nx), wrap(j0+4*dj,Ny), wrap(k0+4*dk,Nz))]
+           +8.0*V[idx(wrap(i0+3*di,Nx), wrap(j0+3*dj,Ny), wrap(k0+3*dk,Nz))]
+           -36.0*V[idx(wrap(i0+2*di,Nx), wrap(j0+2*dj,Ny), wrap(k0+2*dk,Nz))]
+           +112.0*V[idx(wrap(i0+di,Nx), wrap(j0+dj,Ny), wrap(k0+dk,Nz))]
+           -112.0*V[idx(wrap(i0-di,Nx), wrap(j0-dj,Ny), wrap(k0-dk,Nz))]
+           +36.0*V[idx(wrap(i0-2*di,Nx), wrap(j0-2*dj,Ny), wrap(k0-2*dk,Nz))]
+           -8.0*V[idx(wrap(i0-3*di,Nx), wrap(j0-3*dj,Ny), wrap(k0-3*dk,Nz))]
+           +V[idx(wrap(i0-4*di,Nx), wrap(j0-4*dj,Ny), wrap(k0-4*dk,Nz))]) / (280.0*dh);
+  };
+
+  const double dVz_dy = deriv8(Vz, i, j, k, 0, 1, 0, dy);
+  const double dVy_dz = deriv8(Vy, i, j, k, 0, 0, 1, dz);
+  const double dVx_dz = deriv8(Vx, i, j, k, 0, 0, 1, dz);
+  const double dVz_dx = deriv8(Vz, i, j, k, 1, 0, 0, dx);
+  const double dVy_dx = deriv8(Vy, i, j, k, 1, 0, 0, dx);
+  const double dVx_dy = deriv8(Vx, i, j, k, 0, 1, 0, dy);
+
+  return { dVz_dy - dVy_dz, dVx_dz - dVz_dx, dVy_dx - dVx_dy };
+}
+
 static inline double apply_exported(const cStencil::cStencilData& S,
                                     const std::vector<double>& F,
                                     int i, int j, int k,
@@ -167,8 +233,6 @@ static inline double apply_exported(const cStencil::cStencilData& S,
   return acc;
 }
 
-// ----- pretty printers for interior-point comparisons -----
-
 static void print_point_curlcurl(int N, double L,
                                  const std::vector<double>& CCx,
                                  const std::vector<double>& CCy,
@@ -179,38 +243,44 @@ static void print_point_curlcurl(int N, double L,
                                  const std::vector<double>& IDx,
                                  const std::vector<double>& IDy,
                                  const std::vector<double>& IDz,
+                                 const std::vector<double>& CCx_dir,
+                                 const std::vector<double>& CCy_dir,
+                                 const std::vector<double>& CCz_dir,
                                  const char* flavor_label)
 {
   const double dx = L/N;
-  const int ii = N/4, jj = N/3, kk = (2*N)/5;   // interior, nontrivial
+  const int ii = N/4, jj = N/3, kk = (2*N)/5;
   const int Nx=N, Ny=N, Nz=N;
   const size_t idx = (size_t)kk*Ny*Nx + (size_t)jj*Nx + (size_t)ii;
   const double x = ii*dx, y = jj*dx, z = kk*dx;
 
-  auto line = [&](const char* name, double a_, double n_, double n2){
+  auto line = [&](const char* name, double a_, double n_, double n2, double ndir){
     const double err1 = std::abs(n_  - a_);
     const double err2 = std::abs(n2 - a_);
+    const double err3 = std::abs(ndir - a_);
     std::cout << "    " << std::left << std::setw(16) << name
               << std::right << std::scientific << std::setprecision(8)
               << std::setw(16) << a_  << "   "
               << std::setw(16) << n_  << "   "
               << std::setw(16) << n2  << "   "
+              << std::setw(16) << ndir << "   "
               << std::setprecision(3) << std::setw(10) << err1
-              << std::setw(12) << err2 << "\n";
+              << std::setw(12) << err2
+              << std::setw(12) << err3 << "\n";
   };
 
   std::cout << "\n[" << flavor_label << "] curl_curl(E) @ interior point\n"
             << "  N=" << N << ", (i,j,k)=(" << ii << "," << jj << "," << kk << ")"
             << ", (x,y,z)=(" << std::fixed << std::setprecision(6)
             << x << ", " << y << ", " << z << ")\n"
-            << "  --------------------------------------------------------------------------------------------------------------\n"
-            << "    Component          Analytic            Num CurlCurl         Num (GD-Lap)       |Err(CC)|    |Err(ID)|\n"
-            << "                        CC_ana               CC_num               ID_num          |CC-CC_ana|  |ID-CC_ana|\n"
-            << "  --------------------------------------------------------------------------------------------------------------\n";
+            << "  ----------------------------------------------------------------------------------------------------------------------------\n"
+            << "    Component          Analytic            Num CurlCurl         Num (GD-Lap)        Num (Direct)      |Err(CC)|    |Err(ID)|    |Err(Dir)|\n"
+            << "                        CC_ana               CC_num               ID_num              CC_direct      |CC-CC_ana|  |ID-CC_ana|  |Dir-CC_ana|\n"
+            << "  ----------------------------------------------------------------------------------------------------------------------------\n";
 
-  line("(CurlCurlE)_x", CCxA[idx], CCx[idx], IDx[idx]);
-  line("(CurlCurlE)_y", CCyA[idx], CCy[idx], IDy[idx]);
-  line("(CurlCurlE)_z", CCzA[idx], CCz[idx], IDz[idx]);
+  line("(CurlCurlE)_x", CCxA[idx], CCx[idx], IDx[idx], CCx_dir[idx]);
+  line("(CurlCurlE)_y", CCyA[idx], CCy[idx], IDy[idx], CCy_dir[idx]);
+  line("(CurlCurlE)_z", CCzA[idx], CCz[idx], IDz[idx], CCz_dir[idx]);
 }
 
 static void print_point_gd(int N, double L,
@@ -226,7 +296,6 @@ static void print_point_gd(int N, double L,
   const int ii = N/4, jj = N/3, kk = (2*N)/5;
   const int Nx=N, Ny=N, Nz=N;
   const size_t idx = (size_t)kk*Ny*Nx + (size_t)jj*Nx + (size_t)ii;
-  const double x = ii*dx, y = jj*dx, z = kk*dx;
 
   auto line = [&](const char* name, double a_, double n_){
     const double err = std::abs(n_  - a_);
@@ -261,7 +330,6 @@ static void print_point_lap(int N, double L,
   const int ii = N/4, jj = N/3, kk = (2*N)/5;
   const int Nx=N, Ny=N, Nz=N;
   const size_t idx = (size_t)kk*Ny*Nx + (size_t)jj*Nx + (size_t)ii;
-  const double x = ii*dx, y = jj*dx, z = kk*dx;
 
   auto line = [&](const char* name, double a_, double n_){
     const double err = std::abs(n_  - a_);
@@ -283,24 +351,22 @@ static void print_point_lap(int N, double L,
   line("(LaplacianE)_z", LPAz[idx], LPz[idx]);
 }
 
-// ---------- error structure ----------
-// NOTE: l2rel is still used for on-screen diagnostics; l2abs (RMS) is added for convergence table.
 struct ErrStats { double linf=0.0, l2abs=0.0, l2rel=0.0; };
 
-// ---------- core runner ----------
-template<typename BuildGradDiv, typename BuildLap, typename BuildCurlCurl>
+template<typename BuildGradDiv, typename BuildLap, typename BuildCurlCurl, typename CurlFunc>
 ErrStats run_one_order(const char* label,
                        BuildGradDiv build_grad_div,
                        BuildLap     build_lap,
                        BuildCurlCurl build_curl_curl,
+                       CurlFunc     curl_func,
                        int N, double L,
-                       double a, double b, double c)
+                       double a, double b, double c,
+                       ErrStats* direct_err = nullptr)
 {
   const double dx=L/N, dy=L/N, dz=L/N;
   const int Nx=N, Ny=N, Nz=N;
   const size_t NT = (size_t)Nx*Ny*Nz;
 
-  // initialize E at corners
   std::vector<double> Ex(NT), Ey(NT), Ez(NT);
   for (int k=0; k<Nz; ++k){
     const double z=k*dz;
@@ -315,7 +381,6 @@ ErrStats run_one_order(const char* label,
     }
   }
 
-  // build stencils
   cGradDivEStencil  G[3];
   cLaplacianStencil Ls;
   cCurlCurlEStencil CC[3];
@@ -324,7 +389,6 @@ ErrStats run_one_order(const char* label,
   build_lap(&Ls, dx,dy,dz);
   build_curl_curl(CC, dx,dy,dz);
 
-  // export taps
   cStencil::cStencilData
     GxEx,GxEy,GxEz, GyEx,GyEy,GyEz, GzEx,GzEy,GzEz,
     LEx,LEy,LEz,
@@ -340,20 +404,34 @@ ErrStats run_one_order(const char* label,
   CC[1].Ex.ExportStencil(&CCyEx); CC[1].Ey.ExportStencil(&CCyEy); CC[1].Ez.ExportStencil(&CCyEz);
   CC[2].Ex.ExportStencil(&CCzEx); CC[2].Ey.ExportStencil(&CCzEy); CC[2].Ez.ExportStencil(&CCzEz);
 
-  // arrays for diagnostics
-  std::vector<double> CCx(NT), CCy(NT), CCz(NT);          // numerical curl_curl
-  std::vector<double> IDx(NT), IDy(NT), IDz(NT);          // GD - Lap
-  std::vector<double> GDx(NT), GDy(NT), GDz(NT);          // numerical grad_div
-  std::vector<double> LPx(NT), LPy(NT), LPz(NT);          // numerical laplacian
-  std::vector<double> CCxA(NT), CCyA(NT), CCzA(NT);       // analytic curl_curl
-  std::vector<double> GDAx(NT), GDAy(NT), GDAz(NT);       // analytic grad_div
-  std::vector<double> LPAx(NT), LPAy(NT), LPAz(NT);       // analytic laplacian
+  // Compute curl(E) first for direct curl(curl(E))
+  std::vector<double> curlEx(NT), curlEy(NT), curlEz(NT);
+  for (int k=0; k<Nz; ++k){
+    for (int j=0; j<Ny; ++j){
+      for (int i=0; i<Nx; ++i){
+        const size_t id = (size_t)k*Ny*Nx + (size_t)j*Nx + (size_t)i;
+        Vec3 curl = curl_func(Ex, Ey, Ez, i, j, k, Nx, Ny, Nz, dx, dy, dz);
+        curlEx[id] = curl.x;
+        curlEy[id] = curl.y;
+        curlEz[id] = curl.z;
+      }
+    }
+  }
 
-  // error accumulators
-  double linfA=0.0, l2A=0.0, l2refA=0.0;   // CC vs analytic
-  double linfI=0.0, l2I=0.0, l2refI=0.0;   // CC vs ID
-  double linfGD=0.0, l2GD=0.0, l2refGD=0.0;// GD vs analytic
-  double linfLP=0.0, l2LP=0.0, l2refLP=0.0;// Lap vs analytic
+  std::vector<double> CCx(NT), CCy(NT), CCz(NT);
+  std::vector<double> IDx(NT), IDy(NT), IDz(NT);
+  std::vector<double> GDx(NT), GDy(NT), GDz(NT);
+  std::vector<double> LPx(NT), LPy(NT), LPz(NT);
+  std::vector<double> CCxA(NT), CCyA(NT), CCzA(NT);
+  std::vector<double> GDAx(NT), GDAy(NT), GDAz(NT);
+  std::vector<double> LPAx(NT), LPAy(NT), LPAz(NT);
+  std::vector<double> CCx_dir(NT), CCy_dir(NT), CCz_dir(NT);
+
+  double linfA=0.0, l2A=0.0, l2refA=0.0;
+  double linfI=0.0, l2I=0.0, l2refI=0.0;
+  double linfGD=0.0, l2GD=0.0, l2refGD=0.0;
+  double linfLP=0.0, l2LP=0.0, l2refLP=0.0;
+  double linfDir=0.0, l2Dir=0.0;
 
   for (int k=0; k<Nz; ++k){
     const double z=k*dz;
@@ -363,7 +441,6 @@ ErrStats run_one_order(const char* label,
         const double x=i*dx;
         const size_t id = (size_t)k*Ny*Nx + (size_t)j*Nx + (size_t)i;
 
-        // --- numerical curl_curl rows ---
         const double CCx_num =
             apply_exported(CCxEx, Ex,i,j,k,Nx,Ny,Nz)
           + apply_exported(CCxEy, Ey,i,j,k,Nx,Ny,Nz)
@@ -378,7 +455,11 @@ ErrStats run_one_order(const char* label,
           + apply_exported(CCzEz, Ez,i,j,k,Nx,Ny,Nz);
         CCx[id]=CCx_num; CCy[id]=CCy_num; CCz[id]=CCz_num;
 
-        // --- numerical grad_div rows ---
+        Vec3 curlcurl = curl_func(curlEx, curlEy, curlEz, i, j, k, Nx, Ny, Nz, dx, dy, dz);
+        CCx_dir[id] = curlcurl.x;
+        CCy_dir[id] = curlcurl.y;
+        CCz_dir[id] = curlcurl.z;
+
         const double GDx_num =
             apply_exported(GxEx, Ex,i,j,k,Nx,Ny,Nz)
           + apply_exported(GxEy, Ey,i,j,k,Nx,Ny,Nz)
@@ -393,18 +474,15 @@ ErrStats run_one_order(const char* label,
           + apply_exported(GzEz, Ez,i,j,k,Nx,Ny,Nz);
         GDx[id]=GDx_num; GDy[id]=GDy_num; GDz[id]=GDz_num;
 
-        // --- numerical laplacian component-wise ---
         const double LPx_num = apply_exported(LEx, Ex,i,j,k,Nx,Ny,Nz);
         const double LPy_num = apply_exported(LEy, Ey,i,j,k,Nx,Ny,Nz);
         const double LPz_num = apply_exported(LEz, Ez,i,j,k,Nx,Ny,Nz);
         LPx[id]=LPx_num; LPy[id]=LPy_num; LPz[id]=LPz_num;
 
-        // --- numerical identity ---
         IDx[id] = GDx_num - LPx_num;
         IDy[id] = GDy_num - LPy_num;
         IDz[id] = GDz_num - LPz_num;
 
-        // --- analytic references at (x,y,z) ---
         const Vec3 CCa  = analyticCurlCurlE(x,y,z,a,b,c);
         const Vec3 GDa  = analyticGradDivE (x,y,z,a,b,c);
         const Vec3 LPa  = analyticLaplacianE(x,y,z,a,b,c);
@@ -412,15 +490,17 @@ ErrStats run_one_order(const char* label,
         GDAx[id]=GDa.x; GDAy[id]=GDa.y; GDAz[id]=GDa.z;
         LPAx[id]=LPa.x; LPAy[id]=LPa.y; LPAz[id]=LPa.z;
 
-        // --- accumulate errors ---
-        // CC vs analytic
         {
           const double ex = CCx_num-CCa.x, ey = CCy_num-CCa.y, ez = CCz_num-CCa.z;
           linfA = std::max(linfA, std::max(std::abs(ex), std::max(std::abs(ey), std::abs(ez))));
           l2A  += ex*ex + ey*ey + ez*ez;
           l2refA += CCa.x*CCa.x + CCa.y*CCa.y + CCa.z*CCa.z;
         }
-        // CC vs ID (numerical identity)
+        {
+          const double ex = curlcurl.x-CCa.x, ey = curlcurl.y-CCa.y, ez = curlcurl.z-CCa.z;
+          linfDir = std::max(linfDir, std::max(std::abs(ex), std::max(std::abs(ey), std::abs(ez))));
+          l2Dir += ex*ex + ey*ey + ez*ez;
+        }
         {
           const double ex = CCx_num-IDx[id], ey = CCy_num-IDy[id], ez = CCz_num-IDz[id];
           linfI = std::max(linfI, std::max(std::abs(ex), std::max(std::abs(ey), std::abs(ez))));
@@ -428,14 +508,12 @@ ErrStats run_one_order(const char* label,
           const double rx = IDx[id], ry = IDy[id], rz = IDz[id];
           l2refI += rx*rx + ry*ry + rz*rz;
         }
-        // GD vs analytic
         {
           const double ex = GDx_num-GDa.x, ey = GDy_num-GDa.y, ez = GDz_num-GDa.z;
           linfGD = std::max(linfGD, std::max(std::abs(ex), std::max(std::abs(ey), std::abs(ez))));
           l2GD  += ex*ex + ey*ey + ez*ez;
           l2refGD += GDa.x*GDa.x + GDa.y*GDa.y + GDa.z*GDa.z;
         }
-        // Lap vs analytic
         {
           const double ex = LPx_num-LPa.x, ey = LPy_num-LPa.y, ez = LPz_num-LPa.z;
           linfLP = std::max(linfLP, std::max(std::abs(ex), std::max(std::abs(ey), std::abs(ez))));
@@ -446,16 +524,14 @@ ErrStats run_one_order(const char* label,
     }
   }
 
-  // norms (relative L2 kept for per-variant diagnostics)
   const double relL2A  = (l2refA  > 0.0) ? std::sqrt(l2A  / l2refA ) : std::sqrt(l2A);
   const double relL2I  = (l2refI  > 0.0) ? std::sqrt(l2I  / l2refI ) : std::sqrt(l2I);
   const double relL2GD = (l2refGD > 0.0) ? std::sqrt(l2GD / l2refGD) : std::sqrt(l2GD);
   const double relL2LP = (l2refLP > 0.0) ? std::sqrt(l2LP / l2refLP) : std::sqrt(l2LP);
 
-  // absolute L2 (RMS) of CC vs analytic over the whole grid (used for convergence table)
   const double l2absA = std::sqrt(l2A / double(NT));
+  const double l2absDir = std::sqrt(l2Dir / double(NT));
 
-  // print per-variant diagnostics (unchanged)
   std::cout << "  " << std::left << std::setw(12) << label
             << " CC vs analytic:   Linf=" << std::scientific << std::setprecision(3) << linfA
             << "   RelL2=" << relL2A << "\n";
@@ -463,26 +539,33 @@ ErrStats run_one_order(const char* label,
             << " CC vs (GD-Lap):   Linf=" << linfI
             << "   RelL2=" << relL2I << "\n";
   std::cout << "  " << std::left << std::setw(12) << ""
+            << " Direct CC vs ana: Linf=" << linfDir
+            << "   L2(RMS)=" << l2absDir << "\n";
+  std::cout << "  " << std::left << std::setw(12) << ""
             << " GD vs analytic:   Linf=" << linfGD
             << "   RelL2=" << relL2GD << "\n";
   std::cout << "  " << std::left << std::setw(12) << ""
             << " Lap vs analytic:  Linf=" << linfLP
             << "   RelL2=" << relL2LP << "\n";
-  std::cout << "    (RelL2 := ||error||_2 / ||reference||_2 over the whole grid)\n";
 
-  // component-wise tables at one interior point
-  print_point_curlcurl(N, L, CCx, CCy, CCz, CCxA, CCyA, CCzA, IDx, IDy, IDz, label);
-  print_point_gd     (N, L, GDx, GDy, GDz, GDAx, GDAy, GDAz, label);
-  print_point_lap    (N, L, LPx, LPy, LPz, LPAx, LPAy, LPAz, label);
+  print_point_curlcurl(N, L, CCx, CCy, CCz, CCxA, CCyA, CCzA, IDx, IDy, IDz, 
+                       CCx_dir, CCy_dir, CCz_dir, label);
+  print_point_gd(N, L, GDx, GDy, GDz, GDAx, GDAy, GDAz, label);
+  print_point_lap(N, L, LPx, LPy, LPz, LPAx, LPAy, LPAz, label);
 
-  // return the main CC vs analytic stats for convergence summary
   ErrStats s; s.linf = linfA; s.l2abs = l2absA; s.l2rel = relL2A;
+  
+  if (direct_err) {
+    direct_err->linf = linfDir;
+    direct_err->l2abs = l2absDir;
+    direct_err->l2rel = 0.0;
+  }
+  
   return s;
 }
 
 } // anon
 
-// ------------------------------ Registration ------------------------------
 namespace CurlCurlE {
 
 struct Variant {
@@ -490,6 +573,8 @@ struct Variant {
   std::function<void(cGradDivEStencil*, double, double, double)>   build_grad_div;
   std::function<void(cLaplacianStencil*, double, double, double)>  build_lap;
   std::function<void(cCurlCurlEStencil*, double, double, double)>  build_curl_curl;
+  std::function<Vec3(const std::vector<double>&, const std::vector<double>&, const std::vector<double>&,
+                     int, int, int, int, int, int, double, double, double)> curl_func;
 };
 
 int Run(const std::vector<std::string>&) {
@@ -500,40 +585,46 @@ int Run(const std::vector<std::string>&) {
     { "2nd-compact",
       [](cGradDivEStencil G[3], double dx,double dy,double dz){ SecondOrder::InitGradDivEBStencils_compact(G,dx,dy,dz); },
       [](cLaplacianStencil* Ls, double dx,double dy,double dz){ SecondOrder::InitLaplacianStencil(Ls,dx,dy,dz); },
-      [](cCurlCurlEStencil CC[3], double dx,double dy,double dz){ SecondOrder::InitCurlCurlEStencils_compact(CC,dx,dy,dz); }
+      [](cCurlCurlEStencil CC[3], double dx,double dy,double dz){ SecondOrder::InitCurlCurlEStencils_compact(CC,dx,dy,dz); },
+      numericalCurl_2nd
     },
     { "2nd-wide",
       [](cGradDivEStencil G[3], double dx,double dy,double dz){ SecondOrder::InitGradDivEBStencils_wide(G,dx,dy,dz); },
       [](cLaplacianStencil* Ls, double dx,double dy,double dz){ SecondOrder::InitLaplacianStencil(Ls,dx,dy,dz); },
-      [](cCurlCurlEStencil CC[3], double dx,double dy,double dz){ SecondOrder::InitCurlCurlEStencils_wide(CC,dx,dy,dz); }
+      [](cCurlCurlEStencil CC[3], double dx,double dy,double dz){ SecondOrder::InitCurlCurlEStencils_wide(CC,dx,dy,dz); },
+      numericalCurl_2nd
     },
     { "4th",
       [](cGradDivEStencil G[3], double dx,double dy,double dz){ FourthOrder::InitGradDivEBStencils(G,dx,dy,dz); },
       [](cLaplacianStencil* Ls, double dx,double dy,double dz){ FourthOrder::InitLaplacianStencil(Ls,dx,dy,dz); },
-      [](cCurlCurlEStencil CC[3], double dx,double dy,double dz){ FourthOrder::InitCurlCurlEStencils(CC,dx,dy,dz); }
+      [](cCurlCurlEStencil CC[3], double dx,double dy,double dz){ FourthOrder::InitCurlCurlEStencils(CC,dx,dy,dz); },
+      numericalCurl_4th
     },
     { "6th",
       [](cGradDivEStencil G[3], double dx,double dy,double dz){ SixthOrder::InitGradDivEBStencils(G,dx,dy,dz); },
       [](cLaplacianStencil* Ls, double dx,double dy,double dz){ SixthOrder::InitLaplacianStencil(Ls,dx,dy,dz); },
-      [](cCurlCurlEStencil CC[3], double dx,double dy,double dz){ SixthOrder::InitCurlCurlEStencils(CC,dx,dy,dz); }
+      [](cCurlCurlEStencil CC[3], double dx,double dy,double dz){ SixthOrder::InitCurlCurlEStencils(CC,dx,dy,dz); },
+      numericalCurl_6th
     },
     { "8th",
       [](cGradDivEStencil G[3], double dx,double dy,double dz){ EighthOrder::InitGradDivEBStencils(G,dx,dy,dz); },
       [](cLaplacianStencil* Ls, double dx,double dy,double dz){ EighthOrder::InitLaplacianStencil(Ls,dx,dy,dz); },
-      [](cCurlCurlEStencil CC[3], double dx,double dy,double dz){ EighthOrder::InitCurlCurlEStencils(CC,dx,dy,dz); }
+      [](cCurlCurlEStencil CC[3], double dx,double dy,double dz){ EighthOrder::InitCurlCurlEStencils(CC,dx,dy,dz); },
+      numericalCurl_8th
     }
   };
 
-  // For the convergence study we’ll use this fixed sweep.
-  // (If you want CLI-driven N, we can parse args and override this vector.)
   std::vector<int> Ns = {16, 24, 32, 48, 64};
 
   std::cout << "\n=== Corner curl_curl(E): analytic vs numerical, identity, and GD/Lap verification ===\n"
             << "Domain L=" << L << ", wavenumbers a=2π, b=3π, c=5π\n";
 
-  // --- Collect per-order errors (for CC vs analytic) to build the summary table at the end.
   struct Row { double linf=0.0, l2=0.0; };
-  std::vector<Row> second_rows, fourth_rows, sixth_rows, eighth_rows;
+  std::vector<Row> second_rows, second_direct_rows;
+  std::vector<Row> fourth_rows, fourth_direct_rows;
+  std::vector<Row> sixth_rows, sixth_direct_rows;
+  std::vector<Row> eighth_rows, eighth_direct_rows;
+  
   auto push_row = [](std::vector<Row>& vec, const ErrStats& s){
     Row r; r.linf = s.linf; r.l2 = s.l2abs; vec.push_back(r);
   };
@@ -541,108 +632,101 @@ int Run(const std::vector<std::string>&) {
   for (size_t t = 0; t < Ns.size(); ++t) {
     const int N = Ns[t];
 
-    // Eye-catching separator per N (easier to scan logs)
     std::cout << "\n======== N = " << N << " ============================================================\n";
 
-    // Run every variant; record 2nd-compact, 4th, 6th, 8th into the summary vectors.
-    ErrStats s2c, s4, s6, s8;
+    ErrStats s2c, s2c_dir, s4, s4_dir, s6, s6_dir, s8, s8_dir;
 
     for (size_t v=0; v<sizeof(variants)/sizeof(variants[0]); ++v) {
+      ErrStats direct_stats;
       ErrStats res = run_one_order(variants[v].name,
                                    variants[v].build_grad_div,
                                    variants[v].build_lap,
                                    variants[v].build_curl_curl,
-                                   N, L, a, b, c);
+                                   variants[v].curl_func,
+                                   N, L, a, b, c,
+                                   &direct_stats);
 
-      // Map variants to the four summary columns.
       const std::string name = variants[v].name;
-      if      (name == "2nd-compact") s2c = res;
-      else if (name == "4th")         s4  = res;
-      else if (name == "6th")         s6  = res;
-      else if (name == "8th")         s8  = res;
-
-      // Note: we still run "2nd-wide" for diagnostics, but we do not include it in the summary table.
+      if      (name == "2nd-compact") { s2c = res; s2c_dir = direct_stats; }
+      else if (name == "4th")         { s4  = res; s4_dir = direct_stats; }
+      else if (name == "6th")         { s6  = res; s6_dir = direct_stats; }
+      else if (name == "8th")         { s8  = res; s8_dir = direct_stats; }
     }
 
     push_row(second_rows, s2c);
+    push_row(second_direct_rows, s2c_dir);
     push_row(fourth_rows, s4);
-    push_row(sixth_rows,  s6);
+    push_row(fourth_direct_rows, s4_dir);
+    push_row(sixth_rows, s6);
+    push_row(sixth_direct_rows, s6_dir);
     push_row(eighth_rows, s8);
+    push_row(eighth_direct_rows, s8_dir);
 
     std::cout << "=====================================================================================\n";
   }
 
-  // ---------------- Convergence summary (L_inf & L2 RMS of CC vs analytic) ----------------
   auto safe_ord = [](double e_prev, double e_curr, int N_prev, int N_curr)->double{
     if (e_prev<=0.0 || e_curr<=0.0) return 0.0;
     const double rN = double(N_curr)/double(N_prev);
     return std::log(e_prev/e_curr) / std::log(rN);
   };
 
-  auto print_row = [&](int idx){
-    const int N = Ns[idx];
-    const Row& s2 = second_rows[idx];
-    const Row& s4 = fourth_rows[idx];
-    const Row& s6 = sixth_rows[idx];
-    const Row& s8 = eighth_rows[idx];
-
-    // Observed orders relative to the previous N (h ~ 1/N)
-    double o2_inf=0, o2_l2=0, o4_inf=0, o4_l2=0, o6_inf=0, o6_l2=0, o8_inf=0, o8_l2=0;
-    if (idx>0) {
-      o2_inf = safe_ord(second_rows[idx-1].linf, s2.linf, Ns[idx-1], N);
-      o2_l2  = safe_ord(second_rows[idx-1].l2,   s2.l2,   Ns[idx-1], N);
-      o4_inf = safe_ord(fourth_rows[idx-1].linf, s4.linf, Ns[idx-1], N);
-      o4_l2  = safe_ord(fourth_rows[idx-1].l2,   s4.l2,   Ns[idx-1], N);
-      o6_inf = safe_ord(sixth_rows[idx-1].linf,  s6.linf, Ns[idx-1], N);
-      o6_l2  = safe_ord(sixth_rows[idx-1].l2,    s6.l2,   Ns[idx-1], N);
-      o8_inf = safe_ord(eighth_rows[idx-1].linf, s8.linf, Ns[idx-1], N);
-      o8_l2  = safe_ord(eighth_rows[idx-1].l2,   s8.l2,   Ns[idx-1], N);
+  auto print_convergence_table = [&](const char* title,
+                                     const std::vector<Row>& rows,
+                                     const std::vector<Row>& direct_rows,
+                                     const char* order_label) {
+    std::cout << "\n=== " << title << " ===\n";
+    std::cout << "-------------------------------------------------------------------------\n"
+              << "   N  |  Stencil (L_inf)  Ord   Stencil (L2)    Ord  |"
+              << "  Direct (L_inf)  Ord   Direct (L2)     Ord  |\n"
+              << "-------------------------------------------------------------------------\n";
+    
+    for (size_t i=0; i<Ns.size(); ++i) {
+      const int N = Ns[i];
+      const Row& rs = rows[i];
+      const Row& rd = direct_rows[i];
+      
+      double os_inf=0, os_l2=0, od_inf=0, od_l2=0;
+      if (i>0) {
+        os_inf = safe_ord(rows[i-1].linf, rs.linf, Ns[i-1], N);
+        os_l2  = safe_ord(rows[i-1].l2,   rs.l2,   Ns[i-1], N);
+        od_inf = safe_ord(direct_rows[i-1].linf, rd.linf, Ns[i-1], N);
+        od_l2  = safe_ord(direct_rows[i-1].l2,   rd.l2,   Ns[i-1], N);
+      }
+      
+      std::cout << std::setw(5) << N << " | "
+                << std::scientific << std::setprecision(3)
+                << std::setw(13) << rs.linf << " "
+                << std::fixed << std::setprecision(2) << std::setw(4) << os_inf << "   "
+                << std::scientific << std::setprecision(3) << std::setw(12) << rs.l2 << "   "
+                << std::fixed << std::setprecision(2) << std::setw(5) << os_l2 << " | "
+                << std::scientific << std::setprecision(3) << std::setw(13) << rd.linf << " "
+                << std::fixed << std::setprecision(2) << std::setw(4) << od_inf << "   "
+                << std::scientific << std::setprecision(3) << std::setw(12) << rd.l2 << "   "
+                << std::fixed << std::setprecision(2) << std::setw(5) << od_l2 << " |\n";
     }
-
-    std::cout << std::setw(5) << N << " | "
-              << std::scientific << std::setprecision(3)
-              << std::setw(12) << s2.linf  << " "
-              << std::fixed << std::setprecision(2) << std::setw(4) << o2_inf << "   "
-              << std::scientific << std::setprecision(3) << std::setw(12) << s2.l2 << "   " 
-              << std::fixed << std::setprecision(2) << std::setw(5) << o2_l2 << " | "
-
-              << std::scientific << std::setprecision(3) << std::setw(12) << s4.linf
-              << std::fixed << std::setprecision(2) << std::setw(5) << o4_inf << "   "
-              << std::scientific << std::setprecision(3) << std::setw(12) << s4.l2 << "   " 
-              << std::fixed << std::setprecision(2) << std::setw(5) << o4_l2 << " | "
-
-              << std::scientific << std::setprecision(3) << std::setw(13) << s6.linf
-              << std::fixed << std::setprecision(2) << std::setw(5) << o6_inf << "   "
-              << std::scientific << std::setprecision(3) << std::setw(12) << s6.l2 << "   " 
-              << std::fixed << std::setprecision(2) << std::setw(5) << o6_l2 << " | "
-
-              << std::scientific << std::setprecision(3) << std::setw(13) << s8.linf
-              << std::fixed << std::setprecision(2) << std::setw(5) << o8_inf << "   "
-              << std::scientific << std::setprecision(3) << std::setw(12) << s8.l2 << "   " 
-              << std::fixed << std::setprecision(2) << std::setw(5) << o8_l2
-              << " |\n";
+    std::cout << "-------------------------------------------------------------------------\n";
+    std::cout << "Order: " << order_label << "\n";
   };
 
-  // Header & table
-  std::cout << "--------------------------------------------------------------------------------------------------------------\n"
-            << "   N  |  Second (L_inf)  Ord   Second (L2)     Ord  |  Fourth (L_inf)  Ord   Fourth (L2)     Ord  |"
-            << "   Sixth (L_inf)  Ord    Sixth (L2)     Ord  |  Eighth (L_inf)  Ord   Eighth (L2)     Ord\n"
-            << "--------------------------------------------------------------------------------------------------------------\n";
-  for (size_t i=0; i<Ns.size(); ++i) print_row((int)i);
-  std::cout << "--------------------------------------------------------------------------------------------------------------\n";
+  print_convergence_table("CONVERGENCE: 2nd Order (Compact)",
+                         second_rows, second_direct_rows, "2nd");
+  print_convergence_table("CONVERGENCE: 4th Order",
+                         fourth_rows, fourth_direct_rows, "4th");
+  print_convergence_table("CONVERGENCE: 6th Order",
+                         sixth_rows, sixth_direct_rows, "6th");
+  print_convergence_table("CONVERGENCE: 8th Order",
+                         eighth_rows, eighth_direct_rows, "8th");
 
   return 0;
 }
 
 } // namespace CurlCurlE
 
-// Register in the harness (matches framework’s macro & force-link pattern)
 REGISTER_STENCIL_TEST(CurlCurlE,
   "curl_curl_e",
   "Direct curl_curl(E) vs analytic and (grad_div−laplacian); also verify GD and Lap vs analytic.");
 
-// Force-link shim (called from test_force_link_all.cpp)
 namespace CurlCurlE {
   void ForceLinkAllTests() {}
 }
-

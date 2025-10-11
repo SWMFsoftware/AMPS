@@ -1,9 +1,11 @@
 /**
- * @file    grad_div_e.cpp
+ * @file    grad_div_e_corner.cpp
  * @brief   Convergence test for ∇(∇·E) stencils
  *          (Second/compact, Second/wide, Fourth, Sixth, Eighth).
  *
- * Analytic field (periodic):
+ * MODIFIED: Data sampled at CELL CORNERS, ∇(∇·E) computed at CELL CORNERS
+ *
+ * Analytic field (periodic, cell-corner sampling):
  *   Ex = sin(ax) cos(by) cos(cz)
  *   Ey = cos(ax) sin(by) cos(cz)
  *   Ez = cos(ax) cos(by) sin(cz)
@@ -14,8 +16,8 @@
  *
  * Notes:
  *   • This test applies exported integerized stencils on a periodic grid.
- *   • Adds an 8th-order operator that mirrors the existing API used by the
- *     6th-order builder, so it slots into the same harness.
+ *   • Data sampled at CELL CORNERS (i*dx, j*dy, k*dz) - no +0.5 offset
+ *   • Operator output also at CELL CORNERS
  */
 
 #include <cstdio>
@@ -85,7 +87,7 @@ static void write_tecplot_block(
   std::ofstream out(filename.c_str());
   if (!out) { std::cerr << "ERROR: cannot open Tecplot file: " << filename << "\n"; return; }
 
-  out << "TITLE = \"GradDivE test\"\n";
+  out << "TITLE = \"GradDivE test - CELL CORNERS\"\n";
   out << "VARIABLES = \"x\" \"y\" \"z\" "
          "\"Ex\" \"Ey\" \"Ez\" "
          "\"Gx_num\" \"Gy_num\" \"Gz_num\" "
@@ -102,10 +104,10 @@ static void write_tecplot_block(
           out << get_value(i,j,k) << "\n";
   };
 
-  // x, y, z
-  write_block([&](int i,int,  int){ return (i+0.5)*dx; });
-  write_block([&](int,  int j,int){ return (j+0.5)*dy; });
-  write_block([&](int,  int,  int k){ return (k+0.5)*dz; });
+  // CELL CORNERS: no +0.5 offset
+  write_block([&](int i,int,  int){ return i*dx; });
+  write_block([&](int,  int j,int){ return j*dy; });
+  write_block([&](int,  int,  int k){ return k*dz; });
 
   // fields
   size_t NT = (size_t)Nx*Ny*Nz;
@@ -181,19 +183,20 @@ static ErrStats run_case(OpFlavor flavor, int N, double Lx, double Ly, double Lz
   std::vector<double> Gx(NT), Gy(NT), Gz(NT);
   std::vector<double> Gx_true(NT), Gy_true(NT), Gz_true(NT);
 
-  // Fill E and analytic ∇(∇·E)
+  // MODIFIED: Fill E and analytic ∇(∇·E) at CELL CORNERS
   for (int k=0; k<Nz; ++k)
     for (int j=0; j<Ny; ++j)
       for (int i=0; i<Nx; ++i) {
         const size_t idx = (size_t)k*Ny*Nx + (size_t)j*Nx + (size_t)i;
-        const double x=(i+0.5)*dx, y=(j+0.5)*dy, z=(k+0.5)*dz;
+        // CELL CORNER: no +0.5 offset
+        const double x=i*dx, y=j*dy, z=k*dz;
         const Vec3 e = analyticE(x,y,z, a,b,c);
         const Vec3 g = analyticGradDivE(x,y,z, a,b,c);
         Ex[idx]=e.x; Ey[idx]=e.y; Ez[idx]=e.z;
         Gx_true[idx]=g.x; Gy_true[idx]=g.y; Gz_true[idx]=g.z;
       }
 
-  // Apply 3×3 operator rows using exported taps
+  // Apply 3×3 operator rows using exported taps at CELL CORNERS
   for (int k=0; k<Nz; ++k)
     for (int j=0; j<Ny; ++j)
       for (int i=0; i<Nx; ++i) {
@@ -236,7 +239,7 @@ static ErrStats run_case(OpFlavor flavor, int N, double Lx, double Ly, double Lz
   if (out_Gx_true) { *out_Gx_true = Gx_true; *out_Gy_true = Gy_true; *out_Gz_true = Gz_true; }
 
   if (tecplot_dump) {
-    const std::string f = "graddivE_" + flavor_name(flavor) + "_N" + std::to_string(N) + ".dat";
+    const std::string f = "graddivE_corner_" + flavor_name(flavor) + "_N" + std::to_string(N) + ".dat";
     write_tecplot_block(f, Nx,Ny,Nz, dx,dy,dz, Ex,Ey,Ez, Gx,Gy,Gz, Gx_true,Gy_true,Gz_true);
   }
 
@@ -256,9 +259,12 @@ static void print_point_comparison(int N, double Lx,double Ly,double Lz,
 {
   const int Nx=N, Ny=N, Nz=N;
   const double dx=Lx/Nx, dy=Ly/Ny, dz=Lz/Nz;
-  const int ii=Nx/2, jj=Ny/2, kk=Nz/2;
+  // Choose a point with odd indices to avoid zeros in the trig functions
+  // For N=16: (3,5,7) -> (3/16, 5/16, 7/16) gives non-zero field values
+  const int ii=3, jj=5, kk=7;
   const size_t idx=(size_t)kk*Ny*Nx + (size_t)jj*Nx + (size_t)ii;
-  const double x=(ii+0.5)*dx, y=(jj+0.5)*dy, z=(kk+0.5)*dz;
+  // CELL CORNER: no +0.5 offset
+  const double x=ii*dx, y=jj*dy, z=kk*dz;
 
   auto line = [&](const char* name, double a_, double n_){
     double err = std::abs(n_ - a_);
@@ -269,10 +275,10 @@ static void print_point_comparison(int N, double Lx,double Ly,double Lz,
               << std::setprecision(3) << std::setw(8) << err << "\n";
   };
 
-  std::cout << "\n[" << flavor_label << "] Component-wise comparison at interior point:\n"
+  std::cout << "\n[" << flavor_label << "] Component-wise comparison at interior CORNER point:\n"
             << "  Grid: N=" << N << ", (i,j,k)=(" << ii << "," << jj << "," << kk << ")"
             << ", (x,y,z)=(" << std::fixed << std::setprecision(6)
-            << x << ", " << y << ", " << z << ")\n"
+            << x << ", " << y << ", " << z << ") [CORNER]\n"
             << "  -----------------------------------------------------------------------------\n"
             << "    Component         Analytic               Numerical               AbsErr\n"
             << "  -----------------------------------------------------------------------------\n";
@@ -307,9 +313,10 @@ static void print_convergence_combined(const std::vector<int>& Ns,
   std::vector<Row> err[5];
   for (int f=0; f<5; ++f) err[f].resize(Ns.size());
 
-  std::cout << "\n=== GradDivE Convergence (Combined run) ===\n"
+  std::cout << "\n=== GradDivE Convergence - CELL CORNER VERSION (Combined run) ===\n"
             << "Domain Lx=" << Lx << ", Ly=" << Ly << ", Lz=" << Lz
-            << ", wave numbers a=" << a << ", b=" << b << ", c=" << c << "\n";
+            << ", wave numbers a=" << a << ", b=" << b << ", c=" << c << "\n"
+            << "Data sampled at CELL CORNERS (i*dx, j*dy, k*dz)\n";
 
   for (size_t t=0; t<Ns.size(); ++t) {
     const int N = Ns[t];
@@ -373,22 +380,21 @@ int Run(const std::vector<std::string>& args) {
 
   print_convergence_combined(Ns, Lx,Ly,Lz, a,b,c, /*tecplot_on_finest=*/true);
 
-  std::cout << "\nTecplot files (finest grid per operator):\n"
-               "  graddivE_SecondOrder_Compact_N64.dat\n"
-               "  graddivE_SecondOrder_Wide_N64.dat\n"
-               "  graddivE_FourthOrder_N64.dat\n"
-               "  graddivE_SixthOrder_N64.dat\n"
-               "  graddivE_EighthOrder_N64.dat\n";
+  std::cout << "\nTecplot files (finest grid per operator) - CORNER VERSION:\n"
+               "  graddivE_corner_SecondOrder_Compact_N64.dat\n"
+               "  graddivE_corner_SecondOrder_Wide_N64.dat\n"
+               "  graddivE_corner_FourthOrder_N64.dat\n"
+               "  graddivE_corner_SixthOrder_N64.dat\n"
+               "  graddivE_corner_EighthOrder_N64.dat\n";
   return 0;
 }
 } // namespace GradDivE
 
-// ---- GradDivE test registration & force-link shim (append at file end) ----
+// ---- GradDivE test registration & force-link shim ----
 
 namespace GradDivE { int Run(const std::vector<std::string>&); }
 REGISTER_STENCIL_TEST(GradDivE,
   "grad_div_e",
-  "GradDivE stencils: build, apply, and convergence (+ component-wise comparison).");
+  "GradDivE stencils at CELL CORNERS: build, apply, and convergence.");
 
 namespace GradDivE { void ForceLinkAllTests() {} }
-
