@@ -40,7 +40,7 @@ using namespace PIC::FieldSolver::Electromagnetic::ECSIM::Stencil;
 
 #ifndef DEBUG_PRINT_STENCILS
 // Flip to 1 to print the full raw stencils via cStencil::Print() (can be verbose)
-#define DEBUG_PRINT_STENCILS 0
+#define DEBUG_PRINT_STENCILS 1
 #endif
 
 namespace {
@@ -153,33 +153,98 @@ run_probe_for_variant(const Variant& V, int N, double L,
   V.build_lap(&LP,dx,dy,dz);
   V.build_cc(CC,dx,dy,dz);
 
-  LP.Ex.SetSymbol("Laplacian Ex");
-  LP.Ex.Print();
-
-  LP.Ey.SetSymbol("Laplacian Ey");
-  LP.Ey.Print();
-
-  LP.Ez.SetSymbol("Laplacian Ez");
-  LP.Ez.Print();
-
-
 #if DEBUG_PRINT_STENCILS
   if (dump_stencils_now) {
+    char msg[200];
+    
     std::cout << "\n-- RAW cStencil rows via cStencil::Print() -- [ " << V.name << " ]\n";
+    
     std::cout << ">>> Laplacian rows (Ex/Ey/Ez)\n";
-    LP.Ex.Print();  // stdout
+    sprintf(msg, "Laplacian Ex: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    LP.Ex.SetSymbol(msg);
+    LP.Ex.Print();
+    
+    sprintf(msg, "Laplacian Ey: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    LP.Ey.SetSymbol(msg);
     LP.Ey.Print();
+    
+    sprintf(msg, "Laplacian Ez: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    LP.Ez.SetSymbol(msg);
     LP.Ez.Print();
 
     std::cout << ">>> GradDiv rows (Gx:Ex/Ey/Ez; Gy:Ex/Ey/Ez; Gz:Ex/Ey/Ez)\n";
-    GD[0].Ex.Print(); GD[0].Ey.Print(); GD[0].Ez.Print();
-    GD[1].Ex.Print(); GD[1].Ey.Print(); GD[1].Ez.Print();
-    GD[2].Ex.Print(); GD[2].Ey.Print(); GD[2].Ez.Print();
+    sprintf(msg, "GradDiv Gx->Ex: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    GD[0].Ex.SetSymbol(msg);
+    GD[0].Ex.Print();
+    
+    sprintf(msg, "GradDiv Gx->Ey: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    GD[0].Ey.SetSymbol(msg);
+    GD[0].Ey.Print();
+    
+    sprintf(msg, "GradDiv Gx->Ez: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    GD[0].Ez.SetSymbol(msg);
+    GD[0].Ez.Print();
+    
+    sprintf(msg, "GradDiv Gy->Ex: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    GD[1].Ex.SetSymbol(msg);
+    GD[1].Ex.Print();
+    
+    sprintf(msg, "GradDiv Gy->Ey: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    GD[1].Ey.SetSymbol(msg);
+    GD[1].Ey.Print();
+    
+    sprintf(msg, "GradDiv Gy->Ez: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    GD[1].Ez.SetSymbol(msg);
+    GD[1].Ez.Print();
+    
+    sprintf(msg, "GradDiv Gz->Ex: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    GD[2].Ex.SetSymbol(msg);
+    GD[2].Ex.Print();
+    
+    sprintf(msg, "GradDiv Gz->Ey: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    GD[2].Ey.SetSymbol(msg);
+    GD[2].Ey.Print();
+    
+    sprintf(msg, "GradDiv Gz->Ez: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    GD[2].Ez.SetSymbol(msg);
+    GD[2].Ez.Print();
 
     std::cout << ">>> CurlCurl rows (CCx:Ex/Ey/Ez; CCy:Ex/Ey/Ez; CCz:Ex/Ey/Ez)\n";
-    CC[0].Ex.Print(); CC[0].Ey.Print(); CC[0].Ez.Print();
-    CC[1].Ex.Print(); CC[1].Ey.Print(); CC[1].Ez.Print();
-    CC[2].Ex.Print(); CC[2].Ey.Print(); CC[2].Ez.Print();
+    sprintf(msg, "CurlCurl CCx->Ex: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    CC[0].Ex.SetSymbol(msg);
+    CC[0].Ex.Print();
+    
+    sprintf(msg, "CurlCurl CCx->Ey: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    CC[0].Ey.SetSymbol(msg);
+    CC[0].Ey.Print();
+    
+    sprintf(msg, "CurlCurl CCx->Ez: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    CC[0].Ez.SetSymbol(msg);
+    CC[0].Ez.Print();
+    
+    sprintf(msg, "CurlCurl CCy->Ex: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    CC[1].Ex.SetSymbol(msg);
+    CC[1].Ex.Print();
+    
+    sprintf(msg, "CurlCurl CCy->Ey: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    CC[1].Ey.SetSymbol(msg);
+    CC[1].Ey.Print();
+    
+    sprintf(msg, "CurlCurl CCy->Ez: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    CC[1].Ez.SetSymbol(msg);
+    CC[1].Ez.Print();
+    
+    sprintf(msg, "CurlCurl CCz->Ex: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    CC[2].Ex.SetSymbol(msg);
+    CC[2].Ex.Print();
+    
+    sprintf(msg, "CurlCurl CCz->Ey: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    CC[2].Ey.SetSymbol(msg);
+    CC[2].Ey.Print();
+    
+    sprintf(msg, "CurlCurl CCz->Ez: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    CC[2].Ez.SetSymbol(msg);
+    CC[2].Ez.Print();
   }
 #else
   (void)dump_stencils_now; // silence unused
