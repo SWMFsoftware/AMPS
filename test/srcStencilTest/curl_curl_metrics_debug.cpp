@@ -160,89 +160,89 @@ run_probe_for_variant(const Variant& V, int N, double L,
     std::cout << "\n-- RAW cStencil rows via cStencil::Print() -- [ " << V.name << " ]\n";
     
     std::cout << ">>> Laplacian rows (Ex/Ey/Ez)\n";
-    sprintf(msg, "Laplacian Ex: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] Laplacian Ex: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     LP.Ex.SetSymbol(msg);
     LP.Ex.Print();
     
-    sprintf(msg, "Laplacian Ey: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] Laplacian Ey: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     LP.Ey.SetSymbol(msg);
     LP.Ey.Print();
     
-    sprintf(msg, "Laplacian Ez: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] Laplacian Ez: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     LP.Ez.SetSymbol(msg);
     LP.Ez.Print();
 
     std::cout << ">>> GradDiv rows (Gx:Ex/Ey/Ez; Gy:Ex/Ey/Ez; Gz:Ex/Ey/Ez)\n";
-    sprintf(msg, "GradDiv Gx->Ex: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] GradDiv Gx->Ex: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     GD[0].Ex.SetSymbol(msg);
     GD[0].Ex.Print();
     
-    sprintf(msg, "GradDiv Gx->Ey: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] GradDiv Gx->Ey: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     GD[0].Ey.SetSymbol(msg);
     GD[0].Ey.Print();
     
-    sprintf(msg, "GradDiv Gx->Ez: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] GradDiv Gx->Ez: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     GD[0].Ez.SetSymbol(msg);
     GD[0].Ez.Print();
     
-    sprintf(msg, "GradDiv Gy->Ex: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] GradDiv Gy->Ex: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     GD[1].Ex.SetSymbol(msg);
     GD[1].Ex.Print();
     
-    sprintf(msg, "GradDiv Gy->Ey: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] GradDiv Gy->Ey: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     GD[1].Ey.SetSymbol(msg);
     GD[1].Ey.Print();
     
-    sprintf(msg, "GradDiv Gy->Ez: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] GradDiv Gy->Ez: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     GD[1].Ez.SetSymbol(msg);
     GD[1].Ez.Print();
     
-    sprintf(msg, "GradDiv Gz->Ex: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] GradDiv Gz->Ex: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     GD[2].Ex.SetSymbol(msg);
     GD[2].Ex.Print();
     
-    sprintf(msg, "GradDiv Gz->Ey: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] GradDiv Gz->Ey: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     GD[2].Ey.SetSymbol(msg);
     GD[2].Ey.Print();
     
-    sprintf(msg, "GradDiv Gz->Ez: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] GradDiv Gz->Ez: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     GD[2].Ez.SetSymbol(msg);
     GD[2].Ez.Print();
 
     std::cout << ">>> CurlCurl rows (CCx:Ex/Ey/Ez; CCy:Ex/Ey/Ez; CCz:Ex/Ey/Ez)\n";
-    sprintf(msg, "CurlCurl CCx->Ex: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] CurlCurl CCx->Ex: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     CC[0].Ex.SetSymbol(msg);
     CC[0].Ex.Print();
     
-    sprintf(msg, "CurlCurl CCx->Ey: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] CurlCurl CCx->Ey: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     CC[0].Ey.SetSymbol(msg);
     CC[0].Ey.Print();
     
-    sprintf(msg, "CurlCurl CCx->Ez: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] CurlCurl CCx->Ez: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     CC[0].Ez.SetSymbol(msg);
     CC[0].Ez.Print();
     
-    sprintf(msg, "CurlCurl CCy->Ex: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] CurlCurl CCy->Ex: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     CC[1].Ex.SetSymbol(msg);
     CC[1].Ex.Print();
     
-    sprintf(msg, "CurlCurl CCy->Ey: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] CurlCurl CCy->Ey: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     CC[1].Ey.SetSymbol(msg);
     CC[1].Ey.Print();
     
-    sprintf(msg, "CurlCurl CCy->Ez: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] CurlCurl CCy->Ez: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     CC[1].Ez.SetSymbol(msg);
     CC[1].Ez.Print();
     
-    sprintf(msg, "CurlCurl CCz->Ex: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] CurlCurl CCz->Ex: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     CC[2].Ex.SetSymbol(msg);
     CC[2].Ex.Print();
     
-    sprintf(msg, "CurlCurl CCz->Ey: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] CurlCurl CCz->Ey: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     CC[2].Ey.SetSymbol(msg);
     CC[2].Ey.Print();
     
-    sprintf(msg, "CurlCurl CCz->Ez: dx=%e, dy=%e, dz=%e", dx, dy, dz);
+    sprintf(msg, "[%s] CurlCurl CCz->Ez: dx=%e, dy=%e, dz=%e", V.name, dx, dy, dz);
     CC[2].Ez.SetSymbol(msg);
     CC[2].Ez.Print();
   }
@@ -469,8 +469,28 @@ int Run(const std::vector<std::string>& args) {
     print_big_sep(N, dx);
 
     for (size_t iv=0; iv<sizeof(variants)/sizeof(variants[0]); ++iv) {
-      // Only dump raw stencils (via cStencil::Print) for the first variant at the smallest N
-      const bool dump_now = (DEBUG_PRINT_STENCILS && N==Ns.front() && iv==0);
+      // Control which stencils get printed via cStencil::Print() when DEBUG_PRINT_STENCILS=1
+      //
+      // Examples of dump_now conditions:
+      //   - Print only first variant at smallest N (original, minimal output):
+      //       const bool dump_now = (DEBUG_PRINT_STENCILS && N==Ns.front() && iv==0);
+      //
+      //   - Print ALL variants at smallest N (recommended for comparing orders):
+      //       const bool dump_now = (DEBUG_PRINT_STENCILS && N==Ns.front());
+      //
+      //   - Print ALL variants at ALL N values (very verbose, use sparingly):
+      //       const bool dump_now = DEBUG_PRINT_STENCILS;
+      //
+      //   - Print specific variant(s) only, e.g., 4th and 6th order:
+      //       const bool dump_now = (DEBUG_PRINT_STENCILS && N==Ns.front() &&
+      //                              (std::string(variants[iv].name) == "4th" ||
+      //                               std::string(variants[iv].name) == "6th"));
+      //
+      //   - Print specific variant at specific N, e.g., 2nd-compact at N=32:
+      //       const bool dump_now = (DEBUG_PRINT_STENCILS && N==32 && iv==0);
+      //
+      // Current setting: print all variants at smallest N
+      const bool dump_now = (DEBUG_PRINT_STENCILS && N==Ns.front());
 
       const ProbeResults PR = run_probe_for_variant(variants[iv], N, L, a,b,c, dump_now);
 
