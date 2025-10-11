@@ -9280,6 +9280,10 @@ namespace FieldSolver {
               int Radius = -1;       // L∞ radius needed by all three
             };
 
+	    // Reuse the same row type you already expose for grad_div:
+            using cCurlCurlEStencil = cGradDivEStencil;  // rows with Ex/Ey/Ez sub-stencils + Radius
+
+
 	    namespace SecondOrder   { void InitLaplacianStencil(cLaplacianStencil*, double dx,double dy,double dz); }
             namespace FourthOrder   { void InitLaplacianStencil(cLaplacianStencil*, double dx,double dy,double dz); }
             namespace SixthOrder    { void InitLaplacianStencil(cLaplacianStencil*, double dx,double dy,double dz); }
@@ -9327,9 +9331,13 @@ namespace FieldSolver {
               */
               void InitCurlBStencils(cCurlBStencil* Curl, double dx, double dy, double dz);
 
+	      // Init CurlCurlE stencil 
+              void InitCurlCurlEStencils(cCurlCurlEStencil* CurlCurl,const double dx, const double dy, const double dz); 
+
 	      extern cGradDivEStencil GradDivEStencil[3];
               extern cLaplacianStencil LaplacianStencil;
               extern cCurlBStencil CurlBStencil[3];
+	      extern cCurlCurlEStencil CurlCurlEStencil[3];
             } // namespace SixthOrder
 
 	    namespace EighthOrder {
@@ -9350,9 +9358,13 @@ namespace FieldSolver {
              // Optional helper: compile‑time footprint hint for 8th‑order centered rules
              constexpr int RequiredHaloLinf = 4;
 
+	     // Init CurlCurlE stencil
+             void InitCurlCurlEStencils(cCurlCurlEStencil* CurlCurl,const double dx, const double dy, const double dz);
+
 	      extern cGradDivEStencil GradDivEStencil[3];
               extern cLaplacianStencil LaplacianStencil;
               extern cCurlBStencil CurlBStencil[3];
+	      extern cCurlCurlEStencil CurlCurlEStencil[3];
             }
 
 	    namespace FourthOrder {
@@ -9380,9 +9392,13 @@ namespace FieldSolver {
                         cGradDivEStencil* S);
                       }
 
+              // Init CurlCurlE stencil
+              void InitCurlCurlEStencils(cCurlCurlEStencil* CurlCurl,const double dx, const double dy, const double dz);
+
               extern cGradDivEStencil GradDivEStencil[3];
               extern cLaplacianStencil LaplacianStencil;
               extern cCurlBStencil CurlBStencil[3];
+	      extern cCurlCurlEStencil CurlCurlEStencil[3];
 	    }
 
 	    namespace SecondOrder {
@@ -9410,9 +9426,17 @@ namespace FieldSolver {
                      void BuildEdges(cStencil edges[12]);
                      } // namespace Helper_Wide
 
+
+    	            // Build curl_curl using the *compact* 2nd-order grad_div
+                    void InitCurlCurlEStencils_compact(cCurlCurlEStencil* CurlCurl,double dx, double dy, double dz); 
+
+                    // Build curl_curl using the *wide* 2nd-order grad_div
+                    void InitCurlCurlEStencils_wide(cCurlCurlEStencil* CurlCurl,double dx, double dy, double dz); 
+
               extern cGradDivEStencil GradDivEStencil[3];
               extern cLaplacianStencil LaplacianStencil;
               extern cCurlBStencil CurlBStencil[3];
+	      extern cCurlCurlEStencil CurlCurlEStencil[3];
 	    }
 
 
