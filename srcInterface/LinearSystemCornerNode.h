@@ -74,6 +74,61 @@ public:
       MatrixElementValue=0.0;
       rhs=NULL;
     }
+
+    // In cStencilElementData (public:), include <cstdio> somewhere in the TU.
+    static bool Compare(const cStencilElementData& a,
+                    const cStencilElementData& b,
+                    bool break_flag = false) {
+      bool equal = true;
+
+      // Print header lazily (only once if something differs)
+      auto print_header = [&]() {
+        static bool printed = false;
+        if (!printed) {
+          if (break_flag) std::printf("cStencilElementData mismatch:\n");
+          printed = true;
+        }
+      };
+
+      if (a.UnknownVectorIndex != b.UnknownVectorIndex) {
+       equal = false; print_header();
+       if (break_flag) std::printf("  [UnknownVectorIndex] a=%d b=%d\n",
+                a.UnknownVectorIndex, b.UnknownVectorIndex);
+      }
+
+      if (a.iVar != b.iVar) {
+        equal = false; print_header();
+        if (break_flag) std::printf("  [iVar] a=%d b=%d\n", a.iVar, b.iVar);
+      }
+
+      if (a.Thread != b.Thread) {
+        equal = false; print_header();
+        if (break_flag) std::printf("  [Thread] a=%d b=%d\n", a.Thread, b.Thread);
+      }
+
+      if (a.MatrixElementValue != b.MatrixElementValue) {
+        equal = false; print_header();
+        if (break_flag) std::printf("  [MatrixElementValue] a=%.17e b=%.17e\n",
+                a.MatrixElementValue, b.MatrixElementValue);
+      }
+
+      if (a.rhs != b.rhs) {
+        equal = false; print_header();
+        if (break_flag) std::printf("  [rhs ptr] a=%p b=%p\n",
+                (const void*)a.rhs, (const void*)b.rhs);
+      }
+
+      if (!equal && break_flag) {
+        // Build a short message for the project-specific exit() hook.
+        char msg[256];
+        std::snprintf(msg, sizeof(msg),
+                  "cStencilElementData objects differ (see printf log above)");
+        exit(__LINE__, __FILE__, msg);
+      }
+
+      return equal;
+    }
+
   };
 
   class cStencilElement {
@@ -99,12 +154,204 @@ public:
       for (int i=0;i<MaxMatrixElementParameterTableLength;i++) MatrixElementParameterTable[i]=0.0;
       for (int i=0;i<MaxMatrixElementSupportTableLength;i++) MatrixElementSupportTable[i]=NULL;
     }
+
+    static bool Compare(const cStencilElement& a,
+                    const cStencilElement& b,
+                    bool break_flag = false) {
+      bool equal = true;
+      bool printed_header = false;
+
+      auto hdr = [&](){
+        if (!printed_header) { std::printf("cStencilElement mismatch:\n"); printed_header = true; }
+      };
+
+      // --- Strict pointer identity checks (must match) ---
+      if (a.CornerNode != b.CornerNode) {
+        equal = false; hdr();
+        if (break_flag) std::printf("  [CornerNode ptr] a=%p b=%p\n",
+                (const void*)a.CornerNode, (const void*)b.CornerNode);
+      }
+      if (a.node != b.node) {
+        equal = false; hdr();
+        if (break_flag) std::printf("  [node ptr] a=%p b=%p\n",
+                (const void*)a.node, (const void*)b.node);
+      }
+      if (a.MatrixElementParameterTable != b.MatrixElementParameterTable) {
+        equal = false; hdr();
+        if (break_flag) std::printf("  [ParamTable ptr] a=%p b=%p\n",
+                (const void*)a.MatrixElementParameterTable,
+                (const void*)b.MatrixElementParameterTable);
+      }
+      if (a.MatrixElementSupportTable != b.MatrixElementSupportTable) {
+        equal = false; hdr();
+        if (break_flag) std::printf("  [SupportTable ptr] a=%p b=%p\n",
+                (const void*)a.MatrixElementSupportTable,
+                (const void*)b.MatrixElementSupportTable);
+      }
+
+      // IDs/lengths must match too.
+      if (a.CornerNodeID != b.CornerNodeID) {
+        equal = false; hdr();
+        if (break_flag) std::printf("  [CornerNodeID] a=%d b=%d\n", a.CornerNodeID, b.CornerNodeID);
+      }
+      if (a.MatrixElementParameterTableLength != b.MatrixElementParameterTableLength) {
+        equal = false; hdr();
+        if (break_flag) std::printf("  [ParamLen] a=%d b=%d\n",
+                a.MatrixElementParameterTableLength, b.MatrixElementParameterTableLength);
+      }
+      if (a.MatrixElementSupportTableLength != b.MatrixElementSupportTableLength) {
+        equal = false; hdr();
+        if (break_flag) std::printf("  [SupportLen] a=%d b=%d\n",
+                a.MatrixElementSupportTableLength, b.MatrixElementSupportTableLength);
+      }
+
+      // Optional: if you also want to flag per-entry differences (useful when pointers match
+      // but contents might have changed in-place). This does NOT relax the pointer rule above.
+      {
+        const int len_min = (a.MatrixElementParameterTableLength < b.MatrixElementParameterTableLength)
+                        ? a.MatrixElementParameterTableLength : b.MatrixElementParameterTableLength;
+        for (int i = 0; i < len_min; ++i) {
+          const double av = a.MatrixElementParameterTable ? a.MatrixElementParameterTable[i] : 0.0;
+          const double bv = b.MatrixElementParameterTable ? b.MatrixElementParameterTable[i] : 0.0;
+          if (av != bv) {
+            equal = false; hdr();
+            if (break_flag) std::printf("  [Param[%d]] a=%.17e b=%.17e\n", i, av, bv);
+          }
+        }
+      }
+      {
+        const int len_min = (a.MatrixElementSupportTableLength < b.MatrixElementSupportTableLength)
+                        ? a.MatrixElementSupportTableLength : b.MatrixElementSupportTableLength;
+        for (int i = 0; i < len_min; ++i) {
+          const void* ap = a.MatrixElementSupportTable ? a.MatrixElementSupportTable[i] : nullptr;
+          const void* bp = b.MatrixElementSupportTable ? b.MatrixElementSupportTable[i] : nullptr;
+
+          if (ap != bp) {
+            equal = false; hdr();
+            if (break_flag) std::printf("  [Support[%d] ptr] a=%p b=%p\n", i, ap, bp);
+          }
+        }
+      }
+
+      if (!equal && break_flag) {
+        char msg[256];
+        std::snprintf(msg, sizeof(msg),
+                  "cStencilElement objects differ (pointer identity required)");
+        exit(__LINE__, __FILE__, msg);
+      }
+
+      return equal;
+    }
   };
 
   class cRhsSupportTable {
   public:
     double Coefficient;
     char *AssociatedDataPointer;
+
+    cRhsSupportTable () {Coefficient=0.0,AssociatedDataPointer=NULL;}
+
+    // Add inside class cRhsSupportTable (public:). Requires <cstdio>.
+    static bool Compare(const cRhsSupportTable& a,
+                    const cRhsSupportTable& b,
+                    bool break_flag = false) {
+      bool equal = true;
+      bool printed_header = false;
+
+      auto hdr = [&]() {
+        if (!printed_header) { std::printf("cRhsSupportTable mismatch:\n"); printed_header = true; }
+      };
+
+      // Enforce pointer identity.
+      if (a.AssociatedDataPointer != b.AssociatedDataPointer) {
+        equal = false; hdr();
+        if (break_flag) std::printf("  [AssociatedDataPointer] a=%p b=%p\n",
+                (const void*)a.AssociatedDataPointer, (const void*)b.AssociatedDataPointer);
+      }
+
+      // Exact coefficient compare (use an epsilon if you prefer tolerance).
+      if (a.Coefficient != b.Coefficient) {
+        equal = false; hdr();
+        if (break_flag) std::printf("  [Coefficient] a=%.17e b=%.17e\n", a.Coefficient, b.Coefficient);
+      }
+
+      if (!equal && break_flag) {
+        char msg[256];
+        if (break_flag) std::snprintf(msg, sizeof(msg),
+                  "cRhsSupportTable objects differ (pointer identity required)");
+        exit(__LINE__, __FILE__, msg);
+     }
+
+     return equal;
+   }
+
+
+   static bool CompareArray(const cRhsSupportTable* a,
+                         const cRhsSupportTable* b,
+                         int len,
+                         bool break_flag = false) {
+     if (len < 0) {
+       std::printf("cRhsSupportTable array compare: invalid len=%d\n", len);
+       if (break_flag) { char msg[64]; std::snprintf(msg,sizeof(msg),"invalid len"); exit(__LINE__, __FILE__, msg); }
+    return false;
+  }
+  if (len == 0) return true;
+
+  bool equal = true;
+  bool printed_hdr = false;
+  auto hdr = [&](){ if (!printed_hdr){ std::printf("cRhsSupportTable array mismatch:\n"); printed_hdr = true; } };
+
+  // Track which elements of b[] have been matched.
+  bool* used = new bool[len];
+  memset(used, 0, sizeof(bool) * len);
+
+  // For each a[i], find a unique equal element in b using cRhsSupportTable::Compare.
+  for (int i = 0; i < len; ++i) {
+    bool found = false;
+    for (int j = 0; j < len; ++j) {
+      if (used[j]) continue;
+      if (cRhsSupportTable::Compare(a[i], b[j], false)) { // forwards break_flag
+        used[j] = true;
+        found = true;
+        break;
+      }
+      // If break_flag==true and Compare found a difference, it may have exited already.
+    }
+
+    if (!found) {
+      equal = false; hdr();
+      std::printf("  Missing in B: ptr=%p coef=%.17e (a[%d])\n",
+                  (const void*)a[i].AssociatedDataPointer, a[i].Coefficient, i);
+      if (break_flag) {
+        delete[] used;
+        char msg[128];
+        std::snprintf(msg, sizeof(msg), "Missing match in B for a[%d]", i);
+        exit(__LINE__, __FILE__, msg);
+      }
+    }
+  }
+
+  // Report extras left unmatched in B.
+  for (int j = 0; j < len; ++j) {
+    if (!used[j]) {
+      equal = false; hdr();
+      std::printf("  Extra in B: ptr=%p coef=%.17e (b[%d])\n",
+                  (const void*)b[j].AssociatedDataPointer, b[j].Coefficient, j);
+    }
+  }
+
+  delete[] used;
+
+  if (!equal && break_flag) {
+    char msg[160];
+    std::snprintf(msg, sizeof(msg), "cRhsSupportTable arrays differ (unordered O(N^2) compare)");
+    exit(__LINE__, __FILE__, msg);
+  }
+
+  return equal;
+}
+
+
   };
 
   class cMatrixRow {
@@ -133,6 +380,188 @@ public:
       i=0,j=0,k=0,iVar=0,nNonZeroElements=0,RhsSupportLength_CornerNodes=0,RhsSupportLength_CenterNodes=0;
     }
   };
+
+  // Add inside class cMatrixRow (public:). Requires <cstdio>.
+  // Assumes cStencilElement::Compare(...), cStencilElementData::Compare(...),
+  // and cRhsSupportTable::Compare(...) are defined as in earlier steps.
+  static bool Compare(const cMatrixRow& a,
+                    const cMatrixRow& b,
+                    bool break_flag = false) {
+    bool equal = true;
+    bool printed_header = false;
+    auto hdr = [&](){ if (!printed_header) { std::printf("cMatrixRow mismatch:\n"); printed_header = true; } };
+
+    // --- Pointer identity checks ---
+    if (a.next != b.next) { equal = false; hdr();
+      std::printf("  [next ptr] a=%p b=%p\n", (const void*)a.next, (const void*)b.next);
+    }
+    if (a.node != b.node) { equal = false; hdr();
+      std::printf("  [node ptr] a=%p b=%p\n", (const void*)a.node, (const void*)b.node);
+    }
+    if (a.CornerNode != b.CornerNode) { equal = false; hdr();
+      std::printf("  [CornerNode ptr] a=%p b=%p\n", (const void*)a.CornerNode, (const void*)b.CornerNode);
+    }
+
+    // --- Scalars ---
+    if (a.Rhs != b.Rhs) { equal = false; hdr();
+      std::printf("  [Rhs] a=%.17e b=%.17e\n", a.Rhs, b.Rhs);
+    }
+    if (a.nNonZeroElements != b.nNonZeroElements) { equal = false; hdr();
+      std::printf("  [nNonZeroElements] a=%d b=%d\n", a.nNonZeroElements, b.nNonZeroElements);
+    }
+    if (a.i != b.i) { equal = false; hdr(); std::printf("  [i] a=%d b=%d\n", a.i, b.i); }
+    if (a.j != b.j) { equal = false; hdr(); std::printf("  [j] a=%d b=%d\n", a.j, b.j); }
+    if (a.k != b.k) { equal = false; hdr(); std::printf("  [k] a=%d b=%d\n", a.k, b.k); }
+    if (a.iVar != b.iVar) { equal = false; hdr(); std::printf("  [iVar] a=%d b=%d\n", a.iVar, b.iVar); }
+
+    // --- Stencil payloads: compare up to min(nNonZeroElements) ---
+    {
+      const int nnz_min = (a.nNonZeroElements < b.nNonZeroElements) ? a.nNonZeroElements : b.nNonZeroElements;
+      for (int idx = 0; idx < nnz_min; ++idx) {
+        // Elements (enforce pointer identity inside the element comparer)
+        if (!cStencilElement::Compare(a.Elements[idx], b.Elements[idx], /*break_flag*/ false)) {
+          equal = false; hdr();
+          std::printf("  [Elements[%d]] differ\n", idx);
+        }
+        // ElementDataTable (compares indices, value, and rhs pointer identity)
+        if (!cStencilElementData::Compare(a.ElementDataTable[idx], b.ElementDataTable[idx], /*break_flag*/ false)) {
+          equal = false; hdr();
+          std::printf("  [ElementDataTable[%d]] differ\n", idx);
+        }
+      }
+      // If counts differ, flag the tail
+      for (int idx = nnz_min; idx < a.nNonZeroElements; ++idx) { equal = false; hdr();
+        std::printf("  [Elements[%d]/ElementDataTable[%d]] present only in 'a'\n", idx, idx);
+      }
+      for (int idx = nnz_min; idx < b.nNonZeroElements; ++idx) { equal = false; hdr();
+        std::printf("  [Elements[%d]/ElementDataTable[%d]] present only in 'b'\n", idx, idx);
+      }
+    }
+
+    // --- RHS support (corner nodes) ---
+    if (a.RhsSupportLength_CornerNodes != b.RhsSupportLength_CornerNodes) { equal = false; hdr();
+      std::printf("  [RhsSupportLength_CornerNodes] a=%d b=%d\n",
+                a.RhsSupportLength_CornerNodes, b.RhsSupportLength_CornerNodes);
+    }
+    {
+      const int len_min = (a.RhsSupportLength_CornerNodes < b.RhsSupportLength_CornerNodes)
+                        ? a.RhsSupportLength_CornerNodes : b.RhsSupportLength_CornerNodes;
+      for (int i = 0; i < len_min; ++i) {
+        if (!cRhsSupportTable::Compare(a.RhsSupportTable_CornerNodes[i],
+                                     b.RhsSupportTable_CornerNodes[i],
+                                     /*break_flag*/ false)) {
+          equal = false; hdr();
+          std::printf("  [RhsSupportTable_CornerNodes[%d]] differ\n", i);
+        }
+      }
+      for (int i = len_min; i < a.RhsSupportLength_CornerNodes; ++i) { equal = false; hdr();
+        std::printf("  [RhsSupportTable_CornerNodes[%d]] present only in 'a'\n", i);
+      }
+      for (int i = len_min; i < b.RhsSupportLength_CornerNodes; ++i) { equal = false; hdr();
+        std::printf("  [RhsSupportTable_CornerNodes[%d]] present only in 'b'\n", i);
+      }
+    }
+
+    // --- RHS support (center nodes) ---
+    if (a.RhsSupportLength_CenterNodes != b.RhsSupportLength_CenterNodes) { equal = false; hdr();
+      std::printf("  [RhsSupportLength_CenterNodes] a=%d b=%d\n",
+                a.RhsSupportLength_CenterNodes, b.RhsSupportLength_CenterNodes);
+    }
+    {
+      const int len_min = (a.RhsSupportLength_CenterNodes < b.RhsSupportLength_CenterNodes)
+                        ? a.RhsSupportLength_CenterNodes : b.RhsSupportLength_CenterNodes;
+      for (int i = 0; i < len_min; ++i) {
+        if (!cRhsSupportTable::Compare(a.RhsSupportTable_CenterNodes[i],
+                                     b.RhsSupportTable_CenterNodes[i],
+                                     /*break_flag*/ false)) {
+          equal = false; hdr();
+          std::printf("  [RhsSupportTable_CenterNodes[%d]] differ\n", i);
+        }
+      }
+      for (int i = len_min; i < a.RhsSupportLength_CenterNodes; ++i) { equal = false; hdr();
+        std::printf("  [RhsSupportTable_CenterNodes[%d]] present only in 'a'\n", i);
+      }
+      for (int i = len_min; i < b.RhsSupportLength_CenterNodes; ++i) { equal = false; hdr();
+        std::printf("  [RhsSupportTable_CenterNodes[%d]] present only in 'b'\n", i);
+      }
+    }
+
+    if (!equal && break_flag) {
+      char msg[256];
+      std::snprintf(msg, sizeof(msg), "cMatrixRow objects differ (see printf log above)");
+      exit(__LINE__, __FILE__, msg);
+    }
+
+    return equal;
+  }
+
+
+  static bool CompareArray(const cMatrixRow* A,
+                         const cMatrixRow* B,
+                         int len,
+                         bool break_flag = false) {
+    if (len < 0) {
+      std::printf("cMatrixRow array compare: invalid len=%d\n", len);
+      if (break_flag) { char msg[64]; std::snprintf(msg,sizeof(msg),"invalid len"); exit(__LINE__, __FILE__, msg); }
+      return false;
+    }
+    if (len == 0) return true;
+
+    bool equal = true;
+    bool printed_hdr = false;
+    auto hdr = [&](){ if (!printed_hdr){ std::printf("cMatrixRow array mismatch:\n"); printed_hdr = true; } };
+
+    // Track which B[j] have been matched already
+    bool* used = new bool[len];
+    memset(used, 0, sizeof(bool)*len);
+
+    // For each A[i], find a unique equal row in B using cMatrixRow::Compare
+    for (int i = 0; i < len; ++i) {
+      bool found = false;
+      for (int j = 0; j < len; ++j) {
+        if (used[j]) continue;
+        if (cMatrixRow::Compare(A[i], B[j], false)) {
+          used[j] = true;
+          found = true;
+          break;
+        }
+        // If break_flag==true and Compare found a difference, it may have exited already.
+      }
+
+      if (!found) {
+        equal = false; hdr();
+        std::printf("  Missing in B: key=(%d,%d,%d|%d)  (A[%d])\n",
+                  A[i].i, A[i].j, A[i].k, A[i].iVar, i);
+        if (break_flag) {
+          delete[] used;
+          char msg[128];
+          std::snprintf(msg, sizeof(msg), "Missing match in B for A[%d] (key=(%d,%d,%d|%d))",
+                      i, A[i].i, A[i].j, A[i].k, A[i].iVar);
+          exit(__LINE__, __FILE__, msg);
+        }
+      }
+    }
+
+    // Any unused entries in B are extras
+    for (int j = 0; j < len; ++j) {
+      if (!used[j]) {
+        equal = false; hdr();
+        std::printf("  Extra in B: key=(%d,%d,%d|%d)  (B[%d])\n",
+                  B[j].i, B[j].j, B[j].k, B[j].iVar, j);
+      }
+    }
+
+    delete[] used;
+
+    if (!equal && break_flag) {
+      char msg[160];
+      std::snprintf(msg, sizeof(msg), "cMatrixRow arrays differ (unordered O(N^2) compare)");
+      exit(__LINE__, __FILE__, msg);
+    }
+
+    return equal;
+  }
+
 
   cStackManaged<cMatrixRow> MatrixRowStack;
 
