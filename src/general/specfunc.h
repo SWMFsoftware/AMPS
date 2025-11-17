@@ -167,6 +167,221 @@ bool GetGradient(double* gradQ,double cellQ,double* Q,long int ncell,TMesh &grid
 #endif
 
 /*
+ * ============================================================================
+ *  CompareArray_Unordered<T>
+ *  --------------------------------
+ *  Generic helper for comparing two arrays of objects of type T, treating each
+ *  array as an UNORDERED multiset of elements.
+ *
+ *  Requirements on T:
+ *    - T must be equality-comparable via operator==:
+ *
+ *        bool operator==(const T& lhs, const T& rhs);
+ *
+ *      which:
+ *        * returns true if lhs and rhs are considered equal,
+ *        * returns false if they differ.
+ *
+ *  Interface:
+ *    bool CompareArray_Unordered(const T* A, int lenA,
+ *                                const T* B, int lenB,
+ *                                bool break_flag = false,
+ *                                const char* label = NULL);
+ *
+ *  Semantics:
+ *    - The function compares A[0..lenA-1] and B[0..lenB-1] as multisets:
+ *        * Order does NOT matter.
+ *        * Each element in A must have a matching equal element in B.
+ *        * Each element in B must have a matching equal element in A.
+ *    - Complexity is O(lenA * lenB). This is intended for debug / validation
+ *      paths, not for performance-critical code.
+ *
+ *  Diagnostics and termination:
+ *    - If break_flag == false:
+ *        * The function returns true if the arrays match as multisets,
+ *          false otherwise.
+ *        * No early termination; no trap exit is invoked.
+ *
+ *    - If break_flag == true and any difference is detected:
+ *        * A short header is printed once (showing label, lenA, lenB).
+ *        * For each element in A that cannot be matched in B, a message
+ *          "Element from A[i] has no match in B" is printed.
+ *        * For each element in B that remains unmatched, a message
+ *          "Extra element in B[j] has no match in A" is printed.
+ *        * A final summary line "=> Arrays differ" is printed.
+ *        * The function then calls:
+ *
+ *              exit(__LINE__, __FILE__, "CompareArray_Unordered(): arrays differ");
+ *
+ *          so the program terminates via your trap-style exit.
+ *
+ *  Notes:
+ *    - This helper is intended to be wrapped by type-specific utilities, e.g.:
+ *
+ *        // Inside some class:
+ *        static bool CompareArray(const ThisType* a,
+ *                                 const ThisType* b,
+ *                                 int len,
+ *                                 bool break_flag = false)
+ *        {
+ *          return CompareArray_Unordered<ThisType>(a, len, b, len,
+ *                                                 break_flag,
+ *                                                 "ThisType");
+ *        }
+ *
+ *    - The symbol `exit` with signature `exit(int, const char*, const char*)`
+ *      (or a macro with that call form) is assumed to be provided elsewhere.
+ *
+ * ============================================================================
+ */
+template <class T>
+bool CompareArray_Unordered(T* A, int lenA,
+                            T* B, int lenB,
+                            bool break_flag,
+                            const char* label = NULL)
+{
+  bool equal = true;           // Overall result: assume equal until a mismatch is found.
+  bool printed_header = false; // Ensure the header is printed at most once.
+
+  // ------------------------------------------------------------------------
+  // Header printer: prints a short header the first time we detect a mismatch
+  // or want to emit diagnostics. Implemented as a lambda (not a macro).
+  // ------------------------------------------------------------------------
+  auto print_header = [&]() {
+    if (!printed_header) {
+      std::printf("CompareArray_Unordered");
+      if (label != NULL) {
+        std::printf(" [%s]", label);
+      }
+      std::printf(": lenA=%d lenB=%d\n", lenA, lenB);
+      std::printf("--------------------------------------------------\n");
+      printed_header = true;
+    }
+  };
+
+  // ------------------------------------------------------------------------
+  // Length mismatch: record difference and optionally print a message.
+  // We still do full matching so that additional diagnostics can be printed.
+  // ------------------------------------------------------------------------
+  if (lenA != lenB) {
+    equal = false;
+    if (break_flag) {
+      print_header();
+      std::printf("  Length mismatch: lenA=%d lenB=%d\n", lenA, lenB);
+    }
+  }
+
+  // ------------------------------------------------------------------------
+  // Trivial case: both arrays empty => no further work to do.
+  // If break_flag == true and equal == false (pathological), trap.
+  // ------------------------------------------------------------------------
+  if (lenA == 0 && lenB == 0) {
+    if (!equal && break_flag) {
+      print_header();
+      std::printf("  => Arrays differ");
+      if (label != NULL) {
+        std::printf(" (%s)", label);
+      }
+      std::printf("\n");
+      std::fflush(stdout);
+      // Trap-style exit provided elsewhere in the code base.
+      exit(__LINE__, __FILE__, "CompareArray_Unordered(): arrays differ");
+    }
+    return equal;
+  }
+
+  // ------------------------------------------------------------------------
+  // usedB[j] == true  -> B[j] has already been matched to some A[i].
+  // usedB[j] == false -> B[j] is still available to be matched.
+  // ------------------------------------------------------------------------
+  bool* usedB = NULL;
+  if (lenB > 0) {
+    usedB = new bool[lenB];
+    for (int j = 0; j < lenB; ++j) {
+      usedB[j] = false;
+    }
+  }
+
+  // ------------------------------------------------------------------------
+  // For each element A[i], try to find an *unmatched* element B[j] such that
+  // A[i] == B[j]. If we fail, A[i] has no match.
+  // ------------------------------------------------------------------------
+  for (int i = 0; i < lenA; ++i) {
+    bool found = false;
+
+    for (int j = 0; j < lenB; ++j) {
+      // Skip B[j] if it has already been matched to some A[k].
+      if (usedB != NULL && usedB[j]) {
+        continue;
+      }
+
+      // Equality check via operator==.
+      if (A[i] == B[j]) {
+        if (usedB != NULL) {
+          usedB[j] = true;   // Mark B[j] as used so it won't be reused.
+        }
+        found = true;
+        break;               // Move on to the next A[i].
+      }
+    }
+
+    // If no suitable B[j] was found, this A[i] has no matching partner in B.
+    if (!found) {
+      equal = false;
+      if (break_flag) {
+        print_header();
+        std::printf("  Element from A[%d] has no match in B\n", i);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------------
+  // Any element B[j] that remains unmatched (usedB[j] == false) is "extra"
+  // compared to A: it has no counterpart in A.
+  // ------------------------------------------------------------------------
+  for (int j = 0; j < lenB; ++j) {
+    if (usedB != NULL && !usedB[j]) {
+      equal = false;
+      if (break_flag) {
+        print_header();
+        std::printf("  Extra element in B[%d] has no match in A\n", j);
+      }
+    }
+  }
+
+  // Clean up temporary array.
+  if (usedB != NULL) {
+    delete [] usedB;
+    usedB = NULL;
+  }
+
+  // ------------------------------------------------------------------------
+  // Final summary and optional termination.
+  //
+  // If any mismatch has been detected and break_flag == true, print a final
+  // summary line and terminate via the trap-style exit().
+  // ------------------------------------------------------------------------
+  if (!equal && break_flag) {
+    print_header();
+    std::printf("  => Arrays differ");
+    if (label != NULL) {
+      std::printf(" (%s)", label);
+    }
+    std::printf("\n");
+    std::fflush(stdout);
+
+    // Trap-style exit; signature is assumed to be available elsewhere:
+    //   void exit(int line, const char* file, const char* msg);
+    exit(__LINE__, __FILE__, "CompareArray_Unordered(): arrays differ");
+  }
+
+  return equal;
+}
+
+
+
+
+/*
  * Greatest Common Divisor (GCD) - Euclidean Algorithm
  * ====================================================
  *
