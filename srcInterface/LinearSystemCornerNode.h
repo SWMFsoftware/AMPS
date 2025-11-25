@@ -75,6 +75,39 @@ public:
       rhs=NULL;
     }
 
+
+    bool operator==(const cStencilElementData& other) const {
+      // Compare all integer members
+      if (UnknownVectorIndex != other.UnknownVectorIndex) {
+        return false;
+      }
+
+      if (iVar != other.iVar) {
+        return false;
+      }
+
+      if (Thread != other.Thread) {
+        return false;
+      }
+
+      // Compare double value for exact equality
+      if (MatrixElementValue != other.MatrixElementValue) {
+        return false;
+      }
+
+      // Compare pointer identity for rhs
+      if (rhs != other.rhs) {
+        return false;
+      }
+
+      return true;
+    }
+
+   // Inequality operator (optional but recommended)
+   bool operator!=(const cStencilElementData& other) const {
+     return !(*this == other);
+   }
+
     // In cStencilElementData (public:), include <cstdio> somewhere in the TU.
     static bool Compare(const cStencilElementData& a,
                     const cStencilElementData& b,
@@ -154,6 +187,37 @@ public:
       for (int i=0;i<MaxMatrixElementParameterTableLength;i++) MatrixElementParameterTable[i]=0.0;
       for (int i=0;i<MaxMatrixElementSupportTableLength;i++) MatrixElementSupportTable[i]=NULL;
     }
+
+    // EQUALITY OPERATORS (already provided earlier)
+    bool operator==(const cStencilElement& other) const {
+      if (CornerNode != other.CornerNode || node != other.node) {
+        return false;
+      }
+
+      if (CornerNodeID != other.CornerNodeID ||
+        MatrixElementParameterTableLength != other.MatrixElementParameterTableLength ||
+        MatrixElementSupportTableLength != other.MatrixElementSupportTableLength) {
+        return false;
+      }
+
+      for (int i = 0; i < MatrixElementParameterTableLength; ++i) {
+        if (MatrixElementParameterTable[i] != other.MatrixElementParameterTable[i]) {
+            return false;
+        }
+      }
+
+      for (int i = 0; i < MatrixElementSupportTableLength; ++i) {
+        if (MatrixElementSupportTable[i] != other.MatrixElementSupportTable[i]) {
+            return false;
+        }
+      }
+
+      return true;
+   }
+
+   bool operator!=(const cStencilElement& other) const {
+    return !(*this == other);
+   }
 
     static bool Compare(const cStencilElement& a,
                     const cStencilElement& b,
@@ -251,6 +315,26 @@ public:
 
     cRhsSupportTable () {Coefficient=0.0,AssociatedDataPointer=NULL;}
 
+    // Equality operator for class cRhsSupportTable
+    bool operator==(const cRhsSupportTable& other) const {
+      // Compare pointer identity for AssociatedDataPointer
+      if (AssociatedDataPointer != other.AssociatedDataPointer) {
+        return false;
+      }
+
+      // Compare Coefficient values for exact equality
+      if (Coefficient != other.Coefficient) {
+        return false;
+      }
+
+      return true;
+    }
+
+    // Inequality operator (optional but recommended)
+    bool operator!=(const cRhsSupportTable& other) const {
+      return !(*this == other);
+    }
+
     // Add inside class cRhsSupportTable (public:). Requires <cstdio>.
     static bool Compare(const cRhsSupportTable& a,
                     const cRhsSupportTable& b,
@@ -264,15 +348,23 @@ public:
 
       // Enforce pointer identity.
       if (a.AssociatedDataPointer != b.AssociatedDataPointer) {
-        equal = false; hdr();
-        if (break_flag) std::printf("  [AssociatedDataPointer] a=%p b=%p\n",
+        equal = false; 
+
+        if (break_flag) {std::printf("  [AssociatedDataPointer] a=%p b=%p\n",
                 (const void*)a.AssociatedDataPointer, (const void*)b.AssociatedDataPointer);
+	        hdr();
+		exit(__LINE__,__FILE__);
+	}
       }
 
       // Exact coefficient compare (use an epsilon if you prefer tolerance).
       if (a.Coefficient != b.Coefficient) {
-        equal = false; hdr();
-        if (break_flag) std::printf("  [Coefficient] a=%.17e b=%.17e\n", a.Coefficient, b.Coefficient);
+        equal = false;
+
+        if (break_flag) { std::printf("  [Coefficient] a=%.17e b=%.17e\n", a.Coefficient, b.Coefficient);
+          hdr();
+                exit(__LINE__,__FILE__);
+        } 
       }
 
       if (!equal && break_flag) {
@@ -378,6 +470,349 @@ public:
     cMatrixRow() {
       next=NULL,Rhs=0.0,node=NULL,CornerNode=NULL;
       i=0,j=0,k=0,iVar=0,nNonZeroElements=0,RhsSupportLength_CornerNodes=0,RhsSupportLength_CenterNodes=0;
+    }
+
+    // -----------------------------------------------------------------
+    // Equality operators
+    //
+    // Semantics are aligned with static Compare(a,b,...), but without
+    // diagnostics or trap exits:
+    //   - Pointer identity for next, node, CornerNode
+    //   - Exact equality for Rhs, nNonZeroElements, i,j,k,iVar
+    //   - Element-wise equality for:
+    //       * Elements[0..nNonZeroElements-1]
+    //       * ElementDataTable[0..nNonZeroElements-1]
+    //       * RhsSupportTable_CornerNodes[0..RhsSupportLength_CornerNodes-1]
+    //       * RhsSupportTable_CenterNodes[0..RhsSupportLength_CenterNodes-1]
+    //
+    // Requires that:
+    //   - cStencilElement  implements operator==
+    //   - cStencilElementData implements operator==
+    //   - cRhsSupportTable implements operator==
+    // -----------------------------------------------------------------
+   bool operator==(const cMatrixRow& other) const {
+  bool equal = true;
+
+  // Track first mismatch info for debugging
+  enum MismatchKind {
+    NONE,
+    POINTERS,
+    SCALARS,
+    STENCIL_MULTISETS,
+    RHS_CORNER_MULTISETS,
+    RHS_CENTER_MULTISETS
+  };
+  MismatchKind mismatch = NONE;
+  int mismatch_index_this  = -1;
+  int mismatch_index_other = -1; // currently unused, reserved if you ever want to report both sides
+
+  // --- Pointer identity checks ---
+  if (node != other.node || CornerNode != other.CornerNode) {
+    equal = false;
+    mismatch = POINTERS;
+  }
+
+  // --- Scalar checks ---
+  if (Rhs != other.Rhs ||
+      nNonZeroElements != other.nNonZeroElements ||
+      i != other.i || j != other.j || k != other.k || iVar != other.iVar) {
+    equal = false;
+    if (mismatch == NONE) mismatch = SCALARS;
+  }
+
+  // --- Stencil payloads: (Elements, ElementDataTable) as unordered multisets ---
+  if (nNonZeroElements != other.nNonZeroElements) {
+    equal = false;
+    if (mismatch == NONE) mismatch = STENCIL_MULTISETS;
+  } else {
+    bool *used = new bool[nNonZeroElements];
+    for (int t = 0; t < nNonZeroElements; ++t) used[t] = false;
+
+    for (int ia = 0; ia < nNonZeroElements; ++ia) {
+      bool found  = false;
+      int  foundj = -1;
+
+      for (int jb = 0; jb < other.nNonZeroElements; ++jb) {
+        if (used[jb]) continue;
+
+        if ((Elements[ia] == other.Elements[jb]) &&
+            (ElementDataTable[ia] == other.ElementDataTable[jb])) {
+          used[jb] = true;
+          found    = true;
+          foundj   = jb;
+          break;
+        }
+      }
+
+      if (!found) {
+        equal = false;
+        if (mismatch == NONE) {
+          mismatch = STENCIL_MULTISETS;
+          mismatch_index_this  = ia;
+          mismatch_index_other = -1;
+        }
+      }
+    }
+
+    delete [] used;
+  }
+
+  // --- RHS support (corner nodes) as unordered multiset ---
+  if (RhsSupportLength_CornerNodes != other.RhsSupportLength_CornerNodes) {
+    equal = false;
+    if (mismatch == NONE) mismatch = RHS_CORNER_MULTISETS;
+  } else {
+    bool *used = new bool[RhsSupportLength_CornerNodes];
+    for (int t = 0; t < RhsSupportLength_CornerNodes; ++t) used[t] = false;
+
+    for (int ia = 0; ia < RhsSupportLength_CornerNodes; ++ia) {
+      bool found  = false;
+      int  foundj = -1;
+
+      for (int jb = 0; jb < other.RhsSupportLength_CornerNodes; ++jb) {
+        if (used[jb]) continue;
+        if (RhsSupportTable_CornerNodes[ia] ==
+            other.RhsSupportTable_CornerNodes[jb]) {
+          used[jb] = true;
+          found    = true;
+          foundj   = jb;
+          break;
+        }
+      }
+
+      if (!found) {
+        equal = false;
+        if (mismatch == NONE) {
+          mismatch = RHS_CORNER_MULTISETS;
+          mismatch_index_this  = ia;
+          mismatch_index_other = -1;
+        }
+      }
+    }
+
+    delete [] used;
+  }
+
+  // --- RHS support (center nodes) as unordered multiset ---
+  if (RhsSupportLength_CenterNodes != other.RhsSupportLength_CenterNodes) {
+    equal = false;
+    if (mismatch == NONE) mismatch = RHS_CENTER_MULTISETS;
+  } else {
+    bool *used = new bool[RhsSupportLength_CenterNodes];
+    for (int t = 0; t < RhsSupportLength_CenterNodes; ++t) used[t] = false;
+
+    for (int ia = 0; ia < RhsSupportLength_CenterNodes; ++ia) {
+      bool found  = false;
+      int  foundj = -1;
+
+      for (int jb = 0; jb < other.RhsSupportLength_CenterNodes; ++jb) {
+        if (used[jb]) continue;
+        if (RhsSupportTable_CenterNodes[ia] ==
+            other.RhsSupportTable_CenterNodes[jb]) {
+          used[jb] = true;
+          found    = true;
+          foundj   = jb;
+          break;
+        }
+      }
+
+      if (!found) {
+        equal = false;
+        if (mismatch == NONE) {
+          mismatch = RHS_CENTER_MULTISETS;
+          mismatch_index_this  = ia;
+          mismatch_index_other = -1;
+        }
+      }
+    }
+
+    delete [] used;
+  }
+
+  // --- If not equal: dump both rows and indicate where mismatch arose ---
+  if (!equal) {
+    std::printf("cMatrixRow::operator== mismatch at %s:%d\n", __FILE__, __LINE__);
+
+    // Header for this
+    std::printf(
+      "  this : next=%p node=%p CornerNode=%p "
+      "Rhs=%.17e nNonZeroElements=%d "
+      "i=%d j=%d k=%d iVar=%d "
+      "RhsSupportLength_CornerNodes=%d "
+      "RhsSupportLength_CenterNodes=%d\n",
+      (const void*)next, (const void*)node, (const void*)CornerNode,
+      Rhs, nNonZeroElements,
+      i, j, k, iVar,
+      RhsSupportLength_CornerNodes,
+      RhsSupportLength_CenterNodes
+    );
+
+    // Header for other
+    std::printf(
+      "  other: next=%p node=%p CornerNode=%p "
+      "Rhs=%.17e nNonZeroElements=%d "
+      "i=%d j=%d k=%d iVar=%d "
+      "RhsSupportLength_CornerNodes=%d "
+      "RhsSupportLength_CenterNodes=%d\n",
+      (const void*)other.next, (const void*)other.node, (const void*)other.CornerNode,
+      other.Rhs, other.nNonZeroElements,
+      other.i, other.j, other.k, other.iVar,
+      other.RhsSupportLength_CornerNodes,
+      other.RhsSupportLength_CenterNodes
+    );
+
+    // High-level mismatch category
+    switch (mismatch) {
+      case POINTERS:
+        std::printf("  First mismatch category: POINTERS (next/node/CornerNode)\n");
+        break;
+      case SCALARS:
+        std::printf("  First mismatch category: SCALARS (Rhs, nNonZeroElements or i,j,k,iVar)\n");
+        break;
+      case STENCIL_MULTISETS:
+        std::printf("  First mismatch category: STENCIL_MULTISETS");
+        if (mismatch_index_this >= 0) {
+          std::printf(" – element from 'this' at idx=%d has no match in 'other'\n",
+                      mismatch_index_this);
+        } else {
+          std::printf("\n");
+        }
+        break;
+      case RHS_CORNER_MULTISETS:
+        std::printf("  First mismatch category: RHS_CORNER_MULTISETS");
+        if (mismatch_index_this >= 0) {
+          std::printf(" – corner RHS support from 'this' at idx=%d has no match in 'other'\n",
+                      mismatch_index_this);
+        } else {
+          std::printf("\n");
+        }
+        break;
+      case RHS_CENTER_MULTISETS:
+        std::printf("  First mismatch category: RHS_CENTER_MULTISETS");
+        if (mismatch_index_this >= 0) {
+          std::printf(" – center RHS support from 'this' at idx=%d has no match in 'other'\n",
+                      mismatch_index_this);
+        } else {
+          std::printf("\n");
+        }
+        break;
+      case NONE:
+      default:
+        break;
+    }
+
+    // --- Dump stencil payloads for both rows ---
+    std::printf("  Dump of stencil (this):\n");
+    for (int idx = 0; idx < nNonZeroElements; ++idx) {
+      const cStencilElement&     e = Elements[idx];
+      const cStencilElementData& d = ElementDataTable[idx];
+
+      std::printf(
+        "    idx=%d:\n"
+        "      Element: CornerNode=%p node=%p CornerNodeID=%d "
+        "ParamLen=%d SupportLen=%d\n",
+        idx,
+        (const void*)e.CornerNode, (const void*)e.node,
+        e.CornerNodeID,
+        e.MatrixElementParameterTableLength,
+        e.MatrixElementSupportTableLength
+      );
+
+      std::printf("        ParamTable:");
+      for (int p = 0; p < e.MatrixElementParameterTableLength; ++p) {
+        std::printf(" %.17e", e.MatrixElementParameterTable[p]);
+      }
+      std::printf("\n");
+
+      std::printf("        SupportTable:");
+      for (int p = 0; p < e.MatrixElementSupportTableLength; ++p) {
+        std::printf(" %p", e.MatrixElementSupportTable[p]);
+      }
+      std::printf("\n");
+
+      std::printf(
+        "      ElementData: UnknownVectorIndex=%d iVar=%d Thread=%d "
+        "MatrixElementValue=%.17e rhs=%p\n",
+        d.UnknownVectorIndex, d.iVar, d.Thread,
+        d.MatrixElementValue, (const void*)d.rhs
+      );
+    }
+
+    std::printf("  Dump of stencil (other):\n");
+    for (int idx = 0; idx < other.nNonZeroElements; ++idx) {
+      const cStencilElement&     e = other.Elements[idx];
+      const cStencilElementData& d = other.ElementDataTable[idx];
+
+      std::printf(
+        "    idx=%d:\n"
+        "      Element: CornerNode=%p node=%p CornerNodeID=%d "
+        "ParamLen=%d SupportLen=%d\n",
+        idx,
+        (const void*)e.CornerNode, (const void*)e.node,
+        e.CornerNodeID,
+        e.MatrixElementParameterTableLength,
+        e.MatrixElementSupportTableLength
+      );
+
+      std::printf("        ParamTable:");
+      for (int p = 0; p < e.MatrixElementParameterTableLength; ++p) {
+        std::printf(" %.17e", e.MatrixElementParameterTable[p]);
+      }
+      std::printf("\n");
+
+      std::printf("        SupportTable:");
+      for (int p = 0; p < e.MatrixElementSupportTableLength; ++p) {
+        std::printf(" %p", e.MatrixElementSupportTable[p]);
+      }
+      std::printf("\n");
+
+      std::printf(
+        "      ElementData: UnknownVectorIndex=%d iVar=%d Thread=%d "
+        "MatrixElementValue=%.17e rhs=%p\n",
+        d.UnknownVectorIndex, d.iVar, d.Thread,
+        d.MatrixElementValue, (const void*)d.rhs
+      );
+    }
+
+    // --- Dump RHS support tables for both rows ---
+    std::printf("  RHS support (corner, this):\n");
+    for (int n = 0; n < RhsSupportLength_CornerNodes; ++n) {
+      std::printf("    idx=%d: Coefficient=%.17e ptr=%p\n",
+                  n,
+                  RhsSupportTable_CornerNodes[n].Coefficient,
+                  (const void*)RhsSupportTable_CornerNodes[n].AssociatedDataPointer);
+    }
+    std::printf("  RHS support (corner, other):\n");
+    for (int n = 0; n < other.RhsSupportLength_CornerNodes; ++n) {
+      std::printf("    idx=%d: Coefficient=%.17e ptr=%p\n",
+                  n,
+                  other.RhsSupportTable_CornerNodes[n].Coefficient,
+                  (const void*)other.RhsSupportTable_CornerNodes[n].AssociatedDataPointer);
+    }
+
+    std::printf("  RHS support (center, this):\n");
+    for (int n = 0; n < RhsSupportLength_CenterNodes; ++n) {
+      std::printf("    idx=%d: Coefficient=%.17e ptr=%p\n",
+                  n,
+                  RhsSupportTable_CenterNodes[n].Coefficient,
+                  (const void*)RhsSupportTable_CenterNodes[n].AssociatedDataPointer);
+    }
+    std::printf("  RHS support (center, other):\n");
+    for (int n = 0; n < other.RhsSupportLength_CenterNodes; ++n) {
+      std::printf("    idx=%d: Coefficient=%.17e ptr=%p\n",
+                  n,
+                  other.RhsSupportTable_CenterNodes[n].Coefficient,
+                  (const void*)other.RhsSupportTable_CenterNodes[n].AssociatedDataPointer);
+    }
+  }
+
+  return equal;
+}
+ 
+    
+    
+    bool operator!=(const cMatrixRow& other) const {
+      return !(*this == other);
     }
   };
 
@@ -605,6 +1040,64 @@ public:
       for (int i=0;i<MaxMatrixElementParameterTableLength;i++) MatrixElementParameterTable[i]=0.0;
       for (int i=0;i<MaxMatrixElementSupportTableLength;i++) MatrixElementSupportTable[i]=NULL;
     }
+
+    // -----------------------------------------------------------------
+    // Equality operators
+    //
+    // Two cMatrixRowNonZeroElementTable entries are considered equal iff:
+    //   - i,j,k,iVar match exactly
+    //   - MatrixElementValue matches exactly (no tolerance)
+    //   - Node, BoundaryNodeFlag, OriginalNode match
+    //   - MatrixElementParameterTableLength matches and all entries
+    //     [0 .. length-1] are exactly equal
+    //   - MatrixElementSupportTableLength matches and all entries
+    //     [0 .. length-1] are pointer-identical
+    // -----------------------------------------------------------------
+    bool operator==(const cMatrixRowNonZeroElementTable& other) const {
+      // Indices and value
+      if (i   != other.i)   return false;
+      if (j   != other.j)   return false;
+      if (k   != other.k)   return false;
+      if (iVar != other.iVar) return false;
+      if (MatrixElementValue != other.MatrixElementValue) return false;
+
+      // Node and periodic info
+      if (Node           != other.Node)           return false;
+      if (BoundaryNodeFlag != other.BoundaryNodeFlag) return false;
+      if (OriginalNode   != other.OriginalNode)   return false;
+
+      // Parameter table
+      if (MatrixElementParameterTableLength !=
+          other.MatrixElementParameterTableLength) {
+        return false;
+      }
+
+      for (int n = 0; n < MatrixElementParameterTableLength; ++n) {
+        if (MatrixElementParameterTable[n] !=
+          other.MatrixElementParameterTable[n]) {
+          return false;
+        }
+      }
+
+      // Support table (pointer identity)
+      if (MatrixElementSupportTableLength !=
+        other.MatrixElementSupportTableLength) {
+        return false;
+      }
+      
+      for (int n = 0; n < MatrixElementSupportTableLength; ++n) {
+        if (MatrixElementSupportTable[n] !=
+          other.MatrixElementSupportTable[n]) {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    bool operator!=(const cMatrixRowNonZeroElementTable& other) const {
+      return !(*this == other);
+    }
   };
 
   cMatrixRowNonZeroElementTable MatrixRowNonZeroElementTable[MaxStencilLength];
@@ -711,6 +1204,220 @@ public:
     Signature.PrintChecksum(nline,fname);
     SignatureRhs.PrintChecksum(nline,fname);
   }
+
+  // Strict structural equality for the linear system.
+  //
+  // Notes:
+  //  - Uses cMatrixRow::operator== for each row.
+  //  - Compares SubdomainPartialRHS element-wise when both pointers are non-null.
+  //  - Pointer-valued members that encode ownership/layout are compared by identity,
+  //    consistent with the nested comparison helpers in this file.
+  bool operator==(const cLinearSystemCornerNode& other) const {
+    // Basic configuration
+    if (SubdomainPartialUnknownsVectorLength != other.SubdomainPartialUnknownsVectorLength)
+      return false;
+
+    if (nMartixModifications != other.nMartixModifications)
+      return false;
+
+    // Partial RHS / solution buffers: compare identity first
+    if (SubdomainPartialRHS != other.SubdomainPartialRHS)
+      return false;
+
+    if (SubdomainPartialUnknownsVector != other.SubdomainPartialUnknownsVector)
+      return false;
+
+    // Local row table configuration
+    if (MatrixRowTableLength != other.MatrixRowTableLength)
+      return false;
+
+    if (MatrixRowListFirst != other.MatrixRowListFirst)
+      return false;
+
+    if (MatrixRowListLast != other.MatrixRowListLast)
+      return false;
+
+    // Exchange buffers – pointer identity
+    if (RecvExchangeBufferLength != other.RecvExchangeBufferLength)
+      return false;
+
+    if (SendExchangeBufferLength != other.SendExchangeBufferLength)
+      return false;
+
+    if (SendExchangeBufferElementIndex != other.SendExchangeBufferElementIndex)
+      return false;
+
+    // Matrix rows: use cMatrixRow::operator==
+    for (int i = 0; i < MatrixRowTableLength; ++i) {
+      cMatrixRow* rowA = MatrixRowTable[i];
+      cMatrixRow* rowB = other.MatrixRowTable[i];
+
+      if (rowA == nullptr || rowB == nullptr) {
+        if (rowA != rowB) return false; // one null, one non-null
+        continue;                       // both null -> ok
+      }
+
+      if (!(*rowA == *rowB)) {
+        return false;
+      }
+    }
+
+    // RHS vector values (if allocated in both objects and length is consistent)
+    if (SubdomainPartialRHS && other.SubdomainPartialRHS &&
+        SubdomainPartialUnknownsVectorLength == other.SubdomainPartialUnknownsVectorLength) {
+      for (int i = 0; i < SubdomainPartialUnknownsVectorLength; ++i) {
+        if (SubdomainPartialRHS[i] != other.SubdomainPartialRHS[i]) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  bool operator!=(const cLinearSystemCornerNode& other) const {
+    return !(*this == other);
+  }
+
+  // -----------------------------------------------------------------
+  // Debug-style comparison with optional hard exit.
+  //
+  // If exit_flag == true and any difference is detected, this prints
+  // a short log to stdout and then calls:
+  //     exit(__LINE__, __FILE__, msg);
+  //
+  // Return value:
+  //   - true  : objects are equal (under the same semantics as operator==)
+  //   - false : objects differ
+  // -----------------------------------------------------------------
+// -----------------------------------------------------------------
+// Debug-style comparison for entire linear systems (pointer version).
+//
+// Parameters:
+//   a, b      - pointers to the systems to compare
+//   exit_flag - if true, call exit(__LINE__, __FILE__, msg) on mismatch
+//
+// Return:
+//   true  - systems are equal under the same semantics as operator==
+//   false - mismatch found (unless exit_flag==true, in which case
+//           the function will not return and will call exit()).
+// -----------------------------------------------------------------
+static bool Compare(cLinearSystemCornerNode* a,
+                    cLinearSystemCornerNode* b,
+                    bool exit_flag = false) {
+  bool equal = true;
+  bool printed_header = false;
+
+  auto hdr = [&]() {
+    if (!printed_header) {
+      std::printf("cLinearSystemCornerNode mismatch:\n");
+      printed_header = true;
+    }
+  };
+
+  // ---------- Null pointer handling ----------
+  if (a == nullptr || b == nullptr) {
+    if (a == b) {
+      // both nullptr -> treat as equal
+      return true;
+    }
+
+    equal = false;
+    hdr();
+    std::printf("  [pointer] one system is nullptr, the other is not (a=%p b=%p)\n",
+                (const void*)a, (const void*)b);
+
+    if (exit_flag) {
+      char msg[256];
+      std::snprintf(msg, sizeof(msg),
+                    "cLinearSystemCornerNode::Compare - nullptr vs non-null");
+      exit(__LINE__, __FILE__, msg);
+    }
+
+    return false;
+  }
+
+  // For brevity, use references internally
+  const cLinearSystemCornerNode& A = *a;
+  const cLinearSystemCornerNode& B = *b;
+
+  // ---------- Basic configuration ----------
+  if (A.SubdomainPartialUnknownsVectorLength !=
+      B.SubdomainPartialUnknownsVectorLength) {
+    equal = false; hdr();
+    std::printf("  [SubdomainPartialUnknownsVectorLength] a=%d b=%d\n",
+                A.SubdomainPartialUnknownsVectorLength,
+                B.SubdomainPartialUnknownsVectorLength);
+  }
+
+  if (A.nMartixModifications != B.nMartixModifications) {
+    equal = false; hdr();
+    std::printf("  [nMartixModifications] a=%d b=%d\n",
+                A.nMartixModifications, B.nMartixModifications);
+  }
+
+  // ---------- Matrix rows (structural compare) ----------
+  {
+    const int len_min =
+        (A.MatrixRowTableLength < B.MatrixRowTableLength)
+            ? A.MatrixRowTableLength
+            : B.MatrixRowTableLength;
+
+    for (int i = 0; i < len_min; ++i) {
+      typename cLinearSystemCornerNode::cMatrixRow* rowA = A.MatrixRowTable[i];
+      typename cLinearSystemCornerNode::cMatrixRow* rowB = B.MatrixRowTable[i];
+
+      if (rowA == nullptr || rowB == nullptr) {
+        if (rowA != rowB) {
+          equal = false; hdr();
+          std::printf("  [MatrixRowTable[%d]] one null, one non-null (a=%p b=%p)\n",
+                      i, (const void*)rowA, (const void*)rowB);
+        }
+        continue;
+      }
+
+      // Use the row-level comparator for detailed diagnostics
+      if (*rowA!=*rowB) {
+        equal = false; hdr();
+        std::printf("  [MatrixRowTable[%d]] rows differ (see cMatrixRow mismatch above)\n", i);
+      }
+    }
+
+    for (int i = len_min; i < A.MatrixRowTableLength; ++i) {
+      equal = false; hdr();
+      std::printf("  [MatrixRowTable[%d]] present only in 'a'\n", i);
+    }
+    for (int i = len_min; i < B.MatrixRowTableLength; ++i) {
+      equal = false; hdr();
+      std::printf("  [MatrixRowTable[%d]] present only in 'b'\n", i);
+    }
+  }
+
+  // ---------- RHS vector values (element-wise compare) ----------
+  if (A.SubdomainPartialRHS && B.SubdomainPartialRHS &&
+      A.SubdomainPartialUnknownsVectorLength ==
+      B.SubdomainPartialUnknownsVectorLength) {
+
+    for (int i = 0; i < A.SubdomainPartialUnknownsVectorLength; ++i) {
+      if (A.SubdomainPartialRHS[i] != B.SubdomainPartialRHS[i]) {
+        equal = false; hdr();
+        std::printf("  [SubdomainPartialRHS[%d]] a=%.17e b=%.17e\n",
+                    i, A.SubdomainPartialRHS[i], B.SubdomainPartialRHS[i]);
+        break; // one mismatch is enough for diagnostics
+      }
+    }
+  }
+
+  if (!equal && exit_flag) {
+    char msg[256];
+    std::snprintf(msg, sizeof(msg),
+                  "cLinearSystemCornerNode objects differ (see printf log above)");
+    exit(__LINE__, __FILE__, msg);
+  }
+
+  return equal;
+}
+
 
 };
 
