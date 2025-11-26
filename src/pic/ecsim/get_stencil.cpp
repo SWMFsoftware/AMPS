@@ -345,11 +345,14 @@ static void PostAssembleSelfCheck(
       refCenter, refCenterLen,
       node);
 
+  CompareArray_Unordered<RhsEnt>(refCorner,refCornerLen,rowRhsCorner,rowRhsCornerLen,true,"refCorner"); 
+  CompareArray_Unordered<RhsEnt>(refCenter,refCenterLen,rowRhsCenter,rowRhsCenterLen,true,"refCorner");
+
   //RhsEnt::CompareArray(refCorner,rowRhsCorner,rowRhsCornerLen,true); 
   
   //RowEl::CompareArray(refSet,rowSet,rowNze,true);
    
-  //CompareArray_Unordered<RowEl>(rowSet,rowNze,refSet,refNze,true,"sdf");
+  CompareArray_Unordered<RowEl>(rowSet,rowNze,refSet,refNze,true,"sdf");
 
   //CompareArray_Unordered<RhsEnt>(rowRhsCorner,rowRhsCornerLen,refCorner,refCornerLen,true,"RHS unmatched");
   //CompareArray_Unordered<RhsEnt>(rowRhsCenter,rowRhsCenterLen,refCenter,refCenterLen,true,"RHS unmatched"); 
