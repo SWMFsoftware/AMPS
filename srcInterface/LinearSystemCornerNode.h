@@ -95,10 +95,10 @@ public:
         return false;
       }
 
-      // Compare pointer identity for rhs
-      if (rhs != other.rhs) {
-        return false;
-      }
+//      // Compare pointer identity for rhs
+//      if (rhs != other.rhs) {
+//        return false;
+//      }
 
       return true;
     }
@@ -145,11 +145,11 @@ public:
                 a.MatrixElementValue, b.MatrixElementValue);
       }
 
-      if (a.rhs != b.rhs) {
-        equal = false; print_header();
-        if (break_flag) std::printf("  [rhs ptr] a=%p b=%p\n",
-                (const void*)a.rhs, (const void*)b.rhs);
-      }
+//      if (a.rhs != b.rhs) {
+//        equal = false; print_header();
+//        if (break_flag) std::printf("  [rhs ptr] a=%p b=%p\n",
+//                (const void*)a.rhs, (const void*)b.rhs);
+//      }
 
       if (!equal && break_flag) {
         // Build a short message for the project-specific exit() hook.
@@ -490,321 +490,581 @@ public:
     //   - cStencilElementData implements operator==
     //   - cRhsSupportTable implements operator==
     // -----------------------------------------------------------------
-   bool operator==(const cMatrixRow& other) const {
+bool operator==(const cMatrixRow& other) const {
+  // ANSI escape codes for bold highlighting in terminals.
+  const char* BOLD  = "\033[1m";
+  const char* RESET = "\033[0m";
+
   bool equal = true;
 
-  // Track first mismatch info for debugging
-  enum MismatchKind {
-    NONE,
-    POINTERS,
-    SCALARS,
-    STENCIL_MULTISETS,
-    RHS_CORNER_MULTISETS,
-    RHS_CENTER_MULTISETS
+  // -------------------------------------------------------------------
+  // 1) Compare pointers and scalars, track *which* ones differ
+  // -------------------------------------------------------------------
+
+  bool diff_node       = (node       != other.node);
+  bool diff_CornerNode = (CornerNode != other.CornerNode);
+  bool diff_Rhs        = (Rhs        != other.Rhs);
+  bool diff_nNonZero   = (nNonZeroElements != other.nNonZeroElements);
+  bool diff_i          = (i   != other.i);
+  bool diff_j          = (j   != other.j);
+  bool diff_k          = (k   != other.k);
+  bool diff_iVar       = (iVar != other.iVar);
+  bool diff_rhsCornerLen = (RhsSupportLength_CornerNodes !=
+                            other.RhsSupportLength_CornerNodes);
+  bool diff_rhsCenterLen = (RhsSupportLength_CenterNodes !=
+                            other.RhsSupportLength_CenterNodes);
+
+  bool scalarDiff = diff_node || diff_CornerNode || diff_Rhs || diff_nNonZero ||
+                    diff_i || diff_j || diff_k || diff_iVar ||
+                    diff_rhsCornerLen || diff_rhsCenterLen;
+
+  if (scalarDiff) equal = false;
+
+  // -------------------------------------------------------------------
+  // 2) Stencil payloads: Elements + ElementDataTable as unordered multiset
+  //    + pairing info for debug and summary
+  // -------------------------------------------------------------------
+
+  struct PairIdx {
+    int ia;  // index in this
+    int jb;  // index in other
   };
-  MismatchKind mismatch = NONE;
-  int mismatch_index_this  = -1;
-  int mismatch_index_other = -1; // currently unused, reserved if you ever want to report both sides
 
-  // --- Pointer identity checks ---
-  if (node != other.node || CornerNode != other.CornerNode) {
+  const int nA_sten = nNonZeroElements;
+  const int nB_sten = other.nNonZeroElements;
+
+  bool *usedA_sten = (nA_sten > 0) ? new bool[nA_sten] : nullptr;
+  bool *usedB_sten = (nB_sten > 0) ? new bool[nB_sten] : nullptr;
+  if (usedA_sten) for (int t = 0; t < nA_sten; ++t) usedA_sten[t] = false;
+  if (usedB_sten) for (int t = 0; t < nB_sten; ++t) usedB_sten[t] = false;
+
+  const int maxPairs_sten = nA_sten + nB_sten;
+  PairIdx *pairs_sten = (maxPairs_sten > 0) ? new PairIdx[maxPairs_sten] : nullptr;
+  int pairCount_sten = 0;
+
+  if (nA_sten != nB_sten) {
     equal = false;
-    mismatch = POINTERS;
   }
 
-  // --- Scalar checks ---
-  if (Rhs != other.Rhs ||
-      nNonZeroElements != other.nNonZeroElements ||
-      i != other.i || j != other.j || k != other.k || iVar != other.iVar) {
-    equal = false;
-    if (mismatch == NONE) mismatch = SCALARS;
-  }
+  // Match entries from 'this' to 'other' ignoring order
+  for (int ia = 0; ia < nA_sten; ++ia) {
+    bool found  = false;
+    int  foundj = -1;
 
-  // --- Stencil payloads: (Elements, ElementDataTable) as unordered multisets ---
-  if (nNonZeroElements != other.nNonZeroElements) {
-    equal = false;
-    if (mismatch == NONE) mismatch = STENCIL_MULTISETS;
-  } else {
-    bool *used = new bool[nNonZeroElements];
-    for (int t = 0; t < nNonZeroElements; ++t) used[t] = false;
+    for (int jb = 0; jb < nB_sten; ++jb) {
+      if (usedB_sten && usedB_sten[jb]) continue;
 
-    for (int ia = 0; ia < nNonZeroElements; ++ia) {
-      bool found  = false;
-      int  foundj = -1;
-
-      for (int jb = 0; jb < other.nNonZeroElements; ++jb) {
-        if (used[jb]) continue;
-
-        if ((Elements[ia] == other.Elements[jb]) &&
-            (ElementDataTable[ia] == other.ElementDataTable[jb])) {
-          used[jb] = true;
-          found    = true;
-          foundj   = jb;
-          break;
-        }
-      }
-
-      if (!found) {
-        equal = false;
-        if (mismatch == NONE) {
-          mismatch = STENCIL_MULTISETS;
-          mismatch_index_this  = ia;
-          mismatch_index_other = -1;
-        }
+      if ((Elements[ia] == other.Elements[jb]) &&
+          (ElementDataTable[ia] == other.ElementDataTable[jb])) {
+        if (usedB_sten) usedB_sten[jb] = true;
+        if (usedA_sten) usedA_sten[ia] = true;
+        found  = true;
+        foundj = jb;
+        break;
       }
     }
 
-    delete [] used;
+    if (!found) {
+      equal = false;
+    }
+
+    if (pairs_sten) {
+      pairs_sten[pairCount_sten].ia = ia;
+      pairs_sten[pairCount_sten].jb = found ? foundj : -1;
+      ++pairCount_sten;
+    }
   }
 
-  // --- RHS support (corner nodes) as unordered multiset ---
-  if (RhsSupportLength_CornerNodes != other.RhsSupportLength_CornerNodes) {
-    equal = false;
-    if (mismatch == NONE) mismatch = RHS_CORNER_MULTISETS;
-  } else {
-    bool *used = new bool[RhsSupportLength_CornerNodes];
-    for (int t = 0; t < RhsSupportLength_CornerNodes; ++t) used[t] = false;
-
-    for (int ia = 0; ia < RhsSupportLength_CornerNodes; ++ia) {
-      bool found  = false;
-      int  foundj = -1;
-
-      for (int jb = 0; jb < other.RhsSupportLength_CornerNodes; ++jb) {
-        if (used[jb]) continue;
-        if (RhsSupportTable_CornerNodes[ia] ==
-            other.RhsSupportTable_CornerNodes[jb]) {
-          used[jb] = true;
-          found    = true;
-          foundj   = jb;
-          break;
-        }
-      }
-
-      if (!found) {
+  if (pairs_sten && usedB_sten) {
+    for (int jb = 0; jb < nB_sten; ++jb) {
+      if (!usedB_sten[jb]) {
+        pairs_sten[pairCount_sten].ia = -1;
+        pairs_sten[pairCount_sten].jb = jb;
+        ++pairCount_sten;
         equal = false;
-        if (mismatch == NONE) {
-          mismatch = RHS_CORNER_MULTISETS;
-          mismatch_index_this  = ia;
-          mismatch_index_other = -1;
-        }
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // 3) RHS support (corner) as unordered multiset + pairing
+  // -------------------------------------------------------------------
+
+  const int nA_corner = RhsSupportLength_CornerNodes;
+  const int nB_corner = other.RhsSupportLength_CornerNodes;
+
+  bool *usedA_corner = (nA_corner > 0) ? new bool[nA_corner] : nullptr;
+  bool *usedB_corner = (nB_corner > 0) ? new bool[nB_corner] : nullptr;
+  if (usedA_corner) for (int t = 0; t < nA_corner; ++t) usedA_corner[t] = false;
+  if (usedB_corner) for (int t = 0; t < nB_corner; ++t) usedB_corner[t] = false;
+
+  const int maxPairs_corner = nA_corner + nB_corner;
+  PairIdx *pairs_corner = (maxPairs_corner > 0) ? new PairIdx[maxPairs_corner] : nullptr;
+  int pairCount_corner = 0;
+
+  if (nA_corner != nB_corner) {
+    equal = false;
+  }
+
+  for (int ia = 0; ia < nA_corner; ++ia) {
+    bool found  = false;
+    int  foundj = -1;
+
+    for (int jb = 0; jb < nB_corner; ++jb) {
+      if (usedB_corner && usedB_corner[jb]) continue;
+
+      if (RhsSupportTable_CornerNodes[ia] ==
+          other.RhsSupportTable_CornerNodes[jb]) {
+        if (usedB_corner) usedB_corner[jb] = true;
+        if (usedA_corner) usedA_corner[ia] = true;
+        found  = true;
+        foundj = jb;
+        break;
       }
     }
 
-    delete [] used;
+    if (!found) {
+      equal = false;
+    }
+
+    if (pairs_corner) {
+      pairs_corner[pairCount_corner].ia = ia;
+      pairs_corner[pairCount_corner].jb = found ? foundj : -1;
+      ++pairCount_corner;
+    }
   }
 
-  // --- RHS support (center nodes) as unordered multiset ---
-  if (RhsSupportLength_CenterNodes != other.RhsSupportLength_CenterNodes) {
-    equal = false;
-    if (mismatch == NONE) mismatch = RHS_CENTER_MULTISETS;
-  } else {
-    bool *used = new bool[RhsSupportLength_CenterNodes];
-    for (int t = 0; t < RhsSupportLength_CenterNodes; ++t) used[t] = false;
-
-    for (int ia = 0; ia < RhsSupportLength_CenterNodes; ++ia) {
-      bool found  = false;
-      int  foundj = -1;
-
-      for (int jb = 0; jb < other.RhsSupportLength_CenterNodes; ++jb) {
-        if (used[jb]) continue;
-        if (RhsSupportTable_CenterNodes[ia] ==
-            other.RhsSupportTable_CenterNodes[jb]) {
-          used[jb] = true;
-          found    = true;
-          foundj   = jb;
-          break;
-        }
-      }
-
-      if (!found) {
+  if (pairs_corner && usedB_corner) {
+    for (int jb = 0; jb < nB_corner; ++jb) {
+      if (!usedB_corner[jb]) {
+        pairs_corner[pairCount_corner].ia = -1;
+        pairs_corner[pairCount_corner].jb = jb;
+        ++pairCount_corner;
         equal = false;
-        if (mismatch == NONE) {
-          mismatch = RHS_CENTER_MULTISETS;
-          mismatch_index_this  = ia;
-          mismatch_index_other = -1;
-        }
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // 4) RHS support (center) as unordered multiset + pairing
+  // -------------------------------------------------------------------
+
+  const int nA_center = RhsSupportLength_CenterNodes;
+  const int nB_center = other.RhsSupportLength_CenterNodes;
+
+  bool *usedA_center = (nA_center > 0) ? new bool[nA_center] : nullptr;
+  bool *usedB_center = (nB_center > 0) ? new bool[nB_center] : nullptr;
+  if (usedA_center) for (int t = 0; t < nA_center; ++t) usedA_center[t] = false;
+  if (usedB_center) for (int t = 0; t < nB_center; ++t) usedB_center[t] = false;
+
+  const int maxPairs_center = nA_center + nB_center;
+  PairIdx *pairs_center = (maxPairs_center > 0) ? new PairIdx[maxPairs_center] : nullptr;
+  int pairCount_center = 0;
+
+  if (nA_center != nB_center) {
+    equal = false;
+  }
+
+  for (int ia = 0; ia < nA_center; ++ia) {
+    bool found  = false;
+    int  foundj = -1;
+
+    for (int jb = 0; jb < nB_center; ++jb) {
+      if (usedB_center && usedB_center[jb]) continue;
+
+      if (RhsSupportTable_CenterNodes[ia] ==
+          other.RhsSupportTable_CenterNodes[jb]) {
+        if (usedB_center) usedB_center[jb] = true;
+        if (usedA_center) usedA_center[ia] = true;
+        found  = true;
+        foundj = jb;
+        break;
       }
     }
 
-    delete [] used;
+    if (!found) {
+      equal = false;
+    }
+
+    if (pairs_center) {
+      pairs_center[pairCount_center].ia = ia;
+      pairs_center[pairCount_center].jb = found ? foundj : -1;
+      ++pairCount_center;
+    }
   }
 
-  // --- If not equal: dump both rows and indicate where mismatch arose ---
+  if (pairs_center && usedB_center) {
+    for (int jb = 0; jb < nB_center; ++jb) {
+      if (!usedB_center[jb]) {
+        pairs_center[pairCount_center].ia = -1;
+        pairs_center[pairCount_center].jb = jb;
+        ++pairCount_center;
+        equal = false;
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // 5) Debug output with side-by-side tables + difference summary
+  // -------------------------------------------------------------------
+
   if (!equal) {
-    std::printf("cMatrixRow::operator== mismatch at %s:%d\n", __FILE__, __LINE__);
+    std::printf("cMatrixRow::operator== mismatch at %s:%d\n",
+                __FILE__, __LINE__);
 
-    // Header for this
+    // For summary: collect some mismatch locations
+    struct DiffLoc {
+      int ia;
+      int jb;
+    };
+    const int MAX_REPORT = 8;
+    DiffLoc stenDiffs[MAX_REPORT];   int stenDiffCount   = 0, stenDiffTotal   = 0;
+    DiffLoc cornerDiffs[MAX_REPORT]; int cornerDiffCount = 0, cornerDiffTotal = 0;
+    DiffLoc centerDiffs[MAX_REPORT]; int centerDiffCount = 0, centerDiffTotal = 0;
+
+    // === Scalars / pointers header (bold if any scalar difference) ===
+    const char* sStart = scalarDiff ? BOLD : "";
+    const char* sEnd   = scalarDiff ? RESET : "";
+
+    std::printf("%s", sStart);
     std::printf(
-      "  this : next=%p node=%p CornerNode=%p "
-      "Rhs=%.17e nNonZeroElements=%d "
-      "i=%d j=%d k=%d iVar=%d "
-      "RhsSupportLength_CornerNodes=%d "
-      "RhsSupportLength_CenterNodes=%d\n",
-      (const void*)next, (const void*)node, (const void*)CornerNode,
-      Rhs, nNonZeroElements,
+      "  SCALARS / POINTERS (row i,j,k,iVar = %d,%d,%d,%d):\n"
+      "    this : node=%p CornerNode=%p "
+      "Rhs=%.17e nNonZero=%d i=%d j=%d k=%d iVar=%d "
+      "RhsLenCorner=%d RhsLenCenter=%d\n",
       i, j, k, iVar,
-      RhsSupportLength_CornerNodes,
-      RhsSupportLength_CenterNodes
+      (const void*)node, (const void*)CornerNode,
+      Rhs, nNonZeroElements, i, j, k, iVar,
+      RhsSupportLength_CornerNodes, RhsSupportLength_CenterNodes
     );
-
-    // Header for other
     std::printf(
-      "  other: next=%p node=%p CornerNode=%p "
-      "Rhs=%.17e nNonZeroElements=%d "
-      "i=%d j=%d k=%d iVar=%d "
-      "RhsSupportLength_CornerNodes=%d "
-      "RhsSupportLength_CenterNodes=%d\n",
-      (const void*)other.next, (const void*)other.node, (const void*)other.CornerNode,
+      "    other: node=%p CornerNode=%p "
+      "Rhs=%.17e nNonZero=%d i=%d j=%d k=%d iVar=%d "
+      "RhsLenCorner=%d RhsLenCenter=%d\n",
+      (const void*)other.node, (const void*)other.CornerNode,
       other.Rhs, other.nNonZeroElements,
       other.i, other.j, other.k, other.iVar,
       other.RhsSupportLength_CornerNodes,
       other.RhsSupportLength_CenterNodes
     );
+    if (scalarDiff) std::printf("%s", sEnd);
 
-    // High-level mismatch category
-    switch (mismatch) {
-      case POINTERS:
-        std::printf("  First mismatch category: POINTERS (next/node/CornerNode)\n");
-        break;
-      case SCALARS:
-        std::printf("  First mismatch category: SCALARS (Rhs, nNonZeroElements or i,j,k,iVar)\n");
-        break;
-      case STENCIL_MULTISETS:
-        std::printf("  First mismatch category: STENCIL_MULTISETS");
-        if (mismatch_index_this >= 0) {
-          std::printf(" – element from 'this' at idx=%d has no match in 'other'\n",
-                      mismatch_index_this);
-        } else {
-          std::printf("\n");
+    // ---- STENCIL SIDE-BY-SIDE TABLE ----
+    std::printf("  STENCIL (Elements + ElementDataTable) comparison:\n");
+    std::printf(
+      "    ia   | this (Element / ElementData)                           "
+      "||   jb   | other (Element / ElementData)\n"
+      "  --------+-------------------------------------------------------"
+      "++--------+------------------------------------------------------\n"
+    );
+    for (int p = 0; p < pairCount_sten; ++p) {
+      const int ia = pairs_sten[p].ia;
+      const int jb = pairs_sten[p].jb;
+
+      bool pairDiff = false;
+      if (ia < 0 || jb < 0 ||
+          ia >= nA_sten || jb >= nB_sten ||
+          !(Elements[ia] == other.Elements[jb]) ||
+          !(ElementDataTable[ia] == other.ElementDataTable[jb])) {
+        pairDiff = true;
+      }
+
+      if (pairDiff) {
+        ++stenDiffTotal;
+        if (stenDiffCount < MAX_REPORT) {
+          stenDiffs[stenDiffCount].ia = ia;
+          stenDiffs[stenDiffCount].jb = jb;
+          ++stenDiffCount;
         }
-        break;
-      case RHS_CORNER_MULTISETS:
-        std::printf("  First mismatch category: RHS_CORNER_MULTISETS");
-        if (mismatch_index_this >= 0) {
-          std::printf(" – corner RHS support from 'this' at idx=%d has no match in 'other'\n",
-                      mismatch_index_this);
-        } else {
-          std::printf("\n");
+      }
+
+      std::printf("%s", pairDiff ? BOLD : "");
+
+      // Left (this)
+      if (ia >= 0 && ia < nA_sten) {
+        const cStencilElement&     eA = Elements[ia];
+        const cStencilElementData& dA = ElementDataTable[ia];
+
+        std::printf(
+          "  %6d | CN=%p node=%p ID=%d P=%d S=%d "
+          "U=%d v=%d T=%d Val=%.3e rhs=%p ",
+          ia,
+          (const void*)eA.CornerNode,
+          (const void*)eA.node,
+          eA.CornerNodeID,
+          eA.MatrixElementParameterTableLength,
+          eA.MatrixElementSupportTableLength,
+          dA.UnknownVectorIndex,
+          dA.iVar,
+          dA.Thread,
+          dA.MatrixElementValue,
+          (const void*)dA.rhs
+        );
+      } else {
+        std::printf("  %6s | %s", "-", "(no entry)");
+      }
+
+      std::printf("||");
+
+      // Right (other)
+      if (jb >= 0 && jb < nB_sten) {
+        const cStencilElement&     eB = other.Elements[jb];
+        const cStencilElementData& dB = other.ElementDataTable[jb];
+
+        std::printf(
+          "  %6d | CN=%p node=%p ID=%d P=%d S=%d "
+          "U=%d v=%d T=%d Val=%.3e rhs=%p",
+          jb,
+          (const void*)eB.CornerNode,
+          (const void*)eB.node,
+          eB.CornerNodeID,
+          eB.MatrixElementParameterTableLength,
+          eB.MatrixElementSupportTableLength,
+          dB.UnknownVectorIndex,
+          dB.iVar,
+          dB.Thread,
+          dB.MatrixElementValue,
+          (const void*)dB.rhs
+        );
+      } else {
+        std::printf("  %6s | %s", "-", "(no entry)");
+      }
+
+      std::printf("%s\n", pairDiff ? RESET : "");
+    }
+
+    // ---- RHS CORNER SIDE-BY-SIDE ----
+    std::printf("  RHS SUPPORT (corner) comparison:\n");
+    std::printf(
+      "    ia   | this (Coeff, ptr)             "
+      "||   jb   | other (Coeff, ptr)\n"
+      "  --------+------------------------------"
+      "++--------+-----------------------------\n"
+    );
+    for (int p = 0; p < pairCount_corner; ++p) {
+      const int ia = pairs_corner[p].ia;
+      const int jb = pairs_corner[p].jb;
+
+      bool pairDiff = false;
+      if (ia < 0 || jb < 0 ||
+          ia >= nA_corner || jb >= nB_corner ||
+          !(RhsSupportTable_CornerNodes[ia] ==
+            other.RhsSupportTable_CornerNodes[jb])) {
+        pairDiff = true;
+      }
+
+      if (pairDiff) {
+        ++cornerDiffTotal;
+        if (cornerDiffCount < MAX_REPORT) {
+          cornerDiffs[cornerDiffCount].ia = ia;
+          cornerDiffs[cornerDiffCount].jb = jb;
+          ++cornerDiffCount;
         }
-        break;
-      case RHS_CENTER_MULTISETS:
-        std::printf("  First mismatch category: RHS_CENTER_MULTISETS");
-        if (mismatch_index_this >= 0) {
-          std::printf(" – center RHS support from 'this' at idx=%d has no match in 'other'\n",
-                      mismatch_index_this);
-        } else {
-          std::printf("\n");
+      }
+
+      std::printf("%s", pairDiff ? BOLD : "");
+
+      if (ia >= 0 && ia < nA_corner) {
+        const cRhsSupportTable& sA = RhsSupportTable_CornerNodes[ia];
+        std::printf(
+          "  %6d | C=%.3e ptr=%p ",
+          ia, sA.Coefficient, (const void*)sA.AssociatedDataPointer
+        );
+      } else {
+        std::printf("  %6s | %s", "-", "(no entry)");
+      }
+
+      std::printf("||");
+
+      if (jb >= 0 && jb < nB_corner) {
+        const cRhsSupportTable& sB = other.RhsSupportTable_CornerNodes[jb];
+        std::printf(
+          "  %6d | C=%.3e ptr=%p",
+          jb, sB.Coefficient, (const void*)sB.AssociatedDataPointer
+        );
+      } else {
+        std::printf("  %6s | %s", "-", "(no entry)");
+      }
+
+      std::printf("%s\n", pairDiff ? RESET : "");
+    }
+
+    // ---- RHS CENTER SIDE-BY-SIDE ----
+    std::printf("  RHS SUPPORT (center) comparison:\n");
+    std::printf(
+      "    ia   | this (Coeff, ptr)             "
+      "||   jb   | other (Coeff, ptr)\n"
+      "  --------+------------------------------"
+      "++--------+-----------------------------\n"
+    );
+    for (int p = 0; p < pairCount_center; ++p) {
+      const int ia = pairs_center[p].ia;
+      const int jb = pairs_center[p].jb;
+
+      bool pairDiff = false;
+      if (ia < 0 || jb < 0 ||
+          ia >= nA_center || jb >= nB_center ||
+          !(RhsSupportTable_CenterNodes[ia] ==
+            other.RhsSupportTable_CenterNodes[jb])) {
+        pairDiff = true;
+      }
+
+      if (pairDiff) {
+        ++centerDiffTotal;
+        if (centerDiffCount < MAX_REPORT) {
+          centerDiffs[centerDiffCount].ia = ia;
+          centerDiffs[centerDiffCount].jb = jb;
+          ++centerDiffCount;
         }
-        break;
-      case NONE:
-      default:
-        break;
-    }
-
-    // --- Dump stencil payloads for both rows ---
-    std::printf("  Dump of stencil (this):\n");
-    for (int idx = 0; idx < nNonZeroElements; ++idx) {
-      const cStencilElement&     e = Elements[idx];
-      const cStencilElementData& d = ElementDataTable[idx];
-
-      std::printf(
-        "    idx=%d:\n"
-        "      Element: CornerNode=%p node=%p CornerNodeID=%d "
-        "ParamLen=%d SupportLen=%d\n",
-        idx,
-        (const void*)e.CornerNode, (const void*)e.node,
-        e.CornerNodeID,
-        e.MatrixElementParameterTableLength,
-        e.MatrixElementSupportTableLength
-      );
-
-      std::printf("        ParamTable:");
-      for (int p = 0; p < e.MatrixElementParameterTableLength; ++p) {
-        std::printf(" %.17e", e.MatrixElementParameterTable[p]);
       }
-      std::printf("\n");
 
-      std::printf("        SupportTable:");
-      for (int p = 0; p < e.MatrixElementSupportTableLength; ++p) {
-        std::printf(" %p", e.MatrixElementSupportTable[p]);
+      std::printf("%s", pairDiff ? BOLD : "");
+
+      if (ia >= 0 && ia < nA_center) {
+        const cRhsSupportTable& sA = RhsSupportTable_CenterNodes[ia];
+        std::printf(
+          "  %6d | C=%.3e ptr=%p ",
+          ia, sA.Coefficient, (const void*)sA.AssociatedDataPointer
+        );
+      } else {
+        std::printf("  %6s | %s", "-", "(no entry)");
       }
-      std::printf("\n");
 
-      std::printf(
-        "      ElementData: UnknownVectorIndex=%d iVar=%d Thread=%d "
-        "MatrixElementValue=%.17e rhs=%p\n",
-        d.UnknownVectorIndex, d.iVar, d.Thread,
-        d.MatrixElementValue, (const void*)d.rhs
-      );
-    }
+      std::printf("||");
 
-    std::printf("  Dump of stencil (other):\n");
-    for (int idx = 0; idx < other.nNonZeroElements; ++idx) {
-      const cStencilElement&     e = other.Elements[idx];
-      const cStencilElementData& d = other.ElementDataTable[idx];
-
-      std::printf(
-        "    idx=%d:\n"
-        "      Element: CornerNode=%p node=%p CornerNodeID=%d "
-        "ParamLen=%d SupportLen=%d\n",
-        idx,
-        (const void*)e.CornerNode, (const void*)e.node,
-        e.CornerNodeID,
-        e.MatrixElementParameterTableLength,
-        e.MatrixElementSupportTableLength
-      );
-
-      std::printf("        ParamTable:");
-      for (int p = 0; p < e.MatrixElementParameterTableLength; ++p) {
-        std::printf(" %.17e", e.MatrixElementParameterTable[p]);
+      if (jb >= 0 && jb < nB_center) {
+        const cRhsSupportTable& sB = other.RhsSupportTable_CenterNodes[jb];
+        std::printf(
+          "  %6d | C=%.3e ptr=%p",
+          jb, sB.Coefficient, (const void*)sB.AssociatedDataPointer
+        );
+      } else {
+        std::printf("  %6s | %s", "-", "(no entry)");
       }
-      std::printf("\n");
 
-      std::printf("        SupportTable:");
-      for (int p = 0; p < e.MatrixElementSupportTableLength; ++p) {
-        std::printf(" %p", e.MatrixElementSupportTable[p]);
+      std::printf("%s\n", pairDiff ? RESET : "");
+    }
+
+    // -----------------------------------------------------------------
+    // 6) SUMMARY OF DIFFERENCES (row, stencil, RHS)
+    // -----------------------------------------------------------------
+    std::printf("%s  SUMMARY OF DIFFERENCES%s\n", BOLD, RESET);
+    std::printf("    Row location: (i,j,k,iVar) = (%d,%d,%d,%d)\n",
+                i, j, k, iVar);
+
+    if (scalarDiff) {
+      std::printf("    Scalar / pointer differences:\n");
+      if (diff_node)
+        std::printf("      - node pointer differs (this=%p, other=%p)\n",
+                    (const void*)node, (const void*)other.node);
+      if (diff_CornerNode)
+        std::printf("      - CornerNode pointer differs (this=%p, other=%p)\n",
+                    (const void*)CornerNode, (const void*)other.CornerNode);
+      if (diff_Rhs)
+        std::printf("      - Rhs differs (this=%.17e, other=%.17e)\n",
+                    Rhs, other.Rhs);
+      if (diff_nNonZero)
+        std::printf("      - nNonZeroElements differs (this=%d, other=%d)\n",
+                    nNonZeroElements, other.nNonZeroElements);
+      if (diff_i || diff_j || diff_k || diff_iVar)
+        std::printf("      - index/variable differs "
+                    "(this i,j,k,iVar=%d,%d,%d,%d ; other=%d,%d,%d,%d)\n",
+                    i,j,k,iVar, other.i,other.j,other.k,other.iVar);
+      if (diff_rhsCornerLen)
+        std::printf("      - RhsSupportLength_CornerNodes differs "
+                    "(this=%d, other=%d)\n",
+                    RhsSupportLength_CornerNodes,
+                    other.RhsSupportLength_CornerNodes);
+      if (diff_rhsCenterLen)
+        std::printf("      - RhsSupportLength_CenterNodes differs "
+                    "(this=%d, other=%d)\n",
+                    RhsSupportLength_CenterNodes,
+                    other.RhsSupportLength_CenterNodes);
+    } else {
+      std::printf("    Scalar / pointer fields: identical\n");
+    }
+
+    if (stenDiffTotal > 0) {
+      std::printf("    Stencil differences: %d mismatched entries\n",
+                  stenDiffTotal);
+      std::printf("      (showing up to %d):\n", MAX_REPORT);
+      for (int idx = 0; idx < stenDiffCount; ++idx) {
+        int ia = stenDiffs[idx].ia;
+        int jb = stenDiffs[idx].jb;
+        if (ia >= 0 && jb >= 0) {
+          std::printf("        - this stencil index ia=%d  <->  other index jb=%d\n",
+                      ia, jb);
+        } else if (ia >= 0) {
+          std::printf("        - this stencil index ia=%d has no match in other\n",
+                      ia);
+        } else if (jb >= 0) {
+          std::printf("        - other stencil index jb=%d has no match in this\n",
+                      jb);
+        }
       }
-      std::printf("\n");
-
-      std::printf(
-        "      ElementData: UnknownVectorIndex=%d iVar=%d Thread=%d "
-        "MatrixElementValue=%.17e rhs=%p\n",
-        d.UnknownVectorIndex, d.iVar, d.Thread,
-        d.MatrixElementValue, (const void*)d.rhs
-      );
+    } else {
+      std::printf("    Stencil entries: identical (as unordered multisets)\n");
     }
 
-    // --- Dump RHS support tables for both rows ---
-    std::printf("  RHS support (corner, this):\n");
-    for (int n = 0; n < RhsSupportLength_CornerNodes; ++n) {
-      std::printf("    idx=%d: Coefficient=%.17e ptr=%p\n",
-                  n,
-                  RhsSupportTable_CornerNodes[n].Coefficient,
-                  (const void*)RhsSupportTable_CornerNodes[n].AssociatedDataPointer);
-    }
-    std::printf("  RHS support (corner, other):\n");
-    for (int n = 0; n < other.RhsSupportLength_CornerNodes; ++n) {
-      std::printf("    idx=%d: Coefficient=%.17e ptr=%p\n",
-                  n,
-                  other.RhsSupportTable_CornerNodes[n].Coefficient,
-                  (const void*)other.RhsSupportTable_CornerNodes[n].AssociatedDataPointer);
+    if (cornerDiffTotal > 0) {
+      std::printf("    RHS corner support differences: %d mismatched entries\n",
+                  cornerDiffTotal);
+      std::printf("      (showing up to %d):\n", MAX_REPORT);
+      for (int idx = 0; idx < cornerDiffCount; ++idx) {
+        int ia = cornerDiffs[idx].ia;
+        int jb = cornerDiffs[idx].jb;
+        if (ia >= 0 && jb >= 0) {
+          std::printf("        - this corner RHS idx ia=%d  <->  other idx jb=%d\n",
+                      ia, jb);
+        } else if (ia >= 0) {
+          std::printf("        - this corner RHS idx ia=%d has no match in other\n",
+                      ia);
+        } else if (jb >= 0) {
+          std::printf("        - other corner RHS idx jb=%d has no match in this\n",
+                      jb);
+        }
+      }
+    } else {
+      std::printf("    RHS corner support: identical (as unordered multisets)\n");
     }
 
-    std::printf("  RHS support (center, this):\n");
-    for (int n = 0; n < RhsSupportLength_CenterNodes; ++n) {
-      std::printf("    idx=%d: Coefficient=%.17e ptr=%p\n",
-                  n,
-                  RhsSupportTable_CenterNodes[n].Coefficient,
-                  (const void*)RhsSupportTable_CenterNodes[n].AssociatedDataPointer);
-    }
-    std::printf("  RHS support (center, other):\n");
-    for (int n = 0; n < other.RhsSupportLength_CenterNodes; ++n) {
-      std::printf("    idx=%d: Coefficient=%.17e ptr=%p\n",
-                  n,
-                  other.RhsSupportTable_CenterNodes[n].Coefficient,
-                  (const void*)other.RhsSupportTable_CenterNodes[n].AssociatedDataPointer);
+    if (centerDiffTotal > 0) {
+      std::printf("    RHS center support differences: %d mismatched entries\n",
+                  centerDiffTotal);
+      std::printf("      (showing up to %d):\n", MAX_REPORT);
+      for (int idx = 0; idx < centerDiffCount; ++idx) {
+        int ia = centerDiffs[idx].ia;
+        int jb = centerDiffs[idx].jb;
+        if (ia >= 0 && jb >= 0) {
+          std::printf("        - this center RHS idx ia=%d  <->  other idx jb=%d\n",
+                      ia, jb);
+        } else if (ia >= 0) {
+          std::printf("        - this center RHS idx ia=%d has no match in other\n",
+                      ia);
+        } else if (jb >= 0) {
+          std::printf("        - other center RHS idx jb=%d has no match in this\n",
+                      jb);
+        }
+      }
+    } else {
+      std::printf("    RHS center support: identical (as unordered multisets)\n");
     }
   }
+
+  // -------------------------------------------------------------------
+  // 7) Cleanup temporary allocations
+  // -------------------------------------------------------------------
+  if (usedA_sten)   delete [] usedA_sten;
+  if (usedB_sten)   delete [] usedB_sten;
+  if (pairs_sten)   delete [] pairs_sten;
+
+  if (usedA_corner) delete [] usedA_corner;
+  if (usedB_corner) delete [] usedB_corner;
+  if (pairs_corner) delete [] pairs_corner;
+
+  if (usedA_center) delete [] usedA_center;
+  if (usedB_center) delete [] usedB_center;
+  if (pairs_center) delete [] pairs_center;
 
   return equal;
 }
@@ -1214,38 +1474,38 @@ public:
   //    consistent with the nested comparison helpers in this file.
   bool operator==(const cLinearSystemCornerNode& other) const {
     // Basic configuration
-    if (SubdomainPartialUnknownsVectorLength != other.SubdomainPartialUnknownsVectorLength)
-      return false;
+    //if (SubdomainPartialUnknownsVectorLength != other.SubdomainPartialUnknownsVectorLength)
+    //  return false;
 
-    if (nMartixModifications != other.nMartixModifications)
-      return false;
+    //if (nMartixModifications != other.nMartixModifications)
+    //  return false;
 
     // Partial RHS / solution buffers: compare identity first
-    if (SubdomainPartialRHS != other.SubdomainPartialRHS)
-      return false;
+    //if (SubdomainPartialRHS != other.SubdomainPartialRHS)
+    //  return false;
 
-    if (SubdomainPartialUnknownsVector != other.SubdomainPartialUnknownsVector)
-      return false;
+    //if (SubdomainPartialUnknownsVector != other.SubdomainPartialUnknownsVector)
+    //  return false;
 
     // Local row table configuration
     if (MatrixRowTableLength != other.MatrixRowTableLength)
       return false;
 
-    if (MatrixRowListFirst != other.MatrixRowListFirst)
-      return false;
+    //if (MatrixRowListFirst != other.MatrixRowListFirst)
+    //  return false;
 
-    if (MatrixRowListLast != other.MatrixRowListLast)
-      return false;
+    //if (MatrixRowListLast != other.MatrixRowListLast)
+    //  return false;
 
     // Exchange buffers – pointer identity
-    if (RecvExchangeBufferLength != other.RecvExchangeBufferLength)
-      return false;
+    //if (RecvExchangeBufferLength != other.RecvExchangeBufferLength)
+    //  return false;
 
-    if (SendExchangeBufferLength != other.SendExchangeBufferLength)
-      return false;
+    //if (SendExchangeBufferLength != other.SendExchangeBufferLength)
+    //  return false;
 
-    if (SendExchangeBufferElementIndex != other.SendExchangeBufferElementIndex)
-      return false;
+    //if (SendExchangeBufferElementIndex != other.SendExchangeBufferElementIndex)
+    //  return false;
 
     // Matrix rows: use cMatrixRow::operator==
     for (int i = 0; i < MatrixRowTableLength; ++i) {
@@ -1263,14 +1523,14 @@ public:
     }
 
     // RHS vector values (if allocated in both objects and length is consistent)
-    if (SubdomainPartialRHS && other.SubdomainPartialRHS &&
-        SubdomainPartialUnknownsVectorLength == other.SubdomainPartialUnknownsVectorLength) {
-      for (int i = 0; i < SubdomainPartialUnknownsVectorLength; ++i) {
-        if (SubdomainPartialRHS[i] != other.SubdomainPartialRHS[i]) {
-          return false;
-        }
-      }
-    }
+//    if (SubdomainPartialRHS && other.SubdomainPartialRHS &&
+//        SubdomainPartialUnknownsVectorLength == other.SubdomainPartialUnknownsVectorLength) {
+//      for (int i = 0; i < SubdomainPartialUnknownsVectorLength; ++i) {
+//        if (SubdomainPartialRHS[i] != other.SubdomainPartialRHS[i]) {
+//          return false;
+//        }
+//      }
+//    }
 
     return true;
   }
@@ -1342,19 +1602,19 @@ static bool Compare(cLinearSystemCornerNode* a,
   const cLinearSystemCornerNode& B = *b;
 
   // ---------- Basic configuration ----------
-  if (A.SubdomainPartialUnknownsVectorLength !=
-      B.SubdomainPartialUnknownsVectorLength) {
-    equal = false; hdr();
-    std::printf("  [SubdomainPartialUnknownsVectorLength] a=%d b=%d\n",
-                A.SubdomainPartialUnknownsVectorLength,
-                B.SubdomainPartialUnknownsVectorLength);
-  }
+  //if (A.SubdomainPartialUnknownsVectorLength !=
+  //    B.SubdomainPartialUnknownsVectorLength) {
+  //  equal = false; hdr();
+  //  std::printf("  [SubdomainPartialUnknownsVectorLength] a=%d b=%d\n",
+  //              A.SubdomainPartialUnknownsVectorLength,
+  //              B.SubdomainPartialUnknownsVectorLength);
+  //}
 
-  if (A.nMartixModifications != B.nMartixModifications) {
-    equal = false; hdr();
-    std::printf("  [nMartixModifications] a=%d b=%d\n",
-                A.nMartixModifications, B.nMartixModifications);
-  }
+  //if (A.nMartixModifications != B.nMartixModifications) {
+  //  equal = false; hdr();
+  //  std::printf("  [nMartixModifications] a=%d b=%d\n",
+  //              A.nMartixModifications, B.nMartixModifications);
+  //}
 
   // ---------- Matrix rows (structural compare) ----------
   {
@@ -1394,19 +1654,19 @@ static bool Compare(cLinearSystemCornerNode* a,
   }
 
   // ---------- RHS vector values (element-wise compare) ----------
-  if (A.SubdomainPartialRHS && B.SubdomainPartialRHS &&
-      A.SubdomainPartialUnknownsVectorLength ==
-      B.SubdomainPartialUnknownsVectorLength) {
+ // if (A.SubdomainPartialRHS && B.SubdomainPartialRHS &&
+ //     A.SubdomainPartialUnknownsVectorLength ==
+ //     B.SubdomainPartialUnknownsVectorLength) {
 
-    for (int i = 0; i < A.SubdomainPartialUnknownsVectorLength; ++i) {
-      if (A.SubdomainPartialRHS[i] != B.SubdomainPartialRHS[i]) {
-        equal = false; hdr();
-        std::printf("  [SubdomainPartialRHS[%d]] a=%.17e b=%.17e\n",
-                    i, A.SubdomainPartialRHS[i], B.SubdomainPartialRHS[i]);
-        break; // one mismatch is enough for diagnostics
-      }
-    }
-  }
+  //  for (int i = 0; i < A.SubdomainPartialUnknownsVectorLength; ++i) {
+  //    if (A.SubdomainPartialRHS[i] != B.SubdomainPartialRHS[i]) {
+   //     equal = false; hdr();
+   //     std::printf("  [SubdomainPartialRHS[%d]] a=%.17e b=%.17e\n",
+   //                 i, A.SubdomainPartialRHS[i], B.SubdomainPartialRHS[i]);
+   //     break; // one mismatch is enough for diagnostics
+   //   }
+   // }
+ // }
 
   if (!equal && exit_flag) {
     char msg[256];
