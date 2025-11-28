@@ -733,7 +733,7 @@ for (int i=0;i<3;i++) indexer[i].reset();
             const int di = indexAddition[ii];
             const int dj = indexAddition[jj];
             const int dk = indexAddition[kk];
-            //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
+            indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
 	    iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex); 
 
 
@@ -1444,13 +1444,13 @@ int idx2;
    
     RhsSupportLength_CenterNodes = iElement;     
 
-#if defined(_ECSIM_STENCIL_SELFTEST_)
+if (false) { 
   PostAssembleSelfCheck(i, j, k, iVar,
                         MatrixRowNonZeroElementTable, NonZeroElementsFound, rhs,
                         RhsSupportTable_CornerNodes, RhsSupportLength_CornerNodes,
                         RhsSupportTable_CenterNodes, RhsSupportLength_CenterNodes,
                         node);
-#endif
+}
 
 //GetStencil(i,j,k,iVar,MatrixRowNonZeroElementTable,NonZeroElementsFound,rhs,RhsSupportTable_CornerNodes,RhsSupportLength_CornerNodes,RhsSupportTable_CenterNodes,RhsSupportLength_CenterNodes,node);
 }
