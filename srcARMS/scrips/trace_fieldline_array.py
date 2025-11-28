@@ -5,30 +5,53 @@ MAGNETIC FIELD LINE TRACER FOR AMPS/ARMS MHD SIMULATIONS
 ================================================================================
 
 Author:      Enhanced script based on original AMPS/ARMS analysis tools
-Version:     3.2 (Added Max Points Limit)
+Version:     3.3 (Enhanced Visualization & Output)
 Date:        2024
 Python:      3.6+
 License:     Use for academic/research purposes
 
 ================================================================================
-MODIFICATION SUMMARY (Version 3.2)
+MODIFICATION SUMMARY (Version 3.3)
 ================================================================================
 
-NEW FEATURE: Maximum points limit per field line
+NEW FEATURES: Enhanced visualization and individual field line output
 
-ADDED IN v3.2:
-  - --max-points parameter (default: 100,000 points per field line)
-  - Prevents runaway integration in pathological cases
-  - Automatic truncation when limit is exceeded
-  - Warning messages when truncation occurs
-  - Memory protection for large-scale surveys
+ADDED IN v3.3:
+  - Field line legend box with individual field line colors and numbers
+  - Each field line (1, 2, 3, ...) shown in legend with its actual color
+  - Start point indicator in legend showing green circle marker
+  - --save-individual-files flag for separate output files
+  - --individual-file-prefix option to customize filenames
+  - Each individual file includes: coordinates (X,Y,Z) + |B| field strength
+  - Format: ASCII with header describing variables and point count
+
+VISUALIZATION IMPROVEMENTS:
+  - Comprehensive legend box listing all field lines with their colors
+  - "Field line" title in legend for clarity
+  - Legend positioned OUTSIDE plot area on the right (no data overlap)
+  - Automatic multi-column layout for 11+ field lines
+  - Start point indicator clearly marked in legend
+  - Clean plot without text labels on field lines
+  - Professional appearance for publications
+
+INDIVIDUAL FILE FORMAT:
+  Line 1: # field line {index}, starting point x={x0}, y={y0}, z={z0}
+  Line 2: # variables: X,Y,Z [m]; B[T]
+  Line 3: {n_points} # total number of points
+  Lines 4+: x y z |B| (space-separated data)
 
 TYPICAL USAGE:
-  - Default (100,000): Safe for most cases
-  - Increase (e.g., 200,000): Complex closed loops, high resolution
-  - Decrease (e.g., 50,000): Memory constraints, quick surveys
+  # Save individual files
+  python trace_fieldline_array.py --save-individual-files
+  
+  # Custom prefix
+  python trace_fieldline_array.py --save-individual-files --individual-file-prefix mydata
+
+  # limit the number of points in each field line
+  ./trace_fieldline_array.py --parallel --interp-method linear --max-points 10000 --save-individual-files
 
 PREVIOUS VERSIONS:
+  v3.2: Added max_points parameter for memory protection
   v3.1: Fixed parallel interpolation (cubic/quintic now use RectBivariateSpline)
 
 ISSUE IN VERSION 3.0:
@@ -260,8 +283,10 @@ DIAGNOSTICS:
 OUTPUT:
   ✓ XYZ ASCII format (space-separated, blank-line delimited)
   ✓ Tecplot format (multiple zones for visualization)
-  ✓ PNG visualization (matplotlib, color-coded)
+  ✓ PNG visualization (matplotlib, color-coded with comprehensive legend)
+  ✓ Legend shows each field line number with its color
   ✓ Initial points file (optional, for reproducibility)
+  ✓ Individual field line files with |B| strength (optional)
 
 VISUALIZATION:
   ✓ Color-coded field lines (rainbow colormap)
@@ -1156,6 +1181,57 @@ class FieldLineTracer:
                 f.write("\n")  # Blank line separator
         print(f"Saved {len(self.fieldlines)} field lines to {filename}")
     
+    def save_individual_fieldlines(self, prefix='fieldline'):
+        """
+        Save each field line to a separate ASCII file with magnetic field strength.
+        
+        File format:
+        Line 1: # field line {index}, starting point x={x0}, y={y0}, z={z0}
+        Line 2: # variables: X,Y,Z [m]; B[T]
+        Line 3: {n_points} # total number of points
+        Lines 4+: x y z |B|
+        
+        Parameters:
+        -----------
+        prefix : str
+            Prefix for output filenames (default: 'fieldline')
+            Files will be named: {prefix}_001.txt, {prefix}_002.txt, etc.
+        """
+        if not self.fieldlines:
+            print("Warning: No field lines to save")
+            return
+        
+        # Determine number of digits needed for zero-padding
+        n_digits = len(str(len(self.fieldlines)))
+        
+        for i, fl in enumerate(self.fieldlines):
+            # Generate filename with zero-padded index
+            filename = f"{prefix}_{i+1:0{n_digits}d}.txt"
+            
+            # Calculate magnetic field strength at each point
+            B_mag = []
+            for x, y, z in zip(fl['x'], fl['y'], fl['z']):
+                B = self.get_B_field([x, y, z])
+                B_mag.append(np.linalg.norm(B))
+            
+            # Write file
+            with open(filename, 'w') as f:
+                # Line 1: Field line info and starting point
+                f.write(f"# field line {i+1}, starting point x={fl['x0']:.6e}, y={fl['y0']:.6e}, z={fl['z0']:.6e}\n")
+                
+                # Line 2: Variable names
+                f.write("# variables: X,Y,Z [m]; B[T]\n")
+                
+                # Line 3: Total number of points
+                n_points = len(fl['x'])
+                f.write(f"{n_points} # total number of points\n")
+                
+                # Lines 4+: Data (x, y, z, |B|)
+                for x, y, z, b in zip(fl['x'], fl['y'], fl['z'], B_mag):
+                    f.write(f"{x:.10e}\t{y:.10e}\t{z:.10e}\t{b:.10e}\n")
+        
+        print(f"Saved {len(self.fieldlines)} individual field line files ({prefix}_001.txt to {prefix}_{len(self.fieldlines):0{n_digits}d}.txt)")
+    
     def save_all_tecplot(self, filename):
         """
         Save all field lines to a single Tecplot ASCII format file.
@@ -1211,8 +1287,7 @@ class FieldLineTracer:
         
         for i, (fl, color) in enumerate(zip(self.fieldlines, colors)):
             ax.plot(fl['x']/axisnorm, fl['z']/axisnorm, 
-                   '-', color=color, linewidth=1.5, alpha=0.8,
-                   label=f'Line {i+1}')
+                   '-', color=color, linewidth=1.5, alpha=0.8)
             # Mark start point
             ax.plot(fl['x0']/axisnorm, fl['z0']/axisnorm, 
                    'o', color=color, markersize=8, 
@@ -1223,13 +1298,47 @@ class FieldLineTracer:
         ax.set_title(f'Magnetic Field Lines (N={len(self.fieldlines)}, t={self.time:.2e} s)', 
                     fontsize=14)
         
-        # Add legend if not too many lines
-        if len(self.fieldlines) <= 10:
-            ax.legend(loc='best', fontsize=8)
+        # Add custom legend showing each field line with its color
+        from matplotlib.lines import Line2D
+        
+        # Create legend elements for each field line
+        legend_elements = []
+        for i, color in enumerate(colors):
+            # Add field line with its specific color
+            legend_elements.append(
+                Line2D([0], [0], color=color, linewidth=2, label=f'{i+1}')
+            )
+        
+        # Add start point indicator at the end
+        legend_elements.append(
+            Line2D([0], [0], marker='o', color='w', 
+                   markerfacecolor='green', markersize=8, 
+                   markeredgecolor='white', markeredgewidth=1,
+                   linestyle='None', label='Start point')
+        )
+        
+        # Add legend with custom styling
+        # Place legend outside the plot area on the LEFT to avoid colorbar
+        ncol = 1 if len(self.fieldlines) <= 10 else 2
+        legend = ax.legend(handles=legend_elements, 
+                          loc='center right',
+                          bbox_to_anchor=(-0.02, 0.5),  # Place outside plot on the LEFT
+                          fontsize=10,
+                          framealpha=0.95,
+                          edgecolor='black',
+                          fancybox=False,
+                          shadow=False,
+                          ncol=ncol,
+                          title='Field line')
+        legend.get_frame().set_linewidth(1.5)
         
         ax.grid(True, alpha=0.3)
-        plt.tight_layout()
-        plt.savefig(filename, dpi=150, bbox_inches='tight')
+        
+        # Adjust layout to accommodate legend on left, colorbar on right
+        plt.subplots_adjust(left=0.15, right=0.92)  # Make room for legend on left
+        
+        # Save with bbox_extra_artists to ensure legend is included
+        plt.savefig(filename, dpi=150, bbox_extra_artists=[legend], bbox_inches='tight')
         print(f"Saved plot with {len(self.fieldlines)} field lines to {filename}")
 
 
@@ -1546,13 +1655,31 @@ OPTIONS:
     --no-plot                 Skip generating plot
     --no-progress             Disable real-time progress display
     --save-initial-points     Save initial points to separate file
+    --save-individual-files   Save each field line to a separate file with |B|
+    --individual-file-prefix  Prefix for individual files (default: fieldline)
 
 OUTPUT FILES:
     All field lines are saved to combined files:
     1. <prefix>_xyz.txt            - ASCII format with blank line separators
     2. <prefix>_tecplot.dat        - Tecplot format with separate zones per line
-    3. <prefix>_plot.png           - Visualization of all field lines
+    3. <prefix>_plot.png           - Visualization of all field lines (with ID labels)
     4. <prefix>_initial_points.txt - Initial points (if --save-initial-points)
+    
+    Individual field line files (if --save-individual-files):
+    5. <prefix>_001.txt, <prefix>_002.txt, ... - One file per field line
+       Format of each individual file:
+         Line 1: # field line {index}, starting point x={x0}, y={y0}, z={z0}
+         Line 2: # variables: X,Y,Z [m]; B[T]
+         Line 3: {n_points} # total number of points
+         Lines 4+: x y z |B|  (space/tab separated data)
+       
+       Example content:
+         # field line 1, starting point x=8.000000e+08, y=0.000000e+00, z=5.000000e+07
+         # variables: X,Y,Z [m]; B[T]
+         5432 # total number of points
+         8.0000000000e+08  0.0000000000e+00  5.0000000000e+07  1.2345678900e-04
+         8.0010234567e+08  0.0000000000e+00  5.0123456789e+07  1.2344567890e-04
+         ...
 
 TWO INITIALIZATION MODES:
 
@@ -1635,6 +1762,20 @@ EXAMPLES:
             --save-initial-points
         
         Creates fieldlines_initial_points.txt with all starting coordinates
+
+    11. Save individual field line files with magnetic field strength:
+        python trace_fieldline.py \\
+            --x-positions 7e8 8e8 9e8 --n-z-points 10 \\
+            --save-individual-files
+        
+        Creates separate files: fieldline_01.txt, fieldline_02.txt, etc.
+        Each file contains X, Y, Z coordinates and |B| field strength
+
+    12. Customize individual file prefix:
+        python trace_fieldline.py --start 5e8 0 3e8 7e8 0 4e8 \\
+            --save-individual-files --individual-file-prefix my_fl
+        
+        Creates: my_fl_1.txt, my_fl_2.txt
 
 INTERACTIVE MODE WORKFLOW:
 
@@ -1791,6 +1932,10 @@ def main():
                        help='Number of parallel processes (default: all CPUs)')
     parser.add_argument('--save-initial-points', action='store_true',
                        help='Save initial points to file')
+    parser.add_argument('--save-individual-files', action='store_true',
+                       help='Save each field line to a separate file with magnetic field strength')
+    parser.add_argument('--individual-file-prefix', default='fieldline',
+                       help='Prefix for individual field line files (default: fieldline)')
     
     args = parser.parse_args()
     
@@ -1947,8 +2092,14 @@ def main():
         if args.save_initial_points:
             tracer.save_initial_points(f"{args.output}_initial_points.txt")
         
+        # Save combined files
         tracer.save_all_xyz(f"{args.output}_xyz.txt")
         tracer.save_all_tecplot(f"{args.output}_tecplot.dat")
+        
+        # Save individual field line files if requested
+        if args.save_individual_files:
+            print("\nSaving individual field line files...")
+            tracer.save_individual_fieldlines(prefix=args.individual_file_prefix)
         
         # Generate plot
         if not args.no_plot:
