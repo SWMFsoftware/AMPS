@@ -5,10 +5,38 @@ MAGNETIC FIELD LINE TRACER FOR AMPS/ARMS MHD SIMULATIONS
 ================================================================================
 
 Author:      Enhanced script based on original AMPS/ARMS analysis tools
-Version:     3.0 (Fully Enhanced)
+Version:     3.1 (Fixed Parallel Interpolation)
 Date:        2024
 Python:      3.6+
 License:     Use for academic/research purposes
+
+================================================================================
+MODIFICATION SUMMARY (Version 3.1)
+================================================================================
+
+FIXED: Parallel processing interpolation now matches serial mode behavior
+
+ISSUE IN VERSION 3.0:
+  - Serial mode correctly used RectBivariateSpline for cubic/quintic methods
+  - Parallel mode ALWAYS used RegularGridInterpolator (linear only)
+  - Result: Inconsistent field lines and loss of smoothness in parallel runs
+  - Performance benefit of RectBivariateSpline was lost in parallel mode
+
+SOLUTION IN VERSION 3.1:
+  - Parallel worker now uses RectBivariateSpline for cubic/quintic
+  - Both serial and parallel modes produce identical smooth field lines
+  - Performance improvements maintained in parallel mode
+
+KEY CHANGES:
+  1. Modified _trace_single_fieldline_worker function (lines ~395-495)
+  2. Added RectBivariateSpline implementation in parallel worker
+  3. Implemented proper bounds checking for spline interpolation
+  4. Unified interpolation behavior across execution modes
+
+PERFORMANCE REMAINS OPTIMAL:
+  - Linear:   Baseline speed (~1.0×)
+  - Cubic:    Only ~20% slower (~1.2×) - RECOMMENDED
+  - Quintic:  Only ~50% slower (~1.5×) - Publication quality
 
 ================================================================================
 PURPOSE
@@ -399,6 +427,9 @@ def _trace_single_fieldline_worker(args):
     Worker function to trace a single field line (for multiprocessing).
     
     This function must be at module level for pickling by multiprocessing.
+    
+    MODIFIED IN v3.1: Now uses RectBivariateSpline for cubic/quintic methods
+    to match the serial mode implementation and provide smooth field lines.
     """
     (i, n_lines, x0, y0, z0, direction, max_length, step_size,
      x_grid, z_grid, Bx, By, Bz, Rsun, interp_method) = args
@@ -406,26 +437,57 @@ def _trace_single_fieldline_worker(args):
     # Print progress
     print(f"[{i+1}/{n_lines}] Starting field line at ({x0/Rsun:.3f}, {y0/Rsun:.3f}, {z0/Rsun:.3f}) Rs")
     
-    # Create interpolators for this worker
-    Bx_interp = RegularGridInterpolator(
-        (x_grid, z_grid), Bx, method=interp_method,
-        bounds_error=False, fill_value=0.
-    )
-    By_interp = RegularGridInterpolator(
-        (x_grid, z_grid), By, method=interp_method,
-        bounds_error=False, fill_value=0.
-    )
-    Bz_interp = RegularGridInterpolator(
-        (x_grid, z_grid), Bz, method=interp_method,
-        bounds_error=False, fill_value=0.
-    )
+    # Create interpolators for this worker - FIXED to match serial mode
+    if interp_method == 'linear':
+        # Linear interpolation: RegularGridInterpolator is fine
+        Bx_interp = RegularGridInterpolator(
+            (x_grid, z_grid), Bx, method='linear',
+            bounds_error=False, fill_value=0.
+        )
+        By_interp = RegularGridInterpolator(
+            (x_grid, z_grid), By, method='linear',
+            bounds_error=False, fill_value=0.
+        )
+        Bz_interp = RegularGridInterpolator(
+            (x_grid, z_grid), Bz, method='linear',
+            bounds_error=False, fill_value=0.
+        )
+        use_spline = False
+    else:
+        # Cubic/Quintic: Use RectBivariateSpline for speed and smoothness
+        kx = ky = 3 if interp_method == 'cubic' else 5
+        
+        # RectBivariateSpline precomputes coefficients (one-time cost)
+        Bx_interp = RectBivariateSpline(x_grid, z_grid, Bx, kx=kx, ky=kx)
+        By_interp = RectBivariateSpline(x_grid, z_grid, By, kx=kx, ky=kx)
+        Bz_interp = RectBivariateSpline(x_grid, z_grid, Bz, kx=kx, ky=kx)
+        
+        # Store domain bounds for out-of-bounds checking
+        x_min, x_max = x_grid[0], x_grid[-1]
+        z_min, z_max = z_grid[0], z_grid[-1]
+        use_spline = True
     
     def get_B_field(pos):
-        """Get magnetic field at position."""
+        """Get magnetic field at position - matches serial mode implementation."""
         x, y, z = pos
-        Bx_val = Bx_interp((x, z))
-        By_val = By_interp((x, z))
-        Bz_val = Bz_interp((x, z))
+        
+        if use_spline:
+            # RectBivariateSpline evaluation
+            # Check bounds manually (RectBivariateSpline extrapolates by default)
+            if (x < x_min or x > x_max or z < z_min or z > z_max):
+                # Out of bounds - return zero field
+                return np.array([0., 0., 0.])
+            
+            # Evaluate spline (returns scalar for scalar input)
+            Bx_val = float(Bx_interp(x, z))
+            By_val = float(By_interp(x, z))
+            Bz_val = float(Bz_interp(x, z))
+        else:
+            # RegularGridInterpolator evaluation (linear method)
+            Bx_val = Bx_interp((x, z))
+            By_val = By_interp((x, z))
+            Bz_val = Bz_interp((x, z))
+        
         return np.array([Bx_val, By_val, Bz_val])
     
     def field_line_rhs(s, pos):
@@ -1834,4 +1896,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
