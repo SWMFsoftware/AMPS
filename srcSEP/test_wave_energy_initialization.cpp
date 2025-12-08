@@ -212,6 +212,162 @@ void TestWaveEnergyInitialization(PIC::Datum::cDatumStored& WaveEnergy) {
 // SIMPLIFIED TEST FUNCTION: JUST PRINT E+ VALUES
 // ============================================================================
 
+void TestPrintEPlusValues(PIC::Datum::cDatumStored& WaveEnergy,
+                          int PrintThread,
+                          int nSegmentsToPrint) {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    if (rank != PrintThread) return;
+
+    std::cout << std::endl;
+    std::cout << "=== E+/E- DIAGNOSTIC ALONG FIELD LINE 0 ========================" << std::endl;
+    std::cout << " Thread          : " << PrintThread << std::endl;
+
+    if (PIC::FieldLine::nFieldLine <= 0) {
+        std::cout << " ERROR: No field lines found!" << std::endl << std::endl;
+        return;
+    }
+
+    PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[0];
+    const int num_segments = field_line->GetTotalSegmentNumber();
+
+    if (num_segments <= 0) {
+        std::cout << " ERROR: Field line 0 has no segments!" << std::endl << std::endl;
+        return;
+    }
+
+    const int maxN = (nSegmentsToPrint > 0) ? nSegmentsToPrint : 400;
+    const int N = std::min(maxN, num_segments);
+
+    std::cout << " Field line index     : 0" << std::endl;
+    std::cout << " Total # of segments  : " << num_segments << std::endl;
+    std::cout << " # of segments/side   : " << N << std::endl;
+    std::cout << std::endl;
+
+    std::cout << " seg  "
+              << "  r[AU]   "
+              << "  Eplus_int[J]  "
+              << "  Eplus_dens[J/m^3]  "
+              << "  Eplus_flux[J/m^2/s]  "
+              << "  Eminus_int[J]  "
+              << "  Eminus_dens[J/m^3]  "
+              << "  Eminus_flux[J/m^2/s]  "
+              << "  vA[m/s]  "
+              << " thr"
+              << std::endl;
+    std::cout << "---------------------------------------------------------------------------------------------------------------" << std::endl;
+
+    auto print_segment_info = [&](int seg_idx) {
+        namespace FL = PIC::FieldLine;
+
+        FL::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
+        if (segment == nullptr) return;
+
+        // --- Geometry: midpoint radius in AU ---
+        FL::cFieldLineVertex* VertexBegin = segment->GetBegin();
+        FL::cFieldLineVertex* VertexEnd   = segment->GetEnd();
+
+        double x_begin[3], x_end[3], x_mid[3];
+        VertexBegin->GetX(x_begin);
+        VertexEnd->GetX(x_end);
+
+        for (int idim = 0; idim < 3; ++idim) {
+            x_mid[idim] = 0.5 * (x_begin[idim] + x_end[idim]);
+        }
+
+        const double r_helio = std::sqrt(x_mid[0]*x_mid[0] +
+                                         x_mid[1]*x_mid[1] +
+                                         x_mid[2]*x_mid[2]);
+        const double r_AU = r_helio / WaveEnergyConstants::ONE_AU;
+
+        // --- Integrated E+ and E- from a single datum ---
+        double Eplus_int  = 0.0;
+        double Eminus_int = 0.0;
+
+        double* wave_data = segment->GetDatum_ptr(WaveEnergy);
+        if (wave_data) {
+            Eplus_int  = wave_data[0];
+            Eminus_int = wave_data[1];
+        }
+
+        // --- Segment volume and densities ---
+        double V_segment = SEP::FieldLine::GetSegmentVolume(segment, 0); // field_line_idx = 0
+
+        double Eplus_dens  = 0.0;
+        double Eminus_dens = 0.0;
+
+        if (V_segment > 0.0) {
+            Eplus_dens  = Eplus_int  / V_segment;
+            Eminus_dens = Eminus_int / V_segment;
+        }
+
+        // --- Alfvén speed from vertex data ---
+        double PlasmaDensity0 = 0.0, PlasmaDensity1 = 0.0;
+
+        double* B0 = VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+        double* B1 = VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+
+        VertexBegin->GetDatum(FL::DatumAtVertexPlasmaDensity, &PlasmaDensity0);
+        VertexEnd->GetDatum(FL::DatumAtVertexPlasmaDensity, &PlasmaDensity1);
+
+        double Bcenter[3] = {0.0, 0.0, 0.0};
+        if (B0 && B1) {
+            for (int idim = 0; idim < 3; ++idim) {
+                Bcenter[idim] = 0.5 * (B0[idim] + B1[idim]);
+            }
+        }
+
+        const double B2 = Bcenter[0]*Bcenter[0] +
+                          Bcenter[1]*Bcenter[1] +
+                          Bcenter[2]*Bcenter[2];
+
+        const double PlasmaDensity = 0.5 * (PlasmaDensity0 + PlasmaDensity1);
+
+        double vAlfven = 0.0;
+        if (PlasmaDensity > 0.0) {
+            vAlfven = std::sqrt(B2 / (VacuumPermeability * PlasmaDensity * _MASS_(_H_)));
+        }
+
+        // --- Energy density fluxes ---
+        const double Eplus_flux  = Eplus_dens  * vAlfven;
+        const double Eminus_flux = Eminus_dens * vAlfven;
+
+        std::cout << std::setw(4) << seg_idx << "  "
+                  << std::fixed << std::setprecision(3) << std::setw(7) << r_AU << "  "
+                  << std::scientific << std::setprecision(6) << std::setw(14) << Eplus_int << "  "
+                  << std::scientific << std::setprecision(6) << std::setw(18) << Eplus_dens << "  "
+                  << std::scientific << std::setprecision(6) << std::setw(18) << Eplus_flux << "  "
+                  << std::scientific << std::setprecision(6) << std::setw(14) << Eminus_int << "  "
+                  << std::scientific << std::setprecision(6) << std::setw(18) << Eminus_dens << "  "
+                  << std::scientific << std::setprecision(6) << std::setw(18) << Eminus_flux << "  "
+                  << std::scientific << std::setprecision(6) << std::setw(11) << vAlfven << "  "
+                  << std::setw(3) << segment->Thread
+                  << std::endl;
+    };
+
+    // Head: from beginning
+    for (int i = 0; i < N; ++i) {
+        print_segment_info(i);
+    }
+
+    if (2 * N < num_segments) {
+        std::cout << "  ... (skipping interior segments) ..." << std::endl;
+    }
+
+    // Tail: from end (avoid double-print of overlap)
+    const int start_tail = std::max(0, num_segments - N);
+    for (int seg_idx = start_tail; seg_idx < num_segments; ++seg_idx) {
+        if (seg_idx < N) continue;
+        print_segment_info(seg_idx);
+    }
+
+    std::cout << "=================================================================" << std::endl
+              << std::endl;
+}
+
+
+/*
 void TestPrintEPlusValues(PIC::Datum::cDatumStored& WaveEnergy,int PrintThread) {
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -254,6 +410,7 @@ void TestPrintEPlusValues(PIC::Datum::cDatumStored& WaveEnergy,int PrintThread) 
     
     std::cout << "==========================================" << std::endl << std::endl;
 }
+*/
 
 /*
 ================================================================================
