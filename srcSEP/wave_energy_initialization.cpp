@@ -377,7 +377,9 @@ void InitializeWaveEnergyInAllSegments(
                               << "ε=" << local_wave_energy_density << " J/m³, "
                               << "V=" << V_segment << " m³, "
                               << "E+=" << E_plus << " J, "
-                              << "E-=" << E_minus << " J" << std::endl;
+                              << "E-=" << E_minus << " J, "
+		              << "E+/Vol=" << E_plus/V_segment << " J/m³, "
+                              << "E-/Vol=" << E_minus/V_segment << " J/m³" << std::endl;
                 }
             } else {
                 std::cerr << "Error: Could not access wave energy datum for segment " 
