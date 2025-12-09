@@ -141,28 +141,62 @@ void InitializeWaveEnergyInAllSegments(
     bool verbose = false
 );
 
-/**
- * Initialize wave energy using physical solar wind parameters
- * 
- * Calculates wave energy density from magnetic field strength and turbulence level,
- * then initializes all segments with proper heliospheric scaling.
- * 
- * Physics:
- * - Wave energy density: ε = (δB²)/(2μ₀)
- * - Turbulent field: δB = turbulence_level × B₀
- * - Heliospheric scaling: ε(r) = ε_1AU × (1AU/r)²
- * 
- * @param WaveEnergy        Datum for storing wave energy data
- * @param B0_1AU            Magnetic field strength at 1 AU [T] (default: 5 nT)
- * @param turbulence_level  Turbulence level (δB/B₀) (default: 0.2 = 20%)
- * @param verbose           Enable verbose output (default: false)
- */
+/// Initialize the segment–integrated wave energies E⁺ and E⁻ along all field lines
+/// from a large–scale magnetic field model and a prescribed turbulence–level profile
+/// (δB/B) between the beginning and end of each field line.
+///
+/// Parameters
+/// ----------
+/// WaveEnergy
+///   Datum that stores the segment–integrated wave energies. The function assumes
+///   that, for each segment, `GetDatum_ptr(WaveEnergy)` returns a `double[2]` array:
+///     wave_data[0] = E⁺  (integrated wave energy of anti–sunward Alfven waves, in J)
+///     wave_data[1] = E⁻  (integrated wave energy of sunward   Alfven waves, in J)
+///
+/// B0_1AU
+///   Reference magnetic–field magnitude at 1 AU (in Tesla). Used as the base value
+///   when `UseScaledReferenceB == true`, in which case the local field is obtained
+///   via `ApplyHeliosphericScaling(B0_1AU, 1 AU, r)`.
+///
+/// turbulence_level_beginning_fl
+///   Turbulence level (δB/B) at the *beginning* of each field line, i.e., at the
+///   smallest heliocentric distance on that line.
+///
+/// turbulence_level_end_fl
+///   Turbulence level (δB/B) at the *end* of each field line, i.e., at the
+///   largest heliocentric distance on that line.
+///
+/// turbulence_level_decay_power_index
+///   Dimensionless exponent that shapes how δB/B transitions from its value at the
+///   beginning to its value at the end of the field line. For p > 0, the profile is
+///   a weighted power–law blend of the two endpoint values; for p <= 0, a simple
+///   linear interpolation in radius is used.
+///
+/// UseScaledReferenceB
+///   If true, the local magnetic–field magnitude B(r) is obtained by scaling B0_1AU
+///   using `ApplyHeliosphericScaling`. If false, B(r) is taken from the magnetic–field
+///   vectors stored at the field–line vertices (averaged over the segment endpoints),
+///   with a fallback to the scaled–reference model when vertex data are not available.
+///
+/// verbose
+///   If true (and on MPI rank 0), the function prints diagnostic information and the
+///   initialized values of E⁺, E⁻, W⁺, W⁻, and B for the first and last few segments
+///   of field line 0.
+///
+/// Notes
+/// -----
+/// - The routine assumes balanced turbulence at initialization: W⁺ = W⁻ = ½ W_total.
+/// - The segment volume is obtained from `SEP::FieldLine::GetSegmentVolume`, and
+///   E⁺/E⁻ are set as W⁺/W⁻ times this volume.
+///
 void InitializeWaveEnergyFromPhysicalParameters(
     PIC::Datum::cDatumStored& WaveEnergy,
-    double B0_1AU = WaveEnergyConstants::TYPICAL_B0_1AU,
-    double turbulence_level = WaveEnergyConstants::TYPICAL_TURBULENCE,
-    bool verbose = false
-);
+    double B0_1AU,
+    double turbulence_level_beginning_fl,
+    double turbulence_level_end_fl,
+    double turbulence_level_decay_power_index,
+    bool   UseScaledReferenceB,
+    bool   verbose = false);
 
 // ============================================================================
 // PHYSICAL PARAMETER CALCULATIONS

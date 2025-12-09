@@ -423,12 +423,117 @@ void InitializeWaveEnergyInAllSegments(
 // ============================================================================
 // PHYSICS-BASED INITIALIZATION
 // ============================================================================
-
+/// ********************************************************************************************
+/// InitializeWaveEnergyFromPhysicalParameters
+///
+/// PURPOSE
+/// --------
+/// Initialize the total integrated wave energies E⁺ and E⁻ in each field–line segment for the
+/// SEP turbulence module. The initialization is based on:
+///   - a model for the large–scale background magnetic field B(r),
+///   - a prescribed turbulence–level profile δB/B along the field line,
+///   - and a simple balanced–turbulence assumption W⁺ = W⁻ = ½ W_total.
+///
+/// This function writes, for each field–line segment,
+///   wave_data[0] = E⁺  [J] = W⁺(r) * V_segment
+///   wave_data[1] = E⁻  [J] = W⁻(r) * V_segment
+/// where V_segment is the volume associated with that segment.
+///
+///
+/// PHYSICS MODEL
+/// -------------
+/// 1. Magnetic field model:
+///    - If UseScaledReferenceB == true:
+///        The local magnetic field magnitude at radius r is taken from a simple heliospheric
+///        scaling of a reference magnitude B0_1AU:
+///
+///            B_local(r) = ApplyHeliosphericScaling(B0_1AU, 1 AU, r),
+///
+///        which typically encodes a Parker–spiral or WKB–like radial scaling.
+///    - If UseScaledReferenceB == false:
+///        The local magnetic field is taken from the field–line data stored at the segment
+///        vertices:
+///
+///            B_local = |(B_vertex_begin + B_vertex_end) / 2|,
+///
+///        falling back to the scaled reference model if vertex data are missing.
+///
+/// 2. Turbulence level (δB/B) along the field line:
+///    - The turbulence level at the *beginning* and *end* of the field line are specified:
+///
+///            turbulence_level_beginning_fl = (δB/B)_begin
+///            turbulence_level_end_fl       = (δB/B)_end
+///
+///    - A radial coordinate r is built from the positions of the first and last vertices:
+///            r_begin = |x(begin)|, r_end = |x(end)|.
+///
+///    - At each segment midpoint (radius r_helio) we compute a normalized coordinate
+///
+///            f = (r_helio - r_begin) / (r_end - r_begin),  f ∈ [0,1],
+///
+///      and use a power–shaped interpolation controlled by turbulence_level_decay_power_index:
+///
+///         If p = turbulence_level_decay_power_index > 0:
+///           w_begin = (1 - f)^p,  w_end = f^p
+///           turbulence_level_local = ( (δB/B)_begin * w_begin + (δB/B)_end * w_end )
+///                                   / (w_begin + w_end)
+///
+///         If p <= 0:
+///           simple linear interpolation is used:
+///              turbulence_level_local = (δB/B)_begin
+///                                      + f * [ (δB/B)_end - (δB/B)_begin ].
+///
+///      This gives a flexible 1D profile of δB/B between the two endpoints.
+///
+/// 3. Wave energy density and total energy:
+///    - Given B_local and turbulence_level_local = δB/B, we define
+///
+///            δB = turbulence_level_local * B_local
+///            W_total = δB^2 / (2 μ0),
+///
+///      where μ0 = VacuumPermeability. This is a standard expression for magnetic–energy
+///      density in Alfvenic fluctuations.
+///    - We assume balanced turbulence:
+///
+///            W⁺ = W⁻ = ½ W_total.
+///
+///    - For each segment, we obtain its volume via:
+///
+///            V_segment = SEP::FieldLine::GetSegmentVolume(segment, iLine),
+///
+///      and store
+///
+///            E⁺ = W⁺ * V_segment,
+///            E⁻ = W⁻ * V_segment
+///
+///      into the provided WaveEnergy datum.
+///
+///
+/// USE CASES
+/// ---------
+/// - Quickly setting up a *controlled background turbulence profile* for tests of SEP transport
+///   (e.g., varying δB/B between the inner and outer heliosphere).
+/// - Matching approximate analytical expectations for turbulence strength near the Sun and at 1 AU.
+/// - Performing parameter scans over:
+///     * B0_1AU,
+///     * turbulence_level_beginning_fl / turbulence_level_end_fl,
+///     * turbulence_level_decay_power_index,
+///   to study how the initial wave field modifies SEP propagation.
+///
+/// NOTE
+/// ----
+/// This is an initialization routine only. Subsequent evolution of W⁺ and W⁻ should be governed
+/// by the turbulence cascade, advection, reflection, and wave–particle coupling modules.
+///
+/// ********************************************************************************************
 void InitializeWaveEnergyFromPhysicalParameters(
     PIC::Datum::cDatumStored& WaveEnergy,
-    double B0_1AU,              // magnetic field magnitude at 1 AU
-    double turbulence_level,    // δB / B
-    bool verbose) {
+    double B0_1AU,
+    double turbulence_level_beginning_fl,
+    double turbulence_level_end_fl,
+    double turbulence_level_decay_power_index,
+    bool   UseScaledReferenceB,
+    bool   verbose) {
 
   using namespace PIC;
   namespace FL = PIC::FieldLine;
@@ -436,30 +541,72 @@ void InitializeWaveEnergyFromPhysicalParameters(
   int rank = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-  // Lambda: local wave energy density from local B and turbulence level
-  // W_total = δB^2 / (2 μ0), with δB = turbulence_level * B_local
-  auto CalculateLocalWaveEnergyDensity = [turbulence_level](double B_local) -> double {
-    if (B_local <= 0.0 || turbulence_level <= 0.0) return 0.0;
-    const double deltaB = turbulence_level * B_local;
-    return 0.5 * deltaB * deltaB / VacuumPermeability;
-  };
+  // Lambda: compute total wave energy density W_total at a location given:
+  //    - B_local: local magnetic field magnitude [T]
+  //    - turbulence_level: δB/B at that point
+  //
+  // Model:
+  //    δB = turbulence_level * B_local
+  //    W_total = δB^2 / (2 μ0)
+  //
+  auto CalculateLocalWaveEnergyDensity =
+      [](double B_local, double turbulence_level) -> double {
+        if (B_local <= 0.0 || turbulence_level <= 0.0) return 0.0;
+        const double deltaB = turbulence_level * B_local;
+        return 0.5 * deltaB * deltaB / VacuumPermeability;
+      };
 
+  // Optional console header from rank 0
   if (verbose && rank == 0) {
     std::cout << std::endl;
     std::cout << "=== InitializeWaveEnergyFromPhysicalParameters (per-segment) ===" << std::endl;
-    std::cout << " B0(1 AU)         = " << B0_1AU << std::endl;
-    std::cout << " turbulence level = " << turbulence_level << std::endl;
-    std::cout << " nFieldLine       = " << FL::nFieldLine << std::endl;
+    std::cout << " B0(1 AU)                    = " << B0_1AU << std::endl;
+    std::cout << " turbulence_level_beginning   = " << turbulence_level_beginning_fl << std::endl;
+    std::cout << " turbulence_level_end         = " << turbulence_level_end_fl << std::endl;
+    std::cout << " turbulence_level_decay_index = " << turbulence_level_decay_power_index << std::endl;
+    std::cout << " UseScaledReferenceB          = " << (UseScaledReferenceB ? "true" : "false") << std::endl;
+    std::cout << " nFieldLine                   = " << FL::nFieldLine << std::endl;
     std::cout << "---------------------------------------------------------------" << std::endl;
   }
 
-  // Loop over all field lines
+  // Loop over all field lines in the domain
   for (int iLine = 0; iLine < FL::nFieldLine; ++iLine) {
     FL::cFieldLine* field_line = &FL::FieldLinesAll[iLine];
     const int nSegments = field_line->GetTotalSegmentNumber();
     if (nSegments <= 0) continue;
 
-    // Header for diagnostic for line 0
+    // ------------------- Determine r_begin and r_end for this field line -------------------
+    // r_begin  : heliocentric distance at the field-line beginning
+    // r_end    : heliocentric distance at the field-line end
+    // These define the interpolation domain for the turbulence level profile.
+    double r_begin = 0.0, r_end = 0.0;
+
+    {
+      // First and last segments of the field line
+      FL::cFieldLineSegment* seg0   = field_line->GetSegment(0);
+      FL::cFieldLineSegment* segN_1 = field_line->GetSegment(nSegments - 1);
+
+      // Corresponding boundary vertices
+      FL::cFieldLineVertex* v_begin = seg0   ? seg0->GetBegin() : nullptr;
+      FL::cFieldLineVertex* v_end   = segN_1 ? segN_1->GetEnd() : nullptr;
+
+      double xb[3] = {0.0, 0.0, 0.0};
+      double xe[3] = {0.0, 0.0, 0.0};
+
+      if (v_begin) v_begin->GetX(xb);
+      if (v_end)   v_end->GetX(xe);
+
+      // Radii at the endpoints
+      r_begin = std::sqrt(xb[0]*xb[0] + xb[1]*xb[1] + xb[2]*xb[2]);
+      r_end   = std::sqrt(xe[0]*xe[0] + xe[1]*xe[1] + xe[2]*xe[2]);
+
+      // Avoid degenerate case where r_end ≈ r_begin (e.g., pathological geometry)
+      if (r_end <= r_begin) {
+        r_end = r_begin + 1.0e-6; // small offset to prevent division by zero
+      }
+    }
+
+    // Header for detailed diagnostics on the first field line
     if (verbose && rank == 0 && iLine == 0) {
       std::cout << "Field line 0: segment-by-segment initialization" << std::endl;
       std::cout << " seg  "
@@ -473,11 +620,12 @@ void InitializeWaveEnergyFromPhysicalParameters(
       std::cout << "---------------------------------------------------------------------" << std::endl;
     }
 
+    // ------------------------ Loop over segments on this field line ------------------------
     for (int iSeg = 0; iSeg < nSegments; ++iSeg) {
       FL::cFieldLineSegment* segment = field_line->GetSegment(iSeg);
       if (segment == nullptr) continue;
 
-      // ------------------ Geometry and heliocentric distance ------------------
+      // ----- Geometry and heliocentric distance at segment midpoint -----
       FL::cFieldLineVertex* v0 = segment->GetBegin();
       FL::cFieldLineVertex* v1 = segment->GetEnd();
 
@@ -494,32 +642,106 @@ void InitializeWaveEnergyFromPhysicalParameters(
                                        xmid[2]*xmid[2]);
       const double r_AU = r_helio / WaveEnergyConstants::ONE_AU;
 
-      // ------------------ Local magnetic field via heliocentric scaling -------
-      // IMPORTANT: apply scaling to B, not to wave energy.
-      double B_local = ApplyHeliosphericScaling(
-                B0_1AU, WaveEnergyConstants::ONE_AU, r_helio
-            );
+      // ----- Construct local turbulence level δB/B(r) along the line -----
+      // Normalized coordinate f ∈ [0,1] measuring the position between r_begin and r_end.
+      double f = (r_helio - r_begin) / (r_end - r_begin);
+      if (f < 0.0) f = 0.0;
+      if (f > 1.0) f = 1.0;
 
-      // ------------------ Local wave energy density from B(r) -----------------
-      const double W_total = CalculateLocalWaveEnergyDensity(B_local);
-      const double W_plus  = 0.5 * W_total;  // balanced turbulence
+      const double p = turbulence_level_decay_power_index;
+
+      double turbulence_level_local = 0.0;
+      if (p <= 0.0) {
+        // If power index is non-positive, fall back to a simple linear interpolation in f.
+        turbulence_level_local =
+            turbulence_level_beginning_fl +
+            f * (turbulence_level_end_fl - turbulence_level_beginning_fl);
+      } else {
+        // Power-shaped interpolation between beginning and end:
+        //   tl(r) = ( tl_begin * (1-f)^p + tl_end * f^p ) / ( (1-f)^p + f^p )
+        const double w_begin = std::pow(1.0 - f, p);
+        const double w_end   = std::pow(f, p);
+        const double denom   = w_begin + w_end;
+
+        if (denom > 0.0) {
+          turbulence_level_local =
+              (turbulence_level_beginning_fl * w_begin +
+               turbulence_level_end_fl       * w_end) / denom;
+        } else {
+          // Extremely degenerate case (should not normally happen):
+          // fall back to the arithmetic mean of the endpoint values.
+          turbulence_level_local =
+              0.5 * (turbulence_level_beginning_fl + turbulence_level_end_fl);
+        }
+      }
+
+      // ----- Local magnetic field magnitude B_local -----
+      double B_local = 0.0;
+
+      if (UseScaledReferenceB) {
+        // Use heliospheric scaling of B0_1AU from 1 AU to the actual radius r_helio.
+        B_local = ApplyHeliosphericScaling(
+                    B0_1AU,
+                    WaveEnergyConstants::ONE_AU,
+                    r_helio);
+      } else {
+        // Use magnetic field stored at the vertices of the field line.
+        // We average the vectors from the two endpoints and take the magnitude.
+        double* B0_begin = v0->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+        double* B0_end   = v1->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+
+        double B_vec[3] = {0.0, 0.0, 0.0};
+        int n_valid = 0;
+
+        if (B0_begin != nullptr) {
+          for (int d = 0; d < 3; ++d) B_vec[d] += B0_begin[d];
+          ++n_valid;
+        }
+
+        if (B0_end != nullptr) {
+          for (int d = 0; d < 3; ++d) B_vec[d] += B0_end[d];
+          ++n_valid;
+        }
+
+        if (n_valid > 0) {
+          for (int d = 0; d < 3; ++d) B_vec[d] /= static_cast<double>(n_valid);
+          B_local = std::sqrt(B_vec[0]*B_vec[0] +
+                              B_vec[1]*B_vec[1] +
+                              B_vec[2]*B_vec[2]);
+        } else {
+          // If no vertex data are available, revert to the reference scaling model.
+          B_local = ApplyHeliosphericScaling(
+                      B0_1AU,
+                      WaveEnergyConstants::ONE_AU,
+                      r_helio);
+        }
+      }
+
+      // ----- Compute wave energy density W_total(r) from B_local and δB/B(r) -----
+      const double W_total = CalculateLocalWaveEnergyDensity(B_local,
+                                                             turbulence_level_local);
+
+      // Assume balanced turbulence: W⁺ = W⁻ = ½ W_total.
+      const double W_plus  = 0.5 * W_total;
       const double W_minus = 0.5 * W_total;
 
-      // ------------------ Integrated E+/E- using the segment volume -----------
+      // ----- Convert to integrated wave energies using the segment volume -----
       const double V_segment = SEP::FieldLine::GetSegmentVolume(segment, iLine);
 
       const double E_plus  = W_plus  * V_segment;
       const double E_minus = W_minus * V_segment;
 
-      // ------------------ Store into the WaveEnergy datum --------------------
-      // Layout: wave_data[0] = E+, wave_data[1] = E-
+      // ----- Store E⁺ and E⁻ into the provided WaveEnergy datum -----
+      // Convention:
+      //   wave_data[0] = E⁺
+      //   wave_data[1] = E⁻
       double* wave_data = segment->GetDatum_ptr(WaveEnergy);
       if (wave_data != nullptr) {
         wave_data[0] = E_plus;
         wave_data[1] = E_minus;
       }
 
-      // ------------------ Diagnostic print for field line 0 -------------------
+      // ----- Optional diagnostics: print first/last 10 segments of field line 0 -----
       if (verbose && rank == 0 && iLine == 0) {
         const bool in_head = (iSeg < 10);
         const bool in_tail = (iSeg >= std::max(0, nSegments - 10));
@@ -537,13 +759,15 @@ void InitializeWaveEnergyFromPhysicalParameters(
                     << std::endl;
         }
 
+        // One-time ellipsis between head and tail sections if there is a gap
         if (iSeg == 9 && nSegments > 20) {
           std::cout << "  ... (skipping interior segments) ..." << std::endl;
         }
       }
-    } // segment loop
-  }   // field-line loop
+    } // end segment loop
+  }   // end field-line loop
 
+  // Final footer
   if (verbose && rank == 0) {
     std::cout << "=================================================================" << std::endl
               << std::endl;
