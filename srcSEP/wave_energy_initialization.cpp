@@ -426,23 +426,128 @@ void InitializeWaveEnergyInAllSegments(
 
 void InitializeWaveEnergyFromPhysicalParameters(
     PIC::Datum::cDatumStored& WaveEnergy,
-    double B0_1AU,
-    double turbulence_level,
-    bool verbose
-) {
-    double wave_energy_density_1AU = CalculateTypicalWaveEnergyDensity1AU(B0_1AU, turbulence_level);
-    
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    
-    if (rank == 0 && verbose) {
-        std::cout << "Initializing wave energy from physical parameters:" << std::endl;
-        std::cout << "  B₀ at 1 AU: " << B0_1AU * 1e9 << " nT" << std::endl;
-        std::cout << "  Turbulence level: " << turbulence_level * 100 << "%" << std::endl;
-        std::cout << "  Resulting wave energy density at 1 AU: " << wave_energy_density_1AU << " J/m³" << std::endl;
+    double B0_1AU,              // magnetic field magnitude at 1 AU
+    double turbulence_level,    // δB / B
+    bool verbose) {
+
+  using namespace PIC;
+  namespace FL = PIC::FieldLine;
+
+  int rank = 0;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  // Lambda: local wave energy density from local B and turbulence level
+  // W_total = δB^2 / (2 μ0), with δB = turbulence_level * B_local
+  auto CalculateLocalWaveEnergyDensity = [turbulence_level](double B_local) -> double {
+    if (B_local <= 0.0 || turbulence_level <= 0.0) return 0.0;
+    const double deltaB = turbulence_level * B_local;
+    return 0.5 * deltaB * deltaB / VacuumPermeability;
+  };
+
+  if (verbose && rank == 0) {
+    std::cout << std::endl;
+    std::cout << "=== InitializeWaveEnergyFromPhysicalParameters (per-segment) ===" << std::endl;
+    std::cout << " B0(1 AU)         = " << B0_1AU << std::endl;
+    std::cout << " turbulence level = " << turbulence_level << std::endl;
+    std::cout << " nFieldLine       = " << FL::nFieldLine << std::endl;
+    std::cout << "---------------------------------------------------------------" << std::endl;
+  }
+
+  // Loop over all field lines
+  for (int iLine = 0; iLine < FL::nFieldLine; ++iLine) {
+    FL::cFieldLine* field_line = &FL::FieldLinesAll[iLine];
+    const int nSegments = field_line->GetTotalSegmentNumber();
+    if (nSegments <= 0) continue;
+
+    // Header for diagnostic for line 0
+    if (verbose && rank == 0 && iLine == 0) {
+      std::cout << "Field line 0: segment-by-segment initialization" << std::endl;
+      std::cout << " seg  "
+                << "  r[AU]   "
+                << "  Eplus[J]     "
+                << "  Eminus[J]    "
+                << "  Wplus[J/m^3] "
+                << "  Wminus[J/m^3]"
+                << "  B[T]         "
+                << std::endl;
+      std::cout << "---------------------------------------------------------------------" << std::endl;
     }
-    
-    InitializeWaveEnergyInAllSegments(WaveEnergy, wave_energy_density_1AU, verbose);
+
+    for (int iSeg = 0; iSeg < nSegments; ++iSeg) {
+      FL::cFieldLineSegment* segment = field_line->GetSegment(iSeg);
+      if (segment == nullptr) continue;
+
+      // ------------------ Geometry and heliocentric distance ------------------
+      FL::cFieldLineVertex* v0 = segment->GetBegin();
+      FL::cFieldLineVertex* v1 = segment->GetEnd();
+
+      double x0[3], x1[3], xmid[3];
+      v0->GetX(x0);
+      v1->GetX(x1);
+
+      for (int d = 0; d < 3; ++d) {
+        xmid[d] = 0.5 * (x0[d] + x1[d]);
+      }
+
+      const double r_helio = std::sqrt(xmid[0]*xmid[0] +
+                                       xmid[1]*xmid[1] +
+                                       xmid[2]*xmid[2]);
+      const double r_AU = r_helio / WaveEnergyConstants::ONE_AU;
+
+      // ------------------ Local magnetic field via heliocentric scaling -------
+      // IMPORTANT: apply scaling to B, not to wave energy.
+      double B_local = ApplyHeliosphericScaling(
+                B0_1AU, WaveEnergyConstants::ONE_AU, r_helio
+            );
+
+      // ------------------ Local wave energy density from B(r) -----------------
+      const double W_total = CalculateLocalWaveEnergyDensity(B_local);
+      const double W_plus  = 0.5 * W_total;  // balanced turbulence
+      const double W_minus = 0.5 * W_total;
+
+      // ------------------ Integrated E+/E- using the segment volume -----------
+      const double V_segment = SEP::FieldLine::GetSegmentVolume(segment, iLine);
+
+      const double E_plus  = W_plus  * V_segment;
+      const double E_minus = W_minus * V_segment;
+
+      // ------------------ Store into the WaveEnergy datum --------------------
+      // Layout: wave_data[0] = E+, wave_data[1] = E-
+      double* wave_data = segment->GetDatum_ptr(WaveEnergy);
+      if (wave_data != nullptr) {
+        wave_data[0] = E_plus;
+        wave_data[1] = E_minus;
+      }
+
+      // ------------------ Diagnostic print for field line 0 -------------------
+      if (verbose && rank == 0 && iLine == 0) {
+        const bool in_head = (iSeg < 10);
+        const bool in_tail = (iSeg >= std::max(0, nSegments - 10));
+
+        if (in_head || in_tail) {
+          std::cout << std::setw(4) << iSeg << "  "
+                    << std::fixed << std::setprecision(3)
+                    << std::setw(7) << r_AU << "  "
+                    << std::scientific << std::setprecision(6)
+                    << std::setw(12) << E_plus  << "  "
+                    << std::setw(12) << E_minus << "  "
+                    << std::setw(12) << W_plus  << "  "
+                    << std::setw(12) << W_minus << "  "
+                    << std::setw(12) << B_local
+                    << std::endl;
+        }
+
+        if (iSeg == 9 && nSegments > 20) {
+          std::cout << "  ... (skipping interior segments) ..." << std::endl;
+        }
+      }
+    } // segment loop
+  }   // field-line loop
+
+  if (verbose && rank == 0) {
+    std::cout << "=================================================================" << std::endl
+              << std::endl;
+  }
 }
 
 // ============================================================================
