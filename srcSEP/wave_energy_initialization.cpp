@@ -685,31 +685,47 @@ void InitializeWaveEnergyFromPhysicalParameters(
                     WaveEnergyConstants::ONE_AU,
                     r_helio);
       } else {
-        // Use magnetic field stored at the vertices of the field line.
-        // We average the vectors from the two endpoints and take the magnitude.
+        // Use B from vertices of the magnetic field line:
+        //   * First segment:  |B at first vertex|
+        //   * Last segment:   |B at last vertex|
+        //   * Elsewhere:      |(B_begin + B_end)/2|
         double* B0_begin = v0->GetDatum_ptr(FL::DatumAtVertexMagneticField);
         double* B0_end   = v1->GetDatum_ptr(FL::DatumAtVertexMagneticField);
 
-        double B_vec[3] = {0.0, 0.0, 0.0};
-        int n_valid = 0;
+        auto magnitude_or_zero = [](double* B) -> double {
+          if (B == nullptr) return 0.0;
+          return std::sqrt(B[0]*B[0] + B[1]*B[1] + B[2]*B[2]);
+        };
 
-        if (B0_begin != nullptr) {
-          for (int d = 0; d < 3; ++d) B_vec[d] += B0_begin[d];
-          ++n_valid;
-        }
-
-        if (B0_end != nullptr) {
-          for (int d = 0; d < 3; ++d) B_vec[d] += B0_end[d];
-          ++n_valid;
-        }
-
-        if (n_valid > 0) {
-          for (int d = 0; d < 3; ++d) B_vec[d] /= static_cast<double>(n_valid);
-          B_local = std::sqrt(B_vec[0]*B_vec[0] +
-                              B_vec[1]*B_vec[1] +
-                              B_vec[2]*B_vec[2]);
+        if (iSeg == 0) {
+          B_local = magnitude_or_zero(B0_begin);
+        } else if (iSeg == nSegments - 1) {
+          B_local = magnitude_or_zero(B0_end);
         } else {
-          // If no vertex data are available, revert to the reference scaling model.
+          double B_vec[3] = {0.0, 0.0, 0.0};
+          int n_valid = 0;
+
+          if (B0_begin != nullptr) {
+            for (int d = 0; d < 3; ++d) B_vec[d] += B0_begin[d];
+            ++n_valid;
+          }
+          if (B0_end != nullptr) {
+            for (int d = 0; d < 3; ++d) B_vec[d] += B0_end[d];
+            ++n_valid;
+          }
+
+          if (n_valid > 0) {
+            for (int d = 0; d < 3; ++d) B_vec[d] /= static_cast<double>(n_valid);
+            B_local = std::sqrt(B_vec[0]*B_vec[0] +
+                                B_vec[1]*B_vec[1] +
+                                B_vec[2]*B_vec[2]);
+          } else {
+            B_local = 0.0;
+          }
+        }
+
+        // Fallback if vertex-based B is unusable
+        if (B_local <= 0.0) {
           B_local = ApplyHeliosphericScaling(
                       B0_1AU,
                       WaveEnergyConstants::ONE_AU,
