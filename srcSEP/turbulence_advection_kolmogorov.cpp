@@ -485,9 +485,10 @@ void AdvectTurbulenceEnergyAllFieldLines(
                     
                     // Calculate reference energy density from magnetic field energy
                     double reference_energy_density = (B_mag_beginning * B_mag_beginning) / (2.0 * mu0);
-                    double wave_energy_density_beginning = TurbulenceLevelBeginning * reference_energy_density;
-                    
-                    double flux_rate_incoming = V_A_beginning * wave_energy_density_beginning * boundary_area;
+                    double wave_energy_density_beginning = TurbulenceLevelBeginning * TurbulenceLevelBeginning * reference_energy_density;
+
+                    double wave_energy_plus_density_beginning=0.5*wave_energy_density_beginning; 
+                    double flux_rate_incoming = V_A_beginning * wave_energy_plus_density_beginning * boundary_area;
                     double energy_flux_incoming = flux_rate_incoming * dt;
                     
                     DeltaE_plus[field_line_idx][0] += energy_flux_incoming;
@@ -519,9 +520,10 @@ void AdvectTurbulenceEnergyAllFieldLines(
                     
                     // Calculate reference energy density from magnetic field energy
                     double reference_energy_density = (B_mag_end * B_mag_end) / (2.0 * mu0);
-                    double wave_energy_density_end = TurbulenceLevelEnd * reference_energy_density;
-                    
-                    double flux_rate_incoming = V_A_end * wave_energy_density_end * boundary_area;
+                    double wave_energy_density_end = TurbulenceLevelEnd * TurbulenceLevelEnd * reference_energy_density;
+
+                    double wave_energy_minus_density_end=0.5*wave_energy_density_end; 
+                    double flux_rate_incoming = V_A_end * wave_energy_minus_density_end * boundary_area;
                     double energy_flux_incoming = flux_rate_incoming * dt;
                     
                     DeltaE_minus[field_line_idx][num_segments - 1] += energy_flux_incoming;
