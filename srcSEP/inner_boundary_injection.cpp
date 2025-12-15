@@ -73,7 +73,7 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
   double emax=100.0*MeV2J;
 
   double s=4.0;
-  double q=3.0*s/(3-1.0);
+  double q=3.0*s/(s-1.0);
 
   double p,pmin,pmax,speed,pvect[3]; 
   double mass=PIC::MolecularData::GetMass(spec);
