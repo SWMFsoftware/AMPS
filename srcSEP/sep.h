@@ -2036,7 +2036,7 @@ end:
     } 
 
 
-    ParticleMoverPtr(ptr,dtTotal,startNode);
+    res=ParticleMoverPtr(ptr,dtTotal,startNode);
 
 
     if ((_SEP_DIFFUSION_MODEL_!=_DIFFUSION_NONE_)&&(res==_PARTICLE_MOTION_FINISHED_)) {
