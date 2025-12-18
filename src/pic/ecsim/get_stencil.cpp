@@ -338,12 +338,14 @@ static void PostAssembleSelfCheck(
   RhsEnt refCorner[_PIC_STENCIL_NUMBER_+1]; int refCornerLen = 0;
   RhsEnt refCenter[16];                     int refCenterLen = 0;
 
+  vector<RhsEnt> support_corner_vector,support_center_vector; 
+
   PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(
       i, j, k, iVar,
       refSet, refNze, refRhs,
       refCorner, refCornerLen,
       refCenter, refCenterLen,
-      node);
+      node,support_corner_vector,support_center_vector);
 
   CompareArray_Unordered<RhsEnt>(refCorner,refCornerLen,rowRhsCorner,rowRhsCornerLen,true,"refCorner"); 
   CompareArray_Unordered<RhsEnt>(refCenter,refCenterLen,rowRhsCenter,rowRhsCenterLen,true,"refCorner");
@@ -408,7 +410,8 @@ static void PostAssembleSelfCheck(
 void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil_import_cStencil(int i,int j,int k,int iVar,cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,
 			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,
 			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, 
-			     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+			     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,                                                                           vector<cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable>& support_corner_vector,
+              vector<cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable>& support_center_vector) {
   
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
 
@@ -1062,6 +1065,13 @@ if (_PIC_STENCIL_NUMBER_==375) {
 
         RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
         RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+
+        // Store a semantic RHS support entry: Corner/E/component=0 (Ex).
+        auto *cornerNodePtr = node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode));
+        char *pntTemp = (cornerNodePtr!=NULL) ? cornerNodePtr->GetAssociatedDataBufferPointer() : NULL;
+
+        RhsSupportTable_CornerNodes[iElement].SetCornerE(0.0, (pntTemp!=NULL) ? cornerNodePtr : NULL, 0);
+
       }
     }
   }
@@ -1091,6 +1101,8 @@ if (_PIC_STENCIL_NUMBER_==375) {
 
           RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
           RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=RhsSupportTable_CornerNodes[jOldElement].AssociatedDataPointer;
+
+	            RhsSupportTable_CornerNodes[iElement].SetCornerE(0.0, RhsSupportTable_CornerNodes[jOldElement].corner, (unsigned char)iVarIndex);
         }
       }
     }
@@ -1129,7 +1141,14 @@ if (_PIC_STENCIL_NUMBER_==375) {
 
           RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
 
+
+
+
           char * pntTemp = node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode))->GetAssociatedDataBufferPointer();
+
+
+	  auto *cornerNodePtr = node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode));
+	            RhsSupportTable_CornerNodes[iElement].SetCornerE(0.0, (pntTemp!=NULL) ? cornerNodePtr : NULL, 0);
 
           if (pntTemp) {
             RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=pntTemp+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
@@ -1172,6 +1191,9 @@ if (_PIC_STENCIL_NUMBER_==375) {
           RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
           RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=RhsSupportTable_CornerNodes[iElementOld].AssociatedDataPointer;
 
+
+	              RhsSupportTable_CornerNodes[iElement].SetCornerE(0.0, RhsSupportTable_CornerNodes[iElementOld].corner, (unsigned char)iVarIndex);
+
         }
       }
     }
@@ -1201,6 +1223,8 @@ if (_PIC_STENCIL_NUMBER_==375) {
 
       //plus laplacian
       RhsSupportTable_CornerNodes[iElement].Coefficient+=st->Data[it].a*coeffSqr[idim];
+
+      RhsSupportTable_CornerNodes[iElement].CoefficientNEW+=st->Data[it].a*coeffSqr[idim];
     }
   }
 
@@ -1227,6 +1251,8 @@ if (_PIC_STENCIL_NUMBER_==375) {
       }
 
       RhsSupportTable_CornerNodes[iElement].Coefficient -=(1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];
+
+      RhsSupportTable_CornerNodes[iElement].CoefficientNEW -=(1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
 
@@ -1255,6 +1281,7 @@ if (_PIC_STENCIL_NUMBER_==375) {
 
 
       RhsSupportTable_CornerNodes[iElement].Coefficient -=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
+      RhsSupportTable_CornerNodes[iElement].CoefficientNEW -=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
 
@@ -1282,6 +1309,7 @@ if (_PIC_STENCIL_NUMBER_==375) {
 
 
       RhsSupportTable_CornerNodes[iElement].Coefficient -=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
+      RhsSupportTable_CornerNodes[iElement].CoefficientNEW -=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
 
@@ -1299,6 +1327,8 @@ int idx2;
 
   RhsSupportTable_CornerNodes[idx].AssociatedDataPointer=RhsSupportTable_CornerNodes[idx2].AssociatedDataPointer;
   RhsSupportTable_CornerNodes[idx].Coefficient=-4*Pi*dtTotal*theta;
+
+  RhsSupportTable_CornerNodes[idx].SetCornerJ(-4*Pi*dtTotal*theta, RhsSupportTable_CornerNodes[idx2].corner, (unsigned char)iVar);
  
   RhsSupportLength_CornerNodes=idx+1;
 
@@ -1314,6 +1344,16 @@ int idx2;
           
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
+
+        PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(
+            _getCenterNodeLocalNumber(i+indexAdditionB[ii], j, k+indexAdditionB[jj]));
+        
+        RhsSupportTable_CenterNodes[iElement].SetCenterB(
+            coeff4[1],    // +c*dt/(2*dy)
+            center,
+            0             // component 2 = Bz
+        );
+
           RhsSupportTable_CenterNodes[iElement].Coefficient=coeff4[1]; //c(dt)/dy
           RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer=node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[ii],j,k+indexAdditionB[jj]))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
           //  rhs+=((double*)(RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer+CurrentCenterNodeOffset))[BzOffsetIndex]*RhsSupportTable_CenterNodes[iElement].Coefficient;
@@ -1324,6 +1364,16 @@ int idx2;
 
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
+
+        PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(
+            _getCenterNodeLocalNumber(i+indexAdditionB[ii], j-1, k+indexAdditionB[jj]));
+        
+        RhsSupportTable_CenterNodes[iElement].SetCenterB(
+            -coeff4[1],   // -c*dt/(2*dy)
+            center,
+            0             // component 2 = Bz
+        );
+
           RhsSupportTable_CenterNodes[iElement].Coefficient=-coeff4[1]; //-c(dt)/dy
           RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer=node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[ii],j-1,k+indexAdditionB[jj]))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
           // rhs+=((double*)(RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer+CurrentCenterNodeOffset))[BzOffsetIndex]*RhsSupportTable_CenterNodes[iElement].Coefficient;
@@ -1333,6 +1383,15 @@ int idx2;
       
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
+        PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(
+            _getCenterNodeLocalNumber(i+indexAdditionB[ii], j+indexAdditionB[jj], k));
+        
+        RhsSupportTable_CenterNodes[iElement].SetCenterB(
+            -coeff4[2],   // -c*dt/(2*dz)
+            center,
+            0             // component 1 = By
+        );
+
           RhsSupportTable_CenterNodes[iElement].Coefficient=-coeff4[2]; //-c(dt)/dz
           RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer=node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[ii],j+indexAdditionB[jj],k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
           //  rhs+=((double*)(RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer+CurrentCenterNodeOffset))[ByOffsetIndex]*RhsSupportTable_CenterNodes[iElement].Coefficient;
@@ -1342,6 +1401,16 @@ int idx2;
     
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
+
+        PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(
+            _getCenterNodeLocalNumber(i+indexAdditionB[ii], j+indexAdditionB[jj], k-1));
+        
+        RhsSupportTable_CenterNodes[iElement].SetCenterB(
+            coeff4[2],    // +c*dt/(2*dz)
+            center,
+            0             // component 1 = By
+        );
+
           RhsSupportTable_CenterNodes[iElement].Coefficient=coeff4[2]; //c(dt)/dz
           RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer=node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[ii],j+indexAdditionB[jj],k-1))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
           // rhs+=((double*)(RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer+CurrentCenterNodeOffset))[ByOffsetIndex]*RhsSupportTable_CenterNodes[iElement].Coefficient;
@@ -1355,6 +1424,15 @@ int idx2;
     if (iVar==1){
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
+        PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(
+            _getCenterNodeLocalNumber(i+indexAdditionB[ii], j+indexAdditionB[jj], k));
+        
+        RhsSupportTable_CenterNodes[iElement].SetCenterB(
+            coeff4[2],    // +c*dt/(2*dz)
+            center,
+            0             // component 0 = Bx
+        );
+
           RhsSupportTable_CenterNodes[iElement].Coefficient=coeff4[2]; //c(dt)/dz
           RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer=node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[ii],j+indexAdditionB[jj],k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
           // rhs+=((double*)(RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer+CurrentCenterNodeOffset))[BxOffsetIndex]*RhsSupportTable_CenterNodes[iElement].Coefficient;
@@ -1366,6 +1444,16 @@ int idx2;
 
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
+
+        PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(
+            _getCenterNodeLocalNumber(i+indexAdditionB[ii], j+indexAdditionB[jj], k-1));
+        
+        RhsSupportTable_CenterNodes[iElement].SetCenterB(
+            -coeff4[2],   // -c*dt/(2*dz)
+            center,
+            0             // component 0 = Bx
+        );
+
           RhsSupportTable_CenterNodes[iElement].Coefficient=-coeff4[2]; //-c(dt)/dz
           RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer=node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[ii],j+indexAdditionB[jj],k-1))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
           //rhs+=((double*)(RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer+CurrentCenterNodeOffset))[BxOffsetIndex]*RhsSupportTable_CenterNodes[iElement].Coefficient;
@@ -1376,6 +1464,16 @@ int idx2;
       
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
+
+        PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(
+            _getCenterNodeLocalNumber(i, j+indexAdditionB[jj], k+indexAdditionB[ii]));
+        
+        RhsSupportTable_CenterNodes[iElement].SetCenterB(
+            -coeff4[0],   // -c*dt/(2*dx)
+            center,
+            0             // component 2 = Bz
+        );          
+
           RhsSupportTable_CenterNodes[iElement].Coefficient=-coeff4[0]; //-c(dt)/dx
           RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer=node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j+indexAdditionB[jj],k+indexAdditionB[ii]))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
           //rhs+=((double*)(RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer+CurrentCenterNodeOffset))[BzOffsetIndex]*RhsSupportTable_CenterNodes[iElement].Coefficient;
@@ -1386,6 +1484,16 @@ int idx2;
     
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
+
+        PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(
+            _getCenterNodeLocalNumber(i-1, j+indexAdditionB[jj], k+indexAdditionB[ii]));
+        
+        RhsSupportTable_CenterNodes[iElement].SetCenterB(
+            coeff4[0],    // +c*dt/(2*dx)
+            center,
+            0             // component 2 = Bz
+        );
+
           RhsSupportTable_CenterNodes[iElement].Coefficient=coeff4[0]; //c(dt)/dx
           RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer=node->block->GetCenterNode(_getCenterNodeLocalNumber(i-1,j+indexAdditionB[jj],k+indexAdditionB[ii]))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
           // rhs+=((double*)(RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer+CurrentCenterNodeOffset))[BzOffsetIndex]*RhsSupportTable_CenterNodes[iElement].Coefficient;
@@ -1399,6 +1507,16 @@ int idx2;
     if (iVar==2) {
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
+        PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(
+            _getCenterNodeLocalNumber(i, j+indexAdditionB[jj], k+indexAdditionB[ii]));
+        
+        RhsSupportTable_CenterNodes[iElement].SetCenterB(
+            coeff4[0],    // +c*dt/(2*dx)
+            center,
+            0             // component 1 = By
+        );
+
+
           RhsSupportTable_CenterNodes[iElement].Coefficient=coeff4[0]; //c(dt)/dx
           RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer=node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j+indexAdditionB[jj],k+indexAdditionB[ii]))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
           //rhs+=((double*)(RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer+CurrentCenterNodeOffset))[ByOffsetIndex]*RhsSupportTable_CenterNodes[ii].Coefficient;
@@ -1409,6 +1527,16 @@ int idx2;
 
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
+
+        PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(
+            _getCenterNodeLocalNumber(i-1, j+indexAdditionB[jj], k+indexAdditionB[ii]));
+        
+        RhsSupportTable_CenterNodes[iElement].SetCenterB(
+            -coeff4[0],   // -c*dt/(2*dx)
+            center,
+            0             // component 1 = By
+        );
+
           RhsSupportTable_CenterNodes[iElement].Coefficient=-coeff4[0]; //-c(dt)/dx
           RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer=node->block->GetCenterNode(_getCenterNodeLocalNumber(i-1,j+indexAdditionB[jj],k+indexAdditionB[ii]))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
           //rhs+=((double*)(RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer+CurrentCenterNodeOffset))[ByOffsetIndex]*RhsSupportTable_CenterNodes[iElement].Coefficient;
@@ -1419,6 +1547,16 @@ int idx2;
       
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
+
+        PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(
+            _getCenterNodeLocalNumber(i+indexAdditionB[jj], j, k+indexAdditionB[ii]));
+        
+        RhsSupportTable_CenterNodes[iElement].SetCenterB(
+            -coeff4[1],   // -c*dt/(2*dy)
+            center,
+            0             // component 0 = Bx
+        );
+
           RhsSupportTable_CenterNodes[iElement].Coefficient=-coeff4[1]; //-c(dt)/dy
           RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer=node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[jj],j,k+indexAdditionB[ii]))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
           //rhs+=((double*)(RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer+CurrentCenterNodeOffset))[BxOffsetIndex]*RhsSupportTable_CenterNodes[iElement].Coefficient;
@@ -1429,6 +1567,16 @@ int idx2;
     
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
+
+        PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(
+            _getCenterNodeLocalNumber(i+indexAdditionB[jj], j-1, k+indexAdditionB[ii]));
+        
+        RhsSupportTable_CenterNodes[iElement].SetCenterB(
+            coeff4[1],    // +c*dt/(2*dy)
+            center,
+            0             // component 0 = Bx
+        );
+                  
           RhsSupportTable_CenterNodes[iElement].Coefficient=coeff4[1]; //c(dt)/dy
           RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer=node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[jj],j-1,k+indexAdditionB[ii]))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
           //rhs+=((double*)(RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer+CurrentCenterNodeOffset))[BxOffsetIndex]*RhsSupportTable_CenterNodes[iElement].Coefficient;
