@@ -1,0 +1,461 @@
+
+/**
+ * Compute the local right–hand side contribution for a single electric–field
+ * unknown E_i(i,j,k) from its RHS support tables.
+ *
+ * This routine is called by the linear solver when assembling or applying the
+ * ECSIM field equation for one degree of freedom (one component, one corner).
+ * It evaluates the scalar RHS contribution
+ *
+ *     R = Σ_{corner entries} coeff_n * value_n
+ *       + Σ_{center entries} coeff_m * value_m ,
+ *
+ * where each "entry" is a cRhsSupportTable record and encodes:
+ *   - which mesh node is sampled (corner vs center),
+ *   - which physical quantity is read (E, B, J, MassMatrix, …),
+ *   - which component (x, y, z),
+ *   - and, if needed, an auxiliary index (for mass–matrix etc.).
+ *
+ *
+ * NEW cRhsSupportTable LAYOUT
+ * ---------------------------
+ * The RHS support table is now a *semantic* descriptor of what to read,
+ * not a frozen raw pointer. Each entry has the form:
+ *
+ *   struct cRhsSupportTable {
+ *       double coeff;
+ *
+ *       enum class NodeKind : uint8_t { Corner, Center };
+ *       enum class Quantity : uint8_t { E, B, J, MassMatrix };
+ *
+ *       NodeKind  node_kind;   // Corner-node vs Center-node sample
+ *       Quantity  quantity;    // which field: E, B, J, MassMatrix, ...
+ *       uint8_t   component;   // 0 = x, 1 = y, 2 = z (or another component index)
+ *       int       aux_index;   // optional scalar index, e.g. into mass-matrix buffer
+ *
+ *       // Exactly one of these pointers is valid depending on node_kind:
+ *       PIC::Mesh::cDataCornerNode *corner;
+ *       PIC::Mesh::cDataCenterNode *center;
+ *   };
+ *
+ * Interpretation:
+ *   - coeff:
+ *       Numerical factor multiplying the sampled scalar, including all
+ *       physical constants and unit conversions (E_conv, B_conv, dt, 4π,
+ *       θ, etc.). UpdateRhs() does not modify coeff; it just multiplies.
+ *
+ *   - node_kind:
+ *       Distinguishes between a corner-node sample (electric field E,
+ *       current J, mass-matrix entries) and a center-node sample (magnetic
+ *       field B for curl B).
+ *
+ *   - quantity:
+ *       Selects which physical quantity to read from the node’s data
+ *       buffer. For example:
+ *         Quantity::E → electric field at the current time level,
+ *         Quantity::J → current density components at the current time level,
+ *         Quantity::B → magnetic field at the current time level,
+ *         Quantity::MassMatrix → scalar from the mass-matrix buffer.
+ *
+ *   - component:
+ *       Selects which vector component or scalar entry is used, typically:
+ *         0 → x-component, 1 → y-component, 2 → z-component
+ *       For scalar quantities like a mass-matrix entry, component can be
+ *       ignored or used as a small integer tag if desired.
+ *
+ *   - aux_index:
+ *       Optional index for accessing data stored as a 1-D array inside
+ *       the node (e.g. an entry in the mass-matrix buffer). If not used,
+ *       it should be set to a negative value (e.g. -1).
+ *
+ *   - corner / center:
+ *       Pointer to the owning mesh node. For Corner-node entries, corner
+ *       is non-null and center is nullptr. For Center-node entries, center
+ *       is non-null and corner is nullptr.
+ *
+ * The actual scalar value for an entry is obtained via SampleRhsScalar():
+ *
+ *   value = SampleRhsScalar(entry);
+ *
+ * which:
+ *   - uses node_kind (Corner vs Center) to select the correct node pointer,
+ *   - uses quantity to select which field buffer to access (E, B, J, M, …),
+ *   - uses component and aux_index to select the appropriate element,
+ *   - and, crucially, applies the *current* offsets (CurrentEOffset,
+ *     CurrentBOffset, MassMatrixOffsetIndex, etc.) when computing the
+ *     buffer address. No raw double* offsets are stored in the table.
+ *
+ *
+ * DESIGN / RATIONALE
+ * -------------------
+ * Historically, the ECSIM RHS evaluation relied on a hard–wired indexing
+ * scheme for the RHS support arrays:
+ *
+ *   - entries [0..26]            : 3×3×3 neighborhood for Ex
+ *   - entries [27..53]           : 3×3×3 neighborhood for Ey
+ *   - entries [54..80]           : 3×3×3 neighborhood for Ez
+ *   - entries [81..]             : extended 375–point stencil pieces
+ *   - entry [_PIC_STENCIL_NUMBER_] :
+ *         special slot for the current J term,
+ *
+ * and a similar implicit ordering for mass–matrix and grad–div corrections.
+ * This made UpdateRhs() tightly coupled to the particular way
+ * GetStencil_import_cStencil() laid out support entries, and forced any new
+ * stencil/indexer implementation to reproduce the same ad-hoc numbering.
+ *
+ * The old design also stored raw double* pointers with fixed offsets
+ * (e.g. ElectricField.RelativeOffset + CurrentEOffset). If the time–level
+ * offsets (CurrentEOffset, CurrentBOffset) changed at runtime (for example,
+ * when reusing buffers for different time levels), those stored pointers
+ * became stale and pointed at the wrong data.
+ *
+ * The new design addresses both issues:
+ *
+ *   1. Semantic description instead of frozen pointers:
+ *      Each cRhsSupportTable entry describes *what* to sample, not *where*.
+ *      SampleRhsScalar() translates that description into a concrete scalar
+ *      using the current offsets. This makes the RHS safe with respect to
+ *      runtime changes in CurrentEOffset / CurrentBOffset.
+ *
+ *   2. Decoupling UpdateRhs() from stencil indexing:
+ *      UpdateRhs() no longer knows or cares about:
+ *        - 27/98/375–element blocks,
+ *        - which indices belong to Ex/Ey/Ez,
+ *        - which slot corresponds to the current J or any special entry,
+ *        - the details of the 4-D indexer used by the matrix assembly.
+ *
+ *      All of that information is encapsulated when GetStencil_import_cStencil()
+ *      fills the support tables. UpdateRhs() is just:
+ *
+ *        R = Σ coeff * SampleRhsScalar(entry).
+ *
+ * This decouples RHS evaluation from any particular stencil layout and makes
+ * the implementation robust to changes in time-level offsets and to future
+ * modifications of the matrix/indexer logic.
+ *
+ *
+ * INTERFACE CONTRACT
+ * -------------------
+ * The support tables must be fully initialized by
+ * GetStencil_import_cStencil(), which is responsible for:
+ *
+ *   - Filling RhsSupportTable_CornerNodes[0..RhsSupportLength_CornerNodes-1]
+ *     with all corner–based RHS contributions for this equation:
+ *       • E^n stencil terms (Laplacian, grad–div, 375–point corrections),
+ *       • current J contributions,
+ *       • any mass–matrix pieces applied on the RHS.
+ *
+ *   - Filling RhsSupportTable_CenterNodes[0..RhsSupportLength_CenterNodes-1]
+ *     with all center–based RHS contributions:
+ *       • curl B terms (2×2×2 edge–averaging pattern),
+ *       • any other center–stored source terms.
+ *
+ *   - For each entry:
+ *       • coeff      contains the complete numerical factor (including
+ *                    unit conversions and time-step factors),
+ *       • node_kind  is set to Corner or Center,
+ *       • quantity   selects which field is sampled (E, B, J, MassMatrix, …),
+ *       • component  selects the appropriate vector component index,
+ *       • aux_index  is set if an additional scalar index is needed,
+ *       • corner/center pointer is set to the owning node; the other pointer
+ *         is set to nullptr.
+ *
+ * Given that contract, UpdateRhs():
+ *
+ *   - is agnostic to the ordering of support entries,
+ *   - is agnostic to the internal stencil shape or 4-D indexer layout,
+ *   - remains valid if CurrentEOffset / CurrentBOffset change between solves,
+ *   - is re–entrant and side–effect free.
+ *
+ *
+ * PARAMETERS
+ * ----------
+ * @param iVar
+ *   Index of the field component for this equation:
+ *     0 → Ex, 1 → Ey, 2 → Ez.
+ *   Retained for interface compatibility; the new implementation encodes
+ *   component information in each cRhsSupportTable entry and does not
+ *   directly use iVar.
+ *
+ * @param RhsSupportTable_CornerNodes
+ *   Pointer to the first element of the corner–node RHS support array for
+ *   this row. Entries [0..RhsSupportLength_CornerNodes-1] are valid and were
+ *   populated by GetStencil_import_cStencil().
+ *
+ * @param RhsSupportLength_CornerNodes
+ *   Number of valid entries in RhsSupportTable_CornerNodes.
+ *
+ * @param RhsSupportTable_CenterNodes
+ *   Pointer to the first element of the center–node RHS support array for
+ *   this row. Entries [0..RhsSupportLength_CenterNodes-1] are valid and were
+ *   populated by GetStencil_import_cStencil().
+ *
+ * @param RhsSupportLength_CenterNodes
+ *   Number of valid entries in RhsSupportTable_CenterNodes.
+ *
+ *
+ * RETURN VALUE
+ * ------------
+ * @return
+ *   The scalar RHS contribution R for the current unknown E_i(i,j,k), i.e.
+ *   the value that appears on the right–hand side of the linear system
+ *   row after all local source terms (E^n, J, curl B, mass–matrix pieces,
+ *   etc.) have been summed according to the populated support tables.
+ *
+ *
+ * PERFORMANCE NOTES
+ * -----------------
+ * - Complexity is O(N_corner + N_center) per row, where N_corner and
+ *   N_center are the lengths of the support arrays. For typical ECSIM
+ *   stencils (O(10^2) entries), the overhead of SampleRhsScalar() is small
+ *   compared to the global solver cost.
+ *
+ * - Compilers are expected to inline SampleRhsScalar() and specialize the
+ *   switch logic on quantity and node_kind, keeping the cost per entry low.
+ *
+ * THREAD SAFETY
+ * -------------
+ * UpdateRhs() is re–entrant and does not modify global state. It assumes:
+ *   - The mesh data referenced by the support tables (corner/center nodes)
+ *     remain read–only during the call.
+ *   - Global offsets (CurrentEOffset, CurrentBOffset, MassMatrixOffsetIndex,
+ *     etc.) are not changed concurrently while RHS is being evaluated for
+ *     the current matrix.
+ */
+
+#include "../pic.h"
+
+double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs_old(int iVar,
+              cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int RhsSupportLength_CornerNodes,
+              cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int RhsSupportLength_CenterNodes)  
+
+{
+
+  double res = 0.0;
+
+  // Corner-node contributions (E^n, J, mass-matrix, ...)
+  for (int n = 0; n < RhsSupportLength_CornerNodes; ++n) {
+    const auto &s = RhsSupportTable_CornerNodes[n];
+    if (s.Coefficient == 0.0) continue;
+    res += s.Coefficient * PIC::FieldSolver::Electromagnetic::ECSIM::SampleRhsScalar(s);
+  }
+
+  // Center-node contributions (curl B, etc.)
+  for (int n = 0; n < RhsSupportLength_CenterNodes; ++n) {
+    const auto &s = RhsSupportTable_CenterNodes[n];
+    if (s.Coefficient == 0.0) continue;
+    res += s.Coefficient * PIC::FieldSolver::Electromagnetic::ECSIM::SampleRhsScalar(s);
+  }
+
+  return res;
+}
+
+
+
+namespace PIC {
+namespace FieldSolver {
+namespace Electromagnetic {
+namespace ECSIM {
+
+
+	/*
+// Alias to the RHS entry type used by the corner-node linear system.
+// Adjust template parameters here if your LinearSystemCornerNode signature changes.
+using RhsEntry =
+  cLinearSystemCornerNode<
+      PIC::Mesh::cDataCornerNode,
+      3,
+      _PIC_STENCIL_NUMBER_,
+      _PIC_STENCIL_NUMBER_+1,
+      16,1,1
+  >::cRhsSupportTable;
+  */
+
+/**
+ * SampleRhsScalar
+ * ---------------
+ * Return the scalar value referenced by a single RHS support entry.
+ *
+ * The entry (RhsEntry) semantically describes *what* to read using:
+ *
+ *   - node_kind  : Corner or Center node,
+ *   - quantity   : which physical field to sample (E, B, J, MassMatrix, ...),
+ *   - component  : vector component index (0=x, 1=y, 2=z),
+ *   - aux_index  : optional scalar index (e.g., into a mass-matrix buffer),
+ *   - corner     : pointer to the owning cDataCornerNode (if node_kind==Corner),
+ *   - center     : pointer to the owning cDataCenterNode (if node_kind==Center).
+ *
+ * The actual address calculation is done *at call time* using the
+ * *current* time-level offsets:
+ *
+ *   - CurrentEOffset : stride offset into the ElectricField buffer,
+ *   - CurrentBOffset : stride offset into the MagneticField buffer,
+ *   - (optionally) a mass-matrix offset if/when it is wired in.
+ *
+ * This design avoids storing raw double* pointers that could become stale if
+ * time-level offsets are rotated or reused at runtime.
+ *
+ * IMPORTANT:
+ * ----------
+ *  - This function ONLY returns the raw field value; it does not apply
+ *    the coefficient stored in the entry.
+ *
+ *    The full RHS contribution is computed in UpdateRhs() as:
+ *
+ *        contribution = entry.Coefficient * SampleRhsScalar(entry);
+ *
+ *  - If an entry is malformed (e.g., null node pointer, invalid component
+ *    index, negative aux_index for MassMatrix), this function safely
+ *    returns 0.0 instead of crashing.
+ *
+ *  - For now, the MassMatrix case is left as a placeholder that returns
+ *    0.0. Once the mass-matrix buffer layout is finalized, hook it up
+ *    in the Q::MassMatrix block below.
+ *
+ * PARAMETERS
+ * ----------
+ * @param s
+ *   RHS support entry describing which scalar value to read.
+ *
+ * RETURN VALUE
+ * ------------
+ *   The scalar field value referenced by the entry. The caller is
+ *   responsible for multiplying by s.Coefficient (or whatever coefficient
+ *   field you use).
+ */
+double SampleRhsScalar(const RhsEntry &s,int iVar)
+{
+  using NK = RhsEntry::NodeKind;
+  using Q  = RhsEntry::Quantity;
+
+  // ----------------------------------------------------
+  // Corner-node samples
+  // ----------------------------------------------------
+  if (s.node_kind == NK::Corner) {
+    // If the entry says "Corner node" but we don't have a pointer, treat
+    // this as a no-op contribution.
+    if (!s.corner) return 0.0;
+
+    // Base pointer to the corner-node data buffer.
+    char *buf = s.corner->GetAssociatedDataBufferPointer();
+
+    switch (s.quantity) {
+
+    case Q::E: {
+      // Electric field E at the *current* E time level.
+      //
+      // The electric field block is stored at
+      //   ElectricField.RelativeOffset
+      // and we add CurrentEOffset to select the active time level.
+      double *E = reinterpret_cast<double *>(
+          buf + CurrentEOffset); 
+
+      // Select component based on "component" index.
+      switch (s.component) {
+      case 0: return E[ExOffsetIndex];  // Ex
+      case 1: return E[EyOffsetIndex];  // Ey
+      case 2: return E[EzOffsetIndex];  // Ez
+      default:
+        // Unknown component → treat as zero contribution.
+        return 0.0;
+      }
+    }
+
+    case Q::J: {
+      // Current density J at the *current* E time level.
+      //
+      // In this layout, J is stored in the same buffer as E, so we reuse
+      // the ElectricField.RelativeOffset + CurrentEOffset and use J*OffsetIndex.
+      double *J = reinterpret_cast<double *>(buf); 
+
+      switch (s.component) {
+      case 0: return J[JxOffsetIndex+iVar]; // Jx
+      case 1: return J[JyOffsetIndex]; // Jy
+      case 2: return J[JzOffsetIndex]; // Jz
+      default:
+        return 0.0;
+      }
+    }
+
+    case Q::MassMatrix: {
+      // Mass-matrix scalar entry.
+      //
+      // The exact buffer layout for the mass matrix may vary. We currently
+      // treat this as a placeholder:
+      //
+      //   - s.aux_index is expected to identify the scalar element inside
+      //     the mass-matrix buffer.
+      //   - Once the mass-matrix offset is known (e.g. MassMatrixOffsetIndex
+      //     or a dedicated RelativeOffset), hook it up here.
+      //
+      if (s.aux_index < 0) {
+        // No valid index → zero contribution.
+        return 0.0;
+      }
+
+      // Example wiring (uncomment and adjust when mass-matrix offset is known):
+      //
+      // double *M = reinterpret_cast<double *>(
+      //     buf + MassMatrixOffsetIndex  // or PIC::CPLR::DATAFILE::Offset::MassMatrix.RelativeOffset
+      // );
+      // return M[s.aux_index];
+      //
+      // For now, return 0.0 so the term is effectively disabled until
+      // the correct offset is defined.
+      return 0.0;
+    }
+
+    default:
+      // Unknown quantity on a corner node → treat as zero.
+      return 0.0;
+    }
+  }
+
+  // ----------------------------------------------------
+  // Center-node samples
+  // ----------------------------------------------------
+  if (s.node_kind == NK::Center) {
+    // If the entry says "Center node" but no pointer is provided, treat
+    // as zero contribution.
+    if (!s.center) return 0.0;
+
+    // Base pointer to the center-node data buffer.
+    char *buf = s.center->GetAssociatedDataBufferPointer();
+
+    switch (s.quantity) {
+
+    case Q::B: {
+      // Magnetic field B at the *current* B time level.
+      //
+      // The magnetic field block is stored at
+      //   MagneticField.RelativeOffset
+      // and we add CurrentBOffset to select the active time level.
+      double *B = reinterpret_cast<double *>(
+          buf + CurrentBOffset); 
+
+return B[s.component+iVar];
+
+      switch (s.component) {
+      case 0: return B[BxOffsetIndex+iVar];  // Bx
+      case 1: return B[ByOffsetIndex];  // By
+      case 2: return B[BzOffsetIndex];  // Bz
+      default:
+        return 0.0;
+      }
+    }
+
+    default:
+      // Unknown quantity on a center node → treat as zero.
+      return 0.0;
+    }
+  }
+
+  // ----------------------------------------------------
+  // Fallback: unknown node kind
+  // ----------------------------------------------------
+  return 0.0;
+}
+
+
+} } } }
+
