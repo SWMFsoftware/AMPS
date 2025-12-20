@@ -416,6 +416,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil_import_cStencil(int i,
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
 
 
+  support_corner_vector.clear();
+  support_center_vector.clear();
+
 //  GetStencil(i,j,k,iVar,MatrixRowNonZeroElementTable,NonZeroElementsFound,rhs,RhsSupportTable_CornerNodes,RhsSupportLength_CornerNodes,RhsSupportTable_CenterNodes,RhsSupportLength_CenterNodes,node);
 //  return;
   
@@ -657,6 +660,129 @@ for (int i=0;i<3;i++) indexer[i].reset();
   const int reversed_indexAddition[3] = {1,0,2};  //table to determine ii,jj,kk from i,j,k 
 
   char * NodeDataOffset = node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+
+
+//====================================================================
+  // Populate semantic RHS support entries for the **mass-matrix dot product**
+  //====================================================================
+  //
+  // Legacy RHS form (inside old UpdateRhs()):
+  //   The RHS included a term that (schematically) looked like
+  //
+  //     res += (-4*pi*dtTotal*theta) * [  Σ_{ii=0..26}  (E(neib_ii) · M_row(ii))  ] * E_conv
+  //
+  //   where:
+  //     - E(neib_ii) is the electric field sampled from the 3×3×3 neighbor
+  //       corner nodes around (i,j,k),
+  //     - M_row(ii) are the stored mass-matrix coefficients for the current
+  //       row component p=iVar, and
+  //     - the compact mass matrix lives in the **row corner node** buffer.
+  //
+  // New goal:
+  //   The new UpdateRhs() should contain only two simple loops over support
+  //   containers (corner + center). Therefore, we *encode the dot product*
+  //   as explicit semantic support entries of Quantity::MassMatrix and store
+  //   the constant prefactor (-4*pi*dtTotal*theta) in CoefficientNEW.
+  //
+  // Strategy used here:
+  //   - We append 81 entries into the caller-provided 'support_corner_vector':
+  //       27 neighbors × 3 E-components (Ex,Ey,Ez).
+  //   - Each entry represents one scalar term:  Mcoeff(aux_index) * Ecomp(neighbor)
+  //     (SampleRhsScalar implements this when quantity==MassMatrix).
+  //   - UpdateRhs() then accumulates:
+  //        res += s.CoefficientNEW * SampleRhsScalar(s,iVar)
+  //     where CoefficientNEW already includes the requested constant factor.
+  //
+  // IMPORTANT:
+  //   This block only ADDS population of the new semantic support vector.
+  //   It does NOT change any legacy RHS support arrays (RhsSupportTable_*),
+  //   and it does NOT remove or modify any existing stencil/matrix assembly.
+  //====================================================================
+  {
+    // Type alias for readability (matches the template used in this function signature).
+    using RhsEntry = cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable;
+
+    // The requested design requires that "-4*pi*dtTotal*theta" is stored in the
+    // support table (decouples RHS evaluation from the rest of the field solver).
+    //
+    // NOTE:
+    //   The legacy mass-matrix RHS also multiplied by E_conv, so we fold E_conv
+    //   here to preserve the original scaling exactly.
+    const double mmScale = (-4.0*Pi*dtTotal*theta) * E_conv;
+
+    // The mass-matrix buffer is stored on the *row* corner node (i,j,k).
+    // We keep an explicit pointer so SampleRhsScalar() can access the correct
+    // MM buffer even when E is sampled from a neighbor corner.
+    PIC::Mesh::cDataCornerNode *mmOwnerCorner =
+      node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
+
+    // We are going to push 81 entries (27 neighbors × 3 components).
+    // Reserve upfront to avoid repeated reallocations.
+    support_corner_vector.reserve(support_corner_vector.size() + 81);
+
+    // Build entries for:
+    //   Σ_{q∈{x,y,z}} Σ_{neighbor∈3×3×3}  [ E_q(neighbor) * M_{p=iVar,q}(neighbor) ]
+    //
+    // Here:
+    //   - q selects the E component (0=Ex,1=Ey,2=Ez),
+    //   - neighbor_linear = ii + 3*jj + 9*kk selects the neighbor corner in the 3×3×3 block,
+    //   - legacyElem = q*27 + neighbor_linear matches the historic "component block" ordering,
+    //   - MassMatrixOffsetTable[iVar][legacyElem] returns the scalar index into the MM buffer.
+    for (int q = 0; q < 3; q++) {
+      for (int kk = 0; kk < 3; kk++) {
+        for (int jj = 0; jj < 3; jj++) {
+          for (int ii = 0; ii < 3; ii++) {
+
+            // Neighbor offsets in {-1,0,+1} using the same ordering as the legacy code.
+            const int di = indexAddition[ii];
+            const int dj = indexAddition[jj];
+            const int dk = indexAddition[kk];
+
+            // Neighbor corner node that provides E_q(neighbor).
+            PIC::Mesh::cDataCornerNode *neighborCorner =
+              node->block->GetCornerNode(_getCornerNodeLocalNumber(i+di,j+dj,k+dk));
+
+            // Linear neighbor index in the compact 3×3×3 neighborhood.
+            const int neighbor_linear = ii + 3*jj + 9*kk;
+
+            // Historic component-block layout:
+            //   [0..26]  -> Ex neighbors
+            //   [27..53] -> Ey neighbors
+            //   [54..80] -> Ez neighbors
+            const int legacyElem = q*27 + neighbor_linear;
+
+            // Scalar index into the MM buffer for row component p=iVar.
+            // The MM itself lives on the row node mmOwnerCorner.
+            const int mmScalarIndex = MassMatrixOffsetTable[iVar][legacyElem];
+
+            // Create and populate the semantic entry.
+            //
+            // For quantity==MassMatrix, SampleRhsScalar() is expected to:
+            //   - sample E_q(neighborCorner) at the current E time level, and
+            //   - multiply by the MM coefficient M[mmScalarIndex] stored at mmOwnerCorner,
+            // returning one scalar dot-product term.
+            RhsEntry s;
+            s.SetCornerMassMatrix(mmScale, neighborCorner, mmOwnerCorner, mmScalarIndex, (unsigned char)q);
+
+            // Keep legacy fields benign. The legacy RHS path uses only
+            // (Coefficient, AssociatedDataPointer) and does not look at CoefficientNEW.
+            // We do not insert these semantic entries into the legacy arrays, so they
+            // should not affect the legacy UpdateRhs() behavior.
+            s.Coefficient           = 0.0;
+            s.AssociatedDataPointer = NULL;
+
+            support_corner_vector.push_back(s);
+          }
+        }
+      }
+    }
+
+    // NOTE:
+    //   We intentionally do NOT modify RhsSupportLength_CornerNodes here in order
+    //   to avoid breaking any existing legacy RHS layout assumptions. The mass-matrix
+    //   semantic entries are added ONLY to support_corner_vector for consumption by
+    //   the new UpdateRhs() path.
+  }
 
   /*
   emit_compact_mass_structure
