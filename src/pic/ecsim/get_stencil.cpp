@@ -1798,6 +1798,8 @@ auto build_corner_support_with_J = [&]() -> void {
 
 build_corner_support_with_J();
 
+support_corner_vector.shrink_to_fit();
+support_center_vector.shrink_to_fit();
 
 if (false) { 
   PostAssembleSelfCheck(i, j, k, iVar,
