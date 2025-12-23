@@ -225,26 +225,21 @@
 
 #include "../pic.h"
 
-double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs_old(int iVar,
+double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
               cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int RhsSupportLength_CornerNodes,
-              cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int RhsSupportLength_CenterNodes)  
+              cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int RhsSupportLength_CenterNodes,vector<cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable>& support_corner_vector,
+              vector<cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable>& support_center_vector)  
 
 {
 
   double res = 0.0;
 
-  // Corner-node contributions (E^n, J, mass-matrix, ...)
-  for (int n = 0; n < RhsSupportLength_CornerNodes; ++n) {
-    const auto &s = RhsSupportTable_CornerNodes[n];
-    if (s.Coefficient == 0.0) continue;
-    res += s.Coefficient * PIC::FieldSolver::Electromagnetic::ECSIM::SampleRhsScalar(s);
+  for (auto& el : support_center_vector) {
+    res+=el.CoefficientNEW * PIC::FieldSolver::Electromagnetic::ECSIM::SampleRhsScalar(el);
   }
 
-  // Center-node contributions (curl B, etc.)
-  for (int n = 0; n < RhsSupportLength_CenterNodes; ++n) {
-    const auto &s = RhsSupportTable_CenterNodes[n];
-    if (s.Coefficient == 0.0) continue;
-    res += s.Coefficient * PIC::FieldSolver::Electromagnetic::ECSIM::SampleRhsScalar(s);
+  for (auto& el : support_corner_vector) {
+    res+=el.CoefficientNEW * PIC::FieldSolver::Electromagnetic::ECSIM::SampleRhsScalar(el);
   }
 
   return res;
@@ -378,31 +373,41 @@ double SampleRhsScalar(const RhsEntry &s,int iVar)
     }
 
     case Q::MassMatrix: {
-      // Mass-matrix scalar entry.
+  // Mass-matrix contribution (one scalar dot-product term):
       //
-      // The exact buffer layout for the mass matrix may vary. We currently
-      // treat this as a placeholder:
+      //   SampleRhsScalar() returns:   Mcoeff(aux_index) * E_component(neighbor)
       //
-      //   - s.aux_index is expected to identify the scalar element inside
-      //     the mass-matrix buffer.
-      //   - Once the mass-matrix offset is known (e.g. MassMatrixOffsetIndex
-      //     or a dedicated RelativeOffset), hook it up here.
+      // UpdateRhs() multiplies by s.CoefficientNEW which must already contain
+      // the constant prefactor (-4*pi*dt*theta) (and, if desired, E_conv).
       //
-      if (s.aux_index < 0) {
-        // No valid index → zero contribution.
-        return 0.0;
+      // Data ownership:
+      //   - E is sampled from the *neighbor* corner node (s.corner).
+      //   - Mcoeff is sampled from the *row owner* corner node stored in
+      //     s.mm_owner_corner.
+      //
+      if (s.mm_owner_corner == nullptr) return 0.0;
+      if (s.aux_index < 0) return 0.0;
+
+      // Neighbor E component
+      double *E = (double*)(buf + CurrentEOffset);
+
+      double Eval = 0.0;
+      switch (s.component) {
+      case 0: Eval = E[ExOffsetIndex]; break;
+      case 1: Eval = E[EyOffsetIndex]; break;
+      case 2: Eval = E[EzOffsetIndex]; break;
+      default: return 0.0;
       }
 
-      // Example wiring (uncomment and adjust when mass-matrix offset is known):
-      //
-      // double *M = reinterpret_cast<double *>(
-      //     buf + MassMatrixOffsetIndex  // or PIC::CPLR::DATAFILE::Offset::MassMatrix.RelativeOffset
-      // );
-      // return M[s.aux_index];
-      //
-      // For now, return 0.0 so the term is effectively disabled until
-      // the correct offset is defined.
-      return 0.0;
+      // Row-owner mass-matrix coefficient
+      char *owner_buf = s.mm_owner_corner->GetAssociatedDataBufferPointer() +
+        PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+
+      // MassMatrixOffsetIndex is in units of doubles (legacy convention).
+      double *M = (double*)owner_buf + MassMatrixOffsetIndex;
+      const double Mcoeff = M[s.aux_index];
+
+      return Mcoeff * Eval;
     }
 
     default:
