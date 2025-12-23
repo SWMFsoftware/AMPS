@@ -1480,6 +1480,7 @@ int idx2;
             0             // component 2 = Bz
         );
 
+
           RhsSupportTable_CenterNodes[iElement].Coefficient=coeff4[1]; //c(dt)/dy
           RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer=node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[ii],j,k+indexAdditionB[jj]))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
           //  rhs+=((double*)(RhsSupportTable_CenterNodes[iElement].AssociatedDataPointer+CurrentCenterNodeOffset))[BzOffsetIndex]*RhsSupportTable_CenterNodes[iElement].Coefficient;
@@ -1717,6 +1718,58 @@ int idx2;
     }
    
     RhsSupportLength_CenterNodes = iElement;     
+
+
+  //===========================================================================
+  // PART 3: BUILD CENTER NODE RHS SUPPORT (curl B)
+  //===========================================================================
+  // Lambda that builds all center-based RHS contributions
+  // Key: Sets component = B_component from curl formula
+  //      So UpdateRhs doesn't need to know about curl!
+  //===========================================================================
+
+auto build_curlB_support = [&]() -> void {
+  
+  support_center_vector.clear();
+  support_center_vector.reserve(16);
+  
+  // Copy all entries from array to vector, adding component field
+  for (int i = 0; i < RhsSupportLength_CenterNodes; i++) {
+    
+    RhsEntry entry;
+    
+    // Copy coefficient to CoefficientNEW (for new code path)
+    entry.CoefficientNEW = RhsSupportTable_CenterNodes[i].Coefficient;
+    
+    // Also keep Coefficient for backward compatibility if needed
+    entry.Coefficient = RhsSupportTable_CenterNodes[i].Coefficient;
+    
+    // Copy pointer
+    entry.AssociatedDataPointer = RhsSupportTable_CenterNodes[i].AssociatedDataPointer;
+    
+    // Set structure fields
+    entry.node_kind = RhsEntry::NodeKind::Center;
+    entry.quantity = RhsEntry::Quantity::B;
+    
+    // KEY: Component uses your modulo formula
+    entry.component = (i < 8) ? ((iVar + 2) % 3) : ((iVar + 4) % 3);
+    
+    // Initialize unused fields
+    entry.corner = nullptr;
+    entry.aux_index = -1;
+    entry.mm_owner_corner = nullptr;
+    
+
+    // Copy center node pointer (it already exists in the array!)
+    entry.center = RhsSupportTable_CenterNodes[i].center;
+
+    support_center_vector.push_back(entry);
+  }
+};
+
+
+  build_curlB_support();
+
 
 if (false) { 
   PostAssembleSelfCheck(i, j, k, iVar,
