@@ -1770,6 +1770,34 @@ auto build_curlB_support = [&]() -> void {
 
   build_curlB_support();
 
+auto build_corner_support_with_J = [&]() -> void {
+  for (int i = 0; i < RhsSupportLength_CornerNodes; i++) {
+    
+    RhsEntry entry;
+    
+    // Copy from array
+    entry=RhsSupportTable_CornerNodes[i]; 
+  //  entry.CoefficientNEW = RhsSupportTable_CornerNodes[i].Coefficient;
+
+   // entry.center = nullptr;
+   // entry.aux_index = -1;
+   // entry.mm_owner_corner = nullptr;
+    
+    if (i==RhsSupportLength_CornerNodes-1) {
+      // J (current) entries
+      entry.component = iVar;  
+    }
+    
+    entry.center = nullptr;
+    entry.aux_index = -1;
+    entry.mm_owner_corner = nullptr;
+    
+    support_corner_vector.push_back(entry);
+  }
+};
+
+build_corner_support_with_J();
+
 
 if (false) { 
   PostAssembleSelfCheck(i, j, k, iVar,
