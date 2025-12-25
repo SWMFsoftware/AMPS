@@ -862,7 +862,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil_import_cStencil(int i,
             const int di = indexAddition[ii];
             const int dj = indexAddition[jj];
             const int dk = indexAddition[kk];
-            indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
+            //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
 	    iElement=indexer.get_idx(di, dj, dk, iVarIndex); 
 
 
