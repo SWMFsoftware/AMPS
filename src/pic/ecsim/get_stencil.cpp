@@ -442,27 +442,27 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil_import_cStencil(int i,
 
   //init indexers 
   //static 
-	  cIndexer4D indexer[3]; //iVar=0...2 
+	  cIndexer4D indexer; ///[3]; //iVar=0...2 
 
 //  static cIndexer4D indexer_rhs;
 
-  if (indexer[0].isInitialized()==false) {
+  if (indexer.isInitialized()==false) {
     //init indexer
 
     int min_limit[4]={-5,-5,-5,0},max_limit[4]={5,5,5,2};
 
-    for (int i=0;i<3;i++) indexer[i].init(min_limit,max_limit);
+    indexer.init(min_limit,max_limit);
 
  //   indexer_rhs.init(min_limit,max_limit);
   }
 
-for (int i=0;i<3;i++) indexer[i].reset();
+  indexer.reset();
 
   // Canonical mapping from physical offsets (di,dj,dk) and unknown component
   // (iVarIndex: 0->Ex, 1->Ey, 2->Ez) into the compact element slot *for this row iVar*.
   // This keeps iElement <-> (di,dj,dk,iVarIndex) consistent across all terms.
   auto map_iElement = [&](int di, int dj, int dk, int iVarIndex)->int {
-    return indexer[iVar].get_idx(di, dj, dk, iVarIndex);
+    return indexer.get_idx(di, dj, dk, iVarIndex);
   };
 
   //------------------------------------------------------------------------------
@@ -862,8 +862,8 @@ for (int i=0;i<3;i++) indexer[i].reset();
             const int di = indexAddition[ii];
             const int dj = indexAddition[jj];
             const int dk = indexAddition[kk];
-            indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
-	    iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex); 
+            indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
+	    iElement=indexer.get_idx(di, dj, dk, iVarIndex); 
 
 
             MatrixRowNonZeroElementTable[iElement].i = iNode;
@@ -919,7 +919,7 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int dj = indexOffset[jj];
         const int dk = indexOffset[kk];
         //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
+	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
       }
 
 	  cntTemp++;
@@ -957,8 +957,8 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = st->Data[it].i;
         const int dj = st->Data[it].j;
         const int dk = st->Data[it].k;
-        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVar); 
-	iElement=indexer[iVar].get_idx(di, dj, dk, iVar);
+        //indexer.check_and_set(iElement,di, dj, dk, iVar); 
+	iElement=indexer.get_idx(di, dj, dk, iVar);
       }
 
       //minus laplacian
@@ -975,8 +975,8 @@ int idx1;
         const int di = 0;
         const int dj = 0;
         const int dk = 0;
-        //indexer[iVar].check_and_set(27*iVar,di, dj, dk, iVar);
-	idx1=indexer[iVar].get_idx(di, dj, dk, iVar);
+        //indexer.check_and_set(27*iVar,di, dj, dk, iVar);
+	idx1=indexer.get_idx(di, dj, dk, iVar);
       }
   
   MatrixRowNonZeroElementTable[idx1].MatrixElementParameterTable[0]+=1;
@@ -999,8 +999,8 @@ int idx1;
         const int di = st->Data[it].i;
         const int dj = st->Data[it].j;
         const int dk = st->Data[it].k;
-        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
+        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
       }
 
       MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=(1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];
@@ -1022,8 +1022,8 @@ int idx1;
         const int di = st375->Data[it].i;
         const int dj = st375->Data[it].j;
         const int dk = st375->Data[it].k;
-        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
+        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
       }
 
       MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
@@ -1064,8 +1064,8 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = st375->Data[it].i;
         const int dj = st375->Data[it].j;
         const int dk = st375->Data[it].k;
-        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
+        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
       }
 
       MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
@@ -1185,8 +1185,8 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = indexAddition[ii];
         const int dj = indexAddition[jj];
         const int dk = indexAddition[kk];
-        //indexer[iVar].check_and_set(iElement,di, dj, dk, 0);
-	iElement=indexer[iVar].get_idx(di, dj, dk, 0);
+        //indexer.check_and_set(iElement,di, dj, dk, 0);
+	iElement=indexer.get_idx(di, dj, dk, 0);
       }
 
         RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
@@ -1216,11 +1216,11 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = indexOffset[ii];
         const int dj = indexOffset[jj];
         const int dk = indexOffset[kk];
-        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
+        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
 
-        //indexer[iVar].check_and_set(jOldElement,di, dj, dk, 0);
-	jOldElement=indexer[iVar].get_idx(di, dj, dk, 0);
+        //indexer.check_and_set(jOldElement,di, dj, dk, 0);
+	jOldElement=indexer.get_idx(di, dj, dk, 0);
 
       }
 
@@ -1260,8 +1260,8 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = indexOffset[ii];
         const int dj = indexOffset[jj];
         const int dk = indexOffset[kk];
-        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
+        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
       }
 
 
@@ -1303,11 +1303,11 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = indexOffset[ii];
         const int dj = indexOffset[jj];
         const int dk = indexOffset[kk];
-        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
+        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
 
-        //indexer[iVar].check_and_set(iElementOld,di, dj, dk, 0);
-	iElementOld=indexer[iVar].get_idx(di, dj, dk, 0);
+        //indexer.check_and_set(iElementOld,di, dj, dk, 0);
+	iElementOld=indexer.get_idx(di, dj, dk, 0);
 
       }
 
@@ -1343,8 +1343,8 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = st->Data[it].i;
         const int dj = st->Data[it].j;
         const int dk = st->Data[it].k;
-        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVar);
-	iElement=indexer[iVar].get_idx(di, dj, dk, iVar);
+        //indexer.check_and_set(iElement,di, dj, dk, iVar);
+	iElement=indexer.get_idx(di, dj, dk, iVar);
       }
 
       //plus laplacian
@@ -1372,8 +1372,8 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = st->Data[it].i;
         const int dj = st->Data[it].j;
         const int dk = st->Data[it].k;
-        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
+        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
       }
 
       RhsSupportTable_CornerNodes[iElement].Coefficient -=(1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];
@@ -1401,8 +1401,8 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = st375->Data[it].i;
         const int dj = st375->Data[it].j;
         const int dk = st375->Data[it].k;
-        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
+        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
       }
 
 
@@ -1429,8 +1429,8 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = st375->Data[it].i;
         const int dj = st375->Data[it].j;
         const int dk = st375->Data[it].k;
-        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
+        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
       }
 
 
@@ -1441,14 +1441,14 @@ if (_PIC_STENCIL_NUMBER_==375) {
 
 }
 
-int idx=indexer[iVar].get_index_count(); //_PIC_STENCIL_NUMBER_  
+int idx=indexer.get_index_count(); //_PIC_STENCIL_NUMBER_  
 int idx2;
       {
         const int di = 0;
         const int dj = 0;
         const int dk = 0;
-        //indexer[iVar].check_and_set(27*iVar,di, dj, dk, iVar);
-	idx2=indexer[iVar].get_idx(di, dj, dk, iVar);
+        //indexer.check_and_set(27*iVar,di, dj, dk, iVar);
+	idx2=indexer.get_idx(di, dj, dk, iVar);
       }
 
   RhsSupportTable_CornerNodes[idx].AssociatedDataPointer=RhsSupportTable_CornerNodes[idx2].AssociatedDataPointer;
