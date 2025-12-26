@@ -318,7 +318,7 @@ using RhsEntry =
  *   responsible for multiplying by s.Coefficient (or whatever coefficient
  *   field you use).
  */
-double SampleRhsScalar(const RhsEntry &s,int iVar)
+double SampleRhsScalar(const RhsEntry &s)
 {
   using NK = RhsEntry::NodeKind;
   using Q  = RhsEntry::Quantity;
@@ -364,7 +364,7 @@ double SampleRhsScalar(const RhsEntry &s,int iVar)
       double *J = reinterpret_cast<double *>(buf); 
 
       switch (s.component) {
-      case 0: return J[JxOffsetIndex+iVar]; // Jx
+      case 0: return J[JxOffsetIndex]; // Jx
       case 1: return J[JyOffsetIndex]; // Jy
       case 2: return J[JzOffsetIndex]; // Jz
       default:
@@ -438,10 +438,8 @@ double SampleRhsScalar(const RhsEntry &s,int iVar)
       double *B = reinterpret_cast<double *>(
           buf + CurrentBOffset); 
 
-return B[s.component+iVar];
-
       switch (s.component) {
-      case 0: return B[BxOffsetIndex+iVar];  // Bx
+      case 0: return B[BxOffsetIndex];  // Bx
       case 1: return B[ByOffsetIndex];  // By
       case 2: return B[BzOffsetIndex];  // Bz
       default:
