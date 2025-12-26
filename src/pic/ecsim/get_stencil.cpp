@@ -407,18 +407,74 @@ static void PostAssembleSelfCheck(
 #endif // _ECSIM_STENCIL_SELFTEST_
 
 
+
+/**
+ * Assemble one matrix row and RHS support for the ECSIM semi-implicit E-field solve.
+ *
+ * This routine is invoked by the corner-node linear system builder (cLinearSystemCornerNode)
+ * for a single unknown: the electric-field component E_{iVar} at the *corner node* (i,j,k).
+ *
+ * ECSIM context (semi-implicit Maxwell + particle response)
+ * ---------------------------------------------------------
+ * AMPS stores:
+ *   • E on corner nodes (unknowns of this linear system)
+ *   • B on center nodes (appears in RHS through curl(B))
+ *   • J and the particle "mass matrix" response on corner nodes (from UpdateJMassMatrix()).
+ *
+ * The ECSIM update solves for E^{n+θ} (θ∈[0,1], typically 0.5) from a discretized Ampère–Maxwell law
+ * where the particle response is treated implicitly through the mass matrix. In operator form:
+ *
+ *   A(E^{n+θ}) = b(E^n, B^n, J^n, ...)
+ *
+ * where A contains:
+ *   • the identity term
+ *   • discrete curl-curl / grad-div pieces (coming from ∇×B and the semi-implicit Faraday coupling)
+ *   • + (4π θ Δt) * (mass-matrix operator) contributions
+ *
+ * Output contract
+ * ---------------
+ * This function fills:
+ *   • MatrixRowNonZeroElementTable / NonZeroElementsFound : sparse stencil structure for the row of A
+ *   • rhs                                              : the *constant* part of b
+ *   • RhsSupportTable_* / RhsSupportLength_*            : legacy RHS representation (kept for compatibility)
+ *   • support_corner_vector / support_center_vector     : semantic RHS representation used by the new UpdateRhs()
+ *
+ * Semantic RHS representation (new path)
+ * -------------------------------------
+ * The RHS is represented as a dot-product over a small set of sampled quantities:
+ *
+ *   rhs_total = rhs + Σ_s ( coeff_s * sample_s )
+ *
+ * where each sample_s is a *typed* (semantic) reference to:
+ *   • Corner(E component) or Corner(J component)
+ *   • Center(B component)
+ *
+ * UpdateRhs() later evaluates these semantic entries using the correct time-level offsets
+ * (CurrentEOffset / CurrentBOffset) without relying on hard-coded array sizes like _PIC_STENCIL_NUMBER_.
+ *
+ * NOTE: For compatibility with older code paths and optional self-tests, the function signature
+ * still includes the legacy RHS arrays; the semantic vectors are the authoritative output for
+ * the refactored RHS path.
+ */
+
 void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil_import_cStencil(int i,int j,int k,int iVar,cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,
 			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,
 			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, 
 			     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,                                                                           vector<cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable>& support_corner_vector,
               vector<cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable>& support_center_vector) {
   
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
 
+  // ---------------------------------------------------------------------------
+  // (1) Initialize semantic RHS support containers.
+  //     In the ECSIM linear solve, the RHS consists of:
+  //       • a constant part (stored in `rhs`)
+  //       • plus linear combinations of sampled E, B, J values from neighboring nodes.
+  //     The new path stores those samples in the semantic vectors below.
+  // ---------------------------------------------------------------------------
 
   support_corner_vector.clear();
   support_center_vector.clear();
-  support_center_vector.reserve(32);
 
 //  GetStencil(i,j,k,iVar,MatrixRowNonZeroElementTable,NonZeroElementsFound,rhs,RhsSupportTable_CornerNodes,RhsSupportLength_CornerNodes,RhsSupportTable_CenterNodes,RhsSupportLength_CenterNodes,node);
 //  return;
@@ -441,6 +497,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil_import_cStencil(int i,
   int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
   double dx[3],coeff[3],coeffSqr[3],coeff4[3]; 
 
+  // ---------------------------------------------------------------------------
+  // (4) Stencil indexing (do NOT assume _PIC_STENCIL_NUMBER_).
+  //     The legacy implementation relied on fixed-size arrays sized by _PIC_STENCIL_NUMBER_.
+  //     Here we use cIndexer4D to map (di,dj,dk,component) -> compact integer slot.
+  //     Only slots that are actually referenced are created/used in the semantic vectors.
+  // ---------------------------------------------------------------------------
   //init indexers 
   //static 
 	  cIndexer4D indexer[3]; //iVar=0...2 
@@ -617,6 +679,13 @@ for (int i=0;i<3;i++) indexer[i].reset();
   //   • The special case `isRightBoundaryCorner(x,node)` mirrors the original code’s
   //     treatment where the single entry is suppressed by setting NonZeroElementsFound=0.
   //------------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // (3) Boundary handling for the linear system row.
+  //     For physical (non-periodic) boundaries, ECSIM imposes a simplified row
+  //     (often Dirichlet-like) to avoid referencing off-domain nodes.
+  //     This block mirrors the legacy GetStencil() behavior: if the corner lies on
+  //     a boundary, assemble a minimal row and return early.
+  // ---------------------------------------------------------------------------
   auto boundary_short_circuit = [&]() -> bool {
     if (_PIC_BC__PERIODIC_MODE_ == _PIC_BC__PERIODIC_MODE_OFF_)
       if (isBoundaryCorner(x, node)) {
@@ -1192,6 +1261,17 @@ if (_PIC_STENCIL_NUMBER_==375) {
   //   actually referenced.
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // (5) Semantic RHS support helpers: corner-node samples (E and J).
+  //
+  //     In Ampère–Maxwell, the RHS contains (1-θ) contributions built from known
+  //     fields at time level n, e.g. E^n and J^n, while the θ-part is moved to the
+  //     left-hand side to form the matrix operator.
+  //
+  //     We represent each required corner sample with a unique semantic entry and
+  //     accumulate coefficients into it. The uniqueness key is the runtime indexer slot.
+  // ---------------------------------------------------------------------------
+
   // Map: iElement (indexer idx) -> position in support_corner_vector
   std::map<int,int> cornerE_pos;
 
@@ -1379,6 +1459,13 @@ int idx2;
  
   RhsSupportLength_CornerNodes=idx+1;
 
+  // ---------------------------------------------------------------------------
+  // (8) Add the current density J term to the RHS support.
+  //
+  //     In Gaussian units, Ampère’s law contributes a -4π J term. Under ECSIM time-centering,
+  //     the explicit part of J (at time level n) is included on the RHS with coefficient
+  //     (-4π θ Δt) in this formulation (matching the legacy code’s convention).
+  // ---------------------------------------------------------------------------
   // Append the J term to the *semantic* corner support vector (do not copy from the legacy array).
   {
     PIC::Mesh::cDataCornerNode *rowCorner = node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
@@ -1400,24 +1487,33 @@ int idx2;
 
 
   int indexAdditionB[2] = {-1,0};
-  int iElement = 0;
-
   // ---------------------------------------------------------------------------
   // PART 3: BUILD CENTER-NODE RHS SUPPORT (curl B)  [semantic-vector path]
   // ---------------------------------------------------------------------------
   // Goal:
   //   Populate `support_center_vector` directly with semantic Center/B entries,
-  //   without relying on (or copying from) `RhsSupportTable_CenterNodes`.
+  //   WITHOUT relying on (or copying from) `RhsSupportTable_CenterNodes`.
   //
-  // Legacy compatibility:
-  //   We still fill `RhsSupportTable_CenterNodes` and `RhsSupportLength_CenterNodes`
-  //   for older code paths / self-checks, but the semantic RHS evaluation path
-  //   uses ONLY `support_center_vector`.
-  //
-  // We aggregate duplicates by (center-node pointer, B-component) so that the
-  // semantic RHS is a compact dot-product.
+  // Notes:
+  //   - We aggregate duplicates by (center-node pointer, B-component) so the
+  //     semantic RHS is a compact dot-product.
+  //   - The legacy center RHS table is not populated here anymore; the signature
+  //     is preserved for compatibility during the transition.
   // ---------------------------------------------------------------------------
 
+  // (Optional) silence unused-parameter warnings in builds that still pass these.
+  (void)RhsSupportTable_CenterNodes;
+
+  // ---------------------------------------------------------------------------
+  // (6) Semantic RHS support helpers: center-node samples (B for curl(B)).
+  //
+  //     The discrete Ampère–Maxwell RHS includes a curl(B^n) term.
+  //     B is stored at *cell centers*, so we build support_center_vector entries
+  //     that point to specific center nodes and B components (Bx/By/Bz).
+  //
+  //     As with corner E, we ensure uniqueness and accumulate coefficients rather
+  //     than relying on a fixed-size legacy table.
+  // ---------------------------------------------------------------------------
   struct CenterBKey {
     PIC::Mesh::cDataCenterNode* cn;
     unsigned char comp; // 0=Bx,1=By,2=Bz
@@ -1434,14 +1530,15 @@ int idx2;
     auto it = centerB_pos.find(key);
     if (it != centerB_pos.end()) return support_center_vector[it->second];
 
+    // Keep legacy pointer field consistent (even though semantic sampling should not require it).
     char *pnt   = (cn!=NULL) ? cn->GetAssociatedDataBufferPointer() : NULL;
     char *assoc = (pnt!=NULL) ? pnt + PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset : NULL;
 
     RhsEntry e;
     e.Coefficient = 0.0;
     e.AssociatedDataPointer = assoc;
-    e.SetCenterB(0.0, (assoc!=NULL) ? cn : NULL, bcomp);
-    e.idx = -1; // no indexer-based meaning for center taps
+    e.SetCenterB(0.0, cn, bcomp);  // also initializes CoefficientNEW
+    e.idx = -1; // no indexer meaning for center taps
 
     support_center_vector.push_back(e);
     const int pos = (int)support_center_vector.size() - 1;
@@ -1451,46 +1548,38 @@ int idx2;
 
   auto add_center_B_coeff = [&](PIC::Mesh::cDataCenterNode* cn, unsigned char bcomp, double delta) -> void {
     RhsEntry& e = ensure_center_B(cn, bcomp);
-
-    e.Coefficient    += delta;
-    e.CoefficientNEW += delta; // semantic UpdateRhs uses CoefficientNEW
+    e.Coefficient    += delta;  // legacy field (kept consistent)
+    e.CoefficientNEW += delta;  // semantic UpdateRhs uses CoefficientNEW
   };
-
-  // Ex^n,Ey^n,Ez^n
-  rhs = 0.0;
 
   // curlB contributions:
   //   iVar==0: rhs += dBz/dy - dBy/dz
   //   iVar==1: rhs += dBx/dz - dBz/dx
   //   iVar==2: rhs += dBy/dx - dBx/dy
+  rhs = 0.0;
+
   if (iVar==0) {
     // + dBz/dy  (Bz at j and j-1)
     for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
-      PIC::Mesh::cDataCenterNode* center =
-        node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[ii], j,   k+indexAdditionB[jj]));
-
+      auto *center = node->block->GetCenterNode(
+        _getCenterNodeLocalNumber(i+indexAdditionB[ii], j,   k+indexAdditionB[jj]));
       add_center_B_coeff(center, /*Bz*/2, +coeff4[1]);
     }
-
     for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
-      PIC::Mesh::cDataCenterNode* center =
-        node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[ii], j-1, k+indexAdditionB[jj]));
-
+      auto *center = node->block->GetCenterNode(
+        _getCenterNodeLocalNumber(i+indexAdditionB[ii], j-1, k+indexAdditionB[jj]));
       add_center_B_coeff(center, /*Bz*/2, -coeff4[1]);
     }
 
     // - dBy/dz  (By at k and k-1)
     for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
-      PIC::Mesh::cDataCenterNode* center =
-        node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[ii], j+indexAdditionB[jj], k));
-
+      auto *center = node->block->GetCenterNode(
+        _getCenterNodeLocalNumber(i+indexAdditionB[ii], j+indexAdditionB[jj], k));
       add_center_B_coeff(center, /*By*/1, -coeff4[2]);
     }
-
     for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
-      PIC::Mesh::cDataCenterNode* center =
-        node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[ii], j+indexAdditionB[jj], k-1));
-
+      auto *center = node->block->GetCenterNode(
+        _getCenterNodeLocalNumber(i+indexAdditionB[ii], j+indexAdditionB[jj], k-1));
       add_center_B_coeff(center, /*By*/1, +coeff4[2]);
     }
   }
@@ -1498,31 +1587,25 @@ int idx2;
   if (iVar==1) {
     // + dBx/dz (Bx at k and k-1)
     for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
-      PIC::Mesh::cDataCenterNode* center =
-        node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[ii], j+indexAdditionB[jj], k));
-
+      auto *center = node->block->GetCenterNode(
+        _getCenterNodeLocalNumber(i+indexAdditionB[ii], j+indexAdditionB[jj], k));
       add_center_B_coeff(center, /*Bx*/0, +coeff4[2]);
     }
-
     for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
-      PIC::Mesh::cDataCenterNode* center =
-        node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[ii], j+indexAdditionB[jj], k-1));
-
+      auto *center = node->block->GetCenterNode(
+        _getCenterNodeLocalNumber(i+indexAdditionB[ii], j+indexAdditionB[jj], k-1));
       add_center_B_coeff(center, /*Bx*/0, -coeff4[2]);
     }
 
     // - dBz/dx (Bz at i and i-1)
     for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
-      PIC::Mesh::cDataCenterNode* center =
-        node->block->GetCenterNode(_getCenterNodeLocalNumber(i,   j+indexAdditionB[jj], k+indexAdditionB[ii]));
-
+      auto *center = node->block->GetCenterNode(
+        _getCenterNodeLocalNumber(i,   j+indexAdditionB[jj], k+indexAdditionB[ii]));
       add_center_B_coeff(center, /*Bz*/2, -coeff4[0]);
     }
-
     for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
-      PIC::Mesh::cDataCenterNode* center =
-        node->block->GetCenterNode(_getCenterNodeLocalNumber(i-1, j+indexAdditionB[jj], k+indexAdditionB[ii]));
-
+      auto *center = node->block->GetCenterNode(
+        _getCenterNodeLocalNumber(i-1, j+indexAdditionB[jj], k+indexAdditionB[ii]));
       add_center_B_coeff(center, /*Bz*/2, +coeff4[0]);
     }
   }
@@ -1530,42 +1613,28 @@ int idx2;
   if (iVar==2) {
     // + dBy/dx (By at i and i-1)
     for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
-      PIC::Mesh::cDataCenterNode* center =
-        node->block->GetCenterNode(_getCenterNodeLocalNumber(i,   j+indexAdditionB[jj], k+indexAdditionB[ii]));
-
+      auto *center = node->block->GetCenterNode(
+        _getCenterNodeLocalNumber(i,   j+indexAdditionB[jj], k+indexAdditionB[ii]));
       add_center_B_coeff(center, /*By*/1, +coeff4[0]);
     }
-
     for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
-      PIC::Mesh::cDataCenterNode* center =
-        node->block->GetCenterNode(_getCenterNodeLocalNumber(i-1, j+indexAdditionB[jj], k+indexAdditionB[ii]));
-
+      auto *center = node->block->GetCenterNode(
+        _getCenterNodeLocalNumber(i-1, j+indexAdditionB[jj], k+indexAdditionB[ii]));
       add_center_B_coeff(center, /*By*/1, -coeff4[0]);
     }
 
     // - dBx/dy (Bx at j and j-1)
     for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
-      PIC::Mesh::cDataCenterNode* center =
-        node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[jj], j,   k+indexAdditionB[ii]));
-
+      auto *center = node->block->GetCenterNode(
+        _getCenterNodeLocalNumber(i+indexAdditionB[jj], j,   k+indexAdditionB[ii]));
       add_center_B_coeff(center, /*Bx*/0, -coeff4[1]);
     }
-
     for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
-      PIC::Mesh::cDataCenterNode* center =
-        node->block->GetCenterNode(_getCenterNodeLocalNumber(i+indexAdditionB[jj], j-1, k+indexAdditionB[ii]));
-
+      auto *center = node->block->GetCenterNode(
+        _getCenterNodeLocalNumber(i+indexAdditionB[jj], j-1, k+indexAdditionB[ii]));
       add_center_B_coeff(center, /*Bx*/0, +coeff4[1]);
     }
   }
-
-  //===========================================================================
-  // PART 3: BUILD CENTER NODE RHS SUPPORT (curl B)
-  //===========================================================================
-  // Lambda that builds all center-based RHS contributions
-  // Key: Sets component = B_component from curl formula
-  //      So UpdateRhs doesn't need to know about curl!
-  //===========================================================================
 
 if (false) { 
   PostAssembleSelfCheck(i, j, k, iVar,
