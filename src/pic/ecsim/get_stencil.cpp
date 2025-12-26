@@ -76,9 +76,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil_import_cStencil(int i,
   support_corner_vector.clear();
   support_center_vector.clear();
 
-//  GetStencil(i,j,k,iVar,MatrixRowNonZeroElementTable,NonZeroElementsFound,rhs,RhsSupportTable_CornerNodes,RhsSupportLength_CornerNodes,RhsSupportTable_CenterNodes,RhsSupportLength_CenterNodes,node);
-//  return;
-  
   // No.0-No.26  stencil Ex
   // No.27-No.53 stencil Ey
   // No.54-No.80 stencil Ez
@@ -309,8 +306,6 @@ for (int i=0;i<3;i++) indexer[i].reset();
         // Set row sizes / rhs
         NonZeroElementsFound = 1;
         rhs = 0.0;
-        RhsSupportLength_CenterNodes = 0;
-        RhsSupportLength_CornerNodes = 0;
 
         // Preserve original behavior: suppress even this entry on the "right" boundary.
         if (isRightBoundaryCorner(x, node)) NonZeroElementsFound = 0;
@@ -849,12 +844,6 @@ if (_PIC_STENCIL_NUMBER_==375) {
   //   Populate `support_corner_vector` directly with semantic Corner/E entries,
   //   without relying on (or copying from) `RhsSupportTable_CornerNodes`.
   //
-  // Legacy compatibility:
-  //   We still *initialise/update* `RhsSupportTable_CornerNodes` and
-  //   `RhsSupportLength_CornerNodes` because older code paths may still read them.
-  //   However, the semantic RHS evaluation path (UpdateRhs v2) uses ONLY the
-  //   support vectors.
-  //
   // IMPORTANT:
   //   Do NOT assume the RHS corner support length equals `_PIC_STENCIL_NUMBER_`.
   //   We use the runtime `indexer[iVar]` mapping and only create entries that are
@@ -893,17 +882,10 @@ if (_PIC_STENCIL_NUMBER_==375) {
     e.Coefficient = 0.0;                  // legacy field kept consistent
     e.AssociatedDataPointer = assoc;       // legacy pointer path (optional)
     e.SetCornerE(0.0, (assoc!=NULL) ? cn : NULL, comp); // sets CoefficientNEW
-    e.idx = iElement;
 
     support_corner_vector.push_back(e);
     const int pos = (int)support_corner_vector.size()-1;
     cornerE_pos[iElement]=pos;
-
-    // Legacy array init (kept for compatibility / self-checks)
-    RhsSupportTable_CornerNodes[iElement].Coefficient = 0.0;
-    RhsSupportTable_CornerNodes[iElement].CoefficientNEW = 0.0;
-    RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer = assoc;
-    RhsSupportTable_CornerNodes[iElement].SetCornerE(0.0, (assoc!=NULL) ? cn : NULL, comp);
 
     return support_corner_vector[pos];
   };
@@ -916,10 +898,6 @@ if (_PIC_STENCIL_NUMBER_==375) {
     // Keep both coefficient fields consistent (UpdateRhs v2 uses CoefficientNEW).
     e.Coefficient    += delta;
     e.CoefficientNEW += delta;
-
-    const int idxLocal = e.idx;
-    RhsSupportTable_CornerNodes[idxLocal].Coefficient    += delta;
-    RhsSupportTable_CornerNodes[idxLocal].CoefficientNEW += delta;
   };
 
   // Pre-create ALL Corner/E entries referenced by the configured stencil for this row.
@@ -1052,13 +1030,6 @@ int idx2;
 	idx2=indexer[iVar].get_idx(di, dj, dk, iVar);
       }
 
-  RhsSupportTable_CornerNodes[idx].AssociatedDataPointer=RhsSupportTable_CornerNodes[idx2].AssociatedDataPointer;
-  RhsSupportTable_CornerNodes[idx].Coefficient=-4*Pi*dtTotal*theta;
-
-  RhsSupportTable_CornerNodes[idx].SetCornerJ(-4*Pi*dtTotal*theta, RhsSupportTable_CornerNodes[idx2].corner, (unsigned char)iVar);
- 
-  RhsSupportLength_CornerNodes=idx+1;
-
   // ---------------------------------------------------------------------------
   // (8) Add the current density J term to the RHS support.
   //
@@ -1076,7 +1047,6 @@ int idx2;
     jEntry.Coefficient = -4*Pi*dtTotal*theta;
     jEntry.AssociatedDataPointer = assoc;
     jEntry.SetCornerJ(-4*Pi*dtTotal*theta, (assoc!=NULL) ? rowCorner : NULL, (unsigned char)iVar);
-    jEntry.idx = idx;
 
     support_corner_vector.push_back(jEntry);
   }
@@ -1138,7 +1108,6 @@ int idx2;
     e.Coefficient = 0.0;
     e.AssociatedDataPointer = assoc;
     e.SetCenterB(0.0, cn, bcomp);  // also initializes CoefficientNEW
-    e.idx = -1; // no indexer meaning for center taps
 
     support_center_vector.push_back(e);
     const int pos = (int)support_center_vector.size() - 1;
