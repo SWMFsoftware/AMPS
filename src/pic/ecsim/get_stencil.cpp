@@ -442,27 +442,27 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil_import_cStencil(int i,
 
   //init indexers 
   //static 
-	  cIndexer4D indexer; ///[3]; //iVar=0...2 
+	  cIndexer4D indexer[3]; //iVar=0...2 
 
 //  static cIndexer4D indexer_rhs;
 
-  if (indexer.isInitialized()==false) {
+  if (indexer[0].isInitialized()==false) {
     //init indexer
 
     int min_limit[4]={-5,-5,-5,0},max_limit[4]={5,5,5,2};
 
-    indexer.init(min_limit,max_limit);
+    for (int i=0;i<3;i++) indexer[i].init(min_limit,max_limit);
 
  //   indexer_rhs.init(min_limit,max_limit);
   }
 
-  indexer.reset();
+for (int i=0;i<3;i++) indexer[i].reset();
 
   // Canonical mapping from physical offsets (di,dj,dk) and unknown component
   // (iVarIndex: 0->Ex, 1->Ey, 2->Ez) into the compact element slot *for this row iVar*.
   // This keeps iElement <-> (di,dj,dk,iVarIndex) consistent across all terms.
   auto map_iElement = [&](int di, int dj, int dk, int iVarIndex)->int {
-    return indexer.get_idx(di, dj, dk, iVarIndex);
+    return indexer[iVar].get_idx(di, dj, dk, iVarIndex);
   };
 
   //------------------------------------------------------------------------------
@@ -862,8 +862,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil_import_cStencil(int i,
             const int di = indexAddition[ii];
             const int dj = indexAddition[jj];
             const int dk = indexAddition[kk];
-            //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
-	    iElement=indexer.get_idx(di, dj, dk, iVarIndex); 
+            //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
+	    iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex); 
 
 
             MatrixRowNonZeroElementTable[iElement].i = iNode;
@@ -919,7 +919,7 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int dj = indexOffset[jj];
         const int dk = indexOffset[kk];
         //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
+	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
       }
 
 	  cntTemp++;
@@ -957,8 +957,8 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = st->Data[it].i;
         const int dj = st->Data[it].j;
         const int dk = st->Data[it].k;
-        //indexer.check_and_set(iElement,di, dj, dk, iVar); 
-	iElement=indexer.get_idx(di, dj, dk, iVar);
+        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVar); 
+	iElement=indexer[iVar].get_idx(di, dj, dk, iVar);
       }
 
       //minus laplacian
@@ -975,8 +975,8 @@ int idx1;
         const int di = 0;
         const int dj = 0;
         const int dk = 0;
-        //indexer.check_and_set(27*iVar,di, dj, dk, iVar);
-	idx1=indexer.get_idx(di, dj, dk, iVar);
+        //indexer[iVar].check_and_set(27*iVar,di, dj, dk, iVar);
+	idx1=indexer[iVar].get_idx(di, dj, dk, iVar);
       }
   
   MatrixRowNonZeroElementTable[idx1].MatrixElementParameterTable[0]+=1;
@@ -999,8 +999,8 @@ int idx1;
         const int di = st->Data[it].i;
         const int dj = st->Data[it].j;
         const int dk = st->Data[it].k;
-        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
+        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
       }
 
       MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=(1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];
@@ -1022,8 +1022,8 @@ int idx1;
         const int di = st375->Data[it].i;
         const int dj = st375->Data[it].j;
         const int dk = st375->Data[it].k;
-        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
+        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
       }
 
       MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
@@ -1064,8 +1064,8 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = st375->Data[it].i;
         const int dj = st375->Data[it].j;
         const int dk = st375->Data[it].k;
-        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
+        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
       }
 
       MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
@@ -1172,160 +1172,92 @@ if (_PIC_STENCIL_NUMBER_==375) {
 
   //  for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
 
-    // fill first 27 elements
-  for (int ii=0;ii<3;ii++){
-    for (int jj=0;jj<3;jj++){
-      for (int kk=0;kk<3;kk++){
-        int iElement = ii+jj*3+kk*9;
-        int iNode = i+indexAddition[ii];
-        int jNode = j+indexAddition[jj];
-        int kNode = k+indexAddition[kk];
+  // ---------------------------------------------------------------------------
+  // PART 2a: BUILD CORNER-NODE RHS SUPPORT FOR E^n (semantic-vector path)
+  // ---------------------------------------------------------------------------
+  // Goal:
+  //   Populate `support_corner_vector` directly with semantic Corner/E entries,
+  //   without relying on (or copying from) `RhsSupportTable_CornerNodes`.
+  //
+  // Legacy compatibility:
+  //   We still *initialise/update* `RhsSupportTable_CornerNodes` and
+  //   `RhsSupportLength_CornerNodes` because older code paths may still read them.
+  //   However, the semantic RHS evaluation path (UpdateRhs v2) uses ONLY the
+  //   support vectors.
+  //
+  // IMPORTANT:
+  //   Do NOT assume the RHS corner support length equals `_PIC_STENCIL_NUMBER_`.
+  //   We use the runtime `indexer[iVar]` mapping and only create entries that are
+  //   actually referenced.
+  // ---------------------------------------------------------------------------
 
-      {
-        const int di = indexAddition[ii];
-        const int dj = indexAddition[jj];
-        const int dk = indexAddition[kk];
-        //indexer.check_and_set(iElement,di, dj, dk, 0);
-	iElement=indexer.get_idx(di, dj, dk, 0);
-      }
+  // Map: iElement (indexer idx) -> position in support_corner_vector
+  std::map<int,int> cornerE_pos;
 
-        RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
-        RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+  // Ensure a semantic Corner/E entry exists for (di,dj,dk,comp) and return it.
+  auto ensure_corner_E = [&](int di,int dj,int dk,unsigned char comp) -> RhsEntry& {
+    const int iElement = indexer[iVar].get_idx(di,dj,dk,(int)comp);
 
-        // Store a semantic RHS support entry: Corner/E/component=0 (Ex).
-        auto *cornerNodePtr = node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode));
-        char *pntTemp = (cornerNodePtr!=NULL) ? cornerNodePtr->GetAssociatedDataBufferPointer() : NULL;
+    auto it = cornerE_pos.find(iElement);
+    if (it!=cornerE_pos.end()) return support_corner_vector[it->second];
 
-        RhsSupportTable_CornerNodes[iElement].SetCornerE(0.0, (pntTemp!=NULL) ? cornerNodePtr : NULL, 0);
+    PIC::Mesh::cDataCornerNode *cn =
+      node->block->GetCornerNode(_getCornerNodeLocalNumber(i+di,j+dj,k+dk));
 
-      }
+    char *pnt   = (cn!=NULL) ? cn->GetAssociatedDataBufferPointer() : NULL;
+    char *assoc = (pnt!=NULL) ? pnt + PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset : NULL;
+
+    // Semantic entry for new RHS evaluation path
+    RhsEntry e;
+    e.Coefficient = 0.0;                  // legacy field kept consistent
+    e.AssociatedDataPointer = assoc;       // legacy pointer path (optional)
+    e.SetCornerE(0.0, (assoc!=NULL) ? cn : NULL, comp); // sets CoefficientNEW
+    e.idx = iElement;
+
+    support_corner_vector.push_back(e);
+    const int pos = (int)support_corner_vector.size()-1;
+    cornerE_pos[iElement]=pos;
+
+    // Legacy array init (kept for compatibility / self-checks)
+    RhsSupportTable_CornerNodes[iElement].Coefficient = 0.0;
+    RhsSupportTable_CornerNodes[iElement].CoefficientNEW = 0.0;
+    RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer = assoc;
+    RhsSupportTable_CornerNodes[iElement].SetCornerE(0.0, (assoc!=NULL) ? cn : NULL, comp);
+
+    return support_corner_vector[pos];
+  };
+
+  // Accumulate a delta coefficient into BOTH the semantic vector entry and the
+  // legacy array entry.
+  auto add_corner_E_coeff = [&](int di,int dj,int dk,unsigned char comp,double delta) -> void {
+    RhsEntry &e = ensure_corner_E(di,dj,dk,comp);
+
+    // Keep both coefficient fields consistent (UpdateRhs v2 uses CoefficientNEW).
+    e.Coefficient    += delta;
+    e.CoefficientNEW += delta;
+
+    const int idxLocal = e.idx;
+    RhsSupportTable_CornerNodes[idxLocal].Coefficient    += delta;
+    RhsSupportTable_CornerNodes[idxLocal].CoefficientNEW += delta;
+  };
+
+  // Pre-create ALL Corner/E entries referenced by the configured stencil for this row.
+  // 3×3×3 block (always present)
+  for (unsigned char comp=0; comp<3; comp++) {
+    for (int kk=0; kk<3; kk++) for (int jj=0; jj<3; jj++) for (int ii=0; ii<3; ii++) {
+      ensure_corner_E(indexAddition[ii], indexAddition[jj], indexAddition[kk], comp);
     }
   }
 
-
-  for (int iVarIndex=1; iVarIndex<3; iVarIndex++){
-    // fill next 54 elements
-    for (int ii=0;ii<3;ii++){
-      for (int jj=0;jj<3;jj++){
-        for (int kk=0;kk<3;kk++){
-
-          int iElement = iVarIndex*27+ii+jj*3+kk*9;
-          int jOldElement = ii+jj*3+kk*9;
-
-      {
-        const int di = indexOffset[ii];
-        const int dj = indexOffset[jj];
-        const int dk = indexOffset[kk];
-        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
-
-        //indexer.check_and_set(jOldElement,di, dj, dk, 0);
-	jOldElement=indexer.get_idx(di, dj, dk, 0);
-
-      }
-
-
-          RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
-          RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=RhsSupportTable_CornerNodes[jOldElement].AssociatedDataPointer;
-
-	            RhsSupportTable_CornerNodes[iElement].SetCornerE(0.0, RhsSupportTable_CornerNodes[jOldElement].corner, (unsigned char)iVarIndex);
-        }
+  // 5×5×5 extension (only for the larger ECSIM stencil)
+  if (_PIC_STENCIL_NUMBER_==375) {
+    for (unsigned char comp=0; comp<3; comp++) {
+      for (int kk=0; kk<5; kk++) for (int jj=0; jj<5; jj++) for (int ii=0; ii<5; ii++) {
+        if (ii<3 && jj<3 && kk<3) continue;
+        ensure_corner_E(indexOffset[ii], indexOffset[jj], indexOffset[kk], comp);
       }
     }
   }
-
-
-  //  bool isTest=false;
-  //if (fabs(x[0]-1.0)<0.1 && fabs(x[1]-1.0)<0.1 && fabs(x[2]-1.0)<0.1)
-  //  isTest = true;
-if (_PIC_STENCIL_NUMBER_==375) {  
-  for (int iVarIndex=0; iVarIndex<1; iVarIndex++){
-    int cntTemp = 0;
-
-    for (int kk=0; kk<5; kk++){
-      for (int jj=0; jj<5; jj++){
-        for (int ii=0; ii<5; ii++){
-
-          if (ii<3 && jj<3 && kk<3) continue;
-
-          int iNode = i+indexOffset[ii];
-          int jNode = j+indexOffset[jj];
-          int kNode = k+indexOffset[kk];
-
-          int iElement = 81+iVarIndex*98+cntTemp;
-          cntTemp++;
-
-
-      {
-        const int di = indexOffset[ii];
-        const int dj = indexOffset[jj];
-        const int dk = indexOffset[kk];
-        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
-      }
-
-
-          RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
-
-
-
-
-          char * pntTemp = node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode))->GetAssociatedDataBufferPointer();
-
-
-	  auto *cornerNodePtr = node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode));
-	            RhsSupportTable_CornerNodes[iElement].SetCornerE(0.0, (pntTemp!=NULL) ? cornerNodePtr : NULL, 0);
-
-          if (pntTemp) {
-            RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=pntTemp+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-          }
-          else{
-            RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer = NULL;
-          }
-        }
-      }
-    }
-  }
-
-
-  for (int iVarIndex=1; iVarIndex<3; iVarIndex++){
-    int cntTemp = 0;
-    for (int kk=0; kk<5; kk++){
-      for (int jj=0; jj<5; jj++){
-        for (int ii=0; ii<5; ii++){
-          if (ii<3 && jj<3 && kk<3) continue;
-
-          int iElement = 81+iVarIndex*98+cntTemp;
-          int iElementOld = 81+cntTemp;
-
-
-      {
-        const int di = indexOffset[ii];
-        const int dj = indexOffset[jj];
-        const int dk = indexOffset[kk];
-        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
-
-        //indexer.check_and_set(iElementOld,di, dj, dk, 0);
-	iElementOld=indexer.get_idx(di, dj, dk, 0);
-
-      }
-
-
-          cntTemp++;
-
-          RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
-          RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=RhsSupportTable_CornerNodes[iElementOld].AssociatedDataPointer;
-
-
-	              RhsSupportTable_CornerNodes[iElement].SetCornerE(0.0, RhsSupportTable_CornerNodes[iElementOld].corner, (unsigned char)iVarIndex);
-
-        }
-      }
-    }
-  }
-}
-    
 
   //laplacian
   for (int idim=0;idim<3;idim++) {
@@ -1343,14 +1275,11 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = st->Data[it].i;
         const int dj = st->Data[it].j;
         const int dk = st->Data[it].k;
-        //indexer.check_and_set(iElement,di, dj, dk, iVar);
-	iElement=indexer.get_idx(di, dj, dk, iVar);
+        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVar);
+	iElement=indexer[iVar].get_idx(di, dj, dk, iVar);
+              // plus laplacian
+        add_corner_E_coeff(di,dj,dk,(unsigned char)iVar, st->Data[it].a*coeffSqr[idim]);
       }
-
-      //plus laplacian
-      RhsSupportTable_CornerNodes[iElement].Coefficient+=st->Data[it].a*coeffSqr[idim];
-
-      RhsSupportTable_CornerNodes[iElement].CoefficientNEW+=st->Data[it].a*coeffSqr[idim];
     }
   }
 
@@ -1372,13 +1301,10 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = st->Data[it].i;
         const int dj = st->Data[it].j;
         const int dk = st->Data[it].k;
-        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
+        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
+              add_corner_E_coeff(di,dj,dk,(unsigned char)iVarIndex, -(1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex]);
       }
-
-      RhsSupportTable_CornerNodes[iElement].Coefficient -=(1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];
-
-      RhsSupportTable_CornerNodes[iElement].CoefficientNEW -=(1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
 
@@ -1401,13 +1327,10 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = st375->Data[it].i;
         const int dj = st375->Data[it].j;
         const int dk = st375->Data[it].k;
-        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
+        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
+              add_corner_E_coeff(di,dj,dk,(unsigned char)iVarIndex, -corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex]);
       }
-
-
-      RhsSupportTable_CornerNodes[iElement].Coefficient -=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
-      RhsSupportTable_CornerNodes[iElement].CoefficientNEW -=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
 
@@ -1429,26 +1352,23 @@ if (_PIC_STENCIL_NUMBER_==375) {
         const int di = st375->Data[it].i;
         const int dj = st375->Data[it].j;
         const int dk = st375->Data[it].k;
-        //indexer.check_and_set(iElement,di, dj, dk, iVarIndex);
-	iElement=indexer.get_idx(di, dj, dk, iVarIndex);
+        //indexer[iVar].check_and_set(iElement,di, dj, dk, iVarIndex);
+	iElement=indexer[iVar].get_idx(di, dj, dk, iVarIndex);
+              add_corner_E_coeff(di,dj,dk,(unsigned char)iVarIndex, -corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex]);
       }
-
-
-      RhsSupportTable_CornerNodes[iElement].Coefficient -=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
-      RhsSupportTable_CornerNodes[iElement].CoefficientNEW -=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
 
 }
 
-int idx=indexer.get_index_count(); //_PIC_STENCIL_NUMBER_  
+int idx=indexer[iVar].get_index_count(); //_PIC_STENCIL_NUMBER_  
 int idx2;
       {
         const int di = 0;
         const int dj = 0;
         const int dk = 0;
-        //indexer.check_and_set(27*iVar,di, dj, dk, iVar);
-	idx2=indexer.get_idx(di, dj, dk, iVar);
+        //indexer[iVar].check_and_set(27*iVar,di, dj, dk, iVar);
+	idx2=indexer[iVar].get_idx(di, dj, dk, iVar);
       }
 
   RhsSupportTable_CornerNodes[idx].AssociatedDataPointer=RhsSupportTable_CornerNodes[idx2].AssociatedDataPointer;
@@ -1457,6 +1377,22 @@ int idx2;
   RhsSupportTable_CornerNodes[idx].SetCornerJ(-4*Pi*dtTotal*theta, RhsSupportTable_CornerNodes[idx2].corner, (unsigned char)iVar);
  
   RhsSupportLength_CornerNodes=idx+1;
+
+  // Append the J term to the *semantic* corner support vector (do not copy from the legacy array).
+  {
+    PIC::Mesh::cDataCornerNode *rowCorner = node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
+    char *pnt   = (rowCorner!=NULL) ? rowCorner->GetAssociatedDataBufferPointer() : NULL;
+    char *assoc = (pnt!=NULL) ? pnt + PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset : NULL;
+
+    RhsEntry jEntry;
+    jEntry.Coefficient = -4*Pi*dtTotal*theta;
+    jEntry.AssociatedDataPointer = assoc;
+    jEntry.SetCornerJ(-4*Pi*dtTotal*theta, (assoc!=NULL) ? rowCorner : NULL, (unsigned char)iVar);
+    jEntry.idx = idx;
+
+    support_corner_vector.push_back(jEntry);
+  }
+
 
   //Ex^n,Ey^n,Ez^n
   rhs=0.0;
@@ -1769,38 +1705,6 @@ auto build_curlB_support = [&]() -> void {
 
 
   build_curlB_support();
-
-auto build_corner_support_with_J = [&]() -> void {
-  for (int i = 0; i < RhsSupportLength_CornerNodes; i++) {
-    
-    RhsEntry entry;
-    
-    // Copy from array
-    entry=RhsSupportTable_CornerNodes[i]; 
-  //  entry.CoefficientNEW = RhsSupportTable_CornerNodes[i].Coefficient;
-
-   // entry.center = nullptr;
-   // entry.aux_index = -1;
-   // entry.mm_owner_corner = nullptr;
-    
-    if (i==RhsSupportLength_CornerNodes-1) {
-      // J (current) entries
-      entry.component = iVar;  
-    }
-    
-    entry.center = nullptr;
-    entry.aux_index = -1;
-    entry.mm_owner_corner = nullptr;
-    
-    support_corner_vector.push_back(entry);
-  }
-};
-
-build_corner_support_with_J();
-
-support_corner_vector.shrink_to_fit();
-support_center_vector.shrink_to_fit();
-
 if (false) { 
   PostAssembleSelfCheck(i, j, k, iVar,
                         MatrixRowNonZeroElementTable, NonZeroElementsFound, rhs,
