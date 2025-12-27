@@ -253,3 +253,193 @@ After solving \eqref{eq:increment_linear_system}:
 \subsection{Unit-conversion consistency (legacy vs semantic RHS)}
 If the code stores fields in code units, but assembles the linear system in physical (or mixed) units, then the sampling operation for $\mathbf{E}$ and $\mathbf{B}$ must apply $E_{\mathrm{conv}}$ and $B_{\mathrm{conv}}$ consistently. Equivalently, the stencil coefficients must absorb these conversion factors. A mismatch causes the new semantic RHS to deviate from the legacy RHS when $E_{\mathrm{conv}}\neq 1$ and/or $B_{\mathrm{conv}}\neq 1$.
 
+%=========================================================
+% Focused “physics ↔ discretization” derivation (matches code signs/scales)
+%=========================================================
+
+\section{Focused Physics $\leftrightarrow$ Discretization Derivation (Code-Matched)}
+
+\subsection{Starting point: implicit current response (ECSIM)}
+In Gaussian units (consistent with $4\pi$ factors), Ampère–Maxwell reads
+\begin{equation}
+\frac{\partial \mathbf{E}}{\partial t} \;=\; c\,\nabla\times \mathbf{B} \;-\; 4\pi\,\mathbf{J}.
+\end{equation}
+ECSIM uses a linearized implicit current model at the solve time level:
+\begin{equation}
+\mathbf{J}^{n+\theta} \;\approx\; \hat{\mathbf{J}}^{\,n} \;+\; M\,\mathbf{E}^{n+\theta},
+\end{equation}
+where $\hat{\mathbf{J}}^{\,n}$ is the (field-independent) predictor current assembled in
+\texttt{UpdateJMassMatrix()}, and $M$ is the mass matrix stored on corner nodes.
+
+\subsection{Eliminating \texorpdfstring{$\mathbf{B}^{n+\theta}$}{B^{n+θ}} yields a curl--curl operator}
+Using Faraday’s law with $\theta$-centering,
+\begin{equation}
+\mathbf{B}^{n+1} = \mathbf{B}^{n} - c\,\Delta t\,\nabla\times \mathbf{E}^{n+\theta},
+\end{equation}
+one may write
+\begin{equation}
+\mathbf{B}^{n+\theta} = \mathbf{B}^{n} - \theta\,c\,\Delta t\,\nabla\times \mathbf{E}^{n+\theta}.
+\end{equation}
+Insert this into the $\theta$-scheme for Ampère:
+\begin{equation}
+\mathbf{E}^{n+\theta} = \mathbf{E}^{n} + \theta\,\Delta t\left(c\,\nabla\times \mathbf{B}^{n+\theta} - 4\pi\,\mathbf{J}^{n+\theta}\right),
+\end{equation}
+and substitute $\mathbf{J}^{n+\theta}\approx \hat{\mathbf{J}}^{\,n}+M\mathbf{E}^{n+\theta}$ to obtain
+\begin{equation}
+\mathbf{E}^{n+\theta} - \mathbf{E}^{n}
+=
+\theta c\Delta t\,\nabla\times \mathbf{B}^{n}
+-\theta^2(c\Delta t)^2\,\nabla\times\nabla\times \mathbf{E}^{n+\theta}
+-4\pi\theta\Delta t\,\hat{\mathbf{J}}^{\,n}
+-4\pi\theta\Delta t\,M\mathbf{E}^{n+\theta}.
+\end{equation}
+
+\subsection{Increment form: \texorpdfstring{$\Delta\mathbf{E}=\mathbf{E}^{n+\theta}-\mathbf{E}^n$}{ΔE = E^{n+θ}-E^n}}
+Let $\Delta\mathbf{E}\equiv \mathbf{E}^{n+\theta}-\mathbf{E}^{n}$. Then
+\begin{equation}
+\Delta\mathbf{E}
+=
+\theta c\Delta t\,\nabla\times \mathbf{B}^{n}
+-\theta^2(c\Delta t)^2\,\nabla\times\nabla\times (\mathbf{E}^{n}+\Delta\mathbf{E})
+-4\pi\theta\Delta t\,\hat{\mathbf{J}}^{\,n}
+-4\pi\theta\Delta t\,M(\mathbf{E}^{n}+\Delta\mathbf{E}).
+\end{equation}
+Bring all $\Delta\mathbf{E}$ terms to the left:
+\begin{equation}
+\Big[
+I
++\theta^2(c\Delta t)^2\,\nabla\times\nabla\times
++4\pi\theta\Delta t\,M
+\Big]\Delta\mathbf{E}
+=
+\theta c\Delta t\,\nabla\times \mathbf{B}^{n}
+-4\pi\theta\Delta t\,\hat{\mathbf{J}}^{\,n}
+-\theta^2(c\Delta t)^2\,\nabla\times\nabla\times \mathbf{E}^{n}
+-4\pi\theta\Delta t\,M\mathbf{E}^{n}.
+\label{eq:increment_system_continuous}
+\end{equation}
+
+\subsection{Mapping to the exact discrete operator used in \texttt{GetStencil()}}
+The code discretizes the curl--curl term using
+\begin{equation}
+\nabla\times\nabla\times\mathbf{E} \;=\; \nabla(\nabla\cdot\mathbf{E})-\nabla^2\mathbf{E}.
+\end{equation}
+Define the code factors (exactly as in \texttt{init\_metrics\_and\_time\_factors()}):
+\begin{equation}
+\texttt{coeff[d]}=\frac{\theta\,\texttt{cDt}}{\Delta x_d},\qquad
+\texttt{coeffSqr[d]}=\texttt{coeff[d]}^2,\qquad
+\texttt{coeff4[d]}=\frac{1}{4}\texttt{coeff[d]}.
+\end{equation}
+Then the LHS parameter part assembled for the increment is:
+\begin{align}
+\textbf{(i) }&I:\quad A^{(\mathrm{param})}_{pp} \mathrel{+}= 1,\\
+\textbf{(ii) }&-\nabla^2:\quad A^{(\mathrm{param})} \mathrel{-}= a^{(\nabla^2)}_{t}\;\texttt{coeffSqr[idim]},\\
+\textbf{(iii) }&+\nabla\nabla\cdot:\quad
+A^{(\mathrm{param})} \mathrel{+}= a^{(\nabla\nabla\cdot)}_{t}\;\texttt{coeff[p]}\;\texttt{coeff[q]},
+\end{align}
+with the grad--div coefficient blended between two stencil families:
+\begin{equation}
+a^{(\nabla\nabla\cdot)}_{t}
+=
+(1-\texttt{corrCoeff})\,a^{(0)}_{t}
++\texttt{corrCoeff}\,a^{(375)}_{t}.
+\end{equation}
+The mass-matrix LHS term is \emph{not} added into $A^{(\mathrm{param})}$; instead,
+each entry stores a pointer to $M_{pq}$, and the numeric matrix is formed by:
+\begin{equation}
+A_{ij} = A^{(\mathrm{param})}_{ij} + \left(4\pi\,\Delta t\,\theta\right)\,M_{ij},
+\qquad
+4\pi\Delta t\theta = 4\cdot\texttt{Pi}\cdot\texttt{dtTotal}\cdot\texttt{theta}.
+\end{equation}
+
+\subsection{Mapping to the exact discrete RHS assembled in \texttt{GetStencil()}}
+Equation \eqref{eq:increment_system_continuous} implies four RHS blocks. The code constructs each as follows.
+
+\paragraph{1) Curl($B^n$) block}
+The discrete curl uses \textbf{center-node} $B$ samples with a $2\times 2$ face average.
+For example, for row component $p=x$ (\texttt{iVar==0}),
+\begin{equation}
+(\nabla\times \mathbf{B})_x \approx \frac{\partial B_z}{\partial y} - \frac{\partial B_y}{\partial z},
+\end{equation}
+implemented as differences of face-averaged center-node values with coefficients $\pm\texttt{coeff4[d]}$.
+Thus the code-level coefficient corresponds to
+\begin{equation}
+\theta c\Delta t\;\frac{1}{\Delta x_d}
+\quad\longleftrightarrow\quad
+\texttt{coeff[d]},
+\end{equation}
+and the face-average introduces the explicit $\tfrac14$ factor (\texttt{coeff4}).
+
+\paragraph{2) Current predictor block $-4\pi\theta\Delta t\,\hat{\mathbf{J}}^n$}
+A single \textbf{corner-node} current entry is added with coefficient
+\begin{equation}
+\alpha_J = -4\pi\,\Delta t\,\theta
+\end{equation}
+(via \texttt{SetCornerJ(-4*Pi*dtTotal*theta,...)}), sampled from the corner-node electric-field buffer
+layout (where $J$ is stored).
+
+\paragraph{3) Old-field curl--curl block $-\theta^2(c\Delta t)^2\,\nabla\times\nabla\times \mathbf{E}^n$}
+The code moves the old-field curl--curl to the RHS by adding:
+\begin{itemize}
+\item \textbf{Plus Laplacian($E^n$):}
+\[
++\;a_t\;\texttt{coeffSqr[idim]}\;E^n(\text{neighbor}),
+\]
+implemented as \texttt{add\_corner\_E\_coeff(..., +st->Data[it].a*coeffSqr[idim])}.
+\item \textbf{Minus grad--div($E^n$):}
+\[
+-\;a_t\;\texttt{coeff[p]}\;\texttt{coeff[q]}\;E^n_q(\text{neighbor}),
+\]
+implemented as \texttt{add\_corner\_E\_coeff(..., -(1-corrCoeff)*...*coeff[p]*coeff[q])}
+and the analogous \texttt{-corrCoeff} term for the \texttt{375} stencil family.
+\end{itemize}
+Together, this is exactly $-(\nabla\nabla\cdot-\nabla^2 I)\mathbf{E}^n = -(\nabla\times\nabla\times\mathbf{E}^n)$, multiplied by $(\theta c\Delta t)^2$ through the \texttt{coeff} factors.
+
+\paragraph{4) Mass-matrix old-field block $-4\pi\theta\Delta t\,M\mathbf{E}^n$}
+The mass-matrix dot-product is moved to the RHS using semantic \textbf{corner-node} entries of type
+\texttt{Quantity::MassMatrix}. Each entry evaluates
+\begin{equation}
+\mathcal{Q}_s = M(\texttt{aux\_index})\;E^n_q(\text{neighbor}),
+\end{equation}
+and is multiplied by the coefficient
+\begin{equation}
+\alpha_{ME} = (-4\pi\,\Delta t\,\theta)\;E_{\mathrm{conv}}
+\qquad
+(\texttt{mmScale = (-4.0*Pi*dtTotal*theta) * E\_conv}).
+\end{equation}
+(The sampling routine returns $E$ directly from the buffer without applying $E_{\mathrm{conv}}$, hence the explicit $E_{\mathrm{conv}}$ in the coefficient to preserve legacy scaling.)
+
+\subsection{Final discrete linear system (as implemented)}
+Let $\Delta E_{p}$ denote the increment unknown at a corner node and component $p$.
+The assembled row (for fixed \texttt{iVar}=p) has the form:
+\begin{equation}
+\sum_{q\in\{x,y,z\}}\sum_{\alpha\in\mathcal{N}}
+\Big[
+K^{(\mathrm{curlcurl})}_{p q}(\alpha)
+\;+\;
+4\pi\Delta t\theta\;M_{p q}(\alpha)
+\Big]\Delta E_q(\alpha)
+\;+\;
+\Delta E_p(\mathbf{0})
+=
+b_p,
+\end{equation}
+where:
+\begin{itemize}
+\item $K^{(\mathrm{curlcurl})}$ is the parameter-assembled discrete operator
+$(-\nabla^2+\nabla\nabla\cdot)$ scaled by \texttt{coeffSqr} and \texttt{coeff[p]*coeff[q]}
+(and blended by \texttt{corrCoeff} for the grad--div part),
+\item $M_{pq}(\alpha)$ is dereferenced from the support pointer and multiplied by
+$4\pi\Delta t\theta$ in \texttt{UpdateMatrixElement},
+\item $b_p$ is the sum of the four RHS blocks described above:
+curl($B^n$), $-4\pi\theta\Delta t\,\hat{J}^n$, $-\theta^2(c\Delta t)^2\,\nabla\times\nabla\times E^n$,
+and $-4\pi\theta\Delta t\,M E^n$ (with the code’s explicit $E_{\mathrm{conv}}$ scaling).
+\end{itemize}
+
+\subsection{Boundary conditions}
+Boundary nodes enforce
+\begin{equation}
+\Delta \mathbf{E} = \mathbf{0}
+\end{equation}
+by replacing the row with a unit diagonal and no couplings.
+
