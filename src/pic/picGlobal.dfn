@@ -457,6 +457,10 @@ when each MPI process that runs AMPS is discunected from each other (_PIC_DISCON
 #define _STATE_VECTOR_MODE_ALIGNED_ 1
 #define _STATE_VECTOR_MODE_ _STATE_VECTOR_MODE_PACKED_
 
+//selection between new and legacy ECSIM implementations of GetStencil() and UpdateRhs() 
+#define _PIC_ECSIM_MODE_LEGACY_  0
+#define _PIC_ECSIM_MODE_NEW_      1
+#define _PIC_ECSIM_MODE_ _PIC_ECSIM_MODE_NEW_
 
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  
 
