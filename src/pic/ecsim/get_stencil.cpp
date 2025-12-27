@@ -1206,6 +1206,10 @@ int idx2;
       add_center_B_coeff(center, /*Bx*/0, +coeff4[1]);
     }
   }
+
+  //shrink_to_fit support vectors 
+  support_center_vector.shrink_to_fit();
+  support_corner_vector.shrink_to_fit();
 }
 
 
