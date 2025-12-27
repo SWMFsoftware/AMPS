@@ -141,4 +141,112 @@ void GetStencil_Legacy_Wrapper(
     }
   }
 }
+
+/**
+ * @brief Wrapper for evaluating ECSIM RHS using the legacy (array-based) UpdateRhs_Legacy().
+ *
+ * Motivation:
+ *   During the transition from the legacy RHS-support representation (fixed arrays + lengths)
+ *   to the new semantic representation (support_corner_vector / support_center_vector),
+ *   it is often useful to keep the *legacy* RHS evaluation routine unchanged, but feed it
+ *   data originating from the *new* semantic vectors.
+ *
+ * What this wrapper does:
+ *   1) Builds LOCAL (thread-local) legacy RHS-support tables:
+ *        - localRhsSupportTable_CornerNodes[]
+ *        - localRhsSupportTable_CenterNodes[]
+ *      and LOCAL lengths:
+ *        - localRhsSupportLength_CornerNodes
+ *        - localRhsSupportLength_CenterNodes
+ *   2) Copies the content of support_corner_vector and support_center_vector into those local tables.
+ *   3) Calls the legacy evaluator:
+ *        UpdateRhs_Legacy(iVar, localCornerTable, localCornerLen, localCenterTable, localCenterLen)
+ *      and returns its result.
+ *
+ * Important notes:
+ *   - The wrapper does NOT depend on (or modify) the caller-provided legacy arrays/lengths.
+ *     The legacy arrays passed into the wrapper are intentionally ignored (they may be nullptr).
+ *   - Scratch tables are thread_local to avoid large stack allocations and to be safe under OpenMP.
+ *   - LEGACY_MAX_* must be >= the maximum size of the corresponding support vectors.
+ *     If exceeded, the wrapper terminates via exit(__LINE__,__FILE__,msg).
+ */
+
+double UpdateRhs_Legacy_Wrapper(
+    int iVar,
+    cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,
+    int RhsSupportLength_CornerNodes,
+    cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,
+    int RhsSupportLength_CenterNodes,
+    vector<cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable>& support_corner_vector,
+    vector<cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable>& support_center_vector
+) {
+  // Type aliases for readability
+  using LS       = cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>;
+  using RhsEntry = LS::cRhsSupportTable;
+
+  // ---------------------------------------------------------------------------
+  // Scratch capacity: must be >= maximum possible support-vector sizes.
+  // If you know the exact maximum number of entries produced per row, you can
+  // reduce these values to save memory.
+  // ---------------------------------------------------------------------------
+  constexpr int LEGACY_MAX_CORNER = 4096;
+  constexpr int LEGACY_MAX_CENTER = 4096;
+
+  // ---------------------------------------------------------------------------
+  // Local legacy RHS support tables (thread_local: avoids stack usage and is
+  // safe for threaded assembly/evaluation).
+  // ---------------------------------------------------------------------------
+  static thread_local std::array<RhsEntry, LEGACY_MAX_CORNER> localRhsSupportTable_CornerNodes;
+  static thread_local std::array<RhsEntry, LEGACY_MAX_CENTER> localRhsSupportTable_CenterNodes;
+
+  // ---------------------------------------------------------------------------
+  // Local lengths passed to the legacy evaluator: use vector sizes directly.
+  // ---------------------------------------------------------------------------
+  const int localRhsSupportLength_CornerNodes = (int)support_corner_vector.size();
+  const int localRhsSupportLength_CenterNodes = (int)support_center_vector.size();
+
+  // ---------------------------------------------------------------------------
+  // Bounds checks to prevent overwriting our scratch arrays.
+  // ---------------------------------------------------------------------------
+  if (localRhsSupportLength_CornerNodes > LEGACY_MAX_CORNER) {
+    char msg[256];
+    std::snprintf(msg, sizeof(msg),
+      "UpdateRhs_Legacy_Wrapper: support_corner_vector.size()=%d exceeds LEGACY_MAX_CORNER=%d",
+      localRhsSupportLength_CornerNodes, LEGACY_MAX_CORNER);
+    exit(__LINE__, __FILE__, msg);
+  }
+
+  if (localRhsSupportLength_CenterNodes > LEGACY_MAX_CENTER) {
+    char msg[256];
+    std::snprintf(msg, sizeof(msg),
+      "UpdateRhs_Legacy_Wrapper: support_center_vector.size()=%d exceeds LEGACY_MAX_CENTER=%d",
+      localRhsSupportLength_CenterNodes, LEGACY_MAX_CENTER);
+    exit(__LINE__, __FILE__, msg);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Copy semantic vectors into legacy tables. The entry type is the same
+  // (cRhsSupportTable), so this is a straightforward copy.
+  // ---------------------------------------------------------------------------
+  for (int n = 0; n < localRhsSupportLength_CornerNodes; ++n) {
+    localRhsSupportTable_CornerNodes[n] = support_corner_vector[n];
+  }
+
+  for (int n = 0; n < localRhsSupportLength_CenterNodes; ++n) {
+    localRhsSupportTable_CenterNodes[n] = support_center_vector[n];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Call the legacy RHS evaluator using LOCAL tables and LOCAL lengths.
+  // This preserves the legacy numerical behavior while allowing the caller
+  // to operate purely on semantic vectors elsewhere.
+  // ---------------------------------------------------------------------------
+  return UpdateRhs_Legacy(
+      iVar,
+      localRhsSupportTable_CornerNodes.data(), localRhsSupportLength_CornerNodes,
+      localRhsSupportTable_CenterNodes.data(), localRhsSupportLength_CenterNodes
+  );
+}
+
+
 }}}}
