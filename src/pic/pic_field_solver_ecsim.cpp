@@ -183,7 +183,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::Print() {
 //location of the solver's data in the corner node associated data vector
 int PIC::FieldSolver::Electromagnetic::ECSIM::CornerNodeAssociatedDataOffsetBegin=-1,PIC::FieldSolver::Electromagnetic::ECSIM::CornerNodeAssociatedDataOffsetLast=-1;
 
-_TARGET_DEVICE_ _CUDA_MANAGED_ double dtTotal = 0.0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::dtTotal = 0.0;
 _TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::cDt=0.0;
 _TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::theta =0.5;
 _TARGET_DEVICE_ _CUDA_MANAGED_ double epsilon0=8.85418782e-12;
@@ -199,17 +199,17 @@ double TotalParticleEnergy=0.0;
 double TotalWaveEnergy=0.0;
 
 #if _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
-_TARGET_DEVICE_ _CUDA_MANAGED_ double E_conv = 1;
-_TARGET_DEVICE_ _CUDA_MANAGED_ double B_conv = 1;
-_TARGET_DEVICE_ _CUDA_MANAGED_ double mass_conv =1.0/_AMU_;
-_TARGET_DEVICE_ _CUDA_MANAGED_ double charge_conv=1.0/ElectronCharge;
-_TARGET_DEVICE_ _CUDA_MANAGED_ double length_conv=1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::E_conv = 1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::B_conv = 1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::mass_conv =1.0/_AMU_;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::charge_conv=1.0/ElectronCharge;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::length_conv=1;
 #elif _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_SI_
-_TARGET_DEVICE_ _CUDA_MANAGED_ double E_conv = 1e6/PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed; //convert from SI to cgs
-_TARGET_DEVICE_ _CUDA_MANAGED_ double B_conv = 1e4;
-_TARGET_DEVICE_ _CUDA_MANAGED_ double mass_conv = 1e3;
-_TARGET_DEVICE_ _CUDA_MANAGED_ double charge_conv=0.1*PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed;
-_TARGET_DEVICE_ _CUDA_MANAGED_ double length_conv=1e2;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::E_conv = 1e6/PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed; //convert from SI to cgs
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::B_conv = 1e4;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::mass_conv = 1e3;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::charge_conv=0.1*PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::length_conv=1e2;
 #endif
 
 
@@ -618,12 +618,12 @@ void  PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default() {
   }
 }
 
-int MassMatrixOffsetTable[3][81];
-bool initMassMatrixOffsetTable=false;
+int PIC::FieldSolver::Electromagnetic::ECSIM::MassMatrixOffsetTable[3][81];
+bool PIC::FieldSolver::Electromagnetic::ECSIM::initMassMatrixOffsetTable=false;
 
-void computeMassMatrixOffsetTable(){
-
+void PIC::FieldSolver::Electromagnetic::ECSIM::computeMassMatrixOffsetTable() {
  int indexAddition[3] = {0,-1,1};
+
   for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
     for (int ii=0;ii<3;ii++){
       for (int jj=0;jj<3;jj++){
@@ -737,11 +737,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonGetStencil(int i, int j, i
 }
 
 
-void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int iVar,cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,
+void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil_Legacy(int i,int j,int k,int iVar,cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,
 			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,
 			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, 
 			     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
-  
+	
+	
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
   
   // No.0-No.26  stencil Ex
@@ -5154,7 +5155,7 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::PoissonUpdateRhs(int iVar,
 
 
  //update the RHS vector
-double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
+double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs_Legacy(int iVar,
 			      cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int RhsSupportLength_CornerNodes,
 							   cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int RhsSupportLength_CenterNodes) {
   int i;
@@ -5272,11 +5273,21 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
   return res;
 }
 
-
 void PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix() {
   Solver->Reset();
-  Solver->BuildMatrix(GetStencil);
+
+  switch (_PIC_ECSIM_MODE_) {
+  case _PIC_ECSIM_MODE_NEW_ : Solver->BuildMatrix(GetStencil);break;
+  case _PIC_ECSIM_MODE_LEGACY_: Solver->BuildMatrix(GetStencil_Legacy_Wrapper);break; 
+  default: exit(__LINE__,__FILE__,"error: the option is unknown");
+  }
+
+
+
   if (DoDivECorrection){
+    exit(__LINE__,__FILE__,"Error: PoissonGetStencil need to be updated with the new method for populating the support vectors; See GetStencil() [new implementation] and GetStencil_Legacy() [old implementation]"); 
+
+
     PoissonSolver->Reset();
     PoissonSolver->BuildMatrix(PoissonGetStencil);
   }
@@ -5343,7 +5354,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
     PIC::CPLR::FLUID::write_output(timeNow,true);
   }
   */
-  Solver->UpdateRhs(UpdateRhs); 
+
+  switch (_PIC_ECSIM_MODE_) {   
+  case _PIC_ECSIM_MODE_NEW_ : Solver->UpdateRhs(UpdateRhs);break;
+  case _PIC_ECSIM_MODE_LEGACY_: Solver->UpdateRhs(UpdateRhs_Legacy_Wrapper);break;
+  default: exit(__LINE__,__FILE__,"error: the option is unknown");
+  }
+
   Solver->UpdateMatrixNonZeroCoefficients(UpdateMatrixElement);
 
   CumulativeTiming::SolveTime.Start();
@@ -6549,10 +6566,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticFieldGradient(double *
   gradB[3+2]=(B_plus[1]-B_minus[1])/l;
   gradB[6+2]=(B_plus[2]-B_minus[2])/l;
 }
-
-
-
-
 
 
 
