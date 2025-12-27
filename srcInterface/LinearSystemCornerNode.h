@@ -78,9 +78,9 @@ public:
 
     bool operator==(const cStencilElementData& other) const {
       // Compare all integer members
-      if (UnknownVectorIndex != other.UnknownVectorIndex) {
-        return false;
-      }
+//      if (UnknownVectorIndex != other.UnknownVectorIndex) {
+//        return false;
+//      }
 
       if (iVar != other.iVar) {
         return false;
@@ -310,19 +310,200 @@ public:
 
   class cRhsSupportTable {
   public:
+    // -------------------------------------------------------------------
+    // LEGACY MEMBERS (CURRENTLY USED BY EXISTING CODE)
+    //
+    // These are kept for backward compatibility. The existing ECSIM
+    // implementation fills Coefficient and AssociatedDataPointer and
+    // UpdateRhs() reads them as "coeff * (*ptr)".
+    //
+    // Once the RHS is fully migrated to the new semantic layout (see
+    // NEW MEMBERS below) and no code uses AssociatedDataPointer
+    // directly, these legacy members and the pointer-based Compare()
+    // logic can be removed.
+    // -------------------------------------------------------------------
     double Coefficient;
     char *AssociatedDataPointer;
 
-    cRhsSupportTable () {Coefficient=0.0,AssociatedDataPointer=NULL;}
+
+    double CoefficientNEW;
+
+    // -------------------------------------------------------------------
+    // NEW MEMBERS: semantic RHS description
+    //
+    // These describe *what* to sample (node kind, quantity, component),
+    // not *where* a raw double* lives. They are intended for the new
+    // ECSIM::UpdateRhs() + SampleRhsScalar() design, which uses the
+    // current time-level offsets (CurrentEOffset, CurrentBOffset, …)
+    // at evaluation time.
+    //
+    // For now, they are unused by the legacy pointer-based UpdateRhs()
+    // and comparison logic. New code (GetStencil_import_cStencil,
+    // new UpdateRhs) should populate these fields, while older code
+    // can still continue using Coefficient/AssociatedDataPointer.
+    // -------------------------------------------------------------------
+    enum class NodeKind : unsigned char {
+      Corner = 0,
+      Center = 1
+    };
+
+    enum class Quantity : unsigned char {
+      E          = 0,  // electric field at current E time level
+      B          = 1,  // magnetic field at current B time level
+      J          = 2,  // current density at current time level
+      MassMatrix = 3   // scalar entry from mass-matrix buffer
+      // (extend as needed for additional quantities)
+    };
+
+    // NEW semantic fields (to be used by ECSIM::SampleRhsScalar / UpdateRhs v2)
+    NodeKind      node_kind;    ///< NEW: Corner vs Center node
+    Quantity      quantity;     ///< NEW: which physical field (E/B/J/MassMatrix)
+    unsigned char component;    ///< NEW: 0=x,1=y,2=z (or small component index)
+    int           aux_index;    ///< NEW: optional scalar index (e.g. mass-matrix)
+
+    // NEW: node pointers used by semantic RHS; exactly one is valid
+    PIC::Mesh::cDataCornerNode *corner; ///< NEW: valid if node_kind==Corner
+    PIC::Mesh::cDataCenterNode *center; ///< NEW: valid if node_kind==Center
+    PIC::Mesh::cDataCornerNode *mm_owner_corner;// for MassMatrix: row corner node that owns the MM buffer
+
+
+    // -------------------------------------------------------------------
+    // CONSTRUCTOR
+    //
+    // NOTE: we keep Coefficient/AssociatedDataPointer initialisation
+    // fully compatible with the original version, and ALSO initialise
+    // the new semantic members to a benign default.
+    // -------------------------------------------------------------------
+    cRhsSupportTable ()
+    : Coefficient(0.0),
+      AssociatedDataPointer(NULL),
+      node_kind(NodeKind::Corner),     // default: corner-node E entry
+      quantity(Quantity::E),
+      component(0),
+      aux_index(-1),
+      corner(nullptr),
+      center(nullptr),
+      mm_owner_corner(nullptr) 
+    {}
+
+    // -------------------------------------------------------------------
+    // NEW HELPER: reset semantic part (legacy members unchanged)
+    //
+    // Use this when you only want to (re)initialise the semantic
+    // description while leaving Coefficient/AssociatedDataPointer
+    // for legacy code/testing.
+    //
+    // TODO (cleanup): once all RHS usage is semantic, this can be
+    // merged into a single Reset()/Clear() and the legacy pointer
+    // can be dropped.
+    // -------------------------------------------------------------------
+    void ClearSemantic() {
+      node_kind = NodeKind::Corner;
+      quantity  = Quantity::E;
+      component = 0;
+      aux_index = -1;
+      corner    = nullptr;
+      center    = nullptr;
+      mm_owner_corner = nullptr;
+    }
+
+    // -------------------------------------------------------------------
+    // NEW CONVENIENCE SETTERS FOR SEMANTIC RHS ENTRIES
+    //
+    // These *do not* touch AssociatedDataPointer. They are intended
+    // for the new GetStencil_import_cStencil(), which will build
+    // RHS support using semantic descriptors instead of raw double*.
+    //
+    // TODO (cleanup): after full migration, we can:
+    //   - rename Coefficient -> coeff (or similar),
+    //   - drop AssociatedDataPointer,
+    //   - and potentially simplify these helpers further.
+    // -------------------------------------------------------------------
+    void SetCornerE(double c,
+                    PIC::Mesh::cDataCornerNode *cn,
+                    unsigned char comp) {
+      CoefficientNEW = c;
+      node_kind   = NodeKind::Corner;
+      quantity    = Quantity::E;
+      component   = comp;
+      aux_index   = -1;
+      corner      = cn;
+      center      = nullptr;
+      mm_owner_corner = nullptr;
+    }
+
+    void SetCornerJ(double c,
+                    PIC::Mesh::cDataCornerNode *cn,
+                    unsigned char comp) {
+      CoefficientNEW = c;
+      node_kind   = NodeKind::Corner;
+      quantity    = Quantity::J;
+      component   = comp;
+      aux_index   = -1;
+      corner      = cn;
+      center      = nullptr;
+      mm_owner_corner = nullptr;
+    }
+
+
+
+   void SetCornerMassMatrix(double mmScale,
+                                  PIC::Mesh::cDataCornerNode *neighborCorner,
+                                  PIC::Mesh::cDataCornerNode *mmOwnerCorner,
+                                  int mmScalarIndex,
+                                  unsigned char comp) {
+    CoefficientNEW = mmScale;          // stores (-4*pi*dt*theta) (optionally *E_conv)
+    node_kind   = NodeKind::Corner;
+    quantity    = Quantity::MassMatrix;
+    component   = comp;             // 0/1/2 selects Ex/Ey/Ez of neighbor E
+    aux_index   = mmScalarIndex;    // index into MM buffer
+    corner      = neighborCorner;   // where E is sampled
+    center      = nullptr;
+    mm_owner_corner = mmOwnerCorner;// where M is stored
+  }    
+
+    void SetCenterB(double c,
+                    PIC::Mesh::cDataCenterNode *cn,
+                    unsigned char comp) {
+      CoefficientNEW = c;
+      node_kind   = NodeKind::Center;
+      quantity    = Quantity::B;
+      component   = comp;
+      aux_index   = -1;
+      corner      = nullptr;
+      center      = cn;
+    }
+
+    bool IsCorner() const { return node_kind == NodeKind::Corner; }
+    bool IsCenter() const { return node_kind == NodeKind::Center; }
+
+    // -------------------------------------------------------------------
+    // LEGACY EQUALITY OPERATORS
+    //
+    // IMPORTANT:
+    //   - These currently compare ONLY the legacy fields
+    //     (AssociatedDataPointer, Coefficient), because that’s what
+    //     existing tests and comparison logic depend on.
+    //   - They deliberately ignore the new semantic members. This
+    //     keeps existing regression comparisons valid while you are
+    //     transitioning.
+    //
+    // TODO (cleanup): once the codebase no longer uses raw pointers
+    // in the RHS support and all RHS is semantic, update operator==
+    // and Compare() to include:
+    //   - node_kind, quantity, component, aux_index,
+    //   - corner/center pointers,
+    // and then remove AssociatedDataPointer from the equality logic.
+    // -------------------------------------------------------------------
 
     // Equality operator for class cRhsSupportTable
     bool operator==(const cRhsSupportTable& other) const {
-      // Compare pointer identity for AssociatedDataPointer
+      // Compare pointer identity for AssociatedDataPointer (legacy)
       if (AssociatedDataPointer != other.AssociatedDataPointer) {
         return false;
       }
 
-      // Compare Coefficient values for exact equality
+      // Compare Coefficient values for exact equality (legacy)
       if (Coefficient != other.Coefficient) {
         return false;
       }
@@ -337,114 +518,136 @@ public:
 
     // Add inside class cRhsSupportTable (public:). Requires <cstdio>.
     static bool Compare(const cRhsSupportTable& a,
-                    const cRhsSupportTable& b,
-                    bool break_flag = false) {
+                        const cRhsSupportTable& b,
+                        bool break_flag = false) {
       bool equal = true;
       bool printed_header = false;
 
       auto hdr = [&]() {
-        if (!printed_header) { std::printf("cRhsSupportTable mismatch:\n"); printed_header = true; }
+        if (!printed_header) {
+          std::printf("cRhsSupportTable mismatch:\n");
+          printed_header = true;
+        }
       };
 
-      // Enforce pointer identity.
+      // LEGACY: enforce pointer identity.
+      // TODO (cleanup): once semantic RHS is fully used, this should
+      // be replaced by a semantic comparison that looks at node_kind,
+      // quantity, component, aux_index, and node pointers instead.
       if (a.AssociatedDataPointer != b.AssociatedDataPointer) {
-        equal = false; 
+        equal = false;
 
-        if (break_flag) {std::printf("  [AssociatedDataPointer] a=%p b=%p\n",
-                (const void*)a.AssociatedDataPointer, (const void*)b.AssociatedDataPointer);
-	        hdr();
-		exit(__LINE__,__FILE__);
-	}
+        if (break_flag) {
+          hdr();
+          std::printf("  [AssociatedDataPointer] a=%p b=%p\n",
+                      (const void*)a.AssociatedDataPointer,
+                      (const void*)b.AssociatedDataPointer);
+          exit(__LINE__,__FILE__);
+        }
       }
 
-      // Exact coefficient compare (use an epsilon if you prefer tolerance).
+      // Exact coefficient compare (legacy).
       if (a.Coefficient != b.Coefficient) {
         equal = false;
 
-        if (break_flag) { std::printf("  [Coefficient] a=%.17e b=%.17e\n", a.Coefficient, b.Coefficient);
+        if (break_flag) {
           hdr();
-                exit(__LINE__,__FILE__);
-        } 
+          std::printf("  [Coefficient] a=%.17e b=%.17e\n",
+                      a.Coefficient, b.Coefficient);
+          exit(__LINE__,__FILE__);
+        }
       }
 
       if (!equal && break_flag) {
         char msg[256];
-        if (break_flag) std::snprintf(msg, sizeof(msg),
-                  "cRhsSupportTable objects differ (pointer identity required)");
-        exit(__LINE__, __FILE__, msg);
-     }
-
-     return equal;
-   }
-
-
-   static bool CompareArray(const cRhsSupportTable* a,
-                         const cRhsSupportTable* b,
-                         int len,
-                         bool break_flag = false) {
-     if (len < 0) {
-       std::printf("cRhsSupportTable array compare: invalid len=%d\n", len);
-       if (break_flag) { char msg[64]; std::snprintf(msg,sizeof(msg),"invalid len"); exit(__LINE__, __FILE__, msg); }
-    return false;
-  }
-  if (len == 0) return true;
-
-  bool equal = true;
-  bool printed_hdr = false;
-  auto hdr = [&](){ if (!printed_hdr){ std::printf("cRhsSupportTable array mismatch:\n"); printed_hdr = true; } };
-
-  // Track which elements of b[] have been matched.
-  bool* used = new bool[len];
-  memset(used, 0, sizeof(bool) * len);
-
-  // For each a[i], find a unique equal element in b using cRhsSupportTable::Compare.
-  for (int i = 0; i < len; ++i) {
-    bool found = false;
-    for (int j = 0; j < len; ++j) {
-      if (used[j]) continue;
-      if (cRhsSupportTable::Compare(a[i], b[j], false)) { // forwards break_flag
-        used[j] = true;
-        found = true;
-        break;
-      }
-      // If break_flag==true and Compare found a difference, it may have exited already.
-    }
-
-    if (!found) {
-      equal = false; hdr();
-      std::printf("  Missing in B: ptr=%p coef=%.17e (a[%d])\n",
-                  (const void*)a[i].AssociatedDataPointer, a[i].Coefficient, i);
-      if (break_flag) {
-        delete[] used;
-        char msg[128];
-        std::snprintf(msg, sizeof(msg), "Missing match in B for a[%d]", i);
+        std::snprintf(msg, sizeof(msg),
+                      "cRhsSupportTable objects differ (pointer identity required)");
         exit(__LINE__, __FILE__, msg);
       }
+
+      return equal;
     }
-  }
 
-  // Report extras left unmatched in B.
-  for (int j = 0; j < len; ++j) {
-    if (!used[j]) {
-      equal = false; hdr();
-      std::printf("  Extra in B: ptr=%p coef=%.17e (b[%d])\n",
-                  (const void*)b[j].AssociatedDataPointer, b[j].Coefficient, j);
+    // LEGACY unordered array compare, still based on (ptr,coef).
+    // TODO (cleanup): once semantic RHS is fully migrated, this should
+    // be updated to compare semantic fields instead of raw pointers.
+    static bool CompareArray(const cRhsSupportTable* a,
+                             const cRhsSupportTable* b,
+                             int len,
+                             bool break_flag = false) {
+      if (len < 0) {
+        std::printf("cRhsSupportTable array compare: invalid len=%d\n", len);
+        if (break_flag) {
+          char msg[64]; std::snprintf(msg,sizeof(msg),"invalid len");
+          exit(__LINE__, __FILE__, msg);
+        }
+        return false;
+      }
+      if (len == 0) return true;
+
+      bool equal = true;
+      bool printed_hdr = false;
+      auto hdr = [&](){
+        if (!printed_hdr){
+          std::printf("cRhsSupportTable array mismatch:\n");
+          printed_hdr = true;
+        }
+      };
+
+      // Track which elements of b[] have been matched.
+      bool* used = new bool[len];
+      memset(used, 0, sizeof(bool) * len);
+
+      // For each a[i], find a unique equal element in b using pointer/coef compare.
+      for (int i = 0; i < len; ++i) {
+        bool found = false;
+        for (int j = 0; j < len; ++j) {
+          if (used[j]) continue;
+          if (cRhsSupportTable::Compare(a[i], b[j], false)) {
+            used[j] = true;
+            found   = true;
+            break;
+          }
+        }
+
+        if (!found) {
+          equal = false; hdr();
+          std::printf("  Missing in B: ptr=%p coef=%.17e (a[%d])\n",
+                      (const void*)a[i].AssociatedDataPointer,
+                      a[i].Coefficient, i);
+          if (break_flag) {
+            delete[] used;
+            char msg[128];
+            std::snprintf(msg, sizeof(msg),
+                          "Missing match in B for a[%d]", i);
+            exit(__LINE__, __FILE__, msg);
+          }
+        }
+      }
+
+      // Report extras left unmatched in B.
+      for (int j = 0; j < len; ++j) {
+        if (!used[j]) {
+          equal = false; hdr();
+          std::printf("  Extra in B: ptr=%p coef=%.17e (b[%d])\n",
+                      (const void*)b[j].AssociatedDataPointer,
+                      b[j].Coefficient, j);
+        }
+      }
+
+      delete[] used;
+
+      if (!equal && break_flag) {
+        char msg[160];
+        std::snprintf(msg, sizeof(msg),
+                      "cRhsSupportTable arrays differ (unordered O(N^2) compare)");
+        exit(__LINE__, __FILE__, msg);
+      }
+
+      return equal;
     }
-  }
-
-  delete[] used;
-
-  if (!equal && break_flag) {
-    char msg[160];
-    std::snprintf(msg, sizeof(msg), "cRhsSupportTable arrays differ (unordered O(N^2) compare)");
-    exit(__LINE__, __FILE__, msg);
-  }
-
-  return equal;
-}
-
-
   };
+
 
   class cMatrixRow {
   public:
@@ -461,6 +664,8 @@ public:
 
     cRhsSupportTable RhsSupportTable_CenterNodes[MaxRhsSupportLength_CenterNodes];
     int RhsSupportLength_CenterNodes;
+
+    vector<cRhsSupportTable> support_corner_vector,support_center_vector; 
 
     int i,j,k;
     int iVar;
@@ -1382,10 +1587,10 @@ bool operator==(const cMatrixRow& other) const {
   void ResetUnknownVectorIndex(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 
   //build the matrix
-  void(*GetStencil)(int,int,int,int,cMatrixRowNonZeroElementTable*,int&,double&,cRhsSupportTable*,int&,cRhsSupportTable*,int&,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*); 
+  void(*GetStencil)(int,int,int,int,cMatrixRowNonZeroElementTable*,int&,double&,cRhsSupportTable*,int&,cRhsSupportTable*,int&,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,vector<cRhsSupportTable>&,vector<cRhsSupportTable>&); 
 
   _TARGET_HOST_ 
-  void BuildMatrix(void(*f)(int i,int j,int k,int iVar,cMatrixRowNonZeroElementTable* Set,int& NonZeroElementsFound,double& Rhs,cRhsSupportTable* RhsSupportTable_CornerNodes,int &RhsSupportLength_CornerNodes,cRhsSupportTable* RhsSupportTable_CenterNodes,int &RhsSupportLength_CenterNodes,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node));
+  void BuildMatrix(void(*f)(int i,int j,int k,int iVar,cMatrixRowNonZeroElementTable* Set,int& NonZeroElementsFound,double& Rhs,cRhsSupportTable* RhsSupportTable_CornerNodes,int &RhsSupportLength_CornerNodes,cRhsSupportTable* RhsSupportTable_CenterNodes,int &RhsSupportLength_CenterNodes,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,vector<cRhsSupportTable>& support_corner_vector,vector<cRhsSupportTable>& support_center_vector));
 
   //re-build the matrix after the domain re-decomposition operation
   void RebuildMatrix() {
@@ -1425,7 +1630,7 @@ bool operator==(const cMatrixRow& other) const {
       int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer));
 
   //update the RHS vector
-  void UpdateRhs(double (*fSetRhs)(int,cRhsSupportTable*,int,cRhsSupportTable*,int));
+  void UpdateRhs(double (*fSetRhs)(int,cRhsSupportTable*,int,cRhsSupportTable*,int,vector<cRhsSupportTable>& support_corner_vector,vector<cRhsSupportTable>& support_center_vector));
 
   //update non-zero coefficients of the matrix
   void UpdateMatrixNonZeroCoefficients(void (*UpdateMatrixRow)(cMatrixRow*));
@@ -1639,6 +1844,10 @@ static bool Compare(cLinearSystemCornerNode* a,
       // Use the row-level comparator for detailed diagnostics
       if (*rowA!=*rowB) {
         equal = false; hdr();
+
+if (*rowA!=*rowB) equal = false;
+
+
         std::printf("  [MatrixRowTable[%d]] rows differ (see cMatrixRow mismatch above)\n", i);
       }
     }
@@ -1951,7 +2160,7 @@ template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilL
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 _TARGET_HOST_
-void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::BuildMatrix(void(*f)(int i,int j,int k,int iVar,cMatrixRowNonZeroElementTable* Set,int& NonZeroElementsFound,double& Rhs,cRhsSupportTable* RhsSupportTable_CornerNodes,int &RhsSupportLength_CornerNodes,cRhsSupportTable* RhsSupportTable_CenterNodes,int &RhsSupportLength_CenterNodes,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node)) {
+void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::BuildMatrix(void(*f)(int i,int j,int k,int iVar,cMatrixRowNonZeroElementTable* Set,int& NonZeroElementsFound,double& Rhs,cRhsSupportTable* RhsSupportTable_CornerNodes,int &RhsSupportLength_CornerNodes,cRhsSupportTable* RhsSupportTable_CenterNodes,int &RhsSupportLength_CenterNodes,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,vector<cRhsSupportTable>& support_corner_vector,vector<cRhsSupportTable>& support_center_vector)) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   int i,j,k,thread,nLocalNode;
   int iRow=0;
@@ -2035,7 +2244,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
         for (int ii=0;ii<MaxStencilLength;ii++) MatrixRowNonZeroElementTable[ii].MatrixElementParameterTableLength=0,MatrixRowNonZeroElementTable[ii].MatrixElementSupportTableLength=0;
 
-        f(i,j,k,iVar,MatrixRowNonZeroElementTable,NonZeroElementsFound,rhs,NewRow->RhsSupportTable_CornerNodes,NewRow->RhsSupportLength_CornerNodes,NewRow->RhsSupportTable_CenterNodes,NewRow->RhsSupportLength_CenterNodes,node);
+        f(i,j,k,iVar,MatrixRowNonZeroElementTable,NonZeroElementsFound,rhs,NewRow->RhsSupportTable_CornerNodes,NewRow->RhsSupportLength_CornerNodes,NewRow->RhsSupportTable_CenterNodes,NewRow->RhsSupportLength_CenterNodes,node,NewRow->support_corner_vector,NewRow->support_center_vector);
 
         if (NonZeroElementsFound==0) {
           //the point is not included into the matrix
@@ -2519,7 +2728,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
-void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::UpdateRhs(double (*fSetRhs)(int,cRhsSupportTable*,int,cRhsSupportTable*,int)) {
+void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::UpdateRhs(double (*fSetRhs)(int,cRhsSupportTable*,int,cRhsSupportTable*,int,vector<cRhsSupportTable>&,vector<cRhsSupportTable>&)) {
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   #pragma omp parallel for schedule(dynamic,1) default(none) shared(fSetRhs)
@@ -2527,13 +2736,9 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   for (int irow=0;irow<MatrixRowTableLength;irow++) {
     cMatrixRow* row=MatrixRowTable[irow];
 
-    if ((row->RhsSupportLength_CornerNodes!=0)||(row->RhsSupportLength_CenterNodes!=0)) {
-      row->Rhs=fSetRhs(row->iVar,row->RhsSupportTable_CornerNodes,row->RhsSupportLength_CornerNodes,row->RhsSupportTable_CenterNodes,row->RhsSupportLength_CenterNodes);
-    }
+    row->Rhs=fSetRhs(row->iVar,row->RhsSupportTable_CornerNodes,row->RhsSupportLength_CornerNodes,row->RhsSupportTable_CenterNodes,row->RhsSupportLength_CenterNodes,row->support_corner_vector,row->support_center_vector);
   }
 }
-
-
 
 
 //CUDA version of the vector multiplication function 
