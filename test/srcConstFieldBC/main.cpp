@@ -174,8 +174,7 @@ static bool ParseIntAfterEqOrNext(int& i, int argc, char** argv, const char* /*o
   }
 }
 
-static TestConfig ConfigureTestFromArgs(int argc, char** argv) {
-  TestConfig cfg;
+void ConfigureTestFromArgs(TestConfig& cfg,int argc, char** argv) {
   for (int i=1; i<argc; ++i) {
     std::string a(argv[i]);
     if (a=="-particles") {
@@ -214,7 +213,6 @@ static TestConfig ConfigureTestFromArgs(int argc, char** argv) {
       std::printf("Unknown option: %s (use -h for help)\n", argv[i]);
     }
   }
-  return cfg;
 }
 
 // Global that operators may read (only if your code lacks a setter)
@@ -275,7 +273,8 @@ void SetUniformCenterB(const double B0[3]) {
 }
 
 // New SetIC based on CLI
-const TestConfig cfg;
+TestConfig cfg;
+
 void SetIC() {
   const double Z[3] = {0.0,0.0,0.0};
   // Zero fields
@@ -291,7 +290,9 @@ void SetIC() {
       SetUniformCornerE(cfg.E0);
       break;
     case TestConfig::Mode::WithParticles:
+      exit(__LINE__,__FILE__,"error: not implemented");
     case TestConfig::Mode::NoParticles:
+      exit(__LINE__,__FILE__,"error: not implemented");
     default:
       // keep zero fields (or your legacy defaults)
       break;
@@ -607,6 +608,8 @@ int main(int argc,char **argv) {
   
    printf("start: (%i/%i %i:%i:%i)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
 
+  ConfigureTestFromArgs(cfg,argc,argv);
+
 
   PIC::InitMPI();
   PIC::Init_BeforeParser();
@@ -796,7 +799,9 @@ int main(int argc,char **argv) {
       MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
       printf("After cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
 
-      PrepopulateDomain();
+      if ((cfg.mode!=TestConfig::Mode::FieldOnlyB)&&(cfg.mode!=TestConfig::Mode::FieldOnlyE)) {
+        PrepopulateDomain();
+      }
 
       LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
       MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
@@ -983,6 +988,7 @@ for (int i=0;i<PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOC
 	break;
 
       case _PIC_BC__PERIODIC_MODE_ON_:
+	exit(__LINE__,__FILE__,"error: the test is intended to test non-periodic BC");
 	PIC::BC::ExternalBoundary::UpdateData();
 	break;
       }
