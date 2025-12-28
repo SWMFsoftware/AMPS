@@ -10,54 +10,217 @@
 #include <cmath>
 #include <cstdio>
 
+
 /**
- * Assemble one matrix row and RHS support for the ECSIM semi-implicit E-field solve.
+ * GetStencil() — assemble one sparse matrix row + RHS supports for the ECSIM semi-implicit E solve.
  *
- * This routine is invoked by the corner-node linear system builder (cLinearSystemCornerNode)
- * for a single unknown: the electric-field component E_{iVar} at the *corner node* (i,j,k).
+ * Scope of this routine
+ * ---------------------
+ * This routine is called by the *corner-node* linear system builder
+ *   cLinearSystemCornerNode<...>
+ * to assemble the row corresponding to a single unknown at the corner node (i,j,k):
  *
- * ECSIM context (semi-implicit Maxwell + particle response)
- * ---------------------------------------------------------
- * AMPS stores:
- *   • E on corner nodes (unknowns of this linear system)
- *   • B on center nodes (appears in RHS through curl(B))
- *   • J and the particle "mass matrix" response on corner nodes (from UpdateJMassMatrix()).
+ *   unknown component: iVar ∈ {0,1,2}  (0→Ex, 1→Ey, 2→Ez)
+ *   unknown quantity : ΔE_{iVar}  (increment of the θ-centered electric field)
  *
- * The ECSIM update solves for E^{n+θ} (θ∈[0,1], typically 0.5) from a discretized Ampère–Maxwell law
- * where the particle response is treated implicitly through the mass matrix. In operator form:
+ * In AMPS/ECSIM, the solver unknown stored in the global solution vector is scaled as
+ *   x ≈ E_conv * ΔE,
+ * and the half-step field is reconstructed elsewhere as
+ *   E^{n+θ} = E^n + x / E_conv.
  *
- *   A(E^{n+θ}) = b(E^n, B^n, J^n, ...)
- *
- * where A contains:
- *   • the identity term
- *   • discrete curl-curl / grad-div pieces (coming from ∇×B and the semi-implicit Faraday coupling)
- *   • + (4π θ Δt) * (mass-matrix operator) contributions
- *
- * Output contract
- * ---------------
- * This function fills:
- *   • MatrixRowNonZeroElementTable / NonZeroElementsFound : sparse stencil structure for the row of A
- *   • rhs                                              : the *constant* part of b
- *   • RhsSupportTable_* / RhsSupportLength_*            : legacy RHS representation (kept for compatibility)
- *   • support_corner_vector / support_center_vector     : semantic RHS representation used by the new UpdateRhs()
- *
- * Semantic RHS representation (new path)
+ * ECSIM physics in compact operator form
  * -------------------------------------
- * The RHS is represented as a dot-product over a small set of sampled quantities:
+ * With a linearized implicit particle response
+ *   J^{n+θ} ≈ Ĵ^n + M · E^{n+θ},
+ * elimination of B^{n+θ} yields a curl–curl operator in the E equation. In increment form
+ * (ΔE ≡ E^{n+θ} − E^n), the discrete system has the structure
  *
- *   rhs_total = rhs + Σ_s ( coeff_s * sample_s )
+ *   [ I + (θ c Δt)^2 (∇×∇×) + (4π θ Δt) M ] ΔE
+ *     =  (θ c Δt) (∇×B^n) − (4π θ Δt) Ĵ^n
+ *        − (θ c Δt)^2 (∇×∇×E^n) − (4π θ Δt) (M·E^n).
  *
- * where each sample_s is a *typed* (semantic) reference to:
- *   • Corner(E component) or Corner(J component)
- *   • Center(B component)
+ * What GetStencil() assembles
+ * ---------------------------
+ * LHS (matrix row):
+ *   • identity term for ΔE (unit diagonal on the row component)
+ *   • 4th-order discrete curl–curl(E) implemented as
+ *       ∇×∇×E = ∇(∇·E) − ∇^2 E
+ *     (assembled as “minus Laplacian” + “plus grad–div” blocks)
+ *   • mass-matrix couplings M_{pα,qβ} represented via *support pointers*:
+ *       numeric value is formed later as  A_ij = A_param + (4π θ Δt) * (*support)
+ *     so the sparse pattern is constant, while coefficients update each step.
  *
- * UpdateRhs() later evaluates these semantic entries using the correct time-level offsets
- * (CurrentEOffset / CurrentBOffset) without relying on hard-coded array sizes like _PIC_STENCIL_NUMBER_.
+ * RHS:
+ *   • a constant scalar part (returned in `rhs`)
+ *   • plus a dot-product over sampled quantities from neighbor nodes:
+ *       rhs_total = rhs + Σ_s ( coeff_s * sample_s )
  *
- * NOTE: For compatibility with older code paths and optional self-tests, the function signature
- * still includes the legacy RHS arrays; the semantic vectors are the authoritative output for
- * the refactored RHS path.
+ * RHS support representation
+ * --------------------------
+ * Two representations are carried:
+ *   (1) Semantic (new) representation:
+ *       support_corner_vector / support_center_vector
+ *       Each entry encodes:
+ *         - quantity type (Corner E, Corner J, Center B, and semantic-only MassMatrix·E^n terms)
+ *         - relative offsets and component index
+ *         - an optional aux index (for selecting a packed mass-matrix scalar)
+ *         - coefficient `coeff`
+ *       UpdateRhs() later evaluates these using CurrentEOffset / CurrentBOffset and the
+ *       typed sampling logic (no dependence on _PIC_STENCIL_NUMBER_ layouts).
+ *
+ *   (2) Legacy arrays (compatibility):
+ *       RhsSupportTable_CornerNodes / RhsSupportTable_CenterNodes
+ *       These exist for older UpdateRhs_Legacy() paths and some optional self-tests.
+ *
+ * Important compatibility note
+ * ----------------------------
+ * Some RHS entries are *semantic-only* (not representable in the legacy pointer-based layout),
+ * notably the MassMatrix·E^n dot-product terms. In the original dual-coefficient design
+ * (Coefficient vs CoefficientNEW), those entries were made invisible to the legacy evaluator.
+ * If your build can still invoke legacy RHS evaluation, ensure that semantic-only entries
+ * are not routed through UpdateRhs_Legacy() (or that the legacy path explicitly skips them).
  */
+
+/**
+ * \file get_stencil.cpp
+ * \brief Assemble one sparse-matrix row (stencil) and semantic RHS support lists for the ECSIM
+ *        electromagnetic field solve in AMPS.
+ *
+ * ---------------------------------------------------------------------------
+ * 1. What equation is being solved?
+ * ---------------------------------------------------------------------------
+ * The ECSIM field solver is formulated for the increment of the theta-centered electric field:
+ *
+ *     ΔE ≡ E^{n+θ} − E^n.
+ *
+ * The linear system unknown stored by the solver is scaled:
+ *
+ *     x ≈ E_conv · ΔE,
+ *
+ * and after the solve the code reconstructs:
+ *
+ *     E^{n+θ} = E^n + x / E_conv,
+ *
+ * then converts to the full-step field:
+ *
+ *     E^{n+1} = (E^{n+θ} − (1−θ)E^n) / θ.
+ *
+ * Boundary conditions are applied in *increment form* (ΔE = 0 on boundaries), which is why
+ * boundary rows are replaced by a unit diagonal with no couplings.
+ *
+ * ---------------------------------------------------------------------------
+ * 2. What does GetStencil() build?
+ * ---------------------------------------------------------------------------
+ * For a given corner node (i,j,k) in a block and a given row component iVar ∈ {0,1,2}
+ * (x/y/z component of ΔE at that corner), GetStencil() constructs:
+ *
+ *   (A) The list of nonzero matrix elements for that row:
+ *       MatrixRowNonZeroElementTable[0..nNZ-1]
+ *
+ *   (B) Two semantic RHS support vectors (lists of samples + coefficients):
+ *       - RhsSupportTable_CornerNodes[] : samples living on corner nodes (E, Jhat, MassMatrix·E, …)
+ *       - RhsSupportTable_CenterNodes[] : samples living on center nodes (B for curl(B), …)
+ *
+ * The matrix elements are stored in a *two-part* representation:
+ *
+ *   • MatrixElementParameterTable[0] : constant contribution (identity + curlcurl operator)
+ *   • MatrixElementSupportTable[0]   : optional pointer to a mass-matrix coefficient M_{pq}
+ *
+ * During each time step, UpdateMatrixElement() converts this representation into a numeric A_ij:
+ *
+ *     A_ij = Parameter + (4π·dtTotal·θ) · (*SupportPointer),
+ *
+ * where SupportPointer is NULL for purely-parameter entries.
+ *
+ * This split is intentional:
+ *   - the curl–curl operator and identity do not change with time,
+ *   - the particle mass matrix M changes every step and is injected via pointers.
+ *
+ * ---------------------------------------------------------------------------
+ * 3. LHS operator assembled here: identity + (θ c Δt)^2 curlcurl + (4π θ Δt) M
+ * ---------------------------------------------------------------------------
+ * The field equation is written in a form that produces a curl–curl operator. The code assembles
+ * curlcurl using the vector identity:
+ *
+ *     ∇×∇×E = ∇(∇·E) − ∇^2 E.
+ *
+ * In practice the LHS parameter part is assembled as:
+ *
+ *   • “minus Laplacian” block   : contributes −(θ c Δt)^2 (−∇^2 E) = +(θ c Δt)^2 ∇^2 E
+ *     via coefficients using coeffSqr[d] = (θ c Δt / Δx_d)^2.
+ *
+ *   • “plus grad-div” block     : contributes −(θ c Δt)^2 ( ∇(∇·E) )
+ *     via products coeff[p]*coeff[q] with coeff[d] = (θ c Δt / Δx_d).
+ *
+ * IMPORTANT: The sign bookkeeping in the code is done at the coefficient level (adds/subtracts
+ * of stencil taps). Conceptually, the operator corresponds to the standard curlcurl operator
+ * scaled by (θ c Δt)^2, but the exact signs you see in the tables reflect the implementation
+ * of the identity above.
+ *
+ * Higher-order stencil blending:
+ *   The grad-div contribution can be blended between two stencil families using corrCoeff
+ *   (the “375” stencil vs the base stencil). This helps stabilize / improve accuracy while
+ *   keeping the same sparse pattern.
+ *
+ * Identity term:
+ *   After assembling the derivative operator, the diagonal entry for (di,dj,dk)=(0,0,0),
+ *   component iVar is incremented by +1, corresponding to I·ΔE on the LHS.
+ *
+ * Mass-matrix term (LHS):
+ *   For each of the 27 neighbor corner nodes and each component q∈{0,1,2}, the row stores
+ *   a support pointer to M_{iVar,q} located in a packed corner-node buffer. The numeric
+ *   contribution becomes (4π·dtTotal·θ)·M_{iVar,q} in UpdateMatrixElement().
+ *
+ * ---------------------------------------------------------------------------
+ * 4. RHS support lists built here
+ * ---------------------------------------------------------------------------
+ * The RHS is evaluated later by UpdateRhs() as a pure dot-product:
+ *
+ *     rhs = Σ (support_entry.coeff * SampleRhsScalar(support_entry)).
+ *
+ * GetStencil() creates semantic support entries for the following physics terms:
+ *
+ *   (a) curl(B^n) term:
+ *       Implemented using *center-node* B samples (Quantity::B) with a 2×2 face-average.
+ *       Coefficients use:
+ *           coeff4[d] = 0.25 * (θ c Δt / Δx_d),
+ *       matching the face-averaged discrete curl.
+ *
+ *   (b) predicted current term −4π θ Δt Ĵ:
+ *       Implemented as a *corner-node* J sample (Quantity::J) with coefficient:
+ *           −4π * dtTotal * θ.
+ *
+ *   (c) moved-to-RHS curlcurl(E^n) term:
+ *       Because the unknown is ΔE, the operator acting on E^{n+θ}=E^n+ΔE yields a known
+ *       contribution involving E^n that is moved to the RHS. This is added as corner-node
+ *       E samples (Quantity::E) with the same stencil structure as the LHS curlcurl.
+ *
+ *   (d) moved-to-RHS mass-matrix dot product term −4π θ Δt M E^n:
+ *       This is represented by semantic-only entries (Quantity::MassMatrix) that evaluate
+ *       a dot product of a stored mass-matrix coefficient and a neighbor E^n component.
+ *       The coefficient is typically:
+ *           mmScale = (−4π * dtTotal * θ) * E_conv,
+ *       so that SampleRhsScalar() can return the stored E^n value in code units while the
+ *       assembled RHS remains consistent with legacy scaling.
+ *
+ * NOTE ON LEGACY COMPATIBILITY:
+ *   Historically the code carried two coefficient fields (Coefficient vs CoefficientNEW) so
+ *   semantic-only entries (e.g., Quantity::MassMatrix) could be "invisible" to the legacy
+ *   pointer-based RHS evaluator. If you collapse these two into one field, you must ensure that:
+ *     - the legacy RHS path never sees semantic-only entries, AND
+ *     - you do not accidentally double-add coefficients (common when old code did
+ *       Coefficient += δ; CoefficientNEW += δ; which becomes two increments to the same field).
+ *
+ * ---------------------------------------------------------------------------
+ * 5. Boundary handling
+ * ---------------------------------------------------------------------------
+ * If the node is on a boundary where ΔE is prescribed, GetStencil() returns a trivial row:
+ *
+ *     ΔE_{iVar}(i,j,k) = 0,
+ *
+ * implemented as a single diagonal entry of 1.0 and zero RHS supports.
+ */
+
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int iVar,cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,
 			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,
