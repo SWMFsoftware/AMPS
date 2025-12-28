@@ -349,7 +349,7 @@ for (int i=0;i<3;i++) indexer[i].reset();
   //   The new UpdateRhs() should contain only two simple loops over support
   //   containers (corner + center). Therefore, we *encode the dot product*
   //   as explicit semantic support entries of Quantity::MassMatrix and store
-  //   the constant prefactor (-4*pi*dtTotal*theta) in CoefficientNEW.
+  //   the constant prefactor (-4*pi*dtTotal*theta) in coeff.
   //
   // Strategy used here:
   //   - We append 81 entries into the caller-provided 'support_corner_vector':
@@ -357,8 +357,8 @@ for (int i=0;i<3;i++) indexer[i].reset();
   //   - Each entry represents one scalar term:  Mcoeff(aux_index) * Ecomp(neighbor)
   //     (SampleRhsScalar implements this when quantity==MassMatrix).
   //   - UpdateRhs() then accumulates:
-  //        res += s.CoefficientNEW * SampleRhsScalar(s,iVar)
-  //     where CoefficientNEW already includes the requested constant factor.
+  //        res += s.coeff * SampleRhsScalar(s,iVar)
+  //     where coeff already includes the requested constant factor.
   //
   // IMPORTANT:
   //   This block only ADDS population of the new semantic support vector.
@@ -430,13 +430,6 @@ for (int i=0;i<3;i++) indexer[i].reset();
             // returning one scalar dot-product term.
             RhsEntry s;
             s.SetCornerMassMatrix(mmScale, neighborCorner, mmOwnerCorner, mmScalarIndex, (unsigned char)q);
-
-            // Keep legacy fields benign. The legacy RHS path uses only
-            // (Coefficient, AssociatedDataPointer) and does not look at CoefficientNEW.
-            // We do not insert these semantic entries into the legacy arrays, so they
-            // should not affect the legacy UpdateRhs() behavior.
-            s.Coefficient           = 0.0;
-            s.AssociatedDataPointer = NULL;
 
             support_corner_vector.push_back(s);
           }
@@ -881,9 +874,9 @@ if (_PIC_STENCIL_NUMBER_==375) {
 
     // Semantic entry for new RHS evaluation path
     RhsEntry e;
-    e.Coefficient = 0.0;                  // legacy field kept consistent
+    e.coeff = 0.0;                  // legacy field kept consistent
     e.AssociatedDataPointer = assoc;       // legacy pointer path (optional)
-    e.SetCornerE(0.0, (assoc!=NULL) ? cn : NULL, comp); // sets CoefficientNEW
+    e.SetCornerE(0.0, (assoc!=NULL) ? cn : NULL, comp); // sets coeff
 
     support_corner_vector.push_back(e);
     const int pos = (int)support_corner_vector.size()-1;
@@ -896,10 +889,7 @@ if (_PIC_STENCIL_NUMBER_==375) {
   // legacy array entry.
   auto add_corner_E_coeff = [&](int di,int dj,int dk,unsigned char comp,double delta) -> void {
     RhsEntry &e = ensure_corner_E(di,dj,dk,comp);
-
-    // Keep both coefficient fields consistent (UpdateRhs v2 uses CoefficientNEW).
-    e.Coefficient    += delta;
-    e.CoefficientNEW += delta;
+    e.coeff += delta;
   };
 
   // Pre-create ALL Corner/E entries referenced by the configured stencil for this row.
@@ -1046,7 +1036,7 @@ int idx2;
     char *assoc = (pnt!=NULL) ? pnt + PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset : NULL;
 
     RhsEntry jEntry;
-    jEntry.Coefficient = -4*Pi*dtTotal*theta;
+    jEntry.coeff = -4*Pi*dtTotal*theta;
     jEntry.AssociatedDataPointer = assoc;
     jEntry.SetCornerJ(-4*Pi*dtTotal*theta, (assoc!=NULL) ? rowCorner : NULL, (unsigned char)iVar);
 
@@ -1107,9 +1097,9 @@ int idx2;
     char *assoc = (pnt!=NULL) ? pnt + PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset : NULL;
 
     RhsEntry e;
-    e.Coefficient = 0.0;
+    e.coeff = 0.0;
     e.AssociatedDataPointer = assoc;
-    e.SetCenterB(0.0, cn, bcomp);  // also initializes CoefficientNEW
+    e.SetCenterB(0.0, cn, bcomp);  // also initializes coeff
 
     support_center_vector.push_back(e);
     const int pos = (int)support_center_vector.size() - 1;
@@ -1119,8 +1109,7 @@ int idx2;
 
   auto add_center_B_coeff = [&](PIC::Mesh::cDataCenterNode* cn, unsigned char bcomp, double delta) -> void {
     RhsEntry& e = ensure_center_B(cn, bcomp);
-    e.Coefficient    += delta;  // legacy field (kept consistent)
-    e.CoefficientNEW += delta;  // semantic UpdateRhs uses CoefficientNEW
+    e.coeff += delta;  // semantic UpdateRhs uses coeff
   };
 
   // curlB contributions:

@@ -235,11 +235,11 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
   double res = 0.0;
 
   for (auto& el : support_center_vector) {
-    res+=el.CoefficientNEW * PIC::FieldSolver::Electromagnetic::ECSIM::SampleRhsScalar(el);
+    res+=el.coeff * PIC::FieldSolver::Electromagnetic::ECSIM::SampleRhsScalar(el);
   }
 
   for (auto& el : support_corner_vector) {
-    res+=el.CoefficientNEW * PIC::FieldSolver::Electromagnetic::ECSIM::SampleRhsScalar(el);
+    res+=el.coeff * PIC::FieldSolver::Electromagnetic::ECSIM::SampleRhsScalar(el);
   }
 
   return res;
@@ -297,7 +297,7 @@ using RhsEntry =
  *
  *    The full RHS contribution is computed in UpdateRhs() as:
  *
- *        contribution = entry.Coefficient * SampleRhsScalar(entry);
+ *        contribution = entry.coeff * SampleRhsScalar(entry);
  *
  *  - If an entry is malformed (e.g., null node pointer, invalid component
  *    index, negative aux_index for MassMatrix), this function safely
@@ -315,7 +315,7 @@ using RhsEntry =
  * RETURN VALUE
  * ------------
  *   The scalar field value referenced by the entry. The caller is
- *   responsible for multiplying by s.Coefficient (or whatever coefficient
+ *   responsible for multiplying by s.coeff (or whatever coefficient
  *   field you use).
  */
 double SampleRhsScalar(const RhsEntry &s)
@@ -377,7 +377,7 @@ double SampleRhsScalar(const RhsEntry &s)
       //
       //   SampleRhsScalar() returns:   Mcoeff(aux_index) * E_component(neighbor)
       //
-      // UpdateRhs() multiplies by s.CoefficientNEW which must already contain
+      // UpdateRhs() multiplies by s.coeff which must already contain
       // the constant prefactor (-4*pi*dt*theta) (and, if desired, E_conv).
       //
       // Data ownership:

@@ -314,7 +314,7 @@ public:
     // LEGACY MEMBERS (CURRENTLY USED BY EXISTING CODE)
     //
     // These are kept for backward compatibility. The existing ECSIM
-    // implementation fills Coefficient and AssociatedDataPointer and
+    // implementation fills coeff and AssociatedDataPointer and
     // UpdateRhs() reads them as "coeff * (*ptr)".
     //
     // Once the RHS is fully migrated to the new semantic layout (see
@@ -322,11 +322,9 @@ public:
     // directly, these legacy members and the pointer-based Compare()
     // logic can be removed.
     // -------------------------------------------------------------------
-    double Coefficient;
+    double coeff;
     char *AssociatedDataPointer;
 
-
-    double CoefficientNEW;
 
     // -------------------------------------------------------------------
     // NEW MEMBERS: semantic RHS description
@@ -340,7 +338,7 @@ public:
     // For now, they are unused by the legacy pointer-based UpdateRhs()
     // and comparison logic. New code (GetStencil_import_cStencil,
     // new UpdateRhs) should populate these fields, while older code
-    // can still continue using Coefficient/AssociatedDataPointer.
+    // can still continue using coeff/AssociatedDataPointer.
     // -------------------------------------------------------------------
     enum class NodeKind : unsigned char {
       Corner = 0,
@@ -370,12 +368,12 @@ public:
     // -------------------------------------------------------------------
     // CONSTRUCTOR
     //
-    // NOTE: we keep Coefficient/AssociatedDataPointer initialisation
+    // NOTE: we keep coeff/AssociatedDataPointer initialisation
     // fully compatible with the original version, and ALSO initialise
     // the new semantic members to a benign default.
     // -------------------------------------------------------------------
     cRhsSupportTable ()
-    : Coefficient(0.0),
+    : coeff(0.0),
       AssociatedDataPointer(NULL),
       node_kind(NodeKind::Corner),     // default: corner-node E entry
       quantity(Quantity::E),
@@ -390,7 +388,7 @@ public:
     // NEW HELPER: reset semantic part (legacy members unchanged)
     //
     // Use this when you only want to (re)initialise the semantic
-    // description while leaving Coefficient/AssociatedDataPointer
+    // description while leaving coeff/AssociatedDataPointer
     // for legacy code/testing.
     //
     // TODO (cleanup): once all RHS usage is semantic, this can be
@@ -415,14 +413,14 @@ public:
     // RHS support using semantic descriptors instead of raw double*.
     //
     // TODO (cleanup): after full migration, we can:
-    //   - rename Coefficient -> coeff (or similar),
+    //   - rename coeff -> coeff (or similar),
     //   - drop AssociatedDataPointer,
     //   - and potentially simplify these helpers further.
     // -------------------------------------------------------------------
     void SetCornerE(double c,
                     PIC::Mesh::cDataCornerNode *cn,
                     unsigned char comp) {
-      CoefficientNEW = c;
+      coeff = c;
       node_kind   = NodeKind::Corner;
       quantity    = Quantity::E;
       component   = comp;
@@ -435,7 +433,7 @@ public:
     void SetCornerJ(double c,
                     PIC::Mesh::cDataCornerNode *cn,
                     unsigned char comp) {
-      CoefficientNEW = c;
+      coeff = c;
       node_kind   = NodeKind::Corner;
       quantity    = Quantity::J;
       component   = comp;
@@ -452,7 +450,7 @@ public:
                                   PIC::Mesh::cDataCornerNode *mmOwnerCorner,
                                   int mmScalarIndex,
                                   unsigned char comp) {
-    CoefficientNEW = mmScale;          // stores (-4*pi*dt*theta) (optionally *E_conv)
+    coeff = mmScale;          // stores (-4*pi*dt*theta) (optionally *E_conv)
     node_kind   = NodeKind::Corner;
     quantity    = Quantity::MassMatrix;
     component   = comp;             // 0/1/2 selects Ex/Ey/Ez of neighbor E
@@ -465,7 +463,7 @@ public:
     void SetCenterB(double c,
                     PIC::Mesh::cDataCenterNode *cn,
                     unsigned char comp) {
-      CoefficientNEW = c;
+      coeff = c;
       node_kind   = NodeKind::Center;
       quantity    = Quantity::B;
       component   = comp;
@@ -482,7 +480,7 @@ public:
     //
     // IMPORTANT:
     //   - These currently compare ONLY the legacy fields
-    //     (AssociatedDataPointer, Coefficient), because that’s what
+    //     (AssociatedDataPointer, coeff), because that’s what
     //     existing tests and comparison logic depend on.
     //   - They deliberately ignore the new semantic members. This
     //     keeps existing regression comparisons valid while you are
@@ -503,8 +501,8 @@ public:
         return false;
       }
 
-      // Compare Coefficient values for exact equality (legacy)
-      if (Coefficient != other.Coefficient) {
+      // Compare coeff values for exact equality (legacy)
+      if (coeff != other.coeff) {
         return false;
       }
 
@@ -547,13 +545,13 @@ public:
       }
 
       // Exact coefficient compare (legacy).
-      if (a.Coefficient != b.Coefficient) {
+      if (a.coeff != b.coeff) {
         equal = false;
 
         if (break_flag) {
           hdr();
-          std::printf("  [Coefficient] a=%.17e b=%.17e\n",
-                      a.Coefficient, b.Coefficient);
+          std::printf("  [coeff] a=%.17e b=%.17e\n",
+                      a.coeff, b.coeff);
           exit(__LINE__,__FILE__);
         }
       }
@@ -614,7 +612,7 @@ public:
           equal = false; hdr();
           std::printf("  Missing in B: ptr=%p coef=%.17e (a[%d])\n",
                       (const void*)a[i].AssociatedDataPointer,
-                      a[i].Coefficient, i);
+                      a[i].coeff, i);
           if (break_flag) {
             delete[] used;
             char msg[128];
@@ -631,7 +629,7 @@ public:
           equal = false; hdr();
           std::printf("  Extra in B: ptr=%p coef=%.17e (b[%d])\n",
                       (const void*)b[j].AssociatedDataPointer,
-                      b[j].Coefficient, j);
+                      b[j].coeff, j);
         }
       }
 
@@ -1073,7 +1071,7 @@ bool operator==(const cMatrixRow& other) const {
         const cRhsSupportTable& sA = RhsSupportTable_CornerNodes[ia];
         std::printf(
           "  %6d | C=%.3e ptr=%p ",
-          ia, sA.Coefficient, (const void*)sA.AssociatedDataPointer
+          ia, sA.coeff, (const void*)sA.AssociatedDataPointer
         );
       } else {
         std::printf("  %6s | %s", "-", "(no entry)");
@@ -1085,7 +1083,7 @@ bool operator==(const cMatrixRow& other) const {
         const cRhsSupportTable& sB = other.RhsSupportTable_CornerNodes[jb];
         std::printf(
           "  %6d | C=%.3e ptr=%p",
-          jb, sB.Coefficient, (const void*)sB.AssociatedDataPointer
+          jb, sB.coeff, (const void*)sB.AssociatedDataPointer
         );
       } else {
         std::printf("  %6s | %s", "-", "(no entry)");
@@ -1129,7 +1127,7 @@ bool operator==(const cMatrixRow& other) const {
         const cRhsSupportTable& sA = RhsSupportTable_CenterNodes[ia];
         std::printf(
           "  %6d | C=%.3e ptr=%p ",
-          ia, sA.Coefficient, (const void*)sA.AssociatedDataPointer
+          ia, sA.coeff, (const void*)sA.AssociatedDataPointer
         );
       } else {
         std::printf("  %6s | %s", "-", "(no entry)");
@@ -1141,7 +1139,7 @@ bool operator==(const cMatrixRow& other) const {
         const cRhsSupportTable& sB = other.RhsSupportTable_CenterNodes[jb];
         std::printf(
           "  %6d | C=%.3e ptr=%p",
-          jb, sB.Coefficient, (const void*)sB.AssociatedDataPointer
+          jb, sB.coeff, (const void*)sB.AssociatedDataPointer
         );
       } else {
         std::printf("  %6s | %s", "-", "(no entry)");

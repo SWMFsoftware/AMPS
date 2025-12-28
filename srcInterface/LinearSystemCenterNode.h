@@ -79,7 +79,7 @@ public:
  public:
   class cRhsSupportTable {
   public:
-    double Coefficient;
+    double coeff;
     char *AssociatedDataPointer;
   };
 
