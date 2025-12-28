@@ -101,7 +101,7 @@
 #include "../../srcInterface/LinearSystemCornerNode.h"
 #include "linear_solver_wrapper_c.h"
 
-#include "PeriodicBCTest.dfn"
+//#include "PeriodicBCTest.dfn"
 
 #if _CUDA_MODE_ == _ON_
 #include "cuda_runtime.h"
@@ -119,8 +119,8 @@ int nVars=3; //number of variables in center associated data
 double Background[3]={100.0,-20.0,10.0};
 
 
-//#define _UNIFORM_MESH_ 1
-//#define _NONUNIFORM_MESH_ 2
+#define _UNIFORM_MESH_ 1
+#define _NONUNIFORM_MESH_ 2
 
 #ifndef _TEST_MESH_MODE_
 #define _TEST_MESH_MODE_ _UNIFORM_MESH_
