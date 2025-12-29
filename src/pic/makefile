@@ -89,6 +89,7 @@ PICOBJ = pic.o \
 	ecsim/update_rhs.o \
 	ecsim/get_stencil.o \
 	ecsim/get_stencil_legacy_wrapper.o \
+	ecsim/domain_bc.o \
 	mesh/domain_boundary_bc_collectors.o
 
 	
