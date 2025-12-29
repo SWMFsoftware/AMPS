@@ -257,7 +257,7 @@ bool CollectAndMarkDomainBoundaryDirichletCellsOnFaces(const int* faces, int nFa
 // ============================================================================
 // A2) Dirichlet on requested DOMAIN corners: single cell per corner
 // ============================================================================
-bool CollectAndMarkDomainBoundaryDirichletCornerNodes(const int* faces, int nFaces,
+bool CollectAndMarkDomainBoundaryDirichletCornerNodesOnFaces(const int* faces, int nFaces,
                                                       std::vector<Record>& out)
 {
   out.clear();
@@ -448,7 +448,7 @@ bool CollectAndMarkDomainBoundaryNeumannCellsOnFaces(const int* faces, int nFace
 // ============================================================================
 // B2) Neumann on requested DOMAIN corners: one inside ref index per corner
 // ============================================================================
-bool CollectAndMarkDomainBoundaryNeumannCornerNodes(const int* faces, int nFaces,
+bool CollectAndMarkDomainBoundaryNeumannCornerNodesOnFaces(const int* faces, int nFaces,
                                                     std::vector<Record>& out)
 {
   out.clear();

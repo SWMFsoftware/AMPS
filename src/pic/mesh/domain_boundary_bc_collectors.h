@@ -20,7 +20,7 @@
 *
 *    DIRICHLET:
 *    • CollectAndMarkDomainBoundaryDirichletCellsOnFaces(...)   → face-layer cells only
-*    • CollectAndMarkDomainBoundaryDirichletCornerNodes(...)    → corners only
+*    • CollectAndMarkDomainBoundaryDirichletCornerNodesOnFaces(...)    → corners only
 *
 *    NEUMANN:
 *    • CollectAndMarkDomainBoundaryNeumannCellsOnFaces(...)     → face-layer cells only
@@ -141,13 +141,13 @@
 *  ----------------------------------------------------------------------------------------
 *    #include "domain_boundary_bc_collectors.hpp"
 *    using PIC::Mesh::CollectAndMarkDomainBoundaryDirichletCellsOnFaces;
-*    using PIC::Mesh::CollectAndMarkDomainBoundaryDirichletCornerNodes;
+*    using PIC::Mesh::CollectAndMarkDomainBoundaryDirichletCornerNodesOnFaces;
 *
 *    std::vector<cBoundaryCellInfo> faceD, cornerD;
 *    int faces[] = {0, 5}; // -X, +Z
 *
 *    CollectAndMarkDomainBoundaryDirichletCellsOnFaces(faces, 2, faceD);
-*    CollectAndMarkDomainBoundaryDirichletCornerNodes(faces, 2, cornerD);
+*    CollectAndMarkDomainBoundaryDirichletCornerNodesOnFaces(faces, 2, cornerD);
 *
 *  Example 2 — Neumann on +X only; inward index at i=NX-2
 *  ----------------------------------------------------------------------------------------
@@ -255,7 +255,7 @@ bool CollectAndMarkDomainBoundaryDirichletCellsOnFaces(const int* faces, int nFa
  *  @param out     Cleared then appended with {i,j,k,node*,cell*} for each marked corner cell.
  *  @return        true on success; false if validation fails.
  */
-bool CollectAndMarkDomainBoundaryDirichletCornerNodes(const int* faces, int nFaces,
+bool CollectAndMarkDomainBoundaryDirichletCornerNodesOnFaces(const int* faces, int nFaces,
                                                       std::vector<cBoundaryCellInfo>& out);
 
 /** Face-layer, Neumann.
@@ -287,7 +287,7 @@ bool CollectAndMarkDomainBoundaryNeumannCellsOnFaces(const int* faces, int nFace
  *  @param out     Cleared then appended with {i,j,k,node*,cell*} for each marked corner cell.
  *  @return        true on success; false if block is too thin or validation fails.
  */
-bool CollectAndMarkDomainBoundaryNeumannCornerNodes(const int* faces, int nFaces,
+bool CollectAndMarkDomainBoundaryNeumannCornerNodesOnFaces(const int* faces, int nFaces,
                                                     std::vector<cBoundaryCellInfo>& out);
 
 } // namespace Mesh

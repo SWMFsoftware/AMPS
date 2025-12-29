@@ -51,7 +51,7 @@ void cDomainBC::RecomputeBCType() {
     PIC::Mesh::CollectAndMarkDomainBoundaryDirichletCellsOnFaces(
       facesDir.data(), (int)facesDir.size(), DirichletCellsOnFaces);
 
-    PIC::Mesh::CollectAndMarkDomainBoundaryDirichletCornerNodes(
+    PIC::Mesh::CollectAndMarkDomainBoundaryDirichletCornerNodesOnFaces(
       facesDir.data(), (int)facesDir.size(), DirichletCornerNodes);
   }
 
@@ -59,7 +59,7 @@ void cDomainBC::RecomputeBCType() {
     PIC::Mesh::CollectAndMarkDomainBoundaryNeumannCellsOnFaces(
       facesNeu.data(), (int)facesNeu.size(), NeumannCellsOnFaces);
 
-    PIC::Mesh::CollectAndMarkDomainBoundaryNeumannCornerNodes(
+    PIC::Mesh::CollectAndMarkDomainBoundaryNeumannCornerNodesOnFaces(
       facesNeu.data(), (int)facesNeu.size(), NeumannCornerNodes);
   }
 }
