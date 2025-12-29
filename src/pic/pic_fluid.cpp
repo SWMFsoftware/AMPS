@@ -98,7 +98,14 @@ void PIC::CPLR::FLUID::GetCornerPointNumber(int *nCornerPoints) {
   PIC::Mesh::cDataCornerNode *corner;
 
   //in case the BlockTable is not initialized yet -> init BlockTable
-  if (PIC::DomainBlockDecomposition::BlockTable==NULL) PIC::DomainBlockDecomposition::UpdateBlockTable();
+  if (PIC::DomainBlockDecomposition::BlockTable==NULL) {
+    PIC::DomainBlockDecomposition::UpdateBlockTable();
+
+    // recompute bc_type flags on the new owners
+    if (_PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__OFF_) {
+      PIC::FieldSolver::Electromagnetic::DomainBC.RecomputeBCType();
+    }
+  }
 
   *nCornerPoints=0;
 

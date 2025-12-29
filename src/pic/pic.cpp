@@ -75,6 +75,11 @@ int PIC::TimeStep() {
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
    DomainBlockDecomposition::UpdateBlockTable();
    
+   // recompute bc_type flags on the new owners
+   if (_PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__OFF_) {
+     PIC::FieldSolver::Electromagnetic::DomainBC.RecomputeBCType();
+   } 
+   
    //init required sample length if the sample output mode is by time interval 
    static bool SampleTimeInitialized=false;
    
@@ -643,6 +648,11 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
         PIC::Mesh::mesh->CreateNewParallelDistributionLists(_PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_);
         PIC::Parallel::IterationNumberAfterRebalancing=0,PIC::Parallel::CumulativeLatency=0.0;
         PIC::DomainBlockDecomposition::UpdateBlockTable();
+
+        // recompute bc_type flags on the new owners
+       if (_PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__OFF_) {
+         PIC::FieldSolver::Electromagnetic::DomainBC.RecomputeBCType();
+       }
 
         MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
         PIC::Parallel::RebalancingTime=MPI_Wtime()-PIC::Parallel::RebalancingTime;
@@ -1582,6 +1592,11 @@ void PIC::Sampling::Sampling() {
       PIC::Parallel::IterationNumberAfterRebalancing=0,PIC::Parallel::CumulativeLatency=0.0;
       PIC::DomainBlockDecomposition::UpdateBlockTable();
 
+      // recompute bc_type flags on the new owners
+      if (_PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__OFF_) {
+        PIC::FieldSolver::Electromagnetic::DomainBC.RecomputeBCType();
+      }
+
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
       PIC::Parallel::RebalancingTime=MPI_Wtime()-PIC::Parallel::RebalancingTime;
     }
@@ -2069,6 +2084,12 @@ void PIC::Init_AfterParser() {
   if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
     Debugger::logger.InitLogger(ThisThread,false);
   }  
+
+  // recompute bc_type flags on the new owners
+  if (_PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__OFF_) {
+    PIC::FieldSolver::Electromagnetic::DomainBC.RecomputeBCType();
+  }
+
 
   //init the concurrent runs if needed
   if (_PIC__DEBUG_CONCURRENT_RUNS_==_PIC_MODE_ON_) {
