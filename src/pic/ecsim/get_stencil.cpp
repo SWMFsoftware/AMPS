@@ -203,14 +203,6 @@
  *       so that SampleRhsScalar() can return the stored E^n value in code units while the
  *       assembled RHS remains consistent with legacy scaling.
  *
- * NOTE ON LEGACY COMPATIBILITY:
- *   Historically the code carried two coefficient fields (Coefficient vs CoefficientNEW) so
- *   semantic-only entries (e.g., Quantity::MassMatrix) could be "invisible" to the legacy
- *   pointer-based RHS evaluator. If you collapse these two into one field, you must ensure that:
- *     - the legacy RHS path never sees semantic-only entries, AND
- *     - you do not accidentally double-add coefficients (common when old code did
- *       Coefficient += δ; CoefficientNEW += δ; which becomes two increments to the same field).
- *
  * ---------------------------------------------------------------------------
  * 5. Boundary handling
  * ---------------------------------------------------------------------------
