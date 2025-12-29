@@ -2216,6 +2216,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
       const bool touchZmax = (node->GetNeibFace(2*2 + 1, 0, 0, PIC::Mesh::mesh) == nullptr);
 
       // Increment only if stop==max (prevents >+1 when corners belong to multiple edges).
+      iStop=iMax,jStop=jMax,kStop=kMax; 
       if (touchXmax && iStop == iMax) ++iStop;
       if (touchYmax && jStop == jMax) ++jStop;
       if (touchZmax && kStop == kMax) ++kStop;
