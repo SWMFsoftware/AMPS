@@ -9781,6 +9781,6 @@ double SampleRhsScalar(const RhsEntry &sg);
 #endif
 
 #include "mesh/domain_boundary_bc_collectors.h"
-
+#include "ecsim/domain_bc.h" 
 
 
