@@ -5334,9 +5334,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   
   
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ){
-    setB_center_BC();
-    setB_corner_BC();
-    setE_curr_BC();
+    if (setB_center_BC!=NULL) setB_center_BC();
+    if (setB_corner_BC!=NULL) setB_corner_BC();
+    if (setE_curr_BC!=NULL) setE_curr_BC();
   }
   
 
@@ -5374,11 +5374,15 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   CumulativeTiming::UpdateBTime.Start();
   
   
-  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ) setE_half_BC();
+  if ((_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )&&(setE_half_BC!=NULL)) {
+     setE_half_BC();
+  }
 
   UpdateB();
 
-  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ) setB_center_BC();
+  if ((_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )&&(setB_center_BC!=NULL)) {
+    setB_center_BC();
+  }
 
   PIC::Mesh::mesh->ParallelBlockDataExchange(PackBlockData_B,UnpackBlockData_B);
   
