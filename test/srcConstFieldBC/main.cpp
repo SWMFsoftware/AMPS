@@ -610,6 +610,8 @@ int main(int argc,char **argv) {
 
   ConfigureTestFromArgs(cfg,argc,argv);
 
+  // Dirichlet on all 6 faces
+  PIC::FieldSolver::Electromagnetic::DomainBC.SetAll(PIC::Mesh::BCTypeDirichlet);
 
   PIC::InitMPI();
   PIC::Init_BeforeParser();
