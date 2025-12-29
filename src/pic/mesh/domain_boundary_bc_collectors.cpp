@@ -448,7 +448,7 @@ bool CollectAndMarkDomainBoundaryNeumannCellsOnFaces(const int* faces, int nFace
 // ============================================================================
 // B2) Neumann on requested DOMAIN corners: one inside ref index per corner
 // ============================================================================
-bool CollectAndMarkDomainBoundaryNeumannCornerCells(const int* faces, int nFaces,
+bool CollectAndMarkDomainBoundaryNeumannCornerNodes(const int* faces, int nFaces,
                                                     std::vector<Record>& out)
 {
   out.clear();
