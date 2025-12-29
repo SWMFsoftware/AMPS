@@ -4721,115 +4721,283 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryChargeDivE(){
   
 
 
+// ============================================================================
+//  PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB()
+// ============================================================================
+//
+//  PURPOSE
+//  -------
+//  Advance the cell-centered magnetic field B by one full time step using
+//  Faraday's law, with the electric field already computed at the implicit
+//  half step (E^{n+theta}) on CORNER nodes:
+//
+//      B^{n+1} = B^{n} - c * dt * (curl E^{n+theta})
+//
+//  This function:
+//    * reads E^{n+theta} from corner-node buffer (OffsetE_HalfTimeStep)
+//    * reads B^{n}        from center-node buffer (CurrentBOffset)
+//    * writes B^{n+1}     into the alternate buffer (PrevBOffset)
+//    * swaps (CurrentBOffset, PrevBOffset) so CurrentBOffset points to B^{n+1}
+//    * exchanges / updates ghost layers for B after the update.
+//
+//  DISCRETIZATION (code-matched)
+//  -----------------------------
+//  For each cell center (i,j,k) in a block, the curl is computed from the eight
+//  corner values of E^{n+theta}. Each partial derivative uses a 2x2 face average
+//  (4 edges), so the coefficient includes a factor 1/4:
+//
+//      coeff[d]  = (c*dt) / dx[d]
+//      coeff4[d] = coeff[d] / 4
+//
+//  Example (Bx component):
+//      dB_x = - (dE_z/dy - dE_y/dz) * c*dt
+//  with dE_z/dy and dE_y/dz computed as differences of face-averaged corner E.
+//
+//  UNITS / CONVERSION FACTORS
+//  --------------------------
+//  The code stores fields in internal units; UpdateB applies conversion factors:
+//    * Corner E samples are multiplied by E_conv when loaded.
+//    * The accumulated dB is divided by B_conv when stored.
+//    * Cell sizes are multiplied by length_conv when computing dx[].
+//
+//  PARALLELIZATION
+//  ---------------
+//  MPI: The function iterates MPI-local blocks via the mesh-maintained linked list:
+//
+//      for (node = mesh->ParallelNodesDistributionList[mesh->ThisThread];
+//           node != NULL; node = node->nextNodeThisThread)
+//
+//  OpenMP (HYBRID build): Linked lists are not directly indexable, so we use a
+//  deterministic modulo assignment across ELIGIBLE blocks:
+//
+//    1) tid      = omp_get_thread_num()
+//       nThreads = omp_get_num_threads()
+//    2) eligibleBlockCounter increments ONLY for blocks that pass eligibility filters
+//    3) the current thread processes a block iff:
+//           (eligibleBlockCounter % nThreads) == tid
+//
+//  IMPORTANT: The eligibility decision must be identical on all threads; otherwise
+//  different threads will disagree on the block numbering and work will be lost/duplicated.
+//
+//  PERIODIC BC SPECIAL-CASE
+//  ------------------------
+//  When periodic mode is ON, AMPS may allocate/keep "boundary helper blocks" used to
+//  impose periodic conditions. These blocks are detected by missing face neighbors
+//  (GetNeibFace(...) == NULL) and are skipped here. Their data are refreshed by the
+//  ghost/periodic update after the swap.
+//
+//  PERFORMANCE NOTES
+//  -----------------
+//  * Each OpenMP thread maintains a thread-local per-block metric cache (dx, coeff, coeff4)
+//    keyed by node_last to avoid recomputing cell sizes for every cell.
+//  * Each eligible block is processed by exactly one OpenMP thread; within the block,
+//    the (k,j,i) cell loops are serial for good cache locality.
+//
+// ============================================================================
+//
+void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB() {
+  // --------------------------------------------------------------------------
+  // Implementation overview:
+  //   * Iterate MPI-local AMR blocks via mesh->ParallelNodesDistributionList[mesh->ThisThread].
+  //   * In HYBRID builds, assign each ELIGIBLE block to exactly one OpenMP thread using
+  //     a deterministic modulo scheme on a traversal counter.
+  //   * For each eligible block, loop over interior cell centers (no ghost cells)
+  //     and update B^{n+1} from corner E^{n+theta} using a face-averaged discrete curl.
+  //   * Swap B buffers and exchange halos after completing all updates.
+  // --------------------------------------------------------------------------
+
+  using namespace PIC;
+
+  // Short-hand pointer to the global mesh (needed for neighbor queries and halo exchange).
+  auto *mesh = PIC::Mesh::mesh;
+  // c*dt for Faraday update (no theta factor here; E^{n+theta} already contains implicit centering).
+  const double cDt = LightSpeed * dtTotal;
+
+  // Thread-local cache of per-block metrics (dx, coeff, coeff4)
+  struct cUpdateBCache {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node_last = nullptr;
+    double dx[3];
+    double coeff[3];
+    double coeff4[3];
+  };
+
+  // Helper: periodic "boundary ghost block" test (used to impose periodic BC)
+  auto isPeriodicGhostBoundaryBlock =
+    [&](cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) -> bool {
+      if (_PIC_BC__PERIODIC_MODE_!=_PIC_BC__PERIODIC_MODE_ON_) return false;
+      for (int iface=0; iface<6; iface++) {
+        if (node->GetNeibFace(iface,0,0,mesh)==NULL) return true;
+      }
+      return false;
+    };
+
+  // Per-cell work: compute curl(E^{n+θ}) from the 8 corner values and advance B at the cell center.
+  // IMPORTANT: cache is thread-local (one per OMP thread) to preserve the node_last metric caching.
+  auto process_single_cell =
+    [&](cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node, int i, int j, int k, cUpdateBCache& cache) {
+
+      // Update metric cache if block changed (per thread)
+      if (node != cache.node_last) {
+        // Cell sizes in physical units. In AMPS, cTreeNodeAMR stores xmin/xmax as arrays.
+        cache.dx[0] = (node->xmax[0] - node->xmin[0])/_BLOCK_CELLS_X_ * length_conv;
+        cache.dx[1] = (node->xmax[1] - node->xmin[1])/_BLOCK_CELLS_Y_ * length_conv;
+        cache.dx[2] = (node->xmax[2] - node->xmin[2])/_BLOCK_CELLS_Z_ * length_conv;
+
+        cache.coeff[0]  = cDt/cache.dx[0];
+        cache.coeff[1]  = cDt/cache.dx[1];
+        cache.coeff[2]  = cDt/cache.dx[2];
+
+        cache.coeff4[0] = 0.25*cache.coeff[0];
+        cache.coeff4[1] = 0.25*cache.coeff[1];
+        cache.coeff4[2] = 0.25*cache.coeff[2];
+
+        cache.node_last = node;
+      }
+
+      // Load E^{n+θ} at 8 cell corners
+      double Ex[2][2][2], Ey[2][2][2], Ez[2][2][2];
+
+      for (int kk=0; kk<2; kk++) for (int jj=0; jj<2; jj++) for (int ii=0; ii<2; ii++) {
+        PIC::Mesh::cDataCornerNode* CornerNode =
+          node->block->GetCornerNode(_getCornerNodeLocalNumber(i+ii, j+jj, k+kk));
+
+        char* offset = CornerNode->GetAssociatedDataBufferPointer() +
+                       PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+        double* ptrE = (double*)(offset + OffsetE_HalfTimeStep);
+
+        Ex[ii][jj][kk] = ptrE[ExOffsetIndex] * E_conv;
+        Ey[ii][jj][kk] = ptrE[EyOffsetIndex] * E_conv;
+        Ez[ii][jj][kk] = ptrE[EzOffsetIndex] * E_conv;
+      }
+
+      // Center node B pointers
+      PIC::Mesh::cDataCenterNode* CenterNode =
+        node->block->GetCenterNode(_getCenterNodeLocalNumber(i, j, k));
+
+      char* offsetB = CenterNode->GetAssociatedDataBufferPointer() +
+                      PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+      double* CurrentPtr = (double*)(offsetB + CurrentBOffset); // B^n (after last swap)
+      double* PrevPtr    = (double*)(offsetB + PrevBOffset);    // destination for B^{n+1}
+
+      // tempB accumulates ΔB in converted units; divide by B_conv when storing
+      double tempB[3] = {0.0, 0.0, 0.0};
+
+      // Faraday: B^{n+1} = B^n - cΔt (∇×E^{n+θ})
+      // Discrete curl via 2×2 face-averages -> coeff4 = (cΔt/Δx)/4
+
+      // Bx: -(∂Ez/∂y - ∂Ey/∂z)
+      for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
+        tempB[BxOffsetIndex] += -cache.coeff4[1]*(Ez[ii][1][jj] - Ez[ii][0][jj])
+                                +cache.coeff4[2]*(Ey[ii][jj][1] - Ey[ii][jj][0]);
+      }
+
+      // By: -(∂Ex/∂z - ∂Ez/∂x)
+      for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
+        tempB[ByOffsetIndex] += -cache.coeff4[2]*(Ex[ii][jj][1] - Ex[ii][jj][0])
+                                +cache.coeff4[0]*(Ez[1][ii][jj] - Ez[0][ii][jj]);
+      }
+
+      // Bz: -(∂Ey/∂x - ∂Ex/∂y)
+      for (int ii=0; ii<2; ii++) for (int jj=0; jj<2; jj++) {
+        tempB[BzOffsetIndex] += -cache.coeff4[0]*(Ey[1][ii][jj] - Ey[0][ii][jj])
+                                +cache.coeff4[1]*(Ex[ii][1][jj] - Ex[ii][0][jj]);
+      }
+
+      // Store B^{n+1} (in code units)
+      PrevPtr[BxOffsetIndex] = CurrentPtr[BxOffsetIndex] + tempB[BxOffsetIndex]/B_conv;
+      PrevPtr[ByOffsetIndex] = CurrentPtr[ByOffsetIndex] + tempB[ByOffsetIndex]/B_conv;
+      PrevPtr[BzOffsetIndex] = CurrentPtr[BzOffsetIndex] + tempB[BzOffsetIndex]/B_conv;
+    };
 
 
-//compute B^(n+1) from B^(n) and E^(n+theta)
-void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB(){
-  int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
-  double dx[3],coeff[3],coeff4[3],x[3];
-
-  int CellCounter,CellCounterMax=DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node_last=NULL;
+  // --------------------------------------------------------------------------
+  // Main update loops
+  // --------------------------------------------------------------------------
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel for default(none) shared (PIC::Mesh::mesh,CellCounterMax,nCell,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,B_conv) \
-  shared(PrevBOffset,CurrentBOffset,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread,length_conv,cDt) \
-  shared(PIC::CPLR::DATAFILE::Offset::ElectricField,OffsetE_HalfTimeStep,PIC::CPLR::DATAFILE::Offset::MagneticField) \
-  shared(ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,E_conv) firstprivate(node_last) private (dx,coeff,coeff4,x)
-#endif
-  for (CellCounter=0;CellCounter<CellCounterMax;CellCounter++) {
-    int nLocalNode,i,j,k,ii,jj,kk;
+  #pragma omp parallel
+  {
+    cUpdateBCache cache;
 
-    ii=CellCounter;
-    nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
-    ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+    // OpenMP thread id and thread count (nThreads). In non-OpenMP builds, tid=0, nThreads=1.
+    int tid = 0;
+    int nThreads = 1;
 
-    k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
-    ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+    #ifdef _OPENMP
+    tid = omp_get_thread_num();
+    nThreads = omp_get_num_threads();
+    #endif
 
-    j=ii/_BLOCK_CELLS_X_;
-    ii-=j*_BLOCK_CELLS_X_;
+    // Counter of ELIGIBLE blocks (same traversal order on all threads)
+    long int eligibleBlockCounter = -1;
 
-    i=ii;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
 
-      
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
+    // Traverse MPI-local blocks in list order. Each OpenMP thread performs the traversal,
+    // but processes only its assigned blocks using the modulo rule on eligibleBlockCounter.
+    for (node = mesh->ParallelNodesDistributionList[mesh->ThisThread];
+         node != NULL;
+         node = node->nextNodeThisThread)
+    {
+      // Eligibility filters must be thread-independent (all threads must make identical decisions)
+      // so that eligibleBlockCounter stays consistent across threads.
+      if (node->IsUsedInCalculationFlag != true) continue;
+      if (node->block == NULL) continue;
+      if (isPeriodicGhostBoundaryBlock(node)) continue;
 
-    if ((node->block==NULL)||(node->Thread!=PIC::ThisThread)) continue;
+      // Count only blocks we would actually process
+      ++eligibleBlockCounter;
 
-    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-      bool BoundaryBlock=false;
+      // Deterministic block-to-thread assignment
+      // This guarantees each eligible block is handled by exactly one OpenMP thread.
+      // (All threads traverse the list, but only one enters the cell loops for a given block.)
+      if ((eligibleBlockCounter % nThreads) != tid) continue;
 
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
-        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
-        BoundaryBlock=true;
-        break;
-      }
-
-      if (BoundaryBlock==true) continue;
+      // Process all interior cell centers (i,j,k) in the block.
+      // NOTE: we intentionally exclude ghost cells here; ghosts are updated by halo exchange after the swap.
+      for (int k=0; k<_BLOCK_CELLS_Z_; k++)
+        for (int j=0; j<_BLOCK_CELLS_Y_; j++)
+          for (int i=0; i<_BLOCK_CELLS_X_; i++)
+            process_single_cell(node, i, j, k, cache);
     }
-      
-    if (node!=node_last) {
-      for (int iDim=0; iDim<3; iDim++){
-        dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];
-        dx[iDim]*=length_conv;
-
-        coeff[iDim] = cDt/dx[iDim];
-        coeff4[iDim] = coeff[iDim]*0.25; //coefficients for curl calculation
-      }
-
-      node_last=node;
-    }
-    
-    char *offset;
-    double Ex[2][2][2], Ey[2][2][2], Ez[2][2][2];
-
-    for (int kk=0;kk<2;kk++) for (int jj=0;jj<2;jj++) for (int ii=0;ii<2;ii++){
-      offset=node->block->GetCornerNode(_getCornerNodeLocalNumber(i+ii,j+jj,k+kk))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      double * ptr =  (double*)(offset+OffsetE_HalfTimeStep);
-      Ex[ii][jj][kk]=ptr[ExOffsetIndex]*E_conv;
-      Ey[ii][jj][kk]=ptr[EyOffsetIndex]*E_conv;
-      Ez[ii][jj][kk]=ptr[EzOffsetIndex]*E_conv;
-    }
-
-    offset=node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
-
-    double *CurrentPtr = (double*)(offset+CurrentBOffset);
-    double *PrevPtr = (double*)(offset+PrevBOffset);
-    //store next B at prevptr
-    double tempB[3]={0.0,0.0,0.0};
-
-    for (int ii=0;ii<2;ii++){
-      for (int jj=0; jj<2;jj++){
-        tempB[BxOffsetIndex] += (-coeff4[1]*(Ez[ii][1][jj]-Ez[ii][0][jj])+coeff4[2]*(Ey[ii][jj][1]-Ey[ii][jj][0]));
-        tempB[ByOffsetIndex] += (-coeff4[2]*(Ex[ii][jj][1]-Ex[ii][jj][0])+coeff4[0]*(Ez[1][ii][jj]-Ez[0][ii][jj]));
-        tempB[BzOffsetIndex] += (-coeff4[0]*(Ey[1][ii][jj]-Ey[0][ii][jj])+coeff4[1]*(Ex[ii][1][jj]-Ex[ii][0][jj]));
-      }
-    }
-
-    PrevPtr[BxOffsetIndex] = CurrentPtr[BxOffsetIndex]+tempB[BxOffsetIndex]/B_conv;
-    PrevPtr[ByOffsetIndex] = CurrentPtr[ByOffsetIndex]+tempB[ByOffsetIndex]/B_conv;
-    PrevPtr[BzOffsetIndex] = CurrentPtr[BzOffsetIndex]+tempB[BzOffsetIndex]/B_conv;
   }
+#else
+  // Non-hybrid build: single-threaded over the MPI-local list
+  {
+    cUpdateBCache cache;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
 
+    for (node = mesh->ParallelNodesDistributionList[mesh->ThisThread];
+         node != NULL;
+         node = node->nextNodeThisThread)
+    {
+      if (node->IsUsedInCalculationFlag != true) continue;
+      if (node->block == NULL) continue;
+      if (isPeriodicGhostBoundaryBlock(node)) continue;
 
-  //swap current and prev pointer
-  int tempInt;
-  tempInt=PrevBOffset;
-  PrevBOffset=CurrentBOffset;
-  CurrentBOffset=tempInt;
- 
+      for (int k=0; k<_BLOCK_CELLS_Z_; k++)
+        for (int j=0; j<_BLOCK_CELLS_Y_; j++)
+          for (int i=0; i<_BLOCK_CELLS_X_; i++)
+            process_single_cell(node, i, j, k, cache);
+    }
+  }
+#endif
 
-  switch (_PIC_BC__PERIODIC_MODE_) {
-  case _PIC_BC__PERIODIC_MODE_OFF_:
-    PIC::Mesh::mesh->ParallelBlockDataExchange(PackBlockData_B,UnpackBlockData_B);
-    break;
-      
-  case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::Parallel::UpdateGhostBlockData(PackBlockData_B,UnpackBlockData_B);
-    break;
+  // Swap B buffers: after this, CurrentBOffset points to B^{n+1}
+  int tempInt = PrevBOffset;
+  PrevBOffset = CurrentBOffset;
+  CurrentBOffset = tempInt;
+
+  // Communicate ghost/halo B data
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_) {
+    mesh->ParallelBlockDataExchange(PackBlockData_B,UnpackBlockData_B);
+  }
+  else {
+    Parallel::UpdateGhostBlockData(PackBlockData_B,UnpackBlockData_B);
   }
 }
+
+
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_C2N() {
   int CellCounter,CellCounterMax=DomainBlockDecomposition::nLocalBlocks*(_BLOCK_CELLS_Z_+1)*(_BLOCK_CELLS_Y_+1)*(_BLOCK_CELLS_X_+1);
