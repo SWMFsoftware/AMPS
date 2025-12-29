@@ -134,7 +134,7 @@ static inline void GetCornerPosition(cTreeNodeAMR<cDataBlockAMR>* nd, int i, int
 }
 
 //=========================== Public API ======================================
-bool InitBoundaryCornerVector(std::vector<cBoundaryCornerInfo>* out) {
+bool InitBoundaryCornerVector(std::vector<cBoundaryCornerNodeInfo>* out) {
   if (out) out->clear();
 
   std::size_t added = 0;
@@ -214,7 +214,7 @@ bool InitBoundaryCornerVector(std::vector<cBoundaryCornerInfo>* out) {
 
       if (dist == 0) {
         // As before: only emit corners that sit on an open domain face
-        cBoundaryCornerInfo rec{};
+        cBoundaryCornerNodeInfo rec{};
         rec.node = node;
         rec.i = i; rec.j = j; rec.k = k;
         rec.faceMask = GetCornerBoundaryMask(node, i, j, k); // keeps prior face-bit semantics

@@ -55,7 +55,7 @@
  *
  *   // ... initialize mesh/AMR tree as in your usual setup ...
  *
- *   std::vector<cBoundaryCornerInfo> corners;
+ *   std::vector<cBoundaryCornerNodeInfo> corners;
  *   InitBoundaryCornerVector(&corners); // pass pointer; omit or pass nullptr to only set flags
  *
  *   for (const auto& c : corners) {
@@ -103,7 +103,7 @@ enum BoundaryFaceMask : int {
 };
 
 /** Output record for a boundary corner node. */
-struct cBoundaryCornerInfo {
+struct cBoundaryCornerNodeInfo {
   cTreeNodeAMR<cDataBlockAMR>* node;   ///< Owning *leaf* block.
   int i, j, k;                         ///< Local corner indices in [0..Nx],[0..Ny],[0..Nz].
   int faceMask;                        ///< Bit-or of BoundaryFaceMask flags.
@@ -123,7 +123,7 @@ struct cBoundaryCornerInfo {
  *                  the routine will only set boundary flags and will not modify any vector.
  * @return true on success.
  */
-bool InitBoundaryCornerVector(std::vector<cBoundaryCornerInfo>* out = nullptr);
+bool InitBoundaryCornerVector(std::vector<cBoundaryCornerNodeInfo>* out = nullptr);
 
 /** Convert a face mask to a compact string like "X-|Y+|Z-". */
 std::string FaceMaskToString(int mask);
@@ -136,7 +136,7 @@ bool IsOnFace(int faceMask);
 
 /**
  * Decode all faces indicated by @p faceMask into a small list.
- * @param faceMask            Bitmask stored in cBoundaryCornerInfo::faceMask.
+ * @param faceMask            Bitmask stored in cBoundaryCornerNodeInfo::faceMask.
  * @param[out] nBoundaryFaces Number of faces found (0..3).
  * @param[out] BoundaryFaceList Output array of length >= 3 with face codes from BoundaryFaceMask.
  * Ordering is deterministic: X- , X+ , Y- , Y+ , Z- , Z+ (pruned to _MESH_DIMENSION_).
