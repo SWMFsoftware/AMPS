@@ -256,7 +256,7 @@ bool CollectAndMarkDomainBoundaryDirichletCellsOnFaces(const int* faces, int nFa
  *  @return        true on success; false if validation fails.
  */
 bool CollectAndMarkDomainBoundaryDirichletCornerNodesOnFaces(const int* faces, int nFaces,
-                                                      std::vector<cBoundaryCellInfo>& out);
+                                                      std::vector<cBoundaryCornerNodeInfo>& out);
 
 /** Face-layer, Neumann.
  *  Selects center cells on the requested DOMAIN faces and sets Neumann BC on them,
@@ -288,7 +288,7 @@ bool CollectAndMarkDomainBoundaryNeumannCellsOnFaces(const int* faces, int nFace
  *  @return        true on success; false if block is too thin or validation fails.
  */
 bool CollectAndMarkDomainBoundaryNeumannCornerNodesOnFaces(const int* faces, int nFaces,
-                                                    std::vector<cBoundaryCellInfo>& out);
+                                                    std::vector<cBoundaryCornerNodeInfo>& out);
 
 } // namespace Mesh
 } // namespace PIC

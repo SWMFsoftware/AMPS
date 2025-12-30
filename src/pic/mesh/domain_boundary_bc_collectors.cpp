@@ -257,69 +257,202 @@ bool CollectAndMarkDomainBoundaryDirichletCellsOnFaces(const int* faces, int nFa
 // ============================================================================
 // A2) Dirichlet on requested DOMAIN corners: single cell per corner
 // ============================================================================
-bool CollectAndMarkDomainBoundaryDirichletCornerNodesOnFaces(const int* faces, int nFaces,
-                                                      std::vector<Record>& out)
+// ============================================================================
+// CollectAndMarkDomainBoundaryDirichletCornerNodesOnFaces
+// ============================================================================
+//
+// PURPOSE
+// -------
+// Collect and tag CORNER nodes (mesh corner storage) lying on specified PHYSICAL
+// domain faces as DIRICHLET.
+//
+// WHY THIS EXISTS
+// ---------------
+// The existing collectors for "CornerNodes" in domain_boundary_bc_collectors.cpp
+// are actually *domain-corner* selectors (8 corners in 3D) and/or operate on
+// center nodes. For electromagnetic solvers (E on corner nodes), we often need
+// the full *face layer* of corner nodes, including the "right" boundary.
+//
+// FACE / INDEX CONVENTIONS
+// ------------------------
+// Face index convention (AMPS):
+//   0:-X, 1:+X, 2:-Y, 3:+Y, 4:-Z, 5:+Z
+//
+// Corner-node index space for a block:
+//   i = 0..NX, j = 0..NY, k = 0..NZ   (INCLUSIVE ranges)
+// where NX=_BLOCK_CELLS_X_, NY=_BLOCK_CELLS_Y_, NZ=_BLOCK_CELLS_Z_.
+//
+// SELECTION CRITERION
+// -------------------
+// For each MPI-local leaf block:
+//   - Determine which block faces are PHYSICAL domain boundaries by testing
+//     node->GetNeibFace(face,0,0,mesh)==NULL (valid only when periodic mode is OFF).
+//   - For each requested face that is a physical boundary for this block, iterate
+//     all CORNER nodes on that face layer, e.g. for +X: i=NX, j=0..NY, k=0..NZ.
+//   - Mark each selected corner node as Dirichlet.
+//
+// DEDUPLICATION
+// -------------
+// A corner node may lie on multiple faces (edges/corners). We avoid duplicates
+// per block using a local 'seen' mask keyed by (i,j,k) in corner-index space.
+//
+// OUTPUT
+// ------
+// CornerNodeList is filled with PIC::Mesh::cBoundaryCornerNodeInfo records for
+// selected corner nodes owned by MPI-local leaf blocks.
+// ============================================================================
+bool CollectAndMarkDomainBoundaryDirichletCornerNodesOnFaces(
+  const int* faceTable, int faceTableLength,
+  std::vector<cBoundaryCornerNodeInfo>& CornerNodeList)
 {
-  out.clear();
-  if (!faces || nFaces <= 0) { std::printf("$PREFIX: DirichletCorners: no faces\n"); return false; }
-  if (!PIC::Mesh::mesh || !PIC::Mesh::mesh->ParallelNodesDistributionList) {
-    std::printf("$PREFIX: DirichletCorners: mesh not initialized\n"); return false; }
+  CornerNodeList.clear();
 
-  constexpr int NX = _BLOCK_CELLS_X_;
-  constexpr int NY = _BLOCK_CELLS_Y_;
-  constexpr int NZ = _BLOCK_CELLS_Z_;
-  std::size_t added = 0;
+  // Only physical (non-periodic) boundaries are handled here.
+  if (_PIC_BC__PERIODIC_MODE_ != _PIC_BC__PERIODIC_MODE_OFF_) return true;
 
-  for (auto* node = PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];
-       node != nullptr; node = node->nextNodeThisThread)
-  {
-    if (!node->block) continue;
-    if (node->lastBranchFlag() != _BOTTOM_BRANCH_TREE_) continue;
+  auto* mesh = PIC::Mesh::mesh;
 
-    const auto f = computeDomainFaceFlags(node);
+  // Corner index maxima per dimension (inclusive corner ranges 0..N).
+  int NX = _BLOCK_CELLS_X_;
+  int NY = _BLOCK_CELLS_Y_;
+  int NZ = _BLOCK_CELLS_Z_;
 
-    std::vector<unsigned char> seen(static_cast<size_t>(NX) * NY * NZ, 0);
-    auto push_corner_once = [&](int i, int j, int k) {
-      const size_t idx = static_cast<size_t>(i) + NX * (static_cast<size_t>(j) + static_cast<size_t>(NY) * static_cast<size_t>(k));
-      if (seen[idx]) return; seen[idx] = 1;
-      if (auto* c = node->block->GetCenterNode(i,j,k)) {
-        auto* cell = static_cast<CellPtr>(c);
-        cell->SetBCTypeDirichlet(PIC::Mesh::BCTypeDirichlet);
+  // In reduced dimensions, collapse unused directions to a single index (0 only).
+  if (DIM == 1) { NY = 0; NZ = 0; }
+  if (DIM == 2) { NZ = 0; }
 
-        Record rec;
-        rec.i = i; rec.j = j; rec.k = k;
-        rec.node = static_cast<NodePtr>(node);
-        rec.cell = cell;
-        out.push_back(rec);
-        ++added;
-      }
-    };
+  const int activeFaces = 2*DIM;
 
-#if _MESH_DIMENSION_ == 1
-    if (f.Xm && hasFace(faces,nFaces,0)) push_corner_once(0,0,0);
-    if (f.Xp && hasFace(faces,nFaces,1)) push_corner_once(NX-1,0,0);
-#endif
+  // ---- Lambdas (no helper functions) ---------------------------------------
 
-#if _MESH_DIMENSION_ == 2
-    if (f.Xm&&f.Ym&&hasFace(faces,nFaces,0)&&hasFace(faces,nFaces,2)) push_corner_once(0,0,0);
-    if (f.Xm&&f.Yp&&hasFace(faces,nFaces,0)&&hasFace(faces,nFaces,3)) push_corner_once(0,NY-1,0);
-    if (f.Xp&&f.Ym&&hasFace(faces,nFaces,1)&&hasFace(faces,nFaces,2)) push_corner_once(NX-1,0,0);
-    if (f.Xp&&f.Yp&&hasFace(faces,nFaces,1)&&hasFace(faces,nFaces,3)) push_corner_once(NX-1,NY-1,0);
+  auto faceRequested = [&](int face) -> bool {
+    for (int n=0; n<faceTableLength; ++n) if (faceTable[n] == face) return true;
+    return false;
+  };
+
+  auto flatCornerIndex = [&](int i,int j,int k) -> int {
+    // Flatten (i,j,k) in corner-index space (inclusive ranges 0..NX,0..NY,0..NZ)
+    const int Ni = NX + 1;
+    const int Nj = NY + 1;
+    return (k*Nj + j)*Ni + i;
+  };
+
+  auto computeFaceMask = [&](int i,int j,int k, const bool faceIsDomain[6]) -> int {
+    int mask = Face_None;
+    if (i==0   && faceIsDomain[0]) mask |= static_cast<int>(Face_XMin);
+    if (i==NX  && faceIsDomain[1]) mask |= static_cast<int>(Face_XMax);
+
+#if _MESH_DIMENSION_ >= 2
+    if (j==0   && faceIsDomain[2]) mask |= static_cast<int>(Face_YMin);
+    if (j==NY  && faceIsDomain[3]) mask |= static_cast<int>(Face_YMax);
+#else
+    (void)j;
 #endif
 
 #if _MESH_DIMENSION_ == 3
-    if (f.Xm&&f.Ym&&f.Zm&&hasFace(faces,nFaces,0)&&hasFace(faces,nFaces,2)&&hasFace(faces,nFaces,4)) push_corner_once(0,0,0);
-    if (f.Xm&&f.Ym&&f.Zp&&hasFace(faces,nFaces,0)&&hasFace(faces,nFaces,2)&&hasFace(faces,nFaces,5)) push_corner_once(0,0,NZ-1);
-    if (f.Xm&&f.Yp&&f.Zm&&hasFace(faces,nFaces,0)&&hasFace(faces,nFaces,3)&&hasFace(faces,nFaces,4)) push_corner_once(0,NY-1,0);
-    if (f.Xm&&f.Yp&&f.Zp&&hasFace(faces,nFaces,0)&&hasFace(faces,nFaces,3)&&hasFace(faces,nFaces,5)) push_corner_once(0,NY-1,NZ-1);
-    if (f.Xp&&f.Ym&&f.Zm&&hasFace(faces,nFaces,1)&&hasFace(faces,nFaces,2)&&hasFace(faces,nFaces,4)) push_corner_once(NX-1,0,0);
-    if (f.Xp&&f.Ym&&f.Zp&&hasFace(faces,nFaces,1)&&hasFace(faces,nFaces,2)&&hasFace(faces,nFaces,5)) push_corner_once(NX-1,0,NZ-1);
-    if (f.Xp&&f.Yp&&f.Zm&&hasFace(faces,nFaces,1)&&hasFace(faces,nFaces,3)&&hasFace(faces,nFaces,4)) push_corner_once(NX-1,NY-1,0);
-    if (f.Xp&&f.Yp&&f.Zp&&hasFace(faces,nFaces,1)&&hasFace(faces,nFaces,3)&&hasFace(faces,nFaces,5)) push_corner_once(NX-1,NY-1,NZ-1);
+    if (k==0   && faceIsDomain[4]) mask |= static_cast<int>(Face_ZMin);
+    if (k==NZ  && faceIsDomain[5]) mask |= static_cast<int>(Face_ZMax);
+#else
+    (void)k;
 #endif
+    return mask;
+  };
+
+  auto computeCornerCoords = [&](cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+                                 int i,int j,int k, double x[3]) -> void
+  {
+    // Linear interpolation between block bounds; robust for all dimensions.
+    x[0]=x[1]=x[2]=0.0;
+
+    if (NX > 0) {
+      const double t = double(i)/double(NX);
+      x[0] = node->xmin[0] + (node->xmax[0]-node->xmin[0])*t;
+    } else {
+      x[0] = node->xmin[0];
+    }
+
+#if _MESH_DIMENSION_ >= 2
+    if (NY > 0) {
+      const double t = double(j)/double(NY);
+      x[1] = node->xmin[1] + (node->xmax[1]-node->xmin[1])*t;
+    } else {
+      x[1] = node->xmin[1];
+    }
+#endif
+
+#if _MESH_DIMENSION_ == 3
+    if (NZ > 0) {
+      const double t = double(k)/double(NZ);
+      x[2] = node->xmin[2] + (node->xmax[2]-node->xmin[2])*t;
+    } else {
+      x[2] = node->xmin[2];
+    }
+#endif
+  };
+
+  // ---- Main loop over local leaf blocks ------------------------------------
+
+  for (auto* node = mesh->ParallelNodesDistributionList[PIC::ThisThread];
+       node != NULL; node = node->nextNodeThisThread)
+  {
+    if (node->block == NULL) continue;
+    if (node->lastBranchFlag() != _BOTTOM_BRANCH_TREE_) continue;
+
+    // Identify which faces of THIS block touch the physical domain boundary.
+    bool faceIsDomain[6] = {false,false,false,false,false,false};
+    for (int f=0; f<activeFaces; ++f) {
+      if (node->GetNeibFace(f,0,0,mesh) == NULL) faceIsDomain[f] = true;
+    }
+
+    // Per-block dedup mask for ALL corners in this block.
+    const int Ni = NX + 1;
+    const int Nj = NY + 1;
+    const int Nk = NZ + 1;
+    std::vector<unsigned char> seen((size_t)Ni*Nj*Nk, 0);
+
+    // Loop faces requested by caller and collect the corresponding face layer.
+    for (int face=0; face<activeFaces; ++face) {
+      if (!faceRequested(face)) continue;
+      if (!faceIsDomain[face]) continue; // this block does not touch the physical boundary on that face
+
+      // Face-layer bounds in corner-index space (inclusive)
+      int iBeg=0, iEnd=NX, jBeg=0, jEnd=NY, kBeg=0, kEnd=NZ;
+      if (face==0) { iBeg=iEnd=0;  }
+      if (face==1) { iBeg=iEnd=NX; }
+      if (face==2) { jBeg=jEnd=0;  }
+      if (face==3) { jBeg=jEnd=NY; }
+      if (face==4) { kBeg=kEnd=0;  }
+      if (face==5) { kBeg=kEnd=NZ; }
+
+      for (int k=kBeg; k<=kEnd; ++k)
+        for (int j=jBeg; j<=jEnd; ++j)
+          for (int i=iBeg; i<=iEnd; ++i)
+          {
+            const int idx = flatCornerIndex(i,j,k);
+            if (seen[idx]) continue;
+            seen[idx] = 1;
+
+            cDataCornerNode* cn = node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
+            if (cn == NULL) continue;
+
+            // Apply Dirichlet BC tagging
+            cn->SetBCTypeDirichlet(BCTypeDirichlet);
+
+            // Fill record using your existing struct layout
+            cBoundaryCornerNodeInfo rec;
+            rec.node  = node;
+            rec.i     = i;
+            rec.j     = j;
+            rec.k     = k;
+            rec.corner= cn;
+            rec.faceMask = computeFaceMask(i,j,k, faceIsDomain);
+            computeCornerCoords(node, i,j,k, rec.x);
+
+            CornerNodeList.push_back(rec);
+          }
+    }
   }
 
-  std::printf("$PREFIX: DirichletCorners: marked %zu cells on rank %d\n", added, PIC::ThisThread);
   return true;
 }
 
@@ -448,116 +581,215 @@ bool CollectAndMarkDomainBoundaryNeumannCellsOnFaces(const int* faces, int nFace
 // ============================================================================
 // B2) Neumann on requested DOMAIN corners: one inside ref index per corner
 // ============================================================================
-bool CollectAndMarkDomainBoundaryNeumannCornerNodesOnFaces(const int* faces, int nFaces,
-                                                    std::vector<Record>& out)
+// ============================================================================
+// CollectAndMarkDomainBoundaryNeumannCornerNodesOnFaces
+// ============================================================================
+//
+// PURPOSE
+// -------
+// Collect and tag CORNER nodes on specified PHYSICAL domain faces as NEUMANN.
+//
+// Neumann/floating semantics used in your field updates:
+//   "boundary value = value at an interior neighbor node"
+// We encode the interior donor location via:
+//   corner->SetBCTypeNeumann(BCTypeNeumann, iNeib, jNeib, kNeib)
+//
+// NEIGHBOR ("COPY-FROM-INSIDE") RULE IN CORNER-INDEX SPACE
+// --------------------------------------------------------
+// For a boundary corner at (i,j,k):
+//   if on -X domain boundary -> iNeib = 1
+//   if on +X domain boundary -> iNeib = NX-1
+//   if on -Y domain boundary -> jNeib = 1
+//   if on +Y domain boundary -> jNeib = NY-1
+//   if on -Z domain boundary -> kNeib = 1
+//   if on +Z domain boundary -> kNeib = NZ-1
+//
+// For corners on multiple faces (edges/vertices), the shifts are applied in each
+// applicable direction, i.e. diagonally inward.
+//
+// Guards: if NX<2 (or NY<2/NZ<2), we cannot shift inward reliably; we keep the
+// corresponding neighbor index equal to the boundary index.
+// ============================================================================
+bool CollectAndMarkDomainBoundaryNeumannCornerNodesOnFaces(
+  const int* faceTable, int faceTableLength,
+  std::vector<cBoundaryCornerNodeInfo>& CornerNodeList)
 {
-  out.clear();
-  if (!faces || nFaces <= 0) { std::printf("$PREFIX: NeumannCorners: no faces\n"); return false; }
-  if (!PIC::Mesh::mesh || !PIC::Mesh::mesh->ParallelNodesDistributionList) {
-    std::printf("$PREFIX: NeumannCorners: mesh not initialized\n"); return false; }
+  CornerNodeList.clear();
 
-  constexpr int NX = _BLOCK_CELLS_X_;
-  constexpr int NY = _BLOCK_CELLS_Y_;
-  constexpr int NZ = _BLOCK_CELLS_Z_;
+  if (_PIC_BC__PERIODIC_MODE_ != _PIC_BC__PERIODIC_MODE_OFF_) return true;
 
-  if (NX < 2 || (_MESH_DIMENSION_ >= 2 && NY < 2) || (_MESH_DIMENSION_ == 3 && NZ < 2)) {
-    std::printf("$PREFIX: NeumannCorners: block too thin to choose inside indices\n");
+  auto* mesh = PIC::Mesh::mesh;
+
+  int NX = _BLOCK_CELLS_X_;
+  int NY = _BLOCK_CELLS_Y_;
+  int NZ = _BLOCK_CELLS_Z_;
+
+  if (DIM == 1) { NY = 0; NZ = 0; }
+  if (DIM == 2) { NZ = 0; }
+
+  const int activeFaces = 2*DIM;
+
+  // ---- Lambdas --------------------------------------------------------------
+
+  auto faceRequested = [&](int face) -> bool {
+    for (int n=0; n<faceTableLength; ++n) if (faceTable[n] == face) return true;
     return false;
-  }
-
-  std::size_t added = 0;
-
-  auto inward_i = [&](bool usesXm, bool usesXp, int i_b) {
-    if (usesXm) return 1; if (usesXp) return NX-2; return i_b;
   };
+
+  auto flatCornerIndex = [&](int i,int j,int k) -> int {
+    const int Ni = NX + 1;
+    const int Nj = NY + 1;
+    return (k*Nj + j)*Ni + i;
+  };
+
+  auto computeFaceMask = [&](int i,int j,int k, const bool faceIsDomain[6]) -> int {
+    int mask = Face_None;
+    if (i==0   && faceIsDomain[0]) mask |= static_cast<int>(Face_XMin);
+    if (i==NX  && faceIsDomain[1]) mask |= static_cast<int>(Face_XMax);
+
 #if _MESH_DIMENSION_ >= 2
-  auto inward_j = [&](bool usesYm, bool usesYp, int j_b) {
-    if (usesYm) return 1; if (usesYp) return NY-2; return j_b;
-  };
-#endif
-#if _MESH_DIMENSION_ == 3
-  auto inward_k = [&](bool usesZm, bool usesZp, int k_b) {
-    if (usesZm) return 1; if (usesZp) return NZ-2; return k_b;
-  };
+    if (j==0   && faceIsDomain[2]) mask |= static_cast<int>(Face_YMin);
+    if (j==NY  && faceIsDomain[3]) mask |= static_cast<int>(Face_YMax);
+#else
+    (void)j;
 #endif
 
-  for (auto* node = PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];
-       node != nullptr; node = node->nextNodeThisThread)
+#if _MESH_DIMENSION_ == 3
+    if (k==0   && faceIsDomain[4]) mask |= static_cast<int>(Face_ZMin);
+    if (k==NZ  && faceIsDomain[5]) mask |= static_cast<int>(Face_ZMax);
+#else
+    (void)k;
+#endif
+    return mask;
+  };
+
+  auto computeCornerCoords = [&](cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+                                 int i,int j,int k, double x[3]) -> void
   {
-    if (!node->block) continue;
+    x[0]=x[1]=x[2]=0.0;
+
+    if (NX > 0) {
+      const double t = double(i)/double(NX);
+      x[0] = node->xmin[0] + (node->xmax[0]-node->xmin[0])*t;
+    } else {
+      x[0] = node->xmin[0];
+    }
+
+#if _MESH_DIMENSION_ >= 2
+    if (NY > 0) {
+      const double t = double(j)/double(NY);
+      x[1] = node->xmin[1] + (node->xmax[1]-node->xmin[1])*t;
+    } else {
+      x[1] = node->xmin[1];
+    }
+#endif
+
+#if _MESH_DIMENSION_ == 3
+    if (NZ > 0) {
+      const double t = double(k)/double(NZ);
+      x[2] = node->xmin[2] + (node->xmax[2]-node->xmin[2])*t;
+    } else {
+      x[2] = node->xmin[2];
+    }
+#endif
+  };
+
+  // ---- Main loop ------------------------------------------------------------
+
+  for (auto* node = mesh->ParallelNodesDistributionList[PIC::ThisThread];
+       node != NULL; node = node->nextNodeThisThread)
+  {
+    if (node->block == NULL) continue;
     if (node->lastBranchFlag() != _BOTTOM_BRANCH_TREE_) continue;
 
-    const auto f = computeDomainFaceFlags(node);
+    bool faceIsDomain[6] = {false,false,false,false,false,false};
+    for (int f=0; f<activeFaces; ++f) {
+      if (node->GetNeibFace(f,0,0,mesh) == NULL) faceIsDomain[f] = true;
+    }
 
-    std::vector<unsigned char> seen(static_cast<size_t>(NX) * NY * NZ, 0);
-    auto push_corner_once = [&](int i_b, int j_b, int k_b,
-                                bool usesXm, bool usesXp,
-                                bool usesYm, bool usesYp,
-                                bool usesZm, bool usesZp)
-    {
-      const size_t idx = static_cast<size_t>(i_b) + NX * (static_cast<size_t>(j_b) + static_cast<size_t>(NY) * static_cast<size_t>(k_b));
-      if (seen[idx]) return; seen[idx] = 1;
-      if (auto* c = node->block->GetCenterNode(i_b, j_b, k_b)) {
-        auto* cell = static_cast<CellPtr>(c);
-        const int ii = inward_i(usesXm, usesXp, i_b);
+    const int Ni = NX + 1;
+    const int Nj = NY + 1;
+    const int Nk = NZ + 1;
+    std::vector<unsigned char> seen((size_t)Ni*Nj*Nk, 0);
+
+    for (int face=0; face<activeFaces; ++face) {
+      if (!faceRequested(face)) continue;
+      if (!faceIsDomain[face]) continue;
+
+      int iBeg=0, iEnd=NX, jBeg=0, jEnd=NY, kBeg=0, kEnd=NZ;
+      if (face==0) { iBeg=iEnd=0;  }
+      if (face==1) { iBeg=iEnd=NX; }
+      if (face==2) { jBeg=jEnd=0;  }
+      if (face==3) { jBeg=jEnd=NY; }
+      if (face==4) { kBeg=kEnd=0;  }
+      if (face==5) { kBeg=kEnd=NZ; }
+
+      for (int k=kBeg; k<=kEnd; ++k)
+        for (int j=jBeg; j<=jEnd; ++j)
+          for (int i=iBeg; i<=iEnd; ++i)
+          {
+            const int idx = flatCornerIndex(i,j,k);
+            if (seen[idx]) continue;
+            seen[idx] = 1;
+
+            cDataCornerNode* cn = node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
+            if (cn == NULL) continue;
+
+            // Determine which physical domain faces this CORNER lies on (within this block)
+            const bool onXm = (i==0  && faceIsDomain[0]);
+            const bool onXp = (i==NX && faceIsDomain[1]);
+
 #if _MESH_DIMENSION_ >= 2
-        const int jj = inward_j(usesYm, usesYp, j_b);
+            const bool onYm = (j==0  && faceIsDomain[2]);
+            const bool onYp = (j==NY && faceIsDomain[3]);
 #else
-        const int jj = 0;
-#endif
-#if _MESH_DIMENSION_ == 3
-        const int kk = inward_k(usesZm, usesZp, k_b);
-#else
-        const int kk = 0;
-#endif
-        cell->SetBCTypeNeumann(PIC::Mesh::BCTypeNeumann, ii, jj, kk);
-
-        Record rec;
-        rec.i = i_b; rec.j = j_b; rec.k = k_b;
-        rec.node = static_cast<NodePtr>(node);
-        rec.cell = cell;
-        out.push_back(rec);
-        ++added;
-      }
-    };
-
-#if _MESH_DIMENSION_ == 1
-    if (f.Xm && hasFace(faces,nFaces,0)) push_corner_once(0,0,0, /*Xm*/true,false, false,false, false,false);
-    if (f.Xp && hasFace(faces,nFaces,1)) push_corner_once(NX-1,0,0, false,true,  false,false, false,false);
-#endif
-
-#if _MESH_DIMENSION_ == 2
-    if (f.Xm&&f.Ym&&hasFace(faces,nFaces,0)&&hasFace(faces,nFaces,2))
-      push_corner_once(0,0,0, true,false, true,false, false,false);
-    if (f.Xm&&f.Yp&&hasFace(faces,nFaces,0)&&hasFace(faces,nFaces,3))
-      push_corner_once(0,NY-1,0, true,false, false,true, false,false);
-    if (f.Xp&&f.Ym&&hasFace(faces,nFaces,1)&&hasFace(faces,nFaces,2))
-      push_corner_once(NX-1,0,0, false,true, true,false, false,false);
-    if (f.Xp&&f.Yp&&hasFace(faces,nFaces,1)&&hasFace(faces,nFaces,3))
-      push_corner_once(NX-1,NY-1,0, false,true, false,true, false,false);
+            const bool onYm = false, onYp = false;
 #endif
 
 #if _MESH_DIMENSION_ == 3
-    if (f.Xm&&f.Ym&&f.Zm&&hasFace(faces,nFaces,0)&&hasFace(faces,nFaces,2)&&hasFace(faces,nFaces,4))
-      push_corner_once(0,0,0, true,false,  true,false,  true,false);
-    if (f.Xm&&f.Ym&&f.Zp&&hasFace(faces,nFaces,0)&&hasFace(faces,nFaces,2)&&hasFace(faces,nFaces,5))
-      push_corner_once(0,0,NZ-1, true,false,  true,false,  false,true);
-    if (f.Xm&&f.Yp&&f.Zm&&hasFace(faces,nFaces,0)&&hasFace(faces,nFaces,3)&&hasFace(faces,nFaces,4))
-      push_corner_once(0,NY-1,0, true,false,  false,true,  true,false);
-    if (f.Xm&&f.Yp&&f.Zp&&hasFace(faces,nFaces,0)&&hasFace(faces,nFaces,3)&&hasFace(faces,nFaces,5))
-      push_corner_once(0,NY-1,NZ-1, true,false,  false,true,  false,true);
-    if (f.Xp&&f.Ym&&f.Zm&&hasFace(faces,nFaces,1)&&hasFace(faces,nFaces,2)&&hasFace(faces,nFaces,4))
-      push_corner_once(NX-1,0,0, false,true,  true,false,  true,false);
-    if (f.Xp&&f.Ym&&f.Zp&&hasFace(faces,nFaces,1)&&hasFace(faces,nFaces,2)&&hasFace(faces,nFaces,5))
-      push_corner_once(NX-1,0,NZ-1, false,true,  true,false,  false,true);
-    if (f.Xp&&f.Yp&&f.Zm&&hasFace(faces,nFaces,1)&&hasFace(faces,nFaces,3)&&hasFace(faces,nFaces,4))
-      push_corner_once(NX-1,NY-1,0, false,true,  false,true,  true,false);
-    if (f.Xp&&f.Yp&&f.Zp&&hasFace(faces,nFaces,1)&&hasFace(faces,nFaces,3)&&hasFace(faces,nFaces,5))
-      push_corner_once(NX-1,NY-1,NZ-1, false,true,  false,true,  false,true);
+            const bool onZm = (k==0  && faceIsDomain[4]);
+            const bool onZp = (k==NZ && faceIsDomain[5]);
+#else
+            const bool onZm = false, onZp = false;
 #endif
+
+            // Compute "copy-from-inside" neighbor indices in CORNER-index space.
+            int ii=i, jj=j, kk=k;
+
+            if (NX >= 2) {
+              if (onXm) ii = 1;
+              if (onXp) ii = NX-1;
+            }
+#if _MESH_DIMENSION_ >= 2
+            if (NY >= 2) {
+              if (onYm) jj = 1;
+              if (onYp) jj = NY-1;
+            }
+#endif
+#if _MESH_DIMENSION_ == 3
+            if (NZ >= 2) {
+              if (onZm) kk = 1;
+              if (onZp) kk = NZ-1;
+            }
+#endif
+
+            // Apply Neumann BC tagging with stored interior donor indices
+            cn->SetBCTypeNeumann(BCTypeNeumann, ii, jj, kk);
+
+            cBoundaryCornerNodeInfo rec;
+            rec.node   = node;
+            rec.i      = i;
+            rec.j      = j;
+            rec.k      = k;
+            rec.corner = cn;
+            rec.faceMask = computeFaceMask(i,j,k, faceIsDomain);
+            computeCornerCoords(node, i,j,k, rec.x);
+
+            CornerNodeList.push_back(rec);
+          }
+    }
   }
 
-  std::printf("$PREFIX: NeumannCorners: marked %zu cells on rank %d\n", added, PIC::ThisThread);
   return true;
 }
 
