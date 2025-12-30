@@ -24,9 +24,9 @@ namespace Electromagnetic {
     // These are useful for diagnostics and/or for doing additional per-node work
     // consistently with the collector’s selection.
     std::vector<PIC::Mesh::cBoundaryCellInfo> DirichletCellsOnFaces;
-    std::vector<PIC::Mesh::cBoundaryCellInfo> DirichletCornerNodes;
+    std::vector<PIC::Mesh::cBoundaryCornerNodeInfo> DirichletCornerNodes;
     std::vector<PIC::Mesh::cBoundaryCellInfo> NeumannCellsOnFaces;
-    std::vector<PIC::Mesh::cBoundaryCellInfo> NeumannCornerNodes;
+    std::vector<PIC::Mesh::cBoundaryCornerNodeInfo> NeumannCornerNodes;
 
     // Default constructor: mark all faces as "unspecified"
     cDomainBC() {
