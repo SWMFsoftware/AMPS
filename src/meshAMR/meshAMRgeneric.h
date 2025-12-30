@@ -193,6 +193,7 @@ public:
     nodeDescriptor.nNodeConnections=0;
 
     boundary_distance=-1;
+    bc_type.type=-1;
 
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
     Temp_ID=0;
