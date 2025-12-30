@@ -484,8 +484,11 @@ void PIC::TimeStepInternal::ExecutionTrackFieldSolverECSIM(double& ParticleMovin
   RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;
 
   auto FIELD_SOLVER_Task6 = [=] () {
-    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
-      PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC();
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ) { 
+      if (PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC!=NULL) {
+        PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC();
+      }
+    }
 
     if (PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection)
       PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection();

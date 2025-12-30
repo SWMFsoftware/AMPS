@@ -4072,6 +4072,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection(){
   PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionFieldTime.Start();
   ComputeNetCharge(false);
   PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionFieldTime.UpdateTimer();
+
+
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_) {
+    exit(__LINE__,__FILE__,"error: divECorrection() is not generalized for the case _PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_; See GetStencil() as an example");
+  }
 }
 
 void exchangeParticleLocal(){
@@ -5705,16 +5710,22 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   
   if ((_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_) || (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_))  InterpolateB_C2N();
 
-  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ) setB_corner_BC();
+  if ((_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )&&(setB_corner_BC!=NULL)) {
+    setB_corner_BC();
+  }
 
   CumulativeTiming::UpdateBTime.UpdateTimer();
   CumulativeTiming::UpdateETime.Start();
 
-  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ) setE_half_BC();
+  if ((_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )&&(setE_half_BC!=NULL)) {
+    setE_half_BC();
+  }
 
   UpdateE();
 
-  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )  setE_curr_BC();
+  if ((_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )&&(setE_curr_BC!=NULL)) {
+    setE_curr_BC();
+  }
 
   CumulativeTiming::UpdateETime.UpdateTimer();
   CumulativeTiming::TotalRunTime.UpdateTimer();
