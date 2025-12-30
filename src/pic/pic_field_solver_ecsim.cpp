@@ -4909,6 +4909,161 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB() {
       PrevPtr[BzOffsetIndex] = CurrentPtr[BzOffsetIndex] + tempB[BzOffsetIndex]/B_conv;
     };
 
+  // --------------------------------------------------------------------------
+  // Boundary-condition handling for B (domain boundaries only)
+  // --------------------------------------------------------------------------
+  //
+  // For blocks that touch the physical domain boundary (GetNeibFace(...) == NULL for
+  // at least one face), we:
+  //   1) update STRICTLY interior cells first (i=1..Nx-2, j=1..Ny-2, k=1..Nz-2)
+  //   2) update block-boundary cells afterwards:
+  //        * if the cell is NOT on a domain boundary face -> update as usual
+  //        * if the cell IS on a domain boundary face:
+  //            - Dirichlet: B^{n+1} := B^{n}   (keep value "const")
+  //            - Neumann:   B^{n+1} := B^{n+1} from the adjacent interior cell (copy-from-inside)
+  //
+  // Notes:
+  //   * The BC type is assumed to be stored on the CENTER node (boundary collectors call
+  //     CenterNode->SetBCTypeDirichlet/Neumann). In this tree, the canonical field is
+  //     CenterNode->bc_type.type (0=Neumann, 1=Dirichlet).
+  //   * We apply these rules ONLY for physical domain boundaries (periodic mode OFF).
+  //
+
+  // Helper: get BC type for a center node (adjust if your tree stores it differently)
+  auto get_center_bc_type = [&](PIC::Mesh::cDataCenterNode* cn) -> int {
+    return cn->bc_type.type;
+  };
+
+  // Helper: "normal" block processing (no physical domain boundary touched)
+  auto process_block_no_BC =
+    [&](cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node, cUpdateBCache& cache) -> void
+  {
+    for (int k=0; k<_BLOCK_CELLS_Z_; k++)
+      for (int j=0; j<_BLOCK_CELLS_Y_; j++)
+        for (int i=0; i<_BLOCK_CELLS_X_; i++)
+          process_single_cell(node, i, j, k, cache);
+  };
+
+  // Wrapper: apply BC logic for blocks that touch the physical domain boundary
+  auto process_block_with_BC =
+    [&](cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node, cUpdateBCache& cache) -> void
+  {
+    // Determine which faces of this block touch the PHYSICAL domain boundary.
+    // Face index convention assumed by AMPS: 0:-X, 1:+X, 2:-Y, 3:+Y, 4:-Z, 5:+Z.
+    bool faceIsDomain[6] = {false,false,false,false,false,false};
+    bool touchesDomain = false;
+
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_) {
+      for (int iface=0; iface<6; iface++) {
+        if (node->GetNeibFace(iface,0,0,mesh)==NULL) {
+          faceIsDomain[iface] = true;
+          touchesDomain = true;
+        }
+      }
+    }
+
+    // Fast path: no physical domain boundary on this block -> process all cells as usual.
+    if (!touchesDomain) {
+      process_block_no_BC(node, cache);
+      return;
+    }
+
+    // 1) Strictly interior cells first (needed so Neumann "copy-from-inside" reads UPDATED B^{n+1})
+    if (_BLOCK_CELLS_X_>2 && _BLOCK_CELLS_Y_>2 && _BLOCK_CELLS_Z_>2) {
+      for (int k=1; k<_BLOCK_CELLS_Z_-1; k++)
+        for (int j=1; j<_BLOCK_CELLS_Y_-1; j++)
+          for (int i=1; i<_BLOCK_CELLS_X_-1; i++)
+            process_single_cell(node, i, j, k, cache);
+    }
+
+    // 2) Block-boundary cells (includes edges/corners)
+    const int Nx = _BLOCK_CELLS_X_;
+    const int Ny = _BLOCK_CELLS_Y_;
+    const int Nz = _BLOCK_CELLS_Z_;
+
+    for (int k=0; k<Nz; k++)
+      for (int j=0; j<Ny; j++)
+        for (int i=0; i<Nx; i++)
+        {
+          // Skip strictly interior
+          if (i>0 && i<Nx-1 && j>0 && j<Ny-1 && k>0 && k<Nz-1) continue;
+
+          // Is this (i,j,k) actually on a PHYSICAL domain boundary face?
+          bool onDomainBoundary = false;
+          if (i==0     && faceIsDomain[0]) onDomainBoundary = true;
+          if (i==Nx-1  && faceIsDomain[1]) onDomainBoundary = true;
+          if (j==0     && faceIsDomain[2]) onDomainBoundary = true;
+          if (j==Ny-1  && faceIsDomain[3]) onDomainBoundary = true;
+          if (k==0     && faceIsDomain[4]) onDomainBoundary = true;
+          if (k==Nz-1  && faceIsDomain[5]) onDomainBoundary = true;
+
+          // Not a physical boundary cell -> process normally
+          if (!onDomainBoundary) {
+            process_single_cell(node, i, j, k, cache);
+            continue;
+          }
+
+          // Physical boundary cell -> apply B BC
+          PIC::Mesh::cDataCenterNode* CenterNode =
+            node->block->GetCenterNode(_getCenterNodeLocalNumber(i, j, k));
+
+          char* offsetB = CenterNode->GetAssociatedDataBufferPointer() +
+                          PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+          double* CurrentPtr = (double*)(offsetB + CurrentBOffset); // B^n
+          double* PrevPtr    = (double*)(offsetB + PrevBOffset);    // B^{n+1}
+
+          const int bcType = get_center_bc_type(CenterNode);
+
+          if (bcType==PIC::Mesh::BCTypeDirichlet) {
+            // Dirichlet ("const"): keep B unchanged at the boundary
+            PrevPtr[BxOffsetIndex] = CurrentPtr[BxOffsetIndex];
+            PrevPtr[ByOffsetIndex] = CurrentPtr[ByOffsetIndex];
+            PrevPtr[BzOffsetIndex] = CurrentPtr[BzOffsetIndex];
+          }
+          else {
+            // Neumann ("floating"): copy UPDATED B^{n+1} from the adjacent interior cell.
+            // The adjacent interior indices are expected to be precomputed and stored in
+            // CenterNode->bc_type.{iNeib,jNeib,kNeib} by the domain-boundary BC collectors.
+            //
+            // IMPORTANT: Step (1) above updates strictly interior cells first so the interior
+            // neighbor's PrevBOffset (B^{n+1}) is available here.
+            int ii = CenterNode->bc_type.iNeib;
+            int jj = CenterNode->bc_type.jNeib;
+            int kk = CenterNode->bc_type.kNeib;
+
+            // Defensive fallback (should not trigger if bc_type.* are set correctly):
+            //   - indices out of range, or
+            //   - indices refer to this same boundary cell.
+            // In that case, fall back to a geometric "shift inward" guess.
+            if (ii<0 || ii>=Nx || jj<0 || jj>=Ny || kk<0 || kk>=Nz || (ii==i && jj==j && kk==k)) {
+              ii=i; jj=j; kk=k;
+
+              if (i==0    && faceIsDomain[0]) ii = 1;
+              if (i==Nx-1 && faceIsDomain[1]) ii = Nx-2;
+
+              if (j==0    && faceIsDomain[2]) jj = 1;
+              if (j==Ny-1 && faceIsDomain[3]) jj = Ny-2;
+
+              if (k==0    && faceIsDomain[4]) kk = 1;
+              if (k==Nz-1 && faceIsDomain[5]) kk = Nz-2;
+            }
+
+            PIC::Mesh::cDataCenterNode* CenterNodeInside =
+              node->block->GetCenterNode(_getCenterNodeLocalNumber(ii, jj, kk));
+
+            char* offsetBInside = CenterNodeInside->GetAssociatedDataBufferPointer() +
+                                  PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+            double* PrevPtrInside = (double*)(offsetBInside + PrevBOffset); // expected already updated (interior-first)
+
+            PrevPtr[BxOffsetIndex] = PrevPtrInside[BxOffsetIndex];
+            PrevPtr[ByOffsetIndex] = PrevPtrInside[ByOffsetIndex];
+            PrevPtr[BzOffsetIndex] = PrevPtrInside[BzOffsetIndex];
+
+          }
+        }
+  };
+
+
 
   // --------------------------------------------------------------------------
   // Main update loops
@@ -4955,10 +5110,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB() {
 
       // Process all interior cell centers (i,j,k) in the block.
       // NOTE: we intentionally exclude ghost cells here; ghosts are updated by halo exchange after the swap.
-      for (int k=0; k<_BLOCK_CELLS_Z_; k++)
-        for (int j=0; j<_BLOCK_CELLS_Y_; j++)
-          for (int i=0; i<_BLOCK_CELLS_X_; i++)
-            process_single_cell(node, i, j, k, cache);
+      process_block_with_BC(node, cache);
     }
   }
 #else
@@ -4975,10 +5127,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB() {
       if (node->block == NULL) continue;
       if (isPeriodicGhostBoundaryBlock(node)) continue;
 
-      for (int k=0; k<_BLOCK_CELLS_Z_; k++)
-        for (int j=0; j<_BLOCK_CELLS_Y_; j++)
-          for (int i=0; i<_BLOCK_CELLS_X_; i++)
-            process_single_cell(node, i, j, k, cache);
+      process_block_with_BC(node, cache);
     }
   }
 #endif
