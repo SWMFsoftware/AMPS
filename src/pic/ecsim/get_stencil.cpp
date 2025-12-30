@@ -440,37 +440,175 @@ for (int i=0;i<3;i++) indexer[i].reset();
   //     This block mirrors the legacy GetStencil() behavior: if the corner lies on
   //     a boundary, assemble a minimal row and return early.
   // ---------------------------------------------------------------------------
-  auto boundary_short_circuit = [&]() -> bool {
-    if (_PIC_BC__PERIODIC_MODE_ == _PIC_BC__PERIODIC_MODE_OFF_)
-      if (isBoundaryCorner(x, node)) {
-        MatrixRowNonZeroElementTable[0].i = i;
-        MatrixRowNonZeroElementTable[0].j = j;
-        MatrixRowNonZeroElementTable[0].k = k;
+//------------------------------------------------------------------------------
+// boundary_short_circuit
+//------------------------------------------------------------------------------
+// PURPOSE
+//   Apply E-field BCs in the ECSIM *ΔE* linear system at corner (i,j,k).
+//
+//   The ECSIM solve unknown is ΔE (increment). The half-step field is formed as
+//     E^{n+θ} = E^n + ΔE / E_conv
+//   (see ProcessFinalSolution()).
+//
+//   Therefore BCs are enforced as constraints on ΔE:
+//
+//     • Dirichlet (E fixed):      ΔE = 0
+//         -> A[I,I] = 1, rhs = 0
+//
+//     • Neumann (∂E/∂n = 0):      ΔE_b - ΔE_in = 0   (UpdateB-style copy-from-inside)
+//         -> A[I,I] = 1, A[I,neib] = -1, rhs = 0
+//
+// RHS NOTE (IMPORTANT)
+//   Boundary/constraint rows have a *prescribed* RHS. We must explicitly set
+//   rhs = 0.0 here (do NOT leave it uninitialized or carrying an interior value).
+//
+// SUPPORT NOTE (NEW mode)
+//   Because rhs is prescribed, boundary rows must NOT accumulate sampled terms.
+//   We clear all RHS supports (semantic vectors + legacy support lengths) to
+//   signal UpdateRhs() that this is a constraint row.
+//
+// RETURN VALUE
+//   true  -> boundary handled (caller should `return;` from GetStencil)
+//   false -> not a boundary/BC row (caller proceeds with normal assembly)
+//------------------------------------------------------------------------------
+auto boundary_short_circuit = [&]() -> bool {
+  if (_PIC_BC__PERIODIC_MODE_ != _PIC_BC__PERIODIC_MODE_OFF_) return false;
 
-        MatrixRowNonZeroElementTable[0].MatrixElementValue = 0.0; // numeric set later by updater
-        MatrixRowNonZeroElementTable[0].iVar = iVar;
+  // Corner-node index extents (corners are Nx+1, Ny+1, Nz+1)
+  const int NxC = _BLOCK_CELLS_X_ + 1;
+  const int NyC = _BLOCK_CELLS_Y_ + 1;
+  const int NzC = _BLOCK_CELLS_Z_ + 1;
 
-        // One-parameter design: put 1.0 on PARAMETER[0] to encode the unit diagonal.
-        MatrixRowNonZeroElementTable[0].MatrixElementParameterTable[0] = 1.0;
-        MatrixRowNonZeroElementTable[0].MatrixElementParameterTableLength = 1;
+  // (1) Determine BC type first (same convention as UpdateB):
+  //     bc_type.type == 1 -> Dirichlet
+  //     bc_type.type == 0 -> Neumann
+  //     otherwise         -> not a boundary / not participating in BC handling
+  PIC::Mesh::cDataCornerNode* CornerNode =
+    node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
 
-        // No supports for boundary diagonal.
-        MatrixRowNonZeroElementTable[0].MatrixElementSupportTableLength = 0;
-        MatrixRowNonZeroElementTable[0].MatrixElementSupportTable[0] = NULL;
+  const int bcType = CornerNode->bc_type.type;
 
-        MatrixRowNonZeroElementTable[0].Node = node;
+  const bool isDirichlet = (bcType == 1);
+  const bool isNeumann   = (bcType == 0);
 
-        // Set row sizes / rhs
-        NonZeroElementsFound = 1;
-        rhs = 0.0;
+  if (!isDirichlet && !isNeumann) return false;
 
-        // Preserve original behavior: suppress even this entry on the "right" boundary.
-        if (isRightBoundaryCorner(x, node)) NonZeroElementsFound = 0;
+  // Boundary/constraint row: prescribe rhs and forbid any sampled RHS contributions
+  rhs = 0.0;
+  RhsSupportLength_CornerNodes = 0;
+  RhsSupportLength_CenterNodes = 0;
+  support_corner_vector.clear();
+  support_center_vector.clear();
 
-        return true; // caller should `return;`
-      }
-    return false; // not handled; proceed with normal stencil assembly
-  };
+  // (2) Dirichlet: ΔE = 0  -> A[I,I]=1, rhs=0
+  if (isDirichlet) {
+    MatrixRowNonZeroElementTable[0].i = i;
+    MatrixRowNonZeroElementTable[0].j = j;
+    MatrixRowNonZeroElementTable[0].k = k;
+    MatrixRowNonZeroElementTable[0].Node = node;
+
+    MatrixRowNonZeroElementTable[0].iVar = iVar;
+    MatrixRowNonZeroElementTable[0].MatrixElementValue = 0.0; // numeric set later by updater
+
+    MatrixRowNonZeroElementTable[0].MatrixElementParameterTable[0] = 1.0;
+    MatrixRowNonZeroElementTable[0].MatrixElementParameterTableLength = 1;
+
+    MatrixRowNonZeroElementTable[0].MatrixElementSupportTableLength = 0;
+    MatrixRowNonZeroElementTable[0].MatrixElementSupportTable[0] = NULL;
+
+    NonZeroElementsFound = 1;
+
+    // Preserve legacy special-case suppression if your code relies on it
+    if (isRightBoundaryCorner(x, node)) NonZeroElementsFound = 0;
+
+    return true;
+  }
+
+  // (3) Neumann: ΔE_b - ΔE_in = 0  -> A[I,I]=1, A[I,neib]=-1, rhs=0
+  //
+  //     Determine boundary face ONLY here (not needed for Dirichlet).
+  bool faceIsDomain[6] = {false,false,false,false,false,false};
+  for (int iface=0; iface<6; iface++) {
+    if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh) == NULL) faceIsDomain[iface] = true;
+  }
+
+  // Ensure the corner is actually on a PHYSICAL domain boundary face
+  bool onDomainBoundary = false;
+  if (i==0      && faceIsDomain[0]) onDomainBoundary = true;        // -X
+  if (i==NxC-1  && faceIsDomain[1]) onDomainBoundary = true;        // +X
+  if (j==0      && faceIsDomain[2]) onDomainBoundary = true;        // -Y
+  if (j==NyC-1  && faceIsDomain[3]) onDomainBoundary = true;        // +Y
+  if (k==0      && faceIsDomain[4]) onDomainBoundary = true;        // -Z
+  if (k==NzC-1  && faceIsDomain[5]) onDomainBoundary = true;        // +Z
+
+  if (!onDomainBoundary) return false;
+
+  // Pick one representative boundary face (first match; edge/corner cases follow this choice)
+  // Face convention: 0:-x, 1:+x, 2:-y, 3:+y, 4:-z, 5:+z
+  int face = -1;
+  if (i==0       && faceIsDomain[0]) face = 0;
+  else if (i==NxC-1 && faceIsDomain[1]) face = 1;
+  else if (j==0       && faceIsDomain[2]) face = 2;
+  else if (j==NyC-1 && faceIsDomain[3]) face = 3;
+  else if (k==0       && faceIsDomain[4]) face = 4;
+  else if (k==NzC-1 && faceIsDomain[5]) face = 5;
+
+  // Preferred inside neighbor from BC preprocessing (UpdateB-style)
+  int ii = CornerNode->bc_type.iNeib;
+  int jj = CornerNode->bc_type.jNeib;
+  int kk = CornerNode->bc_type.kNeib;
+
+  // Validate; otherwise fallback: one step inward from selected face
+  const bool neibOK =
+    (ii>=0 && ii<NxC && jj>=0 && jj<NyC && kk>=0 && kk<NzC && !(ii==i && jj==j && kk==k));
+
+  if (!neibOK) {
+    ii=i; jj=j; kk=k;
+    if (face==0) ii = 1;
+    if (face==1) ii = NxC-2;
+    if (face==2) jj = 1;
+    if (face==3) jj = NyC-2;
+    if (face==4) kk = 1;
+    if (face==5) kk = NzC-2;
+  }
+
+  // Entry 0: +1 * ΔE_boundary
+  MatrixRowNonZeroElementTable[0].i = i;
+  MatrixRowNonZeroElementTable[0].j = j;
+  MatrixRowNonZeroElementTable[0].k = k;
+  MatrixRowNonZeroElementTable[0].Node = node;
+
+  MatrixRowNonZeroElementTable[0].iVar = iVar;
+  MatrixRowNonZeroElementTable[0].MatrixElementValue = 0.0;
+
+  MatrixRowNonZeroElementTable[0].MatrixElementParameterTable[0] = 1.0;
+  MatrixRowNonZeroElementTable[0].MatrixElementParameterTableLength = 1;
+
+  MatrixRowNonZeroElementTable[0].MatrixElementSupportTableLength = 0;
+  MatrixRowNonZeroElementTable[0].MatrixElementSupportTable[0] = NULL;
+
+  // Entry 1: -1 * ΔE_inside
+  MatrixRowNonZeroElementTable[1].i = ii;
+  MatrixRowNonZeroElementTable[1].j = jj;
+  MatrixRowNonZeroElementTable[1].k = kk;
+  MatrixRowNonZeroElementTable[1].Node = node;  // neighbor is in same block by construction here
+
+  MatrixRowNonZeroElementTable[1].iVar = iVar;
+  MatrixRowNonZeroElementTable[1].MatrixElementValue = 0.0;
+
+  MatrixRowNonZeroElementTable[1].MatrixElementParameterTable[0] = -1.0;
+  MatrixRowNonZeroElementTable[1].MatrixElementParameterTableLength = 1;
+
+  MatrixRowNonZeroElementTable[1].MatrixElementSupportTableLength = 0;
+  MatrixRowNonZeroElementTable[1].MatrixElementSupportTable[0] = NULL;
+
+  NonZeroElementsFound = 2;
+
+  // Preserve legacy special-case suppression if your code relies on it
+  if (isRightBoundaryCorner(x, node)) NonZeroElementsFound = 0;
+
+  return true;
+};
 
  if (boundary_short_circuit()) return;
 
