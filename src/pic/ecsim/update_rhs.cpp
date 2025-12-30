@@ -223,6 +223,63 @@
  *     the current matrix.
  */
 
+// -----------------------------------------------------------------------------
+// NOTE ON ZERO-LENGTH RHS SUPPORT VECTORS
+//
+// In the NEW ECSIM path, GetStencil() can populate two kinds of RHS “supports”:
+//
+//   (A) Legacy flat support arrays:
+//       - RhsSupportTable_CornerNodes / RhsSupportTable_CenterNodes
+//       - ...with explicit lengths RhsSupportLength_*
+//
+//   (B) Semantic support vectors (preferred):
+//       - support_corner_vector / support_center_vector
+//       - each entry typically provides a typed pointer + metadata describing
+//         what is being sampled (E at corners, B at centers, J at corners, etc.)
+//
+// These support lists exist only to build the RHS for *physics rows* (interior
+// discretization of Ampère + particle response terms). However, there are valid
+// situations where GetStencil() intentionally returns *constraint rows*, and in
+// those cases the support vectors are expected to be empty (length == 0).
+//
+// EXPECT support vectors to have length 0 in the following cases:
+//
+//  1) Boundary constraint rows (physical domain boundaries, periodic OFF):
+//     - Dirichlet E BC (“E fixed”): we enforce ΔE = 0 via A[I,I]=1, rhs=0.
+//     - Neumann  E BC (zero normal derivative, UpdateB-style): we enforce
+//          ΔE_boundary - ΔE_inside = 0
+//       via A[I,I]=1, A[I,inside]=-1, rhs=0.
+//     For both types, RHS is fully prescribed (rhs=0), so GetStencil() clears
+//     all RHS supports (both semantic vectors and legacy arrays) to avoid any
+//     accidental contributions from sampled fields/currents.
+//
+//  2) Rows explicitly suppressed / deactivated by stencil assembly:
+//     Some configurations short-circuit assembly by emitting no equation
+//     (e.g., NonZeroElementsFound==0 for special boundary corners such as
+//     isRightBoundaryCorner(...)). In such cases, there is nothing to sample,
+//     so GetStencil() leaves support vectors empty.
+//
+//  3) Any other “pure algebraic” constraint row created by GetStencil():
+//     If a row’s RHS is meant to be a constant (typically zero), rather than a
+//     dot-product of sampled field data, GetStencil() must not provide supports.
+//
+// CONSEQUENCE FOR UpdateRhs():
+//   - Do NOT assume supports are non-empty.
+//   - If both semantic vectors are empty AND legacy RhsSupportLength_* are 0,
+//     then rhs should already have been set by the boundary/constraint logic
+//     (typically rhs=0). UpdateRhs() must simply return that rhs unchanged.
+//   - It is safe (and recommended) to guard the sampling loop, e.g.:
+//         if (support_corner_vector.empty() && support_center_vector.empty() &&
+//             RhsSupportLength_CornerNodes==0 && RhsSupportLength_CenterNodes==0) {
+//           return rhs; // constraint row (Dirichlet/Neumann or suppressed row)
+//         }
+//
+// This behavior is intentional: zero-length supports are a *signal* that the
+// row is not a physics-discretization row but a boundary/constraint row.
+// -----------------------------------------------------------------------------
+
+
+
 #include "../pic.h"
 
 double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
