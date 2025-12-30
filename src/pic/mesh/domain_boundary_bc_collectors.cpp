@@ -250,7 +250,15 @@ bool CollectAndMarkDomainBoundaryDirichletCellsOnFaces(const int* faces, int nFa
     }
   }
 
-  std::printf("$PREFIX: DirichletFaces: marked %zu cells on rank %d\n", added, PIC::ThisThread);
+  int localCount = out.size();
+  int globalCount = 0;
+
+  MPI_Allreduce(&localCount, &globalCount, 1, MPI_INT, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+
+  if (PIC::ThisThread == 0) {
+    std::printf("$PREFIX: %s: total collected = %d\n", __func__, globalCount);
+  }
+
   return true;
 }
 
@@ -453,6 +461,15 @@ bool CollectAndMarkDomainBoundaryDirichletCornerNodesOnFaces(
     }
   }
 
+  int localCount = CornerNodeList.size();
+  int globalCount = 0;
+
+  MPI_Allreduce(&localCount, &globalCount, 1, MPI_INT, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+
+  if (PIC::ThisThread == 0) {
+    std::printf("$PREFIX: %s: total collected = %d\n", __func__, globalCount);
+  }
+
   return true;
 }
 
@@ -574,7 +591,15 @@ bool CollectAndMarkDomainBoundaryNeumannCellsOnFaces(const int* faces, int nFace
     }
   }
 
-  std::printf("$PREFIX: NeumannFaces: marked %zu cells on rank %d\n", added, PIC::ThisThread);
+  int localCount = out.size();
+  int globalCount = 0;
+
+  MPI_Allreduce(&localCount, &globalCount, 1, MPI_INT, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+
+  if (PIC::ThisThread == 0) {
+    std::printf("$PREFIX: %s: total collected = %d\n", __func__, globalCount);
+  }
+
   return true;
 }
 
@@ -788,6 +813,15 @@ bool CollectAndMarkDomainBoundaryNeumannCornerNodesOnFaces(
             CornerNodeList.push_back(rec);
           }
     }
+  }
+
+  int localCount = CornerNodeList.size();
+  int globalCount = 0;
+
+  MPI_Allreduce(&localCount, &globalCount, 1, MPI_INT, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+
+  if (PIC::ThisThread == 0) {
+    std::printf("$PREFIX: %s: total collected = %d\n", __func__, globalCount);
   }
 
   return true;
