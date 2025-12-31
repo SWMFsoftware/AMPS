@@ -142,7 +142,33 @@ struct TestConfig {
   double B0[3] = {0.0, 0.0, 0.0};
   double E0[3] = {0.0, 0.0, 0.0};
   int stencilOrder = 2;
+
+  // Domain size control (optional). If -L is provided, the domain is centered at (0,0,0)
+  // with extents [-Lx/2,Lx/2] etc.
+  bool   use_domain_L = false;
+  double domain_L[3] = {32.0,16.0,8.0}; // defaults match xmin/xmax below
+
+  // Particle (solar-wind-like) initialization controls (used when mode==WithParticles).
+  // NOTE: The values below are in the same normalized units used by this legacy test
+  //       (see rho_conv/p_conv in PrepopulateDomain()).
+  double sw_rho0 = 1.0;            // background mass density (before rho_conv)
+  double sw_p0   = 4.5e-4;         // background scalar pressure (before p_conv)
+  double sw_u0[3] = {0.05,0.0,0.0};// bulk flow velocity
+  bool   sw_use_rounding = true;   // stochastic rounding for particle counts
+  // Optional physical-unit convenience inputs (interpreted in SI):
+  //   -sw-ncm3 : number density in cm^-3 (converted to m^-3)
+  //   -sw-TK   : temperature in K (applied as Ti=Te=T unless overridden by future options)
+  //   -sw-BnT  : background magnetic field in nT (converted to Tesla and stored in B0)
+  bool   sw_has_ncm3 = false;
+  double sw_n_cm3 = 0.0;
+
+  bool   sw_has_TK = false;
+  double sw_TK = 0.0;
+
+  bool   sw_has_BnT = false;
+  double sw_BnT[3] = {0.0,0.0,0.0};
 };
+
 
 static bool TryRead3(int& i, int argc, char** argv, double v[3]) {
   if (i + 3 >= argc) return false;
@@ -155,6 +181,41 @@ static bool TryRead3(int& i, int argc, char** argv, double v[3]) {
   i += 3;
   return true;
 }
+
+static bool TryRead1or3(int& i, int argc, char** argv, double v[3]) {
+  if (i + 1 >= argc) return false;
+
+  auto parse_double = [](const char* s, double& out)->bool {
+    char* end=nullptr;
+    out = std::strtod(s, &end);
+    if (end==s) return false;               // no conversion
+    while (*end==' ' || *end=='\t') ++end;  // tolerate trailing whitespace
+    return (*end=='\0');                    // must consume full token
+  };
+
+  double a0=0.0;
+  if (!parse_double(argv[i+1], a0)) return false;
+
+  // Try to read two more doubles. If both parse cleanly, interpret as 3-vector.
+  double a1=0.0, a2=0.0;
+  bool have3 = false;
+  if (i + 3 < argc) {
+    if (parse_double(argv[i+2], a1) && parse_double(argv[i+3], a2)) {
+      have3 = true;
+    }
+  }
+
+  if (have3) {
+    v[0]=a0; v[1]=a1; v[2]=a2;
+    i += 3;
+  }
+  else {
+    v[0]=a0; v[1]=a0; v[2]=a0;
+    i += 1;
+  }
+  return true;
+}
+
 
 static bool ParseIntAfterEqOrNext(int& i, int argc, char** argv, const char* /*opt*/, int& outVal) {
   std::string a(argv[i]);
@@ -177,41 +238,208 @@ static bool ParseIntAfterEqOrNext(int& i, int argc, char** argv, const char* /*o
 void ConfigureTestFromArgs(TestConfig& cfg,int argc, char** argv) {
   for (int i=1; i<argc; ++i) {
     std::string a(argv[i]);
+
+    // ---- Mode selection ----
     if (a=="-particles") {
       cfg.mode = TestConfig::Mode::WithParticles;
-    } else if (a=="-no-particles") {
+      continue;
+    }
+    if (a=="-no-particles") {
       cfg.mode = TestConfig::Mode::NoParticles;
-    } else if (a=="-B") {
-      cfg.mode = TestConfig::Mode::FieldOnlyB;
+      continue;
+    }
+
+    // ---- Particle (solar wind) controls ----
+    // These options imply particles are enabled.
+    if (a=="-sw" || a=="-solar-wind") {
+      cfg.mode = TestConfig::Mode::WithParticles;
+      // keep defaults sw_rho0/sw_p0/sw_u0
+      continue;
+    }
+    if (a=="-sw-rho") {
+      if (i+1>=argc) { std::printf("-sw-rho requires a value\n"); continue; }
+      cfg.mode = TestConfig::Mode::WithParticles;
+      cfg.sw_rho0 = std::atof(argv[++i]);
+      continue;
+    }
+    if (a=="-sw-p") {
+      if (i+1>=argc) { std::printf("-sw-p requires a value\n"); continue; }
+      cfg.mode = TestConfig::Mode::WithParticles;
+      cfg.sw_p0 = std::atof(argv[++i]);
+      continue;
+    }
+    if (a=="-sw-u") {
+      cfg.mode = TestConfig::Mode::WithParticles;
+      if (!TryRead3(i, argc, argv, cfg.sw_u0)) {
+        std::printf("-sw-u requires three values: ux uy uz\n");
+      }
+      continue;
+    }
+    if (a=="-sw-no-round") {
+      cfg.sw_use_rounding = false;
+      continue;
+    }
+
+    if (a=="-sw-ncm3") {
+      if (i+1>=argc) { std::printf("-sw-ncm3 requires a value\n"); continue; }
+      cfg.mode = TestConfig::Mode::WithParticles;
+      cfg.sw_has_ncm3 = true;
+      cfg.sw_n_cm3 = std::atof(argv[++i]);
+      continue;
+    }
+    if (a=="-sw-TK") {
+      if (i+1>=argc) { std::printf("-sw-TK requires a value\n"); continue; }
+      cfg.mode = TestConfig::Mode::WithParticles;
+      cfg.sw_has_TK = true;
+      cfg.sw_TK = std::atof(argv[++i]);
+      continue;
+    }
+    if (a=="-sw-BnT") {
+      // Background magnetic field in nT. Converted to Tesla and stored in cfg.B0.
+      // This implies particles are enabled (solar-wind convenience).
+      cfg.mode = TestConfig::Mode::WithParticles;
+      cfg.sw_has_BnT = true;
+
+      double bnT[3] = {0.0,0.0,0.0};
+      bool ok = TryRead3(i, argc, argv, bnT);
+      if (!ok) { bnT[0]=0.0; bnT[1]=5.0; bnT[2]=0.0; } // default 5 nT along +y
+      cfg.sw_BnT[0]=bnT[0]; cfg.sw_BnT[1]=bnT[1]; cfg.sw_BnT[2]=bnT[2];
+
+      // Convert nT -> Tesla. NOTE: assumes -B uses Tesla-consistent units in this test.
+      cfg.userB = true;
+      cfg.B0[0] = bnT[0]*1.0e-9;
+      cfg.B0[1] = bnT[1]*1.0e-9;
+      cfg.B0[2] = bnT[2]*1.0e-9;
+
+      continue;
+    }
+
+
+
+
+// ---- Domain size ----
+// -L L     -> cubic domain of size L, centered at (0,0,0)
+// -L Lx Ly Lz -> anisotropic domain, centered at (0,0,0)
+if (a=="-L") {
+  cfg.use_domain_L = true;
+  if (!TryRead1or3(i, argc, argv, cfg.domain_L)) {
+    std::printf("-L requires 1 value (L) or 3 values (Lx Ly Lz)\n");
+    cfg.use_domain_L = false;
+  }
+  continue;
+}
+
+    // ---- Background fields ----
+    // In particle mode, -B/-E set background fields but DO NOT switch to field-only.
+    // In non-particle modes, -B/-E imply field-only initialization.
+    if (a=="-B") {
       cfg.userB = TryRead3(i, argc, argv, cfg.B0);
       if (!cfg.userB) { cfg.B0[0]=0.0; cfg.B0[1]=1.0; cfg.B0[2]=0.0; }
-    } else if (a=="-E") {
-      cfg.mode = TestConfig::Mode::FieldOnlyE;
+      if (cfg.mode != TestConfig::Mode::WithParticles) cfg.mode = TestConfig::Mode::FieldOnlyB;
+      continue;
+    }
+    if (a=="-E") {
       cfg.userE = TryRead3(i, argc, argv, cfg.E0);
       if (!cfg.userE) { cfg.E0[0]=1.0; cfg.E0[1]=0.0; cfg.E0[2]=0.0; }
-    } else if (a.rfind("-stencil-order",0)==0) {
+      if (cfg.mode != TestConfig::Mode::WithParticles) cfg.mode = TestConfig::Mode::FieldOnlyE;
+      continue;
+    }
+
+    // ---- Operator stencil order (if your solver reads g_TestStencilOrder) ----
+    if (a.rfind("-stencil-order",0)==0) {
       int val = cfg.stencilOrder;
       if (!ParseIntAfterEqOrNext(i, argc, argv, "-stencil-order", val)) {
         std::printf("Invalid -stencil-order value; keeping default %d\n", cfg.stencilOrder);
       } else {
         cfg.stencilOrder = val;
       }
-    } else if (a=="-h" || a=="--help") {
-      std::printf(
-        "Usage:\n"
-        "  %s [-particles | -no-particles | -B [Bx By Bz] | -E [Ex Ey Ez]] [-stencil-order=N]\n"
-        "Modes (choose one; -B/-E imply -no-particles):\n"
-        "  -particles           : PIC with particles; constant field BC; specular reflection.\n"
-        "  -no-particles        : Field-only (no particles).\n"
-        "  -B [Bx By Bz]        : Field-only with uniform B (E=0). Default: (0,1,0).\n"
-        "  -E [Ex Ey Ez]        : Field-only with uniform E (B=0). Default: (1,0,0).\n"
-        "Options:\n"
-        "  -stencil-order=N     : FD stencil order for this test (default 2).\n",
-        argv[0]);
-      std::exit(0);
-    } else {
-      std::printf("Unknown option: %s (use -h for help)\n", argv[i]);
+      continue;
     }
+
+    if (a=="-h" || a=="--help") {
+      std::printf(
+        "\n"
+        "ECSIM Constant-Field / BC Test\n"
+        "--------------------------------\n"
+        "This driver is a regression / validation test for the ECSIM electromagnetic\n"
+        "field solver and domain boundary-condition (BC) handling (Dirichlet/Neumann)\n"
+        "for E (and related solver exchanges). It is intended to catch regressions in:\n"
+        "  • ECSIM linear-system assembly (matrix + RHS)\n"
+        "  • BC short-circuit rows in GetStencil()\n"
+        "  • MPI corner/center exchange and ghost synchronization\n"
+        "  • Source-free stability (no spurious fields when J=0, rho=0)\n"
+        "  • Particle-coupled stability (J/M deposition + solve + exchange)\n"
+        "\n"
+        "Usage:\n"
+        "  %s [-particles | -no-particles]\n"
+        "     [-B  Bx By Bz] [-E  Ex Ey Ez]\n"
+        "     [-L  L | -L  Lx Ly Lz]\n"
+        "     [-sw|-solar-wind] [-sw-rho RHO] [-sw-p P] [-sw-u ux uy uz] [-sw-no-round]\n"
+        "     [-sw-ncm3 N] [-sw-TK T] [-sw-BnT Bx By Bz]\n"
+        "     [-stencil-order=N]\n"
+        "\n"
+       "Modes:\n"
+        "  -no-particles\n"
+        "      Field-only test (no particles; J=0, rho=0). Uniform E/B should remain\n"
+        "      uniform (up to roundoff). Best for BC and matrix/RHS assembly checks.\n"
+        "\n"
+        "  -particles\n"
+        "      Enable particles. With -sw* options, initializes a spatially-uniform\n"
+        "      solar-wind-like plasma (ions + electrons) with bulk drift and thermal\n"
+        "      pressure. Best for exercising deposition (J + mass matrix) + solve +\n"
+        "      MPI boundary exchange.\n"
+        "\n"
+        "Domain:\n"
+        "  -L  L\n"
+        "      Set cubic domain size L, centered at (0,0,0).\n"
+        "  -L  Lx Ly Lz\n"
+        "      Set domain size (Lx,Ly,Lz), centered at (0,0,0).\n"
+        "\n"
+        "Background fields (any mode):\n"
+        "  -B  Bx By Bz\n"
+        "      Set uniform background magnetic field.\n"
+        "  -E  Ex Ey Ez\n"
+        "      Set uniform background electric field.\n"
+        "  -sw-BnT Bx By Bz\n"
+        "      Set uniform background B in nT (converted internally and applied as -B).\n"
+        "\n"
+        "Solar-wind plasma IC (implies -particles):\n"
+        "  -sw | -solar-wind\n"
+        "      Enable particles with default solar-wind-like parameters.\n"
+        "  -sw-rho RHO\n"
+        "      Background mass density parameter (driver code units).\n"
+        "  -sw-p   P\n"
+        "      Background scalar pressure parameter (driver code units).\n"
+        "  -sw-u  ux uy uz\n"
+        "      Bulk flow velocity (driver code units).\n"
+        "  -sw-no-round\n"
+        "      Disable stochastic rounding of particles-per-cell.\n"
+        "\n"
+        "Solar-wind plasma IC (physical inputs):\n"
+        "  -sw-ncm3 N\n"
+        "      Number density in cm^-3 (converted internally).\n"
+        "  -sw-TK   T\n"
+        "      Temperature in K (assumes Ti=Te=T; sets pressure from n,T).\n"
+        "\n"
+        "Options:\n"
+        "  -stencil-order=N\n"
+        "      FD stencil order for this test (default 2).\n"
+        "\n"
+        "Examples:\n"
+        "  Field-only constant B:\n"
+        "    %s -no-particles -B 0 5e-9 0\n"
+        "\n"
+        "  Solar wind (physical units) + constant B:\n"
+        "    %s -particles -sw-ncm3 5 -sw-TK 1e5 -sw-BnT 0 5 0 -sw-u 0.05 0 0\n"
+        "\n"
+        "  Long box centered at origin:\n"
+        "    %s -particles -L 128 16 16 -sw-ncm3 5 -sw-TK 1e5 -sw-BnT 0 5 0\n"
+        "\n",
+        argv[0], argv[0], argv[0], argv[0]);
+      std::exit(0);
+    }
+
+    std::printf("Unknown option: %s (use -h for help)\n", argv[i]);
   }
 }
 
@@ -290,11 +518,16 @@ void SetIC() {
       SetUniformCornerE(cfg.E0);
       break;
     case TestConfig::Mode::WithParticles:
-      exit(__LINE__,__FILE__,"error: not implemented");
+      // Particle mode: keep fields uniform/constant if provided via -B/-E, otherwise leave as zero.
+      if (cfg.userB) SetUniformCenterB(cfg.B0);
+      if (cfg.userE) SetUniformCornerE(cfg.E0);
+      break;
     case TestConfig::Mode::NoParticles:
-      exit(__LINE__,__FILE__,"error: not implemented");
+      // Field-only run with no particles: honor user-specified backgrounds if provided.
+      if (cfg.userB) SetUniformCenterB(cfg.B0);
+      if (cfg.userE) SetUniformCornerE(cfg.E0);
+      break;
     default:
-      // keep zero fields (or your legacy defaults)
       break;
   }
 
@@ -413,53 +646,70 @@ long int PrepopulateDomain() {
       //offset = cell->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
 	  int ind[3]={iCell,jCell,kCell};
 	  double x[3];
-	  for (int idim=0; idim<3; idim++) x[idim]=xminBlock[idim]+(ind[idim]+0.5)*dx[idim];
-	  
-          
-          double waveShape =sin(waveNumber[0]*(x[0]-xmin[0])+waveNumber[1]*(x[1]-xmin[1])+waveNumber[2]*(x[2]-xmin[2]));
-          double rho = 1, ux=0.0, p=4.5e-4, Ppar=4.5e-4;
-          double Ppar1 = 4.5e-5*waveShape;
-          double p1 = 7.5e-5*waveShape;
-          double rho1 = 0.1*waveShape;
-          double rho_conv=0.0795774715459477;
-          double p_conv = 0.0795774715459477;
-          
-          rho *=rho_conv;
-          rho1 *= rho_conv;
-          p *= p_conv;
-          p1 *= p_conv;
-          
-          Ppar *=p_conv;
-          Ppar1 *=p_conv;
-          
-
-          double rho_i = (rho+rho1)*ionMass/(ionMass+electronMass);
-          double rho_e = (rho+rho1)*electronMass/(ionMass+electronMass); 
-          double ux1= 0.005*waveShape;
-
-
-
-          double NumberDensity=(rho+rho1)/(ionMass+electronMass);
-          double kTemp_par = (Ppar+Ppar1)/NumberDensity*0.5;
-          double kTemp = (p+p1)/NumberDensity*0.5;
-          double kTemp_perp = 3*kTemp-2*kTemp_par;
+	  for (int idim=0; idim<3; idim++) x[idim]=xminBlock[idim]+(ind[idim]+0.5)*dx[idim];          // --- Uniform solar-wind-like plasma (no waves) ---
+          // The legacy test historically used a sinusoidal perturbation (fast-wave IC).
+          // For a constant-field BC regression with particles, we inject a uniform plasma:
+          //   rho = cfg.sw_rho0 * rho_conv
+          //   p   = cfg.sw_p0   * p_conv
+          //   u   = cfg.sw_u0
+          // Ions and electrons share the scalar pressure equally.
+          const double rho_conv = 0.0795774715459477;
+          const double p_conv   = 0.0795774715459477;
 
           
-          double pi_par=(Ppar+Ppar1)*0.5;
-          double pe_par=pi_par;
-          double pi_perp = 3*(p+p1)*0.5-2*pi_par;
-          double pe_perp = pi_perp;
-          double ionBulkVelocity[3]={0,0,0};
-          double electronBulkVelocity[3]={0,0,0};
-          
-          ionBulkVelocity[0] = ux+ux1;
-          electronBulkVelocity[0] = ux+ux1;
+// Base (legacy) inputs: cfg.sw_rho0 and cfg.sw_p0 are interpreted as
+// "pre-conversion" values that are scaled by rho_conv/p_conv below.
+//
+// Physical-unit convenience options:
+//   -sw-ncm3 (cm^-3) provides number density; we convert to SI (m^-3) and
+//             compute mass density rho0 = n*(m_i+m_e) [kg/m^3] using the
+//             actual species masses from PIC::MolecularData.
+//   -sw-TK   (K) provides temperature; we compute scalar pressure from
+//             p0 = n*kB*(Ti+Te). With a single -sw-TK, we assume Ti=Te=T.
+//
+// If -sw-ncm3 is present, it overrides cfg.sw_rho0. If -sw-TK is present,
+// it overrides cfg.sw_p0 (using n inferred from the chosen rho0).
+const double kB_SI = 1.380649e-23; // J/K
+
+double rho0 = cfg.sw_rho0;
+if (cfg.sw_has_ncm3) {
+  const double n_m3 = cfg.sw_n_cm3 * 1.0e6; // cm^-3 -> m^-3
+  rho0 = n_m3 * (ionMass + electronMass);   // kg/m^3
+}
+
+// Number density inferred from chosen rho0 (SI m^-3).
+const double n_m3 = rho0 / (ionMass + electronMass);
+
+double p0 = cfg.sw_p0;
+if (cfg.sw_has_TK) {
+  // Assume Ti=Te=T unless specialized options are introduced later.
+  p0 = n_m3 * kB_SI * (2.0 * cfg.sw_TK); // Pa = N/m^2
+}
+
+double rho = rho0 * rho_conv;
+double p   = p0   * p_conv;
+
+          const double NumberDensity = rho/(ionMass+electronMass);
+          const double rho_i = NumberDensity*ionMass;
+          const double rho_e = NumberDensity*electronMass;
+
+          // Split total scalar pressure between ions and electrons (isotropic).
+          const double pi = 0.5*p;
+          const double pe = 0.5*p;
+
+          double ionBulkVelocity[3]      = {cfg.sw_u0[0], cfg.sw_u0[1], cfg.sw_u0[2]};
+          double electronBulkVelocity[3] = {cfg.sw_u0[0], cfg.sw_u0[1], cfg.sw_u0[2]};
+
+          // Component thermal speeds for isotropic Maxwellians: <v_x'^2> = p_species / rho_species
+          const double uth_i = sqrt(pi / rho_i);
+          const double uth_e = sqrt(pe / rho_e);
+
 
           //inject particles into the cell
           anpart=NumberDensity*CellVolume/ParticleWeight;
           //std::cout<<"CellLoc:"<<x[0]<<" "<<x[1]<<" "<<x[2]<<" NumberDensity: "<<NumberDensity<<"cell volume: "<<CellVolume<<"anpart: "<<anpart<<std::endl;
           npart=(int)(anpart);
-          //if (rnd()<anpart-npart) npart++;
+          if (cfg.sw_use_rounding && (rnd() < anpart - npart)) npart++;
           nLocalInjectedParticles+=npart*2;
           //std::cout<<"need to inject npart: "<<npart<<std::endl;
           
@@ -488,12 +738,12 @@ long int PrepopulateDomain() {
 
             
             double electronVelocity[3],ionVelocity[3];
-            for (int idim=0;idim<3;idim++) { 
-              double uth_e = idim!=1?sqrt(pe_perp/rho_e):sqrt(pe_par/rho_e);
-              double uth_i = idim!=1?sqrt(pi_perp/rho_i):sqrt(pi_par/rho_i);
-              
-              electronVelocity[idim]=uth_e* sqrt(-2.0 * log(1.0 - .999999999 * rnd()))*cos(2*Pi*rnd())+electronBulkVelocity[idim];
-              ionVelocity[idim]=uth_i*sqrt(-2.0 * log(1.0 - .999999999 * rnd()))*cos(2*Pi*rnd())+ionBulkVelocity[idim];   
+                        for (int idim=0; idim<3; idim++) {
+              // Box-Muller: Gaussian(0,1) * uth + bulk
+              const double g1 = sqrt(-2.0 * log(1.0 - 0.999999999 * rnd())) * cos(2.0*Pi*rnd());
+              const double g2 = sqrt(-2.0 * log(1.0 - 0.999999999 * rnd())) * cos(2.0*Pi*rnd());
+              electronVelocity[idim] = uth_e * g1 + electronBulkVelocity[idim];
+              ionVelocity[idim]      = uth_i * g2 + ionBulkVelocity[idim];
             }
             
             /*  
@@ -609,6 +859,17 @@ int main(int argc,char **argv) {
    printf("start: (%i/%i %i:%i:%i)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
 
   ConfigureTestFromArgs(cfg,argc,argv);
+
+// If -L was provided, redefine the domain to be centered at (0,0,0).
+// NOTE: xmin/xmax are used for mesh initialization and (if periodic) for periodic BC setup.
+if (cfg.use_domain_L) {
+  for (int d=0; d<3; ++d) {
+    xmin[d] = -0.5*cfg.domain_L[d];
+    xmax[d] =  0.5*cfg.domain_L[d];
+  }
+}
+
+
 
   // Dirichlet on all 6 faces
   PIC::FieldSolver::Electromagnetic::DomainBC.SetAll(PIC::Mesh::BCTypeDirichlet);
@@ -801,7 +1062,7 @@ int main(int argc,char **argv) {
       MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
       printf("After cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
 
-      if ((cfg.mode!=TestConfig::Mode::FieldOnlyB)&&(cfg.mode!=TestConfig::Mode::FieldOnlyE)) {
+      if (cfg.mode==TestConfig::Mode::WithParticles) {
         PrepopulateDomain();
       }
 
