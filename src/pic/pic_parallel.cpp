@@ -2358,7 +2358,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
 
           //in case the clock has a 'ghost'pair -> loop through the pair block
-          if (startNode->TestFlag(periodic_bc_pair_real_block)==true) {
+          if ((_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_)&&(startNode->TestFlag(periodic_bc_pair_real_block)==true)) {
             //the block has a ghost pair
             int iBlockPair;
             cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *GhostBlock,*RealBlock;
@@ -2421,6 +2421,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
             }
           }
 
+	  if (cntStencilData>=100) exit(__LINE__,__FILE__,"Error: cntStencilData>=100 -- 100 is a hardwired constant used to allocated the data buffers; that needs to be increased");
 
           //determine how whether a stencil neet to be created
           int cntStencilDataSum;
@@ -2441,11 +2442,22 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
             if (PIC::ThisThread==0) {
               for (int thread=0;thread<PIC::nTotalThreads;thread++) if (ContributingThreadTable[thread]==true) StencilData.ContributingThreadTable[StencilData.ContributingThreadTableLength++]=thread;
               
-              //determine the processing thread:
-              int iProcessingThread=(int)(StencilData.ContributingThreadTableLength*rnd());
-              
-              StencilData.ProcessingThread=StencilData.ContributingThreadTable[iProcessingThread];
-              StencilData.ContributingThreadTable[iProcessingThread]=StencilData.ContributingThreadTable[--StencilData.ContributingThreadTableLength];
+              // Deterministic load-balanced processing thread selection based on stencil id.
+              // This avoids run-to-run randomness while distributing ownership.
+	      // NOTE: idx is an INDEX into ContributingThreadTable.
+              uint64_t h = 1469598103934665603ULL; // FNV-1a
+              auto mix = [&](uint64_t v) { h ^= v; h *= 1099511628211ULL; };
+
+	      // Add corner identity for better spread:
+              mix((uint64_t)i); mix((uint64_t)j); mix((uint64_t)k);
+	      mix((uint64_t)startNode->Temp_ID);
+
+	      // Table[idx] is the chosen OWNER RANK (value), not an index.
+              int idx = (int)(h % (uint64_t)StencilData.ContributingThreadTableLength);
+
+	      // Remove the owner entry from the contributor list (swap-with-last). 
+              StencilData.ProcessingThread = StencilData.ContributingThreadTable[idx];
+	      StencilData.ContributingThreadTable[idx]=StencilData.ContributingThreadTable[--StencilData.ContributingThreadTableLength];
             }
             
             //set the insex of the stencil
