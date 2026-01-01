@@ -1,0 +1,22 @@
+# Solar-wind-like uniform plasma specified in physical units
+mode=particles
+
+# A longer box helps with flow tests (centered at 0)
+L=128,16,16
+
+# Solar wind physical parameters
+sw-ncm3=5
+sw-TK=100000
+sw-BnT=0,5,0
+
+# Bulk flow in test units (you can later add -sw-ukms if you want physical velocity)
+sw-u=0.05,0,0
+
+# Target macro-particles per cell per species
+ppc=100
+
+# Use stochastic rounding for ppc (default). To disable:
+# sw-no-round=1
+
+stencil-order=2
+

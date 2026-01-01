@@ -1,0 +1,20 @@
+# Constant-field BC test: particles enabled (uniform plasma in test units)
+mode=particles
+
+# Domain centered at (0,0,0)
+L=32,16,8
+
+# Uniform plasma parameters in the test's legacy units
+sw-rho=1.0
+sw-p=4.5e-4
+sw-u=0.05,0,0
+
+# Target ~ppc macro-particles per cell per species (ions + electrons)
+ppc=100
+
+# Optional background B (test units)
+B=0,1,0
+
+# Stencil order
+stencil-order=2
+
