@@ -157,6 +157,21 @@ if (cfg.use_domain_L) {
 }
 
 
+// If requested, compute the solar-wind convective electric field E = -u x B.
+// Precedence: if E was explicitly provided (-E, -sw-EVm, -sw-EmVm, or sw-evm/sw-emvm in the input file),
+// we do NOT override it.
+//
+// NOTE: Many MHD conventions use E = -u x B. This test implements the sign requested for this driver: E = -u x B.
+if (cfg.sw_use_EvXB && !cfg.userE_explicit) {
+  const double* u = cfg.sw_u0;
+  const double* B = cfg.B0;
+
+  cfg.userE = true;
+  cfg.E0[0] = -(u[1]*B[2] - u[2]*B[1]);
+  cfg.E0[1] = -(u[2]*B[0] - u[0]*B[2]);
+  cfg.E0[2] = -(u[0]*B[1] - u[1]*B[0]);
+}
+
 
   // Dirichlet on all 6 faces
   PIC::FieldSolver::Electromagnetic::DomainBC.SetAll(PIC::Mesh::BCTypeDirichlet);
