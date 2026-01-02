@@ -1,19 +1,61 @@
+# -----------------------------------------------------------------------------
+# example_solarwind.in
+#
+# ECSIM Constant-Field / BC Test: solar-wind-like uniform plasma (physical units)
+#
+# CONFIG PRECEDENCE:
+#   Defaults  ->  this input file (-i)  ->  command line (overrides file)
+#
+# EXAMPLE COMMAND LINES:
+#   1) Run exactly as configured in this file:
+#        ./amps_test -i example_solarwind.in
+#
+#   2) Override one parameter from the CLI (CLI wins over file):
+#        ./amps_test -i example_solarwind.in -ppc 200
+#
+#   3) Same case written fully on the CLI (no input file):
+#        ./amps_test -particles -L 128 16 16 \
+#          -sw-ncm3 5 -sw-TK 1e5 -sw-BnT 0 5 0 -sw-u-kms 400 0 0 \
+#          -sw-EvXB -ppc 100 -stencil-order=2
+#
+#
+#sw-evxb=1  # Compute convective E from bulk flow and B:  E = -u x B.
+            # Requires u (sw-u / sw-u-ms / sw-u-kms) and B (B=... or sw-BnT=...).
+            # Ignored if E is explicitly specified (E=..., sw-evm=..., sw-emvm=..., or CLI -E/-sw-EVm/-sw-EmVm).
+            # CLI equivalent: -sw-EvXB
+# NOTES:
+#   * -sw-EvXB computes the convective electric field using the correct MHD sign:
+#         E = - u x B
+#     Explicit E (via -E, -sw-EVm, -sw-EmVm, sw-evm, sw-emvm) overrides -sw-EvXB.
+#   * Units:
+#       sw-ncm3 : cm^-3
+#       sw-TK   : K
+#       sw-BnT  : nT
+#       sw-u-kms: km/s
+#       sw-evm  : V/m     (optional explicit E)
+#       sw-emvm : mV/m    (optional explicit E)
+# -----------------------------------------------------------------------------
+
+
+
 # Solar-wind-like uniform plasma specified in physical units
 mode=particles
 
 # A longer box helps with flow tests (centered at 0)
-L=128,16,16
+L=12,12,12 
 
 # Solar wind physical parameters
 sw-ncm3=5
 sw-TK=100000
 sw-BnT=0,5,0
+sw-evxb=1 
 
 # Bulk flow in test units (you can later add -sw-ukms if you want physical velocity)
-sw-u=0.05,0,0
+#sw-u=0.05,0,0
+sw-u-kms=400,0,0
 
 # Target macro-particles per cell per species
-ppc=100
+ppc=50
 
 # Use stochastic rounding for ppc (default). To disable:
 # sw-no-round=1

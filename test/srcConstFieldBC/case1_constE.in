@@ -5,7 +5,7 @@ mode=no-particles
 L=32,16,8
 
 # Set uniform E (test code units)
-E=0.2,0,0
+E=0,1,0
 
 # Optional: FD stencil order (2/4/6/8)
 stencil-order=2
