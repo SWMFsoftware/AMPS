@@ -137,6 +137,7 @@ static void ApplyKeyValue(TestConfig& cfg, const std::string& keyRaw,
     if (need3(tmp)) {
       cfg.userE=true;
       cfg.E0[0]=tmp[0]; cfg.E0[1]=tmp[1]; cfg.E0[2]=tmp[2];
+      cfg.userE_explicit=true;
       if (cfg.mode != TestConfig::Mode::WithParticles) cfg.mode = TestConfig::Mode::FieldOnlyE;
     }
     return;
@@ -165,6 +166,61 @@ static void ApplyKeyValue(TestConfig& cfg, const std::string& keyRaw,
     if (nums.size()>=3) { cfg.mode = TestConfig::Mode::WithParticles; cfg.sw_u0[0]=nums[0]; cfg.sw_u0[1]=nums[1]; cfg.sw_u0[2]=nums[2]; }
     return;
   }
+
+if (key=="sw-u-ms" || key=="sw-ums") {
+  if (nums.size()>=3) {
+    cfg.mode = TestConfig::Mode::WithParticles;
+    cfg.sw_has_u_ms = true;
+    cfg.sw_u_ms[0]=nums[0]; cfg.sw_u_ms[1]=nums[1]; cfg.sw_u_ms[2]=nums[2];
+    // Store converted value (m/s) into sw_u0 immediately for downstream use.
+    cfg.sw_u0[0]=nums[0]; cfg.sw_u0[1]=nums[1]; cfg.sw_u0[2]=nums[2];
+  }
+  return;
+}
+if (key=="sw-u-kms" || key=="sw-ukms") {
+  if (nums.size()>=3) {
+    cfg.mode = TestConfig::Mode::WithParticles;
+    cfg.sw_has_u_kms = true;
+    cfg.sw_u_kms[0]=nums[0]; cfg.sw_u_kms[1]=nums[1]; cfg.sw_u_kms[2]=nums[2];
+    // Convert km/s -> m/s and store into sw_u0.
+    cfg.sw_u0[0]=nums[0]*1.0e3; cfg.sw_u0[1]=nums[1]*1.0e3; cfg.sw_u0[2]=nums[2]*1.0e3;
+  }
+  return;
+}
+
+// Solar-wind E options
+if (key=="sw-evxb" || key=="sw-exb" || key=="evxb") {
+  if (ToBool(nums,strs,true)) {
+    cfg.mode = TestConfig::Mode::WithParticles;
+    cfg.sw_use_EvXB = true;
+  }
+  return;
+}
+if (key=="sw-evm") {
+  if (nums.size()>=3) {
+    cfg.mode = TestConfig::Mode::WithParticles;
+    cfg.sw_has_EVm = true;
+    cfg.sw_EVm[0]=nums[0]; cfg.sw_EVm[1]=nums[1]; cfg.sw_EVm[2]=nums[2];
+
+    cfg.userE = true;
+    cfg.userE_explicit = true;
+    cfg.E0[0]=nums[0]; cfg.E0[1]=nums[1]; cfg.E0[2]=nums[2]; // V/m
+  }
+  return;
+}
+if (key=="sw-emvm") {
+  if (nums.size()>=3) {
+    cfg.mode = TestConfig::Mode::WithParticles;
+    cfg.sw_has_EmVm = true;
+    cfg.sw_EmVm[0]=nums[0]; cfg.sw_EmVm[1]=nums[1]; cfg.sw_EmVm[2]=nums[2];
+
+    cfg.userE = true;
+    cfg.userE_explicit = true;
+    // Convert mV/m -> V/m
+    cfg.E0[0]=nums[0]*1.0e-3; cfg.E0[1]=nums[1]*1.0e-3; cfg.E0[2]=nums[2]*1.0e-3;
+  }
+  return;
+}
   if (key=="sw-no-round" || key=="sw-noround") {
     // sw-no-round=1 disables rounding
     if (ToBool(nums,strs,true)) cfg.sw_use_rounding = false;
@@ -300,11 +356,22 @@ void PrintHelpAndExit(const char* prog) {
     "      Background scalar pressure parameter (driver code units).\n"
     "  -sw-u  ux uy uz\n"
     "      Bulk flow velocity (driver code units).\n"
+    "  -sw-u-ms  ux uy uz\n"
+    "      Bulk flow velocity in m/s (stored internally as sw_u0).\n"
+    "  -sw-u-kms ux uy uz\n"
+    "      Bulk flow velocity in km/s (converted to m/s internally).\n"
     "  -ppc N\n"
     "      Target macro-particles per cell per species for the uniform IC (default 100).\n"
     "      The code sets a global particle weight so initial injection produces ~N ppc.\n"
     "  -sw-no-round\n"
     "      Disable stochastic rounding of particles-per-cell.\n"
+    "  -sw-EvXB\n"
+    "      Compute the convective electric field E = u x B (using current sw-u and background B).\n"
+    "      Ignored if E is explicitly set (-E, -sw-EVm, -sw-EmVm).\n"
+    "  -sw-EVm  Ex Ey Ez\n"
+    "      Set uniform background E in V/m (applied as -E).\n"
+    "  -sw-EmVm Ex Ey Ez\n"
+    "      Set uniform background E in mV/m (converted to V/m; applied as -E).\n"
     "\n"
     "Solar-wind plasma IC (physical inputs):\n"
     "  -sw-ncm3 N\n"
@@ -321,13 +388,13 @@ void PrintHelpAndExit(const char* prog) {
     "    %s -no-particles -B 0 5e-9 0\n"
     "\n"
     "  Solar wind (physical units) + constant B, ~100 ppc/spec:\n"
-    "    %s -particles -sw-ncm3 5 -sw-TK 1e5 -sw-BnT 0 5 0 -sw-u 0.05 0 0 -ppc 100\n"
+    "    %s -particles -sw-ncm3 5 -sw-TK 1e5 -sw-BnT 0 5 0 -sw-u-kms 400 0 0 -sw-EvXB -ppc 100\n"
     "\n"
     "  Same, but driven by an input file (CLI overrides):\n"
     "    %s -i sw.in -ppc 200\n"
     "\n"
     "  Long box centered at origin:\n"
-    "    %s -particles -L 128 16 16 -sw-ncm3 5 -sw-TK 1e5 -sw-BnT 0 5 0 -ppc 100\n"
+    "    %s -particles -L 128 16 16 -sw-ncm3 5 -sw-TK 1e5 -sw-BnT 0 5 0 -sw-u-kms 400 0 0 -sw-EvXB -ppc 100\n"
     "\n",
     prog, prog, prog, prog, prog);
   std::exit(0);
@@ -437,10 +504,70 @@ void ConfigureTestFromArgs(TestConfig& cfg,int argc, char** argv) {
     if (a=="-sw-u") {
       cfg.mode = TestConfig::Mode::WithParticles;
       if (!TryRead3(i, argc, argv, cfg.sw_u0)) {
-        std::printf("-sw-u requires three values: ux uy uz\n");
+        std::printf("-sw-u requires three values: ux uy uz"); 
       }
       continue;
     }
+
+if (a=="-sw-u-ms") {
+  cfg.mode = TestConfig::Mode::WithParticles;
+  double u[3]={0.0,0.0,0.0};
+  if (!TryRead3(i, argc, argv, u)) {
+    std::printf("-sw-u-ms requires three values: ux uy uz (m/s)"); 
+  } else {
+    cfg.sw_has_u_ms = true;
+    cfg.sw_u_ms[0]=u[0]; cfg.sw_u_ms[1]=u[1]; cfg.sw_u_ms[2]=u[2];
+    cfg.sw_u0[0]=u[0]; cfg.sw_u0[1]=u[1]; cfg.sw_u0[2]=u[2];
+  }
+  continue;
+}
+if (a=="-sw-u-kms") {
+  cfg.mode = TestConfig::Mode::WithParticles;
+  double u[3]={0.0,0.0,0.0};
+  if (!TryRead3(i, argc, argv, u)) {
+    std::printf("-sw-u-kms requires three values: ux uy uz (km/s)"); 
+  } else {
+    cfg.sw_has_u_kms = true;
+    cfg.sw_u_kms[0]=u[0]; cfg.sw_u_kms[1]=u[1]; cfg.sw_u_kms[2]=u[2];
+    cfg.sw_u0[0]=u[0]*1.0e3; cfg.sw_u0[1]=u[1]*1.0e3; cfg.sw_u0[2]=u[2]*1.0e3;
+  }
+  continue;
+}
+
+// Solar-wind E options
+if (a=="-sw-EvXB" || a=="-sw-ExB") {
+  cfg.mode = TestConfig::Mode::WithParticles;
+  cfg.sw_use_EvXB = true;
+  continue;
+}
+if (a=="-sw-EVm") {
+  cfg.mode = TestConfig::Mode::WithParticles;
+  double e[3]={0.0,0.0,0.0};
+  if (!TryRead3(i, argc, argv, e)) {
+    std::printf("-sw-EVm requires three values: Ex Ey Ez (V/m)"); 
+  } else {
+    cfg.sw_has_EVm = true;
+    cfg.sw_EVm[0]=e[0]; cfg.sw_EVm[1]=e[1]; cfg.sw_EVm[2]=e[2];
+    cfg.userE = true;
+    cfg.userE_explicit = true;
+    cfg.E0[0]=e[0]; cfg.E0[1]=e[1]; cfg.E0[2]=e[2];
+  }
+  continue;
+}
+if (a=="-sw-EmVm") {
+  cfg.mode = TestConfig::Mode::WithParticles;
+  double e[3]={0.0,0.0,0.0};
+  if (!TryRead3(i, argc, argv, e)) {
+    std::printf("-sw-EmVm requires three values: Ex Ey Ez (mV/m)"); 
+  } else {
+    cfg.sw_has_EmVm = true;
+    cfg.sw_EmVm[0]=e[0]; cfg.sw_EmVm[1]=e[1]; cfg.sw_EmVm[2]=e[2];
+    cfg.userE = true;
+    cfg.userE_explicit = true;
+    cfg.E0[0]=e[0]*1.0e-3; cfg.E0[1]=e[1]*1.0e-3; cfg.E0[2]=e[2]*1.0e-3;
+  }
+  continue;
+}
     if (a=="-sw-no-round") {
       cfg.sw_use_rounding = false;
       continue;
@@ -532,6 +659,7 @@ if (a=="-L") {
     if (a=="-E") {
       cfg.userE = TryRead3(i, argc, argv, cfg.E0);
       if (!cfg.userE) { cfg.E0[0]=1.0; cfg.E0[1]=0.0; cfg.E0[2]=0.0; }
+      cfg.userE_explicit = true;
       if (cfg.mode != TestConfig::Mode::WithParticles) cfg.mode = TestConfig::Mode::FieldOnlyE;
       continue;
     }

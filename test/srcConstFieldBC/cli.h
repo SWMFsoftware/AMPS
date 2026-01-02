@@ -38,6 +38,32 @@ struct TestConfig {
   bool   sw_has_BnT = false;
   double sw_BnT[3] = {0.0,0.0,0.0};
 
+
+// Optional physical-unit convenience inputs for the bulk flow velocity:
+//   -sw-u-ms  : bulk flow in m/s (stored into sw_u0 after conversion)
+//   -sw-u-kms : bulk flow in km/s (converted to m/s and stored into sw_u0)
+// If either is provided, it overrides any existing sw_u0 setting.
+bool   sw_has_u_ms  = false;
+double sw_u_ms[3]   = {0.0,0.0,0.0};
+
+bool   sw_has_u_kms = false;
+double sw_u_kms[3]  = {0.0,0.0,0.0};
+
+// Optional solar-wind E initialization controls:
+//   1) -sw-EvXB / sw-evxb=1  -> compute E = u x B using the configured sw_u0 and B0
+//   2) -sw-EVm / -sw-EmVm or sw-evm/sw-emvm -> set E in physical units (V/m or mV/m)
+//
+// Precedence:
+//   • Explicit E (-E, -sw-EVm, -sw-EmVm, sw-evm, sw-emvm) disables the EvXB computation.
+bool   sw_use_EvXB = false;      // request computing E = u x B
+bool   userE_explicit = false;   // E was explicitly set (file or CLI), so don't override
+
+bool   sw_has_EVm = false;       // E provided in V/m
+double sw_EVm[3]  = {0.0,0.0,0.0};
+
+bool   sw_has_EmVm = false;      // E provided in mV/m
+double sw_EmVm[3]  = {0.0,0.0,0.0};
+
   // Target macro-particles per cell (per species) for the uniform solar-wind-like IC.
   // Default: 100 ppc/spec. Override with -ppc <N>.
   double target_ppc = 100.0;
