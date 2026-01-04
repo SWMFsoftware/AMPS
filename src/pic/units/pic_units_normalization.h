@@ -41,6 +41,23 @@ NOTES
   • The three input scales set the entire unit system. Typical heliosphere use:
     ℓ_SI ~ 1e6 m, u_SI ~ 5e4 m/s, m_SI ~ m_p.
 
+HOW TO CHOOSE M_SI (NORMALIZATION MASS)
+  You have two common choices:
+
+  (A) From a reference **mass density** ρ_ref_SI [kg/m^3]
+      Choose a reference density (e.g., solar wind ρ), then set:
+        ρ0_cgs = ρ_ref_SI * 1e-3            [g/cm^3]
+        L0     = 100*ℓ_SI                   [cm]
+        M_SI   = ρ0_cgs * L0^3              [g]
+      This anchors the normalization to a physical density.
+
+  (B) From the FLEKS/MHD‑EPIC “proton constraint”:  
+      Many couplers choose M_SI so that q̄/(m̄ c̄)=1 for a proton in normalized
+      variables. Algorithm.tex derives the normalization mass in SI (kg):
+        m*_SI(kg) = 1e7 * ℓ_SI(m) * (m_p/q_p)^2 * (ScalingFactor)^2
+      The CGS mass in grams used here is:
+        M_SI(g)   = 1000 * m*_SI(kg)
+
 EXAMPLES (quick glance)
   NormScalesSI s{1.0e6, 5.0e4, 1.67262192369e-27};
   auto F = build(s);
@@ -55,9 +72,6 @@ TESTING
 ================================================================================
 */
 #pragma once
-// pic_units_normalization.hpp — Drop-in SI↔PIC normalization helper
-// Implements the normalization used by FLEKS/fluid couplers.
-// No dependencies beyond <cmath>.
 
 #include <cmath>
 #include <array>

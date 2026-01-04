@@ -179,7 +179,7 @@ int main(){
   const double n_no = si2no_n(n_SI_m3, N0_cm3); // expected 0.045 = 45e-3
   const double n_SI_rt = no2si_n(n_no, N0_cm3); // back to [1/m^3]
     
-  std::cout << "Number density conversion (using header helpers)\n";
+  std::cout << "\nNumber density conversion (using header helpers)\n";
   std::cout << " n_SI = " << n_SI_m3 << " [1/m^3]    "    << " n_no = " << n_no << " (target 4.5e-2)\n";
   std::cout << " n_SI↩ = " << n_SI_rt << " [1/m^3]\n";
 
