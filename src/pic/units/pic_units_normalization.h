@@ -198,7 +198,7 @@ inline Factors build(const NormScalesSI &s) {
     // SI→CGS bases
     f.L0_cm  = 100.0 * s.lSI_m;
     f.U0_cms = 100.0 * s.uSI_mps;
-    f.M0_g   = s.mSI_kg; // carried consistently via derived combos
+    f.M0_g   = 1000.0 * s.mSI_kg; 
 
     // Derived CGS normalizers
     f.rho0 = f.M0_g / (f.L0_cm * f.L0_cm * f.L0_cm);

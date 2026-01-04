@@ -67,7 +67,13 @@ int main(){
   // Deduced from Case 1 targets (see header comments):
   const double uSI = 3.0e6; // [m/s]
   const double lSI = 1.0e3; // [m]
-  const double mSI = 1.0898097712911516e-3; // [kg]
+
+
+  const double m_p=1.6726E-27; 
+  const double q_p=1.6022E-19; 
+
+  double mSI=1.0E7*lSI*pow(m_p/q_p,2) ; // [kg] 
+//  const double mSI = 1.0898097712911516e-3; // [g]
 
 
   auto F = build({lSI, uSI, mSI});
