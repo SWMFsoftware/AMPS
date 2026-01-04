@@ -9,9 +9,15 @@
 
 #include "cli.h"
 #include "pic.h"
+//#include "pic_units_normalization.h" 
 
 // defined in main.cpp
 extern TestConfig cfg;
+
+// Convert any physical-unit inputs in cfg (SI) into the unit system expected by the
+// field solver / particle routines. This must be called once after
+// ConfigureTestFromArgsWithInput() and before any IC/setup routines.
+void FinalizeConfigUnits(TestConfig& cfg);
 extern double xmin[3];
 extern double xmax[3];
 extern int g_TestStencilOrder;

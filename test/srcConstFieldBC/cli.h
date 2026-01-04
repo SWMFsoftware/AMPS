@@ -2,33 +2,70 @@
 #define _CONSTFIELDBC_CLI_H_
 
 #include <string>
+#include "specfunc.h"
 
-// ---------------- CLI configuration ----------------
+// ---------------- CLI / input-file configuration ----------------
+//
+// This test can be compiled with different ECSIM unit conventions
+// (see _PIC_FIELD_SOLVER_INPUT_UNIT_* macros in the AMPS build).
+//
+// To keep the test usable in both modes, we allow the user to specify
+// *physical* inputs for fields and the solar-wind IC and convert them into
+// the solver input units during FinalizeConfigUnits().
+//
+// Rule of thumb:
+//   * "B=..." / "E=..." are interpreted as *solver units* (whatever your build uses).
+//   * "BnT=..." / "EmVm=..." (and sw-* physical options) are interpreted as SI
+//     and converted to solver units.
+
 struct TestConfig {
-  enum class Mode { WithParticles, NoParticles, FieldOnlyB, FieldOnlyE } mode = Mode::WithParticles;
+  // Default to *field-only* unless particles are explicitly enabled.
+  enum class Mode { WithParticles, NoParticles, FieldOnlyB, FieldOnlyE } mode = Mode::NoParticles;
 
-  bool userB = false, userE = false;
+  // Background fields in *solver units* (written into node data buffers by SetIC()).
+  bool   userB = false;
+  bool   userE = false;
   double B0[3] = {0.0, 0.0, 0.0};
   double E0[3] = {0.0, 0.0, 0.0};
+
+  // Optional background fields specified in SI; converted in FinalizeConfigUnits().
+  bool   userB_SI = false;         // B0_SI_T is valid
+  bool   userE_SI = false;         // E0_SI_Vm is valid
+  double B0_SI_T[3]  = {0.0,0.0,0.0}; // Tesla
+  double E0_SI_Vm[3] = {0.0,0.0,0.0}; // V/m
+
   int stencilOrder = 2;
 
   // Domain size control (optional). If -L is provided, the domain is centered at (0,0,0)
-  // with extents [-Lx/2,Lx/2] etc.
+  // with extents [-Lx/2, Lx/2] etc. (L is in the mesh length units used by this test.)
   bool   use_domain_L = false;
   double domain_L[3] = {32.0,16.0,8.0}; // defaults match legacy xmin/xmax
 
+  // ---------------------------------------------------------------------------
+  // Units normalization controls (used when the ECSIM build expects NORM units).
+  // These are the three reference scales used by the attached normalization helper
+  // (pic_units_normalization.h): length [m], speed [m/s], mass [kg].
+  //
+  // The defaults below are "solar-wind-ish" and yield O(1) normalized magnitudes
+  // for typical SW inputs. Override via CLI/input file as needed.
+  // ---------------------------------------------------------------------------
+  bool   units_user_set = false;
+  double units_lSI_m   = 1.0e6;               // 1000 km
+  double units_uSI_mps = 5.0e4;               // 50 km/s
+  double units_mSI_kg  = 1.66053906660e-27;   // proton mass
+
+  // ---------------------------------------------------------------------------
   // Particle (solar wind) initialization controls (used when mode==WithParticles).
-  // NOTE: sw_rho0/sw_p0 are in the same normalized convention used by this legacy test
-  //       (see rho_conv/p_conv in PrepopulateDomain()).
-  double sw_rho0 = 1.0;              // background mass density parameter (before rho_conv)
-  double sw_p0   = 4.5e-4;           // background scalar pressure parameter (before p_conv)
-  double sw_u0[3] = {0.05,0.0,0.0};  // bulk flow velocity (test units)
+  // These are stored in the *solver units* expected by this build after
+  // FinalizeConfigUnits() runs.
+  // ---------------------------------------------------------------------------
+  double sw_rho0 = 1.0;              // background mass density (solver units)
+  double sw_p0   = 4.5e-4;           // scalar pressure (solver units)
+  double sw_u0[3] = {0.05,0.0,0.0};  // bulk flow velocity (solver units)
   bool   sw_use_rounding = true;     // stochastic rounding for particle counts
 
-  // Optional physical-unit convenience inputs (interpreted in SI):
-  //   -sw-ncm3 : number density in cm^-3 (converted to m^-3)
-  //   -sw-TK   : temperature in K (assumes Ti=Te=T)
-  //   -sw-BnT  : background magnetic field in nT (converted to Tesla and stored in B0)
+  // Physical-unit convenience inputs (SI): n [cm^-3], T [K], B [nT], u [km/s or m/s], E [mV/m or V/m].
+  // If provided, they override sw_rho0/sw_p0/sw_u0 and/or background fields.
   bool   sw_has_ncm3 = false;
   double sw_n_cm3 = 0.0;
 
@@ -38,38 +75,30 @@ struct TestConfig {
   bool   sw_has_BnT = false;
   double sw_BnT[3] = {0.0,0.0,0.0};
 
+  bool   sw_has_u_kms = false;
+  double sw_u_kms[3] = {0.0,0.0,0.0};
 
-// Optional physical-unit convenience inputs for the bulk flow velocity:
-//   -sw-u-ms  : bulk flow in m/s (stored into sw_u0 after conversion)
-//   -sw-u-kms : bulk flow in km/s (converted to m/s and stored into sw_u0)
-// If either is provided, it overrides any existing sw_u0 setting.
-bool   sw_has_u_ms  = false;
-double sw_u_ms[3]   = {0.0,0.0,0.0};
+  bool   sw_has_u_mps = false;
+  double sw_u_mps[3] = {0.0,0.0,0.0};
 
-bool   sw_has_u_kms = false;
-double sw_u_kms[3]  = {0.0,0.0,0.0};
+  // E initialization for solar wind:
+  //   sw-evxb = 1 : set E = -u x B (in SI, then convert)
+  //   sw-evxb = 0 : use explicit E (if provided) or leave E as given by -E/-EmVm.
+  //   sw-evxb = -1: auto (default): if particles enabled and both u and B are known,
+  //                 use E=-u x B unless an explicit E was provided.
+  int    sw_evxb = -1;
 
-// Optional solar-wind E initialization controls:
-//   1) -sw-EvXB / sw-evxb=1  -> compute E = u x B using the configured sw_u0 and B0
-//   2) -sw-EVm / -sw-EmVm or sw-evm/sw-emvm -> set E in physical units (V/m or mV/m)
-//
-// Precedence:
-//   • Explicit E (-E, -sw-EVm, -sw-EmVm, sw-evm, sw-emvm) disables the EvXB computation.
-bool   sw_use_EvXB = false;      // request computing E = u x B
-bool   userE_explicit = false;   // E was explicitly set (file or CLI), so don't override
+  bool   sw_has_EmVm = false;
+  double sw_E_mVm[3] = {0.0,0.0,0.0};
 
-bool   sw_has_EVm = false;       // E provided in V/m
-double sw_EVm[3]  = {0.0,0.0,0.0};
+  bool   sw_has_EVm = false;
+  double sw_E_Vm[3] = {0.0,0.0,0.0};
 
-bool   sw_has_EmVm = false;      // E provided in mV/m
-double sw_EmVm[3]  = {0.0,0.0,0.0};
-
-  // Target macro-particles per cell (per species) for the uniform solar-wind-like IC.
-  // Default: 100 ppc/spec. Override with -ppc <N>.
+  // Target macro-particles per cell (per species) for uniform IC.
   double target_ppc = 100.0;
   bool   user_target_ppc = false;
 
-  // Optional input file path (for bookkeeping; not required)
+  // Optional input file path (for bookkeeping).
   std::string inputFile;
 };
 

@@ -117,6 +117,7 @@
 
 
 #include "main_lib.h"
+#include "pic_units_normalization.h"
 
 // -----------------------------------------------------------------------------
 // InitGlobalParticleWeight_TargetPPC()
@@ -186,16 +187,12 @@ void InitGlobalParticleWeight_TargetPPC(const TestConfig& cfg) {
     globalMinCellVolume = 1.0;
   }
 
-  // Compute reference number density (same conventions as PrepopulateDomain()).
-  const double rho_conv = 0.0795774715459477;
-
-  double rho0 = cfg.sw_rho0;
-  if (cfg.sw_has_ncm3) {
-    const double n_m3 = cfg.sw_n_cm3 * 1.0e6; // cm^-3 -> m^-3
-    rho0 = n_m3 * (ionMass + electronMass);
-  }
-
-  const double rho = rho0 * rho_conv;
+  // Reference number density derived from the configured mass density.
+  // IMPORTANT: In this test driver, cfg.sw_* fields are finalized (including
+  // any SI->normalized conversions) by FinalizeConfigUnits(cfg) in main.cpp.
+  // Therefore, the injection formula uses cfg.sw_rho0/cfg.sw_p0 directly, with
+  // no additional ad-hoc scaling.
+  const double rho = cfg.sw_rho0;
   const double NumberDensity_ref = rho / (ionMass + electronMass);
 
   const double ParticleWeight_ref = NumberDensity_ref * globalMinCellVolume / Nppc_target;
@@ -209,6 +206,191 @@ void InitGlobalParticleWeight_TargetPPC(const TestConfig& cfg) {
   }
 }
 
+
+
+
+//------------------------------------------------------------------------
+void FinalizeConfigUnits(TestConfig& cfg) {
+  // This routine converts *physical* (SI) user inputs (if provided) into the
+  // unit system expected by the compiled ECSIM field solver.
+  //
+  // The AMPS/ECSIM build can be configured either to store fields in SI units
+  // (_PIC_FIELD_SOLVER_INPUT_UNIT_SI_) or in a normalized "code-unit" system
+  // (_PIC_FIELD_SOLVER_INPUT_UNIT_NORM_). For the latter, we use the
+  // normalization in pic_units_normalization.h:
+  //   - choose normalization scales (lSI, uSI, mSI)
+  //   - compute factors
+  //   - map SI -> normalized for {rho, p, v, B, E}
+  //
+  // IMPORTANT:
+  //   * This is a *driver-level* convenience. The test logic (SetIC,
+  //     PrepopulateDomain) expects cfg.B0/E0 and cfg.sw_* already expressed in
+  //     the solver's input units after this routine runs.
+  //   * For the solar-wind option, the convective field is E = -u x B.
+
+  // Build normalization factors once (used only if the solver expects NORM units).
+  // NOTE: picunits::build() takes a NormScalesSI struct (see pic_units_normalization.h).
+  picunits::NormScalesSI norm_scales{cfg.units_lSI_m, cfg.units_uSI_mps, cfg.units_mSI_kg};
+  picunits::Factors F = picunits::build(norm_scales);
+
+  auto si_to_solver_B = [&](const double B_T[3], double B_out[3]) {
+#if _PIC_FIELD_SOLVER_INPUT_UNIT_ == _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
+    picunits::si2no_B3(B_T, B_out, F);
+#else
+    // SI build: store Tesla directly
+    for (int d=0; d<3; d++) B_out[d] = B_T[d];
+#endif
+  };
+
+  auto si_to_solver_E = [&](const double E_Vm[3], double E_out[3]) {
+#if _PIC_FIELD_SOLVER_INPUT_UNIT_ == _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
+    picunits::si2no_E3(E_Vm, E_out, F);
+#else
+    // SI build: store V/m directly
+    for (int d=0; d<3; d++) E_out[d] = E_Vm[d];
+#endif
+  };
+
+  auto si_to_solver_v = [&](const double u_mps[3], double u_out[3]) {
+#if _PIC_FIELD_SOLVER_INPUT_UNIT_ == _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
+    picunits::si2no_v3(u_mps, u_out, F);
+#else
+    for (int d=0; d<3; d++) u_out[d] = u_mps[d];
+#endif
+  };
+
+  auto si_to_solver_rho = [&](double rho_kgm3) -> double {
+#if _PIC_FIELD_SOLVER_INPUT_UNIT_ == _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
+    return picunits::si2no_rho(rho_kgm3, F);
+#else
+    return rho_kgm3;
+#endif
+  };
+
+  auto si_to_solver_p = [&](double p_Pa) -> double {
+#if _PIC_FIELD_SOLVER_INPUT_UNIT_ == _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
+    return picunits::si2no_P(p_Pa, F);
+#else
+    return p_Pa;
+#endif
+  };
+
+  // ---------------- Background fields (non-solar-wind mode too) ----------------
+  if (cfg.userB_SI) {
+    si_to_solver_B(cfg.B0_SI_T, cfg.B0);
+    cfg.userB = true;
+  }
+
+  if (cfg.userE_SI) {
+    si_to_solver_E(cfg.E0_SI_Vm, cfg.E0);
+    cfg.userE = true;
+  }
+
+  // ---------------- Solar wind: convert physical IC to solver units ----------------
+  if (cfg.mode == TestConfig::Mode::WithParticles) {
+    // --- Velocity ---
+    bool have_u_SI = false;
+    double u_SI[3] = {0.0,0.0,0.0};
+    if (cfg.sw_has_u_kms) {
+      for (int d=0; d<3; d++) u_SI[d] = cfg.sw_u_kms[d] * 1.0e3; // km/s -> m/s
+      have_u_SI = true;
+    }
+    else if (cfg.sw_has_u_mps) {
+      for (int d=0; d<3; d++) u_SI[d] = cfg.sw_u_mps[d];
+      have_u_SI = true;
+    }
+
+    if (have_u_SI) {
+      si_to_solver_v(u_SI, cfg.sw_u0);
+    }
+
+    // --- Magnetic field ---
+    // If the user provided SW B in nT, store it also as background B in SI so it
+    // gets converted above (cfg.userB_SI).
+    if (cfg.sw_has_BnT) {
+      for (int d=0; d<3; d++) cfg.B0_SI_T[d] = cfg.sw_BnT[d] * 1.0e-9; // nT -> Tesla
+      cfg.userB_SI = true;
+      si_to_solver_B(cfg.B0_SI_T, cfg.B0);
+      cfg.userB = true;
+    }
+
+    // --- Density & pressure ---
+    // If n and T are provided in physical units, we build SI rho,p and convert.
+    if (cfg.sw_has_ncm3) {
+      const double kB_SI = 1.380649e-23; // J/K
+      const double n_m3 = cfg.sw_n_cm3 * 1.0e6; // cm^-3 -> m^-3
+
+      // NOTE: we keep the legacy assumption of one ion species (species=0) and
+      //       quasi-neutral plasma with Ti=Te=T.
+      const double mi_kg = PIC::MolecularData::GetMass(0);
+      const double me_kg = PIC::MolecularData::GetMass(PIC::nTotalSpecies-1);
+
+      const double rho_SI = n_m3 * (mi_kg + me_kg); // kg/m^3
+      cfg.sw_rho0 = si_to_solver_rho(rho_SI);
+
+      if (cfg.sw_has_TK) {
+        const double T = cfg.sw_TK;
+        const double p_SI = n_m3 * kB_SI * (T + T); // Pi+Pe with Ti=Te=T
+        cfg.sw_p0 = si_to_solver_p(p_SI);
+      }
+    }
+
+    // --- Electric field ---
+    // Explicit physical E overrides E=-u×B.
+    if (cfg.sw_has_EmVm || cfg.sw_has_EVm) {
+      double E_SI[3] = {0.0,0.0,0.0};
+      if (cfg.sw_has_EmVm) {
+        for (int d=0; d<3; d++) E_SI[d] = cfg.sw_E_mVm[d] * 1.0e-3; // mV/m -> V/m
+      }
+      else {
+        for (int d=0; d<3; d++) E_SI[d] = cfg.sw_E_Vm[d];
+      }
+
+      for (int d=0; d<3; d++) cfg.E0_SI_Vm[d] = E_SI[d];
+      cfg.userE_SI = true;
+      si_to_solver_E(cfg.E0_SI_Vm, cfg.E0);
+      cfg.userE = true;
+    }
+    else {
+      // If sw-evxb is unset, default to computing E=-u×B when particles are enabled.
+      const bool do_evxb = (cfg.sw_evxb == 1) || (cfg.sw_evxb < 0);
+
+      if (do_evxb && cfg.userB && (cfg.sw_has_u_kms || cfg.sw_has_u_mps || (cfg.sw_u0[0]!=0.0 || cfg.sw_u0[1]!=0.0 || cfg.sw_u0[2]!=0.0))) {
+        // Compute in solver units (works for both SI and normalized builds as long as
+        // u and B are in consistent units):  E = -u × B
+        const double ux = cfg.sw_u0[0], uy = cfg.sw_u0[1], uz = cfg.sw_u0[2];
+        const double Bx = cfg.B0[0],    By = cfg.B0[1],    Bz = cfg.B0[2];
+
+        cfg.E0[0] = -(uy*Bz - uz*By);
+        cfg.E0[1] = -(uz*Bx - ux*Bz);
+        cfg.E0[2] = -(ux*By - uy*Bx);
+        cfg.userE = true;
+      }
+    }
+  }
+
+  // Optional sanity print (rank 0 only) to help validate unit conversions.
+  {
+    int do_print = 1;
+#ifdef MPI_ON
+    int mpi_init = 0;
+    MPI_Initialized(&mpi_init);
+    if (mpi_init) {
+      int rank = 0;
+      MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+      do_print = (rank == 0);
+    }
+#endif
+    if (do_print) {
+#if _PIC_FIELD_SOLVER_INPUT_UNIT_ == _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
+      printf("[ConstFieldBC] ECSIM input units: NORM (code units). Using normalization scales: lSI=%g m, uSI=%g m/s, mSI=%g kg\n",
+             cfg.units_lSI_m, cfg.units_uSI_mps, cfg.units_mSI_kg);
+#else
+      printf("[ConstFieldBC] ECSIM input units: SI. Background fields interpreted as SI (Tesla, V/m).\n");
+#endif
+    }
+  }
+}
 
 // Uniform setters used by SetIC()
 // NOTE: These use the same buffer/offset accessors that your legacy SetIC() uses.
@@ -409,47 +591,11 @@ long int PrepopulateDomain() {
 	  int ind[3]={iCell,jCell,kCell};
 	  double x[3];
 	  for (int idim=0; idim<3; idim++) x[idim]=xminBlock[idim]+(ind[idim]+0.5)*dx[idim];          // --- Uniform solar-wind-like plasma (no waves) ---
-          // The legacy test historically used a sinusoidal perturbation (fast-wave IC).
-          // For a constant-field BC regression with particles, we inject a uniform plasma:
-          //   rho = cfg.sw_rho0 * rho_conv
-          //   p   = cfg.sw_p0   * p_conv
-          //   u   = cfg.sw_u0
-          // Ions and electrons share the scalar pressure equally.
-          const double rho_conv = 0.0795774715459477;
-          const double p_conv   = 0.0795774715459477;
-
-          
-// Base (legacy) inputs: cfg.sw_rho0 and cfg.sw_p0 are interpreted as
-// "pre-conversion" values that are scaled by rho_conv/p_conv below.
-//
-// Physical-unit convenience options:
-//   -sw-ncm3 (cm^-3) provides number density; we convert to SI (m^-3) and
-//             compute mass density rho0 = n*(m_i+m_e) [kg/m^3] using the
-//             actual species masses from PIC::MolecularData.
-//   -sw-TK   (K) provides temperature; we compute scalar pressure from
-//             p0 = n*kB*(Ti+Te). With a single -sw-TK, we assume Ti=Te=T.
-//
-// If -sw-ncm3 is present, it overrides cfg.sw_rho0. If -sw-TK is present,
-// it overrides cfg.sw_p0 (using n inferred from the chosen rho0).
-const double kB_SI = 1.380649e-23; // J/K
-
-double rho0 = cfg.sw_rho0;
-if (cfg.sw_has_ncm3) {
-  const double n_m3 = cfg.sw_n_cm3 * 1.0e6; // cm^-3 -> m^-3
-  rho0 = n_m3 * (ionMass + electronMass);   // kg/m^3
-}
-
-// Number density inferred from chosen rho0 (SI m^-3).
-const double n_m3 = rho0 / (ionMass + electronMass);
-
-double p0 = cfg.sw_p0;
-if (cfg.sw_has_TK) {
-  // Assume Ti=Te=T unless specialized options are introduced later.
-  p0 = n_m3 * kB_SI * (2.0 * cfg.sw_TK); // Pa = N/m^2
-}
-
-double rho = rho0 * rho_conv;
-double p   = p0   * p_conv;
+          // The solar-wind IC is specified through cfg.sw_* and has already been
+          // converted into the ECSIM unit system by FinalizeConfigUnits(cfg).
+          // Here we use those values directly to build Maxwellian particle samples.
+          const double rho = cfg.sw_rho0;
+          const double p   = cfg.sw_p0;
 
           const double NumberDensity = rho/(ionMass+electronMass);
           const double rho_i = NumberDensity*ionMass;

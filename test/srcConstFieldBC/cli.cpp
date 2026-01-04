@@ -137,7 +137,43 @@ static void ApplyKeyValue(TestConfig& cfg, const std::string& keyRaw,
     if (need3(tmp)) {
       cfg.userE=true;
       cfg.E0[0]=tmp[0]; cfg.E0[1]=tmp[1]; cfg.E0[2]=tmp[2];
-      cfg.userE_explicit=true;
+      if (cfg.mode != TestConfig::Mode::WithParticles) cfg.mode = TestConfig::Mode::FieldOnlyE;
+    }
+    return;
+  }
+
+  // Background fields in *physical* units (SI). Values are converted to solver units in
+  // FinalizeConfigUnits(). These keys are available both on the CLI (as -BnT/-EmVm/-EVm)
+  // and in the input file (as BnT=..., EmVm=..., EVm=...).
+  if (key=="bnt" || key=="b-nt") {
+    double tmp[3];
+    if (need3(tmp)) {
+      cfg.userB_SI = true;
+      cfg.B0_SI_T[0] = tmp[0]*1.0e-9;
+      cfg.B0_SI_T[1] = tmp[1]*1.0e-9;
+      cfg.B0_SI_T[2] = tmp[2]*1.0e-9;
+      if (cfg.mode != TestConfig::Mode::WithParticles) cfg.mode = TestConfig::Mode::FieldOnlyB;
+    }
+    return;
+  }
+  if (key=="evm" || key=="e-vm") {
+    double tmp[3];
+    if (need3(tmp)) {
+      cfg.userE_SI = true;
+      cfg.E0_SI_Vm[0] = tmp[0];
+      cfg.E0_SI_Vm[1] = tmp[1];
+      cfg.E0_SI_Vm[2] = tmp[2];
+      if (cfg.mode != TestConfig::Mode::WithParticles) cfg.mode = TestConfig::Mode::FieldOnlyE;
+    }
+    return;
+  }
+  if (key=="emvm" || key=="e-mvm") {
+    double tmp[3];
+    if (need3(tmp)) {
+      cfg.userE_SI = true;
+      cfg.E0_SI_Vm[0] = tmp[0]*1.0e-3;
+      cfg.E0_SI_Vm[1] = tmp[1]*1.0e-3;
+      cfg.E0_SI_Vm[2] = tmp[2]*1.0e-3;
       if (cfg.mode != TestConfig::Mode::WithParticles) cfg.mode = TestConfig::Mode::FieldOnlyE;
     }
     return;
@@ -166,68 +202,28 @@ static void ApplyKeyValue(TestConfig& cfg, const std::string& keyRaw,
     if (nums.size()>=3) { cfg.mode = TestConfig::Mode::WithParticles; cfg.sw_u0[0]=nums[0]; cfg.sw_u0[1]=nums[1]; cfg.sw_u0[2]=nums[2]; }
     return;
   }
-
-if (key=="sw-u-ms" || key=="sw-ums") {
-  if (nums.size()>=3) {
-    cfg.mode = TestConfig::Mode::WithParticles;
-    cfg.sw_has_u_ms = true;
-    cfg.sw_u_ms[0]=nums[0]; cfg.sw_u_ms[1]=nums[1]; cfg.sw_u_ms[2]=nums[2];
-    // Store converted value (m/s) into sw_u0 immediately for downstream use.
-    cfg.sw_u0[0]=nums[0]; cfg.sw_u0[1]=nums[1]; cfg.sw_u0[2]=nums[2];
-  }
-  return;
-}
-if (key=="sw-u-kms" || key=="sw-ukms") {
-  if (nums.size()>=3) {
-    cfg.mode = TestConfig::Mode::WithParticles;
-    cfg.sw_has_u_kms = true;
-    cfg.sw_u_kms[0]=nums[0]; cfg.sw_u_kms[1]=nums[1]; cfg.sw_u_kms[2]=nums[2];
-    // Convert km/s -> m/s and store into sw_u0.
-    cfg.sw_u0[0]=nums[0]*1.0e3; cfg.sw_u0[1]=nums[1]*1.0e3; cfg.sw_u0[2]=nums[2]*1.0e3;
-  }
-  return;
-}
-
-// Solar-wind E options
-if (key=="sw-evxb" || key=="sw-exb" || key=="evxb") {
-  if (ToBool(nums,strs,true)) {
-    cfg.mode = TestConfig::Mode::WithParticles;
-    cfg.sw_use_EvXB = true;
-  }
-  return;
-}
-if (key=="sw-evm") {
-  if (nums.size()>=3) {
-    cfg.mode = TestConfig::Mode::WithParticles;
-    cfg.sw_has_EVm = true;
-    cfg.sw_EVm[0]=nums[0]; cfg.sw_EVm[1]=nums[1]; cfg.sw_EVm[2]=nums[2];
-
-    cfg.userE = true;
-    cfg.userE_explicit = true;
-    cfg.E0[0]=nums[0]; cfg.E0[1]=nums[1]; cfg.E0[2]=nums[2]; // V/m
-  }
-  return;
-}
-if (key=="sw-emvm") {
-  if (nums.size()>=3) {
-    cfg.mode = TestConfig::Mode::WithParticles;
-    cfg.sw_has_EmVm = true;
-    cfg.sw_EmVm[0]=nums[0]; cfg.sw_EmVm[1]=nums[1]; cfg.sw_EmVm[2]=nums[2];
-
-    cfg.userE = true;
-    cfg.userE_explicit = true;
-    // Convert mV/m -> V/m
-    cfg.E0[0]=nums[0]*1.0e-3; cfg.E0[1]=nums[1]*1.0e-3; cfg.E0[2]=nums[2]*1.0e-3;
-  }
-  return;
-}
   if (key=="sw-no-round" || key=="sw-noround") {
     // sw-no-round=1 disables rounding
     if (ToBool(nums,strs,true)) cfg.sw_use_rounding = false;
     return;
   }
 
-  // Physical inputs
+  // Units normalization scales used when converting SI inputs to normalized/code units.
+  // These are ONLY used when the ECSIM build expects normalized units, but can be set in any build.
+  if (key=="units-lm" || key=="units-l" || key=="units-length-m") {
+    if (!nums.empty() && nums[0]>0.0) { cfg.units_user_set=true; cfg.units_lSI_m=nums[0]; }
+    return;
+  }
+  if (key=="units-umps" || key=="units-u" || key=="units-speed-mps") {
+    if (!nums.empty() && nums[0]>0.0) { cfg.units_user_set=true; cfg.units_uSI_mps=nums[0]; }
+    return;
+  }
+  if (key=="units-mkg" || key=="units-m" || key=="units-mass-kg") {
+    if (!nums.empty() && nums[0]>0.0) { cfg.units_user_set=true; cfg.units_mSI_kg=nums[0]; }
+    return;
+  }
+
+  // Physical solar-wind inputs (SI). These are converted to solver units in FinalizeConfigUnits().
   if (key=="sw-ncm3" || key=="sw-n-cm3") {
     if (!nums.empty()) { cfg.mode = TestConfig::Mode::WithParticles; cfg.sw_has_ncm3=true; cfg.sw_n_cm3=nums[0]; }
     return;
@@ -241,11 +237,49 @@ if (key=="sw-emvm") {
       cfg.mode = TestConfig::Mode::WithParticles;
       cfg.sw_has_BnT=true;
       cfg.sw_BnT[0]=nums[0]; cfg.sw_BnT[1]=nums[1]; cfg.sw_BnT[2]=nums[2];
-      // Convert nT -> Tesla and apply as background B
-      cfg.userB = true;
-      cfg.B0[0] = nums[0]*1.0e-9;
-      cfg.B0[1] = nums[1]*1.0e-9;
-      cfg.B0[2] = nums[2]*1.0e-9;
+      // Also treat as background-field specification in SI.
+      cfg.userB_SI=true;
+      cfg.B0_SI_T[0]=nums[0]*1.0e-9; cfg.B0_SI_T[1]=nums[1]*1.0e-9; cfg.B0_SI_T[2]=nums[2]*1.0e-9;
+    }
+    return;
+  }
+  if (key=="sw-u-kms" || key=="sw-ukms") {
+    if (nums.size()>=3) {
+      cfg.mode = TestConfig::Mode::WithParticles;
+      cfg.sw_has_u_kms=true;
+      cfg.sw_u_kms[0]=nums[0]; cfg.sw_u_kms[1]=nums[1]; cfg.sw_u_kms[2]=nums[2];
+    }
+    return;
+  }
+  if (key=="sw-u-mps" || key=="sw-umps") {
+    if (nums.size()>=3) {
+      cfg.mode = TestConfig::Mode::WithParticles;
+      cfg.sw_has_u_mps=true;
+      cfg.sw_u_mps[0]=nums[0]; cfg.sw_u_mps[1]=nums[1]; cfg.sw_u_mps[2]=nums[2];
+    }
+    return;
+  }
+  if (key=="sw-evxb") {
+    cfg.mode = TestConfig::Mode::WithParticles;
+    cfg.sw_evxb = ToBool(nums,strs,true) ? 1 : 0;
+    return;
+  }
+  if (key=="sw-emvm") {
+    if (nums.size()>=3) {
+      cfg.mode = TestConfig::Mode::WithParticles;
+      cfg.sw_has_EmVm=true;
+      cfg.sw_E_mVm[0]=nums[0]; cfg.sw_E_mVm[1]=nums[1]; cfg.sw_E_mVm[2]=nums[2];
+      // If an explicit E is provided, it should take precedence over E=-u×B.
+      cfg.sw_evxb = 0;
+    }
+    return;
+  }
+  if (key=="sw-evm") {
+    if (nums.size()>=3) {
+      cfg.mode = TestConfig::Mode::WithParticles;
+      cfg.sw_has_EVm=true;
+      cfg.sw_E_Vm[0]=nums[0]; cfg.sw_E_Vm[1]=nums[1]; cfg.sw_E_Vm[2]=nums[2];
+      cfg.sw_evxb = 0;
     }
     return;
   }
@@ -253,7 +287,6 @@ if (key=="sw-emvm") {
   // Particle count target
   if (key=="ppc" || key=="target-ppc") {
     if (!nums.empty() && nums[0]>0.0) {
-      cfg.mode = TestConfig::Mode::WithParticles;
       cfg.target_ppc = nums[0];
       cfg.user_target_ppc = true;
     }
@@ -262,6 +295,7 @@ if (key=="sw-emvm") {
 
   // Unknown: ignore but warn (only rank 0 later; here we don't have MPI)
   std::fprintf(stderr,"[ConstFieldBC input] Warning: unknown key '%s'\n", keyRaw.c_str());
+  exit(__LINE__,__FILE__,"Unknown option");
 }
 
 static void ApplyInputFile(TestConfig& cfg, const std::string& filename) {
@@ -356,22 +390,11 @@ void PrintHelpAndExit(const char* prog) {
     "      Background scalar pressure parameter (driver code units).\n"
     "  -sw-u  ux uy uz\n"
     "      Bulk flow velocity (driver code units).\n"
-    "  -sw-u-ms  ux uy uz\n"
-    "      Bulk flow velocity in m/s (stored internally as sw_u0).\n"
-    "  -sw-u-kms ux uy uz\n"
-    "      Bulk flow velocity in km/s (converted to m/s internally).\n"
     "  -ppc N\n"
     "      Target macro-particles per cell per species for the uniform IC (default 100).\n"
     "      The code sets a global particle weight so initial injection produces ~N ppc.\n"
     "  -sw-no-round\n"
     "      Disable stochastic rounding of particles-per-cell.\n"
-    "  -sw-EvXB\n"
-    "      Compute the convective electric field E = u x B (using current sw-u and background B).\n"
-    "      Ignored if E is explicitly set (-E, -sw-EVm, -sw-EmVm).\n"
-    "  -sw-EVm  Ex Ey Ez\n"
-    "      Set uniform background E in V/m (applied as -E).\n"
-    "  -sw-EmVm Ex Ey Ez\n"
-    "      Set uniform background E in mV/m (converted to V/m; applied as -E).\n"
     "\n"
     "Solar-wind plasma IC (physical inputs):\n"
     "  -sw-ncm3 N\n"
@@ -388,13 +411,13 @@ void PrintHelpAndExit(const char* prog) {
     "    %s -no-particles -B 0 5e-9 0\n"
     "\n"
     "  Solar wind (physical units) + constant B, ~100 ppc/spec:\n"
-    "    %s -particles -sw-ncm3 5 -sw-TK 1e5 -sw-BnT 0 5 0 -sw-u-kms 400 0 0 -sw-EvXB -ppc 100\n"
+    "    %s -particles -sw-ncm3 5 -sw-TK 1e5 -sw-BnT 0 5 0 -sw-u 0.05 0 0 -ppc 100\n"
     "\n"
     "  Same, but driven by an input file (CLI overrides):\n"
     "    %s -i sw.in -ppc 200\n"
     "\n"
     "  Long box centered at origin:\n"
-    "    %s -particles -L 128 16 16 -sw-ncm3 5 -sw-TK 1e5 -sw-BnT 0 5 0 -sw-u-kms 400 0 0 -sw-EvXB -ppc 100\n"
+    "    %s -particles -L 128 16 16 -sw-ncm3 5 -sw-TK 1e5 -sw-BnT 0 5 0 -ppc 100\n"
     "\n",
     prog, prog, prog, prog, prog);
   std::exit(0);
@@ -504,80 +527,59 @@ void ConfigureTestFromArgs(TestConfig& cfg,int argc, char** argv) {
     if (a=="-sw-u") {
       cfg.mode = TestConfig::Mode::WithParticles;
       if (!TryRead3(i, argc, argv, cfg.sw_u0)) {
-        std::printf("-sw-u requires three values: ux uy uz"); 
+        std::printf("-sw-u requires three values: ux uy uz\n");
       }
       continue;
     }
-
-if (a=="-sw-u-ms") {
-  cfg.mode = TestConfig::Mode::WithParticles;
-  double u[3]={0.0,0.0,0.0};
-  if (!TryRead3(i, argc, argv, u)) {
-    std::printf("-sw-u-ms requires three values: ux uy uz (m/s)"); 
-  } else {
-    cfg.sw_has_u_ms = true;
-    cfg.sw_u_ms[0]=u[0]; cfg.sw_u_ms[1]=u[1]; cfg.sw_u_ms[2]=u[2];
-    cfg.sw_u0[0]=u[0]; cfg.sw_u0[1]=u[1]; cfg.sw_u0[2]=u[2];
-  }
-  continue;
-}
-if (a=="-sw-u-kms") {
-  cfg.mode = TestConfig::Mode::WithParticles;
-  double u[3]={0.0,0.0,0.0};
-  if (!TryRead3(i, argc, argv, u)) {
-    std::printf("-sw-u-kms requires three values: ux uy uz (km/s)"); 
-  } else {
-    cfg.sw_has_u_kms = true;
-    cfg.sw_u_kms[0]=u[0]; cfg.sw_u_kms[1]=u[1]; cfg.sw_u_kms[2]=u[2];
-    cfg.sw_u0[0]=u[0]*1.0e3; cfg.sw_u0[1]=u[1]*1.0e3; cfg.sw_u0[2]=u[2]*1.0e3;
-  }
-  continue;
-}
-
-// Solar-wind E options
-if (a=="-sw-EvXB" || a=="-sw-ExB") {
-  cfg.mode = TestConfig::Mode::WithParticles;
-  cfg.sw_use_EvXB = true;
-  continue;
-}
-if (a=="-sw-EVm") {
-  cfg.mode = TestConfig::Mode::WithParticles;
-  double e[3]={0.0,0.0,0.0};
-  if (!TryRead3(i, argc, argv, e)) {
-    std::printf("-sw-EVm requires three values: Ex Ey Ez (V/m)"); 
-  } else {
-    cfg.sw_has_EVm = true;
-    cfg.sw_EVm[0]=e[0]; cfg.sw_EVm[1]=e[1]; cfg.sw_EVm[2]=e[2];
-    cfg.userE = true;
-    cfg.userE_explicit = true;
-    cfg.E0[0]=e[0]; cfg.E0[1]=e[1]; cfg.E0[2]=e[2];
-  }
-  continue;
-}
-if (a=="-sw-EmVm") {
-  cfg.mode = TestConfig::Mode::WithParticles;
-  double e[3]={0.0,0.0,0.0};
-  if (!TryRead3(i, argc, argv, e)) {
-    std::printf("-sw-EmVm requires three values: Ex Ey Ez (mV/m)"); 
-  } else {
-    cfg.sw_has_EmVm = true;
-    cfg.sw_EmVm[0]=e[0]; cfg.sw_EmVm[1]=e[1]; cfg.sw_EmVm[2]=e[2];
-    cfg.userE = true;
-    cfg.userE_explicit = true;
-    cfg.E0[0]=e[0]*1.0e-3; cfg.E0[1]=e[1]*1.0e-3; cfg.E0[2]=e[2]*1.0e-3;
-  }
-  continue;
-}
     if (a=="-sw-no-round") {
       cfg.sw_use_rounding = false;
+      continue;
+    }
+
+    // ---- Unit normalization scales (SI) for converting physical inputs -> solver units ----
+    // Accept either "-units-lm V" or "-units-lm=V" (similarly for -units-umps / -units-mkg).
+    auto ParseDoubleAfterEqOrNext = [&](const std::string& opt, double& outv)->bool {
+      if (a.rfind(opt+"=",0)==0) {
+        const char* s = a.c_str() + (opt.size()+1);
+        char* end=nullptr;
+        outv = std::strtod(s,&end);
+        return end!=s;
+      }
+      if (a==opt) {
+        if (i+1>=argc) return false;
+        const char* s = argv[++i];
+        char* end=nullptr;
+        outv = std::strtod(s,&end);
+        return end!=s;
+      }
+      return false;
+    };
+
+    if (a=="-units-lm" || a.rfind("-units-lm=",0)==0) {
+      double v;
+      if (!ParseDoubleAfterEqOrNext("-units-lm", v) || v<=0.0) {
+        std::printf("-units-lm requires a positive value in meters\n");
+      } else { cfg.units_user_set=true; cfg.units_lSI_m=v; }
+      continue;
+    }
+    if (a=="-units-umps" || a.rfind("-units-umps=",0)==0) {
+      double v;
+      if (!ParseDoubleAfterEqOrNext("-units-umps", v) || v<=0.0) {
+        std::printf("-units-umps requires a positive value in m/s\n");
+      } else { cfg.units_user_set=true; cfg.units_uSI_mps=v; }
+      continue;
+    }
+    if (a=="-units-mkg" || a.rfind("-units-mkg=",0)==0) {
+      double v;
+      if (!ParseDoubleAfterEqOrNext("-units-mkg", v) || v<=0.0) {
+        std::printf("-units-mkg requires a positive value in kg\n");
+      } else { cfg.units_user_set=true; cfg.units_mSI_kg=v; }
       continue;
     }
 
     if (a=="-ppc" || a.rfind("-ppc=",0)==0) {
       // Target macro-particles per cell (per species) for the uniform IC.
       // Accept "-ppc N" or "-ppc=N".
-      cfg.mode = TestConfig::Mode::WithParticles;
-
       const char* s = nullptr;
       if (a=="-ppc") {
         if (i+1>=argc) { std::printf("-ppc requires a value\n"); continue; }
@@ -613,9 +615,7 @@ if (a=="-sw-EmVm") {
       continue;
     }
     if (a=="-sw-BnT") {
-      // Background magnetic field in nT. Converted to Tesla and stored in cfg.B0.
-      // This implies particles are enabled (solar-wind convenience).
-      cfg.mode = TestConfig::Mode::WithParticles;
+      // Background magnetic field in nT (physical). Stored as SI and converted later.
       cfg.sw_has_BnT = true;
 
       double bnT[3] = {0.0,0.0,0.0};
@@ -623,15 +623,64 @@ if (a=="-sw-EmVm") {
       if (!ok) { bnT[0]=0.0; bnT[1]=5.0; bnT[2]=0.0; } // default 5 nT along +y
       cfg.sw_BnT[0]=bnT[0]; cfg.sw_BnT[1]=bnT[1]; cfg.sw_BnT[2]=bnT[2];
 
-      // Convert nT -> Tesla. NOTE: assumes -B uses Tesla-consistent units in this test.
-      cfg.userB = true;
-      cfg.B0[0] = bnT[0]*1.0e-9;
-      cfg.B0[1] = bnT[1]*1.0e-9;
-      cfg.B0[2] = bnT[2]*1.0e-9;
+      // Also treat as a background-field specification in SI (Tesla).
+      cfg.userB_SI = true;
+      cfg.B0_SI_T[0] = bnT[0]*1.0e-9;
+      cfg.B0_SI_T[1] = bnT[1]*1.0e-9;
+      cfg.B0_SI_T[2] = bnT[2]*1.0e-9;
 
       continue;
     }
 
+    if (a=="-sw-u-kms" || a=="-sw-ukms") {
+      cfg.mode = TestConfig::Mode::WithParticles;
+      cfg.sw_has_u_kms = true;
+      if (!TryRead3(i, argc, argv, cfg.sw_u_kms)) {
+        std::printf("-sw-u-kms requires three values: ux uy uz [km/s]\n");
+      }
+      continue;
+    }
+
+    if (a=="-sw-u-mps" || a=="-sw-umps") {
+      cfg.mode = TestConfig::Mode::WithParticles;
+      cfg.sw_has_u_mps = true;
+      if (!TryRead3(i, argc, argv, cfg.sw_u_mps)) {
+        std::printf("-sw-u-mps requires three values: ux uy uz [m/s]\n");
+      }
+      continue;
+    }
+
+    if (a.rfind("-sw-evxb",0)==0) {
+      // Enable/disable convective electric field: E = -u x B (physical SI, then converted).
+      int val = 1;
+      if (!ParseIntAfterEqOrNext(i, argc, argv, "-sw-evxb", val)) {
+        std::printf("Invalid -sw-evxb value; using default 1\n");
+        val = 1;
+      }
+      cfg.mode = TestConfig::Mode::WithParticles;
+      cfg.sw_evxb = (val!=0) ? 1 : 0;
+      continue;
+    }
+
+    if (a=="-sw-EmVm") {
+      cfg.mode = TestConfig::Mode::WithParticles;
+      cfg.sw_has_EmVm = true;
+      if (!TryRead3(i, argc, argv, cfg.sw_E_mVm)) {
+        std::printf("-sw-EmVm requires three values: Ex Ey Ez [mV/m]\n");
+      }
+      cfg.sw_evxb = 0; // explicit E overrides E=-u×B
+      continue;
+    }
+
+    if (a=="-sw-EVm") {
+      cfg.mode = TestConfig::Mode::WithParticles;
+      cfg.sw_has_EVm = true;
+      if (!TryRead3(i, argc, argv, cfg.sw_E_Vm)) {
+        std::printf("-sw-EVm requires three values: Ex Ey Ez [V/m]\n");
+      }
+      cfg.sw_evxb = 0;
+      continue;
+    }
 
 
 
@@ -647,6 +696,36 @@ if (a=="-L") {
   continue;
 }
 
+
+    // ---- Background fields in *physical* units (SI) ----
+    // These do NOT force particle mode; they are convenience setters.
+    if (a=="-BnT") {
+      double bnT[3] = {0.0,0.0,0.0};
+      bool ok = TryRead3(i, argc, argv, bnT);
+      if (!ok) { bnT[0]=0.0; bnT[1]=5.0; bnT[2]=0.0; }
+      cfg.userB_SI = true;
+      cfg.B0_SI_T[0]=bnT[0]*1.0e-9; cfg.B0_SI_T[1]=bnT[1]*1.0e-9; cfg.B0_SI_T[2]=bnT[2]*1.0e-9;
+      if (cfg.mode != TestConfig::Mode::WithParticles) cfg.mode = TestConfig::Mode::FieldOnlyB;
+      continue;
+    }
+    if (a=="-EVm") {
+      double Evm[3] = {0.0,0.0,0.0};
+      bool ok = TryRead3(i, argc, argv, Evm);
+      if (!ok) { Evm[0]=1.0; Evm[1]=0.0; Evm[2]=0.0; }
+      cfg.userE_SI = true;
+      cfg.E0_SI_Vm[0]=Evm[0]; cfg.E0_SI_Vm[1]=Evm[1]; cfg.E0_SI_Vm[2]=Evm[2];
+      if (cfg.mode != TestConfig::Mode::WithParticles) cfg.mode = TestConfig::Mode::FieldOnlyE;
+      continue;
+    }
+    if (a=="-EmVm") {
+      double EmVm[3] = {0.0,0.0,0.0};
+      bool ok = TryRead3(i, argc, argv, EmVm);
+      if (!ok) { EmVm[0]=0.0; EmVm[1]=0.0; EmVm[2]=0.0; }
+      cfg.userE_SI = true;
+      cfg.E0_SI_Vm[0]=EmVm[0]*1.0e-3; cfg.E0_SI_Vm[1]=EmVm[1]*1.0e-3; cfg.E0_SI_Vm[2]=EmVm[2]*1.0e-3;
+      if (cfg.mode != TestConfig::Mode::WithParticles) cfg.mode = TestConfig::Mode::FieldOnlyE;
+      continue;
+    }
     // ---- Background fields ----
     // In particle mode, -B/-E set background fields but DO NOT switch to field-only.
     // In non-particle modes, -B/-E imply field-only initialization.
@@ -659,7 +738,6 @@ if (a=="-L") {
     if (a=="-E") {
       cfg.userE = TryRead3(i, argc, argv, cfg.E0);
       if (!cfg.userE) { cfg.E0[0]=1.0; cfg.E0[1]=0.0; cfg.E0[2]=0.0; }
-      cfg.userE_explicit = true;
       if (cfg.mode != TestConfig::Mode::WithParticles) cfg.mode = TestConfig::Mode::FieldOnlyE;
       continue;
     }
@@ -680,6 +758,7 @@ if (a=="-h" || a=="--help") { PrintHelpAndExit(argv[0]); }
 
 
     std::printf("Unknown option: %s (use -h for help)\n", argv[i]);
+    exit(__LINE__,__FILE__,"Unknown option");
   }
 }
 
