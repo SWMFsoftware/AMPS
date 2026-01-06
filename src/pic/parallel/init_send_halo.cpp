@@ -1,3 +1,251 @@
+// =====================================================================================
+// init_send_halo.cpp
+//
+// SEND-SIDE HALO DESCRIPTOR CONSTRUCTION (DOMAIN-BOUNDARY-LAYER MPI EXCHANGE)
+// ==========================================================================
+//
+// This file builds the **SEND-side** halo exchange descriptors used by MPI halo
+// synchronization routines (e.g., SyncNodeHalo_DomainBoundaryLayer).
+//
+// The core product is a `PIC::Parallel::cHalo` object, which stores a list of
+// per-destination send records (`cHaloEntry`) describing:
+//
+//   • WHICH owned AMR block to send (`startNode`)
+//   • TO WHICH neighbor rank (`ToThread`)
+//   • WHICH SUBSET of the block to send, as index ranges for both:
+//       - cell-centered nodes  (i_cell_min/max)
+//       - corner nodes         (i_corner_min/max)
+//
+// In addition, `cHalo` carries two “validity / configuration” fields:
+//
+//   • `nMeshModificationCounter`   : snapshot of `mesh->nMeshModificationCounter`
+//   • `communicate_entire_block`   : whether the halo list was built in full-block mode
+//                                   or in NG-thick “halo slab” mode
+//
+// Downstream exchange code uses these fields to decide whether the cached halo is still
+// valid for the current mesh topology and requested communication policy:
+//
+//   if (SendHalo.nMeshModificationCounter != mesh->nMeshModificationCounter ||
+//       SendHalo.communicate_entire_block != manager.communicate_entire_block) {
+//     InitSendHaloLayer(SendHalo, manager.communicate_entire_block);
+//   }
+//
+// -----------------------------------------------------------------------------
+// 1. WHY WE NEED A *SEND-SIDE* HALO LIST
+// -----------------------------------------------------------------------------
+// In AMPS “Domain Boundary Layer” exchange mode, many implementations maintain lists
+// like `mesh->DomainBoundaryLayerNodesList[To]`. In practice, those lists often have
+// **receive-side semantics**:
+//
+//   DomainBoundaryLayerNodesList[To] on rank R typically contains ghost blocks
+//   owned by rank To that exist locally on rank R.
+//
+// Such lists are excellent for answering:
+//   “Which ghost blocks (owned by To) do I have locally?”
+//
+// But they do *not* directly answer the SEND question:
+//   “Which of MY owned blocks must I send to To?”
+//
+// This file solves the SEND-side problem directly by scanning blocks owned by the
+// current rank and discovering which neighbor ranks touch them across faces/edges/corners.
+// The resulting `SendHalo.list` is therefore the authoritative source for
+// “owner → ghost” propagation.
+//
+// -----------------------------------------------------------------------------
+// 2. WHAT A cHaloEntry MEANS (SEMANTICS)
+// -----------------------------------------------------------------------------
+// Each `cHaloEntry` represents a single communication relation:
+//
+//   (startNode owned by ThisThread)  --->  (ghost copy on rank ToThread)
+//
+// with the following constraints:
+//
+//   - `startNode->Thread == ThisThread`
+//   - `ToThread != ThisThread`
+//   - `mesh->ParallelSendRecvMap[ThisThread][ToThread] == true`
+//
+// Index ranges are **inclusive**:
+//
+//   Cell-centered ranges:
+//     x: 0.._BLOCK_CELLS_X_-1, y: 0.._BLOCK_CELLS_Y_-1, z: 0.._BLOCK_CELLS_Z_-1
+//
+//   Corner ranges:
+//     x: 0.._BLOCK_CELLS_X_,   y: 0.._BLOCK_CELLS_Y_,   z: 0.._BLOCK_CELLS_Z_
+//
+// Corner ranges are derived from cell ranges using the conventional “+1” rule:
+//
+//   i_corner_min[d] = i_cell_min[d]
+//   i_corner_max[d] = i_cell_max[d] + 1
+//
+// with clamping to valid bounds, so that ranges remain safe even at domain extremes.
+//
+// For lower-dimensional builds (1D/2D), inactive dimensions are collapsed to 0..0.
+//
+// -----------------------------------------------------------------------------
+// 3. DISPATCHER: InitSendHaloLayer()
+// -----------------------------------------------------------------------------
+// `InitSendHaloLayer(cHalo&, bool)` is a dispatcher that selects a dimension-specific
+// implementation at compile time:
+//
+//   _MESH_DIMENSION_ == 1  → InitSendHaloLayer_1D
+//   _MESH_DIMENSION_ == 2  → InitSendHaloLayer_2D
+//   _MESH_DIMENSION_ == 3  → InitSendHaloLayer_3D
+//
+// The dispatcher also stores the requested policy into `SendHalo.communicate_entire_block`
+// before calling the dimension-specific builder, so downstream code can detect policy
+// mismatches and force a rebuild.
+//
+// -----------------------------------------------------------------------------
+// 4. HALO THICKNESS POLICY (communicate_entire_block vs NG “slabs”)
+// -----------------------------------------------------------------------------
+// The subset of nodes to be communicated can be built in one of two modes:
+//
+//   A) communicate_entire_block == true
+//      → send the entire owned block to each neighbor rank that touches it.
+//      → simplest and most robust, but potentially large messages.
+//
+//   B) communicate_entire_block == false (default)
+//      → send only an NG-thick boundary-adjacent subset (“halo slab”) of the block.
+//      → NG is determined as the maximum ghost-cell depth in active dimensions:
+//
+//         1D: NG = _GHOST_CELLS_X_
+//         2D: NG = max(_GHOST_CELLS_X_, _GHOST_CELLS_Y_)
+//         3D: NG = max(_GHOST_CELLS_X_, _GHOST_CELLS_Y_, _GHOST_CELLS_Z_)
+//
+//      → per-dimension helper `apply_side_slab()` computes the inclusive index range
+//        for a given side sign (-1 min-side, +1 max-side, 0 interior/full).
+//
+// IMPORTANT REQUIREMENT:
+//   The computed slab thickness NG must be consistent with the actual stencil reach
+//   used by the solver. If any stencil reads ghost nodes deeper than NG, the halo will
+//   be incomplete unless NG is increased or the range logic is expanded.
+//
+// -----------------------------------------------------------------------------
+// 5. CORE ALGORITHM (HOW THE SEND LIST IS BUILT)
+// -----------------------------------------------------------------------------
+// For each block owned by the current rank (`ThisThread`), the builder:
+//
+//   1) Iterates over neighbor relations (faces, corners, and in 3D also edges)
+//      using AMR neighbor accessors:
+//
+//        node->neibNodeFace(...)
+//        node->neibNodeCorner(...)
+//        node->neibNodeEdge(...)
+//
+//   2) For each neighbor that exists and is owned by another rank (`ToThread`),
+//      it computes a conservative cell-range box based on which directions are offset.
+//
+//      - Face neighbor:  NG-thick in the normal direction, full extent in tangential dirs
+//      - Corner neighbor: NG-thick in all offset directions
+//      - Edge neighbor (3D): NG-thick in the two offset directions, full extent along edge
+//
+//   3) The computed cell-range is converted to a corner-range (see Section 2).
+//
+//   4) The routine ensures uniqueness by storing at most ONE entry per
+//      (startNode, ToThread). If the same relation is discovered multiple times
+//      (e.g., due to face segmentation indexing, or because a neighbor touches
+//      at both face and corner), the ranges are **merged** using a union operation:
+//
+//        min = min(oldMin, newMin)
+//        max = max(oldMax, newMax)
+//
+// This yields a single conservative send-range per destination rank.
+//
+// -----------------------------------------------------------------------------
+// 6. NEIGHBOR ENUMERATION DETAILS (FACE/EDGE/CORNER INDEXING)
+// -----------------------------------------------------------------------------
+// Face neighbor indexing varies by dimension and AMR implementation. This file assumes
+// a common convention in which face indices include a segmentation factor:
+//
+//   nFaces = 2*D
+//   nSeg   = 2^(D-1)
+//   nFaceIdx = nFaces * nSeg
+//
+// and the “logical face direction” is recovered as:
+//
+//   faceDir = iface / nSeg
+//
+// 2D:
+//   nFaces=4, nSeg=2, nFaceIdx=8
+//   faceDir: 0=x-,1=x+,2=y-,3=y+
+//
+// 3D:
+//   nFaces=6, nSeg=4, nFaceIdx=24
+//   faceDir: 0=x-,1=x+,2=y-,3=y+,4=z-,5=z+
+//
+// Corner neighbors use the standard bit encoding:
+//   2D: 4 corners, bits select x/y min/max
+//   3D: 8 corners, bits select x/y/z min/max
+//
+// 3D edges:
+//   The code iterates `12 * 2` edge indices (12 edges, 2 segments each).
+//   It uses a fixed `EdgeIncrement[12][3]` mapping to infer the sign vector
+//   (which dimensions are on min/max side, which dimension is along-edge).
+//
+// REQUIREMENT / ASSUMPTION:
+//   The above indexing and segmentation counts must match the actual behavior of
+//   `neibNodeFace/neibNodeEdge/neibNodeCorner` in your mesh implementation.
+//   If your AMR uses a different face segmentation convention, adjust `nSeg` and/or
+//   how `faceDir` is computed.
+//
+// -----------------------------------------------------------------------------
+// 7. FILTERS, VALIDATION, AND DEFENSIVE CLEANUP
+// -----------------------------------------------------------------------------
+// The builders include defensive checks to avoid producing invalid entries:
+//
+//   - skip nodes without allocated blocks (`node->block == nullptr`)
+//   - skip blocks not used in calculation (`IsUsedInCalculationFlag == false`)
+//   - skip self-thread neighbors (ToThread == ThisThread)
+//   - skip non-partner ranks (ParallelSendRecvMap == false)
+//
+// After construction, the list is pruned with `std::remove_if` to remove:
+//   - null startNode pointers
+//   - invalid ToThread indices
+//   - degenerate index ranges (max < min)
+//
+// At function exit, `SendHalo.nMeshModificationCounter` is set to
+// `mesh->nMeshModificationCounter` to “stamp” the halo with the current mesh topology.
+//
+// -----------------------------------------------------------------------------
+// 8. TEST STATUS NOTES (IMPORTANT)
+// -----------------------------------------------------------------------------
+// The current 1D and 2D implementations contain explicit `exit(...)` statements:
+//
+//   exit(__LINE__,__FILE__,"error: the function was never tested or ran ...");
+//
+// This indicates those code paths were not validated at the time of writing.
+// 3D does not contain that guard and is intended to be the primary active path.
+// Before enabling 1D/2D, remove the exits and validate neighbor indexing and range logic.
+//
+// -----------------------------------------------------------------------------
+// 9. USE CASES
+// -----------------------------------------------------------------------------
+// This file is used whenever you need a reliable SEND-side description of halo exchanges,
+// for example:
+//
+//   - Field solver halo propagation (E, B, potentials) stored in node associated buffers
+//     and synchronized via a generic MPI pack/unpack routine.
+//   - Replacing or augmenting mesh->ParallelBlockDataExchange(...) when that routine
+//     misses some halo points due to incomplete send masks or ambiguous boundary lists.
+//   - Debugging halo correctness by switching to communicate_entire_block=true.
+//   - Minimizing bandwidth by sending only NG-thick subsets once range logic is validated.
+//
+// -----------------------------------------------------------------------------
+// 10. NON-USE CASES
+// -----------------------------------------------------------------------------
+// This file only constructs *geometry descriptors* for owner→ghost propagation.
+// It does not perform any MPI itself, and it is not a reduction mechanism.
+// Quantities that require summation across ranks at shared boundary nodes should use
+// dedicated boundary-node reduction/exchange logic.
+//
+// -----------------------------------------------------------------------------
+// 11. IMPLEMENTATION STYLE REQUIREMENT
+// -----------------------------------------------------------------------------
+// Per project convention request, all helper logic is implemented as local lambdas
+// inside each function to keep functionality tightly scoped and avoid polluting
+// the broader namespace.
+//
+// =====================================================================================
 
 
 #include "../pic.h"
