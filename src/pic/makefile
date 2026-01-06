@@ -90,7 +90,10 @@ PICOBJ = pic.o \
 	ecsim/get_stencil.o \
 	ecsim/get_stencil_legacy_wrapper.o \
 	ecsim/domain_bc.o \
-	mesh/domain_boundary_bc_collectors.o
+	mesh/domain_boundary_bc_collectors.o \
+	parallel/halo_sync.o \
+	parallel/init_send_halo.o \
+	ecsim/halo_sync.o	
 
 	
 ifneq ($(BATL),nobatl)	
