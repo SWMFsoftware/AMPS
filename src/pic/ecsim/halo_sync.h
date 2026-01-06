@@ -30,17 +30,17 @@ namespace FieldSolver {
 namespace Electromagnetic {
 namespace ECSIM {
 
-// Electric field (corner nodes): sync Current and Half-step
-void SyncE();
+  // Electric field (corner nodes): sync Current and Half-step
+  void SyncE();
 
-// Magnetic field: pick ONE variant depending on where B is stored
-void SyncB();
+  // Magnetic field: pick ONE variant depending on where B is stored
+  void SyncB();
 
-// Current density J: halo propagation (replace)
-void SyncJ_Halo_DomainBoundaryLayer_CornerNodes_Replace();
+  // Current density J: halo propagation (replace)
+  void SyncJ(int tagBase=43000);
 
-// Mass matrix: halo propagation (replace); nDoublesMassMatrix defaults to 16 but can be overridden
-void SyncMassMatrix_Halo_DomainBoundaryLayer_CornerNodes_Replace(int nDoublesMassMatrix = 16);
+  // Mass matrix: halo propagation (replace); nDoublesMassMatrix defaults to 16 but can be overridden
+  void SyncMassMatrix(int tagBase=44000);
 
 } // namespace ECSIM
 } // namespace Electromagnetic
