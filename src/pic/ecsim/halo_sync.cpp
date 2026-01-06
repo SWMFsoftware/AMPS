@@ -33,6 +33,7 @@ void SyncE() {
         PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset + CurrentEOffset;
     m.nDoubles = 3;
     m.Op = eHaloOp::Replace;
+    m.communicate_entire_block = false; 
 
     // Unique tagBase for this exchange
     PIC::Parallel::SyncNodeHalo_DomainBoundaryLayer(m, /*tagBase=*/42000);
@@ -46,6 +47,7 @@ void SyncE() {
         PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset + OffsetE_HalfTimeStep;
     m.nDoubles = 3;
     m.Op = eHaloOp::Replace;
+    m.communicate_entire_block = false;
 
     PIC::Parallel::SyncNodeHalo_DomainBoundaryLayer(m, /*tagBase=*/42010);
   }
