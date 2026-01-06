@@ -453,6 +453,7 @@ void SetIC() {
   SetUniformCornerE(Z);
   SetUniformCenterB(Z);
 
+
   // Apply chosen mode
   switch (cfg.mode) {
     case TestConfig::Mode::FieldOnlyB:
@@ -475,7 +476,8 @@ void SetIC() {
       break;
   }
 
-  PIC::Mesh::mesh->ParallelBlockDataExchange();
+  PIC::FieldSolver::Electromagnetic::ECSIM::SyncE();
+  PIC::FieldSolver::Electromagnetic::ECSIM::SyncB();
 }
 
 void CleanParticles(){
