@@ -1,5 +1,5 @@
 // =====================================================================================
-// pic_field_solver_ecsim_halo_sync.cpp
+// halo_sync.cpp
 //
 // Implementation of ECSIM halo sync wrappers.
 // Requires:
@@ -63,15 +63,61 @@ void SyncB() {
     cNodeHaloSyncManager m;
     m.NodeType = eNodeType::Center;
     m.RelativeOffsetBytesFromAssociated =
-        PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset + CurrentBOffset; // adjust if needed
+        PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset 
+	+ PIC::FieldSolver::Electromagnetic::ECSIM::BxOffsetIndex * (int)sizeof(double);
+
     m.nDoubles = 3;
     m.Op = eHaloOp::Replace;
+    m.communicate_entire_block = false;
 
     PIC::Parallel::SyncNodeHalo_DomainBoundaryLayer(m, /*tagBase=*/42100);
   }
 }
 
+void SyncJ(bool communicate_entire_block) {
+  using PIC::Parallel::cNodeHaloSyncManager;
+  using PIC::Parallel::eNodeType;
+  using PIC::Parallel::eHaloOp;
 
+  PIC::Parallel::cNodeHaloSyncManager m;
+
+  // Corner-node data: base = Associated + ElectricField.RelativeOffset
+  // J is stored in the same EJ array as E time levels: indices 6..8.
+  m.NodeType = eNodeType::Corner;
+  m.Op       = eHaloOp::Add;
+  m.communicate_entire_block = false;
+
+  m.RelativeOffsetBytesFromAssociated =
+      PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset
+    + PIC::FieldSolver::Electromagnetic::ECSIM::JxOffsetIndex * (int)sizeof(double);
+
+  m.nDoubles = 3; // Jx,Jy,Jz contiguous (6..8)
+
+  PIC::Parallel::SyncNodeHalo_DomainBoundaryLayer(m, /*tagBase=*/31300);
+}
+
+void SyncMassMatrix(bool communicate_entire_block) {
+  using PIC::Parallel::cNodeHaloSyncManager;
+  using PIC::Parallel::eNodeType;
+  using PIC::Parallel::eHaloOp
+
+  PIC::Parallel::cNodeHaloSyncManager m;
+
+  // Corner-node MassMatrix coefficients are stored in owner corner’s EJ array
+  // starting at MassMatrixOffsetIndex. ECSIM allocates 243 doubles there.
+  m.NodeType = eNodeType::Corner;
+  m.Op       = eHaloOp::Add;
+  m.communicate_entire_block = false;
+
+  m.RelativeOffsetBytesFromAssociated =
+      PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset
+    + PIC::FieldSolver::Electromagnetic::ECSIM::MassMatrixOffsetIndex * (int)sizeof(double);
+
+  // From ECSIM init + pic.h: CornerMassMatrix[243]
+  m.nDoubles = 243;
+
+  PIC::Parallel::SyncNodeHalo_DomainBoundaryLayer(m, /*tagBase=*/31400);
+}
 
 } // namespace ECSIM
 } // namespace Electromagnetic
