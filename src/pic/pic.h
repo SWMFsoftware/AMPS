@@ -9782,5 +9782,6 @@ double SampleRhsScalar(const RhsEntry &sg);
 
 #include "mesh/domain_boundary_bc_collectors.h"
 #include "ecsim/domain_bc.h" 
-
+#include "ecsim/halo_sync.h" 
+#include "parallel/halo_sync.h"
 
