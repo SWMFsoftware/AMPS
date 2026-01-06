@@ -52,11 +52,19 @@ void SyncNodeHalo_DomainBoundaryLayer(const cNodeHaloSyncManager& manager,
 
   // ===========================================================================
   // 1) Ensure SendHalo is initialized for the current mesh topology
-  // ===========================================================================
-  if (SendHalo.nMeshModificationCounter != mesh->nMeshModificationCounter) {
-    // Rebuild SEND-side halo list (default communicate_entire_block=false)
-    InitSendHaloLayer(SendHalo, /*communicate_entire_block=*/false);
-    // InitSendHaloLayer sets SendHalo.nMeshModificationCounter at exit.
+  //   Rebuild if:
+  //     (A) mesh topology changed
+  //     (B) communicate_entire_block requested by manager differs from halo mode
+  // --------------------------------------------------------------------------
+  const bool meshChanged =
+      (SendHalo.nMeshModificationCounter != mesh->nMeshModificationCounter);
+
+  const bool modeChanged =
+      (SendHalo.communicate_entire_block != manager.communicate_entire_block);
+
+  if (meshChanged || modeChanged) {
+    // Build halo in the exact mode requested by manager
+    InitSendHaloLayer(SendHalo, manager.communicate_entire_block);
   }
 
   // Two tags per exchange: size + payload

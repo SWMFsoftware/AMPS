@@ -7,6 +7,9 @@ namespace Parallel {
 
 // Dispatcher
 void InitSendHaloLayer(cHalo& SendHalo, bool communicate_entire_block) {
+  // Store requested mode in halo (so downstream checks are consistent)
+  SendHalo.communicate_entire_block = communicate_entire_block;
+
 #if _MESH_DIMENSION_ == 1
   InitSendHaloLayer_1D(SendHalo, communicate_entire_block);
 #elif _MESH_DIMENSION_ == 2

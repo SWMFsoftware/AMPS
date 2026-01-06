@@ -45,6 +45,9 @@ struct cNodeHaloSyncManager {
   int RelativeOffsetBytesFromAssociated = 0;
   int nDoubles = 0;
   eHaloOp Op = eHaloOp::Replace;
+
+  // Request full-block communication instead of the limited halo slabs
+  bool communicate_entire_block = false;
 };
 
 // =====================================================================================
@@ -128,6 +131,7 @@ struct cHaloEntry {
 
 struct cHalo {
   int nMeshModificationCounter = -1;     // snapshot of mesh->nMeshModificationCounter
+  bool communicate_entire_block = false; // how the halo ranges were constructed
   std::vector<cHaloEntry> list;          // send descriptors
 
   inline void clear() {
