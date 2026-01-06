@@ -375,147 +375,133 @@ using RhsEntry =
  *   responsible for multiplying by s.coeff (or whatever coefficient
  *   field you use).
  */
-double SampleRhsScalar(const RhsEntry &s)
-{
-  using NK = RhsEntry::NodeKind;
-  using Q  = RhsEntry::Quantity;
+// NOTE: This must match the memory layout built in pic_field_solver_ecsim.cpp:
+//  - Corner-node E/J/M live in the ElectricField block at
+//      GetAssociatedDataBufferPointer() + PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset
+//    with CurrentEOffset selecting the active time level.
+//  - J components are stored in the same double array at J*OffsetIndex.
+//  - MassMatrix coefficients are stored in the same array starting at MassMatrixOffsetIndex.
+//  - Center-node B lives in MagneticField block at
+//      GetAssociatedDataBufferPointer() + PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset
+//    with CurrentBOffset selecting the active time level.
+//
+// IMPORTANT: This returns the *raw sampled scalar* (or M*E for Quantity::MassMatrix).
+// Coefficients/conversions must be carried in s.coeff (as set in get_stencil.cpp).
 
-  // ----------------------------------------------------
+double SampleRhsScalar(const PIC::FieldSolver::Electromagnetic::ECSIM::RhsEntry &s)
+{
+  using NK = PIC::FieldSolver::Electromagnetic::ECSIM::RhsEntry::NodeKind;
+  using Q  = PIC::FieldSolver::Electromagnetic::ECSIM::RhsEntry::Quantity;
+
+  // -------------------------
   // Corner-node samples
-  // ----------------------------------------------------
+  // -------------------------
   if (s.node_kind == NK::Corner) {
-    // If the entry says "Corner node" but we don't have a pointer, treat
-    // this as a no-op contribution.
     if (!s.corner) return 0.0;
 
-    // Base pointer to the corner-node data buffer.
-    char *buf = s.corner->GetAssociatedDataBufferPointer();
+    // Base of the corner-node ElectricField block (this is the canonical base used everywhere else)
+    char *base =
+      s.corner->GetAssociatedDataBufferPointer()
+      + PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+
+    // For E/J/M, the "current" time level begins at (base + CurrentEOffset).
+    // CurrentEOffset is 0 in your layout, but keep it explicit for correctness.
+    double *EJ = reinterpret_cast<double*>(base + PIC::FieldSolver::Electromagnetic::ECSIM::CurrentEOffset);
 
     switch (s.quantity) {
 
     case Q::E: {
-      // Electric field E at the *current* E time level.
-      //
-      // The electric field block is stored at
-      //   ElectricField.RelativeOffset
-      // and we add CurrentEOffset to select the active time level.
-      double *E = reinterpret_cast<double *>(
-          buf + CurrentEOffset); 
-
-      // Select component based on "component" index.
+      // E component at current E time level
       switch (s.component) {
-      case 0: return E[ExOffsetIndex];  // Ex
-      case 1: return E[EyOffsetIndex];  // Ey
-      case 2: return E[EzOffsetIndex];  // Ez
-      default:
-        // Unknown component → treat as zero contribution.
-        return 0.0;
+      case 0: return EJ[PIC::FieldSolver::Electromagnetic::ECSIM::ExOffsetIndex];
+      case 1: return EJ[PIC::FieldSolver::Electromagnetic::ECSIM::EyOffsetIndex];
+      case 2: return EJ[PIC::FieldSolver::Electromagnetic::ECSIM::EzOffsetIndex];
+      default: return 0.0;
       }
     }
 
     case Q::J: {
-      // Current density J at the *current* E time level.
-      //
-      // In this layout, J is stored in the same buffer as E, so we reuse
-      // the ElectricField.RelativeOffset + CurrentEOffset and use J*OffsetIndex.
-      double *J = reinterpret_cast<double *>(buf); 
-
+      // J components are stored in the SAME array as E time levels in your layout,
+      // with indices JxOffsetIndex/JyOffsetIndex/JzOffsetIndex (set to 6..8).
       switch (s.component) {
-      case 0: return J[JxOffsetIndex]; // Jx
-      case 1: return J[JyOffsetIndex]; // Jy
-      case 2: return J[JzOffsetIndex]; // Jz
-      default:
-        return 0.0;
+      case 0: return EJ[PIC::FieldSolver::Electromagnetic::ECSIM::JxOffsetIndex];
+      case 1: return EJ[PIC::FieldSolver::Electromagnetic::ECSIM::JyOffsetIndex];
+      case 2: return EJ[PIC::FieldSolver::Electromagnetic::ECSIM::JzOffsetIndex];
+      default: return 0.0;
       }
     }
 
     case Q::MassMatrix: {
-  // Mass-matrix contribution (one scalar dot-product term):
+      // Semantic entry encodes one dot-product tap:
+      //   return  M(owner)[aux_index] * E_q(neighbor)
       //
-      //   SampleRhsScalar() returns:   Mcoeff(aux_index) * E_component(neighbor)
-      //
-      // UpdateRhs() multiplies by s.coeff which must already contain
-      // the constant prefactor (-4*pi*dt*theta) (and, if desired, E_conv).
-      //
-      // Data ownership:
-      //   - E is sampled from the *neighbor* corner node (s.corner).
-      //   - Mcoeff is sampled from the *row owner* corner node stored in
-      //     s.mm_owner_corner.
-      //
-      if (s.mm_owner_corner == nullptr) return 0.0;
-      if (s.aux_index < 0) return 0.0;
+      //  - s.corner           : neighbor corner where E_q is sampled
+      //  - s.mm_owner_corner  : row corner (i,j,k) that owns the mass-matrix buffer
+      //  - s.aux_index        : scalar index into M row (MassMatrixOffsetIndex + aux_index)
+      //  - s.component        : q in {0,1,2} selecting E component
 
-      // Neighbor E component
-      double *E = (double*)(buf + CurrentEOffset);
+      if (!s.mm_owner_corner) return 0.0;
+      if ((int)s.aux_index < 0) return 0.0;
 
-      double Eval = 0.0;
+      // Sample E_q(neighbor) using the SAME base as E above
+      double Eq = 0.0;
       switch (s.component) {
-      case 0: Eval = E[ExOffsetIndex]; break;
-      case 1: Eval = E[EyOffsetIndex]; break;
-      case 2: Eval = E[EzOffsetIndex]; break;
+      case 0: Eq = EJ[PIC::FieldSolver::Electromagnetic::ECSIM::ExOffsetIndex]; break;
+      case 1: Eq = EJ[PIC::FieldSolver::Electromagnetic::ECSIM::EyOffsetIndex]; break;
+      case 2: Eq = EJ[PIC::FieldSolver::Electromagnetic::ECSIM::EzOffsetIndex]; break;
       default: return 0.0;
       }
 
-      // Row-owner mass-matrix coefficient
-      char *owner_buf = s.mm_owner_corner->GetAssociatedDataBufferPointer() +
-        PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+      // Owner mass-matrix coefficients live in the SAME ElectricField block on the OWNER corner node.
+      char *owner_base =
+        s.mm_owner_corner->GetAssociatedDataBufferPointer()
+        + PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
-      // MassMatrixOffsetIndex is in units of doubles (legacy convention).
-      double *M = (double*)owner_buf + MassMatrixOffsetIndex;
-      const double Mcoeff = M[s.aux_index];
+      double *owner_EJ = reinterpret_cast<double*>(owner_base + PIC::FieldSolver::Electromagnetic::ECSIM::CurrentEOffset);
 
-      return Mcoeff * Eval;
+      // MassMatrixOffsetIndex is an index in doubles (set to 9 in your layout).
+      const int mm0 = PIC::FieldSolver::Electromagnetic::ECSIM::MassMatrixOffsetIndex;
+      const int idx = mm0 + (int)s.aux_index;
+
+      const double Mcoeff = owner_EJ[idx];
+      return Mcoeff * Eq;
     }
 
     default:
-      // Unknown quantity on a corner node → treat as zero.
       return 0.0;
     }
   }
 
-  // ----------------------------------------------------
+  // -------------------------
   // Center-node samples
-  // ----------------------------------------------------
+  // -------------------------
   if (s.node_kind == NK::Center) {
-    // If the entry says "Center node" but no pointer is provided, treat
-    // as zero contribution.
     if (!s.center) return 0.0;
 
-    // Base pointer to the center-node data buffer.
-    char *buf = s.center->GetAssociatedDataBufferPointer();
+    char *base =
+      s.center->GetAssociatedDataBufferPointer()
+      + PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+
+    double *B = reinterpret_cast<double*>(base + PIC::FieldSolver::Electromagnetic::ECSIM::CurrentBOffset);
 
     switch (s.quantity) {
 
     case Q::B: {
-      // Magnetic field B at the *current* B time level.
-      //
-      // The magnetic field block is stored at
-      //   MagneticField.RelativeOffset
-      // and we add CurrentBOffset to select the active time level.
-      double *B = reinterpret_cast<double *>(
-          buf + CurrentBOffset); 
-
       switch (s.component) {
-      case 0: return B[BxOffsetIndex];  // Bx
-      case 1: return B[ByOffsetIndex];  // By
-      case 2: return B[BzOffsetIndex];  // Bz
-      default:
-        return 0.0;
+      case 0: return B[PIC::FieldSolver::Electromagnetic::ECSIM::BxOffsetIndex];
+      case 1: return B[PIC::FieldSolver::Electromagnetic::ECSIM::ByOffsetIndex];
+      case 2: return B[PIC::FieldSolver::Electromagnetic::ECSIM::BzOffsetIndex];
+      default: return 0.0;
       }
     }
 
     default:
-      // Unknown quantity on a center node → treat as zero.
       return 0.0;
     }
   }
 
-  // ----------------------------------------------------
-  // Fallback: unknown node kind
-  // ----------------------------------------------------
   return 0.0;
 }
-
 
 } } } }
 
