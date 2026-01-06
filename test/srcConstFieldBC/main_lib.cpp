@@ -117,7 +117,7 @@
 
 
 #include "main_lib.h"
-#include "pic_units_normalization.h"
+#include "../pic/units/pic_units_normalization.h"
 
 // -----------------------------------------------------------------------------
 // InitGlobalParticleWeight_TargetPPC()
