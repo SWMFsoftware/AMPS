@@ -9,7 +9,7 @@
 
 #include "cli.h"
 #include "pic.h"
-//#include "pic_units_normalization.h" 
+#include "../pic/units/pic_units_normalization.h"
 
 // defined in main.cpp
 extern TestConfig cfg;
@@ -17,7 +17,7 @@ extern TestConfig cfg;
 // Convert any physical-unit inputs in cfg (SI) into the unit system expected by the
 // field solver / particle routines. This must be called once after
 // ConfigureTestFromArgsWithInput() and before any IC/setup routines.
-void FinalizeConfigUnits(TestConfig& cfg);
+picunits::Factors FinalizeConfigUnits(TestConfig& cfg);
 extern double xmin[3];
 extern double xmax[3];
 extern int g_TestStencilOrder;
@@ -26,7 +26,7 @@ extern int g_TestStencilOrder;
 double BulletLocalResolution(double *x);
 void InitGlobalParticleWeight_TargetPPC(const TestConfig& cfg);
 void CleanParticles();
-long int PrepopulateDomain();
+long int PrepopulateDomain(picunits::Factors);
 double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 void SetIC();
 #endif

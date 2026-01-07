@@ -117,7 +117,6 @@
 
 
 #include "main_lib.h"
-#include "../pic/units/pic_units_normalization.h"
 
 // -----------------------------------------------------------------------------
 // InitGlobalParticleWeight_TargetPPC()
@@ -210,7 +209,7 @@ void InitGlobalParticleWeight_TargetPPC(const TestConfig& cfg) {
 
 
 //------------------------------------------------------------------------
-void FinalizeConfigUnits(TestConfig& cfg) {
+picunits::Factors  FinalizeConfigUnits(TestConfig& cfg) {
   // This routine converts *physical* (SI) user inputs (if provided) into the
   // unit system expected by the compiled ECSIM field solver.
   //
@@ -396,6 +395,8 @@ void FinalizeConfigUnits(TestConfig& cfg) {
 #endif
     }
   }
+
+  return F;
 }
 
 // Uniform setters used by SetIC()
@@ -508,7 +509,7 @@ void CleanParticles(){
 }
 
 
-long int PrepopulateDomain() {
+long int PrepopulateDomain(picunits::Factors F) {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int iCell,jCell,kCell;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;

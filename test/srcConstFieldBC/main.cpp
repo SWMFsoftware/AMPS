@@ -133,6 +133,7 @@ int iCase;
 
 // Global configuration for this test (used by SetIC/PrepopulateDomain in main_lib.cpp)
 TestConfig cfg;
+picunits::Factors F;
 
 // Optional: export stencil order for helper operators in this test module
 int g_TestStencilOrder = 2;
@@ -145,7 +146,7 @@ int main(int argc,char **argv) {
    printf("start: (%i/%i %i:%i:%i)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
 
   ConfigureTestFromArgsWithInput(cfg,argc,argv);
-  FinalizeConfigUnits(cfg);
+  F=FinalizeConfigUnits(cfg);
   g_TestStencilOrder = cfg.stencilOrder;
 
 // If -L was provided, redefine the domain to be centered at (0,0,0).
@@ -352,7 +353,7 @@ if (cfg.use_domain_L) {
       printf("After cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
 
       if (cfg.mode==TestConfig::Mode::WithParticles) {
-        PrepopulateDomain();
+        PrepopulateDomain(F);
       }
 
       LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
