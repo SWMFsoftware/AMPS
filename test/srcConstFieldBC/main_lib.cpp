@@ -228,6 +228,12 @@ void FinalizeConfigUnits(TestConfig& cfg) {
   //     the solver's input units after this routine runs.
   //   * For the solar-wind option, the convective field is E = -u x B.
 
+  //determine cfg.units_mSI_kg: src/pic/units/example_units.cpp 
+  const double m_p=1.6726E-27; 
+  const double q_p=1.6022E-19; 
+
+  cfg.units_mSI_kg=1.0E7*cfg.units_lSI_m*pow(m_p/q_p,2) ; // [kg] 
+
   // Build normalization factors once (used only if the solver expects NORM units).
   // NOTE: picunits::build() takes a NormScalesSI struct (see pic_units_normalization.h).
   picunits::NormScalesSI norm_scales{cfg.units_lSI_m, cfg.units_uSI_mps, cfg.units_mSI_kg};
