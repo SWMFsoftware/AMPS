@@ -436,18 +436,6 @@ inline Vec3 scale3(const Vec3& a, double s){ return {a[0]*s, a[1]*s, a[2]*s}; }
 inline Vec3 si2no_v3(const Vec3& v_SI, const Factors& f){ return scale3(v_SI, f.Si2NoV); }
 inline Vec3 no2si_v3(const Vec3& v_no, const Factors& f){ return scale3(v_no, f.No2SiV); }
 
-inline void si2no_v3(double *v_no, const double *v_si, const Factors& f) {
-  v_no[0] = v_si[0] * f.Si2NoV;
-  v_no[1] = v_si[1] * f.Si2NoV;
-  v_no[2] = v_si[2] * f.Si2NoV;
-}
-
-inline void no2si_v3(double *v_si, const double *v_no, const Factors& f) {
-  v_si[0] = v_no[0] * f.No2SiV;
-  v_si[1] = v_no[1] * f.No2SiV;
-  v_si[2] = v_no[2] * f.No2SiV;
-}
-
 // Magnetic field (Tesla ↔ normalized)
 inline Vec3 si2no_B3(const Vec3& B_SI, const Factors& f){ return scale3(B_SI, f.Si2NoB); }
 inline Vec3 no2si_B3(const Vec3& B_no, const Factors& f){ return scale3(B_no, f.No2SiB); }
