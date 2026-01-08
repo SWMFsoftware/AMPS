@@ -473,7 +473,7 @@ setsid();
          return;
        }
 
-       sleep(0.1);
+       sleep(1);
      }  
    }
 
