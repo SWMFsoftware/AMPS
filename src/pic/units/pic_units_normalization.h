@@ -305,6 +305,92 @@ inline double no2si_n(double n_no, double N0_cm3){
     return n_no * N0_cm3 * 1.0e6;
 }
 
+//------------------------------------------------------------------------------
+// SI mass ⇄ normalized mass (for SI-form Lorentz pusher)
+//
+// The pusher integrates the SI-form equation of motion:
+//   dv/dt = (q/m) (E + v×B)
+//
+// We nondimensionalize using a reference mass scale m0 (user-selected base scale).
+// In this code, the base mass scale is stored in Factors as M0_g in grams, so:
+//   m0_kg = M0_g * 1e-3
+//
+// Define the dimensionless mass as:
+//   m_no = m_SI / m0_kg
+//   m_SI = m_no * m0_kg
+//
+// This preserves all mass ratios exactly (e.g., mi/me) and is independent of how
+// charge is normalized; charge normalization only affects the (q/m) coupling.
+inline double si2no_m(double m_kg, const Factors& f) {return m_kg / (1.0E-3*f.M0_g);} 
+inline double no2si_m(double m_no, const Factors& f) {return m_no * (1.0E-3*f.M0_g);} 
+
+
+//------------------------------------------------------------------------------
+// SI charge ⇄ normalized charge (FOR SI-FORM PUSHER)
+//
+// Pusher equation (SI form, no 1/c):
+//   dv/dt = (q/m) (E + v×B)
+//
+// Normalized variables are chosen so that E and v×B scale identically:
+//   v = U0 * v_no
+//   t = T0 * t_no
+//   B = B0 * B_no
+//   E = (U0*B0) * E_no
+//
+// Substitute into the SI pusher equation:
+//   (U0/T0) dv_no/dt_no = (q/m) (U0*B0) [E_no + v_no×B_no]
+//
+// Cancel U0 and rearrange:
+//   dv_no/dt_no = (q/m) (B0*T0) [E_no + v_no×B_no]
+//
+// Therefore the dimensionless coupling seen by the pusher must be:
+//   (q/m)_no = (q/m)_SI * (B0*T0)
+//
+// Implementation choice:
+//   - normalize mass as m_no = m_SI / m0
+//   - choose charge scale q0 so that q_no/m_no reproduces (q/m)_SI*(B0*T0):
+//       q0 = m0 / (B0*T0)
+//       q_no = q_SI / q0 = q_SI * (B0*T0) / m0
+//       q_SI = q_no * m0 / (B0*T0)
+//
+// Here B0 and T0 are taken directly from Factors via the inverse scalings:
+//   B0_SI = Factors::No2SiB   [Tesla]
+//   T0    = Factors::No2SiT   [seconds]
+//   m0    = (Factors::M0_g * 1e-3) [kg]
+
+// DERIVATION (why q_no depends on B0, T0, M0)
+//   Substitute the scalings into the SI pusher equation:
+//       (U0/T0) dv_no/dt_no
+//         = (q/m) [ (U0*B0)E_no + (U0 v_no) × (B0 B_no) ]
+//         = (q/m) (U0*B0) [ E_no + v_no × B_no ]
+//
+//   Cancel U0 and rearrange:
+//       dv_no/dt_no = (q/m) (B0*T0) [ E_no + v_no × B_no ]
+//
+//   Therefore the dimensionless coupling that the pusher must see is:
+//       (q_no/m_no) = (q_SI/m_SI) * (B0*T0)
+//
+//   If we already define:
+//       m_no = m_SI / m0
+//   then we must define q_no so that:
+//       q_no/m_no = (q_SI/m_SI) * (B0*T0)
+//   One convenient choice is:
+//       q_no = q_SI / q0,   where   q0 = m0 / (B0*T0)
+//
+// IMPLEMENTATION DETAILS (in code terms)
+//   - B0 and T0 are available directly from Factors via the inverse scalings:
+//       No2SiB = B0  [Tesla]
+//       No2SiT = T0  [seconds]
+//   - m0 is the reference mass scale:
+//       m0_kg = M0_g * 1e-3
+//
+//   Thus:
+//       q_no = q_C * (B0*T0) / m0_kg
+//       q_C  = q_no * m0_kg / (B0*T0)
+inline double si2no_q(double q_C, const Factors& f) {return q_C * (f.No2SiB * f.No2SiT) / (1.0E-3*f.M0_g);}  
+inline double no2si_q(double q_no, const Factors& f) {return q_no * (1.0E-3*f.M0_g) / (f.No2SiB * f.No2SiT);} 
+
+
 // OPTIONAL OVERLOADS (derive N0 from Factors and a species mass)
 // ------------------------------------------------------------------
 // PURPOSE
@@ -349,6 +435,18 @@ inline Vec3 scale3(const Vec3& a, double s){ return {a[0]*s, a[1]*s, a[2]*s}; }
 // Velocity (m/s ↔ normalized)
 inline Vec3 si2no_v3(const Vec3& v_SI, const Factors& f){ return scale3(v_SI, f.Si2NoV); }
 inline Vec3 no2si_v3(const Vec3& v_no, const Factors& f){ return scale3(v_no, f.No2SiV); }
+
+inline void si2no_v3(double *v_no, const double *v_si, const Factors& f) {
+  v_no[0] = v_si[0] * f.Si2NoV;
+  v_no[1] = v_si[1] * f.Si2NoV;
+  v_no[2] = v_si[2] * f.Si2NoV;
+}
+
+inline void no2si_v3(double *v_si, const double *v_no, const Factors& f) {
+  v_si[0] = v_no[0] * f.No2SiV;
+  v_si[1] = v_no[1] * f.No2SiV;
+  v_si[2] = v_no[2] * f.No2SiV;
+}
 
 // Magnetic field (Tesla ↔ normalized)
 inline Vec3 si2no_B3(const Vec3& B_SI, const Factors& f){ return scale3(B_SI, f.Si2NoB); }
