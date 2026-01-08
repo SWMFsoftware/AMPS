@@ -406,8 +406,8 @@ namespace PIC {
       cDatum(int lengthIn, const char* nameIn, int StatusVector) {
         type = Unset_;
         SetDatum(lengthIn,nameIn);
-        doPrint=(StatusVector&DATUM_DO_PRINT!=0) ? true : false;
-        divideByVolumeOnPrint=(StatusVector&DATUM_DO_DEVIDE_VOLUME_PRINT!=0) ? true : false;  
+        doPrint=((StatusVector&DATUM_DO_PRINT)!=0) ? true : false;
+        divideByVolumeOnPrint=((StatusVector&DATUM_DO_DEVIDE_VOLUME_PRINT)!=0) ? true : false;  
       }
 
       cDatum(const char* baseName, int nBinsIn, double minValIn, double maxValIn,int distTypeIn, bool doPrintIn = true) { 

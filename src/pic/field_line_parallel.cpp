@@ -282,9 +282,11 @@ namespace FL = PIC::FieldLine;
 void PIC::ParallelFieldLines::ExchangeFieldLineParticles(cThreadSegmentTable &ThreadSegmentTable) {
     int From, To;
     long int Particle, newParticle;
-    int nTotalSendParticles[PIC::nTotalThreads] = {0};
-    int nRecvSegments[PIC::nTotalThreads] = {0};
-    int nSendSegments[PIC::nTotalThreads] = {0};
+    int nTotalSendParticles[PIC::nTotalThreads]; 
+    int nRecvSegments[PIC::nTotalThreads];
+    int nSendSegments[PIC::nTotalThreads]; 
+
+    for (int t=0;t<PIC::nTotalThreads;t++) nTotalSendParticles[t]=0,nRecvSegments[t]=0,nSendSegments[t]=0;
 
     MPI_Request RecvParticleDataRequestTable[PIC::nTotalThreads];
     MPI_Request SendParticleDataRequestTable[PIC::nTotalThreads];
