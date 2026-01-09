@@ -31,4 +31,5 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
 void SetIC();
 
 double EvaluateGlobalParticleWeightForTargetPPC(const picunits::Factors& F,const TestConfig& cfg); 
+double EvaluateCFLTimeStepForSpecies(int spec, double CFL);
 #endif

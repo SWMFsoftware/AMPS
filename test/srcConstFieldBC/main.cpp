@@ -353,7 +353,23 @@ if (cfg.use_domain_L) {
       printf("After cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
 
       if (cfg.mode==TestConfig::Mode::WithParticles) {
-        PrepopulateDomain(0,F,cfg);
+        int spec=0;
+	double CFL=0.8;
+
+        for (spec=0;spec<PIC::nTotalSpecies;spec++) PrepopulateDomain(spec,F,cfg);
+
+	//Compute dt from particles (your CFL function)
+        double dt = EvaluateCFLTimeStepForSpecies(0, CFL);
+
+	for (spec=0;spec<PIC::nTotalSpecies;spec++) {
+          double t=EvaluateCFLTimeStepForSpecies(0, CFL);
+	  if (t<dt) dt=t;
+	}
+
+        for (spec=0;spec<PIC::nTotalSpecies;spec++) PIC::ParticleWeightTimeStep::GlobalTimeStep[spec] = dt;
+
+        PIC::FieldSolver::Electromagnetic::ECSIM::dtTotal = dt;
+        PIC::FieldSolver::Electromagnetic::ECSIM::cDt = PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed * dt;  
       }
 
       LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();

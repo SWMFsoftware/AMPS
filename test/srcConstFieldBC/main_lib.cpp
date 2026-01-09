@@ -922,3 +922,178 @@ double EvaluateGlobalParticleWeightForTargetPPC(const picunits::Factors& F,const
   return ParticleWeight;
 }
 
+#include <cmath>
+#include <limits>
+#include <mpi.h>
+#include "pic.h"
+
+// ============================================================================
+// EvaluateCFLTimeStepForSpecies()
+// ----------------------------------------------------------------------------
+// PURPOSE
+//   Compute a stable explicit time step for particle advection based on a CFL
+//   condition for a specific species:
+//
+//       dt_cell = CFL * h_cell / <|v|>_cell,spec
+//
+//   where
+//     • CFL is a user-requested Courant number (0 < CFL <= 1 typically)
+//     • h_cell is a characteristic cell size (here: min cell edge length)
+//     • <|v|> is the mean particle speed magnitude for the requested species
+//       within that cell
+//
+//   The function loops over all *local* cells, computes dt_cell where the cell
+//   contains at least one particle of the requested species with nonzero mean
+//   speed, and returns the *global* minimum dt (MPI_MIN across ranks).
+//
+// UNITS / CONSISTENCY
+//   This routine works entirely in the solver’s native units:
+//     • cell geometry uses node->xmin/xmax (solver length units)
+//     • particle velocities are read from ParticleBuffer (solver velocity units)
+//   Therefore the returned dt is in solver time units.
+//   If you need SI seconds, multiply by picunits::Factors::No2SiT.
+//
+// WHAT IS MEAN SPEED?
+//   We compute a statistically-weighted mean speed in each cell:
+//
+//       <|v|> = ( Σ w_p * |v_p| ) / ( Σ w_p )
+//
+//   where w_p is the physical-particle statistical weight represented by the
+//   macroparticle. In AMPS this is typically:
+//       w_p = LocalParticleWeight(spec) * IndividualStatWeightCorrection(p)
+//
+//   If you want the unweighted macro-average instead, set w_p = 1.0 below.
+//
+// EDGE CASES
+//   • Cells with no particles of this species are ignored (dt = +∞).
+//   • Cells with particles but <|v|> == 0 are ignored (dt = +∞).
+//   • If there are no qualifying cells anywhere (no particles of this species),
+//     the function returns 0.0.
+//
+// PERFORMANCE NOTE
+//   This is an O(Nparticles) scan and is intended for test harnesses / diagnostics.
+// ============================================================================
+
+double EvaluateCFLTimeStepForSpecies(int spec, double CFL) {
+  if (!(CFL > 0.0)) {
+    throw std::invalid_argument("EvaluateCFLTimeStepForSpecies: CFL must be > 0");
+  }
+
+  double local_dt_min = std::numeric_limits<double>::infinity();
+
+  // Loop over local blocks on this MPI rank/thread
+  for (auto* node = PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
+       node != NULL; node = node->nextNodeThisThread) {
+
+    // Skip periodic "ghost" boundary blocks (same convention as PrepopulateDomain)
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
+      for (int iface=0; iface<6; iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
+        BoundaryBlock=true;
+        break;
+      }
+      if (BoundaryBlock) continue;
+    }
+
+    auto* block = node->block;
+    long int* FirstCellParticleTable = block->FirstCellParticleTable;
+
+    // Cell edge lengths for this block (uniform within block)
+    double dx[3] = {1.0,1.0,1.0};
+#if DIM >= 1
+    dx[0] = (node->xmax[0] - node->xmin[0]) / _BLOCK_CELLS_X_;
+#endif
+#if DIM >= 2
+    dx[1] = (node->xmax[1] - node->xmin[1]) / _BLOCK_CELLS_Y_;
+#else
+    dx[1] = std::numeric_limits<double>::infinity();
+#endif
+#if DIM == 3
+    dx[2] = (node->xmax[2] - node->xmin[2]) / _BLOCK_CELLS_Z_;
+#else
+    dx[2] = std::numeric_limits<double>::infinity();
+#endif
+
+    const double h_cell = std::min(dx[0], std::min(dx[1], dx[2]));
+    if (!(h_cell > 0.0)) continue;
+
+    // Loop over all cells in block
+#if DIM == 3
+    for (int k=0; k<_BLOCK_CELLS_Z_; ++k)
+    for (int j=0; j<_BLOCK_CELLS_Y_; ++j)
+    for (int i=0; i<_BLOCK_CELLS_X_; ++i) {
+      const int cellIndex = i + _BLOCK_CELLS_X_*(j + _BLOCK_CELLS_Y_*k);
+#elif DIM == 2
+    for (int j=0; j<_BLOCK_CELLS_Y_; ++j)
+    for (int i=0; i<_BLOCK_CELLS_X_; ++i) {
+      const int cellIndex = i + _BLOCK_CELLS_X_*j;
+#elif DIM == 1
+    for (int i=0; i<_BLOCK_CELLS_X_; ++i) {
+      const int cellIndex = i;
+#endif
+
+      long int ptr = FirstCellParticleTable[cellIndex];
+      if (ptr == -1) continue;
+
+      // Weighted mean speed in this cell for this species
+      double sum_w = 0.0;
+      double sum_w_speed = 0.0;
+
+      while (ptr != -1) {
+        auto  pdata = PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+
+        const int pspec = PIC::ParticleBuffer::GetI(pdata);
+        if (pspec == spec) {
+          double v[3];
+          PIC::ParticleBuffer::GetV(v, pdata);
+
+          const double speed = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+
+          if (speed > 0.0) {
+            // Statistical weight represented by this macroparticle
+            double w = 1.0;
+
+            // Recommended: physical-particle weight (matches sampling / moments)
+#if  _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
+            w = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+#else
+            w = block->GetLocalParticleWeight(spec);
+#endif
+            w *= PIC::ParticleBuffer::GetIndividualStatWeightCorrection(pdata);
+
+            // If you prefer pure macro-average, comment out the two lines above
+            // and keep w = 1.0.
+
+            sum_w       += w;
+            sum_w_speed += w * speed;
+          }
+        }
+
+        ptr = PIC::ParticleBuffer::GetNext(pdata);
+      }
+
+      if (sum_w > 0.0) {
+        const double mean_speed = sum_w_speed / sum_w;
+        if (mean_speed > 0.0) {
+          const double dt_cell = CFL * h_cell / mean_speed;
+          if (dt_cell < local_dt_min) local_dt_min = dt_cell;
+        }
+      }
+
+#if DIM == 3
+    }
+#elif DIM == 2
+    }
+#elif DIM == 1
+    }
+#endif
+  }
+
+  // Global minimum across MPI ranks
+  double global_dt_min = std::numeric_limits<double>::infinity();
+  MPI_Allreduce(&local_dt_min, &global_dt_min, 1, MPI_DOUBLE, MPI_MIN, MPI_GLOBAL_COMMUNICATOR);
+
+  if (!std::isfinite(global_dt_min)) return 0.0; // no particles of this species found
+  return global_dt_min;
+}
+
