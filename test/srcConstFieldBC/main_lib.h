@@ -24,9 +24,11 @@ extern int g_TestStencilOrder;
 
 
 double BulletLocalResolution(double *x);
-void InitGlobalParticleWeight_TargetPPC(const TestConfig& cfg);
+void InitGlobalParticleWeight_TargetPPC(const picunits::Factors& F,const TestConfig& cfg);
 void CleanParticles();
-long int PrepopulateDomain(picunits::Factors);
+long int PrepopulateDomain(int spec,picunits::Factors,const TestConfig& cfg);
 double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 void SetIC();
+
+double EvaluateGlobalParticleWeightForTargetPPC(const picunits::Factors& F,const TestConfig& cfg); 
 #endif

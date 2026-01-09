@@ -136,7 +136,7 @@
 //         (rho_conv and the definition of NumberDensity_ref) to ensure the ppc
 //         target matches the injection formula used by the test.
 // -----------------------------------------------------------------------------
-void InitGlobalParticleWeight_TargetPPC(const TestConfig& cfg) {
+void InitGlobalParticleWeight_TargetPPC(const picunits::Factors& F,const TestConfig& cfg) {
   if (cfg.mode != TestConfig::Mode::WithParticles) return;
 
   const double Nppc_target = cfg.target_ppc;
@@ -198,6 +198,10 @@ void InitGlobalParticleWeight_TargetPPC(const TestConfig& cfg) {
 
   PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(ionSpec,ParticleWeight_ref);
   PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(electronSpec,ParticleWeight_ref);
+
+  const double pw = EvaluateGlobalParticleWeightForTargetPPC(F, cfg);
+  PIC::ParticleWeightTimeStep::GlobalParticleWeight[ionSpec] = pw;  // if using species-dependent global weight
+  PIC::ParticleWeightTimeStep::GlobalParticleWeight[electronSpec] = pw;  // if using species-dependent global weight
 
   if (PIC::ThisThread==0) {
     std::printf("[ConstFieldBC] ParticleWeight set for ~%.1f ppc/spec: weight=%e, n_ref=%e, Vcell(min)=%e\n",
@@ -509,217 +513,247 @@ void CleanParticles(){
 }
 
 
-long int PrepopulateDomain(picunits::Factors F) {
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-  int iCell,jCell,kCell;
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-  PIC::Mesh::cDataCenterNode *cell;
-  long int nd,nGlobalInjectedParticles,nLocalInjectedParticles=0;
-  double Velocity[3];
-  /*
-  //local copy of the block's cells
-  int cellListLength=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread]->block->GetCenterNodeListLength();
-  PIC::Mesh::cDataCenterNode *cellList[cellListLength];
-  */
-  //particle ejection parameters
-  double ParticleWeight;//beta=PIC::MolecularData::GetMass(spec)/(2*Kbol*Temperature);
-  double waveNumber[3]={0.0,0.0,0.0};
-  double lambda=32.0;
- 
-  waveNumber[0]=2*Pi/lambda;
+// ============================================================================
+// PrepopulateDomain(F, cfg)  —  Drifting Maxwellian particle initialization
+// ----------------------------------------------------------------------------
+// This function mirrors the logic/pattern of PIC::InitialCondition::PrepopulateDomain()
+// (see pic_initial_conditions.cpp), but drives the initial plasma state from
+// TestConfig in *physical units* and converts velocities to the solver’s
+// normalized units via picunits::si2no_v3().
+//
+// USER CLARIFICATIONS INCORPORATED
+//   (1) cell->Measure is ALREADY NORMALIZED volume (dimensionless), i.e. it is
+//       expressed in units of (L0)^DIM where L0 = F.No2SiL [m].
+//   (2) Solar-wind initial state is provided as:
+//         density     cfg.sw_n_cm3   [cm^-3]
+//         bulk speed  cfg.sw_u_kms   [km/s] (or cfg.sw_u_mps [m/s])
+//         temperature cfg.sw_TK      [K]
+//       These are used when cfg.sw_has_* flags are set.
+//
+// WHAT “NumberDensity” MEANS HERE (important)
+//   The legacy AMPS PrepopulateDomain() expects NumberDensity in the SAME units
+//   as cell->Measure so that:
+//       expected_macro_count = NumberDensity * cell->Measure / ParticleWeight
+//   Since cell->Measure is normalized (dimensionless) and represents V_no, and
+//   the physical cell volume is:
+//       V_SI = V_no * (L0)^DIM  where L0 = F.No2SiL [m],
+//   converting SI number density n_SI [1/m^3] into the legacy "solver density"
+//   that multiplies cell->Measure is simply:
+//       NumberDensity_solver = n_SI * (L0)^DIM
+//   because:
+//       n_SI * V_SI = n_SI * (V_no * L0^DIM) = (n_SI * L0^DIM) * V_no
+//
+// VELOCITY + TEMPERATURE
+//   We sample a drifting Maxwellian in SI units:
+//       v_SI = U_SI + sigma * N(0,1)  (each component)
+//       sigma = sqrt(kB*T / m_species)
+//   Then store v_no = si2no_v3(v_SI, F) into the particle buffer.
+//
+// SPECIES MASS USED FOR THERMAL SPREAD
+//   We need m_species in kg for sigma. This code tries to obtain it from
+//   PIC::MolecularData::GetMass(spec) and heuristically interprets whether it is
+//   returned in kg or g. If that fails for your build, replace GetSpeciesMass_kg()
+//   with the correct accessor for your codebase.
+//
+// ROUNDING
+//   - cfg.sw_use_rounding == true  -> stochastic rounding (legacy behavior)
+//   - cfg.sw_use_rounding == false -> floor() (deterministic)
+//
+// RETURN
+//   Global total number of injected macroparticles (MPI-summed).
+// ============================================================================
+long int PrepopulateDomain(int spec,picunits::Factors F, const TestConfig& cfg) {
+  // Only inject particles when requested
+  if (cfg.mode != TestConfig::Mode::WithParticles) return 0;
 
-  double *ParticleDataTable=NULL,*ParticleDataTable_dev=NULL;
-  int ParticleDataTableIndex=0,ParticleDataTableLength=0;
+  if (!(F.No2SiL > 0.0 && F.Si2NoV > 0.0)) {
+    throw std::invalid_argument("PrepopulateDomain: invalid Factors (No2SiL/Si2NoV).");
+  }
 
-  
-  int nBlock[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+  // Bulk velocity:
+  //  - if sw_has_u_kms: km/s -> m/s -> normalize to v_no
+  //  - else if sw_has_u_mps: m/s -> normalize to v_no
+  //  - else: assume cfg.sw_u0 already in solver units (normalized), use directly
+  double BulkVelocity_no[3] = {0.0,0.0,0.0};
 
-  //the boundaries of the block and middle point of the cell
-  double *xminBlock,*xmaxBlock;
-  double v[3],anpart;
-  int npart;
-  char * offset=NULL;
-  int ionSpec=0, electronSpec=1;
-  double ionMass = PIC::MolecularData::GetMass(ionSpec)/_AMU_;
-  double electronMass = PIC::MolecularData::GetMass(electronSpec)/_AMU_;
+  if (cfg.sw_has_u_kms || cfg.sw_has_u_mps) {
+    double U_SI[3];
+    if (cfg.sw_has_u_kms) {
+      U_SI[0] = cfg.sw_u_kms[0] * 1.0e3;
+      U_SI[1] = cfg.sw_u_kms[1] * 1.0e3;
+      U_SI[2] = cfg.sw_u_kms[2] * 1.0e3;
+    }
+    else {
+      U_SI[0] = cfg.sw_u_mps[0];
+      U_SI[1] = cfg.sw_u_mps[1];
+      U_SI[2] = cfg.sw_u_mps[2];
+    }
+    picunits::si2no_v3(U_SI,BulkVelocity_no,  F);
+  }
+  else {
+    BulkVelocity_no[0] = cfg.sw_u0[0];
+    BulkVelocity_no[1] = cfg.sw_u0[1];
+    BulkVelocity_no[2] = cfg.sw_u0[2];
+  }
 
-  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
+  // Temperature in K (for thermal spread). If not provided, use 0K -> no spread.
+  const double Temperature_K = (cfg.sw_has_TK ? cfg.sw_TK : 0.0);
+  if (!(Temperature_K >= 0.0)) {
+    throw std::invalid_argument("PrepopulateDomain: Temperature_K must be >= 0.");
+  }
+
+  // Thermal velocity sigma in SI [m/s]
+  constexpr double kB_SI = 1.380649e-23; // J/K
+  const double m_species_kg = PIC::MolecularData::GetMass(spec);
+
+  const double sigma_SI =
+    (Temperature_K > 0.0) ? std::sqrt(kB_SI * Temperature_K / m_species_kg) : 0.0;
+
+  // Standard normal generator using Box–Muller and AMPS rnd()
+  auto normal01 = []() -> double {
+    double u1 = rnd();
+    if (u1 < 1.0e-300) u1 = 1.0e-300;  // protect log(0)
+    const double u2 = rnd();
+    return std::sqrt(-2.0 * std::log(u1)) * std::cos(2.0 * Pi * u2);
+  };
+
+  // --------------------------------------------------------------------------
+  // Injection loop (copied structurally from PIC::InitialCondition::PrepopulateDomain)
+  // --------------------------------------------------------------------------
+  int iCell,jCell,kCell,idim;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
+  PIC::Mesh::cDataCenterNode* cell;
+  long int nd, nLocalInjectedParticles = 0, nGlobalInjectedParticles = 0;
+
+#if DIM == 3
+  static const int iCellMax=_BLOCK_CELLS_X_, jCellMax=_BLOCK_CELLS_Y_, kCellMax=_BLOCK_CELLS_Z_;
+#elif DIM == 2
+  const int iCellMax=_BLOCK_CELLS_X_, jCellMax=_BLOCK_CELLS_Y_, kCellMax=1;
+#elif DIM == 1
+  const int iCellMax=_BLOCK_CELLS_X_, jCellMax=1,               kCellMax=1;
+#else
+  exit(__LINE__,__FILE__,"Error: the option is not defined");
+#endif
+
+  // boundaries of the block and middle point of the cell
+  double* xmin;
+  double* xmax;
+  double* xMiddle;
+
+  double x[3], v_no[3];
+
+  for (node = PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
+       node != NULL; node = node->nextNodeThisThread) {
+
+    // Skip periodic "ghost" boundary blocks (legacy logic)
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
-      
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
-	  //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
-	  BoundaryBlock=true;
-	  break;
-	}
-      
+      for (int iface=0; iface<6; iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
+        BoundaryBlock=true;
+        break;
+      }
       if (BoundaryBlock==true) continue;
     }
 
-    if (node->Thread!=PIC::ThisThread) continue;
+    // Local copy of the block's cells
+    const int cellListLength = node->block->GetCenterNodeListLength();
+    PIC::Mesh::cDataCenterNode* cellList[cellListLength];
+    memcpy(cellList, node->block->GetCenterNodeList(), cellListLength*sizeof(PIC::Mesh::cDataCenterNode*));
 
+    xmin = node->xmin;
+    xmax = node->xmax;
 
-    // }
-
-    // PIC::Mesh::cDataCenterNode *cellList[cellListLength];
-  
-    //memcpy(cellList,node->block->GetCenterNodeList(),cellListLength*sizeof(PIC::Mesh::cDataCenterNode*));
-
-    xminBlock=node->xmin,xmaxBlock=node->xmax;
-    double dx[3];
-    double CellVolume=1;
-    for (int idim=0;idim<3;idim++) {
-      dx[idim]=(xmaxBlock[idim]-xminBlock[idim])/nBlock[idim];
-      CellVolume *= dx[idim];
+    // Particle statistical weight (physical particles per macroparticle)
+    double ParticleWeight;
+#if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
+    ParticleWeight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+#else
+    ParticleWeight = node->block->GetLocalParticleWeight(spec);
+#endif
+    if (!(ParticleWeight > 0.0)) {
+      throw std::runtime_error("PrepopulateDomain: ParticleWeight must be > 0.");
     }
-    //particle stat weight
-#ifndef _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
-#error ERROR: _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_ is used but not defined
-#endif
-#ifndef _SIMULATION_PARTICLE_WEIGHT_MODE_
-#error ERROR: _SIMULATION_PARTICLE_WEIGHT_MODE_ is used but not defined
-#endif
 
-    //assume ion and electron have the same particle weight
-    #if  _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
-    ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[ionSpec];
-    #else
-    ParticleWeight=node->block->GetLocalParticleWeight(ionSpec);
-    #endif
+    for (kCell=0; kCell<kCellMax; kCell++)
+    for (jCell=0; jCell<jCellMax; jCell++)
+    for (iCell=0; iCell<iCellMax; iCell++) {
 
-//    double *ParticleDataTable=NULL,*ParticleDataTable_dev=NULL;
-//    int ParticleDataTableIndex=0,ParticleDataTableLength=0;
+      nd = _getCenterNodeLocalNumber(iCell,jCell,kCell);
+      cell = cellList[nd];
+      xMiddle = cell->GetX();
 
-    for (kCell=0;kCell<nBlock[2];kCell++) for (jCell=0;jCell<nBlock[1];jCell++) for (iCell=0;iCell<nBlock[0];iCell++) {
-	  //      nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(iCell,jCell,kCell);
+      // Expected macro count in this cell (cell->Measure is normalized volume)
+      const double n_SI_m3 = cfg.sw_n_cm3 * 1.0e6; // cm^-3 -> m^-3
 
-      // cell=cellList[nd];
-      //  xMiddle=cell->GetX();
-      //offset = cell->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
-	  int ind[3]={iCell,jCell,kCell};
-	  double x[3];
-	  for (int idim=0; idim<3; idim++) x[idim]=xminBlock[idim]+(ind[idim]+0.5)*dx[idim];          // --- Uniform solar-wind-like plasma (no waves) ---
-          // The solar-wind IC is specified through cfg.sw_* and has already been
-          // converted into the ECSIM unit system by FinalizeConfigUnits(cfg).
-          // Here we use those values directly to build Maxwellian particle samples.
-          const double rho = cfg.sw_rho0;
-          const double p   = cfg.sw_p0;
-
-          const double NumberDensity = rho/(ionMass+electronMass);
-          const double rho_i = NumberDensity*ionMass;
-          const double rho_e = NumberDensity*electronMass;
-
-          // Split total scalar pressure between ions and electrons (isotropic).
-          const double pi = 0.5*p;
-          const double pe = 0.5*p;
-
-          double ionBulkVelocity[3]      = {cfg.sw_u0[0], cfg.sw_u0[1], cfg.sw_u0[2]};
-          double electronBulkVelocity[3] = {cfg.sw_u0[0], cfg.sw_u0[1], cfg.sw_u0[2]};
-
-          // Component thermal speeds for isotropic Maxwellians: <v_x'^2> = p_species / rho_species
-          const double uth_i = sqrt(pi / rho_i);
-          const double uth_e = sqrt(pe / rho_e);
-
-
-          //inject particles into the cell
-          anpart=NumberDensity*CellVolume/ParticleWeight;
-          //std::cout<<"CellLoc:"<<x[0]<<" "<<x[1]<<" "<<x[2]<<" NumberDensity: "<<NumberDensity<<"cell volume: "<<CellVolume<<"anpart: "<<anpart<<std::endl;
-          npart=(int)(anpart);
-          if (cfg.sw_use_rounding && (rnd() < anpart - npart)) npart++;
-          nLocalInjectedParticles+=npart*2;
-          //std::cout<<"need to inject npart: "<<npart<<std::endl;
-          
-          #if _CUDA_MODE_ == _ON_
-          if (ParticleDataTableLength<npart) {
-            if (ParticleDataTable!=NULL) {
-              delete [] ParticleDataTable;
-              cudaFree(ParticleDataTable_dev);
-            }
-
-            ParticleDataTable=new double [9*npart];
-            cudaMalloc(&ParticleDataTable_dev,9*npart*sizeof(double));
-          }
-          
-          ParticleDataTableIndex=0;
-          #endif 
-
-          while (npart-->0) {
-            double xPar[3];
-            xPar[0]=x[0]+dx[0]*(rnd()-0.5);
-            xPar[1]=x[1]+dx[1]*(rnd()-0.5);
-            
-            // xPar[0]=x[0];
-            // xPar[1]=x[1];
-            xPar[2]=x[2];
-
-            
-            double electronVelocity[3],ionVelocity[3];
-                        for (int idim=0; idim<3; idim++) {
-              // Box-Muller: Gaussian(0,1) * uth + bulk
-              const double g1 = sqrt(-2.0 * log(1.0 - 0.999999999 * rnd())) * cos(2.0*Pi*rnd());
-              const double g2 = sqrt(-2.0 * log(1.0 - 0.999999999 * rnd())) * cos(2.0*Pi*rnd());
-              electronVelocity[idim] = uth_e * g1 + electronBulkVelocity[idim];
-              ionVelocity[idim]      = uth_i * g2 + ionBulkVelocity[idim];
-            }
-            
-            /*  
-            for (int idim=0;idim<3;idim++) {
-              //in this test case B field is in y-direction
-              double ElectronTemp= idim!=1?kTemp_perp/electronMass:kTemp_par/electronMass; 
-              double IonTemp= idim!=1?kTemp_perp/ionMass:kTemp_par/ionMass; 
-              
-              electronVelocity[idim]=cos(2*Pi*rnd())*sqrt(-log(rnd())*(2*ElectronTemp))+electronBulkVelocity[idim];
-              ionVelocity[idim]=cos(2*Pi*rnd())*sqrt(-log(rnd())*(2*IonTemp))+ionBulkVelocity[idim];       
-              }
-            */      
-            //initiate the new particle
-            
-            #if _CUDA_MODE_ == _OFF_ 
-            PIC::ParticleBuffer::InitiateParticle(xPar, electronVelocity,NULL,&electronSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
-            PIC::ParticleBuffer::InitiateParticle(xPar, ionVelocity,NULL,&ionSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
-            #else 
-           
-            memcpy(ParticleDataTable+0+9*ParticleDataTableIndex,xPar,3*sizeof(double));
-            memcpy(ParticleDataTable+3+9*ParticleDataTableIndex,electronVelocity,3*sizeof(double));
-            memcpy(ParticleDataTable+6+9*ParticleDataTableIndex,ionVelocity,3*sizeof(double));
-
-            ParticleDataTableIndex++;
-            #endif
-            
-          }
-      //end of the particle injection block
-      //std::cout<<"finished injecting npart: "<<npart<<std::endl;
-      
-     #if _CUDA_MODE_ == _ON_ 
-          auto InitParticle = [=] _TARGET_DEVICE_ (double *ParticleDataTable, int ParticleDataTableIndex,int electronSpec, int ionSpec, void *node) {
-            int id=blockIdx.x*blockDim.x+threadIdx.x;
-            int increment=gridDim.x*blockDim.x;
-
-            for (int i=id;i<ParticleDataTableIndex;i+=increment) {
-              PIC::ParticleBuffer::InitiateParticle(ParticleDataTable+0+9*i,ParticleDataTable+3+9*i,NULL,&electronSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
-              PIC::ParticleBuffer::InitiateParticle(ParticleDataTable+0+9*i,ParticleDataTable+6+9*i,NULL,&ionSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
-            }
-          };
-
-
-          cudaMemcpy(ParticleDataTable_dev,ParticleDataTable,9*ParticleDataTableIndex*sizeof(double),cudaMemcpyHostToDevice);
-
-          kernel_5<<<1,1>>>(InitParticle,ParticleDataTable_dev,ParticleDataTableIndex,electronSpec,ionSpec,node);
-          cudaDeviceSynchronize();
+      #if DIM == 3
+      const double V_SI_m3 = cell->Measure * (F.No2SiL*F.No2SiL*F.No2SiL);
+      #elif DIM == 2
+      const double V_SI_m3 = cell->Measure * (F.No2SiL*F.No2SiL);
+      #elif DIM == 1
+      const double V_SI_m3 = cell->Measure * (F.No2SiL);
       #endif
+
+      const double anpart = (n_SI_m3 * V_SI_m3) / ParticleWeight;      
       
-      
-        }
+      if (anpart <= 0.0) continue;
+
+      long int npart = static_cast<long int>(anpart);
+
+      // Rounding behavior
+      if (cfg.sw_use_rounding) {
+        if (rnd() < anpart - static_cast<double>(npart)) npart++;
+      }
+      // else: deterministic floor()
+
+      // Optional min-particles behavior: TestConfig does not currently carry
+      // ForceMinParticleNumber / limit; keep legacy behavior OFF by default.
+      // If you later add cfg.forceMinParticleNumber, apply the same logic as the legacy
+      // PrepopulateDomain: w = anpart/limit, npart=limit.
+
+      // The per-particle sampler weight stored in particle buffer
+      double w = 1.0;
+
+      nLocalInjectedParticles += npart;
+
+      while (npart-- > 0) {
+        // Uniform position inside the cell (legacy sampling from block extents)
+        x[0] = xMiddle[0] + (xmax[0]-xmin[0])/_BLOCK_CELLS_X_*(rnd()-0.5);
+#if DIM >= 2
+        x[1] = xMiddle[1] + (xmax[1]-xmin[1])/_BLOCK_CELLS_Y_*(rnd()-0.5);
+#else
+        x[1] = 0.0;
+#endif
+#if DIM == 3
+        x[2] = xMiddle[2] + (xmax[2]-xmin[2])/_BLOCK_CELLS_Z_*(rnd()-0.5);
+#else
+        x[2] = 0.0;
+#endif
+
+        // Sample velocity:
+        //   v_no = BulkVelocity_no + (sigma_no * N(0,1))
+        // Compute sigma_no by converting sigma_SI with the same normalization:
+        //   sigma_no = sigma_SI / U0 = sigma_SI * F.Si2NoV
+        const double sigma_no = sigma_SI * F.Si2NoV;
+
+	const double beta=sqrt(m_species_kg/(2.0*kB_SI * Temperature_K)); 
+
+        for (idim=0; idim<3; idim++) {
+          //v_no[idim] = BulkVelocity_no[idim] + (sigma_no > 0.0 ? sigma_no * normal01() : 0.0);
+	  v_no[idim] = BulkVelocity_no[idim] + sqrt(-log(rnd()))/beta*sin(2.0*Pi*rnd()) * F.Si2NoV; 
         }
 
-    #if _CUDA_MODE_ == _ON_
-    delete [] ParticleDataTable;
-    cudaFree(ParticleDataTable_dev);
-    #endif
+        // Initiate particle
+        PIC::ParticleBuffer::InitiateParticle(
+          x, v_no, &w, &spec, NULL,
+          _PIC_INIT_PARTICLE_MODE__ADD2LIST_,
+          (void*)node,
+          NULL /*UserInitParticleFunction*/
+        );
+      }
+    }
+  }
 
-  MPI_Allreduce(&nLocalInjectedParticles,&nGlobalInjectedParticles,1,MPI_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-  printf("particles prepopulated!\n");
+  MPI_Allreduce(&nLocalInjectedParticles, &nGlobalInjectedParticles, 1, MPI_LONG, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
   return nGlobalInjectedParticles;
 }
 
@@ -768,4 +802,123 @@ double BulletLocalResolution(double *x) {
 }
                        
 
+#include <cmath>
+#include <stdexcept>
+#include <mpi.h>
+
+// ============================================================================
+// EvaluateGlobalParticleWeightForTargetPPC()
+// ----------------------------------------------------------------------------
+// Compute a *global* macroparticle statistical weight (physical particles per
+// macroparticle) such that, for a uniform background number density, the run
+// will inject ~cfg.target_ppc macroparticles per cell on average.
+//
+// INPUTS / ASSUMPTIONS
+//   • Cell geometry:
+//       - cell->Measure is already a *normalized* cell volume V_no (dimensionless),
+//         i.e. V_SI = V_no * (L0)^DIM, where L0 = F.No2SiL [m].
+//   • Density input:
+//       - If cfg.sw_has_ncm3: use cfg.sw_n_cm3 [cm^-3]
+//         n_SI_m3 = cfg.sw_n_cm3 * 1e6.
+//       - Otherwise, you can either refuse (recommended) or fall back to some
+//         solver-unit density. This implementation requires sw_has_ncm3.
+//   • Target macroparticles per cell:
+//       - cfg.target_ppc is the desired *average* number of macroparticles per cell.
+//   • Uniform density assumed across the whole domain.
+//
+// DERIVATION
+//   Let Ncells be the total number of cells (global).
+//   Let Vtot_SI be the total physical domain volume (global).
+//   Then total physical particles represented by density n_SI is:
+//       Nphys_tot = n_SI * Vtot_SI.
+//
+//   If we want on average target_ppc macroparticles per cell, then the target
+//   global macroparticle count is:
+//       Nmacro_target = target_ppc * Ncells.
+//
+//   The statistical weight must satisfy:
+//       Nmacro_target * ParticleWeight = Nphys_tot
+//   so
+//       ParticleWeight = Nphys_tot / Nmacro_target.
+//
+//   With this ParticleWeight, the expected macroparticles in a cell become:
+//       anpart = (n_SI * Vcell_SI) / ParticleWeight
+//            ~= target_ppc * (Vcell_SI / Vavg_SI)
+//   i.e. average is target_ppc, with proportional variation if cell volumes vary.
+//
+// RETURN
+//   ParticleWeight (global), in "physical particles per macroparticle" units,
+//   consistent with the counting used in PrepopulateDomain.
+// ============================================================================
+
+double EvaluateGlobalParticleWeightForTargetPPC(const picunits::Factors& F,const TestConfig& cfg) { 
+  if (!(F.No2SiL > 0.0)) throw std::invalid_argument("EvaluateParticleWeight: F.No2SiL must be > 0.");
+  if (!(cfg.target_ppc > 0.0)) throw std::invalid_argument("EvaluateParticleWeight: cfg.target_ppc must be > 0.");
+
+  if (!cfg.sw_has_ncm3) {
+    throw std::invalid_argument("EvaluateParticleWeight: cfg.sw_has_ncm3 must be true (need physical density).");
+  }
+
+  const double n_SI_m3 = cfg.sw_n_cm3 * 1.0e6; // cm^-3 -> m^-3
+  if (!(n_SI_m3 >= 0.0)) throw std::invalid_argument("EvaluateParticleWeight: n_SI_m3 must be >= 0.");
+
+  // --- local totals ---
+  int localCellCount = 0;
+  double    localVolumeNo  = 0.0;  // sum of normalized cell volumes (dimensionless)
+
+  // Count cells & sum normalized volumes over local blocks (same pattern as PrepopulateDomain)
+  for (auto* node = PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
+       node != NULL; node = node->nextNodeThisThread) {
+
+    // Match PrepopulateDomain periodic-boundary skipping to avoid double-counting
+    if (_PIC_BC__PERIODIC_MODE_ == _PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
+      for (int iface=0; iface<6; iface++) {
+        if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh) == NULL) { BoundaryBlock=true; break; }
+      }
+      if (BoundaryBlock) continue;
+    }
+
+    const int len = node->block->GetCenterNodeListLength();
+    PIC::Mesh::cDataCenterNode** list = node->block->GetCenterNodeList();
+
+    for (int i=0; i<len; ++i) {
+      PIC::Mesh::cDataCenterNode* cell = list[i];
+
+      if (cell!=NULL) {
+        localVolumeNo += cell->Measure;  // Measure is V_no (already normalized)
+	localCellCount++;
+      }
+    }
+  }
+
+  // --- global totals ---
+  int globalCellCount = 0;
+  double    globalVolumeNo  = 0.0;
+
+  MPI_Allreduce(&localCellCount, &globalCellCount, 1, MPI_INT, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&localVolumeNo,  &globalVolumeNo,  1, MPI_DOUBLE,    MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+
+  if (globalCellCount <= 0) throw std::runtime_error("EvaluateParticleWeight: globalCellCount <= 0.");
+  if (!(globalVolumeNo > 0.0)) throw std::runtime_error("EvaluateParticleWeight: globalVolumeNo <= 0.");
+
+  // Convert total normalized volume to SI volume using L0 = F.No2SiL [m]
+#if DIM == 3
+  const double Vtot_SI_m3 = globalVolumeNo * (F.No2SiL * F.No2SiL * F.No2SiL);
+#elif DIM == 2
+  const double Vtot_SI_m3 = globalVolumeNo * (F.No2SiL * F.No2SiL);
+#elif DIM == 1
+  const double Vtot_SI_m3 = globalVolumeNo * (F.No2SiL);
+#else
+  exit(__LINE__,__FILE__,"Error: DIM is not defined");
+#endif
+
+  const double Nphys_tot        = n_SI_m3 * Vtot_SI_m3;
+  const double Nmacro_target    = cfg.target_ppc * static_cast<double>(globalCellCount);
+  const double ParticleWeight   = Nphys_tot / Nmacro_target;
+
+  if (!(ParticleWeight > 0.0)) throw std::runtime_error("EvaluateParticleWeight: computed ParticleWeight <= 0.");
+
+  return ParticleWeight;
+}
 

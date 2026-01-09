@@ -300,7 +300,7 @@ if (cfg.use_domain_L) {
   //PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(1);
 
     // Initialize global particle weight to target ~ppc/spec for the uniform particle IC.
-  InitGlobalParticleWeight_TargetPPC(cfg);
+  InitGlobalParticleWeight_TargetPPC(F,cfg);
 
   PIC::DomainBlockDecomposition::UpdateBlockTable();
 
@@ -353,7 +353,7 @@ if (cfg.use_domain_L) {
       printf("After cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
 
       if (cfg.mode==TestConfig::Mode::WithParticles) {
-        PrepopulateDomain(F);
+        PrepopulateDomain(0,F,cfg);
       }
 
       LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
