@@ -32,4 +32,9 @@ void SetIC();
 
 double EvaluateGlobalParticleWeightForTargetPPC(const picunits::Factors& F,const TestConfig& cfg); 
 double EvaluateCFLTimeStepForSpecies(int spec, double CFL);
+
+int InjectBoundaryParticles(const picunits::Factors& F,
+                                 const TestConfig& cfg,
+                                 int spec,
+                                 double dt_no); 
 #endif

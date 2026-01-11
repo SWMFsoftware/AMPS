@@ -551,6 +551,15 @@ for (int i=0;i<PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOC
       //PIC::Mesh::mesh->outputMeshDataTECPLOT("2.dat",0);
 
 
+      //inject particles from the domain'a boundary 
+      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_) { 
+        for (int spec=0;spec<PIC::nTotalSpecies;spec++) {
+          double dt=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+
+	  InjectBoundaryParticles(F,cfg,spec,dt);
+        }
+      }
+
       switch (_PIC_BC__PERIODIC_MODE_) {
       case _PIC_BC__PERIODIC_MODE_OFF_:
 	PIC::Mesh::mesh->ParallelBlockDataExchange();

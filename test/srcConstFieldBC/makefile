@@ -4,7 +4,7 @@ DEFAULT_TARGET : lib
 
 include ../../Makefile.conf
 
-MAINLIBOBJ = cli.o main_lib.o 
+MAINLIBOBJ = cli.o main_lib.o bc.o 
 
 MAINOBJ = main.o
 
