@@ -5875,6 +5875,13 @@ void DeleteAttachedParticles();
       }
     }
 
+    // NOTE: Particles created/moved during injection are first accumulated in
+    // block->tempParticleMovingListTable[cell] (thread-safe staging lists). Before any
+    // MPI migration (PIC::Parallel::ExchangeParticleData), these staged lists must be
+    // committed/concatenated into block->FirstCellParticleTable[cell]; otherwise the
+    // newly injected particles will not be included in the exchange.
+    void CommitTempParticleMovingListsToFirstCellParticleTable();
+
     namespace FieldLine {
       // procedure that returns parameters of the guiding center motion
       void GuidingCenterMotion(double *Vguide_perp,double &ForceParal,double &BAbsoluteValue, double *BDirection,double *PParal,int spec,long int ptr,double *x,double *v);

@@ -4333,3 +4333,128 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   
   return _PARTICLE_MOTION_FINISHED_;
 }
+
+//==============================================================================
+// CommitTempParticleMovingListsToFirstCellParticleTable()
+//------------------------------------------------------------------------------
+// In AMPS, when particles are created/moved in a thread-safe way, they are often
+// first pushed into block->tempParticleMovingListTable[cell] (possibly using
+// atomic_exchange). Before any MPI particle exchange, these temporary per-cell
+// lists must be *committed* into the regular per-cell list heads
+// block->FirstCellParticleTable[cell].
+//
+// IMPORTANT:
+//   The example you provided (from pic_mover.cpp) does:
+//       FirstCellParticleTable[cell] = tempParticleMovingListTable[cell];
+//       tempParticleMovingListTable[cell] = -1;
+//   That is correct in the mover because FirstCellParticleTable has been
+//   effectively "emptied/swapped" before moving, so assignment does not lose
+//   particles.
+//
+//   For a general injection routine (or any place where FirstCellParticleTable
+//   may already contain particles), we must **CONCATENATE**:
+//       NewHead = tempHead
+//       tail(tempHead)->next = oldHead
+//       oldHead->prev = tail(tempHead)
+//       FirstCellParticleTable[cell] = NewHead
+//       tempParticleMovingListTable[cell] = -1
+//
+// This function follows the mover’s “update particle lists” pattern:
+//   - First commits boundary-layer blocks owned by other threads (thread!=ThisThread)
+//   - Then commits this thread’s local BlockTable blocks
+//==============================================================================
+
+void PIC::Mover::CommitTempParticleMovingListsToFirstCellParticleTable() {
+  using Node_t  = cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>;
+  using Block_t = PIC::Mesh::cDataBlockAMR;
+
+  Node_t *node;
+  Block_t *block;
+
+  // For OpenMP partitioning (same scheme used in mover). If not in an OpenMP
+  // parallel region, these default to 0/1 and the modulo filters pass all nodes.
+  int this_thread_id = 0;
+  int thread_id_table_size = 1;
+
+#if defined(_OPENMP)
+  // Safe even if OpenMP is enabled but we are not inside a parallel region:
+  // omp_get_num_threads() returns 1 and omp_get_thread_num() returns 0.
+  this_thread_id = omp_get_thread_num();
+  thread_id_table_size = omp_get_num_threads();
+#endif
+
+  auto commit_block = [&](Block_t* b) {
+    if (b == NULL) return;
+
+    const int nCells = _BLOCK_CELLS_X_ * _BLOCK_CELLS_Y_ * _BLOCK_CELLS_Z_;
+    for (int icell = 0; icell < nCells; ++icell) {
+      long int tempHead = b->tempParticleMovingListTable[icell];
+      if (tempHead == -1) continue;
+
+      long int firstHead = b->FirstCellParticleTable[icell];
+
+      // Ensure the temp list head is marked as a head (prev = -1)
+      PIC::ParticleBuffer::SetPrev(-1, tempHead);
+
+      if (firstHead == -1) {
+        // Fast path: destination is empty
+        b->FirstCellParticleTable[icell] = tempHead;
+        b->tempParticleMovingListTable[icell] = -1;
+        continue;
+      }
+
+      // Find tail of temp list
+      long int tail = tempHead;
+      while (true) {
+        PIC::ParticleBuffer::byte* p = PIC::ParticleBuffer::GetParticleDataPointer(tail);
+        long int nxt = PIC::ParticleBuffer::GetNext(p);
+        if (nxt == -1) break;
+        tail = nxt;
+      }
+
+      // Concatenate: tempList + existingList
+      PIC::ParticleBuffer::SetNext(firstHead, tail);     // tail->next = firstHead
+      PIC::ParticleBuffer::SetPrev(tail, firstHead);     // firstHead->prev = tail
+      b->FirstCellParticleTable[icell] = tempHead;       // new head
+
+      // Clear temp head
+      b->tempParticleMovingListTable[icell] = -1;
+    }
+  };
+
+  // --------------------------------------------------------------------------
+  // 1) Commit boundary-layer blocks owned by other threads (same as mover)
+  // --------------------------------------------------------------------------
+  Node_t** DomainBoundaryLayerNodesList = PIC::Mesh::mesh->DomainBoundaryLayerNodesList;
+  const int ThisThread = PIC::ThisThread;
+
+  for (int thread = 0; thread < PIC::Mesh::mesh->nTotalThreads; ++thread) {
+    if (thread == ThisThread) continue;
+
+    node = DomainBoundaryLayerNodesList[thread];
+    int node_cnt = 0;
+
+    for (; node != NULL; node = node->nextNodeThisThread, ++node_cnt) {
+      if (node_cnt % thread_id_table_size != this_thread_id) continue;
+      if ((block = node->block) == NULL) continue;
+      commit_block(block);
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // 2) Commit this thread’s local blocks (BlockTable)
+  // --------------------------------------------------------------------------
+  Node_t** BlockTable = PIC::DomainBlockDecomposition::BlockTable;
+  const int nlocal_blocks = PIC::DomainBlockDecomposition::nLocalBlocks;
+
+  for (int iblock = 0; iblock < nlocal_blocks; ++iblock) {
+    if (iblock % thread_id_table_size != this_thread_id) continue;
+
+    node = BlockTable[iblock];
+    if (node == NULL) continue;
+    if ((block = node->block) == NULL) continue;
+
+    commit_block(block);
+  }
+}
+
