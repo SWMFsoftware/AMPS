@@ -9259,6 +9259,7 @@ void DeleteAttachedParticles();
 namespace PIC {
   namespace Units {
     extern picunits::Factors Factors;
+    void InitializeAMUChargeNormalization(bool verbose=false);
   }
 }
 
