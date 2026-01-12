@@ -72,6 +72,7 @@
 #include <immintrin.h>
 #endif
 
+#include "units/pic_units_normalization.h"
 
 using namespace std;
 
@@ -9252,6 +9253,13 @@ void DeleteAttachedParticles();
     }
   }
 
+}
+
+//Conversion between normalized and SI units 
+namespace PIC {
+  namespace Units {
+    extern picunits::Factors Factors;
+  }
 }
 
 //field solver
