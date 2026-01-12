@@ -10,3 +10,5 @@ B=0,1,0
 # Optional: FD stencil order (2/4/6/8)
 stencil-order=2
 
+# Domain electromagnetic BC on all faces: dirichlet | neumann
+bc=dirichlet

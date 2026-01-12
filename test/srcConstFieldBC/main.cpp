@@ -133,7 +133,6 @@ int iCase;
 
 // Global configuration for this test (used by SetIC/PrepopulateDomain in main_lib.cpp)
 TestConfig cfg;
-picunits::Factors F;
 
 // Optional: export stencil order for helper operators in this test module
 int g_TestStencilOrder = 2;
@@ -146,7 +145,7 @@ int main(int argc,char **argv) {
    printf("start: (%i/%i %i:%i:%i)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
 
   ConfigureTestFromArgsWithInput(cfg,argc,argv);
-  F=FinalizeConfigUnits(cfg);
+  PIC::FieldSolver::Electromagnetic::UnitsConversionFactors=FinalizeConfigUnits(cfg);
   g_TestStencilOrder = cfg.stencilOrder;
 
 // If -L was provided, redefine the domain to be centered at (0,0,0).
@@ -160,8 +159,15 @@ if (cfg.use_domain_L) {
 
 
 
-  // Dirichlet on all 6 faces
+// Electromagnetic field boundary conditions (all 6 faces)
+// Default behavior is Dirichlet; can be changed via CLI (-bc ...) or input file (bc=...).
+if (cfg.domain_bc == TestConfig::DomainBCType::Dirichlet) {
   PIC::FieldSolver::Electromagnetic::DomainBC.SetAll(PIC::Mesh::BCTypeDirichlet);
+}
+else {
+  PIC::FieldSolver::Electromagnetic::DomainBC.SetAll(PIC::Mesh::BCTypeNeumann);
+}
+
 
   PIC::InitMPI();
   PIC::Init_BeforeParser();
@@ -300,7 +306,7 @@ if (cfg.use_domain_L) {
   //PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(1);
 
     // Initialize global particle weight to target ~ppc/spec for the uniform particle IC.
-  InitGlobalParticleWeight_TargetPPC(F,cfg);
+  InitGlobalParticleWeight_TargetPPC(PIC::FieldSolver::Electromagnetic::UnitsConversionFactors,cfg);
 
   PIC::DomainBlockDecomposition::UpdateBlockTable();
 
@@ -356,7 +362,7 @@ if (cfg.use_domain_L) {
         int spec=0;
 	double CFL=0.8;
 
-        for (spec=0;spec<PIC::nTotalSpecies;spec++) PrepopulateDomain(spec,F,cfg);
+        for (spec=0;spec<PIC::nTotalSpecies;spec++) PrepopulateDomain(spec,PIC::FieldSolver::Electromagnetic::UnitsConversionFactors,cfg);
 
 	//Compute dt from particles (your CFL function)
         double dt = EvaluateCFLTimeStepForSpecies(0, CFL);
@@ -556,7 +562,7 @@ for (int i=0;i<PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOC
         for (int spec=0;spec<PIC::nTotalSpecies;spec++) {
           double dt=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
 
-	  InjectBoundaryParticles(F,cfg,spec,dt);
+	  InjectBoundaryParticles(PIC::FieldSolver::Electromagnetic::UnitsConversionFactors,cfg,spec,dt);
         }
       }
 

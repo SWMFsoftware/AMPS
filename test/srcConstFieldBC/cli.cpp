@@ -105,6 +105,23 @@ static void ApplyKeyValue(TestConfig& cfg, const std::string& keyRaw,
     cfg.mode = (ToBool(nums,strs,true) ? TestConfig::Mode::WithParticles : TestConfig::Mode::NoParticles);
     return;
   }
+// Domain boundary condition type: bc=dirichlet|neumann  (applied on all 6 faces)
+if (key=="bc" || key=="bc-type" || key=="domain-bc") {
+  std::string v;
+  if (!strs.empty()) v = tolower_str(strs[0]);
+  else if (!nums.empty()) v = (nums[0]!=0.0 ? "dirichlet" : "neumann"); // allow bc=1/0 as shorthand
+  v = tolower_str(trim(v));
+  if (!v.empty()) {
+    cfg.user_domain_bc = true;
+    if (v=="d" || v=="dirichlet") cfg.domain_bc = TestConfig::DomainBCType::Dirichlet;
+    else if (v=="n" || v=="neumann") cfg.domain_bc = TestConfig::DomainBCType::Neumann;
+    else {
+      std::fprintf(stderr,"[ConstFieldBC] WARNING: unknown bc='%s' in input; keeping default\n", v.c_str());
+    }
+  }
+  return;
+}
+
   if (key=="particles" || key=="withparticles") {
     cfg.mode = (ToBool(nums,strs,true) ? TestConfig::Mode::WithParticles : cfg.mode);
     return;
@@ -406,6 +423,11 @@ void PrintHelpAndExit(const char* prog) {
     "  -stencil-order=N\n"
     "      FD stencil order for this test (default 2).\n"
     "\n"
+    "Domain electromagnetic BC (applied to all 6 faces):\n"
+    "  -bc dirichlet|neumann\n"
+    "      Set DomainBC type on all faces (default: dirichlet).\n"
+    "      Input-file keys: bc=..., domain-bc=..., bc-type=...\n"
+    "\n"
     "Examples:\n"
     "  Field-only constant B:\n"
     "    %s -no-particles -B 0 5e-9 0\n"
@@ -505,7 +527,29 @@ void ConfigureTestFromArgs(TestConfig& cfg,int argc, char** argv) {
       continue;
     }
 
-    // ---- Particle (solar wind) controls ----
+    
+// ---- Domain boundary conditions ----
+// Applies to all faces (Dirichlet or Neumann). Default is Dirichlet.
+if (a=="-bc" || a=="--bc" || a.rfind("-bc=",0)==0 || a.rfind("--bc=",0)==0) {
+  std::string v;
+  if (a.rfind("=",0)!=std::string::npos) {
+    v = a.substr(a.find('=')+1);
+  }
+  else {
+    if (i+1>=argc) { std::fprintf(stderr,"[ConstFieldBC] ERROR: -bc requires a value (dirichlet|neumann)\n"); std::exit(1); }
+    v = argv[++i];
+  }
+  v = tolower_str(trim(v));
+  cfg.user_domain_bc = true;
+  if (v=="d" || v=="dirichlet") cfg.domain_bc = TestConfig::DomainBCType::Dirichlet;
+  else if (v=="n" || v=="neumann") cfg.domain_bc = TestConfig::DomainBCType::Neumann;
+  else {
+    std::fprintf(stderr,"[ConstFieldBC] ERROR: unknown BC type '%s' (expected dirichlet|neumann)\n", v.c_str());
+    std::exit(1);
+  }
+  continue;
+}
+// ---- Particle (solar wind) controls ----
     // These options imply particles are enabled.
     if (a=="-sw" || a=="-solar-wind") {
       cfg.mode = TestConfig::Mode::WithParticles;

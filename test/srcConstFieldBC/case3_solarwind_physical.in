@@ -62,3 +62,5 @@ ppc=50
 
 stencil-order=2
 
+# Domain electromagnetic BC on all faces: dirichlet | neumann
+bc=dirichlet

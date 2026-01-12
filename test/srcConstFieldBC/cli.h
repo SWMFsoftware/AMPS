@@ -21,6 +21,10 @@
 struct TestConfig {
   // Default to *field-only* unless particles are explicitly enabled.
   enum class Mode { WithParticles, NoParticles, FieldOnlyB, FieldOnlyE } mode = Mode::NoParticles;
+  enum class DomainBCType { Dirichlet, Neumann } domain_bc = DomainBCType::Dirichlet;
+
+  //Indicate that user has selected a particular BC
+  bool user_domain_bc = false;
 
   // Background fields in *solver units* (written into node data buffers by SetIC()).
   bool   userB = false;

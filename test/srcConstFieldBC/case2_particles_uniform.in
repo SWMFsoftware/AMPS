@@ -18,3 +18,5 @@ B=0,1,0
 # Stencil order
 stencil-order=2
 
+# Domain electromagnetic BC on all faces: dirichlet | neumann
+bc=dirichlet
