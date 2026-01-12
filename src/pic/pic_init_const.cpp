@@ -81,5 +81,3 @@ int PIC::Sampling::SkipOutputStep=1;
 //switch to temporary disable/enable sampling procedure
 bool PIC::Sampling::RuntimeSamplingSwitch=true;
 
-//conversion factors between normalized and SI units 
-picunits::Factors PIC::Units::Factors;
