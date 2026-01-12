@@ -70,6 +70,35 @@ TESTING
   The example program in this doc (example_units.cpp) prints SI→PIC and back
   for ρ, v, B, P, L, t. Expect values O(1) when SI inputs ≈ chosen scales.
 ================================================================================
+
+//   (M0 units)
+//   In build(), the base mass scale stored in Factors is in grams and is computed as:
+//     M0_g = 1000 * m_SI(kg)
+//   (So the comment “M0 = m_SI [g]” above should be read as “M0 is the CGS mass
+//    corresponding to the SI input mass scale”; numerically it is 1000×m_SI.)
+//
+// PARTICLE PUSHER HELPERS (SI-form Lorentz equation)
+//   This header also provides explicit SI⇄No conversions for particle mass and charge
+//   used by the SI-form pusher dv/dt = (q/m)(E + v×B). These are defined so that the
+//   dimensionless coupling satisfies:
+//     (q/m)_no = (q/m)_SI * (B0*T0)
+//
+//   Mass normalization:
+//     m0_kg = M0_g * 1e-3
+//     m_no  = m_SI / m0_kg
+//
+//   Charge normalization (depends on B0 and T0 by design):
+//     q_no = q_SI * (B0_SI * T0_SI) / m0_kg
+//     q_SI = q_no * m0_kg / (B0_SI * T0_SI)
+//   where B0_SI and T0_SI are obtained directly from Factors via No2SiB and No2SiT.
+//
+// NUMBER DENSITY HELPERS
+//   In addition to mass density ρ, helper functions are provided for number density:
+//     n_no = (n_SI[m^-3] * 1e-6) / N0[cm^-3]
+//     n_SI = n_no * N0 * 1e6
+//   Optionally, N0 can be derived from Factors and a species mass to make n and ρ
+//   consistent for that species (see the overloads below).
+
 */
 #pragma once
 
@@ -183,6 +212,12 @@ struct Factors {
     double Si2NoRho{}, Si2NoV{}, Si2NoB{}, Si2NoP{}, Si2NoJ{}, Si2NoE{}, Si2NoL{}, Si2NoT{};
     // PIC→SI inverses
     double No2SiRho{}, No2SiV{}, No2SiB{}, No2SiP{}, No2SiJ{}, No2SiE{}, No2SiL{}, No2SiT{};
+
+    // Particle mass & charge (used by SI-form particle pusher helpers)
+    //   m_no = m_SI * Si2NoM,   m_SI = m_no * No2SiM   (No2SiM = m0_kg)
+    //   q_no = q_SI * Si2NoQ,   q_SI = q_no * No2SiQ   (Si2NoQ = (B0*T0)/m0_kg)
+    double Si2NoM{}, No2SiM{};
+    double Si2NoQ{}, No2SiQ{};
 };
 
 inline Factors build(const NormScalesSI &s) {
@@ -250,6 +285,28 @@ inline Factors build(const NormScalesSI &s) {
     f.No2SiE   = 1.0 / f.Si2NoE;
     f.No2SiL   = 1.0 / f.Si2NoL;
     f.No2SiT   = 1.0 / f.Si2NoT;
+
+    // -------------------------------------------------------------------------
+    // Particle mass & charge conversions used by SI-form pusher helpers
+    //
+    // Mass reference (SI):
+    //   m0_kg = 1e-3 * M0_g
+    // so:
+    //   m_no = m_SI / m0_kg  ==  m_SI * (1/m0_kg)
+    //
+    // Charge reference chosen so that the SI-form Lorentz coupling is preserved:
+    //   (q/m)_no = (q/m)_SI * (B0*T0)
+    // which implies:
+    //   q_no = q_SI * (B0*T0)/m0_kg
+    //
+    // NOTE: No2SiB and No2SiT are the SI values of the B and time reference scales.
+    // -------------------------------------------------------------------------
+    f.No2SiM = 1.0E-3 * f.M0_g;     // [kg]
+    f.Si2NoM = 1.0 / f.No2SiM;
+
+    const double B0T0 = f.No2SiB * f.No2SiT;  // [T·s]
+    f.Si2NoQ = B0T0 / f.No2SiM;               // q_no = q_SI * Si2NoQ
+    f.No2SiQ = f.No2SiM / B0T0;               // q_SI = q_no * No2SiQ
 
     return f;
 }
@@ -321,8 +378,8 @@ inline double no2si_n(double n_no, double N0_cm3){
 //
 // This preserves all mass ratios exactly (e.g., mi/me) and is independent of how
 // charge is normalized; charge normalization only affects the (q/m) coupling.
-inline double si2no_m(double m_kg, const Factors& f) {return m_kg / (1.0E-3*f.M0_g);} 
-inline double no2si_m(double m_no, const Factors& f) {return m_no * (1.0E-3*f.M0_g);} 
+inline double si2no_m(double m_kg, const Factors& f) {return m_kg * f.Si2NoM;}
+inline double no2si_m(double m_no, const Factors& f) {return m_no * f.No2SiM;}
 
 
 //------------------------------------------------------------------------------
@@ -387,8 +444,8 @@ inline double no2si_m(double m_no, const Factors& f) {return m_no * (1.0E-3*f.M0
 //   Thus:
 //       q_no = q_C * (B0*T0) / m0_kg
 //       q_C  = q_no * m0_kg / (B0*T0)
-inline double si2no_q(double q_C, const Factors& f) {return q_C * (f.No2SiB * f.No2SiT) / (1.0E-3*f.M0_g);}  
-inline double no2si_q(double q_no, const Factors& f) {return q_no * (1.0E-3*f.M0_g) / (f.No2SiB * f.No2SiT);} 
+inline double si2no_q(double q_C, const Factors& f) {return q_C * f.Si2NoQ;}
+inline double no2si_q(double q_no, const Factors& f) {return q_no * f.No2SiQ;}
 
 
 // OPTIONAL OVERLOADS (derive N0 from Factors and a species mass)
