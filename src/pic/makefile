@@ -93,7 +93,8 @@ PICOBJ = pic.o \
 	mesh/domain_boundary_bc_collectors.o \
 	parallel/halo_sync.o \
 	parallel/init_send_halo.o \
-	ecsim/halo_sync.o	
+	ecsim/halo_sync.o \
+	units/units.o
 
 	
 ifneq ($(BATL),nobatl)	
