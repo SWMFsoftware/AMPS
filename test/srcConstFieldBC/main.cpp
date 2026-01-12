@@ -145,7 +145,7 @@ int main(int argc,char **argv) {
    printf("start: (%i/%i %i:%i:%i)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
 
   ConfigureTestFromArgsWithInput(cfg,argc,argv);
-  PIC::FieldSolver::Electromagnetic::UnitsConversionFactors=FinalizeConfigUnits(cfg);
+  PIC::Units::Factors=FinalizeConfigUnits(cfg);
   g_TestStencilOrder = cfg.stencilOrder;
 
 // If -L was provided, redefine the domain to be centered at (0,0,0).
@@ -306,7 +306,7 @@ else {
   //PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(1);
 
     // Initialize global particle weight to target ~ppc/spec for the uniform particle IC.
-  InitGlobalParticleWeight_TargetPPC(PIC::FieldSolver::Electromagnetic::UnitsConversionFactors,cfg);
+  InitGlobalParticleWeight_TargetPPC(PIC::Units::Factors,cfg);
 
   PIC::DomainBlockDecomposition::UpdateBlockTable();
 
@@ -362,7 +362,7 @@ else {
         int spec=0;
 	double CFL=0.8;
 
-        for (spec=0;spec<PIC::nTotalSpecies;spec++) PrepopulateDomain(spec,PIC::FieldSolver::Electromagnetic::UnitsConversionFactors,cfg);
+        for (spec=0;spec<PIC::nTotalSpecies;spec++) PrepopulateDomain(spec,PIC::Units::Factors,cfg);
 
 	//Compute dt from particles (your CFL function)
         double dt = EvaluateCFLTimeStepForSpecies(0, CFL);
@@ -562,7 +562,7 @@ for (int i=0;i<PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOC
         for (int spec=0;spec<PIC::nTotalSpecies;spec++) {
           double dt=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
 
-	  InjectBoundaryParticles(PIC::FieldSolver::Electromagnetic::UnitsConversionFactors,cfg,spec,dt);
+	  InjectBoundaryParticles(PIC::Units::Factors,cfg,spec,dt);
         }
       }
 
