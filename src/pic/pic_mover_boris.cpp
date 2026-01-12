@@ -983,15 +983,25 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
   //advance the particle velocity
   double QdT_over_m,QdT_over_2m,alpha[3][3];
   double c0,QdT_over_2m_squared,mass,chargeQ;
-  double mass_conv=1.0,charge_conv=1.0;
+//  double mass_conv=1.0,charge_conv=1.0;
 
-  if (_PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_) {
-    mass_conv =1.0/_AMU_;
-    charge_conv=1.0/ElectronCharge;
+//  if (_PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_) {
+//    mass_conv =1.0/_AMU_;
+//    charge_conv=1.0/ElectronCharge;
+//  }
+
+  switch (_PIC_FIELD_SOLVER_INPUT_UNIT_) {
+  case _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_: 
+    chargeQ=picunits::si2no_q(data->ElectricChargeTable[spec],PIC::Units::Factors);  
+    mass=picunits::si2no_m(data->MolMass[spec],PIC::Units::Factors); 
+    break;
+  default:
+    chargeQ = data->ElectricChargeTable[spec];
+    mass= data->MolMass[spec];
   }
 
-  chargeQ = data->ElectricChargeTable[spec]*charge_conv; 
-  mass= data->MolMass[spec]*mass_conv;
+//  chargeQ = data->ElectricChargeTable[spec]*charge_conv; 
+//  mass= data->MolMass[spec]*mass_conv;
   QdT_over_m=chargeQ*dtTotal/mass;
   QdT_over_2m=0.5*QdT_over_m;
   QdT_over_2m_squared=QdT_over_2m*QdT_over_2m;

@@ -2008,10 +2008,19 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
         double c0,QdT_over_2m_squared;
         double mass;
 
-        chargeQ = ChargeTable[spec]*charge_conv;
-        mass= MassTable[spec]*mass_conv;
-        //effect of particle weight
+        //chargeQ = ChargeTable[spec]*charge_conv;
+        //mass= MassTable[spec]*mass_conv;
+        switch (_PIC_FIELD_SOLVER_INPUT_UNIT_) {
+        case _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_:
+          chargeQ=picunits::si2no_q(ChargeTable[spec],PIC::Units::Factors);
+          mass=picunits::si2no_m(MassTable[spec],PIC::Units::Factors);
+          break;
+        default:
+          chargeQ = ChargeTable[spec];
+          mass= MassTable[spec];
+        }
 
+        //effect of particle weight
         chargeQ *= LocalParticleWeight;
         mass *= LocalParticleWeight;
 
