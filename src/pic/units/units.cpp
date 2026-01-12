@@ -103,8 +103,8 @@ picunits::Factors PIC::Units::Factors;
 void PIC::Units::InitializeAMUChargeNormalization(bool verbose) {
   // Use your project-wide constants if they exist; otherwise these are the exact SI values.
   // If _AMU_ and ElectronCharge are already defined macros/consts in AMPS, remove these and use the global ones.
-  constexpr double AMU_kg = 1.66053906660e-27;     // kg
-  constexpr double e_C    = 1.602176634e-19;       // Coulomb
+  constexpr double AMU_kg = _AMU_;     // kg
+  constexpr double e_C    = ElectronCharge;       // Coulomb
 
   // 1) Fix mSI so that mass_conv = 1/mSI = 1/AMU
   const double mSI_kg = AMU_kg;
