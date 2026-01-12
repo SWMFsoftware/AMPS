@@ -77,9 +77,14 @@ int PIC::TimeStep() {
    
    // recompute bc_type flags on the new owners
    if (_PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__OFF_) {
-     PIC::FieldSolver::Electromagnetic::DomainBC.RecomputeBCType();
-   } 
-   
+     static int LastMeshModificationID=-1;
+
+     if (LastMeshModificationID!=PIC::Mesh::mesh->nMeshModificationCounter) {
+       PIC::FieldSolver::Electromagnetic::DomainBC.RecomputeBCType();
+       LastMeshModificationID=PIC::Mesh::mesh->nMeshModificationCounter;
+     }
+   }
+
    //init required sample length if the sample output mode is by time interval 
    static bool SampleTimeInitialized=false;
    
@@ -651,7 +656,12 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 
         // recompute bc_type flags on the new owners
        if (_PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__OFF_) {
-         PIC::FieldSolver::Electromagnetic::DomainBC.RecomputeBCType();
+         static int LastMeshModificationID=-1; 
+
+         if (LastMeshModificationID!=PIC::Mesh::mesh->nMeshModificationCounter) {
+           PIC::FieldSolver::Electromagnetic::DomainBC.RecomputeBCType();
+	   LastMeshModificationID=PIC::Mesh::mesh->nMeshModificationCounter;
+	 }
        }
 
         MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
@@ -1706,6 +1716,9 @@ void PIC::Init_BeforeParser() {
 
   //initiate MPI
   InitMPI();
+
+  //init the default univ normalization 
+  PIC::Units::InitializeAMUChargeNormalization();
 
 //  PIC::IndividualModelSampling::RequestStaticCellData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
 //  PIC::IndividualModelSampling::RequestStaticCellData->clear();
