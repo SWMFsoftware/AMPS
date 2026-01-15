@@ -4808,7 +4808,80 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryChargeDivE(){
 //    the (k,j,i) cell loops are serial for good cache locality.
 //
 // ============================================================================
+////======================================================================================
+// UpdateB()
+//======================================================================================
 //
+// PURPOSE
+//   Advance the magnetic field B by one time step in the ECSIM electromagnetic solver:
+//
+//       B^{n+1} = B^{n} - dt * (curl E)^{n+θ}
+//
+//   The curl(E) operator is evaluated on the center-node magnetic field storage used by AMPS.
+//   This routine writes the new-time magnetic field into the "Prev" state vector (PrevBOffset)
+//   using the old-time values from the "Current" state vector (CurrentBOffset).
+//
+// DATA LAYOUT / STATE VECTORS
+//   Each center node stores magnetic field components in a packed state vector.
+//   The offsets used here have the following semantics:
+//     - CurrentBOffset : B^{n}   (old time level)
+//     - PrevBOffset    : B^{n+1} (new time level to be computed)
+//
+//   Access pattern used throughout this function:
+//     char* base = CenterNode->GetAssociatedDataBufferPointer()
+//                  + PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+//     double* CurrentPtr = (double*)(base + CurrentBOffset);
+//     double* PrevPtr    = (double*)(base + PrevBOffset);
+//
+// HIGH-LEVEL ALGORITHM
+//   The update is performed per AMR block. For each block we do:
+//
+//   (1) Strictly-interior cells:
+//       - Update cells with i=1..Nx-2, j=1..Ny-2, k=1..Nz-2 directly from the PDE update
+//         (curl(E) contribution) because all stencil points are inside the block.
+//
+//   (2) Block-boundary cells:
+//       - Update ALL cells on the AMR block boundary (i==0 or i==Nx-1 or j==0 or j==Ny-1 or
+//         k==0 or k==Nz-1) using the same PDE update.
+//       - This includes both physical-domain boundary cells and block-interface cells.
+//       - We compute these candidate PDE updates FIRST so that any cell that might be used as a
+//         boundary-condition "donor" has a well-defined B^{n+1} value in PrevBOffset.
+//
+//   (3) Physical-domain BC enforcement (only for cells on the GLOBAL domain boundary):
+//       - Dirichlet ("constant"): enforce B^{n+1} := B^{n} at the physical boundary.
+//       - Neumann ("floating"): enforce ∂B/∂n = 0 at the physical boundary.
+//
+//       CORNER/EDGE CORRECTNESS FOR NEUMANN
+//         A boundary cell can lie on multiple physical domain faces simultaneously (edges/corners).
+//         If Neumann is enforced with a single 3D donor (ii,jj,kk), the donor can move tangentially
+//         and the resulting constraint effectively becomes "diagonal", which is incorrect.
+//
+//         We therefore use a MULTI-DONOR, FACE-NORMAL construction:
+//
+//           B^{n+1}(i,j,k) := (1/N) * Σ_m B^{n+1}(donor_m)
+//
+//         where donor_m are one-step inward neighbors along each active boundary normal:
+//           -X/+X: donor = (iNeib, j, k)  (fallback: i±1 inward)
+//           -Y/+Y: donor = (i, jNeib, k)  (fallback: j±1 inward)
+//           -Z/+Z: donor = (i, j, kNeib)  (fallback: k±1 inward)
+//
+//       ORDERING TO AVOID EXTRA BUFFERS
+//         Donor cells for an edge/corner Neumann boundary cell are themselves boundary cells
+//         tangentially. To avoid allocating snapshot/temporary buffers and to remove traversal-order
+//         dependence, we apply Neumann in a topological order that respects donor dependencies:
+//
+//           (a) Face-only cells   : touch exactly 1 physical face (donors are strictly interior)
+//           (b) Edge cells        : touch exactly 2 physical faces (donors are face-only cells)
+//           (c) Corner cells      : touch exactly 3 physical faces (donors are edge cells)
+//
+//         With the face-normal donor rule above, this ordering guarantees donors are finalized
+//         before being read, so Neumann can be enforced in-place deterministically.
+//
+// NOTES
+//   - This function assumes bc_type.{iNeib,jNeib,kNeib} are populated for physical boundary cells.
+//     If not, robust geometric fallbacks are used (one cell inward along the relevant normal).
+//======================================================================================
+
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB() {
   // --------------------------------------------------------------------------
   // Implementation overview:
@@ -4990,91 +5063,291 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB() {
             process_single_cell(node, i, j, k, cache);
     }
 
+
     // 2) Block-boundary cells (includes edges/corners)
+    //
+    // This section has TWO responsibilities:
+    //   (A) Compute the candidate time-advanced magnetic field B^{n+1} on ALL cells that lie on the
+    //       boundary of the AMR block. This is purely the PDE update (curl(E)) and does NOT yet apply
+    //       physical (global-domain) boundary conditions.
+    //
+    //   (B) For those block-boundary cells that ALSO lie on the PHYSICAL domain boundary, overwrite
+    //       the candidate values with the requested boundary condition (Dirichlet or Neumann).
+    //
+    // We deliberately separate (A) and (B) because a Neumann boundary cell may use as a donor a cell
+    // that is itself on the block boundary (tangentially). By computing candidate B^{n+1} everywhere
+    // on the block boundary first, we guarantee donors exist. We then apply BCs in a dependency-safe
+    // order (faces -> edges -> corners) to avoid diagonal donors and order dependence.
+
     const int Nx = _BLOCK_CELLS_X_;
     const int Ny = _BLOCK_CELLS_Y_;
     const int Nz = _BLOCK_CELLS_Z_;
 
+    //----------------------------------------------------------------------------------
+    // (A) Candidate PDE update on ALL block-boundary cells
+    //----------------------------------------------------------------------------------
+    //
+    // All strictly interior cells were updated in step (1) already. Here we update all remaining
+    // cells on the block boundary, including:
+    //   - physical domain boundary cells, and
+    //   - AMR block interface cells (neighbor blocks).
+    //
+    // At this point we DO NOT enforce Dirichlet/Neumann; we only compute B^{n+1} from curl(E).
     for (int k=0; k<Nz; k++)
       for (int j=0; j<Ny; j++)
-        for (int i=0; i<Nx; i++)
-        {
-          // Skip strictly interior
+        for (int i=0; i<Nx; i++) {
+          // Skip strictly interior cells (already updated).
           if (i>0 && i<Nx-1 && j>0 && j<Ny-1 && k>0 && k<Nz-1) continue;
 
-          // Is this (i,j,k) actually on a PHYSICAL domain boundary face?
-          bool onDomainBoundary = false;
-          if (i==0     && faceIsDomain[0]) onDomainBoundary = true;
-          if (i==Nx-1  && faceIsDomain[1]) onDomainBoundary = true;
-          if (j==0     && faceIsDomain[2]) onDomainBoundary = true;
-          if (j==Ny-1  && faceIsDomain[3]) onDomainBoundary = true;
-          if (k==0     && faceIsDomain[4]) onDomainBoundary = true;
-          if (k==Nz-1  && faceIsDomain[5]) onDomainBoundary = true;
+          // Compute B^{n+1} candidate into PrevBOffset using the same logic as the interior update.
+          process_single_cell(node, i, j, k, cache);
+        }
 
-          // Not a physical boundary cell -> process normally
-          if (!onDomainBoundary) {
-            process_single_cell(node, i, j, k, cache);
-            continue;
-          }
+    //----------------------------------------------------------------------------------
+    // (B) Physical domain BC enforcement on boundary cells (Dirichlet / Neumann)
+    //----------------------------------------------------------------------------------
+    //
+    // Only cells that are on the *physical* domain boundary (global mesh boundary) should be changed
+    // by BC enforcement. Block interface cells inside the global domain keep their PDE-updated values.
 
-          // Physical boundary cell -> apply B BC
+    // Helper lambda: return true if (i,j,k) is on a given physical domain face.
+    // Face convention in faceIsDomain[]:
+    //   0:-X, 1:+X, 2:-Y, 3:+Y, 4:-Z, 5:+Z
+    auto classify_physical_faces = [&](int i,int j,int k,
+                                       bool& onXm,bool& onXp,bool& onYm,bool& onYp,bool& onZm,bool& onZp,
+                                       int& nPhysicalFaces)->bool {
+      onXm = (i==0    && faceIsDomain[0]);
+      onXp = (i==Nx-1 && faceIsDomain[1]);
+#if _MESH_DIMENSION_ >= 2
+      onYm = (j==0    && faceIsDomain[2]);
+      onYp = (j==Ny-1 && faceIsDomain[3]);
+#else
+      onYm = onYp = false;
+#endif
+#if _MESH_DIMENSION_ == 3
+      onZm = (k==0    && faceIsDomain[4]);
+      onZp = (k==Nz-1 && faceIsDomain[5]);
+#else
+      onZm = onZp = false;
+#endif
+      nPhysicalFaces = int(onXm) + int(onXp) + int(onYm) + int(onYp) + int(onZm) + int(onZp);
+      return (nPhysicalFaces>0);
+    };
+
+    // Helper lambda: compute the face-normal donor indices for Neumann.
+    //
+    // IMPORTANT:
+    //   We never treat (iNeib,jNeib,kNeib) as a single 3D donor coordinate.
+    //   Each is an axis-specific inward index; we build donors by shifting only along each
+    //   active boundary normal.
+    auto build_neumann_donors = [&](int i,int j,int k,
+                                   bool onXm,bool onXp,bool onYm,bool onYp,bool onZm,bool onZp,
+                                   int iNeib,int jNeib,int kNeib,
+                                   int donors[3][3], int& nDonors) {
+      nDonors = 0;
+
+      auto push_donor = [&](int ii,int jj,int kk) {
+        // Range check (block-local indices)
+        if (ii<0 || ii>=Nx) return;
+        if (jj<0 || jj>=Ny) return;
+        if (kk<0 || kk>=Nz) return;
+        // Must not be self
+        if (ii==i && jj==j && kk==k) return;
+        // Unique check (avoid duplicates at degenerate cases)
+        for (int q=0;q<nDonors;q++)
+          if (donors[q][0]==ii && donors[q][1]==jj && donors[q][2]==kk) return;
+        donors[nDonors][0]=ii;
+        donors[nDonors][1]=jj;
+        donors[nDonors][2]=kk;
+        nDonors++;
+      };
+
+      // X-normal donor (one cell inward in X). Prefer bc_type.iNeib if valid; else geometric fallback.
+      if (onXm || onXp) {
+        int ii = iNeib;
+        if (!(ii>=0 && ii<Nx && ii!=i)) {
+          ii = (onXm ? 1 : Nx-2);
+        }
+        push_donor(ii, j, k);
+      }
+
+#if _MESH_DIMENSION_ >= 2
+      // Y-normal donor (one cell inward in Y)
+      if (onYm || onYp) {
+        int jj = jNeib;
+        if (!(jj>=0 && jj<Ny && jj!=j)) {
+          jj = (onYm ? 1 : Ny-2);
+        }
+        push_donor(i, jj, k);
+      }
+#endif
+
+#if _MESH_DIMENSION_ == 3
+      // Z-normal donor (one cell inward in Z)
+      if (onZm || onZp) {
+        int kk = kNeib;
+        if (!(kk>=0 && kk<Nz && kk!=k)) {
+          kk = (onZm ? 1 : Nz-2);
+        }
+        push_donor(i, j, kk);
+      }
+#endif
+
+      // Safety fallback: if no donors were added (should not happen), use a diagonal inward shift.
+      if (nDonors==0) {
+        int ii=i, jj=j, kk=k;
+        if (onXm) ii=1; if (onXp) ii=Nx-2;
+#if _MESH_DIMENSION_ >= 2
+        if (onYm) jj=1; if (onYp) jj=Ny-2;
+#endif
+#if _MESH_DIMENSION_ == 3
+        if (onZm) kk=1; if (onZp) kk=Nz-2;
+#endif
+        push_donor(ii,jj,kk);
+      }
+    };
+
+    //----------------------------------------------------------------------------------
+    // (B1) Apply Dirichlet BC first (in-place)
+    //----------------------------------------------------------------------------------
+    //
+    // Dirichlet BC ("constant") means B is held fixed at the boundary.
+    // We apply it first so that Neumann donors that reference a Dirichlet boundary cell
+    // will see the correct fixed value.
+    for (int k=0; k<Nz; k++)
+      for (int j=0; j<Ny; j++)
+        for (int i=0; i<Nx; i++) {
+          if (i>0 && i<Nx-1 && j>0 && j<Ny-1 && k>0 && k<Nz-1) continue;
+
+          bool onXm,onXp,onYm,onYp,onZm,onZp;
+          int nFaces;
+          if (!classify_physical_faces(i,j,k,onXm,onXp,onYm,onYp,onZm,onZp,nFaces)) continue;
+
           PIC::Mesh::cDataCenterNode* CenterNode =
             node->block->GetCenterNode(_getCenterNodeLocalNumber(i, j, k));
 
-          char* offsetB = CenterNode->GetAssociatedDataBufferPointer() +
-                          PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
-          double* CurrentPtr = (double*)(offsetB + CurrentBOffset); // B^n
-          double* PrevPtr    = (double*)(offsetB + PrevBOffset);    // B^{n+1}
-
           const int bcType = get_center_bc_type(CenterNode);
+          if (bcType != PIC::Mesh::BCTypeDirichlet) continue;
 
-          if (bcType==PIC::Mesh::BCTypeDirichlet) {
-            // Dirichlet ("const"): keep B unchanged at the boundary
-            PrevPtr[BxOffsetIndex] = CurrentPtr[BxOffsetIndex];
-            PrevPtr[ByOffsetIndex] = CurrentPtr[ByOffsetIndex];
-            PrevPtr[BzOffsetIndex] = CurrentPtr[BzOffsetIndex];
-          }
-          else {
-            // Neumann ("floating"): copy UPDATED B^{n+1} from the adjacent interior cell.
-            // The adjacent interior indices are expected to be precomputed and stored in
-            // CenterNode->bc_type.{iNeib,jNeib,kNeib} by the domain-boundary BC collectors.
-            //
-            // IMPORTANT: Step (1) above updates strictly interior cells first so the interior
-            // neighbor's PrevBOffset (B^{n+1}) is available here.
-            int ii = CenterNode->bc_type.iNeib;
-            int jj = CenterNode->bc_type.jNeib;
-            int kk = CenterNode->bc_type.kNeib;
+          // Access old/new B vectors.
+          char* base = CenterNode->GetAssociatedDataBufferPointer() +
+                       PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+          double* CurrentPtr = (double*)(base + CurrentBOffset); // B^n
+          double* PrevPtr    = (double*)(base + PrevBOffset);    // B^{n+1} (to overwrite)
 
-            // Defensive fallback (should not trigger if bc_type.* are set correctly):
-            //   - indices out of range, or
-            //   - indices refer to this same boundary cell.
-            // In that case, fall back to a geometric "shift inward" guess.
-            if (ii<0 || ii>=Nx || jj<0 || jj>=Ny || kk<0 || kk>=Nz || (ii==i && jj==j && kk==k)) {
-              ii=i; jj=j; kk=k;
-
-              if (i==0    && faceIsDomain[0]) ii = 1;
-              if (i==Nx-1 && faceIsDomain[1]) ii = Nx-2;
-
-              if (j==0    && faceIsDomain[2]) jj = 1;
-              if (j==Ny-1 && faceIsDomain[3]) jj = Ny-2;
-
-              if (k==0    && faceIsDomain[4]) kk = 1;
-              if (k==Nz-1 && faceIsDomain[5]) kk = Nz-2;
-            }
-
-            PIC::Mesh::cDataCenterNode* CenterNodeInside =
-              node->block->GetCenterNode(_getCenterNodeLocalNumber(ii, jj, kk));
-
-            char* offsetBInside = CenterNodeInside->GetAssociatedDataBufferPointer() +
-                                  PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
-            double* PrevPtrInside = (double*)(offsetBInside + PrevBOffset); // expected already updated (interior-first)
-
-            PrevPtr[BxOffsetIndex] = PrevPtrInside[BxOffsetIndex];
-            PrevPtr[ByOffsetIndex] = PrevPtrInside[ByOffsetIndex];
-            PrevPtr[BzOffsetIndex] = PrevPtrInside[BzOffsetIndex];
-
-          }
+          // Enforce B^{n+1} := B^{n}
+          PrevPtr[BxOffsetIndex] = CurrentPtr[BxOffsetIndex];
+          PrevPtr[ByOffsetIndex] = CurrentPtr[ByOffsetIndex];
+          PrevPtr[BzOffsetIndex] = CurrentPtr[BzOffsetIndex];
         }
+
+    //----------------------------------------------------------------------------------
+    // (B2) Apply Neumann BC in dependency-safe order: faces -> edges -> corners
+    //----------------------------------------------------------------------------------
+    //
+    // Neumann BC ("floating") is implemented as "copy-from-inside" with multi-donor averaging:
+    //
+    //     B^{n+1}(boundary) := average( B^{n+1}(donors) )
+    //
+    // where donors are face-normal inward neighbors. At edges/corners, donors can lie on other
+    // physical faces tangentially. We avoid any order dependence by processing:
+    //   - face-only cells first (their donors are strictly interior),
+    //   - then edge cells (their donors are face-only),
+    //   - then corner cells (their donors are edges).
+    //
+    // This makes the in-place overwrite deterministic without snapshot buffers.
+
+    // Helper lambda: apply Neumann to one cell (assumes it is on physical boundary and NOT Dirichlet).
+    auto apply_neumann_one_cell = [&](int i,int j,int k,
+                                     bool onXm,bool onXp,bool onYm,bool onYp,bool onZm,bool onZp) {
+      PIC::Mesh::cDataCenterNode* CenterNode =
+        node->block->GetCenterNode(_getCenterNodeLocalNumber(i, j, k));
+
+      const int bcType = get_center_bc_type(CenterNode);
+      if (bcType == PIC::Mesh::BCTypeDirichlet) return; // already enforced
+
+      // Read axis-specific inward indices (if populated); if invalid, fallbacks in build_neumann_donors().
+      const int iNeib = CenterNode->bc_type.iNeib;
+      const int jNeib = CenterNode->bc_type.jNeib;
+      const int kNeib = CenterNode->bc_type.kNeib;
+
+      int donors[3][3];
+      int nDonors;
+      build_neumann_donors(i,j,k,onXm,onXp,onYm,onYp,onZm,onZp,iNeib,jNeib,kNeib,donors,nDonors);
+
+      // Accumulate donor B^{n+1} values from PrevBOffset (donors are already finalized by ordering).
+      double bx=0.0, by=0.0, bz=0.0;
+      for (int q=0; q<nDonors; q++) {
+        const int ii = donors[q][0];
+        const int jj = donors[q][1];
+        const int kk = donors[q][2];
+
+        PIC::Mesh::cDataCenterNode* DonorNode =
+          node->block->GetCenterNode(_getCenterNodeLocalNumber(ii, jj, kk));
+
+        char* baseD = DonorNode->GetAssociatedDataBufferPointer() +
+                      PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+        double* PrevD = (double*)(baseD + PrevBOffset);
+
+        bx += PrevD[BxOffsetIndex];
+        by += PrevD[ByOffsetIndex];
+        bz += PrevD[BzOffsetIndex];
+      }
+
+      const double invN = 1.0 / double(nDonors);
+
+      // Overwrite this boundary cell's B^{n+1} with the averaged donor value.
+      char* base = CenterNode->GetAssociatedDataBufferPointer() +
+                   PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+      double* PrevPtr = (double*)(base + PrevBOffset);
+
+      PrevPtr[BxOffsetIndex] = bx * invN;
+      PrevPtr[ByOffsetIndex] = by * invN;
+      PrevPtr[BzOffsetIndex] = bz * invN;
+    };
+
+    // Pass Neumann-FACES: cells that touch exactly 1 physical domain face.
+    for (int k=0; k<Nz; k++)
+      for (int j=0; j<Ny; j++)
+        for (int i=0; i<Nx; i++) {
+          if (i>0 && i<Nx-1 && j>0 && j<Ny-1 && k>0 && k<Nz-1) continue;
+
+          bool onXm,onXp,onYm,onYp,onZm,onZp;
+          int nFaces;
+          if (!classify_physical_faces(i,j,k,onXm,onXp,onYm,onYp,onZm,onZp,nFaces)) continue;
+          if (nFaces != 1) continue;
+
+          apply_neumann_one_cell(i,j,k,onXm,onXp,onYm,onYp,onZm,onZp);
+        }
+
+    // Pass Neumann-EDGES: cells that touch exactly 2 physical domain faces.
+    for (int k=0; k<Nz; k++)
+      for (int j=0; j<Ny; j++)
+        for (int i=0; i<Nx; i++) {
+          if (i>0 && i<Nx-1 && j>0 && j<Ny-1 && k>0 && k<Nz-1) continue;
+
+          bool onXm,onXp,onYm,onYp,onZm,onZp;
+          int nFaces;
+          if (!classify_physical_faces(i,j,k,onXm,onXp,onYm,onYp,onZm,onZp,nFaces)) continue;
+          if (nFaces != 2) continue;
+
+          apply_neumann_one_cell(i,j,k,onXm,onXp,onYm,onYp,onZm,onZp);
+        }
+
+    // Pass Neumann-CORNERS: cells that touch exactly 3 physical domain faces.
+    for (int k=0; k<Nz; k++)
+      for (int j=0; j<Ny; j++)
+        for (int i=0; i<Nx; i++) {
+          if (i>0 && i<Nx-1 && j>0 && j<Ny-1 && k>0 && k<Nz-1) continue;
+
+          bool onXm,onXp,onYm,onYp,onZm,onZp;
+          int nFaces;
+          if (!classify_physical_faces(i,j,k,onXm,onXp,onYm,onYp,onZm,onZp,nFaces)) continue;
+          if (nFaces != 3) continue;
+
+          apply_neumann_one_cell(i,j,k,onXm,onXp,onYm,onYp,onZm,onZp);
+        }
+
   };
 
 
