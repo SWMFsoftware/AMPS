@@ -6193,3 +6193,103 @@ Compile=
 >>>@echo "test_cdap_test_compile... done" >> test_cdap_test$(TESTcdap_test-REF).diff
 
 <#
+
+==============================================================================
+Test for Constant E and B Boundary Conditions for Field Solver
+==============================================================================
+
+#>
+Name=test/const-field-bc
+Time=5
+
+Type=amps
+
+Keys=-spice-path=nospice -amps-test=on
+Outs=test_field-bc-constE_dirichlet test_field-bc-constE_neumann test_field-bc-constB_dirichlet test_field-bc-constB_neumann
+
+Run=
+>>>@echo "test_const-field-bc_run..." > test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>@echo Test test_const-field-bc has started: `date`
+>>>cp test/srcConstFieldBC/case* $(TESTconst-field-bcDIR) 
+>>>mkdir -p $(TESTconst-field-bcDIR)/res 
+
+>>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>@echo "Running Case 1: constE with Dirichlet BC" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>cd $(TESTconst-field-bcDIR); ${TESTMPIRUN1} ./amps -i case1_constE.in -bc dirichlet
+>>>mv $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat $(TESTconst-field-bcDIR)/res/constE_dirichlet.dat
+
+>>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>@echo "Running Case 2: constE with Neumann BC" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>cd $(TESTconst-field-bcDIR); ${TESTMPIRUN1} ./amps -i case1_constE.in -bc neumann
+>>>mv $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat $(TESTconst-field-bcDIR)/res/constE_neumann.dat
+
+>>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>@echo "Running Case 3: constB with Dirichlet BC" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>cd $(TESTconst-field-bcDIR); ${TESTMPIRUN1} ./amps -i case1_constB.in -bc dirichlet
+>>>mv $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat $(TESTconst-field-bcDIR)/res/constB_dirichlet.dat
+
+>>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>@echo "Running Case 4: constB with Neumann BC" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>cd $(TESTconst-field-bcDIR); ${TESTMPIRUN1} ./amps -i case1_constB.in -bc neumann
+>>>mv $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat $(TESTconst-field-bcDIR)/res/constB_neumann.dat
+
+>>>@echo "test_const-field-bc_run... done" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>@echo Test test_const-field-bc has finished: `date`
+
+
+Check=
+>>>@echo "test_const-field-bc_check..." >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+
+>>>@# Unzip reference solutions if not already unzipped
+>>>@if [ ! -f output/test_const-field-bc/constE.dat ]; then \
+>>>  gunzip -k output/test_const-field-bc/constE.dat.gz; \
+>>>fi
+>>>@if [ ! -f output/test_const-field-bc/constB.dat ]; then \
+>>>  gunzip -k output/test_const-field-bc/constB.dat.gz; \
+>>>fi
+
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTconst-field-bcDIR)/res/constE_dirichlet.dat \
+>>>  output/test_const-field-bc/constE.dat \
+>>>  > test_field-bc-constE_dirichlet.diff
+
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTconst-field-bcDIR)/res/constE_neumann.dat \
+>>>  output/test_const-field-bc/constE.dat \
+>>>  > test_field-bc-constE_neumann.diff
+
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTconst-field-bcDIR)/res/constB_dirichlet.dat \
+>>>  output/test_const-field-bc/constB.dat \
+>>>  > test_field-bc-constB_dirichlet.diff
+
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTconst-field-bcDIR)/res/constB_neumann.dat \
+>>>  output/test_const-field-bc/constB.dat \
+>>>  > test_field-bc-constB_neumann.diff
+
+
+>>>@ls -l test_field-bc-constE_dirichlet.diff
+>>>@ls -l test_field-bc-constE_neumann.diff
+>>>@ls -l test_field-bc-constB_dirichlet.diff
+>>>@ls -l test_field-bc-constB_neumann.diff
+
+>>>@# Combine all diff files into master diff file
+>>>@cat test_field-bc-constE_dirichlet.diff \
+>>>    test_field-bc-constE_neumann.diff \
+>>>    test_field-bc-constB_dirichlet.diff \
+>>>    test_field-bc-constB_neumann.diff \
+>>>    > test_const-field-bc$(TESTconst-field-bc-REF).diff
+
+>>>@ls -l test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>@echo Test test_const-field-bc verification completed: `date`
+
+<#
