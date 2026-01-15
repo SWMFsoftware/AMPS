@@ -133,6 +133,11 @@ void PIC::Units::InitializeAMUChargeNormalization(bool verbose) {
   const double rel_err_mass   = std::fabs(mass_conv   - mass_conv_target)   / mass_conv_target;
   const double rel_err_charge = std::fabs(charge_conv - charge_conv_target) / charge_conv_target;
 
+  if (PIC::Units::Factors.L0_cm!=0.0) {
+    std::printf("\nPIC::Units::Factors are already initialized\n");
+    return;
+  }
+
   if (verbose) {
     std::printf("\nInitializeBuild_ForMassAMU_ChargeE:\n");
     std::printf("  uSI = %.15e m/s\n", uSI_mps);
