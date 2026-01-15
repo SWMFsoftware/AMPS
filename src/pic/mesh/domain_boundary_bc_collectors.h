@@ -290,6 +290,52 @@ bool CollectAndMarkDomainBoundaryNeumannCellsOnFaces(const int* faces, int nFace
 bool CollectAndMarkDomainBoundaryNeumannCornerNodesOnFaces(const int* faces, int nFaces,
                                                     std::vector<cBoundaryCornerNodeInfo>& out);
 
+/**
+ * Build the face-normal Neumann donor corner indices from axis-specific inward indices.
+ *
+ * IMPORTANT:
+ *   In AMPS, a boundary corner may lie on multiple physical domain faces (edge/corner of the domain).
+ *   The preprocessing step stores three axis-specific inward indices:
+ *     - iNeib : inward i-index for +/-X Neumann
+ *     - jNeib : inward j-index for +/-Y Neumann
+ *     - kNeib : inward k-index for +/-Z Neumann
+ *
+ *   These three numbers are NOT a single donor corner coordinate. When enforcing Neumann on a
+ *   specific face, build the donor by shifting ONLY along the face-normal direction:
+ *     face 0/-X or 1/+X : donor = (iNeib, j, k)
+ *     face 2/-Y or 3/+Y : donor = (i, jNeib, k)
+ *     face 4/-Z or 5/+Z : donor = (i, j, kNeib)
+ *
+ * Face convention:
+ *   0:-X, 1:+X, 2:-Y, 3:+Y, 4:-Z, 5:+Z
+ */
+inline void GetNeumannDonorCornerForFace(
+  int i, int j, int k,
+  int iNeib, int jNeib, int kNeib,
+  int face,
+  int& ii, int& jj, int& kk)
+{
+  ii = i; jj = j; kk = k;
+
+  switch (face) {
+    case 0: case 1: // X-normal
+      ii = iNeib;
+      break;
+#if _MESH_DIMENSION_ >= 2
+    case 2: case 3: // Y-normal
+      jj = jNeib;
+      break;
+#endif
+#if _MESH_DIMENSION_ == 3
+    case 4: case 5: // Z-normal
+      kk = kNeib;
+      break;
+#endif
+    default:
+      break;
+  }
+}
+
 } // namespace Mesh
 } // namespace PIC
 
