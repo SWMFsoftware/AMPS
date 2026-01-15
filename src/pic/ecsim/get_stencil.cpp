@@ -543,36 +543,88 @@ auto boundary_short_circuit = [&]() -> bool {
 
   if (!onDomainBoundary) return false;
 
-  // Pick one representative boundary face (first match; edge/corner cases follow this choice)
-  // Face convention: 0:-x, 1:+x, 2:-y, 3:+y, 4:-z, 5:+z
-  int face = -1;
-  if (i==0       && faceIsDomain[0]) face = 0;
-  else if (i==NxC-1 && faceIsDomain[1]) face = 1;
-  else if (j==0       && faceIsDomain[2]) face = 2;
-  else if (j==NyC-1 && faceIsDomain[3]) face = 3;
-  else if (k==0       && faceIsDomain[4]) face = 4;
-  else if (k==NzC-1 && faceIsDomain[5]) face = 5;
+  // Neumann BC at a boundary corner:
+  //
+  // IMPORTANT (axis-specific neighbor indices):
+  //   CornerNode->bc_type.iNeib / jNeib / kNeib are *axis-specific* inward indices for +/-X, +/-Y, +/-Z
+  //   Neumann normals. They are NOT a single donor corner coordinate.
+  //
+  // WHY THIS MATTERS:
+  //   This function is called with "all faces that share the same BC type". Therefore a geometric corner
+  //   can lie on multiple physical domain faces simultaneously (e.g., +X/-Y/-Z). If we treat
+  //   (iNeib,jNeib,kNeib) as one 3D donor point, the donor becomes diagonal (tangentially shifted),
+  //   e.g. (NxC-1,0,0) -> (NxC-2,NyC-2,NzC-2), which is incorrect for enforcing ∂E/∂n = 0 on +X.
+  //
+  // CORRECT APPROACH:
+  //   Build one donor per active boundary normal (face-normal donors) and impose a single robust
+  //   constraint that the boundary value equals the average of the inward values:
+  //
+  //       ΔE(i,j,k) - (1/N) * Σ_m ΔE(donor_m) = 0
+  //
+  //   where donor_m are computed by shifting ONLY along the corresponding face normal:
+  //     face 0/-X or 1/+X: donor = (iNeib, j, k)
+  //     face 2/-Y or 3/+Y: donor = (i, jNeib, k)
+  //     face 4/-Z or 5/+Z: donor = (i, j, kNeib)
 
-  // Preferred inside neighbor from BC preprocessing (UpdateB-style)
-  int ii = CornerNode->bc_type.iNeib;
-  int jj = CornerNode->bc_type.jNeib;
-  int kk = CornerNode->bc_type.kNeib;
+  const int iNeib = CornerNode->bc_type.iNeib;
+  const int jNeib = CornerNode->bc_type.jNeib;
+  const int kNeib = CornerNode->bc_type.kNeib;
 
-  // Validate; otherwise fallback: one step inward from selected face
-  const bool neibOK =
-    (ii>=0 && ii<NxC && jj>=0 && jj<NyC && kk>=0 && kk<NzC && !(ii==i && jj==j && kk==k));
+  struct cDonor { int ii, jj, kk; };
+  cDonor donors[3];
+  int nDonors = 0;
 
-  if (!neibOK) {
-    ii=i; jj=j; kk=k;
-    if (face==0) ii = 1;
-    if (face==1) ii = NxC-2;
-    if (face==2) jj = 1;
-    if (face==3) jj = NyC-2;
-    if (face==4) kk = 1;
-    if (face==5) kk = NzC-2;
+  auto push_unique_donor = [&](int ii, int jj, int kk) {
+    // Range checks
+    if (ii < 0 || ii >= NxC) return;
+    if (jj < 0 || jj >= NyC) return;
+    if (kk < 0 || kk >= NzC) return;
+
+    // Must differ from the boundary corner (otherwise the row is ineffective)
+    if (ii == i && jj == j && kk == k) return;
+
+    // Avoid duplicates (can happen in degenerate dimensions)
+    for (int q = 0; q < nDonors; ++q) {
+      if (donors[q].ii == ii && donors[q].jj == jj && donors[q].kk == kk) return;
+    }
+
+    donors[nDonors++] = {ii, jj, kk};
+  };
+
+  auto add_donor_for_face = [&](int face) {
+    int ii, jj, kk;
+    PIC::Mesh::GetNeumannDonorCornerForFace(i, j, k, iNeib, jNeib, kNeib, face, ii, jj, kk);
+    push_unique_donor(ii, jj, kk);
+  };
+
+  // Add one donor per active physical domain face that touches this corner.
+  if (i == 0     && faceIsDomain[0]) add_donor_for_face(0);   // -X
+  if (i == NxC-1 && faceIsDomain[1]) add_donor_for_face(1);   // +X
+  if (j == 0     && faceIsDomain[2]) add_donor_for_face(2);   // -Y
+  if (j == NyC-1 && faceIsDomain[3]) add_donor_for_face(3);   // +Y
+  if (k == 0     && faceIsDomain[4]) add_donor_for_face(4);   // -Z
+  if (k == NzC-1 && faceIsDomain[5]) add_donor_for_face(5);   // +Z
+
+  // Fallback (should be rare): if no donors were accepted, build a deterministic inward donor by
+  // moving inward along all active faces (diagonal) and use it as a single donor.
+  if (nDonors == 0) {
+    int ii = i, jj = j, kk = k;
+
+    if (i == 0     && faceIsDomain[0]) ii = 1;
+    if (i == NxC-1 && faceIsDomain[1]) ii = NxC - 2;
+
+    if (j == 0     && faceIsDomain[2]) jj = 1;
+    if (j == NyC-1 && faceIsDomain[3]) jj = NyC - 2;
+
+    if (k == 0     && faceIsDomain[4]) kk = 1;
+    if (k == NzC-1 && faceIsDomain[5]) kk = NzC - 2;
+
+    push_unique_donor(ii, jj, kk);
   }
 
-  // Entry 0: +1 * ΔE_boundary
+  // Safety: MatrixRowNonZeroElementTable must have space for 1 + nDonors entries.
+  // In this Neumann corner logic, nDonors <= 3 (DIM <= 3), so 4 entries total.
+// Entry 0: +1 * ΔE_boundary
   MatrixRowNonZeroElementTable[0].i = i;
   MatrixRowNonZeroElementTable[0].j = j;
   MatrixRowNonZeroElementTable[0].k = k;
@@ -587,22 +639,30 @@ auto boundary_short_circuit = [&]() -> bool {
   MatrixRowNonZeroElementTable[0].MatrixElementSupportTableLength = 0;
   MatrixRowNonZeroElementTable[0].MatrixElementSupportTable[0] = NULL;
 
-  // Entry 1: -1 * ΔE_inside
-  MatrixRowNonZeroElementTable[1].i = ii;
-  MatrixRowNonZeroElementTable[1].j = jj;
-  MatrixRowNonZeroElementTable[1].k = kk;
-  MatrixRowNonZeroElementTable[1].Node = node;  // neighbor is in same block by construction here
+  // Donor entries: -(1/nDonors) * Σ ΔE(donor_m)
+  //
+  // We use the *average* of the inward values along each active boundary normal so that a single
+  // Neumann corner row remains well-defined even when this corner lies on multiple domain faces.
+  const double wNeib = -1.0 / double(nDonors);
 
-  MatrixRowNonZeroElementTable[1].iVar = iVar;
-  MatrixRowNonZeroElementTable[1].MatrixElementValue = 0.0;
+  for (int q = 0; q < nDonors; ++q) {
+    const int idx = 1 + q;
 
-  MatrixRowNonZeroElementTable[1].MatrixElementParameterTable[0] = -1.0;
-  MatrixRowNonZeroElementTable[1].MatrixElementParameterTableLength = 1;
+    MatrixRowNonZeroElementTable[idx].i = donors[q].ii;
+    MatrixRowNonZeroElementTable[idx].j = donors[q].jj;
+    MatrixRowNonZeroElementTable[idx].k = donors[q].kk;
+    MatrixRowNonZeroElementTable[idx].Node = node;  // donors are in the same block by construction
+    MatrixRowNonZeroElementTable[idx].iVar = iVar;
+    MatrixRowNonZeroElementTable[idx].MatrixElementValue = 0.0;
 
-  MatrixRowNonZeroElementTable[1].MatrixElementSupportTableLength = 0;
-  MatrixRowNonZeroElementTable[1].MatrixElementSupportTable[0] = NULL;
+    MatrixRowNonZeroElementTable[idx].MatrixElementParameterTable[0] = wNeib;
+    MatrixRowNonZeroElementTable[idx].MatrixElementParameterTableLength = 1;
 
-  NonZeroElementsFound = 2;
+    MatrixRowNonZeroElementTable[idx].MatrixElementSupportTableLength = 0;
+    MatrixRowNonZeroElementTable[idx].MatrixElementSupportTable[0] = NULL;
+  }
+
+  NonZeroElementsFound = 1 + nDonors;
 
   // Preserve legacy special-case suppression if your code relies on it
   if (isRightBoundaryCorner(x, node)) NonZeroElementsFound = 0;
@@ -1028,13 +1088,44 @@ if (_PIC_STENCIL_NUMBER_==375) {
 
 
   //find corners outside the boundary
-  vector<int> pointLeft;
+  // ---------------------------------------------------------------------------
+  // Legacy behavior:
+  //   The original implementation used a two-pass strategy:
+  //     1) push candidate indices into `pointLeft`, then pop them back out for invalid entries
+  //     2) perform a second pass that compacts MatrixRowNonZeroElementTable[] by copying
+  //        surviving entries from `pointLeft[ii]` into slot `ii`
+  //
+  // Refactor (this block):
+  //   We preserve the exact same validation logic and the same "scan-order" of surviving
+  //   entries, but do the compaction in a SINGLE pass:
+  //
+  //     writePos = 0
+  //     for each candidate slot src in [0.._PIC_STENCIL_NUMBER_-1]:
+  //       - evaluate validity (same checks as before)
+  //       - if valid: copy entry src -> writePos (if needed) and increment writePos
+  //
+  // Benefits:
+  //   - removes the dynamic `std::vector<int> pointLeft` allocation
+  //   - removes the second copy pass
+  //   - keeps NonZeroElementsFound equal to the number of valid entries
+  //
+  // IMPORTANT:
+  //   Do NOT remove or change any of the existing validity checks below; they are kept
+  //   intentionally to match legacy behavior.
+  // ---------------------------------------------------------------------------
   int kMax=_BLOCK_CELLS_Z_,jMax=_BLOCK_CELLS_Y_,iMax=_BLOCK_CELLS_X_;
 
+  int writePos = 0;  // next compact slot for a valid entry
+
   for (int ii=0;ii<_PIC_STENCIL_NUMBER_;ii++) {
+    // Preserve legacy initialization: default Node is the current block.
+    // (NOTE: the legacy code did not overwrite Node with nodeTemp; we keep that behavior here.)
     MatrixRowNonZeroElementTable[ii].Node=node;
 
+    // Local working copy used only for boundary/neighbor validation:
+    // nodeTemp becomes NULL if the stencil tap walks out of the physical domain.
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * nodeTemp = node;
+
     int i0,j0,k0; //for test
     i0 = MatrixRowNonZeroElementTable[ii].i;
     j0 = MatrixRowNonZeroElementTable[ii].j;
@@ -1075,53 +1166,64 @@ if (_PIC_STENCIL_NUMBER_==375) {
     for (int idim=0; idim<3; idim++) {
       xlocal[idim]=MatrixRowNonZeroElementTable[ii].Node->xmin[idim]+indlocal[idim]*dx[idim];
     }
-     
-    pointLeft.push_back(ii);
+
+    // -------------------------------------------------------------------------
+    // Validity checks (kept identical to the legacy logic).
+    // Instead of push/pop on a pointLeft vector, we decide a boolean `keep`.
+    // -------------------------------------------------------------------------
+    bool keep = true;
 
     if (MatrixRowNonZeroElementTable[ii].Node==NULL){
-      pointLeft.pop_back();
-      continue;
+      keep = false;
     }
     else if (MatrixRowNonZeroElementTable[ii].Node->IsUsedInCalculationFlag==false) {
-      pointLeft.pop_back();
-      continue;
+      keep = false;
     }
-    
+
     if (nodeTemp==NULL){
-      pointLeft.pop_back();
-      continue;
+      keep = false;
     }
     else if (nodeTemp->IsUsedInCalculationFlag==false){
-      pointLeft.pop_back();
-      continue;
+      keep = false;
     }
 
-    if (isBoundaryCorner(xlocal,node)) pointLeft.pop_back();
-  }
-
-  for (int ii=0; ii<pointLeft.size();ii++){
-    int copyFrom = pointLeft[ii];
-
-    if (ii!=copyFrom){
-      MatrixRowNonZeroElementTable[ii].i=MatrixRowNonZeroElementTable[copyFrom].i;
-      MatrixRowNonZeroElementTable[ii].j=MatrixRowNonZeroElementTable[copyFrom].j;
-      MatrixRowNonZeroElementTable[ii].k=MatrixRowNonZeroElementTable[copyFrom].k;
-
-      MatrixRowNonZeroElementTable[ii].MatrixElementValue= MatrixRowNonZeroElementTable[copyFrom].MatrixElementValue;
-      MatrixRowNonZeroElementTable[ii].iVar=MatrixRowNonZeroElementTable[copyFrom].iVar;
-
-      MatrixRowNonZeroElementTable[ii].MatrixElementParameterTable[0]=MatrixRowNonZeroElementTable[copyFrom].MatrixElementParameterTable[0];
-      MatrixRowNonZeroElementTable[ii].MatrixElementParameterTableLength=MatrixRowNonZeroElementTable[copyFrom].MatrixElementParameterTableLength;
-      MatrixRowNonZeroElementTable[ii].MatrixElementSupportTableLength = MatrixRowNonZeroElementTable[copyFrom].MatrixElementSupportTableLength;
-         
-      MatrixRowNonZeroElementTable[ii].MatrixElementSupportTable[0]=MatrixRowNonZeroElementTable[copyFrom].MatrixElementSupportTable[0];
+    if (keep) {
+      if (isBoundaryCorner(xlocal,node)) keep = false;
     }
 
+    // -------------------------------------------------------------------------
+    // Single-pass compaction:
+    //   If this entry survives, move/copy it into the next compact slot [writePos].
+    //   We copy exactly the same fields as the legacy second-pass compaction.
+    // -------------------------------------------------------------------------
+    if (keep) {
+      if (writePos != ii) {
+        MatrixRowNonZeroElementTable[writePos].i = MatrixRowNonZeroElementTable[ii].i;
+        MatrixRowNonZeroElementTable[writePos].j = MatrixRowNonZeroElementTable[ii].j;
+        MatrixRowNonZeroElementTable[writePos].k = MatrixRowNonZeroElementTable[ii].k;
+
+        MatrixRowNonZeroElementTable[writePos].MatrixElementValue = MatrixRowNonZeroElementTable[ii].MatrixElementValue;
+        MatrixRowNonZeroElementTable[writePos].iVar               = MatrixRowNonZeroElementTable[ii].iVar;
+
+        MatrixRowNonZeroElementTable[writePos].MatrixElementParameterTable[0] =
+          MatrixRowNonZeroElementTable[ii].MatrixElementParameterTable[0];
+        MatrixRowNonZeroElementTable[writePos].MatrixElementParameterTableLength =
+          MatrixRowNonZeroElementTable[ii].MatrixElementParameterTableLength;
+        MatrixRowNonZeroElementTable[writePos].MatrixElementSupportTableLength =
+          MatrixRowNonZeroElementTable[ii].MatrixElementSupportTableLength;
+
+        MatrixRowNonZeroElementTable[writePos].MatrixElementSupportTable[0] =
+          MatrixRowNonZeroElementTable[ii].MatrixElementSupportTable[0];
+      }
+
+      writePos++;
+    }
   }
-  
-  NonZeroElementsFound=pointLeft.size();
-  
-  //NonZeroElementsFound=81;
+
+  // Final number of non-zero entries is the number of kept elements.
+  NonZeroElementsFound = writePos;
+
+//NonZeroElementsFound=81;
 
   //  for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
 
