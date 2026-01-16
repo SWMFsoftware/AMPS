@@ -582,6 +582,10 @@ void PIC::Mover::MoveParticles() {
   long int ParticleList,ptr;
   double LocalTimeStep;
 
+  if (_PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__OFF_) {
+    return;
+  }
+
   if (UserDefinedMoverManager!=NULL) {
     UserDefinedMoverManager();
     return;
