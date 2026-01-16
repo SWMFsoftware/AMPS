@@ -59,6 +59,8 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   define _PIC_BC__PERIODIC_MODE_ _PIC_BC__PERIODIC_MODE_OFF_
   define _PIC_LINEAR_SOLVER_MODE_ _PIC_MODE_ON_
 
+!  define _PIC_MOVER_INTEGRATOR_MODE_ _PIC_MOVER_INTEGRATOR_MODE__OFF_
+
   ReferenceInjectionParticleNumber=60000
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=off !on,off
