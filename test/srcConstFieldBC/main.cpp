@@ -558,7 +558,7 @@ for (int i=0;i<PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOC
 
 
       //inject particles from the domain'a boundary 
-      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_) { 
+      if ((_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_)&&(_PIC_MOVER_INTEGRATOR_MODE_ != _PIC_MOVER_INTEGRATOR_MODE__OFF_))  { 
         for (int spec=0;spec<PIC::nTotalSpecies;spec++) {
           double dt=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
 
