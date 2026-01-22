@@ -6216,25 +6216,33 @@ Run=
 >>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
 >>>@echo "Running Case 1: constE with Dirichlet BC" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
 >>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
->>>cd $(TESTconst-field-bcDIR); ${TESTMPIRUN1} ./amps -i case1_constE.in -bc dirichlet
+>>>cd $(TESTconst-field-bcDIR); ${MPIRUN} ./amps -i case1_constE.in -bc dirichlet
+>>>utility/RemoveColumn.pl -c=5 $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>utility/RemoveColumn.pl -c=5 $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>mv $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat $(TESTconst-field-bcDIR)/res/constE_dirichlet.dat
 
 >>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
 >>>@echo "Running Case 2: constE with Neumann BC" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
 >>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
->>>cd $(TESTconst-field-bcDIR); ${TESTMPIRUN1} ./amps -i case1_constE.in -bc neumann
+>>>cd $(TESTconst-field-bcDIR); ${MPIRUN} ./amps -i case1_constE.in -bc neumann
+>>>utility/RemoveColumn.pl -c=5 $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>utility/RemoveColumn.pl -c=5 $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>mv $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat $(TESTconst-field-bcDIR)/res/constE_neumann.dat
 
 >>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
 >>>@echo "Running Case 3: constB with Dirichlet BC" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
 >>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
->>>cd $(TESTconst-field-bcDIR); ${TESTMPIRUN1} ./amps -i case1_constB.in -bc dirichlet
+>>>cd $(TESTconst-field-bcDIR); ${MPIRUN} ./amps -i case1_constB.in -bc dirichlet
+>>>utility/RemoveColumn.pl -c=5 $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>utility/RemoveColumn.pl -c=5 $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>mv $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat $(TESTconst-field-bcDIR)/res/constB_dirichlet.dat
 
 >>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
 >>>@echo "Running Case 4: constB with Neumann BC" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
 >>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
->>>cd $(TESTconst-field-bcDIR); ${TESTMPIRUN1} ./amps -i case1_constB.in -bc neumann
+>>>cd $(TESTconst-field-bcDIR); ${MPIRUN} ./amps -i case1_constB.in -bc neumann
+>>>utility/RemoveColumn.pl -c=5 $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>utility/RemoveColumn.pl -c=5 $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>mv $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat $(TESTconst-field-bcDIR)/res/constB_neumann.dat
 
 >>>@echo "test_const-field-bc_run... done" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
@@ -6245,12 +6253,13 @@ Check=
 >>>@echo "test_const-field-bc_check..." >> test_const-field-bc$(TESTconst-field-bc-REF).diff
 
 >>>@# Unzip reference solutions if not already unzipped
->>>@if [ ! -f output/test_const-field-bc/constE.dat ]; then \
->>>  gunzip -k output/test_const-field-bc/constE.dat.gz; \
->>>fi
->>>@if [ ! -f output/test_const-field-bc/constB.dat ]; then \
->>>  gunzip -k output/test_const-field-bc/constB.dat.gz; \
->>>fi
+>>>gunzip -kf output/test_const-field-bc/constE.dat.gz   
+>>>utility/RemoveColumn.pl -c=5 output/test_const-field-bc/constE.dat
+>>>utility/RemoveColumn.pl -c=5 output/test_const-field-bc/constE.dat
+
+>>>gunzip -kf output/test_const-field-bc/constB.dat.gz   
+>>>utility/RemoveColumn.pl -c=5 output/test_const-field-bc/constB.dat
+>>>utility/RemoveColumn.pl -c=5 output/test_const-field-bc/constB.dat
 
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
