@@ -40,7 +40,7 @@ namespace ECSIM {
   void SyncJ(int tagBase=43000);
 
   // Mass matrix: halo propagation (replace); nDoublesMassMatrix defaults to 16 but can be overridden
-  void SyncMassMatrix(int tagBase=44000);
+  void SyncMassMatrix(bool communicate_entire_block=true);
 
 } // namespace ECSIM
 } // namespace Electromagnetic
