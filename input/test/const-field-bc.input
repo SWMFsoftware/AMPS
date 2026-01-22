@@ -5,7 +5,7 @@ SpeciesList=H_PLUS,25thElectron
 DebuggerMode=off !on,off
 ForceRepeatableSimulationPath=on ! on,off 
 
-MoverIntegratorMode=Lapenta2017
+MoverIntegratorMode=Boris !Lapenta2017
 
 makefile  SOURCES=src
 makefile  RUNDIR=run
