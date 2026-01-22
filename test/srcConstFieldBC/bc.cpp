@@ -228,6 +228,9 @@ long int InjectBoundaryParticles(const picunits::Factors& F,
   //Commit thread-safe temp per-cell particle lists into the main per-cell lists 
   PIC::Mover::CommitTempParticleMovingListsToFirstCellParticleTable(); 
 
+  // Exchange injected particles across MPI ranks so each rank owns what lies in its subdomain
+  PIC::Parallel::ExchangeParticleData();
+
   int np=PIC::Debugger::GetParticleNumberInLists(true);
   int npb=PIC::ParticleBuffer::GetAllPartNum();
   if (np!=npb) exit(__LINE__,__FILE__);
@@ -235,8 +238,6 @@ long int InjectBoundaryParticles(const picunits::Factors& F,
 
 
   // Exchange injected particles across MPI ranks so each rank owns what lies in its subdomain
-  PIC::Parallel::ExchangeParticleData();
-
   // Return global injected count
   long int globalInjected = 0;
   MPI_Allreduce(&localInjected, &globalInjected, 1, MPI_LONG, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
