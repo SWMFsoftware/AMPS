@@ -3689,7 +3689,21 @@ barrier.Sync();
 
     break;
   case _PIC_MODE_OFF_:
-    PIC::Parallel::ProcessBlockBoundaryNodes();
+    //PIC::Parallel::ProcessBlockBoundaryNodes();
+
+    switch(_PIC_BC__PERIODIC_MODE_) {
+    case _PIC_BC__PERIODIC_MODE_ON_:
+      //update associated data accounting for the periodic boundary conditions
+      PIC::Parallel::ProcessCornerBlockBoundaryNodes();
+      PIC::Parallel::ProcessCenterBlockBoundaryNodes();
+      break;
+    default:
+      //ProcessCornerBlockBoundaryNodes_new();
+      //ProcessCenterBlockBoundaryNodes_new();
+ 
+      SyncMassMatrix();
+      break;
+    }
   }
 
   PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(false);
