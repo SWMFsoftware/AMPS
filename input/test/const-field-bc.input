@@ -5,7 +5,8 @@ SpeciesList=H_PLUS,25thElectron
 DebuggerMode=off !on,off
 ForceRepeatableSimulationPath=on ! on,off 
 
-MoverIntegratorMode=Boris !Lapenta2017
+!the moved is defined below is _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_ 
+!MoverIntegratorMode=Boris !Lapenta2017
 
 makefile  SOURCES=src
 makefile  RUNDIR=run
@@ -86,6 +87,8 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   define _PIC_FIELD_SOLVER_MODE_ _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
   define _PIC_FIELD_SOLVER_INPUT_UNIT_  _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
 
+
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) MoverTestConstBC(ptr,LocalTimeStep,node)
 #endGeneral
 
 #interface
@@ -98,7 +101,7 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
 
   define _TARGET_ _TARGET_NONE_
 
-  !addPhysicalModelHeader=PeriodicBCTest.dfn
+  addPhysicalModelHeader=main_lib.h 
 
 #endblock
 
