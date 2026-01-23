@@ -5440,7 +5440,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB() {
 
   // Communicate ghost/halo B data
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_) {
-    mesh->ParallelBlockDataExchange(PackBlockData_B,UnpackBlockData_B);
+    //mesh->ParallelBlockDataExchange(PackBlockData_B,UnpackBlockData_B);
+
+    SyncB();
   }
   else {
     Parallel::UpdateGhostBlockData(PackBlockData_B,UnpackBlockData_B);
@@ -5720,7 +5722,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
     
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
-    PIC::Mesh::mesh->ParallelBlockDataExchange(PackBlockData_E,UnpackBlockData_E);
+//    PIC::Mesh::mesh->ParallelBlockDataExchange(PackBlockData_E,UnpackBlockData_E);
+    SyncE();
     break;
     
   case _PIC_BC__PERIODIC_MODE_ON_:
