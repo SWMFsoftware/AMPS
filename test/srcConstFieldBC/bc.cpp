@@ -44,7 +44,7 @@
 #include "pic.h"
 #include "../pic/units/pic_units_normalization.h"
 
-long int InjectBoundaryParticles(const picunits::Factors& F,
+int InjectBoundaryParticles(const picunits::Factors& F,
                                  const TestConfig& cfg,
                                  int spec,
                                  double dt_no) {
@@ -64,7 +64,7 @@ long int InjectBoundaryParticles(const picunits::Factors& F,
          "InjectBoundaryParticles: invalid Factors (No2SiT/No2SiL/Si2NoV must be >0).");
   }
 
-  static long int ncall=0;
+  static int ncall=0;
   
 
   // ---- helpers (lambdas) ----------------------------------------------------
@@ -110,7 +110,7 @@ long int InjectBoundaryParticles(const picunits::Factors& F,
   const auto   U_SI    = get_bulk_velocity_SI();
   const double dt_SI   = dt_no * F.No2SiT;
 
-  long int localInjected = 0;
+  int localInjected = 0;
 
   // ---- loop over local blocks -----------------------------------------------
   for (auto* node = PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
@@ -239,8 +239,8 @@ long int InjectBoundaryParticles(const picunits::Factors& F,
 
   // Exchange injected particles across MPI ranks so each rank owns what lies in its subdomain
   // Return global injected count
-  long int globalInjected = 0;
-  MPI_Allreduce(&localInjected, &globalInjected, 1, MPI_LONG, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+  int globalInjected = 0;
+  MPI_Allreduce(&localInjected, &globalInjected, 1, MPI_INT, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
 
 
    np=PIC::Debugger::GetParticleNumberInLists(true);

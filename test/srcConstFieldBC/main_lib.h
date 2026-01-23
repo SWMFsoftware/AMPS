@@ -1,3 +1,6 @@
+
+
+
 #ifndef _CONSTFIELDBC_MAIN_LIB_H_
 #define _CONSTFIELDBC_MAIN_LIB_H_
 
@@ -37,4 +40,6 @@ int InjectBoundaryParticles(const picunits::Factors& F,
                                  const TestConfig& cfg,
                                  int spec,
                                  double dt_no); 
+//particle mover 
+int MoverTestConstBC(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 #endif
