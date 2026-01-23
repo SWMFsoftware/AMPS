@@ -160,12 +160,23 @@ if (cfg.use_domain_L) {
 
 
 // Electromagnetic field boundary conditions (all 6 faces)
-// Default behavior is Dirichlet; can be changed via CLI (-bc ...) or input file (bc=...).
-if (cfg.domain_bc == TestConfig::DomainBCType::Dirichlet) {
-  PIC::FieldSolver::Electromagnetic::DomainBC.SetAll(PIC::Mesh::BCTypeDirichlet);
-}
-else {
-  PIC::FieldSolver::Electromagnetic::DomainBC.SetAll(PIC::Mesh::BCTypeNeumann);
+// Global default is Dirichlet; can be changed via CLI (-bc ...) or input file (bc=...).
+// Optional per-face overrides: bc-xmin/..../bc-zmax (CLI: --bc-xmin ...; input file: bc-xmin=...).
+//
+// Resolution rule:
+//   - Start from global cfg.domain_bc
+//   - Apply any per-face override cfg.domain_bc_face[f] where cfg.user_domain_bc_face[f] is true
+//
+// Edge/corner rule (enforced in DomainBC::RecomputeBCType): Dirichlet dominates when mixed.
+//
+// Face index convention: 0:xmin,1:xmax,2:ymin,3:ymax,4:zmin,5:zmax.
+PIC::FieldSolver::Electromagnetic::DomainBC.SetAll(
+  (cfg.domain_bc == TestConfig::DomainBCType::Dirichlet) ? PIC::Mesh::BCTypeDirichlet : PIC::Mesh::BCTypeNeumann);
+
+for (int f=0; f<6; ++f) {
+  if (!cfg.user_domain_bc_face[f]) continue;
+  const int bc = (cfg.domain_bc_face[f] == TestConfig::DomainBCType::Dirichlet) ? PIC::Mesh::BCTypeDirichlet : PIC::Mesh::BCTypeNeumann;
+  PIC::FieldSolver::Electromagnetic::DomainBC.face[f] = bc;
 }
 
 

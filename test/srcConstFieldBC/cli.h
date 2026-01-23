@@ -26,6 +26,15 @@ struct TestConfig {
   //Indicate that user has selected a particular BC
   bool user_domain_bc = false;
 
+  // Optional per-face BC overrides (Dirichlet dominates at edges/corners when mixed).
+  // Face index convention: 0:xmin, 1:xmax, 2:ymin, 3:ymax, 4:zmin, 5:zmax.
+  DomainBCType domain_bc_face[6] = {
+    DomainBCType::Dirichlet, DomainBCType::Dirichlet,
+    DomainBCType::Dirichlet, DomainBCType::Dirichlet,
+    DomainBCType::Dirichlet, DomainBCType::Dirichlet
+  };
+  bool user_domain_bc_face[6] = {false,false,false,false,false,false};
+
   // Background fields in *solver units* (written into node data buffers by SetIC()).
   bool   userB = false;
   bool   userE = false;

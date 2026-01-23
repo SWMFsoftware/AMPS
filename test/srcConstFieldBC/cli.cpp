@@ -122,6 +122,46 @@ if (key=="bc" || key=="bc-type" || key=="domain-bc") {
   return;
 }
 
+// Per-face domain boundary condition overrides:
+//   bc-xmin=dirichlet|neumann, ..., bc-zmax=...
+// Accepted synonyms (after normalization): bc-xmin, domain-bc-xmin, bc-type-xmin.
+{
+  auto parse_bc = [&](const std::vector<double>& numsL, const std::vector<std::string>& strsL, bool& ok)->TestConfig::DomainBCType {
+    std::string v;
+    if (!strsL.empty()) v = tolower_str(strsL[0]);
+    else if (!numsL.empty()) v = (numsL[0]!=0.0 ? "dirichlet" : "neumann"); // allow 1/0 shorthand
+    v = tolower_str(trim(v));
+    ok = true;
+    if (v=="d" || v=="dirichlet") return TestConfig::DomainBCType::Dirichlet;
+    if (v=="n" || v=="neumann")   return TestConfig::DomainBCType::Neumann;
+    ok = false;
+    return cfg.domain_bc; // fallback; caller decides whether to apply
+  };
+
+  auto try_face = [&](const std::string& faceKey, int faceIdx)->bool {
+    if (key==faceKey || key==("domain-bc-"+faceKey.substr(3)) || key==("bc-type-"+faceKey.substr(3))) {
+      bool ok=false;
+      TestConfig::DomainBCType t = parse_bc(nums, strs, ok);
+      if (ok) {
+        cfg.user_domain_bc_face[faceIdx] = true;
+        cfg.domain_bc_face[faceIdx] = t;
+      }
+      else {
+        std::fprintf(stderr,"[ConstFieldBC] WARNING: unknown %s in input; ignoring\n", key.c_str());
+      }
+      return true;
+    }
+    return false;
+  };
+
+  if (try_face("bc-xmin",0)) return;
+  if (try_face("bc-xmax",1)) return;
+  if (try_face("bc-ymin",2)) return;
+  if (try_face("bc-ymax",3)) return;
+  if (try_face("bc-zmin",4)) return;
+  if (try_face("bc-zmax",5)) return;
+}
+
   if (key=="particles" || key=="withparticles") {
     cfg.mode = (ToBool(nums,strs,true) ? TestConfig::Mode::WithParticles : cfg.mode);
     return;
@@ -423,10 +463,20 @@ void PrintHelpAndExit(const char* prog) {
     "  -stencil-order=N\n"
     "      FD stencil order for this test (default 2).\n"
     "\n"
-    "Domain electromagnetic BC (applied to all 6 faces):\n"
+    "Domain electromagnetic BC (global + per-face overrides):\n"
     "  -bc dirichlet|neumann\n"
-    "      Set DomainBC type on all faces (default: dirichlet).\n"
-    "      Input-file keys: bc=..., domain-bc=..., bc-type=...\n"
+    "      Set DomainBC type on all 6 faces (default: dirichlet).\n"
+    "      Input-file keys (global): bc=..., domain-bc=..., bc-type=...\n"
+    "\n"
+    "  --bc-xmin dirichlet|neumann   --bc-xmax dirichlet|neumann\n"
+    "  --bc-ymin dirichlet|neumann   --bc-ymax dirichlet|neumann\n"
+    "  --bc-zmin dirichlet|neumann   --bc-zmax dirichlet|neumann\n"
+    "      Override the BC on an individual face. These take precedence over -bc.\n"
+    "      Input-file keys (per-face):\n"
+    "        bc-xmin=..., bc-xmax=..., bc-ymin=..., bc-ymax=..., bc-zmin=..., bc-zmax=...\n"
+    "\n"
+    "      Precedence (most specific wins):\n"
+    "        per-face > global, and CLI > input file > defaults\n"
     "\n"
     "Examples:\n"
     "  Field-only constant B:\n"
@@ -548,6 +598,43 @@ if (a=="-bc" || a=="--bc" || a.rfind("-bc=",0)==0 || a.rfind("--bc=",0)==0) {
     std::exit(1);
   }
   continue;
+}
+
+// ---- Per-face domain boundary conditions ----
+// CLI overrides input file. Per-face overrides global -bc.
+//   --bc-xmin dirichlet|neumann   (also accepts --bc-xmin=... and -bc-xmin/ -bc-xmin=...)
+// Face index convention: 0:xmin,1:xmax,2:ymin,3:ymax,4:zmin,5:zmax.
+{
+  auto parse_bc_str = [&](const std::string& raw)->TestConfig::DomainBCType {
+    std::string v = tolower_str(trim(raw));
+    if (v=="d" || v=="dirichlet") return TestConfig::DomainBCType::Dirichlet;
+    if (v=="n" || v=="neumann")   return TestConfig::DomainBCType::Neumann;
+    std::fprintf(stderr,"[ConstFieldBC] ERROR: unknown BC type '%s' (expected dirichlet|neumann)\n", v.c_str());
+    std::exit(1);
+  };
+
+  auto parse_face_opt = [&](const std::string& opt, int faceIdx)->bool {
+    if (a==opt || a==("-"+opt) || a==("--"+opt) || a.rfind(opt+"=",0)==0 || a.rfind("-"+opt+"=",0)==0 || a.rfind("--"+opt+"=",0)==0) {
+      std::string v;
+      auto pos = a.find('=');
+      if (pos!=std::string::npos) v = a.substr(pos+1);
+      else {
+        if (i+1>=argc) { std::fprintf(stderr,"[ConstFieldBC] ERROR: %s requires a value (dirichlet|neumann)\n", opt.c_str()); std::exit(1); }
+        v = argv[++i];
+      }
+      cfg.user_domain_bc_face[faceIdx] = true;
+      cfg.domain_bc_face[faceIdx] = parse_bc_str(v);
+      return true;
+    }
+    return false;
+  };
+
+  if (parse_face_opt("bc-xmin",0)) continue;
+  if (parse_face_opt("bc-xmax",1)) continue;
+  if (parse_face_opt("bc-ymin",2)) continue;
+  if (parse_face_opt("bc-ymax",3)) continue;
+  if (parse_face_opt("bc-zmin",4)) continue;
+  if (parse_face_opt("bc-zmax",5)) continue;
 }
 // ---- Particle (solar wind) controls ----
     // These options imply particles are enabled.
