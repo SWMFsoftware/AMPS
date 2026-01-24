@@ -30,6 +30,27 @@ static inline std::string tolower_str(std::string s) {
   return s;
 }
 
+
+// Normalize particle-mover name.
+// Returns empty string if name is unrecognized.
+static std::string NormalizeMoverName(const std::string& raw) {
+  std::string s = tolower_str(trim(raw));
+  // tolerate common separators
+  for (auto& c : s) {
+    if (c=='_' || c==' ') c='-';
+  }
+  // collapse multiple '-'
+  while (s.find("--")!=std::string::npos) {
+    s.replace(s.find("--"), 2, "-");
+  }
+
+  if (s=="boris" || s=="b") return "boris";
+  if (s=="lapenta" || s=="lapenta2017" || s=="l") return "lapenta";
+  if (s=="guiding-center" || s=="guidingcenter" || s=="gc" || s=="g") return "guiding-center";
+  return std::string();
+}
+
+
 // Strip comments: supports '#', ';', '//' (first occurrence wins).
 static std::string StripComments(const std::string& line) {
   size_t cut = std::string::npos;
@@ -90,6 +111,60 @@ static void ApplyKeyValue(TestConfig& cfg, const std::string& keyRaw,
     if (nums.size()>=3) { v[0]=nums[0]; v[1]=nums[1]; v[2]=nums[2]; return true; }
     return false;
   };
+
+
+// ---------------------------------------------------------------------------
+// Particle mover selection (input file)
+// ---------------------------------------------------------------------------
+auto set_mover_all = [&](const std::string& raw)->void {
+  std::string norm = NormalizeMoverName(raw);
+  if (norm.empty()) {
+    std::fprintf(stderr,"[ConstFieldBC] WARNING: unknown mover '%s' (expected boris|lapenta|guiding-center); ignoring", raw.c_str()); 
+    return;
+  }
+  cfg.user_mover_all = true;
+  cfg.mover_all = norm;
+};
+
+auto set_mover_spec = [&](int spec, const std::string& raw)->void {
+  std::string norm = NormalizeMoverName(raw);
+  if (norm.empty()) {
+    std::fprintf(stderr,"[ConstFieldBC] WARNING: unknown mover '%s' for spec %d (expected boris|lapenta|guiding-center); ignoring", raw.c_str(), spec); 
+    return;
+  }
+  cfg.mover_by_spec[spec] = norm;
+};
+
+// key: mover=..., particle-mover=...
+if (key=="mover" || key=="particle-mover" || key=="particle-mover-all" || key=="mover-all") {
+  if (!strs.empty()) set_mover_all(strs[0]);
+  return;
+}
+
+// key: mover-spec=spec,mover
+if (key=="mover-spec" || key=="mover-by-spec" || key=="species-mover") {
+  if (!nums.empty() && !strs.empty()) {
+    set_mover_spec((int)nums[0], strs[0]);
+  }
+  return;
+}
+
+// key: mover0=..., mover-0=..., mover-12=...
+// After normalization '_' -> '-', so accept both mover0 and mover-0 forms.
+if (key.rfind("mover",0)==0) {
+  std::string suffix = key.substr(5); // after "mover"
+  if (!suffix.empty()) {
+    // allow optional leading '-'
+    if (suffix[0]=='-') suffix.erase(suffix.begin());
+    bool allDigits = !suffix.empty();
+    for (char c : suffix) if (c<'0' || c>'9') { allDigits=false; break; }
+    if (allDigits) {
+      int spec = std::atoi(suffix.c_str());
+      if (!strs.empty()) set_mover_spec(spec, strs[0]);
+      return;
+    }
+  }
+}
 
   // Mode switches
   if (key=="mode") {
@@ -438,6 +513,16 @@ void PrintHelpAndExit(const char* prog) {
     "  -sw-BnT Bx By Bz\n"
     "      Set uniform background B in nT (converted internally; applied as -B).\n"
     "\n"
+    "Particle mover selection (particles mode):\n"
+    "  -mover NAME\n"
+    "      Select particle mover for all species: boris | lapenta | guiding-center.\n"
+    "      Aliases: b, l, g, gc, guidingcenter\n"
+    "  -mover-spec SPEC NAME\n"
+    "      Override mover for a particular species index (0-based).\n"
+    "  -moverN NAME\n"
+    "      Shorthand per-species override, e.g. -mover0 lapenta, --mover1=boris, -mover-2 guiding-center.\n"
+    "      Input-file keys: mover=..., mover-spec=SPEC,NAME, mover0=..., mover-1=...\n"
+    "\n"
     "Solar-wind plasma IC (implies -particles):\n"
     "  -sw | -solar-wind\n"
     "      Enable particles with default solar-wind-like parameters.\n"
@@ -576,6 +661,83 @@ void ConfigureTestFromArgs(TestConfig& cfg,int argc, char** argv) {
       cfg.mode = TestConfig::Mode::NoParticles;
       continue;
     }
+
+
+// ---- Particle mover selection ----
+// Global: -mover <name> (or -mover=name)
+if (a=="-mover" || a=="--mover" || a.rfind("-mover=",0)==0 || a.rfind("--mover=",0)==0) {
+  std::string v;
+  auto pos = a.find('=');
+  if (pos!=std::string::npos) v = a.substr(pos+1);
+  else {
+    if (i+1>=argc) { std::fprintf(stderr,"[ConstFieldBC] ERROR: -mover requires a value (boris|lapenta|guiding-center)"); std::exit(1); } 
+    v = argv[++i];
+  }
+  std::string norm = NormalizeMoverName(v);
+  if (norm.empty()) {
+    std::fprintf(stderr,"[ConstFieldBC] ERROR: unknown mover '%s' (expected boris|lapenta|guiding-center)", v.c_str()); 
+    std::exit(1);
+  }
+  cfg.user_mover_all = true;
+  cfg.mover_all = norm;
+  continue;
+}
+
+// Per-spec: -mover-spec <spec> <name>
+// Also accepts: -mover-spec=spec,name
+if (a=="-mover-spec" || a=="--mover-spec" || a.rfind("-mover-spec=",0)==0 || a.rfind("--mover-spec=",0)==0) {
+  int spec = -1;
+  std::string mover;
+  auto pos = a.find('=');
+  if (pos!=std::string::npos) {
+    std::string rhs = a.substr(pos+1);
+    std::vector<double> nums; std::vector<std::string> strs;
+    ParseDoublesCSV(rhs, nums, strs);
+    if (!nums.empty()) spec = (int)nums[0];
+    if (!strs.empty()) mover = strs[0];
+  }
+  else {
+    if (i+2>=argc) { std::fprintf(stderr,"[ConstFieldBC] ERROR: -mover-spec requires two values: SPEC NAME"); std::exit(1); } 
+    spec = std::atoi(argv[++i]);
+    mover = argv[++i];
+  }
+  std::string norm = NormalizeMoverName(mover);
+  if (spec<0 || norm.empty()) {
+    std::fprintf(stderr,"[ConstFieldBC] ERROR: invalid -mover-spec (expected: SPEC and boris|lapenta|guiding-center)"); 
+    std::exit(1);
+  }
+  cfg.mover_by_spec[spec] = norm;
+  continue;
+}
+
+// Per-spec shorthand: -mover0 <name>, -mover0=name, -mover-0 <name>, --mover12=lapenta, etc.
+{
+  std::string opt = a;
+  while (!opt.empty() && opt[0]=='-') opt.erase(opt.begin());
+  if (opt.rfind("mover",0)==0 && opt.size()>5) {
+    std::string suffix = opt.substr(5);
+    if (!suffix.empty() && suffix[0]=='-') suffix.erase(suffix.begin());
+    bool allDigits = !suffix.empty();
+    for (char c : suffix) if (c<'0' || c>'9') { allDigits=false; break; }
+    if (allDigits) {
+      int spec = std::atoi(suffix.c_str());
+      std::string v;
+      auto eq = a.find('=');
+      if (eq!=std::string::npos) v = a.substr(eq+1);
+      else {
+        if (i+1>=argc) { std::fprintf(stderr,"[ConstFieldBC] ERROR: %s requires a value (boris|lapenta|guiding-center)", a.c_str()); std::exit(1); } 
+        v = argv[++i];
+      }
+      std::string norm = NormalizeMoverName(v);
+      if (norm.empty()) {
+        std::fprintf(stderr,"[ConstFieldBC] ERROR: unknown mover '%s' for %s (expected boris|lapenta|guiding-center)", v.c_str(), a.c_str()); 
+        std::exit(1);
+      }
+      cfg.mover_by_spec[spec] = norm;
+      continue;
+    }
+  }
+}
 
     
 // ---- Domain boundary conditions ----

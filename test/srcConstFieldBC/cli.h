@@ -2,6 +2,7 @@
 #define _CONSTFIELDBC_CLI_H_
 
 #include <string>
+#include <map>
 #include "specfunc.h"
 
 // ---------------- CLI / input-file configuration ----------------
@@ -113,6 +114,23 @@ struct TestConfig {
 
   // Optional input file path (for bookkeeping).
   std::string inputFile;
+
+  // ---------------------------------------------------------------------------
+  // Particle mover selection (particles mode)
+  //
+  // MoverTestConstBC() dispatches into a species-dependent particle mover.
+  // The user can select a default mover for all species and then override
+  // individual species as needed.
+  //
+  // Accepted mover names (case-insensitive):
+  //   boris | lapenta | guiding-center (aliases: guidingcenter,gc)
+  // ---------------------------------------------------------------------------
+  std::string mover_all = "boris";
+  bool user_mover_all = false;
+
+  // Per-species overrides: spec -> mover name
+  // (Only entries present in the map override mover_all.)
+  std::map<int,std::string> mover_by_spec;
 };
 
 // Parse configuration. If '-i <file>' is present, the file is parsed first and then

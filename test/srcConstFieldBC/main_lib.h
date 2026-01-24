@@ -42,4 +42,9 @@ int InjectBoundaryParticles(const picunits::Factors& F,
                                  double dt_no); 
 //particle mover 
 int MoverTestConstBC(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+
+// Species-dependent mover dispatch table. Populated from cfg (CLI / input file)
+// on first use (lazy-init) and can also be explicitly re-initialized.
+extern PIC::Mover::fSpeciesDependentParticleMover g_SpeciesParticleMoverTable[_TOTAL_SPECIES_NUMBER_];
+void InitSpeciesParticleMoverTable(const TestConfig& cfg);
 #endif
