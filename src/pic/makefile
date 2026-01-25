@@ -7,6 +7,19 @@ BATL=nobatl
 include ../../Makefile.conf
 include ../../Makefile.local
 
+# -----------------------------------------------------------------------------
+# NOTE:
+# parallel/halo_sync.o and ecsim/halo_sync.o have the same archive member name
+# (halo_sync.o). When both are added to amps.a, one may replace the other.
+#
+# To keep BOTH implementations in the same static library, we archive them
+# under unique member names by creating renamed copies of the object files.
+# This approach is source-extension agnostic and relies on the existing rules
+# from Makefile.conf/Makefile.local to build the original .o files.
+# -----------------------------------------------------------------------------
+PAR_HALO_SYNC_OBJ   = parallel/halo_sync_parallel.o
+ECSIM_HALO_SYNC_OBJ = ecsim/halo_sync_ecsim.o
+
 PICOBJ = pic.o \
 	field_line_parallel.o \
 	field_line_particle_split.o \
@@ -91,9 +104,9 @@ PICOBJ = pic.o \
 	ecsim/get_stencil_legacy_wrapper.o \
 	ecsim/domain_bc.o \
 	mesh/domain_boundary_bc_collectors.o \
-	parallel/halo_sync.o \
+	$(PAR_HALO_SYNC_OBJ) \
 	parallel/init_send_halo.o \
-	ecsim/halo_sync.o \
+	$(ECSIM_HALO_SYNC_OBJ) \
 	units/units.o
 
 	
@@ -101,6 +114,16 @@ ifneq ($(BATL),nobatl)
 PICOBJ+=pic_batsrus.o \
 	pic_batsrus_wrapper.o
 endif
+
+
+# Build halo_sync objects with unique basenames (avoid archive member collisions)
+$(PAR_HALO_SYNC_OBJ): parallel/halo_sync.cpp
+	@mkdir -p $(dir $@)
+	$(COMPILE.mpicxx) ${FLAGCC} -c $< -o $@
+
+$(ECSIM_HALO_SYNC_OBJ): ecsim/halo_sync.cpp
+	@mkdir -p $(dir $@)
+	$(COMPILE.mpicxx) ${FLAGCC} -c $< -o $@
 
 amps : $(PICOBJ)
 	ar -src amps.a $(PICOBJ)
