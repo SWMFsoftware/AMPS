@@ -1352,7 +1352,7 @@ void PIC::CPLR::GetDriftVelocity(double *vDrift,double *ParticleVelocity,double 
   int idim;
 
   //get the particle momentum
-  gamma=1.0/sqrt(1.0-sqrt(ParticleVelocity[0]*ParticleVelocity[0]+ParticleVelocity[1]*ParticleVelocity[1]+ParticleVelocity[2]*ParticleVelocity[2])/SpeedOfLight);
+  gamma=1.0/sqrt(1.0-(ParticleVelocity[0]*ParticleVelocity[0]+ParticleVelocity[1]*ParticleVelocity[1]+ParticleVelocity[2]*ParticleVelocity[2])/(SpeedOfLight*SpeedOfLight));
   for (idim=0;idim<3;idim++) ParticleMomentum[idim]=gamma*ParticleMass*ParticleVelocity[idim],vDrift[idim]=0.0;
 
   //get the background fields
