@@ -112,7 +112,7 @@ int MoverTestConstBC(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBl
   }
 
   PIC::Mover::fSpeciesDependentParticleMover f = g_SpeciesParticleMoverTable[spec];
-  if (f==nullptr) return _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,dtTotal,node); // &PIC::Mover::Boris;
+  if (f==nullptr) f = &PIC::Mover::Boris;
 
 
   return f(ptr,dtTotal,node);
