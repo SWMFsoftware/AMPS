@@ -107,7 +107,9 @@ PICOBJ = pic.o \
 	$(PAR_HALO_SYNC_OBJ) \
 	parallel/init_send_halo.o \
 	$(ECSIM_HALO_SYNC_OBJ) \
-	units/units.o
+	units/units.o \
+	gyro/drift_velocity.o \
+	gyro/gyro_mover.o
 
 	
 ifneq ($(BATL),nobatl)	
