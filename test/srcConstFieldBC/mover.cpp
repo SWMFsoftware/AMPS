@@ -70,7 +70,7 @@ static PIC::Mover::fSpeciesDependentParticleMover ResolveMoverPtr(const std::str
 
   if (s=="boris" || s=="b") return &PIC::Mover::Boris;
   if (s=="lapenta" || s=="lapenta2017" || s=="l") return &PIC::Mover::Lapenta2017;
-  if (s=="guiding-center" || s=="guidingcenter" || s=="gc" || s=="g") return &PIC::Mover::GuidingCenter::Mover_SecondOrder;
+  if (s=="guiding-center" || s=="guidingcenter" || s=="gc" || s=="g") return &PIC::GYROKINETIC::Mover_SecondOrder;
 
   return nullptr;
 }
