@@ -4955,6 +4955,13 @@ void DeleteAttachedParticles();
   //gyrokinetic approaxumation
   namespace GYROKINETIC {
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ int DriftVelocityOffset;
+
+
+    extern bool UseGuidingCenterSpeciesTable[_TOTAL_SPECIES_NUMBER_]; 
+    void SetGuidingCenterSpecies(int spec,bool flag);
+    void SetGuidingCenterAllSpecies(bool flag);
+    inline bool IsGuidingCenterSpecies(int spec) {return UseGuidingCenterSpeciesTable[spec];} 
+
     void Init();
 
     _TARGET_HOST_ _TARGET_DEVICE_
@@ -8226,7 +8233,7 @@ void DeleteAttachedParticles();
        int idim;
 
        //get the particle momentum
-       gamma=1.0/sqrt(1.0-sqrt(ParticleVelocity[0]*ParticleVelocity[0]+ParticleVelocity[1]*ParticleVelocity[1]+ParticleVelocity[2]*ParticleVelocity[2])/SpeedOfLight);
+       gamma=1.0/sqrt(1.0-(ParticleVelocity[0]*ParticleVelocity[0]+ParticleVelocity[1]*ParticleVelocity[1]+ParticleVelocity[2]*ParticleVelocity[2])/(SpeedOfLight*SpeedOfLight));
        for (idim=0;idim<3;idim++) ParticleMomentum[idim]=gamma*ParticleMass*ParticleVelocity[idim],vDrift[idim]=0.0;
 
        //get the background fields
@@ -9800,4 +9807,7 @@ double SampleRhsScalar(const RhsEntry &sg);
 #include "ecsim/domain_bc.h" 
 #include "ecsim/halo_sync.h" 
 #include "parallel/halo_sync.h"
+#include "gyro/drift_velocity.h"
+#include "gyro/gyro_mover.h"
+
 
