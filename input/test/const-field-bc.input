@@ -62,6 +62,9 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
 
 !  define _PIC_MOVER_INTEGRATOR_MODE_ _PIC_MOVER_INTEGRATOR_MODE__OFF_
 
+  define _USE_MAGNETIC_MOMENT_ _PIC_MODE_ON_
+  define _USE_PARTICLE_V_PARALLEL_NORM_ _PIC_MODE_ON_
+
   ReferenceInjectionParticleNumber=60000
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=off !on,off
