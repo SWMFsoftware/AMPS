@@ -6245,6 +6245,22 @@ Run=
 >>>utility/RemoveColumn.pl -c=5 $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>mv $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat $(TESTconst-field-bcDIR)/res/constB_neumann.dat
 
+>>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>@echo "Running Case 5: Solar Wind Physical (200 ppc)" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>@echo "========================================" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
+>>>cd $(TESTconst-field-bcDIR); ${MPIRUN} ./amps -i case3_solarwind_physical.in -ppc 200
+
+>>>cp $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat $(TESTconst-field-bcDIR)/res/solarwind_protons_full.dat
+>>>utility/RemoveColumn.pl -c=5 $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>utility/RemoveColumn.pl -c=5 $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>mv $(TESTconst-field-bcDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat $(TESTconst-field-bcDIR)/res/solarwind_protons.dat
+
+>>>cp $(TESTconst-field-bcDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat $(TESTconst-field-bcDIR)/res/solarwind_electrons_full.dat
+>>>utility/RemoveColumn.pl -c=5 $(TESTconst-field-bcDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
+>>>utility/RemoveColumn.pl -c=5 $(TESTconst-field-bcDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
+>>>mv $(TESTconst-field-bcDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat $(TESTconst-field-bcDIR)/res/solarwind_electrons.dat
+
+
 >>>@echo "test_const-field-bc_run... done" >> test_const-field-bc$(TESTconst-field-bc-REF).diff
 >>>@echo Test test_const-field-bc has finished: `date`
 
@@ -6260,6 +6276,14 @@ Check=
 >>>gunzip -kf output/test_const-field-bc/constB.dat.gz   
 >>>utility/RemoveColumn.pl -c=5 output/test_const-field-bc/constB.dat
 >>>utility/RemoveColumn.pl -c=5 output/test_const-field-bc/constB.dat
+
+>>>gunzip -kf output/test_const-field-bc/solarwind_protons.dat.gz
+>>>utility/RemoveColumn.pl -c=5 output/test_const-field-bc/solarwind_protons.dat 
+>>>utility/RemoveColumn.pl -c=5 output/test_const-field-bc/solarwind_protons.dat 
+
+>>>gunzip -kf output/test_const-field-bc/solarwind_electrons.dat.gz
+>>>utility/RemoveColumn.pl -c=5 output/test_const-field-bc/solarwind_electrons.dat
+>>>utility/RemoveColumn.pl -c=5 output/test_const-field-bc/solarwind_electrons.dat
 
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
@@ -6285,17 +6309,30 @@ Check=
 >>>  output/test_const-field-bc/constB.dat \
 >>>  > test_field-bc-constB_neumann.diff
 
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTconst-field-bcDIR)/res/solarwind_protons.dat \
+>>>  output/test_const-field-bc/solarwind_protons.dat \
+>>>  > test_field-bc-solarwind_protons.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTconst-field-bcDIR)/res/solarwind_electrons.dat \
+>>>  output/test_const-field-bc/solarwind_electrons.dat \
+>>>  > test_field-bc-solarwind_electrons.diff
 
 >>>@ls -l test_field-bc-constE_dirichlet.diff
 >>>@ls -l test_field-bc-constE_neumann.diff
 >>>@ls -l test_field-bc-constB_dirichlet.diff
 >>>@ls -l test_field-bc-constB_neumann.diff
+>>>@ls -l test_field-bc-solarwind_electrons.diff
+>>>@ls -l test_field-bc-solarwind_protons.diff
 
 >>>@# Combine all diff files into master diff file
 >>>@cat test_field-bc-constE_dirichlet.diff \
 >>>    test_field-bc-constE_neumann.diff \
 >>>    test_field-bc-constB_dirichlet.diff \
 >>>    test_field-bc-constB_neumann.diff \
+>>>    test_field-bc-solarwind_electrons.diff \
+>>>    test_field-bc-solarwind_electrons.diff \
 >>>    > test_const-field-bc$(TESTconst-field-bc-REF).diff
 
 >>>@ls -l test_const-field-bc$(TESTconst-field-bc-REF).diff
