@@ -21,11 +21,18 @@ extern TestConfig cfg;
 // field solver / particle routines. This must be called once after
 // ConfigureTestFromArgsWithInput() and before any IC/setup routines.
 picunits::Factors FinalizeConfigUnits(TestConfig& cfg);
+// Global domain extents used by the test driver. These are filled in main.cpp
+// either from legacy xmin/xmax defaults or from -L (domain size) option.
+// Units: the mesh coordinate units for this test (same as used everywhere else).
 extern double xmin[3];
 extern double xmax[3];
 extern int g_TestStencilOrder;
 
 
+// Local surface resolution callback used by AMPS internal boundaries.
+// The framework calls this to decide the surface-element target size near x.
+// In this test we keep a uniform surface resolution, so BulletLocalResolution()
+// returns a constant (see main_lib.cpp).
 double BulletLocalResolution(double *x);
 void InitGlobalParticleWeight_TargetPPC(const picunits::Factors& F,const TestConfig& cfg);
 void CleanParticles();
@@ -47,6 +54,24 @@ int MoverTestConstBC(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBl
 // on first use (lazy-init) and can also be explicitly re-initialized.
 extern PIC::Mover::fSpeciesDependentParticleMover g_SpeciesParticleMoverTable[_TOTAL_SPECIES_NUMBER_];
 void InitSpeciesParticleMoverTable(const TestConfig& cfg);
+
+// ---------------------------------------------------------------------------
+// Optional internal spherical boundary ("Enceladus" placeholder)
+// ---------------------------------------------------------------------------
+// When enabled, we register an internal sphere through the AMPS internal-boundary
+// module (PIC::BC::InternalBoundary::Sphere). The intent is to treat the sphere
+// as a solid obstacle inside the domain (a simple Enceladus stand-in).
+//
+// IMPORTANT ordering:
+//   * Mesh must already exist: PIC::Mesh::mesh is created and xmin/xmax are final.
+//   * Sphere must be registered before particles are created, so:
+//       - PrepopulateDomain() can avoid putting particles inside the body.
+//       - The mover sees the sphere as an internal boundary from the first step.
+void InitInternalSphericalBoundary(const TestConfig& cfg);
+
+// Utility used by particle initialization (PrepopulateDomain) to reject samples
+// inside the internal sphere. If the sphere is disabled, this always returns false.
+bool IsPointInsideInternalSphere(const double x[3]);
 
 //==============================================================================
 // Optional initialization of reduced (aligned) velocity state at particle birth
