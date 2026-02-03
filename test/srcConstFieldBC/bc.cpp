@@ -65,6 +65,14 @@ int InjectBoundaryParticles(const picunits::Factors& F,
   }
 
   static int ncall=0;
+
+  // Cache uniform B0 for particle birth initialization (solver units).
+  // This is used only when _USE_PARTICLE_V_PARALLEL_NORM_ is enabled.
+  #if _USE_PARTICLE_V_PARALLEL_NORM_ == _PIC_MODE_ON_
+  VparVnormMu::gUniformB0_no[0] = cfg.B0[0];
+  VparVnormMu::gUniformB0_no[1] = cfg.B0[1];
+  VparVnormMu::gUniformB0_no[2] = cfg.B0[2];
+  #endif
   
 
   // ---- helpers (lambdas) ----------------------------------------------------
@@ -206,12 +214,21 @@ int InjectBoundaryParticles(const picunits::Factors& F,
 
 	ncall++;
 
+        // Particle birth:
+        //   - always store full 3D velocity v_no in the particle buffer
+        //   - if _USE_PARTICLE_V_PARALLEL_NORM_ is enabled, additionally
+        //     initialize V_parallel, V_normal and magnetic moment (if enabled)
+        //     BEFORE the particle mover is called (InitMode==MOVE).
         PIC::ParticleBuffer::InitiateParticle(
           x, v_no, &w, &specLocal,
           NULL,
           _PIC_INIT_PARTICLE_MODE__MOVE_,
           (void*)node,
+          #if _USE_PARTICLE_V_PARALLEL_NORM_ == _PIC_MODE_ON_
+          VparVnormMu::InitParticle
+          #else
           NULL
+          #endif
         );
 
 //  int np=PIC::Debugger::GetParticleNumberInLists(true);

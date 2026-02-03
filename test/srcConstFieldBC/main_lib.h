@@ -47,4 +47,22 @@ int MoverTestConstBC(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBl
 // on first use (lazy-init) and can also be explicitly re-initialized.
 extern PIC::Mover::fSpeciesDependentParticleMover g_SpeciesParticleMoverTable[_TOTAL_SPECIES_NUMBER_];
 void InitSpeciesParticleMoverTable(const TestConfig& cfg);
+
+//==============================================================================
+// Optional initialization of reduced (aligned) velocity state at particle birth
+//------------------------------------------------------------------------------
+// See the detailed discussion in bc.cpp. The key points are:
+//   - When _USE_PARTICLE_V_PARALLEL_NORM_ is ON, particles have dedicated storage
+//     for V_parallel and V_normal (in addition to the full 3D velocity vector).
+//   - For guiding-center / gyrokinetic / magnetic-moment workflows it is useful
+//     to also compute the magnetic moment at birth:
+//         mu = (gamma^2 m v_perp^2) / (2|B|)
+//   - This test driver uses a spatially uniform background magnetic field B0
+//     (cfg.B0 in solver units), so we can compute these values in the generic
+//     PIC::ParticleBuffer::InitiateParticle() callback without x/node.
+//==============================================================================
+namespace VparVnormMu {
+  extern double gUniformB0_no[3];
+  void InitParticle(PIC::ParticleBuffer::byte* ParticleDataStart); 
+}
 #endif

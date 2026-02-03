@@ -114,6 +114,61 @@
 #include "Exosphere.dfn"
 #include "Exosphere.h"
 
+//==============================================================================
+// Optional initialization of reduced (aligned) velocity state at particle birth
+//------------------------------------------------------------------------------
+// See the detailed discussion in bc.cpp. The key points are:
+//   - When _USE_PARTICLE_V_PARALLEL_NORM_ is ON, particles have dedicated storage
+//     for V_parallel and V_normal (in addition to the full 3D velocity vector).
+//   - For guiding-center / gyrokinetic / magnetic-moment workflows it is useful
+//     to also compute the magnetic moment at birth:
+//         mu = (gamma^2 m v_perp^2) / (2|B|)
+//   - This test driver uses a spatially uniform background magnetic field B0
+//     (cfg.B0 in solver units), so we can compute these values in the generic
+//     PIC::ParticleBuffer::InitiateParticle() callback without x/node.
+//==============================================================================
+namespace VparVnormMu {
+  double gUniformB0_no[3] = {0.0, 0.0, 0.0};
+
+  void InitParticle(PIC::ParticleBuffer::byte* ParticleDataStart) {
+    namespace PB = PIC::ParticleBuffer;
+
+    double* v = PB::GetV(ParticleDataStart);
+    const int spec = PB::GetI(ParticleDataStart);
+
+    const double Bx = gUniformB0_no[0];
+    const double By = gUniformB0_no[1];
+    const double Bz = gUniformB0_no[2];
+    const double absB = std::sqrt(Bx*Bx + By*By + Bz*Bz) + 1.0e-15;
+    const double bx = Bx/absB, by = By/absB, bz = Bz/absB;
+
+    const double vpar = v[0]*bx + v[1]*by + v[2]*bz;
+    const double v2   = v[0]*v[0] + v[1]*v[1] + v[2]*v[2];
+    const double vperp2 = std::max(0.0, v2 - vpar*vpar);
+
+    PB::SetVParallel(vpar, ParticleDataStart);
+    PB::SetVNormal(std::sqrt(vperp2), ParticleDataStart);
+
+    // Only write magnetic moment if that storage is present.
+    #if _USE_MAGNETIC_MOMENT_ == _PIC_MODE_ON_
+    {
+      double gamma2 = 1.0;
+      #if _PIC_PARTICLE_MOVER__RELATIVITY_MODE_ == _PIC_MODE_ON_
+      const double c_no = picunits::si2no_v(SpeedOfLight, PIC::Units::Factors);
+      const double beta2 = v2/(c_no*c_no);
+      if (beta2 >= 1.0) exit(__LINE__,__FILE__,"Error: v^2 >= c^2 in normalized units");
+      gamma2 = 1.0/(1.0 - beta2);
+      #endif
+
+      const double m_SI_kg = PIC::MolecularData::GetMass(spec);
+      const double m_no    = picunits::si2no_m(m_SI_kg, PIC::Units::Factors);
+      const double mu_no = 0.5 * gamma2 * m_no * vperp2 / absB;
+      PB::SetMagneticMoment(mu_no, ParticleDataStart);
+    }
+    #endif
+  }
+}
+
 
 
 #include "main_lib.h"
@@ -566,6 +621,13 @@ long int PrepopulateDomain(int spec,picunits::Factors F, const TestConfig& cfg) 
   // Only inject particles when requested
   if (cfg.mode != TestConfig::Mode::WithParticles) return 0;
 
+  // Cache uniform B0 for particle birth initialization (solver units).
+  #if _USE_PARTICLE_V_PARALLEL_NORM_ == _PIC_MODE_ON_
+  VparVnormMu::gUniformB0_no[0] = cfg.B0[0];
+  VparVnormMu::gUniformB0_no[1] = cfg.B0[1];
+  VparVnormMu::gUniformB0_no[2] = cfg.B0[2];
+  #endif
+
   if (!(F.No2SiL > 0.0 && F.Si2NoV > 0.0)) {
     throw std::invalid_argument("PrepopulateDomain: invalid Factors (No2SiL/Si2NoV).");
   }
@@ -742,12 +804,20 @@ long int PrepopulateDomain(int spec,picunits::Factors F, const TestConfig& cfg) 
 	  v_no[idim] = BulkVelocity_no[idim] + sqrt(-log(rnd()))/beta*sin(2.0*Pi*rnd()) * F.Si2NoV; 
         }
 
-        // Initiate particle
+        // Particle birth:
+        //   - store full 3D velocity v_no in the particle buffer
+        //   - if _USE_PARTICLE_V_PARALLEL_NORM_ is enabled, additionally
+        //     initialize V_parallel, V_normal and magnetic moment (if enabled)
+        //     via the user-init callback.
         PIC::ParticleBuffer::InitiateParticle(
           x, v_no, &w, &spec, NULL,
           _PIC_INIT_PARTICLE_MODE__ADD2LIST_,
           (void*)node,
-          NULL /*UserInitParticleFunction*/
+          #if _USE_PARTICLE_V_PARALLEL_NORM_ == _PIC_MODE_ON_
+          VparVnormMu::InitParticle 
+          #else
+          NULL
+          #endif
         );
       }
     }
