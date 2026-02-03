@@ -10,6 +10,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <unistd.h>
 
 // ----------- small utilities -----------
 static inline std::string ltrim(const std::string& s) {
@@ -119,7 +120,7 @@ static void ApplyKeyValue(TestConfig& cfg, const std::string& keyRaw,
 auto set_mover_all = [&](const std::string& raw)->void {
   std::string norm = NormalizeMoverName(raw);
   if (norm.empty()) {
-    std::fprintf(stderr,"[ConstFieldBC] WARNING: unknown mover '%s' (expected boris|lapenta|guiding-center); ignoring", raw.c_str()); 
+    std::printf("[ConstFieldBC] WARNING: unknown mover '%s' (expected boris|lapenta|guiding-center); ignoring", raw.c_str()); 
     return;
   }
   cfg.user_mover_all = true;
@@ -129,7 +130,7 @@ auto set_mover_all = [&](const std::string& raw)->void {
 auto set_mover_spec = [&](int spec, const std::string& raw)->void {
   std::string norm = NormalizeMoverName(raw);
   if (norm.empty()) {
-    std::fprintf(stderr,"[ConstFieldBC] WARNING: unknown mover '%s' for spec %d (expected boris|lapenta|guiding-center); ignoring", raw.c_str(), spec); 
+    std::printf("[ConstFieldBC] WARNING: unknown mover '%s' for spec %d (expected boris|lapenta|guiding-center); ignoring", raw.c_str(), spec); 
     return;
   }
   cfg.mover_by_spec[spec] = norm;
@@ -191,7 +192,7 @@ if (key=="bc" || key=="bc-type" || key=="domain-bc") {
     if (v=="d" || v=="dirichlet") cfg.domain_bc = TestConfig::DomainBCType::Dirichlet;
     else if (v=="n" || v=="neumann") cfg.domain_bc = TestConfig::DomainBCType::Neumann;
     else {
-      std::fprintf(stderr,"[ConstFieldBC] WARNING: unknown bc='%s' in input; keeping default\n", v.c_str());
+      std::printf("[ConstFieldBC] WARNING: unknown bc='%s' in input; keeping default\n", v.c_str());
     }
   }
   return;
@@ -222,7 +223,7 @@ if (key=="bc" || key=="bc-type" || key=="domain-bc") {
         cfg.domain_bc_face[faceIdx] = t;
       }
       else {
-        std::fprintf(stderr,"[ConstFieldBC] WARNING: unknown %s in input; ignoring\n", key.c_str());
+        std::printf("[ConstFieldBC] WARNING: unknown %s in input; ignoring\n", key.c_str());
       }
       return true;
     }
@@ -250,6 +251,47 @@ if (key=="bc" || key=="bc-type" || key=="domain-bc") {
   if (key=="l" || key=="domain-l" || key=="domain" || key=="box") {
     if (nums.size()==1) { cfg.use_domain_L=true; cfg.domain_L[0]=cfg.domain_L[1]=cfg.domain_L[2]=nums[0]; return; }
     if (nums.size()>=3) { cfg.use_domain_L=true; cfg.domain_L[0]=nums[0]; cfg.domain_L[1]=nums[1]; cfg.domain_L[2]=nums[2]; return; }
+    return;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal spherical boundary (input file)
+  // ---------------------------------------------------------------------------
+  // NOTE on defaults:
+  //   We only *record* user intent here. We do NOT compute the default radius/center
+  //   inside the parser because the true domain extents (xmin/xmax) are finalized
+  //   later in main.cpp after processing -L and/or explicit xmin/xmax.
+  //
+  //   The actual geometric defaults are applied in InitInternalSphericalBoundary():
+  //     center = domain center
+  //     radius = 0.25 * min(domain size)
+  //
+  // Units:
+  //   radius and center are specified in the same coordinate units as xmin/xmax.
+  //   This is *not* SI and no conversion is performed for these parameters.
+  // Enable/disable: sphere=on/off, use-sphere=1/0, spherical-boundary=true/false
+  if (key=="sphere" || key=="use-sphere" || key=="spherical-boundary" || key=="enceladus") {
+    cfg.use_sphere = ToBool(nums,strs,false);
+    return;
+  }
+
+  // Radius in domain/mesh units: sphere-radius=R
+  if (key=="sphere-radius" || key=="sphere-r" || key=="enceladus-radius") {
+    if (!nums.empty()) {
+      cfg.user_sphere_radius = true;
+      cfg.sphere_radius = nums[0];
+    }
+    return;
+  }
+
+  // Center in domain/mesh units: sphere-center=x,y,z
+  if (key=="sphere-center" || key=="sphere-x0" || key=="enceladus-center") {
+    if (nums.size()>=3) {
+      cfg.user_sphere_center = true;
+      cfg.sphere_center[0] = nums[0];
+      cfg.sphere_center[1] = nums[1];
+      cfg.sphere_center[2] = nums[2];
+    }
     return;
   }
 
@@ -426,14 +468,14 @@ if (key=="bc" || key=="bc-type" || key=="domain-bc") {
   }
 
   // Unknown: ignore but warn (only rank 0 later; here we don't have MPI)
-  std::fprintf(stderr,"[ConstFieldBC input] Warning: unknown key '%s'\n", keyRaw.c_str());
+  std::printf("[ConstFieldBC input] Warning: unknown key '%s'\n", keyRaw.c_str());
   exit(__LINE__,__FILE__,"Unknown option");
 }
 
 static void ApplyInputFile(TestConfig& cfg, const std::string& filename) {
   std::ifstream in(filename.c_str());
   if (!in.is_open()) {
-    std::fprintf(stderr,"[ConstFieldBC] ERROR: cannot open input file '%s'\n", filename.c_str());
+    std::printf("[ConstFieldBC] ERROR: cannot open input file '%s'\n", filename.c_str());
     return;
   }
 
@@ -504,6 +546,18 @@ void PrintHelpAndExit(const char* prog) {
     "      Set cubic domain size L, centered at (0,0,0).\n"
     "  -L  Lx Ly Lz\n"
     "      Set domain size (Lx,Ly,Lz), centered at (0,0,0).\n"
+    "\n"
+    "Internal spherical boundary (Enceladus placeholder):\n"
+    "  --sphere | --enceladus\n"
+    "      Enable a spherical internal boundary (an obstacle) inside the domain.\n"
+    "  --no-sphere\n"
+    "      Disable the spherical internal boundary.\n"
+    "  --sphere-radius R\n"
+    "      Sphere radius in the same coordinate units as the domain (-L/xmin/xmax).\n"
+    "      Default: 0.25 * min(domain size).\n"
+    "  --sphere-center X Y Z\n"
+    "      Sphere center in domain coordinates. Default: domain center.\n"
+    "      Input-file keys: sphere=on/off, sphere-radius=R, sphere-center=X,Y,Z\n"
     "\n"
     "Background fields (any mode):\n"
     "  -B  Bx By Bz\n"
@@ -670,12 +724,12 @@ if (a=="-mover" || a=="--mover" || a.rfind("-mover=",0)==0 || a.rfind("--mover="
   auto pos = a.find('=');
   if (pos!=std::string::npos) v = a.substr(pos+1);
   else {
-    if (i+1>=argc) { std::fprintf(stderr,"[ConstFieldBC] ERROR: -mover requires a value (boris|lapenta|guiding-center)"); std::exit(1); } 
+    if (i+1>=argc) { std::printf("[ConstFieldBC] ERROR: -mover requires a value (boris|lapenta|guiding-center)"); std::exit(1); } 
     v = argv[++i];
   }
   std::string norm = NormalizeMoverName(v);
   if (norm.empty()) {
-    std::fprintf(stderr,"[ConstFieldBC] ERROR: unknown mover '%s' (expected boris|lapenta|guiding-center)", v.c_str()); 
+    std::printf("[ConstFieldBC] ERROR: unknown mover '%s' (expected boris|lapenta|guiding-center)", v.c_str()); 
     std::exit(1);
   }
   cfg.user_mover_all = true;
@@ -697,13 +751,13 @@ if (a=="-mover-spec" || a=="--mover-spec" || a.rfind("-mover-spec=",0)==0 || a.r
     if (!strs.empty()) mover = strs[0];
   }
   else {
-    if (i+2>=argc) { std::fprintf(stderr,"[ConstFieldBC] ERROR: -mover-spec requires two values: SPEC NAME"); std::exit(1); } 
+    if (i+2>=argc) { std::printf("[ConstFieldBC] ERROR: -mover-spec requires two values: SPEC NAME"); std::exit(1); } 
     spec = std::atoi(argv[++i]);
     mover = argv[++i];
   }
   std::string norm = NormalizeMoverName(mover);
   if (spec<0 || norm.empty()) {
-    std::fprintf(stderr,"[ConstFieldBC] ERROR: invalid -mover-spec (expected: SPEC and boris|lapenta|guiding-center)"); 
+    std::printf("[ConstFieldBC] ERROR: invalid -mover-spec (expected: SPEC and boris|lapenta|guiding-center)"); 
     std::exit(1);
   }
   cfg.mover_by_spec[spec] = norm;
@@ -725,12 +779,12 @@ if (a=="-mover-spec" || a=="--mover-spec" || a.rfind("-mover-spec=",0)==0 || a.r
       auto eq = a.find('=');
       if (eq!=std::string::npos) v = a.substr(eq+1);
       else {
-        if (i+1>=argc) { std::fprintf(stderr,"[ConstFieldBC] ERROR: %s requires a value (boris|lapenta|guiding-center)", a.c_str()); std::exit(1); } 
+        if (i+1>=argc) { std::printf("[ConstFieldBC] ERROR: %s requires a value (boris|lapenta|guiding-center)", a.c_str()); std::exit(1); } 
         v = argv[++i];
       }
       std::string norm = NormalizeMoverName(v);
       if (norm.empty()) {
-        std::fprintf(stderr,"[ConstFieldBC] ERROR: unknown mover '%s' for %s (expected boris|lapenta|guiding-center)", v.c_str(), a.c_str()); 
+        std::printf("[ConstFieldBC] ERROR: unknown mover '%s' for %s (expected boris|lapenta|guiding-center)", v.c_str(), a.c_str()); 
         std::exit(1);
       }
       cfg.mover_by_spec[spec] = norm;
@@ -748,7 +802,7 @@ if (a=="-bc" || a=="--bc" || a.rfind("-bc=",0)==0 || a.rfind("--bc=",0)==0) {
     v = a.substr(a.find('=')+1);
   }
   else {
-    if (i+1>=argc) { std::fprintf(stderr,"[ConstFieldBC] ERROR: -bc requires a value (dirichlet|neumann)\n"); std::exit(1); }
+    if (i+1>=argc) { std::printf("[ConstFieldBC] ERROR: -bc requires a value (dirichlet|neumann)\n"); std::exit(1); }
     v = argv[++i];
   }
   v = tolower_str(trim(v));
@@ -756,7 +810,7 @@ if (a=="-bc" || a=="--bc" || a.rfind("-bc=",0)==0 || a.rfind("--bc=",0)==0) {
   if (v=="d" || v=="dirichlet") cfg.domain_bc = TestConfig::DomainBCType::Dirichlet;
   else if (v=="n" || v=="neumann") cfg.domain_bc = TestConfig::DomainBCType::Neumann;
   else {
-    std::fprintf(stderr,"[ConstFieldBC] ERROR: unknown BC type '%s' (expected dirichlet|neumann)\n", v.c_str());
+    std::printf("[ConstFieldBC] ERROR: unknown BC type '%s' (expected dirichlet|neumann)\n", v.c_str());
     std::exit(1);
   }
   continue;
@@ -771,7 +825,7 @@ if (a=="-bc" || a=="--bc" || a.rfind("-bc=",0)==0 || a.rfind("--bc=",0)==0) {
     std::string v = tolower_str(trim(raw));
     if (v=="d" || v=="dirichlet") return TestConfig::DomainBCType::Dirichlet;
     if (v=="n" || v=="neumann")   return TestConfig::DomainBCType::Neumann;
-    std::fprintf(stderr,"[ConstFieldBC] ERROR: unknown BC type '%s' (expected dirichlet|neumann)\n", v.c_str());
+    std::printf("[ConstFieldBC] ERROR: unknown BC type '%s' (expected dirichlet|neumann)\n", v.c_str());
     std::exit(1);
   };
 
@@ -781,7 +835,7 @@ if (a=="-bc" || a=="--bc" || a.rfind("-bc=",0)==0 || a.rfind("--bc=",0)==0) {
       auto pos = a.find('=');
       if (pos!=std::string::npos) v = a.substr(pos+1);
       else {
-        if (i+1>=argc) { std::fprintf(stderr,"[ConstFieldBC] ERROR: %s requires a value (dirichlet|neumann)\n", opt.c_str()); std::exit(1); }
+        if (i+1>=argc) { std::printf("[ConstFieldBC] ERROR: %s requires a value (dirichlet|neumann)\n", opt.c_str()); std::exit(1); }
         v = argv[++i];
       }
       cfg.user_domain_bc_face[faceIdx] = true;
@@ -989,6 +1043,75 @@ if (a=="-L") {
   continue;
 }
 
+// ---- Internal spherical boundary (Enceladus placeholder) ----
+// These options let you place a solid sphere inside the computational domain.
+// The geometry is expressed in *mesh coordinate units* (same units as xmin/xmax
+// or -L). No SI conversion is applied for the geometry.
+//
+// Defaults:
+//   If the sphere is enabled but radius/center are omitted, the actual defaults
+//   are applied later in InitInternalSphericalBoundary() after the domain bounds
+//   are finalized:
+//     radius = 0.25 * min(domain size)
+//     center = domain center
+//
+// Enable:  --sphere, --enceladus, --sphere=1
+// Disable: --no-sphere, --sphere=0
+if (a=="--sphere" || a=="-sphere" || a=="--enceladus" || a=="-enceladus" || a.rfind("--sphere=",0)==0 || a.rfind("-sphere=",0)==0) {
+  bool val = true;
+  auto pos = a.find('=');
+  if (pos!=std::string::npos) {
+    std::string v = tolower_str(trim(a.substr(pos+1)));
+    if (v=="0" || v=="false" || v=="no" || v=="off") val = false;
+  }
+  cfg.use_sphere = val;
+  continue;
+}
+if (a=="--no-sphere" || a=="-no-sphere") {
+  cfg.use_sphere = false;
+  continue;
+}
+
+// Radius: --sphere-radius R   (also accepts --sphere-radius=R)
+if (a=="--sphere-radius" || a.rfind("--sphere-radius=",0)==0 || a=="-sphere-radius" || a.rfind("-sphere-radius=",0)==0) {
+  double v=0.0;
+  bool ok=false;
+  auto pos = a.find('=');
+  if (pos!=std::string::npos) {
+    char* end=nullptr;
+    v = std::strtod(a.c_str()+pos+1,&end);
+    ok = (end!=a.c_str()+pos+1);
+  }
+  else {
+    if (i+1<argc) {
+      char* end=nullptr;
+      v = std::strtod(argv[++i],&end);
+      ok = (end!=argv[i]);
+    }
+  }
+  if (!ok) {
+    std::printf("[ConstFieldBC] ERROR: --sphere-radius requires a numeric value\n");
+    std::exit(1);
+  }
+  cfg.use_sphere = true;
+  cfg.user_sphere_radius = true;
+  cfg.sphere_radius = v;
+  continue;
+}
+
+// Center: --sphere-center X Y Z
+if (a=="--sphere-center" || a=="-sphere-center") {
+  double c[3];
+  if (!TryRead3(i, argc, argv, c)) {
+    std::printf("[ConstFieldBC] ERROR: --sphere-center requires three values: X Y Z\n");
+    std::exit(1);
+  }
+  cfg.use_sphere = true;
+  cfg.user_sphere_center = true;
+  cfg.sphere_center[0]=c[0]; cfg.sphere_center[1]=c[1]; cfg.sphere_center[2]=c[2];
+  continue;
+}
+
 
     // ---- Background fields in *physical* units (SI) ----
     // These do NOT force particle mode; they are convenience setters.
@@ -1048,7 +1171,6 @@ if (a=="-L") {
 
 
 if (a=="-h" || a=="--help") { PrintHelpAndExit(argv[0]); }
-
 
     std::printf("Unknown option: %s (use -h for help)\n", argv[i]);
     exit(__LINE__,__FILE__,"Unknown option");

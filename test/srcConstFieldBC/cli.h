@@ -116,6 +116,34 @@ struct TestConfig {
   std::string inputFile;
 
   // ---------------------------------------------------------------------------
+  // Optional internal spherical boundary ("Enceladus" placeholder)
+  //
+  // When enabled, a spherical internal boundary is registered using AMPS's
+  // internal-boundary infrastructure (PIC::BC::InternalBoundary::Sphere).
+  //
+  // In this test we treat the sphere as a *solid absorbing obstacle*:
+  //   * particles initialized inside the sphere are rejected (vacuum body)
+  //   * particles that hit the sphere are deleted
+  //
+  // This is intentionally minimal: it gives you a clean geometric "Enceladus"
+  // placeholder that can later be extended with surface source terms,
+  // secondary emission, sputtering, charging, etc.
+  //
+  // Geometry units: the same coordinate system used by the mesh in this driver
+  // (i.e., the units used for xmin/xmax or the -L option). No SI conversion is
+  // done here.
+  //
+  // Defaults (only applied when use_sphere==true and the user did not specify
+  // the corresponding parameter):
+  //   center = domain center = 0.5*(xmin+xmax)
+  //   radius = 0.25 * min(domain size)
+  bool   use_sphere = false;
+  bool   user_sphere_radius = false;
+  bool   user_sphere_center = false;
+  double sphere_radius = 0.0;
+  double sphere_center[3] = {0.0,0.0,0.0};
+
+  // ---------------------------------------------------------------------------
   // Particle mover selection (particles mode)
   //
   // MoverTestConstBC() dispatches into a species-dependent particle mover.
