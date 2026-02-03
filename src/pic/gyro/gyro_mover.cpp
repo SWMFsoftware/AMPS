@@ -228,67 +228,6 @@ namespace GYROKINETIC {
   }
 
   //----------------------------------------------------------------------------------
-  // Helper: initialize reduced GC state from an existing full 3D velocity if needed
-  //----------------------------------------------------------------------------------
-  inline void EnsureReducedStateInitialized(long int ptr,
-                                            PIC::ParticleBuffer::byte *ParticleData,
-                                            int spec,
-                                            const double *x,
-                                            cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
-    namespace PB = PIC::ParticleBuffer;
-
-    // Evaluate B to get unit b and |B|
-    double E[3],B[3],gradB[9];
-    if (GetEBandGradB(E,B,gradB,x,node)==false) {
-      // If we cannot evaluate fields at creation point, fall back to trivial state.
-      PB::SetMagneticMoment(0.0,ptr);
-      PB::SetVParallel(0.0,ParticleData);
-      PB::SetVNormal(0.0,ParticleData);
-      double vd[3]={0.0,0.0,0.0};
-      SetV_drift(vd,ParticleData);
-      return;
-    }
-
-    double absB=0.0,b[3];
-    if (GetAbsBAndUnitB(B,absB,b)==false) {
-      // If B=0, GC model is not meaningful; store trivial state.
-      PB::SetMagneticMoment(0.0,ptr);
-      PB::SetVParallel(0.0,ParticleData);
-      PB::SetVNormal(0.0,ParticleData);
-      double vd[3]={0.0,0.0,0.0};
-      SetV_drift(vd,ParticleData);
-      return;
-    }
-
-    // Species properties (consistent with field units)
-    double m,q;
-    GetSpeciesMassCharge(m,q,spec);
-
-    // Current velocity vector stored in particle buffer (full 3D)
-    double *v = PB::GetV(ParticleData);
-
-    // v_parallel = v · b
-    const double vpar = v[0]*b[0] + v[1]*b[1] + v[2]*b[2];
-
-    // v_perp^2 = |v|^2 - v_parallel^2
-    const double v2 = v[0]*v[0] + v[1]*v[1] + v[2]*v[2];
-    const double vperp2 = fmax(0.0, v2 - vpar*vpar);
-    const double vperp  = sqrt(vperp2);
-
-    // Magnetic moment (non-rel)
-    //   mu = m v_perp^2 / (2|B|)
-    const double mu = 0.5*m*vperp2/absB;
-
-    PB::SetMagneticMoment(mu,ptr);
-    PB::SetVParallel(vpar,ParticleData);
-    PB::SetVNormal(vperp,ParticleData);
-
-    // Initialize drift velocity storage to zero
-    double vd[3]={0.0,0.0,0.0};
-    SetV_drift(vd,ParticleData);
-  }
-
-  //----------------------------------------------------------------------------------
   // Helper: evaluate RHS terms for guiding-center ODE system
   //
   // Inputs:
@@ -430,10 +369,12 @@ namespace GYROKINETIC {
     // Commit full 3D velocity vector v = b*v_parallel (requested)
     // Note: this is the *parallel* velocity vector, not including drifts.
     // If you want total GC velocity, add vdrift separately in diagnostics.
-    double *v = PB::GetV(ParticleData);
-    v[0]=b[0]*vpar;
-    v[1]=b[1]*vpar;
-    v[2]=b[2]*vpar;
+    double v[3];
+    PB::GetV(v,ParticleData);
+    v[0]=b[0]*vpar+vdrift_to_store[0];
+    v[1]=b[1]*vpar+vdrift_to_store[1];
+    v[2]=b[2]*vpar+vdrift_to_store[2];
+    PB::SetV(v,ParticleData);
 
     // Commit drift velocity (requested)
     SetV_drift((double*)vdrift_to_store,ParticleData);
@@ -450,8 +391,6 @@ namespace GYROKINETIC {
     PIC::ParticleBuffer::byte *ParticleData = PIC::ParticleBuffer::GetParticleDataPointer(ptr);
     double *x = PIC::ParticleBuffer::GetX(ParticleData);
     int spec  = PIC::ParticleBuffer::GetI(ParticleData);
-
-    EnsureReducedStateInitialized(ptr,ParticleData,spec,x,startNode);
 
     // µ is invariant in this model
     const double mu   = PB::GetMagneticMoment(ptr);
@@ -537,7 +476,8 @@ namespace GYROKINETIC {
     // 7) Trajectory tracker (if enabled)
     //--------------------------------------------------------------------------
     if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) {
-      double *v = PIC::ParticleBuffer::GetV(ParticleData);
+      double v[3];
+      PIC::ParticleBuffer::GetV(v,ParticleData);
       PIC::ParticleTracker::RecordTrajectoryPoint(x,v,spec,ParticleData,(void*)startNode);
 
       if (_PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_) {
@@ -609,13 +549,14 @@ namespace GYROKINETIC {
     // 1) Load particle state and ensure reduced state is initialized
     //--------------------------------------------------------------------------
     PIC::ParticleBuffer::byte *ParticleData = PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-    double *x = PIC::ParticleBuffer::GetX(ParticleData);
-    int spec  = PIC::ParticleBuffer::GetI(ParticleData);
-
-    EnsureReducedStateInitialized(ptr,ParticleData,spec,x,startNode);
+    double x[3];
+    PB::GetX(x,ParticleData);
+    int spec  = PB::GetI(ParticleData);
 
     const double mu   = PB::GetMagneticMoment(ptr);
     const double vpar0 = PB::GetVParallel(ParticleData);
+
+    if (PB::IsParticleAllocated(ptr)==false) exit(__LINE__,__FILE__,"error: a particle is not allocated");
 
     // Save initial position (x^n)
     const double x0[3] = {x[0],x[1],x[2]};
@@ -661,6 +602,7 @@ namespace GYROKINETIC {
     x[0] = x0[0] + dtTotal*(vdriftH[0] + bH[0]*vparHalf);
     x[1] = x0[1] + dtTotal*(vdriftH[1] + bH[1]*vparHalf);
     x[2] = x0[2] + dtTotal*(vdriftH[2] + bH[2]*vparHalf);
+    PB::SetX(x,ParticleData);
 
     const double vpar1 = vpar0 + dtTotal*dvpar_dtH;
 
@@ -683,6 +625,8 @@ namespace GYROKINETIC {
     EvalRHS(x,newNode,vpar1,mu,spec,absB1,b1,vdrift1,dvpar_dt_dummy);
 
     CommitReducedStateAndVelocity(ptr,ParticleData,spec,x,newNode,vpar1,mu,vdrift1);
+
+    
 
     //--------------------------------------------------------------------------
     // 8) Internal boundary handling (same style as other movers)
@@ -711,7 +655,8 @@ namespace GYROKINETIC {
     // 9) Trajectory tracker (if enabled)
     //--------------------------------------------------------------------------
     if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) {
-      double *v = PIC::ParticleBuffer::GetV(ParticleData);
+      double v[3];
+      PIC::ParticleBuffer::GetV(v,ParticleData);
       PIC::ParticleTracker::RecordTrajectoryPoint(x,v,spec,ParticleData,(void*)startNode);
 
       if (_PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_) {
