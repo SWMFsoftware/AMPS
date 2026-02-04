@@ -114,6 +114,121 @@
 #include "Exosphere.dfn"
 #include "Exosphere.h"
 
+
+
+//==============================================================================
+// Optional internal spherical boundary ("Enceladus" placeholder)
+//------------------------------------------------------------------------------
+// We use the built-in internal-boundary sphere implementation:
+//   PIC::BC::InternalBoundary::Sphere
+//
+// For this test driver we keep the physics intentionally minimal:
+//   * The sphere is a SOLID obstacle inside the domain.
+//   * Particles initialized inside the sphere are rejected (vacuum interior).
+//   * Particles that intersect the surface are deleted (fully absorbing).
+//
+// This gives a clean geometric placeholder for Enceladus that can later be
+// extended with source processes (sputtering, thermal desorption), secondary
+// emission, or surface charging.
+//
+// IMPORTANT ORDERING:
+//   AMPS requires that ALL internal surfaces be registered BEFORE
+//   PIC::Mesh::mesh->init() is called. If you register the sphere after that,
+//   you will hit:
+//     "all internal surface must be registered before initialization of the mesh"
+//==============================================================================
+
+namespace ConstFieldBC_InternalSphere {
+  static bool   gEnabled = false;
+  static double gCenter[3] = {0.0,0.0,0.0};
+  static double gRadius = 0.0;
+  static cInternalSphericalData* gSphere = NULL;
+
+  // Surface interaction callback (absorbing surface)
+  static int ParticleSphereInteraction_Absorb(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPointer,void *SphereDataPointer) {
+    (void)spec; (void)ptr; (void)x; (void)v; (void)dtTotal; (void)NodeDataPointer; (void)SphereDataPointer;
+    return _PARTICLE_DELETED_ON_THE_FACE_;
+  }
+
+  static inline bool Inside(const double x[3]) {
+    const double dx = x[0]-gCenter[0];
+    const double dy = x[1]-gCenter[1];
+    const double dz = x[2]-gCenter[2];
+    return (dx*dx + dy*dy + dz*dz) <= gRadius*gRadius;
+  }
+}
+
+bool IsPointInsideInternalSphere(const double x[3]) {
+  using namespace ConstFieldBC_InternalSphere;
+  if (!gEnabled) return false;
+  return Inside(x);
+}
+
+void InitInternalSphericalBoundary(const TestConfig& cfg) {
+  using namespace ConstFieldBC_InternalSphere;
+
+  gEnabled = false;
+  gSphere = NULL;
+  gRadius = 0.0;
+  gCenter[0]=gCenter[1]=gCenter[2]=0.0;
+
+  if (!cfg.use_sphere) return;
+
+  // -------------------------------------------------------------------------
+  // Compute default geometry from the finalized domain extents
+  // -------------------------------------------------------------------------
+  const double Lx = xmax[0]-xmin[0];
+  const double Ly = xmax[1]-xmin[1];
+  const double Lz = xmax[2]-xmin[2];
+  const double Lmin = std::min(Lx,std::min(Ly,Lz));
+
+  if (cfg.user_sphere_center) {
+    gCenter[0]=cfg.sphere_center[0];
+    gCenter[1]=cfg.sphere_center[1];
+    gCenter[2]=cfg.sphere_center[2];
+  }
+  else {
+    gCenter[0]=0.5*(xmin[0]+xmax[0]);
+    gCenter[1]=0.5*(xmin[1]+xmax[1]);
+    gCenter[2]=0.5*(xmin[2]+xmax[2]);
+  }
+
+  if (cfg.user_sphere_radius) gRadius = cfg.sphere_radius;
+  else gRadius = 0.25*Lmin;
+
+  if (!(gRadius>0.0)) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
+      std::fprintf(stderr,"[ConstFieldBC] WARNING: sphere enabled but radius<=0; disabling internal sphere\n");
+    }
+    return;
+  }
+
+  // -------------------------------------------------------------------------
+  // Register the internal boundary with AMPS
+  // -------------------------------------------------------------------------
+  // Reserve zero surface-sampling variables per species for now (no flux diagnostics).
+  std::vector<long int> ReserveSamplingSpace(PIC::nTotalSpecies,0);
+
+  // Surface mesh resolution of the sphere discretization (zenith, azimuth).
+  // Increase if you later need finer per-element diagnostics.
+  cInternalSphericalData::SetGeneralSurfaceMeshParameters(20,40);
+  PIC::BC::InternalBoundary::Sphere::Init(ReserveSamplingSpace.data(),NULL);
+
+  cInternalBoundaryConditionsDescriptor d = PIC::BC::InternalBoundary::Sphere::RegisterInternalSphere();
+  gSphere = (cInternalSphericalData*)d.BoundaryElement;
+  gSphere->SetSphereGeometricalParameters(gCenter,gRadius);
+
+  // Use a uniform surface resolution target for cut-cell / surface intersection.
+  gSphere->localResolution = BulletLocalResolution;
+  gSphere->ParticleSphereInteraction = ParticleSphereInteraction_Absorb;
+
+  gEnabled = true;
+
+  if (PIC::Mesh::mesh->ThisThread==0) {
+    std::printf("[ConstFieldBC] Internal sphere enabled: center=(%g,%g,%g), R=%g\n", gCenter[0],gCenter[1],gCenter[2],gRadius);
+  }
+}
+
 //==============================================================================
 // Optional initialization of reduced (aligned) velocity state at particle birth
 //------------------------------------------------------------------------------
@@ -172,147 +287,6 @@ namespace VparVnormMu {
 
 
 #include "main_lib.h"
-
-// ---------------------------------------------------------------------------
-// Optional internal spherical boundary ("Enceladus" placeholder)
-// ---------------------------------------------------------------------------
-// AMPS provides an "internal boundary" abstraction for solid objects embedded
-// inside the computational domain. The object is registered once at startup and
-// then the particle mover calls back into the object handler whenever a particle
-// crosses the surface during a time step.
-//
-// In this test driver we use the built-in spherical internal boundary:
-//   PIC::BC::InternalBoundary::Sphere
-// and configure it as a simple *absorbing* body:
-//   * particles born inside the sphere are rejected during PrepopulateDomain()
-//     (so the interior starts as vacuum)
-//   * particles that intersect the surface are deleted
-//
-// We keep a small static cache of the geometry (center, radius) so we can
-// cheaply test point-in-sphere during particle initialization and so we can
-// print out the final (defaulted) geometry for reproducibility.
-
-namespace ConstFieldBC_InternalSphere {
-  static bool   gEnabled = false;
-  static double gCenter[3] = {0.0,0.0,0.0};
-  static double gRadius = 0.0;
-  static cInternalSphericalData* gSphere = NULL;
-
-  // -------------------------------------------------------------------------
-  // Surface interaction callback
-  // -------------------------------------------------------------------------
-  // The internal-boundary infrastructure calls this function after it detects
-  // that a particle has crossed the surface during a mover substep.
-  //
-  // Returning _PARTICLE_DELETED_ON_THE_FACE_ tells the framework to remove the
-  // particle from the simulation. This models a fully absorbing surface.
-  //
-  // If you later want to add Enceladus source physics (sputtering, thermal
-  // desorption, secondary emission, etc.), this callback is the correct place to
-  // implement it.
-  static int ParticleSphereInteraction_Absorb(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPointer,void *SphereDataPointer) {
-    // The framework interprets this return code and deletes the particle.
-    (void)spec; (void)ptr; (void)x; (void)v; (void)dtTotal; (void)NodeDataPointer; (void)SphereDataPointer;
-    return _PARTICLE_DELETED_ON_THE_FACE_;
-  }
-
-  // Fast geometry predicate used for prepopulation rejection.
-  static inline bool Inside(const double x[3]) {
-    const double dx = x[0]-gCenter[0];
-    const double dy = x[1]-gCenter[1];
-    const double dz = x[2]-gCenter[2];
-    return (dx*dx + dy*dy + dz*dz) <= gRadius*gRadius;
-  }
-}
-
-bool IsPointInsideInternalSphere(const double x[3]) {
-  using namespace ConstFieldBC_InternalSphere;
-  if (!gEnabled) return false;
-  return Inside(x);
-}
-
-void InitInternalSphericalBoundary(const TestConfig& cfg) {
-  using namespace ConstFieldBC_InternalSphere;
-
-  gEnabled = false;
-  gSphere = NULL;
-  gRadius = 0.0;
-  gCenter[0]=gCenter[1]=gCenter[2]=0.0;
-
-  if (!cfg.use_sphere) return;
-
-  // -------------------------------------------------------------------------
-  // Decide on final geometry
-  // -------------------------------------------------------------------------
-  // We must compute defaults here (and not in the CLI parser) because xmin/xmax
-  // are finalized in main.cpp after combining legacy defaults, -L, and any
-  // explicit xmin/xmax settings.
-  //
-  // Default geometry:
-  //   center = domain center
-  //   radius = 0.25 * min(domain size)
-  const double Lx = xmax[0]-xmin[0];
-  const double Ly = xmax[1]-xmin[1];
-  const double Lz = xmax[2]-xmin[2];
-  const double Lmin = std::min(Lx,std::min(Ly,Lz));
-
-  if (cfg.user_sphere_center) {
-    gCenter[0]=cfg.sphere_center[0];
-    gCenter[1]=cfg.sphere_center[1];
-    gCenter[2]=cfg.sphere_center[2];
-  }
-  else {
-    gCenter[0]=0.5*(xmin[0]+xmax[0]);
-    gCenter[1]=0.5*(xmin[1]+xmax[1]);
-    gCenter[2]=0.5*(xmin[2]+xmax[2]);
-  }
-
-  if (cfg.user_sphere_radius) {
-    gRadius = cfg.sphere_radius;
-  }
-  else {
-    gRadius = 0.25*Lmin;
-  }
-
-  if (!(gRadius>0.0)) {
-    if (PIC::Mesh::mesh->ThisThread==0) {
-      std::fprintf(stderr,"[ConstFieldBC] WARNING: sphere enabled but radius<=0; disabling internal sphere\n");
-    }
-    return;
-  }
-
-  // -------------------------------------------------------------------------
-  // Register the internal boundary with AMPS
-  // -------------------------------------------------------------------------
-  // The internal sphere module can optionally reserve per-species surface
-  // sampling arrays (for fluxes, source rates, etc.). This test does not use
-  // surface sampling yet, so we reserve zero for all species.
-  static long int ReserveSamplingSpace[PIC::nTotalSpecies];
-  for (int s=0; s<PIC::nTotalSpecies; ++s) ReserveSamplingSpace[s]=0;
-
-  // Surface mesh resolution of the *sphere surface discretization*.
-  // The parameters are (nZenith, nAzimuth) in the standard AMPS implementation.
-  // You can refine these later if you need smoother surface intersection or
-  // per-surface-element diagnostics.
-  cInternalSphericalData::SetGeneralSurfaceMeshParameters(20,40);
-  PIC::BC::InternalBoundary::Sphere::Init(ReserveSamplingSpace,NULL);
-
-  // RegisterInternalSphere() creates the object and returns a descriptor that
-  // includes a pointer to the created boundary element.
-  cInternalBoundaryConditionsDescriptor d = PIC::BC::InternalBoundary::Sphere::RegisterInternalSphere();
-  gSphere = (cInternalSphericalData*)d.BoundaryElement;
-  gSphere->SetSphereGeometricalParameters(gCenter,gRadius);
-  // localResolution controls the target surface-element size as a function of
-  // position on the surface. Here we keep it uniform by returning a constant.
-  gSphere->localResolution = BulletLocalResolution;
-  gSphere->ParticleSphereInteraction = ParticleSphereInteraction_Absorb;
-
-  gEnabled = true;
-
-  if (PIC::Mesh::mesh->ThisThread==0) {
-    std::printf("[ConstFieldBC] Internal sphere enabled: center=(%g,%g,%g), R=%g\n", gCenter[0],gCenter[1],gCenter[2],gRadius);
-  }
-}
 
 // -----------------------------------------------------------------------------
 // InitGlobalParticleWeight_TargetPPC()
@@ -920,14 +894,8 @@ long int PrepopulateDomain(int spec,picunits::Factors F, const TestConfig& cfg) 
 
       while (npart-- > 0) {
         // Uniform position inside the cell (legacy sampling from block extents).
-        // If an internal sphere is enabled, reject samples that fall inside it.
-        // (This keeps the initial condition "vacuum" inside Enceladus.)
-        // Position sampling:
-        //   We sample uniformly within a cell. When an internal sphere is enabled
-        //   we reject points inside the obstacle so the body interior remains
-        //   particle-free. We cap the number of attempts to avoid pathological
-        //   infinite loops if the sphere occupies most of a cell (e.g., small
-        //   domains, coarse meshes, or a large radius).
+        // If an internal sphere is enabled, reject samples that fall inside it
+        // (keeps the initial condition "vacuum" inside Enceladus).
         bool okPos=false;
         for (int attempt=0; attempt<32; ++attempt) {
           x[0] = xMiddle[0] + (xmax[0]-xmin[0])/_BLOCK_CELLS_X_*(rnd()-0.5);
@@ -941,11 +909,8 @@ long int PrepopulateDomain(int spec,picunits::Factors F, const TestConfig& cfg) 
 #else
           x[2] = 0.0;
 #endif
-
           if (!IsPointInsideInternalSphere(x)) { okPos=true; break; }
         }
-        // If we failed to find an acceptable point (rare unless the sphere is
-        // very large), skip this macro-particle.
         if (!okPos) continue;
 
         // Sample velocity:

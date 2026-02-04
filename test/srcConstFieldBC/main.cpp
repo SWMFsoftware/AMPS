@@ -143,7 +143,7 @@ int main(int argc,char **argv) {
    tm *ct=localtime(&TimeValue);
 
    PIC::InitMPI();
-
+  
    printf("start: (%i/%i %i:%i:%i)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
 
   ConfigureTestFromArgsWithInput(cfg,argc,argv);
@@ -182,6 +182,7 @@ for (int f=0; f<6; ++f) {
 }
 
 
+//  PIC::InitMPI();
   PIC::Init_BeforeParser();
 
   
@@ -230,6 +231,20 @@ for (int f=0; f<6; ++f) {
 
   //seed the random number generator
   rnd_seed(100);
+
+// ---------------------------------------------------------------------
+// Optional internal spherical boundary (Enceladus placeholder)
+// ---------------------------------------------------------------------
+// IMPORTANT ORDERING:
+//   AMPS requires that internal surfaces are registered BEFORE
+//   PIC::Mesh::mesh->init(). If you move this below mesh->init(), AMPS will
+//   abort with:
+//     "all internal surface must be registered before initialization of the mesh"
+//
+// We register the sphere here (after xmin/xmax are finalized and after
+// Init_BeforeParser(), but BEFORE mesh initialization).
+InitInternalSphericalBoundary(cfg);
+
 
   //generate mesh or read from file
   char mesh[_MAX_STRING_LENGTH_PIC_]="none";  ///"amr.sig=0xd7058cc2a680a3a2.mesh.bin";
@@ -369,22 +384,6 @@ for (int f=0; f<6; ++f) {
       LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
       MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
       printf("After cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
-
-      // ---------------------------------------------------------------------
-      // Optional internal spherical boundary (Enceladus placeholder)
-      // ---------------------------------------------------------------------
-      // If enabled, this registers an internal *solid sphere* with the AMPS
-      // internal-boundary module:
-      //   PIC::BC::InternalBoundary::Sphere
-      //
-      // Why it must be called HERE:
-      //   * the geometry defaults (center, radius) depend on xmin/xmax,
-      //     which are finalized only after the mesh is created.
-      //   * particles are created right after this (PrepopulateDomain);
-      //     we want to avoid initializing particles inside the sphere.
-      //   * once registered, the mover will automatically detect crossings
-      //     and invoke the sphere interaction callback each time step.
-      InitInternalSphericalBoundary(cfg);
 
       if (cfg.mode==TestConfig::Mode::WithParticles) {
         int spec=0;
