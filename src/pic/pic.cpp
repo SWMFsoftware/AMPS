@@ -1720,6 +1720,69 @@ void PIC::Init_BeforeParser() {
   //init the default univ normalization 
   PIC::Units::InitializeAMUChargeNormalization();
 
+  //================================= DEBUG =================================
+  // When the PIC debugger is enabled, print the active particle-data layout
+  // (byte offsets) defined in picParticleDataMacro.h. This is helpful for
+  // validating optional particle fields (e.g., magnetic moment or aligned
+  // velocity storage) and for diagnosing ABI/layout mismatches.
+  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  if (ThisThread==0) {
+    auto PrintField=[&](const char* name,long int offset,long int length) {
+      if ((offset>=0) && (length>0)) {
+        printf("$PREFIX:   %-40s offset=%ld  length=%ld\n",name,offset,length);
+      }
+    };
+
+    printf("$PREFIX: Particle data layout (active fields; byte offsets)\n");
+    printf("$PREFIX:   BASIC_DATA_LENGTH=%ld\n",(long int)_PIC_PARTICLE_DATA__BASIC_DATA_LENGTH_);
+    printf("$PREFIX:   FULL_DATA_LENGTH =%ld\n",(long int)_PIC_PARTICLE_DATA__FULL_DATA_LENGTH_);
+
+    // Mandatory fields (always present)
+    PrintField("NEXT",(long int)_PIC_PARTICLE_DATA__NEXT_OFFSET_,(long int)sizeof(long int));
+    PrintField("PREV",(long int)_PIC_PARTICLE_DATA__PREV_OFFSET_,(long int)sizeof(long int));
+    PrintField("SPECIES_ID",(long int)_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_,
+      (long int)((_STATE_VECTOR_MODE_==_STATE_VECTOR_MODE_ALIGNED_) ? sizeof(long int) : sizeof(unsigned char)));
+    PrintField("VELOCITY(vx,vy,vz)",(long int)_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,(long int)(3*sizeof(double)));
+    PrintField("POSITION(x,y,z)",(long int)_PIC_PARTICLE_DATA__POSITION_OFFSET_,(long int)(DIM*sizeof(double)));
+    PrintField("WEIGHT_CORRECTION",
+      (long int)_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_,
+      (long int)_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_LENGTH_);
+
+    // Optional fields (printed only when active)
+    PrintField("DUST_GRAIN_MASS",
+      (long int)_PIC_PARTICLE_DATA__DUST_GRAIN_MASS_OFFSET_,
+      (long int)_PIC_PARTICLE_DATA__DUST_GRAIN_MASS_LENGTH_);
+    PrintField("DUST_GRAIN_RADIUS",
+      (long int)_PIC_PARTICLE_DATA__DUST_GRAIN_RADIUS_OFFSET_,
+      (long int)_PIC_PARTICLE_DATA__DUST_GRAIN_RADIUS_LENGTH_);
+    PrintField("DUST_GRAIN_CHARGE",
+      (long int)_PIC_PARTICLE_DATA__DUST_GRAIN_CHARGE_OFFSET_,
+      (long int)_PIC_PARTICLE_DATA__DUST_GRAIN_CHARGE_LENGTH_);
+    PrintField("MAGNETIC_MOMENT",
+      (long int)_PIC_PARTICLE_DATA__MAGNETIC_MOMENT_OFFSET_,
+      (long int)_PIC_PARTICLE_DATA__MAGNETIC_MOMENT_LENGTH_);
+    PrintField("INJECTION_FACE",
+      (long int)_PIC_PARTICLE_DATA__INJECTION_FACE_OFFSET_,
+      (long int)_PIC_PARTICLE_DATA__INJECTION_FACE_LENGTH_);
+    PrintField("WEIGHT_OVER_TIME_STEP",
+      (long int)_PIC_PARTICLE_DATA__WEIGHT_OVER_TIME_STEP_OFFSET_,
+      (long int)_PIC_PARTICLE_DATA__WEIGHT_OVER_TIME_STEP_LENGTH_);
+    PrintField("FIELD_LINE_ID",
+      (long int)_PIC_PARTICLE_DATA__FIELD_LINE_ID_OFFSET_,
+      (long int)_PIC_PARTICLE_DATA__FIELD_LINE_ID_LENGTH_);
+    PrintField("FIELD_LINE_COORD",
+      (long int)_PIC_PARTICLE_DATA__FIELD_LINE_COORD_OFFSET_,
+      (long int)_PIC_PARTICLE_DATA__FIELD_LINE_COORD_LENGTH_);
+    PrintField("V_PARALLEL",
+      (long int)_PIC_PARTICLE_DATA__V_PARALLEL_OFFSET_,
+      (long int)_PIC_PARTICLE_DATA__V_PARALLEL_LENGTH_);
+    PrintField("V_NORMAL",
+      (long int)_PIC_PARTICLE_DATA__V_NORMAL_OFFSET_,
+      (long int)_PIC_PARTICLE_DATA__V_NORMAL_LENGTH_);
+  }
+  #endif
+  //=============================== END DEBUG ================================
+
 //  PIC::IndividualModelSampling::RequestStaticCellData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
 //  PIC::IndividualModelSampling::RequestStaticCellData->clear();
 

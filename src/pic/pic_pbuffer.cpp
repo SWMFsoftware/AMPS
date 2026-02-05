@@ -64,7 +64,12 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
   //adjust the length of the particle state vector to be proportional to _ALIGN_STATE_VECTORS_BASE_
   if (ParticleDataLength%_ALIGN_STATE_VECTORS_BASE_!=0) ParticleDataLength=_ALIGN_STATE_VECTORS_BASE_*(1+ParticleDataLength/_ALIGN_STATE_VECTORS_BASE_); 
 
-  
+  // Debug: report the final particle state-vector length (bytes) after optional fields and alignment
+  if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_) && (PIC::ThisThread==0)) {
+    printf("$PREFIX: [DEBUG] PIC::ParticleBuffer::Init(): ParticleDataLength=%ld bytes (align_base=%d)\n",
+      ParticleDataLength,
+      (int)_ALIGN_STATE_VECTORS_BASE_);
+  }
 
 
   #if defined(__linux__)
