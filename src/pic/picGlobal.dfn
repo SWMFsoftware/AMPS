@@ -34,6 +34,13 @@
 #define _USE_FIELD_LINE_ID_     _PIC_MODE_OFF_
 // Optional parameter: coordinate along field line
 #define _USE_FIELD_LINE_COORD_  _PIC_MODE_OFF_
+
+// Optional parameter: particle-aligned velocity storage (V_parallel, V_normal)
+// Default is OFF. The feature can be force-enabled by configuration and is also
+// enabled automatically by the model when required (e.g., field-line mode and/or
+// magnetic-moment / guiding-center integrators). See picParticleDataMacro.h for
+// the forcing logic and the associated particle-data offsets.
+#define _USE_PARTICLE_V_PARALLEL_NORM_ _PIC_MODE_OFF_
 //-----------------------------------------------------------------------------
 
 

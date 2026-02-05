@@ -126,14 +126,6 @@
     #define _USE_MAGNETIC_MOMENT_ _PIC_MODE_ON_
 #endif//_PIC_MOVER_INTEGRATOR_MODE_
 //.............................................................................
-// Optional parameter: field line ID and field line coordinate
-#if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
-    #undef  _USE_FIELD_LINE_ID_
-    #define _USE_FIELD_LINE_ID_ _PIC_MODE_ON_
-    #undef  _USE_FIELD_LINE_COORD_
-    #define _USE_FIELD_LINE_COORD_ _PIC_MODE_ON_
-#endif//_PIC_FIELD_LINE_MODE_
-//.............................................................................
 // Optional parameter: the number of the face where the particle was injected
 #if _PIC_PARTICLE_TRACKER__INJECTION_FACE_MODE_ == _PIC_MODE_ON_
     #undef _USE_SAVE_INJECTION_FACE_
@@ -255,9 +247,67 @@
 #else
     #define _PIC_PARTICLE_DATA__FIELD_LINE_COORD_OFFSET_   -1
     #define _PIC_PARTICLE_DATA__FIELD_LINE_COORD_LENGTH_    0
-#endif//_USE_FIELD_LINE_COORD_ 
+#endif//_USE_FIELD_LINE_COORD_
 
 
+	//==========================================================================
+	// Optional storage: particle-aligned velocity components (V_parallel, V_normal)
+	//
+	// Motivation:
+	//   Historically, in the field-line implementation the code overloaded the 3D
+	//   velocity vector (vx,vy,vz) to store (V_parallel,V_normal) in v[0],v[1].
+	//   That coupling makes it impossible to preserve a physical 3D velocity while
+	//   also tracking aligned components for guiding-center / magnetic-moment
+	//   formulations.
+	//
+	// New behavior:
+	//   When _USE_PARTICLE_V_PARALLEL_NORM_ is ON, we allocate two extra doubles in
+	//   the particle data layout:
+	//     - _PIC_PARTICLE_DATA__V_PARALLEL_OFFSET_ : V_parallel
+	//     - _PIC_PARTICLE_DATA__V_NORMAL_OFFSET_   : V_normal
+	//   The 3D velocity vector at _PIC_PARTICLE_DATA__VELOCITY_OFFSET_ always
+	//   remains (vx,vy,vz) and is no longer overloaded.
+	//
+	// Default/override policy:
+	//   - By default we enable this feature when either field-line mode or magnetic
+	//     moment support is enabled.
+	//   - Users can force enable/disable independently by defining
+	//     _USE_PARTICLE_V_PARALLEL_NORM_ before including this header.
+	//==========================================================================
+	#ifndef _USE_PARTICLE_V_PARALLEL_NORM_
+	  #if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) || (_USE_MAGNETIC_MOMENT_ == _PIC_MODE_ON_)
+	    #undef _USE_PARTICLE_V_PARALLEL_NORM_
+	    #define _USE_PARTICLE_V_PARALLEL_NORM_ _PIC_MODE_ON_
+	  #endif
+	#endif
+
+	// Layout definition:
+	//   - LENGTH macros are defined first (0 when feature is OFF).
+	//   - OFFSETS are then computed as a sum of the preceding blocks.
+	#if _USE_PARTICLE_V_PARALLEL_NORM_ == _PIC_MODE_ON_
+	    #define _PIC_PARTICLE_DATA__V_PARALLEL_LENGTH_ sizeof(double)
+	    #define _PIC_PARTICLE_DATA__V_NORMAL_LENGTH_   sizeof(double)
+
+	    #define _PIC_PARTICLE_DATA__V_PARALLEL_OFFSET_ \
+	    (_PIC_PARTICLE_DATA__BASIC_DATA_LENGTH_ +\
+	     _PIC_PARTICLE_DATA__WEIGHT_CORRECTION_LENGTH_ +\
+	     _PIC_PARTICLE_DATA__DUST_GRAIN_MASS_LENGTH_ +\
+	     _PIC_PARTICLE_DATA__DUST_GRAIN_RADIUS_LENGTH_+\
+	     _PIC_PARTICLE_DATA__DUST_GRAIN_CHARGE_LENGTH_+\
+	     _PIC_PARTICLE_DATA__MAGNETIC_MOMENT_LENGTH_+\
+	     _PIC_PARTICLE_DATA__INJECTION_FACE_LENGTH_+\
+	     _PIC_PARTICLE_DATA__WEIGHT_OVER_TIME_STEP_LENGTH_+\
+	     _PIC_PARTICLE_DATA__FIELD_LINE_ID_LENGTH_+\
+	     _PIC_PARTICLE_DATA__FIELD_LINE_COORD_LENGTH_)
+
+	    #define _PIC_PARTICLE_DATA__V_NORMAL_OFFSET_ \
+	    (_PIC_PARTICLE_DATA__V_PARALLEL_OFFSET_ + _PIC_PARTICLE_DATA__V_PARALLEL_LENGTH_)
+#else
+	    #define _PIC_PARTICLE_DATA__V_PARALLEL_OFFSET_   -1
+	    #define _PIC_PARTICLE_DATA__V_PARALLEL_LENGTH_    0
+	    #define _PIC_PARTICLE_DATA__V_NORMAL_OFFSET_     -1
+	    #define _PIC_PARTICLE_DATA__V_NORMAL_LENGTH_      0
+	#endif//_USE_PARTICLE_V_PARALLEL_NORM_
     // Total space occupied by data carried by a particle
     #define _PIC_PARTICLE_DATA__FULL_DATA_LENGTH_ \
                (_PIC_PARTICLE_DATA__BASIC_DATA_LENGTH_ +\
@@ -269,6 +319,8 @@
 		_PIC_PARTICLE_DATA__INJECTION_FACE_LENGTH_ +\
 		_PIC_PARTICLE_DATA__WEIGHT_OVER_TIME_STEP_LENGTH_+\
 		_PIC_PARTICLE_DATA__FIELD_LINE_ID_LENGTH_+\
-		_PIC_PARTICLE_DATA__FIELD_LINE_COORD_LENGTH_)
+		_PIC_PARTICLE_DATA__FIELD_LINE_COORD_LENGTH_+\
+		_PIC_PARTICLE_DATA__V_PARALLEL_LENGTH_+\
+		_PIC_PARTICLE_DATA__V_NORMAL_LENGTH_)
 
 #endif//_PIC_PARTICLE_DATA_MACRO_DEFINITION_
