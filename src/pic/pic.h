@@ -2963,164 +2963,181 @@ void DeleteAttachedParticles();
     }
     //-------------------------------------------------------------------------
 
-    // Operations related to the particle velocity
-    //-------------------------------------------------------------------------
-    _TARGET_HOST_ _TARGET_DEVICE_
-    inline double GetVParallel(long int ptr) {
-      double *v=(double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
+// Operations related to the particle velocity
+//-------------------------------------------------------------------------
+// NOTE on V_parallel / V_normal storage
+//
+// The code supports (optionally) storing two aligned velocity components:
+//   - V_parallel : component along a selected direction (e.g., magnetic field)
+//   - V_normal   : a perpendicular / "normal" component (model-dependent meaning)
+//
+// Historically, some configurations (notably field-line mode) overloaded the
+// first two entries of the 3D velocity vector (vx,vy,vz) to store
+// (V_parallel, V_normal) in v[0], v[1]. That prevented the model from keeping a
+// true physical 3D velocity while also tracking aligned components.
+//
+// New behavior:
+//   If the particle data layout allocates dedicated slots
+//     _PIC_PARTICLE_DATA__V_PARALLEL_OFFSET_
+//     _PIC_PARTICLE_DATA__V_NORMAL_OFFSET_
+//   then these accessors use those slots and the 3D velocity vector remains
+//   (vx,vy,vz). The accessors intentionally key off the presence of the offsets
+//   (offset >= 0) rather than off any mover/physics compile-time flags.
+//
+// Enabling/disabling those slots is controlled by _USE_PARTICLE_V_PARALLEL_NORM_
+// (see src/pic/picParticleDataMacro.h), and the runtime layout is built in
+// src/pic/picParticleBasicOffset.cpp.
+//-------------------------------------------------------------------------
+_TARGET_HOST_ _TARGET_DEVICE_
+inline double GetVParallel(long int ptr) {
+  #if _USE_PARTICLE_V_PARALLEL_NORM_ == _PIC_MODE_ON_
+  double *vpar=(double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__V_PARALLEL_OFFSET_);
+  #else
+  double *v=(double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
+  double *vpar=&v[0];
+  #endif
 
-      #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
-      exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_"); 
-      #endif
+  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+  if (isfinite((*vpar))==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+  #endif
+  #endif
 
-      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
-      if (isfinite(v[0])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
-      #endif
-      #endif
+  return *vpar;
+}
 
-      return v[0];
-    } 
+_TARGET_HOST_ _TARGET_DEVICE_
+inline double GetVParallel(byte *ParticleDataStart) {
+  #if _USE_PARTICLE_V_PARALLEL_NORM_ == _PIC_MODE_ON_
+  double *vpar=(double*)(ParticleDataStart+_PIC_PARTICLE_DATA__V_PARALLEL_OFFSET_);
+  #else
+  double *v=(double*)(ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
+  double *vpar=&v[0];
+  #endif
 
-    _TARGET_HOST_ _TARGET_DEVICE_
-    inline double GetVParallel(byte *ParticleDataStart) {
-      double *v=(double*) (ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
+  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+  if (isfinite((*vpar))==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+  #endif
+  #endif
 
-      #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
-      exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_");
-      #endif
-
-      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
-      if (isfinite(v[0])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
-      #endif
-      #endif
-
-      return v[0];
-    }
-
-    _TARGET_HOST_ _TARGET_DEVICE_
-    inline void SetVParallel(double t,long int ptr) {
-      double *v=(double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
-
-      #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
-      exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_");
-      #endif
-
-      v[0]=t;
-
-      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-      if (fabs(t)>SpeedOfLight) exit(__LINE__,__FILE__,"Error: exceed the limit");
-
-      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
-      if (isfinite(t)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
-      #endif
-      #endif
-    }
-
-    _TARGET_HOST_ _TARGET_DEVICE_
-    inline void SetVParallel(double t,byte *ParticleDataStart) {
-      double *v=(double*) (ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
-
-      #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
-      exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_");
-      #endif
-
-      v[0]=t;
-
-      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-      if (fabs(t)>SpeedOfLight) exit(__LINE__,__FILE__,"Error: exceed the limit");
-
-      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
-      if (isfinite(t)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
-      #endif
-      #endif
-    }
+  return *vpar;
+}
 
 
+_TARGET_HOST_ _TARGET_DEVICE_
+inline void SetVParallel(double t,long int ptr) {
+  #if _USE_PARTICLE_V_PARALLEL_NORM_ == _PIC_MODE_ON_
+  double *vpar=(double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__V_PARALLEL_OFFSET_);
+  #else
+  double *v=(double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
+  double *vpar=&v[0];
+  #endif
 
-    _TARGET_HOST_ _TARGET_DEVICE_
-    inline double GetVNormal(long int ptr) {
-      double *v=(double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
+  *vpar=t;
 
-      #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
-      exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_");
-      #endif
+  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  if (fabs(t)>SpeedOfLight) exit(__LINE__,__FILE__,"Error: exceed the limit");
 
-      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
-      if (isfinite(v[1])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
-      #endif
-      #endif
+  #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+  if (isfinite((*vpar))==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+  #endif
+  #endif
+}
 
-      return v[1];
-    }
+_TARGET_HOST_ _TARGET_DEVICE_
+inline void SetVParallel(double t,byte *ParticleDataStart) {
+  #if _USE_PARTICLE_V_PARALLEL_NORM_ == _PIC_MODE_OFF_
+  exit(__LINE__,__FILE__,"Error: VParallel is not allocated in the particle data layout");
+  #else
+  double *vpar=(double*) (ParticleDataStart+_PIC_PARTICLE_DATA__V_PARALLEL_OFFSET_);
+  *vpar=t;
 
-    _TARGET_HOST_ _TARGET_DEVICE_
-    inline double GetVNormal(byte *ParticleDataStart) {
-      double *v=(double*) (ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
+  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  if (fabs(t)>SpeedOfLight) exit(__LINE__,__FILE__,"Error: exceed the limit");
 
-      #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
-      exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_");
-      #endif
+  #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+  if (isfinite(t)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+  #endif
+  #endif
+  #endif
+}
 
-      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
-      if (isfinite(v[1])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
-      #endif
-      #endif
+_TARGET_HOST_ _TARGET_DEVICE_
+inline double GetVNormal(long int ptr) {
+  #if _USE_PARTICLE_V_PARALLEL_NORM_ == _PIC_MODE_ON_
+  double *vnorm=(double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__V_NORMAL_OFFSET_);
+  #else
+  double *v=(double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
+  double *vnorm=&v[1];
+  #endif
 
-      return v[1];
-    }
+  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+  if (isfinite((*vnorm))==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+  #endif
+  #endif
 
+  return *vnorm;
+}
 
-    _TARGET_HOST_ _TARGET_DEVICE_
-    inline void SetVNormal(double t,long int ptr) {
-      double *v=(double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
+_TARGET_HOST_ _TARGET_DEVICE_
+inline double GetVNormal(byte *ParticleDataStart) {
+  #if _USE_PARTICLE_V_PARALLEL_NORM_ == _PIC_MODE_OFF_
+  exit(__LINE__,__FILE__,"Error: VNormal is not allocated in the particle data layout");
+  #endif 
 
-      #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
-      exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_");
-      #endif
+  double *vnorm=(double*) (ParticleDataStart+_PIC_PARTICLE_DATA__V_NORMAL_OFFSET_);
 
-      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-      if (fabs(t)>SpeedOfLight) exit(__LINE__,__FILE__,"Error: exceed the limit");
+  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+  if (isfinite((*vnorm))==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+  #endif
+  #endif
 
-      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
-      if (isfinite(t)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
-      #endif
-      #endif
+  return *vnorm;
+}
 
-      v[1]=t;
-    }
+_TARGET_HOST_ _TARGET_DEVICE_
+inline void SetVNormal(double t,long int ptr) {
+  #if _USE_PARTICLE_V_PARALLEL_NORM_ == _PIC_MODE_ON_
+  double *vnorm=(double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__V_NORMAL_OFFSET_);
+  #else
+  double *v=(double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
+  double *vnorm=&v[1];
+  #endif
 
-    _TARGET_HOST_ _TARGET_DEVICE_
-    inline void SetVNormal(double t,byte *ParticleDataStart) {
-      double *v=(double*) (ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
+  *vnorm=t;
 
-      #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
-      exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_");
-      #endif
+  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  if (fabs(t)>SpeedOfLight) exit(__LINE__,__FILE__,"Error: exceed the limit");
 
-      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-      if (fabs(t)>SpeedOfLight) exit(__LINE__,__FILE__,"Error: exceed the limit");
+  #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+  if (isfinite((*vnorm))==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+  #endif
+  #endif
+}
 
-      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
-      if (isfinite(t)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
-      #endif
-      #endif
+_TARGET_HOST_ _TARGET_DEVICE_
+inline void SetVNormal(double t,byte *ParticleDataStart) {
+  #if _USE_PARTICLE_V_PARALLEL_NORM_ == _PIC_MODE_OFF_
+  exit(__LINE__,__FILE__,"Error: VNormal is not allocated in the particle data layout");
+  #else
+  double *vnorm=(double*) (ParticleDataStart+_PIC_PARTICLE_DATA__V_NORMAL_OFFSET_);
 
-      v[1]=t;
-    }
+  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  if (fabs(t)>SpeedOfLight) exit(__LINE__,__FILE__,"Error: exceed the limit");
 
+  #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+  if (isfinite(t)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+  #endif
+  #endif
 
-
-    _TARGET_HOST_ _TARGET_DEVICE_
+  *vnorm=t;
+  #endif
+}
     inline double *GetV(long int ptr) {
-      #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
-      exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_OFF_");
-      #endif
-
-      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
       double *v=(double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
       for (int idim=0;idim<3;idim++) if (fabs(v[idim])>1.0E10) exit(__LINE__,__FILE__);
       #endif
@@ -3144,14 +3161,7 @@ void DeleteAttachedParticles();
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
     inline void GetV(double* v,long int ptr) {
-      #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
-      v[0]=GetVParallel(ptr);
-      v[1]=GetVNormal(ptr);
-      v[2]=0.0;
-      return;
-      #endif
-
-      memcpy(v,ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double));
+memcpy(v,ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double));
       #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
       #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
       for (int idim=0;idim<3;idim++) if (isfinite(v[idim])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
@@ -3165,14 +3175,7 @@ void DeleteAttachedParticles();
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_ 
     inline void GetV(double* v,byte *ParticleDataStart) {
-      #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
-      v[0]=GetVParallel(ParticleDataStart);
-      v[1]=GetVNormal(ParticleDataStart);
-      v[2]=0.0;
-      return;
-      #endif
-
-      memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double));
+memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double));
 
       #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
       #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
@@ -3195,14 +3198,6 @@ void DeleteAttachedParticles();
       for (int ii=0;ii<3;ii++) d.d[ii]=v[ii];
       PIC::Debugger::ConcurrentDebug::NewEntry(&d,__LINE__,__FILE__);
       #endif
-
-
-      #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
-      SetVParallel(v[0],ptr);
-      SetVNormal(v[1],ptr);
-      return;
-      #endif
-
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
 #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
       for (int idim=0;idim<3;idim++) if (isfinite(v[idim])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
@@ -3223,13 +3218,7 @@ void DeleteAttachedParticles();
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetV(double* v,byte *ParticleDataStart) {
-      #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
-      SetVParallel(v[0],ParticleDataStart);
-      SetVNormal(v[1],ParticleDataStart);
-      return;
-      #endif
-
-      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
       for (int idim=0;idim<3;idim++) if (fabs(v[idim])>1.0E10) exit(__LINE__,__FILE__);
       #endif
 
@@ -4971,6 +4960,10 @@ void DeleteAttachedParticles();
 
     _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetV_drift(double *v_drift,ParticleBuffer::byte* p) {
+      if (_PIC_GYROKINETIC_MODEL_MODE_==_PIC_MODE_OFF_) {
+        exit(__LINE__,__FILE__,"error: call SetV_drift() when _PIC_GYROKINETIC_MODEL_MODE_==_PIC_MODE_OFF_");
+      }
+
       memcpy(p+DriftVelocityOffset,v_drift,3*sizeof(double));
     }
 
