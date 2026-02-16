@@ -508,6 +508,19 @@ if (key=="bc" || key=="bc-type" || key=="domain-bc") {
     return;
   }
 
+  // CFL factor for the particle time step
+  if (key=="cfl") {
+    if (!nums.empty()) {
+      if (nums[0] <= 0.0) {
+        std::printf("[ConstFieldBC input] ERROR: cfl must be > 0 (got %g)\n", nums[0]);
+        exit(__LINE__,__FILE__,"Invalid cfl");
+      }
+      cfg.cfl = nums[0];
+      cfg.user_cfl = true;
+    }
+    return;
+  }
+
   // Unknown: ignore but warn (only rank 0 later; here we don't have MPI)
   std::printf("[ConstFieldBC input] Warning: unknown key '%s'\n", keyRaw.c_str());
   exit(__LINE__,__FILE__,"Unknown option");
@@ -641,6 +654,9 @@ void PrintHelpAndExit(const char* prog) {
     "  -ppc N\n"
     "      Target macro-particles per cell per species for the uniform IC (default 100).\n"
     "      The code sets a global particle weight so initial injection produces ~N ppc.\n"
+    "  -cfl X\n"
+    "      CFL factor used when computing the global particle time step from particle motion\n"
+    "      (default 0.2). Input-file key: cfl=X\n"
     "  -sw-no-round\n"
     "      Disable stochastic rounding of particles-per-cell.\n"
     "\n"
@@ -1116,6 +1132,28 @@ if (a=="-bc" || a=="--bc" || a.rfind("-bc=",0)==0 || a.rfind("--bc=",0)==0) {
 
       cfg.target_ppc = v;
       cfg.user_target_ppc = true;
+      continue;
+    }
+
+    if (a=="-cfl" || a.rfind("-cfl=",0)==0 || a=="--cfl" || a.rfind("--cfl=",0)==0) {
+      // CFL factor used for the particle time step computation.
+      // Accept "-cfl 0.2" or "-cfl=0.2" (also "--cfl").
+      const char* s = nullptr;
+      if (a=="-cfl" || a=="--cfl") {
+        if (i+1>=argc) { std::printf("-cfl requires a value\n"); continue; }
+        s = argv[++i];
+      }
+      else {
+        // after "-cfl=" (5 chars) or "--cfl=" (6 chars)
+        s = (a.rfind("-cfl=",0)==0) ? (a.c_str() + 5) : (a.c_str() + 6);
+      }
+
+      char* end=nullptr;
+      double v = std::strtod(s,&end);
+      if (end==s) { std::printf("Invalid -cfl value: %s\n", s); continue; }
+      if (v<=0.0) { std::printf("-cfl must be > 0\n"); continue; }
+      cfg.cfl = v;
+      cfg.user_cfl = true;
       continue;
     }
 

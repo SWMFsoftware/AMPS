@@ -423,7 +423,9 @@ InitInternalSphericalBoundary(cfg);
 
       if (cfg.mode==TestConfig::Mode::WithParticles) {
         int spec=0;
-	double CFL=0.2;
+	// CFL factor used to compute dt from particle motion.
+	// Exposed via CLI/input as cfg.cfl.
+	double CFL=cfg.cfl;
 
         for (spec=0;spec<PIC::nTotalSpecies;spec++) PrepopulateDomain(spec,PIC::Units::Factors,cfg);
 

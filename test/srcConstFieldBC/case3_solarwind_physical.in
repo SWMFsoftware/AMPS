@@ -57,6 +57,10 @@ sw-u-kms=400,0,0
 # Target macro-particles per cell per species
 ppc=50
 
+# CFL factor used when computing the global particle time step from particle motion
+# (default is 0.2 if not specified)
+# cfl=0.2
+
 # Use stochastic rounding for ppc (default). To disable:
 # sw-no-round=1
 

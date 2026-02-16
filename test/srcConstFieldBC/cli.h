@@ -113,6 +113,14 @@ struct TestConfig {
   double target_ppc = 100.0;
   bool   user_target_ppc = false;
 
+  // CFL factor used to compute the global particle time step via
+  // EvaluateCFLTimeStepForSpecies(spec, CFL).
+  //
+  // Historically this test hard-wired CFL=0.2 in main.cpp. Expose it so
+  // time-step sensitivity / stability can be tested from the CLI/input.
+  double cfl = 0.2;
+  bool   user_cfl = false;
+
   // Optional input file path (for bookkeeping).
   std::string inputFile;
 
