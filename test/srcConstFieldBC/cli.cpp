@@ -113,6 +113,34 @@ static void ApplyKeyValue(TestConfig& cfg, const std::string& keyRaw,
     return false;
   };
 
+  // Helper: add one or more species indices to cfg.gc_species
+  auto add_gc_species = [&](const std::vector<double>& ns, const std::vector<std::string>& ss)->void {
+    // Special strings:
+    //   none/off/false/0  -> clear
+    //   all              -> not supported here (needs nSpecies); warn
+    if (!ss.empty()) {
+      std::string t = tolower_str(trim(ss[0]));
+      if (t=="none" || t=="off" || t=="false" || t=="0") {
+        cfg.gc_species.clear();
+        cfg.user_gc_species = true;
+        return;
+      }
+      if (t=="all") {
+        std::printf("[ConstFieldBC] WARNING: gc-spec=all is not supported in the input parser (needs nSpecies). Specify explicit indices instead.\n");
+      }
+    }
+
+    for (double dv : ns) {
+      int s = (int)dv;
+      if (s < 0) {
+        std::printf("[ConstFieldBC] WARNING: ignoring negative gc-spec index %d\n", s);
+        continue;
+      }
+      cfg.gc_species.insert(s);
+      cfg.user_gc_species = true;
+    }
+  };
+
 
 // ---------------------------------------------------------------------------
 // Particle mover selection (input file)
@@ -165,6 +193,19 @@ if (key.rfind("mover",0)==0) {
       return;
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Guiding-center / gyrokinetic species selection (FIELD SOLVER)
+// ---------------------------------------------------------------------------
+// key: gc-spec=1,3
+//      guiding-center-spec=...
+//      guiding-center-species=...
+//      gyrokinetic-spec=...
+if (key=="gc-spec" || key=="gc-species" || key=="guiding-center-spec" || key=="guiding-center-species" ||
+    key=="gyrokinetic-spec" || key=="gyrokinetic-species") {
+  add_gc_species(nums, strs);
+  return;
 }
 
   // Mode switches
@@ -577,6 +618,17 @@ void PrintHelpAndExit(const char* prog) {
     "      Shorthand per-species override, e.g. -mover0 lapenta, --mover1=boris, -mover-2 guiding-center.\n"
     "      Input-file keys: mover=..., mover-spec=SPEC,NAME, mover0=..., mover-1=...\n"
     "\n"
+
+    "Guiding-center / gyrokinetic species (field-solver coupling):\n"
+    "  -gc-spec LIST\n"
+    "      Mark one or more species indices as guiding-center species for the field solver\n"
+    "      via PIC::GYROKINETIC::SetGuidingCenterSpecies(spec,true).\n"
+    "      LIST can be a single integer or a comma-separated list (e.g. 1 or 1,3).\n"
+    "      You may repeat -gc-spec multiple times.\n"
+    "      Input-file keys: gc-spec=..., guiding-center-spec=..., gyrokinetic-spec=...\n"
+    "  -no-gc-spec\n"
+    "      Clear any guiding-center species selection.\n"
+    "\n"
     "Solar-wind plasma IC (implies -particles):\n"
     "  -sw | -solar-wind\n"
     "      Enable particles with default solar-wind-like parameters.\n"
@@ -717,6 +769,70 @@ void ConfigureTestFromArgs(TestConfig& cfg,int argc, char** argv) {
     }
 
 
+// ---- Guiding-center / gyrokinetic species selection (FIELD SOLVER) ----
+// Mark one or more species indices as guiding-center species for the field solver.
+// Accepts:
+//   -gc-spec 1
+//   -gc-spec 1,3
+//   --gc-spec=1,3
+//   -guiding-center-spec 1,3
+// Clear:
+//   -no-gc-spec
+if (a=="-no-gc-spec" || a=="--no-gc-spec") {
+  cfg.gc_species.clear();
+  cfg.user_gc_species = true;
+  continue;
+}
+
+if (a=="-gc-spec" || a=="--gc-spec" || a=="-guiding-center-spec" || a=="--guiding-center-spec" ||
+    a=="-gyrokinetic-spec" || a=="--gyrokinetic-spec" ||
+    a.rfind("-gc-spec=",0)==0 || a.rfind("--gc-spec=",0)==0 ||
+    a.rfind("-guiding-center-spec=",0)==0 || a.rfind("--guiding-center-spec=",0)==0 ||
+    a.rfind("-gyrokinetic-spec=",0)==0 || a.rfind("--gyrokinetic-spec=",0)==0) {
+
+  std::string rhs;
+  auto pos = a.find('=');
+  if (pos!=std::string::npos) rhs = a.substr(pos+1);
+  else {
+    if (i+1>=argc) { std::printf("[ConstFieldBC] ERROR: %s requires a value (e.g. -gc-spec 1 or -gc-spec 1,3)\n", a.c_str()); std::exit(1); }
+    rhs = argv[++i];
+  }
+
+  std::vector<double> nums; std::vector<std::string> strs;
+  ParseDoublesCSV(rhs, nums, strs);
+
+  // Support text tokens 'none'/'off' to clear.
+  if (!strs.empty()) {
+    std::string t = tolower_str(trim(strs[0]));
+    if (t=="none" || t=="off" || t=="false" || t=="0") {
+      cfg.gc_species.clear();
+      cfg.user_gc_species = true;
+      continue;
+    }
+    if (t=="all") {
+      std::printf("[ConstFieldBC] ERROR: gc-spec=all is not supported on CLI (needs nSpecies). Specify explicit indices instead.\n");
+      std::exit(1);
+    }
+  }
+
+  if (nums.empty()) {
+    std::printf("[ConstFieldBC] ERROR: %s did not contain a valid species index (expected integer or comma-separated integers)\n", a.c_str());
+    std::exit(1);
+  }
+
+  for (double dv : nums) {
+    int s = (int)dv;
+    if (s < 0) {
+      std::printf("[ConstFieldBC] ERROR: negative species index in %s\n", a.c_str());
+      std::exit(1);
+    }
+    cfg.gc_species.insert(s);
+  }
+  cfg.user_gc_species = true;
+  continue;
+}
+
+
 // ---- Particle mover selection ----
 // Global: -mover <name> (or -mover=name)
 if (a=="-mover" || a=="--mover" || a.rfind("-mover=",0)==0 || a.rfind("--mover=",0)==0) {
@@ -791,6 +907,63 @@ if (a=="-mover-spec" || a=="--mover-spec" || a.rfind("-mover-spec=",0)==0 || a.r
       continue;
     }
   }
+}
+
+// ---- Guiding-center / gyrokinetic species selection (field-solver coupling) ----
+// Usage:
+//   -gc-spec 1
+//   -gc-spec 1,3
+//   -gc-spec=1,3
+//   --gc-spec 1
+//   -no-gc-spec   (clear list)
+if (a=="-no-gc-spec" || a=="--no-gc-spec" || a=="-gc-spec=none" || a=="--gc-spec=none") {
+  cfg.gc_species.clear();
+  cfg.user_gc_species = true;
+  continue;
+}
+
+if (a=="-gc-spec" || a=="--gc-spec" || a=="-guiding-center-spec" || a=="--guiding-center-spec" ||
+    a=="-guiding-center-species" || a=="--guiding-center-species" ||
+    a.rfind("-gc-spec=",0)==0 || a.rfind("--gc-spec=",0)==0 ||
+    a.rfind("-guiding-center-spec=",0)==0 || a.rfind("--guiding-center-spec=",0)==0 ||
+    a.rfind("-guiding-center-species=",0)==0 || a.rfind("--guiding-center-species=",0)==0) {
+
+  std::string rhs;
+  auto pos = a.find('=');
+  if (pos!=std::string::npos) rhs = a.substr(pos+1);
+  else {
+    if (i+1>=argc) { std::printf("[ConstFieldBC] ERROR: %s requires a value (e.g. 1 or 1,3)\n", a.c_str()); std::exit(1); }
+    rhs = argv[++i];
+  }
+
+  std::vector<double> nums; std::vector<std::string> strs;
+  if (!rhs.empty()) ParseDoublesCSV(rhs, nums, strs);
+
+  // Support clearing by string token
+  if (!strs.empty()) {
+    std::string t = tolower_str(trim(strs[0]));
+    if (t=="none" || t=="off" || t=="false" || t=="0") {
+      cfg.gc_species.clear();
+      cfg.user_gc_species = true;
+      continue;
+    }
+  }
+
+  if (nums.empty()) {
+    std::printf("[ConstFieldBC] ERROR: %s requires one or more integer species indices\n", a.c_str());
+    std::exit(1);
+  }
+
+  for (double dv : nums) {
+    int s = (int)dv;
+    if (s < 0) {
+      std::printf("[ConstFieldBC] WARNING: ignoring negative gc-spec index %d\n", s);
+      continue;
+    }
+    cfg.gc_species.insert(s);
+    cfg.user_gc_species = true;
+  }
+  continue;
 }
 
     

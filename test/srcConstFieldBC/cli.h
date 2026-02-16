@@ -3,6 +3,7 @@
 
 #include <string>
 #include <map>
+#include <set>
 #include "specfunc.h"
 
 // ---------------- CLI / input-file configuration ----------------
@@ -158,6 +159,30 @@ double sphere_center[3] = {0.0,0.0,0.0};
   // Per-species overrides: spec -> mover name
   // (Only entries present in the map override mover_all.)
   std::map<int,std::string> mover_by_spec;
+
+  // ---------------------------------------------------------------------------
+  // Gyrokinetic / guiding-center species selection (FIELD SOLVER)
+  //
+  // Some AMPS/ECSIM configurations treat a subset of species with a
+  // guiding-center / gyrokinetic approximation in the field-solver coupling.
+  //
+  // This test exposes that capability via:
+  //   PIC::GYROKINETIC::SetGuidingCenterSpecies(int spec, bool on)
+  //
+  // The user can mark one or more species indices as guiding-center species
+  // via CLI or the input file.
+  //
+  // CLI examples:
+  //   -gc-spec 1
+  //   -gc-spec 1,3
+  //   -gc-spec 1 -gc-spec 3
+  //
+  // Input-file examples:
+  //   gc-spec=1
+  //   gc-spec=1,3
+  // ---------------------------------------------------------------------------
+  std::set<int> gc_species;
+  bool user_gc_species = false;
 };
 
 // Parse configuration. If '-i <file>' is present, the file is parsed first and then

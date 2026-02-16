@@ -261,6 +261,11 @@ namespace VparVnormMu {
     const double v2   = v[0]*v[0] + v[1]*v[1] + v[2]*v[2];
     const double vperp2 = std::max(0.0, v2 - vpar*vpar);
 
+    if ((fabs(vpar)>10.0)||(vperp2>100.0)) {
+	    double ee=0;
+	    ee+=33;
+    }
+
     PB::SetVParallel(vpar, ParticleDataStart);
     PB::SetVNormal(std::sqrt(vperp2), ParticleDataStart);
 
@@ -931,7 +936,9 @@ long int PrepopulateDomain(int spec,picunits::Factors F, const TestConfig& cfg) 
         //   - if _USE_PARTICLE_V_PARALLEL_NORM_ is enabled, additionally
         //     initialize V_parallel, V_normal and magnetic moment (if enabled)
         //     via the user-init callback.
-        PIC::ParticleBuffer::InitiateParticle(
+        long int newptr; 
+	
+	newptr=PIC::ParticleBuffer::InitiateParticle(
           x, v_no, &w, &spec, NULL,
           _PIC_INIT_PARTICLE_MODE__ADD2LIST_,
           (void*)node,
@@ -941,6 +948,19 @@ long int PrepopulateDomain(int spec,picunits::Factors F, const TestConfig& cfg) 
           NULL
           #endif
         );
+
+        double vp=PIC::ParticleBuffer::GetVParallel(newptr);
+	if (fabs(vp)>5.0) {
+  
+		double vsi[3];
+		for (int i=0;i<3;i++) vsi[i]=F.No2SiV*v_no[i]; 
+
+		double za=0;
+		za+=22;
+
+
+	}
+
       }
     }
   }

@@ -313,6 +313,42 @@ InitInternalSphericalBoundary(cfg);
   PIC::Init_AfterParser();
   PIC::Mover::Init();
 
+  // -------------------------------------------------------------------------
+  // Optional: mark selected species as guiding-center (gyrokinetic) species for
+  // the field-solver coupling.
+  //
+  // This is distinct from the particle mover selection (-mover/-mover-spec).
+  // Here we inform the gyrokinetic module that a given species should be
+  // treated with the guiding-center approximation in the solver's coupling.
+  //
+  // The list is configured via:
+  //   CLI:        -gc-spec 1,3   (repeatable)
+  //   input file: gc-spec=1,3
+  //
+  // API:
+  //   PIC::GYROKINETIC::SetGuidingCenterSpecies(int spec, bool on)
+  // -------------------------------------------------------------------------
+  if (cfg.user_gc_species) {
+    if (PIC::ThisThread==0) {
+      std::printf("[ConstFieldBC] Guiding-center species (field solver):");
+      if (cfg.gc_species.empty()) std::printf(" <none>\n");
+      else {
+        for (int s : cfg.gc_species) std::printf(" %d", s);
+        std::printf("\n");
+      }
+    }
+
+    for (int s : cfg.gc_species) {
+      if (s < 0 || s >= _TOTAL_SPECIES_NUMBER_) {
+        if (PIC::ThisThread==0) {
+          std::printf("[ConstFieldBC] WARNING: gc-spec index %d is outside [0,%d); ignoring\n", s, (int)_TOTAL_SPECIES_NUMBER_);
+        }
+        continue;
+      }
+      PIC::GYROKINETIC::SetGuidingCenterSpecies(s,true);
+    }
+  }
+
   //set up the time step
   PIC::ParticleWeightTimeStep::LocalTimeStep=localTimeStep;
   PIC::ParticleWeightTimeStep::initTimeStep();

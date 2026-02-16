@@ -65,6 +65,11 @@ stencil-order=2
 # Domain electromagnetic BC on all faces: dirichlet | neumann
 bc=dirichlet
 
+# Optional: mark species as guiding-center (gyrokinetic) species for the *field solver*
+# coupling. This calls PIC::GYROKINETIC::SetGuidingCenterSpecies(spec,true) for each
+# listed index. Replace the index below with the electron species id in your setup.
+# gc-spec=1
+
 # =====================================================================
 # Particle mover selection (HELP / EXAMPLES)
 #
