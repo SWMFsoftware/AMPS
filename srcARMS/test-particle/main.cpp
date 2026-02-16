@@ -1,62 +1,128 @@
-// mc_fieldline.cpp
-// Monte Carlo test-particle model for electrons moving along a magnetic field line,
-// with a simple guiding-center mover (motion along arc-length s, mirror force,
-// optional constant E_parallel) and optional pitch-angle diffusion.
-// Also writes Tecplot ASCII outputs (fieldline XY, pitch-angle distributions).
+// main.cpp
+// =====================================================================================
+// Monte-Carlo guiding-center test-particle model for electrons moving along a magnetic
+// field line, with time-integrated sampling of pitch-angle, kinetic energy, and
+// parallel velocity distributions as a function of distance along the line.
 //
+// This code is intentionally self-contained (single .cpp + Makefile) so it can be
+// dropped into small AMPS-side utilities or used standalone for quick experiments.
+//
+// -------------------------------------------------------------------------------------
+// 1) WHAT THIS PROGRAM DOES
+// -------------------------------------------------------------------------------------
+// (A) FIELD-LINE I/O
+//   * Reads a field-line file that contains a sequence of points:
+//       - position  (x,y,z) in meters
+//       - magnetic field information either as magnitude |B| [T] or components (Bx,By,Bz)
+//   * Computes arc-length coordinate s along the field line:
+//       s[0]=0,  s[i+1]=s[i] + |r[i+1]-r[i]|
+//   * Builds a piecewise-linear interpolation of:
+//       r(s),  |B|(s),  and an approximate tangent direction t_hat(s)=dr/ds
+//
+//   IMPORTANT FOR 4-COLUMN INPUT (x y z Bmag):
+//     The file does not provide B-direction. In that case we reconstruct a consistent
+//     vector field using the curve tangent:
+//       Bvec(s) = |B|(s) * t_hat(s)
+//     This makes Tecplot output (Bx,By,Bz) and the local b-hat meaningful, and avoids
+//     the common mistake of interpreting the 4th column as Bx.
+//
+//   * Writes a Tecplot ASCII “XY” file where X is distance along the line (s), and
+//     Y includes abs(x), abs(y), abs(z), (Bx,By,Bz), and |B|.
+//     (You can plot any of these as an XY curve in Tecplot.)
+//
+// (B) GUIDING-CENTER PARTICLE TRANSPORT (1D ALONG s)
+//   Each particle is advanced in time using a guiding-center approximation along the
+//   field-line coordinate s. We evolve:
+//     - s            : arc-length position
+//     - v_parallel   : velocity component parallel to the magnetic field
+//     - mu_mag       : magnetic moment (adiabatic invariant), held constant unless you
+//                      add additional physics
+//
+//   Equations (SI units):
+//     ds/dt        = v_parallel
+//     dv_par/dt    = (q/m) * E_par(s)  -  (mu_mag/m) * d|B|/ds
+//
+//   where:
+//     * q = electron charge (-e), m = electron mass
+//     * E_par is a user-specified constant parallel electric field (CLI option
+//       -Epar_Vm). If E_par=0, no electrostatic acceleration is applied.
+//     * The mirror force term uses d|B|/ds computed from the piecewise-linear |B|(s).
+//
+//   Pitch-angle cosine is derived from mu_mag and v_parallel:
+//     v_perp^2   = 2 * mu_mag * |B| / m
+//     v^2        = v_parallel^2 + v_perp^2
+//     mu         = cos(alpha) = v_parallel / sqrt(v^2)   (clamped to [-1,1])
+//
+//   Optional pitch-angle diffusion (stochastic scattering) can be enabled with -D:
+//     dmu = sqrt(2 D dt) * N(0,1), then clamp mu to [-1,1], and recompute v_par and
+//     mu_mag consistently at the local |B|.
+//
+//   BOUNDARIES (IMPORTANT):
+//     If a particle leaves the field line (s < 0 or s > L), it is DELETED (marked dead)
+//     and no longer contributes to transport or sampling. There is NO reflection at
+//     endpoints (per your requirement).
+//
+// (C) TIME-INTEGRATED SAMPLING DURING TRANSPORT
+//   At EACH TIME STEP (not only at the end), each alive particle contributes one sample
+//   to histograms binned by:
+//     - s-bin   : particle location along the line (0..L)
+//     - mu-bin  : pitch-angle cosine mu in [-1,1]
+//     - E-bin   : kinetic energy in eV
+//     - vpar-bin: parallel velocity in m/s
+//
+//   This produces time-integrated distributions f(s,mu), f(s,E), f(s,vpar), normalized
+//   PER s-bin at output time:
+//     sum_j pdf(s,x_j) * dx  = 1
+//
+//   Output Tecplot ordered-zone files:
+//     <prefix>_mc_mu_s_2d.dat    : pdf(s, mu)
+//     <prefix>_mc_E_s_2d.dat     : pdf(s, E_eV)
+//     <prefix>_mc_vpar_s_2d.dat  : pdf(s, vpar)
+//
+// -------------------------------------------------------------------------------------
+// 2) INPUT FILE FORMAT (FIELD LINE)
+// -------------------------------------------------------------------------------------
+// The loader is designed to be tolerant of comment/header lines.
+// It supports rows with:
+//
+//   (i) 4 columns:   x  y  z  Bmag
+//  (ii) 6 columns:   x  y  z  Bx  By  Bz     (|B| computed)
+// (iii) 7 columns:   x  y  z  Bx  By  Bz  Bmag (|B| may be redundant)
+//
+// Your example file uses case (i): “# variables: X,Y,Z [m]; B[T]” followed by the point
+// count and then x y z B rows.
+//
+// -------------------------------------------------------------------------------------
+// 3) EXAMPLES
+// -------------------------------------------------------------------------------------
 // Build:
-//   g++ -O2 -std=c++17 mc_fieldline.cpp -o mc_fieldline
+//   make
 //
-// -----------------------------------------------------------------------------
-// INPUT FIELD LINE FORMAT
-// -----------------------------------------------------------------------------
-// Comment/header lines beginning with '#' are ignored.
-// A bare integer line may appear giving the point count (and is ignored).
+// Convert field line to Tecplot XY curves:
+//   ./mc_fieldline -fieldline /mnt/data/fieldline_32.txt -out demo -npart 0
 //
-// Data lines support either:
-//   (A) 4 columns: x y z Bmag
-//   (B) 6 columns: x y z Bx By Bz        (|B| computed)
-//   (C) 7+ cols :  x y z Bx By Bz Bmag   (first 7 used)
+// Run Monte Carlo GC transport, inject in the middle, sample f(s,mu), f(s,E), f(s,vpar):
+//   ./mc_fieldline -fieldline /mnt/data/fieldline_32.txt -out run 
+//       -inj_sfrac 0.5 -T_eV 200 -npart 200000 -dt 1e-3 -tmax 1.0 
+//       -D 0.05 -nbins_s 100 -nbins_mu 100 -nbins_E 120 -Emax_eV 3000 
+//       -nbins_vpar 120 -seed 42
 //
-// Units are assumed SI (meters, Tesla), but the code does not enforce units.
+// Add constant parallel acceleration (uniform E_par):
+//   ./mc_fieldline -fieldline /mnt/data/fieldline_32.txt -out accel 
+//       -inj_sfrac 0.25 -T_eV 100 -Epar_Vm 1e-3 -npart 100000 -dt 1e-3 -tmax 2.0
 //
-// -----------------------------------------------------------------------------
-// PHYSICS MODEL (guiding-center along s)
-// -----------------------------------------------------------------------------
-// Each particle state (non-relativistic):
-//   s        : arc-length coordinate along the line [m]
-//   v_par    : parallel velocity along +s [m/s]
-//   mu_mag   : magnetic moment = m v_perp^2 / (2 B)   [J/T]  (constant in deterministic step)
+// -------------------------------------------------------------------------------------
+// 4) IMPLEMENTATION NOTES / ASSUMPTIONS
+// -------------------------------------------------------------------------------------
+// * This is a 1D-along-the-line guiding-center model intended for algorithm development
+//   and diagnostics, not a full 3D GC integrator.
+// * Spatial interpolation is piecewise linear in s.
+// * d|B|/ds is taken as a piecewise constant slope between nodes.
+// * If B-direction is not provided, b-hat is approximated by the curve tangent.
+// * All dynamics are SI; temperature is specified in eV for convenience.
+// * For reproducibility, use -seed.
 //
-// Deterministic guiding-center update:
-//   ds/dt      = v_par
-//   dv_par/dt  = (q/m) E_par  -  (mu_mag/m) dB/ds
-//
-// where E_par is an optional *constant* parallel electric field [V/m] (CLI -Epar_Vm).
-// The mirror term uses piecewise dB/ds computed from the loaded B(s).
-//
-// Pitch-angle diffusion (optional, CLI -D) is applied as diffusion in mu_cos = cos(alpha):
-//   d(mu_cos) = sqrt(2 D dt) * N(0,1)
-// and we re-split kinetic energy between v_par and v_perp while keeping speed |v| fixed
-// during the scattering substep.
-//
-// INITIALIZATION / INJECTION
-// -----------------------------------------------------------------------------
-// The code injects N electrons at s = inj_sfrac * L, where L is the total field line length.
-// Velocity is sampled from a 3D Maxwellian at temperature T_eV (CLI -T_eV).
-// Optionally, -mu0 can fix the initial mu_cos for all particles.
-// If -forward_only 1 is used, initial v_par is forced >= 0.
-//
-// OUTPUTS (Tecplot ASCII)
-// -----------------------------------------------------------------------------
-// 1) <prefix>_fieldline.dat      : s vs abs(x,y,z), B components, |B|
-// 2) <prefix>_mc_mu_hist.dat     : final mu_cos histogram PDF
-// 3) <prefix>_mc_mu_vs_s.dat     : binned mean/var(mu_cos) vs s
-// 4) <prefix>_mc_mu_s_2d.dat     : 2D distribution f(s, mu_cos) (counts normalized per s-bin)
-//
-// -----------------------------------------------------------------------------
-// CLI (run with -help)
-// -----------------------------------------------------------------------------
+// =====================================================================================
 
 #include <algorithm>
 #include <array>
@@ -111,6 +177,14 @@ struct FieldLine {
   std::vector<FieldLinePoint> p;
 
   double length() const { return p.empty() ? 0.0 : p.back().s; }
+
+// -------------------------------------------------------------------------------------
+// FieldLine::load()
+//   Robust parser for field-line text files with optional header/comments.
+//   Supports 4/6/7-column rows described in the file header.
+//   After reading points, we compute arc-length s[i] and (if needed) reconstruct Bvec
+//   from tangent direction.
+// -------------------------------------------------------------------------------------
 
   bool load(const std::string& path, std::string* err=nullptr){
     std::ifstream in(path);
@@ -238,6 +312,16 @@ struct FieldLine {
     return j-1;
   }
 
+// -------------------------------------------------------------------------------------
+// FieldLine::sample(s_query)
+//   Piecewise-linear interpolation in arc-length coordinate s.
+//   Returns:
+//     r(s), |B|(s), Bvec(s), tangent t_hat(s), and d|B|/ds for mirror force.
+//   Notes:
+//     * For 4-column inputs, Bvec(s)=|B|(s)*t_hat(s).
+//     * d|B|/ds is piecewise constant between nodes.
+// -------------------------------------------------------------------------------------
+
   InterpSample sample(double s_query) const {
     InterpSample out{};
     if(p.size()<2){
@@ -318,6 +402,15 @@ struct Cli {
   int nbins_mu = 80;
   int nbins_s  = 80;
 
+
+  // Additional time-integrated sampling (energy and v_parallel)
+  int nbins_E = 80;
+  int nbins_vpar = 80;
+  double Emin_eV = 0.0;
+  double Emax_eV = -1.0;      // if <= Emin_eV => auto-set
+  double vpar_min = 0.0;
+  double vpar_max = 0.0;      // if <= vpar_min => auto-set
+
   static void print_help(const char* exe){
     std::cout
       << "Usage:\n"
@@ -344,13 +437,21 @@ struct Cli {
       << "  -seed <int>                RNG seed (default: 1)\n"
       << "  -nbins_mu <int>            mu histogram bins (default: 80)\n"
       << "  -nbins_s <int>             s bins for statistics and 2D distribution (default: 80)\n"
+      << "  -nbins_E <int>             kinetic energy bins for time-integrated f(s,E) (default: 80)\n"
+      << "  -Emin_eV <eV>              min kinetic energy for binning (default: 0)\n"
+      << "  -Emax_eV <eV>              max kinetic energy for binning (default: auto = 10*T_eV)\n"
+      << "  -nbins_vpar <int>          v_par bins for time-integrated f(s,v_par) (default: 80)\n"
+      << "  -vpar_min <m/s>            min v_par for binning (default: auto = -6*v_th)\n"
+      << "  -vpar_max <m/s>            max v_par for binning (default: auto = +6*v_th)\n"
       << "  -out <prefix>              Output prefix (default: out)\n"
       << "  -help                      Show this help and exit\n\n"
       << "Outputs (Tecplot ASCII):\n"
       << "  <prefix>_fieldline.dat     Field line XY: s vs abs(x,y,z), B components and |B|\n"
       << "  <prefix>_mc_mu_hist.dat    Final mu histogram (PDF)\n"
       << "  <prefix>_mc_mu_vs_s.dat    mean/var(mu) binned vs s\n"
-      << "  <prefix>_mc_mu_s_2d.dat    2D distribution f(s,mu) normalized per s-bin\n";
+      << "  <prefix>_mc_mu_s_2d.dat    2D distribution f(s,mu) sampled each time step; normalized per s-bin\n"
+      << "  <prefix>_mc_E_s_2d.dat     2D distribution f(s,E_kin) sampled each time step; normalized per s-bin\n"
+      << "  <prefix>_mc_vpar_s_2d.dat  2D distribution f(s,v_par) sampled each time step; normalized per s-bin\n";
   }
 
   bool parse(int argc, char** argv, std::string* err=nullptr){
@@ -399,6 +500,18 @@ struct Cli {
           nbins_mu = std::max(4, std::stoi(need(a)));
         } else if(a=="-nbins_s"){
           nbins_s = std::max(4, std::stoi(need(a)));
+        } else if(a=="-nbins_E"){
+          nbins_E = std::max(4, std::stoi(need(a)));
+        } else if(a=="-Emin_eV"){
+          Emin_eV = std::stod(need(a));
+        } else if(a=="-Emax_eV"){
+          Emax_eV = std::stod(need(a));
+        } else if(a=="-nbins_vpar"){
+          nbins_vpar = std::max(4, std::stoi(need(a)));
+        } else if(a=="-vpar_min"){
+          vpar_min = std::stod(need(a));
+        } else if(a=="-vpar_max"){
+          vpar_max = std::stod(need(a));
         } else {
           throw std::runtime_error("Unknown option: " + a);
         }
@@ -436,6 +549,29 @@ struct Cli {
       if(err) *err = "-mu0 must be in [-1,1].";
       return false;
     }
+
+    // Derived/default binning ranges for energy and v_par sampling
+    if(Emin_eV < 0.0){
+      if(err) *err = "-Emin_eV must be >= 0.";
+      return false;
+    }
+    if(Emax_eV <= Emin_eV){
+      // Auto: cover a broad thermal tail by default
+      Emax_eV = std::max(Emin_eV + 1e-6, 10.0*T_eV);
+    }
+
+    if(vpar_max <= vpar_min){
+      // Auto: +/- 6 thermal speeds based on injected temperature
+      const double kT = T_eV * kEvToJ; // J
+      const double vth = std::sqrt(2.0*kT / kElectronMass);
+      vpar_min = -6.0*vth;
+      vpar_max = +6.0*vth;
+    }
+    if(vpar_max <= vpar_min){
+      if(err) *err = "Invalid vpar range (vpar_max must be > vpar_min).";
+      return false;
+    }
+
     return true;
   }
 };
@@ -450,6 +586,19 @@ struct Particle {
 struct MCResult {
   std::vector<double> s_final;
   std::vector<double> mu_final; // mu_cos
+
+  // Time-integrated (sampled every time step) 2D distribution counts.
+  // Layout: counts[ sbin * nbins_mu + mubin ]
+  std::vector<double> mu_s_counts;
+  std::vector<double> mu_s_count_s;
+
+
+  // Additional time-integrated sampling (same per-s-bin totals as mu sampling).
+  // Layouts:
+  //   E_s_counts   [ sbin * nbins_E   + ebin ]
+  //   vpar_s_counts[ sbin * nbins_vpar+ vbin ]
+  std::vector<double> E_s_counts;
+  std::vector<double> vpar_s_counts;
 };
 
 static inline double vth_sigma_from_Te_eV(double T_eV){
@@ -465,6 +614,14 @@ static inline Vec3 sample_maxwellian_velocity(std::mt19937_64& rng, double sigma
 }
 
 // For mu diffusion, keep speed constant (during scattering), update (vpar, mu_mag) at local B.
+
+// -------------------------------------------------------------------------------------
+// apply_pitch_angle_diffusion()
+//   Adds stochastic pitch-angle scattering in mu=cos(alpha):
+//       mu <- mu + sqrt(2 D dt) * N(0,1)
+//   Then reprojects the state onto consistent (v_par, mu_mag) at the local |B|.
+//   This keeps the model internally consistent with the guiding-center invariants.
+// -------------------------------------------------------------------------------------
 static inline void apply_pitch_angle_diffusion(Particle& part,
                                                double B_local,
                                                double dt,
@@ -494,6 +651,20 @@ static inline void apply_pitch_angle_diffusion(Particle& part,
   const double B = std::max(B_local, 1e-30);
   part.mu_mag = 0.5*kElectronMass*vperp2_new / B;
 }
+
+// -------------------------------------------------------------------------------------
+// run_guiding_center_mc()
+//   Main Monte Carlo loop:
+//     1) Initialize particles at s = inj_sfrac*L with Maxwellian velocities from T_eV.
+//     2) For each time step:
+//         - interpolate |B|(s) and d|B|/ds
+//         - advance v_par with mirror force and optional E_par acceleration
+//         - advance s with ds/dt = v_par
+//         - delete particles leaving [0,L]
+//         - optionally apply pitch-angle diffusion
+//         - sample time-integrated histograms in (s,mu), (s,E), (s,v_par)
+//     3) After the loop, write Tecplot files with per-s-bin normalization.
+// -------------------------------------------------------------------------------------
 
 static MCResult run_guiding_center_mc(const FieldLine& fl, const Cli& cli){
   std::mt19937_64 rng(cli.seed);
@@ -558,6 +729,102 @@ static MCResult run_guiding_center_mc(const FieldLine& fl, const Cli& cli){
   // Time advance
   const double q_over_m = kElectronCharge / kElectronMass;
 
+  // ---------------------------------------------------------------------------
+  // Time-integrated sampling of pitch-angle distribution f(s,mu)
+  // Sample at each time step based on the particle's *current* s (after the move)
+  // and its mu_cos computed from (v_par, mu_mag, B(s)).
+  // ---------------------------------------------------------------------------
+
+  std::vector<double> mu_s_counts(static_cast<size_t>(cli.nbins_s * cli.nbins_mu), 0.0);
+  std::vector<double> mu_s_count_s(static_cast<size_t>(cli.nbins_s), 0.0);
+
+  std::vector<double> E_s_counts(static_cast<size_t>(cli.nbins_s * cli.nbins_E), 0.0);
+  std::vector<double> vpar_s_counts(static_cast<size_t>(cli.nbins_s * cli.nbins_vpar), 0.0);
+
+  auto idx2d = [&](int bs, int b, int stride)->size_t{
+    return static_cast<size_t>(bs * stride + b);
+  };
+
+  auto s_to_bin = [&](double s)->int{
+    double xs = (L>0.0) ? clamp(s / L, 0.0, 1.0) : 0.0;
+    int bs = static_cast<int>(std::floor(xs * cli.nbins_s));
+    if(bs < 0) bs = 0;
+    if(bs >= cli.nbins_s) bs = cli.nbins_s - 1;
+    return bs;
+  };
+
+  auto mu_to_bin = [&](double mu_cos)->int{
+    double xm = (clamp(mu_cos, -1.0, 1.0) + 1.0) * 0.5; // [-1,1] -> [0,1]
+    int bm = static_cast<int>(std::floor(xm * cli.nbins_mu));
+    if(bm < 0) bm = 0;
+    if(bm >= cli.nbins_mu) bm = cli.nbins_mu - 1;
+    return bm;
+  };
+
+  auto E_to_bin = [&](double E_eV)->int{
+    const double Emin = cli.Emin_eV;
+    const double Emax = cli.Emax_eV;
+    double x = (Emax > Emin) ? (E_eV - Emin)/(Emax - Emin) : 0.0;
+    x = clamp(x, 0.0, 1.0);
+    int be = static_cast<int>(std::floor(x * cli.nbins_E));
+    if(be < 0) be = 0;
+    if(be >= cli.nbins_E) be = cli.nbins_E - 1;
+    return be;
+  };
+
+  auto vpar_to_bin = [&](double vpar)->int{
+    const double vmin = cli.vpar_min;
+    const double vmax = cli.vpar_max;
+    double x = (vmax > vmin) ? (vpar - vmin)/(vmax - vmin) : 0.0;
+    x = clamp(x, 0.0, 1.0);
+    int bv = static_cast<int>(std::floor(x * cli.nbins_vpar));
+    if(bv < 0) bv = 0;
+    if(bv >= cli.nbins_vpar) bv = cli.nbins_vpar - 1;
+    return bv;
+  };
+
+  // ---------------------------------------------------------------------------
+  // sample_particle_into_hist(p)
+  //   This lambda performs the "time-integrated sampling" requested:
+  //     * It is called once per particle per time step (after the deterministic move).
+  //     * It finds the particle's s-bin and variable bins (mu, E, v_par).
+  //     * It increments the corresponding 2D histogram counters.
+  //
+  //   Notes:
+  //     - Sampling uses the *current* local |B|(s) to reconstruct v_perp from mu_mag.
+  //     - Energy is computed from v^2 = v_par^2 + v_perp^2.
+  //     - Per-s-bin total counts are stored in mu_s_count_s[bs] and used later for
+  //       per-s normalization when writing PDFs.
+  // ---------------------------------------------------------------------------
+
+
+  auto sample_particle_into_hist = [&](const Particle& p){
+    // Defensive: only sample inside the domain
+    if(p.s < 0.0 || p.s > L) return;
+
+    InterpSample sp = fl.sample(p.s);
+    const double B = std::max(sp.Bmag, 1e-30);
+    const double vperp2 = std::max(0.0, 2.0*p.mu_mag*B / kElectronMass);
+    const double v2 = p.vpar*p.vpar + vperp2;
+    const double v  = std::sqrt(std::max(0.0, v2));
+    double mu_cos = (v>0.0) ? (p.vpar / v) : 0.0;
+    mu_cos = clamp(mu_cos, -1.0, 1.0);
+
+    const int bs = s_to_bin(p.s);
+    const int bm = mu_to_bin(mu_cos);
+
+    // Kinetic energy [eV] and v_par [m/s]
+    const double E_eV = 0.5*kElectronMass*v2 / kEvToJ;
+    const int be = E_to_bin(E_eV);
+    const int bv = vpar_to_bin(p.vpar);
+
+    mu_s_counts[idx2d(bs,bm,cli.nbins_mu)] += 1.0;
+    E_s_counts[idx2d(bs,be,cli.nbins_E)] += 1.0;
+    vpar_s_counts[idx2d(bs,bv,cli.nbins_vpar)] += 1.0;
+
+    mu_s_count_s[static_cast<size_t>(bs)] += 1.0;
+  };
+
   for(int n=0;n<nsteps;n++){
     for(auto& p : part){
       if(!p.alive) continue;
@@ -583,6 +850,9 @@ static MCResult run_guiding_center_mc(const FieldLine& fl, const Cli& cli){
         continue;
       }
 
+      // Sample distribution after the move at this time step
+      sample_particle_into_hist(p);
+
       // Update mu_mag is constant in deterministic step (already stored),
       // but B changes => v_perp changes implicitly via mu_mag = m v_perp^2 /(2B).
       // We do not need to explicitly store v_perp, but it enters mu_cos at output.
@@ -591,6 +861,10 @@ static MCResult run_guiding_center_mc(const FieldLine& fl, const Cli& cli){
 
   // Collect outputs: final mu_cos and final s (ONLY for particles that stayed on the field line)
   MCResult out;
+  out.mu_s_counts = std::move(mu_s_counts);
+  out.mu_s_count_s = std::move(mu_s_count_s);
+  out.E_s_counts = std::move(E_s_counts);
+  out.vpar_s_counts = std::move(vpar_s_counts);
   out.s_final.reserve(part.size());
   out.mu_final.reserve(part.size());
 
@@ -697,34 +971,32 @@ static bool write_mu_vs_s_tecplot(const std::string& out_path,
   return true;
 }
 
-static bool write_mu_s_2d_tecplot(const std::string& out_path,
-                                  const std::vector<double>& s,
-                                  const std::vector<double>& mu,
-                                  double smax,
-                                  int nbins_s,
-                                  int nbins_mu,
-                                  std::string* err=nullptr)
+// Write a 2D distribution f(s,mu) from pre-accumulated counts.
+// counts layout: counts[ sbin * nbins_mu + mubin ]
+// count_s layout: per-sbin totals, same sampling scheme used for counts.
+
+// -------------------------------------------------------------------------------------
+// write_mu_s_2d_tecplot_from_counts()
+//   Writes time-integrated pitch-angle PDF per s-bin as a Tecplot ordered zone.
+//   Input:
+//     - mu_s_counts[bs, bm] : raw sample counts accumulated during the run
+//     - mu_s_count_s[bs]    : total samples in each s-bin (normalization denominator)
+//   Output variables:
+//     s_m, mu_cos, pdf
+//   Normalization:
+//     For each s-bin independently, pdf is scaled so that sum_j pdf*DeltaMu = 1.
+// -------------------------------------------------------------------------------------
+static bool write_mu_s_2d_tecplot_from_counts(const std::string& out_path,
+                                              const std::vector<double>& counts,
+                                              const std::vector<double>& count_s,
+                                              double smax,
+                                              int nbins_s,
+                                              int nbins_mu,
+                                              std::string* err=nullptr)
 {
-  // counts[sbin][mubin]
-  std::vector<double> counts(static_cast<size_t>(nbins_s*nbins_mu), 0.0);
-  std::vector<double> count_s(static_cast<size_t>(nbins_s), 0.0);
-
-  auto idx = [&](int bs, int bm)->size_t{
-    return static_cast<size_t>(bs*nbins_mu + bm);
-  };
-
-  for(size_t i=0;i<s.size();i++){
-    double xs = clamp(s[i]/smax, 0.0, 1.0);
-    int bs = static_cast<int>(std::floor(xs*nbins_s));
-    if(bs>=nbins_s) bs=nbins_s-1;
-
-    double xm = (clamp(mu[i], -1.0, 1.0) + 1.0)*0.5;
-    int bm = static_cast<int>(std::floor(xm*nbins_mu));
-    if(bm<0) bm=0;
-    if(bm>=nbins_mu) bm=nbins_mu-1;
-
-    counts[idx(bs,bm)] += 1.0;
-    count_s[static_cast<size_t>(bs)] += 1.0;
+  if(static_cast<int>(count_s.size())!=nbins_s || static_cast<int>(counts.size())!=nbins_s*nbins_mu){
+    if(err) *err = "write_mu_s_2d_tecplot_from_counts: size mismatch";
+    return false;
   }
 
   const double ds = smax/nbins_s;
@@ -736,7 +1008,7 @@ static bool write_mu_s_2d_tecplot(const std::string& out_path,
     return false;
   }
 
-  out << "TITLE = \"2D distribution f(s,mu)\"\n";
+  out << "TITLE = \"2D distribution f(s,mu) (time-integrated)\"\n";
   out << "VARIABLES = \"s_m\" \"mu\" \"pdf\"\n";
   // Tecplot ordered zone: I varies fastest, then J.
   // We'll use I=nbins_s (s) and J=nbins_mu (mu) so that rows correspond to mu bins.
@@ -752,7 +1024,7 @@ static bool write_mu_s_2d_tecplot(const std::string& out_path,
       // Normalize per s-bin so that for each s-bin: sum_j pdf(s,mu_j)*dm = 1
       double pdf = 0.0;
       if(cs>0.0){
-        pdf = (counts[idx(is,jm)]/cs)/dm;
+        pdf = (counts[static_cast<size_t>(is*nbins_mu + jm)]/cs)/dm;
       }
       out << s_center << " " << mu_center << " " << pdf << "\n";
     }
@@ -760,6 +1032,114 @@ static bool write_mu_s_2d_tecplot(const std::string& out_path,
 
   return true;
 }
+
+// Write a 2D distribution f(s,E_kin) from pre-accumulated counts.
+// counts layout: counts[ sbin * nbins_E + ebin ]
+// count_s layout: per-sbin totals (same sampling cadence as counts).
+
+// -------------------------------------------------------------------------------------
+// write_E_s_2d_tecplot_from_counts()
+//   Writes time-integrated kinetic-energy PDF per s-bin.
+//   Energy is binned linearly in [Emin_eV, Emax_eV].
+//   Per-s normalization: sum_j pdf*DeltaE = 1.
+// -------------------------------------------------------------------------------------
+static bool write_E_s_2d_tecplot_from_counts(const std::string& out_path,
+                                             const std::vector<double>& counts,
+                                             const std::vector<double>& count_s,
+                                             double smax,
+                                             int nbins_s,
+                                             int nbins_E,
+                                             double Emin_eV,
+                                             double Emax_eV,
+                                             std::string* err=nullptr)
+{
+  if(static_cast<int>(count_s.size())!=nbins_s || static_cast<int>(counts.size())!=nbins_s*nbins_E){
+    if(err) *err = "write_E_s_2d_tecplot_from_counts: size mismatch";
+    return false;
+  }
+  const double ds = smax/nbins_s;
+  const double dE = (Emax_eV - Emin_eV)/nbins_E;
+
+  std::ofstream out(out_path);
+  if(!out){
+    if(err) *err = "Cannot write: " + out_path;
+    return false;
+  }
+
+  out << "TITLE = \"2D distribution f(s,E_kin) (time-integrated)\"\n";
+  out << "VARIABLES = \"s_m\" \"E_eV\" \"pdf\"\n";
+  out << "ZONE T=\"E_s_2d\", I=" << nbins_s << ", J=" << nbins_E << ", F=POINT\n";
+  out << std::setprecision(12) << std::scientific;
+
+  for(int jE=0;jE<nbins_E;jE++){
+    const double E_center = Emin_eV + (jE + 0.5)*dE;
+    for(int is=0;is<nbins_s;is++){
+      const double s_center = (is + 0.5)*ds;
+      const double cs = count_s[static_cast<size_t>(is)];
+      double pdf = 0.0;
+      if(cs>0.0 && dE>0.0){
+        pdf = (counts[static_cast<size_t>(is*nbins_E + jE)]/cs)/dE;
+      }
+      out << s_center << " " << E_center << " " << pdf << "\n";
+    }
+  }
+  return true;
+}
+
+// Write a 2D distribution f(s,v_par) from pre-accumulated counts.
+// counts layout: counts[ sbin * nbins_vpar + vbin ]
+// count_s layout: per-sbin totals (same sampling cadence as counts).
+
+// -------------------------------------------------------------------------------------
+// write_vpar_s_2d_tecplot_from_counts()
+//   Writes time-integrated parallel-velocity PDF per s-bin.
+//   v_par is binned linearly in [vpar_min, vpar_max].
+//   Per-s normalization: sum_j pdf*DeltaV = 1.
+// -------------------------------------------------------------------------------------
+static bool write_vpar_s_2d_tecplot_from_counts(const std::string& out_path,
+                                                const std::vector<double>& counts,
+                                                const std::vector<double>& count_s,
+                                                double smax,
+                                                int nbins_s,
+                                                int nbins_vpar,
+                                                double vpar_min,
+                                                double vpar_max,
+                                                std::string* err=nullptr)
+{
+  if(static_cast<int>(count_s.size())!=nbins_s || static_cast<int>(counts.size())!=nbins_s*nbins_vpar){
+    if(err) *err = "write_vpar_s_2d_tecplot_from_counts: size mismatch";
+    return false;
+  }
+  const double ds = smax/nbins_s;
+  const double dv = (vpar_max - vpar_min)/nbins_vpar;
+
+  std::ofstream out(out_path);
+  if(!out){
+    if(err) *err = "Cannot write: " + out_path;
+    return false;
+  }
+
+  out << "TITLE = \"2D distribution f(s,v_par) (time-integrated)\"\n";
+  out << "VARIABLES = \"s_m\" \"vpar_mps\" \"pdf\"\n";
+  out << "ZONE T=\"vpar_s_2d\", I=" << nbins_s << ", J=" << nbins_vpar << ", F=POINT\n";
+  out << std::setprecision(12) << std::scientific;
+
+  for(int jv=0;jv<nbins_vpar;jv++){
+    const double v_center = vpar_min + (jv + 0.5)*dv;
+    for(int is=0;is<nbins_s;is++){
+      const double s_center = (is + 0.5)*ds;
+      const double cs = count_s[static_cast<size_t>(is)];
+      double pdf = 0.0;
+      if(cs>0.0 && dv>0.0){
+        pdf = (counts[static_cast<size_t>(is*nbins_vpar + jv)]/cs)/dv;
+      }
+      out << s_center << " " << v_center << " " << pdf << "\n";
+    }
+  }
+  return true;
+}
+
+
 
 int main(int argc, char** argv){
   Cli cli;
@@ -815,12 +1195,38 @@ int main(int argc, char** argv){
     std::cout << "Wrote: " << out_path << "\n";
   }
 
-  // 5) 2D distribution f(s,mu) (normalized per s-bin)
+  // 5) 2D distribution f(s,mu) (time-integrated sampling, normalized per s-bin)
   {
     const std::string out_path = cli.out_prefix + "_mc_mu_s_2d.dat";
-    if(!write_mu_s_2d_tecplot(out_path, res.s_final, res.mu_final, fl.length(), cli.nbins_s, cli.nbins_mu, &err)){
+    if(!write_mu_s_2d_tecplot_from_counts(out_path, res.mu_s_counts, res.mu_s_count_s,
+                                          fl.length(), cli.nbins_s, cli.nbins_mu, &err)){
       std::cerr << "Error: " << err << "\n";
       return 7;
+    }
+    std::cout << "Wrote: " << out_path << "\n";
+  }
+
+
+  // 6) 2D distribution f(s,E_kin) (time-integrated sampling, normalized per s-bin)
+  {
+    const std::string out_path = cli.out_prefix + "_mc_E_s_2d.dat";
+    if(!write_E_s_2d_tecplot_from_counts(out_path, res.E_s_counts, res.mu_s_count_s,
+                                         fl.length(), cli.nbins_s, cli.nbins_E,
+                                         cli.Emin_eV, cli.Emax_eV, &err)){
+      std::cerr << "Error: " << err << "\n";
+      return 8;
+    }
+    std::cout << "Wrote: " << out_path << "\n";
+  }
+
+  // 7) 2D distribution f(s,v_par) (time-integrated sampling, normalized per s-bin)
+  {
+    const std::string out_path = cli.out_prefix + "_mc_vpar_s_2d.dat";
+    if(!write_vpar_s_2d_tecplot_from_counts(out_path, res.vpar_s_counts, res.mu_s_count_s,
+                                            fl.length(), cli.nbins_s, cli.nbins_vpar,
+                                            cli.vpar_min, cli.vpar_max, &err)){
+      std::cerr << "Error: " << err << "\n";
+      return 9;
     }
     std::cout << "Wrote: " << out_path << "\n";
   }
