@@ -29,6 +29,10 @@ void PIC::GYROKINETIC::Init() {
   PIC::ParticleBuffer::RequestDataStorage(offset,3*sizeof(double));
   DriftVelocityOffset=offset;
 
+  if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_) && (PIC::ThisThread==0)) {
+    printf("[DEBUG] PIC::GYROKINETIC::Init(): DriftVelocityOffset=%i bytes (3 doubles)\n",DriftVelocityOffset);
+  }
+
   //Initialize the species selection table.
   //Default: full-orbit for all species.
   SetGuidingCenterAllSpecies(false);
