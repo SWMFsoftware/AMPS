@@ -1868,6 +1868,20 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
       }
     }
 
+    // --- Magnetization current closure support (guiding-center species) ---
+    // We accumulate the magnetic dipole moment density M = (sum mu * b) / V on the 8 corners of the cell,
+    // then add J_mag = curl(M) (cell-centered, distributed to corners).
+    double MCornerSum[8][3];
+    bool cell_has_gc = false;
+
+    for (int ii=0; ii<8; ii++){
+      #pragma ivdep
+      for (int jj=0; jj<3; jj++){
+        MCornerSum[ii][jj]=0.0;
+      }
+    }
+
+
     double MassMatrix_GGD[8][8][9];
     for (int iCorner=0;iCorner<8;iCorner++){
       for(int jCorner=0;jCorner<8;jCorner++){
@@ -1943,14 +1957,18 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
       LocalParticleWeight=block->GetLocalParticleWeight(spec);
       LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
 
-      //in case if gyrokinetic model for electrons is used => add the drift velocity to vInit
-      if (_PIC_GYROKINETIC_MODEL_MODE_==_PIC_MODE_ON_) {
-        if (spec==_ELECTRON_SPEC_) {
-          double *v_drift=PIC::GYROKINETIC::GetV_drift(ParticleData); 
-
-          for (int idim=0;idim<3;idim++) vInit[idim]+=v_drift[idim];
-        }
-      }
+      // Guiding-center species flag used for diagnostics/moments.
+      //
+      // IMPORTANT CONVENTION:
+      //   The gyrokinetic mover commits the *effective* transport velocity into the standard
+      //   particle velocity vector V:
+      //       V = v_eff = b*v_parallel + v_drift
+      //   Therefore ECSIM MUST NOT add v_drift again during deposition.
+      //
+      // We still use this flag to include the unresolved perpendicular kinetic energy carried
+      // by v_normal (|v_perp|) in diagnostic moments (e.g., ParticleEnergyCell).
+      const bool use_gc_species =
+        (_PIC_GYROKINETIC_MODEL_MODE_==_PIC_MODE_ON_) && PIC::GYROKINETIC::IsGuidingCenterSpecies(spec);
 
       ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
 
@@ -2002,6 +2020,9 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
           B[idim] *= B_conv;
           vInit[idim] *= length_conv;
         }
+
+// Save B before any possible /LightSpeed scaling: guiding-center closures (b-direction) use the physical B.
+double Braw[3] = {B[0], B[1], B[2]};
 
         double QdT_over_m,QdT_over_2m,alpha[9],chargeQ;
         double WeightPG[8];
@@ -2064,10 +2085,43 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
 
         PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,CornerBasedStencil,WeightPG);
 
-        double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2];
+// Guiding-center magnetization closure:
+// Each macro-particle carries a magnetic dipole moment mu (scalar) aligned with b = B/|B|.
+// We deposit mu*b to the cell corners and later add J_mag = curl(M) to the corner currents.
+if (use_gc_species) {
+  const double mu = PIC::ParticleBuffer::GetMagneticMoment(ParticleData);
+  const double mu_tot = mu * LocalParticleWeight; // scale by statistical weight (macro-particle represents many particles)
 
-        vmean_cell[spec] += sqrt(vsqr_par)*GlobalTimeStep;
-        ParticleEnergyCell += 0.5*mass*vsqr_par;
+  const double absB = sqrt(Braw[0]*Braw[0] + Braw[1]*Braw[1] + Braw[2]*Braw[2]);
+
+  if (absB > 0.0) {
+    const double b0 = Braw[0]/absB;
+    const double b1 = Braw[1]/absB;
+    const double b2 = Braw[2]/absB;
+
+    for (int iCorner=0; iCorner<8; iCorner++){
+      const double w = mu_tot * WeightPG[iCorner];
+      MCornerSum[iCorner][0] += w*b0;
+      MCornerSum[iCorner][1] += w*b1;
+      MCornerSum[iCorner][2] += w*b2;
+    }
+
+    cell_has_gc = true;
+  }
+}
+
+
+        double vsqr = vInit[0]*vInit[0] + vInit[1]*vInit[1] + vInit[2]*vInit[2];
+
+        // For guiding-center species, add perpendicular kinetic energy from v_normal (|v_perp|).
+        // V already includes drifts (v_eff) by mover convention; v_normal represents unresolved gyromotion.
+        if (use_gc_species) {
+          const double vperp = PIC::ParticleBuffer::GetVNormal(ParticleData);
+          vsqr += vperp*vperp;
+        }
+
+        vmean_cell[spec] += sqrt(vsqr)*GlobalTimeStep;
+        ParticleEnergyCell += 0.5*mass*vsqr;
 
         //compute alpha*vInit
         double vRot[3]={0.0,0.0,0.0};
@@ -2078,6 +2132,15 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
             vRot[iDim]+=alpha[3*iDim+jj]*vInit[jj];
           }
         }
+
+// For guiding-center species the mover already committed the effective transport velocity:
+//   vInit = v_eff = v_parallel*b + v_drift
+// ECSIM's full-orbit implicit response (alpha rotation / mass-matrix) does not apply.
+if (use_gc_species) {
+  vRot[0]=vInit[0];
+  vRot[1]=vInit[1];
+  vRot[2]=vInit[2];
+}
 
         for (int iCorner=0; iCorner<8; iCorner++){
           double t=chargeQ*WeightPG[iCorner];
@@ -2127,6 +2190,10 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
 
 
 
+
+// Mass-matrix (implicit response) is only valid for full-orbit species.
+// For guiding-center species we skip it (they contribute explicit current only) and rely on closures.
+if (!use_gc_species) {
         double matrixConst = chargeQ*QdT_over_2m/CellVolume;
 
         for (int iCorner=0; iCorner<8; iCorner++){
@@ -2160,6 +2227,8 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
           }//jCorner
         }//iCorner
 
+
+        }
         particleNumber[spec]++;
       }
 
@@ -2184,6 +2253,54 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
             CornerJ[ii] += (Jg[iCorner][ii])/CellVolume;
           }
         }
+
+
+// Add magnetization current closure for guiding-center species:
+//   M = (sum mu * b) / V  (magnetization density)
+//   J_mag = curl(M)
+// We compute M on the cell corners from particles in this cell (trilinear within the cell),
+// approximate curl(M) at the cell center using corner differences, and distribute J_mag equally
+// to the 8 corners (current is stored at corners in ECSIM).
+if (cell_has_gc) {
+  double M[8][3];
+
+  for (int iCorner=0;iCorner<8;iCorner++){
+    #pragma ivdep
+    for (int d=0; d<3; d++) {
+      M[iCorner][d] = MCornerSum[iCorner][d] / CellVolume;
+    }
+  }
+
+  auto d_dx = [&](int d) {
+    return 0.25*( (M[1][d]-M[0][d]) + (M[2][d]-M[3][d]) + (M[5][d]-M[4][d]) + (M[6][d]-M[7][d]) ) / dx[0];
+  };
+  auto d_dy = [&](int d) {
+    return 0.25*( (M[3][d]-M[0][d]) + (M[2][d]-M[1][d]) + (M[7][d]-M[4][d]) + (M[6][d]-M[5][d]) ) / dx[1];
+  };
+  auto d_dz = [&](int d) {
+    return 0.25*( (M[4][d]-M[0][d]) + (M[5][d]-M[1][d]) + (M[6][d]-M[2][d]) + (M[7][d]-M[3][d]) ) / dx[2];
+  };
+
+  const double dMz_dy = d_dy(2);
+  const double dMy_dz = d_dz(1);
+  const double dMx_dz = d_dz(0);
+  const double dMz_dx = d_dx(2);
+  const double dMy_dx = d_dx(1);
+  const double dMx_dy = d_dy(0);
+
+  const double Jmag[3] = {
+    dMz_dy - dMy_dz,
+    dMx_dz - dMz_dx,
+    dMy_dx - dMx_dy
+  };
+
+  for (int iCorner=0; iCorner<8; iCorner++){
+    double *CornerJ=CellData->CornerData[iCorner].CornerJ;
+    CornerJ[0] += Jmag[0]/8.0;
+    CornerJ[1] += Jmag[1]/8.0;
+    CornerJ[2] += Jmag[2]/8.0;
+  }
+}
 
 #ifdef __CUDA_ARCH__
 __syncwarp;
@@ -2459,15 +2576,9 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
         //convert from SI to cgs
         B[3]=0.0;
         B_v=_mm256_mul_pd(B_v,_mm256_set1_pd(B_conv));
-
-        //in case if gyrokinetic model is used for the electrons => add drift velocity of vInit_v
+        // Particle velocity already stores the effective transport velocity for GC species
+        // (V = v_eff by mover convention). Do not add v_drift here.
         vInit_v=_mm256_loadu_pd(PIC::ParticleBuffer::GetV(ParticleData));
-
-        if (_PIC_GYROKINETIC_MODEL_MODE_==_PIC_MODE_ON_) {
-          if (spec==_ELECTRON_SPEC_) {
-            vInit_v=_mm256_add_pd(vInit_v,_mm256_loadu_pd(PIC::GYROKINETIC::GetV_drift(ParticleData)));
-          }
-        }
 
         vInit_v=_mm256_mul_pd(vInit_v,_mm256_set1_pd(length_conv));
 
@@ -2561,10 +2672,15 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
         union {__m256d vInit2_v; double vInit2[4];};
         vInit2_v=_mm256_mul_pd(vInit_v,vInit_v);
 
-        double vsqr_par =vInit2[0]+vInit2[1]+vInit2[2];
+        double vsqr = vInit2[0] + vInit2[1] + vInit2[2];
 
-        vmean_cell[spec] += sqrt(vsqr_par)*GlobalTimeStep;
-        ParticleEnergyCell += 0.5*mass*vsqr_par;
+        if (use_gc_species) {
+          const double vperp = PIC::ParticleBuffer::GetVNormal(ParticleData);
+          vsqr += vperp*vperp;
+        }
+
+        vmean_cell[spec] += sqrt(vsqr)*GlobalTimeStep;
+        ParticleEnergyCell += 0.5*mass*vsqr;
 
         //compute alpha*vInit
         union {__m256d vRot_v; double vRot[4];};
@@ -2741,10 +2857,15 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
         union {__m256d vInit2_v; double vInit2[4];};
         vInit2_v=_mm256_mul_pd(vInit_v,vInit_v);
 
-        double vsqr_par =vInit2[0]+vInit2[1]+vInit2[2];
+        double vsqr = vInit2[0] + vInit2[1] + vInit2[2];
 
-        vmean_cell[spec] += sqrt(vsqr_par)*PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
-        ParticleEnergyCell += 0.5*mass*vsqr_par;
+        if (use_gc_species) {
+          const double vperp = PIC::ParticleBuffer::GetVNormal(ParticleData);
+          vsqr += vperp*vperp;
+        }
+
+        vmean_cell[spec] += sqrt(vsqr)*PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+        ParticleEnergyCell += 0.5*mass*vsqr;
 
         //compute alpha*vInit
         union {__m256d vRot_v; double vRot[4];};
@@ -7137,65 +7258,72 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(double *B,double
 //===============================================
 //get magnetic filed gradient
 void PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticFieldGradient(double *gradB,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node) {
-  double x_prob[3],dx,B_plus[3],B_minus[3],l;
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node_prob;
+  double x_plus[3],x_minus[3],dx;
+  double B_plus[3],B_minus[3],B0[3];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node_plus,*node_minus;
 
   // structure of gradB is the following
   //   gradB[0:2] = {d/dx, d/dy, d/dz} B_x
   //   gradB[3:5] = {d/dx, d/dy, d/dz} B_y
   //   gradB[6:8] = {d/dx, d/dy, d/dz} B_z
-       
-  //d/dx
-  memcpy(x_prob,x,3*sizeof(double));
-  dx=0.5*(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
-  l=2.0*dx;
-  
-  x_prob[0]+=dx;
-  node_prob=PIC::Mesh::mesh->findTreeNode(x_prob,node); 
-  PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B_plus,x_prob,node_prob);
+  //
+  // If periodic BC are NOT used, probing points for numerical differentiation can fall outside of the domain.
+  // In that case, use one-sided differentiation based on the original point 'x' and the probe point that is
+  // still inside of the domain.
+  //
+  // Central difference (both sides available):   dB/dd ≈ (B(x+dx) - B(x-dx)) / (2*dx)
+  // One-sided (only + available):               dB/dd ≈ (B(x+dx) - B(x)) / dx
+  // One-sided (only - available):               dB/dd ≈ (B(x) - B(x-dx)) / dx
 
-  x_prob[0]-=l;
-  node_prob=PIC::Mesh::mesh->findTreeNode(x_prob,node);
-  PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B_minus,x_prob,node_prob);
-  
-  gradB[0]=(B_plus[0]-B_minus[0])/l;
-  gradB[3]=(B_plus[1]-B_minus[1])/l;
-  gradB[6]=(B_plus[2]-B_minus[2])/l; 
-   
+  // Magnetic field at the original location (assumed to be inside the domain)
+  PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B0,x,node);
 
-  //d/dy
-  memcpy(x_prob,x,3*sizeof(double));
-  dx=0.5*(node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_;
-  l=2.0*dx;
+  for (int idim=0;idim<3;idim++) {
+    memcpy(x_plus,x,3*sizeof(double));
+    memcpy(x_minus,x,3*sizeof(double));
 
-  x_prob[1]+=dx;
-  node_prob=PIC::Mesh::mesh->findTreeNode(x_prob,node);
-  PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B_plus,x_prob,node_prob);
+    // local cell size on the current AMR node
+    if (idim==0) dx=0.5*(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
+    else if (idim==1) dx=0.5*(node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_;
+    else dx=0.5*(node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_;
 
-  x_prob[1]-=l;
-  node_prob=PIC::Mesh::mesh->findTreeNode(x_prob,node);
-  PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B_minus,x_prob,node_prob);
+    x_plus[idim]+=dx;
+    x_minus[idim]-=dx;
 
-  gradB[0+1]=(B_plus[0]-B_minus[0])/l;
-  gradB[3+1]=(B_plus[1]-B_minus[1])/l;
-  gradB[6+1]=(B_plus[2]-B_minus[2])/l;
+    node_plus=PIC::Mesh::mesh->findTreeNode(x_plus,node);
+    node_minus=PIC::Mesh::mesh->findTreeNode(x_minus,node);
 
-  //d/dz
-  memcpy(x_prob,x,3*sizeof(double));
-  dx=0.5*(node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_;
-  l=2.0*dx;
+    const bool has_plus=(node_plus!=NULL);
+    const bool has_minus=(node_minus!=NULL);
 
-  x_prob[2]+=dx;
-  node_prob=PIC::Mesh::mesh->findTreeNode(x_prob,node);
-  PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B_plus,x_prob,node_prob);
+    if (has_plus) PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B_plus,x_plus,node_plus);
+    if (has_minus) PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B_minus,x_minus,node_minus);
 
-  x_prob[2]-=l;
-  node_prob=PIC::Mesh::mesh->findTreeNode(x_prob,node);
-  PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B_minus,x_prob,node_prob);
-
-  gradB[0+2]=(B_plus[0]-B_minus[0])/l;
-  gradB[3+2]=(B_plus[1]-B_minus[1])/l;
-  gradB[6+2]=(B_plus[2]-B_minus[2])/l;
+    if (has_plus && has_minus) {
+      // central difference
+      gradB[0+idim]=(B_plus[0]-B_minus[0])/(2.0*dx);
+      gradB[3+idim]=(B_plus[1]-B_minus[1])/(2.0*dx);
+      gradB[6+idim]=(B_plus[2]-B_minus[2])/(2.0*dx);
+    }
+    else if (has_plus) {
+      // forward one-sided difference
+      gradB[0+idim]=(B_plus[0]-B0[0])/dx;
+      gradB[3+idim]=(B_plus[1]-B0[1])/dx;
+      gradB[6+idim]=(B_plus[2]-B0[2])/dx;
+    }
+    else if (has_minus) {
+      // backward one-sided difference
+      gradB[0+idim]=(B0[0]-B_minus[0])/dx;
+      gradB[3+idim]=(B0[1]-B_minus[1])/dx;
+      gradB[6+idim]=(B0[2]-B_minus[2])/dx;
+    }
+    else {
+      // both probe points are outside the domain (should be rare); return zero gradient in this direction
+      gradB[0+idim]=0.0;
+      gradB[3+idim]=0.0;
+      gradB[6+idim]=0.0;
+    }
+  }
 }
 
 
