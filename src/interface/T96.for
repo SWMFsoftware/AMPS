@@ -169,7 +169,7 @@ C                                         THE INTERPOLATION REGION
        FINT=0.5*(1.-(SIGMA-S0)/DSIG)
        FEXT=0.5*(1.+(SIGMA-S0)/DSIG)
 C
-       CALL DIPOLE(PS,X,Y,Z,QX,QY,QZ)
+       CALL DIPOLE_T96(PS,X,Y,Z,QX,QY,QZ)
        BX=(FX+QX)*FINT+OIMFX*FEXT -QX
        BY=(FY+QY)*FINT+OIMFY*FEXT -QY
        BZ=(FZ+QZ)*FINT+OIMFZ*FEXT -QZ
@@ -177,7 +177,7 @@ c
         ENDIF  !   THE CASES (1) AND (2) ARE EXHAUSTED; THE ONLY REMAINING
 C                      POSSIBILITY IS NOW THE CASE (3):
          ELSE
-                CALL DIPOLE(PS,X,Y,Z,QX,QY,QZ)
+                CALL DIPOLE_T96(PS,X,Y,Z,QX,QY,QZ)
                 BX=OIMFX-QX
                 BY=OIMFY-QY
                 BZ=OIMFZ-QZ
@@ -651,19 +651,19 @@ C                                        OUT THE SHEET, AS THAT USED IN T89
         DDZETADY=(ZS*DZSY+D*DDDY)/DZETAS
         DDZETADZ=ZS*DZSZ/DZETAS
 C
-        CALL SHLCAR3X3(ARC,X,Y,Z,SPS,WX,WY,WZ)
+        CALL SHLCAR3X3_T96(ARC,X,Y,Z,SPS,WX,WY,WZ)
         CALL RINGCURR96(X,Y,Z,HX,HY,HZ)
         BXRC=WX+HX
         BYRC=WY+HY
         BZRC=WZ+HZ
 C
-        CALL SHLCAR3X3(ATAIL2,X,Y,Z,SPS,WX,WY,WZ)
-        CALL TAILDISK(X,Y,Z,HX,HY,HZ)
+        CALL SHLCAR3X3_T96(ATAIL2,X,Y,Z,SPS,WX,WY,WZ)
+        CALL TAILDISK_T96(X,Y,Z,HX,HY,HZ)
         BXT2=WX+HX
         BYT2=WY+HY
         BZT2=WZ+HZ
 C
-        CALL SHLCAR3X3(ATAIL3,X,Y,Z,SPS,WX,WY,WZ)
+        CALL SHLCAR3X3_T96(ATAIL3,X,Y,Z,SPS,WX,WY,WZ)
         CALL TAIL87(X,Z,HX,HZ)
         BXT3=WX+HX
         BYT3=WY
@@ -776,7 +776,7 @@ C
 C
 C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 C
-         SUBROUTINE TAILDISK(X,Y,Z,BX,BY,BZ)
+         SUBROUTINE TAILDISK_T96(X,Y,Z,BX,BY,BZ)
 C
 c
 c       THIS SUBROUTINE COMPUTES THE COMPONENTS OF THE TAIL CURRENT FIELD,
@@ -985,7 +985,7 @@ C
 C THIS CODE RETURNS THE SHIELDING FIELD REPRESENTED BY  2x3x3=18 "CARTESIAN"
 C    HARMONICS
 C
-         SUBROUTINE  SHLCAR3X3(A,X,Y,Z,SPS,HX,HY,HZ)
+         SUBROUTINE  SHLCAR3X3_T96(A,X,Y,Z,SPS,HX,HY,HZ)
 C
 C - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 C  The 36 coefficients enter in pairs in the amplitudes of the "cartesian"
@@ -2540,7 +2540,7 @@ C
 C
 C~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 c
-       SUBROUTINE DIPOLE(PS,X,Y,Z,BX,BY,BZ)
+       SUBROUTINE DIPOLE_T96(PS,X,Y,Z,BX,BY,BZ)
 C
 C  CALCULATES GSM COMPONENTS OF GEODIPOLE FIELD WITH THE DIPOLE MOMENT
 C  CORRESPONDING TO THE EPOCH OF 1980.
