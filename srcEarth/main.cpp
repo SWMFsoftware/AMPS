@@ -32,6 +32,11 @@
 #include "T96Interface.h"
 #include "T05Interface.h"
 
+// Gridless cutoff rigidity CLI/runner
+#include "util/cutoff_cli.h"
+#include "util/amps_param_parser.h"
+#include "gridless/CutoffRigidityGridless.h"
+
 int nZenithElements=200;
 int nAzimuthalElements=200;
 
@@ -1431,6 +1436,55 @@ void CutoffRigidityCalculation_Legacy(int nTotalIterations) {
 
 
 int main(int argc,char **argv) {
+
+  //===================================================================================
+  // New lightweight CLI pre-parser
+  //===================================================================================
+  // The historical srcEarth/main.cpp is a large driver for PIC-based workflows.
+  // For the CCMC Runs-on-Request interface we also need a "gridless" execution
+  // mode that bypasses the mesh/PIC setup and directly evaluates analytic field
+  // models (T96/T05) for cutoff rigidity.
+  //
+  // Requirement: support
+  //   -h
+  //   -mode 3d|gridless
+  //   -i <input>
+  //
+  // We intentionally place this block at the *beginning* of main(). If -mode
+  // gridless is selected, we execute the gridless solver and then return.
+  //===================================================================================
+  try {
+    EarthUtil::CliOptions cli = EarthUtil::ParseCli(argc,argv);
+
+    if (cli.help) {
+      std::cout << EarthUtil::HelpMessage(argv[0]);
+      return 0;
+    }
+
+    if (!cli.mode.empty()) {
+      std::string m = EarthUtil::ToUpper(cli.mode);
+      if (m=="GRIDLESS") {
+        if (cli.inputFile.empty()) {
+          std::cerr << "Error: -mode gridless requires -i <input-file>\n";
+          std::cerr << EarthUtil::HelpMessage(argv[0]);
+          return 1;
+        }
+
+	Exosphere::Init_SPICE();
+
+        EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
+        return Earth::GridlessMode::RunCutoffRigidity(p);
+      }
+
+      // "3d" and other values are handled by the legacy path below.
+    }
+  }
+  catch (std::exception& e) {
+    std::cerr << "CLI error: " << e.what() << "\n";
+    std::cerr << EarthUtil::HelpMessage(argv[0]);
+    return 1;
+  }
+
   static int LastDataOutputFileNumber=0;
 
   Earth::CutoffRigidity::SampleRigidityMode=true;

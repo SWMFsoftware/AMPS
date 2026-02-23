@@ -13,6 +13,9 @@ MAINLIBOBJ = Earth_Sampling.o \
 	BoundaryInjection_SW.o \
 	GCR_Badavi2011ASR.o \
 	CutoffRigidity.o \
+	gridless/CutoffRigidityGridless.o \
+	util/amps_param_parser.o \
+	util/cutoff_cli.o \
 	ImpulseSource.o \
 	DomainBoundaryParticlePropertyTable.o \
 	parser.o \
