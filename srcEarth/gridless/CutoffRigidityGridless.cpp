@@ -29,6 +29,7 @@
 //
 //======================================================================================
 
+#include "specfunc.h"
 #include "CutoffRigidityGridless.h"
 
 #include <cstdio>
@@ -58,16 +59,11 @@ static inline V3 unit(const V3&a){double n=norm(a); return (n>0)?mul(1.0/n,a):V3
 
 static inline double MomentumFromKineticEnergy_MeV(double E_MeV,double m0_kg) {
   const double E_J = E_MeV * 1.0e6 * ElectronCharge;
-  const double mc2 = m0_kg * SpeedOfLight * SpeedOfLight;
-  const double total = E_J + mc2;
-  const double pc = std::sqrt(std::max(0.0, total*total - mc2*mc2));
-  return pc / SpeedOfLight;
+  return Relativistic::Energy2Momentum(E_J,m0_kg);
 }
 
 static inline double KineticEnergyFromMomentum_MeV(double p,double m0_kg) {
-  const double mc2 = m0_kg * SpeedOfLight * SpeedOfLight;
-  const double total = std::sqrt((p*SpeedOfLight)*(p*SpeedOfLight) + mc2*mc2);
-  const double E_J = total - mc2;
+  const double E_J = Relativistic::Momentum2Energy(p,m0_kg);
   return E_J / (1.0e6 * ElectronCharge);
 }
 
