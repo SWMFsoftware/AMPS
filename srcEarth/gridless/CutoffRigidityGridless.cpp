@@ -111,6 +111,120 @@ extern "C" {
 
 namespace {
 
+//------------------------------------------------------------------------------
+// Rank-0 text progress bar (MPI dynamic scheduling)
+//
+// WHY THIS EXISTS
+// ---------------
+// Orbit integration cost varies strongly from one search point to another:
+// some trajectories escape quickly, others hit the inner sphere quickly, and
+// some consume almost the full trace budget before classification. Because the
+// MPI scheduler is dynamic (master/worker), the most meaningful and cheapest
+// progress metric is the number of COMPLETED TASKS received by rank 0.
+//
+// DESIGN
+// ------
+// - Rank 0 only (master): no extra MPI messages are needed.
+// - Progress is task-based, not step-based (robust under variable trajectory cost).
+// - Output is throttled to avoid flooding stdout / scheduler logs.
+// - Uses MPI_Wtime() (wall clock) for ETA estimation.
+//
+// NOTE
+// ----
+// In SHELLS mode the progress bar is instantiated PER SHELL ALTITUDE, but the
+// progress unit is still a single SEARCH POINT (shell grid location / task).
+//------------------------------------------------------------------------------
+struct MPIRank0ProgressBar {
+  int total_tasks = 1;
+  int done_tasks  = 0;
+  int update_count = 0;  // Track number of Print() calls for periodic newline
+  double t_start = 0.0;
+  double t_last_print = -1.0;
+  int last_percent_printed = -1;
+  const char* prefix = "[Rank 0] Progress";
+
+  static const int kBarWidth = 32;
+  static const int kNewlineEveryNUpdates = 1;  // Force newline periodically
+
+  void Start(int total, const char* pfx = "[Rank 0] Progress") {
+    total_tasks = (total > 0) ? total : 1;
+    done_tasks = 0;
+    update_count = 0;
+    prefix = pfx ? pfx : "[Rank 0] Progress";
+    t_start = MPI_Wtime();
+    t_last_print = -1.0;
+    last_percent_printed = -1;
+    Print(true);
+  }
+
+  void Advance(int delta = 1) {
+    done_tasks += delta;
+    if (done_tasks > total_tasks) done_tasks = total_tasks;
+    if (done_tasks < 0) done_tasks = 0;
+    Print(false);
+  }
+
+  void Finish() {
+    done_tasks = total_tasks;
+    Print(true);
+    std::fprintf(stderr, "\n");
+    std::fflush(stderr);
+  }
+
+  void Print(bool force) {
+    const double now = MPI_Wtime();
+    const double elapsed = std::max(1.0e-12, now - t_start);
+    const double frac = std::min(1.0, std::max(0.0,
+      static_cast<double>(done_tasks) / static_cast<double>(total_tasks)));
+    const int pct = static_cast<int>(frac * 100.0);
+
+    // Throttle updates: print immediately if forced; otherwise update when
+    // integer percent changes or after ~1 second has elapsed.
+    if (!force) {
+      const bool too_soon = (t_last_print >= 0.0) && ((now - t_last_print) < 1.0);
+      const bool same_pct = (pct == last_percent_printed);
+      if (too_soon && same_pct) return;
+    }
+
+    const double rate = static_cast<double>(done_tasks) / elapsed; // tasks/sec
+    const int remain = std::max(0, total_tasks - done_tasks);
+    const double eta_sec = (rate > 1.0e-12) ? (static_cast<double>(remain) / rate) : 0.0;
+
+    const int eta_h = static_cast<int>(eta_sec / 3600.0);
+    const int eta_m = (static_cast<int>(eta_sec) / 60) % 60;
+    const int eta_s = static_cast<int>(eta_sec) % 60;
+
+    int fill = static_cast<int>(frac * static_cast<double>(kBarWidth) + 0.5);
+    if (fill < 0) fill = 0;
+    if (fill > kBarWidth) fill = kBarWidth;
+
+    char bar[kBarWidth + 1];
+    for (int i = 0; i < kBarWidth; ++i) bar[i] = (i < fill ? '#' : '-');
+    bar[kBarWidth] = '\0';
+
+    // Pad with ~20 spaces at end to clear any trailing characters from longer previous output
+    std::fprintf(stderr,
+      "\r%s [%s] %6.2f%%  (%d/%d tasks)  ETA %02d:%02d:%02d                    ",
+      prefix, bar, 100.0 * frac, done_tasks, total_tasks, eta_h, eta_m, eta_s);
+    
+    // In severely buffered environments (batch schedulers, heavy redirection),
+    // even explicit fflush(stderr) with _IONBF mode may not show up until
+    // process termination. Force a newline every N updates to guarantee SOMETHING
+    // appears, even if it's not as pretty as a single-line updating bar.
+    ++update_count;
+    const bool force_newline = (update_count % kNewlineEveryNUpdates == 0) || force;
+    if (force_newline) {
+      std::fprintf(stderr, "\n");
+    }
+    
+    std::fflush(stderr);
+
+    t_last_print = now;
+    last_percent_printed = pct;
+  }
+};
+
+
 // Small local 3-vector utility used to keep the implementation self-contained.
 // We intentionally avoid introducing heavier AMPS vector dependencies here
 // because this module is meant to be lightweight and easy to port/refactor.
@@ -574,6 +688,19 @@ namespace GridlessMode {
 //   5) Writes Tecplot output on rank 0.
 int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   cGridlessMpiRuntime mpiRt = InitGridlessMpiRuntime();
+  
+  // CRITICAL: Unbuffer stderr IMMEDIATELY, before any other output.
+  // Some environments (batch schedulers, redirected streams) will buffer stderr
+  // aggressively. We need unbuffered mode + explicit fflush to get real-time
+  // progress visibility. We also unbuffer stdout in case there's stream interaction.
+  if (mpiRt.rank == 0) {
+    setvbuf(stderr, nullptr, _IONBF, 0);  // Unbuffered mode for stderr
+    setvbuf(stdout, nullptr, _IOLBF, 0);  // Line-buffered mode for stdout
+    // Immediate feedback that unbuffering is active:
+    std::fprintf(stderr, "[Rank 0] Progress tracking enabled (unbuffered stderr)\n");
+    std::fflush(stderr);
+  }
+  
   try {
   const int mpiRank = mpiRt.rank;
   const int mpiSize = mpiRt.size;
@@ -655,6 +782,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
         for (int r=1; r<mpiSize; ++r) {
           if (!sendPointTask(r)) MPI_Send(nullptr,0,MPI_BYTE,r,GRIDLESS_MPI_TAG_STOP,MPI_COMM_WORLD);
         }
+        // Rank-0 task-level progress for POINTS mode. One task = one search point.
+        MPIRank0ProgressBar pbarPoints;
+        pbarPoints.Start(static_cast<int>(prm.output.points.size()), "[Rank 0] POINTS");
                 // Dynamic scheduling loop:
         //   receive a completed result from any worker,
         //   store it,
@@ -664,8 +794,11 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
           MPI_Recv(&out,sizeof(out),MPI_BYTE,MPI_ANY_SOURCE,GRIDLESS_MPI_TAG_RESULT,MPI_COMM_WORLD,&st);
           if (out.idx>=0 && static_cast<size_t>(out.idx)<Rc.size()) { Rc[out.idx]=out.Rc_GV; Emin[out.idx]=out.Emin_MeV; }
           ++nDone;
+          // Progress unit is one completed search point (location task).
+          pbarPoints.Advance(1);
           if (!sendPointTask(st.MPI_SOURCE)) MPI_Send(nullptr,0,MPI_BYTE,st.MPI_SOURCE,GRIDLESS_MPI_TAG_STOP,MPI_COMM_WORLD);
         }
+        pbarPoints.Finish();
       }
       else {
         RunPointWorkerLoopMPI(prm,field,dirs,Rmin,Rmax,qabs,m0);
@@ -679,20 +812,23 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     else
     {
       // Serial fallback: same per-location kernel, no MPI scheduling.
+      // IMPORTANT: We still provide a rank-0 progress bar here (with one MPI rank,
+      // rank 0 is the only rank). This gives user feedback for long serial runs and
+      // avoids the "no progress visible until Ctrl-C" issue when combined with
+      // explicit stdout flushing in MPIRank0ProgressBar.
+      MPIRank0ProgressBar pbarPointsSerial;
+      pbarPointsSerial.Start(static_cast<int>(prm.output.points.size()), "[Rank 0] POINTS");
       for (size_t i=0;i<prm.output.points.size();i++) {
         const auto& P = prm.output.points[i];
         V3 x0_m{ P.x*1000.0, P.y*1000.0, P.z*1000.0 };
         EvaluateLocationCutoff(prm,field,dirs,Rmin,Rmax,x0_m,qabs,m0,Rc[i],Emin[i]);
+        // Progress unit is one completed search point (location task).
+        pbarPointsSerial.Advance(1);
       }
+      pbarPointsSerial.Finish();
     }
 
     if (mpiRank==0) {
-      // Serial fallback: same per-location kernel, no MPI scheduling.
-      for (size_t i=0;i<prm.output.points.size();i++) {
-        const auto& P = prm.output.points[i];
-        std::cout << "Point " << i << " (" << P.x << "," << P.y << "," << P.z << ")"
-                  << " -> Rc=" << Rc[i] << " GV, Emin=" << Emin[i] << " MeV\n";
-      }
       WriteTecplotPoints(prm.output.points,Rc,Emin);
       std::cout << "Wrote Tecplot: cutoff_gridless_points.dat\n";
       std::cout.flush();
@@ -741,6 +877,13 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
           for (int r=1; r<mpiSize; ++r) {
             if (!sendShellTask(r)) MPI_Send(nullptr,0,MPI_BYTE,r,GRIDLESS_MPI_TAG_STOP,MPI_COMM_WORLD);
           }
+          // Rank-0 task-level progress for this shell altitude.
+          // IMPORTANT: progress granularity is ONE SEARCH POINT (shell grid cell),
+          // not one altitude. This provides useful feedback even for large shells.
+          char shellPfx[160];
+          std::snprintf(shellPfx, sizeof(shellPfx), "[Rank 0] SHELL %zu/%zu alt=%.3f km", s+1, prm.output.shellAlt_km.size(), alt_km);
+          MPIRank0ProgressBar pbarShell;
+          pbarShell.Start(nPts, shellPfx);
                     // Same dynamic scheduling pattern as POINTS mode, but for shell
           // grid cells of the current altitude.
           while (nDone<nPts) {
@@ -748,8 +891,11 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
             MPI_Recv(&out,sizeof(out),MPI_BYTE,MPI_ANY_SOURCE,GRIDLESS_MPI_TAG_RESULT,MPI_COMM_WORLD,&st);
             if (out.idx>=0 && out.idx<nPts) { RcShell[s][out.idx]=out.Rc_GV; EminShell[s][out.idx]=out.Emin_MeV; }
             ++nDone;
+            // Progress unit is one completed shell-grid search point.
+            pbarShell.Advance(1);
             if (!sendShellTask(st.MPI_SOURCE)) MPI_Send(nullptr,0,MPI_BYTE,st.MPI_SOURCE,GRIDLESS_MPI_TAG_STOP,MPI_COMM_WORLD);
           }
+          pbarShell.Finish();
         }
         else {
           RunShellWorkerLoopMPI(prm,field,dirs,Rmin,Rmax,qabs,m0);
@@ -760,13 +906,23 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
       else
       {
         // Serial fallback for shell grid traversal.
+        // We show progress per SEARCH POINT (shell grid cell), matching the MPI
+        // dynamic-scheduling progress granularity. This gives fine-grained feedback
+        // during large shell runs even when only one rank is used.
+        char shellPfx[160];
+        std::snprintf(shellPfx, sizeof(shellPfx), "[Rank 0] SHELL %zu/%zu alt=%.3f km", s+1, prm.output.shellAlt_km.size(), alt_km);
+        MPIRank0ProgressBar pbarShellSerial;
+        pbarShellSerial.Start(nPts, shellPfx);
         for (int j=0;j<nLat;j++) {
           double lat=-90.0 + d*j; if (lat>90.0) lat=90.0;
           for (int i=0;i<nLon;i++) {
             double lon=d*i; int k=i+nLon*j;
             EvaluateLocationCutoff(prm,field,dirs,Rmin,Rmax,Sph2CartDeg(lon,lat,r_m),qabs,m0,RcShell[s][k],EminShell[s][k]);
+            // Progress unit is one completed shell-grid search point.
+            pbarShellSerial.Advance(1);
           }
         }
+        pbarShellSerial.Finish();
       }
 
       if (mpiRank==0) { std::cout << "Shell alt=" << alt_km << " km done.\n"; std::cout.flush(); }
