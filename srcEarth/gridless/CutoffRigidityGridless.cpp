@@ -1,32 +1,92 @@
 //======================================================================================
 // CutoffRigidityGridless.cpp
 //======================================================================================
-// IMPLEMENTATION SUMMARY
+// GRIDLESS CUTOFF RIGIDITY SOLVER (MPI DYNAMIC SCHEDULING VERSION)
 //
-// 1) Direct access to Tsyganenko models
-//    The standard AMPS interfaces (src/interface/T96Interface.* and
-//    src/interface/T05Interface.*) guard model calls by compile-time
-//    _PIC_COUPLER_MODE_. For the gridless tool we need to choose T96/T05 at
-//    runtime. Therefore we call the underlying Fortran entry points directly:
-//      - t96_01_ (T96)
-//      - t04_s_  (T05)
+// OVERVIEW
+//   This implementation computes geomagnetic cutoff rigidity in a "gridless"
+//   mode: instead of interpolating fields from a precomputed 3D grid, it
+//   evaluates the background magnetic field directly at the particle position
+//   during orbit integration. The field is composed of:
+//     (1) internal IGRF field via Geopack::IGRF::GetMagneticField()
+//     (2) external Tsyganenko model selected at runtime from the input file
+//         (currently T96 or T05)
 //
-//    Both models are called with X,Y,Z in GSM [Re] and return BX,BY,BZ in nT.
-//    We convert to Tesla and add the internal IGRF field obtained from
-//    Geopack::IGRF::GetMagneticField().
+// WHY THIS MODULE EXISTS
+//   The legacy AMPS Earth workflow for cutoff rigidity is tightly integrated
+//   with the PIC / AMR data structures and historically selected Tsyganenko
+//   models through compile-time switches (_PIC_COUPLER_MODE_). For the new
+//   "gridless" workflow we need:
+//     - runtime selection of background model (T96/T05 from input),
+//     - a lightweight executable path driven by AMPS_PARAM files,
+//     - straightforward extension toward flux calculations later.
 //
-// 2) Particle tracing
-//    - Relativistic Boris pusher (magnetic field only).
-//    - State variables are kept in SI units:
-//        x [m], p=gamma m v [kg m/s]
-//    - Rigidity R [GV] is converted to momentum magnitude:
-//        p = (R * 1e9 * |q|) / c
+// NUMERICAL ALGORITHM (PER LOCATION)
+//   1) Build a fixed angular sampling grid of launch / backtrace directions.
+//   2) For each direction, classify trajectories as allowed/forbidden for a
+//      given rigidity R by integrating the relativistic Lorentz equation
+//      (magnetic field only) with a Boris pusher.
+//   3) For each direction, bracket and refine the transition using bisection
+//      in rigidity between [Rmin, Rmax] derived from the input energy range.
+//   4) The location cutoff rigidity Rc is the minimum directional cutoff over
+//      all sampled directions.
+//   5) Convert Rc to minimum kinetic energy (Emin) for reporting.
 //
-// 3) Classification
-//    Allowed if the particle escapes the rectangular domain boundary without
-//    hitting the inner loss sphere. If it times out, we classify as forbidden
-//    (conservative).
+// TRAJECTORY CLASSIFICATION (ALLOWED / FORBIDDEN)
+//   - "Allowed"    : particle exits the rectangular domain box before entering
+//                    the inner loss sphere (R_INNER).
+//   - "Forbidden"  : particle reaches the inner sphere, or exceeds the
+//                    integration step/time cap (conservative classification).
 //
+// UNITS AND CONVERSIONS
+//   Input parser stores geometry in kilometers (km):
+//     DOMAIN_* bounds, R_INNER, POINT coordinates, shell altitudes.
+//   This solver converts as needed:
+//     - km -> m   : particle state and integration (SI units)
+//     - km -> Re  : boundary checks and Tsyganenko model coordinates
+//   Tsyganenko models are called with GSM position in Re and return B_ext in nT.
+//   IGRF is returned in Tesla by Geopack interface (as used in AMPS Earth code);
+//   the external field is converted nT -> T before summation.
+//
+// MPI PARALLELIZATION STRATEGY
+//   The computational cost per location is highly variable because orbit
+//   lifetime depends strongly on launch direction, rigidity, and location.
+//   Some trajectories escape quickly while others approach the integration cap.
+//   A static partition (equal block of locations per rank) leads to severe
+//   load imbalance. To address this, this file implements a dynamic master/
+//   worker scheduler:
+//
+//     Rank 0 (master):
+//       - creates tasks (one location per task),
+//       - dispatches work to workers on demand,
+//       - collects results and immediately reassigns the next task,
+//       - writes Tecplot output after all tasks complete.
+//
+//     Ranks 1..N-1 (workers):
+//       - receive a task,
+//       - compute Rc/Emin for that location,
+//       - send result back,
+//       - repeat until STOP tag is received.
+//
+//   Task granularity is intentionally set to ONE location per task because the
+//   variance in trajectory count / runtime within a location is already large;
+//   finer granularity (per direction) would increase MPI traffic and bookkeeping.
+//   This one-location dynamic scheme is a good balance for shell/point scans.
+//
+// SERIAL FALLBACK
+//   If AMPS is built/run without MPI or with a single rank, the same code path
+//   executes in serial with identical physics and output format.
+//
+// OUTPUT
+//   Tecplot ASCII files are written by rank 0:
+//     - cutoff_gridless_points.dat
+//     - cutoff_gridless_shells.dat
+//
+// EXTENSIBILITY NOTES
+//   - The cutoff kernel is isolated in EvaluateLocationCutoff() and can be
+//     reused later for flux / transmission-function calculations.
+//   - The direction grid and bisection settings are currently fixed constants;
+//     these can be moved to input-file controls in a future revision.
 //======================================================================================
 
 #include "specfunc.h"
@@ -42,6 +102,8 @@
 #include "constants.PlanetaryData.h"
 #include "GeopackInterface.h"
 
+#include <mpi.h>
+
 extern "C" {
   void t96_01_(int*,double*,double*,double*,double*,double*,double*,double*,double*);
   void t04_s_(int*,double*,double*,double*,double*,double*,double*,double*,double*);
@@ -49,6 +111,9 @@ extern "C" {
 
 namespace {
 
+// Small local 3-vector utility used to keep the implementation self-contained.
+// We intentionally avoid introducing heavier AMPS vector dependencies here
+// because this module is meant to be lightweight and easy to port/refactor.
 struct V3 { double x,y,z; };
 static inline V3 add(const V3&a,const V3&b){return {a.x+b.x,a.y+b.y,a.z+b.z};}
 static inline V3 mul(double s,const V3&a){return {s*a.x,s*a.y,s*a.z};}
@@ -75,6 +140,12 @@ static inline double RigidityFromMomentum_GV(double p,double q_C_abs) {
   return (q_C_abs>0.0) ? (p*SpeedOfLight/q_C_abs/1.0e9) : 0.0;
 }
 
+// Field evaluator wrapper:
+//   - initializes Geopack once using the requested epoch/frame,
+//   - stores Tsyganenko parameters (PARMOD, PS),
+//   - evaluates B = B_IGRF + B_Tsyganenko at arbitrary x(t) during tracing.
+// This object is created per rank. Workers do not communicate field values;
+// each rank evaluates fields locally to minimize MPI traffic.
 class cFieldEvaluator {
 public:
   explicit cFieldEvaluator(const EarthUtil::AmpsParam& p) : prm(p) {
@@ -125,6 +196,17 @@ private:
   double PS;
 };
 
+// Relativistic Boris pusher (magnetic field only).
+// The Boris scheme is used because it is robust and volume-preserving for
+// Lorentz motion, and handles gyration much better than naïve explicit Euler.
+// State variables:
+//   x [m]                  : position
+//   p = gamma m v [kg m/s] : relativistic momentum
+// Inputs:
+//   q_C, m0_kg, dt, field evaluator
+// Notes:
+//   - No electric field is included in this prototype (E=0).
+//   - We update momentum first, then drift position with v_{n+1}.
 static inline void BorisStep(V3& x, V3& p, double q_C, double m0_kg, double dt,
                              const cFieldEvaluator& field) {
   const double p2 = dot(p,p);
@@ -179,6 +261,11 @@ static inline bool LostInnerSphere(const V3& xRe,double rInnerRe) {
   return (std::sqrt(xRe.x*xRe.x + xRe.y*xRe.y + xRe.z*xRe.z) <= rInnerRe);
 }
 
+// Integrate one trajectory and classify it as allowed / forbidden.
+// This is the core expensive kernel called repeatedly by the cutoff search.
+// Runtime variability originates here: depending on the initial direction and
+// rigidity, the orbit may terminate quickly (loss/escape) or run near the cap.
+// This is exactly why the MPI layer uses dynamic scheduling.
 static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
                          const cFieldEvaluator& field,
                          const V3& x0_m,
@@ -199,6 +286,11 @@ static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
   // Convert domain bounds from km (input) to Re for checks.
   const DomainBoxRe boxRe = ToDomainBoxRe(prm.domain);
 
+    // Main trajectory integration loop. Each iteration performs:
+  //   (1) boundary/loss checks at current position,
+  //   (2) one Boris push step.
+  // Boundary checks are done before stepping so immediate out-of-domain /
+  // inner-sphere starting conditions are classified consistently.
   for (int i=0;i<nSteps;i++) {
     V3 xRe{ x.x/_EARTH__RADIUS_, x.y/_EARTH__RADIUS_, x.z/_EARTH__RADIUS_ };
     if (LostInnerSphere(xRe,boxRe.rInner)) return false;
@@ -210,6 +302,9 @@ static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
   return false;
 }
 
+// Build an approximately uniform angular sampling over the sphere using
+// uniform bins in mu=cos(theta) and uniform azimuth bins. Sampling in mu
+// (instead of theta) avoids over-weighting the poles.
 static std::vector<V3> BuildDirGrid(int nZenith,int nAz) {
   std::vector<V3> dirs;
   dirs.reserve(nZenith*nAz);
@@ -229,6 +324,13 @@ static std::vector<V3> BuildDirGrid(int nZenith,int nAz) {
   return dirs;
 }
 
+// Compute cutoff rigidity at one location by scanning all directions and
+// taking the minimum directional cutoff. For each direction:
+//   - evaluate at Rmin and Rmax,
+//   - skip if no allowed orbit exists in the bracket,
+//   - if both are allowed then directional cutoff <= Rmin,
+//   - otherwise refine the allowed/forbidden transition by bisection.
+// This produces a practical directional cutoff estimate for the chosen grid.
 static double CutoffAtPoint_GV(const EarthUtil::AmpsParam& prm,
                                const cFieldEvaluator& field,
                                const V3& x0_m,
@@ -238,6 +340,10 @@ static double CutoffAtPoint_GV(const EarthUtil::AmpsParam& prm,
                                int maxIter=24) {
   double Rc=-1.0;
 
+    // Loop over direction samples. This loop is intentionally local and serial
+  // within a task to keep MPI task granularity coarse (one location per task).
+  // Coarse tasks reduce communication overhead and still balance well because
+  // cost variance across locations is high.
   for (const auto& d : dirs) {
     // Backtrace convention
     V3 v0 = mul(-1.0, d);
@@ -252,6 +358,11 @@ static double CutoffAtPoint_GV(const EarthUtil::AmpsParam& prm,
     if (!ahi) continue;
 
     double lo=Rmin_GV, hi=Rmax_GV;
+        // Bisection search for the directional cutoff within [lo,hi].
+    // Invariant after each iteration:
+    //   lo -> forbidden (or less allowed),
+    //   hi -> allowed.
+    // We stop after maxIter fixed iterations for deterministic cost.
     for (int it=0;it<maxIter;it++) {
       double mid=0.5*(lo+hi);
       bool a = TraceAllowed(prm,field,x0_m,v0,mid);
@@ -264,6 +375,9 @@ static double CutoffAtPoint_GV(const EarthUtil::AmpsParam& prm,
   return Rc;
 }
 
+// Tecplot writer for explicit point list mode.
+// Coordinates are written exactly as provided by the parser (km in current
+// gridless convention), together with computed Rc and Emin.
 static void WriteTecplotPoints(const std::vector<EarthUtil::Vec3>& points,
                                const std::vector<double>& Rc,
                                const std::vector<double>& Emin) {
@@ -281,6 +395,9 @@ static void WriteTecplotPoints(const std::vector<EarthUtil::Vec3>& points,
   std::fclose(f);
 }
 
+// Tecplot writer for shell mode.
+// We emit one zone per altitude and keep the logical structured indexing
+// (I=nLon, J=nLat) so maps are easy to plot as contours on lon/lat grids.
 static void WriteTecplotShells(const std::vector<double>& shellAlt_km,
                                double res_deg,
                                const std::vector< std::vector<double> >& RcShell,
@@ -317,15 +434,155 @@ static void WriteTecplotShells(const std::vector<double>& shellAlt_km,
   std::fclose(f);
 }
 
+//--------------------------------------------------------------------------------------
+// MPI helpers (dynamic scheduling for variable-cost trajectory tracing)
+//--------------------------------------------------------------------------------------
+// WHY DYNAMIC SCHEDULING?
+//   Trajectory integration wall-time is highly non-uniform. Different injection
+//   points, pitch angles, and rigidities can terminate quickly (escape/loss) or
+//   consume the full time cap. A static partition causes severe load imbalance.
+//   We therefore use a master/worker scheduler with one location per task.
+//
+//   This approach is well-suited for cutoff-rigidity orbit tracing because task
+//   cost variance is dominated by orbit lifetime and bisection convergence, both
+//   of which vary strongly with position and direction. Dynamic scheduling keeps
+//   workers busy and minimizes idle walltime.
+//--------------------------------------------------------------------------------------
+
+//--------------------------------------------------------------------------------------
+// MPI runtime guard
+//--------------------------------------------------------------------------------------
+// The gridless cutoff solver is often tested locally as `./amps -mode gridless ...`
+// without `mpirun`. Some MPI implementations support this as a valid single-rank run,
+// but only if MPI is initialized before any communicator calls. The earlier version of
+// this file called MPI_Comm_rank/MPI_Comm_size directly, which can abort when MPI_Init
+// has not yet been called by the surrounding AMPS code.
+//
+// To make the solver robust in all launch modes, we:
+//   1) query whether MPI is already initialized,
+//   2) initialize it locally only if needed,
+//   3) finalize only if *this module* initialized it.
+//
+// This preserves compatibility with the broader AMPS MPI lifecycle while allowing a
+// safe serial fallback when the executable is run without mpirun.
+struct cGridlessMpiRuntime {
+  int rank = 0;
+  int size = 1;
+  bool initializedByThisModule = false;
+};
+
+static inline cGridlessMpiRuntime InitGridlessMpiRuntime() {
+  cGridlessMpiRuntime rt;
+  int mpiInitialized = 0;
+  MPI_Initialized(&mpiInitialized);
+
+  if (!mpiInitialized) {
+    int argc_dummy = 0;
+    char** argv_dummy = nullptr;
+    MPI_Init(&argc_dummy, &argv_dummy);
+    rt.initializedByThisModule = true;
+  }
+
+  MPI_Comm_rank(MPI_COMM_WORLD, &rt.rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &rt.size);
+  return rt;
+}
+
+static inline void FinalizeGridlessMpiRuntime(cGridlessMpiRuntime& rt) {
+  if (!rt.initializedByThisModule) return;
+  int mpiFinalized = 0;
+  MPI_Finalized(&mpiFinalized);
+  if (!mpiFinalized) MPI_Finalize();
+  rt.initializedByThisModule = false;
+}
+
+// Thin wrapper used by both serial and MPI code paths.
+// It keeps the expensive per-location computation in one place so master/worker
+// and serial loops share exactly the same physics kernel and output conversion.
+static inline void EvaluateLocationCutoff(const EarthUtil::AmpsParam& prm,
+                                          const cFieldEvaluator& field,
+                                          const std::vector<V3>& dirs,
+                                          double Rmin,double Rmax,
+                                          const V3& x0_m,
+                                          double qabs,double m0,
+                                          double& rc_out,double& Emin_out) {
+  rc_out = CutoffAtPoint_GV(prm,field,x0_m,dirs,Rmin,Rmax);
+  Emin_out = -1.0;
+  if (rc_out>0.0) {
+    const double pCut = MomentumFromRigidity_GV(rc_out,qabs);
+    Emin_out = KineticEnergyFromMomentum_MeV(pCut,m0);
+  }
+}
+
+
+enum { GRIDLESS_MPI_TAG_TASK=5001, GRIDLESS_MPI_TAG_RESULT=5002, GRIDLESS_MPI_TAG_STOP=5003 };
+struct PointTaskPayload { int idx; double x_m,y_m,z_m; };
+struct PointResultPayload { int idx; double Rc_GV,Emin_MeV; };
+struct ShellTaskPayload { int idx; double lon_deg,lat_deg,r_m; };
+struct ShellResultPayload { int idx; double Rc_GV,Emin_MeV; };
+
+static inline V3 Sph2CartDeg(double lonDeg,double latDeg,double r_m) {
+  const double lon=lonDeg*M_PI/180.0, lat=latDeg*M_PI/180.0;
+  const double cl=std::cos(lat);
+  return { r_m*cl*std::cos(lon), r_m*cl*std::sin(lon), r_m*std::sin(lat)};
+}
+
+// Worker loop for explicit point tasks.
+// The worker blocks waiting for either:
+//   - GRIDLESS_MPI_TAG_TASK : compute one point and send result
+//   - GRIDLESS_MPI_TAG_STOP : terminate worker loop
+// Any unexpected tag is treated as a hard error to avoid silent corruption.
+static void RunPointWorkerLoopMPI(const EarthUtil::AmpsParam& prm,const cFieldEvaluator& field,
+                                  const std::vector<V3>& dirs,double Rmin,double Rmax,double qabs,double m0) {
+  while (true) {
+    PointTaskPayload task{}; MPI_Status st;
+    MPI_Recv(&task,sizeof(task),MPI_BYTE,0,MPI_ANY_TAG,MPI_COMM_WORLD,&st);
+    if (st.MPI_TAG==GRIDLESS_MPI_TAG_STOP) break;
+    if (st.MPI_TAG!=GRIDLESS_MPI_TAG_TASK) throw std::runtime_error("Unexpected MPI tag (POINT worker)");
+    PointResultPayload out{}; out.idx=task.idx;
+    EvaluateLocationCutoff(prm,field,dirs,Rmin,Rmax,V3{task.x_m,task.y_m,task.z_m},qabs,m0,out.Rc_GV,out.Emin_MeV);
+    MPI_Send(&out,sizeof(out),MPI_BYTE,0,GRIDLESS_MPI_TAG_RESULT,MPI_COMM_WORLD);
+  }
+}
+
+// Worker loop for shell-grid tasks (lon/lat at a given radius).
+// Same protocol as point worker, but payload carries spherical coordinates.
+static void RunShellWorkerLoopMPI(const EarthUtil::AmpsParam& prm,const cFieldEvaluator& field,
+                                  const std::vector<V3>& dirs,double Rmin,double Rmax,double qabs,double m0) {
+  while (true) {
+    ShellTaskPayload task{}; MPI_Status st;
+    MPI_Recv(&task,sizeof(task),MPI_BYTE,0,MPI_ANY_TAG,MPI_COMM_WORLD,&st);
+    if (st.MPI_TAG==GRIDLESS_MPI_TAG_STOP) break;
+    if (st.MPI_TAG!=GRIDLESS_MPI_TAG_TASK) throw std::runtime_error("Unexpected MPI tag (SHELL worker)");
+    ShellResultPayload out{}; out.idx=task.idx;
+    EvaluateLocationCutoff(prm,field,dirs,Rmin,Rmax,Sph2CartDeg(task.lon_deg,task.lat_deg,task.r_m),qabs,m0,out.Rc_GV,out.Emin_MeV);
+    MPI_Send(&out,sizeof(out),MPI_BYTE,0,GRIDLESS_MPI_TAG_RESULT,MPI_COMM_WORLD);
+  }
+}
+
 }
 
 namespace Earth {
 namespace GridlessMode {
 
+// Top-level driver called from srcEarth/main.cpp when '-mode gridless' is
+// selected. This function:
+//   1) Initializes MPI rank/size info (if enabled),
+//   2) Builds the rigidity bracket from input energy limits,
+//   3) Initializes field evaluator and direction grid,
+//   4) Executes POINTS or SHELLS workflow (serial or MPI dynamic scheduling),
+//   5) Writes Tecplot output on rank 0.
 int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
+  cGridlessMpiRuntime mpiRt = InitGridlessMpiRuntime();
+  try {
+  const int mpiRank = mpiRt.rank;
+  const int mpiSize = mpiRt.size;
   const double qabs = std::fabs(prm.species.charge_e * ElectronCharge);
   const double m0   = prm.species.mass_amu * _AMU_;
 
+  // Convert user-specified kinetic-energy bracket to rigidity bracket.
+  // The cutoff search itself is done in rigidity because rigidity is the
+  // natural control parameter for geomagnetic transmission/cutoff work.
   const double pMin = MomentumFromKineticEnergy_MeV(prm.cutoff.eMin_MeV,m0);
   const double pMax = MomentumFromKineticEnergy_MeV(prm.cutoff.eMax_MeV,m0);
   const double Rmin = RigidityFromMomentum_GV(pMin,qabs);
@@ -335,13 +592,16 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     throw std::runtime_error("Invalid cutoff energy bracket in input; cannot compute rigidity range");
   }
 
-  cFieldEvaluator field(prm);
-
-  // Direction grid (prototype constants)
+  // Direction grid controls are fixed in this prototype. We declare them before
+  // the summary so the summary can report the intended angular resolution even
+  // before field initialization and direction-vector construction occurs.
   const int nZenith=24;
   const int nAz=48;
-  std::vector<V3> dirs = BuildDirGrid(nZenith,nAz);
 
+  // Print a run summary early (before field initialization) so the user gets
+  // immediate feedback even if later initialization fails (e.g., unsupported
+  // field model, Geopack/Tsyganenko setup issue, bad runtime parameters).
+  if (mpiRank==0) {
   std::cout << "================ Gridless cutoff rigidity ================\n";
   std::cout << "Run ID          : " << prm.runId << "\n";
   std::cout << "Mode            : GRIDLESS\n";
@@ -350,7 +610,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   std::cout << "Species         : " << prm.species.name << " (q=" << prm.species.charge_e
             << " e, m=" << prm.species.mass_amu << " amu)\n";
   std::cout << "Rigidity bracket: [" << Rmin << ", " << Rmax << "] GV\n";
-  std::cout << "Directions grid : " << dirs.size() << " (nZenith=" << nZenith << ", nAz=" << nAz << ")\n";
+  std::cout << "Directions grid : " << (nZenith*nAz) << " (nZenith=" << nZenith << ", nAz=" << nAz << ")\n";
   const DomainBoxRe boxRe = ToDomainBoxRe(prm.domain);
   std::cout << "Domain box (km) : x[" << prm.domain.xMin << "," << prm.domain.xMax << "] "
             << "y[" << prm.domain.yMin << "," << prm.domain.yMax << "] "
@@ -361,31 +621,82 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
             << "z[" << boxRe.zMin << "," << boxRe.zMax << "] "
             << "rInner=" << boxRe.rInner << "\n";
   std::cout << "dtTrace [s]     : " << prm.numerics.dtTrace_s << "\n";
+  std::cout << "MPI ranks        : " << mpiSize << "\n";
+  std::cout << "Scheduling       : " << ((mpiSize>1) ? "dynamic master/worker (per-location tasks)" : "serial") << "\n";
   std::cout << "==========================================================\n";
+  std::cout.flush();
+  }
+
+  cFieldEvaluator field(prm);
+
+  // Direction grid (prototype constants). These values control angular
+  // resolution of the directional cutoff search and therefore the accuracy/
+  // cost tradeoff. They can be exposed in the input file in a later revision.
+  std::vector<V3> dirs = BuildDirGrid(nZenith,nAz);
 
   if (prm.output.mode=="POINTS") {
     std::vector<double> Rc(prm.output.points.size(),-1.0);
     std::vector<double> Emin(prm.output.points.size(),-1.0);
 
-    for (size_t i=0;i<prm.output.points.size();i++) {
-      const auto& P = prm.output.points[i];
-
-      // IMPORTANT (UNITS): POINT coordinates are interpreted as GSM kilometers.
-      V3 x0_m{ P.x*1000.0, P.y*1000.0, P.z*1000.0 };
-
-      double rc = CutoffAtPoint_GV(prm,field,x0_m,dirs,Rmin,Rmax);
-      Rc[i]=rc;
-      if (rc>0.0) {
-        double pCut = MomentumFromRigidity_GV(rc,qabs);
-        Emin[i] = KineticEnergyFromMomentum_MeV(pCut,m0);
+    if (mpiSize>1) {
+      if (mpiRank==0) {
+        size_t nextTask = 0, nDone = 0;
+                // Send one point task to a worker. Returns false when the global task
+        // queue is exhausted. This lambda is used both for initial filling of
+        // workers and for refill-after-result dynamic scheduling.
+        auto sendPointTask = [&](int dest)->bool {
+          if (nextTask >= prm.output.points.size()) return false;
+          const auto& P = prm.output.points[nextTask];
+          PointTaskPayload t{}; t.idx = static_cast<int>(nextTask);
+          t.x_m = P.x*1000.0; t.y_m = P.y*1000.0; t.z_m = P.z*1000.0;
+          MPI_Send(&t,sizeof(t),MPI_BYTE,dest,GRIDLESS_MPI_TAG_TASK,MPI_COMM_WORLD);
+          ++nextTask; return true;
+        };
+        for (int r=1; r<mpiSize; ++r) {
+          if (!sendPointTask(r)) MPI_Send(nullptr,0,MPI_BYTE,r,GRIDLESS_MPI_TAG_STOP,MPI_COMM_WORLD);
+        }
+                // Dynamic scheduling loop:
+        //   receive a completed result from any worker,
+        //   store it,
+        //   immediately refill that same worker with the next task (or STOP).
+        while (nDone < prm.output.points.size()) {
+          PointResultPayload out{}; MPI_Status st;
+          MPI_Recv(&out,sizeof(out),MPI_BYTE,MPI_ANY_SOURCE,GRIDLESS_MPI_TAG_RESULT,MPI_COMM_WORLD,&st);
+          if (out.idx>=0 && static_cast<size_t>(out.idx)<Rc.size()) { Rc[out.idx]=out.Rc_GV; Emin[out.idx]=out.Emin_MeV; }
+          ++nDone;
+          if (!sendPointTask(st.MPI_SOURCE)) MPI_Send(nullptr,0,MPI_BYTE,st.MPI_SOURCE,GRIDLESS_MPI_TAG_STOP,MPI_COMM_WORLD);
+        }
       }
-
-      std::cout << "Point " << i << " (" << P.x << "," << P.y << "," << P.z << ")"
-                << " -> Rc=" << Rc[i] << " GV, Emin=" << Emin[i] << " MeV\n";
+      else {
+        RunPointWorkerLoopMPI(prm,field,dirs,Rmin,Rmax,qabs,m0);
+      }
+            // Broadcast final arrays so all ranks leave this function with the same
+      // state (useful for debugging and for future extensions that may perform
+      // collective post-processing after cutoff computation).
+      MPI_Bcast(Rc.data(), static_cast<int>(Rc.size()), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+      MPI_Bcast(Emin.data(), static_cast<int>(Emin.size()), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    }
+    else
+    {
+      // Serial fallback: same per-location kernel, no MPI scheduling.
+      for (size_t i=0;i<prm.output.points.size();i++) {
+        const auto& P = prm.output.points[i];
+        V3 x0_m{ P.x*1000.0, P.y*1000.0, P.z*1000.0 };
+        EvaluateLocationCutoff(prm,field,dirs,Rmin,Rmax,x0_m,qabs,m0,Rc[i],Emin[i]);
+      }
     }
 
-    WriteTecplotPoints(prm.output.points,Rc,Emin);
-    std::cout << "Wrote Tecplot: cutoff_gridless_points.dat\n";
+    if (mpiRank==0) {
+      // Serial fallback: same per-location kernel, no MPI scheduling.
+      for (size_t i=0;i<prm.output.points.size();i++) {
+        const auto& P = prm.output.points[i];
+        std::cout << "Point " << i << " (" << P.x << "," << P.y << "," << P.z << ")"
+                  << " -> Rc=" << Rc[i] << " GV, Emin=" << Emin[i] << " MeV\n";
+      }
+      WriteTecplotPoints(prm.output.points,Rc,Emin);
+      std::cout << "Wrote Tecplot: cutoff_gridless_points.dat\n";
+      std::cout.flush();
+    }
   }
   else if (prm.output.mode=="SHELLS") {
     if (prm.output.shellAlt_km.empty()) {
@@ -397,57 +708,94 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     const int nLat = static_cast<int>(std::floor(180.0/d + 0.5)) + 1;
     const int nPts = nLon*nLat;
 
-    auto sph2cart = [](double lonDeg,double latDeg,double r_m)->V3{
-      const double lon=lonDeg*M_PI/180.0;
-      const double lat=latDeg*M_PI/180.0;
-      const double cl=std::cos(lat);
-      return { r_m*cl*std::cos(lon), r_m*cl*std::sin(lon), r_m*std::sin(lat)};
-    };
-
     std::vector< std::vector<double> > RcShell(prm.output.shellAlt_km.size());
     std::vector< std::vector<double> > EminShell(prm.output.shellAlt_km.size());
 
+    // Process shell altitudes one-by-one. Keeping altitude as the outer loop
+    // limits memory footprint and lets us reuse the same worker code with a
+    // simple task payload (lon, lat, r).
     for (size_t s=0;s<prm.output.shellAlt_km.size();s++) {
       const double alt_km=prm.output.shellAlt_km[s];
+      // Radius of the shell in meters (Earth radius + altitude).
       const double r_m = (_RADIUS_(_EARTH_) + alt_km*1000.0);
 
       RcShell[s].assign(nPts,-1.0);
       EminShell[s].assign(nPts,-1.0);
 
-      for (int j=0;j<nLat;j++) {
-        double lat=-90.0 + d*j;
-        if (lat>90.0) lat=90.0;
-
-        for (int i=0;i<nLon;i++) {
-          double lon=d*i;
-          int k=i+nLon*j;
-
-          V3 x0 = sph2cart(lon,lat,r_m);
-          double rc = CutoffAtPoint_GV(prm,field,x0,dirs,Rmin,Rmax);
-          RcShell[s][k]=rc;
-          if (rc>0.0) {
-            double pCut = MomentumFromRigidity_GV(rc,qabs);
-            EminShell[s][k] = KineticEnergyFromMomentum_MeV(pCut,m0);
+      if (mpiSize>1) {
+        if (mpiRank==0) {
+          int nextK=0, nDone=0;
+                    // Send one shell-grid location (lon/lat at current shell radius).
+          // Task index k maps to (i,j) using the Tecplot-compatible ordering.
+          auto sendShellTask = [&](int dest)->bool {
+            if (nextK>=nPts) return false;
+            const int k=nextK++;
+            const int i=k % nLon;
+            const int j=k / nLon;
+            double lat=-90.0 + d*j; if (lat>90.0) lat=90.0;
+            double lon=d*i;
+            ShellTaskPayload t{}; t.idx=k; t.lon_deg=lon; t.lat_deg=lat; t.r_m=r_m;
+            MPI_Send(&t,sizeof(t),MPI_BYTE,dest,GRIDLESS_MPI_TAG_TASK,MPI_COMM_WORLD);
+            return true;
+          };
+          for (int r=1; r<mpiSize; ++r) {
+            if (!sendShellTask(r)) MPI_Send(nullptr,0,MPI_BYTE,r,GRIDLESS_MPI_TAG_STOP,MPI_COMM_WORLD);
+          }
+                    // Same dynamic scheduling pattern as POINTS mode, but for shell
+          // grid cells of the current altitude.
+          while (nDone<nPts) {
+            ShellResultPayload out{}; MPI_Status st;
+            MPI_Recv(&out,sizeof(out),MPI_BYTE,MPI_ANY_SOURCE,GRIDLESS_MPI_TAG_RESULT,MPI_COMM_WORLD,&st);
+            if (out.idx>=0 && out.idx<nPts) { RcShell[s][out.idx]=out.Rc_GV; EminShell[s][out.idx]=out.Emin_MeV; }
+            ++nDone;
+            if (!sendShellTask(st.MPI_SOURCE)) MPI_Send(nullptr,0,MPI_BYTE,st.MPI_SOURCE,GRIDLESS_MPI_TAG_STOP,MPI_COMM_WORLD);
+          }
+        }
+        else {
+          RunShellWorkerLoopMPI(prm,field,dirs,Rmin,Rmax,qabs,m0);
+        }
+        MPI_Bcast(RcShell[s].data(), nPts, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Bcast(EminShell[s].data(), nPts, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+      }
+      else
+      {
+        // Serial fallback for shell grid traversal.
+        for (int j=0;j<nLat;j++) {
+          double lat=-90.0 + d*j; if (lat>90.0) lat=90.0;
+          for (int i=0;i<nLon;i++) {
+            double lon=d*i; int k=i+nLon*j;
+            EvaluateLocationCutoff(prm,field,dirs,Rmin,Rmax,Sph2CartDeg(lon,lat,r_m),qabs,m0,RcShell[s][k],EminShell[s][k]);
           }
         }
       }
 
-      std::cout << "Shell alt=" << alt_km << " km done.\n";
+      if (mpiRank==0) { std::cout << "Shell alt=" << alt_km << " km done.\n"; std::cout.flush(); }
     }
 
-    WriteTecplotShells(prm.output.shellAlt_km,prm.output.shellRes_deg,RcShell,EminShell);
-    std::cout << "Wrote Tecplot: cutoff_gridless_shells.dat\n";
+    if (mpiRank==0) {
+      WriteTecplotShells(prm.output.shellAlt_km,prm.output.shellRes_deg,RcShell,EminShell);
+      std::cout << "Wrote Tecplot: cutoff_gridless_shells.dat\n";
+      std::cout.flush();
+    }
   }
   else {
     throw std::runtime_error("Unsupported OUTPUT_MODE for gridless cutoff solver: "+prm.output.mode);
   }
 
-  if (prm.output.coords!="GSM") {
+  if (mpiRank==0 && prm.output.coords!="GSM") {
     std::cout << "[gridless] NOTE: OUTPUT_COORDS=" << prm.output.coords
               << ". This prototype interprets positions as GSM.\n";
+    std::cout.flush();
   }
 
+  if (mpiSize>1) MPI_Barrier(MPI_COMM_WORLD);
+  FinalizeGridlessMpiRuntime(mpiRt);
   return 0;
+  }
+  catch (...) {
+    FinalizeGridlessMpiRuntime(mpiRt);
+    throw;
+  }
 }
 
 }
