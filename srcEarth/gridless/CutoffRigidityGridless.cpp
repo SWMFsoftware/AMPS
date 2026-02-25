@@ -73,9 +73,69 @@
 //   finer granularity (per direction) would increase MPI traffic and bookkeeping.
 //   This one-location dynamic scheme is a good balance for shell/point scans.
 //
+// PROGRESS BAR IMPLEMENTATION
+//   Because orbit integration cost is unpredictable and varies by orders of 
+//   magnitude across different locations, a simple "percent complete" metric
+//   based on launched tasks would be misleading. Instead, the progress bar
+//   tracks COMPLETED tasks returned to rank 0, providing accurate estimates
+//   of remaining work under dynamic scheduling.
+//
+//   DESIGN RATIONALE:
+//     - MPI-aware: only rank 0 prints (no duplicate output from workers)
+//     - Task-based metric: progress = (tasks_done / tasks_total)
+//     - Wall-time ETA: uses MPI_Wtime() for accurate elapsed time
+//     - Throttled updates: prints only when percent changes or 0.5s elapsed
+//     - Output to stderr: keeps stdout clean for redirected data files
+//
+//   BUFFERING ROBUSTNESS:
+//     Batch schedulers and redirected streams often buffer stderr aggressively,
+//     preventing real-time visibility. Three layers of defense ensure progress
+//     appears even in heavily buffered environments:
+//
+//     1) Early unbuffering (line ~683):
+//          setvbuf(stderr, nullptr, _IONBF, 0);  // rank 0, before any output
+//
+//     2) Periodic forced newlines (every N=10 updates by default):
+//          In environments that ignore unbuffering requests entirely, this
+//          ensures users see progress lines at regular task intervals rather
+//          than waiting for process termination to flush buffers.
+//
+//     3) Explicit fflush(stderr) after every print:
+//          Combined with unbuffering, this maximizes visibility in all but
+//          the most pathological buffering scenarios.
+//
+//   TUNING PARAMETERS (struct MPIRank0ProgressBar, lines ~146-147, 184):
+//     kNewlineEveryNUpdates = 10   // Force newline every N task completions
+//     time_threshold = 0.5         // Minimum seconds between updates
+//
+//     To increase output frequency:
+//       - Reduce kNewlineEveryNUpdates (e.g., 5 for updates every 5 tasks)
+//       - Reduce time_threshold (e.g., 0.25 for updates up to 4 times/sec)
+//
+//     To decrease output frequency (quieter logs):
+//       - Increase kNewlineEveryNUpdates (e.g., 50 or 100)
+//       - Increase time_threshold (e.g., 2.0 for updates every 2 seconds)
+//
+//   GRACEFUL DEGRADATION:
+//     - Best case (interactive terminal): single-line updating progress bar
+//           [Rank 0] SHELL 1/2 [########----] 45.67% (228/500) ETA 00:00:35
+//     - Fallback (batch/redirected): newline every N updates
+//           [Rank 0] SHELL 1/2 [####--------] 15.23% (76/500)  ETA 00:01:23
+//           [Rank 0] SHELL 1/2 [########----] 30.45% (152/500) ETA 00:00:58
+//           [Rank 0] SHELL 1/2 [############] 45.67% (228/500) ETA 00:00:35
+//     - Worst case (complete buffering): at least final message appears
+//
+//   SHELL MODE SPECIFICS:
+//     When OUTPUT_MODE=SHELLS, a separate progress bar is instantiated for EACH
+//     shell altitude. The progress unit is still one SEARCH POINT (shell grid
+//     cell / task), not one altitude. This provides fine-grained feedback even
+//     for large shell grids (e.g., 0.5-degree resolution -> ~130k cells).
+//
 // SERIAL FALLBACK
 //   If AMPS is built/run without MPI or with a single rank, the same code path
-//   executes in serial with identical physics and output format.
+//   executes in serial with identical physics and output format. The progress
+//   bar still appears (rank 0 is the only rank) to provide user feedback during
+//   long serial runs.
 //
 // OUTPUT
 //   Tecplot ASCII files are written by rank 0:
@@ -87,6 +147,8 @@
 //     reused later for flux / transmission-function calculations.
 //   - The direction grid and bisection settings are currently fixed constants;
 //     these can be moved to input-file controls in a future revision.
+//   - Progress bar is self-contained in MPIRank0ProgressBar struct and can be
+//     extracted/reused for other long-running tasks (flux calculations, etc.).
 //======================================================================================
 
 #include "specfunc.h"
@@ -128,6 +190,20 @@ namespace {
 // - Progress is task-based, not step-based (robust under variable trajectory cost).
 // - Output is throttled to avoid flooding stdout / scheduler logs.
 // - Uses MPI_Wtime() (wall clock) for ETA estimation.
+// - Output to stderr with aggressive unbuffering to handle batch environments.
+//
+// BUFFERING STRATEGY
+// ------------------
+// Batch schedulers and redirected streams often ignore unbuffering requests.
+// We employ THREE defensive layers to ensure visibility:
+//   1) Early setvbuf(..., _IONBF, 0) on rank 0 (before any output)
+//   2) Periodic forced newlines (every kNewlineEveryNUpdates tasks)
+//   3) Explicit fflush(stderr) after every print
+//
+// This ensures graceful degradation:
+//   - Best case: single-line updating bar (interactive terminal)
+//   - Fallback: multi-line output with newlines every N updates (batch/redirected)
+//   - Worst case: at least final completion message appears
 //
 // NOTE
 // ----
@@ -135,126 +211,360 @@ namespace {
 // progress unit is still a single SEARCH POINT (shell grid location / task).
 //------------------------------------------------------------------------------
 struct MPIRank0ProgressBar {
-  int total_tasks = 1;
-  int done_tasks  = 0;
-  int update_count = 0;  // Track number of Print() calls for periodic newline
-  double t_start = 0.0;
-  double t_last_print = -1.0;
-  int last_percent_printed = -1;
-  const char* prefix = "[Rank 0] Progress";
+  // ── State variables ──────────────────────────────────────────────────────
+  int total_tasks = 1;            // Total number of tasks to complete
+  int done_tasks  = 0;            // Number of tasks completed so far
+  int update_count = 0;           // Number of Print() calls (for periodic newline)
+  double t_start = 0.0;           // Wall-clock start time (from MPI_Wtime)
+  double t_last_print = -1.0;     // Wall-clock time of last print (for throttling)
+  int last_percent_printed = -1;  // Last integer percent printed (for throttling)
+  const char* prefix = "[Rank 0] Progress";  // Display label (e.g., "POINTS", "SHELL 1/2")
 
-  static const int kBarWidth = 32;
-  static const int kNewlineEveryNUpdates = 1;  // Force newline periodically
+  // ── Tuning parameters ────────────────────────────────────────────────────
+  static const int kBarWidth = 32;              // Width of the [####----] bar in characters
+  static const int kNewlineEveryNUpdates = 10;  // Force newline every N updates (for buffered environments)
+                                                 // Reduce this (e.g., 5) for more frequent output
+                                                 // Increase this (e.g., 50) for quieter logs
 
+  //----------------------------------------------------------------------------
+  // Start: Initialize progress tracking
+  //
+  // Call once at the beginning of a task set (e.g., before processing all
+  // points in POINTS mode, or before processing all cells in one shell).
+  //
+  // Parameters:
+  //   total - Total number of tasks in this set (e.g., number of search points)
+  //   pfx   - Display prefix (e.g., "[Rank 0] POINTS", "[Rank 0] SHELL 1/2")
+  //
+  // Implementation notes:
+  //   - Resets all counters to zero
+  //   - Records start time via MPI_Wtime() for ETA calculation
+  //   - Immediately prints the 0% state via Print(force=true)
+  //----------------------------------------------------------------------------
   void Start(int total, const char* pfx = "[Rank 0] Progress") {
-    total_tasks = (total > 0) ? total : 1;
+    total_tasks = (total > 0) ? total : 1;  // Avoid division by zero
     done_tasks = 0;
     update_count = 0;
     prefix = pfx ? pfx : "[Rank 0] Progress";
-    t_start = MPI_Wtime();
-    t_last_print = -1.0;
-    last_percent_printed = -1;
-    Print(true);
+    t_start = MPI_Wtime();         // Record wall-clock start time
+    t_last_print = -1.0;           // Force first print to happen
+    last_percent_printed = -1;     // Force first print to happen
+    Print(true);                   // Print initial 0% state immediately
   }
 
+  //----------------------------------------------------------------------------
+  // Advance: Increment completed task count
+  //
+  // Call each time a task completes (e.g., each time rank 0 receives a result
+  // from a worker, or each time the serial loop finishes one search point).
+  //
+  // Parameters:
+  //   delta - Number of tasks to add to done_tasks (usually 1)
+  //
+  // Implementation notes:
+  //   - Clamps done_tasks to [0, total_tasks] to handle any bookkeeping errors
+  //   - Calls Print(force=false), which respects throttling rules
+  //----------------------------------------------------------------------------
   void Advance(int delta = 1) {
     done_tasks += delta;
-    if (done_tasks > total_tasks) done_tasks = total_tasks;
-    if (done_tasks < 0) done_tasks = 0;
-    Print(false);
+    if (done_tasks > total_tasks) done_tasks = total_tasks;  // Clamp to total
+    if (done_tasks < 0) done_tasks = 0;                      // Clamp to zero
+    Print(false);  // Print with throttling (may skip if too soon)
   }
 
+  //----------------------------------------------------------------------------
+  // Finish: Mark all tasks complete and print final state
+  //
+  // Call once at the end of a task set to force printing the 100% completion
+  // state and move the cursor to a new line (so subsequent output doesn't
+  // overwrite the progress bar).
+  //
+  // Implementation notes:
+  //   - Forces done_tasks = total_tasks (in case of any rounding/bookkeeping)
+  //   - Calls Print(force=true) to bypass throttling
+  //   - Prints a final newline to move cursor off the progress line
+  //----------------------------------------------------------------------------
   void Finish() {
-    done_tasks = total_tasks;
-    Print(true);
-    std::fprintf(stderr, "\n");
-    std::fflush(stderr);
+    done_tasks = total_tasks;       // Force 100% complete
+    Print(true);                    // Force final print (ignore throttling)
+    std::fprintf(stderr, "\n");     // Move to new line (cursor off progress bar)
+    std::fflush(stderr);            // Ensure output is visible immediately
   }
 
+  //----------------------------------------------------------------------------
+  // Print: Render and output the progress bar
+  //
+  // This is the core rendering function. It formats the progress bar string,
+  // applies throttling rules, handles periodic newlines for buffered
+  // environments, and outputs to stderr.
+  //
+  // Parameters:
+  //   force - If true, bypass throttling and print immediately. Used for
+  //           initial (0%) and final (100%) states, and periodic forced
+  //           newlines. If false, apply throttling rules to avoid flooding
+  //           the output.
+  //
+  // Throttling rules (when force=false):
+  //   - Skip if less than 0.5 seconds elapsed since last print AND
+  //     integer percent hasn't changed. This limits update frequency to
+  //     ~2 Hz while still showing every 1% milestone.
+  //
+  // Buffering strategy:
+  //   - Use \r (carriage return) to overwrite the same line (when possible)
+  //   - Pad output with ~20 spaces to clear trailing chars from longer lines
+  //   - Force newline every kNewlineEveryNUpdates calls (even if force=false)
+  //     to ensure visibility in heavily buffered batch environments
+  //   - Always call fflush(stderr) to push output immediately
+  //
+  // ETA calculation:
+  //   rate = done_tasks / elapsed_seconds
+  //   eta_sec = remaining_tasks / rate
+  //   Format as HH:MM:SS for display
+  //
+  // Output format:
+  //   [prefix] [################----------------] 50.00%  (250/500 tasks)  ETA 00:02:35
+  //   ^^^^^^^^ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^   ^^^^^^   ^^^^^^^^^^^^^^   ^^^^^^^^^^^^
+  //   label    visual bar (kBarWidth chars)      percent  task counters    time estimate
+  //----------------------------------------------------------------------------
   void Print(bool force) {
-    const double now = MPI_Wtime();
-    const double elapsed = std::max(1.0e-12, now - t_start);
-    const double frac = std::min(1.0, std::max(0.0,
+    // ── Compute current state ──────────────────────────────────────────────
+    const double now = MPI_Wtime();                          // Current wall time
+    const double elapsed = std::max(1.0e-12, now - t_start); // Elapsed seconds (avoid div-by-zero)
+    const double frac = std::min(1.0, std::max(0.0,         // Fraction complete [0, 1]
       static_cast<double>(done_tasks) / static_cast<double>(total_tasks)));
-    const int pct = static_cast<int>(frac * 100.0);
+    const int pct = static_cast<int>(frac * 100.0);         // Integer percent [0, 100]
 
-    // Throttle updates: print immediately if forced; otherwise update when
-    // integer percent changes or after ~1 second has elapsed.
+    // ── Throttling logic ────────────────────────────────────────────────────
+    // Skip printing if all of the following are true:
+    //   - force=false (not an initial/final/forced update)
+    //   - less than 0.5 seconds have elapsed since last print
+    //   - integer percent hasn't changed
+    // This keeps update rate reasonable (~2 Hz max) while showing all 1% steps.
     if (!force) {
-      const bool too_soon = (t_last_print >= 0.0) && ((now - t_last_print) < 1.0);
+      const bool too_soon = (t_last_print >= 0.0) && ((now - t_last_print) < 0.5);
       const bool same_pct = (pct == last_percent_printed);
-      if (too_soon && same_pct) return;
+      if (too_soon && same_pct) return;  // Skip this update
     }
 
+    // ── ETA calculation ─────────────────────────────────────────────────────
     const double rate = static_cast<double>(done_tasks) / elapsed; // tasks/sec
-    const int remain = std::max(0, total_tasks - done_tasks);
-    const double eta_sec = (rate > 1.0e-12) ? (static_cast<double>(remain) / rate) : 0.0;
+    const int remain = std::max(0, total_tasks - done_tasks);      // tasks left
+    const double eta_sec = (rate > 1.0e-12) 
+        ? (static_cast<double>(remain) / rate) 
+        : 0.0;  // Avoid division by zero when no tasks done yet
 
-    const int eta_h = static_cast<int>(eta_sec / 3600.0);
-    const int eta_m = (static_cast<int>(eta_sec) / 60) % 60;
-    const int eta_s = static_cast<int>(eta_sec) % 60;
+    // Convert ETA from seconds to HH:MM:SS format
+    const int eta_h = static_cast<int>(eta_sec / 3600.0);        // Hours
+    const int eta_m = (static_cast<int>(eta_sec) / 60) % 60;     // Minutes (mod 60)
+    const int eta_s = static_cast<int>(eta_sec) % 60;            // Seconds (mod 60)
 
+    // ── Build visual progress bar ───────────────────────────────────────────
+    // Compute how many characters should be filled ('#') vs empty ('-')
     int fill = static_cast<int>(frac * static_cast<double>(kBarWidth) + 0.5);
-    if (fill < 0) fill = 0;
+    if (fill < 0) fill = 0;                // Clamp to [0, kBarWidth]
     if (fill > kBarWidth) fill = kBarWidth;
 
+    // Build the bar string: "################----------------"
     char bar[kBarWidth + 1];
     for (int i = 0; i < kBarWidth; ++i) bar[i] = (i < fill ? '#' : '-');
-    bar[kBarWidth] = '\0';
+    bar[kBarWidth] = '\0';  // Null-terminate
 
-    // Pad with ~20 spaces at end to clear any trailing characters from longer previous output
+    // ── Output formatted progress line ──────────────────────────────────────
+    // Use \r to return cursor to line start (overwrites previous line).
+    // Pad with ~20 spaces at end to clear trailing characters from any
+    // previous longer output (e.g., when transitioning from "SHELL 10/10"
+    // to "SHELL 1/2", the prefix gets shorter).
     std::fprintf(stderr,
       "\r%s [%s] %6.2f%%  (%d/%d tasks)  ETA %02d:%02d:%02d                    ",
       prefix, bar, 100.0 * frac, done_tasks, total_tasks, eta_h, eta_m, eta_s);
     
+    // ── Periodic forced newline for buffered environments ───────────────────
     // In severely buffered environments (batch schedulers, heavy redirection),
     // even explicit fflush(stderr) with _IONBF mode may not show up until
-    // process termination. Force a newline every N updates to guarantee SOMETHING
-    // appears, even if it's not as pretty as a single-line updating bar.
+    // process termination. Force a newline every kNewlineEveryNUpdates to
+    // guarantee SOMETHING appears, even if it's not as pretty as a single-line
+    // updating bar. This trades visual elegance for robustness.
     ++update_count;
     const bool force_newline = (update_count % kNewlineEveryNUpdates == 0) || force;
     if (force_newline) {
-      std::fprintf(stderr, "\n");
+      std::fprintf(stderr, "\n");  // Move to next line
     }
     
-    std::fflush(stderr);
+    std::fflush(stderr);  // Push output immediately (critical for unbuffered mode)
 
-    t_last_print = now;
-    last_percent_printed = pct;
+    // ── Update state for next call ──────────────────────────────────────────
+    t_last_print = now;                // Record this print time
+    last_percent_printed = pct;        // Record this percent value
   }
 };
 
 
-// Small local 3-vector utility used to keep the implementation self-contained.
+//==============================================================================
+// Small local 3-vector utility
+//==============================================================================
 // We intentionally avoid introducing heavier AMPS vector dependencies here
 // because this module is meant to be lightweight and easy to port/refactor.
-struct V3 { double x,y,z; };
-static inline V3 add(const V3&a,const V3&b){return {a.x+b.x,a.y+b.y,a.z+b.z};}
-static inline V3 mul(double s,const V3&a){return {s*a.x,s*a.y,s*a.z};}
-static inline double dot(const V3&a,const V3&b){return a.x*b.x+a.y*b.y+a.z*b.z;}
-static inline V3 cross(const V3&a,const V3&b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
-static inline double norm(const V3&a){return std::sqrt(dot(a,a));}
-static inline V3 unit(const V3&a){double n=norm(a); return (n>0)?mul(1.0/n,a):V3{0,0,0};}
+// These inline functions provide basic 3D vector operations for particle
+// positions, velocities, and magnetic field vectors.
+//==============================================================================
+struct V3 { 
+  double x, y, z; 
+};
 
+// Vector addition: c = a + b
+static inline V3 add(const V3&a, const V3&b) {
+  return {a.x+b.x, a.y+b.y, a.z+b.z};
+}
+
+// Scalar multiplication: c = s * a
+static inline V3 mul(double s, const V3&a) {
+  return {s*a.x, s*a.y, s*a.z};
+}
+
+// Dot product: c = a · b
+static inline double dot(const V3&a, const V3&b) {
+  return a.x*b.x + a.y*b.y + a.z*b.z;
+}
+
+// Cross product: c = a × b
+// Using right-hand rule: (x,y,z) × (u,v,w) = (yw-zv, zu-xw, xv-yu)
+static inline V3 cross(const V3&a, const V3&b) {
+  return {a.y*b.z - a.z*b.y,
+          a.z*b.x - a.x*b.z,
+          a.x*b.y - a.y*b.x};
+}
+
+// Euclidean norm: ||a|| = sqrt(a · a)
+static inline double norm(const V3&a) {
+  return std::sqrt(dot(a,a));
+}
+
+// Unit vector: â = a / ||a||
+// Returns zero vector if input is zero (avoids division by zero)
+static inline V3 unit(const V3&a) {
+  double n = norm(a);
+  return (n > 0) ? mul(1.0/n, a) : V3{0,0,0};
+}
+
+//==============================================================================
+// Relativistic energy, momentum, and rigidity conversions
+//==============================================================================
+// These functions convert between kinetic energy (MeV), momentum (SI), and
+// magnetic rigidity (GV) using special-relativistic kinematics.
+//
+// DEFINITIONS:
+//   E_k   = kinetic energy [MeV]
+//   E     = total energy = E_k + m₀c² [Joules]
+//   p     = relativistic momentum [kg·m/s]
+//   R     = magnetic rigidity = pc/|q| [GV = 10⁹ eV/c]
+//   m₀    = rest mass [kg]
+//   q     = particle charge [Coulomb]
+//   c     = speed of light [m/s]
+//
+// RELATIONS (special relativity):
+//   E² = (pc)² + (m₀c²)²              [energy-momentum relation]
+//   p  = sqrt(E² - (m₀c²)²) / c       [solve for p]
+//   E  = sqrt((pc)² + (m₀c²)²)        [solve for E]
+//   R  = pc / |q|                      [rigidity definition]
+//
+// UNIT CONVERSIONS:
+//   1 MeV = 1e6 eV = 1e6 * ElectronCharge [Joules]
+//   1 GV  = 1e9 V = 1e9 eV/c per unit charge
+//
+// USAGE:
+//   These conversions are used to:
+//     1) Convert input energy bracket [eMin, eMax] to rigidity bracket [Rmin, Rmax]
+//     2) Convert computed cutoff rigidity Rc back to minimum kinetic energy Emin
+//==============================================================================
+
+//------------------------------------------------------------------------------
+// MomentumFromKineticEnergy_MeV: E_k [MeV] → p [kg·m/s]
+//
+// Converts particle kinetic energy to relativistic momentum using:
+//   E_total = E_k + m₀c²
+//   p = sqrt(E_total² - (m₀c²)²) / c
+//
+// Parameters:
+//   E_MeV - kinetic energy in MeV
+//   m0_kg - rest mass in kilograms
+//
+// Returns:
+//   Relativistic momentum in SI units [kg·m/s]
+//
+// Used for:
+//   Converting input energy bracket to momentum for rigidity calculation
+//------------------------------------------------------------------------------
 static inline double MomentumFromKineticEnergy_MeV(double E_MeV,double m0_kg) {
-  const double E_J = E_MeV * 1.0e6 * ElectronCharge;
-  return Relativistic::Energy2Momentum(E_J,m0_kg);
+  const double E_J = E_MeV * 1.0e6 * ElectronCharge;  // MeV → Joules
+  return Relativistic::Energy2Momentum(E_J,m0_kg);    // AMPS utility (E→p)
 }
 
+//------------------------------------------------------------------------------
+// KineticEnergyFromMomentum_MeV: p [kg·m/s] → E_k [MeV]
+//
+// Converts relativistic momentum to kinetic energy using:
+//   E_total = sqrt((pc)² + (m₀c²)²)
+//   E_k = E_total - m₀c²
+//
+// Parameters:
+//   p     - relativistic momentum in SI [kg·m/s]
+//   m0_kg - rest mass in kilograms
+//
+// Returns:
+//   Kinetic energy in MeV
+//
+// Used for:
+//   Converting cutoff momentum back to minimum energy for output
+//------------------------------------------------------------------------------
 static inline double KineticEnergyFromMomentum_MeV(double p,double m0_kg) {
-  const double E_J = Relativistic::Momentum2Energy(p,m0_kg);
-  return E_J / (1.0e6 * ElectronCharge);
+  const double E_J = Relativistic::Momentum2Energy(p,m0_kg);  // AMPS utility (p→E)
+  return E_J / (1.0e6 * ElectronCharge);  // Joules → MeV
 }
 
+//------------------------------------------------------------------------------
+// MomentumFromRigidity_GV: R [GV] → p [kg·m/s]
+//
+// Converts magnetic rigidity to momentum using:
+//   R = pc / |q|  ⟹  p = R|q| / c
+//
+// Parameters:
+//   R_GV      - magnetic rigidity in GV (gigavolts)
+//   q_C_abs   - absolute value of charge in Coulombs
+//
+// Returns:
+//   Relativistic momentum in SI [kg·m/s]
+//
+// Note:
+//   1 GV = 10⁹ V, so pc in eV is R_GV × 10⁹ × (q/e)
+//------------------------------------------------------------------------------
 static inline double MomentumFromRigidity_GV(double R_GV,double q_C_abs) {
   return (R_GV*1.0e9*q_C_abs)/SpeedOfLight;
 }
 
+//------------------------------------------------------------------------------
+// RigidityFromMomentum_GV: p [kg·m/s] → R [GV]
+//
+// Converts momentum to magnetic rigidity using:
+//   R = pc / |q|
+//
+// Parameters:
+//   p         - relativistic momentum in SI [kg·m/s]
+//   q_C_abs   - absolute value of charge in Coulombs
+//
+// Returns:
+//   Magnetic rigidity in GV
+//   Returns 0 if charge is zero (to avoid division by zero)
+//
+// Note:
+//   This is the inverse of MomentumFromRigidity_GV
+//------------------------------------------------------------------------------
 static inline double RigidityFromMomentum_GV(double p,double q_C_abs) {
   return (q_C_abs>0.0) ? (p*SpeedOfLight/q_C_abs/1.0e9) : 0.0;
 }
 
-// Field evaluator wrapper:
+//==============================================================================
+// Field evaluator wrapper
+//==============================================================================
 //   - initializes Geopack once using the requested epoch/frame,
 //   - stores Tsyganenko parameters (PARMOD, PS),
 //   - evaluates B = B_IGRF + B_Tsyganenko at arbitrary x(t) during tracing.
@@ -628,49 +938,224 @@ static inline void EvaluateLocationCutoff(const EarthUtil::AmpsParam& prm,
   }
 }
 
+//==============================================================================
+// MPI dynamic scheduling infrastructure
+//==============================================================================
+// The master/worker pattern uses three MPI message tags to coordinate work:
+//   TASK   - master → worker: "compute this location"
+//   RESULT - worker → master: "here's the result"
+//   STOP   - master → worker: "no more work, terminate"
+//
+// Tag values are chosen to avoid collision with other AMPS MPI traffic.
+//==============================================================================
+enum { 
+  GRIDLESS_MPI_TAG_TASK   = 5001,  // Master sends this with a task payload
+  GRIDLESS_MPI_TAG_RESULT = 5002,  // Worker sends this with a result payload
+  GRIDLESS_MPI_TAG_STOP   = 5003   // Master sends this to terminate worker
+};
 
-enum { GRIDLESS_MPI_TAG_TASK=5001, GRIDLESS_MPI_TAG_RESULT=5002, GRIDLESS_MPI_TAG_STOP=5003 };
-struct PointTaskPayload { int idx; double x_m,y_m,z_m; };
-struct PointResultPayload { int idx; double Rc_GV,Emin_MeV; };
-struct ShellTaskPayload { int idx; double lon_deg,lat_deg,r_m; };
-struct ShellResultPayload { int idx; double Rc_GV,Emin_MeV; };
+//------------------------------------------------------------------------------
+// Task payloads (master → worker)
+//
+// These structures are sent via MPI_Send as raw bytes (MPI_BYTE type).
+// Each payload contains just enough information for a worker to compute
+// cutoff rigidity at one location.
+//------------------------------------------------------------------------------
 
+// Payload for POINTS mode: explicit (x, y, z) coordinate in meters
+struct PointTaskPayload { 
+  int idx;               // Index in output arrays (for result storage)
+  double x_m, y_m, z_m;  // Position in GSM coordinates [meters]
+};
+
+// Payload for SHELLS mode: spherical coordinates (lon, lat, r)
+struct ShellTaskPayload { 
+  int idx;               // Index in output arrays (flattened k = i + nLon*j)
+  double lon_deg;        // Longitude in degrees [0, 360)
+  double lat_deg;        // Latitude in degrees [-90, 90]
+  double r_m;            // Radial distance from Earth center [meters]
+};
+
+//------------------------------------------------------------------------------
+// Result payloads (worker → master)
+//
+// Workers send these back after computing cutoff rigidity at the assigned
+// location. Master uses the idx field to store results in the correct slot
+// of the output arrays.
+//------------------------------------------------------------------------------
+
+// Result for POINTS mode
+struct PointResultPayload { 
+  int idx;            // Index in output arrays (matches PointTaskPayload.idx)
+  double Rc_GV;       // Cutoff rigidity in GV (gigavolts)
+  double Emin_MeV;    // Minimum kinetic energy in MeV (derived from Rc)
+};
+
+// Result for SHELLS mode
+struct ShellResultPayload { 
+  int idx;            // Index in output arrays (matches ShellTaskPayload.idx)
+  double Rc_GV;       // Cutoff rigidity in GV
+  double Emin_MeV;    // Minimum kinetic energy in MeV
+};
+
+//------------------------------------------------------------------------------
+// Sph2CartDeg: Spherical → Cartesian coordinate conversion
+//
+// Converts (longitude, latitude, radius) to (x, y, z) using spherical
+// coordinate conventions:
+//   x = r cos(lat) cos(lon)
+//   y = r cos(lat) sin(lon)
+//   z = r sin(lat)
+//
+// Parameters:
+//   lonDeg - longitude in degrees [0, 360)
+//   latDeg - latitude in degrees [-90, 90]
+//   r_m    - radial distance from origin in meters
+//
+// Returns:
+//   V3 position vector in Cartesian GSM coordinates [meters]
+//
+// Usage:
+//   Convert shell grid points (lon, lat, altitude) to (x, y, z) for orbit
+//   integration. The shell grid is sampled uniformly in (lon, lat) space.
+//------------------------------------------------------------------------------
 static inline V3 Sph2CartDeg(double lonDeg,double latDeg,double r_m) {
-  const double lon=lonDeg*M_PI/180.0, lat=latDeg*M_PI/180.0;
-  const double cl=std::cos(lat);
-  return { r_m*cl*std::cos(lon), r_m*cl*std::sin(lon), r_m*std::sin(lat)};
+  const double lon=lonDeg*M_PI/180.0, lat=latDeg*M_PI/180.0;  // Degrees → radians
+  const double cl=std::cos(lat);  // cos(latitude) appears in both x and y
+  return { r_m*cl*std::cos(lon),  // x component
+           r_m*cl*std::sin(lon),  // y component
+           r_m*std::sin(lat)};    // z component
 }
 
-// Worker loop for explicit point tasks.
-// The worker blocks waiting for either:
-//   - GRIDLESS_MPI_TAG_TASK : compute one point and send result
-//   - GRIDLESS_MPI_TAG_STOP : terminate worker loop
-// Any unexpected tag is treated as a hard error to avoid silent corruption.
+//==============================================================================
+// Worker loop functions (ranks 1..N-1)
+//==============================================================================
+// These functions implement the worker side of the dynamic scheduler.
+// Each worker blocks on MPI_Recv waiting for the master (rank 0) to send:
+//   - TASK tag with payload → compute cutoff, send result, repeat
+//   - STOP tag             → break loop and terminate
+//
+// PROTOCOL:
+//   1) Worker calls MPI_Recv(..., source=0, tag=ANY_TAG)
+//   2) Check received tag:
+//        If TAG_STOP → break and return (worker done)
+//        If TAG_TASK → extract payload, compute, send RESULT, go to 1
+//        Otherwise   → hard error (unexpected tag = protocol violation)
+//
+// ERROR HANDLING:
+//   Any unexpected tag triggers std::runtime_error. This is intentional:
+//   silent mismatches between master and worker would corrupt results.
+//
+// PERFORMANCE NOTE:
+//   Workers spend nearly all their time inside EvaluateLocationCutoff (orbit
+//   integration). MPI overhead is negligible compared to computation time.
+//==============================================================================
+
+//------------------------------------------------------------------------------
+// RunPointWorkerLoopMPI: Worker loop for POINTS mode
+//
+// Processes explicit point locations sent by the master. Each task payload
+// contains (x, y, z) coordinates in meters (GSM frame).
+//
+// Parameters (passed from main RunCutoffRigidity):
+//   prm   - Input parameters (field model, integration settings, etc.)
+//   field - Field evaluator (IGRF + Tsyganenko)
+//   dirs  - Pre-computed direction grid for angular sampling
+//   Rmin  - Minimum rigidity in GV (from input energy bracket)
+//   Rmax  - Maximum rigidity in GV (from input energy bracket)
+//   qabs  - Absolute value of particle charge [Coulombs]
+//   m0    - Particle rest mass [kg]
+//
+// Worker lifetime:
+//   Repeats until receiving STOP tag. Typically processes dozens to hundreds
+//   of tasks (depending on mpiSize and total number of points).
+//------------------------------------------------------------------------------
 static void RunPointWorkerLoopMPI(const EarthUtil::AmpsParam& prm,const cFieldEvaluator& field,
                                   const std::vector<V3>& dirs,double Rmin,double Rmax,double qabs,double m0) {
   while (true) {
-    PointTaskPayload task{}; MPI_Status st;
-    MPI_Recv(&task,sizeof(task),MPI_BYTE,0,MPI_ANY_TAG,MPI_COMM_WORLD,&st);
-    if (st.MPI_TAG==GRIDLESS_MPI_TAG_STOP) break;
-    if (st.MPI_TAG!=GRIDLESS_MPI_TAG_TASK) throw std::runtime_error("Unexpected MPI tag (POINT worker)");
-    PointResultPayload out{}; out.idx=task.idx;
-    EvaluateLocationCutoff(prm,field,dirs,Rmin,Rmax,V3{task.x_m,task.y_m,task.z_m},qabs,m0,out.Rc_GV,out.Emin_MeV);
-    MPI_Send(&out,sizeof(out),MPI_BYTE,0,GRIDLESS_MPI_TAG_RESULT,MPI_COMM_WORLD);
+    // ── Receive next task or STOP command ────────────────────────────────
+    PointTaskPayload task{};  // Payload structure (idx, x_m, y_m, z_m)
+    MPI_Status st;            // Status will contain actual received tag
+    MPI_Recv(&task,sizeof(task),MPI_BYTE,
+             0,                      // Source: rank 0 (master)
+             MPI_ANY_TAG,            // Accept any tag (we'll check it below)
+             MPI_COMM_WORLD,&st);
+    
+    // ── Check received tag ───────────────────────────────────────────────
+    if (st.MPI_TAG==GRIDLESS_MPI_TAG_STOP) break;  // Master says we're done
+    
+    // Unexpected tag = protocol violation (master/worker out of sync)
+    if (st.MPI_TAG!=GRIDLESS_MPI_TAG_TASK) 
+      throw std::runtime_error("Unexpected MPI tag (POINT worker)");
+    
+    // ── Compute cutoff rigidity at this location ─────────────────────────
+    PointResultPayload out{};  // Result structure to send back
+    out.idx = task.idx;        // Preserve index for master's storage
+    
+    // EvaluateLocationCutoff does the heavy lifting: angular sampling,
+    // rigidity bisection, trajectory integration, etc.
+    EvaluateLocationCutoff(prm, field, dirs, Rmin, Rmax,
+                          V3{task.x_m, task.y_m, task.z_m},  // Position [m]
+                          qabs, m0, 
+                          out.Rc_GV, out.Emin_MeV);  // Output
+    
+    // ── Send result back to master ───────────────────────────────────────
+    MPI_Send(&out, sizeof(out), MPI_BYTE, 
+             0,                            // Destination: rank 0 (master)
+             GRIDLESS_MPI_TAG_RESULT,      // Tag identifies this as a result
+             MPI_COMM_WORLD);
+    
+    // Loop repeats: worker immediately waits for next task
   }
 }
 
-// Worker loop for shell-grid tasks (lon/lat at a given radius).
-// Same protocol as point worker, but payload carries spherical coordinates.
+//------------------------------------------------------------------------------
+// RunShellWorkerLoopMPI: Worker loop for SHELLS mode
+//
+// Processes shell grid cells sent by the master. Each task payload contains
+// spherical coordinates (lon, lat, r) which are converted to Cartesian before
+// calling the cutoff kernel.
+//
+// Parameters:
+//   Same as RunPointWorkerLoopMPI (field model, direction grid, rigidity
+//   bracket, particle properties).
+//
+// Difference from POINTS mode:
+//   - Payload is (lon_deg, lat_deg, r_m) instead of (x_m, y_m, z_m)
+//   - Converts to Cartesian via Sph2CartDeg before calling kernel
+//
+// Worker lifetime:
+//   Repeats until receiving STOP tag. For large shells (e.g., 0.5° resolution
+//   → ~130k cells), each worker processes hundreds to thousands of tasks.
+//------------------------------------------------------------------------------
 static void RunShellWorkerLoopMPI(const EarthUtil::AmpsParam& prm,const cFieldEvaluator& field,
                                   const std::vector<V3>& dirs,double Rmin,double Rmax,double qabs,double m0) {
   while (true) {
-    ShellTaskPayload task{}; MPI_Status st;
-    MPI_Recv(&task,sizeof(task),MPI_BYTE,0,MPI_ANY_TAG,MPI_COMM_WORLD,&st);
-    if (st.MPI_TAG==GRIDLESS_MPI_TAG_STOP) break;
-    if (st.MPI_TAG!=GRIDLESS_MPI_TAG_TASK) throw std::runtime_error("Unexpected MPI tag (SHELL worker)");
-    ShellResultPayload out{}; out.idx=task.idx;
-    EvaluateLocationCutoff(prm,field,dirs,Rmin,Rmax,Sph2CartDeg(task.lon_deg,task.lat_deg,task.r_m),qabs,m0,out.Rc_GV,out.Emin_MeV);
-    MPI_Send(&out,sizeof(out),MPI_BYTE,0,GRIDLESS_MPI_TAG_RESULT,MPI_COMM_WORLD);
+    // ── Receive next task or STOP command ────────────────────────────────
+    ShellTaskPayload task{};  // Payload structure (idx, lon_deg, lat_deg, r_m)
+    MPI_Status st;            // Status will contain actual received tag
+    MPI_Recv(&task,sizeof(task),MPI_BYTE,
+             0,MPI_ANY_TAG,MPI_COMM_WORLD,&st);
+    
+    // ── Check received tag ───────────────────────────────────────────────
+    if (st.MPI_TAG==GRIDLESS_MPI_TAG_STOP) break;  // Master says we're done
+    
+    if (st.MPI_TAG!=GRIDLESS_MPI_TAG_TASK) 
+      throw std::runtime_error("Unexpected MPI tag (SHELL worker)");
+    
+    // ── Compute cutoff rigidity at this shell grid cell ──────────────────
+    ShellResultPayload out{};  // Result structure to send back
+    out.idx = task.idx;        // Preserve index for master's storage
+    
+    // Convert (lon, lat, r) → (x, y, z) then call cutoff kernel
+    EvaluateLocationCutoff(prm, field, dirs, Rmin, Rmax,
+                          Sph2CartDeg(task.lon_deg, task.lat_deg, task.r_m),
+                          qabs, m0, 
+                          out.Rc_GV, out.Emin_MeV);
+    
+    // ── Send result back to master ───────────────────────────────────────
+    MPI_Send(&out, sizeof(out), MPI_BYTE, 
+             0, GRIDLESS_MPI_TAG_RESULT, MPI_COMM_WORLD);
   }
 }
 
