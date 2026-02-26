@@ -350,7 +350,8 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         // Although the key name contains _KM (historical), accept explicit Re
         // units inline or in the trailing comment. If no units are provided, km
         // remains the default for backward compatibility.
-        p.output.shellAlt_km = ParseLengthListToKm(val,commentText);
+	auto t=ParseLengthListToKm(val,commentText);
+        p.output.shellAlt_km.insert(p.output.shellAlt_km.end(),t.begin(),t.end());  
       }
       else if (uKey=="SHELL_RES_DEG") p.output.shellRes_deg=std::stod(val);
       else {

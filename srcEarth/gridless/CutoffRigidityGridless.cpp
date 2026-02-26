@@ -419,7 +419,7 @@ static void WriteTecplotShells(const std::vector<double>& shellAlt_km,
   if (!f) throw std::runtime_error("Cannot write Tecplot file: cutoff_gridless_shells.dat");
 
   std::fprintf(f,"TITLE=\"Cutoff Rigidity (Gridless Shells)\"\n");
-  std::fprintf(f,"VARIABLES=\"lon_deg\",\"lat_deg\",\"alt_km\",\"Rc_GV\",\"Emin_MeV\"\n");
+  std::fprintf(f,"VARIABLES=\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"\n");
 
   const int nLon = static_cast<int>(std::floor(360.0/res_deg + 0.5));
   const int nLat = static_cast<int>(std::floor(180.0/res_deg + 0.5)) + 1; // include poles
@@ -437,7 +437,7 @@ static void WriteTecplotShells(const std::vector<double>& shellAlt_km,
         double lon = res_deg*i;
         int k=i+nLon*j;
 
-        std::fprintf(f,"%e %e %e %e %e\n", lon, lat, alt,
+        std::fprintf(f,"%e %e %e %e\n", lon, lat, 
           RcShell[s][k], EminShell[s][k]);
       }
     }
