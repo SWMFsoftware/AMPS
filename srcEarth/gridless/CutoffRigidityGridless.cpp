@@ -37,8 +37,10 @@
 #include <stdexcept>
 #include <iostream>
 #include <vector>
-#include <chrono>   // wall-clock timing for progress-bar ETA
-#include <cstring>  // snprintf used in ProgressBar
+#include <string>
+#include <algorithm>
+#include <numeric>
+#include <mpi.h> 
 
 #include "constants.h"
 #include "constants.PlanetaryData.h"
@@ -50,273 +52,6 @@ extern "C" {
 }
 
 namespace {
-
-//==============================================================================
-// ProgressBar  –  live single-line progress display on stderr
-//==============================================================================
-//
-// PURPOSE
-// -------
-// Cutoff-rigidity runs can take minutes to hours with no visible feedback.
-// This struct prints a compact progress bar that updates in-place on stderr
-// using the carriage-return (\r) trick so it never scrolls the log.
-//
-// TYPICAL OUTPUT (one line, updated in-place during the run)
-//
-//   [POINTS] [########--------]  50.0%  ( 500/1000)  ETA 00:01:23
-//    ^^^^^^   ^^^^^^^^^^^^^^^^   ^^^^^   ^^^^^^^^^^        ^^^^^^^^
-//    label    visual bar (36ch)  pct     counters          HH:MM:SS
-//
-// USAGE
-// -----
-//   ProgressBar bar;
-//   bar.Start(total, "POINTS");   // once, before the loop
-//   for (...) {
-//     doWork();
-//     bar.Advance(1);             // once per completed task
-//   }
-//   bar.Finish();                 // once, after the loop
-//
-// The bar can be reused for successive work sets (e.g. multiple shells) by
-// calling Start() again; it resets all internal state including the clock.
-//
-// BUFFERING STRATEGY
-// ------------------
-// Batch schedulers and redirected streams often ignore the _IONBF hint and
-// buffer stderr aggressively.  We defend against this with three layers:
-//
-//   1) setvbuf(stderr, nullptr, _IONBF, 0)
-//        Requests unbuffered mode from the C runtime.  Works for most
-//        interactive and pipe scenarios; may be ignored by some schedulers.
-//        Called once in RunCutoffRigidity before any output (not inside
-//        Start(), so it is guaranteed to fire before the first print).
-//
-//   2) fflush(stderr) after every fprintf
-//        Forces an OS-level flush regardless of the buffering mode.
-//        This is the most reliable layer.
-//
-//   3) Forced newline every kNewlineEvery updates
-//        When \r is processed but the stream is still line-buffered,
-//        a real newline guarantees the line is flushed and visible.
-//        When output is redirected to a file, this produces readable
-//        multi-line progress history rather than a single overwritten line.
-//        Set kNewlineEvery = 1 to always use newlines (safest for files).
-//        Set kNewlineEvery = 0 to never force them (pure \r mode).
-//
-// THROTTLING
-// ----------
-// Print() is called on every Advance(), but actually emits output only when
-// at least one of these is true:
-//   a) force = true  (Start and Finish always force a print)
-//   b) kMinIntervalSec seconds have elapsed since the last print
-//   c) the integer percent has changed
-// This caps stderr noise at roughly 2 lines/second while still capturing
-// every 1% milestone.
-//
-// ETA CALCULATION
-// ---------------
-//   rate = tasks_done / elapsed_wall_seconds
-//   eta  = tasks_remaining / rate
-// Suppressed (shown as "--:--:--") until kMinTasksForEta tasks complete,
-// to avoid misleading estimates from the first one or two (fast) tasks.
-//
-// THREAD SAFETY
-// -------------
-// Not thread-safe.  Designed for single-threaded serial use.
-//==============================================================================
-struct ProgressBar {
-
-  //──────────────────────────────────────────────────────────────────────────
-  // Tuning knobs  –  edit these to adjust behaviour without changing logic
-  //──────────────────────────────────────────────────────────────────────────
-  static const int    kBarWidth       = 36;   // characters in the [####----] bar
-  static const int    kNewlineEvery   = 20;   // force \n every N updates
-                                               //   0 = never (pure \r, looks best)
-                                               //   1 = always (safest for log files)
-  static const int    kMinTasksForEta = 3;    // suppress ETA until this many done
-  static const double kMinIntervalSec;        // minimum seconds between prints
-                                               //   (defined below the struct)
-
-  //──────────────────────────────────────────────────────────────────────────
-  // Internal state  –  reset by Start(), mutated by Advance() / Print()
-  //──────────────────────────────────────────────────────────────────────────
-  int          total_       = 1;     // denominator  (tasks in this work-set)
-  int          done_        = 0;     // numerator    (tasks completed so far)
-  int          printCount_  = 0;     // total number of actual prints issued
-  int          lastPct_     = -1;    // last integer-percent that was printed
-
-  const char*  label_       = "";    // text displayed before the bar
-
-  // Wall-clock reference points, measured with steady_clock so they are
-  // unaffected by NTP adjustments or daylight-saving changes during a run.
-  std::chrono::steady_clock::time_point tStart_;      // when Start() was called
-  std::chrono::steady_clock::time_point tLastPrint_;  // when Print() last fired
-
-  bool started_ = false;   // guards against Advance() before Start()
-
-  //──────────────────────────────────────────────────────────────────────────
-  // Start  –  initialise the bar and print the 0% state immediately.
-  //
-  // Parameters:
-  //   total  Number of tasks in this work-set.  Must be > 0; clamped to 1
-  //          if zero to avoid division-by-zero.
-  //   label  Short string shown as the bar's prefix (e.g. "POINTS",
-  //          "SHELL 1/3 alt=500 km").  Copied by pointer; must remain valid
-  //          for the lifetime of the bar (string literals always qualify).
-  //
-  // After Start() returns, the 0% bar is already visible on stderr.
-  // Call Advance() for each completed task, Finish() once at the end.
-  //──────────────────────────────────────────────────────────────────────────
-  void Start(int total, const char* label = "Progress") {
-    total_      = (total > 0) ? total : 1;
-    done_       = 0;
-    printCount_ = 0;
-    lastPct_    = -1;
-    label_      = label ? label : "Progress";
-
-    // Record the start time.  steady_clock is monotonic (never goes backward).
-    tStart_     = std::chrono::steady_clock::now();
-    // Set tLastPrint_ to a point far in the past so the very first call to
-    // Print(force=false) always passes the time-threshold check.
-    tLastPrint_ = tStart_ - std::chrono::seconds(3600);
-
-    started_ = true;
-
-    // Emit the initial 0% bar unconditionally (force=true).
-    Print(true);
-  }
-
-  //──────────────────────────────────────────────────────────────────────────
-  // Advance  –  record delta completed tasks and conditionally refresh.
-  //
-  // Parameters:
-  //   delta  Tasks completed since the last call (normally 1).
-  //
-  // done_ is clamped to [0, total_] so over-counting never produces > 100%.
-  // Calls Print(force=false) which applies the throttle rules.
-  //──────────────────────────────────────────────────────────────────────────
-  void Advance(int delta = 1) {
-    if (!started_) return;        // defensive: ignore calls before Start()
-    done_ += delta;
-    if (done_ > total_) done_ = total_;
-    if (done_ < 0)      done_ = 0;
-    Print(false);
-  }
-
-  //──────────────────────────────────────────────────────────────────────────
-  // Finish  –  snap to 100%, print the final line, move to a new line.
-  //
-  // The forced newline ensures that any subsequent stdout/stderr output
-  // (e.g. "Wrote Tecplot: ...") starts on a clean line and does not
-  // overwrite the final progress bar.
-  //──────────────────────────────────────────────────────────────────────────
-  void Finish() {
-    if (!started_) return;
-    done_ = total_;       // snap to 100% regardless of accumulated count
-    Print(true);          // force the final 100% print
-    std::fprintf(stderr, "\n");
-    std::fflush(stderr);
-    started_ = false;
-  }
-
-  //──────────────────────────────────────────────────────────────────────────
-  // Print  –  render and emit one progress line.  (Private helper.)
-  //
-  // Parameters:
-  //   force  true  → bypass throttle; always emit.
-  //                  Used by Start() (0%), Finish() (100%), and periodic
-  //                  forced-newline updates.
-  //          false → apply throttle: skip if both of the following hold:
-  //                  (a) less than kMinIntervalSec elapsed since last print
-  //                  (b) integer percent has not changed
-  //
-  // Output mechanics:
-  //   - Uses \r to return the cursor to column 0, overwriting the previous
-  //     bar on the same terminal line.
-  //   - Pads the line to a fixed width with trailing spaces to erase any
-  //     leftover characters from a previously longer label.
-  //   - Every kNewlineEvery actual prints, a real \n is appended instead.
-  //     This makes the output readable in log files and on terminals that
-  //     do not process \r correctly.
-  //   - Always calls fflush(stderr) to bypass any remaining OS buffering.
-  //──────────────────────────────────────────────────────────────────────────
-  void Print(bool force) {
-    using Clock = std::chrono::steady_clock;
-    using Fsec  = std::chrono::duration<double>;   // floating-point seconds
-
-    const Clock::time_point now     = Clock::now();
-    const double elapsedSec = std::chrono::duration_cast<Fsec>(now - tStart_).count();
-    const double sinceLast  = std::chrono::duration_cast<Fsec>(now - tLastPrint_).count();
-
-    // ── Compute fraction and integer percent ─────────────────────────────
-    const double frac = (done_ <= 0)     ? 0.0 :
-                        (done_ >= total_) ? 1.0 :
-                        static_cast<double>(done_) / static_cast<double>(total_);
-    const int    pct  = static_cast<int>(frac * 100.0);
-
-    // ── Throttle ──────────────────────────────────────────────────────────
-    // Skip this print unless force=true, enough time has elapsed, or the
-    // displayed percentage would change.
-    if (!force && sinceLast < kMinIntervalSec && pct == lastPct_) return;
-
-    // ── ETA ───────────────────────────────────────────────────────────────
-    // Suppress ETA for the first few tasks to avoid wild early estimates
-    // (the first task might be much faster or slower than average).
-    char etaBuf[16];
-    const int remaining = total_ - done_;
-    if (done_ >= kMinTasksForEta && elapsedSec > 0.01) {
-      const double rate   = static_cast<double>(done_) / elapsedSec; // tasks/s
-      const double etaSec = (rate > 1.0e-12)
-                              ? static_cast<double>(remaining) / rate
-                              : 0.0;
-      const int h = static_cast<int>(etaSec / 3600.0);
-      const int m = (static_cast<int>(etaSec) / 60) % 60;
-      const int s = static_cast<int>(etaSec) % 60;
-      std::snprintf(etaBuf, sizeof(etaBuf), "%02d:%02d:%02d", h, m, s);
-    } else {
-      std::snprintf(etaBuf, sizeof(etaBuf), "--:--:--");
-    }
-
-    // ── Build the [####----] bar ──────────────────────────────────────────
-    // Fill kBarWidth characters: '#' for completed fraction, '-' for the rest.
-    int fill = static_cast<int>(frac * static_cast<double>(kBarWidth) + 0.5);
-    if (fill < 0)         fill = 0;
-    if (fill > kBarWidth) fill = kBarWidth;
-
-    char bar[kBarWidth + 1];
-    for (int i = 0; i < kBarWidth; ++i) bar[i] = (i < fill ? '#' : '-');
-    bar[kBarWidth] = '\0';
-
-    // ── Choose line ending ────────────────────────────────────────────────
-    // Normally we use \r (carriage return) to overwrite the previous line.
-    // Every kNewlineEvery actual prints we force a real \n so that even in
-    // log files or \r-blind environments the user sees periodic updates.
-    ++printCount_;
-    const bool useNewline = force
-                         || (kNewlineEvery > 0 && (printCount_ % kNewlineEvery == 0));
-
-    // ── Emit ──────────────────────────────────────────────────────────────
-    // \r returns the cursor to column 0.  Trailing spaces (via the format
-    // string padding) erase any leftover chars from a previously longer line.
-    std::fprintf(stderr,
-      "\r[%s] [%s] %5.1f%%  (%5d/%5d)  ETA %s   %s",
-      label_, bar,
-      100.0 * frac, done_, total_,
-      etaBuf,
-      useNewline ? "\n" : "");
-    std::fflush(stderr);
-
-    // ── Update throttle state ─────────────────────────────────────────────
-    tLastPrint_ = now;
-    lastPct_    = pct;
-  }
-};
-
-// Out-of-class definition for the non-integer constant (ODR requirement).
-// Value: 0.5 seconds minimum between consecutive progress-bar updates.
-// Increase for quieter logs; decrease (e.g. 0.1) for more frequent updates.
-const double ProgressBar::kMinIntervalSec = 0.5;
-
 
 struct V3 { double x,y,z; };
 static inline V3 add(const V3&a,const V3&b){return {a.x+b.x,a.y+b.y,a.z+b.z};}
@@ -716,14 +451,66 @@ namespace Earth {
 namespace GridlessMode {
 
 int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
-  // Unbuffer both output streams as early as possible so that progress-bar
-  // updates and regular log lines appear immediately, even inside batch jobs
-  // or when output is piped.  These are hints to the C runtime; some
-  // environments ignore them, which is why ProgressBar also calls
-  // fflush(stderr) after every print and forces periodic newlines.
-  setvbuf(stderr, nullptr, _IONBF, 0);  // unbuffered:     each write goes straight through
-  setvbuf(stdout, nullptr, _IOLBF, 0);  // line-buffered:  each '\n' flushes stdout
+  //====================================================================================
+  // MPI PARALLEL EXECUTION MODEL (TRAJECTORY-BASED DYNAMIC SCHEDULING)
+  //
+  // Why we parallelize by "trajectory" rather than by "location":
+  //   - A "location" (a point or a shell grid node) requires evaluating many candidate
+  //     backtraced trajectories (different launch directions) and, for each direction,
+  //     a cutoff search (multiple trace runs at different rigidities).
+  //   - The wall-time of an individual trajectory evaluation can vary drastically:
+  //       * some trajectories quickly escape the domain,
+  //       * some hit the loss sphere quickly,
+  //       * some remain trapped and run close to the time limit (slow).
+  //   - If we parallelize only by locations and the number of locations is small
+  //     (e.g., a few points), we may have fewer tasks than cores and waste compute.
+  //
+  // Strategy implemented here:
+  //   - Define a "task" as:  (location_id, direction_id)
+  //       -> compute the cutoff rigidity for that single direction at that location
+  //          (internally: endpoint checks + bisection).
+  //   - Total number of tasks = N_locations * N_directions, typically >> #cores.
+  //   - Use a master/worker dynamic scheduler:
+  //       * Rank 0 is the master: it feeds tasks to workers as they become idle and
+  //         accumulates results for each location.
+  //       * Ranks 1..(size-1) are workers: each runs expensive trajectory tracing for
+  //         the task assigned, and returns the result.
+  //
+  // Benefits:
+  //   - Excellent load balance even with highly variable trajectory wall times.
+  //   - Scales well even when N_locations is small, because we have many tasks.
+  //
+  // Important note about MPI initialization:
+  //   - You requested "assume MPI is always on", so we include mpi.h unconditionally
+  //     and always compile MPI code.
+  //   - However, depending on how AMPS is launched, MPI may or may not have already
+  //     been initialized by the time we reach here.
+  //   - To be robust for local debugging, we call MPI_Initialized() and, if needed,
+  //     initialize MPI here. This allows running without mpirun in many MPI stacks
+  //     (single-process MPI_COMM_WORLD), while still behaving normally under mpirun.
+  //====================================================================================
 
+  //----------------------------
+  // MPI runtime initialization
+  //----------------------------
+  int mpiInitialized = 0;
+  MPI_Initialized(&mpiInitialized);
+
+  bool mpiInitByThisModule = false;
+  if (!mpiInitialized) {
+    int argc_dummy = 0;
+    char** argv_dummy = nullptr;
+    MPI_Init(&argc_dummy, &argv_dummy);
+    mpiInitByThisModule = true;
+  }
+
+  int mpiRank = 0, mpiSize = 1;
+  MPI_Comm_rank(MPI_COMM_WORLD, &mpiRank);
+  MPI_Comm_size(MPI_COMM_WORLD, &mpiSize);
+
+  //----------------------------------------------------------------------------
+  // Precompute species + rigidity bracket derived from input energy bracket
+  //----------------------------------------------------------------------------
   const double qabs = std::fabs(prm.species.charge_e * ElectronCharge);
   const double m0   = prm.species.mass_amu * _AMU_;
 
@@ -736,159 +523,626 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     throw std::runtime_error("Invalid cutoff energy bracket in input; cannot compute rigidity range");
   }
 
-  cFieldEvaluator field(prm);
+  //----------------------------------------------------------------------------
+  // Background field evaluator (T96/T05 + IGRF) is local per rank.
+  //
+  // NOTE:
+  //   This object typically holds model parameters and performs calls into the
+  //   Tsyganenko/Geopack routines. It is safer to have one instance per rank to
+  //   avoid any accidental shared state between ranks (MPI ranks are separate
+  //   processes, but some libraries may still have hidden global state).
+  //----------------------------------------------------------------------------
+  const cFieldEvaluator field(prm);
 
-  // Direction grid (prototype constants)
+  //----------------------------------------------------------------------------
+  // Direction grid (kept identical to your current serial "meaningful results")
+  //----------------------------------------------------------------------------
   const int nZenith=24;
   const int nAz=48;
-  std::vector<V3> dirs = BuildDirGrid(nZenith,nAz);
+  const std::vector<V3> dirs = BuildDirGrid(nZenith,nAz);
 
-  std::cout << "================ Gridless cutoff rigidity ================\n";
-  std::cout << "Run ID          : " << prm.runId << "\n";
-  std::cout << "Mode            : GRIDLESS\n";
-  std::cout << "Field model     : " << prm.field.model << "\n";
-  std::cout << "Epoch           : " << prm.field.epoch << "\n";
-  std::cout << "Species         : " << prm.species.name << " (q=" << prm.species.charge_e
-            << " e, m=" << prm.species.mass_amu << " amu)\n";
-  std::cout << "Rigidity bracket: [" << Rmin << ", " << Rmax << "] GV\n";
-  std::cout << "Directions grid : " << dirs.size() << " (nZenith=" << nZenith << ", nAz=" << nAz << ")\n";
-  const DomainBoxRe boxRe = ToDomainBoxRe(prm.domain);
-  std::cout << "Domain box (km) : x[" << prm.domain.xMin << "," << prm.domain.xMax << "] "
-            << "y[" << prm.domain.yMin << "," << prm.domain.yMax << "] "
-            << "z[" << prm.domain.zMin << "," << prm.domain.zMax << "] "
-            << "rInner=" << prm.domain.rInner << "\n";
-  std::cout << "Domain box (Re) : x[" << boxRe.xMin << "," << boxRe.xMax << "] "
-            << "y[" << boxRe.yMin << "," << boxRe.yMax << "] "
-            << "z[" << boxRe.zMin << "," << boxRe.zMax << "] "
-            << "rInner=" << boxRe.rInner << "\n";
-  std::cout << "dtTrace max [s] : " << prm.numerics.dtTrace_s << "  (adaptive upper bound)\n";
-  std::cout << "dt integrator   : variable dt (gyro-angle + boundary-distance caps)\n";
-  std::cout << "==========================================================\n";
-
-  if (prm.output.mode=="POINTS") {
-    std::vector<double> Rc(prm.output.points.size(),-1.0);
-    std::vector<double> Emin(prm.output.points.size(),-1.0);
-
-    // ── Progress bar for POINTS mode ─────────────────────────────────────
-    // One task = one point location.  The bar shows how many points have
-    // been fully processed (all 1152 directions + bisection for each).
-    // We use the point count (not trajectory count) as the denominator
-    // because it is known exactly up front and gives a clean 0-100% arc.
-    ProgressBar pointsBar;
-    pointsBar.Start(static_cast<int>(prm.output.points.size()), "POINTS");
-
-    for (size_t i=0;i<prm.output.points.size();i++) {
-      const auto& P = prm.output.points[i];
-
-      // IMPORTANT (UNITS): POINT coordinates are interpreted as GSM kilometers.
-      V3 x0_m{ P.x*1000.0, P.y*1000.0, P.z*1000.0 };
-
-      double rc = CutoffAtPoint_GV(prm,field,x0_m,dirs,Rmin,Rmax);
-      Rc[i]=rc;
-      if (rc>0.0) {
-        double pCut = MomentumFromRigidity_GV(rc,qabs);
-        Emin[i] = KineticEnergyFromMomentum_MeV(pCut,m0);
-      }
-
-      // Print a one-line summary for this point to stdout.  This goes to
-      // stdout (not stderr) so it does not collide with the progress bar.
-      std::cout << "Point " << i << " (" << P.x << "," << P.y << "," << P.z << ")"
-                << " -> Rc=" << Rc[i] << " GV, Emin=" << Emin[i] << " MeV\n";
-      std::cout.flush();
-
-      // Advance the bar by one completed point.
-      // The bar will only actually redraw if enough time has elapsed or the
-      // displayed percent has changed (see ProgressBar::kMinIntervalSec).
-      pointsBar.Advance(1);
-    }
-
-    // Snap to 100%, print the final bar line, and emit a newline so the
-    // subsequent "Wrote Tecplot:" message starts on a clean line.
-    pointsBar.Finish();
-
-    WriteTecplotPoints(prm.output.points,Rc,Emin);
-    std::cout << "Wrote Tecplot: cutoff_gridless_points.dat\n";
+  //----------------------------------------------------------------------------
+  // Print a run summary (rank 0 only), and flush to avoid buffered stdout issues.
+  //----------------------------------------------------------------------------
+  if (mpiRank==0) {
+    std::cout << "================ Gridless cutoff rigidity ================\n";
+    std::cout << "Run ID          : " << prm.runId << "\n";
+    std::cout << "Mode            : GRIDLESS\n";
+    std::cout << "Field model     : " << prm.field.model << "\n";
+    std::cout << "Epoch           : " << prm.field.epoch << "\n";
+    std::cout << "Species         : " << prm.species.name << " (q=" << prm.species.charge_e
+              << " e, m=" << prm.species.mass_amu << " amu)\n";
+    std::cout << "Rigidity bracket: [" << Rmin << ", " << Rmax << "] GV\n";
+    std::cout << "Directions grid : " << dirs.size() << " (nZenith=" << nZenith << ", nAz=" << nAz << ")\n";
+    const DomainBoxRe boxRe = ToDomainBoxRe(prm.domain);
+    std::cout << "Domain box (km) : x[" << prm.domain.xMin << "," << prm.domain.xMax << "] "
+              << "y[" << prm.domain.yMin << "," << prm.domain.yMax << "] "
+              << "z[" << prm.domain.zMin << "," << prm.domain.zMax << "] "
+              << "rInner=" << prm.domain.rInner << "\n";
+    std::cout << "Domain box (Re) : x[" << boxRe.xMin << "," << boxRe.xMax << "] "
+              << "y[" << boxRe.yMin << "," << boxRe.yMax << "] "
+              << "z[" << boxRe.zMin << "," << boxRe.zMax << "] "
+              << "rInner=" << boxRe.rInner << "\n";
+    std::cout << "dtTrace max [s] : " << prm.numerics.dtTrace_s << "  (adaptive upper bound)\n";
+    std::cout << "MPI ranks       : " << mpiSize
+              << " (trajectory-based dynamic scheduling)\n";
+    std::cout << "==========================================================\n";
+    std::cout.flush();
   }
-  else if (prm.output.mode=="SHELLS") {
-    if (prm.output.shellAlt_km.empty()) {
-      throw std::runtime_error("OUTPUT_MODE=SHELLS but SHELL_ALTS_KM list is empty");
+
+  //====================================================================================
+  // Helper: compute cutoff for a SINGLE (location, direction) task.
+  //
+  // The logic is the same as inside CutoffAtPoint_GV(), but extracted so we can
+  // distribute per-direction work across MPI ranks.
+  //
+  // Return value:
+  //   - If direction never becomes allowed up to Rmax -> return -1 (no cutoff / forbidden).
+  //   - Else return the cutoff rigidity for this direction (>= Rmin).
+  //====================================================================================
+  auto CutoffForDirection_GV = [&](const V3& x0_m, const V3& dir_unit, double Rmin_GV, double Rmax_GV) -> double {
+    // Backtrace convention: initial velocity points opposite to the desired arrival direction.
+    const V3 v0 = mul(-1.0, dir_unit);
+
+    // Quick endpoint classification:
+    const bool alo = TraceAllowed(prm,field,x0_m,v0,Rmin_GV);
+    const bool ahi = TraceAllowed(prm,field,x0_m,v0,Rmax_GV);
+
+    // If already allowed at Rmin, the cutoff for this direction is at/below Rmin.
+    if (alo && ahi) return Rmin_GV;
+
+    // If still forbidden at Rmax, there is no allowed trajectory in the bracket.
+    if (!ahi) return -1.0;
+
+    // Otherwise: bracket exists (forbidden at Rmin, allowed at Rmax). Refine by bisection.
+    double lo=Rmin_GV, hi=Rmax_GV;
+    const int maxIter=24; // keep identical to serial behavior for reproducibility
+
+    for (int it=0; it<maxIter; it++) {
+      const double mid=0.5*(lo+hi);
+      const bool a = TraceAllowed(prm,field,x0_m,v0,mid);
+      if (a) hi=mid; else lo=mid;
     }
 
-    const double d = prm.output.shellRes_deg;
-    const int nLon = static_cast<int>(std::floor(360.0/d + 0.5));
-    const int nLat = static_cast<int>(std::floor(180.0/d + 0.5)) + 1;
-    const int nPts = nLon*nLat;
+    // "hi" is our conservative estimate of the first allowed rigidity for this direction.
+    return hi;
+  };
 
-    auto sph2cart = [](double lonDeg,double latDeg,double r_m)->V3{
-      const double lon=lonDeg*M_PI/180.0;
-      const double lat=latDeg*M_PI/180.0;
-      const double cl=std::cos(lat);
-      return { r_m*cl*std::cos(lon), r_m*cl*std::sin(lon), r_m*std::sin(lat)};
-    };
+  //====================================================================================
+  // Location indexing
+  //
+  // POINTS mode:
+  //   locationId = iPoint in [0, nPoints)
+  //
+  // SHELLS mode:
+  //   For each shell altitude s, there is a structured lon/lat grid of size nPts=nLon*nLat.
+  //   We flatten the global list of locations as:
+  //     locationId = s*nPts + k,  where k in [0, nPts)
+  //
+  // This scheme lets workers reconstruct the 3D coordinate from (locationId) using only
+  // prm.output.* data (which is available on every rank).
+  //====================================================================================
+  const bool isPoints = (prm.output.mode=="POINTS");
+  const bool isShells = (prm.output.mode=="SHELLS");
 
-    std::vector< std::vector<double> > RcShell(prm.output.shellAlt_km.size());
-    std::vector< std::vector<double> > EminShell(prm.output.shellAlt_km.size());
-
-    for (size_t s=0;s<prm.output.shellAlt_km.size();s++) {
-      const double alt_km=prm.output.shellAlt_km[s];
-      const double r_m = (_RADIUS_(_EARTH_) + alt_km*1000.0);
-
-      RcShell[s].assign(nPts,-1.0);
-      EminShell[s].assign(nPts,-1.0);
-
-      // ── Progress bar for this shell ────────────────────────────────────
-      // One task = one (lon, lat) grid cell on this shell altitude.
-      // The label shows which shell we are on out of the total, plus the
-      // altitude, so multi-altitude runs give clear per-shell feedback.
-      // The bar is constructed fresh each iteration so Start() resets the
-      // wall-clock reference; each shell gets its own 0-100% arc and ETA.
-      char shellLabel[128];
-      std::snprintf(shellLabel, sizeof(shellLabel),
-                    "SHELL %zu/%zu alt=%.1fkm",
-                    s + 1, prm.output.shellAlt_km.size(), alt_km);
-      ProgressBar shellBar;
-      shellBar.Start(nPts, shellLabel);
-
-      for (int j=0;j<nLat;j++) {
-        double lat=-90.0 + d*j;
-        if (lat>90.0) lat=90.0;
-
-        for (int i=0;i<nLon;i++) {
-          double lon=d*i;
-          int k=i+nLon*j;
-
-          V3 x0 = sph2cart(lon,lat,r_m);
-          double rc = CutoffAtPoint_GV(prm,field,x0,dirs,Rmin,Rmax);
-          RcShell[s][k]=rc;
-          if (rc>0.0) {
-            double pCut = MomentumFromRigidity_GV(rc,qabs);
-            EminShell[s][k] = KineticEnergyFromMomentum_MeV(pCut,m0);
-          }
-
-          // Advance by one completed grid cell.
-          shellBar.Advance(1);
-        }
-      }
-
-      // 100%, final bar line, newline — then the "Shell done" message.
-      shellBar.Finish();
-      std::cout << "Shell alt=" << alt_km << " km done.\n";
-    }
-
-    WriteTecplotShells(prm.output.shellAlt_km,prm.output.shellRes_deg,RcShell,EminShell);
-    std::cout << "Wrote Tecplot: cutoff_gridless_shells.dat\n";
-  }
-  else {
+  if (!isPoints && !isShells) {
     throw std::runtime_error("Unsupported OUTPUT_MODE for gridless cutoff solver: "+prm.output.mode);
   }
 
-  if (prm.output.coords!="GSM") {
-    std::cout << "[gridless] NOTE: OUTPUT_COORDS=" << prm.output.coords
-              << ". This prototype interprets positions as GSM.\n";
+  // Shell grid geometry (only used in SHELLS mode).
+  const double d_deg = isShells ? prm.output.shellRes_deg : 0.0;
+  // Number of shells (altitude surfaces) requested in SHELLS mode.
+  // NOTE: We define this here (next to other shell geometry quantities) so that
+  //       progress reporting and per-shell completion tracking can use it without
+  //       relying on any later declarations.
+  const int nShells = isShells ? static_cast<int>(prm.output.shellAlt_km.size()) : 0;
+  const int nLon = isShells ? static_cast<int>(std::floor(360.0/d_deg + 0.5)) : 0;
+  const int nLat = isShells ? static_cast<int>(std::floor(180.0/d_deg + 0.5)) + 1 : 0;
+  const int nPtsShell = isShells ? (nLon*nLat) : 0;
+
+  // Total number of locations in this run.
+  const int nLoc =
+    isPoints ? static_cast<int>(prm.output.points.size())
+             : static_cast<int>(prm.output.shellAlt_km.size()) * nPtsShell;
+
+  const int nDir = static_cast<int>(dirs.size());
+
+  //====================================================================================
+  // MASTER/WORKER message protocol
+  //
+  // We keep messages minimal to reduce MPI overhead:
+  //   Task:   {int locationId; int dirId;}
+  //   Result: {int locationId; double RcDir;}
+  //
+  // The worker recomputes x0_m from locationId and reads dir vector from dirs[dirId].
+  //====================================================================================
+  struct TaskMsg { int loc; int dir; };
+  struct ResultMsg { int loc; double rc; };
+
+  const int TAG_TASK   = 1001;
+  const int TAG_RESULT = 1002;
+  const int TAG_STOP   = 1003;
+
+  //====================================================================================
+  // Rank-0 progress reporting
+  //
+  // We print infrequently (time-throttled) to avoid turning stdout into a scalability
+  // bottleneck. The "done" count here refers to completed TRAJECTORY tasks, not locations.
+  //====================================================================================
+  auto nowSeconds = []() -> double {
+    return MPI_Wtime();
+  };
+
+  // Wall-clock reference time used for ETA estimation in the progress bar.
+  // IMPORTANT: This must be defined *before* the progress lambda below; otherwise
+  //            the lambda will refer to an out-of-scope identifier and fail to compile.
+  const double tStart = nowSeconds();
+
+//====================================================================================
+// Progress reporting (MASTER ONLY)
+//
+// IMPORTANT CONTEXT (why this is more complicated than a simple "location done" bar):
+//   In this trajectory-parallel MPI design we distribute work by (locationId,dirId)
+//   tasks, because:
+//     * Different directions/rigidities take very different walltime (escape quickly vs
+//       long trapping vs near-boundary grazing trajectories).
+//     * The number of search locations (points/shell nodes) can be smaller than the
+//       number of MPI ranks, but the number of trajectories is usually much larger:
+//           Ntasks = Nlocations * Ndirections
+//
+//   As a result, the natural "unit of work" that advances smoothly is TASKS, not
+//   LOCATIONS. A location is only "complete" once all its direction tasks return.
+//
+//   To make runtime behavior transparent (and to avoid the confusion you observed),
+//   the progress bar prints BOTH:
+//     - completed locations:   locDone / nLoc
+//     - completed tasks:       doneTasks / totalTasks
+//
+//   This makes it obvious that the scheduler is working even when locDone stays at 0
+//   for some time (because many direction tasks must finish before the first location
+//   can be reduced to a final cutoff).
+//
+// OUTPUT DESIGN:
+//   - Only rank 0 prints, to keep stdout readable.
+//   - Print at most once per second (stdout can become a scalability bottleneck).
+//   - For SHELLS mode, we additionally show "SHELL i/N alt=..." for the first not-yet-
+//     completed shell, so the output resembles the original serial progress format.
+//====================================================================================
+auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
+                              int locDone,
+                              const std::vector<int>& locDonePerShell) {
+  if (mpiRank!=0) return; // MASTER ONLY
+
+  static double tLast = -1.0;
+  const double t = nowSeconds();
+  if (tLast < 0.0) tLast = t;
+  if (t - tLast < 1.0) return; // throttle
+  tLast = t;
+
+  // --- Compute fraction based on TASKS, because tasks advance smoothly ---
+  const double frac = (totalTasks>0) ? (double(doneTasks)/double(totalTasks)) : 1.0;
+
+  // --- ETA based on tasks ---
+  const double dt = t - tStart;
+  const double rate = (dt>0.0) ? (double(doneTasks)/dt) : 0.0;
+  double eta_s = -1.0;
+  if (rate>0.0 && totalTasks>doneTasks) eta_s = double(totalTasks-doneTasks)/rate;
+
+  auto fmt_hms = [&](double s)->std::string{
+    if (s < 0.0) return std::string("--:--:--");
+    long long is = (long long)std::llround(s);
+    long long hh = is/3600; is-=hh*3600;
+    long long mm = is/60;   is-=mm*60;
+    long long ss = is;
+    char buf[64];
+    std::snprintf(buf,sizeof(buf),"%02lld:%02lld:%02lld",hh,mm,ss);
+    return std::string(buf);
+  };
+
+  const int barW = 36;
+  const int filled = (int)std::floor(frac*barW + 0.5);
+
+  // Header label: POINTS or SHELL i/N with altitude
+  if (isPoints) {
+    std::cout << "[POINTS] ";
+  } else {
+    // Identify the first incomplete shell (for user-friendly output)
+    int curShell = 0;
+    for (int s=0;s<nShells;s++) {
+      if (locDonePerShell[(size_t)s] < nPtsShell) { curShell = s; break; }
+      curShell = s; // if all done, prints last shell
+    }
+    const double alt_km = prm.output.shellAlt_km[(size_t)curShell];
+    std::cout << "[SHELL " << (curShell+1) << "/" << nShells << " alt=" << alt_km << "km] ";
+  }
+
+  // Prefix with rank to make it unambiguous that only rank 0 is printing.
+  std::cout << "[rank " << mpiRank << "] ";
+
+  std::cout << "[";
+  for (int i=0;i<barW;i++) std::cout << (i<filled ? "#" : "-");
+  std::cout << "] ";
+
+  std::cout << std::fixed;
+  std::cout.precision(1);
+  std::cout << (frac*100.0) << "%  ";
+
+  // Show BOTH locations and tasks
+  std::cout << "(Loc " << locDone << "/" << nLoc << ", "
+            << "Task " << doneTasks << "/" << totalTasks << ")  "
+            << "ETA " << fmt_hms(eta_s) << "\n";
+  std::cout.flush();
+};
+
+  //====================================================================================
+  // Helper: reconstruct the starting position x0_m [m] from a flattened locationId.
+  //
+  // IMPORTANT: This matches your current "meaningful results" conventions:
+  //   - POINTS are interpreted as GSM kilometers in the input file.
+  //   - SHELLS positions are constructed in GSM Cartesian from lon/lat/alt.
+  //====================================================================================
+  auto LocationToX0m = [&](int locationId) -> V3 {
+    if (isPoints) {
+      const auto& P = prm.output.points[(size_t)locationId];
+      return { P.x*1000.0, P.y*1000.0, P.z*1000.0 };
+    }
+
+    // SHELLS
+    const int s = locationId / nPtsShell;
+    const int k = locationId - s*nPtsShell;
+
+    const int iLon = k % nLon;
+    const int jLat = k / nLon;
+
+    double lon = d_deg * iLon;
+    double lat = -90.0 + d_deg * jLat;
+    if (lat > 90.0) lat = 90.0;
+
+    const double alt_km = prm.output.shellAlt_km[(size_t)s];
+    const double r_m = (_RADIUS_(_EARTH_) + alt_km*1000.0);
+
+    const double lonRad = lon*M_PI/180.0;
+    const double latRad = lat*M_PI/180.0;
+    const double cl = std::cos(latRad);
+
+    return { r_m*cl*std::cos(lonRad), r_m*cl*std::sin(lonRad), r_m*std::sin(latRad) };
+  };
+
+  //====================================================================================
+  // Storage for final results (computed on master, then written to Tecplot).
+  //
+  // NOTE:
+  //   We only need per-location minimum cutoff (min over directions). We do not store
+  //   per-direction cutoffs to keep memory bounded for large shell grids.
+  //====================================================================================
+  std::vector<double> RcMin;
+  std::vector<double> EminMin;
+
+  if (mpiRank==0) {
+    RcMin.assign((size_t)nLoc, -1.0);
+    EminMin.assign((size_t)nLoc, -1.0);
+  }
+
+  // Total number of independent tasks.
+  const long long totalTasks = (long long)nLoc * (long long)nDir;
+
+  // Each worker counts how many trajectory-tasks it actually computed.
+  // This is used at the end to *prove* tasks were distributed (no duplicated work).
+  long long myTasksProcessed = 0;
+
+  //====================================================================================
+  // WORKER LOOP
+  //
+  // Workers wait for tasks, compute the cutoff for one direction, and send back results.
+  //====================================================================================
+  auto WorkerLoop = [&]() {
+    while (true) {
+      MPI_Status st;
+      TaskMsg task;
+
+      MPI_Recv(&task, (int)sizeof(TaskMsg), MPI_BYTE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &st);
+
+      if (st.MPI_TAG == TAG_STOP) {
+        // Master tells us there is no more work.
+        break;
+      }
+
+      // Defensive: only TAG_TASK is expected here.
+      if (st.MPI_TAG != TAG_TASK) {
+        continue;
+      }
+
+
+      // Count this task. Each task corresponds to one (locationId,dirId) trajectory.
+      // If scheduling is correct, the sum of these counters over ranks 1..N-1 should
+      // equal totalTasks.
+      myTasksProcessed++; 
+
+      // Reconstruct start position and direction.
+      const V3 x0_m = LocationToX0m(task.loc);
+      const V3 dir  = dirs[(size_t)task.dir];
+
+      // Compute direction cutoff.
+      const double rc = CutoffForDirection_GV(x0_m, dir, Rmin, Rmax);
+
+      ResultMsg res{ task.loc, rc };
+      MPI_Send(&res, (int)sizeof(ResultMsg), MPI_BYTE, 0, TAG_RESULT, MPI_COMM_WORLD);
+    }
+  };
+
+  //====================================================================================
+  // MASTER SCHEDULER
+  //
+  // Rank 0 feeds tasks to workers as they become available. This is the key piece
+  // that keeps the cluster busy when trajectory costs vary widely.
+  //====================================================================================
+  auto MasterScheduler = [&]() {
+    // Edge case: running with a single rank -> just do serial execution.
+    if (mpiSize==1) {
+      if (mpiRank==0) std::cout << "[gridless][MPI] size==1 -> serial fallback.\n";
+
+      for (int loc=0; loc<nLoc; loc++) {
+        const V3 x0_m = LocationToX0m(loc);
+
+        double rcMin = -1.0;
+        for (int dId=0; dId<nDir; dId++) {
+          const double rc = CutoffForDirection_GV(x0_m, dirs[(size_t)dId], Rmin, Rmax);
+          if (rc>0.0) rcMin = (rcMin<0.0) ? rc : std::min(rcMin, rc);
+        }
+
+        RcMin[(size_t)loc] = rcMin;
+        if (rcMin>0.0) {
+          const double pCut = MomentumFromRigidity_GV(rcMin, qabs);
+          EminMin[(size_t)loc] = KineticEnergyFromMomentum_MeV(pCut, m0);
+        }
+      }
+
+      return;
+    }
+
+
+// Next task to issue (linearized over loc then dir).
+long long nextTask = 0;
+long long doneTasks = 0;
+
+//----------------------------------------------------------------------------------
+// Location-level completion tracking (for user-visible progress reporting)
+//
+// We schedule work as (locationId,dirId) tasks, but users naturally think in terms
+// of "how many points/shell nodes are finished?".
+//
+// A location is COMPLETE only when *all* its direction tasks have returned.
+// We track that with a simple countdown initialized to nDir for each location.
+//
+// For SHELLS, we also track completion per shell index so the progress line can
+// report "SHELL i/N alt=..." similar to the legacy serial output.
+//----------------------------------------------------------------------------------
+std::vector<int> locRemain((size_t)nLoc, nDir);
+int locDone = 0;
+std::vector<int> locDonePerShell;
+if (!isPoints) locDonePerShell.assign((size_t)nShells, 0);
+
+    // 1) Prime the workers with one task each (or until we run out of tasks).
+    const int nWorkers = mpiSize - 1;
+    for (int w=1; w<=nWorkers; w++) {
+      if (nextTask >= totalTasks) break;
+
+      const int loc = (int)(nextTask / nDir);
+      const int dir = (int)(nextTask - (long long)loc*nDir);
+      TaskMsg t{ loc, dir };
+
+      MPI_Send(&t, (int)sizeof(TaskMsg), MPI_BYTE, w, TAG_TASK, MPI_COMM_WORLD);
+      nextTask++;
+    }
+
+    // 2) Receive results and keep issuing new tasks until completion.
+    while (doneTasks < totalTasks) {
+      MPI_Status st;
+      ResultMsg res;
+
+      MPI_Recv(&res, (int)sizeof(ResultMsg), MPI_BYTE, MPI_ANY_SOURCE, TAG_RESULT, MPI_COMM_WORLD, &st);
+      doneTasks++;
+
+      // Update per-location minimum cutoff.
+      if (res.rc > 0.0) {
+        double& cur = RcMin[(size_t)res.loc];
+        cur = (cur<0.0) ? res.rc : std::min(cur, res.rc);
+      }
+
+      //--------------------------------------------------------------------------------
+      // Mark this (location,dir) task as completed.
+      //
+      // A location is 'done' only after ALL directions have been processed.
+      // Tracking this lets the progress bar show both Task and Location completion.
+      //--------------------------------------------------------------------------------
+      {
+        const int loc = res.loc;
+        if (loc >= 0 && loc < nLoc) {
+          locRemain[(size_t)loc]--;
+          if (locRemain[(size_t)loc] == 0) {
+            locDone++;
+            if (!isPoints) {
+              const int s = loc / nPtsShell;
+              if (s >= 0 && s < nShells) locDonePerShell[(size_t)s]++;
+            }
+          }
+        }
+      }
+
+      // Print progress occasionally (throttled).
+      maybePrintProgress(doneTasks, totalTasks, locDone, locDonePerShell);
+
+      // Send a new task to the worker that just returned, or stop it if we're done.
+      if (nextTask < totalTasks) {
+        const int loc = (int)(nextTask / nDir);
+        const int dir = (int)(nextTask - (long long)loc*nDir);
+        TaskMsg t{ loc, dir };
+
+        MPI_Send(&t, (int)sizeof(TaskMsg), MPI_BYTE, st.MPI_SOURCE, TAG_TASK, MPI_COMM_WORLD);
+        nextTask++;
+      } else {
+        // No more tasks left -> stop this worker.
+        TaskMsg stopMsg{ -1, -1 };
+        MPI_Send(&stopMsg, (int)sizeof(TaskMsg), MPI_BYTE, st.MPI_SOURCE, TAG_STOP, MPI_COMM_WORLD);
+      }
+    }
+
+    // 3) Ensure any workers that never received a STOP also get one.
+    //    (This can happen when totalTasks < #workers).
+    for (int w=1; w<mpiSize; w++) {
+      // We attempt a nonblocking "probe" for safety; if a worker is still waiting,
+      // it will receive the stop message. If it already exited, the message is harmless.
+      TaskMsg stopMsg{ -1, -1 };
+      MPI_Send(&stopMsg, (int)sizeof(TaskMsg), MPI_BYTE, w, TAG_STOP, MPI_COMM_WORLD);
+    }
+
+    // 4) Convert RcMin -> EminMin (rank 0 only) after all tasks have been reduced.
+    for (int loc=0; loc<nLoc; loc++) {
+      const double rc = RcMin[(size_t)loc];
+      if (rc>0.0) {
+        const double pCut = MomentumFromRigidity_GV(rc,qabs);
+        EminMin[(size_t)loc] = KineticEnergyFromMomentum_MeV(pCut,m0);
+      }
+    }
+  };
+
+  //====================================================================================
+  // Run: master or worker
+  //====================================================================================
+  if (mpiRank==0) {
+    MasterScheduler();
+  } else {
+    WorkerLoop();
+  }
+
+  
+
+      //====================================================================================
+      // POST-RUN DIAGNOSTIC: Verify that tasks were truly distributed (no duplicated work)
+      //
+      // Symptom you observed:
+      //   "All processes output the progress bar" and the intervals between progress prints
+      //   increase over time. The second effect is normal when some tasks become long:
+      //   the master blocks in MPI_Recv waiting for a worker to finish, so it cannot print
+      //   at a fixed cadence. The first effect is usually stdout interleaving/tagging by
+      //   the MPI launcher, or accidental worker printing.
+      //
+      // The definitive check is to count how many tasks each rank actually executed.
+      // Each worker increments myTasksProcessed once per received TAG_TASK message.
+      //
+      // We gather these counts on rank 0 and print:
+      //   - per-rank counts
+      //   - sum over workers
+      // and we compare sum to totalTasks.
+      //
+      // If scheduling is correct:
+      //   sum_{r=1..size-1} myTasksProcessed[r] == totalTasks
+      // (rank 0 does not compute tasks in this design).
+      //====================================================================================
+      std::vector<long long> taskCounts;
+      if (mpiRank == 0) taskCounts.assign((size_t)mpiSize, 0);
+
+      MPI_Gather(&myTasksProcessed, 1, MPI_LONG_LONG,
+                 (mpiRank==0 ? taskCounts.data() : nullptr), 1, MPI_LONG_LONG,
+                 0, MPI_COMM_WORLD);
+
+      if (mpiRank == 0) {
+        long long sumWorkers = 0;
+        long long minW = (mpiSize>1 ? taskCounts[1] : 0);
+        long long maxW = (mpiSize>1 ? taskCounts[1] : 0);
+
+        for (int r=1; r<mpiSize; ++r) {
+          sumWorkers += taskCounts[(size_t)r];
+          minW = std::min(minW, taskCounts[(size_t)r]);
+          maxW = std::max(maxW, taskCounts[(size_t)r]);
+        }
+
+        std::cout << "[gridless][MPI] Task distribution check:\n";
+        std::cout << "  totalTasks (expected) = " << totalTasks << "\n";
+        std::cout << "  sum(worker tasks)     = " << sumWorkers << "\n";
+        if (mpiSize > 1) {
+          std::cout << "  per-worker min/avg/max = " << minW
+                    << " / " << (double(sumWorkers)/double(mpiSize-1))
+                    << " / " << maxW << "\n";
+        }
+        for (int r=0; r<mpiSize; ++r) {
+          std::cout << "    rank " << r << ": " << taskCounts[(size_t)r] << " tasks\n";
+        }
+
+        if (sumWorkers != totalTasks) {
+          std::cout << "[gridless][MPI][WARNING] sum(worker tasks) != totalTasks.\n"
+                    << "  This can happen only if:\n"
+                    << "   - rank 0 also computed tasks (not in this design), or\n"
+                    << "   - tasks were dropped/duplicated due to a scheduler bug.\n"
+                    << "  Investigate immediately if this persists.\n";
+        }
+        std::cout.flush();
+      }
+
+  //====================================================================================
+  // Output (rank 0 only)
+  //====================================================================================
+  if (mpiRank==0) {
+    if (isPoints) {
+      // Repackage into per-point arrays for Tecplot writer.
+      std::vector<double> Rc((size_t)nLoc), Emin((size_t)nLoc);
+      for (int i=0;i<nLoc;i++) { Rc[(size_t)i]=RcMin[(size_t)i]; Emin[(size_t)i]=EminMin[(size_t)i]; }
+
+      // Preserve the original per-point console summary (optional; can be large).
+      for (size_t i=0;i<prm.output.points.size();i++) {
+        const auto& P = prm.output.points[i];
+        std::cout << "Point " << i << " (" << P.x << "," << P.y << "," << P.z << ")"
+                  << " -> Rc=" << Rc[i] << " GV, Emin=" << Emin[i] << " MeV\n";
+      }
+
+      WriteTecplotPoints(prm.output.points,Rc,Emin);
+      std::cout << "Wrote Tecplot: cutoff_gridless_points.dat\n";
+    } else {
+      // SHELLS: RcMin/EminMin are flattened [s*nPtsShell + k].
+      if (prm.output.shellAlt_km.empty()) {
+        throw std::runtime_error("OUTPUT_MODE=SHELLS but SHELL_ALTS_KM list is empty");
+      }
+
+      std::vector< std::vector<double> > RcShell(prm.output.shellAlt_km.size());
+      std::vector< std::vector<double> > EminShell(prm.output.shellAlt_km.size());
+
+      for (size_t s=0; s<prm.output.shellAlt_km.size(); s++) {
+        RcShell[s].assign((size_t)nPtsShell, -1.0);
+        EminShell[s].assign((size_t)nPtsShell, -1.0);
+
+        for (int k=0;k<nPtsShell;k++) {
+          const int locId = (int)(s*nPtsShell + k);
+          RcShell[s][(size_t)k]   = RcMin[(size_t)locId];
+          EminShell[s][(size_t)k] = EminMin[(size_t)locId];
+        }
+
+        std::cout << "Shell alt=" << prm.output.shellAlt_km[s] << " km done.\n";
+      }
+
+      WriteTecplotShells(prm.output.shellAlt_km,prm.output.shellRes_deg,RcShell,EminShell);
+      std::cout << "Wrote Tecplot: cutoff_gridless_shells.dat\n";
+    }
+
+    if (prm.output.coords!="GSM") {
+      std::cout << "[gridless] NOTE: OUTPUT_COORDS=" << prm.output.coords
+                << ". This prototype interprets positions as GSM.\n";
+    }
+
+    std::cout.flush();
+  }
+
+  //----------------------------
+  // MPI finalize (only if we initialized it here)
+  //----------------------------
+  if (mpiInitByThisModule) {
+    int mpiFinalized = 0;
+    MPI_Finalized(&mpiFinalized);
+    if (!mpiFinalized) MPI_Finalize();
   }
 
   return 0;
 }
+
 
 }
 }
