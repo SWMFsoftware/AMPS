@@ -37,6 +37,8 @@
 #include <stdexcept>
 #include <iostream>
 #include <vector>
+#include <chrono>   // wall-clock timing for progress-bar ETA
+#include <cstring>  // snprintf used in ProgressBar
 
 #include "constants.h"
 #include "constants.PlanetaryData.h"
@@ -48,6 +50,273 @@ extern "C" {
 }
 
 namespace {
+
+//==============================================================================
+// ProgressBar  –  live single-line progress display on stderr
+//==============================================================================
+//
+// PURPOSE
+// -------
+// Cutoff-rigidity runs can take minutes to hours with no visible feedback.
+// This struct prints a compact progress bar that updates in-place on stderr
+// using the carriage-return (\r) trick so it never scrolls the log.
+//
+// TYPICAL OUTPUT (one line, updated in-place during the run)
+//
+//   [POINTS] [########--------]  50.0%  ( 500/1000)  ETA 00:01:23
+//    ^^^^^^   ^^^^^^^^^^^^^^^^   ^^^^^   ^^^^^^^^^^        ^^^^^^^^
+//    label    visual bar (36ch)  pct     counters          HH:MM:SS
+//
+// USAGE
+// -----
+//   ProgressBar bar;
+//   bar.Start(total, "POINTS");   // once, before the loop
+//   for (...) {
+//     doWork();
+//     bar.Advance(1);             // once per completed task
+//   }
+//   bar.Finish();                 // once, after the loop
+//
+// The bar can be reused for successive work sets (e.g. multiple shells) by
+// calling Start() again; it resets all internal state including the clock.
+//
+// BUFFERING STRATEGY
+// ------------------
+// Batch schedulers and redirected streams often ignore the _IONBF hint and
+// buffer stderr aggressively.  We defend against this with three layers:
+//
+//   1) setvbuf(stderr, nullptr, _IONBF, 0)
+//        Requests unbuffered mode from the C runtime.  Works for most
+//        interactive and pipe scenarios; may be ignored by some schedulers.
+//        Called once in RunCutoffRigidity before any output (not inside
+//        Start(), so it is guaranteed to fire before the first print).
+//
+//   2) fflush(stderr) after every fprintf
+//        Forces an OS-level flush regardless of the buffering mode.
+//        This is the most reliable layer.
+//
+//   3) Forced newline every kNewlineEvery updates
+//        When \r is processed but the stream is still line-buffered,
+//        a real newline guarantees the line is flushed and visible.
+//        When output is redirected to a file, this produces readable
+//        multi-line progress history rather than a single overwritten line.
+//        Set kNewlineEvery = 1 to always use newlines (safest for files).
+//        Set kNewlineEvery = 0 to never force them (pure \r mode).
+//
+// THROTTLING
+// ----------
+// Print() is called on every Advance(), but actually emits output only when
+// at least one of these is true:
+//   a) force = true  (Start and Finish always force a print)
+//   b) kMinIntervalSec seconds have elapsed since the last print
+//   c) the integer percent has changed
+// This caps stderr noise at roughly 2 lines/second while still capturing
+// every 1% milestone.
+//
+// ETA CALCULATION
+// ---------------
+//   rate = tasks_done / elapsed_wall_seconds
+//   eta  = tasks_remaining / rate
+// Suppressed (shown as "--:--:--") until kMinTasksForEta tasks complete,
+// to avoid misleading estimates from the first one or two (fast) tasks.
+//
+// THREAD SAFETY
+// -------------
+// Not thread-safe.  Designed for single-threaded serial use.
+//==============================================================================
+struct ProgressBar {
+
+  //──────────────────────────────────────────────────────────────────────────
+  // Tuning knobs  –  edit these to adjust behaviour without changing logic
+  //──────────────────────────────────────────────────────────────────────────
+  static const int    kBarWidth       = 36;   // characters in the [####----] bar
+  static const int    kNewlineEvery   = 20;   // force \n every N updates
+                                               //   0 = never (pure \r, looks best)
+                                               //   1 = always (safest for log files)
+  static const int    kMinTasksForEta = 3;    // suppress ETA until this many done
+  static const double kMinIntervalSec;        // minimum seconds between prints
+                                               //   (defined below the struct)
+
+  //──────────────────────────────────────────────────────────────────────────
+  // Internal state  –  reset by Start(), mutated by Advance() / Print()
+  //──────────────────────────────────────────────────────────────────────────
+  int          total_       = 1;     // denominator  (tasks in this work-set)
+  int          done_        = 0;     // numerator    (tasks completed so far)
+  int          printCount_  = 0;     // total number of actual prints issued
+  int          lastPct_     = -1;    // last integer-percent that was printed
+
+  const char*  label_       = "";    // text displayed before the bar
+
+  // Wall-clock reference points, measured with steady_clock so they are
+  // unaffected by NTP adjustments or daylight-saving changes during a run.
+  std::chrono::steady_clock::time_point tStart_;      // when Start() was called
+  std::chrono::steady_clock::time_point tLastPrint_;  // when Print() last fired
+
+  bool started_ = false;   // guards against Advance() before Start()
+
+  //──────────────────────────────────────────────────────────────────────────
+  // Start  –  initialise the bar and print the 0% state immediately.
+  //
+  // Parameters:
+  //   total  Number of tasks in this work-set.  Must be > 0; clamped to 1
+  //          if zero to avoid division-by-zero.
+  //   label  Short string shown as the bar's prefix (e.g. "POINTS",
+  //          "SHELL 1/3 alt=500 km").  Copied by pointer; must remain valid
+  //          for the lifetime of the bar (string literals always qualify).
+  //
+  // After Start() returns, the 0% bar is already visible on stderr.
+  // Call Advance() for each completed task, Finish() once at the end.
+  //──────────────────────────────────────────────────────────────────────────
+  void Start(int total, const char* label = "Progress") {
+    total_      = (total > 0) ? total : 1;
+    done_       = 0;
+    printCount_ = 0;
+    lastPct_    = -1;
+    label_      = label ? label : "Progress";
+
+    // Record the start time.  steady_clock is monotonic (never goes backward).
+    tStart_     = std::chrono::steady_clock::now();
+    // Set tLastPrint_ to a point far in the past so the very first call to
+    // Print(force=false) always passes the time-threshold check.
+    tLastPrint_ = tStart_ - std::chrono::seconds(3600);
+
+    started_ = true;
+
+    // Emit the initial 0% bar unconditionally (force=true).
+    Print(true);
+  }
+
+  //──────────────────────────────────────────────────────────────────────────
+  // Advance  –  record delta completed tasks and conditionally refresh.
+  //
+  // Parameters:
+  //   delta  Tasks completed since the last call (normally 1).
+  //
+  // done_ is clamped to [0, total_] so over-counting never produces > 100%.
+  // Calls Print(force=false) which applies the throttle rules.
+  //──────────────────────────────────────────────────────────────────────────
+  void Advance(int delta = 1) {
+    if (!started_) return;        // defensive: ignore calls before Start()
+    done_ += delta;
+    if (done_ > total_) done_ = total_;
+    if (done_ < 0)      done_ = 0;
+    Print(false);
+  }
+
+  //──────────────────────────────────────────────────────────────────────────
+  // Finish  –  snap to 100%, print the final line, move to a new line.
+  //
+  // The forced newline ensures that any subsequent stdout/stderr output
+  // (e.g. "Wrote Tecplot: ...") starts on a clean line and does not
+  // overwrite the final progress bar.
+  //──────────────────────────────────────────────────────────────────────────
+  void Finish() {
+    if (!started_) return;
+    done_ = total_;       // snap to 100% regardless of accumulated count
+    Print(true);          // force the final 100% print
+    std::fprintf(stderr, "\n");
+    std::fflush(stderr);
+    started_ = false;
+  }
+
+  //──────────────────────────────────────────────────────────────────────────
+  // Print  –  render and emit one progress line.  (Private helper.)
+  //
+  // Parameters:
+  //   force  true  → bypass throttle; always emit.
+  //                  Used by Start() (0%), Finish() (100%), and periodic
+  //                  forced-newline updates.
+  //          false → apply throttle: skip if both of the following hold:
+  //                  (a) less than kMinIntervalSec elapsed since last print
+  //                  (b) integer percent has not changed
+  //
+  // Output mechanics:
+  //   - Uses \r to return the cursor to column 0, overwriting the previous
+  //     bar on the same terminal line.
+  //   - Pads the line to a fixed width with trailing spaces to erase any
+  //     leftover characters from a previously longer label.
+  //   - Every kNewlineEvery actual prints, a real \n is appended instead.
+  //     This makes the output readable in log files and on terminals that
+  //     do not process \r correctly.
+  //   - Always calls fflush(stderr) to bypass any remaining OS buffering.
+  //──────────────────────────────────────────────────────────────────────────
+  void Print(bool force) {
+    using Clock = std::chrono::steady_clock;
+    using Fsec  = std::chrono::duration<double>;   // floating-point seconds
+
+    const Clock::time_point now     = Clock::now();
+    const double elapsedSec = std::chrono::duration_cast<Fsec>(now - tStart_).count();
+    const double sinceLast  = std::chrono::duration_cast<Fsec>(now - tLastPrint_).count();
+
+    // ── Compute fraction and integer percent ─────────────────────────────
+    const double frac = (done_ <= 0)     ? 0.0 :
+                        (done_ >= total_) ? 1.0 :
+                        static_cast<double>(done_) / static_cast<double>(total_);
+    const int    pct  = static_cast<int>(frac * 100.0);
+
+    // ── Throttle ──────────────────────────────────────────────────────────
+    // Skip this print unless force=true, enough time has elapsed, or the
+    // displayed percentage would change.
+    if (!force && sinceLast < kMinIntervalSec && pct == lastPct_) return;
+
+    // ── ETA ───────────────────────────────────────────────────────────────
+    // Suppress ETA for the first few tasks to avoid wild early estimates
+    // (the first task might be much faster or slower than average).
+    char etaBuf[16];
+    const int remaining = total_ - done_;
+    if (done_ >= kMinTasksForEta && elapsedSec > 0.01) {
+      const double rate   = static_cast<double>(done_) / elapsedSec; // tasks/s
+      const double etaSec = (rate > 1.0e-12)
+                              ? static_cast<double>(remaining) / rate
+                              : 0.0;
+      const int h = static_cast<int>(etaSec / 3600.0);
+      const int m = (static_cast<int>(etaSec) / 60) % 60;
+      const int s = static_cast<int>(etaSec) % 60;
+      std::snprintf(etaBuf, sizeof(etaBuf), "%02d:%02d:%02d", h, m, s);
+    } else {
+      std::snprintf(etaBuf, sizeof(etaBuf), "--:--:--");
+    }
+
+    // ── Build the [####----] bar ──────────────────────────────────────────
+    // Fill kBarWidth characters: '#' for completed fraction, '-' for the rest.
+    int fill = static_cast<int>(frac * static_cast<double>(kBarWidth) + 0.5);
+    if (fill < 0)         fill = 0;
+    if (fill > kBarWidth) fill = kBarWidth;
+
+    char bar[kBarWidth + 1];
+    for (int i = 0; i < kBarWidth; ++i) bar[i] = (i < fill ? '#' : '-');
+    bar[kBarWidth] = '\0';
+
+    // ── Choose line ending ────────────────────────────────────────────────
+    // Normally we use \r (carriage return) to overwrite the previous line.
+    // Every kNewlineEvery actual prints we force a real \n so that even in
+    // log files or \r-blind environments the user sees periodic updates.
+    ++printCount_;
+    const bool useNewline = force
+                         || (kNewlineEvery > 0 && (printCount_ % kNewlineEvery == 0));
+
+    // ── Emit ──────────────────────────────────────────────────────────────
+    // \r returns the cursor to column 0.  Trailing spaces (via the format
+    // string padding) erase any leftover chars from a previously longer line.
+    std::fprintf(stderr,
+      "\r[%s] [%s] %5.1f%%  (%5d/%5d)  ETA %s   %s",
+      label_, bar,
+      100.0 * frac, done_, total_,
+      etaBuf,
+      useNewline ? "\n" : "");
+    std::fflush(stderr);
+
+    // ── Update throttle state ─────────────────────────────────────────────
+    tLastPrint_ = now;
+    lastPct_    = pct;
+  }
+};
+
+// Out-of-class definition for the non-integer constant (ODR requirement).
+// Value: 0.5 seconds minimum between consecutive progress-bar updates.
+// Increase for quieter logs; decrease (e.g. 0.1) for more frequent updates.
+const double ProgressBar::kMinIntervalSec = 0.5;
+
 
 struct V3 { double x,y,z; };
 static inline V3 add(const V3&a,const V3&b){return {a.x+b.x,a.y+b.y,a.z+b.z};}
@@ -447,6 +716,14 @@ namespace Earth {
 namespace GridlessMode {
 
 int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
+  // Unbuffer both output streams as early as possible so that progress-bar
+  // updates and regular log lines appear immediately, even inside batch jobs
+  // or when output is piped.  These are hints to the C runtime; some
+  // environments ignore them, which is why ProgressBar also calls
+  // fflush(stderr) after every print and forces periodic newlines.
+  setvbuf(stderr, nullptr, _IONBF, 0);  // unbuffered:     each write goes straight through
+  setvbuf(stdout, nullptr, _IOLBF, 0);  // line-buffered:  each '\n' flushes stdout
+
   const double qabs = std::fabs(prm.species.charge_e * ElectronCharge);
   const double m0   = prm.species.mass_amu * _AMU_;
 
@@ -492,6 +769,14 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     std::vector<double> Rc(prm.output.points.size(),-1.0);
     std::vector<double> Emin(prm.output.points.size(),-1.0);
 
+    // ── Progress bar for POINTS mode ─────────────────────────────────────
+    // One task = one point location.  The bar shows how many points have
+    // been fully processed (all 1152 directions + bisection for each).
+    // We use the point count (not trajectory count) as the denominator
+    // because it is known exactly up front and gives a clean 0-100% arc.
+    ProgressBar pointsBar;
+    pointsBar.Start(static_cast<int>(prm.output.points.size()), "POINTS");
+
     for (size_t i=0;i<prm.output.points.size();i++) {
       const auto& P = prm.output.points[i];
 
@@ -505,9 +790,21 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
         Emin[i] = KineticEnergyFromMomentum_MeV(pCut,m0);
       }
 
+      // Print a one-line summary for this point to stdout.  This goes to
+      // stdout (not stderr) so it does not collide with the progress bar.
       std::cout << "Point " << i << " (" << P.x << "," << P.y << "," << P.z << ")"
                 << " -> Rc=" << Rc[i] << " GV, Emin=" << Emin[i] << " MeV\n";
+      std::cout.flush();
+
+      // Advance the bar by one completed point.
+      // The bar will only actually redraw if enough time has elapsed or the
+      // displayed percent has changed (see ProgressBar::kMinIntervalSec).
+      pointsBar.Advance(1);
     }
+
+    // Snap to 100%, print the final bar line, and emit a newline so the
+    // subsequent "Wrote Tecplot:" message starts on a clean line.
+    pointsBar.Finish();
 
     WriteTecplotPoints(prm.output.points,Rc,Emin);
     std::cout << "Wrote Tecplot: cutoff_gridless_points.dat\n";
@@ -539,6 +836,19 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
       RcShell[s].assign(nPts,-1.0);
       EminShell[s].assign(nPts,-1.0);
 
+      // ── Progress bar for this shell ────────────────────────────────────
+      // One task = one (lon, lat) grid cell on this shell altitude.
+      // The label shows which shell we are on out of the total, plus the
+      // altitude, so multi-altitude runs give clear per-shell feedback.
+      // The bar is constructed fresh each iteration so Start() resets the
+      // wall-clock reference; each shell gets its own 0-100% arc and ETA.
+      char shellLabel[128];
+      std::snprintf(shellLabel, sizeof(shellLabel),
+                    "SHELL %zu/%zu alt=%.1fkm",
+                    s + 1, prm.output.shellAlt_km.size(), alt_km);
+      ProgressBar shellBar;
+      shellBar.Start(nPts, shellLabel);
+
       for (int j=0;j<nLat;j++) {
         double lat=-90.0 + d*j;
         if (lat>90.0) lat=90.0;
@@ -554,9 +864,14 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
             double pCut = MomentumFromRigidity_GV(rc,qabs);
             EminShell[s][k] = KineticEnergyFromMomentum_MeV(pCut,m0);
           }
+
+          // Advance by one completed grid cell.
+          shellBar.Advance(1);
         }
       }
 
+      // 100%, final bar line, newline — then the "Shell done" message.
+      shellBar.Finish();
       std::cout << "Shell alt=" << alt_km << " km done.\n";
     }
 
