@@ -137,6 +137,8 @@ my $ProjectSpecificSourceDirectory="main";
 
 # Copy project specific sources only when recreating the tree
 if ($needToRecreateTree && -d $ProjectSpecificSourceDirectory) {
+    print "ProjectSpecificSourceDirectory=$ProjectSpecificSourceDirectory\n";
+
     my $result = system("cp -r $ProjectSpecificSourceDirectory $BuildDir/main");
     die "Failed to remove build directory: $!" if $result != 0;
 }
