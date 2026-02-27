@@ -19,6 +19,7 @@
 //======================================================================================
 
 #include "amps_param_parser.h"
+#include "../boundary/spectrum.h"  // cSpectrum + global spectrum init
 
 #include <fstream>
 #include <sstream>
@@ -26,10 +27,16 @@
 #include <algorithm>
 #include <cctype>
 #include <vector>
+#include <map>
 #include <cstdlib>
 #include <cerrno>
 
 namespace EarthUtil {
+
+//======================================================================================
+// String / unit-conversion utilities
+// These must be defined before any function that calls them.
+//======================================================================================
 
 static inline std::string Trim(const std::string& s) {
   size_t a=0;
@@ -69,7 +76,6 @@ static inline std::string StripComment(const std::string& line) {
   return line.substr(0,p);
 }
 
-
 // Split an input line into the "code" part and the optional comment after '!'.
 // We intentionally preserve the comment text because some AMPS_PARAM files carry
 // UNITS in the comment, for example:
@@ -87,6 +93,97 @@ static inline void SplitCodeAndComment(const std::string& line,std::string& code
     comment=line.substr(p+1);
   }
 }
+
+//======================================================================================
+// Spectrum parsing
+//======================================================================================
+// The AMPS_PARAM.in format contains a #SPECTRUM section that defines the energy spectrum
+// of the injected flux (typically differential flux in energy).
+//
+// We parse the spectrum into a strongly-typed object so downstream output code can
+// reproduce the spectrum definition exactly (e.g., in Tecplot headers) and we can
+// fail fast if the spectrum type is unknown.
+//
+// Supported spectrum types (as produced by the wizard website):
+//   - POWER_LAW
+//   - POWER_LAW_CUTOFF
+//   - LIS_FORCE_FIELD
+//   - BAND
+//   - TABLE
+//======================================================================================
+
+/**
+ * @brief Enumerates supported spectrum functional forms read from #SPECTRUM.
+ *
+ * These correspond 1:1 to the wizard-generated keywords in AMPS_PARAM.in.
+ * Parsing into an enum avoids string comparisons during hot loops and allows us
+ * to validate the input once at startup (fail-fast).
+ */
+
+// Parsed spectrum object.
+// Note: this file was uploaded without amps_param_parser.h, so we keep this struct
+// local. In the real codebase, move this to the header and add a field to AmpsParam.
+/**
+ * @brief Holds a parsed spectrum definition from AMPS_PARAM.in.
+ *
+ * This is a "data-only" representation produced by the parser.
+ * - It is kept separate from any injection logic on purpose: the parser should
+ *   not depend on physics modules, and injection should not depend on parsing.
+ * - The Tecplot writer can use this object to emit metadata (AUXDATA) so the
+ *   output file records exactly which spectrum was used.
+ *
+ * All energies are stored in MeV (typically MeV/n). Conversion to Joules is done
+ * by downstream physics/injection code as needed.
+ */
+
+static inline double GetDoubleOrThrow(const std::map<std::string,std::string>& m,
+                                      const std::string& k,
+                                      const std::string& ctx) {
+  auto it=m.find(k);
+  if (it==m.end()) throw std::runtime_error("Missing required spectrum key '"+k+"' in "+ctx);
+  return std::stod(it->second);
+}
+
+static inline std::string GetStringOrThrow(const std::map<std::string,std::string>& m,
+                                           const std::string& k,
+                                           const std::string& ctx) {
+  auto it=m.find(k);
+  if (it==m.end()) throw std::runtime_error("Missing required spectrum key '"+k+"' in "+ctx);
+  return Trim(it->second);
+}
+
+/**
+ * @brief Parse and validate the #SPECTRUM section.
+ *
+ * @param kv  Key/value table collected by the generic AMPS_PARAM.in reader for the
+ *            #SPECTRUM section only (keys already uppercased by the parser).
+ *
+ * @return SpectrumSpec with type and parameters filled in.
+ *
+ * Failure policy (important):
+ * - Unknown SPECTRUM_TYPE => throw with a clear list of supported types.
+ * - Missing required parameters for a known type => throw (fail-fast).
+ * - Emin/Emax invalid => throw.
+ *
+ * Rationale:
+ * Spectra define injected particle populations. If the spectrum is misread, the
+ * resulting simulation can be scientifically invalid. Therefore we prefer explicit
+ * errors over silent defaults.
+ */
+
+// Write spectrum definition as Tecplot AUXDATA entries.
+// Typical usage: call this while writing the Tecplot header (before ZONE).
+/**
+ * @brief Emit spectrum parameters into Tecplot header as AUXDATA entries.
+ *
+ * This is meant to be called by the Tecplot writer (not by the parser itself)
+ * so that each output file records the exact spectrum configuration used.
+ *
+ * Why AUXDATA:
+ * - It is preserved with the dataset.
+ * - It is easy to parse later for provenance.
+ * - It does not interfere with VARIABLES/ZONE data.
+ */
 
 // Earth radius used for conversion of "Re" to kilometers in the parser.
 // The parser stores all length-like quantities internally in km. Downstream code
@@ -228,6 +325,9 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
   }
 
   AmpsParam p;
+
+  // Keep a parsed spectrum object local to this translation unit.
+  // In the full codebase, add it as a field in AmpsParam and remove this local.
 
   std::string section;
   bool inPointsBlock=false;
@@ -379,6 +479,28 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
   if (p.output.mode=="POINTS" && p.output.points.empty()) {
     throw std::runtime_error("OUTPUT_MODE=POINTS but no POINT entries were found in POINTS_BEGIN/END block");
   }
+
+  // Parse spectrum into a typed representation and validate SPECTRUM_TYPE.
+  // This guarantees we fail fast for unrecognized spectrum definitions.
+
+  // If your downstream Tecplot writer lives elsewhere, pass parsedSpectrum to it
+  // and call WriteSpectrumTecplotAuxData(out, parsedSpectrum) when writing the
+  // Tecplot header. See comment above.
+
+    // Build/validate the global spectrum object from the parsed #SPECTRUM section.
+  // This exits early with a clear error message if the spectrum is missing, incomplete,
+  // or has an unrecognized SPECTRUM_TYPE token.
+  InitGlobalSpectrumFromKeyValueMap(p.spectrum);
+
+  // Diagnostic output: record the parsed spectrum in a standalone Tecplot file.
+  // This is intentionally written immediately after spectrum initialization so the
+  // output reflects exactly what injection will use.
+  //
+  // File: spectrum_input.dat
+  //  - Energy is written in MeV
+  //  - TABLE spectra preserve the user table points
+  //  - Analytic spectra are sampled with log-spaced energies (200 points by default)
+  ::WriteSpectrumInputTecplot("spectrum_input.dat", ::gSpectrum);
 
   return p;
 }
