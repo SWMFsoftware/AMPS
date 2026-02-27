@@ -432,8 +432,9 @@ InitInternalSphericalBoundary(cfg);
 	//Compute dt from particles (your CFL function)
         double dt = EvaluateCFLTimeStepForSpecies(0, CFL);
 
-	for (spec=0;spec<PIC::nTotalSpecies;spec++) {
-          double t=EvaluateCFLTimeStepForSpecies(0, CFL);
+	for (spec=1;spec<PIC::nTotalSpecies;spec++) {
+          double t=EvaluateCFLTimeStepForSpecies(spec, CFL);
+
 	  if (t<dt) dt=t;
 	}
 
