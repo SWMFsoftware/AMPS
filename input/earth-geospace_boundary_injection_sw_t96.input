@@ -41,7 +41,7 @@ CouplerMode=T05; //T96 !!!file(batsrus) !file(batsrus) !!T96 !!geopack !!!!(bats
 
 TimeStepMode=SpeciesGlobalTimeStep
 ParticleWeightMode=SpeciesGlobalParticleWeight
-ParticleWeightCorrectionMode=off !!on
+ParticleWeightCorrectionMode=on !off !!on
 
 MoverIntegratorMode=Boris-relativistic
 
@@ -60,7 +60,7 @@ MoverIntegratorMode=Boris-relativistic
 
 #General
   ReferenceInjectionParticleNumber=1000 
-  MaxMeshRefinmentLevel=12
+  MaxMeshRefinmentLevel=13
   EnforceRequestedMeshResolution=on !on,off
 
 ! FirstPrintedOutputFile=100 
@@ -71,13 +71,14 @@ MoverIntegratorMode=Boris-relativistic
   define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
 
   define _PIC__OPENMP_THREAD_SPLIT_MODE_ _PIC__OPENMP_THREAD_SPLIT_MODE__PARTICLES_
+  define _PIC__OPENMP_THREAD_SPLIT_MODE_ _PIC__OPENMP_THREAD_SPLIT_MODE__CELLS_
 
   BlockCells=4,4,4
   GhostCells=1,1,1
 ! CutCellVolumeCalculationMaxRefinmentLevel=1
 
-  NastranSurfaceUserData=on !!!on, off
-  ControlParticleInsideNastranSurface=on !!!on,of
+  !NastranSurfaceUserData=on !!!on, off
+  !ControlParticleInsideNastranSurface=on !!!on,of
 
   TrajectoryTracing=off
 
