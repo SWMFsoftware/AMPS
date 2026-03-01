@@ -2733,6 +2733,18 @@ sub ReadInterfaceBlock {
   my $T05_MODE__OFF=0;
   my $T05_MODE__ON=1;
   my $T05_MODE_=$T05_MODE__OFF;
+  my $T01_MODE__OFF=0;
+  my $T01_MODE__ON=1;
+  my $T01_MODE_=$T01_MODE__OFF;
+
+  my $TA15_MODE__OFF=0;
+  my $TA15_MODE__ON=1;
+  my $TA15_MODE_=$TA15_MODE__OFF;
+
+  my $TA16_MODE__OFF=0;
+  my $TA16_MODE__ON=1;
+  my $TA16_MODE_=$TA16_MODE__OFF;
+
   
   my $KMAG_MODE__OFF=0;
   my $KMAG_MODE__ON=1;
@@ -2826,7 +2838,56 @@ sub ReadInterfaceBlock {
       }
     }
     
-    #Khurana empirical model of magnetic field in Saturn's magnetosphere 
+    
+    #Tsyganenko T01 
+    elsif (uc($InputLine) eq "T01") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      if (uc($InputLine) eq "ON") {
+        $T01_MODE_=$T01_MODE__ON;
+      }
+      elsif (uc($InputLine) eq "OFF") {
+        $T01_MODE_=$T01_MODE__OFF;
+      }
+      else  {
+        warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+        die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+      }
+    }
+
+    #Tsyganenko & Andreeva TA15
+    elsif (uc($InputLine) eq "TA15") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      if (uc($InputLine) eq "ON") {
+        $TA15_MODE_=$TA15_MODE__ON;
+      }
+      elsif (uc($InputLine) eq "OFF") {
+        $TA15_MODE_=$TA15_MODE__OFF;
+      }
+      else  {
+        warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+        die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+      }
+    }
+
+    #Tsyganenko & Andreeva TA16
+    elsif (uc($InputLine) eq "TA16") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      if (uc($InputLine) eq "ON") {
+        $TA16_MODE_=$TA16_MODE__ON;
+      }
+      elsif (uc($InputLine) eq "OFF") {
+        $TA16_MODE_=$TA16_MODE__OFF;
+      }
+      else  {
+        warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+        die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+      }
+    }
+
+#Khurana empirical model of magnetic field in Saturn's magnetosphere 
     elsif (uc($InputLine) eq "KMAG") {
       ($InputLine,$InputComment)=split(' ',$InputComment,2);
             
@@ -2894,6 +2955,34 @@ sub ReadInterfaceBlock {
         $Interfaces="$Interfaces "."t05";
       }
 	    
+
+      #T01 interface ---------------------------------------------------------
+      ampsConfigLib::RedefineMacro("_INTERFACE__T01__MODE_","_INTERFACE_MODE_OFF_",'interface/interface.dfn');
+      if ($T01_MODE_==$T01_MODE__ON) {
+        ampsConfigLib::RedefineMacro("_INTERFACE__T01__MODE_","_INTERFACE_MODE_ON_",'interface/interface.dfn');
+
+        $UseInterface='on';
+        $Interfaces="$Interfaces "."t01";
+      }
+
+      #TA15 interface ---------------------------------------------------------
+      ampsConfigLib::RedefineMacro("_INTERFACE__TA15__MODE_","_INTERFACE_MODE_OFF_",'interface/interface.dfn');
+      if ($TA15_MODE_==$TA15_MODE__ON) {
+        ampsConfigLib::RedefineMacro("_INTERFACE__TA15__MODE_","_INTERFACE_MODE_ON_",'interface/interface.dfn');
+
+        $UseInterface='on';
+        $Interfaces="$Interfaces "."ta15";
+      }
+
+      #TA16 interface ---------------------------------------------------------
+      ampsConfigLib::RedefineMacro("_INTERFACE__TA16__MODE_","_INTERFACE_MODE_OFF_",'interface/interface.dfn');
+      if ($TA16_MODE_==$TA16_MODE__ON) {
+        ampsConfigLib::RedefineMacro("_INTERFACE__TA16__MODE_","_INTERFACE_MODE_ON_",'interface/interface.dfn');
+
+        $UseInterface='on';
+        $Interfaces="$Interfaces "."ta16";
+      }
+
       #KMAG interface ---------------------------------------------------------
       if ($KMAG_MODE_==$KMAG_MODE__ON) {
         ampsConfigLib::RedefineMacro("_INTERFACE__KMAG__MODE_","_INTERFACE_MODE_ON_",'interface/interface.dfn');

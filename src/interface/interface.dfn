@@ -13,6 +13,18 @@
 //interface to T96
 #define _INTERFACE__T96__MODE_ _INTERFACE_MODE_OFF_
 
+
+//interface to T05
+#define _INTERFACE__T05__MODE_ _INTERFACE_MODE_OFF_
+
+//interface to T01
+#define _INTERFACE__T01__MODE_ _INTERFACE_MODE_OFF_
+
+//interface to TA15
+#define _INTERFACE__TA15__MODE_ _INTERFACE_MODE_OFF_
+
+//interface to TA16
+#define _INTERFACE__TA16__MODE_ _INTERFACE_MODE_OFF_
+
 //interface to KMAG
 #define _INTERFACE__KMAG__MODE_ _INTERFACE_MODE_OFF_
-

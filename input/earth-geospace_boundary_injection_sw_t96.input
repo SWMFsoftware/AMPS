@@ -143,6 +143,9 @@ MoverIntegratorMode=Boris-relativistic
   geopack=on
   T96=on
   T05=on
+  T01=on
+  TA15=ON
+  TA16=ON
 #endinterface
 
 
