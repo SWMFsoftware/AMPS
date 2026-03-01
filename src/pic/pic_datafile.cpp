@@ -357,7 +357,8 @@ void PIC::CPLR::DATAFILE::Init() {
       exit(__LINE__,__FILE__,"Error: the option is unknown");
     }
   }
-  else if ((_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T96_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T05_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__KMAG_)) {
+  else if ((_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T96_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T05_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__KMAG_)||
+           (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T01_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__TA15_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__TA16_)) {
     PIC::CPLR::DATAFILE::Offset::MagneticField.allocate=true;
   }
   else exit(__LINE__,__FILE__,"Error: wrong option");
@@ -1382,7 +1383,8 @@ void PIC::CPLR::GetDriftVelocity(double *vDrift,double *ParticleVelocity,double 
       SWMF::GetBackgroundMagneticField(cellB,Stencil.cell[iStencil]);
 
       break;
-    case _PIC_COUPLER_MODE__T96_: case _PIC_COUPLER_MODE__T05_: case _PIC_COUPLER_MODE__KMAG_: 
+    case _PIC_COUPLER_MODE__T96_: case _PIC_COUPLER_MODE__T05_: case _PIC_COUPLER_MODE__KMAG_:
+    case _PIC_COUPLER_MODE__T01_: case _PIC_COUPLER_MODE__TA15_: case _PIC_COUPLER_MODE__TA16_:
       for (int i=0;i<3;i++) cellE[i]=0.0;
       DATAFILE::GetBackgroundData(cellB,3,DATAFILE::Offset::MagneticField.RelativeOffset,Stencil.cell[iStencil]);
 

@@ -9,6 +9,9 @@ include makefile.geopack2008
 include makefile.T96
 include makefile.T05 
 include makefile.KMAG
+include makefile.T01
+include makefile.TA15
+include makefile.TA16
 
 
 INTERFACES=

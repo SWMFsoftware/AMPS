@@ -2095,7 +2095,12 @@ void PIC::Init_BeforeParser() {
   PIC::Mover::Init_BeforeParser();
 
   //init coupler 
-  if ((_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__DATAFILE_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T96_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T05_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__KMAG_)) {
+  // NOTE: DATAFILE is used not only for "file-based" background fields, but also
+  // as a uniform storage layer for analytic background field models (T96/T05/etc.).
+  // The latter path lets us reuse the same interpolation + gradient infrastructure.
+  if ((_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__DATAFILE_)||
+      (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T96_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T05_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__KMAG_)||
+      (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T01_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__TA15_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__TA16_)) {
     PIC::CPLR::DATAFILE::Init();
   }
 
