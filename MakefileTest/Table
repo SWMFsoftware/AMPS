@@ -6339,3 +6339,68 @@ Check=
 >>>@echo Test test_const-field-bc verification completed: `date`
 
 <#
+
+==============================================================================
+Test for Gridless Cutoff Rigidity Steady State with T96 Background Magnetic Field
+==============================================================================
+
+#>
+Name=Earth-cutoff-rigidity-gridless-steadystate_t96
+Time=5
+
+Type=amps
+
+Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
+Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels @@(0+pleiades)
+Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
+
+Outs=test_Earth-cutoff-rigidity-gridless-steadystate_t96-points test_Earth-cutoff-rigidity-gridless-steadystate_t96-shells
+
+Compile=
+>>>@echo "test_Earth-cutoff-rigidity-gridless-steadystate_t96_compile..." > test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+>>>./Config.pl -application=earth-geospace_boundary_injection_sep_t96 -amps-test=on $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96KEYS)
+>>>rm -rf srcTemp
+>>>-@($(MAKE) -j8 amps)
+>>>@echo "test_Earth-cutoff-rigidity-gridless-steadystate_t96_compile... done" >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+
+Run=
+>>>@echo "test_Earth-cutoff-rigidity-gridless-steadystate_t96_run..." >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+>>>@echo Test test_Earth-cutoff-rigidity-gridless-steadystate_t96 has started: `date`
+>>>cp input/test/geospace/* $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96DIR)
+
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+>>>@echo "Running cutoff rigidity for a set of points" >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+>>>cd $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96DIR); ${MPIRUN} ./amps -mode gridless -i cutoff-t96-points-steadystate.in
+
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+>>>@echo "Running cutoff rigidity for a spherical shell" >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+>>>cd $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96DIR); ${MPIRUN} ./amps -mode gridless -i cutoff-t96-shells-steadystate.in
+
+>>>@echo "test_Earth-cutoff-rigidity-gridless-steadystate_t96_run... done" >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+>>>@echo Test test_Earth-cutoff-rigidity-gridless-steadystate_t96 has finished: `date`
+
+Check=
+>>>@echo "test_Earth-cutoff-rigidity-gridless-steadystate_t96_check..." >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96DIR)/cutoff_gridless_points.dat \
+>>>  output/test_Earth-cutoff-rigidity-gridless-steadystate_t96/cutoff_gridless_points.dat$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).ref_np`ls $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96DIR)/PT/thread* |wc -l |tr -d ' '` \
+>>>  > test_Earth-cutoff-rigidity-gridless-steadystate_t96-points$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96DIR)/cutoff_gridless_shells.dat \
+>>>  output/test_Earth-cutoff-rigidity-gridless-steadystate_t96/cutoff_gridless_shells.dat$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).ref_np`ls $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96DIR)/PT/thread* |wc -l |tr -d ' '` \
+>>>  > test_Earth-cutoff-rigidity-gridless-steadystate_t96-shells$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+
+>>>@cat test_Earth-cutoff-rigidity-gridless-steadystate_t96-points$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff test_Earth-cutoff-rigidity-gridless-steadystate_t96-shells$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff > test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-steadystate_t96-points$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-steadystate_t96-shells$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
+>>>@echo Test test_Earth-cutoff-rigidity-gridless-steadystate_t96 verification completed: `date`
+
+<#
+
