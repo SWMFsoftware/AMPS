@@ -113,7 +113,6 @@
  *  (2) gridless_points_spectrum.dat
  *      One ZONE per observation point.
  *      Variables: E_MeV  T  J_boundary_perMeV  J_local_perMeV
- *      AUXDATA: spectrum definition (type + parameters) for provenance.
  *
  * -----------------------------------------------------------------------------
  * 4. IMPLEMENTATION OVERVIEW (algorithmic steps)
@@ -537,13 +536,24 @@ static double Trapz(const std::vector<double>& x, const std::vector<double>& f) 
 namespace Earth {
 namespace GridlessMode {
 
-int RunDensityAndSpectrumPoints(const EarthUtil::AmpsParam& prm) {
+//======================================================================================
+// INTERNAL DRIVER: POINTS MODE
+//======================================================================================
+// This is the original implementation: a list of explicit observation points is
+// processed (with MPI dynamic scheduling if available) and two Tecplot files are
+// written:
+//   - gridless_points_density.dat
+//   - gridless_points_spectrum.dat
+//
+// The logic is kept as a standalone helper so we can reuse the same per-point kernel
+// for SHELLS mode without mixing the output logic.
+static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
   int mpiRank=0, mpiSize=1;
   MPI_Comm_rank(MPI_COMM_WORLD,&mpiRank);
   MPI_Comm_size(MPI_COMM_WORLD,&mpiSize);
 
   if (EarthUtil::ToUpper(prm.output.mode)!="POINTS") {
-    throw std::runtime_error("DENSITY_SPECTRUM currently supports OUTPUT_MODE=POINTS only");
+    throw std::runtime_error("Internal error: RunDensityAndSpectrum_POINTS called for non-POINTS mode");
   }
 
   // Build shared grids.
@@ -735,6 +745,329 @@ int RunDensityAndSpectrumPoints(const EarthUtil::AmpsParam& prm) {
   }
 
   return 0;
+}
+
+//======================================================================================
+// INTERNAL DRIVER: SHELLS MODE
+//======================================================================================
+// For each requested shell altitude, we discretize the spherical surface into a
+// deterministic lon/lat grid and evaluate the density model at each grid point.
+//
+// OUTPUT (per shell altitude): a single Tecplot file with multiple ZONEs:
+//   - ZONE 1: total density integrated over the full energy band
+//   - ZONE i: density contribution from energy channel i-2
+//
+// Each ZONE is written in POINT format with the same spatial coordinates, so the
+// zones can be loaded together and visualized as separate scalar fields.
+//
+// IMPORTANT ABOUT "ENERGY CHANNELS"
+//   The energy grid contains Npoints = DS_NINTERVALS+1 values {E_i}.
+//   Channel k corresponds to interval [E_k, E_{k+1}] and its density contribution is
+//     n_k = 4*pi * \int_{E_k}^{E_{k+1}} J_loc(E)/v(E) dE
+//   which we approximate by a single trapezoid over the two endpoints.
+static std::vector<EarthUtil::Vec3> BuildShellPoints_km(double alt_km, double res_deg) {
+  // Radius of the shell in km.
+  const double r_km = RE_KM + alt_km;
+
+  // We intentionally match the Tecplot shell-grid convention used by
+  // CutoffRigidityGridless.cpp so that shell outputs from different tools
+  // are directly comparable.
+  //
+  //  - Longitude: periodic; generate nLon samples on [0, 360) degrees.
+  //    Do NOT include 360 deg to avoid duplicating the seam.
+  //  - Latitude: include both poles; generate nLat samples on [-90, 90] degrees.
+  //
+  // Using floor( ... + 0.5 ) matches the cutoff-rigidity writer.
+  const int nLon = std::max(1, (int)std::floor(360.0 / res_deg + 0.5));
+  const int nLat = std::max(2, (int)std::floor(180.0 / res_deg + 0.5) + 1);
+
+  std::vector<EarthUtil::Vec3> pts;
+  pts.reserve((size_t)nLat * (size_t)nLon);
+
+  for (int ilat = 0; ilat < nLat; ++ilat) {
+    // Match cutoff rigidity: lat = -90 + res_deg*j (with the last sample clamped at +90)
+    double lat_deg = -90.0 + res_deg * ilat;
+    if (lat_deg > 90.0) lat_deg = 90.0;
+    const double lat = lat_deg * M_PI / 180.0;
+    const double clat = std::cos(lat);
+    const double slat = std::sin(lat);
+    for (int ilon = 0; ilon < nLon; ++ilon) {
+      // Match cutoff rigidity: lon = res_deg*i, i in [0, nLon)
+      const double lon_deg = res_deg * ilon;
+      const double lon = lon_deg * M_PI / 180.0;
+      const double clon = std::cos(lon);
+      const double slon = std::sin(lon);
+      // GSM Cartesian convention used by the rest of the tool: X sunward, Z north.
+      // This spherical parameterization is purely geometric; it assumes the shell is
+      // centered at Earth's center in GSM coordinates.
+      EarthUtil::Vec3 p;
+      p.x = r_km * clat * clon;
+      p.y = r_km * clat * slon;
+      p.z = r_km * slat;
+      pts.push_back(p);
+    }
+  }
+  return pts;
+}
+
+static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
+  int mpiRank=0, mpiSize=1;
+  MPI_Comm_rank(MPI_COMM_WORLD,&mpiRank);
+  MPI_Comm_size(MPI_COMM_WORLD,&mpiSize);
+
+  if (EarthUtil::ToUpper(prm.output.mode)!="SHELLS") {
+    throw std::runtime_error("Internal error: RunDensityAndSpectrum_SHELLS called for non-SHELLS mode");
+  }
+  if (prm.output.shellAlt_km.empty()) {
+    throw std::runtime_error("OUTPUT_MODE=SHELLS requires at least one altitude in SHELL_ALTITUDES");
+  }
+
+  // Shared direction and energy grids.
+  const int nZenith=24;
+  const int nAz=48;
+  const std::vector<V3> dirs = BuildDirGrid(nZenith,nAz);
+  const std::vector<double> E_MeV = BuildEnergyGrid_MeV(prm);
+  const int nE = (int)E_MeV.size();
+  const int nIntervals = std::max(0, prm.densitySpectrum.nIntervals);
+  if (nE != nIntervals + 1) {
+    throw std::runtime_error("Internal inconsistency: energy grid size != DS_NINTERVALS+1");
+  }
+
+  int nDirsUse = (int)dirs.size();
+  if (prm.densitySpectrum.maxParticlesPerPoint > 0 && nE > 0) {
+    nDirsUse = std::max(1, prm.densitySpectrum.maxParticlesPerPoint / nE);
+    nDirsUse = std::min(nDirsUse, (int)dirs.size());
+  }
+  const std::vector<V3> dirsUse = SelectDirectionsDeterministic(dirs, nDirsUse);
+
+  const cFieldEvaluator field(prm);
+
+  if (mpiRank==0) {
+    std::cout << "================ Gridless density & spectrum (SHELLS) ================\n";
+    std::cout << "Run ID          : " << prm.runId << "\n";
+    std::cout << "Field model     : " << prm.field.model << "\n";
+    std::cout << "Epoch           : " << prm.field.epoch << "\n";
+    std::cout << "Species         : " << prm.species.name << " (q=" << prm.species.charge_e
+              << " e, m=" << prm.species.mass_amu << " amu)\n";
+    std::cout << "Energy grid     : [" << prm.densitySpectrum.Emin_MeV << ", " << prm.densitySpectrum.Emax_MeV
+              << "] MeV, Npoints=" << nE << " (" << (prm.densitySpectrum.spacing==EarthUtil::DensitySpectrumParam::Spacing::LOG?"LOG":"LINEAR")
+              << ")\n";
+    std::cout << "Directions grid : " << dirsUse.size() << " (nZenith=" << nZenith << ", nAz=" << nAz << ")";
+    if (prm.densitySpectrum.maxParticlesPerPoint > 0) {
+      std::cout << " [capped by DS_MAX_PARTICLES=" << prm.densitySpectrum.maxParticlesPerPoint << "]";
+    }
+    std::cout << "\n";
+    std::cout << "Shells          : " << prm.output.shellAlt_km.size() << " altitude(s), res=" << prm.output.shellRes_deg << " deg\n";
+    std::cout << "MPI ranks       : " << mpiSize << "\n";
+    std::cout << "======================================================================\n";
+    std::cout.flush();
+  }
+
+  // Process each shell independently: this keeps memory bounded and also matches
+  // the requested output semantics (one file per shell).
+  for (double alt_km : prm.output.shellAlt_km) {
+    // Build the shell point list in km and convert to meters when tracing.
+    const std::vector<EarthUtil::Vec3> shellPts_km = BuildShellPoints_km(alt_km, prm.output.shellRes_deg);
+    const int nPts = (int)shellPts_km.size();
+
+    // Sanity check: the shell point list must be a complete structured lon/lat grid
+    // with the exact same (nLon,nLat) definition used by the cutoff-rigidity tool.
+    const int nLon_expected = std::max(1, (int)std::floor(360.0 / prm.output.shellRes_deg + 0.5));
+    const int nLat_expected = std::max(2, (int)std::floor(180.0 / prm.output.shellRes_deg + 0.5) + 1);
+    if (nPts != nLon_expected * nLat_expected) {
+      std::ostringstream oss;
+      oss << "Internal error: shell point grid size mismatch: got nPts=" << nPts
+          << ", expected nLon*nLat=" << (nLon_expected * nLat_expected)
+          << " (nLon=" << nLon_expected << ", nLat=" << nLat_expected
+          << ", res_deg=" << prm.output.shellRes_deg << ")";
+      throw std::runtime_error(oss.str());
+    }
+
+    // Storage on rank 0.
+    std::vector<double> nTot_m3;
+    std::vector< std::vector<double> > nChan_m3; // [interval][point]
+    if (mpiRank==0) {
+      nTot_m3.assign(nPts, 0.0);
+      nChan_m3.assign(nIntervals, std::vector<double>(nPts, 0.0));
+    }
+
+    // MPI scheduling over shell point indices (same pattern as POINTS).
+    if (mpiSize==1) {
+      for (int ip=0; ip<nPts; ++ip) {
+        const auto& pk = shellPts_km[ip];
+        const V3 x0_m{pk.x*1000.0, pk.y*1000.0, pk.z*1000.0};
+
+        // Compute transmissivity T(E) on the energy grid.
+        std::vector<double> T(nE,0.0);
+        for (int ie=0; ie<nE; ++ie) {
+          const double Ej = E_MeV[ie]*MEV_TO_J;
+          const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
+          int allowed=0;
+          for (const auto& d : dirsUse) {
+            if (TraceAllowed(prm,field,x0_m, mul(-1.0,d), Rgv)) ++allowed;
+          }
+          T[ie] = double(allowed)/double(dirsUse.size());
+        }
+
+        // Build per-energy integrand g(E)=4*pi*J_loc(E)/v(E) and integrate.
+        std::vector<double> g(nE,0.0);
+        std::vector<double> EjGrid(nE,0.0);
+        for (int ie=0; ie<nE; ++ie) {
+          const double Ej = E_MeV[ie]*MEV_TO_J;
+          EjGrid[ie]=Ej;
+          const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
+          const double Jb = ::gSpectrum.GetSpectrum(Ej);
+          const double Jloc = T[ie]*Jb;
+          g[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
+        }
+        const double nTot = Trapz(EjGrid, g);
+        nTot_m3[ip] = nTot;
+
+        // Energy-channel contributions: one trapezoid per interval.
+        for (int ic=0; ic<nIntervals; ++ic) {
+          const double dE = EjGrid[ic+1] - EjGrid[ic];
+          const double nC = 0.5*(g[ic] + g[ic+1]) * dE;
+          nChan_m3[ic][ip] = nC;
+        }
+      }
+    }
+    else {
+      // Parallel: rank 0 distributes point indices.
+      const int TAG_TASK=3100, TAG_RES=3200;
+      if (mpiRank==0) {
+        int next=0;
+        for (int r=1;r<mpiSize;r++) {
+          int idx = (next<nPts)? next++ : -1;
+          MPI_Send(&idx,1,MPI_INT,r,TAG_TASK,MPI_COMM_WORLD);
+        }
+        int done=0;
+        while (done<nPts) {
+          // Header: point index + total density
+          struct { int idx; double nTot; } hdr;
+          MPI_Status st;
+          MPI_Recv(&hdr,sizeof(hdr),MPI_BYTE,MPI_ANY_SOURCE,TAG_RES,MPI_COMM_WORLD,&st);
+
+          // Channel densities
+          std::vector<double> buf(nIntervals,0.0);
+          MPI_Recv(buf.data(),nIntervals,MPI_DOUBLE,st.MPI_SOURCE,TAG_RES+1,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+
+          nTot_m3[hdr.idx]=hdr.nTot;
+          for (int ic=0; ic<nIntervals; ++ic) nChan_m3[ic][hdr.idx] = buf[ic];
+          done++;
+
+          int idx = (next<nPts)? next++ : -1;
+          MPI_Send(&idx,1,MPI_INT,st.MPI_SOURCE,TAG_TASK,MPI_COMM_WORLD);
+        }
+      }
+      else {
+        while (true) {
+          int idx=-1;
+          MPI_Recv(&idx,1,MPI_INT,0,TAG_TASK,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+          if (idx<0) break;
+
+          const auto& pk = shellPts_km[idx];
+          const V3 x0_m{pk.x*1000.0, pk.y*1000.0, pk.z*1000.0};
+
+          std::vector<double> T(nE,0.0);
+          for (int ie=0; ie<nE; ++ie) {
+            const double Ej = E_MeV[ie]*MEV_TO_J;
+            const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
+            int allowed=0;
+            for (const auto& d : dirsUse) {
+              if (TraceAllowed(prm,field,x0_m, mul(-1.0,d), Rgv)) ++allowed;
+            }
+            T[ie] = double(allowed)/double(dirsUse.size());
+          }
+
+          std::vector<double> g(nE,0.0);
+          std::vector<double> EjGrid(nE,0.0);
+          for (int ie=0; ie<nE; ++ie) {
+            const double Ej = E_MeV[ie]*MEV_TO_J;
+            EjGrid[ie]=Ej;
+            const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
+            const double Jb = ::gSpectrum.GetSpectrum(Ej);
+            const double Jloc = T[ie]*Jb;
+            g[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
+          }
+          const double nTot = Trapz(EjGrid, g);
+          std::vector<double> nCh(nIntervals,0.0);
+          for (int ic=0; ic<nIntervals; ++ic) {
+            const double dE = EjGrid[ic+1] - EjGrid[ic];
+            nCh[ic] = 0.5*(g[ic] + g[ic+1]) * dE;
+          }
+
+          struct { int idx; double nTot; } hdr{idx,nTot};
+          MPI_Send(&hdr,sizeof(hdr),MPI_BYTE,0,TAG_RES,MPI_COMM_WORLD);
+          MPI_Send(nCh.data(),nIntervals,MPI_DOUBLE,0,TAG_RES+1,MPI_COMM_WORLD);
+        }
+      }
+    }
+
+    // Rank 0 output: one Tecplot file per shell.
+    if (mpiRank==0) {
+      std::ostringstream fn;
+      fn << "gridless_shell_" << (int)std::round(alt_km) << "km_density_channels.dat";
+      std::ofstream out(fn.str());
+      out << "TITLE=\"Gridless energetic particle density (SHELL alt=" << alt_km << " km)\"\n";
+      // Match the structured (I,J) Tecplot layout used by the cutoff-rigidity tool.
+      // We write lon/lat grids (not X/Y/Z) because Tecplot structured grids are
+      // naturally indexed in 2D. The underlying physical shell is still a sphere
+      // centered at Earth; lon/lat are just a convenient parameterization.
+      out << "VARIABLES=\"lon_deg\" \"lat_deg\" \"N_m^-3\" \"N_cm^-3\"\n";
+
+      // Grid dimensions (must match BuildShellPoints_km).
+      const int nLon = std::max(1, (int)std::floor(360.0 / prm.output.shellRes_deg + 0.5));
+      const int nLat = std::max(2, (int)std::floor(180.0 / prm.output.shellRes_deg + 0.5) + 1);
+
+      // Zone 1: total density on the structured lon/lat grid.
+      // Ordering must match cutoff rigidity: k = i + nLon*j.
+      out << "ZONE T=\"TotalDensity\" I=" << nLon << " J=" << nLat << " F=POINT\n";
+      for (int j=0; j<nLat; ++j) {
+        double lat = -90.0 + prm.output.shellRes_deg * j;
+        if (lat > 90.0) lat = 90.0;
+        for (int i=0; i<nLon; ++i) {
+          const int k = i + nLon * j;
+          const double lon = prm.output.shellRes_deg * i;
+          const double n_m3 = nTot_m3[k];
+          const double n_cm3 = n_m3 * 1.0e-6;
+          out << lon << " " << lat << " " << n_m3 << " " << n_cm3 << "\n";
+        }
+      }
+
+      // Zones 2..: per-channel densities.
+      // Each channel corresponds to the energy interval [E_i, E_{i+1}] on the
+      // DS energy grid. We store each channel as its own Tecplot zone so that
+      // Tecplot users can toggle visibility / compute derived quantities per band.
+      for (int ic=0; ic<nIntervals; ++ic) {
+        const double Elo = E_MeV[ic];
+        const double Ehi = E_MeV[ic+1];
+        out << "ZONE T=\"Chan" << ic << "_" << Elo << "_" << Ehi << "MeV\" I=" << nLon << " J=" << nLat << " F=POINT\n";
+        for (int j=0; j<nLat; ++j) {
+          double lat = -90.0 + prm.output.shellRes_deg * j;
+          if (lat > 90.0) lat = 90.0;
+          for (int i=0; i<nLon; ++i) {
+            const int k = i + nLon * j;
+            const double lon = prm.output.shellRes_deg * i;
+            const double n_m3 = nChan_m3[ic][k];
+            const double n_cm3 = n_m3 * 1.0e-6;
+            out << lon << " " << lat << " " << n_m3 << " " << n_cm3 << "\n";
+          }
+        }
+      }
+    }
+  }
+
+  return 0;
+}
+
+//======================================================================================
+// PUBLIC ENTRY POINT
+//======================================================================================
+int RunDensityAndSpectrum(const EarthUtil::AmpsParam& prm) {
+  const std::string mode = EarthUtil::ToUpper(prm.output.mode);
+  if (mode=="POINTS") return RunDensityAndSpectrum_POINTS(prm);
+  if (mode=="SHELLS") return RunDensityAndSpectrum_SHELLS(prm);
+  throw std::runtime_error("Unsupported OUTPUT_MODE for DENSITY_SPECTRUM: '"+prm.output.mode+"' (supported: POINTS,SHELLS)");
 }
 
 }

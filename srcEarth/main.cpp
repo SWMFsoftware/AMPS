@@ -1484,7 +1484,7 @@ int main(int argc,char **argv) {
           return Earth::GridlessMode::RunCutoffRigidity(p);
         }
         if (target=="DENSITY_SPECTRUM") {
-          return Earth::GridlessMode::RunDensityAndSpectrumPoints(p);
+          return Earth::GridlessMode::RunDensityAndSpectrum(p);
         }
 
         throw std::runtime_error("Unsupported CALC_TARGET for -mode gridless: '"+p.calc.target+"'");

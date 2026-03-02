@@ -37,17 +37,31 @@
  * This solver requires:
  *   CALC_TARGET            DENSITY_SPECTRUM
  *   FIELD_EVAL_METHOD      GRIDLESS
- *   OUTPUT_MODE            POINTS
- * plus a #DENSITY_SPECTRUM section defining the energy grid and optional work caps.
+ * and a #DENSITY_SPECTRUM section defining the energy grid and optional work caps.
+ *
+ * OUTPUT_DOMAIN modes supported:
+ *   - POINTS : explicit observation points.
+ *   - SHELLS : one or more spherical shells defined by altitude(s) and angular
+ *              resolution (lon/lat grid).
  *
  * OUTPUT CONTRACT
  * ---------------
- * Writes two Tecplot files (rank 0):
- *   - gridless_points_density.dat
- *   - gridless_points_spectrum.dat
+ * POINTS:
+ *   Writes two Tecplot files (rank 0):
+ *     - gridless_points_density.dat
+ *     - gridless_points_spectrum.dat
+ *
+ * SHELLS:
+ *   Writes one Tecplot file per shell altitude A[km] (rank 0):
+ *     - gridless_shell_Akm_density_channels.dat
+ *   Each such file contains multiple Tecplot ZONEs:
+ *     - ZONE 1: total density integrated over the full energy band
+ *     - ZONE 2..: density contributions from individual energy channels
+ *                (one zone per energy interval [E_i,E_{i+1}]).
  *
  * See DensityGridless.cpp for full details and derivations.
  */
+
 
 #ifndef _SRC_EARTH_GRIDLESS_DENSITYGRIDLESS_H_
 #define _SRC_EARTH_GRIDLESS_DENSITYGRIDLESS_H_
@@ -57,7 +71,7 @@
 namespace Earth {
   namespace GridlessMode {
     // Returns 0 on success; throws std::runtime_error on invalid input.
-    int RunDensityAndSpectrumPoints(const EarthUtil::AmpsParam& p);
+    int RunDensityAndSpectrum(const EarthUtil::AmpsParam& p);
   }
 }
 
