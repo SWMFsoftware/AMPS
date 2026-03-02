@@ -531,6 +531,86 @@ static double Trapz(const std::vector<double>& x, const std::vector<double>& f) 
   return s;
 }
 
+//====================================================================================
+// Progress bar helper for density/spectrum calculations
+//
+// DESIGN RATIONALE
+//   The cutoff-rigidity module already has a sophisticated progress bar; this module
+//   (density/spectrum) previously had none, making long runs opaque to the user.
+//
+//   We follow the same visual conventions as the cutoff progress bar:
+//     - ASCII bar [####----] with percentage
+//     - Completed/total task counts
+//     - ETA based on elapsed walltime and current rate
+//     - Time-throttled printing (at most once per second) to avoid stdout overhead
+//     - Master (rank 0) only prints; workers never touch stdout
+//
+//   The progress tracker is a lightweight struct so it can be instantiated locally
+//   in each driver function without polluting the file-level namespace.
+//====================================================================================
+struct ProgressBar {
+  double tStart;          // wall-clock reference
+  double tLastPrint;      // last time we printed
+  int    mpiRank;         // only rank 0 prints
+  std::string label;      // e.g. "[POINTS]" or "[SHELL 2/5 alt=450km]"
+
+  ProgressBar(int rank, const std::string& lbl)
+    : tStart(MPI_Wtime()), tLastPrint(-1.0), mpiRank(rank), label(lbl) {}
+
+  void setLabel(const std::string& lbl) { label = lbl; }
+
+  // Print progress if rank==0 and at least 1 second has elapsed since last print.
+  // done/total are the number of completed vs total work items.
+  void update(long long done, long long total) {
+    if (mpiRank != 0) return;
+
+    const double tNow = MPI_Wtime();
+    if (tLastPrint >= 0.0 && (tNow - tLastPrint) < 1.0) return;
+    tLastPrint = tNow;
+
+    const double frac = (total > 0) ? double(done) / double(total) : 1.0;
+
+    // ETA
+    const double elapsed = tNow - tStart;
+    const double rate = (elapsed > 0.0) ? double(done) / elapsed : 0.0;
+    double eta_s = -1.0;
+    if (rate > 0.0 && done < total) eta_s = double(total - done) / rate;
+
+    // Format HH:MM:SS
+    auto fmt_hms = [](double s) -> std::string {
+      if (s < 0.0) return std::string("--:--:--");
+      long long is = (long long)std::llround(s);
+      long long hh = is / 3600; is -= hh * 3600;
+      long long mm = is / 60;   is -= mm * 60;
+      long long ss = is;
+      char buf[64];
+      std::snprintf(buf, sizeof(buf), "%02lld:%02lld:%02lld", hh, mm, ss);
+      return std::string(buf);
+    };
+
+    const int barW = 36;
+    const int filled = (int)std::floor(frac * barW + 0.5);
+
+    std::cout << label << " [rank 0] [";
+    for (int i = 0; i < barW; i++) std::cout << (i < filled ? "#" : "-");
+    std::cout << "] ";
+
+    std::cout << std::fixed;
+    std::cout.precision(1);
+    std::cout << (frac * 100.0) << "%  ";
+    std::cout << "(" << done << "/" << total << ")  "
+              << "ETA " << fmt_hms(eta_s) << "\n";
+    std::cout.flush();
+  }
+
+  // Force a final 100% line (always prints regardless of throttle).
+  void finish(long long total) {
+    if (mpiRank != 0) return;
+    tLastPrint = -1.0; // force print
+    update(total, total);
+  }
+};
+
 }
 
 namespace Earth {
@@ -605,6 +685,8 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
   // Master/worker scheduling over point indices.
   if (mpiSize==1) {
     // Serial path.
+    ProgressBar prog(mpiRank, "[POINTS]");
+
     for (int ip=0; ip<nPoints; ++ip) {
       const EarthUtil::Vec3 pk = prm.output.points[ip];
       const V3 x0_m { pk.x*1000.0, pk.y*1000.0, pk.z*1000.0 };
@@ -633,12 +715,18 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       }
       density_m3[ip] = Trapz(EjGrid, integrand);
       T_byPoint[ip] = std::move(T);
+
+      prog.update((long long)(ip + 1), (long long)nPoints);
     }
+
+    prog.finish((long long)nPoints);
   }
   else {
     // Parallel dynamic scheduling.
     const int TAG_TASK=100, TAG_RES=200;
     if (mpiRank==0) {
+      ProgressBar prog(mpiRank, "[POINTS]");
+
       int next=0;
       // seed workers
       for (int r=1;r<mpiSize;r++) {
@@ -661,10 +749,14 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
         T_byPoint[hdr.idx]=std::move(T);
         done++;
 
+        prog.update((long long)done, (long long)nPoints);
+
         // send next task
         int idx = (next<nPoints)? next++ : -1;
         MPI_Send(&idx,1,MPI_INT,st.MPI_SOURCE,TAG_TASK,MPI_COMM_WORLD);
       }
+
+      prog.finish((long long)nPoints);
     }
     else {
       while (true) {
@@ -893,48 +985,74 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
 
     // MPI scheduling over shell point indices (same pattern as POINTS).
     if (mpiSize==1) {
-      for (int ip=0; ip<nPts; ++ip) {
-        const auto& pk = shellPts_km[ip];
-        const V3 x0_m{pk.x*1000.0, pk.y*1000.0, pk.z*1000.0};
+      // Build shell-specific label: "[SHELL 2/5 alt=450km]"
+      {
+        int shellIdx = 0;
+        for (size_t si = 0; si < prm.output.shellAlt_km.size(); ++si) {
+          if (std::fabs(prm.output.shellAlt_km[si] - alt_km) < 0.01) { shellIdx = (int)si; break; }
+        }
+        std::ostringstream lbl;
+        lbl << "[SHELL " << (shellIdx + 1) << "/" << prm.output.shellAlt_km.size()
+            << " alt=" << alt_km << "km]";
+        ProgressBar prog(mpiRank, lbl.str());
 
-        // Compute transmissivity T(E) on the energy grid.
-        std::vector<double> T(nE,0.0);
-        for (int ie=0; ie<nE; ++ie) {
-          const double Ej = E_MeV[ie]*MEV_TO_J;
-          const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
-          int allowed=0;
-          for (const auto& d : dirsUse) {
-            if (TraceAllowed(prm,field,x0_m, mul(-1.0,d), Rgv)) ++allowed;
+        for (int ip=0; ip<nPts; ++ip) {
+          const auto& pk = shellPts_km[ip];
+          const V3 x0_m{pk.x*1000.0, pk.y*1000.0, pk.z*1000.0};
+
+          // Compute transmissivity T(E) on the energy grid.
+          std::vector<double> T(nE,0.0);
+          for (int ie=0; ie<nE; ++ie) {
+            const double Ej = E_MeV[ie]*MEV_TO_J;
+            const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
+            int allowed=0;
+            for (const auto& d : dirsUse) {
+              if (TraceAllowed(prm,field,x0_m, mul(-1.0,d), Rgv)) ++allowed;
+            }
+            T[ie] = double(allowed)/double(dirsUse.size());
           }
-          T[ie] = double(allowed)/double(dirsUse.size());
+
+          // Build per-energy integrand g(E)=4*pi*J_loc(E)/v(E) and integrate.
+          std::vector<double> g(nE,0.0);
+          std::vector<double> EjGrid(nE,0.0);
+          for (int ie=0; ie<nE; ++ie) {
+            const double Ej = E_MeV[ie]*MEV_TO_J;
+            EjGrid[ie]=Ej;
+            const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
+            const double Jb = ::gSpectrum.GetSpectrum(Ej);
+            const double Jloc = T[ie]*Jb;
+            g[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
+          }
+          const double nTot = Trapz(EjGrid, g);
+          nTot_m3[ip] = nTot;
+
+          // Energy-channel contributions: one trapezoid per interval.
+          for (int ic=0; ic<nIntervals; ++ic) {
+            const double dE = EjGrid[ic+1] - EjGrid[ic];
+            const double nC = 0.5*(g[ic] + g[ic+1]) * dE;
+            nChan_m3[ic][ip] = nC;
+          }
+
+          prog.update((long long)(ip + 1), (long long)nPts);
         }
 
-        // Build per-energy integrand g(E)=4*pi*J_loc(E)/v(E) and integrate.
-        std::vector<double> g(nE,0.0);
-        std::vector<double> EjGrid(nE,0.0);
-        for (int ie=0; ie<nE; ++ie) {
-          const double Ej = E_MeV[ie]*MEV_TO_J;
-          EjGrid[ie]=Ej;
-          const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
-          const double Jb = ::gSpectrum.GetSpectrum(Ej);
-          const double Jloc = T[ie]*Jb;
-          g[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
-        }
-        const double nTot = Trapz(EjGrid, g);
-        nTot_m3[ip] = nTot;
-
-        // Energy-channel contributions: one trapezoid per interval.
-        for (int ic=0; ic<nIntervals; ++ic) {
-          const double dE = EjGrid[ic+1] - EjGrid[ic];
-          const double nC = 0.5*(g[ic] + g[ic+1]) * dE;
-          nChan_m3[ic][ip] = nC;
-        }
+        prog.finish((long long)nPts);
       }
     }
     else {
       // Parallel: rank 0 distributes point indices.
       const int TAG_TASK=3100, TAG_RES=3200;
       if (mpiRank==0) {
+        // Build shell-specific label.
+        int shellIdx = 0;
+        for (size_t si = 0; si < prm.output.shellAlt_km.size(); ++si) {
+          if (std::fabs(prm.output.shellAlt_km[si] - alt_km) < 0.01) { shellIdx = (int)si; break; }
+        }
+        std::ostringstream lbl;
+        lbl << "[SHELL " << (shellIdx + 1) << "/" << prm.output.shellAlt_km.size()
+            << " alt=" << alt_km << "km]";
+        ProgressBar prog(mpiRank, lbl.str());
+
         int next=0;
         for (int r=1;r<mpiSize;r++) {
           int idx = (next<nPts)? next++ : -1;
@@ -955,9 +1073,13 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
           for (int ic=0; ic<nIntervals; ++ic) nChan_m3[ic][hdr.idx] = buf[ic];
           done++;
 
+          prog.update((long long)done, (long long)nPts);
+
           int idx = (next<nPts)? next++ : -1;
           MPI_Send(&idx,1,MPI_INT,st.MPI_SOURCE,TAG_TASK,MPI_COMM_WORLD);
         }
+
+        prog.finish((long long)nPts);
       }
       else {
         while (true) {
