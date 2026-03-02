@@ -81,6 +81,45 @@ namespace EarthUtil {
     int maxParticlesPerPoint{500};
   };
 
+  //====================================================================================
+  // Density + spectrum sampling controls (gridless)
+  //====================================================================================
+  // The gridless density/spectrum workflow (CALC_TARGET = DENSITY_SPECTRUM) uses a
+  // dedicated input section:
+  //   #DENSITY_SPECTRUM
+  //     DS_EMIN           <min energy>      ! MeV/n
+  //     DS_EMAX           <max energy>      ! MeV/n
+  //     DS_NINTERVALS     <n>               ! number of energy *intervals*
+  //     DS_ENERGY_SPACING LOG|LINEAR
+  //
+  // Notes:
+  // - DS_NINTERVALS is stored as "intervals" (not points) because this is the
+  //   most robust way to define a grid: Npoints = Nintervals + 1.
+  // - Energies are kinetic energy. For PROTON this is MeV per particle.
+  //   For ions, MeV/n is commonly used; we keep the unit label but do not
+  //   apply any per-nucleon conversion inside the parser.
+  struct DensitySpectrumParam {
+    double Emin_MeV{1.0};
+    double Emax_MeV{1000.0};
+    int nIntervals{50};
+
+    // Optional cap on trajectory work per observation point.
+    //
+    // DS_MAX_PARTICLES limits the *total* number of backtraced trajectories
+    // launched from a single observation point across the entire energy grid.
+    // In DensityGridless this is enforced by reducing the number of sampled
+    // directions per energy:
+    //   nDir(E) = min(nDirDefault, floor(DS_MAX_PARTICLES / NenergyPoints)).
+    //
+    // If omitted or <= 0, no cap is applied.
+    int maxParticlesPerPoint{0}; // DS_MAX_PARTICLES
+
+    enum class Spacing { LOG, LINEAR };
+    Spacing spacing{Spacing::LOG};
+
+    int nPoints() const { return (nIntervals > 0) ? (nIntervals + 1) : 0; }
+  };
+
   struct Species {
     std::string name{"PROTON"};
     int charge_e{1};
@@ -145,6 +184,7 @@ namespace EarthUtil {
 
     CalcMode calc;
     CutoffScan cutoff;
+    DensitySpectrumParam densitySpectrum;
     Species species;
     BackgroundField field;
     DomainBox domain;

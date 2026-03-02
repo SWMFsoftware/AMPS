@@ -36,6 +36,7 @@
 #include "util/cutoff_cli.h"
 #include "util/amps_param_parser.h"
 #include "gridless/CutoffRigidityGridless.h"
+#include "gridless/DensityGridless.h"
 
 int nZenithElements=200;
 int nAzimuthalElements=200;
@@ -1470,10 +1471,23 @@ int main(int argc,char **argv) {
           return 1;
         }
 
+	PIC::InitMPI();
 	Exosphere::Init_SPICE();
 
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
-        return Earth::GridlessMode::RunCutoffRigidity(p);
+
+        // Dispatch gridless workflows by CALC_TARGET.
+        // - CUTOFF_RIGIDITY   : existing gridless cutoff tool
+        // - DENSITY_SPECTRUM  : energy-grid transmissivity + density integration
+        const std::string target = EarthUtil::ToUpper(p.calc.target);
+        if (target=="CUTOFF_RIGIDITY") {
+          return Earth::GridlessMode::RunCutoffRigidity(p);
+        }
+        if (target=="DENSITY_SPECTRUM") {
+          return Earth::GridlessMode::RunDensityAndSpectrumPoints(p);
+        }
+
+        throw std::runtime_error("Unsupported CALC_TARGET for -mode gridless: '"+p.calc.target+"'");
       }
 
       // "3d" and other values are handled by the legacy path below.

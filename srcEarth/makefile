@@ -14,6 +14,7 @@ MAINLIBOBJ = Earth_Sampling.o \
 	GCR_Badavi2011ASR.o \
 	CutoffRigidity.o \
 	gridless/CutoffRigidityGridless.o \
+	gridless/DensityGridless.o \
 	util/amps_param_parser.o \
 	util/cutoff_cli.o \
 	boundary/spectrum.o \

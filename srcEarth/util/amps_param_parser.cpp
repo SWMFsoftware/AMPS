@@ -63,6 +63,17 @@ bool ToBool(const std::string& sIn) {
   throw std::runtime_error("Cannot parse boolean token: '"+sIn+"'");
 }
 
+//======================================================================================
+// Density + spectrum (gridless) parsing helpers
+//======================================================================================
+
+static EarthUtil::DensitySpectrumParam::Spacing ParseEnergySpacingToken(const std::string& s) {
+  const std::string t = ToUpper(Trim(s));
+  if (t=="LOG") return EarthUtil::DensitySpectrumParam::Spacing::LOG;
+  if (t=="LINEAR") return EarthUtil::DensitySpectrumParam::Spacing::LINEAR;
+  throw std::runtime_error("DS_ENERGY_SPACING must be LOG or LINEAR (got '" + Trim(s) + "')");
+}
+
 static inline void SplitKV(const std::string& line,std::string& key,std::string& value) {
   std::istringstream iss(line);
   iss >> key;
@@ -465,6 +476,16 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="MAX_TRACE_TIME") p.numerics.maxTraceTime_s=std::stod(val);
       else rememberUnknown();
     }
+    else if (section=="#DENSITY_SPECTRUM") {
+      // Density/spectrum workflow controls.
+      // All energies are read in MeV (commonly MeV/n in CCMC inputs).
+      if (uKey=="DS_EMIN") p.densitySpectrum.Emin_MeV=std::stod(val);
+      else if (uKey=="DS_EMAX") p.densitySpectrum.Emax_MeV=std::stod(val);
+      else if (uKey=="DS_NINTERVALS") p.densitySpectrum.nIntervals=std::stoi(val);
+      else if (uKey=="DS_MAX_PARTICLES") p.densitySpectrum.maxParticlesPerPoint=std::stoi(val);
+      else if (uKey=="DS_ENERGY_SPACING") p.densitySpectrum.spacing=ParseEnergySpacingToken(val);
+      else rememberUnknown();
+    }
     else if (section=="#SPECTRUM") {
       p.spectrum[uKey]=val;
     }
@@ -478,6 +499,25 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
 
   if (p.output.mode=="POINTS" && p.output.points.empty()) {
     throw std::runtime_error("OUTPUT_MODE=POINTS but no POINT entries were found in POINTS_BEGIN/END block");
+  }
+
+  // Validate density/spectrum controls if requested.
+  if (ToUpper(p.calc.target)=="DENSITY_SPECTRUM") {
+    if (!(p.densitySpectrum.Emin_MeV>0.0)) {
+      throw std::runtime_error("DS_EMIN must be > 0 (MeV)");
+    }
+    if (!(p.densitySpectrum.Emax_MeV>p.densitySpectrum.Emin_MeV)) {
+      throw std::runtime_error("DS_EMAX must be > DS_EMIN (MeV)");
+    }
+    if (!(p.densitySpectrum.nIntervals>=1)) {
+      throw std::runtime_error("DS_NINTERVALS must be >= 1");
+    }
+    if (p.densitySpectrum.maxParticlesPerPoint < 0) {
+      throw std::runtime_error("DS_MAX_PARTICLES must be >= 0 (0 means: no cap)");
+    }
+    if (ToUpper(p.calc.fieldEvalMethod)!="GRIDLESS") {
+      throw std::runtime_error("DENSITY_SPECTRUM currently requires FIELD_EVAL_METHOD = GRIDLESS");
+    }
   }
 
   // Parse spectrum into a typed representation and validate SPECTRUM_TYPE.
