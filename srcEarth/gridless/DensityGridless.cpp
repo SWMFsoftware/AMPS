@@ -352,7 +352,22 @@ static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
   double t=0.0;
   int nSteps=0;
 
-  while (t < prm.numerics.maxTraceTime_s && nSteps < prm.numerics.maxSteps) {
+  // Per-trajectory integration time limit.
+  //
+  // Rationale:
+  //   Density/spectrum calculations can trace a large number of trajectories
+  //   (N_energy * N_dir per point). A dedicated DS_MAX_TRAJ_TIME provides a
+  //   convenient knob to cap work per trajectory without changing the cutoff
+  //   tool's global #NUMERICAL MAX_TRACE_TIME setting.
+  //
+  // Policy:
+  //   - If DS_MAX_TRAJ_TIME > 0: use it.
+  //   - Else: fall back to #NUMERICAL MAX_TRACE_TIME.
+  const double maxTrajTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
+                                 ? prm.densitySpectrum.maxTrajTime_s
+                                 : prm.numerics.maxTraceTime_s;
+
+  while (t < maxTrajTime_s && nSteps < prm.numerics.maxSteps) {
     // classification checks in Re
     V3 xRe { x.x/1000.0/RE_KM, x.y/1000.0/RE_KM, x.z/1000.0/RE_KM };
     if (!InBoxRe(box,xRe)) return true;       // escaped -> allowed
@@ -363,7 +378,7 @@ static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
 	    // same background-field access path as CutoffRigidityGridless.
 	    // (xRe is only used for geometry checks; the field evaluator expects SI meters.)
 	    V3 B; field.GetB_T(x, B);
-    double dt = ChooseDt(prm,qabs,m0,p,B,prm.numerics.dtTrace_s);
+    double dt = 100*ChooseDt(prm,qabs,m0,p,B,prm.numerics.dtTrace_s);
     if (!(dt>0.0)) dt = prm.numerics.dtTrace_s;
 
     BorisStep(x,p,prm.species.charge_e*QE,m0,dt,field);

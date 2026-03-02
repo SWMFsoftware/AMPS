@@ -483,6 +483,7 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="DS_EMAX") p.densitySpectrum.Emax_MeV=std::stod(val);
       else if (uKey=="DS_NINTERVALS") p.densitySpectrum.nIntervals=std::stoi(val);
       else if (uKey=="DS_MAX_PARTICLES") p.densitySpectrum.maxParticlesPerPoint=std::stoi(val);
+      else if (uKey=="DS_MAX_TRAJ_TIME") p.densitySpectrum.maxTrajTime_s=std::stod(val);
       else if (uKey=="DS_ENERGY_SPACING") p.densitySpectrum.spacing=ParseEnergySpacingToken(val);
       else rememberUnknown();
     }
@@ -514,6 +515,9 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
     }
     if (p.densitySpectrum.maxParticlesPerPoint < 0) {
       throw std::runtime_error("DS_MAX_PARTICLES must be >= 0 (0 means: no cap)");
+    }
+    if (p.densitySpectrum.maxTrajTime_s < 0.0) {
+      throw std::runtime_error("DS_MAX_TRAJ_TIME must be >= 0 (0 means: use MAX_TRACE_TIME)");
     }
     if (ToUpper(p.calc.fieldEvalMethod)!="GRIDLESS") {
       throw std::runtime_error("DENSITY_SPECTRUM currently requires FIELD_EVAL_METHOD = GRIDLESS");

@@ -114,6 +114,20 @@ namespace EarthUtil {
     // If omitted or <= 0, no cap is applied.
     int maxParticlesPerPoint{0}; // DS_MAX_PARTICLES
 
+    // Optional cap on how long we integrate a *single* trajectory.
+    //
+    // DS_MAX_TRAJ_TIME [s] provides an additional (often tighter) time limit
+    // on the backtracing integration used to classify ALLOWED/FORBIDDEN.
+    // This is useful for density/spectrum calculations because they can trace
+    // many more trajectories than a cutoff scan.
+    //
+    // Semantics:
+    //   - If DS_MAX_TRAJ_TIME > 0: use it as the per-trajectory integration
+    //     time limit (in seconds).
+    //   - If DS_MAX_TRAJ_TIME <= 0 or omitted: fall back to #NUMERICAL
+    //     MAX_TRACE_TIME.
+    double maxTrajTime_s{0.0}; // DS_MAX_TRAJ_TIME
+
     enum class Spacing { LOG, LINEAR };
     Spacing spacing{Spacing::LOG};
 
