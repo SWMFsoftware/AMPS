@@ -1,74 +1,137 @@
 //======================================================================================
 // DensityGridless.cpp
 //======================================================================================
-// THEORY (what is computed)
-// -------------------------------------------------------------------------------------
-// We compute the *local energetic-particle spectrum* and the corresponding *total number
-// density* at user-specified spatial locations (OUTPUT_MODE = POINTS).
-//
-// 1) Directional transmissivity T(E)
-//    For a given kinetic energy E and a given location x0, we sample a fixed grid of
-//    directions on the unit sphere. For each direction we backtrace a test particle in
-//    the prescribed magnetic field (IGRF + Tsyganenko external field, evaluated on the
-//    fly). A trajectory is classified as:
-//      - ALLOWED   : it escapes the outer domain box before hitting the inner loss sphere
-//      - FORBIDDEN : it hits the inner sphere or times out before escaping
-//
-//    The transmissivity is the *fraction of allowed directions*:
-//        T(E; x0) = N_allowed(E; x0) / N_dirs
-//
-//    This is the same "allowed vs forbidden" concept used in the cutoff rigidity tool,
-//    but here we evaluate it over an energy grid rather than searching for a single
-//    cutoff.
-//
-// 2) Local spectrum folding
-//    The boundary spectrum J_b(E) is defined in the #SPECTRUM section of AMPS_PARAM.in
-//    and is evaluated via the global ::gSpectrum object:
-//        J_b(E) = gSpectrum.GetSpectrum(E[J])
-//
-//    The local spectrum is modeled as
-//        J_loc(E; x0) = T(E; x0) * J_b(E)
-//
-//    i.e., the magnetosphere acts as an energy-dependent filter with transmissivity T.
-//    This is a deliberately simple (but reproducible) model that matches how cutoff
-//    rigidity calculations are commonly interpreted.
-//
-// 3) Total number density
-//    Under an isotropic assumption, differential flux J(E) [m^-2 s^-1 sr^-1 J^-1] is
-//    related to differential number density n_E [m^-3 J^-1] by:
-//        J(E) = (v(E) / 4π) * n_E(E)
-//    therefore
-//        n_E(E) = 4π * J(E) / v(E)
-//
-//    The total number density in the energy range [Emin, Emax] is:
-//        n = ∫ n_E(E) dE = 4π ∫_{Emin}^{Emax} J_loc(E) / v(E) dE
-//
-//    We evaluate the integral numerically using trapezoidal integration on an energy
-//    grid defined by #DENSITY_SPECTRUM:
-//        DS_EMIN, DS_EMAX, DS_NINTERVALS, DS_ENERGY_SPACING (LOG or LINEAR).
-//
-// IMPLEMENTATION OVERVIEW (how it is computed)
-// -------------------------------------------------------------------------------------
-// - Parse and validate inputs using EarthUtil::ParseAmpsParamFile().
-// - Build the energy grid:
-//     Npoints = DS_NINTERVALS + 1
-//     LOG spacing: E[i] = Emin * (Emax/Emin)^(i/(Npoints-1))
-//     LINEAR     : E[i] = Emin + (Emax-Emin)*i/(Npoints-1)
-// - Build a direction grid identical to the cutoff tool (nZenith=24, nAz=48).
-// - For each point x0:
-//     For each energy E:
-//       - Convert energy -> rigidity R(GV)
-//       - For each direction d:
-//           backtrace using TraceAllowed(prm, field, x0, v0=-d, R)
-//       - T(E) = allowed/Ndirs
-//     Compute J_loc(E) and integrate for density.
-// - MPI: dynamic master/worker scheduling over POINT indices.
-//     Each task is one location; the worker returns T(E) array + integrated density.
-// - Rank 0 writes two Tecplot ASCII files:
-//     (1) gridless_points_density.dat
-//     (2) gridless_points_spectrum.dat
-//======================================================================================
-
+/**
+ * \file DensityGridless.cpp
+ *
+ * GRIDLESS ENERGETIC-PARTICLE DENSITY + SPECTRUM (POINTS MODE)
+ * -----------------------------------------------------------
+ *
+ * This module computes, at a set of user-provided observation points, (i) the *local*
+ * differential energy spectrum and (ii) the corresponding *total energetic-particle number
+ * density* implied by that local spectrum.
+ *
+ * The implementation is intentionally "gridless": the magnetic field is evaluated on the fly
+ * using the same background-field access pattern as the gridless cutoff-rigidity solver
+ * (IGRF + Tsyganenko external field), and particle trajectories are integrated directly in SI.
+ *
+ * -----------------------------------------------------------------------------
+ * 1. INPUTS (from AMPS_PARAM.in)
+ * -----------------------------------------------------------------------------
+ * The calculation is activated by:
+ *   #CALCULATION_MODE
+ *     CALC_TARGET       DENSITY_SPECTRUM
+ *     FIELD_EVAL_METHOD GRIDLESS
+ *
+ * Energy grid controls (this section is REQUIRED for CALC_TARGET=DENSITY_SPECTRUM):
+ *   #DENSITY_SPECTRUM
+ *     DS_EMIN           [MeV/n]
+ *     DS_EMAX           [MeV/n]
+ *     DS_NINTERVALS     number of energy intervals (Npoints = NINTERVALS + 1)
+ *     DS_ENERGY_SPACING LOG | LINEAR
+ *     DS_MAX_PARTICLES  (optional) cap on total trajectory evaluations per point
+ *     DS_MAX_TRAJ_TIME  (optional) cap on integration time per trajectory [s]
+ *
+ * Boundary spectrum:
+ *   #SPECTRUM  ... (parsed into amps::gSpectrum, see boundary/spectrum.*)
+ * The function amps::gSpectrum.GetSpectrum(E[J]) must return the *boundary differential
+ * intensity* J_b(E) in units of [m^-2 s^-1 sr^-1 J^-1] (or an equivalent consistent system).
+ *
+ * Geometry / stopping conditions:
+ *   - outer boundary: rectangular domain box (escape = ALLOWED)
+ *   - inner boundary: loss sphere (atmosphere proxy; hit = FORBIDDEN)
+ *   - time/step caps: from #NUMERICAL plus DS_MAX_TRAJ_TIME override for this mode
+ *
+ * -----------------------------------------------------------------------------
+ * 2. THEORY (what is computed and why)
+ * -----------------------------------------------------------------------------
+ * We assume that far outside the magnetosphere the energetic particle population is an
+ * (approximately) *isotropic* distribution characterized by a boundary differential intensity
+ * J_b(E). The magnetosphere acts as a direction-dependent filter: for a particle at an
+ * observation point x0 and kinetic energy E, only some asymptotic directions connect to the
+ * boundary without intersecting the loss surface.
+ *
+ * 2.1 Directional transmissivity
+ * For each observation point x0 and energy E we sample N_dirs directions {\hat{u}_k} and
+ * classify each direction via backtracing. Define:
+ *
+ *   A_k(E; x0) = 1  if direction k is ALLOWED (escapes outer box)
+ *             = 0  otherwise (hits loss sphere or times out).
+ *
+ * The (isotropic) transmissivity is approximated by a simple directional average:
+ *
+ *   T(E; x0) \approx (1/N_dirs) \sum_{k=1}^{N_dirs} A_k(E; x0) .
+ *
+ * Notes:
+ *   - This is the same physical classifier used in cutoff-rigidity: "allowed vs forbidden".
+ *   - The direction set is deterministic for reproducibility.
+ *   - If DS_MAX_PARTICLES limits work, we deterministically subsample directions.
+ *
+ * 2.2 Local spectrum
+ * Under the isotropy assumption, the local differential intensity is modeled as:
+ *
+ *   J_loc(E; x0) = T(E; x0) * J_b(E).
+ *
+ * This corresponds to a "grey" (direction-averaged) transmissivity applied to the boundary
+ * spectrum.
+ *
+ * 2.3 Number density from differential intensity
+ * Let n(E) = dn/dE be the differential number density [m^-3 J^-1]. For an isotropic
+ * distribution, the differential intensity and density are related by:
+ *
+ *   J(E) = (v(E) / 4\pi) * n(E),
+ *
+ * where v(E) is the particle speed at kinetic energy E. Therefore:
+ *
+ *   n(E) = (4\pi / v(E)) * J(E),
+ *   n_tot = \int_{Emin}^{Emax} n(E) dE = 4\pi \int_{Emin}^{Emax} J(E)/v(E) dE .
+ *
+ * We apply this to the local spectrum:
+ *
+ *   n_tot(x0) = 4\pi \int_{Emin}^{Emax} J_loc(E; x0)/v(E) dE
+ *             = 4\pi \int_{Emin}^{Emax} T(E; x0) * J_b(E) / v(E) dE .
+ *
+ * Numerical quadrature uses the trapezoidal rule on the user-specified energy grid.
+ *
+ * 2.4 Relativistic kinematics (kinetic energy -> speed)
+ * For a particle of rest mass m0:
+ *   gamma = 1 + E/(m0 c^2)
+ *   beta  = sqrt(1 - 1/gamma^2)
+ *   v     = beta * c
+ *
+ * This is used consistently in both trajectory integration (Boris pusher in momentum form)
+ * and in the density integral.
+ *
+ * -----------------------------------------------------------------------------
+ * 3. OUTPUTS
+ * -----------------------------------------------------------------------------
+ * Two Tecplot ASCII files are written (rank 0):
+ *
+ *  (1) gridless_points_density.dat
+ *      Variables: X_km Y_km Z_km N_m3 N_cm3
+ *
+ *  (2) gridless_points_spectrum.dat
+ *      One ZONE per observation point.
+ *      Variables: E_MeV  T  J_boundary_perMeV  J_local_perMeV
+ *      AUXDATA: spectrum definition (type + parameters) for provenance.
+ *
+ * -----------------------------------------------------------------------------
+ * 4. IMPLEMENTATION OVERVIEW (algorithmic steps)
+ * -----------------------------------------------------------------------------
+ * For each observation point x0:
+ *   (a) Build energy grid {E_i} with LOG or LINEAR spacing in [Emin,Emax].
+ *   (b) For each E_i:
+ *       - choose direction subset (possibly limited by DS_MAX_PARTICLES)
+ *       - for each direction, backtrace and classify allowed/forbidden
+ *       - compute T(E_i) as allowed fraction
+ *       - compute boundary spectrum J_b(E_i) = gSpectrum.GetSpectrum(E_i[J])
+ *       - compute local spectrum  J_loc(E_i) = T(E_i)*J_b(E_i)
+ *   (c) Integrate n_tot = 4*pi * sum_i trapezoid( J_loc(E_i)/v(E_i) ).
+ *   (d) Output: density per point and per-point spectrum ZONE.
+ *
+ * The heavy lifting per trajectory is identical in spirit to the cutoff-rigidity gridless
+ * solver: same field evaluation, same geometry checks, same time-step constraints.
+ */
 #include "DensityGridless.h"
 
 #include "CutoffRigidityGridless.h" // for namespace consistency only (no symbols used)
