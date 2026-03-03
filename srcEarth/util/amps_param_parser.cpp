@@ -425,6 +425,8 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
     }
     else if (section=="#BACKGROUND_FIELD") {
       if (uKey=="FIELD_MODEL") p.field.model=ToUpper(val);
+      else if (uKey=="DIPOLE_MOMENT") p.field.dipoleMoment_Me=std::stod(val);
+      else if (uKey=="DIPOLE_TILT" || uKey=="DIPOLE_TILT_DEG") p.field.dipoleTilt_deg=std::stod(val);
       else if (uKey=="DST") p.field.dst_nT=std::stod(val);
       else if (uKey=="PDYN") p.field.pdyn_nPa=std::stod(val);
       else if (uKey=="IMF_BY") p.field.imfBy_nT=std::stod(val);
@@ -498,7 +500,22 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
     }
   }
 
-  if (p.output.mode=="POINTS" && p.output.points.empty()) {
+  
+
+// Validate dipole-specific background field settings if requested.
+if (ToUpper(p.field.model)=="DIPOLE") {
+  // Moment scaling must be positive.
+  if (!(p.field.dipoleMoment_Me>0.0)) {
+    throw std::runtime_error("DIPOLE_MOMENT must be > 0 (multiples of M_E)");
+  }
+  // Keep tilt range conservative; values outside +/-90 deg usually indicate
+  // a coordinate/sign convention mistake in the input.
+  if (p.field.dipoleTilt_deg < -90.0 || p.field.dipoleTilt_deg > 90.0) {
+    throw std::runtime_error("DIPOLE_TILT must be in [-90, 90] degrees");
+  }
+}
+
+if (p.output.mode=="POINTS" && p.output.points.empty()) {
     throw std::runtime_error("OUTPUT_MODE=POINTS but no POINT entries were found in POINTS_BEGIN/END block");
   }
 

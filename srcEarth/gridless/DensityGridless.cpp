@@ -131,6 +131,7 @@
  * The heavy lifting per trajectory is identical in spirit to the cutoff-rigidity gridless
  * solver: same field evaluation, same geometry checks, same time-step constraints.
  */
+#include "pic.h"
 #include "DensityGridless.h"
 
 #include "CutoffRigidityGridless.h" // for namespace consistency only (no symbols used)
@@ -163,6 +164,7 @@
 #include "constants.h"
 #include "constants.PlanetaryData.h"
 #include "GeopackInterface.h"
+#include "DipoleInterface.h"
 
 namespace {
 
@@ -253,8 +255,16 @@ static void ParseEpochToGeopack(const std::string& epoch,
 class cFieldEvaluator {
 public:
   explicit cFieldEvaluator(const EarthUtil::AmpsParam& prm) : prm_(prm) {
-    // Exactly as in CutoffRigidityGridless.cpp: initialize Geopack in GSM.
-    Geopack::Init(prm_.field.epoch.c_str(),"GSM");
+    // Exactly as in CutoffRigidityGridless.cpp: Geopack is required only for
+    // Tsyganenko models (IGRF + coordinate setup). For the analytic DIPOLE model
+    // we keep the calculation self-contained and do not call Geopack at all.
+    if (EarthUtil::ToUpper(Model())!="DIPOLE") {
+      Geopack::Init(prm_.field.epoch.c_str(),"GSM");
+    }
+
+    // Configure analytic dipole parameters (used only when FIELD_MODEL=DIPOLE).
+    Earth::GridlessMode::Dipole::SetMomentScale(prm_.field.dipoleMoment_Me);
+    Earth::GridlessMode::Dipole::SetTiltDeg(prm_.field.dipoleTilt_deg);
 
     for (int i=0;i<11;i++) PARMOD_[i]=0.0;
     PS_ = 0.170481; // default dipole tilt used by existing interfaces
@@ -273,6 +283,15 @@ public:
 
   // Evaluate B at a position expressed in SI meters (GSM). Output is Tesla.
   void GetB_T(const V3& x_m, V3& B_T) const {
+    // Dipole branch: internal field only, analytic.
+    if (EarthUtil::ToUpper(Model())=="DIPOLE") {
+      double x_arr[3]={x_m.x,x_m.y,x_m.z};
+      double b_arr[3];
+      Earth::GridlessMode::Dipole::GetB_Tesla(x_arr,b_arr);
+      B_T.x=b_arr[0]; B_T.y=b_arr[1]; B_T.z=b_arr[2];
+      return;
+    }
+
     // Internal field from IGRF via Geopack wrapper.
     double x_arr[3]={x_m.x,x_m.y,x_m.z};
     double b_int[3];
@@ -292,7 +311,7 @@ public:
              xRe+0,xRe+1,xRe+2,b_ext_nT+0,b_ext_nT+1,b_ext_nT+2);
     }
     else {
-      throw std::runtime_error("Unsupported FIELD_MODEL for gridless density: '"+Model()+"' (supported: T96,T05)");
+      throw std::runtime_error("Unsupported FIELD_MODEL for gridless density: '"+Model()+"' (supported: T96,T05,DIPOLE)");
     }
 
     B_T.x = b_int[0] + b_ext_nT[0]*_NANO_;
@@ -394,6 +413,40 @@ static double SpeedFromEnergy(double E_J, double m0_kg) {
   if (gamma<=1.0) return 0.0;
   const double beta2 = 1.0 - 1.0/(gamma*gamma);
   return C_LIGHT*std::sqrt(std::max(0.0,beta2));
+}
+
+//-------------------------------------------------------------------------------------------------
+// Convenience overloads used by the dipole analytic-comparison utilities.
+//-------------------------------------------------------------------------------------------------
+// In the core tight-loop trajectory integrator we keep the low-level helpers:
+//
+//   RigidityFromEnergy_GV(E_J, qabs_C, m0_kg)
+//   SpeedFromEnergy(E_J, m0_kg)
+//
+// because they avoid any dependency on a higher-level parameter object.
+//
+// Some of the analytic reference writers (used only in nightly test mode) naturally have access to
+// the full parsed run configuration (EarthUtil::AmpsParam).  To keep those call sites readable, we
+// provide small wrappers that extract the charge and rest mass from prm.species and forward to the
+// low-level implementations.
+//
+// Units:
+//   - E_J      : kinetic energy [J]
+//   - charge_e : particle charge in units of elementary charge (e)
+//   - mass_amu : particle rest mass in atomic mass units (amu)
+//   - Returns rigidity [GV] and speed [m/s].
+//
+// NOTE: These overloads intentionally live in the same anonymous namespace as the low-level helpers
+// so the compiler can inline them and so we do not export any new symbols.
+static double RigidityFromEnergy_GV(double E_J, const EarthUtil::AmpsParam& prm) {
+  const double qabs_C = std::abs(prm.species.charge_e) * QE;
+  const double m0_kg  = prm.species.mass_amu * AMU;
+  return RigidityFromEnergy_GV(E_J, qabs_C, m0_kg);
+}
+
+static double SpeedFromEnergy(double E_J, const EarthUtil::AmpsParam& prm) {
+  const double m0_kg = prm.species.mass_amu * AMU;
+  return SpeedFromEnergy(E_J, m0_kg);
 }
 
 // Trace a single backtraced trajectory and classify allowed vs forbidden.
@@ -612,6 +665,29 @@ struct ProgressBar {
 };
 
 }
+
+
+
+//======================================================================================
+// DIPOLE ANALYTIC REFERENCE (DENSITY, POINTS)
+//======================================================================================
+// This helper writes a Tecplot file comparing the numerically computed energetic
+// particle number density (from the full backtracing transmissivity calculation)
+// against a simple *analytic* dipole benchmark.
+//
+// Benchmark model (hard-cutoff approximation):
+//   1) Use the vertical Størmer cutoff rigidity Rv(λ,r) as a sharp threshold.
+//   2) Assume transmissivity T(E)=1 for R(E)≥Rv and 0 otherwise.
+//   3) Fold the boundary spectrum: J_loc(E)=T(E) J_b(E).
+//   4) Convert intensity to number density via n=4π\int J_loc(E)/v(E) dE.
+//
+// This intentionally ignores the penumbra and direction-dependent cutoffs. It is
+// nonetheless an excellent regression reference for unit/geometry conversions and
+// the numerical quadrature in the density tool.
+//======================================================================================
+static void WriteTecplotPoints_DipoleAnalyticDensityCompare(const EarthUtil::AmpsParam& prm,
+                                                            const std::vector<EarthUtil::Vec3>& points,
+                                                            const std::vector<double>& n_num_m3);
 
 namespace Earth {
 namespace GridlessMode {
@@ -834,6 +910,24 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
         }
       }
     }
+
+    //------------------------------------------------------------------------------------------
+    // Nightly test mode: write an analytic-vs-numeric density comparison for the DIPOLE field.
+    //
+    // IMPORTANT:
+    //  - This comparison is intentionally generated only in nightly mode to avoid extra I/O in
+    //    production runs.
+    //  - The analytic reference used here is a "hard-cutoff" benchmark derived from the vertical
+    //    Størmer cutoff approximation in a centered dipole (with optional dipole tilt/moment).
+    //  - The numerical density is the one already computed above (density_m3).
+    //------------------------------------------------------------------------------------------
+#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_ 
+    if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
+      // Writes: density_gridless_points_dipole_compare.dat
+      WriteTecplotPoints_DipoleAnalyticDensityCompare(prm,prm.output.points,density_m3);
+    }
+#endif
+
   }
 
   return 0;
@@ -1193,4 +1287,89 @@ int RunDensityAndSpectrum(const EarthUtil::AmpsParam& prm) {
 }
 
 }
+}
+
+
+  // NOTE:
+  // This file historically accumulated two independent implementations of the
+  // dipole analytic density comparison Tecplot writer with the same function name.
+  // Unqualified calls then became ambiguous at compile time.
+  //
+  // We keep BOTH implementations (for traceability/regression comparisons), but
+  // the older/alternate implementation below is renamed with a _v2 suffix so the
+  // primary implementation above remains the one used by the code path.
+
+static void WriteTecplotPoints_DipoleAnalyticDensityCompare(const EarthUtil::AmpsParam& prm,
+                                                            const std::vector<EarthUtil::Vec3>& points,
+                                                            const std::vector<double>& n_num_m3) {
+  FILE* f=std::fopen("density_gridless_points_dipole_compare.dat","w");
+  if (!f) throw std::runtime_error("Cannot write Tecplot file: density_gridless_points_dipole_compare.dat");
+
+  std::fprintf(f,"TITLE=\"Dipole Density: Numeric vs Analytic Hard-Cutoff\"\n"); 
+  std::fprintf(f,"VARIABLES=\"id\",\"x\",\"y\",\"z\",\"n_num_m^-3\",\"n_ana_m^-3\",\"rel_err\"\n"); 
+  std::fprintf(f,"ZONE T=\"points\" I=%zu F=POINT\n",points.size()); 
+
+  const double mx = Earth::GridlessMode::Dipole::gParams.m_hat[0];
+  const double my = Earth::GridlessMode::Dipole::gParams.m_hat[1];
+  const double mz = Earth::GridlessMode::Dipole::gParams.m_hat[2];
+
+  const int nPts = prm.densitySpectrum.nPoints();
+  const double Emin = prm.densitySpectrum.Emin_MeV;
+  const double Emax = prm.densitySpectrum.Emax_MeV;
+
+  for (size_t ip=0; ip<points.size(); ++ip) {
+    const double x_m = points[ip].x*1000.0;
+    const double y_m = points[ip].y*1000.0;
+    const double z_m = points[ip].z*1000.0;
+    const double r_m = std::sqrt(x_m*x_m + y_m*y_m + z_m*z_m);
+    const double rhatx = x_m/r_m;
+    const double rhaty = y_m/r_m;
+    const double rhatz = z_m/r_m;
+
+    const double sinLam = mx*rhatx + my*rhaty + mz*rhatz;
+    const double cosLam = std::sqrt(std::max(0.0, 1.0 - sinLam*sinLam));
+    const double rRe = r_m/_EARTH__RADIUS_;
+
+    const double Rv_GV = 14.9 * prm.field.dipoleMoment_Me * std::pow(cosLam,4) / (rRe*rRe);
+
+    double n_ana = 0.0;
+    double Eprev_J = 0.0;
+    double gprev = 0.0;
+
+    for (int i=0;i<nPts;i++) {
+      double Ei_MeV;
+      const double a = (nPts==1)?0.0:double(i)/(nPts-1);
+      if (prm.densitySpectrum.spacing==EarthUtil::DensitySpectrumParam::Spacing::LOG) {
+        Ei_MeV = Emin*std::pow(Emax/Emin, a);
+      }
+      else {
+        Ei_MeV = Emin + (Emax-Emin)*a;
+      }
+
+      const double E_J = Ei_MeV * 1.0e6 * 1.602176634e-19;
+
+      const double R_GV = RigidityFromEnergy_GV(E_J, prm);
+      const double T = (R_GV >= Rv_GV) ? 1.0 : 0.0;
+
+      const double Jb = gSpectrum.GetSpectrum(E_J);
+      const double Jloc = T * Jb;
+
+      const double v = SpeedFromEnergy(E_J, prm);
+      const double g = 4.0*M_PI * Jloc / v;
+
+      if (i>0) {
+        const double dE = E_J - Eprev_J;
+        n_ana += 0.5*(g+gprev)*dE;
+      }
+
+      Eprev_J = E_J;
+      gprev = g;
+    }
+
+    const double rel = (n_ana>0.0) ? (n_num_m3[ip]-n_ana)/n_ana : 0.0;
+
+    std::fprintf(f,"%zu %e %e %e %e %e %e\n", ip, points[ip].x,points[ip].y,points[ip].z,n_num_m3[ip], n_ana, rel); 
+  }
+
+  std::fclose(f);
 }

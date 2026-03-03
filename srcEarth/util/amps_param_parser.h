@@ -141,8 +141,26 @@ namespace EarthUtil {
   };
 
   struct BackgroundField {
-    // FIELD_MODEL: "T96" or "T05".
+    // FIELD_MODEL selects the background magnetic field model evaluated by
+    // the gridless tools. Historically only Tsyganenko models were supported
+    // (T96/T05). We extend this with an analytic dipole for verification and
+    // regression tests.
+    //
+    // Supported values:
+    //   - "T96"    Tsyganenko (1996)
+    //   - "T05"    Tsyganenko & Sitnov (2005)
+    //   - "DIPOLE" Analytic centered dipole (internal field only)
     std::string model{"T96"};
+
+    // --- Dipole-only parameters (FIELD_MODEL = DIPOLE) ---
+    // DIPOLE_MOMENT: dipole moment magnitude as a multiple of Earth's canonical
+    // dipole moment M_E (default 1.0).
+    double dipoleMoment_Me{1.0}; // keyword: DIPOLE_MOMENT
+
+    // DIPOLE_TILT [deg]: dipole tilt angle in degrees measured from +Z_GSM
+    // toward +X_GSM (rotation about +Y_GSM). Default 0.0 aligns the dipole
+    // with the GSM Z-axis.
+    double dipoleTilt_deg{0.0};  // keyword: DIPOLE_TILT (alias: DIPOLE_TILT_DEG)
 
     // Common parameters
     double dst_nT{-50.0};

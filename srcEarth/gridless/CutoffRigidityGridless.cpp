@@ -29,8 +29,9 @@
 //
 //======================================================================================
 
-#include "specfunc.h"
+#include "pic.h"
 #include "CutoffRigidityGridless.h"
+#include "DipoleInterface.h" 
 
 #include <cstdio>
 #include <cmath>
@@ -45,6 +46,7 @@
 #include "constants.h"
 #include "constants.PlanetaryData.h"
 #include "GeopackInterface.h"
+#include "DipoleInterface.h"
 
 extern "C" {
   void t96_01_(int*,double*,double*,double*,double*,double*,double*,double*,double*);
@@ -82,7 +84,16 @@ static inline double RigidityFromMomentum_GV(double p,double q_C_abs) {
 class cFieldEvaluator {
 public:
   explicit cFieldEvaluator(const EarthUtil::AmpsParam& p) : prm(p) {
-    Geopack::Init(prm.field.epoch.c_str(),"GSM");
+    // For Tsyganenko models we need Geopack initialization (IGRF + coordinate setup).
+    // For the analytic DIPOLE model we do NOT call Geopack at all; this avoids
+    // link-time dependencies and keeps the dipole test self-contained.
+    if (Model()!="DIPOLE") {
+      Geopack::Init(prm.field.epoch.c_str(),"GSM");
+    }
+
+    // Configure analytic dipole parameters (used only when FIELD_MODEL=DIPOLE).
+    Earth::GridlessMode::Dipole::SetMomentScale(prm.field.dipoleMoment_Me);
+    Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
 
     for (int i=0;i<11;i++) PARMOD[i]=0.0;
     PS = 0.170481; // same default as interfaces
@@ -100,6 +111,15 @@ public:
   std::string Model() const { return prm.field.model; }
 
   void GetB_T(const V3& x_m, V3& B_T) const {
+    // Dipole branch: internal field only, analytic, no IGRF/external field.
+    if (Model()=="DIPOLE") {
+      double x_arr[3]={x_m.x,x_m.y,x_m.z};
+      double b_arr[3];
+      Earth::GridlessMode::Dipole::GetB_Tesla(x_arr,b_arr);
+      B_T.x=b_arr[0]; B_T.y=b_arr[1]; B_T.z=b_arr[2];
+      return;
+    }
+
     double x_arr[3]={x_m.x,x_m.y,x_m.z};
     double b_int[3];
     Geopack::IGRF::GetMagneticField(b_int,x_arr);
@@ -115,7 +135,7 @@ public:
       t04_s_(&IOPT,const_cast<double*>(PARMOD),const_cast<double*>(&PS),xRe+0,xRe+1,xRe+2,b_ext_nT+0,b_ext_nT+1,b_ext_nT+2);
     }
     else {
-      throw std::runtime_error("Unsupported FIELD_MODEL in gridless solver: "+Model()+" (supported: T96,T05)");
+      throw std::runtime_error("Unsupported FIELD_MODEL in gridless solver: "+Model()+" (supported: T96,T05,DIPOLE)");
     }
 
     B_T.x = b_int[0] + b_ext_nT[0]*_NANO_;
@@ -405,6 +425,65 @@ static void WriteTecplotPoints(const std::vector<EarthUtil::Vec3>& points,
 
   for (size_t i=0;i<points.size();i++) {
     std::fprintf(f,"%zu %e %e %e %e %e\n", i, points[i].x,points[i].y,points[i].z, Rc[i],Emin[i]);
+  }
+
+  std::fclose(f);
+}
+
+
+
+//======================================================================================
+// DIPOLE ANALYTIC REFERENCE (POINTS)
+//======================================================================================
+// For a centered dipole, Størmer theory gives an analytic expression for the
+// *vertical* cutoff rigidity. A widely used approximation (Earth-normalized) is:
+//
+//   Rv(λ,r) ≈ 14.9 * cos^4(λ) / (r/Re)^2   [GV]
+//
+// where λ is magnetic latitude and r is geocentric radius.
+//
+// In our verification mode we compute λ with respect to the (optionally tilted)
+// dipole axis m_hat used by DipoleInterface:
+//   sin(λ) = m_hat · r_hat
+//
+// We also scale the constant linearly with DIPOLE_MOMENT (multiples of M_E).
+//
+// This provides a simple analytic benchmark to compare against the numerically
+// evaluated cutoff (which may include directional averaging/search).
+//======================================================================================
+static void WriteTecplotPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
+                                                     const std::vector<EarthUtil::Vec3>& points,
+                                                     const std::vector<double>& Rc_num_GV) {
+  FILE* f=std::fopen("cutoff_gridless_points_dipole_compare.dat","w");
+  if (!f) throw std::runtime_error("Cannot write Tecplot file: cutoff_gridless_points_dipole_compare.dat");
+
+  std::fprintf(f,"TITLE=\"Dipole Cutoff Rigidity: Numeric vs Analytic Vertical\"\n");
+  std::fprintf(f,"VARIABLES=\"id\",\"x\",\"y\",\"z\",\"Rc_num_GV\",\"Rc_vert_GV\",\"rel_err\"\n");
+  std::fprintf(f,"ZONE T=\"points\" I=%zu F=POINT\n", points.size());
+// Unit dipole axis used by DipoleInterface.
+  const double mx = Earth::GridlessMode::Dipole::gParams.m_hat[0];
+  const double my = Earth::GridlessMode::Dipole::gParams.m_hat[1];
+  const double mz = Earth::GridlessMode::Dipole::gParams.m_hat[2];
+
+  for (size_t i=0;i<points.size();i++) {
+    const double x_m = points[i].x*1000.0;
+    const double y_m = points[i].y*1000.0;
+    const double z_m = points[i].z*1000.0;
+    const double r_m = std::sqrt(x_m*x_m + y_m*y_m + z_m*z_m);
+    const double rhatx = x_m/r_m;
+    const double rhaty = y_m/r_m;
+    const double rhatz = z_m/r_m;
+
+    const double sinLam = mx*rhatx + my*rhaty + mz*rhatz;
+    const double cosLam = std::sqrt(std::max(0.0, 1.0 - sinLam*sinLam));
+    const double rRe = r_m/_EARTH__RADIUS_;
+
+    const double Rc_vert = 14.9 * prm.field.dipoleMoment_Me * std::pow(cosLam,4) / (rRe*rRe);
+    const double Rc_num = Rc_num_GV[i];
+
+    const double rel = (Rc_vert>0.0 && Rc_num>0.0) ? (Rc_num-Rc_vert)/Rc_vert : 0.0;
+
+        std::fprintf(f,"%zu %e %e %e %e %e %e \n", i, points[i].x,points[i].y,points[i].z,Rc_num, Rc_vert, rel); 
   }
 
   std::fclose(f);
@@ -1096,6 +1175,19 @@ if (!isPoints) locDonePerShell.assign((size_t)nShells, 0);
       }
 
       WriteTecplotPoints(prm.output.points,Rc,Emin);
+
+// If the background model is an analytic dipole, also write an analytic
+// Størmer vertical-cutoff reference for quick verification.
+//
+// NOTE: We only emit this comparison file in nightly-test mode to keep
+// production outputs unchanged and to avoid extra I/O for regular runs.
+// In nightly test mode, produce an analytic-vs-numeric comparison for the DIPOLE case.
+// This avoids extra I/O for regular runs.
+#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_ 
+if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
+  WriteTecplotPoints_DipoleAnalyticCompare(prm,prm.output.points,Rc);
+}
+#endif
       std::cout << "Wrote Tecplot: cutoff_gridless_points.dat\n";
     } else {
       // SHELLS: RcMin/EminMin are flattened [s*nPtsShell + k].
