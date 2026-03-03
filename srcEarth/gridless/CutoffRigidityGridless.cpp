@@ -331,18 +331,30 @@ static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
   double tTrace_s = 0.0;
   int nSteps = 0;
 
+  //----------------------------------------------------------------------------------
+  // Per-trajectory time limit
+  //----------------------------------------------------------------------------------
+  // By default, we use the global time cap from #NUMERICAL MAX_TRACE_TIME.
+  //
+  // New feature (requested):
+  //   If the input file provides CUTOFF_MAX_TRAJ_TIME > 0 in #CUTOFF_RIGIDITY,
+  //   we use that tighter limit *only for cutoff-rigidity tracing*.
+  //
+  // Rationale:
+  //   Cutoff scans can backtrace many trajectories; a small fraction may be
+  //   quasi-trapped and would otherwise run up to the global cap, dominating
+  //   runtime. This knob allows you to control that cost specifically for
+  //   cutoff calculations.
+  //
+  // IMPORTANT: This does not change any other AMPS workflows.
+  const double maxTraceTime_s_effective =
+    (prm.cutoff.maxTrajTime_s > 0.0) ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s;
+
   // Main trace loop with automatic dt selection. The geometric classification
   // checks are intentionally evaluated *before* the push so that starting exactly
   // outside the box (allowed) or inside the loss sphere (forbidden) is handled
   // consistently and independently of the step size.
-  // Choose the time cap for this trace.
-// By default we use prm.numerics.maxTraceTime_s, but the cutoff section can override
-// it with CUTOFF_MAX_TRAJ_TIME to keep cutoff runs short without affecting other
-// parts of the code that may use the same Numerical block.
-const double maxTraceTime_s_effective =
-    (prm.cutoff.maxTrajTime_s > 0.0) ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s;
-
-while (nSteps < prm.numerics.maxSteps && tTrace_s < maxTraceTime_s_effective) {
+  while (nSteps < prm.numerics.maxSteps && tTrace_s < maxTraceTime_s_effective) {
     V3 xRe{ x.x/_EARTH__RADIUS_, x.y/_EARTH__RADIUS_, x.z/_EARTH__RADIUS_ };
     if (LostInnerSphere(xRe,boxRe.rInner)) return false;
     if (!InsideBoxRe(xRe,boxRe)) return true;
@@ -385,6 +397,91 @@ static std::vector<V3> BuildDirGrid(int nZenith,int nAz) {
   return dirs;
 }
 
+//======================================================================================
+// LOCAL "GSM-LIKE" LON/LAT FRAME FOR DIRECTIONAL SKY MAPS (POINT-CENTERED)
+//======================================================================================
+// Requested behavior:
+//   - POINTS are specified in GSM Cartesian coordinates.
+//   - When building a *directional* cutoff rigidity map (Rc vs arrival direction),
+//     use a "GSM-type" frame that is centered on the point.
+//
+// What this means in practice:
+//   We define a local orthonormal basis (E,N,U) at the point, analogous to the
+//   usual East/North/Up frame on a sphere, but with the "north reference" taken
+//   from the *global GSM Z axis*.
+//
+// Definitions (all vectors in GSM):
+//   U = r_hat = unit(position)
+//   E = unit( Z_GSM x U )
+//   N = U x E
+// where Z_GSM=(0,0,1). This yields:
+//   - U: local "up" (radially outward from Earth center)
+//   - N: local "north" (closest to +Z_GSM while tangent to the sphere)
+//   - E: local "east"  (completes a right-handed triad)
+//
+// IMPORTANT:
+//   - This is NOT geographic (GEO). It is a *local* frame that remains tied to
+//     the GSM axes.
+//   - Near the GSM poles (U nearly parallel to Z_GSM), the cross product becomes
+//     ill-conditioned. We include a deterministic fallback to X_GSM=(1,0,0).
+//
+// FUTURE REPLACEMENT HOOK:
+//   If you later decide to define directional-map lon/lat differently (e.g.,
+//   using a magnetic-aligned frame, GEO local frame, or some event-specific
+//   reference), this is the ONLY code you need to swap.
+//======================================================================================
+
+struct LocalENUFrame {
+  V3 E; // local east
+  V3 N; // local north
+  V3 U; // local up (radial)
+};
+
+static inline LocalENUFrame BuildLocalENU_GSM(const V3& x0_m) {
+  const V3 U = unit(x0_m);
+
+  // Primary reference axis: global GSM +Z.
+  const V3 Zgsm{0.0,0.0,1.0};
+  V3 E = cross(Zgsm, U);
+
+  // If near singular (point near GSM pole), fall back to GSM +X.
+  if (norm(E) < 1.0e-12) {
+    const V3 Xgsm{1.0,0.0,0.0};
+    E = cross(Xgsm, U);
+  }
+
+  E = unit(E);
+  const V3 N = unit(cross(U, E));
+  return {E,N,U};
+}
+
+// Convert local (lon,lat) on the sky to a GSM unit direction vector.
+//
+// Convention (documented for Tecplot maps):
+//   - lon_deg = 0   points toward local +N
+//   - lon_deg = +90 points toward local +E
+//   - lat_deg = 0   is in the local tangent plane
+//   - lat_deg = +90 points toward +U (radially outward)
+//
+// This is a standard spherical parameterization where lon is azimuth measured
+// from +N toward +E, and lat is elevation toward +U.
+static inline V3 LocalLonLatToDir_GSM(const LocalENUFrame& fr, double lon_deg, double lat_deg) {
+  const double lon = lon_deg * M_PI/180.0;
+  const double lat = lat_deg * M_PI/180.0;
+
+  const double cl = std::cos(lat);
+  const double sl = std::sin(lat);
+
+  // Local components in (E,N,U) basis (see convention above).
+  const double dE = cl * std::sin(lon);
+  const double dN = cl * std::cos(lon);
+  const double dU = sl;
+
+  // Convert to GSM Cartesian.
+  const V3 d = add(add(mul(dE, fr.E), mul(dN, fr.N)), mul(dU, fr.U));
+  return unit(d);
+}
+
 static double CutoffAtPoint_GV(const EarthUtil::AmpsParam& prm,
                                const cFieldEvaluator& field,
                                const V3& x0_m,
@@ -423,46 +520,44 @@ static double CutoffAtPoint_GV(const EarthUtil::AmpsParam& prm,
 static void WriteTecplotPoints(const std::vector<EarthUtil::Vec3>& points,
                                const std::vector<double>& Rc,
                                const std::vector<double>& Emin) {
-  //====================================================================================
-  // Tecplot output for POINTS mode
-  //
-  // IMPORTANT ABOUT LON/LAT HERE:
-  //   The input points for this gridless workflow are specified in GSM Cartesian
-  //   coordinates (as confirmed by the user). For convenience, we also report a
-  //   simple "spherical lon/lat" computed directly from the GSM Cartesian vector:
-  //
-  //     lon_GSM = atan2(y, x)      (degrees, -180..180)
-  //     lat_GSM = atan2(z, sqrt(x^2+y^2))  (degrees, -90..90)
-  //
-  //   This is NOT geographic lon/lat (GEO) and does not require time-dependent
-  //   transforms. It is simply a way to label point locations for plotting.
-  //
-  //   If you later decide to output geographic coordinates instead, this is the
-  //   single location in the code to replace with a GEO<->GSM transform and a
-  //   true Earth-fixed lon/lat definition.
-  //====================================================================================
-  auto lonlat_from_gsm_cart = [&](double x, double y, double z,
-                                 double& lon_deg, double& lat_deg) {
-    // atan2 returns radians in [-pi,pi]; convert to degrees.
-    lon_deg = std::atan2(y,x) * 180.0/M_PI;
-
-    // Guard against division by zero at the poles.
-    const double rho = std::sqrt(x*x + y*y);
-    lat_deg = std::atan2(z, rho) * 180.0/M_PI;
-  };
-
   FILE* f=std::fopen("cutoff_gridless_points.dat","w");
   if (!f) throw std::runtime_error("Cannot write Tecplot file: cutoff_gridless_points.dat");
 
-  std::fprintf(f,"TITLE=\"Cutoff Rigidity (Gridless)\""); 
-  std::fprintf(f,"VARIABLES=\"id\",\"x\",\"y\",\"z\",\"lon_GSM_deg\",\"lat_GSM_deg\",\"Rc_GV\",\"Emin_MeV\""); 
-  std::fprintf(f,"ZONE T=\"points\" I=%zu F=POINT", points.size()); 
+  std::fprintf(f,"TITLE=\"Cutoff Rigidity (Gridless)\"\n");
+
+  //----------------------------------------------------------------------------------
+  // POINTS MODE OUTPUT: adding Lon/Lat labels
+  //----------------------------------------------------------------------------------
+  // Requested change:
+  //   When OUTPUT_MODE=POINTS, also provide a Lon/Lat map of the cutoff rigidity.
+  //
+  // IMPORTANT CLARIFICATION (because POINTS are in GSM):
+  //   - points[i].(x,y,z) are interpreted as Cartesian coordinates in the *GSM* frame.
+  //   - Therefore the Lon/Lat we compute here are *GSM spherical* Lon/Lat labels:
+  //       lon_GSM = atan2(y,x)
+  //       lat_GSM = atan2(z, sqrt(x^2+y^2))
+  //   - These are NOT geographic lon/lat (GEO). Converting to geographic requires
+  //     a time-dependent GEO<->GSM transform (e.g., via Geopack) and is intentionally
+  //     NOT done here to keep the output consistent with your GSM input.
+  //
+  // FUTURE REPLACEMENT HOOK:
+  //   If later you decide you want geographic lon/lat, replace ONLY the two lines
+  //   that compute lon_deg/lat_deg below with your preferred GEO mapping.
+  //----------------------------------------------------------------------------------
+  std::fprintf(f,"VARIABLES=\"id\",\"x\",\"y\",\"z\",\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"\n");
+  std::fprintf(f,"ZONE T=\"points\" I=%zu F=POINT\n", points.size());
 
   for (size_t i=0;i<points.size();i++) {
-    double lon_deg=0.0, lat_deg=0.0;
-    lonlat_from_gsm_cart(points[i].x, points[i].y, points[i].z, lon_deg, lat_deg);
+    const double x = points[i].x;
+    const double y = points[i].y;
+    const double z = points[i].z;
 
-    std::fprintf(f,"%zu %e %e %e %e %e %e %e",i,points[i].x,points[i].y,points[i].z,lon_deg, lat_deg,Rc[i],Emin[i]); 
+    // GSM spherical labels (degrees). See note above.
+    const double lon_deg = std::atan2(y,x) * 180.0/M_PI;
+    const double lat_deg = std::atan2(z, std::sqrt(x*x + y*y)) * 180.0/M_PI;
+
+    std::fprintf(f,"%zu %e %e %e %e %e %e %e\n",
+                 i, x,y,z, lon_deg, lat_deg, Rc[i],Emin[i]);
   }
 
   std::fclose(f);
@@ -557,6 +652,60 @@ static void WriteTecplotShells(const std::vector<double>& shellAlt_km,
         std::fprintf(f,"%e %e %e %e\n", lon, lat, 
           RcShell[s][k], EminShell[s][k]);
       }
+    }
+  }
+
+  std::fclose(f);
+}
+
+//--------------------------------------------------------------------------------------
+// Directional cutoff rigidity sky-map writer (POINTS mode)
+//--------------------------------------------------------------------------------------
+// This writes a Tecplot POINT zone on a (lon,lat) grid in the *local GSM-like ENU*
+// frame centered on the injection point.
+//
+// Lon/Lat meaning here is explicitly *directional*:
+//   - lon_deg: azimuth in the local tangent plane, measured from +N toward +E.
+//   - lat_deg: elevation toward +U.
+//
+// This is NOT the same as GEO lon/lat. It is a sky coordinate system tied to GSM.
+// The definition is documented near BuildLocalENU_GSM() and LocalLonLatToDir_GSM().
+//--------------------------------------------------------------------------------------
+static void WriteTecplotDirectionalMap_Point(const std::string& fileName,
+                                             int pointId,
+                                             const EarthUtil::Vec3& point_km,
+                                             double lonRes_deg,
+                                             double latRes_deg,
+                                             int nLon,
+                                             int nLat,
+                                             const std::vector<double>& RcCell,
+                                             double qabs,
+                                             double m0_kg) {
+  FILE* f = std::fopen(fileName.c_str(),"w");
+  if (!f) throw std::runtime_error("Cannot write Tecplot file: "+fileName);
+
+  std::fprintf(f,"TITLE=\"Directional cutoff rigidity sky-map (POINT %d)\"\n", pointId);
+  std::fprintf(f,"VARIABLES=\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"\n");
+  std::fprintf(f,"ZONE T=\"point=%d x_km=%g y_km=%g z_km=%g\" I=%d J=%d F=POINT\n",
+               pointId, point_km.x, point_km.y, point_km.z, nLon, nLat);
+
+  // Cell ordering: k = iLon + nLon*jLat (same as used throughout this solver).
+  for (int j=0; j<nLat; j++) {
+    double lat = -90.0 + latRes_deg * j;
+    if (lat > 90.0) lat = 90.0;
+
+    for (int i=0; i<nLon; i++) {
+      const double lon = lonRes_deg * i;
+      const int k = i + nLon*j;
+      const double rc = RcCell[(size_t)k];
+
+      double Emin = -1.0;
+      if (rc > 0.0) {
+        const double pCut = MomentumFromRigidity_GV(rc, qabs);
+        Emin = KineticEnergyFromMomentum_MeV(pCut, m0_kg);
+      }
+
+      std::fprintf(f,"%e %e %e %e\n", lon, lat, rc, Emin);
     }
   }
 
@@ -658,6 +807,26 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   const int nAz=48;
   const std::vector<V3> dirs = BuildDirGrid(nZenith,nAz);
 
+  //----------------------------------------------------------------------------------
+  // Cutoff sampling mode (VERTICAL vs ISOTROPIC)
+  //----------------------------------------------------------------------------------
+  // Requested feature:
+  //   Allow computing either:
+  //     - VERTICAL cutoff: single arrival direction (toward Earth) per point.
+  //     - ISOTROPIC cutoff: min over a pre-defined sky sampling grid.
+  //
+  // Implementation detail:
+  //   We keep the existing dirs grid for isotropic sampling. For vertical, we
+  //   do not use dirs[]; instead, we compute the vertical direction directly
+  //   from the location position vector at runtime.
+  const std::string samplingMode = EarthUtil::ToUpper(prm.cutoff.sampling);
+  const bool samplingVertical = (samplingMode=="VERTICAL");
+  const bool samplingIsotropic = (samplingMode=="ISOTROPIC" || samplingMode.empty());
+
+  if (!samplingVertical && !samplingIsotropic) {
+    throw std::runtime_error("Unsupported CUTOFF_SAMPLING: '"+prm.cutoff.sampling+"' (use VERTICAL or ISOTROPIC)");
+  }
+
   //----------------------------------------------------------------------------
   // Print a run summary (rank 0 only), and flush to avoid buffered stdout issues.
   //----------------------------------------------------------------------------
@@ -670,19 +839,17 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     std::cout << "Species         : " << prm.species.name << " (q=" << prm.species.charge_e
               << " e, m=" << prm.species.mass_amu << " amu)\n";
     std::cout << "Rigidity bracket: [" << Rmin << ", " << Rmax << "] GV\n";
-    // Cutoff sampling mode controls how many directions are evaluated.
-//   - ISOTROPIC: evaluate a fixed direction grid (nZenith x nAz) and take min Rc.
-//   - VERTICAL : evaluate ONLY the local vertical direction at each point.
-// NOTE: For VERTICAL the direction depends on the point, so we report "1 (VERTICAL)".
-{
-      const std::string samp = EarthUtil::ToUpper(prm.cutoff.sampling);
-      if (samp=="VERTICAL") {
-        std::cout << "Directions grid : 1 (VERTICAL)\n";
-      } else {
-        std::cout << "Directions grid : " << dirs.size()
-                  << " (nZenith=" << nZenith << ", nAz=" << nAz << ")\n";
-      }
-}
+    std::cout << "CUTOFF_SAMPLING : " << (samplingVertical ? "VERTICAL" : "ISOTROPIC") << "\n";
+    if (!samplingVertical) {
+      std::cout << "Directions grid : " << dirs.size() << " (nZenith=" << nZenith << ", nAz=" << nAz << ")\n";
+    } else {
+      std::cout << "Directions grid : (not used for VERTICAL)\n";
+    }
+    std::cout << "Directional map : " << (prm.cutoff.directionalMap ? "ON" : "OFF") << "\n";
+    if (prm.cutoff.directionalMap) {
+      std::cout << "  DIRMAP_LON_RES: " << prm.cutoff.dirMapLonRes_deg << " deg\n";
+      std::cout << "  DIRMAP_LAT_RES: " << prm.cutoff.dirMapLatRes_deg << " deg\n";
+    }
     const DomainBoxRe boxRe = ToDomainBoxRe(prm.domain);
     std::cout << "Domain box (km) : x[" << prm.domain.xMin << "," << prm.domain.xMax << "] "
               << "y[" << prm.domain.yMin << "," << prm.domain.yMax << "] "
@@ -735,88 +902,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
 
     // "hi" is our conservative estimate of the first allowed rigidity for this direction.
     return hi;
-  }; 
-//====================================================================================
-// LOCAL "GSM-LIKE" LON/LAT FOR DIRECTIONAL SAMPLING MAPS (POINT-CENTERED SKY MAP)
-//
-// The user requested that POINTS are in GSM and that any lon/lat map we produce for
-// *directional sampling* should be computed in a GSM-type local frame centered on the
-// point.
-//
-// We therefore define, for each location x0, a local right-handed orthonormal basis
-// (E, N, U) where:
-//   U = rhat = x0/|x0|      (local "Up", radial direction)
-//   E = (Z_GSM x U) / |Z_GSM x U|    (local "East", using global GSM Z as reference)
-//   N = U x E               (local "North", completes the triad)
-//
-// This is analogous to a local ENU frame, but the "north reference" is GSM +Z rather
-// than the geographic rotation axis. This is intentional: it keeps the sky-map
-// definition purely in GSM, without any time-dependent GEO<->GSM conversions.
-//
-// EDGE CASE (near GSM poles):
-//   If U is nearly parallel to Z_GSM, the cross product Z_GSM x U becomes ill-conditioned.
-//   In that case we fall back to X_GSM as reference to define E.
-//
-// Once we have (E,N,U), any direction in the local sky can be parameterized by
-// (lon,lat) where:
-//   lon: azimuth measured clockwise from +N toward +E (degrees)
-//   lat: elevation above the local horizon, i.e. angle from the tangent plane toward +U
-//
-// The conversion from (lon,lat) to a GSM direction unit vector is:
-//   d_local = [ cos(lat)*sin(lon),  cos(lat)*cos(lon),  sin(lat) ] in (E,N,U) components
-//   d_GSM   = d_local.x * E  +  d_local.y * N  +  d_local.z * U
-//
-// NOTE: This convention is documented heavily so that replacing it in the future
-// (e.g., with GEO geographic lon/lat, or with magnetic coordinates) is straightforward.
-//====================================================================================
-struct LocalGsmFrame {
-  V3 e; // local east  unit vector (GSM Cartesian components)
-  V3 n; // local north unit vector (GSM Cartesian components)
-  V3 u; // local up    unit vector (GSM Cartesian components)
-};
-
-// Build a local (E,N,U) frame at x0_m in GSM coordinates.
-auto BuildLocalGsmFrame = [&](const V3& x0_m) -> LocalGsmFrame {
-  LocalGsmFrame F;
-  F.u = unit(x0_m); // local Up
-
-  // Reference axes in GSM.
-  const V3 Zg{0.0,0.0,1.0};
-  const V3 Xg{1.0,0.0,0.0};
-
-  // East is defined as ref x Up (right-handed). We primarily use Zg, but fall back
-  // to Xg near the GSM poles.
-  V3 east = cross(Zg, F.u);
-  if (norm(east) < 1.0e-12) {
-    // Near poles: use Xg as reference.
-    east = cross(Xg, F.u);
-  }
-  F.e = unit(east);
-
-  // North completes the frame.
-  F.n = unit(cross(F.u, F.e));
-
-  return F;
-};
-
-// Convert local (lon,lat) in degrees to a GSM unit direction using the local frame.
-auto DirFromLocalLonLat = [&](const LocalGsmFrame& F,
-                             double lon_deg, double lat_deg) -> V3 {
-  const double lon = lon_deg * M_PI/180.0;
-  const double lat = lat_deg * M_PI/180.0;
-
-  // Local direction components in (E,N,U)
-  const double cLat = std::cos(lat);
-  const double sx = cLat * std::sin(lon); // East component
-  const double sy = cLat * std::cos(lon); // North component
-  const double sz = std::sin(lat);        // Up component
-
-  // Recompose in GSM Cartesian.
-  V3 d = add( add(mul(sx, F.e), mul(sy, F.n)), mul(sz, F.u) );
-  return unit(d);
-};
-
-;
+  };
 
   //====================================================================================
   // Location indexing
@@ -855,12 +941,43 @@ auto DirFromLocalLonLat = [&](const LocalGsmFrame& F,
     isPoints ? static_cast<int>(prm.output.points.size())
              : static_cast<int>(prm.output.shellAlt_km.size()) * nPtsShell;
 
-  // Number of direction tasks per location depends on the cutoff sampling mode.
-// In ISOTROPIC mode we evaluate the full direction grid.
-// In VERTICAL mode we evaluate only one direction (local vertical), which is computed
-// on-the-fly from the location vector in the worker loop.
-const bool isVerticalSampling = (EarthUtil::ToUpper(prm.cutoff.sampling)=="VERTICAL");
-const int nDir = isVerticalSampling ? 1 : static_cast<int>(dirs.size());
+  //----------------------------------------------------------------------------------
+  // Number of sampling directions for the *primary* cutoff result
+  //----------------------------------------------------------------------------------
+  // ISOTROPIC: use the full dirs[] grid.
+  // VERTICAL : use a single direction computed from the location position.
+  const int nDirSampling = samplingVertical ? 1 : static_cast<int>(dirs.size());
+
+  //----------------------------------------------------------------------------------
+  // Optional directional sky-map configuration (POINTS mode only)
+  //----------------------------------------------------------------------------------
+  // Requested feature: MPI-parallel sky-map computation.
+  //
+  // Notes:
+  //   - We currently enable this only for OUTPUT_MODE=POINTS because it is
+  //     primarily a diagnostic product per injection point.
+  //   - Extending to SHELLS is possible but would generate extremely large
+  //     outputs; if you need it, we can add a dedicated output mode.
+  const bool doDirMap = (prm.cutoff.directionalMap && isPoints);
+
+  // Directional map grid dimensions. We interpret resolutions in degrees.
+  // - lon: [0,360) in steps of lonRes
+  // - lat: [-90,90] inclusive in steps of latRes
+  const double lonRes_deg = prm.cutoff.dirMapLonRes_deg;
+  const double latRes_deg = prm.cutoff.dirMapLatRes_deg;
+
+  int nLonMap = 0;
+  int nLatMap = 0;
+  int nDirMapCells = 0;
+  if (doDirMap) {
+    if (!(lonRes_deg>0.0) || !(latRes_deg>0.0)) {
+      throw std::runtime_error("DIRMAP_LON_RES and DIRMAP_LAT_RES must be > 0 when DIRECTIONAL_MAP=T");
+    }
+
+    nLonMap = static_cast<int>(std::floor(360.0/lonRes_deg + 0.5));
+    nLatMap = static_cast<int>(std::floor(180.0/latRes_deg + 0.5)) + 1; // include poles
+    nDirMapCells = nLonMap * nLatMap;
+  }
 
   //====================================================================================
   // MASTER/WORKER message protocol
@@ -871,8 +988,24 @@ const int nDir = isVerticalSampling ? 1 : static_cast<int>(dirs.size());
   //
   // The worker recomputes x0_m from locationId and reads dir vector from dirs[dirId].
   //====================================================================================
-  struct TaskMsg { int loc; int dir; };
-  struct ResultMsg { int loc; double rc; };
+  // Task kinds:
+  //   TASK_SAMPLING: compute Rc for one sampling direction (isotropic grid or vertical)
+  //   TASK_DIRMAP  : compute Rc for one directional-map cell (lon/lat sky-map)
+  enum : int {
+    TASK_SAMPLING = 0,
+    TASK_DIRMAP   = 1
+  };
+
+  // Task message:
+  //   type : TASK_SAMPLING or TASK_DIRMAP
+  //   loc  : locationId (for both task types)
+  //   idx  :
+  //          - TASK_SAMPLING: dirId (ignored for VERTICAL)
+  //          - TASK_DIRMAP  : cellId on the lon/lat grid
+  struct TaskMsg { int type; int loc; int idx; };
+
+  // Result message mirrors task identification so the master can reduce/store.
+  struct ResultMsg { int type; int loc; int idx; double rc; };
 
   const int TAG_TASK   = 1001;
   const int TAG_RESULT = 1002;
@@ -1033,13 +1166,39 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
   std::vector<double> RcMin;
   std::vector<double> EminMin;
 
+  // Directional sky-map storage (POINTS only). Flattened as:
+  //   RcDirMap[ pointId*nDirMapCells + cellId ]
+  // where cellId = iLon + nLonMap*jLat.
+  //
+  // We store this only on the master (rank 0). It can be large, but for POINTS
+  // mode the number of points is typically modest.
+  std::vector<double> RcDirMap;
+
   if (mpiRank==0) {
     RcMin.assign((size_t)nLoc, -1.0);
     EminMin.assign((size_t)nLoc, -1.0);
+
+    if (doDirMap) {
+      RcDirMap.assign((size_t)prm.output.points.size() * (size_t)nDirMapCells, -1.0);
+    }
   }
 
-  // Total number of independent tasks.
-  const long long totalTasks = (long long)nLoc * (long long)nDir;
+  //----------------------------------------------------------------------------------
+  // Total number of independent tasks
+  //----------------------------------------------------------------------------------
+  // We now have up to two task families:
+  //   (A) Primary cutoff sampling tasks (always):
+  //       - ISOTROPIC: nDirSampling = size(dirs)
+  //       - VERTICAL : nDirSampling = 1
+  //       Total = nLoc * nDirSampling
+  //
+  //   (B) Optional directional sky-map tasks (POINTS only, if enabled):
+  //       Total = nPoints * nDirMapCells
+  //
+  // We schedule both families through the same dynamic master/worker scheduler.
+  const long long totalSamplingTasks = (long long)nLoc * (long long)nDirSampling;
+  const long long totalDirMapTasks   = (doDirMap ? (long long)prm.output.points.size() * (long long)nDirMapCells : 0LL);
+  const long long totalTasks = totalSamplingTasks + totalDirMapTasks;
 
   // Each worker counts how many trajectory-tasks it actually computed.
   // This is used at the end to *prove* tasks were distributed (no duplicated work).
@@ -1073,34 +1232,54 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
       // equal totalTasks.
       myTasksProcessed++; 
 
-      // Reconstruct start position and direction.
+      // Reconstruct start position (needed for both task types).
       const V3 x0_m = LocationToX0m(task.loc);
-      // Determine the "arrival direction" unit vector for this task.
-//
-// IMPORTANT CONVENTION:
-//   dir_unit represents the *desired arrival direction* of the particle at x0.
-//   The backtracer then launches the particle with initial velocity v0 = -dir_unit
-//   (see CutoffForDirection_GV lambda below).
-//
-// ISOTROPIC mode:
-//   dir_unit is taken from a fixed sky grid defined in global GSM Cartesian coordinates.
-//
-// VERTICAL mode:
-//   "Vertical" means local radial incidence, i.e. the particle arrives from above
-//   toward Earth's center. At a given location x0, the local "Up" is +rhat = x0/|x0|,
-//   therefore the downward/vertical arrival direction is -rhat.
-V3 dir;
-if (isVerticalSampling) {
-  const V3 rhat = unit(x0_m);
-  dir = mul(-1.0, rhat); // vertical (downward) arrival direction
-} else {
-  dir = dirs[(size_t)task.dir];
-}
 
-      // Compute direction cutoff.
-      const double rc = CutoffForDirection_GV(x0_m, dir, Rmin, Rmax);
+      // Compute direction cutoff depending on task type.
+      double rc = -1.0;
 
-      ResultMsg res{ task.loc, rc };
+      if (task.type == TASK_SAMPLING) {
+        // Primary cutoff sampling direction.
+        //
+        // ISOTROPIC: use the precomputed direction grid (dirs[idx]).
+        // VERTICAL : ignore idx and compute the local vertical arrival direction
+        //            toward Earth: d = -unit(r0).
+        V3 dir;
+        if (samplingVertical) {
+          dir = mul(-1.0, unit(x0_m));
+        } else {
+          dir = dirs[(size_t)task.idx];
+        }
+
+        rc = CutoffForDirection_GV(x0_m, dir, Rmin, Rmax);
+      }
+      else if (task.type == TASK_DIRMAP) {
+        // Directional sky-map cell.
+        //
+        // We build a local GSM-like ENU frame at the point and then convert
+        // (lon,lat) on the sky to a GSM Cartesian direction vector.
+        //
+        // Cell indexing convention:
+        //   cellId = iLon + nLonMap*jLat
+        // where:
+        //   iLon in [0,nLonMap)
+        //   jLat in [0,nLatMap)
+        //   lon_deg = lonRes_deg * iLon
+        //   lat_deg = -90 + latRes_deg * jLat  (clamped to +90 for the last row)
+        const int cellId = task.idx;
+        const int iLon = cellId % nLonMap;
+        const int jLat = cellId / nLonMap;
+
+        double lon_deg = lonRes_deg * iLon;
+        double lat_deg = -90.0 + latRes_deg * jLat;
+        if (lat_deg > 90.0) lat_deg = 90.0;
+
+        const LocalENUFrame fr = BuildLocalENU_GSM(x0_m);
+        const V3 dir = LocalLonLatToDir_GSM(fr, lon_deg, lat_deg);
+        rc = CutoffForDirection_GV(x0_m, dir, Rmin, Rmax);
+      }
+
+      ResultMsg res{ task.type, task.loc, task.idx, rc };
       MPI_Send(&res, (int)sizeof(ResultMsg), MPI_BYTE, 0, TAG_RESULT, MPI_COMM_WORLD);
     }
   };
@@ -1120,8 +1299,16 @@ if (isVerticalSampling) {
         const V3 x0_m = LocationToX0m(loc);
 
         double rcMin = -1.0;
-        for (int dId=0; dId<nDir; dId++) {
-          const double rc = CutoffForDirection_GV(x0_m, dirs[(size_t)dId], Rmin, Rmax);
+        for (int dId=0; dId<nDirSampling; dId++) {
+          V3 dir;
+          if (samplingVertical) {
+            // Local vertical arrival direction toward Earth.
+            dir = mul(-1.0, unit(x0_m));
+          } else {
+            dir = dirs[(size_t)dId];
+          }
+
+          const double rc = CutoffForDirection_GV(x0_m, dir, Rmin, Rmax);
           if (rc>0.0) rcMin = (rcMin<0.0) ? rc : std::min(rcMin, rc);
         }
 
@@ -1130,15 +1317,51 @@ if (isVerticalSampling) {
           const double pCut = MomentumFromRigidity_GV(rcMin, qabs);
           EminMin[(size_t)loc] = KineticEnergyFromMomentum_MeV(pCut, m0);
         }
+
+        // Optional directional sky-map (POINTS only).
+        if (doDirMap) {
+          const int pointId = loc;
+          const LocalENUFrame fr = BuildLocalENU_GSM(x0_m);
+          (void)fr; // silence unused warning in case doDirMap is compiled out later
+
+          for (int cell=0; cell<nDirMapCells; cell++) {
+            const int iLon = cell % nLonMap;
+            const int jLat = cell / nLonMap;
+            double lon_deg = lonRes_deg * iLon;
+            double lat_deg = -90.0 + latRes_deg * jLat;
+            if (lat_deg > 90.0) lat_deg = 90.0;
+
+            const V3 dirMap = LocalLonLatToDir_GSM(BuildLocalENU_GSM(x0_m), lon_deg, lat_deg);
+            const double rc = CutoffForDirection_GV(x0_m, dirMap, Rmin, Rmax);
+            RcDirMap[(size_t)pointId*(size_t)nDirMapCells + (size_t)cell] = rc;
+          }
+        }
       }
 
       return;
     }
 
 
-// Next task to issue (linearized over loc then dir).
+// Next task to issue (linearized over both task families).
 long long nextTask = 0;
 long long doneTasks = 0;
+
+// Decode a linear task index into a TaskMsg.
+// This isolates the scheduling logic so we can extend task families without
+// rewriting the master/worker protocol.
+auto DecodeTask = [&](long long taskId) -> TaskMsg {
+  if (taskId < totalSamplingTasks) {
+    const int loc = (int)(taskId / nDirSampling);
+    const int idx = (int)(taskId - (long long)loc*nDirSampling);
+    return TaskMsg{ TASK_SAMPLING, loc, idx };
+  }
+
+  // Directional sky-map tasks start after sampling tasks.
+  const long long rem = taskId - totalSamplingTasks;
+  const int pointId = (int)(rem / nDirMapCells);
+  const int cellId  = (int)(rem - (long long)pointId*nDirMapCells);
+  return TaskMsg{ TASK_DIRMAP, pointId, cellId };
+};
 
 //----------------------------------------------------------------------------------
 // Location-level completion tracking (for user-visible progress reporting)
@@ -1152,7 +1375,11 @@ long long doneTasks = 0;
 // For SHELLS, we also track completion per shell index so the progress line can
 // report "SHELL i/N alt=..." similar to the legacy serial output.
 //----------------------------------------------------------------------------------
-std::vector<int> locRemain((size_t)nLoc, nDir);
+// Location completion tracking:
+// If directional maps are enabled, we treat a location as "complete" only when
+// BOTH the primary cutoff sampling tasks AND all its map cells are finished.
+const int tasksPerLocation = nDirSampling + ((doDirMap && isPoints) ? nDirMapCells : 0);
+std::vector<int> locRemain((size_t)nLoc, tasksPerLocation);
 int locDone = 0;
 std::vector<int> locDonePerShell;
 if (!isPoints) locDonePerShell.assign((size_t)nShells, 0);
@@ -1162,10 +1389,7 @@ if (!isPoints) locDonePerShell.assign((size_t)nShells, 0);
     for (int w=1; w<=nWorkers; w++) {
       if (nextTask >= totalTasks) break;
 
-      const int loc = (int)(nextTask / nDir);
-      const int dir = (int)(nextTask - (long long)loc*nDir);
-      TaskMsg t{ loc, dir };
-
+      TaskMsg t = DecodeTask(nextTask);
       MPI_Send(&t, (int)sizeof(TaskMsg), MPI_BYTE, w, TAG_TASK, MPI_COMM_WORLD);
       nextTask++;
     }
@@ -1178,10 +1402,20 @@ if (!isPoints) locDonePerShell.assign((size_t)nShells, 0);
       MPI_Recv(&res, (int)sizeof(ResultMsg), MPI_BYTE, MPI_ANY_SOURCE, TAG_RESULT, MPI_COMM_WORLD, &st);
       doneTasks++;
 
-      // Update per-location minimum cutoff.
-      if (res.rc > 0.0) {
-        double& cur = RcMin[(size_t)res.loc];
-        cur = (cur<0.0) ? res.rc : std::min(cur, res.rc);
+      // Update master-side storage.
+      if (res.type == TASK_SAMPLING) {
+        // Update per-location minimum cutoff (isotropic = min over directions;
+        // vertical = min over a single direction).
+        if (res.rc > 0.0) {
+          double& cur = RcMin[(size_t)res.loc];
+          cur = (cur<0.0) ? res.rc : std::min(cur, res.rc);
+        }
+      }
+      else if (res.type == TASK_DIRMAP) {
+        // Store Rc for this directional map cell.
+        if (doDirMap) {
+          RcDirMap[(size_t)res.loc*(size_t)nDirMapCells + (size_t)res.idx] = res.rc;
+        }
       }
 
       //--------------------------------------------------------------------------------
@@ -1209,15 +1443,12 @@ if (!isPoints) locDonePerShell.assign((size_t)nShells, 0);
 
       // Send a new task to the worker that just returned, or stop it if we're done.
       if (nextTask < totalTasks) {
-        const int loc = (int)(nextTask / nDir);
-        const int dir = (int)(nextTask - (long long)loc*nDir);
-        TaskMsg t{ loc, dir };
-
+        TaskMsg t = DecodeTask(nextTask);
         MPI_Send(&t, (int)sizeof(TaskMsg), MPI_BYTE, st.MPI_SOURCE, TAG_TASK, MPI_COMM_WORLD);
         nextTask++;
       } else {
         // No more tasks left -> stop this worker.
-        TaskMsg stopMsg{ -1, -1 };
+        TaskMsg stopMsg{ -1, -1, -1 };
         MPI_Send(&stopMsg, (int)sizeof(TaskMsg), MPI_BYTE, st.MPI_SOURCE, TAG_STOP, MPI_COMM_WORLD);
       }
     }
@@ -1227,11 +1458,12 @@ if (!isPoints) locDonePerShell.assign((size_t)nShells, 0);
     for (int w=1; w<mpiSize; w++) {
       // We attempt a nonblocking "probe" for safety; if a worker is still waiting,
       // it will receive the stop message. If it already exited, the message is harmless.
-      TaskMsg stopMsg{ -1, -1 };
+      TaskMsg stopMsg{ -1, -1, -1 };
       MPI_Send(&stopMsg, (int)sizeof(TaskMsg), MPI_BYTE, w, TAG_STOP, MPI_COMM_WORLD);
     }
 
-    // 4) Convert RcMin -> EminMin (rank 0 only) after all tasks have been reduced.
+    // 4) Convert RcMin -> EminMin (rank 0 only) after all *sampling* tasks
+    //    have been reduced.
     for (int loc=0; loc<nLoc; loc++) {
       const double rc = RcMin[(size_t)loc];
       if (rc>0.0) {
@@ -1332,90 +1564,41 @@ if (!isPoints) locDonePerShell.assign((size_t)nShells, 0);
 
       WriteTecplotPoints(prm.output.points,Rc,Emin);
 
-      //================================================================================
-      // OPTIONAL: Directional cutoff rigidity "sky map" for each POINT
+      //--------------------------------------------------------------------------------
+      // Optional directional sky-maps (MPI-parallelized)
+      //--------------------------------------------------------------------------------
+      // If DIRECTIONAL_MAP=T, we write one Tecplot file per point:
+      //   cutoff_gridless_dir_map_point_XXXX.dat
       //
-      // Controlled by:
-      //   CUTOFF_RIGIDITY / DIRECTIONAL_MAP      (T/F)
-      //   CUTOFF_RIGIDITY / DIRMAP_LON_RES       (deg)
-      //   CUTOFF_RIGIDITY / DIRMAP_LAT_RES       (deg)
+      // Each file is a (lon,lat) grid in the local GSM-like ENU frame centered
+      // on the point. See the detailed documentation near BuildLocalENU_GSM().
       //
-      // The map is computed in a LOCAL GSM-like (E,N,U) frame at the point. See the
-      // detailed documentation above (LocalGsmFrame / BuildLocalGsmFrame /
-      // DirFromLocalLonLat).
-      //
-      // Output file naming:
-      //   cutoff_gridless_dir_map_point_XXXX.dat  (Tecplot POINT zone)
-      //
-      // NOTE ON PERFORMANCE:
-      //   This implementation computes the maps on rank 0 after the main cutoff
-      //   calculation is finished. This keeps the MPI task protocol simple and the
-      //   main isotropic/vertical cutoff fast. If you later want to parallelize the
-      //   sky maps as well, the natural extension is to add a second task loop where
-      //   "dir" indexes lon/lat grid cells rather than the global direction grid.
-      //================================================================================
-      if (prm.cutoff.directionalMap) {
-        const double dLon = prm.cutoff.dirMapLonRes_deg;
-        const double dLat = prm.cutoff.dirMapLatRes_deg;
+      // IMPORTANT:
+      //   The maps are computed in parallel by MPI tasks and stored in RcDirMap.
+      //--------------------------------------------------------------------------------
+      if (doDirMap) {
+        for (size_t ip=0; ip<prm.output.points.size(); ip++) {
+          char fname[256];
+          std::snprintf(fname, sizeof(fname), "cutoff_gridless_dir_map_point_%04zu.dat", ip);
 
-        if (dLon <= 0.0 || dLat <= 0.0) {
-          std::cerr << "WARNING: DIRECTIONAL_MAP requested but DIRMAP_*_RES is non-positive; skipping maps.\n";
-        } else {
+          // Slice out this point's cell array.
+          std::vector<double> RcCell((size_t)nDirMapCells, -1.0);
+          const size_t base = ip*(size_t)nDirMapCells;
+          for (int k=0; k<nDirMapCells; k++) RcCell[(size_t)k] = RcDirMap[base + (size_t)k];
 
-          for (size_t ip=0; ip<prm.output.points.size(); ++ip) {
-            // Build local frame for this point (GSM).
-            const V3 x0_m = LocationToX0m((int)ip);
-            const LocalGsmFrame F = BuildLocalGsmFrame(x0_m);
-
-            // Prepare output.
-            char fname[256];
-            std::snprintf(fname,sizeof(fname),"cutoff_gridless_dir_map_point_%04zu.dat", ip);
-            FILE* fm = std::fopen(fname,"w");
-            if (!fm) {
-              std::cerr << "WARNING: Cannot write directional map file: " << fname << "\n";
-              continue;
-            }
-
-            // Count grid points for Tecplot header (inclusive endpoints).
-            const int nLon = (int)std::floor(360.0/dLon + 0.5) + 1; // -180..180
-            const int nLat = (int)std::floor(180.0/dLat + 0.5) + 1; // -90..90
-            const int nTot = nLon * nLat;
-
-            std::fprintf(fm,"TITLE=\"Directional Cutoff Rigidity Map (Gridless)\"\n");
-            std::fprintf(fm,"VARIABLES=\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"\n");
-            std::fprintf(fm,"ZONE T=\"point_%04zu\" I=%d J=%d F=POINT\n", ip, nLon, nLat);
-
-            // Loop over (lat,lon) grid in the LOCAL sky frame.
-            // Convention:
-            //   lon = -180..180 deg (azimuth, 0=North, +90=East)
-            //   lat =  -90.. 90 deg (elevation, +90=Up, -90=Down)
-            for (int j=0; j<nLat; ++j) {
-              const double lat_deg = -90.0 + j*dLat;
-              for (int iLon=0; iLon<nLon; ++iLon) {
-                const double lon_deg = -180.0 + iLon*dLon;
-
-                // Convert (lon,lat) to a GSM direction unit vector.
-                const V3 dir_unit = DirFromLocalLonLat(F, lon_deg, lat_deg);
-
-                // Compute directional cutoff in this direction.
-                const double rc = CutoffForDirection_GV(x0_m, dir_unit, Rmin, Rmax);
-
-                // Convert cutoff rigidity back to kinetic energy at the point (MeV).
-                double Emin_dir = -1.0;
-                if (rc > 0.0) {
-                  const double p = MomentumFromRigidity_GV(rc, qabs);
-                  Emin_dir = KineticEnergyFromMomentum_MeV(p, m0);
-                }
-
-                std::fprintf(fm,"%e %e %e %e\n", lon_deg, lat_deg, rc, Emin_dir);
-              }
-            }
-
-            std::fclose(fm);
-          }
+          WriteTecplotDirectionalMap_Point(fname,
+                                           (int)ip,
+                                           prm.output.points[ip],
+                                           lonRes_deg,
+                                           latRes_deg,
+                                           nLonMap,
+                                           nLatMap,
+                                           RcCell,
+                                           qabs,
+                                           m0);
         }
+        std::cout << "Wrote Tecplot: cutoff_gridless_dir_map_point_####.dat (" << prm.output.points.size() << " files)\n";
       }
-
 
 // If the background model is an analytic dipole, also write an analytic
 // Størmer vertical-cutoff reference for quick verification.
