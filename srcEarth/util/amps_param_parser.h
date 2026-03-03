@@ -75,10 +75,52 @@ namespace EarthUtil {
   };
 
   struct CutoffScan {
+    //------------------------------------------------------------------------------
+    // Cutoff rigidity scan controls (gridless backward tracing)
+    //
+    // NOTE ON UNITS:
+    //   The cutoff solver uses rigidity internally (GV). Here we keep the user-facing
+    //   bracket in kinetic energy (MeV/n) because that is what is commonly specified
+    //   for SEP/GCR spectra and aligns with the wizard UI.
+    //
+    //   For PROTON: "MeV/n" is effectively MeV per particle.
+    //   For ions:   the parser does NOT convert per-nucleon to per-particle; it simply
+    //              stores the numeric values and the solver interprets them as kinetic
+    //              energy per particle when converting to momentum.
+    //------------------------------------------------------------------------------
     double eMin_MeV{1.0};
     double eMax_MeV{1000.0};
+
+    // Number of energy bins (log-spaced) the UI may want to report.
+    // The current cutoff solver uses only the bracket [eMin,eMax] to compute [Rmin,Rmax]
+    // for bisection; we keep nEnergy for future extensions (penumbra mapping, spectra).
     int nEnergy{50};
+
+    // Maximum number of particles (trajectories) per injection point.
+    // NOTE: The current gridless cutoff solver uses a deterministic direction set and
+    // therefore does not directly consume this value, but we keep it for future Monte
+    // Carlo / randomized sampling modes.
     int maxParticlesPerPoint{500};
+
+    // Optional override for max integration time (seconds) used *only* for the cutoff
+    // tracing. If <= 0, the solver falls back to prm.numerics.maxTraceTime_s.
+    double maxTrajTime_s{0.0};
+
+    // How to define the cutoff rigidity for a point.
+    //   - VERTICAL: use ONLY the local-vertical arrival direction (toward Earth center).
+    //   - ISOTROPIC: compute directional cutoff for a set of directions and take the
+    //                minimum Rc across directions (current historical behavior).
+    //
+    // Stored as an uppercase string to keep the parser simple and extensible.
+    std::string sampling{"ISOTROPIC"}; // "VERTICAL" or "ISOTROPIC"
+
+    // Optional output: compute a *directional* cutoff rigidity map (Rc vs sky direction)
+    // for each POINT location. This is typically used to visualize penumbra-like
+    // structure. The map directions are defined in a *local GSM-like frame* at the
+    // point (see CutoffRigidityGridless.cpp for detailed documentation).
+    bool directionalMap{false};
+    double dirMapLonRes_deg{10.0}; // longitude (azimuth) step, degrees
+    double dirMapLatRes_deg{10.0}; // latitude  (elevation) step, degrees
   };
 
   //====================================================================================

@@ -22,10 +22,14 @@ FIELD_EVAL_METHOD      GRIDLESS
 ! Energy range and particle budget for backward-tracing cutoff search.
 #CUTOFF_RIGIDITY
 CUTOFF_EMIN            1.0          ! MeV/n
-CUTOFF_EMAX            4000.0       ! MeV/n
+CUTOFF_EMAX            1000.0       ! MeV/n
 CUTOFF_MAX_PARTICLES   500              ! per injection point
 CUTOFF_NENERGY         50               ! log-spaced energy bins
 CUTOFF_MAX_TRAJ_TIME   600               ! sec — max trajectory integration time
+CUTOFF_SAMPLING        VERTICAL           ! VERTICAL or ISOTROPIC
+DIRECTIONAL_MAP        T                 ! compute directional Rc sky-map
+DIRMAP_LON_RES         10                ! deg — longitude resolution
+DIRMAP_LAT_RES         10                ! deg — latitude resolution
 
 
 

@@ -411,10 +411,34 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else rememberUnknown();
     }
     else if (section=="#CUTOFF_RIGIDITY") {
+      //-------------------------------------------------------------------------
+      // Cutoff rigidity scan controls (Step 2, Section C)
+      //
+      // New parameters added for the gridless cutoff solver:
+      //   CUTOFF_MAX_TRAJ_TIME   [sec]    override NUMERICAL/MAX_TRACE_TIME for cutoff tracing
+      //   CUTOFF_SAMPLING        VERTICAL | ISOTROPIC
+      //   DIRECTIONAL_MAP        T/F      compute Rc(lon,lat) sky-map per POINT
+      //   DIRMAP_LON_RES         [deg]    longitude resolution for directional map
+      //   DIRMAP_LAT_RES         [deg]    latitude  resolution for directional map
+      //
+      // IMPORTANT: We keep these fields in prm.cutoff even if not all of them are
+      //            consumed by the current solver, because the wizard/UI expects the
+      //            full round-trip of parameters.
+      //-------------------------------------------------------------------------
       if (uKey=="CUTOFF_EMIN") p.cutoff.eMin_MeV=std::stod(val);
       else if (uKey=="CUTOFF_EMAX") p.cutoff.eMax_MeV=std::stod(val);
       else if (uKey=="CUTOFF_NENERGY") p.cutoff.nEnergy=std::stoi(val);
       else if (uKey=="CUTOFF_MAX_PARTICLES") p.cutoff.maxParticlesPerPoint=std::stoi(val);
+
+      // Solver-only controls
+      else if (uKey=="CUTOFF_MAX_TRAJ_TIME") p.cutoff.maxTrajTime_s=std::stod(val);
+      else if (uKey=="CUTOFF_SAMPLING") p.cutoff.sampling=ToUpper(val);
+
+      // Directional map controls (POINTS only)
+      else if (uKey=="DIRECTIONAL_MAP") p.cutoff.directionalMap=ToBool(val);
+      else if (uKey=="DIRMAP_LON_RES") p.cutoff.dirMapLonRes_deg=std::stod(val);
+      else if (uKey=="DIRMAP_LAT_RES") p.cutoff.dirMapLatRes_deg=std::stod(val);
+
       else rememberUnknown();
     }
     else if (section=="#PARTICLE_SPECIES") {
