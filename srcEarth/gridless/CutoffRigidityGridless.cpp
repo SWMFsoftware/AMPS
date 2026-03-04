@@ -43,6 +43,28 @@
 #include <numeric>
 #include <mpi.h> 
 
+//--------------------------------------------------------------------------------------
+// OPTIONAL SPICE SUPPORT (FRAME TRANSFORMS)
+//--------------------------------------------------------------------------------------
+// This solver keeps the actual particle tracing in GSM (because Tsyganenko models are
+// defined in GSM), but for *visualization / directional sampling maps* it is often
+// desirable to label directions in another global frame (e.g., SM).
+//
+// IMPORTANT DESIGN CHOICE:
+//   - We intentionally DO NOT use Geopack for coordinate transformations here.
+//   - If a direction-frame transform is needed, we do it via SPICE pxform.
+//   - Geopack remains IGRF-only (see cFieldEvaluator).
+//
+// To enable SPICE transforms, compile with -DAMPS_USE_SPICE and link CSPICE.
+// The runtime must furnish kernels that define the requested frames.
+// Per user request:
+//   - GSM frame name in SPICE is "GSM".
+//   - Solar Magnetic frame name is "SM".
+//   - If you later want Earth-fixed labeling, you may use "GCE" (if present in your FK).
+#ifndef _NO_SPICE_CALLS_
+#include "SpiceUsr.h"
+#endif
+
 #include "constants.h"
 #include "constants.PlanetaryData.h"
 #include "GeopackInterface.h"
@@ -62,6 +84,69 @@ static inline double dot(const V3&a,const V3&b){return a.x*b.x+a.y*b.y+a.z*b.z;}
 static inline V3 cross(const V3&a,const V3&b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
 static inline double norm(const V3&a){return std::sqrt(dot(a,a));}
 static inline V3 unit(const V3&a){double n=norm(a); return (n>0)?mul(1.0/n,a):V3{0,0,0};}
+
+//--------------------------------------------------------------------------------------
+// Small 3x3 rotation helper
+//--------------------------------------------------------------------------------------
+struct Mat3 { double a[3][3]; };
+static inline Mat3 Identity3() {
+  Mat3 R{};
+  R.a[0][0]=1.0; R.a[0][1]=0.0; R.a[0][2]=0.0;
+  R.a[1][0]=0.0; R.a[1][1]=1.0; R.a[1][2]=0.0;
+  R.a[2][0]=0.0; R.a[2][1]=0.0; R.a[2][2]=1.0;
+  return R;
+}
+
+static inline V3 Apply(const Mat3& R, const V3& v) {
+  return {
+    R.a[0][0]*v.x + R.a[0][1]*v.y + R.a[0][2]*v.z,
+    R.a[1][0]*v.x + R.a[1][1]*v.y + R.a[1][2]*v.z,
+    R.a[2][0]*v.x + R.a[2][1]*v.y + R.a[2][2]*v.z
+  };
+}
+
+//--------------------------------------------------------------------------------------
+// SPICE frame transform helper
+//--------------------------------------------------------------------------------------
+// Returns a rotation matrix that maps vectors from `fromFrame` to `toFrame`.
+// The matrix is time-dependent; we use prm.field.epoch (a SPICE-parsable time string).
+//
+// Behavior when SPICE is not available or the transform fails:
+//   - ok=false
+//   - returns identity (so the program can still run, but the labeled frame is not real)
+//
+// NOTE:
+//   This helper is used ONLY for direction labeling / sampling maps. The physics tracing
+//   remains in GSM.
+static inline Mat3 GetSpiceRotationOrIdentity(const char* fromFrame,
+                                              const char* toFrame,
+                                              const std::string& epoch,
+                                              bool& ok) {
+  ok = false;
+  Mat3 R = Identity3();
+
+#ifndef _NO_SPICE_CALLS_
+  try {
+    SpiceDouble et = 0.0;
+    str2et_c(epoch.c_str(), &et);
+
+    SpiceDouble m[3][3];
+    pxform_c(fromFrame, toFrame, et, m);
+
+    for (int i=0;i<3;i++) for (int j=0;j<3;j++) R.a[i][j] = m[i][j];
+    ok = true;
+  }
+  catch (...) {
+    // CSPICE is C, but some builds may still throw through wrappers; keep this as
+    // a defensive guard. If it fails we fall back to identity.
+    ok = false;
+  }
+#else
+  (void)fromFrame; (void)toFrame; (void)epoch;
+#endif
+
+  return R;
+}
 
 static inline double MomentumFromKineticEnergy_MeV(double E_MeV,double m0_kg) {
   const double E_J = E_MeV * 1.0e6 * ElectronCharge;
@@ -84,7 +169,18 @@ static inline double RigidityFromMomentum_GV(double p,double q_C_abs) {
 class cFieldEvaluator {
 public:
   explicit cFieldEvaluator(const EarthUtil::AmpsParam& p) : prm(p) {
-    // For Tsyganenko models we need Geopack initialization (IGRF + coordinate setup).
+    // For Tsyganenko models we need Geopack initialization.
+    //
+    // IMPORTANT NOTE (coordinate transforms vs magnetic field evaluation):
+    //   - In this gridless cutoff tool Geopack is used **ONLY** to evaluate the
+    //     internal IGRF field via Geopack::IGRF::GetMagneticField().
+    //   - We DO NOT use Geopack for any coordinate transformations in this file.
+    //     All coordinate / direction transforms (e.g., SM<->GSM, GEO/GCE<->GSM)
+    //     are intended to be handled by SPICE (pxform) when enabled.
+    //
+    // Historical comment (kept): older revisions mentioned "coordinate setup" here
+    // because Geopack commonly provides GEO<->GSM helpers in other projects. That
+    // is NOT the design in this solver; keep Geopack confined to IGRF.
     // For the analytic DIPOLE model we do NOT call Geopack at all; this avoids
     // link-time dependencies and keeps the dipole test self-contained.
     if (Model()!="DIPOLE") {
@@ -537,7 +633,7 @@ static void WriteTecplotPoints(const std::vector<EarthUtil::Vec3>& points,
   //       lon_GSM = atan2(y,x)
   //       lat_GSM = atan2(z, sqrt(x^2+y^2))
   //   - These are NOT geographic lon/lat (GEO). Converting to geographic requires
-  //     a time-dependent GEO<->GSM transform (e.g., via Geopack) and is intentionally
+  //     a time-dependent GEO/GCE<->GSM transform (recommended via SPICE pxform) and is intentionally
   //     NOT done here to keep the output consistent with your GSM input.
   //
   // FUTURE REPLACEMENT HOOK:
@@ -661,15 +757,24 @@ static void WriteTecplotShells(const std::vector<double>& shellAlt_km,
 //--------------------------------------------------------------------------------------
 // Directional cutoff rigidity sky-map writer (POINTS mode)
 //--------------------------------------------------------------------------------------
-// This writes a Tecplot POINT zone on a (lon,lat) grid in the *local GSM-like ENU*
-// frame centered on the injection point.
+// This writes a Tecplot POINT zone on a (lon,lat) grid.
 //
-// Lon/Lat meaning here is explicitly *directional*:
-//   - lon_deg: azimuth in the local tangent plane, measured from +N toward +E.
-//   - lat_deg: elevation toward +U.
+// UPDATED (per request):
+//   The directional map is now parameterized in the Solar Magnetic (SM) frame
+//   using **global spherical** lon/lat. The actual tracing remains in GSM:
+//     dir_SM(lon,lat) -> (SPICE pxform) -> dir_GSM -> trace
 //
-// This is NOT the same as GEO lon/lat. It is a sky coordinate system tied to GSM.
-// The definition is documented near BuildLocalENU_GSM() and LocalLonLatToDir_GSM().
+// Historical note (kept):
+//   Earlier versions used a *local GSM-like ENU* sky coordinate system centered
+//   on the injection point (BuildLocalENU_GSM / LocalLonLatToDir_GSM). That legacy
+//   mapping is still present in the source as a reference/fallback.
+//
+// Lon/Lat meaning here is explicitly *directional* (arrival direction), in SM:
+//   - lon_deg: global spherical longitude in SM (atan2(dy,dx)), [0,360)
+//   - lat_deg: global spherical latitude  in SM (asin(dz)),   [-90,90]
+//
+// This is NOT GEO lon/lat. It is a sky-direction coordinate system tied to the
+// chosen *direction-labeling* frame (SM in the current implementation).
 //--------------------------------------------------------------------------------------
 static void WriteTecplotDirectionalMap_Point(const std::string& fileName,
                                              int pointId,
@@ -979,6 +1084,43 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     nDirMapCells = nLonMap * nLatMap;
   }
 
+  //----------------------------------------------------------------------------------
+  // Directional map frame transform: SM -> GSM (SPICE)
+  //----------------------------------------------------------------------------------
+  // The directional cutoff sky-map is parameterized in the Solar Magnetic frame (SM)
+  // using **global spherical** lon/lat (not the older local ENU definition).
+  //
+  // For each sky-map cell (lon_SM, lat_SM):
+  //   1) build a unit direction vector in SM:
+  //        d_SM = (cos(lat)*cos(lon), cos(lat)*sin(lon), sin(lat))
+  //   2) rotate into GSM using SPICE pxform:
+  //        d_GSM = R_SM->GSM(epoch) * d_SM
+  //   3) run the cutoff search/tracing in GSM (Tsyganenko expects GSM).
+  //
+  // WHY THIS FRAME:
+  //   This matches common literature plots where the Earth-shadow for a point on
+  //   +X (sunward) appears around lon~180, lat~0.
+  //
+  // FALLBACK BEHAVIOR:
+  //   If SPICE is not enabled or the SM->GSM transform is not available, we fall
+  //   back to identity. In that case the map is effectively labeled in GSM but
+  //   still written as lon/lat.
+  //----------------------------------------------------------------------------------
+  bool spice_ok_sm2gsm = false;
+  const Mat3 R_sm2gsm = doDirMap ? GetSpiceRotationOrIdentity("SM","GSM",prm.field.epoch,spice_ok_sm2gsm)
+                                 : Identity3();
+
+  // Inform the user early if SPICE transforms are not active.
+  // We keep this as a WARNING (not a hard error) because some development
+  // environments may compile without CSPICE. In that case the map still
+  // computes, but lon/lat are effectively interpreted in GSM.
+  if (mpiRank==0 && doDirMap && !spice_ok_sm2gsm) {
+    std::cout << "[gridless][warning] SPICE SM->GSM transform not available. "
+              << "Directional maps will fall back to identity (SM treated as GSM). "
+              << "Enable AMPS_USE_SPICE and furnish kernels defining frames SM and GSM.\n";
+    std::cout.flush();
+  }
+
   //====================================================================================
   // MASTER/WORKER message protocol
   //
@@ -1256,8 +1398,27 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
       else if (task.type == TASK_DIRMAP) {
         // Directional sky-map cell.
         //
-        // We build a local GSM-like ENU frame at the point and then convert
-        // (lon,lat) on the sky to a GSM Cartesian direction vector.
+        // UPDATED (per request): parameterize the sky-map in the global SM frame,
+        // then transform the direction into GSM using SPICE.
+        //
+        // IMPORTANT: do NOT confuse "labeling / sampling" frame with the physics
+        // tracing frame. The particle tracing is always performed in GSM because
+        // the external field models (T96/T05) are defined in GSM.
+        //
+        // Lon/Lat meaning here is explicitly *directional* (arrival direction):
+        //   - lon_SM_deg = atan2(dy,dx)  mapped to [0,360)
+        //   - lat_SM_deg = asin(dz)      mapped to [-90,90]
+        //
+        // We sample these angles on a rectangular lon/lat grid and convert
+        // (lon_SM,lat_SM) -> d_SM using the standard spherical parameterization.
+        // Then we rotate d_SM into GSM:
+        //    d_GSM = R_SM->GSM(epoch) * d_SM
+        // and run the cutoff search using d_GSM.
+        //
+        // FUTURE REPLACEMENT HOOK:
+        //   If later you prefer a different plotting frame (e.g., GCE, GEO),
+        //   change ONLY the SPICE frame names in the rotation definition above
+        //   (R_sm2gsm), and keep the math below identical.
         //
         // Cell indexing convention:
         //   cellId = iLon + nLonMap*jLat
@@ -1274,9 +1435,18 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
         double lat_deg = -90.0 + latRes_deg * jLat;
         if (lat_deg > 90.0) lat_deg = 90.0;
 
-        const LocalENUFrame fr = BuildLocalENU_GSM(x0_m);
-        const V3 dir = LocalLonLatToDir_GSM(fr, lon_deg, lat_deg);
-        rc = CutoffForDirection_GV(x0_m, dir, Rmin, Rmax);
+        // Build unit direction in SM from global spherical lon/lat.
+        // Note: lon_deg is sampled on [0,360) and lat_deg on [-90,90].
+        const double lon = lon_deg * M_PI/180.0;
+        const double lat = lat_deg * M_PI/180.0;
+        const double cl  = std::cos(lat);
+        const V3 dir_sm { cl*std::cos(lon), cl*std::sin(lon), std::sin(lat) };
+
+        // Transform the direction to GSM (for tracing).
+        const V3 dir_gsm = unit(Apply(R_sm2gsm, dir_sm));
+
+        // Compute cutoff for this arrival direction (in GSM).
+        rc = CutoffForDirection_GV(x0_m, dir_gsm, Rmin, Rmax);
       }
 
       ResultMsg res{ task.type, task.loc, task.idx, rc };
@@ -1570,8 +1740,13 @@ if (!isPoints) locDonePerShell.assign((size_t)nShells, 0);
       // If DIRECTIONAL_MAP=T, we write one Tecplot file per point:
       //   cutoff_gridless_dir_map_point_XXXX.dat
       //
-      // Each file is a (lon,lat) grid in the local GSM-like ENU frame centered
-      // on the point. See the detailed documentation near BuildLocalENU_GSM().
+      // Each file is a (lon,lat) grid in the Solar Magnetic (SM) frame using
+      // global spherical lon/lat. Directions are built in SM and then rotated
+      // into GSM via SPICE for the actual tracing.
+      //
+      // Historical note (kept): older revisions used a local GSM-like ENU frame
+      // centered on each point (see BuildLocalENU_GSM / LocalLonLatToDir_GSM).
+      // That mapping is still present in the file as a reference/fallback.
       //
       // IMPORTANT:
       //   The maps are computed in parallel by MPI tasks and stored in RcDirMap.
