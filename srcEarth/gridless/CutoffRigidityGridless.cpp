@@ -245,6 +245,42 @@ private:
   double PS;
 };
 
+
+//--------------------------------------------------------------------------------------
+// Particle movers (integrators)
+//--------------------------------------------------------------------------------------
+// Historically this solver used a single mover: a relativistic Boris pusher evaluated
+// with B(x_n) (field sampled at the start of the step). That is robust and widely used,
+// but for strongly spatially varying B (dipole / Tsyganenko) its accuracy is limited by
+// the fact that the field is assumed constant over the whole step.
+//
+// RECENT UPDATE (requested):
+//   - Keep classic BORIS as an option.
+//   - Add a more accurate option without a large cost increase.
+//   - Mover selection will be wired to the input parser later; for now it is controlled
+//     by a single file-scope variable (gMoverType) and a small dispatcher.
+//
+// The new option implemented here is BORIS_MIDPOINT:
+//   - Still uses the Boris rotation structure (good long-term stability).
+//   - Samples the magnetic field at a *midpoint position* x_{n+1/2}:
+//         x_{n+1/2} = x_n + (dt/2) * v(x_n, p_n)
+//     and uses B(x_{n+1/2}) for the rotation.
+//   - This reduces error when B varies over the step (common in cutoff problems).
+//
+// IMPORTANT:
+//   - We do NOT remove the original Boris implementation. It remains available.
+//   - Until the parser is updated, gMoverType defaults to BORIS (no behavior change).
+//--------------------------------------------------------------------------------------
+
+enum class MoverType {
+  BORIS = 0,          // Classic Boris with B(x_n)
+  BORIS_MIDPOINT = 1  // Boris rotation using B(x_{n+1/2})
+};
+
+// TODO(parser): expose this via a new input keyword, e.g. CUTOFF_MOVER BORIS|BORIS_MIDPOINT.
+// For now we keep it as a compile-/edit-time selection.
+static MoverType gMoverType = MoverType::BORIS;
+
 static inline void BorisStep(V3& x, V3& p, double q_C, double m0_kg, double dt,
                              const cFieldEvaluator& field) {
   const double p2 = dot(p,p);
@@ -265,6 +301,79 @@ static inline void BorisStep(V3& x, V3& p, double q_C, double m0_kg, double dt,
   V3 vnew = mul(1.0/(gamman*m0_kg), p);
   x = add(x, mul(dt, vnew));
 }
+
+
+//--------------------------------------------------------------------------------------
+// More accurate mover: Boris with midpoint-B sampling
+//--------------------------------------------------------------------------------------
+// This is a "minimal disruption" accuracy upgrade:
+//   1) compute v_n from p_n and gamma_n
+//   2) predict midpoint position x_{n+1/2} = x_n + (dt/2) v_n
+//   3) evaluate B at x_{n+1/2}
+//   4) perform the standard Boris rotation using that B
+//   5) advance x using the updated momentum p_{n+1} (as in classic Boris)
+//
+// Notes:
+//   - For magnetic-field-only motion, |p| (and hence gamma) should remain constant;
+//     numerical drift is reduced because B is sampled at a position more representative
+//     of the step.
+//   - Cost: one extra field evaluation per step.
+//--------------------------------------------------------------------------------------
+static inline void BorisMidpointStep(V3& x, V3& p, double q_C, double m0_kg, double dt,
+                                     const cFieldEvaluator& field) {
+  const double p2 = dot(p,p);
+  const double mc = m0_kg*SpeedOfLight;
+  const double gamma = std::sqrt(1.0 + p2/(mc*mc));
+
+  // v_n from p_n
+  const V3 v_n = mul(1.0/(gamma*m0_kg), p);
+
+  // Midpoint position predictor
+  const V3 x_half = add(x, mul(0.5*dt, v_n));
+
+  // Sample B at the midpoint position
+  V3 B; field.GetB_T(x_half,B);
+
+  // Standard Boris rotation using B(x_{n+1/2})
+  V3 t = mul((q_C*dt)/(2.0*gamma*m0_kg), B);
+  const double t2 = dot(t,t);
+  V3 s = mul(2.0/(1.0+t2), t);
+
+  V3 p_prime = add(p, cross(p, t));
+  V3 p_plus  = add(p, cross(p_prime, s));
+  p = p_plus;
+
+  // Position update with updated momentum (same as classic Boris)
+  const double p2n = dot(p,p);
+  const double gamman = std::sqrt(1.0 + p2n/(mc*mc));
+  V3 vnew = mul(1.0/(gamman*m0_kg), p);
+  x = add(x, mul(dt, vnew));
+}
+
+//--------------------------------------------------------------------------------------
+// Unified mover dispatcher (single hook point for future parser integration)
+//--------------------------------------------------------------------------------------
+// Keep all stepping logic behind this function so that:
+//   - TraceAllowed() does not need to know which mover is active.
+//   - Adding future movers (e.g., Vay, RK4) is localized.
+//--------------------------------------------------------------------------------------
+static inline void StepParticle(V3& x, V3& p, double q_C, double m0_kg, double dt,
+                                const cFieldEvaluator& field) {
+  switch (gMoverType) {
+    case MoverType::BORIS:
+      BorisStep(x,p,q_C,m0_kg,dt,field);
+      break;
+    case MoverType::BORIS_MIDPOINT:
+      BorisMidpointStep(x,p,q_C,m0_kg,dt,field);
+      break;
+    default:
+      // Defensive fallback: if gMoverType ever holds an unknown value,
+      // use the classic Boris mover.
+      BorisStep(x,p,q_C,m0_kg,dt,field);
+      break;
+  }
+}
+
 
 //--------------------------------------------------------------------------------------
 // Domain geometry checks
@@ -463,7 +572,10 @@ static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
     const double dt = 0.5*SelectAdaptiveDt(prm,field,x,p,q,m0,boxRe,timeRemaining_s);
 
     // One relativistic Boris push with the selected local step.
-    BorisStep(x,p,q,m0,dt,field);
+    // NOTE: This used to call BorisStep() unconditionally.
+    //       We now dispatch through StepParticle() so that alternative movers
+    //       (e.g., BorisMidpointStep) can be selected without touching the trace loop.
+    StepParticle(x,p,q,m0,dt,field);
 
     tTrace_s += dt;
     ++nSteps;
@@ -753,6 +865,103 @@ static void WriteTecplotShells(const std::vector<double>& shellAlt_km,
 
   std::fclose(f);
 }
+
+
+//======================================================================================
+// Dipole analytic vs numeric cutoff comparison (SHELLS mode)
+//
+// Requested update:
+//   Provide the same style of benchmark output as cutoff_gridless_points_dipole_compare.dat,
+//   but for SHELLS mode, formatted as a Tecplot multi-zone file analogous to
+//   cutoff_gridless_shells.dat.
+//
+// File produced (only in nightly test dipole case):
+//   cutoff_gridless_shells_dipole_compare.dat
+//
+// VARIABLES (per node):
+//   lon_deg, lat_deg : shell grid coordinates (degrees) matching cutoff_gridless_shells.dat
+//   x_km,y_km,z_km    : Cartesian location of the shell node in the solver coordinate system
+//                      (currently interpreted as GSM; for DIPOLE nightly tests this matches
+//                      the analytic dipole frame used by DipoleInterface).
+//   Rc_num_GV         : numerically computed cutoff rigidity (what the solver produced)
+//   Rc_vert_GV        : analytic vertical Størmer cutoff approximation for a dipole
+//   rel_err           : (Rc_num - Rc_vert)/Rc_vert
+//
+// IMPORTANT NOTE ABOUT "VERTICAL":
+//   The analytic formula is for the *vertical* cutoff in an ideal dipole.
+//   If the numerical solver is configured for ISOTROPIC sampling, then Rc_num_GV will
+//   generally be <= the vertical cutoff, and discrepancies are expected. For the
+//   cleanest regression comparison, use CUTOFF_SAMPLING VERTICAL in the nightly dipole case.
+//======================================================================================
+static void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
+                                                     const std::vector<double>& shellAlt_km,
+                                                     double res_deg,
+                                                     const std::vector< std::vector<double> >& RcShell) {
+  FILE* f=std::fopen("cutoff_gridless_shells_dipole_compare.dat","w");
+  if (!f) throw std::runtime_error("Cannot write Tecplot file: cutoff_gridless_shells_dipole_compare.dat");
+
+  std::fprintf(f,"TITLE=\"Dipole Cutoff Rigidity (Shells): Numeric vs Analytic Vertical\"\n");
+  std::fprintf(f,"VARIABLES=\"lon_deg\",\"lat_deg\",\"x_km\",\"y_km\",\"z_km\",\"Rc_num_GV\",\"Rc_vert_GV\",\"rel_err\"\n");
+
+  const int nLon = static_cast<int>(std::floor(360.0/res_deg + 0.5));
+  const int nLat = static_cast<int>(std::floor(180.0/res_deg + 0.5)) + 1; // include poles
+
+  // Unit dipole axis used by DipoleInterface.
+  const double mx = Earth::GridlessMode::Dipole::gParams.m_hat[0];
+  const double my = Earth::GridlessMode::Dipole::gParams.m_hat[1];
+  const double mz = Earth::GridlessMode::Dipole::gParams.m_hat[2];
+
+  for (size_t s=0;s<shellAlt_km.size();s++) {
+    const double alt_km = shellAlt_km[s];
+    std::fprintf(f,"ZONE T=\"alt_km=%g\" I=%d J=%d F=POINT\n", alt_km, nLon, nLat);
+
+    // Geocentric radius of this shell in meters.
+    const double r_m = _EARTH__RADIUS_ + alt_km*1000.0;
+
+    for (int j=0;j<nLat;j++) {
+      double lat_deg = -90.0 + res_deg*j;
+      if (lat_deg>90.0) lat_deg=90.0;
+
+      const double lat = lat_deg*Pi/180.0;
+      const double clat = std::cos(lat);
+      const double slat = std::sin(lat);
+
+      for (int i=0;i<nLon;i++) {
+        const double lon_deg = res_deg*i;
+        const double lon = lon_deg*Pi/180.0;
+
+        const double clon = std::cos(lon);
+        const double slon = std::sin(lon);
+
+        // Cartesian position (km) consistent with shell writer:
+        const double x_km = (r_m*clat*clon)/1000.0;
+        const double y_km = (r_m*clat*slon)/1000.0;
+        const double z_km = (r_m*slat)/1000.0;
+
+        // Compute magnetic latitude with respect to the dipole axis m_hat used by DipoleInterface.
+        const double rhatx = clat*clon;
+        const double rhaty = clat*slon;
+        const double rhatz = slat;
+
+        const double sinLam = mx*rhatx + my*rhaty + mz*rhatz;
+        const double cosLam = std::sqrt(std::max(0.0, 1.0 - sinLam*sinLam));
+        const double rRe = r_m/_EARTH__RADIUS_;
+
+        const double Rc_vert = 14.9 * prm.field.dipoleMoment_Me * std::pow(cosLam,4) / (rRe*rRe);
+
+        const int k=i+nLon*j;
+        const double Rc_num = RcShell[s][(size_t)k];
+        const double rel = (Rc_vert>0.0 && Rc_num>0.0) ? (Rc_num-Rc_vert)/Rc_vert : 0.0;
+
+        std::fprintf(f,"%e %e %e %e %e %e %e %e\n",
+                     lon_deg, lat_deg, x_km, y_km, z_km, Rc_num, Rc_vert, rel);
+      }
+    }
+  }
+
+  std::fclose(f);
+}
+
 
 //--------------------------------------------------------------------------------------
 // Directional cutoff rigidity sky-map writer (POINTS mode)
@@ -1812,6 +2021,16 @@ if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
 
       WriteTecplotShells(prm.output.shellAlt_km,prm.output.shellRes_deg,RcShell,EminShell);
       std::cout << "Wrote Tecplot: cutoff_gridless_shells.dat\n";
+
+      // In nightly test mode, produce an analytic-vs-numeric comparison for the DIPOLE case
+      // in SHELLS mode. This is analogous to cutoff_gridless_points_dipole_compare.dat, but
+      // formatted as a multi-zone shells file (I/J grid per altitude).
+#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
+      if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
+        WriteTecplotShells_DipoleAnalyticCompare(prm,prm.output.shellAlt_km,prm.output.shellRes_deg,RcShell);
+        std::cout << "Wrote Tecplot: cutoff_gridless_shells_dipole_compare.dat\n";
+      }
+#endif
     }
 
     if (prm.output.coords!="GSM") {
