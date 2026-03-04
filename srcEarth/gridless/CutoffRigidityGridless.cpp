@@ -33,6 +33,35 @@
 #include "CutoffRigidityGridless.h"
 #include "DipoleInterface.h" 
 
+//--------------------------------------------------------------------------------------
+// Shared particle movers (extracted)
+//--------------------------------------------------------------------------------------
+// Per user request, particle movers used by gridless cutoff and gridless density/spectrum
+// solvers must be identical. We therefore include the shared mover module.
+//
+// This header provides:
+//   - struct V3 and common vector ops (add/mul/dot/cross/norm/unit)
+//   - interface IGridlessFieldEvaluator
+//   - enum class MoverType { BORIS, BORIS_MIDPOINT }
+//   - ::StepParticle(...) dispatcher and individual mover implementations
+//
+// IMPORTANT:
+//   This file historically contained local copies of V3 and BorisStep. Those historical
+//   implementations are archived below inside a large comment block (comments preserved) so future
+//   developers can compare behavior if needed.
+#include "GridlessParticleMovers.h"
+
+//--------------------------------------------------------------------------------------
+// Particle mover selection (temporary hook)
+//--------------------------------------------------------------------------------------
+// We support multiple particle movers through the shared module GridlessParticleMovers.*.
+// The parser/input-file hook will be added later; for now we keep a single file-scope
+// selector variable that defaults to the legacy behavior (classic BORIS).
+//
+// IMPORTANT: This definition must appear BEFORE the first use (TraceAllowed()), otherwise
+// the compiler will complain that gMoverType is not declared.
+//--------------------------------------------------------------------------------------
+MoverType gMoverType = MoverType::BORIS;  // default; parser hook will set this later
 #include <cstdio>
 #include <cmath>
 #include <stdexcept>
@@ -77,6 +106,16 @@ extern "C" {
 
 namespace {
 
+/*
+//--------------------------------------------------------------------------------------
+// Legacy local V3 + vector ops (kept for reference; DO NOT DELETE)
+//--------------------------------------------------------------------------------------
+// NOTE:
+//   These definitions were historically embedded in CutoffRigidityGridless.cpp.
+//   They have been superseded by the shared module GridlessParticleMovers.h so that
+//   cutoff rigidity and density/spectrum tools cannot diverge.
+//   We keep the original code here (disabled) because it is valuable for regression
+//   archaeology and for quickly comparing behavior if a future change raises questions.
 struct V3 { double x,y,z; };
 static inline V3 add(const V3&a,const V3&b){return {a.x+b.x,a.y+b.y,a.z+b.z};}
 static inline V3 mul(double s,const V3&a){return {s*a.x,s*a.y,s*a.z};}
@@ -84,6 +123,8 @@ static inline double dot(const V3&a,const V3&b){return a.x*b.x+a.y*b.y+a.z*b.z;}
 static inline V3 cross(const V3&a,const V3&b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
 static inline double norm(const V3&a){return std::sqrt(dot(a,a));}
 static inline V3 unit(const V3&a){double n=norm(a); return (n>0)?mul(1.0/n,a):V3{0,0,0};}
+
+*/
 
 //--------------------------------------------------------------------------------------
 // Small 3x3 rotation helper
@@ -166,7 +207,7 @@ static inline double RigidityFromMomentum_GV(double p,double q_C_abs) {
   return (q_C_abs>0.0) ? (p*SpeedOfLight/q_C_abs/1.0e9) : 0.0;
 }
 
-class cFieldEvaluator {
+class cFieldEvaluator : public IGridlessFieldEvaluator {
 public:
   explicit cFieldEvaluator(const EarthUtil::AmpsParam& p) : prm(p) {
     // For Tsyganenko models we need Geopack initialization.
@@ -206,7 +247,7 @@ public:
 
   std::string Model() const { return prm.field.model; }
 
-  void GetB_T(const V3& x_m, V3& B_T) const {
+  void GetB_T(const V3& x_m, V3& B_T) const override {
     // Dipole branch: internal field only, analytic, no IGRF/external field.
     if (Model()=="DIPOLE") {
       double x_arr[3]={x_m.x,x_m.y,x_m.z};
@@ -272,6 +313,22 @@ private:
 //   - Until the parser is updated, gMoverType defaults to BORIS (no behavior change).
 //--------------------------------------------------------------------------------------
 
+/*
+//--------------------------------------------------------------------------------------
+// Legacy in-file mover selection + implementations (kept for reference; DO NOT DELETE)
+//--------------------------------------------------------------------------------------
+// NOTE:
+//   These movers (MoverType enum, gMoverType, BorisStep/BorisMidpointStep/StepParticle)
+//   were originally implemented directly in this file.
+//   They have been superseded by the shared module GridlessParticleMovers.{h,cpp}.
+//
+//   We keep the original code here (disabled) for two reasons:
+//     (1) Preserve historical comments and implementation details (per user request).
+//     (2) Allow future developers to compare behavior if a regression is suspected.
+//
+//   ACTIVE CODE PATH:
+//     - See the small "Mover selection (active)" section below, which selects a mover
+//       and calls ::::StepParticle(...) from GridlessParticleMovers.
 enum class MoverType {
   BORIS = 0,          // Classic Boris with B(x_n)
   BORIS_MIDPOINT = 1  // Boris rotation using B(x_{n+1/2})
@@ -357,7 +414,7 @@ static inline void BorisMidpointStep(V3& x, V3& p, double q_C, double m0_kg, dou
 //   - TraceAllowed() does not need to know which mover is active.
 //   - Adding future movers (e.g., Vay, RK4) is localized.
 //--------------------------------------------------------------------------------------
-static inline void StepParticle(V3& x, V3& p, double q_C, double m0_kg, double dt,
+static inline void ::StepParticle(V3& x, V3& p, double q_C, double m0_kg, double dt,
                                 const cFieldEvaluator& field) {
   switch (gMoverType) {
     case MoverType::BORIS:
@@ -373,6 +430,8 @@ static inline void StepParticle(V3& x, V3& p, double q_C, double m0_kg, double d
       break;
   }
 }
+*/
+
 
 
 //--------------------------------------------------------------------------------------
@@ -573,9 +632,9 @@ static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
 
     // One relativistic Boris push with the selected local step.
     // NOTE: This used to call BorisStep() unconditionally.
-    //       We now dispatch through StepParticle() so that alternative movers
+    //       We now dispatch through ::StepParticle() so that alternative movers
     //       (e.g., BorisMidpointStep) can be selected without touching the trace loop.
-    StepParticle(x,p,q,m0,dt,field);
+    ::StepParticle(gMoverType, x, p,q,m0,dt,field);
 
     tTrace_s += dt;
     ++nSteps;
