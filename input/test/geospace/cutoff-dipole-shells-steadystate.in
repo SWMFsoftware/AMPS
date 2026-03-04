@@ -65,8 +65,8 @@ SPEC_EMAX              1000.0       ! MeV/n
 OUTPUT_MODE            SHELLS
 FLUX_DT                1.0           ! min (trajectory cadence; ignored for POINTS/SHELLS)
 SHELL_COUNT            2                 ! number of shells
-SHELL_ALTS_KM          9000.0 0.0          ! km; one altitude per shell
-SHELL_RES_DEG          1                 ! deg; angular resolution (lat/lon)
+SHELL_ALTS_KM          9000.0 7000.0          ! km; one altitude per shell
+SHELL_RES_DEG          60                 ! deg; angular resolution (lat/lon)
 
 #OUTPUT_OPTIONS
 FLUX_TYPE              DIFFERENTIAL
