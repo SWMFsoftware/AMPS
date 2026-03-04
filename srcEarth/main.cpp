@@ -37,6 +37,7 @@
 #include "util/amps_param_parser.h"
 #include "gridless/CutoffRigidityGridless.h"
 #include "gridless/DensityGridless.h"
+#include "gridless/GridlessParticleMovers.h"
 
 int nZenithElements=200;
 int nAzimuthalElements=200;
@@ -1475,6 +1476,16 @@ int main(int argc,char **argv) {
 	Exosphere::Init_SPICE();
 
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
+
+	//set up mover type used in the calculation 
+	if (cli.mover=="BORIS") SetDefaultMoverType(MoverType::BORIS);
+	else if (cli.mover=="BORIS_MIDPOINT") SetDefaultMoverType(MoverType::BORIS_MIDPOINT);
+	else {
+          std::cerr << "Error: unknown mover option -mover " << cli.mover << endl;
+          return 1;
+        }	  
+
+
 
         // Dispatch gridless workflows by CALC_TARGET.
         // - CUTOFF_RIGIDITY   : existing gridless cutoff tool

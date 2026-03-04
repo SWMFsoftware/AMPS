@@ -6,6 +6,9 @@
 
 #include "GridlessParticleMovers.h"
 
+#include <algorithm>
+#include <cctype>
+
 //------------------------------------------------------------------------------
 // Classic relativistic Boris pusher (magnetic field only)
 //------------------------------------------------------------------------------
@@ -89,6 +92,45 @@ void BorisMidpointStep(V3& x, V3& p, double q_C, double m0_kg, double dt,
   const double gamman = std::sqrt(1.0 + p2n/(mc*mc));
   V3 vnew = mul(1.0/(gamman*m0_kg), p);
   x = add(x, mul(dt, vnew));
+}
+
+//------------------------------------------------------------------------------
+// Process-wide default mover
+//------------------------------------------------------------------------------
+// See header for intended precedence and usage.
+MoverType gDefaultMover = MoverType::BORIS;
+
+void SetDefaultMoverType(MoverType m) {
+  gDefaultMover = m;
+}
+
+MoverType GetDefaultMoverType() {
+  return gDefaultMover;
+}
+
+//------------------------------------------------------------------------------
+// Parsing / printing helpers
+//------------------------------------------------------------------------------
+static std::string ToUpperCopy(std::string s) {
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){return std::toupper(c);});
+  return s;
+}
+
+bool ParseMoverType(const std::string& s, MoverType& out) {
+  const std::string u = ToUpperCopy(s);
+  if (u=="BORIS") { out = MoverType::BORIS; return true; }
+  if (u=="BORIS_MIDPOINT" || u=="MIDPOINT" || u=="BORIS-MIDPOINT") {
+    out = MoverType::BORIS_MIDPOINT; return true;
+  }
+  return false;
+}
+
+const char* MoverTypeToString(MoverType m) {
+  switch (m) {
+    case MoverType::BORIS: return "BORIS";
+    case MoverType::BORIS_MIDPOINT: return "BORIS_MIDPOINT";
+    default: return "BORIS";
+  }
 }
 
 //------------------------------------------------------------------------------

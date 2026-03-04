@@ -10,6 +10,7 @@
 //       -h              : print help and exit
 //       -mode 3d|gridless
 //       -i <input-file> : AMPS_PARAM style input file
+//       -mover <name>   : select particle mover (BORIS | BORIS_MIDPOINT)
 //   - The CLI and parser live in srcEarth/util.
 //======================================================================================
 
@@ -24,6 +25,17 @@ namespace EarthUtil {
     bool help{false};
     std::string mode{""};
     std::string inputFile{""};
+    // Particle mover selection.
+    // NOTE: This is intentionally a *string* here to keep the CLI independent of the
+    // gridless integrator implementation. The executable can translate this string into
+    // a concrete enum (MoverType) and/or an input-file setting.
+    //
+    // Supported values (case-insensitive):
+    //   BORIS           : classic relativistic Boris pusher (legacy default)
+    //   BORIS_MIDPOINT  : Boris pusher with midpoint B(x_{n+1/2}) sampling
+    //
+    // If empty, the executable should use its default / input-file setting.
+    std::string mover{""};
   };
 
   // Parse argc/argv. Throws std::runtime_error for malformed inputs.

@@ -42,6 +42,7 @@
 #define _AMPS_GRIDLESS_PARTICLE_MOVERS_H_
 
 #include <cmath>
+#include <string>
 
 // The gridless solvers already rely on AMPS constants and relativistic helpers.
 // We keep this include lightweight: SpeedOfLight is used in gamma evaluation.
@@ -89,6 +90,40 @@ enum class MoverType {
 };
 
 //------------------------------------------------------------------------------
+// Process-wide default mover
+//------------------------------------------------------------------------------
+// See header for intended precedence and usage.
+extern MoverType gDefaultMover;
+
+
+//------------------------------------------------------------------------------
+// Default mover (shared across gridless tools)
+//------------------------------------------------------------------------------
+// Many AMPS entry points currently do not have direct access to the parsed
+// AmpsParam object at the exact place where stepping occurs (e.g., deep inside
+// worker loops). To support a simple CLI override *today* (and a parser-based
+// configuration *later*), we provide a process-wide default mover.
+//
+// Intended precedence (recommended):
+//   CLI option (explicit)  >  input-file setting  >  compiled default
+//
+// Tools can call SetDefaultMoverType(...) during initialization (after parsing
+// CLI and/or input file). Then stepping code can use GetDefaultMoverType().
+//
+// NOTE: This is deliberately minimal and does not introduce any dependency on
+// MPI or thread primitives. If you run multiple different solvers in the same
+// process with different mover choices, you should pass MoverType explicitly
+// instead of using this global default.
+void SetDefaultMoverType(MoverType m);
+MoverType GetDefaultMoverType();
+
+// Helper utilities for parsing/printing mover names in CLI/help text.
+// Supported names (case-insensitive):
+//   "BORIS" and "BORIS_MIDPOINT" (also accepts "MIDPOINT" as shorthand).
+bool ParseMoverType(const std::string& s, MoverType& out);
+const char* MoverTypeToString(MoverType m);
+
+//------------------------------------------------------------------------------
 // Public API
 //------------------------------------------------------------------------------
 // The dispatcher is what solvers should call. They can select the mover type
@@ -99,6 +134,15 @@ void StepParticle(MoverType mover,
                   double q_C, double m0_kg,
                   double dt,
                   const IGridlessFieldEvaluator& field);
+
+// Convenience overload: step using the process-wide default mover.
+// This is what most gridless solvers should use until the parser wiring lands.
+inline void StepParticle(V3& x_m, V3& p_SI,
+                         double q_C, double m0_kg,
+                         double dt,
+                         const IGridlessFieldEvaluator& field) {
+  StepParticle(GetDefaultMoverType(), x_m, p_SI, q_C, m0_kg, dt, field);
+}
 
 // Optional: expose the individual movers for debugging/experimentation.
 void BorisStep(V3& x_m, V3& p_SI,

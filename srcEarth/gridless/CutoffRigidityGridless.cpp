@@ -51,17 +51,6 @@
 //   developers can compare behavior if needed.
 #include "GridlessParticleMovers.h"
 
-//--------------------------------------------------------------------------------------
-// Particle mover selection (temporary hook)
-//--------------------------------------------------------------------------------------
-// We support multiple particle movers through the shared module GridlessParticleMovers.*.
-// The parser/input-file hook will be added later; for now we keep a single file-scope
-// selector variable that defaults to the legacy behavior (classic BORIS).
-//
-// IMPORTANT: This definition must appear BEFORE the first use (TraceAllowed()), otherwise
-// the compiler will complain that gMoverType is not declared.
-//--------------------------------------------------------------------------------------
-MoverType gMoverType = MoverType::BORIS;  // default; parser hook will set this later
 #include <cstdio>
 #include <cmath>
 #include <stdexcept>
@@ -634,7 +623,7 @@ static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
     // NOTE: This used to call BorisStep() unconditionally.
     //       We now dispatch through ::StepParticle() so that alternative movers
     //       (e.g., BorisMidpointStep) can be selected without touching the trace loop.
-    ::StepParticle(gMoverType, x, p,q,m0,dt,field);
+    ::StepParticle(gDefaultMover, x, p,q,m0,dt,field);
 
     tTrace_s += dt;
     ++nSteps;

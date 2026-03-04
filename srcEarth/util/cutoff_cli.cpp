@@ -29,6 +29,14 @@ CliOptions ParseCli(int argc,char** argv) {
       if (i+1>=argc) throw std::runtime_error("Missing value after -i");
       opt.inputFile=argv[++i];
     }
+    else if (a=="-mover" || a=="--mover") {
+      // We store the mover choice as a string. The *executable* should translate this
+      // into the internal enum (MoverType) and then apply it to the shared mover
+      // module (GridlessParticleMovers). This keeps this CLI file small and avoids
+      // pulling gridless numerics headers into util/.
+      if (i+1>=argc) throw std::runtime_error("Missing value after -mover");
+      opt.mover=argv[++i];
+    }
     else {
       std::ostringstream oss;
       oss << "Unknown CLI token: '" << a << "'. Use -h for help.";
@@ -45,18 +53,25 @@ std::string HelpMessage(const char* progName) {
   out << "Usage:\n";
   out << "  " << progName << " -h\n";
   out << "  " << progName << " -mode gridless -i AMPS_PARAM.in\n";
+  out << "  " << progName << " -mode gridless -i AMPS_PARAM.in -mover BORIS_MIDPOINT\n";
   out << "  " << progName << " -mode 3d      -i AMPS_PARAM.in   (reserved / legacy path)\n\n";
   out << "Options:\n";
   out << "  -h                 Print this help and exit\n";
   out << "  -mode 3d|gridless   Select solver backend\n";
   out << "  -i <file>           Input file in AMPS_PARAM format\n\n";
+  out << "  -mover <name>       Select particle mover used for trajectory integration\n";
+  out << "                     Supported (case-insensitive): BORIS | BORIS_MIDPOINT\n";
+  out << "                     Default: BORIS\n";
+  out << "                     NOTE: When provided, this CLI option should override any\n";
+  out << "                     mover selection specified in the input file.\n\n";
   out << "Outputs (gridless):\n";
   out << "  - Summary text to stdout\n";
   out << "  - Tecplot ASCII file(s) in current directory:\n";
   out << "      cutoff_gridless_points.dat\n";
   out << "      cutoff_gridless_shells.dat\n\n";
   out << "Notes:\n";
-  out << "  * Prototype implementation; coordinate transforms can be added later.\n";
+  out << "  * Coordinate transforms (e.g., SM<->GSM) are handled in the solver code.\n";
+  out << "  * This CLI only parses tokens; the executable applies them to the solver.\n";
   return out.str();
 }
 
