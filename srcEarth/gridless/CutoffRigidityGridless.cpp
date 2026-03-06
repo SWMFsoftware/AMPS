@@ -59,6 +59,8 @@
 #include <string>
 #include <algorithm>
 #include <numeric>
+#include <memory>
+#include <sstream>
 #include <mpi.h> 
 
 //--------------------------------------------------------------------------------------
@@ -581,13 +583,12 @@ static inline double SelectAdaptiveDt(const EarthUtil::AmpsParam& prm,
   return dt;
 }
 
-}
-
-static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
-                         const cFieldEvaluator& field,
-                         const V3& x0_m,
-                         const V3& v0_unit,
-                         double R_GV) {
+static bool TraceAllowedImpl(const EarthUtil::AmpsParam& prm,
+                             const cFieldEvaluator& field,
+                             const V3& x0_m,
+                             const V3& v0_unit,
+                             double R_GV,
+                             double maxTraceTimeOverride_s) {
   const double q = prm.species.charge_e * ElectronCharge;
   const double qabs = std::fabs(q);
   const double m0 = prm.species.mass_amu * _AMU_;
@@ -623,7 +624,9 @@ static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
   //
   // IMPORTANT: This does not change any other AMPS workflows.
   const double maxTraceTime_s_effective =
-    (prm.cutoff.maxTrajTime_s > 0.0) ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s;
+    (maxTraceTimeOverride_s > 0.0)
+      ? maxTraceTimeOverride_s
+      : ((prm.cutoff.maxTrajTime_s > 0.0) ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s);
 
   // Main trace loop with automatic dt selection. The geometric classification
   // checks are intentionally evaluated *before* the push so that starting exactly
@@ -657,6 +660,63 @@ static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
   // reached, classify trajectory as not allowed in the current rigidity bracket.
   return false;
 }
+
+
+} // end anonymous namespace for private tracing helpers
+
+//--------------------------------------------------------------------------------------
+// Exported shared trajectory classifier
+//--------------------------------------------------------------------------------------
+// This thin wrapper is the key architectural change that lets DensityGridless use the
+// *same* particle-tracking code path as CutoffRigidityGridless instead of maintaining a
+// near-duplicate private copy.  The wrapper deliberately exposes only plain arrays so
+// the public header stays lightweight and does not need to reveal internal helper types
+// such as cFieldEvaluator or DomainBoxRe.
+//
+// A small thread-local cache avoids reconstructing the field evaluator on every call.
+// In the common use case, a given MPI rank traces many trajectories for the same run
+// configuration, so the cached evaluator is reused across all those calls.
+namespace Earth {
+namespace GridlessMode {
+
+bool TraceAllowedShared(const EarthUtil::AmpsParam& prm,
+                        const double x0_m_arr[3],
+                        const double v0_unit_arr[3],
+                        double R_GV,
+                        double maxTraceTimeOverride_s) {
+  // Build a compact cache key from the field-configuration parameters that actually
+  // influence cFieldEvaluator.  If any of these values changes, the evaluator must be
+  // rebuilt; otherwise the existing one is safe to reuse for this thread.
+  std::ostringstream key;
+  key << prm.field.model << '|'
+      << prm.field.epoch << '|'
+      << prm.field.dipoleMoment_Me << '|'
+      << prm.field.dipoleTilt_deg << '|'
+      << prm.field.pdyn_nPa << '|'
+      << prm.field.dst_nT << '|'
+      << prm.field.imfBy_nT << '|'
+      << prm.field.imfBz_nT;
+  for (int i=0;i<6;i++) key << '|' << prm.field.w[i];
+
+  static thread_local std::string cachedKey;
+  static thread_local std::unique_ptr<cFieldEvaluator> cachedField;
+
+  const std::string newKey = key.str();
+  if (!cachedField || cachedKey != newKey) {
+    cachedField.reset(new cFieldEvaluator(prm));
+    cachedKey = newKey;
+  }
+
+  const V3 x0_m{ x0_m_arr[0], x0_m_arr[1], x0_m_arr[2] };
+  const V3 v0_unit = unit(V3{ v0_unit_arr[0], v0_unit_arr[1], v0_unit_arr[2] });
+
+  return TraceAllowedImpl(prm, *cachedField, x0_m, v0_unit, R_GV, maxTraceTimeOverride_s);
+}
+
+} // namespace GridlessMode
+} // namespace Earth
+
+namespace {
 
 static std::vector<V3> BuildDirGrid(int nZenith,int nAz) {
   std::vector<V3> dirs;
@@ -775,8 +835,8 @@ static double CutoffAtPoint_GV(const EarthUtil::AmpsParam& prm,
     // Backtrace convention
     V3 v0 = mul(-1.0, d);
 
-    bool alo = TraceAllowed(prm,field,x0_m,v0,Rmin_GV);
-    bool ahi = TraceAllowed(prm,field,x0_m,v0,Rmax_GV);
+    bool alo = TraceAllowedImpl(prm,field,x0_m,v0,Rmin_GV,-1.0);
+    bool ahi = TraceAllowedImpl(prm,field,x0_m,v0,Rmax_GV,-1.0);
 
     if (alo && ahi) {
       Rc = (Rc<0.0) ? Rmin_GV : std::min(Rc,Rmin_GV);
@@ -787,7 +847,7 @@ static double CutoffAtPoint_GV(const EarthUtil::AmpsParam& prm,
     double lo=Rmin_GV, hi=Rmax_GV;
     for (int it=0;it<maxIter;it++) {
       double mid=0.5*(lo+hi);
-      bool a = TraceAllowed(prm,field,x0_m,v0,mid);
+      bool a = TraceAllowedImpl(prm,field,x0_m,v0,mid,-1.0);
       if (a) hi=mid; else lo=mid;
     }
 
@@ -1102,6 +1162,7 @@ static void WriteTecplotDirectionalMap_Point(const std::string& fileName,
   std::fclose(f);
 }
 
+} // end anonymous namespace for private writer/helper functions
 
 namespace Earth {
 namespace GridlessMode {
@@ -1271,8 +1332,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     const V3 v0 = mul(-1.0, dir_unit);
 
     // Quick endpoint classification:
-    const bool alo = TraceAllowed(prm,field,x0_m,v0,Rmin_GV);
-    const bool ahi = TraceAllowed(prm,field,x0_m,v0,Rmax_GV);
+    const bool alo = TraceAllowedImpl(prm,field,x0_m,v0,Rmin_GV,-1.0);
+    const bool ahi = TraceAllowedImpl(prm,field,x0_m,v0,Rmax_GV,-1.0);
 
     // If already allowed at Rmin, the cutoff for this direction is at/below Rmin.
     if (alo && ahi) return Rmin_GV;
@@ -1286,7 +1347,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
 
     for (int it=0; it<maxIter; it++) {
       const double mid=0.5*(lo+hi);
-      const bool a = TraceAllowed(prm,field,x0_m,v0,mid);
+      const bool a = TraceAllowedImpl(prm,field,x0_m,v0,mid,-1.0);
       if (a) hi=mid; else lo=mid;
     }
 

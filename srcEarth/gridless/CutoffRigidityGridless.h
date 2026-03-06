@@ -45,6 +45,7 @@
 #define _SRC_EARTH_GRIDLESSM_CUTOFFRIGIDITYGRIDLESS_H_
 
 #include "util/amps_param_parser.h"
+#include "GridlessParticleMovers.h"
 
 namespace Earth {
   namespace GridlessMode {
@@ -52,6 +53,53 @@ namespace Earth {
     // Returns 0 on success; throws std::runtime_error on invalid input
     // or runtime failures (file I/O, unsupported field model, etc.).
     int RunCutoffRigidity(const EarthUtil::AmpsParam& p);
+
+    // Shared low-level trajectory classifier used by both the cutoff-rigidity and
+    // density/spectrum workflows.
+    //
+    // WHY THIS FUNCTION EXISTS
+    // ------------------------
+    // Earlier revisions kept the actual particle-tracking loop hidden as a file-
+    // local static helper inside CutoffRigidityGridless.cpp and then reimplemented
+    // a similar loop inside DensityGridless.cpp.  That duplication turned out to be
+    // fragile: once one copy drifted (different dt policy, different mover, missed
+    // inner-sphere crossing checks, etc.), the two physics products no longer used
+    // the same definition of "allowed trajectory."
+    //
+    // To prevent that divergence, the tracing logic is now exported through this
+    // single helper.  Both workflows call the same routine, so any future fix to
+    // the mover / adaptive-step / geometry-classification logic automatically
+    // affects both cutoff and density calculations in exactly the same way.
+    //
+    // ARGUMENTS
+    // ---------
+    //   p                     : full parsed AMPS/gridless parameter block
+    //   x0_m[3]               : starting point in GSM Cartesian coordinates [m]
+    //   v0_unit[3]            : starting direction (must be normalized or close)
+    //   R_GV                  : particle rigidity [GV]
+    //   maxTraceTimeOverride_s: optional per-trajectory time cap.  If >0, it
+    //                           overrides the default cutoff-specific cap inside
+    //                           the shared tracer.  Density/spectrum uses this to
+    //                           apply DS_MAX_TRAJ_TIME while still reusing the
+    //                           exact same particle push / escape / loss logic as
+    //                           the cutoff solver.
+    //
+    // RETURN VALUE
+    // ------------
+    //   true  -> trajectory escapes the outer domain before entering the inner sphere
+    //   false -> trajectory hits the inner sphere or fails to escape before limits
+    //
+    // PERFORMANCE NOTE
+    // ----------------
+    // The implementation caches the field evaluator per thread/run so repeated
+    // calls from the density module do not reconstruct the field context on every
+    // trajectory.  That keeps this shared-logic design practical even though the
+    // function interface itself stays simple.
+    bool TraceAllowedShared(const EarthUtil::AmpsParam& p,
+                            const double x0_m[3],
+                            const double v0_unit[3],
+                            double R_GV,
+                            double maxTraceTimeOverride_s=-1.0);
   }
 }
 
