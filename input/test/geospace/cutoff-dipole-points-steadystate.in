@@ -25,18 +25,18 @@ CUTOFF_EMIN            1.0          ! MeV/n
 CUTOFF_EMAX            20000.0       ! MeV/n
 CUTOFF_MAX_PARTICLES   500              ! per injection point
 CUTOFF_NENERGY         50               ! log-spaced energy bins
-CUTOFF_MAX_TRAJ_TIME   600               ! sec — max trajectory integration time
+CUTOFF_MAX_TRAJ_TIME   6000               ! sec — max trajectory integration time
 CUTOFF_SAMPLING        VERTICAL           ! VERTICAL or ISOTROPIC
-DIRECTIONAL_MAP        T                 ! compute directional Rc sky-map
-DIRMAP_LON_RES         10                ! deg — longitude resolution
-DIRMAP_LAT_RES         10                ! deg — latitude resolution
+DIRECTIONAL_MAP        F                 ! compute directional Rc sky-map
+DIRMAP_LON_RES         5                ! deg — longitude resolution
+DIRMAP_LAT_RES         5                ! deg — latitude resolution
 
 
 
 #PARTICLE_SPECIES
 SPECIES                PROTON
 CHARGE                 1               ! elementary charge
-MASS_AMU               1.0073           ! atomic mass units
+MASS_AMU               1.007276466621            ! atomic mass units
 
 #BACKGROUND_FIELD
 FIELD_MODEL            DIPOLE
@@ -45,13 +45,13 @@ DIPOLE_TILT            0.0          ! deg from GSM Z-axis
 
 #DOMAIN_BOUNDARY
 BOUNDARY_TYPE          BOX  ! rectangular box in GSM
-DOMAIN_X_MAX           15.0         ! RE dayside
-DOMAIN_X_MIN           -60.0        ! RE nightside
-DOMAIN_Y_MAX           25.0         ! RE dusk
-DOMAIN_Y_MIN           -25.0        ! RE dawn
-DOMAIN_Z_MAX           20.0         ! RE north
-DOMAIN_Z_MIN           -20.0        ! RE south
-R_INNER                1.0           ! RE inner loss sphere
+DOMAIN_X_MAX           30.0         ! RE dayside
+DOMAIN_X_MIN           -30.0        ! RE nightside
+DOMAIN_Y_MAX           30.0         ! RE dusk
+DOMAIN_Y_MIN           -30.0        ! RE dawn
+DOMAIN_Z_MAX           30.0         ! RE north
+DOMAIN_Z_MIN           -30.0        ! RE south
+R_INNER                1.00           ! RE inner loss sphere
 
 #TEMPORAL
 TEMPORAL_MODE          STEADY_STATE
@@ -68,10 +68,12 @@ SPEC_EMAX              1000.0       ! MeV/n
 #OUTPUT_DOMAIN
 OUTPUT_MODE            POINTS
 FLUX_DT                1.0           ! min (trajectory cadence; ignored for POINTS/SHELLS)
-N_POINTS               2                 ! number of points provided below
+N_POINTS               4                 ! number of points provided below
 POINTS_BEGIN
-POINT                 7000 0 0
-POINT                 9000 0 0
+POINT                 7000 4000 5000
+POINT                 9000 -5000 -4000
+POINT                 7000 0  0
+POINT                 9000 0  0
 POINTS_END
 
 #OUTPUT_OPTIONS
