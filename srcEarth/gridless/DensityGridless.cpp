@@ -134,7 +134,8 @@
 #include "pic.h"
 #include "DensityGridless.h"
 
-#include "CutoffRigidityGridless.h" // for namespace consistency only (no symbols used)
+#include "CutoffRigidityGridless.h" // shared trajectory classifier used directly by density
+#include "GridlessParticleMovers.h"   // shared V3 helpers / mover vocabulary used across gridless modules
 
 #include "../boundary/spectrum.h"  // ::gSpectrum and spectrum metadata writers
 
@@ -169,19 +170,12 @@
 namespace {
 
 //--------------------------------------------------------------------------------------
-// Small 3D vector helper (private to this file).
-// We duplicate the minimal utilities from CutoffRigidityGridless.cpp intentionally so
-// this module is self-contained.
+// Small 3D vector helper note
 //--------------------------------------------------------------------------------------
-
-struct V3 { double x,y,z; };
-
-static inline V3 add(const V3&a,const V3&b){return {a.x+b.x,a.y+b.y,a.z+b.z};}
-static inline V3 sub(const V3&a,const V3&b){return {a.x-b.x,a.y-b.y,a.z-b.z};}
-static inline V3 mul(double s,const V3&a){return {s*a.x,s*a.y,s*a.z};}
-static inline double dot(const V3&a,const V3&b){return a.x*b.x+a.y*b.y+a.z*b.z;}
-static inline double norm(const V3&a){return std::sqrt(dot(a,a));}
-static inline V3 unit(const V3&a){double n=norm(a); return (n>0)?mul(1.0/n,a):V3{0,0,0};}
+// The density module now intentionally uses the *same* V3 type and vector helper
+// functions that are declared in GridlessParticleMovers.h.  This avoids having one
+// V3/add/mul/unit implementation in cutoff and another in density, which in turn makes
+// it easier to pass trajectory state between modules without any translation layer.
 
 //--------------------------------------------------------------------------------------
 // Constants
@@ -206,6 +200,27 @@ static DomainBoxRe ToDomainBoxRe(const EarthUtil::DomainBox& d) {
   b.rInner= d.rInner/RE_KM;
   return b;
 }
+
+// Convert kinetic energy [J] to rigidity [GV].
+static double RigidityFromEnergy_GV(double E_J, double qabs_C, double m0_kg) {
+  // Total energy: E_tot = E_kin + m c^2
+  const double mc2 = m0_kg*C_LIGHT*C_LIGHT;
+  const double Etot = E_J + mc2;
+  const double pc = std::sqrt(std::max(0.0, Etot*Etot - mc2*mc2)); // p*c
+  const double p = pc / C_LIGHT;
+  const double R_V = (p*C_LIGHT)/qabs_C; // = p c / q
+  return R_V * 1.0e-9;
+}
+
+// Relativistic speed from kinetic energy.
+static double SpeedFromEnergy(double E_J, double m0_kg) {
+  const double mc2 = m0_kg*C_LIGHT*C_LIGHT;
+  const double gamma = 1.0 + E_J/mc2;
+  if (gamma<=1.0) return 0.0;
+  const double beta2 = 1.0 - 1.0/(gamma*gamma);
+  return C_LIGHT*std::sqrt(std::max(0.0,beta2));
+}
+
 
 //--------------------------------------------------------------------------------------
 // Field evaluator and Boris pusher
@@ -252,258 +267,27 @@ static void ParseEpochToGeopack(const std::string& epoch,
   iday = id;
 }
 
-class cFieldEvaluator {
-public:
-  explicit cFieldEvaluator(const EarthUtil::AmpsParam& prm) : prm_(prm) {
-    // Exactly as in CutoffRigidityGridless.cpp: Geopack is required only for
-    // Tsyganenko models (IGRF + coordinate setup). For the analytic DIPOLE model
-    // we keep the calculation self-contained and do not call Geopack at all.
-    if (EarthUtil::ToUpper(Model())!="DIPOLE") {
-      Geopack::Init(prm_.field.epoch.c_str(),"GSM");
-    }
-
-    // Configure analytic dipole parameters (used only when FIELD_MODEL=DIPOLE).
-    Earth::GridlessMode::Dipole::SetMomentScale(prm_.field.dipoleMoment_Me);
-    Earth::GridlessMode::Dipole::SetTiltDeg(prm_.field.dipoleTilt_deg);
-
-    for (int i=0;i<11;i++) PARMOD_[i]=0.0;
-    PS_ = 0.170481; // default dipole tilt used by existing interfaces
-
-    PARMOD_[0]=prm_.field.pdyn_nPa;
-    PARMOD_[1]=prm_.field.dst_nT;
-    PARMOD_[2]=prm_.field.imfBy_nT;
-    PARMOD_[3]=prm_.field.imfBz_nT;
-
-    if (EarthUtil::ToUpper(prm_.field.model)=="T05") {
-      for (int i=0;i<6;i++) PARMOD_[4+i]=prm_.field.w[i];
-    }
-  }
-
-  std::string Model() const { return prm_.field.model; }
-
-  // Evaluate B at a position expressed in SI meters (GSM). Output is Tesla.
-  void GetB_T(const V3& x_m, V3& B_T) const {
-    // Dipole branch: internal field only, analytic.
-    if (EarthUtil::ToUpper(Model())=="DIPOLE") {
-      double x_arr[3]={x_m.x,x_m.y,x_m.z};
-      double b_arr[3];
-      Earth::GridlessMode::Dipole::GetB_Tesla(x_arr,b_arr);
-      B_T.x=b_arr[0]; B_T.y=b_arr[1]; B_T.z=b_arr[2];
-      return;
-    }
-
-    // Internal field from IGRF via Geopack wrapper.
-    double x_arr[3]={x_m.x,x_m.y,x_m.z};
-    double b_int[3];
-    Geopack::IGRF::GetMagneticField(b_int,x_arr);
-
-    // External field from Tsyganenko (expects coordinates in Re and returns nT).
-    double xRe[3]={x_m.x/_EARTH__RADIUS_, x_m.y/_EARTH__RADIUS_, x_m.z/_EARTH__RADIUS_};
-    double b_ext_nT[3]={0,0,0};
-    int IOPT=0;
-
-    if (EarthUtil::ToUpper(Model())=="T96") {
-      t96_01_(&IOPT,const_cast<double*>(PARMOD_),const_cast<double*>(&PS_),
-              xRe+0,xRe+1,xRe+2,b_ext_nT+0,b_ext_nT+1,b_ext_nT+2);
-    }
-    else if (EarthUtil::ToUpper(Model())=="T05") {
-      t04_s_(&IOPT,const_cast<double*>(PARMOD_),const_cast<double*>(&PS_),
-             xRe+0,xRe+1,xRe+2,b_ext_nT+0,b_ext_nT+1,b_ext_nT+2);
-    }
-    else {
-      throw std::runtime_error("Unsupported FIELD_MODEL for gridless density: '"+Model()+"' (supported: T96,T05,DIPOLE)");
-    }
-
-    B_T.x = b_int[0] + b_ext_nT[0]*_NANO_;
-    B_T.y = b_int[1] + b_ext_nT[1]*_NANO_;
-    B_T.z = b_int[2] + b_ext_nT[2]*_NANO_;
-  }
-
-private:
-  const EarthUtil::AmpsParam& prm_;
-  double PARMOD_[11];
-  double PS_;
-};
-
-// Relativistic Boris push (magnetic-only).
-static void BorisStep(V3& x_m, V3& p_SI, double q_C, double m0_kg,
-                      double dt, const cFieldEvaluator& field) {
-  // Field evaluation is in SI meters, consistent with CutoffRigidityGridless.
-  V3 B; field.GetB_T(x_m,B);
-
-  // gamma = sqrt(1 + (p/(m c))^2)
-  const double p2 = dot(p_SI,p_SI);
-  const double mc = m0_kg*C_LIGHT;
-  const double gamma = std::sqrt(1.0 + p2/(mc*mc));
-
-  // t = (q dt / (2 gamma m)) B
-  const double coef = (q_C*dt)/(2.0*gamma*m0_kg);
-  const V3 t = mul(coef,B);
-  const double t2 = dot(t,t);
-  const V3 s = mul(2.0/(1.0+t2), t);
-
-  // p- = p
-  V3 pminus = p_SI;
-
-  // p' = p- + p- x t
-  V3 pprime { pminus.x + (pminus.y*t.z - pminus.z*t.y),
-              pminus.y + (pminus.z*t.x - pminus.x*t.z),
-              pminus.z + (pminus.x*t.y - pminus.y*t.x) };
-
-  // p+ = p- + p' x s
-  V3 pplus { pminus.x + (pprime.y*s.z - pprime.z*s.y),
-             pminus.y + (pprime.z*s.x - pprime.x*s.z),
-             pminus.z + (pprime.x*s.y - pprime.y*s.x) };
-
-  p_SI = pplus;
-
-  // Update position: v = p/(gamma m)
-  const double p2n = dot(p_SI,p_SI);
-  const double gamman = std::sqrt(1.0 + p2n/(mc*mc));
-  const V3 v = mul(1.0/(gamman*m0_kg), p_SI);
-  x_m = add(x_m, mul(dt, v));
-}
-
-// Adaptive dt selection: copy the conservative approach from cutoff.
-static double ChooseDt(const EarthUtil::AmpsParam& prm,
-                       double qabs_C,double m0_kg,
-                       const V3& p_SI,const V3& B_T,
-                       double dtMax) {
-  // Limit the gyro phase advance per step.
-  const double Bmag = norm(B_T);
-  if (Bmag>0.0) {
-    const double mc = m0_kg*C_LIGHT;
-    const double p2 = dot(p_SI,p_SI);
-    const double gamma = std::sqrt(1.0 + p2/(mc*mc));
-    const double omega = qabs_C*Bmag/(gamma*m0_kg); // rad/s
-    if (omega>0.0) {
-      const double dphiMax = 0.15;
-      dtMax = std::min(dtMax, dphiMax/omega);
-    }
-  }
-  // Also clamp by user dtTrace_s.
-  return std::min(dtMax, prm.numerics.dtTrace_s);
-}
-
-static bool InBoxRe(const DomainBoxRe& b, const V3& xRe) {
-  return (xRe.x>=b.xMin && xRe.x<=b.xMax &&
-          xRe.y>=b.yMin && xRe.y<=b.yMax &&
-          xRe.z>=b.zMin && xRe.z<=b.zMax);
-}
-
-static bool HitInnerSphereRe(const DomainBoxRe& b, const V3& xRe) {
-  return (norm(xRe) <= b.rInner);
-}
-
-// Convert kinetic energy [J] to rigidity [GV].
-static double RigidityFromEnergy_GV(double E_J, double qabs_C, double m0_kg) {
-  // Total energy: E_tot = E_kin + m c^2
-  const double mc2 = m0_kg*C_LIGHT*C_LIGHT;
-  const double Etot = E_J + mc2;
-  const double pc = std::sqrt(std::max(0.0, Etot*Etot - mc2*mc2)); // p*c
-  const double p = pc / C_LIGHT;
-  const double R_V = (p*C_LIGHT)/qabs_C; // = p c / q
-  return R_V * 1.0e-9;
-}
-
-// Relativistic speed from kinetic energy.
-static double SpeedFromEnergy(double E_J, double m0_kg) {
-  const double mc2 = m0_kg*C_LIGHT*C_LIGHT;
-  const double gamma = 1.0 + E_J/mc2;
-  if (gamma<=1.0) return 0.0;
-  const double beta2 = 1.0 - 1.0/(gamma*gamma);
-  return C_LIGHT*std::sqrt(std::max(0.0,beta2));
-}
-
-//-------------------------------------------------------------------------------------------------
-// Convenience overloads used by the dipole analytic-comparison utilities.
-//-------------------------------------------------------------------------------------------------
-// In the core tight-loop trajectory integrator we keep the low-level helpers:
+//--------------------------------------------------------------------------------------
+// Shared tracing policy
+//--------------------------------------------------------------------------------------
+// IMPORTANT ARCHITECTURAL CHANGE
+// --------------------------------
+// The density/spectrum solver no longer owns a private field evaluator, private Boris
+// pusher, private adaptive-dt selector, or private TraceAllowed(...) function.  All of
+// those pieces now live in the cutoff-rigidity module and are accessed through the
+// exported helper Earth::GridlessMode::TraceAllowedShared(...).
 //
-//   RigidityFromEnergy_GV(E_J, qabs_C, m0_kg)
-//   SpeedFromEnergy(E_J, m0_kg)
+// Why this is better:
+//   1. One executable now contains exactly one authoritative definition of how a
+//      backtraced trajectory is advanced and classified.
+//   2. Any future fix in the cutoff tracer (mover bug, dt refinement, inner-sphere
+//      crossing logic, geometry handling, etc.) automatically benefits density runs.
+//   3. The old density-only bug "dt = 100 * ChooseDt(...)" becomes impossible because
+//      density no longer has its own step-size logic at all.
 //
-// because they avoid any dependency on a higher-level parameter object.
-//
-// Some of the analytic reference writers (used only in nightly test mode) naturally have access to
-// the full parsed run configuration (EarthUtil::AmpsParam).  To keep those call sites readable, we
-// provide small wrappers that extract the charge and rest mass from prm.species and forward to the
-// low-level implementations.
-//
-// Units:
-//   - E_J      : kinetic energy [J]
-//   - charge_e : particle charge in units of elementary charge (e)
-//   - mass_amu : particle rest mass in atomic mass units (amu)
-//   - Returns rigidity [GV] and speed [m/s].
-//
-// NOTE: These overloads intentionally live in the same anonymous namespace as the low-level helpers
-// so the compiler can inline them and so we do not export any new symbols.
-static double RigidityFromEnergy_GV(double E_J, const EarthUtil::AmpsParam& prm) {
-  const double qabs_C = std::abs(prm.species.charge_e) * QE;
-  const double m0_kg  = prm.species.mass_amu * AMU;
-  return RigidityFromEnergy_GV(E_J, qabs_C, m0_kg);
-}
-
-static double SpeedFromEnergy(double E_J, const EarthUtil::AmpsParam& prm) {
-  const double m0_kg = prm.species.mass_amu * AMU;
-  return SpeedFromEnergy(E_J, m0_kg);
-}
-
-// Trace a single backtraced trajectory and classify allowed vs forbidden.
-static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
-                         const cFieldEvaluator& field,
-                         const V3& x0_m,
-                         const V3& v0_unit,
-                         double R_GV) {
-  const DomainBoxRe box = ToDomainBoxRe(prm.domain);
-  const double qabs = std::abs(prm.species.charge_e)*QE;
-  const double m0 = prm.species.mass_amu*AMU;
-
-  // Convert rigidity to momentum magnitude p = (R*1e9 * q)/c
-  const double p_mag = (R_GV*1.0e9*qabs)/C_LIGHT;
-  V3 p = mul(p_mag, v0_unit);
-  V3 x = x0_m;
-
-  double t=0.0;
-  int nSteps=0;
-
-  // Per-trajectory integration time limit.
-  //
-  // Rationale:
-  //   Density/spectrum calculations can trace a large number of trajectories
-  //   (N_energy * N_dir per point). A dedicated DS_MAX_TRAJ_TIME provides a
-  //   convenient knob to cap work per trajectory without changing the cutoff
-  //   tool's global #NUMERICAL MAX_TRACE_TIME setting.
-  //
-  // Policy:
-  //   - If DS_MAX_TRAJ_TIME > 0: use it.
-  //   - Else: fall back to #NUMERICAL MAX_TRACE_TIME.
-  const double maxTrajTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
-                                 ? prm.densitySpectrum.maxTrajTime_s
-                                 : prm.numerics.maxTraceTime_s;
-
-  while (t < maxTrajTime_s && nSteps < prm.numerics.maxSteps) {
-    // classification checks in Re
-    V3 xRe { x.x/1000.0/RE_KM, x.y/1000.0/RE_KM, x.z/1000.0/RE_KM };
-    if (!InBoxRe(box,xRe)) return true;       // escaped -> allowed
-    if (HitInnerSphereRe(box,xRe)) return false; // hit inner sphere -> forbidden
-
-	    // dt selection
-	    // IMPORTANT: evaluate B at the *current Cartesian position in meters* using the
-	    // same background-field access path as CutoffRigidityGridless.
-	    // (xRe is only used for geometry checks; the field evaluator expects SI meters.)
-	    V3 B; field.GetB_T(x, B);
-    double dt = 100*ChooseDt(prm,qabs,m0,p,B,prm.numerics.dtTrace_s);
-    if (!(dt>0.0)) dt = prm.numerics.dtTrace_s;
-
-    BorisStep(x,p,prm.species.charge_e*QE,m0,dt,field);
-    t += dt;
-    ++nSteps;
-  }
-
-  // conservative: timeout -> forbidden
-  return false;
-}
+// The functions below (energy grid generation, transmissivity averaging, density
+// integration, Tecplot output) remain density-specific.  Only the actual single-particle
+// trajectory classification has been centralized.
 
 static std::vector<V3> BuildDirGrid(int nZenith,int nAz) {
   std::vector<V3> dirs;
@@ -728,7 +512,6 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
   }
   const std::vector<V3> dirsUse = SelectDirectionsDeterministic(dirs, nDirsUse);
 
-  const cFieldEvaluator field(prm);
 
   // Rank 0 summary.
   if (mpiRank==0) {
@@ -773,7 +556,19 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
         const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
         int allowed=0;
         for (const auto& d : dirsUse) {
-          if (TraceAllowed(prm,field,x0_m, mul(-1.0,d), Rgv)) ++allowed;
+          {
+            // Shared trajectory classification call.  The density workflow supplies its
+            // own per-trajectory time cap (DS_MAX_TRAJ_TIME when provided), but the
+            // particle mover, adaptive time-step selection, escape test, and inner-sphere
+            // loss logic are *exactly* the same as in the cutoff-rigidity solver.
+            const double x0_arr[3] = {x0_m.x, x0_m.y, x0_m.z};
+            const V3 vTry = mul(-1.0,d);
+            const double v0_arr[3] = {vTry.x, vTry.y, vTry.z};
+            const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
+                                            ? prm.densitySpectrum.maxTrajTime_s
+                                            : -1.0;
+            if (Earth::GridlessMode::TraceAllowedShared(prm,x0_arr,v0_arr,Rgv,maxTraceTime_s)) ++allowed;
+          }
         }
         T[ie] = double(allowed)/double(dirsUse.size());
       }
@@ -849,7 +644,19 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
           const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
           int allowed=0;
           for (const auto& d : dirsUse) {
-            if (TraceAllowed(prm,field,x0_m, mul(-1.0,d), Rgv)) ++allowed;
+            {
+            // Shared trajectory classification call.  The density workflow supplies its
+            // own per-trajectory time cap (DS_MAX_TRAJ_TIME when provided), but the
+            // particle mover, adaptive time-step selection, escape test, and inner-sphere
+            // loss logic are *exactly* the same as in the cutoff-rigidity solver.
+            const double x0_arr[3] = {x0_m.x, x0_m.y, x0_m.z};
+            const V3 vTry = mul(-1.0,d);
+            const double v0_arr[3] = {vTry.x, vTry.y, vTry.z};
+            const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
+                                            ? prm.densitySpectrum.maxTrajTime_s
+                                            : -1.0;
+            if (Earth::GridlessMode::TraceAllowedShared(prm,x0_arr,v0_arr,Rgv,maxTraceTime_s)) ++allowed;
+          }
           }
           T[ie] = double(allowed)/double(dirsUse.size());
         }
@@ -1026,7 +833,6 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
   }
   const std::vector<V3> dirsUse = SelectDirectionsDeterministic(dirs, nDirsUse);
 
-  const cFieldEvaluator field(prm);
 
   if (mpiRank==0) {
     std::cout << "================ Gridless density & spectrum (SHELLS) ================\n";
@@ -1101,7 +907,19 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
             const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
             int allowed=0;
             for (const auto& d : dirsUse) {
-              if (TraceAllowed(prm,field,x0_m, mul(-1.0,d), Rgv)) ++allowed;
+              {
+            // Shared trajectory classification call.  The density workflow supplies its
+            // own per-trajectory time cap (DS_MAX_TRAJ_TIME when provided), but the
+            // particle mover, adaptive time-step selection, escape test, and inner-sphere
+            // loss logic are *exactly* the same as in the cutoff-rigidity solver.
+            const double x0_arr[3] = {x0_m.x, x0_m.y, x0_m.z};
+            const V3 vTry = mul(-1.0,d);
+            const double v0_arr[3] = {vTry.x, vTry.y, vTry.z};
+            const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
+                                            ? prm.densitySpectrum.maxTrajTime_s
+                                            : -1.0;
+            if (Earth::GridlessMode::TraceAllowedShared(prm,x0_arr,v0_arr,Rgv,maxTraceTime_s)) ++allowed;
+          }
             }
             T[ie] = double(allowed)/double(dirsUse.size());
           }
@@ -1190,7 +1008,19 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
             const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
             int allowed=0;
             for (const auto& d : dirsUse) {
-              if (TraceAllowed(prm,field,x0_m, mul(-1.0,d), Rgv)) ++allowed;
+              {
+            // Shared trajectory classification call.  The density workflow supplies its
+            // own per-trajectory time cap (DS_MAX_TRAJ_TIME when provided), but the
+            // particle mover, adaptive time-step selection, escape test, and inner-sphere
+            // loss logic are *exactly* the same as in the cutoff-rigidity solver.
+            const double x0_arr[3] = {x0_m.x, x0_m.y, x0_m.z};
+            const V3 vTry = mul(-1.0,d);
+            const double v0_arr[3] = {vTry.x, vTry.y, vTry.z};
+            const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
+                                            ? prm.densitySpectrum.maxTrajTime_s
+                                            : -1.0;
+            if (Earth::GridlessMode::TraceAllowedShared(prm,x0_arr,v0_arr,Rgv,maxTraceTime_s)) ++allowed;
+          }
             }
             T[ie] = double(allowed)/double(dirsUse.size());
           }
@@ -1348,13 +1178,13 @@ static void WriteTecplotPoints_DipoleAnalyticDensityCompare(const EarthUtil::Amp
 
       const double E_J = Ei_MeV * 1.0e6 * 1.602176634e-19;
 
-      const double R_GV = RigidityFromEnergy_GV(E_J, prm);
+      const double R_GV = RigidityFromEnergy_GV(E_J, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
       const double T = (R_GV >= Rv_GV) ? 1.0 : 0.0;
 
       const double Jb = gSpectrum.GetSpectrum(E_J);
       const double Jloc = T * Jb;
 
-      const double v = SpeedFromEnergy(E_J, prm);
+      const double v = SpeedFromEnergy(E_J, prm.species.mass_amu*AMU);
       const double g = 4.0*M_PI * Jloc / v;
 
       if (i>0) {
