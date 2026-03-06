@@ -744,7 +744,7 @@ static double CutoffAtPoint_GV(const EarthUtil::AmpsParam& prm,
                                const std::vector<V3>& dirs,
                                double Rmin_GV,
                                double Rmax_GV,
-                               int maxIter=24) {
+                               int maxIter=28) {
   double Rc=-1.0;
 
   for (const auto& d : dirs) {
