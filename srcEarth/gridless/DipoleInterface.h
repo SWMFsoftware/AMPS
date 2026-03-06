@@ -43,7 +43,35 @@ namespace Dipole {
   // Canonical Earth dipole moment (A*m^2).
   // This value is commonly used as a representative modern-era magnitude.
   // The dipole-only verification tests scale linearly with this constant.
-  constexpr double M_E_Am2 = 7.94e22;
+//  constexpr double M_E_Am2 = 7.94e22;
+
+// Choose dipole moment so that equatorial B at r=Re is ~3.12e-5 T (31.2 microTesla),
+// which corresponds to classic Størmer vertical coefficient ~14.9 GV for protons.
+// Dipole field: B = (mu0/4pi) * (1/r^3) * [3(m·rhat)rhat - m]
+// If we choose m along +Z with magnitude M, then equatorial B magnitude at theta=90° is:
+//   |B_eq| = (mu0/4pi) * M / r^3
+// Set B_eq(Re) = 3.12e-5 T => M = B_eq * Re^3 / (mu0/4pi)
+// where (mu0/4pi) = 1e-7 in SI.
+static constexpr double PI = 3.14159265358979323846;
+
+// Physical constants (SI)
+static constexpr double c0   = 299792458.0;                 // m/s
+static constexpr double q_e  = 1.602176634e-19;             // C
+static constexpr double amu  = 1.66053906660e-27;           // kg
+
+// Earth radius
+static constexpr double Re_km = 6371.2;                     // km
+static constexpr double Re_m  = Re_km * 1000.0;             // m
+
+// Proton
+static constexpr double m0 = 1.007276466621 * amu;          // kg
+static constexpr double q  = +1.0 * q_e;                    // C
+
+static constexpr double mu0_over_4pi = 1e-7;
+static constexpr double B_eq_Re = 3.12e-5;                  // Tesla
+static constexpr double M_E_Am2 = B_eq_Re * Re_m*Re_m*Re_m / mu0_over_4pi; // A·m^2
+
+
 
   struct Params {
     // Multiplicative scale applied to M_E_Am2.
