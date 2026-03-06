@@ -1,44 +1,124 @@
 //======================================================================================
 // GridlessParticleMovers.cpp
 //======================================================================================
-// See GridlessParticleMovers.h for detailed documentation and design notes.
-//======================================================================================
 
 #include "GridlessParticleMovers.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 
-//------------------------------------------------------------------------------
-// Classic relativistic Boris pusher (magnetic field only)
-//------------------------------------------------------------------------------
-// This is the same algorithm historically used in the gridless cutoff and density
-// solvers, moved here for reuse.
-//
-// Key details:
-//   - We integrate momentum p (not velocity).
-//   - Relativistic gamma is computed from |p|.
-//   - In the absence of E, the Boris push reduces to a pure rotation of p around B.
-//   - Position is advanced using the updated momentum.
-void BorisStep(V3& x_m, V3& p_SI, double q_C, double m0_kg, double dt,
-               const IGridlessFieldEvaluator& field) {
+namespace {
 
-  V3 B_T; field.GetB_T(x_m,B_T);
-
-  auto TcppGammaFromMomentum = [](const V3& p_SI, double m0_kg) -> double {
+static inline double GammaFromMomentum(const V3& p_SI, double m0_kg) {
   const double p2 = dot(p_SI, p_SI);
   const double mc = m0_kg * SpeedOfLight;
   return std::sqrt(1.0 + p2 / (mc * mc));
-  };
-  
+}
 
-  const double gam = TcppGammaFromMomentum(p_SI, m0_kg);
+static inline V3 VelocityFromMomentum(const V3& p_SI, double m0_kg) {
+  const double gamma = GammaFromMomentum(p_SI, m0_kg);
+  return mul(1.0 / (gamma * m0_kg), p_SI);
+}
+
+struct State { V3 x; V3 p; };
+
+static inline State add_state(const State& a, const State& b) {
+  return { add(a.x,b.x), add(a.p,b.p) };
+}
+
+static inline State mul_state(double s, const State& a) {
+  return { mul(s,a.x), mul(s,a.p) };
+}
+
+static inline bool InsideInnerSphereM(const V3& x_m, double rInner_m) {
+  return (rInner_m > 0.0) && (dot(x_m,x_m) <= rInner_m*rInner_m);
+}
+
+static bool SegmentHitsInnerSphere(const V3& a, const V3& b, double rInner_m) {
+  if (rInner_m <= 0.0) return false;
+  if (InsideInnerSphereM(a,rInner_m) || InsideInnerSphereM(b,rInner_m)) return true;
+
+  const V3 d = sub(b,a);
+  const double dd = dot(d,d);
+  if (dd <= 0.0) return false;
+
+  double t = -dot(a,d)/dd;
+  if (t < 0.0) t = 0.0;
+  if (t > 1.0) t = 1.0;
+  const V3 q = add(a, mul(t,d));
+  return dot(q,q) <= rInner_m*rInner_m;
+}
+
+static inline State LorentzRhs(const State& s,
+                               double q_C, double m0_kg,
+                               const IGridlessFieldEvaluator& field) {
+  V3 B_T; field.GetB_T(s.x, B_T);
+  const V3 v = VelocityFromMomentum(s.p, m0_kg);
+  return { v, mul(q_C, cross(v, B_T)) };
+}
+
+static bool CheckIntermediateSphereHit(const V3& from,
+                                       const V3& to,
+                                       double rInner_m,
+                                       V3& x_m) {
+  if (SegmentHitsInnerSphere(from,to,rInner_m)) {
+    x_m = to;
+    return true;
+  }
+  return false;
+}
+
+// Generic explicit RK stepper with segment/stage inner-sphere checks.
+template <size_t N>
+static bool RKStepGeneric(const std::array<double,N>& c,
+                          const std::array<std::array<double,N>,N>& a,
+                          const std::array<double,N>& b,
+                          V3& x_m, V3& p_SI,
+                          double q_C, double m0_kg,
+                          double dt,
+                          const IGridlessFieldEvaluator& field,
+                          double rInner_m) {
+  const State y0{x_m,p_SI};
+  std::array<State,N> k{};
+  std::array<V3,N+1> stageX{};
+  stageX[0] = x_m;
+
+  for (size_t i=0;i<N;i++) {
+    State yi = y0;
+    for (size_t j=0;j<i;j++) {
+      yi = add_state(yi, mul_state(dt*a[i][j], k[j]));
+    }
+
+    stageX[i+1] = yi.x;
+    if (CheckIntermediateSphereHit(stageX[i], stageX[i+1], rInner_m, x_m)) return false;
+    if (InsideInnerSphereM(yi.x, rInner_m)) { x_m = yi.x; p_SI = yi.p; return false; }
+
+    (void)c;
+    k[i] = LorentzRhs(yi, q_C, m0_kg, field);
+  }
+
+  State y1 = y0;
+  for (size_t i=0;i<N;i++) y1 = add_state(y1, mul_state(dt*b[i], k[i]));
+
+  if (CheckIntermediateSphereHit(stageX[N], y1.x, rInner_m, x_m)) { p_SI = y1.p; return false; }
+  if (InsideInnerSphereM(y1.x, rInner_m)) { x_m = y1.x; p_SI = y1.p; return false; }
+
+  x_m = y1.x;
+  p_SI = y1.p;
+  return true;
+}
+
+} // namespace
+
+void BorisStep(V3& x_m, V3& p_SI, double q_C, double m0_kg, double dt,
+               const IGridlessFieldEvaluator& field) {
+  V3 B_T; field.GetB_T(x_m,B_T);
+
+  const double gam = GammaFromMomentum(p_SI, m0_kg);
   const V3 v = mul(1.0/(gam*m0_kg), p_SI);
-
-  // half drift
   x_m = add(x_m, mul(0.5*dt, v));
 
-  // Boris rotation in momentum
   const V3 t = mul((q_C*dt)/(2.0*gam*m0_kg), B_T);
   const double t2 = dot(t,t);
   const V3 s = mul(2.0/(1.0+t2), t);
@@ -48,64 +128,58 @@ void BorisStep(V3& x_m, V3& p_SI, double q_C, double m0_kg, double dt,
   const V3 p_plus  = add(p_minus, cross(p_prime, s));
   p_SI = p_plus;
 
-  // second half drift with updated momentum
-  const double gam2 = TcppGammaFromMomentum(p_SI, m0_kg);
+  const double gam2 = GammaFromMomentum(p_SI, m0_kg);
   const V3 v2 = mul(1.0/(gam2*m0_kg), p_SI);
   x_m = add(x_m, mul(0.5*dt, v2));
 }
 
-//------------------------------------------------------------------------------
-// Higher-accuracy Boris variant: midpoint B sampling
-//------------------------------------------------------------------------------
-// Motivation:
-//   In strongly varying magnetic fields, sampling B only at x_n introduces a
-//   first-order error in how the rotation axis is chosen over the step.
-//   A simple and effective improvement is to sample B at an approximate midpoint
-//   position x_{n+1/2}.
-//
-// Algorithm sketch:
-//   1) compute v_n from p_n
-//   2) x_half = x_n + 0.5*dt*v_n
-//   3) evaluate B_half = B(x_half)
-//   4) perform Boris rotation using B_half
-//   5) advance position with the updated momentum
-//
-// Notes:
-//   - Still no E-field.
-//   - Cost: one extra B evaluation per step.
-//   - Benefit: reduced phase/trajectory error for a given dt.
-void BorisMidpointStep(V3& x, V3& p, double q_C, double m0_kg, double dt,
-                       const IGridlessFieldEvaluator& field) {
-  const double p2 = dot(p,p);
-  const double mc = m0_kg*SpeedOfLight;
-  const double gamma = std::sqrt(1.0 + p2/(mc*mc));
-
-  // v_n = p_n/(gamma m)
-  const V3 v_n = mul(1.0/(gamma*m0_kg), p);
-  const V3 x_half = add(x, mul(0.5*dt, v_n));
-
-  // B sampled at midpoint position
-  V3 B_half; field.GetB_T(x_half, B_half);
-
-  V3 t = mul((q_C*dt)/(2.0*gamma*m0_kg), B_half);
-  const double t2 = dot(t,t);
-  V3 s = mul(2.0/(1.0+t2), t);
-
-  V3 p_prime = add(p, cross(p, t));
-  V3 p_plus  = add(p, cross(p_prime, s));
-  p = p_plus;
-
-  const double p2n = dot(p,p);
-  const double gamman = std::sqrt(1.0 + p2n/(mc*mc));
-  V3 vnew = mul(1.0/(gamman*m0_kg), p);
-  x = add(x, mul(dt, vnew));
+void RK2Step(V3& x_m, V3& p_SI,
+             double q_C, double m0_kg,
+             double dt,
+             const IGridlessFieldEvaluator& field) {
+  static const std::array<double,2> c{{0.0, 0.5}};
+  static const std::array<std::array<double,2>,2> a{{
+    {{0.0, 0.0}},
+    {{0.5, 0.0}}
+  }};
+  static const std::array<double,2> b{{0.0, 1.0}};
+  RKStepGeneric(c,a,b,x_m,p_SI,q_C,m0_kg,dt,field,-1.0);
 }
 
-//------------------------------------------------------------------------------
-// Process-wide default mover
-//------------------------------------------------------------------------------
-// See header for intended precedence and usage.
-MoverType gDefaultMover = MoverType::BORIS;
+void RK4Step(V3& x_m, V3& p_SI,
+             double q_C, double m0_kg,
+             double dt,
+             const IGridlessFieldEvaluator& field) {
+  static const std::array<double,4> c{{0.0, 0.5, 0.5, 1.0}};
+  static const std::array<std::array<double,4>,4> a{{
+    {{0.0, 0.0, 0.0, 0.0}},
+    {{0.5, 0.0, 0.0, 0.0}},
+    {{0.0, 0.5, 0.0, 0.0}},
+    {{0.0, 0.0, 1.0, 0.0}}
+  }};
+  static const std::array<double,4> b{{1.0/6.0, 1.0/3.0, 1.0/3.0, 1.0/6.0}};
+  RKStepGeneric(c,a,b,x_m,p_SI,q_C,m0_kg,dt,field,-1.0);
+}
+
+void RK6Step(V3& x_m, V3& p_SI,
+             double q_C, double m0_kg,
+             double dt,
+             const IGridlessFieldEvaluator& field) {
+  static const std::array<double,7> c{{0.0, 1.0/3.0, 2.0/3.0, 1.0/3.0, 0.5, 0.5, 1.0}};
+  static const std::array<std::array<double,7>,7> a{{
+    {{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}},
+    {{1.0/3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}},
+    {{0.0, 2.0/3.0, 0.0, 0.0, 0.0, 0.0, 0.0}},
+    {{1.0/12.0, 1.0/3.0, -1.0/12.0, 0.0, 0.0, 0.0, 0.0}},
+    {{-1.0/16.0, 9.0/8.0, -3.0/16.0, -3.0/8.0, 0.0, 0.0, 0.0}},
+    {{0.0, 9.0/8.0, -3.0/8.0, -3.0/4.0, 0.5, 0.0, 0.0}},
+    {{9.0/44.0, -9.0/11.0, 63.0/44.0, 18.0/11.0, 0.0, -16.0/11.0, 0.0}}
+  }};
+  static const std::array<double,7> b{{11.0/120.0, 0.0, 27.0/40.0, 27.0/40.0, -4.0/15.0, -4.0/15.0, 11.0/120.0}};
+  RKStepGeneric(c,a,b,x_m,p_SI,q_C,m0_kg,dt,field,-1.0);
+}
+
+MoverType gDefaultMover = MoverType::RK4;
 
 void SetDefaultMoverType(MoverType m) {
   gDefaultMover = m;
@@ -115,34 +189,30 @@ MoverType GetDefaultMoverType() {
   return gDefaultMover;
 }
 
-//------------------------------------------------------------------------------
-// Parsing / printing helpers
-//------------------------------------------------------------------------------
 static std::string ToUpperCopy(std::string s) {
-  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){return std::toupper(c);});
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char ch){ return std::toupper(ch); });
   return s;
 }
 
 bool ParseMoverType(const std::string& s, MoverType& out) {
   const std::string u = ToUpperCopy(s);
   if (u=="BORIS") { out = MoverType::BORIS; return true; }
-  if (u=="BORIS_MIDPOINT" || u=="MIDPOINT" || u=="BORIS-MIDPOINT") {
-    out = MoverType::BORIS_MIDPOINT; return true;
-  }
+  if (u=="RK2" || u=="RUNGEKUTTA2" || u=="RUNGE-KUTTA-2") { out = MoverType::RK2; return true; }
+  if (u=="RK4" || u=="RUNGEKUTTA4" || u=="RUNGE-KUTTA-4") { out = MoverType::RK4; return true; }
+  if (u=="RK6" || u=="RUNGEKUTTA6" || u=="RUNGE-KUTTA-6") { out = MoverType::RK6; return true; }
   return false;
 }
 
 const char* MoverTypeToString(MoverType m) {
   switch (m) {
     case MoverType::BORIS: return "BORIS";
-    case MoverType::BORIS_MIDPOINT: return "BORIS_MIDPOINT";
+    case MoverType::RK2:   return "RK2";
+    case MoverType::RK4:   return "RK4";
+    case MoverType::RK6:   return "RK6";
     default: return "BORIS";
   }
 }
 
-//------------------------------------------------------------------------------
-// Dispatcher
-//------------------------------------------------------------------------------
 void StepParticle(MoverType mover,
                   V3& x_m, V3& p_SI,
                   double q_C, double m0_kg,
@@ -152,12 +222,71 @@ void StepParticle(MoverType mover,
     case MoverType::BORIS:
       BorisStep(x_m, p_SI, q_C, m0_kg, dt, field);
       break;
-    case MoverType::BORIS_MIDPOINT:
-      BorisMidpointStep(x_m, p_SI, q_C, m0_kg, dt, field);
+    case MoverType::RK2:
+      RK2Step(x_m, p_SI, q_C, m0_kg, dt, field);
+      break;
+    case MoverType::RK4:
+      RK4Step(x_m, p_SI, q_C, m0_kg, dt, field);
+      break;
+    case MoverType::RK6:
+      RK6Step(x_m, p_SI, q_C, m0_kg, dt, field);
       break;
     default:
-      // Defensive default: use classic Boris.
       BorisStep(x_m, p_SI, q_C, m0_kg, dt, field);
       break;
+  }
+}
+
+bool StepParticleChecked(MoverType mover,
+                         V3& x_m, V3& p_SI,
+                         double q_C, double m0_kg,
+                         double dt,
+                         const IGridlessFieldEvaluator& field,
+                         double rInner_m) {
+  switch (mover) {
+    case MoverType::BORIS: {
+      const V3 x0 = x_m;
+      BorisStep(x_m, p_SI, q_C, m0_kg, dt, field);
+      return !SegmentHitsInnerSphere(x0, x_m, rInner_m) && !InsideInnerSphereM(x_m, rInner_m);
+    }
+    case MoverType::RK2: {
+      static const std::array<double,2> c{{0.0, 0.5}};
+      static const std::array<std::array<double,2>,2> a{{
+        {{0.0, 0.0}},
+        {{0.5, 0.0}}
+      }};
+      static const std::array<double,2> b{{0.0, 1.0}};
+      return RKStepGeneric(c,a,b,x_m,p_SI,q_C,m0_kg,dt,field,rInner_m);
+    }
+    case MoverType::RK4: {
+      static const std::array<double,4> c{{0.0, 0.5, 0.5, 1.0}};
+      static const std::array<std::array<double,4>,4> a{{
+        {{0.0, 0.0, 0.0, 0.0}},
+        {{0.5, 0.0, 0.0, 0.0}},
+        {{0.0, 0.5, 0.0, 0.0}},
+        {{0.0, 0.0, 1.0, 0.0}}
+      }};
+      static const std::array<double,4> b{{1.0/6.0, 1.0/3.0, 1.0/3.0, 1.0/6.0}};
+      return RKStepGeneric(c,a,b,x_m,p_SI,q_C,m0_kg,dt,field,rInner_m);
+    }
+    case MoverType::RK6: {
+      static const std::array<double,7> c{{0.0, 1.0/3.0, 2.0/3.0, 1.0/3.0, 0.5, 0.5, 1.0}};
+      static const std::array<std::array<double,7>,7> a{{
+        {{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}},
+        {{1.0/3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}},
+        {{0.0, 2.0/3.0, 0.0, 0.0, 0.0, 0.0, 0.0}},
+        {{1.0/12.0, 1.0/3.0, -1.0/12.0, 0.0, 0.0, 0.0, 0.0}},
+        {{-1.0/16.0, 9.0/8.0, -3.0/16.0, -3.0/8.0, 0.0, 0.0, 0.0}},
+        {{0.0, 9.0/8.0, -3.0/8.0, -3.0/4.0, 0.5, 0.0, 0.0}},
+        {{9.0/44.0, -9.0/11.0, 63.0/44.0, 18.0/11.0, 0.0, -16.0/11.0, 0.0}}
+      }};
+      static const std::array<double,7> b{{11.0/120.0, 0.0, 27.0/40.0, 27.0/40.0, -4.0/15.0, -4.0/15.0, 11.0/120.0}};
+      return RKStepGeneric(c,a,b,x_m,p_SI,q_C,m0_kg,dt,field,rInner_m);
+    }
+    default: {
+      const V3 x0 = x_m;
+      BorisStep(x_m, p_SI, q_C, m0_kg, dt, field);
+      return !SegmentHitsInnerSphere(x0, x_m, rInner_m) && !InsideInnerSphereM(x_m, rInner_m);
+    }
   }
 }

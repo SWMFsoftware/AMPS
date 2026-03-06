@@ -1478,15 +1478,27 @@ int main(int argc,char **argv) {
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
 
 	//set up mover type used in the calculation 
-        if (cli.mover!="") {	
-          if (cli.mover=="BORIS") SetDefaultMoverType(MoverType::BORIS);
-	  else if (cli.mover=="BORIS_MIDPOINT") SetDefaultMoverType(MoverType::BORIS_MIDPOINT);
-	  else {
-            std::cerr << "Error: unknown mover option -mover " << cli.mover << endl;
-            return 1;
-	  }
-        }	  
+        if (!cli.mover.empty()) {
+          const std::string mover = EarthUtil::ToUpper(cli.mover);
 
+          if (mover=="BORIS") {
+            SetDefaultMoverType(MoverType::BORIS);
+          }
+          else if (mover=="RK2") {
+            SetDefaultMoverType(MoverType::RK2);
+          }
+          else if (mover=="RK4") {
+            SetDefaultMoverType(MoverType::RK4);
+          }
+          else if (mover=="RK6") {
+            SetDefaultMoverType(MoverType::RK6);
+          }
+          else {
+            std::cerr << "Error: unknown mover option -mover " << cli.mover
+                      << ". Allowed: BORIS, RK2, RK4, RK6" << std::endl;
+            return 1;
+          }
+        }
 
 
         // Dispatch gridless workflows by CALC_TARGET.

@@ -10,7 +10,7 @@
 //       -h              : print help and exit
 //       -mode 3d|gridless
 //       -i <input-file> : AMPS_PARAM style input file
-//       -mover <name>   : select particle mover (BORIS | BORIS_MIDPOINT)
+//       -mover <name>   : select particle mover (BORIS | RK2 | RK4 | RK6)
 //   - The CLI and parser live in srcEarth/util.
 //======================================================================================
 
@@ -32,7 +32,7 @@ namespace EarthUtil {
     //
     // Supported values (case-insensitive):
     //   BORIS           : classic relativistic Boris pusher (legacy default)
-    //   BORIS_MIDPOINT  : Boris pusher with midpoint B(x_{n+1/2}) sampling
+    //   RK2/RK4/RK6   : explicit Runge-Kutta movers of order 2/4/6
     //
     // If empty, the executable should use its default / input-file setting.
     std::string mover{""};

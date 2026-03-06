@@ -641,11 +641,13 @@ static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
     // compatibility with existing input files.
     const double dt = SelectAdaptiveDt(prm,field,x,p,q,m0,boxRe,timeRemaining_s);
 
-    // One relativistic Boris push with the selected local step.
-    // NOTE: This used to call BorisStep() unconditionally.
-    //       We now dispatch through ::StepParticle() so that alternative movers
-    //       (e.g., BorisMidpointStep) can be selected without touching the trace loop.
-    ::StepParticle(gDefaultMover, x, p,q,m0,dt,field);
+    // Advance one step with the selected mover.
+    // Important cutoff-specific rule: if the trajectory enters the inner sphere
+    // at any intermediate RK stage (or along a segment between consecutive stage
+    // positions), classify it immediately as forbidden.
+    if (!StepParticleChecked(gDefaultMover, x, p,q,m0,dt,field, boxRe.rInner*_EARTH__RADIUS_)) {
+      return false;
+    }
 
     tTrace_s += dt;
     ++nSteps;
