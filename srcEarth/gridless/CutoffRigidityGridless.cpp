@@ -639,7 +639,7 @@ static bool TraceAllowed(const EarthUtil::AmpsParam& prm,
     // Automatic dt selection based on local gyrofrequency and proximity to the
     // termination surfaces. DT_TRACE remains a hard upper bound for backward
     // compatibility with existing input files.
-    const double dt = 0.5*SelectAdaptiveDt(prm,field,x,p,q,m0,boxRe,timeRemaining_s);
+    const double dt = SelectAdaptiveDt(prm,field,x,p,q,m0,boxRe,timeRemaining_s);
 
     // One relativistic Boris push with the selected local step.
     // NOTE: This used to call BorisStep() unconditionally.
@@ -990,6 +990,8 @@ static void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam&
     // Geocentric radius of this shell in meters.
     const double r_m = _EARTH__RADIUS_ + alt_km*1000.0;
 
+    const double R0 = StormerVerticalCoeff_GV(prm.field.dipoleMoment_Me, _EARTH__RADIUS_);
+
     for (int j=0;j<nLat;j++) {
       double lat_deg = -90.0 + res_deg*j;
       if (lat_deg>90.0) lat_deg=90.0;
@@ -1019,7 +1021,7 @@ static void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam&
         const double cosLam = std::sqrt(std::max(0.0, 1.0 - sinLam*sinLam));
         const double rRe = r_m/_EARTH__RADIUS_;
 
-        const double Rc_vert = 14.9 * prm.field.dipoleMoment_Me * std::pow(cosLam,4) / (rRe*rRe);
+        const double Rc_vert = R0 * prm.field.dipoleMoment_Me * std::pow(cosLam,4) / (rRe*rRe);
 
         const int k=i+nLon*j;
         const double Rc_num = RcShell[s][(size_t)k];
