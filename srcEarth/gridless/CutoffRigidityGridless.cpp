@@ -93,6 +93,28 @@ extern "C" {
   void t04_s_(int*,double*,double*,double*,double*,double*,double*,double*,double*);
 }
 
+// Compute Stormer vertical-cutoff coefficient R0(M) in GV, using the *same* dipole moment
+// normalization as the dipole B-field implementation.
+//
+// Dipole B uses:  B = (mu0/4pi) * ( 3 r (m·r)/r^5 - m/r^3 )
+// with m = M * m_hat, and M = momentScale_Me * M_E_Am2.
+//
+// Stormer vertical cutoff: Rc = R0(M) * cos^4(lambda) / r^2, with
+// R0(M) [GV] = 0.299792458 * (1/4) * (mu0/4pi) * M / Re^2
+static inline double StormerVerticalCoeff_GV(double momentScale_Me,
+                                             double Re_m /* _EARTH__RADIUS_ */) {
+  constexpr double mu0_over_4pi = 1.0e-7;          // SI
+  constexpr double c_to_GV_per_Tm = 0.299792458;   // (c/1e9) converts T·m -> GV
+  constexpr double M_E_Am2 = Earth::GridlessMode::Dipole::M_E_Am2;              // your code constant (modern-era representative)
+
+  const double M = momentScale_Me * M_E_Am2;       // A·m^2
+  const double Brho_Tm = (mu0_over_4pi * M) / (Re_m * Re_m); // T·m scale at equator, r=Re
+  const double R0_GV = c_to_GV_per_Tm * 0.25 * Brho_Tm;      // Stormer vertical factor 1/4
+  return R0_GV;
+}
+
+
+
 namespace {
 
 /*
@@ -744,7 +766,7 @@ static double CutoffAtPoint_GV(const EarthUtil::AmpsParam& prm,
                                const std::vector<V3>& dirs,
                                double Rmin_GV,
                                double Rmax_GV,
-                               int maxIter=28) {
+                               int maxIter=30) {
   double Rc=-1.0;
 
   for (const auto& d : dirs) {
@@ -854,6 +876,8 @@ static void WriteTecplotPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam&
   const double my = Earth::GridlessMode::Dipole::gParams.m_hat[1];
   const double mz = Earth::GridlessMode::Dipole::gParams.m_hat[2];
 
+  const double R0 = StormerVerticalCoeff_GV(prm.field.dipoleMoment_Me, _EARTH__RADIUS_);
+
   for (size_t i=0;i<points.size();i++) {
     const double x_m = points[i].x*1000.0;
     const double y_m = points[i].y*1000.0;
@@ -867,7 +891,7 @@ static void WriteTecplotPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam&
     const double cosLam = std::sqrt(std::max(0.0, 1.0 - sinLam*sinLam));
     const double rRe = r_m/_EARTH__RADIUS_;
 
-    const double Rc_vert = 14.9 * prm.field.dipoleMoment_Me * std::pow(cosLam,4) / (rRe*rRe);
+    const double Rc_vert = R0 * prm.field.dipoleMoment_Me * std::pow(cosLam,4) / (rRe*rRe);
     const double Rc_num = Rc_num_GV[i];
 
     const double rel = (Rc_vert>0.0 && Rc_num>0.0) ? (Rc_num-Rc_vert)/Rc_vert : 0.0;
