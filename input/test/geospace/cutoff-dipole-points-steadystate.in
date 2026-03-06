@@ -27,7 +27,7 @@ CUTOFF_MAX_PARTICLES   500              ! per injection point
 CUTOFF_NENERGY         50               ! log-spaced energy bins
 CUTOFF_MAX_TRAJ_TIME   6000               ! sec — max trajectory integration time
 CUTOFF_SAMPLING        VERTICAL           ! VERTICAL or ISOTROPIC
-DIRECTIONAL_MAP        F                 ! compute directional Rc sky-map
+DIRECTIONAL_MAP        T                 ! compute directional Rc sky-map
 DIRMAP_LON_RES         5                ! deg — longitude resolution
 DIRMAP_LAT_RES         5                ! deg — latitude resolution
 
