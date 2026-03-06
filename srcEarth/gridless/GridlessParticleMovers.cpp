@@ -20,31 +20,38 @@
 //   - Relativistic gamma is computed from |p|.
 //   - In the absence of E, the Boris push reduces to a pure rotation of p around B.
 //   - Position is advanced using the updated momentum.
-void BorisStep(V3& x, V3& p, double q_C, double m0_kg, double dt,
+void BorisStep(V3& x_m, V3& p_SI, double q_C, double m0_kg, double dt,
                const IGridlessFieldEvaluator& field) {
-  const double p2 = dot(p,p);
-  const double mc = m0_kg*SpeedOfLight;
-  const double gamma = std::sqrt(1.0 + p2/(mc*mc));
 
-  V3 B; field.GetB_T(x,B);
+  V3 B_T; field.GetB_T(x_m,B_T);
 
-  // Boris rotation parameters.
-  // t = (q dt / (2 gamma m)) * B
-  V3 t = mul((q_C*dt)/(2.0*gamma*m0_kg), B);
+  auto TcppGammaFromMomentum = [](const V3& p_SI, double m0_kg) -> double {
+  const double p2 = dot(p_SI, p_SI);
+  const double mc = m0_kg * SpeedOfLight;
+  return std::sqrt(1.0 + p2 / (mc * mc));
+  };
+  
+
+  const double gam = TcppGammaFromMomentum(p_SI, m0_kg);
+  const V3 v = mul(1.0/(gam*m0_kg), p_SI);
+
+  // half drift
+  x_m = add(x_m, mul(0.5*dt, v));
+
+  // Boris rotation in momentum
+  const V3 t = mul((q_C*dt)/(2.0*gam*m0_kg), B_T);
   const double t2 = dot(t,t);
-  V3 s = mul(2.0/(1.0+t2), t);
+  const V3 s = mul(2.0/(1.0+t2), t);
 
-  // p' = p + p x t
-  V3 p_prime = add(p, cross(p, t));
-  // p+ = p + p' x s
-  V3 p_plus  = add(p, cross(p_prime, s));
-  p = p_plus;
+  const V3 p_minus = p_SI;
+  const V3 p_prime = add(p_minus, cross(p_minus, t));
+  const V3 p_plus  = add(p_minus, cross(p_prime, s));
+  p_SI = p_plus;
 
-  // Update position using v = p / (gamma m)
-  const double p2n = dot(p,p);
-  const double gamman = std::sqrt(1.0 + p2n/(mc*mc));
-  V3 vnew = mul(1.0/(gamman*m0_kg), p);
-  x = add(x, mul(dt, vnew));
+  // second half drift with updated momentum
+  const double gam2 = TcppGammaFromMomentum(p_SI, m0_kg);
+  const V3 v2 = mul(1.0/(gam2*m0_kg), p_SI);
+  x_m = add(x_m, mul(0.5*dt, v2));
 }
 
 //------------------------------------------------------------------------------
