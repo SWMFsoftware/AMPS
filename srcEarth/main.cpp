@@ -1478,11 +1478,13 @@ int main(int argc,char **argv) {
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
 
 	//set up mover type used in the calculation 
-	if (cli.mover=="BORIS") SetDefaultMoverType(MoverType::BORIS);
-	else if (cli.mover=="BORIS_MIDPOINT") SetDefaultMoverType(MoverType::BORIS_MIDPOINT);
-	else {
-          std::cerr << "Error: unknown mover option -mover " << cli.mover << endl;
-          return 1;
+        if (cli.mover!="") {	
+          if (cli.mover=="BORIS") SetDefaultMoverType(MoverType::BORIS);
+	  else if (cli.mover=="BORIS_MIDPOINT") SetDefaultMoverType(MoverType::BORIS_MIDPOINT);
+	  else {
+            std::cerr << "Error: unknown mover option -mover " << cli.mover << endl;
+            return 1;
+	  }
         }	  
 
 
