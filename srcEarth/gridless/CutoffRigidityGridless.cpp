@@ -1641,7 +1641,24 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
     const double latRad = lat*M_PI/180.0;
     const double cl = std::cos(latRad);
 
-    return { r_m*cl*std::cos(lonRad), r_m*cl*std::sin(lonRad), r_m*std::sin(latRad) };
+    SpiceDouble xGEO[3]={ r_m*cl*std::cos(lonRad), r_m*cl*std::sin(lonRad), r_m*std::sin(latRad) };
+    static std::string epoch=""; 
+    static SpiceDouble rot[3][3];
+
+    if (epoch!=prm.field.epoch) {
+      epoch=prm.field.epoch;
+
+      SpiceDouble et;
+      str2et_c(prm.field.epoch.c_str(), &et);
+      pxform_c("ITRF93", "GSM", et, rot);
+    }
+
+    SpiceDouble xGSM[3];
+    mxv_c(rot, xGEO, xGSM);
+
+    return {xGSM[0],xGSM[1],xGSM[2]};
+
+//    return { r_m*cl*std::cos(lonRad), r_m*cl*std::sin(lonRad), r_m*std::sin(latRad) };
   };
 
   //====================================================================================
