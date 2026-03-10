@@ -27,6 +27,7 @@
 #include "GeopackInterface.h"
 #include "T96Interface.h"
 #include "T05Interface.h"
+#include "3d/Mode3D.h"
 
 namespace MAIN_LIB_GEO {
   void amps_init_mesh();
@@ -288,14 +289,22 @@ void amps_init_mesh() {
  
  double xmax[3]={0.0,0.0,0.0},xmin[3]={0.0,0.0,0.0};
 
- for (idim=0;idim<DIM;idim++) {
-   if (Earth::ModelMode==Earth::CutoffRigidityMode) {
-     xmax[idim]= 29 * _RADIUS_(_EARTH_);
-     xmin[idim]=-29 * _RADIUS_(_EARTH_);
+ if (Earth::Mode3D::ParsedDomainActive==true) {
+   for (idim=0;idim<DIM;idim++) {
+     xmin[idim]=Earth::Mode3D::ParsedDomainMin[idim];
+     xmax[idim]=Earth::Mode3D::ParsedDomainMax[idim];
    }
-   else {
-     xmax[idim]= 29*1.5 * _RADIUS_(_EARTH_);
-     xmin[idim]=-29*1.5 * _RADIUS_(_EARTH_);
+ }
+ else {
+   for (idim=0;idim<DIM;idim++) {
+     if (Earth::ModelMode==Earth::CutoffRigidityMode) {
+       xmax[idim]= 29 * _RADIUS_(_EARTH_);
+       xmin[idim]=-29 * _RADIUS_(_EARTH_);
+     }
+     else {
+       xmax[idim]= 29*1.5 * _RADIUS_(_EARTH_);
+       xmin[idim]=-29*1.5 * _RADIUS_(_EARTH_);
+     }
    }
  }
  

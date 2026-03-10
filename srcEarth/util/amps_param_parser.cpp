@@ -462,6 +462,20 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         rememberUnknown();
       }
     }
+    else if (section=="#ELECTRIC_FIELD") {
+      if (uKey=="EFIELD_MODEL") p.efield.model=ToUpper(val);
+      else if (uKey=="COROTATION_SCALE") p.efield.corotationScale=std::stod(val);
+      else if (uKey=="VS_POTENTIAL_KV") p.efield.vsPotential_kV=std::stod(val);
+      else if (uKey=="VS_GAMMA") p.efield.vsGamma=std::stod(val);
+      else if (uKey=="VS_REFERENCE_L") p.efield.vsReferenceL=std::stod(val);
+      else if (uKey=="VS_SCALE") p.efield.vsScale=std::stod(val);
+      else if (uKey=="EFIELD_RMIN" || uKey=="EFIELD_RMIN_KM") p.efield.rMin_km=ParseLengthToKm(val,commentText);
+      else if (uKey=="EFIELD_LMIN") p.efield.lMin=std::stod(val);
+      else {
+        p.efield.raw[uKey]=val;
+        rememberUnknown();
+      }
+    }
     else if (section=="#DOMAIN_BOUNDARY") {
       if (uKey=="DOMAIN_X_MAX") p.domain.xMax=ParseLengthToKm(val,commentText);
       else if (uKey=="DOMAIN_X_MIN") p.domain.xMin=ParseLengthToKm(val,commentText);

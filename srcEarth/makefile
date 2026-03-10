@@ -17,6 +17,8 @@ MAINLIBOBJ = Earth_Sampling.o \
 	gridless/DensityGridless.o \
 	gridless/DipoleInterface.o \
 	gridless/GridlessParticleMovers.o \
+	3d/Mode3D.o \
+	3d/ElectricField.o \
 	util/amps_param_parser.o \
 	util/cutoff_cli.o \
 	boundary/spectrum.o \

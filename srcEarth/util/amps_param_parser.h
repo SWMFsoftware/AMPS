@@ -228,6 +228,36 @@ namespace EarthUtil {
     std::map<std::string,std::string> raw;
   };
 
+
+  struct ElectricField {
+    // Extensible electric-field model selector for the AMPS-backed 3D path.
+    //
+    // Supported values in this patch:
+    //   - NONE
+    //   - COROTATION_VOLLAND_STERN
+    //
+    // The intent is to keep the parser/API stable while making it easy to
+    // add other models later (Weimer, user tables, solver-backed fields, etc.).
+    std::string model{"NONE"};
+
+    // Multiplier applied to the nominal corotation electric field.
+    double corotationScale{1.0};
+
+    // Volland-Stern-type shielded convection potential parameters. The exact
+    // volumetric extension used by the 3D initializer is documented in
+    // srcEarth/3d/ElectricField.cpp.
+    double vsPotential_kV{60.0};
+    double vsGamma{2.0};
+    double vsReferenceL{10.0};
+    double vsScale{1.0};
+
+    // Numerical guards used by the volumetric initializer.
+    double rMin_km{20.0};
+    double lMin{1.0e-3};
+
+    std::map<std::string,std::string> raw;
+  };
+
   struct OutputDomain {
     // OUTPUT_MODE: "POINTS" or "SHELLS".
     std::string mode{"POINTS"};
@@ -264,6 +294,7 @@ namespace EarthUtil {
     DensitySpectrumParam densitySpectrum;
     Species species;
     BackgroundField field;
+    ElectricField efield;
     DomainBox domain;
     OutputDomain output;
     Numerical numerics;

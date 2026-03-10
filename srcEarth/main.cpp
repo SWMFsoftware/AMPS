@@ -38,6 +38,7 @@
 #include "gridless/CutoffRigidityGridless.h"
 #include "gridless/DensityGridless.h"
 #include "gridless/GridlessParticleMovers.h"
+#include "3d/Mode3D.h"
 
 int nZenithElements=200;
 int nAzimuthalElements=200;
@@ -1514,8 +1515,17 @@ int main(int argc,char **argv) {
 
         throw std::runtime_error("Unsupported CALC_TARGET for -mode gridless: '"+p.calc.target+"'");
       }
+      if (m=="3D") {
+        if (cli.inputFile.empty()) {
+          std::cerr << "Error: -mode 3d requires -i <input-file>\n";
+          std::cerr << EarthUtil::HelpMessage(argv[0]);
+          return 1;
+        }
+        EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
+        return Earth::Mode3D::Run(p);
+      }
 
-      // "3d" and other values are handled by the legacy path below.
+      // Other values are handled by the legacy path below.
     }
   }
   catch (std::exception& e) {

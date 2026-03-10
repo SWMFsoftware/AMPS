@@ -54,14 +54,14 @@ std::string HelpMessage(const char* progName) {
   out << "  " << progName << " -h\n";
   out << "  " << progName << " -mode gridless -i AMPS_PARAM.in\n";
   out << "  " << progName << " -mode gridless -i AMPS_PARAM.in -mover RK4\n";
-  out << "  " << progName << " -mode 3d      -i AMPS_PARAM.in   (reserved / legacy path)\n\n";
+  out << "  " << progName << " -mode 3d      -i AMPS_PARAM.in   (AMPS mesh + field initialization path)\n\n";
   out << "Options:\n";
   out << "  -h                 Print this help and exit\n";
   out << "  -mode 3d|gridless   Select solver backend\n";
   out << "  -i <file>           Input file in AMPS_PARAM format\n\n";
   out << "  -mover <name>       Select particle mover used for trajectory integration\n";
   out << "                     Supported (case-insensitive): BORIS | RK2 | RK4 | RK6\n";
-  out << "                     Default: BORIS\n";
+  out << "                     Default: RK4\n";
   out << "                     NOTE: When provided, this CLI option should override any\n";
   out << "                     mover selection specified in the input file.\n\n";
   out << "Outputs (gridless):\n";
