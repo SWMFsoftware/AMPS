@@ -22,9 +22,11 @@ FIELD_EVAL_METHOD      GRIDLESS
 ! Energy range and particle budget for backward-tracing cutoff search.
 #CUTOFF_RIGIDITY
 CUTOFF_EMIN            1.0          ! MeV/n
-CUTOFF_EMAX            1000.0       ! MeV/n
+CUTOFF_EMAX            20000.0       ! MeV/n
 CUTOFF_MAX_PARTICLES   500              ! per injection point
 CUTOFF_NENERGY         50               ! log-spaced energy bins
+CUTOFF_MAX_TRAJ_TIME   600               ! sec — max trajectory integration time
+CUTOFF_SAMPLING        ISOTROPIC           ! VERTICAL or ISOTROPIC
 
 
 #PARTICLE_SPECIES
@@ -68,10 +70,9 @@ SPEC_EMAX              1000.0       ! MeV/n
 #OUTPUT_DOMAIN
 OUTPUT_MODE            SHELLS
 FLUX_DT                1.0           ! min (trajectory cadence; ignored for POINTS/SHELLS)
-SHELL_COUNT            2                 ! number of shells
-SHELL_ALTS_KM          8000.0           ! km; one altitude per shell
-SHELL_ALTS_KM          9000.0           ! km; one altitude per shell
-SHELL_RES_DEG          60                 ! deg; angular resolution (lat/lon)
+SHELL_COUNT            1                 ! number of shells
+SHELL_ALTS_KM          400            ! km; one altitude per shell
+SHELL_RES_DEG          5                 ! deg; angular resolution (lat/lon)
 
 #OUTPUT_OPTIONS
 FLUX_TYPE              DIFFERENTIAL
