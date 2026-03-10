@@ -2309,6 +2309,8 @@ if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
     std::cout.flush();
   }
 
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+
   //----------------------------
   // MPI finalize (only if we initialized it here)
   //----------------------------
