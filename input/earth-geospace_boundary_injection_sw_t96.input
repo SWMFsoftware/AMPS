@@ -241,7 +241,7 @@ MoverIntegratorMode=Boris-relativistic
   SPICE=on !!!!off!, off
   SpiceKernels="NAIF/NAIF0011.TLS", "NAIF/pck00010.tpc", \\
                "NAIF/DE405.BSP", \\
-               "OTHER/GSE.tf", "OTHER/GSM.tf", "OTHER/SM.tf"  
+               "OTHER/GSE.tf", "OTHER/GSM.tf", "OTHER/SM.tf", "OTHER/earth_assoc_itrf93.tf", "OTHER/earth_latest_high_prec.bpc"  
 
   SurfaceDataStructure=SurfaceDataStructure.h
 
