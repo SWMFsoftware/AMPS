@@ -165,129 +165,41 @@ static inline V3 Apply(const Mat3& R, const V3& v) {
 // Returns a rotation matrix that maps vectors from `fromFrame` to `toFrame`.
 // The matrix is time-dependent; we use prm.field.epoch (a SPICE-parsable time string).
 //
-// IMPORTANT ASSUMPTION FOR THIS IMPLEMENTATION:
-//   Per user request, SPICE is assumed to be available and properly initialized.
-//   Therefore, unlike some older revisions that silently fell back to identity on
-//   transform failure, this helper now treats missing / failed transforms as a hard
-//   runtime error.  This is safer for cutoff-rigidity studies because a silent frame
-//   mistake can produce physically plausible-looking but incorrect maps.
+// Behavior when SPICE is not available or the transform fails:
+//   - ok=false
+//   - returns identity (so the program can still run, but the labeled frame is not real)
 //
 // NOTE:
-//   This helper is used for frame-consistent geometry reconstruction and for
-//   direction-labeling / sampling maps. The particle tracing itself still remains in
-//   GSM because the external field models (T96/T05) are defined in GSM.
-static inline Mat3 GetSpiceRotationOrThrow(const char* fromFrame,
-                                           const char* toFrame,
-                                           const std::string& epoch) {
+//   This helper is used ONLY for direction labeling / sampling maps. The physics tracing
+//   remains in GSM.
+static inline Mat3 GetSpiceRotationOrIdentity(const char* fromFrame,
+                                              const char* toFrame,
+                                              const std::string& epoch,
+                                              bool& ok) {
+  ok = false;
   Mat3 R = Identity3();
 
 #ifndef _NO_SPICE_CALLS_
-  SpiceDouble et = 0.0;
-  str2et_c(epoch.c_str(), &et);
+  try {
+    SpiceDouble et = 0.0;
+    str2et_c(epoch.c_str(), &et);
 
-  SpiceDouble m[3][3];
-  pxform_c(fromFrame, toFrame, et, m);
+    SpiceDouble m[3][3];
+    pxform_c(fromFrame, toFrame, et, m);
 
-  for (int i=0;i<3;i++) for (int j=0;j<3;j++) R.a[i][j] = m[i][j];
+    for (int i=0;i<3;i++) for (int j=0;j<3;j++) R.a[i][j] = m[i][j];
+    ok = true;
+  }
+  catch (...) {
+    // CSPICE is C, but some builds may still throw through wrappers; keep this as
+    // a defensive guard. If it fails we fall back to identity.
+    ok = false;
+  }
 #else
   (void)fromFrame; (void)toFrame; (void)epoch;
-  throw std::runtime_error("SPICE support is required for cutoff-rigidity frame transforms, but the code was compiled with _NO_SPICE_CALLS_.");
 #endif
 
   return R;
-}
-
-//--------------------------------------------------------------------------------------
-// SHELL NODE COORDINATE RECONSTRUCTION: (lon,lat,alt) -> GSM Cartesian [m]
-//--------------------------------------------------------------------------------------
-// WHY THIS HELPER EXISTS
-// ----------------------
-// The solver supports OUTPUT_MODE=SHELLS, where user-facing locations are given by a
-// shell altitude plus a lon/lat sampling on that shell.  Multiple parts of the code
-// need the Cartesian location of each shell node:
-//   1) the actual trajectory tracing start point,
-//   2) diagnostic / benchmark Tecplot writers,
-//   3) any future validation output that wants the "real" GSM coordinates.
-//
-// Historically these pieces were not using exactly the same construction path:
-//   - LocationToX0m() converted shell lon/lat/alt into an Earth-fixed vector and then
-//     rotated that vector from ITRF93 to GSM using SPICE.
-//   - WriteTecplotShells_DipoleAnalyticCompare() exported x_km,y_km,z_km using a plain
-//     spherical lon/lat formula without applying the same ITRF93->GSM rotation.
-//
-// That meant the coordinates written to the diagnostic file were NOT necessarily the
-// coordinates that were actually used when tracing the particle.  This helper removes
-// that inconsistency by centralizing the conversion.  After this change:
-//   - the tracer and
-//   - the shell comparison Tecplot writer
-// both call the exact same routine.
-//
-// FRAME CONVENTION
-// ----------------
-// We interpret SHELLS lon/lat as an Earth-fixed geographic-style parameterization of a
-// spherical shell, form the corresponding Cartesian vector in ITRF93, and then rotate
-// it into GSM at the run epoch using SPICE pxform("ITRF93","GSM",...).
-//
-// USER REQUEST / ASSUMPTION
-// -------------------------
-// Per the current request, assume SPICE is available.  We therefore intentionally use
-// the SPICE transform directly and do not build an alternate non-SPICE path here.
-//--------------------------------------------------------------------------------------
-static inline V3 ShellLonLatAltToX_GSM_m(double lon_deg,
-                                         double lat_deg,
-                                         double alt_km,
-                                         const std::string& epoch,
-                                         const std::string& fieldModel) {
-  const double lon = lon_deg * M_PI/180.0;
-  const double lat = lat_deg * M_PI/180.0;
-  const double r_m = _RADIUS_(_EARTH_) + alt_km*1000.0;
-
-  // Cartesian position associated with the shell node before any frame conversion.
-  //
-  // INTERPRETATION OF THE INPUT SHELL GRID:
-  //   The shell generator defines nodes through longitude/latitude on a sphere of
-  //   radius Re + altitude.  The formulas below therefore construct the usual
-  //   Cartesian vector corresponding to that spherical parameterization.
-  //
-  // MODEL-DEPENDENT CONVENTION:
-  //   * For the pure DIPOLE model, the user asked that we DO NOT rotate shell nodes
-  //     into GSM.  In that special case we use the vector below directly as the model
-  //     position.  This preserves the original lon/lat-defined location exactly,
-  //     without any epoch-dependent SPICE transformation.
-  //   * For all other field models (T96, T05, etc.), the shell grid is interpreted as
-  //     Earth-fixed and then rotated into GSM at the run epoch, because those external
-  //     field models are evaluated in GSM.
-  const V3 x_from_lonlat{
-    r_m * std::cos(lat) * std::cos(lon),
-    r_m * std::cos(lat) * std::sin(lon),
-    r_m * std::sin(lat)
-  };
-
-  // IMPORTANT SPECIAL CASE FOR THE DIPOLE BENCHMARK / VALIDATION MODE:
-  //   Do not apply any frame rotation.  The dipole-only problem should use the shell
-  //   locations exactly as generated from lon/lat, with no epoch dependence and no
-  //   reinterpretation in GSM.
-  if (EarthUtil::ToUpper(fieldModel) == "DIPOLE") {
-    return x_from_lonlat;
-  }
-
-  // For non-dipole models, rotate the Earth-fixed shell node into GSM.
-  //
-  // Cache the epoch-specific rotation so repeated shell-node evaluations do not keep
-  // reparsing the same time string or recomputing the same frame transform.
-  //
-  // IMPORTANT:
-  //   This function may be called many times inside the scheduler and also later by
-  //   Tecplot writers.  Caching here keeps all call sites simple while still avoiding
-  //   needless SPICE overhead.
-  static std::string cachedEpoch;
-  static Mat3 R_itrf2gsm = Identity3();
-  if (cachedEpoch != epoch) {
-    R_itrf2gsm = GetSpiceRotationOrThrow("ITRF93","GSM",epoch);
-    cachedEpoch = epoch;
-  }
-
-  return Apply(R_itrf2gsm, x_from_lonlat);
 }
 
 static inline double MomentumFromKineticEnergy_MeV(double E_MeV,double m0_kg) {
@@ -1007,8 +919,7 @@ static void WriteTecplotPoints(const std::vector<EarthUtil::Vec3>& points,
 // dipole axis m_hat used by DipoleInterface:
 //   sin(λ) = m_hat · r_hat
 //
-// The moment scaling is already built into StormerVerticalCoeff_GV(...), so the
-// final Størmer expression below must NOT multiply by DIPOLE_MOMENT again.
+// We also scale the constant linearly with DIPOLE_MOMENT (multiples of M_E).
 //
 // This provides a simple analytic benchmark to compare against the numerically
 // evaluated cutoff (which may include directional averaging/search).
@@ -1042,7 +953,7 @@ static void WriteTecplotPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam&
     const double cosLam = std::sqrt(std::max(0.0, 1.0 - sinLam*sinLam));
     const double rRe = r_m/_EARTH__RADIUS_;
 
-    const double Rc_vert = R0 * std::pow(cosLam,4) / (rRe*rRe);
+    const double Rc_vert = R0 * prm.field.dipoleMoment_Me * std::pow(cosLam,4) / (rRe*rRe);
     const double Rc_num = Rc_num_GV[i];
 
     const double rel = (Rc_vert>0.0 && Rc_num>0.0) ? (Rc_num-Rc_vert)/Rc_vert : 0.0;
@@ -1103,12 +1014,9 @@ static void WriteTecplotShells(const std::vector<double>& shellAlt_km,
 //
 // VARIABLES (per node):
 //   lon_deg, lat_deg : shell grid coordinates (degrees) matching cutoff_gridless_shells.dat
-//   x_km,y_km,z_km    : Cartesian location of the shell node in the solver coordinate system.
-//                      IMPORTANT: these coordinates are now generated by the SAME helper that
-//                      reconstructs shell start positions for tracing, i.e. shell lon/lat are
-//                      first interpreted in Earth-fixed ITRF93 and then rotated into GSM using
-//                      SPICE at the requested epoch.  Therefore the exported coordinates match
-//                      the actual traced location exactly.
+//   x_km,y_km,z_km    : Cartesian location of the shell node in the solver coordinate system
+//                      (currently interpreted as GSM; for DIPOLE nightly tests this matches
+//                      the analytic dipole frame used by DipoleInterface).
 //   Rc_num_GV         : numerically computed cutoff rigidity (what the solver produced)
 //   Rc_vert_GV        : analytic vertical Størmer cutoff approximation for a dipole
 //   rel_err           : (Rc_num - Rc_vert)/Rc_vert
@@ -1161,36 +1069,21 @@ static void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam&
         const double clon = std::cos(lon);
         const double slon = std::sin(lon);
 
-        // Cartesian position of the shell node ACTUALLY used by the solver.
-        //
-        // Historical bug fixed here:
-        //   older code wrote (x,y,z) as if shell lon/lat were already GSM spherical
-        //   coordinates.  That was inconsistent with LocationToX0m(), which first built
-        //   an Earth-fixed position and then rotated it into GSM via SPICE.
-        //
-        // By using the shared helper below, the exported coordinates in the compare file
-        // exactly match the coordinates that were traced when computing Rc_num.
-        const V3 x_gsm_m = ShellLonLatAltToX_GSM_m(lon_deg, lat_deg, alt_km, prm.field.epoch, prm.field.model);
-        const double x_km = x_gsm_m.x/1000.0;
-        const double y_km = x_gsm_m.y/1000.0;
-        const double z_km = x_gsm_m.z/1000.0;
+        // Cartesian position (km) consistent with shell writer:
+        const double x_km = (r_m*clat*clon)/1000.0;
+        const double y_km = (r_m*clat*slon)/1000.0;
+        const double z_km = (r_m*slat)/1000.0;
 
-        // Compute magnetic latitude with respect to the dipole axis m_hat used by
-        // DipoleInterface.
-        //
-        // IMPORTANT:
-        //   The analytic Størmer reference must be evaluated at the SAME physical point as
-        //   the numerical tracing.  Therefore r_hat is taken from x_gsm_m rather than from
-        //   the unrotated spherical shell geometry.
-        const double rhatx = x_gsm_m.x/r_m;
-        const double rhaty = x_gsm_m.y/r_m;
-        const double rhatz = x_gsm_m.z/r_m;
+        // Compute magnetic latitude with respect to the dipole axis m_hat used by DipoleInterface.
+        const double rhatx = clat*clon;
+        const double rhaty = clat*slon;
+        const double rhatz = slat;
 
         const double sinLam = mx*rhatx + my*rhaty + mz*rhatz;
         const double cosLam = std::sqrt(std::max(0.0, 1.0 - sinLam*sinLam));
         const double rRe = r_m/_EARTH__RADIUS_;
 
-        const double Rc_vert = R0 * std::pow(cosLam,4) / (rRe*rRe);
+        const double Rc_vert = R0 * prm.field.dipoleMoment_Me * std::pow(cosLam,4) / (rRe*rRe);
 
         const int k=i+nLon*j;
         const double Rc_num = RcShell[s][(size_t)k];
@@ -1219,8 +1112,7 @@ static void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam&
 // Historical note (kept):
 //   Earlier versions used a *local GSM-like ENU* sky coordinate system centered
 //   on the injection point (BuildLocalENU_GSM / LocalLonLatToDir_GSM). That legacy
-//   mapping is still present in the source as a reference only; the active code path
-//   now uses a global SM spherical direction grid in both serial and MPI execution.
+//   mapping is still present in the source as a reference/fallback.
 //
 // Lon/Lat meaning here is explicitly *directional* (arrival direction), in SM:
 //   - lon_deg: global spherical longitude in SM (atan2(dy,dx)), [0,360)
@@ -1439,6 +1331,19 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     // Backtrace convention: initial velocity points opposite to the desired arrival direction.
     const V3 v0 = mul(-1.0, dir_unit);
 
+    // Degenerate / already-collapsed bracket protection.
+    //
+    // This can happen after the new per-location upper-bound optimization has
+    // tightened the search interval for later directions of the same location.
+    // If the available interval is already essentially zero, we do not need a full
+    // bisection search any more.
+    const double intervalTolAbs_GV = 1.0e-3;
+    const double intervalTolRel    = 1.0e-6;
+    const double intervalTol_GV = std::max(intervalTolAbs_GV,
+                                           intervalTolRel*std::max(std::fabs(Rmin_GV), std::fabs(Rmax_GV)));
+
+    if (Rmax_GV < Rmin_GV) return -1.0;
+
     // Quick endpoint classification:
     const bool alo = TraceAllowedImpl(prm,field,x0_m,v0,Rmin_GV,-1.0);
     const bool ahi = TraceAllowedImpl(prm,field,x0_m,v0,Rmax_GV,-1.0);
@@ -1450,10 +1355,23 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     if (!ahi) return -1.0;
 
     // Otherwise: bracket exists (forbidden at Rmin, allowed at Rmax). Refine by bisection.
+    //
+    // UPDATED per request:
+    //   The stopping criterion is no longer a fixed total number of iterations.
+    //   Instead, we stop when the current uncertainty interval [lo,hi] becomes
+    //   sufficiently small in rigidity space.
+    //
+    // Why this is better:
+    //   - It ties the termination directly to the quantity of interest, namely the
+    //     uncertainty of the cutoff rigidity.
+    //   - If the bracket has already been reduced by the per-location optimization,
+    //     the search will naturally terminate sooner.
+    //   - If the user requests a very large initial energy / rigidity range, we no
+    //     longer spend a hardwired number of iterations regardless of the actual
+    //     width remaining.
     double lo=Rmin_GV, hi=Rmax_GV;
-    const int maxIter=24; // keep identical to serial behavior for reproducibility
 
-    for (int it=0; it<maxIter; it++) {
+    while ((hi - lo) > intervalTol_GV) {
       const double mid=0.5*(lo+hi);
       const bool a = TraceAllowedImpl(prm,field,x0_m,v0,mid,-1.0);
       if (a) hi=mid; else lo=mid;
@@ -1555,15 +1473,25 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   //   This matches common literature plots where the Earth-shadow for a point on
   //   +X (sunward) appears around lon~180, lat~0.
   //
-  // IMPORTANT IMPLEMENTATION CHOICE:
-  //   Per the current request, SPICE is assumed to be available.  Therefore the
-  //   SM->GSM rotation is treated as required infrastructure and obtained through
-  //   GetSpiceRotationOrThrow(...).  We intentionally do NOT allow a silent identity
-  //   fallback here, because that would relabel the directional map without making
-  //   the physics error obvious to the user.
+  // FALLBACK BEHAVIOR:
+  //   If SPICE is not enabled or the SM->GSM transform is not available, we fall
+  //   back to identity. In that case the map is effectively labeled in GSM but
+  //   still written as lon/lat.
   //----------------------------------------------------------------------------------
-  const Mat3 R_sm2gsm = doDirMap ? GetSpiceRotationOrThrow("SM","GSM",prm.field.epoch)
+  bool spice_ok_sm2gsm = false;
+  const Mat3 R_sm2gsm = doDirMap ? GetSpiceRotationOrIdentity("SM","GSM",prm.field.epoch,spice_ok_sm2gsm)
                                  : Identity3();
+
+  // Inform the user early if SPICE transforms are not active.
+  // We keep this as a WARNING (not a hard error) because some development
+  // environments may compile without CSPICE. In that case the map still
+  // computes, but lon/lat are effectively interpreted in GSM.
+  if (mpiRank==0 && doDirMap && !spice_ok_sm2gsm) {
+    std::cout << "[gridless][warning] SPICE SM->GSM transform not available. "
+              << "Directional maps will fall back to identity (SM treated as GSM). "
+              << "Enable AMPS_USE_SPICE and furnish kernels defining frames SM and GSM.\n";
+    std::cout.flush();
+  }
 
   //====================================================================================
   // MASTER/WORKER message protocol
@@ -1588,7 +1516,35 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   //   idx  :
   //          - TASK_SAMPLING: dirId (ignored for VERTICAL)
   //          - TASK_DIRMAP  : cellId on the lon/lat grid
-  struct TaskMsg { int type; int loc; int idx; };
+  struct TaskMsg {
+    int type;   // TASK_SAMPLING or TASK_DIRMAP
+    int loc;    // flattened location index
+    int idx;    // direction index or map-cell index, depending on type
+
+    // Rigidity search bracket carried with the task.
+    //
+    // Why this is useful:
+    //   For the primary cutoff result in ISOTROPIC mode, the final answer for a
+    //   given location is the MINIMUM cutoff over all sampled directions. Once we
+    //   have already found one allowed direction with cutoff Rc_found, there is no
+    //   reason to search any *later* direction above Rc_found, because even if that
+    //   direction is allowed only at higher rigidity it cannot lower the location's
+    //   final minimum cutoff.
+    //
+    // Therefore, rank 0 can shrink the upper bound of the rigidity search for
+    // later sampling directions of the SAME location before dispatching them to
+    // workers. This is a pure optimization: it does not change the mathematical
+    // definition of the location cutoff, it only avoids unnecessary high-rigidity
+    // trace calls.
+    //
+    // IMPORTANT:
+    //   This optimization is applied ONLY to the primary sampling tasks used to
+    //   compute the final location cutoff. It is NOT applied to directional-map
+    //   tasks, because a directional map needs the cutoff of EACH direction on its
+    //   own, not the minimum over all directions.
+    double rLo_GV;
+    double rHi_GV;
+  };
 
   // Result message mirrors task identification so the master can reduce/store.
   struct ResultMsg { int type; int loc; int idx; double rc; };
@@ -1713,8 +1669,15 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
   //
   // IMPORTANT: This matches your current "meaningful results" conventions:
   //   - POINTS are interpreted as GSM kilometers in the input file.
-  //   - SHELLS nodes are defined by lon/lat/alt on an Earth-fixed spherical shell and
-  //     then rotated into GSM at the run epoch using SPICE for external-field models; for the pure DIPOLE model no rotation is applied.
+  //   - SHELLS positions are parameterized by lon/lat/alt on a spherical Earth.
+  //     For external-field models (for example T96/T05), those positions are then
+  //     rotated from Earth-fixed coordinates into GSM using the epoch-dependent
+  //     SPICE transform.
+  //   - Special case requested by user: if FIELD_MODEL == DIPOLE, DO NOT rotate
+  //     shell positions into GSM. In that case the lon/lat-derived Cartesian point
+  //     is used directly. This preserves the simple analytic dipole geometry and
+  //     avoids introducing a frame rotation into a model that is intended to be
+  //     interpreted in that same lon/lat-defined spherical frame.
   //====================================================================================
   auto LocationToX0m = [&](int locationId) -> V3 {
     if (isPoints) {
@@ -1734,13 +1697,47 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
     if (lat > 90.0) lat = 90.0;
 
     const double alt_km = prm.output.shellAlt_km[(size_t)s];
+    const double r_m = (_RADIUS_(_EARTH_) + alt_km*1000.0);
 
-    // IMPORTANT CONSISTENCY FIX:
-    //   ShellLonLatAltToX_GSM_m() is now the single authoritative conversion from a
-    //   shell node (lon,lat,alt) to the GSM Cartesian position used by the solver.
-    //   By routing LocationToX0m() through that helper, the particle tracer and all
-    //   shell diagnostic writers are guaranteed to refer to the same physical point.
-    return ShellLonLatAltToX_GSM_m(lon, lat, alt_km, prm.field.epoch, prm.field.model);
+    const double lonRad = lon*M_PI/180.0;
+    const double latRad = lat*M_PI/180.0;
+    const double cl = std::cos(latRad);
+
+    // Cartesian point generated directly from the requested shell lon/lat/alt.
+    // This is the geometry the user has in mind when defining the shell grid.
+    const V3 xShellCartesian = { r_m*cl*std::cos(lonRad), r_m*cl*std::sin(lonRad), r_m*std::sin(latRad) };
+
+    // User-requested special case:
+    //   In pure DIPOLE mode, do NOT rotate the shell point into GSM.
+    //   We keep the point exactly as determined from lon/lat on the sphere.
+    //   This is desirable for idealized dipole studies, where lon/lat are intended
+    //   to define the analysis location directly rather than through a time-dependent
+    //   Earth-fixed -> GSM transformation.
+    if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
+      return xShellCartesian;
+    }
+
+    // External field models (for example T96/T05) are evaluated in GSM. For those
+    // models we rotate the Earth-fixed shell location into GSM using the run epoch.
+    //
+    // Assumption (explicitly requested): SPICE is always available in the intended
+    // execution environment, so we do not add fallback logic here.
+    SpiceDouble xGEO[3]={ xShellCartesian.x, xShellCartesian.y, xShellCartesian.z };
+    static std::string epoch="";
+    static SpiceDouble rot[3][3];
+
+    if (epoch!=prm.field.epoch) {
+      epoch=prm.field.epoch;
+
+      SpiceDouble et;
+      str2et_c(prm.field.epoch.c_str(), &et);
+      pxform_c("ITRF93", "GSM", et, rot);
+    }
+
+    SpiceDouble xGSM[3];
+    mxv_c(rot, xGEO, xGSM);
+
+    return {xGSM[0],xGSM[1],xGSM[2]};
   };
 
   //====================================================================================
@@ -1838,7 +1835,7 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
           dir = dirs[(size_t)task.idx];
         }
 
-        rc = CutoffForDirection_GV(x0_m, dir, Rmin, Rmax);
+        rc = CutoffForDirection_GV(x0_m, dir, task.rLo_GV, task.rHi_GV);
       }
       else if (task.type == TASK_DIRMAP) {
         // Directional sky-map cell.
@@ -1891,7 +1888,7 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
         const V3 dir_gsm = unit(Apply(R_sm2gsm, dir_sm));
 
         // Compute cutoff for this arrival direction (in GSM).
-        rc = CutoffForDirection_GV(x0_m, dir_gsm, Rmin, Rmax);
+        rc = CutoffForDirection_GV(x0_m, dir_gsm, task.rLo_GV, task.rHi_GV);
       }
 
       ResultMsg res{ task.type, task.loc, task.idx, rc };
@@ -1923,7 +1920,19 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
             dir = dirs[(size_t)dId];
           }
 
-          const double rc = CutoffForDirection_GV(x0_m, dir, Rmin, Rmax);
+          // Optimization requested by user:
+          //   When multiple directions are searched for the SAME location, use the
+          //   best cutoff already found at that location as the upper bound for all
+          //   later directions. Since the final isotropic cutoff is the MINIMUM over
+          //   directions, later directions cannot improve the location cutoff above
+          //   the current minimum, so searching beyond that value is unnecessary.
+          //
+          // This optimization is relevant only to the primary sampling directions.
+          // It must NOT be applied to the optional directional map, because the map
+          // needs each direction's own cutoff, not the minimum over all directions.
+          const double rHiThis_GV = (!samplingVertical && rcMin>0.0) ? std::min(Rmax, rcMin) : Rmax;
+
+          const double rc = CutoffForDirection_GV(x0_m, dir, Rmin, rHiThis_GV);
           if (rc>0.0) rcMin = (rcMin<0.0) ? rc : std::min(rcMin, rc);
         }
 
@@ -1936,24 +1945,9 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
         // Optional directional sky-map (POINTS only).
         if (doDirMap) {
           const int pointId = loc;
+          const LocalENUFrame fr = BuildLocalENU_GSM(x0_m);
+          (void)fr; // silence unused warning in case doDirMap is compiled out later
 
-          // IMPORTANT CONSISTENCY FIX:
-          //   The MPI worker path already defines directional-map cells in the global
-          //   SM frame and then rotates those directions into GSM before tracing.
-          //   Historically the serial fallback used an older point-centered local ENU
-          //   construction instead.  That made the directional map depend on mpiSize:
-          //   the same physical run could produce different maps in serial and in MPI.
-          //
-          //   To eliminate that discrepancy, the serial fallback now uses the exact
-          //   same directional construction as the MPI worker path:
-          //     1) build a unit direction from global SM lon/lat,
-          //     2) rotate SM -> GSM with the epoch-dependent SPICE matrix,
-          //     3) trace in GSM.
-          //
-          //   Keeping the mathematics identical here is important for reproducibility,
-          //   validation, and regression testing.  After this change, mpiSize==1 and
-          //   mpiSize>1 should generate the same directional-map values up to normal
-          //   floating-point noise.
           for (int cell=0; cell<nDirMapCells; cell++) {
             const int iLon = cell % nLonMap;
             const int jLat = cell / nLonMap;
@@ -1961,18 +1955,8 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
             double lat_deg = -90.0 + latRes_deg * jLat;
             if (lat_deg > 90.0) lat_deg = 90.0;
 
-            const double lon = lon_deg * M_PI/180.0;
-            const double lat = lat_deg * M_PI/180.0;
-            const double cl  = std::cos(lat);
-
-            const V3 dir_sm{
-              cl*std::cos(lon),
-              cl*std::sin(lon),
-              std::sin(lat)
-            };
-
-            const V3 dir_gsm = unit(Apply(R_sm2gsm, dir_sm));
-            const double rc = CutoffForDirection_GV(x0_m, dir_gsm, Rmin, Rmax);
+            const V3 dirMap = LocalLonLatToDir_GSM(BuildLocalENU_GSM(x0_m), lon_deg, lat_deg);
+            const double rc = CutoffForDirection_GV(x0_m, dirMap, Rmin, Rmax);
             RcDirMap[(size_t)pointId*(size_t)nDirMapCells + (size_t)cell] = rc;
           }
         }
@@ -1993,14 +1977,37 @@ auto DecodeTask = [&](long long taskId) -> TaskMsg {
   if (taskId < totalSamplingTasks) {
     const int loc = (int)(taskId / nDirSampling);
     const int idx = (int)(taskId - (long long)loc*nDirSampling);
-    return TaskMsg{ TASK_SAMPLING, loc, idx };
+
+    // Default rigidity bracket for a primary sampling task.
+    double rLoTask_GV = Rmin;
+    double rHiTask_GV = Rmax;
+
+    // Optimization requested by user:
+    //   For multiple primary sampling directions at the same location, use the
+    //   currently known minimum cutoff at that location as the upper bound for
+    //   any later directions that have not yet been dispatched.
+    //
+    // This works because the final isotropic cutoff is the MINIMUM over sampled
+    // directions. Once a direction with cutoff Rc_found has already been found,
+    // searching another direction above Rc_found cannot improve the final answer.
+    //
+    // IMPORTANT:
+    //   This optimization is intentionally limited to the primary sampling tasks.
+    //   Directional sky-map tasks must keep their full bracket because they need
+    //   the cutoff of EACH individual direction, not the minimum over directions.
+    if (mpiRank==0 && !samplingVertical && !RcMin.empty()) {
+      const double cur = RcMin[(size_t)loc];
+      if (cur > 0.0) rHiTask_GV = std::min(rHiTask_GV, cur);
+    }
+
+    return TaskMsg{ TASK_SAMPLING, loc, idx, rLoTask_GV, rHiTask_GV };
   }
 
   // Directional sky-map tasks start after sampling tasks.
   const long long rem = taskId - totalSamplingTasks;
   const int pointId = (int)(rem / nDirMapCells);
   const int cellId  = (int)(rem - (long long)pointId*nDirMapCells);
-  return TaskMsg{ TASK_DIRMAP, pointId, cellId };
+  return TaskMsg{ TASK_DIRMAP, pointId, cellId, Rmin, Rmax };
 };
 
 //----------------------------------------------------------------------------------
@@ -2088,7 +2095,7 @@ if (!isPoints) locDonePerShell.assign((size_t)nShells, 0);
         nextTask++;
       } else {
         // No more tasks left -> stop this worker.
-        TaskMsg stopMsg{ -1, -1, -1 };
+        TaskMsg stopMsg{ -1, -1, -1, 0.0, 0.0 };
         MPI_Send(&stopMsg, (int)sizeof(TaskMsg), MPI_BYTE, st.MPI_SOURCE, TAG_STOP, MPI_COMM_WORLD);
       }
     }
@@ -2098,7 +2105,7 @@ if (!isPoints) locDonePerShell.assign((size_t)nShells, 0);
     for (int w=1; w<mpiSize; w++) {
       // We attempt a nonblocking "probe" for safety; if a worker is still waiting,
       // it will receive the stop message. If it already exited, the message is harmless.
-      TaskMsg stopMsg{ -1, -1, -1 };
+      TaskMsg stopMsg{ -1, -1, -1, 0.0, 0.0 };
       MPI_Send(&stopMsg, (int)sizeof(TaskMsg), MPI_BYTE, w, TAG_STOP, MPI_COMM_WORLD);
     }
 
@@ -2216,8 +2223,7 @@ if (!isPoints) locDonePerShell.assign((size_t)nShells, 0);
       //
       // Historical note (kept): older revisions used a local GSM-like ENU frame
       // centered on each point (see BuildLocalENU_GSM / LocalLonLatToDir_GSM).
-      // That mapping is still present in the file as a reference only; both the serial
-      // and MPI code paths now use the same global SM spherical direction grid.
+      // That mapping is still present in the file as a reference/fallback.
       //
       // IMPORTANT:
       //   The maps are computed in parallel by MPI tasks and stored in RcDirMap.

@@ -20,10 +20,8 @@
 // MPI / LOAD BALANCING DESIGN
 //   Orbit tracing cost varies significantly between locations and directions.
 //   To handle this efficiently in parallel runs, the implementation uses a
-//   dynamic master/worker schedule at the trajectory-task level
-//   ((location_id, direction_id), plus optional directional-map cells). This avoids the
-//   poor utilization that often occurs with static block decomposition when trajectory
-//   runtimes vary strongly.
+//   dynamic master/worker schedule (one location per task). This avoids the
+//   poor utilization that often occurs with static block decomposition.
 //
 // INPUT/OUTPUT CONTRACT (through EarthUtil::AmpsParam)
 //   Input (parser-normalized):
