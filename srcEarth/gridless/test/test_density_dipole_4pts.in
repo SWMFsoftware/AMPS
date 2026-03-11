@@ -92,9 +92,11 @@
   !   J_REFERENCE instead of J0
   !
   SPECTRUM_TYPE      POWER_LAW
-  J0                 10000.0   ! m^-2 s^-1 sr^-1 MeV^-1  (= 1 cm^-2 s^-1 sr^-1 MeV^-1)
-  E0_MEV             100.0     ! MeV  reference energy
-  GAMMA              2.0       ! spectral index (J proportional to E^-GAMMA)
+  SPEC_J0                1.00e+4   ! p/cm2/s/sr/(MeV/n)
+  SPEC_GAMMA             3.50         ! spectral index
+  SPEC_E0                10.0          ! MeV/n pivot
+  SPEC_EMIN              1.0          ! MeV/n
+  SPEC_EMAX              20000.0       ! MeV/n
 
 #NUMERICAL
   DT_TRACE           0.5       ! s — initial time step for particle integration
@@ -107,8 +109,8 @@
   POINTS_BEGIN
   !  X_km        Y_km    Z_km     Description
   !  -------     ------  -----    -----------------------------------------------
-    50969.6      0.0     0.0      ! TC1: 8 Re equator  — above-cutoff free space
-        0.0      0.0  31856.0     ! TC2: 5 Re pole     — magnetic pole, Rc=0
-    38227.2      0.0     0.0      ! TC3: 6 Re equator  — above-cutoff, closer-in
-    12742.4      0.0     0.0      ! TC4: 2 Re equator  — deep Størmer shielding
+  POINT  50969.6      0.0     0.0      ! TC1: 8 Re equator  — above-cutoff free space
+  POINT      0.0      0.0  31856.0     ! TC2: 5 Re pole     — magnetic pole, Rc=0
+  POINT  38227.2      0.0     0.0      ! TC3: 6 Re equator  — above-cutoff, closer-in
+  POINT  12742.4      0.0     0.0      ! TC4: 2 Re equator  — deep Størmer shielding
   POINTS_END

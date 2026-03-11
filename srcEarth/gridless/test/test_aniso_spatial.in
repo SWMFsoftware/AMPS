@@ -44,10 +44,21 @@
   DS_ENERGY_SPACING  LOG
 
 #SPECTRUM
+  ! Power-law differential intensity: J_b(E) = J0 * (E/E0)^(-GAMMA)
+  ! Units as registered by the solver: J0 in m^-2 s^-1 sr^-1 MeV^-1
+  !
+  ! IMPORTANT: Verify that these key names match your spectrum.h
+  ! InitGlobalSpectrumFromKeyValueMap() implementation. Common alternatives:
+  !   SPECTRAL_INDEX instead of GAMMA
+  !   E_REFERENCE instead of E0_MEV
+  !   J_REFERENCE instead of J0
+  !
   SPECTRUM_TYPE      POWER_LAW
-  J0                 10000.0   ! m^-2 s^-1 sr^-1 MeV^-1
-  E0_MEV             100.0
-  GAMMA              2.0
+  SPEC_J0                1.00e+4   ! p/cm2/s/sr/(MeV/n)
+  SPEC_GAMMA             3.50         ! spectral index
+  SPEC_E0                10.0          ! MeV/n pivot
+  SPEC_EMIN              1.0          ! MeV/n
+  SPEC_EMAX              20000.0       ! MeV/n
 
 #NUMERICAL
   DT_TRACE           0.5
@@ -67,5 +78,5 @@
   OUTPUT_MODE   POINTS
   POINTS_BEGIN
   !  X_km         Y_km      Z_km      Description
-        0.0   50969.6       0.0       ! TC-DUSK: 8 Re dusk meridian (GSM Y-axis)
+  POINT      0.0   50969.6       0.0       ! TC-DUSK: 8 Re dusk meridian (GSM Y-axis)
   POINTS_END
