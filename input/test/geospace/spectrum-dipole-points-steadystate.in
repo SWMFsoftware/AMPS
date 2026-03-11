@@ -23,7 +23,7 @@ FIELD_EVAL_METHOD      GRIDLESS
 ! Backward-trace energy grid + boundary spectrum folding.
 #DENSITY_SPECTRUM
 DS_EMIN                1.0          ! MeV/n
-DS_EMAX                1000.0       ! MeV/n
+DS_EMAX                20000.0       ! MeV/n
 DS_NINTERVALS          50               ! energy intervals
 DS_MAX_PARTICLES       500              ! per observation point
 DS_MAX_TRAJ_TIME       60               ! sec — max trajectory integration time
@@ -60,7 +60,7 @@ SPEC_J0                1.00e+4   ! p/cm2/s/sr/(MeV/n)
 SPEC_GAMMA             3.50         ! spectral index
 SPEC_E0                10.0          ! MeV/n pivot
 SPEC_EMIN              1.0          ! MeV/n
-SPEC_EMAX              1000.0       ! MeV/n
+SPEC_EMAX              20000.0       ! MeV/n
 
 #OUTPUT_DOMAIN
 OUTPUT_MODE            POINTS
