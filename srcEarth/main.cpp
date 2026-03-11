@@ -1507,10 +1507,16 @@ int main(int argc,char **argv) {
         // - DENSITY_SPECTRUM  : energy-grid transmissivity + density integration
         const std::string target = EarthUtil::ToUpper(p.calc.target);
         if (target=="CUTOFF_RIGIDITY") {
-          return Earth::GridlessMode::RunCutoffRigidity(p);
+          Earth::GridlessMode::RunCutoffRigidity(p);
+	  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+	  MPI_Finalize();
+	  return EXIT_SUCCESS;
         }
         if (target=="DENSITY_SPECTRUM") {
-          return Earth::GridlessMode::RunDensityAndSpectrum(p);
+          Earth::GridlessMode::RunDensityAndSpectrum(p);
+	  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+	  MPI_Finalize();
+          return EXIT_SUCCESS;
         }
 
         throw std::runtime_error("Unsupported CALC_TARGET for -mode gridless: '"+p.calc.target+"'");
@@ -1522,7 +1528,10 @@ int main(int argc,char **argv) {
           return 1;
         }
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
-        return Earth::Mode3D::Run(p);
+        Earth::Mode3D::Run(p);
+	MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+	MPI_Finalize();
+        return EXIT_SUCCESS;
       }
 
       // Other values are handled by the legacy path below.
