@@ -1,49 +1,163 @@
 //======================================================================================
 // amps_param_parser.h
 //======================================================================================
+//
 // PURPOSE
-//   Lightweight parser for the AMPS_PARAM.in style inputs produced by the CCMC
-//   Runs-on-Request interface for the Geospace energetic particle tools.
+// -------
+// Self-contained, dependency-free parser for the AMPS_PARAM.in format used by
+// the CCMC Runs-on-Request interface for the Geospace energetic particle tools.
+// Populates EarthUtil::AmpsParam from a text file; used by both the gridless
+// cutoff-rigidity solver and the gridless density/spectrum solver.
 //
-//   This parser is intentionally *self-contained* and does NOT depend on the legacy
-//   srcEarth/parser.cpp logic. The goal is to support a standalone "gridless" cutoff
-//   rigidity computation path that directly evaluates Tsyganenko field models (T96/T05)
-//   without requiring the full PIC runtime configuration.
+// DESIGN PRINCIPLES
+// -----------------
+//   (1) No PIC framework dependencies. This parser can be built and tested standalone.
+//   (2) Permissive: unknown keys are stored in a "raw" map rather than rejected.
+//   (3) Forward-compatible: new sections and keys can be added without breaking old runs.
+//   (4) Clear unit contract: all geometric lengths are expected in km from the caller;
+//       the parser documents this but does not enforce conversions (the solvers do).
 //
-// FILE FORMAT OVERVIEW
-//   The input examples provided by the user follow a simple sectioned format:
-//     - Sections begin with a token like "#RUN_INFO" on its own line.
-//     - Inside a section, each line is either:
-//         KEY   VALUE   [! comment]
-//       or a block delimiter:
-//         POINTS_BEGIN / POINTS_END
-//       or blank/comment lines.
-//     - Lines beginning with '!' or '#' (outside a section header) are treated
-//       as comments.
+//======================================================================================
+// INPUT FILE FORMAT
+//======================================================================================
 //
-//   The parser is permissive:
-//     - Unknown keys are stored into a "raw" map for later extension.
-//     - Numeric values are parsed with std::stod/std::stoi.
-//     - Boolean flags accept: T/F, TRUE/FALSE, 1/0.
+// The file is a sequence of named sections. Each section starts with a keyword line
+// beginning with '#'. Lines beginning with '!' outside a section header are comments.
+// Blank lines are ignored. Within a section, each non-blank, non-comment line is:
 //
-// WHAT THIS PARSER POPULATES
-//   The gridless cutoff solver currently needs only a subset of fields:
-//     - CALCULATION_MODE: FIELD_EVAL_METHOD (GRIDLESS vs GRID_3D)
-//     - CUTOFF_RIGIDITY: EMIN/EMAX, NENERGY, MAX_PARTICLES (future)
-//     - PARTICLE_SPECIES: charge and mass
-//     - BACKGROUND_FIELD: FIELD_MODEL (T96 or T05) + model parameters
-//     - DOMAIN_BOUNDARY: bounding box and inner loss sphere
-//     - OUTPUT_DOMAIN: POINTS or SHELLS definitions
-//     - NUMERICAL: DT_TRACE and (optionally) max steps/stop criteria
+//   KEY   VALUE   [! optional comment]
 //
-// EXTENSION NOTES
-//   The user intends to later extend this to compute fluxes. For that purpose
-//   we keep:
-//     - Spectrum section as a raw key/value map.
-//     - Output options as a raw key/value map.
+// The following sections are recognised (unrecognised sections are skipped silently):
 //
-// THREAD SAFETY
-//   This parser has no global state; it is safe to use from any thread.
+//   #RUN_INFO
+//     RUN_ID      <string>      ! arbitrary run identifier, stored in AmpsParam.runId
+//
+//   #CALCULATION_MODE
+//     CALC_TARGET             CUTOFF_RIGIDITY | DENSITY_SPECTRUM
+//     FIELD_EVAL_METHOD       GRIDLESS | GRID_3D
+//
+//   #CUTOFF_RIGIDITY
+//     CUTOFF_EMIN             <double>   ! MeV; lower rigidity scan bound
+//     CUTOFF_EMAX             <double>   ! MeV; upper rigidity scan bound
+//     CUTOFF_NENERGY          <int>      ! number of rigidity bisection points
+//     CUTOFF_MAX_PARTICLES    <int>      ! per-point trajectory cap (optional)
+//     CUTOFF_MAX_TRAJ_TIME    <double>   ! per-trajectory time cap [s] (optional)
+//     CUTOFF_SAMPLING         VERTICAL | ISOTROPIC
+//     DIRECTIONAL_MAP         T|F        ! enable directional cutoff sky-map output
+//     DIRMAP_LON_RES          <double>   ! longitude resolution [deg] for sky-map
+//     DIRMAP_LAT_RES          <double>   ! latitude resolution [deg] for sky-map
+//
+//   #DENSITY_SPECTRUM
+//     DS_EMIN                 <double>   ! MeV/n; lower energy bound
+//     DS_EMAX                 <double>   ! MeV/n; upper energy bound
+//     DS_NINTERVALS           <int>      ! number of energy intervals (nPoints = +1)
+//     DS_ENERGY_SPACING       LOG | LINEAR
+//     DS_MAX_PARTICLES        <int>      ! total trajectory cap per obs. point (optional)
+//     DS_MAX_TRAJ_TIME        <double>   ! per-trajectory time cap [s] (optional)
+//     DS_BOUNDARY_MODE        ISOTROPIC | ANISOTROPIC
+//       ISOTROPIC (default): T(E;x0) = N_allowed/N_dirs, uniform boundary spectrum
+//       ANISOTROPIC:         T_aniso(E;x0) = (1/N_dirs)*sum_k A_k*f_PAD_k*f_spatial_k
+//                            requires #BOUNDARY_ANISOTROPY section
+//
+//   #BOUNDARY_ANISOTROPY     (required when DS_BOUNDARY_MODE = ANISOTROPIC)
+//     BA_PAD_MODEL            ISOTROPIC | SINALPHA_N | COSALPHA_N | BIDIRECTIONAL
+//     BA_PAD_EXPONENT         <double>   ! n in sin^n or |cos|^n  (default 2.0)
+//     BA_SPATIAL_MODEL        UNIFORM | DAYSIDE_NIGHTSIDE
+//     BA_DAYSIDE_FACTOR       <double>   ! flux multiplier for GSM x > 0  (default 1.0)
+//     BA_NIGHTSIDE_FACTOR     <double>   ! flux multiplier for GSM x <= 0 (default 1.0)
+//
+//   #PARTICLE_SPECIES
+//     SPECIES_NAME            <string>   ! e.g. PROTON, ELECTRON, HE4
+//     SPECIES_CHARGE          <int>      ! charge in units of e (sign matters)
+//     SPECIES_MASS_AMU        <double>   ! mass in atomic mass units
+//
+//   #BACKGROUND_FIELD
+//     FIELD_MODEL             T96 | T05 | DIPOLE
+//     EPOCH                   <ISO datetime>   ! e.g. 2003-11-20T06:00
+//     DST                     <double>   ! nT
+//     PDYN                    <double>   ! nPa
+//     IMF_BY                  <double>   ! nT (GSM Y component of IMF)
+//     IMF_BZ                  <double>   ! nT (GSM Z component of IMF)
+//     IMF_BX                  <double>   ! nT (reserved; not used by T96/T05)
+//     SW_VX                   <double>   ! km/s solar wind x velocity (T05 input)
+//     SW_N                    <double>   ! cm^-3 solar wind number density (T05 input)
+//     T05_W1 .. T05_W6        <double>   ! T05 storm-time history integrals W1..W6
+//     DIPOLE_MOMENT           <double>   ! multiple of Earth dipole moment M_E (DIPOLE model)
+//     DIPOLE_TILT             <double>   ! tilt from +Z_GSM toward +X_GSM [deg] (DIPOLE model)
+//
+//   #DOMAIN_BOUNDARY
+//     DOMAIN_XMIN             <double>   ! km (GSM)
+//     DOMAIN_XMAX             <double>   ! km
+//     DOMAIN_YMIN             <double>   ! km
+//     DOMAIN_YMAX             <double>   ! km
+//     DOMAIN_ZMIN             <double>   ! km
+//     DOMAIN_ZMAX             <double>   ! km
+//     R_INNER                 <double>   ! km inner loss sphere radius
+//
+//   #OUTPUT_DOMAIN
+//     OUTPUT_MODE             POINTS | SHELLS
+//     COORDS                  GSM | GEO | GSE      ! coordinate label (not transformed)
+//     SHELL_ALTITUDES         <double> [<double> ...] ! km above Earth's surface; space-separated
+//     SHELL_RES               <double>   ! angular resolution [deg] for lon/lat grid
+//     POINTS_BEGIN
+//       x1 y1 z1
+//       x2 y2 z2
+//       ...
+//     POINTS_END
+//     (coordinates in km, GSM by default)
+//
+//   #NUMERICAL
+//     DT_TRACE                <double>   ! initial time step [s]
+//     MAX_STEPS               <int>      ! hard cap on integration steps
+//     MAX_TRACE_TIME          <double>   ! hard cap on integration time [s]
+//
+//   #SPECTRUM
+//     (arbitrary key/value pairs stored in AmpsParam.spectrum raw map;
+//      interpreted by boundary/spectrum.h InitGlobalSpectrumFromKeyValueMap)
+//
+//   Any unrecognised section or key is stored in AmpsParam.unknown for diagnostics.
+//
+//======================================================================================
+// TYPE CONVERSION RULES
+//======================================================================================
+//
+// Booleans:     T / TRUE / 1  -> true     F / FALSE / 0 -> false   (case-insensitive)
+// Integers:     std::stoi     (raises std::invalid_argument on failure)
+// Doubles:      std::stod     (raises std::invalid_argument on failure)
+// Strings:      trimmed of leading/trailing whitespace; comment text after '!' removed
+// Enumerations: stored as uppercase strings; validated lazily by the consumer
+//
+//======================================================================================
+// UNITS CONTRACT
+//======================================================================================
+//
+// The parser stores distances in whatever unit the file uses (km for Runs-on-Request
+// inputs; Re for some legacy files). The dominant convention used in production is km.
+// The solvers convert km -> m internally.
+//
+// IMPORTANT: The parser does NOT transform coordinates between GSM, GEO, and GSE.
+// The COORDS keyword is stored as a label only. The gridless solver assumes all
+// positions are in GSM and will produce incorrect results if non-GSM coordinates are
+// passed without external conversion.
+//
+//======================================================================================
+// ERROR HANDLING
+//======================================================================================
+//
+// ParseAmpsParamFile throws std::runtime_error for:
+//   - File not found / cannot open
+//   - Malformed numeric values for recognised keys (std::stod/stoi failure)
+//   - POINTS_END before POINTS_BEGIN
+//
+// It does NOT throw for:
+//   - Unknown section names (silently skipped)
+//   - Unknown key names within a recognised section (stored in raw map)
+//   - Missing required sections (defaults in structs are used)
+//
+// Post-parse validation (e.g., checking that #BOUNDARY_ANISOTROPY is present when
+// DS_BOUNDARY_MODE = ANISOTROPIC) is performed in amps_param_parser.cpp after the
+// parse loop, and also at solver startup in DensityGridless.cpp.
+//
 //======================================================================================
 
 #ifndef _SRC_EARTH_UTIL_AMPS_PARAM_PARSER_H_
@@ -177,6 +291,60 @@ namespace EarthUtil {
     Spacing spacing{Spacing::LOG};
 
     int nPoints() const { return (nIntervals > 0) ? (nIntervals + 1) : 0; }
+
+    // DS_BOUNDARY_MODE selects the density/spectrum solver branch.
+    //
+    // ISOTROPIC   (default, backward-compatible):
+    //   T(E; x0) = N_allowed / N_dirs
+    //   J_loc(E; x0) = T(E; x0) * J_b(E)
+    //   The boundary spectrum J_b is assumed uniform and isotropic; the exit
+    //   position and direction of each allowed trajectory are discarded.
+    //
+    // ANISOTROPIC:
+    //   T_aniso(E; x0) = (1/N_dirs) * sum_k [ A_k * f_PAD(cos_alpha_k) * f_spatial(x_k) ]
+    //   J_loc(E; x0) = J_b_iso(E) * T_aniso(E; x0)
+    //   where cos_alpha_k = v_exit_k . B_hat(x_exit_k) and x_exit_k is the
+    //   GSM position where trajectory k crossed the outer domain boundary.
+    //   The PAD and spatial modulation models are controlled by #BOUNDARY_ANISOTROPY.
+    //   Requires TraceAllowedSharedEx() to return exit state per trajectory.
+    std::string boundaryMode{"ISOTROPIC"}; // DS_BOUNDARY_MODE
+  };
+
+  //====================================================================================
+  // Anisotropic boundary spectrum parameters (#BOUNDARY_ANISOTROPY section)
+  //====================================================================================
+  // These parameters control the non-isotropic boundary spectrum used when
+  // DS_BOUNDARY_MODE = ANISOTROPIC.
+  //
+  // The full boundary intensity is factored as:
+  //   J_b(E, Omega, x) = J_b_iso(E) * f_PAD(cos_alpha) * f_spatial(x)
+  //
+  // where:
+  //   cos_alpha = v_exit . B_hat(x_exit)   (pitch angle at the domain boundary)
+  //   x_exit                               (GSM exit position on the outer boundary)
+  //
+  // PAD MODELS (BA_PAD_MODEL):
+  //   ISOTROPIC      f(alpha) = 1                         (reduces to isotropic)
+  //   SINALPHA_N     f(alpha) = sin^n(alpha)              (pancake distribution)
+  //   COSALPHA_N     f(alpha) = |cos(alpha)|^n            (field-aligned beam)
+  //   BIDIRECTIONAL  f(alpha) = |cos(alpha)|^n            (symmetric about equator;
+  //                                                        identical to COSALPHA_N
+  //                                                        but documents intent)
+  //
+  // SPATIAL MODELS (BA_SPATIAL_MODEL):
+  //   UNIFORM              f_spatial = 1 everywhere
+  //   DAYSIDE_NIGHTSIDE    f_spatial = BA_DAYSIDE_FACTOR  if GSM x > 0
+  //                                  = BA_NIGHTSIDE_FACTOR if GSM x <= 0
+  //====================================================================================
+  struct AnisotropyParam {
+    // Pitch angle distribution
+    std::string padModel{"ISOTROPIC"};   // BA_PAD_MODEL
+    double padExponent{2.0};             // BA_PAD_EXPONENT  (n in sin^n or |cos|^n)
+
+    // Spatial flux modulation
+    std::string spatialModel{"UNIFORM"}; // BA_SPATIAL_MODEL
+    double daysideFactor{1.0};           // BA_DAYSIDE_FACTOR   (GSM x > 0 multiplier)
+    double nightsideFactor{1.0};         // BA_NIGHTSIDE_FACTOR (GSM x <= 0 multiplier)
   };
 
   struct Species {
@@ -292,6 +460,7 @@ namespace EarthUtil {
     CalcMode calc;
     CutoffScan cutoff;
     DensitySpectrumParam densitySpectrum;
+    AnisotropyParam anisotropy;
     Species species;
     BackgroundField field;
     ElectricField efield;

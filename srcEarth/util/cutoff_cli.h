@@ -1,17 +1,87 @@
 //======================================================================================
 // cutoff_cli.h
 //======================================================================================
-// PURPOSE
-//   Provide a small, robust command line interface (CLI) for running the
-//   Earth energetic particle tools in "gridless" mode.
 //
-// USER REQUIREMENTS
-//   - CLI options:
-//       -h              : print help and exit
-//       -mode 3d|gridless
-//       -i <input-file> : AMPS_PARAM style input file
-//       -mover <name>   : select particle mover (BORIS | RK2 | RK4 | RK6)
-//   - The CLI and parser live in srcEarth/util.
+// PURPOSE
+// -------
+// Command-line interface (CLI) for the Earth energetic particle gridless tools.
+// Parses argc/argv into a CliOptions struct that the main executable uses to
+// configure the solver run. Intentionally kept independent of the solver and parser
+// so it can be unit-tested in isolation.
+//
+//======================================================================================
+// SUPPORTED OPTIONS
+//======================================================================================
+//
+//   -h | --help
+//       Print help text and exit. No other processing is done.
+//
+//   -mode <string>
+//       Select the solver execution mode.
+//       Recognised values:
+//         3d        Run the full PIC-backed 3D solver.
+//         gridless  Run the gridless field-evaluation solver (Tsyganenko + Boris).
+//       Required. Error if absent and -h is not given.
+//
+//   -i <path>
+//       Path to the AMPS_PARAM-format input file. Parsed by ParseAmpsParamFile.
+//       Required unless -h is given.
+//
+//   -mover <string>
+//       Select the particle integration algorithm.
+//       Recognised values (case-insensitive):
+//         BORIS   Relativistic Boris pusher (default; recommended for all production runs)
+//         RK2     Runge-Kutta 2nd order (Heun)
+//         RK4     Runge-Kutta 4th order (classical)
+//         RK6     Runge-Kutta 6th order
+//       See GridlessParticleMovers.h for a full description of each mover.
+//       If omitted, the default mover (BORIS) is used.
+//       The string is stored as-is; translation to MoverType enum is done by the caller.
+//
+//   -density-mode <string>
+//       Override the DS_BOUNDARY_MODE key from the input file.
+//       Recognised values (case-insensitive):
+//         ISOTROPIC     Use uniform isotropic boundary spectrum (original behavior).
+//         ANISOTROPIC   Use pitch-angle- and spatially-weighted boundary spectrum.
+//                       Requires a #BOUNDARY_ANISOTROPY section in the input file,
+//                       or the solver will throw at startup.
+//       If omitted, the input file value (or its default ISOTROPIC) is used.
+//       CLI override is useful for:
+//         - Comparing isotropic and anisotropic results on the same input file
+//           without editing the file: run twice with -density-mode ISOTROPIC and
+//           -density-mode ANISOTROPIC.
+//         - Automated test scripts that exercise both branches from a single
+//           test input file.
+//
+//======================================================================================
+// USAGE EXAMPLES
+//======================================================================================
+//
+//   Basic cutoff-rigidity run (isotropic, Boris pusher):
+//     ./amps -mode gridless -i run.in
+//
+//   Density/spectrum, anisotropic boundary, override from command line:
+//     ./amps -mode gridless -i run.in -density-mode ANISOTROPIC
+//
+//   Density/spectrum, RK4 mover for comparison:
+//     ./amps -mode gridless -i run.in -mover RK4
+//
+//   Print help:
+//     ./amps -h
+//
+//======================================================================================
+// ERROR HANDLING
+//======================================================================================
+//
+// ParseCli throws std::runtime_error for:
+//   - An option flag that requires an argument but none follows (e.g., "-i" at end)
+//   - An unrecognised option flag (e.g., "-xyz")
+//
+// It does NOT throw for:
+//   - Missing required options (the main executable checks CliOptions after parsing)
+//   - Unrecognised values for -mover or -density-mode (passed through as strings;
+//     validated by the solver at startup)
+//
 //======================================================================================
 
 #ifndef _SRC_EARTH_UTIL_CUTOFF_CLI_H_
@@ -36,6 +106,13 @@ namespace EarthUtil {
     //
     // If empty, the executable should use its default / input-file setting.
     std::string mover{""};
+
+    // -density-mode ISOTROPIC|ANISOTROPIC
+    // Overrides DS_BOUNDARY_MODE from the input file.
+    // ISOTROPIC   : uniform isotropic boundary (original behavior).
+    // ANISOTROPIC : pitch-angle-dependent and spatially non-uniform boundary;
+    //               requires a #BOUNDARY_ANISOTROPY section in the input file.
+    std::string densityMode{""};
   };
 
   // Parse argc/argv. Throws std::runtime_error for malformed inputs.

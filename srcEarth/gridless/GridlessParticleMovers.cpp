@@ -1,6 +1,74 @@
 //======================================================================================
 // GridlessParticleMovers.cpp
 //======================================================================================
+//
+// IMPLEMENTATION NOTES
+// --------------------
+// This file implements the four particle movers declared in GridlessParticleMovers.h.
+// See that header for the full physics description, algorithm rationale, and
+// comparison of mover choices.
+//
+// UNIT CONVENTIONS (enforced throughout this file)
+// -------------------------------------------------
+//   Position x          : meters  [m]
+//   Momentum p          : kg m/s  (relativistic: p = gamma * m0 * v)
+//   Magnetic field B    : Tesla   [T]
+//   Charge q            : Coulombs [C]
+//   Mass m0             : kg
+//   Time dt             : seconds [s]
+//   Cyclotron frequency : rad/s
+//
+// All input positions (GSM coordinates) are converted from km to m by the callers
+// before being passed here. No unit conversion is done inside the movers themselves.
+//
+// BORIS PUSHER -- IMPLEMENTATION NOTES
+// -------------------------------------
+// The rotation step follows the exact Boris half-angle formula:
+//
+//   t = (q * B * dt) / (2 * gamma * m0)       [vector]
+//   s = 2*t / (1 + |t|^2)
+//   p' = p_minus + (p_minus + p_minus x t) x s
+//
+// The factor 1/(1+|t|^2) in s ensures that the rotation matrix is exactly
+// orthogonal even for large |t| (large step size or strong field). This is the
+// key stability property absent in the naive "add cross product" form.
+//
+// gamma is evaluated at p_minus (i.e., the beginning of the magnetic rotation
+// half-step). Since |p| is conserved by the magnetic force, gamma is the same
+// before and after the rotation, so this is self-consistent.
+//
+// RK MOVERS -- IMPLEMENTATION NOTES
+// ------------------------------------
+// The RK movers integrate the system [dx/dt, dp/dt] = [v, q*v x B(x)] as a
+// 6-dimensional ODE. The function f(x, p) returning (v, q*v x B) is evaluated
+// at each stage position. For RK2 this means evaluating B twice per outer step;
+// for RK4, four times; for RK6, six times.
+//
+// Note on gamma consistency in RK stages: at each intermediate stage we recompute
+// gamma from the stage momentum p_k:
+//   gamma_k = sqrt(1 + |p_k|^2 / (m0*c)^2)
+//   v_k = p_k / (gamma_k * m0)
+// This maintains relativistic correctness at each stage without approximation.
+//
+// StepParticleChecked -- IMPLEMENTATION NOTES
+// --------------------------------------------
+// For Boris: subdivide into N_SUBSTEP Boris sub-steps of size dt/N_SUBSTEP,
+// checking |x| < rInner after each. N_SUBSTEP = 4 balances detection accuracy
+// against overhead (4 extra field evaluations per outer step).
+//
+// For RK variants: the intermediate stage positions k1..k4 (or k1..k6 for RK6)
+// are already computed inside the step. We test |x| < rInner at each stage
+// position rather than after the completed step. This costs nothing extra because
+// the stage evaluations happen anyway.
+//
+// THREAD SAFETY
+// -------------
+// All movers are stateless functions (no global or static mutable state). They
+// are safe to call concurrently from multiple MPI worker threads as long as the
+// IGridlessFieldEvaluator passed in is also thread-safe (the Tsyganenko and dipole
+// evaluators in CutoffRigidityGridless.cpp use only local stack state and are safe).
+//
+//======================================================================================
 
 #include "GridlessParticleMovers.h"
 

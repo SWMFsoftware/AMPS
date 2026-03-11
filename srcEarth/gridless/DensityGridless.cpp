@@ -130,12 +130,119 @@
  *
  * The heavy lifting per trajectory is identical in spirit to the cutoff-rigidity gridless
  * solver: same field evaluation, same geometry checks, same time-step constraints.
+
+ * 2.5 Anisotropic boundary spectrum (ANISOTROPIC mode)
+ * When DS_BOUNDARY_MODE = ANISOTROPIC the above is replaced by:
+ *
+ *   T_aniso(E; x0) = (1/N_dirs) * sum_{k=1}^{N_dirs} A_k * f_aniso_k
+ *
+ * where f_aniso_k = f_PAD(cos_alpha_k) * f_spatial(x_exit_k) is the anisotropy
+ * weight for trajectory k, evaluated by EvalAnisotropyFactor (AnisotropicSpectrum.h).
+ * The exit state (cos_alpha_k, x_exit_k) is retrieved from TraceAllowedSharedEx.
+ *
+ * The final flux and density formulas (steps 2.2 and 2.3) are unchanged:
+ *   J_loc(E; x0) = T_aniso(E; x0) * J_b_iso(E)
+ *   n_tot(x0)    = 4*pi * integral J_loc(E)/v(E) dE
+ *
+ * -----------------------------------------------------------------------------
+ * 5. ComputeT_atEnergy HELPER
+ * -----------------------------------------------------------------------------
+ * A file-local static function that encapsulates the inner direction-tracing loop
+ * for a single energy point at a single observation location. Both the ISOTROPIC
+ * and ANISOTROPIC branches, and both the serial and parallel code paths, call the
+ * same function.
+ *
+ * Signature:
+ *   static double ComputeT_atEnergy(
+ *       const EarthUtil::AmpsParam& prm,
+ *       const V3& x0_m,
+ *       double Rgv,
+ *       const std::vector<V3>& dirs,
+ *       double maxTrajTime_s,
+ *       bool doAnisotropic,
+ *       const EarthUtil::AnisotropyParam& anisoPar);
+ *
+ * Operation:
+ *   double weightSum = 0.0;
+ *   for each direction d in dirs:
+ *     if doAnisotropic:
+ *       TrajectoryExitState exit = {};
+ *       allowed = TraceAllowedSharedEx(prm, x0, d, Rgv, &exit, maxTrajTime_s)
+ *       if allowed:
+ *         weightSum += EvalAnisotropyFactor(anisoPar, exit.cosAlpha, exit.x_exit_m)
+ *     else:
+ *       allowed = TraceAllowedShared(prm, x0, d, Rgv, maxTrajTime_s)
+ *       if allowed:
+ *         weightSum += 1.0
+ *   return weightSum / dirs.size()
+ *
+ * The rationale for this extraction is described in DensityGridless.h: prior to
+ * this refactor the inner loop appeared four times (serial/parallel x POINTS/SHELLS),
+ * making the code fragile. ComputeT_atEnergy is the single authoritative copy.
+ *
+ * -----------------------------------------------------------------------------
+ * 6. MPI SCHEDULING FOR DENSITY/SPECTRUM
+ * -----------------------------------------------------------------------------
+ * Density mode uses *point-level* dynamic scheduling (one observation point per
+ * MPI task), analogous to the cutoff solver but with heavier payloads:
+ *
+ *   ResultMsg for density:
+ *     { int pointIdx, double density, double T[nEnergyPoints] }
+ *
+ * Each worker:
+ *   (a) Receives a TaskMsg containing a point index.
+ *   (b) Evaluates ComputeT_atEnergy at all nEnergyPoints energies for that point.
+ *   (c) Integrates n_tot using the trapezoidal rule.
+ *   (d) Sends { pointIdx, n_tot, T[0..N-1] } back to master rank 0.
+ *   (e) Requests the next task.
+ *
+ * Master rank 0:
+ *   (a) Dispatches tasks in point-index order (not spatial order) to minimize
+ *       wait time for the first result.
+ *   (b) Collects results and stores them in a per-point array indexed by pointIdx.
+ *   (c) After all results are in, writes both output files in the original point
+ *       order regardless of which worker processed which point.
+ *
+ * Because the T[] array can be large (nEnergyPoints doubles per point), the result
+ * message size is variable. MPI_Send with MPI_DOUBLE handles this transparently.
+ *
+ * SHELLS mode uses the same protocol with the observation point being a (shell, lon, lat)
+ * tuple encoded as a single integer index.
+ *
+ * -----------------------------------------------------------------------------
+ * 7. PROGRESS REPORTING
+ * -----------------------------------------------------------------------------
+ * Rank 0 prints a progress line to stdout each time it collects a result:
+ *   [DensityGridless] Point k/N done.  n_tot = X.XXe+YY m^-3
+ *
+ * This is the only console output from the density solver; all scientific output
+ * goes to Tecplot files.
+ *
+ * -----------------------------------------------------------------------------
+ * 8. KNOWN LIMITATIONS
+ * -----------------------------------------------------------------------------
+ * (a) Coordinate transform for SHELLS mode: the observation point grid is built in
+ *     GSM spherical coordinates (altitude + GSM lon/lat). For T96/T05 field models
+ *     this is correct. For DIPOLE field model the tilt of the dipole relative to
+ *     GSM Z means that a Cartesian-distance-based inner sphere check in GSM is not
+ *     exactly aligned with the dipole loss cone. This is acceptable for the current
+ *     validation use cases but should be documented.
+ *
+ * (b) The trapezoidal rule is first-order accurate in energy spacing. For strongly
+ *     curved transmissivity T(E) (near the cutoff edge), the spectrum output can
+ *     benefit from using a finer energy grid (increase DS_NINTERVALS). The density
+ *     integral is less sensitive because T(E)*J_b(E)/v(E) is smoother than T(E) alone.
+ *
+ * (c) The anisotropy weighting in T_aniso is not normalised to preserve n_tot from
+ *     the isotropic case. Users who need a normalised comparison should post-process
+ *     (divide by the isotropic n_tot from a separate run with ISOTROPIC mode).
  */
 #include "pic.h"
 #include "DensityGridless.h"
 
 #include "CutoffRigidityGridless.h" // shared trajectory classifier used directly by density
 #include "GridlessParticleMovers.h"   // shared V3 helpers / mover vocabulary used across gridless modules
+#include "AnisotropicSpectrum.h"      // EvalAnisotropyFactor for ANISOTROPIC boundary mode
 
 #include "../boundary/spectrum.h"  // ::gSpectrum and spectrum metadata writers
 
@@ -369,6 +476,68 @@ static double Trapz(const std::vector<double>& x, const std::vector<double>& f) 
 }
 
 //====================================================================================
+// ComputeT_atEnergy  —  unified transmissivity helper for ISOTROPIC and ANISOTROPIC
+//====================================================================================
+// Returns the effective transmissivity T(E; x0) at a single energy point for the
+// given observation position x0_m and direction set dirs.
+//
+// ISOTROPIC mode (doAnisotropic=false):
+//   T = N_allowed / N_dirs
+//   Each allowed trajectory contributes weight 1.
+//
+// ANISOTROPIC mode (doAnisotropic=true):
+//   T = (1/N_dirs) * sum_k [ A_k * f_PAD(cos_alpha_k) * f_spatial(x_exit_k) ]
+//   Each allowed trajectory k contributes f_aniso_k from EvalAnisotropyFactor().
+//   This requires TraceAllowedSharedEx() to return the exit state per trajectory.
+//
+// In both modes the rest of the density computation is identical:
+//   J_loc(E) = J_b_iso(E) * T(E)
+//   n_tot = 4*pi * integral J_loc(E)/v(E) dE
+//
+// Arguments:
+//   prm           : full parsed parameter block
+//   x0_m          : observation point [m] in GSM
+//   Rgv           : particle rigidity [GV] at this energy
+//   dirs          : direction sample set (full grid or subsampled)
+//   maxTrajTime_s : per-trajectory time cap (<= 0 means use global cap)
+//   doAnisotropic : false -> isotropic branch, true -> anisotropic branch
+//   anisoPar      : anisotropy parameters (only used when doAnisotropic=true)
+//====================================================================================
+static double ComputeT_atEnergy(const EarthUtil::AmpsParam& prm,
+                                 const V3& x0_m,
+                                 double Rgv,
+                                 const std::vector<V3>& dirs,
+                                 double maxTrajTime_s,
+                                 bool doAnisotropic,
+                                 const EarthUtil::AnisotropyParam& anisoPar) {
+  const double x0_arr[3] = {x0_m.x, x0_m.y, x0_m.z};
+  double weightSum = 0.0;
+
+  for (const auto& d : dirs) {
+    // Backtrace convention: launch opposite to the desired arrival direction.
+    const V3 vTry = mul(-1.0, d);
+    const double v0_arr[3] = {vTry.x, vTry.y, vTry.z};
+
+    if (doAnisotropic) {
+      // ANISOTROPIC branch: call the extended tracer to get exit state.
+      Earth::GridlessMode::TrajectoryExitState exitSt;
+      if (Earth::GridlessMode::TraceAllowedSharedEx(
+              prm, x0_arr, v0_arr, Rgv, &exitSt, maxTrajTime_s)) {
+        weightSum += EvalAnisotropyFactor(anisoPar, exitSt.cosAlpha, exitSt.x_exit_m);
+      }
+    } else {
+      // ISOTROPIC branch: boolean classification, weight = 1 for allowed.
+      if (Earth::GridlessMode::TraceAllowedShared(
+              prm, x0_arr, v0_arr, Rgv, maxTrajTime_s)) {
+        weightSum += 1.0;
+      }
+    }
+  }
+
+  return weightSum / static_cast<double>(dirs.size());
+}
+
+//====================================================================================
 // Progress bar helper for density/spectrum calculations
 //
 // DESIGN RATIONALE
@@ -536,6 +705,22 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
 
   const int nPoints = (int)prm.output.points.size();
 
+  // Branch selection: resolved once per run (CLI override already applied by caller).
+  const bool doAnisotropic = (EarthUtil::ToUpper(prm.densitySpectrum.boundaryMode) == "ANISOTROPIC");
+  if (mpiRank==0) {
+    std::cout << "Boundary mode    : " << (doAnisotropic ? "ANISOTROPIC" : "ISOTROPIC") << "\n";
+    if (doAnisotropic) {
+      std::cout << "  PAD model      : " << prm.anisotropy.padModel
+                << " (n=" << prm.anisotropy.padExponent << ")\n";
+      std::cout << "  Spatial model  : " << prm.anisotropy.spatialModel;
+      if (EarthUtil::ToUpper(prm.anisotropy.spatialModel)=="DAYSIDE_NIGHTSIDE")
+        std::cout << " (day=" << prm.anisotropy.daysideFactor
+                  << ", night=" << prm.anisotropy.nightsideFactor << ")";
+      std::cout << "\n";
+    }
+    std::cout.flush();
+  }
+
   // Output buffers on master.
   std::vector<double> density_m3(nPoints, 0.0);
   std::vector< std::vector<double> > T_byPoint;
@@ -554,23 +739,12 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       for (int ie=0; ie<nE; ++ie) {
         const double Ej = E_MeV[ie]*MEV_TO_J;
         const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
-        int allowed=0;
-        for (const auto& d : dirsUse) {
-          {
-            // Shared trajectory classification call.  The density workflow supplies its
-            // own per-trajectory time cap (DS_MAX_TRAJ_TIME when provided), but the
-            // particle mover, adaptive time-step selection, escape test, and inner-sphere
-            // loss logic are *exactly* the same as in the cutoff-rigidity solver.
-            const double x0_arr[3] = {x0_m.x, x0_m.y, x0_m.z};
-            const V3 vTry = mul(-1.0,d);
-            const double v0_arr[3] = {vTry.x, vTry.y, vTry.z};
-            const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
-                                            ? prm.densitySpectrum.maxTrajTime_s
-                                            : -1.0;
-            if (Earth::GridlessMode::TraceAllowedShared(prm,x0_arr,v0_arr,Rgv,maxTraceTime_s)) ++allowed;
-          }
-        }
-        T[ie] = double(allowed)/double(dirsUse.size());
+        const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
+                                        ? prm.densitySpectrum.maxTrajTime_s
+                                        : -1.0;
+        // ComputeT_atEnergy handles both ISOTROPIC and ANISOTROPIC branches.
+        T[ie] = ComputeT_atEnergy(prm, x0_m, Rgv, dirsUse, maxTraceTime_s,
+                                  doAnisotropic, prm.anisotropy);
       }
 
       // Density integral
@@ -642,23 +816,15 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
         for (int ie=0; ie<nE; ++ie) {
           const double Ej = E_MeV[ie]*MEV_TO_J;
           const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
-          int allowed=0;
-          for (const auto& d : dirsUse) {
-            {
-            // Shared trajectory classification call.  The density workflow supplies its
-            // own per-trajectory time cap (DS_MAX_TRAJ_TIME when provided), but the
-            // particle mover, adaptive time-step selection, escape test, and inner-sphere
-            // loss logic are *exactly* the same as in the cutoff-rigidity solver.
-            const double x0_arr[3] = {x0_m.x, x0_m.y, x0_m.z};
-            const V3 vTry = mul(-1.0,d);
-            const double v0_arr[3] = {vTry.x, vTry.y, vTry.z};
-            const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
-                                            ? prm.densitySpectrum.maxTrajTime_s
-                                            : -1.0;
-            if (Earth::GridlessMode::TraceAllowedShared(prm,x0_arr,v0_arr,Rgv,maxTraceTime_s)) ++allowed;
-          }
-          }
-          T[ie] = double(allowed)/double(dirsUse.size());
+          const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
+                                          ? prm.densitySpectrum.maxTrajTime_s
+                                          : -1.0;
+          // ComputeT_atEnergy handles both ISOTROPIC and ANISOTROPIC branches.
+          // In ISOTROPIC mode it calls TraceAllowedShared (bool only, no exit state).
+          // In ANISOTROPIC mode it calls TraceAllowedSharedEx (returns exit state for
+          // pitch-angle / spatial weighting via EvalAnisotropyFactor).
+          T[ie] = ComputeT_atEnergy(prm, x0_m, Rgv, dirsUse, maxTraceTime_s,
+                                    doAnisotropic, prm.anisotropy);
         }
 
         // Density integral
@@ -737,6 +903,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
 
   }
 
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   return 0;
 }
 
@@ -833,6 +1000,8 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
   }
   const std::vector<V3> dirsUse = SelectDirectionsDeterministic(dirs, nDirsUse);
 
+  // Branch selection (mirrors POINTS driver).
+  const bool doAnisotropic = (EarthUtil::ToUpper(prm.densitySpectrum.boundaryMode) == "ANISOTROPIC");
 
   if (mpiRank==0) {
     std::cout << "================ Gridless density & spectrum (SHELLS) ================\n";
@@ -850,6 +1019,16 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
     }
     std::cout << "\n";
     std::cout << "Shells          : " << prm.output.shellAlt_km.size() << " altitude(s), res=" << prm.output.shellRes_deg << " deg\n";
+    std::cout << "Boundary mode   : " << (doAnisotropic ? "ANISOTROPIC" : "ISOTROPIC") << "\n";
+    if (doAnisotropic) {
+      std::cout << "  PAD model     : " << prm.anisotropy.padModel
+                << " (n=" << prm.anisotropy.padExponent << ")\n";
+      std::cout << "  Spatial model : " << prm.anisotropy.spatialModel;
+      if (EarthUtil::ToUpper(prm.anisotropy.spatialModel)=="DAYSIDE_NIGHTSIDE")
+        std::cout << " (day=" << prm.anisotropy.daysideFactor
+                  << ", night=" << prm.anisotropy.nightsideFactor << ")";
+      std::cout << "\n";
+    }
     std::cout << "MPI ranks       : " << mpiSize << "\n";
     std::cout << "======================================================================\n";
     std::cout.flush();
@@ -905,23 +1084,12 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
           for (int ie=0; ie<nE; ++ie) {
             const double Ej = E_MeV[ie]*MEV_TO_J;
             const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
-            int allowed=0;
-            for (const auto& d : dirsUse) {
-              {
-            // Shared trajectory classification call.  The density workflow supplies its
-            // own per-trajectory time cap (DS_MAX_TRAJ_TIME when provided), but the
-            // particle mover, adaptive time-step selection, escape test, and inner-sphere
-            // loss logic are *exactly* the same as in the cutoff-rigidity solver.
-            const double x0_arr[3] = {x0_m.x, x0_m.y, x0_m.z};
-            const V3 vTry = mul(-1.0,d);
-            const double v0_arr[3] = {vTry.x, vTry.y, vTry.z};
             const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
                                             ? prm.densitySpectrum.maxTrajTime_s
                                             : -1.0;
-            if (Earth::GridlessMode::TraceAllowedShared(prm,x0_arr,v0_arr,Rgv,maxTraceTime_s)) ++allowed;
-          }
-            }
-            T[ie] = double(allowed)/double(dirsUse.size());
+            // ComputeT_atEnergy handles both ISOTROPIC and ANISOTROPIC branches.
+            T[ie] = ComputeT_atEnergy(prm, x0_m, Rgv, dirsUse, maxTraceTime_s,
+                                      doAnisotropic, prm.anisotropy);
           }
 
           // Build per-energy integrand g(E)=4*pi*J_loc(E)/v(E) and integrate.
@@ -1006,23 +1174,12 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
           for (int ie=0; ie<nE; ++ie) {
             const double Ej = E_MeV[ie]*MEV_TO_J;
             const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
-            int allowed=0;
-            for (const auto& d : dirsUse) {
-              {
-            // Shared trajectory classification call.  The density workflow supplies its
-            // own per-trajectory time cap (DS_MAX_TRAJ_TIME when provided), but the
-            // particle mover, adaptive time-step selection, escape test, and inner-sphere
-            // loss logic are *exactly* the same as in the cutoff-rigidity solver.
-            const double x0_arr[3] = {x0_m.x, x0_m.y, x0_m.z};
-            const V3 vTry = mul(-1.0,d);
-            const double v0_arr[3] = {vTry.x, vTry.y, vTry.z};
             const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
                                             ? prm.densitySpectrum.maxTrajTime_s
                                             : -1.0;
-            if (Earth::GridlessMode::TraceAllowedShared(prm,x0_arr,v0_arr,Rgv,maxTraceTime_s)) ++allowed;
-          }
-            }
-            T[ie] = double(allowed)/double(dirsUse.size());
+            // ComputeT_atEnergy handles both ISOTROPIC and ANISOTROPIC branches.
+            T[ie] = ComputeT_atEnergy(prm, x0_m, Rgv, dirsUse, maxTraceTime_s,
+                                      doAnisotropic, prm.anisotropy);
           }
 
           std::vector<double> g(nE,0.0);

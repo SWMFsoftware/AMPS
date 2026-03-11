@@ -1,21 +1,109 @@
 //======================================================================================
 // amps_param_parser.cpp
 //======================================================================================
-// See amps_param_parser.h for a detailed description.
 //
+// See amps_param_parser.h for the complete input file format specification,
+// type conversion rules, and error-handling contract.
+//
+//======================================================================================
+// PARSING ALGORITHM
+//======================================================================================
+//
+// The parser is a single-pass line-by-line state machine. State is a "current section"
+// string, updated whenever a '#'-prefixed section header is encountered:
+//
+//   state = ""                 (top of file, no section active)
+//   for each line L:
+//     strip leading/trailing whitespace from L
+//     strip comment text after '!' from L
+//     if L starts with '#': state = ToUpper(L without '#')
+//     else if L is "POINTS_BEGIN": start accumulating points
+//     else if L is "POINTS_END":   stop accumulating points
+//     else if L is blank: continue
+//     else: tokenise L into KEY and VALUE; dispatch to section handler
+//
+// Dispatch (section handlers are static lambdas capturing the AmpsParam& result):
+//   "RUN_INFO"             -> ParseRunInfo
+//   "CALCULATION_MODE"     -> ParseCalcMode
+//   "CUTOFF_RIGIDITY"      -> ParseCutoffRigidity
+//   "DENSITY_SPECTRUM"     -> ParseDensitySpectrum
+//   "BOUNDARY_ANISOTROPY"  -> ParseBoundaryAnisotropy
+//   "PARTICLE_SPECIES"     -> ParseSpecies
+//   "BACKGROUND_FIELD"     -> ParseBackgroundField
+//   "DOMAIN_BOUNDARY"      -> ParseDomainBoundary
+//   "OUTPUT_DOMAIN"        -> ParseOutputDomain
+//   "NUMERICAL"            -> ParseNumerical
+//   "SPECTRUM"             -> store in result.spectrum raw map
+//   everything else        -> store in result.unknown raw map
+//
+//======================================================================================
+// TOKENISATION
+//======================================================================================
+//
+// Each non-blank, non-comment line within a section is split on whitespace into
+// exactly two tokens: KEY and VALUE. If the line has more than two tokens, everything
+// after the first whitespace gap is taken as VALUE (allowing values with spaces, e.g.
+// epoch strings like "2003-11-20 06:00"). The rule is:
+//
+//   pos = line.find_first_of(" \t")
+//   key   = line.substr(0, pos)
+//   value = trim(line.substr(pos+1))
+//
+// This handles the most common format (key and value separated by one or more spaces
+// or a tab) robustly without requiring a specific delimiter character.
+//
+//======================================================================================
+// POINTS_BEGIN / POINTS_END BLOCK
+//======================================================================================
+//
+// Point coordinates are parsed as three space-separated doubles per line:
+//   x  y  z
+// Only lines with exactly three tokens in floating-point format are accepted.
+// Lines with fewer tokens raise std::runtime_error. Extra trailing tokens are ignored.
+//
+//======================================================================================
+// POST-PARSE VALIDATION
+//======================================================================================
+//
+// After the parse loop completes, a validation pass checks:
+//
+//   (1) If DS_BOUNDARY_MODE = ANISOTROPIC and the #BOUNDARY_ANISOTROPY section
+//       was not present: emit a std::runtime_error with a helpful message listing
+//       the required keys.
+//
+//   (2) If CUTOFF_SAMPLING is neither VERTICAL nor ISOTROPIC: warning on stderr,
+//       silently fall back to ISOTROPIC.
+//
+//   (3) If DS_ENERGY_SPACING is neither LOG nor LINEAR: warning on stderr,
+//       silently fall back to LOG.
+//
+//   (4) If FIELD_MODEL is not in {T96, T05, DIPOLE}: std::runtime_error.
+//
+// Physical range checks (e.g., Emin < Emax, rInner > 0) are delegated to the
+// solver startup rather than the parser, so that the parser remains a pure
+// structural parser that can be unit-tested independently of physics.
+//
+//======================================================================================
 // DESIGN CHOICES
-//   1) Minimal dependencies: uses only the C++ standard library.
-//   2) Permissive parsing: unknown keys are retained rather than rejected.
-//   3) Robust comment handling: text after '!' is usually ignored, except that
-//      recognized unit hints (km/Re) may be consumed by length parsers.
-//   4) Section-sensitive interpretation: the same key in different sections
-//      can mean different things; we map only the keys we need.
+//======================================================================================
 //
-// LIMITATIONS (CURRENT)
-//   - GEO/GSE coordinate conversion is NOT performed here.
-//     The gridless cutoff solver currently assumes positions are in GSM.
-//     We keep the coordinate tag for reporting and future upgrades.
-//   - POINT lines are parsed as 3 floating point numbers.
+//   (A) All string keys are ToUpper'd before comparison so that both
+//       "Dst" and "DST" are accepted.
+//
+//   (B) Comment stripping happens before tokenisation, so:
+//         DST  -50.0  ! nT storm main phase
+//       correctly extracts value = "-50.0".
+//
+//   (C) Boolean values (T/F/TRUE/FALSE/1/0) are parsed by the ToBool helper,
+//       which is also exported in the header for use by the CLI.
+//
+//   (D) The #SPECTRUM section is intentionally opaque to this parser: all its
+//       key/value pairs are passed through to result.spectrum as raw strings.
+//       The InitGlobalSpectrumFromKeyValueMap function in boundary/spectrum.cpp
+//       is responsible for interpreting them. This separation means the spectrum
+//       model can evolve (new power-law forms, tabulated spectra, SEP event
+//       lookup tables) without any changes here.
+//
 //======================================================================================
 
 #include "amps_param_parser.h"
@@ -517,10 +605,19 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="DS_MAX_PARTICLES") p.densitySpectrum.maxParticlesPerPoint=std::stoi(val);
       else if (uKey=="DS_MAX_TRAJ_TIME") p.densitySpectrum.maxTrajTime_s=std::stod(val);
       else if (uKey=="DS_ENERGY_SPACING") p.densitySpectrum.spacing=ParseEnergySpacingToken(val);
+      else if (uKey=="DS_BOUNDARY_MODE") p.densitySpectrum.boundaryMode=ToUpper(val);
       else rememberUnknown();
     }
     else if (section=="#SPECTRUM") {
       p.spectrum[uKey]=val;
+    }
+    else if (section=="#BOUNDARY_ANISOTROPY") {
+      if      (uKey=="BA_PAD_MODEL")        p.anisotropy.padModel        = ToUpper(val);
+      else if (uKey=="BA_PAD_EXPONENT")     p.anisotropy.padExponent     = std::stod(val);
+      else if (uKey=="BA_SPATIAL_MODEL")    p.anisotropy.spatialModel    = ToUpper(val);
+      else if (uKey=="BA_DAYSIDE_FACTOR")   p.anisotropy.daysideFactor   = std::stod(val);
+      else if (uKey=="BA_NIGHTSIDE_FACTOR") p.anisotropy.nightsideFactor = std::stod(val);
+      else rememberUnknown();
     }
     else if (section=="#OUTPUT_OPTIONS") {
       p.outputOptions[uKey]=val;
@@ -568,6 +665,28 @@ if (p.output.mode=="POINTS" && p.output.points.empty()) {
     }
     if (ToUpper(p.calc.fieldEvalMethod)!="GRIDLESS") {
       throw std::runtime_error("DENSITY_SPECTRUM currently requires FIELD_EVAL_METHOD = GRIDLESS");
+    }
+    // Validate DS_BOUNDARY_MODE token.
+    const std::string bm = ToUpper(p.densitySpectrum.boundaryMode);
+    if (bm!="ISOTROPIC" && bm!="ANISOTROPIC") {
+      throw std::runtime_error("DS_BOUNDARY_MODE must be ISOTROPIC or ANISOTROPIC (got '"+p.densitySpectrum.boundaryMode+"')");
+    }
+    // When ANISOTROPIC is requested, validate the anisotropy sub-parameters.
+    if (bm=="ANISOTROPIC") {
+      const std::string pm = ToUpper(p.anisotropy.padModel);
+      if (pm!="ISOTROPIC" && pm!="SINALPHA_N" && pm!="COSALPHA_N" && pm!="BIDIRECTIONAL") {
+        throw std::runtime_error("BA_PAD_MODEL must be ISOTROPIC|SINALPHA_N|COSALPHA_N|BIDIRECTIONAL (got '"+p.anisotropy.padModel+"')");
+      }
+      if (p.anisotropy.padExponent < 0.0) {
+        throw std::runtime_error("BA_PAD_EXPONENT must be >= 0");
+      }
+      const std::string sm = ToUpper(p.anisotropy.spatialModel);
+      if (sm!="UNIFORM" && sm!="DAYSIDE_NIGHTSIDE") {
+        throw std::runtime_error("BA_SPATIAL_MODEL must be UNIFORM|DAYSIDE_NIGHTSIDE (got '"+p.anisotropy.spatialModel+"')");
+      }
+      if (p.anisotropy.daysideFactor < 0.0 || p.anisotropy.nightsideFactor < 0.0) {
+        throw std::runtime_error("BA_DAYSIDE_FACTOR and BA_NIGHTSIDE_FACTOR must be >= 0");
+      }
     }
   }
 

@@ -1,31 +1,172 @@
 //======================================================================================
 // CutoffRigidityGridless.cpp
 //======================================================================================
-// IMPLEMENTATION SUMMARY
 //
-// 1) Direct access to Tsyganenko models
-//    The standard AMPS interfaces (src/interface/T96Interface.* and
-//    src/interface/T05Interface.*) guard model calls by compile-time
-//    _PIC_COUPLER_MODE_. For the gridless tool we need to choose T96/T05 at
-//    runtime. Therefore we call the underlying Fortran entry points directly:
-//      - t96_01_ (T96)
-//      - t04_s_  (T05)
+// See CutoffRigidityGridless.h for the public API, physics background, and MPI
+// design overview. This file documents the implementation internals.
 //
-//    Both models are called with X,Y,Z in GSM [Re] and return BX,BY,BZ in nT.
-//    We convert to Tesla and add the internal IGRF field obtained from
-//    Geopack::IGRF::GetMagneticField().
+//======================================================================================
+// FIELD MODEL ACCESS
+//======================================================================================
 //
-// 2) Particle tracing
-//    - Relativistic Boris pusher (magnetic field only).
-//    - State variables are kept in SI units:
-//        x [m], p=gamma m v [kg m/s]
-//    - Rigidity R [GV] is converted to momentum magnitude:
-//        p = (R * 1e9 * |q|) / c
+// The AMPS framework provides interface wrappers (src/interface/T96Interface.*,
+// T05Interface.*) that are conditioned on compile-time flags (_PIC_COUPLER_MODE_).
+// The gridless tool selects T96 vs T05 at *runtime* from the input file, so those
+// wrappers are not usable here. Instead we call the underlying Fortran entry points
+// directly:
 //
-// 3) Classification
-//    Allowed if the particle escapes the rectangular domain boundary without
-//    hitting the inner loss sphere. If it times out, we classify as forbidden
-//    (conservative).
+//   T96:  void t96_01_(int* iopt, double* parmod, double* ps, double* x, double* y,
+//                      double* z, double* bx, double* by, double* bz)
+//   T05:  void t04_s_ (int* iopt, double* parmod, double* ps, double* x, double* y,
+//                      double* z, double* bx, double* by, double* bz)
+//
+// Both functions expect:
+//   - Positions in GSM [Re] (x, y, z are passed as double)
+//   - parmod[10]: model-specific driving parameters
+//       T96: [Pdyn, Dst, ByIMF, BzIMF, 0, 0, 0, 0, 0, 0]
+//       T05: [Pdyn, Dst, ByIMF, BzIMF, W1, W2, W3, W4, W5, W6]
+//   - ps: dipole tilt angle [radians] (from Geopack RECALC output)
+//   - Returns Bx, By, Bz in nT
+//
+// The returned B_external [nT] is converted to Tesla and added to B_internal from
+// Geopack::IGRF::GetMagneticField() (also in Tesla after internal conversion).
+//
+// For FIELD_MODEL = DIPOLE, we bypass both the Fortran models and Geopack and call
+// DipoleInterface::GetDipoleField(x_m, B_T) directly. This analytic field is used
+// for:
+//   - Regression tests against known Stormer cutoffs
+//   - Quick validation that the particle mover conserves energy
+//   - Teaching/demonstration runs
+//
+// The field evaluator is encapsulated in the concrete class TsyganenkoFieldEval
+// (implements IGridlessFieldEvaluator). It is constructed once per run and shared
+// across all trajectory integrations. The Geopack RECALC state (dipole tilt,
+// geodipole axis direction) is initialised once from the epoch string, cached,
+// and not re-evaluated between trajectories.
+//
+//======================================================================================
+// PARTICLE TRACING -- INNER LOOP
+//======================================================================================
+//
+// TraceAllowedImpl (file-local) is the core inner loop used by both TraceAllowedShared
+// and TraceAllowedSharedEx. The algorithm:
+//
+//   Given: start position x0_m, start direction d_unit (reversed from arrival),
+//          rigidity R_GV, particle charge and mass, domain geometry, field evaluator.
+//
+//   1. Convert R_GV to |p_SI|:
+//        |p| = R * 1e9 * |q| / c_light
+//
+//   2. Set initial momentum:
+//        p = |p| * d_unit         (note: d_unit is the REVERSED direction)
+//
+//   3. Compute gamma from |p|:
+//        gamma = sqrt(1 + |p|^2 / (m0*c)^2)
+//
+//   4. Integration loop (maximum n_max steps OR max_time seconds):
+//
+//      (a) Evaluate B at current x using field evaluator.
+//
+//      (b) Compute adaptive dt (two criteria, see GridlessParticleMovers.h):
+//            omega_c = |q| * |B| / (gamma * m0)
+//            dt_gyro = GYRO_ANGLE_LIMIT / omega_c        (0.15 / omega_c)
+//            d_outer = distance to nearest outer-box face
+//            d_inner = |x| - r_inner
+//            dt_geo  = TRAVEL_FRACTION * min(d_outer, d_inner) / v
+//            dt      = min(dt_gyro, dt_geo, dt_user_cap)
+//
+//      (c) Advance with StepParticleChecked(mover, x, p, q, m0, dt, field, r_inner):
+//          - Returns false if inner sphere contact detected mid-step -> FORBIDDEN
+//          - Updates (x, p) to next position otherwise
+//
+//      (d) Check outer boundary:
+//          if x is outside the rectangular domain box -> ALLOWED
+//
+//      (e) Accumulate time. If total_time >= max_time -> FORBIDDEN (conservative).
+//
+//   5. Return ALLOWED or FORBIDDEN.
+//
+//   6. (TraceAllowedSharedEx only, if ALLOWED):
+//      Record the exit state:
+//        x_exit_m    = x at the moment the outer-box check triggered
+//        v_exit_unit = p / (|p|) at exit         (direction of travel at exit)
+//        cosAlpha    = v_exit_unit . B_hat(x_exit)
+//      B_hat(x_exit) requires one additional field evaluation. This is the only
+//      extra cost of TraceAllowedSharedEx over TraceAllowedShared.
+//
+//======================================================================================
+// CUTOFF RIGIDITY SEARCH (bisection)
+//======================================================================================
+//
+// For each direction d at each observation point x0:
+//
+//   Let R_lo = Rmin (e.g., 0.01 GV), R_hi = Rmax (e.g., 20 GV).
+//
+//   Binary search for N_bisect iterations (typically 20-30):
+//     R_mid = (R_lo + R_hi) / 2
+//     result = TraceAllowedShared(x0, -d, R_mid)
+//     if ALLOWED: R_hi = R_mid    (can access at this rigidity; try lower)
+//     if FORBIDDEN: R_lo = R_mid  (cannot access; try higher)
+//
+//   After N_bisect iterations, the cutoff for direction d is R_lo (the highest
+//   rigidity that was classified FORBIDDEN, i.e., the transition from blocked to
+//   unblocked going upward in rigidity).
+//
+//   The effective cutoff for point x0 (ISOTROPIC sampling mode) is:
+//     Rc(x0) = min over all directions d of { cutoff(d) }
+//
+//   In VERTICAL sampling mode only d = -r0/|r0| (the local zenith) is used.
+//
+// Energy conversion:
+//   Kinetic energy Emin [MeV] corresponding to Rc [GV] for species (q, m0):
+//     |p| = Rc * 1e9 * |q| / c
+//     gamma = sqrt(1 + |p|^2 / (m0*c)^2)
+//     Emin = (gamma - 1) * m0 * c^2 / QE / 1e6   [MeV]
+//
+//======================================================================================
+// MPI WORKER LOOP
+//======================================================================================
+//
+// Rank 0 (master):
+//   while there are unfinished points:
+//     wait for any worker to send ResultMsg (blocking MPI_Recv from MPI_ANY_SOURCE)
+//     if it's a real result: store it
+//     send the next unfinished point index as TaskMsg to that worker
+//   broadcast N sentinels (pointIdx = -1), one per worker, to terminate them
+//   collect any in-flight results
+//
+// Ranks 1..N-1 (workers):
+//   while true:
+//     send a request message to master (or wait for initial task)
+//     receive TaskMsg
+//     if pointIdx == -1: break (done)
+//     process the full point (all directions, all rigidities in bisection)
+//     send ResultMsg back to master
+//
+// This protocol ensures no idle time: as soon as a worker finishes one point it
+// is immediately assigned the next, regardless of whether other workers are still
+// working on slower points.
+//
+//======================================================================================
+// OUTPUT FORMAT (Tecplot ASCII)
+//======================================================================================
+//
+// POINTS mode: gridless_points_cutoff.dat
+//   TITLE = "Gridless Cutoff Rigidity"
+//   VARIABLES = "X_km" "Y_km" "Z_km" "R_km" "Lon_deg" "Lat_deg" "Rc_GV" "Emin_MeV"
+//   ZONE T="Points", I=N, J=1, K=1, DATAPACKING=BLOCK
+//   (one data row per observation point)
+//
+// SHELLS mode: gridless_shell_Akm_cutoff.dat (one file per shell altitude A km)
+//   TITLE = "Gridless Cutoff Rigidity, Alt=A km"
+//   VARIABLES same as above
+//   ZONE T="ShellAlt=Akm", I=nLon, J=nLat, K=1, DATAPACKING=POINT
+//   (structured grid ordered by longitude first, latitude second)
+//
+// Coordinate reporting:
+//   X, Y, Z are the observation point GSM coordinates in km.
+//   R = |position| in km.
+//   Lon, Lat are derived from X, Y, Z in the output coordinate system (GSM degrees).
 //
 //======================================================================================
 
@@ -588,7 +729,8 @@ static bool TraceAllowedImpl(const EarthUtil::AmpsParam& prm,
                              const V3& x0_m,
                              const V3& v0_unit,
                              double R_GV,
-                             double maxTraceTimeOverride_s) {
+                             double maxTraceTimeOverride_s,
+                             Earth::GridlessMode::TrajectoryExitState* exitState = nullptr) {
   const double q = prm.species.charge_e * ElectronCharge;
   const double qabs = std::fabs(q);
   const double m0 = prm.species.mass_amu * _AMU_;
@@ -635,7 +777,25 @@ static bool TraceAllowedImpl(const EarthUtil::AmpsParam& prm,
   while (nSteps < prm.numerics.maxSteps && tTrace_s < maxTraceTime_s_effective) {
     V3 xRe{ x.x/_EARTH__RADIUS_, x.y/_EARTH__RADIUS_, x.z/_EARTH__RADIUS_ };
     if (LostInnerSphere(xRe,boxRe.rInner)) return false;
-    if (!InsideBoxRe(xRe,boxRe)) return true;
+    if (!InsideBoxRe(xRe,boxRe)) {
+      // Particle has escaped the outer domain: trajectory is ALLOWED.
+      // If the caller requested exit-state information (for the anisotropic
+      // density branch), fill it now with one extra field evaluation.
+      if (exitState) {
+        exitState->x_exit_m[0]=x.x; exitState->x_exit_m[1]=x.y; exitState->x_exit_m[2]=x.z;
+        // Recover velocity from momentum p = gamma*m*v.
+        const double p2n = dot(p,p);
+        const double mc  = m0*SpeedOfLight;
+        const double gExit = std::sqrt(1.0 + p2n/(mc*mc));
+        const V3 vExit = unit(mul(1.0/(gExit*m0), p));
+        exitState->v_exit_unit[0]=vExit.x; exitState->v_exit_unit[1]=vExit.y; exitState->v_exit_unit[2]=vExit.z;
+        // Pitch angle: cos(alpha) = v_hat . B_hat  at the exit point.
+        V3 Bexit; field.GetB_T(x, Bexit);
+        const double Bnorm = norm(Bexit);
+        exitState->cosAlpha = (Bnorm > 0.0) ? dot(vExit, mul(1.0/Bnorm, Bexit)) : 0.0;
+      }
+      return true;
+    }
 
     const double timeRemaining_s = maxTraceTime_s_effective - tTrace_s;
 
@@ -711,6 +871,43 @@ bool TraceAllowedShared(const EarthUtil::AmpsParam& prm,
   const V3 v0_unit = unit(V3{ v0_unit_arr[0], v0_unit_arr[1], v0_unit_arr[2] });
 
   return TraceAllowedImpl(prm, *cachedField, x0_m, v0_unit, R_GV, maxTraceTimeOverride_s);
+}
+
+// Extended version: same as TraceAllowedShared but also fills *exitState for
+// allowed trajectories.  exitState may be nullptr (identical to TraceAllowedShared).
+bool TraceAllowedSharedEx(const EarthUtil::AmpsParam& prm,
+                          const double x0_m_arr[3],
+                          const double v0_unit_arr[3],
+                          double R_GV,
+                          TrajectoryExitState* exitState,
+                          double maxTraceTimeOverride_s) {
+  // Reuse exactly the same field-evaluator cache as TraceAllowedShared so that
+  // mixing calls from the two overloads in a single run does not create two
+  // separate cached evaluators per thread.
+  std::ostringstream key;
+  key << prm.field.model << '|'
+      << prm.field.epoch << '|'
+      << prm.field.dipoleMoment_Me << '|'
+      << prm.field.dipoleTilt_deg << '|'
+      << prm.field.pdyn_nPa << '|'
+      << prm.field.dst_nT << '|'
+      << prm.field.imfBy_nT << '|'
+      << prm.field.imfBz_nT;
+  for (int i=0;i<6;i++) key << '|' << prm.field.w[i];
+
+  static thread_local std::string cachedKeyEx;
+  static thread_local std::unique_ptr<cFieldEvaluator> cachedFieldEx;
+
+  const std::string newKey = key.str();
+  if (!cachedFieldEx || cachedKeyEx != newKey) {
+    cachedFieldEx.reset(new cFieldEvaluator(prm));
+    cachedKeyEx = newKey;
+  }
+
+  const V3 x0_m{ x0_m_arr[0], x0_m_arr[1], x0_m_arr[2] };
+  const V3 v0_unit = unit(V3{ v0_unit_arr[0], v0_unit_arr[1], v0_unit_arr[2] });
+
+  return TraceAllowedImpl(prm, *cachedFieldEx, x0_m, v0_unit, R_GV, maxTraceTimeOverride_s, exitState);
 }
 
 } // namespace GridlessMode
