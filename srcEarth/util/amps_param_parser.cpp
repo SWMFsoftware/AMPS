@@ -108,10 +108,10 @@
 
 #include "amps_param_parser.h"
 #include "../boundary/spectrum.h"  // cSpectrum + global spectrum init
+#include "specfunc.h"
 
 #include <fstream>
 #include <sstream>
-#include <stdexcept>
 #include <algorithm>
 #include <cctype>
 #include <vector>
@@ -148,7 +148,8 @@ bool ToBool(const std::string& sIn) {
   std::string s=ToUpper(Trim(sIn));
   if (s=="T"||s=="TRUE"||s=="1"||s=="YES"||s=="Y") return true;
   if (s=="F"||s=="FALSE"||s=="0"||s=="NO"||s=="N") return false;
-  throw std::runtime_error("Cannot parse boolean token: '"+sIn+"'");
+  { std::ostringstream _exit_msg; _exit_msg << "Cannot parse boolean token: '"+sIn+"'"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
+  return false; //The code should not come to this point -- it is here just to make the compiler happy
 }
 
 //======================================================================================
@@ -159,7 +160,8 @@ static EarthUtil::DensitySpectrumParam::Spacing ParseEnergySpacingToken(const st
   const std::string t = ToUpper(Trim(s));
   if (t=="LOG") return EarthUtil::DensitySpectrumParam::Spacing::LOG;
   if (t=="LINEAR") return EarthUtil::DensitySpectrumParam::Spacing::LINEAR;
-  throw std::runtime_error("DS_ENERGY_SPACING must be LOG or LINEAR (got '" + Trim(s) + "')");
+  { std::ostringstream _exit_msg; _exit_msg << "DS_ENERGY_SPACING must be LOG or LINEAR (got '" + Trim(s) + "')"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
+  return EarthUtil::DensitySpectrumParam::Spacing::LINEAR; //The code should not come to this point -- it is here just to make the compiler happy
 }
 
 static inline void SplitKV(const std::string& line,std::string& key,std::string& value) {
@@ -239,7 +241,7 @@ static inline double GetDoubleOrThrow(const std::map<std::string,std::string>& m
                                       const std::string& k,
                                       const std::string& ctx) {
   auto it=m.find(k);
-  if (it==m.end()) throw std::runtime_error("Missing required spectrum key '"+k+"' in "+ctx);
+  if (it==m.end()) { std::ostringstream _exit_msg; _exit_msg << "Missing required spectrum key '"+k+"' in "+ctx; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
   return std::stod(it->second);
 }
 
@@ -247,7 +249,7 @@ static inline std::string GetStringOrThrow(const std::map<std::string,std::strin
                                            const std::string& k,
                                            const std::string& ctx) {
   auto it=m.find(k);
-  if (it==m.end()) throw std::runtime_error("Missing required spectrum key '"+k+"' in "+ctx);
+  if (it==m.end()) { std::ostringstream _exit_msg; _exit_msg << "Missing required spectrum key '"+k+"' in "+ctx; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
   return Trim(it->second);
 }
 
@@ -310,17 +312,17 @@ static const double kEarthRadiusKm = AMPS_EARTH_RADIUS_KM;
 // Supported units (case-insensitive): km, Re.
 static double ParseLengthToKm(const std::string& token,const std::string& unitHintFromComment="") {
   std::string t=Trim(token);
-  if (t.empty()) throw std::runtime_error("Empty length token");
+  if (t.empty()) exit(__LINE__,__FILE__,"Empty length token");
 
   const char* begin=t.c_str();
   char* end=nullptr;
   errno=0;
   double value=std::strtod(begin,&end);
   if (begin==end) {
-    throw std::runtime_error("Cannot parse numeric length token: '"+t+"'");
+    { std::ostringstream _exit_msg; _exit_msg << "Cannot parse numeric length token: '"+t+"'"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
   }
   if (errno==ERANGE) {
-    throw std::runtime_error("Length token is out of range: '"+t+"'");
+    { std::ostringstream _exit_msg; _exit_msg << "Length token is out of range: '"+t+"'"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
   }
 
   std::string suffix=ToLower(Trim(std::string(end)));
@@ -345,7 +347,7 @@ static double ParseLengthToKm(const std::string& token,const std::string& unitHi
   if (!suffix.empty()) {
     if (suffix=="km") return value;
     if (suffix=="re") return value*kEarthRadiusKm;
-    throw std::runtime_error("Unsupported inline length unit '"+suffix+"' in token '"+t+"'");
+    { std::ostringstream _exit_msg; _exit_msg << "Unsupported inline length unit '"+suffix+"' in token '"+t+"'"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
   }
 
   // No inline suffix: use comment hint if present. The comment may be a pure
@@ -420,7 +422,7 @@ static std::vector<double> ParseLengthListToKm(const std::string& values,const s
 AmpsParam ParseAmpsParamFile(const std::string& fileName) {
   std::ifstream fin(fileName);
   if (!fin.is_open()) {
-    throw std::runtime_error("Cannot open input file: "+fileName);
+    { std::ostringstream _exit_msg; _exit_msg << "Cannot open input file: "+fileName; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
   }
 
   AmpsParam p;
@@ -459,7 +461,7 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       std::istringstream iss(line);
       std::string tok; iss >> tok;
       if (ToUpper(tok)!="POINT") {
-        throw std::runtime_error("Malformed POINTS block at line "+std::to_string(lineNo)+": "+line);
+        { std::ostringstream _exit_msg; _exit_msg << "Malformed POINTS block at line "+std::to_string(lineNo)+": "+line; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
       }
       // POINT coordinates are length-like values. They may have inline units
       // (e.g. POINT 1Re 0 0) or units specified in the comment after '!':
@@ -467,12 +469,12 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       //   POINT 6371 0 0 ! km km km
       std::string xTok,yTok,zTok;
       if (!(iss >> xTok >> yTok >> zTok)) {
-        throw std::runtime_error("Cannot parse POINT coordinates at line "+std::to_string(lineNo)+": "+line);
+        { std::ostringstream _exit_msg; _exit_msg << "Cannot parse POINT coordinates at line "+std::to_string(lineNo)+": "+line; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
       }
       Vec3 v;
       {
         std::vector<double> xyz = ParseLengthListToKm(xTok+" "+yTok+" "+zTok, commentText);
-        if (xyz.size()!=3) throw std::runtime_error("Internal error parsing POINT at line "+std::to_string(lineNo));
+        if (xyz.size()!=3) { std::ostringstream _exit_msg; _exit_msg << "Internal error parsing POINT at line "+std::to_string(lineNo); exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
         v.x=xyz[0]; v.y=xyz[1]; v.z=xyz[2];
       }
       p.output.points.push_back(v);
@@ -633,59 +635,59 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
 if (ToUpper(p.field.model)=="DIPOLE") {
   // Moment scaling must be positive.
   if (!(p.field.dipoleMoment_Me>0.0)) {
-    throw std::runtime_error("DIPOLE_MOMENT must be > 0 (multiples of M_E)");
+    exit(__LINE__,__FILE__,"DIPOLE_MOMENT must be > 0 (multiples of M_E)");
   }
   // Keep tilt range conservative; values outside +/-90 deg usually indicate
   // a coordinate/sign convention mistake in the input.
   if (p.field.dipoleTilt_deg < -90.0 || p.field.dipoleTilt_deg > 90.0) {
-    throw std::runtime_error("DIPOLE_TILT must be in [-90, 90] degrees");
+    exit(__LINE__,__FILE__,"DIPOLE_TILT must be in [-90, 90] degrees");
   }
 }
 
 if (p.output.mode=="POINTS" && p.output.points.empty()) {
-    throw std::runtime_error("OUTPUT_MODE=POINTS but no POINT entries were found in POINTS_BEGIN/END block");
+    exit(__LINE__,__FILE__,"OUTPUT_MODE=POINTS but no POINT entries were found in POINTS_BEGIN/END block");
   }
 
   // Validate density/spectrum controls if requested.
   if (ToUpper(p.calc.target)=="DENSITY_SPECTRUM") {
     if (!(p.densitySpectrum.Emin_MeV>0.0)) {
-      throw std::runtime_error("DS_EMIN must be > 0 (MeV)");
+      exit(__LINE__,__FILE__,"DS_EMIN must be > 0 (MeV)");
     }
     if (!(p.densitySpectrum.Emax_MeV>p.densitySpectrum.Emin_MeV)) {
-      throw std::runtime_error("DS_EMAX must be > DS_EMIN (MeV)");
+      exit(__LINE__,__FILE__,"DS_EMAX must be > DS_EMIN (MeV)");
     }
     if (!(p.densitySpectrum.nIntervals>=1)) {
-      throw std::runtime_error("DS_NINTERVALS must be >= 1");
+      exit(__LINE__,__FILE__,"DS_NINTERVALS must be >= 1");
     }
     if (p.densitySpectrum.maxParticlesPerPoint < 0) {
-      throw std::runtime_error("DS_MAX_PARTICLES must be >= 0 (0 means: no cap)");
+      exit(__LINE__,__FILE__,"DS_MAX_PARTICLES must be >= 0 (0 means: no cap)");
     }
     if (p.densitySpectrum.maxTrajTime_s < 0.0) {
-      throw std::runtime_error("DS_MAX_TRAJ_TIME must be >= 0 (0 means: use MAX_TRACE_TIME)");
+      exit(__LINE__,__FILE__,"DS_MAX_TRAJ_TIME must be >= 0 (0 means: use MAX_TRACE_TIME)");
     }
     if (ToUpper(p.calc.fieldEvalMethod)!="GRIDLESS") {
-      throw std::runtime_error("DENSITY_SPECTRUM currently requires FIELD_EVAL_METHOD = GRIDLESS");
+      exit(__LINE__,__FILE__,"DENSITY_SPECTRUM currently requires FIELD_EVAL_METHOD = GRIDLESS");
     }
     // Validate DS_BOUNDARY_MODE token.
     const std::string bm = ToUpper(p.densitySpectrum.boundaryMode);
     if (bm!="ISOTROPIC" && bm!="ANISOTROPIC") {
-      throw std::runtime_error("DS_BOUNDARY_MODE must be ISOTROPIC or ANISOTROPIC (got '"+p.densitySpectrum.boundaryMode+"')");
+      { std::ostringstream _exit_msg; _exit_msg << "DS_BOUNDARY_MODE must be ISOTROPIC or ANISOTROPIC (got '"+p.densitySpectrum.boundaryMode+"')"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
     }
     // When ANISOTROPIC is requested, validate the anisotropy sub-parameters.
     if (bm=="ANISOTROPIC") {
       const std::string pm = ToUpper(p.anisotropy.padModel);
       if (pm!="ISOTROPIC" && pm!="SINALPHA_N" && pm!="COSALPHA_N" && pm!="BIDIRECTIONAL") {
-        throw std::runtime_error("BA_PAD_MODEL must be ISOTROPIC|SINALPHA_N|COSALPHA_N|BIDIRECTIONAL (got '"+p.anisotropy.padModel+"')");
+        { std::ostringstream _exit_msg; _exit_msg << "BA_PAD_MODEL must be ISOTROPIC|SINALPHA_N|COSALPHA_N|BIDIRECTIONAL (got '"+p.anisotropy.padModel+"')"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
       }
       if (p.anisotropy.padExponent < 0.0) {
-        throw std::runtime_error("BA_PAD_EXPONENT must be >= 0");
+        exit(__LINE__,__FILE__,"BA_PAD_EXPONENT must be >= 0");
       }
       const std::string sm = ToUpper(p.anisotropy.spatialModel);
       if (sm!="UNIFORM" && sm!="DAYSIDE_NIGHTSIDE") {
-        throw std::runtime_error("BA_SPATIAL_MODEL must be UNIFORM|DAYSIDE_NIGHTSIDE (got '"+p.anisotropy.spatialModel+"')");
+        { std::ostringstream _exit_msg; _exit_msg << "BA_SPATIAL_MODEL must be UNIFORM|DAYSIDE_NIGHTSIDE (got '"+p.anisotropy.spatialModel+"')"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
       }
       if (p.anisotropy.daysideFactor < 0.0 || p.anisotropy.nightsideFactor < 0.0) {
-        throw std::runtime_error("BA_DAYSIDE_FACTOR and BA_NIGHTSIDE_FACTOR must be >= 0");
+        exit(__LINE__,__FILE__,"BA_DAYSIDE_FACTOR and BA_NIGHTSIDE_FACTOR must be >= 0");
       }
     }
   }

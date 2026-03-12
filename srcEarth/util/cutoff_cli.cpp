@@ -19,12 +19,12 @@
 // The parser walks argv[1..argc-1] with an index cursor i:
 //   for i in 1..argc-1:
 //     if argv[i] is a recognised flag expecting a value:
-//       if i+1 >= argc: throw std::runtime_error("flag needs argument")
+//       if i+1 >= argc: exit(__LINE__,__FILE__,"flag needs argument")
 //       store argv[++i] as the value
 //     elif argv[i] is a recognised boolean flag (e.g., -h):
 //       set the corresponding bool field
 //     else:
-//       throw std::runtime_error("unrecognised option: <argv[i]>")
+//       exit(__LINE__,__FILE__,"unrecognised option: <argv[i]>")
 //
 // Values are stored as strings without case normalisation; the solver
 // normalises internally (ToUpper, ParseMoverType, etc.).
@@ -51,9 +51,9 @@
 //======================================================================================
 
 #include "cutoff_cli.h"
+#include "specfunc.h"
 
 #include <sstream>
-#include <stdexcept>
 
 namespace EarthUtil {
 
@@ -67,11 +67,11 @@ CliOptions ParseCli(int argc,char** argv) {
       opt.help=true;
     }
     else if (a=="-mode") {
-      if (i+1>=argc) throw std::runtime_error("Missing value after -mode");
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -mode");
       opt.mode=argv[++i];
     }
     else if (a=="-i") {
-      if (i+1>=argc) throw std::runtime_error("Missing value after -i");
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -i");
       opt.inputFile=argv[++i];
     }
     else if (a=="-mover" || a=="--mover") {
@@ -79,19 +79,19 @@ CliOptions ParseCli(int argc,char** argv) {
       // into the internal enum (MoverType) and then apply it to the shared mover
       // module (GridlessParticleMovers). This keeps this CLI file small and avoids
       // pulling gridless numerics headers into util/.
-      if (i+1>=argc) throw std::runtime_error("Missing value after -mover");
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -mover");
       opt.mover=argv[++i];
     }
     else if (a=="-density-mode" || a=="--density-mode") {
       // Overrides DS_BOUNDARY_MODE from the input file.
       // Supported values (case-insensitive): ISOTROPIC | ANISOTROPIC
-      if (i+1>=argc) throw std::runtime_error("Missing value after -density-mode");
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density-mode");
       opt.densityMode=argv[++i];
     }
     else {
       std::ostringstream oss;
       oss << "Unknown CLI token: '" << a << "'. Use -h for help.";
-      throw std::runtime_error(oss.str());
+      exit(__LINE__,__FILE__,oss.str().c_str());
     }
   }
 
