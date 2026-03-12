@@ -128,6 +128,8 @@ void exit(long int nline, const char* fname, const char* msg) {
     printf("$PREFIX: exit: line=%ld, file=%s, message=%s (error code=%i.%i)\n",nline,fname,msg,t1,t2);
   }
 
+  fflush(stdout);
+
   #ifndef __CUDA_ARCH__  
   char str[1000];
   PrintErrorLog(str);
