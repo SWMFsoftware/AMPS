@@ -432,6 +432,7 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
 
   std::string section;
   bool inPointsBlock=false;
+  bool inChannelsBlock=false;
 
   std::string line;
   int lineNo=0;
@@ -457,6 +458,10 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
     if (ToUpper(line)=="POINTS_BEGIN") { inPointsBlock=true; continue; }
     if (ToUpper(line)=="POINTS_END") { inPointsBlock=false; continue; }
 
+    // Block delimiters for ENERGY_CHANNELS
+    if (ToUpper(line)=="CH_BEGIN") { inChannelsBlock=true; continue; }
+    if (ToUpper(line)=="CH_END")   { inChannelsBlock=false; continue; }
+
     if (inPointsBlock) {
       std::istringstream iss(line);
       std::string tok; iss >> tok;
@@ -478,6 +483,35 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         v.x=xyz[0]; v.y=xyz[1]; v.z=xyz[2];
       }
       p.output.points.push_back(v);
+      continue;
+    }
+
+    // ----- ENERGY_CHANNELS block: each line is  NAME  E1_MeV  E2_MeV  -----
+    // PHYSICS:
+    //   Each channel defines an energy sub-range for integral-flux output.
+    //   The solver will integrate  F_ch = 4pi * integral[E1,E2] T(E)*Jb(E) dE.
+    // VALIDATION:
+    //   E1 and E2 are checked here; cross-validation against DS_EMIN/DS_EMAX
+    //   is left to the solver (channels that don't overlap the grid give F=0).
+    if (inChannelsBlock) {
+      std::istringstream iss(line);
+      EnergyChannel ch;
+      if (!(iss >> ch.name >> ch.E1_MeV >> ch.E2_MeV)) {
+        { std::ostringstream _exit_msg; _exit_msg << "Malformed CH line at line "
+            +std::to_string(lineNo)+": expected NAME E1_MeV E2_MeV, got: "+line;
+          exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
+      }
+      if (ch.E1_MeV <= 0.0) {
+        { std::ostringstream _exit_msg; _exit_msg << "Energy channel '"+ch.name
+            +"' at line "+std::to_string(lineNo)+": E1_MeV must be > 0";
+          exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
+      }
+      if (ch.E2_MeV <= ch.E1_MeV) {
+        { std::ostringstream _exit_msg; _exit_msg << "Energy channel '"+ch.name
+            +"' at line "+std::to_string(lineNo)+": E2_MeV must be > E1_MeV";
+          exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
+      }
+      p.fluxChannels.push_back(ch);
       continue;
     }
 

@@ -117,6 +117,21 @@
 //
 //   Any unrecognised section or key is stored in AmpsParam.unknown for diagnostics.
 //
+//   #ENERGY_CHANNELS    (optional; if present, enables per-channel integral flux output)
+//     CH_BEGIN
+//       NAME   E1_MeV   E2_MeV   [! optional comment]
+//       ...
+//     CH_END
+//     Example:
+//       CH_BEGIN
+//         CH1   10.0   100.0    ! 10–100 MeV
+//         CH2  100.0  1000.0    ! 100 MeV–1 GeV
+//         CH3 1000.0 10000.0    ! 1–10 GeV
+//         CH4 10000.0 20000.0   ! 10–20 GeV
+//       CH_END
+//     Channels may overlap and may extend outside [DS_EMIN, DS_EMAX].
+//     If this section is absent, only the total integral flux is computed.
+//
 //======================================================================================
 // TYPE CONVERSION RULES
 //======================================================================================
@@ -454,6 +469,67 @@ namespace EarthUtil {
     std::string fieldEvalMethod{"GRIDLESS"};
   };
 
+  //====================================================================================
+  // EnergyChannel — one user-defined integral-flux channel (#ENERGY_CHANNELS section)
+  //====================================================================================
+  //
+  // PHYSICS
+  //   An energy channel [E1, E2] defines the integration range for the omnidirectional
+  //   integral particle flux at each observation point x0:
+  //
+  //     F_ch(x0) = 4π ∫_{E1}^{E2} J_loc(E; x0) dE
+  //              = 4π ∫_{E1}^{E2} T(E; x0) · J_b(E) dE          [m^-2 s^-1]
+  //
+  //   Integral flux differs from number density by the absence of a 1/v(E) weight:
+  //
+  //     n(x0)    = 4π ∫ J_loc(E; x0) / v(E) dE                   [m^-3]
+  //
+  //   The 1/v weight makes density sensitive to slow particles. Flux treats all
+  //   energies in the channel with equal weight (per unit energy interval).
+  //
+  // ANALYTIC CLOSED FORM (power-law boundary spectrum, gamma ≠ 1)
+  //   For J_b(E) = J0 · (E/E0)^{-gamma}:
+  //
+  //     F_ch = 4π · T · J0 · E0^gamma / (gamma-1) · ( E1^{1-gamma} − E2^{1-gamma} )
+  //
+  //   Special case gamma = 2 (the test configuration):
+  //     F_ch = 4π · T · J0 · E0² · ( 1/E1 − 1/E2 )
+  //
+  //   Total flux over the full solver energy range [Emin, Emax] is obtained by
+  //   substituting E1=Emin, E2=Emax in the same formula.
+  //
+  // NUMERICAL IMPLEMENTATION
+  //   Channel integrals are computed from the T(E) array already computed by the
+  //   density solver. For each channel [E1, E2]:
+  //
+  //     (1) Find all grid nodes E_i with E1 ≤ E_i ≤ E2. Call this sub-array {E_i}.
+  //     (2) Prepend E1 with T linearly interpolated from the two surrounding nodes if
+  //         E1 does not coincide with a grid node. Append E2 similarly.
+  //     (3) Accumulate F = 4π · Σ_i 0.5·(J_loc_i + J_loc_{i+1})·(E_{i+1} − E_i)
+  //         using the trapezoidal rule in MeV (then convert to J internally, or use
+  //         a consistent unit system throughout).
+  //
+  //   Channels may overlap and may extend outside [DS_EMIN, DS_EMAX]; the
+  //   integration is silently clipped to the available grid range.
+  //   No error is raised for an empty intersection (F_ch = 0 is returned).
+  //
+  // INPUT FORMAT (#ENERGY_CHANNELS section):
+  //   CH_BEGIN
+  //     NAME   E1_MeV   E2_MeV   [! optional comment]
+  //     ...
+  //   CH_END
+  //
+  //   NAME    — identifier string used in output column headings (F_NAME_m2s1).
+  //             Allowed characters: letters, digits, underscores.
+  //   E1_MeV  — lower channel boundary [MeV], must be > 0.
+  //   E2_MeV  — upper channel boundary [MeV], must be > E1_MeV.
+  //====================================================================================
+  struct EnergyChannel {
+    std::string name;       // identifier  (e.g. "CH1", "P10_100")
+    double E1_MeV{0.0};    // lower bound [MeV]
+    double E2_MeV{0.0};    // upper bound [MeV]
+  };
+
   struct AmpsParam {
     std::string runId{"UNKNOWN"};
 
@@ -468,11 +544,14 @@ namespace EarthUtil {
     OutputDomain output;
     Numerical numerics;
 
-    // For later (flux) expansion
     std::map<std::string,std::string> spectrum;
     std::map<std::string,std::string> outputOptions;
 
-    // Holds all unknown keys across sections.
+    // User-defined integral-flux channels.  Empty when #ENERGY_CHANNELS is absent;
+    // in that case only the total integral flux F_tot is written to the output files.
+    std::vector<EnergyChannel> fluxChannels;
+
+    // Holds all unknown keys across sections (for diagnostics / forward compat).
     std::map<std::string,std::string> unknown;
   };
 
