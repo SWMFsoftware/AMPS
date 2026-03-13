@@ -141,6 +141,28 @@ void PIC::Mesh::cDataCenterNode::PrintVariableList(FILE* fout,int DataSetNumber)
   if (PIC::IndividualModelSampling::PrintVariableList.size()!=0) {
     for (unsigned int i=0;i<PIC::IndividualModelSampling::PrintVariableList.size();i++) PIC::IndividualModelSampling::PrintVariableList[i](fout,DataSetNumber);
   }
+
+#if _CONVERT_OUTPUT_SI_UNITS_ == _PIC_MODE_ON_
+  // IMPORTANT ABOUT PLACEMENT OF THE EXTRA SI COLUMNS:
+  //
+  // The existing Tecplot output path prints data in the following order:
+  //   1. built-in sampled center-node data (OutputData[])
+  //   2. user-defined center-node data (PrintDataCenterNode callbacks)
+  //   3. optional drift velocity
+  //   4. optional IndividualModelSampling data
+  //
+  // Therefore the matching variable list must use the exact same order.  The
+  // safest place for any *new* derived output columns is at the very end, after
+  // all pre-existing variables, so that none of the legacy columns shift their
+  // header/data alignment.  This is especially important for externally added
+  // fields such as magnetic field output (e.g., "Bx (center node)").
+  //
+  // Append all SI-converted particle quantities here, in the exact same order
+  // in which their numeric values are appended at the end of PrintData().
+  fprintf(fout, ", \"Number Density[SI]\"");
+  fprintf(fout, ", \"Particle Speed[SI, m/s]\"");
+  fprintf(fout, ", \"Particle Velocity X[SI, m/s]\", \"Particle Velocity Y[SI, m/s]\", \"Particle Velocity Z[SI, m/s]\"");
+#endif
 }
 
 void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread) {
@@ -151,6 +173,28 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
   static vector<cDatumTimed*>    DataTimedPrint;
   static vector<cDatumWeighted*> DataWeightedPrint;
   static vector<cDatumDerived*>  DataDerivedPrint;
+
+#if _CONVERT_OUTPUT_SI_UNITS_ == _PIC_MODE_ON_
+  // Indices of selected built-in sampled quantities inside the flattened
+  // OutputData[] array that stores the already-sampled center-node quantities.
+  //
+  // Why store indices instead of re-sampling later?
+  //   1. It guarantees that the SI conversion uses the exact same normalized
+  //      values that are already being printed to Tecplot in the legacy columns.
+  //   2. It avoids any risk of recomputing a different quantity or using a
+  //      different accumulation path.
+  //   3. It keeps the new SI columns purely as post-processing views of the
+  //      existing output, with zero effect on the original sampled fields.
+  //
+  // Assumptions made explicit here:
+  //   * DatumNumberDensity has length 1.
+  //   * DatumParticleSpeed has length 1.
+  //   * DatumParticleVelocity has length 3 and stores components in the order
+  //     X, Y, Z.
+  static int iOutputNumberDensity = -1;
+  static int iOutputParticleSpeed = -1;
+  static int iOutputParticleVelocity = -1;
+#endif
 
   static unsigned long int nCallCounter=0;
   ++nCallCounter;
@@ -164,6 +208,16 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
 
     for(itrDatumSampled = DataSampledCenterNodeActive.begin();itrDatumSampled!= DataSampledCenterNodeActive.end();itrDatumSampled++) {
       if ((*itrDatumSampled)->doPrint==true) {
+#if _CONVERT_OUTPUT_SI_UNITS_ == _PIC_MODE_ON_
+        // Record the locations of the already-sampled quantities in the packed
+        // output vector *before* nOutput is incremented.
+        //
+        // These indices are later used to append SI-converted columns that are
+        // guaranteed to correspond exactly to the legacy printed values.
+        if ((*itrDatumSampled)==&DatumNumberDensity) iOutputNumberDensity=nOutput;
+        if ((*itrDatumSampled)==&DatumParticleSpeed) iOutputParticleSpeed=nOutput;
+        if ((*itrDatumSampled)==&DatumParticleVelocity) iOutputParticleVelocity=nOutput;
+#endif
         nOutput+=(*itrDatumSampled)->length;
 
         if((*itrDatumSampled)->type == PIC::Datum::cDatumSampled::Timed_) {
@@ -275,6 +329,72 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
   if (PIC::IndividualModelSampling::PrintSampledData.size()!=0) {
     for (unsigned int i=0;i<PIC::IndividualModelSampling::PrintSampledData.size();i++) PIC::IndividualModelSampling::PrintSampledData[i](fout,DataSetNumber,pipe,CenterNodeThread,this);
   }
+
+#if _CONVERT_OUTPUT_SI_UNITS_ == _PIC_MODE_ON_
+  // Append the SI-converted quantities *after* all pre-existing output.  This
+  // preserves the byte-for-byte order of every legacy Tecplot column and avoids
+  // shifting later quantities such as center-node magnetic field.
+  //
+  // The conversion is intentionally based on the already prepared OutputData[]
+  // values for the corresponding built-in sampled quantities.  That ensures the
+  // SI columns are simply converted views of the exact normalized values that
+  // AMPS is already writing to the legacy columns.
+  double NumberDensitySI = 0.0;
+  double ParticleSpeedSI = 0.0;
+  double ParticleVelocitySI[3] = {0.0,0.0,0.0};
+
+  bool gather_print_data_si=false;
+
+  if (pipe==NULL) gather_print_data_si=true;
+  else if (pipe->ThisThread==CenterNodeThread) gather_print_data_si=true;
+
+  if (gather_print_data_si==true) {
+    const double SpeciesMassSI = PIC::MolecularData::GetMass(DataSetNumber);
+
+    // -------- Number density -------------------------------------------------
+    // Convert normalized number density -> SI [1/m^3] using the unit
+    // normalization helpers from src/pic/units.  This call uses the global
+    // normalization factors already initialized by the units subsystem and the
+    // mass of the currently printed species.
+    if ((iOutputNumberDensity>=0) && (iOutputNumberDensity<nOutput)) {
+      const double NumberDensityNormalized = OutputData[iOutputNumberDensity];
+      NumberDensitySI = picunits::no2si_n(NumberDensityNormalized,PIC::Units::Factors,SpeciesMassSI);
+    }
+
+    // -------- Particle speed -------------------------------------------------
+    // Speed is a scalar magnitude sampled by AMPS.  Convert that scalar from
+    // normalized units to SI [m/s] using the existing velocity scale factor.
+    if ((iOutputParticleSpeed>=0) && (iOutputParticleSpeed<nOutput)) {
+      const double ParticleSpeedNormalized = OutputData[iOutputParticleSpeed];
+      ParticleSpeedSI = picunits::no2si_v(ParticleSpeedNormalized,PIC::Units::Factors);
+    }
+
+    // -------- Particle velocity vector --------------------------------------
+    // Velocity is a 3-component sampled quantity.  Convert each component using
+    // the same normalized-velocity -> SI [m/s] mapping that is used for any
+    // other velocity-like vector in src/pic/units.
+    if ((iOutputParticleVelocity>=0) && ((iOutputParticleVelocity+2)<nOutput)) {
+      picunits::no2si_v3(&OutputData[iOutputParticleVelocity],ParticleVelocitySI,PIC::Units::Factors);
+    }
+  }
+
+  if ((PIC::ThisThread==0)||(pipe==NULL)) {
+    if ((CenterNodeThread!=0)&&(pipe!=NULL)) {
+      pipe->recv((char*)&NumberDensitySI,sizeof(NumberDensitySI),CenterNodeThread);
+      pipe->recv((char*)&ParticleSpeedSI,sizeof(ParticleSpeedSI),CenterNodeThread);
+      pipe->recv((char*)ParticleVelocitySI,3*sizeof(double),CenterNodeThread);
+    }
+
+    fprintf(fout," %e ",NumberDensitySI);
+    fprintf(fout," %e ",ParticleSpeedSI);
+    fprintf(fout," %e %e %e ",ParticleVelocitySI[0],ParticleVelocitySI[1],ParticleVelocitySI[2]);
+  }
+  else {
+    pipe->send((char*)&NumberDensitySI,sizeof(NumberDensitySI));
+    pipe->send((char*)&ParticleSpeedSI,sizeof(ParticleSpeedSI));
+    pipe->send((char*)ParticleVelocitySI,3*sizeof(double));
+  }
+#endif
 
 }
 

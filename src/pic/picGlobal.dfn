@@ -86,6 +86,20 @@ at the end of each time step
 //output macroscopic particle drift velocity
 #define _PIC_OUTPUT__DRIFT_VELOCITY__MODE_ _PIC_MODE_OFF_
 
+// Control whether additional SI-converted diagnostic columns are appended to
+// Tecplot ASCII output.
+//
+// IMPORTANT: this switch is intentionally limited to OUTPUT ONLY.  It does not
+// change any sampled data stored in the center-node buffers, does not modify
+// internal normalization, and does not affect the values used anywhere else in
+// the solver.  The original normalized quantity is left untouched, and the SI
+// quantity is appended as an extra Tecplot column when enabled.
+//
+// Keeping the conversion localized to the file-output stage avoids any risk of
+// changing the physics, sampling, interpolation, restart files, or any other
+// internal diagnostics that rely on the normalized values.
+#define _CONVERT_OUTPUT_SI_UNITS_ _PIC_MODE_ON_
+
 
 //the maximum length of the strings
 #define _MAX_STRING_LENGTH_PIC_  2000

@@ -6188,6 +6188,14 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonProcessFinalSolution(doubl
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCenterNodeVariableList(FILE* fout,int DataSetNumber) {
   fprintf(fout,",\"Bx (center node)\",\"By (center node)\",\"Bz (center node)\"");
+
+#if _CONVERT_OUTPUT_SI_UNITS_ == _PIC_MODE_ON_
+  // Append SI-converted magnetic-field variable names immediately after the
+  // legacy center-node magnetic-field components.  The data routine appends the
+  // converted values in this exact same place, so the header/data order remains
+  // strictly aligned for Tecplot.
+  fprintf(fout,",\"Bx (center node) [SI, T]\",\"By (center node) [SI, T]\",\"Bz (center node) [SI, T]\"");
+#endif
 }
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::output::InterpolateCenterNode(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode) {
@@ -6214,6 +6222,15 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCenterNodeData(FILE*
   int idim;
   double * t;
 
+#if _CONVERT_OUTPUT_SI_UNITS_ == _PIC_MODE_ON_
+  // Buffer for the SI-converted magnetic field.
+  //
+  // This is intentionally a separate buffer rather than an in-place conversion
+  // of t[].  The legacy output columns must remain unchanged, and the SI view is
+  // appended as additional Tecplot columns after the original values are written.
+  double tSI[3] = {0.0,0.0,0.0};
+#endif
+
   bool gather_print_data=false;
 
   if (pipe==NULL) gather_print_data=true;
@@ -6223,23 +6240,60 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCenterNodeData(FILE*
   if (gather_print_data==true) { // (pipe->ThisThread==CenterNodeThread) {
     t= (double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+CurrentBOffset);
     // t= (double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+
+#if _CONVERT_OUTPUT_SI_UNITS_ == _PIC_MODE_ON_
+    // Convert the already prepared magnetic-field vector from normalized units
+    // to SI units [Tesla] using the common AMPS normalization helpers.  Doing
+    // the conversion here at output time keeps the solver state itself in its
+    // original normalized representation.
+    picunits::no2si_B3(t,tSI,PIC::Units::Factors);
+#endif
   }
   
   if ((PIC::ThisThread==0)||(pipe==NULL)) { // (pipe->ThisThread==0) {
     if ((CenterNodeThread!=0)&&(pipe!=NULL)) t=pipe->recvPointer<double>(3,CenterNodeThread);
     fprintf(fout,"%e %e %e ",t[0],t[1],t[2]);
+
+#if _CONVERT_OUTPUT_SI_UNITS_ == _PIC_MODE_ON_
+    // The SI magnetic field is appended immediately after the legacy Bx/By/Bz
+    // columns because the variable list routine appended the matching names in
+    // the same place.  Preserve that exact order to avoid header/data shifts.
+    if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv((char*)tSI,3*sizeof(double),CenterNodeThread);
+    fprintf(fout,"%e %e %e ",tSI[0],tSI[1],tSI[2]);
+#endif
   }
+#if _CONVERT_OUTPUT_SI_UNITS_ == _PIC_MODE_ON_
+  else {
+    pipe->send(t,3);
+    pipe->send((char*)tSI,3*sizeof(double));
+  }
+#else
   else pipe->send(t,3);
+#endif
 
 }
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCornerNodeVariableList(FILE* fout,int DataSetNumber) {
   fprintf(fout,",\"Ex (corner node)\",\"Ey (corner node)\",\"Ez (corner node)\"");
+
+#if _CONVERT_OUTPUT_SI_UNITS_ == _PIC_MODE_ON_
+  // Append SI-converted electric-field variable names immediately after the
+  // legacy corner-node electric-field components.  This mirrors the order used
+  // in PrintCornerNodeData() and prevents Tecplot variable/data misalignment.
+  fprintf(fout,",\"Ex (corner node) [SI, V/m]\",\"Ey (corner node) [SI, V/m]\",\"Ez (corner node) [SI, V/m]\"");
+#endif
 }
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCornerNodeData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CornerNodeThread,PIC::Mesh::cDataCornerNode *CornerNode) {
   int idim;
   double * t;
+
+#if _CONVERT_OUTPUT_SI_UNITS_ == _PIC_MODE_ON_
+  // Temporary storage for the electric field converted from normalized output
+  // units to SI [V/m].  This is kept separate from t[] so the original output
+  // remains untouched and only the extra Tecplot columns carry converted data.
+  double tSI[3] = {0.0,0.0,0.0};
+#endif
 
   bool gather_print_data=false;
 
@@ -6249,13 +6303,32 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCornerNodeData(FILE*
 
   if (gather_print_data==true) { // (pipe->ThisThread==CornerNodeThread) {
     t= ((double*)(CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+CurrentEOffset));
+
+#if _CONVERT_OUTPUT_SI_UNITS_ == _PIC_MODE_ON_
+    // Convert the electric-field vector with the standard AMPS units helpers.
+    // The conversion factors are provided by PIC::Units::Factors, which is the
+    // same normalization state used consistently elsewhere in the code.
+    picunits::no2si_E3(t,tSI,PIC::Units::Factors);
+#endif
   }
 
   if ((PIC::ThisThread==0)||(pipe==NULL)) {// (pipe->ThisThread==0) {
     if ((CornerNodeThread!=0)&&(pipe!=NULL)) t=pipe->recvPointer<double>(3,CornerNodeThread);
     fprintf(fout,"%e %e %e ",t[0],t[1],t[2]);
+
+#if _CONVERT_OUTPUT_SI_UNITS_ == _PIC_MODE_ON_
+    if ((CornerNodeThread!=0)&&(pipe!=NULL)) pipe->recv((char*)tSI,3*sizeof(double),CornerNodeThread);
+    fprintf(fout,"%e %e %e ",tSI[0],tSI[1],tSI[2]);
+#endif
   }
+#if _CONVERT_OUTPUT_SI_UNITS_ == _PIC_MODE_ON_
+  else {
+    pipe->send(t,3);
+    pipe->send((char*)tSI,3*sizeof(double));
+  }
+#else
   else pipe->send(t,3);
+#endif
 }
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::matvec(double* VecIn, double * VecOut, int n){
