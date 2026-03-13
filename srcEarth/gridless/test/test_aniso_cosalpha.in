@@ -86,3 +86,20 @@
   POINT      0.0       0.0   50969.6       ! TC-PL8: 8 Re magnetic pole (+Z)
   POINT  38227.2       0.0       0.0       ! TC-EQ6: 6 Re equator
   POINTS_END
+
+#ENERGY_CHANNELS
+  ! Integral-flux output channels: F_ch = 4pi * int[E1,E2] T(E)*Jb(E) dE  [m^-2 s^-1]
+  ! NOTE: the solver energy grid is 5-50 GeV.
+  !   CH1 [10-100 MeV] and CH2 [100 MeV-1 GeV] lie BELOW the grid; solver returns 0.
+  !   CH3 [1-10 GeV]  clips to [5-10 GeV]  (within grid).
+  !   CH4 [10-20 GeV] clips to [10-20 GeV] (fully within grid).
+  ! Analytic reference (power-law gamma=2, T=T_eff):
+  !   F_ch = 4pi * T_eff * J0 * E0^2 * (1/lo - 1/hi)  where lo,hi = clipped limits
+  !
+  ! NAME    E1_MeV    E2_MeV
+  CH_BEGIN
+    CH1       10.0     100.0   ! 10-100 MeV  — below grid, expect F=0
+    CH2      100.0    1000.0   ! 100 MeV-1 GeV — below grid, expect F=0
+    CH3     1000.0   10000.0   ! 1-10 GeV — clips to [5000,10000 MeV] in grid
+    CH4    10000.0   20000.0   ! 10-20 GeV — fully within grid [5000,50000 MeV]
+  CH_END

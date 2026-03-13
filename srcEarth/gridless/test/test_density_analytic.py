@@ -2,107 +2,118 @@
 """
 test_density_analytic.py
 ========================
-Compare AMPS gridless density/spectrum output against analytic predictions
-for four test cases in a pure DIPOLE magnetic field.
+Compare AMPS gridless density/spectrum/flux output against closed-form analytic
+predictions for four test cases in a pure DIPOLE magnetic field.
 
 USAGE
 -----
-  # Run after AMPS has produced its output files in the current directory:
-  python3 test_density_analytic.py [--spectrum-dir <path>] [--tol <fraction>]
-
-  Default: looks for gridless_points_density.dat and gridless_points_spectrum.dat
-  in the current directory.
+  python3 test_density_analytic.py [OPTIONS]
 
   Options:
-    --spectrum-dir PATH   directory containing the AMPS output files
-    --tol FRACTION        relative tolerance for pass/fail (default 0.05 = 5 %)
-    --no-plots            skip matplotlib figures even if matplotlib is available
+    --dir PATH     directory containing AMPS output files  (default: '.')
+    --tol FRAC     relative tolerance for exact tests       (default: 0.05)
+    --no-plots     skip matplotlib figures
+    -v             verbose (default: True)
 
-PHYSICS SUMMARY
----------------
-The AMPS gridless solver computes, at each observation point x0:
+OUTPUT FILES READ
+-----------------
+  gridless_points_density.dat    total number density per point
+  gridless_points_spectrum.dat   T(E), J_b(E), J_loc(E) per point
+  gridless_points_flux.dat       total + per-channel integral flux per point
+                                 (present only if #ENERGY_CHANNELS is in the input)
 
-  J_loc(E; x0) = T(E; x0) * J_b(E)
+=============================================================================
+SECTION 1  PHYSICS BACKGROUND
+=============================================================================
 
-  n_tot(x0) = 4pi * integral[Emin,Emax] T(E; x0) * J_b(E) / v(E) dE
+1.1  Liouville's theorem and directional transmissivity
+  In a static magnetic field, Liouville's theorem states that phase-space
+  density is constant along particle trajectories. For an isotropic boundary
+  distribution J_b(E) [m^-2 s^-1 sr^-1 MeV^-1], the local intensity at x0 is
 
-where
-  J_b(E)  = boundary differential intensity  [m^-2 s^-1 sr^-1 MeV^-1]
-  T(E; x0) = transmissivity = fraction of isotropic directions that
-             backtrack to the outer domain box (= ALLOWED trajectories)
-  v(E)    = relativistic proton speed at kinetic energy E
+    J_loc(E, Ω; x0) = A(E, Ω; x0) · J_b(E)
 
-For a power-law boundary spectrum  J_b(E) = J0 * (E/E0)^{-gamma}
-and observation points where ALL energies are above the maximum Størmer
-cutoff, the transmissivity equals the geometric transmissivity:
+  where A=1 if direction Ω backtraces to the outer boundary (ALLOWED) and
+  A=0 if it terminates on the loss sphere (FORBIDDEN).
 
-  T(E; x0) = T_geo(r)  for all E in [Emin, Emax]
+  The direction-averaged (isotropic) transmissivity is
 
-  T_geo(r) = (1 + sqrt(1 - (r_inner/r)^2)) / 2
+    T(E; x0) = (1/4π) ∫ A dΩ  ≈  N_allowed / N_dirs
 
-This is the EXACT analytic prediction — no free parameters.
+  The solver samples N_dirs = 24×48 = 1152 directions per energy per point.
+  Statistical uncertainty: σ_T ≈ 1/√N_dirs × 0.5 ≈ 1.5%.
 
-DIPOLE STØRMER CUTOFFS (for protons, Earth dipole B_eq = 3.12e-5 T)
---------------------------------------------------------------------
-The maximum Størmer cutoff at equatorial radius r (in Earth radii):
+1.2  Number density  (1/v weighted)
+    n(x0) = 4π ∫_{Emin}^{Emax} T(E;x0)·J_b(E) / v(E) dE         [m^-3]
 
-  Rc_max(r) = (mu0/4pi * M_E / Re^2) * (c/1e9) / r^2   [GV]
-            = 59.6 / r^2  GV                             [Re units]
+  The factor 1/v(E) arises from the relation n = (4π/v)·J for isotropic f.
+  Slow particles contribute more density per unit flux.
 
-At the geomagnetic pole: Rc = 0 for all r (cos(lambda)=0 exactly).
+1.3  Omnidirectional integral flux  (NOT 1/v weighted)
+    F(x0; E1,E2) = 4π ∫_{E1}^{E2} T(E;x0)·J_b(E) dE              [m^-2 s^-1]
 
-TEST CASES
-----------
-Point index  Location (GSM km)       Energy range      Expected T       Test type
------------  ---------------------   ---------------   ---------------  ---------
-0  TC1        (50969.6, 0, 0)        2–20 GeV          T_geo = 0.99600  EXACT
-1  TC2        (0, 0, 31856)          50–500 MeV        T_geo = 0.98969  EXACT
-2  TC3        (38227.2, 0, 0)        3–30 GeV          T_geo = 0.99287  EXACT
-3  TC4        (12742.4, 0, 0)        10–500 MeV        T << T_geo       UPPER BOUND
+  Flux counts particles crossing a unit surface per unit time from all
+  directions. No velocity weighting: each particle counts once regardless
+  of speed.
 
-For TC1–TC3, the pass criterion is:
-  |n_model - n_analytic| / n_analytic < tolerance
+1.4  Density vs flux
+    n [m^-3]      = 4π ∫ T·J_b/v dE
+    F [m^-2 s^-1] = 4π ∫ T·J_b   dE
 
-For TC4, the pass criterion is:
-  n_model < 0.5 * n_analytic_Tgeo   (strong magnetic shielding)
+  Ratio: n/F = <1/v>_J  (energy-averaged inverse speed, weighted by J_b).
+  For ultra-relativistic particles (v → c): F ≈ n·c.
 
-EFFECT OF EARTH'S PRESENCE ON THE ANALYTIC ESTIMATE
-----------------------------------------------------
-Earth's inner boundary (loss sphere, r < r_inner = 1.01 Re) affects the
-density in TWO ways:
+=============================================================================
+SECTION 2  ANALYTIC REFERENCE FORMULAS
+=============================================================================
 
-1. GEOMETRIC SHADOW (always present):
-   From any point at radius r, Earth subtends a half-angle
-     alpha = arcsin(r_inner / r)
-   The fraction of 4pi solid angle blocked is
-     Omega_blocked / 4pi = (1 - cos alpha) / 2
-   So T_geo = (1 + cos alpha) / 2 = (1 + sqrt(1 - (r_inner/r)^2)) / 2
+2.1  Geometric transmissivity (inner-sphere shadow)
+  From any point at radius r, Earth blocks a cone of half-angle
+  α = arcsin(r_inner/r). Fraction NOT blocked:
 
-   This is the factor encoded in T_geo and IS captured by the solver
-   automatically (trajectories hitting the inner sphere are FORBIDDEN).
+    T_geo(r) = (1 + cos α) / 2 = (1 + √(1 − (r_inner/r)²)) / 2
 
-   At r = 2 Re: T_geo = 0.932  (7% blocked by Earth disk)
-   At r = 5 Re: T_geo = 0.990  (1% blocked)
-   At r = 8 Re: T_geo = 0.996  (0.4% blocked)
+  This is EXACT when all energies are above the Størmer cutoff (T_Størmer=1).
 
-2. GEOMAGNETIC SHIELDING (additional, energy-dependent):
-   For energies below the Størmer cutoff, the geomagnetic field additionally
-   forbids trajectories that would otherwise escape. This is an extra factor
-   T_Stormer(E; x0) <= 1 on top of the geometric shadow.
+2.2  Størmer cutoff rigidity  (Smart & Shea 2005; Störmer 1930)
+  For a centred dipole with Størmer constant Cs ≈ 59.6 GV·Re²:
 
-   For TC1–TC3 (energies above all cutoffs): T_Stormer = 1.
-   For TC4 (energies below cutoffs): T_Stormer << 1  →  n << n_free * T_geo.
+    Rc_max(r, λ) = Cs · cos⁴λ / r²   [GV]
 
-The total transmissivity is:
-  T_total = T_geo * T_Stormer   (schematically; the solver computes this jointly)
+  At the geomagnetic pole cos λ=0, Rc=0 for all r.
 
-TOLERANCE JUSTIFICATION
------------------------
-The solver uses a finite direction sample (typically 24 azimuths × 24 elevations
-= 576 directions per energy per point). The statistical uncertainty in T from
-sampling is approximately 1/sqrt(N_dirs) ~ 4%. We therefore use 5% tolerance
-for TC1–TC3. TC4 uses a factor-of-2 margin (50% of the upper bound) which is
-very conservative given the deep shielding expected.
+2.3  Analytic number density  (numerical quadrature)
+  The integrand J_b(E)/v(E) has no closed-form antiderivative for relativistic
+  protons. We use 4000-point log-spaced quadrature.
+
+2.4  Analytic integral flux  (EXACT CLOSED FORM, power-law spectrum)
+  For J_b(E) = J0·(E/E0)^{−γ} with γ ≠ 1:
+
+    F(E1,E2) = 4π·T·J0·E0^γ / (γ−1) · (E1^{1−γ} − E2^{1−γ})
+
+  For γ = 2 (this test):
+    F(E1,E2) = 4π·T·J0·E0² · (1/E1 − 1/E2)
+
+  Exact — independent of grid resolution. Primary benchmark for flux tests.
+
+=============================================================================
+SECTION 3  NUMERICAL IMPLEMENTATION (DensityGridless.cpp)
+=============================================================================
+
+3.1  Density integral: trapezoidal rule on the solver energy grid [J].
+       n = 4π · Σ 0.5·(g_i + g_{i+1})·ΔE_J   where g_i = J_loc_i / v_i
+
+3.2  Total flux integral (FluxIntegrateTotal): same rule, no 1/v.
+       F = 4π · Σ 0.5·(J_loc_i + J_loc_{i+1})·ΔE_J
+
+3.3  Channel flux integral (FluxIntegrateChannel):
+     Step 1: clip channel [E1,E2] to the solver grid range.
+     Step 2: augment sub-grid with linearly-interpolated T at E1, E2.
+     Step 3: trapezoidal rule on the augmented sub-grid.
+     Channels outside the grid return 0. Zero-width channels return 0.
+
+3.4  MPI: flux is NOT sent over MPI. Workers send T[]. Master reconstructs
+     flux from T[] after receiving it, reusing the same gSpectrum object.
 """
 
 import sys
@@ -110,585 +121,675 @@ import os
 import math
 import argparse
 import numpy as np
-from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Physical constants (must match DipoleInterface.h and DensityGridless.cpp)
+# Physical constants  (must match DipoleInterface.h / DensityGridless.cpp)
 # ---------------------------------------------------------------------------
-C_LIGHT  = 299792458.0           # m/s
-QE       = 1.602176634e-19       # C
-AMU      = 1.66053906660e-27     # kg
-MP_KG    = 1.007276466621 * AMU  # proton mass kg
-MP_MEV   = MP_KG * C_LIGHT**2 / (1e6 * QE)  # ~938.272 MeV
-RE_M     = 6371.2e3              # m   (must match kEarthRadiusKm in amps_param_parser)
-RE_KM    = 6371.2                # km
-MU0_4PI  = 1e-7                  # T·m/A
-B_EQ_RE  = 3.12e-5               # T   (from DipoleInterface.h)
-M_E      = B_EQ_RE * RE_M**3 / MU0_4PI  # A·m^2
-CS_GV    = MU0_4PI * M_E / RE_M**2 * C_LIGHT / 1e9  # ~59.6 GV·Re²
+C_LIGHT  = 299792458.0
+QE       = 1.602176634e-19
+AMU      = 1.66053906660e-27
+MP_KG    = 1.007276466621 * AMU
+MP_MEV   = MP_KG * C_LIGHT**2 / (1e6 * QE)     # ~938.272 MeV
+RE_KM    = 6371.2
+RE_M     = RE_KM * 1e3
+MU0_4PI  = 1e-7
+B_EQ_RE  = 3.12e-5                               # T  (DipoleInterface.h)
+M_E      = B_EQ_RE * RE_M**3 / MU0_4PI
+CS_GV    = MU0_4PI * M_E / RE_M**2 * C_LIGHT / 1e9   # ~59.6 GV·Re²
 
 # ---------------------------------------------------------------------------
-# Spectrum parameters (MUST match the #SPECTRUM section in the .in file)
+# Spectrum parameters  (must match #SPECTRUM block in .in file)
 # ---------------------------------------------------------------------------
-J0_SPEC  = 1.0e4    # m^-2 s^-1 sr^-1 MeV^-1
-E0_SPEC  = 100.0    # MeV
-GAMMA    = 2.0      # spectral index
+J0_SPEC  = 1.0e4       # m^-2 s^-1 sr^-1 MeV^-1
+E0_SPEC  = 100.0       # MeV
+GAMMA    = 2.0
 
-# Inner loss sphere radius (must match R_INNER in the .in file)
-R_INNER_KM = 6434.9   # km = 1.01 Re
+# Inner loss sphere (must match R_INNER in .in file)
+R_INNER_KM = 6434.9    # km = 1.01 Re
+
+# Energy channels  (must mirror CH_BEGIN...CH_END in the .in file)
+ENERGY_CHANNELS = [
+    ("CH1",    10.0,    100.0, "10–100 MeV"),
+    ("CH2",   100.0,   1000.0, "100 MeV–1 GeV"),
+    ("CH3",  1000.0,  10000.0, "1–10 GeV"),
+    ("CH4", 10000.0,  20000.0, "10–20 GeV"),
+]
+
+# Solver energy grid boundaries  (must match DS_EMIN / DS_EMAX in .in file)
+EMIN_GRID = 10.0        # MeV
+EMAX_GRID = 20000.0     # MeV
 
 # ---------------------------------------------------------------------------
 # Test case definitions
 # ---------------------------------------------------------------------------
-# Each entry: (label, x_km, y_km, z_km, Emin_test, Emax_test, r_Re_approx)
-#
-#  Emin_test, Emax_test — the energy sub-range used for the analytic comparison
-#  (the full AMPS energy grid is wider; we integrate only over the sub-range
-#   where T = T_geo is guaranteed, i.e., above Rc_max for that point)
 TEST_CASES = [
-    {
-        "label":      "TC1 — 8Re equator (above-cutoff, free-space)",
-        "x_km":       8.0 * RE_KM,
-        "y_km":       0.0,
-        "z_km":       0.0,
-        "Emin_test":  2000.0,   # MeV  (well above Rc_max(8Re)=384 MeV)
-        "Emax_test":  20000.0,  # MeV
-        "r_Re":       8.0,
-        "lam_deg":    0.0,      # geomagnetic latitude (equator)
-        "test_type":  "exact",
-        "description": (
-            "At r=8 Re equator, Rc_max = 0.93 GV → 384 MeV. "
-            "All energies in 2–20 GeV are above this, so T = T_geo exactly. "
-            "Tests the free-space (no-field) density integral."
-        ),
-    },
-    {
-        "label":      "TC2 — 5Re pole (geomagnetic pole, Rc=0)",
-        "x_km":       0.0,
-        "y_km":       0.0,
-        "z_km":       5.0 * RE_KM,
-        "Emin_test":  50.0,    # MeV
-        "Emax_test":  500.0,   # MeV
-        "r_Re":       5.0,
-        "lam_deg":    90.0,    # geomagnetic pole: cos(lambda) = 0
-        "test_type":  "exact",
-        "description": (
-            "At the geomagnetic pole, cos(lambda)=0 makes Størmer Rc=0 for ALL "
-            "energies and ALL directions. So T = T_geo regardless of energy. "
-            "Tests that the solver does NOT over-shield at high geomagnetic latitudes."
-        ),
-    },
-    {
-        "label":      "TC3 — 6Re equator (above-cutoff, mid-distance)",
-        "x_km":       6.0 * RE_KM,
-        "y_km":       0.0,
-        "z_km":       0.0,
-        "Emin_test":  3000.0,   # MeV  (Rc_max(6Re)=1.66 GV → 965 MeV)
-        "Emax_test":  30000.0,  # MeV
-        "r_Re":       6.0,
-        "lam_deg":    0.0,
-        "test_type":  "exact",
-        "description": (
-            "At r=6 Re equator, Rc_max = 1.66 GV → 965 MeV. "
-            "All energies in 3–30 GeV are above this → T = T_geo. "
-            "Closer-in than TC1; tests that the geometric shadow scales correctly."
-        ),
-    },
-    {
-        "label":      "TC4 — 2Re equator (deep Størmer shielding)",
-        "x_km":       2.0 * RE_KM,
-        "y_km":       0.0,
-        "z_km":       0.0,
-        "Emin_test":  10.0,    # MeV
-        "Emax_test":  500.0,   # MeV
-        "r_Re":       2.0,
-        "lam_deg":    0.0,
-        "test_type":  "upper_bound",
-        "description": (
-            "At r=2 Re equator, Rc_vert = 3.73 GV → 2.9 GeV. "
-            "All test energies (up to 500 MeV, R=1.09 GV) are far below Rc_vert. "
-            "Strong magnetic shielding expected: n << T_geo * n_free. "
-            "Upper-bound test only — exact T_Stormer not analytically tractable."
-        ),
-    },
+    {"label": "TC1 — 8Re equator", "x_km": 8*RE_KM, "y_km": 0, "z_km": 0,
+     "Emin_test": 2000.0, "Emax_test": 20000.0, "r_Re": 8.0, "lam_deg": 0.0,
+     "test_type": "exact"},
+    {"label": "TC2 — 5Re pole (Rc=0)", "x_km": 0, "y_km": 0, "z_km": 5*RE_KM,
+     "Emin_test": 50.0, "Emax_test": 500.0, "r_Re": 5.0, "lam_deg": 90.0,
+     "test_type": "exact"},
+    {"label": "TC3 — 6Re equator", "x_km": 6*RE_KM, "y_km": 0, "z_km": 0,
+     "Emin_test": 3000.0, "Emax_test": 30000.0, "r_Re": 6.0, "lam_deg": 0.0,
+     "test_type": "exact"},
+    {"label": "TC4 — 2Re equator (shielded)", "x_km": 2*RE_KM, "y_km": 0, "z_km": 0,
+     "Emin_test": 10.0, "Emax_test": 500.0, "r_Re": 2.0, "lam_deg": 0.0,
+     "test_type": "upper_bound"},
 ]
 
+# =============================================================================
+# SECTION 2 ANALYTIC HELPERS
+# =============================================================================
 
-# ---------------------------------------------------------------------------
-# Analytic helpers
-# ---------------------------------------------------------------------------
+def v_from_E_MeV(E_MeV):
+    """Relativistic proton speed [m/s]."""
+    g = 1.0 + np.asarray(E_MeV) / MP_MEV
+    return C_LIGHT * np.sqrt(np.maximum(0.0, 1.0 - 1.0 / g**2))
 
-def v_from_E_MeV(E_MeV: float) -> float:
-    """Relativistic proton speed [m/s] from kinetic energy [MeV]."""
-    gamma = 1.0 + E_MeV / MP_MEV
-    beta2 = max(0.0, 1.0 - 1.0 / gamma**2)
-    return C_LIGHT * math.sqrt(beta2)
+def Jb(E_MeV):
+    """Boundary intensity [m^-2 s^-1 sr^-1 MeV^-1]."""
+    return J0_SPEC * (np.asarray(E_MeV) / E0_SPEC) ** (-GAMMA)
 
+def T_geometric(r_Re, r_inner_km=R_INNER_KM):
+    """T_geo from inner-sphere shadow (§2.1)."""
+    sin_a = r_inner_km / (r_Re * RE_KM)
+    if sin_a >= 1.0: return 0.0
+    return (1.0 + math.sqrt(1.0 - sin_a**2)) / 2.0
 
-def Jb_from_E_MeV(E_MeV: float) -> float:
-    """Power-law boundary spectrum [m^-2 s^-1 sr^-1 MeV^-1]."""
-    return J0_SPEC * (E_MeV / E0_SPEC) ** (-GAMMA)
+def Rc_max_GV(r_Re, lam_deg):
+    """Størmer cutoff [GV] (§2.2)."""
+    return CS_GV * math.cos(math.radians(lam_deg))**4 / r_Re**2
 
+def E_kin_from_R_GV(R_GV):
+    """Proton kinetic energy [MeV] from rigidity [GV]."""
+    if R_GV <= 0.0: return 0.0
+    pc = R_GV * 1e3    # MeV for Z=1
+    return math.sqrt(pc**2 + MP_MEV**2) - MP_MEV
 
-def T_geometric(r_Re: float, r_inner_km: float = R_INNER_KM) -> float:
+def n_analytic(Emin, Emax, T, N=4000):
     """
-    Geometric transmissivity: fraction of 4pi NOT blocked by the inner sphere.
-
-    T_geo = (1 + cos(alpha)) / 2
-    where alpha = arcsin(r_inner / r) is the half-angle of the blocked cone.
+    Number density [m^-3] via log-spaced numerical quadrature (§2.3).
+      n = 4π·T·∫ J_b(E)/v(E) dE
+    No closed form for relativistic v(E).
     """
-    r_km = r_Re * RE_KM
-    sin_alpha = r_inner_km / r_km
-    if sin_alpha >= 1.0:
-        return 0.0
-    cos_alpha = math.sqrt(1.0 - sin_alpha**2)
-    return (1.0 + cos_alpha) / 2.0
+    Es = np.logspace(np.log10(Emin), np.log10(Emax), N)
+    return 4.0 * math.pi * T * float(np.trapezoid(Jb(Es) / v_from_E_MeV(Es), Es))
 
-
-def Rc_max_GV(r_Re: float, lam_deg: float) -> float:
-    """Maximum Størmer cutoff [GV] at (r_Re, lam_deg)."""
-    cos_lam = math.cos(math.radians(lam_deg))
-    return CS_GV * cos_lam**4 / r_Re**2
-
-
-def E_kin_from_R_GV(R_GV: float) -> float:
-    """Kinetic energy [MeV] corresponding to rigidity R_GV [GV] for a proton."""
-    pc_MeV = R_GV * 1e3   # R [GV] × 1000 = pc [MeV] for Z=1
-    return math.sqrt(pc_MeV**2 + MP_MEV**2) - MP_MEV
-
-
-def n_integral_analytic(Emin_MeV: float, Emax_MeV: float, T: float,
-                        N: int = 4000) -> float:
+def F_analytic_closed(E1, E2, T):
     """
-    Compute analytic density [m^-3] for a given T (constant over energy):
+    Exact closed-form flux [m^-2 s^-1] for power-law spectrum (§2.4).
 
-      n = 4pi * T * integral[Emin,Emax] J_b(E) / v(E) dE
-
-    Uses log-spaced quadrature with N points.
+    γ ≠ 1: F = 4π·T·J0·E0^γ/(γ−1)·(E1^{1−γ} − E2^{1−γ})
+    γ = 2: F = 4π·T·J0·E0²·(1/E1 − 1/E2)
     """
-    Es = np.logspace(np.log10(Emin_MeV), np.log10(Emax_MeV), N)
-    Jb = J0_SPEC * (Es / E0_SPEC) ** (-GAMMA)   # m^-2 s^-1 sr^-1 MeV^-1
-    vs = np.array([v_from_E_MeV(e) for e in Es], dtype=float)  # m/s
-    integrand = Jb / vs  # m^-3 sr^-1 MeV^-1 × (MeV/MeV) = m^-3 sr^-1
-    return 4.0 * math.pi * T * float(np.trapezoid(integrand, Es))
+    if abs(GAMMA - 1.0) < 1e-10:
+        I = J0_SPEC * E0_SPEC * math.log(E2 / E1)
+    else:
+        I = (J0_SPEC * E0_SPEC**GAMMA / (GAMMA - 1.0)
+             * (E1**(1.0 - GAMMA) - E2**(1.0 - GAMMA)))
+    return 4.0 * math.pi * T * I
 
+def F_analytic_numeric(E1, E2, T, N=4000):
+    """Numeric flux for closed-form cross-check."""
+    Es = np.logspace(np.log10(E1), np.log10(E2), N)
+    return 4.0 * math.pi * T * float(np.trapezoid(Jb(Es), Es))
 
-# ---------------------------------------------------------------------------
-# File readers
-# ---------------------------------------------------------------------------
+# =============================================================================
+# SECTION 3 FILE READERS
+# =============================================================================
 
-def read_density_dat(filepath: str) -> list[dict]:
-    """
-    Parse gridless_points_density.dat (Tecplot ASCII, POINT data format).
+def _skip(s):
+    u = s.upper()
+    return (not s or s.startswith('!') or s.startswith('#')
+            or u.startswith('TITLE') or u.startswith('AUXDATA'))
 
-    Returns list of dicts with keys: X_km, Y_km, Z_km, N_m3, N_cm3
-    (order matches the order of points in the input file).
-    """
-    records = []
-    in_zone = False
-    var_names = []
-
-    with open(filepath) as f:
-        for line in f:
+def read_density_dat(path):
+    records, vnames, in_zone = [], [], False
+    with open(path) as fh:
+        for line in fh:
             s = line.strip()
-            if not s or s.startswith('!') or s.startswith('#'):
-                continue
-            if s.upper().startswith('VARIABLES'):
-                # VARIABLES = "X_km" "Y_km" ...
-                parts = s.split('=', 1)[1]
-                var_names = [v.strip().strip('"') for v in parts.split()]
-                continue
-            if s.upper().startswith('ZONE'):
+            if _skip(s): continue
+            u = s.upper()
+            if u.startswith('VARIABLES'):
+                vnames = [v.strip().strip('"') for v in s.split('=',1)[1].split()]
+            elif u.startswith('ZONE'):
                 in_zone = True
-                continue
-            if in_zone:
+            elif in_zone:
                 try:
                     vals = [float(v) for v in s.split()]
-                    if len(vals) == len(var_names):
-                        records.append(dict(zip(var_names, vals)))
+                    if len(vals) == len(vnames):
+                        records.append(dict(zip(vnames, vals)))
                 except ValueError:
                     pass
-
     return records
 
-
-def read_spectrum_dat(filepath: str) -> list[dict]:
-    """
-    Parse gridless_points_spectrum.dat (Tecplot ASCII, one ZONE per point).
-
-    Returns a list of per-point dicts:
-      { 'E_MeV': [...], 'T': [...], 'J_boundary': [...], 'J_local': [...] }
-    Column names expected: E_MeV  T  J_boundary_perMeV  J_local_perMeV
-
-    One entry per ZONE (= one entry per observation point).
-    """
-    points = []
-    current_zone = None
-    var_names = []
-
-    with open(filepath) as f:
-        for line in f:
+def read_spectrum_dat(path):
+    """Returns list of per-point dicts, keys: E_MeV, T, J_boundary_perMeV, J_local_perMeV."""
+    points, cur, vnames = [], None, []
+    with open(path) as fh:
+        for line in fh:
             s = line.strip()
-            if not s or s.startswith('!') or s.startswith('#'):
-                continue
-            if s.upper().startswith('VARIABLES'):
-                parts = s.split('=', 1)[1]
-                var_names = [v.strip().strip('"') for v in parts.split()]
-                continue
-            if s.upper().startswith('ZONE'):
-                if current_zone:
-                    points.append(_finalise_zone(current_zone, var_names))
-                current_zone = {v: [] for v in var_names}
-                continue
-            if current_zone is not None:
+            if _skip(s): continue
+            u = s.upper()
+            if u.startswith('VARIABLES'):
+                vnames = [v.strip().strip('"') for v in s.split('=',1)[1].split()]
+            elif u.startswith('ZONE'):
+                if cur: points.append({k: np.array(v) for k,v in cur.items()})
+                cur = {v:[] for v in vnames}
+            elif cur is not None:
                 try:
                     vals = [float(v) for v in s.split()]
-                    if len(vals) == len(var_names):
-                        for v, x in zip(var_names, vals):
-                            current_zone[v].append(x)
+                    if len(vals) == len(vnames):
+                        for v,x in zip(vnames, vals): cur[v].append(x)
                 except ValueError:
                     pass
-
-    if current_zone:
-        points.append(_finalise_zone(current_zone, var_names))
-
+    if cur: points.append({k: np.array(v) for k,v in cur.items()})
     return points
 
+def read_flux_dat(path):
+    records, vnames, in_zone = [], [], False
+    with open(path) as fh:
+        for line in fh:
+            s = line.strip()
+            if _skip(s): continue
+            u = s.upper()
+            if u.startswith('VARIABLES'):
+                vnames = [v.strip().strip('"') for v in s.split('=',1)[1].split()]
+            elif u.startswith('ZONE'):
+                in_zone = True
+            elif in_zone:
+                try:
+                    vals = [float(v) for v in s.split()]
+                    if len(vals) == len(vnames):
+                        records.append(dict(zip(vnames, vals)))
+                except ValueError:
+                    pass
+    return records
 
-def _finalise_zone(zone_dict: dict, var_names: list) -> dict:
-    """Convert lists to numpy arrays inside a zone dict."""
-    return {k: np.array(v, dtype=float) for k, v in zone_dict.items()}
+# =============================================================================
+# SECTION 4 DENSITY COMPARISON
+# =============================================================================
 
+def compare_density(tc, spectrum_zone, tol, verbose):
+    """Compare number density against T_geo analytic prediction."""
+    r, lam  = tc["r_Re"], tc["lam_deg"]
+    E1, E2  = tc["Emin_test"], tc["Emax_test"]
+    Tg      = T_geometric(r)
+    na      = n_analytic(E1, E2, Tg)
+    n_free  = n_analytic(E1, E2, 1.0)
+    Rc      = Rc_max_GV(r, lam)
+    Ec      = E_kin_from_R_GV(Rc)
 
-# ---------------------------------------------------------------------------
-# Per-point analytic comparison
-# ---------------------------------------------------------------------------
-
-def compare_point(tc: dict, density_rec: dict, spectrum_zone: dict,
-                  tol: float = 0.05, verbose: bool = True) -> dict:
-    """
-    Compare a single test case against its analytic prediction.
-
-    Parameters
-    ----------
-    tc           : test case descriptor dict (from TEST_CASES)
-    density_rec  : row from gridless_points_density.dat
-    spectrum_zone: zone from gridless_points_spectrum.dat
-    tol          : relative tolerance for pass/fail
-    verbose      : print a detailed report
-
-    Returns
-    -------
-    dict with 'passed' (bool), 'ratio' (model/analytic), 'message' (str)
-    """
-    label     = tc["label"]
-    r_Re      = tc["r_Re"]
-    lam_deg   = tc["lam_deg"]
-    E1        = tc["Emin_test"]
-    E2        = tc["Emax_test"]
-    test_type = tc["test_type"]
-
-    # --- Analytic prediction ---
-    Tg          = T_geometric(r_Re)
-    n_analytic  = n_integral_analytic(E1, E2, Tg)
-    n_free      = n_integral_analytic(E1, E2, 1.0)
-    Rc_mx       = Rc_max_GV(r_Re, lam_deg)
-    E_cutoff_MeV = E_kin_from_R_GV(Rc_mx) if Rc_mx > 0 else 0.0
-
-    # --- Model: integrate spectrum output over the test energy sub-range ---
-    E_arr = spectrum_zone.get("E_MeV", np.array([]))
-    T_arr = spectrum_zone.get("T",     np.array([]))
-    J_arr = spectrum_zone.get("J_local_perMeV", np.array([]))
-
-    if E_arr.size == 0:
+    E_arr   = spectrum_zone.get("E_MeV", np.array([]))
+    T_arr   = spectrum_zone.get("T",     np.array([]))
+    if E_arr.size < 2:
         return {"passed": False, "ratio": float("nan"),
-                "message": f"{label}: spectrum zone is empty"}
+                "n_model": float("nan"), "n_analytic": na, "T_geo": Tg}
 
-    # Select energy bins within [E1, E2]
-    mask = (E_arr >= E1) & (E_arr <= E2)
+    mask  = (E_arr >= E1) & (E_arr <= E2)
     if mask.sum() < 2:
         return {"passed": False, "ratio": float("nan"),
-                "message": f"{label}: fewer than 2 energy bins in [{E1},{E2}] MeV"}
+                "n_model": float("nan"), "n_analytic": na, "T_geo": Tg}
 
-    E_sub = E_arr[mask]
-    T_sub = T_arr[mask]
+    Es, Ts = E_arr[mask], T_arr[mask]
+    nm = 4.0*math.pi * float(np.trapezoid(Ts * Jb(Es) / v_from_E_MeV(Es), Es))
+    T_mean = float(np.mean(Ts))
 
-    # Compute model density in the sub-range:
-    #   n_sub = 4pi * trapezoid( T(E)*J_b(E)/v(E) dE )
-    Jb_sub = J0_SPEC * (E_sub / E0_SPEC) ** (-GAMMA)
-    vs_sub = np.array([v_from_E_MeV(e) for e in E_sub])
-    n_model = 4.0 * math.pi * float(np.trapezoid(T_sub * Jb_sub / vs_sub, E_sub))
+    if tc["test_type"] == "exact":
+        rel  = abs(nm - na) / na
+        ok   = rel < tol
+        verb = "PASS ✓" if ok else "FAIL ✗"
+        if verbose:
+            print(f"  [DENSITY] {tc['label']}")
+            print(f"    T_geo={Tg:.5f}  Rc_max={Rc:.3f} GV → {Ec:.0f} MeV  "
+                  f"range {E1:.0f}–{E2:.0f} MeV ({mask.sum()} bins)")
+            print(f"    n_analytic={na:.4e}  n_model={nm:.4e}  "
+                  f"rel={rel:.2%}  T_mean={T_mean:.5f}  {verb}")
+    else:
+        upper = 0.5 * na
+        ok    = nm < upper
+        rel   = nm / na
+        verb  = "PASS ✓" if ok else "FAIL ✗"
+        if verbose:
+            print(f"  [DENSITY] {tc['label']} (upper-bound test)")
+            print(f"    Rc_max={Rc:.3f} GV → {Ec:.0f} MeV  T_geo={Tg:.5f}")
+            print(f"    n_Tgeo={na:.4e}  50%bound={upper:.4e}  "
+                  f"n_model={nm:.4e}  ratio={rel:.3f}  {verb}")
 
-    # Mean transmissivity in the sub-range
-    T_mean_model = float(np.mean(T_sub))
+    return {"passed": ok, "ratio": nm/na, "n_model": nm, "n_analytic": na,
+            "T_geo": Tg, "T_mean_model": T_mean, "E_sub": Es, "T_sub": Ts,
+            "rel_err": abs(nm-na)/na if na>0 else float("nan")}
 
-    # --- Pass/fail ---
-    if test_type == "exact":
-        rel_err = abs(n_model - n_analytic) / n_analytic
-        passed  = rel_err < tol
-        ratio   = n_model / n_analytic if n_analytic > 0 else float("nan")
-        verdict = "PASS" if passed else "FAIL"
-        msg = (f"{label}\n"
-               f"  Test type  : {test_type}  (|n_model-n_analytic|/n_analytic < {tol:.0%})\n"
-               f"  T_geo      = {Tg:.5f}  (geometric shadow)\n"
-               f"  Rc_max     = {Rc_mx:.3f} GV  → {E_cutoff_MeV:.0f} MeV\n"
-               f"  E test range: {E1:.0f}–{E2:.0f} MeV  ({mask.sum()} bins used)\n"
-               f"  n_free     = {n_free:.4e} m^-3  (T=1 reference)\n"
-               f"  n_analytic = {n_analytic:.4e} m^-3  (T=T_geo={Tg:.5f})\n"
-               f"  n_model    = {n_model:.4e} m^-3  (from spectrum output)\n"
-               f"  T_mean(model) = {T_mean_model:.5f}  (should ≈ {Tg:.5f})\n"
-               f"  rel_err    = {rel_err:.2%}  (tol={tol:.0%})\n"
-               f"  >>> {verdict} <<<")
+# =============================================================================
+# SECTION 5 FLUX COMPARISONS  (new)
+# =============================================================================
 
-    else:  # upper_bound
-        upper = 0.5 * n_analytic   # n_model must be < 50% of T_geo reference
-        passed = (n_model < upper)
-        ratio  = n_model / n_analytic if n_analytic > 0 else float("nan")
-        verdict = "PASS" if passed else "FAIL"
-        msg = (f"{label}\n"
-               f"  Test type  : {test_type}  (n_model < 50% of T_geo reference)\n"
-               f"  T_geo      = {Tg:.5f}  (geometric shadow only)\n"
-               f"  Rc_vert    = {Rc_max_GV(r_Re,lam_deg)/4:.3f} GV → {E_kin_from_R_GV(Rc_max_GV(r_Re,lam_deg)/4):.0f} MeV  (vertical)\n"
-               f"  Rc_max     = {Rc_mx:.3f} GV → {E_cutoff_MeV:.0f} MeV  (horizontal-east)\n"
-               f"  E test range: {E1:.0f}–{E2:.0f} MeV  ({mask.sum()} bins used)\n"
-               f"  n_free     = {n_free:.4e} m^-3  (T=1 reference)\n"
-               f"  n_Tgeo     = {n_analytic:.4e} m^-3  (T=T_geo upper bound)\n"
-               f"  50% upper  = {upper:.4e} m^-3  (pass threshold)\n"
-               f"  n_model    = {n_model:.4e} m^-3  (from spectrum output)\n"
-               f"  T_mean(model) = {T_mean_model:.5f}  (should << {Tg:.5f})\n"
-               f"  ratio n_model/n_Tgeo = {ratio:.3f}  (should << 0.5)\n"
-               f"  >>> {verdict} <<<")
+def _interp_T(E_grid, T_grid, x):
+    """Linear interpolation of T at energy x on the solver grid."""
+    idx = int(np.searchsorted(E_grid, x))
+    if idx == 0:           return float(T_grid[0])
+    if idx >= len(E_grid): return float(T_grid[-1])
+    Ea, Eb = E_grid[idx-1], E_grid[idx]
+    Ta, Tb = T_grid[idx-1], T_grid[idx]
+    return float(Ta + (Tb-Ta)*(x-Ea)/(Eb-Ea)) if Eb > Ea else float(Ta)
+
+def flux_from_spectrum(spectrum_zone, E1, E2):
+    """
+    Reconstruct channel flux from the spectrum zone (mirrors FluxIntegrateChannel).
+
+    Algorithm (§3.3):
+      1. Clip [E1,E2] to grid range.
+      2. Build augmented sub-grid with linearly-interpolated T at boundaries.
+      3. Trapezoid over J_loc = T·J_b.
+    """
+    E_arr = spectrum_zone.get("E_MeV", np.array([]))
+    T_arr = spectrum_zone.get("T",     np.array([]))
+    if E_arr.size < 2: return 0.0
+    lo = max(E1, float(E_arr[0]))
+    hi = min(E2, float(E_arr[-1]))
+    if lo >= hi: return 0.0
+
+    mask = (E_arr > lo) & (E_arr < hi)
+    E_sub = np.concatenate([[lo], E_arr[mask], [hi]])
+    T_sub = np.concatenate([[_interp_T(E_arr, T_arr, lo)],
+                             T_arr[mask],
+                             [_interp_T(E_arr, T_arr, hi)]])
+    return 4.0 * math.pi * float(np.trapezoid(T_sub * Jb(E_sub), E_sub))
+
+
+def compare_total_flux(tc, spectrum_zone, flux_rec, tol, verbose):
+    """
+    Compare total omnidirectional flux F_tot over [EMIN_GRID, EMAX_GRID].
+
+    If EMIN_GRID is above the Størmer cutoff at this point: exact test.
+    Otherwise: upper-bound test (F_model ≤ 1.05·F_analytic).
+    """
+    Tg   = T_geometric(tc["r_Re"])
+    Rc   = Rc_max_GV(tc["r_Re"], tc["lam_deg"])
+    Ec   = E_kin_from_R_GV(Rc)
+    Fa   = F_analytic_closed(EMIN_GRID, EMAX_GRID, Tg)
+    F_py = flux_from_spectrum(spectrum_zone, EMIN_GRID, EMAX_GRID)
+    F_sv = (flux_rec.get("F_tot_m2s1") if flux_rec else None)
+
+    fully_above = (EMIN_GRID > Ec)
+    if fully_above:
+        rel   = abs(F_py - Fa) / Fa
+        ok    = rel < tol
+        crit  = f"|rel|<{tol:.0%}"
+    else:
+        rel   = F_py / Fa if Fa > 0 else float("nan")
+        ok    = (F_py <= 1.05 * Fa)
+        crit  = "≤ F_analytic"
+    verb = "PASS ✓" if ok else "FAIL ✗"
 
     if verbose:
-        print(msg)
-        print()
+        tag = "(fully above cutoff)" if fully_above else "(straddles cutoff)"
+        print(f"  [TOTAL FLUX] {tc['label']} {tag}")
+        print(f"    F_analytic(closed)={Fa:.4e}  F_model={F_py:.4e}  "
+              f"ratio={rel:.4f}  criterion:{crit}  {verb}")
+        if F_sv is not None:
+            cons = abs(F_sv - F_py) / max(abs(F_py), 1e-30)
+            print(f"    F_solver(file)    ={F_sv:.4e}  consistency={cons:.5%}")
 
-    return {"passed": passed, "ratio": ratio, "message": msg,
-            "n_model": n_model, "n_analytic": n_analytic, "T_geo": Tg,
-            "T_mean_model": T_mean_model, "E_sub": E_sub, "T_sub": T_sub}
+    return {"passed": ok, "F_analytic": Fa, "F_py": F_py,
+            "F_solver": F_sv, "rel_err": rel, "T_geo": Tg}
 
 
-# ---------------------------------------------------------------------------
-# Summary table
-# ---------------------------------------------------------------------------
+def compare_flux_channels(tc, spectrum_zone, flux_rec, tol, verbose):
+    """
+    Compare per-channel integral flux against the analytic closed form (§2.4).
 
-def print_summary_header():
-    print("=" * 70)
-    print("AMPS DENSITY/SPECTRUM ANALYTIC TEST SUITE — DIPOLE FIELD")
-    print("=" * 70)
+    For channels fully above the Størmer cutoff: exact test (|rel| < tol).
+    For channels that straddle or lie below the cutoff: upper-bound test.
+
+    Also verifies that the solver-written F_ch (from gridless_points_flux.dat)
+    agrees with the Python reconstruction to < 0.1% (consistency check).
+    """
+    Tg  = T_geometric(tc["r_Re"])
+    Rc  = Rc_max_GV(tc["r_Re"], tc["lam_deg"])
+    Ec  = E_kin_from_R_GV(Rc)
+
+    if verbose:
+        print(f"  [FLUX CHANNELS] {tc['label']}  "
+              f"T_geo={Tg:.5f}  Rc_max={Rc:.3f} GV → Ec={Ec:.0f} MeV")
+
+    ch_res   = {}
+    all_pass = True
+
+    for name, E1, E2, desc in ENERGY_CHANNELS:
+        Fa   = F_analytic_closed(E1, E2, Tg)
+        F_py = flux_from_spectrum(spectrum_zone, E1, E2)
+        col  = f"F_{name}_m2s1"
+        F_sv = (flux_rec.get(col) if flux_rec else None)
+
+        fully_above = (E1 > Ec)
+        if fully_above:
+            rel  = abs(F_py - Fa) / Fa if Fa > 0 else float("nan")
+            ok   = rel < tol
+            crit = f"|rel|<{tol:.0%}"
+        else:
+            rel  = F_py / Fa if Fa > 0 else float("nan")
+            ok   = (F_py <= 1.05 * Fa)
+            crit = "≤ F_analytic"
+
+        # Consistency: solver file vs Python  (< 0.1%)
+        if F_sv is not None:
+            cons = abs(F_sv - F_py) / max(abs(F_py), 1e-30)
+            ok   = ok and (cons < 0.001)
+        else:
+            cons = float("nan")
+
+        all_pass = all_pass and ok
+        verb = "PASS ✓" if ok else "FAIL ✗"
+        tag  = "above" if fully_above else "below/straddle"
+
+        if verbose:
+            line = (f"    {name} [{E1:.0f}–{E2:.0f} MeV] ({tag} Ec)  "
+                    f"F_a={Fa:.4e}  F_py={F_py:.4e}  ratio={rel:.4f}  {crit}  {verb}")
+            if F_sv is not None:
+                line += f"  [file cons={cons:.5%}]"
+            print(line)
+
+        ch_res[name] = {"passed": ok, "F_analytic": Fa, "F_py": F_py,
+                        "F_solver": F_sv, "rel_err_py": rel,
+                        "fully_above_cutoff": fully_above,
+                        "E1_MeV": E1, "E2_MeV": E2}
+
+    return {"all_passed": all_pass, "channels": ch_res, "T_geo": Tg}
+
+# =============================================================================
+# SECTION 6 SUMMARY PRINTERS
+# =============================================================================
+
+def print_header():
+    W = 76
+    print("=" * W)
+    print("AMPS GRIDLESS  DENSITY / SPECTRUM / FLUX  —  ANALYTIC TEST SUITE")
+    print("Magnetic field: centred DIPOLE  |  Species: proton  (Z=1, A≈1)")
+    print("=" * W)
+    print(f"  mp·c²      = {MP_MEV:.3f} MeV")
+    print(f"  B_eq(Re)   = {B_EQ_RE:.3e} T")
+    print(f"  Cs         = {CS_GV:.3f} GV·Re²  (Størmer constant)")
+    print(f"  r_inner    = {R_INNER_KM:.1f} km = {R_INNER_KM/RE_KM:.4f} Re")
+    print(f"  J_b(E)     = {J0_SPEC:.1e} · (E/{E0_SPEC:.0f} MeV)^(−{GAMMA:.1f})  "
+          f"[m^-2 s^-1 sr^-1 MeV^-1]")
     print()
-    print(f"Proton rest mass     : {MP_MEV:.3f} MeV")
-    print(f"Earth dipole B_eq(Re): {B_EQ_RE:.3e} T")
-    print(f"Størmer const Cs     : {CS_GV:.3f} GV·Re²  (= mu0/4pi*M_E/Re^2 * c)")
-    print(f"Inner sphere r_inner : {R_INNER_KM:.1f} km = {R_INNER_KM/RE_KM:.3f} Re")
+    print("  Closed-form flux: F(E1,E2) = 4π·T·J0·E0²·(1/E1−1/E2)  [γ=2]")
     print()
-    print(f"Spectrum: J_b(E) = {J0_SPEC:.1e} * (E/{E0_SPEC:.0f} MeV)^(-{GAMMA:.1f})")
-    print(f"          [m^-2 s^-1 sr^-1 MeV^-1]")
+    print("  Cross-check closed form vs numeric quadrature (T=1):")
+    print(f"  {'Ch':4} {'E1':>8} {'E2':>8} {'F_closed':>14} {'F_numeric':>14} {'err':>8}")
+    for n, E1, E2, _ in ENERGY_CHANNELS:
+        Fc = F_analytic_closed(E1, E2, 1.0)
+        Fn = F_analytic_numeric(E1, E2, 1.0)
+        err = abs(Fc-Fn)/Fc if Fc>0 else float("nan")
+        print(f"  {n:4} {E1:>8.0f} {E2:>8.0f} {Fc:>14.6e} {Fn:>14.6e} {err:>7.5%}")
     print()
 
-
-def print_summary_table(results: list[dict]):
+def print_cutoff_table():
+    print("  Størmer cutoff table:")
+    print(f"  {'Point':12} {'r [Re]':>7} {'λ [°]':>6} "
+          f"{'Rc_max [GV]':>12} {'E_cut [MeV]':>12} {'T_geo':>8}")
+    for tc in TEST_CASES:
+        Rc  = Rc_max_GV(tc["r_Re"], tc["lam_deg"])
+        Ec  = E_kin_from_R_GV(Rc)
+        Tg  = T_geometric(tc["r_Re"])
+        print(f"  {tc['label'][:12]:12} {tc['r_Re']:>7.1f} {tc['lam_deg']:>6.0f} "
+              f"{Rc:>12.3f} {Ec:>12.0f} {Tg:>8.5f}")
     print()
-    print("-" * 70)
-    print("SUMMARY")
-    print("-" * 70)
-    print(f"{'Case':<35} {'n_model':>12} {'n_analytic':>12} {'ratio':>8} {'Result':>8}")
-    print("-" * 70)
-    n_pass = 0
-    for i, r in enumerate(results):
-        tc = TEST_CASES[i]
-        status = "PASS" if r["passed"] else "FAIL"
-        n_pass += int(r["passed"])
-        nm = f"{r.get('n_model', float('nan')):.3e}"
-        na = f"{r.get('n_analytic', float('nan')):.3e}"
-        ratio = f"{r.get('ratio', float('nan')):.3f}"
-        print(f"  {tc['label'][:33]:<33} {nm:>12} {na:>12} {ratio:>8} {status:>8}")
-    print("-" * 70)
-    print(f"  Passed: {n_pass}/{len(results)}")
-    print("=" * 70)
-    if n_pass == len(results):
-        print("ALL TESTS PASSED")
+
+def print_analytic_flux_table():
+    print("  Analytic flux [m^-2 s^-1]  (closed form, T=T_geo):")
+    hdr = f"  {'Channel':6} {'E1 MeV':>8} {'E2 MeV':>8}"
+    for tc in TEST_CASES:
+        hdr += f"  {tc['label'][:10]:>13}"
+    print(hdr)
+    for n, E1, E2, _ in ENERGY_CHANNELS:
+        row = f"  {n:6} {E1:>8.0f} {E2:>8.0f}"
+        for tc in TEST_CASES:
+            row += f"  {F_analytic_closed(E1,E2,T_geometric(tc['r_Re'])):>13.4e}"
+        print(row)
+    row = f"  {'TOTAL':6} {EMIN_GRID:>8.0f} {EMAX_GRID:>8.0f}"
+    for tc in TEST_CASES:
+        row += f"  {F_analytic_closed(EMIN_GRID,EMAX_GRID,T_geometric(tc['r_Re'])):>13.4e}"
+    print(row)
+    print()
+
+def print_summary(d_res, f_res, fch_res):
+    W = 76
+    print(); print("=" * W); print("FINAL SUMMARY"); print("=" * W)
+
+    # --- density ---
+    print("\n  DENSITY [m^-3]")
+    print(f"  {'Case':<34} {'n_model':>12} {'n_analytic':>12} {'ratio':>8} {'Result':>8}")
+    print("  " + "-" * 70)
+    nd = sum(r["passed"] for r in d_res)
+    for tc, r in zip(TEST_CASES, d_res):
+        nm, na, rat, ok = (r.get("n_model", float("nan")),
+                           r.get("n_analytic", float("nan")),
+                           r.get("ratio", float("nan")),
+                           r.get("passed", False))
+        print(f"  {tc['label'][:34]:<34} {nm:>12.3e} {na:>12.3e} "
+              f"{rat:>8.4f} {'PASS ✓' if ok else 'FAIL ✗':>8}")
+    print(f"  Density: {nd}/{len(d_res)} passed")
+
+    # --- total flux ---
+    print("\n  TOTAL FLUX [m^-2 s^-1]")
+    print(f"  {'Case':<34} {'F_model':>14} {'F_analytic':>14} {'ratio':>8} {'Result':>8}")
+    print("  " + "-" * 74)
+    nf = sum(r["passed"] for r in f_res)
+    for tc, r in zip(TEST_CASES, f_res):
+        Fm, Fa, ok = (r.get("F_py", float("nan")),
+                      r.get("F_analytic", float("nan")),
+                      r.get("passed", False))
+        rat = Fm/Fa if Fa>0 else float("nan")
+        print(f"  {tc['label'][:34]:<34} {Fm:>14.4e} {Fa:>14.4e} "
+              f"{rat:>8.4f} {'PASS ✓' if ok else 'FAIL ✗':>8}")
+    print(f"  Total flux: {nf}/{len(f_res)} passed")
+
+    # --- per-channel ---
+    print("\n  PER-CHANNEL FLUX  (PASS ✓ / FAIL ✗)")
+    ch_names = [c[0] for c in ENERGY_CHANNELS]
+    hdr = f"  {'Case':<34}"
+    for cn in ch_names: hdr += f" {cn:>9}"
+    print(hdr); print("  " + "-" * (34 + 10*len(ch_names)))
+    nch_pass = nch_tot = 0
+    for tc, fcr in zip(TEST_CASES, fch_res):
+        row = f"  {tc['label'][:34]:<34}"
+        for cn in ch_names:
+            ok = fcr["channels"].get(cn, {}).get("passed", False)
+            nch_pass += int(ok); nch_tot += 1
+            row += f" {'PASS ✓' if ok else 'FAIL ✗':>9}"
+        print(row)
+    print(f"  Channel flux: {nch_pass}/{nch_tot} passed")
+
+    grand     = nd + nf + nch_pass
+    grand_tot = len(d_res) + len(f_res) + nch_tot
+    print()
+    print("=" * W)
+    if grand == grand_tot:
+        print(f"ALL {grand_tot} TESTS PASSED")
     else:
-        print(f"WARNING: {len(results) - n_pass} TEST(S) FAILED")
-    print("=" * 70)
+        print(f"PASSED {grand}/{grand_tot}  "
+              f"({grand_tot-grand} FAILURE{'S' if grand_tot-grand>1 else ''})")
+    print("=" * W)
+    return grand_tot - grand
 
+# =============================================================================
+# SECTION 7 PLOTS
+# =============================================================================
 
-# ---------------------------------------------------------------------------
-# Optional matplotlib T(E) plots
-# ---------------------------------------------------------------------------
-
-def make_plots(results: list[dict], out_dir: str = "."):
-    """
-    Plot T(E) from AMPS output vs analytic expectation for each test case.
-    Requires matplotlib.
-    """
+def make_plots(d_res, f_res, fch_res, out_dir="."):
     try:
         import matplotlib.pyplot as plt
     except ImportError:
-        print("[plots] matplotlib not available — skipping figures")
-        return
+        print("[plots] matplotlib not available — skipping"); return
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+    COLORS = ["#1f77b4", "#2ca02c", "#ff7f0e", "#d62728"]
+
+    # ── Figure 1: T(E) per test case ──────────────────────────────────────
+    fig, axes = plt.subplots(2, 2, figsize=(13, 9))
     axes = axes.ravel()
-
-    colors = {"TC1": "#1f77b4", "TC2": "#2ca02c", "TC3": "#ff7f0e", "TC4": "#d62728"}
-
-    for i, (r, ax) in enumerate(zip(results, axes)):
-        tc = TEST_CASES[i]
-        key = f"TC{i+1}"
-        color = colors.get(key, "black")
-
-        E_sub = r.get("E_sub", np.array([]))
-        T_sub = r.get("T_sub", np.array([]))
-        Tg    = r.get("T_geo", float("nan"))
-
-        if E_sub.size > 0:
-            ax.semilogx(E_sub, T_sub, "o-", color=color, ms=4, lw=1.5,
-                        label="AMPS model T(E)")
-
-        # Analytic expectation
-        E_dense = np.logspace(np.log10(tc["Emin_test"]),
-                              np.log10(tc["Emax_test"]), 200)
-        if tc["test_type"] == "exact":
-            ax.axhline(Tg, color="k", ls="--", lw=1.5,
-                       label=f"T_geo = {Tg:.4f} (analytic)")
-        else:
-            ax.axhline(Tg, color="k", ls="--", lw=1.5,
-                       label=f"T_geo = {Tg:.4f} (upper bound)")
-            ax.axhline(0.5 * Tg, color="gray", ls=":", lw=1.5,
-                       label=f"50% × T_geo (pass threshold)")
-
-        # Mark the Størmer cutoff
-        Rc_max_here = Rc_max_GV(tc["r_Re"], tc["lam_deg"])
-        if Rc_max_here > 0:
-            E_cm = E_kin_from_R_GV(Rc_max_here)
-            if tc["Emin_test"] < E_cm < tc["Emax_test"]:
-                ax.axvline(E_cm, color="purple", ls="-.", lw=1.0, alpha=0.6,
-                           label=f"Rc_max = {Rc_max_here:.2f} GV ({E_cm:.0f} MeV)")
-
-        status = "PASS ✓" if r["passed"] else "FAIL ✗"
-        ax.set_title(f"{key}: {status}\n{tc['r_Re']:.0f} Re, lam={tc['lam_deg']:.0f}°",
+    for i, (tc, dr, ax) in enumerate(zip(TEST_CASES, d_res, axes)):
+        Es, Ts = dr.get("E_sub", np.array([])), dr.get("T_sub", np.array([]))
+        Tg     = dr.get("T_geo", float("nan"))
+        if Es.size > 0:
+            ax.semilogx(Es, Ts, "o-", color=COLORS[i], ms=3, lw=1.5, label="AMPS T(E)")
+        ax.axhline(Tg, color="k", ls="--", lw=1.5, label=f"T_geo={Tg:.4f}")
+        Rc = Rc_max_GV(tc["r_Re"], tc["lam_deg"])
+        if Rc > 0:
+            Ec = E_kin_from_R_GV(Rc)
+            if EMIN_GRID < Ec < EMAX_GRID:
+                ax.axvline(Ec, color="purple", ls="-.", lw=1.0, alpha=0.7,
+                           label=f"Rc={Rc:.2f} GV")
+        for j, (cn, E1, E2, _) in enumerate(ENERGY_CHANNELS):
+            ax.axvspan(E1, E2, alpha=0.07, color=plt.cm.tab10(j/10), label=cn)
+        verdict = "PASS ✓" if dr["passed"] else "FAIL ✗"
+        ax.set_title(f"TC{i+1}: {verdict}  r={tc['r_Re']:.0f}Re λ={tc['lam_deg']:.0f}°",
                      fontsize=9)
-        ax.set_xlabel("E [MeV]")
-        ax.set_ylabel("Transmissivity T")
-        ax.set_ylim(-0.05, 1.15)
-        ax.legend(fontsize=7)
-        ax.grid(True, alpha=0.3)
-
-    fig.suptitle("AMPS gridless: T(E) — model vs analytic (DIPOLE field)", fontsize=11)
+        ax.set_xlabel("E [MeV]"); ax.set_ylabel("T"); ax.set_ylim(-0.05, 1.15)
+        ax.legend(fontsize=6, loc="lower right"); ax.grid(True, alpha=0.3)
+    fig.suptitle("T(E): solver vs analytic (DIPOLE)", fontsize=11)
     plt.tight_layout()
-    out_path = os.path.join(out_dir, "test_density_T_comparison.png")
-    plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"[plots] Saved: {out_path}")
-    plt.close(fig)
+    p1 = os.path.join(out_dir, "test_density_T_comparison.png")
+    plt.savefig(p1, dpi=150, bbox_inches="tight"); print(f"[plots] {p1}"); plt.close(fig)
 
-    # Second figure: density bar chart
-    fig2, ax2 = plt.subplots(figsize=(8, 5))
-    labels  = [f"TC{i+1}" for i in range(len(results))]
-    n_model = [r.get("n_model", 0) for r in results]
-    n_analy = [r.get("n_analytic", 0) for r in results]
+    # ── Figure 2: density + total flux bar chart ───────────────────────────
+    fig2, (ax_n, ax_F) = plt.subplots(1, 2, figsize=(13, 5))
+    x = np.arange(len(TEST_CASES)); w = 0.35
+    ax_n.bar(x-w/2, [r.get("n_model",0) for r in d_res], w, label="model",
+             color=COLORS[0])
+    ax_n.bar(x+w/2, [r.get("n_analytic",0) for r in d_res], w, label="analytic",
+             color=COLORS[2], alpha=0.7)
+    ax_n.set_yscale("log"); ax_n.set_xticks(x)
+    ax_n.set_xticklabels([f"TC{i+1}" for i in range(len(TEST_CASES))])
+    ax_n.set_ylabel("n  [m⁻³]"); ax_n.set_title("Number density"); ax_n.legend()
+    ax_n.grid(True, alpha=0.3, axis="y")
 
-    x = np.arange(len(labels))
-    w = 0.35
-    bars_m = ax2.bar(x - w/2, n_model, w, label="n_model (AMPS)", color="#1f77b4")
-    bars_a = ax2.bar(x + w/2, n_analy, w, label="n_analytic (T_geo)", color="#ff7f0e",
-                     alpha=0.7)
+    ax_F.bar(x-w/2, [r.get("F_py",0) for r in f_res], w, label="model",
+             color=COLORS[1])
+    ax_F.bar(x+w/2, [r.get("F_analytic",0) for r in f_res], w, label="analytic",
+             color=COLORS[3], alpha=0.7)
+    ax_F.set_yscale("log"); ax_F.set_xticks(x)
+    ax_F.set_xticklabels([f"TC{i+1}" for i in range(len(TEST_CASES))])
+    ax_F.set_ylabel("F_tot  [m⁻² s⁻¹]"); ax_F.set_title("Total flux"); ax_F.legend()
+    ax_F.grid(True, alpha=0.3, axis="y")
 
-    ax2.set_yscale("log")
-    ax2.set_xticks(x)
-    ax2.set_xticklabels(labels)
-    ax2.set_ylabel("Number density  n  [m⁻³]")
-    ax2.set_title("AMPS model vs analytic density (DIPOLE field)")
-    ax2.legend()
-    ax2.grid(True, alpha=0.3, axis="y")
+    fig2.suptitle("Density and total flux: model vs analytic (DIPOLE)", fontsize=11)
+    plt.tight_layout()
+    p2 = os.path.join(out_dir, "test_density_n_comparison.png")
+    plt.savefig(p2, dpi=150, bbox_inches="tight"); print(f"[plots] {p2}"); plt.close(fig2)
 
-    out_path2 = os.path.join(out_dir, "test_density_n_comparison.png")
-    plt.savefig(out_path2, dpi=150, bbox_inches="tight")
-    print(f"[plots] Saved: {out_path2}")
-    plt.close(fig2)
+    # ── Figure 3: per-channel flux bar chart (one panel per TC) ───────────
+    nTC = len(TEST_CASES)
+    fig3, axes3 = plt.subplots(1, nTC, figsize=(4*nTC, 5))
+    if nTC == 1: axes3 = [axes3]
+    ch_names = [c[0] for c in ENERGY_CHANNELS]
+    xch = np.arange(len(ch_names)); wch = 0.35
+    for i, (tc, fcr, ax) in enumerate(zip(TEST_CASES, fch_res, axes3)):
+        F_m = [fcr["channels"].get(cn,{}).get("F_py",0)       for cn in ch_names]
+        F_a = [fcr["channels"].get(cn,{}).get("F_analytic",0) for cn in ch_names]
+        ax.bar(xch-wch/2, F_m, wch, label="model",    color=COLORS[i])
+        ax.bar(xch+wch/2, F_a, wch, label="analytic", color="gray", alpha=0.6)
+        ax.set_yscale("log"); ax.set_xticks(xch)
+        ax.set_xticklabels(ch_names, fontsize=8)
+        if i == 0: ax.set_ylabel("F_ch  [m⁻² s⁻¹]")
+        ok = "PASS ✓" if fcr["all_passed"] else "FAIL ✗"
+        ax.set_title(f"TC{i+1}  r={tc['r_Re']:.0f}Re\n{ok}", fontsize=9)
+        ax.legend(fontsize=7); ax.grid(True, alpha=0.3, axis="y")
+    fig3.suptitle("Per-channel integral flux: model vs analytic (DIPOLE)", fontsize=11)
+    plt.tight_layout()
+    p3 = os.path.join(out_dir, "test_flux_channels.png")
+    plt.savefig(p3, dpi=150, bbox_inches="tight"); print(f"[plots] {p3}"); plt.close(fig3)
 
+    # ── Figure 4: relative flux error for above-cutoff channels ───────────
+    fig4, ax4 = plt.subplots(figsize=(10, 4))
+    for i, (tc, fcr) in enumerate(zip(TEST_CASES, fch_res)):
+        pts = [(j, cr["rel_err_py"]*100)
+               for j, (cn, _, _, _) in enumerate(ENERGY_CHANNELS)
+               if (cr := fcr["channels"].get(cn, {})) and
+               cr.get("fully_above_cutoff", False) and
+               math.isfinite(cr.get("rel_err_py", float("nan")))]
+        if pts:
+            js, errs = zip(*pts)
+            ax4.plot(js, errs, "o-", color=COLORS[i], label=f"TC{i+1}")
+            for j, e in pts:
+                ax4.annotate(ENERGY_CHANNELS[j][0], (j, e),
+                             textcoords="offset points", xytext=(2,3), fontsize=7)
+    ax4.axhline(5.0, color="red",  ls="--", lw=1.0, label="5% tol")
+    ax4.axhline(2.0, color="gray", ls=":",  lw=1.0, label="2%")
+    ax4.set_ylabel("|F_model − F_analytic| / F_analytic  [%]")
+    ax4.set_title("Relative flux error — channels fully above Størmer cutoff")
+    ax4.set_xticks(range(len(ENERGY_CHANNELS)))
+    ax4.set_xticklabels([c[0] for c in ENERGY_CHANNELS])
+    ax4.legend(fontsize=8); ax4.grid(True, alpha=0.3)
+    plt.tight_layout()
+    p4 = os.path.join(out_dir, "test_flux_relative_error.png")
+    plt.savefig(p4, dpi=150, bbox_inches="tight"); print(f"[plots] {p4}"); plt.close(fig4)
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+# =============================================================================
+# MAIN
+# =============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--spectrum-dir", default=".",
-                        help="Directory containing AMPS output files (default: '.')")
-    parser.add_argument("--tol", type=float, default=0.05,
-                        help="Relative tolerance for TC1–TC3 pass/fail (default: 0.05)")
-    parser.add_argument("--no-plots", action="store_true",
-                        help="Skip matplotlib figure generation")
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--dir",      default=".",
+                    help="Directory with AMPS output files  (default: '.')")
+    ap.add_argument("--tol",      type=float, default=0.05,
+                    help="Relative tolerance for exact tests  (default: 0.05)")
+    ap.add_argument("--no-plots", action="store_true")
+    ap.add_argument("-v", "--verbose", action="store_true", default=True)
+    args = ap.parse_args()
 
-    density_file  = os.path.join(args.spectrum_dir, "gridless_points_density.dat")
-    spectrum_file = os.path.join(args.spectrum_dir, "gridless_points_spectrum.dat")
+    d = args.dir
+    f_density  = os.path.join(d, "gridless_points_density.dat")
+    f_spectrum = os.path.join(d, "gridless_points_spectrum.dat")
+    f_flux     = os.path.join(d, "gridless_points_flux.dat")
 
-    print_summary_header()
+    for fp, label in [(f_density, "density"), (f_spectrum, "spectrum")]:
+        if not os.path.isfile(fp):
+            print(f"ERROR: {label} file not found: {fp}\n"
+                  "       Run AMPS with test_density_dipole_4pts.in first.")
+            sys.exit(1)
 
-    # --- Load AMPS output ---
-    if not os.path.isfile(density_file):
-        print(f"ERROR: density file not found: {density_file}")
-        print("       Run AMPS with test_density_dipole_4pts.in first.")
-        sys.exit(1)
-    if not os.path.isfile(spectrum_file):
-        print(f"ERROR: spectrum file not found: {spectrum_file}")
-        sys.exit(1)
+    flux_present = os.path.isfile(f_flux)
+    if not flux_present:
+        print(f"NOTE: flux file not found ({f_flux})\n"
+              "      Solver-file consistency check skipped; "
+              "Python flux reconstruction will still run.")
 
-    density_rows = read_density_dat(density_file)
-    spectrum_zones = read_spectrum_dat(spectrum_file)
+    density_rows   = read_density_dat(f_density)
+    spectrum_zones = read_spectrum_dat(f_spectrum)
+    flux_rows      = read_flux_dat(f_flux) if flux_present else []
 
-    if len(density_rows) < len(TEST_CASES):
-        print(f"WARNING: expected {len(TEST_CASES)} points in density file, "
-              f"found {len(density_rows)}. Will test what is available.")
+    print_header()
+    print_cutoff_table()
+    print_analytic_flux_table()
 
-    if len(spectrum_zones) < len(TEST_CASES):
-        print(f"WARNING: expected {len(TEST_CASES)} zones in spectrum file, "
-              f"found {len(spectrum_zones)}. Will test what is available.")
+    print("=" * 76)
+    print("DETAILED RESULTS")
+    print("=" * 76)
 
-    # --- Print analytic cutoff table (informational) ---
-    print("Størmer cutoff table (DIPOLE, protons):")
-    print(f"  {'r [Re]':>8}  {'lam':>5}  {'Rc_vert [GV]':>14}  {'E_vert [MeV]':>14}  "
-          f"{'Rc_max [GV]':>12}  {'E_max [MeV]':>12}  {'T_geo':>8}")
-    for tc in TEST_CASES:
-        Rv = Rc_max_GV(tc["r_Re"], tc["lam_deg"]) / 4
-        Rm = Rc_max_GV(tc["r_Re"], tc["lam_deg"])
-        Ev = E_kin_from_R_GV(Rv) if Rv > 1e-6 else 0.0
-        Em = E_kin_from_R_GV(Rm) if Rm > 1e-6 else 0.0
-        Tg = T_geometric(tc["r_Re"])
-        print(f"  {tc['r_Re']:>8.1f}  {tc['lam_deg']:>5.0f}  "
-              f"{Rv:>14.3f}  {Ev:>14.0f}  "
-              f"{Rm:>12.3f}  {Em:>12.0f}  {Tg:>8.5f}")
-    print()
+    d_res = []; f_res = []; fch_res = []
 
-    # --- Run comparisons ---
-    print("DETAILED TEST RESULTS")
-    print("-" * 70)
-    results = []
     for i, tc in enumerate(TEST_CASES):
-        if i >= len(spectrum_zones):
-            results.append({"passed": False, "ratio": float("nan"),
-                             "message": f"Point {i} missing from output",
-                             "n_model": float("nan"), "n_analytic": float("nan")})
-            continue
-        dr = density_rows[i] if i < len(density_rows) else {}
-        sz = spectrum_zones[i]
-        result = compare_point(tc, dr, sz, tol=args.tol, verbose=True)
-        results.append(result)
+        print(f"\n{'─'*70}\n  {tc['label']}\n{'─'*70}")
+        sz = spectrum_zones[i] if i < len(spectrum_zones) else {}
+        fr = flux_rows[i]      if i < len(flux_rows)      else None
 
-    # --- Summary table ---
-    print_summary_table(results)
+        d_res.append(  compare_density(tc, sz, args.tol, args.verbose))
+        print()
+        f_res.append(  compare_total_flux(tc, sz, fr, args.tol, args.verbose))
+        print()
+        fch_res.append(compare_flux_channels(tc, sz, fr, args.tol, args.verbose))
 
-    # --- Optional plots ---
+    n_fail = print_summary(d_res, f_res, fch_res)
+
     if not args.no_plots:
-        make_plots(results, out_dir=args.spectrum_dir)
+        make_plots(d_res, f_res, fch_res, out_dir=d)
 
-    # Exit code: 0 if all passed, 1 if any failed
-    n_failed = sum(1 for r in results if not r["passed"])
-    sys.exit(n_failed)
-
+    sys.exit(min(n_fail, 1))
 
 if __name__ == "__main__":
     main()

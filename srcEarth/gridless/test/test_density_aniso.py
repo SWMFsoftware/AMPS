@@ -116,6 +116,15 @@ GAMMA   = 2.0
 EMIN_ANISO = 5000.0    # MeV
 EMAX_ANISO = 50000.0   # MeV
 
+# Energy channels (same definition as isotropic test; see #ENERGY_CHANNELS in .in files)
+# Tuple: (name, E1_MeV, E2_MeV)
+ANISO_CHANNELS = [
+    ("CH1",    10.0,    100.0),
+    ("CH2",   100.0,   1000.0),
+    ("CH3",  1000.0,  10000.0),
+    ("CH4", 10000.0,  20000.0),
+]
+
 # ---------------------------------------------------------------------------
 # Test case definitions for PAD runs (A, C, D)
 # ---------------------------------------------------------------------------
@@ -418,6 +427,154 @@ def compute_n_from_spectrum_zone(zone: dict,
     return 4.0 * math.pi * float(np.trapezoid(T_sub * Jb_sub / vs_sub, E_sub))
 
 # ---------------------------------------------------------------------------
+# Flux helpers
+# ---------------------------------------------------------------------------
+
+def read_flux_dat(filepath: str) -> list:
+    """
+    Parse gridless_points_flux.dat.
+    Returns a list of row dicts; each row has keys:
+      X_km, Y_km, Z_km, F_tot_m2s1, [F_CH1_m2s1, F_CH2_m2s1, ...]
+    """
+    rows = []
+    var_names = []
+    in_zone = False
+    with open(filepath) as f:
+        for line in f:
+            s = line.strip()
+            if not s or s.startswith("!") or s.startswith("AUXDATA"):
+                continue
+            if s.upper().startswith("VARIABLES"):
+                parts = s.split("=", 1)[1]
+                var_names = [v.strip().strip('"') for v in parts.split()]
+                continue
+            if s.upper().startswith("ZONE"):
+                in_zone = True
+                continue
+            if in_zone:
+                try:
+                    vals = [float(v) for v in s.split()]
+                    if len(vals) == len(var_names):
+                        rows.append(dict(zip(var_names, vals)))
+                except ValueError:
+                    pass
+    return rows
+
+
+def F_closed(E1_MeV: float, E2_MeV: float, T_eff: float) -> float:
+    """
+    Closed-form omnidirectional integral flux for a power-law spectrum
+    J_b(E) = J0*(E/E0)^(-GAMMA) with GAMMA=2:
+
+      F = 4π · T_eff · J0 · E0² · (1/E1 - 1/E2)     [m^-2 s^-1]
+    """
+    if E2_MeV <= E1_MeV or T_eff == 0.0:
+        return 0.0
+    return 4.0 * math.pi * T_eff * J0_SPEC * E0_SPEC**2 * (1.0/E1_MeV - 1.0/E2_MeV)
+
+
+def F_closed_clipped(E1_MeV: float, E2_MeV: float, T_eff: float,
+                     Emin_grid: float = EMIN_ANISO,
+                     Emax_grid: float = EMAX_ANISO) -> float:
+    """
+    Expected channel flux as produced by FluxIntegrateChannel in DensityGridless.cpp.
+
+    The C++ code clips the channel [E1, E2] to the solver energy grid [Emin_grid,
+    Emax_grid] before integrating.  For channels entirely outside the grid the
+    return value is 0.0.
+
+    For the anisotropic test the grid is [5000, 50000] MeV, so:
+      CH1 (10-100 MeV)   -> 0          (below grid)
+      CH2 (100-1000 MeV) -> 0          (below grid)
+      CH3 (1-10 GeV)     -> F([5000, 10000], T_eff)
+      CH4 (10-20 GeV)    -> F([10000, 20000], T_eff)
+    """
+    lo = max(E1_MeV, Emin_grid)
+    hi = min(E2_MeV, Emax_grid)
+    if lo >= hi:
+        return 0.0
+    return F_closed(lo, hi, T_eff)
+
+
+def compare_flux_channels_aniso(
+        run_dir: str,
+        run_label: str,
+        T_aniso_ref: float,        # expected effective transmissivity
+        tol: float = 0.05,
+        verbose: bool = True) -> list:
+    """
+    Read gridless_points_flux.dat from run_dir and compare per-channel flux against
+    the analytic closed-form.
+
+    For the aniso test cases the solver grid is [5-50 GeV]:
+      - CH1, CH2 are entirely below the grid -> C++ returns 0; we verify that.
+      - CH3 (1-10 GeV) clips to [5-10 GeV]; CH4 (10-20 GeV) is fully in the grid.
+
+    T_aniso_ref is the effective transmissivity (= T_aniso from semi_analytic_ratio,
+    or T_geo for Run A regression).  Since the PAD/spatial weights don't depend on
+    energy (rL >> domain), F_ch_aniso = F_closed_clipped(E1,E2, T_aniso_ref).
+
+    Returns a list of result dicts, one per channel per test point.
+    """
+    flux_file = os.path.join(run_dir, "gridless_points_flux.dat")
+    if not os.path.isfile(flux_file):
+        if verbose:
+            print(f"  [flux] {run_label}: gridless_points_flux.dat not found — skipping flux test")
+        return []
+
+    rows = read_flux_dat(flux_file)
+    if not rows:
+        if verbose:
+            print(f"  [flux] {run_label}: no rows in flux file — skipping")
+        return []
+
+    results = []
+    if verbose:
+        print(f"  [flux] {run_label}: comparing {len(ANISO_CHANNELS)} channels "
+              f"× {len(rows)} points  (T_aniso_ref={T_aniso_ref:.5f})")
+
+    for row_idx, row in enumerate(rows):
+        for ch_name, E1, E2 in ANISO_CHANNELS:
+            col = f"F_{ch_name}_m2s1"
+            if col not in row:
+                continue
+            F_model = row[col]
+            F_ref   = F_closed_clipped(E1, E2, T_aniso_ref)
+
+            if F_ref == 0.0:
+                # Expect zero — check absolute value is negligible
+                tiny = 1.0   # 1 m^-2 s^-1 threshold for "zero"
+                passed = abs(F_model) < tiny
+                rel_err = float("nan")
+                status  = "PASS" if passed else "FAIL"
+                if verbose:
+                    print(f"    [{run_label} pt{row_idx} {ch_name}]  F_model={F_model:.3e}"
+                          f"  F_ref=0 (below grid)  >>> {status} <<<")
+            else:
+                rel_err = abs(F_model - F_ref) / F_ref
+                passed  = rel_err < tol
+                status  = "PASS" if passed else "FAIL"
+                if verbose:
+                    print(f"    [{run_label} pt{row_idx} {ch_name}]  "
+                          f"F_model={F_model:.4e}  F_ref={F_ref:.4e}  "
+                          f"err={rel_err:.2%}  tol={tol:.0%}  >>> {status} <<<")
+
+            results.append({
+                "run":       run_label,
+                "point_idx": row_idx,
+                "channel":   ch_name,
+                "E1":        E1,
+                "E2":        E2,
+                "F_model":   F_model,
+                "F_ref":     F_ref,
+                "rel_err":   rel_err,
+                "passed":    passed,
+                "is_zero_expected": F_ref == 0.0,
+            })
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Individual test runners
 # ---------------------------------------------------------------------------
 
@@ -454,6 +611,49 @@ def run_test_A_regression(run_dir: str, tol: float = 0.02) -> list:
                         "n_model": n_model, "n_analytic": n_analytic,
                         "rel_err": rel_err, "T_mean": T_mean, "T_geo": Tg})
     return results
+
+
+def run_test_A_flux(run_dir: str, tol: float = 0.02) -> list:
+    """
+    RUN A flux: ISOTROPIC PAD → T_aniso_ref = T_geo for each point.
+    For CH3 and CH4 (in-grid channels) F_aniso must equal F_iso within tol.
+    For CH1 and CH2 (below grid) the solver returns 0; verified as zero.
+    """
+    print("  [RUN A flux] Comparing per-channel flux against analytic reference ...")
+    all_flux = []
+    for i, tc in enumerate(PAD_TEST_POINTS):
+        Tg = T_geometric(tc["r_Re"])
+        flux_file = os.path.join(run_dir, "gridless_points_flux.dat")
+        if not os.path.isfile(flux_file):
+            print(f"    gridless_points_flux.dat not found in {run_dir}")
+            return []
+        rows = read_flux_dat(flux_file)
+        if i >= len(rows):
+            continue
+        row = rows[i]
+        for ch_name, E1, E2 in ANISO_CHANNELS:
+            col = f"F_{ch_name}_m2s1"
+            if col not in row:
+                continue
+            F_model = row[col]
+            F_ref   = F_closed_clipped(E1, E2, Tg)
+            if F_ref == 0.0:
+                passed  = abs(F_model) < 1.0
+                rel_err = float("nan")
+            else:
+                rel_err = abs(F_model - F_ref) / F_ref
+                passed  = rel_err < tol
+            st = "PASS" if passed else "FAIL"
+            print(f"    [A-{tc['label']} {ch_name}]  "
+                  + (f"F_model={F_model:.4e}  F_ref={F_ref:.4e}  err={rel_err:.2%}  >>> {st} <<<"
+                     if F_ref > 0 else f"F_model={F_model:.3e}  F_ref=0 (below grid)  >>> {st} <<<"))
+            all_flux.append({
+                "run": "A-flux", "label": tc["label"], "channel": ch_name,
+                "E1": E1, "E2": E2, "F_model": F_model, "F_ref": F_ref,
+                "rel_err": rel_err, "passed": passed, "is_zero_expected": F_ref == 0.0,
+            })
+    print()
+    return all_flux
 
 
 def run_test_B_spatial(run_dir: str, tol: float = 0.05) -> list:
@@ -495,6 +695,53 @@ def run_test_B_spatial(run_dir: str, tol: float = 0.05) -> list:
              "n_model": n_aniso_model, "n_analytic": n_expected,
              "rel_err": rel_err, "ratio_exact": ratio_exact,
              "n_iso_analytic": n_iso_analytic}]
+
+
+def run_test_B_flux(run_dir: str, tol: float = 0.05) -> list:
+    """
+    RUN B flux: DAYSIDE_NIGHTSIDE spatial, DUSK point.
+    Since PAD=ISOTROPIC and T is energy-independent, flux ratio = (f_day+f_night)/2
+    exactly as for density.  T_aniso_ref = T_geo * ratio_exact.
+    """
+    print("  [RUN B flux] Comparing per-channel flux (dusk point) ...")
+    tc   = SPATIAL_TEST_POINT
+    Tg   = T_geometric(tc["r_Re"])
+    ratio_exact   = (tc["f_day"] + tc["f_night"]) / 2.0
+    T_aniso_ref   = Tg * ratio_exact
+
+    flux_file = os.path.join(run_dir, "gridless_points_flux.dat")
+    if not os.path.isfile(flux_file):
+        print(f"    gridless_points_flux.dat not found in {run_dir}")
+        return []
+    rows = read_flux_dat(flux_file)
+    if not rows:
+        return []
+    row = rows[0]
+
+    all_flux = []
+    for ch_name, E1, E2 in ANISO_CHANNELS:
+        col = f"F_{ch_name}_m2s1"
+        if col not in row:
+            continue
+        F_model = row[col]
+        F_ref   = F_closed_clipped(E1, E2, T_aniso_ref)
+        if F_ref == 0.0:
+            passed  = abs(F_model) < 1.0
+            rel_err = float("nan")
+        else:
+            rel_err = abs(F_model - F_ref) / F_ref
+            passed  = rel_err < tol
+        st = "PASS" if passed else "FAIL"
+        print(f"    [B-DUSK {ch_name}]  "
+              + (f"F_model={F_model:.4e}  F_ref={F_ref:.4e}  err={rel_err:.2%}  >>> {st} <<<"
+                 if F_ref > 0 else f"F_model={F_model:.3e}  F_ref=0 (below grid)  >>> {st} <<<"))
+        all_flux.append({
+            "run": "B-flux", "label": "DUSK", "channel": ch_name,
+            "E1": E1, "E2": E2, "F_model": F_model, "F_ref": F_ref,
+            "rel_err": rel_err, "passed": passed, "is_zero_expected": F_ref == 0.0,
+        })
+    print()
+    return all_flux
 
 
 def run_test_PAD(run_dir: str, pad_model: str, pad_n: float,
@@ -563,16 +810,67 @@ def run_test_PAD(run_dir: str, pad_model: str, pad_n: float,
     return results
 
 
-# ---------------------------------------------------------------------------
-# Summary
-# ---------------------------------------------------------------------------
+def run_test_PAD_flux(run_dir: str, pad_model: str, pad_n: float,
+                      tol: float = 0.10,
+                      N_theta: int = 200, N_phi: int = 400) -> list:
+    """
+    RUN C/D flux: PAD anisotropy.
+    For energies well above the Størmer cutoff, T is energy-independent, so:
+      F_ch_aniso = T_aniso_ref * F_closed_clipped(E1, E2, 1.0)
+                 = F_closed_clipped(E1, E2, T_aniso_ref)
 
-def print_summary(all_results: list):
+    T_aniso_ref is taken from semi_analytic_ratio() for each test point.
+    """
+    run_label = "C" if "SIN" in pad_model else "D"
+    flux_file = os.path.join(run_dir, "gridless_points_flux.dat")
+    if not os.path.isfile(flux_file):
+        print(f"  [{run_label} flux] gridless_points_flux.dat not found — skipping")
+        return []
+    rows = read_flux_dat(flux_file)
+    if not rows:
+        return []
+
+    print(f"  [{run_label} flux] Comparing per-channel flux ({pad_model} n={pad_n}) ...")
+    all_flux = []
+
+    for i, tc in enumerate(PAD_TEST_POINTS):
+        if i >= len(rows):
+            continue
+        row = rows[i]
+        x0_Re = [tc["x_km"]/RE_KM, tc["y_km"]/RE_KM, tc["z_km"]/RE_KM]
+        ref = semi_analytic_ratio(x0_Re, pad_model, pad_n, N_theta=N_theta, N_phi=N_phi)
+        T_aniso_ref = ref["T_aniso_ref"]
+
+        for ch_name, E1, E2 in ANISO_CHANNELS:
+            col = f"F_{ch_name}_m2s1"
+            if col not in row:
+                continue
+            F_model = row[col]
+            F_ref   = F_closed_clipped(E1, E2, T_aniso_ref)
+            if F_ref == 0.0:
+                passed  = abs(F_model) < 1.0
+                rel_err = float("nan")
+            else:
+                rel_err = abs(F_model - F_ref) / F_ref
+                passed  = rel_err < tol
+            st = "PASS" if passed else "FAIL"
+            print(f"    [{run_label}-{tc['label']} {ch_name}]  "
+                  + (f"F_model={F_model:.4e}  F_ref={F_ref:.4e}  err={rel_err:.2%}  >>> {st} <<<"
+                     if F_ref > 0 else f"F_model={F_model:.3e}  F_ref=0 (below grid)  >>> {st} <<<"))
+            all_flux.append({
+                "run": f"{run_label}-flux", "label": tc["label"], "channel": ch_name,
+                "E1": E1, "E2": E2, "F_model": F_model, "F_ref": F_ref,
+                "rel_err": rel_err, "passed": passed, "is_zero_expected": F_ref == 0.0,
+            })
+    print()
+    return all_flux
+
+def print_summary(all_results: list, all_flux: list = None):
     n_pass = sum(1 for r in all_results if r.get("passed", False))
     n_total = len(all_results)
     print()
     print("=" * 72)
-    print("SUMMARY")
+    print("SUMMARY — DENSITY")
     print("-" * 72)
     print(f"  {'Run':6}  {'Label':8}  {'n_model':>12}  {'n_analytic':>12}  "
           f"{'rel_err':>8}  {'Result':>6}")
@@ -586,11 +884,39 @@ def print_summary(all_results: list):
               f"{err:>8}  {st:>6}")
     print("-" * 72)
     print(f"  Passed: {n_pass}/{n_total}")
+
+    if all_flux:
+        flux_active = [r for r in all_flux if not r.get("is_zero_expected", False)]
+        flux_zero   = [r for r in all_flux if r.get("is_zero_expected", False)]
+        fp = sum(1 for r in all_flux if r.get("passed", False))
+        ft = len(all_flux)
+        print()
+        print("SUMMARY — FLUX CHANNELS")
+        print("-" * 72)
+        print(f"  {'Run':8}  {'Label':6}  {'Ch':5}  {'F_model':>12}  "
+              f"{'F_ref':>12}  {'rel_err':>8}  {'Result':>6}")
+        print("-" * 72)
+        for r in flux_active:
+            fm  = f"{r.get('F_model', float('nan')):.4e}"
+            fr  = f"{r.get('F_ref',   float('nan')):.4e}"
+            err = f"{r.get('rel_err', float('nan')):.1%}"
+            st  = "PASS" if r.get("passed") else "FAIL"
+            print(f"  {r.get('run','?'):8}  {r.get('label','?'):6}  "
+                  f"{r.get('channel','?'):5}  {fm:>12}  {fr:>12}  {err:>8}  {st:>6}")
+        if flux_zero:
+            n_zero_pass = sum(1 for r in flux_zero if r.get("passed", False))
+            print(f"  (Below-grid channels: {n_zero_pass}/{len(flux_zero)} correctly return 0)")
+        print("-" * 72)
+        print(f"  Passed: {fp}/{ft}")
+
+    n_total_all = n_total + (len(all_flux) if all_flux else 0)
+    n_pass_all  = n_pass  + (sum(1 for r in all_flux if r.get("passed")) if all_flux else 0)
+    print()
     print("=" * 72)
-    if n_pass == n_total:
+    if n_pass_all == n_total_all:
         print("ALL TESTS PASSED")
     else:
-        print(f"WARNING: {n_total - n_pass} TEST(S) FAILED")
+        print(f"WARNING: {n_total_all - n_pass_all} TEST(S) FAILED")
     print("=" * 72)
 
 
@@ -598,7 +924,8 @@ def print_summary(all_results: list):
 # Optional plots
 # ---------------------------------------------------------------------------
 
-def make_plots(all_results: list, zones_by_run: dict, out_dir: str = "."):
+def make_plots(all_results: list, zones_by_run: dict, out_dir: str = ".",
+               all_flux: list = None):
     try:
         import matplotlib.pyplot as plt
     except ImportError:
@@ -675,6 +1002,49 @@ def make_plots(all_results: list, zones_by_run: dict, out_dir: str = "."):
         print(f"[plots] Saved: {out2}")
         plt.close(fig2)
 
+    # ----- Plot 3: per-channel flux model vs reference -----
+    if all_flux:
+        active_flux = [r for r in all_flux if not r.get("is_zero_expected", False)]
+        if active_flux:
+            # Group by (run, label) pair
+            groups = {}
+            for r in active_flux:
+                key = f"{r['run']}\n{r['label']}"
+                groups.setdefault(key, {})
+                groups[key][r["channel"]] = (r["F_model"], r["F_ref"])
+
+            ch_names = [c for c, _, _ in ANISO_CHANNELS
+                        if any(c in groups[k] for k in groups)]
+            n_groups = len(groups)
+            n_ch     = len(ch_names)
+            if n_groups > 0 and n_ch > 0:
+                fig3, ax = plt.subplots(figsize=(max(6, 2*n_groups), 4))
+                x = np.arange(n_groups)
+                width = 0.8 / (2 * n_ch)
+                for ci, ch in enumerate(ch_names):
+                    F_models = [groups[k].get(ch, (float("nan"),float("nan")))[0]
+                                for k in groups]
+                    F_refs   = [groups[k].get(ch, (float("nan"),float("nan")))[1]
+                                for k in groups]
+                    offset_m = (2*ci - n_ch + 0.5) * width
+                    offset_r = offset_m + width
+                    ax.bar(x + offset_m, F_models, width*0.9,
+                           label=f"{ch} model", alpha=0.85)
+                    ax.bar(x + offset_r, F_refs, width*0.9,
+                           label=f"{ch} ref", alpha=0.55, hatch="//")
+                ax.set_xticks(x)
+                ax.set_xticklabels(list(groups.keys()), fontsize=7)
+                ax.set_ylabel("Integral flux [m⁻² s⁻¹]")
+                ax.set_yscale("log")
+                ax.legend(fontsize=7, ncol=2)
+                ax.set_title("Per-channel integral flux: model vs analytic reference", fontsize=9)
+                ax.grid(True, alpha=0.3, axis="y")
+                plt.tight_layout()
+                out3 = os.path.join(out_dir, "test_aniso_flux_channels.png")
+                plt.savefig(out3, dpi=150, bbox_inches="tight")
+                print(f"[plots] Saved: {out3}")
+                plt.close(fig3)
+
 
 # ---------------------------------------------------------------------------
 # Main
@@ -712,6 +1082,7 @@ def main():
         tol_override = None
 
     all_results = []
+    all_flux    = []
     zones_by_run = {}
 
     print()
@@ -732,6 +1103,7 @@ def main():
         print()
         res_A = run_test_A_regression(args.dir_regression, tol=args.tol_exact)
         all_results.extend(res_A)
+        all_flux.extend(run_test_A_flux(args.dir_regression, tol=args.tol_exact))
         if not args.no_plots and args.dir_regression:
             sf = os.path.join(args.dir_regression, "gridless_points_spectrum.dat")
             if os.path.isfile(sf):
@@ -749,6 +1121,7 @@ def main():
         print()
         res_B = run_test_B_spatial(args.dir_spatial, tol=args.tol_spatial)
         all_results.extend(res_B)
+        all_flux.extend(run_test_B_flux(args.dir_spatial, tol=args.tol_spatial))
 
     # RUN C
     if args.dir_sinalpha:
@@ -762,6 +1135,9 @@ def main():
                               tol_override=tol_override,
                               N_theta=ref_N_theta, N_phi=ref_N_phi)
         all_results.extend(res_C)
+        all_flux.extend(run_test_PAD_flux(args.dir_sinalpha, "SINALPHA_N", 2.0,
+                                           tol=args.tol_semianalytic or 0.10,
+                                           N_theta=ref_N_theta, N_phi=ref_N_phi))
         if not args.no_plots and args.dir_sinalpha:
             sf = os.path.join(args.dir_sinalpha, "gridless_points_spectrum.dat")
             if os.path.isfile(sf):
@@ -779,6 +1155,9 @@ def main():
                               tol_override=tol_override,
                               N_theta=ref_N_theta, N_phi=ref_N_phi)
         all_results.extend(res_D)
+        all_flux.extend(run_test_PAD_flux(args.dir_cosalpha, "COSALPHA_N", 2.0,
+                                           tol=args.tol_semianalytic or 0.10,
+                                           N_theta=ref_N_theta, N_phi=ref_N_phi))
         if not args.no_plots and args.dir_cosalpha:
             sf = os.path.join(args.dir_cosalpha, "gridless_points_spectrum.dat")
             if os.path.isfile(sf):
@@ -789,14 +1168,16 @@ def main():
         print_reference_table(ref_N_theta, ref_N_phi)
         sys.exit(0)
 
-    print_summary(all_results)
+    print_summary(all_results, all_flux if all_flux else None)
 
     if not args.no_plots and zones_by_run:
         out_dir = (args.dir_regression or args.dir_sinalpha
                    or args.dir_cosalpha or ".")
-        make_plots(all_results, zones_by_run, out_dir=out_dir)
+        make_plots(all_results, zones_by_run, out_dir=out_dir,
+                   all_flux=all_flux if all_flux else None)
 
     n_failed = sum(1 for r in all_results if not r.get("passed", False))
+    n_failed += sum(1 for r in all_flux   if not r.get("passed", False))
     sys.exit(n_failed)
 
 

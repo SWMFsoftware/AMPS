@@ -81,6 +81,34 @@
   DS_ENERGY_SPACING  LOG
   DS_BOUNDARY_MODE   ISOTROPIC
 
+#ENERGY_CHANNELS
+  ! User-defined integral-flux channels for comparing F_ch = 4pi*int[E1,E2] T*Jb dE
+  !
+  ! Physics:  Omnidirectional integral flux  F_ch [m^-2 s^-1]
+  !   = 4π ∫_{E1}^{E2} T(E;x0) · J_b(E) dE
+  !
+  ! Analytic (power-law J_b = J0*(E/E0)^{-γ}, γ=2, T=T_geo):
+  !   F_ch = 4π · T_geo · J0 · E0² · (1/E1 − 1/E2)    [m^-2 s^-1]
+  !
+  ! Channel selection rationale:
+  !   CH1 (10-100 MeV): dominated by sub-cutoff region for equatorial points
+  !      TC1 and TC3; tests the shielded regime. TC2 (pole) has Rc=0, so
+  !      CH1 tests the unshielded low-energy limit there.
+  !   CH2 (100 MeV-1 GeV): spans the transition through the Størmer cutoff
+  !      for equatorial points. TC2 fully above cutoff.
+  !   CH3 (1-10 GeV): all four test points have T = T_geo in this range.
+  !      Provides the cleanest analytic comparison.
+  !   CH4 (10-20 GeV): near the upper bound of the grid. TC1/TC3 above-cutoff.
+  !      Tests accurate integration at the top of the energy grid.
+  !
+  ! NAME    E1_MeV    E2_MeV
+  CH_BEGIN
+    CH1       10.0     100.0   ! 10–100 MeV  (low energy, shielded at equator)
+    CH2      100.0    1000.0   ! 100 MeV–1 GeV  (transition through Størmer cutoff)
+    CH3     1000.0   10000.0   ! 1–10 GeV  (above cutoff at all test points)
+    CH4    10000.0   20000.0   ! 10–20 GeV (high energy, near grid upper bound)
+  CH_END
+
 #SPECTRUM
   ! Power-law differential intensity: J_b(E) = J0 * (E/E0)^(-GAMMA)
   ! Units as registered by the solver: J0 in m^-2 s^-1 sr^-1 MeV^-1

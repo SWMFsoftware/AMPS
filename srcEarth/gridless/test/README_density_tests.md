@@ -277,8 +277,8 @@ magnetosphere (TC4, r = 2 Re) should show similar or stronger shielding.
 
 | File | Description |
 |------|-------------|
-| `test_density_dipole_4pts.in`  | AMPS input file, all 4 test points, DIPOLE field |
-| `test_density_analytic.py`     | Python comparison script with analytic formulas |
+| `test_density_dipole_4pts.in`  | AMPS input file — all 4 test points, DIPOLE field, energy channels |
+| `test_density_analytic.py`     | Python comparison script — density, total flux, per-channel flux |
 | `README_density_tests.md`      | This document |
 
 Run sequence:
@@ -287,6 +287,125 @@ Run sequence:
 python3 test_density_analytic.py --tol 0.05
 ```
 
-Expected outputs from AMPS:
+Expected AMPS outputs:
 - `gridless_points_density.dat`   — 4 rows, one per point
 - `gridless_points_spectrum.dat`  — 4 ZONEs, one per point
+- `gridless_points_flux.dat`      — 4 rows: F_tot + F_CH1 + F_CH2 + F_CH3 + F_CH4
+
+---
+
+## 9. Integral flux — physics, algorithm, and analytic validation
+
+### 9.1 Definition: density vs integral flux
+
+Both quantities are derived from the local differential intensity
+J_loc(E; x0) = T(E; x0) · J_b(E), but they differ by the presence or
+absence of a 1/v(E) weighting:
+
+| Quantity | Formula | Units |
+|----------|---------|-------|
+| Number density | n(x0) = 4π ∫ J_loc(E)/v(E) dE | m⁻³ |
+| Integral flux | F(x0; E1,E2) = 4π ∫_{E1}^{E2} J_loc(E) dE | m⁻² s⁻¹ |
+
+The **1/v factor** in the density integral means that slow particles contribute
+more density per unit flux — a 100 MeV proton (v ≈ 0.43 c) contributes
+1/0.43 ≈ 2.3× more density per unit flux than a 10 GeV proton (v ≈ c).
+
+Integral flux, by contrast, is a direct count of particles per unit area per
+unit time and is what particle detectors with energy thresholds measure.
+
+### 9.2 Energy channels
+
+Four channels are defined in `#ENERGY_CHANNELS` of the input file:
+
+| Channel | E1 [MeV] | E2 [MeV] | Notes |
+|---------|----------|----------|-------|
+| CH1 | 10 | 100 | Sub-cutoff at equatorial points; above-cutoff at pole |
+| CH2 | 100 | 1000 | Spans the Størmer cutoff transition for TC1/TC3 |
+| CH3 | 1000 | 10000 | All test points above cutoff → exact analytic prediction |
+| CH4 | 10000 | 20000 | High energy, near top of solver grid |
+
+### 9.3 Analytic closed form (power-law spectrum, γ = 2)
+
+For J_b(E) = J0 · (E/E0)^{−γ} with γ ≠ 1, the integral flux has an
+**exact closed form** (no numerical approximation needed):
+
+```
+F(E1, E2) = 4π · T · J0 · E0^γ / (γ−1) · (E1^{1−γ} − E2^{1−γ})
+```
+
+For γ = 2 (used in this test):
+
+```
+F(E1, E2) = 4π · T · J0 · E0² · (1/E1 − 1/E2)
+```
+
+This expression is **independent of the energy grid resolution** — it is a
+pure analytic formula. This is the primary benchmark for flux validation and
+makes the flux tests much cleaner than density tests (which require numerical
+quadrature of the 1/v factor).
+
+**Example** (T_geo(8Re) = 0.99600, CH3: E1=1000 MeV, E2=10000 MeV):
+
+```
+F_CH3 = 4π × 0.99600 × 10⁴ × 100² × (1/1000 − 1/10000)
+      = 4π × 0.99600 × 10⁴ × 10⁴ × 9×10⁻⁴
+      ≈ 1.126 × 10⁶  m⁻² s⁻¹
+```
+
+### 9.4 Numerical implementation
+
+**FluxIntegrateTotal** (total flux over [Emin, Emax]):
+
+```cpp
+F = 4π · Σ_i  0.5 · (J_loc_i + J_loc_{i+1}) · ΔE_J
+```
+
+Trapezoidal rule on the solver energy grid (in Joules), exactly as for
+density but without the 1/v factor.
+
+**FluxIntegrateChannel** (channel flux over user-defined [E1, E2]):
+
+1. Clip the channel to the grid: `lo = max(E1, Emin_grid)`, `hi = min(E2, Emax_grid)`.
+   Return 0 if `lo ≥ hi`.
+2. Build an augmented sub-grid:  
+   `{lo} ∪ {E_i ∈ (lo, hi)} ∪ {hi}`  
+   where T at `lo` and `hi` is obtained by **linear interpolation** from the
+   two nearest grid nodes.
+3. Apply the trapezoidal rule over J_loc = T · J_b on the augmented sub-grid.
+
+**MPI design:** channel flux is computed on rank 0 from the T[] array received
+from each worker — no extra MPI messages. Workers already send T[nE] along
+with n_tot in the density protocol.
+
+### 9.5 Test logic in test_density_analytic.py
+
+For each test point and each channel:
+
+| Channel status | Test criterion | Rationale |
+|---------------|---------------|-----------|
+| E1 > E_cut (fully above cutoff) | \|F_model − F_analytic\| / F_analytic < 5% | T = T_geo exactly; analytic formula is exact |
+| Channel straddles/below cutoff | F_model ≤ 1.05 · F_analytic | T_Størmer ≤ 1, so model ≤ analytic upper bound |
+
+**Consistency check:** the Python reconstruction of F_ch from the spectrum
+zone should agree with the solver-written value in `gridless_points_flux.dat`
+to < 0.1% (same algorithm, same T[], same spectrum). This catches any unit
+conversion bugs in the C++ output writer.
+
+### 9.6 Expected values
+
+| Channel | TC1 (8Re eq.) | TC2 (5Re pole) | TC3 (6Re eq.) | TC4 (2Re eq.) |
+|---------|--------------|---------------|--------------|--------------|
+| CH1 | shielded | 1.119×10⁸ m⁻²s⁻¹ | shielded | deep shielding |
+| CH2 | shielded | 1.119×10⁷ | shielded | deep shielding |
+| CH3 | 1.126×10⁶ | 1.119×10⁶ | 1.122×10⁶ | shielded |
+| CH4 | 6.258×10⁴ | 6.219×10⁴ | 6.238×10⁴ | shielded |
+| TOTAL | 1.251×10⁸ | 1.244×10⁸ | 1.247×10⁸ | << 1.244×10⁸ |
+
+"shielded" = channel is below or straddles the Størmer cutoff at that location;
+the model output is expected to be less than the analytic upper bound.
+
+CH3 provides the cleanest analytic comparison: all four test points have
+energies in 1–10 GeV well above their respective cutoffs, so T = T_geo exactly
+for all of them, and the 5% tolerance is an upper bound on sampling error only.
+
