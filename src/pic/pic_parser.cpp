@@ -158,7 +158,7 @@ void PIC::Parser::readMain(CiFileOperations& ifile) {
 	  else ifile.error();}
 	else if (strcmp("INTERNALDEGREESOFFREEDOM",str1)==0) {
 	  ifile.CutInputStr(str1,str);
-	  if (strcmp("ON",str1)==0) PIC::MolecularData::InternalDegreesOfFreedomModelingFlag=_INTERNAL_DEGRESS_OF_FREEDOM_OFF_;
+	  if (strcmp("ON",str1)==0) PIC::MolecularData::InternalDegreesOfFreedomModelingFlag=_INTERNAL_DEGREES_OF_FREEDOM_ON_;
 	  else if (strcmp("OFF",str1)==0) PIC::MolecularData::InternalDegreesOfFreedomModelingFlag=_INTERNAL_DEGRESS_OF_FREEDOM_OFF_;
 	  else ifile.error();}
 
