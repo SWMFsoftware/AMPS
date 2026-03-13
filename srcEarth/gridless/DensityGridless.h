@@ -47,9 +47,26 @@
  * OUTPUT CONTRACT
  * ---------------
  * POINTS:
- *   Writes two Tecplot files (rank 0):
+ *   Writes three Tecplot files (rank 0):
  *     - gridless_points_density.dat
+ *         Variables: X_km Y_km Z_km N_m3 N_cm3
+ *         Number density integrated over [DS_EMIN, DS_EMAX].
+ *
  *     - gridless_points_spectrum.dat
+ *         One ZONE per observation point.
+ *         Variables: E_MeV  T  J_boundary_perMeV  J_local_perMeV
+ *
+ *     - gridless_points_flux.dat
+ *         Variables: X_km  Y_km  Z_km  F_tot_m2s1  [F_NAME_m2s1 ...]
+ *         F_tot = 4π ∫ T(E)·J_b(E) dE  over [DS_EMIN, DS_EMAX]  [m^-2 s^-1].
+ *         Additional columns F_NAME_m2s1 are added for each user-defined channel
+ *         from the #ENERGY_CHANNELS section of the input file.
+ *         If #ENERGY_CHANNELS is absent, only F_tot is written.
+ *
+ *   KEY DISTINCTION: density vs flux
+ *     n(x0)     = 4π ∫ J_loc(E)/v(E) dE   [m^-3]     (1/v weight; density)
+ *     F_tot(x0) = 4π ∫ J_loc(E)     dE   [m^-2 s^-1] (no weight; flux)
+ *   For ultra-relativistic particles (v≈c): F_tot ≈ n · c.
  *
  * SHELLS:
  *   Writes one Tecplot file per shell altitude A[km] (rank 0):

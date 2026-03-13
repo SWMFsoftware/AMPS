@@ -237,6 +237,7 @@
  *     the isotropic case. Users who need a normalised comparison should post-process
  *     (divide by the isotropic n_tot from a separate run with ISOTROPIC mode).
  */
+ 
 #include "pic.h"
 #include "DensityGridless.h"
 
@@ -252,7 +253,7 @@
 #include <string>
 #include <fstream>
 #include <sstream>
-#include <stdexcept>
+
 #include <algorithm>
 #include <iostream>
 
@@ -351,7 +352,7 @@ extern "C" {
 static void ParseEpochToGeopack(const std::string& epoch,
                                 int& iyear,int& iday,int& ihour,int& imin,int& isec) {
   // Very lightweight: expect at least YYYY-MM-DD.
-  if (epoch.size()<10) throw std::runtime_error("Invalid epoch string: '"+epoch+"'");
+  if (epoch.size()<10) { std::ostringstream _exit_msg; _exit_msg << "Invalid epoch string: '"+epoch+"'"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); };
   iyear = std::stoi(epoch.substr(0,4));
   int imon = std::stoi(epoch.substr(5,2));
   int idom = std::stoi(epoch.substr(8,2));
@@ -447,7 +448,7 @@ static std::vector<double> BuildEnergyGrid_MeV(const EarthUtil::AmpsParam& prm) 
   std::vector<double> E(n);
   const double Emin = prm.densitySpectrum.Emin_MeV;
   const double Emax = prm.densitySpectrum.Emax_MeV;
-  if (n<2) throw std::runtime_error("Energy grid requires at least 2 points");
+  if (n<2) exit(__LINE__,__FILE__,"Energy grid requires at least 2 points");
 
   if (prm.densitySpectrum.spacing==EarthUtil::DensitySpectrumParam::Spacing::LOG) {
     const double r = Emax/Emin;
@@ -473,6 +474,137 @@ static double Trapz(const std::vector<double>& x, const std::vector<double>& f) 
     s += 0.5*(f[i]+f[i+1])*(x[i+1]-x[i]);
   }
   return s;
+}
+
+//====================================================================================
+// FluxIntegrateTotal  —  omnidirectional integral flux over the full energy grid
+//====================================================================================
+// Computes:
+//   F_tot(x0) = 4π ∫_{Emin}^{Emax} J_loc(E; x0) dE
+//             = 4π ∫_{Emin}^{Emax} T(E; x0) · J_b(E) dE          [m^-2 s^-1]
+//
+// PHYSICS vs DENSITY
+//   Number density:      n   = 4π ∫ J_loc(E)/v(E) dE   [m^-3]
+//   Omnidirectional flux: F  = 4π ∫ J_loc(E)    dE    [m^-2 s^-1]
+//
+//   The only difference is the presence/absence of the 1/v(E) factor.
+//   For relativistic protons in the GeV range, v ≈ c, so n ≈ F/c.
+//   At non-relativistic energies (E << mp c^2 = 938 MeV) the 1/v factor
+//   matters significantly: equal fluxes give more density at low energy.
+//
+// UNITS
+//   Input:
+//     E_MeV    : energy grid nodes [MeV]
+//     T        : transmissivity at each node (dimensionless, 0–1)
+//     GetSpectrum(E_J): boundary intensity J_b [m^-2 s^-1 sr^-1 J^-1]
+//
+//   The integrand is:  4π sr  ×  T(E) × J_b(E) [m^-2 s^-1 sr^-1 J^-1]  ×  dE [J]
+//   Result:  [m^-2 s^-1]
+//
+// ANALYTIC CHECK (power-law J_b = J0*(E/E0)^{-γ}, γ≠1, constant T)
+//   F_tot = 4π · T · J0 · E0^γ / (γ−1) · ( Emin^{1-γ} − Emax^{1-γ} )
+//   For γ=2: F_tot = 4π · T · J0 · E0² · ( 1/Emin − 1/Emax )
+//   This is evaluated analytically in test_density_analytic.py for comparison.
+//====================================================================================
+static double FluxIntegrateTotal(
+    const std::vector<double>& E_MeV,
+    const std::vector<double>& T) {
+
+  const int n = (int)E_MeV.size();
+  if (n < 2) return 0.0;
+  double s = 0.0;
+  for (int i = 0; i+1 < n; ++i) {
+    // Convert MeV -> J for the boundary-spectrum call.
+    const double Ei_J   = E_MeV[i]   * MEV_TO_J;
+    const double Ei1_J  = E_MeV[i+1] * MEV_TO_J;
+    const double Jloc_i  = T[i]   * ::gSpectrum.GetSpectrum(Ei_J);
+    const double Jloc_i1 = T[i+1] * ::gSpectrum.GetSpectrum(Ei1_J);
+    const double dE_J    = Ei1_J - Ei_J;
+    s += 0.5 * (Jloc_i + Jloc_i1) * dE_J;
+  }
+  return 4.0 * M_PI * s;  // [m^-2 s^-1]
+}
+
+//====================================================================================
+// FluxIntegrateChannel  —  omnidirectional integral flux in a user-defined channel
+//====================================================================================
+// Computes:
+//   F_ch(x0) = 4π ∫_{E1}^{E2} T(E; x0) · J_b(E) dE               [m^-2 s^-1]
+//
+// ALGORITHM
+//   The energy grid {E_i} is the solver's internal grid from BuildEnergyGrid_MeV.
+//   The channel [E1, E2] may be narrower than, identical to, or wider than the grid.
+//
+//   Step 1: Find interior grid points:  i_lo ≤ i ≤ i_hi  where E_i ∈ (E1, E2).
+//   Step 2: Build an augmented sub-grid that includes E1 and E2 as endpoints.
+//           T is linearly interpolated at E1 and E2 if they do not coincide with
+//           grid nodes. Linear interpolation is appropriate because T(E) is
+//           smooth on scales larger than one grid interval.
+//   Step 3: Integrate the augmented sub-grid with the trapezoidal rule.
+//
+// BOUNDARY CASES
+//   - If E1 >= Emax or E2 <= Emin (channel completely outside the grid): F_ch = 0.
+//   - If E1 == E2 (zero-width channel): F_ch = 0 (no trapezoid formed).
+//   - If only one grid node falls inside [E1, E2]: a single trapezoid from E1 to E2
+//     is formed using interpolated T at both endpoints.
+//
+// LINEAR INTERPOLATION OF T AT CHANNEL BOUNDARY
+//   Given two adjacent grid nodes (E_a, T_a) and (E_b, T_b) with E_a < x < E_b:
+//     T(x) ≈ T_a + (T_b - T_a) * (x - E_a) / (E_b - E_a)
+//   J_b(x) is evaluated directly (not interpolated) at x via gSpectrum.GetSpectrum.
+//   This is exact for analytic spectra; for tabulated spectra the same interpolation
+//   scheme as gSpectrum uses applies.
+//====================================================================================
+static double FluxIntegrateChannel(
+    const std::vector<double>& E_MeV,  // solver energy grid [MeV]
+    const std::vector<double>& T,       // transmissivity at each grid node
+    double E1_MeV,                      // channel lower bound [MeV]
+    double E2_MeV) {                    // channel upper bound [MeV]
+
+  const int n = (int)E_MeV.size();
+  if (n < 2 || E1_MeV >= E2_MeV) return 0.0;
+
+  // Clip channel to the grid range.
+  const double Eg_lo = E_MeV.front();
+  const double Eg_hi = E_MeV.back();
+  const double lo = std::max(E1_MeV, Eg_lo);
+  const double hi = std::min(E2_MeV, Eg_hi);
+  if (lo >= hi) return 0.0;
+
+  // Linear interpolation of T at an arbitrary energy x, given that x falls
+  // inside the grid (lo >= Eg_lo, hi <= Eg_hi is already guaranteed above).
+  auto interpT = [&](double x) -> double {
+    // Find the first grid index with E_MeV[k] >= x.
+    auto it = std::lower_bound(E_MeV.begin(), E_MeV.end(), x);
+    if (it == E_MeV.end()) return T.back();
+    const int k = (int)(it - E_MeV.begin());
+    if (k == 0) return T[0];
+    const double Ea = E_MeV[k-1], Eb = E_MeV[k];
+    const double Ta = T[k-1],      Tb = T[k];
+    if (Eb <= Ea) return Ta;
+    return Ta + (Tb - Ta) * (x - Ea) / (Eb - Ea);
+  };
+
+  // Collect all grid nodes strictly inside (lo, hi).
+  struct Pt { double E_MeV; double T_val; };
+  std::vector<Pt> pts;
+  pts.push_back({lo, interpT(lo)});
+  for (int i = 0; i < n; ++i) {
+    if (E_MeV[i] > lo && E_MeV[i] < hi)
+      pts.push_back({E_MeV[i], T[i]});
+  }
+  pts.push_back({hi, interpT(hi)});
+
+  // Trapezoidal integration of J_loc(E) = T(E) * J_b(E) over the sub-grid.
+  double s = 0.0;
+  for (size_t k = 0; k+1 < pts.size(); ++k) {
+    const double Ei_J  = pts[k].E_MeV   * MEV_TO_J;
+    const double Ei1_J = pts[k+1].E_MeV * MEV_TO_J;
+    const double Jloc_i  = pts[k].T_val   * ::gSpectrum.GetSpectrum(Ei_J);
+    const double Jloc_i1 = pts[k+1].T_val * ::gSpectrum.GetSpectrum(Ei1_J);
+    s += 0.5 * (Jloc_i + Jloc_i1) * (Ei1_J - Ei_J);
+  }
+  return 4.0 * M_PI * s;  // [m^-2 s^-1]
 }
 
 //====================================================================================
@@ -662,7 +794,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
   MPI_Comm_size(MPI_COMM_WORLD,&mpiSize);
 
   if (EarthUtil::ToUpper(prm.output.mode)!="POINTS") {
-    throw std::runtime_error("Internal error: RunDensityAndSpectrum_POINTS called for non-POINTS mode");
+    exit(__LINE__,__FILE__,"Internal error: RunDensityAndSpectrum_POINTS called for non-POINTS mode");
   }
 
   // Build shared grids.
@@ -723,6 +855,10 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
 
   // Output buffers on master.
   std::vector<double> density_m3(nPoints, 0.0);
+  std::vector<double> flux_tot_m2s1(nPoints, 0.0);
+  const int nCh = (int)prm.fluxChannels.size();
+  // flux_ch[ic][ip] = integral flux in channel ic at point ip  [m^-2 s^-1]
+  std::vector< std::vector<double> > flux_ch(nCh, std::vector<double>(nPoints, 0.0));
   std::vector< std::vector<double> > T_byPoint;
   if (mpiRank==0) T_byPoint.assign(nPoints, std::vector<double>(nE, 0.0));
 
@@ -759,6 +895,15 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
         integrand[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
       }
       density_m3[ip] = Trapz(EjGrid, integrand);
+      // ---- Integral flux (total and per channel) ----
+      // F_tot = 4pi * int T(E)*Jb(E) dE  [m^-2 s^-1]  (no 1/v weight)
+      flux_tot_m2s1[ip] = FluxIntegrateTotal(E_MeV, T);
+      for (int ic = 0; ic < nCh; ++ic) {
+        flux_ch[ic][ip] = FluxIntegrateChannel(
+            E_MeV, T,
+            prm.fluxChannels[ic].E1_MeV,
+            prm.fluxChannels[ic].E2_MeV);
+      }
       T_byPoint[ip] = std::move(T);
 
       prog.update((long long)(ip + 1), (long long)nPoints);
@@ -792,6 +937,14 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
 
         density_m3[hdr.idx]=hdr.dens;
         T_byPoint[hdr.idx]=std::move(T);
+        // Compute flux from the received T[] on master (no extra MPI traffic).
+        flux_tot_m2s1[hdr.idx] = FluxIntegrateTotal(E_MeV, T_byPoint[hdr.idx]);
+        for (int ic = 0; ic < nCh; ++ic) {
+          flux_ch[ic][hdr.idx] = FluxIntegrateChannel(
+              E_MeV, T_byPoint[hdr.idx],
+              prm.fluxChannels[ic].E1_MeV,
+              prm.fluxChannels[ic].E2_MeV);
+        }
         done++;
 
         prog.update((long long)done, (long long)nPoints);
@@ -884,19 +1037,64 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       }
     }
 
+    //--------------------------------------------------------------------------
+    // File 3: integral flux (total and per user-defined channel)
+    //--------------------------------------------------------------------------
+    // PHYSICS
+    //   Total omnidirectional flux [m^-2 s^-1]:
+    //     F_tot(x0) = 4π ∫_{Emin}^{Emax} T(E;x0) · J_b(E) dE
+    //
+    //   Per-channel flux for channel [E1,E2] [m^-2 s^-1]:
+    //     F_ch(x0)  = 4π ∫_{E1}^{E2}  T(E;x0) · J_b(E) dE
+    //
+    //   Analytic reference (power-law J_b = J0*(E/E0)^{-γ}, γ≠1, T constant):
+    //     F = 4π · T · J0 · E0^γ / (γ−1) · ( E1^{1−γ} − E2^{1−γ} )
+    //     For γ=2: F = 4π · T · J0 · E0² · ( 1/E1 − 1/E2 )
+    //     This is the benchmark evaluated in test_density_analytic.py §9.
+    //
+    // OUTPUT FORMAT
+    //   Variables:  X_km  Y_km  Z_km  F_tot_m2s1  [F_NAME_m2s1 ...]
+    //   One ZONE per energy channel plus the total.
+    //   Separate zones allow Tecplot to toggle channel visibility.
+    //--------------------------------------------------------------------------
+    {
+      std::ofstream out("gridless_points_flux.dat");
+      out << "TITLE=\"Gridless omnidirectional integral flux (POINTS)\"\n";
+
+      // Build variable list header dynamically.
+      out << "VARIABLES=\"X_km\" \"Y_km\" \"Z_km\" \"F_tot_m2s1\"";
+      for (int ic = 0; ic < nCh; ++ic) {
+        out << " \"F_" << prm.fluxChannels[ic].name << "_m2s1\"";
+      }
+      out << "\n";
+
+      // Single zone: all points.
+      out << "ZONE T=\"flux\" I=" << nPoints << " F=POINT\n";
+      // Auxiliary data: channel definitions for post-processing scripts.
+      out << "AUXDATA Emin_MeV=\"" << prm.densitySpectrum.Emin_MeV << "\"\n";
+      out << "AUXDATA Emax_MeV=\"" << prm.densitySpectrum.Emax_MeV << "\"\n";
+      for (int ic = 0; ic < nCh; ++ic) {
+        out << "AUXDATA CH_" << prm.fluxChannels[ic].name
+            << "=\"" << prm.fluxChannels[ic].E1_MeV
+            << "_" << prm.fluxChannels[ic].E2_MeV << "_MeV\"\n";
+      }
+
+      for (int ip = 0; ip < nPoints; ++ip) {
+        const auto& p0 = prm.output.points[ip];
+        out << p0.x << " " << p0.y << " " << p0.z
+            << " " << flux_tot_m2s1[ip];
+        for (int ic = 0; ic < nCh; ++ic) {
+          out << " " << flux_ch[ic][ip];
+        }
+        out << "\n";
+      }
+    }
+
     //------------------------------------------------------------------------------------------
     // Nightly test mode: write an analytic-vs-numeric density comparison for the DIPOLE field.
-    //
-    // IMPORTANT:
-    //  - This comparison is intentionally generated only in nightly mode to avoid extra I/O in
-    //    production runs.
-    //  - The analytic reference used here is a "hard-cutoff" benchmark derived from the vertical
-    //    Størmer cutoff approximation in a centered dipole (with optional dipole tilt/moment).
-    //  - The numerical density is the one already computed above (density_m3).
     //------------------------------------------------------------------------------------------
-#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_ 
+#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
     if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
-      // Writes: density_gridless_points_dipole_compare.dat
       WriteTecplotPoints_DipoleAnalyticDensityCompare(prm,prm.output.points,density_m3);
     }
 #endif
@@ -976,10 +1174,10 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
   MPI_Comm_size(MPI_COMM_WORLD,&mpiSize);
 
   if (EarthUtil::ToUpper(prm.output.mode)!="SHELLS") {
-    throw std::runtime_error("Internal error: RunDensityAndSpectrum_SHELLS called for non-SHELLS mode");
+    exit(__LINE__,__FILE__,"Internal error: RunDensityAndSpectrum_SHELLS called for non-SHELLS mode");
   }
   if (prm.output.shellAlt_km.empty()) {
-    throw std::runtime_error("OUTPUT_MODE=SHELLS requires at least one altitude in SHELL_ALTITUDES");
+    exit(__LINE__,__FILE__,"OUTPUT_MODE=SHELLS requires at least one altitude in SHELL_ALTITUDES");
   }
 
   // Shared direction and energy grids.
@@ -990,7 +1188,7 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
   const int nE = (int)E_MeV.size();
   const int nIntervals = std::max(0, prm.densitySpectrum.nIntervals);
   if (nE != nIntervals + 1) {
-    throw std::runtime_error("Internal inconsistency: energy grid size != DS_NINTERVALS+1");
+    exit(__LINE__,__FILE__,"Internal inconsistency: energy grid size != DS_NINTERVALS+1");
   }
 
   int nDirsUse = (int)dirs.size();
@@ -1051,7 +1249,7 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
           << ", expected nLon*nLat=" << (nLon_expected * nLat_expected)
           << " (nLon=" << nLon_expected << ", nLat=" << nLat_expected
           << ", res_deg=" << prm.output.shellRes_deg << ")";
-      throw std::runtime_error(oss.str());
+      exit(__LINE__,__FILE__,oss.str().c_str());
     }
 
     // Storage on rank 0.
@@ -1270,7 +1468,9 @@ int RunDensityAndSpectrum(const EarthUtil::AmpsParam& prm) {
   const std::string mode = EarthUtil::ToUpper(prm.output.mode);
   if (mode=="POINTS") return RunDensityAndSpectrum_POINTS(prm);
   if (mode=="SHELLS") return RunDensityAndSpectrum_SHELLS(prm);
-  throw std::runtime_error("Unsupported OUTPUT_MODE for DENSITY_SPECTRUM: '"+prm.output.mode+"' (supported: POINTS,SHELLS)");
+  { std::ostringstream _exit_msg; _exit_msg << "Unsupported OUTPUT_MODE for DENSITY_SPECTRUM: '"+prm.output.mode+"'  (supported: POINTS,SHELLS)"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
+
+  return -1; //the code should not get to this point -- it is here just to make the compiler happy
 }
 
 }
@@ -1290,7 +1490,7 @@ static void WriteTecplotPoints_DipoleAnalyticDensityCompare(const EarthUtil::Amp
                                                             const std::vector<EarthUtil::Vec3>& points,
                                                             const std::vector<double>& n_num_m3) {
   FILE* f=std::fopen("density_gridless_points_dipole_compare.dat","w");
-  if (!f) throw std::runtime_error("Cannot write Tecplot file: density_gridless_points_dipole_compare.dat");
+  if (!f) exit(__LINE__,__FILE__,"Cannot write Tecplot file: density_gridless_points_dipole_compare.dat");
 
   std::fprintf(f,"TITLE=\"Dipole Density: Numeric vs Analytic Hard-Cutoff\"\n"); 
   std::fprintf(f,"VARIABLES=\"id\",\"x\",\"y\",\"z\",\"n_num_m^-3\",\"n_ana_m^-3\",\"rel_err\"\n"); 
