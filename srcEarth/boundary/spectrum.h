@@ -34,6 +34,8 @@
 #include <utility>
 #include <vector>
 
+#include "specfunc.h"
+
 class cSpectrum {
 public:
   enum class Type : uint8_t {
@@ -216,14 +218,17 @@ public:
 
     if (type_s == "TABLE") {
       std::string f = Trim(get("SPEC_TABLE_FILE"));
-      if (f.empty()) throw std::runtime_error("Missing required key SPEC_TABLE_FILE for SPECTRUM_TYPE=TABLE");
+      if (f.empty()) exit(__LINE__,__FILE__,"Missing required key SPEC_TABLE_FILE for SPECTRUM_TYPE=TABLE");
       return MakeTable(f, Emin, Emax);
     }
 
     std::ostringstream oss;
     oss << "Unrecognized SPECTRUM_TYPE='" << type_s
         << "'. Supported types: POWER_LAW, POWER_LAW_CUTOFF, LIS_FORCE_FIELD, BAND, TABLE";
-    throw std::runtime_error(oss.str());
+    exit(__LINE__,__FILE__,oss.str().c_str()); 
+
+    cSpectrum t;
+    return t; //the code should not make to this point -- it is hear just to make compiler happy
   }
 
   /**
@@ -359,10 +364,10 @@ private:
   // ---------- Validation / loading ----------
   void ValidateOrThrow() const {
     if (type_ == Type::Unknown) {
-      throw std::runtime_error("cSpectrum has Unknown type");
+      exit(__LINE__,__FILE__,"cSpectrum has Unknown type");
     }
     if (!(spec_emin_MeV_ > 0.0) || !(spec_emax_MeV_ > spec_emin_MeV_)) {
-      throw std::runtime_error("cSpectrum invalid energy bounds: require 0 < SPEC_EMIN < SPEC_EMAX (MeV)");
+      exit(__LINE__,__FILE__,"cSpectrum invalid energy bounds: require 0 < SPEC_EMIN < SPEC_EMAX (MeV)");
     }
 
     switch (type_) {
@@ -383,7 +388,7 @@ private:
         RequirePositive_("REST_MASS_MEV", rest_mass_MeV_);
         RequireFinite_("SPEC_LIS_GAMMA", spec_lis_gamma_);
         RequireFinite_("SPEC_PHI", spec_phi_MV_);
-        if (spec_phi_MV_ < 0.0) throw std::runtime_error("SPEC_PHI must be >= 0");
+        if (spec_phi_MV_ < 0.0) exit(__LINE__,__FILE__,"SPEC_PHI must be >= 0");
         break;
       case Type::Band:
         RequirePositive_("SPEC_J0", spec_j0_);
@@ -391,11 +396,11 @@ private:
         RequireFinite_("SPEC_GAMMA1", spec_gamma1_);
         RequireFinite_("SPEC_GAMMA2", spec_gamma2_);
         if ((spec_gamma2_ - spec_gamma1_) <= 0.0) {
-          throw std::runtime_error("BAND requires SPEC_GAMMA2 > SPEC_GAMMA1 (so break energy is positive)");
+          exit(__LINE__,__FILE__,"BAND requires SPEC_GAMMA2 > SPEC_GAMMA1 (so break energy is positive)");
         }
         break;
       case Type::Table:
-        if (table_E_MeV_.size() < 2) throw std::runtime_error("TABLE spectrum requires >= 2 data points");
+        if (table_E_MeV_.size() < 2) exit(__LINE__,__FILE__,"TABLE spectrum requires >= 2 data points");
         break;
       default:
         break;
@@ -408,7 +413,9 @@ private:
 
     std::ifstream in(table_file_);
     if (!in) {
-      throw std::runtime_error("Failed to open SPEC_TABLE_FILE='" + table_file_ + "'");
+      std::ostringstream oss;
+      oss << "Failed to open SPEC_TABLE_FILE='" << table_file_ << "'";
+      exit(__LINE__,__FILE__,oss.str().c_str());
     }
 
     std::string line;
@@ -423,7 +430,7 @@ private:
       if (!(iss >> e >> j)) {
         std::ostringstream oss;
         oss << "Bad TABLE line " << lineno << " in '" << table_file_ << "': expected two columns (E_MeV flux_perMeV)";
-        throw std::runtime_error(oss.str());
+	exit(__LINE__,__FILE__,oss.str().c_str()); 
       }
       if (!(e > 0.0) || !(j > 0.0)) continue; // skip non-positive entries
       table_E_MeV_.push_back(e);
@@ -431,7 +438,9 @@ private:
     }
 
     if (table_E_MeV_.size() < 2) {
-      throw std::runtime_error("TABLE file '" + table_file_ + "' did not contain >=2 valid (positive) rows");
+      std::ostringstream oss;
+      oss << "TABLE file '" << table_file_ << "' did not contain >=2 valid (positive) rows";
+      exit(__LINE__,__FILE__,oss.str().c_str());
     }
 
     // Ensure monotonic increasing E; if not, sort pairs.
@@ -501,14 +510,14 @@ private:
     if (s.empty()) {
       std::ostringstream oss;
       oss << "Missing required key " << key;
-      throw std::runtime_error(oss.str());
+      exit(__LINE__,__FILE__,oss.str().c_str()); 
     }
     char* end = nullptr;
     const double x = std::strtod(s.c_str(), &end);
     if (end == s.c_str() || !std::isfinite(x)) {
       std::ostringstream oss;
       oss << "Invalid numeric value for " << key << ": '" << s << "'";
-      throw std::runtime_error(oss.str());
+      exit(__LINE__,__FILE__,oss.str().c_str()); 
     }
     return x;
   }
@@ -517,7 +526,7 @@ private:
     if (!(v > 0.0) || !std::isfinite(v)) {
       std::ostringstream oss;
       oss << key << " must be > 0";
-      throw std::runtime_error(oss.str());
+      exit(__LINE__,__FILE__,oss.str().c_str()); 
     }
   }
 
@@ -525,7 +534,7 @@ private:
     if (!std::isfinite(v)) {
       std::ostringstream oss;
       oss << key << " must be finite";
-      throw std::runtime_error(oss.str());
+      exit(__LINE__,__FILE__,oss.str().c_str()); 
     }
   }
 
