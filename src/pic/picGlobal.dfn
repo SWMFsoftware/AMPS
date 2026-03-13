@@ -98,7 +98,7 @@ at the end of each time step
 // Keeping the conversion localized to the file-output stage avoids any risk of
 // changing the physics, sampling, interpolation, restart files, or any other
 // internal diagnostics that rely on the normalized values.
-#define _CONVERT_OUTPUT_SI_UNITS_ _PIC_MODE_ON_
+#define _CONVERT_OUTPUT_SI_UNITS_ _PIC_MODE_OFF_
 
 
 //the maximum length of the strings
