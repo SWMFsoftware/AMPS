@@ -104,6 +104,7 @@ TESTING
 
 #include <cmath>
 #include <array>
+#include <cstdio>
 #include <stdexcept>
 
 namespace picunits {
@@ -309,6 +310,148 @@ inline Factors build(const NormScalesSI &s) {
     f.No2SiQ = f.No2SiM / B0T0;               // q_SI = q_no * No2SiQ
 
     return f;
+}
+
+
+
+// --- Formatted conversion-table printer -------------------------------------
+//
+// PURPOSE
+//   Print a human-readable summary of the currently active normalization system.
+//   The intent is diagnostic rather than computational: this routine exposes the
+//   exact scalar coefficients that are already stored in `Factors` and used by
+//   the SI<->normalized helper functions above.
+//
+// WHAT IS PRINTED
+//   1) The three primary SI normalization scales used to build `Factors`
+//      (length, speed, mass), reconstructed from the stored CGS bases.
+//   2) The derived CGS reference scales (rho0, B0, Q0, P0, J0, T0).
+//   3) A two-way conversion table for all scalar coefficients contained in
+//      `Factors`:
+//         SI -> norm   : multiply by Si2No*
+//         norm -> SI   : multiply by No2Si*
+//      for density, velocity, magnetic field, pressure, current density,
+//      electric field, length, time, particle mass, and particle charge.
+//
+// DESIGN NOTES
+//   * The function does not perform any new derivation; it only formats values
+//     already present in `Factors`. Therefore the table remains consistent with
+//     all existing conversion helpers by construction.
+//   * Number density is intentionally not printed as a single universal scalar
+//     coefficient because its conversion depends either on an explicit reference
+//     N0 or on the species mass when using the overloads above.
+//   * The function accepts a FILE* to make it easy to send the output to stdout,
+//     stderr, a log file, or any AMPS diagnostic file stream.
+//
+// USAGE
+//   auto F = build({lSI_m, uSI_mps, mSI_kg});
+//   print_conversion_table(stdout, F);
+//
+inline void print_conversion_table(FILE* fout, const Factors& f) {
+    if (fout == nullptr) fout = stdout;
+
+    // Reconstruct the original SI base scales from the stored CGS values.
+    // These are the actual normalization choices that generated the rest of the
+    // table, so printing them first makes the output self-contained.
+    const double lSI_m   = 1.0e-2 * f.L0_cm;   // cm -> m
+    const double uSI_mps = 1.0e-2 * f.U0_cms;  // cm/s -> m/s
+    const double mSI_kg  = 1.0e-3 * f.M0_g;    // g -> kg
+
+    // Small local lambda used to keep the formatted output consistent across
+    // all rows. Each row describes one physical quantity and the multiplicative
+    // factor used in each conversion direction.
+    const auto print_row = [fout](const char* quantity,
+                                  const char* si_unit,
+                                  const char* no_unit,
+                                  double si2no,
+                                  double no2si) {
+        std::fprintf(fout,
+            "  %-22s  %-16s  %-12s  % .10e  % .10e\n",
+            quantity, si_unit, no_unit, si2no, no2si);
+    };
+
+    std::fprintf(fout,
+        "\n"
+        "==============================================================\n"
+        " PIC / AMPS Unit Conversion Coefficients\n"
+        "==============================================================\n");
+
+    std::fprintf(fout,
+        "Primary normalization scales used to build Factors:\n"
+        "  L0 = %.10e m\n"
+        "  U0 = %.10e m/s\n"
+        "  M0 = %.10e kg\n",
+        lSI_m, uSI_mps, mSI_kg);
+
+    std::fprintf(fout,
+        "Derived CGS reference scales stored in Factors:\n"
+        "  L0_cm = %.10e cm\n"
+        "  U0_cms = %.10e cm/s\n"
+        "  M0_g = %.10e g\n"
+        "  rho0 = %.10e g/cm^3\n"
+        "  B0_G = %.10e G\n"
+        "  Q0 = %.10e [sqrt(g*cm)*cm/s]\n"
+        "  P0 = %.10e Ba\n"
+        "  J0 = %.10e statA/cm^2\n"
+        "  T0_s = %.10e s\n",
+        f.L0_cm, f.U0_cms, f.M0_g, f.rho0, f.B0_G, f.Q0, f.P0, f.J0, f.T0_s);
+
+    std::fprintf(fout,
+        "\n"
+        "Multiplicative conversion coefficients:\n"
+        "  %-22s  %-16s  %-12s  %-14s  %-14s\n"
+        "  %-22s  %-16s  %-12s  %-14s  %-14s\n",
+        "Quantity", "SI unit", "Norm unit", "SI -> norm", "norm -> SI",
+        "----------------------", "----------------", "------------", "--------------", "--------------");
+
+    print_row("Mass density",      "kg/m^3",   "1", f.Si2NoRho, f.No2SiRho);
+    print_row("Velocity",          "m/s",      "1", f.Si2NoV,   f.No2SiV);
+    print_row("Magnetic field",    "T",        "1", f.Si2NoB,   f.No2SiB);
+    print_row("Pressure",          "Pa",       "1", f.Si2NoP,   f.No2SiP);
+    print_row("Current density",   "A/m^2",    "1", f.Si2NoJ,   f.No2SiJ);
+    print_row("Electric field",    "V/m",      "1", f.Si2NoE,   f.No2SiE);
+    print_row("Length",            "m",        "1", f.Si2NoL,   f.No2SiL);
+    print_row("Time",              "s",        "1", f.Si2NoT,   f.No2SiT);
+    print_row("Particle mass",     "kg",       "1", f.Si2NoM,   f.No2SiM);
+    print_row("Particle charge",   "C",        "1", f.Si2NoQ,   f.No2SiQ);
+
+    // Number density is special: unlike velocity, field, pressure, etc., the
+    // SI <-> normalized conversion is not a single universal scalar stored in
+    // Factors.  It depends on particle mass because the normalized number
+    // density is derived from the mass-density normalization:
+    //
+    //   rho_SI = n_SI * m_species
+    //   rho_no = rho_SI * Si2NoRho
+    //
+    // therefore
+    //
+    //   n_no = n_SI * m_species * Si2NoRho
+    //   n_SI = n_no * No2SiRho / m_species
+    //
+    // where m_species is in SI kilograms and n_SI is in 1/m^3.  We print the
+    // generic formula explicitly, and also one concrete example for proton mass
+    // so the table contains directly usable numbers in addition to the formula.
+    const double ProtonMassSI_kg = 1.67262192369e-27;
+    const double Si2NoN_Proton   = ProtonMassSI_kg * f.Si2NoRho;
+    const double No2SiN_Proton   = f.No2SiRho / ProtonMassSI_kg;
+
+    std::fprintf(fout,
+        "  %-22s  %-16s  %-12s  % .10e * m_species[kg]  % .10e / m_species[kg]\n",
+        "Number density", "1/m^3", "1", f.Si2NoRho, f.No2SiRho);
+    print_row("Number density (p+)", "1/m^3", "1", Si2NoN_Proton, No2SiN_Proton);
+
+    std::fprintf(fout,
+        "\n"
+        "Notes:\n"
+        "  * Each coefficient is multiplicative. Example: v_norm = v_SI * Si2NoV;\n"
+        "    conversely, v_SI = v_norm * No2SiV.\n"
+        "  * Number density from Factors is species dependent and uses:\n"
+        "      si2no_n(n_SI, F, m_species) = n_SI * m_species * Si2NoRho\n"
+        "      no2si_n(n_no, F, m_species) = n_no * No2SiRho / m_species\n"
+        "    where m_species is in kg and n_SI is in 1/m^3.\n"
+        "  * The row 'Number density (p+)' gives a concrete numeric coefficient\n"
+        "    for proton mass.\n"
+        "==============================================================\n");
 }
 
 // Convenience converters (scalars)

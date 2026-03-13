@@ -9265,6 +9265,18 @@ namespace PIC {
   namespace Units {
     extern picunits::Factors Factors;
     void InitializeAMUChargeNormalization(bool verbose=false);
+
+    // Print a formatted summary of the currently active SI<->normalized
+    // conversion coefficients stored in PIC::Units::Factors.  The routine is a
+    // thin wrapper around picunits::print_conversion_table(...) so callers do
+    // not need to know where the lower-level formatting helper lives.
+    //
+    // Typical usage:
+    //   PIC::Units::InitializeAMUChargeNormalization(true);
+    //   PIC::Units::PrintConversionTable(stdout);
+    //
+    // IMPORTANT: call this only after PIC::Units::Factors has been initialized.
+    void PrintConversionTable(FILE* fout=stdout);
   }
 }
 

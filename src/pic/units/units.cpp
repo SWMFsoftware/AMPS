@@ -166,3 +166,31 @@ void PIC::Units::InitializeAMUChargeNormalization(bool verbose) {
 }
 
 
+
+
+//==============================================================
+// PrintConversionTable
+//==============================================================
+//
+// PURPOSE
+//   Provide an AMPS-facing wrapper that prints all currently active SI<->norm
+//   conversion coefficients stored in PIC::Units::Factors.
+//
+// WHY A WRAPPER IS USEFUL
+//   The core formatting logic lives in picunits::print_conversion_table(...) so
+//   it can operate on any `picunits::Factors` instance.  This wrapper makes the
+//   common AMPS use case trivial: callers typically want the table for the
+//   global, already-initialized PIC::Units::Factors object.
+//
+// INPUT
+//   fout : destination stream. If NULL, the lower-level routine redirects to
+//          stdout so the call still succeeds.
+//
+// IMPORTANT
+//   This routine assumes that PIC::Units::Factors has already been initialized.
+//   If it has not, the printed table will simply reflect the current contents of
+//   the struct, which will usually be zeros.
+//==============================================================
+void PIC::Units::PrintConversionTable(FILE* fout) {
+  picunits::print_conversion_table(fout, PIC::Units::Factors);
+}
