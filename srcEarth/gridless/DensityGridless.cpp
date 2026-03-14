@@ -770,12 +770,24 @@ struct ProgressBar {
 // nonetheless an excellent regression reference for unit/geometry conversions and
 // the numerical quadrature in the density tool.
 //======================================================================================
-static void WriteTecplotPoints_DipoleAnalyticDensityCompare(const EarthUtil::AmpsParam& prm,
-                                                            const std::vector<EarthUtil::Vec3>& points,
-                                                            const std::vector<double>& n_num_m3);
-
 namespace Earth {
 namespace GridlessMode {
+
+void WriteTecplotPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
+                                                     const std::vector<EarthUtil::Vec3>& points,
+                                                     const std::vector<double>& n_num_m3,
+                                                     const std::vector< std::vector<double> >& T_byPoint,
+                                                     const std::vector<double>& flux_tot_m2s1,
+                                                     const std::vector< std::vector<double> >& flux_ch);
+
+void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
+                                                     double alt_km,
+                                                     double res_deg,
+                                                     const std::vector<EarthUtil::Vec3>& shellPts_km,
+                                                     const std::vector<double>& n_num_m3,
+                                                     const std::vector< std::vector<double> >& T_byPoint,
+                                                     const std::vector<double>& flux_tot_m2s1,
+                                                     const std::vector< std::vector<double> >& flux_ch);
 
 //======================================================================================
 // INTERNAL DRIVER: POINTS MODE
@@ -1095,7 +1107,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     //------------------------------------------------------------------------------------------
 #if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
     if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
-      WriteTecplotPoints_DipoleAnalyticDensityCompare(prm,prm.output.points,density_m3);
+      WriteTecplotPoints_DipoleAnalyticCompare(prm, prm.output.points, density_m3, T_byPoint, flux_tot_m2s1, flux_ch);
     }
 #endif
 
@@ -1255,9 +1267,16 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
     // Storage on rank 0.
     std::vector<double> nTot_m3;
     std::vector< std::vector<double> > nChan_m3; // [interval][point]
+    std::vector<double> flux_tot_m2s1;
+    const int nFluxCh = (int)prm.fluxChannels.size();
+    std::vector< std::vector<double> > flux_ch;
+    std::vector< std::vector<double> > T_byPoint;
     if (mpiRank==0) {
       nTot_m3.assign(nPts, 0.0);
       nChan_m3.assign(nIntervals, std::vector<double>(nPts, 0.0));
+      flux_tot_m2s1.assign(nPts, 0.0);
+      flux_ch.assign(nFluxCh, std::vector<double>(nPts, 0.0));
+      T_byPoint.assign(nPts, std::vector<double>(nE, 0.0));
     }
 
     // MPI scheduling over shell point indices (same pattern as POINTS).
@@ -1303,6 +1322,13 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
           }
           const double nTot = Trapz(EjGrid, g);
           nTot_m3[ip] = nTot;
+          T_byPoint[ip] = T;
+          flux_tot_m2s1[ip] = FluxIntegrateTotal(E_MeV, T);
+          for (int icf=0; icf<nFluxCh; ++icf) {
+            flux_ch[icf][ip] = FluxIntegrateChannel(E_MeV, T,
+                                                    prm.fluxChannels[icf].E1_MeV,
+                                                    prm.fluxChannels[icf].E2_MeV);
+          }
 
           // Energy-channel contributions: one trapezoid per interval.
           for (int ic=0; ic<nIntervals; ++ic) {
@@ -1347,8 +1373,19 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
           std::vector<double> buf(nIntervals,0.0);
           MPI_Recv(buf.data(),nIntervals,MPI_DOUBLE,st.MPI_SOURCE,TAG_RES+1,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
 
+          // Full transmissivity spectrum for this shell node.
+          std::vector<double> T(nE,0.0);
+          MPI_Recv(T.data(),nE,MPI_DOUBLE,st.MPI_SOURCE,TAG_RES+2,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+
           nTot_m3[hdr.idx]=hdr.nTot;
           for (int ic=0; ic<nIntervals; ++ic) nChan_m3[ic][hdr.idx] = buf[ic];
+          T_byPoint[hdr.idx] = T;
+          flux_tot_m2s1[hdr.idx] = FluxIntegrateTotal(E_MeV, T_byPoint[hdr.idx]);
+          for (int icf=0; icf<nFluxCh; ++icf) {
+            flux_ch[icf][hdr.idx] = FluxIntegrateChannel(E_MeV, T_byPoint[hdr.idx],
+                                                         prm.fluxChannels[icf].E1_MeV,
+                                                         prm.fluxChannels[icf].E2_MeV);
+          }
           done++;
 
           prog.update((long long)done, (long long)nPts);
@@ -1400,6 +1437,7 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
           struct { int idx; double nTot; } hdr{idx,nTot};
           MPI_Send(&hdr,sizeof(hdr),MPI_BYTE,0,TAG_RES,MPI_COMM_WORLD);
           MPI_Send(nCh.data(),nIntervals,MPI_DOUBLE,0,TAG_RES+1,MPI_COMM_WORLD);
+          MPI_Send(T.data(),nE,MPI_DOUBLE,0,TAG_RES+2,MPI_COMM_WORLD);
         }
       }
     }
@@ -1455,6 +1493,14 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
           }
         }
       }
+
+#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
+      if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
+        WriteTecplotShells_DipoleAnalyticCompare(prm, alt_km, prm.output.shellRes_deg,
+                                                 shellPts_km, nTot_m3, T_byPoint,
+                                                 flux_tot_m2s1, flux_ch);
+      }
+#endif
     }
   }
 
@@ -1486,77 +1532,656 @@ int RunDensityAndSpectrum(const EarthUtil::AmpsParam& prm) {
   // the older/alternate implementation below is renamed with a _v2 suffix so the
   // primary implementation above remains the one used by the code path.
 
-static void WriteTecplotPoints_DipoleAnalyticDensityCompare(const EarthUtil::AmpsParam& prm,
-                                                            const std::vector<EarthUtil::Vec3>& points,
-                                                            const std::vector<double>& n_num_m3) {
-  FILE* f=std::fopen("density_gridless_points_dipole_compare.dat","w");
-  if (!f) exit(__LINE__,__FILE__,"Cannot write Tecplot file: density_gridless_points_dipole_compare.dat");
 
-  std::fprintf(f,"TITLE=\"Dipole Density: Numeric vs Analytic Hard-Cutoff\"\n"); 
-  std::fprintf(f,"VARIABLES=\"id\",\"x\",\"y\",\"z\",\"n_num_m^-3\",\"n_ana_m^-3\",\"rel_err\"\n"); 
-  std::fprintf(f,"ZONE T=\"points\" I=%zu F=POINT\n",points.size()); 
+//======================================================================================
+// Dipole analytic / semi-analytic comparison helpers for density, spectrum, and flux
+//======================================================================================
+// NOTE:
+// The helper block below was previously wrapped in an anonymous namespace.
+// That made the later namespace-qualified writer definitions invalid because
+// a definition of Earth::GridlessMode::... must appear at global scope or
+// inside a namespace that encloses Earth::GridlessMode.  We keep all comments
+// and helper code intact, but remove the anonymous namespace wrapper so the
+// qualified writer definitions below are legal and link correctly.
+//
+
+struct DipoleAnalyticReference {
+  double T_geo{0.0};
+  double T_weighted{0.0};
+  double Rc_vert_GV{0.0};
+  std::vector<double> T_ref;
+  double density_m3{0.0};
+  double flux_tot_m2s1{0.0};
+  std::vector<double> flux_ch_m2s1;
+};
+
+static double StormerVerticalCutoff_GV(const EarthUtil::AmpsParam& prm, const EarthUtil::Vec3& p_km) {
+  const double x_m = p_km.x*1000.0;
+  const double y_m = p_km.y*1000.0;
+  const double z_m = p_km.z*1000.0;
+  const double r_m = std::sqrt(x_m*x_m + y_m*y_m + z_m*z_m);
+  if (r_m <= 0.0) return 0.0;
 
   const double mx = Earth::GridlessMode::Dipole::gParams.m_hat[0];
   const double my = Earth::GridlessMode::Dipole::gParams.m_hat[1];
   const double mz = Earth::GridlessMode::Dipole::gParams.m_hat[2];
+  const double sinLam = (mx*x_m + my*y_m + mz*z_m) / r_m;
+  const double cosLam = std::sqrt(std::max(0.0, 1.0 - sinLam*sinLam));
+  const double rRe = r_m / _EARTH__RADIUS_;
+  return 14.9 * prm.field.dipoleMoment_Me * std::pow(cosLam, 4) / (rRe*rRe);
+}
 
-  const int nPts = prm.densitySpectrum.nPoints();
-  const double Emin = prm.densitySpectrum.Emin_MeV;
-  const double Emax = prm.densitySpectrum.Emax_MeV;
+static bool RayBoxExit_m(const EarthUtil::DomainBox& box_km,
+                         const double x0_m[3], const double u[3],
+                         double& tExit_m, double xExit_m[3]) {
+  const double bmin[3] = {box_km.xMin*1000.0, box_km.yMin*1000.0, box_km.zMin*1000.0};
+  const double bmax[3] = {box_km.xMax*1000.0, box_km.yMax*1000.0, box_km.zMax*1000.0};
 
-  for (size_t ip=0; ip<points.size(); ++ip) {
-    const double x_m = points[ip].x*1000.0;
-    const double y_m = points[ip].y*1000.0;
-    const double z_m = points[ip].z*1000.0;
-    const double r_m = std::sqrt(x_m*x_m + y_m*y_m + z_m*z_m);
-    const double rhatx = x_m/r_m;
-    const double rhaty = y_m/r_m;
-    const double rhatz = z_m/r_m;
+  double tBest = 1.0e300;
+  for (int d=0; d<3; ++d) {
+    if (std::abs(u[d]) < 1.0e-14) continue;
+    for (int side=0; side<2; ++side) {
+      const double plane = (side==0) ? bmin[d] : bmax[d];
+      const double t = (plane - x0_m[d]) / u[d];
+      if (t <= 0.0 || t >= tBest) continue;
 
-    const double sinLam = mx*rhatx + my*rhaty + mz*rhatz;
-    const double cosLam = std::sqrt(std::max(0.0, 1.0 - sinLam*sinLam));
-    const double rRe = r_m/_EARTH__RADIUS_;
-
-    const double Rv_GV = 14.9 * prm.field.dipoleMoment_Me * std::pow(cosLam,4) / (rRe*rRe);
-
-    double n_ana = 0.0;
-    double Eprev_J = 0.0;
-    double gprev = 0.0;
-
-    for (int i=0;i<nPts;i++) {
-      double Ei_MeV;
-      const double a = (nPts==1)?0.0:double(i)/(nPts-1);
-      if (prm.densitySpectrum.spacing==EarthUtil::DensitySpectrumParam::Spacing::LOG) {
-        Ei_MeV = Emin*std::pow(Emax/Emin, a);
+      const double x[3] = {x0_m[0] + t*u[0], x0_m[1] + t*u[1], x0_m[2] + t*u[2]};
+      bool inside = true;
+      for (int q=0; q<3; ++q) {
+        if (q==d) continue;
+        if (x[q] < bmin[q]-1.0e-9 || x[q] > bmax[q]+1.0e-9) { inside = false; break; }
       }
-      else {
-        Ei_MeV = Emin + (Emax-Emin)*a;
+      if (inside) {
+        tBest = t;
+        xExit_m[0] = x[0]; xExit_m[1] = x[1]; xExit_m[2] = x[2];
       }
-
-      const double E_J = Ei_MeV * 1.0e6 * 1.602176634e-19;
-
-      const double R_GV = RigidityFromEnergy_GV(E_J, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
-      const double T = (R_GV >= Rv_GV) ? 1.0 : 0.0;
-
-      const double Jb = gSpectrum.GetSpectrum(E_J);
-      const double Jloc = T * Jb;
-
-      const double v = SpeedFromEnergy(E_J, prm.species.mass_amu*AMU);
-      const double g = 4.0*M_PI * Jloc / v;
-
-      if (i>0) {
-        const double dE = E_J - Eprev_J;
-        n_ana += 0.5*(g+gprev)*dE;
-      }
-
-      Eprev_J = E_J;
-      gprev = g;
     }
-
-    const double rel = (n_ana>0.0) ? (n_num_m3[ip]-n_ana)/n_ana : 0.0;
-
-    std::fprintf(f,"%zu %e %e %e %e %e %e\n", ip, points[ip].x,points[ip].y,points[ip].z,n_num_m3[ip], n_ana, rel); 
   }
 
-  std::fclose(f);
+  if (tBest >= 1.0e299) return false;
+  tExit_m = tBest;
+  return true;
 }
+
+static bool RayHitsInnerSphereBeforeExit_m(const EarthUtil::DomainBox& box_km,
+                                           const double x0_m[3], const double u[3],
+                                           double& tHit_m) {
+  double xExit_m[3];
+  double tExit_m = 0.0;
+  if (!RayBoxExit_m(box_km, x0_m, u, tExit_m, xExit_m)) return false;
+
+  const double rInner_m = box_km.rInner * 1000.0;
+  const double b = 2.0*(x0_m[0]*u[0] + x0_m[1]*u[1] + x0_m[2]*u[2]);
+  const double c = x0_m[0]*x0_m[0] + x0_m[1]*x0_m[1] + x0_m[2]*x0_m[2] - rInner_m*rInner_m;
+  const double disc = b*b - 4.0*c;
+  if (disc < 0.0) return false;
+
+  const double sq = std::sqrt(std::max(0.0, disc));
+  const double t1 = 0.5*(-b - sq);
+  const double t2 = 0.5*(-b + sq);
+
+  double tMin = 1.0e300;
+  if (t1 > 0.0) tMin = std::min(tMin, t1);
+  if (t2 > 0.0) tMin = std::min(tMin, t2);
+  if (tMin >= 1.0e299) return false;
+  if (tMin < tExit_m) { tHit_m = tMin; return true; }
+  return false;
+}
+
+static void DipoleBhat(const double x_m[3], double bhat[3]) {
+  double B[3];
+  Earth::GridlessMode::Dipole::GetB_Tesla(x_m, B);
+  const double bmag = std::sqrt(B[0]*B[0] + B[1]*B[1] + B[2]*B[2]);
+  if (bmag <= 0.0) {
+    bhat[0] = bhat[1] = 0.0; bhat[2] = 1.0;
+  }
+  else {
+    bhat[0] = B[0]/bmag; bhat[1] = B[1]/bmag; bhat[2] = B[2]/bmag;
+  }
+}
+
+//======================================================================================
+// ComputeStraightLineOpenFractions
+//======================================================================================
+// PURPOSE
+//   Construct the *analytic / semi-analytic open-sky factor* used by the built-in
+//   DIPOLE nightly benchmark for density, spectrum, and flux.
+//
+// WHY THIS EXISTS
+//   The full numerical solver obtains transmissivity T(E;x0) by integrating the exact
+//   Lorentz equation in the chosen magnetic field model and classifying each trial
+//   direction as ALLOWED or FORBIDDEN.  That is the physically richer solution, but
+//   for regression testing we also need a simpler reference that:
+//
+//     1) is deterministic,
+//     2) is fast,
+//     3) can be evaluated inside the C++ code itself,
+//     4) is sensitive to geometry mistakes, unit mistakes, and spectrum-folding bugs.
+//
+//   The benchmark therefore separates the problem into two conceptually distinct pieces:
+//
+//     (A) a purely geometric / directional "open-sky" factor,
+//     (B) an energy-dependent dipole cutoff factor.
+//
+//   The product of (A) and (B) becomes the analytic reference transmissivity T_ref(E).
+//
+// PHYSICAL MEANING OF THE TWO OUTPUTS
+//   T_geo
+//     Fraction of sampled asymptotic directions that can leave the computational box
+//     without intersecting the inner loss sphere, *ignoring magnetic bending*.
+//     In the isotropic + uniform case, this is simply the fraction of the sky not
+//     occulted by the planet/loss sphere.
+//
+//   T_weighted
+//     Same open fraction, but with each open direction weighted by the boundary
+//     anisotropy model:
+//
+//       T_weighted = (1/Ndir) * Σ_open w_k ,
+//
+//     where
+//
+//       w_k = f_PAD(cos α_k) · f_spatial(x_exit,k) .
+//
+//     In isotropic/uniform mode, w_k = 1 and therefore T_weighted = T_geo.
+//
+// STRAIGHT-LINE GEOMETRY
+//   For the isotropic/uniform case we can derive the open fraction analytically.
+//   Let r = |x0| be the observer radius and r_in be the inner loss-sphere radius.
+//   The blocked directions form a cone subtending the loss sphere.  If ψ is the
+//   half-angle of that cone, then
+//
+//       sin ψ = r_in / r ,
+//
+//   and the blocked solid angle is
+//
+//       Ω_blocked = 2π (1 - cos ψ) .
+//
+//   The open fraction is then
+//
+//       T_geo = 1 - Ω_blocked / (4π)
+//             = 1/2 (1 + cos ψ)
+//             = 1/2 (1 + sqrt(1 - (r_in/r)^2)) .
+//
+//   That is exactly what is used below when the boundary mode is isotropic/uniform.
+//
+// ANISOTROPIC CASE
+//   Once the boundary population is anisotropic, a closed-form solid-angle integral is
+//   generally no longer available because the weight depends on:
+//
+//     • pitch angle α between the asymptotic velocity direction and the local magnetic
+//       field direction at the exit point,
+//     • possible spatial asymmetry (e.g. dayside/nightside weighting) through x_exit.
+//
+//   The code therefore evaluates a *semi-analytic* straight-line reference:
+//     • it still ignores magnetic bending,
+//     • it still uses line-of-sight ray geometry to decide whether a direction is open,
+//     • but it computes the anisotropy weight explicitly for each sampled open direction.
+//
+//   This is still far cheaper and simpler than the full backtracing solution while being
+//   sensitive to mistakes in anisotropy implementation and spectrum folding.
+//
+// IMPORTANT LIMITATION
+//   This helper is *not* meant to be the best physical model of access in a dipole.
+//   It is only a benchmark reference.  The full numerical solution remains the source
+//   of truth for actual science calculations.
+//======================================================================================
+static void ComputeStraightLineOpenFractions(const EarthUtil::AmpsParam& prm,
+                                             const EarthUtil::Vec3& p_km,
+                                             double& T_geo,
+                                             double& T_weighted) {
+  const std::string bmode = EarthUtil::ToUpper(prm.densitySpectrum.boundaryMode);
+  const bool doAniso = (bmode == "ANISOTROPIC");
+  const std::string padModel = EarthUtil::ToUpper(prm.anisotropy.padModel);
+  const std::string spatialModel = EarthUtil::ToUpper(prm.anisotropy.spatialModel);
+
+  if (!doAniso || (padModel == "ISOTROPIC" && spatialModel == "UNIFORM")) {
+    const double r_m = std::sqrt(p_km.x*p_km.x + p_km.y*p_km.y + p_km.z*p_km.z) * 1000.0;
+    const double rInner_m = prm.domain.rInner * 1000.0;
+    if (r_m <= rInner_m) {
+      T_geo = 0.0;
+      T_weighted = 0.0;
+    }
+    else {
+      const double s = rInner_m / r_m;
+      T_geo = 0.5 * (1.0 + std::sqrt(std::max(0.0, 1.0 - s*s)));
+      T_weighted = T_geo;
+    }
+    return;
+  }
+
+  const std::vector<V3> dirs = BuildDirGrid(24, 48);
+  const double x0_m[3] = {p_km.x*1000.0, p_km.y*1000.0, p_km.z*1000.0};
+  double sumW = 0.0;
+  int nAllowed = 0;
+
+  for (const auto& d : dirs) {
+    const double u[3] = {d.x, d.y, d.z};
+    // Each sampled direction u is interpreted as an *asymptotic arrival direction*.
+    // In the straight-line benchmark there is no curvature: the trajectory is just the
+    // ray x(s)=x0+s*u.  If that ray intersects the inner loss sphere before it exits the
+    // outer box, the direction is considered blocked.  Otherwise it is open.
+    double tHit = 0.0;
+    if (RayHitsInnerSphereBeforeExit_m(prm.domain, x0_m, u, tHit)) continue;
+
+    double tExit = 0.0;
+    double xExit[3];
+    if (!RayBoxExit_m(prm.domain, x0_m, u, tExit, xExit)) continue;
+
+    ++nAllowed;
+    double bhat[3];
+    DipoleBhat(xExit, bhat);
+    // Pitch-angle cosine used by the anisotropy model:
+    //
+    //   cos(alpha) = û · b̂_exit ,
+    //
+    // where û is the asymptotic particle direction at the outer boundary and b̂_exit is
+    // the unit magnetic-field direction of the dipole at the exit point.  This is the
+    // physically natural quantity for many heliospheric and SEP boundary distributions,
+    // because they are organized relative to the magnetic field rather than to the GSM
+    // axes themselves.
+    const double cosAlpha = u[0]*bhat[0] + u[1]*bhat[1] + u[2]*bhat[2];
+    // EvalAnisotropyFactor() combines:
+    //   • pitch-angle dependence f_PAD(cos alpha)
+    //   • optional spatial asymmetry f_spatial(x_exit)
+    // into one multiplicative weight.  By averaging that weight over *open* directions
+    // and dividing by the total number of sampled directions, we obtain the effective
+    // anisotropy-weighted transmissivity used by the benchmark.
+    sumW += EvalAnisotropyFactor(prm.anisotropy, cosAlpha, xExit);
+  }
+
+  T_geo = dirs.empty() ? 0.0 : double(nAllowed) / double(dirs.size());
+  T_weighted = dirs.empty() ? 0.0 : sumW / double(dirs.size());
+}
+
+//======================================================================================
+// BuildDipoleAnalyticReference
+//======================================================================================
+// PURPOSE
+//   Build the full nightly-test reference for one observation point in DIPOLE mode.
+//
+// REFERENCE MODEL
+//   The benchmark transmissivity is approximated as
+//
+//     T_ref(E; x0) = T_open(x0) · H( R(E) - Rc_vert(x0) ) ,
+//
+//   where
+//
+//     T_open(x0)   = T_weighted from ComputeStraightLineOpenFractions(),
+//     H(...)       = Heaviside step function,
+//     R(E)         = particle rigidity corresponding to kinetic energy E,
+//     Rc_vert(x0)  = vertical Størmer cutoff rigidity for a dipole.
+//
+//   In words:
+//
+//     • the point sees only a fraction of the asymptotic sky;
+//     • among those directions, access is additionally suppressed below the vertical
+//       Størmer cutoff;
+//     • above the cutoff, all open directions are treated as equally accessible in the
+//       isotropic case, or anisotropy-weighted in the anisotropic case.
+//
+//   This is intentionally simpler than the full numerical solution.  It discards
+//   penumbra structure and direction-dependent cutoffs.  That simplification is exactly
+//   what makes the reference robust for regression testing.
+//
+// FROM TRANSMISSIVITY TO OBSERVABLES
+//   Once T_ref(E) is known, the benchmark uses the *same* physics definitions as the
+//   production solver:
+//
+//     Local differential intensity:
+//       J_loc(E; x0) = T_ref(E; x0) · J_b(E)
+//
+//     Number density:
+//       n(x0) = 4π ∫ J_loc(E; x0) / v(E) dE
+//
+//     Omnidirectional integral flux:
+//       F_tot(x0) = 4π ∫ J_loc(E; x0) dE
+//
+//     Channel flux for user channel [E1,E2]:
+//       F_ch(x0) = 4π ∫_{E1}^{E2} J_loc(E; x0) dE
+//
+//   Therefore the comparison isolates the *transmissivity* model while keeping all
+//   spectrum, relativistic, and quadrature machinery consistent between analytic and
+//   numerical paths.
+//
+// IMPLEMENTATION NOTES
+//   • E_MeV is the exact same energy grid as used by the solver.
+//   • RigidityFromEnergy_GV() converts energy -> rigidity using species charge and mass.
+//   • SpeedFromEnergy() provides v(E) for the density conversion.
+//   • FluxIntegrateTotal() and FluxIntegrateChannel() are reused so that the analytic
+//     and numerical outputs differ only in T(E), not in integration details.
+//======================================================================================
+static DipoleAnalyticReference BuildDipoleAnalyticReference(const EarthUtil::AmpsParam& prm,
+                                                            const EarthUtil::Vec3& p_km,
+                                                            const std::vector<double>& E_MeV) {
+  DipoleAnalyticReference ref;
+  ref.flux_ch_m2s1.assign(prm.fluxChannels.size(), 0.0);
+  ComputeStraightLineOpenFractions(prm, p_km, ref.T_geo, ref.T_weighted);
+  ref.Rc_vert_GV = StormerVerticalCutoff_GV(prm, p_km);
+
+  ref.T_ref.resize(E_MeV.size(), 0.0);
+  std::vector<double> Ej(E_MeV.size(), 0.0), g(E_MeV.size(), 0.0);
+  for (size_t i=0; i<E_MeV.size(); ++i) {
+    // The reference is evaluated on the *same* discrete energy nodes as the production
+    // solver.  This is deliberate: if analytic and numerical results differ, we want the
+    // difference to reflect transmissivity physics, not different quadrature grids.
+    const double E_J = E_MeV[i] * MEV_TO_J;
+    Ej[i] = E_J;
+    const double R_GV = RigidityFromEnergy_GV(E_J, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
+    // Hard-cutoff approximation:
+    //   below Rc_vert -> inaccessible  -> T_ref = 0
+    //   above Rc_vert -> accessible    -> T_ref = open-sky factor
+    //
+    // This is the spectrum-space analogue of the traditional Størmer cutoff benchmark:
+    // the detailed penumbra is collapsed into a step function in rigidity.
+    const double Tref = (R_GV >= ref.Rc_vert_GV) ? ref.T_weighted : 0.0;
+    ref.T_ref[i] = Tref;
+    const double v = SpeedFromEnergy(E_J, prm.species.mass_amu*AMU);
+    const double Jb = ::gSpectrum.GetSpectrum(E_J);
+    const double Jloc = Tref * Jb;
+    g[i] = (v > 0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
+  }
+  ref.density_m3 = Trapz(Ej, g);
+  ref.flux_tot_m2s1 = FluxIntegrateTotal(E_MeV, ref.T_ref);
+  for (size_t ic=0; ic<prm.fluxChannels.size(); ++ic) {
+    ref.flux_ch_m2s1[ic] = FluxIntegrateChannel(E_MeV, ref.T_ref,
+                                                prm.fluxChannels[ic].E1_MeV,
+                                                prm.fluxChannels[ic].E2_MeV);
+  }
+  return ref;
+}
+
+//======================================================================================
+// WriteTecplotPoints_DipoleAnalyticCompare
+//======================================================================================
+// WHAT IS WRITTEN
+//   Three benchmark files are produced for explicit observation points:
+//
+//     1) density_gridless_points_dipole_compare.dat
+//     2) spectrum_gridless_points_dipole_compare.dat
+//     3) flux_gridless_points_dipole_compare.dat
+//
+//   Together they answer three distinct verification questions:
+//
+//     • Density file:
+//         "Does the integrated local phase-space population agree with the dipole
+//          benchmark after applying transmissivity and 1/v weighting?"
+//
+//     • Spectrum file:
+//         "Does the numerical T(E) curve produce the expected filtered spectrum
+//          J_loc(E)=T(E)J_b(E), and where in energy do deviations appear?"
+//
+//     • Flux file:
+//         "Does the same T(E) fold into the correct total and channel-integrated
+//          omnidirectional fluxes?"
+//
+// WHY SEPARATE FILES
+//   Density, spectrum, and flux emphasize different parts of the pipeline.  A bug can
+//   affect one and not the others:
+//
+//     • a rigidity/cutoff bug mainly appears in T(E) and therefore in the spectrum file;
+//     • a speed conversion bug mainly appears in density, because density contains 1/v;
+//     • a channel-boundary interpolation bug mainly appears in the flux file.
+//
+// RELATIVE ERROR DEFINITIONS
+//   The comparison files use the convention
+//
+//       rel_err = (numeric - analytic) / analytic ,
+//
+//   when the analytic quantity is non-zero.  If the analytic reference is exactly zero,
+//   the code falls back to storing the raw numerical value.  This avoids division by zero
+//   while still flagging spurious numerical leakage into forbidden regions.
+//
+// UNITS
+//   Density file:
+//     n_num_m^-3, n_ana_m^-3
+//
+//   Spectrum file:
+//     J_boundary_perMeV, J_local_num_perMeV, J_local_ana_perMeV
+//
+//   Flux file:
+//     Ftot_num_m2s1, Ftot_ana_m2s1, plus one triple per user-defined channel.
+//======================================================================================
+namespace Earth {
+namespace GridlessMode {
+
+void WriteTecplotPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
+                                                     const std::vector<EarthUtil::Vec3>& points,
+                                                     const std::vector<double>& n_num_m3,
+                                                     const std::vector< std::vector<double> >& T_byPoint,
+                                                     const std::vector<double>& flux_tot_m2s1,
+                                                     const std::vector< std::vector<double> >& flux_ch) {
+  const std::vector<double> E_MeV = BuildEnergyGrid_MeV(prm);
+
+  {
+    FILE* f = std::fopen("density_gridless_points_dipole_compare.dat", "w");
+    if (!f) exit(__LINE__,__FILE__,"Cannot write Tecplot file: density_gridless_points_dipole_compare.dat");
+    std::fprintf(f,"TITLE=\"Dipole Density (POINTS): Numeric vs Analytic/Semi-analytic\"\n");
+    std::fprintf(f,"VARIABLES=\"id\",\"x_km\",\"y_km\",\"z_km\",\"T_geo_ref\",\"T_open_ref\",\"Rc_vert_GV\",\"n_num_m^-3\",\"n_ana_m^-3\",\"rel_err\"\n");
+    std::fprintf(f,"ZONE T=\"points\" I=%zu F=POINT\n", points.size());
+    for (size_t ip=0; ip<points.size(); ++ip) {
+      DipoleAnalyticReference ref = BuildDipoleAnalyticReference(prm, points[ip], E_MeV);
+      const double rel = (std::abs(ref.density_m3) > 0.0) ? (n_num_m3[ip] - ref.density_m3)/ref.density_m3 : 0.0;
+      std::fprintf(f, "%zu %e %e %e %e %e %e %e %e %e\n", ip,
+                   points[ip].x, points[ip].y, points[ip].z,
+                   ref.T_geo, ref.T_weighted, ref.Rc_vert_GV,
+                   n_num_m3[ip], ref.density_m3, rel);
+    }
+    std::fclose(f);
+  }
+
+  {
+    FILE* f = std::fopen("spectrum_gridless_points_dipole_compare.dat", "w");
+    if (!f) exit(__LINE__,__FILE__,"Cannot write Tecplot file: spectrum_gridless_points_dipole_compare.dat");
+    std::fprintf(f,"TITLE=\"Dipole Spectrum (POINTS): Numeric vs Analytic/Semi-analytic\"\n");
+    std::fprintf(f,"VARIABLES=\"E_MeV\",\"T_num\",\"T_ana\",\"J_boundary_perMeV\",\"J_local_num_perMeV\",\"J_local_ana_perMeV\",\"rel_err_T\",\"rel_err_Jloc\"\n");
+    for (size_t ip=0; ip<points.size(); ++ip) {
+      DipoleAnalyticReference ref = BuildDipoleAnalyticReference(prm, points[ip], E_MeV);
+      std::fprintf(f, "ZONE T=\"P%zu\" I=%zu F=POINT\n", ip, E_MeV.size());
+      std::fprintf(f, "AUXDATA X_km=\"%g\"\nAUXDATA Y_km=\"%g\"\nAUXDATA Z_km=\"%g\"\n", points[ip].x, points[ip].y, points[ip].z);
+      for (size_t ie=0; ie<E_MeV.size(); ++ie) {
+        const double Tnum = T_byPoint[ip][ie];
+        const double Tana = ref.T_ref[ie];
+        const double JbMeV = ::gSpectrum.GetSpectrumPerMeV(E_MeV[ie]);
+        const double Jnum = Tnum * JbMeV;
+        const double Jana = Tana * JbMeV;
+        const double relT = (std::abs(Tana) > 0.0) ? (Tnum - Tana)/Tana : Tnum;
+        const double relJ = (std::abs(Jana) > 0.0) ? (Jnum - Jana)/Jana : Jnum;
+        std::fprintf(f, "%e %e %e %e %e %e %e %e\n", E_MeV[ie], Tnum, Tana, JbMeV, Jnum, Jana, relT, relJ);
+      }
+    }
+    std::fclose(f);
+  }
+
+  {
+    FILE* f = std::fopen("flux_gridless_points_dipole_compare.dat", "w");
+    if (!f) exit(__LINE__,__FILE__,"Cannot write Tecplot file: flux_gridless_points_dipole_compare.dat");
+    std::fprintf(f,"TITLE=\"Dipole Integral Flux (POINTS): Numeric vs Analytic/Semi-analytic\"\n");
+    std::fprintf(f,"VARIABLES=\"id\",\"x_km\",\"y_km\",\"z_km\",\"T_geo_ref\",\"T_open_ref\",\"Rc_vert_GV\",\"Ftot_num_m2s1\",\"Ftot_ana_m2s1\",\"Ftot_rel_err\"");
+    for (const auto& ch : prm.fluxChannels) {
+      std::fprintf(f, " \"F_%s_num_m2s1\" \"F_%s_ana_m2s1\" \"F_%s_rel_err\"", ch.name.c_str(), ch.name.c_str(), ch.name.c_str());
+    }
+    std::fprintf(f, "\n");
+    std::fprintf(f,"ZONE T=\"points\" I=%zu F=POINT\n", points.size());
+    for (size_t ip=0; ip<points.size(); ++ip) {
+      DipoleAnalyticReference ref = BuildDipoleAnalyticReference(prm, points[ip], E_MeV);
+      const double relTot = (std::abs(ref.flux_tot_m2s1) > 0.0) ? (flux_tot_m2s1[ip] - ref.flux_tot_m2s1)/ref.flux_tot_m2s1 : flux_tot_m2s1[ip];
+      std::fprintf(f, "%zu %e %e %e %e %e %e %e %e %e", ip,
+                   points[ip].x, points[ip].y, points[ip].z,
+                   ref.T_geo, ref.T_weighted, ref.Rc_vert_GV,
+                   flux_tot_m2s1[ip], ref.flux_tot_m2s1, relTot);
+      for (size_t ic=0; ic<prm.fluxChannels.size(); ++ic) {
+        const double Fnum = flux_ch[ic][ip];
+        const double Fana = ref.flux_ch_m2s1[ic];
+        const double rel = (std::abs(Fana) > 0.0) ? (Fnum - Fana)/Fana : Fnum;
+        std::fprintf(f, " %e %e %e", Fnum, Fana, rel);
+      }
+      std::fprintf(f, "\n");
+    }
+    std::fclose(f);
+  }
+}
+
+//======================================================================================
+// WriteTecplotShells_DipoleAnalyticCompare
+//======================================================================================
+// SHELL BENCHMARK PHILOSOPHY
+//   In SHELLS mode the same physics as POINTS mode is evaluated, but now on a structured
+//   longitude/latitude grid at one or more fixed altitudes.  This turns the benchmark from
+//   a pointwise regression check into a *map-based* regression check.
+//
+//   That matters because many implementation mistakes are geometric and only become obvious
+//   when viewed spatially:
+//
+//     • wrong longitude convention,
+//     • latitude indexing mistakes,
+//     • GSM sign errors,
+//     • altitude/radius conversion errors,
+//     • north/south asymmetries caused by dipole geometry,
+//     • dayside/nightside asymmetry in anisotropic runs.
+//
+// FILE ORGANIZATION
+//   Instead of writing one file per altitude, the benchmark appends one Tecplot ZONE per
+//   altitude into a common comparison file.  This matches the style already used by the
+//   cutoff nightly benchmark and makes side-by-side loading easier.
+//
+//   Three files are written:
+//
+//     • density_gridless_shells_dipole_compare.dat
+//     • flux_gridless_shells_dipole_compare.dat
+//     • spectrum_gridless_shells_dipole_compare.dat
+//
+//   The spectrum file is necessarily larger because each shell point becomes its own
+//   energy-dependent ZONE.
+//
+// SPECTRUM PHYSICS IN SHELLS MODE
+//   For every shell grid point x0 and every solver energy E_i:
+//
+//       T_num(E_i;x0)    = full backtracing transmissivity
+//       T_ana(E_i;x0)    = dipole benchmark transmissivity
+//       J_num(E_i;x0)    = T_num(E_i;x0) · J_b(E_i)
+//       J_ana(E_i;x0)    = T_ana(E_i;x0) · J_b(E_i)
+//
+//   so the comparison remains fully consistent with the POINTS-mode definition.
+//
+// NOTE ON ANISOTROPY
+//   If DS_BOUNDARY_MODE = ANISOTROPIC, the benchmark still remains meaningful:
+//   T_open_ref becomes the anisotropy-weighted open-sky fraction from the straight-line
+//   reference model, while the numerical solution uses the exact backtraced exit state.
+//   The shell maps are therefore especially useful for diagnosing whether the anisotropic
+//   weighting introduces the expected large-scale spatial patterns.
+//======================================================================================
+void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
+                                                     double alt_km,
+                                                     double res_deg,
+                                                     const std::vector<EarthUtil::Vec3>& shellPts_km,
+                                                     const std::vector<double>& n_num_m3,
+                                                     const std::vector< std::vector<double> >& T_byPoint,
+                                                     const std::vector<double>& flux_tot_m2s1,
+                                                     const std::vector< std::vector<double> >& flux_ch) {
+  const std::vector<double> E_MeV = BuildEnergyGrid_MeV(prm);
+  const int nLon = std::max(1, (int)std::floor(360.0 / res_deg + 0.5));
+  const int nLat = std::max(2, (int)std::floor(180.0 / res_deg + 0.5) + 1);
+
+  {
+    static bool firstDensityShellWrite = true;
+    const bool newFile = firstDensityShellWrite;
+    firstDensityShellWrite = false;
+    FILE* f = std::fopen("density_gridless_shells_dipole_compare.dat", newFile ? "w" : "a");
+    if (!f) exit(__LINE__,__FILE__,"Cannot write Tecplot file: density_gridless_shells_dipole_compare.dat");
+    if (newFile) {
+      std::fprintf(f,"TITLE=\"Dipole Density (SHELLS): Numeric vs Analytic/Semi-analytic\"\n");
+      std::fprintf(f,"VARIABLES=\"lon_deg\",\"lat_deg\",\"x_km\",\"y_km\",\"z_km\",\"T_geo_ref\",\"T_open_ref\",\"Rc_vert_GV\",\"n_num_m^-3\",\"n_ana_m^-3\",\"rel_err\"\n");
+    }
+    std::fprintf(f,"ZONE T=\"alt_km=%g\" I=%d J=%d F=POINT\n", alt_km, nLon, nLat);
+    for (int j=0; j<nLat; ++j) {
+      double lat_deg = -90.0 + res_deg*j; if (lat_deg > 90.0) lat_deg = 90.0;
+      for (int i=0; i<nLon; ++i) {
+        const int k = i + nLon*j;
+        const double lon_deg = res_deg*i;
+        DipoleAnalyticReference ref = BuildDipoleAnalyticReference(prm, shellPts_km[k], E_MeV);
+        const double rel = (std::abs(ref.density_m3) > 0.0) ? (n_num_m3[k] - ref.density_m3)/ref.density_m3 : 0.0;
+        std::fprintf(f, "%e %e %e %e %e %e %e %e %e %e %e\n", lon_deg, lat_deg,
+                     shellPts_km[k].x, shellPts_km[k].y, shellPts_km[k].z,
+                     ref.T_geo, ref.T_weighted, ref.Rc_vert_GV,
+                     n_num_m3[k], ref.density_m3, rel);
+      }
+    }
+    std::fclose(f);
+  }
+
+  {
+    static bool firstFluxShellWrite = true;
+    const bool newFile = firstFluxShellWrite;
+    firstFluxShellWrite = false;
+    FILE* f = std::fopen("flux_gridless_shells_dipole_compare.dat", newFile ? "w" : "a");
+    if (!f) exit(__LINE__,__FILE__,"Cannot write Tecplot file: flux_gridless_shells_dipole_compare.dat");
+    if (newFile) {
+      std::fprintf(f,"TITLE=\"Dipole Integral Flux (SHELLS): Numeric vs Analytic/Semi-analytic\"\n");
+      std::fprintf(f,"VARIABLES=\"lon_deg\",\"lat_deg\",\"x_km\",\"y_km\",\"z_km\",\"T_geo_ref\",\"T_open_ref\",\"Rc_vert_GV\",\"Ftot_num_m2s1\",\"Ftot_ana_m2s1\",\"Ftot_rel_err\"");
+      for (const auto& ch : prm.fluxChannels) {
+        std::fprintf(f, " \"F_%s_num_m2s1\" \"F_%s_ana_m2s1\" \"F_%s_rel_err\"", ch.name.c_str(), ch.name.c_str(), ch.name.c_str());
+      }
+      std::fprintf(f, "\n");
+    }
+    std::fprintf(f,"ZONE T=\"alt_km=%g\" I=%d J=%d F=POINT\n", alt_km, nLon, nLat);
+    for (int j=0; j<nLat; ++j) {
+      double lat_deg = -90.0 + res_deg*j; if (lat_deg > 90.0) lat_deg = 90.0;
+      for (int i=0; i<nLon; ++i) {
+        const int k = i + nLon*j;
+        const double lon_deg = res_deg*i;
+        DipoleAnalyticReference ref = BuildDipoleAnalyticReference(prm, shellPts_km[k], E_MeV);
+        const double relTot = (std::abs(ref.flux_tot_m2s1) > 0.0) ? (flux_tot_m2s1[k] - ref.flux_tot_m2s1)/ref.flux_tot_m2s1 : flux_tot_m2s1[k];
+        std::fprintf(f, "%e %e %e %e %e %e %e %e %e %e %e", lon_deg, lat_deg,
+                     shellPts_km[k].x, shellPts_km[k].y, shellPts_km[k].z,
+                     ref.T_geo, ref.T_weighted, ref.Rc_vert_GV,
+                     flux_tot_m2s1[k], ref.flux_tot_m2s1, relTot);
+        for (size_t ic=0; ic<prm.fluxChannels.size(); ++ic) {
+          const double Fnum = flux_ch[ic][k];
+          const double Fana = ref.flux_ch_m2s1[ic];
+          const double rel = (std::abs(Fana) > 0.0) ? (Fnum - Fana)/Fana : Fnum;
+          std::fprintf(f, " %e %e %e", Fnum, Fana, rel);
+        }
+        std::fprintf(f, "\n");
+      }
+    }
+    std::fclose(f);
+  }
+
+  {
+    static bool firstSpectrumShellWrite = true;
+    const bool newFile = firstSpectrumShellWrite;
+    firstSpectrumShellWrite = false;
+    FILE* f = std::fopen("spectrum_gridless_shells_dipole_compare.dat", newFile ? "w" : "a");
+    if (!f) exit(__LINE__,__FILE__,"Cannot write Tecplot file: spectrum_gridless_shells_dipole_compare.dat");
+    if (newFile) {
+      std::fprintf(f,"TITLE=\"Dipole Spectrum (SHELLS): Numeric vs Analytic/Semi-analytic\"\n");
+      std::fprintf(f,"VARIABLES=\"E_MeV\",\"T_num\",\"T_ana\",\"J_boundary_perMeV\",\"J_local_num_perMeV\",\"J_local_ana_perMeV\",\"rel_err_T\",\"rel_err_Jloc\"\n");
+    }
+    for (int j=0; j<nLat; ++j) {
+      double lat_deg = -90.0 + res_deg*j; if (lat_deg > 90.0) lat_deg = 90.0;
+      for (int i=0; i<nLon; ++i) {
+        const int k = i + nLon*j;
+        const double lon_deg = res_deg*i;
+        DipoleAnalyticReference ref = BuildDipoleAnalyticReference(prm, shellPts_km[k], E_MeV);
+        std::fprintf(f, "ZONE T=\"alt_%g_lon_%g_lat_%g\" I=%zu F=POINT\n", alt_km, lon_deg, lat_deg, E_MeV.size());
+        std::fprintf(f, "AUXDATA ALT_km=\"%g\"\nAUXDATA LON_deg=\"%g\"\nAUXDATA LAT_deg=\"%g\"\nAUXDATA X_km=\"%g\"\nAUXDATA Y_km=\"%g\"\nAUXDATA Z_km=\"%g\"\n",
+                     alt_km, lon_deg, lat_deg, shellPts_km[k].x, shellPts_km[k].y, shellPts_km[k].z);
+        for (size_t ie=0; ie<E_MeV.size(); ++ie) {
+          const double Tnum = T_byPoint[k][ie];
+          const double Tana = ref.T_ref[ie];
+          const double JbMeV = ::gSpectrum.GetSpectrumPerMeV(E_MeV[ie]);
+          const double Jnum = Tnum * JbMeV;
+          const double Jana = Tana * JbMeV;
+          const double relT = (std::abs(Tana) > 0.0) ? (Tnum - Tana)/Tana : Tnum;
+          const double relJ = (std::abs(Jana) > 0.0) ? (Jnum - Jana)/Jana : Jnum;
+          std::fprintf(f, "%e %e %e %e %e %e %e %e\n", E_MeV[ie], Tnum, Tana, JbMeV, Jnum, Jana, relT, relJ);
+        }
+      }
+    }
+    std::fclose(f);
+  }
+}
+
+
+} // namespace GridlessMode
+} // namespace Earth
