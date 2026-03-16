@@ -65,6 +65,8 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   define _USE_MAGNETIC_MOMENT_ _PIC_MODE_ON_
   define _USE_PARTICLE_V_PARALLEL_NORM_ _PIC_MODE_ON_
 
+  define _CONVERT_OUTPUT_SI_UNITS_ _PIC_MODE_ON_
+
   ReferenceInjectionParticleNumber=60000
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=off !on,off
@@ -72,7 +74,7 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   TestRunTotalIteration=50
 
   MeshType=uniform !uniform,non-uniform
-  BlockCells=16,8,4
+  BlockCells=8,8,8
   GhostCells=1,1,1
 
   !InternalBoundary=off
