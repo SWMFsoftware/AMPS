@@ -357,8 +357,18 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
     // normalization factors already initialized by the units subsystem and the
     // mass of the currently printed species.
     if ((iOutputNumberDensity>=0) && (iOutputNumberDensity<nOutput)) {
-      const double NumberDensityNormalized = OutputData[iOutputNumberDensity];
-      NumberDensitySI = picunits::no2si_n(NumberDensityNormalized,PIC::Units::Factors,SpeciesMassSI);
+      const double NumberDensitySolver = OutputData[iOutputNumberDensity];
+
+      #if DIM == 3
+      NumberDensitySI = NumberDensitySolver /
+        (PIC::Units::Factors.No2SiL*PIC::Units::Factors.No2SiL*PIC::Units::Factors.No2SiL);
+      #elif DIM == 2
+      NumberDensitySI = NumberDensitySolver /
+        (PIC::Units::Factors.No2SiL*PIC::Units::Factors.No2SiL);
+      #elif DIM == 1
+      NumberDensitySI = NumberDensitySolver /
+        (PIC::Units::Factors.No2SiL);
+      #endif
     }
 
     // -------- Particle speed -------------------------------------------------
