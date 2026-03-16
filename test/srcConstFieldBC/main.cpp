@@ -150,6 +150,9 @@ int main(int argc,char **argv) {
   PIC::Units::Factors=FinalizeConfigUnits(cfg);
   g_TestStencilOrder = cfg.stencilOrder;
 
+  //print unit conversion coeffcients
+  PIC::Units::PrintConversionTable(stdout);
+
 // If -L was provided, redefine the domain to be centered at (0,0,0).
 // NOTE: xmin/xmax are used for mesh initialization and (if periodic) for periodic BC setup.
 if (cfg.use_domain_L) {
