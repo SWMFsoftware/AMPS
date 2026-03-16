@@ -137,6 +137,11 @@ TestConfig cfg;
 // Optional: export stencil order for helper operators in this test module
 int g_TestStencilOrder = 2;
 
+// Global mesh/grid resolution multiplier used by BulletLocalResolution().
+// Keep the default at 1.0 so legacy behavior is unchanged unless the user
+// explicitly requests a different mesh resolution from the CLI/input.
+double g_GridResolutionMultiplier = 1.0;
+
 int main(int argc,char **argv) {
   
    time_t TimeValue=time(NULL);
@@ -149,6 +154,7 @@ int main(int argc,char **argv) {
   ConfigureTestFromArgsWithInput(cfg,argc,argv);
   PIC::Units::Factors=FinalizeConfigUnits(cfg);
   g_TestStencilOrder = cfg.stencilOrder;
+  g_GridResolutionMultiplier = cfg.gridResolutionMultiplier;
 
   //print unit conversion coeffcients
   PIC::Units::PrintConversionTable(stdout);
@@ -230,6 +236,9 @@ for (int f=0; f<6; ++f) {
   printf("current mode off!\n");
 #endif
 
+  if (PIC::ThisThread==0) {
+    printf("grid resolution multiplier: %.12g\n", g_GridResolutionMultiplier);
+  }
 
 
   //seed the random number generator
@@ -251,7 +260,12 @@ InitInternalSphericalBoundary(cfg);
 
   //generate mesh or read from file
   char mesh[_MAX_STRING_LENGTH_PIC_]="none";  ///"amr.sig=0xd7058cc2a680a3a2.mesh.bin";
-  sprintf(mesh,"amr.sig=%s.mesh.bin","test_mesh");
+  // IMPORTANT:
+  //   The mesh filename must depend on the grid-resolution multiplier.
+  //   Otherwise a run with a new multiplier may silently reload an old mesh file
+  //   produced with a different resolution, making it look like the CLI option
+  //   has no effect.
+  sprintf(mesh,"amr.sig=%s.grm=%0.8e.mesh.bin","test_mesh",g_GridResolutionMultiplier);
 
   PIC::Mesh::mesh->AllowBlockAllocation=false;
   if(_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_){

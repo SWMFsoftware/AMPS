@@ -400,6 +400,25 @@ if (key=="bc" || key=="bc-type" || key=="domain-bc") {
     return;
   }
 
+  // Mesh/grid resolution multiplier.
+  // Accepted input-file keys:
+  //   grid-res-mult=...
+  //   grid-resolution-multiplier=...
+  //   mesh-res-mult=...
+  //   resolution-multiplier=...
+  if (key=="grid-res-mult" || key=="grid-resolution-multiplier" ||
+      key=="mesh-res-mult" || key=="resolution-multiplier") {
+    if (!nums.empty()) {
+      if (nums[0] <= 0.0) {
+        std::printf("[ConstFieldBC input] ERROR: grid resolution multiplier must be > 0 (got %g)\n", nums[0]);
+        exit(__LINE__,__FILE__,"Invalid grid resolution multiplier");
+      }
+      cfg.gridResolutionMultiplier = nums[0];
+      cfg.user_gridResolutionMultiplier = true;
+    }
+    return;
+  }
+
   // Solar wind IC in test units
   if (key=="sw" || key=="solar-wind" || key=="solarwind") {
     cfg.mode = TestConfig::Mode::WithParticles;
@@ -600,6 +619,10 @@ void PrintHelpAndExit(const char* prog) {
     "      Set cubic domain size L, centered at (0,0,0).\n"
     "  -L  Lx Ly Lz\n"
     "      Set domain size (Lx,Ly,Lz), centered at (0,0,0).\n"
+    "  --grid-res-mult X\n"
+    "      Grid resolution multiplier for the current simulation (default 1.0).\n"
+    "      X > 1.0 -> finer mesh, X < 1.0 -> coarser mesh. Must be > 0.\n"
+    "      Input-file keys: grid-res-mult=X, grid-resolution-multiplier=X\n"
     "\n"
     "Internal spherical boundary (Enceladus placeholder):\n"
     "  --sphere | --enceladus\n"
@@ -1154,6 +1177,33 @@ if (a=="-bc" || a=="--bc" || a.rfind("-bc=",0)==0 || a.rfind("--bc=",0)==0) {
       if (v<=0.0) { std::printf("-cfl must be > 0\n"); continue; }
       cfg.cfl = v;
       cfg.user_cfl = true;
+      continue;
+    }
+
+    if (a=="--grid-res-mult" || a.rfind("--grid-res-mult=",0)==0 ||
+        a=="-grid-res-mult"  || a.rfind("-grid-res-mult=",0)==0 ||
+        a=="--grid-resolution-multiplier" || a.rfind("--grid-resolution-multiplier=",0)==0) {
+      const char* s = nullptr;
+      if (a=="--grid-res-mult" || a=="-grid-res-mult" || a=="--grid-resolution-multiplier") {
+        if (i+1>=argc) { std::printf("--grid-res-mult requires a value\n"); continue; }
+        s = argv[++i];
+      }
+      else if (a.rfind("--grid-res-mult=",0)==0) {
+        s = a.c_str() + std::strlen("--grid-res-mult=");
+      }
+      else if (a.rfind("-grid-res-mult=",0)==0) {
+        s = a.c_str() + std::strlen("-grid-res-mult=");
+      }
+      else {
+        s = a.c_str() + std::strlen("--grid-resolution-multiplier=");
+      }
+
+      char* end=nullptr;
+      double v = std::strtod(s,&end);
+      if (end==s) { std::printf("Invalid --grid-res-mult value: %s\n", s); continue; }
+      if (v<=0.0) { std::printf("--grid-res-mult must be > 0\n"); continue; }
+      cfg.gridResolutionMultiplier = v;
+      cfg.user_gridResolutionMultiplier = true;
       continue;
     }
 

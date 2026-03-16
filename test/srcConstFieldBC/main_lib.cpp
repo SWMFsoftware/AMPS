@@ -985,34 +985,44 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
 }
 
 
-double BulletLocalResolution(double *x) {                                                                                           
-  double dist = xmax[0]-xmin[0];
+double BulletLocalResolution(double *x) {
+  (void)x;
 
-#ifndef _UNIFORM_MESH_
-#error ERROR: _UNIFORM_MESH_ is used but not defined
-#endif
-#ifndef _TEST_MESH_MODE_
-#error ERROR: _TEST_MESH_MODE_ is used but not defined
-#endif
-#if _TEST_MESH_MODE_==_UNIFORM_MESH_  
-  double res = 3;
-#endif
+  // ---------------------------------------------------------------------------
+  // Mesh-resolution callback used by PIC::Mesh::mesh->init().
+  //
+  // AMPS expects this callback to return a *target local cell size / resolution
+  // scale* in the same coordinate units as the mesh. A smaller returned value
+  // requests a finer grid; a larger value requests a coarser grid.
+  //
+  // Historically this test always returned the same constant value:
+  //
+  //   sqrt(3) + 0.1
+  //
+  // That behavior is preserved when g_GridResolutionMultiplier == 1.0.
+  //
+  // To make the new CLI option intuitive, we define:
+  //
+  //   effective_resolution = legacy_resolution / g_GridResolutionMultiplier
+  //
+  // Therefore:
+  //   multiplier > 1  -> smaller target cell size -> finer mesh
+  //   multiplier < 1  -> larger  target cell size -> coarser mesh
+  //
+  // NOTE:
+  //   The old code contained some dead branches for uniform/nonuniform test modes,
+  //   but the final returned value was always overwritten by sqrt(3)+0.1. The new
+  //   implementation keeps the same legacy base value and applies the user-requested
+  //   multiplier explicitly.
+  // ---------------------------------------------------------------------------
+  const double legacy_resolution = std::sqrt(3.0) + 0.1;
 
-#ifndef _NONUNIFORM_MESH_
-#error ERROR: _NONUNIFORM_MESH_ is used but not defined
-#endif
-#ifndef _TEST_MESH_MODE_
-#error ERROR: _TEST_MESH_MODE_ is used but not defined
-#endif
-#if _TEST_MESH_MODE_==_NONUNIFORM_MESH_
-  double highRes = dist/32.0, lowRes= dist/2.0;     
-  double res =(5-1)/dist*(x[0]-xmin[0])+1;  
-#endif
+  double mult = g_GridResolutionMultiplier;
+  if (!(mult > 0.0)) mult = 1.0;
 
-  res=sqrt(3)+0.1;
-  return res;
+  const double effective_resolution = legacy_resolution / mult;
+  return effective_resolution;
 }
-                       
 
 #include <cmath>
 #include <stdexcept>

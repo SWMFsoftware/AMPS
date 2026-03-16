@@ -24,6 +24,7 @@ picunits::Factors FinalizeConfigUnits(TestConfig& cfg);
 extern double xmin[3];
 extern double xmax[3];
 extern int g_TestStencilOrder;
+extern double g_GridResolutionMultiplier;
 
 
 double BulletLocalResolution(double *x);

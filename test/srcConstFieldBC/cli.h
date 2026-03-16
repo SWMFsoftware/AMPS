@@ -56,6 +56,23 @@ struct TestConfig {
   bool   use_domain_L = false;
   double domain_L[3] = {32.0,16.0,8.0}; // defaults match legacy xmin/xmax
 
+  // Mesh/grid resolution multiplier.
+  //
+  // This scales the local-resolution function passed into PIC::Mesh::mesh->init().
+  // In this driver the mesh builder interprets a *smaller* local resolution target
+  // as a request for a *finer* mesh, so the multiplier is applied as:
+  //
+  //   effective_resolution = base_resolution / gridResolutionMultiplier
+  //
+  // Therefore:
+  //   gridResolutionMultiplier = 1.0  -> keep legacy/default mesh resolution
+  //   gridResolutionMultiplier > 1.0  -> finer grid
+  //   gridResolutionMultiplier < 1.0  -> coarser grid
+  //
+  // The value must remain strictly positive.
+  double gridResolutionMultiplier = 1.0;
+  bool   user_gridResolutionMultiplier = false;
+
   // ---------------------------------------------------------------------------
   // Units normalization controls (used when the ECSIM build expects NORM units).
   // These are the three reference scales used by the attached normalization helper
