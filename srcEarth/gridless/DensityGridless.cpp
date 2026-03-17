@@ -1762,6 +1762,52 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
 // PUBLIC ENTRY POINT
 //======================================================================================
 int RunDensityAndSpectrum(const EarthUtil::AmpsParam& prm) {
+  //----------------------------------------------------------------------------
+  // Keep the analytic dipole state used by the density/spectrum workflow in sync
+  // with the input file whenever FIELD_MODEL=DIPOLE.
+  //
+  // WHY THIS IS NECESSARY
+  //   The built-in nightly-test comparison written by
+  //   WriteTecplotPoints_DipoleAnalyticCompare() /
+  //   WriteTecplotShells_DipoleAnalyticCompare() evaluates a semi-analytic
+  //   reference that needs the dipole field direction B_hat(x_exit) at the outer
+  //   boundary.  That helper obtains B_hat through the shared global dipole state
+  //   stored in Earth::GridlessMode::Dipole::gParams.
+  //
+  //   The cutoff-rigidity workflow already initializes gParams from the parsed
+  //   input file.  Prior to this patch, the density/spectrum workflow did NOT do
+  //   so.  As a result, the analytic / semi-analytic density benchmark could end
+  //   up using stale dipole settings left behind by some other code path, or just
+  //   the library defaults, rather than the actual DIPOLE_MOMENT / DIPOLE_TILT
+  //   requested in the current input file.
+  //
+  // WHY THIS HURTS ANISOTROPIC RUNS THE MOST
+  //   In isotropic mode, the straight-line open-sky factor depends only on the
+  //   inner-sphere geometry, so a stale dipole direction does not matter much.
+  //   In ANISOTROPIC mode, however, the reference weight is
+  //
+  //       f_aniso = f_PAD(cos alpha) * f_spatial(x_exit)
+  //
+  //   with
+  //
+  //       cos alpha = v_exit · B_hat(x_exit) .
+  //
+  //   Therefore an incorrect dipole orientation/magnitude directly corrupts the
+  //   analytic PAD weighting and can drive the analytic density/spectrum/flux
+  //   reference to the wrong value (including spuriously tiny or zero values for
+  //   strongly field-aligned distributions).
+  //
+  // IMPLEMENTATION POLICY
+  //   We initialize the shared dipole state here, once per density/spectrum run,
+  //   before dispatching to POINTS or SHELLS mode.  This mirrors the cutoff tool
+  //   and guarantees that every subsequent analytic helper sees the same dipole
+  //   configuration as the numerical tracer.
+  //----------------------------------------------------------------------------
+  if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
+    Earth::GridlessMode::Dipole::SetMomentScale(prm.field.dipoleMoment_Me);
+    Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
+  }
+
   const std::string mode = EarthUtil::ToUpper(prm.output.mode);
   if (mode=="POINTS") return RunDensityAndSpectrum_POINTS(prm);
   if (mode=="SHELLS") return RunDensityAndSpectrum_SHELLS(prm);

@@ -89,7 +89,29 @@ double EvalAnisotropyFactor(const EarthUtil::AnisotropyParam& par,
   //===========================================================================
   // We clamp cos_alpha to [-1, 1] to guard against tiny floating-point
   // excursions that could make sin^2 slightly negative.
-  const double ca  = (cos_alpha < -1.0) ? -1.0 : (cos_alpha > 1.0 ? 1.0 : cos_alpha);
+  //
+  // IMPORTANT ROBUSTNESS NOTE
+  //   The header comment for this file already documents the intended NaN
+  //   safeguard: if the incoming pitch-angle cosine is NaN, treat it as 0.0
+  //   before evaluating the PAD.  Prior to this patch, the code only performed
+  //   a numerical clamp using '<' and '>' comparisons.  Those comparisons are
+  //   BOTH false for NaN, so a NaN input slipped through unchanged.  In the
+  //   COSALPHA_N / BIDIRECTIONAL branches that then produced
+  //
+  //       pow(fabs(NaN), n) = NaN
+  //
+  //   and the accumulated anisotropy-weight sum could become NaN as well.
+  //
+  //   We therefore implement the documented behaviour explicitly:
+  //     NaN  -> 0.0  (neutral / perpendicular fallback)
+  //   and only then apply the ordinary [-1,1] clamp.
+  double ca = 0.0;
+  if (std::isnan(cos_alpha)) {
+    ca = 0.0;
+  }
+  else {
+    ca = (cos_alpha < -1.0) ? -1.0 : (cos_alpha > 1.0 ? 1.0 : cos_alpha);
+  }
   const double sa2 = std::max(0.0, 1.0 - ca*ca);  // sin^2(alpha)
   const double n   = par.padExponent;
 
