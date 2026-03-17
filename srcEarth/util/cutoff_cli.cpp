@@ -40,7 +40,7 @@
 //     -h | --help              Print this message and exit.
 //     -mode <3d|gridless>      Select solver mode.
 //     -i <file>                Input parameter file (AMPS_PARAM format).
-//     -mover <BORIS|RK2|RK4|RK6>   Particle mover (default: BORIS).
+//     -mover <BORIS|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>   Particle mover (default: BORIS).
 //     -density-mode <ISOTROPIC|ANISOTROPIC>
 //                              Override DS_BOUNDARY_MODE from input file.
 //
@@ -125,7 +125,7 @@ std::string HelpMessage(const char* progName) {
   out << "      Path to the AMPS_PARAM-format input file. Controls all physics and\n";
   out << "      geometry parameters. See 'Input file sections' below for a summary.\n\n";
 
-  out << "  -mover <BORIS|RK2|RK4|RK6>   (optional; default: BORIS)\n";
+  out << "  -mover <BORIS|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>   (optional; default: BORIS)\n";
   out << "      Select the particle integration algorithm.\n";
   out << "        BORIS   Relativistic Boris pusher. Volume-preserving (symplectic),\n";
   out << "                time-reversible, one field evaluation per step. Recommended\n";
@@ -137,6 +137,13 @@ std::string HelpMessage(const char* progName) {
   out << "                Use when orbit reconstruction accuracy matters more than speed.\n";
   out << "        RK6     Runge-Kutta 6th order. Six evaluations per step. Recommended\n";
   out << "                near the inner boundary in strong storm-time T05 fields.\n";
+  out << "        GC2/4/6 Guiding-center equations integrated with RK2/RK4/RK6.\n";
+  out << "                Useful when fast gyromotion is not the quantity of interest.\n";
+  out << "        HYBRID  Per-step switch between RK4 and GC4. The code evaluates a\n";
+  out << "                local adiabaticity estimate rho/L_eff: if the gyroradius is\n";
+  out << "                small compared with field-gradient/curvature scales it uses\n";
+  out << "                GC4, otherwise it falls back to full-orbit RK4. Intended to\n";
+  out << "                support a larger but still physically correct dt.\n";
   out << "      When provided, overrides any mover setting in the input file.\n\n";
 
   out << "  -density-mode <ISOTROPIC|ANISOTROPIC>   (optional)\n";

@@ -34,6 +34,11 @@
 //         RK2     Runge-Kutta 2nd order (Heun)
 //         RK4     Runge-Kutta 4th order (classical)
 //         RK6     Runge-Kutta 6th order
+//         GC2     Guiding-center equations integrated with RK2
+//         GC4     Guiding-center equations integrated with RK4
+//         GC6     Guiding-center equations integrated with RK6
+//         HYBRID  Switch per step between RK4 and GC4 when the local motion is
+//                 sufficiently adiabatic for guiding-center transport
 //       See GridlessParticleMovers.h for a full description of each mover.
 //       If omitted, the default mover (BORIS) is used.
 //       The string is stored as-is; translation to MoverType enum is done by the caller.
@@ -102,7 +107,10 @@ namespace EarthUtil {
     //
     // Supported values (case-insensitive):
     //   BORIS           : classic relativistic Boris pusher (legacy default)
-    //   RK2/RK4/RK6   : explicit Runge-Kutta movers of order 2/4/6
+    //   RK2/RK4/RK6   : explicit full-orbit Runge-Kutta movers of order 2/4/6
+    //   GC2/GC4/GC6   : guiding-center movers integrated with RK2/RK4/RK6
+    //   HYBRID        : per-step switch between RK4 and GC4 using a local
+    //                   adiabaticity criterion rho/L_eff
     //
     // If empty, the executable should use its default / input-file setting.
     std::string mover{""};
