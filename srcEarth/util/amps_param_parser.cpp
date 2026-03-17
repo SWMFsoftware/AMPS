@@ -394,21 +394,75 @@ static std::vector<double> ParseLengthListToKm(const std::string& values,const s
     while (iss>>t) valueToks.push_back(t);
   }
 
-  std::vector<std::string> unitHints;
+  // IMPORTANT ROBUSTNESS FIX
+  // ------------------------
+  // A comment attached to a POINT line often contains *descriptive prose*, e.g.
+  //
+  //   POINT 50969.6 0 0   ! TC-EQ8: 8 Re equator (GSM x-axis)
+  //
+  // The earlier implementation scanned the full comment and collected every token that
+  // looked like a supported unit.  In the example above it would find the word "Re"
+  // in the prose fragment "8 Re equator" and incorrectly interpret that as a unit hint
+  // for the coordinate list.  The result was catastrophic: a coordinate already given in
+  // km (50969.6) was reinterpreted as 50969.6 Re, i.e. multiplied by Earth's radius.
+  //
+  // That bug affected any list-style length field parsed with ParseLengthListToKm(), but
+  // it was most visible for OUTPUT_MODE=POINTS because the analytic dipole benchmark then
+  // saw observation points absurdly far from Earth and returned near-zero/zero reference
+  // values.  The numerical solver itself still used the same misparsed coordinates, which
+  // is why the output X_km/Y_km/Z_km columns looked obviously wrong (orders of magnitude
+  // too large).
+  //
+  // The corrected rule is intentionally strict:
+  //   * a comment-derived unit hint is accepted only if the comment is *purely a unit
+  //     specification*, either
+  //         ! Re
+  //     or  ! km km km
+  //     i.e. one global unit token or one token per listed value;
+  //   * as soon as the comment contains any non-unit text, it is treated as descriptive
+  //     prose and contributes NO unit hint.
+  //
+  // This keeps explicit unit comments working, while preventing accidental capture of
+  // words like "Re" in free-form descriptions.
+  std::vector<std::string> rawCommentToks;
   {
     std::istringstream iss(comment);
     std::string t;
-    while (iss>>t) {
-      std::string u=ToLower(Trim(t));
-      if (u=="km" || u=="re") unitHints.push_back(u);
+    while (iss>>t) rawCommentToks.push_back(t);
+  }
+
+  auto NormalizeUnitToken = [](std::string x) {
+    std::string y;
+    y.reserve(x.size());
+    for (char c : x) {
+      unsigned char uc = static_cast<unsigned char>(c);
+      if (std::isalpha(uc)) y.push_back(static_cast<char>(std::tolower(uc)));
+    }
+    return y;
+  };
+
+  bool commentIsPureUnitList = !rawCommentToks.empty();
+  std::vector<std::string> unitHints;
+  unitHints.reserve(rawCommentToks.size());
+  for (const auto& t : rawCommentToks) {
+    const std::string u = NormalizeUnitToken(Trim(t));
+    if (u=="km" || u=="re") {
+      unitHints.push_back(u);
+    }
+    else {
+      // Any non-unit token means the comment is descriptive prose rather than an
+      // unambiguous unit declaration.  Discard *all* comment-derived hints.
+      commentIsPureUnitList = false;
+      unitHints.clear();
+      break;
     }
   }
 
   std::vector<double> out;
   out.reserve(valueToks.size());
 
-  const bool oneGlobalHint = (unitHints.size()==1);
-  const bool perValueHints = (unitHints.size()==valueToks.size());
+  const bool oneGlobalHint = commentIsPureUnitList && (unitHints.size()==1);
+  const bool perValueHints = commentIsPureUnitList && (unitHints.size()==valueToks.size());
 
   for (size_t i=0;i<valueToks.size();++i) {
     std::string hint;
