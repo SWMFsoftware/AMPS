@@ -257,6 +257,10 @@
 #include <algorithm>
 #include <iostream>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 // --- Field model dependencies (match CutoffRigidityGridless.cpp) ----------------------
 // We intentionally use the *same* access pattern as the gridless cutoff solver to avoid
 // link-time mismatches across platforms/compilers:
@@ -276,6 +280,37 @@
 #include "DipoleInterface.h"
 
 namespace {
+
+//--------------------------------------------------------------------------------------
+// OpenMP helper notes
+//--------------------------------------------------------------------------------------
+// The density solver now uses OpenMP at two levels of embarrassingly parallel work:
+//   (1) over directions for a *single* energy point inside ComputeT_atEnergy(), and
+//   (2) over the energy grid for a *single* observation point in the POINTS/SHELLS
+//       drivers.
+//
+// However, enabling both levels simultaneously would create nested parallel regions.
+// In practice that usually hurts performance because the total number of worker threads
+// becomes roughly (threads over energy) x (threads over directions), which leads to
+// oversubscription, cache thrash, and much higher OpenMP runtime overhead.
+//
+// To avoid that, the inner direction loop checks whether the current thread is already
+// inside an outer OpenMP parallel region. If yes, the direction loop falls back to its
+// serial implementation for that energy point. If not, the direction loop is free to
+// use OpenMP itself. This gives the following behavior:
+//   - serial/MPI-only build + OpenMP enabled: directions can be threaded
+//   - energy-loop threading active: directions stay serial inside each energy task
+//   - OpenMP disabled at compile time: everything reduces to ordinary serial loops
+//
+// The helper below hides the omp_in_parallel() call so the rest of the code can stay
+// readable and can still compile cleanly when _OPENMP is not defined.
+static inline bool DensityGridless_IsInsideOpenMPParallelRegion() {
+#ifdef _OPENMP
+  return omp_in_parallel() != 0;
+#else
+  return false;
+#endif
+}
 
 //--------------------------------------------------------------------------------------
 // Small 3D vector helper note
@@ -645,7 +680,21 @@ static double ComputeT_atEnergy(const EarthUtil::AmpsParam& prm,
   const double x0_arr[3] = {x0_m.x, x0_m.y, x0_m.z};
   double weightSum = 0.0;
 
-  for (const auto& d : dirs) {
+  // The direction loop is embarrassingly parallel because each backtraced trajectory
+  // is completely independent from the others: one launch direction produces exactly
+  // one allowed/forbidden classification (and, in ANISOTROPIC mode, one independent
+  // anisotropy weight). The only shared quantity is the accumulated scalar weightSum,
+  // which is handled with an OpenMP reduction.
+  //
+  // IMPORTANT: the loop is executed in parallel only when we are *not* already inside
+  // another OpenMP region. This prevents nested parallelism when the caller has already
+  // parallelized the outer energy loop for the same observation point.
+#ifdef _OPENMP
+#pragma omp parallel for default(none) shared(dirs, prm, x0_arr, Rgv, maxTrajTime_s, doAnisotropic, anisoPar) reduction(+:weightSum) if(!DensityGridless_IsInsideOpenMPParallelRegion() && (int)dirs.size() > 1) schedule(dynamic)
+#endif
+  for (int idir = 0; idir < (int)dirs.size(); ++idir) {
+    const auto& d = dirs[idir];
+
     // Backtrace convention: launch opposite to the desired arrival direction.
     const V3 vTry = mul(-1.0, d);
     const double v0_arr[3] = {vTry.x, vTry.y, vTry.z};
@@ -884,6 +933,19 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       const V3 x0_m { pk.x*1000.0, pk.y*1000.0, pk.z*1000.0 };
 
       std::vector<double> T(nE,0.0);
+
+      // Each energy point can be processed independently: rigidity depends only on the
+      // current grid energy, while transmissivity T(E) is computed from a self-contained
+      // set of backtraced directions for that energy. Therefore the energy loop is a
+      // natural OpenMP target.
+      //
+      // We use schedule(dynamic) because the tracing cost is not uniform across energy:
+      // some energies escape quickly, while others may spend much longer near the cutoff
+      // penumbra before being classified. Dynamic scheduling improves load balance among
+      // threads for such irregular work.
+#ifdef _OPENMP
+#pragma omp parallel for default(none) shared(T, E_MeV, prm, x0_m, dirsUse, doAnisotropic, nE) if(nE > 1) schedule(dynamic)
+#endif
       for (int ie=0; ie<nE; ++ie) {
         const double Ej = E_MeV[ie]*MEV_TO_J;
         const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
@@ -978,6 +1040,15 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
         const V3 x0_m { pk.x*1000.0, pk.y*1000.0, pk.z*1000.0 };
 
         std::vector<double> T(nE,0.0);
+
+        // Parallelize across energy levels for this observation point. Each iteration
+        // writes to a unique T[ie] entry, so no synchronization is required beyond the
+        // implicit barrier at the end of the OpenMP loop. Dynamic scheduling is used for
+        // the same reason as in the serial/MPI-single-rank path: trajectory cost varies
+        // strongly with energy near the transmissivity transition.
+#ifdef _OPENMP
+#pragma omp parallel for default(none) shared(T, E_MeV, prm, x0_m, dirsUse, doAnisotropic, nE) if(nE > 1) schedule(dynamic)
+#endif
         for (int ie=0; ie<nE; ++ie) {
           const double Ej = E_MeV[ie]*MEV_TO_J;
           const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
@@ -1298,6 +1369,14 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
 
           // Compute transmissivity T(E) on the energy grid.
           std::vector<double> T(nE,0.0);
+
+          // The shell driver evaluates the same per-energy kernel as POINTS mode, so the
+          // same OpenMP strategy applies here as well: thread over energies, let each
+          // iteration compute one independent transmissivity value T[ie], and rely on the
+          // inner helper to avoid nested OpenMP parallelism in the direction loop.
+#ifdef _OPENMP
+#pragma omp parallel for default(none) shared(T, E_MeV, prm, x0_m, dirsUse, doAnisotropic, nE) if(nE > 1) schedule(dynamic)
+#endif
           for (int ie=0; ie<nE; ++ie) {
             const double Ej = E_MeV[ie]*MEV_TO_J;
             const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
@@ -1406,6 +1485,13 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
           const V3 x0_m{pk.x*1000.0, pk.y*1000.0, pk.z*1000.0};
 
           std::vector<double> T(nE,0.0);
+
+          // Worker-side shell evaluation uses the same OpenMP energy decomposition as the
+          // other code paths so that MPI rank-level parallelism and thread-level parallelism
+          // can be combined. Each thread owns one energy index and writes one T[ie] value.
+#ifdef _OPENMP
+#pragma omp parallel for default(none) shared(T, E_MeV, prm, x0_m, dirsUse, doAnisotropic, nE) if(nE > 1) schedule(dynamic)
+#endif
           for (int ie=0; ie<nE; ++ie) {
             const double Ej = E_MeV[ie]*MEV_TO_J;
             const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
