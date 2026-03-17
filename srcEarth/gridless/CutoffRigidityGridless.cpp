@@ -657,6 +657,79 @@ static inline bool LostInnerSphere(const V3& xRe,double rInnerRe) {
 //   - If |B| is small, the gyro constraint becomes inactive and dt is set by
 //     the user cap and/or boundary-distance cap.
 //   - A small floor avoids zero or denormal dt and guarantees forward progress.
+//------------------------------------------------------------------------------
+// Local adiabaticity estimate used by the HYBRID mover time-step selector
+//------------------------------------------------------------------------------
+// The hybrid RK4/GC4 mover can tolerate a substantially larger step when the local
+// motion is adiabatic because GC4 does not need to resolve the fast gyrophase.  To
+// avoid giving that enlarged dt to clearly non-adiabatic orbits, the selector below
+// repeats a lightweight version of the same rho/L_eff estimate used inside
+// GridlessParticleMovers.cpp:
+//
+//   rho   = p_perp / (|q| B)
+//   L_eff = min( B/|grad(B)| , 1/|kappa| )
+//   epsilon = rho / L_eff
+//
+// If epsilon is small, the step is likely to be advanced by the GC branch and we may
+// safely relax the gyro-angle budget.  If epsilon is not small, we keep the usual
+// full-orbit budget.  The calculation uses only local field samples and does not
+// alter the trajectory classification by itself; it only chooses a candidate dt.
+static inline double EstimateHybridAdiabaticity(const cFieldEvaluator& field,
+                                                const V3& x,
+                                                const V3& p,
+                                                double q_C) {
+  const double qAbs = std::fabs(q_C);
+  if (qAbs <= 0.0) return 1.0e300;
+
+  V3 B0; field.GetB_T(x,B0);
+  const double Bmag = norm(B0);
+  if (Bmag <= 0.0) return 1.0e300;
+
+  const V3 bHat = mul(1.0/Bmag, B0);
+  const double pMag = norm(p);
+  const double pPar = dot(p,bHat);
+  const double pPerp2 = std::max(0.0,pMag*pMag - pPar*pPar);
+  const double pPerp = std::sqrt(pPerp2);
+  const double rho_m = pPerp/(qAbs*Bmag);
+
+  const double r = std::max(1.0, norm(x));
+  const double h = std::max(100.0, 1.0e-4*r);
+
+  V3 dbdx[3];
+  V3 gradBmag{0.0,0.0,0.0};
+  for (int idir=0; idir<3; ++idir) {
+    V3 dx{0.0,0.0,0.0};
+    if (idir==0) dx.x = h;
+    if (idir==1) dx.y = h;
+    if (idir==2) dx.z = h;
+
+    V3 Bp,Bm; field.GetB_T(add(x,dx),Bp); field.GetB_T(sub(x,dx),Bm);
+    const double BpMag = norm(Bp);
+    const double BmMag = norm(Bm);
+    const double dB = (BpMag - BmMag)/(2.0*h);
+    if (idir==0) gradBmag.x = dB;
+    if (idir==1) gradBmag.y = dB;
+    if (idir==2) gradBmag.z = dB;
+
+    const V3 bpHat = (BpMag > 0.0) ? mul(1.0/BpMag, Bp) : bHat;
+    const V3 bmHat = (BmMag > 0.0) ? mul(1.0/BmMag, Bm) : bHat;
+    dbdx[idir] = mul(1.0/(2.0*h), sub(bpHat,bmHat));
+  }
+
+  const V3 curvature = add(add(mul(bHat.x, dbdx[0]), mul(bHat.y, dbdx[1])), mul(bHat.z, dbdx[2]));
+  const double gradNorm = norm(gradBmag);
+  const double curvNorm = norm(curvature);
+
+  double LB_m = 1.0e300;
+  if (gradNorm > 0.0) LB_m = Bmag/gradNorm;
+  double Rc_m = 1.0e300;
+  if (curvNorm > 0.0) Rc_m = 1.0/curvNorm;
+
+  const double Leff_m = std::min(LB_m,Rc_m);
+  if (Leff_m <= 0.0 || Leff_m >= 1.0e299) return 0.0;
+  return rho_m/Leff_m;
+}
+
 static inline double SelectAdaptiveDt(const EarthUtil::AmpsParam& prm,
                                       const cFieldEvaluator& field,
                                       const V3& x,
@@ -664,7 +737,8 @@ static inline double SelectAdaptiveDt(const EarthUtil::AmpsParam& prm,
                                       double q_C,
                                       double m0_kg,
                                       const DomainBoxRe& boxRe,
-                                      double timeRemaining_s) {
+                                      double timeRemaining_s,
+                                      bool useGuidingCenterForThisStep) {
   // DT_TRACE from input remains the *maximum* allowed step in the adaptive mode.
   double dt = prm.numerics.dtTrace_s;
   if (timeRemaining_s < dt) dt = timeRemaining_s;
@@ -676,17 +750,28 @@ static inline double SelectAdaptiveDt(const EarthUtil::AmpsParam& prm,
   const double pMag = std::sqrt(std::max(0.0,p2));
   const double vMag = (gamma>0.0 && m0_kg>0.0) ? pMag/(gamma*m0_kg) : 0.0;
 
-  // Local field magnitude for gyrofrequency estimate.
+  // Local field magnitude is still needed for full-orbit gyro-resolution control.
   V3 B; field.GetB_T(x,B);
   const double Bmag = norm(B);
 
-  // (1) Gyro-angle criterion: keep omega_c * dt below a conservative limit.
-  //     This directly addresses the "dt too big" issue in strong magnetic field.
-  //     0.15 rad (~8.6 deg) is a practical compromise between accuracy and cost.
-  const double dphiMax = 0.15;
-  if (Bmag>0.0) {
-    const double omega = std::fabs(q_C)*Bmag/(gamma*m0_kg);
-    if (omega>0.0) dt = std::min(dt, dphiMax/omega);
+  // (1) Branch-aware fast-timescale constraint.
+  //
+  // New control flow requested by the user:
+  //   first decide whether the upcoming step will use the GC branch,
+  //   then choose dt appropriate for that branch,
+  //   then advance the state.
+  //
+  // Consequence:
+  //   If this outer step has already been committed to the GC description, there is
+  //   no need to limit dt by the instantaneous gyrofrequency because the GC equations
+  //   do not advance the fast gyrophase explicitly.  In that case we simply skip the
+  //   gyro-angle limiter.  For full-orbit branches we retain the conservative bound.
+  if (!useGuidingCenterForThisStep) {
+    const double dphiMax = 0.15;
+    if (Bmag>0.0) {
+      const double omega = std::fabs(q_C)*Bmag/(gamma*m0_kg);
+      if (omega>0.0) dt = std::min(dt, dphiMax/omega);
+    }
   }
 
   // (2) Geometry-aware travel criterion: avoid very large jumps near stopping
@@ -710,14 +795,40 @@ static inline double SelectAdaptiveDt(const EarthUtil::AmpsParam& prm,
   }
 
   // Limit per-step travel distance to a fraction of the nearest termination
-  // surface distance. This is a CFL-like geometric criterion, not a formal LTE.
+  // surface distance.  This limiter must be branch-aware as well.
+  //
+  // Earlier HYBRID versions used the full particle speed vMag for BOTH RK and GC.
+  // That made the geometry limiter almost identical in both branches, so even when GC
+  // was selected the resulting dt often remained essentially the same as the RK dt.
+  // In a guiding-center step the fast gyromotion is not advanced explicitly, so the
+  // relevant geometric transport speed is the speed of the *guiding center itself*,
+  // not the instantaneous particle speed around its Larmor orbit.
+  //
+  // We therefore use:
+  //   RK branch : full particle speed  |v|
+  //   GC branch : conservative GC transport speed based on the field-aligned motion
+  //               |v_parallel| only
+  //
+  // Why |v_parallel| and not a more elaborate drift estimate here?
+  //   The dominant transport over one GC step is usually the motion along the field
+  //   line; grad-B and curvature drifts are retained by the mover but are generally
+  //   much slower.  Using |v_parallel| therefore removes the artificial RK-like gyro
+  //   restriction while still keeping a conservative geometric bound near loss/escape
+  //   surfaces.
   const double dNear_m = std::min(dInner_m,dBox_m);
   const double fDist = 0.20; // allow <=20% of nearest-boundary distance per step
-  if (vMag>0.0 && dNear_m<1.0e299) dt = std::min(dt, fDist*dNear_m/vMag);
+  double vForBoundaryLimiter = vMag;
+  if (useGuidingCenterForThisStep && Bmag>0.0) {
+    const V3 bHat = mul(1.0/Bmag, B);
+    const double pPar = dot(p, bHat);
+    const double vParAbs = std::fabs(pPar) / (gamma*m0_kg);
+    vForBoundaryLimiter = std::max(vParAbs, 1.0e-12);
+  }
+  if (vForBoundaryLimiter>0.0 && dNear_m<1.0e299) dt = std::min(dt, fDist*dNear_m/vForBoundaryLimiter);
 
-  // Floor for numerical robustness and guaranteed forward progress.
-  // We still clamp by timeRemaining_s so we never exceed the time cap.
-  const double dtFloor = std::max(1.0e-12, 1.0e-9*std::max(prm.numerics.dtTrace_s,1.0));
+  // Small floor to guarantee forward progress and to avoid denormal / zero dt in
+  // extreme edge cases.
+  const double dtFloor = std::max(std::max(1.0e-12, 1.0e-9*std::max(prm.numerics.dtTrace_s,1.0)),100.0E3/vForBoundaryLimiter);
   dt = std::max(dtFloor, dt);
   if (timeRemaining_s > 0.0) dt = std::min(dt, timeRemaining_s);
 
@@ -741,6 +852,21 @@ static bool TraceAllowedImpl(const EarthUtil::AmpsParam& prm,
 
   // Convert domain bounds from km (input) to Re for checks.
   const DomainBoxRe boxRe = ToDomainBoxRe(prm.domain);
+
+  // Reset the thread-local HYBRID mover context for this trajectory.
+  //
+  // Why reset here?
+  //   HYBRID intentionally carries a small amount of trajectory history (launch point,
+  //   warm-up counter, consecutive GC-eligibility counter, current branch state).  That
+  //   history is essential for the safer algorithm: every trajectory must start in RK4
+  //   and only later be allowed to enter GC4 in a demonstrably adiabatic mid-trajectory
+  //   region.
+  //
+  // The reset is harmless for all other movers because only HYBRID consults this
+  // context.  Performing the reset unconditionally here keeps the tracing logic simple
+  // and guarantees that repeated calls from the rigidity bisection and density loops do
+  // not leak HYBRID state from one trajectory to the next.
+  ResetHybridTrajectoryContext(x0_m, boxRe.rInner*_EARTH__RADIUS_);
 
   // Adaptive integration bookkeeping.
   // We keep both a physical-time cap and a hard step-count cap. The former
@@ -799,10 +925,26 @@ static bool TraceAllowedImpl(const EarthUtil::AmpsParam& prm,
 
     const double timeRemaining_s = maxTraceTime_s_effective - tTrace_s;
 
-    // Automatic dt selection based on local gyrofrequency and proximity to the
-    // termination surfaces. DT_TRACE remains a hard upper bound for backward
-    // compatibility with existing input files.
-    const double dt = SelectAdaptiveDt(prm,field,x,p,q,m0,boxRe,timeRemaining_s);
+    // New branch-aware control flow for HYBRID and GC-capable trajectories:
+    //   1. decide whether the current outer step will be advanced with the GC branch,
+    //   2. choose dt for THAT branch,
+    //   3. advance the particle state.
+    //
+    // For non-HYBRID movers the decision reduces to a simple branch-independent flag.
+    bool useGuidingCenterForThisStep = false;
+    const MoverType mover = GetDefaultMoverType();
+    if (mover==MoverType::GC2 || mover==MoverType::GC4 || mover==MoverType::GC6) {
+      useGuidingCenterForThisStep = true;
+    }
+    else if (mover==MoverType::HYBRID) {
+      useGuidingCenterForThisStep = HybridPrepareStepUseGuidingCenter(x,p,q,field);
+    }
+
+    // Automatic dt selection now happens AFTER the branch decision.  In particular,
+    // GC steps are no longer constrained by the local gyrofrequency, because that
+    // fast timescale is absent from the GC equations themselves.
+    const double dt = SelectAdaptiveDt(prm,field,x,p,q,m0,boxRe,timeRemaining_s,
+                                       useGuidingCenterForThisStep);
 
     // Advance one step with the selected mover.
     // Important cutoff-specific rule: if the trajectory enters the inner sphere
