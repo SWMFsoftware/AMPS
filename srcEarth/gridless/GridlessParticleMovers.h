@@ -6,7 +6,8 @@
 // -------
 // Provides the particle integration engine shared by all gridless solvers:
 //   - Relativistic Boris pusher (default)
-//   - Runge-Kutta movers of order 2, 4, and 6
+//   - Full-orbit Runge-Kutta movers of order 2, 4, and 6
+//   - Guiding-center movers integrated with RK2 / RK4 / RK6
 //   - V3 vector type and inline arithmetic used uniformly across gridless modules
 //   - IGridlessFieldEvaluator interface for magnetic field injection
 //   - StepParticleChecked: mover wrapper that detects inner-sphere crossings
@@ -105,6 +106,47 @@
 // curvature (near the inner boundary, near the magnetopause current sheet in
 // storm-time T05 fields) when SHELLS output is being validated against high-accuracy
 // reference calculations. In routine production runs the extra cost is not justified.
+//
+// ---- GC2 / GC4 / GC6 (guiding-center movers integrated with RK2 / RK4 / RK6) ---
+//
+// These movers do NOT resolve the fast gyrophase explicitly. Instead, they evolve the
+// adiabatic guiding-center state in a static magnetic field using the first-order
+// guiding-center equations with mirror force, grad-B drift, and curvature drift:
+//
+//   dX/dt      = v_parallel * b
+//                + (mu / (q * B^2)) * (B x grad(B))
+//                + (p_parallel^2 / (q * gamma * m0 * B^2)) * (b x kappa)
+//
+//   dp_parallel/dt = - mu * b . grad(B)
+//
+// where
+//   b      = B / |B|                       magnetic-field unit vector
+//   kappa  = (b . grad) b                  field-line curvature vector
+//   mu     = p_perp^2 / (2 * gamma * m0 * B)
+//
+// The implementation used here evaluates grad(B) and the directional derivatives of b
+// numerically with central finite differences of the injected field evaluator.  The
+// total momentum magnitude |p| is kept constant during each outer step (appropriate for
+// a time-independent magnetic field with E=0), while the parallel component p_parallel
+// is advanced by the mirror force. The perpendicular momentum magnitude is then
+// reconstructed from |p|^2 = p_parallel^2 + p_perp^2.
+//
+// IMPORTANT PHYSICS LIMITATION:
+//   Guiding-center motion is an asymptotic approximation valid when the gyroradius is
+//   small compared to the magnetic-field gradient/curvature scale length. Near the
+//   inner boundary, in weak-field regions with very large gyroradius, or close to sharp
+//   cutoff/penumbra transitions, the full-orbit movers (BORIS / RK2 / RK4 / RK6) are
+//   still the reference method and should be preferred for production classification.
+//
+// Why provide GC movers anyway?
+//   (1) They are useful for algorithmic comparisons and for diagnosing whether a change
+//       in cutoff/density results is caused by gyrophase resolution or by the large-scale
+//       magnetic geometry itself.
+//   (2) They provide a much smoother trajectory representation when the fast gyro-motion
+//       is not of interest.
+//   (3) Using RK2 / RK4 / RK6 on the SAME guiding-center equations makes it easy to
+//       separate physics-model error (guiding-center approximation) from pure time-
+//       integration error.
 //
 //======================================================================================
 // ADAPTIVE TIME-STEP SELECTION (called externally; not inside this module)
@@ -218,10 +260,53 @@ enum class MoverType {
   BORIS,
   RK2,
   RK4,
-  RK6
+  RK6,
+  GC2,
+  GC4,
+  GC6,
+  HYBRID
 };
 
 extern MoverType gDefaultMover;
+
+//----------------------------------------------------------------------------
+// Hybrid-mover trajectory context helpers
+//----------------------------------------------------------------------------
+// The HYBRID mover needs a small amount of per-trajectory context in order to
+// decide when it is safe to switch from the full-orbit RK4 branch to the GC4
+// branch.  The key point is that guiding-center motion should NOT be activated
+// immediately at the launch point: cutoff-rigidity trajectories are sensitive to
+// finite-Larmor-radius and gyrophase effects near the source point and near the
+// inner loss sphere.
+//
+// The shared trajectory tracer therefore resets a thread-local HYBRID context at
+// the beginning of every new trajectory.  The context stores the launch position,
+// the inner-sphere radius, and small hysteresis counters used by the per-step
+// branch selector.  The API below is intentionally tiny so the rest of the code
+// base can remain unaware of the internal details.
+void ResetHybridTrajectoryContext(const V3& xLaunch_m, double rInner_m);
+
+// Decide which branch the HYBRID mover should use for the *next* outer step of the
+// current trajectory and cache that decision in the thread-local HYBRID context.
+//
+// Why this extra preparation stage is needed:
+//   The caller may want to choose the time step *after* it knows which physical
+//   description will be used.  In particular, if the next step will be taken with
+//   the guiding-center branch, the adaptive time-step selector should not impose a
+//   gyro-frequency resolution limit because the fast gyrophase is not advanced
+//   explicitly in that branch.  Therefore the control flow must be:
+//
+//     (1) decide RK4 vs GC4 for this outer step,
+//     (2) choose dt appropriate for that branch,
+//     (3) advance the state,
+//     (4) commit the trajectory-history counters.
+//
+// The function below performs step (1).  The returned value is the actual branch
+// choice for the upcoming step, not merely a raw adiabaticity estimate.
+bool HybridPrepareStepUseGuidingCenter(const V3& x_m,
+                                       const V3& p_SI,
+                                       double q_C,
+                                       const IGridlessFieldEvaluator& field);
 
 void SetDefaultMoverType(MoverType m);
 MoverType GetDefaultMoverType();
@@ -279,5 +364,35 @@ void RK6Step(V3& x_m, V3& p_SI,
              double q_C, double m0_kg,
              double dt,
              const IGridlessFieldEvaluator& field);
+
+// Guiding-center movers using the same RK orders as the full-orbit movers above.
+// The state visible to the callers remains (x, p), but internally the mover evolves
+// guiding-center position X and parallel momentum p_parallel while reconstructing a
+// physically consistent momentum vector whose pitch angle matches the evolved
+// guiding-center state.
+void GC2Step(V3& x_m, V3& p_SI,
+             double q_C, double m0_kg,
+             double dt,
+             const IGridlessFieldEvaluator& field);
+
+void GC4Step(V3& x_m, V3& p_SI,
+             double q_C, double m0_kg,
+             double dt,
+             const IGridlessFieldEvaluator& field);
+
+void GC6Step(V3& x_m, V3& p_SI,
+             double q_C, double m0_kg,
+             double dt,
+             const IGridlessFieldEvaluator& field);
+
+// Hybrid mover: dynamically switches between the full-orbit RK4 mover and the
+// guiding-center GC4 mover on a step-by-step basis.  The objective is to retain
+// full-orbit accuracy in non-adiabatic regions while allowing the caller to use
+// a larger step in adiabatic regions where the guiding-center approximation is
+// valid.
+void HybridRKGCStep(V3& x_m, V3& p_SI,
+                    double q_C, double m0_kg,
+                    double dt,
+                    const IGridlessFieldEvaluator& field);
 
 #endif
