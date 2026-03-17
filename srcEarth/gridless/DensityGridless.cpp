@@ -719,6 +719,78 @@ static double ComputeT_atEnergy(const EarthUtil::AmpsParam& prm,
 }
 
 //====================================================================================
+// ComputeWeightBlockAtEnergy  —  partial direction-block helper for fine MPI balance
+//====================================================================================
+// This helper evaluates only a contiguous sub-range of the sampled arrival directions
+// for one fixed observation point and one fixed energy / rigidity.
+//
+// WHY THIS EXISTS
+//   The original MPI work decomposition assigned one entire point, then later one whole
+//   (point,energy) pair, to a worker. That is still sometimes too coarse because the
+//   actual expensive physics work is the set of independent traced trajectories over the
+//   sampled directions. In difficult regions some direction traces can be much slower
+//   than others, so a worker that owns a "bad" full energy sample can still become a
+//   straggler.
+//
+//   To make the scheduling even finer without exploding the MPI message count, we group
+//   a *small batch* of directions (typically 10–50 trajectories) into one MPI task.
+//   Rank 0 later accumulates the returned partial weights from all batches belonging to
+//   the same (point,energy) pair and divides by the total number of sampled directions.
+//
+// MATHEMATICAL EQUIVALENCE
+//   This is an exact repartitioning of the same sum already used by ComputeT_atEnergy():
+//
+//      weightSum(E,x0) = sum_over_dirs w_k
+//      T(E,x0)         = weightSum / N_dirs
+//
+//   We simply compute the sum in chunks:
+//
+//      weightSum = sum_over_blocks [ sum_over_dirs_in_block w_k ]
+//
+//   Therefore the final transmissivity is bitwise-identical up to normal floating-point
+//   reordering effects that are already unavoidable in parallel reductions.
+//====================================================================================
+static double ComputeWeightBlockAtEnergy(const EarthUtil::AmpsParam& prm,
+                                         const V3& x0_m,
+                                         double Rgv,
+                                         const std::vector<V3>& dirs,
+                                         int idirBegin,
+                                         int idirEnd,
+                                         double maxTrajTime_s,
+                                         bool doAnisotropic,
+                                         const EarthUtil::AnisotropyParam& anisoPar) {
+  const double x0_arr[3] = {x0_m.x, x0_m.y, x0_m.z};
+  double weightSum = 0.0;
+
+  // Each trajectory in the requested sub-range is independent. We intentionally do not
+  // open another OpenMP region here because the MPI work unit is already deliberately
+  // small (10–50 trajectories). Creating nested thread teams for such small batches
+  // would usually add more overhead than benefit and would also complicate reasoning
+  // about the intended MPI-vs-OpenMP work split.
+  for (int idir = idirBegin; idir < idirEnd; ++idir) {
+    const auto& d = dirs[(size_t)idir];
+    const V3 vTry = mul(-1.0, d);
+    const double v0_arr[3] = {vTry.x, vTry.y, vTry.z};
+
+    if (doAnisotropic) {
+      Earth::GridlessMode::TrajectoryExitState exitSt;
+      if (Earth::GridlessMode::TraceAllowedSharedEx(
+              prm, x0_arr, v0_arr, Rgv, &exitSt, maxTrajTime_s)) {
+        weightSum += EvalAnisotropyFactor(anisoPar, exitSt.cosAlpha, exitSt.x_exit_m);
+      }
+    }
+    else {
+      if (Earth::GridlessMode::TraceAllowedShared(
+              prm, x0_arr, v0_arr, Rgv, maxTrajTime_s)) {
+        weightSum += 1.0;
+      }
+    }
+  }
+
+  return weightSum;
+}
+
+//====================================================================================
 // Progress bar helper for density/spectrum calculations
 //
 // DESIGN RATIONALE
@@ -987,98 +1059,169 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
   }
   else {
     // Parallel dynamic scheduling.
-    const int TAG_TASK=100, TAG_RES=200;
+    //
+    // LOAD-BALANCING IMPROVEMENT
+    // --------------------------
+    // The original MPI implementation used one *point* as the scheduling unit. That is
+    // simple, but it can leave noticeable load imbalance because the actual expensive
+    // work is not "one point"; it is "one backtraced transmissivity evaluation at one
+    // point and one energy". Different energies can have very different tracing costs,
+    // especially near transmissivity transitions / cutoff-like behavior, so assigning a
+    // whole point to one worker can make that worker busy for much longer than others.
+    //
+    // Here we switch to an even finer scheduler whose MPI work unit is a *small
+    // block of traced trajectories* for one fixed (point,energy) pair.
+    //
+    // TOTAL KNOWN WORK
+    //   For POINTS mode the total number of traced trajectories is known exactly at the
+    //   start of the run:
+    //
+    //      totalTraj = nPoints * nE * nDirs
+    //
+    //   where nDirs is the number of sampled arrival directions actually used in the
+    //   calculation (full grid or user-requested subsample).
+    //
+    // WHY BLOCK THE DIRECTIONS
+    //   Sending one MPI message per single trajectory would maximize balance but would
+    //   also flood the code with very small MPI messages. Instead we batch a modest
+    //   number of trajectories (here 32, which lies in the requested 10–50 range) into
+    //   one work item. This keeps the granularity fine enough to smooth out stragglers
+    //   while still amortizing MPI latency over a meaningful amount of physics work.
+    //
+    // LINEAR TASK SPACE
+    //   A task id now corresponds to:
+    //
+    //      taskId -> (point index, energy index, direction-block index)
+    //
+    //   The worker computes the partial weight sum over only that direction block and
+    //   returns it to rank 0. Rank 0 accumulates block sums until all directions for an
+    //   energy are complete, forms T(E)=weightSum/N_dirs, and once all energies of one
+    //   point are complete performs the cheap density / flux reductions.
+    const int TAG_TASK=100, TAG_RES_META=200, TAG_RES_VAL=201;
+    const int kTrajBatch = 32; // Deliberately in the requested 10–50 range.
+    const int nDirs = (int)dirsUse.size();
+    const int nDirBlocks = std::max(1, (nDirs + kTrajBatch - 1) / kTrajBatch);
     if (mpiRank==0) {
       ProgressBar prog(mpiRank, "[POINTS]");
 
-      int next=0;
-      // seed workers
-      for (int r=1;r<mpiSize;r++) {
-        int idx = (next<nPoints)? next++ : -1;
-        MPI_Send(&idx,1,MPI_INT,r,TAG_TASK,MPI_COMM_WORLD);
+      const long long totalTasks = (long long)nPoints * (long long)nE * (long long)nDirBlocks;
+      const long long totalTraj  = (long long)nPoints * (long long)nE * (long long)nDirs;
+      long long nextTask = 0;
+      long long doneTraj = 0;
+
+      std::vector<std::vector<double>> partialWeight((size_t)nPoints, std::vector<double>((size_t)nE, 0.0));
+      std::vector<std::vector<int>>    dirsDone     ((size_t)nPoints, std::vector<int>((size_t)nE, 0));
+      std::vector<int> energiesDone((size_t)nPoints, 0);
+
+      for (int r=1; r<mpiSize; r++) {
+        long long taskId = (nextTask < totalTasks) ? nextTask++ : -1;
+        MPI_Send(&taskId, 1, MPI_LONG_LONG, r, TAG_TASK, MPI_COMM_WORLD);
       }
 
-      int done=0;
-      while (done<nPoints) {
-        // Receive header: point index + density.
-        struct { int idx; double dens; } hdr;
+      while (doneTraj < totalTraj) {
+        // Receive the result in two explicitly typed messages instead of one raw struct.
+        //
+        // WHY THIS IS SAFER THAN MPI_BYTE + C++ STRUCT
+        //   The earlier implementation sent a locally defined C++ struct as a blob of bytes.
+        //   That usually works on homogeneous systems, but it relies on compiler-specific
+        //   padding / layout rules and therefore is more fragile than necessary.
+        //
+        //   Here the worker sends:
+        //     1) a fixed-length integer metadata packet: [point index, energy index,
+        //        first direction, one-past-last direction]
+        //     2) one double containing the partial accumulated weight for that block
+        //
+        //   This keeps the protocol explicit, typed, and independent of struct packing.
+        int meta[4];
+        double weightSum = 0.0;
         MPI_Status st;
-        MPI_Recv(&hdr,sizeof(hdr),MPI_BYTE,MPI_ANY_SOURCE,TAG_RES,MPI_COMM_WORLD,&st);
+        MPI_Recv(meta, 4, MPI_INT, MPI_ANY_SOURCE, TAG_RES_META, MPI_COMM_WORLD, &st);
+        MPI_Recv(&weightSum, 1, MPI_DOUBLE, st.MPI_SOURCE, TAG_RES_VAL, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        // Receive T array
-        std::vector<double> T(nE,0.0);
-        MPI_Recv(T.data(),nE,MPI_DOUBLE,st.MPI_SOURCE,TAG_RES+1,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+        const int idx       = meta[0];
+        const int ie        = meta[1];
+        const int idirBegin = meta[2];
+        const int idirEnd   = meta[3];
 
-        density_m3[hdr.idx]=hdr.dens;
-        T_byPoint[hdr.idx]=std::move(T);
-        // Compute flux from the received T[] on master (no extra MPI traffic).
-        flux_tot_m2s1[hdr.idx] = FluxIntegrateTotal(E_MeV, T_byPoint[hdr.idx]);
-        for (int ic = 0; ic < nCh; ++ic) {
-          flux_ch[ic][hdr.idx] = FluxIntegrateChannel(
-              E_MeV, T_byPoint[hdr.idx],
-              prm.fluxChannels[ic].E1_MeV,
-              prm.fluxChannels[ic].E2_MeV);
+        const int batchCount = idirEnd - idirBegin;
+        doneTraj += (long long)batchCount;
+
+        partialWeight[(size_t)idx][(size_t)ie] += weightSum;
+        dirsDone[(size_t)idx][(size_t)ie] += batchCount;
+
+        if (dirsDone[(size_t)idx][(size_t)ie] == nDirs) {
+          T_byPoint[(size_t)idx][(size_t)ie] = partialWeight[(size_t)idx][(size_t)ie] / (double)nDirs;
+          energiesDone[(size_t)idx]++;
+
+          if (energiesDone[(size_t)idx] == nE) {
+            const std::vector<double>& T = T_byPoint[(size_t)idx];
+
+            std::vector<double> integrand(nE,0.0);
+            std::vector<double> EjGrid(nE,0.0);
+            for (int ie=0; ie<nE; ++ie) {
+              const double Ej = E_MeV[ie]*MEV_TO_J;
+              EjGrid[ie] = Ej;
+              const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
+              const double Jb = ::gSpectrum.GetSpectrum(Ej); // boundary spectrum per Joule
+              const double Jloc = T[ie] * Jb;
+              integrand[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
+            }
+
+            density_m3[(size_t)idx] = Trapz(EjGrid, integrand);
+            flux_tot_m2s1[(size_t)idx] = FluxIntegrateTotal(E_MeV, T);
+            for (int ic = 0; ic < nCh; ++ic) {
+              flux_ch[ic][(size_t)idx] = FluxIntegrateChannel(
+                  E_MeV, T,
+                  prm.fluxChannels[ic].E1_MeV,
+                  prm.fluxChannels[ic].E2_MeV);
+            }
+          }
         }
-        done++;
 
-        prog.update((long long)done, (long long)nPoints);
+        prog.update(doneTraj, totalTraj);
 
-        // send next task
-        int idx = (next<nPoints)? next++ : -1;
-        MPI_Send(&idx,1,MPI_INT,st.MPI_SOURCE,TAG_TASK,MPI_COMM_WORLD);
+        long long taskId = (nextTask < totalTasks) ? nextTask++ : -1;
+        MPI_Send(&taskId, 1, MPI_LONG_LONG, st.MPI_SOURCE, TAG_TASK, MPI_COMM_WORLD);
       }
 
-      prog.finish((long long)nPoints);
+      prog.finish(totalTraj);
     }
     else {
       while (true) {
-        int idx=-1;
-        MPI_Recv(&idx,1,MPI_INT,0,TAG_TASK,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-        if (idx<0) break;
+        long long taskId = -1;
+        MPI_Recv(&taskId, 1, MPI_LONG_LONG, 0, TAG_TASK, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        if (taskId < 0) break;
+
+        const long long perPoint = (long long)nE * (long long)nDirBlocks;
+        const int idx = (int)(taskId / perPoint);
+        const long long rem1 = taskId - (long long)idx * perPoint;
+        const int ie = (int)(rem1 / (long long)nDirBlocks);
+        const int iblock = (int)(rem1 - (long long)ie * (long long)nDirBlocks);
+        const int idirBegin = iblock * kTrajBatch;
+        const int idirEnd = std::min(idirBegin + kTrajBatch, nDirs);
 
         const EarthUtil::Vec3 pk = prm.output.points[idx];
         const V3 x0_m { pk.x*1000.0, pk.y*1000.0, pk.z*1000.0 };
 
-        std::vector<double> T(nE,0.0);
+        const double Ej = E_MeV[ie]*MEV_TO_J;
+        const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE,
+                                                 prm.species.mass_amu*AMU);
+        const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
+                                        ? prm.densitySpectrum.maxTrajTime_s
+                                        : -1.0;
 
-        // Parallelize across energy levels for this observation point. Each iteration
-        // writes to a unique T[ie] entry, so no synchronization is required beyond the
-        // implicit barrier at the end of the OpenMP loop. Dynamic scheduling is used for
-        // the same reason as in the serial/MPI-single-rank path: trajectory cost varies
-        // strongly with energy near the transmissivity transition.
-#ifdef _OPENMP
-#pragma omp parallel for default(none) shared(T, E_MeV, prm, x0_m, dirsUse, doAnisotropic, nE) if(nE > 1) schedule(dynamic)
-#endif
-        for (int ie=0; ie<nE; ++ie) {
-          const double Ej = E_MeV[ie]*MEV_TO_J;
-          const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
-          const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
-                                          ? prm.densitySpectrum.maxTrajTime_s
-                                          : -1.0;
-          // ComputeT_atEnergy handles both ISOTROPIC and ANISOTROPIC branches.
-          // In ISOTROPIC mode it calls TraceAllowedShared (bool only, no exit state).
-          // In ANISOTROPIC mode it calls TraceAllowedSharedEx (returns exit state for
-          // pitch-angle / spatial weighting via EvalAnisotropyFactor).
-          T[ie] = ComputeT_atEnergy(prm, x0_m, Rgv, dirsUse, maxTraceTime_s,
-                                    doAnisotropic, prm.anisotropy);
-        }
+        const double weightSum = ComputeWeightBlockAtEnergy(prm, x0_m, Rgv, dirsUse,
+                                                            idirBegin, idirEnd,
+                                                            maxTraceTime_s,
+                                                            doAnisotropic,
+                                                            prm.anisotropy);
 
-        // Density integral
-        std::vector<double> integrand(nE,0.0);
-        std::vector<double> EjGrid(nE,0.0);
-        for (int ie=0; ie<nE; ++ie) {
-          const double Ej = E_MeV[ie]*MEV_TO_J;
-          EjGrid[ie]=Ej;
-          const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
-          const double Jb = ::gSpectrum.GetSpectrum(Ej);
-          const double Jloc = T[ie]*Jb;
-          integrand[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
-        }
-        const double dens = Trapz(EjGrid, integrand);
-
-        struct { int idx; double dens; } hdr{idx,dens};
-        MPI_Send(&hdr,sizeof(hdr),MPI_BYTE,0,TAG_RES,MPI_COMM_WORLD);
-        MPI_Send(T.data(),nE,MPI_DOUBLE,0,TAG_RES+1,MPI_COMM_WORLD);
+        // Send the result back in two typed messages rather than as a raw struct.
+        // The metadata packet fully identifies the finished block, and the separate
+        // floating-point message carries the accumulated partial weight.
+        int meta[4] = {idx, ie, idirBegin, idirEnd};
+        MPI_Send(meta, 4, MPI_INT, 0, TAG_RES_META, MPI_COMM_WORLD);
+        MPI_Send(&weightSum, 1, MPI_DOUBLE, 0, TAG_RES_VAL, MPI_COMM_WORLD);
       }
     }
   }
@@ -1352,81 +1495,86 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
 
     // MPI scheduling over shell point indices (same pattern as POINTS).
     if (mpiSize==1) {
-      // Build shell-specific label: "[SHELL 2/5 alt=450km]"
-      {
-        int shellIdx = 0;
-        for (size_t si = 0; si < prm.output.shellAlt_km.size(); ++si) {
-          if (std::fabs(prm.output.shellAlt_km[si] - alt_km) < 0.01) { shellIdx = (int)si; break; }
-        }
-        std::ostringstream lbl;
-        lbl << "[SHELL " << (shellIdx + 1) << "/" << prm.output.shellAlt_km.size()
-            << " alt=" << alt_km << "km]";
-        ProgressBar prog(mpiRank, lbl.str());
+      // Serial path for the current shell.  Even though the MPI scheduler below now
+      // works at a much finer granularity (direction blocks for a fixed point/energy
+      // pair), the serial case should remain simple and avoid any MPI-specific state.
+      // We therefore keep the original serial semantics here: loop over shell points on
+      // rank 0, and for each point compute the full T(E) array before doing the cheap
+      // density / flux reductions.
+      int shellIdx = 0;
+      for (size_t si = 0; si < prm.output.shellAlt_km.size(); ++si) {
+        if (std::fabs(prm.output.shellAlt_km[si] - alt_km) < 0.01) { shellIdx = (int)si; break; }
+      }
+      std::ostringstream lbl;
+      lbl << "[SHELL " << (shellIdx + 1) << "/" << prm.output.shellAlt_km.size()
+          << " alt=" << alt_km << "km]";
+      ProgressBar prog(mpiRank, lbl.str());
 
-        for (int ip=0; ip<nPts; ++ip) {
-          const auto& pk = shellPts_km[ip];
-          const V3 x0_m{pk.x*1000.0, pk.y*1000.0, pk.z*1000.0};
+      for (int idx=0; idx<nPts; ++idx) {
+        const auto& pk = shellPts_km[idx];
+        const V3 x0_m{pk.x*1000.0, pk.y*1000.0, pk.z*1000.0};
 
-          // Compute transmissivity T(E) on the energy grid.
-          std::vector<double> T(nE,0.0);
+        std::vector<double> T(nE,0.0);
 
-          // The shell driver evaluates the same per-energy kernel as POINTS mode, so the
-          // same OpenMP strategy applies here as well: thread over energies, let each
-          // iteration compute one independent transmissivity value T[ie], and rely on the
-          // inner helper to avoid nested OpenMP parallelism in the direction loop.
+        // As in POINTS mode, the shell serial path can still exploit OpenMP across
+        // energies because each transmissivity evaluation T(E) is independent for a
+        // fixed spatial location.
 #ifdef _OPENMP
 #pragma omp parallel for default(none) shared(T, E_MeV, prm, x0_m, dirsUse, doAnisotropic, nE) if(nE > 1) schedule(dynamic)
 #endif
-          for (int ie=0; ie<nE; ++ie) {
-            const double Ej = E_MeV[ie]*MEV_TO_J;
-            const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
-            const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
-                                            ? prm.densitySpectrum.maxTrajTime_s
-                                            : -1.0;
-            // ComputeT_atEnergy handles both ISOTROPIC and ANISOTROPIC branches.
-            T[ie] = ComputeT_atEnergy(prm, x0_m, Rgv, dirsUse, maxTraceTime_s,
-                                      doAnisotropic, prm.anisotropy);
-          }
-
-          // Build per-energy integrand g(E)=4*pi*J_loc(E)/v(E) and integrate.
-          std::vector<double> g(nE,0.0);
-          std::vector<double> EjGrid(nE,0.0);
-          for (int ie=0; ie<nE; ++ie) {
-            const double Ej = E_MeV[ie]*MEV_TO_J;
-            EjGrid[ie]=Ej;
-            const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
-            const double Jb = ::gSpectrum.GetSpectrum(Ej);
-            const double Jloc = T[ie]*Jb;
-            g[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
-          }
-          const double nTot = Trapz(EjGrid, g);
-          nTot_m3[ip] = nTot;
-          T_byPoint[ip] = T;
-          flux_tot_m2s1[ip] = FluxIntegrateTotal(E_MeV, T);
-          for (int icf=0; icf<nFluxCh; ++icf) {
-            flux_ch[icf][ip] = FluxIntegrateChannel(E_MeV, T,
-                                                    prm.fluxChannels[icf].E1_MeV,
-                                                    prm.fluxChannels[icf].E2_MeV);
-          }
-
-          // Energy-channel contributions: one trapezoid per interval.
-          for (int ic=0; ic<nIntervals; ++ic) {
-            const double dE = EjGrid[ic+1] - EjGrid[ic];
-            const double nC = 0.5*(g[ic] + g[ic+1]) * dE;
-            nChan_m3[ic][ip] = nC;
-          }
-
-          prog.update((long long)(ip + 1), (long long)nPts);
+        for (int ie=0; ie<nE; ++ie) {
+          const double Ej = E_MeV[ie]*MEV_TO_J;
+          const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE,
+                                                   prm.species.mass_amu*AMU);
+          const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
+                                          ? prm.densitySpectrum.maxTrajTime_s
+                                          : -1.0;
+          T[ie] = ComputeT_atEnergy(prm, x0_m, Rgv, dirsUse, maxTraceTime_s,
+                                    doAnisotropic, prm.anisotropy);
         }
 
-        prog.finish((long long)nPts);
+        std::vector<double> g(nE,0.0);
+        std::vector<double> EjGrid(nE,0.0);
+        for (int ie=0; ie<nE; ++ie) {
+          const double Ej = E_MeV[ie]*MEV_TO_J;
+          EjGrid[ie]=Ej;
+          const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
+          const double Jb = ::gSpectrum.GetSpectrum(Ej);
+          const double Jloc = T[ie]*Jb;
+          g[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
+        }
+        nTot_m3[(size_t)idx] = Trapz(EjGrid, g);
+        for (int ic=0; ic<nIntervals; ++ic) {
+          const double dE = EjGrid[ic+1] - EjGrid[ic];
+          nChan_m3[ic][(size_t)idx] = 0.5*(g[ic] + g[ic+1]) * dE;
+        }
+        flux_tot_m2s1[(size_t)idx] = FluxIntegrateTotal(E_MeV, T);
+        for (int icf=0; icf<nFluxCh; ++icf) {
+          flux_ch[icf][(size_t)idx] = FluxIntegrateChannel(E_MeV, T,
+                                                           prm.fluxChannels[icf].E1_MeV,
+                                                           prm.fluxChannels[icf].E2_MeV);
+        }
+        T_byPoint[(size_t)idx] = std::move(T);
+
+        prog.update((long long)(idx + 1), (long long)nPts);
       }
+
+      prog.finish((long long)nPts);
     }
     else {
-      // Parallel: rank 0 distributes point indices.
-      const int TAG_TASK=3100, TAG_RES=3200;
+      // Parallel dynamic scheduling for SHELLS mode.
+      //
+      // The work unit mirrors the new POINTS-mode scheduler: one MPI task covers a
+      // small batch of traced directions for a fixed (shell point, energy) pair.
+      // This provides finer balancing than assigning a whole shell point to one rank,
+      // while still avoiding the excessive MPI overhead that one-message-per-trajectory
+      // would create.
+      const int TAG_TASK=100, TAG_RES_META=200, TAG_RES_VAL=201;
+      const int kTrajBatch = 32; // Deliberately in the requested 10–50 range.
+      const int nDirs = (int)dirsUse.size();
+      const int nDirBlocks = std::max(1, (nDirs + kTrajBatch - 1) / kTrajBatch);
+
       if (mpiRank==0) {
-        // Build shell-specific label.
         int shellIdx = 0;
         for (size_t si = 0; si < prm.output.shellAlt_km.size(); ++si) {
           if (std::fabs(prm.output.shellAlt_km[si] - alt_km) < 0.01) { shellIdx = (int)si; break; }
@@ -1436,94 +1584,111 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
             << " alt=" << alt_km << "km]";
         ProgressBar prog(mpiRank, lbl.str());
 
-        int next=0;
-        for (int r=1;r<mpiSize;r++) {
-          int idx = (next<nPts)? next++ : -1;
-          MPI_Send(&idx,1,MPI_INT,r,TAG_TASK,MPI_COMM_WORLD);
+        const long long totalTasks = (long long)nPts * (long long)nE * (long long)nDirBlocks;
+        const long long totalTraj  = (long long)nPts * (long long)nE * (long long)nDirs;
+        long long nextTask = 0;
+        long long doneTraj = 0;
+
+        std::vector<std::vector<double>> partialWeight((size_t)nPts, std::vector<double>((size_t)nE, 0.0));
+        std::vector<std::vector<int>>    dirsDone     ((size_t)nPts, std::vector<int>((size_t)nE, 0));
+        std::vector<int> energiesDone((size_t)nPts, 0);
+
+        for (int r=1; r<mpiSize; r++) {
+          long long taskId = (nextTask < totalTasks) ? nextTask++ : -1;
+          MPI_Send(&taskId, 1, MPI_LONG_LONG, r, TAG_TASK, MPI_COMM_WORLD);
         }
-        int done=0;
-        while (done<nPts) {
-          // Header: point index + total density
-          struct { int idx; double nTot; } hdr;
+
+        while (doneTraj < totalTraj) {
+          // Receive shell-mode worker results in two typed messages.  This avoids
+          // sending a raw packed C++ struct over MPI and therefore avoids any hidden
+          // dependence on compiler-inserted padding bytes.
+          int meta[4];
+          double weightSum = 0.0;
           MPI_Status st;
-          MPI_Recv(&hdr,sizeof(hdr),MPI_BYTE,MPI_ANY_SOURCE,TAG_RES,MPI_COMM_WORLD,&st);
+          MPI_Recv(meta, 4, MPI_INT, MPI_ANY_SOURCE, TAG_RES_META, MPI_COMM_WORLD, &st);
+          MPI_Recv(&weightSum, 1, MPI_DOUBLE, st.MPI_SOURCE, TAG_RES_VAL, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-          // Channel densities
-          std::vector<double> buf(nIntervals,0.0);
-          MPI_Recv(buf.data(),nIntervals,MPI_DOUBLE,st.MPI_SOURCE,TAG_RES+1,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+          const int idx       = meta[0];
+          const int ie        = meta[1];
+          const int idirBegin = meta[2];
+          const int idirEnd   = meta[3];
 
-          // Full transmissivity spectrum for this shell node.
-          std::vector<double> T(nE,0.0);
-          MPI_Recv(T.data(),nE,MPI_DOUBLE,st.MPI_SOURCE,TAG_RES+2,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+          const int batchCount = idirEnd - idirBegin;
+          doneTraj += (long long)batchCount;
+          partialWeight[(size_t)idx][(size_t)ie] += weightSum;
+          dirsDone[(size_t)idx][(size_t)ie] += batchCount;
 
-          nTot_m3[hdr.idx]=hdr.nTot;
-          for (int ic=0; ic<nIntervals; ++ic) nChan_m3[ic][hdr.idx] = buf[ic];
-          T_byPoint[hdr.idx] = T;
-          flux_tot_m2s1[hdr.idx] = FluxIntegrateTotal(E_MeV, T_byPoint[hdr.idx]);
-          for (int icf=0; icf<nFluxCh; ++icf) {
-            flux_ch[icf][hdr.idx] = FluxIntegrateChannel(E_MeV, T_byPoint[hdr.idx],
-                                                         prm.fluxChannels[icf].E1_MeV,
-                                                         prm.fluxChannels[icf].E2_MeV);
+          if (dirsDone[(size_t)idx][(size_t)ie] == nDirs) {
+            T_byPoint[(size_t)idx][(size_t)ie] = partialWeight[(size_t)idx][(size_t)ie] / (double)nDirs;
+            energiesDone[(size_t)idx]++;
+
+            if (energiesDone[(size_t)idx] == nE) {
+              const std::vector<double>& T = T_byPoint[(size_t)idx];
+              std::vector<double> g(nE,0.0);
+              std::vector<double> EjGrid(nE,0.0);
+              for (int ie=0; ie<nE; ++ie) {
+                const double Ej = E_MeV[ie]*MEV_TO_J;
+                EjGrid[ie]=Ej;
+                const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
+                const double Jb = ::gSpectrum.GetSpectrum(Ej);
+                const double Jloc = T[ie]*Jb;
+                g[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
+              }
+              nTot_m3[(size_t)idx] = Trapz(EjGrid, g);
+              for (int ic=0; ic<nIntervals; ++ic) {
+                const double dE = EjGrid[ic+1] - EjGrid[ic];
+                nChan_m3[ic][(size_t)idx] = 0.5*(g[ic] + g[ic+1]) * dE;
+              }
+              flux_tot_m2s1[(size_t)idx] = FluxIntegrateTotal(E_MeV, T);
+              for (int icf=0; icf<nFluxCh; ++icf) {
+                flux_ch[icf][(size_t)idx] = FluxIntegrateChannel(E_MeV, T,
+                                                                     prm.fluxChannels[icf].E1_MeV,
+                                                                     prm.fluxChannels[icf].E2_MeV);
+              }
+            }
           }
-          done++;
 
-          prog.update((long long)done, (long long)nPts);
+          prog.update(doneTraj, totalTraj);
 
-          int idx = (next<nPts)? next++ : -1;
-          MPI_Send(&idx,1,MPI_INT,st.MPI_SOURCE,TAG_TASK,MPI_COMM_WORLD);
+          long long taskId = (nextTask < totalTasks) ? nextTask++ : -1;
+          MPI_Send(&taskId, 1, MPI_LONG_LONG, st.MPI_SOURCE, TAG_TASK, MPI_COMM_WORLD);
         }
 
-        prog.finish((long long)nPts);
+        prog.finish(totalTraj);
       }
       else {
         while (true) {
-          int idx=-1;
-          MPI_Recv(&idx,1,MPI_INT,0,TAG_TASK,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-          if (idx<0) break;
+          long long taskId = -1;
+          MPI_Recv(&taskId, 1, MPI_LONG_LONG, 0, TAG_TASK, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+          if (taskId < 0) break;
+
+          const long long perPoint = (long long)nE * (long long)nDirBlocks;
+          const int idx = (int)(taskId / perPoint);
+          const long long rem1 = taskId - (long long)idx * perPoint;
+          const int ie  = (int)(rem1 / (long long)nDirBlocks);
+          const int iblock = (int)(rem1 - (long long)ie * (long long)nDirBlocks);
+          const int idirBegin = iblock * kTrajBatch;
+          const int idirEnd = std::min(idirBegin + kTrajBatch, nDirs);
 
           const auto& pk = shellPts_km[idx];
           const V3 x0_m{pk.x*1000.0, pk.y*1000.0, pk.z*1000.0};
 
-          std::vector<double> T(nE,0.0);
+          const double Ej = E_MeV[ie]*MEV_TO_J;
+          const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE,
+                                                   prm.species.mass_amu*AMU);
+          const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
+                                          ? prm.densitySpectrum.maxTrajTime_s
+                                          : -1.0;
+          const double weightSum = ComputeWeightBlockAtEnergy(prm, x0_m, Rgv, dirsUse,
+                                                              idirBegin, idirEnd,
+                                                              maxTraceTime_s,
+                                                              doAnisotropic,
+                                                              prm.anisotropy);
 
-          // Worker-side shell evaluation uses the same OpenMP energy decomposition as the
-          // other code paths so that MPI rank-level parallelism and thread-level parallelism
-          // can be combined. Each thread owns one energy index and writes one T[ie] value.
-#ifdef _OPENMP
-#pragma omp parallel for default(none) shared(T, E_MeV, prm, x0_m, dirsUse, doAnisotropic, nE) if(nE > 1) schedule(dynamic)
-#endif
-          for (int ie=0; ie<nE; ++ie) {
-            const double Ej = E_MeV[ie]*MEV_TO_J;
-            const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
-            const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
-                                            ? prm.densitySpectrum.maxTrajTime_s
-                                            : -1.0;
-            // ComputeT_atEnergy handles both ISOTROPIC and ANISOTROPIC branches.
-            T[ie] = ComputeT_atEnergy(prm, x0_m, Rgv, dirsUse, maxTraceTime_s,
-                                      doAnisotropic, prm.anisotropy);
-          }
-
-          std::vector<double> g(nE,0.0);
-          std::vector<double> EjGrid(nE,0.0);
-          for (int ie=0; ie<nE; ++ie) {
-            const double Ej = E_MeV[ie]*MEV_TO_J;
-            EjGrid[ie]=Ej;
-            const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
-            const double Jb = ::gSpectrum.GetSpectrum(Ej);
-            const double Jloc = T[ie]*Jb;
-            g[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
-          }
-          const double nTot = Trapz(EjGrid, g);
-          std::vector<double> nCh(nIntervals,0.0);
-          for (int ic=0; ic<nIntervals; ++ic) {
-            const double dE = EjGrid[ic+1] - EjGrid[ic];
-            nCh[ic] = 0.5*(g[ic] + g[ic+1]) * dE;
-          }
-
-          struct { int idx; double nTot; } hdr{idx,nTot};
-          MPI_Send(&hdr,sizeof(hdr),MPI_BYTE,0,TAG_RES,MPI_COMM_WORLD);
-          MPI_Send(nCh.data(),nIntervals,MPI_DOUBLE,0,TAG_RES+1,MPI_COMM_WORLD);
-          MPI_Send(T.data(),nE,MPI_DOUBLE,0,TAG_RES+2,MPI_COMM_WORLD);
+          // Send shell-mode results as two typed messages rather than a raw struct.
+          int meta[4] = {idx, ie, idirBegin, idirEnd};
+          MPI_Send(meta, 4, MPI_INT, 0, TAG_RES_META, MPI_COMM_WORLD);
+          MPI_Send(&weightSum, 1, MPI_DOUBLE, 0, TAG_RES_VAL, MPI_COMM_WORLD);
         }
       }
     }
@@ -1605,8 +1770,6 @@ int RunDensityAndSpectrum(const EarthUtil::AmpsParam& prm) {
   return -1; //the code should not get to this point -- it is here just to make the compiler happy
 }
 
-}
-}
 
 
   // NOTE:
@@ -2027,8 +2190,6 @@ static DipoleAnalyticReference BuildDipoleAnalyticReference(const EarthUtil::Amp
 //   Flux file:
 //     Ftot_num_m2s1, Ftot_ana_m2s1, plus one triple per user-defined channel.
 //======================================================================================
-namespace Earth {
-namespace GridlessMode {
 
 void WriteTecplotPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
                                                      const std::vector<EarthUtil::Vec3>& points,
