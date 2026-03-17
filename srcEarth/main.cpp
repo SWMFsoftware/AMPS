@@ -1494,9 +1494,21 @@ int main(int argc,char **argv) {
           else if (mover=="RK6") {
             SetDefaultMoverType(MoverType::RK6);
           }
+	  else if (mover=="HYBRID") {
+            SetDefaultMoverType(MoverType::HYBRID);
+          }
+	  else if (mover=="GC2") {
+            SetDefaultMoverType(MoverType::GC2);
+          }
+          else if (mover=="GC4") {
+            SetDefaultMoverType(MoverType::GC4);
+          }
+          else if (mover=="GC6") {
+            SetDefaultMoverType(MoverType::GC6);
+          }
           else {
             std::cerr << "Error: unknown mover option -mover " << cli.mover
-                      << ". Allowed: BORIS, RK2, RK4, RK6" << std::endl;
+                      << ". Allowed: BORIS, RK2, RK4, RK6, GC2, GC4, GC6, HYBRID" << std::endl;
             return 1;
           }
         }
