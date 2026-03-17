@@ -129,7 +129,7 @@
 #NUMERICAL
   DT_TRACE           0.5       ! s — initial time step for particle integration
   MAX_STEPS          200000    ! hard cap on integration steps per trajectory
-  MAX_TRACE_TIME     600.0     ! s — hard cap on integration time per trajectory
+  MAX_TRACE_TIME     60.0     ! s — hard cap on integration time per trajectory
 
 #OUTPUT_DOMAIN
   OUTPUT_MODE   POINTS
@@ -141,4 +141,5 @@
   POINT      0.0      0.0  31856.0     ! TC2: 5 Re pole     — magnetic pole, Rc=0
   POINT  38227.2      0.0     0.0      ! TC3: 6 Re equator  — above-cutoff, closer-in
   POINT  12742.4      0.0     0.0      ! TC4: 2 Re equator  — deep Størmer shielding
+  POINT  7742.4      0.0     0.0
   POINTS_END

@@ -48,6 +48,7 @@
   DS_EMAX            50000.0   ! MeV = 50 GeV
   DS_NINTERVALS      40        ! 41 log-spaced bins
   DS_ENERGY_SPACING  LOG
+  DS_BOUNDARY_MODE   ANISOTROPIC
 
 #SPECTRUM
   ! Power-law differential intensity: J_b(E) = J0 * (E/E0)^(-GAMMA)
