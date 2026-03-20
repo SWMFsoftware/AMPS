@@ -88,6 +88,16 @@ CliOptions ParseCli(int argc,char** argv) {
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density-mode");
       opt.densityMode=argv[++i];
     }
+    else if (a=="-max-trace-distance" || a=="--max-trace-distance") {
+      // CLI override for the global cumulative trace-distance cap.
+      // Units: Earth radii (Re). The option mirrors the input-file key
+      // #NUMERICAL / MAX_TRACE_DISTANCE.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -max-trace-distance");
+      opt.maxTraceDistance_Re=std::stod(argv[++i]);
+      if (opt.maxTraceDistance_Re < 0.0) {
+        exit(__LINE__,__FILE__,"-max-trace-distance must be >= 0 (0 means: disable the cap)");
+      }
+    }
     else {
       std::ostringstream oss;
       oss << "Unknown CLI token: '" << a << "'. Use -h for help.";
@@ -125,7 +135,7 @@ std::string HelpMessage(const char* progName) {
   out << "      Path to the AMPS_PARAM-format input file. Controls all physics and\n";
   out << "      geometry parameters. See 'Input file sections' below for a summary.\n\n";
 
-  out << "  -mover <BORIS|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>   (optional; default: BORIS)\n";
+  out << "  -mover | --mover <BORIS|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>   (optional; default: BORIS)\n";
   out << "      Select the particle integration algorithm.\n";
   out << "        BORIS   Relativistic Boris pusher. Volume-preserving (symplectic),\n";
   out << "                time-reversible, one field evaluation per step. Recommended\n";
@@ -146,7 +156,7 @@ std::string HelpMessage(const char* progName) {
   out << "                support a larger but still physically correct dt.\n";
   out << "      When provided, overrides any mover setting in the input file.\n\n";
 
-  out << "  -density-mode <ISOTROPIC|ANISOTROPIC>   (optional)\n";
+  out << "  -density-mode | --density-mode <ISOTROPIC|ANISOTROPIC>   (optional)\n";
   out << "      Override DS_BOUNDARY_MODE from the input file.\n";
   out << "      Only applies when CALC_TARGET = DENSITY_SPECTRUM.\n\n";
   out << "        ISOTROPIC   (default if flag is absent)\n";
@@ -167,6 +177,13 @@ std::string HelpMessage(const char* progName) {
   out << "            Physically appropriate for: SEP events (field-aligned PAD),\n";
   out << "            radiation belt pancake distributions, bidirectional streaming,\n";
   out << "            day/night asymmetric CME-driven boundary conditions.\n\n";
+  out << "  -max-trace-distance | --max-trace-distance <double>   (optional)\n";
+  out << "      Override #NUMERICAL / MAX_TRACE_DISTANCE from the input file.\n";
+  out << "      Units: Earth radii (Re) of cumulative traced path length.\n";
+  out << "        value > 0   enable the cumulative-distance cap\n";
+  out << "        value = 0   disable the cap\n";
+  out << "      Applies to the shared backtracer, so it affects cutoff-rigidity,\n";
+  out << "      density, and spectrum calculations consistently.\n\n";
   out << "      Example: compare both modes on the same input file:\n";
   out << "        " << progName << " -mode gridless -i run.in -density-mode ISOTROPIC\n";
   out << "        " << progName << " -mode gridless -i run.in -density-mode ANISOTROPIC\n\n";
@@ -224,7 +241,8 @@ std::string HelpMessage(const char* progName) {
   out << "  #NUMERICAL\n";
   out << "    DT_TRACE           <double>   initial time step [s]\n";
   out << "    MAX_STEPS          <int>      hard step count cap\n";
-  out << "    MAX_TRACE_TIME     <double>   hard integration time cap [s]\n\n";
+  out << "    MAX_TRACE_TIME     <double>   hard integration time cap [s]\n";
+  out << "    MAX_TRACE_DISTANCE <double>   hard cumulative trace-distance cap [Re]\n\n";
 
   // -----------------------------------------------------------------------
   out << "Outputs (gridless mode):\n\n";

@@ -58,6 +58,15 @@
 //         - Automated test scripts that exercise both branches from a single
 //           test input file.
 //
+//   -max-trace-distance <double>
+//       Override #NUMERICAL MAX_TRACE_DISTANCE from the input file.
+//       Units: Earth radii (Re) of cumulative traced path length.
+//       Semantics:
+//         value > 0   enable the hard cumulative-distance cap
+//         value = 0   disable the cap
+//       This mirrors MAX_TRACE_TIME, but limits total geometric distance traveled
+//       by a trajectory rather than elapsed integration time.
+//
 //======================================================================================
 // USAGE EXAMPLES
 //======================================================================================
@@ -121,6 +130,18 @@ namespace EarthUtil {
     // ANISOTROPIC : pitch-angle-dependent and spatially non-uniform boundary;
     //               requires a #BOUNDARY_ANISOTROPY section in the input file.
     std::string densityMode{""};
+
+    // -max-trace-distance <double>
+    // Optional CLI override for #NUMERICAL MAX_TRACE_DISTANCE.
+    //
+    // Units:
+    //   Earth radii (Re) of *cumulative* traced path length.
+    //
+    // Sentinel convention:
+    //   < 0   : no CLI override was supplied; use the input file value
+    //   = 0   : explicitly disable the cumulative-distance cap
+    //   > 0   : enable/override the cap
+    double maxTraceDistance_Re{-1.0};
   };
 
   // Parse argc/argv. Throws std::runtime_error for malformed inputs.

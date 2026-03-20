@@ -684,6 +684,7 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       if (uKey=="DT_TRACE") p.numerics.dtTrace_s=std::stod(val);
       else if (uKey=="MAX_STEPS") p.numerics.maxSteps=std::stoi(val);
       else if (uKey=="MAX_TRACE_TIME") p.numerics.maxTraceTime_s=std::stod(val);
+      else if (uKey=="MAX_TRACE_DISTANCE") p.numerics.maxTraceDistance_Re=std::stod(val);
       else rememberUnknown();
     }
     else if (section=="#DENSITY_SPECTRUM") {
@@ -752,6 +753,9 @@ if (p.output.mode=="POINTS" && p.output.points.empty()) {
     }
     if (p.densitySpectrum.maxTrajTime_s < 0.0) {
       exit(__LINE__,__FILE__,"DS_MAX_TRAJ_TIME must be >= 0 (0 means: use MAX_TRACE_TIME)");
+    }
+    if (p.numerics.maxTraceDistance_Re < 0.0) {
+      exit(__LINE__,__FILE__,"MAX_TRACE_DISTANCE must be >= 0 (0 means: disabled)");
     }
     if (ToUpper(p.calc.fieldEvalMethod)!="GRIDLESS") {
       exit(__LINE__,__FILE__,"DENSITY_SPECTRUM currently requires FIELD_EVAL_METHOD = GRIDLESS");

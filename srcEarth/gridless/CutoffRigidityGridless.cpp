@@ -869,11 +869,18 @@ static bool TraceAllowedImpl(const EarthUtil::AmpsParam& prm,
   ResetHybridTrajectoryContext(x0_m, boxRe.rInner*_EARTH__RADIUS_);
 
   // Adaptive integration bookkeeping.
-  // We keep both a physical-time cap and a hard step-count cap. The former
-  // preserves the intended tracing horizon from the input file; the latter is a
-  // safety valve for pathological orbits in weak-field / trapped configurations.
+  // We keep:
+  //   (1) a physical-time cap,
+  //   (2) a hard step-count cap,
+  //   (3) an optional cumulative trace-distance cap.
+  //
+  // The new distance cap is intentionally based on the *accumulated segment
+  // lengths* of the trajectory, not on |x-x0|. This makes it effective for
+  // quasi-trapped and drifting trajectories that can stay near the launch point
+  // while still accumulating a very long total path length.
   double tTrace_s = 0.0;
   int nSteps = 0;
+  double sTrace_m = 0.0;
 
   //----------------------------------------------------------------------------------
   // Per-trajectory time limit
@@ -896,11 +903,26 @@ static bool TraceAllowedImpl(const EarthUtil::AmpsParam& prm,
       ? maxTraceTimeOverride_s
       : ((prm.cutoff.maxTrajTime_s > 0.0) ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s);
 
+  // Optional global cumulative path-length cap.
+  //
+  // Input units are Earth radii (Re), but the integrator state x is in meters.
+  // We therefore convert once here and keep the loop test in SI units.
+  //
+  // Convention:
+  //   maxTraceDistance_Re <= 0  => disabled
+  //   maxTraceDistance_Re >  0  => stop once cumulative traveled distance exceeds it
+  const double maxTraceDistance_m =
+    (prm.numerics.maxTraceDistance_Re > 0.0)
+      ? prm.numerics.maxTraceDistance_Re * _EARTH__RADIUS_
+      : -1.0;
+
   // Main trace loop with automatic dt selection. The geometric classification
   // checks are intentionally evaluated *before* the push so that starting exactly
   // outside the box (allowed) or inside the loss sphere (forbidden) is handled
   // consistently and independently of the step size.
-  while (nSteps < prm.numerics.maxSteps && tTrace_s < maxTraceTime_s_effective) {
+  while (nSteps < prm.numerics.maxSteps &&
+         tTrace_s < maxTraceTime_s_effective &&
+         (maxTraceDistance_m <= 0.0 || sTrace_m < maxTraceDistance_m)) {
     V3 xRe{ x.x/_EARTH__RADIUS_, x.y/_EARTH__RADIUS_, x.z/_EARTH__RADIUS_ };
     if (LostInnerSphere(xRe,boxRe.rInner)) return false;
     if (!InsideBoxRe(xRe,boxRe)) {
@@ -950,10 +972,16 @@ static bool TraceAllowedImpl(const EarthUtil::AmpsParam& prm,
     // Important cutoff-specific rule: if the trajectory enters the inner sphere
     // at any intermediate RK stage (or along a segment between consecutive stage
     // positions), classify it immediately as forbidden.
+    //
+    // We also accumulate the geometric distance traveled during this accepted
+    // step so MAX_TRACE_DISTANCE can terminate long trapped/drifting paths in a
+    // way that is independent of the local adaptive dt.
+    const V3 xBeforeStep = x;
     if (!StepParticleChecked(gDefaultMover, x, p,q,m0,dt,field, boxRe.rInner*_EARTH__RADIUS_)) {
       return false;
     }
 
+    sTrace_m += norm(sub(x, xBeforeStep));
     tTrace_s += dt;
     ++nSteps;
   }

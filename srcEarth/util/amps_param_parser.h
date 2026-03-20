@@ -110,6 +110,8 @@
 //     DT_TRACE                <double>   ! initial time step [s]
 //     MAX_STEPS               <int>      ! hard cap on integration steps
 //     MAX_TRACE_TIME          <double>   ! hard cap on integration time [s]
+//     MAX_TRACE_DISTANCE      <double>   ! hard cap on cumulative trace distance [Re]
+//                                        ! 0 or negative => disabled
 //
 //   #SPECTRUM
 //     (arbitrary key/value pairs stored in AmpsParam.spectrum raw map;
@@ -462,6 +464,29 @@ namespace EarthUtil {
     double dtTrace_s{1.0};
     int maxSteps{300000};
     double maxTraceTime_s{7200.0};
+
+    // MAX_TRACE_DISTANCE [Re]
+    // -----------------------
+    // Optional hard cap on the *cumulative path length* traveled by a single
+    // backtraced particle trajectory, measured in Earth radii.
+    //
+    // Why cumulative path length instead of distance-from-launch?
+    //   The tracing workflows here (cutoff, density, and anisotropic spectrum)
+    //   can encounter quasi-trapped or drifting trajectories that remain near the
+    //   launch location while still traveling a very long total arc length.
+    //   Using cumulative path length makes this control analogous to
+    //   MAX_TRACE_TIME: it limits total tracing work irrespective of whether the
+    //   orbit loops back near the start point.
+    //
+    // Semantics:
+    //   maxTraceDistance_Re <= 0 : disabled (backward-compatible default)
+    //   maxTraceDistance_Re >  0 : stop tracing once the accumulated segment
+    //                              lengths exceed this threshold.
+    //
+    // Units:
+    //   Earth radii (Re), not km and not meters. The solver converts Re -> m
+    //   internally at runtime using _EARTH__RADIUS_.
+    double maxTraceDistance_Re{0.0};
   };
 
   struct CalcMode {
