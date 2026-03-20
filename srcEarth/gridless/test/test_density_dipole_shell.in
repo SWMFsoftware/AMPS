@@ -75,8 +75,8 @@
   R_INNER            6434.9    ! km = 1.01 Re  (inner loss sphere)
 
 #DENSITY_SPECTRUM
-  DS_EMIN            10.0      ! MeV — lower bound (TC2 needs 50+, TC4 needs 10+)
-  DS_EMAX            20000.0   ! MeV = 20 GeV — upper bound (TC1 needs up to 20 GeV)
+  DS_EMIN            30000.0      ! MeV — lower bound (TC2 needs 50+, TC4 needs 10+)
+  DS_EMAX            50000.0   ! MeV = 20 GeV — upper bound (TC1 needs up to 20 GeV)
   DS_NINTERVALS      60        ! 61 log-spaced energy points over 3 decades
   DS_ENERGY_SPACING  LOG
   DS_BOUNDARY_MODE   ISOTROPIC
@@ -103,10 +103,8 @@
   !
   ! NAME    E1_MeV    E2_MeV
   CH_BEGIN
-    CH1       10.0     100.0   ! 10–100 MeV  (low energy, shielded at equator)
-    CH2      100.0    1000.0   ! 100 MeV–1 GeV  (transition through Størmer cutoff)
-    CH3     1000.0   10000.0   ! 1–10 GeV  (above cutoff at all test points)
-    CH4    10000.0   20000.0   ! 10–20 GeV (high energy, near grid upper bound)
+    CH1    30000.0   40000.0   ! 10–100 MeV  (low energy, shielded at equator)
+    CH2    40000.0   50000.0   ! 100 MeV–1 GeV  (transition through Størmer cutoff)
   CH_END
 
 #SPECTRUM
@@ -123,8 +121,8 @@
   SPEC_J0                1.00e+4   ! p/cm2/s/sr/(MeV/n)
   SPEC_GAMMA             3.50         ! spectral index
   SPEC_E0                10.0          ! MeV/n pivot
-  SPEC_EMIN              1.0          ! MeV/n
-  SPEC_EMAX              20000.0       ! MeV/n
+  SPEC_EMIN          30000.0          ! MeV/n
+  SPEC_EMAX          50000.0       ! MeV/n
 
 #NUMERICAL
   DT_TRACE           0.5       ! s — initial time step for particle integration
