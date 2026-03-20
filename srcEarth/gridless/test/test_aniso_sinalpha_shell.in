@@ -69,7 +69,8 @@
 #NUMERICAL
   DT_TRACE           0.5
   MAX_STEPS          200000
-  MAX_TRACE_TIME     600.0
+  MAX_TRACE_TIME     60.0
+  MAX_TRACE_DISTANCE 50       ! Re -  hard cap on integration distance per trajectory
 
   DS_BOUNDARY_MODE   ANISOTROPIC
 
@@ -79,13 +80,11 @@
   BA_SPATIAL_MODEL    UNIFORM
 
 #OUTPUT_DOMAIN
-  OUTPUT_MODE   POINTS
-  POINTS_BEGIN
-  !  X_km         Y_km      Z_km      Description
-  POINT  50969.6       0.0       0.0       ! TC-EQ8: 8 Re equator (GSM x-axis)
-  POINT      0.0       0.0   50969.6       ! TC-PL8: 8 Re magnetic pole (+Z)
-  POINT  38227.2       0.0       0.0       ! TC-EQ6: 6 Re equator
-  POINTS_END
+  OUTPUT_MODE            SHELLS
+  FLUX_DT                1.0           ! min (trajectory cadence; ignored for POINTS/SHELLS)
+  SHELL_COUNT            2                 ! number of shells
+  SHELL_ALTS_KM          9000.0 7000.0          ! km; one altitude per shell
+  SHELL_RES_DEG          60                 ! deg; angular resolution (lat/lon)
 
 #ENERGY_CHANNELS
   ! Integral-flux output channels: F_ch = 4pi * int[E1,E2] T(E)*Jb(E) dE  [m^-2 s^-1]

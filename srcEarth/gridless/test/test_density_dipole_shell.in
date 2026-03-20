@@ -129,12 +129,13 @@
 #NUMERICAL
   DT_TRACE           0.5       ! s — initial time step for particle integration
   MAX_STEPS          200000    ! hard cap on integration steps per trajectory
-  MAX_TRACE_TIME     60.0     ! s — hard cap on integration time per trajectory
+  MAX_TRACE_TIME     30.0     ! s — hard cap on integration time per trajectory
+  MAX_TRACE_DISTANCE 50       ! Re -  hard cap on integration distance per trajectory
 
 #OUTPUT_DOMAIN
 OUTPUT_MODE            SHELLS
 FLUX_DT                1.0           ! min (trajectory cadence; ignored for POINTS/SHELLS)
 SHELL_COUNT            2                 ! number of shells
 SHELL_ALTS_KM          9000.0 7000.0          ! km; one altitude per shell
-SHELL_RES_DEG          10                 ! deg; angular resolution (lat/lon)
+SHELL_RES_DEG          60                 ! deg; angular resolution (lat/lon)
 
