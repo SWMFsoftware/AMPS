@@ -253,6 +253,7 @@
 #include <string>
 #include <fstream>
 #include <sstream>
+#include <iomanip>
 
 #include <algorithm>
 #include <iostream>
@@ -342,6 +343,45 @@ static DomainBoxRe ToDomainBoxRe(const EarthUtil::DomainBox& d) {
   b.zMin = d.zMin/RE_KM; b.zMax = d.zMax/RE_KM;
   b.rInner= d.rInner/RE_KM;
   return b;
+}
+
+//--------------------------------------------------------------------------------------
+// Tecplot variable-name helper for flux channels
+//--------------------------------------------------------------------------------------
+// The input file lets users define friendly channel IDs such as CH1/CH2, but those
+// IDs are not very informative once the data are written to disk.  For Tecplot output
+// we therefore build variable names from the *actual* energy bounds of the channel so
+// the header itself tells the user what interval each column corresponds to.
+//
+// Example:
+//   input channel:  CH1   30000   50000
+//   Tecplot name :  F_30000_50000MeV_num_m2s1
+//
+// Variable names should avoid spaces and punctuation that may be awkward in downstream
+// tools.  The formatter below therefore:
+//   - prints integer-valued bounds without a decimal point,
+//   - otherwise prints a compact decimal representation,
+//   - replaces '.' with 'p' in the final token.
+static std::string FormatFluxChannelBoundForTecplot(double E_MeV) {
+  const double rounded = std::round(E_MeV);
+  if (std::abs(E_MeV - rounded) < 1.0e-9) {
+    return std::to_string((long long)rounded);
+  }
+
+  std::ostringstream os;
+  os.setf(std::ios::fixed);
+  os << std::setprecision(6) << E_MeV;
+  std::string s = os.str();
+
+  while (!s.empty() && s.back() == '0') s.pop_back();
+  if (!s.empty() && s.back() == '.') s.pop_back();
+  std::replace(s.begin(), s.end(), '.', 'p');
+  return s;
+}
+
+static std::string FluxChannelLabelForTecplot(const EarthUtil::EnergyChannel& ch) {
+  return FormatFluxChannelBoundForTecplot(ch.E1_MeV) + "_"
+       + FormatFluxChannelBoundForTecplot(ch.E2_MeV) + "MeV";
 }
 
 // Convert kinetic energy [J] to rigidity [GV].
@@ -2291,7 +2331,9 @@ void WriteTecplotPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
     std::fprintf(f,"TITLE=\"Dipole Integral Flux (POINTS): Numeric vs Analytic/Semi-analytic\"\n");
     std::fprintf(f,"VARIABLES=\"id\",\"x_km\",\"y_km\",\"z_km\",\"T_geo_ref\",\"T_open_ref\",\"Rc_vert_GV\",\"Ftot_num_m2s1\",\"Ftot_ana_m2s1\",\"Ftot_rel_err\"");
     for (const auto& ch : prm.fluxChannels) {
-      std::fprintf(f, " \"F_%s_num_m2s1\" \"F_%s_ana_m2s1\" \"F_%s_rel_err\"", ch.name.c_str(), ch.name.c_str(), ch.name.c_str());
+      const std::string chLabel = FluxChannelLabelForTecplot(ch);
+      std::fprintf(f, " \"F_%s_num_m2s1\" \"F_%s_ana_m2s1\" \"F_%s_rel_err\"",
+                   chLabel.c_str(), chLabel.c_str(), chLabel.c_str());
     }
     std::fprintf(f, "\n");
     std::fprintf(f,"ZONE T=\"points\" I=%zu F=POINT\n", points.size());
@@ -2412,7 +2454,9 @@ void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
       std::fprintf(f,"TITLE=\"Dipole Integral Flux (SHELLS): Numeric vs Analytic/Semi-analytic\"\n");
       std::fprintf(f,"VARIABLES=\"lon_deg\",\"lat_deg\",\"x_km\",\"y_km\",\"z_km\",\"T_geo_ref\",\"T_open_ref\",\"Rc_vert_GV\",\"Ftot_num_m2s1\",\"Ftot_ana_m2s1\",\"Ftot_rel_err\"");
       for (const auto& ch : prm.fluxChannels) {
-        std::fprintf(f, " \"F_%s_num_m2s1\" \"F_%s_ana_m2s1\" \"F_%s_rel_err\"", ch.name.c_str(), ch.name.c_str(), ch.name.c_str());
+        const std::string chLabel = FluxChannelLabelForTecplot(ch);
+        std::fprintf(f, " \"F_%s_num_m2s1\" \"F_%s_ana_m2s1\" \"F_%s_rel_err\"",
+                     chLabel.c_str(), chLabel.c_str(), chLabel.c_str());
       }
       std::fprintf(f, "\n");
     }
