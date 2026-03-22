@@ -400,52 +400,122 @@ public:
     }
   }
 
-  std::string Model() const { return prm.field.model; }
+  // Return the canonical (normalised) model name.
+  //
+  // WHY NORMALISE HERE AS WELL AS IN THE PARSER
+  //   ParseAmpsParamFile already calls NormalizeTsModelName when it reads
+  //   FIELD_MODEL, so for runs that go through the parser prm.field.model is
+  //   always canonical.  However, cFieldEvaluator can also be constructed
+  //   directly in unit tests or from programmatically assembled AmpsParam
+  //   objects that may use alternate spellings (e.g. "TS05").  Normalising
+  //   here guarantees that every if (Model()=="T05") comparison in GetB_T,
+  //   ReinitGeopack, and the constructor is correct regardless of how the
+  //   object was created.
+  //
+  // THE ALIASES
+  //   "TS05", "T05S", "T04S", "TS04" all refer to the same Fortran function
+  //   t04_s_ (the naming reflects intermediate research versions).
+  //   "TS96" / "T96S" are CCMC/ViRBO alternate spellings of T96.
+  //   "TS01" / "T01S" are alternate spellings of T01.
+  std::string Model() const {
+    const std::string u = EarthUtil::ToUpper(prm.field.model);
+    if (u=="TS05"||u=="T05S"||u=="T04S"||u=="TS04") return "T05";
+    if (u=="TS96"||u=="T96S")                        return "T96";
+    if (u=="TS01"||u=="T01S")                        return "T01";
+    return u;
+  }
 
-  // Re-initialize Geopack for a different epoch.
+  // Re-initialise Geopack and, when a driver table is supplied, update the
+  // Tsyganenko model driving parameters (PARMOD) for the new epoch.
   //
-  // For OUTPUT_MODE=TRAJECTORY each observation point carries its own UTC
-  // timestamp. The dipole tilt angle (set by Geopack RECALC) is time-dependent
-  // and can change by tens of degrees over a single satellite orbit. Failing to
-  // update it per-point yields systematically wrong cutoff rigidities wherever
-  // the tilt matters (equatorial to mid-latitude regions).
+  // BACKGROUND — WHY PER-POINT RE-INITIALISATION IS NEEDED
+  //   Geopack::Init (which wraps the Fortran RECALC subroutine) computes the
+  //   GSM dipole tilt angle psi for a given UTC epoch.  This angle changes
+  //   continuously as Earth rotates on its axis: it shifts by roughly 30 degrees
+  //   over a 12-hour RBSP orbit and by up to 23 degrees over the course of a day
+  //   due to the Earth's axial tilt alone.  Using the same psi for all 400 points
+  //   of a trajectory means the IGRF internal field is evaluated with the wrong
+  //   dipole orientation at every point except the first — a systematic error that
+  //   biases the computed cutoff rigidities at mid to low latitudes.
   //
-  // Call this before computing the cutoff for each new location when the epoch
-  // differs from the one used during construction. The method is a no-op for
-  // DIPOLE runs (no Geopack dependency) and for repeated calls with the same
-  // epoch string (avoids redundant Fortran library re-entry).
-  // Re-initialise Geopack (and optionally update PARMOD from the driver table).
+  //   Additionally, for storm-time runs using a time-varying driver file (T05,
+  //   TA15, ...) the external-field parameters Pdyn, Dst, By, Bz, W1..W6 can
+  //   change substantially over a few hours.  The Dst index alone typically drops
+  //   from -50 nT to -150 nT or less during the main phase of a major event.
+  //   A fixed PARMOD from the run's global epoch would miss this and report
+  //   cutoff rigidities appropriate for quiet conditions even during storm peak.
   //
-  // When driverTable is non-null and the table is non-empty, the method:
-  //   1. Converts epoch to SPICE ET.
-  //   2. Linearly interpolates all driving parameters at that time.
-  //   3. Copies the result into prm.field and PARMOD so GetB_T uses updated values.
-  //   4. Calls Geopack::Init with the new epoch (updates dipole tilt).
+  // WHAT THIS FUNCTION DOES
   //
-  // Without a driver table, only the dipole tilt is updated (existing behavior).
-  // The method is a no-op for DIPOLE runs and for repeated identical epochs.
+  //   Step 1 — Guard conditions.
+  //     If the model is DIPOLE, return immediately (no Geopack dependency).
+  //     If neither the epoch nor the driver parameters have changed since the
+  //     last call, return immediately (avoids re-entering the Fortran library
+  //     for every trajectory that happens to share the same rounded timestamp).
+  //
+  //   Step 2 — Driver table update (only when driverTable is non-null).
+  //     Convert the epoch string to SPICE ET.
+  //     Call TsDriverTable::Lookup to linearly interpolate all parameters.
+  //     Apply the result to prm.field via TsDriverTable::ApplyToField.
+  //     Rebuild PARMOD from the fresh field snapshot so GetB_T uses the
+  //     correct values at the next field evaluation.
+  //
+  //   Step 3 — Geopack re-initialisation (only when epoch has changed).
+  //     Call Geopack::Init(epoch, "GSM") to update the dipole tilt.
+  //     Store the new epoch in currentEpoch_ so the guard in Step 1 works
+  //     correctly on the next call.
+  //
+  // ARGUMENTS
+  //   epoch       — UTC timestamp string for the current trajectory point,
+  //                 in any format accepted by SPICE str2et_c
+  //                 (e.g. "2017-09-10T01:26:36Z").
+  //   driverTable — pointer to the loaded TsDriverTable, or nullptr if the
+  //                 run uses static parameters from #BACKGROUND_FIELD.
+  //                 Passing nullptr is equivalent to the pre-driver-table
+  //                 behaviour: only the dipole tilt is updated.
+  //
+  // CALLER RESPONSIBILITIES
+  //   • Call this function once per trajectory point, before any trajectory
+  //     integration for that point begins (i.e. before CutoffForDirection_GV
+  //     or ComputeT_atEnergy is invoked).
+  //   • Pass the same driverTable pointer consistently throughout the run.
+  //     Alternating between nullptr and a valid table is not tested.
+  //
+  // NO-OP CONDITIONS (fast path)
+  //   Model == DIPOLE  : always no-op.
+  //   epoch unchanged AND driverTable == nullptr  : no-op (nothing to update).
+  //   epoch unchanged AND driverTable non-null    : PARMOD still updated because
+  //     the driver parameters may have changed even when the string is identical
+  //     (e.g. sub-minute time steps that don't affect the epoch string).
   void ReinitGeopack(const std::string& epoch,
                      const EarthUtil::TsDriverTable* driverTable = nullptr) {
-    if (Model() == "DIPOLE") return;
+    if (Model() == "DIPOLE") return;  // analytic dipole has no Geopack dependency
 
     const bool epochChanged   = (epoch != currentEpoch_);
     const bool hasDriverTable = (driverTable && !driverTable->empty());
 
-    // If neither the epoch nor the driver parameters will change, skip entirely.
+    // Fast exit: nothing to update.
     if (!epochChanged && !hasDriverTable) return;
 
-    // Update driving parameters from the table when available.
+    // ── Step 2: update driving parameters from the time-varying table ────────
     if (hasDriverTable) {
-      double et = 0.0;
+      // Convert the ISO-8601 epoch to SPICE ET [s past J2000] for the Lookup call.
 #ifndef _NO_SPICE_CALLS_
       SpiceDouble etSpice = 0.0;
       str2et_c(epoch.c_str(), &etSpice);
-      et = etSpice;
+      const double et = static_cast<double>(etSpice);
+#else
+      const double et = 0.0;  // SPICE unavailable — Lookup will clamp to table start
 #endif
+      // Linear interpolation of all driving parameters at this epoch.
       const EarthUtil::TsDriverRecord rec = driverTable->Lookup(et);
+      // Write By, Bz, Vsw, DenP, Pdyn, Dst, W1..W6 into prm.field.
       EarthUtil::TsDriverTable::ApplyToField(rec, prm.field);
 
-      // Rebuild PARMOD from the freshly updated field snapshot.
+      // Rebuild the PARMOD array that GetB_T passes to the Fortran routines.
+      // PARMOD layout is model-dependent:
+      //   T96: [0]=Pdyn [1]=Dst [2]=By [3]=Bz [4..10]=0
+      //   T05: [0]=Pdyn [1]=Dst [2]=By [3]=Bz [4]=W1 .. [9]=W6 [10]=0
       PARMOD[0] = prm.field.pdyn_nPa;
       PARMOD[1] = prm.field.dst_nT;
       PARMOD[2] = prm.field.imfBy_nT;
@@ -455,9 +525,17 @@ public:
       }
     }
 
+    // ── Step 3: re-initialise Geopack for the new epoch ──────────────────────
     if (epochChanged) {
+      // Geopack::Init calls the Fortran RECALC subroutine, which:
+      //   • computes the GSM dipole tilt angle psi from the Earth's axial tilt
+      //     and the GSM frame definition for the given date/time,
+      //   • initialises the internal IGRF field coefficients for the epoch.
+      // Both psi and the IGRF coefficients are stored in Geopack Fortran common
+      // blocks and are used implicitly by every subsequent field evaluation until
+      // RECALC is called again.
       Geopack::Init(epoch.c_str(), "GSM");
-      currentEpoch_ = epoch;
+      currentEpoch_ = epoch;  // remember for the guard check on the next call
     }
   }
 

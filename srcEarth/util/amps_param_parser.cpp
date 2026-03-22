@@ -702,29 +702,605 @@ void EarthUtil::TsDriverTable::ApplyToField(const EarthUtil::TsDriverRecord& rec
 }
 
 //======================================================================================
-// LoadTsDriverFile — parse Qin-Denton / ViRBO driver file
 //======================================================================================
-// Column layout (1-based, space-separated; '#' and '!' are comment characters):
-//   $1        ISO-8601 datetime (e.g. 2017-09-10T00:00:00)
-//   $2–$7     year month day hour min sec    (redundant; $1 drives the SPICE call)
-//   $8        IMF By  [nT]
-//   $9        IMF Bz  [nT]
-//   $10       Vsw     [km/s]  (positive magnitude; stored as negative swVx)
-//   $11       Den_P   [cm^-3]
-//   $12       Pdyn    [nPa]
-//   $13–$15   G1 G2 G3  (T96 G-parameters; skipped — not needed by T96/T05 calls)
-//   $16–$23   8 quality-flag integers  (skipped)
-//   $24       Kp      [dimensionless]  (skipped)
-//   $25       akp3    [dimensionless]  (skipped)
-//   $26       Dst     [nT]
-//   $27–$32   Bz1..Bz6  (historic average Bz lags; skipped)
-//   $33–$38   W1..W6    (T05 storm-time history integrals)
-//   $39–$44   W1..W6 quality flags  (skipped)
-static EarthUtil::TsDriverTable LoadTsDriverFile(const std::string& fileName) {
+// NormalizeTsModelName
+//======================================================================================
+// PURPOSE
+//   Map every known spelling of a Tsyganenko model name to the single canonical
+//   string used throughout this codebase.  This centralises all alias handling
+//   so that no downstream comparison needs to know about alternate spellings.
+//
+// WHY MULTIPLE SPELLINGS EXIST
+//   The Tsyganenko models have been distributed with slightly different name
+//   conventions over the years:
+//     • CCMC Runs-on-Request uses "T96", "T05", "TS05" interchangeably depending
+//       on the interface version.
+//     • The ViRBO / Qin-Denton data portal labels the T05 model "TS05".
+//     • Some older AMPS input files were generated with "T04S" (the Fortran
+//       function name of the T05 external field is t04_s_).
+//     • User-supplied input files may use any of the above, or variants like
+//       "T05S", "TS04".
+//   Rather than spreading if-chains throughout the code, we normalise once here
+//   and everywhere else compares against the canonical form only.
+//
+// CANONICAL NAMES (matching the strings used in GetB_T / cFieldEvaluator)
+//   "T96"   — Tsyganenko (1996)
+//   "T05"   — Tsyganenko-Sitnov (2005); Fortran entry t04_s_
+//   "T01"   — Tsyganenko (2001)
+//   "TA15N" — Tsyganenko-Andreeva (2015), northward IMF variant
+//   "TA15B" — Tsyganenko-Andreeva (2015), southward IMF variant
+//   "TA16"  — Tsyganenko-Andreeva (2016) (future; Fortran not yet linked)
+//   "DIPOLE"— Analytic centred dipole; no external-field call
+//
+// EXTENSIBILITY
+//   To add a new alias, append one line to the table below.
+//   To add a new canonical model, add a new entry in GetB_T, RequiredColumnsForModel,
+//   and cFieldEvaluator::ReinitGeopack, then optionally add aliases here.
+static std::string NormalizeTsModelName(const std::string& raw) {
+  const std::string u = ToUpper(Trim(raw));
+
+  // T05 family — all refer to the Tsyganenko-Sitnov (2005) model whose
+  // Fortran entry point is t04_s_.  "TS04" / "T04S" come from that name.
+  if (u == "TS05" || u == "T05S" || u == "T04S" || u == "TS04") return "T05";
+
+  // T96 family — alternate CCMC/ViRBO spellings.
+  if (u == "TS96" || u == "T96S")                                 return "T96";
+
+  // T01 family — Tsyganenko (2001).
+  if (u == "TS01" || u == "T01S")                                 return "T01";
+
+  // TA15 — two distinct sub-variants (northward / southward IMF orientation);
+  // we keep the sub-variant suffix because they use different PARMOD layouts.
+  if (u == "TA15N" || u == "TA15B")                               return u;
+
+  // TA16 — placeholder; no aliases known yet.
+  if (u == "TA16")                                                 return "TA16";
+
+  // All other values (T96, T05, T01, DIPOLE, ...) are already canonical.
+  return u;
+}
+
+//======================================================================================
+//======================================================================================
+// TsColMap — variable name (uppercase) -> 0-based column index
+//======================================================================================
+//
+// WHY WE NEED THIS
+//   Different versions of the Qin-Denton / ViRBO format, and driver files produced
+//   by other sources (CCMC, custom scripts), may place the same physical quantity
+//   in a different column.  Hardcoding column numbers (e.g. "Dst is always column
+//   25") makes the loader fragile and produces silently wrong results whenever the
+//   layout differs — which happens, for example, between the 1-minute and 5-minute
+//   Qin-Denton products, or between different model driver formats (T96 vs T05 vs
+//   TA15).
+//
+//   We avoid this entirely by parsing the JSON-like metadata block that every
+//   ViRBO-format file embeds in its comment header.  That block explicitly maps
+//   every variable NAME to its START_COLUMN, so the loader never has to guess.
+//
+// HEADER FORMAT (excerpt from qd_sep2017.txt)
+//   The metadata block is delimited by comment lines:
+//     # {
+//     ...
+//     # } End JSON
+//
+//   Inside, each variable is described by a JSON-like stanza, e.g.:
+//
+//     #  "NAME": "Pdyn",
+//     #  "TITLE": "Solar Wind Dynamic Pressure",
+//     #  "START_COLUMN": 11,
+//     #  "UNITS": "nPa"
+//
+//   Vector (array) variables also carry an ELEMENT_NAMES list:
+//
+//     #  "NAME": "W",
+//     #  "DIMENSION": [ 6 ],
+//     #  "START_COLUMN": 32,
+//     #  "ELEMENT_NAMES": [ "W1", "W2", "W3", "W4", "W5", "W6" ]
+//
+//   For vectors we expand the list into individual entries so that the caller can
+//   look up any element by name: "W1"->32, "W2"->33, ..., "W6"->37.
+//   The base name ("W") also gets an entry pointing at the first element.
+//
+// HOW PARSEDTSDRIVER HEADER BUILDS THE MAP
+//   The function is a simple state machine:
+//   • It accumulates (NAME, START_COLUMN, ELEMENT_NAMES) in three local variables.
+//   • Whenever it sees a new NAME entry it "commits" the previous variable by
+//     writing its entry (or entries, for vectors) into the map.
+//   • At the end of the JSON block it commits whatever is still pending.
+//   • Lines outside the JSON block and non-# data lines are ignored.
+//
+// THREAD SAFETY
+//   TsColMap is a plain std::map<std::string,int>; it is built once by the parser
+//   (single-threaded) and then used read-only by all MPI ranks/threads.
+using TsColMap = std::map<std::string, int>;
+
+//======================================================================================
+// ParseTsDriverHeader
+//======================================================================================
+// Reads the JSON metadata block embedded in the comment header of a ViRBO-format
+// driver file and returns a TsColMap mapping each variable name (uppercase) to its
+// 0-based column index in the data rows.
+//
+// ARGUMENTS
+//   fin      — open input stream positioned at the beginning of the file.
+//   fileName — used only in warning messages.
+//
+// RETURN VALUE
+//   A TsColMap with one entry per scalar variable and one entry per vector element
+//   (plus one entry for the vector base name).  If no JSON block is found, an empty
+//   map is returned and a warning is written to stderr.
+//
+// STATE MACHINE OVERVIEW
+//   State variable: inJsonBlock (false until "# {" is seen)
+//   Per-variable accumulator: currentName, currentStartCol, currentElements
+//   The accumulator is committed to the map each time a new "NAME" line is seen,
+//   ensuring that the final variable in the block is also written when "} End JSON"
+//   is encountered.
+//
+// PARSING RULES
+//   • Only '#'-prefixed lines are processed; the first non-# line ends the header.
+//   • Three JSON keys are recognised (case-insensitive match on the uppercased line):
+//       "NAME"          — begins a new variable entry; commits any pending entry first
+//       "START_COLUMN"  — the 0-based column index of the first (or only) element
+//       "ELEMENT_NAMES" — optional list of per-element names for array variables
+//   • All other JSON keys (TITLE, LABEL, UNITS, DIMENSION, DESCRIPTION, ...) are
+//     intentionally ignored; they carry no information needed by the loader.
+//
+// ROBUSTNESS
+//   • The function does NOT require strict JSON: missing commas, extra whitespace,
+//     and reordered keys within a variable block are all tolerated.
+//   • If a variable block lacks a START_COLUMN it is silently skipped.
+//   • If a variable block lacks ELEMENT_NAMES it is treated as a scalar.
+static TsColMap ParseTsDriverHeader(std::istream& fin,
+                                    const std::string& fileName) {
+  TsColMap colMap;
+
+  // ── Per-variable accumulator ──────────────────────────────────────────────
+  // These three variables hold the state for the variable block currently being
+  // parsed.  They are reset by commitCurrent() and updated incrementally as the
+  // corresponding JSON keys are encountered.
+  std::string currentName;             // text of the most recent "NAME" value
+  int         currentStartCol = -1;    // value of "START_COLUMN" (-1 = not yet seen)
+  std::vector<std::string> currentElements; // contents of "ELEMENT_NAMES" (empty = scalar)
+
+  bool inJsonBlock = false; // true after "# {" has been seen
+  bool headerDone  = false; // true once we have left the header section
+
+  // ── Lambda: commitCurrent ─────────────────────────────────────────────────
+  // Write the accumulated variable state into colMap and reset the accumulator.
+  // Called each time a new "NAME" line is seen (before updating currentName) and
+  // at the end of the JSON block.
+  //
+  // Scalar variable: one map entry   NAME -> startCol
+  // Vector variable: one entry per   ELEMENT_NAME[k] -> (startCol + k)
+  //                  plus a base     NAME -> startCol   (points at element 0)
+  //
+  // If currentName is empty or currentStartCol is -1 (incomplete block),
+  // the function does nothing — this handles the first call before any NAME
+  // has been seen, and any block whose START_COLUMN was missing.
+  auto commitCurrent = [&]() {
+    if (currentName.empty() || currentStartCol < 0) return;
+    const std::string uName = ToUpper(currentName);
+    if (currentElements.empty()) {
+      // Scalar: single column entry.
+      colMap[uName] = currentStartCol;
+    } else {
+      // Vector: one entry per named element at consecutive columns.
+      for (int k = 0; k < static_cast<int>(currentElements.size()); ++k) {
+        colMap[ToUpper(currentElements[k])] = currentStartCol + k;
+      }
+      // Base name also maps to the first element (column startCol + 0).
+      colMap[uName] = currentStartCol;
+    }
+    // Reset for the next variable.
+    currentName.clear();
+    currentStartCol = -1;
+    currentElements.clear();
+  };
+
+  // ── Lambda: extractQuotedValue ────────────────────────────────────────────
+  // Extract the text between the first pair of double-quotes that follows the
+  // colon on a line such as:
+  //   #  "NAME": "ByIMF",
+  // Returns "" if the expected pattern is not found.
+  auto extractQuotedValue = [](const std::string& line) -> std::string {
+    const std::size_t colon = line.find(':');
+    if (colon == std::string::npos) return "";
+    const std::string after = line.substr(colon + 1);
+    const std::size_t q1 = after.find('"');
+    if (q1 == std::string::npos) return "";
+    const std::size_t q2 = after.find('"', q1 + 1);
+    if (q2 == std::string::npos) return "";
+    return after.substr(q1 + 1, q2 - q1 - 1);
+  };
+
+  // ── Lambda: extractIntValue ───────────────────────────────────────────────
+  // Extract the integer that follows the colon on a line such as:
+  //   #  "START_COLUMN": 7,
+  // The trailing comma is stripped before parsing.  Returns -1 on failure.
+  auto extractIntValue = [](const std::string& line) -> int {
+    const std::size_t colon = line.find(':');
+    if (colon == std::string::npos) return -1;
+    std::string after = line.substr(colon + 1);
+    // Replace the first comma with a space so stoi/>> does not stumble on it.
+    for (char& c : after) if (c == ',') { c = ' '; break; }
+    std::istringstream iss(after);
+    int v = -1;
+    iss >> v;
+    return v;
+  };
+
+  // ── Lambda: extractStringArray ────────────────────────────────────────────
+  // Extract a JSON array of quoted strings from a line such as:
+  //   #  "ELEMENT_NAMES": [ "W1", "W2", "W3", "W4", "W5", "W6" ],
+  // Returns an empty vector if the '[' ... ']' delimiters are absent.
+  // Scanning is character-by-character within the bracket content so that
+  // element names containing digits (e.g. "G1") or underscores are preserved.
+  auto extractStringArray = [](const std::string& line) -> std::vector<std::string> {
+    std::vector<std::string> result;
+    const std::size_t lb = line.find('[');
+    const std::size_t rb = line.find(']');
+    if (lb == std::string::npos || rb == std::string::npos || rb <= lb) return result;
+    const std::string inner = line.substr(lb + 1, rb - lb - 1);
+    std::size_t pos = 0;
+    while (pos < inner.size()) {
+      const std::size_t q1 = inner.find('"', pos);
+      if (q1 == std::string::npos) break;
+      const std::size_t q2 = inner.find('"', q1 + 1);
+      if (q2 == std::string::npos) break;
+      result.push_back(inner.substr(q1 + 1, q2 - q1 - 1));
+      pos = q2 + 1;
+    }
+    return result;
+  };
+
+  // ── Main scan loop ────────────────────────────────────────────────────────
+  // We read line-by-line.  Only '#'-prefixed lines are part of the header;
+  // the first non-# line means we have left the header section entirely.
+  std::string line;
+  while (!headerDone && std::getline(fin, line)) {
+    if (line.empty() || line[0] != '#') {
+      // This is the first data row (or a blank non-comment line).
+      // We cannot "put back" a line with std::istream, so we simply mark
+      // the header as done.  The caller opens a fresh stream for the data pass.
+      headerDone = true;
+      break;
+    }
+
+    // Strip the leading '#' and trim whitespace.
+    const std::string stripped = Trim(line.substr(1));
+
+    // Detect the JSON block boundaries.
+    if (stripped == "{") { inJsonBlock = true; continue; }
+    if (!inJsonBlock) continue;  // outside JSON block — skip source-file comments etc.
+    if (stripped.find("} End JSON") != std::string::npos ||
+        stripped.find("}") == 0) {
+      // End of JSON block.  Commit the last pending variable and stop.
+      commitCurrent();
+      headerDone = true;
+      break;
+    }
+
+    // Inside the JSON block: inspect this line for the three keys we care about.
+    // We uppercase the line for the key search so the match is case-insensitive,
+    // but pass the original 'stripped' to the extraction helpers so quoted values
+    // are not accidentally uppercased.
+    const std::string ustripped = ToUpper(stripped);
+
+    if (ustripped.find("\"NAME\"") != std::string::npos) {
+      // A new variable is starting.  Commit whatever was being accumulated for
+      // the previous variable before resetting the accumulator.
+      commitCurrent();
+      currentName = extractQuotedValue(stripped);
+    }
+    else if (ustripped.find("\"START_COLUMN\"") != std::string::npos) {
+      // The 0-based column index of this variable's first (or only) element.
+      currentStartCol = extractIntValue(stripped);
+    }
+    else if (ustripped.find("\"ELEMENT_NAMES\"") != std::string::npos) {
+      // Optional: names for each component of a vector variable.
+      // If present, commitCurrent will create one map entry per element.
+      currentElements = extractStringArray(stripped);
+    }
+    // All other JSON keys (TITLE, LABEL, UNITS, DIMENSION, DESCRIPTION,
+    // VALUES, ...) are ignored.
+  }
+
+  // Commit any variable whose closing brace may have been the end-of-file.
+  commitCurrent();
+
+  if (colMap.empty() && !fileName.empty()) {
+    std::cerr << "[TsDriverTable] WARNING: no column-map entries found in header of '"
+              << fileName << "'. Proceeding without header-driven column detection.\n";
+  }
+  return colMap;
+}
+
+//======================================================================================
+// RequiredColumnsForModel
+//======================================================================================
+// PURPOSE
+//   Returns the set of TsColMap variable names (uppercase) that must be present
+//   in the driver file to drive the named Tsyganenko model.  Called by
+//   ValidateTsDriverColumns to produce a clear, model-specific error message when
+//   a required column is absent.
+//
+// ARGUMENT
+//   model — canonical model name (output of NormalizeTsModelName, already uppercase).
+//
+// VARIABLE NAME CONVENTIONS
+//   The names in the returned vector must match the keys in the TsColMap produced
+//   by ParseTsDriverHeader, which are the uppercase "NAME" values from the JSON
+//   metadata block.  Standard Qin-Denton / ViRBO mappings:
+//
+//     ViRBO NAME   TsColMap key   Physical meaning
+//     ----------   ------------   -----------------------------------------
+//     ByIMF        BYIMF          IMF Y-component [nT]
+//     BzIMF        BZIMF          IMF Z-component [nT]
+//     Vsw          VSW            Solar wind speed magnitude [km/s]
+//     Den_P        DEN_P          Solar wind proton density [cm^-3]
+//     Pdyn         PDYN           Solar wind dynamic pressure [nPa]
+//     Dst          DST            Dst index [nT]
+//     G1..G3       G1..G3         T01 storm-activity G-indices
+//     W1..W6       W1..W6         T05/TA15/TA16 storm-time history integrals
+//     Bz1..Bz6     BZ1..BZ6       TA15 |Bz_south| running averages [nT]
+//
+// HOW TO ADD A NEW MODEL
+//   1. Add an `if (m == "MODELNAME")` block.
+//   2. Build the required list from swBase and any additional variable names.
+//   3. Optionally register aliases in NormalizeTsModelName.
+//   4. Add the Fortran call in cFieldEvaluator::GetB_T.
+//   5. Update PARMOD loading in cFieldEvaluator constructor and ReinitGeopack.
+static std::vector<std::string> RequiredColumnsForModel(const std::string& model) {
+  // Shared by all external Tsyganenko models: IMF, solar wind, Dst.
+  // These are the minimum inputs needed to call any T96/T01/T05/TA15/TA16
+  // Fortran routine.
+  static const std::vector<std::string> swBase = {
+    "BYIMF",  // IMF By [nT]
+    "BZIMF",  // IMF Bz [nT]
+    "VSW",    // Solar wind speed [km/s] (positive magnitude in file)
+    "DEN_P",  // Solar wind proton density [cm^-3]
+    "PDYN",   // Solar wind dynamic pressure [nPa]
+    "DST"     // Dst index [nT]
+  };
+
+  // W1..W6: storm-time history integrals introduced by T05.
+  // They encode the time-integrated energy injection into each internal current
+  // system (ring current, partial ring current, field-aligned, Chapman-Ferraro,
+  // tail) and are also required by TA15 and TA16.
+  static const std::vector<std::string> wIntegrals = {
+    "W1", "W2", "W3", "W4", "W5", "W6"
+  };
+
+  const std::string m = ToUpper(Trim(model));
+
+  // DIPOLE: analytic internal field only; no external Fortran call, no inputs.
+  if (m == "DIPOLE") return {};
+
+  // T96: driven by [Pdyn, Dst, By, Bz] only.
+  // PARMOD: [0]=Pdyn [1]=Dst [2]=By [3]=Bz [4..10]=0
+  if (m == "T96") return swBase;
+
+  // T01: same as T96 plus the G-indices G1, G2, G3 that capture the recent
+  // history of strong southward Bz intervals and their effect on the ring current.
+  // PARMOD: [0]=Pdyn [1]=Dst [2]=By [3]=Bz [4]=G1 [5]=G2 [6]=G3 [7..10]=0
+  if (m == "T01") {
+    std::vector<std::string> req = swBase;
+    req.insert(req.end(), {"G1", "G2", "G3"});
+    return req;
+  }
+
+  // T05: adds the six W storm-time integrals to the base set.
+  // PARMOD: [0]=Pdyn [1]=Dst [2]=By [3]=Bz [4]=W1 .. [9]=W6 [10]=0
+  if (m == "T05") {
+    std::vector<std::string> req = swBase;
+    req.insert(req.end(), wIntegrals.begin(), wIntegrals.end());
+    return req;
+  }
+
+  // TA15 (Tsyganenko-Andreeva 2015): two sub-variants (northward / southward IMF).
+  // In addition to the W-integrals it needs BZ1..BZ6 — the mean |Bz_south| over
+  // 1, 2, 3, 4, 5, 6 hours before the observation epoch.
+  if (m == "TA15N" || m == "TA15B") {
+    std::vector<std::string> req = swBase;
+    req.insert(req.end(), wIntegrals.begin(), wIntegrals.end());
+    req.insert(req.end(), {"BZ1", "BZ2", "BZ3", "BZ4", "BZ5", "BZ6"});
+    return req;
+  }
+
+  // TA16 (Tsyganenko-Andreeva 2016): Fortran interface not yet linked.
+  // We register the expected driver columns now so the parser gives a useful
+  // validation error rather than silently using wrong values.
+  if (m == "TA16") {
+    std::vector<std::string> req = swBase;
+    req.insert(req.end(), wIntegrals.begin(), wIntegrals.end());
+    return req;
+  }
+
+  // Unknown model — skip validation and let the solver report the problem.
+  std::cerr << "[TsDriverTable] WARNING: no required-column definition for model '"
+            << model << "'. Column validation will be skipped.\n";
+  return {};
+}
+//======================================================================================
+// ValidateTsDriverColumns
+//======================================================================================
+// PURPOSE
+//   Verify that every column required by `model` is present in `colMap`.
+//   Called once after ParseTsDriverHeader, before any data rows are read, so
+//   the user gets a clear error message at load time rather than a silent wrong
+//   value during the trajectory run.
+//
+// ERROR MESSAGE
+//   On failure the function lists:
+//   • each missing column by name, and
+//   • all available column names (from the file header) so the user can see
+//     whether the file uses a different spelling or simply lacks the variable.
+//
+// DESIGN NOTE
+//   We exit rather than throw because a missing required column is always a
+//   configuration error that cannot be recovered from at runtime.  Continuing
+//   with a default of zero for, say, Dst or W1 would produce physically wrong
+//   cutoff rigidities with no diagnostic.
+static void ValidateTsDriverColumns(const TsColMap& colMap,
+                                    const std::string& model,
+                                    const std::string& fileName) {
+  const std::vector<std::string> required = RequiredColumnsForModel(model);
+
+  // Collect all missing names in one pass so the error message is complete.
+  std::vector<std::string> missing;
+  for (const auto& name : required) {
+    if (colMap.find(name) == colMap.end()) missing.push_back(name);
+  }
+  if (missing.empty()) return;  // all required columns present — OK
+
+  std::ostringstream _m;
+  _m << "TS_INPUT_FILE '" << fileName << "' is missing columns required by "
+     << "FIELD_MODEL=" << model << ":\n";
+  for (const auto& n : missing) _m << "  " << n << "\n";
+  _m << "Available columns detected in file header:";
+  for (const auto& kv : colMap) _m << " " << kv.first;
+  exit(__LINE__,__FILE__,_m.str().c_str());
+}
+//======================================================================================
+// ExtractColumn
+//======================================================================================
+// PURPOSE
+//   Safely retrieve one double value from a pre-tokenised data row using the
+//   variable name as a lookup key in the TsColMap.
+//
+// ARGUMENTS
+//   toks       — whitespace-split tokens of the current data line (0-based).
+//   colMap     — column map produced by ParseTsDriverHeader.
+//   varName    — variable name to look up (case-insensitive; ToUpper applied).
+//   defaultVal — value returned when the variable is absent from the map or the
+//                token at the mapped column cannot be converted to double.
+//
+// WHEN DEFAULTVAL IS RETURNED
+//   1. varName not in colMap — column does not exist in this file.
+//   2. Mapped column index is out of range for this row — row is shorter than
+//      expected (can happen for the last line if the file is truncated).
+//   3. std::stod throws — the token is not a valid floating-point number.
+//
+//   Cases (1) and (2) are expected only for optional variables (e.g. G1..G3 in
+//   a T96 driver file that was also run through a T01 validation check).  For
+//   required columns, ValidateTsDriverColumns has already verified their presence,
+//   so case (1) should never occur for those variables at this point.
+//
+// THREAD SAFETY
+//   colMap is read-only; toks is a local copy.  Safe to call concurrently.
+static double ExtractColumn(const std::vector<std::string>& toks,
+                            const TsColMap& colMap,
+                            const std::string& varName,
+                            double defaultVal = 0.0) {
+  const auto it = colMap.find(ToUpper(varName));
+  if (it == colMap.end()) return defaultVal;           // variable not in this file
+  const int col = it->second;
+  if (col < 0 || col >= static_cast<int>(toks.size())) return defaultVal; // row too short
+  try { return std::stod(toks[static_cast<std::size_t>(col)]); }
+  catch (...) { return defaultVal; }                   // non-numeric token
+}
+//======================================================================================
+// LoadTsDriverFile
+//======================================================================================
+// PURPOSE
+//   Parse a Qin-Denton / ViRBO formatted driver file and return a populated
+//   TsDriverTable suitable for per-trajectory-point interpolation of Tsyganenko
+//   model driving parameters.
+//
+// TWO-PASS ALGORITHM
+//
+//   Pass 1 — Header scan
+//     Open the file once and call ParseTsDriverHeader to build a TsColMap.
+//     This maps every variable name (uppercase) to its 0-based column index in
+//     the data rows.  Close the stream immediately after the header scan.
+//
+//   Pass 2 — Data rows
+//     Re-open the file and iterate over all lines.  For each non-comment,
+//     non-empty line:
+//       • Strip '#' and '!' comment characters.
+//       • Split into whitespace-separated tokens.
+//       • Extract the ISO-8601 timestamp from the column identified in Pass 1.
+//       • Reject lines whose timestamp token contains no 'T' (ISO-8601 separator),
+//         which filters out residual header lines that survived comment stripping.
+//       • Convert the timestamp to SPICE ET (exits if SPICE is unavailable).
+//       • Use ExtractColumn to read each physics parameter by name from the TsColMap.
+//       • Construct a TsDriverRecord and append it to the table.
+//
+//   After Pass 2, ValidateTsDriverColumns is called between the passes to ensure
+//   that every column required by `modelName` is present before any data is read.
+//
+// ARGUMENTS
+//   fileName  — path to the driver file (from TS_INPUT_FILE in #TEMPORAL).
+//   modelName — canonical model name (from NormalizeTsModelName); used only to
+//               select the correct required-column set for validation.
+//
+// COLUMN EXTRACTION DETAILS
+//   BYIMF / BZIMF     — IMF components [nT]; stored directly.
+//   VSW               — solar wind speed [km/s]; the file stores a positive
+//                       magnitude, but the solver convention for swVx_kms is
+//                       negative (sunward = -X_GSM direction).  We apply
+//                       -abs() so the sign is always correct regardless of
+//                       whether a particular file happens to include a sign.
+//   DEN_P             — proton density [cm^-3].
+//   PDYN              — dynamic pressure [nPa].
+//   DST               — Dst index [nT].
+//   W1..W6            — T05 storm-time integrals; default to 0.0 if not present
+//                       in the file (relevant for T96 driver files used with
+//                       a T05 run — caught by ValidateTsDriverColumns, but
+//                       ExtractColumn's default provides a safe fallback).
+//
+// TIMESTAMP DETECTION
+//   The TsColMap lookup for the timestamp column tries the following variable
+//   names in order: ISODATETIME, DATETIME, TIME, DATE_TIME.  If none are found
+//   in the header, column 0 is used as a fallback.
+//
+// THREAD SAFETY
+//   This function is called once from ParseAmpsParamFile (single-threaded) and
+//   the resulting TsDriverTable is then used read-only by MPI workers.
+static EarthUtil::TsDriverTable LoadTsDriverFile(const std::string& fileName,
+                                                  const std::string& modelName) {
+  // -----------------------------------------------------------------------
+  // Pass 1: Build the column map from the file header.
+  // -----------------------------------------------------------------------
+  TsColMap colMap;
+  {
+    std::ifstream hdr(fileName);
+    if (!hdr.is_open()) {
+      std::ostringstream _m; _m << "Cannot open TS_INPUT_FILE: " << fileName;
+      exit(__LINE__,__FILE__,_m.str().c_str());
+    }
+    colMap = ParseTsDriverHeader(hdr, fileName);
+    // hdr is closed here (RAII).
+  }
+
+  // Validate that every column required by this model is present before
+  // reading a single data row.  Fails with a descriptive error listing the
+  // missing columns and all available columns from the header.
+  ValidateTsDriverColumns(colMap, modelName, fileName);
+
+  // Resolve the 0-based column index for the ISO-8601 timestamp.
+  // Try standard ViRBO name variants in priority order.
+  int colTime = -1;
+  for (const auto& candidate : {"ISODATETIME", "DATETIME", "TIME", "DATE_TIME"}) {
+    const auto it = colMap.find(std::string(candidate));
+    if (it != colMap.end()) { colTime = it->second; break; }
+  }
+  if (colTime < 0) {
+    // No timestamp column found in header — fall back to column 0 (the standard
+    // first column in all known ViRBO files).
+    colTime = 0;
+    std::cerr << "[TsDriverTable] WARNING: no timestamp column identified in '"
+              << fileName << "' header; defaulting to column 0.\n";
+  }
+
+  // -----------------------------------------------------------------------
+  // Pass 2: Read data rows.
+  // -----------------------------------------------------------------------
   std::ifstream fin(fileName);
   if (!fin.is_open()) {
-    std::ostringstream _m;
-    _m << "Cannot open TS_INPUT_FILE: " << fileName;
+    std::ostringstream _m; _m << "Cannot open TS_INPUT_FILE: " << fileName;
     exit(__LINE__,__FILE__,_m.str().c_str());
   }
 
@@ -735,7 +1311,8 @@ static EarthUtil::TsDriverTable LoadTsDriverFile(const std::string& fileName) {
   while (std::getline(fin, line)) {
     ++lineNo;
 
-    // Strip comments: both '#' and '!' introduce a comment to end-of-line.
+    // Strip comment text.  In trajectory / driver files both '#' and '!'
+    // introduce comments to end-of-line.  We take the earlier delimiter.
     {
       const std::size_t ph = line.find('#');
       const std::size_t pe = line.find('!');
@@ -743,63 +1320,71 @@ static EarthUtil::TsDriverTable LoadTsDriverFile(const std::string& fileName) {
       if (pcut != std::string::npos) line = line.substr(0, pcut);
     }
     line = Trim(line);
-    if (line.empty()) continue;
+    if (line.empty()) continue;  // blank or comment-only line
 
-    // Parse 38 required tokens ($1..$38).  Rows with fewer tokens are skipped.
-    std::istringstream iss(line);
-    std::string timeUTC;
-    int yr,mo,dy,hr,mn,sc;
-    double by,bz,vsw,denP,pdyn;
-    double g1,g2,g3;
-    int sf1,sf2,sf3,sf4,sf5,sf6,sf7,sf8;
-    double kp,akp3,dst;
-    double bz1,bz2,bz3,bz4,bz5,bz6;
-    double w1,w2,w3,w4,w5,w6;
-
-    if (!(iss >> timeUTC
-              >> yr >> mo >> dy >> hr >> mn >> sc
-              >> by >> bz >> vsw >> denP >> pdyn
-              >> g1 >> g2 >> g3
-              >> sf1 >> sf2 >> sf3 >> sf4 >> sf5 >> sf6 >> sf7 >> sf8
-              >> kp >> akp3 >> dst
-              >> bz1 >> bz2 >> bz3 >> bz4 >> bz5 >> bz6
-              >> w1 >> w2 >> w3 >> w4 >> w5 >> w6)) {
-      ++skipped;
-      continue;
+    // Tokenise the remaining text on whitespace.
+    std::vector<std::string> toks;
+    {
+      std::istringstream iss(line);
+      std::string t;
+      while (iss >> t) toks.push_back(t);
     }
+    if (toks.empty()) continue;
 
-    // Require ISO-8601 'T' separator to reject residual header lines.
+    // Extract the timestamp from the column identified above.
+    const std::string timeUTC =
+        (colTime < static_cast<int>(toks.size()))
+          ? toks[static_cast<std::size_t>(colTime)]
+          : "";
+
+    // Reject lines that do not look like ISO-8601 timestamps (e.g. column-name
+    // rows that survived comment stripping because they had no comment prefix).
+    // ISO-8601 requires a 'T' separator between date and time.
     if (timeUTC.find('T') == std::string::npos) { ++skipped; continue; }
 
-    // Convert the ISO-8601 timestamp to SPICE ephemeris time.
+    // Convert ISO-8601 to SPICE ET (seconds past J2000).
+    // We need ET for two purposes:
+    //   (a) storing a monotone numeric time for binary-search in TsDriverTable::Lookup,
+    //   (b) potential future use in coordinate transforms.
     double et = 0.0;
     if (!ParseIsoUtcToEt(timeUTC, et)) {
 #ifdef _NO_SPICE_CALLS_
+      // SPICE is required for timestamp conversion.  Without it the table
+      // would have et=0 for every record, making Lookup useless.
       exit(__LINE__,__FILE__,
            "LoadTsDriverFile requires SPICE for timestamp conversion "
            "but the build has _NO_SPICE_CALLS_ defined");
 #else
+      // SPICE is present but this specific string failed.  Skip the row with
+      // a warning; do not abort the entire load.
       std::cerr << "[TsDriverTable] WARNING: cannot parse timestamp '"
                 << timeUTC << "' at line " << lineNo
                 << " of " << fileName << "; skipping.\n";
-      ++skipped;
-      continue;
+      ++skipped; continue;
 #endif
     }
 
+    // Extract each physics parameter by variable name.
+    // ExtractColumn returns defaultVal (0.0) for any column absent from the
+    // TsColMap.  For required columns this should never occur here because
+    // ValidateTsDriverColumns has already guaranteed their presence.
     EarthUtil::TsDriverRecord rec;
     rec.et       = et;
     rec.timeUTC  = timeUTC;
-    rec.imfBy_nT = by;
-    rec.imfBz_nT = bz;
-    // Vsw is stored as a positive speed magnitude in the file.
-    // The solver convention for swVx_kms is negative (sunward = -X_GSM).
-    rec.swVx_kms = -std::abs(vsw);
-    rec.swN_cm3  = denP;
-    rec.pdyn_nPa = pdyn;
-    rec.dst_nT   = dst;
-    rec.w[0]=w1; rec.w[1]=w2; rec.w[2]=w3;
-    rec.w[3]=w4; rec.w[4]=w5; rec.w[5]=w6;
+    rec.imfBy_nT = ExtractColumn(toks, colMap, "BYIMF");
+    rec.imfBz_nT = ExtractColumn(toks, colMap, "BZIMF");
+    // Vsw in the file is always a positive speed magnitude (e.g. 587.5 km/s).
+    // The solver stores swVx_kms as a signed velocity in GSM X: negative
+    // because the solar wind flows anti-sunward (-X_GSM).
+    rec.swVx_kms = -std::abs(ExtractColumn(toks, colMap, "VSW"));
+    rec.swN_cm3  = ExtractColumn(toks, colMap, "DEN_P");
+    rec.pdyn_nPa = ExtractColumn(toks, colMap, "PDYN");
+    rec.dst_nT   = ExtractColumn(toks, colMap, "DST");
+    // W1..W6 are stored in the array rec.w[0..5].
+    for (int i = 0; i < 6; ++i) {
+      const std::string wKey = "W" + std::to_string(i + 1);
+      rec.w[i] = ExtractColumn(toks, colMap, wKey);
+    }
 
     table.push_back(rec);
     ++loaded;
@@ -976,7 +1561,11 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else rememberUnknown();
     }
     else if (section=="#BACKGROUND_FIELD") {
-      if (uKey=="FIELD_MODEL") p.field.model=ToUpper(val);
+      if (uKey=="FIELD_MODEL") {
+        // Normalize alternate spellings to the canonical model name
+        // used throughout the codebase (e.g. TS05 -> T05).
+        p.field.model = NormalizeTsModelName(val);
+      }
       else if (uKey=="DIPOLE_MOMENT") p.field.dipoleMoment_Me=std::stod(val);
       else if (uKey=="DIPOLE_TILT" || uKey=="DIPOLE_TILT_DEG") p.field.dipoleTilt_deg=std::stod(val);
       else if (uKey=="DST") p.field.dst_nT=std::stod(val);
@@ -1129,7 +1718,9 @@ if (ToUpper(p.field.model)=="DIPOLE") {
       exit(__LINE__,__FILE__,
            "TS_INPUT_MODE=FILE requires TS_INPUT_FILE to be set in #TEMPORAL");
     }
-    p.temporal.driverTable = LoadTsDriverFile(p.temporal.tsInputFile);
+    p.temporal.driverTable = LoadTsDriverFile(
+        p.temporal.tsInputFile,
+        p.field.model);  // model name drives per-model column validation
   }
 
   // Validate density/spectrum controls if requested.

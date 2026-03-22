@@ -377,10 +377,17 @@ namespace EarthUtil {
     // (T96/T05). We extend this with an analytic dipole for verification and
     // regression tests.
     //
-    // Supported values:
-    //   - "T96"    Tsyganenko (1996)
-    //   - "T05"    Tsyganenko & Sitnov (2005)
-    //   - "DIPOLE" Analytic centered dipole (internal field only)
+    // Supported values (aliases are normalised to canonical form by the parser):
+    //   Canonical  Accepted aliases        Description
+    //   --------   ------------------      ----------------------------------------
+    //   "T96"      "TS96", "T96S"          Tsyganenko (1996)
+    //   "T05"      "TS05","T05S","T04S",   Tsyganenko-Sitnov (2005)
+    //              "TS04"
+    //   "T01"      "TS01", "T01S"          Tsyganenko (2001)
+    //   "TA15N"                            Tsyganenko-Andreeva (2015) northward
+    //   "TA15B"                            Tsyganenko-Andreeva (2015) southward
+    //   "TA16"                             Tsyganenko-Andreeva (2016) (future)
+    //   "DIPOLE"                           Analytic centered dipole (internal only)
     std::string model{"T96"};
 
     // --- Dipole-only parameters (FIELD_MODEL = DIPOLE) ---
