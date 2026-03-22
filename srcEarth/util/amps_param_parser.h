@@ -641,6 +641,124 @@ namespace EarthUtil {
     double E2_MeV{0.0};    // upper bound [MeV]
   };
 
+  //====================================================================================
+  // TsDriverRecord — one time-stamped snapshot of Tsyganenko model driving parameters
+  //====================================================================================
+  // Parsed from the Qin-Denton / ViRBO format (qd_sep2017.txt and equivalents).
+  // Column layout (1-based, space-separated):
+  //   $1  : ISO-8601 datetime  (e.g. 2017-09-10T00:00:00)
+  //   $2–7: year month day hour min sec   (not read; $1 is used for time)
+  //   $8  : IMF By  [nT]
+  //   $9  : IMF Bz  [nT]
+  //   $10 : Vsw     [km/s]
+  //   $11 : Den_P   [cm^-3]
+  //   $12 : Pdyn    [nPa]
+  //   $13–15: G1 G2 G3   (T96 external-field G parameters, not presently used)
+  //   $16–23: 8 status flags   (skipped)
+  //   $24 : Kp      [dimensionless]
+  //   $25 : akp3    [dimensionless]   (not presently used)
+  //   $26 : Dst     [nT]
+  //   $27–32: Bz1..Bz6  (historic average IMF Bz over 1..6 h; not presently used)
+  //   $33–38: W1..W6    (T05 storm-time history integrals)
+  //   $39–44: W_status flags  (skipped)
+  //
+  // Only the physically required fields (By, Bz, Vsw, DenP, Pdyn, Dst, W1..W6)
+  // are stored; everything else is parsed and discarded.
+  struct TsDriverRecord {
+    double et{0.0};          // SPICE ephemeris time of this record [s]
+    std::string timeUTC;     // original ISO-8601 string (kept for diagnostics)
+
+    // T96 + T05 shared parameters
+    double imfBy_nT{0.0};
+    double imfBz_nT{0.0};
+    double swVx_kms{-400.0}; // stored as positive magnitude in file; sign applied here
+    double swN_cm3{5.0};
+    double pdyn_nPa{2.0};
+    double dst_nT{0.0};
+
+    // T05 storm-time integrals W1..W6
+    double w[6]{0,0,0,0,0,0};
+  };
+
+  //====================================================================================
+  // TsDriverTable — time-ordered table of TsDriverRecords with lookup/interpolation
+  //====================================================================================
+  //
+  // USAGE
+  //   After construction the table is populated by ParseAmpsParamFile when
+  //   TS_INPUT_MODE = FILE and TS_INPUT_FILE is set in #TEMPORAL.
+  //
+  //   At runtime (per trajectory point), call:
+  //     TsDriverRecord rec = table.Lookup(et);
+  //   to get a linearly interpolated snapshot of every driving parameter at the
+  //   requested ephemeris time.  The result can be applied directly to
+  //   BackgroundField before (re-)initialising Geopack and the Tsyganenko model.
+  //
+  // INTERPOLATION POLICY
+  //   Linear interpolation between the two bracketing records is used for all
+  //   continuous parameters (By, Bz, Vsw, DenP, Pdyn, Dst, W1..W6).
+  //   If the requested time lies outside the table range, the nearest endpoint
+  //   record is returned (clamped) with a one-time stderr warning.
+  //
+  // THREAD SAFETY
+  //   The table is read-only after construction.  Concurrent Lookup() calls from
+  //   MPI workers (or OpenMP threads) are safe without any locking.
+  class TsDriverTable {
+  public:
+    TsDriverTable() = default;
+
+    // Returns true if the table contains at least one record.
+    inline bool empty() const { return records_.empty(); }
+    inline std::size_t size() const { return records_.size(); }
+
+    // Add a record (must be called in chronological order).
+    void push_back(const TsDriverRecord& r) { records_.push_back(r); }
+
+    // Linear interpolation at ephemeris time et [s].
+    // Clamps to the table endpoints when et is out of range.
+    // Exits with a clear error message if the table is empty.
+    TsDriverRecord Lookup(double et) const;
+
+    // Apply the parameters from a record into a BackgroundField snapshot.
+    // This does NOT update field.epoch (the caller is responsible for setting
+    // epoch to the trajectory-point timestamp before calling Geopack::Init).
+    static void ApplyToField(const TsDriverRecord& rec, BackgroundField& field);
+
+  private:
+    std::vector<TsDriverRecord> records_;
+    mutable bool clampWarnedLow_{false};
+    mutable bool clampWarnedHigh_{false};
+  };
+
+  //====================================================================================
+  // TemporalParam — parameters from the #TEMPORAL section
+  //====================================================================================
+  // Controls the time-series (trajectory) execution mode: event window, update
+  // cadences, and the optional time-varying Tsyganenko driver file.
+  struct TemporalParam {
+    // TEMPORAL_MODE: TIME_SERIES or SNAPSHOT (default SNAPSHOT = legacy behaviour).
+    std::string mode{"SNAPSHOT"};
+
+    // Event window [ISO-8601 UTC strings].
+    std::string eventStart;
+    std::string eventEnd;
+
+    // FIELD_UPDATE_DT [min]: cadence at which the magnetic field model is updated.
+    double fieldUpdateDt_min{5.0};
+
+    // INJECT_DT [min]: cadence at which particles are injected along the trajectory.
+    double injectDt_min{30.0};
+
+    // TS_INPUT_MODE: FILE (load from TS_INPUT_FILE) or PARAMS (use #BACKGROUND_FIELD).
+    std::string tsInputMode{"PARAMS"};
+
+    // TS_INPUT_FILE: path to a Qin-Denton / ViRBO formatted driver file.
+    std::string tsInputFile;
+
+    // Populated by ParseAmpsParamFile when tsInputMode == "FILE".
+    TsDriverTable driverTable;
+  };
+
   struct AmpsParam {
     std::string runId{"UNKNOWN"};
 
@@ -654,6 +772,7 @@ namespace EarthUtil {
     DomainBox domain;
     OutputDomain output;
     Numerical numerics;
+    TemporalParam temporal;   // #TEMPORAL section (time-series mode + driver table)
 
     std::map<std::string,std::string> spectrum;
     std::map<std::string,std::string> outputOptions;

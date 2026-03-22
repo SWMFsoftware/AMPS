@@ -279,6 +279,9 @@
 #include "constants.PlanetaryData.h"
 #include "GeopackInterface.h"
 #include "DipoleInterface.h"
+#ifndef _NO_SPICE_CALLS_
+#include "SpiceUsr.h"  // str2et_c — needed for driver-table ET conversion
+#endif
 
 namespace {
 
@@ -1061,6 +1064,20 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
             prm.output.trajectories[0].samples[static_cast<size_t>(ip)].timeUTC;
       }
 
+      // If a time-varying driver table is loaded, apply interpolated parameters
+      // into prmForPoint.field so the thread-local field cache inside
+      // TraceAllowedShared/Ex picks up the correct Pdyn, Dst, By, Bz, W1..W6
+      // for this trajectory point.
+      if (!prmForPoint.temporal.driverTable.empty()) {
+#ifndef _NO_SPICE_CALLS_
+        SpiceDouble etPoint = 0.0;
+        str2et_c(prmForPoint.field.epoch.c_str(), &etPoint);
+        const EarthUtil::TsDriverRecord drec =
+            prmForPoint.temporal.driverTable.Lookup(static_cast<double>(etPoint));
+        EarthUtil::TsDriverTable::ApplyToField(drec, prmForPoint.field);
+#endif
+      }
+
       std::vector<double> T(nE,0.0);
 
       // Each energy point can be processed independently: rigidity depends only on the
@@ -1270,6 +1287,20 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
             && idx < static_cast<int>(prm.output.trajectories[0].size())) {
           prmForPoint.field.epoch =
               prm.output.trajectories[0].samples[static_cast<size_t>(idx)].timeUTC;
+        }
+
+        // If a time-varying driver table is loaded, apply interpolated parameters
+        // into prmForPoint.field so the thread-local field cache inside
+        // TraceAllowedShared/Ex picks up the correct Pdyn, Dst, By, Bz, W1..W6
+        // for this trajectory point.
+        if (!prmForPoint.temporal.driverTable.empty()) {
+#ifndef _NO_SPICE_CALLS_
+          SpiceDouble etPoint = 0.0;
+          str2et_c(prmForPoint.field.epoch.c_str(), &etPoint);
+          const EarthUtil::TsDriverRecord drec =
+                prmForPoint.temporal.driverTable.Lookup(static_cast<double>(etPoint));
+          EarthUtil::TsDriverTable::ApplyToField(drec, prmForPoint.field);
+#endif
         }
 
         const double Ej = E_MeV[ie]*MEV_TO_J;

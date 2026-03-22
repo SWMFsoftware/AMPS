@@ -637,6 +637,188 @@ static void PackStandalonePointsIntoSyntheticTrajectories(EarthUtil::AmpsParam& 
   }
 }
 
+
+//======================================================================================
+// TsDriverTable — implementation
+//======================================================================================
+
+static inline double Lerp(double a, double b, double t) { return a + t*(b-a); }
+
+EarthUtil::TsDriverRecord EarthUtil::TsDriverTable::Lookup(double et) const {
+  if (records_.empty())
+    exit(__LINE__,__FILE__,"TsDriverTable::Lookup called on an empty table");
+
+  if (et <= records_.front().et) {
+    if (!clampWarnedLow_) {
+      std::cerr << "[TsDriverTable] WARNING: time before table start ("
+                << records_.front().timeUTC << "); clamping.\n";
+      clampWarnedLow_ = true;
+    }
+    return records_.front();
+  }
+  if (et >= records_.back().et) {
+    if (!clampWarnedHigh_) {
+      std::cerr << "[TsDriverTable] WARNING: time after table end ("
+                << records_.back().timeUTC << "); clamping.\n";
+      clampWarnedHigh_ = true;
+    }
+    return records_.back();
+  }
+
+  // Binary search: records_[lo].et <= et < records_[lo+1].et
+  std::size_t lo = 0, hi = records_.size() - 1;
+  while (hi - lo > 1) {
+    const std::size_t mid = (lo + hi) / 2;
+    if (records_[mid].et <= et) lo = mid; else hi = mid;
+  }
+
+  const EarthUtil::TsDriverRecord& r0 = records_[lo];
+  const EarthUtil::TsDriverRecord& r1 = records_[hi];
+  const double dt = r1.et - r0.et;
+  const double t  = (dt > 0.0) ? (et - r0.et) / dt : 0.0;
+
+  EarthUtil::TsDriverRecord out;
+  out.et       = et;
+  out.timeUTC  = r0.timeUTC;
+  out.imfBy_nT = Lerp(r0.imfBy_nT, r1.imfBy_nT, t);
+  out.imfBz_nT = Lerp(r0.imfBz_nT, r1.imfBz_nT, t);
+  out.swVx_kms = Lerp(r0.swVx_kms, r1.swVx_kms, t);
+  out.swN_cm3  = Lerp(r0.swN_cm3,  r1.swN_cm3,  t);
+  out.pdyn_nPa = Lerp(r0.pdyn_nPa, r1.pdyn_nPa, t);
+  out.dst_nT   = Lerp(r0.dst_nT,   r1.dst_nT,   t);
+  for (int i = 0; i < 6; ++i) out.w[i] = Lerp(r0.w[i], r1.w[i], t);
+  return out;
+}
+
+void EarthUtil::TsDriverTable::ApplyToField(const EarthUtil::TsDriverRecord& rec,
+                                             EarthUtil::BackgroundField& field) {
+  field.imfBy_nT = rec.imfBy_nT;
+  field.imfBz_nT = rec.imfBz_nT;
+  field.swVx_kms = rec.swVx_kms;
+  field.swN_cm3  = rec.swN_cm3;
+  field.pdyn_nPa = rec.pdyn_nPa;
+  field.dst_nT   = rec.dst_nT;
+  for (int i = 0; i < 6; ++i) field.w[i] = rec.w[i];
+}
+
+//======================================================================================
+// LoadTsDriverFile — parse Qin-Denton / ViRBO driver file
+//======================================================================================
+// Column layout (1-based, space-separated; '#' and '!' are comment characters):
+//   $1        ISO-8601 datetime (e.g. 2017-09-10T00:00:00)
+//   $2–$7     year month day hour min sec    (redundant; $1 drives the SPICE call)
+//   $8        IMF By  [nT]
+//   $9        IMF Bz  [nT]
+//   $10       Vsw     [km/s]  (positive magnitude; stored as negative swVx)
+//   $11       Den_P   [cm^-3]
+//   $12       Pdyn    [nPa]
+//   $13–$15   G1 G2 G3  (T96 G-parameters; skipped — not needed by T96/T05 calls)
+//   $16–$23   8 quality-flag integers  (skipped)
+//   $24       Kp      [dimensionless]  (skipped)
+//   $25       akp3    [dimensionless]  (skipped)
+//   $26       Dst     [nT]
+//   $27–$32   Bz1..Bz6  (historic average Bz lags; skipped)
+//   $33–$38   W1..W6    (T05 storm-time history integrals)
+//   $39–$44   W1..W6 quality flags  (skipped)
+static EarthUtil::TsDriverTable LoadTsDriverFile(const std::string& fileName) {
+  std::ifstream fin(fileName);
+  if (!fin.is_open()) {
+    std::ostringstream _m;
+    _m << "Cannot open TS_INPUT_FILE: " << fileName;
+    exit(__LINE__,__FILE__,_m.str().c_str());
+  }
+
+  EarthUtil::TsDriverTable table;
+  std::string line;
+  int lineNo = 0, loaded = 0, skipped = 0;
+
+  while (std::getline(fin, line)) {
+    ++lineNo;
+
+    // Strip comments: both '#' and '!' introduce a comment to end-of-line.
+    {
+      const std::size_t ph = line.find('#');
+      const std::size_t pe = line.find('!');
+      const std::size_t pcut = std::min(ph, pe);
+      if (pcut != std::string::npos) line = line.substr(0, pcut);
+    }
+    line = Trim(line);
+    if (line.empty()) continue;
+
+    // Parse 38 required tokens ($1..$38).  Rows with fewer tokens are skipped.
+    std::istringstream iss(line);
+    std::string timeUTC;
+    int yr,mo,dy,hr,mn,sc;
+    double by,bz,vsw,denP,pdyn;
+    double g1,g2,g3;
+    int sf1,sf2,sf3,sf4,sf5,sf6,sf7,sf8;
+    double kp,akp3,dst;
+    double bz1,bz2,bz3,bz4,bz5,bz6;
+    double w1,w2,w3,w4,w5,w6;
+
+    if (!(iss >> timeUTC
+              >> yr >> mo >> dy >> hr >> mn >> sc
+              >> by >> bz >> vsw >> denP >> pdyn
+              >> g1 >> g2 >> g3
+              >> sf1 >> sf2 >> sf3 >> sf4 >> sf5 >> sf6 >> sf7 >> sf8
+              >> kp >> akp3 >> dst
+              >> bz1 >> bz2 >> bz3 >> bz4 >> bz5 >> bz6
+              >> w1 >> w2 >> w3 >> w4 >> w5 >> w6)) {
+      ++skipped;
+      continue;
+    }
+
+    // Require ISO-8601 'T' separator to reject residual header lines.
+    if (timeUTC.find('T') == std::string::npos) { ++skipped; continue; }
+
+    // Convert the ISO-8601 timestamp to SPICE ephemeris time.
+    double et = 0.0;
+    if (!ParseIsoUtcToEt(timeUTC, et)) {
+#ifdef _NO_SPICE_CALLS_
+      exit(__LINE__,__FILE__,
+           "LoadTsDriverFile requires SPICE for timestamp conversion "
+           "but the build has _NO_SPICE_CALLS_ defined");
+#else
+      std::cerr << "[TsDriverTable] WARNING: cannot parse timestamp '"
+                << timeUTC << "' at line " << lineNo
+                << " of " << fileName << "; skipping.\n";
+      ++skipped;
+      continue;
+#endif
+    }
+
+    EarthUtil::TsDriverRecord rec;
+    rec.et       = et;
+    rec.timeUTC  = timeUTC;
+    rec.imfBy_nT = by;
+    rec.imfBz_nT = bz;
+    // Vsw is stored as a positive speed magnitude in the file.
+    // The solver convention for swVx_kms is negative (sunward = -X_GSM).
+    rec.swVx_kms = -std::abs(vsw);
+    rec.swN_cm3  = denP;
+    rec.pdyn_nPa = pdyn;
+    rec.dst_nT   = dst;
+    rec.w[0]=w1; rec.w[1]=w2; rec.w[2]=w3;
+    rec.w[3]=w4; rec.w[4]=w5; rec.w[5]=w6;
+
+    table.push_back(rec);
+    ++loaded;
+  }
+
+  if (table.empty()) {
+    std::ostringstream _m;
+    _m << "LoadTsDriverFile: no valid records in '" << fileName
+       << "' (lines=" << lineNo << ", skipped=" << skipped << ")";
+    exit(__LINE__,__FILE__,_m.str().c_str());
+  }
+
+  std::cout << "[TsDriverTable] Loaded " << loaded << " records from '"
+            << fileName << "'"
+            << (skipped > 0 ? " (" + std::to_string(skipped) + " lines skipped)" : "")
+            << "\n";
+  return table;
+}
+
 AmpsParam ParseAmpsParamFile(const std::string& fileName) {
   std::ifstream fin(fileName);
   if (!fin.is_open()) {
@@ -892,6 +1074,16 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
     else if (section=="#OUTPUT_OPTIONS") {
       p.outputOptions[uKey]=val;
     }
+    else if (section=="#TEMPORAL") {
+      if      (uKey=="TEMPORAL_MODE")    p.temporal.mode=ToUpper(val);
+      else if (uKey=="EVENT_START")      p.temporal.eventStart=Trim(val);
+      else if (uKey=="EVENT_END")        p.temporal.eventEnd=Trim(val);
+      else if (uKey=="FIELD_UPDATE_DT")  p.temporal.fieldUpdateDt_min=std::stod(val);
+      else if (uKey=="INJECT_DT")        p.temporal.injectDt_min=std::stod(val);
+      else if (uKey=="TS_INPUT_MODE")    p.temporal.tsInputMode=ToUpper(val);
+      else if (uKey=="TS_INPUT_FILE")    p.temporal.tsInputFile=Trim(val);
+      else rememberUnknown();
+    }
     else {
       rememberUnknown();
     }
@@ -927,6 +1119,17 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
     PackStandalonePointsIntoSyntheticTrajectories(p);
     p.output.RebuildFlattenedPointsFromTrajectories();
+  }
+
+  // Load time-varying Tsyganenko driver file when TS_INPUT_MODE = FILE.
+  // This must happen after the #TEMPORAL section has been fully parsed and
+  // before the solvers start querying the table per trajectory point.
+  if (ToUpper(p.temporal.tsInputMode) == "FILE") {
+    if (Trim(p.temporal.tsInputFile).empty()) {
+      exit(__LINE__,__FILE__,
+           "TS_INPUT_MODE=FILE requires TS_INPUT_FILE to be set in #TEMPORAL");
+    }
+    p.temporal.driverTable = LoadTsDriverFile(p.temporal.tsInputFile);
   }
 
   // Validate density/spectrum controls if requested.

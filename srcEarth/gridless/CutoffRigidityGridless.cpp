@@ -414,11 +414,51 @@ public:
   // differs from the one used during construction. The method is a no-op for
   // DIPOLE runs (no Geopack dependency) and for repeated calls with the same
   // epoch string (avoids redundant Fortran library re-entry).
-  void ReinitGeopack(const std::string& epoch) {
-    if (Model() == "DIPOLE") return;      // analytic dipole: no Geopack needed
-    if (epoch == currentEpoch_) return;  // already up to date
-    Geopack::Init(epoch.c_str(), "GSM");
-    currentEpoch_ = epoch;
+  // Re-initialise Geopack (and optionally update PARMOD from the driver table).
+  //
+  // When driverTable is non-null and the table is non-empty, the method:
+  //   1. Converts epoch to SPICE ET.
+  //   2. Linearly interpolates all driving parameters at that time.
+  //   3. Copies the result into prm.field and PARMOD so GetB_T uses updated values.
+  //   4. Calls Geopack::Init with the new epoch (updates dipole tilt).
+  //
+  // Without a driver table, only the dipole tilt is updated (existing behavior).
+  // The method is a no-op for DIPOLE runs and for repeated identical epochs.
+  void ReinitGeopack(const std::string& epoch,
+                     const EarthUtil::TsDriverTable* driverTable = nullptr) {
+    if (Model() == "DIPOLE") return;
+
+    const bool epochChanged   = (epoch != currentEpoch_);
+    const bool hasDriverTable = (driverTable && !driverTable->empty());
+
+    // If neither the epoch nor the driver parameters will change, skip entirely.
+    if (!epochChanged && !hasDriverTable) return;
+
+    // Update driving parameters from the table when available.
+    if (hasDriverTable) {
+      double et = 0.0;
+#ifndef _NO_SPICE_CALLS_
+      SpiceDouble etSpice = 0.0;
+      str2et_c(epoch.c_str(), &etSpice);
+      et = etSpice;
+#endif
+      const EarthUtil::TsDriverRecord rec = driverTable->Lookup(et);
+      EarthUtil::TsDriverTable::ApplyToField(rec, prm.field);
+
+      // Rebuild PARMOD from the freshly updated field snapshot.
+      PARMOD[0] = prm.field.pdyn_nPa;
+      PARMOD[1] = prm.field.dst_nT;
+      PARMOD[2] = prm.field.imfBy_nT;
+      PARMOD[3] = prm.field.imfBz_nT;
+      if (Model() == "T05") {
+        for (int i = 0; i < 6; ++i) PARMOD[4+i] = prm.field.w[i];
+      }
+    }
+
+    if (epochChanged) {
+      Geopack::Init(epoch.c_str(), "GSM");
+      currentEpoch_ = epoch;
+    }
   }
 
   void GetB_T(const V3& x_m, V3& B_T) const override {
@@ -455,10 +495,12 @@ public:
   }
 
 private:
-  const EarthUtil::AmpsParam& prm;
+  // Owned copy (not a reference) so ReinitGeopack can mutate PARMOD and field
+  // parameters in-place when the driver table provides per-point values.
+  EarthUtil::AmpsParam prm;
   double PARMOD[11];
   double PS;
-  std::string currentEpoch_; // epoch string last used in Geopack::Init (for ReinitGeopack)
+  std::string currentEpoch_; // epoch string last used in Geopack::Init
 };
 
 
@@ -2235,7 +2277,7 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
       // refreshed for every new location. ReinitGeopack is a no-op when the
       // epoch string is unchanged (POINTS / SHELLS mode, or consecutive tasks
       // for the same location).
-      field.ReinitGeopack(GetPointEpoch(task.loc));
+      field.ReinitGeopack(GetPointEpoch(task.loc), (prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable));
 
       // Reconstruct start position (needed for both task types).
       const V3 x0_m = LocationToX0m(task.loc);
@@ -2332,7 +2374,7 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
         // Update Geopack for this location's epoch before tracing.
         // In TRAJECTORY mode each point has its own timestamp; in POINTS/SHELLS
         // mode this is a no-op (epoch hasn't changed).
-        field.ReinitGeopack(GetPointEpoch(loc));
+        field.ReinitGeopack(GetPointEpoch(loc), (prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable));
 
         const V3 x0_m = LocationToX0m(loc);
 
