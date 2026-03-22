@@ -119,6 +119,10 @@
 #include <cstdlib>
 #include <cerrno>
 
+#ifndef _NO_SPICE_CALLS_
+#include "SpiceUsr.h"
+#endif
+
 namespace EarthUtil {
 
 //======================================================================================
@@ -473,6 +477,166 @@ static std::vector<double> ParseLengthListToKm(const std::string& values,const s
   return out;
 }
 
+
+static inline bool ParseIsoUtcToEt(const std::string& timeUTC, double& et) {
+#ifndef _NO_SPICE_CALLS_
+  try {
+    SpiceDouble etSpice = 0.0;
+    str2et_c(timeUTC.c_str(), &etSpice);
+    et = etSpice;
+    return true;
+  }
+  catch (...) {
+    return false;
+  }
+#else
+  (void)timeUTC; (void)et;
+  return false;
+#endif
+}
+
+static inline EarthUtil::Vec3 RotateVectorWithSpiceOrThrow(const EarthUtil::Vec3& vin,
+                                                           const char* fromFrame,
+                                                           const char* toFrame,
+                                                           const std::string& timeUTC,
+                                                           const std::string& context) {
+#ifndef _NO_SPICE_CALLS_
+  SpiceDouble et = 0.0;
+  if (!ParseIsoUtcToEt(timeUTC, et)) {
+    { std::ostringstream _exit_msg; _exit_msg << "Cannot parse trajectory timestamp for SPICE transform in "
+                                              << context << ": '" << timeUTC << "'"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
+  }
+
+  SpiceDouble rot[3][3];
+  pxform_c(fromFrame, toFrame, et, rot);
+
+  SpiceDouble in[3]  = {vin.x, vin.y, vin.z};
+  SpiceDouble out[3] = {0.0,0.0,0.0};
+  mxv_c(rot, in, out);
+  return {out[0], out[1], out[2]};
+#else
+  (void)vin; (void)fromFrame; (void)toFrame; (void)timeUTC; (void)context;
+  exit(__LINE__,__FILE__,"Trajectory frame conversion requires SPICE, but the code was built with _NO_SPICE_CALLS_");
+  return EarthUtil::Vec3{};
+#endif
+}
+
+static inline EarthUtil::Vec3 GeoLatLonAltToCartesianKm(double lat_deg,double lon_deg,double alt_km) {
+  const double r_km = kEarthRadiusKm + alt_km;
+  const double pi = std::acos(-1.0);
+  const double lat = lat_deg * pi / 180.0;
+  const double lon = lon_deg * pi / 180.0;
+  const double clat = std::cos(lat);
+  return {r_km*clat*std::cos(lon), r_km*clat*std::sin(lon), r_km*std::sin(lat)};
+}
+
+static EarthUtil::Vec3 ConvertTrajectorySampleToGsmM(const std::string& frame,
+                                                     const std::string& timeUTC,
+                                                     double c1,double c2,double c3,
+                                                     const std::string& fileName,
+                                                     int lineNo) {
+  const std::string f = ToUpper(Trim(frame));
+  const std::string ctx = std::string("trajectory file '") + fileName + "' line " + std::to_string(lineNo);
+
+  // All branches ultimately produce a GSM Cartesian vector in SI meters.
+  if (f=="GSM") {
+    // Input: Cartesian GSM in Earth radii.  Convert Re -> m.
+    const double Re_m = kEarthRadiusKm * 1000.0;
+    return {c1*Re_m, c2*Re_m, c3*Re_m};
+  }
+  else if (f=="SM") {
+    const double Re_m = kEarthRadiusKm * 1000.0;
+    const EarthUtil::Vec3 xSM_km{c1*kEarthRadiusKm, c2*kEarthRadiusKm, c3*kEarthRadiusKm};
+    const EarthUtil::Vec3 xGSM_km = RotateVectorWithSpiceOrThrow(xSM_km, "SM", "GSM", timeUTC, ctx);
+    return {xGSM_km.x*1000.0, xGSM_km.y*1000.0, xGSM_km.z*1000.0};
+  }
+  else if (f=="GEO") {
+    const EarthUtil::Vec3 xGeo_km = GeoLatLonAltToCartesianKm(c1, c2, c3);
+    const EarthUtil::Vec3 xGSM_km = RotateVectorWithSpiceOrThrow(xGeo_km, "ITRF93", "GSM", timeUTC, ctx);
+    return {xGSM_km.x*1000.0, xGSM_km.y*1000.0, xGSM_km.z*1000.0};
+  }
+
+  { std::ostringstream _exit_msg; _exit_msg << "Unsupported TRAJ_FRAME='" << frame
+                                            << "' in " << ctx
+                                            << ". Supported values: GEO | GSM | SM"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
+  return EarthUtil::Vec3{};
+}
+
+static EarthUtil::SpacecraftTrajectory LoadTrajectoryFileAsGsm(const std::string& fileName,
+                                                               const std::string& trajFrame) {
+  std::ifstream fin(fileName);
+  if (!fin.is_open()) {
+    { std::ostringstream _exit_msg; _exit_msg << "Cannot open trajectory file: " << fileName; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
+  }
+
+  EarthUtil::SpacecraftTrajectory tr;
+  tr.name = fileName;
+  tr.sourceFrame = ToUpper(Trim(trajFrame));
+
+  std::string line;
+  int lineNo = 0;
+  while (std::getline(fin, line)) {
+    ++lineNo;
+
+    // Strip comments: in the trajectory file both '#' and '!' introduce a comment
+    // that extends to the end of the line.  We strip whichever character comes
+    // first so that lines like
+    //   2017-09-10T00:00:00Z  4.716  -0.684  -0.415  # first point
+    //   # full-line comment
+    //   ! also a comment
+    // are all handled correctly.
+    // Note: '#' is NOT treated as a comment in the main AMPS_PARAM parser (it marks
+    // section headers there), so this stripping is intentionally local to this
+    // function and not applied via the global StripComment helper.
+    {
+      const std::size_t ph = line.find('#');
+      const std::size_t pe = line.find('!');
+      const std::size_t pcut = std::min(ph, pe);   // npos if both absent, else the earlier one
+      if (pcut != std::string::npos) line = line.substr(0, pcut);
+    }
+
+    line = Trim(line);
+    if (line.empty()) continue;   // blank or comment-only lines are skipped
+
+    std::istringstream iss(line);
+    std::string timeUTC;
+    double c1=0.0, c2=0.0, c3=0.0;
+    if (!(iss >> timeUTC >> c1 >> c2 >> c3)) {
+      continue;  // fewer than 4 tokens on a non-blank line — skip gracefully
+    }
+
+    // Require an ISO-8601 'T' separator to distinguish data rows from any
+    // residual header lines that slip through (e.g. column-name rows whose
+    // first token is a plain string with no 'T').
+    if (timeUTC.find('T') == std::string::npos) continue;
+
+    // Position stored in meters (SI) in xGSM_m.
+    const EarthUtil::Vec3 xGSM_m = ConvertTrajectorySampleToGsmM(trajFrame, timeUTC, c1, c2, c3, fileName, lineNo);
+    tr.AddSample(timeUTC, xGSM_m);
+  }
+
+  if (tr.samples.empty()) {
+    { std::ostringstream _exit_msg; _exit_msg << "No trajectory samples were loaded from " << fileName; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
+  }
+
+  return tr;
+}
+
+static void PackStandalonePointsIntoSyntheticTrajectories(EarthUtil::AmpsParam& p) {
+  p.output.trajectories.clear();
+  p.output.trajectories.reserve(p.output.points.size());
+
+  for (size_t i=0; i<p.output.points.size(); ++i) {
+    EarthUtil::SpacecraftTrajectory tr;
+    tr.name = std::string("POINT_") + std::to_string(i);
+    tr.sourceFrame = ToUpper(p.output.coords);
+    // output.points is in km; trajectory samples are stored in meters.
+    const EarthUtil::Vec3& pt_km = p.output.points[i];
+    tr.AddSample(p.field.epoch, {pt_km.x*1000.0, pt_km.y*1000.0, pt_km.z*1000.0});
+    p.output.trajectories.push_back(tr);
+  }
+}
+
 AmpsParam ParseAmpsParamFile(const std::string& fileName) {
   std::ifstream fin(fileName);
   if (!fin.is_open()) {
@@ -517,19 +681,31 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
     if (ToUpper(line)=="CH_END")   { inChannelsBlock=false; continue; }
 
     if (inPointsBlock) {
+      // Accept both the original bare format "x y z" and the newer "POINT x y z"
+      // form (which was added to allow inline units on each token, e.g. POINT 1Re 0 0).
+      // The presence of the "POINT" keyword is detected by trying to read the first
+      // token: if it converts to a double it is the x-coordinate; otherwise it must
+      // be the literal string "POINT" (anything else is an error).
       std::istringstream iss(line);
-      std::string tok; iss >> tok;
-      if (ToUpper(tok)!="POINT") {
-        { std::ostringstream _exit_msg; _exit_msg << "Malformed POINTS block at line "+std::to_string(lineNo)+": "+line; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
+      std::string firstTok;
+      iss >> firstTok;
+
+      std::string xTok, yTok, zTok;
+      if (ToUpper(firstTok) == "POINT") {
+        // New format: "POINT x y z" — first token is the keyword.
+        // Coordinates may carry inline units (e.g. POINT 1Re 0 0) or inherit
+        // units from the trailing comment (e.g. POINT 1 0 0 ! Re).
+        if (!(iss >> xTok >> yTok >> zTok)) {
+          { std::ostringstream _exit_msg; _exit_msg << "Cannot parse POINT coordinates at line "+std::to_string(lineNo)+": "+line; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
+        }
+      } else {
+        // Original format: "x y z" — first token is already the x-coordinate.
+        xTok = firstTok;
+        if (!(iss >> yTok >> zTok)) {
+          { std::ostringstream _exit_msg; _exit_msg << "Cannot parse point coordinates at line "+std::to_string(lineNo)+": "+line; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
+        }
       }
-      // POINT coordinates are length-like values. They may have inline units
-      // (e.g. POINT 1Re 0 0) or units specified in the comment after '!':
-      //   POINT 1 0 0 ! Re
-      //   POINT 6371 0 0 ! km km km
-      std::string xTok,yTok,zTok;
-      if (!(iss >> xTok >> yTok >> zTok)) {
-        { std::ostringstream _exit_msg; _exit_msg << "Cannot parse POINT coordinates at line "+std::to_string(lineNo)+": "+line; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
-      }
+
       Vec3 v;
       {
         std::vector<double> xyz = ParseLengthListToKm(xTok+" "+yTok+" "+zTok, commentText);
@@ -666,8 +842,11 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
     }
     else if (section=="#OUTPUT_DOMAIN") {
       if (uKey=="OUTPUT_MODE") p.output.mode=ToUpper(val);
-      else if (uKey=="OUTPUT_COORDS") p.output.coords=ToUpper(val);
-      else if (uKey=="SHELL_ALTS_KM") {
+      else if (uKey=="OUTPUT_COORDS" || uKey=="COORDS") p.output.coords=ToUpper(val);
+      else if (uKey=="TRAJ_FRAME") p.output.trajFrame=ToUpper(val);
+      else if (uKey=="TRAJ_FILE") p.output.trajFile=Trim(val);
+      else if (uKey=="FLUX_DT") p.output.fluxDt_min=std::stod(val);
+      else if (uKey=="SHELL_ALTS_KM" || uKey=="SHELL_ALTITUDES") {
         // Although the key name contains _KM (historical), accept explicit Re
         // units inline or in the trailing comment. If no units are provided, km
         // remains the default for backward compatibility.
@@ -733,8 +912,21 @@ if (ToUpper(p.field.model)=="DIPOLE") {
   }
 }
 
-if (p.output.mode=="POINTS" && p.output.points.empty()) {
-    exit(__LINE__,__FILE__,"OUTPUT_MODE=POINTS but no POINT entries were found in POINTS_BEGIN/END block");
+// Build the unified trajectory representation once parsing is complete.
+  if (p.output.mode=="TRAJECTORY") {
+    if (Trim(p.output.trajFile).empty()) {
+      exit(__LINE__,__FILE__,"OUTPUT_MODE=TRAJECTORY requires TRAJ_FILE in #OUTPUT_DOMAIN");
+    }
+    p.output.trajectories.clear();
+    p.output.trajectories.push_back(LoadTrajectoryFileAsGsm(p.output.trajFile, p.output.trajFrame));
+    p.output.RebuildFlattenedPointsFromTrajectories();
+  }
+  else if (p.output.mode=="POINTS") {
+    if (p.output.points.empty()) {
+      exit(__LINE__,__FILE__,"OUTPUT_MODE=POINTS but no POINT entries were found in POINTS_BEGIN/END block");
+    }
+    PackStandalonePointsIntoSyntheticTrajectories(p);
+    p.output.RebuildFlattenedPointsFromTrajectories();
   }
 
   // Validate density/spectrum controls if requested.

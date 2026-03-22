@@ -183,6 +183,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <stdexcept>
 
 namespace EarthUtil {
 
@@ -443,19 +444,104 @@ namespace EarthUtil {
     std::map<std::string,std::string> raw;
   };
 
+
+  //====================================================================================
+  // SpacecraftTrajectoryPoint / SpacecraftTrajectory
+  //====================================================================================
+  // To unify the treatment of standalone POINTS and sampled spacecraft trajectories,
+  // every spatial sample is represented as a trajectory point carrying:
+  //   - timeUTC    : ISO-8601 timestamp string associated with the sample
+  //   - xGSM_m     : location in GSM Cartesian coordinates [m]
+  //
+  // UNIT CONTRACT
+  //   The position is stored in SI meters so it can be handed directly to the
+  //   particle-tracing routines (Boris pusher, field evaluators) without any
+  //   additional unit conversion at the call site.
+  //
+  //   The legacy OutputDomain::points array (used for Tecplot output and the
+  //   inherited POINTS code path) remains in km; RebuildFlattenedPointsFromTrajectories
+  //   performs the m -> km division when populating it.
+  //
+  // For legacy OUTPUT_MODE=POINTS runs, we create one synthetic trajectory per point.
+  // Each such trajectory contains exactly one sample and therefore reuses the exact
+  // same downstream computation kernel as true multi-point trajectories.
+  //
+  // IMPORTANT:
+  //   The solver physics is always evaluated in GSM. If the trajectory file is given
+  //   in another frame (for example GEO or SM), the parser converts it to GSM when
+  //   loading the file so all downstream code sees a single consistent representation.
+  struct SpacecraftTrajectoryPoint {
+    std::string timeUTC;
+    Vec3 xGSM_m;   // GSM Cartesian position [m]
+  };
+
+  class SpacecraftTrajectory {
+  public:
+    std::string name;
+    std::string sourceFrame{"GSM"};
+    std::vector<SpacecraftTrajectoryPoint> samples;
+
+    inline bool empty() const { return samples.empty(); }
+    inline std::size_t size() const { return samples.size(); }
+
+    inline void clear() {
+      name.clear();
+      sourceFrame = "GSM";
+      samples.clear();
+    }
+
+    inline void AddSample(const std::string& timeUTC, const Vec3& xGSM_m) {
+      samples.push_back(SpacecraftTrajectoryPoint{timeUTC, xGSM_m});
+    }
+  };
+
   struct OutputDomain {
-    // OUTPUT_MODE: "POINTS" or "SHELLS".
+    // OUTPUT_MODE:
+    //   POINTS     - explicit list of individual locations
+    //   SHELLS     - spherical shell map(s)
+    //   TRAJECTORY - time-ordered sequence loaded from TRAJ_FILE
     std::string mode{"POINTS"};
 
-    // Coordinate label for reporting.
+    // Coordinate label for reporting / backward compatibility with older inputs.
+    // For trajectories, TRAJ_FRAME is the authoritative input-frame selector.
     std::string coords{"GSM"};
 
-    // POINTS: user-provided list.
+    // Legacy flattened point list used by the existing solver kernels.
+    // For OUTPUT_MODE=TRAJECTORY this is populated automatically from trajectories[0].
     std::vector<Vec3> points;
+
+    // Unified representation: each standalone point is packed into a one-sample
+    // trajectory so trajectory and point workflows can share the same code path.
+    std::vector<SpacecraftTrajectory> trajectories;
+
+    // Trajectory-specific controls.
+    std::string trajFrame{"GSM"};      // TRAJ_FRAME
+    std::string trajFile;               // TRAJ_FILE
+    double fluxDt_min{1.0};             // FLUX_DT  [min]
 
     // SHELLS: altitudes in km + resolution in degrees.
     std::vector<double> shellAlt_km;
     double shellRes_deg{15.0};
+
+    // Helper utilities used by the parser and the solvers.
+    inline bool HasTrajectorySamples() const {
+      for (const auto& tr : trajectories) if (!tr.empty()) return true;
+      return false;
+    }
+
+    inline void ClearFlattenedPoints() { points.clear(); }
+
+    inline void RebuildFlattenedPointsFromTrajectories() {
+      points.clear();
+      for (const auto& tr : trajectories) {
+        for (const auto& s : tr.samples) {
+          // xGSM_m is stored in meters; the legacy points array is in km.
+          points.push_back({s.xGSM_m.x / 1000.0,
+                            s.xGSM_m.y / 1000.0,
+                            s.xGSM_m.z / 1000.0});
+        }
+      }
+    }
 
     std::map<std::string,std::string> raw;
   };

@@ -966,8 +966,9 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
   MPI_Comm_rank(MPI_COMM_WORLD,&mpiRank);
   MPI_Comm_size(MPI_COMM_WORLD,&mpiSize);
 
-  if (EarthUtil::ToUpper(prm.output.mode)!="POINTS") {
-    exit(__LINE__,__FILE__,"Internal error: RunDensityAndSpectrum_POINTS called for non-POINTS mode");
+  const std::string outputModeUpper = EarthUtil::ToUpper(prm.output.mode);
+  if (outputModeUpper!="POINTS" && outputModeUpper!="TRAJECTORY") {
+    exit(__LINE__,__FILE__,"Internal error: RunDensityAndSpectrum_POINTS called for unsupported point-like mode");
   }
 
   // Build shared grids.
@@ -1003,6 +1004,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       std::cout << " [capped by DS_MAX_PARTICLES=" << prm.densitySpectrum.maxParticlesPerPoint << "]";
     }
     std::cout << "\n";
+    std::cout << "Output mode     : " << outputModeUpper << "\n";
     std::cout << "MPI ranks       : " << mpiSize << "\n";
     std::cout << "============================================================\n";
     std::cout.flush();
@@ -1044,6 +1046,21 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       const EarthUtil::Vec3 pk = prm.output.points[ip];
       const V3 x0_m { pk.x*1000.0, pk.y*1000.0, pk.z*1000.0 };
 
+      // Build a per-point parameter block whose field.epoch reflects this
+      // sample's UTC timestamp.  TraceAllowedShared / TraceAllowedSharedEx
+      // maintain a thread-local field-evaluator cache keyed on prm.field.epoch;
+      // by updating that field in the copy we force Geopack re-initialization
+      // whenever the epoch changes — which happens at every step in TRAJECTORY
+      // mode.  For POINTS mode all samples share the same global epoch, so the
+      // copy is cheap and the cache is never invalidated unnecessarily.
+      EarthUtil::AmpsParam prmForPoint = prm;
+      if (outputModeUpper == "TRAJECTORY"
+          && !prm.output.trajectories.empty()
+          && ip < static_cast<int>(prm.output.trajectories[0].size())) {
+        prmForPoint.field.epoch =
+            prm.output.trajectories[0].samples[static_cast<size_t>(ip)].timeUTC;
+      }
+
       std::vector<double> T(nE,0.0);
 
       // Each energy point can be processed independently: rigidity depends only on the
@@ -1056,17 +1073,19 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       // penumbra before being classified. Dynamic scheduling improves load balance among
       // threads for such irregular work.
 #ifdef _OPENMP
-#pragma omp parallel for default(none) shared(T, E_MeV, prm, x0_m, dirsUse, doAnisotropic, nE) if(nE > 1) schedule(dynamic)
+#pragma omp parallel for default(none) shared(T, E_MeV, prmForPoint, x0_m, dirsUse, doAnisotropic, nE) if(nE > 1) schedule(dynamic)
 #endif
       for (int ie=0; ie<nE; ++ie) {
         const double Ej = E_MeV[ie]*MEV_TO_J;
-        const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE, prm.species.mass_amu*AMU);
-        const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
-                                        ? prm.densitySpectrum.maxTrajTime_s
+        const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prmForPoint.species.charge_e)*QE, prmForPoint.species.mass_amu*AMU);
+        const double maxTraceTime_s = (prmForPoint.densitySpectrum.maxTrajTime_s > 0.0)
+                                        ? prmForPoint.densitySpectrum.maxTrajTime_s
                                         : -1.0;
         // ComputeT_atEnergy handles both ISOTROPIC and ANISOTROPIC branches.
-        T[ie] = ComputeT_atEnergy(prm, x0_m, Rgv, dirsUse, maxTraceTime_s,
-                                  doAnisotropic, prm.anisotropy);
+        // prmForPoint carries the per-point epoch so the thread-local field-evaluator
+        // cache inside TraceAllowedShared/Ex re-initializes Geopack correctly.
+        T[ie] = ComputeT_atEnergy(prmForPoint, x0_m, Rgv, dirsUse, maxTraceTime_s,
+                                  doAnisotropic, prmForPoint.anisotropy);
       }
 
       // Density integral
@@ -1243,18 +1262,28 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
         const EarthUtil::Vec3 pk = prm.output.points[idx];
         const V3 x0_m { pk.x*1000.0, pk.y*1000.0, pk.z*1000.0 };
 
+        // Per-point epoch: same approach as the serial path.  Each MPI rank is a
+        // separate process, so modifying prmForPoint here is thread-safe.
+        EarthUtil::AmpsParam prmForPoint = prm;
+        if (outputModeUpper == "TRAJECTORY"
+            && !prm.output.trajectories.empty()
+            && idx < static_cast<int>(prm.output.trajectories[0].size())) {
+          prmForPoint.field.epoch =
+              prm.output.trajectories[0].samples[static_cast<size_t>(idx)].timeUTC;
+        }
+
         const double Ej = E_MeV[ie]*MEV_TO_J;
-        const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE,
-                                                 prm.species.mass_amu*AMU);
-        const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
-                                        ? prm.densitySpectrum.maxTrajTime_s
+        const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prmForPoint.species.charge_e)*QE,
+                                                 prmForPoint.species.mass_amu*AMU);
+        const double maxTraceTime_s = (prmForPoint.densitySpectrum.maxTrajTime_s > 0.0)
+                                        ? prmForPoint.densitySpectrum.maxTrajTime_s
                                         : -1.0;
 
-        const double weightSum = ComputeWeightBlockAtEnergy(prm, x0_m, Rgv, dirsUse,
+        const double weightSum = ComputeWeightBlockAtEnergy(prmForPoint, x0_m, Rgv, dirsUse,
                                                             idirBegin, idirEnd,
                                                             maxTraceTime_s,
                                                             doAnisotropic,
-                                                            prm.anisotropy);
+                                                            prmForPoint.anisotropy);
 
         // Send the result back in two typed messages rather than as a raw struct.
         // The metadata packet fully identifies the finished block, and the separate
@@ -1271,13 +1300,17 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     // File 1: densities
     {
       std::ofstream out("gridless_points_density.dat");
-      out << "TITLE=\"Gridless energetic particle density (POINTS)\"\n";
-      out << "VARIABLES=\"X_km\" \"Y_km\" \"Z_km\" \"N_m^-3\" \"N_cm^-3\"\n";
+      out << "TITLE=\"Gridless energetic particle density (POINTS/TRAJECTORY)\"\n";
+      const bool writeTimeColumn = (outputModeUpper=="TRAJECTORY" && !prm.output.trajectories.empty());
+      if (writeTimeColumn) out << "VARIABLES=\"TimeUTC\" ";
+      else out << "VARIABLES=";
+      out << "\"X_km\" \"Y_km\" \"Z_km\" \"N_m^-3\" \"N_cm^-3\"\n";
       out << "ZONE T=\"density\" I=" << nPoints << " F=POINT\n";
       for (int ip=0; ip<nPoints; ++ip) {
         const auto& p0 = prm.output.points[ip];
         const double n_m3 = density_m3[ip];
         const double n_cm3 = n_m3*1.0e-6;
+        if (writeTimeColumn) out << "\"" << prm.output.trajectories[0].samples[(size_t)ip].timeUTC << "\" ";
         out << p0.x << " " << p0.y << " " << p0.z << " " << n_m3 << " " << n_cm3 << "\n";
       }
     }
@@ -1325,10 +1358,12 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     //--------------------------------------------------------------------------
     {
       std::ofstream out("gridless_points_flux.dat");
-      out << "TITLE=\"Gridless omnidirectional integral flux (POINTS)\"\n";
+      out << "TITLE=\"Gridless omnidirectional integral flux (POINTS/TRAJECTORY)\"\n";
 
       // Build variable list header dynamically.
-      out << "VARIABLES=\"X_km\" \"Y_km\" \"Z_km\" \"F_tot_m2s1\"";
+      if (outputModeUpper=="TRAJECTORY" && !prm.output.trajectories.empty()) out << "VARIABLES=\"TimeUTC\" ";
+      else out << "VARIABLES=";
+      out << "\"X_km\" \"Y_km\" \"Z_km\" \"F_tot_m2s1\"";
       for (int ic = 0; ic < nCh; ++ic) {
         out << " \"F_" << prm.fluxChannels[ic].name << "_m2s1\"";
       }
@@ -1336,7 +1371,6 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
 
       // Single zone: all points.
       out << "ZONE T=\"flux\" I=" << nPoints << " F=POINT\n";
-      // Auxiliary data: channel definitions for post-processing scripts.
       out << "AUXDATA Emin_MeV=\"" << prm.densitySpectrum.Emin_MeV << "\"\n";
       out << "AUXDATA Emax_MeV=\"" << prm.densitySpectrum.Emax_MeV << "\"\n";
       for (int ic = 0; ic < nCh; ++ic) {
@@ -1347,6 +1381,9 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
 
       for (int ip = 0; ip < nPoints; ++ip) {
         const auto& p0 = prm.output.points[ip];
+        if (outputModeUpper=="TRAJECTORY" && !prm.output.trajectories.empty()) {
+          out << "\"" << prm.output.trajectories[0].samples[(size_t)ip].timeUTC << "\" ";
+        }
         out << p0.x << " " << p0.y << " " << p0.z
             << " " << flux_tot_m2s1[ip];
         for (int ic = 0; ic < nCh; ++ic) {
@@ -1492,6 +1529,12 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
         std::cout << " (day=" << prm.anisotropy.daysideFactor
                   << ", night=" << prm.anisotropy.nightsideFactor << ")";
       std::cout << "\n";
+    }
+    std::cout << "Output mode     : " << EarthUtil::ToUpper(prm.output.mode) << "\n";
+    if (EarthUtil::ToUpper(prm.output.mode)=="TRAJECTORY" && !prm.output.trajectories.empty()) {
+      std::cout << "Trajectory file : " << prm.output.trajFile << "\n";
+      std::cout << "Trajectory pts  : " << prm.output.trajectories[0].size() << "\n";
+      std::cout << "Flux cadence    : " << prm.output.fluxDt_min << " min\n";
     }
     std::cout << "MPI ranks       : " << mpiSize << "\n";
     std::cout << "======================================================================\n";
@@ -1849,7 +1892,7 @@ int RunDensityAndSpectrum(const EarthUtil::AmpsParam& prm) {
   }
 
   const std::string mode = EarthUtil::ToUpper(prm.output.mode);
-  if (mode=="POINTS") return RunDensityAndSpectrum_POINTS(prm);
+  if (mode=="POINTS" || mode=="TRAJECTORY") return RunDensityAndSpectrum_POINTS(prm);
   if (mode=="SHELLS") return RunDensityAndSpectrum_SHELLS(prm);
   { std::ostringstream _exit_msg; _exit_msg << "Unsupported OUTPUT_MODE for DENSITY_SPECTRUM: '"+prm.output.mode+"'  (supported: POINTS,SHELLS)"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
 

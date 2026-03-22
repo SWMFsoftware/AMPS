@@ -380,6 +380,7 @@ public:
     // link-time dependencies and keeps the dipole test self-contained.
     if (Model()!="DIPOLE") {
       Geopack::Init(prm.field.epoch.c_str(),"GSM");
+      currentEpoch_ = prm.field.epoch;
     }
 
     // Configure analytic dipole parameters (used only when FIELD_MODEL=DIPOLE).
@@ -400,6 +401,25 @@ public:
   }
 
   std::string Model() const { return prm.field.model; }
+
+  // Re-initialize Geopack for a different epoch.
+  //
+  // For OUTPUT_MODE=TRAJECTORY each observation point carries its own UTC
+  // timestamp. The dipole tilt angle (set by Geopack RECALC) is time-dependent
+  // and can change by tens of degrees over a single satellite orbit. Failing to
+  // update it per-point yields systematically wrong cutoff rigidities wherever
+  // the tilt matters (equatorial to mid-latitude regions).
+  //
+  // Call this before computing the cutoff for each new location when the epoch
+  // differs from the one used during construction. The method is a no-op for
+  // DIPOLE runs (no Geopack dependency) and for repeated calls with the same
+  // epoch string (avoids redundant Fortran library re-entry).
+  void ReinitGeopack(const std::string& epoch) {
+    if (Model() == "DIPOLE") return;      // analytic dipole: no Geopack needed
+    if (epoch == currentEpoch_) return;  // already up to date
+    Geopack::Init(epoch.c_str(), "GSM");
+    currentEpoch_ = epoch;
+  }
 
   void GetB_T(const V3& x_m, V3& B_T) const override {
     // Dipole branch: internal field only, analytic, no IGRF/external field.
@@ -438,6 +458,7 @@ private:
   const EarthUtil::AmpsParam& prm;
   double PARMOD[11];
   double PS;
+  std::string currentEpoch_; // epoch string last used in Geopack::Init (for ReinitGeopack)
 };
 
 
@@ -1615,8 +1636,33 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   //   Tsyganenko/Geopack routines. It is safer to have one instance per rank to
   //   avoid any accidental shared state between ranks (MPI ranks are separate
   //   processes, but some libraries may still have hidden global state).
+  //
+  // Not declared const: ReinitGeopack() must be called before each observation
+  // point when running in TRAJECTORY mode (each point has its own epoch).
   //----------------------------------------------------------------------------
-  const cFieldEvaluator field(prm);
+  cFieldEvaluator field(prm);
+
+  //----------------------------------------------------------------------------
+  // Per-point epoch lookup (TRAJECTORY mode).
+  //
+  // In TRAJECTORY mode every sample has its own UTC timestamp. The Geopack
+  // dipole tilt — which directly controls the IGRF internal field orientation —
+  // is epoch-dependent and can shift by tens of degrees over a single RBSP
+  // orbit. We therefore call field.ReinitGeopack(epoch) before processing each
+  // location so that the tilt is always consistent with the point's time.
+  //
+  // In POINTS or SHELLS mode there is only one global epoch (from the input
+  // file), so this helper returns prm.field.epoch for every location.
+  //----------------------------------------------------------------------------
+  auto GetPointEpoch = [&](int loc) -> std::string {
+    if (prm.output.mode == "TRAJECTORY"
+        && !prm.output.trajectories.empty()
+        && loc >= 0
+        && loc < static_cast<int>(prm.output.trajectories[0].size())) {
+      return prm.output.trajectories[0].samples[static_cast<size_t>(loc)].timeUTC;
+    }
+    return prm.field.epoch;
+  };
 
   //----------------------------------------------------------------------------
   // Direction grid (kept identical to your current serial "meaningful results")
@@ -1762,7 +1808,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   // This scheme lets workers reconstruct the 3D coordinate from (locationId) using only
   // prm.output.* data (which is available on every rank).
   //====================================================================================
-  const bool isPoints = (prm.output.mode=="POINTS");
+  const bool isPoints = (prm.output.mode=="POINTS" || prm.output.mode=="TRAJECTORY");
   const bool isShells = (prm.output.mode=="SHELLS");
 
   if (!isPoints && !isShells) {
@@ -2181,7 +2227,15 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
       // Count this task. Each task corresponds to one (locationId,dirId) trajectory.
       // If scheduling is correct, the sum of these counters over ranks 1..N-1 should
       // equal totalTasks.
-      myTasksProcessed++; 
+      myTasksProcessed++;
+
+      // Update Geopack for this location's epoch before tracing.
+      // In TRAJECTORY mode each point carries a distinct UTC timestamp, so the
+      // dipole tilt (set by Geopack RECALC inside ReinitGeopack) must be
+      // refreshed for every new location. ReinitGeopack is a no-op when the
+      // epoch string is unchanged (POINTS / SHELLS mode, or consecutive tasks
+      // for the same location).
+      field.ReinitGeopack(GetPointEpoch(task.loc));
 
       // Reconstruct start position (needed for both task types).
       const V3 x0_m = LocationToX0m(task.loc);
@@ -2275,6 +2329,11 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
       if (mpiRank==0) std::cout << "[gridless][MPI] size==1 -> serial fallback.\n";
 
       for (int loc=0; loc<nLoc; loc++) {
+        // Update Geopack for this location's epoch before tracing.
+        // In TRAJECTORY mode each point has its own timestamp; in POINTS/SHELLS
+        // mode this is a no-op (epoch hasn't changed).
+        field.ReinitGeopack(GetPointEpoch(loc));
+
         const V3 x0_m = LocationToX0m(loc);
 
         double rcMin = -1.0;
@@ -2668,7 +2727,7 @@ if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
 #endif
     }
 
-    if (prm.output.coords!="GSM") {
+    if (prm.output.mode!="TRAJECTORY" && prm.output.coords!="GSM") {
       std::cout << "[gridless] NOTE: OUTPUT_COORDS=" << prm.output.coords
                 << ". This prototype interprets positions as GSM.\n";
     }
