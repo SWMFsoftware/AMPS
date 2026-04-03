@@ -1,11 +1,529 @@
-1. application for cualculation of the cutoff rigidity with T96,T05, etc : input/earth-geospace_boundary_injection_sep_t96.input
+================================================================================
+AMPS Earth -- GRIDLESS energetic-particle tools
+================================================================================
 
-2. CLI:
-./amps -h 
-AMPS Earth: Gridless Cutoff Rigidity (prototype)
+This directory contains the gridless geospace energetic-particle solvers used by
+`srcEarth/main.cpp` when the executable is launched with:
 
-Usage:
+  ./amps -mode gridless -i AMPS_PARAM.in [options]
+
+The gridless path evaluates the magnetic field directly (rather than interpolating
+from a precomputed 3-D mesh) and integrates particle trajectories on the fly.
+At present the gridless workflow supports two science targets:
+
+  1) CUTOFF_RIGIDITY
+     Directional / effective geomagnetic cutoff rigidity at user-selected
+     locations or shell grids.
+
+  2) DENSITY_SPECTRUM
+     Local transmissivity, local spectrum, number density, and integral fluxes
+     implied by a prescribed outer-boundary spectrum.
+
+The gridless branch is intended for fast physics studies, algorithm development,
+benchmarking, and eventual user-facing Runs-on-Request style workflows where the
+inputs are specified in an AMPS parameter file.
+
+--------------------------------------------------------------------------------
+1. What “gridless” means here
+--------------------------------------------------------------------------------
+
+“Gridless” means that the solver does NOT construct or sample a volume mesh of B
+(and, in this branch, no electric field is used in the trajectory advance).
+Instead, each trajectory step evaluates the magnetic field directly from the
+selected field model and current particle position.
+
+In practical terms this means:
+
+  - no interpolation error from a precomputed field grid;
+  - no mesh generation cost for the magnetic field;
+  - trajectory cost is concentrated only where the solver actually traces;
+  - the code is naturally suited to point, shell, and trajectory-style products.
+
+The current gridless implementation is a magnetic-access / backtracing solver.
+It is NOT a full self-consistent radiation-belt transport model and it does NOT
+currently include electric-field drifts, diffusion, collisions, or wave-particle
+scattering in the shared gridless backtracer.
+
+--------------------------------------------------------------------------------
+2. High-level physics model
+--------------------------------------------------------------------------------
+
+2.1 Backtracing principle
+-------------------------
+
+A particle observed at a location x0 inside the magnetosphere is considered
+ALLOWED if the time-reversed trajectory launched from x0 escapes through the
+outer domain boundary before intersecting the inner loss sphere. Otherwise it is
+considered FORBIDDEN.
+
+This is the same “allowed vs forbidden” classifier used by both major gridless
+products in this directory:
+
+  - cutoff rigidity;
+  - density / spectrum / integral flux.
+
+Keeping a shared classifier is intentional: both science products must use the
+same field model, same geometry, same time stepping, and same stopping rules.
+
+
+2.2 Cutoff rigidity mode
+------------------------
+
+For each observation point and each tested arrival direction, the solver searches
+for the transition rigidity between forbidden and allowed access. In the gridless
+implementation this is done numerically by repeated trajectory classification over
+an interval specified in the input file.
+
+Conceptually:
+
+  Rc(x0, direction) = minimum rigidity at which the direction becomes allowed.
+
+Depending on the configured sampling mode, the code can report either:
+
+  - VERTICAL cutoff (single local vertical direction), or
+  - an isotropic/effective cutoff based on a sampled sky of directions.
+
+An optional directional cutoff map can also be produced in POINTS mode.
+
+
+2.3 Density / spectrum mode
+---------------------------
+
+For each observation point x0 and kinetic energy E, the solver samples a set of
+arrival directions and computes the allowed fraction (transmissivity):
+
+  T(E; x0) ~= N_allowed / N_dirs
+
+for the isotropic boundary case.
+
+The local spectrum is then modeled as
+
+  J_loc(E; x0) = T(E; x0) * J_b(E)
+
+where J_b(E) is the user-provided outer-boundary differential intensity from the
+#SPECTRUM section.
+
+The total number density is obtained from
+
+  n_tot(x0) = 4*pi * integral[ J_loc(E; x0) / v(E) ] dE
+
+and the omnidirectional integral flux is
+
+  F_tot(x0) = 4*pi * integral[ J_loc(E; x0) ] dE
+
+Additional user-defined energy channels may also be integrated.
+
+
+2.4 Optional anisotropic boundary mode
+--------------------------------------
+
+Density/spectrum mode supports two boundary models:
+
+  DS_BOUNDARY_MODE = ISOTROPIC
+  DS_BOUNDARY_MODE = ANISOTROPIC
+
+In the anisotropic mode, the boundary spectrum is represented in factored form:
+
+  J_b(E, dir, x_exit) ~= J_b_iso(E) * f_PAD(cos alpha) * f_spatial(x_exit)
+
+where:
+
+  - cos alpha is evaluated at the outer-boundary exit point of an allowed
+    backtraced trajectory,
+  - f_PAD is a pitch-angle-distribution weight,
+  - f_spatial is a spatial weight on the boundary.
+
+Supported PAD / spatial forms are implemented in:
+
+  gridless/AnisotropicSpectrum.h
+  gridless/AnisotropicSpectrum.cpp
+
+This branch is still intentionally simple but already useful for SEP-like
+field-aligned streaming, pancake-like distributions, and crude dayside/nightside
+asymmetry tests.
+
+--------------------------------------------------------------------------------
+3. Main source files in this directory
+--------------------------------------------------------------------------------
+
+  CutoffRigidityGridless.h / .cpp
+      Gridless cutoff-rigidity solver, shared trajectory classifier,
+      MPI scheduling, Tecplot output, optional directional sky maps.
+
+  DensityGridless.h / .cpp
+      Gridless transmissivity / local-spectrum / density / flux solver.
+      Reuses the same shared trajectory classifier as cutoff rigidity.
+
+  GridlessParticleMovers.h / .cpp
+      Shared low-level particle movers and adaptive time-stepping utilities.
+      This file is the common numerical core used by the gridless solvers.
+
+  DipoleInterface.h / .cpp
+      Dipole-field helper used both for analytic benchmarking and for a simple
+      standalone DIPOLE field-model option.
+
+  AnisotropicSpectrum.h / .cpp
+      Boundary anisotropy weighting models used by density/spectrum mode.
+
+  test/
+      Analytical / regression test inputs and Python scripts for density and
+      anisotropic-density validation.
+
+--------------------------------------------------------------------------------
+4. Field models currently implemented in the gridless branch
+--------------------------------------------------------------------------------
+
+The actual gridless field evaluation in this source drop supports:
+
+  - T96
+  - T05
+  - DIPOLE
+
+Notes:
+
+  * The gridless tracer advances particles in GSM.
+  * The external-field evaluation uses the same access pattern as the rest of the
+    AMPS Earth code base (Geopack + Tsyganenko interfaces).
+  * DIPOLE is useful for analytic benchmarking and controlled regression tests.
+
+If parser aliases or other field-model names are added elsewhere, they should NOT
+be documented here unless the gridless field evaluator itself supports them.
+
+--------------------------------------------------------------------------------
+5. Particle movers and numerical integration
+--------------------------------------------------------------------------------
+
+The gridless CLI and shared mover layer support the following trajectory movers:
+
+  BORIS
+  RK2
+  RK4
+  RK6
+  GC2
+  GC4
+  GC6
+  HYBRID
+
+Default production choice:
+
+  BORIS
+
+because it is efficient, robust, and well suited to relativistic charged-particle
+motion in a magnetic field.
+
+General guidance:
+
+  - BORIS:
+      recommended default for most cutoff and density runs.
+
+  - RK2 / RK4 / RK6:
+      explicit full-orbit alternatives mainly useful for cross-checks,
+      convergence studies, and regions where orbit reconstruction detail matters.
+
+  - GC2 / GC4 / GC6:
+      guiding-center approximations for cases where gyromotion itself is not the
+      main quantity of interest and adiabatic ordering is acceptable.
+
+  - HYBRID:
+      per-step switch between full-orbit and guiding-center updates using a local
+      adiabaticity estimate.
+
+Time stepping is adaptive and controlled by the shared mover layer. In broad
+terms the step size is restricted by:
+
+  - a gyro-angle criterion, and
+  - a geometric criterion tied to distance from the outer box and inner sphere.
+
+The stepper also includes explicit checking for crossing of the inner loss sphere
+within a step so that absorption is not missed by a large step.
+
+--------------------------------------------------------------------------------
+6. Geometry and stopping conditions
+--------------------------------------------------------------------------------
+
+The gridless domain is defined by:
+
+  - an outer rectangular box (#DOMAIN_BOUNDARY), and
+  - an inner absorbing sphere of radius R_INNER.
+
+Trajectory classification uses the following logic:
+
+  OUTSIDE OUTER BOX  -> ALLOWED
+  HIT INNER SPHERE   -> FORBIDDEN
+  EXCEED STEP/TIME/DISTANCE CAP -> FORBIDDEN (conservative)
+
+The inner sphere is a simple loss-surface proxy. It is not a detailed atmosphere,
+ionosphere, or loss-cone model.
+
+--------------------------------------------------------------------------------
+7. Input-file interface
+--------------------------------------------------------------------------------
+
+The gridless branch is configured through the same AMPS parameter file parsed by:
+
+  util/amps_param_parser.h
+  util/amps_param_parser.cpp
+
+The minimum sections needed for a typical run are:
+
+  #CALCULATION_MODE
+      CALC_TARGET       CUTOFF_RIGIDITY | DENSITY_SPECTRUM
+      FIELD_EVAL_METHOD GRIDLESS
+
+  #PARTICLE_SPECIES
+      species charge and mass
+
+  #BACKGROUND_FIELD
+      FIELD_MODEL, epoch, and model-specific drivers
+
+  #DOMAIN_BOUNDARY
+      outer box and R_INNER
+
+  #OUTPUT_DOMAIN
+      POINTS or SHELLS definition
+
+  #NUMERICAL
+      DT_TRACE, MAX_STEPS, MAX_TRACE_TIME, etc.
+
+For cutoff runs add:
+
+  #CUTOFF_RIGIDITY
+
+For density/spectrum runs add:
+
+  #DENSITY_SPECTRUM
+  #SPECTRUM
+
+Optional sections:
+
+  #BOUNDARY_ANISOTROPY   (for DS_BOUNDARY_MODE = ANISOTROPIC)
+  #ENERGY_CHANNELS       (extra integral-flux channels)
+
+IMPORTANT INPUT CONVENTION:
+
+  The gridless solvers trace in GSM. The parser stores coordinate labels but does
+  not perform a full coordinate transformation of input points for the user.
+  Input coordinates therefore need to be consistent with the solver’s GSM-based
+  assumptions unless an external conversion has already been applied.
+
+--------------------------------------------------------------------------------
+8. Command-line interface
+--------------------------------------------------------------------------------
+
+Main usage:
+
   ./amps -h
   ./amps -mode gridless -i AMPS_PARAM.in
-  ./amps -mode 3d      -i AMPS_PARAM.in   (reserved / legacy path)
-  
+  ./amps -mode gridless -i AMPS_PARAM.in -mover BORIS
+  ./amps -mode gridless -i AMPS_PARAM.in -density-mode ANISOTROPIC
+  ./amps -mode gridless -i AMPS_PARAM.in -max-trace-distance 200
+
+Useful options:
+
+  -h | --help
+      Print the solver help message.
+
+  -mode <gridless|3d>
+      Select execution path. This README documents the gridless branch only.
+
+  -i <file>
+      AMPS parameter file.
+
+  -mover <BORIS|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>
+      Override the default/shared mover.
+
+  -density-mode <ISOTROPIC|ANISOTROPIC>
+      Override DS_BOUNDARY_MODE for density/spectrum runs.
+
+  -max-trace-distance <Re>
+      Optional cumulative path-length cap in Earth radii.
+
+For the authoritative CLI wording, see:
+
+  util/cutoff_cli.cpp
+
+--------------------------------------------------------------------------------
+9. Output files written by the current gridless implementation
+--------------------------------------------------------------------------------
+
+9.1 Cutoff-rigidity mode
+------------------------
+
+Primary outputs written by the current code are:
+
+  cutoff_gridless_points.dat
+      Point list results (POINTS mode).
+
+  cutoff_gridless_shells.dat
+      Shell-grid results (SHELLS mode).
+
+Optional / benchmark-style outputs may also be written in specific branches:
+
+  cutoff_gridless_dir_map_point_####.dat
+      Directional cutoff maps for individual points when enabled.
+
+  cutoff_gridless_points_dipole_compare.dat
+  cutoff_gridless_shells_dipole_compare.dat
+      Comparison products used for dipole / analytic benchmarking.
+
+
+9.2 Density / spectrum mode
+---------------------------
+
+Primary outputs written by the current code are:
+
+  gridless_points_density.dat
+      Total number density per point.
+
+  gridless_points_spectrum.dat
+      Energy-resolved transmissivity and local spectrum per point.
+
+  gridless_points_flux.dat
+      Total integral flux plus optional user-defined energy channels.
+
+  gridless_shell_<ALT>km_density_channels.dat
+      Shell-grid density output with multiple Tecplot zones, including total
+      density and channel-resolved contributions.
+
+Optional dipole-comparison files may be written by benchmark paths:
+
+  density_gridless_points_dipole_compare.dat
+  spectrum_gridless_points_dipole_compare.dat
+  flux_gridless_points_dipole_compare.dat
+  density_gridless_shells_dipole_compare.dat
+  spectrum_gridless_shells_dipole_compare.dat
+  flux_gridless_shells_dipole_compare.dat
+
+--------------------------------------------------------------------------------
+10. Parallelism
+--------------------------------------------------------------------------------
+
+The gridless branch is designed to exploit both MPI and OpenMP where available.
+
+MPI
+---
+
+Both major gridless solvers use dynamic point-level MPI scheduling so that slow
+points (for example near penumbra-like access transitions or long-lived trapped
+orbits) do not idle the rest of the job.
+
+OpenMP
+------
+
+Density/spectrum mode contains OpenMP-aware logic for embarrassingly parallel
+loops over energies and/or directions. Care is taken to avoid pathological nested
+parallelism.
+
+The exact runtime benefit depends strongly on field model, observation geometry,
+energy range, and near-cutoff trajectory behavior.
+
+--------------------------------------------------------------------------------
+11. Validation / tests in gridless/test
+--------------------------------------------------------------------------------
+
+The `gridless/test` directory contains analytical and regression-oriented tests,
+including:
+
+  - isotropic density tests in dipole / geometric-shadow configurations;
+  - anisotropic density regression tests;
+  - shell and point test inputs;
+  - Python scripts that compare solver output to analytical expectations.
+
+Useful entry points:
+
+  test/README_density_tests.md
+  test/README_aniso_density_tests.md
+  test/test_density_analytic.py
+  test/test_density_aniso.py
+
+These tests are important because they validate not only output formatting but
+also the physical consistency of transmissivity, density integration, and
+anisotropy weighting.
+
+--------------------------------------------------------------------------------
+12. Current limitations and scope boundaries
+--------------------------------------------------------------------------------
+
+This README should be explicit about what the gridless branch currently is and is
+not.
+
+Implemented / supported in the reviewed source:
+
+  - direct magnetic-field evaluation in GSM;
+  - gridless backtracing;
+  - cutoff-rigidity calculations;
+  - transmissivity-based density / spectrum / integral-flux calculations;
+  - optional factored anisotropic boundary weighting;
+  - DIPOLE / T96 / T05 magnetic fields;
+  - MPI scheduling and Tecplot ASCII outputs.
+
+Not currently part of the shared gridless trajectory physics:
+
+  - electric-field forcing in the backtracer;
+  - self-consistent time-dependent field evolution during a single trace;
+  - pitch-angle diffusion / radial diffusion;
+  - collisions or chemistry;
+  - detailed atmospheric loss physics beyond the absorbing inner sphere;
+  - a full 5-D boundary distribution J(E, direction, position, time).
+
+Therefore the present branch should be interpreted as a fast and flexible
+magnetic-access / boundary-filtering solver, not yet as a complete radiation-belt
+transport code.
+
+--------------------------------------------------------------------------------
+13. Practical recommendations
+--------------------------------------------------------------------------------
+
+For most new users / developers:
+
+  1) start with DIPOLE runs and the test cases in `gridless/test`;
+  2) use BORIS unless there is a specific reason to test another mover;
+  3) verify coordinate conventions before trusting point outputs;
+  4) refine energy or directional sampling near sharp transmissivity transitions;
+  5) treat the anisotropic mode as a controlled extension, not a substitute for a
+     fully tabulated boundary distribution.
+
+--------------------------------------------------------------------------------
+14. Minimal example commands
+--------------------------------------------------------------------------------
+
+Cutoff rigidity:
+
+  ./amps -mode gridless -i input/earth-geospace_boundary_injection_sep_t96.input
+
+Density / spectrum, isotropic boundary:
+
+  ./amps -mode gridless -i my_density_run.in -density-mode ISOTROPIC
+
+Density / spectrum, anisotropic boundary:
+
+  ./amps -mode gridless -i my_density_run.in -density-mode ANISOTROPIC
+
+Cross-check with a different mover:
+
+  ./amps -mode gridless -i my_run.in -mover RK4
+
+--------------------------------------------------------------------------------
+15. Where to look next in the source
+--------------------------------------------------------------------------------
+
+For architecture / shared classifier:
+
+  gridless/CutoffRigidityGridless.h
+
+For detailed density/spectrum theory and file formats:
+
+  gridless/DensityGridless.cpp
+
+For mover assumptions and adaptive time stepping:
+
+  gridless/GridlessParticleMovers.h
+
+For anisotropic boundary models:
+
+  gridless/AnisotropicSpectrum.h
+
+For AMPS input-file syntax:
+
+  util/amps_param_parser.h
+
