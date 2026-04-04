@@ -24,7 +24,10 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <ctime>
 #include <fstream>
+#include <iomanip>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -136,15 +139,20 @@ public:
   }
 
   /**
-   * @brief Table spectrum: energy(MeV) and flux(per MeV) columns.
-   * The file may contain comments beginning with #.
-   * Interpolation: log-log linear interpolation (positive values required).
+   * @brief Table spectrum loaded from either a legacy 2-column file or a
+   *        time-dependent file with one timestamp row and many energy columns.
+   *
+   * For time-dependent files, reference_epoch_utc determines which time row is
+   * selected. The nearest row in time is used. If reference_epoch_utc is empty
+   * or cannot be parsed, the first valid time row is used.
    */
   static cSpectrum MakeTable(std::string table_file,
-                            double Emin_MeV, double Emax_MeV) {
+                            double Emin_MeV, double Emax_MeV,
+                            std::string reference_epoch_utc = std::string()) {
     cSpectrum s;
     s.type_ = Type::Table;
     s.table_file_ = std::move(table_file);
+    s.table_reference_epoch_utc_ = std::move(reference_epoch_utc);
     s.spec_emin_MeV_ = Emin_MeV;
     s.spec_emax_MeV_ = Emax_MeV;
     s.LoadTableOrThrow();
@@ -219,7 +227,8 @@ public:
     if (type_s == "TABLE") {
       std::string f = Trim(get("SPEC_TABLE_FILE"));
       if (f.empty()) exit(__LINE__,__FILE__,"Missing required key SPEC_TABLE_FILE for SPECTRUM_TYPE=TABLE");
-      return MakeTable(f, Emin, Emax);
+      const std::string refEpochUTC = Trim(get("SPEC_TABLE_REFERENCE_EPOCH_UTC"));
+      return MakeTable(f, Emin, Emax, refEpochUTC);
     }
 
     std::ostringstream oss;
@@ -248,6 +257,21 @@ public:
   // ---------- Accessors ----------
   Type GetType() const noexcept { return type_; }
   const std::string& GetTableFile() const noexcept { return table_file_; }
+  bool IsTimeDependentTable() const noexcept { return table_is_time_dependent_; }
+  std::size_t TableSnapshotCount() const noexcept { return table_snapshots_.size(); }
+  const std::string& ActiveTableEpochUTC() const noexcept { return selected_table_epoch_utc_; }
+
+  void SetEvaluationUnixSeconds(double unixTime) {
+    if (!table_is_time_dependent_ || table_snapshots_.empty() || !std::isfinite(unixTime)) return;
+    ActivateTimeDependentSnapshotByIndex_(FindNearestTimeDependentSnapshotIndex_(unixTime));
+  }
+
+  void SetEvaluationEpochUTC(const std::string& epochUTC) {
+    if (!table_is_time_dependent_ || table_snapshots_.empty()) return;
+    double unixTime = 0.0;
+    if (!ParseIsoUtcToUnixSeconds_(epochUTC, unixTime)) return;
+    SetEvaluationUnixSeconds(unixTime);
+  }
 
   /**
    * @brief Direct access to table points (only meaningful for Type::Table).
@@ -407,9 +431,194 @@ private:
     }
   }
 
-  void LoadTableOrThrow() {
-    table_E_MeV_.clear();
-    table_J_perMeV_.clear();
+  enum class TableFileFormat : uint8_t { Unknown, TwoColumn, TimeDependent };
+
+  static bool ParseDoubleNoThrow_(const std::string& s, double& x) {
+    const std::string t = Trim(s);
+    if (t.empty()) return false;
+    char* end = nullptr;
+    x = std::strtod(t.c_str(), &end);
+    if (end == t.c_str() || !std::isfinite(x)) return false;
+    while (end && *end != '\0' && std::isspace(static_cast<unsigned char>(*end))) ++end;
+    return end && *end == '\0';
+  }
+
+  static std::vector<std::string> SplitWhitespace_(const std::string& s) {
+    std::istringstream iss(s);
+    std::vector<std::string> out;
+    std::string tok;
+    while (iss >> tok) out.push_back(tok);
+    return out;
+  }
+
+  static std::string StripInlineComment_(const std::string& line) {
+    std::size_t cut = std::string::npos;
+    for (char c : {'#','!'}) {
+      const std::size_t p = line.find(c);
+      if (p != std::string::npos && (cut == std::string::npos || p < cut)) cut = p;
+    }
+    return (cut == std::string::npos) ? Trim(line) : Trim(line.substr(0, cut));
+  }
+
+  static bool LooksLikeIsoUtcToken_(const std::string& s) {
+    return (s.find('T') != std::string::npos) && (s.find('-') != std::string::npos || s.find('/') != std::string::npos);
+  }
+
+  static bool ParseIsoUtcToUnixSeconds_(const std::string& s, double& unixOut) {
+    std::tm tm = {};
+    std::istringstream iss(s);
+    iss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+    if (iss.fail()) {
+      std::istringstream iss2(s);
+      iss2 >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
+      if (iss2.fail()) return false;
+    }
+#if defined(_WIN32)
+    std::time_t tt = _mkgmtime(&tm);
+#else
+    std::time_t tt = timegm(&tm);
+#endif
+    if (tt == static_cast<std::time_t>(-1)) return false;
+    unixOut = static_cast<double>(tt);
+    return true;
+  }
+
+  static bool TryParseEnergyGridHeader_(const std::string& rawLine, std::vector<double>& energyGridOut) {
+    std::string s = Trim(rawLine);
+    if (s.empty()) return false;
+    if (s[0]=='#' || s[0]=='!') s = Trim(s.substr(1));
+    const std::string u = ToUpper(s);
+    const std::string prefix = "ENERGY_MEV:";
+    if (u.rfind(prefix, 0) != 0) return false;
+
+    const std::string values = Trim(s.substr(prefix.size()));
+    const auto toks = SplitWhitespace_(values);
+    if (toks.empty()) exit(__LINE__,__FILE__,"Spectrum time-dependent file has ENERGY_MEV header with no values");
+
+    energyGridOut.clear();
+    energyGridOut.reserve(toks.size());
+    for (const auto& tok : toks) {
+      double e = 0.0;
+      if (!ParseDoubleNoThrow_(tok, e) || !(e > 0.0)) {
+        std::ostringstream oss;
+        oss << "Invalid energy value '" << tok << "' in ENERGY_MEV header of '" << rawLine << "'";
+        exit(__LINE__,__FILE__,oss.str().c_str());
+      }
+      energyGridOut.push_back(e);
+    }
+    return true;
+  }
+
+  TableFileFormat DetectTableFileFormat_() const {
+    std::ifstream in(table_file_);
+    if (!in) {
+      std::ostringstream oss;
+      oss << "Failed to open SPEC_TABLE_FILE='" << table_file_ << "'";
+      exit(__LINE__,__FILE__,oss.str().c_str());
+    }
+
+    bool sawEnergyGrid = false;
+    std::string line;
+    while (std::getline(in, line)) {
+      const std::string trimmed = Trim(line);
+      if (trimmed.empty()) continue;
+
+      std::vector<double> dummy;
+      if (TryParseEnergyGridHeader_(trimmed, dummy)) {
+        sawEnergyGrid = true;
+        continue;
+      }
+
+      if (trimmed[0]=='#' || trimmed[0]=='!') continue;
+
+      const std::string data = StripInlineComment_(trimmed);
+      if (data.empty()) continue;
+      const auto toks = SplitWhitespace_(data);
+      if (toks.empty()) continue;
+
+      if (toks.size()==2) {
+        double e=0.0, j=0.0;
+        if (ParseDoubleNoThrow_(toks[0], e) && ParseDoubleNoThrow_(toks[1], j)) {
+          return TableFileFormat::TwoColumn;
+        }
+      }
+
+      if (toks.size()>=3 && LooksLikeIsoUtcToken_(toks[0])) return TableFileFormat::TimeDependent;
+      if (sawEnergyGrid && toks.size()>=3) return TableFileFormat::TimeDependent;
+    }
+
+    return TableFileFormat::Unknown;
+  }
+
+  static void FinalizeTableVectorsOrThrow_(std::vector<double>& E_MeV,
+                                          std::vector<double>& J_perMeV,
+                                          const std::string& sourceLabel) {
+    if (E_MeV.size() < 2) {
+      std::ostringstream oss;
+      oss << "TABLE data '" << sourceLabel << "' did not contain >=2 valid (positive) rows";
+      exit(__LINE__,__FILE__,oss.str().c_str());
+    }
+
+    std::vector<size_t> idx(E_MeV.size());
+    for (size_t i = 0; i < idx.size(); ++i) idx[i] = i;
+    std::sort(idx.begin(), idx.end(), [&](size_t a, size_t b){ return E_MeV[a] < E_MeV[b]; });
+
+    std::vector<double> E2, J2;
+    E2.reserve(idx.size()); J2.reserve(idx.size());
+    for (size_t k : idx) { E2.push_back(E_MeV[k]); J2.push_back(J_perMeV[k]); }
+    E_MeV.swap(E2);
+    J_perMeV.swap(J2);
+
+    std::vector<double> E3, J3;
+    for (size_t i = 0; i < E_MeV.size(); ++i) {
+      if (!E3.empty() && std::fabs(E_MeV[i] - E3.back()) <= 0.0) {
+        J3.back() = J_perMeV[i];
+      } else {
+        E3.push_back(E_MeV[i]);
+        J3.push_back(J_perMeV[i]);
+      }
+    }
+    E_MeV.swap(E3);
+    J_perMeV.swap(J3);
+  }
+
+  void FinalizeLoadedTableOrThrow_() {
+    FinalizeTableVectorsOrThrow_(table_E_MeV_, table_J_perMeV_, table_file_);
+  }
+
+  void ActivateTimeDependentSnapshotByIndex_(std::size_t idx) {
+    if (table_snapshots_.empty()) {
+      table_E_MeV_.clear();
+      table_J_perMeV_.clear();
+      selected_table_epoch_utc_.clear();
+      active_snapshot_index_ = -1;
+      return;
+    }
+    if (idx >= table_snapshots_.size()) idx = table_snapshots_.size() - 1;
+    active_snapshot_index_ = static_cast<int>(idx);
+    table_E_MeV_ = table_snapshots_[idx].E_MeV;
+    table_J_perMeV_ = table_snapshots_[idx].J_perMeV;
+    selected_table_epoch_utc_ = table_snapshots_[idx].epochUTC;
+  }
+
+  std::size_t FindNearestTimeDependentSnapshotIndex_(double unixTime) const {
+    if (table_snapshots_.empty()) return 0;
+    std::size_t best = 0;
+    double bestAbsDt = std::fabs(table_snapshots_[0].unixTime_s - unixTime);
+    for (std::size_t i = 1; i < table_snapshots_.size(); ++i) {
+      const double dt = std::fabs(table_snapshots_[i].unixTime_s - unixTime);
+      if (dt < bestAbsDt) {
+        bestAbsDt = dt;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  void LoadTwoColumnTableOrThrow_() {
+    table_is_time_dependent_ = false;
+    table_snapshots_.clear();
+    active_snapshot_index_ = -1;
 
     std::ifstream in(table_file_);
     if (!in) {
@@ -423,49 +632,163 @@ private:
     while (std::getline(in, line)) {
       ++lineno;
       line = Trim(line);
-      if (line.empty() || line[0] == '#') continue;
+      if (line.empty() || line[0] == '#' || line[0] == '!') continue;
 
-      std::istringstream iss(line);
+      const std::string data = StripInlineComment_(line);
+      if (data.empty()) continue;
+
+      std::istringstream iss(data);
       double e = 0.0, j = 0.0;
       if (!(iss >> e >> j)) {
         std::ostringstream oss;
         oss << "Bad TABLE line " << lineno << " in '" << table_file_ << "': expected two columns (E_MeV flux_perMeV)";
-	exit(__LINE__,__FILE__,oss.str().c_str()); 
+        exit(__LINE__,__FILE__,oss.str().c_str());
       }
-      if (!(e > 0.0) || !(j > 0.0)) continue; // skip non-positive entries
+      if (!(e > 0.0) || !(j > 0.0)) continue;
       table_E_MeV_.push_back(e);
       table_J_perMeV_.push_back(j);
     }
 
-    if (table_E_MeV_.size() < 2) {
+    FinalizeLoadedTableOrThrow_();
+  }
+
+  void LoadTimeDependentTableOrThrow_() {
+    std::ifstream in(table_file_);
+    if (!in) {
       std::ostringstream oss;
-      oss << "TABLE file '" << table_file_ << "' did not contain >=2 valid (positive) rows";
+      oss << "Failed to open SPEC_TABLE_FILE='" << table_file_ << "'";
       exit(__LINE__,__FILE__,oss.str().c_str());
     }
 
-    // Ensure monotonic increasing E; if not, sort pairs.
-    std::vector<size_t> idx(table_E_MeV_.size());
-    for (size_t i = 0; i < idx.size(); ++i) idx[i] = i;
-    std::sort(idx.begin(), idx.end(), [&](size_t a, size_t b){ return table_E_MeV_[a] < table_E_MeV_[b]; });
+    table_is_time_dependent_ = true;
+    table_snapshots_.clear();
+    active_snapshot_index_ = -1;
 
-    std::vector<double> E2, J2;
-    E2.reserve(idx.size()); J2.reserve(idx.size());
-    for (size_t k : idx) { E2.push_back(table_E_MeV_[k]); J2.push_back(table_J_perMeV_[k]); }
-    table_E_MeV_.swap(E2);
-    table_J_perMeV_.swap(J2);
+    bool haveRef = false;
+    double refTime = 0.0;
+    if (!table_reference_epoch_utc_.empty()) haveRef = ParseIsoUtcToUnixSeconds_(table_reference_epoch_utc_, refTime);
 
-    // Remove duplicates in energy (keep last).
-    std::vector<double> E3, J3;
-    for (size_t i = 0; i < table_E_MeV_.size(); ++i) {
-      if (!E3.empty() && std::fabs(table_E_MeV_[i] - E3.back()) <= 0.0) {
-        J3.back() = table_J_perMeV_[i];
-      } else {
-        E3.push_back(table_E_MeV_[i]);
-        J3.push_back(table_J_perMeV_[i]);
+    std::vector<double> energyGrid;
+    bool haveGrid = false;
+
+    std::string line;
+    size_t lineno = 0;
+    while (std::getline(in, line)) {
+      ++lineno;
+      const std::string trimmed = Trim(line);
+      if (trimmed.empty()) continue;
+
+      std::vector<double> headerGrid;
+      if (TryParseEnergyGridHeader_(trimmed, headerGrid)) {
+        energyGrid = headerGrid;
+        haveGrid = true;
+        continue;
+      }
+
+      if (trimmed[0]=='#' || trimmed[0]=='!') continue;
+
+      const std::string data = StripInlineComment_(trimmed);
+      if (data.empty()) continue;
+      const auto toks = SplitWhitespace_(data);
+      if (toks.size() < 3 || !LooksLikeIsoUtcToken_(toks[0])) continue;
+
+      if (!haveGrid) {
+        std::ostringstream oss;
+        oss << "Time-dependent TABLE file '" << table_file_ << "' contains data rows before ENERGY_MEV header";
+        exit(__LINE__,__FILE__,oss.str().c_str());
+      }
+      if (toks.size() != energyGrid.size() + 1) {
+        std::ostringstream oss;
+        oss << "Time-dependent TABLE line " << lineno << " in '" << table_file_ << "' has "
+            << (toks.size()-1) << " flux columns, but ENERGY_MEV defines " << energyGrid.size() << " energies";
+        exit(__LINE__,__FILE__,oss.str().c_str());
+      }
+
+      double rowTime = 0.0;
+      if (!ParseIsoUtcToUnixSeconds_(toks[0], rowTime)) {
+        std::ostringstream oss;
+        oss << "Invalid UTC timestamp '" << toks[0] << "' in time-dependent TABLE line "
+            << lineno << " of '" << table_file_ << "'";
+        exit(__LINE__,__FILE__,oss.str().c_str());
+      }
+
+      std::vector<double> rowE;
+      std::vector<double> rowJ;
+      rowE.reserve(energyGrid.size());
+      rowJ.reserve(energyGrid.size());
+      for (std::size_t i=1; i<toks.size(); ++i) {
+        double v = 0.0;
+        if (!ParseDoubleNoThrow_(toks[i], v)) {
+          std::ostringstream oss;
+          oss << "Invalid flux value '" << toks[i] << "' in time-dependent TABLE line " << lineno
+              << " of '" << table_file_ << "'";
+          exit(__LINE__,__FILE__,oss.str().c_str());
+        }
+        if (!(v > 0.0) || !std::isfinite(v)) continue;
+        rowE.push_back(energyGrid[i-1]);
+        rowJ.push_back(v);
+      }
+
+      if (rowE.size() < 2) continue;
+
+      {
+        std::ostringstream label;
+        label << table_file_ << " @ " << toks[0];
+        FinalizeTableVectorsOrThrow_(rowE, rowJ, label.str());
+      }
+
+      TableSnapshot snap;
+      snap.unixTime_s = rowTime;
+      snap.epochUTC = toks[0];
+      snap.E_MeV.swap(rowE);
+      snap.J_perMeV.swap(rowJ);
+      table_snapshots_.push_back(std::move(snap));
+    }
+
+    if (!haveGrid) {
+      std::ostringstream oss;
+      oss << "Time-dependent TABLE file '" << table_file_ << "' does not contain ENERGY_MEV header";
+      exit(__LINE__,__FILE__,oss.str().c_str());
+    }
+    if (table_snapshots_.empty()) {
+      std::ostringstream oss;
+      oss << "Time-dependent TABLE file '" << table_file_
+          << "' does not contain any time snapshots with at least two valid positive bins";
+      exit(__LINE__,__FILE__,oss.str().c_str());
+    }
+
+    std::sort(table_snapshots_.begin(), table_snapshots_.end(),
+              [](const TableSnapshot& a, const TableSnapshot& b) {
+                return a.unixTime_s < b.unixTime_s;
+              });
+
+    const std::size_t i0 = haveRef ? FindNearestTimeDependentSnapshotIndex_(refTime) : std::size_t(0);
+    ActivateTimeDependentSnapshotByIndex_(i0);
+  }
+
+  void LoadTableOrThrow() {
+    table_E_MeV_.clear();
+    table_J_perMeV_.clear();
+    selected_table_epoch_utc_.clear();
+    table_snapshots_.clear();
+    table_is_time_dependent_ = false;
+    active_snapshot_index_ = -1;
+
+    const TableFileFormat fmt = DetectTableFileFormat_();
+    switch (fmt) {
+      case TableFileFormat::TwoColumn:
+        LoadTwoColumnTableOrThrow_();
+        return;
+      case TableFileFormat::TimeDependent:
+        LoadTimeDependentTableOrThrow_();
+        return;
+      case TableFileFormat::Unknown:
+      default: {
+        std::ostringstream oss;
+        oss << "Could not determine spectrum TABLE format for file '" << table_file_ << "'";
+        exit(__LINE__,__FILE__,oss.str().c_str());
       }
     }
-    table_E_MeV_.swap(E3);
-    table_J_perMeV_.swap(J3);
   }
 
   double InterpLogLog_(double E_MeV) const {
@@ -565,8 +888,20 @@ double spec_lis_gamma_ = 0.0;
   double spec_gamma1_ = 0.0;
   double spec_gamma2_ = 0.0;
 
+  struct TableSnapshot {
+    double unixTime_s = 0.0;
+    std::string epochUTC;
+    std::vector<double> E_MeV;
+    std::vector<double> J_perMeV;
+  };
+
   // Table
   std::string table_file_;
+  std::string table_reference_epoch_utc_;
+  std::string selected_table_epoch_utc_;
+  bool table_is_time_dependent_ = false;
+  int active_snapshot_index_ = -1;
+  std::vector<TableSnapshot> table_snapshots_;
   std::vector<double> table_E_MeV_;
   std::vector<double> table_J_perMeV_;
 };

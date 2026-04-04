@@ -114,8 +114,9 @@
 //                                        ! 0 or negative => disabled
 //
 //   #SPECTRUM
-//     (arbitrary key/value pairs stored in AmpsParam.spectrum raw map;
-//      interpreted by boundary/spectrum.h InitGlobalSpectrumFromKeyValueMap)
+//     (stored both as a raw key/value map in AmpsParam.spectrum and as a
+//      typed metadata view in AmpsParam.particleSpectrum; the downstream
+//      evaluator still uses boundary/spectrum.h InitGlobalSpectrumFromKeyValueMap)
 //
 //   Any unrecognised section or key is stored in AmpsParam.unknown for diagnostics.
 //
@@ -190,6 +191,56 @@ namespace EarthUtil {
   // Simple 3-component container used throughout.
   struct Vec3 {
     double x{0.0}, y{0.0}, z{0.0};
+  };
+
+  //====================================================================================
+  // ParticleSpectrum / SpectrumTablePoint
+  //====================================================================================
+  // A typed representation of the #SPECTRUM block.  The raw key/value table is kept
+  // as well, but this structure makes the most important spectrum choices available
+  // during initialization without requiring downstream code to reinterpret strings.
+  //
+  // Design goal:
+  //   - keep the parser independent from the actual injection implementation;
+  //   - validate the commonly used POWER_LAW inputs early;
+  //   - preserve all original raw keys for forward compatibility.
+  struct SpectrumTablePoint {
+    double energy_MeV{0.0};
+    double intensity{0.0};
+  };
+
+  struct ParticleSpectrum {
+    enum class Type { UNKNOWN, POWER_LAW, POWER_LAW_CUTOFF, LIS_FORCE_FIELD, BAND, TABLE };
+    enum class TableFormat { UNKNOWN, TWO_COLUMN, TIME_DEPENDENT };
+
+    Type type{Type::UNKNOWN};
+    std::string typeName{"UNKNOWN"};
+    bool parsed{false};
+    TableFormat tableFormat{TableFormat::UNKNOWN};
+
+    // Common power-law style parameters.  These are populated when present and are
+    // required for POWER_LAW.  For other spectrum types they remain optional metadata
+    // unless a downstream module chooses to use them.
+    double J0{0.0};
+    double gamma{0.0};
+    double E0_MeV{0.0};
+    double Emin_MeV{0.0};
+    double Emax_MeV{0.0};
+
+    // Optional extra parameters for extended spectrum forms.  They are intentionally
+    // generic because the exact downstream evaluator lives outside this parser.
+    double cutoffEnergy_MeV{0.0};
+    double modulationPotential_MV{0.0};
+    double alpha{0.0};
+    double beta{0.0};
+    double breakEnergy_MeV{0.0};
+    std::string tableFile;
+    std::string resolvedTableFile;
+    std::string selectedSnapshotEpochUTC;
+    double selectedSnapshotTimeOffset_s{0.0};
+    std::vector<SpectrumTablePoint> tablePoints;
+
+    std::map<std::string,std::string> raw;
   };
 
   struct DomainBox {
@@ -782,6 +833,7 @@ namespace EarthUtil {
     TemporalParam temporal;   // #TEMPORAL section (time-series mode + driver table)
 
     std::map<std::string,std::string> spectrum;
+    ParticleSpectrum particleSpectrum;  // typed view of #SPECTRUM, built at init time
     std::map<std::string,std::string> outputOptions;
 
     // User-defined integral-flux channels.  Empty when #ENERGY_CHANNELS is absent;
@@ -791,6 +843,22 @@ namespace EarthUtil {
     // Holds all unknown keys across sections (for diagnostics / forward compat).
     std::map<std::string,std::string> unknown;
   };
+
+  // Parse and validate the #SPECTRUM section into a typed representation while
+  // preserving the original raw key/value table for the downstream spectrum
+  // evaluator.
+  ParticleSpectrum ParseParticleSpectrum(const std::map<std::string,std::string>& kv);
+
+  // Load a trajectory file and convert every sample into GSM Cartesian coordinates
+  // in meters.  This is used by OUTPUT_MODE=TRAJECTORY during initialization.
+  SpacecraftTrajectory LoadTrajectoryFileAsGsm(const std::string& fileName,
+                                               const std::string& trajFrame);
+
+  // Finalize the point-like output representation after parsing.
+  //   POINTS     -> pack standalone points into one-sample synthetic trajectories
+  //   TRAJECTORY -> load the trajectory file and flatten it into output.points
+  //   SHELLS     -> leave the point/trajectory containers untouched
+  void InitializePointLikeOutput(AmpsParam& p);
 
   // Parse an AMPS_PARAM file. Throws std::runtime_error on hard errors.
   AmpsParam ParseAmpsParamFile(const std::string& fileName);

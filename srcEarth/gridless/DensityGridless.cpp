@@ -833,6 +833,104 @@ static double ComputeWeightBlockAtEnergy(const EarthUtil::AmpsParam& prm,
   return weightSum;
 }
 
+//--------------------------------------------------------------------------------------
+// POINT-LIKE OUTPUT HELPERS (shared by POINTS and TRAJECTORY modes)
+//--------------------------------------------------------------------------------------
+// POINTS and TRAJECTORY already share the same flattened prm.output.points array and the
+// same tracing kernels.  The remaining mode-specific differences are small:
+//
+//   (1) TRAJECTORY carries a per-sample UTC timestamp that must be propagated into the
+//       field initialization so the Geopack / driver-table state matches the current
+//       sample.
+//   (2) Writers may optionally prepend a TimeUTC column and use trajectory-specific zone
+//       labels when the input really came from a trajectory file.
+//
+// Centralizing those rules here avoids repeating "if (mode==TRAJECTORY ...)" blocks in
+// the serial loop, MPI worker loop, and Tecplot writers.
+static inline bool DensityGridless_IsTrajectoryPointLikeMode(const EarthUtil::AmpsParam& prm) {
+  return EarthUtil::ToUpper(prm.output.mode) == "TRAJECTORY"
+      && !prm.output.trajectories.empty();
+}
+
+static inline bool DensityGridless_PointLikeHasPerSampleTime(const EarthUtil::AmpsParam& prm) {
+  return DensityGridless_IsTrajectoryPointLikeMode(prm);
+}
+
+static inline std::string DensityGridless_PointLikeSampleTimeUTC(const EarthUtil::AmpsParam& prm,
+                                                                 int idx) {
+  if (DensityGridless_IsTrajectoryPointLikeMode(prm)
+      && idx >= 0
+      && idx < static_cast<int>(prm.output.trajectories[0].size())) {
+    return prm.output.trajectories[0].samples[static_cast<size_t>(idx)].timeUTC;
+  }
+  return prm.field.epoch;
+}
+
+static inline void DensityGridless_SetSpectrumEpochUTC(const std::string& epochUTC) {
+  ::gSpectrum.SetEvaluationEpochUTC(epochUTC);
+}
+
+static inline void DensityGridless_SetSpectrumForPointLikeLocation(const EarthUtil::AmpsParam& prm,
+                                                                   int idx) {
+  DensityGridless_SetSpectrumEpochUTC(DensityGridless_PointLikeSampleTimeUTC(prm, idx));
+}
+
+static EarthUtil::AmpsParam DensityGridless_BuildParamForPointLikeLocation(
+    const EarthUtil::AmpsParam& prm, int idx) {
+  EarthUtil::AmpsParam prmForPoint = prm;
+  prmForPoint.field.epoch = DensityGridless_PointLikeSampleTimeUTC(prm, idx);
+
+  // If a time-varying driver table is loaded, apply the interpolated drivers for the
+  // current sample time immediately so every downstream tracing call sees a fully
+  // initialized field block.
+  if (!prmForPoint.temporal.driverTable.empty()) {
+#ifndef _NO_SPICE_CALLS_
+    SpiceDouble etPoint = 0.0;
+    str2et_c(prmForPoint.field.epoch.c_str(), &etPoint);
+    const EarthUtil::TsDriverRecord drec =
+        prmForPoint.temporal.driverTable.Lookup(static_cast<double>(etPoint));
+    EarthUtil::TsDriverTable::ApplyToField(drec, prmForPoint.field);
+#endif
+  }
+
+  return prmForPoint;
+}
+
+static inline const char* DensityGridless_PointLikeProgressLabel(const EarthUtil::AmpsParam& prm) {
+  return DensityGridless_PointLikeHasPerSampleTime(prm) ? "[TRAJECTORY]" : "[POINTS]";
+}
+
+static inline std::string DensityGridless_PointLikeZoneLabel(const EarthUtil::AmpsParam& prm,
+                                                             int idx) {
+  std::ostringstream os;
+  if (DensityGridless_PointLikeHasPerSampleTime(prm)) {
+    os << "T" << idx;
+    const std::string t = DensityGridless_PointLikeSampleTimeUTC(prm, idx);
+    if (!t.empty()) os << " " << t;
+  }
+  else {
+    os << "P" << idx;
+  }
+  return os.str();
+}
+
+template <class TStream>
+static void DensityGridless_WritePointLikeVariablePrefix(TStream& out,
+                                                         const EarthUtil::AmpsParam& prm) {
+  if (DensityGridless_PointLikeHasPerSampleTime(prm)) out << "VARIABLES=\"TimeUTC\" ";
+  else out << "VARIABLES=";
+}
+
+template <class TStream>
+static void DensityGridless_WritePointLikeRowPrefix(TStream& out,
+                                                    const EarthUtil::AmpsParam& prm,
+                                                    int idx) {
+  if (DensityGridless_PointLikeHasPerSampleTime(prm)) {
+    out << "\"" << DensityGridless_PointLikeSampleTimeUTC(prm, idx) << "\" ";
+  }
+}
+
+
 //====================================================================================
 // Progress bar helper for density/spectrum calculations
 //
@@ -1043,7 +1141,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
   // Master/worker scheduling over point indices.
   if (mpiSize==1) {
     // Serial path.
-    ProgressBar prog(mpiRank, "[POINTS]");
+    ProgressBar prog(mpiRank, DensityGridless_PointLikeProgressLabel(prm));
 
     for (int ip=0; ip<nPoints; ++ip) {
       const EarthUtil::Vec3 pk = prm.output.points[ip];
@@ -1056,27 +1154,8 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       // whenever the epoch changes — which happens at every step in TRAJECTORY
       // mode.  For POINTS mode all samples share the same global epoch, so the
       // copy is cheap and the cache is never invalidated unnecessarily.
-      EarthUtil::AmpsParam prmForPoint = prm;
-      if (outputModeUpper == "TRAJECTORY"
-          && !prm.output.trajectories.empty()
-          && ip < static_cast<int>(prm.output.trajectories[0].size())) {
-        prmForPoint.field.epoch =
-            prm.output.trajectories[0].samples[static_cast<size_t>(ip)].timeUTC;
-      }
-
-      // If a time-varying driver table is loaded, apply interpolated parameters
-      // into prmForPoint.field so the thread-local field cache inside
-      // TraceAllowedShared/Ex picks up the correct Pdyn, Dst, By, Bz, W1..W6
-      // for this trajectory point.
-      if (!prmForPoint.temporal.driverTable.empty()) {
-#ifndef _NO_SPICE_CALLS_
-        SpiceDouble etPoint = 0.0;
-        str2et_c(prmForPoint.field.epoch.c_str(), &etPoint);
-        const EarthUtil::TsDriverRecord drec =
-            prmForPoint.temporal.driverTable.Lookup(static_cast<double>(etPoint));
-        EarthUtil::TsDriverTable::ApplyToField(drec, prmForPoint.field);
-#endif
-      }
+      EarthUtil::AmpsParam prmForPoint = DensityGridless_BuildParamForPointLikeLocation(prm, ip);
+      DensityGridless_SetSpectrumEpochUTC(prmForPoint.field.epoch);
 
       std::vector<double> T(nE,0.0);
 
@@ -1178,7 +1257,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     const int nDirs = (int)dirsUse.size();
     const int nDirBlocks = std::max(1, (nDirs + kTrajBatch - 1) / kTrajBatch);
     if (mpiRank==0) {
-      ProgressBar prog(mpiRank, "[POINTS]");
+      ProgressBar prog(mpiRank, DensityGridless_PointLikeProgressLabel(prm));
 
       const long long totalTasks = (long long)nPoints * (long long)nE * (long long)nDirBlocks;
       const long long totalTraj  = (long long)nPoints * (long long)nE * (long long)nDirs;
@@ -1230,6 +1309,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
           energiesDone[(size_t)idx]++;
 
           if (energiesDone[(size_t)idx] == nE) {
+            DensityGridless_SetSpectrumForPointLikeLocation(prm, idx);
             const std::vector<double>& T = T_byPoint[(size_t)idx];
 
             std::vector<double> integrand(nE,0.0);
@@ -1279,29 +1359,9 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
         const EarthUtil::Vec3 pk = prm.output.points[idx];
         const V3 x0_m { pk.x*1000.0, pk.y*1000.0, pk.z*1000.0 };
 
-        // Per-point epoch: same approach as the serial path.  Each MPI rank is a
-        // separate process, so modifying prmForPoint here is thread-safe.
-        EarthUtil::AmpsParam prmForPoint = prm;
-        if (outputModeUpper == "TRAJECTORY"
-            && !prm.output.trajectories.empty()
-            && idx < static_cast<int>(prm.output.trajectories[0].size())) {
-          prmForPoint.field.epoch =
-              prm.output.trajectories[0].samples[static_cast<size_t>(idx)].timeUTC;
-        }
-
-        // If a time-varying driver table is loaded, apply interpolated parameters
-        // into prmForPoint.field so the thread-local field cache inside
-        // TraceAllowedShared/Ex picks up the correct Pdyn, Dst, By, Bz, W1..W6
-        // for this trajectory point.
-        if (!prmForPoint.temporal.driverTable.empty()) {
-#ifndef _NO_SPICE_CALLS_
-          SpiceDouble etPoint = 0.0;
-          str2et_c(prmForPoint.field.epoch.c_str(), &etPoint);
-          const EarthUtil::TsDriverRecord drec =
-                prmForPoint.temporal.driverTable.Lookup(static_cast<double>(etPoint));
-          EarthUtil::TsDriverTable::ApplyToField(drec, prmForPoint.field);
-#endif
-        }
+        // Each MPI rank is a separate process, so the returned parameter block is
+        // private to the current worker task.
+        EarthUtil::AmpsParam prmForPoint = DensityGridless_BuildParamForPointLikeLocation(prm, idx);
 
         const double Ej = E_MeV[ie]*MEV_TO_J;
         const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prmForPoint.species.charge_e)*QE,
@@ -1332,16 +1392,14 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     {
       std::ofstream out("gridless_points_density.dat");
       out << "TITLE=\"Gridless energetic particle density (POINTS/TRAJECTORY)\"\n";
-      const bool writeTimeColumn = (outputModeUpper=="TRAJECTORY" && !prm.output.trajectories.empty());
-      if (writeTimeColumn) out << "VARIABLES=\"TimeUTC\" ";
-      else out << "VARIABLES=";
+      DensityGridless_WritePointLikeVariablePrefix(out, prm);
       out << "\"X_km\" \"Y_km\" \"Z_km\" \"N_m^-3\" \"N_cm^-3\"\n";
       out << "ZONE T=\"density\" I=" << nPoints << " F=POINT\n";
       for (int ip=0; ip<nPoints; ++ip) {
         const auto& p0 = prm.output.points[ip];
         const double n_m3 = density_m3[ip];
         const double n_cm3 = n_m3*1.0e-6;
-        if (writeTimeColumn) out << "\"" << prm.output.trajectories[0].samples[(size_t)ip].timeUTC << "\" ";
+        DensityGridless_WritePointLikeRowPrefix(out, prm, ip);
         out << p0.x << " " << p0.y << " " << p0.z << " " << n_m3 << " " << n_cm3 << "\n";
       }
     }
@@ -1349,14 +1407,14 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     // File 2: spectra
     {
       std::ofstream out("gridless_points_spectrum.dat");
-      out << "TITLE=\"Gridless energetic particle spectrum (POINTS)\"\n";
+      out << "TITLE=\"Gridless energetic particle spectrum (POINTS/TRAJECTORY)\"\n";
       out << "VARIABLES=\"E_MeV\" \"T\" \"J_boundary_perMeV\" \"J_local_perMeV\"\n";
 
       // Record spectrum definition for provenance.
       for (int ip=0; ip<nPoints; ++ip) {
-        std::ostringstream zt;
-        zt << "P" << ip;
-        out << "ZONE T=\"" << zt.str() << "\" I=" << nE << " F=POINT\n";
+        DensityGridless_SetSpectrumForPointLikeLocation(prm, ip);
+        out << "ZONE T=\"" << DensityGridless_PointLikeZoneLabel(prm, ip)
+            << "\" I=" << nE << " F=POINT\n";
         for (int ie=0; ie<nE; ++ie) {
           const double Ej = E_MeV[ie]*MEV_TO_J;
           const double T = T_byPoint[ip][ie];
@@ -1392,8 +1450,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       out << "TITLE=\"Gridless omnidirectional integral flux (POINTS/TRAJECTORY)\"\n";
 
       // Build variable list header dynamically.
-      if (outputModeUpper=="TRAJECTORY" && !prm.output.trajectories.empty()) out << "VARIABLES=\"TimeUTC\" ";
-      else out << "VARIABLES=";
+      DensityGridless_WritePointLikeVariablePrefix(out, prm);
       out << "\"X_km\" \"Y_km\" \"Z_km\" \"F_tot_m2s1\"";
       for (int ic = 0; ic < nCh; ++ic) {
         out << " \"F_" << prm.fluxChannels[ic].name << "_m2s1\"";
@@ -1412,9 +1469,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
 
       for (int ip = 0; ip < nPoints; ++ip) {
         const auto& p0 = prm.output.points[ip];
-        if (outputModeUpper=="TRAJECTORY" && !prm.output.trajectories.empty()) {
-          out << "\"" << prm.output.trajectories[0].samples[(size_t)ip].timeUTC << "\" ";
-        }
+        DensityGridless_WritePointLikeRowPrefix(out, prm, ip);
         out << p0.x << " " << p0.y << " " << p0.z
             << " " << flux_tot_m2s1[ip];
         for (int ic = 0; ic < nCh; ++ic) {
@@ -1623,6 +1678,7 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
       lbl << "[SHELL " << (shellIdx + 1) << "/" << prm.output.shellAlt_km.size()
           << " alt=" << alt_km << "km]";
       ProgressBar prog(mpiRank, lbl.str());
+      DensityGridless_SetSpectrumEpochUTC(prm.field.epoch);
 
       for (int idx=0; idx<nPts; ++idx) {
         const auto& pk = shellPts_km[idx];
@@ -1737,6 +1793,7 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
             energiesDone[(size_t)idx]++;
 
             if (energiesDone[(size_t)idx] == nE) {
+              DensityGridless_SetSpectrumEpochUTC(prm.field.epoch);
               const std::vector<double>& T = T_byPoint[(size_t)idx];
               std::vector<double> g(nE,0.0);
               std::vector<double> EjGrid(nE,0.0);
@@ -2366,6 +2423,7 @@ void WriteTecplotPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
     std::fprintf(f,"VARIABLES=\"id\",\"x_km\",\"y_km\",\"z_km\",\"T_geo_ref\",\"T_open_ref\",\"Rc_vert_GV\",\"n_num_m^-3\",\"n_ana_m^-3\",\"rel_err\"\n");
     std::fprintf(f,"ZONE T=\"points\" I=%zu F=POINT\n", points.size());
     for (size_t ip=0; ip<points.size(); ++ip) {
+      DensityGridless_SetSpectrumForPointLikeLocation(prm, static_cast<int>(ip));
       DipoleAnalyticReference ref = BuildDipoleAnalyticReference(prm, points[ip], E_MeV);
       const double rel = (std::abs(ref.density_m3) > 0.0) ? (n_num_m3[ip] - ref.density_m3)/ref.density_m3 : 0.0;
       std::fprintf(f, "%zu %e %e %e %e %e %e %e %e %e\n", ip,
@@ -2382,6 +2440,7 @@ void WriteTecplotPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
     std::fprintf(f,"TITLE=\"Dipole Spectrum (POINTS): Numeric vs Analytic/Semi-analytic\"\n");
     std::fprintf(f,"VARIABLES=\"E_MeV\",\"T_num\",\"T_ana\",\"J_boundary_perMeV\",\"J_local_num_perMeV\",\"J_local_ana_perMeV\",\"rel_err_T\",\"rel_err_Jloc\"\n");
     for (size_t ip=0; ip<points.size(); ++ip) {
+      DensityGridless_SetSpectrumForPointLikeLocation(prm, static_cast<int>(ip));
       DipoleAnalyticReference ref = BuildDipoleAnalyticReference(prm, points[ip], E_MeV);
       std::fprintf(f, "ZONE T=\"P%zu\" I=%zu F=POINT\n", ip, E_MeV.size());
       std::fprintf(f, "AUXDATA X_km=\"%g\"\nAUXDATA Y_km=\"%g\"\nAUXDATA Z_km=\"%g\"\n", points[ip].x, points[ip].y, points[ip].z);
@@ -2412,6 +2471,7 @@ void WriteTecplotPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
     std::fprintf(f, "\n");
     std::fprintf(f,"ZONE T=\"points\" I=%zu F=POINT\n", points.size());
     for (size_t ip=0; ip<points.size(); ++ip) {
+      DensityGridless_SetSpectrumForPointLikeLocation(prm, static_cast<int>(ip));
       DipoleAnalyticReference ref = BuildDipoleAnalyticReference(prm, points[ip], E_MeV);
       const double relTot = (std::abs(ref.flux_tot_m2s1) > 0.0) ? (flux_tot_m2s1[ip] - ref.flux_tot_m2s1)/ref.flux_tot_m2s1 : flux_tot_m2s1[ip];
       std::fprintf(f, "%zu %e %e %e %e %e %e %e %e %e", ip,
@@ -2492,6 +2552,7 @@ void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
   const int nLat = std::max(2, (int)std::floor(180.0 / res_deg + 0.5) + 1);
 
   {
+    DensityGridless_SetSpectrumEpochUTC(prm.field.epoch);
     static bool firstDensityShellWrite = true;
     const bool newFile = firstDensityShellWrite;
     firstDensityShellWrite = false;
@@ -2519,6 +2580,7 @@ void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
   }
 
   {
+    DensityGridless_SetSpectrumEpochUTC(prm.field.epoch);
     static bool firstFluxShellWrite = true;
     const bool newFile = firstFluxShellWrite;
     firstFluxShellWrite = false;
@@ -2559,6 +2621,7 @@ void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
   }
 
   {
+    DensityGridless_SetSpectrumEpochUTC(prm.field.epoch);
     static bool firstSpectrumShellWrite = true;
     const bool newFile = firstSpectrumShellWrite;
     firstSpectrumShellWrite = false;

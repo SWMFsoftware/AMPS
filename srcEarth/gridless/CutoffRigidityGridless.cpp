@@ -1245,6 +1245,47 @@ static std::vector<V3> BuildDirGrid(int nZenith,int nAz) {
   return dirs;
 }
 
+
+//--------------------------------------------------------------------------------------
+// POINT-LIKE OUTPUT HELPERS (shared by POINTS and TRAJECTORY modes)
+//--------------------------------------------------------------------------------------
+static inline bool CutoffGridless_IsPointLikeMode(const EarthUtil::AmpsParam& prm) {
+  const std::string mode = EarthUtil::ToUpper(prm.output.mode);
+  return (mode=="POINTS" || mode=="TRAJECTORY");
+}
+
+static inline bool CutoffGridless_PointLikeHasPerSampleTime(const EarthUtil::AmpsParam& prm) {
+  return EarthUtil::ToUpper(prm.output.mode)=="TRAJECTORY"
+      && !prm.output.trajectories.empty();
+}
+
+static inline std::string CutoffGridless_PointLikeSampleEpochUTC(const EarthUtil::AmpsParam& prm,
+                                                                 int loc) {
+  if (CutoffGridless_PointLikeHasPerSampleTime(prm)
+      && loc >= 0
+      && loc < static_cast<int>(prm.output.trajectories[0].size())) {
+    return prm.output.trajectories[0].samples[static_cast<size_t>(loc)].timeUTC;
+  }
+  return prm.field.epoch;
+}
+
+static inline const char* CutoffGridless_PointLikeProgressLabel(const EarthUtil::AmpsParam& prm) {
+  return CutoffGridless_PointLikeHasPerSampleTime(prm) ? "[TRAJECTORY]" : "[POINTS]";
+}
+
+static inline std::string CutoffGridless_PointLikeZoneLabel(const EarthUtil::AmpsParam& prm) {
+  return CutoffGridless_PointLikeHasPerSampleTime(prm) ? "trajectory" : "points";
+}
+
+template <class TStream>
+static void CutoffGridless_WritePointLikeRowPrefix(TStream& out,
+                                                   const EarthUtil::AmpsParam& prm,
+                                                   int loc) {
+  if (CutoffGridless_PointLikeHasPerSampleTime(prm)) {
+    std::fprintf(out, "\"%s\" ", CutoffGridless_PointLikeSampleEpochUTC(prm, loc).c_str());
+  }
+}
+
 //======================================================================================
 // LOCAL "GSM-LIKE" LON/LAT FRAME FOR DIRECTIONAL SKY MAPS (POINT-CENTERED)
 //======================================================================================
@@ -1365,13 +1406,14 @@ static double CutoffAtPoint_GV(const EarthUtil::AmpsParam& prm,
   return Rc;
 }
 
-static void WriteTecplotPoints(const std::vector<EarthUtil::Vec3>& points,
+static void WriteTecplotPoints(const EarthUtil::AmpsParam& prm,
+                               const std::vector<EarthUtil::Vec3>& points,
                                const std::vector<double>& Rc,
                                const std::vector<double>& Emin) {
   FILE* f=std::fopen("cutoff_gridless_points.dat","w");
   if (!f) throw std::runtime_error("Cannot write Tecplot file: cutoff_gridless_points.dat");
 
-  std::fprintf(f,"TITLE=\"Cutoff Rigidity (Gridless)\"\n");
+  std::fprintf(f,"TITLE=\"Cutoff Rigidity (Gridless, POINTS/TRAJECTORY)\"\n");
 
   //----------------------------------------------------------------------------------
   // POINTS MODE OUTPUT: adding Lon/Lat labels
@@ -1392,8 +1434,10 @@ static void WriteTecplotPoints(const std::vector<EarthUtil::Vec3>& points,
   //   If later you decide you want geographic lon/lat, replace ONLY the two lines
   //   that compute lon_deg/lat_deg below with your preferred GEO mapping.
   //----------------------------------------------------------------------------------
-  std::fprintf(f,"VARIABLES=\"id\",\"x\",\"y\",\"z\",\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"\n");
-  std::fprintf(f,"ZONE T=\"points\" I=%zu F=POINT\n", points.size());
+  std::fprintf(f,"VARIABLES=");
+  if (CutoffGridless_PointLikeHasPerSampleTime(prm)) std::fprintf(f,"\"TimeUTC\" ");
+  std::fprintf(f,"\"id\",\"x\",\"y\",\"z\",\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"\n");
+  std::fprintf(f,"ZONE T=\"%s\" I=%zu F=POINT\n", CutoffGridless_PointLikeZoneLabel(prm).c_str(), points.size());
 
   for (size_t i=0;i<points.size();i++) {
     const double x = points[i].x;
@@ -1404,10 +1448,10 @@ static void WriteTecplotPoints(const std::vector<EarthUtil::Vec3>& points,
     const double lon_deg = std::atan2(y,x) * 180.0/M_PI;
     const double lat_deg = std::atan2(z, std::sqrt(x*x + y*y)) * 180.0/M_PI;
 
+    CutoffGridless_WritePointLikeRowPrefix(f, prm, static_cast<int>(i));
     std::fprintf(f,"%zu %e %e %e %e %e %e %e\n",
                  i, x,y,z, lon_deg, lat_deg, Rc[i],Emin[i]);
   }
-
   std::fclose(f);
 }
 
@@ -1763,26 +1807,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   cFieldEvaluator field(prm);
 
   //----------------------------------------------------------------------------
-  // Per-point epoch lookup (TRAJECTORY mode).
+  // Per-location epoch lookup for point-like outputs.
   //
-  // In TRAJECTORY mode every sample has its own UTC timestamp. The Geopack
-  // dipole tilt — which directly controls the IGRF internal field orientation —
-  // is epoch-dependent and can shift by tens of degrees over a single RBSP
-  // orbit. We therefore call field.ReinitGeopack(epoch) before processing each
-  // location so that the tilt is always consistent with the point's time.
-  //
-  // In POINTS or SHELLS mode there is only one global epoch (from the input
-  // file), so this helper returns prm.field.epoch for every location.
+  // POINTS and TRAJECTORY share the same flattened location loop. The only time
+  // distinction is that TRAJECTORY carries per-sample UTC timestamps, while POINTS
+  // reuses the single global epoch from the input file.
   //----------------------------------------------------------------------------
-  auto GetPointEpoch = [&](int loc) -> std::string {
-    if (prm.output.mode == "TRAJECTORY"
-        && !prm.output.trajectories.empty()
-        && loc >= 0
-        && loc < static_cast<int>(prm.output.trajectories[0].size())) {
-      return prm.output.trajectories[0].samples[static_cast<size_t>(loc)].timeUTC;
-    }
-    return prm.field.epoch;
-  };
 
   //----------------------------------------------------------------------------
   // Direction grid (kept identical to your current serial "meaningful results")
@@ -1928,7 +1958,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   // This scheme lets workers reconstruct the 3D coordinate from (locationId) using only
   // prm.output.* data (which is available on every rank).
   //====================================================================================
-  const bool isPoints = (prm.output.mode=="POINTS" || prm.output.mode=="TRAJECTORY");
+  const bool isPoints = CutoffGridless_IsPointLikeMode(prm);
   const bool isShells = (prm.output.mode=="SHELLS");
 
   if (!isPoints && !isShells) {
@@ -2167,7 +2197,7 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
 
   // Header label: POINTS or SHELL i/N with altitude
   if (isPoints) {
-    std::cout << "[POINTS] ";
+    std::cout << CutoffGridless_PointLikeProgressLabel(prm) << " ";
   } else {
     // Identify the first incomplete shell (for user-friendly output)
     int curShell = 0;
@@ -2355,7 +2385,7 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
       // refreshed for every new location. ReinitGeopack is a no-op when the
       // epoch string is unchanged (POINTS / SHELLS mode, or consecutive tasks
       // for the same location).
-      field.ReinitGeopack(GetPointEpoch(task.loc), (prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable));
+      field.ReinitGeopack(CutoffGridless_PointLikeSampleEpochUTC(prm, task.loc), (prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable));
 
       // Reconstruct start position (needed for both task types).
       const V3 x0_m = LocationToX0m(task.loc);
@@ -2452,7 +2482,7 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
         // Update Geopack for this location's epoch before tracing.
         // In TRAJECTORY mode each point has its own timestamp; in POINTS/SHELLS
         // mode this is a no-op (epoch hasn't changed).
-        field.ReinitGeopack(GetPointEpoch(loc), (prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable));
+        field.ReinitGeopack(CutoffGridless_PointLikeSampleEpochUTC(prm, loc), (prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable));
 
         const V3 x0_m = LocationToX0m(loc);
 
@@ -2755,7 +2785,7 @@ if (!isPoints) locDonePerShell.assign((size_t)nShells, 0);
                   << " -> Rc=" << Rc[i] << " GV, Emin=" << Emin[i] << " MeV\n";
       }
 
-      WriteTecplotPoints(prm.output.points,Rc,Emin);
+      WriteTecplotPoints(prm,prm.output.points,Rc,Emin);
 
       //--------------------------------------------------------------------------------
       // Optional directional sky-maps (MPI-parallelized)

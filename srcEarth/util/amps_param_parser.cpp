@@ -33,7 +33,8 @@
 //   "DOMAIN_BOUNDARY"      -> ParseDomainBoundary
 //   "OUTPUT_DOMAIN"        -> ParseOutputDomain
 //   "NUMERICAL"            -> ParseNumerical
-//   "SPECTRUM"             -> store in result.spectrum raw map
+//   "SPECTRUM"             -> store raw keys in result.spectrum and build
+//                              result.particleSpectrum during post-parse init
 //   everything else        -> store in result.unknown raw map
 //
 //======================================================================================
@@ -97,12 +98,13 @@
 //   (C) Boolean values (T/F/TRUE/FALSE/1/0) are parsed by the ToBool helper,
 //       which is also exported in the header for use by the CLI.
 //
-//   (D) The #SPECTRUM section is intentionally opaque to this parser: all its
-//       key/value pairs are passed through to result.spectrum as raw strings.
-//       The InitGlobalSpectrumFromKeyValueMap function in boundary/spectrum.cpp
-//       is responsible for interpreting them. This separation means the spectrum
-//       model can evolve (new power-law forms, tabulated spectra, SEP event
-//       lookup tables) without any changes here.
+//   (D) The #SPECTRUM section is stored in two forms:
+//         * result.spectrum         — raw key/value strings for the existing
+//                                     boundary/spectrum.cpp initializer
+//         * result.particleSpectrum — typed metadata parsed here for early
+//                                     validation and clearer initialization
+//       This keeps the parser decoupled from the injection implementation while
+//       still making the spectrum choice explicit in AmpsParam.
 //
 //======================================================================================
 
@@ -118,6 +120,9 @@
 #include <map>
 #include <cstdlib>
 #include <cerrno>
+#include <cmath>
+#include <limits>
+#include <cstdio>
 
 #ifndef _NO_SPICE_CALLS_
 #include "SpiceUsr.h"
@@ -256,6 +261,430 @@ static inline std::string GetStringOrThrow(const std::map<std::string,std::strin
   if (it==m.end()) { std::ostringstream _exit_msg; _exit_msg << "Missing required spectrum key '"+k+"' in "+ctx; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
   return Trim(it->second);
 }
+
+static bool TryGetKey(const std::map<std::string,std::string>& kv,
+                      const std::vector<std::string>& keys,
+                      std::string& valueOut) {
+  for (const auto& k : keys) {
+    auto it = kv.find(k);
+    if (it != kv.end()) {
+      valueOut = Trim(it->second);
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool TryGetDouble(const std::map<std::string,std::string>& kv,
+                         const std::vector<std::string>& keys,
+                         double& valueOut) {
+  std::string s;
+  if (!TryGetKey(kv, keys, s)) return false;
+  valueOut = std::stod(s);
+  return true;
+}
+
+static EarthUtil::ParticleSpectrum::Type ParseSpectrumTypeToken(const std::string& s) {
+  const std::string t = ToUpper(Trim(s));
+  if (t=="POWER_LAW") return EarthUtil::ParticleSpectrum::Type::POWER_LAW;
+  if (t=="POWER_LAW_CUTOFF") return EarthUtil::ParticleSpectrum::Type::POWER_LAW_CUTOFF;
+  if (t=="LIS_FORCE_FIELD") return EarthUtil::ParticleSpectrum::Type::LIS_FORCE_FIELD;
+  if (t=="BAND") return EarthUtil::ParticleSpectrum::Type::BAND;
+  if (t=="TABLE") return EarthUtil::ParticleSpectrum::Type::TABLE;
+  return EarthUtil::ParticleSpectrum::Type::UNKNOWN;
+}
+
+EarthUtil::ParticleSpectrum ParseParticleSpectrum(const std::map<std::string,std::string>& kv) {
+  EarthUtil::ParticleSpectrum spec;
+  spec.raw = kv;
+  if (kv.empty()) return spec;
+
+  const std::string ctx = "#SPECTRUM";
+  std::string typeToken;
+  if (!TryGetKey(kv, {"SPECTRUM_TYPE", "TYPE"}, typeToken)) {
+    exit(__LINE__,__FILE__,"Missing required key SPECTRUM_TYPE in #SPECTRUM");
+  }
+
+  spec.typeName = ToUpper(typeToken);
+  spec.type = ParseSpectrumTypeToken(spec.typeName);
+  spec.parsed = true;
+
+  if (spec.type == EarthUtil::ParticleSpectrum::Type::UNKNOWN) {
+    std::ostringstream _exit_msg;
+    _exit_msg << "Unsupported SPECTRUM_TYPE='" << typeToken
+              << "'. Supported tokens: POWER_LAW | POWER_LAW_CUTOFF | LIS_FORCE_FIELD | BAND | TABLE";
+    exit(__LINE__,__FILE__,_exit_msg.str().c_str());
+  }
+
+  // Common aliases produced by different wizard / legacy inputs.
+  const bool hasJ0    = TryGetDouble(kv, {"SPEC_J0", "J0", "J_REFERENCE", "SPEC_J_REFERENCE"}, spec.J0);
+  const bool hasGamma = TryGetDouble(kv, {"SPEC_GAMMA", "GAMMA", "SPECTRAL_INDEX", "SPEC_SPECTRAL_INDEX"}, spec.gamma);
+  const bool hasE0    = TryGetDouble(kv, {"SPEC_E0", "E0", "E0_MEV", "E_REFERENCE", "SPEC_E0_MEV", "SPEC_E_REFERENCE"}, spec.E0_MeV);
+  TryGetDouble(kv, {"SPEC_EMIN", "EMIN", "ENERGY_MIN", "SPEC_ENERGY_MIN"}, spec.Emin_MeV);
+  TryGetDouble(kv, {"SPEC_EMAX", "EMAX", "ENERGY_MAX", "SPEC_ENERGY_MAX"}, spec.Emax_MeV);
+  TryGetDouble(kv, {"SPEC_ECUT", "ECUT", "E_CUTOFF", "SPEC_E_CUTOFF", "CUTOFF_ENERGY_MEV"}, spec.cutoffEnergy_MeV);
+  TryGetDouble(kv, {"PHI_MV", "MODULATION_POTENTIAL_MV", "FORCE_FIELD_PHI_MV"}, spec.modulationPotential_MV);
+  TryGetDouble(kv, {"ALPHA", "BAND_ALPHA"}, spec.alpha);
+  TryGetDouble(kv, {"BETA", "BAND_BETA"}, spec.beta);
+  TryGetDouble(kv, {"E_BREAK", "BREAK_ENERGY_MEV", "BAND_EBREAK"}, spec.breakEnergy_MeV);
+  {
+    std::string tableFile;
+    if (TryGetKey(kv, {"SPEC_TABLE_FILE", "TABLE_FILE", "SPECTRUM_FILE", "FILE"}, tableFile)) spec.tableFile = tableFile;
+  }
+
+  // Strong validation for the currently used/tested spectrum form.
+  if (spec.type == EarthUtil::ParticleSpectrum::Type::POWER_LAW) {
+    if (!hasJ0 || !(spec.J0 > 0.0)) {
+      exit(__LINE__,__FILE__,"POWER_LAW spectrum requires SPEC_J0/J0 > 0");
+    }
+    if (!hasE0 || !(spec.E0_MeV > 0.0)) {
+      exit(__LINE__,__FILE__,"POWER_LAW spectrum requires SPEC_E0/E0 > 0 (MeV)");
+    }
+    if (!hasGamma) {
+      exit(__LINE__,__FILE__,"POWER_LAW spectrum requires SPEC_GAMMA/GAMMA (or SPECTRAL_INDEX)");
+    }
+    if (spec.Emin_MeV > 0.0 && spec.Emax_MeV > 0.0 && !(spec.Emax_MeV > spec.Emin_MeV)) {
+      exit(__LINE__,__FILE__,"POWER_LAW spectrum requires SPEC_EMAX > SPEC_EMIN when both are provided");
+    }
+  }
+
+  return spec;
+}
+
+
+namespace {
+
+enum class SpectrumTableFileFormat { UNKNOWN, TWO_COLUMN, TIME_DEPENDENT };
+
+static inline bool TryParseScalarToken(const std::string& sIn, double& valueOut) {
+  const std::string s = Trim(sIn);
+  if (s.empty()) return false;
+  char* end = nullptr;
+  errno = 0;
+  const double v = std::strtod(s.c_str(), &end);
+  if (end == s.c_str() || errno == ERANGE) return false;
+  while (end && *end && std::isspace(static_cast<unsigned char>(*end))) ++end;
+  if (end && *end) return false;
+  if (!std::isfinite(v)) return false;
+  valueOut = v;
+  return true;
+}
+
+static inline bool ParseUtcTimestampToUnixSeconds(const std::string& sIn, double& secondsOut) {
+  std::string s = Trim(sIn);
+  if (s.empty()) return false;
+  if (!s.empty() && (s.back()=='Z' || s.back()=='z')) s.pop_back();
+
+  int year=0, month=0, day=0, hour=0, minute=0;
+  double second = 0.0;
+  int consumed = 0;
+
+  if (std::sscanf(s.c_str(), "%d-%d-%dT%d:%d:%lf%n", &year, &month, &day, &hour, &minute, &second, &consumed) < 6) {
+    consumed = 0;
+    second = 0.0;
+    if (std::sscanf(s.c_str(), "%d-%d-%d %d:%d:%lf%n", &year, &month, &day, &hour, &minute, &second, &consumed) < 6) {
+      consumed = 0;
+      if (std::sscanf(s.c_str(), "%d-%d-%dT%d:%d%n", &year, &month, &day, &hour, &minute, &consumed) < 5) {
+        consumed = 0;
+        if (std::sscanf(s.c_str(), "%d-%d-%d %d:%d%n", &year, &month, &day, &hour, &minute, &consumed) < 5) {
+          consumed = 0;
+          if (std::sscanf(s.c_str(), "%d-%d-%d%n", &year, &month, &day, &consumed) < 3) return false;
+          hour = 0; minute = 0; second = 0.0;
+        }
+        else {
+          second = 0.0;
+        }
+      }
+      else {
+        second = 0.0;
+      }
+    }
+  }
+
+  while (consumed < static_cast<int>(s.size()) && std::isspace(static_cast<unsigned char>(s[consumed]))) ++consumed;
+  if (consumed != static_cast<int>(s.size())) return false;
+
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 || hour > 23 || minute < 0 || minute > 59) return false;
+  if (!(second >= 0.0) || !(second < 61.0) || !std::isfinite(second)) return false;
+
+  const int y = year - (month <= 2 ? 1 : 0);
+  const int era = (y >= 0 ? y : y - 399) / 400;
+  const unsigned yoe = static_cast<unsigned>(y - era * 400);
+  const unsigned mp = static_cast<unsigned>(month + (month > 2 ? -3 : 9));
+  const unsigned doy = (153u * mp + 2u) / 5u + static_cast<unsigned>(day - 1);
+  const unsigned doe = yoe * 365u + yoe / 4u - yoe / 100u + doy;
+  const long long days = static_cast<long long>(era) * 146097LL + static_cast<long long>(doe) - 719468LL;
+
+  secondsOut = static_cast<double>(days) * 86400.0 + static_cast<double>(hour * 3600 + minute * 60) + second;
+  return true;
+}
+
+static inline std::vector<std::string> SplitWhitespaceTokens(const std::string& line) {
+  std::istringstream iss(line);
+  std::vector<std::string> out;
+  std::string tok;
+  while (iss >> tok) out.push_back(tok);
+  return out;
+}
+
+static inline std::string StripLeadingCommentMarkers(const std::string& line) {
+  std::string s = Trim(line);
+  while (!s.empty() && (s[0]=='#' || s[0]=='!')) s = Trim(s.substr(1));
+  return s;
+}
+
+static SpectrumTableFileFormat DetectSpectrumTableFileFormat(const std::string& fileName) {
+  std::ifstream in(fileName.c_str());
+  if (!in) {
+    std::ostringstream oss;
+    oss << "Cannot open spectrum table file: " << fileName;
+    exit(__LINE__,__FILE__,oss.str().c_str());
+  }
+
+  std::string line;
+  std::size_t lineNo = 0;
+  while (std::getline(in, line)) {
+    ++lineNo;
+    const std::string trimmed = Trim(line);
+    if (trimmed.empty()) continue;
+
+    if (trimmed[0]=='#' || trimmed[0]=='!') {
+      const std::string header = ToUpper(StripLeadingCommentMarkers(trimmed));
+      if (header.find("ENERGY_MEV:") == 0 ||
+          header.find("COLUMNS: TIMESTAMP") == 0 ||
+          header.find("COLUMN 1") == 0 ||
+          header.find("N_ENERGY_BINS") == 0) {
+        return SpectrumTableFileFormat::TIME_DEPENDENT;
+      }
+      continue;
+    }
+
+    const std::vector<std::string> toks = SplitWhitespaceTokens(trimmed);
+    if (toks.empty()) continue;
+
+    double tSeconds = 0.0;
+    if (ParseUtcTimestampToUnixSeconds(toks[0], tSeconds)) {
+      return SpectrumTableFileFormat::TIME_DEPENDENT;
+    }
+
+    if (toks.size() == 2) {
+      double e = 0.0, j = 0.0;
+      if (TryParseScalarToken(toks[0], e) && TryParseScalarToken(toks[1], j)) {
+        return SpectrumTableFileFormat::TWO_COLUMN;
+      }
+    }
+
+    std::ostringstream oss;
+    oss << "Cannot determine spectrum-table format for '" << fileName
+        << "' from line " << lineNo << ": '" << trimmed << "'";
+    exit(__LINE__,__FILE__,oss.str().c_str());
+  }
+
+  std::ostringstream oss;
+  oss << "Spectrum table file '" << fileName << "' is empty";
+  exit(__LINE__,__FILE__,oss.str().c_str());
+  return SpectrumTableFileFormat::UNKNOWN;
+}
+
+static std::vector<double> ParseTimeDependentSpectrumEnergyGridOrThrow(const std::string& fileName) {
+  std::ifstream in(fileName.c_str());
+  if (!in) {
+    std::ostringstream oss;
+    oss << "Cannot open spectrum table file: " << fileName;
+    exit(__LINE__,__FILE__,oss.str().c_str());
+  }
+
+  std::string line;
+  while (std::getline(in, line)) {
+    const std::string header = StripLeadingCommentMarkers(line);
+    const std::string upper = ToUpper(header);
+    if (upper.find("ENERGY_MEV:") != 0) continue;
+
+    const std::string payload = Trim(header.substr(std::string("Energy_MeV:").size()));
+    const std::vector<std::string> toks = SplitWhitespaceTokens(payload);
+    std::vector<double> energyGrid;
+    energyGrid.reserve(toks.size());
+    for (const auto& tok : toks) {
+      double e = 0.0;
+      if (!TryParseScalarToken(tok, e) || !(e > 0.0)) {
+        std::ostringstream oss;
+        oss << "Invalid energy value '" << tok << "' in time-dependent spectrum header of '" << fileName << "'";
+        exit(__LINE__,__FILE__,oss.str().c_str());
+      }
+      energyGrid.push_back(e);
+    }
+    if (energyGrid.size() < 2) {
+      std::ostringstream oss;
+      oss << "Time-dependent spectrum file '" << fileName << "' must define at least two energies in Energy_MeV header";
+      exit(__LINE__,__FILE__,oss.str().c_str());
+    }
+    return energyGrid;
+  }
+
+  std::ostringstream oss;
+  oss << "Time-dependent spectrum file '" << fileName << "' is missing the Energy_MeV header";
+  exit(__LINE__,__FILE__,oss.str().c_str());
+  return std::vector<double>();
+}
+
+static inline std::string BasenameOnly(const std::string& path) {
+  const std::size_t pos = path.find_last_of("/\\");
+  return (pos == std::string::npos) ? path : path.substr(pos + 1);
+}
+
+static inline std::string SanitizeFileStem(std::string s) {
+  for (char& c : s) {
+    if (!(std::isalnum(static_cast<unsigned char>(c)) || c=='.' || c=='_' || c=='-')) c = '_';
+  }
+  return s;
+}
+
+static std::string SelectSpectrumInitializationEpochUTC(const EarthUtil::AmpsParam& p) {
+  const std::string mode = ToUpper(p.output.mode);
+  if (mode == "TRAJECTORY") {
+    for (const auto& tr : p.output.trajectories) {
+      if (!tr.samples.empty()) return tr.samples.front().timeUTC;
+    }
+  }
+  return p.field.epoch;
+}
+
+static std::string MaterializeTimeDependentSpectrumSnapshotOrThrow(const std::string& fileName,
+                                                                   const std::string& refEpochUTC) {
+  double refSeconds = 0.0;
+  if (!ParseUtcTimestampToUnixSeconds(refEpochUTC, refSeconds)) {
+    std::ostringstream oss;
+    oss << "Cannot parse reference epoch for time-dependent spectrum selection: '" << refEpochUTC << "'";
+    exit(__LINE__,__FILE__,oss.str().c_str());
+  }
+
+  const std::vector<double> energyGrid = ParseTimeDependentSpectrumEnergyGridOrThrow(fileName);
+
+  std::ifstream in(fileName.c_str());
+  if (!in) {
+    std::ostringstream oss;
+    oss << "Cannot open spectrum table file: " << fileName;
+    exit(__LINE__,__FILE__,oss.str().c_str());
+  }
+
+  double bestDelta = std::numeric_limits<double>::infinity();
+  std::string bestEpochUTC;
+  std::vector<double> bestFlux;
+
+  std::string line;
+  std::size_t lineNo = 0;
+  while (std::getline(in, line)) {
+    ++lineNo;
+    const std::string trimmed = Trim(line);
+    if (trimmed.empty() || trimmed[0]=='#' || trimmed[0]=='!') continue;
+
+    const std::vector<std::string> toks = SplitWhitespaceTokens(trimmed);
+    if (toks.size() < 2) continue;
+
+    double rowSeconds = 0.0;
+    if (!ParseUtcTimestampToUnixSeconds(toks[0], rowSeconds)) continue;
+
+    if (toks.size() < 1 + energyGrid.size()) {
+      std::ostringstream oss;
+      oss << "Time-dependent spectrum row " << lineNo << " in '" << fileName
+          << "' has " << (toks.size() - 1) << " flux columns but the Energy_MeV header declares "
+          << energyGrid.size();
+      exit(__LINE__,__FILE__,oss.str().c_str());
+    }
+
+    std::vector<double> flux(energyGrid.size(), std::numeric_limits<double>::quiet_NaN());
+    for (std::size_t i=0; i<energyGrid.size(); ++i) {
+      double v = 0.0;
+      if (TryParseScalarToken(toks[1+i], v) && v > 0.0) flux[i] = v;
+    }
+
+    const double delta = std::fabs(rowSeconds - refSeconds);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      bestEpochUTC = toks[0];
+      bestFlux.swap(flux);
+    }
+  }
+
+  if (bestFlux.empty()) {
+    std::ostringstream oss;
+    oss << "No timestamped spectrum rows were found in time-dependent spectrum file '" << fileName << "'";
+    exit(__LINE__,__FILE__,oss.str().c_str());
+  }
+
+  std::ostringstream name;
+  name << "spectrum_snapshot_" << SanitizeFileStem(BasenameOnly(fileName)) << ".dat";
+  const std::string outFile = name.str();
+
+  std::ofstream out(outFile.c_str());
+  if (!out) {
+    std::ostringstream oss;
+    oss << "Cannot create snapshot spectrum file: " << outFile;
+    exit(__LINE__,__FILE__,oss.str().c_str());
+  }
+
+  out << "# Extracted from time-dependent spectrum file\n";
+  out << "# source_file: " << fileName << "\n";
+  out << "# reference_epoch_utc: " << refEpochUTC << "\n";
+  out << "# selected_epoch_utc: " << bestEpochUTC << "\n";
+  out << "# selected_time_offset_s: " << bestDelta << "\n";
+  out << "# columns: Energy_MeV  differential_flux_perMeV\n";
+
+  std::size_t nValid = 0;
+  out.setf(std::ios::scientific);
+  out.precision(12);
+  for (std::size_t i=0; i<energyGrid.size() && i<bestFlux.size(); ++i) {
+    if (!(bestFlux[i] > 0.0) || !std::isfinite(bestFlux[i])) continue;
+    out << energyGrid[i] << " " << bestFlux[i] << "\n";
+    ++nValid;
+  }
+
+  if (nValid < 2) {
+    std::ostringstream oss;
+    oss << "Selected time-dependent spectrum snapshot from '" << fileName
+        << "' at epoch '" << bestEpochUTC << "' contains fewer than two valid positive bins";
+    exit(__LINE__,__FILE__,oss.str().c_str());
+  }
+
+  return outFile;
+}
+
+static void ResolveTableSpectrumFileForInitialization(EarthUtil::AmpsParam& p) {
+  if (p.particleSpectrum.type != EarthUtil::ParticleSpectrum::Type::TABLE) return;
+
+  std::string tableFile = Trim(p.particleSpectrum.tableFile);
+  if (tableFile.empty()) {
+    std::map<std::string,std::string>::const_iterator it = p.spectrum.find("SPEC_TABLE_FILE");
+    if (it != p.spectrum.end()) tableFile = Trim(it->second);
+  }
+  if (tableFile.empty()) {
+    std::map<std::string,std::string>::const_iterator it = p.spectrum.find("TABLE_FILE");
+    if (it != p.spectrum.end()) tableFile = Trim(it->second);
+  }
+  if (tableFile.empty()) return;
+
+  p.spectrum["SPEC_TABLE_FILE"] = tableFile;
+  p.particleSpectrum.tableFile = tableFile;
+
+  const SpectrumTableFileFormat fmt = DetectSpectrumTableFileFormat(tableFile);
+  if (fmt == SpectrumTableFileFormat::TWO_COLUMN) {
+    p.particleSpectrum.tableFormat = EarthUtil::ParticleSpectrum::TableFormat::TWO_COLUMN;
+  }
+  else if (fmt == SpectrumTableFileFormat::TIME_DEPENDENT) {
+    p.particleSpectrum.tableFormat = EarthUtil::ParticleSpectrum::TableFormat::TIME_DEPENDENT;
+  }
+  else {
+    std::ostringstream oss;
+    oss << "Unsupported spectrum table format for file '" << tableFile << "'";
+    exit(__LINE__,__FILE__,oss.str().c_str());
+  }
+
+  const std::string refEpochUTC = SelectSpectrumInitializationEpochUTC(p);
+  p.spectrum["SPEC_TABLE_REFERENCE_EPOCH_UTC"] = refEpochUTC;
+}
+
+
+} // anonymous namespace
 
 /**
  * @brief Parse and validate the #SPECTRUM section.
@@ -562,8 +991,8 @@ static EarthUtil::Vec3 ConvertTrajectorySampleToGsmM(const std::string& frame,
   return EarthUtil::Vec3{};
 }
 
-static EarthUtil::SpacecraftTrajectory LoadTrajectoryFileAsGsm(const std::string& fileName,
-                                                               const std::string& trajFrame) {
+EarthUtil::SpacecraftTrajectory LoadTrajectoryFileAsGsm(const std::string& fileName,
+                                                     const std::string& trajFrame) {
   std::ifstream fin(fileName);
   if (!fin.is_open()) {
     { std::ostringstream _exit_msg; _exit_msg << "Cannot open trajectory file: " << fileName; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
@@ -634,6 +1063,38 @@ static void PackStandalonePointsIntoSyntheticTrajectories(EarthUtil::AmpsParam& 
     const EarthUtil::Vec3& pt_km = p.output.points[i];
     tr.AddSample(p.field.epoch, {pt_km.x*1000.0, pt_km.y*1000.0, pt_km.z*1000.0});
     p.output.trajectories.push_back(tr);
+  }
+}
+
+void InitializePointLikeOutput(EarthUtil::AmpsParam& p) {
+  const std::string mode = ToUpper(Trim(p.output.mode));
+
+  if (mode=="TRAJECTORY") {
+    if (Trim(p.output.trajFile).empty()) {
+      exit(__LINE__,__FILE__,"OUTPUT_MODE=TRAJECTORY requires TRAJ_FILE in #OUTPUT_DOMAIN");
+    }
+    p.output.trajectories.clear();
+    p.output.trajectories.push_back(LoadTrajectoryFileAsGsm(p.output.trajFile, p.output.trajFrame));
+    p.output.RebuildFlattenedPointsFromTrajectories();
+    return;
+  }
+
+  if (mode=="POINTS") {
+    if (p.output.points.empty()) {
+      exit(__LINE__,__FILE__,"OUTPUT_MODE=POINTS but no POINT entries were found in POINTS_BEGIN/END block");
+    }
+    PackStandalonePointsIntoSyntheticTrajectories(p);
+    p.output.RebuildFlattenedPointsFromTrajectories();
+    return;
+  }
+
+  if (mode=="SHELLS") return;
+
+  {
+    std::ostringstream _exit_msg;
+    _exit_msg << "Unsupported OUTPUT_MODE='" << p.output.mode
+              << "'. Supported values: POINTS | TRAJECTORY | SHELLS";
+    exit(__LINE__,__FILE__,_exit_msg.str().c_str());
   }
 }
 
@@ -1412,9 +1873,6 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
 
   AmpsParam p;
 
-  // Keep a parsed spectrum object local to this translation unit.
-  // In the full codebase, add it as a field in AmpsParam and remove this local.
-
   std::string section;
   bool inPointsBlock=false;
   bool inChannelsBlock=false;
@@ -1693,22 +2151,13 @@ if (ToUpper(p.field.model)=="DIPOLE") {
   }
 }
 
-// Build the unified trajectory representation once parsing is complete.
-  if (p.output.mode=="TRAJECTORY") {
-    if (Trim(p.output.trajFile).empty()) {
-      exit(__LINE__,__FILE__,"OUTPUT_MODE=TRAJECTORY requires TRAJ_FILE in #OUTPUT_DOMAIN");
-    }
-    p.output.trajectories.clear();
-    p.output.trajectories.push_back(LoadTrajectoryFileAsGsm(p.output.trajFile, p.output.trajFrame));
-    p.output.RebuildFlattenedPointsFromTrajectories();
-  }
-  else if (p.output.mode=="POINTS") {
-    if (p.output.points.empty()) {
-      exit(__LINE__,__FILE__,"OUTPUT_MODE=POINTS but no POINT entries were found in POINTS_BEGIN/END block");
-    }
-    PackStandalonePointsIntoSyntheticTrajectories(p);
-    p.output.RebuildFlattenedPointsFromTrajectories();
-  }
+  // Finalize the point-like initialization path.  This is the key step that makes
+  // POINTS and TRAJECTORY reuse the same downstream solver kernels:
+  //   POINTS     -> one synthetic one-sample trajectory per point
+  //   TRAJECTORY -> real multi-sample trajectory loaded from file
+  // In both cases the result is a flattened output.points array plus the unified
+  // output.trajectories container used for per-sample timestamps.
+  InitializePointLikeOutput(p);
 
   // Load time-varying Tsyganenko driver file when TS_INPUT_MODE = FILE.
   // This must happen after the #TEMPORAL section has been fully parsed and
@@ -1770,16 +2219,21 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
   }
 
-  // Parse spectrum into a typed representation and validate SPECTRUM_TYPE.
-  // This guarantees we fail fast for unrecognized spectrum definitions.
+  // Parse the particle spectrum into a typed metadata object first.  The legacy
+  // boundary/spectrum initializer still consumes the raw key/value table, but by
+  // storing the typed view in AmpsParam we make the selected spectrum explicit in
+  // the model initialization sequence.
+  p.particleSpectrum = ParseParticleSpectrum(p.spectrum);
 
-  // If your downstream Tecplot writer lives elsewhere, pass parsedSpectrum to it
-  // and call WriteSpectrumTecplotAuxData(out, parsedSpectrum) when writing the
-  // Tecplot header. See comment above.
+  // TABLE spectra support two on-disk formats:
+  //   (1) a legacy 2-column table (Energy_MeV, differential flux)
+  //   (2) a time-dependent table with one UTC timestamp per row and many energy columns
+  // The parser determines the file type here and passes the reference epoch through
+  // #SPECTRUM so cSpectrum can call the appropriate loader directly.
+  ResolveTableSpectrumFileForInitialization(p);
 
-    // Build/validate the global spectrum object from the parsed #SPECTRUM section.
-  // This exits early with a clear error message if the spectrum is missing, incomplete,
-  // or has an unrecognized SPECTRUM_TYPE token.
+  // Build/validate the global spectrum object from the prepared #SPECTRUM table because
+  // the downstream density/cutoff code still evaluates spectra through ::gSpectrum.
   InitGlobalSpectrumFromKeyValueMap(p.spectrum);
 
   // Diagnostic output: record the parsed spectrum in a standalone Tecplot file.
