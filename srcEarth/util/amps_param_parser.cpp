@@ -969,13 +969,12 @@ static EarthUtil::Vec3 ConvertTrajectorySampleToGsmM(const std::string& frame,
 
   // All branches ultimately produce a GSM Cartesian vector in SI meters.
   if (f=="GSM") {
-    // Input: Cartesian GSM in Earth radii.  Convert Re -> m.
-    const double Re_m = kEarthRadiusKm * 1000.0;
-    return {c1*Re_m, c2*Re_m, c3*Re_m};
+    // Input: Cartesian GSM in kilometers.  Convert km -> m.
+    return {c1*1000.0, c2*1000.0, c3*1000.0};
   }
   else if (f=="SM") {
-    const double Re_m = kEarthRadiusKm * 1000.0;
-    const EarthUtil::Vec3 xSM_km{c1*kEarthRadiusKm, c2*kEarthRadiusKm, c3*kEarthRadiusKm};
+    // Input: Cartesian SM in kilometers.  Rotate SM -> GSM in km, then convert to m.
+    const EarthUtil::Vec3 xSM_km{c1, c2, c3};
     const EarthUtil::Vec3 xGSM_km = RotateVectorWithSpiceOrThrow(xSM_km, "SM", "GSM", timeUTC, ctx);
     return {xGSM_km.x*1000.0, xGSM_km.y*1000.0, xGSM_km.z*1000.0};
   }
@@ -1039,7 +1038,8 @@ EarthUtil::SpacecraftTrajectory LoadTrajectoryFileAsGsm(const std::string& fileN
     // first token is a plain string with no 'T').
     if (timeUTC.find('T') == std::string::npos) continue;
 
-    // Position stored in meters (SI) in xGSM_m.
+    // Trajectory file coordinates are interpreted in kilometers.
+    // Position is stored internally in meters (SI) in xGSM_m.
     const EarthUtil::Vec3 xGSM_m = ConvertTrajectorySampleToGsmM(trajFrame, timeUTC, c1, c2, c3, fileName, lineNo);
     tr.AddSample(timeUTC, xGSM_m);
   }
