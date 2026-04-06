@@ -387,17 +387,8 @@ public:
     Earth::GridlessMode::Dipole::SetMomentScale(prm.field.dipoleMoment_Me);
     Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
 
-    for (int i=0;i<11;i++) PARMOD[i]=0.0;
+    EarthUtil::BuildTsParmod(prm.field, Model(), PARMOD);
     PS = 0.170481; // same default as interfaces
-
-    PARMOD[0]=prm.field.pdyn_nPa;
-    PARMOD[1]=prm.field.dst_nT;
-    PARMOD[2]=prm.field.imfBy_nT;
-    PARMOD[3]=prm.field.imfBz_nT;
-
-    if (Model()=="T05") {
-      for (int i=0;i<6;i++) PARMOD[4+i]=prm.field.w[i];
-    }
   }
 
   // Return the canonical (normalised) model name.
@@ -499,30 +490,42 @@ public:
 
     // ── Step 2: update driving parameters from the time-varying table ────────
     if (hasDriverTable) {
-      // Convert the ISO-8601 epoch to SPICE ET [s past J2000] for the Lookup call.
+      // Convert the ISO-8601 epoch string carried by the trajectory sample to
+      // SPICE ephemeris time.  The driver table is stored in ET so this puts
+      // the spacecraft point and the external driving history on the same time
+      // axis before interpolation.
 #ifndef _NO_SPICE_CALLS_
       SpiceDouble etSpice = 0.0;
       str2et_c(epoch.c_str(), &etSpice);
       const double et = static_cast<double>(etSpice);
 #else
-      const double et = 0.0;  // SPICE unavailable — Lookup will clamp to table start
+      // When SPICE is disabled we have no robust UTC->ET conversion here.
+      // Using et=0 forces Lookup() to clamp to the start of the table.  That is
+      // intentionally conservative: it keeps the code path alive for builds
+      // without SPICE while making the degraded behavior obvious in the output.
+      const double et = 0.0;
 #endif
-      // Linear interpolation of all driving parameters at this epoch.
+
+      // Interpolate the full driver state for this exact point time.  The
+      // returned record contains both the common T96/T05-style quantities and
+      // the extra model-specific blocks (G, W, BZ averages).
       const EarthUtil::TsDriverRecord rec = driverTable->Lookup(et);
-      // Write By, Bz, Vsw, DenP, Pdyn, Dst, W1..W6 into prm.field.
+
+      // Copy the interpolated snapshot into the mutable BackgroundField block.
+      // From this point onward, all downstream field code sees prm.field as if
+      // it had originally been configured with these values.
       EarthUtil::TsDriverTable::ApplyToField(rec, prm.field);
 
-      // Rebuild the PARMOD array that GetB_T passes to the Fortran routines.
-      // PARMOD layout is model-dependent:
-      //   T96: [0]=Pdyn [1]=Dst [2]=By [3]=Bz [4..10]=0
-      //   T05: [0]=Pdyn [1]=Dst [2]=By [3]=Bz [4]=W1 .. [9]=W6 [10]=0
-      PARMOD[0] = prm.field.pdyn_nPa;
-      PARMOD[1] = prm.field.dst_nT;
-      PARMOD[2] = prm.field.imfBy_nT;
-      PARMOD[3] = prm.field.imfBz_nT;
-      if (Model() == "T05") {
-        for (int i = 0; i < 6; ++i) PARMOD[4+i] = prm.field.w[i];
-      }
+      // Rebuild PARMOD every time we refresh the driver snapshot.
+      //
+      // This is the key step that removes the old T05-only assumption:
+      //   • T96 gets [Pdyn,Dst,By,Bz,...]
+      //   • T01 additionally receives G1..G3
+      //   • T05/TA16 receive W1..W6
+      //   • TA15 receives its placeholder AMPS-side packing using W and BZ
+      // The field evaluator then consumes the same PARMOD array it always did,
+      // but now its contents are refreshed through a uniform model-agnostic API.
+      EarthUtil::BuildTsParmod(prm.field, Model(), PARMOD);
     }
 
     // ── Step 3: re-initialise Geopack for the new epoch ──────────────────────
@@ -564,7 +567,7 @@ public:
       t04_s_(&IOPT,const_cast<double*>(PARMOD),const_cast<double*>(&PS),xRe+0,xRe+1,xRe+2,b_ext_nT+0,b_ext_nT+1,b_ext_nT+2);
     }
     else {
-      throw std::runtime_error("Unsupported FIELD_MODEL in gridless solver: "+Model()+" (supported: T96,T05,DIPOLE)");
+      throw std::runtime_error("Unsupported FIELD_MODEL in gridless solver: "+Model()+" (implemented in this archive: T96,T05,DIPOLE; driver-state support also prepared for T01,TA15N,TA15B,TA16)");
     }
 
     B_T.x = b_int[0] + b_ext_nT[0]*_NANO_;

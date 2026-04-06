@@ -1104,6 +1104,37 @@ void InitializePointLikeOutput(EarthUtil::AmpsParam& p) {
 //======================================================================================
 
 static inline double Lerp(double a, double b, double t) { return a + t*(b-a); }
+static std::string NormalizeTsModelName(const std::string& raw);
+
+void BuildTsParmod(const BackgroundField& field,
+                   const std::string& model,
+                   double parmod[11]) {
+  for (int i = 0; i < 11; ++i) parmod[i] = 0.0;
+  parmod[0] = field.pdyn_nPa;
+  parmod[1] = field.dst_nT;
+  parmod[2] = field.imfBy_nT;
+  parmod[3] = field.imfBz_nT;
+
+  const std::string m = NormalizeTsModelName(model);
+  if (m == "T01") {
+    for (int i = 0; i < 3; ++i) parmod[4 + i] = field.g[i];
+  }
+  else if (m == "T05" || m == "TA16") {
+    for (int i = 0; i < 6; ++i) parmod[4 + i] = field.w[i];
+  }
+  else if (m == "TA15N" || m == "TA15B") {
+    // Shared uniform packing for the AMPS side. The actual external TA15
+    // interface is not yet linked in this archive, but the full driver state is
+    // carried here so per-point updates become model-agnostic.
+    parmod[4] = field.w[0];
+    parmod[5] = field.w[1];
+    parmod[6] = field.w[2];
+    parmod[7] = field.bzAvg[0];
+    parmod[8] = field.bzAvg[1];
+    parmod[9] = field.bzAvg[2];
+    parmod[10] = field.bzAvg[3];
+  }
+}
 
 EarthUtil::TsDriverRecord EarthUtil::TsDriverTable::Lookup(double et) const {
   if (records_.empty())
@@ -1147,7 +1178,9 @@ EarthUtil::TsDriverRecord EarthUtil::TsDriverTable::Lookup(double et) const {
   out.swN_cm3  = Lerp(r0.swN_cm3,  r1.swN_cm3,  t);
   out.pdyn_nPa = Lerp(r0.pdyn_nPa, r1.pdyn_nPa, t);
   out.dst_nT   = Lerp(r0.dst_nT,   r1.dst_nT,   t);
+  for (int i = 0; i < 3; ++i) out.g[i] = Lerp(r0.g[i], r1.g[i], t);
   for (int i = 0; i < 6; ++i) out.w[i] = Lerp(r0.w[i], r1.w[i], t);
+  for (int i = 0; i < 6; ++i) out.bzAvg[i] = Lerp(r0.bzAvg[i], r1.bzAvg[i], t);
   return out;
 }
 
@@ -1159,7 +1192,9 @@ void EarthUtil::TsDriverTable::ApplyToField(const EarthUtil::TsDriverRecord& rec
   field.swN_cm3  = rec.swN_cm3;
   field.pdyn_nPa = rec.pdyn_nPa;
   field.dst_nT   = rec.dst_nT;
+  for (int i = 0; i < 3; ++i) field.g[i] = rec.g[i];
   for (int i = 0; i < 6; ++i) field.w[i] = rec.w[i];
+  for (int i = 0; i < 6; ++i) field.bzAvg[i] = rec.bzAvg[i];
 }
 
 //======================================================================================
@@ -1479,6 +1514,52 @@ static TsColMap ParseTsDriverHeader(std::istream& fin,
 }
 
 //======================================================================================
+// ParseSimpleTsDriverHeader
+//======================================================================================
+// Fallback for AMPS wizard style plain-text tables whose second comment line is a
+// whitespace-separated list of column names, for example:
+//   # YYYY-MM-DDTHH:MM:SS Bx By Bz Vx Vy Vz Np Temp SYM-H IMFflag SWflag Tilt Pdyn W1 ...
+static TsColMap ParseSimpleTsDriverHeader(const std::string& fileName) {
+  std::ifstream fin(fileName);
+  if (!fin.is_open()) return {};
+
+  std::string line;
+  while (std::getline(fin, line)) {
+    const std::string t = Trim(line);
+    if (t.empty() || t[0] != '#') continue;
+    const std::string body = Trim(t.substr(1));
+    if (body.find("YYYY-MM-DDTHH:MM:SS") == std::string::npos) continue;
+
+    std::istringstream iss(body);
+    std::vector<std::string> hdr;
+    for (std::string tok; iss >> tok; ) hdr.push_back(tok);
+    if (hdr.empty()) return {};
+
+    TsColMap colMap;
+    for (int i = 0; i < static_cast<int>(hdr.size()); ++i) {
+      const std::string u = ToUpper(hdr[i]);
+      if (u == "YYYY-MM-DDTHH:MM:SS") {
+        colMap["DATETIME"] = i;
+        colMap["ISODATETIME"] = i;
+      }
+      else if (u == "BY") colMap["BYIMF"] = i;
+      else if (u == "BZ") colMap["BZIMF"] = i;
+      else if (u == "VX") colMap["VSW"] = i;
+      else if (u == "NP") colMap["DEN_P"] = i;
+      else if (u == "SYM-H" || u == "SYMH") colMap["DST"] = i;
+      else if (u == "PDYN") colMap["PDYN"] = i;
+      else if (u == "G1" || u == "G2" || u == "G3" ||
+               u == "W1" || u == "W2" || u == "W3" || u == "W4" || u == "W5" || u == "W6" ||
+               u == "BZ1" || u == "BZ2" || u == "BZ3" || u == "BZ4" || u == "BZ5" || u == "BZ6") {
+        colMap[u] = i;
+      }
+    }
+    return colMap;
+  }
+  return {};
+}
+
+//======================================================================================
 // RequiredColumnsForModel
 //======================================================================================
 // PURPOSE
@@ -1735,6 +1816,7 @@ static EarthUtil::TsDriverTable LoadTsDriverFile(const std::string& fileName,
     colMap = ParseTsDriverHeader(hdr, fileName);
     // hdr is closed here (RAII).
   }
+  if (colMap.empty()) colMap = ParseSimpleTsDriverHeader(fileName);
 
   // Validate that every column required by this model is present before
   // reading a single data row.  Fails with a descriptive error listing the
@@ -1841,10 +1923,16 @@ static EarthUtil::TsDriverTable LoadTsDriverFile(const std::string& fileName,
     rec.swN_cm3  = ExtractColumn(toks, colMap, "DEN_P");
     rec.pdyn_nPa = ExtractColumn(toks, colMap, "PDYN");
     rec.dst_nT   = ExtractColumn(toks, colMap, "DST");
+    for (int i = 0; i < 3; ++i) {
+      const std::string gKey = "G" + std::to_string(i + 1);
+      rec.g[i] = ExtractColumn(toks, colMap, gKey);
+    }
     // W1..W6 are stored in the array rec.w[0..5].
     for (int i = 0; i < 6; ++i) {
       const std::string wKey = "W" + std::to_string(i + 1);
       rec.w[i] = ExtractColumn(toks, colMap, wKey);
+      const std::string bzKey = "BZ" + std::to_string(i + 1);
+      rec.bzAvg[i] = ExtractColumn(toks, colMap, bzKey);
     }
 
     table.push_back(rec);
@@ -2033,13 +2121,39 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="IMF_BX") p.field.imfBx_nT=std::stod(val);
       else if (uKey=="SW_VX") p.field.swVx_kms=std::stod(val);
       else if (uKey=="SW_N") p.field.swN_cm3=std::stod(val);
+      else if (uKey=="G1") p.field.g[0]=std::stod(val);
+      else if (uKey=="G2") p.field.g[1]=std::stod(val);
+      else if (uKey=="G3") p.field.g[2]=std::stod(val);
       else if (uKey=="W1") p.field.w[0]=std::stod(val);
       else if (uKey=="W2") p.field.w[1]=std::stod(val);
       else if (uKey=="W3") p.field.w[2]=std::stod(val);
       else if (uKey=="W4") p.field.w[3]=std::stod(val);
       else if (uKey=="W5") p.field.w[4]=std::stod(val);
       else if (uKey=="W6") p.field.w[5]=std::stod(val);
+      else if (uKey=="BZ1") p.field.bzAvg[0]=std::stod(val);
+      else if (uKey=="BZ2") p.field.bzAvg[1]=std::stod(val);
+      else if (uKey=="BZ3") p.field.bzAvg[2]=std::stod(val);
+      else if (uKey=="BZ4") p.field.bzAvg[3]=std::stod(val);
+      else if (uKey=="BZ5") p.field.bzAvg[4]=std::stod(val);
+      else if (uKey=="BZ6") p.field.bzAvg[5]=std::stod(val);
       else if (uKey=="EPOCH") p.field.epoch=val;
+      else if (uKey=="DRIVER_FILE" || uKey=="MAGNETIC_DRIVER_FILE") {
+        // Allow the magnetic-field driver table to be declared next to the
+        // Tsyganenko model selection inside #BACKGROUND_FIELD, e.g.
+        //
+        //   #BACKGROUND_FIELD
+        //   FIELD_MODEL   TS05
+        //   DRIVER_FILE   ts05_driving_2017-09-07T000000Z.txt
+        //
+        // This is intentionally stored on p.field first, because semantically the
+        // file belongs to the magnetic-field model configuration.  The actual load
+        // is deferred until the entire input file has been parsed so that:
+        //   1) FIELD_MODEL has already been normalized,
+        //   2) later sections still have a chance to override the same driver via
+        //      #TEMPORAL TS_INPUT_FILE if desired, and
+        //   3) all parser errors are reported from a single finalization stage.
+        p.field.driverFile = Trim(val);
+      }
       else {
         p.field.raw[uKey]=val;
         rememberUnknown();
@@ -2159,17 +2273,83 @@ if (ToUpper(p.field.model)=="DIPOLE") {
   // output.trajectories container used for per-sample timestamps.
   InitializePointLikeOutput(p);
 
-  // Load time-varying Tsyganenko driver file when TS_INPUT_MODE = FILE.
-  // This must happen after the #TEMPORAL section has been fully parsed and
-  // before the solvers start querying the table per trajectory point.
-  if (ToUpper(p.temporal.tsInputMode) == "FILE") {
-    if (Trim(p.temporal.tsInputFile).empty()) {
+  // Finalize loading of a time-dependent Tsyganenko driver table.
+  //
+  // Supported user-facing ways to request the same capability:
+  //
+  //   (A) Legacy / explicit temporal syntax
+  //       #TEMPORAL
+  //       TS_INPUT_MODE  FILE
+  //       TS_INPUT_FILE  ...
+  //
+  //   (B) Magnetic-model-local syntax
+  //       #BACKGROUND_FIELD
+  //       FIELD_MODEL    TS05
+  //       DRIVER_FILE    ...
+  //
+  // The solver uses only one shared object at runtime: p.temporal.driverTable.
+  // Therefore the parser resolves both input styles here and loads exactly one
+  // file into that table.
+  //
+  // Precedence rule:
+  //   #TEMPORAL TS_INPUT_FILE wins over #BACKGROUND_FIELD DRIVER_FILE when both
+  //   are present, because #TEMPORAL is the more explicit request for
+  //   time-dependent forcing.  This keeps backward compatibility with inputs that
+  //   already relied on TS_INPUT_FILE while still allowing the simpler
+  //   BACKGROUND_FIELD-only syntax requested for Tsyganenko runs.
+  //
+  // Validation rule:
+  //   If TS_INPUT_MODE=FILE is requested, a filename must be available from
+  //   either TS_INPUT_FILE or DRIVER_FILE.  If neither is provided, abort with a
+  //   clear message instead of silently falling back to static parameters.
+  {
+    const std::string temporalMode = ToUpper(p.temporal.tsInputMode);
+    const std::string temporalDriverFile = Trim(p.temporal.tsInputFile);
+    const std::string backgroundDriverFile = Trim(p.field.driverFile);
+
+    // Determine whether the run explicitly requests a file-backed driver table
+    // through either configuration path.
+    const bool temporalRequestsFile = (temporalMode == "FILE");
+    const bool backgroundProvidesFile = !backgroundDriverFile.empty();
+
+    // Pick the actual file to load.  Prefer #TEMPORAL TS_INPUT_FILE when set;
+    // otherwise fall back to #BACKGROUND_FIELD DRIVER_FILE.
+    std::string resolvedDriverFile;
+    if (!temporalDriverFile.empty()) resolvedDriverFile = temporalDriverFile;
+    else if (backgroundProvidesFile) resolvedDriverFile = backgroundDriverFile;
+
+    // When the input explicitly says TS_INPUT_MODE=FILE, insist that a filename
+    // exists somewhere in the input.  This preserves the old safety check while
+    // broadening where the filename may come from.
+    if (temporalRequestsFile && resolvedDriverFile.empty()) {
       exit(__LINE__,__FILE__,
-           "TS_INPUT_MODE=FILE requires TS_INPUT_FILE to be set in #TEMPORAL");
+           "TS_INPUT_MODE=FILE requires TS_INPUT_FILE in #TEMPORAL or DRIVER_FILE in #BACKGROUND_FIELD");
     }
-    p.temporal.driverTable = LoadTsDriverFile(
-        p.temporal.tsInputFile,
-        p.field.model);  // model name drives per-model column validation
+
+    // Load the table whenever either syntax supplied a filename.  The loaded
+    // table is attached to p.temporal.driverTable because the runtime solvers
+    // already look there for per-epoch interpolation.
+    if (!resolvedDriverFile.empty()) {
+      p.temporal.driverTable = LoadTsDriverFile(
+          resolvedDriverFile,
+          p.field.model);  // model name drives per-model column validation
+
+      // Keep the resolved filename mirrored in the temporal structure so any
+      // later diagnostics or dumps that inspect TS_INPUT_FILE still see the
+      // actual source used for the run, even when it originally came from
+      // #BACKGROUND_FIELD DRIVER_FILE.
+      p.temporal.tsInputFile = resolvedDriverFile;
+
+      // If the user supplied DRIVER_FILE through #BACKGROUND_FIELD while leaving
+      // #TEMPORAL in its default PARAMS mode, promote the effective mode to FILE
+      // so downstream diagnostics and solver branches accurately reflect that the
+      // magnetic field is being driven by an external time table.
+      //
+      // We intentionally do not override an explicit user request such as
+      // TS_INPUT_MODE=FILE (already consistent) or any future nonstandard mode
+      // token that the caller may want to inspect later.
+      if (temporalMode.empty() || temporalMode == "PARAMS") p.temporal.tsInputMode = "FILE";
+    }
   }
 
   // Validate density/spectrum controls if requested.

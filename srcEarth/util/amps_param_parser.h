@@ -462,11 +462,44 @@ namespace EarthUtil {
     double swVx_kms{-400.0};
     double swN_cm3{5.0};
 
-    // T05 storm-time integrals
+    // T01 storm-time activity indices
+    double g[3]{0,0,0};
+
+    // T05/TA15/TA16 storm-time history integrals
     double w[6]{0,0,0,0,0,0};
+
+    // TA15 running averages of southward IMF Bz magnitude
+    double bzAvg[6]{0,0,0,0,0,0};
 
     // Snapshot time
     std::string epoch{"2000-01-01T00:00"};
+
+    // Optional external driver table file specified directly in #BACKGROUND_FIELD
+    // via DRIVER_FILE.
+    //
+    // Why this lives in BackgroundField instead of Temporal:
+    //   Historically, AMPS inputs often describe the magnetic-field model and its
+    //   driver source together in one section:
+    //
+    //     #BACKGROUND_FIELD
+    //     FIELD_MODEL   TS05
+    //     DRIVER_FILE   ts05_driving_....txt
+    //
+    //   The gridless implementation already has a generic time-dependent driver
+    //   table capability, but before this change it was only activated through
+    //   #TEMPORAL TS_INPUT_MODE=FILE / TS_INPUT_FILE=...
+    //
+    //   Storing the filename here lets the parser honor the more natural
+    //   BACKGROUND_FIELD-based syntax while still loading the same shared
+    //   TsDriverTable used by the trajectory/gridless solvers.
+    //
+    // Semantics:
+    //   - empty string: no driver table requested from #BACKGROUND_FIELD
+    //   - non-empty    : parser must load the file after the full input is read
+    //                    and attach it to temporal.driverTable
+    //
+    // Precedence rules are implemented in amps_param_parser.cpp.
+    std::string driverFile;
 
     // Raw key/value store for forward compatibility.
     std::map<std::string,std::string> raw;
@@ -734,8 +767,14 @@ namespace EarthUtil {
     double pdyn_nPa{2.0};
     double dst_nT{0.0};
 
-    // T05 storm-time integrals W1..W6
+    // T01 storm-time activity indices G1..G3
+    double g[3]{0,0,0};
+
+    // T05/TA15/TA16 storm-time integrals W1..W6
     double w[6]{0,0,0,0,0,0};
+
+    // TA15 running averages BZ1..BZ6
+    double bzAvg[6]{0,0,0,0,0,0};
   };
 
   //====================================================================================
@@ -787,6 +826,15 @@ namespace EarthUtil {
     mutable bool clampWarnedLow_{false};
     mutable bool clampWarnedHigh_{false};
   };
+
+
+
+  // Build the 10-element Tsyganenko PARMOD vector plus trailing compatibility slot.
+  // Layout depends on the canonical FIELD_MODEL name. Unknown or unsupported
+  // models fall back to the shared base set [Pdyn,Dst,By,Bz,0..].
+  void BuildTsParmod(const BackgroundField& field,
+                     const std::string& model,
+                     double parmod[11]);
 
   //====================================================================================
   // TemporalParam — parameters from the #TEMPORAL section
