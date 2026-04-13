@@ -7307,7 +7307,7 @@ Check=
 
 ==============================================================================
 Test for Cutoff Rigidity (Gridless) Trajectory mode
-with geomagnetic field model subtests (currently: T05)
+with geomagnetic field model subtests (currently: T01, T05, T96, TA15, TA16)
 To add a new model: duplicate the T05 blocks in Run, Check, cat, ls, and Outs
 ==============================================================================
 
@@ -7322,7 +7322,7 @@ Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE
 Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
 
-Outs=test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--t05--compare
+Outs=test_Earth-cutoff-rigidity-gridless-trajectory--t01--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--t01--compare test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--t05--compare test_Earth-cutoff-rigidity-gridless-trajectory--t96--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--t96--compare test_Earth-cutoff-rigidity-gridless-trajectory--ta15--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--ta15--compare test_Earth-cutoff-rigidity-gridless-trajectory--ta16--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--ta16--compare
 
 Compile=
 >>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory_compile..." > test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
@@ -7345,7 +7345,50 @@ Run=
 >>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM.in 
 
 >>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t05.dat
->>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points_dipole_compare.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points_dipole_compare--t05.dat
+
+>>>@# ======================================================================
+>>>@# Subtest: T01 geomagnetic field model
+>>>@# ======================================================================
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "Running cutoff rigidity trajectory: T01 model" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/T01/* $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)
+>>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM.in 
+
+>>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t01.dat
+
+>>>@# ======================================================================
+>>>@# Subtest: T96 geomagnetic field model
+>>>@# ======================================================================
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "Running cutoff rigidity trajectory: T96 model" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/T96/* $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)
+>>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM.in 
+
+>>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t96.dat
+
+>>>@# ======================================================================
+>>>@# Subtest: TA15 geomagnetic field model
+>>>@# ======================================================================
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "Running cutoff rigidity trajectory: TA15 model" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/TA15/* $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)
+>>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM.in 
+
+>>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta15.dat
+
+>>>@# ======================================================================
+>>>@# Subtest: TA16 geomagnetic field model
+>>>@# ======================================================================
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "Running cutoff rigidity trajectory: TA16 model" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/TA16/* $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)
+>>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM.in 
+
+>>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta16.dat
 
 >>>@# ======================================================================
 >>>@# To add a new geomagnetic model (e.g. IGRF), copy the T05 block above
@@ -7361,7 +7404,6 @@ Check=
 
 >>>@# Unzip compressed reference solutions — T05
 >>>gunzip -kf output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t05.dat.gz
->>>gunzip -kf output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points_dipole_compare--t05.dat.gz
 
 >>>@echo "--- Subtest: T05 model ---" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 
@@ -7370,10 +7412,45 @@ Check=
 >>>  output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t05.dat \
 >>>  > test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff.diff
 
+>>>@# Unzip compressed reference solutions — T01
+>>>gunzip -kf output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t01.dat.gz
+
+>>>@echo "--- Subtest: T01 model ---" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+
 >>>-@${SCRIPTDIR}/DiffNum.pl \
->>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points_dipole_compare--t05.dat \
->>>  output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points_dipole_compare--t05.dat \
->>>  > test_Earth-cutoff-rigidity-gridless-trajectory--t05--compare.diff
+>>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t01.dat \
+>>>  output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t01.dat \
+>>>  > test_Earth-cutoff-rigidity-gridless-trajectory--t01--cutoff.diff
+
+>>>@# Unzip compressed reference solutions — T96
+>>>gunzip -kf output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t96.dat.gz
+
+>>>@echo "--- Subtest: T96 model ---" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t96.dat \
+>>>  output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t96.dat \
+>>>  > test_Earth-cutoff-rigidity-gridless-trajectory--t96--cutoff.diff
+
+>>>@# Unzip compressed reference solutions — TA15
+>>>gunzip -kf output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta15.dat.gz
+
+>>>@echo "--- Subtest: TA15 model ---" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta15.dat \
+>>>  output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta15.dat \
+>>>  > test_Earth-cutoff-rigidity-gridless-trajectory--ta15--cutoff.diff
+
+>>>@# Unzip compressed reference solutions — TA16
+>>>gunzip -kf output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta16.dat.gz
+
+>>>@echo "--- Subtest: TA16 model ---" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta16.dat \
+>>>  output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta16.dat \
+>>>  > test_Earth-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff
 
 >>>@# ======================================================================
 >>>@# To add a new model: duplicate the gunzip + DiffNum blocks above,
@@ -7382,12 +7459,28 @@ Check=
 >>>@# ======================================================================
 
 >>>@# Combine all sub-diffs into master diff file
->>>@cat test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff.diff \
+>>>@cat test_Earth-cutoff-rigidity-gridless-trajectory--t01--cutoff.diff \
+>>>    test_Earth-cutoff-rigidity-gridless-trajectory--t01--compare.diff \
+>>>    test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff.diff \
 >>>    test_Earth-cutoff-rigidity-gridless-trajectory--t05--compare.diff \
+>>>    test_Earth-cutoff-rigidity-gridless-trajectory--t96--cutoff.diff \
+>>>    test_Earth-cutoff-rigidity-gridless-trajectory--t96--compare.diff \
+>>>    test_Earth-cutoff-rigidity-gridless-trajectory--ta15--cutoff.diff \
+>>>    test_Earth-cutoff-rigidity-gridless-trajectory--ta15--compare.diff \
+>>>    test_Earth-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff \
+>>>    test_Earth-cutoff-rigidity-gridless-trajectory--ta16--compare.diff \
 >>>    > test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t01--cutoff.diff
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t01--compare.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t05--compare.diff
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t96--cutoff.diff
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t96--compare.diff
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--ta15--cutoff.diff
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--ta15--compare.diff
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--ta16--compare.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>@echo Test test_Earth-cutoff-rigidity-gridless-trajectory verification completed: `date`
 
