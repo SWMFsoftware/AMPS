@@ -6502,3 +6502,102 @@ Check=
 >>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless verification completed: `date`
 
 <#
+
+==============================================================================
+Test for Vertical Cutoff Rigidity (Gridless) with Dipole Magnetic Field
+using HYBRID Mover: Points and Shells
+==============================================================================
+
+#>
+Name=Earth-vertical-cutoff-rigidity-gridless-hybrid
+Time=5
+
+Type=amps
+
+Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
+Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
+Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
+
+Outs=test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-compare test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-cutoff test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-dirmap test_Earth-vertical-cutoff-rigidity-gridless-hybrid-shells-compare test_Earth-vertical-cutoff-rigidity-gridless-hybrid-shells-cutoff
+
+Compile=
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-hybrid_compile..." > test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+>>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-vertical-cutoff-rigidity-gridless-hybridKEYS)
+>>>rm -rf srcTemp
+>>>-@($(MAKE) -j8 amps)
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-hybrid_compile... done" >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+
+Run=
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-hybrid_run..." >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+>>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-hybrid has started: `date`
+>>>cp input/test/geospace/* $(TESTEarth-vertical-cutoff-rigidity-gridless-hybridDIR)
+
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+>>>@echo "Running vertical cutoff rigidity for a set of points (dipole, HYBRID mover)" >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+>>>cd $(TESTEarth-vertical-cutoff-rigidity-gridless-hybridDIR); ${MPIRUN} ./amps -mode gridless -mover HYBRID -i cutoff-dipole-points-steadystate.in
+
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+>>>@echo "Running vertical cutoff rigidity for a spherical shell (dipole, HYBRID mover)" >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+>>>cd $(TESTEarth-vertical-cutoff-rigidity-gridless-hybridDIR); ${MPIRUN} ./amps -mode gridless -mover HYBRID -i cutoff-dipole-shells-steadystate.in
+
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-hybrid_run... done" >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+>>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-hybrid has finished: `date`
+
+Check=
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-hybrid_check..." >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+
+>>>@# Unzip compressed reference solutions (hybrid)
+>>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless/points/cutoff_gridless_points_dipole_compare_hybrid.dat.gz
+>>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless/points/cutoff_gridless_dir_map_point_0003_hybrid.dat.gz
+>>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless/shells/cutoff_gridless_shells_hybrid.dat.gz
+>>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless/shells/cutoff_gridless_shells_dipole_compare_hybrid.dat.gz
+
+>>>@echo "--- Points subtest (HYBRID mover) ---" >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-hybridDIR)/cutoff_gridless_points_dipole_compare.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless/points/cutoff_gridless_points_dipole_compare_hybrid.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-compare.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-hybridDIR)/cutoff_gridless_points.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless/points/cutoff_gridless_points_hybrid.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-cutoff.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-hybridDIR)/cutoff_gridless_dir_map_point_0003.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless/points/cutoff_gridless_dir_map_point_0003_hybrid.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-dirmap.diff
+
+>>>@echo "--- Shells subtest (HYBRID mover) ---" >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-hybridDIR)/cutoff_gridless_shells_dipole_compare.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless/shells/cutoff_gridless_shells_dipole_compare_hybrid.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-hybrid-shells-compare.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-hybridDIR)/cutoff_gridless_shells.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless/shells/cutoff_gridless_shells_hybrid.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-hybrid-shells-cutoff.diff
+
+>>>@# Combine all sub-diffs into master diff file
+>>>@cat test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-compare.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-cutoff.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-dirmap.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-hybrid-shells-compare.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-hybrid-shells-cutoff.diff \
+>>>    > test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-compare.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-cutoff.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-dirmap.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-hybrid-shells-compare.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-hybrid-shells-cutoff.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
+>>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-hybrid verification completed: `date`
+
+<#
