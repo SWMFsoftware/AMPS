@@ -7303,3 +7303,92 @@ Check=
 >>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-trajectory verification completed: `date`
 
 <#
+
+
+==============================================================================
+Test for Cutoff Rigidity (Gridless) Trajectory mode
+with geomagnetic field model subtests (currently: T05)
+To add a new model: duplicate the T05 blocks in Run, Check, cat, ls, and Outs
+==============================================================================
+
+#>
+Name=Earth-cutoff-rigidity-gridless-trajectory
+Time=5
+
+Type=amps
+
+Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
+Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
+Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
+
+Outs=test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--t05--compare
+
+Compile=
+>>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory_compile..." > test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-cutoff-rigidity-gridless-trajectoryKEYS)
+>>>rm -rf srcTemp
+>>>-@($(MAKE) -j8 amps)
+>>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory_compile... done" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+
+Run=
+>>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory_run..." >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo Test test_Earth-cutoff-rigidity-gridless-trajectory has started: `date`
+
+>>>@# ======================================================================
+>>>@# Subtest: T05 geomagnetic field model
+>>>@# ======================================================================
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "Running cutoff rigidity trajectory: T05 model" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/T05/* $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)
+>>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM.in 
+
+>>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t05.dat
+>>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points_dipole_compare.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points_dipole_compare--t05.dat
+
+>>>@# ======================================================================
+>>>@# To add a new geomagnetic model (e.g. IGRF), copy the T05 block above
+>>>@# and replace t05/T05 with the new model name, adjusting the input
+>>>@# directory and .in file accordingly.
+>>>@# ======================================================================
+
+>>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory_run... done" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo Test test_Earth-cutoff-rigidity-gridless-trajectory has finished: `date`
+
+Check=
+>>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory_check..." >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>@# Unzip compressed reference solutions — T05
+>>>gunzip -kf output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t05.dat.gz
+>>>gunzip -kf output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points_dipole_compare--t05.dat.gz
+
+>>>@echo "--- Subtest: T05 model ---" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t05.dat \
+>>>  output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t05.dat \
+>>>  > test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points_dipole_compare--t05.dat \
+>>>  output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points_dipole_compare--t05.dat \
+>>>  > test_Earth-cutoff-rigidity-gridless-trajectory--t05--compare.diff
+
+>>>@# ======================================================================
+>>>@# To add a new model: duplicate the gunzip + DiffNum blocks above,
+>>>@# replace t05/T05 with the new model tag, and append the new .diff
+>>>@# files to the cat and ls lists below.
+>>>@# ======================================================================
+
+>>>@# Combine all sub-diffs into master diff file
+>>>@cat test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff.diff \
+>>>    test_Earth-cutoff-rigidity-gridless-trajectory--t05--compare.diff \
+>>>    > test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff.diff
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t05--compare.diff
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo Test test_Earth-cutoff-rigidity-gridless-trajectory verification completed: `date`
+
+<#
