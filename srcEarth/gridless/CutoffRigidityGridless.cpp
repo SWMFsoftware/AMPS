@@ -1229,20 +1229,43 @@ bool TraceAllowedSharedEx(const EarthUtil::AmpsParam& prm,
 
 namespace {
 
-static std::vector<V3> BuildDirGrid(int nZenith,int nAz) {
+//------------------------------------------------------------------------------
+// Build an approximately uniform full-sphere direction set on 4*pi using a
+// Fibonacci / golden-angle sphere.
+//
+// Why this replaces the old fixed (nZenith x nAz) tensor grid for cutoff runs:
+//   - the user now specifies the TOTAL number of sampled directions through
+//     CUTOFF_MAX_PARTICLES in #CUTOFF_RIGIDITY;
+//   - we need a single-parameter direction generator with near-uniform area
+//     coverage on the sphere;
+//   - a latitude/longitude tensor product grid tends to create meridional
+//     structure and is awkward when the requested number of directions is not a
+//     convenient rectangular product.
+//
+// Distribution details:
+//   For k=0..n-1 we place z = cos(theta) uniformly in [-1,1] and advance the
+//   azimuth with the golden angle. The resulting unit vectors provide a
+//   deterministic, reproducible, near-uniform covering of 4*pi.
+//------------------------------------------------------------------------------
+static std::vector<V3> BuildUniformSphereDirs(int nDir) {
+  if (nDir <= 0) {
+    throw std::runtime_error(
+      "BuildUniformSphereDirs requires nDir > 0 (set CUTOFF_MAX_PARTICLES >= 1)");
+  }
+
   std::vector<V3> dirs;
-  dirs.reserve(nZenith*nAz);
+  dirs.reserve((size_t)nDir);
 
-  for (int i=0;i<nZenith;i++) {
-    double mu = -1.0 + (2.0*(i+0.5))/nZenith;
-    double theta = std::acos(std::max(-1.0,std::min(1.0,mu)));
-    double st = std::sin(theta);
+  const double goldenRatio = 0.5*(1.0 + std::sqrt(5.0));
+  const double goldenAngle = 2.0*M_PI*(1.0 - 1.0/goldenRatio);
 
-    for (int j=0;j<nAz;j++) {
-      double phi = (2.0*M_PI)*(j+0.5)/nAz;
-      V3 v{ st*std::cos(phi), st*std::sin(phi), std::cos(theta) };
-      dirs.push_back(unit(v));
-    }
+  for (int k=0; k<nDir; ++k) {
+    const double z = 1.0 - 2.0*(static_cast<double>(k) + 0.5)/static_cast<double>(nDir);
+    const double r = std::sqrt(std::max(0.0, 1.0 - z*z));
+    const double phi = goldenAngle*static_cast<double>(k);
+
+    V3 v{ r*std::cos(phi), r*std::sin(phi), z };
+    dirs.push_back(unit(v));
   }
 
   return dirs;
@@ -1818,11 +1841,15 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   //----------------------------------------------------------------------------
 
   //----------------------------------------------------------------------------
-  // Direction grid (kept identical to your current serial "meaningful results")
+  // Direction grid for ISOTROPIC cutoff sampling
   //----------------------------------------------------------------------------
-  const int nZenith=24;
-  const int nAz=48;
-  const std::vector<V3> dirs = BuildDirGrid(nZenith,nAz);
+  // CUTOFF_MAX_PARTICLES is interpreted here as the TOTAL number of arrival
+  // directions sampled per injection point when CUTOFF_SAMPLING=ISOTROPIC.
+  //
+  // We generate those directions with a deterministic Fibonacci-sphere rule so
+  // the coverage is approximately uniform over the full 4*pi solid angle.
+  const int nCutoffDirs = prm.cutoff.maxParticlesPerPoint;
+  const std::vector<V3> dirs = BuildUniformSphereDirs(nCutoffDirs);
 
   //----------------------------------------------------------------------------------
   // Cutoff sampling mode (VERTICAL vs ISOTROPIC)
@@ -1858,9 +1885,11 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     std::cout << "Rigidity bracket: [" << Rmin << ", " << Rmax << "] GV\n";
     std::cout << "CUTOFF_SAMPLING : " << (samplingVertical ? "VERTICAL" : "ISOTROPIC") << "\n";
     if (!samplingVertical) {
-      std::cout << "Directions grid : " << dirs.size() << " (nZenith=" << nZenith << ", nAz=" << nAz << ")\n";
+      std::cout << "Directions grid : " << dirs.size()
+                << " (uniform Fibonacci-sphere, from CUTOFF_MAX_PARTICLES)\n";
     } else {
-      std::cout << "Directions grid : (not used for VERTICAL)\n";
+      std::cout << "Directions grid : (not used for VERTICAL; CUTOFF_MAX_PARTICLES="
+                << prm.cutoff.maxParticlesPerPoint << ")\n";
     }
     std::cout << "Directional map : " << (prm.cutoff.directionalMap ? "ON" : "OFF") << "\n";
     if (prm.cutoff.directionalMap) {
