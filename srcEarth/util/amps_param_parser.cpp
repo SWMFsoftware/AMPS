@@ -2352,6 +2352,22 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
   }
 
+  // Validate cutoff controls if requested.
+  if (ToUpper(p.calc.target)=="CUTOFF_RIGIDITY") {
+    if (!(p.cutoff.eMin_MeV>0.0)) {
+      exit(__LINE__,__FILE__,"CUTOFF_EMIN must be > 0 (MeV/n)");
+    }
+    if (!(p.cutoff.eMax_MeV>p.cutoff.eMin_MeV)) {
+      exit(__LINE__,__FILE__,"CUTOFF_EMAX must be > CUTOFF_EMIN (MeV/n)");
+    }
+    if (!(p.cutoff.nEnergy>=1)) {
+      exit(__LINE__,__FILE__,"CUTOFF_NENERGY must be >= 1");
+    }
+    if (p.cutoff.maxParticlesPerPoint < 1) {
+      exit(__LINE__,__FILE__,"CUTOFF_MAX_PARTICLES must be >= 1");
+    }
+  }
+
   // Validate density/spectrum controls if requested.
   if (ToUpper(p.calc.target)=="DENSITY_SPECTRUM") {
     if (!(p.densitySpectrum.Emin_MeV>0.0)) {
