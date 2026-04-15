@@ -36,7 +36,7 @@ C  CODED BY N. A. TSYGANENKO, 2015
 C
 c----------------------------------------------------------------------------------------
       IMPLICIT  REAL * 8  (A - H, O - Z)
-      EXTERNAL TAIL15_SHIELDED,SRC_SHIELDED,PRC_SHIELDED
+      EXTERNAL TAIL15_SHIELDEN,SRC_SHIELDEN,PRC_SHIELDEN
       DIMENSION PARMOD(10), PARAMETERS(-10:30), A(24)
 C
       PDPM =PARMOD(1) 
@@ -100,7 +100,7 @@ C
       PARAMETERS(19) =  A(23)  ! R1_DTheta00: R1 FAC FTPT COLATITUDE INCREMENT FROM NOON TO MIDNIGHT (BETWEEN 0.07 AND 0.17)
       PARAMETERS(20) =  A(24)  ! DMIDN:  TAIL SHEET HALFTHICKNESS AT MIDNIGHT  (BETWEEN 1.0 AND 4.0)
 C
-      CALL DIPOLE_SHIELD (X,Y,Z,PS,PDPM,BZIMF,CFX,CFY,CFZ)   !  THE DIPOLE SHIELDING FIELD IS PRESSURE-SCALED INSIDE THE DIPOLE_SHIELD(X,Y,Z,...)
+      CALL DIPOLE_SHIELN (X,Y,Z,PS,PDPM,BZIMF,CFX,CFY,CFZ)   !  THE DIPOLE SHIELDING FIELD IS PRESSURE-SCALED INSIDE THE DIPOLE_SHIELD(X,Y,Z,...)
 C                                                            !   ALL OTHER MODULES NEED IT TO BE DONE IN THIS S/R (BELOW).
 C
 C  NOW CALCULATE CONTRIBUTIONS FROM INTRA-MAGNETOSPHERIC FIELD SOURCES:
@@ -114,8 +114,8 @@ C
 c----------------------------------------------------------------------------------------------
 C   (2) TAIL15 MODULE 
 C
-      CALL DEFORM_XZ_YZ (PS,PARAMETERS,XX,YY,ZZ,TBX,TBY,TBZ,
-     *  TAIL15_SHIELDED) 
+      CALL DEFORM_XZ_YN (PS,PARAMETERS,XX,YY,ZZ,TBX,TBY,TBZ,
+     *  TAIL15_SHIELDEN) 
       TX=PARAMETERS(2)*TBX
       TY=PARAMETERS(2)*TBY
       TZ=PARAMETERS(2)*TBZ
@@ -123,7 +123,7 @@ c-------------------------------------------------------------------------------
 C
 C   (3) AXISYMMETRIC RING CURRENT (SRC)
 C
-      CALL DEFORM_XZ_YZ(PS,PARAMETERS,XX,YY,ZZ,SBX,SBY,SBZ,SRC_SHIELDED) 
+      CALL DEFORM_XZ_YN(PS,PARAMETERS,XX,YY,ZZ,SBX,SBY,SBZ,SRC_SHIELDEN) 
       SX=PARAMETERS(3)*SBX
       SY=PARAMETERS(3)*SBY
       SZ=PARAMETERS(3)*SBZ
@@ -132,7 +132,7 @@ c-------------------------------------------------------------------------------
 C
 C   (4) PARTIAL RING CURRENT (PRC)
 C
-      CALL DEFORM_XZ_YZ(PS,PARAMETERS,XX,YY,ZZ,PBX,PBY,PBZ,PRC_SHIELDED) 
+      CALL DEFORM_XZ_YN(PS,PARAMETERS,XX,YY,ZZ,PBX,PBY,PBZ,PRC_SHIELDEN) 
       PX=PARAMETERS(4)*PBX
       PY=PARAMETERS(4)*PBY
       PZ=PARAMETERS(4)*PBZ
@@ -144,9 +144,9 @@ C
        Theta00 =PARAMETERS(18)
        DTheta00=PARAMETERS(19)
 C
-       CALL R1_FAC_R(Theta00,DTheta00,PS,XX,YY,ZZ,BXR1R_UNSH,BYR1R_UNSH,
+       CALL R1_FAN_R(Theta00,DTheta00,PS,XX,YY,ZZ,BXR1R_UNSH,BYR1R_UNSH,
      *      BZR1R_UNSH)                                      ! THE SUFFIX "R" CORRESPONDS TO REGULAR MODE OF R1 FACs
-       CALL R1_R_SHLD (XX,YY,ZZ,PS,BZIMF,Theta00,DTheta00,   !  SHIELDING FIELD FOR THE "R" MODE
+       CALL R1_R_SHLN (XX,YY,ZZ,PS,BZIMF,Theta00,DTheta00,   !  SHIELDING FIELD FOR THE "R" MODE
      *                 BXR1R_SHLD,BYR1R_SHLD,BZR1R_SHLD)
 C
        R1RX=PARAMETERS(5)*(BXR1R_UNSH+BXR1R_SHLD)*FPDPM
@@ -157,8 +157,8 @@ C-------------------------------------------------------------------------------
 C
 C   (6) REGION 1 FACs -  NOW NORTH-SOUTH-ANTISYMMETRIC MODE (A): 
 C
-       CALL R1_FAC_A (PS,XX,YY,ZZ,BXR1A_UNSH,BYR1A_UNSH,BZR1A_UNSH) ! THE SUFFIX "A" CORRESPONDS TO TILT-ANTISYMMETRIC MODE OF R1 FACs
-       CALL R1_A_SHLD (XX,YY,ZZ,PS,BZIMF,Theta00,DTheta00,          !  SHIELDING FIELD FOR THE "A" MODE
+       CALL R1_FAC_N (PS,XX,YY,ZZ,BXR1A_UNSH,BYR1A_UNSH,BZR1A_UNSH) ! THE SUFFIX "A" CORRESPONDS TO TILT-ANTISYMMETRIC MODE OF R1 FACs
+       CALL R1_A_SHLN (XX,YY,ZZ,PS,BZIMF,Theta00,DTheta00,          !  SHIELDING FIELD FOR THE "A" MODE
      *                 BXR1A_SHLD,BYR1A_SHLD,BZR1A_SHLD)
 C
        R1AX=PARAMETERS(6)*(BXR1A_UNSH+BXR1A_SHLD)*FPDPM
@@ -183,7 +183,7 @@ C
 
 cOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
 c
-      SUBROUTINE TAIL15_SHIELDED (X,Y,Z,PARAMETERS,BX,BY,BZ)   
+      SUBROUTINE TAIL15_SHIELDEN (X,Y,Z,PARAMETERS,BX,BY,BZ)   
 C
 C  INPUT:  X, Y, Z  - CARTESIAN GSM POSITION (IN RE)
 C  OUTPUT: BX,BY,BZ - CARTESIAN GSM B-FIELD COMPONENTS
@@ -205,8 +205,8 @@ C
 C
        T15FACT =(PDPM/2.D0)**PWP
 
-       CALL TAIL15_UNSHIELDED (DMIDN,PWR,XC,RN,X,Y,Z,HXT15,HYT15,HZT15)
-       CALL TAIL15_SHLD (X,Y,Z,BZIMF,PWR,XC,RN,FXT15,FYT15,FZT15)
+       CALL TAIL15_UNSHIELDEN (DMIDN,PWR,XC,RN,X,Y,Z,HXT15,HYT15,HZT15)
+       CALL TAIL15_SHLN (X,Y,Z,BZIMF,PWR,XC,RN,FXT15,FYT15,FZT15)
 
        BX=(HXT15+FXT15)*T15FACT
        BY=(HYT15+FYT15)*T15FACT
@@ -217,7 +217,7 @@ C
 C
 C================================================================================================
 c
-      SUBROUTINE SRC_SHIELDED (X,Y,Z,PARAMETERS,BX,BY,BZ)   
+      SUBROUTINE SRC_SHIELDEN (X,Y,Z,PARAMETERS,BX,BY,BZ)   
 C
 C  INPUT:  X, Y, Z  - CARTESIAN GSM POSITION (IN RE)
 C  OUTPUT: BX,BY,BZ - CARTESIAN GSM B-FIELD COMPONENTS
@@ -231,8 +231,8 @@ C
        SRCSCL = PARAMETERS(13)      !   SRCSCL: SRC SCALE FACTOR
        SRCEPS = PARAMETERS(14)      !   SRCEPS: SRC EPS PARAMETER (CONTROLS NOON-MIDNIGHT ASYMMETRY OF SRC)
 C
-       CALL SRC_UNSH (SRCEPS,SRCSCL,X,Y,Z,HXSRC,HYSRC,HZSRC)
-       CALL SRC_SHLD (X,Y,Z,BZIMF,SRCEPS,SRCSCL,FXSRC,FYSRC,FZSRC)
+       CALL SRC_UNSN (SRCEPS,SRCSCL,X,Y,Z,HXSRC,HYSRC,HZSRC)
+       CALL SRC_SHLN (X,Y,Z,BZIMF,SRCEPS,SRCSCL,FXSRC,FYSRC,FZSRC)
 
        BX=HXSRC+FXSRC          
        BY=HYSRC+FYSRC          
@@ -243,7 +243,7 @@ C
 C
 C================================================================================================
 c
-      SUBROUTINE PRC_SHIELDED (X,Y,Z,PARAMETERS,BX,BY,BZ)   
+      SUBROUTINE PRC_SHIELDEN (X,Y,Z,PARAMETERS,BX,BY,BZ)   
 C
 C  INPUT:  X, Y, Z  - CARTESIAN GSM POSITION (IN RE)
 C  OUTPUT: BX,BY,BZ - CARTESIAN GSM B-FIELD COMPONENTS
@@ -261,20 +261,20 @@ C
        CPRC=DCOS(PRC_PHI)
        SPRC=DSIN(PRC_PHI)
 C
-       CALL PRC_UNSH_NM (PRCEPS,PRCSCL,X,Y,Z,HXPRC1,HYPRC1,HZPRC1)
-       CALL PRC_SHLD_NM (X,Y,Z,BZIMF,PRCEPS,PRCSCL,FXPRC1,FYPRC1,FZPRC1)
+       CALL PRC_UNSH_NN (PRCEPS,PRCSCL,X,Y,Z,HXPRC1,HYPRC1,HZPRC1)
+       CALL PRC_SHLD_NN (X,Y,Z,BZIMF,PRCEPS,PRCSCL,FXPRC1,FYPRC1,FZPRC1)
        BNMX=HXPRC1+FXPRC1
        BNMY=HYPRC1+FYPRC1
        BNMZ=HZPRC1+FZPRC1
 C
-       CALL PRC_UNSH_DD (PRCEPS,PRCSCL,X,Y,Z,HXPRC2,HYPRC2,HZPRC2)
-       CALL PRC_SHLD_DD(X,Y,Z,BZIMF,PRCEPS,PRCSCL,FXPRC2,FYPRC2,FZPRC2)
+       CALL PRC_UNSH_DN (PRCEPS,PRCSCL,X,Y,Z,HXPRC2,HYPRC2,HZPRC2)
+       CALL PRC_SHLD_DN(X,Y,Z,BZIMF,PRCEPS,PRCSCL,FXPRC2,FYPRC2,FZPRC2)
        BDDX=HXPRC2+FXPRC2
        BDDY=HYPRC2+FYPRC2
        BDDZ=HZPRC2+FZPRC2
 C
-       CALL PRCS_UNSH (PRCEPS,PRCSCL,X,Y,Z,HXPRCS,HYPRCS,HZPRCS)
-       CALL PRCS_SHLD (X,Y,Z,BZIMF,PRCEPS,PRCSCL,FXPRCS,FYPRCS,FZPRCS)
+       CALL PRCS_UNSN (PRCEPS,PRCSCL,X,Y,Z,HXPRCS,HYPRCS,HZPRCS)
+       CALL PRCS_SHLN (X,Y,Z,BZIMF,PRCEPS,PRCSCL,FXPRCS,FYPRCS,FZPRCS)
        BSYMX=HXPRCS+FXPRCS
        BSYMY=HYPRCS+FYPRCS
        BSYMZ=HZPRCS+FZPRCS
@@ -288,7 +288,7 @@ C
 C
 c&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE DEFORM_XZ_YZ (PS,PARAMETERS,X,Y,Z,BX,BY,BZ,
+      SUBROUTINE DEFORM_XZ_YN (PS,PARAMETERS,X,Y,Z,BX,BY,BZ,
      *   B_EXT_UNTILTED)
 C
 C   CALCULATES GSM COMPONENTS OF THE WARPED (IN YZ) & BENT (IN XZ) FIELD, DERIVED FROM A SHIELDED
@@ -476,7 +476,7 @@ C
 C
 C=============================================================================================
 C
-      SUBROUTINE DIPOLE_SHIELD (X,Y,Z,PSI,PDPM,BZIMF,BX,BY,BZ)
+      SUBROUTINE DIPOLE_SHIELN (X,Y,Z,PSI,PDPM,BZIMF,BX,BY,BZ)
 C
 C   CALCULATES COMPONENTS {FX,FY,FZ} OF THE DIPOLE SHIELDING FIELD VECTOR AT ANY GIVEN POSITION X,Y,Z
 C
@@ -619,7 +619,7 @@ C
 C
   2        CONTINUE
 C
-             CALL DIPOLE(0.D0,XX-XD1,YY,ZZ,DPERPX,DPERPY,DPERPZ)
+             CALL DIPOLN(0.D0,XX-XD1,YY,ZZ,DPERPX,DPERPY,DPERPZ)
 C
              FX=FX+(A(L)+A(L+1)*FBZ+A(L+2)*FBZ21+A(L+3)*PS2
      *          +A(L+4)*PS2*FBZ+A(L+5)*PS2*FBZ21)*DPERPX
@@ -669,7 +669,7 @@ c
 C
   3          CONTINUE
 C
-            CALL DIPOLE(1.570796327D0,XX-XD2,YY,ZZ,DPARAX,DPARAY,DPARAZ)
+            CALL DIPOLN(1.570796327D0,XX-XD2,YY,ZZ,DPARAX,DPARAY,DPARAZ)
 
              FX=FX+(A(L)+A(L+1)*FBZ+A(L+2)*FBZ21+A(L+3)*PS2
      *          +A(L+4)*PS2*FBZ+A(L+5)*PS2*FBZ21)*DPARAX *PSI
@@ -687,7 +687,7 @@ C
 C
 C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 C
-      SUBROUTINE TAIL15_UNSHIELDED (DMIDN,PW,XC,RN,X,Y,Z,BX,BY,BZ)
+      SUBROUTINE TAIL15_UNSHIELDEN (DMIDN,PW,XC,RN,X,Y,Z,BX,BY,BZ)
       IMPLICIT  REAL * 8  (A - H, O - Z)
 C
 C  Input:  PW - exponent defining the rate of radial decrease of the current in the sheet
@@ -767,7 +767,7 @@ C
 C
 c&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE TAIL15_SHLD (X,Y,Z,BZIMF,PW,XC,RN,FX,FY,FZ)
+      SUBROUTINE TAIL15_SHLN (X,Y,Z,BZIMF,PW,XC,RN,FX,FY,FZ)
 C
 C   CALCULATES COMPONENTS {FX,FY,FZ} OF THE TAIL15 SHIELDING FIELD VECTOR AT A GIVEN LOCATION {X,Y,Z}
 C
@@ -998,8 +998,8 @@ C
   1      CONTINUE
 C
          IND=IND+21
-         CALL T89_2_DISK_THIN (X-SHIFT1,Y,Z-50.D0,RMAX_THIN,BXN,BYN,BZN)
-         CALL T89_2_DISK_THIN (X-SHIFT1,Y,Z+50.D0,RMAX_THIN,BXS,BYS,BZS)
+         CALL T89_2_DISK_THNN (X-SHIFT1,Y,Z-50.D0,RMAX_THIN,BXN,BYN,BZN)
+         CALL T89_2_DISK_THNN (X-SHIFT1,Y,Z+50.D0,RMAX_THIN,BXS,BYS,BZS)
 
          AI=A(IND)+A(IND+1)*FBZ+A(IND+2)*FBZ21
          FX=FX+AI*(BXN+BXS)
@@ -1007,8 +1007,8 @@ C
          FZ=FZ+AI*(BZN+BZS)
 
          IND=IND+3
-         CALL T89_2_DISK_THIN (X-SHIFT2,Y,Z-70.D0,RMAX_THIN,BXN,BYN,BZN)
-         CALL T89_2_DISK_THIN (X-SHIFT2,Y,Z+70.D0,RMAX_THIN,BXS,BYS,BZS)
+         CALL T89_2_DISK_THNN (X-SHIFT2,Y,Z-70.D0,RMAX_THIN,BXN,BYN,BZN)
+         CALL T89_2_DISK_THNN (X-SHIFT2,Y,Z+70.D0,RMAX_THIN,BXS,BYS,BZS)
 
          AI=A(IND)+A(IND+1)*FBZ+A(IND+2)*FBZ21
          FX=FX+AI*(BXN+BXS)
@@ -1020,7 +1020,7 @@ C
 C
 C=======================================================================================
 c
-      SUBROUTINE T89_2_DISK_THIN (X,Y,Z,RMAX,BX,BY,BZ)
+      SUBROUTINE T89_2_DISK_THNN (X,Y,Z,RMAX,BX,BY,BZ)
 C
 C  A REDUCED VERSION OF THE S/R T89_2_DISK, IN WHICH D=0. IT IS USED IN SHIELD FOR AUXILIARY DISKS.
 C
@@ -1051,7 +1051,7 @@ C
 c
 c&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 c
-      SUBROUTINE SRC_UNSH (EPS,SCALE,X,Y,Z,BX,BY,BZ)
+      SUBROUTINE SRC_UNSN (EPS,SCALE,X,Y,Z,BX,BY,BZ)
       IMPLICIT REAL*8 (A-H,O-Z)
 c
 C     AUTHOR:  N. A. TSYGANENKO, 2015
@@ -1100,7 +1100,7 @@ c
       Y_s=R_prime*DSIN(Ts)*CP
       Z_s=R_prime*DSIN(Ts)*SP
 c
-      CALL SRC_AXISYMMETRIC (X_s,Y_s,Z_s,BXas,BYas,BZas)    !  calculate Cartesian B components at primed location
+      CALL SRC_AXISYMMETRIN (X_s,Y_s,Z_s,BXas,BYas,BZas)    !  calculate Cartesian B components at primed location
 C
       RHO2_s=Y_s**2+Z_s**2
       R_s=DSQRT(RHO2_s+X_s**2)
@@ -1135,7 +1135,7 @@ c
 c
 C&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE SRC_AXISYMMETRIC (X,Y,Z,BX,BY,BZ)
+      SUBROUTINE SRC_AXISYMMETRIN (X,Y,Z,BX,BY,BZ)
       IMPLICIT  REAL * 8  (A - H, O - Z)
 c
 C     AUTHOR:  N. A. TSYGANENKO, 2015
@@ -1193,7 +1193,7 @@ C
 C
 C     THE FIRST (OUTER) LOOP:
 C     
-      CALL SPREAD_LOOP_B (R1,D1,X_AST,Y_AST,Z_AST,BX_AST,BY_AST,BZ_AST)
+      CALL SPREAD_LOOP_N (R1,D1,X_AST,Y_AST,Z_AST,BX_AST,BY_AST,BZ_AST)
 C
       BRHO_AST=(BX_AST*X_AST+BY_AST*Y_AST)/RHO_AST
 C
@@ -1206,7 +1206,7 @@ C
 C
 C     THE SECOND (INNER) LOOP:
 C     
-      CALL SPREAD_LOOP_B (R2,D2,X,Y,Z,BX2,BY2,BZ2)
+      CALL SPREAD_LOOP_N (R2,D2,X,Y,Z,BX2,BY2,BZ2)
 C      
       BX=F1*BX1+F2*BX2
       BY=F1*BY1+F2*BY2
@@ -1217,7 +1217,7 @@ C
 C
 C==========================================================================
 C
-      SUBROUTINE SPREAD_LOOP_B (R,D,X,Y,Z,BX,BY,BZ)
+      SUBROUTINE SPREAD_LOOP_N (R,D,X,Y,Z,BX,BY,BZ)
 C
 C     AUTHOR:  N. A. TSYGANENKO, 2015
 c
@@ -1271,7 +1271,7 @@ C
 C
 C=======================================================================================
 C
-      SUBROUTINE SRC_SHLD (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
+      SUBROUTINE SRC_SHLN (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
 C
 C   CALCULATES: (1) COMPONENTS OF THE TOTAL SHIELDING FIELD VECTOR AT ANY GIVEN POSITION X,Y,Z
 C               (2) SCALAR PRODUCTS OF THE 'PARTIAL' FIELDS, CORRESPONDING TO EACH LINEAR TERM
@@ -1471,7 +1471,7 @@ C
 C
 C=====================================================================================
 c
-      SUBROUTINE PRC_UNSH_NM (EPS,SCALE,X,Y,Z,BX,BY,BZ)
+      SUBROUTINE PRC_UNSH_NN (EPS,SCALE,X,Y,Z,BX,BY,BZ)
       IMPLICIT REAL*8 (A-H,O-Z)
 c
 C      AUTHOR:  N. A. TSYGANENKO, 2015
@@ -1519,7 +1519,7 @@ c
       Y_s=R_prime*DSIN(Ts)*CP
       Z_s=R_prime*DSIN(Ts)*SP
 c
-      CALL PRC_NM_UNDEFORMED (X_s,Y_s,Z_s,BXas,BYas,BZas)    !  calculate Cartesian B components at primed location
+      CALL PRC_NM_UNDEFORMEN (X_s,Y_s,Z_s,BXas,BYas,BZas)    !  calculate Cartesian B components at primed location
 C
       RHO2_s=Y_s**2+Z_s**2
       R_s=DSQRT(RHO2_s+X_s**2)
@@ -1554,17 +1554,17 @@ c
 c
 C&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE PRC_NM_UNDEFORMED (X,Y,Z,BX,BY,BZ)
+      SUBROUTINE PRC_NM_UNDEFORMEN (X,Y,Z,BX,BY,BZ)
       IMPLICIT REAL*8 (A-H,O-Z)
-      CALL SPHCAR (R,T,P,X,Y,Z,-1)
-      CALL BRBTBP_PRC (R,T,P,BR,BT,BP)
-      CALL BSPCAR (T,P,BR,BT,BP,BX,BY,BZ)
+      CALL SPHCAN (R,T,P,X,Y,Z,-1)
+      CALL BRBTBP_PRN (R,T,P,BR,BT,BP)
+      CALL BSPCAN (T,P,BR,BT,BP,BX,BY,BZ)
       RETURN
       END
 C
 C#########################################################################
 C
-      SUBROUTINE BRBTBP_PRC (R,T,P,BR,BT,BP) 
+      SUBROUTINE BRBTBP_PRN (R,T,P,BR,BT,BP) 
       IMPLICIT REAL*8 (A-H,O-Z)
 C
       DATA  ABR01,ABR02,ABR03,ABR04,ABR05,ABR06,ABR07,ABR08,ABR09,ABR10,
@@ -1884,7 +1884,7 @@ C
 C
 C================================================================================
 c
-      SUBROUTINE SPHCAR (R,THETA,PHI,X,Y,Z,J)  !   IDENTICAL TO SPHCAR_08 FROM GEOPACK-2008 PACKAGE
+      SUBROUTINE SPHCAN (R,THETA,PHI,X,Y,Z,J)  !   IDENTICAL TO SPHCAR_08 FROM GEOPACK-2008 PACKAGE
 C
 C   CONVERTS SPHERICAL COORDS INTO CARTESIAN ONES AND VICE VERSA
 C    (THETA AND PHI IN RADIANS).
@@ -1926,7 +1926,7 @@ C
 C
 C===========================================================================
 c
-      SUBROUTINE BSPCAR (THETA,PHI,BR,BTHETA,BPHI,BX,BY,BZ)  !  IDENTICAL TO BSPCAR_08 FROM GEOPACK-2008 PACKAGE
+      SUBROUTINE BSPCAN (THETA,PHI,BR,BTHETA,BPHI,BX,BY,BZ)  !  IDENTICAL TO BSPCAR_08 FROM GEOPACK-2008 PACKAGE
 C
 C   CALCULATES CARTESIAN FIELD COMPONENTS FROM LOCAL SPHERICAL ONES
 C
@@ -1953,7 +1953,7 @@ C
 c
 C=======================================================================================
 C
-      SUBROUTINE PRC_SHLD_NM (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
+      SUBROUTINE PRC_SHLD_NN (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
 C
 C   CALCULATES: (1) COMPONENTS OF THE TOTAL SHIELDING FIELD VECTOR AT ANY GIVEN POSITION X,Y,Z
 C
@@ -2084,7 +2084,7 @@ C
 C
 C==========================================================================================
 c
-      SUBROUTINE PRC_UNSH_DD (EPS,SCALE,X,Y,Z,BX,BY,BZ)
+      SUBROUTINE PRC_UNSH_DN (EPS,SCALE,X,Y,Z,BX,BY,BZ)
       IMPLICIT REAL*8 (A-H,O-Z)
 c
       DATA DT0 /0.07D0/  !  controls the noon-midnight angular stretch (radians)
@@ -2133,7 +2133,7 @@ c
       Y_s=R_prime*DSIN(Ts)*CP
       Z_s=R_prime*DSIN(Ts)*SP
 c
-      CALL PRC_DD_UNDEFORMED (X_s,Y_s,Z_s,BXas,BYas,BZas)    !  calculate Cartesian B components at primed location
+      CALL PRC_DD_UNDEFORMEN (X_s,Y_s,Z_s,BXas,BYas,BZas)    !  calculate Cartesian B components at primed location
 C
       RHO2_s=Y_s**2+Z_s**2
       R_s=DSQRT(RHO2_s+X_s**2)
@@ -2172,13 +2172,13 @@ c
 c
 C&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE PRC_DD_UNDEFORMED (X,Y,Z,BX,BY,BZ)
+      SUBROUTINE PRC_DD_UNDEFORMEN (X,Y,Z,BX,BY,BZ)
       IMPLICIT REAL*8 (A-H,O-Z)
       X1=-Y
       Y1= X
-      CALL SPHCAR (R,T,P,X1,Y1,Z,-1)
-      CALL BRBTBP_PRC (R,T,P,BR,BT,BP)
-      CALL BSPCAR (T,P,BR,BT,BP,BX1,BY1,BZ)
+      CALL SPHCAN (R,T,P,X1,Y1,Z,-1)
+      CALL BRBTBP_PRN (R,T,P,BR,BT,BP)
+      CALL BSPCAN (T,P,BR,BT,BP,BX1,BY1,BZ)
       BX= BY1
       BY=-BX1
       RETURN
@@ -2186,7 +2186,7 @@ C
 C
 C=======================================================================================
 C
-      SUBROUTINE PRC_SHLD_DD (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
+      SUBROUTINE PRC_SHLD_DN (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
 C
 C   CALCULATES: (1) COMPONENTS OF THE TOTAL SHIELDING FIELD VECTOR AT ANY GIVEN POSITION X,Y,Z
 C
@@ -2317,7 +2317,7 @@ C
 C
 C=======================================================================================
 c
-      SUBROUTINE PRCS_UNSH (EPS,SCALE,X,Y,Z,BX,BY,BZ)
+      SUBROUTINE PRCS_UNSN (EPS,SCALE,X,Y,Z,BX,BY,BZ)
       IMPLICIT REAL*8 (A-H,O-Z)
 c
       DATA DT0 /0.07D0/  !  controls the noon-midnight angular stretch (radians)
@@ -2363,7 +2363,7 @@ c
       Y_s=R_prime*DSIN(Ts)*CP
       Z_s=R_prime*DSIN(Ts)*SP
 c
-      CALL PRCS_AXISYMMETRIC (X_s,Y_s,Z_s,BXas,BYas,BZas)    !  calculate Cartesian B components at primed location
+      CALL PRCS_AXISYMMETRIN (X_s,Y_s,Z_s,BXas,BYas,BZas)    !  calculate Cartesian B components at primed location
 C
       RHO2_s=Y_s**2+Z_s**2
       R_s=DSQRT(RHO2_s+X_s**2)
@@ -2398,7 +2398,7 @@ c
 c
 C&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE PRCS_AXISYMMETRIC (X,Y,Z,BX,BY,BZ)
+      SUBROUTINE PRCS_AXISYMMETRIN (X,Y,Z,BX,BY,BZ)
       IMPLICIT  REAL * 8  (A - H, O - Z)
       DATA F1,F2,DR,R1,D1,R2,D2,AL,A1,A2,A3,A4,A5,A6,A7,B1,B2,B3,B4,B5,
      * B6,B7 /-77.8729D0,63.2601D0,2.60373D0,5.49124D0,2.80109D0,
@@ -2452,7 +2452,7 @@ C
 C
 C     THE FIRST (OUTER) LOOP:
 C     
-      CALL SPREAD_LOOP_B (R1,D1,X_AST,Y_AST,Z_AST,BX_AST,BY_AST,BZ_AST)
+      CALL SPREAD_LOOP_N (R1,D1,X_AST,Y_AST,Z_AST,BX_AST,BY_AST,BZ_AST)
 C
 C      IF (RHO_AST.LT.1.D-9) RHO_AST=1.D-9   !   TO PREVENT DIVISION BY 0 AT Z-AXIS
 C
@@ -2467,7 +2467,7 @@ C
 C
 C     THE SECOND (INNER) LOOP:
 C     
-      CALL SPREAD_LOOP_B (R2,D2,X,Y,Z,BX2,BY2,BZ2)
+      CALL SPREAD_LOOP_N (R2,D2,X,Y,Z,BX2,BY2,BZ2)
 C      
       BX=F1*BX1+F2*BX2
       BY=F1*BY1+F2*BY2
@@ -2478,7 +2478,7 @@ C
 C
 C==========================================================================
 C
-      SUBROUTINE PRCS_SHLD (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
+      SUBROUTINE PRCS_SHLN (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
 C
 C   CALCULATES COMPONENTS OF THE PRCS SHIELDING FIELD VECTOR AT ANY GIVEN POSITION X,Y,Z
 C
@@ -2670,7 +2670,7 @@ C
 C
 c&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE R1_FAC_R (Theta00,DTheta00,PS,X,Y,Z,BX,BY,BZ)  ! THE SUFFIX "R" CORRESPONDS TO REGULAR MODE OF R1 FACs
+      SUBROUTINE R1_FAN_R (Theta00,DTheta00,PS,X,Y,Z,BX,BY,BZ)  ! THE SUFFIX "R" CORRESPONDS TO REGULAR MODE OF R1 FACs
 C
 c   INPUTS:  X,Y,Z   -  GSM position of the observation point (RE),
 c            Theta00 - colatitude of R1 zone at noon (radians)
@@ -2681,7 +2681,7 @@ c
       IMPLICIT REAL*8 (A-H,O-Z)
 C
       DIMENSION RR(15)
-      COMMON /XYZD/ CURDPHI,DD(15),SP(25),CP(25),XXN(15,25),YYN(15,25),
+      COMMON /XYZN/ CURDPHI,DD(15),SP(25),CP(25),XXN(15,25),YYN(15,25),
      *  ZZN(15,25),XXS(15,25),YYS(15,25),ZZS(15,25)
 C
       SAVE
@@ -2884,7 +2884,7 @@ C
 C
 C--------------------------------------------------------------------------------------------------------------------
 C
-      SUBROUTINE R1_FAC_A (PS,X,Y,Z,BX,BY,BZ)  !     THE SUFFIX "A" CORRESPONDS TO TILT-ANTISYMMETRIC MODE OF R1 FACs            
+      SUBROUTINE R1_FAC_N (PS,X,Y,Z,BX,BY,BZ)  !     THE SUFFIX "A" CORRESPONDS TO TILT-ANTISYMMETRIC MODE OF R1 FACs            
 C                                              !               (that is, downward at NORTHERN DAWN, and SOUTHERN DUSK
 c                                                                       upward at NORTHERN DUSK, and SOUTHERN DAWN 
 c                                              ! must be called after R1_FAC_C (where the common arrays are prepared)
@@ -2897,7 +2897,7 @@ c   OUTPUT: BX,BY,BZ - field GSM components (nT)
 c
       IMPLICIT REAL*8 (A-H,O-Z)
 C
-      COMMON /XYZD/ CURDPHI,DD(15),SP(25),CP(25),XXN(15,25),YYN(15,25),
+      COMMON /XYZN/ CURDPHI,DD(15),SP(25),CP(25),XXN(15,25),YYN(15,25),
      *  ZZN(15,25),XXS(15,25),YYS(15,25),ZZS(15,25)
       DATA MW/25/    !   number of wires, spanning 360-degs of the R1 FAC oval
       DATA CC/15.69563D0/  !  CC=1000.D0/63.712D0  SO THAT, WITH I IN MA AND DISTANCES IN RE, 
@@ -3026,7 +3026,7 @@ C
 C
 C===============================================================================================================
 C
-      SUBROUTINE R1_R_SHLD (X,Y,Z,PSI,BZIMF,TH,DTH,FX,FY,FZ)  
+      SUBROUTINE R1_R_SHLN (X,Y,Z,PSI,BZIMF,TH,DTH,FX,FY,FZ)  
 C
 C   CALCULATES COMPONENTS OF THE SHIELDING FIELD OF THE REGULAR MODE (HENCE "R") OF THE R1 FAC SYSTEM 
 C
@@ -3325,7 +3325,7 @@ C
 C
 c%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 C
-      SUBROUTINE R1_A_SHLD (X,Y,Z,PSI,BZIMF,TH,DTH,FX,FY,FZ)
+      SUBROUTINE R1_A_SHLN (X,Y,Z,PSI,BZIMF,TH,DTH,FX,FY,FZ)
 C
 C   CALCULATES COMPONENTS OF THE SHIELDING FIELD OF THE ANTISYMMETRIC MODE (HENCE "A") OF THE R1 FAC SYSTEM 
 C
@@ -3625,7 +3625,7 @@ C
 
 C===================================================================================
 c
-       SUBROUTINE DIPOLE(PS,X,Y,Z,BX,BY,BZ)  ! USED ONLY IN THE DIPOLE_SHIELD SUBROUTINE AS AN IMAGE SOURCE 
+       SUBROUTINE DIPOLN(PS,X,Y,Z,BX,BY,BZ)  ! USED ONLY IN THE DIPOLE_SHIELD SUBROUTINE AS AN IMAGE SOURCE 
 C
 C  CALCULATES GSM COMPONENTS OF GEODIPOLE FIELD WITH THE DIPOLE MOMENT
 C  CORRESPONDING TO THE EPOCH OF 1980.
