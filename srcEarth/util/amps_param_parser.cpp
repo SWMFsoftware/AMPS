@@ -1635,7 +1635,10 @@ static std::vector<std::string> RequiredColumnsForModel(const std::string& model
 
   // T96: driven by [Pdyn, Dst, By, Bz] only.
   // PARMOD: [0]=Pdyn [1]=Dst [2]=By [3]=Bz [4..10]=0
-  if (m == "T96") return swBase;
+  // VSW and DEN_P are NOT arguments to the T96 Fortran routine; do not include
+  // them in the required set.  AMPS wizard T96 driver files legitimately omit
+  // those columns, and requiring them produces a spurious fatal validation error.
+  if (m == "T96") return {"BYIMF", "BZIMF", "PDYN", "DST"};
 
   // T01: same as T96 plus the G-indices G1, G2, G3 that capture the recent
   // history of strong southward Bz intervals and their effect on the ring current.
