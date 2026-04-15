@@ -7342,7 +7342,7 @@ Run=
 >>>@echo "Running cutoff rigidity trajectory: T05 model" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>cp data/input/test_Geospace-Flux-Gridless-trajectory/T05/* $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)
->>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM.in 
+>>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_cutoff.in 
 
 >>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t05.dat
 
@@ -7353,7 +7353,7 @@ Run=
 >>>@echo "Running cutoff rigidity trajectory: T01 model" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>cp data/input/test_Geospace-Flux-Gridless-trajectory/T01/* $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)
->>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM.in 
+>>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_cutoff.in 
 
 >>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t01.dat
 
@@ -7364,7 +7364,7 @@ Run=
 >>>@echo "Running cutoff rigidity trajectory: T96 model" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>cp data/input/test_Geospace-Flux-Gridless-trajectory/T96/* $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)
->>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM.in 
+>>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_cutoff.in 
 
 >>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t96.dat
 
@@ -7375,7 +7375,7 @@ Run=
 >>>@echo "Running cutoff rigidity trajectory: TA15 model" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>cp data/input/test_Geospace-Flux-Gridless-trajectory/TA15/* $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)
->>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM.in 
+>>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_cutoff.in 
 
 >>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta15.dat
 
@@ -7386,7 +7386,7 @@ Run=
 >>>@echo "Running cutoff rigidity trajectory: TA16 model" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>cp data/input/test_Geospace-Flux-Gridless-trajectory/TA16/* $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)
->>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM.in 
+>>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_cutoff.in 
 
 >>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta16.dat
 
