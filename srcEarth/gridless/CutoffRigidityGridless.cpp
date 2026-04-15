@@ -234,6 +234,7 @@
 #include "T96Interface.h"
 #include "T05Interface.h"
 #include "T01Interface.h"
+#include "TA15Interface.h"
 
 // Compute Stormer vertical-cutoff coefficient R0(M) in GV, using the *same* dipole moment
 // normalization as the dipole B-field implementation.
@@ -387,6 +388,8 @@ public:
     Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
 
     EarthUtil::BuildTsParmod(prm.field, Model(), PARMOD);
+    if (Model()=="TA15N") TA15::SetVersion(TA15::Version_N);
+    else if (Model()=="TA15B") TA15::SetVersion(TA15::Version_B);
     PS = 0.170481; // same default as interfaces
   }
 
@@ -521,7 +524,7 @@ public:
       //   • T96 gets [Pdyn,Dst,By,Bz,...]
       //   • T01 additionally receives G1..G3
       //   • T05/TA16 receive W1..W6
-      //   • TA15 receives its placeholder AMPS-side packing using W and BZ
+      //   • TA15 receives [Pdyn,By,Bz,XIND] in the direct Fortran layout
       // The field evaluator then consumes the same PARMOD array it always did,
       // but now its contents are refreshed through a uniform model-agnostic API.
       EarthUtil::BuildTsParmod(prm.field, Model(), PARMOD);
@@ -569,8 +572,14 @@ public:
       for (int i=0;i<11;i++) T01::PARMOD[i] = PARMOD[i];
       T01::GetMagneticField(b_total,x_arr);
     }
+    else if (Model()=="TA15N" || Model()=="TA15B") {
+      TA15::PS = PS;
+      TA15::SetVersion((Model()=="TA15N") ? TA15::Version_N : TA15::Version_B);
+      for (int i=0;i<10;i++) TA15::PARMOD[i] = PARMOD[i];
+      TA15::GetMagneticField(b_total,x_arr);
+    }
     else {
-      throw std::runtime_error("Unsupported FIELD_MODEL in gridless solver: "+Model()+" (implemented via interfaces in this archive: T96,T01,T05,DIPOLE)");
+      throw std::runtime_error("Unsupported FIELD_MODEL in gridless solver: "+Model()+" (implemented via interfaces in this archive: T96,T01,T05,TA15N,TA15B,DIPOLE)");
     }
 
     B_T.x = b_total[0];
