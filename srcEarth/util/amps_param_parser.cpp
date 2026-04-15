@@ -1537,16 +1537,29 @@ static TsColMap ParseSimpleTsDriverHeader(const std::string& fileName) {
 
     TsColMap colMap;
     for (int i = 0; i < static_cast<int>(hdr.size()); ++i) {
-      const std::string u = ToUpper(hdr[i]);
+      // Strip any trailing unit suffix of the form "[...]" that the AMPS wizard
+      // appends to column names (e.g. "By[nT]" -> "By", "Vsw[km/s]" -> "Vsw",
+      // "Pdyn[nPa]" -> "Pdyn", "Dst[nT]" -> "Dst").  Tokens without a bracket
+      // (e.g. "G1", "YYYY-MM-DDTHH:MM:SS") are unaffected.
+      const std::string raw  = hdr[i];
+      const std::size_t brk  = raw.find('[');
+      const std::string base = (brk != std::string::npos) ? raw.substr(0, brk) : raw;
+      const std::string u    = ToUpper(base);
+
       if (u == "YYYY-MM-DDTHH:MM:SS") {
         colMap["DATETIME"] = i;
         colMap["ISODATETIME"] = i;
       }
-      else if (u == "BY") colMap["BYIMF"] = i;
-      else if (u == "BZ") colMap["BZIMF"] = i;
-      else if (u == "VX") colMap["VSW"] = i;
+      // IMF components — ViRBO alias (By/Bz) and AMPS wizard direct names (ByIMF/BzIMF).
+      else if (u == "BY" || u == "BYIMF") colMap["BYIMF"] = i;
+      else if (u == "BZ" || u == "BZIMF") colMap["BZIMF"] = i;
+      // Solar wind speed — ViRBO uses the x-component "Vx"; AMPS wizard writes
+      // the scalar magnitude "Vsw".  Both map to the internal key VSW.
+      else if (u == "VX" || u == "VSW") colMap["VSW"] = i;
+      // Proton density.
       else if (u == "NP") colMap["DEN_P"] = i;
-      else if (u == "SYM-H" || u == "SYMH") colMap["DST"] = i;
+      // Dst index — AMPS wizard writes "Dst" directly; ViRBO files use SYM-H/SYMH.
+      else if (u == "DST" || u == "SYM-H" || u == "SYMH") colMap["DST"] = i;
       else if (u == "PDYN") colMap["PDYN"] = i;
       else if (u == "G1" || u == "G2" || u == "G3" ||
                u == "W1" || u == "W2" || u == "W3" || u == "W4" || u == "W5" || u == "W6" ||
