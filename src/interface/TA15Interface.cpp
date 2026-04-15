@@ -82,8 +82,6 @@ void TA15::GetMagneticField(double *B,double *x) {
   double xLocal[3];
   for (idim=0;idim<3;idim++) xLocal[idim]=x[idim]/_EARTH__RADIUS_;
 
-  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__TA15_
-
   if (Rotate2GSM==false) {
     CallTA15_Fortran(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bTA15+0,bTA15+1,bTA15+2,Version);
   }
@@ -93,10 +91,6 @@ void TA15::GetMagneticField(double *B,double *x) {
     CallTA15_Fortran(&IOPT,PARMOD,&PS,xLocal_GSM+0,xLocal_GSM+1,xLocal_GSM+2,bTA15_GSM+0,bTA15_GSM+1,bTA15_GSM+2,Version);
     mxv_c(GSM2UserFrame,bTA15_GSM,bTA15);
   }
-
-  #else
-  exit(__LINE__,__FILE__,"Error: TA15 is not setup for this run. Use option 'CouplerMode=TA15' in the input file to use TA15");
-  #endif
 
   // Internal field
   IGRF::GetMagneticField(B,x);

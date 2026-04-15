@@ -103,7 +103,6 @@ void T05::GetMagneticField(double *B,double *x) {
 
   for (idim=0;idim<3;idim++) xLocal[idim]=x[idim]/_EARTH__RADIUS_;
 
-  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__T05_
   //T04_s (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ)
   //X,Y,Z -  GSM POSITION (RE) 
 
@@ -119,10 +118,6 @@ void T05::GetMagneticField(double *B,double *x) {
   } 
 
 
-  #else 
-  exit(__LINE__,__FILE__,"Error: T05 is not setup for this run. Use option \'CouplerMode=T05\' in the input file to use T05"); 
-  #endif
-  
   // Calculate Earth's internal magentic field
   // IGRF_GSW_08 (XGSW,YGSW,ZGSW,HXGSW,HYGSW,HZGSW)
   // SUBROUTINE GSWGSE_08 (XGSW,YGSW,ZGSW,XGSE,YGSE,ZGSE,J)

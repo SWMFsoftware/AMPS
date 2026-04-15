@@ -48,7 +48,6 @@ void T96::GetMagneticField(double *B,double *x) {
 
   for (idim=0;idim<3;idim++) xLocal[idim]=x[idim]/_EARTH__RADIUS_;
 
-  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__T96_
   //SUBROUTINE T96_01 (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ)
   //X,Y,Z -  GSM POSITION (RE)
 
@@ -63,9 +62,6 @@ void T96::GetMagneticField(double *B,double *x) {
     mxv_c(GSM2UserFrame,bT96_GSM,bT96);
   }
 
-  #else
-  exit(__LINE__,__FILE__,"Error: T96 is not setup for this run. Use option \'CouplerMode=T96\' in the input file to use T96");
-  #endif
 
 
   //calcualte the Earth's internal magnetis field

@@ -70,8 +70,6 @@ void T01::GetMagneticField(double *B,double *x) {
 
   // This wrapper is only meaningful when AMPS is compiled in the matching coupler mode.
   // That is identical to T96/T05 behavior.
-  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__T01_
-
   // The Fortran expects GSM coordinates.
   if (Rotate2GSM==false) {
     t01_01_(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bT01+0,bT01+1,bT01+2);
@@ -83,10 +81,6 @@ void T01::GetMagneticField(double *B,double *x) {
     t01_01_(&IOPT,PARMOD,&PS,xLocal_GSM+0,xLocal_GSM+1,xLocal_GSM+2,bT01_GSM+0,bT01_GSM+1,bT01_GSM+2);
     mxv_c(GSM2UserFrame,bT01_GSM,bT01);
   }
-
-  #else
-  exit(__LINE__,__FILE__,"Error: T01 is not setup for this run. Use option 'CouplerMode=T01' in the input file to use T01");
-  #endif
 
   // Internal Earth's field (IGRF) in SI.
   IGRF::GetMagneticField(B,x);

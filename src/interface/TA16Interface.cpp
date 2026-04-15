@@ -72,8 +72,6 @@ void TA16::GetMagneticField(double *B,double *x) {
   double xLocal[3];
   for (idim=0;idim<3;idim++) xLocal[idim]=x[idim]/_EARTH__RADIUS_;
 
-  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__TA16_
-
   if (Rotate2GSM==false) {
     rbf_model_2016_(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bTA16+0,bTA16+1,bTA16+2);
   }
@@ -83,10 +81,6 @@ void TA16::GetMagneticField(double *B,double *x) {
     rbf_model_2016_(&IOPT,PARMOD,&PS,xLocal_GSM+0,xLocal_GSM+1,xLocal_GSM+2,bTA16_GSM+0,bTA16_GSM+1,bTA16_GSM+2);
     mxv_c(GSM2UserFrame,bTA16_GSM,bTA16);
   }
-
-  #else
-  exit(__LINE__,__FILE__,"Error: TA16 is not setup for this run. Use option 'CouplerMode=TA16' in the input file to use TA16");
-  #endif
 
   IGRF::GetMagneticField(B,x);
   for (idim=0;idim<3;idim++) B[idim]+=bTA16[idim]*_NANO_;
