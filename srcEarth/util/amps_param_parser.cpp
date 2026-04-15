@@ -1123,16 +1123,17 @@ void BuildTsParmod(const BackgroundField& field,
     for (int i = 0; i < 6; ++i) parmod[4 + i] = field.w[i];
   }
   else if (m == "TA15N" || m == "TA15B") {
-    // Shared uniform packing for the AMPS side. The actual external TA15
-    // interface is not yet linked in this archive, but the full driver state is
-    // carried here so per-point updates become model-agnostic.
-    parmod[4] = field.w[0];
-    parmod[5] = field.w[1];
-    parmod[6] = field.w[2];
-    parmod[7] = field.bzAvg[0];
-    parmod[8] = field.bzAvg[1];
-    parmod[9] = field.bzAvg[2];
-    parmod[10] = field.bzAvg[3];
+    // TA15 uses the direct Fortran parameter layout exposed by TA15Interface:
+    //   PARMOD(1)=PDYN [nPa]
+    //   PARMOD(2)=BYIMF [nT]
+    //   PARMOD(3)=BZIMF [nT]
+    //   PARMOD(4)=XIND  [dimensionless coupling index]
+    // The remaining slots are left at zero for compatibility with the shared
+    // 11-element AMPS-side PARMOD buffer.
+    parmod[0] = field.pdyn_nPa;
+    parmod[1] = field.imfBy_nT;
+    parmod[2] = field.imfBz_nT;
+    parmod[3] = field.xind;
   }
 }
 
@@ -1178,6 +1179,7 @@ EarthUtil::TsDriverRecord EarthUtil::TsDriverTable::Lookup(double et) const {
   out.swN_cm3  = Lerp(r0.swN_cm3,  r1.swN_cm3,  t);
   out.pdyn_nPa = Lerp(r0.pdyn_nPa, r1.pdyn_nPa, t);
   out.dst_nT   = Lerp(r0.dst_nT,   r1.dst_nT,   t);
+  out.xind     = Lerp(r0.xind,     r1.xind,     t);
   for (int i = 0; i < 3; ++i) out.g[i] = Lerp(r0.g[i], r1.g[i], t);
   for (int i = 0; i < 6; ++i) out.w[i] = Lerp(r0.w[i], r1.w[i], t);
   for (int i = 0; i < 6; ++i) out.bzAvg[i] = Lerp(r0.bzAvg[i], r1.bzAvg[i], t);
@@ -1192,6 +1194,7 @@ void EarthUtil::TsDriverTable::ApplyToField(const EarthUtil::TsDriverRecord& rec
   field.swN_cm3  = rec.swN_cm3;
   field.pdyn_nPa = rec.pdyn_nPa;
   field.dst_nT   = rec.dst_nT;
+  field.xind     = rec.xind;
   for (int i = 0; i < 3; ++i) field.g[i] = rec.g[i];
   for (int i = 0; i < 6; ++i) field.w[i] = rec.w[i];
   for (int i = 0; i < 6; ++i) field.bzAvg[i] = rec.bzAvg[i];
@@ -1563,7 +1566,8 @@ static TsColMap ParseSimpleTsDriverHeader(const std::string& fileName) {
       else if (u == "PDYN") colMap["PDYN"] = i;
       else if (u == "G1" || u == "G2" || u == "G3" ||
                u == "W1" || u == "W2" || u == "W3" || u == "W4" || u == "W5" || u == "W6" ||
-               u == "BZ1" || u == "BZ2" || u == "BZ3" || u == "BZ4" || u == "BZ5" || u == "BZ6") {
+               u == "BZ1" || u == "BZ2" || u == "BZ3" || u == "BZ4" || u == "BZ5" || u == "BZ6" ||
+               u == "XIND") {
         colMap[u] = i;
       }
     }
@@ -1939,6 +1943,7 @@ static EarthUtil::TsDriverTable LoadTsDriverFile(const std::string& fileName,
     rec.swN_cm3  = ExtractColumn(toks, colMap, "DEN_P");
     rec.pdyn_nPa = ExtractColumn(toks, colMap, "PDYN");
     rec.dst_nT   = ExtractColumn(toks, colMap, "DST");
+    rec.xind     = ExtractColumn(toks, colMap, "XIND");
     for (int i = 0; i < 3; ++i) {
       const std::string gKey = "G" + std::to_string(i + 1);
       rec.g[i] = ExtractColumn(toks, colMap, gKey);
@@ -2152,6 +2157,7 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="BZ4") p.field.bzAvg[3]=std::stod(val);
       else if (uKey=="BZ5") p.field.bzAvg[4]=std::stod(val);
       else if (uKey=="BZ6") p.field.bzAvg[5]=std::stod(val);
+      else if (uKey=="XIND" || uKey=="TA15_XIND") p.field.xind=std::stod(val);
       else if (uKey=="EPOCH") p.field.epoch=val;
       else if (uKey=="DRIVER_FILE" || uKey=="MAGNETIC_DRIVER_FILE") {
         // Allow the magnetic-field driver table to be declared next to the

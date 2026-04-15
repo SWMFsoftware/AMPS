@@ -471,6 +471,10 @@ namespace EarthUtil {
     // TA15 running averages of southward IMF Bz magnitude
     double bzAvg[6]{0,0,0,0,0,0};
 
+    // TA15 optimal solar-wind coupling index used by the official TA15
+    // Fortran interface as PARMOD(4).  Defaults to 0.0 when not provided.
+    double xind{0.0};
+
     // Snapshot time
     std::string epoch{"2000-01-01T00:00"};
 
@@ -775,6 +779,9 @@ namespace EarthUtil {
 
     // TA15 running averages BZ1..BZ6
     double bzAvg[6]{0,0,0,0,0,0};
+
+    // TA15 coupling index XIND (optional in generic driver tables).
+    double xind{0.0};
   };
 
   //====================================================================================
