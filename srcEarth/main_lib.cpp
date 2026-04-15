@@ -27,6 +27,7 @@
 #include "GeopackInterface.h"
 #include "T96Interface.h"
 #include "T05Interface.h"
+#include "TA15Interface.h"
 #include "3d/Mode3D.h"
 
 namespace MAIN_LIB_GEO {
@@ -534,7 +535,16 @@ void amps_init_mesh() {
      }
 
      break;
-   case _PIC_COUPLER_MODE__T96_ : case _PIC_COUPLER_MODE__T05_: 
+   case _PIC_COUPLER_MODE__T96_ : case _PIC_COUPLER_MODE__T05_:
+#if defined(_PIC_COUPLER_MODE__TA15_)
+   case _PIC_COUPLER_MODE__TA15_:
+#endif
+#if defined(_PIC_COUPLER_MODE__TA15N_)
+   case _PIC_COUPLER_MODE__TA15N_:
+#endif
+#if defined(_PIC_COUPLER_MODE__TA15B_)
+   case _PIC_COUPLER_MODE__TA15B_:
+#endif
      if (PIC::CPLR::DATAFILE::BinaryFileExists("EARTH-T96")==true)  {
        PIC::CPLR::DATAFILE::LoadBinaryFile("EARTH-T96");
      }
@@ -549,6 +559,24 @@ void amps_init_mesh() {
          case _PIC_COUPLER_MODE__T05_:
             T05::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
            break;
+#if defined(_PIC_COUPLER_MODE__TA15_)
+         case _PIC_COUPLER_MODE__TA15_:
+           TA15::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
+           TA15::SetVersion(TA15::Version_B);
+           break;
+#endif
+#if defined(_PIC_COUPLER_MODE__TA15N_)
+         case _PIC_COUPLER_MODE__TA15N_:
+           TA15::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
+           TA15::SetVersion(TA15::Version_N);
+           break;
+#endif
+#if defined(_PIC_COUPLER_MODE__TA15B_)
+         case _PIC_COUPLER_MODE__TA15B_:
+           TA15::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
+           TA15::SetVersion(TA15::Version_B);
+           break;
+#endif
          default:
            exit(__LINE__,__FILE__,"Error: the option is unknown");
          }
@@ -629,6 +657,17 @@ void amps_init_mesh() {
                      T05::GetMagneticField(B,xCell);
 
                      GeospaceFlag=(Vector3D::DotProduct(B,B)>Vector3D::DotProduct(T05::IMF,T05::IMF)) ? 1.0 : 0.0;
+                     break;
+#if defined(_PIC_COUPLER_MODE__TA15_)
+                   case _PIC_COUPLER_MODE__TA15_:
+#endif
+#if defined(_PIC_COUPLER_MODE__TA15N_)
+                   case _PIC_COUPLER_MODE__TA15N_:
+#endif
+#if defined(_PIC_COUPLER_MODE__TA15B_)
+                   case _PIC_COUPLER_MODE__TA15B_:
+#endif
+                     TA15::GetMagneticField(B,xCell);
                      break;
                    default:
                      exit(__LINE__,__FILE__,"Error: the option is unknown");
