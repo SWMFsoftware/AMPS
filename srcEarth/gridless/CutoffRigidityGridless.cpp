@@ -231,10 +231,9 @@
 #include "GeopackInterface.h"
 #include "DipoleInterface.h"
 
-extern "C" {
-  void t96_01_(int*,double*,double*,double*,double*,double*,double*,double*,double*);
-  void t04_s_(int*,double*,double*,double*,double*,double*,double*,double*,double*);
-}
+#include "T96Interface.h"
+#include "T05Interface.h"
+#include "T01Interface.h"
 
 // Compute Stormer vertical-cutoff coefficient R0(M) in GV, using the *same* dipole moment
 // normalization as the dipole B-field implementation.
@@ -553,26 +552,30 @@ public:
     }
 
     double x_arr[3]={x_m.x,x_m.y,x_m.z};
-    double b_int[3];
-    Geopack::IGRF::GetMagneticField(b_int,x_arr);
-
-    double xRe[3]={x_m.x/_EARTH__RADIUS_, x_m.y/_EARTH__RADIUS_, x_m.z/_EARTH__RADIUS_};
-    double b_ext_nT[3]={0,0,0};
-    int IOPT=0;
+    double b_total[3]={0.0,0.0,0.0};
 
     if (Model()=="T96") {
-      t96_01_(&IOPT,const_cast<double*>(PARMOD),const_cast<double*>(&PS),xRe+0,xRe+1,xRe+2,b_ext_nT+0,b_ext_nT+1,b_ext_nT+2);
+      T96::PS = PS;
+      for (int i=0;i<11;i++) T96::PARMOD[i] = PARMOD[i];
+      T96::GetMagneticField(b_total,x_arr);
     }
     else if (Model()=="T05") {
-      t04_s_(&IOPT,const_cast<double*>(PARMOD),const_cast<double*>(&PS),xRe+0,xRe+1,xRe+2,b_ext_nT+0,b_ext_nT+1,b_ext_nT+2);
+      T05::PS = PS;
+      for (int i=0;i<11;i++) T05::PARMOD[i] = PARMOD[i];
+      T05::GetMagneticField(b_total,x_arr);
+    }
+    else if (Model()=="T01") {
+      T01::PS = PS;
+      for (int i=0;i<11;i++) T01::PARMOD[i] = PARMOD[i];
+      T01::GetMagneticField(b_total,x_arr);
     }
     else {
-      throw std::runtime_error("Unsupported FIELD_MODEL in gridless solver: "+Model()+" (implemented in this archive: T96,T05,DIPOLE; driver-state support also prepared for T01,TA15N,TA15B,TA16)");
+      throw std::runtime_error("Unsupported FIELD_MODEL in gridless solver: "+Model()+" (implemented via interfaces in this archive: T96,T01,T05,DIPOLE)");
     }
 
-    B_T.x = b_int[0] + b_ext_nT[0]*_NANO_;
-    B_T.y = b_int[1] + b_ext_nT[1]*_NANO_;
-    B_T.z = b_int[2] + b_ext_nT[2]*_NANO_;
+    B_T.x = b_total[0];
+    B_T.y = b_total[1];
+    B_T.z = b_total[2];
   }
 
 private:
