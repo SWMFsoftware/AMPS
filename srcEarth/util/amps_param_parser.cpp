@@ -1663,11 +1663,24 @@ static std::vector<std::string> RequiredColumnsForModel(const std::string& model
 
   // TA15 (Tsyganenko-Andreeva 2015): two sub-variants (northward / southward IMF).
   // In addition to the W-integrals it needs BZ1..BZ6 — the mean |Bz_south| over
-  // 1, 2, 3, 4, 5, 6 hours before the observation epoch.
+  // 1, 2, 3, 4, 5, 6 hours before the observation epoch — and XIND, the
+  // Newell-type dimensionless coupling index that maps directly to PARMOD(4) in
+  // the TA15 Fortran call (see BuildTsParmod: parmod[3] = field.xind).
+  //
+  // WHY XIND MUST BE VALIDATED HERE
+  // ---------------------------------
+  // ExtractColumn() returns 0.0 (its default) whenever a column is absent from
+  // the column map.  For XIND this means a missing column silently produces
+  // parmod[3] = 0 for every time step -- a physically wrong value for any
+  // geomagnetically active interval, with no diagnostic to alert the user.
+  // Including XIND in the required set converts this silent wrong-value condition
+  // into a descriptive fatal error at load time, consistent with how all other
+  // required columns are handled throughout this function.
   if (m == "TA15N" || m == "TA15B") {
     std::vector<std::string> req = swBase;
     req.insert(req.end(), wIntegrals.begin(), wIntegrals.end());
     req.insert(req.end(), {"BZ1", "BZ2", "BZ3", "BZ4", "BZ5", "BZ6"});
+    req.push_back("XIND");   // Newell coupling index -> parmod[3] in BuildTsParmod
     return req;
   }
 
