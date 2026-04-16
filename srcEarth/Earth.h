@@ -240,6 +240,7 @@ namespace Earth {
   const int _undef=0;
   const int _t96=1;
   const int _t05=2;
+  const int _ta16=3; 
 
   //data file that serts the parames of the background magnetic field model
   extern string BackgroundMagneticFieldT05Data;

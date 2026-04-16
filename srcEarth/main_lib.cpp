@@ -28,6 +28,7 @@
 #include "T96Interface.h"
 #include "T05Interface.h"
 #include "TA15Interface.h"
+#include "TA16Interface.h"
 #include "3d/Mode3D.h"
 
 namespace MAIN_LIB_GEO {
@@ -545,6 +546,9 @@ void amps_init_mesh() {
 #if defined(_PIC_COUPLER_MODE__TA15B_)
    case _PIC_COUPLER_MODE__TA15B_:
 #endif
+#if defined(_PIC_COUPLER_MODE__TA16_)
+   case _PIC_COUPLER_MODE__TA16_:
+#endif
      if (PIC::CPLR::DATAFILE::BinaryFileExists("EARTH-T96")==true)  {
        PIC::CPLR::DATAFILE::LoadBinaryFile("EARTH-T96");
      }
@@ -575,6 +579,11 @@ void amps_init_mesh() {
          case _PIC_COUPLER_MODE__TA15B_:
            TA15::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
            TA15::SetVersion(TA15::Version_B);
+           break;
+#endif
+#if defined(_PIC_COUPLER_MODE__TA16_)
+         case _PIC_COUPLER_MODE__TA16_:
+           TA16::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
            break;
 #endif
          default:
@@ -667,8 +676,15 @@ void amps_init_mesh() {
 #if defined(_PIC_COUPLER_MODE__TA15B_)
                    case _PIC_COUPLER_MODE__TA15B_:
 #endif
+#if defined(_PIC_COUPLER_MODE__TA15_) || defined(_PIC_COUPLER_MODE__TA15N_) || defined(_PIC_COUPLER_MODE__TA15B_)
                      TA15::GetMagneticField(B,xCell);
                      break;
+#endif
+#if defined(_PIC_COUPLER_MODE__TA16_)
+                   case _PIC_COUPLER_MODE__TA16_:
+                     TA16::GetMagneticField(B,xCell);
+                     break;
+#endif
                    default:
                      exit(__LINE__,__FILE__,"Error: the option is unknown");
                    }

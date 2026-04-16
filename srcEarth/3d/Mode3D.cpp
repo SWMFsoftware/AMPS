@@ -8,6 +8,7 @@
 #include "pic.h"
 #include "../../interface/T96Interface.h"
 #include "../../interface/T05Interface.h"
+#include "../../interface/TA16Interface.h"
 
 void amps_init_mesh();
 void amps_init();
@@ -65,6 +66,21 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
     ::T05::SetBZIMF(Earth::T05::bz);
     ::T05::SetW(Earth::T05::W[0],Earth::T05::W[1],Earth::T05::W[2],Earth::T05::W[3],Earth::T05::W[4],Earth::T05::W[5]);
     ::T05::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
+  }
+  else if (model=="TA16") {
+    // TA16 does not use BackgroundMagneticFieldModelType — it is driven
+    // entirely through _PIC_COUPLER_MODE__TA16_ compile-time guards,
+    // consistent with TA15 and T01.
+    if (!prm.field.ta16CoeffFile.empty())
+      ::TA16::SetCoeffFileName(prm.field.ta16CoeffFile);
+    // TA16 PARMOD: [PDYN, SymHc, XIND, BYIMF, W1..W6]
+    // SetSolarWindPressure/SetSymHc accept SI values (Pa / T); the _NANO_
+    // factor converts from nPa / nT to SI, matching the T05 convention.
+    ::TA16::SetSolarWindPressure(prm.field.pdyn_nPa*_NANO_);
+    ::TA16::SetSymHc(prm.field.dst_nT*_NANO_);
+    ::TA16::SetXIND(prm.field.xind);
+    ::TA16::SetBYIMF(prm.field.imfBy_nT*_NANO_);
+    ::TA16::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
   }
 }
 

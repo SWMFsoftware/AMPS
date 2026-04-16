@@ -437,7 +437,7 @@ namespace EarthUtil {
     //   "T01"      "TS01", "T01S"          Tsyganenko (2001)
     //   "TA15N"                            Tsyganenko-Andreeva (2015) northward
     //   "TA15B"                            Tsyganenko-Andreeva (2015) southward
-    //   "TA16"                             Tsyganenko-Andreeva (2016) (future)
+    //   "TA16"                             Tsyganenko-Andreeva (2016)
     //   "DIPOLE"                           Analytic centered dipole (internal only)
     std::string model{"T96"};
 
@@ -471,9 +471,15 @@ namespace EarthUtil {
     // TA15 running averages of southward IMF Bz magnitude
     double bzAvg[6]{0,0,0,0,0,0};
 
-    // TA15 optimal solar-wind coupling index used by the official TA15
-    // Fortran interface as PARMOD(4).  Defaults to 0.0 when not provided.
+    // TA15/TA16 optimal solar-wind coupling index.
+    // For TA15 this maps to PARMOD(4); for TA16 it maps to PARMOD(3).
+    // Defaults to 0.0 when not provided.
     double xind{0.0};
+
+    // TA16 coefficient file path (TA16_RBF.par or equivalent).
+    // Empty string means use the Fortran default (TA16_RBF.par in the CWD).
+    // Set via keyword TA16_COEFF_FILE in #BACKGROUND_FIELD.
+    std::string ta16CoeffFile;
 
     // Snapshot time
     std::string epoch{"2000-01-01T00:00"};

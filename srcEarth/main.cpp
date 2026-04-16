@@ -31,6 +31,7 @@
 #include "GeopackInterface.h"
 #include "T96Interface.h"
 #include "T05Interface.h"
+#include "TA16Interface.h"
 
 // Gridless cutoff rigidity CLI/runner
 #include "util/cutoff_cli.h"
@@ -1593,7 +1594,13 @@ int main(int argc,char **argv) {
     //load parameters of T05 model
     if (Earth::BackgroundMagneticFieldT05Data!="") {
       T05::LoadDataFile(Earth::BackgroundMagneticFieldT05Data.c_str()); 
-    }    
+    }
+
+    // TA16: the coefficient file (TA16_RBF.par) must be in the current working
+    // directory, or set via TA16::SetCoeffFileName() before amps_init() is called.
+    // This mirrors the TA15 pattern: there is no separate data-file loading step
+    // here for TA16 — the Fortran default (TA16_RBF.par in CWD) is used unless
+    // the caller has already invoked TA16::SetCoeffFileName explicitly.
 
     //init the simulation start time 
     str2et_c(Exosphere::SimulationStartTimeString,&et); 
@@ -1620,6 +1627,18 @@ int main(int argc,char **argv) {
     T05::SetW4(T05::Data[iEtInterval].W4);
     T05::SetW5(T05::Data[iEtInterval].W5);
     T05::SetW6(T05::Data[iEtInterval].W6);
+
+    // TA16 initial parameter set.
+    // The T05 driver file (cT05Data) carries Pdyn, SYMH, BYGSM and W1..W6
+    // which map directly onto TA16's PARMOD(1..2,4..10).  XIND (PARMOD(3))
+    // is not present in the standard T05 driver format; it defaults to 0.0.
+    // Extend cT05Data with an XIND column and wire it here once it is available.
+    #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__TA16_
+    TA16::SetSolarWindPressure_nano(T05::Data[iEtInterval].Pdyn);
+    TA16::SetSymHc_nano(T05::Data[iEtInterval].SYMH);
+    TA16::SetXIND(0.0);
+    TA16::SetBYIMF_nano(T05::Data[iEtInterval].BYGSM);
+    #endif
 
     Earth::InitMagneticField();
 
@@ -1658,6 +1677,14 @@ int main(int argc,char **argv) {
         T05::SetW4(T05::Data[iEtInterval].W4);
         T05::SetW5(T05::Data[iEtInterval].W5);
         T05::SetW6(T05::Data[iEtInterval].W6);
+
+        // TA16 time-step update — mirrors T05 above.
+        #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__TA16_
+        TA16::SetSolarWindPressure_nano(T05::Data[iEtInterval].Pdyn);
+        TA16::SetSymHc_nano(T05::Data[iEtInterval].SYMH);
+        TA16::SetXIND(0.0);
+        TA16::SetBYIMF_nano(T05::Data[iEtInterval].BYGSM);
+        #endif
 
         Earth::InitMagneticField();
       }

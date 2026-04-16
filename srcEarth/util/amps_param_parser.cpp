@@ -1119,7 +1119,18 @@ void BuildTsParmod(const BackgroundField& field,
   if (m == "T01") {
     for (int i = 0; i < 3; ++i) parmod[4 + i] = field.g[i];
   }
-  else if (m == "T05" || m == "TA16") {
+  else if (m == "T05") {
+    for (int i = 0; i < 6; ++i) parmod[4 + i] = field.w[i];
+  }
+  else if (m == "TA16") {
+    // TA16 (Tsyganenko-Andreeva 2016) PARMOD layout (as documented in TA16Interface.h):
+    //   PARMOD(1) = PDYN   [nPa]           — already filled above from field.pdyn_nPa
+    //   PARMOD(2) = SymHc  [nT]            — already filled above (field.dst_nT as SymHc proxy)
+    //   PARMOD(3) = XIND   [dimensionless] — Newell optimal coupling index
+    //   PARMOD(4) = BYIMF  [nT]
+    //   PARMOD(5..10) = W1..W6             — storm-time history integrals (same as T05)
+    parmod[2] = field.xind;
+    parmod[3] = field.imfBy_nT;
     for (int i = 0; i < 6; ++i) parmod[4 + i] = field.w[i];
   }
   else if (m == "TA15N" || m == "TA15B") {
@@ -1562,8 +1573,16 @@ static TsColMap ParseSimpleTsDriverHeader(const std::string& fileName) {
       // Proton density.
       else if (u == "NP") colMap["DEN_P"] = i;
       // Dst index — AMPS wizard writes "Dst" directly; ViRBO files use SYM-H/SYMH.
+      // Plain SYM-H is mapped to DST.  The corrected SymH value (SymHc) that
+      // TA16 needs as PARMOD(2) is kept under its own key so the loader can
+      // prefer it over the raw DST when both are present.
       else if (u == "DST" || u == "SYM-H" || u == "SYMH") colMap["DST"] = i;
+      else if (u == "SYMHC") colMap["SYMHC"] = i;
       else if (u == "PDYN") colMap["PDYN"] = i;
+      // N-index is the Newell optimal solar-wind coupling index, written as
+      // "N-index" by the AMPS wizard.  It maps to XIND (TA15/TA16 PARMOD slot).
+      // The hyphen in "N-index" survives ToUpper as "N-INDEX".
+      else if (u == "N-INDEX" || u == "NINDEX" || u == "XIND") colMap["XIND"] = i;
       else if (u == "G1" || u == "G2" || u == "G3" ||
                u == "W1" || u == "W2" || u == "W3" || u == "W4" || u == "W5" || u == "W6" ||
                u == "BZ1" || u == "BZ2" || u == "BZ3" || u == "BZ4" || u == "BZ5" || u == "BZ6" ||
@@ -1684,13 +1703,19 @@ static std::vector<std::string> RequiredColumnsForModel(const std::string& model
     return req;
   }
 
-  // TA16 (Tsyganenko-Andreeva 2016): Fortran interface not yet linked.
-  // We register the expected driver columns now so the parser gives a useful
-  // validation error rather than silently using wrong values.
+  // TA16 (Tsyganenko-Andreeva 2016).
+  // PARMOD layout: [PDYN, SymHc, XIND, BYIMF].  Only the first 4 PARMOD slots
+  // are used — W1..W6 (PARMOD 5..10) are a T05 concept and are NOT read by TA16.
+  // Required: PDYN, BYIMF, and either SYMHC (preferred, corrected SymH) or DST
+  //   (raw SYM-H, acceptable proxy).
+  // Optional: XIND (Newell coupling index) — defaults to 0.0 if the column is
+  //   absent, which is physically reasonable for quiet-time runs.
   if (m == "TA16") {
-    std::vector<std::string> req = swBase;
-    req.insert(req.end(), wIntegrals.begin(), wIntegrals.end());
-    return req;
+    // We cannot express "SYMHC or DST" as a hard requirement in this function,
+    // so we require DST which covers both: ParseSimpleTsDriverHeader maps both
+    // the raw SYM-H and SymHc columns to usable keys, and the loader prefers
+    // SYMHC when present (see LoadTsDriverFile).
+    return {"PDYN", "BYIMF", "DST"};
   }
 
   // Unknown model — skip validation and let the solver report the problem.
@@ -1724,9 +1749,14 @@ static void ValidateTsDriverColumns(const TsColMap& colMap,
   const std::vector<std::string> required = RequiredColumnsForModel(model);
 
   // Collect all missing names in one pass so the error message is complete.
+  // Special case: "DST" is satisfied by either the "DST" key (raw SYM-H) or
+  // the "SYMHC" key (corrected SymH used by TA16), because the loader already
+  // prefers SYMHC over DST when both are present.
   std::vector<std::string> missing;
   for (const auto& name : required) {
-    if (colMap.find(name) == colMap.end()) missing.push_back(name);
+    if (colMap.find(name) != colMap.end()) continue;
+    if (name == "DST" && colMap.find("SYMHC") != colMap.end()) continue;
+    missing.push_back(name);
   }
   if (missing.empty()) return;  // all required columns present — OK
 
@@ -1955,7 +1985,12 @@ static EarthUtil::TsDriverTable LoadTsDriverFile(const std::string& fileName,
     rec.swVx_kms = -std::abs(ExtractColumn(toks, colMap, "VSW"));
     rec.swN_cm3  = ExtractColumn(toks, colMap, "DEN_P");
     rec.pdyn_nPa = ExtractColumn(toks, colMap, "PDYN");
-    rec.dst_nT   = ExtractColumn(toks, colMap, "DST");
+    // Prefer the corrected SymH index (SymHc) over the raw Dst/SYM-H when both
+    // columns are present.  TA16 uses SymHc as PARMOD(2); T96/T05 use plain Dst.
+    // Files that have only one of the two still work correctly via the fallback.
+    rec.dst_nT   = colMap.count("SYMHC")
+                     ? ExtractColumn(toks, colMap, "SYMHC")
+                     : ExtractColumn(toks, colMap, "DST");
     rec.xind     = ExtractColumn(toks, colMap, "XIND");
     for (int i = 0; i < 3; ++i) {
       const std::string gKey = "G" + std::to_string(i + 1);
@@ -2171,6 +2206,7 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="BZ5") p.field.bzAvg[4]=std::stod(val);
       else if (uKey=="BZ6") p.field.bzAvg[5]=std::stod(val);
       else if (uKey=="XIND" || uKey=="TA15_XIND") p.field.xind=std::stod(val);
+      else if (uKey=="TA16_COEFF_FILE") p.field.ta16CoeffFile=Trim(val);
       else if (uKey=="EPOCH") p.field.epoch=val;
       else if (uKey=="DRIVER_FILE" || uKey=="MAGNETIC_DRIVER_FILE") {
         // Allow the magnetic-field driver table to be declared next to the

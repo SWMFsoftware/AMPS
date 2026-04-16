@@ -6,6 +6,7 @@
 #include "pic.h"
 #include "../../interface/T96Interface.h"
 #include "../../interface/T05Interface.h"
+#include "../../interface/TA16Interface.h"
 #include "../gridless/DipoleInterface.h"
 
 namespace {
@@ -47,6 +48,7 @@ void EvaluateBackgroundMagneticFieldSI(double B[3],const double xGSM_SI[3],const
   if (model=="DIPOLE") { EvalDipoleSI(B,xGSM_SI,prm); return; }
   if (model=="T96") { ::T96::GetMagneticField(B,const_cast<double*>(xGSM_SI)); return; }
   if (model=="T05") { ::T05::GetMagneticField(B,const_cast<double*>(xGSM_SI)); return; }
+  if (model=="TA16") { ::TA16::GetMagneticField(B,const_cast<double*>(xGSM_SI)); return; }
   B[0]=B[1]=B[2]=0.0;
 }
 
