@@ -396,6 +396,11 @@ public:
       // An empty string leaves the Fortran default (TA16_RBF.par in CWD) intact.
       if (!prm.field.ta16CoeffFile.empty())
         TA16::SetCoeffFileName(prm.field.ta16CoeffFile);
+      // TA16::Init is not called in the gridless path (only Geopack::Init above
+      // is), so VerifyCoeffFile must be called explicitly here.  Without this,
+      // the Fortran OPEN/READ fires first and produces a cryptic
+      // "End of file" runtime error instead of a useful diagnostic.
+      TA16::VerifyCoeffFile(__LINE__,__FILE__);
     }
     PS = 0.170481; // same default as interfaces
   }
