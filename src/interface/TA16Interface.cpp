@@ -19,6 +19,7 @@
 #include "constants.h"
 #include "constants.PlanetaryData.h"
 #include "TA16Interface.h"
+#include <sstream>
 
 // Default driver values
 
@@ -57,13 +58,72 @@ void TA16::SetXIND(double XIND) {PARMOD[2]=XIND;}
 void TA16::SetBYIMF(double BY) {PARMOD[3]=BY/_NANO_;}
 void TA16::SetBYIMF_nano(double BY) {PARMOD[3]=BY;}
 
+// The coefficient file path known to the C++ layer.
+// Kept in sync with the Fortran COMMON block via SetCoeffFileName.
+// Default matches the Fortran hard-coded default so VerifyCoeffFile works
+// even when SetCoeffFileName has never been called.
+std::string TA16::CoeffFileName = "TA16_RBF.par";
+
 void TA16::SetCoeffFileName(const std::string &fname) {
+  // Save the path on the C++ side so VerifyCoeffFile can check it.
+  CoeffFileName = fname;
+
   // Fortran expects a fixed-length CHARACTER argument; the common pattern is
   // to pass (char*, int len) from C/C++.
   //
   // We do *not* pad here; the Fortran side copies the bytes and will include
   // trailing spaces if present. So pass the raw string.
   ta16_set_coeff_file_(const_cast<char*>(fname.c_str()), (int)fname.size());
+}
+
+void TA16::VerifyCoeffFile(int line, const char* file) {
+  // Check 1: file exists and can be opened.
+  // Check 2: file is not empty — an empty file opens successfully but causes
+  //   a Fortran "End of file" runtime error on the first READ statement.
+  //   This typically means the file was created as a placeholder or the
+  //   download was interrupted.
+  {
+    std::ifstream test(CoeffFileName.c_str());
+    if (test.good()) {
+      test.seekg(0, std::ios::end);
+      if (test.tellg() > 0) {
+        // Second: probe the conventional AMPS data directory.
+        return;
+      }
+    }
+  }
+
+  // Probe the conventional AMPS data directory as a fallback.
+  // If found there (and non-empty), update CoeffFileName and the Fortran
+  // COMMON block so the Fortran OPEN uses the correct path automatically.
+  const std::string dataPath = "data/input/TA16/TA16_RBF.par";
+  {
+    std::ifstream test(dataPath.c_str());
+    if (test.good()) {
+      test.seekg(0, std::ios::end);
+      if (test.tellg() > 0) {
+        SetCoeffFileName(dataPath);
+        return;
+      }
+    }
+  }
+
+  // Neither location had a valid (non-empty) file — emit a descriptive fatal error.
+  std::ostringstream msg;
+  msg << "TA16 coefficient file not found, not readable, or empty: '"
+      << CoeffFileName << "'.\n"
+      << "  This file contains the RBF linear coefficients that define the\n"
+      << "  TA16 magnetic field model and must be present in the run directory.\n"
+      << "  An empty file causes a Fortran 'End of file' error at runtime.\n"
+      << "  To fix:\n"
+      << "    1) If AMPS/data/input/TA16/TA16_RBF.par exists, copy or symlink\n"
+      << "       it into the run directory:\n"
+      << "         cp AMPS/data/input/TA16/TA16_RBF.par .\n"
+      << "    2) Otherwise download the RBF_MODEL_2016 package from:\n"
+      << "         https://geo.phys.spbu.ru/~tsyganenko/empirical-models/magnetic_field/ta16/\n"
+      << "       extract TA16_RBF.par and place it in the run directory."; 
+
+  exit(line, file, msg.str().c_str());
 }
 
 void TA16::GetMagneticField(double *B,double *x) {

@@ -53,6 +53,13 @@ namespace TA16 {
   extern double UserFrame2GSE[3][3],GSE2UserFrame[3][3];
   extern bool Rotate2GSE;
 
+  // TA16 coefficient file management — declared here, before Init, because
+  // the inline Init body calls VerifyCoeffFile and the declaration must
+  // precede any use within the same translation unit.
+  extern std::string CoeffFileName;
+  void SetCoeffFileName(const std::string &fname);
+  void VerifyCoeffFile(int line, const char* file);
+
   inline void Init(const char* Epoch, std::string FrameNameIn) {
     Geopack::Init(Epoch,FrameNameIn);
 
@@ -73,6 +80,11 @@ namespace TA16 {
       pxform_c(UserFrameName.c_str(),"GSE",et,UserFrame2GSE);
       pxform_c("GSE",UserFrameName.c_str(),et,GSE2UserFrame);
     }
+
+    // Verify the coefficient file exists and is readable before any field
+    // evaluation is attempted.  Calling this here gives a clear fatal error
+    // at initialisation time rather than a cryptic Fortran I/O error later.
+    VerifyCoeffFile(__LINE__,__FILE__);
   }
 
   extern double PS;
@@ -91,9 +103,6 @@ namespace TA16 {
   void SetXIND(double XIND);
   void SetBYIMF(double BY);
   void SetBYIMF_nano(double BY);                 // argument already in nT
-
-  // TA16 coefficient file management (AMPS extension).
-  void SetCoeffFileName(const std::string &fname);
 
   void GetMagneticField(double *B,double *x);
 }
