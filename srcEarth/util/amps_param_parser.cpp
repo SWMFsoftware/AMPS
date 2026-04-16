@@ -1263,8 +1263,9 @@ static std::string NormalizeTsModelName(const std::string& raw) {
   // we keep the sub-variant suffix because they use different PARMOD layouts.
   if (u == "TA15N" || u == "TA15B")                               return u;
 
-  // TA16 — placeholder; no aliases known yet.
-  if (u == "TA16")                                                 return "TA16";
+  // TA16 family — "TA16RBF" is the name used in AMPS_PARAM.in input files
+  // to distinguish it from TA15; both map to the same canonical "TA16".
+  if (u == "TA16" || u == "TA16RBF")                              return "TA16";
 
   // All other values (T96, T05, T01, DIPOLE, ...) are already canonical.
   return u;

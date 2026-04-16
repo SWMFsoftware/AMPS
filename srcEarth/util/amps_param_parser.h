@@ -437,7 +437,7 @@ namespace EarthUtil {
     //   "T01"      "TS01", "T01S"          Tsyganenko (2001)
     //   "TA15N"                            Tsyganenko-Andreeva (2015) northward
     //   "TA15B"                            Tsyganenko-Andreeva (2015) southward
-    //   "TA16"                             Tsyganenko-Andreeva (2016)
+    //   "TA16"    "TA16RBF"               Tsyganenko-Andreeva (2016)
     //   "DIPOLE"                           Analytic centered dipole (internal only)
     std::string model{"T96"};
 
