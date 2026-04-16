@@ -85,9 +85,12 @@ namespace TA16 {
   extern double PARMOD[10];
 
   void SetSolarWindPressure(double PDYN);
+  void SetSolarWindPressure_nano(double PDYN);   // argument already in nPa
   void SetSymHc(double SymHc);
+  void SetSymHc_nano(double SymHc);              // argument already in nT
   void SetXIND(double XIND);
   void SetBYIMF(double BY);
+  void SetBYIMF_nano(double BY);                 // argument already in nT
 
   // TA16 coefficient file management (AMPS extension).
   void SetCoeffFileName(const std::string &fname);

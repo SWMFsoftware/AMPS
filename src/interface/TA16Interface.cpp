@@ -50,9 +50,12 @@ extern "C"{
 }
 
 void TA16::SetSolarWindPressure(double PDYN) {PARMOD[0]=PDYN/_NANO_;}
+void TA16::SetSolarWindPressure_nano(double PDYN) {PARMOD[0]=PDYN;}
 void TA16::SetSymHc(double SymHc) {PARMOD[1]=SymHc/_NANO_;}
+void TA16::SetSymHc_nano(double SymHc) {PARMOD[1]=SymHc;}
 void TA16::SetXIND(double XIND) {PARMOD[2]=XIND;}
 void TA16::SetBYIMF(double BY) {PARMOD[3]=BY/_NANO_;}
+void TA16::SetBYIMF_nano(double BY) {PARMOD[3]=BY;}
 
 void TA16::SetCoeffFileName(const std::string &fname) {
   // Fortran expects a fixed-length CHARACTER argument; the common pattern is
@@ -72,6 +75,13 @@ void TA16::GetMagneticField(double *B,double *x) {
   double xLocal[3];
   for (idim=0;idim<3;idim++) xLocal[idim]=x[idim]/_EARTH__RADIUS_;
 
+  // No _PIC_COUPLER_MODE_ guard here — unlike T05/T96 whose gridless binaries
+  // are compiled with a matching CouplerMode constant, TA16 is dispatched by
+  // string comparison in the gridless solver (CutoffRigidityGridless.cpp) and
+  // by the #if defined(_PIC_COUPLER_MODE__TA16_) guards in main_lib.cpp.
+  // Gating on _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__TA16_ would always
+  // evaluate to false (the constant is not yet defined in the AMPS build
+  // system) and unconditionally exit.
   if (Rotate2GSM==false) {
     rbf_model_2016_(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bTA16+0,bTA16+1,bTA16+2);
   }
@@ -85,11 +95,11 @@ void TA16::GetMagneticField(double *B,double *x) {
   IGRF::GetMagneticField(B,x);
   for (idim=0;idim<3;idim++) B[idim]+=bTA16[idim]*_NANO_;
 
-  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  #if _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
+#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+#if _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
   PIC::Debugger::CatchOutLimitValue(xLocal,DIM,__LINE__,__FILE__);
   PIC::Debugger::CatchOutLimitValue(bTA16,DIM,__LINE__,__FILE__);
   PIC::Debugger::CatchOutLimitValue(B,DIM,__LINE__,__FILE__);
-  #endif
-  #endif
+#endif
+#endif
 }
