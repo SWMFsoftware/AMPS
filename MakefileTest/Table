@@ -7235,75 +7235,6 @@ Check=
 
 <#
 
-==============================================================================
-Test for Vertical Cutoff Rigidity (Gridless) with Dipole Magnetic Field:
-Trajectory mode
-==============================================================================
-
-#>
-Name=Earth-vertical-cutoff-rigidity-gridless-trajectory
-Time=5
-
-Type=amps
-
-Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
-Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
-Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
-Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
-
-Outs=test_Earth-vertical-cutoff-rigidity-gridless-trajectory-cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory-compare
-
-Compile=
->>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_compile..." > test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
->>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryKEYS)
->>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
->>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_compile... done" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
-
-Run=
->>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_run..." >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
->>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-trajectory has started: `date`
->>>cp data/input/test_Geospace-Flux-Gridless-trajectory/dipole/* $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)
-
->>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
->>>@echo "Running vertical cutoff rigidity trajectory (dipole)" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
->>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
->>>cd $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i cutoff-dipole-trajectory.in
-
->>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_run... done" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
->>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-trajectory has finished: `date`
-
-Check=
->>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_check..." >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
-
->>>@# Unzip compressed reference solutions
->>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points.dat.gz
->>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points_dipole_compare.dat.gz
-
->>>@echo "--- Trajectory subtest ---" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
-
->>>-@${SCRIPTDIR}/DiffNum.pl \
->>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat \
->>>  output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points.dat \
->>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory-cutoff.diff
-
->>>-@${SCRIPTDIR}/DiffNum.pl \
->>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points_dipole_compare.dat \
->>>  output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points_dipole_compare.dat \
->>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory-compare.diff
-
->>>@# Combine all sub-diffs into master diff file
->>>@cat test_Earth-vertical-cutoff-rigidity-gridless-trajectory-cutoff.diff \
->>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory-compare.diff \
->>>    > test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
-
->>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory-cutoff.diff
->>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory-compare.diff
->>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
->>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-trajectory verification completed: `date`
-
-<#
-
 
 ==============================================================================
 Test for Cutoff Rigidity (Gridless) Trajectory mode
@@ -7541,5 +7472,313 @@ Check=
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--dipole--compare.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>@echo Test test_Earth-cutoff-rigidity-gridless-trajectory verification completed: `date`
+
+<#
+
+==============================================================================
+Test for Vertical Cutoff Rigidity (Gridless) Trajectory mode
+with geomagnetic field model subtests (currently: T01, T05, T96, TA15, TA16)
+To add a new model: duplicate the T05 blocks in Run, Check, cat, ls, and Outs
+==============================================================================
+
+#>
+Name=Earth-vertical-cutoff-rigidity-gridless-trajectory
+Time=5
+
+Type=amps
+
+Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
+Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
+Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
+
+Outs=test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t01--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t01--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t05--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t05--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t96--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t96--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--compare
+
+Compile=
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_compile..." > test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryKEYS)
+>>>rm -rf srcTemp
+>>>-@($(MAKE) -j8 amps)
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_compile... done" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+
+Run=
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_run..." >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-trajectory has started: `date`
+
+>>>@# ======================================================================
+>>>@# Subtest: T05 geomagnetic field model
+>>>@# ======================================================================
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "Running cutoff rigidity trajectory: T05 model" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/T05/* $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)
+>>>cd $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_vertical_cutoff.in 
+
+>>>mv $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t05.dat
+
+>>>@# ======================================================================
+>>>@# Subtest: T01 geomagnetic field model
+>>>@# ======================================================================
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "Running cutoff rigidity trajectory: T01 model" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/T01/* $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)
+>>>cd $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_vertical_cutoff.in 
+
+>>>mv $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t01.dat
+
+>>>@# ======================================================================
+>>>@# Subtest: T96 geomagnetic field model
+>>>@# ======================================================================
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "Running cutoff rigidity trajectory: T96 model" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/T96/* $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)
+>>>cd $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_vertical_cutoff.in 
+
+>>>mv $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t96.dat
+
+>>>@# ======================================================================
+>>>@# Subtest: TA15N geomagnetic field model
+>>>@# ======================================================================
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "Running cutoff rigidity trajectory: TA15N model" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/TA15/* $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)
+>>>cd $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_vertical_cutoff_ta15n.in 
+
+>>>mv $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta15n.dat
+
+>>>@# ======================================================================
+>>>@# Subtest: TA15B geomagnetic field model
+>>>@# ======================================================================
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "Running cutoff rigidity trajectory: TA15B model" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/TA15/* $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)
+>>>cd $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_vertical_cutoff_ta15b.in 
+
+>>>mv $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta15b.dat
+
+>>>@# ======================================================================
+>>>@# Subtest: TA16 geomagnetic field model
+>>>@# ======================================================================
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "Running cutoff rigidity trajectory: TA16 model" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/TA16/* $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)
+>>>cp data/input/TA16/TA16_RBF.par $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)
+>>>cd $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_vertical_cutoff.in 
+
+>>>mv $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta16.dat
+
+>>>@# ======================================================================
+>>>@# Subtest: Dipole geomagnetic field model
+>>>@# ======================================================================
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "Running cutoff rigidity trajectory: Dipole model" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/dipole/* $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)
+>>>cd $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_vertical_cutoff.in 
+
+>>>mv $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--dipole.dat
+>>>mv $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points_dipole_compare.dat $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--dipole--compare.dat
+
+>>>@# ======================================================================
+>>>@# To add a new geomagnetic model (e.g. IGRF), copy the T05 block above
+>>>@# and replace t05/T05 with the new model name, adjusting the input
+>>>@# directory and .in file accordingly.
+>>>@# ======================================================================
+
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_run... done" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-trajectory has finished: `date`
+
+Check=
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_check..." >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>@# Unzip compressed reference solutions — T05
+>>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t05.dat.gz
+
+>>>@echo "--- Subtest: T05 model ---" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t05.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t05.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t05--cutoff.diff
+
+>>>@# Unzip compressed reference solutions — T01
+>>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t01.dat.gz
+
+>>>@echo "--- Subtest: T01 model ---" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t01.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t01.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t01--cutoff.diff
+
+>>>@# Unzip compressed reference solutions — T96
+>>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t96.dat.gz
+
+>>>@echo "--- Subtest: T96 model ---" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t96.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t96.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t96--cutoff.diff
+
+>>>@# Unzip compressed reference solutions — TA15N
+>>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta15n.dat.gz
+
+>>>@echo "--- Subtest: TA15N model ---" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta15n.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta15n.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--cutoff.diff
+
+>>>@# Unzip compressed reference solutions — TA15B
+>>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta15b.dat.gz
+
+>>>@echo "--- Subtest: TA15B model ---" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta15b.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta15b.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--cutoff.diff
+
+>>>@# Unzip compressed reference solutions — TA16
+>>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta16.dat.gz
+
+>>>@echo "--- Subtest: TA16 model ---" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta16.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta16.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff
+
+>>>@# Unzip compressed reference solutions — Dipole
+>>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--dipole.dat.gz
+>>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--dipole--compare.dat.gz
+
+>>>@echo "--- Subtest: Dipole model ---" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--dipole.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--dipole.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--cutoff.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--dipole--compare.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--dipole--compare.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--compare.diff
+
+>>>@# ======================================================================
+>>>@# To add a new model: duplicate the gunzip + DiffNum blocks above,
+>>>@# replace t05/T05 with the new model tag, and append the new .diff
+>>>@# files to the cat and ls lists below.
+>>>@# ======================================================================
+
+>>>@# Combine all sub-diffs into master diff file
+>>>@cat test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t01--cutoff.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t01--compare.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t05--cutoff.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t05--compare.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t96--cutoff.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t96--compare.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--cutoff.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--compare.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--cutoff.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--compare.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--compare.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--cutoff.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--compare.diff \
+>>>    > test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t01--cutoff.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t01--compare.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t05--cutoff.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t05--compare.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t96--cutoff.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t96--compare.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--cutoff.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--compare.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--cutoff.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--compare.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--compare.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--cutoff.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--compare.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
+>>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-trajectory verification completed: `date`
+
+<#
+
+==============================================================================
+Test for Vertical Cutoff Rigidity (Gridless) with Dipole Magnetic Field:
+Trajectory mode
+==============================================================================
+
+#>
+Name=Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only
+Time=5
+
+Type=amps
+
+Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
+Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
+Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
+
+Outs=test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-compare
+
+Compile=
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only_compile..." > test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-REF).diff
+>>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_onlyKEYS)
+>>>rm -rf srcTemp
+>>>-@($(MAKE) -j8 amps)
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only_compile... done" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-REF).diff
+
+Run=
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only_run..." >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-REF).diff
+>>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only has started: `date`
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/dipole/* $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_onlyDIR)
+
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-REF).diff
+>>>@echo "Running vertical cutoff rigidity trajectory (dipole)" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-REF).diff
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-REF).diff
+>>>cd $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_onlyDIR); ${MPIRUN} ./amps -mode gridless -i cutoff-dipole-trajectory.in
+
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only_run... done" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-REF).diff
+>>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only has finished: `date`
+
+Check=
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only_check..." >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-REF).diff
+
+>>>@# Unzip compressed reference solutions
+>>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points.dat.gz
+>>>gunzip -kf output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points_dipole_compare.dat.gz
+
+>>>@echo "--- Trajectory subtest ---" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_onlyDIR)/cutoff_gridless_points.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-cutoff.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_onlyDIR)/cutoff_gridless_points_dipole_compare.dat \
+>>>  output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points_dipole_compare.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-compare.diff
+
+>>>@# Combine all sub-diffs into master diff file
+>>>@cat test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-cutoff.diff \
+>>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-compare.diff \
+>>>    > test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-REF).diff
+
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-cutoff.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-compare.diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-REF).diff
+>>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only verification completed: `date`
 
 <#
