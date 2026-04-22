@@ -1,4 +1,4 @@
-// main.cpp
+// mc_fieldline.cpp
 // =====================================================================================
 // Monte-Carlo guiding-center test-particle model for electrons moving along a magnetic
 // field line, with time-integrated sampling of pitch-angle, kinetic energy, and
@@ -79,6 +79,15 @@
 //     <prefix>_mc_E_s_2d.dat     : pdf(s, E_eV)
 //     <prefix>_mc_vpar_s_2d.dat  : pdf(s, vpar)
 //
+// (D) MPI PARALLELIZATION + PROGRESS OUTPUT
+//   * When launched under MPI, the total particle population is partitioned across
+//     ranks. Each rank advances only its local subset of particles.
+//   * Time-integrated histograms are reduced across ranks with MPI_Reduce, and rank 0
+//     gathers the surviving-particle diagnostics needed for the final 1D outputs.
+//   * Progress information is printed by rank 0 at a user-controlled step interval and
+//     reports completed steps, percent complete, elapsed wall time, ETA, and the
+//     current number of globally alive particles.
+//
 // -------------------------------------------------------------------------------------
 // 2) INPUT FILE FORMAT (FIELD LINE)
 // -------------------------------------------------------------------------------------
@@ -128,6 +137,7 @@
 #include <array>
 #include <cassert>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
@@ -136,8 +146,11 @@
 #include <limits>
 #include <random>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
+
+#include <mpi.h>
 
 static constexpr double kElectronMass   = 9.1093837015e-31; // kg
 static constexpr double kElectronCharge = -1.602176634e-19; // C (electron charge is negative)
@@ -157,6 +170,83 @@ static inline Vec3 unit_or_zero(const Vec3& a){
   return mul(a, 1.0/n);
 }
 static inline double clamp(double x, double lo, double hi){ return std::min(hi, std::max(lo, x)); }
+
+// -------------------------------------------------------------------------------------
+// local_particle_count()
+//   Static block partition of the global particle count across MPI ranks. The first
+//   (npart % nranks) ranks get one extra particle so that the load stays balanced to
+//   within one particle.
+// -------------------------------------------------------------------------------------
+static inline int local_particle_count(int npart_global, int rank, int nranks){
+  const int base = npart_global / nranks;
+  const int rem  = npart_global % nranks;
+  return base + ((rank < rem) ? 1 : 0);
+}
+
+// -------------------------------------------------------------------------------------
+// reduce_sum_vector_to_root()
+//   Sum a double vector across all MPI ranks and store the global result on root.
+//   Non-root ranks keep an empty vector because only rank 0 writes the output files.
+// -------------------------------------------------------------------------------------
+static inline std::vector<double> reduce_sum_vector_to_root(const std::vector<double>& local,
+                                                            int root,
+                                                            MPI_Comm comm)
+{
+  int rank = 0;
+  MPI_Comm_rank(comm, &rank);
+
+  std::vector<double> global;
+  if(rank == root) global.resize(local.size(), 0.0);
+
+  MPI_Reduce(local.empty() ? nullptr : local.data(),
+             (rank == root && !global.empty()) ? global.data() : nullptr,
+             static_cast<int>(local.size()), MPI_DOUBLE, MPI_SUM, root, comm);
+
+  return global;
+}
+
+// -------------------------------------------------------------------------------------
+// gather_double_vector_to_root()
+//   Gather a variable-length double vector from each rank onto root. This is used for
+//   the final surviving-particle diagnostics (s_final and mu_final), which are much
+//   more convenient to write on rank 0 after a single gather.
+// -------------------------------------------------------------------------------------
+static inline std::vector<double> gather_double_vector_to_root(const std::vector<double>& local,
+                                                               int root,
+                                                               MPI_Comm comm)
+{
+  int rank = 0, nranks = 1;
+  MPI_Comm_rank(comm, &rank);
+  MPI_Comm_size(comm, &nranks);
+
+  const int local_n = static_cast<int>(local.size());
+  std::vector<int> counts;
+  if(rank == root) counts.resize(nranks, 0);
+
+  MPI_Gather(&local_n, 1, MPI_INT,
+             (rank == root) ? counts.data() : nullptr, 1, MPI_INT,
+             root, comm);
+
+  std::vector<double> global;
+  std::vector<int> displs;
+  if(rank == root){
+    displs.resize(nranks, 0);
+    int total = 0;
+    for(int r=0;r<nranks;r++){
+      displs[r] = total;
+      total += counts[r];
+    }
+    global.resize(static_cast<size_t>(total));
+  }
+
+  MPI_Gatherv(local.empty() ? nullptr : local.data(), local_n, MPI_DOUBLE,
+              (rank == root && !global.empty()) ? global.data() : nullptr,
+              (rank == root) ? counts.data() : nullptr,
+              (rank == root) ? displs.data() : nullptr,
+              MPI_DOUBLE, root, comm);
+
+  return global;
+}
 
 struct FieldLinePoint {
   Vec3 r;          // position [m]
@@ -381,6 +471,7 @@ struct FieldLine {
 struct Cli {
   std::string fieldline_path;
   std::string out_prefix = "out";
+  bool help_requested = false;
 
   // Injection / plasma parameters
   double inj_sfrac = 0.0;     // fraction of field line length [0..1]
@@ -398,6 +489,10 @@ struct Cli {
   bool forward_only = false;
 
   uint64_t seed = 1;
+
+  // Progress output during the MC loop. The reporting itself is done only on rank 0.
+  bool progress = true;
+  int progress_steps = 0;   // <=0 => auto-select based on total number of time steps
 
   int nbins_mu = 80;
   int nbins_s  = 80;
@@ -435,6 +530,9 @@ struct Cli {
       << "  -mu0 <value>               Fix initial mu for all particles (overrides isotropic Maxwellian angles)\n"
       << "  -forward_only <0|1>         Force initial v_par >= 0 (default: 0)\n"
       << "  -seed <int>                RNG seed (default: 1)\n"
+      << "  -progress_steps <int>      Rank-0 progress report interval in time steps\n"
+      << "                            (default: auto; about 100 reports per run)\n"
+      << "  -no_progress               Disable rank-0 progress output\n"
       << "  -nbins_mu <int>            mu histogram bins (default: 80)\n"
       << "  -nbins_s <int>             s bins for statistics and 2D distribution (default: 80)\n"
       << "  -nbins_E <int>             kinetic energy bins for time-integrated f(s,E) (default: 80)\n"
@@ -451,7 +549,11 @@ struct Cli {
       << "  <prefix>_mc_mu_vs_s.dat    mean/var(mu) binned vs s\n"
       << "  <prefix>_mc_mu_s_2d.dat    2D distribution f(s,mu) sampled each time step; normalized per s-bin\n"
       << "  <prefix>_mc_E_s_2d.dat     2D distribution f(s,E_kin) sampled each time step; normalized per s-bin\n"
-      << "  <prefix>_mc_vpar_s_2d.dat  2D distribution f(s,v_par) sampled each time step; normalized per s-bin\n";
+      << "  <prefix>_mc_vpar_s_2d.dat  2D distribution f(s,v_par) sampled each time step; normalized per s-bin\n"
+      << "\nMPI notes:\n"
+      << "  Run in parallel, for example:\n"
+      << "    mpirun -np 8 " << exe << " -fieldline fieldline.txt -out run -npart 200000\n"
+      << "  Particles are distributed across ranks, but only rank 0 writes output files.\n";
   }
 
   bool parse(int argc, char** argv, std::string* err=nullptr){
@@ -469,8 +571,7 @@ struct Cli {
 
       try{
         if(a=="-help" || a=="--help" || a=="-h"){
-          print_help(argv[0]);
-          std::exit(0);
+          help_requested = true;
         } else if(a=="-fieldline"){
           fieldline_path = need(a);
         } else if(a=="-out"){
@@ -496,6 +597,10 @@ struct Cli {
           forward_only = (std::stoi(need(a))!=0);
         } else if(a=="-seed"){
           seed = static_cast<uint64_t>(std::stoull(need(a)));
+        } else if(a=="-progress_steps"){
+          progress_steps = std::stoi(need(a));
+        } else if(a=="-no_progress"){
+          progress = false;
         } else if(a=="-nbins_mu"){
           nbins_mu = std::max(4, std::stoi(need(a)));
         } else if(a=="-nbins_s"){
@@ -521,6 +626,8 @@ struct Cli {
       }
     }
 
+    if(help_requested) return true;
+
     if(fieldline_path.empty()){
       if(err) *err = "Missing -fieldline <path>.";
       return false;
@@ -533,8 +640,8 @@ struct Cli {
       if(err) *err = "-T_eV must be > 0.";
       return false;
     }
-    if(npart<=0){
-      if(err) *err = "-npart must be > 0.";
+    if(npart<0){
+      if(err) *err = "-npart must be >= 0.";
       return false;
     }
     if(!(dt>0.0 && tmax>0.0)){
@@ -569,6 +676,10 @@ struct Cli {
     }
     if(vpar_max <= vpar_min){
       if(err) *err = "Invalid vpar range (vpar_max must be > vpar_min).";
+      return false;
+    }
+    if(progress_steps < 0){
+      if(err) *err = "-progress_steps must be >= 0.";
       return false;
     }
 
@@ -663,19 +774,33 @@ static inline void apply_pitch_angle_diffusion(Particle& part,
 //         - delete particles leaving [0,L]
 //         - optionally apply pitch-angle diffusion
 //         - sample time-integrated histograms in (s,mu), (s,E), (s,v_par)
-//     3) After the loop, write Tecplot files with per-s-bin normalization.
+//     3) After the loop, reduce/gather distributed diagnostics onto rank 0 and
+//        write Tecplot files with per-s-bin normalization there.
+//
+//   MPI strategy:
+//     * The particle population is decomposed across ranks using a static block split.
+//     * Histograms are reduced with MPI_Reduce.
+//     * Final surviving-particle arrays are gathered to rank 0 with MPI_Gatherv.
 // -------------------------------------------------------------------------------------
 
-static MCResult run_guiding_center_mc(const FieldLine& fl, const Cli& cli){
-  std::mt19937_64 rng(cli.seed);
+static MCResult run_guiding_center_mc(const FieldLine& fl, const Cli& cli, MPI_Comm comm){
+  int mpi_rank = 0, mpi_size = 1;
+  MPI_Comm_rank(comm, &mpi_rank);
+  MPI_Comm_size(comm, &mpi_size);
+
+  // Make the per-rank random streams deterministic but distinct. This preserves
+  // reproducibility for a fixed MPI layout while avoiding identical streams on all ranks.
+  const uint64_t rank_seed = cli.seed + 0x9E3779B97F4A7C15ull * static_cast<uint64_t>(mpi_rank + 1);
+  std::mt19937_64 rng(rank_seed);
 
   const double L = fl.length();
   const double s0 = cli.inj_sfrac * L;
 
   const int nsteps = static_cast<int>(std::ceil(cli.tmax / cli.dt));
 
-  // Initialize particles injected at s0
-  std::vector<Particle> part(static_cast<size_t>(cli.npart));
+  // Initialize only the local subset of particles assigned to this rank.
+  const int npart_local = local_particle_count(cli.npart, mpi_rank, mpi_size);
+  std::vector<Particle> part(static_cast<size_t>(npart_local));
 
   // Local tangent direction (used as b-hat for defining pitch angle at injection)
   InterpSample samp0 = fl.sample(s0);
@@ -690,7 +815,7 @@ static MCResult run_guiding_center_mc(const FieldLine& fl, const Cli& cli){
   // Uniform distribution for mu if mu0 not specified (isotropic in mu)
   std::uniform_real_distribution<double> uni01(0.0, 1.0);
 
-  for(int i=0;i<cli.npart;i++){
+  for(int i=0;i<npart_local;i++){
     Particle p;
     p.s = s0;
 
@@ -825,6 +950,14 @@ static MCResult run_guiding_center_mc(const FieldLine& fl, const Cli& cli){
     mu_s_count_s[static_cast<size_t>(bs)] += 1.0;
   };
 
+  // Progress-report cadence. By default, aim for about 100 updates per run, but
+  // never more frequent than once per step. Progress output is emitted only by rank 0.
+  const int progress_stride = (cli.progress_steps > 0) ? cli.progress_steps
+                                                       : std::max(1, nsteps / 100);
+  const auto wall_t0 = std::chrono::steady_clock::now();
+
+  long long local_alive = static_cast<long long>(part.size());
+
   for(int n=0;n<nsteps;n++){
     for(auto& p : part){
       if(!p.alive) continue;
@@ -847,6 +980,7 @@ static MCResult run_guiding_center_mc(const FieldLine& fl, const Cli& cli){
       // Delete particle if it leaves the field line (no reflection)
       if(p.s < 0.0 || p.s > L){
         p.alive = false;
+        local_alive--;
         continue;
       }
 
@@ -857,16 +991,38 @@ static MCResult run_guiding_center_mc(const FieldLine& fl, const Cli& cli){
       // but B changes => v_perp changes implicitly via mu_mag = m v_perp^2 /(2B).
       // We do not need to explicitly store v_perp, but it enters mu_cos at output.
     }
+
+    // Progress output: reduce the currently alive particle count across all ranks and
+    // let rank 0 print a compact status line. The reduction is done only at the chosen
+    // stride so that the reporting overhead stays small even for long runs.
+    const bool report_progress = cli.progress &&
+                                 ((n==0) || ((n+1)%progress_stride==0) || (n+1==nsteps));
+    if(report_progress){
+      long long global_alive = 0;
+      MPI_Reduce(&local_alive, &global_alive, 1, MPI_LONG_LONG, MPI_SUM, 0, comm);
+
+      if(mpi_rank == 0){
+        const double frac = (nsteps>0) ? static_cast<double>(n+1)/static_cast<double>(nsteps) : 1.0;
+        const auto now = std::chrono::steady_clock::now();
+        const double elapsed_s = std::chrono::duration<double>(now - wall_t0).count();
+        const double eta_s = (frac > 0.0 && frac < 1.0) ? elapsed_s*(1.0 - frac)/frac : 0.0;
+
+        std::cout << std::fixed << std::setprecision(1)
+                  << "[progress] step " << (n+1) << "/" << nsteps
+                  << " (" << (100.0*frac) << "%), alive=" << global_alive
+                  << ", elapsed=" << elapsed_s << " s"
+                  << ", eta=" << eta_s << " s"
+                  << std::defaultfloat << "\n";
+      }
+    }
   }
 
-  // Collect outputs: final mu_cos and final s (ONLY for particles that stayed on the field line)
-  MCResult out;
-  out.mu_s_counts = std::move(mu_s_counts);
-  out.mu_s_count_s = std::move(mu_s_count_s);
-  out.E_s_counts = std::move(E_s_counts);
-  out.vpar_s_counts = std::move(vpar_s_counts);
-  out.s_final.reserve(part.size());
-  out.mu_final.reserve(part.size());
+  // Collect local surviving-particle outputs first. These are later gathered to rank 0,
+  // while the histogram-style diagnostics are globally reduced with MPI_Reduce.
+  std::vector<double> s_final_local;
+  std::vector<double> mu_final_local;
+  s_final_local.reserve(part.size());
+  mu_final_local.reserve(part.size());
 
   for(const Particle& p : part){
     if(!p.alive) continue;
@@ -880,9 +1036,17 @@ static MCResult run_guiding_center_mc(const FieldLine& fl, const Cli& cli){
     double mu_cos = (v>0.0) ? (p.vpar / v) : 0.0;
     mu_cos = clamp(mu_cos, -1.0, 1.0);
 
-    out.s_final.push_back(p.s);
-    out.mu_final.push_back(mu_cos);
+    s_final_local.push_back(p.s);
+    mu_final_local.push_back(mu_cos);
   }
+
+  MCResult out;
+  out.mu_s_counts   = reduce_sum_vector_to_root(mu_s_counts, 0, comm);
+  out.mu_s_count_s  = reduce_sum_vector_to_root(mu_s_count_s, 0, comm);
+  out.E_s_counts    = reduce_sum_vector_to_root(E_s_counts, 0, comm);
+  out.vpar_s_counts = reduce_sum_vector_to_root(vpar_s_counts, 0, comm);
+  out.s_final       = gather_double_vector_to_root(s_final_local, 0, comm);
+  out.mu_final      = gather_double_vector_to_root(mu_final_local, 0, comm);
 
   return out;
 }
@@ -1142,96 +1306,127 @@ static bool write_vpar_s_2d_tecplot_from_counts(const std::string& out_path,
 
 
 int main(int argc, char** argv){
+  MPI_Init(&argc, &argv);
+
+  int mpi_rank = 0, mpi_size = 1;
+  MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+
   Cli cli;
   std::string err;
 
   if(!cli.parse(argc, argv, &err)){
-    std::cerr << "Error: " << err << "\n\n";
-    Cli::print_help(argv[0]);
+    if(mpi_rank == 0){
+      std::cerr << "Error: " << err << "\n\n";
+      Cli::print_help(argv[0]);
+    }
+    MPI_Finalize();
     return 1;
+  }
+
+  if(cli.help_requested){
+    if(mpi_rank == 0) Cli::print_help(argv[0]);
+    MPI_Finalize();
+    return 0;
   }
 
   FieldLine fl;
   if(!fl.load(cli.fieldline_path, &err)){
-    std::cerr << "Error: " << err << "\n";
+    if(mpi_rank == 0) std::cerr << "Error: " << err << "\n";
+    MPI_Finalize();
     return 2;
   }
 
   if(fl.p.size()<2 || !(fl.length()>0.0)){
-    std::cerr << "Error: field line is too short or invalid.\n";
+    if(mpi_rank == 0) std::cerr << "Error: field line is too short or invalid.\n";
+    MPI_Finalize();
     return 3;
   }
 
-  // 1) Field line Tecplot output
-  {
+  // 1) Field line Tecplot output. Only rank 0 writes files so that output naming stays
+  //    unchanged relative to the serial code.
+  if(mpi_rank == 0){
     const std::string out_path = cli.out_prefix + "_fieldline.dat";
     if(!fl.write_tecplot_xy(out_path, &err)){
       std::cerr << "Error: " << err << "\n";
+      MPI_Finalize();
       return 4;
     }
     std::cout << "Wrote: " << out_path << "\n";
+    std::cout << "Running with " << mpi_size << " MPI rank(s) and "
+              << cli.npart << " total particle(s).\n";
+    if(cli.npart == 0){
+      std::cout << "-npart 0: field-line export only; Monte Carlo outputs will be empty.\n";
+    }
   }
 
+  // Keep all ranks synchronized before entering the collective Monte Carlo section.
+  MPI_Barrier(MPI_COMM_WORLD);
+
   // 2) Guiding-center Monte Carlo
-  MCResult res = run_guiding_center_mc(fl, cli);
+  MCResult res = run_guiding_center_mc(fl, cli, MPI_COMM_WORLD);
 
   // 3) Final mu histogram
-  {
+  if(mpi_rank == 0){
     const std::string out_path = cli.out_prefix + "_mc_mu_hist.dat";
     if(!write_mu_hist_tecplot(out_path, res.mu_final, cli.nbins_mu, &err)){
       std::cerr << "Error: " << err << "\n";
+      MPI_Finalize();
       return 5;
     }
     std::cout << "Wrote: " << out_path << "\n";
   }
 
   // 4) mu moments vs s
-  {
+  if(mpi_rank == 0){
     const std::string out_path = cli.out_prefix + "_mc_mu_vs_s.dat";
     if(!write_mu_vs_s_tecplot(out_path, res.s_final, res.mu_final, fl.length(), cli.nbins_s, &err)){
       std::cerr << "Error: " << err << "\n";
+      MPI_Finalize();
       return 6;
     }
     std::cout << "Wrote: " << out_path << "\n";
   }
 
   // 5) 2D distribution f(s,mu) (time-integrated sampling, normalized per s-bin)
-  {
+  if(mpi_rank == 0){
     const std::string out_path = cli.out_prefix + "_mc_mu_s_2d.dat";
     if(!write_mu_s_2d_tecplot_from_counts(out_path, res.mu_s_counts, res.mu_s_count_s,
                                           fl.length(), cli.nbins_s, cli.nbins_mu, &err)){
       std::cerr << "Error: " << err << "\n";
+      MPI_Finalize();
       return 7;
     }
     std::cout << "Wrote: " << out_path << "\n";
   }
 
-
   // 6) 2D distribution f(s,E_kin) (time-integrated sampling, normalized per s-bin)
-  {
+  if(mpi_rank == 0){
     const std::string out_path = cli.out_prefix + "_mc_E_s_2d.dat";
     if(!write_E_s_2d_tecplot_from_counts(out_path, res.E_s_counts, res.mu_s_count_s,
                                          fl.length(), cli.nbins_s, cli.nbins_E,
                                          cli.Emin_eV, cli.Emax_eV, &err)){
       std::cerr << "Error: " << err << "\n";
+      MPI_Finalize();
       return 8;
     }
     std::cout << "Wrote: " << out_path << "\n";
   }
 
   // 7) 2D distribution f(s,v_par) (time-integrated sampling, normalized per s-bin)
-  {
+  if(mpi_rank == 0){
     const std::string out_path = cli.out_prefix + "_mc_vpar_s_2d.dat";
     if(!write_vpar_s_2d_tecplot_from_counts(out_path, res.vpar_s_counts, res.mu_s_count_s,
                                             fl.length(), cli.nbins_s, cli.nbins_vpar,
                                             cli.vpar_min, cli.vpar_max, &err)){
       std::cerr << "Error: " << err << "\n";
+      MPI_Finalize();
       return 9;
     }
     std::cout << "Wrote: " << out_path << "\n";
+    std::cout << "Done.\n";
   }
 
-  std::cout << "Done.\n";
+  MPI_Finalize();
   return 0;
 }
-
