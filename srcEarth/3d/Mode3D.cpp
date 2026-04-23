@@ -84,6 +84,66 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
   }
 }
 
+// Traverse the full AMR tree and write B and E into every cell's data buffer,
+// following the same ghost-cell-inclusive iteration pattern used by
+// Earth::InitMagneticField in Earth.cpp.  Unlike that function, this version:
+//   - uses EvaluateBackgroundMagneticFieldSI / EvaluateElectricFieldSI so all
+//     models (T96, T05, TA16, DIPOLE) are handled uniformly, and
+//   - initialises E from the configured electric-field model instead of
+//     unconditionally writing zero.
+void InitMeshFields(const EarthUtil::AmpsParam& prm,
+                    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  const int iMin=-_GHOST_CELLS_X_, iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+  const int jMin=-_GHOST_CELLS_Y_, jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+  const int kMin=-_GHOST_CELLS_Z_, kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
+
+  if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+    if (startNode->block!=NULL) {
+      const int S=(kMax-kMin+1)*(jMax-jMin+1)*(iMax-iMin+1);
+
+      for (int ii=0;ii<S;ii++) {
+        int S1=ii;
+        const int i=iMin+S1/((kMax-kMin+1)*(jMax-jMin+1));
+        S1=S1%((kMax-kMin+1)*(jMax-jMin+1));
+        const int j=jMin+S1/(kMax-kMin+1);
+        const int k=kMin+S1%(kMax-kMin+1);
+
+        const int nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
+        PIC::Mesh::cDataCenterNode* CenterNode=startNode->block->GetCenterNode(nd);
+        if (CenterNode==NULL) continue;
+
+        char* offset=CenterNode->GetAssociatedDataBufferPointer()
+                    +PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin
+                    +PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset;
+
+        double xCell[3];
+        xCell[0]=startNode->xmin[0]+(startNode->xmax[0]-startNode->xmin[0])/_BLOCK_CELLS_X_*(0.5+i);
+        xCell[1]=startNode->xmin[1]+(startNode->xmax[1]-startNode->xmin[1])/_BLOCK_CELLS_Y_*(0.5+j);
+        xCell[2]=startNode->xmin[2]+(startNode->xmax[2]-startNode->xmin[2])/_BLOCK_CELLS_Z_*(0.5+k);
+
+        double B[3],E[3];
+        EvaluateBackgroundMagneticFieldSI(B,xCell,prm);
+        EvaluateElectricFieldSI(E,xCell,prm);
+
+        for (int idim=0;idim<3;idim++) {
+          if (PIC::CPLR::DATAFILE::Offset::MagneticField.active==true) {
+            *((double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+idim*sizeof(double)))=B[idim];
+          }
+          if (PIC::CPLR::DATAFILE::Offset::ElectricField.active==true) {
+            *((double*)(offset+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+idim*sizeof(double)))=E[idim];
+          }
+        }
+      }
+    }
+  }
+  else {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* downNode;
+    for (int i=0;i<(1<<DIM);i++) {
+      if ((downNode=startNode->downNode[i])!=NULL) InitMeshFields(prm,downNode);
+    }
+  }
+}
+
 void WriteTecplotMesh(const EarthUtil::AmpsParam& prm,const char* fnameBase) {
   // In MPI runs each rank writes its own Tecplot file. This avoids the need for
   // manual gather logic in this patch while still preserving all initialized
@@ -153,6 +213,12 @@ int Run(const EarthUtil::AmpsParam& prm) {
   amps_init();
 
   ConfigureBackgroundFieldModel(prm);
+
+  // Populate every cell's B and E data buffers in the AMR tree, mirroring the
+  // ghost-cell-inclusive traversal of Earth::InitMagneticField but routing
+  // field evaluation through the model-aware helpers so that T96, T05, TA16,
+  // and DIPOLE are all handled consistently.
+  InitMeshFields(prm,PIC::Mesh::mesh->rootTree);
 
   // The output filename is passed as a base name; in parallel runs each rank
   // appends its own suffix inside WriteTecplotMesh().
