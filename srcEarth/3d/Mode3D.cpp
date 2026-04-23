@@ -157,6 +157,7 @@ int Run(const EarthUtil::AmpsParam& prm) {
   // The output filename is passed as a base name; in parallel runs each rank
   // appends its own suffix inside WriteTecplotMesh().
   WriteTecplotMesh(prm,"amps_3d_initialized_mesh.dat");
+  PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_3d_initialized.data.dat",0);
   return 0;
 }
 
