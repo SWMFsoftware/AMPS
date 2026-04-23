@@ -146,12 +146,13 @@ int Run(const EarthUtil::AmpsParam& prm) {
   // rest of the code rather than creating a separate standalone mesh.
   Earth::ModelMode=Earth::CutoffRigidityMode;
   ApplyParsedDomain(prm);
-  ConfigureBackgroundFieldModel(prm);
 
   PIC::InitMPI();
   Exosphere::Init_SPICE();
   amps_init_mesh();
   amps_init();
+
+  ConfigureBackgroundFieldModel(prm);
 
   // The output filename is passed as a base name; in parallel runs each rank
   // appends its own suffix inside WriteTecplotMesh().
