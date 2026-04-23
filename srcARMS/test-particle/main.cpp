@@ -87,6 +87,11 @@
 //   * Progress information is printed by rank 0 at a user-controlled step interval and
 //     reports completed steps, percent complete, elapsed wall time, ETA, and the
 //     current number of globally alive particles.
+//   * The deterministic guiding-center mover can be selected at runtime:
+//       -gc_mover euler   : keep the original first-order update
+//       -gc_mover rk4     : use a 4th-order Runge-Kutta update for (s, v_parallel)
+//     The stochastic pitch-angle diffusion step, if enabled, is still applied as a
+//     separate operator before the deterministic mover.
 //
 // -------------------------------------------------------------------------------------
 // 2) INPUT FILE FORMAT (FIELD LINE)
@@ -120,6 +125,10 @@
 //   ./mc_fieldline -fieldline /mnt/data/fieldline_32.txt -out accel 
 //       -inj_sfrac 0.25 -T_eV 100 -Epar_Vm 1e-3 -npart 100000 -dt 1e-3 -tmax 2.0
 //
+// Use the 4th-order deterministic mover for the guiding-center update:
+//   ./mc_fieldline -fieldline /mnt/data/fieldline_32.txt -out rk4_run
+//       -inj_sfrac 0.5 -T_eV 200 -npart 200000 -dt 1e-3 -tmax 1.0 -gc_mover rk4
+//
 // -------------------------------------------------------------------------------------
 // 4) IMPLEMENTATION NOTES / ASSUMPTIONS
 // -------------------------------------------------------------------------------------
@@ -129,6 +138,10 @@
 // * d|B|/ds is taken as a piecewise constant slope between nodes.
 // * If B-direction is not provided, b-hat is approximated by the curve tangent.
 // * All dynamics are SI; temperature is specified in eV for convenience.
+// * The deterministic part of the particle advance can use either the original
+//   first-order mover or a classical 4th-order Runge-Kutta (RK4) mover.
+// * The RK4 mover integrates only the deterministic guiding-center equations.
+//   Pitch-angle diffusion remains operator-split and is applied separately.
 // * For reproducibility, use -seed.
 //
 // =====================================================================================
@@ -170,6 +183,39 @@ static inline Vec3 unit_or_zero(const Vec3& a){
   return mul(a, 1.0/n);
 }
 static inline double clamp(double x, double lo, double hi){ return std::min(hi, std::max(lo, x)); }
+
+// -------------------------------------------------------------------------------------
+// GuidingCenterMover
+//   Runtime-selectable deterministic particle mover for the guiding-center advance.
+//   We keep the original first-order method for backward compatibility and add a
+//   classical 4th-order Runge-Kutta option for improved accuracy in the deterministic
+//   (s, v_parallel) integration.
+// -------------------------------------------------------------------------------------
+enum class GuidingCenterMover {
+  Euler = 0,  // original first-order mover used by earlier versions of the code
+  RK4   = 1   // classical 4th-order Runge-Kutta for the deterministic GC equations
+};
+
+static inline const char* guiding_center_mover_name(GuidingCenterMover mover){
+  switch(mover){
+    case GuidingCenterMover::Euler: return "euler";
+    case GuidingCenterMover::RK4:   return "rk4";
+    default:                        return "unknown";
+  }
+}
+
+static inline bool parse_guiding_center_mover(const std::string& s, GuidingCenterMover& mover){
+  if(s=="euler" || s=="Euler" || s=="EULER" || s=="1"){
+    mover = GuidingCenterMover::Euler;
+    return true;
+  }
+  if(s=="rk4" || s=="RK4" || s=="Rk4" || s=="4"){
+    mover = GuidingCenterMover::RK4;
+    return true;
+  }
+  return false;
+}
+
 
 // -------------------------------------------------------------------------------------
 // local_particle_count()
@@ -477,6 +523,7 @@ struct Cli {
   double inj_sfrac = 0.0;     // fraction of field line length [0..1]
   double T_eV = 100.0;        // injected electron temperature [eV]
   double Epar_Vm = 0.0;       // constant parallel electric field [V/m]
+  GuidingCenterMover gc_mover = GuidingCenterMover::Euler; // deterministic GC mover
 
   // Monte Carlo / numerics
   int npart = 100000;
@@ -521,7 +568,10 @@ struct Cli {
       << "                            0.0=start, 0.5=middle, 1.0=end (default: 0.0)\n"
       << "  -T_eV <eV>                 Injected electron temperature (Maxwellian) (default: 100 eV)\n\n"
       << "Guiding-center / acceleration:\n"
-      << "  -Epar_Vm <V/m>             Constant parallel electric field along +s (default: 0)\n\n"
+      << "  -Epar_Vm <V/m>             Constant parallel electric field along +s (default: 0)\n"
+      << "  -gc_mover <euler|rk4>      Deterministic guiding-center mover\n"
+      << "                            euler = original first-order update (default)\n"
+      << "                            rk4   = classical 4th-order Runge-Kutta update\n\n"
       << "Monte Carlo / numerics:\n"
       << "  -npart <int>               Number of particles (default: 100000)\n"
       << "  -dt <s>                    Time step (default: 1e-3)\n"
@@ -582,6 +632,12 @@ struct Cli {
           T_eV = std::stod(need(a));
         } else if(a=="-Epar_Vm"){
           Epar_Vm = std::stod(need(a));
+        } else if(a=="-gc_mover"){
+          const std::string mover_name = need(a);
+          if(!parse_guiding_center_mover(mover_name, gc_mover)){
+            throw std::runtime_error("Unknown -gc_mover value: " + mover_name +
+                                     " (expected euler or rk4)");
+          }
         } else if(a=="-npart"){
           npart = std::stoi(need(a));
         } else if(a=="-dt"){
@@ -764,15 +820,133 @@ static inline void apply_pitch_angle_diffusion(Particle& part,
 }
 
 // -------------------------------------------------------------------------------------
+// gc_rhs_deterministic()
+//   Right-hand side of the deterministic 1D guiding-center equations:
+//
+//     ds/dt     = v_parallel
+//     dv_par/dt = (q/m) E_par - (mu_mag/m) d|B|/ds
+//
+//   The magnetic moment mu_mag is treated as constant during this deterministic
+//   substep. The field-line interpolation is queried at the supplied s position, so the
+//   same helper can be used by both the original first-order mover and the RK4 mover.
+// -------------------------------------------------------------------------------------
+struct GCRhsState {
+  double s = 0.0;
+  double vpar = 0.0;
+};
+
+static inline GCRhsState gc_rhs_deterministic(const FieldLine& fl,
+                                              double s,
+                                              double vpar,
+                                              double mu_mag,
+                                              double q_over_m,
+                                              double Epar_Vm)
+{
+  const InterpSample sp = fl.sample(s);
+  GCRhsState rhs;
+  rhs.s = vpar;
+  rhs.vpar = q_over_m*Epar_Vm - (mu_mag/kElectronMass)*sp.dBds;
+  return rhs;
+}
+
+// -------------------------------------------------------------------------------------
+// advance_guiding_center_euler()
+//   Original first-order deterministic mover retained for backward compatibility.
+//   This reproduces the legacy update order used by the code before the RK4 option
+//   was added:
+//     1) evaluate d|B|/ds at the old position
+//     2) update v_parallel
+//     3) update s using the updated v_parallel
+//
+//   Because many users may rely on the exact behavior of the existing mover, we keep
+//   this implementation separate rather than rewriting it in a more abstract form.
+// -------------------------------------------------------------------------------------
+static inline void advance_guiding_center_euler(Particle& p,
+                                                const FieldLine& fl,
+                                                double dt,
+                                                double q_over_m,
+                                                double Epar_Vm)
+{
+  const InterpSample sOld = fl.sample(p.s);
+  const double dBds = sOld.dBds;
+  const double dvpar = dt * ( q_over_m*Epar_Vm - (p.mu_mag/kElectronMass)*dBds );
+  p.vpar += dvpar;
+  p.s += dt * p.vpar;
+}
+
+// -------------------------------------------------------------------------------------
+// advance_guiding_center_rk4()
+//   Classical Runge-Kutta 4th-order deterministic mover for the 1D guiding-center
+//   system in (s, v_parallel). The magnetic moment mu_mag is held fixed during the
+//   deterministic substep, exactly as in the legacy mover.
+//
+//   Boundary note:
+//     The no-reflection / delete-on-exit rule is still enforced outside this helper
+//     after the full time step is completed. Intermediate RK stages are allowed to
+//     probe the field-line interpolation at clamped endpoints through FieldLine::sample.
+//     This keeps the implementation simple and robust while preserving the original
+//     endpoint-deletion semantics at the outer time-step level.
+// -------------------------------------------------------------------------------------
+static inline void advance_guiding_center_rk4(Particle& p,
+                                              const FieldLine& fl,
+                                              double dt,
+                                              double q_over_m,
+                                              double Epar_Vm)
+{
+  const GCRhsState k1 = gc_rhs_deterministic(fl, p.s, p.vpar, p.mu_mag, q_over_m, Epar_Vm);
+  const GCRhsState k2 = gc_rhs_deterministic(fl,
+                                             p.s + 0.5*dt*k1.s,
+                                             p.vpar + 0.5*dt*k1.vpar,
+                                             p.mu_mag, q_over_m, Epar_Vm);
+  const GCRhsState k3 = gc_rhs_deterministic(fl,
+                                             p.s + 0.5*dt*k2.s,
+                                             p.vpar + 0.5*dt*k2.vpar,
+                                             p.mu_mag, q_over_m, Epar_Vm);
+  const GCRhsState k4 = gc_rhs_deterministic(fl,
+                                             p.s + dt*k3.s,
+                                             p.vpar + dt*k3.vpar,
+                                             p.mu_mag, q_over_m, Epar_Vm);
+
+  p.s += (dt/6.0) * (k1.s + 2.0*k2.s + 2.0*k3.s + k4.s);
+  p.vpar += (dt/6.0) * (k1.vpar + 2.0*k2.vpar + 2.0*k3.vpar + k4.vpar);
+}
+
+// -------------------------------------------------------------------------------------
+// advance_guiding_center_particle()
+//   Thin dispatch wrapper that selects the deterministic mover requested on the CLI.
+//   Keeping the selection in one place makes it easier to add additional movers later
+//   without cluttering the Monte Carlo loop below.
+// -------------------------------------------------------------------------------------
+static inline void advance_guiding_center_particle(Particle& p,
+                                                   const FieldLine& fl,
+                                                   GuidingCenterMover mover,
+                                                   double dt,
+                                                   double q_over_m,
+                                                   double Epar_Vm)
+{
+  switch(mover){
+    case GuidingCenterMover::Euler:
+      advance_guiding_center_euler(p, fl, dt, q_over_m, Epar_Vm);
+      break;
+    case GuidingCenterMover::RK4:
+      advance_guiding_center_rk4(p, fl, dt, q_over_m, Epar_Vm);
+      break;
+    default:
+      advance_guiding_center_euler(p, fl, dt, q_over_m, Epar_Vm);
+      break;
+  }
+}
+
+// -------------------------------------------------------------------------------------
 // run_guiding_center_mc()
 //   Main Monte Carlo loop:
 //     1) Initialize particles at s = inj_sfrac*L with Maxwellian velocities from T_eV.
 //     2) For each time step:
-//         - interpolate |B|(s) and d|B|/ds
-//         - advance v_par with mirror force and optional E_par acceleration
-//         - advance s with ds/dt = v_par
-//         - delete particles leaving [0,L]
+//         - interpolate |B|(s) as needed for scattering
 //         - optionally apply pitch-angle diffusion
+//         - advance the deterministic GC equations with the selected mover
+//           (original first-order Euler-like update or 4th-order RK4)
+//         - delete particles leaving [0,L]
 //         - sample time-integrated histograms in (s,mu), (s,E), (s,v_par)
 //     3) After the loop, reduce/gather distributed diagnostics onto rank 0 and
 //        write Tecplot files with per-s-bin normalization there.
@@ -781,6 +955,11 @@ static inline void apply_pitch_angle_diffusion(Particle& part,
 //     * The particle population is decomposed across ranks using a static block split.
 //     * Histograms are reduced with MPI_Reduce.
 //     * Final surviving-particle arrays are gathered to rank 0 with MPI_Gatherv.
+//
+//   Mover strategy:
+//     * The stochastic pitch-angle diffusion, if enabled, is operator-split from the
+//       deterministic guiding-center advance.
+//     * The deterministic substep is selected by cli.gc_mover.
 // -------------------------------------------------------------------------------------
 
 static MCResult run_guiding_center_mc(const FieldLine& fl, const Cli& cli, MPI_Comm comm){
@@ -809,6 +988,7 @@ static MCResult run_guiding_center_mc(const FieldLine& fl, const Cli& cli, MPI_C
     // fallback if tangent is degenerate
     bhat = {1,0,0};
   }
+  (void)bhat; // retained for documentation / future extensions that use an explicit b-hat basis
 
   const double sigma = vth_sigma_from_Te_eV(cli.T_eV); // std of each component
 
@@ -962,20 +1142,18 @@ static MCResult run_guiding_center_mc(const FieldLine& fl, const Cli& cli, MPI_C
     for(auto& p : part){
       if(!p.alive) continue;
 
-      // Sample local field
+      // Sample local field at the old position. This is used only for the stochastic
+      // pitch-angle diffusion operator. The deterministic advance itself is handled
+      // below by the user-selected guiding-center mover.
       InterpSample sOld = fl.sample(p.s);
       const double B_old = std::max(sOld.Bmag, 1e-30);
 
       // Optional scattering (acts at old position)
       apply_pitch_angle_diffusion(p, B_old, cli.dt, cli.D, rng);
 
-      // Deterministic GC update
-      const double dBds = sOld.dBds;
-      const double dvpar = cli.dt * ( q_over_m*cli.Epar_Vm - (p.mu_mag/kElectronMass)*dBds );
-      p.vpar += dvpar;
-
-      // Update position
-      p.s += cli.dt * p.vpar;
+      // Deterministic guiding-center update. The selected mover advances (s, v_par)
+      // over one full time step while keeping mu_mag fixed during this substep.
+      advance_guiding_center_particle(p, fl, cli.gc_mover, cli.dt, q_over_m, cli.Epar_Vm);
 
       // Delete particle if it leaves the field line (no reflection)
       if(p.s < 0.0 || p.s > L){
@@ -1355,6 +1533,8 @@ int main(int argc, char** argv){
     std::cout << "Wrote: " << out_path << "\n";
     std::cout << "Running with " << mpi_size << " MPI rank(s) and "
               << cli.npart << " total particle(s).\n";
+    std::cout << "Deterministic guiding-center mover: "
+              << guiding_center_mover_name(cli.gc_mover) << "\n";
     if(cli.npart == 0){
       std::cout << "-npart 0: field-line export only; Monte Carlo outputs will be empty.\n";
     }
