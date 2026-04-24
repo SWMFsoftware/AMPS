@@ -66,7 +66,40 @@ static void EvalCorotationSI(double E[3],const double x[3],const EarthUtil::Amps
   E[1]=-prm.efield.corotationScale*e[1];
   E[2]=-prm.efield.corotationScale*e[2];
 }
-static double EvalCorotationPotentialV(const double x[3],const EarthUtil::AmpsParam& prm) {(void)x;(void)prm; return 0.0;}
+// Scalar potential for the corotation electric field.
+//
+// Derivation (equatorial-plane, aligned dipole):
+//   E_corot = -(Ω×r)×B  →  E_r = -Ω_E · B_eq(r)· r (cylindrical)
+//
+//   For a dipole: B_z(equator) = +B_eq · (R_E/r)³, so
+//     E_r = -Ω_E · B_eq · R_E³ / r²
+//     → ∂Φ/∂r = Ω_E · B_eq · R_E³ / r²
+//     → Φ_corot(r) = -Ω_E · B_eq · R_E³ / r      (Volland 1973, Stern 1975)
+//
+// For non-dipole models (T96/T05/TA16) the same formula is used with the IGRF
+// dipole reference: corotation is dominated by the internal (dipolar) field at
+// L < 4, where this approximation is accurate to a few percent.
+//
+// Scale: at r = R_E, |Φ_corot| ≈ 92 kV for the standard IGRF dipole moment —
+// consistent with published ionospheric corotation voltage estimates.
+//
+// corotationScale mirrors the factor used in EvalCorotationSI so that the
+// potential and its gradient are mutually consistent.
+static double EvalCorotationPotentialV(const double x[3],const EarthUtil::AmpsParam& prm) {
+  // Reference IGRF equatorial surface field (~3.12e-5 T).  prm.field.dipoleMoment_Me
+  // is the scale factor applied by EvalDipoleSI → SetMomentScale; use it here
+  // to keep the potential consistent with the dipole-model E field.
+  const double kBequatorial_SI = 3.12e-5;  // T
+  const double B_eq = (prm.field.dipoleMoment_Me > 0.0)
+                        ? prm.field.dipoleMoment_Me * kBequatorial_SI
+                        : kBequatorial_SI;
+
+  const double r = std::sqrt(sqr(x[0]) + sqr(x[1]) + sqr(x[2]));
+  if (r < 1.0) return 0.0;  // guard against r ≈ 0; 1 m << R_E is safe
+
+  return -prm.efield.corotationScale
+       * kOmegaEarth * B_eq * std::pow(_EARTH__RADIUS_, 3) / r;
+}
 
 // Volland-Stern-type volumetric potential. Classical published forms are most
 // commonly given in equatorial/L-shell variables. For AMPS mesh initialization
