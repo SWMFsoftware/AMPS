@@ -13,6 +13,12 @@
 void amps_init_mesh();
 void amps_init();
 
+// Sphere surface-mesh resolution parameters and the per-surface-element
+// resolution function are defined in main_lib.cpp and shared with Mode3D.
+extern int nZenithElements;
+extern int nAzimuthalElements;
+double localSphericalSurfaceResolution(double *x);
+
 namespace Earth {
 namespace Mode3D {
 
@@ -125,6 +131,8 @@ void InitMeshFields(const EarthUtil::AmpsParam& prm,
         EvaluateBackgroundMagneticFieldSI(B,xCell,prm);
         EvaluateElectricFieldSI(E,xCell,prm);
 
+//for (int i=0;i<3;i++) B[i]=xCell[i];
+
         for (int idim=0;idim<3;idim++) {
           if (PIC::CPLR::DATAFILE::Offset::MagneticField.active==true) {
             *((double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+idim*sizeof(double)))=B[idim];
@@ -198,6 +206,74 @@ void WriteTecplotMesh(const EarthUtil::AmpsParam& prm,const char* fnameBase) {
   std::fclose(fout);
 }
 
+// ---------------------------------------------------------------------------
+// InitSphere — explicitly initialises and configures the inner Earth boundary
+// sphere following the same pattern as the SphereInsideDomain block in
+// main_lib.cpp::amps_init_mesh().
+//
+// amps_init_mesh() registers the sphere and sets Earth::Planet; we retrieve
+// that handle here and re-apply every property so that the sphere setup is
+// self-contained and auditable in the Mode3D flow.
+//
+// One important difference from main_lib.cpp: the cutoff-rigidity output
+// callbacks are wired unconditionally.  In main_lib.cpp they are only set
+// when (RigidityCalculationMode == Earth::_sphere &&
+//       CutoffRigidity::SampleRigidityMode == true).
+// Mode3D::Run() always operates in CutoffRigidityMode, so both conditions
+// are implicitly satisfied and the guard can be dropped.
+// ---------------------------------------------------------------------------
+void InitSphere() {
+  // amps_init_mesh() has already registered the sphere and assigned
+  // Earth::Planet.  Retrieve the pointer and bail if it is somehow null.
+  cInternalSphericalData* Sphere =
+      static_cast<cInternalSphericalData*>(Earth::Planet);
+  if (Sphere == nullptr) return;
+
+  // ---- Geometry -----------------------------------------------------------
+  // Sphere centred at the origin, radius = Earth radius (matches main_lib.cpp
+  // where sx0={0,0,0} and rSphere=_EARTH__RADIUS_).
+  double sx0[3] = {0.0, 0.0, 0.0};
+  Sphere->SetSphereGeometricalParameters(sx0, _EARTH__RADIUS_);
+  Sphere->Radius = _RADIUS_(_EARTH_);
+
+  // ---- Surface mesh -------------------------------------------------------
+  // Surface-mesh discretisation is shared with main_lib.cpp via the externs
+  // declared at the top of this file.
+  cInternalSphericalData::SetGeneralSurfaceMeshParameters(
+      nZenithElements, nAzimuthalElements);
+
+  // ---- Callbacks ----------------------------------------------------------
+  // Particle–sphere interaction and injection (same values as main_lib.cpp).
+  Sphere->ParticleSphereInteraction  = Earth::BC::ParticleSphereInteraction;
+  Sphere->InjectionRate              = Exosphere::SourceProcesses::totalProductionRate;
+  Sphere->InjectionBoundaryCondition = Exosphere::SourceProcesses::InjectionBoundaryModel;
+
+  // Per-surface-element resolution function and face offset.
+  Sphere->localResolution = localSphericalSurfaceResolution;
+  Sphere->faceat          = 0;
+
+  // ---- Diagnostic surface files -------------------------------------------
+  // Re-emit the surface-mesh and initial surface-data files so that the output
+  // on disk reflects the final Mode3D sphere configuration (geometry and
+  // callbacks set above), not just the partial state left by amps_init_mesh().
+  // The filenames match those written by main_lib.cpp::amps_init_mesh() so
+  // that downstream post-processing scripts find the expected files.
+  Sphere->PrintSurfaceMesh("Sphere.dat");
+  Sphere->PrintSurfaceData("SpheraData.dat", 0);
+
+  // ---- Cutoff-rigidity output callbacks -----------------------------------
+  // In Mode3D, Run() always sets Earth::ModelMode = CutoffRigidityMode, so
+  // the cutoff-rigidity output callbacks must always be connected.  Wire them
+  // unconditionally here instead of repeating the conditional from
+  // main_lib.cpp (which only fires when RigidityCalculationMode == _sphere &&
+  // SampleRigidityMode == true).
+  Earth::CutoffRigidity::AllocateCutoffRigidityTable();
+  Sphere->PrintDataStateVector =
+      Earth::CutoffRigidity::OutputDataFile::PrintDataStateVector;
+  Sphere->PrintVariableList =
+      Earth::CutoffRigidity::OutputDataFile::PrintVariableList;
+}
+
 } // namespace
 
 int Run(const EarthUtil::AmpsParam& prm) {
@@ -211,6 +287,14 @@ int Run(const EarthUtil::AmpsParam& prm) {
   Exosphere::Init_SPICE();
   amps_init_mesh();
   amps_init();
+
+  // Explicitly initialise and configure the inner sphere boundary, mirroring
+  // the SphereInsideDomain block in main_lib.cpp::amps_init_mesh().
+  // amps_init_mesh() registers the sphere and sets Earth::Planet; InitSphere()
+  // retrieves that handle and applies all sphere properties (geometry,
+  // callbacks, cutoff-rigidity output hooks) so the setup is auditable here
+  // rather than hidden inside amps_init_mesh().
+  InitSphere();
 
   ConfigureBackgroundFieldModel(prm);
 
