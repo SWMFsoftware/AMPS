@@ -32,12 +32,12 @@ namespace {
 
 void ApplyParsedDomain(const EarthUtil::AmpsParam& prm) {
   ParsedDomainActive=true;
-  ParsedDomainMin[0]=prm.domain.xMin*_EARTH__RADIUS_;
-  ParsedDomainMin[1]=prm.domain.yMin*_EARTH__RADIUS_;
-  ParsedDomainMin[2]=prm.domain.zMin*_EARTH__RADIUS_;
-  ParsedDomainMax[0]=prm.domain.xMax*_EARTH__RADIUS_;
-  ParsedDomainMax[1]=prm.domain.yMax*_EARTH__RADIUS_;
-  ParsedDomainMax[2]=prm.domain.zMax*_EARTH__RADIUS_;
+  ParsedDomainMin[0]=prm.domain.xMin*1000.0;
+  ParsedDomainMin[1]=prm.domain.yMin*1000.0;
+  ParsedDomainMin[2]=prm.domain.zMin*1000.0;
+  ParsedDomainMax[0]=prm.domain.xMax*1000.0;
+  ParsedDomainMax[1]=prm.domain.yMax*1000.0;
+  ParsedDomainMax[2]=prm.domain.zMax*1000.0;
 }
 
 void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
