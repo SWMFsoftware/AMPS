@@ -359,11 +359,39 @@ int Run(const EarthUtil::AmpsParam& prm) {
 
   //----------------------------------------------------------------------------
   // Mesh field initialisation (diagnostic Tecplot output)
-  // The cutoff solver evaluates fields directly from model calls per integration
-  // step and does not read stored mesh-cell field values.
+  // The cutoff solver reads field values from these mesh cells during particle
+  // tracing (see cMode3DMeshFieldEval in CutoffRigidityMode3D.cpp).
   //----------------------------------------------------------------------------
   InitMeshFields(prm, PIC::Mesh::mesh->rootTree);
-  PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_3d_initialized.data.dat", 0);
+
+  // Guard against concurrent file writes in replicated-domain mode.
+  //
+  // In the standard AMPS distributed-domain mode PIC::nTotalThreads > 1 and
+  // outputMeshDataTECPLOT handles MPI coordination internally via
+  // MPI_GLOBAL_COMMUNICATOR (each rank writes only its own blocks; rank 0
+  // assembles the file).  That path is safe and unchanged.
+  //
+  // In replicated-domain mode (PIC::InitMPI(true)) every rank sees
+  // PIC::nTotalThreads == 1 and PIC::ThisThread == 0 because each rank has
+  // its own singleton MPI_GLOBAL_COMMUNICATOR.  Without the guard below all N
+  // MPI_COMM_WORLD processes would call outputMeshDataTECPLOT simultaneously
+  // and write to the same file concurrently, corrupting the output.
+  //
+  // Fix: when PIC::nTotalThreads == 1 (replicated-domain), only the process
+  // whose rank in MPI_COMM_WORLD is 0 writes the file.  All other processes
+  // skip the call entirely.  The resulting file is identical to a normal
+  // single-process run because every rank holds the complete mesh.
+  if (PIC::nTotalThreads != 1) {
+    // Standard distributed-domain mode: outputMeshDataTECPLOT handles MPI.
+    PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_3d_initialized.data.dat", 0);
+  } else {
+    // Replicated-domain mode: only MPI_COMM_WORLD rank 0 writes.
+    int worldRank = 0;
+    MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);
+    if (worldRank == 0) {
+      PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_3d_initialized.data.dat", 0);
+    }
+  }
 
   //----------------------------------------------------------------------------
   // Cutoff rigidity computation (MPI_COMM_WORLD × OpenMP)
