@@ -108,6 +108,12 @@
 // Gridless shared utilities (movers, V3 helpers, IGridlessFieldEvaluator)
 #include "../gridless/GridlessParticleMovers.h"
 
+// Shared Störmer formula and DipoleInterface global state (gParams.m_hat).
+// CutoffRigidityGridless.h declares StormerVerticalCoeff_GV inline so that
+// Mode3D and gridless use a single definition with identical constants.
+#include "../gridless/CutoffRigidityGridless.h"
+#include "../gridless/DipoleInterface.h"
+
 // Parameter parser
 #include "../util/amps_param_parser.h"
 
@@ -789,6 +795,14 @@ static V3 LocationToX0m(const EarthUtil::AmpsParam& prm, int loc,
 //======================================================================================
 // SECTION 13 — TECPLOT OUTPUT WRITERS
 //======================================================================================
+//
+// The Störmer analytic reference is computed via
+// Earth::GridlessMode::StormerVerticalCoeff_GV (declared inline in
+// CutoffRigidityGridless.h) and Earth::GridlessMode::Dipole::gParams.m_hat
+// (from DipoleInterface.h) — the same functions and state used by the gridless
+// solver's WriteTecplotShells_DipoleAnalyticCompare.  This guarantees that the
+// analytic reference values in cutoff_3d_shells.dat are numerically identical
+// to those that would appear in the gridless dipole-compare output file.
 
 static void WriteTecplot3DPoints(const EarthUtil::AmpsParam& prm,
                                  const std::vector<double>& Rc,
@@ -827,24 +841,113 @@ static void WriteTecplot3DShells(const EarthUtil::AmpsParam& prm,
                                  const std::vector<std::vector<double>>& RcShell,
                                  const std::vector<std::vector<double>>& EminShell,
                                  int nLon, int nLat, double d_deg) {
+    //--------------------------------------------------------------------------
+    // Analytic Störmer reference columns
+    //
+    // Enabled when FIELD_MODEL = DIPOLE  AND  CUTOFF_SAMPLING = VERTICAL.
+    //
+    // The vertical cutoff in a centred-dipole field has a closed-form Störmer
+    // solution:  Rc(λ,r) = R₀ · cos⁴(λ) / (r/Rₑ)²
+    // where λ is the magnetic latitude measured from the dipole axis m̂.
+    //
+    // When CUTOFF_SAMPLING is VERTICAL the numerical solver traces the same
+    // radially inward direction as the Störmer vertical — the comparison is
+    // therefore physically meaningful.  For ISOTROPIC sampling the numerical
+    // result is the minimum over all directions (generally less than the
+    // vertical Störmer value), making the comparison misleading; in that case
+    // the extra columns are omitted.
+    //
+    // Extra VARIABLES written per data row when both conditions are met:
+    //   Rc_Stormer_GV  — analytic Störmer vertical cutoff [GV]
+    //   rel_err        — (Rc_numeric − Rc_Stormer) / Rc_Stormer
+    //--------------------------------------------------------------------------
+    const bool isDipole      = (EarthUtil::ToUpper(prm.field.model)    == "DIPOLE");
+    const bool isVertical    = (EarthUtil::ToUpper(prm.cutoff.sampling) == "VERTICAL");
+    const bool writeAnalytic = isDipole && isVertical;
+
+    // Pre-compute Störmer coefficient R₀ and the dipole axis unit vector m̂.
+    //
+    // We use Earth::GridlessMode::StormerVerticalCoeff_GV and
+    // Earth::GridlessMode::Dipole::gParams.m_hat — exactly the same state and
+    // function as WriteTecplotShells_DipoleAnalyticCompare in the gridless solver.
+    //
+    // SetTiltDeg is called explicitly here because the Mode3D flow does not go
+    // through the gridless cFieldEvaluator constructor that normally sets gParams.
+    double R0_GV = 0.0;
+    double mx = 0.0, my = 0.0, mz = 1.0;
+    if (writeAnalytic) {
+        Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
+        mx = Earth::GridlessMode::Dipole::gParams.m_hat[0];
+        my = Earth::GridlessMode::Dipole::gParams.m_hat[1];
+        mz = Earth::GridlessMode::Dipole::gParams.m_hat[2];
+        R0_GV = Earth::GridlessMode::StormerVerticalCoeff_GV(
+                    prm.field.dipoleMoment_Me, _EARTH__RADIUS_);
+    }
+
     FILE* f = std::fopen("cutoff_3d_shells.dat", "w");
     if (!f) throw std::runtime_error("Cannot write cutoff_3d_shells.dat");
 
     std::fprintf(f, "TITLE=\"Mode3D Cutoff Rigidity (SHELLS)\"\n");
-    std::fprintf(f, "VARIABLES=\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"\n");
+    if (writeAnalytic) {
+        std::fprintf(f, "VARIABLES=\"lon_deg\",\"lat_deg\","
+                        "\"Rc_GV\",\"Emin_MeV\","
+                        "\"Rc_Stormer_GV\",\"rel_err\"\n");
+    } else {
+        std::fprintf(f, "VARIABLES=\"lon_deg\",\"lat_deg\","
+                        "\"Rc_GV\",\"Emin_MeV\"\n");
+    }
 
     for (size_t s = 0; s < prm.output.shellAlt_km.size(); ++s) {
+        const double alt_km = prm.output.shellAlt_km[s];
         std::fprintf(f, "ZONE T=\"alt_km=%g\" I=%d J=%d F=POINT\n",
-                     prm.output.shellAlt_km[s], nLon, nLat);
+                     alt_km, nLon, nLat);
+
+        // r/Re for this shell — must use the same Earth-radius constant as the
+        // AMR domain geometry so the Störmer denominator is consistent.
+        const double r_m = _RADIUS_(_EARTH_) + alt_km * 1000.0;
+        const double rRe = r_m / _EARTH__RADIUS_;
+
         const int nPts = nLon * nLat;
         for (int k = 0; k < nPts; ++k) {
-            const int iLon = k % nLon;
-            const int jLat = k / nLon;
+            const int    iLon = k % nLon;
+            const int    jLat = k / nLon;
             double lat = -90.0 + d_deg * jLat;
             if (lat > 90.0) lat = 90.0;
-            const double lon = d_deg * iLon;
-            std::fprintf(f, "%e %e %e %e\n",
-                         lon, lat, RcShell[s][(size_t)k], EminShell[s][(size_t)k]);
+            const double lon  = d_deg * iLon;
+            const double rc   = RcShell[s][(size_t)k];
+            const double emin = EminShell[s][(size_t)k];
+
+            if (writeAnalytic) {
+                // Unit position vector r̂ from (lon, lat).
+                const double lonRad = lon * M_PI / 180.0;
+                const double latRad = lat * M_PI / 180.0;
+                const double clat   = std::cos(latRad);
+                const double rhatx  = clat * std::cos(lonRad);
+                const double rhaty  = clat * std::sin(lonRad);
+                const double rhatz  = std::sin(latRad);
+
+                // Magnetic latitude λ:  sin(λ) = m̂ · r̂
+                const double sinLam = mx*rhatx + my*rhaty + mz*rhatz;
+                const double cosLam = std::sqrt(std::max(0.0, 1.0 - sinLam*sinLam));
+
+                // Störmer vertical cutoff — identical formula to
+                // WriteTecplotShells_DipoleAnalyticCompare in the gridless solver:
+                //   Rc_vert = R0 * dipoleMoment_Me * cos^4(lambda) / (r/Re)^2
+                const double Rc_S = R0_GV
+                                  * prm.field.dipoleMoment_Me
+                                  * std::pow(cosLam, 4) / (rRe * rRe);
+
+                // Relative error: defined only when both values are positive.
+                // At the magnetic poles cosLam → 0 and Rc_S → 0; avoid 0/0.
+                const double relErr = (Rc_S > 0.0 && rc > 0.0)
+                                     ? (rc - Rc_S) / Rc_S
+                                     : 0.0;
+
+                std::fprintf(f, "%e %e %e %e %e %e\n",
+                             lon, lat, rc, emin, Rc_S, relErr);
+            } else {
+                std::fprintf(f, "%e %e %e %e\n", lon, lat, rc, emin);
+            }
         }
     }
     std::fclose(f);
