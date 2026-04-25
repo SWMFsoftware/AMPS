@@ -13,7 +13,7 @@
 // (IGRF coefficients, parmod, dipole tilt, etc.).  A common block is a single global
 // region of static storage; it is NOT thread-safe.
 //
-// We handle this with a file-scope mutex (gTsyMutex) acquired only around the Fortran
+// Field evaluation in Mode3D reads from the AMPS AMR mesh (no Fortran calls,
 // field-evaluation call.  The lock is released immediately afterward, so the critical
 // section contains only the Fortran call itself (typically a few microseconds).
 //
@@ -105,17 +105,8 @@
 #include "Earth.h"
 #include "specfunc.h"
 
-// Gridless shared utilities (field evaluator, movers)
+// Gridless shared utilities (movers, V3 helpers, IGridlessFieldEvaluator)
 #include "../gridless/GridlessParticleMovers.h"
-
-// Field model interfaces
-#include "../../interface/T96Interface.h"
-#include "../../interface/T05Interface.h"
-#include "../../interface/T01Interface.h"
-#include "../../interface/TA15Interface.h"
-#include "../../interface/TA16Interface.h"
-#include "../../interface/GeopackInterface.h"
-#include "../gridless/DipoleInterface.h"
 
 // Parameter parser
 #include "../util/amps_param_parser.h"
@@ -131,7 +122,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <iostream>
-#include <mutex>
 
 // MPI (always compiled in; see design notes in header)
 #include <mpi.h>
@@ -141,25 +131,40 @@
 #include <omp.h>
 #endif
 
-// SPICE (optional; same guards as gridless solver)
+// SPICE — only for coordinate frame transforms in LocationToX0m (SHELLS mode).
+// NOT used for field evaluation: B is read from the AMPS mesh cells.
 #ifndef _NO_SPICE_CALLS_
 #include "SpiceUsr.h"
 #endif
 
-// Constants (same set as gridless solver)
+// Constants
 #include "constants.h"
 #include "constants.PlanetaryData.h"
+
+// NOTE: Tsyganenko model interfaces (T96Interface.h, T05Interface.h, etc.),
+// GeopackInterface.h, and DipoleInterface.h are intentionally NOT included here.
+// In Mode3D the magnetic field is read directly from the AMPS AMR mesh cells
+// that were populated by InitMeshFields() in Mode3D::Run() before the cutoff
+// calculation begins.  There is therefore no need to call the Tsyganenko Fortran
+// libraries during particle tracing, and no mutex is required.
 
 namespace {
 
 //======================================================================================
-// SECTION 1 — THREAD-SAFETY INFRASTRUCTURE
 //======================================================================================
-
-// Global mutex protecting Tsyganenko / Geopack Fortran common-block state.
-// Acquired only around the actual Fortran call; released immediately after.
-// See "THREAD SAFETY" section in the file header for the rationale.
-static std::mutex gTsyMutex;
+// SECTION 1 — THREAD SAFETY
+//======================================================================================
+//
+// The magnetic field is read from the AMPS AMR mesh cells that were populated by
+// InitMeshFields() in Mode3D::Run() before the cutoff calculation begins.
+//
+// findTreeNode() is a pure pointer traversal over the frozen (read-only) AMR tree.
+// Concurrent reads from multiple OpenMP threads are safe: no shared state is
+// modified and no lock is required.
+//
+// This eliminates the per-step mutex that the gridless evaluator needs around its
+// Tsyganenko Fortran calls, giving substantially better OpenMP scaling.
+//======================================================================================
 
 //======================================================================================
 // SECTION 2 — SMALL VECTOR HELPERS
@@ -228,160 +233,97 @@ static inline bool LostInnerSphere3D(const V3& x, double rInner) {
 }
 
 //======================================================================================
-// SECTION 5 — FIELD EVALUATOR (per-thread)
+// SECTION 5 — MESH-BASED FIELD EVALUATOR (per-thread)
 //======================================================================================
 //
-// cMode3DFieldEval is the Mode3D equivalent of the gridless cFieldEvaluator.
-// It wraps the Tsyganenko / Geopack / IGRF / DIPOLE field models and provides:
+// cMode3DMeshFieldEval reads the magnetic field that InitMeshFields() stored in the
+// AMPS AMR cell-centre data buffers.  It is the Mode3D replacement for the gridless
+// cFieldEvaluator (which calls Tsyganenko Fortran directly).
 //
-//   GetB_T(x_m, B_T)          — evaluate B field in Tesla at position x_m [m]
-//   ReinitGeopack(epoch, tbl) — update dipole tilt + PARMOD for a new epoch
+// Design:
+//   - Implements IGridlessFieldEvaluator so all shared mover infrastructure
+//     (StepParticleChecked, HybridPrepareStepUseGuidingCenter, etc.) is reused
+//     without modification.
+//   - Each OpenMP thread holds its own instance; the mutable lastNode_ member
+//     caches the most recently found AMR block, accelerating findTreeNode() when
+//     consecutive GetB_T calls are within the same block (the common case for a
+//     particle advancing in small steps).
+//   - No mutex: the AMR tree and cell data are READ-ONLY during particle tracing.
 //
-// Design decisions:
-//   - Implements IGridlessFieldEvaluator so that the shared mover infrastructure
-//     (StepParticleChecked, SelectAdaptiveDt, etc.) from GridlessParticleMovers.h
-//     can be reused without modification.
-//   - Holds a private OWNED copy of EarthUtil::AmpsParam so ReinitGeopack can
-//     mutate PARMOD and field parameters without aliasing.
-//   - Fortran calls are protected by gTsyMutex (see SECTION 1).
-//   - Normalises model name identically to the gridless cFieldEvaluator.
+// Field data layout (mirrors InitMeshFields write):
+//   ptr = center->GetAssociatedDataBufferPointer()
+//       + PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin
+//       + PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset
+//       + PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset
+//       + idim * sizeof(double)      (idim = 0,1,2 for Bx,By,Bz)
+//
+// Fallback: if the particle is outside all allocated blocks (e.g. just before the
+// outer-boundary escape check fires), GetB_T returns B = 0.  The integration loop
+// detects the escape on the very next geometry check, so the zero-field step is
+// never used to advance the trajectory classification.
 //======================================================================================
 
-class cMode3DFieldEval : public IGridlessFieldEvaluator {
+class cMode3DMeshFieldEval : public IGridlessFieldEvaluator {
 public:
-    explicit cMode3DFieldEval(const EarthUtil::AmpsParam& p)
-        : prm_(p), PS_(0.170481), currentEpoch_("") {
+    cMode3DMeshFieldEval() : lastNode_(nullptr) {}
 
-        const std::string mdl = Model();
-
-        if (mdl != "DIPOLE") {
-            std::lock_guard<std::mutex> lk(gTsyMutex);
-            Geopack::Init(prm_.field.epoch.c_str(), "GSM");
-            currentEpoch_ = prm_.field.epoch;
-        }
-
-        Earth::GridlessMode::Dipole::SetMomentScale(prm_.field.dipoleMoment_Me);
-        Earth::GridlessMode::Dipole::SetTiltDeg(prm_.field.dipoleTilt_deg);
-
-        EarthUtil::BuildTsParmod(prm_.field, mdl, PARMOD_);
-
-        if (mdl == "TA15N")      TA15::SetVersion(TA15::Version_N);
-        else if (mdl == "TA15B") TA15::SetVersion(TA15::Version_B);
-        else if (mdl == "TA16") {
-            if (!prm_.field.ta16CoeffFile.empty())
-                TA16::SetCoeffFileName(prm_.field.ta16CoeffFile);
-            TA16::VerifyCoeffFile(__LINE__, __FILE__);
-        }
-    }
-
-    // Canonical (upper-case) model name, with alias normalisation identical to
-    // the gridless cFieldEvaluator so model-name comparisons are consistent.
-    std::string Model() const {
-        const std::string u = EarthUtil::ToUpper(prm_.field.model);
-        if (u=="TS05"||u=="T05S"||u=="T04S"||u=="TS04") return "T05";
-        if (u=="TS96"||u=="T96S")                        return "T96";
-        if (u=="TS01"||u=="T01S")                        return "T01";
-        return u;
-    }
-
-    // Re-initialise Geopack (dipole tilt) and optionally update PARMOD from a
-    // time-varying driver table.  Identical logic to cFieldEvaluator::ReinitGeopack.
-    //
-    // Thread safety: the Geopack/Tsyganenko common blocks are protected by gTsyMutex.
-    // This function is called once per trajectory point (before the bisection loop),
-    // so mutex contention here is negligible compared to the integration cost.
-    void ReinitGeopack(const std::string& epoch,
-                       const EarthUtil::TsDriverTable* driverTable = nullptr) {
-        if (Model() == "DIPOLE") return;
-
-        const bool epochChanged   = (epoch != currentEpoch_);
-        const bool hasDriverTable = (driverTable && !driverTable->empty());
-
-        if (!epochChanged && !hasDriverTable) return;
-
-        if (hasDriverTable) {
-#ifndef _NO_SPICE_CALLS_
-            SpiceDouble etSpice = 0.0;
-            str2et_c(epoch.c_str(), &etSpice);
-            const double et = static_cast<double>(etSpice);
-#else
-            const double et = 0.0;
-#endif
-            const EarthUtil::TsDriverRecord rec = driverTable->Lookup(et);
-            EarthUtil::TsDriverTable::ApplyToField(rec, prm_.field);
-            EarthUtil::BuildTsParmod(prm_.field, Model(), PARMOD_);
-        }
-
-        if (epochChanged) {
-            std::lock_guard<std::mutex> lk(gTsyMutex);
-            Geopack::Init(epoch.c_str(), "GSM");
-            currentEpoch_ = epoch;
-        }
-    }
-
-    // Evaluate the total magnetic field (internal IGRF + external Tsyganenko) at
-    // position x_m [m] in GSM.  Result B_T is in Tesla.
-    //
-    // Thread safety: The Fortran call is wrapped in gTsyMutex.  The critical section
-    // is as tight as possible (only the Fortran call); all pre/post-processing is
-    // outside the lock.
+    // Evaluate B [Tesla] at position x_m [m] by reading from the AMR mesh cells.
     void GetB_T(const V3& x_m, V3& B_T) const override {
-        if (Model() == "DIPOLE") {
-            double xa[3] = {x_m.x, x_m.y, x_m.z};
-            double ba[3] = {0.0, 0.0, 0.0};
-            Earth::GridlessMode::Dipole::GetB_Tesla(xa, ba);
-            B_T.x = ba[0]; B_T.y = ba[1]; B_T.z = ba[2];
+        double xArr[3] = {x_m.x, x_m.y, x_m.z};
+
+        // Locate the leaf block that contains xArr.
+        // The lastNode_ hint makes subsequent calls O(1) when the particle stays
+        // in the same block between integration steps.
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
+            PIC::Mesh::mesh->findTreeNode(xArr, lastNode_);
+        lastNode_ = node;          // update hint for next call
+
+        if (node == nullptr || node->block == nullptr) {
+            // Particle is outside the domain or in an unallocated block.
+            // Return zero; the caller's boundary check will handle this.
+            B_T.x = B_T.y = B_T.z = 0.0;
             return;
         }
 
-        double xa[3]      = {x_m.x, x_m.y, x_m.z};
-        double b_total[3] = {0.0, 0.0, 0.0};
-        double ps_local   = PS_;
-        double parmod_local[11];
-        for (int i = 0; i < 11; ++i) parmod_local[i] = PARMOD_[i];
+        // Determine which cell centre within the block is closest to x.
+        // Cell i occupies [xmin + i*dx, xmin + (i+1)*dx] where dx = blockSize/_BLOCK_CELLS_X_.
+        const double dx = (node->xmax[0] - node->xmin[0]) / _BLOCK_CELLS_X_;
+        const double dy = (node->xmax[1] - node->xmin[1]) / _BLOCK_CELLS_Y_;
+        const double dz = (node->xmax[2] - node->xmin[2]) / _BLOCK_CELLS_Z_;
 
-        {
-            std::lock_guard<std::mutex> lk(gTsyMutex);
-            const std::string mdl = Model();
+        int i = static_cast<int>((xArr[0] - node->xmin[0]) / dx);
+        int j = static_cast<int>((xArr[1] - node->xmin[1]) / dy);
+        int k = static_cast<int>((xArr[2] - node->xmin[2]) / dz);
 
-            if (mdl == "T96") {
-                T96::PS = ps_local;
-                for (int i = 0; i < 11; ++i) T96::PARMOD[i] = parmod_local[i];
-                T96::GetMagneticField(b_total, xa);
-            } else if (mdl == "T05") {
-                T05::PS = ps_local;
-                for (int i = 0; i < 11; ++i) T05::PARMOD[i] = parmod_local[i];
-                T05::GetMagneticField(b_total, xa);
-            } else if (mdl == "T01") {
-                T01::PS = ps_local;
-                for (int i = 0; i < 11; ++i) T01::PARMOD[i] = parmod_local[i];
-                T01::GetMagneticField(b_total, xa);
-            } else if (mdl == "TA15N" || mdl == "TA15B") {
-                TA15::PS = ps_local;
-                TA15::SetVersion((mdl=="TA15N") ? TA15::Version_N : TA15::Version_B);
-                for (int i = 0; i < 10; ++i) TA15::PARMOD[i] = parmod_local[i];
-                TA15::GetMagneticField(b_total, xa);
-            } else if (mdl == "TA16") {
-                TA16::PS = ps_local;
-                for (int i = 0; i < 10; ++i) TA16::PARMOD[i] = parmod_local[i];
-                TA16::GetMagneticField(b_total, xa);
-            } else {
-                throw std::runtime_error(
-                    "Mode3D cutoff: unsupported FIELD_MODEL '" + mdl +
-                    "'. Supported: T96, T01, T05, TA15N, TA15B, TA16, DIPOLE.");
-            }
-        } // mutex released
+        // Clamp to interior cells [0, _BLOCK_CELLS_? - 1].
+        i = std::max(0, std::min(i, _BLOCK_CELLS_X_ - 1));
+        j = std::max(0, std::min(j, _BLOCK_CELLS_Y_ - 1));
+        k = std::max(0, std::min(k, _BLOCK_CELLS_Z_ - 1));
 
-        B_T.x = b_total[0];
-        B_T.y = b_total[1];
-        B_T.z = b_total[2];
+        const int nd = PIC::Mesh::mesh->getCenterNodeLocalNumber(i, j, k);
+        PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(nd);
+
+        if (center == nullptr ||
+            !PIC::CPLR::DATAFILE::Offset::MagneticField.active) {
+            B_T.x = B_T.y = B_T.z = 0.0;
+            return;
+        }
+
+        // Read Bx, By, Bz from the data buffer using the same offset chain
+        // that InitMeshFields() used to write them.
+        const char* base = center->GetAssociatedDataBufferPointer()
+                         + PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin
+                         + PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset
+                         + PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+
+        B_T.x = *reinterpret_cast<const double*>(base + 0*sizeof(double));
+        B_T.y = *reinterpret_cast<const double*>(base + 1*sizeof(double));
+        B_T.z = *reinterpret_cast<const double*>(base + 2*sizeof(double));
     }
 
 private:
-    EarthUtil::AmpsParam prm_; // owned copy; mutated by ReinitGeopack
-    double PARMOD_[11];
-    double PS_;
-    std::string currentEpoch_;
+    // Mutable so GetB_T can update the search hint while remaining logically const.
+    mutable cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* lastNode_;
 };
 
 //======================================================================================
@@ -436,7 +378,7 @@ static std::vector<V3> BuildFibonacciDirs(int nDir) {
 //======================================================================================
 
 static inline double SelectDt3D(const EarthUtil::AmpsParam& prm,
-                                  const cMode3DFieldEval& field,
+                                  const cMode3DMeshFieldEval& field,
                                   const V3& x, const V3& p,
                                   double q_C, double m0_kg,
                                   const DomainBox3D& box,
@@ -536,7 +478,7 @@ static inline double SelectDt3D(const EarthUtil::AmpsParam& prm,
 //   - Domain geometry uses DomainBox3D (metres) instead of DomainBoxRe (Earth radii).
 //     All distance comparisons are therefore done in metres without any Re↔m
 //     conversion factor.
-//   - The field evaluator type is cMode3DFieldEval (implements IGridlessFieldEvaluator)
+//   - The field evaluator type is cMode3DMeshFieldEval (implements IGridlessFieldEvaluator)
 //     rather than the gridless cFieldEvaluator.  Both classes expose the same
 //     GetB_T(x, B) virtual method, so all mover calls are identical.
 //
@@ -558,12 +500,12 @@ static inline double SelectDt3D(const EarthUtil::AmpsParam& prm,
 //     is called once at startup (before any parallel region).
 //   - HybridPrepareStepUseGuidingCenter() reads and writes thread-local storage
 //     (the HYBRID trajectory context); each OpenMP thread is safe.
-//   - The field evaluator (cMode3DFieldEval) is per-thread; see Section 5.
-//   - StepParticleChecked calls field.GetB_T which is protected by gTsyMutex.
+//   - The field evaluator (cMode3DMeshFieldEval) is per-thread; see Section 5.
+//   - StepParticleChecked calls field.GetB_T which reads from the frozen AMR mesh (no mutex).
 //======================================================================================
 
 static bool TraceAllowed3D(const EarthUtil::AmpsParam& prm,
-                            cMode3DFieldEval& field,
+                            cMode3DMeshFieldEval& field,
                             const V3& x0_m,
                             const V3& v0_unit,
                             double R_GV,
@@ -673,7 +615,7 @@ static bool TraceAllowed3D(const EarthUtil::AmpsParam& prm,
 //======================================================================================
 
 static double CutoffForDir_GV(const EarthUtil::AmpsParam& prm,
-                               cMode3DFieldEval& field,
+                               cMode3DMeshFieldEval& field,
                                const V3& x0_m,
                                const V3& dir_unit,   // ARRIVAL direction (backtraced as -dir)
                                double q_C, double m0_kg,
@@ -728,7 +670,7 @@ static double CutoffForDir_GV(const EarthUtil::AmpsParam& prm,
 //======================================================================================
 
 static double ComputeCutoffAtPoint_GV(const EarthUtil::AmpsParam& prm,
-                                       cMode3DFieldEval& field,
+                                       cMode3DMeshFieldEval& field,
                                        const V3& x0_m,
                                        const std::vector<V3>& dirs,
                                        bool samplingVertical,
@@ -1094,53 +1036,39 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     //
     // Requirement 3: Parallelization of calculation for individual points with OpenMP.
     //
-    // Each OpenMP thread owns a PRIVATE cMode3DFieldEval instance.  This avoids any
-    // Geopack common-block aliasing between threads during ReinitGeopack().
+    // Each OpenMP thread owns a PRIVATE cMode3DMeshFieldEval instance.
+    // The evaluator reads from the frozen AMR mesh (no shared mutable state),
+    // so no mutex or synchronisation is needed between threads.
     //
-    // The `firstprivate(prm)` clause gives each thread its own copy of the parameter
-    // block, which ReinitGeopack may mutate when updating PARMOD from a driver table.
-    //
-    // Result writes use an `omp critical` guard: each write is a scalar store to a
-    // distinct array element (indexed by `localIdx`), so the critical section is
-    // entered at most once per point per thread — negligible overhead.
+    // The mutable lastNode_ cache inside cMode3DMeshFieldEval is per-instance
+    // (and therefore per-thread), so findTreeNode() hint updates are naturally
+    // thread-safe without any explicit protection.
     //==================================================================================
 
-    #pragma omp parallel firstprivate(prm)
+    #pragma omp parallel
     {
-        // Thread-private field evaluator.  Construction calls Geopack::Init once for
-        // the run's global epoch; ReinitGeopack() will update it per point when
-        // per-point epochs are present (TRAJECTORY mode).
-        cMode3DFieldEval threadField(prm);
-
-        // Thread-private driver-table pointer (null when prm.temporal.driverTable is
-        // empty, as in the common static-field case).
-        const EarthUtil::TsDriverTable* drvTable =
-            prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable;
+        // Thread-private mesh field evaluator.
+        // Constructed once per thread; lastNode_ starts as nullptr and is
+        // updated on every GetB_T call as the particle moves through the mesh.
+        cMode3DMeshFieldEval threadField;
 
         #pragma omp for schedule(dynamic, 1)
         for (int localIdx = 0; localIdx < nLocal; ++localIdx) {
             const int globalIdx = locStart + localIdx;
 
-            // Per-point epoch and field-model update (covers TRAJECTORY mode where
-            // each sample carries its own timestamp and potentially different field
-            // parameters loaded from the driver table).
-            //
-            // For POINTS and SHELLS mode, EpochForLocation returns the global epoch
-            // and drvTable is null, so ReinitGeopack is effectively a no-op
-            // (fast-path guard on unchanged epoch).
-            const std::string epoch = EpochForLocation(prm, globalIdx);
-            threadField.ReinitGeopack(epoch, drvTable);
-
             // Reconstruct the observation position for this point.
             const V3 x0_m = LocationToX0m(prm, globalIdx, nLon, nLat, d_deg, nPtsShell);
 
             // Compute the minimum cutoff rigidity over all sampled directions.
+            // The mesh field is the same for all points (initialized once by
+            // InitMeshFields in Mode3D::Run before this parallel section).
             const double rc = ComputeCutoffAtPoint_GV(
                 prm, threadField, x0_m, dirs, samplingVertical,
                 q_C, m0, box, Rmin, Rmax);
 
-            // Store result.  Each localIdx is unique per thread in this loop body,
-            // so the critical section prevents compiler/cache aliasing only.
+            // Store result — each localIdx is unique to this thread in the
+            // dynamic schedule, so the critical section is a no-op in practice
+            // but guards against any future collapse/vectorisation reordering.
             #pragma omp critical
             {
                 rcLocal[(size_t)localIdx]   = rc;
