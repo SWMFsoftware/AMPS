@@ -1,9 +1,11 @@
 #include "Mode3D.h"
 #include "ElectricField.h"
+#include "CutoffRigidityMode3D.h"
 
 #include <cstdio>
 #include <cmath>
 #include <string>
+#include <iostream>
 
 #include "pic.h"
 #include "../../interface/T96Interface.h"
@@ -277,38 +279,107 @@ void InitSphere() {
 } // namespace
 
 int Run(const EarthUtil::AmpsParam& prm) {
-  // Reuse the standard AMPS initialization path so that the 3D mode generates
-  // the same tree, internal sphere, block allocation, and cell metrics as the
-  // rest of the code rather than creating a separate standalone mesh.
-  Earth::ModelMode=Earth::CutoffRigidityMode;
+  //============================================================================
+  // Mode3D::Run — entry point for the 3D cutoff rigidity workflow.
+  //
+  // Initialisation sequence
+  // -----------------------
+  // 1. Mark execution mode and configure domain bounds from prm so that
+  //    RunCutoffRigidity can read ParsedDomainMin/Max without re-parsing.
+  //
+  // 2. REPLICATED-DOMAIN mesh initialisation.
+  //    Requirement: "the entire domain needs to be allocated for each MPI
+  //    process" (design spec §3).
+  //
+  //    Standard amps_init_mesh() distributes AMR blocks across ranks using
+  //    PIC::nTotalThreads.  To replicate the domain on every rank we
+  //    temporarily override:
+  //
+  //       PIC::nTotalThreads = 1   → all blocks assigned to "thread 0" of
+  //       PIC::ThisThread    = 0     each rank's private single-rank view.
+  //
+  //    After amps_init_mesh() returns, the true MPI topology is restored so
+  //    that downstream utilities (Tecplot writers, MPI_Barrier, etc.) behave
+  //    correctly.  Every rank now owns the complete AMR tree.
+  //
+  // 3. Sphere and field-model configuration (diagnostic; same as before).
+  //
+  // 4. Field initialisation in mesh cells (diagnostic Tecplot output).
+  //    The cutoff solver uses direct Tsyganenko calls per step — it does NOT
+  //    read stored mesh-cell field values — so this step is optional for the
+  //    cutoff workflow but is retained for Mode3D diagnostic outputs.
+  //
+  // 5. RunCutoffRigidity: MPI × OpenMP parallel cutoff computation.
+  //    - Static point distribution across MPI ranks (each rank independent).
+  //    - OpenMP threads within each rank parallelise over individual points.
+  //    - No MPI communication during computation.
+  //    - Rank 0 gathers scalar results and writes Tecplot output files.
+  //============================================================================
+
+  Earth::ModelMode = Earth::CutoffRigidityMode;
   ApplyParsedDomain(prm);
 
-  PIC::InitMPI();
+  // ---- Replicated-domain initialisation -----------------------------------
+  //
+  // Requirement: every MPI process must independently own the COMPLETE AMR
+  // mesh so that backtracing calculations are fully independent across ranks.
+  //
+  // Mechanism:
+  //   PIC::InitMPI(/*independentDomainMode=*/true) calls
+  //   MPI_Comm_split(MPI_COMM_WORLD, worldRank, 0, &MPI_GLOBAL_COMMUNICATOR)
+  //   before querying rank/size.  Each process therefore obtains:
+  //       PIC::ThisThread    = 0
+  //       PIC::nTotalThreads = 1
+  //   from its private singleton communicator.
+  //
+  //   Because the AMPS mesh partitioner uses PIC::nTotalThreads to divide AMR
+  //   blocks, setting it to 1 causes amps_init_mesh() to assign ALL blocks to
+  //   "rank 0" — which is every process, each in its own singleton universe.
+  //   The result is an identical, complete AMR tree on every rank.
+  //
+  //   The singleton communicator persists for the lifetime of the run: the
+  //   !initialized guard inside InitMPI() ensures that subsequent calls from
+  //   Init_BeforeParser / amps_init leave MPI_GLOBAL_COMMUNICATOR unchanged,
+  //   so no manual save-and-restore of PIC::nTotalThreads is needed.
+  //
+  //   MPI_COMM_WORLD remains intact; RunCutoffRigidity uses it directly for
+  //   inter-rank point distribution and result gathering.
+  // -------------------------------------------------------------------------
+  PIC::InitMPI(/*independentDomainMode=*/true);
   Exosphere::Init_SPICE();
-  amps_init_mesh();
-  amps_init();
 
-  // Explicitly initialise and configure the inner sphere boundary, mirroring
-  // the SphereInsideDomain block in main_lib.cpp::amps_init_mesh().
-  // amps_init_mesh() registers the sphere and sets Earth::Planet; InitSphere()
-  // retrieves that handle and applies all sphere properties (geometry,
-  // callbacks, cutoff-rigidity output hooks) so the setup is auditable here
-  // rather than hidden inside amps_init_mesh().
+  amps_init_mesh();   // every rank builds the complete AMR tree
+  amps_init();        // block allocation, data-offset registration
+
+  //----------------------------------------------------------------------------
+  // Sphere and field-model configuration
+  //----------------------------------------------------------------------------
   InitSphere();
-
   ConfigureBackgroundFieldModel(prm);
 
-  // Populate every cell's B and E data buffers in the AMR tree, mirroring the
-  // ghost-cell-inclusive traversal of Earth::InitMagneticField but routing
-  // field evaluation through the model-aware helpers so that T96, T05, TA16,
-  // and DIPOLE are all handled consistently.
-  InitMeshFields(prm,PIC::Mesh::mesh->rootTree);
+  //----------------------------------------------------------------------------
+  // Mesh field initialisation (diagnostic Tecplot output)
+  // The cutoff solver evaluates fields directly from model calls per integration
+  // step and does not read stored mesh-cell field values.
+  //----------------------------------------------------------------------------
+  InitMeshFields(prm, PIC::Mesh::mesh->rootTree);
+  PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_3d_initialized.data.dat", 0);
 
-  // The output filename is passed as a base name; in parallel runs each rank
-  // appends its own suffix inside WriteTecplotMesh().
-  //WriteTecplotMesh(prm,"amps_3d_initialized_mesh.dat");
-  PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_3d_initialized.data.dat",0);
-  return 0;
+  //----------------------------------------------------------------------------
+  // Cutoff rigidity computation (MPI_COMM_WORLD × OpenMP)
+  // Each rank independently processes its static point slice; OpenMP threads
+  // within each rank parallelise over individual trajectory points.
+  //----------------------------------------------------------------------------
+  std::cout << "[Mode3D] Starting cutoff rigidity calculation...\n";
+  std::cout.flush();
+
+  const int status = RunCutoffRigidity(prm);
+
+  std::cout << "[Mode3D] Cutoff rigidity calculation complete (status="
+            << status << ").\n";
+  std::cout.flush();
+
+  return status;
 }
 
 } // namespace Mode3D
