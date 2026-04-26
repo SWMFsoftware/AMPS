@@ -245,17 +245,10 @@
 //
 // Stormer vertical cutoff: Rc = R0(M) * cos^4(lambda) / r^2, with
 // R0(M) [GV] = 0.299792458 * (1/4) * (mu0/4pi) * M / Re^2
-static inline double StormerVerticalCoeff_GV(double momentScale_Me,
-                                             double Re_m /* _EARTH__RADIUS_ */) {
-  constexpr double mu0_over_4pi = 1.0e-7;          // SI
-  constexpr double c_to_GV_per_Tm = 0.299792458;   // (c/1e9) converts T·m -> GV
-  constexpr double M_E_Am2 = Earth::GridlessMode::Dipole::M_E_Am2;              // your code constant (modern-era representative)
-
-  const double M = momentScale_Me * M_E_Am2;       // A·m^2
-  const double Brho_Tm = (mu0_over_4pi * M) / (Re_m * Re_m); // T·m scale at equator, r=Re
-  const double R0_GV = c_to_GV_per_Tm * 0.25 * Brho_Tm;      // Stormer vertical factor 1/4
-  return R0_GV;
-}
+// StormerVerticalCoeff_GV is now declared inline in CutoffRigidityGridless.h
+// (Earth::GridlessMode namespace). Import it into file scope so the existing
+// call sites inside the anonymous namespace need no changes.
+using Earth::GridlessMode::StormerVerticalCoeff_GV;
 
 
 

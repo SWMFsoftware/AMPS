@@ -277,6 +277,37 @@ namespace Earth {
                               double R_GV,
                               TrajectoryExitState* exitState,
                               double maxTraceTimeOverride_s=-1.0);
+
+    //--------------------------------------------------------------------------
+    // StormerVerticalCoeff_GV
+    //
+    // Returns the Störmer coefficient R₀ [GV] for the vertical geomagnetic
+    // cutoff rigidity in a centred-dipole field:
+    //
+    //   Rc_vert(λ, r) = StormerVerticalCoeff_GV(momentScale_Me, Re_m)
+    //                 * momentScale_Me          ← caller multiplies again
+    //                 * cos⁴(λ) / (r/Re_m)²
+    //
+    // Derivation: Lorentz balance at the magnetic equator gives
+    //   p c = q (μ₀/4π) M / (4 r²)  →  Rc [GV] = (c/10⁹)·¼·(μ₀/4π)·M/Re²
+    //
+    // Constants match DipoleInterface.h (B_eq_Re = 3.12e-5 T, Re = 6371.2 km).
+    //
+    // Declared inline here so CutoffRigidityGridless.cpp and
+    // CutoffRigidityMode3D.cpp share one definition with no separate TU.
+    //--------------------------------------------------------------------------
+    inline double StormerVerticalCoeff_GV(double momentScale_Me, double Re_m) {
+        constexpr double mu0_over_4pi   = 1.0e-7;       // SI
+        constexpr double c_to_GV_per_Tm = 0.299792458;  // c/10⁹ [GV/(T·m)]
+        // M_E_Am2 from DipoleInterface.h: B_eq_Re=3.12e-5 T, Re_dipole=6371.2 km
+        constexpr double B_eq_Re     = 3.12e-5;
+        constexpr double Re_dipole_m = 6371.2e3;
+        const double M_E_Am2 =
+            B_eq_Re * Re_dipole_m * Re_dipole_m * Re_dipole_m / mu0_over_4pi;
+        const double M       = momentScale_Me * M_E_Am2;
+        const double Brho_Tm = (mu0_over_4pi * M) / (Re_m * Re_m);
+        return c_to_GV_per_Tm * 0.25 * Brho_Tm;
+    }
   }
 }
 
