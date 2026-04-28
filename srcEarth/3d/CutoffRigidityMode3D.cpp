@@ -242,7 +242,7 @@ static inline bool LostInnerSphere3D(const V3& x, double rInner) {
 // SECTION 5 — MESH-BASED FIELD EVALUATOR (per-thread)
 //======================================================================================
 //
-// cMode3DMeshFieldEval reads the magnetic field that InitMeshFields() stored in the
+// cMode3DMeshFieldEval interpolates the magnetic field that InitMeshFields() stored in the
 // AMPS AMR cell-centre data buffers.  It is the Mode3D replacement for the gridless
 // cFieldEvaluator (which calls Tsyganenko Fortran directly).
 //
@@ -256,7 +256,7 @@ static inline bool LostInnerSphere3D(const V3& x, double rInner) {
 //     particle advancing in small steps).
 //   - No mutex: the AMR tree and cell data are READ-ONLY during particle tracing.
 //
-// Field data layout (mirrors InitMeshFields write):
+// Field data layout for each stencil cell (mirrors InitMeshFields write):
 //   ptr = center->GetAssociatedDataBufferPointer()
 //       + PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin
 //       + PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset
@@ -273,7 +273,7 @@ class cMode3DMeshFieldEval : public IGridlessFieldEvaluator {
 public:
     cMode3DMeshFieldEval() : lastNode_(nullptr) {}
 
-    // Evaluate B [Tesla] at position x_m [m] by reading from the AMR mesh cells.
+    // Evaluate B [Tesla] at position x_m [m] by AMR-aware linear interpolation.
     void GetB_T(const V3& x_m, V3& B_T) const override {
         double xArr[3] = {x_m.x, x_m.y, x_m.z};
 
@@ -291,40 +291,50 @@ public:
             return;
         }
 
-        // Determine which cell centre within the block is closest to x.
-        // Cell i occupies [xmin + i*dx, xmin + (i+1)*dx] where dx = blockSize/_BLOCK_CELLS_X_.
-        const double dx = (node->xmax[0] - node->xmin[0]) / _BLOCK_CELLS_X_;
-        const double dy = (node->xmax[1] - node->xmin[1]) / _BLOCK_CELLS_Y_;
-        const double dz = (node->xmax[2] - node->xmin[2]) / _BLOCK_CELLS_Z_;
-
-        int i = static_cast<int>((xArr[0] - node->xmin[0]) / dx);
-        int j = static_cast<int>((xArr[1] - node->xmin[1]) / dy);
-        int k = static_cast<int>((xArr[2] - node->xmin[2]) / dz);
-
-        // Clamp to interior cells [0, _BLOCK_CELLS_? - 1].
-        i = std::max(0, std::min(i, _BLOCK_CELLS_X_ - 1));
-        j = std::max(0, std::min(j, _BLOCK_CELLS_Y_ - 1));
-        k = std::max(0, std::min(k, _BLOCK_CELLS_Z_ - 1));
-
-        const int nd = PIC::Mesh::mesh->getCenterNodeLocalNumber(i, j, k);
-        PIC::Mesh::cDataCenterNode* center = node->block->GetCenterNode(nd);
-
-        if (center == nullptr ||
-            !PIC::CPLR::DATAFILE::Offset::MagneticField.active) {
+        if (!PIC::CPLR::DATAFILE::Offset::MagneticField.active) {
             B_T.x = B_T.y = B_T.z = 0.0;
             return;
         }
 
-        // Read Bx, By, Bz from the data buffer using the same offset chain
-        // that InitMeshFields() used to write them.
-        const char* base = center->GetAssociatedDataBufferPointer()
-                         + PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin
-                         + PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset
-                         + PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+        // Build AMPS' cell-centred linear interpolation stencil at the particle
+        // position.  This routine is AMR-aware: when the particle is near a
+        // refinement boundary it constructs a multi-block stencil and blends
+        // fine/coarse stencils as needed, instead of assuming a uniform local
+        // trilinear stencil.
+        PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
+        PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xArr, node, Stencil);
 
-        B_T.x = *reinterpret_cast<const double*>(base + 0*sizeof(double));
-        B_T.y = *reinterpret_cast<const double*>(base + 1*sizeof(double));
-        B_T.z = *reinterpret_cast<const double*>(base + 2*sizeof(double));
+        if (Stencil.Length <= 0) {
+            B_T.x = B_T.y = B_T.z = 0.0;
+            return;
+        }
+
+        // Interpolate B from the cell-centred values written by InitMeshFields().
+        // DATAFILE::GetBackgroundData applies the same offset chain used when the
+        // data were stored:
+        //   CenterNodeAssociatedDataOffsetBegin + CurrDataFileOffset
+        //   + Offset::MagneticField.RelativeOffset.
+        double B[3] = {0.0, 0.0, 0.0};
+        double BCell[3];
+
+        for (int iStencil = 0; iStencil < Stencil.Length; ++iStencil) {
+            PIC::Mesh::cDataCenterNode* center = Stencil.cell[iStencil];
+            if (center == nullptr) continue;
+
+            PIC::CPLR::DATAFILE::GetBackgroundData(
+                BCell, 3,
+                PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,
+                center);
+
+            const double w = Stencil.Weight[iStencil];
+            B[0] += w * BCell[0];
+            B[1] += w * BCell[1];
+            B[2] += w * BCell[2];
+        }
+
+        B_T.x = B[0];
+        B_T.y = B[1];
+        B_T.z = B[2];
     }
 
 private:
