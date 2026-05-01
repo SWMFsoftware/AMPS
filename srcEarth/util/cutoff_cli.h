@@ -58,6 +58,16 @@
 //         - Automated test scripts that exercise both branches from a single
 //           test input file.
 //
+//   -mode3d-output-initialized
+//       In -mode 3d, write amps_3d_initialized.data.dat after mesh field
+//       initialization. The default is to skip this potentially large diagnostic file.
+//
+//   -mode3d-field-eval <INTERPOLATION|ANALYTIC>
+//       In -mode 3d, select how the magnetic field is evaluated during tracing.
+//       INTERPOLATION (default) uses the AMR cell-centered interpolation stencil.
+//       ANALYTIC calls the same background-field function used to initialize the
+//       mesh cell centers.
+//
 //   -max-trace-distance <double>
 //       Override #NUMERICAL MAX_TRACE_DISTANCE from the input file.
 //       Units: Earth radii (Re) of cumulative traced path length.
@@ -130,6 +140,18 @@ namespace EarthUtil {
     // ANISOTROPIC : pitch-angle-dependent and spatially non-uniform boundary;
     //               requires a #BOUNDARY_ANISOTROPY section in the input file.
     std::string densityMode{""};
+
+    // -mode3d-output-initialized
+    // Boolean flag. When true, Mode3D::Run writes the initialized AMR mesh fields
+    // to amps_3d_initialized.data.dat. The default is false to avoid creating this
+    // large diagnostic file unless explicitly requested.
+    bool mode3dOutputInitialized{false};
+
+    // -mode3d-field-eval <INTERPOLATION|ANALYTIC>
+    // Optional Mode3D magnetic-field evaluation override.
+    // Empty or INTERPOLATION uses the AMR interpolation stencil.
+    // ANALYTIC calls Earth::Mode3D::EvaluateBackgroundMagneticFieldSI directly.
+    std::string mode3dFieldEval{""};
 
     // -max-trace-distance <double>
     // Optional CLI override for #NUMERICAL MAX_TRACE_DISTANCE.

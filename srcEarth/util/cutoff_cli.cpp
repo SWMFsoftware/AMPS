@@ -41,6 +41,8 @@
 //     -mode <3d|gridless>      Select solver mode.
 //     -i <file>                Input parameter file (AMPS_PARAM format).
 //     -mover <BORIS|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>   Particle mover (default: BORIS).
+//     -mode3d-output-initialized                         Write amps_3d_initialized.data.dat.
+//     -mode3d-field-eval <INTERPOLATION|ANALYTIC>        3D B-field source during tracing.
 //     -density-mode <ISOTROPIC|ANISOTROPIC>
 //                              Override DS_BOUNDARY_MODE from input file.
 //
@@ -88,6 +90,23 @@ CliOptions ParseCli(int argc,char** argv) {
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density-mode");
       opt.densityMode=argv[++i];
     }
+    else if (a=="-mode3d-output-initialized" || a=="--mode3d-output-initialized" ||
+             a=="-output-3d-initialized" || a=="--output-3d-initialized") {
+      // Optional Mode3D diagnostic output. Kept as a boolean flag because the
+      // default behavior should be no output unless explicitly requested.
+      opt.mode3dOutputInitialized=true;
+    }
+    else if (a=="-mode3d-field-eval" || a=="--mode3d-field-eval" ||
+             a=="-mode3d-b-field" || a=="--mode3d-b-field") {
+      // Optional Mode3D magnetic-field source during tracing.
+      // Validated in main after the input file has been parsed.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -mode3d-field-eval");
+      opt.mode3dFieldEval=argv[++i];
+    }
+    else if (a=="-mode3d-analytic-field" || a=="--mode3d-analytic-field") {
+      // Convenience alias for the common diagnostic/comparison use case.
+      opt.mode3dFieldEval="ANALYTIC";
+    }
     else if (a=="-max-trace-distance" || a=="--max-trace-distance") {
       // CLI override for the global cumulative trace-distance cap.
       // Units: Earth radii (Re). The option mirrors the input-file key
@@ -116,7 +135,7 @@ std::string HelpMessage(const char* progName) {
   out << "Usage:\n";
   out << "  " << progName << " -h\n";
   out << "  " << progName << " -mode gridless -i AMPS_PARAM.in [options]\n";
-  out << "  " << progName << " -mode 3d       -i AMPS_PARAM.in\n";
+  out << "  " << progName << " -mode 3d       -i AMPS_PARAM.in [options]\n";
   out << "\n";
 
   // -----------------------------------------------------------------------
@@ -177,6 +196,17 @@ std::string HelpMessage(const char* progName) {
   out << "            Physically appropriate for: SEP events (field-aligned PAD),\n";
   out << "            radiation belt pancake distributions, bidirectional streaming,\n";
   out << "            day/night asymmetric CME-driven boundary conditions.\n\n";
+  out << "  -mode3d-output-initialized | --mode3d-output-initialized   (optional; default: off)\n";
+  out << "      In -mode 3d, write amps_3d_initialized.data.dat after the AMR mesh\n";
+  out << "      cell-centered B/E fields have been initialized. This diagnostic file can\n";
+  out << "      be large, so it is skipped unless this flag is present.\n\n";
+
+  out << "  -mode3d-field-eval | --mode3d-field-eval <INTERPOLATION|ANALYTIC>   (optional; default: INTERPOLATION)\n";
+  out << "      In -mode 3d, select the magnetic-field source used during backtracing.\n";
+  out << "        INTERPOLATION  Use the AMR-aware cell-centered interpolation stencil.\n";
+  out << "        ANALYTIC       Call the same background-field evaluator used to prepopulate\n";
+  out << "                       the mesh cell centers. Alias: --mode3d-analytic-field.\n\n";
+
   out << "  -max-trace-distance | --max-trace-distance <double>   (optional)\n";
   out << "      Override #NUMERICAL / MAX_TRACE_DISTANCE from the input file.\n";
   out << "      Units: Earth radii (Re) of cumulative traced path length.\n";
@@ -262,6 +292,10 @@ std::string HelpMessage(const char* progName) {
   out << "Notes:\n";
   out << "  * All input positions assumed in GSM coordinates [km]; no transform applied.\n";
   out << "  * -mover and -density-mode override the corresponding input file settings.\n";
+  out << "  * Mode3D writes amps_3d_initialized.data.dat only when\n";
+  out << "    -mode3d-output-initialized is supplied.\n";
+  out << "  * Mode3D magnetic-field tracing uses interpolation by default; use\n";
+  out << "    -mode3d-field-eval ANALYTIC for direct background-field evaluation.\n";
   out << "  * MPI: rank 0 is master scheduler; ranks 1..N-1 are workers.\n";
   out << "    Dynamic point-level scheduling; no static decomposition.\n";
   out << "  * See AnisotropicSpectrum.h for the full physics derivation of the\n";

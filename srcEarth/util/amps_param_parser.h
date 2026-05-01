@@ -682,6 +682,20 @@ namespace EarthUtil {
   };
 
   //====================================================================================
+  // Mode3DOptions — command-line controls specific to the PIC-backed 3D workflow
+  //====================================================================================
+  struct Mode3DOptions {
+    // Write amps_3d_initialized.data.dat after InitMeshFields().
+    // Default is false because this is a diagnostic file and can be large.
+    bool outputInitializedFile{false};
+
+    // Magnetic-field source used by the Mode3D cutoff tracer.
+    // false: AMR interpolation from cell-centered data populated by InitMeshFields().
+    // true : direct analytic/background evaluator call via EvaluateBackgroundMagneticFieldSI().
+    bool forceAnalyticMagneticField{false};
+  };
+
+  //====================================================================================
   // EnergyChannel — one user-defined integral-flux channel (#ENERGY_CHANNELS section)
   //====================================================================================
   //
@@ -882,6 +896,7 @@ namespace EarthUtil {
     std::string runId{"UNKNOWN"};
 
     CalcMode calc;
+    Mode3DOptions mode3d;
     CutoffScan cutoff;
     DensitySpectrumParam densitySpectrum;
     AnisotropyParam anisotropy;
