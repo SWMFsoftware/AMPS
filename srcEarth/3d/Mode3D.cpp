@@ -381,15 +381,17 @@ int Run(const EarthUtil::AmpsParam& prm) {
   // whose rank in MPI_COMM_WORLD is 0 writes the file.  All other processes
   // skip the call entirely.  The resulting file is identical to a normal
   // single-process run because every rank holds the complete mesh.
-  if (PIC::nTotalThreads != 1) {
-    // Standard distributed-domain mode: outputMeshDataTECPLOT handles MPI.
-    PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_3d_initialized.data.dat", 0);
-  } else {
-    // Replicated-domain mode: only MPI_COMM_WORLD rank 0 writes.
-    int worldRank = 0;
-    MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);
-    if (worldRank == 0) {
+  if (prm.mode3d.outputInitializedFile) {
+    if (PIC::nTotalThreads != 1) {
+      // Standard distributed-domain mode: outputMeshDataTECPLOT handles MPI.
       PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_3d_initialized.data.dat", 0);
+    } else {
+      // Replicated-domain mode: only MPI_COMM_WORLD rank 0 writes.
+      int worldRank = 0;
+      MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);
+      if (worldRank == 0) {
+        PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_3d_initialized.data.dat", 0);
+      }
     }
   }
 
