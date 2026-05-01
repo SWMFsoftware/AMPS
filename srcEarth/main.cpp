@@ -1541,6 +1541,29 @@ int main(int argc,char **argv) {
           return 1;
         }
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
+
+        // Mode3D-specific CLI overrides. Defaults are deliberately conservative:
+        // do not write the potentially large initialized-mesh Tecplot file, and
+        // use AMR interpolation during tracing unless direct background-field
+        // evaluation is requested explicitly.
+        p.mode3d.outputInitializedFile = cli.mode3dOutputInitialized;
+        if (!cli.mode3dFieldEval.empty()) {
+          const std::string fieldEval = EarthUtil::ToUpper(cli.mode3dFieldEval);
+          if (fieldEval=="ANALYTIC" || fieldEval=="DIRECT") {
+            p.mode3d.forceAnalyticMagneticField = true;
+          }
+          else if (fieldEval=="INTERPOLATION" || fieldEval=="INTERPOLATED" ||
+                   fieldEval=="MESH" || fieldEval=="AMR") {
+            p.mode3d.forceAnalyticMagneticField = false;
+          }
+          else {
+            std::cerr << "Error: unknown Mode3D field-evaluation option -mode3d-field-eval "
+                      << cli.mode3dFieldEval
+                      << ". Valid values: INTERPOLATION or ANALYTIC.\n";
+            return 1;
+          }
+        }
+
         Earth::Mode3D::Run(p);
 	MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 	MPI_Finalize();
