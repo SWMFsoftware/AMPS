@@ -55,11 +55,12 @@
 // Outer box:    Mode3D::ParsedDomainMin[3] / ParsedDomainMax[3]  (SI meters)
 //               Set by ApplyParsedDomain() in Mode3D.cpp from prm.domain (km → m).
 //
-// Inner sphere: radius = _EARTH__RADIUS_  (Earth radius in SI meters)
+// Inner sphere: radius = prm.domain.rInner from #DOMAIN_BOUNDARY (km -> m)
 //               Centred at origin (GSM).
 //
-// These match the geometry established by amps_init_mesh() so that the cutoff tracer
-// and the AMPS particle mover see the same physical domain.
+// This must match the gridless cutoff solver exactly. The AMPS internal sphere
+// geometry may remain at the planetary radius for mesh/surface diagnostics, but
+// cutoff classification uses the user-requested R_INNER loss boundary.
 //
 //======================================================================================
 // RIGIDITY SEARCH
@@ -214,7 +215,7 @@ static inline double RigidityFromMomentum_GV(double p, double q_C_abs) {
 //======================================================================================
 //
 // Outer domain: rectangular box in SI meters, from Mode3D::ParsedDomainMin/Max.
-// Inner boundary: loss sphere of radius _EARTH__RADIUS_ centred at origin.
+// Inner boundary: loss sphere of radius prm.domain.rInner converted from km to m.
 //
 // These are set once at the start of RunCutoffRigidity and shared across all threads
 // as read-only data (no mutation after initialisation).
@@ -1093,7 +1094,17 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     box.xMin   = ParsedDomainMin[0];  box.xMax   = ParsedDomainMax[0];
     box.yMin   = ParsedDomainMin[1];  box.yMax   = ParsedDomainMax[1];
     box.zMin   = ParsedDomainMin[2];  box.zMax   = ParsedDomainMax[2];
-    box.rInner = _EARTH__RADIUS_;     // loss sphere = Earth surface
+
+    // Match the gridless cutoff solver exactly: R_INNER in #DOMAIN_BOUNDARY is
+    // the loss-sphere radius used for trajectory classification. Do not hard-code
+    // _EARTH__RADIUS_ here; several validation inputs intentionally use R_INNER
+    // slightly above the surface (for example 1.01 Re) to avoid grazing-boundary
+    // numerical ambiguity.
+    box.rInner = prm.domain.rInner * 1000.0;
+    if (!(box.rInner > 0.0)) {
+        throw std::runtime_error(
+            "Mode3D cutoff: invalid R_INNER in #DOMAIN_BOUNDARY; value must be positive.");
+    }
 
     //==================================================================================
     // 14.5 — Direction grid (Fibonacci sphere)
@@ -1174,7 +1185,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
             << "Domain [m]     : x[" << box.xMin << "," << box.xMax << "] "
             << "y[" << box.yMin << "," << box.yMax << "] "
             << "z[" << box.zMin << "," << box.zMax << "]\n"
-            << "Inner sphere r : " << box.rInner << " m\n"
+            << "Inner sphere r : " << box.rInner << " m (from R_INNER)\n"
             << "=========================================\n";
         std::cout.flush();
     }

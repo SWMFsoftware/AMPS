@@ -19,8 +19,8 @@
 //
 //   1. Domain geometry is taken from the AMPS AMR tree (ParsedDomainMin/Max set by
 //      ApplyParsedDomain in Mode3D.cpp), not from the AMPS_PARAM.in km values.
-//      This guarantees that the cutoff tracer uses exactly the same bounding box and
-//      inner-sphere radius as the rest of the Mode3D framework.
+//      The cutoff tracer uses this same bounding box and uses R_INNER from
+//      #DOMAIN_BOUNDARY for the loss sphere, matching gridless cutoff mode.
 //
 //   2. Field evaluation is still performed by direct Tsyganenko / IGRF library calls
 //      (exactly as in the gridless solver), NOT by interpolating mesh-stored values.
@@ -124,7 +124,7 @@
 //   - dt_gyro = GYRO_ANGLE_LIMIT / omega_c     (limits rotation angle per step)
 //   - dt_geo  = TRAVEL_FRACTION * d_nearest / v (limits overshoot near boundaries)
 //   - dt      = min(dt_gyro, dt_geo, user cap, time remaining)
-//   - Inner boundary: loss sphere of radius _EARTH__RADIUS_ centred at origin
+//   - Inner boundary: loss sphere of radius R_INNER from #DOMAIN_BOUNDARY
 //   - Outer boundary: rectangular box from ParsedDomainMin/Max
 //   - ALLOWED if trajectory exits the outer box before hitting the inner sphere
 //   - FORBIDDEN otherwise (inner sphere hit, time cap, step cap)
