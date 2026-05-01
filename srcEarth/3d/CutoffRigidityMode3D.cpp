@@ -271,11 +271,34 @@ static inline bool LostInnerSphere3D(const V3& x, double rInner) {
 
 class cMode3DMeshFieldEval : public IGridlessFieldEvaluator {
 public:
-    cMode3DMeshFieldEval() : lastNode_(nullptr) {}
+    explicit cMode3DMeshFieldEval(const EarthUtil::AmpsParam& prm)
+      : prm_(prm), model_(EarthUtil::ToUpper(prm.field.model)), lastNode_(nullptr) {}
 
-    // Evaluate B [Tesla] at position x_m [m] by AMR-aware linear interpolation.
+    // Evaluate B [Tesla] at position x_m [m]. By default this uses AMR-aware
+    // interpolation from the cell-centered values written by InitMeshFields().
+    // When requested from the CLI, it instead calls the same background-field
+    // evaluator used by InitMeshFields() to prepopulate those cell centers.
     void GetB_T(const V3& x_m, V3& B_T) const override {
         double xArr[3] = {x_m.x, x_m.y, x_m.z};
+
+        if (prm_.mode3d.forceAnalyticMagneticField) {
+            double B[3] = {0.0, 0.0, 0.0};
+
+            // Evaluate with the same function used by InitMeshFields().  This path
+            // may touch shared model state (Tsyganenko/TA Fortran common blocks, or
+            // the dipole helper state), so serialize it when OpenMP is enabled.
+#ifdef _OPENMP
+#pragma omp critical(Mode3DAnalyticMagneticFieldEval)
+#endif
+            {
+                Earth::Mode3D::EvaluateBackgroundMagneticFieldSI(B, xArr, prm_);
+            }
+
+            B_T.x = B[0];
+            B_T.y = B[1];
+            B_T.z = B[2];
+            return;
+        }
 
         // Locate the leaf block that contains xArr.
         // The lastNode_ hint makes subsequent calls O(1) when the particle stays
@@ -335,9 +358,41 @@ public:
         B_T.x = B[0];
         B_T.y = B[1];
         B_T.z = B[2];
+
+        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_ && model_ == "DIPOLE") {
+          // In debugger builds, compare interpolated Mode3D values with the same
+          // analytic/background evaluator used by InitMeshFields(). This is only
+          // a diagnostic check; it must not overwrite the interpolation result.
+          double BExact[3] = {0.0, 0.0, 0.0};
+#ifdef _OPENMP
+#pragma omp critical(Mode3DAnalyticMagneticFieldEval)
+#endif
+          {
+            Earth::Mode3D::EvaluateBackgroundMagneticFieldSI(BExact, xArr, prm_);
+          }
+
+          const double dBx = B_T.x - BExact[0];
+          const double dBy = B_T.y - BExact[1];
+          const double dBz = B_T.z - BExact[2];
+          const double diffNorm = std::sqrt(dBx*dBx + dBy*dBy + dBz*dBz);
+          const double exactNorm = std::sqrt(BExact[0]*BExact[0]
+                                           + BExact[1]*BExact[1]
+                                           + BExact[2]*BExact[2]);
+          const double relErr = (exactNorm > 0.0) ? diffNorm / exactNorm : diffNorm;
+          if (relErr > 1.0e-5) {
+            std::cout << "Mode3D magnetic-field interpolation relative error "
+                      << relErr << " exceeds 1.0e-5 at x=["
+                      << xArr[0] << ", " << xArr[1] << ", " << xArr[2]
+                      << "] m" << std::endl;
+          }
+        }
+
     }
 
 private:
+    const EarthUtil::AmpsParam& prm_;
+    std::string model_;
+
     // Mutable so GetB_T can update the search hint while remaining logically const.
     mutable cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* lastNode_;
 };
@@ -1095,7 +1150,10 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
             << " (q=" << prm.species.charge_e << " e"
             << ", m=" << prm.species.mass_amu << " amu)\n"
             << "Rigidity range : [" << Rmin << ", " << Rmax << "] GV\n"
-            << "Sampling       : " << (samplingVertical ? "VERTICAL" : "ISOTROPIC") << "\n";
+            << "Sampling       : " << (samplingVertical ? "VERTICAL" : "ISOTROPIC") << "\n"
+            << "B eval source  : "
+            << (prm.mode3d.forceAnalyticMagneticField ? "ANALYTIC" : "AMR INTERPOLATION")
+            << "\n";
 
         if (!samplingVertical)
             std::cout << "N_directions   : " << dirs.size()
@@ -1163,7 +1221,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
         // Thread-private mesh field evaluator.
         // Constructed once per thread; lastNode_ starts as nullptr and is
         // updated on every GetB_T call as the particle moves through the mesh.
-        cMode3DMeshFieldEval threadField;
+        cMode3DMeshFieldEval threadField(prm);
 
         #pragma omp for schedule(dynamic, 1)
         for (int localIdx = 0; localIdx < nLocal; ++localIdx) {
