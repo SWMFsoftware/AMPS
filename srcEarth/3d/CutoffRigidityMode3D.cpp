@@ -55,12 +55,11 @@
 // Outer box:    Mode3D::ParsedDomainMin[3] / ParsedDomainMax[3]  (SI meters)
 //               Set by ApplyParsedDomain() in Mode3D.cpp from prm.domain (km → m).
 //
-// Inner sphere: radius = prm.domain.rInner from #DOMAIN_BOUNDARY (km -> m)
+// Inner sphere: radius = _EARTH__RADIUS_  (Earth radius in SI meters)
 //               Centred at origin (GSM).
 //
-// This must match the gridless cutoff solver exactly. The AMPS internal sphere
-// geometry may remain at the planetary radius for mesh/surface diagnostics, but
-// cutoff classification uses the user-requested R_INNER loss boundary.
+// These match the geometry established by amps_init_mesh() so that the cutoff tracer
+// and the AMPS particle mover see the same physical domain.
 //
 //======================================================================================
 // RIGIDITY SEARCH
@@ -215,7 +214,7 @@ static inline double RigidityFromMomentum_GV(double p, double q_C_abs) {
 //======================================================================================
 //
 // Outer domain: rectangular box in SI meters, from Mode3D::ParsedDomainMin/Max.
-// Inner boundary: loss sphere of radius prm.domain.rInner converted from km to m.
+// Inner boundary: loss sphere of radius _EARTH__RADIUS_ centred at origin.
 //
 // These are set once at the start of RunCutoffRigidity and shared across all threads
 // as read-only data (no mutation after initialisation).
@@ -1094,7 +1093,6 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     box.xMin   = ParsedDomainMin[0];  box.xMax   = ParsedDomainMax[0];
     box.yMin   = ParsedDomainMin[1];  box.yMax   = ParsedDomainMax[1];
     box.zMin   = ParsedDomainMin[2];  box.zMax   = ParsedDomainMax[2];
-
     // Match the gridless cutoff solver exactly: R_INNER in #DOMAIN_BOUNDARY is
     // the loss-sphere radius used for trajectory classification. Do not hard-code
     // _EARTH__RADIUS_ here; several validation inputs intentionally use R_INNER
@@ -1161,10 +1159,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
             << " (q=" << prm.species.charge_e << " e"
             << ", m=" << prm.species.mass_amu << " amu)\n"
             << "Rigidity range : [" << Rmin << ", " << Rmax << "] GV\n"
-            << "Sampling       : " << (samplingVertical ? "VERTICAL" : "ISOTROPIC") << "\n"
-            << "B eval source  : "
-            << (prm.mode3d.forceAnalyticMagneticField ? "ANALYTIC" : "AMR INTERPOLATION")
-            << "\n";
+            << "Sampling       : " << (samplingVertical ? "VERTICAL" : "ISOTROPIC") << "\n";
 
         if (!samplingVertical)
             std::cout << "N_directions   : " << dirs.size()
@@ -1185,7 +1180,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
             << "Domain [m]     : x[" << box.xMin << "," << box.xMax << "] "
             << "y[" << box.yMin << "," << box.yMax << "] "
             << "z[" << box.zMin << "," << box.zMax << "]\n"
-            << "Inner sphere r : " << box.rInner << " m (from R_INNER)\n"
+            << "Inner sphere r : " << box.rInner << " m\n"
             << "=========================================\n";
         std::cout.flush();
     }
