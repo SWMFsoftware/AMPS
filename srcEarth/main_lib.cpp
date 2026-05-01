@@ -142,7 +142,7 @@ double localResolution(double *x) {
     return 2.5*res;
   }
 
-  return 0.3*  2.5*res;
+  return  0.25*2.5*res;
 }
 
 //set up the local time step
@@ -734,7 +734,7 @@ void amps_init_mesh() {
          }
        } SetBackgroundMagneticField;
 
-       SetBackgroundMagneticField.Set(PIC::Mesh::mesh->rootTree);
+       //SetBackgroundMagneticField.Set(PIC::Mesh::mesh->rootTree);
        //PIC::CPLR::DATAFILE::SaveBinaryFile("EARTH-T96");
      }
 
