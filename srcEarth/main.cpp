@@ -41,6 +41,25 @@
 #include "gridless/GridlessParticleMovers.h"
 #include "3d/Mode3D.h"
 
+namespace {
+
+bool ApplyCutoffMoverCli(const EarthUtil::CliOptions& cli) {
+  if (cli.mover.empty()) return true;
+
+  MoverType moverType;
+  if (!ParseMoverType(cli.mover, moverType)) {
+    std::cerr << "Error: unknown mover option -mover " << cli.mover
+              << ". Allowed: BORIS, RK2, RK4, RK6, GC2, GC4, GC6, HYBRID"
+              << std::endl;
+    return false;
+  }
+
+  SetDefaultMoverType(moverType);
+  return true;
+}
+
+} // namespace
+
 int nZenithElements=200;
 int nAzimuthalElements=200;
 
@@ -1480,39 +1499,7 @@ int main(int argc,char **argv) {
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
 
 	//set up mover type used in the calculation 
-        if (!cli.mover.empty()) {
-          const std::string mover = EarthUtil::ToUpper(cli.mover);
-
-          if (mover=="BORIS") {
-            SetDefaultMoverType(MoverType::BORIS);
-          }
-          else if (mover=="RK2") {
-            SetDefaultMoverType(MoverType::RK2);
-          }
-          else if (mover=="RK4") {
-            SetDefaultMoverType(MoverType::RK4);
-          }
-          else if (mover=="RK6") {
-            SetDefaultMoverType(MoverType::RK6);
-          }
-	  else if (mover=="HYBRID") {
-            SetDefaultMoverType(MoverType::HYBRID);
-          }
-	  else if (mover=="GC2") {
-            SetDefaultMoverType(MoverType::GC2);
-          }
-          else if (mover=="GC4") {
-            SetDefaultMoverType(MoverType::GC4);
-          }
-          else if (mover=="GC6") {
-            SetDefaultMoverType(MoverType::GC6);
-          }
-          else {
-            std::cerr << "Error: unknown mover option -mover " << cli.mover
-                      << ". Allowed: BORIS, RK2, RK4, RK6, GC2, GC4, GC6, HYBRID" << std::endl;
-            return 1;
-          }
-        }
+        if (!ApplyCutoffMoverCli(cli)) return 1;
 
 
         // Dispatch gridless workflows by CALC_TARGET.
@@ -1563,6 +1550,10 @@ int main(int argc,char **argv) {
             return 1;
           }
         }
+
+        // Keep the trajectory integrator identical to the gridless path when
+        // the user selects a mover on the command line.
+        if (!ApplyCutoffMoverCli(cli)) return 1;
 
         Earth::Mode3D::Run(p);
 	MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
