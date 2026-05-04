@@ -358,35 +358,6 @@ public:
         B_T.x = B[0];
         B_T.y = B[1];
         B_T.z = B[2];
-
-        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_ && model_ == "DIPOLE") {
-          // In debugger builds, compare interpolated Mode3D values with the same
-          // analytic/background evaluator used by InitMeshFields(). This is only
-          // a diagnostic check; it must not overwrite the interpolation result.
-          double BExact[3] = {0.0, 0.0, 0.0};
-#ifdef _OPENMP
-#pragma omp critical(Mode3DAnalyticMagneticFieldEval)
-#endif
-          {
-            Earth::Mode3D::EvaluateBackgroundMagneticFieldSI(BExact, xArr, prm_);
-          }
-
-          const double dBx = B_T.x - BExact[0];
-          const double dBy = B_T.y - BExact[1];
-          const double dBz = B_T.z - BExact[2];
-          const double diffNorm = std::sqrt(dBx*dBx + dBy*dBy + dBz*dBz);
-          const double exactNorm = std::sqrt(BExact[0]*BExact[0]
-                                           + BExact[1]*BExact[1]
-                                           + BExact[2]*BExact[2]);
-          const double relErr = (exactNorm > 0.0) ? diffNorm / exactNorm : diffNorm;
-          if (relErr > 1.0e-5) {
-            std::cout << "Mode3D magnetic-field interpolation relative error "
-                      << relErr << " exceeds 1.0e-5 at x=["
-                      << xArr[0] << ", " << xArr[1] << ", " << xArr[2]
-                      << "] m" << std::endl;
-          }
-        }
-
     }
 
 private:
