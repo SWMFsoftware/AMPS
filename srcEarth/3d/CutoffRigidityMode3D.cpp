@@ -832,13 +832,57 @@ static V3 LocationToX0m(const EarthUtil::AmpsParam& prm, int loc,
 // SECTION 13 — TECPLOT OUTPUT WRITERS
 //======================================================================================
 //
-// The Störmer analytic reference is computed via
-// Earth::GridlessMode::StormerVerticalCoeff_GV (declared inline in
-// CutoffRigidityGridless.h) and Earth::GridlessMode::Dipole::gParams.m_hat
-// (from DipoleInterface.h) — the same functions and state used by the gridless
-// solver's WriteTecplotShells_DipoleAnalyticCompare.  This guarantees that the
-// analytic reference values in cutoff_3d_shells.dat are numerically identical
-// to those that would appear in the gridless dipole-compare output file.
+// The regular Mode3D output files keep the same compact schema as the gridless
+// production outputs:
+//   cutoff_3d_points.dat
+//   cutoff_3d_shells.dat
+//
+// For DIPOLE nightly tests, additional comparison files are written, matching
+// the gridless-path convention:
+//   cutoff_3d_points_dipole_compare.dat
+//   cutoff_3d_shells_dipole_compare.dat
+//
+// These comparison files report the numerically calculated cutoff beside the
+// analytic Størmer vertical cutoff for the same point/shell node.  For a clean
+// apples-to-apples benchmark the run should use CUTOFF_SAMPLING VERTICAL; if an
+// isotropic run is used, Rc_num_GV is the minimum over sampled directions and is
+// not expected to equal the vertical Størmer value.
+//======================================================================================
+
+static double StormerVerticalCutoff_GV(const EarthUtil::AmpsParam& prm,
+                                       const V3& x_m) {
+    const double r_m = v3norm(x_m);
+    if (!(r_m > 0.0)) return 0.0;
+
+    const double rhatx = x_m.x / r_m;
+    const double rhaty = x_m.y / r_m;
+    const double rhatz = x_m.z / r_m;
+
+    const double mx = Earth::GridlessMode::Dipole::gParams.m_hat[0];
+    const double my = Earth::GridlessMode::Dipole::gParams.m_hat[1];
+    const double mz = Earth::GridlessMode::Dipole::gParams.m_hat[2];
+
+    const double sinLam = mx*rhatx + my*rhaty + mz*rhatz;
+    const double cosLam = std::sqrt(std::max(0.0, 1.0 - sinLam*sinLam));
+    const double rRe    = r_m / _EARTH__RADIUS_;
+
+    // Same formula used by the gridless comparison writers:
+    //   Rc_vert = R0 * dipoleMoment_Me * cos^4(lambda) / (r/Re)^2
+    // Note: StormerVerticalCoeff_GV currently follows the gridless convention,
+    // where the caller also multiplies by dipoleMoment_Me.
+    const double R0_GV = Earth::GridlessMode::StormerVerticalCoeff_GV(
+                             prm.field.dipoleMoment_Me, _EARTH__RADIUS_);
+
+    return R0_GV * prm.field.dipoleMoment_Me
+                 * std::pow(cosLam, 4) / (rRe * rRe);
+}
+
+static void EnsureDipoleAnalyticState3D(const EarthUtil::AmpsParam& prm) {
+    // Mode3D does not necessarily construct the gridless cFieldEvaluator that
+    // initializes Dipole::gParams, so set the dipole axis explicitly before any
+    // analytic Størmer comparison is written.
+    Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
+}
 
 static void WriteTecplot3DPoints(const EarthUtil::AmpsParam& prm,
                                  const std::vector<double>& Rc,
@@ -873,75 +917,49 @@ static void WriteTecplot3DPoints(const EarthUtil::AmpsParam& prm,
     std::fclose(f);
 }
 
+static void WriteTecplot3DPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
+                                                       const std::vector<double>& Rc_num_GV,
+                                                       int nLoc) {
+    FILE* f = std::fopen("cutoff_3d_points_dipole_compare.dat", "w");
+    if (!f) throw std::runtime_error("Cannot write Tecplot file: cutoff_3d_points_dipole_compare.dat");
+
+    EnsureDipoleAnalyticState3D(prm);
+
+    std::fprintf(f, "TITLE=\"Mode3D Dipole Cutoff Rigidity: Numeric vs Analytic Vertical\"\n");
+    std::fprintf(f, "VARIABLES=\"id\",\"x\",\"y\",\"z\",\"Rc_num_GV\",\"Rc_vert_GV\",\"rel_err\"\n");
+    std::fprintf(f, "ZONE T=\"points\" I=%d F=POINT\n", nLoc);
+
+    for (int i = 0; i < nLoc; ++i) {
+        const auto& P = prm.output.points[(size_t)i];
+        const V3 x_m{P.x*1000.0, P.y*1000.0, P.z*1000.0};
+
+        const double Rc_vert = StormerVerticalCutoff_GV(prm, x_m);
+        const double Rc_num  = Rc_num_GV[(size_t)i];
+        const double rel     = (Rc_vert > 0.0 && Rc_num > 0.0)
+                             ? (Rc_num - Rc_vert) / Rc_vert
+                             : 0.0;
+
+        std::fprintf(f, "%d %e %e %e %e %e %e\n",
+                     i, P.x, P.y, P.z, Rc_num, Rc_vert, rel);
+    }
+
+    std::fclose(f);
+}
+
 static void WriteTecplot3DShells(const EarthUtil::AmpsParam& prm,
                                  const std::vector<std::vector<double>>& RcShell,
                                  const std::vector<std::vector<double>>& EminShell,
                                  int nLon, int nLat, double d_deg) {
-    //--------------------------------------------------------------------------
-    // Analytic Störmer reference columns
-    //
-    // Enabled when FIELD_MODEL = DIPOLE  AND  CUTOFF_SAMPLING = VERTICAL.
-    //
-    // The vertical cutoff in a centred-dipole field has a closed-form Störmer
-    // solution:  Rc(λ,r) = R₀ · cos⁴(λ) / (r/Rₑ)²
-    // where λ is the magnetic latitude measured from the dipole axis m̂.
-    //
-    // When CUTOFF_SAMPLING is VERTICAL the numerical solver traces the same
-    // radially inward direction as the Störmer vertical — the comparison is
-    // therefore physically meaningful.  For ISOTROPIC sampling the numerical
-    // result is the minimum over all directions (generally less than the
-    // vertical Störmer value), making the comparison misleading; in that case
-    // the extra columns are omitted.
-    //
-    // Extra VARIABLES written per data row when both conditions are met:
-    //   Rc_Stormer_GV  — analytic Störmer vertical cutoff [GV]
-    //   rel_err        — (Rc_numeric − Rc_Stormer) / Rc_Stormer
-    //--------------------------------------------------------------------------
-    const bool isDipole      = (EarthUtil::ToUpper(prm.field.model)    == "DIPOLE");
-    const bool isVertical    = (EarthUtil::ToUpper(prm.cutoff.sampling) == "VERTICAL");
-    const bool writeAnalytic = isDipole && isVertical;
-
-    // Pre-compute Störmer coefficient R₀ and the dipole axis unit vector m̂.
-    //
-    // We use Earth::GridlessMode::StormerVerticalCoeff_GV and
-    // Earth::GridlessMode::Dipole::gParams.m_hat — exactly the same state and
-    // function as WriteTecplotShells_DipoleAnalyticCompare in the gridless solver.
-    //
-    // SetTiltDeg is called explicitly here because the Mode3D flow does not go
-    // through the gridless cFieldEvaluator constructor that normally sets gParams.
-    double R0_GV = 0.0;
-    double mx = 0.0, my = 0.0, mz = 1.0;
-    if (writeAnalytic) {
-        Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
-        mx = Earth::GridlessMode::Dipole::gParams.m_hat[0];
-        my = Earth::GridlessMode::Dipole::gParams.m_hat[1];
-        mz = Earth::GridlessMode::Dipole::gParams.m_hat[2];
-        R0_GV = Earth::GridlessMode::StormerVerticalCoeff_GV(
-                    prm.field.dipoleMoment_Me, _EARTH__RADIUS_);
-    }
-
     FILE* f = std::fopen("cutoff_3d_shells.dat", "w");
     if (!f) throw std::runtime_error("Cannot write cutoff_3d_shells.dat");
 
     std::fprintf(f, "TITLE=\"Mode3D Cutoff Rigidity (SHELLS)\"\n");
-    if (writeAnalytic) {
-        std::fprintf(f, "VARIABLES=\"lon_deg\",\"lat_deg\","
-                        "\"Rc_GV\",\"Emin_MeV\","
-                        "\"Rc_Stormer_GV\",\"rel_err\"\n");
-    } else {
-        std::fprintf(f, "VARIABLES=\"lon_deg\",\"lat_deg\","
-                        "\"Rc_GV\",\"Emin_MeV\"\n");
-    }
+    std::fprintf(f, "VARIABLES=\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"\n");
 
     for (size_t s = 0; s < prm.output.shellAlt_km.size(); ++s) {
         const double alt_km = prm.output.shellAlt_km[s];
         std::fprintf(f, "ZONE T=\"alt_km=%g\" I=%d J=%d F=POINT\n",
                      alt_km, nLon, nLat);
-
-        // r/Re for this shell — must use the same Earth-radius constant as the
-        // AMR domain geometry so the Störmer denominator is consistent.
-        const double r_m = _RADIUS_(_EARTH_) + alt_km * 1000.0;
-        const double rRe = r_m / _EARTH__RADIUS_;
 
         const int nPts = nLon * nLat;
         for (int k = 0; k < nPts; ++k) {
@@ -950,42 +968,68 @@ static void WriteTecplot3DShells(const EarthUtil::AmpsParam& prm,
             double lat = -90.0 + d_deg * jLat;
             if (lat > 90.0) lat = 90.0;
             const double lon  = d_deg * iLon;
-            const double rc   = RcShell[s][(size_t)k];
-            const double emin = EminShell[s][(size_t)k];
 
-            if (writeAnalytic) {
-                // Unit position vector r̂ from (lon, lat).
-                const double lonRad = lon * M_PI / 180.0;
-                const double latRad = lat * M_PI / 180.0;
-                const double clat   = std::cos(latRad);
-                const double rhatx  = clat * std::cos(lonRad);
-                const double rhaty  = clat * std::sin(lonRad);
-                const double rhatz  = std::sin(latRad);
-
-                // Magnetic latitude λ:  sin(λ) = m̂ · r̂
-                const double sinLam = mx*rhatx + my*rhaty + mz*rhatz;
-                const double cosLam = std::sqrt(std::max(0.0, 1.0 - sinLam*sinLam));
-
-                // Störmer vertical cutoff — identical formula to
-                // WriteTecplotShells_DipoleAnalyticCompare in the gridless solver:
-                //   Rc_vert = R0 * dipoleMoment_Me * cos^4(lambda) / (r/Re)^2
-                const double Rc_S = R0_GV
-                                  * prm.field.dipoleMoment_Me
-                                  * std::pow(cosLam, 4) / (rRe * rRe);
-
-                // Relative error: defined only when both values are positive.
-                // At the magnetic poles cosLam → 0 and Rc_S → 0; avoid 0/0.
-                const double relErr = (Rc_S > 0.0 && rc > 0.0)
-                                     ? (rc - Rc_S) / Rc_S
-                                     : 0.0;
-
-                std::fprintf(f, "%e %e %e %e %e %e\n",
-                             lon, lat, rc, emin, Rc_S, relErr);
-            } else {
-                std::fprintf(f, "%e %e %e %e\n", lon, lat, rc, emin);
-            }
+            std::fprintf(f, "%e %e %e %e\n",
+                         lon, lat,
+                         RcShell[s][(size_t)k],
+                         EminShell[s][(size_t)k]);
         }
     }
+    std::fclose(f);
+}
+
+static void WriteTecplot3DShells_DipoleAnalyticCompare(
+                                 const EarthUtil::AmpsParam& prm,
+                                 const std::vector<std::vector<double>>& RcShell,
+                                 int nLon, int nLat, double d_deg) {
+    FILE* f = std::fopen("cutoff_3d_shells_dipole_compare.dat", "w");
+    if (!f) throw std::runtime_error("Cannot write Tecplot file: cutoff_3d_shells_dipole_compare.dat");
+
+    EnsureDipoleAnalyticState3D(prm);
+
+    std::fprintf(f, "TITLE=\"Mode3D Dipole Cutoff Rigidity (Shells): Numeric vs Analytic Vertical\"\n");
+    std::fprintf(f, "VARIABLES=\"lon_deg\",\"lat_deg\",\"x_km\",\"y_km\",\"z_km\","
+                    "\"Rc_num_GV\",\"Rc_vert_GV\",\"rel_err\"\n");
+
+    for (size_t s = 0; s < prm.output.shellAlt_km.size(); ++s) {
+        const double alt_km = prm.output.shellAlt_km[s];
+        std::fprintf(f, "ZONE T=\"alt_km=%g\" I=%d J=%d F=POINT\n",
+                     alt_km, nLon, nLat);
+
+        const double r_m = _EARTH__RADIUS_ + alt_km * 1000.0;
+        const int nPts = nLon * nLat;
+
+        for (int k = 0; k < nPts; ++k) {
+            const int    iLon = k % nLon;
+            const int    jLat = k / nLon;
+            double lat_deg = -90.0 + d_deg * jLat;
+            if (lat_deg > 90.0) lat_deg = 90.0;
+            const double lon_deg = d_deg * iLon;
+
+            const double lon = lon_deg * M_PI / 180.0;
+            const double lat = lat_deg * M_PI / 180.0;
+            const double clat = std::cos(lat);
+
+            const V3 x_m{r_m * clat * std::cos(lon),
+                         r_m * clat * std::sin(lon),
+                         r_m * std::sin(lat)};
+
+            const double x_km = x_m.x / 1000.0;
+            const double y_km = x_m.y / 1000.0;
+            const double z_km = x_m.z / 1000.0;
+
+            const double Rc_vert = StormerVerticalCutoff_GV(prm, x_m);
+            const double Rc_num  = RcShell[s][(size_t)k];
+            const double rel     = (Rc_vert > 0.0 && Rc_num > 0.0)
+                                 ? (Rc_num - Rc_vert) / Rc_vert
+                                 : 0.0;
+
+            std::fprintf(f, "%e %e %e %e %e %e %e %e\n",
+                         lon_deg, lat_deg, x_km, y_km, z_km,
+                         Rc_num, Rc_vert, rel);
+        }
+    }
+
     std::fclose(f);
 }
 
@@ -1284,6 +1328,13 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
             WriteTecplot3DPoints(prm, rcAll, eminAll, nLoc);
             std::cout << "Wrote: cutoff_3d_points.dat\n";
 
+#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
+            if (EarthUtil::ToUpper(prm.field.model) == "DIPOLE") {
+                WriteTecplot3DPoints_DipoleAnalyticCompare(prm, rcAll, nLoc);
+                std::cout << "Wrote: cutoff_3d_points_dipole_compare.dat\n";
+            }
+#endif
+
         } else {
             // SHELLS: reshape flat rcAll into per-shell arrays
             std::vector<std::vector<double>> RcShell(nShells),
@@ -1302,6 +1353,13 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
 
             WriteTecplot3DShells(prm, RcShell, EminShell, nLon, nLat, d_deg);
             std::cout << "Wrote: cutoff_3d_shells.dat\n";
+
+#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
+            if (EarthUtil::ToUpper(prm.field.model) == "DIPOLE") {
+                WriteTecplot3DShells_DipoleAnalyticCompare(prm, RcShell, nLon, nLat, d_deg);
+                std::cout << "Wrote: cutoff_3d_shells_dipole_compare.dat\n";
+            }
+#endif
         }
         std::cout.flush();
     }
