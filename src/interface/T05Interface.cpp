@@ -99,9 +99,17 @@ extern "C"{
 void T05::GetMagneticField(double *B,double *x) {
   int idim,IOPT=0;
   //Calculate global magnetic field in the magnetosphere
-  double xLocal[3],bT05[3];
+  double xLocal[3],bT05[3],r2=0.0;
 
-  for (idim=0;idim<3;idim++) xLocal[idim]=x[idim]/_EARTH__RADIUS_;
+  for (idim=0;idim<3;idim++) {
+    xLocal[idim]=x[idim]/_EARTH__RADIUS_;
+    r2+=xLocal[idim]*xLocal[idim];
+  }
+
+  if (r2<1.0) {
+    for (idim=0;idim<3;idim++) B[idim]=0.0;
+    return;
+  }
 
   //T04_s (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ)
   //X,Y,Z -  GSM POSITION (RE) 
