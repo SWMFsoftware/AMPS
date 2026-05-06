@@ -7046,145 +7046,145 @@ Check=
 >>>@echo "test_Geospace-Flux-Gridless-hybrid_check..." >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>@# Unzip compressed reference solutions (hybrid)
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_cosalpha_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_cosalpha_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_cosalpha_shell_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_cosalpha_shell_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_regression_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_regression_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_regression_shell_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_regression_shell_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_sinalpha_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_sinalpha_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_sinalpha_shell_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_sinalpha_shell_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_spatial_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_spatial_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_spatial_shell_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_spatial_shell_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_density_dipole_4pts_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_density_dipole_4pts_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_density_dipole_shell_hybrid.dat.gz
->>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_density_dipole_shell_hybrid.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_cosalpha.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_cosalpha.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_regression.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_regression.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_regression_shell.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_regression_shell.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_sinalpha.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_sinalpha.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_spatial.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_spatial.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_density_dipole_4pts.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_density_dipole_4pts.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_density_dipole_shell.dat.gz
+>>>gunzip -kf output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_density_dipole_shell.dat.gz
 
 >>>@echo "--- Subtest: test_aniso_cosalpha (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/density_gridless_points_dipole_compare--test_aniso_cosalpha.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_cosalpha_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_cosalpha.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha--density.diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/flux_gridless_points_dipole_compare--test_aniso_cosalpha.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_cosalpha_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_cosalpha.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha--flux.diff
 
 >>>@echo "--- Subtest: test_aniso_cosalpha_shell (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/density_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_cosalpha_shell_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha_shell--density.diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/flux_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_cosalpha_shell_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha_shell--flux.diff
 
 >>>@echo "--- Subtest: test_aniso_regression (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/density_gridless_points_dipole_compare--test_aniso_regression.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_regression_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_regression.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_regression--density.diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/flux_gridless_points_dipole_compare--test_aniso_regression.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_regression_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_regression.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_regression--flux.diff
 
 >>>@echo "--- Subtest: test_aniso_regression_shell (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/density_gridless_shells_dipole_compare--test_aniso_regression_shell.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_regression_shell_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_regression_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_regression_shell--density.diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/flux_gridless_shells_dipole_compare--test_aniso_regression_shell.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_regression_shell_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_regression_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_regression_shell--flux.diff
 
 >>>@echo "--- Subtest: test_aniso_sinalpha (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/density_gridless_points_dipole_compare--test_aniso_sinalpha.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_sinalpha_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_sinalpha.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha--density.diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/flux_gridless_points_dipole_compare--test_aniso_sinalpha.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_sinalpha_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_sinalpha.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha--flux.diff
 
 >>>@echo "--- Subtest: test_aniso_sinalpha_shell (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/density_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_sinalpha_shell_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha_shell--density.diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/flux_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_sinalpha_shell_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha_shell--flux.diff
 
 >>>@echo "--- Subtest: test_aniso_spatial (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/density_gridless_points_dipole_compare--test_aniso_spatial.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_spatial_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_spatial.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial--density.diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/flux_gridless_points_dipole_compare--test_aniso_spatial.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_spatial_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_spatial.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial--flux.diff
 
 >>>@echo "--- Subtest: test_aniso_spatial_shell (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/density_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_spatial_shell_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial_shell--density.diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/flux_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_spatial_shell_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial_shell--flux.diff
 
 >>>@echo "--- Subtest: test_density_dipole_4pts (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/density_gridless_points_dipole_compare--test_density_dipole_4pts.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_density_dipole_4pts_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_density_dipole_4pts.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_density_dipole_4pts--density.diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/flux_gridless_points_dipole_compare--test_density_dipole_4pts.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_density_dipole_4pts_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_density_dipole_4pts.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_density_dipole_4pts--flux.diff
 
 >>>@echo "--- Subtest: test_density_dipole_shell (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/density_gridless_shells_dipole_compare--test_density_dipole_shell.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_density_dipole_shell_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_density_dipole_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_density_dipole_shell--density.diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/flux_gridless_shells_dipole_compare--test_density_dipole_shell.dat \
->>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_density_dipole_shell_hybrid.dat \
+>>>  output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_density_dipole_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_density_dipole_shell--flux.diff
 
 >>>@# Combine all sub-diffs into master diff file
