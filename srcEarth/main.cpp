@@ -40,6 +40,7 @@
 #include "gridless/DensityGridless.h"
 #include "gridless/GridlessParticleMovers.h"
 #include "3d/Mode3D.h"
+#include "3d_forward/Mode3DForward.h"
 
 namespace {
 
@@ -1558,6 +1559,33 @@ int main(int argc,char **argv) {
         Earth::Mode3D::Run(p);
 	MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 	MPI_Finalize();
+        return EXIT_SUCCESS;
+      }
+      if (m=="3D_FORWARD") {
+        if (cli.inputFile.empty()) {
+          std::cerr << "Error: -mode 3d_forward requires -i <input-file>\n";
+          std::cerr << EarthUtil::HelpMessage(argv[0]);
+          return 1;
+        }
+        EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
+
+        // ---- CLI overrides for 3d_forward ----
+        // Shared flag: diagnostic initialized-mesh Tecplot file.
+        p.mode3dForward.outputInitializedFile = cli.mode3dOutputInitialized;
+
+        // Number of forward iterations.
+        if (cli.forward3dNiter > 0) p.mode3dForward.nIterations = cli.forward3dNiter;
+
+        // Boundary distribution type (default ISOTROPIC; extensible).
+        if (!cli.forward3dBoundaryDist.empty())
+          p.mode3dForward.boundaryDistType = EarthUtil::ToUpper(cli.forward3dBoundaryDist);
+
+        // Particle mover (shared with backward mode for consistency).
+        if (!ApplyCutoffMoverCli(cli)) return 1;
+
+        Earth::Mode3DForward::Run(p);
+        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+        MPI_Finalize();
         return EXIT_SUCCESS;
       }
 

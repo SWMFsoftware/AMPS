@@ -117,6 +117,20 @@ CliOptions ParseCli(int argc,char** argv) {
         exit(__LINE__,__FILE__,"-max-trace-distance must be >= 0 (0 means: disable the cap)");
       }
     }
+    // ----- 3d_forward specific options -----
+    else if (a=="-forward-niter" || a=="--forward-niter") {
+      // Override Mode3DForwardOptions::nIterations.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -forward-niter");
+      opt.forward3dNiter = std::stoi(argv[++i]);
+      if (opt.forward3dNiter < 1)
+        exit(__LINE__,__FILE__,"-forward-niter must be >= 1");
+    }
+    else if (a=="-forward-boundary-dist" || a=="--forward-boundary-dist") {
+      // Override Mode3DForwardOptions::boundaryDistType.
+      // Accepted values (case-insensitive): ISOTROPIC (others reserved for future use).
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -forward-boundary-dist");
+      opt.forward3dBoundaryDist = argv[++i];
+    }
     else {
       std::ostringstream oss;
       oss << "Unknown CLI token: '" << a << "'. Use -h for help.";
@@ -136,6 +150,7 @@ std::string HelpMessage(const char* progName) {
   out << "  " << progName << " -h\n";
   out << "  " << progName << " -mode gridless -i AMPS_PARAM.in [options]\n";
   out << "  " << progName << " -mode 3d       -i AMPS_PARAM.in [options]\n";
+  out << "  " << progName << " -mode 3d_forward -i AMPS_PARAM.in [options]\n";
   out << "\n";
 
   // -----------------------------------------------------------------------
@@ -148,7 +163,12 @@ std::string HelpMessage(const char* progName) {
   out << "      Select the solver execution path.\n";
   out << "        3d        Full PIC-backed 3D solver with mesh-interpolated fields.\n";
   out << "        gridless  Direct Tsyganenko/IGRF field evaluation + backtracing.\n";
-  out << "                  Supports both cutoff-rigidity and density/spectrum modes.\n\n";
+  out << "                  Supports both cutoff-rigidity and density/spectrum modes.\n";
+  out << "        3d_forward  Full PIC-backed 3D forward particle transport.\n";
+  out << "                  Injects particles at the outer domain boundary, propagates\n";
+  out << "                  them forward in time under the configured B/E fields, and\n";
+  out << "                  accumulates 3D volumetric number-density on the AMR mesh.\n";
+  out << "                  Requires #DENSITY_3D section in the input file.\n\n";
 
   out << "  -i <file>   (required)\n";
   out << "      Path to the AMPS_PARAM-format input file. Controls all physics and\n";
@@ -208,6 +228,19 @@ std::string HelpMessage(const char* progName) {
   out << "                       the mesh cell centers. Alias: --mode3d-analytic-field.\n\n";
 
   out << "  -max-trace-distance | --max-trace-distance <double>   (optional)\n";
+  out << "\n";
+  out << "3D Forward mode options (-mode 3d_forward):\n\n";
+  out << "  -forward-niter | --forward-niter <int>   (optional)\n";
+  out << "      Override FORWARD_N_ITERATIONS from the input file.\n";
+  out << "      Total number of forward time-step iterations to run.\n\n";
+  out << "  -forward-boundary-dist | --forward-boundary-dist <ISOTROPIC>   (optional)\n";
+  out << "      Override Mode3DForwardOptions::boundaryDistType.\n";
+  out << "      ISOTROPIC (default): cos(θ)-weighted hemisphere at each domain-boundary face.\n";
+  out << "      Other distributions (field-aligned beam, pancake) are reserved for future use.\n\n";
+  out << "  -mode3d-output-initialized\n";
+  out << "      Also works in 3d_forward mode: writes amps_3dforward_initialized.data.dat\n";
+  out << "      after the AMR mesh B/E fields have been populated.\n\n";
+  out << "\n";
   out << "      Override #NUMERICAL / MAX_TRACE_DISTANCE from the input file.\n";
   out << "      Units: Earth radii (Re) of cumulative traced path length.\n";
   out << "        value > 0   enable the cumulative-distance cap\n";

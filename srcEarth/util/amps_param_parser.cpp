@@ -2279,6 +2279,24 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="MAX_STEPS") p.numerics.maxSteps=std::stoi(val);
       else if (uKey=="MAX_TRACE_TIME") p.numerics.maxTraceTime_s=std::stod(val);
       else if (uKey=="MAX_TRACE_DISTANCE") p.numerics.maxTraceDistance_Re=std::stod(val);
+      // 3d_forward: simulation particles injected from domain boundary per iteration.
+      else if (uKey=="FORWARD_N_PARTICLES")  p.mode3dForward.nParticlesPerIter=std::stoi(val);
+      // 3d_forward: total number of forward integration iterations.
+      else if (uKey=="FORWARD_N_ITERATIONS") p.mode3dForward.nIterations=std::stoi(val);
+      else rememberUnknown();
+    }
+    else if (section=="#DENSITY_3D") {
+      // Volumetric 3D density sampling controls for Mode3DForward.
+      // All energies are in MeV/n (same convention as #DENSITY_SPECTRUM).
+      if      (uKey=="DENS_EMIN")    p.density3d.Emin_MeV    = std::stod(val);
+      else if (uKey=="DENS_EMAX")    p.density3d.Emax_MeV    = std::stod(val);
+      else if (uKey=="DENS_NENERGY") p.density3d.nEnergyBins  = std::stoi(val);
+      else if (uKey=="DENS_ENERGY_SPACING") {
+        const std::string sp = ToUpper(Trim(val));
+        if      (sp=="LOG")    p.density3d.spacing = EarthUtil::Density3DParam::Spacing::LOG;
+        else if (sp=="LINEAR") p.density3d.spacing = EarthUtil::Density3DParam::Spacing::LINEAR;
+        else { std::ostringstream _m; _m << "DENS_ENERGY_SPACING must be LOG or LINEAR (got '" << Trim(val) << "')"; exit(__LINE__,__FILE__,_m.str().c_str()); }
+      }
       else rememberUnknown();
     }
     else if (section=="#DENSITY_SPECTRUM") {

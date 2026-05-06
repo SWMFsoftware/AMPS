@@ -682,6 +682,72 @@ namespace EarthUtil {
   };
 
   //====================================================================================
+  //====================================================================================
+  // Density3DParam — 3D volumetric density sampling for Mode3DForward (#DENSITY_3D)
+  //====================================================================================
+  //
+  // Controls the energy grid used to bin sampled particle number density in the
+  // volumetric (per-cell) sampling pass of Mode3DForward.
+  //
+  // Input file section:
+  //   #DENSITY_3D
+  //     DENS_EMIN              1.0          ! MeV/n  lower energy bound
+  //     DENS_EMAX              20000.0      ! MeV/n  upper energy bound
+  //     DENS_NENERGY           30           ! number of energy bins
+  //     DENS_ENERGY_SPACING    LOG          ! LOG or LINEAR bin spacing
+  //
+  // Resulting output variable:
+  //   n(E_i) [m^-3 J^-1] — differential number density per Joule in each cell
+  //   Integrated over ΔE_i to get the bin-total number density [m^-3].
+  //
+  struct Density3DParam {
+    double Emin_MeV{1.0};      // DENS_EMIN [MeV/n]
+    double Emax_MeV{20000.0};  // DENS_EMAX [MeV/n]
+    int    nEnergyBins{30};    // DENS_NENERGY
+
+    // Energy-bin spacing (shared enum shape with DensitySpectrumParam::Spacing
+    // to reuse the ParseEnergySpacingToken helper in the parser).
+    enum class Spacing { LOG, LINEAR };
+    Spacing spacing{Spacing::LOG};  // DENS_ENERGY_SPACING
+  };
+
+  //====================================================================================
+  // Mode3DForwardOptions — runtime controls for the 3D forward particle mode
+  //====================================================================================
+  //
+  // These options are populated from the CLI and/or the input file (where applicable).
+  //
+  // CLI flags:
+  //   -mode 3d_forward                              select this mode
+  //   -mode3d-output-initialized                    write initialized mesh Tecplot file
+  //   -forward-niter <int>                          override iteration count
+  //   -forward-boundary-dist <ISOTROPIC|...>        override boundary distribution type
+  //
+  // Input file keywords (parsed from #NUMERICAL for max-step reuse):
+  //   FORWARD_N_PARTICLES  <int>   simulation particles injected per iteration
+  //
+  struct Mode3DForwardOptions {
+    // Write amps_3dforward_initialized.data.dat after InitMeshFields().
+    bool outputInitializedFile{false};
+
+    // Total number of forward integration iterations to run.
+    // Can be overridden by -forward-niter on the CLI.
+    int nIterations{10000};
+
+    // Simulation particles injected from the domain boundary each iteration.
+    // The physical weight per particle is calculated from the boundary flux,
+    // the time step dt, and this count:
+    //   W = (π × ∫J dE × A_boundary × dt) / nParticlesPerIter
+    int nParticlesPerIter{1000};
+
+    // Angular distribution type at the domain boundary.
+    //   ISOTROPIC (default) — uniform-intensity boundary with cos(θ)-weighted
+    //                          directions (see BoundaryDistribution.h for physics).
+    // Future values: COSALPHA_N, SINALPHA_N, DAYSIDE_NIGHTSIDE
+    // Populated from -forward-boundary-dist CLI flag or the input file.
+    std::string boundaryDistType{"ISOTROPIC"};
+  };
+
   // Mode3DOptions — command-line controls specific to the PIC-backed 3D workflow
   //====================================================================================
   struct Mode3DOptions {
@@ -897,8 +963,10 @@ namespace EarthUtil {
 
     CalcMode calc;
     Mode3DOptions mode3d;
+    Mode3DForwardOptions mode3dForward;   // -mode 3d_forward controls
     CutoffScan cutoff;
     DensitySpectrumParam densitySpectrum;
+    Density3DParam density3d;             // #DENSITY_3D section
     AnisotropyParam anisotropy;
     Species species;
     BackgroundField field;

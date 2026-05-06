@@ -164,6 +164,20 @@ namespace EarthUtil {
     //   = 0   : explicitly disable the cumulative-distance cap
     //   > 0   : enable/override the cap
     double maxTraceDistance_Re{-1.0};
+
+    // -----------------------------------------------------------------------
+    // -mode 3d_forward specific options
+    // -----------------------------------------------------------------------
+
+    // -forward-niter <int>
+    //   Override Mode3DForwardOptions::nIterations from the input file.
+    //   Sentinel: < 0 means no CLI override (use input file value).
+    int forward3dNiter{-1};
+
+    // -forward-boundary-dist <ISOTROPIC|...>
+    //   Override Mode3DForwardOptions::boundaryDistType.
+    //   Empty string means: use the input file default (ISOTROPIC).
+    std::string forward3dBoundaryDist{""};
   };
 
   // Parse argc/argv. Throws std::runtime_error for malformed inputs.
