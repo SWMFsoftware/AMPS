@@ -76,7 +76,7 @@ Check=
 -------------------------------------------------------------------------------
 
 #>
-Name=test/Mars-ions 
+Name=test/Mars-ions@@(0+) 
 Time=2
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+valeriy)
 Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+amps-gpu+passion)
@@ -88,7 +88,7 @@ Keys=-cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_P
 -------------------------------------------------------------------------------
 
 #>
-Name=test/Mercury-ions 
+Name=test/Mercury-ions@@(0+) 
 Time=2
 
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/MERCURY-IONS@@(0+valeriy)
@@ -444,7 +444,7 @@ Check=
 <#
 -------------------------------------------------------------------------------
 #>
-Name=CCMC@@(-pleiades) 
+Name=CCMC@@(0+)  
 Time=4
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/CCMC@@(0+valeriy)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC@@(0+amps-gpu+passion)
@@ -1572,7 +1572,7 @@ Run=
 <#
 -------------------------------------------------------------------------------
 #>
-Name=test/ices-reader@@(0+valeriy) 
+Name=test/ices-reader@@(0+) 
 
 Time=2
 ExeptionCode=SKIP{icc}
@@ -1583,13 +1583,13 @@ Keys=-ices-path=/Users/vtenishe/ices/ICES/Models@@(0+valeriy)
 -------------------------------------------------------------------------------
 #>
 Time=1
-Name=test/tecplot-reader@@(0+valeriy+pleiades+amps-gpu)  
+Name=test/tecplot-reader@@(0+)  
 Keys=-cplr-data-path=${PTDIR}/data/input/Europa/Martin-Multifluid 
 <#
 
 #>
 Time=1
-Name=test/binary-reader@@(0+valeriy+stampede+pleiades+amps-gpu+passion)
+Name=test/binary-reader@@(0+)
 
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/BINARY-READER@@(0+stampede+pleiades)
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/BINARY-READER@@(0+valeriy) 
@@ -1611,7 +1611,7 @@ Check=
 <#
 -------------------------------------------------------------------------------
 #>
-Name=test/kameleon-reader@@(0+valeriy)
+Name=test/kameleon-reader@@(0+)
 Time=2
 
 ExeptionCode=SKIP{pgcc}
@@ -1689,7 +1689,7 @@ Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02
 <#
 -------------------------------------------------------------------------------
 #>
-Name=test/batl-reader
+Name=test/batl-reader@@(0+) 
 Time=2
 
 Ref=1{pgcc}@@(0+pleiades)
@@ -1860,7 +1860,7 @@ Check=
 
 -------------------------------------------------------------------------------
 #>
-Name=Earth-cutoff-rigidity_t05
+Name=Earth-cutoff-rigidity_t05@@(0+) 
 Time=15
 
 Ref=2{icc}@@(0+valeriy)
@@ -1904,7 +1904,7 @@ Check=
 
 
 #>
-Name=Earth-cutoff-rigidity-points_t05
+Name=Earth-cutoff-rigidity-points_t05@@(0+) 
 Time=15
 
 Ref=2{icc}@@(0+valeriy)
@@ -1963,7 +1963,7 @@ Check=
 
 
 #>
-Name=Earth-geo_t05
+Name=Earth-geo_t05@@(0+) 
 Time=15
 
 Ref=2{icc}@@(0+valeriy)
