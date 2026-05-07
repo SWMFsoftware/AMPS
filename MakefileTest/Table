@@ -7441,33 +7441,21 @@ Check=
 
 >>>@# Combine all sub-diffs into master diff file
 >>>@cat test_Earth-cutoff-rigidity-gridless-trajectory--t01--cutoff.diff \
->>>    test_Earth-cutoff-rigidity-gridless-trajectory--t01--compare.diff \
 >>>    test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff.diff \
->>>    test_Earth-cutoff-rigidity-gridless-trajectory--t05--compare.diff \
 >>>    test_Earth-cutoff-rigidity-gridless-trajectory--t96--cutoff.diff \
->>>    test_Earth-cutoff-rigidity-gridless-trajectory--t96--compare.diff \
 >>>    test_Earth-cutoff-rigidity-gridless-trajectory--ta15n--cutoff.diff \
->>>    test_Earth-cutoff-rigidity-gridless-trajectory--ta15n--compare.diff \
 >>>    test_Earth-cutoff-rigidity-gridless-trajectory--ta15b--cutoff.diff \
->>>    test_Earth-cutoff-rigidity-gridless-trajectory--ta15b--compare.diff \
 >>>    test_Earth-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff \
->>>    test_Earth-cutoff-rigidity-gridless-trajectory--ta16--compare.diff \
 >>>    test_Earth-cutoff-rigidity-gridless-trajectory--dipole--cutoff.diff \
 >>>    test_Earth-cutoff-rigidity-gridless-trajectory--dipole--compare.diff \
 >>>    > test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t01--cutoff.diff
->>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t01--compare.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff.diff
->>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t05--compare.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t96--cutoff.diff
->>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t96--compare.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--ta15n--cutoff.diff
->>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--ta15n--compare.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--ta15b--cutoff.diff
->>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--ta15b--compare.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff
->>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--ta16--compare.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--dipole--cutoff.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--dipole--compare.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
