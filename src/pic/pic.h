@@ -234,7 +234,34 @@ namespace PIC {
 //  void Sampling();
 
   //init the particle solver
-  void InitMPI();
+  // Initialize MPI for the PIC framework.
+  //
+  // independentDomainMode = false (default)
+  //   Standard operation: MPI_GLOBAL_COMMUNICATOR = MPI_COMM_WORLD.
+  //   All PIC/AMPS collective operations span all launched MPI processes.
+  //   Used by every normal PIC simulation run.
+  //
+  // independentDomainMode = true
+  //   Each MPI process receives a SINGLETON communicator for MPI_GLOBAL_COMMUNICATOR,
+  //   constructed via MPI_Comm_split(MPI_COMM_WORLD, worldRank, 0, ...).
+  //   From AMPS's perspective every rank is the only process:
+  //     PIC::nTotalThreads == 1,  PIC::ThisThread == 0
+  //   This causes amps_init_mesh() to allocate ALL AMR blocks on the calling
+  //   rank (replicated domain), which is required for workflows where each MPI
+  //   process must independently own the complete mesh — e.g. the Mode3D
+  //   cutoff rigidity solver where trajectory points may carry different
+  //   time/field configurations and no inter-rank field communication can occur.
+  //
+  //   MPI_COMM_WORLD remains accessible to application code that needs true
+  //   inter-rank communication (e.g. gathering scalar results after independent
+  //   per-rank computation).
+  //
+  // Guard: MPI_GLOBAL_COMMUNICATOR is only set when MPI is first initialised
+  // (the !initialized branch).  Subsequent calls to InitMPI() with the default
+  // independentDomainMode=false leave MPI_GLOBAL_COMMUNICATOR unchanged, so the
+  // singleton set by an earlier InitMPI(true) is preserved across re-entrant
+  // calls from Init_BeforeParser / amps_init.
+  void InitMPI(bool independentDomainMode = false);
   void Init_BeforeParser();
   void Init_AfterParser();
 

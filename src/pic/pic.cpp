@@ -1666,7 +1666,7 @@ void SetThreadData(int inThisThread,int innTotalThreads) {
 }
 
 
-void PIC::InitMPI() {
+void PIC::InitMPI(bool independentDomainMode) {
 
   //check is MPI is initialized
   int initialized;
@@ -1677,7 +1677,55 @@ void PIC::InitMPI() {
     int provided;
 
     MPI_Init_thread(NULL,NULL,MPI_THREAD_FUNNELED,&provided);
+
+    // Initial communicator assignment.  When independentDomainMode is requested
+    // this will be immediately overridden below; when not requested this remains
+    // the permanent setting for the run.
     MPI_GLOBAL_COMMUNICATOR=MPI_COMM_WORLD;
+  }
+
+  // ---- Independent-domain mode --------------------------------------------
+  //
+  // Replace MPI_GLOBAL_COMMUNICATOR with a SINGLETON communicator so that every
+  // subsequent AMPS call (mesh partitioning, block distribution, barriers) sees
+  // this rank as the sole process.
+  //
+  // Implementation:
+  //   MPI_Comm_split(MPI_COMM_WORLD,
+  //                  color = worldRank,   <- unique per rank → distinct groups
+  //                  key   = 0,           <- ordering within each group (moot: size 1)
+  //                  &MPI_GLOBAL_COMMUNICATOR)
+  //
+  // Result:
+  //   Every rank becomes rank 0 in its own communicator of size 1.
+  //   MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR) → 0
+  //   MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR) → 1
+  //
+  // Re-entry guard:
+  //   This block is only entered when the CALLER explicitly requests independent
+  //   mode.  The default-parameter call path (independentDomainMode = false)
+  //   never touches MPI_GLOBAL_COMMUNICATOR here.  Because the !initialized
+  //   branch above only fires once (the very first call), subsequent calls from
+  //   Init_BeforeParser / amps_init leave MPI_GLOBAL_COMMUNICATOR unchanged —
+  //   the singleton created here is preserved for the lifetime of the run.
+  //
+  // MPI_COMM_WORLD remains accessible: application code that needs true
+  // inter-rank communication (e.g. RunCutoffRigidity's MPI_Gatherv) queries
+  // MPI_COMM_WORLD directly rather than going through MPI_GLOBAL_COMMUNICATOR.
+  // -------------------------------------------------------------------------
+  if (independentDomainMode) {
+    int worldRank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);
+
+    // Release any previously created singleton to avoid a communicator handle
+    // leak if InitMPI(true) is somehow called more than once.
+    if (MPI_GLOBAL_COMMUNICATOR != MPI_COMM_WORLD &&
+        MPI_GLOBAL_COMMUNICATOR != MPI_COMM_NULL) {
+      MPI_Comm_free(&MPI_GLOBAL_COMMUNICATOR);
+    }
+
+    // Each rank's color equals its world rank → distinct group of exactly 1.
+    MPI_Comm_split(MPI_COMM_WORLD, worldRank, /*key=*/0, &MPI_GLOBAL_COMMUNICATOR);
   }
 
   //init MPI variables
@@ -1706,8 +1754,24 @@ void PIC::InitMPI() {
 #endif //_COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 
   if (ThisThread==0) {
-    printf("$PREFIX: The total number of the MPI processes=%i\n",nTotalThreads);
-    printf("$PREFIX: The total number of the OpenMP threads per each MPI process=%i\n",nTotalThreadsOpenMP);
+    // When running in independent-domain mode, report both the singleton view
+    // (nTotalThreads = 1) and the true MPI_COMM_WORLD size so the log is not
+    // misleading.
+    if (independentDomainMode) {
+      int worldSize, worldRank;
+      MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
+      MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);
+      if (worldRank==0) {
+        printf("$PREFIX: IndependentDomainMode ON: each of the %i MPI processes "
+               "owns the complete domain (singleton MPI_GLOBAL_COMMUNICATOR).\n",
+               worldSize);
+        printf("$PREFIX: The total number of the OpenMP threads per each MPI "
+               "process=%i\n", nTotalThreadsOpenMP);
+      }
+    } else {
+      printf("$PREFIX: The total number of the MPI processes=%i\n",nTotalThreads);
+      printf("$PREFIX: The total number of the OpenMP threads per each MPI process=%i\n",nTotalThreadsOpenMP);
+    }
   }
 }
 
