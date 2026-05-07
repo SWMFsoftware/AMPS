@@ -1759,6 +1759,120 @@ public:
 _TARGET_DEVICE_ _CUDA_MANAGED_ int Offset_MagneticField=-1;
 _TARGET_DEVICE_ _CUDA_MANAGED_ int Offset_ElectricField=-1;
 
+// ================================================================================================================================
+// Guiding-center magnetization-current closure for ECSIM corner currents
+//
+// Physics
+// -------
+// In the guiding-center (GC) description the fast Larmor motion is removed from the explicit particle mover.
+// The corresponding gyromotion current must nevertheless be returned to Maxwell's equations through the
+// magnetization current
+//
+//     J_mag = curl(M),   M = n * <mu b>
+//
+// where mu is the first adiabatic invariant (magnetic moment), b = B/|B| is the local magnetic-field unit
+// vector, and M is the magnetization density.  If this term is omitted, the reduced particle model carries the
+// drift/parallel transport current but misses the current associated with the unresolved cyclotron rotation.
+//
+// Why the previous implementation was not solver-consistent
+// ---------------------------------------------------------
+// The earlier code deposited mu*b to the 8 corners of the cell, formed one cell-centered curl(M), and then split
+// that single value equally among the eight corner-current unknowns.  That procedure is easy to implement but it
+// is *not* the same discrete object that ECSIM advances.  ECSIM stores J on corner nodes and uses corner-based
+// interpolation/stencils throughout the E update.  Therefore the closure should produce a *corner current* that is
+// compatible with the same corner representation rather than a cell-centered quantity that is later smeared to nodes.
+//
+// Discrete representation used below
+// ----------------------------------
+// Inside one AMR cell we already have nodal samples of magnetization density:
+//
+//     M_h(x) = sum_a N_a(x) M_a
+//
+// where N_a are the standard trilinear (Q1) basis functions associated with the 8 corners of the cell and M_a are
+// the corner magnetization-density values assembled from the particle deposition.  The solver-consistent current from
+// this reconstructed field is
+//
+//     J_h(x) = curl(M_h) = sum_a (grad N_a) x M_a .
+//
+// The key point is that the current attached to a given corner node should be obtained from the *same nodal basis*
+// that defines the field representation.  Accordingly, for each target corner c we evaluate the interior trace of
+// grad(N_a) at that corner and accumulate
+//
+//     J_c += sum_a [ grad N_a(x_c^-) x M_a ] .
+//
+// Because each cell contributes the current associated with its own interior trilinear reconstruction, and corner
+// nodes later sum contributions from adjacent cells, the assembled nodal current is consistent with the piecewise-Q1
+// field used by the discretization.  This is substantially more consistent than forming one cell-centered curl and
+// distributing it uniformly.
+//
+// Notes on the corner evaluation
+// ------------------------------
+// The gradient of a trilinear basis is not single-valued across cell boundaries, so at a corner we use the limit
+// taken from *inside the current cell*.  This is exactly what is needed for a cell-local deposition routine: each
+// cell contributes its own interior trace, and the final nodal value is obtained by the normal node-based assembly.
+//
+// For a Q1 hexahedral basis on an axis-aligned cell:
+//   - dN_a/dx at corner c is non-zero only for basis functions whose y/z bits match the target corner bits
+//   - dN_a/dy is non-zero only when x/z bits match
+//   - dN_a/dz is non-zero only when x/y bits match
+// The sign is +1/dx_dim when the basis function points toward the high side of that dimension and -1/dx_dim when it
+// points toward the low side.  This gives an exact one-sided derivative of the trilinear basis at the corner.
+//
+// Units and weighting
+// -------------------
+// MCornerSum stores the sum of particle magnetic moments projected to the corners, i.e. sum(mu * b * W_corner).
+// Dividing by the physical cell volume converts that sum to magnetization density M_a at the corner.  The resulting
+// curl(M) has the same units as current density and can therefore be added directly to ECSIM's CornerJ storage.
+// ================================================================================================================================
+_TARGET_HOST_ _TARGET_DEVICE_
+static inline void ECSIM_AddGuidingCenterMagnetizationCurrentToCorners(
+    PIC::FieldSolver::Electromagnetic::ECSIM::cCellData *CellData,
+    const double MCornerSum[8][3],double CellVolume,const double dx[3]) {
+
+  const int CornerBits[8][3] = {
+    {0,0,0},{1,0,0},{1,1,0},{0,1,0},
+    {0,0,1},{1,0,1},{1,1,1},{0,1,1}
+  };
+
+  double Mnode[8][3];
+
+  for (int iCorner=0;iCorner<8;iCorner++) {
+    #pragma ivdep
+    for (int d=0; d<3; d++) Mnode[iCorner][d]=MCornerSum[iCorner][d]/CellVolume;
+  }
+
+  for (int iTargetCorner=0;iTargetCorner<8;iTargetCorner++) {
+    const int uc=CornerBits[iTargetCorner][0];
+    const int vc=CornerBits[iTargetCorner][1];
+    const int wc=CornerBits[iTargetCorner][2];
+
+    double Jcorner[3]={0.0,0.0,0.0};
+
+    for (int iSourceCorner=0;iSourceCorner<8;iSourceCorner++) {
+      const int ua=CornerBits[iSourceCorner][0];
+      const int va=CornerBits[iSourceCorner][1];
+      const int wa=CornerBits[iSourceCorner][2];
+
+      double dNdx=0.0,dNdy=0.0,dNdz=0.0;
+
+      if ((va==vc) && (wa==wc)) dNdx=((ua==1) ? 1.0 : -1.0)/dx[0];
+      if ((ua==uc) && (wa==wc)) dNdy=((va==1) ? 1.0 : -1.0)/dx[1];
+      if ((ua==uc) && (va==vc)) dNdz=((wa==1) ? 1.0 : -1.0)/dx[2];
+
+      const double *M=Mnode[iSourceCorner];
+
+      Jcorner[0]+=dNdy*M[2]-dNdz*M[1];
+      Jcorner[1]+=dNdz*M[0]-dNdx*M[2];
+      Jcorner[2]+=dNdx*M[1]-dNdy*M[0];
+    }
+
+    double *CornerJ=CellData->CornerData[iTargetCorner].CornerJ;
+    CornerJ[0]+=Jcorner[0];
+    CornerJ[1]+=Jcorner[1];
+    CornerJ[2]+=Jcorner[2];
+  }
+}
+
 
 #if  _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
 
@@ -2255,51 +2369,11 @@ if (!use_gc_species) {
         }
 
 
-// Add magnetization current closure for guiding-center species:
-//   M = (sum mu * b) / V  (magnetization density)
-//   J_mag = curl(M)
-// We compute M on the cell corners from particles in this cell (trilinear within the cell),
-// approximate curl(M) at the cell center using corner differences, and distribute J_mag equally
-// to the 8 corners (current is stored at corners in ECSIM).
+// Add the guiding-center magnetization current using a corner-based Q1 reconstruction
+// that is consistent with ECSIM's corner-current representation.  See the helper
+// routine above for the detailed physical and numerical rationale.
 if (cell_has_gc) {
-  double M[8][3];
-
-  for (int iCorner=0;iCorner<8;iCorner++){
-    #pragma ivdep
-    for (int d=0; d<3; d++) {
-      M[iCorner][d] = MCornerSum[iCorner][d] / CellVolume;
-    }
-  }
-
-  auto d_dx = [&](int d) {
-    return 0.25*( (M[1][d]-M[0][d]) + (M[2][d]-M[3][d]) + (M[5][d]-M[4][d]) + (M[6][d]-M[7][d]) ) / dx[0];
-  };
-  auto d_dy = [&](int d) {
-    return 0.25*( (M[3][d]-M[0][d]) + (M[2][d]-M[1][d]) + (M[7][d]-M[4][d]) + (M[6][d]-M[5][d]) ) / dx[1];
-  };
-  auto d_dz = [&](int d) {
-    return 0.25*( (M[4][d]-M[0][d]) + (M[5][d]-M[1][d]) + (M[6][d]-M[2][d]) + (M[7][d]-M[3][d]) ) / dx[2];
-  };
-
-  const double dMz_dy = d_dy(2);
-  const double dMy_dz = d_dz(1);
-  const double dMx_dz = d_dz(0);
-  const double dMz_dx = d_dx(2);
-  const double dMy_dx = d_dx(1);
-  const double dMx_dy = d_dy(0);
-
-  const double Jmag[3] = {
-    dMz_dy - dMy_dz,
-    dMx_dz - dMz_dx,
-    dMy_dx - dMx_dy
-  };
-
-  for (int iCorner=0; iCorner<8; iCorner++){
-    double *CornerJ=CellData->CornerData[iCorner].CornerJ;
-    CornerJ[0] += Jmag[0]/8.0;
-    CornerJ[1] += Jmag[1]/8.0;
-    CornerJ[2] += Jmag[2]/8.0;
-  }
+  ECSIM_AddGuidingCenterMagnetizationCurrentToCorners(CellData,MCornerSum,CellVolume,dx);
 }
 
 #ifdef __CUDA_ARCH__
@@ -2444,9 +2518,14 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
 
     int spec;
     union {__m256d Jg_v[8]; double Jg[4*8];};
+    double MCornerSum[8][3];
+    bool cell_has_gc=false;
 
     for (int ii=0; ii<8; ii++){
       Jg_v[ii]=_mm256_setzero_pd();
+
+      #pragma ivdep
+      for (int jj=0;jj<3;jj++) MCornerSum[ii][jj]=0.0;
     }
 
 
@@ -2532,6 +2611,9 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
       LocalParticleWeight=block->GetLocalParticleWeight(spec);
       LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
 
+      const bool use_gc_species =
+        (_PIC_GYROKINETIC_MODEL_MODE_==_PIC_MODE_ON_) && PIC::GYROKINETIC::IsGuidingCenterSpecies(spec);
+
       ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
 
       if (ptrNext!=-1) {
@@ -2576,6 +2658,11 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
         //convert from SI to cgs
         B[3]=0.0;
         B_v=_mm256_mul_pd(B_v,_mm256_set1_pd(B_conv));
+
+        // Save the physical magnetic field before the 1/c scaling used in the full-orbit
+        // alpha matrix.  The GC magnetization closure uses the physical b = B/|B| direction.
+        double Braw[3]={B[0],B[1],B[2]};
+
         // Particle velocity already stores the effective transport velocity for GC species
         // (V = v_eff by mover convention). Do not add v_drift here.
         vInit_v=_mm256_loadu_pd(PIC::ParticleBuffer::GetV(ParticleData));
@@ -2667,6 +2754,27 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
         _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
         #endif
 
+        if (use_gc_species) {
+          const double mu=PIC::ParticleBuffer::GetMagneticMoment(ParticleData);
+          const double mu_tot=mu*LocalParticleWeight;
+          const double absB=sqrt(Braw[0]*Braw[0]+Braw[1]*Braw[1]+Braw[2]*Braw[2]);
+
+          if (absB>0.0) {
+            const double b0=Braw[0]/absB;
+            const double b1=Braw[1]/absB;
+            const double b2=Braw[2]/absB;
+
+            for (int iCorner=0;iCorner<8;iCorner++) {
+              const double w=mu_tot*WeightPG[iCorner];
+              MCornerSum[iCorner][0]+=w*b0;
+              MCornerSum[iCorner][1]+=w*b1;
+              MCornerSum[iCorner][2]+=w*b2;
+            }
+
+            cell_has_gc=true;
+          }
+        }
+
         //double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2];
 
         union {__m256d vInit2_v; double vInit2[4];};
@@ -2701,6 +2809,8 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
 
         __m256d t=_mm256_mul_pd(alpha_2v,vInit_v);
         vRot[2]=t[0]+t[1]+t[2];
+
+        if (use_gc_species) vRot_v=vInit_v;
 
 //          for (int iCorner=0; iCorner<8; iCorner++){
 //            double t=chargeQ*WeightPG[iCorner];
@@ -2764,6 +2874,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
           }
         }
 
+        if (!use_gc_species) {
         double matrixConst = chargeQ*QdT_over_2m/CellVolume;
 
         //To convert the double loop (below) into a single loop,
@@ -2829,6 +2940,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
             process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,0);
           }
         }//iCorner
+        }
 
 #else //_AVX_INSTRUCTIONS_USAGE_MODE_  (256/512)
 
@@ -2851,6 +2963,27 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
         #if _PIC_MEMORY_PREFETCH_MODE_ == _PIC_MEMORY_PREFETCH_MODE__ON_
         _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
         #endif
+
+        if (use_gc_species) {
+          const double mu=PIC::ParticleBuffer::GetMagneticMoment(ParticleData);
+          const double mu_tot=mu*LocalParticleWeight;
+          const double absB=sqrt(Braw[0]*Braw[0]+Braw[1]*Braw[1]+Braw[2]*Braw[2]);
+
+          if (absB>0.0) {
+            const double b0=Braw[0]/absB;
+            const double b1=Braw[1]/absB;
+            const double b2=Braw[2]/absB;
+
+            for (int iCorner=0;iCorner<8;iCorner++) {
+              const double w=mu_tot*WeightPG[iCorner];
+              MCornerSum[iCorner][0]+=w*b0;
+              MCornerSum[iCorner][1]+=w*b1;
+              MCornerSum[iCorner][2]+=w*b2;
+            }
+
+            cell_has_gc=true;
+          }
+        }
 
         //double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2];
 
@@ -2891,6 +3024,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
         t=_mm256_mul_pd(alpha_2v,vInit_v);
         vRot[2]=t[0]+t[1]+t[2];
 
+        if (use_gc_species) vRot_v=vInit_v;
 
 
 //          for (int iCorner=0; iCorner<8; iCorner++){
@@ -2955,6 +3089,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
           }
         }
 
+        if (!use_gc_species) {
         double matrixConst = chargeQ*QdT_over_2m/CellVolume;
 
         const int PermutationTable_vl=0b00'10'01'00;
@@ -3018,6 +3153,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
             process_ij_corner(alpha_2[2],tempWeightConst,iCorner,0);
           }
         }//iCorner
+        }
 
 #endif //_AVX_INSTRUCTIONS_USAGE_MODE_ (256/512)
 
@@ -3044,6 +3180,10 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
           for (int ii=0; ii<3; ii++){
             CornerJ[ii] += (Jg[iCorner*4+ii])/CellVolume;   //Jg[iCorner*4+ii] is corrected because Jg is defined compatible with __256d
           }
+        }
+
+        if (cell_has_gc) {
+          ECSIM_AddGuidingCenterMagnetizationCurrentToCorners(CellData,MCornerSum,CellVolume,dx);
         }
 
         if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
