@@ -11,6 +11,8 @@
 #include <cctype>
 #include <locale>
 
+#include "util/amps_param_parser.h"
+
 using namespace std;
 
 
@@ -519,6 +521,12 @@ namespace Earth {
 
     //determine the direction of the IMF
     extern double b[3];
+
+    // Store the parsed model parameters so that InitDirectionIMF() can call
+    // Earth::Mode3D::EvaluateBackgroundMagneticFieldSI() for the default
+    // (non-T96, non-T05) coupler mode.  Must be called before InitDirectionIMF().
+    void SetPrm(const EarthUtil::AmpsParam& prm);
+
     void InitDirectionIMF();
 
 /*

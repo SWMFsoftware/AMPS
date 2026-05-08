@@ -1576,6 +1576,13 @@ int main(int argc,char **argv) {
         // Number of forward iterations.
         if (cli.forward3dNiter > 0) p.mode3dForward.nIterations = cli.forward3dNiter;
 
+        // Simulation particles injected per iteration (determines physical weight W).
+        // W = (pi * integral_J * A_boundary * dt) / nParticlesPerIter
+        // A positive sentinel means the CLI flag was supplied; <= 0 means use
+        // the input-file default stored in p.mode3dForward.nParticlesPerIter.
+        if (cli.forward3dNparticles > 0)
+          p.mode3dForward.nParticlesPerIter = cli.forward3dNparticles;
+
         // Boundary distribution type (default ISOTROPIC; extensible).
         if (!cli.forward3dBoundaryDist.empty())
           p.mode3dForward.boundaryDistType = EarthUtil::ToUpper(cli.forward3dBoundaryDist);

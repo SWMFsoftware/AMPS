@@ -204,52 +204,76 @@ static double EvaluateTimeStep(const EarthUtil::AmpsParam& prm) {
 }
 
 // ============================================================================
-//  Helper: evaluate particle injection weight
+//  BoundaryInjectionSourceRate
 // ============================================================================
-//  Physical boundary flux for isotropic distribution:
-//    F_total = π × ∫ J(E) dE × TotalBoundaryArea   [particles/s]
 //
-//  Physical particles per iteration:
-//    N_phys = F_total × dt
+// PURPOSE
+// -------
+// Wrapper function whose address is assigned to
+//   PIC::ParticleWeightTimeStep::UserDefinedExtraSourceRate
+// before calling
+//   PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(spec, startNode)
 //
-//  Weight per simulation particle:
-//    W = N_phys / N_sim_per_iter
+// This follows the same pattern used in srcMOP/main.cpp:
+//   PIC::ParticleWeightTimeStep::UserDefinedExtraSourceRate = MOP::SourceRate;
+//   PIC::ParticleWeightTimeStep::maxReferenceInjectedParticleNumber = N;
+//   PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(s);
 //
-static double EvaluateParticleWeight(const EarthUtil::AmpsParam& prm,
-                                     double dt, int nSimPerIter) {
-  // ---- Integrate spectrum over [Emin, Emax] using trapezoidal rule ----
+// The framework then derives the global particle weight internally as:
+//   W = BoundaryInjectionSourceRate(spec)
+//         x GlobalTimeStep[spec]
+//         / maxReferenceInjectedParticleNumber
+//     = (pi x integral_{Emin}^{Emax} J(E) dE x A_boundary)
+//         x dt / nParticlesPerIter
+//
+// which is identical to the previous hand-computed formula in EvaluateParticleWeight,
+// but now goes through the standard AMPS weight-initialisation machinery so that
+// all internal accounting, diagnostic counters, and normalisation paths see a
+// consistent value from the very start of the run.
+//
+// PRECONDITIONS
+// -------------
+//   - gSpectrum must already be initialised (InitGlobalSpectrumFromKeyValueMap called).
+//   - PIC::Mesh::mesh->xGlobalMin/xGlobalMax must be set (amps_init_mesh called).
+//   - sSpecies must be set to the forward-mode particle species index.
+//
+// PHYSICS
+// -------
+// For an isotropic external differential intensity J(E) [m^-2 s^-1 sr^-1 J^-1],
+// the one-way particle flux incident on a surface element is:
+//   dN/dA/dt = pi x integral_{Emin}^{Emax} J(E) dE     [particles m^-2 s^-1]
+//
+// Integrated over the total outer rectangular boundary area A_boundary:
+//   R_total = pi x integral J(E) dE x A_boundary        [particles s^-1]
+//
+static double BoundaryInjectionSourceRate(int spec) {
+  // Only the species used by this forward run contributes a non-zero rate.
+  if (spec != sSpecies) return 0.0;
+
+  // ---- Log-spaced trapezoidal integration of J(E) over the spectrum range ----
   const int    nIntegPts = 500;
-  const double logEmin   = std::log(prm.density3d.Emin_MeV * MeV_in_J);
-  const double logEmax   = std::log(prm.density3d.Emax_MeV * MeV_in_J);
+  const double logEmin   = std::log(gSpectrum.Emin_MeV() * MeV_in_J);
+  const double logEmax   = std::log(gSpectrum.Emax_MeV() * MeV_in_J);
   const double dlogE     = (logEmax - logEmin) / nIntegPts;
 
   double integralJ = 0.0;
   for (int i = 0; i < nIntegPts; i++) {
     const double E0 = std::exp(logEmin + i       * dlogE);
     const double E1 = std::exp(logEmin + (i+1.0) * dlogE);
-    const double J0 = gSpectrum.GetSpectrum(E0);   // [m^-2 s^-1 sr^-1 J^-1]
-    const double J1 = gSpectrum.GetSpectrum(E1);
-    integralJ += 0.5 * (J0 + J1) * (E1 - E0);     // [m^-2 s^-1 sr^-1]
+    integralJ += 0.5 * (gSpectrum.GetSpectrum(E0) + gSpectrum.GetSpectrum(E1)) * (E1 - E0);
   }
-  // ∫ J dE × π sr = one-way isotropic flux [particles m^-2 s^-1]
+  // pi sr * integral J dE = one-way isotropic flux  [particles m^-2 s^-1]
   const double onewayFlux = Pi * integralJ;
 
-  // ---- Total boundary area ----
+  // ---- Total outer rectangular boundary area [m^2] ----
   const double Lx = PIC::Mesh::mesh->xGlobalMax[0] - PIC::Mesh::mesh->xGlobalMin[0];
   const double Ly = PIC::Mesh::mesh->xGlobalMax[1] - PIC::Mesh::mesh->xGlobalMin[1];
   const double Lz = PIC::Mesh::mesh->xGlobalMax[2] - PIC::Mesh::mesh->xGlobalMin[2];
   const double totalArea = 2.0 * (Lx*Ly + Ly*Lz + Lz*Lx);
 
-  const double N_phys = onewayFlux * totalArea * dt;
-  const double weight = (nSimPerIter > 0) ? (N_phys / nSimPerIter) : 1.0;
-
-  if (PIC::ThisThread == 0)
-    std::cout << "[Mode3DForward] Particle weight: W=" << weight
-              << " phys/sim  (N_phys/iter=" << N_phys
-              << ", totalArea=" << totalArea << " m²)\n";
-  return weight;
+  // Total physical injection rate [particles / s]
+  return onewayFlux * totalArea;
 }
-
 // ============================================================================
 //  Inner absorption sphere: particle-sphere interaction callback
 // ============================================================================
@@ -508,17 +532,43 @@ int Run(const EarthUtil::AmpsParam& prm) {
   // and are not used here.
 
   //--------------------------------------------------------------------------
-  // 2. Mesh initialisation (standard PIC — distributed domain)
+  // 2. Register callbacks and configure the field model, THEN init mesh + PIC.
   //--------------------------------------------------------------------------
+  // All three assignments below must happen BEFORE amps_init_mesh() / amps_init()
+  // because both of those calls reach into main_lib.cpp::amps_init() which, for
+  // BoundaryInjectionMode, calls Earth::BoundingBoxInjection::InitDirectionIMF().
+  // InitDirectionIMF() needs:
+  //   (a) UserDefinedExtraSourceRate -- for the particle weight path (MOP pattern)
+  //   (b) s_prm (via SetPrm)         -- so InitDirectionIMF()'s default case can
+  //                                    call EvaluateBackgroundMagneticFieldSI
+  //   (c) the field model state      -- ConfigureBackgroundFieldModel sets the
+  //                                    T96/T05/TA16 active flags and calls their
+  //                                    Init(); EvaluateBackgroundMagneticFieldSI
+  //                                    dispatches on those flags at runtime.
+  //
+  // (a) cf. srcMOP/main.cpp:238 -- UserDefinedExtraSourceRate set before amps_init.
+  PIC::ParticleWeightTimeStep::UserDefinedExtraSourceRate = BoundaryInjectionSourceRate;
+
+  // (b) register prm so InitDirectionIMF()'s default branch can call
+  //     EvaluateBackgroundMagneticFieldSI(b, x, prm).
+  Earth::BoundingBoxInjection::SetPrm(prm);
+
+  // (c) set active flags and initialise T96/T05/TA16 before amps_init() fires
+  //     InitDirectionIMF(), which evaluates the background field.
+  //     ConfigureBackgroundFieldModel does not touch the mesh, so it is safe
+  //     to call here before amps_init_mesh().
+  ConfigureBackgroundFieldModel(prm);
+
   PIC::InitMPI();
   Exosphere::Init_SPICE();
   amps_init_mesh();
   amps_init();
 
   //--------------------------------------------------------------------------
-  // 3. Background field model
+  // 3. Background field model (mesh-dependent setup, e.g. InitMeshFields)
   //--------------------------------------------------------------------------
-  ConfigureBackgroundFieldModel(prm);
+  // ConfigureBackgroundFieldModel was already called above (step 2c). The
+  // mesh cells are populated here now that amps_init() has allocated blocks.
 
   //--------------------------------------------------------------------------
   // 4. Initialise B/E fields in all mesh cells
@@ -526,14 +576,32 @@ int Run(const EarthUtil::AmpsParam& prm) {
   InitMeshFields(prm, PIC::Mesh::mesh->rootTree);
 
   if (prm.mode3dForward.outputInitializedFile) {
-    int worldRank = 0;
-    MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);
-    if (worldRank == 0)
+    if (PIC::nTotalThreads != 1) {
+      // Multi-rank PIC run: outputMeshDataTECPLOT is a collective operation --
+      // all PIC ranks must call it together (it gathers cell data via the PIC
+      // communicator before rank 0 writes the file).
       PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_3dforward_initialized.data.dat", 0);
+    }
+    else {
+      // Single-rank PIC run: MPI may be configured so each process runs
+      // independently (e.g. embarrassingly parallel over parameter space).
+      // Only the process that owns MPI_COMM_WORLD rank 0 should write the file.
+      int worldRank = 0;
+      MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);
+      if (worldRank == 0)
+        PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_3dforward_initialized.data.dat", 0);
+    }
   }
 
   //--------------------------------------------------------------------------
-  // 5. Time step: dt = DtCellFrac * min_cell / v_max(DENS_EMAX)
+  // 5. Initialise global spectrum from #SPECTRUM section
+  //    Must happen before step 7 (particle weight) because
+  //    BoundaryInjectionSourceRate() integrates gSpectrum over [Emin, Emax].
+  //--------------------------------------------------------------------------
+  InitGlobalSpectrumFromKeyValueMap(prm.spectrum);
+
+  //--------------------------------------------------------------------------
+  // 6. Time step: dt = DtCellFrac * min_cell / v_max(DENS_EMAX)
   //--------------------------------------------------------------------------
   // Identify species index (use species 0 as default; all share the same mass
   // in single-species runs).
@@ -543,26 +611,42 @@ int Run(const EarthUtil::AmpsParam& prm) {
   cDensity3D::dt_s = sDt;
 
   //--------------------------------------------------------------------------
-  // 6. Particle weight
+  // 7. Particle weight — via initParticleWeight_ConstantWeight (MOP pattern)
   //--------------------------------------------------------------------------
+  // BoundaryInjectionSourceRate was registered with UserDefinedExtraSourceRate
+  // before amps_init_mesh() (step 2), mirroring the MOP pattern:
+  //   srcMOP/main.cpp:238  PIC::ParticleWeightTimeStep::UserDefinedExtraSourceRate=MOP::SourceRate;
+  //   (mesh + amps_init)
+  //   srcMOP/main.cpp:400  PIC::ParticleWeightTimeStep::maxReferenceInjectedParticleNumber=...;
+  //   srcMOP/main.cpp:405  PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(s);
+  //
+  // initParticleWeight_ConstantWeight now derives GlobalParticleWeight as:
+  //   W = BoundaryInjectionSourceRate(spec) x GlobalTimeStep[spec]
+  //         / maxReferenceInjectedParticleNumber
+  //     = (pi x integral J(E) dE x A_boundary) x dt / nParticlesPerIter
   const int nSimPerIter = prm.mode3dForward.nParticlesPerIter;
-  sParticleWeight = EvaluateParticleWeight(prm, sDt, nSimPerIter);
+  PIC::ParticleWeightTimeStep::maxReferenceInjectedParticleNumber = nSimPerIter;
+  PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(sSpecies);
+
+  // Cache the weight for use in InjectBoundaryParticles and progress logging.
+  sParticleWeight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[sSpecies];
+
+  if (PIC::ThisThread == 0)
+    std::cout << "[Mode3DForward] Particle weight: W=" << sParticleWeight
+              << " phys/sim  (nParticlesPerIter=" << nSimPerIter
+              << ", injectionRate=" << BoundaryInjectionSourceRate(sSpecies)
+              << " particles/s)\n";
 
   //--------------------------------------------------------------------------
-  // 7. Inner absorption sphere
+  // 8. Inner absorption sphere
   //--------------------------------------------------------------------------
   InitAbsorptionSphere(prm);
 
   //--------------------------------------------------------------------------
-  // 8. 3D density sampling (CG/Moon ExternalSamplingLocalVariables pattern)
+  // 9. 3D density sampling (CG/Moon ExternalSamplingLocalVariables pattern)
   //--------------------------------------------------------------------------
   // Init() registers SampleParticleData and OutputSampledData callbacks.
   cDensity3D::Init(prm);
-
-  //--------------------------------------------------------------------------
-  // 9. Initialise global spectrum from #SPECTRUM section
-  //--------------------------------------------------------------------------
-  InitGlobalSpectrumFromKeyValueMap(prm.spectrum);
 
   //--------------------------------------------------------------------------
   // 10. Select boundary distribution (ISOTROPIC now; extensible for future modes)

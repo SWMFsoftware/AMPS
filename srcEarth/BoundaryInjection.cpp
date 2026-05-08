@@ -14,6 +14,21 @@
 #include "GeopackInterface.h"
 #include "T96Interface.h"
 #include "T05Interface.h"
+#include "gridless/DipoleInterface.h"
+#include "3d/ElectricField.h"
+
+// Module-level storage for the parsed model parameters.
+// Set by Earth::BoundingBoxInjection::SetPrm() before InitDirectionIMF() is called.
+// This allows InitDirectionIMF() to delegate to EvaluateBackgroundMagneticFieldSI()
+// for all field models (DIPOLE, T96, T05, TA16) via the same generic function used
+// in the gridless and 3d branches.
+static EarthUtil::AmpsParam s_prm;
+static bool s_prm_set = false;
+
+void Earth::BoundingBoxInjection::SetPrm(const EarthUtil::AmpsParam& prm) {
+  s_prm     = prm;
+  s_prm_set = true;
+}
 
 //determine the direction of the IMF
 double Earth::BoundingBoxInjection::b[3]={0.0,0.0,0.0};
@@ -32,11 +47,32 @@ void Earth::BoundingBoxInjection::InitDirectionIMF() {
   case _PIC_COUPLER_MODE__T96_:
     exit(__LINE__,__FILE__,"Error: not implemented");
     break;
-  case _PIC_COUPLER_MODE__T05_:
-    ::T05::GetIMF(b);
-    break;
+//  case _PIC_COUPLER_MODE__T05_:
+//    ::T05::GetIMF(b);
+//    break;
   default:
-    exit(__LINE__,__FILE__,"Error: the option is unknown");
+    // No T96/T05 coupler — use the generic background field evaluator that is
+    // shared by both the gridless and 3d branches of the model.
+    //
+    // gridless: field.GetB_T(x, B)
+    //           -> Earth::GridlessMode::Dipole::GetB_Tesla() for DIPOLE
+    // 3d:       Earth::Mode3D::EvaluateBackgroundMagneticFieldSI(B, x, prm)
+    //           -> T96 / T05 / TA16 / DIPOLE dispatch on prm.field.model
+    //
+    // Using EvaluateBackgroundMagneticFieldSI here gives identical dispatch for
+    // all field models (DIPOLE, T96, T05, TA16) rather than only the dipole.
+    // The field is sampled at the subsolar point on the outer domain boundary
+    // (+X face centre) as a representative inflow point for the IMF direction.
+    //
+    // prm must have been registered via SetPrm() before this function is called.
+    if (!s_prm_set) exit(__LINE__,__FILE__,
+        "Error: BoundingBoxInjection::SetPrm() must be called before "
+        "InitDirectionIMF() when _PIC_COUPLER_MODE_ is not T96 or T05");
+    {
+      const double x[3] = {PIC::Mesh::mesh->xGlobalMax[0], 0.0, 0.0};
+      Earth::Mode3D::EvaluateBackgroundMagneticFieldSI(b, x, s_prm);
+    }
+    break;
   }
 
   l=Vector3D::Normalize(b); 

@@ -174,6 +174,14 @@ namespace EarthUtil {
     //   Sentinel: < 0 means no CLI override (use input file value).
     int forward3dNiter{-1};
 
+    // -forward-nparticles <int>
+    //   Override Mode3DForwardOptions::nParticlesPerIter from the input file.
+    //   Sets the number of simulation particles injected at the domain boundary each
+    //   iteration. The physical particle weight is then automatically derived as:
+    //     W = (π × ∫J(E)dE × A_boundary × dt) / nParticlesPerIter
+    //   Sentinel: < 0 means no CLI override (use input file value, default 1000).
+    int forward3dNparticles{-1};
+
     // -forward-boundary-dist <ISOTROPIC|...>
     //   Override Mode3DForwardOptions::boundaryDistType.
     //   Empty string means: use the input file default (ISOTROPIC).

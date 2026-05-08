@@ -721,6 +721,9 @@ namespace EarthUtil {
   //   -mode 3d_forward                              select this mode
   //   -mode3d-output-initialized                    write initialized mesh Tecplot file
   //   -forward-niter <int>                          override iteration count
+  //   -forward-nparticles <int>                     override simulation particles per iteration;
+  //                                                 physical weight is recomputed automatically:
+  //                                                   W = (π×∫J dE×A_boundary×dt)/N
   //   -forward-boundary-dist <ISOTROPIC|...>        override boundary distribution type
   //
   // Input file keywords (parsed from #NUMERICAL for max-step reuse):

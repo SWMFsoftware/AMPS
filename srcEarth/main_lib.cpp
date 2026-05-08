@@ -25,6 +25,7 @@
 #include "Earth.h"
 
 #include "GeopackInterface.h"
+#include "util/amps_param_parser.h"
 #include "T96Interface.h"
 #include "T05Interface.h"
 #include "TA15Interface.h"
@@ -412,10 +413,12 @@ void amps_init_mesh() {
  void amps_init() {
    int idim;
 
+   /*
   if (Earth::ModelMode==Earth::BoundaryInjectionMode) {
     MAIN_LIB_GEO::amps_init();
     return;
   }
+  */
    
    //init the PIC solver
    PIC::Init_AfterParser ();
@@ -474,6 +477,11 @@ void amps_init_mesh() {
    case Earth::CutoffRigidityMode:
      break; 
    case Earth::BoundaryInjectionMode:
+     // Register the parsed model parameters so InitDirectionIMF() can call
+     // EvaluateBackgroundMagneticFieldSI() in the default (_PIC_COUPLER_MODE_) case.
+     if (PIC::PostCompileInputFileName != "")
+       Earth::BoundingBoxInjection::SetPrm(
+           EarthUtil::ParseAmpsParamFile(PIC::PostCompileInputFileName));
      Earth::BoundingBoxInjection::InitDirectionIMF();
 
      PIC::BC::BlockInjectionBCindicatior=Earth::BoundingBoxInjection::InjectionIndicator;

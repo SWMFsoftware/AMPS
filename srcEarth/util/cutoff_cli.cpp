@@ -125,6 +125,19 @@ CliOptions ParseCli(int argc,char** argv) {
       if (opt.forward3dNiter < 1)
         exit(__LINE__,__FILE__,"-forward-niter must be >= 1");
     }
+    else if (a=="-forward-nparticles" || a=="--forward-nparticles") {
+      // Override Mode3DForwardOptions::nParticlesPerIter.
+      // Sets the number of simulation particles injected at the domain boundary per
+      // iteration.  The physical particle weight W is then automatically derived from
+      // the boundary spectrum integral and total boundary area:
+      //   W = (pi x int_{Emin}^{Emax} J(E) dE x A_boundary x dt) / nParticlesPerIter
+      // Increasing this improves statistical sampling of the density distribution at
+      // the cost of proportionally higher memory and compute per iteration.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -forward-nparticles");
+      opt.forward3dNparticles = std::stoi(argv[++i]);
+      if (opt.forward3dNparticles < 1)
+        exit(__LINE__,__FILE__,"-forward-nparticles must be >= 1");
+    }
     else if (a=="-forward-boundary-dist" || a=="--forward-boundary-dist") {
       // Override Mode3DForwardOptions::boundaryDistType.
       // Accepted values (case-insensitive): ISOTROPIC (others reserved for future use).
@@ -233,6 +246,14 @@ std::string HelpMessage(const char* progName) {
   out << "  -forward-niter | --forward-niter <int>   (optional)\n";
   out << "      Override FORWARD_N_ITERATIONS from the input file.\n";
   out << "      Total number of forward time-step iterations to run.\n\n";
+  out << "  -forward-nparticles | --forward-nparticles <int>   (optional; default: 1000)\n";
+  out << "      Number of simulation particles injected at the domain boundary each\n";
+  out << "      forward iteration.  Overrides FORWARD_N_PARTICLES from the input file.\n";
+  out << "      The physical particle weight is computed automatically from the boundary\n";
+  out << "      spectrum, total boundary area, and the time step:\n";
+  out << "        W = (pi x integral_{Emin}^{Emax} J(E) dE x A_boundary x dt) / N\n";
+  out << "      where N is this count.  Larger N gives finer phase-space sampling at\n";
+  out << "      the cost of proportionally more memory and compute per iteration.\n\n";
   out << "  -forward-boundary-dist | --forward-boundary-dist <ISOTROPIC>   (optional)\n";
   out << "      Override Mode3DForwardOptions::boundaryDistType.\n";
   out << "      ISOTROPIC (default): cos(θ)-weighted hemisphere at each domain-boundary face.\n";
