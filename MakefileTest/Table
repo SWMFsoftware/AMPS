@@ -59,9 +59,8 @@ Ref=7{pgcc}@@(0+pleiades)
 Ref=5{gcc}@@(0+stampede+amps-gpu+passion)
 Ref=6{icc}@@(0+stampede)
 
-Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels  @@(0+valeriy)
+Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels
 Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels  @@(0+amps-gpu+passion)
-Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels  @@(0+stampede)
 
 Check=
@@ -6350,9 +6349,8 @@ Time=5
 
 Type=amps
 
-Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
+Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels
 Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
-Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
 
 Outs=test_Earth-cutoff-rigidity-gridless-steadystate_t96-points test_Earth-cutoff-rigidity-gridless-steadystate_t96-shells
@@ -6415,9 +6413,8 @@ Time=5
 
 Type=amps
 
-Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
+Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels
 Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
-Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
 
 Outs=test_Earth-vertical-cutoff-rigidity-gridless-points-compare test_Earth-vertical-cutoff-rigidity-gridless-points-cutoff test_Earth-vertical-cutoff-rigidity-gridless-points-dirmap test_Earth-vertical-cutoff-rigidity-gridless-shells-compare test_Earth-vertical-cutoff-rigidity-gridless-shells-cutoff
@@ -6514,9 +6511,8 @@ Time=5
 
 Type=amps
 
-Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
+Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels
 Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
-Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
 
 Outs=test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-compare test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-cutoff test_Earth-vertical-cutoff-rigidity-gridless-hybrid-points-dirmap test_Earth-vertical-cutoff-rigidity-gridless-hybrid-shells-compare test_Earth-vertical-cutoff-rigidity-gridless-hybrid-shells-cutoff
@@ -7248,9 +7244,8 @@ Time=5
 
 Type=amps
 
-Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
-Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
 
 Outs=test_Earth-cutoff-rigidity-gridless-trajectory--t01--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--t01--compare test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--t05--compare test_Earth-cutoff-rigidity-gridless-trajectory--t96--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--t96--compare test_Earth-cutoff-rigidity-gridless-trajectory--ta15n--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--ta15n--compare test_Earth-cutoff-rigidity-gridless-trajectory--ta15b--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--ta15b--compare test_Earth-cutoff-rigidity-gridless-trajectory--ta16--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--ta16--compare test_Earth-cutoff-rigidity-gridless-trajectory--dipole--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--dipole--compare
@@ -7475,9 +7470,8 @@ Time=5
 
 Type=amps
 
-Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
-Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
 
 Outs=test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t01--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t01--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t05--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t05--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t96--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t96--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--compare
@@ -7713,9 +7707,8 @@ Time=5
 
 Type=amps
 
-Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
-Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
 
 Outs=test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-compare
@@ -7783,9 +7776,8 @@ Time=5
 
 Type=amps
 
-Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
-Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
 
 Outs=test_Earth-cutoff-rigidity-3d-points-cutoff test_Earth-cutoff-rigidity-3d-points-compare test_Earth-cutoff-rigidity-3d-shells-cutoff test_Earth-cutoff-rigidity-3d-shells-compare
@@ -7875,9 +7867,8 @@ Time=5
 
 Type=amps
 
-Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
-Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
 
 Outs=test_Earth-cutoff-rigidity-3d-analytic-points-cutoff test_Earth-cutoff-rigidity-3d-analytic-points-compare test_Earth-cutoff-rigidity-3d-analytic-shells-cutoff test_Earth-cutoff-rigidity-3d-analytic-shells-compare
