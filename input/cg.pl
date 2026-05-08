@@ -140,7 +140,7 @@ while ($line=<InputFile>) {
 
 
   #set flag that blocks cutting the nucleus out of the domain 
-  if ($InputLine eq "CUTNUCLEUSOUT") {
+  elsif ($InputLine eq "CUTNUCLEUSOUT") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
 
     if ($InputLine eq "TRUE") {
