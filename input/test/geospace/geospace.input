@@ -27,7 +27,7 @@
 
 #block ../input/earth.input.pl
   GCR=off
-  SEP=on
+  SEP=off 
   SW=off 
 
 ! SepEnergySpectrumFile=sep-spectrum-09102017-event.dat
