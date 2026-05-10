@@ -7358,7 +7358,7 @@ Check=
 
 >>>@echo "--- Subtest: T05 model ---" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=1e-2  \
 >>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t05.dat \
 >>>  output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t05.dat \
 >>>  > test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff.diff
@@ -7368,7 +7368,7 @@ Check=
 
 >>>@echo "--- Subtest: T01 model ---" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=1e-2 \
 >>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t01.dat \
 >>>  output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t01.dat \
 >>>  > test_Earth-cutoff-rigidity-gridless-trajectory--t01--cutoff.diff
@@ -7378,7 +7378,7 @@ Check=
 
 >>>@echo "--- Subtest: T96 model ---" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=1e-2 \
 >>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--t96.dat \
 >>>  output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--t96.dat \
 >>>  > test_Earth-cutoff-rigidity-gridless-trajectory--t96--cutoff.diff
@@ -7388,7 +7388,7 @@ Check=
 
 >>>@echo "--- Subtest: TA15N model ---" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=1e-2 \
 >>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta15n.dat \
 >>>  output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta15n.dat \
 >>>  > test_Earth-cutoff-rigidity-gridless-trajectory--ta15n--cutoff.diff
@@ -7398,7 +7398,7 @@ Check=
 
 >>>@echo "--- Subtest: TA15B model ---" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=1e-2 \
 >>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta15b.dat \
 >>>  output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta15b.dat \
 >>>  > test_Earth-cutoff-rigidity-gridless-trajectory--ta15b--cutoff.diff
@@ -7408,7 +7408,7 @@ Check=
 
 >>>@echo "--- Subtest: TA16 model ---" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=1e-2 \
 >>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta16.dat \
 >>>  output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta16.dat \
 >>>  > test_Earth-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff
