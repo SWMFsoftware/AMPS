@@ -890,7 +890,7 @@ int Run(const EarthUtil::AmpsParam& prm) {
   // 11. Main loop
   //--------------------------------------------------------------------------
   PIC::Mover::BackwardTimeIntegrationMode = _PIC_MODE_OFF_; // forward in time
-  PIC::SamplingMode = _SINGLE_OUTPUT_FILE_SAMPING_MODE_;
+  PIC::SamplingMode = _RESTART_SAMPLING_MODE_; 
 
   const int nIter = prm.mode3dForward.nIterations;
 
