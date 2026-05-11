@@ -36,6 +36,10 @@ SpiceDouble Exosphere::Sampling::OutputDataFile::SO_to_HCI_TransformationMartix[
 //sample the source rate
 double Exosphere::Sampling::CalculatedSourceRate[PIC::nTotalSpecies][1+_EXOSPHERE__SOURCE_MAX_ID_VALUE_];
 
+
+//output columns integrals
+bool Exosphere::ColumnIntegral::OutputColumnIntegralFlag=true;
+
 //sampling offsets
 int Exosphere::Sampling::SamplingDensityOffset[1+_EXOSPHERE__SOURCE_MAX_ID_VALUE_];
 int Exosphere::Sampling::CellSamplingDataOffset=-1;
@@ -1709,27 +1713,29 @@ void Exosphere::Sampling::OutputSampledModelData(int DataOutputFileNumber) {
 
 
   //the sodium column density in the tail
-  sprintf(fname,"%s/pic.TailColumnDensity.%s.out=%i.dat",PIC::OutputDataFileDirectory,utcstr,DataOutputFileNumber);
-  ColumnIntegral::Tail(fname);
+  if (Exosphere::ColumnIntegral::OutputColumnIntegralFlag==true) {
+    sprintf(fname,"%s/pic.TailColumnDensity.%s.out=%i.dat",PIC::OutputDataFileDirectory,utcstr,DataOutputFileNumber);
+    ColumnIntegral::Tail(fname);
 
-  //column density distribution map
-/*
-  sprintf(fname,"pic.ColumnDensityMap.%s.out=%i.dat",utcstr,DataOutputFileNumber);
-  ColumnDensityIntegration_Map(fname,-1.0,-1.0,100);
+    //column density distribution map
+    /*
+    sprintf(fname,"pic.ColumnDensityMap.%s.out=%i.dat",utcstr,DataOutputFileNumber);
+    ColumnDensityIntegration_Map(fname,-1.0,-1.0,100);
 
-  sprintf(fname,"pic.ColumnDensityMap.close.%s.out=%i.dat",utcstr,DataOutputFileNumber);
-  ColumnDensityIntegration_Map(fname,40.0*_RADIUS_(_TARGET_),40.0*_RADIUS_(_TARGET_),100);
-*/
+    sprintf(fname,"pic.ColumnDensityMap.close.%s.out=%i.dat",utcstr,DataOutputFileNumber);
+    ColumnDensityIntegration_Map(fname,40.0*_RADIUS_(_TARGET_),40.0*_RADIUS_(_TARGET_),100);
+    */
 
-  sprintf(fname,"%s/pic.ColumnDensityMap.spherical.%s.out=%i.dat",PIC::OutputDataFileDirectory,utcstr,DataOutputFileNumber);
-  double domainCharacteristicSize=0.0;
-  for (int idim=0;idim<DIM;idim++) domainCharacteristicSize=max(max(fabs(PIC::Mesh::mesh->xGlobalMax[idim]),fabs(PIC::Mesh::mesh->xGlobalMin[idim])),domainCharacteristicSize);
+    sprintf(fname,"%s/pic.ColumnDensityMap.spherical.%s.out=%i.dat",PIC::OutputDataFileDirectory,utcstr,DataOutputFileNumber);
+    double domainCharacteristicSize=0.0;
+    for (int idim=0;idim<DIM;idim++) domainCharacteristicSize=max(max(fabs(PIC::Mesh::mesh->xGlobalMax[idim]),fabs(PIC::Mesh::mesh->xGlobalMin[idim])),domainCharacteristicSize);
 
-  Exosphere::ColumnIntegral::CircularMap(fname,domainCharacteristicSize,0.05*_RADIUS_(_TARGET_),min(5*_RADIUS_(_TARGET_),0.1*domainCharacteristicSize),80,Exosphere::OrbitalMotion::et);
+    Exosphere::ColumnIntegral::CircularMap(fname,domainCharacteristicSize,0.05*_RADIUS_(_TARGET_),min(5*_RADIUS_(_TARGET_),0.1*domainCharacteristicSize),80,Exosphere::OrbitalMotion::et);
 
-  //sodium column density along the limb direction
-  sprintf(fname,"%s/pic.LimbColumnDensity.%s.out=%i.dat",PIC::OutputDataFileDirectory,utcstr,DataOutputFileNumber);
-  ColumnIntegral::Limb(fname);
+    //sodium column density along the limb direction
+    sprintf(fname,"%s/pic.LimbColumnDensity.%s.out=%i.dat",PIC::OutputDataFileDirectory,utcstr,DataOutputFileNumber);
+    ColumnIntegral::Limb(fname);
+  }
 
 
   //output data that correcponds for avalable ground based observatinos

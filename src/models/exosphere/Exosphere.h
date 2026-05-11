@@ -101,6 +101,7 @@ namespace Exosphere {
 
   //make coulumn integration
   namespace ColumnIntegral {
+    extern bool OutputColumnIntegralFlag;
     void CoulumnDensityIntegrant(double *res,int resLength,double* x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
     int GetVariableList(char *vlist=NULL);
     void ProcessColumnIntegrationVector(double *res,int resLength);
