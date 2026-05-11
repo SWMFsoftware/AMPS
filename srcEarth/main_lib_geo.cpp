@@ -185,6 +185,8 @@ void amps_init_mesh() {
 
 
  Earth::Init_BeforeParser();
+ Earth::Init_AfterParser();
+ Exosphere::ColumnIntegral::OutputColumnIntegralFlag=false;
 
  //init the particle solver
  PIC::Init_BeforeParser();
