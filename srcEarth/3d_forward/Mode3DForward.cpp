@@ -594,17 +594,33 @@ static long int InjectParticles() {
       if (fRand < sBndTable.cumFaceWeight[f + 1]) { face = f; break; }
 
     // ------------------------------------------------------------------
-    // 2. Uniform random position on the chosen face
-    //    SEP: x = x0 + c0*e0 + c1*e1 via GetBlockFaceCoordinateFrame_3D
+    // 2. Uniform random position on the chosen face, offset slightly inward.
+    //
+    //    The injection point is placed ONE CELL WIDTH inward from the outer
+    //    boundary face along the inward normal.  This is necessary because
+    //    PIC::Mesh::mesh->findTreeNode() treats the domain as a half-open
+    //    interval: a coordinate exactly equal to xmin[d] or xmax[d] lies
+    //    outside the valid range and findTreeNode returns NULL, which causes
+    //    the particle to be silently dropped.
+    //
+    //    The reference BoundaryInjection.cpp avoids this entirely by iterating
+    //    over pre-built boundary-block lists (InitBoundingBoxInjectionBlockList)
+    //    and never calling findTreeNode on an outer-boundary coordinate.  Here
+    //    we replicate the same guarantee with a small offset equal to 1e-6 of
+    //    the relevant domain dimension -- small enough that the injection point
+    //    is still effectively on the boundary face for sampling purposes.
     // ------------------------------------------------------------------
     double xInj[3];
+    const double offX = (xmax[0]-xmin[0]) * 1.0e-6;
+    const double offY = (xmax[1]-xmin[1]) * 1.0e-6;
+    const double offZ = (xmax[2]-xmin[2]) * 1.0e-6;
     switch (face) {
-      case 0: xInj[0]=xmin[0]; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmin[2]+rnd()*Lz; break;
-      case 1: xInj[0]=xmax[0]; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmin[2]+rnd()*Lz; break;
-      case 2: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmin[1]; xInj[2]=xmin[2]+rnd()*Lz; break;
-      case 3: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmax[1]; xInj[2]=xmin[2]+rnd()*Lz; break;
-      case 4: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmin[2]; break;
-      default: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmax[2]; break;
+      case 0: xInj[0]=xmin[0]+offX; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmin[2]+rnd()*Lz; break;
+      case 1: xInj[0]=xmax[0]-offX; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmin[2]+rnd()*Lz; break;
+      case 2: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmin[1]+offY; xInj[2]=xmin[2]+rnd()*Lz; break;
+      case 3: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmax[1]-offY; xInj[2]=xmin[2]+rnd()*Lz; break;
+      case 4: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmin[2]+offZ; break;
+      default: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmax[2]-offZ; break;
     }
 
     // Skip positions inside the inner absorption sphere (Earth's surface)
