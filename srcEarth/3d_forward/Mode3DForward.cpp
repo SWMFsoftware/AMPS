@@ -54,6 +54,7 @@ static constexpr double DtCellFrac   = 0.25;
 //  Module-level state (set in Run, read by injection/sphere callbacks)
 // ============================================================================
 static double sParticleWeight      = 1.0;   // physical particles per sim particle
+static int    sNParticlesPerIter   = 1000;  // sim particles injected per iteration
 static double sDt                  = 1.0;   // time step [s]
 static int    sSpecies             = 0;     // AMPS species index for injection
 
@@ -341,180 +342,375 @@ static void InitAbsorptionSphere(const EarthUtil::AmpsParam& prm) {
 //
 //  The distribution object allows future non-isotropic modes (see BoundaryDistribution.h).
 //
-static void InjectBoundaryParticles(int nParticles,
-                                    double weight,
-                                    const BoundaryDistributionBase* dist) {
-  const double xmin[3] = {PIC::Mesh::mesh->xGlobalMin[0],
-                          PIC::Mesh::mesh->xGlobalMin[1],
-                          PIC::Mesh::mesh->xGlobalMin[2]};
-  const double xmax[3] = {PIC::Mesh::mesh->xGlobalMax[0],
-                          PIC::Mesh::mesh->xGlobalMax[1],
-                          PIC::Mesh::mesh->xGlobalMax[2]};
+// ============================================================================
+// Boundary injection table (follows BoundaryInjection_SEP.cpp pattern)
+// ============================================================================
+//
+// PURPOSE
+// -------
+// Pre-computes per-face injection data once from the loaded spectrum gSpectrum
+// and the IMF direction b (Earth::BoundingBoxInjection::b set by InitDirectionIMF).
+// The design mirrors the SEP model:
+//
+//   SEP::InitEnergySpectrum()   -> cBoundaryInjectionTable::Init()
+//   SEP::EnergyDistributor[]    -> cBoundaryInjectionTable::energyCDF[face][bin]
+//   SEP::IntegratedSpectrum[]   -> cBoundaryInjectionTable::fluxPerArea[face]
+//   SEP::GetNewParticle()       -> the (mu, phi, b) direction-sampling loop in
+//                                  InjectBoundaryParticles()
+//
+// PHYSICS
+// -------
+// For an isotropic external differential intensity J(E) [m^-2 s^-1 sr^-1 J^-1]
+// the one-way particle flux incident on a surface element is the same for every
+// face orientation:
+//
+//   Phi = pi * integral_{Emin}^{Emax} J(E) dE   [particles m^-2 s^-1]
+//
+// The per-face flux (and therefore the per-face energy CDF) is identical for
+// all six domain faces. Face selection is thus proportional to face area, and
+// the energy CDF is built once and shared.
+//
+// The velocity direction is sampled in the inward hemisphere relative to the IMF
+// vector b exactly as in SEP::GetNewParticle():
+//
+//   mu  = rnd()                       pitch-angle cosine (uniform in [0,1])
+//   phi = 2*pi * rnd()               azimuth (uniform)
+//   v_hat = mu*b + sqrt(1-mu^2)*(sin(phi)*ee0 + cos(phi)*ee1)
+//   accept if v_hat . inwardNormal < 0   (particle enters the domain)
+//
+// This sampling produces the correct cos(theta) marginal distribution for the
+// one-way flux at a planar surface for an isotropic external field.
 
-  const double Lx = xmax[0] - xmin[0];
-  const double Ly = xmax[1] - xmin[1];
-  const double Lz = xmax[2] - xmin[2];
+static constexpr int kNEnergyBins = 500;
 
-  // Face areas and their cumulative sum for random face selection
-  const double areas[6] = { Ly*Lz, Ly*Lz,   // ±X faces
-                             Lz*Lx, Lz*Lx,   // ±Y faces
-                             Lx*Ly, Lx*Ly }; // ±Z faces
-  double cumArea[7];
-  cumArea[0] = 0.0;
-  for (int f = 0; f < 6; f++) cumArea[f+1] = cumArea[f] + areas[f];
-  const double totalArea = cumArea[6];
+struct cBoundaryInjectionTable {
+  bool   initialized{false};
 
-  // Pre-compute species mass and spectrum bounds for energy sampling
-  const double mass     = PIC::MolecularData::GetMass(sSpecies);
-  const double logEmin  = std::log(gSpectrum.Emin_MeV() * MeV_in_J);
-  const double logEmax  = std::log(gSpectrum.Emax_MeV() * MeV_in_J);
-  // Upper envelope for rejection sampling: J at Emin (max for typical falling spectra)
-  const double Jmax     = gSpectrum.GetSpectrum(gSpectrum.Emin_MeV() * MeV_in_J);
+  // Log-uniform energy bin edges [J], size kNEnergyBins+1
+  double eBinEdge[kNEnergyBins + 1]{};
+
+  // Energy CDF shared across all faces (isotropic: same spectrum for each face).
+  // energyCDF[k] = P(E < eBinEdge[k+1]).
+  // Populated from the cumulative trapezoid of J(E_mid) * dE.
+  // Mirrors SEP::EnergyDistributor (cSingleVariableDiscreteDistribution).
+  double energyCDF[kNEnergyBins]{};
+
+  // Per-face one-way flux per unit area [particles m^-2 s^-1].
+  // For isotropic injection: fluxPerArea[f] = pi * integralJ for all f.
+  // Mirrors SEP::IntegratedSpectrum[6].
+  double fluxPerArea[6]{};
+
+  // Face areas [m^2]: face 0=-X,1=+X -> Ly*Lz; 2=-Y,3=+Y -> Lz*Lx; 4=-Z,5=+Z -> Lx*Ly
+  double faceArea[6]{};
+
+  // Cumulative face selection weights (fluxPerArea[f]*faceArea[f], normalised).
+  // cumFaceWeight[0]=0, cumFaceWeight[6]=1.
+  double cumFaceWeight[7]{};
+};
+
+static cBoundaryInjectionTable sBndTable;
+
+// ---------------------------------------------------------------------------
+// InitBoundaryInjectionTable — analogous to SEP::InitEnergySpectrum()
+// ---------------------------------------------------------------------------
+static void InitBoundaryInjectionTable() {
+  if (sBndTable.initialized) return;
+
+  // ---- 1. Log-uniform energy bins over the spectrum range ----
+  const double Emin_J  = gSpectrum.Emin_MeV() * MeV_in_J;
+  const double Emax_J  = gSpectrum.Emax_MeV() * MeV_in_J;
+  const double logEmin = std::log(Emin_J);
+  const double logEmax = std::log(Emax_J);
+  const double dlogE   = (logEmax - logEmin) / kNEnergyBins;
+
+  for (int k = 0; k <= kNEnergyBins; k++)
+    sBndTable.eBinEdge[k] = std::exp(logEmin + k * dlogE);
+
+  // ---- 2. Raw bin flux values (trapezoid rule) and energy CDF ----
+  // rawBin[k] = 0.5*(J(E0)+J(E1))*(E1-E0) — the flux contribution of bin k.
+  // Mirrors SEP::ProbabilityTable[] before normalisation.
+  double rawBin[kNEnergyBins]{};
+  double integralJ = 0.0;
+
+  for (int k = 0; k < kNEnergyBins; k++) {
+    const double E0 = sBndTable.eBinEdge[k];
+    const double E1 = sBndTable.eBinEdge[k + 1];
+    rawBin[k]  = 0.5 * (gSpectrum.GetSpectrum(E0) + gSpectrum.GetSpectrum(E1)) * (E1 - E0);
+    integralJ += rawBin[k];
+  }
+
+  // Normalised CDF (same as SEP's ProbabilityTable[] after dividing by IntegratedSpectrum)
+  double running = 0.0;
+  for (int k = 0; k < kNEnergyBins; k++) {
+    running += (integralJ > 0.0) ? rawBin[k] / integralJ : 1.0 / kNEnergyBins;
+    sBndTable.energyCDF[k] = running;
+  }
+
+  // ---- 3. Per-face one-way flux per unit area ----
+  // For isotropic: Phi = pi * integralJ  [particles m^-2 s^-1] for every face.
+  // This is the 3d_forward analogue of SEP::IntegratedSpectrum[iface].
+  const double isoFluxPerArea = Pi * integralJ;
+  for (int f = 0; f < 6; f++) sBndTable.fluxPerArea[f] = isoFluxPerArea;
+
+  // ---- 4. Face areas and cumulative selection CDF ----
+  const double Lx = PIC::Mesh::mesh->xGlobalMax[0] - PIC::Mesh::mesh->xGlobalMin[0];
+  const double Ly = PIC::Mesh::mesh->xGlobalMax[1] - PIC::Mesh::mesh->xGlobalMin[1];
+  const double Lz = PIC::Mesh::mesh->xGlobalMax[2] - PIC::Mesh::mesh->xGlobalMin[2];
+
+  sBndTable.faceArea[0] = sBndTable.faceArea[1] = Ly * Lz;
+  sBndTable.faceArea[2] = sBndTable.faceArea[3] = Lz * Lx;
+  sBndTable.faceArea[4] = sBndTable.faceArea[5] = Lx * Ly;
+
+  double totalWeight = 0.0;
+  for (int f = 0; f < 6; f++)
+    totalWeight += sBndTable.fluxPerArea[f] * sBndTable.faceArea[f];
+
+  sBndTable.cumFaceWeight[0] = 0.0;
+  for (int f = 0; f < 6; f++)
+    sBndTable.cumFaceWeight[f + 1] = sBndTable.cumFaceWeight[f]
+        + sBndTable.fluxPerArea[f] * sBndTable.faceArea[f] / totalWeight;
+
+  sBndTable.initialized = true;
+
+  if (PIC::ThisThread == 0)
+    std::cout << "[Mode3DForward] BoundaryInjectionTable: integralJ=" << integralJ
+              << " m^-2 s^-1 sr^-1, isoFluxPerArea=" << isoFluxPerArea
+              << " m^-2 s^-1\n";
+}
+
+// ============================================================================
+// InjectBoundaryParticles
+// ============================================================================
+//
+// Inject exactly nParticles simulation particles at the domain boundary for
+// this iteration, drawing energy and direction from the input-file spectrum.
+//
+// Implementation follows the SEP pattern from BoundaryInjection_SEP.cpp:
+//
+//  1. Face selection:   proportional to fluxPerArea[f] * faceArea[f]
+//                       (= area for isotropic; analogous to SEP::InjectionRate)
+//
+//  2. Position:         uniform random on the chosen face
+//                       (cf. BoundaryInjection.cpp::InjectionProcessor,
+//                            GetBlockFaceCoordinateFrame_3D + random (c0,c1))
+//
+//  3. Energy:           inverse-CDF sampling from per-face energyCDF[]
+//                       (cf. SEP::GetNewParticle -> EnergyDistributor[nface])
+//
+//  4. Direction:        inward half-hemisphere relative to IMF vector b
+//                       (cf. SEP::GetNewParticle, default InjectionMode)
+//                         mu  = rnd()          pitch-angle cosine (uniform)
+//                         phi = 2*pi*rnd()     azimuth (uniform)
+//                         v = mu*b + sqrt(1-mu^2)*(sin(phi)*ee0 + cos(phi)*ee1)
+//                         accept if v . inwardNormal < 0
+//
+//  5. Inject:           GetNewParticle / SetV / SetX / SetI
+//                       (same as BoundaryInjection.cpp::InjectionProcessor)
+//
+// ============================================================================
+// InjectBoundaryParticles
+// ============================================================================
+//
+// Inject exactly nParticles simulation particles at the domain boundary for
+// this iteration, drawing energy and direction from the input-file spectrum.
+//
+// Follows the SEP injection pattern (BoundaryInjection_SEP.cpp):
+//
+//  1. Face selection:  proportional to fluxPerArea[f] * faceArea[f]
+//                      (mirrors SEP::InjectionRate returning IntegratedSpectrum[nface])
+//
+//  2. Position:        uniform random on the chosen face
+//                      (cf. BoundaryInjection.cpp::InjectionProcessor:
+//                           x = x0 + c0*e0 + c1*e1 from GetBlockFaceCoordinateFrame_3D)
+//
+//  3. Energy:          inverse-CDF sampling from energyCDF[]
+//                      (cf. SEP::GetNewParticle -> EnergyDistributor[nface].DistributeVariable()
+//                           then e = e0 + rnd()*(e1-e0) within the selected bin)
+//
+//  4. Direction:       inward half-hemisphere relative to IMF vector b
+//                      (cf. SEP::GetNewParticle, default InjectionMode:
+//                           mu=rnd(), phi=2*pi*rnd(),
+//                           v = mu*b + sqrt(1-mu^2)*(sin(phi)*ee0 + cos(phi)*ee1),
+//                           while (v.ExternalNormal >= 0) repeat)
+//
+//  5. Inject:          SetV / SetX / SetI + particle tracker hook
+//                      (same as BoundaryInjection.cpp::InjectionProcessor)
+//
+// ---------------------------------------------------------------------------
+// InjectParticles — UserDefinedParticleInjectionFunction callback
+// ---------------------------------------------------------------------------
+// Signature matches PIC::BC::fUserDefinedParticleInjectionFunction:
+//   long int (*)()
+// Assigned to PIC::BC::UserDefinedParticleInjectionFunction in Run() before
+// amps_init_mesh(), following the pattern in srcMOP/main.cpp line 239:
+//   PIC::BC::UserDefinedParticleInjectionFunction = MOP::InjectParticles;
+// PIC::TimeStep() (via amps_time_step()) then calls it automatically each
+// iteration — no explicit call is needed in the main loop.
+static long int InjectParticles() {
+  const int    nParticles = sNParticlesPerIter;
+  const double weight     = sParticleWeight;
+
+  // Pre-compute injection tables from gSpectrum on first call (lazy, idempotent).
+  // Analogous to SEP::InjectionRate() calling InitEnergySpectrum() on first use.
+  InitBoundaryInjectionTable();
+
+  const double* xmin  = PIC::Mesh::mesh->xGlobalMin;
+  const double* xmax  = PIC::Mesh::mesh->xGlobalMax;
+  const double  Lx    = xmax[0] - xmin[0];
+  const double  Ly    = xmax[1] - xmin[1];
+  const double  Lz    = xmax[2] - xmin[2];
+  const double  mass  = PIC::MolecularData::GetMass(sSpecies);
+
+  // Per-face inward normals and fixed tangent-vector pairs.
+  // Each face has an orthonormal frame (n_in, t1, t2) used for direction sampling.
+  // n_in points into the domain; t1 and t2 span the face plane.
+  static const double inwardNormal[6][3] = {
+    { 1, 0, 0}, {-1, 0, 0},   // face 0=-X, face 1=+X
+    { 0, 1, 0}, { 0,-1, 0},   // face 2=-Y, face 3=+Y
+    { 0, 0, 1}, { 0, 0,-1}    // face 4=-Z, face 5=+Z
+  };
+  // Tangent vectors completing the right-handed frame for each face.
+  static const double tangent1[6][3] = {
+    {0, 1, 0}, {0, 1, 0},     // face 0,1: t1 = +Y
+    {0, 0, 1}, {0, 0, 1},     // face 2,3: t1 = +Z
+    {1, 0, 0}, {1, 0, 0}      // face 4,5: t1 = +X
+  };
+  static const double tangent2[6][3] = {
+    {0, 0, 1}, {0, 0, 1},     // face 0,1: t2 = +Z
+    {1, 0, 0}, {1, 0, 0},     // face 2,3: t2 = +X
+    {0, 1, 0}, {0, 1, 0}      // face 4,5: t2 = +Y
+  };
 
   for (int ip = 0; ip < nParticles; ip++) {
-    // ---- Select face proportional to area ----
-    const double aRand = rnd() * totalArea;
+
+    // ------------------------------------------------------------------
+    // 1. Select face from pre-computed CDF (proportional to area for isotropic)
+    //    SEP analogue: InjectionProcessor loops over nface with ExternalFaces[nface];
+    //    here the face is drawn probabilistically rather than processed per-block.
+    // ------------------------------------------------------------------
+    const double fRand = rnd();
     int face = 5;
     for (int f = 0; f < 6; f++)
-      if (aRand < cumArea[f+1]) { face = f; break; }
+      if (fRand < sBndTable.cumFaceWeight[f + 1]) { face = f; break; }
 
-    // face 0 = -X, 1 = +X, 2 = -Y, 3 = +Y, 4 = -Z, 5 = +Z
-    // Inward normals: (-X face) → (+1,0,0), etc.
-    //   face 0: n=(+1,0,0); face 1: n=(-1,0,0)
-    //   face 2: n=(0,+1,0); face 3: n=(0,-1,0)
-    //   face 4: n=(0,0,+1); face 5: n=(0,0,-1)
-
-    // ---- Random position on chosen face ----
+    // ------------------------------------------------------------------
+    // 2. Uniform random position on the chosen face
+    //    SEP: x = x0 + c0*e0 + c1*e1 via GetBlockFaceCoordinateFrame_3D
+    // ------------------------------------------------------------------
     double xInj[3];
     switch (face) {
-      case 0: // -X face
-        xInj[0] = xmin[0];
-        xInj[1] = xmin[1] + rnd() * Ly;
-        xInj[2] = xmin[2] + rnd() * Lz;
-        break;
-      case 1: // +X face
-        xInj[0] = xmax[0];
-        xInj[1] = xmin[1] + rnd() * Ly;
-        xInj[2] = xmin[2] + rnd() * Lz;
-        break;
-      case 2: // -Y face
-        xInj[0] = xmin[0] + rnd() * Lx;
-        xInj[1] = xmin[1];
-        xInj[2] = xmin[2] + rnd() * Lz;
-        break;
-      case 3: // +Y face
-        xInj[0] = xmin[0] + rnd() * Lx;
-        xInj[1] = xmax[1];
-        xInj[2] = xmin[2] + rnd() * Lz;
-        break;
-      case 4: // -Z face
-        xInj[0] = xmin[0] + rnd() * Lx;
-        xInj[1] = xmin[1] + rnd() * Ly;
-        xInj[2] = xmin[2];
-        break;
-      default: // +Z face
-        xInj[0] = xmin[0] + rnd() * Lx;
-        xInj[1] = xmin[1] + rnd() * Ly;
-        xInj[2] = xmax[2];
-        break;
+      case 0: xInj[0]=xmin[0]; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmin[2]+rnd()*Lz; break;
+      case 1: xInj[0]=xmax[0]; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmin[2]+rnd()*Lz; break;
+      case 2: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmin[1]; xInj[2]=xmin[2]+rnd()*Lz; break;
+      case 3: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmax[1]; xInj[2]=xmin[2]+rnd()*Lz; break;
+      case 4: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmin[2]; break;
+      default: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmax[2]; break;
     }
 
-    // ---- Sample kinetic energy by rejection sampling ----
-    // Reject if position is inside the inner sphere (pre-check to save work).
-    const double r2 = xInj[0]*xInj[0] + xInj[1]*xInj[1] + xInj[2]*xInj[2];
-    const double rInner = sAbsorptionSphere ? sAbsorptionSphere->Radius : _EARTH__RADIUS_;
-    if (r2 < rInner * rInner * 0.99 * 0.99) continue; // extremely unlikely but safe
-
-    double E_J = 0.0;
+    // Skip positions inside the inner absorption sphere (Earth's surface)
     {
-      bool accepted = false;
-      for (int attempt = 0; attempt < 200; attempt++) {
-        const double Etry = std::exp(logEmin + rnd() * (logEmax - logEmin));
-        const double Jtry = gSpectrum.GetSpectrum(Etry);
-        if (Jmax > 0.0 && rnd() * Jmax <= Jtry) {
-          E_J = Etry;
-          accepted = true;
-          break;
-        }
-      }
-      if (!accepted) E_J = std::exp(logEmin); // fallback: inject at Emin
+      const double r2     = xInj[0]*xInj[0] + xInj[1]*xInj[1] + xInj[2]*xInj[2];
+      const double rInner = sAbsorptionSphere ? sAbsorptionSphere->Radius : _EARTH__RADIUS_;
+      if (r2 < rInner * rInner) continue;
     }
 
-    // ---- Sample inward direction (cosine-weighted hemisphere) ----
-    // Local frame: e_n is the inward normal, e1 and e2 are tangents.
-    double e_n[3] = {0,0,0}, e1[3] = {0,0,0}, e2[3] = {0,0,0};
-    switch (face) {
-      case 0: e_n[0]= 1; e1[1]= 1; e2[2]= 1; break;
-      case 1: e_n[0]=-1; e1[1]= 1; e2[2]= 1; break;
-      case 2: e_n[1]= 1; e1[0]= 1; e2[2]= 1; break;
-      case 3: e_n[1]=-1; e1[0]= 1; e2[2]= 1; break;
-      case 4: e_n[2]= 1; e1[0]= 1; e2[1]= 1; break;
-      default: e_n[2]=-1; e1[0]= 1; e2[1]= 1; break;
+    // ------------------------------------------------------------------
+    // 3. Sample kinetic energy using inverse-CDF on sBndTable.energyCDF[]
+    //    SEP: EnergyDistributor[nface].DistributeVariable() -> iInterval
+    //         e = e0 + rnd()*(e1-e0) within the selected bin (eV, then *eV2J)
+    //    Here bins are already in Joules.
+    // ------------------------------------------------------------------
+    double E_J;
+    {
+      const double u = rnd();
+      int k = kNEnergyBins - 1;
+      for (int kk = 0; kk < kNEnergyBins; kk++)
+        if (u <= sBndTable.energyCDF[kk]) { k = kk; break; }
+      E_J = sBndTable.eBinEdge[k] + rnd() * (sBndTable.eBinEdge[k+1] - sBndTable.eBinEdge[k]);
     }
 
-    // Cosine-weighted hemisphere: cos(θ) = sqrt(ξ₁), φ = 2π ξ₂
-    const double xi1 = rnd();
-    const double xi2 = rnd();
-    const double cosTheta = std::sqrt(xi1);
-    const double sinTheta = std::sqrt(1.0 - xi1);
-    const double phi = 2.0 * Pi * xi2;
-    const double cosPhi = std::cos(phi);
-    const double sinPhi = std::sin(phi);
-
+    // ------------------------------------------------------------------
+    // 4. Sample inward velocity direction: isotropic 4pi, cosine-weighted.
+    //
+    // For an isotropic external intensity f(Omega) = 1/(4*pi) the one-way
+    // flux through a surface element is weighted by v_norm = v * cos(theta).
+    // The conditional PDF of an inward direction, given that the particle
+    // crosses the surface, is:
+    //
+    //   p(theta, phi) = (1/pi) * cos(theta)  for theta in [0, pi/2], phi in [0, 2*pi)
+    //
+    // This is sampled exactly (no rejection loop) by cosine-weighted hemisphere
+    // sampling:
+    //
+    //   cos(theta) = sqrt(xi_1)      <- accounts for v_norm * f(v) factor
+    //   phi        = 2*pi * xi_2
+    //   v_hat = cos(theta)*n_in + sin(theta)*(cos(phi)*t1 + sin(phi)*t2)
+    //
+    // where (n_in, t1, t2) is the face-local orthonormal frame defined above.
+    // ------------------------------------------------------------------
     double v_hat[3];
-    for (int idim = 0; idim < 3; idim++)
-      v_hat[idim] = cosTheta * e_n[idim]
-                  + sinTheta * cosPhi * e1[idim]
-                  + sinTheta * sinPhi * e2[idim];
+    {
+      const double cosTheta = std::sqrt(rnd());   // samples v_norm*f(v) exactly
+      const double sinTheta = std::sqrt(1.0 - cosTheta * cosTheta);
+      const double phi      = 2.0 * Pi * rnd();
+      const double cosPhi   = std::cos(phi);
+      const double sinPhi   = std::sin(phi);
+      for (int d = 0; d < 3; d++)
+        v_hat[d] = cosTheta * inwardNormal[face][d]
+                 + sinTheta * (cosPhi * tangent1[face][d] + sinPhi * tangent2[face][d]);
+    }
 
-    // ---- Distribution weighting factor ----
-    // Retrieve B at injection point for anisotropic modes.
-    // For ISOTROPIC this call always returns 1.0.
-    double B_inj[3] = {0.0, 0.0, 0.0};
-    // (B is not needed for isotropic; skip evaluation for performance)
-
-    const double angularWeight = dist->GetAngularWeight(xInj, v_hat, B_inj, sSpecies);
-    if (!(angularWeight > 0.0)) continue;
-
-    // ---- Particle speed from kinetic energy ----
-    const double speed  = Relativistic::E2Speed(E_J, mass);
+    // ------------------------------------------------------------------
+    // 5. Physical speed from relativistic kinetic energy
+    //    (same as SEP::GetNewParticle: Speed = Relativistic::E2Speed(e, mass))
+    // ------------------------------------------------------------------
+    const double speed = Relativistic::E2Speed(E_J, mass);
     double v[3];
-    for (int idim = 0; idim < 3; idim++) v[idim] = v_hat[idim] * speed;
+    for (int d = 0; d < 3; d++) v[d] = v_hat[d] * speed;
 
-    // ---- Find cell and inject ----
+    // ------------------------------------------------------------------
+    // 6. Locate AMR cell and inject particle
+    //    (mirrors BoundaryInjection.cpp::InjectionProcessor:
+    //     GetNewParticle + CloneParticle + SetX/SetI + MoveParticle)
+    // ------------------------------------------------------------------
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode =
         PIC::Mesh::mesh->findTreeNode(xInj);
-    if (startNode == nullptr) continue;
-    if (startNode->Thread != PIC::ThisThread) continue;
+    if (!startNode || startNode->Thread != PIC::ThisThread) continue;
 
     int iCell, jCell, kCell;
     if (PIC::Mesh::mesh->FindCellIndex(xInj, iCell, jCell, kCell, startNode, false) == -1)
       continue;
 
-    long int newP = PIC::ParticleBuffer::GetNewParticle(
-        startNode->block->FirstCellParticleTable[
-            iCell + _BLOCK_CELLS_X_ * (jCell + _BLOCK_CELLS_Y_ * kCell)]);
-
+    long int newP = PIC::ParticleBuffer::GetNewParticle(); 
     PIC::ParticleBuffer::byte* pData = PIC::ParticleBuffer::GetParticleDataPointer(newP);
 
-    PIC::ParticleBuffer::SetV(v, pData);
-    PIC::ParticleBuffer::SetX(xInj, pData);
+    PIC::ParticleBuffer::SetV(v,      pData);
+    PIC::ParticleBuffer::SetX(xInj,   pData);
     PIC::ParticleBuffer::SetI(sSpecies, pData);
 
-    // Apply angular weighting to individual particle weight correction
-    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(angularWeight, pData);
+    if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_)
+      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0, pData);
 
-    // Per-particle physical weight stored in the block
     startNode->block->SetLocalParticleWeight(weight, sSpecies);
 
-    // Optional: trajectory tracking
-    if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) {
-      PIC::ParticleTracker::InitParticleID(pData);
-      PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(xInj, v, sSpecies, pData,
-                                                              static_cast<void*>(startNode));
-    }
-  }
-}
+#if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
+    PIC::ParticleTracker::InitParticleID(pData);
+    PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(xInj, v, sSpecies, pData,
+                                                            static_cast<void*>(startNode));
+#endif
+
+    // Move the freshly injected particle for a random fraction of the local
+    // time step, placing it at a statistically uniform position along its
+    // trajectory within the first iteration interval.
+    // This is identical to BoundaryInjection.cpp line 219:
+    //   _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newParticle, rnd()*LocalTimeStep, startNode)
+    // Without this step all injected particles would start on the domain face,
+    // producing a spurious density spike at the boundary in the first sample.
+    const double localDt = startNode->block->GetLocalTimeStep(sSpecies);
+    _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newP, rnd() * localDt, startNode);
+  }  // end for (int ip = 0; ip < nParticles; ip++)
+  return nParticles;
+}  // end InjectParticles
 
 // ============================================================================
 //  Run — main entry point
@@ -548,6 +744,12 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //
   // (a) cf. srcMOP/main.cpp:238 -- UserDefinedExtraSourceRate set before amps_init.
   PIC::ParticleWeightTimeStep::UserDefinedExtraSourceRate = BoundaryInjectionSourceRate;
+
+  // Register injection callback — mirrors srcMOP/main.cpp:239:
+  //   PIC::BC::UserDefinedParticleInjectionFunction = MOP::InjectParticles;
+  // PIC::TimeStep() calls this automatically each iteration; the direct
+  // InjectBoundaryParticles() call in the main loop is therefore removed.
+  PIC::BC::UserDefinedParticleInjectionFunction = InjectParticles;
 
   // (b) register prm so InitDirectionIMF()'s default branch can call
   //     EvaluateBackgroundMagneticFieldSI(b, x, prm).
@@ -624,7 +826,10 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //   W = BoundaryInjectionSourceRate(spec) x GlobalTimeStep[spec]
   //         / maxReferenceInjectedParticleNumber
   //     = (pi x integral J(E) dE x A_boundary) x dt / nParticlesPerIter
-  const int nSimPerIter = prm.mode3dForward.nParticlesPerIter;
+  // Store in module-level static so InjectParticles() (called by
+  // PIC::TimeStep via UserDefinedParticleInjectionFunction) can read it.
+  sNParticlesPerIter = prm.mode3dForward.nParticlesPerIter;
+  const int nSimPerIter = sNParticlesPerIter;
   PIC::ParticleWeightTimeStep::maxReferenceInjectedParticleNumber = nSimPerIter;
   PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(sSpecies);
 
@@ -649,14 +854,18 @@ int Run(const EarthUtil::AmpsParam& prm) {
   cDensity3D::Init(prm);
 
   //--------------------------------------------------------------------------
-  // 10. Select boundary distribution (ISOTROPIC now; extensible for future modes)
+  // 10. Pre-compute boundary injection table from spectrum + IMF direction.
   //--------------------------------------------------------------------------
-  const BoundaryDistributionType distType =
-      ParseBoundaryDistributionType(prm.mode3dForward.boundaryDistType);
-  std::unique_ptr<BoundaryDistributionBase> boundaryDist(MakeBoundaryDistribution(distType));
+  // InitBoundaryInjectionTable() is also called lazily on the first injection,
+  // but calling it here ensures any startup diagnostics are printed before the
+  // main loop begins. Analogous to SEP::Init() -> InitEnergySpectrum().
+  InitBoundaryInjectionTable();
 
   if (PIC::ThisThread == 0)
-    std::cout << "[Mode3DForward] Boundary distribution: " << boundaryDist->TypeName() << "\n"
+    std::cout << "[Mode3DForward] Boundary injection: SEP-style spectrum CDF sampling\n"
+              << "[Mode3DForward] IMF direction: b=(" << Earth::BoundingBoxInjection::b[0]
+              << ", " << Earth::BoundingBoxInjection::b[1]
+              << ", " << Earth::BoundingBoxInjection::b[2] << ")\n"
               << "[Mode3DForward] Starting " << prm.mode3dForward.nIterations
               << " forward iterations...\n";
   std::cout.flush();
@@ -670,11 +879,10 @@ int Run(const EarthUtil::AmpsParam& prm) {
   const int nIter = prm.mode3dForward.nIterations;
 
   for (int iter = 0; iter < nIter; iter++) {
-    // ---- Inject particles from boundary ----
-    InjectBoundaryParticles(nSimPerIter, sParticleWeight, boundaryDist.get());
-
-    // ---- Advance one time step (moves particles, applies sphere BC,
-    //      triggers sampling callbacks registered via ExternalSamplingLocalVariables) ----
+    // ---- Advance one time step ----
+    // InjectParticles() is called automatically by PIC::TimeStep() via
+    // PIC::BC::UserDefinedParticleInjectionFunction (set in step 2, above).
+    // No explicit injection call is needed here.
     amps_time_step();
 
     // ---- Progress report every 100 iterations (rank 0 only) ----
