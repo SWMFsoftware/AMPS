@@ -31,4 +31,11 @@
   SW=off 
 
 ! SepEnergySpectrumFile=sep-spectrum-09102017-event.dat
+
+! ParticleDataSamplingMode=on \\
+!   function=Earth::Sampling::ParticleData::SampleParticleData
+
+  ParticleDataSamplingMode=on \\
+    function=Earth::Mode3DForward::cDensity3D::SampleParticleData
+
 #endblock
