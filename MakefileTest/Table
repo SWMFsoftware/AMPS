@@ -6384,14 +6384,16 @@ Run=
 Check=
 >>>@echo "test_Earth-cutoff-rigidity-gridless-steadystate_t96_check..." >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
 
+>>>-@gunzip -kf output/test_Earth-cutoff-rigidity-gridless-steadystate_t96/cutoff_gridless_shells.dat.gz 
+
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96DIR)/cutoff_gridless_points.dat \
->>>  output/test_Earth-cutoff-rigidity-gridless-steadystate_t96/cutoff_gridless_points.dat$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).ref_np`ls $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96DIR)/PT/thread* |wc -l |tr -d ' '` \
+>>>  output/test_Earth-cutoff-rigidity-gridless-steadystate_t96/cutoff_gridless_points.dat \
 >>>  > test_Earth-cutoff-rigidity-gridless-steadystate_t96-points$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
 >>>  $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96DIR)/cutoff_gridless_shells.dat \
->>>  output/test_Earth-cutoff-rigidity-gridless-steadystate_t96/cutoff_gridless_shells.dat$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).ref_np`ls $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96DIR)/PT/thread* |wc -l |tr -d ' '` \
+>>>  output/test_Earth-cutoff-rigidity-gridless-steadystate_t96/cutoff_gridless_shells.dat \
 >>>  > test_Earth-cutoff-rigidity-gridless-steadystate_t96-shells$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
 
 >>>@cat test_Earth-cutoff-rigidity-gridless-steadystate_t96-points$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff test_Earth-cutoff-rigidity-gridless-steadystate_t96-shells$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff > test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
