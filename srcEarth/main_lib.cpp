@@ -31,6 +31,7 @@
 #include "TA15Interface.h"
 #include "TA16Interface.h"
 #include "3d/Mode3D.h"
+#include "3d_forward/Density3D.h"
 
 namespace MAIN_LIB_GEO {
   void amps_init_mesh();
@@ -183,6 +184,16 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
 
 void amps_init_mesh() {
 
+
+  // Register cDensity3D sampling — mirrors Earth::Sampling::ParticleData::Init().
+  // RequestSamplingData MUST be pushed here, before PIC::Mesh::initCellSamplingDataBuffer()
+  // (called later in this function), which iterates PIC::IndividualModelSampling::
+  // RequestSamplingData to size and allocate each cell's sampling buffer.
+  // Energy-grid parameters (nEnergyBins etc.) are set in Mode3DForward::Run()
+  // before amps_init_mesh() so the callback sees the correct buffer size.
+  PIC::IndividualModelSampling::RequestSamplingData.push_back(
+      Earth::Mode3DForward::cDensity3D::RequestSamplingData);
+
   if (Earth::ModelMode==Earth::BoundaryInjectionMode) {
     MAIN_LIB_GEO::amps_init_mesh();    
     return;
@@ -194,6 +205,14 @@ void amps_init_mesh() {
   //init Earth magnetosphere model
   Earth::Init();
   Earth::Sampling::ParticleData::Init();
+
+  // SamplingMode enables the AMPS compiled-in call to
+  // Earth::Sampling::ParticleData::SampleParticleData (pic.h -> Earth.h).
+  // cDensity3D::SampleParticleData is dispatched from there via the
+  // SampleParticleDataCallbacks vector (Earth_Sampling.cpp).
+  Earth::Sampling::ParticleData::SamplingMode = true;
+  Earth::Sampling::ParticleData::SampleParticleDataCallbacks.push_back(
+      Earth::Mode3DForward::cDensity3D::SampleParticleData);
 
   //if (strcmp(Earth::Mesh::sign,"new")==0) 
 { //full mesh

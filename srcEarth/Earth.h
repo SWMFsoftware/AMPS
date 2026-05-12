@@ -12,6 +12,7 @@
 #include <locale>
 
 #include "util/amps_param_parser.h"
+#include "3d_forward/Density3D.h"
 
 using namespace std;
 
@@ -35,6 +36,7 @@ using namespace std;
 #include "Earth.dfn"
 
 #include "GCR_Badavi2011ASR.h"
+
 
 void DebuggerTrap();
 
@@ -319,6 +321,15 @@ namespace Earth {
 
 
       void Init();
+
+      // Additional per-particle sampling callbacks registered at run time.
+      // Each entry has the same signature as SampleParticleData and is called
+      // for every particle after the built-in gyro-radius/frequency sampling.
+      // Use this to plug in model-specific samplers (e.g. cDensity3D) without
+      // modifying the AMPS framework core.
+      typedef void (*SampleParticleDataFn)(char*, double, char*, int,
+                                           cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
+      extern std::vector<SampleParticleDataFn> SampleParticleDataCallbacks;
     }
   }
 

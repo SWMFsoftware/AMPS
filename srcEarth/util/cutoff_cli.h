@@ -186,6 +186,21 @@ namespace EarthUtil {
     //   Override Mode3DForwardOptions::boundaryDistType.
     //   Empty string means: use the input file default (ISOTROPIC).
     std::string forward3dBoundaryDist{""};
+
+    // -----------------------------------------------------------------------
+    // #DENSITY_3D overrides (-mode 3d_forward)
+    // -----------------------------------------------------------------------
+    // These flags override the corresponding keys in the #DENSITY_3D section.
+    // Sentinel: double < 0 | int < 0 | string empty => no CLI override.
+    //
+    //   -density3d-emin    <double>       Override DENS_EMIN  [MeV/n]
+    //   -density3d-emax    <double>       Override DENS_EMAX  [MeV/n]
+    //   -density3d-nenergy <int>          Override DENS_NENERGY
+    //   -density3d-spacing <LOG|LINEAR>   Override DENS_ENERGY_SPACING
+    double density3dEmin_MeV{-1.0};   ///< <0 = no override
+    double density3dEmax_MeV{-1.0};   ///< <0 = no override
+    int    density3dNenergy{-1};       ///< <0 = no override
+    std::string density3dSpacing{""};  ///< empty = no override
   };
 
   // Parse argc/argv. Throws std::runtime_error for malformed inputs.

@@ -777,6 +777,21 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //     to call here before amps_init_mesh().
   ConfigureBackgroundFieldModel(prm);
 
+  // Set cDensity3D energy-grid parameters BEFORE amps_init_mesh().
+  // main_lib.cpp::amps_init_mesh() pushes cDensity3D::RequestSamplingData onto
+  // PIC::IndividualModelSampling::RequestSamplingData, and that callback is
+  // invoked by PIC::Mesh::initCellSamplingDataBuffer() (also inside
+  // amps_init_mesh()).  The callback reads nEnergyBins to size the per-cell
+  // buffer, so nEnergyBins must be correct before amps_init_mesh() is called.
+  {
+    constexpr double MeV_in_J = 1.602176634e-13;
+    cDensity3D::nEnergyBins = prm.density3d.nEnergyBins;
+    cDensity3D::Emin_J      = prm.density3d.Emin_MeV * MeV_in_J;
+    cDensity3D::Emax_J      = prm.density3d.Emax_MeV * MeV_in_J;
+    cDensity3D::logSpacing  =
+        (prm.density3d.spacing == EarthUtil::Density3DParam::Spacing::LOG);
+  }
+
   PIC::InitMPI();
   Exosphere::Init_SPICE();
   amps_init_mesh();
@@ -826,7 +841,6 @@ int Run(const EarthUtil::AmpsParam& prm) {
   sSpecies = 0;
   sDt = EvaluateTimeStep(prm);
   PIC::ParticleWeightTimeStep::GlobalTimeStep[sSpecies] = sDt;
-  cDensity3D::dt_s = sDt;
 
   //--------------------------------------------------------------------------
   // 7. Particle weight — via initParticleWeight_ConstantWeight (MOP pattern)
@@ -864,9 +878,12 @@ int Run(const EarthUtil::AmpsParam& prm) {
   InitAbsorptionSphere(prm);
 
   //--------------------------------------------------------------------------
-  // 9. 3D density sampling (CG/Moon ExternalSamplingLocalVariables pattern)
+  // 9. 3D density sampling (AMPS per-cell buffer + ExternalSamplingLocalVariables)
   //--------------------------------------------------------------------------
-  // Init() registers SampleParticleData and OutputSampledData callbacks.
+  // Init() registers:
+  //   - RequestSamplingData / SampleParticleData via IndividualModelSampling
+  //   - PrintVariableList / PrintData / Interpolate for AMPS standard output
+  //   - NoOpSample / OutputSampledModelData via ExternalSamplingLocalVariables
   cDensity3D::Init(prm);
 
   //--------------------------------------------------------------------------
@@ -916,7 +933,7 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //--------------------------------------------------------------------------
   // 12. Force final output (trigger output callbacks at end of run)
   //--------------------------------------------------------------------------
-  cDensity3D::OutputSampledData(PIC::DataOutputFileNumber);
+  cDensity3D::OutputSampledModelData(PIC::DataOutputFileNumber);
 
   return EXIT_SUCCESS;
 }

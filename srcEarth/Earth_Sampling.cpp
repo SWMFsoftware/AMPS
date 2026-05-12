@@ -17,6 +17,8 @@ char Exosphere::IAU_FRAME[_MAX_STRING_LENGTH_PIC_]="IAU_MOON";
 int Earth::Sampling::ParticleData::_GYRO_RADIUS_SAMPLING_OFFSET_=-1;
 int Earth::Sampling::ParticleData::_GYRO_FRECUENCY_SAMPLING_OFFSET_=-1;
 bool Earth::Sampling::ParticleData::SamplingMode=false;
+std::vector<Earth::Sampling::ParticleData::SampleParticleDataFn>
+    Earth::Sampling::ParticleData::SampleParticleDataCallbacks;
 double Earth::Sampling::SampleSphereRadii[Earth::Sampling::nSphericalShells]={0.0};
 bool Earth::Sampling::SamplingMode=false;
 
@@ -71,6 +73,10 @@ void Earth::Sampling::ParticleData::SampleParticleData(char* tempParticleData,do
 
   *(s+(double*)(SamplingData+_GYRO_RADIUS_SAMPLING_OFFSET_))+=GyroRadius*LocalParticleWeight;
   *(s+(double*)(SamplingData+_GYRO_FRECUENCY_SAMPLING_OFFSET_))+=GyroFrequency*LocalParticleWeight;
+
+  // Dispatch to any additional per-particle samplers registered at run time.
+  for (auto fn : SampleParticleDataCallbacks)
+    fn(tempParticleData,LocalParticleWeight,SamplingData,s,node);
 }
 
 //interpolate the cell aberaged data on a corner of a cell

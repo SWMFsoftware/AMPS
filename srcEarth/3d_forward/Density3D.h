@@ -11,49 +11,58 @@
 // Accumulates differential number density n(E) [m^-3 J^-1] in each AMR cell
 // across energy bins defined by the #DENSITY_3D input section.
 //
-// DESIGN FOLLOWS CG/MOON PATTERN
-// --------------------------------
-// Sampling is registered with PIC::Sampling::ExternalSamplingLocalVariables
-// (same pattern as Comet::Sampling::InjectedDustSizeDistribution and
-//  Moon::Sampling::VelocityDistribution).
+// DESIGN — AMPS PER-CELL SAMPLING BUFFER PATTERN
+// ------------------------------------------------
+// Follows Earth_Sampling.cpp (Earth::Sampling::ParticleData) exactly:
 //
-// Two callbacks are registered:
-//   SampleParticleData()    — called every PIC iteration to accumulate density
-//   OutputSampledData(int)  — called each output cycle to gather MPI contributions
-//                             and write Tecplot
+//   (A) RequestSamplingData(offset)
+//       Allocates nEnergyBins doubles per cell in the AMPS collecting buffer.
+//       Registered via:
+//           PIC::IndividualModelSampling::RequestSamplingData.push_back(RequestSamplingData)
 //
-// INDEXING
-// --------
-// After amps_init(), the mesh block table is stable. A sequential block index
-// iBlock ∈ [0, nLocalBlocks) maps to PIC::DomainBlockDecomposition::BlockTable[iBlock].
-// Each block contains nCellsPerBlock = _BLOCK_CELLS_X_ × _BLOCK_CELLS_Y_ × _BLOCK_CELLS_Z_ cells.
+//   (B) SampleParticleData(tempParticleData, LocalParticleWeight, SamplingData, s, node)
+//       Per-particle callback with the same 5-parameter signature used by
+//       Earth::Sampling::ParticleData::SampleParticleData.
+//       Called from within Earth::Sampling::ParticleData::SampleParticleData
+//       (Earth_Sampling.cpp), which is the per-particle hook invoked by AMPS.
+//       Accumulates:
+//           collectingBuf[iE] += LocalParticleWeight / (cellVol * dE[iE])
+//       AMPS manages all MPI data transport through the per-cell buffer.
 //
-// The flat density buffer is indexed as:
+//   (C) OutputSampledModelData(N)
+//       Reads the completed per-cell AMPS buffer (MPI transport already handled),
+//       normalises by PIC::LastSampleLength, and writes the Tecplot output file.
+//       Registered via:
+//           PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(
+//               NoOpSample, OutputSampledModelData)
 //
-//   densityBuffer[(iBlock * nCellsPerBlock + localCellIdx) * nEnergyBins + iE]
+//   (D) PrintVariableList / PrintData / Interpolate
+//       Appended to the AMPS standard output lists so the density also appears
+//       in the main AMPS .dat files alongside B, E, and other per-cell quantities.
 //
-// where localCellIdx = i + _BLOCK_CELLS_X_ * (j + _BLOCK_CELLS_Y_ * k).
+// BUFFER LAYOUT
+// -------------
+//   collectingBuf + _DENSITY_ENERGY_SAMPLING_OFFSET_ + iE*sizeof(double)
+//       = sum of (LocalParticleWeight / (cellVol * dE[iE])) accumulated
+//         over all particles in this cell during the sampling window
+//
+//   n_avg(iE) [m^-3 J^-1] = completedBuf[iE] / PIC::LastSampleLength
 //
 // UNITS
 // -----
-// densitySampled[cell][iE] — time-averaged differential number density
-//   [particles m^-3 J^-1]
-//
-// To convert to [particles m^-3 MeV^-1]:
-//   n_perMeV = n_perJ * MeV_in_J   (where MeV_in_J = 1.602176634e-13)
-//
-// To convert to total number density in bin iE:
-//   N_iE [m^-3] = n_perJ * GetBinWidthJ(iE)
+//   n_avg(iE)  [m^-3 J^-1]
+//   To [m^-3 MeV^-1]: multiply by MeV_in_J = 1.602176634e-13
+//   Bin-integrated:   N_iE [m^-3] = n_avg(iE) * GetBinWidthJ(iE)
 //
 //======================================================================================
 
-#include <vector>
-#include <string>
+#include <cstdio>
 
-// Forward-declare PIC types so this header remains independent of pic.h
+// Forward declarations — independent of pic.h.
+// cDataBlockAMR is in PIC::Mesh namespace.
 template <class T> class cTreeNodeAMR;
-class cDataBlockAMR;
-
+namespace PIC { namespace Mesh { class cDataBlockAMR; struct cDataCenterNode; } }
+struct CMPI_channel;
 namespace EarthUtil { struct AmpsParam; }
 
 namespace Earth {
@@ -64,61 +73,88 @@ public:
   // -------------------------------------------------------------------
   // Initialisation
   // -------------------------------------------------------------------
-  // Must be called once after amps_init_mesh() and amps_init() have
-  // completed so that the block table is stable and cell measures are set.
-  //
-  // Allocates the density buffer, sets up energy bins, and registers
-  // SampleParticleData / OutputSampledData with
-  //   PIC::Sampling::ExternalSamplingLocalVariables.
-  //
+  // Call once after amps_init_mesh() + amps_init().
+  //   (A) PIC::IndividualModelSampling::RequestSamplingData.push_back(RequestSamplingData)
+  //   (C) PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(
+  //           NoOpSample, OutputSampledModelData)
+  //   (D) PIC::Mesh::PrintVariableListCenterNode / PrintDataCenterNode / InterpolateCenterNode
   static void Init(const EarthUtil::AmpsParam& prm);
 
   // -------------------------------------------------------------------
-  // Registered callbacks
+  // (A)  Request per-cell AMPS sampling buffer space
   // -------------------------------------------------------------------
-  // SampleParticleData — traverse every local block×cell, sum weighted
-  //   particle contributions into densityBuffer_.
-  static void SampleParticleData();
-
-  // OutputSampledData — MPI_Reduce across ranks, normalise by sample
-  //   count × dt, write Tecplot file "density3d_<N>.dat".
-  static void OutputSampledData(int dataOutputFileNumber);
+  // Called by the AMPS framework to assign the byte offset for this
+  // sampler's data within each cell's collecting buffer.
+  // Sets _DENSITY_ENERGY_SAMPLING_OFFSET_ and returns nEnergyBins*sizeof(double).
+  static int RequestSamplingData(int offset);
 
   // -------------------------------------------------------------------
-  // Energy-bin accessors
+  // (B)  Per-particle sampling callback
   // -------------------------------------------------------------------
-  static int    nEnergyBins;          ///< number of energy bins (from DENS_NENERGY)
-  static double Emin_J;               ///< lower bound [J]  (= DENS_EMIN * MeV_in_J)
-  static double Emax_J;               ///< upper bound [J]  (= DENS_EMAX * MeV_in_J)
-  static bool   logSpacing;           ///< true for LOG, false for LINEAR
+  // Same 5-parameter signature as Earth::Sampling::ParticleData::SampleParticleData.
+  // Called from within Earth::Sampling::ParticleData::SampleParticleData
+  // (Earth_Sampling.cpp) for every simulation particle processed by AMPS.
+  //
+  //   tempParticleData    — raw byte buffer for this particle
+  //   LocalParticleWeight — physical particles this sim-particle represents
+  //   SamplingData        — this cell's AMPS collecting buffer
+  //   s                   — species index
+  //   node                — AMR tree node owning this particle's cell
+  //
+  // Accumulates: collectingBuf[iE] += LocalParticleWeight / (cellVol * dE[iE])
+  static void SampleParticleData(char*                                   tempParticleData,
+                                  double                                  LocalParticleWeight,
+                                  char*                                   SamplingData,
+                                  int                                     s,
+                                  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
-  // Return energy bounds and width of bin iE (0-based) in Joules.
-  static double GetBinLowJ(int iE);
-  static double GetBinHighJ(int iE);
+  // -------------------------------------------------------------------
+  // (C)  ExternalSamplingLocalVariables output callback
+  // -------------------------------------------------------------------
+  // Called at each output cycle. AMPS has already handled MPI transport.
+  // Reads completedCellSampleDataPointerOffset, normalises by PIC::LastSampleLength,
+  // and writes "density3d.out=<N>.dat" (per rank when running in parallel).
+  static void OutputSampledModelData(int dataOutputFileNumber);
+
+  // No-op sampling function paired with OutputSampledModelData in
+  // RegisterSamplingRoutine. Actual sampling is done per-particle via (B).
+  static void NoOpSample();
+
+  // -------------------------------------------------------------------
+  // (D)  AMPS standard output integration
+  // -------------------------------------------------------------------
+  static void PrintVariableList(FILE* fout, int DataSetNumber);
+  static void PrintData(FILE*                       fout,
+                        int                         DataSetNumber,
+                        CMPI_channel*               pipe,
+                        int                         CenterNodeThread,
+                        PIC::Mesh::cDataCenterNode* CenterNode);
+  static void Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,
+                          double*                      InterpolationCoefficients,
+                          int                          nInterpolationCoefficients,
+                          PIC::Mesh::cDataCenterNode*  CenterNode);
+
+  // -------------------------------------------------------------------
+  // Energy-bin parameters  (set by Init from #DENSITY_3D)
+  // -------------------------------------------------------------------
+  static int    nEnergyBins;
+  static double Emin_J;
+  static double Emax_J;
+  static bool   logSpacing;
+
+  static double GetBinLowJ   (int iE);
+  static double GetBinHighJ  (int iE);
   static double GetBinCentreJ(int iE);
-  static double GetBinWidthJ(int iE);
+  static double GetBinWidthJ (int iE);
 
-  // -------------------------------------------------------------------
-  // Buffer sizes (set by Init)
-  // -------------------------------------------------------------------
-  static int nLocalBlocks_;     ///< PIC::DomainBlockDecomposition::nLocalBlocks snapshot
-  static int nCellsPerBlock_;   ///< _BLOCK_CELLS_X_ * _BLOCK_CELLS_Y_ * _BLOCK_CELLS_Z_
-  static int nTotalCells_;      ///< nLocalBlocks_ * nCellsPerBlock_
-  static long int nSampleSteps_;///< iterations accumulated since last reset
-
-  // Flat sampling accumulator; reset to zero at start of each output window.
-  // Size: nTotalCells_ * nEnergyBins
-  static std::vector<double> densityBuffer_;
-
-  // Time-averaged result written to Tecplot; populated by OutputSampledData.
-  static std::vector<double> densitySampled_;
-
-  // Physical time step (set externally by Mode3DForward::Run before Init).
-  static double dt_s;
+  // Per-cell AMPS sampling buffer offset — set by RequestSamplingData(),
+  // used by SampleParticleData(), PrintData(), Interpolate(), and
+  // OutputSampledModelData().  Initialised to -1; checked before use.
+  static int _DENSITY_ENERGY_SAMPLING_OFFSET_;
 
 private:
-  // Not instantiable; all members are static.
   cDensity3D() = delete;
+  static int EnergyToBin(double E_J);
 };
 
 } // namespace Mode3DForward
