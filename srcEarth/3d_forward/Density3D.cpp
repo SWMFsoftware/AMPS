@@ -11,9 +11,6 @@
 //   → Earth::Sampling::ParticleData::SampleParticleData(...)  [Earth_Sampling.cpp]
 //       → cDensity3D::SampleParticleData(...)                 [this file, (B)]
 //
-// AMPS output cycle
-//   → ExternalSamplingLocalVariables output callback
-//       → cDensity3D::OutputSampledModelData(N)               [this file, (C)]
 //
 //======================================================================================
 
@@ -91,21 +88,6 @@ void cDensity3D::Init(const EarthUtil::AmpsParam& prm) {
   PIC::Mesh::PrintVariableListCenterNode.push_back(PrintVariableList);
   PIC::Mesh::PrintDataCenterNode.push_back(PrintData);
   PIC::Mesh::InterpolateCenterNode.push_back(Interpolate);
-
-  // (C) Register output callback with ExternalSamplingLocalVariables.
-  // NoOpSample is empty — per-particle sampling is handled by SampleParticleData (B).
-  // OutputSampledModelData is called at each output cycle.
-  PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(
-      NoOpSample,
-      OutputSampledModelData);
-
-  if (PIC::ThisThread == 0) {
-    std::cout << "[Density3D] Initialized:"
-              << " nEnergyBins=" << nEnergyBins
-              << " Emin="  << prm.density3d.Emin_MeV << " MeV"
-              << " Emax="  << prm.density3d.Emax_MeV << " MeV"
-              << " spacing=" << (logSpacing ? "LOG" : "LINEAR") << "\n";
-  }
 }
 
 //======================================================================================
@@ -169,91 +151,26 @@ void cDensity3D::SampleParticleData(char*                                   temp
   const double dE = GetBinWidthJ(iE);
   if (!(dE > 0.0)) return;
 
+  //get cells' measure 
+  double *xNodeMin=node->xmin;
+  double *xNodeMax=node->xmax;
+  double Measure,dx,dy,dz;
+
+  dx=(xNodeMax[0]-xNodeMin[0])/_BLOCK_CELLS_X_;
+  Measure=dx;
+
+  if (_MESH_DIMENSION_>1) {
+    dy=(xNodeMax[1]-xNodeMin[1])/_BLOCK_CELLS_Y_;
+    Measure*=dy;
+  }
+
+  if (_MESH_DIMENSION_>2) {
+    dz=(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_;
+    Measure*=dz;
+  }  
+
   // Accumulate into the AMPS per-cell collecting buffer
-  *(iE + reinterpret_cast<double*>(SamplingData + _DENSITY_ENERGY_SAMPLING_OFFSET_))+=LocalParticleWeight; 
-}
-
-//======================================================================================
-// OutputSampledModelData  (C)
-//======================================================================================
-// Called by AMPS at each output cycle via ExternalSamplingLocalVariables.
-// AMPS has already handled MPI transport through the per-cell buffer.
-// Reads completedCellSampleDataPointerOffset, normalises by PIC::LastSampleLength,
-// and writes the Tecplot output file.
-//======================================================================================
-void cDensity3D::OutputSampledModelData(int dataOutputFileNumber) {
-  if (_DENSITY_ENERGY_SAMPLING_OFFSET_ < 0 || nEnergyBins <= 0) return;
-  if (PIC::LastSampleLength <= 0) return;
-
-  constexpr double MeV_in_J = 1.602176634e-13;
-  const double norm = 1.0 / static_cast<double>(PIC::LastSampleLength);
-  const double Re   = _EARTH__RADIUS_;
-
-  char fname[512];
-  if (PIC::nTotalThreads > 1)
-    std::snprintf(fname, sizeof(fname), "%s/density3d.out=%04d.thread=%04d.dat",
-                  PIC::OutputDataFileDirectory, dataOutputFileNumber, PIC::ThisThread);
-  else
-    std::snprintf(fname, sizeof(fname), "%s/density3d.out=%04d.dat",
-                  PIC::OutputDataFileDirectory, dataOutputFileNumber);
-
-  FILE* fout = std::fopen(fname, "w");
-  if (fout == nullptr) {
-    std::cerr << "[Density3D] Cannot open output file: " << fname << "\n";
-    return;
-  }
-
-  // Header
-  std::fprintf(fout,
-      "TITLE=\"AMPS 3D Forward: Volumetric Particle Density\"\n"
-      "VARIABLES=\"x_Re\" \"y_Re\" \"z_Re\" \"CellSize_Re\"");
-  for (int iE = 0; iE < nEnergyBins; iE++)
-    std::fprintf(fout, " \"n[%g-%g_MeV]_m3J\"",
-                 GetBinLowJ(iE)/MeV_in_J, GetBinHighJ(iE)/MeV_in_J);
-  std::fprintf(fout, " \"n_total_m3\"\n");
-  std::fprintf(fout, "ZONE T=\"AMPS_3DFORWARD_DENSITY\", F=POINT\n");
-
-  // Data rows — use ParallelNodesDistributionList (domain-decomposition-safe)
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
-           PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];
-       node != nullptr; node = node->nextNodeThisThread)
-  {
-    if (node->lastBranchFlag() != _BOTTOM_BRANCH_TREE_) continue;
-    if (node->block == nullptr) continue;
-
-    const double sz = node->GetCharacteristicCellSize();
-
-    for (int i = 0; i < _BLOCK_CELLS_X_; i++)
-    for (int j = 0; j < _BLOCK_CELLS_Y_; j++)
-    for (int k = 0; k < _BLOCK_CELLS_Z_; k++) {
-      const double x=(node->xmin[0]+(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_*(0.5+i))/Re;
-      const double y=(node->xmin[1]+(node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_*(0.5+j))/Re;
-      const double z=(node->xmin[2]+(node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_*(0.5+k))/Re;
-
-      const int nd = PIC::Mesh::mesh->getCenterNodeLocalNumber(i, j, k);
-      PIC::Mesh::cDataCenterNode* cellNode = node->block->GetCenterNode(nd);
-      if (cellNode == nullptr) continue;
-
-      const char* completedBuf = cellNode->GetAssociatedDataBufferPointer()
-                                 + PIC::Mesh::completedCellSampleDataPointerOffset;
-
-      std::fprintf(fout, "%.6e %.6e %.6e %.6e", x, y, z, sz/Re);
-
-      double n_total = 0.0;
-      for (int iE = 0; iE < nEnergyBins; iE++) {
-        const double n_perJ =
-            *(iE + reinterpret_cast<const double*>(
-                       completedBuf + _DENSITY_ENERGY_SAMPLING_OFFSET_)) * norm;
-        std::fprintf(fout, " %.6e", n_perJ);
-        n_total += n_perJ * GetBinWidthJ(iE);
-      }
-      std::fprintf(fout, " %.6e\n", n_total);
-    }
-  }
-
-  std::fclose(fout);
-  if (PIC::ThisThread == 0)
-    std::cout << "[Density3D] Output written: " << fname << "\n";
+  *(iE + reinterpret_cast<double*>(SamplingData + _DENSITY_ENERGY_SAMPLING_OFFSET_))+=LocalParticleWeight/Measure; 
 }
 
 //======================================================================================
@@ -287,8 +204,6 @@ void cDensity3D::PrintData(FILE*                       fout,
       densityBins[iE] =
           *(iE + reinterpret_cast<const double*>(
                      completedBuf + _DENSITY_ENERGY_SAMPLING_OFFSET_)) * norm;
-
-      densityBins[iE]/=CenterNode->Measure;
     }
   }
 
@@ -299,7 +214,7 @@ void cDensity3D::PrintData(FILE*                       fout,
     double n_total = 0.0;
     for (int iE = 0; iE < nEnergyBins; iE++) {
       std::fprintf(fout, " %e", densityBins[iE]);
-      n_total += densityBins[iE] * GetBinWidthJ(iE);
+      n_total += densityBins[iE];
     }
     std::fprintf(fout, " %e ", n_total);
   } else {

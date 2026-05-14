@@ -930,11 +930,6 @@ int Run(const EarthUtil::AmpsParam& prm) {
   if (PIC::ThisThread == 0)
     std::cout << "[Mode3DForward] Forward integration complete.\n";
 
-  //--------------------------------------------------------------------------
-  // 12. Force final output (trigger output callbacks at end of run)
-  //--------------------------------------------------------------------------
-  cDensity3D::OutputSampledModelData(PIC::DataOutputFileNumber);
-
   return EXIT_SUCCESS;
 }
 
