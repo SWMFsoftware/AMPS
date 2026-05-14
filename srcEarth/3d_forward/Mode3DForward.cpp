@@ -9,6 +9,7 @@
 
 #include "Mode3DForward.h"
 #include "Density3D.h"
+#include "SphereFlux3D.h"
 #include "BoundaryDistribution.h"
 
 #include "../boundary/spectrum.h"
@@ -279,16 +280,22 @@ static double BoundaryInjectionSourceRate(int spec) {
 //  Inner absorption sphere: particle-sphere interaction callback
 // ============================================================================
 //  Called by AMPS when a particle reaches the inner sphere surface.
-//  Action: delete the particle (absorbed by Earth / inner boundary).
+//  Action: sample the incident surface flux, then delete the particle
+//          (absorbed by Earth / inner boundary).
 //
 static int ForwardModeParticleSphereInteraction(
-    int              /*spec*/,
+    int              spec,
     long int         ptr,
-    double*          /*x*/,
-    double*          /*v*/,
+    double*          x,
+    double*          v,
     double&          /*dtReturned*/,
-    void*            /*sphereData*/,
-    void*            /*nodeData*/) {
+    void*            nodeData,
+    void*            sphereData) {
+
+  // Sample the incident particle flux on the inner sphere before removing the
+  // particle from the simulation.  AMPS calls the internal-boundary interaction
+  // with the start-node pointer first and the sphere-data pointer second.
+  cSphereFlux3D::SampleParticleImpact(spec, ptr, x, v, nodeData, sphereData);
 
   // Particles reaching the inner sphere are absorbed by Earth.
   PIC::ParticleBuffer::DeleteParticle(ptr);
@@ -317,7 +324,7 @@ static void InitAbsorptionSphere(const EarthUtil::AmpsParam& prm) {
   sAbsorptionSphere->localResolution = localSphericalSurfaceResolution;
   sAbsorptionSphere->faceat           = 0;
 
-  // Absorption callback — simply deletes arriving particles
+  // Absorption callback — samples surface flux and then deletes arriving particles
   sAbsorptionSphere->ParticleSphereInteraction = ForwardModeParticleSphereInteraction;
 
   // No injection from the sphere (forward mode: injection is from outer boundary)
@@ -777,21 +784,6 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //     to call here before amps_init_mesh().
   ConfigureBackgroundFieldModel(prm);
 
-  // Set cDensity3D energy-grid parameters BEFORE amps_init_mesh().
-  // main_lib.cpp::amps_init_mesh() pushes cDensity3D::RequestSamplingData onto
-  // PIC::IndividualModelSampling::RequestSamplingData, and that callback is
-  // invoked by PIC::Mesh::initCellSamplingDataBuffer() (also inside
-  // amps_init_mesh()).  The callback reads nEnergyBins to size the per-cell
-  // buffer, so nEnergyBins must be correct before amps_init_mesh() is called.
-  {
-    constexpr double MeV_in_J = 1.602176634e-13;
-    cDensity3D::nEnergyBins = prm.density3d.nEnergyBins;
-    cDensity3D::Emin_J      = prm.density3d.Emin_MeV * MeV_in_J;
-    cDensity3D::Emax_J      = prm.density3d.Emax_MeV * MeV_in_J;
-    cDensity3D::logSpacing  =
-        (prm.density3d.spacing == EarthUtil::Density3DParam::Spacing::LOG);
-  }
-
   PIC::InitMPI();
   Exosphere::Init_SPICE();
   amps_init_mesh();
@@ -839,8 +831,7 @@ int Run(const EarthUtil::AmpsParam& prm) {
   // Identify species index (use species 0 as default; all share the same mass
   // in single-species runs).
   sSpecies = 0;
-  sDt = EvaluateTimeStep(prm);
-  PIC::ParticleWeightTimeStep::GlobalTimeStep[sSpecies] = sDt;
+  sDt = PIC::ParticleWeightTimeStep::GlobalTimeStep[sSpecies];
 
   //--------------------------------------------------------------------------
   // 7. Particle weight — via initParticleWeight_ConstantWeight (MOP pattern)
@@ -878,13 +869,13 @@ int Run(const EarthUtil::AmpsParam& prm) {
   InitAbsorptionSphere(prm);
 
   //--------------------------------------------------------------------------
-  // 9. 3D density sampling (AMPS per-cell buffer + ExternalSamplingLocalVariables)
+  // 9. 3D density and inner-sphere flux sampling
   //--------------------------------------------------------------------------
-  // Init() registers:
-  //   - RequestSamplingData / SampleParticleData via IndividualModelSampling
-  //   - PrintVariableList / PrintData / Interpolate for AMPS standard output
-  //   - NoOpSample / OutputSampledModelData via ExternalSamplingLocalVariables
+  // cDensity3D samples the volumetric density in AMR cells.
+  // cSphereFlux3D samples particles at the absorbing inner sphere in the same
+  // energy channels as the density sampler.
   cDensity3D::Init(prm);
+  cSphereFlux3D::Init(prm, sAbsorptionSphere, sDt);
 
   //--------------------------------------------------------------------------
   // 10. Pre-compute boundary injection table from spectrum + IMF direction.
@@ -929,6 +920,11 @@ int Run(const EarthUtil::AmpsParam& prm) {
 
   if (PIC::ThisThread == 0)
     std::cout << "[Mode3DForward] Forward integration complete.\n";
+
+  //--------------------------------------------------------------------------
+  // 12. Force final output (trigger output callbacks at end of run)
+  //--------------------------------------------------------------------------
+  cSphereFlux3D::OutputSampledData(PIC::DataOutputFileNumber);
 
   return EXIT_SUCCESS;
 }
