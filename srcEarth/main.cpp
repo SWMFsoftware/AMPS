@@ -1587,34 +1587,12 @@ int main(int argc,char **argv) {
         if (!cli.forward3dBoundaryDist.empty())
           p.mode3dForward.boundaryDistType = EarthUtil::ToUpper(cli.forward3dBoundaryDist);
 
-        // ---- CLI overrides for #DENSITY_3D energy-binned sampling ----
-        // Applied after ParseAmpsParamFile so that CLI values take precedence
-        // over anything in the input file.  Sentinel < 0 / empty = no override.
-        if (cli.density3dEmin_MeV > 0.0)
-          p.density3d.Emin_MeV = cli.density3dEmin_MeV;
-        if (cli.density3dEmax_MeV > 0.0)
-          p.density3d.Emax_MeV = cli.density3dEmax_MeV;
-        if (cli.density3dNenergy > 0)
-          p.density3d.nEnergyBins = cli.density3dNenergy;
-        if (!cli.density3dSpacing.empty()) {
-          const std::string sp = EarthUtil::ToUpper(cli.density3dSpacing);
-          if (sp == "LOG")
-            p.density3d.spacing = EarthUtil::Density3DParam::Spacing::LOG;
-          else if (sp == "LINEAR")
-            p.density3d.spacing = EarthUtil::Density3DParam::Spacing::LINEAR;
-          else {
-            std::cerr << "Error: -density3d-spacing must be LOG or LINEAR (got '"
-                      << cli.density3dSpacing << "')\n";
-            return 1;
-          }
-        }
-        // Validate the final energy grid before running
-        if (p.density3d.Emin_MeV >= p.density3d.Emax_MeV) {
-          std::cerr << "Error: DENS_EMIN (" << p.density3d.Emin_MeV
-                    << " MeV/n) must be < DENS_EMAX (" << p.density3d.Emax_MeV
-                    << " MeV/n).\n";
-          return 1;
-        }
+        // Energy proposal distribution for the forward boundary source.
+        // SPECTRUM keeps the legacy branch; LOG_UNIFORM oversamples the
+        // high-energy tail and applies individual particle weight corrections.
+        if (!cli.forward3dInjectionEnergyDistribution.empty())
+          p.mode3dForward.injectionEnergyDistribution =
+              EarthUtil::ToUpper(cli.forward3dInjectionEnergyDistribution);
 
         // Particle mover (shared with backward mode for consistency).
         if (!ApplyCutoffMoverCli(cli)) return 1;
