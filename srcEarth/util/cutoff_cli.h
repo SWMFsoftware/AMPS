@@ -187,20 +187,14 @@ namespace EarthUtil {
     //   Empty string means: use the input file default (ISOTROPIC).
     std::string forward3dBoundaryDist{""};
 
-    // -----------------------------------------------------------------------
-    // #DENSITY_3D overrides (-mode 3d_forward)
-    // -----------------------------------------------------------------------
-    // These flags override the corresponding keys in the #DENSITY_3D section.
-    // Sentinel: double < 0 | int < 0 | string empty => no CLI override.
-    //
-    //   -density3d-emin    <double>       Override DENS_EMIN  [MeV/n]
-    //   -density3d-emax    <double>       Override DENS_EMAX  [MeV/n]
-    //   -density3d-nenergy <int>          Override DENS_NENERGY
-    //   -density3d-spacing <LOG|LINEAR>   Override DENS_ENERGY_SPACING
-    double density3dEmin_MeV{-1.0};   ///< <0 = no override
-    double density3dEmax_MeV{-1.0};   ///< <0 = no override
-    int    density3dNenergy{-1};       ///< <0 = no override
-    std::string density3dSpacing{""};  ///< empty = no override
+    // -forward-injection-energy <SPECTRUM|LOG_UNIFORM>
+    //   Select the energy proposal distribution used by the 3d_forward outer-boundary
+    //   particle source.
+    //     SPECTRUM    : legacy/default; sample E from the physical J(E)dE CDF.
+    //     LOG_UNIFORM : sample E uniformly in log(E) and correct each particle with
+    //                   an individual statistical-weight factor q(E).
+    //   Empty string means: use the input-file/default Mode3DForwardOptions value.
+    std::string forward3dInjectionEnergyDistribution{""};
   };
 
   // Parse argc/argv. Throws std::runtime_error for malformed inputs.

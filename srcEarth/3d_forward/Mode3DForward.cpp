@@ -24,6 +24,8 @@
 #include <memory>
 #include <algorithm>
 #include <functional>
+#include <vector>
+#include <stdexcept>
 
 #include "pic.h"
 #include "../../interface/T96Interface.h"
@@ -54,10 +56,66 @@ static constexpr double DtCellFrac   = 0.25;
 // ============================================================================
 //  Module-level state (set in Run, read by injection/sphere callbacks)
 // ============================================================================
-static double sParticleWeight      = 1.0;   // physical particles per sim particle
-static int    sNParticlesPerIter   = 1000;  // sim particles injected per iteration
+static double sParticleWeight      = 1.0;   // nominal physical particles per simulation particle
+static int    sNParticlesPerIter   = 1000;  // simulation particles requested per iteration
 static double sDt                  = 1.0;   // time step [s]
 static int    sSpecies             = 0;     // AMPS species index for injection
+
+// ============================================================================
+//  Energy-sampling branch used by the forward boundary injector
+// ============================================================================
+//
+// The original 3d_forward implementation sampled the injected kinetic energy from
+// the physical differential intensity J(E).  That is statistically optimal for the
+// total source rate, but it heavily undersamples the high-energy tail when J(E) is
+// steep.  The LOG_UNIFORM branch added here samples E uniformly in log(E) and then
+// applies an individual-particle statistical-weight correction so that the expected
+// physical injection spectrum is still exactly the input spectrum.
+//
+// The selection is intentionally represented by a small enum and a parser function
+// rather than hard-wiring CLI strings throughout the injector.  When the same
+// selection is later exposed in the input file, only the parser needs to populate
+// Mode3DForwardOptions::injectionEnergyDistribution; the injection code below will
+// not need to change.
+enum class InjectionEnergyDistribution {
+  SPECTRUM_WEIGHTED,  // current/default branch: proposal pdf p(E) ∝ J(E)
+  LOG_UNIFORM         // high-energy-friendly branch: proposal pdf p(E) ∝ 1/E
+};
+
+static InjectionEnergyDistribution sInjectionEnergyDistribution =
+    InjectionEnergyDistribution::SPECTRUM_WEIGHTED;
+
+static const char* InjectionEnergyDistributionName(InjectionEnergyDistribution mode) {
+  switch (mode) {
+    case InjectionEnergyDistribution::SPECTRUM_WEIGHTED: return "SPECTRUM";
+    case InjectionEnergyDistribution::LOG_UNIFORM:       return "LOG_UNIFORM";
+  }
+  return "UNKNOWN";
+}
+
+static InjectionEnergyDistribution ParseInjectionEnergyDistribution(const std::string& value) {
+  const std::string u = EarthUtil::ToUpper(value);
+
+  // SPECTRUM/SPECTRUM_WEIGHTED is the legacy/current behavior.  Energies are drawn
+  // from the cumulative distribution built from J(E)dE, and all particles have the
+  // same statistical correction factor before the per-step conservation normalizer.
+  if (u.empty() || u == "SPECTRUM" || u == "SPECTRUM_WEIGHTED" ||
+      u == "PHYSICAL" || u == "CDF") {
+    return InjectionEnergyDistribution::SPECTRUM_WEIGHTED;
+  }
+
+  // LOG_UNIFORM/UNIFORM_LOG/LOG draws equal numbers of simulation particles per
+  // logarithmic energy interval.  This deliberately oversamples the high-energy
+  // tail and corrects the physical source by assigning an individual weight factor
+  // q(E)=p_target(E)/p_proposal(E).
+  if (u == "LOG_UNIFORM" || u == "UNIFORM_LOG" || u == "LOG") {
+    return InjectionEnergyDistribution::LOG_UNIFORM;
+  }
+
+  throw std::runtime_error(
+      "Unknown 3d_forward injection energy distribution '" + value +
+      "'. Valid values are SPECTRUM and LOG_UNIFORM.");
+}
 
 // Pointer to the inner absorbing sphere (set by InitAbsorptionSphere)
 static cInternalSphericalData* sAbsorptionSphere = nullptr;
@@ -280,8 +338,7 @@ static double BoundaryInjectionSourceRate(int spec) {
 //  Inner absorption sphere: particle-sphere interaction callback
 // ============================================================================
 //  Called by AMPS when a particle reaches the inner sphere surface.
-//  Action: sample the incident surface flux, then delete the particle
-//          (absorbed by Earth / inner boundary).
+//  Action: delete the particle (absorbed by Earth / inner boundary).
 //
 static int ForwardModeParticleSphereInteraction(
     int              spec,
@@ -292,9 +349,19 @@ static int ForwardModeParticleSphereInteraction(
     void*            nodeData,
     void*            sphereData) {
 
-  // Sample the incident particle flux on the inner sphere before removing the
-  // particle from the simulation.  AMPS calls the internal-boundary interaction
-  // with the start-node pointer first and the sphere-data pointer second.
+  // Sample the particle impact before the particle is removed from the domain.
+  //
+  // AMPS calls the internal-sphere interaction callback as
+  //
+  //   ParticleSphereInteraction(spec,ptr,x,v,dt,startNode,boundaryElement)
+  //
+  // so the first opaque pointer is the AMR start-node pointer and the second
+  // opaque pointer is the internal-sphere boundary element.  cSphereFlux3D uses
+  // both pieces of information: the start node provides the block-local base
+  // particle weight, while the sphere pointer identifies the impacted surface
+  // element and its area.  The individual particle weight correction is also
+  // included inside cSphereFlux3D, which is essential for the LOG_UNIFORM
+  // importance-sampling injection branch.
   cSphereFlux3D::SampleParticleImpact(spec, ptr, x, v, nodeData, sphereData);
 
   // Particles reaching the inner sphere are absorbed by Earth.
@@ -324,7 +391,7 @@ static void InitAbsorptionSphere(const EarthUtil::AmpsParam& prm) {
   sAbsorptionSphere->localResolution = localSphericalSurfaceResolution;
   sAbsorptionSphere->faceat           = 0;
 
-  // Absorption callback — samples surface flux and then deletes arriving particles
+  // Absorption callback — simply deletes arriving particles
   sAbsorptionSphere->ParticleSphereInteraction = ForwardModeParticleSphereInteraction;
 
   // No injection from the sphere (forward mode: injection is from outer boundary)
@@ -413,6 +480,16 @@ struct cBoundaryInjectionTable {
   // Cumulative face selection weights (fluxPerArea[f]*faceArea[f], normalised).
   // cumFaceWeight[0]=0, cumFaceWeight[6]=1.
   double cumFaceWeight[7]{};
+
+  // Integral of the input boundary spectrum over the injection energy range:
+  //   integralJ = ∫ J(E) dE  [particles m^-2 s^-1 sr^-1]
+  // Stored because the LOG_UNIFORM importance-sampling branch needs the same
+  // normalisation used by BoundaryInjectionSourceRate().
+  double integralJ{0.0};
+
+  // ln(Emax/Emin), with E in Joules.  This is the normalisation denominator for
+  // a log-uniform proposal distribution p_log(E)=1/[E ln(Emax/Emin)].
+  double logEnergyRange{0.0};
 };
 
 static cBoundaryInjectionTable sBndTable;
@@ -429,6 +506,8 @@ static void InitBoundaryInjectionTable() {
   const double logEmin = std::log(Emin_J);
   const double logEmax = std::log(Emax_J);
   const double dlogE   = (logEmax - logEmin) / kNEnergyBins;
+
+  sBndTable.logEnergyRange = logEmax - logEmin;
 
   for (int k = 0; k <= kNEnergyBins; k++)
     sBndTable.eBinEdge[k] = std::exp(logEmin + k * dlogE);
@@ -452,6 +531,9 @@ static void InitBoundaryInjectionTable() {
     running += (integralJ > 0.0) ? rawBin[k] / integralJ : 1.0 / kNEnergyBins;
     sBndTable.energyCDF[k] = running;
   }
+
+  // Save the integral for later importance-weight calculations.
+  sBndTable.integralJ = integralJ;
 
   // ---- 3. Per-face one-way flux per unit area ----
   // For isotropic: Phi = pi * integralJ  [particles m^-2 s^-1] for every face.
@@ -553,9 +635,111 @@ static void InitBoundaryInjectionTable() {
 //   PIC::BC::UserDefinedParticleInjectionFunction = MOP::InjectParticles;
 // PIC::TimeStep() (via amps_time_step()) then calls it automatically each
 // iteration — no explicit call is needed in the main loop.
+// ============================================================================
+//  Energy sampling helpers for the two forward-injection branches
+// ============================================================================
+
+static double SampleSpectrumWeightedEnergyJ() {
+  // Legacy/current branch.  The proposal probability density is
+  //   p_spec(E) = J(E) / integral J(E') dE'
+  // so every injected simulation particle can represent the same number of
+  // physical particles, apart from the small per-step conservation normalizer
+  // applied below when the actual accepted MPI-domain candidates are known.
+  const double u = rnd();
+  int k = kNEnergyBins - 1;
+
+  for (int kk = 0; kk < kNEnergyBins; kk++) {
+    if (u <= sBndTable.energyCDF[kk]) { k = kk; break; }
+  }
+
+  return sBndTable.eBinEdge[k]
+       + rnd() * (sBndTable.eBinEdge[k + 1] - sBndTable.eBinEdge[k]);
+}
+
+static double SampleLogUniformEnergyJ() {
+  // High-energy oversampling branch.  The proposal distribution is uniform in
+  // log(E), i.e.
+  //   p_log(E) dE = dlog(E) / log(Emax/Emin)
+  // and therefore
+  //   p_log(E) = 1 / [ E log(Emax/Emin) ].
+  // This gives comparable numbers of simulation particles in each logarithmic
+  // energy decade, which substantially improves statistics in the high-energy
+  // tail of a steep SEP spectrum.
+  const double logEmin = std::log(sBndTable.eBinEdge[0]);
+  return std::exp(logEmin + rnd() * sBndTable.logEnergyRange);
+}
+
+static double RawEnergyStatWeightCorrection(double E_J) {
+  // Return the unnormalised importance-sampling correction q(E) that converts
+  // the selected proposal distribution into the desired physical injection
+  // spectrum.  The correction is later multiplied by a per-time-step normalizer
+  // so that the total physical number injected during the step is exactly
+  // R_total*dt, even if the number of candidates accepted by this MPI rank is
+  // not exactly nParticles/P.
+
+  if (sInjectionEnergyDistribution == InjectionEnergyDistribution::SPECTRUM_WEIGHTED) {
+    // When E is sampled from p_spec(E) ∝ J(E), the physical spectrum is already
+    // represented by equal-weight particles; q(E)=1.
+    return 1.0;
+  }
+
+  // LOG_UNIFORM branch:
+  //   target pdf:   p_target(E) = J(E) / integralJ
+  //   proposal pdf: p_log(E)    = 1 / [E log(Emax/Emin)]
+  // Therefore the statistical correction is
+  //   q(E) = p_target(E) / p_log(E)
+  //        = J(E) * E * log(Emax/Emin) / integralJ .
+  // q is dimensionless and has expectation value 1 when averaged over the
+  // log-uniform proposal distribution.
+  const double J = gSpectrum.GetSpectrum(E_J);
+  if (!(E_J > 0.0) || !(J >= 0.0) || !(sBndTable.integralJ > 0.0) ||
+      !(sBndTable.logEnergyRange > 0.0)) {
+    return 0.0;
+  }
+
+  return J * E_J * sBndTable.logEnergyRange / sBndTable.integralJ;
+}
+
+static double SampleInjectedEnergyJ() {
+  switch (sInjectionEnergyDistribution) {
+    case InjectionEnergyDistribution::SPECTRUM_WEIGHTED:
+      return SampleSpectrumWeightedEnergyJ();
+    case InjectionEnergyDistribution::LOG_UNIFORM:
+      return SampleLogUniformEnergyJ();
+  }
+
+  // Defensive fallback; ParseInjectionEnergyDistribution prevents this branch.
+  return SampleSpectrumWeightedEnergyJ();
+}
+
+// Local candidate created by the Monte Carlo boundary source before the AMPS
+// particle object itself is allocated.  The two-stage approach is intentional:
+// first all MPI ranks generate/own their local candidates and compute the global
+// sum of raw statistical corrections; only then are AMPS particles created with
+// a normalized individual correction factor.  This guarantees the total physical
+// number injected per time step is correct:
+//   Σ_p W0 * q_p_normalized = R_total * dt
+// where W0 = R_total*dt/N is the nominal AMPS particle weight.
+struct cForwardInjectionCandidate {
+  double x[3]{};                       // injection position [m]
+  double v[3]{};                       // injection velocity [m/s]
+  double rawStatWeightCorrection{1.0}; // q(E) before per-step normalization
+  double moveTimeFraction{0.0};        // random fraction of the local dt used after creation
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode{nullptr};
+};
+
+// ---------------------------------------------------------------------------
+// InjectParticles — UserDefinedParticleInjectionFunction callback
+// ---------------------------------------------------------------------------
+// Signature matches PIC::BC::fUserDefinedParticleInjectionFunction:
+//   long int (*)()
+// Assigned to PIC::BC::UserDefinedParticleInjectionFunction in Run() before
+// amps_init_mesh(), following the pattern in srcMOP/main.cpp line 239:
+//   PIC::BC::UserDefinedParticleInjectionFunction = MOP::InjectParticles;
+// PIC::TimeStep() (via amps_time_step()) then calls it automatically each
+// iteration — no explicit call is needed in the main loop.
 static long int InjectParticles() {
-  const int    nParticles = sNParticlesPerIter;
-  const double weight     = sParticleWeight;
+  const int nParticles = sNParticlesPerIter;
 
   // Pre-compute injection tables from gSpectrum on first call (lazy, idempotent).
   // Analogous to SEP::InjectionRate() calling InitEnergySpectrum() on first use.
@@ -576,7 +760,8 @@ static long int InjectParticles() {
     { 0, 1, 0}, { 0,-1, 0},   // face 2=-Y, face 3=+Y
     { 0, 0, 1}, { 0, 0,-1}    // face 4=-Z, face 5=+Z
   };
-  // Tangent vectors completing the right-handed frame for each face.
+
+  // Tangent vectors completing the face-local orthonormal frame.
   static const double tangent1[6][3] = {
     {0, 1, 0}, {0, 1, 0},     // face 0,1: t1 = +Y
     {0, 0, 1}, {0, 0, 1},     // face 2,3: t1 = +Z
@@ -588,34 +773,33 @@ static long int InjectParticles() {
     {0, 1, 0}, {0, 1, 0}      // face 4,5: t2 = +Y
   };
 
-  for (int ip = 0; ip < nParticles; ip++) {
+  // ------------------------------------------------------------------------
+  // Stage 1: build the list of particles that this MPI rank actually owns.
+  // ------------------------------------------------------------------------
+  // The original implementation created each particle immediately.  That works
+  // for equal-weight injection, but it cannot enforce exact source conservation
+  // when individual statistical corrections vary with energy.  Here we first
+  // generate all candidate phase-space coordinates, identify which candidates
+  // belong to this MPI rank, and accumulate the raw correction sum.  After an
+  // MPI_Allreduce gives the global correction sum, we create the AMPS particles
+  // with a normalized individual correction factor.
+  std::vector<cForwardInjectionCandidate> localCandidates;
+  localCandidates.reserve(nParticles);
 
+  double localRawCorrectionSum = 0.0;
+
+  for (int ip = 0; ip < nParticles; ip++) {
     // ------------------------------------------------------------------
     // 1. Select face from pre-computed CDF (proportional to area for isotropic)
-    //    SEP analogue: InjectionProcessor loops over nface with ExternalFaces[nface];
-    //    here the face is drawn probabilistically rather than processed per-block.
     // ------------------------------------------------------------------
     const double fRand = rnd();
     int face = 5;
-    for (int f = 0; f < 6; f++)
+    for (int f = 0; f < 6; f++) {
       if (fRand < sBndTable.cumFaceWeight[f + 1]) { face = f; break; }
+    }
 
     // ------------------------------------------------------------------
     // 2. Uniform random position on the chosen face, offset slightly inward.
-    //
-    //    The injection point is placed ONE CELL WIDTH inward from the outer
-    //    boundary face along the inward normal.  This is necessary because
-    //    PIC::Mesh::mesh->findTreeNode() treats the domain as a half-open
-    //    interval: a coordinate exactly equal to xmin[d] or xmax[d] lies
-    //    outside the valid range and findTreeNode returns NULL, which causes
-    //    the particle to be silently dropped.
-    //
-    //    The reference BoundaryInjection.cpp avoids this entirely by iterating
-    //    over pre-built boundary-block lists (InitBoundingBoxInjectionBlockList)
-    //    and never calling findTreeNode on an outer-boundary coordinate.  Here
-    //    we replicate the same guarantee with a small offset equal to 1e-6 of
-    //    the relevant domain dimension -- small enough that the injection point
-    //    is still effectively on the boundary face for sampling purposes.
     // ------------------------------------------------------------------
     double xInj[3];
     const double offX = (xmax[0]-xmin[0]) * 1.0e-6;
@@ -627,74 +811,49 @@ static long int InjectParticles() {
       case 2: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmin[1]+offY; xInj[2]=xmin[2]+rnd()*Lz; break;
       case 3: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmax[1]-offY; xInj[2]=xmin[2]+rnd()*Lz; break;
       case 4: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmin[2]+offZ; break;
-      default: xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmax[2]-offZ; break;
+      default:xInj[0]=xmin[0]+rnd()*Lx; xInj[1]=xmin[1]+rnd()*Ly; xInj[2]=xmax[2]-offZ; break;
     }
 
-    // Skip positions inside the inner absorption sphere (Earth's surface)
-    {
-      const double r2     = xInj[0]*xInj[0] + xInj[1]*xInj[1] + xInj[2]*xInj[2];
-      const double rInner = sAbsorptionSphere ? sAbsorptionSphere->Radius : _EARTH__RADIUS_;
-      if (r2 < rInner * rInner) continue;
-    }
+    // Skip positions inside the inner absorption sphere.  This should not occur
+    // for a normal outer bounding box, but the check protects unusual test domains.
+    const double r2     = xInj[0]*xInj[0] + xInj[1]*xInj[1] + xInj[2]*xInj[2];
+    const double rInner = sAbsorptionSphere ? sAbsorptionSphere->Radius : _EARTH__RADIUS_;
+    if (r2 < rInner * rInner) continue;
 
     // ------------------------------------------------------------------
-    // 3. Sample kinetic energy using inverse-CDF on sBndTable.energyCDF[]
-    //    SEP: EnergyDistributor[nface].DistributeVariable() -> iInterval
-    //         e = e0 + rnd()*(e1-e0) within the selected bin (eV, then *eV2J)
-    //    Here bins are already in Joules.
+    // 3. Sample kinetic energy from the selected proposal distribution.
     // ------------------------------------------------------------------
-    double E_J;
-    {
-      const double u = rnd();
-      int k = kNEnergyBins - 1;
-      for (int kk = 0; kk < kNEnergyBins; kk++)
-        if (u <= sBndTable.energyCDF[kk]) { k = kk; break; }
-      E_J = sBndTable.eBinEdge[k] + rnd() * (sBndTable.eBinEdge[k+1] - sBndTable.eBinEdge[k]);
-    }
+    const double E_J = SampleInjectedEnergyJ();
+    const double rawCorrection = RawEnergyStatWeightCorrection(E_J);
+    if (!(rawCorrection > 0.0)) continue;
 
     // ------------------------------------------------------------------
-    // 4. Sample inward velocity direction: isotropic 4pi, cosine-weighted.
-    //
-    // For an isotropic external intensity f(Omega) = 1/(4*pi) the one-way
-    // flux through a surface element is weighted by v_norm = v * cos(theta).
-    // The conditional PDF of an inward direction, given that the particle
-    // crosses the surface, is:
-    //
-    //   p(theta, phi) = (1/pi) * cos(theta)  for theta in [0, pi/2], phi in [0, 2*pi)
-    //
-    // This is sampled exactly (no rejection loop) by cosine-weighted hemisphere
-    // sampling:
-    //
-    //   cos(theta) = sqrt(xi_1)      <- accounts for v_norm * f(v) factor
-    //   phi        = 2*pi * xi_2
-    //   v_hat = cos(theta)*n_in + sin(theta)*(cos(phi)*t1 + sin(phi)*t2)
-    //
-    // where (n_in, t1, t2) is the face-local orthonormal frame defined above.
+    // 4. Sample inward velocity direction from the cosine-weighted hemisphere.
     // ------------------------------------------------------------------
     double v_hat[3];
     {
-      const double cosTheta = std::sqrt(rnd());   // samples v_norm*f(v) exactly
+      const double cosTheta = std::sqrt(rnd());
       const double sinTheta = std::sqrt(1.0 - cosTheta * cosTheta);
       const double phi      = 2.0 * Pi * rnd();
       const double cosPhi   = std::cos(phi);
       const double sinPhi   = std::sin(phi);
-      for (int d = 0; d < 3; d++)
+      for (int d = 0; d < 3; d++) {
         v_hat[d] = cosTheta * inwardNormal[face][d]
                  + sinTheta * (cosPhi * tangent1[face][d] + sinPhi * tangent2[face][d]);
+      }
     }
 
-    // ------------------------------------------------------------------
-    // 5. Physical speed from relativistic kinetic energy
-    //    (same as SEP::GetNewParticle: Speed = Relativistic::E2Speed(e, mass))
-    // ------------------------------------------------------------------
     const double speed = Relativistic::E2Speed(E_J, mass);
-    double v[3];
-    for (int d = 0; d < 3; d++) v[d] = v_hat[d] * speed;
+
+    // Draw the initial post-injection move fraction here, before ownership tests,
+    // so all candidates are sampled from the same distribution independent of MPI
+    // decomposition.  The move itself is performed only on the owning rank after
+    // the global source-conservation normalizer is known.
+    const double moveTimeFraction = rnd();
 
     // ------------------------------------------------------------------
-    // 6. Locate AMR cell and inject particle
-    //    (mirrors BoundaryInjection.cpp::InjectionProcessor:
-    //     GetNewParticle + CloneParticle + SetX/SetI + MoveParticle)
+    // 5. Locate the AMR cell.  Only the MPI rank that owns the start node creates
+    //    the actual AMPS particle.
     // ------------------------------------------------------------------
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode =
         PIC::Mesh::mesh->findTreeNode(xInj);
@@ -704,36 +863,81 @@ static long int InjectParticles() {
     if (PIC::Mesh::mesh->FindCellIndex(xInj, iCell, jCell, kCell, startNode, false) == -1)
       continue;
 
-    long int newP = PIC::ParticleBuffer::GetNewParticle(); 
+    cForwardInjectionCandidate c;
+    for (int d = 0; d < 3; d++) {
+      c.x[d] = xInj[d];
+      c.v[d] = v_hat[d] * speed;
+    }
+    c.rawStatWeightCorrection = rawCorrection;
+    c.moveTimeFraction        = moveTimeFraction;
+    c.startNode               = startNode;
+
+    localRawCorrectionSum += rawCorrection;
+    localCandidates.push_back(c);
+  }
+
+  // Sum the raw correction over all MPI ranks.  The normalizer below enforces
+  //   Σ W0*q_norm = W0*N = BoundaryInjectionSourceRate*sDt,
+  // where W0=sParticleWeight was computed as R_total*dt/N.  For the legacy
+  // SPECTRUM branch q_raw=1, so this simply corrects small deviations between
+  // requested and actually accepted candidate counts.  For LOG_UNIFORM it also
+  // converts the log-uniform proposal distribution into the physical J(E).
+  double globalRawCorrectionSum = 0.0;
+  MPI_Allreduce(&localRawCorrectionSum, &globalRawCorrectionSum, 1, MPI_DOUBLE,
+                MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+
+  if (!(globalRawCorrectionSum > 0.0)) return 0;
+
+  const double conservationNormalizer =
+      static_cast<double>(nParticles) / globalRawCorrectionSum;
+
+  // ------------------------------------------------------------------------
+  // Stage 2: create and initialize AMPS particles with normalized weights.
+  // ------------------------------------------------------------------------
+  long int nInjectedLocal = 0;
+
+  for (auto& c : localCandidates) {
+    long int newP = PIC::ParticleBuffer::GetNewParticle();
     PIC::ParticleBuffer::byte* pData = PIC::ParticleBuffer::GetParticleDataPointer(newP);
 
-    PIC::ParticleBuffer::SetV(v,      pData);
-    PIC::ParticleBuffer::SetX(xInj,   pData);
+    PIC::ParticleBuffer::SetV(c.v, pData);
+    PIC::ParticleBuffer::SetX(c.x, pData);
     PIC::ParticleBuffer::SetI(sSpecies, pData);
 
-    if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_)
-      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0, pData);
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+    // q_norm is the full dimensionless statistical correction carried by this
+    // simulation particle.  For SPECTRUM injection q_norm is normally 1.  For
+    // LOG_UNIFORM injection q_norm is larger/smaller depending on J(E) relative
+    // to the log-uniform proposal pdf.  The normalization factor makes the total
+    // physical source per time step exactly R_total*dt.
+    const double qNorm = c.rawStatWeightCorrection * conservationNormalizer;
+    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(qNorm, pData);
+#else
+    // The LOG_UNIFORM branch is rejected in Run() unless individual particle
+    // weights are enabled.  For the legacy SPECTRUM branch this preserves the
+    // old equal-weight behavior when AMPS is compiled without per-particle weights.
+#endif
 
-    startNode->block->SetLocalParticleWeight(weight, sSpecies);
+    // Keep the AMPS block/species base weight fixed.  The energy-dependent factor
+    // is stored on the particle itself.  Do not fold qNorm into the block-local
+    // weight: that weight is shared by all particles of the species in the block,
+    // including particles injected during previous time steps.
+    c.startNode->block->SetLocalParticleWeight(sParticleWeight, sSpecies);
 
 #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
     PIC::ParticleTracker::InitParticleID(pData);
-    PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(xInj, v, sSpecies, pData,
-                                                            static_cast<void*>(startNode));
+    PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(
+        c.x, c.v, sSpecies, pData, static_cast<void*>(c.startNode));
 #endif
 
-    // Move the freshly injected particle for a random fraction of the local
-    // time step, placing it at a statistically uniform position along its
-    // trajectory within the first iteration interval.
-    // This is identical to BoundaryInjection.cpp line 219:
-    //   _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newParticle, rnd()*LocalTimeStep, startNode)
-    // Without this step all injected particles would start on the domain face,
-    // producing a spurious density spike at the boundary in the first sample.
-    const double localDt = startNode->block->GetLocalTimeStep(sSpecies);
-    _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newP, rnd() * localDt, startNode);
-  }  // end for (int ip = 0; ip < nParticles; ip++)
-  return nParticles;
+    const double localDt = c.startNode->block->GetLocalTimeStep(sSpecies);
+    _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newP, c.moveTimeFraction * localDt, c.startNode);
+    nInjectedLocal++;
+  }
+
+  return nInjectedLocal;
 }  // end InjectParticles
+
 
 // ============================================================================
 //  Run — main entry point
@@ -743,6 +947,24 @@ int Run(const EarthUtil::AmpsParam& prm) {
   // 1. Set model mode
   //--------------------------------------------------------------------------
   Earth::ModelMode = Earth::BoundaryInjectionMode;
+
+  // Select the energy-sampling branch for the outer-boundary source.  The string
+  // currently comes from the CLI override or the default stored in
+  // Mode3DForwardOptions.  The same field is deliberately used by the optional
+  // input-file parser so adding an input-file keyword later requires no changes in
+  // the injector itself.
+  sInjectionEnergyDistribution =
+      ParseInjectionEnergyDistribution(prm.mode3dForward.injectionEnergyDistribution);
+
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  if (sInjectionEnergyDistribution == InjectionEnergyDistribution::LOG_UNIFORM) {
+    throw std::runtime_error(
+        "3d_forward LOG_UNIFORM injection requires AMPS to be compiled with "
+        "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_. "
+        "The energy-dependent importance-sampling correction cannot be represented "
+        "with a single block-local particle weight.");
+  }
+#endif
 
   // Domain bounds (convert km → m; same convention as Mode3D)
   // Domain bounds are encoded directly in the PIC AMR mesh
@@ -831,7 +1053,8 @@ int Run(const EarthUtil::AmpsParam& prm) {
   // Identify species index (use species 0 as default; all share the same mass
   // in single-species runs).
   sSpecies = 0;
-  sDt = PIC::ParticleWeightTimeStep::GlobalTimeStep[sSpecies];
+  sDt = EvaluateTimeStep(prm);
+  PIC::ParticleWeightTimeStep::GlobalTimeStep[sSpecies] = sDt;
 
   //--------------------------------------------------------------------------
   // 7. Particle weight — via initParticleWeight_ConstantWeight (MOP pattern)
@@ -858,10 +1081,12 @@ int Run(const EarthUtil::AmpsParam& prm) {
   sParticleWeight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[sSpecies];
 
   if (PIC::ThisThread == 0)
-    std::cout << "[Mode3DForward] Particle weight: W=" << sParticleWeight
-              << " phys/sim  (nParticlesPerIter=" << nSimPerIter
+    std::cout << "[Mode3DForward] Particle weight: W0=" << sParticleWeight
+              << " phys/sim nominal  (nParticlesPerIter=" << nSimPerIter
               << ", injectionRate=" << BoundaryInjectionSourceRate(sSpecies)
-              << " particles/s)\n";
+              << " particles/s, energySampling="
+              << InjectionEnergyDistributionName(sInjectionEnergyDistribution)
+              << ")\n";
 
   //--------------------------------------------------------------------------
   // 8. Inner absorption sphere
@@ -871,9 +1096,12 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //--------------------------------------------------------------------------
   // 9. 3D density and inner-sphere flux sampling
   //--------------------------------------------------------------------------
-  // cDensity3D samples the volumetric density in AMR cells.
-  // cSphereFlux3D samples particles at the absorbing inner sphere in the same
-  // energy channels as the density sampler.
+  // cDensity3D samples volumetric density in AMR cells.  cSphereFlux3D samples
+  // the particles that actually hit the absorbing inner sphere, using the same
+  // energy channels as cDensity3D.  The sphere sampler must be initialized after
+  // InitAbsorptionSphere(), because it needs the configured sphere pointer and
+  // surface mesh, and before the main time loop, because impacts are sampled from
+  // ForwardModeParticleSphereInteraction().
   cDensity3D::Init(prm);
   cSphereFlux3D::Init(prm, sAbsorptionSphere, sDt);
 
@@ -886,7 +1114,8 @@ int Run(const EarthUtil::AmpsParam& prm) {
   InitBoundaryInjectionTable();
 
   if (PIC::ThisThread == 0)
-    std::cout << "[Mode3DForward] Boundary injection: SEP-style spectrum CDF sampling\n"
+    std::cout << "[Mode3DForward] Boundary injection: energySampling="
+              << InjectionEnergyDistributionName(sInjectionEnergyDistribution) << "\n"
               << "[Mode3DForward] IMF direction: b=(" << Earth::BoundingBoxInjection::b[0]
               << ", " << Earth::BoundingBoxInjection::b[1]
               << ", " << Earth::BoundingBoxInjection::b[2] << ")\n"
@@ -922,8 +1151,13 @@ int Run(const EarthUtil::AmpsParam& prm) {
     std::cout << "[Mode3DForward] Forward integration complete.\n";
 
   //--------------------------------------------------------------------------
-  // 12. Force final output (trigger output callbacks at end of run)
+  // 12. Force final sphere-flux output at the end of the run
   //--------------------------------------------------------------------------
+  // Density output is handled by the callback registered in cDensity3D::Init().
+  // The sphere flux sampler is also registered as an external sampler, but we
+  // explicitly write it here so short 3d_forward runs still produce a final
+  // inner-sphere flux file even if the generic AMPS output interval was not
+  // reached during the run.
   cSphereFlux3D::OutputSampledData(PIC::DataOutputFileNumber);
 
   return EXIT_SUCCESS;

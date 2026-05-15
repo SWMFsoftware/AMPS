@@ -2283,6 +2283,16 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="FORWARD_N_PARTICLES")  p.mode3dForward.nParticlesPerIter=std::stoi(val);
       // 3d_forward: total number of forward integration iterations.
       else if (uKey=="FORWARD_N_ITERATIONS") p.mode3dForward.nIterations=std::stoi(val);
+      // 3d_forward: energy proposal distribution for boundary injection.
+      // Supported by Mode3DForward.cpp: SPECTRUM (legacy/default) and LOG_UNIFORM.
+      // Multiple key names are accepted so the future input-file keyword can be
+      // settled without touching the injection implementation.
+      else if (uKey=="FORWARD_INJECTION_ENERGY" ||
+               uKey=="FORWARD_INJECTION_ENERGY_DISTRIBUTION" ||
+               uKey=="FORWARD_ENERGY_SAMPLING" ||
+               uKey=="FORWARD_INJECTION_SCHEME") {
+        p.mode3dForward.injectionEnergyDistribution=ToUpper(Trim(val));
+      }
       else rememberUnknown();
     }
     else if (section=="#DENSITY_3D") {

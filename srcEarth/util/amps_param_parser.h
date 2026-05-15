@@ -749,6 +749,20 @@ namespace EarthUtil {
     // Future values: COSALPHA_N, SINALPHA_N, DAYSIDE_NIGHTSIDE
     // Populated from -forward-boundary-dist CLI flag or the input file.
     std::string boundaryDistType{"ISOTROPIC"};
+
+    // Energy proposal distribution used by Mode3DForward boundary injection.
+    //   SPECTRUM     — legacy/default behavior: sample E from J(E)dE and use
+    //                  nearly equal statistical weights.
+    //   LOG_UNIFORM  — sample E uniformly in log(E) and apply an individual
+    //                  particle statistical-weight correction q(E).  This improves
+    //                  high-energy statistics for steep SEP spectra while keeping
+    //                  the total physical source rate identical to the input
+    //                  spectrum.
+    //
+    // The field is currently set by the CLI.  The parser also accepts optional
+    // input-file keys FORWARD_INJECTION_ENERGY[_DISTRIBUTION] /
+    // FORWARD_ENERGY_SAMPLING for forward compatibility with future input files.
+    std::string injectionEnergyDistribution{"SPECTRUM"};
   };
 
   // Mode3DOptions — command-line controls specific to the PIC-backed 3D workflow

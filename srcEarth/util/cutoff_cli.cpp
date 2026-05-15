@@ -144,33 +144,14 @@ CliOptions ParseCli(int argc,char** argv) {
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -forward-boundary-dist");
       opt.forward3dBoundaryDist = argv[++i];
     }
-    // ----- #DENSITY_3D overrides (3d_forward mode) -----
-    else if (a=="-density3d-emin" || a=="--density3d-emin") {
-      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density3d-emin");
-      opt.density3dEmin_MeV = std::stod(argv[++i]);
-      if (opt.density3dEmin_MeV <= 0.0)
-        exit(__LINE__,__FILE__,"-density3d-emin must be > 0 MeV/n");
-    }
-    else if (a=="-density3d-emax" || a=="--density3d-emax") {
-      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density3d-emax");
-      opt.density3dEmax_MeV = std::stod(argv[++i]);
-      if (opt.density3dEmax_MeV <= 0.0)
-        exit(__LINE__,__FILE__,"-density3d-emax must be > 0 MeV/n");
-    }
-    else if (a=="-density3d-nenergy" || a=="--density3d-nenergy") {
-      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density3d-nenergy");
-      opt.density3dNenergy = std::stoi(argv[++i]);
-      if (opt.density3dNenergy < 1)
-        exit(__LINE__,__FILE__,"-density3d-nenergy must be >= 1");
-    }
-    else if (a=="-density3d-spacing" || a=="--density3d-spacing") {
-      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density3d-spacing");
-      opt.density3dSpacing = argv[++i];
-      // Validate at parse time for early error reporting
-      std::string up = opt.density3dSpacing;
-      for (auto& c : up) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-      if (up != "LOG" && up != "LINEAR")
-        exit(__LINE__,__FILE__,"-density3d-spacing must be LOG or LINEAR");
+    else if (a=="-forward-injection-energy" || a=="--forward-injection-energy" ||
+             a=="-forward-energy-sampling" || a=="--forward-energy-sampling") {
+      // Select the proposal distribution for injected particle kinetic energy.
+      // SPECTRUM preserves the legacy branch: sample directly from J(E)dE.
+      // LOG_UNIFORM samples uniformly in log(E) and requires individual particle
+      // statistical-weight corrections in Mode3DForward.cpp.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -forward-injection-energy");
+      opt.forward3dInjectionEnergyDistribution = argv[++i];
     }
     else {
       std::ostringstream oss;
@@ -282,6 +263,18 @@ std::string HelpMessage(const char* progName) {
   out << "        W = (pi x integral_{Emin}^{Emax} J(E) dE x A_boundary x dt) / N\n";
   out << "      where N is this count.  Larger N gives finer phase-space sampling at\n";
   out << "      the cost of proportionally more memory and compute per iteration.\n\n";
+  out << "  -forward-injection-energy | --forward-injection-energy <SPECTRUM|LOG_UNIFORM>   (optional)\n";
+  out << "      Select the injected-particle energy proposal distribution.\n";
+  out << "        SPECTRUM    (default): sample E from the physical J(E)dE CDF.\n";
+  out << "                     This is the legacy equal-weight branch and is efficient\n";
+  out << "                     where the spectrum is largest, usually at low energy.\n";
+  out << "        LOG_UNIFORM: sample E uniformly in log(E) and apply an individual\n";
+  out << "                     statistical-weight correction q(E)=p_target/p_log.\n";
+  out << "                     This improves high-energy statistics for steep SEP spectra\n";
+  out << "                     while conserving the total physical source rate per step.\n";
+  out << "      Alias: --forward-energy-sampling. A matching input-file key can be added\n";
+  out << "      later using Mode3DForwardOptions::injectionEnergyDistribution.\n\n";
+
   out << "  -forward-boundary-dist | --forward-boundary-dist <ISOTROPIC>   (optional)\n";
   out << "      Override Mode3DForwardOptions::boundaryDistType.\n";
   out << "      ISOTROPIC (default): cos(θ)-weighted hemisphere at each domain-boundary face.\n";
@@ -290,48 +283,6 @@ std::string HelpMessage(const char* progName) {
   out << "      Also works in 3d_forward mode: writes amps_3dforward_initialized.data.dat\n";
   out << "      after the AMR mesh B/E fields have been populated.\n\n";
   out << "\n";
-
-  // -----------------------------------------------------------------------
-  out << "Energy-binned density options (-mode 3d_forward, overrides #DENSITY_3D):\n\n";
-
-  out << "  -density3d-emin | --density3d-emin <double>   (optional)\n";
-  out << "      Override DENS_EMIN from the #DENSITY_3D input section.\n";
-  out << "      Lower bound of the energy grid for density sampling.\n";
-  out << "      Units: MeV/n (kinetic energy per nucleon).  Must be > 0.\n";
-  out << "      Input file default: 1.0 MeV/n\n\n";
-
-  out << "  -density3d-emax | --density3d-emax <double>   (optional)\n";
-  out << "      Override DENS_EMAX from the #DENSITY_3D input section.\n";
-  out << "      Upper bound of the energy grid for density sampling.\n";
-  out << "      Units: MeV/n (kinetic energy per nucleon).  Must be > 0.\n";
-  out << "      Input file default: 20000.0 MeV/n\n\n";
-
-  out << "  -density3d-nenergy | --density3d-nenergy <int>   (optional)\n";
-  out << "      Override DENS_NENERGY from the #DENSITY_3D input section.\n";
-  out << "      Number of energy bins covering [DENS_EMIN, DENS_EMAX].\n";
-  out << "      Must be >= 1.  Larger values give finer energy resolution at the\n";
-  out << "      cost of proportionally more sampling-buffer memory per cell.\n";
-  out << "      Input file default: 30\n\n";
-
-  out << "  -density3d-spacing | --density3d-spacing <LOG|LINEAR>   (optional)\n";
-  out << "      Override DENS_ENERGY_SPACING from the #DENSITY_3D input section.\n";
-  out << "        LOG     Logarithmically spaced bins (recommended for broad energy\n";
-  out << "                ranges spanning orders of magnitude; GCR/SEP spectra).\n";
-  out << "        LINEAR  Uniformly spaced bins (equal width in energy; useful for\n";
-  out << "                narrow ranges or when spectral resolution is uniform).\n";
-  out << "      Input file default: LOG\n\n";
-
-  out << "  Input file equivalent (#DENSITY_3D section):\n";
-  out << "    #DENSITY_3D\n";
-  out << "    DENS_EMIN              1.0          ! MeV/n\n";
-  out << "    DENS_EMAX              20000.0      ! MeV/n\n";
-  out << "    DENS_NENERGY           30           ! energy bins\n";
-  out << "    DENS_ENERGY_SPACING    LOG          ! LOG or LINEAR\n\n";
-
-  out << "  Example: override energy grid on the command line:\n";
-  out << "    " << progName << " -mode 3d_forward -i run.in \\\n";
-  out << "        -density3d-emin 10.0 -density3d-emax 1000.0 \\\n";
-  out << "        -density3d-nenergy 20 -density3d-spacing LOG\n\n";
   out << "      Override #NUMERICAL / MAX_TRACE_DISTANCE from the input file.\n";
   out << "      Units: Earth radii (Re) of cumulative traced path length.\n";
   out << "        value > 0   enable the cumulative-distance cap\n";
