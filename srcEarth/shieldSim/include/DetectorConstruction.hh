@@ -11,9 +11,11 @@
  *   upstream vacuum  ->  shield slab  ->  scoring slab(s)  ->  downstream vacuum
  *
  * All volumes are axis-aligned G4Box objects.  The slab normal is the +z
- * direction.  The shield and scoring materials are resolved through the Geant4
- * NIST database using names such as G4_Al, G4_WATER, G4_Si, or
- * G4_POLYETHYLENE.
+ * direction.  The shield material is resolved through the ShieldSim shielding
+ * material catalog or ordinary Geant4/NIST G4_* names.  The scoring materials
+ * are resolved through the detector/absorber/target catalog, which includes
+ * tissue proxies and electronics materials, and then falls back to shielding
+ * aliases and ordinary G4_* names.
  * ========================================================================== */
 
 #include "ShieldSimConfig.hh"

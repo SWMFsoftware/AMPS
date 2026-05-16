@@ -6,6 +6,7 @@ The package version is split into normal Geant4-style source files while preserv
 
 - CLI-selectable Geant4 physics list (`FTFP_BERT`, `FTFP_BERT_HP`, `Shielding`, `QGSP_BIC_HP`),
 - CLI-selectable shield materials using either Geant4/NIST names or built-in aliases for metals, hydrogenous polymers, composites, water, and regolith,
+- CLI-selectable detector/absorber/target materials for downstream scoring slabs, including tissue proxies and electronics/semiconductor media,
 - source normalization using `J(E) dE`,
 - `beam` and `isotropic` source modes controlled by CLI,
 - local-coordinate shield rear-face scoring,
@@ -147,21 +148,70 @@ Examples:
 The composite and regolith materials are approximate trade-study materials defined in `src/MaterialCatalog.cc`.  Replace their density/composition there if a project-specific measured material is required.
 
 
+## Detector / absorber / target material selection
+
+Use `--scoring=<material>:<thickness_mm>,...` to define downstream scoring slabs.  The alias `--target=<material>:<thickness_mm>,...` is equivalent and is often clearer when the slabs represent tissue, detector, or electronics media.
+
+Print the full detector/target catalog with:
+
+```bash
+./shieldSim --list-target-materials
+```
+
+Built-in detector/target keys:
+
+```text
+Crewed Mission - Tissue Targets
+  Skin             Skin/epidermis proxy; use e.g. Skin:0.07 for 0.07 mm
+  EyeLens          Crystalline eye-lens tissue proxy
+  BFO              Blood-forming-organ soft-tissue proxy; BFO:50 for 5 cm
+  CNS              Brain/CNS tissue proxy
+  SoftTissue       ICRU-style 4-element soft tissue / muscle proxy
+
+Electronics - Silicon Family
+  Si               Silicon, alias to G4_Si
+  SiO2             Silicon dioxide / gate-oxide proxy
+  SiC              Dense stoichiometric silicon carbide
+
+Electronics - III-V and Compound Semiconductors
+  GaAs             Gallium arsenide
+  InGaAs           In0.53Ga0.47As proxy
+  Ge               Germanium, alias to G4_Ge
+  H2O              Water reference, alias to G4_WATER
+```
+
+Examples:
+
+```bash
+# Tissue and electronics scoring behind 2 mm aluminum
+./shieldSim --shield=Al:2 --target=BFO:50,Si:1 --events=100000
+
+# Shallow skin and eye-lens scoring
+./shieldSim --shield=HDPE:5 --target=Skin:0.07,EyeLens:1 --source-mode=isotropic
+
+# Electronics detector materials
+./shieldSim --shield=Al:2 --target=Si:1,SiO2:0.01,GaAs:1,InGaAs:1,Ge:1
+```
+
+Organ/tissue names define material composition only.  `shieldSim` does not apply NASA limit checks, quality factors, LET/RBE weighting, organ weighting, NIEL conversion, displacement-damage conversion, or device response functions internally.  Those quantities require post-processing using the relevant radiation-protection or electronics-damage standard.
+
 ## Material-property references and adding new materials
 
-The material-property references used by the built-in catalog are documented in `src/MaterialCatalog.cc` and summarized by `./shieldSim --list-materials`.  In brief:
+The material-property references used by the built-in catalogs are documented in `src/MaterialCatalog.cc` and summarized by `./shieldSim --list-materials` and `./shieldSim --list-target-materials`.  In brief:
 
 - `Al`, `Cu`, `W`, `Ta`, `Kapton`, and `Water` are aliases to Geant4/NIST `G4_*` materials.
 - `HDPE`, `BPE`, `Kevlar`, `CFRP`, `SiCComposite`, `LunarRegolith`, and `MarsRegolith` are custom ShieldSim trade-study approximations.
 - Composite and regolith definitions are intentionally approximate. Replace their density and mass fractions with measured project-specific values before using them for final quantitative analysis.
+- Tissue/organ target definitions are simplified material proxies. They are not anatomical phantoms and do not include biological weighting factors.
+- Electronics target definitions are transport media only. NIEL, displacement damage, LET, charge collection, and device response must be applied in post-processing.
 
 To add a new material:
 
-1. Edit `src/MaterialCatalog.cc` and add a `MaterialCatalogEntry` in `ShieldMaterialCatalog()`.
+1. Edit `src/MaterialCatalog.cc` and add a `MaterialCatalogEntry` in `ShieldMaterialCatalog()` for a new shield/absorber material, or in `DetectorMaterialCatalog()` for a new detector/target scoring material.
 2. If the material exists in Geant4/NIST, set `canonicalName` to the corresponding `G4_*` name and set `isCustom=false`.
 3. If the material is custom, implement a `Build...()` function in `src/MaterialCatalog.cc`, use explicit Geant4 units such as `g/cm3`, register the builder in `BuildCustomMaterial()`, and document the density/composition/reference above the builder.
 4. Add useful aliases. The parser ignores case and punctuation, so aliases can be user-friendly names.
-5. Rebuild. The `--help` and `--list-materials` output is generated from the catalog automatically.
+5. Rebuild. The `--help`, `--list-materials`, and `--list-target-materials` output is generated from the catalogs automatically.
 
 ## Physics-list selection
 

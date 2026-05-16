@@ -28,6 +28,14 @@
  *      state whether the composition is defined by atom count or by mass
  *      fraction and give the reference assumptions.
  *
+ * 3. Detector/absorber/target scoring materials
+ *      Entries such as Skin, EyeLens, BFO, CNS, SoftTissue, Si, SiO2, SiC,
+ *      GaAs, InGaAs, Ge, and H2O are intended for downstream scoring slabs.
+ *      They represent either tissue-equivalent media for crewed-mission dose
+ *      proxies or electronics/semiconductor media for detector/instrument
+ *      response proxies.  These materials are selected through --scoring or
+ *      the equivalent --target option.
+ *
  * References used for the default catalog
  * ---------------------------------------
  * The help text prints compact reference notes.  The longer URLs are listed
@@ -71,6 +79,28 @@
  * [MARS-APXS] Mars Pathfinder / MER / Curiosity APXS literature gives in-situ
  *           bulk chemistry of Martian soils and rocks.  ShieldSim's default is
  *           only a rough basaltic/regolith elemental mixture.
+ *
+ * [ICRU-44] ICRU Report 44, Tissue Substitutes in Radiation Dosimetry and
+ *           Measurement.  Used here for the 4-element soft-tissue proxy
+ *           convention documented in the builder comments.
+ *
+ * [ICRP-110] ICRP Publication 110 adult reference computational phantoms and
+ *           reference tissue context.  Used here only as a provenance note for
+ *           organ/tissue proxy naming; the default shieldSim organ materials
+ *           are simplified transport proxies, not full phantom models.
+ *
+ * [NASA-STD-3001] NASA Space Flight Human-System Standard, Volume 1, crew
+ *           health dose-limit context for skin, lens, BFO, and CNS endpoints.
+ *           ShieldSim stores material definitions only; biological weighting
+ *           and dose-equivalent conversion must be applied separately.
+ *
+ * [NIST-PSTAR] NIST PSTAR stopping-power tables.  Used as the provenance note
+ *           for silicon/electronics stopping-power use cases.
+ *
+ * [SEMICONDUCTOR] Standard semiconductor material-property references for
+ *           Si, SiO2, SiC, GaAs, InGaAs, and Ge densities/stoichiometry.
+ *           Compound-semiconductor entries are practical transport proxies and
+ *           should be replaced with device-specific compositions if needed.
  *
  * How to add a new material
  * -------------------------
@@ -299,26 +329,196 @@ G4Material* BuildMarsRegolith(){
   return m;
 }
 
+G4Material* BuildSoftTissueICRU4(){
+  const char* name="ShieldSim_SoftTissue_ICRU4";
+  if(auto* m=Existing(name)) return m;
+
+  // Four-element soft-tissue proxy.
+  //   Intended use: generic tissue/muscle or water-like organ dose scoring when
+  //                 a full anthropomorphic phantom is not being modeled.
+  //   Composition convention: mass fractions for a simplified ICRU-style
+  //                           4-element tissue substitute, H/C/N/O only.
+  //   Density: 1.00 g/cm3.
+  //   Important: this is a scoring material, not a biological dose-equivalent
+  //              model.  Quality factors, RBE, LET weighting, or organ
+  //              weighting must be applied in post-processing if needed.
+  auto* m = new G4Material(name,1.00*g/cm3,4);
+  m->AddElement(El("H"),0.101);
+  m->AddElement(El("C"),0.111);
+  m->AddElement(El("N"),0.026);
+  m->AddElement(El("O"),0.762);
+  return m;
+}
+
+G4Material* BuildSkinEpidermis(){
+  const char* name="ShieldSim_Skin_Epidermis";
+  if(auto* m=Existing(name)) return m;
+
+  // Skin/epidermis dose proxy.
+  //   Intended use: shallow skin scoring layer, for example a user-specified
+  //                 0.07 mm slab when comparing with skin-depth limits.
+  //   Composition convention: mass fractions for an approximate ICRP-like skin
+  //                           tissue.  Trace elements are included only at the
+  //                           level needed for charged-particle transport.
+  //   Density: 1.09 g/cm3.
+  //   The NASA skin dose-limit context belongs in output interpretation; this
+  //   material definition only controls transport and energy deposition.
+  auto* m = new G4Material(name,1.09*g/cm3,9);
+  m->AddElement(El("H" ),0.100);
+  m->AddElement(El("C" ),0.204);
+  m->AddElement(El("N" ),0.042);
+  m->AddElement(El("O" ),0.645);
+  m->AddElement(El("Na"),0.002);
+  m->AddElement(El("P" ),0.001);
+  m->AddElement(El("S" ),0.002);
+  m->AddElement(El("Cl"),0.003);
+  m->AddElement(El("K" ),0.001);
+  return m;
+}
+
+G4Material* BuildEyeLens(){
+  const char* name="ShieldSim_EyeLens";
+  if(auto* m=Existing(name)) return m;
+
+  // Crystalline eye-lens proxy.
+  //   Intended use: organ-specific scoring slab for cataract-endpoint dose
+  //                 studies, not a geometrically correct eye model.
+  //   Composition convention: simplified H/C/N/O mass fractions representing a
+  //                           protein-rich water-like tissue.
+  //   Density: 1.07 g/cm3.
+  //   Radiation protection quantities such as dose equivalent must be computed
+  //   outside this material definition.
+  auto* m = new G4Material(name,1.07*g/cm3,4);
+  m->AddElement(El("H"),0.096);
+  m->AddElement(El("C"),0.195);
+  m->AddElement(El("N"),0.057);
+  m->AddElement(El("O"),0.652);
+  return m;
+}
+
+G4Material* BuildBFO(){
+  const char* name="ShieldSim_BFO_Tissue";
+  if(auto* m=Existing(name)) return m;
+
+  // Blood-forming-organ tissue proxy.
+  //   Intended use: a material for the scoring slab that the user may place at
+  //                 a BFO-relevant depth, for example 50 mm of tissue.
+  //   Composition convention: same simplified soft-tissue mass fractions as the
+  //                           ICRU 4-element proxy.
+  //   Density: 1.00 g/cm3.
+  //   The 5 cm BFO-depth convention is not hard-coded here because the slab
+  //   thickness is controlled by the CLI.  Use --target=BFO:50 for a 50 mm
+  //   scoring slab if that is the intended approximation.
+  auto* m = new G4Material(name,1.00*g/cm3,4);
+  m->AddElement(El("H"),0.101);
+  m->AddElement(El("C"),0.111);
+  m->AddElement(El("N"),0.026);
+  m->AddElement(El("O"),0.762);
+  return m;
+}
+
+G4Material* BuildCNS(){
+  const char* name="ShieldSim_CNS_Tissue";
+  if(auto* m=Existing(name)) return m;
+
+  // Central-nervous-system / brain-tissue proxy.
+  //   Intended use: a simple material for CNS energy-deposition scoring, such
+  //                 as a hippocampus-like tissue proxy in a slab geometry.
+  //   Composition convention: mass fractions for an approximate brain/soft
+  //                           tissue.  This is not a voxel phantom.
+  //   Density: 1.04 g/cm3.
+  auto* m = new G4Material(name,1.04*g/cm3,9);
+  m->AddElement(El("H" ),0.107);
+  m->AddElement(El("C" ),0.145);
+  m->AddElement(El("N" ),0.022);
+  m->AddElement(El("O" ),0.712);
+  m->AddElement(El("Na"),0.002);
+  m->AddElement(El("P" ),0.004);
+  m->AddElement(El("S" ),0.002);
+  m->AddElement(El("Cl"),0.003);
+  m->AddElement(El("K" ),0.003);
+  return m;
+}
+
+G4Material* BuildSiliconDioxide(){
+  const char* name="ShieldSim_SiliconDioxide";
+  if(auto* m=Existing(name)) return m;
+
+  // Silicon dioxide / oxide scoring material.
+  //   Intended use: gate oxide or insulating oxide TID proxy.
+  //   Composition convention: atom counts, SiO2.
+  //   Density: 2.20 g/cm3, representative amorphous/fused silica scale.
+  //   Device oxides can have different density, hydrogen content, or process
+  //   impurities; replace this with a project-specific definition if needed.
+  auto* m = new G4Material(name,2.20*g/cm3,2);
+  m->AddElement(El("Si"),1);
+  m->AddElement(El("O" ),2);
+  return m;
+}
+
+G4Material* BuildGaAs(){
+  const char* name="ShieldSim_GaAs";
+  if(auto* m=Existing(name)) return m;
+
+  // Gallium arsenide semiconductor.
+  //   Intended use: RF/microwave ICs and multi-junction solar-cell detector
+  //                 material proxy.
+  //   Composition convention: atom counts, GaAs.
+  //   Density: 5.3176 g/cm3.
+  auto* m = new G4Material(name,5.3176*g/cm3,2);
+  m->AddElement(El("Ga"),1);
+  m->AddElement(El("As"),1);
+  return m;
+}
+
+G4Material* BuildInGaAs(){
+  const char* name="ShieldSim_InGaAs";
+  if(auto* m=Existing(name)) return m;
+
+  // Indium gallium arsenide semiconductor proxy.
+  //   Intended use: SWIR/NIR focal-plane arrays and detector materials.
+  //   Composition convention: mass fractions corresponding approximately to
+  //                           In0.53Ga0.47As, a common lattice-matched alloy.
+  //   Density: 5.68 g/cm3 engineering reference value.
+  //   Device-specific In/Ga fraction should be changed here when known.
+  auto* m = new G4Material(name,5.68*g/cm3,3);
+  m->AddElement(El("In"),0.361);
+  m->AddElement(El("Ga"),0.194);
+  m->AddElement(El("As"),0.445);
+  return m;
+}
+
 G4Material* BuildCustomMaterial(const std::string& canonical){
   // Dispatch table for ShieldSim_* materials.  Every custom material listed in
-  // ShieldMaterialCatalog() must appear here.  If it does not, the material will
-  // be advertised in --help but will fail at geometry construction.
+  // ShieldMaterialCatalog() or DetectorMaterialCatalog() must appear here.
+  // If it does not, the material will be advertised in --help/list output but
+  // will fail at geometry construction.
   if(canonical=="ShieldSim_HDPE")                 return BuildHDPE();
   if(canonical=="ShieldSim_BPE_5pctB")            return BuildBPE();
   if(canonical=="ShieldSim_Kevlar")               return BuildKevlar();
   if(canonical=="ShieldSim_CFRP")                 return BuildCFRP();
   if(canonical=="ShieldSim_SiCCompositePlastic")  return BuildSiCCompositePlastic();
+  if(canonical=="ShieldSim_SiC")                  return BuildSiC();
+  if(canonical=="ShieldSim_SoftTissue_ICRU4")     return BuildSoftTissueICRU4();
+  if(canonical=="ShieldSim_Skin_Epidermis")       return BuildSkinEpidermis();
+  if(canonical=="ShieldSim_EyeLens")              return BuildEyeLens();
+  if(canonical=="ShieldSim_BFO_Tissue")           return BuildBFO();
+  if(canonical=="ShieldSim_CNS_Tissue")           return BuildCNS();
+  if(canonical=="ShieldSim_SiliconDioxide")       return BuildSiliconDioxide();
+  if(canonical=="ShieldSim_GaAs")                 return BuildGaAs();
+  if(canonical=="ShieldSim_InGaAs")               return BuildInGaAs();
   if(canonical=="ShieldSim_LunarRegolith")        return BuildLunarRegolith();
   if(canonical=="ShieldSim_MarsRegolith")         return BuildMarsRegolith();
   return nullptr;
 }
 
-std::map<std::string,std::string> MakeAliasMap(){
-  // Build a normalized alias -> canonical-name map from the catalog itself.
+std::map<std::string,std::string> MakeAliasMapFor(const std::vector<MaterialCatalogEntry>& catalog){
+  // Build a normalized alias -> canonical-name map from a catalog.
   // This keeps the parser data-driven: adding an alias to a catalog entry is
-  // enough to make the CLI accept it.
+  // enough to make the CLI accept it.  The same helper is used for both the
+  // shielding catalog and the detector/target catalog.
   std::map<std::string,std::string> out;
-  for(const auto& e : ShieldMaterialCatalog()){
+  for(const auto& e : catalog){
     out[NormalizeToken(e.key)] = e.canonicalName;
     out[NormalizeToken(e.displayName)] = e.canonicalName;
     out[NormalizeToken(e.canonicalName)] = e.canonicalName;
@@ -327,8 +527,13 @@ std::map<std::string,std::string> MakeAliasMap(){
   return out;
 }
 
-const MaterialCatalogEntry* FindCatalogEntryByCanonical(const std::string& canonical){
-  for(const auto& e : ShieldMaterialCatalog())
+const MaterialCatalogEntry* FindCatalogEntryByCanonical(
+    const std::vector<MaterialCatalogEntry>& catalog,
+    const std::string& canonical)
+{
+  // Return the catalog entry for a canonical name, or nullptr for raw G4_*
+  // materials that are accepted but not listed in the shieldSim short catalog.
+  for(const auto& e : catalog)
     if(e.canonicalName==canonical) return &e;
   return nullptr;
 }
@@ -386,11 +591,59 @@ const std::vector<MaterialCatalogEntry>& ShieldMaterialCatalog(){
   return entries;
 }
 
+const std::vector<MaterialCatalogEntry>& DetectorMaterialCatalog(){
+  // The order below controls the order printed in --help and
+  // --list-target-materials.  The grouping follows the absorber/detector UI:
+  // crewed-mission tissue targets, silicon-family electronics, and compound
+  // semiconductors / reference media.
+  static const std::vector<MaterialCatalogEntry> entries = {
+    {"Crewed Mission - Tissue Targets", "Skin", "Skin (Epidermis)", "ShieldSim_Skin_Epidermis",
+     "Custom shallow-skin tissue proxy, density 1.09 g/cm3; use user-selected thickness, e.g. 0.07 mm.",
+     "Refs: [ICRP-110], [NASA-STD-3001]; endpoint/dose-equivalent conversion is post-processing", {"Epidermis","SkinEpidermis","Skin_Epidermis"}, true},
+    {"Crewed Mission - Tissue Targets", "EyeLens", "Eye Lens", "ShieldSim_EyeLens",
+     "Custom crystalline-lens tissue proxy, density 1.07 g/cm3; cataract endpoint context only.",
+     "Refs: [ICRP-110], [NASA-STD-3001]; not a geometric eye model", {"Lens","Eye","CrystallineLens","Eye Lens"}, true},
+    {"Crewed Mission - Tissue Targets", "BFO", "BFO - Blood-Forming Organs", "ShieldSim_BFO_Tissue",
+     "Custom soft-tissue proxy for BFO scoring; material only, depth is controlled by CLI thickness.",
+     "Refs: [ICRU-44], [NASA-STD-3001]; common depth proxy is 5 cm = 50 mm", {"BloodFormingOrgans","Blood-Forming Organs","BFO_Tissue"}, true},
+    {"Crewed Mission - Tissue Targets", "CNS", "CNS - Central Nervous System", "ShieldSim_CNS_Tissue",
+     "Custom brain/CNS tissue proxy, density 1.04 g/cm3; slab proxy for CNS energy deposition.",
+     "Refs: [ICRP-110], [NASA-STD-3001]; not a voxel phantom", {"Brain","BrainTissue","CentralNervousSystem","Hippocampus"}, true},
+    {"Crewed Mission - Tissue Targets", "SoftTissue", "Soft Tissue / Muscle (ICRU 4-element)", "ShieldSim_SoftTissue_ICRU4",
+     "Custom simplified ICRU-style 4-element tissue substitute, density 1.00 g/cm3.",
+     "Ref: [ICRU-44]; useful general organ-dose proxy", {"Muscle","Tissue","ICRU4","ICRU-4","Soft Tissue"}, true},
+
+    {"Electronics - Silicon Family", "Si", "Si - Silicon", "G4_Si",
+     "Geant4/NIST elemental silicon; common scoring medium for CMOS, CCDs, solar cells, TID/DDD proxies.",
+     "Refs: [G4-MAT], [NIST-PSTAR], [SEMICONDUCTOR]", {"Silicon","G4_Si"}, false},
+    {"Electronics - Silicon Family", "SiO2", "SiO2 - Silicon Dioxide", "ShieldSim_SiliconDioxide",
+     "Custom SiO2 oxide proxy, density 2.20 g/cm3; useful for gate-oxide TID studies.",
+     "Refs: [SEMICONDUCTOR]; device-specific process oxide may differ", {"SiliconDioxide","Silica","Oxide","GateOxide"}, true},
+    {"Electronics - Silicon Family", "SiC", "SiC - Silicon Carbide", "ShieldSim_SiC",
+     "Custom dense stoichiometric SiC, density 3.21 g/cm3; wide-bandgap electronics proxy.",
+     "Refs: [SIC], [SEMICONDUCTOR]; TID and DDD both may be relevant", {"SiliconCarbide","Silicon Carbide"}, true},
+
+    {"Electronics - III-V and Compound Semiconductors", "GaAs", "GaAs - Gallium Arsenide", "ShieldSim_GaAs",
+     "Custom stoichiometric GaAs, density 5.3176 g/cm3; RF/microwave ICs and multi-junction solar cells.",
+     "Refs: [SEMICONDUCTOR]; use device-specific material if known", {"GalliumArsenide","Gallium Arsenide"}, true},
+    {"Electronics - III-V and Compound Semiconductors", "InGaAs", "InGaAs - Indium Gallium Arsenide", "ShieldSim_InGaAs",
+     "Custom In0.53Ga0.47As proxy, density 5.68 g/cm3; SWIR/NIR focal-plane arrays.",
+     "Refs: [SEMICONDUCTOR]; DDD/dark-current metrics require post-processing", {"IndiumGalliumArsenide","Indium Gallium Arsenide","In0.53Ga0.47As"}, true},
+    {"Electronics - III-V and Compound Semiconductors", "Ge", "Ge - Germanium", "G4_Ge",
+     "Geant4/NIST elemental germanium; MWIR/thermal IR detector-array proxy.",
+     "Refs: [G4-MAT], [NIST-PSTAR], [SEMICONDUCTOR]", {"Germanium","G4_Ge"}, false},
+    {"Electronics - III-V and Compound Semiconductors", "H2O", "H2O - Water (ICRU reference)", "G4_WATER",
+     "Geant4/NIST liquid water; useful ICRU reference medium and tissue-comparison baseline.",
+     "Refs: [G4-MAT], [NIST-XCOM], [ICRU-44]", {"Water","G4_WATER","LiquidWater"}, false}
+  };
+  return entries;
+}
+
 std::string ResolveShieldMaterialName(const std::string& userName){
   if(userName.empty()) return userName;
   if(StartsWithG4(userName)) return userName;
 
-  static const auto aliasMap = MakeAliasMap();
+  static const auto aliasMap = MakeAliasMapFor(ShieldMaterialCatalog());
   const auto key = NormalizeToken(userName);
   const auto it = aliasMap.find(key);
   if(it!=aliasMap.end()) return it->second;
@@ -399,6 +652,21 @@ std::string ResolveShieldMaterialName(const std::string& userName){
   // future code can create a G4Material elsewhere before DetectorConstruction is
   // built, then pass that material name through the CLI.
   return userName;
+}
+
+std::string ResolveDetectorMaterialName(const std::string& userName){
+  if(userName.empty()) return userName;
+  if(StartsWithG4(userName)) return userName;
+
+  static const auto detectorAliasMap = MakeAliasMapFor(DetectorMaterialCatalog());
+  const auto key = NormalizeToken(userName);
+  const auto detIt = detectorAliasMap.find(key);
+  if(detIt!=detectorAliasMap.end()) return detIt->second;
+
+  // Scoring slabs are often made from the same material as the shield during
+  // debugging or specialized detector studies.  Therefore, detector resolution
+  // deliberately falls back to the shielding catalog before giving up.
+  return ResolveShieldMaterialName(userName);
 }
 
 G4Material* FindOrBuildShieldMaterial(const std::string& userName){
@@ -417,10 +685,36 @@ G4Material* FindOrBuildShieldMaterial(const std::string& userName){
   auto* nist=G4NistManager::Instance();
   auto* m=nist->FindOrBuildMaterial(canonical,false);
   if(!m){
-    const std::string msg = "Material '" + userName + "' could not be resolved. "
+    const std::string msg = "Shield material '" + userName + "' could not be resolved. "
                           + "Use --list-materials to see built-in aliases, or "
                           + "provide a valid Geant4 NIST material name such as G4_Al.";
     G4Exception("FindOrBuildShieldMaterial","BadMaterial",FatalException,msg.c_str());
+  }
+  return m;
+}
+
+G4Material* FindOrBuildDetectorMaterial(const std::string& userName){
+  const std::string canonical = ResolveDetectorMaterialName(userName);
+
+  // The detector material may already have been created as a custom material or
+  // may have been requested by a shielding material.  Check the global Geant4
+  // material table first to avoid duplicate definitions.
+  if(auto* m=G4Material::GetMaterial(canonical,false)) return m;
+
+  // Detector and shield custom materials share the same builder dispatcher.
+  // This lets scoring slabs use both biological/electronics target materials
+  // and ordinary shielding materials.
+  if(auto* m=BuildCustomMaterial(canonical)) return m;
+
+  // Finally, ask Geant4/NIST.  This supports any G4_* material and also catches
+  // catalog aliases that intentionally resolve to a predefined NIST material.
+  auto* nist=G4NistManager::Instance();
+  auto* m=nist->FindOrBuildMaterial(canonical,false);
+  if(!m){
+    const std::string msg = "Detector/target material '" + userName + "' could not be resolved. "
+                          + "Use --list-target-materials to see detector aliases, "
+                          + "--list-materials to see shielding aliases, or provide a valid G4_* material name.";
+    G4Exception("FindOrBuildDetectorMaterial","BadMaterial",FatalException,msg.c_str());
   }
   return m;
 }
@@ -455,8 +749,8 @@ std::string ShieldMaterialCatalogText(){
   out<<"\n  Any Geant4/NIST material name beginning with G4_ is also accepted,\n";
   out<<"  for example G4_Al, G4_Cu, G4_WATER, G4_Si, G4_Pb, or G4_POLYETHYLENE.\n";
 
-  out<<"\n  Material-property reference notes\n";
-  out<<"  ---------------------------------\n";
+  out<<"\n  Shielding-material reference notes\n";
+  out<<"  ----------------------------------\n";
   out<<"    [G4-MAT]          Geant4 material database / installed Geant4 NIST definitions.\n";
   out<<"    [NIST-XCOM]       NIST material constants and elemental-density tables.\n";
   out<<"    [NIST-KAPTON]     NIST STAR Kapton composition/density.\n";
@@ -473,9 +767,68 @@ std::string ShieldMaterialCatalogText(){
   return out.str();
 }
 
+std::string DetectorMaterialCatalogText(){
+  std::ostringstream out;
+  std::string currentCategory;
+
+  out<<"\n  Allowed detector / absorber / target material catalog keys\n";
+  out<<"  --------------------------------------------------------\n";
+  for(const auto& e : DetectorMaterialCatalog()){
+    if(e.category!=currentCategory){
+      currentCategory=e.category;
+      out<<"\n  "<<currentCategory<<"\n";
+    }
+    out<<"    "<<std::left<<std::setw(16)<<e.key
+       <<" -> "<<std::setw(42)<<e.displayName
+       <<" canonical="<<std::setw(32)<<e.canonicalName
+       <<(e.isCustom?" custom":" G4/NIST")<<"\n";
+    out<<"       "<<e.description<<"\n";
+    out<<"       "<<e.sourceNote<<"\n";
+    if(!e.aliases.empty()){
+      out<<"       aliases: ";
+      for(std::size_t i=0;i<e.aliases.size();++i){
+        if(i) out<<", ";
+        out<<e.aliases[i];
+      }
+      out<<"\n";
+    }
+  }
+
+  out<<"\n  Any Geant4/NIST material name beginning with G4_ is also accepted.\n";
+  out<<"  Detector materials are selected with --scoring=<M>:<mm>,... or\n";
+  out<<"  the equivalent --target=<M>:<mm>,... option.\n";
+  out<<"\n  Detector/target material reference notes\n";
+  out<<"  ----------------------------------------\n";
+  out<<"    [ICRU-44]        ICRU tissue substitutes / 4-element soft-tissue proxy context.\n";
+  out<<"    [ICRP-110]       Reference tissue/organ context; ShieldSim uses simplified slab proxies.\n";
+  out<<"    [NASA-STD-3001]  Crew health endpoint context for skin, lens, BFO, and CNS.\n";
+  out<<"    [NIST-PSTAR]     Stopping-power table provenance for electronics/scoring media.\n";
+  out<<"    [G4-MAT]         Geant4 material database / installed Geant4 NIST definitions.\n";
+  out<<"    [NIST-XCOM]      NIST material constants and elemental-density tables.\n";
+  out<<"    [SEMICONDUCTOR]  Standard semiconductor material-property references.\n";
+  out<<"\n  Important: organ names here define material composition only.  ShieldSim does\n";
+  out<<"  not apply quality factors, LET/RBE weighting, organ weighting, NASA limit\n";
+  out<<"  checks, NIEL conversion, or displacement-damage conversion internally.\n";
+  out<<"  Those quantities require post-processing of deposited energy, fluence, LET,\n";
+  out<<"  or damage functions using the relevant mission standard.\n";
+  out<<"\n";
+  return out.str();
+}
+
 std::string DescribeShieldMaterial(const std::string& userName){
   const std::string canonical = ResolveShieldMaterialName(userName);
-  if(const auto* e = FindCatalogEntryByCanonical(canonical)){
+  if(const auto* e = FindCatalogEntryByCanonical(ShieldMaterialCatalog(),canonical)){
+    return e->displayName + " [" + e->key + "; " + e->canonicalName + "]";
+  }
+  return userName;
+}
+
+std::string DescribeDetectorMaterial(const std::string& userName){
+  const std::string canonical = ResolveDetectorMaterialName(userName);
+  if(const auto* e = FindCatalogEntryByCanonical(DetectorMaterialCatalog(),canonical)){
+    return e->displayName + " [" + e->key + "; " + e->canonicalName + "]";
+  }
+  if(const auto* e = FindCatalogEntryByCanonical(ShieldMaterialCatalog(),canonical)){
     return e->displayName + " [" + e->key + "; " + e->canonicalName + "]";
   }
   return userName;

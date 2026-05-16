@@ -69,7 +69,8 @@ struct Options {
   bool        sweepLog      = false;
 
   bool showHelp = false;
-  bool listMaterials = false;
+  bool listMaterials = false;       // print shielding-material catalog and exit
+  bool listTargetMaterials = false; // print detector/absorber/target-material catalog and exit
 };
 
 // One row in the dose-vs-thickness sweep output table.

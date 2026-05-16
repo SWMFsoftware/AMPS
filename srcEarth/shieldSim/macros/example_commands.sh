@@ -3,8 +3,9 @@
 
 set -euo pipefail
 
-# Show material catalog.
+# Show material catalogs.
 ./shieldSim --list-materials
+./shieldSim --list-target-materials
 
 # Single run with normal-incidence beam.
 ./shieldSim --source-mode=beam --shield=Al:2 --events=50000
@@ -21,3 +22,9 @@ set -euo pipefail
 ./shieldSim --physics-list=Shielding --sweep --source-mode=isotropic --sweep-material=HDPE \
             --sweep-tmin=0.5 --sweep-tmax=30 --sweep-n=15 \
             --sweep-log --events=20000
+
+# Tissue and silicon scoring behind aluminum.
+./shieldSim --source-mode=isotropic --shield=Al:2 --target=BFO:50,Si:1 --events=50000
+
+# Electronics detector-material scoring stack.
+./shieldSim --shield=Al:2 --target=Si:1,SiO2:0.01,GaAs:1,InGaAs:1,Ge:1 --events=50000

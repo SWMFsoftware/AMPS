@@ -64,10 +64,16 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
   // Downstream scoring stack.  Each slab is immediately adjacent to the
   // preceding volume.  Energy deposited in these logical volumes is accumulated
   // by SteppingAction and normalized by RunAction at the end of each run.
+  //
+  // Scoring slabs use FindOrBuildDetectorMaterial() rather than the shielding
+  // resolver.  The detector resolver knows about tissue targets and electronics
+  // materials such as BFO, CNS, SoftTissue, SiO2, GaAs, and InGaAs.  It still
+  // falls back to the shielding catalog and to raw G4_* names, so a user can
+  // deliberately score dose in a shielding material as well.
   G4double curZ=1.*mm+fOpts.shieldThickness;
   for(std::size_t i=0;i<fOpts.scoringMaterials.size();++i){
     const auto& sm=fOpts.scoringMaterials[i];
-    auto* mat=FindOrBuildShieldMaterial(sm.first);
+    auto* mat=FindOrBuildDetectorMaterial(sm.first);
     if(!mat) G4Exception("Detector","ScoreMat",FatalException,
         ("Scoring material "+sm.first+" not found").c_str());
     G4double hz=sm.second/2;

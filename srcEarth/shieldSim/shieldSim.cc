@@ -22,24 +22,38 @@
  *   upstream source plane -> shield slab -> scoring slab(s) -> downstream gap
  *
  * The default shield is 2 mm Al.  The default scoring stack is 1 mm water plus
- * 1 mm silicon.  Materials are resolved using either Geant4/NIST material
- * names or the ShieldSim user-facing material catalog.
+ * 1 mm silicon.  Shield materials are resolved using either Geant4/NIST
+ * material names or the ShieldSim shielding-material catalog.  Scoring slabs
+ * are resolved through the detector/absorber/target catalog, which includes
+ * tissue proxies and electronics materials, and then falls back to the shielding
+ * catalog and ordinary G4_* names.
  *
- * Shielding-material catalog
- * --------------------------
- * The allowed short material names shown by --help and --list-materials are
- * defined in include/MaterialCatalog.hh and src/MaterialCatalog.cc.  Some names
- * are aliases to Geant4/NIST materials, such as Al -> G4_Al and Water ->
- * G4_WATER.  Other names are custom trade-study materials built by shieldSim,
- * such as BPE, CFRP, LunarRegolith, and MarsRegolith.
+ * Material catalogs
+ * -----------------
+ * The allowed short material names shown by --help, --list-materials, and
+ * --list-target-materials are defined in include/MaterialCatalog.hh and
+ * src/MaterialCatalog.cc.
  *
- * To add a new shielding material, add a MaterialCatalogEntry in
- * ShieldMaterialCatalog().  If the material is already provided by Geant4/NIST,
- * set canonicalName to the G4_* name and isCustom=false.  If it is a new custom
- * material, implement a Build...() function in src/MaterialCatalog.cc, register
- * it in BuildCustomMaterial(), document the density/composition/reference, and
- * rebuild.  The CLI help table will update automatically because it is generated
- * from the catalog.
+ * Shielding materials include structural metals, hydrogenous polymers,
+ * composites, water, and regolith-like materials.  Some are aliases to
+ * Geant4/NIST materials, such as Al -> G4_Al and Water -> G4_WATER.  Other
+ * names are custom trade-study materials built by shieldSim, such as BPE, CFRP,
+ * LunarRegolith, and MarsRegolith.
+ *
+ * Detector/target materials include crewed-mission tissue proxies such as Skin,
+ * EyeLens, BFO, CNS, and SoftTissue, and electronics materials such as Si,
+ * SiO2, SiC, GaAs, InGaAs, Ge, and H2O.  These entries define material
+ * composition only.  Dose-equivalent weighting, NASA limit checks, NIEL/DDD
+ * conversion, or device response functions must be applied separately.
+ *
+ * To add a new material, add a MaterialCatalogEntry in ShieldMaterialCatalog()
+ * or DetectorMaterialCatalog().  If the material is already provided by
+ * Geant4/NIST, set canonicalName to the G4_* name and isCustom=false.  If it is
+ * a new custom material, implement a Build...() function in
+ * src/MaterialCatalog.cc, register it in BuildCustomMaterial(), document the
+ * density/composition/reference immediately above the builder, and rebuild.
+ * The CLI help tables will update automatically because they are generated from
+ * the catalogs.
  *
  * Source and normalization
  * ------------------------
@@ -111,10 +125,17 @@ int main(int argc,char** argv){
           <<ShieldMaterialCatalogText()<<G4endl;
     return 0;
   }
+  if(opts.listTargetMaterials){
+    G4cout<<"Available detector/absorber/target-material keys and aliases:\n"
+          <<DetectorMaterialCatalogText()<<G4endl;
+    return 0;
+  }
 
   // Collect scoring names and thicknesses once.  RunAction uses these for
   // reports and output variable names, while DetectorConstruction owns the
-  // actual logical volumes.
+  // actual logical volumes.  The names are kept as the user provided them for
+  // compact Tecplot variable names; configuration printouts use the catalog
+  // description so it is clear which material definition was selected.
   std::vector<std::string> scNames;
   std::vector<G4double>    scThick;
   for(const auto& s:opts.scoringMaterials){
@@ -133,7 +154,7 @@ int main(int argc,char** argv){
   G4cout<<"Events    : "<<opts.nEvents<<" per run"<<G4endl;
   G4cout<<"Scoring   :";
   for(const auto& s:opts.scoringMaterials)
-    G4cout<<"  "<<DescribeShieldMaterial(s.first)<<":"<<s.second/mm<<"mm";
+    G4cout<<"  "<<DescribeDetectorMaterial(s.first)<<":"<<s.second/mm<<"mm";
   G4cout<<G4endl;
   if(opts.doSweep){
     G4cout<<"Mode      : SWEEP"<<G4endl;

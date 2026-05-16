@@ -10,11 +10,13 @@
  *
  * Material help text
  * ------------------
- * Shielding materials are not hard-coded in this file.  Instead, PrintHelp()
- * calls ShieldMaterialCatalogText(), which is generated from the central catalog
- * in src/MaterialCatalog.cc.  Therefore, when adding a new shielding material,
- * update MaterialCatalog.cc/MaterialCatalog.hh only; the --help and
- * --list-materials tables will update automatically.
+ * Shielding and detector/target materials are not hard-coded in this file.
+ * Instead, PrintHelp() calls ShieldMaterialCatalogText() and
+ * DetectorMaterialCatalogText(), which are generated from the central catalog
+ * definitions in src/MaterialCatalog.cc.  Therefore, when adding a new
+ * shielding or detector/target material, update MaterialCatalog.cc/
+ * MaterialCatalog.hh only; the --help, --list-materials, and
+ * --list-target-materials tables will update automatically.
  *
  * Units shown to users
  * --------------------
@@ -83,8 +85,22 @@ void PrintHelp(){
   std::cout<<"                           Default: Al:2\n";
   std::cout<<"  --shield-material=<M>    Change only the shield material.\n";
   std::cout<<"  --shield-thickness=<mm>  Change only the shield thickness.\n";
-  std::cout<<"  --list-materials         Print the material catalog and exit.\n";
+  std::cout<<"  --list-materials         Print the shielding-material catalog and exit.\n";
   std::cout<<ShieldMaterialCatalogText();
+
+  std::cout<<"DETECTOR / ABSORBER / TARGET MATERIAL SELECTION\n";
+  std::cout<<"  --scoring=<M>:<t>,...    Comma-separated downstream scoring slabs.\n";
+  std::cout<<"                           M may be a detector/target catalog key,\n";
+  std::cout<<"                           a shielding catalog key, or a G4_* name.\n";
+  std::cout<<"                           t is slab thickness in mm.\n";
+  std::cout<<"                           Default: Water:1,G4_Si:1\n";
+  std::cout<<"  --target=<M>:<t>,...     Alias for --scoring.  This name is useful\n";
+  std::cout<<"                           when the scoring slabs represent tissue,\n";
+  std::cout<<"                           detector, or electronics target media.\n";
+  std::cout<<"  --list-target-materials  Print detector/absorber/target catalog and exit.\n";
+  std::cout<<"  --list-detector-materials Alias for --list-target-materials.\n";
+  std::cout<<"  --list-targets            Alias for --list-target-materials.\n";
+  std::cout<<DetectorMaterialCatalogText();
 
   std::cout<<"SOURCE AND SPECTRUM OPTIONS\n";
   std::cout<<"  --source-mode=<mode>     Source angular/spatial model: beam or isotropic.\n";
@@ -115,9 +131,6 @@ void PrintHelp(){
   std::cout<<"  --emax-a=<MeV>           Alpha total-energy maximum (overrides --emax).\n";
 
   std::cout<<"\nSINGLE-RUN GEOMETRY\n";
-  std::cout<<"  --scoring=<M>:<t>,...    Comma-separated scoring slabs (material:mm).\n";
-  std::cout<<"                           Materials may be catalog keys/aliases or G4_ names.\n";
-  std::cout<<"                           Default: Water:1,G4_Si:1\n";
   std::cout<<"  --events=<n>             Primary particles per run. Default: 10000.\n";
 
   std::cout<<"\nDOSE-VS-THICKNESS SWEEP  (--sweep enables this mode)\n";
@@ -174,6 +187,7 @@ Options ParseArguments(int argc, char** argv){
     std::string a=argv[i];
     if(a=="-h"||a=="-help"||a=="--help"){ o.showHelp=true; }
     else if(a=="--list-materials"){ o.listMaterials=true; }
+    else if(a=="--list-target-materials" || a=="--list-detector-materials" || a=="--list-targets"){ o.listTargetMaterials=true; }
     else if(a.find("--physics-list=")==0){ o.physicsList=strVal(a,"--physics-list="); }
     else if(a.find("--phys=")==0){ o.physicsList=strVal(a,"--phys="); }
     else if(a.find("--source-mode=")==0){ o.sourceMode=strVal(a,"--source-mode="); }
@@ -197,9 +211,15 @@ Options ParseArguments(int argc, char** argv){
     else if(a.find("--shield-thickness=")==0){
       o.shieldThickness=std::stod(strVal(a,"--shield-thickness="))*mm;
     }
-    else if(a.find("--scoring=")==0){
+    else if(a.find("--scoring=")==0 || a.find("--target=")==0){
       o.scoringMaterials.clear();
-      std::stringstream ss(strVal(a,"--scoring=")); std::string item;
+      // --target is a user-facing alias for --scoring.  Both parse to the same
+      // Options::scoringMaterials vector because the geometry represents all
+      // downstream detector/absorber/target media as scoring slabs.
+      const std::string value = (a.find("--scoring=")==0)
+                              ? strVal(a,"--scoring=")
+                              : strVal(a,"--target=");
+      std::stringstream ss(value); std::string item;
       while(std::getline(ss,item,',')){
         auto p=item.find(':');
         std::string mat=item; G4double t=1.;

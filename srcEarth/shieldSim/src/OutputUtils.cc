@@ -32,6 +32,9 @@ void WriteDoseSweepTecplot(const std::vector<SweepPoint>& data,
   out<<"# Scoring volumes:";
   for(const auto& n:matNames) out<<" "<<n;
   out<<"\n";
+  out<<"# Scoring material descriptions:";
+  for(const auto& n:matNames) out<<" "<<DescribeDetectorMaterial(n);
+  out<<"\n";
 
   out<<"VARIABLES = \"Thickness [mm]\" \"Areal_Density [g/cm2]\"";
   for(const auto& n:matNames)
