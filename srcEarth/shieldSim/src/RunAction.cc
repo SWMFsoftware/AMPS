@@ -225,6 +225,11 @@ void RunAction::EndOfRunAction(const G4Run* run) {
   WriteComputedQuantitiesTecplot(nEv);
   if(fOpts.calcLET) WriteLETSpectrumTecplot(nEv);
 
+  // Optional Layer-3 machine-readable scalar summary.  The ordinary Tecplot
+  // files are the science-facing outputs, but automated tests need stable
+  // key/value rows that are independent of Tecplot variable ordering.
+  WriteRunSummary(nEv);
+
   CloseDiagnosticFiles();
 }
 
@@ -628,4 +633,85 @@ void RunAction::WriteLETSpectrumTecplot(G4int nEv){
   if(fSweepMode) fFirstLETWrite=false;
   G4cout<<"LET spectra written: "<<fname
         <<(fSweepMode?" (appended zones)":"")<<G4endl;
+}
+
+
+void RunAction::WriteRunSummary(G4int nEv){
+  // The run-summary file is a deliberately simple, machine-readable diagnostic
+  // for Layer-3 physics/numerics tests.  It duplicates integrated scalar
+  // quantities that are also present in the normal Tecplot outputs, but writes
+  // them as fixed keyword rows so a bash/Python test script can parse them
+  // robustly.  This file is not intended to replace the science output files.
+  //
+  // Format notes:
+  //   scalar <name> <value>
+  //   count  <name> <value>
+  //   target <index> <name> <thick_mm> <TID_Gy/primary> <TIDRate_Gy/s>
+  //          <DDD_MeV/g/primary> <DDDRate_MeV/g/s> <n_eq/primary> <n_eq/s>
+  //
+  // The same file can contain several blocks in sweep mode.  The first sweep
+  // point overwrites any old file, while subsequent points append.
+  if(fOpts.dumpRunSummaryFile.empty()) return;
+
+  const bool append = fSweepMode && !fFirstSummaryWrite;
+  std::ofstream out(fOpts.dumpRunSummaryFile, append ? (std::ios::out|std::ios::app) : std::ios::out);
+  if(!out){
+    G4cerr<<"Cannot write run-summary diagnostic "<<fOpts.dumpRunSummaryFile<<G4endl;
+    return;
+  }
+
+  auto sumCounts=[](const std::vector<G4double>& v){
+    G4double s=0.0;
+    for(G4double x:v) s+=x;
+    return s;
+  };
+
+  const G4double shieldThicknessMM = fSweepMode ? fCurrentTmm : fOpts.shieldThickness/mm;
+  G4double areal = 0.0;
+  if(fShieldLV && fShieldLV->GetMaterial()){
+    const G4double rho_gcc = fShieldLV->GetMaterial()->GetDensity()/(g/cm3);
+    areal = rho_gcc*shieldThicknessMM*0.1; // 1 mm = 0.1 cm
+  }
+
+  out<<std::scientific<<std::setprecision(12);
+  out<<"# shieldSim machine-readable run summary\n";
+  out<<"# The target row format is:\n";
+  out<<"# target index name thickness_mm TID_Gy_perPrimary TIDRate_Gy_s DDD_MeV_g_perPrimary DDDRate_MeV_g_s n_eq_cm2_perPrimary n_eq_rate_cm2_s\n";
+  out<<"begin_run\n";
+  out<<"meta physics_list "<<fOpts.physicsList<<"\n";
+  out<<"meta source_mode "<<fSourceMode<<"\n";
+  out<<"meta spectrum_file "<<(fOpts.spectrumFile.empty()?"builtin":fOpts.spectrumFile)<<"\n";
+  out<<"meta shield_material "<<(fSweepMode?fCurrentMat:fOpts.shieldMaterial)<<"\n";
+  out<<"scalar events "<<nEv<<"\n";
+  out<<"scalar shield_thickness_mm "<<shieldThicknessMM<<"\n";
+  out<<"scalar shield_areal_density_g_cm2 "<<areal<<"\n";
+  out<<"scalar source_norm_no_angular "<<fSourceNormNoAngular<<"\n";
+  out<<"scalar source_angular_factor "<<fSourceAngularFactor<<"\n";
+  out<<"scalar source_norm "<<fSourceNorm<<"\n";
+  out<<"scalar source_plane_area_cm2 "<<GetSourcePlaneAreaCM2()<<"\n";
+  out<<"scalar incident_particle_rate_s "<<GetIncidentParticleRate()<<"\n";
+  out<<"scalar H100_10 "<<fLastHardness<<"\n";
+  out<<"count input_proton "<<sumCounts(fInP)<<"\n";
+  out<<"count input_alpha "<<sumCounts(fInA)<<"\n";
+  out<<"count output_proton "<<sumCounts(fOutP)<<"\n";
+  out<<"count output_alpha "<<sumCounts(fOutA)<<"\n";
+  out<<"count output_neutron "<<sumCounts(fOutN)<<"\n";
+  out<<"scalar production_cut_mm "<<(fOpts.productionCut>0.0 ? fOpts.productionCut/mm : -1.0)<<"\n";
+  out<<"scalar max_step_mm "<<(fOpts.maxStepLength>0.0 ? fOpts.maxStepLength/mm : -1.0)<<"\n";
+
+  for(std::size_t i=0;i<fScoringNames.size();++i){
+    out<<"target "<<i<<' '<<SanitiseName(fScoringNames[i])<<' '
+       <<fScoringThick[i]/mm<<' '
+       <<(i<fLastDose.size()?fLastDose[i]/gray:0.0)<<' '
+       <<(i<fLastDoseRate.size()?fLastDoseRate[i]/gray:0.0)<<' '
+       <<(i<fLastDDD.size()?fLastDDD[i]:0.0)<<' '
+       <<(i<fLastDDDRate.size()?fLastDDDRate[i]:0.0)<<' '
+       <<(i<fLastNEq.size()?fLastNEq[i]:0.0)<<' '
+       <<(i<fLastNEqRate.size()?fLastNEqRate[i]:0.0)<<"\n";
+  }
+  out<<"end_run\n";
+
+  if(fSweepMode) fFirstSummaryWrite=false;
+  G4cout<<"Run summary written: "<<fOpts.dumpRunSummaryFile
+        <<(append?" (appended block)":"")<<G4endl;
 }

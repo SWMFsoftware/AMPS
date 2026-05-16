@@ -114,15 +114,23 @@
  *           dose rate, spectrum-folded DDD/n_eq,
  *           LET spectra, hardness index, and writes spectra/quantity files.
  *   4. Optional diagnostic output for tests can be enabled with
- *      --dump-source-samples and --dump-exit-particles.  The source diagnostic
- *      records the particle species, kinetic energy, source position, and
- *      direction that PrimaryGeneratorAction gives to Geant4.  The exit
- *      diagnostic records particles accepted by SteppingAction as crossing the
- *      downstream shield face after transforming the crossing point into the
- *      shield-local coordinate system.  These files are intended for automated
- *      Layer-2 tests of source sampling, geometry, and scoring, not for science
+ *      --dump-source-samples, --dump-exit-particles, and
+ *      --dump-run-summary.  The source diagnostic records the particle species,
+ *      kinetic energy, source position, and direction that PrimaryGeneratorAction
+ *      gives to Geant4.  The exit diagnostic records particles accepted by
+ *      SteppingAction as crossing the downstream shield face after transforming
+ *      the crossing point into the shield-local coordinate system.  The run
+ *      summary repeats integrated scalar quantities in a stable machine-readable
+ *      format for Layer-3 physics/numerics tests.  These files are intended for
+ *      automated verification and regression tests, not for science
  *      post-processing.
- *   5. In sweep mode, write the dose-vs-thickness Tecplot table and append one
+ *   5. Optional numerical controls for verification are available through
+ *      --production-cut=<mm> and --max-step=<mm>.  The production cut sets the
+ *      Geant4 default range cut for secondary production; the maximum step
+ *      attaches G4UserLimits to the shield and scoring slabs and registers
+ *      G4StepLimiterPhysics.  These controls allow tests of range-cut and
+ *      step-size sensitivity of TID, secondary production, DDD, n_eq, and LET.
+ *   6. In sweep mode, write the dose-vs-thickness Tecplot table and append one
  *      zone per shielding thickness to the scalar-quantity and LET files.
  * ========================================================================== */
 
@@ -139,6 +147,7 @@
 #include <G4Exception.hh>
 #include <G4PhysListFactory.hh>
 #include <G4RunManager.hh>
+#include <G4StepLimiterPhysics.hh>
 #include <G4SystemOfUnits.hh>
 #include <G4VModularPhysicsList.hh>
 #include <G4ios.hh>
@@ -202,6 +211,12 @@ int main(int argc,char** argv){
     G4cout<<"Diag src  : "<<opts.dumpSourceSamplesFile<<G4endl;
   if(!opts.dumpExitParticlesFile.empty())
     G4cout<<"Diag exit : "<<opts.dumpExitParticlesFile<<G4endl;
+  if(!opts.dumpRunSummaryFile.empty())
+    G4cout<<"Diag sum  : "<<opts.dumpRunSummaryFile<<G4endl;
+  if(opts.productionCut>0.0)
+    G4cout<<"Prod cut  : "<<opts.productionCut/mm<<" mm"<<G4endl;
+  if(opts.maxStepLength>0.0)
+    G4cout<<"Max step  : "<<opts.maxStepLength/mm<<" mm"<<G4endl;
   ComputedQuantities::Selection qsel;
   qsel.tid      = opts.calcTID;
   qsel.ddd      = opts.calcDDD;
@@ -268,6 +283,16 @@ int main(int argc,char** argv){
     const G4String msg = G4String("Cannot create requested physics list: ") + opts.physicsList;
     G4Exception("main","PhysList",FatalException,msg.c_str());
   }
+  // Optional production range cut and step limiter for numerical convergence
+  // testing.  The range cut controls when Geant4 creates explicit secondaries
+  // instead of depositing their energy locally.  The step limiter is registered
+  // only when --max-step is requested; DetectorConstruction then attaches the
+  // corresponding G4UserLimits to the shield and scoring slabs.
+  if(opts.productionCut>0.0)
+    physList->SetDefaultCutValue(opts.productionCut);
+  if(opts.maxStepLength>0.0)
+    physList->RegisterPhysics(new G4StepLimiterPhysics());
+
   physList->SetVerboseLevel(0);
   runManager->SetUserInitialization(physList);
 

@@ -82,6 +82,15 @@ void PrintHelp(){
   std::cout<<"                           FTFP_BERT_HP adds high-precision neutron transport.\n";
   std::cout<<"                           Shielding is Geant4's radiation-shielding list.\n";
   std::cout<<"                           QGSP_BIC_HP uses binary cascade plus HP neutrons.\n";
+  std::cout<<"  --production-cut=<mm>   Optional Geant4 default production range cut in mm.\n";
+  std::cout<<"                           Omit to use the selected physics-list default.\n";
+  std::cout<<"                           Layer-3 tests use this as a numerical smoke/\n";
+  std::cout<<"                           convergence knob; production runs should record\n";
+  std::cout<<"                           the chosen value because low-energy secondaries,\n";
+  std::cout<<"                           TID, DDD, n_eq, and LET tails can depend on it.\n";
+  std::cout<<"  --max-step=<mm>         Optional maximum step length applied to the shield\n";
+  std::cout<<"                           and scoring slabs.  Omit to disable.  This is\n";
+  std::cout<<"                           useful for thin-target and LET numerical tests.\n";
 
   std::cout<<"SHIELD MATERIAL SELECTION\n";
   std::cout<<"  --shield=<M>:<t>         Shield material M and thickness t in mm.\n";
@@ -162,6 +171,11 @@ void PrintHelp(){
   std::cout<<"                           Write particles accepted as crossing the\n";
   std::cout<<"                           downstream shield face.  Includes global and\n";
   std::cout<<"                           shield-local coordinates for scoring checks.\n";
+  std::cout<<"  --dump-run-summary=<file>\n";
+  std::cout<<"                           Write a simple machine-readable run summary with\n";
+  std::cout<<"                           integrated counts, source normalization, TID,\n";
+  std::cout<<"                           DDD, n_eq, and H100/10.  This is intended for\n";
+  std::cout<<"                           automated Layer-3 physics/numerics tests.\n";
   std::cout<<"  --diagnostic-max-rows=<n>\n";
   std::cout<<"                           Maximum rows written to each diagnostic dump.\n";
   std::cout<<"                           Default: 200000.  Use <=0 for no explicit cap.\n";
@@ -249,6 +263,9 @@ Options ParseArguments(int argc, char** argv){
     else if(a.find("--output-prefix=")==0){ o.outputPrefix=strVal(a,"--output-prefix="); }
     else if(a.find("--dump-source-samples=")==0){ o.dumpSourceSamplesFile=strVal(a,"--dump-source-samples="); }
     else if(a.find("--dump-exit-particles=")==0){ o.dumpExitParticlesFile=strVal(a,"--dump-exit-particles="); }
+    else if(a.find("--dump-run-summary=")==0){ o.dumpRunSummaryFile=strVal(a,"--dump-run-summary="); }
+    else if(a.find("--production-cut=")==0){ o.productionCut=std::stod(strVal(a,"--production-cut="))*mm; }
+    else if(a.find("--max-step=")==0){ o.maxStepLength=std::stod(strVal(a,"--max-step="))*mm; }
     else if(a.find("--diagnostic-max-rows=")==0){ o.diagnosticMaxRows=std::stoi(strVal(a,"--diagnostic-max-rows=")); }
     else if(a.find("--emin=")==0){ o.eMinProton=o.eMinAlpha=std::stod(strVal(a,"--emin=")); }
     else if(a.find("--emax=")==0){ o.eMaxProton=o.eMaxAlpha=std::stod(strVal(a,"--emax=")); }
@@ -314,6 +331,14 @@ Options ParseArguments(int argc, char** argv){
     G4Exception("ParseArguments","BadInput",FatalException,"--output-prefix must not be empty");
   if(o.nEvents<=0)
     G4Exception("ParseArguments","BadInput",FatalException,"--events must be > 0");
+  if(o.productionCut==0.0)
+    G4Exception("ParseArguments","BadInput",FatalException,"--production-cut must be > 0 mm when specified");
+  if(o.maxStepLength==0.0)
+    G4Exception("ParseArguments","BadInput",FatalException,"--max-step must be > 0 mm when specified");
+  if(o.productionCut<0.0 && o.productionCut!=-1.0)
+    G4Exception("ParseArguments","BadInput",FatalException,"--production-cut must be > 0 mm when specified");
+  if(o.maxStepLength<0.0 && o.maxStepLength!=-1.0)
+    G4Exception("ParseArguments","BadInput",FatalException,"--max-step must be > 0 mm when specified");
   if(o.eMinProton<=0 || o.eMinAlpha<=0)
     G4Exception("ParseArguments","BadInput",FatalException,"Energy minima must be > 0 MeV");
   if(o.eMinProton>o.eMaxProton)

@@ -79,6 +79,21 @@ struct Options {
   bool useRandomSeed = false;
   long randomSeed = 0;
 
+  // ---- transport numerical controls ----------------------------------------
+  // Optional Geant4 production cut.  A value <=0 keeps the physics-list default.
+  // The CLI value is specified in mm and converted to Geant4 length units.
+  // Layer-3 tests use this knob as a smoke/convergence control; production
+  // studies should document the selected value because TID, low-energy
+  // secondaries, DDD, n_eq, and LET tails can be sensitive to range cuts.
+  G4double productionCut = -1.0;
+
+  // Optional maximum step length applied to the shield and scoring slabs.
+  // A value <=0 disables the explicit step limit.  When enabled, shieldSim.cc
+  // registers G4StepLimiterPhysics so the G4UserLimits assigned in
+  // DetectorConstruction are honored during tracking.  This is mainly useful
+  // for numerical convergence checks in thin targets and LET-spectrum tests.
+  G4double maxStepLength = -1.0;
+
   // ---- output and diagnostics ---------------------------------------------
   // Output prefix for the standard result files.  The default preserves the
   // original file names:
@@ -95,6 +110,12 @@ struct Options {
   // SteppingAction only when a particle leaves the downstream shield face.
   std::string dumpSourceSamplesFile = "";
   std::string dumpExitParticlesFile = "";
+
+  // Optional machine-readable scalar summary used by Layer-3 physics/numerics
+  // tests.  The file repeats the most important integrated quantities from the
+  // Tecplot outputs in simple whitespace-separated rows so shell/Python test
+  // scripts can parse them without relying on variable-column order.
+  std::string dumpRunSummaryFile = "";
 
   // Protect accidental huge diagnostic files.  A value <=0 means no explicit
   // limit.  The default is intentionally generous enough for statistics tests

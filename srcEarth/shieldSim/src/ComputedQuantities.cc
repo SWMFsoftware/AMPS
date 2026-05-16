@@ -1,6 +1,7 @@
 #include "ComputedQuantities.hh"
 
 #include <G4Element.hh>
+#include <G4Exception.hh>
 #include <G4IonisParamMat.hh>
 #include <G4Material.hh>
 #include <G4PhysicalConstants.hh>
@@ -179,6 +180,10 @@ Selection ParseSelection(const std::string& text){
       s.let=true;
     } else if(t=="hardness" || t=="h10010" || t=="h100over10"){
       s.hardness=true;
+    } else {
+      const std::string msg = "Unknown computed quantity token: '" + item +
+                              "'. Use --list-quantities for allowed values.";
+      G4Exception("ComputedQuantities::ParseSelection","BadQuantity",FatalException,msg.c_str());
     }
   }
   return s;

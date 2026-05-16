@@ -5,7 +5,7 @@ This directory contains automated and semi-automated test scripts for the
 
 The tests are organized in layers. Lower-numbered layers test basic software
 functionality, while higher-numbered layers test geometry, source sampling,
-scoring, physics behavior, numerical convergence, and regression stability.
+scoring, physics-output behavior, numerical controls, and regression stability.
 
 ## Test Philosophy
 
@@ -15,15 +15,16 @@ The purpose of the test suite is to separate several different questions:
 2. Does the command-line interface work?
 3. Are invalid inputs rejected cleanly?
 4. Are the geometry, source, and scoring algorithms behaving correctly?
-5. Are the physics results consistent with simple reference problems?
-6. Are Monte Carlo results statistically converged?
+5. Do the physics-facing outputs respond correctly to simple controlled cases?
+6. Are Monte Carlo results statistically stable enough for the intended use?
 7. Do future code changes preserve validated behavior?
 
 Layer-1 tests should be quick and should be run frequently. Layer-2 tests are
 also intended to be lightweight, but they run short Geant4 simulations and use
-diagnostic output to check geometry/source/scoring behavior. Higher-layer
-physics and regression tests may require many events and should be run before
-major releases or science production runs.
+diagnostic output to check geometry/source/scoring behavior. Layer-3 tests run
+more physics-facing simulations and are intended as sanity checks, not as a full
+validation against external reference data. Regression tests should be added once
+a trusted set of reference results has been accepted.
 
 ---
 
@@ -34,11 +35,15 @@ tests/
 ├── README.md
 ├── run_layer1_tests.sh
 ├── run_layer2_tests.sh
-├── run_layer3_tests.sh              # planned
-├── run_regression_tests.sh          # planned
+├── run_layer3_tests.sh
+├── run_regression_tests.sh          # future
 ├── data/
+│   ├── mono_50MeV_proton.dat
 │   ├── mono_100MeV_proton.dat
-│   └── mono_100MeV_alpha.dat
+│   ├── mono_100MeV_proton_rate10.dat
+│   ├── mono_100MeV_alpha.dat
+│   ├── mono_100MeV_alpha_rate10.dat
+│   └── mono_150MeV_proton.dat
 ├── expected/
 │   └── README.md
 └── logs/
@@ -60,44 +65,60 @@ This script verifies beam-source sampling, isotropic-source sampling,
 near-vacuum transmission through the shield rear face, target ordering, and
 basic material alias behavior.
 
+### `run_layer3_tests.sh`
+
+Physics-output and numerical-sanity tests.
+
+This script verifies that computed-quantity outputs are written, that source
+normalization scales rates correctly, that H100/10 behaves correctly for simple
+below/above-threshold spectra, that alpha LET is larger than proton LET in a
+controlled silicon case, that all supported physics lists run, and that sweep
+output has monotonic areal density.
+
 ### `data/`
 
-Small deterministic input spectra for tests.  These files are intentionally
-simple and should be version controlled.
+Small deterministic input spectra for tests. These files are intentionally
+simple and should be version controlled. Rate-scaled spectra have the same shape
+as their unit-rate counterpart, but a larger absolute source normalization. They
+are used to test that per-primary Monte Carlo quantities are unchanged while
+physical rates scale with the input spectrum intensity.
 
 ### `expected/`
 
-Reference output summaries or metadata for future regression tests.  Large raw
+Reference output summaries or metadata for future regression tests. Large raw
 Geant4 output files should generally not be committed unless they are small and
 essential.
 
 ### `logs/`
 
-Generated test logs.  This directory should not be version controlled except for
+Generated test logs. This directory should not be version controlled except for
 its `.gitignore` file.
 
 ---
 
-## Diagnostic CLI Options Used by Tests
+## Diagnostic and Numerical CLI Options Used by Tests
 
-Layer-2 tests require several diagnostic options implemented in the main code:
+The test suite uses several CLI options implemented in the main code:
 
 ```bash
 --random-seed=<integer>
 --output-prefix=<name>
 --dump-source-samples=<file>
 --dump-exit-particles=<file>
+--dump-run-summary=<file>
 --diagnostic-max-rows=<n>
+--production-cut=<mm>
+--max-step=<mm>
 ```
 
 ### `--random-seed=<integer>`
 
-Sets the CLHEP/Geant4 random seed before the run.  This makes source-sampling
-and short Monte Carlo tests reproducible.
+Sets the CLHEP/Geant4 random seed before the run. This makes source-sampling and
+short Monte Carlo tests reproducible.
 
 ### `--output-prefix=<name>`
 
-Changes standard output file names.  With the default prefix `shieldSim`, files
+Changes standard output file names. With the default prefix `shieldSim`, files
 keep their historical names, such as:
 
 ```text
@@ -126,7 +147,7 @@ Writes one row per generated primary:
 row species E_MeV x_mm y_mm z_mm ux uy uz
 ```
 
-Positions are global coordinates in millimeters.  The vector `(ux,uy,uz)` is the
+Positions are global coordinates in millimeters. The vector `(ux,uy,uz)` is the
 unit momentum direction requested by `PrimaryGeneratorAction`.
 
 This file is used to verify that:
@@ -145,16 +166,45 @@ face:
 row species E_MeV xg_mm yg_mm zg_mm xl_mm yl_mm zl_mm uxl uyl uzl
 ```
 
-The `g` coordinates are global coordinates.  The `l` coordinates and directions
-are in the local coordinate frame of the shield.  This file is used to verify
+The `g` coordinates are global coordinates. The `l` coordinates and directions
+are in the local coordinate frame of the shield. This file is used to verify
 that shield rear-face scoring is based on the correct local-coordinate crossing
 condition.
 
+### `--dump-run-summary=<file>`
+
+Writes a machine-readable scalar summary for Layer-3 tests. The normal Tecplot
+files remain the science-facing outputs, but the run summary gives stable
+keyword rows that are easier to parse in automated tests:
+
+```text
+scalar H100_10 <value>
+count output_proton <value>
+target index name thickness_mm TID_Gy_perPrimary TIDRate_Gy_s DDD_MeV_g_perPrimary DDDRate_MeV_g_s n_eq_cm2_perPrimary n_eq_rate_cm2_s
+```
+
+In sweep mode, the file contains one `begin_run` / `end_run` block per sweep
+thickness.
+
+### `--production-cut=<mm>`
+
+Sets the Geant4 default production range cut in millimeters. The Layer-3 script
+uses this as a smoke/numerical-control test. Production runs should document the
+chosen value because low-energy secondaries, TID, DDD, `n_eq`, and LET tails can
+be cut-sensitive.
+
+### `--max-step=<mm>`
+
+Applies a maximum step length to the shield and scoring slabs and registers
+`G4StepLimiterPhysics`. This is mainly for numerical convergence checks in thin
+targets and LET-spectrum tests. Omit it to use the normal physics-list stepping
+behavior.
+
 ### `--diagnostic-max-rows=<n>`
 
-Limits the number of rows written to each diagnostic file.  This prevents
-accidentally generating huge diagnostic dumps.  Use a value less than or equal
-to zero to remove the explicit cap.
+Limits the number of rows written to each diagnostic file. This prevents
+accidentally generating huge diagnostic dumps. Use a value less than or equal to
+zero to remove the explicit cap.
 
 ---
 
@@ -317,25 +367,106 @@ These generated directories should not be committed.
 
 ## Layer-3 Tests
 
-Layer-3 tests should verify physics behavior.  They are planned but not yet
-implemented in this package.
+Layer-3 tests verify physics-output behavior and numerical-control plumbing with
+short, deterministic Geant4 runs. They are sanity tests, not a substitute for
+full validation against NIST stopping powers, SR-NIEL/device-response tables, or
+experimental data.
 
-Recommended tests:
+The implemented Layer-3 script checks:
 
-1. Proton stopping power in thin Al, water, and Si targets.
-2. Alpha stopping power.
-3. CSDA range behavior as a function of shield thickness.
-4. TID unit normalization.
-5. Source-intensity scaling.
-6. LET spectrum behavior.
-7. DDD and `n_eq` proxy sanity checks.
-8. Physics-list comparison:
-   - `FTFP_BERT`
-   - `FTFP_BERT_HP`
-   - `Shielding`
-   - `QGSP_BIC_HP`
+1. `--help` lists `--dump-run-summary`, `--production-cut`, and `--max-step`.
+2. A monoenergetic 100 MeV proton run writes spectra, scalar quantity, LET, and
+   summary outputs.
+3. Source normalization is applied correctly: scaling the input spectrum by 10
+   leaves per-primary TID unchanged but scales the source-normalized TID rate by
+   10.
+4. H100/10 behaves correctly for simple monoenergetic spectra:
+   - 50 MeV protons give `H100/10 ≈ 0`,
+   - 150 MeV protons give `H100/10 ≈ 1`.
+5. The folded mean LET for 100 MeV total-energy alpha particles in silicon is
+   larger than the folded mean LET for 100 MeV protons.
+6. All supported physics lists run in a short smoke test:
+   - `FTFP_BERT`,
+   - `FTFP_BERT_HP`,
+   - `Shielding`,
+   - `QGSP_BIC_HP`.
+7. A three-point Al sweep writes scalar outputs and increasing areal density.
 
-These tests may require many more events than Layer-1 or Layer-2 tests.
+Run from the top-level package directory:
+
+```bash
+chmod +x tests/run_layer3_tests.sh
+tests/run_layer3_tests.sh
+```
+
+To see script options:
+
+```bash
+tests/run_layer3_tests.sh --help
+```
+
+Optional environment variables:
+
+```bash
+BUILD_DIR=build_l3 JOBS=8 tests/run_layer3_tests.sh
+EVENTS_SHORT=10000 EVENTS_SMOKE=1000 tests/run_layer3_tests.sh
+```
+
+Available variables:
+
+```text
+BUILD_DIR       Build directory used by the test script.
+                Default: build_layer3_tests
+
+EXE_NAME        Executable name.
+                Default: shieldSim
+
+LOG_DIR         Directory where test logs are written.
+                Default: layer3_test_logs
+
+RUN_DIR         Directory where each Layer-3 test case writes its run outputs.
+                Default: layer3_test_runs
+
+JOBS            Number of parallel build jobs.
+                Default: nproc, or 2 if nproc is unavailable.
+
+SKIP_BUILD      Set to 1 to skip CMake configure/build.
+                Default: 0
+
+EXE_PATH        Explicit executable path when using SKIP_BUILD=1.
+
+EVENTS_SHORT    Events for ordinary Layer-3 cases.
+                Default: 2000
+
+EVENTS_SMOKE    Events for quick physics-list/sweep smoke cases.
+                Default: 300
+```
+
+Example using an already-built executable:
+
+```bash
+SKIP_BUILD=1 EXE_PATH=build/shieldSim tests/run_layer3_tests.sh
+```
+
+Expected result:
+
+```text
+All Layer-3 tests passed.
+```
+
+Layer-3 test outputs are written under:
+
+```text
+layer3_test_runs/
+```
+
+Logs are written under:
+
+```text
+layer3_test_logs/
+```
+
+These generated directories should not be committed.
 
 ---
 
@@ -368,7 +499,7 @@ LET-spectrum integral
 ```
 
 Because this is a Monte Carlo code, comparisons should use statistical
-tolerances.  A useful starting point is a three-sigma tolerance for integrated
+tolerances. A useful starting point is a three-sigma tolerance for integrated
 quantities.
 
 ---
@@ -408,12 +539,14 @@ tests/logs/
 
 ## Notes on Monte Carlo Testing
 
-Monte Carlo tests are not exactly reproducible unless the random seed and all
-Geant4 settings are fixed.  For reliable regression testing, use:
+Monte Carlo tests are not exactly reproducible unless the random seed, Geant4
+version, physics list, production cuts, and geometry are fixed. For reliable
+regression testing, use:
 
 ```bash
 --random-seed=<integer>
 --output-prefix=<name>
+--dump-run-summary=<file>
 ```
 
 Useful future diagnostic or convenience options include:
@@ -423,9 +556,7 @@ Useful future diagnostic or convenience options include:
 --mono-alpha=<MeV>
 --disable-protons
 --disable-alphas
---set-production-cut=<mm>
---max-step=<mm>
 ```
 
-The current package already implements source and exit diagnostic dumps, which
-are enough for the Layer-2 source/geometry/scoring tests.
+The current package already implements source, exit, and run-summary diagnostic
+dumps, which are enough for the implemented Layer-2 and Layer-3 tests.

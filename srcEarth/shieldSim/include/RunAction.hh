@@ -95,6 +95,7 @@ private:
   void ComputeSpectrumFoldedQuantities(G4int nEv);
   void WriteComputedQuantitiesTecplot(G4int nEv);
   void WriteLETSpectrumTecplot(G4int nEv);
+  void WriteRunSummary(G4int nEv);
   G4double ComputeHardnessIndex(G4int nEv) const;
 
   Options                     fOpts;
@@ -136,6 +137,7 @@ private:
   bool        fFirstSpectraWrite=true;
   bool        fFirstQuantitiesWrite=true;
   bool        fFirstLETWrite=true;
+  bool        fFirstSummaryWrite=true;
   std::vector<SweepPoint> fSweepData;
 };
 
