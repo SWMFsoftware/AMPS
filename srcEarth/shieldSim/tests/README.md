@@ -23,8 +23,7 @@ Layer-1 tests should be quick and should be run frequently. Layer-2 tests are
 also intended to be lightweight, but they run short Geant4 simulations and use
 diagnostic output to check geometry/source/scoring behavior. Layer-3 tests run
 more physics-facing simulations and are intended as sanity checks, not as a full
-validation against external reference data. Regression tests should be added once
-a trusted set of reference results has been accepted.
+validation against external reference data. Layer-4 tests implement a baseline-driven regression workflow: generate an accepted baseline from a trusted version, then compare future runs against it with documented tolerances.
 
 ---
 
@@ -36,7 +35,8 @@ tests/
 ├── run_layer1_tests.sh
 ├── run_layer2_tests.sh
 ├── run_layer3_tests.sh
-├── run_regression_tests.sh          # future
+├── run_layer4_tests.sh
+├── regression_tools.py
 ├── data/
 │   ├── mono_50MeV_proton.dat
 │   ├── mono_100MeV_proton.dat
@@ -45,7 +45,10 @@ tests/
 │   ├── mono_100MeV_alpha_rate10.dat
 │   └── mono_150MeV_proton.dat
 ├── expected/
-│   └── README.md
+│   ├── README.md
+│   └── layer4/
+│       ├── README.md
+│       └── layer4_reference.json    # generated after accepting a baseline
 └── logs/
     └── .gitignore
 ```
@@ -75,6 +78,22 @@ below/above-threshold spectra, that alpha LET is larger than proton LET in a
 controlled silicon case, that all supported physics lists run, and that sweep
 output has monotonic areal density.
 
+
+### `run_layer4_tests.sh`
+
+End-to-end regression tests.
+
+This script runs deterministic reference cases, collects compact signatures from
+run-summary and output files, and compares the current results against an
+accepted JSON baseline. It can also create or update that baseline after manual
+review.
+
+### `regression_tools.py`
+
+Python helper used by `run_layer4_tests.sh` to collect run summaries into JSON
+and compare actual results against the accepted baseline with configurable
+numerical tolerances.
+
 ### `data/`
 
 Small deterministic input spectra for tests. These files are intentionally
@@ -85,7 +104,7 @@ physical rates scale with the input spectrum intensity.
 
 ### `expected/`
 
-Reference output summaries or metadata for future regression tests. Large raw
+Reference output summaries and accepted regression baselines. The Layer-4 baseline is stored under `tests/expected/layer4/layer4_reference.json` after it is generated with `tests/run_layer4_tests.sh --update-baseline`. Large raw
 Geant4 output files should generally not be committed unless they are small and
 essential.
 
@@ -470,37 +489,146 @@ These generated directories should not be committed.
 
 ---
 
-## Regression Tests
+## Layer-4 Regression Tests
 
-Regression tests should be created after a set of reference results is accepted.
+Layer-4 tests verify regression stability of complete end-to-end cases. They are
+intended to answer: did a code change alter previously accepted results beyond
+the configured tolerance? They do **not** independently validate Geant4 physics.
 
-Recommended regression cases:
+The implemented Layer-4 workflow uses three modes:
+
+```bash
+tests/run_layer4_tests.sh --check            # default: compare against baseline
+tests/run_layer4_tests.sh --update-baseline  # replace accepted baseline
+tests/run_layer4_tests.sh --actual-only      # run and collect actual JSON only
+```
+
+The first trusted Layer-4 run should be reviewed manually, then accepted with:
+
+```bash
+chmod +x tests/run_layer4_tests.sh
+tests/run_layer4_tests.sh --update-baseline
+```
+
+After a baseline exists, normal regression checks are run with:
+
+```bash
+tests/run_layer4_tests.sh
+```
+
+The accepted baseline is written to:
+
+```text
+tests/expected/layer4/layer4_reference.json
+```
+
+The current-run result is written by default to:
+
+```text
+layer4_test_runs/layer4_actual.json
+```
+
+The implemented Layer-4 script runs these deterministic cases:
 
 ```text
 regression_001_beam_100MeV_p_Al2mm_Si1mm
-regression_002_isotropic_SEP_Al2mm_BFO50mm
-regression_003_GCR_HDPE10mm_Si1mm
-regression_004_physicslist_comparison_Al20mm
-regression_005_material_catalog_all_targets
+regression_002_beam_100MeV_alpha_Al2mm_Si1mm
+regression_003_isotropic_SEP_Al2mm_BFO50mm_Si1mm
+regression_004_builtin_HDPE10mm_BFO50mm_Si1mm
+regression_005_highZ_Shielding_W5mm_Si1mm
+regression_006_sweep_Al_0p5_to_2mm_Si1mm
 ```
 
-For each regression case, compare quantities such as:
+For each case, the script compares compact signatures derived from:
 
 ```text
-total number of events
-transmitted proton integral
-transmitted alpha integral
-transmitted neutron integral
-TID
-DDD
-n_eq
+run-summary metadata
+input/output particle counts
+source normalization
+incident particle rate
+shield thickness and areal density
 H100/10
-LET-spectrum integral
+target TID, TID rate, DDD, DDD rate, n_eq, and n_eq rate
+LET-spectrum integral and mean LET
+compact numeric signatures of spectra and quantities output files
 ```
 
-Because this is a Monte Carlo code, comparisons should use statistical
-tolerances. A useful starting point is a three-sigma tolerance for integrated
-quantities.
+The comparison is performed by:
+
+```text
+tests/regression_tools.py
+```
+
+Default tolerances are intentionally moderate because these are short Monte
+Carlo regression cases. The defaults can be overridden:
+
+```bash
+REL_TOL=0.05 ABS_TOL=1e-30 tests/run_layer4_tests.sh --check
+EVENTS_REGRESSION=20000 EVENTS_SMOKE=5000 tests/run_layer4_tests.sh --check
+```
+
+Available variables:
+
+```text
+BUILD_DIR          Build directory used by the test script.
+                   Default: build_layer4_tests
+
+EXE_NAME           Executable name.
+                   Default: shieldSim
+
+LOG_DIR            Directory where test logs are written.
+                   Default: layer4_test_logs
+
+RUN_DIR            Directory where each Layer-4 test case writes run outputs.
+                   Default: layer4_test_runs
+
+JOBS               Number of parallel build jobs.
+                   Default: nproc, or 2 if nproc is unavailable.
+
+SKIP_BUILD         Set to 1 to skip CMake configure/build.
+                   Default: 0
+
+EXE_PATH           Explicit executable path when using SKIP_BUILD=1.
+
+EVENTS_REGRESSION  Events for ordinary regression cases.
+                   Default: 4000
+
+EVENTS_SMOKE       Events for high-Z and sweep smoke cases.
+                   Default: 1000
+
+REL_TOL            Relative tolerance for numerical comparison.
+                   Default: 0.15
+
+ABS_TOL            Absolute tolerance for numerical comparison.
+                   Default: 1e-30
+
+BASELINE_FILE      Accepted baseline JSON.
+                   Default: tests/expected/layer4/layer4_reference.json
+
+ACTUAL_FILE        Actual JSON produced by the current run.
+                   Default: layer4_test_runs/layer4_actual.json
+```
+
+Example using an already-built executable:
+
+```bash
+SKIP_BUILD=1 EXE_PATH=build/shieldSim tests/run_layer4_tests.sh --check
+```
+
+Layer-4 generated outputs are written under:
+
+```text
+layer4_test_runs/
+```
+
+Logs are written under:
+
+```text
+layer4_test_logs/
+```
+
+Do not update the Layer-4 baseline just to make tests pass. Update it only when
+the changed behavior is expected and has been reviewed.
 
 ---
 
@@ -514,6 +642,8 @@ tests/README.md
 tests/data/*.dat
 tests/expected/*.md
 tests/expected/*.json
+tests/expected/layer4/*.md
+tests/expected/layer4/*.json
 tests/expected/*.txt
 tests/logs/.gitignore
 ```
@@ -527,11 +657,14 @@ Recommended `.gitignore` entries:
 build_layer1_tests/
 build_layer2_tests/
 build_layer3_tests/
+build_layer4_tests/
 layer1_test_logs/
 layer2_test_logs/
 layer3_test_logs/
+layer4_test_logs/
 layer2_test_runs/
 layer3_test_runs/
+layer4_test_runs/
 tests/logs/
 ```
 
@@ -559,4 +692,4 @@ Useful future diagnostic or convenience options include:
 ```
 
 The current package already implements source, exit, and run-summary diagnostic
-dumps, which are enough for the implemented Layer-2 and Layer-3 tests.
+dumps, which are enough for the implemented Layer-2, Layer-3, and Layer-4 tests.

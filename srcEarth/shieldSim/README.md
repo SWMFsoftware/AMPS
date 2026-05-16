@@ -13,7 +13,7 @@ The package version is split into normal Geant4-style source files while preserv
 - dose accumulation in Geant4 internal units,
 - computed TID, DDD, 1-MeV neutron-equivalent fluence, LET spectra, and H100/10 hardness output,
 - detailed help text describing input/output units and radiation-effect approximations,
-- Layer-1/2/3 automated test scripts with deterministic diagnostic output,
+- Layer-1/2/3/4 automated test scripts with deterministic diagnostic and regression output,
 - optional test/numerical controls: `--dump-run-summary`, `--production-cut`, and `--max-step`.
 
 ## Directory structure
@@ -56,6 +56,8 @@ shieldSim/
     ├── run_layer1_tests.sh
     ├── run_layer2_tests.sh
     ├── run_layer3_tests.sh
+    ├── run_layer4_tests.sh
+    ├── regression_tools.py
     ├── data/
     │   ├── mono_50MeV_proton.dat
     │   ├── mono_100MeV_proton.dat
@@ -64,7 +66,27 @@ shieldSim/
     │   ├── mono_100MeV_alpha_rate10.dat
     │   └── mono_150MeV_proton.dat
     ├── expected/
+    │   └── layer4/
     └── logs/
+```
+
+## Automated tests
+
+The package includes layered test scripts under `tests/`. Layer-1 covers build
+and CLI smoke tests, Layer-2 covers geometry/source/scoring diagnostics, Layer-3
+covers physics-output sanity checks, and Layer-4 performs baseline-driven
+end-to-end regression tests. See `tests/README.md` for details.
+
+Layer-4 baselines are created only after manual review:
+
+```bash
+tests/run_layer4_tests.sh --update-baseline
+```
+
+Subsequent checks compare against that accepted baseline:
+
+```bash
+tests/run_layer4_tests.sh --check
 ```
 
 ## Build

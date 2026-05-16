@@ -638,14 +638,22 @@ void RunAction::WriteLETSpectrumTecplot(G4int nEv){
 
 void RunAction::WriteRunSummary(G4int nEv){
   // The run-summary file is a deliberately simple, machine-readable diagnostic
-  // for Layer-3 physics/numerics tests.  It duplicates integrated scalar
-  // quantities that are also present in the normal Tecplot outputs, but writes
-  // them as fixed keyword rows so a bash/Python test script can parse them
-  // robustly.  This file is not intended to replace the science output files.
+  // for Layer-3 physics/numerics tests and Layer-4 regression tests.  It
+  // duplicates integrated scalar quantities that are also present in the normal
+  // Tecplot outputs, but writes them as fixed keyword rows so a bash/Python
+  // test script can parse them robustly.  This file is not intended to replace
+  // the science output files.
+  //
+  // Layer-4 regression tests use this summary as the primary comparison source
+  // because it avoids brittle parsing of column-oriented Tecplot files.  For
+  // that reason, the first few metadata rows below form a tiny schema.  When new
+  // rows are added in the future, keep existing row names and column ordering
+  // stable whenever possible; this lets old regression baselines remain useful.
   //
   // Format notes:
-  //   scalar <name> <value>
-  //   count  <name> <value>
+  //   meta   <name> <string-value>
+  //   scalar <name> <floating-point-value>
+  //   count  <name> <floating-point-count>
   //   target <index> <name> <thick_mm> <TID_Gy/primary> <TIDRate_Gy/s>
   //          <DDD_MeV/g/primary> <DDDRate_MeV/g/s> <n_eq/primary> <n_eq/s>
   //
@@ -678,11 +686,14 @@ void RunAction::WriteRunSummary(G4int nEv){
   out<<"# The target row format is:\n";
   out<<"# target index name thickness_mm TID_Gy_perPrimary TIDRate_Gy_s DDD_MeV_g_perPrimary DDDRate_MeV_g_s n_eq_cm2_perPrimary n_eq_rate_cm2_s\n";
   out<<"begin_run\n";
+  out<<"meta summary_schema layer4_v1\n";
+  out<<"meta output_prefix "<<fOpts.outputPrefix<<"\n";
   out<<"meta physics_list "<<fOpts.physicsList<<"\n";
   out<<"meta source_mode "<<fSourceMode<<"\n";
   out<<"meta spectrum_file "<<(fOpts.spectrumFile.empty()?"builtin":fOpts.spectrumFile)<<"\n";
   out<<"meta shield_material "<<(fSweepMode?fCurrentMat:fOpts.shieldMaterial)<<"\n";
   out<<"scalar events "<<nEv<<"\n";
+  out<<"scalar target_count "<<fScoringNames.size()<<"\n";
   out<<"scalar shield_thickness_mm "<<shieldThicknessMM<<"\n";
   out<<"scalar shield_areal_density_g_cm2 "<<areal<<"\n";
   out<<"scalar source_norm_no_angular "<<fSourceNormNoAngular<<"\n";
