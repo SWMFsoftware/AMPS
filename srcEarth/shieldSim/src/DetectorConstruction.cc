@@ -1,5 +1,7 @@
 #include "DetectorConstruction.hh"
 
+#include "MaterialCatalog.hh"
+
 #include <G4Box.hh>
 #include <G4Exception.hh>
 #include <G4LogicalVolume.hh>
@@ -44,7 +46,7 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
   fWorldBox = wSol;
   auto* wPhys=new G4PVPlacement(nullptr,G4ThreeVector(),wLog,"World",nullptr,false,0);
 
-  auto* shMat=nist->FindOrBuildMaterial(fOpts.shieldMaterial);
+  auto* shMat=FindOrBuildShieldMaterial(fOpts.shieldMaterial);
   if(!shMat) G4Exception("Detector","ShieldMat",FatalException,
       ("Shield material "+fOpts.shieldMaterial+" not found").c_str());
 
@@ -65,7 +67,7 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
   G4double curZ=1.*mm+fOpts.shieldThickness;
   for(std::size_t i=0;i<fOpts.scoringMaterials.size();++i){
     const auto& sm=fOpts.scoringMaterials[i];
-    auto* mat=nist->FindOrBuildMaterial(sm.first);
+    auto* mat=FindOrBuildShieldMaterial(sm.first);
     if(!mat) G4Exception("Detector","ScoreMat",FatalException,
         ("Scoring material "+sm.first+" not found").c_str());
     G4double hz=sm.second/2;

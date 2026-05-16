@@ -1,5 +1,7 @@
 #include "OutputUtils.hh"
 
+#include "MaterialCatalog.hh"
+
 #include <G4SystemOfUnits.hh>
 #include <G4ios.hh>
 
@@ -22,7 +24,7 @@ void WriteDoseSweepTecplot(const std::vector<SweepPoint>& data,
   out<<"# Beam mode assumes the source spectrum columns are differential beam rates [particles/s/MeV].\n";
   out<<"# Isotropic mode assumes the source spectrum columns are differential intensities [particles/(cm2 s sr MeV)].\n";
   out<<"# In isotropic mode the code applies the pi angular factor and multiplies by the finite source-plane area.\n";
-  out<<"# Shield material: "<<shieldMat<<"\n";
+  out<<"# Shield material: "<<DescribeShieldMaterial(shieldMat)<<"\n";
   out<<"# Source mode: "<<opts.sourceMode<<"\n";
   out<<"# Events per point: "<<opts.nEvents<<"\n";
   out<<"# Proton energy range: ["<<opts.eMinProton<<", "<<opts.eMaxProton<<"] MeV total kinetic energy\n";
@@ -38,7 +40,7 @@ void WriteDoseSweepTecplot(const std::vector<SweepPoint>& data,
     out<<" \"DoseRate_"<<n<<" [Gy/s]\"";
   out<<"\n";
 
-  out<<"ZONE T=\""<<shieldMat<<" shield | source-mode="<<opts.sourceMode<<" | "
+  out<<"ZONE T=\""<<DescribeShieldMaterial(shieldMat)<<" shield | source-mode="<<opts.sourceMode<<" | "
      <<opts.nEvents<<" evt/pt\", I="<<data.size()<<", DATAPACKING=POINT\n";
 
   out<<std::scientific<<std::setprecision(6);

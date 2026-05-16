@@ -47,7 +47,10 @@ struct Options {
   G4double eMaxAlpha  = 1.0e5;
 
   // ---- single-run shield geometry -----------------------------------------
-  std::string shieldMaterial  = "G4_Al";
+  // Material can be either a Geant4/NIST material name (for example G4_Al)
+  // or a user-friendly catalog key/alias (for example Al, HDPE, BPE, CFRP,
+  // Water, LunarRegolith).  See MaterialCatalog.hh for the built-in list.
+  std::string shieldMaterial  = "Al";
   G4double    shieldThickness = 2.0*mm;
 
   // ---- downstream scoring slabs -------------------------------------------
@@ -66,6 +69,7 @@ struct Options {
   bool        sweepLog      = false;
 
   bool showHelp = false;
+  bool listMaterials = false;
 };
 
 // One row in the dose-vs-thickness sweep output table.

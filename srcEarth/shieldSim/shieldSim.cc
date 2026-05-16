@@ -22,7 +22,24 @@
  *   upstream source plane -> shield slab -> scoring slab(s) -> downstream gap
  *
  * The default shield is 2 mm Al.  The default scoring stack is 1 mm water plus
- * 1 mm silicon.  Materials are resolved using Geant4 NIST material names.
+ * 1 mm silicon.  Materials are resolved using either Geant4/NIST material
+ * names or the ShieldSim user-facing material catalog.
+ *
+ * Shielding-material catalog
+ * --------------------------
+ * The allowed short material names shown by --help and --list-materials are
+ * defined in include/MaterialCatalog.hh and src/MaterialCatalog.cc.  Some names
+ * are aliases to Geant4/NIST materials, such as Al -> G4_Al and Water ->
+ * G4_WATER.  Other names are custom trade-study materials built by shieldSim,
+ * such as BPE, CFRP, LunarRegolith, and MarsRegolith.
+ *
+ * To add a new shielding material, add a MaterialCatalogEntry in
+ * ShieldMaterialCatalog().  If the material is already provided by Geant4/NIST,
+ * set canonicalName to the G4_* name and isCustom=false.  If it is a new custom
+ * material, implement a Build...() function in src/MaterialCatalog.cc, register
+ * it in BuildCustomMaterial(), document the density/composition/reference, and
+ * rebuild.  The CLI help table will update automatically because it is generated
+ * from the catalog.
  *
  * Source and normalization
  * ------------------------
@@ -68,13 +85,13 @@
 #include "CLI.hh"
 #include "DetectorConstruction.hh"
 #include "EventAction.hh"
+#include "MaterialCatalog.hh"
 #include "OutputUtils.hh"
 #include "PrimaryGeneratorAction.hh"
 #include "RunAction.hh"
 #include "SteppingAction.hh"
 
 #include <G4Exception.hh>
-#include <G4NistManager.hh>
 #include <G4PhysListFactory.hh>
 #include <G4RunManager.hh>
 #include <G4SystemOfUnits.hh>
@@ -89,6 +106,11 @@
 int main(int argc,char** argv){
   Options opts=ParseArguments(argc,argv);
   if(opts.showHelp){ PrintHelp(); return 0; }
+  if(opts.listMaterials){
+    G4cout<<"Available shield-material keys and aliases:\n"
+          <<ShieldMaterialCatalogText()<<G4endl;
+    return 0;
+  }
 
   // Collect scoring names and thicknesses once.  RunAction uses these for
   // reports and output variable names, while DetectorConstruction owns the
@@ -111,16 +133,16 @@ int main(int argc,char** argv){
   G4cout<<"Events    : "<<opts.nEvents<<" per run"<<G4endl;
   G4cout<<"Scoring   :";
   for(const auto& s:opts.scoringMaterials)
-    G4cout<<"  "<<s.first<<":"<<s.second/mm<<"mm";
+    G4cout<<"  "<<DescribeShieldMaterial(s.first)<<":"<<s.second/mm<<"mm";
   G4cout<<G4endl;
   if(opts.doSweep){
     G4cout<<"Mode      : SWEEP"<<G4endl;
-    G4cout<<"Material  : "<<opts.sweepMaterial<<G4endl;
+    G4cout<<"Material  : "<<DescribeShieldMaterial(opts.sweepMaterial)<<G4endl;
     G4cout<<"Thickness : "<<opts.sweepTmin<<" - "<<opts.sweepTmax<<" mm  ("
           <<opts.sweepN<<" points, "<<(opts.sweepLog?"log":"linear")<<")"<<G4endl;
   } else {
     G4cout<<"Mode      : single run"<<G4endl;
-    G4cout<<"Shield    : "<<opts.shieldMaterial
+    G4cout<<"Shield    : "<<DescribeShieldMaterial(opts.shieldMaterial)
           <<", "<<opts.shieldThickness/mm<<" mm"<<G4endl;
   }
   G4cout<<"================================================="<<G4endl;
@@ -201,8 +223,7 @@ int main(int argc,char** argv){
     runManager->BeamOn(opts.nEvents);
 
     if(opts.doSweep){
-      auto* nist=G4NistManager::Instance();
-      auto* mat=nist->FindOrBuildMaterial(opts.sweepMaterial);
+      auto* mat=FindOrBuildShieldMaterial(opts.sweepMaterial);
       G4double rho_gcc = mat ? mat->GetDensity()/(g/cm3) : 0.;
       G4double areal   = rho_gcc * tMM * 0.1;  // g/cm^2, since 1 mm = 0.1 cm
 

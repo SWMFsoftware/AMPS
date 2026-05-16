@@ -1,6 +1,7 @@
 #include "RunAction.hh"
 
 #include "DetectorConstruction.hh"
+#include "MaterialCatalog.hh"
 #include "SpecBins.hh"
 
 #include <G4AnalysisManager.hh>
@@ -131,7 +132,7 @@ void RunAction::EndOfRunAction(const G4Run* run) {
     fLastDoseRate[i] = fLastDose[i]*incidentRate;
 
   G4cout<<"\nDose per primary ["
-        <<(fSweepMode ? fCurrentMat+" "+FormatMM(fCurrentTmm)+"mm" : "single run")
+        <<(fSweepMode ? DescribeShieldMaterial(fCurrentMat)+" "+FormatMM(fCurrentTmm)+"mm" : "single run")
         <<"]:"<<G4endl;
   for(std::size_t i=0;i<fScoringNames.size();++i)
     G4cout<<"  "<<fScoringNames[i]<<": "
@@ -190,7 +191,7 @@ void RunAction::WriteSpectraTecplot(G4int nEv){
     out<<"# Source normalization integral(no angular factor): "<<fSourceNormNoAngular<<"\n";
     out<<"# Source angular factor: "<<fSourceAngularFactor<<"\n";
     out<<"# Source normalization used for spectra: "<<fSourceNorm<<"\n";
-    out<<"# Shield: "<<(fSweepMode?fCurrentMat:fOpts.shieldMaterial)<<"\n";
+    out<<"# Shield: "<<DescribeShieldMaterial(fSweepMode?fCurrentMat:fOpts.shieldMaterial)<<"\n";
     if(fOpts.spectrumFile.empty())
       out<<"# Spectrum: built-in approximate Badhwar-O'Neill, phi = 550 MV.\n";
     else
@@ -211,9 +212,9 @@ void RunAction::WriteSpectraTecplot(G4int nEv){
 
   std::ostringstream zt;
   if(fSweepMode)
-    zt<<fCurrentMat<<"_"<<FormatMM(fCurrentTmm)<<"mm";
+    zt<<SanitiseName(DescribeShieldMaterial(fCurrentMat))<<"_"<<FormatMM(fCurrentTmm)<<"mm";
   else
-    zt<<fOpts.shieldMaterial<<"_"<<FormatMM(fOpts.shieldThickness/mm)<<"mm";
+    zt<<SanitiseName(DescribeShieldMaterial(fOpts.shieldMaterial))<<"_"<<FormatMM(fOpts.shieldThickness/mm)<<"mm";
   zt<<" | source-mode="<<fSourceMode<<" | "<<nEv<<" events";
 
   out<<"ZONE T=\""<<zt.str()<<"\", I="<<SpecBins::N<<", DATAPACKING=POINT\n";

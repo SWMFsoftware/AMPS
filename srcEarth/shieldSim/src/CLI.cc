@@ -1,4 +1,31 @@
+/* ============================================================================
+ * CLI.cc
+ *
+ * Command-line interface for shieldSim
+ * ------------------------------------
+ * This file converts user-facing command-line options into the Options structure
+ * used by the detector, source, run action, and sweep driver.  The parser is
+ * intentionally simple and dependency-free because shieldSim is meant to remain
+ * easy to build as a small Geant4 application.
+ *
+ * Material help text
+ * ------------------
+ * Shielding materials are not hard-coded in this file.  Instead, PrintHelp()
+ * calls ShieldMaterialCatalogText(), which is generated from the central catalog
+ * in src/MaterialCatalog.cc.  Therefore, when adding a new shielding material,
+ * update MaterialCatalog.cc/MaterialCatalog.hh only; the --help and
+ * --list-materials tables will update automatically.
+ *
+ * Units shown to users
+ * --------------------
+ * All CLI thicknesses are given in mm.  All CLI kinetic-energy limits are given
+ * in MeV total kinetic energy per particle.  For alpha particles, the current
+ * convention is total alpha-particle kinetic energy, not MeV/nucleon.
+ * ========================================================================== */
+
 #include "CLI.hh"
+
+#include "MaterialCatalog.hh"
 
 #include <G4Exception.hh>
 #include <G4SystemOfUnits.hh>
@@ -49,6 +76,16 @@ void PrintHelp(){
   std::cout<<"                           Shielding is Geant4's radiation-shielding list.\n";
   std::cout<<"                           QGSP_BIC_HP uses binary cascade plus HP neutrons.\n";
 
+  std::cout<<"SHIELD MATERIAL SELECTION\n";
+  std::cout<<"  --shield=<M>:<t>         Shield material M and thickness t in mm.\n";
+  std::cout<<"                           M may be a Geant4/NIST name such as G4_Al,\n";
+  std::cout<<"                           or one of the built-in catalog keys below.\n";
+  std::cout<<"                           Default: Al:2\n";
+  std::cout<<"  --shield-material=<M>    Change only the shield material.\n";
+  std::cout<<"  --shield-thickness=<mm>  Change only the shield thickness.\n";
+  std::cout<<"  --list-materials         Print the material catalog and exit.\n";
+  std::cout<<ShieldMaterialCatalogText();
+
   std::cout<<"SOURCE AND SPECTRUM OPTIONS\n";
   std::cout<<"  --source-mode=<mode>     Source angular/spatial model: beam or isotropic.\n";
   std::cout<<"                           beam: pencil beam at x=y=0, direction +z.\n";
@@ -78,16 +115,16 @@ void PrintHelp(){
   std::cout<<"  --emax-a=<MeV>           Alpha total-energy maximum (overrides --emax).\n";
 
   std::cout<<"\nSINGLE-RUN GEOMETRY\n";
-  std::cout<<"  --shield=<M>:<t>         Shield NIST material and thickness in mm.\n";
-  std::cout<<"                           Default: G4_Al:2\n";
   std::cout<<"  --scoring=<M>:<t>,...    Comma-separated scoring slabs (material:mm).\n";
-  std::cout<<"                           Default: G4_WATER:1,G4_Si:1\n";
+  std::cout<<"                           Materials may be catalog keys/aliases or G4_ names.\n";
+  std::cout<<"                           Default: Water:1,G4_Si:1\n";
   std::cout<<"  --events=<n>             Primary particles per run. Default: 10000.\n";
 
   std::cout<<"\nDOSE-VS-THICKNESS SWEEP  (--sweep enables this mode)\n";
   std::cout<<"  --sweep                  Enable sweep; runs BeamOn for each thickness\n";
   std::cout<<"                           and writes shieldSim_dose_sweep.dat.\n";
-  std::cout<<"  --sweep-material=<M>     Shield material to sweep over\n";
+  std::cout<<"  --sweep-material=<M>     Shield material to sweep over. M may be a\n";
+  std::cout<<"                           catalog key/alias or a Geant4/NIST name\n";
   std::cout<<"                           (default: same as --shield material).\n";
   std::cout<<"  --sweep-tmin=<mm>        Minimum sweep thickness. Default: 0.5 mm.\n";
   std::cout<<"  --sweep-tmax=<mm>        Maximum sweep thickness. Default: 50 mm.\n";
@@ -111,22 +148,22 @@ void PrintHelp(){
 
   std::cout<<"\nEXAMPLES\n";
   std::cout<<"  # Single run, 2 mm Al, normal-incidence beam, built-in GCR-like spectrum\n";
-  std::cout<<"  ./shieldSim --source-mode=beam --shield=G4_Al:2 --events=50000\n\n";
+  std::cout<<"  ./shieldSim --source-mode=beam --shield=Al:2 --events=50000\n\n";
   std::cout<<"  # Isotropic source over the upstream plane using high-precision neutrons\n";
   std::cout<<"  ./shieldSim --physics-list=FTFP_BERT_HP --source-mode=isotropic \\\n";
-  std::cout<<"              --shield=G4_Al:2 --events=50000\n\n";
+  std::cout<<"              --shield=Al:2 --events=50000\n\n";
   std::cout<<"  # Tabulated source spectrum, isotropic mode\n";
   std::cout<<"  ./shieldSim --source-mode=isotropic --spectrum=../examples/sep_spectrum.dat \\\n";
-  std::cout<<"              --shield=G4_Al:2 --events=100000\n\n";
-  std::cout<<"  # Dose vs thickness sweep, Al 0.5-30 mm, 15 log-spaced points\n";
-  std::cout<<"  ./shieldSim --sweep --source-mode=isotropic --sweep-material=G4_Al \\\n";
+  std::cout<<"              --shield=Al:2 --events=100000\n\n";
+  std::cout<<"  # Dose vs thickness sweep, HDPE 0.5-30 mm, 15 log-spaced points\n";
+  std::cout<<"  ./shieldSim --sweep --source-mode=isotropic --sweep-material=HDPE \\\n";
   std::cout<<"              --sweep-tmin=0.5 --sweep-tmax=30 \\\n";
   std::cout<<"              --sweep-n=15 --sweep-log --events=20000\n\n";
 }
 
 Options ParseArguments(int argc, char** argv){
   Options o;
-  o.scoringMaterials.push_back({"G4_WATER",1.*mm});
+  o.scoringMaterials.push_back({"Water",1.*mm});
   o.scoringMaterials.push_back({"G4_Si",   1.*mm});
 
   auto strVal=[](const std::string& arg,const std::string& prefix)->std::string{
@@ -136,6 +173,7 @@ Options ParseArguments(int argc, char** argv){
   for(int i=1;i<argc;++i){
     std::string a=argv[i];
     if(a=="-h"||a=="-help"||a=="--help"){ o.showHelp=true; }
+    else if(a=="--list-materials"){ o.listMaterials=true; }
     else if(a.find("--physics-list=")==0){ o.physicsList=strVal(a,"--physics-list="); }
     else if(a.find("--phys=")==0){ o.physicsList=strVal(a,"--phys="); }
     else if(a.find("--source-mode=")==0){ o.sourceMode=strVal(a,"--source-mode="); }
@@ -152,6 +190,12 @@ Options ParseArguments(int argc, char** argv){
       if(p!=std::string::npos){ o.shieldMaterial=v.substr(0,p);
                                  o.shieldThickness=std::stod(v.substr(p+1))*mm; }
       else o.shieldMaterial=v;
+    }
+    else if(a.find("--shield-material=")==0){
+      o.shieldMaterial=strVal(a,"--shield-material=");
+    }
+    else if(a.find("--shield-thickness=")==0){
+      o.shieldThickness=std::stod(strVal(a,"--shield-thickness="))*mm;
     }
     else if(a.find("--scoring=")==0){
       o.scoringMaterials.clear();

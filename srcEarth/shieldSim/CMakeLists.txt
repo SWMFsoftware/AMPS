@@ -19,6 +19,7 @@ add_executable(shieldSim
   src/DetectorConstruction.cc
   src/EventAction.cc
   src/GCRSpectrum.cc
+  src/MaterialCatalog.cc
   src/OutputUtils.cc
   src/PrimaryGeneratorAction.cc
   src/RunAction.cc
