@@ -4,8 +4,8 @@ This directory contains automated and semi-automated test scripts for the
 `shieldSim` Geant4 shielding application.
 
 The tests are organized in layers. Lower-numbered layers test basic software
-functionality, while higher-numbered layers test physics behavior, numerical
-convergence, and regression stability.
+functionality, while higher-numbered layers test geometry, source sampling,
+scoring, physics behavior, numerical convergence, and regression stability.
 
 ## Test Philosophy
 
@@ -19,27 +19,26 @@ The purpose of the test suite is to separate several different questions:
 6. Are Monte Carlo results statistically converged?
 7. Do future code changes preserve validated behavior?
 
-Not every test is expected to be fast. Layer-1 tests should be quick and should
-be run frequently. Higher-layer physics and regression tests may require many
-events and should be run before major releases or science production runs.
+Layer-1 tests should be quick and should be run frequently. Layer-2 tests are
+also intended to be lightweight, but they run short Geant4 simulations and use
+diagnostic output to check geometry/source/scoring behavior. Higher-layer
+physics and regression tests may require many events and should be run before
+major releases or science production runs.
 
 ---
 
 ## Directory Layout
-
-Recommended structure:
 
 ```text
 tests/
 ├── README.md
 ├── run_layer1_tests.sh
 ├── run_layer2_tests.sh
-├── run_layer3_tests.sh
-├── run_regression_tests.sh
+├── run_layer3_tests.sh              # planned
+├── run_regression_tests.sh          # planned
 ├── data/
 │   ├── mono_100MeV_proton.dat
-│   ├── flat_test_spectrum.dat
-│   └── zero_flux.dat
+│   └── mono_100MeV_alpha.dat
 ├── expected/
 │   └── README.md
 └── logs/
@@ -57,41 +56,105 @@ that invalid input is rejected cleanly.
 
 Geometry, source, and scoring tests.
 
-Examples include vacuum transmission, shield-exit scoring, monoenergetic beam
-transport, beam versus isotropic source checks, and detector ordering tests.
-
-### `run_layer3_tests.sh`
-
-Physics verification tests.
-
-Examples include stopping-power comparisons, dose normalization checks,
-LET-spectrum tests, secondary neutron production, and physics-list comparison.
-
-### `run_regression_tests.sh`
-
-Longer reference-output tests.
-
-These should compare important integrated quantities against previously saved
-reference results, using tolerances appropriate for Monte Carlo statistics.
+This script verifies beam-source sampling, isotropic-source sampling,
+near-vacuum transmission through the shield rear face, target ordering, and
+basic material alias behavior.
 
 ### `data/`
 
-Small input spectra and other fixed test data.
-
-These files should be version controlled if they are small and deterministic.
+Small deterministic input spectra for tests.  These files are intentionally
+simple and should be version controlled.
 
 ### `expected/`
 
-Reference output summaries or metadata for regression tests.
-
-Large raw Geant4 output files should generally not be committed unless they are
-small and essential.
+Reference output summaries or metadata for future regression tests.  Large raw
+Geant4 output files should generally not be committed unless they are small and
+essential.
 
 ### `logs/`
 
-Generated test logs.
+Generated test logs.  This directory should not be version controlled except for
+its `.gitignore` file.
 
-This directory should not be version controlled, except for a `.gitignore` file.
+---
+
+## Diagnostic CLI Options Used by Tests
+
+Layer-2 tests require several diagnostic options implemented in the main code:
+
+```bash
+--random-seed=<integer>
+--output-prefix=<name>
+--dump-source-samples=<file>
+--dump-exit-particles=<file>
+--diagnostic-max-rows=<n>
+```
+
+### `--random-seed=<integer>`
+
+Sets the CLHEP/Geant4 random seed before the run.  This makes source-sampling
+and short Monte Carlo tests reproducible.
+
+### `--output-prefix=<name>`
+
+Changes standard output file names.  With the default prefix `shieldSim`, files
+keep their historical names, such as:
+
+```text
+shieldSim_spectra.dat
+shieldSim_quantities.dat
+shieldSim_let_spectrum.dat
+shieldSim_dose_sweep.dat
+shieldSimOutput*.csv
+```
+
+With `--output-prefix=caseA`, they become:
+
+```text
+caseA_spectra.dat
+caseA_quantities.dat
+caseA_let_spectrum.dat
+caseA_dose_sweep.dat
+caseAOutput*.csv
+```
+
+### `--dump-source-samples=<file>`
+
+Writes one row per generated primary:
+
+```text
+row species E_MeV x_mm y_mm z_mm ux uy uz
+```
+
+Positions are global coordinates in millimeters.  The vector `(ux,uy,uz)` is the
+unit momentum direction requested by `PrimaryGeneratorAction`.
+
+This file is used to verify that:
+
+- beam mode generates `x = y = 0` and direction `+z`,
+- isotropic mode keeps positions on the upstream plane,
+- isotropic mode samples the inward-hemisphere crossing distribution
+  `p(mu) = 2 mu`, where `mu = uz`.
+
+### `--dump-exit-particles=<file>`
+
+Writes one row for each particle accepted as crossing the downstream shield
+face:
+
+```text
+row species E_MeV xg_mm yg_mm zg_mm xl_mm yl_mm zl_mm uxl uyl uzl
+```
+
+The `g` coordinates are global coordinates.  The `l` coordinates and directions
+are in the local coordinate frame of the shield.  This file is used to verify
+that shield rear-face scoring is based on the correct local-coordinate crossing
+condition.
+
+### `--diagnostic-max-rows=<n>`
+
+Limits the number of rows written to each diagnostic file.  This prevents
+accidentally generating huge diagnostic dumps.  Use a value less than or equal
+to zero to remove the explicit cap.
 
 ---
 
@@ -162,32 +225,100 @@ All Layer-1 tests passed.
 
 ## Layer-2 Tests
 
-Layer-2 tests should verify geometry, source sampling, and scoring logic.
+Layer-2 tests verify geometry, source sampling, and scoring logic using short
+Geant4 runs and diagnostic files.
 
-Recommended tests:
+The implemented Layer-2 script checks:
 
-1. Vacuum or near-vacuum transmission.
-2. Thin-shield monoenergetic proton transmission.
-3. Shield rear-face scoring.
-4. Beam source direction.
-5. Isotropic source angular distribution.
-6. Isotropic source position distribution.
-7. Detector/target ordering.
-8. Material alias equivalence, for example `Al` versus `G4_Al`.
+1. The diagnostic options are present in `--help`.
+2. Beam mode generates 100 MeV protons at `x = y = 0` with direction `+z`.
+3. Isotropic mode samples the source plane and direction distribution correctly:
+   - all directions point inward, `0 < mu <= 1`,
+   - `<mu> ≈ 2/3`,
+   - `<mu^2> ≈ 1/2`,
+   - source positions stay within the finite upstream plane.
+4. A near-vacuum shield transmits most 100 MeV protons through the downstream
+   shield face.
+5. Exit diagnostics use shield-local coordinates and positive downstream local
+   direction cosine.
+6. Detector/target material order is preserved in output metadata.
+7. `Al` and `G4_Al` both run successfully as shield material specifications.
 
-These tests are intended to catch implementation errors such as:
+Run from the top-level package directory:
 
-- incorrect coordinate transformations,
-- lost particles at boundaries,
-- incorrect source direction sampling,
-- incorrect detector indexing,
-- target-volume scoring mistakes.
+```bash
+chmod +x tests/run_layer2_tests.sh
+tests/run_layer2_tests.sh
+```
+
+To see script options:
+
+```bash
+tests/run_layer2_tests.sh --help
+```
+
+Optional environment variables:
+
+```bash
+BUILD_DIR=build_l2 JOBS=8 tests/run_layer2_tests.sh
+```
+
+Available variables:
+
+```text
+BUILD_DIR   Build directory used by the test script.
+            Default: build_layer2_tests
+
+EXE_NAME    Executable name.
+            Default: shieldSim
+
+LOG_DIR     Directory where test logs are written.
+            Default: layer2_test_logs
+
+RUN_DIR     Directory where each Layer-2 test case writes its run outputs.
+            Default: layer2_test_runs
+
+JOBS        Number of parallel build jobs.
+            Default: nproc, or 2 if nproc is unavailable.
+
+SKIP_BUILD  Set to 1 to skip CMake configure/build.
+            Default: 0
+
+EXE_PATH    Explicit executable path when using SKIP_BUILD=1.
+```
+
+Example using an already-built executable:
+
+```bash
+SKIP_BUILD=1 EXE_PATH=build/shieldSim tests/run_layer2_tests.sh
+```
+
+Expected result:
+
+```text
+All Layer-2 tests passed.
+```
+
+Layer-2 test outputs are written under:
+
+```text
+layer2_test_runs/
+```
+
+Logs are written under:
+
+```text
+layer2_test_logs/
+```
+
+These generated directories should not be committed.
 
 ---
 
 ## Layer-3 Tests
 
-Layer-3 tests should verify physics behavior.
+Layer-3 tests should verify physics behavior.  They are planned but not yet
+implemented in this package.
 
 Recommended tests:
 
@@ -204,7 +335,7 @@ Recommended tests:
    - `Shielding`
    - `QGSP_BIC_HP`
 
-These tests may require many more events than Layer-1 tests.
+These tests may require many more events than Layer-1 or Layer-2 tests.
 
 ---
 
@@ -237,7 +368,7 @@ LET-spectrum integral
 ```
 
 Because this is a Monte Carlo code, comparisons should use statistical
-tolerances. A useful starting point is a three-sigma tolerance for integrated
+tolerances.  A useful starting point is a three-sigma tolerance for integrated
 quantities.
 
 ---
@@ -250,11 +381,14 @@ Commit:
 tests/*.sh
 tests/README.md
 tests/data/*.dat
+tests/expected/*.md
 tests/expected/*.json
 tests/expected/*.txt
+tests/logs/.gitignore
 ```
 
-Do not commit generated build directories, logs, or large raw output files.
+Do not commit generated build directories, logs, test-run directories, or large
+raw output files.
 
 Recommended `.gitignore` entries:
 
@@ -265,6 +399,8 @@ build_layer3_tests/
 layer1_test_logs/
 layer2_test_logs/
 layer3_test_logs/
+layer2_test_runs/
+layer3_test_runs/
 tests/logs/
 ```
 
@@ -273,25 +409,23 @@ tests/logs/
 ## Notes on Monte Carlo Testing
 
 Monte Carlo tests are not exactly reproducible unless the random seed and all
-Geant4 settings are fixed. For reliable regression testing, the application
-should support:
+Geant4 settings are fixed.  For reliable regression testing, use:
 
 ```bash
 --random-seed=<integer>
 --output-prefix=<name>
 ```
 
-Useful future diagnostic options include:
+Useful future diagnostic or convenience options include:
 
 ```bash
 --mono-proton=<MeV>
 --mono-alpha=<MeV>
 --disable-protons
 --disable-alphas
---dump-source-samples=<file>
---dump-exit-particles=<file>
 --set-production-cut=<mm>
 --max-step=<mm>
 ```
 
-These options make it much easier to diagnose differences between runs.
+The current package already implements source and exit diagnostic dumps, which
+are enough for the Layer-2 source/geometry/scoring tests.

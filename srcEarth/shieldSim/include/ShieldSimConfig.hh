@@ -69,8 +69,37 @@ struct Options {
   bool calcLET      = true;
   bool calcHardness = true;
 
-  // ---- statistics ----------------------------------------------------------
+  // ---- statistics and reproducibility --------------------------------------
   G4int nEvents = 10000;
+
+  // Optional random seed for reproducible software/physics tests.  A value of
+  // false in useRandomSeed leaves Geant4/CLHEP in its default random state.
+  // When useRandomSeed is true, shieldSim.cc calls G4Random::setTheSeed()
+  // before particles are generated.
+  bool useRandomSeed = false;
+  long randomSeed = 0;
+
+  // ---- output and diagnostics ---------------------------------------------
+  // Output prefix for the standard result files.  The default preserves the
+  // original file names:
+  //   shieldSim_spectra.dat, shieldSim_quantities.dat, shieldSim_let_spectrum.dat,
+  //   shieldSim_dose_sweep.dat, shieldSimOutput*.csv.
+  // Test scripts can set a different prefix so multiple runs in the same
+  // directory do not overwrite each other.
+  std::string outputPrefix = "shieldSim";
+
+  // Optional diagnostic dump files used by the Layer-2 geometry/source/scoring
+  // tests.  If the string is empty, no file is written.  Source samples are
+  // written by PrimaryGeneratorAction after the particle species, energy,
+  // source position, and direction are chosen.  Exit particles are written by
+  // SteppingAction only when a particle leaves the downstream shield face.
+  std::string dumpSourceSamplesFile = "";
+  std::string dumpExitParticlesFile = "";
+
+  // Protect accidental huge diagnostic files.  A value <=0 means no explicit
+  // limit.  The default is intentionally generous enough for statistics tests
+  // but still prevents an accidental million-line diagnostic dump.
+  G4int diagnosticMaxRows = 200000;
 
   // ---- dose-vs-thickness sweep --------------------------------------------
   bool        doSweep       = false;

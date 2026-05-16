@@ -21,6 +21,7 @@
 
 #include <G4VUserPrimaryGeneratorAction.hh>
 #include <G4Types.hh>
+#include <G4ThreeVector.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -95,6 +96,7 @@ private:
   G4double Sample(CLHEP::RandGeneral* rng,const std::vector<G4double>& E);
   void ConfigureSourcePositionAndDirection();
   void RecordInput(bool isProton,G4double E);
+  void RecordSourceDiagnostic(const std::string& species,G4double E);
   G4Box* GetCurrentWorldBox() const;
 
   Options fOpts;
@@ -109,6 +111,12 @@ private:
   G4double fTotP=0,fTotA=0;
   G4double fSourceNormNoAngular=0.0;
   G4double fSourceAngularFactor=1.0;
+
+  // Cached position/direction requested for the current primary.  These are
+  // used only for optional diagnostic output so the automated source tests can
+  // verify beam and isotropic sampling without instrumenting Geant4 internals.
+  G4ThreeVector fLastSourcePosition = G4ThreeVector(0.0,0.0,0.0);
+  G4ThreeVector fLastSourceDirection = G4ThreeVector(0.0,0.0,1.0);
 };
 
 #endif // SHIELDSIM_PRIMARY_GENERATOR_ACTION_HH

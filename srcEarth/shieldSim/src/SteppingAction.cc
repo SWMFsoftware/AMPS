@@ -54,6 +54,16 @@ void SteppingAction::UserSteppingAction(const G4Step* step) {
             if(nm=="proton") { am->FillH1(0,ke); fRA->AddOutP(ke); }
             else if(nm=="alpha")  { am->FillH1(1,ke); fRA->AddOutA(ke); }
             else if(nm=="neutron"){ am->FillH1(2,ke); fRA->AddOutN(ke); }
+
+            // Optional diagnostic used by Layer-2 tests.  The record is made
+            // only after the same downstream-face criteria used for physics
+            // scoring are satisfied, so the file is a direct audit trail of
+            // the accepted exit crossings.
+            const G4ThreeVector globalPos = post->GetPosition();
+            fRA->RecordExitParticle(nm,ke,
+                                    globalPos.x()/mm, globalPos.y()/mm, globalPos.z()/mm,
+                                    localPos.x()/mm,  localPos.y()/mm,  localPos.z()/mm,
+                                    localDir.x(),     localDir.y(),     localDir.z());
           }
         }
       }

@@ -14,7 +14,7 @@ void WriteDoseSweepTecplot(const std::vector<SweepPoint>& data,
                            const std::string& shieldMat,
                            const Options& opts)
 {
-  const std::string fname="shieldSim_dose_sweep.dat";
+  const std::string fname=opts.outputPrefix+"_dose_sweep.dat";
   std::ofstream out(fname);
   if(!out){ G4cerr<<"Cannot write "<<fname<<G4endl; return; }
 

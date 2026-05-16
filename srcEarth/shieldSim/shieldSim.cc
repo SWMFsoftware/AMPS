@@ -113,7 +113,16 @@
  *        d. At end of run, RunAction computes dose per primary, source-normalized
  *           dose rate, spectrum-folded DDD/n_eq,
  *           LET spectra, hardness index, and writes spectra/quantity files.
- *   4. In sweep mode, write the dose-vs-thickness Tecplot table and append one
+ *   4. Optional diagnostic output for tests can be enabled with
+ *      --dump-source-samples and --dump-exit-particles.  The source diagnostic
+ *      records the particle species, kinetic energy, source position, and
+ *      direction that PrimaryGeneratorAction gives to Geant4.  The exit
+ *      diagnostic records particles accepted by SteppingAction as crossing the
+ *      downstream shield face after transforming the crossing point into the
+ *      shield-local coordinate system.  These files are intended for automated
+ *      Layer-2 tests of source sampling, geometry, and scoring, not for science
+ *      post-processing.
+ *   5. In sweep mode, write the dose-vs-thickness Tecplot table and append one
  *      zone per shielding thickness to the scalar-quantity and LET files.
  * ========================================================================== */
 
@@ -133,6 +142,7 @@
 #include <G4SystemOfUnits.hh>
 #include <G4VModularPhysicsList.hh>
 #include <G4ios.hh>
+#include <Randomize.hh>
 
 #include <cmath>
 #include <iomanip>
@@ -157,6 +167,14 @@ int main(int argc,char** argv){
     return 0;
   }
 
+  // Optional deterministic random seed.  This is especially important for
+  // automated tests: source-sampling tests can then compare angular moments
+  // against fixed tolerances, and geometry/scoring tests can be reproduced
+  // exactly if a regression changes.
+  if(opts.useRandomSeed){
+    G4Random::setTheSeed(opts.randomSeed);
+  }
+
   // Collect scoring names and thicknesses once.  RunAction uses these for
   // reports and output variable names, while DetectorConstruction owns the
   // actual logical volumes.  The names are kept as the user provided them for
@@ -178,6 +196,12 @@ int main(int argc,char** argv){
   G4cout<<"E proton  : ["<<opts.eMinProton<<", "<<opts.eMaxProton<<"] MeV"<<G4endl;
   G4cout<<"E alpha   : ["<<opts.eMinAlpha <<", "<<opts.eMaxAlpha <<"] MeV"<<G4endl;
   G4cout<<"Events    : "<<opts.nEvents<<" per run"<<G4endl;
+  G4cout<<"Output    : prefix="<<opts.outputPrefix<<G4endl;
+  if(opts.useRandomSeed) G4cout<<"Random    : seed="<<opts.randomSeed<<G4endl;
+  if(!opts.dumpSourceSamplesFile.empty())
+    G4cout<<"Diag src  : "<<opts.dumpSourceSamplesFile<<G4endl;
+  if(!opts.dumpExitParticlesFile.empty())
+    G4cout<<"Diag exit : "<<opts.dumpExitParticlesFile<<G4endl;
   ComputedQuantities::Selection qsel;
   qsel.tid      = opts.calcTID;
   qsel.ddd      = opts.calcDDD;

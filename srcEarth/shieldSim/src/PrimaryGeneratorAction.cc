@@ -55,15 +55,24 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* ev) {
   bool useP=(tot>0) ? (G4UniformRand()<fTotP/tot) : true;
 
   G4double E; G4ParticleDefinition* pd;
+  std::string species;
   if(useP){
     E=Sample(fPRand,fEP);
     pd=G4ParticleTable::GetParticleTable()->FindParticle("proton");
+    species="proton";
     RecordInput(true,E);
   } else {
     E=Sample(fARand,fEA);
     pd=G4ParticleTable::GetParticleTable()->FindParticle("alpha");
+    species="alpha";
     RecordInput(false,E);
   }
+
+  // Record the source diagnostic after species and energy are selected but
+  // before Geant4 tracking begins.  This diagnostic is optional and is used by
+  // the Layer-2 tests to verify the source algorithm independently from the
+  // transport physics.
+  RecordSourceDiagnostic(species,E);
 
   // Geant4 expects total kinetic energy for the particle definition.  For alpha
   // particles this is total alpha energy, not energy per nucleon.
@@ -227,17 +236,32 @@ void PrimaryGeneratorAction::ConfigureSourcePositionAndDirection(){
     const G4ThreeVector dir(sinTheta*std::cos(phi),
                             sinTheta*std::sin(phi),
                             mu);
-    fGun->SetParticlePosition(G4ThreeVector(x,y,z0));
-    fGun->SetParticleMomentumDirection(dir);
+    fLastSourcePosition = G4ThreeVector(x,y,z0);
+    fLastSourceDirection = dir;
+    fGun->SetParticlePosition(fLastSourcePosition);
+    fGun->SetParticleMomentumDirection(fLastSourceDirection);
   } else {
-    fGun->SetParticlePosition(G4ThreeVector(0,0,z0));
-    fGun->SetParticleMomentumDirection(G4ThreeVector(0,0,1));
+    fLastSourcePosition = G4ThreeVector(0,0,z0);
+    fLastSourceDirection = G4ThreeVector(0,0,1);
+    fGun->SetParticlePosition(fLastSourcePosition);
+    fGun->SetParticleMomentumDirection(fLastSourceDirection);
   }
 }
 
 void PrimaryGeneratorAction::RecordInput(bool isProton,G4double E){
   if(isProton) fRunAction->AddInP(E);
   else         fRunAction->AddInA(E);
+}
+
+void PrimaryGeneratorAction::RecordSourceDiagnostic(const std::string& species,G4double E){
+  if(!fRunAction) return;
+  fRunAction->RecordSourceSample(species,E,
+                                 fLastSourcePosition.x()/mm,
+                                 fLastSourcePosition.y()/mm,
+                                 fLastSourcePosition.z()/mm,
+                                 fLastSourceDirection.x(),
+                                 fLastSourceDirection.y(),
+                                 fLastSourceDirection.z());
 }
 
 G4Box* PrimaryGeneratorAction::GetCurrentWorldBox() const {

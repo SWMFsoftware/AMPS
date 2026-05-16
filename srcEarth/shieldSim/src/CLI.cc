@@ -146,6 +146,26 @@ void PrintHelp(){
   std::cout<<"\nSINGLE-RUN GEOMETRY\n";
   std::cout<<"  --events=<n>             Primary particles per run. Default: 10000.\n";
 
+  std::cout<<"\nTESTING AND DIAGNOSTIC OPTIONS\n";
+  std::cout<<"  --random-seed=<n>        Set the CLHEP/Geant4 random seed.  This is\n";
+  std::cout<<"                           strongly recommended for regression and\n";
+  std::cout<<"                           Layer-2 geometry/source/scoring tests.\n";
+  std::cout<<"  --output-prefix=<name>   Prefix for standard output files.  Default:\n";
+  std::cout<<"                           shieldSim, which preserves the historical\n";
+  std::cout<<"                           shieldSim_spectra.dat and related names.\n";
+  std::cout<<"  --dump-source-samples=<file>\n";
+  std::cout<<"                           Write one row per generated primary with\n";
+  std::cout<<"                           species, energy, global position [mm], and\n";
+  std::cout<<"                           direction.  Used to verify beam/isotropic\n";
+  std::cout<<"                           source sampling.\n";
+  std::cout<<"  --dump-exit-particles=<file>\n";
+  std::cout<<"                           Write particles accepted as crossing the\n";
+  std::cout<<"                           downstream shield face.  Includes global and\n";
+  std::cout<<"                           shield-local coordinates for scoring checks.\n";
+  std::cout<<"  --diagnostic-max-rows=<n>\n";
+  std::cout<<"                           Maximum rows written to each diagnostic dump.\n";
+  std::cout<<"                           Default: 200000.  Use <=0 for no explicit cap.\n";
+
   std::cout<<"\nDOSE-VS-THICKNESS SWEEP  (--sweep enables this mode)\n";
   std::cout<<"  --sweep                  Enable sweep; runs BeamOn for each thickness\n";
   std::cout<<"                           and writes shieldSim_dose_sweep.dat.\n";
@@ -174,6 +194,10 @@ void PrintHelp(){
   std::cout<<"                           Gy/primary. DoseRate_* columns are Gy/s when\n";
   std::cout<<"                           the input source spectrum has physical units.\n";
   std::cout<<"  shieldSimOutput[*].csv   G4AnalysisManager exit-energy histograms.\n";
+  std::cout<<"                           If --output-prefix=<p> is given, standard\n";
+  std::cout<<"                           files become <p>_spectra.dat,\n";
+  std::cout<<"                           <p>_quantities.dat, <p>_let_spectrum.dat,\n";
+  std::cout<<"                           and <p>Output*.csv.\n";
 
   std::cout<<"\nEXAMPLES\n";
   std::cout<<"  # Single run, 2 mm Al, normal-incidence beam, built-in GCR-like spectrum\n";
@@ -221,6 +245,11 @@ Options ParseArguments(int argc, char** argv){
     else if(a.find("--phys=")==0){ o.physicsList=strVal(a,"--phys="); }
     else if(a.find("--source-mode=")==0){ o.sourceMode=strVal(a,"--source-mode="); }
     else if(a.find("--spectrum=")==0){ o.spectrumFile=strVal(a,"--spectrum="); }
+    else if(a.find("--random-seed=")==0){ o.randomSeed=std::stol(strVal(a,"--random-seed=")); o.useRandomSeed=true; }
+    else if(a.find("--output-prefix=")==0){ o.outputPrefix=strVal(a,"--output-prefix="); }
+    else if(a.find("--dump-source-samples=")==0){ o.dumpSourceSamplesFile=strVal(a,"--dump-source-samples="); }
+    else if(a.find("--dump-exit-particles=")==0){ o.dumpExitParticlesFile=strVal(a,"--dump-exit-particles="); }
+    else if(a.find("--diagnostic-max-rows=")==0){ o.diagnosticMaxRows=std::stoi(strVal(a,"--diagnostic-max-rows=")); }
     else if(a.find("--emin=")==0){ o.eMinProton=o.eMinAlpha=std::stod(strVal(a,"--emin=")); }
     else if(a.find("--emax=")==0){ o.eMaxProton=o.eMaxAlpha=std::stod(strVal(a,"--emax=")); }
     else if(a.find("--emin-p=")==0){ o.eMinProton=std::stod(strVal(a,"--emin-p=")); }
@@ -228,11 +257,16 @@ Options ParseArguments(int argc, char** argv){
     else if(a.find("--emin-a=")==0){ o.eMinAlpha =std::stod(strVal(a,"--emin-a=")); }
     else if(a.find("--emax-a=")==0){ o.eMaxAlpha =std::stod(strVal(a,"--emax-a=")); }
     else if(a.find("--shield=")==0){
+      // --shield is deliberately the combined material:thickness form.  Use
+      // --shield-material if only the material should be changed.  Treating a
+      // bare --shield=Al as malformed catches a common typo in automated tests
+      // and avoids silently reusing the previous/default thickness.
       std::string v=strVal(a,"--shield=");
       auto p=v.find(':');
       if(p!=std::string::npos){ o.shieldMaterial=v.substr(0,p);
                                  o.shieldThickness=std::stod(v.substr(p+1))*mm; }
-      else o.shieldMaterial=v;
+      else G4Exception("ParseArguments","BadInput",FatalException,
+                       "--shield must have the form --shield=<material>:<thickness_mm>; use --shield-material=<material> to change only the material");
     }
     else if(a.find("--shield-material=")==0){
       o.shieldMaterial=strVal(a,"--shield-material=");
@@ -276,6 +310,8 @@ Options ParseArguments(int argc, char** argv){
 
   if(o.sourceMode!="beam" && o.sourceMode!="isotropic")
     G4Exception("ParseArguments","BadInput",FatalException,"--source-mode must be either beam or isotropic");
+  if(o.outputPrefix.empty())
+    G4Exception("ParseArguments","BadInput",FatalException,"--output-prefix must not be empty");
   if(o.nEvents<=0)
     G4Exception("ParseArguments","BadInput",FatalException,"--events must be > 0");
   if(o.eMinProton<=0 || o.eMinAlpha<=0)

@@ -56,6 +56,46 @@ void RunAction::AddOutP (G4double E){ fOutP[SpecBins::Bin(E)]+=1; }
 void RunAction::AddOutA (G4double E){ fOutA[SpecBins::Bin(E)]+=1; }
 void RunAction::AddOutN (G4double E){ fOutN[SpecBins::Bin(E)]+=1; }
 
+bool RunAction::DiagnosticLimitReached(G4long rowsWritten) const {
+  return (fOpts.diagnosticMaxRows>0 && rowsWritten>=fOpts.diagnosticMaxRows);
+}
+
+void RunAction::RecordSourceSample(const std::string& species,
+                                   G4double energyMeV,
+                                   G4double xMM, G4double yMM, G4double zMM,
+                                   G4double ux, G4double uy, G4double uz){
+  // The source diagnostic is designed for automated source-sampling tests.
+  // It records the final particle state handed to G4ParticleGun, not the
+  // spectrum table itself.  Therefore beam tests can verify that x=y=0 and
+  // u=(0,0,1), while isotropic tests can verify p(mu)=2mu by taking mu=uz.
+  if(!fSourceDump.is_open() || DiagnosticLimitReached(fSourceDumpRows)) return;
+  fSourceDump<<std::scientific<<std::setprecision(12)
+             <<fSourceDumpRows<<' '<<species<<' '<<energyMeV<<' '
+             <<xMM<<' '<<yMM<<' '<<zMM<<' '
+             <<ux<<' '<<uy<<' '<<uz<<'\n';
+  ++fSourceDumpRows;
+}
+
+void RunAction::RecordExitParticle(const std::string& species,
+                                   G4double energyMeV,
+                                   G4double xGlobalMM, G4double yGlobalMM, G4double zGlobalMM,
+                                   G4double xLocalMM,  G4double yLocalMM,  G4double zLocalMM,
+                                   G4double uxLocal,   G4double uyLocal,   G4double uzLocal){
+  // The exit diagnostic is designed to validate shield-rear-face scoring.
+  // It is called only after SteppingAction has transformed the post-step point
+  // into shield-local coordinates and confirmed that the particle crossed the
+  // downstream face.  The local z coordinate should therefore be close to the
+  // local shield half-thickness, and the local direction cosine uzLocal should
+  // be positive.
+  if(!fExitDump.is_open() || DiagnosticLimitReached(fExitDumpRows)) return;
+  fExitDump<<std::scientific<<std::setprecision(12)
+           <<fExitDumpRows<<' '<<species<<' '<<energyMeV<<' '
+           <<xGlobalMM<<' '<<yGlobalMM<<' '<<zGlobalMM<<' '
+           <<xLocalMM <<' '<<yLocalMM <<' '<<zLocalMM <<' '
+           <<uxLocal  <<' '<<uyLocal  <<' '<<uzLocal  <<'\n';
+  ++fExitDumpRows;
+}
+
 void RunAction::AddEdep(std::size_t i,G4double edep){
   if(i<fEdep.size()) fEdep[i]+=edep;
 }
@@ -105,10 +145,11 @@ const std::vector<G4LogicalVolume*>& RunAction::GetScoringLVs() const{ return fS
 
 void RunAction::BeginOfRunAction(const G4Run*) {
   RefreshLVPointers();
+  OpenDiagnosticFiles();
 
   auto* am=G4AnalysisManager::Instance();
   am->Reset();
-  std::string csvName="shieldSimOutput";
+  std::string csvName=fOpts.outputPrefix+"Output";
   if(fSweepMode)
     csvName+="_"+SanitiseName(fCurrentMat)+"_"+FormatMM(fCurrentTmm)+"mm";
   csvName+=".csv";
@@ -130,7 +171,7 @@ void RunAction::BeginOfRunAction(const G4Run*) {
 
 void RunAction::EndOfRunAction(const G4Run* run) {
   G4int nEv=run->GetNumberOfEvent();
-  if(nEv==0) return;
+  if(nEv==0){ CloseDiagnosticFiles(); return; }
 
   // Dose per primary.  fEdep is in Geant4 energy units, mass is in Geant4 mass
   // units, therefore fEdep/mass is already in Geant4 dose units.
@@ -183,6 +224,8 @@ void RunAction::EndOfRunAction(const G4Run* run) {
   WriteSpectraTecplot(nEv);
   WriteComputedQuantitiesTecplot(nEv);
   if(fOpts.calcLET) WriteLETSpectrumTecplot(nEv);
+
+  CloseDiagnosticFiles();
 }
 
 std::string RunAction::SanitiseName(const std::string& s){
@@ -196,8 +239,54 @@ std::string RunAction::FormatMM(G4double t){
   return ss.str();
 }
 
+std::string RunAction::OutputName(const std::string& suffix) const {
+  // Preserve the historical names when outputPrefix is the default
+  // "shieldSim".  For example, OutputName("_spectra.dat") becomes
+  // "shieldSim_spectra.dat".  Test scripts can set --output-prefix=caseA to
+  // obtain caseA_spectra.dat, caseA_quantities.dat, and so on.
+  return fOpts.outputPrefix + suffix;
+}
+
+void RunAction::OpenDiagnosticFiles(){
+  // Diagnostic files are opened at BeginOfRunAction so a geometry sweep can
+  // reset them for each run if desired.  The Layer-2 test script uses one run
+  // per directory, so the non-append behavior is simplest and avoids stale
+  // rows from earlier tests.
+  fSourceDumpRows=0;
+  fExitDumpRows=0;
+
+  if(!fOpts.dumpSourceSamplesFile.empty()){
+    fSourceDump.open(fOpts.dumpSourceSamplesFile);
+    if(fSourceDump){
+      fSourceDump<<"# shieldSim source-sample diagnostic\n";
+      fSourceDump<<"# Columns:\n";
+      fSourceDump<<"#   row species E_MeV x_mm y_mm z_mm ux uy uz\n";
+      fSourceDump<<"# Positions are global coordinates in mm; u is a unit direction vector.\n";
+    } else {
+      G4cerr<<"Cannot open source diagnostic file "<<fOpts.dumpSourceSamplesFile<<G4endl;
+    }
+  }
+
+  if(!fOpts.dumpExitParticlesFile.empty()){
+    fExitDump.open(fOpts.dumpExitParticlesFile);
+    if(fExitDump){
+      fExitDump<<"# shieldSim shield-exit diagnostic\n";
+      fExitDump<<"# Columns:\n";
+      fExitDump<<"#   row species E_MeV xg_mm yg_mm zg_mm xl_mm yl_mm zl_mm uxl uyl uzl\n";
+      fExitDump<<"# Global positions are Geant4 world coordinates.  Local coordinates and directions are in the shield frame.\n";
+    } else {
+      G4cerr<<"Cannot open exit diagnostic file "<<fOpts.dumpExitParticlesFile<<G4endl;
+    }
+  }
+}
+
+void RunAction::CloseDiagnosticFiles(){
+  if(fSourceDump.is_open()) fSourceDump.close();
+  if(fExitDump.is_open())   fExitDump.close();
+}
+
 void RunAction::WriteSpectraTecplot(G4int nEv){
-  const std::string fname="shieldSim_spectra.dat";
+  const std::string fname=OutputName("_spectra.dat");
   std::ios::openmode mode= (fSweepMode && !fFirstSpectraWrite)
                            ? (std::ios::out|std::ios::app)
                            :  std::ios::out;
@@ -379,7 +468,7 @@ void RunAction::WriteComputedQuantitiesTecplot(G4int nEv){
   // (shielding x absorber) combinations requested by the run.
   if(!(fOpts.calcTID || fOpts.calcDDD || fOpts.calcNEq || fOpts.calcHardness)) return;
 
-  const std::string fname="shieldSim_quantities.dat";
+  const std::string fname=OutputName("_quantities.dat");
   const bool append = fSweepMode && !fFirstQuantitiesWrite;
   std::ofstream out(fname, append ? (std::ios::out|std::ios::app) : std::ios::out);
   if(!out){ G4cerr<<"Cannot write "<<fname<<G4endl; return; }
@@ -476,7 +565,7 @@ void RunAction::WriteLETSpectrumTecplot(G4int nEv){
   // The output contains an area-averaged per-primary fluence spectrum and a
   // source-normalized fluence-rate spectrum.  This is useful for comparing the
   // radiation quality of different shielding/target configurations.
-  const std::string fname="shieldSim_let_spectrum.dat";
+  const std::string fname=OutputName("_let_spectrum.dat");
   const bool append = fSweepMode && !fFirstLETWrite;
   std::ofstream out(fname, append ? (std::ios::out|std::ios::app) : std::ios::out);
   if(!out){ G4cerr<<"Cannot write "<<fname<<G4endl; return; }
