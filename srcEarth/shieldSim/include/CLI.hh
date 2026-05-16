@@ -8,7 +8,8 @@
  *
  * All options use --key=value syntax except boolean flags such as --sweep and
  * --sweep-log.  Length values are specified in mm.  Energy values are specified
- * in MeV total kinetic energy per particle.
+ * in MeV total kinetic energy per particle.  --quantities controls which
+ * post-processed radiation-effect outputs are written.
  * ========================================================================== */
 
 #include "ShieldSimConfig.hh"

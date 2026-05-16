@@ -16,6 +16,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(shieldSim
   shieldSim.cc
   src/CLI.cc
+  src/ComputedQuantities.cc
   src/DetectorConstruction.cc
   src/EventAction.cc
   src/GCRSpectrum.cc

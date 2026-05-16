@@ -11,7 +11,8 @@ The package version is split into normal Geant4-style source files while preserv
 - `beam` and `isotropic` source modes controlled by CLI,
 - local-coordinate shield rear-face scoring,
 - dose accumulation in Geant4 internal units,
-- detailed help text describing input/output units.
+- computed TID, DDD, 1-MeV neutron-equivalent fluence, LET spectra, and H100/10 hardness output,
+- detailed help text describing input/output units and radiation-effect approximations.
 
 ## Directory structure
 
@@ -22,6 +23,7 @@ shieldSim/
 ├── shieldSim.cc
 ├── include/
 │   ├── CLI.hh
+│   ├── ComputedQuantities.hh
 │   ├── DetectorConstruction.hh
 │   ├── EventAction.hh
 │   ├── GCRSpectrum.hh
@@ -34,6 +36,7 @@ shieldSim/
 │   └── SteppingAction.hh
 ├── src/
 │   ├── CLI.cc
+│   ├── ComputedQuantities.cc
 │   ├── DetectorConstruction.cc
 │   ├── EventAction.cc
 │   ├── GCRSpectrum.cc
@@ -193,7 +196,53 @@ Examples:
 ./shieldSim --shield=Al:2 --target=Si:1,SiO2:0.01,GaAs:1,InGaAs:1,Ge:1
 ```
 
-Organ/tissue names define material composition only.  `shieldSim` does not apply NASA limit checks, quality factors, LET/RBE weighting, organ weighting, NIEL conversion, displacement-damage conversion, or device response functions internally.  Those quantities require post-processing using the relevant radiation-protection or electronics-damage standard.
+Organ/tissue names define material composition only.  `shieldSim` does not apply NASA limit checks, quality factors, LET/RBE weighting, organ weighting, or device response functions internally.  It now provides documented first-order TID, DDD, n_eq, LET-spectrum, and hardness outputs; DDD/n_eq remain engineering proxies until replaced with authoritative material-specific NIEL and device-response data.
+
+
+## Computed quantity selection
+
+The code now computes the quantities shown in the UI for every selected `shield x target` combination.  By default all computed quantities are enabled:
+
+```bash
+./shieldSim --shield=Al:2 --target=BFO:50,Si:1 --quantities=all --events=100000
+```
+
+You can restrict the output with a comma-separated list:
+
+```bash
+./shieldSim --shield=Al:2 --target=Si:1 --quantities=TID,DDD,n_eq,H100/10
+./shieldSim --shield=Al:2 --target=Si:1 --quantities=TID,LET
+./shieldSim --list-quantities
+```
+
+Implemented quantities:
+
+```text
+TID       Total Ionizing Dose
+          D = E_dep / m.  E_dep is the Geant4 energy deposition in the selected target slab.
+          Output units: Gy/primary, rad/primary, Gy/s, rad/s.
+
+DDD       Displacement Damage Dose proxy
+          D_d = integral Phi(E) NIEL(E) dE.
+          Phi is the area-averaged transmitted fluence at the downstream shield face.
+          NIEL is a documented analytic surrogate in src/ComputedQuantities.cc.
+          Output units: MeV/g/primary and MeV/g/s, plus rad-equivalent columns.
+
+n_eq      1-MeV Neutron Equivalent fluence proxy
+          n_eq = DDD / NIEL_1MeV_neutron(material).
+          This convention is most meaningful for silicon electronics; non-silicon values are proxies.
+          Output units: cm^-2/primary and cm^-2/s.
+
+LET       LET spectrum
+          dPhi/dLET = integral dPhi/dE delta(LET - LET(E,material)) dE.
+          LET(E,material) is estimated with a Bethe-Bloch electronic mass-stopping-power approximation.
+          Output units: area-averaged fluence per primary and fluence rate per LET bin.
+
+H100/10   Spectral hardness index
+          H100/10 = J(>100 MeV) / J(>10 MeV) for transmitted protons + alphas + neutrons.
+```
+
+The equations, assumptions, and references are documented in `include/ComputedQuantities.hh` and `src/ComputedQuantities.cc`.  TID is directly scored by Geant4 and is the most robust output.  DDD, `n_eq`, and LET are post-processed engineering estimates.  For quantitative electronics damage work, replace `ComputedQuantities::NIEL_MeV_cm2_g()` with tabulated NIEL/SR-NIEL data for the target material and particle species of interest.
 
 ## Material-property references and adding new materials
 
@@ -203,7 +252,7 @@ The material-property references used by the built-in catalogs are documented in
 - `HDPE`, `BPE`, `Kevlar`, `CFRP`, `SiCComposite`, `LunarRegolith`, and `MarsRegolith` are custom ShieldSim trade-study approximations.
 - Composite and regolith definitions are intentionally approximate. Replace their density and mass fractions with measured project-specific values before using them for final quantitative analysis.
 - Tissue/organ target definitions are simplified material proxies. They are not anatomical phantoms and do not include biological weighting factors.
-- Electronics target definitions are transport media only. NIEL, displacement damage, LET, charge collection, and device response must be applied in post-processing.
+- Electronics target definitions are transport media only. The built-in DDD, n_eq, and LET outputs are documented engineering proxies; charge collection, dark-current response, threshold shifts, and device-specific damage response still require external post-processing.
 
 To add a new material:
 
@@ -270,12 +319,26 @@ For beam mode, normalized units are `particles/s/MeV` if the input spectrum is `
 
 For isotropic mode, normalized units are `particles/(cm2 s MeV)` if the input spectrum is `particles/(cm2 s sr MeV)`.
 
+### `shieldSim_quantities.dat`
+
+Tecplot-format scalar quantity table.  One row is written for each selected target material in each shielding configuration.  In sweep mode a new zone is appended for every shield thickness.
+
+- TID columns: `Gy/primary`, `rad/primary`, `Gy/s`, `rad/s`.
+- DDD columns: `MeV/g/primary`, `MeV/g/s`, and rad-equivalent conversions.
+- `n_eq` columns: `cm^-2/primary` and `cm^-2/s`.
+- `H100_10`: dimensionless hardness index.
+
+### `shieldSim_let_spectrum.dat`
+
+Tecplot-format LET spectra, one zone for each target material and shielding configuration when LET is enabled.  LET is in `MeV cm2/mg`.  Per-primary columns are area-averaged fluence per source primary per LET unit; rate columns multiply by the source-primary rate.
+
 ### `shieldSim_dose_sweep.dat`
 
 Written only in sweep mode.
 
-- `Dose_*_perPrimary` columns are `Gy/primary`.
+- `Dose_*_perPrimary` columns are `Gy/primary` when TID is enabled.
 - `DoseRate_*` columns are `Gy/s` when the source spectrum has physical units.
+- DDD, `n_eq`, and `H100_10` sweep columns are also included when those quantities are enabled.
 
 ### `shieldSimOutput*.csv`
 
@@ -287,3 +350,5 @@ Geant4 analysis histograms for exit energies of protons, alphas, and neutrons.
 - The built-in material catalog is intended for shielding trade studies.  Use `G4_` NIST names or replace the custom definitions if an exact alloy, polymer formulation, composite layup, or regolith composition is required.
 - The isotropic source uses a finite upstream plane, not an infinite half-space source. Very oblique trajectories can interact with the finite side boundaries.
 - The default detector transverse size is 5 cm × 5 cm. Dose per primary depends on the scoring mass and therefore on this finite detector area.
+- DDD and n_eq are based on a transparent analytic NIEL surrogate, not authoritative material-specific NIEL tables.  Replace the NIEL function for final electronics-damage analyses.
+- LET spectra use a Bethe-Bloch estimate for binning.  Use NIST/Geant4 stopping-power tables if high-accuracy LET spectra are required.

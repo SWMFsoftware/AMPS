@@ -57,6 +57,18 @@ struct Options {
   // Each entry is (NIST material name, slab thickness in Geant4 length units).
   std::vector<std::pair<std::string,G4double>> scoringMaterials;
 
+
+  // ---- post-processed computed quantities ---------------------------------
+  // The Geant4 transport always scores energy deposition and transmitted
+  // spectra.  These switches control which derived radiation-effect quantities
+  // are written at the end of each run.  Defaults compute all quantities shown
+  // in the UI: TID, DDD, n_eq, LET spectrum, and H100/10.
+  bool calcTID      = true;
+  bool calcDDD      = true;
+  bool calcNEq      = true;
+  bool calcLET      = true;
+  bool calcHardness = true;
+
   // ---- statistics ----------------------------------------------------------
   G4int nEvents = 10000;
 
@@ -71,6 +83,7 @@ struct Options {
   bool showHelp = false;
   bool listMaterials = false;       // print shielding-material catalog and exit
   bool listTargetMaterials = false; // print detector/absorber/target-material catalog and exit
+  bool listQuantities = false;      // print computed-quantity definitions and exit
 };
 
 // One row in the dose-vs-thickness sweep output table.
@@ -78,7 +91,20 @@ struct SweepPoint {
   G4double thickMM;                       // shield thickness [mm]
   G4double arealDensity;                  // shield areal density [g/cm^2]
   std::vector<G4double> dose_Gy;          // dose per primary, in G4 dose units
-  std::vector<G4double> doseRate_Gy_s;    // source-normalized dose rate
+  std::vector<G4double> doseRate_Gy_s;    // source-normalized ionizing dose rate
+
+  // Spectrum-folded radiation-effect outputs.  DDD is accumulated in MeV/g
+  // because NIEL response functions are conventionally in MeV cm^2/g and
+  // fluence is in cm^-2.  The rad-equivalent conversion is written at output
+  // time.  n_eq is the equivalent 1-MeV-neutron fluence in cm^-2.
+  std::vector<G4double> ddd_MeV_g_perPrimary;
+  std::vector<G4double> dddRate_MeV_g_s;
+  std::vector<G4double> neq_cm2_perPrimary;
+  std::vector<G4double> neqRate_cm2_s;
+
+  // H100/10 is independent of the target material, but it is repeated in the
+  // per-target output rows so each shielding x absorber row is self-contained.
+  G4double hardness_H100_10 = 0.0;
 };
 
 #endif // SHIELDSIM_CONFIG_HH

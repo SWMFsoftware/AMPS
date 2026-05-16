@@ -18,6 +18,10 @@
  * MaterialCatalog.hh only; the --help, --list-materials, and
  * --list-target-materials tables will update automatically.
  *
+ * Computed-quantity help text is generated from ComputedQuantities.hh/.cc so
+ * equations, approximations, and output units are documented in the same module
+ * that implements the calculations.
+ *
  * Units shown to users
  * --------------------
  * All CLI thicknesses are given in mm.  All CLI kinetic-energy limits are given
@@ -27,6 +31,7 @@
 
 #include "CLI.hh"
 
+#include "ComputedQuantities.hh"
 #include "MaterialCatalog.hh"
 
 #include <G4Exception.hh>
@@ -102,6 +107,14 @@ void PrintHelp(){
   std::cout<<"  --list-targets            Alias for --list-target-materials.\n";
   std::cout<<DetectorMaterialCatalogText();
 
+  std::cout<<"COMPUTED QUANTITY SELECTION\n";
+  std::cout<<"  --quantities=<list>      Comma-separated list of computed quantities.\n";
+  std::cout<<"                           Allowed: all, none, TID, DDD, n_eq, LET, H100/10.\n";
+  std::cout<<"                           Default: all.\n";
+  std::cout<<"  --list-quantities       Print quantity definitions, equations, assumptions,\n";
+  std::cout<<"                           output units, and implementation notes, then exit.\n";
+  std::cout<<ComputedQuantities::QuantityCatalogText();
+
   std::cout<<"SOURCE AND SPECTRUM OPTIONS\n";
   std::cout<<"  --source-mode=<mode>     Source angular/spatial model: beam or isotropic.\n";
   std::cout<<"                           beam: pencil beam at x=y=0, direction +z.\n";
@@ -154,6 +167,9 @@ void PrintHelp(){
   std::cout<<"                           Isotropic mode *_Norm units: particles/(cm2 s\n";
   std::cout<<"                           MeV) if input spectrum units are particles/(cm2\n";
   std::cout<<"                           s sr MeV).\n";
+  std::cout<<"  shieldSim_quantities.dat  Tecplot scalar quantities for each shield x target\n";
+  std::cout<<"                           row: TID, DDD, n_eq, and H100/10 when enabled.\n";
+  std::cout<<"  shieldSim_let_spectrum.dat Tecplot LET spectra for each target when LET is enabled.\n";
   std::cout<<"  shieldSim_dose_sweep.dat Tecplot dose vs thickness. Dose_* columns are\n";
   std::cout<<"                           Gy/primary. DoseRate_* columns are Gy/s when\n";
   std::cout<<"                           the input source spectrum has physical units.\n";
@@ -188,6 +204,19 @@ Options ParseArguments(int argc, char** argv){
     if(a=="-h"||a=="-help"||a=="--help"){ o.showHelp=true; }
     else if(a=="--list-materials"){ o.listMaterials=true; }
     else if(a=="--list-target-materials" || a=="--list-detector-materials" || a=="--list-targets"){ o.listTargetMaterials=true; }
+    else if(a=="--list-quantities"){ o.listQuantities=true; }
+    else if(a.find("--quantities=")==0){
+      // Quantity selection is deliberately separated from transport.  Geant4
+      // still transports particles and scores the raw quantities needed by the
+      // post-processor; these switches only control which derived outputs are
+      // written.  See ComputedQuantities.cc for equations and approximations.
+      auto sel = ComputedQuantities::ParseSelection(strVal(a,"--quantities="));
+      o.calcTID      = sel.tid;
+      o.calcDDD      = sel.ddd;
+      o.calcNEq      = sel.neq;
+      o.calcLET      = sel.let;
+      o.calcHardness = sel.hardness;
+    }
     else if(a.find("--physics-list=")==0){ o.physicsList=strVal(a,"--physics-list="); }
     else if(a.find("--phys=")==0){ o.physicsList=strVal(a,"--phys="); }
     else if(a.find("--source-mode=")==0){ o.sourceMode=strVal(a,"--source-mode="); }

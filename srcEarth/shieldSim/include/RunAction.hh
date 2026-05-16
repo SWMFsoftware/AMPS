@@ -55,6 +55,11 @@ public:
   const std::vector<SweepPoint>& GetSweepData() const;
   const std::vector<G4double>&   GetLastDose() const;
   const std::vector<G4double>&   GetLastDoseRate() const;
+  const std::vector<G4double>&   GetLastDDD() const;
+  const std::vector<G4double>&   GetLastDDDRate() const;
+  const std::vector<G4double>&   GetLastNEq() const;
+  const std::vector<G4double>&   GetLastNEqRate() const;
+  G4double                      GetLastHardness() const;
 
   void RefreshLVPointers();
   G4LogicalVolume*                     GetShieldLV() const;
@@ -67,6 +72,10 @@ private:
   static std::string SanitiseName(const std::string& s);
   static std::string FormatMM(G4double t);
   void WriteSpectraTecplot(G4int nEv);
+  void ComputeSpectrumFoldedQuantities(G4int nEv);
+  void WriteComputedQuantitiesTecplot(G4int nEv);
+  void WriteLETSpectrumTecplot(G4int nEv);
+  G4double ComputeHardnessIndex(G4int nEv) const;
 
   Options                     fOpts;
   DetectorConstruction*       fDetector=nullptr;
@@ -79,6 +88,11 @@ private:
   std::vector<G4double>       fEdep;
   std::vector<G4double>       fLastDose;
   std::vector<G4double>       fLastDoseRate;
+  std::vector<G4double>       fLastDDD;
+  std::vector<G4double>       fLastDDDRate;
+  std::vector<G4double>       fLastNEq;
+  std::vector<G4double>       fLastNEqRate;
+  G4double                    fLastHardness=0.0;
   std::vector<G4double>       fInP,fInA,fOutP,fOutA,fOutN;
 
   G4double    fSourceNormNoAngular=0.0;
@@ -90,6 +104,8 @@ private:
   std::string fCurrentMat;
   G4double    fCurrentTmm=0;
   bool        fFirstSpectraWrite=true;
+  bool        fFirstQuantitiesWrite=true;
+  bool        fFirstLETWrite=true;
   std::vector<SweepPoint> fSweepData;
 };
 

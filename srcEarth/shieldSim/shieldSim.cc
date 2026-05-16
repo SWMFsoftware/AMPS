@@ -15,6 +15,11 @@
  *   2. Energy-deposition dose in one or more downstream scoring slabs, such as
  *      water and silicon detector layers.
  *
+ *   3. Post-processed computed quantities for every selected
+ *      shielding x target combination: total ionizing dose (TID),
+ *      displacement damage dose proxy (DDD), 1-MeV neutron-equivalent fluence
+ *      proxy (n_eq), LET spectra, and the H100/10 spectral hardness index.
+ *
  * Geometry
  * --------
  * The detector is a one-dimensional slab stack embedded in vacuum:
@@ -43,8 +48,22 @@
  * Detector/target materials include crewed-mission tissue proxies such as Skin,
  * EyeLens, BFO, CNS, and SoftTissue, and electronics materials such as Si,
  * SiO2, SiC, GaAs, InGaAs, Ge, and H2O.  These entries define material
- * composition only.  Dose-equivalent weighting, NASA limit checks, NIEL/DDD
- * conversion, or device response functions must be applied separately.
+ * composition only.  Biological dose-equivalent weighting, organ weighting,
+ * NASA limit checks, and detailed device response functions are not applied.
+ *
+ * Computed quantities
+ * -------------------
+ * TID is computed directly from Geant4 energy deposition in the selected target
+ * slabs using D = E_dep/m.  DDD and n_eq are computed by folding the transmitted
+ * downstream-face spectrum with a documented analytic NIEL surrogate,
+ * D_d = integral Phi(E) NIEL(E) dE, then using n_eq = D_d/NIEL_1MeV_neutron.
+ * LET spectra are computed by mapping transmitted charged-particle energy bins
+ * to target-material LET bins using a self-contained Bethe-Bloch electronic
+ * mass-stopping-power approximation.  H100/10 is J(>100 MeV)/J(>10 MeV) for
+ * the transmitted p+alpha+n spectrum.  The equations, assumptions, units, and
+ * references are documented in include/ComputedQuantities.hh and
+ * src/ComputedQuantities.cc.  For production electronics damage studies, replace
+ * the analytic NIEL surrogate with tabulated NIEL/SR-NIEL response functions.
  *
  * To add a new material, add a MaterialCatalogEntry in ShieldMaterialCatalog()
  * or DetectorMaterialCatalog().  If the material is already provided by
@@ -92,12 +111,15 @@
  *           scoring slabs and transmitted particles crossing the shield rear
  *           face in shield-local coordinates.
  *        d. At end of run, RunAction computes dose per primary, source-normalized
- *           dose rate, and writes spectra.
- *   4. In sweep mode, write the dose-vs-thickness Tecplot table.
+ *           dose rate, spectrum-folded DDD/n_eq,
+ *           LET spectra, hardness index, and writes spectra/quantity files.
+ *   4. In sweep mode, write the dose-vs-thickness Tecplot table and append one
+ *      zone per shielding thickness to the scalar-quantity and LET files.
  * ========================================================================== */
 
 #include "CLI.hh"
 #include "DetectorConstruction.hh"
+#include "ComputedQuantities.hh"
 #include "EventAction.hh"
 #include "MaterialCatalog.hh"
 #include "OutputUtils.hh"
@@ -130,6 +152,10 @@ int main(int argc,char** argv){
           <<DetectorMaterialCatalogText()<<G4endl;
     return 0;
   }
+  if(opts.listQuantities){
+    G4cout<<ComputedQuantities::QuantityCatalogText()<<G4endl;
+    return 0;
+  }
 
   // Collect scoring names and thicknesses once.  RunAction uses these for
   // reports and output variable names, while DetectorConstruction owns the
@@ -152,6 +178,13 @@ int main(int argc,char** argv){
   G4cout<<"E proton  : ["<<opts.eMinProton<<", "<<opts.eMaxProton<<"] MeV"<<G4endl;
   G4cout<<"E alpha   : ["<<opts.eMinAlpha <<", "<<opts.eMaxAlpha <<"] MeV"<<G4endl;
   G4cout<<"Events    : "<<opts.nEvents<<" per run"<<G4endl;
+  ComputedQuantities::Selection qsel;
+  qsel.tid      = opts.calcTID;
+  qsel.ddd      = opts.calcDDD;
+  qsel.neq      = opts.calcNEq;
+  qsel.let      = opts.calcLET;
+  qsel.hardness = opts.calcHardness;
+  G4cout<<"Quantities: "<<ComputedQuantities::SelectionSummary(qsel)<<G4endl;
   G4cout<<"Scoring   :";
   for(const auto& s:opts.scoringMaterials)
     G4cout<<"  "<<DescribeDetectorMaterial(s.first)<<":"<<s.second/mm<<"mm";
@@ -253,6 +286,11 @@ int main(int argc,char** argv){
       sp.arealDensity  = areal;
       sp.dose_Gy       = runAction->GetLastDose();
       sp.doseRate_Gy_s = runAction->GetLastDoseRate();
+      sp.ddd_MeV_g_perPrimary = runAction->GetLastDDD();
+      sp.dddRate_MeV_g_s      = runAction->GetLastDDDRate();
+      sp.neq_cm2_perPrimary   = runAction->GetLastNEq();
+      sp.neqRate_cm2_s        = runAction->GetLastNEqRate();
+      sp.hardness_H100_10     = runAction->GetLastHardness();
       runAction->AppendSweepPoint(sp);
     }
   }
