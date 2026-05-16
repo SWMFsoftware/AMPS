@@ -25,6 +25,12 @@
 #include <vector>
 
 struct Options {
+  // ---- physics configuration ----------------------------------------------
+  // Geant4 reference physics list created through G4PhysListFactory.
+  // Supported CLI values are currently:
+  //   FTFP_BERT, FTFP_BERT_HP, Shielding, QGSP_BIC_HP
+  std::string physicsList = "FTFP_BERT";
+
   // ---- source and spectrum configuration ----------------------------------
   // Empty spectrumFile selects the built-in approximate GCR spectrum.
   std::string spectrumFile = "";

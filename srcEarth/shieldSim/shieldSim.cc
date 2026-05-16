@@ -50,8 +50,10 @@
  * Algorithm
  * ---------
  *   1. Parse command-line options into Options.
- *   2. Create the Geant4 run manager, detector, physics list, primary generator,
- *      run action, event action, and stepping action.
+ *   2. Create the Geant4 run manager, detector, selected physics list, primary
+ *      generator, run action, event action, and stepping action.
+ *      The physics list is selected with --physics-list and created using
+ *      G4PhysListFactory.
  *   3. For each requested shield thickness:
  *        a. Build or reinitialize the geometry.
  *        b. Run BeamOn(nEvents).
@@ -99,6 +101,7 @@ int main(int argc,char** argv){
   }
 
   G4cout<<"============ shieldSim configuration ============"<<G4endl;
+  G4cout<<"Physics  : "<<opts.physicsList<<G4endl;
   G4cout<<"Spectrum  : "
         <<(opts.spectrumFile.empty()?"GCR Badhwar-O'Neill phi=550MV"
                                     :opts.spectrumFile)<<G4endl;
@@ -155,10 +158,16 @@ int main(int argc,char** argv){
   auto* detector = new DetectorConstruction(opts);
   runManager->SetUserInitialization(detector);
 
+  // Create the requested Geant4 reference physics list.  The CLI parser
+  // validates the allowed names, but we still check the factory return value
+  // here so that build/runtime differences in Geant4 installations fail
+  // cleanly with an explicit message.
   G4PhysListFactory factory;
-  auto* physList=factory.GetReferencePhysList("FTFP_BERT");
-  if(!physList) G4Exception("main","PhysList",FatalException,
-                            "Cannot create FTFP_BERT.");
+  auto* physList=factory.GetReferencePhysList(opts.physicsList);
+  if(!physList){
+    const G4String msg = G4String("Cannot create requested physics list: ") + opts.physicsList;
+    G4Exception("main","PhysList",FatalException,msg.c_str());
+  }
   physList->SetVerboseLevel(0);
   runManager->SetUserInitialization(physList);
 

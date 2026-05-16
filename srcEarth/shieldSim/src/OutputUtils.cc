@@ -15,7 +15,8 @@ void WriteDoseSweepTecplot(const std::vector<SweepPoint>& data,
   std::ofstream out(fname);
   if(!out){ G4cerr<<"Cannot write "<<fname<<G4endl; return; }
 
-  out<<"TITLE = \"Dose vs Shield Thickness - Geant4/FTFP_BERT\"\n";
+  out<<"TITLE = \"Dose vs Shield Thickness - Geant4/"<<opts.physicsList<<"\"\n";
+  out<<"# Physics list: "<<opts.physicsList<<"\n";
   out<<"# Dose_perPrimary columns are Gy/primary.\n";
   out<<"# DoseRate columns are Gy/s if the input source spectrum units are physical.\n";
   out<<"# Beam mode assumes the source spectrum columns are differential beam rates [particles/s/MeV].\n";

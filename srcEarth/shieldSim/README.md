@@ -4,6 +4,7 @@
 
 The package version is split into normal Geant4-style source files while preserving the logic from the single-file prototype:
 
+- CLI-selectable Geant4 physics list (`FTFP_BERT`, `FTFP_BERT_HP`, `Shielding`, `QGSP_BIC_HP`),
 - source normalization using `J(E) dE`,
 - `beam` and `isotropic` source modes controlled by CLI,
 - local-coordinate shield rear-face scoring,
@@ -62,16 +63,17 @@ cmake .. -DGeant4_DIR=/path/to/geant4/lib/Geant4-11.*/
 
 ## Run examples
 
-Single 2 mm Al shield with the built-in GCR-like spectrum:
+Single 2 mm Al shield with the built-in GCR-like spectrum and the default physics list:
 
 ```bash
 ./shieldSim --source-mode=beam --shield=G4_Al:2 --events=50000
 ```
 
-Isotropic source over the upstream plane:
+Isotropic source over the upstream plane using high-precision neutron transport:
 
 ```bash
-./shieldSim --source-mode=isotropic --shield=G4_Al:2 --events=50000
+./shieldSim --physics-list=FTFP_BERT_HP --source-mode=isotropic \
+            --shield=G4_Al:2 --events=50000
 ```
 
 Tabulated SEP-like source spectrum:
@@ -87,6 +89,26 @@ Dose-vs-thickness sweep:
 ./shieldSim --sweep --source-mode=isotropic --sweep-material=G4_Al \
             --sweep-tmin=0.5 --sweep-tmax=30 --sweep-n=15 \
             --sweep-log --events=20000
+```
+
+## Physics-list selection
+
+Use `--physics-list=<name>` to select the Geant4 reference physics list at runtime. Supported values are:
+
+```text
+FTFP_BERT
+FTFP_BERT_HP
+Shielding
+QGSP_BIC_HP
+```
+
+The default is `FTFP_BERT`. For shielding calculations where low-energy secondary neutrons can affect dose behind the absorber, compare against one of the high-precision neutron options, especially `FTFP_BERT_HP`, `QGSP_BIC_HP`, or `Shielding`.
+
+Example:
+
+```bash
+./shieldSim --physics-list=Shielding --source-mode=isotropic \
+            --shield=G4_Al:5 --events=100000
 ```
 
 ## Spectrum input units
@@ -139,6 +161,6 @@ Geant4 analysis histograms for exit energies of protons, alphas, and neutrons.
 
 ## Notes and limitations
 
-- The default physics list is `FTFP_BERT`. For radiation-shielding studies with neutron production, compare with `FTFP_BERT_HP`, `QGSP_BIC_HP`, or the Geant4 `Shielding` physics list.
+- The default physics list is `FTFP_BERT`, and the runtime option `--physics-list=` supports `FTFP_BERT`, `FTFP_BERT_HP`, `Shielding`, and `QGSP_BIC_HP`.
 - The isotropic source uses a finite upstream plane, not an infinite half-space source. Very oblique trajectories can interact with the finite side boundaries.
 - The default detector transverse size is 5 cm × 5 cm. Dose per primary depends on the scoring mass and therefore on this finite detector area.

@@ -4,11 +4,50 @@
 #include <G4SystemOfUnits.hh>
 #include <G4ios.hh>
 
+#include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <vector>
+
+namespace {
+
+const std::vector<std::string>& AllowedPhysicsLists(){
+  static const std::vector<std::string> lists = {
+    "FTFP_BERT",
+    "FTFP_BERT_HP",
+    "Shielding",
+    "QGSP_BIC_HP"
+  };
+  return lists;
+}
+
+bool IsAllowedPhysicsList(const std::string& name){
+  const auto& lists = AllowedPhysicsLists();
+  return std::find(lists.begin(),lists.end(),name)!=lists.end();
+}
+
+std::string AllowedPhysicsListText(){
+  const auto& lists = AllowedPhysicsLists();
+  std::string out;
+  for(std::size_t i=0;i<lists.size();++i){
+    if(i) out += ", ";
+    out += lists[i];
+  }
+  return out;
+}
+
+} // namespace
 
 void PrintHelp(){
   std::cout<<"\nUsage: shieldSim [options]\n\n";
+
+  std::cout<<"PHYSICS OPTIONS\n";
+  std::cout<<"  --physics-list=<name>    Geant4 reference physics list. Default: FTFP_BERT.\n";
+  std::cout<<"                           Supported: "<<AllowedPhysicsListText()<<".\n";
+  std::cout<<"                           FTFP_BERT is the baseline Bertini cascade list.\n";
+  std::cout<<"                           FTFP_BERT_HP adds high-precision neutron transport.\n";
+  std::cout<<"                           Shielding is Geant4's radiation-shielding list.\n";
+  std::cout<<"                           QGSP_BIC_HP uses binary cascade plus HP neutrons.\n";
 
   std::cout<<"SOURCE AND SPECTRUM OPTIONS\n";
   std::cout<<"  --source-mode=<mode>     Source angular/spatial model: beam or isotropic.\n";
@@ -73,8 +112,9 @@ void PrintHelp(){
   std::cout<<"\nEXAMPLES\n";
   std::cout<<"  # Single run, 2 mm Al, normal-incidence beam, built-in GCR-like spectrum\n";
   std::cout<<"  ./shieldSim --source-mode=beam --shield=G4_Al:2 --events=50000\n\n";
-  std::cout<<"  # Isotropic source over the upstream plane\n";
-  std::cout<<"  ./shieldSim --source-mode=isotropic --shield=G4_Al:2 --events=50000\n\n";
+  std::cout<<"  # Isotropic source over the upstream plane using high-precision neutrons\n";
+  std::cout<<"  ./shieldSim --physics-list=FTFP_BERT_HP --source-mode=isotropic \\\n";
+  std::cout<<"              --shield=G4_Al:2 --events=50000\n\n";
   std::cout<<"  # Tabulated source spectrum, isotropic mode\n";
   std::cout<<"  ./shieldSim --source-mode=isotropic --spectrum=../examples/sep_spectrum.dat \\\n";
   std::cout<<"              --shield=G4_Al:2 --events=100000\n\n";
@@ -96,6 +136,8 @@ Options ParseArguments(int argc, char** argv){
   for(int i=1;i<argc;++i){
     std::string a=argv[i];
     if(a=="-h"||a=="-help"||a=="--help"){ o.showHelp=true; }
+    else if(a.find("--physics-list=")==0){ o.physicsList=strVal(a,"--physics-list="); }
+    else if(a.find("--phys=")==0){ o.physicsList=strVal(a,"--phys="); }
     else if(a.find("--source-mode=")==0){ o.sourceMode=strVal(a,"--source-mode="); }
     else if(a.find("--spectrum=")==0){ o.spectrumFile=strVal(a,"--spectrum="); }
     else if(a.find("--emin=")==0){ o.eMinProton=o.eMinAlpha=std::stod(strVal(a,"--emin=")); }
@@ -133,6 +175,11 @@ Options ParseArguments(int argc, char** argv){
   }
 
   if(o.sweepMaterial.empty()) o.sweepMaterial=o.shieldMaterial;
+
+  if(!IsAllowedPhysicsList(o.physicsList)){
+    const std::string msg = "--physics-list must be one of: " + AllowedPhysicsListText();
+    G4Exception("ParseArguments","BadInput",FatalException,msg.c_str());
+  }
 
   if(o.sourceMode!="beam" && o.sourceMode!="isotropic")
     G4Exception("ParseArguments","BadInput",FatalException,"--source-mode must be either beam or isotropic");

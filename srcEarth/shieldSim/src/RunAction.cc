@@ -179,7 +179,8 @@ void RunAction::WriteSpectraTecplot(G4int nEv){
   if(!out){ G4cerr<<"Cannot write "<<fname<<G4endl; return; }
 
   if(!fSweepMode || fFirstSpectraWrite){
-    out<<"TITLE = \"Energetic Particle Shielding Simulation Spectra - Geant4/FTFP_BERT\"\n";
+    out<<"TITLE = \"Energetic Particle Shielding Simulation Spectra - Geant4/"<<fOpts.physicsList<<"\"\n";
+    out<<"# Physics list: "<<fOpts.physicsList<<"\n";
     out<<"# Energy unit: MeV total kinetic energy per particle.\n";
     out<<"# MC spectra: raw Monte Carlo counts/(MeV primary).\n";
     out<<"# Source-normalized spectra: MC spectra multiplied by the integrated source normalization.\n";
