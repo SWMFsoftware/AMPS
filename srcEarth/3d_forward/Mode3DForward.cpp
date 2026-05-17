@@ -917,12 +917,6 @@ static long int InjectParticles() {
     // old equal-weight behavior when AMPS is compiled without per-particle weights.
 #endif
 
-    // Keep the AMPS block/species base weight fixed.  The energy-dependent factor
-    // is stored on the particle itself.  Do not fold qNorm into the block-local
-    // weight: that weight is shared by all particles of the species in the block,
-    // including particles injected during previous time steps.
-    c.startNode->block->SetLocalParticleWeight(sParticleWeight, sSpecies);
-
 #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
     PIC::ParticleTracker::InitParticleID(pData);
     PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(
