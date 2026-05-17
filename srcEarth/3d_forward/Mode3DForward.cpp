@@ -365,8 +365,7 @@ static int ForwardModeParticleSphereInteraction(
   cSphereFlux3D::SampleParticleImpact(spec, ptr, x, v, nodeData, sphereData);
 
   // Particles reaching the inner sphere are absorbed by Earth.
-  PIC::ParticleBuffer::DeleteParticle(ptr);
-  return _PARTICLE_LEFT_THE_DOMAIN_;
+  return _PARTICLE_DELETED_ON_THE_FACE_;
 }
 
 // ============================================================================

@@ -196,7 +196,7 @@ void cSphereFlux3D::SampleParticleImpact(int spec,
   const std::size_t idx =
       (static_cast<std::size_t>(surfaceElement) * nEnergyBins) + iE;
   if (idx < sphereFluxBuffer_.size())
-    sphereFluxBuffer_[idx] += weight / (area * dE);
+    sphereFluxBuffer_[idx] += weight / area;
 }
 
 //======================================================================================
