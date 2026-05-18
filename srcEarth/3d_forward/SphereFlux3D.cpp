@@ -296,7 +296,7 @@ void cSphereFlux3D::OutputSampledData(int dataOutputFileNumber) {
             for (int iE = 0; iE < nEnergyBins; iE++) {
               const double J_perJ = sphereFluxSampled_[base + iE];
               std::fprintf(fout, " %.8e", J_perJ);
-              totalFlux += J_perJ * GetBinWidthJ(iE);
+              totalFlux += J_perJ;
             }
 
             std::fprintf(fout, " %.8e\n", totalFlux);
