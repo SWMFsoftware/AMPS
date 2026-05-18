@@ -1594,6 +1594,25 @@ int main(int argc,char **argv) {
           p.mode3dForward.injectionEnergyDistribution =
               EarthUtil::ToUpper(cli.forward3dInjectionEnergyDistribution);
 
+        // Optional CLI override for the 3d_forward particle-energy limits.
+        // In forward mode, #DENSITY_3D is treated as the authoritative particle
+        // energy grid: it controls density-output bins, the DENS_EMAX time-step
+        // estimate, and the boundary injection/integration range used inside
+        // Mode3DForward::Run().  Therefore the CLI limit override updates the
+        // effective density3d range rather than editing only #SPECTRUM.
+        if (cli.forward3dInjectionEmin_MeV > 0.0)
+          p.density3d.Emin_MeV = cli.forward3dInjectionEmin_MeV;
+        if (cli.forward3dInjectionEmax_MeV > 0.0)
+          p.density3d.Emax_MeV = cli.forward3dInjectionEmax_MeV;
+
+        if (!(p.density3d.Emin_MeV > 0.0) ||
+            !(p.density3d.Emax_MeV > p.density3d.Emin_MeV)) {
+          std::cerr << "Error: 3d_forward energy limits require 0 < Emin < Emax "
+                    << "(MeV/n). Current values: Emin=" << p.density3d.Emin_MeV
+                    << ", Emax=" << p.density3d.Emax_MeV << "\n";
+          return 1;
+        }
+
         // Particle mover (shared with backward mode for consistency).
         if (!ApplyCutoffMoverCli(cli)) return 1;
 

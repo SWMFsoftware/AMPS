@@ -2468,6 +2468,19 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
   }
 
+  // Validate 3d_forward density/energy-grid controls if requested.
+  if (ToUpper(p.calc.target)=="DENSITY_3D") {
+    if (!(p.density3d.Emin_MeV > 0.0)) {
+      exit(__LINE__,__FILE__,"DENS_EMIN must be > 0 (MeV/n)");
+    }
+    if (!(p.density3d.Emax_MeV > p.density3d.Emin_MeV)) {
+      exit(__LINE__,__FILE__,"DENS_EMAX must be > DENS_EMIN (MeV/n)");
+    }
+    if (!(p.density3d.nEnergyBins >= 1)) {
+      exit(__LINE__,__FILE__,"DENS_NENERGY must be >= 1");
+    }
+  }
+
   // Validate density/spectrum controls if requested.
   if (ToUpper(p.calc.target)=="DENSITY_SPECTRUM") {
     if (!(p.densitySpectrum.Emin_MeV>0.0)) {

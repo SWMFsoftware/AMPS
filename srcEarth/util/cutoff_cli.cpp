@@ -153,11 +153,52 @@ CliOptions ParseCli(int argc,char** argv) {
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -forward-injection-energy");
       opt.forward3dInjectionEnergyDistribution = argv[++i];
     }
+    else if (a=="-forward-injection-emin" || a=="--forward-injection-emin" ||
+             a=="-forward-emin" || a=="--forward-emin" ||
+             a=="-forward-injection-energy-min" || a=="--forward-injection-energy-min") {
+      // Lower kinetic-energy limit [MeV/n] for 3d_forward injected particles.
+      // This overrides the effective #DENSITY_3D DENS_EMIN value so the source
+      // range and density-output energy grid remain synchronized.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -forward-injection-emin");
+      opt.forward3dInjectionEmin_MeV = std::stod(argv[++i]);
+      if (!(opt.forward3dInjectionEmin_MeV > 0.0))
+        exit(__LINE__,__FILE__,"-forward-injection-emin must be > 0 (MeV/n)");
+    }
+    else if (a=="-forward-injection-emax" || a=="--forward-injection-emax" ||
+             a=="-forward-emax" || a=="--forward-emax" ||
+             a=="-forward-injection-energy-max" || a=="--forward-injection-energy-max") {
+      // Upper kinetic-energy limit [MeV/n] for 3d_forward injected particles.
+      // This overrides the effective #DENSITY_3D DENS_EMAX value so the source
+      // range and density-output energy grid remain synchronized.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -forward-injection-emax");
+      opt.forward3dInjectionEmax_MeV = std::stod(argv[++i]);
+      if (!(opt.forward3dInjectionEmax_MeV > 0.0))
+        exit(__LINE__,__FILE__,"-forward-injection-emax must be > 0 (MeV/n)");
+    }
+    else if (a=="-forward-injection-energy-range" || a=="--forward-injection-energy-range" ||
+             a=="-forward-energy-range" || a=="--forward-energy-range") {
+      // Convenience form: set both limits in one option.
+      // Example: -forward-injection-energy-range 1.0 20000.0
+      if (i+2>=argc) exit(__LINE__,__FILE__,"Missing values after -forward-injection-energy-range");
+      opt.forward3dInjectionEmin_MeV = std::stod(argv[++i]);
+      opt.forward3dInjectionEmax_MeV = std::stod(argv[++i]);
+      if (!(opt.forward3dInjectionEmin_MeV > 0.0))
+        exit(__LINE__,__FILE__,"-forward-injection-energy-range Emin must be > 0 (MeV/n)");
+      if (!(opt.forward3dInjectionEmax_MeV > opt.forward3dInjectionEmin_MeV))
+        exit(__LINE__,__FILE__,"-forward-injection-energy-range requires Emax > Emin (MeV/n)");
+    }
     else {
       std::ostringstream oss;
       oss << "Unknown CLI token: '" << a << "'. Use -h for help.";
       exit(__LINE__,__FILE__,oss.str().c_str());
     }
+  }
+
+  if (opt.forward3dInjectionEmin_MeV > 0.0 &&
+      opt.forward3dInjectionEmax_MeV > 0.0 &&
+      !(opt.forward3dInjectionEmax_MeV > opt.forward3dInjectionEmin_MeV)) {
+    exit(__LINE__, __FILE__,
+         "3d_forward injection energy limits require Emax > Emin (MeV/n)");
   }
 
   return opt;
@@ -274,6 +315,15 @@ std::string HelpMessage(const char* progName) {
   out << "                     while conserving the total physical source rate per step.\n";
   out << "      Alias: --forward-energy-sampling. A matching input-file key can be added\n";
   out << "      later using Mode3DForwardOptions::injectionEnergyDistribution.\n\n";
+
+  out << "  -forward-injection-emin | --forward-injection-emin <MeV/n>   (optional)\n";
+  out << "  -forward-injection-emax | --forward-injection-emax <MeV/n>   (optional)\n";
+  out << "      Override the 3d_forward particle-energy limits from the command line.\n";
+  out << "      These values update the effective #DENSITY_3D DENS_EMIN/DENS_EMAX range,\n";
+  out << "      which controls both the volumetric density energy bins and the forward\n";
+  out << "      boundary injection/integration range.  Aliases: --forward-emin,\n";
+  out << "      --forward-emax, --forward-injection-energy-min, --forward-injection-energy-max.\n";
+  out << "      Convenience form: --forward-injection-energy-range <Emin> <Emax>.\n\n";
 
   out << "  -forward-boundary-dist | --forward-boundary-dist <ISOTROPIC>   (optional)\n";
   out << "      Override Mode3DForwardOptions::boundaryDistType.\n";

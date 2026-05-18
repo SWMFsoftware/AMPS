@@ -195,6 +195,15 @@ namespace EarthUtil {
     //                   an individual statistical-weight factor q(E).
     //   Empty string means: use the input-file/default Mode3DForwardOptions value.
     std::string forward3dInjectionEnergyDistribution{""};
+
+    // -forward-injection-emin <MeV/n>, -forward-injection-emax <MeV/n>
+    //   Optional CLI overrides for the 3d_forward particle-energy limits.  These
+    //   limits intentionally update the effective #DENSITY_3D range, because in
+    //   forward mode that range now controls both the density-output energy grid and
+    //   the boundary injection/integration range.
+    //   Sentinel: < 0 means no CLI override.
+    double forward3dInjectionEmin_MeV{-1.0};
+    double forward3dInjectionEmax_MeV{-1.0};
   };
 
   // Parse argc/argv. Throws std::runtime_error for malformed inputs.

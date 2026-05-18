@@ -38,6 +38,45 @@ bool   cDensity3D::logSpacing                       = true;
 int    cDensity3D::_DENSITY_ENERGY_SAMPLING_OFFSET_ = -1;
 
 //======================================================================================
+// ConfigureEnergyGrid
+//======================================================================================
+void cDensity3D::ConfigureEnergyGrid(const EarthUtil::AmpsParam& prm) {
+  // Apply the parsed #DENSITY_3D section to the static energy grid that is used by
+  // RequestSamplingData(), EnergyToBin(), and the output variable labels.  This
+  // routine is deliberately separate from Init(): RequestSamplingData() is called
+  // while the AMPS cell sampling buffer is allocated inside amps_init_mesh(), so the
+  // grid must be configured before amps_init_mesh() is entered.
+
+  constexpr double MeV_in_J = 1.602176634e-13;
+
+  if (prm.density3d.nEnergyBins < 1) {
+    exit(__LINE__, __FILE__, "DENS_NENERGY must be >= 1");
+  }
+
+  if (!(prm.density3d.Emin_MeV > 0.0)) {
+    exit(__LINE__, __FILE__, "DENS_EMIN must be > 0 (MeV/n)");
+  }
+
+  if (!(prm.density3d.Emax_MeV > prm.density3d.Emin_MeV)) {
+    exit(__LINE__, __FILE__, "DENS_EMAX must be > DENS_EMIN (MeV/n)");
+  }
+
+  nEnergyBins = prm.density3d.nEnergyBins;
+  Emin_J      = prm.density3d.Emin_MeV * MeV_in_J;
+  Emax_J      = prm.density3d.Emax_MeV * MeV_in_J;
+  logSpacing  = (prm.density3d.spacing == EarthUtil::Density3DParam::Spacing::LOG);
+
+  if (PIC::ThisThread == 0) {
+    std::cout << "[Density3D] Energy grid from #DENSITY_3D:"
+              << " Emin=" << prm.density3d.Emin_MeV << " MeV/n"
+              << " Emax=" << prm.density3d.Emax_MeV << " MeV/n"
+              << " nEnergyBins=" << nEnergyBins
+              << " spacing=" << (logSpacing ? "LOG" : "LINEAR")
+              << "\n";
+  }
+}
+
+//======================================================================================
 // Energy-bin helpers
 //======================================================================================
 double cDensity3D::GetBinLowJ(int iE) {
@@ -73,9 +112,10 @@ int cDensity3D::EnergyToBin(double E_J) {
 //======================================================================================
 void cDensity3D::Init(const EarthUtil::AmpsParam& prm) {
   // Energy-grid parameters and RequestSamplingData are handled earlier:
-  //   - nEnergyBins / Emin_J / Emax_J / logSpacing: set in Mode3DForward::Run()
-  //     BEFORE amps_init_mesh() so that RequestSamplingData allocates the right
-  //     per-cell buffer size when PIC::Mesh::initCellSamplingDataBuffer() runs.
+  //   - nEnergyBins / Emin_J / Emax_J / logSpacing: set by ConfigureEnergyGrid()
+  //     from #DENSITY_3D in Mode3DForward::Run() BEFORE amps_init_mesh(), so that
+  //     RequestSamplingData allocates the right per-cell buffer size when
+  //     PIC::Mesh::initCellSamplingDataBuffer() runs.
   //   - RequestSamplingData: pushed in main_lib.cpp::amps_init_mesh() alongside
   //     Earth::Sampling::ParticleData::Init(), following the same pattern.
   //   - SampleParticleData: registered via SampleParticleDataCallbacks in

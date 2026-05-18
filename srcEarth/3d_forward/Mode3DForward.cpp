@@ -25,7 +25,10 @@
 #include <algorithm>
 #include <functional>
 #include <vector>
+#include <map>
 #include <stdexcept>
+#include <sstream>
+#include <iomanip>
 
 #include "pic.h"
 #include "../../interface/T96Interface.h"
@@ -84,6 +87,33 @@ enum class InjectionEnergyDistribution {
 
 static InjectionEnergyDistribution sInjectionEnergyDistribution =
     InjectionEnergyDistribution::SPECTRUM_WEIGHTED;
+
+static std::string FormatEnergyMeVForSpectrumKey(double value) {
+  // Preserve the user-provided double with enough significant digits that a
+  // command-line override such as 0.25 or 20000.0 is not rounded when the local
+  // #SPECTRUM map is rebuilt for 3d_forward injection.
+  std::ostringstream out;
+  out << std::setprecision(17) << value;
+  return out.str();
+}
+
+static std::map<std::string, std::string> BuildForwardInjectionSpectrumMap(
+    const EarthUtil::AmpsParam& prm) {
+  // In 3d_forward mode, #DENSITY_3D is the authoritative energy grid for the
+  // simulated particles: it controls the energy bins written to the volumetric
+  // density output, the maximum energy used for the CFL-like time-step estimate,
+  // and now also the injection/integration range used by the boundary source.
+  //
+  // #SPECTRUM still defines the spectral SHAPE and normalisation (POWER_LAW,
+  // TABLE, etc.).  The local copy below only replaces SPEC_EMIN/SPEC_EMAX with
+  // the effective 3d_forward particle-energy limits.  This avoids the confusing
+  // previous behaviour where DENS_EMAX could be 20000 MeV/n while the boundary
+  // source still sampled only up to SPEC_EMAX=1000 MeV/n.
+  std::map<std::string, std::string> spectrum = prm.spectrum;
+  spectrum["SPEC_EMIN"] = FormatEnergyMeVForSpectrumKey(prm.density3d.Emin_MeV);
+  spectrum["SPEC_EMAX"] = FormatEnergyMeVForSpectrumKey(prm.density3d.Emax_MeV);
+  return spectrum;
+}
 
 static const char* InjectionEnergyDistributionName(InjectionEnergyDistribution mode) {
   switch (mode) {
@@ -1193,6 +1223,13 @@ int Run(const EarthUtil::AmpsParam& prm) {
   ConfigureBackgroundFieldModel(prm);
 
   PIC::InitMPI();
+
+  // Apply #DENSITY_3D before amps_init_mesh().  amps_init_mesh() allocates the
+  // AMPS per-cell sampling buffer by calling cDensity3D::RequestSamplingData(),
+  // so nEnergyBins/Emin/Emax/spacing must already reflect the parsed input file
+  // rather than the static defaults in Density3D.cpp.
+  cDensity3D::ConfigureEnergyGrid(prm);
+
   Exosphere::Init_SPICE();
   amps_init_mesh();
   amps_init();
@@ -1227,11 +1264,20 @@ int Run(const EarthUtil::AmpsParam& prm) {
   }
 
   //--------------------------------------------------------------------------
-  // 5. Initialise global spectrum from #SPECTRUM section
+  // 5. Initialise global spectrum from #SPECTRUM shape + #DENSITY_3D range.
   //    Must happen before step 7 (particle weight) because
   //    BoundaryInjectionSourceRate() integrates gSpectrum over [Emin, Emax].
   //--------------------------------------------------------------------------
-  InitGlobalSpectrumFromKeyValueMap(prm.spectrum);
+  const std::map<std::string, std::string> forwardSpectrum =
+      BuildForwardInjectionSpectrumMap(prm);
+  InitGlobalSpectrumFromKeyValueMap(forwardSpectrum);
+
+  if (PIC::ThisThread == 0) {
+    std::cout << "[Mode3DForward] Forward injection energy range: "
+              << prm.density3d.Emin_MeV << " - " << prm.density3d.Emax_MeV
+              << " MeV/n (from #DENSITY_3D / CLI overrides; "
+              << "#SPECTRUM supplies shape and normalization)\n";
+  }
 
   //--------------------------------------------------------------------------
   // 6. Time step: dt = DtCellFrac * min_cell / v_max(DENS_EMAX)

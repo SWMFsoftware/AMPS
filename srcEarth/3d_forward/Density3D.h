@@ -73,6 +73,20 @@ public:
   // -------------------------------------------------------------------
   // Initialisation
   // -------------------------------------------------------------------
+  // Configure the energy grid from the parsed #DENSITY_3D section.
+  //
+  // IMPORTANT ORDERING REQUIREMENT
+  // ------------------------------
+  // This must be called before amps_init_mesh(), because amps_init_mesh()
+  // registers RequestSamplingData() and then the AMPS mesh allocates each
+  // cell sampling buffer using the *current* nEnergyBins value.  If the
+  // parsed #DENSITY_3D values are applied only later in Init(), the output
+  // variable list and EnergyToBin() will use one grid while the allocated
+  // buffer still has the hard-coded static defaults.  That was the source
+  // of the observed bug where DENS_EMIN/DENS_EMAX/DENS_NENERGY from the
+  // input file were parsed but not actually controlling cDensity3D.
+  static void ConfigureEnergyGrid(const EarthUtil::AmpsParam& prm);
+
   // Call once after amps_init_mesh() + amps_init().
   //   (A) PIC::IndividualModelSampling::RequestSamplingData.push_back(RequestSamplingData)
   //   (C) PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(
