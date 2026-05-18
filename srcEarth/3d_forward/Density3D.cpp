@@ -31,9 +31,9 @@ namespace Mode3DForward {
 //======================================================================================
 // Static member definitions
 //======================================================================================
-int    cDensity3D::nEnergyBins                      = 30;
+int    cDensity3D::nEnergyBins                      = 10;
 double cDensity3D::Emin_J                           = 1.0   * 1.602176634e-13;
-double cDensity3D::Emax_J                           = 2.0e7 * 1.602176634e-13;
+double cDensity3D::Emax_J                           = 100.0 * 1.602176634e-13;
 bool   cDensity3D::logSpacing                       = true;
 int    cDensity3D::_DENSITY_ENERGY_SAMPLING_OFFSET_ = -1;
 

@@ -489,6 +489,14 @@ struct cBoundaryInjectionTable {
   // ln(Emax/Emin), with E in Joules.  This is the normalisation denominator for
   // a log-uniform proposal distribution p_log(E)=1/[E ln(Emax/Emin)].
   double logEnergyRange{0.0};
+
+  // Cached ln(Emin) [E in Joules].  Stored once at table-init time so the
+  // LOG_UNIFORM sampler does not have to recompute std::log(eBinEdge[0]) on
+  // every particle.  The pair (logEmin, logEnergyRange) fully specifies the
+  // log-uniform proposal distribution:
+  //     log(E) ~ U(logEmin, logEmin + logEnergyRange)
+  //     E      = exp(logEmin + rnd() * logEnergyRange)
+  double logEmin{0.0};
 };
 
 static cBoundaryInjectionTable sBndTable;
@@ -502,11 +510,22 @@ static void InitBoundaryInjectionTable() {
   // ---- 1. Log-uniform energy bins over the spectrum range ----
   const double Emin_J  = gSpectrum.Emin_MeV() * MeV_in_J;
   const double Emax_J  = gSpectrum.Emax_MeV() * MeV_in_J;
+
+  // Defensive guard: the LOG_UNIFORM proposal pdf p_log(E) = 1/[E ln(Emax/Emin)]
+  // is singular at E=0 and undefined when Emax<=Emin.  Fail loudly here rather
+  // than silently produce NaNs deep inside the injection loop.
+  if (!(Emin_J > 0.0) || !(Emax_J > Emin_J)) {
+    exit(__LINE__, __FILE__,
+         "Mode3DForward::InitBoundaryInjectionTable: degenerate spectrum "
+         "energy range (require 0 < Emin < Emax).");
+  }
+
   const double logEmin = std::log(Emin_J);
   const double logEmax = std::log(Emax_J);
   const double dlogE   = (logEmax - logEmin) / kNEnergyBins;
 
   sBndTable.logEnergyRange = logEmax - logEmin;
+  sBndTable.logEmin        = logEmin;  // cached for SampleLogUniformEnergyJ()
 
   for (int k = 0; k <= kNEnergyBins; k++)
     sBndTable.eBinEdge[k] = std::exp(logEmin + k * dlogE);
@@ -524,12 +543,28 @@ static void InitBoundaryInjectionTable() {
     integralJ += rawBin[k];
   }
 
-  // Normalised CDF (same as SEP's ProbabilityTable[] after dividing by IntegratedSpectrum)
+  // Defensive guard #2: a spectrum that integrates to zero (or negative due to
+  // numerical pathology) cannot be normalised.  Both injection branches divide
+  // by integralJ and one of them would silently produce NaN weights.
+  if (!(integralJ > 0.0)) {
+    exit(__LINE__, __FILE__,
+         "Mode3DForward::InitBoundaryInjectionTable: ∫J(E)dE is non-positive; "
+         "the input spectrum is degenerate.");
+  }
+
+  // Normalised CDF (same as SEP's ProbabilityTable[] after dividing by IntegratedSpectrum).
+  // The CDF is monotonically non-decreasing and stored as cumulative running totals;
+  // std::upper_bound in SampleSpectrumWeightedEnergyJ() relies on this ordering.
   double running = 0.0;
   for (int k = 0; k < kNEnergyBins; k++) {
-    running += (integralJ > 0.0) ? rawBin[k] / integralJ : 1.0 / kNEnergyBins;
+    running += rawBin[k] / integralJ;
     sBndTable.energyCDF[k] = running;
   }
+  // Force the last entry to exactly 1.0 to protect against floating-point
+  // round-off leaving energyCDF[N-1] just under 1.  Without this guard,
+  // rnd() == 1.0 (extremely rare) could fall past the last bin in the
+  // upper_bound search.  Tiny correction, zero physical effect.
+  sBndTable.energyCDF[kNEnergyBins - 1] = 1.0;
 
   // Save the integral for later importance-weight calculations.
   sBndTable.integralJ = integralJ;
@@ -639,63 +674,131 @@ static void InitBoundaryInjectionTable() {
 // ============================================================================
 
 static double SampleSpectrumWeightedEnergyJ() {
-  // Legacy/current branch.  The proposal probability density is
-  //   p_spec(E) = J(E) / integral J(E') dE'
-  // so every injected simulation particle can represent the same number of
-  // physical particles, apart from the small per-step conservation normalizer
-  // applied below when the actual accepted MPI-domain candidates are known.
-  const double u = rnd();
-  int k = kNEnergyBins - 1;
+  // ============================================================================
+  // Mode 1 sampler:  E drawn directly from the physical input spectrum.
+  // ============================================================================
+  // Proposal pdf (and target pdf — they are identical in this mode):
+  //     p_spec(E) = J(E) / ∫ J(E') dE'        with E in Joules.
+  //
+  // The CDF stored in sBndTable.energyCDF[k] = P(E < eBinEdge[k+1]) is a
+  // piecewise-linear approximation of the spectrum CDF, built from a 500-bin
+  // log-spaced trapezoid integral in InitBoundaryInjectionTable().
+  //
+  // Inverse-CDF sampling:
+  //     1. draw u ~ U(0,1)
+  //     2. find the smallest bin index k such that u < energyCDF[k]
+  //     3. draw E uniformly within bin k's energy range [E_k, E_{k+1}]
+  //
+  // The bin lookup uses std::upper_bound (binary search, O(log N)) instead of
+  // a linear scan.  With kNEnergyBins=500 this is ~9 comparisons per call
+  // instead of an average of 250 — a meaningful speed-up when injecting
+  // 10^5–10^6 particles per time step.
+  //
+  // Since energyCDF[] is sorted ascending,
+  //     upper_bound(begin, end, u) returns the first iterator whose value is
+  //     strictly greater than u.
+  // That index k satisfies energyCDF[k-1] <= u < energyCDF[k], i.e. the bin
+  // whose cumulative mass first exceeds u — exactly what the linear scan
+  // returned with the "u <= energyCDF[kk]" predicate.
 
-  for (int kk = 0; kk < kNEnergyBins; kk++) {
-    if (u <= sBndTable.energyCDF[kk]) { k = kk; break; }
-  }
+  const double  u     = rnd();
+  const double* first = sBndTable.energyCDF;
+  const double* last  = sBndTable.energyCDF + kNEnergyBins;
+  const double* it    = std::upper_bound(first, last, u);
 
-  return sBndTable.eBinEdge[k]
-       + rnd() * (sBndTable.eBinEdge[k + 1] - sBndTable.eBinEdge[k]);
+  int k = static_cast<int>(it - first);
+  if (k >= kNEnergyBins) k = kNEnergyBins - 1;   // u==1.0 corner case
+
+  // Uniform draw within the chosen bin.  Within a single log-spaced bin J(E)
+  // is nearly constant for any smooth spectrum (E1/E0 ≈ 1.018 with 500 bins
+  // over the typical CR/SEP range), so the uniform-within-bin approximation
+  // contributes well under 1% to the in-bin shape — comfortably below the
+  // statistical noise of any practical Monte-Carlo run.
+  const double E0 = sBndTable.eBinEdge[k];
+  const double E1 = sBndTable.eBinEdge[k + 1];
+  return E0 + rnd() * (E1 - E0);
 }
 
 static double SampleLogUniformEnergyJ() {
-  // High-energy oversampling branch.  The proposal distribution is uniform in
-  // log(E), i.e.
-  //   p_log(E) dE = dlog(E) / log(Emax/Emin)
-  // and therefore
-  //   p_log(E) = 1 / [ E log(Emax/Emin) ].
-  // This gives comparable numbers of simulation particles in each logarithmic
-  // energy decade, which substantially improves statistics in the high-energy
-  // tail of a steep SEP spectrum.
-  const double logEmin = std::log(sBndTable.eBinEdge[0]);
-  return std::exp(logEmin + rnd() * sBndTable.logEnergyRange);
+  // ============================================================================
+  // Mode 2 sampler:  E drawn uniformly in log(E) over [Emin, Emax].
+  // ============================================================================
+  // Proposal pdf on log(E):
+  //     p_log(log E) = 1 / ln(Emax/Emin)
+  // Change of variables  dlog(E) = dE/E  =>  pdf on E:
+  //     p_log(E)     = 1 / [ E ln(Emax/Emin) ]
+  //
+  // Equal numbers of simulation particles per logarithmic decade — this is
+  // exactly the high-energy oversampling the user requested.  The proposal
+  // distribution does NOT match the physical spectrum: the per-particle
+  // statistical correction
+  //     q(E) = p_spec(E) / p_log(E)
+  // returned by RawEnergyStatWeightCorrection() restores the correct expected
+  // physical injection spectrum, and the conservation normaliser in
+  // InjectParticles() makes the per-step physical count exactly correct.
+  //
+  // Implementation notes:
+  //   * Both logEmin and logEnergyRange are cached in sBndTable at init time,
+  //     so the per-particle cost is one rnd() + one std::exp.  No std::log,
+  //     no division, no branching.
+  //   * The returned energy is guaranteed to lie in [Emin, Emax] by
+  //     construction — no rejection needed.
+
+  return std::exp(sBndTable.logEmin + rnd() * sBndTable.logEnergyRange);
 }
 
 static double RawEnergyStatWeightCorrection(double E_J) {
-  // Return the unnormalised importance-sampling correction q(E) that converts
-  // the selected proposal distribution into the desired physical injection
-  // spectrum.  The correction is later multiplied by a per-time-step normalizer
-  // so that the total physical number injected during the step is exactly
-  // R_total*dt, even if the number of candidates accepted by this MPI rank is
-  // not exactly nParticles/P.
+  // ============================================================================
+  // Per-particle importance-sampling correction (un-normalised).
+  // ============================================================================
+  // Definition:  q_raw(E) = p_target(E) / p_proposal(E)
+  //
+  // The conservation normaliser in InjectParticles() then forms
+  //     q_norm_i = q_raw(E_i) * N / Σ_j q_raw(E_j)
+  // where N is the requested global sim-particle count per step and the sum
+  // runs over all globally accepted candidates.  The total injected physical
+  // particle count is therefore exactly preserved:
+  //     Σ_i W0 * q_norm_i  =  W0 * N  =  R_total * Δt          (exactly)
+  // independently of statistical fluctuations or the number of candidates
+  // rejected for any reason (inner-sphere skip, remote MPI rank, J(E)=0).
+  //
+  // Returning q_raw == 0 marks a candidate as rejected.  This must be done for
+  // any E at which the user-supplied spectrum is exactly zero (piecewise
+  // spectrum tables routinely have gaps), so that the candidate is dropped
+  // before it is added to the candidate list.  The conservation normaliser
+  // then redistributes that particle's weight across the remaining accepted
+  // candidates, keeping R_total * Δt invariant.
 
-  if (sInjectionEnergyDistribution == InjectionEnergyDistribution::SPECTRUM_WEIGHTED) {
-    // When E is sampled from p_spec(E) ∝ J(E), the physical spectrum is already
-    // represented by equal-weight particles; q(E)=1.
+  // -------- Mode 1: proposal pdf == target pdf, so q_raw ≡ 1 --------
+  // The renormalisation that produces q_norm still applies, because
+  // ip-loop candidates can be silently rejected by the inner-sphere mask or
+  // by the MPI-rank ownership test.  Even with q_raw=1 the normaliser
+  // therefore corrects q_norm slightly upward from 1.
+  if (sInjectionEnergyDistribution ==
+      InjectionEnergyDistribution::SPECTRUM_WEIGHTED) {
     return 1.0;
   }
 
-  // LOG_UNIFORM branch:
-  //   target pdf:   p_target(E) = J(E) / integralJ
-  //   proposal pdf: p_log(E)    = 1 / [E log(Emax/Emin)]
-  // Therefore the statistical correction is
-  //   q(E) = p_target(E) / p_log(E)
-  //        = J(E) * E * log(Emax/Emin) / integralJ .
-  // q is dimensionless and has expectation value 1 when averaged over the
-  // log-uniform proposal distribution.
-  const double J = gSpectrum.GetSpectrum(E_J);
-  if (!(E_J > 0.0) || !(J >= 0.0) || !(sBndTable.integralJ > 0.0) ||
-      !(sBndTable.logEnergyRange > 0.0)) {
-    return 0.0;
-  }
+  // -------- Mode 2: LOG_UNIFORM proposal --------
+  //   target pdf:    p_spec(E) = J(E) / integralJ
+  //   proposal pdf:  p_log(E)  = 1 / [ E ln(Emax/Emin) ]
+  //   =>             q_raw(E) = p_spec(E) / p_log(E)
+  //                            = J(E) * E * ln(Emax/Emin) / integralJ.
+  //
+  // q_raw is dimensionless.  Under the proposal distribution its expectation
+  // value is exactly 1:
+  //   E_{p_log}[q_raw] = ∫ q_raw(E) p_log(E) dE
+  //                    = ∫ [J(E)/integralJ] dE  =  1.
+  // So in a large-N run the conservation normaliser is ≈ 1 and the per-step
+  // physical count comes out right "for free"; the normaliser only handles
+  // statistical fluctuations and rejected candidates.
 
+  if (!(E_J > 0.0)) return 0.0;
+  const double J = gSpectrum.GetSpectrum(E_J);
+  if (!(J > 0.0)) return 0.0;   // gap in piecewise-defined J(E): drop sample
+
+  // (integralJ > 0 and logEnergyRange > 0 are guaranteed by
+  // InitBoundaryInjectionTable(), which exits on degenerate input.)
   return J * E_J * sBndTable.logEnergyRange / sBndTable.integralJ;
 }
 
@@ -743,6 +846,40 @@ static long int InjectParticles() {
   // Pre-compute injection tables from gSpectrum on first call (lazy, idempotent).
   // Analogous to SEP::InjectionRate() calling InitEnergySpectrum() on first use.
   InitBoundaryInjectionTable();
+
+  // --------------------------------------------------------------------------
+  // One-shot weight-conservation sanity check (debug builds only).
+  // --------------------------------------------------------------------------
+  // The exact source-conservation guarantee
+  //       Σ_i W0 * q_norm_i  =  W0 * N  =  R_total * Δt
+  // depends on AMPS having set the base weight to
+  //       W0  =  R_total * Δt / N.
+  // initParticleWeight_ConstantWeight() does this for us, but a downstream
+  // override (some species-mixing setup, user code that re-scales weights,
+  // etc.) would silently break source conservation in a way the conservation
+  // normaliser below CANNOT detect, because the normaliser only fixes
+  // q_norm — it does not see W0.  We therefore verify the invariant once and
+  // emit a loud warning if it is violated.  Cost: a single fp comparison per
+  // run, only on rank 0, only in debug builds.
+#ifndef NDEBUG
+  {
+    static bool s_weightChecked = false;
+    if (!s_weightChecked && PIC::ThisThread == 0) {
+      const double W0     = PIC::ParticleWeightTimeStep::GlobalParticleWeight[sSpecies];
+      const double R_dt   = BoundaryInjectionSourceRate(sSpecies) * sDt;
+      const double expect = (nParticles > 0) ? R_dt / static_cast<double>(nParticles) : 0.0;
+      if (expect > 0.0 && std::fabs(W0 - expect) > 1.0e-9 * std::fabs(expect)) {
+        std::cerr << "[Mode3DForward] WARNING: GlobalParticleWeight=" << W0
+                  << " differs from R_total*dt/N=" << expect
+                  << " (relative error "
+                  << std::fabs(W0 - expect) / std::fabs(expect)
+                  << "). Per-step source conservation will be scaled by the "
+                  << "same ratio.\n";
+      }
+      s_weightChecked = true;
+    }
+  }
+#endif
 
   const double* xmin  = PIC::Mesh::mesh->xGlobalMin;
   const double* xmax  = PIC::Mesh::mesh->xGlobalMax;
@@ -829,6 +966,19 @@ static long int InjectParticles() {
     // ------------------------------------------------------------------
     // 4. Sample inward velocity direction from the cosine-weighted hemisphere.
     // ------------------------------------------------------------------
+    // For an isotropic external population with differential intensity J(E),
+    // the joint distribution of (E, Ω) for particles crossing a planar surface
+    // factorises as
+    //     p(E, Ω) dE dΩ  ∝  J(E) cos θ dE dΩ,         (cos θ > 0 inward)
+    // so E and direction are statistically independent and can be sampled
+    // separately.  The marginal direction pdf is
+    //     p(Ω) = cos θ / π,        p(cos θ) = 2 cos θ  on [0,1].
+    // Inverse-CDF sampling of 2 cos θ gives cos θ = sqrt(U(0,1)).
+    //
+    // Because the (E, Ω) factorisation holds for BOTH injection modes, this
+    // block is identical in SPECTRUM_WEIGHTED and LOG_UNIFORM — only the
+    // energy sampler upstream differs.  The importance-sampling correction
+    // for LOG_UNIFORM lives entirely in q_raw(E); direction is unaffected.
     double v_hat[3];
     {
       const double cosTheta = std::sqrt(rnd());
@@ -842,6 +992,9 @@ static long int InjectParticles() {
       }
     }
 
+    // Kinetic-energy-to-speed: takes E in Joules and the particle's rest mass.
+    // The result is the magnitude of the velocity vector for THIS candidate;
+    // it is multiplied component-wise into the unit direction below.
     const double speed = Relativistic::E2Speed(E_J, mass);
 
     // Draw the initial post-injection move fraction here, before ownership tests,
@@ -875,18 +1028,43 @@ static long int InjectParticles() {
     localCandidates.push_back(c);
   }
 
-  // Sum the raw correction over all MPI ranks.  The normalizer below enforces
-  //   Σ W0*q_norm = W0*N = BoundaryInjectionSourceRate*sDt,
-  // where W0=sParticleWeight was computed as R_total*dt/N.  For the legacy
-  // SPECTRUM branch q_raw=1, so this simply corrects small deviations between
-  // requested and actually accepted candidate counts.  For LOG_UNIFORM it also
-  // converts the log-uniform proposal distribution into the physical J(E).
+  // ==========================================================================
+  // Stage 2 setup: collective MPI sum of the raw stat-weight corrections.
+  // ==========================================================================
+  // Each MPI rank holds a partial sum
+  //     localRawCorrectionSum = Σ_{i ∈ localCandidates} q_raw(E_i)
+  // over the candidates whose injection position falls into a tree node owned
+  // by this rank.  An MPI_Allreduce gives every rank the GLOBAL sum
+  //     S_raw = Σ_{all globally-accepted i} q_raw(E_i)
+  // which is needed to form the per-particle conservation normaliser.
+  //
+  // SPECTRUM_WEIGHTED branch:  q_raw ≡ 1  =>  S_raw == N_accepted_global,
+  //                            so the normaliser corrects only the small
+  //                            shortfall from rejected candidates (inner
+  //                            sphere, missing cells, etc.).
+  // LOG_UNIFORM branch:        q_raw varies with E.  E[q_raw] under the
+  //                            proposal pdf is exactly 1, so S_raw ≈ N in
+  //                            large-N runs, but per-step fluctuations are
+  //                            removed by the normaliser.
   double globalRawCorrectionSum = 0.0;
   MPI_Allreduce(&localRawCorrectionSum, &globalRawCorrectionSum, 1, MPI_DOUBLE,
                 MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
 
+  // If no candidates survived globally (degenerate spectrum, tiny domain,
+  // pathological config) the run cannot make forward progress — bail out
+  // returning 0 so PIC::TimeStep() can move on without dereferencing an
+  // empty candidate list.
   if (!(globalRawCorrectionSum > 0.0)) return 0;
 
+  // The conservation normaliser.  Multiplying every q_raw by this factor makes
+  // the sum of (W0 * q_norm) over all globally injected particles exactly equal
+  // to W0 * N = R_total * Δt — i.e. the correct physical number of injected
+  // particles for this time step, by construction, regardless of statistical
+  // fluctuations or per-particle rejections.  Derivation:
+  //     Σ_i W0 q_norm_i  =  W0 * Σ_i q_raw_i * (N / S_raw)
+  //                      =  W0 * S_raw     * (N / S_raw)
+  //                      =  W0 * N
+  //                      =  R_total * Δt.
   const double conservationNormalizer =
       static_cast<double>(nParticles) / globalRawCorrectionSum;
 
@@ -904,17 +1082,32 @@ static long int InjectParticles() {
     PIC::ParticleBuffer::SetI(sSpecies, pData);
 
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
-    // q_norm is the full dimensionless statistical correction carried by this
-    // simulation particle.  For SPECTRUM injection q_norm is normally 1.  For
-    // LOG_UNIFORM injection q_norm is larger/smaller depending on J(E) relative
-    // to the log-uniform proposal pdf.  The normalization factor makes the total
-    // physical source per time step exactly R_total*dt.
+    // q_norm = q_raw * (N / S_raw) is the FULL dimensionless stat-weight
+    // correction carried by this simulation particle.  AMPS multiplies it by
+    // the block-local base weight W0 wherever a physical density / flux
+    // sample is taken (cDensity3D, cSphereFlux3D, etc.), so the per-particle
+    // physical content is W0 * q_norm.
+    //
+    //   SPECTRUM_WEIGHTED:  q_raw=1, q_norm ≈ 1 (slightly >1 if any
+    //                        candidates were rejected).
+    //   LOG_UNIFORM:         q_raw = J(E) * E * ln(Emax/Emin) / integralJ,
+    //                        which is small at low E (where the log-uniform
+    //                        proposal over-samples relative to J(E)) and
+    //                        large at high E (where it under-samples), so
+    //                        the high-energy simulation particles carry
+    //                        large statistical weight — this is the whole
+    //                        point of the importance-sampling.
     const double qNorm = c.rawStatWeightCorrection * conservationNormalizer;
     PIC::ParticleBuffer::SetIndividualStatWeightCorrection(qNorm, pData);
 #else
-    // The LOG_UNIFORM branch is rejected in Run() unless individual particle
-    // weights are enabled.  For the legacy SPECTRUM branch this preserves the
-    // old equal-weight behavior when AMPS is compiled without per-particle weights.
+    // No per-particle weights at compile time.  Run() enforces that only
+    // SPECTRUM_WEIGHTED is permitted in this configuration (LOG_UNIFORM cannot
+    // be represented without per-particle weights — its statistical correction
+    // is energy-dependent).  For SPECTRUM_WEIGHTED, q_norm is normally very
+    // close to 1; dropping the small renormalisation (typically <1%) is the
+    // historical equal-weight behaviour.  If exact source conservation is
+    // required in this configuration, build AMPS with
+    // _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_.
 #endif
 
 #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
