@@ -95,6 +95,22 @@ namespace Earth {
 
 
   namespace ParticleTracker {
+    // Runtime controls layered on top of the AMPS compile-time particle-tracker
+    // switch.  AMPS still must be compiled with
+    //   _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
+    // for any trajectory records to be written.  These model-level controls let
+    // a run decide whether newly injected particles should actually request
+    // trajectory tracking, and cap how many trajectory records are initialized.
+    //
+    // enabled=false or maxTrajectories<=0 disables initialization of new
+    // trajectory records even when the AMPS tracker is compiled in.
+    // forceInjectedParticles=true is used by 3d_forward boundary injection: the
+    // injected particles start on the outer boundary, so the legacy near-Earth
+    // radius test in TrajectoryTrackingCondition would otherwise reject them.
+    void ConfigureRuntimeTrajectoryTracking(bool enabled,
+                                            int maxTrajectories,
+                                            bool forceInjectedParticles=false);
+
     bool TrajectoryTrackingCondition(double *x,double *v,int spec,void *ParticleData);  
   }
 

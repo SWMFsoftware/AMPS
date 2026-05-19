@@ -31,6 +31,7 @@
 #include <iomanip>
 
 #include "pic.h"
+#include "../Earth.h"
 #include "../../interface/T96Interface.h"
 #include "../../interface/T05Interface.h"
 #include "../../interface/TA16Interface.h"
@@ -63,6 +64,13 @@ static double sParticleWeight      = 1.0;   // nominal physical particles per si
 static int    sNParticlesPerIter   = 1000;  // simulation particles requested per iteration
 static double sDt                  = 1.0;   // time step [s]
 static int    sSpecies             = 0;     // AMPS species index for injection
+
+// Runtime particle-trajectory controls.  These are deliberately separate from
+// the AMPS compile-time _PIC_PARTICLE_TRACKER_MODE_ switch.  The compile-time
+// switch decides whether the tracker exists at all; these values decide whether
+// this 3d_forward run initializes trajectory records for newly injected particles.
+static bool   sInitializeParticleTrajectories = false;
+static int    sMaxParticleTrajectories        = 0;
 
 // ============================================================================
 //  Energy-sampling branch used by the forward boundary injector
@@ -1141,9 +1149,16 @@ static long int InjectParticles() {
 #endif
 
 #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
-    PIC::ParticleTracker::InitParticleID(pData);
-    PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(
-        c.x, c.v, sSpecies, pData, static_cast<void*>(c.startNode));
+    // Runtime gate requested by the model input/CLI.  AMPS must still be built
+    // with _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_, but that compile-time
+    // capability no longer forces every 3d_forward run to initialize trajectory
+    // records.  The model-level switch is configured from #PARTICLE_TRAJECTORY
+    // or the -forward-track-trajectories / -forward-n-trajectories CLI flags.
+    if (sInitializeParticleTrajectories) {
+      PIC::ParticleTracker::InitParticleID(pData);
+      PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(
+          c.x, c.v, sSpecies, pData, static_cast<void*>(c.startNode));
+    }
 #endif
 
     const double localDt = c.startNode->block->GetLocalTimeStep(sSpecies);
@@ -1171,6 +1186,10 @@ int Run(const EarthUtil::AmpsParam& prm) {
   // the injector itself.
   sInjectionEnergyDistribution =
       ParseInjectionEnergyDistribution(prm.mode3dForward.injectionEnergyDistribution);
+
+  sInitializeParticleTrajectories =
+      prm.mode3dForward.initializeParticleTrajectories;
+  sMaxParticleTrajectories = prm.mode3dForward.nParticleTrajectories;
 
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_
   if (sInjectionEnergyDistribution == InjectionEnergyDistribution::LOG_UNIFORM) {
@@ -1223,6 +1242,24 @@ int Run(const EarthUtil::AmpsParam& prm) {
   ConfigureBackgroundFieldModel(prm);
 
   PIC::InitMPI();
+
+#if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
+  // Configure the model-level runtime gate in the Earth particle-tracker
+  // callback.  forceInjectedParticles=true is important for 3d_forward: the
+  // particles are born on the outer boundary, so the legacy near-Earth radius
+  // condition in pt.cpp would otherwise reject the newly injected particles.
+  Earth::ParticleTracker::ConfigureRuntimeTrajectoryTracking(
+      sInitializeParticleTrajectories,
+      sMaxParticleTrajectories,
+      true);
+#else
+  if (sInitializeParticleTrajectories && PIC::ThisThread == 0) {
+    std::cerr << "[Mode3DForward] WARNING: #PARTICLE_TRAJECTORY / CLI requested "
+              << "particle trajectory initialization, but AMPS was compiled with "
+              << "_PIC_PARTICLE_TRACKER_MODE_ != _PIC_MODE_ON_. No trajectory "
+              << "records will be initialized.\n";
+  }
+#endif
 
   // Apply #DENSITY_3D before amps_init_mesh().  amps_init_mesh() allocates the
   // AMPS per-cell sampling buffer by calling cDensity3D::RequestSamplingData(),
@@ -1319,6 +1356,13 @@ int Run(const EarthUtil::AmpsParam& prm) {
               << " particles/s, energySampling="
               << InjectionEnergyDistributionName(sInjectionEnergyDistribution)
               << ")\n";
+
+  if (PIC::ThisThread == 0) {
+    std::cout << "[Mode3DForward] Particle trajectory initialization: "
+              << (sInitializeParticleTrajectories ? "ON" : "OFF")
+              << " (N_TRAJECTORIES=" << sMaxParticleTrajectories
+              << ", requires _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_)\n";
+  }
 
   //--------------------------------------------------------------------------
   // 8. Inner absorption sphere

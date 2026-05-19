@@ -1587,6 +1587,31 @@ int main(int argc,char **argv) {
         if (!cli.forward3dBoundaryDist.empty())
           p.mode3dForward.boundaryDistType = EarthUtil::ToUpper(cli.forward3dBoundaryDist);
 
+        // Runtime particle-trajectory initialization controls.  These are
+        // layered on top of AMPS' compile-time _PIC_PARTICLE_TRACKER_MODE_ flag:
+        // the compile-time flag must be ON, and this model-level flag must also
+        // be true, before injected 3d_forward particles request trajectory records.
+        if (cli.forward3dTrajectoryTracking >= 0)
+          p.mode3dForward.initializeParticleTrajectories =
+              (cli.forward3dTrajectoryTracking != 0);
+        if (cli.forward3dNTrajectories >= 0) {
+          p.mode3dForward.nParticleTrajectories = cli.forward3dNTrajectories;
+          p.mode3dForward.initializeParticleTrajectories =
+              (cli.forward3dNTrajectories > 0);
+        }
+
+        if (p.mode3dForward.nParticleTrajectories < 0) {
+          std::cerr << "Error: N_TRAJECTORIES must be >= 0 "
+                    << "(0 disables particle trajectory initialization).\n";
+          return 1;
+        }
+        if (p.mode3dForward.initializeParticleTrajectories &&
+            p.mode3dForward.nParticleTrajectories <= 0) {
+          std::cerr << "Error: particle trajectory initialization requires "
+                    << "N_TRAJECTORIES > 0.\n";
+          return 1;
+        }
+
         // Energy proposal distribution for the forward boundary source.
         // SPECTRUM keeps the legacy branch; LOG_UNIFORM oversamples the
         // high-energy tail and applies individual particle weight corrections.

@@ -204,6 +204,23 @@ namespace EarthUtil {
     //   Sentinel: < 0 means no CLI override.
     double forward3dInjectionEmin_MeV{-1.0};
     double forward3dInjectionEmax_MeV{-1.0};
+
+    // 3d_forward particle-trajectory initialization controls.
+    // These are runtime controls layered on top of AMPS' compile-time
+    // _PIC_PARTICLE_TRACKER_MODE_.  If AMPS was not compiled with the particle
+    // tracker enabled, these flags are parsed but cannot produce trajectory files.
+    //
+    // forward3dTrajectoryTracking sentinel:
+    //   -1 : no CLI override; use #PARTICLE_TRAJECTORY/defaults
+    //    0 : disable trajectory initialization
+    //    1 : enable trajectory initialization
+    int forward3dTrajectoryTracking{-1};
+
+    // -forward-n-trajectories <int> / --forward-n-trajectories <int>
+    // Maximum number of injected-particle trajectory records to initialize.
+    // Sentinel <0 means no CLI override.  A value of 0 explicitly disables
+    // trajectory initialization; a positive value enables it.
+    int forward3dNTrajectories{-1};
   };
 
   // Parse argc/argv. Throws std::runtime_error for malformed inputs.

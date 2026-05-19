@@ -187,6 +187,32 @@ CliOptions ParseCli(int argc,char** argv) {
       if (!(opt.forward3dInjectionEmax_MeV > opt.forward3dInjectionEmin_MeV))
         exit(__LINE__,__FILE__,"-forward-injection-energy-range requires Emax > Emin (MeV/n)");
     }
+    else if (a=="-forward-track-trajectories" || a=="--forward-track-trajectories" ||
+             a=="-forward-init-trajectories" || a=="--forward-init-trajectories" ||
+             a=="-track-particle-trajectories" || a=="--track-particle-trajectories") {
+      // Runtime opt-in for AMPS particle trajectory records in 3d_forward.
+      // AMPS still must be compiled with _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_.
+      opt.forward3dTrajectoryTracking = 1;
+    }
+    else if (a=="-forward-no-track-trajectories" || a=="--forward-no-track-trajectories" ||
+             a=="-forward-disable-trajectories" || a=="--forward-disable-trajectories" ||
+             a=="-no-particle-trajectories" || a=="--no-particle-trajectories") {
+      // Explicit runtime disable. Useful when the input file contains a
+      // #PARTICLE_TRAJECTORY section but a production run should skip the
+      // potentially large trajectory output.
+      opt.forward3dTrajectoryTracking = 0;
+    }
+    else if (a=="-forward-n-trajectories" || a=="--forward-n-trajectories" ||
+             a=="-forward-particle-trajectories" || a=="--forward-particle-trajectories" ||
+             a=="-n-trajectories" || a=="--n-trajectories") {
+      // Cap on injected-particle trajectory records.  A positive value also
+      // enables trajectory initialization; zero disables it.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -forward-n-trajectories");
+      opt.forward3dNTrajectories = std::stoi(argv[++i]);
+      if (opt.forward3dNTrajectories < 0)
+        exit(__LINE__,__FILE__,"-forward-n-trajectories must be >= 0 (0 disables trajectory initialization)");
+      opt.forward3dTrajectoryTracking = (opt.forward3dNTrajectories > 0) ? 1 : 0;
+    }
     else {
       std::ostringstream oss;
       oss << "Unknown CLI token: '" << a << "'. Use -h for help.";
@@ -329,6 +355,20 @@ std::string HelpMessage(const char* progName) {
   out << "      Override Mode3DForwardOptions::boundaryDistType.\n";
   out << "      ISOTROPIC (default): cos(θ)-weighted hemisphere at each domain-boundary face.\n";
   out << "      Other distributions (field-aligned beam, pancake) are reserved for future use.\n\n";
+
+  out << "  -forward-track-trajectories | --forward-track-trajectories   (optional; default: off)\n";
+  out << "      Request AMPS particle-trajectory records for injected 3d_forward particles.\n";
+  out << "      This is a runtime gate in addition to the AMPS compile-time switch\n";
+  out << "      _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_; if AMPS was built with the\n";
+  out << "      tracker off, this option is parsed but no trajectory records can be made.\n";
+  out << "      Disable explicitly with --forward-no-track-trajectories.\n\n";
+
+  out << "  -forward-n-trajectories | --forward-n-trajectories <int>   (optional)\n";
+  out << "      Maximum number of injected-particle trajectory records to initialize.\n";
+  out << "      A positive value also enables trajectory initialization; zero disables it.\n";
+  out << "      Equivalent input-file section:\n";
+  out << "        #PARTICLE_TRAJECTORY\n";
+  out << "        N_TRAJECTORIES 10000\n\n";
   out << "  -mode3d-output-initialized\n";
   out << "      Also works in 3d_forward mode: writes amps_3dforward_initialized.data.dat\n";
   out << "      after the AMR mesh B/E fields have been populated.\n\n";
@@ -398,6 +438,11 @@ std::string HelpMessage(const char* progName) {
   out << "    MAX_STEPS          <int>      hard step count cap\n";
   out << "    MAX_TRACE_TIME     <double>   hard integration time cap [s]\n";
   out << "    MAX_TRACE_DISTANCE <double>   hard cumulative trace-distance cap [Re]\n\n";
+
+  out << "  #PARTICLE_TRAJECTORY   (optional; -mode 3d_forward)\n";
+  out << "    INITIALIZE_TRAJECTORIES T|F   runtime gate for AMPS trajectory records\n";
+  out << "    N_TRAJECTORIES          <int> maximum injected-particle trajectories;\n";
+  out << "                               >0 enables tracking, 0 disables it\n\n";
 
   // -----------------------------------------------------------------------
   out << "Outputs (gridless mode):\n\n";

@@ -2309,6 +2309,34 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       }
       else rememberUnknown();
     }
+    else if (section=="#PARTICLE_TRAJECTORY") {
+      // Runtime controls for AMPS particle-trajectory records in 3d_forward.
+      // These settings do not replace the AMPS compile-time switch: the tracker
+      // must still be built with _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_.
+      // They only decide whether 3d_forward injected particles request tracking
+      // and how many such trajectory records may be initialized.
+      if (uKey=="INITIALIZE_TRAJECTORIES" ||
+          uKey=="INITIALIZE_PARTICLE_TRAJECTORIES" ||
+          uKey=="TRACK_TRAJECTORIES" ||
+          uKey=="ENABLE_TRAJECTORY_TRACKING" ||
+          uKey=="PARTICLE_TRAJECTORY_TRACKING") {
+        p.mode3dForward.initializeParticleTrajectories = ToBool(val);
+      }
+      else if (uKey=="N_TRAJECTORIES" ||
+               uKey=="N_PARTICLE_TRAJECTORIES" ||
+               uKey=="MAX_TRAJECTORIES" ||
+               uKey=="MAX_PARTICLE_TRAJECTORIES") {
+        p.mode3dForward.nParticleTrajectories = std::stoi(val);
+        // The compact input requested by the user:
+        //   #PARTICLE_TRAJECTORY
+        //   N_TRAJECTORIES 10000
+        // should be sufficient to enable trajectory initialization.  A zero
+        // value is treated as an explicit disable switch.
+        p.mode3dForward.initializeParticleTrajectories =
+            (p.mode3dForward.nParticleTrajectories > 0);
+      }
+      else rememberUnknown();
+    }
     else if (section=="#DENSITY_SPECTRUM") {
       // Density/spectrum workflow controls.
       // All energies are read in MeV (commonly MeV/n in CCMC inputs).
@@ -2478,6 +2506,14 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
     if (!(p.density3d.nEnergyBins >= 1)) {
       exit(__LINE__,__FILE__,"DENS_NENERGY must be >= 1");
+    }
+    if (p.mode3dForward.nParticleTrajectories < 0) {
+      exit(__LINE__,__FILE__,"N_TRAJECTORIES must be >= 0 (0 disables particle trajectory initialization)");
+    }
+    if (p.mode3dForward.initializeParticleTrajectories &&
+        p.mode3dForward.nParticleTrajectories <= 0) {
+      exit(__LINE__,__FILE__,
+           "INITIALIZE_TRAJECTORIES requires N_TRAJECTORIES > 0 in #PARTICLE_TRAJECTORY");
     }
   }
 
