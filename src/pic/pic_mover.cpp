@@ -3803,9 +3803,44 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
           exit(__LINE__, __FILE__, "Error: the cell is not found");
       }
       
-      if (startNode->block == NULL) {
-          exit(__LINE__, __FILE__, "Error: the block is not initialized");
+
+  if (startNode->block == NULL) {
+      //there is a problem with the particles: remove the particle
+      if (_PIC_MOVER__UNKNOWN_ERROR_IN_PARTICLE_MOTION__STOP_EXECUTION_ == _PIC_MODE_OFF_) {
+        double Rate;
+        int spec;
+
+        //debug info 
+        double s=dtTotal_init*Vector3D::Length(v);
+        double l=0.0;
+
+        for (int i=0;i<3;i++) {
+          double t=startNode->xmax[i]-startNode->xmin[i];
+          l+=t*t;
+        }
+
+        l=sqrt(l);
+
+        spec=PIC::ParticleBuffer::GetI(ParticleData);
+
+        if (s>l) {
+          cout << "AMPS:: time step is too large: v*dt > block size: (" << s << "  > " << l << ") -- reduce time step (" << __LINE__ << "@" << __FILE__ << ")" <<endl;
+        }
+
+
+        Rate=startNode_init->block->GetLocalParticleWeight(spec)*PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr)/
+            startNode_init->block->GetLocalTimeStep(spec);
+
+        PIC::Mover::Sampling::Errors::AddRemovedParticleData(Rate,spec,__LINE__,__FILE__);
+
+        //remove the particle
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return _PARTICLE_LEFT_THE_DOMAIN_;
       }
+      else exit(__LINE__,__FILE__,"Error: startNode->block == NULL");
+  }
+
+
       #endif
       
       xminBlock = startNode->xmin;
