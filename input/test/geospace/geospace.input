@@ -2,13 +2,16 @@
 #include input/earth-geospace_boundary_injection_sw_t96.input
 
 #General
-  TrajectoryTracing=off 
+  TrajectoryTracing=on 
   MaxSampledTrajectoryNumber=10000
   
   ReferenceInjectionParticleNumber=100000
 
-  define _PIC_PARTICLE_TRACKER_MODE_ _PIC_MODE_OFF_
+  InitialSampleLength=1000
+
+! define _PIC_PARTICLE_TRACKER_MODE_ _PIC_MODE_OFF_
 ! define _PIC_PARTICLE_TRACKER__RUNTIME_OUTPUT_ _PIC_MODE_ON_
+   define _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_(x,v,spec,ParticleData) Earth::ParticleTracker::TrajectoryTrackingCondition(x,v,spec,ParticleData)
 
   SaveParticleRestartFile=off \\  !on,off
     file=ParticleData.restart \\
