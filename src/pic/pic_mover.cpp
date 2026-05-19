@@ -3810,7 +3810,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
         double Rate;
         int spec;
 
-        //debug info 
+        //debug info
         double s=dtTotal_init*Vector3D::Length(v);
         double l=0.0;
 
@@ -3988,46 +3988,84 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
       if (std::fpclassify(dtMin) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
       #endif
       
-      if (startNode->FirstTriangleCutFace != NULL) {
+      if ((startNode->FirstTriangleCutFace != NULL) ||
+          (startNode->neibCutFaceListDescriptorList != NULL)) {
           CutCell::cTriangleFaceDescriptor *t;
           CutCell::cTriangleFace *TriangleFace;
           double TimeOfFlight;
           double xLocalIntersection[2], xIntersection[3];
-          
-          for (t = startNode->FirstTriangleCutFace; t != NULL; t = t->next) {
-              if ((TriangleFace = t->TriangleFace) != lastIntersectedTriangleFace) {
-                  if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace) == true) {
-                      if (TriangleFace->RayIntersection(x, v, TimeOfFlight, xLocalIntersection, xIntersection, PIC::Mesh::mesh->EPS) == true) {
 
-                          TimeOfFlight*=(1.0-1.0E-5);
+          // Search both cut faces attached directly to this block and the
+          // neighboring cut-face descriptors.  The simplified mover previously
+          // inspected only startNode->FirstTriangleCutFace, which can miss a
+          // triangulated-surface crossing close to a block boundary when the
+          // relevant face is stored in a neighbor descriptor.  This mirrors the
+          // more complete mover's two-pass cut-face scan.
+          for (int ipass = 0; ipass < 2; ipass++) {
+              cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>::cCutFaceListDescriptor *D;
+              cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>::cCutFaceListDescriptor descTemp;
 
-                          if ((TimeOfFlight < dtMin) && (TimeOfFlight > 0.0)) {
-                              // Check intersection acceptance flag (same logic as original)
-                              bool FaceIntersectionAccetanceFlag = true;
-                              
-                              if (FaceIntersectionAccetanceFlag == true) {
-                                  dtMin = TimeOfFlight;
-                                  IntersectionFace = t->TriangleFace;
+              switch (ipass) {
+              case 0:
+                  descTemp.next = NULL;
+                  descTemp.node = startNode;
+                  descTemp.FirstTriangleCutFace = startNode->FirstTriangleCutFace;
+                  D = &descTemp;
+                  break;
+              case 1:
+                  D = startNode->neibCutFaceListDescriptorList;
+                  break;
+              default:
+                  D = NULL;
+                  break;
+              }
 
-				  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-				  if (isfinite(dtMin)==false) exit(__LINE__,__FILE__,"Error: non finite");
-				  if (std::fpclassify(dtMin) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
-                                  #endif
-                                  
-                                  memcpy(xLocalIntersectionFace, xLocalIntersection, 2 * sizeof(double));
-                                  memcpy(xIntersectionFace, xIntersection, 3 * sizeof(double));
-                                  
-                                  ParticleIntersectionCode = _BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_;
-                                  MovingTimeFinished = false;
+              for (; D != NULL; D = D->next) {
+                  for (t = D->FirstTriangleCutFace; t != NULL; t = t->next) {
+                      if ((TriangleFace = t->TriangleFace) != lastIntersectedTriangleFace) {
+                          if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace) == true) {
+                              if (TriangleFace->RayIntersection(x, v, TimeOfFlight, xLocalIntersection, xIntersection, PIC::Mesh::mesh->EPS) == true) {
+
+                                  // Use the geometrically exact triangle-intersection time here.
+                                  // The previous implementation multiplied TimeOfFlight by
+                                  // (1.0-1.0E-5), but the particle position is later snapped
+                                  // back onto the triangle using barycentric coordinates.
+                                  // Therefore, shortening the time step did not keep the
+                                  // particle outside the solid body; it only perturbed the
+                                  // remaining integration time.  Robust separation from the
+                                  // triangulated surface is now handled explicitly after the
+                                  // boundary-condition callback by displacing the particle
+                                  // along the outward face normal.
+
+                                  if ((TimeOfFlight < dtMin) && (TimeOfFlight > 0.0)) {
+                                      // Check intersection acceptance flag (same logic as original)
+                                      bool FaceIntersectionAccetanceFlag = true;
+
+                                      if (FaceIntersectionAccetanceFlag == true) {
+                                          dtMin = TimeOfFlight;
+                                          IntersectionFace = t->TriangleFace;
+
+                                          #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+                                          if (isfinite(dtMin)==false) exit(__LINE__,__FILE__,"Error: non finite");
+                                          if (std::fpclassify(dtMin) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
+                                          #endif
+
+                                          memcpy(xLocalIntersectionFace, xLocalIntersection, 2 * sizeof(double));
+                                          memcpy(xIntersectionFace, xIntersection, 3 * sizeof(double));
+
+                                          ParticleIntersectionCode = _BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_;
+                                          MovingTimeFinished = false;
+                                      }
+                                  }
                               }
                           }
+
+                          #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+                          if (isfinite(dtMin)==false) exit(__LINE__,__FILE__,"Error: non finite");
+                          if (std::fpclassify(dtMin) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
+                          #endif
                       }
                   }
-
-		  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-		  if (isfinite(dtMin)==false) exit(__LINE__,__FILE__,"Error: non finite");
-		  if (std::fpclassify(dtMin) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
-                  #endif
               }
           }
       }
@@ -4053,36 +4091,67 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
           double dtMinCutFace = dtMin; // Initialize with current dtMin
           bool foundCutFaceIntersection = false;
           
-          // Check cut faces in the new block from original particle position
-          if (potentialNewNode->FirstTriangleCutFace != NULL) {
-              
+          // Check cut faces in the new block from original particle position.
+          // Include neighbor descriptors for the same reason as above: a face
+          // crossed near a block boundary may be accessible through the
+          // neighboring cut-face list rather than FirstTriangleCutFace alone.
+          if ((potentialNewNode->FirstTriangleCutFace != NULL) ||
+              (potentialNewNode->neibCutFaceListDescriptorList != NULL)) {
+
               CutCell::cTriangleFaceDescriptor *t;
               CutCell::cTriangleFace *TriangleFace;
               double TimeOfFlight;
               double xLocalIntersection[2], xIntersection[3];
-              
-              for (t = potentialNewNode->FirstTriangleCutFace; t != NULL; t = t->next) {
-                  if ((TriangleFace = t->TriangleFace) != lastIntersectedTriangleFace)  if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace) == true) {
-                      if (TriangleFace->RayIntersection(xOriginal, v, TimeOfFlight, 
-                                                     xLocalIntersection, xIntersection, 
-                                                     PIC::Mesh::mesh->EPS) == true) {
 
-                          TimeOfFlight*=(1.0-1.0E-5);
+              for (int ipass = 0; ipass < 2; ipass++) {
+                  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>::cCutFaceListDescriptor *D;
+                  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>::cCutFaceListDescriptor descTemp;
 
-                          if ((TimeOfFlight < dtMinCutFace) && (TimeOfFlight > 0.0)) {
-                              dtMinCutFace = TimeOfFlight;
-                              foundCutFaceIntersection = true;
+                  switch (ipass) {
+                  case 0:
+                      descTemp.next = NULL;
+                      descTemp.node = potentialNewNode;
+                      descTemp.FirstTriangleCutFace = potentialNewNode->FirstTriangleCutFace;
+                      D = &descTemp;
+                      break;
+                  case 1:
+                      D = potentialNewNode->neibCutFaceListDescriptorList;
+                      break;
+                  default:
+                      D = NULL;
+                      break;
+                  }
 
-			      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-			      if (isfinite(dtMinCutFace)==false) exit(__LINE__,__FILE__,"Error: non finite");
-			      if (std::fpclassify(dtMinCutFace) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
-                              #endif
-                              
-                              // Update intersection data
-                              IntersectionFace = TriangleFace;
-                              memcpy(xLocalIntersectionFace, xLocalIntersection, 2 * sizeof(double));
-                              memcpy(xIntersectionFace, xIntersection, 3 * sizeof(double));
-                              ParticleIntersectionCode = _BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_;
+                  for (; D != NULL; D = D->next) {
+                      for (t = D->FirstTriangleCutFace; t != NULL; t = t->next) {
+                          if ((TriangleFace = t->TriangleFace) != lastIntersectedTriangleFace) {
+                              if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace) == true) {
+                                  if (TriangleFace->RayIntersection(xOriginal, v, TimeOfFlight,
+                                                                 xLocalIntersection, xIntersection,
+                                                                 PIC::Mesh::mesh->EPS) == true) {
+
+                                      // Use the exact geometric intersection time.  The
+                                      // post-intersection outward-normal displacement below is
+                                      // responsible for moving the particle safely away from the
+                                      // triangulated surface.
+
+                                      if ((TimeOfFlight < dtMinCutFace) && (TimeOfFlight > 0.0)) {
+                                          dtMinCutFace = TimeOfFlight;
+                                          foundCutFaceIntersection = true;
+
+                                          #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+                                          if (isfinite(dtMinCutFace)==false) exit(__LINE__,__FILE__,"Error: non finite");
+                                          if (std::fpclassify(dtMinCutFace) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
+                                          #endif
+
+                                          // Update intersection data
+                                          IntersectionFace = TriangleFace;
+                                          memcpy(xLocalIntersectionFace, xLocalIntersection, 2 * sizeof(double));
+                                          memcpy(xIntersectionFace, xIntersection, 3 * sizeof(double));
+                                          ParticleIntersectionCode = _BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_;
+                                      }
+                                  }
+                              }
                           }
                       }
                   }
@@ -4159,84 +4228,179 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
           int code;
           newNode = PIC::Mesh::mesh->findTreeNode(x, startNode);
 
-	  double dot_product_init=v[0] * IntersectionFace->ExternalNormal[0] +
-                 v[1] * IntersectionFace->ExternalNormal[1] +
-                 v[2] * IntersectionFace->ExternalNormal[2]; 
-          
-       //   do {
-              code = (ProcessTriangleCutFaceIntersection != NULL) ? 
-                     ProcessTriangleCutFaceIntersection(ptr, x, v, IntersectionFace, newNode) : 
-                     _PARTICLE_DELETED_ON_THE_FACE_;
-              
-              if (code == _PARTICLE_DELETED_ON_THE_FACE_) {
-                  PIC::ParticleBuffer::DeleteParticle(ptr);
-                  return _PARTICLE_LEFT_THE_DOMAIN_;
-              }
-        //  }
-        if  ((v[0] * IntersectionFace->ExternalNormal[0] + 
-                 v[1] * IntersectionFace->ExternalNormal[1] + 
-                 v[2] * IntersectionFace->ExternalNormal[2])* dot_product_init>=0.0) {
-		 for (int i=0;i<3;i++) v[i]*=-1.0; 
-	}
-          
-	/*
-          // Ensure particle is positioned outside the surface after scattering
-          double normalDotPosition = 0.0;
+          // The face normal is assumed to point from the triangulated body into
+          // the computational domain.  A particle that has just hit the surface
+          // should leave the boundary-condition callback with v dot n > 0.
+          // Keep the pointer visible outside of this block because the optional
+          // NASTRAN inside-domain check below also needs the same normal.
           double *surfaceNormal = IntersectionFace->ExternalNormal;
-          double *surfacePoint = IntersectionFace->x0Face;
-          
-          // Calculate distance from surface (positive = outside, negative = inside)
-          for (idim = 0; idim < 3; idim++) {
-              normalDotPosition += (x[idim] - surfacePoint[idim]) * surfaceNormal[idim];
+          double *surfacePoint  = IntersectionFace->x0Face;
+
+          // Use a normalized copy of the face normal for velocity correction and
+          // position displacement.  ExternalNormal is expected to be normalized,
+          // but normalizing here makes the numerical guard independent of that
+          // assumption and prevents displacement distances from being scaled by
+          // a non-unit normal.
+          double surfaceNormalUnit[3];
+          double surfaceNormalLength2 =
+              surfaceNormal[0] * surfaceNormal[0] +
+              surfaceNormal[1] * surfaceNormal[1] +
+              surfaceNormal[2] * surfaceNormal[2];
+
+          if (surfaceNormalLength2 <= 0.0) {
+              PIC::ParticleBuffer::DeleteParticle(ptr);
+              return _PARTICLE_LEFT_THE_DOMAIN_;
           }
-          
-          // If particle is inside or too close to surface, move it outside
-          double minDistanceFromSurface = 2.0 * PIC::Mesh::mesh->EPS;
-          if (normalDotPosition < minDistanceFromSurface) {
-              double displacementDistance = minDistanceFromSurface - normalDotPosition;
-              
-              // Move particle along surface normal to ensure it's outside
+
+          double surfaceNormalLength = sqrt(surfaceNormalLength2);
+          for (idim = 0; idim < 3; idim++) {
+              surfaceNormalUnit[idim] = surfaceNormal[idim] / surfaceNormalLength;
+          }
+
+          // Remember the incoming normal velocity for diagnostics/debugging.
+          // A normal impact from outside the body usually has v dot n < 0.
+          // The value is not used to decide the post-collision correction: the
+          // physically important condition after the callback is simply that the
+          // particle must be moving into the computational domain.
+          double dot_product_init =
+              v[0] * surfaceNormalUnit[0] +
+              v[1] * surfaceNormalUnit[1] +
+              v[2] * surfaceNormalUnit[2];
+          (void)dot_product_init;
+
+          code = (ProcessTriangleCutFaceIntersection != NULL) ?
+                 ProcessTriangleCutFaceIntersection(ptr, x, v, IntersectionFace, newNode) :
+                 _PARTICLE_DELETED_ON_THE_FACE_;
+
+          if (code == _PARTICLE_DELETED_ON_THE_FACE_) {
+              PIC::ParticleBuffer::DeleteParticle(ptr);
+              return _PARTICLE_LEFT_THE_DOMAIN_;
+          }
+
+          // Numerical guard against particles slipping into the body.
+          //
+          // The intersection point is reconstructed above from barycentric
+          // coordinates, i.e. it lies exactly on the triangle plane to within
+          // floating-point precision.  If the particle is reinserted at that
+          // location, subsequent roundoff in FindCellIndex(), findTreeNode(),
+          // or a repeated RayIntersection() call can classify it as being just
+          // inside the triangulated body.  The previous code tried to avoid this
+          // by shortening TimeOfFlight, but that did not help because the point
+          // was later snapped back onto the face.
+          //
+          // The robust procedure is:
+          //   1. require the post-interaction normal velocity to be outward;
+          //   2. move the particle a small, geometry-scaled distance along the
+          //      outward face normal;
+          //   3. update the AMR node using the displaced position.
+          //
+          // Only the normal component of velocity is corrected.  Flipping the
+          // full velocity vector changes tangential motion and can create
+          // nonphysical scattering, especially for grazing impacts.
+          double blockScale = 0.0;
+          for (idim = 0; idim < 3; idim++) {
+              double s = startNode->xmax[idim] - startNode->xmin[idim];
+              if (s > blockScale) blockScale = s;
+          }
+
+          // Floating point roundoff scales with the local geometry.  Combine a
+          // mesh-level epsilon with a machine-precision scale so the displacement
+          // is large enough to break numerical ties with the triangle plane but
+          // still tiny compared with a block/cell size.  The explicit double
+          // precision epsilon avoids introducing a new header dependency here.
+          const double doubleRoundoff = 2.2204460492503131e-16;
+          double surfaceEPS = 10.0 * PIC::Mesh::mesh->EPS;
+          double roundoffEPS = 64.0 * doubleRoundoff * blockScale;
+          if (surfaceEPS < roundoffEPS) surfaceEPS = roundoffEPS;
+
+          double vNormal =
+              v[0] * surfaceNormalUnit[0] +
+              v[1] * surfaceNormalUnit[1] +
+              v[2] * surfaceNormalUnit[2];
+
+          if (vNormal <= 0.0) {
+              // Reflect only the inward normal component.  This makes v dot n
+              // positive while preserving the tangential velocity components.
               for (idim = 0; idim < 3; idim++) {
-                  x[idim] += displacementDistance * surfaceNormal[idim];
+                  v[idim] -= 2.0 * vNormal * surfaceNormalUnit[idim];
               }
-              
-              // Verify the particle is now outside the surface
-              normalDotPosition = 0.0;
+
+              vNormal =
+                  v[0] * surfaceNormalUnit[0] +
+                  v[1] * surfaceNormalUnit[1] +
+                  v[2] * surfaceNormalUnit[2];
+          }
+
+          // If the boundary-condition callback produced a nearly tangent
+          // velocity, add the smallest useful outward normal component.  This
+          // prevents the same face from being hit again immediately due to
+          // roundoff, without changing the particle speed at a macroscopic level.
+          if (vNormal <= 0.0) {
+              double speed = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+              double vNormalFloor = 64.0 * doubleRoundoff * speed;
+
+              if (vNormalFloor < 0.0) vNormalFloor = 0.0;
+
               for (idim = 0; idim < 3; idim++) {
-                  normalDotPosition += (x[idim] - surfacePoint[idim]) * surfaceNormal[idim];
-              }
-              
-              // Additional safety check - if still inside, move further out
-              if (normalDotPosition < minDistanceFromSurface) {
-                  for (idim = 0; idim < 3; idim++) {
-                      x[idim] += minDistanceFromSurface * surfaceNormal[idim];
-                  }
+                  v[idim] += (vNormalFloor - vNormal) * surfaceNormalUnit[idim];
               }
           }
 
-	  */
-          
+          // Calculate signed distance from the reconstructed point to the local
+          // triangle plane.  Positive distance means the point is already outside
+          // the body.  Zero or negative distance is unsafe because the same point
+          // can be classified as inside after roundoff.
+          double normalDotPosition = 0.0;
+          for (idim = 0; idim < 3; idim++) {
+              normalDotPosition += (x[idim] - surfacePoint[idim]) * surfaceNormalUnit[idim];
+          }
+
+          if (normalDotPosition < surfaceEPS) {
+              double displacementDistance = surfaceEPS - normalDotPosition;
+
+              for (idim = 0; idim < 3; idim++) {
+                  x[idim] += displacementDistance * surfaceNormalUnit[idim];
+              }
+          }
+
           // Double-check using domain boundary function if available
           #if _PIC_CONTROL_PARTICLE_INSIDE_NASTRAN_SURFACE_ == _PIC_MODE_ON_
-          if (CutCell::CheckPointInsideDomain(x, CutCell::BoundaryTriangleFaces, 
-                                            CutCell::nBoundaryTriangleFaces, 
+          if (CutCell::CheckPointInsideDomain(x, CutCell::BoundaryTriangleFaces,
+                                            CutCell::nBoundaryTriangleFaces,
                                             false, 0.0 * PIC::Mesh::mesh->EPS) == false) {
-              // Particle is still inside - move it further out along normal
-              for (idim = 0; idim < 3; idim++) {
-                  x[idim] += 5.0 * PIC::Mesh::mesh->EPS * surfaceNormal[idim];
+              // The local face-normal displacement should be sufficient for a
+              // consistently oriented closed surface.  If the global inside/outside
+              // test still fails, try a few progressively larger displacements
+              // before deleting the particle.  This protects against roundoff near
+              // triangle edges/vertices and avoids leaving a particle inside the
+              // solid body.
+              bool recoveredOutsideDomain = false;
+
+              for (int nSurfaceRecoveryStep = 0; nSurfaceRecoveryStep < 4; nSurfaceRecoveryStep++) {
+                  double extraDisplacement = pow(2.0, nSurfaceRecoveryStep) * surfaceEPS;
+
+                  for (idim = 0; idim < 3; idim++) {
+                      x[idim] += extraDisplacement * surfaceNormalUnit[idim];
+                  }
+
+                  if (CutCell::CheckPointInsideDomain(x, CutCell::BoundaryTriangleFaces,
+                                                    CutCell::nBoundaryTriangleFaces,
+                                                    false, 0.0 * PIC::Mesh::mesh->EPS) == true) {
+                      recoveredOutsideDomain = true;
+                      break;
+                  }
               }
-              
-              // Final check - if still inside, delete particle to avoid infinite loop
-              if (CutCell::CheckPointInsideDomain(x, CutCell::BoundaryTriangleFaces, 
-                                                CutCell::nBoundaryTriangleFaces, 
-                                                false, 0.0 * PIC::Mesh::mesh->EPS) == false) {
+
+              if (recoveredOutsideDomain == false) {
                   PIC::ParticleBuffer::DeleteParticle(ptr);
                   return _PARTICLE_LEFT_THE_DOMAIN_;
               }
           }
           #endif
-          
-          // Save the intersected face and update node
+
+          // Save the intersected face and update node after the outward
+          // displacement.  The next iteration may skip this face only after the
+          // particle has been moved away from the triangle plane.
           lastIntersectedTriangleFace = IntersectionFace;
           startNode = PIC::Mesh::mesh->findTreeNode(x, startNode);
           
@@ -4271,6 +4435,20 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
           }
       }
   } // End of main while loop
+
+  #if _PIC_CONTROL_PARTICLE_INSIDE_NASTRAN_SURFACE_ == _PIC_MODE_ON_
+  // Final safety guard before reinserting the particle into AMR cell lists.
+  // This catches any rare case where a particle ends the mover step inside the
+  // triangulated solid body without the last sub-step being classified as a
+  // boundary-face hit.  Do not silently insert such a particle into a valid
+  // mesh cell, because it can then continue propagating inside the body.
+  if (CutCell::CheckPointInsideDomain(x, CutCell::BoundaryTriangleFaces,
+                                    CutCell::nBoundaryTriangleFaces,
+                                    false, 0.0 * PIC::Mesh::mesh->EPS) == false) {
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+  }
+  #endif
   
   // Final particle placement
   if ((LocalCellNumber = PIC::Mesh::mesh->FindCellIndex(x, i, j, k, startNode, false)) == -1) {
