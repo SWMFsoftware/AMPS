@@ -103,12 +103,14 @@ namespace Earth {
     // a run decide whether newly injected particles should actually request
     // trajectory tracking, and cap how many trajectory records are initialized.
     //
-    // enabled=false or maxTrajectories<=0 disables initialization of new
-    // trajectory records even when the AMPS tracker is compiled in.
+    // initializeParticleTrajectories must be the parsed value of
+    // prm.mode3dForward.initializeParticleTrajectories.  A false value disables
+    // initialization of new trajectory records even when the AMPS tracker is
+    // compiled in.  maxTrajectories must be the parsed N_TRAJECTORIES cap.
     // forceInjectedParticles=true is used by 3d_forward boundary injection: the
     // injected particles start on the outer boundary, so the legacy near-Earth
     // radius test in TrajectoryTrackingCondition would otherwise reject them.
-    void ConfigureRuntimeTrajectoryTracking(bool enabled,
+    void ConfigureRuntimeTrajectoryTracking(bool initializeParticleTrajectories,
                                             int maxTrajectories,
                                             bool forceInjectedParticles=false);
 

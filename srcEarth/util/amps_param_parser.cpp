@@ -2530,7 +2530,7 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         //   N_TRAJECTORIES 1000
         // must be sufficient to change the runtime cap and enable trajectory
         // initialization.  This is the bug fix: before this section was parsed,
-        // pt.cpp kept its default MaxRuntimeTrajectories=40000.
+        // pt.cpp could fall back to an internal hard-coded trajectory cap.
         // A zero value is treated as an explicit disable switch.
         p.mode3dForward.initializeParticleTrajectories =
             (p.mode3dForward.nParticleTrajectories > 0);

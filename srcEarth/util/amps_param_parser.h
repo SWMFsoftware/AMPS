@@ -807,10 +807,10 @@ namespace EarthUtil {
     bool initializeParticleTrajectories{false};
 
     // Maximum number of injected-particle trajectory records initialized by the
-    // model.  The cap is local to the AMPS tracker callback, which matches the
-    // historical behavior of pt.cpp.  Values <=0 disable trajectory initialization;
-    // positive values enable it when parsed from N_TRAJECTORIES.
-    int nParticleTrajectories{40000};
+    // model.  Default is zero so the parser/configuration path must explicitly
+    // enable trajectory initialization; the AMPS callback must not fall back to
+    // an independent hard-coded cap.
+    int nParticleTrajectories{0};
   };
 
   // Mode3DOptions — command-line controls specific to the PIC-backed 3D workflow
