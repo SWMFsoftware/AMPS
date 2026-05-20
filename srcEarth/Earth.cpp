@@ -11,6 +11,7 @@
 
 #include "pic.h"
 #include "Earth.h"
+#include "3d_forward/ForwardParticleMovers.h"
 #include "T96Interface.h"
 #include "T05Interface.h"
 
@@ -228,7 +229,7 @@ void Earth::Sampling::PrintManager(int nDataSet) {
 //empty fucntion. needed for compartibility with the core
 void Earth::Sampling::SamplingManager() {}
 
-//particle mover: call relativistic Boris, ans sample particle flux
+//particle mover: call the active model mover and sample particle flux
 int Earth::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   double xInit[3],xFinal[3];
   int res,iShell;
@@ -237,7 +238,15 @@ int Earth::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDa
 
 
 
-  switch ((int)PIC::ParticleBuffer::GetI(ptr)) {
+  if (Earth::ModelMode == Earth::BoundaryInjectionMode) {
+    // 3d_forward must enter through one AMPS-facing mover manager.  The manager
+    // selects the concrete mover (BORIS/RK4/GC/HYBRID) internally from the runtime
+    // configuration set by the 3d_forward driver.  Keeping AMPS connected to one
+    // function prevents the injection path and the AMPS time-step path from using
+    // different mover-selection logic.
+    res = Earth3DForward::MoverManager(ptr,dtTotal,startNode);
+  }
+  else switch ((int)PIC::ParticleBuffer::GetI(ptr)) {
   case _ELECTRON_SPEC_:
 //    res=PIC::Mover::GuidingCenter::Mover_SecondOrder(ptr,dtTotal,startNode);
     res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);

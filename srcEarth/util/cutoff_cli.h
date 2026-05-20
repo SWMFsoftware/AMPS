@@ -39,9 +39,11 @@
 //         GC6     Guiding-center equations integrated with RK6
 //         HYBRID  Switch per step between RK4 and GC4 when the local motion is
 //                 sufficiently adiabatic for guiding-center transport
-//       See GridlessParticleMovers.h for a full description of each mover.
+//       In gridless and backward 3D modes, all listed values are handled by the
+//       shared GridlessParticleMovers layer. In 3d_forward mode, the AMPS-signature
+//       mover manager currently supports BORIS, RK4, GC/GC4, and HYBRID.
 //       If omitted, the default mover (BORIS) is used.
-//       The string is stored as-is; translation to MoverType enum is done by the caller.
+//       The string is stored as-is; translation to the concrete mover is done by the caller.
 //
 //   -density-mode <string>
 //       Override the DS_BOUNDARY_MODE key from the input file.
@@ -122,7 +124,7 @@ namespace EarthUtil {
     // Particle mover selection.
     // NOTE: This is intentionally a *string* here to keep the CLI independent of the
     // gridless integrator implementation. The executable can translate this string into
-    // a concrete enum (MoverType) and/or an input-file setting.
+    // a concrete enum (MoverType) or the 3d_forward manager selection.
     //
     // Supported values (case-insensitive):
     //   BORIS           : classic relativistic Boris pusher (legacy default)
@@ -131,7 +133,7 @@ namespace EarthUtil {
     //   HYBRID        : per-step switch between RK4 and GC4 using a local
     //                   adiabaticity criterion rho/L_eff
     //
-    // If empty, the executable should use its default / input-file setting.
+    // If empty, the executable should use its default setting.
     std::string mover{""};
 
     // -density-mode ISOTROPIC|ANISOTROPIC
@@ -204,23 +206,6 @@ namespace EarthUtil {
     //   Sentinel: < 0 means no CLI override.
     double forward3dInjectionEmin_MeV{-1.0};
     double forward3dInjectionEmax_MeV{-1.0};
-
-    // 3d_forward particle-trajectory initialization controls.
-    // These are runtime controls layered on top of AMPS' compile-time
-    // _PIC_PARTICLE_TRACKER_MODE_.  If AMPS was not compiled with the particle
-    // tracker enabled, these flags are parsed but cannot produce trajectory files.
-    //
-    // forward3dTrajectoryTracking sentinel:
-    //   -1 : no CLI override; use #PARTICLE_TRAJECTORY/defaults
-    //    0 : disable trajectory initialization
-    //    1 : enable trajectory initialization
-    int forward3dTrajectoryTracking{-1};
-
-    // -forward-n-trajectories <int> / --forward-n-trajectories <int>
-    // Maximum number of injected-particle trajectory records to initialize.
-    // Sentinel <0 means no CLI override.  A value of 0 explicitly disables
-    // trajectory initialization; a positive value enables it.
-    int forward3dNTrajectories{-1};
   };
 
   // Parse argc/argv. Throws std::runtime_error for malformed inputs.

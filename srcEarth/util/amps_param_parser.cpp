@@ -2293,12 +2293,31 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
                uKey=="FORWARD_INJECTION_SCHEME") {
         p.mode3dForward.injectionEnergyDistribution=ToUpper(Trim(val));
       }
+      // 3d_forward mover keywords are reserved for a future input-file selection
+      // feature.  Store the requested value for diagnostics/future use, but do NOT
+      // apply it to p.mode3dForward.particleMover yet.  At present the active mover is
+      // selected by the CLI (-mover) or falls back to BORIS.
+      else if (uKey=="FORWARD_MOVER" ||
+               uKey=="FORWARD_PARTICLE_MOVER" ||
+               uKey=="FORWARD_INTEGRATOR" ||
+               uKey=="PARTICLE_MOVER") {
+        p.mode3dForward.reservedInputFileParticleMover=ToUpper(Trim(val));
+        p.mode3dForward.hasReservedInputFileParticleMover=true;
+      }
       else rememberUnknown();
     }
     else if (section=="#DENSITY_3D") {
       // Volumetric 3D density sampling controls for Mode3DForward.
       // All energies are in MeV/n (same convention as #DENSITY_SPECTRUM).
-      if      (uKey=="DENS_EMIN")    p.density3d.Emin_MeV    = std::stod(val);
+      if      (uKey=="FORWARD_MOVER" || uKey=="FORWARD_PARTICLE_MOVER" ||
+               uKey=="FORWARD_INTEGRATOR" || uKey=="PARTICLE_MOVER" ||
+               uKey=="DENS_MOVER") {
+        // Reserved for future input-file-driven 3d_forward mover selection.  Keep the
+        // value but do not make it active; CLI selection remains the only active path.
+        p.mode3dForward.reservedInputFileParticleMover=ToUpper(Trim(val));
+        p.mode3dForward.hasReservedInputFileParticleMover=true;
+      }
+      else if (uKey=="DENS_EMIN")    p.density3d.Emin_MeV    = std::stod(val);
       else if (uKey=="DENS_EMAX")    p.density3d.Emax_MeV    = std::stod(val);
       else if (uKey=="DENS_NENERGY") p.density3d.nEnergyBins  = std::stoi(val);
       else if (uKey=="DENS_ENERGY_SPACING") {
@@ -2306,34 +2325,6 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         if      (sp=="LOG")    p.density3d.spacing = EarthUtil::Density3DParam::Spacing::LOG;
         else if (sp=="LINEAR") p.density3d.spacing = EarthUtil::Density3DParam::Spacing::LINEAR;
         else { std::ostringstream _m; _m << "DENS_ENERGY_SPACING must be LOG or LINEAR (got '" << Trim(val) << "')"; exit(__LINE__,__FILE__,_m.str().c_str()); }
-      }
-      else rememberUnknown();
-    }
-    else if (section=="#PARTICLE_TRAJECTORY") {
-      // Runtime controls for AMPS particle-trajectory records in 3d_forward.
-      // These settings do not replace the AMPS compile-time switch: the tracker
-      // must still be built with _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_.
-      // They only decide whether 3d_forward injected particles request tracking
-      // and how many such trajectory records may be initialized.
-      if (uKey=="INITIALIZE_TRAJECTORIES" ||
-          uKey=="INITIALIZE_PARTICLE_TRAJECTORIES" ||
-          uKey=="TRACK_TRAJECTORIES" ||
-          uKey=="ENABLE_TRAJECTORY_TRACKING" ||
-          uKey=="PARTICLE_TRAJECTORY_TRACKING") {
-        p.mode3dForward.initializeParticleTrajectories = ToBool(val);
-      }
-      else if (uKey=="N_TRAJECTORIES" ||
-               uKey=="N_PARTICLE_TRAJECTORIES" ||
-               uKey=="MAX_TRAJECTORIES" ||
-               uKey=="MAX_PARTICLE_TRAJECTORIES") {
-        p.mode3dForward.nParticleTrajectories = std::stoi(val);
-        // The compact input requested by the user:
-        //   #PARTICLE_TRAJECTORY
-        //   N_TRAJECTORIES 10000
-        // should be sufficient to enable trajectory initialization.  A zero
-        // value is treated as an explicit disable switch.
-        p.mode3dForward.initializeParticleTrajectories =
-            (p.mode3dForward.nParticleTrajectories > 0);
       }
       else rememberUnknown();
     }
@@ -2506,14 +2497,6 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
     if (!(p.density3d.nEnergyBins >= 1)) {
       exit(__LINE__,__FILE__,"DENS_NENERGY must be >= 1");
-    }
-    if (p.mode3dForward.nParticleTrajectories < 0) {
-      exit(__LINE__,__FILE__,"N_TRAJECTORIES must be >= 0 (0 disables particle trajectory initialization)");
-    }
-    if (p.mode3dForward.initializeParticleTrajectories &&
-        p.mode3dForward.nParticleTrajectories <= 0) {
-      exit(__LINE__,__FILE__,
-           "INITIALIZE_TRAJECTORIES requires N_TRAJECTORIES > 0 in #PARTICLE_TRAJECTORY");
     }
   }
 

@@ -11,6 +11,7 @@
 #include "Density3D.h"
 #include "SphereFlux3D.h"
 #include "BoundaryDistribution.h"
+#include "ForwardParticleMovers.h"
 
 #include "../boundary/spectrum.h"
 #include "../3d/ElectricField.h"
@@ -31,7 +32,6 @@
 #include <iomanip>
 
 #include "pic.h"
-#include "../Earth.h"
 #include "../../interface/T96Interface.h"
 #include "../../interface/T05Interface.h"
 #include "../../interface/TA16Interface.h"
@@ -64,13 +64,6 @@ static double sParticleWeight      = 1.0;   // nominal physical particles per si
 static int    sNParticlesPerIter   = 1000;  // simulation particles requested per iteration
 static double sDt                  = 1.0;   // time step [s]
 static int    sSpecies             = 0;     // AMPS species index for injection
-
-// Runtime particle-trajectory controls.  These are deliberately separate from
-// the AMPS compile-time _PIC_PARTICLE_TRACKER_MODE_ switch.  The compile-time
-// switch decides whether the tracker exists at all; these values decide whether
-// this 3d_forward run initializes trajectory records for newly injected particles.
-static bool   sInitializeParticleTrajectories = false;
-static int    sMaxParticleTrajectories        = 0;
 
 // ============================================================================
 //  Energy-sampling branch used by the forward boundary injector
@@ -1149,20 +1142,17 @@ static long int InjectParticles() {
 #endif
 
 #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
-    // Runtime gate requested by the model input/CLI.  AMPS must still be built
-    // with _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_, but that compile-time
-    // capability no longer forces every 3d_forward run to initialize trajectory
-    // records.  The model-level switch is configured from #PARTICLE_TRAJECTORY
-    // or the -forward-track-trajectories / -forward-n-trajectories CLI flags.
-    if (sInitializeParticleTrajectories) {
-      PIC::ParticleTracker::InitParticleID(pData);
-      PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(
-          c.x, c.v, sSpecies, pData, static_cast<void*>(c.startNode));
-    }
+    PIC::ParticleTracker::InitParticleID(pData);
+    PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(
+        c.x, c.v, sSpecies, pData, static_cast<void*>(c.startNode));
 #endif
 
     const double localDt = c.startNode->block->GetLocalTimeStep(sSpecies);
-    _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newP, c.moveTimeFraction * localDt, c.startNode);
+    // Use the single 3d_forward AMPS-facing mover manager for the random partial-step
+    // immediately after injection.  The regular AMPS time-step loop enters the same
+    // manager through Earth::ParticleMover, so newly created particles and already
+    // resident particles cannot accidentally use different mover-selection logic.
+    Earth::Earth3DForward::MoverManager(newP, c.moveTimeFraction * localDt, c.startNode);
     nInjectedLocal++;
   }
 
@@ -1179,6 +1169,28 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //--------------------------------------------------------------------------
   Earth::ModelMode = Earth::BoundaryInjectionMode;
 
+  // Configure the single AMPS-signature mover manager used by the 3d_forward path.
+  // The actual manager lives in 3d_forward/ForwardParticleMovers.cpp and performs full
+  // AMPS particle-list and boundary bookkeeping.  Earth::ParticleMover and the
+  // immediate post-injection partial step both call MoverManager(); only this startup
+  // configuration decides which concrete numerical method the manager uses.
+  //
+  // Current policy: the active mover is selected by CLI/default only.  The input-file
+  // parser has reserved fields for future FORWARD_MOVER-style keywords, but those
+  // reserved values are intentionally not applied here yet.
+  if (!Earth::Earth3DForward::SetMoverByName(prm.mode3dForward.particleMover)) {
+    throw std::runtime_error(
+        "Unknown 3d_forward particle mover '" + prm.mode3dForward.particleMover +
+        "'. Valid 3d_forward movers are BORIS, RK4, GC/GC4, and HYBRID.");
+  }
+
+  // Give the AMPS-signature forward movers access to the same parsed field-model
+  // configuration used by Mode3D.  The standard AMPS mover signature cannot carry
+  // an AmpsParam object, but RK4/GC/HYBRID need it in order to reproduce the 3-D
+  // path's field access policy: AMR interpolation of DATAFILE fields by default,
+  // or direct analytic EvaluateBackgroundMagneticFieldSI() calls when requested.
+  Earth::Earth3DForward::ConfigureFieldEvaluation(prm);
+
   // Select the energy-sampling branch for the outer-boundary source.  The string
   // currently comes from the CLI override or the default stored in
   // Mode3DForwardOptions.  The same field is deliberately used by the optional
@@ -1186,10 +1198,6 @@ int Run(const EarthUtil::AmpsParam& prm) {
   // the injector itself.
   sInjectionEnergyDistribution =
       ParseInjectionEnergyDistribution(prm.mode3dForward.injectionEnergyDistribution);
-
-  sInitializeParticleTrajectories =
-      prm.mode3dForward.initializeParticleTrajectories;
-  sMaxParticleTrajectories = prm.mode3dForward.nParticleTrajectories;
 
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_
   if (sInjectionEnergyDistribution == InjectionEnergyDistribution::LOG_UNIFORM) {
@@ -1242,24 +1250,6 @@ int Run(const EarthUtil::AmpsParam& prm) {
   ConfigureBackgroundFieldModel(prm);
 
   PIC::InitMPI();
-
-#if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
-  // Configure the model-level runtime gate in the Earth particle-tracker
-  // callback.  forceInjectedParticles=true is important for 3d_forward: the
-  // particles are born on the outer boundary, so the legacy near-Earth radius
-  // condition in pt.cpp would otherwise reject the newly injected particles.
-  Earth::ParticleTracker::ConfigureRuntimeTrajectoryTracking(
-      sInitializeParticleTrajectories,
-      sMaxParticleTrajectories,
-      true);
-#else
-  if (sInitializeParticleTrajectories && PIC::ThisThread == 0) {
-    std::cerr << "[Mode3DForward] WARNING: #PARTICLE_TRAJECTORY / CLI requested "
-              << "particle trajectory initialization, but AMPS was compiled with "
-              << "_PIC_PARTICLE_TRACKER_MODE_ != _PIC_MODE_ON_. No trajectory "
-              << "records will be initialized.\n";
-  }
-#endif
 
   // Apply #DENSITY_3D before amps_init_mesh().  amps_init_mesh() allocates the
   // AMPS per-cell sampling buffer by calling cDensity3D::RequestSamplingData(),
@@ -1357,13 +1347,6 @@ int Run(const EarthUtil::AmpsParam& prm) {
               << InjectionEnergyDistributionName(sInjectionEnergyDistribution)
               << ")\n";
 
-  if (PIC::ThisThread == 0) {
-    std::cout << "[Mode3DForward] Particle trajectory initialization: "
-              << (sInitializeParticleTrajectories ? "ON" : "OFF")
-              << " (N_TRAJECTORIES=" << sMaxParticleTrajectories
-              << ", requires _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_)\n";
-  }
-
   //--------------------------------------------------------------------------
   // 8. Inner absorption sphere
   //--------------------------------------------------------------------------
@@ -1390,7 +1373,9 @@ int Run(const EarthUtil::AmpsParam& prm) {
   InitBoundaryInjectionTable();
 
   if (PIC::ThisThread == 0)
-    std::cout << "[Mode3DForward] Boundary injection: energySampling="
+    std::cout << "[Mode3DForward] Particle mover: "
+              << Earth::Earth3DForward::GetMoverName() << "\n"
+              << "[Mode3DForward] Boundary injection: energySampling="
               << InjectionEnergyDistributionName(sInjectionEnergyDistribution) << "\n"
               << "[Mode3DForward] IMF direction: b=(" << Earth::BoundingBoxInjection::b[0]
               << ", " << Earth::BoundingBoxInjection::b[1]

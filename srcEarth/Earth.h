@@ -13,6 +13,7 @@
 
 #include "util/amps_param_parser.h"
 #include "3d_forward/Density3D.h"
+#include "3d_forward/ForwardParticleMovers.h"
 
 using namespace std;
 

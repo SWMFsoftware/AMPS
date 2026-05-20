@@ -59,11 +59,6 @@
 //       ANISOTROPIC:         T_aniso(E;x0) = (1/N_dirs)*sum_k A_k*f_PAD_k*f_spatial_k
 //                            requires #BOUNDARY_ANISOTROPY section
 //
-//   #PARTICLE_TRAJECTORY    (optional; used by -mode 3d_forward)
-//     INITIALIZE_TRAJECTORIES T|F        ! runtime gate for AMPS trajectory records
-//     N_TRAJECTORIES          <int>      ! maximum injected-particle trajectories
-//                                        ! >0 also enables INITIALIZE_TRAJECTORIES
-//
 //   #BOUNDARY_ANISOTROPY     (required when DS_BOUNDARY_MODE = ANISOTROPIC)
 //     BA_PAD_MODEL            ISOTROPIC | SINALPHA_N | COSALPHA_N | BIDIRECTIONAL
 //     BA_PAD_EXPONENT         <double>   ! n in sin^n or |cos|^n  (default 2.0)
@@ -730,16 +725,9 @@ namespace EarthUtil {
   //                                                 physical weight is recomputed automatically:
   //                                                   W = (π×∫J dE×A_boundary×dt)/N
   //   -forward-boundary-dist <ISOTROPIC|...>        override boundary distribution type
-  //   -forward-track-trajectories                    initialize AMPS trajectory records
-  //   -forward-no-track-trajectories                 disable trajectory-record initialization
-  //   -forward-n-trajectories <int>                  maximum injected-particle trajectories
   //
-  // Input file keywords:
-  //   #NUMERICAL
-  //     FORWARD_N_PARTICLES  <int>   simulation particles injected per iteration
-  //   #PARTICLE_TRAJECTORY
-  //     INITIALIZE_TRAJECTORIES T|F  runtime trajectory-record gate
-  //     N_TRAJECTORIES        <int>  trajectory-record cap; >0 also enables tracking
+  // Input file keywords (parsed from #NUMERICAL for max-step reuse):
+  //   FORWARD_N_PARTICLES  <int>   simulation particles injected per iteration
   //
   struct Mode3DForwardOptions {
     // Write amps_3dforward_initialized.data.dat after InitMeshFields().
@@ -776,24 +764,22 @@ namespace EarthUtil {
     // FORWARD_ENERGY_SAMPLING for forward compatibility with future input files.
     std::string injectionEnergyDistribution{"SPECTRUM"};
 
-    // Runtime gate for AMPS particle-trajectory initialization in 3d_forward.
-    // This is an additional model-level control on top of the AMPS compile-time
-    // switch _PIC_PARTICLE_TRACKER_MODE_.  No trajectory output is possible unless
-    // AMPS is compiled with that switch ON; when it is ON, this flag decides
-    // whether newly injected 3d_forward particles request trajectory records.
+    // Active particle mover used by the single AMPS-signature 3d_forward mover
+    // manager.  Supported values: BORIS, RK4, GC/GC4, HYBRID.
     //
-    // Default is off because trajectory output can be large.  It can be enabled
-    // by either:
-    //   #PARTICLE_TRAJECTORY / INITIALIZE_TRAJECTORIES T
-    //   #PARTICLE_TRAJECTORY / N_TRAJECTORIES <positive int>
-    //   CLI: -forward-track-trajectories or -forward-n-trajectories <positive int>
-    bool initializeParticleTrajectories{false};
+    // CURRENT POLICY: this active value is set from the CLI (-mover) or remains BORIS.
+    // The input-file parser does not currently change it.  This is intentional: the
+    // 3d_forward branch should have one active selection path until the final input-file
+    // keyword syntax and precedence rules are implemented.
+    std::string particleMover{"BORIS"};
 
-    // Maximum number of injected-particle trajectory records initialized by the
-    // model.  The cap is local to the run/rank in the AMPS tracker callback, which
-    // matches the historical behavior of pt.cpp.  Values <=0 disable trajectory
-    // initialization; positive values enable it when parsed from N_TRAJECTORIES.
-    int nParticleTrajectories{40000};
+    // Reserved input-file mover selection.  The parser recognizes future keys such as
+    // FORWARD_MOVER / FORWARD_PARTICLE_MOVER / FORWARD_INTEGRATOR and stores the value
+    // here, but Mode3DForward::Run() does not apply this field yet.  This reserves the
+    // necessary space for future input-file support without creating two competing
+    // active selector paths today.
+    std::string reservedInputFileParticleMover{""};
+    bool hasReservedInputFileParticleMover{false};
   };
 
   // Mode3DOptions — command-line controls specific to the PIC-backed 3D workflow

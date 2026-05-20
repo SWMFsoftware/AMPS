@@ -3,7 +3,7 @@
 
 #General
   TrajectoryTracing=on 
-  MaxSampledTrajectoryNumber=10000
+  MaxSampledTrajectoryNumber=1000
   
   ReferenceInjectionParticleNumber=100000
 
@@ -17,6 +17,8 @@
     file=ParticleData.restart \\
     SaveMode=overwrite  \\ !overwrite, newfile
     IterationInterval=200
+
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) Earth::Earth3DForward::MoverManager(ptr,LocalTimeStep,node)
 
 #endGeneral
 

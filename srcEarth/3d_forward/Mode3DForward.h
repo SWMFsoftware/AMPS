@@ -39,8 +39,9 @@
 //   6. Evaluate particle injection weight from boundary flux × dt / N_per_iter.
 //   7. Initialise absorption sphere (inner boundary at R_inner).
 //   8. Initialise 3D density sampling buffers (cDensity3D::Init).
-//   9. Main loop: inject → advance → sample → repeat for N_iterations.
-//  10. Final Tecplot output of sampled density.
+//   9. Configure the selected AMPS-signature mover (BORIS/RK4/GC/HYBRID).
+//  10. Main loop: inject → advance → sample → repeat for N_iterations.
+//  11. Final Tecplot output of sampled density.
 //
 //======================================================================================
 

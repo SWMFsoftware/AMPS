@@ -41,6 +41,7 @@
 #include "gridless/GridlessParticleMovers.h"
 #include "3d/Mode3D.h"
 #include "3d_forward/Mode3DForward.h"
+#include "3d_forward/ForwardParticleMovers.h"
 
 namespace {
 
@@ -1573,6 +1574,27 @@ int main(int argc,char **argv) {
         // Shared flag: diagnostic initialized-mesh Tecplot file.
         p.mode3dForward.outputInitializedFile = cli.mode3dOutputInitialized;
 
+        // Reuse the same field-evaluation CLI switch as -mode 3d.  The new
+        // 3d_forward RK4/GC/HYBRID movers use this flag to choose between AMR
+        // interpolation of the initialized 3-D mesh and direct analytic calls to
+        // Earth::Mode3D::EvaluateBackgroundMagneticFieldSI().
+        if (!cli.mode3dFieldEval.empty()) {
+          const std::string fieldEval = EarthUtil::ToUpper(cli.mode3dFieldEval);
+          if (fieldEval=="ANALYTIC" || fieldEval=="DIRECT") {
+            p.mode3d.forceAnalyticMagneticField = true;
+          }
+          else if (fieldEval=="INTERPOLATION" || fieldEval=="INTERPOLATED" ||
+                   fieldEval=="MESH" || fieldEval=="AMR") {
+            p.mode3d.forceAnalyticMagneticField = false;
+          }
+          else {
+            std::cerr << "Error: unknown field-evaluation option -mode3d-field-eval "
+                      << cli.mode3dFieldEval
+                      << ". Valid values: INTERPOLATION or ANALYTIC.\n";
+            return 1;
+          }
+        }
+
         // Number of forward iterations.
         if (cli.forward3dNiter > 0) p.mode3dForward.nIterations = cli.forward3dNiter;
 
@@ -1586,31 +1608,6 @@ int main(int argc,char **argv) {
         // Boundary distribution type (default ISOTROPIC; extensible).
         if (!cli.forward3dBoundaryDist.empty())
           p.mode3dForward.boundaryDistType = EarthUtil::ToUpper(cli.forward3dBoundaryDist);
-
-        // Runtime particle-trajectory initialization controls.  These are
-        // layered on top of AMPS' compile-time _PIC_PARTICLE_TRACKER_MODE_ flag:
-        // the compile-time flag must be ON, and this model-level flag must also
-        // be true, before injected 3d_forward particles request trajectory records.
-        if (cli.forward3dTrajectoryTracking >= 0)
-          p.mode3dForward.initializeParticleTrajectories =
-              (cli.forward3dTrajectoryTracking != 0);
-        if (cli.forward3dNTrajectories >= 0) {
-          p.mode3dForward.nParticleTrajectories = cli.forward3dNTrajectories;
-          p.mode3dForward.initializeParticleTrajectories =
-              (cli.forward3dNTrajectories > 0);
-        }
-
-        if (p.mode3dForward.nParticleTrajectories < 0) {
-          std::cerr << "Error: N_TRAJECTORIES must be >= 0 "
-                    << "(0 disables particle trajectory initialization).\n";
-          return 1;
-        }
-        if (p.mode3dForward.initializeParticleTrajectories &&
-            p.mode3dForward.nParticleTrajectories <= 0) {
-          std::cerr << "Error: particle trajectory initialization requires "
-                    << "N_TRAJECTORIES > 0.\n";
-          return 1;
-        }
 
         // Energy proposal distribution for the forward boundary source.
         // SPECTRUM keeps the legacy branch; LOG_UNIFORM oversamples the
@@ -1638,8 +1635,14 @@ int main(int argc,char **argv) {
           return 1;
         }
 
-        // Particle mover (shared with backward mode for consistency).
-        if (!ApplyCutoffMoverCli(cli)) return 1;
+        // Particle mover for 3d_forward.  The active selection path is currently CLI
+        // only: -mover sets the concrete method used internally by the single
+        // AMPS-facing 3d_forward mover manager.  The input-file parser has reserved
+        // storage for future FORWARD_MOVER-style keywords, but those values are not
+        // applied here yet to avoid two competing selector paths.
+        if (!cli.mover.empty()) {
+          p.mode3dForward.particleMover = EarthUtil::ToUpper(cli.mover);
+        }
 
         Earth::Mode3DForward::Run(p);
         MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
