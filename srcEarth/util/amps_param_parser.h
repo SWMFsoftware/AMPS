@@ -12,8 +12,10 @@
 // DESIGN PRINCIPLES
 // -----------------
 //   (1) No PIC framework dependencies. This parser can be built and tested standalone.
-//   (2) Permissive: unknown keys are stored in a "raw" map rather than rejected.
-//   (3) Forward-compatible: new sections and keys can be added without breaking old runs.
+//   (2) Fail-fast validation: unknown sections/keywords terminate execution through
+//       exit(__LINE__,__FILE__,msg) instead of being silently ignored.
+//   (3) New sections and keys must be added explicitly to the parser before they can
+//       appear in production input files.
 //   (4) Clear unit contract: all geometric lengths are expected in km from the caller;
 //       the parser documents this but does not enforce conversions (the solvers do).
 //
@@ -27,7 +29,9 @@
 //
 //   KEY   VALUE   [! optional comment]
 //
-// The following sections are recognised (unrecognised sections are skipped silently):
+// The following sections are recognised. Any unrecognised section or keyword is
+// treated as a fatal input-file error because it may indicate a typo or an option
+// that has not been connected to the model.
 //
 //   #RUN_INFO
 //     RUN_ID      <string>      ! arbitrary run identifier, stored in AmpsParam.runId
@@ -58,6 +62,11 @@
 //       ISOTROPIC (default): T(E;x0) = N_allowed/N_dirs, uniform boundary spectrum
 //       ANISOTROPIC:         T_aniso(E;x0) = (1/N_dirs)*sum_k A_k*f_PAD_k*f_spatial_k
 //                            requires #BOUNDARY_ANISOTROPY section
+//
+//   #PARTICLE_TRAJECTORY    (optional; used by -mode 3d_forward)
+//     INITIALIZE_TRAJECTORIES T|F        ! runtime gate for AMPS trajectory records
+//     N_TRAJECTORIES          <int>      ! maximum injected-particle trajectories
+//                                        ! >0 also enables INITIALIZE_TRAJECTORIES
 //
 //   #BOUNDARY_ANISOTROPY     (required when DS_BOUNDARY_MODE = ANISOTROPIC)
 //     BA_PAD_MODEL            ISOTROPIC | SINALPHA_N | COSALPHA_N | BIDIRECTIONAL
@@ -118,8 +127,6 @@
 //      typed metadata view in AmpsParam.particleSpectrum; the downstream
 //      evaluator still uses boundary/spectrum.h InitGlobalSpectrumFromKeyValueMap)
 //
-//   Any unrecognised section or key is stored in AmpsParam.unknown for diagnostics.
-//
 //   #ENERGY_CHANNELS    (optional; if present, enables per-channel integral flux output)
 //     CH_BEGIN
 //       NAME   E1_MeV   E2_MeV   [! optional comment]
@@ -162,15 +169,14 @@
 // ERROR HANDLING
 //======================================================================================
 //
-// ParseAmpsParamFile throws std::runtime_error for:
+// ParseAmpsParamFile terminates through exit(__LINE__,__FILE__,msg) for:
 //   - File not found / cannot open
-//   - Malformed numeric values for recognised keys (std::stod/stoi failure)
-//   - POINTS_END before POINTS_BEGIN
+//   - Unknown section names
+//   - Unknown key names within a recognised section
+//   - Malformed numeric values for recognised keys
+//   - Invalid physical or structural settings discovered during post-parse validation
 //
-// It does NOT throw for:
-//   - Unknown section names (silently skipped)
-//   - Unknown key names within a recognised section (stored in raw map)
-//   - Missing required sections (defaults in structs are used)
+// Missing optional sections are still allowed; defaults in structs are used.
 //
 // Post-parse validation (e.g., checking that #BOUNDARY_ANISOTROPY is present when
 // DS_BOUNDARY_MODE = ANISOTROPIC) is performed in amps_param_parser.cpp after the
@@ -725,9 +731,16 @@ namespace EarthUtil {
   //                                                 physical weight is recomputed automatically:
   //                                                   W = (π×∫J dE×A_boundary×dt)/N
   //   -forward-boundary-dist <ISOTROPIC|...>        override boundary distribution type
+  //   -forward-track-trajectories                    initialize AMPS trajectory records
+  //   -forward-no-track-trajectories                 disable trajectory-record initialization
+  //   -forward-n-trajectories <int>                  maximum injected-particle trajectories
   //
-  // Input file keywords (parsed from #NUMERICAL for max-step reuse):
-  //   FORWARD_N_PARTICLES  <int>   simulation particles injected per iteration
+  // Input file keywords:
+  //   #NUMERICAL
+  //     FORWARD_N_PARTICLES  <int>   simulation particles injected per iteration
+  //   #PARTICLE_TRAJECTORY
+  //     INITIALIZE_TRAJECTORIES T|F  runtime trajectory-record gate
+  //     N_TRAJECTORIES        <int>  trajectory-record cap; >0 also enables tracking
   //
   struct Mode3DForwardOptions {
     // Write amps_3dforward_initialized.data.dat after InitMeshFields().
@@ -780,6 +793,24 @@ namespace EarthUtil {
     // active selector paths today.
     std::string reservedInputFileParticleMover{""};
     bool hasReservedInputFileParticleMover{false};
+
+    // Runtime gate for AMPS particle-trajectory initialization in 3d_forward.
+    // This is an additional model-level control on top of the AMPS compile-time
+    // switch _PIC_PARTICLE_TRACKER_MODE_.  No trajectory output is possible unless
+    // AMPS is compiled with that switch ON; when it is ON, this flag decides
+    // whether newly injected 3d_forward particles request trajectory records.
+    //
+    // Default is off because trajectory output can be large.  It can be enabled
+    // by either:
+    //   #PARTICLE_TRAJECTORY / INITIALIZE_TRAJECTORIES T
+    //   #PARTICLE_TRAJECTORY / N_TRAJECTORIES <positive int>
+    bool initializeParticleTrajectories{false};
+
+    // Maximum number of injected-particle trajectory records initialized by the
+    // model.  The cap is local to the AMPS tracker callback, which matches the
+    // historical behavior of pt.cpp.  Values <=0 disable trajectory initialization;
+    // positive values enable it when parsed from N_TRAJECTORIES.
+    int nParticleTrajectories{40000};
   };
 
   // Mode3DOptions — command-line controls specific to the PIC-backed 3D workflow
@@ -1018,7 +1049,9 @@ namespace EarthUtil {
     // in that case only the total integral flux F_tot is written to the output files.
     std::vector<EnergyChannel> fluxChannels;
 
-    // Holds all unknown keys across sections (for diagnostics / forward compat).
+    // Retained for ABI/source compatibility with older parser clients.
+    // The strict parser no longer populates this map: unknown input sections or
+    // keywords terminate execution immediately through exit(__LINE__,__FILE__,msg).
     std::map<std::string,std::string> unknown;
   };
 

@@ -33,9 +33,11 @@
 //   "DOMAIN_BOUNDARY"      -> ParseDomainBoundary
 //   "OUTPUT_DOMAIN"        -> ParseOutputDomain
 //   "NUMERICAL"            -> ParseNumerical
-//   "SPECTRUM"             -> store raw keys in result.spectrum and build
+//   "SPECTRUM"             -> validate against supported spectrum keywords, store
+//                              raw keys in result.spectrum, and build
 //                              result.particleSpectrum during post-parse init
-//   everything else        -> store in result.unknown raw map
+//   everything else        -> terminate through exit(__LINE__,__FILE__,msg)
+//                              with a message identifying the unknown keyword
 //
 //======================================================================================
 // TOKENISATION
@@ -80,9 +82,10 @@
 //
 //   (4) If FIELD_MODEL is not in {T96, T05, DIPOLE}: std::runtime_error.
 //
-// Physical range checks (e.g., Emin < Emax, rInner > 0) are delegated to the
-// solver startup rather than the parser, so that the parser remains a pure
-// structural parser that can be unit-tested independently of physics.
+// Physical range checks (e.g., Emin < Emax, rInner > 0) are mostly delegated to
+// post-parse validation or solver startup.  Structural validation is strict: an
+// unknown section or keyword terminates execution immediately because ignoring it
+// could leave unintended default parameters active.
 //
 //======================================================================================
 // DESIGN CHOICES
@@ -104,7 +107,8 @@
 //         * result.particleSpectrum — typed metadata parsed here for early
 //                                     validation and clearer initialization
 //       This keeps the parser decoupled from the injection implementation while
-//       still making the spectrum choice explicit in AmpsParam.
+//       still making the spectrum choice explicit in AmpsParam.  Unknown spectrum
+//       keywords are rejected before the downstream initializer is called.
 //
 //======================================================================================
 
@@ -113,6 +117,7 @@
 #include "specfunc.h"
 
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <algorithm>
 #include <cctype>
@@ -159,6 +164,144 @@ bool ToBool(const std::string& sIn) {
   if (s=="F"||s=="FALSE"||s=="0"||s=="NO"||s=="N") return false;
   { std::ostringstream _exit_msg; _exit_msg << "Cannot parse boolean token: '"+sIn+"'"; exit(__LINE__,__FILE__,_exit_msg.str().c_str()); }
   return false; //The code should not come to this point -- it is here just to make the compiler happy
+}
+
+//======================================================================================
+// Strict AMPS_PARAM.in keyword validation helpers
+//======================================================================================
+//
+// The parser intentionally fails immediately when it sees an unrecognized section or
+// keyword.  This is safer than the previous permissive behavior because a misspelled
+// keyword such as N_TRAJECTORY instead of N_TRAJECTORIES can otherwise be ignored
+// silently, leaving a compiled-in/default value active and producing a scientifically
+// misleading run.  All fail-fast paths use the AMPS exit(__LINE__,__FILE__,msg)
+// convention requested for model-level fatal errors.
+//
+
+static inline bool ContainsToken(const std::vector<std::string>& list,
+                                 const std::string& token) {
+  return std::find(list.begin(), list.end(), token) != list.end();
+}
+
+static std::string JoinTokens(const std::vector<std::string>& list,
+                              const std::string& sep) {
+  std::ostringstream out;
+  for (std::size_t i=0; i<list.size(); ++i) {
+    if (i != 0) out << sep;
+    out << list[i];
+  }
+  return out.str();
+}
+
+static const std::vector<std::string>& RecognizedAmpsParamSections() {
+  static const std::vector<std::string> sections = {
+    "#RUN_INFO",
+    "#CALCULATION_MODE",
+    "#CUTOFF_RIGIDITY",
+    "#PARTICLE_SPECIES",
+    "#BACKGROUND_FIELD",
+    "#ELECTRIC_FIELD",
+    "#DOMAIN_BOUNDARY",
+    "#OUTPUT_DOMAIN",
+    "#NUMERICAL",
+    "#DENSITY_3D",
+    "#PARTICLE_TRAJECTORY",
+    "#DENSITY_SPECTRUM",
+    "#SPECTRUM",
+    "#BOUNDARY_ANISOTROPY",
+    "#OUTPUT_OPTIONS",
+    "#TEMPORAL",
+    "#ENERGY_CHANNELS"
+  };
+  return sections;
+}
+
+static inline bool IsRecognizedAmpsParamSection(const std::string& section) {
+  return ContainsToken(RecognizedAmpsParamSections(), ToUpper(Trim(section)));
+}
+
+static const std::vector<std::string>& RecognizedSpectrumKeys() {
+  static const std::vector<std::string> keys = {
+    // Type selectors.  SPECTRUM_TYPE is the canonical key; TYPE is retained as a
+    // legacy/user-friendly alias already understood by ParseParticleSpectrum().
+    "SPECTRUM_TYPE", "TYPE",
+
+    // Common energy/intensity parameters and parser aliases.
+    "SPEC_J0", "J0", "J_REFERENCE", "SPEC_J_REFERENCE",
+    "SPEC_GAMMA", "GAMMA", "SPECTRAL_INDEX", "SPEC_SPECTRAL_INDEX",
+    "SPEC_E0", "E0", "E0_MEV", "E_REFERENCE", "SPEC_E0_MEV", "SPEC_E_REFERENCE",
+    "SPEC_EMIN", "EMIN", "ENERGY_MIN", "SPEC_ENERGY_MIN",
+    "SPEC_EMAX", "EMAX", "ENERGY_MAX", "SPEC_ENERGY_MAX",
+
+    // Cutoff, LIS force-field, and Band-function parameters.
+    "SPEC_EC", "SPEC_ECUT", "ECUT", "E_CUTOFF", "SPEC_E_CUTOFF", "CUTOFF_ENERGY_MEV",
+    "SPEC_LIS_J0", "SPEC_LIS_GAMMA", "SPEC_PHI",
+    "PHI_MV", "MODULATION_POTENTIAL_MV", "FORCE_FIELD_PHI_MV",
+    "SPEC_GAMMA1", "SPEC_GAMMA2",
+    "ALPHA", "BAND_ALPHA", "BETA", "BAND_BETA",
+    "E_BREAK", "BREAK_ENERGY_MEV", "BAND_EBREAK",
+
+    // Table-spectrum inputs.  SPEC_TABLE_REFERENCE_EPOCH_UTC is usually inserted
+    // by the parser after it resolves the event time, but accepting it in the file
+    // keeps the strict validator compatible with explicit expert inputs.
+    "SPEC_TABLE_FILE", "TABLE_FILE", "SPECTRUM_FILE", "FILE",
+    "SPEC_TABLE_REFERENCE_EPOCH_UTC"
+  };
+  return keys;
+}
+
+static inline bool IsRecognizedSpectrumKey(const std::string& key) {
+  return ContainsToken(RecognizedSpectrumKeys(), ToUpper(Trim(key)));
+}
+
+static void FailUnknownSection(const std::string& fileName,
+                               int lineNo,
+                               const std::string& section,
+                               const std::string& rawLine) {
+  std::ostringstream msg;
+  msg << "Unrecognized AMPS_PARAM.in section '" << section << "' in file '"
+      << fileName << "' at input line " << lineNo << ". Raw line: '"
+      << Trim(rawLine) << "'. The code is terminated because unknown input-file "
+      << "sections are not ignored: a misspelled or unsupported section would "
+      << "prevent its settings from being applied and could leave default model "
+      << "parameters active. Check the section spelling or add explicit support "
+      << "for this section in util/amps_param_parser.cpp. Recognized sections: "
+      << JoinTokens(RecognizedAmpsParamSections(), ", ");
+  exit(__LINE__,__FILE__,msg.str().c_str());
+}
+
+static void FailUnknownKeyword(const std::string& fileName,
+                               int lineNo,
+                               const std::string& section,
+                               const std::string& key,
+                               const std::string& rawLine) {
+  std::ostringstream msg;
+  msg << "Unrecognized AMPS_PARAM.in keyword '" << key << "'";
+  if (Trim(section).empty()) {
+    msg << " outside of any section";
+  }
+  else {
+    msg << " in section '" << section << "'";
+  }
+  msg << " in file '" << fileName << "' at input line " << lineNo
+      << ". Raw line: '" << Trim(rawLine) << "'. The code is terminated "
+      << "because unknown input keywords are not ignored: this usually indicates "
+      << "a typo, a keyword placed in the wrong section, or a new option that "
+      << "has not been connected to the parser. Ignoring it could leave the "
+      << "default value active and make the run inconsistent with the requested "
+      << "AMPS_PARAM.in settings. Check the keyword/section spelling or add an "
+      << "explicit parser branch in util/amps_param_parser.cpp.";
+
+  if (ToUpper(Trim(section)) == "#SPECTRUM") {
+    msg << " Recognized #SPECTRUM keywords are: "
+        << JoinTokens(RecognizedSpectrumKeys(), ", ");
+  }
+  if (ToUpper(Trim(section)) == "#OUTPUT_OPTIONS") {
+    msg << " The #OUTPUT_OPTIONS section is currently reserved; no active "
+        << "keywords are implemented for it in this parser.";
+  }
+
+  exit(__LINE__,__FILE__,msg.str().c_str());
 }
 
 //======================================================================================
@@ -2049,10 +2192,28 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
     commentText=Trim(commentText);
     if (line.empty()) continue;
 
-    // Section header
-    if (line.size()>1 && line[0]=='#') {
-      section=ToUpper(Trim(line));
-      continue;
+    // Section header.  Section names are keywords too; reject misspelled or
+    // unsupported section-keywords immediately instead of silently collecting
+    // ignored keys.  Lines such as "# ----" or "# explanatory comment" are
+    // comments, not section keywords, and are skipped.
+    if (!line.empty() && line[0]=='#') {
+      if (line.size()==1) continue;
+      const std::string candidateSection=ToUpper(Trim(line));
+      if (IsRecognizedAmpsParamSection(candidateSection)) {
+        section=candidateSection;
+        continue;
+      }
+
+      // Treat common hash-comment forms as comments.  This preserves the many
+      // explanatory banner/comment lines in existing AMPS_PARAM.in files while
+      // still catching typo-like section names such as #PARTICLE_TRAJECTORYS.
+      const char c1 = line[1];
+      const bool hashComment =
+          std::isspace(static_cast<unsigned char>(c1)) ||
+          c1=='=' || c1=='-' || c1=='!' || c1=='#';
+      if (hashComment) continue;
+
+      FailUnknownSection(fileName,lineNo,candidateSection,rawLine);
     }
 
     // Block delimiters for POINTS
@@ -2134,18 +2295,18 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
     if (key.empty()) continue;
     std::string uKey=ToUpper(key);
 
-    auto rememberUnknown=[&](){
-      p.unknown[section+":"+uKey]=val;
+    auto rejectUnknownKeyword=[&](){
+      FailUnknownKeyword(fileName,lineNo,section,uKey,rawLine);
     };
 
     if (section=="#RUN_INFO") {
       if (uKey=="RUN_ID") p.runId=val;
-      else rememberUnknown();
+      else rejectUnknownKeyword();
     }
     else if (section=="#CALCULATION_MODE") {
       if (uKey=="CALC_TARGET") p.calc.target=ToUpper(val);
       else if (uKey=="FIELD_EVAL_METHOD") p.calc.fieldEvalMethod=ToUpper(val);
-      else rememberUnknown();
+      else rejectUnknownKeyword();
     }
     else if (section=="#CUTOFF_RIGIDITY") {
       if (uKey=="CUTOFF_EMIN") p.cutoff.eMin_MeV=std::stod(val);
@@ -2168,13 +2329,13 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="DIRECTIONAL_MAP") p.cutoff.directionalMap=ToBool(val);
       else if (uKey=="DIRMAP_LON_RES") p.cutoff.dirMapLonRes_deg=std::stod(val);
       else if (uKey=="DIRMAP_LAT_RES") p.cutoff.dirMapLatRes_deg=std::stod(val);
-      else rememberUnknown();
+      else rejectUnknownKeyword();
     }
     else if (section=="#PARTICLE_SPECIES") {
-      if (uKey=="SPECIES") p.species.name=ToUpper(val);
-      else if (uKey=="CHARGE") p.species.charge_e=std::stoi(val);
-      else if (uKey=="MASS_AMU") p.species.mass_amu=std::stod(val);
-      else rememberUnknown();
+      if (uKey=="SPECIES" || uKey=="SPECIES_NAME") p.species.name=ToUpper(val);
+      else if (uKey=="CHARGE" || uKey=="SPECIES_CHARGE") p.species.charge_e=std::stoi(val);
+      else if (uKey=="MASS_AMU" || uKey=="SPECIES_MASS_AMU") p.species.mass_amu=std::stod(val);
+      else rejectUnknownKeyword();
     }
     else if (section=="#BACKGROUND_FIELD") {
       if (uKey=="FIELD_MODEL") {
@@ -2194,18 +2355,18 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="G1") p.field.g[0]=std::stod(val);
       else if (uKey=="G2") p.field.g[1]=std::stod(val);
       else if (uKey=="G3") p.field.g[2]=std::stod(val);
-      else if (uKey=="W1") p.field.w[0]=std::stod(val);
-      else if (uKey=="W2") p.field.w[1]=std::stod(val);
-      else if (uKey=="W3") p.field.w[2]=std::stod(val);
-      else if (uKey=="W4") p.field.w[3]=std::stod(val);
-      else if (uKey=="W5") p.field.w[4]=std::stod(val);
-      else if (uKey=="W6") p.field.w[5]=std::stod(val);
-      else if (uKey=="BZ1") p.field.bzAvg[0]=std::stod(val);
-      else if (uKey=="BZ2") p.field.bzAvg[1]=std::stod(val);
-      else if (uKey=="BZ3") p.field.bzAvg[2]=std::stod(val);
-      else if (uKey=="BZ4") p.field.bzAvg[3]=std::stod(val);
-      else if (uKey=="BZ5") p.field.bzAvg[4]=std::stod(val);
-      else if (uKey=="BZ6") p.field.bzAvg[5]=std::stod(val);
+      else if (uKey=="W1" || uKey=="T05_W1" || uKey=="TS05_W1") p.field.w[0]=std::stod(val);
+      else if (uKey=="W2" || uKey=="T05_W2" || uKey=="TS05_W2") p.field.w[1]=std::stod(val);
+      else if (uKey=="W3" || uKey=="T05_W3" || uKey=="TS05_W3") p.field.w[2]=std::stod(val);
+      else if (uKey=="W4" || uKey=="T05_W4" || uKey=="TS05_W4") p.field.w[3]=std::stod(val);
+      else if (uKey=="W5" || uKey=="T05_W5" || uKey=="TS05_W5") p.field.w[4]=std::stod(val);
+      else if (uKey=="W6" || uKey=="T05_W6" || uKey=="TS05_W6") p.field.w[5]=std::stod(val);
+      else if (uKey=="BZ1" || uKey=="TA15_BZ1" || uKey=="TA16_BZ1") p.field.bzAvg[0]=std::stod(val);
+      else if (uKey=="BZ2" || uKey=="TA15_BZ2" || uKey=="TA16_BZ2") p.field.bzAvg[1]=std::stod(val);
+      else if (uKey=="BZ3" || uKey=="TA15_BZ3" || uKey=="TA16_BZ3") p.field.bzAvg[2]=std::stod(val);
+      else if (uKey=="BZ4" || uKey=="TA15_BZ4" || uKey=="TA16_BZ4") p.field.bzAvg[3]=std::stod(val);
+      else if (uKey=="BZ5" || uKey=="TA15_BZ5" || uKey=="TA16_BZ5") p.field.bzAvg[4]=std::stod(val);
+      else if (uKey=="BZ6" || uKey=="TA15_BZ6" || uKey=="TA16_BZ6") p.field.bzAvg[5]=std::stod(val);
       else if (uKey=="XIND" || uKey=="TA15_XIND") p.field.xind=std::stod(val);
       else if (uKey=="TA16_COEFF_FILE") p.field.ta16CoeffFile=Trim(val);
       else if (uKey=="EPOCH") p.field.epoch=val;
@@ -2228,7 +2389,7 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       }
       else {
         p.field.raw[uKey]=val;
-        rememberUnknown();
+        rejectUnknownKeyword();
       }
     }
     else if (section=="#ELECTRIC_FIELD") {
@@ -2242,18 +2403,18 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="EFIELD_LMIN") p.efield.lMin=std::stod(val);
       else {
         p.efield.raw[uKey]=val;
-        rememberUnknown();
+        rejectUnknownKeyword();
       }
     }
     else if (section=="#DOMAIN_BOUNDARY") {
-      if (uKey=="DOMAIN_X_MAX") p.domain.xMax=ParseLengthToKm(val,commentText);
-      else if (uKey=="DOMAIN_X_MIN") p.domain.xMin=ParseLengthToKm(val,commentText);
-      else if (uKey=="DOMAIN_Y_MAX") p.domain.yMax=ParseLengthToKm(val,commentText);
-      else if (uKey=="DOMAIN_Y_MIN") p.domain.yMin=ParseLengthToKm(val,commentText);
-      else if (uKey=="DOMAIN_Z_MAX") p.domain.zMax=ParseLengthToKm(val,commentText);
-      else if (uKey=="DOMAIN_Z_MIN") p.domain.zMin=ParseLengthToKm(val,commentText);
+      if (uKey=="DOMAIN_X_MAX" || uKey=="DOMAIN_XMAX") p.domain.xMax=ParseLengthToKm(val,commentText);
+      else if (uKey=="DOMAIN_X_MIN" || uKey=="DOMAIN_XMIN") p.domain.xMin=ParseLengthToKm(val,commentText);
+      else if (uKey=="DOMAIN_Y_MAX" || uKey=="DOMAIN_YMAX") p.domain.yMax=ParseLengthToKm(val,commentText);
+      else if (uKey=="DOMAIN_Y_MIN" || uKey=="DOMAIN_YMIN") p.domain.yMin=ParseLengthToKm(val,commentText);
+      else if (uKey=="DOMAIN_Z_MAX" || uKey=="DOMAIN_ZMAX") p.domain.zMax=ParseLengthToKm(val,commentText);
+      else if (uKey=="DOMAIN_Z_MIN" || uKey=="DOMAIN_ZMIN") p.domain.zMin=ParseLengthToKm(val,commentText);
       else if (uKey=="R_INNER") p.domain.rInner=ParseLengthToKm(val,commentText);
-      else rememberUnknown();
+      else rejectUnknownKeyword();
     }
     else if (section=="#OUTPUT_DOMAIN") {
       if (uKey=="OUTPUT_MODE") p.output.mode=ToUpper(val);
@@ -2268,10 +2429,21 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
 	auto t=ParseLengthListToKm(val,commentText);
         p.output.shellAlt_km.insert(p.output.shellAlt_km.end(),t.begin(),t.end());  
       }
-      else if (uKey=="SHELL_RES_DEG") p.output.shellRes_deg=std::stod(val);
+      else if (uKey=="SHELL_RES_DEG" || uKey=="SHELL_RES") p.output.shellRes_deg=std::stod(val);
+      else if (uKey=="SHELL_COUNT") {
+        // Legacy/self-documenting input files sometimes specify SHELL_COUNT next to
+        // SHELL_ALTS_KM.  The actual number of shells is determined by the number
+        // of altitudes parsed above, but recognizing this key avoids treating a
+        // harmless consistency annotation as an unknown option.
+        const int nShellDeclared = std::stoi(val);
+        if (nShellDeclared < 0) {
+          exit(__LINE__,__FILE__,"SHELL_COUNT must be >= 0");
+        }
+        p.output.raw[uKey]=val;
+      }
       else {
         p.output.raw[uKey]=val;
-        rememberUnknown();
+        rejectUnknownKeyword();
       }
     }
     else if (section=="#NUMERICAL") {
@@ -2279,6 +2451,12 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="MAX_STEPS") p.numerics.maxSteps=std::stoi(val);
       else if (uKey=="MAX_TRACE_TIME") p.numerics.maxTraceTime_s=std::stod(val);
       else if (uKey=="MAX_TRACE_DISTANCE") p.numerics.maxTraceDistance_Re=std::stod(val);
+      else if (uKey=="DS_BOUNDARY_MODE") {
+        // Legacy inputs placed this density/spectrum setting in #NUMERICAL.
+        // Keep it recognized, but route it to the same destination as the
+        // canonical #DENSITY_SPECTRUM / DS_BOUNDARY_MODE keyword.
+        p.densitySpectrum.boundaryMode=ToUpper(val);
+      }
       // 3d_forward: simulation particles injected from domain boundary per iteration.
       else if (uKey=="FORWARD_N_PARTICLES")  p.mode3dForward.nParticlesPerIter=std::stoi(val);
       // 3d_forward: total number of forward integration iterations.
@@ -2304,7 +2482,7 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         p.mode3dForward.reservedInputFileParticleMover=ToUpper(Trim(val));
         p.mode3dForward.hasReservedInputFileParticleMover=true;
       }
-      else rememberUnknown();
+      else rejectUnknownKeyword();
     }
     else if (section=="#DENSITY_3D") {
       // Volumetric 3D density sampling controls for Mode3DForward.
@@ -2326,7 +2504,38 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         else if (sp=="LINEAR") p.density3d.spacing = EarthUtil::Density3DParam::Spacing::LINEAR;
         else { std::ostringstream _m; _m << "DENS_ENERGY_SPACING must be LOG or LINEAR (got '" << Trim(val) << "')"; exit(__LINE__,__FILE__,_m.str().c_str()); }
       }
-      else rememberUnknown();
+      else rejectUnknownKeyword();
+    }
+    else if (section=="#PARTICLE_TRAJECTORY") {
+      // Runtime controls for AMPS particle-trajectory records in 3d_forward.
+      // These settings do not replace the AMPS compile-time switch: the tracker
+      // must still be built with _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_.
+      // They only decide whether 3d_forward injected particles request tracking
+      // and how many such trajectory records may be initialized.
+      if (uKey=="INITIALIZE_TRAJECTORIES" ||
+          uKey=="INITIALIZE_PARTICLE_TRAJECTORIES" ||
+          uKey=="TRACK_TRAJECTORIES" ||
+          uKey=="ENABLE_TRAJECTORY_TRACKING" ||
+          uKey=="PARTICLE_TRAJECTORY_TRACKING") {
+        p.mode3dForward.initializeParticleTrajectories = ToBool(val);
+      }
+      else if (uKey=="N_TRAJECTORIES" ||
+               uKey=="N_PARTICLE_TRAJECTORIES" ||
+               uKey=="MAX_TRAJECTORIES" ||
+               uKey=="MAX_PARTICLE_TRAJECTORIES") {
+        p.mode3dForward.nParticleTrajectories = std::stoi(val);
+
+        // Compact input such as:
+        //   #PARTICLE_TRAJECTORY
+        //   N_TRAJECTORIES 1000
+        // must be sufficient to change the runtime cap and enable trajectory
+        // initialization.  This is the bug fix: before this section was parsed,
+        // pt.cpp kept its default MaxRuntimeTrajectories=40000.
+        // A zero value is treated as an explicit disable switch.
+        p.mode3dForward.initializeParticleTrajectories =
+            (p.mode3dForward.nParticleTrajectories > 0);
+      }
+      else rejectUnknownKeyword();
     }
     else if (section=="#DENSITY_SPECTRUM") {
       // Density/spectrum workflow controls.
@@ -2338,10 +2547,11 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="DS_MAX_TRAJ_TIME") p.densitySpectrum.maxTrajTime_s=std::stod(val);
       else if (uKey=="DS_ENERGY_SPACING") p.densitySpectrum.spacing=ParseEnergySpacingToken(val);
       else if (uKey=="DS_BOUNDARY_MODE") p.densitySpectrum.boundaryMode=ToUpper(val);
-      else rememberUnknown();
+      else rejectUnknownKeyword();
     }
     else if (section=="#SPECTRUM") {
-      p.spectrum[uKey]=val;
+      if (IsRecognizedSpectrumKey(uKey)) p.spectrum[uKey]=val;
+      else rejectUnknownKeyword();
     }
     else if (section=="#BOUNDARY_ANISOTROPY") {
       if      (uKey=="BA_PAD_MODEL")        p.anisotropy.padModel        = ToUpper(val);
@@ -2349,10 +2559,12 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="BA_SPATIAL_MODEL")    p.anisotropy.spatialModel    = ToUpper(val);
       else if (uKey=="BA_DAYSIDE_FACTOR")   p.anisotropy.daysideFactor   = std::stod(val);
       else if (uKey=="BA_NIGHTSIDE_FACTOR") p.anisotropy.nightsideFactor = std::stod(val);
-      else rememberUnknown();
+      else rejectUnknownKeyword();
     }
     else if (section=="#OUTPUT_OPTIONS") {
-      p.outputOptions[uKey]=val;
+      // Reserved section.  Do not silently accept arbitrary keys: an option placed
+      // here currently has no consumer and would not affect the model output.
+      rejectUnknownKeyword();
     }
     else if (section=="#TEMPORAL") {
       if      (uKey=="TEMPORAL_MODE")    p.temporal.mode=ToUpper(val);
@@ -2362,10 +2574,10 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="INJECT_DT")        p.temporal.injectDt_min=std::stod(val);
       else if (uKey=="TS_INPUT_MODE")    p.temporal.tsInputMode=ToUpper(val);
       else if (uKey=="TS_INPUT_FILE")    p.temporal.tsInputFile=Trim(val);
-      else rememberUnknown();
+      else rejectUnknownKeyword();
     }
     else {
-      rememberUnknown();
+      rejectUnknownKeyword();
     }
   }
 
@@ -2497,6 +2709,15 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
     if (!(p.density3d.nEnergyBins >= 1)) {
       exit(__LINE__,__FILE__,"DENS_NENERGY must be >= 1");
+    }
+    if (p.mode3dForward.nParticleTrajectories < 0) {
+      exit(__LINE__,__FILE__,
+           "N_TRAJECTORIES must be >= 0 (0 disables particle trajectory initialization)");
+    }
+    if (p.mode3dForward.initializeParticleTrajectories &&
+        p.mode3dForward.nParticleTrajectories <= 0) {
+      exit(__LINE__,__FILE__,
+           "INITIALIZE_TRAJECTORIES requires N_TRAJECTORIES > 0 in #PARTICLE_TRAJECTORY");
     }
   }
 
