@@ -101,7 +101,7 @@ N_PARTICLES            10000              ! test particles per injection
 MAX_BOUNCE             500                ! max mirror reflections
 DT_TRACE               1.0               ! s integration step
 MAX_TRACE_TIME         30               ! sec — max trajectory integration time
-MAX_TRACE_DISTANCE 50       ! Re -  hard cap on integration distance per trajectory
+MAX_TRACE_DISTANCE 150       ! Re -  hard cap on integration distance per trajectory
 
 
 #END
