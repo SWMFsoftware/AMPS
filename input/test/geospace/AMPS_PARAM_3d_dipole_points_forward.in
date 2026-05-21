@@ -104,6 +104,7 @@ POINTS_END
 MAX_TRACE_TIME         600               ! sec — max trajectory integration time
 MAX_TRACE_DISTANCE     40.0         ! Re — max cumulative trajectory path length
 !PITCH_ISOTROPIC        T                 ! isotropic injection
+FORWARD_N_PARTICLES    5000
 
 #PARTICLE_TRAJECTORY
 N_TRAJECTORIES         100
