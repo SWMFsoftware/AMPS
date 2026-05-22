@@ -305,6 +305,10 @@ void Exosphere::Init_AfterParser() {
   if (PIC::ThisThread==0) {
     char OrbitalDataFileName[_MAX_STRING_LENGTH_PIC_];
 
+    char cmd[200];
+    sprintf(cmd,"mkdir -p %s",PIC::OutputDataFileDirectory);
+    if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed");
+
     sprintf(OrbitalDataFileName,"rm -f %s/pic.OrbitalData.dat",PIC::OutputDataFileDirectory);
     if (system(OrbitalDataFileName)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
