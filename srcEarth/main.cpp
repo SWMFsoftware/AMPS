@@ -1644,6 +1644,7 @@ int main(int argc,char **argv) {
           p.mode3dForward.particleMover = EarthUtil::ToUpper(cli.mover);
         }
 
+        Exosphere::Init_SPICE();
         Earth::Mode3DForward::Run(p);
         MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
         MPI_Finalize();
