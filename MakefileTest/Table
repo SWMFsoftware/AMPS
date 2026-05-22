@@ -7949,3 +7949,71 @@ Check=
 >>>@echo Test test_Earth-cutoff-rigidity-3d-analytic verification completed: `date`
 
 <#
+
+==============================================================================
+Test for 3D Forward Particle Tracking with Dipole Magnetic Field:
+H+ trajectory and volume output (ANALYTIC field evaluation)
+==============================================================================
+
+#>
+Name=Earth-3d_forward-dipole_analytic
+Time=5
+
+Type=amps
+
+Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
+Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
+
+Outs=test_Earth-3d_forward-dipole_analytic-trajectory test_Earth-3d_forward-dipole_analytic-volume
+
+Compile=
+>>>@echo "test_Earth-3d_forward-dipole_analytic_compile..." > test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+>>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-3d_forward-dipole_analyticKEYS)
+>>>rm -rf srcTemp
+>>>-@($(MAKE) -j8 amps)
+>>>@echo "test_Earth-3d_forward-dipole_analytic_compile... done" >> test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+
+Run=
+>>>@echo "test_Earth-3d_forward-dipole_analytic_run..." >> test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+>>>@echo Test test_Earth-3d_forward-dipole_analytic has started: `date`
+>>>cp input/test/geospace/AMPS_PARAM_3d_dipole_points_forward.in $(TESTEarth-3d_forward-dipole_analyticDIR)
+
+>>>@echo "========================================" >> test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+>>>@echo "Running 3D forward tracking with dipole field, H+ (analytic field)" >> test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+>>>@echo "========================================" >> test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+>>>cd $(TESTEarth-3d_forward-dipole_analyticDIR); mpirun -n 48 ./amps -mode 3d_forward -i AMPS_PARAM_3d_dipole_points_forward.in -mover RK4 -forward-injection-energy LOG_UNIFORM -forward-injection-emin 1 -forward-injection-emax 2000 --mode3d-analytic-field
+
+>>>@echo "test_Earth-3d_forward-dipole_analytic_run... done" >> test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+>>>@echo Test test_Earth-3d_forward-dipole_analytic has finished: `date`
+
+Check=
+>>>@echo "test_Earth-3d_forward-dipole_analytic_check..." >> test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+
+>>>-@${TESTEarth-3d_forward-dipole_analyticDIR}/../utility/ReduceFile.pl ${TESTEarth-3d_forward-dipole_analyticDIR}/PT/plots/amps.TrajectoryTracking.out=6.s=0.H_PLUS1.dat 100000
+>>>-@${TESTEarth-3d_forward-dipole_analyticDIR}/../utility/ReduceFile.pl ${TESTEarth-3d_forward-dipole_analyticDIR}/PT/plots/pic.H_PLUS1.s=0.out=6.dat 10000
+
+>>>@echo "--- Trajectory subtest ---" >> test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  ${TESTEarth-3d_forward-dipole_analyticDIR}/PT/plots/amps.TrajectoryTracking.out=6.s=0.H_PLUS1.dat.Reduced.Step=100000 \
+>>>  output/test_Earth-3d_forward-dipole_analytic/amps.TrajectoryTracking.out=6.s=0.H_PLUS1.dat.Reduced.Step=100000 \
+>>>  > test_Earth-3d_forward-dipole_analytic-trajectory$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+
+>>>@echo "--- Volume subtest ---" >> test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  ${TESTEarth-3d_forward-dipole_analyticDIR}/PT/plots/pic.H_PLUS1.s=0.out=6.dat.Reduced.Step=10000 \
+>>>  output/test_Earth-3d_forward-dipole_analytic/pic.H_PLUS1.s=0.out=6.dat.Reduced.Step=10000 \
+>>>  > test_Earth-3d_forward-dipole_analytic-volume$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+
+>>>@cat test_Earth-3d_forward-dipole_analytic-trajectory$(TESTEarth-3d_forward-dipole_analytic-REF).diff \
+>>>    test_Earth-3d_forward-dipole_analytic-volume$(TESTEarth-3d_forward-dipole_analytic-REF).diff \
+>>>    > test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+
+>>>@ls -l test_Earth-3d_forward-dipole_analytic-trajectory$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+>>>@ls -l test_Earth-3d_forward-dipole_analytic-volume$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+>>>@ls -l test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
+>>>@echo Test test_Earth-3d_forward-dipole_analytic verification completed: `date`
+
+<#
