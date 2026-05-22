@@ -1,6 +1,6 @@
 //$Id$
 //data se tof the photolytic reaction model (Huebner 1992, ASS)
-
+//update with values from Huebner&Mukherjee, 2015 PSJ
 
 #include "PhotolyticReactions.h"
 
@@ -36,7 +36,7 @@ double PhotolyticReactions::H2O::Huebner1992ASS::EmissionWaveLength[nReactionCha
 };
 
 double PhotolyticReactions::H2O::Huebner1992ASS::ReactionRateTable_QuietSun[nReactionChannels]={
-  1.03E-5,5.97E-7,7.55E-7,3.31E-7,5.54E-8,5.85E-9,1.31E-8
+  1.03E-5,5.97E-7,7.54E-7,3.31E-7,5.54E-8,5.85E-9,1.31E-8
 };
 
 double PhotolyticReactions::H2O::Huebner1992ASS::ReactionRateTable_ActiveSun[nReactionChannels]={
@@ -44,7 +44,7 @@ double PhotolyticReactions::H2O::Huebner1992ASS::ReactionRateTable_ActiveSun[nRe
 };
 
 double PhotolyticReactions::H2O::Huebner1992ASS::ExcessEnergyTable_QuietSun[nReactionChannels]={
-    3.42*eV2J,3.84*eV2J,0.7*eV2J,12.4*eV2J,18.6*eV2J,36.5*eV2J,25.0*eV2J
+    3.41*eV2J,3.84*eV2J,0.7*eV2J,12.4*eV2J,18.6*eV2J,36.5*eV2J,25.0*eV2J
 };
 
 double PhotolyticReactions::H2O::Huebner1992ASS::ExcessEnergyTable_ActiveSun[nReactionChannels]={
@@ -99,7 +99,7 @@ int PhotolyticReactions::O2::Huebner1992ASS::ReactionChannelProductNumber[nReact
 };
 
 double PhotolyticReactions::O2::Huebner1992ASS::ReactionRateTable_QuietSun[nReactionChannels]={
-  1.45E-7,4.05E-6,3.90E-8,4.64E-7,1.10E-7
+  1.45E-7,4.05E-6,3.90E-8,4.67E-7,1.10E-7
 };
 
 double PhotolyticReactions::O2::Huebner1992ASS::ReactionRateTable_ActiveSun[nReactionChannels]={
@@ -111,11 +111,11 @@ double PhotolyticReactions::O2::Huebner1992ASS::EmissionWaveLength[nReactionChan
 };
 
 double PhotolyticReactions::O2::Huebner1992ASS::ExcessEnergyTable_QuietSun[nReactionChannels]={
-    4.39*eV2J,1.33*eV2J,0.74*eV2J,15.9*eV2J,23.8*eV2J
+    4.39*eV2J,1.33*eV2J,0.74*eV2J,15.8*eV2J,23.8*eV2J
 };
 
 double PhotolyticReactions::O2::Huebner1992ASS::ExcessEnergyTable_ActiveSun[nReactionChannels]={
-    5.85*eV2J,1.55*eV2J,0.74*eV2J,19.3*eV2J,27.3*eV2J
+    5.85*eV2J,1.55*eV2J,0.74*eV2J,19.2*eV2J,27.3*eV2J
 };
 
 
@@ -225,11 +225,11 @@ double PhotolyticReactions::H2::Huebner1992ASS::EmissionWaveLength[nReactionChan
 };
 
 double PhotolyticReactions::H2::Huebner1992ASS::ExcessEnergyTable_QuietSun[nReactionChannels]={
-    8.23*eV2J,0.44*eV2J,6.56*eV2J,24.8*eV2J
+    8.23*eV2J,0.502*eV2J,6.57*eV2J,24.8*eV2J
 };
 
 double PhotolyticReactions::H2::Huebner1992ASS::ExcessEnergyTable_ActiveSun[nReactionChannels]={
-    8.22*eV2J,0.42*eV2J,7.17*eV2J,27.0*eV2J
+    8.22*eV2J,0.488*eV2J,7.17*eV2J,27.0*eV2J
 };
 
 double *PhotolyticReactions::H2::Huebner1992ASS::ReactionRateTable=NULL;
@@ -254,10 +254,14 @@ void PhotolyticReactions::H2::Huebner1992ASS::Init() {
 }
 //-----------------------------------   O ----------------------------------------------
 int PhotolyticReactions::O::Huebner1992ASS::ReactionProducts[nReactionChannels][nMaxReactionProducts]={
-    {_O_PLUS_SPEC_,_ELECTRON_SPEC_}
+   {_O_PLUS_SPEC_,_ELECTRON_SPEC_},
+   {_O_PLUS_SPEC_,_ELECTRON_SPEC_},
+   {_O_PLUS_SPEC_,_ELECTRON_SPEC_}
 };
 
 double PhotolyticReactions::O::Huebner1992ASS::ReactionProductMassTable[nReactionChannels][nMaxReactionProducts]={
+    {_O__MASS_,_ELECTRON__MASS_},
+    {_O__MASS_,_ELECTRON__MASS_},
     {_O__MASS_,_ELECTRON__MASS_}
 };
 
@@ -266,23 +270,23 @@ int PhotolyticReactions::O::Huebner1992ASS::ReactionChannelProductNumber[nReacti
 };
 
 double PhotolyticReactions::O::Huebner1992ASS::ReactionRateTable_QuietSun[nReactionChannels]={
-  1.96E-7
+  2.44e-7,2.38e-7,2.47E-7
 };
 
 double PhotolyticReactions::O::Huebner1992ASS::ReactionRateTable_ActiveSun[nReactionChannels]={
-  5.28E-7
+  6.59e-7,6.25e-7,6.45E-7
 };
 
 double PhotolyticReactions::O::Huebner1992ASS::EmissionWaveLength[nReactionChannels]={
-   858.3*_A_
+  910.4*_A_,827.9*_A_,  858.3*_A_
 };
 
 double PhotolyticReactions::O::Huebner1992ASS::ExcessEnergyTable_QuietSun[nReactionChannels]={
-    18.9*eV2J
+  20.1*eV2J, 19.0*eV2J, 17.9*eV2J
 };
 
 double PhotolyticReactions::O::Huebner1992ASS::ExcessEnergyTable_ActiveSun[nReactionChannels]={
-    23.1*eV2J
+   24.1*eV2J, 23.3*eV2J, 21.7*eV2J
 };
 
 double *PhotolyticReactions::O::Huebner1992ASS::ReactionRateTable=NULL;
@@ -331,7 +335,7 @@ double PhotolyticReactions::OH::Huebner1992ASS::ReactionRateTable_QuietSun[nReac
 };
 
 double PhotolyticReactions::OH::Huebner1992ASS::ReactionRateTable_ActiveSun[nReactionChannels]={
-  1.38E-5,1.76E-5,2.11E-6,6.43E-5
+  1.37E-5,1.76E-5,2.11E-6,6.43E-7
 };
 
 double PhotolyticReactions::OH::Huebner1992ASS::EmissionWaveLength[nReactionChannels]={
