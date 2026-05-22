@@ -406,7 +406,7 @@ namespace PhotolyticReactions {
   namespace O {
     namespace Huebner1992ASS {
       const int nMaxReactionProducts=2;
-      const int nReactionChannels=3;
+      const int nReactionChannels=1;
       const double TableHeliocentricDistance=1.0*_AU_;
 
       extern int ReactionProducts[nReactionChannels][nMaxReactionProducts],ReactionChannelProductNumber[nReactionChannels];
