@@ -343,6 +343,11 @@ void Exosphere::Init_AfterParser() {
 }*/
 
 void Exosphere::Init_SPICE() {
+  static bool init_flag=false;
+  if (init_flag==true) return;
+  init_flag=true;
+ 
+
   //furnish the SPICE kernels
 #if  _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
   char str[_MAX_STRING_LENGTH_PIC_];
