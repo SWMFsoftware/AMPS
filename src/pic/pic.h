@@ -2156,6 +2156,21 @@ void DeleteAttachedParticles();
 
     extern int nMaxSavedSignleTrajectoryPoints; //the maximum number of the trajectory points saved in the output trajectory file for each particle trajectory
 
+    //----- sampling-time dyadic-grid reservoir thinning -----
+    extern bool TrajectorySamplingThinningMode; //when true (default), trajectories are thinned during sampling so only ~N points per trajectory are ever written
+    extern int  OutputTrajectoryPointNumber;    //the requested number of output points per trajectory (N); must be >= 2
+
+    //set the requested number of output points per trajectory (N); N must be >= 2
+    void SetOutputTrajectoryPointNumber(int nRequestedOutputPoints);
+
+    //thinning helpers (pure functions of the running count and N)
+    int TrajectoryThinningCapacity(int nRequestedOutputPoints);             //largest power of two not exceeding N
+    int TrajectoryThinningLevel(unsigned long int count,int Capacity);      //smallest L with ceil(count/2^L) <= Capacity
+
+    //parallel (MPI-distributed) output of the thinned trajectories
+    void ParallelPreselectTrajectoryPoints(const char *fname,const char *OutputDataFileDirectory);     //each rank pre-selects surviving points from its own temp files
+    void AssembleTrajectoryOutputFromSelected(const char *fname,const char *OutputDataFileDirectory);  //rank 0 assembles the ASCII Tecplot from the per-rank selected-points files
+
     extern bool AllowRecordingParticleTrajectoryPoints[PIC::nTotalSpecies]; //the array of flags that controls recording of the particle trajectory points
 
     struct cTrajectoryID {
@@ -2168,7 +2183,7 @@ void DeleteAttachedParticles();
       bool TrajectoryTrackingFlag; //the trajectory of the praticle is sampled only when TrajectoryTrackingFlag==true; the default value is  TrajectoryTrackingFlag==false
 
       cTrajectoryID Trajectory;
-      unsigned int nSampledTrajectoryPoints; //the number of the points of the particle trajectory
+      unsigned long int nSampledTrajectoryPoints; //the number of the points of the particle trajectory (the running global count K; migrates with the particle across MPI ranks)
     };
 
     struct cTrajectoryPhysicalData {
@@ -2185,12 +2200,13 @@ void DeleteAttachedParticles();
     struct cTrajectoryDataRecord {
       cTrajectoryPhysicalData data;
       cTrajectoryID Trajectory;
-      unsigned int offset; //the point number in the trajectory
+      unsigned long int offset; //the point number in the trajectory (global 0-based offset; 64-bit)
+      unsigned int ForcedEndpoint; //set to 1 only for a point force-written at trajectory termination (the true endpoint that fell off the final dyadic grid); 0 otherwise
     };
 
     struct cTrajectoryListRecord {
       cTrajectoryID Trajectory;
-      unsigned int nSampledTrajectoryPoints; //the number of the points of the particle trajectory
+      unsigned long int nSampledTrajectoryPoints; //the number of the points of the particle trajectory (final global count K; 64-bit)
     };
 
     struct cTrajectoryData {
