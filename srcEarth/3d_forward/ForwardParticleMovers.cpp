@@ -30,15 +30,22 @@
 // IMPLEMENTED MOVERS
 // ------------------
 //   * RK4
-//       Full-orbit fourth-order Runge-Kutta integration of
-//           dx/dt = v,
-//           dv/dt = a_simple(x) + Omega(x) x v,
-//       where the force is evaluated from the same 3-D field-evaluation path used by
-//       the backward 3d mover: either AMR interpolation of the cell-centered DATAFILE
-//       fields initialized by Mode3D/Mode3DForward, or direct calls to the analytic
-//       geomagnetic evaluator when -mode3d-field-eval ANALYTIC is requested.  The
-//       forward mover then adds the forward-only electric-field force, gravity, and
-//       species/dust charge-to-mass handling needed by the AMPS PIC particle state.
+//       Full-orbit fourth-order Runge-Kutta integration of the relativistic
+//       proper-velocity state
+//           u = gamma v,
+//           gamma = sqrt(1 + |u|^2/c^2),
+//           dx/dt = v = u/gamma,
+//           du/dt = (q/m) [ E(x) + v x B(x) ] + g(x).
+//       Advancing u rather than v is essential for energetic-particle calculations:
+//       conversion from u back to v keeps |v| < c by construction.  The RK4 branch
+//       also subcycles the AMPS time step so the local gyro rotation angle stays small
+//       near the strong inner-dipole field.  The force is evaluated from the same 3-D
+//       field-evaluation path used by the backward 3d mover: either AMR interpolation
+//       of the cell-centered DATAFILE fields initialized by Mode3D/Mode3DForward, or
+//       direct calls to the analytic geomagnetic evaluator when -mode3d-field-eval
+//       ANALYTIC is requested.  The forward mover then adds the forward-only
+//       electric-field force, gravity, and species/dust charge-to-mass handling needed
+//       by the AMPS PIC particle state.
 //
 //   * GuidingCenter
 //       First-order nonrelativistic guiding-center advance with E x B drift, parallel
@@ -75,13 +82,16 @@
 //
 // NUMERICAL/PHYSICS CAVEATS
 // -------------------------
-// The RK4 branch advances the same AMPS velocity-space particle state as
-// PIC::Mover::Boris(), but its B/E fields now come from the same Mode3D mesh/analytic
-// evaluator used by the backward 3-D mover.  The guiding-center branch is a
-// first-order drift approximation; it should not be used as the validation reference
-// near cutoff/penumbra boundaries where finite-Larmor-radius and gyrophase effects can
-// control access.  Use RK4 or Boris for reference calculations, and use HYBRID only
-// after checking that the local adiabaticity thresholds are appropriate for the event.
+// The RK4 branch reads and writes the usual AMPS velocity-space particle state, but
+// internally it advances the relativistic proper velocity u=gamma v.  This avoids the
+// nonrelativistic velocity-space instability in which a magnetic-only RK4 step can
+// numerically increase |v| above c.  Its B/E fields come from the same Mode3D
+// mesh/analytic evaluator used by the backward 3-D mover.  The guiding-center branch
+// is a first-order drift approximation; it should not be used as the validation
+// reference near cutoff/penumbra boundaries where finite-Larmor-radius and gyrophase
+// effects can control access.  Use RK4 or Boris for reference calculations, and use
+// HYBRID only after checking that the local adiabaticity thresholds are appropriate
+// for the event.
 //
 //======================================================================================
 
@@ -96,6 +106,7 @@
 #include <cmath>
 #include <cstring>
 #include <cctype>
+#include <cstdio>
 #include <limits>
 #include <sstream>
 #include <string>
@@ -433,26 +444,182 @@ static bool get_fields(const Vec3& x,
 // Evaluate the full-orbit RHS with the same field access as the backward 3-D mover.
 // The backward cutoff mover advances relativistic momentum in B only.  The forward PIC
 // branch stores velocity in the AMPS particle buffer and can include optional E-field
-// and gravity terms, so the equation advanced here is the velocity-space Lorentz force
-// used by the AMPS Boris mover, but with B/E supplied by get_fields() above:
+// and gravity terms.  Earlier versions of this RK4 mover advanced the velocity-space
+// equation
 //
 //     dx/dt = v
 //     dv/dt = (q/m) [ E(x) + v x B(x) ] + g(x)
 //
-// This removes the previous inconsistency where RK4 used the generic AMPS Boris split
-// acceleration callback, which could bypass the Mode3D mesh/analytic field evaluator.
-struct FullOrbitRhs {
+// directly.  That equation is nonrelativistic.  For SEP energies, and especially for
+// the strong analytical dipole field near the inner sphere, a large RK4 step in a pure
+// magnetic field can increase |v| even though the physical magnetic force does no work.
+// Once |v| exceeds c, downstream diagnostics such as Relativistic::Speed2E() correctly
+// return NaN.  The fix is to integrate the relativistic proper velocity
+//
+//     u = gamma v,      gamma = sqrt(1 + |u|^2/c^2),      v = u/gamma,
+//
+// and use the Lorentz equation per unit rest mass
+//
+//     dx/dt = v,
+//     du/dt = (q/m) [ E(x) + v x B(x) ] + g(x).
+//
+// The AMPS particle buffer still receives a velocity at the end of the step, but that
+// velocity is reconstructed from u/gamma and therefore remains subluminal by
+// construction.  This keeps the RK4 branch compatible with existing AMPS trajectory,
+// density, and boundary-processing infrastructure while removing the superluminal
+// failure mode seen in magnetic-only dipole tests.
+static const double SpeedOfLightSI = 2.99792458e8; // exact SI speed of light, m/s
+static const double SpeedOfLight2SI = SpeedOfLightSI*SpeedOfLightSI;
+
+// Numerical safety constants for the relativistic RK4 subcycler.
+//
+// kRK4MaxGyroAngleRad controls the maximum local rotation angle Omega*dt_sub for one
+// RK4 substep.  The formal linear stability limit of RK4 for pure imaginary eigenvalues
+// is much larger than this value, but using a small angle is intentional: a static
+// magnetic field must conserve kinetic energy, so the orbit step should resolve the
+// gyromotion accurately, not merely avoid explosive instability.
+//
+// kRK4MaxCellFraction additionally limits one substep to a fraction of the local AMR
+// cell size.  This prevents the RK4 stages from sampling fields across many cells in a
+// single substep when the global AMPS source/weight time step is much larger than the
+// local orbit-resolution time scale.
+static const double kRK4MaxGyroAngleRad  = 5.0e-2;  // rad; conservative accuracy limit
+static const double kRK4MaxCellFraction  = 1.0e-1;  // fraction of the local cell length
+static const int    kRK4MaxSubcycles     = 1000000; // hard guard against infinite loops
+static const double kRK4TinyDt           = 1.0e-30;
+
+static inline bool finite_vec(const Vec3& a) {
+  return std::isfinite(a.x) && std::isfinite(a.y) && std::isfinite(a.z);
+}
+
+static inline double min3(double a,double b,double c) {
+  return std::min(a,std::min(b,c));
+}
+
+static double local_cell_size(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  // Return the smallest physical cell size inside this AMR block.  The cTreeNodeAMR
+  // extents are block extents, so divide by the AMPS block-cell counts.  If the node is
+  // not available, return infinity; the caller will then rely on the gyro limit alone.
+  if (node == nullptr) return std::numeric_limits<double>::infinity();
+
+  const double dx = (node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
+  const double dy = (node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_;
+  const double dz = (node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_;
+  const double ds = min3(std::fabs(dx),std::fabs(dy),std::fabs(dz));
+
+  return (std::isfinite(ds) && ds > 0.0) ? ds : std::numeric_limits<double>::infinity();
+}
+
+static inline double gamma_from_proper_velocity(const Vec3& u) {
+  // u is the proper velocity gamma*v, i.e. momentum per unit rest mass.  This form is
+  // numerically well behaved for relativistic particles because gamma is always >= 1
+  // for finite u and v=u/gamma is always smaller than c.
+  const double u2 = norm2(u);
+  if (!std::isfinite(u2) || u2 < 0.0) return std::numeric_limits<double>::quiet_NaN();
+  return std::sqrt(1.0 + u2/SpeedOfLight2SI);
+}
+
+static inline Vec3 velocity_from_proper_velocity(const Vec3& u) {
+  const double gamma = gamma_from_proper_velocity(u);
+  return (std::isfinite(gamma) && gamma > 0.0) ? mul(1.0/gamma,u)
+                                               : Vec3{std::numeric_limits<double>::quiet_NaN(),
+                                                      std::numeric_limits<double>::quiet_NaN(),
+                                                      std::numeric_limits<double>::quiet_NaN()};
+}
+
+static inline bool proper_velocity_from_velocity(const Vec3& v,Vec3& u,double& gamma) {
+  // Convert the AMPS particle-buffer velocity to the RK4 internal state.  Reject an
+  // already-superluminal velocity immediately; continuing would make gamma imaginary
+  // and hide the original source of the invalid particle state.
+  const double v2 = norm2(v);
+  if (!finite_vec(v) || !std::isfinite(v2) || v2 < 0.0 || v2 >= SpeedOfLight2SI) {
+    gamma = std::numeric_limits<double>::quiet_NaN();
+    u = Vec3{std::numeric_limits<double>::quiet_NaN(),
+             std::numeric_limits<double>::quiet_NaN(),
+             std::numeric_limits<double>::quiet_NaN()};
+    return false;
+  }
+
+  gamma = 1.0/std::sqrt(1.0 - v2/SpeedOfLight2SI);
+  u = mul(gamma,v);
+  return std::isfinite(gamma) && finite_vec(u);
+}
+
+static inline bool valid_subluminal_velocity(const Vec3& v) {
+  const double v2 = norm2(v);
+  return finite_vec(v) && std::isfinite(v2) && v2 >= 0.0 && v2 < SpeedOfLight2SI;
+}
+
+static void rk4_abort_invalid_state(const char* where,
+                                    long int ptr,
+                                    int spec,
+                                    const Vec3& x,
+                                    const Vec3& u,
+                                    double dtLocal,
+                                    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,
+                                    PIC::ParticleBuffer::byte* ParticleData) {
+  // Fail loudly and close to the source of the problem.  Without this check, an invalid
+  // RK4 state can be written to PIC::ParticleBuffer and the first visible symptom may be
+  // a NaN in Density3D/SphereFlux3D or a nonsensical trajectory file many steps later.
+  const Vec3 v = velocity_from_proper_velocity(u);
+  const double gamma = gamma_from_proper_velocity(u);
+  const double vmag = norm(v);
+  const double umag = norm(u);
+
+  double q_C=0.0,m_kg=0.0;
+  get_charge_and_mass(spec,ptr,ParticleData,q_C,m_kg);
+
+  Vec3 E{0.0,0.0,0.0},B{0.0,0.0,0.0};
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=nullptr;
+  const bool haveField = get_fields(x,startNode,E,B,&node);
+  const double Bmag = haveField ? norm(B) : std::numeric_limits<double>::quiet_NaN();
+  const double omega = (haveField && m_kg > std::numeric_limits<double>::min())
+      ? std::fabs(q_C/m_kg)*Bmag/(std::isfinite(gamma) && gamma > 0.0 ? gamma : 1.0)
+      : std::numeric_limits<double>::quiet_NaN();
+
+  char msg[2048];
+  std::snprintf(msg,sizeof(msg),
+      "Error: invalid relativistic RK4 state in 3d_forward (%s). "
+      "The particle will not be written back to PIC::ParticleBuffer. "
+      "ptr=%ld spec=%d x=(%.17e, %.17e, %.17e) "
+      "|u|=%.17e gamma=%.17e |v|=%.17e |v|/c=%.17e "
+      "dtLocal=%.17e |B|=%.17e omega=%.17e omega*|dtLocal|=%.17e. "
+      "Likely causes are an excessively large gyro step, non-SI field units, or an "
+      "already invalid particle-buffer velocity.",
+      where,ptr,spec,x.x,x.y,x.z,umag,gamma,vmag,vmag/SpeedOfLightSI,
+      dtLocal,Bmag,omega,omega*std::fabs(dtLocal));
+  exit(__LINE__,__FILE__,msg);
+}
+
+static void rk4_check_state_or_exit(const char* where,
+                                    long int ptr,
+                                    int spec,
+                                    const Vec3& x,
+                                    const Vec3& u,
+                                    double dtLocal,
+                                    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,
+                                    PIC::ParticleBuffer::byte* ParticleData) {
+  const Vec3 v = velocity_from_proper_velocity(u);
+  const double gamma = gamma_from_proper_velocity(u);
+
+  if (!finite_vec(x) || !finite_vec(u) || !std::isfinite(gamma) || gamma < 1.0 ||
+      !valid_subluminal_velocity(v)) {
+    rk4_abort_invalid_state(where,ptr,spec,x,u,dtLocal,startNode,ParticleData);
+  }
+}
+
+struct RelativisticFullOrbitRhs {
   Vec3 dxdt;
-  Vec3 dvdt;
+  Vec3 dudt;
 };
 
-static bool evaluate_full_orbit_rhs(long int ptr,
-                                    int spec,
-                                    PIC::ParticleBuffer::byte* ParticleData,
-                                    const Vec3& x,
-                                    const Vec3& v,
-                                    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,
-                                    FullOrbitRhs& rhs) {
+static bool evaluate_relativistic_full_orbit_rhs(long int ptr,
+                                                 int spec,
+                                                 PIC::ParticleBuffer::byte* ParticleData,
+                                                 const Vec3& x,
+                                                 const Vec3& u,
+                                                 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,
+                                                 RelativisticFullOrbitRhs& rhs) {
   Vec3 E,B;
   if (!get_fields(x,startNode,E,B)) return false;
 
@@ -460,23 +627,126 @@ static bool evaluate_full_orbit_rhs(long int ptr,
   double m_kg = 0.0;
   get_charge_and_mass(spec,ptr,ParticleData,q_C,m_kg);
 
-  Vec3 a = Vec3{0.0,0.0,0.0};
+  const Vec3 v = velocity_from_proper_velocity(u);
+  if (!valid_subluminal_velocity(v)) return false;
+
+  Vec3 dudt = Vec3{0.0,0.0,0.0};
   if (m_kg > std::numeric_limits<double>::min() &&
       std::fabs(q_C) > std::numeric_limits<double>::min()) {
-    a = mul(q_C/m_kg,add(E,cross(v,B)));
+    // Relativistic Lorentz equation in proper velocity.  The magnetic term changes the
+    // direction of u but does no work; the electric term changes the particle energy.
+    // The gamma dependence enters through v=u/gamma inside v x B.
+    dudt = mul(q_C/m_kg,add(E,cross(v,B)));
   }
 
 #if _TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_
   const double r2 = norm2(x);
   const double r  = std::sqrt(r2);
   if (r2 > 0.0 && r > 0.0) {
-    a = add(a,mul(-GravityConstant*_MASS_(_TARGET_)/(r2*r),x));
+    // Gravity is kept as the same force-per-unit-mass correction used by the previous
+    // velocity-space RK4 branch.  For the energetic-particle cases targeted here it is
+    // normally negligible, but preserving it avoids changing dust/low-energy behavior.
+    dudt = add(dudt,mul(-GravityConstant*_MASS_(_TARGET_)/(r2*r),x));
   }
 #endif
 
   rhs.dxdt = v;
-  rhs.dvdt = a;
+  rhs.dudt = dudt;
   return true;
+}
+
+static bool rk4_single_substep(long int ptr,
+                               int spec,
+                               PIC::ParticleBuffer::byte* ParticleData,
+                               const Vec3& x0,
+                               const Vec3& u0,
+                               double dt,
+                               cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,
+                               Vec3& x1,
+                               Vec3& u1) {
+  RelativisticFullOrbitRhs k1,k2,k3,k4;
+
+  if (!evaluate_relativistic_full_orbit_rhs(ptr,spec,ParticleData,x0,u0,startNode,k1)) return false;
+
+  const Vec3 x2 = add(x0,mul(0.5*dt,k1.dxdt));
+  const Vec3 u2 = add(u0,mul(0.5*dt,k1.dudt));
+  if (!evaluate_relativistic_full_orbit_rhs(ptr,spec,ParticleData,x2,u2,startNode,k2)) {
+    // Preserve the old defensive behavior for particles already extremely close to an
+    // outer face: if an intermediate RK stage leaves the mesh, let the boundary logic
+    // handle a ballistic estimate instead of aborting the whole AMPS particle move.
+    x1 = add(x0,mul(dt,velocity_from_proper_velocity(u0)));
+    u1 = u0;
+    return true;
+  }
+
+  const Vec3 x3 = add(x0,mul(0.5*dt,k2.dxdt));
+  const Vec3 u3 = add(u0,mul(0.5*dt,k2.dudt));
+  if (!evaluate_relativistic_full_orbit_rhs(ptr,spec,ParticleData,x3,u3,startNode,k3)) {
+    x1 = add(x0,mul(dt,velocity_from_proper_velocity(u0)));
+    u1 = u0;
+    return true;
+  }
+
+  const Vec3 x4 = add(x0,mul(dt,k3.dxdt));
+  const Vec3 u4 = add(u0,mul(dt,k3.dudt));
+  if (!evaluate_relativistic_full_orbit_rhs(ptr,spec,ParticleData,x4,u4,startNode,k4)) {
+    x1 = add(x0,mul(dt,velocity_from_proper_velocity(u0)));
+    u1 = u0;
+    return true;
+  }
+
+  x1 = add(x0,mul(dt/6.0,add(add(k1.dxdt,mul(2.0,k2.dxdt)),add(mul(2.0,k3.dxdt),k4.dxdt))));
+  u1 = add(u0,mul(dt/6.0,add(add(k1.dudt,mul(2.0,k2.dudt)),add(mul(2.0,k3.dudt),k4.dudt))));
+  return true;
+}
+
+static double rk4_select_substep_abs(long int ptr,
+                                     int spec,
+                                     PIC::ParticleBuffer::byte* ParticleData,
+                                     const Vec3& x,
+                                     const Vec3& u,
+                                     double remainingAbs,
+                                     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  // Choose an internal RK4 substep from two independent constraints:
+  //   (1) local gyro angle:     Omega * dt_sub <= kRK4MaxGyroAngleRad,
+  //   (2) local spatial CFL:    |v| * dt_sub <= kRK4MaxCellFraction * dx_cell.
+  //
+  // The global AMPS dt is a source/weight/mesh-transport step; it is not guaranteed to
+  // resolve gyroperiods.  This is the root cause of the speed blow-up observed with the
+  // analytical dipole field.  Subcycling keeps the RK4 orbit integration accurate while
+  // still letting AMPS process boundary interactions and particle-list bookkeeping once
+  // per global time step.
+  Vec3 E{0.0,0.0,0.0},B{0.0,0.0,0.0};
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=nullptr;
+  if (!get_fields(x,startNode,E,B,&node)) return remainingAbs;
+
+  double q_C=0.0,m_kg=0.0;
+  get_charge_and_mass(spec,ptr,ParticleData,q_C,m_kg);
+
+  double dtLimit = remainingAbs;
+  const double gamma = gamma_from_proper_velocity(u);
+  const double Bmag = norm(B);
+  if (m_kg > std::numeric_limits<double>::min() && std::fabs(q_C) > 0.0 &&
+      std::isfinite(gamma) && gamma > 0.0 && std::isfinite(Bmag) && Bmag > 0.0) {
+    const double omega = std::fabs(q_C/m_kg)*Bmag/gamma;
+    if (std::isfinite(omega) && omega > 0.0) {
+      dtLimit = std::min(dtLimit,kRK4MaxGyroAngleRad/omega);
+    }
+  }
+
+  const Vec3 v = velocity_from_proper_velocity(u);
+  const double vmag = norm(v);
+  const double dxLocal = local_cell_size(node);
+  if (std::isfinite(vmag) && vmag > 0.0 && std::isfinite(dxLocal) && dxLocal > 0.0) {
+    dtLimit = std::min(dtLimit,kRK4MaxCellFraction*dxLocal/vmag);
+  }
+
+  // Be robust against roundoff, zero fields, or pathological inputs.  A positive but
+  // very small lower bound prevents a stuck while-loop.  The validity checks around the
+  // actual RK4 update still catch nonfinite states before they can be written back.
+  if (!std::isfinite(dtLimit) || dtLimit <= 0.0) dtLimit = remainingAbs;
+  dtLimit = std::max(dtLimit,kRK4TinyDt);
+  return std::min(dtLimit,remainingAbs);
 }
 
 //====================================================================================
@@ -491,39 +761,54 @@ static bool advance_rk4(long int ptr,
                         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,
                         Vec3& x1,
                         Vec3& v1) {
-  FullOrbitRhs k1,k2,k3,k4;
+  Vec3 u;
+  double gamma0=1.0;
+  if (!proper_velocity_from_velocity(v0,u,gamma0)) {
+    rk4_abort_invalid_state("initial particle-buffer velocity",ptr,spec,x0,u,dt,startNode,ParticleData);
+  }
 
-  if (!evaluate_full_orbit_rhs(ptr,spec,ParticleData,x0,v0,startNode,k1)) return false;
+  Vec3 x = x0;
+  const double sign = (dt >= 0.0) ? 1.0 : -1.0;
+  const double totalAbs = std::fabs(dt);
+  double remainingAbs = totalAbs;
 
-  const Vec3 x2 = add(x0,mul(0.5*dt,k1.dxdt));
-  const Vec3 v2 = add(v0,mul(0.5*dt,k1.dvdt));
-  if (!evaluate_full_orbit_rhs(ptr,spec,ParticleData,x2,v2,startNode,k2)) {
-    // An intermediate stage has left the mesh.  Let the boundary processor handle a
-    // ballistic estimate rather than aborting the time step.  This is a defensive path
-    // for particles already extremely close to an outer face.
-    x1 = add(x0,mul(dt,v0));
-    v1 = v0;
+  rk4_check_state_or_exit("before RK4 subcycling",ptr,spec,x,u,dt,startNode,ParticleData);
+
+  if (totalAbs <= 0.0) {
+    x1 = x;
+    v1 = velocity_from_proper_velocity(u);
     return true;
   }
 
-  const Vec3 x3 = add(x0,mul(0.5*dt,k2.dxdt));
-  const Vec3 v3 = add(v0,mul(0.5*dt,k2.dvdt));
-  if (!evaluate_full_orbit_rhs(ptr,spec,ParticleData,x3,v3,startNode,k3)) {
-    x1 = add(x0,mul(dt,v0));
-    v1 = v0;
-    return true;
+  int nSub = 0;
+  while (remainingAbs > 0.0) {
+    if (++nSub > kRK4MaxSubcycles) {
+      rk4_abort_invalid_state("too many RK4 gyro subcycles",ptr,spec,x,u,sign*remainingAbs,startNode,ParticleData);
+    }
+
+    if (remainingAbs <= std::max(kRK4TinyDt,1.0e-14*totalAbs)) break;
+
+    const double subAbs = rk4_select_substep_abs(ptr,spec,ParticleData,x,u,remainingAbs,startNode);
+    const double h = sign*subAbs;
+
+    Vec3 xNew,uNew;
+    if (!rk4_single_substep(ptr,spec,ParticleData,x,u,h,startNode,xNew,uNew)) {
+      return false;
+    }
+
+    rk4_check_state_or_exit("after RK4 substep",ptr,spec,xNew,uNew,h,startNode,ParticleData);
+
+    x = xNew;
+    u = uNew;
+    remainingAbs = std::max(0.0,remainingAbs-subAbs);
   }
 
-  const Vec3 x4 = add(x0,mul(dt,k3.dxdt));
-  const Vec3 v4 = add(v0,mul(dt,k3.dvdt));
-  if (!evaluate_full_orbit_rhs(ptr,spec,ParticleData,x4,v4,startNode,k4)) {
-    x1 = add(x0,mul(dt,v0));
-    v1 = v0;
-    return true;
+  x1 = x;
+  v1 = velocity_from_proper_velocity(u);
+  if (!valid_subluminal_velocity(v1)) {
+    rk4_abort_invalid_state("final RK4 velocity reconstruction",ptr,spec,x,u,dt,startNode,ParticleData);
   }
 
-  x1 = add(x0,mul(dt/6.0,add(add(k1.dxdt,mul(2.0,k2.dxdt)),add(mul(2.0,k3.dxdt),k4.dxdt))));
-  v1 = add(v0,mul(dt/6.0,add(add(k1.dvdt,mul(2.0,k2.dvdt)),add(mul(2.0,k3.dvdt),k4.dvdt))));
   return true;
 }
 
@@ -1193,6 +1478,30 @@ static int finish_particle_move(long int ptr,
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably the time step is too large");
   }
 
+  // Final write-back guard.  The RK4 kernel already validates every internal
+  // proper-velocity substep, but the generic particle-transformation hook and boundary
+  // callbacks operate on the AMPS velocity array directly.  Do one last check before
+  // the particle is inserted into the temporary moving-particle list and before the
+  // state is written back to PIC::ParticleBuffer.
+  {
+    const Vec3 xCheck = Vec3{xFinal[0],xFinal[1],xFinal[2]};
+    const Vec3 vCheck = Vec3{vFinal[0],vFinal[1],vFinal[2]};
+    const double v2Check = norm2(vCheck);
+    if (!finite_vec(xCheck) || !finite_vec(vCheck) || !std::isfinite(v2Check) ||
+        v2Check < 0.0 || v2Check >= SpeedOfLight2SI) {
+      char msg[2048];
+      std::snprintf(msg,sizeof(msg),
+          "Error: invalid particle state before 3d_forward write-back. "
+          "The state was not written to PIC::ParticleBuffer. "
+          "ptr=%ld spec=%d x=(%.17e, %.17e, %.17e) "
+          "v=(%.17e, %.17e, %.17e) |v|=%.17e |v|/c=%.17e dtTotal=%.17e",
+          ptr,spec,xFinal[0],xFinal[1],xFinal[2],
+          vFinal[0],vFinal[1],vFinal[2],std::sqrt(v2Check),
+          std::sqrt(v2Check)/SpeedOfLightSI,dtTotal);
+      exit(__LINE__,__FILE__,msg);
+    }
+  }
+
 #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
   long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
@@ -1235,6 +1544,7 @@ static int finish_particle_move(long int ptr,
 #else
 #error The option is unknown
 #endif
+
 
   PIC::ParticleBuffer::SetV(vFinal,ParticleData);
   PIC::ParticleBuffer::SetX(xFinal,ParticleData);
@@ -1384,7 +1694,10 @@ int MoverManager(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockA
   case MoverKind::BORIS:
     // Delegate to the native AMPS Boris mover.  It already implements the AMPS particle
     // bookkeeping and is the reference production branch.
-    return PIC::Mover::Boris(ptr,dtTotal,startNode);
+    //return PIC::Mover::Boris(ptr,dtTotal,startNode);
+
+    return PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
+
   case MoverKind::RK4:
     return RK4(ptr,dtTotal,startNode);
   case MoverKind::GC:
