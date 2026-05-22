@@ -73,8 +73,8 @@ MoverIntegratorMode=Boris-relativistic
   define _PIC__OPENMP_THREAD_SPLIT_MODE_ _PIC__OPENMP_THREAD_SPLIT_MODE__PARTICLES_
   define _PIC__OPENMP_THREAD_SPLIT_MODE_ _PIC__OPENMP_THREAD_SPLIT_MODE__CELLS_
 
-  BlockCells=4,4,4
-  GhostCells=1,1,1
+  BlockCells=6,6,6
+  GhostCells=2,2,2
 ! CutCellVolumeCalculationMaxRefinmentLevel=1
 
   !NastranSurfaceUserData=on !!!on, off
