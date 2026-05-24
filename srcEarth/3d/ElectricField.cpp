@@ -2,11 +2,26 @@
 
 #include <cmath>
 #include <algorithm>
+#include <string>
 
 #include "pic.h"
+
+//--------------------------------------------------------------------------------------
+// Tsyganenko interfaces and live SWMF coupling are mutually exclusive in this source.
+//--------------------------------------------------------------------------------------
+// In _PIC_COUPLER_MODE__SWMF_ builds the authoritative background fields are the
+// cell-centered fields imported from SWMF into the AMPS coupler buffers.  Therefore this
+// file must not include or call the Tsyganenko wrappers in that build: doing so would
+// introduce invalid model selection and unnecessary Geopack/Tsyganenko link dependencies.
+//
+// In non-SWMF builds we preserve the existing behavior for the supported standalone
+// magnetic models used by the 3D electric-field initialization path.
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
 #include "../../interface/T96Interface.h"
 #include "../../interface/T05Interface.h"
 #include "../../interface/TA16Interface.h"
+#endif
+
 #include "../gridless/DipoleInterface.h"
 
 namespace {
@@ -38,6 +53,82 @@ void EvalDipoleSI(double B[3],const double x[3],const EarthUtil::AmpsParam& prm)
   Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
   Earth::GridlessMode::Dipole::GetB_Tesla(x,B);
 }
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+//--------------------------------------------------------------------------------------
+// Live SWMF-coupled field access
+//--------------------------------------------------------------------------------------
+// The direct SWMF coupler does not evaluate T96/T05/TA16 in this source.  Instead, SWMF
+// sends the MHD state to AMPS, AMPS stores B and plasma velocity in the cell-centered
+// coupler buffers, and PIC::CPLR exposes the same interpolated fields that the standard
+// AMPS particle movers use.
+//
+// Magnetic field:
+//   PIC::CPLR::GetBackgroundMagneticField(B) dispatches to
+//   PIC::CPLR::SWMF::GetBackgroundMagneticField(...) and interpolates the SWMF B field
+//   from the current AMPS interpolation stencil.
+//
+// Electric field:
+//   PIC::CPLR::GetBackgroundElectricField(E) dispatches to the SWMF coupler path, where
+//   the field is reconstructed as the ideal-MHD field E = -v x B from the SWMF plasma
+//   velocity and magnetic field stored in the same cell-centered buffers.
+//
+// This helper mirrors the access pattern used by AMPS movers: find the AMR block that
+// contains x, initialize the coupler interpolation stencil, then call the global PIC::CPLR
+// accessor.  A thread-local node cache avoids repeatedly searching from the AMR root when
+// this routine is called for many neighboring mesh points during 3D initialization.
+static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* FindSWMFNodeOrDie(const double x[3],
+                                                                const char* caller) {
+  if (PIC::Mesh::mesh == NULL) {
+    exit(__LINE__,__FILE__,
+         "Error in Earth::Mode3D::ElectricField: PIC::Mesh::mesh is NULL; "
+         "cannot interpolate SWMF-coupled background fields");
+  }
+
+  // InitInterpolationStencil takes a non-const pointer, so work with a local copy.
+  // The coordinates themselves remain in the same SI/GSM system used by AMPS.
+  double xLocal[3]={x[0],x[1],x[2]};
+
+  static thread_local cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* swmfLastNode = NULL;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
+    (swmfLastNode != NULL)
+      ? PIC::Mesh::mesh->findTreeNode(xLocal,swmfLastNode)
+      : PIC::Mesh::mesh->findTreeNode(xLocal);
+
+  // If the cached-node search fails, retry from the root before reporting a true
+  // out-of-mesh condition.  This makes the cache safe across large jumps between
+  // initialization points or changes in AMR-block ownership.
+  if (node == NULL) node = PIC::Mesh::mesh->findTreeNode(xLocal);
+
+  if (node == NULL) {
+    (void)caller;
+    exit(__LINE__,__FILE__,
+         "Error in Earth::Mode3D::ElectricField: point is outside the AMPS mesh; "
+         "cannot interpolate SWMF-coupled background fields");
+  }
+
+  swmfLastNode = node;
+  return node;
+}
+
+static void EvalSWMFBkgMagneticFieldSI(double B[3],const double x[3]) {
+  double xLocal[3]={x[0],x[1],x[2]};
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
+    FindSWMFNodeOrDie(xLocal,"EvalSWMFBkgMagneticFieldSI");
+
+  PIC::CPLR::InitInterpolationStencil(xLocal,node);
+  PIC::CPLR::GetBackgroundMagneticField(B);
+}
+
+static void EvalSWMFBkgElectricFieldSI(double E[3],const double x[3]) {
+  double xLocal[3]={x[0],x[1],x[2]};
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
+    FindSWMFNodeOrDie(xLocal,"EvalSWMFBkgElectricFieldSI");
+
+  PIC::CPLR::InitInterpolationStencil(xLocal,node);
+  PIC::CPLR::GetBackgroundElectricField(E);
+}
+#endif
 } // namespace
 
 namespace Earth {
@@ -45,11 +136,29 @@ namespace Mode3D {
 
 void EvaluateBackgroundMagneticFieldSI(double B[3],const double xGSM_SI[3],const EarthUtil::AmpsParam& prm) {
   const std::string model=EarthUtil::ToUpper(prm.field.model);
+
+  // The analytic dipole remains available in every build.  It is useful for
+  // controlled validation runs and does not depend on either Tsyganenko/Geopack or
+  // SWMF-coupler state.
   if (model=="DIPOLE") { EvalDipoleSI(B,xGSM_SI,prm); return; }
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // Live SWMF-coupled path.
+  //
+  // T96/T05/TA16 are standalone empirical models and must not be used when AMPS is
+  // compiled as an SWMF-coupled component.  In that mode the magnetic field used by
+  // AMPS is the SWMF-supplied field stored in the coupler data buffers and exposed
+  // through PIC::CPLR::GetBackgroundMagneticField().  Use that same accessor here so
+  // mesh initialization, diagnostics, and particle movers all sample the same B.
+  (void)prm;
+  EvalSWMFBkgMagneticFieldSI(B,xGSM_SI);
+  return;
+#else
   if (model=="T96") { ::T96::GetMagneticField(B,const_cast<double*>(xGSM_SI)); return; }
   if (model=="T05") { ::T05::GetMagneticField(B,const_cast<double*>(xGSM_SI)); return; }
   if (model=="TA16") { ::TA16::GetMagneticField(B,const_cast<double*>(xGSM_SI)); return; }
   B[0]=B[1]=B[2]=0.0;
+#endif
 }
 
 // Corotation: E = -(Omega x r) x B. This is a clean SI-space implementation
@@ -126,6 +235,22 @@ static void EvalVollandSternSI(double E[3],const double x[3],const EarthUtil::Am
 
 void EvaluateElectricFieldSI(double E[3],const double xGSM_SI[3],const EarthUtil::AmpsParam& prm) {
   E[0]=E[1]=E[2]=0.0;
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // Live SWMF-coupled path.
+  //
+  // In the direct AMPS/SWMF coupling mode the background electric field used by the
+  // AMPS particle movers is obtained through PIC::CPLR::GetBackgroundElectricField().
+  // For SWMF this accessor reconstructs the ideal-MHD electric field E = -v x B from
+  // the plasma velocity and magnetic field imported from SWMF into AMPS cell buffers.
+  //
+  // Therefore, do not evaluate the local corotation/Volland-Stern models here in an
+  // SWMF-coupled build.  Returning the coupled field keeps this 3D initialization /
+  // diagnostic path consistent with the live AMPS particle-tracing path.
+  (void)prm;
+  EvalSWMFBkgElectricFieldSI(E,xGSM_SI);
+  return;
+#else
   const std::string model=EarthUtil::ToUpper(prm.efield.model);
   if (model=="NONE" || model.empty()) return;
   const double r=std::sqrt(sqr(xGSM_SI[0])+sqr(xGSM_SI[1])+sqr(xGSM_SI[2]));
@@ -138,14 +263,25 @@ void EvaluateElectricFieldSI(double E[3],const double xGSM_SI[3],const EarthUtil
     EvalVollandSternSI(b,xGSM_SI,prm);
     for (int i=0;i<3;i++) E[i]=a[i]+b[i];
   }
+#endif
 }
 
 double EvaluateElectricPotential_V(const double xGSM_SI[3],const EarthUtil::AmpsParam& prm) {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // The SWMF-coupled electric field is the interpolated ideal-MHD field E = -v x B.
+  // In general that field is not represented in AMPS by a scalar electrostatic
+  // potential.  Return zero rather than reporting an inconsistent analytic potential
+  // from the standalone corotation/Volland-Stern models.
+  (void)xGSM_SI;
+  (void)prm;
+  return 0.0;
+#else
   const std::string model=EarthUtil::ToUpper(prm.efield.model);
   if (model=="COROTATION") return EvalCorotationPotentialV(xGSM_SI,prm);
   if (model=="VOLLAND_STERN") return EvalVSPotentialV(xGSM_SI,prm);
   if (model=="COROTATION_VOLLAND_STERN") return EvalCorotationPotentialV(xGSM_SI,prm)+EvalVSPotentialV(xGSM_SI,prm);
   return 0.0;
+#endif
 }
 
 } // namespace Mode3D

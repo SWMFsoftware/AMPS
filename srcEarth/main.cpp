@@ -62,8 +62,8 @@ bool ApplyCutoffMoverCli(const EarthUtil::CliOptions& cli) {
 
 } // namespace
 
-int nZenithElements=200;
-int nAzimuthalElements=200;
+extern int nZenithElements;
+extern int nAzimuthalElements;
 
 void amps_init();
 void amps_init_mesh();

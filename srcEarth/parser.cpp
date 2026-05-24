@@ -7,8 +7,14 @@
 
 #include "pic.h"
 #include "Earth.h"
+// Tsyganenko model wrappers are standalone/background-field interfaces.
+// They must not be included in a live SWMF-coupled build: in that mode AMPS
+// obtains the magnetic field from the SWMF coupler through PIC::CPLR, and the
+// T96/T05 wrappers should not be compiled or linked.
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
 #include "T96Interface.h"
 #include "T05Interface.h"
+#endif
 
 
 using namespace std;
@@ -214,6 +220,19 @@ void Earth::Parser::SetT05DataFile(vector<string>& StringVector) {
 
   if (_reading_mode!=_reading_mode_pre_init) return; 
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // In live SWMF-coupled runs the magnetic field is supplied by SWMF and
+  // exposed to AMPS through PIC::CPLR.  A T05 driver file is therefore not a
+  // valid source of magnetic-field data in this compile mode.  Fail loudly so
+  // an input file cannot silently request a Tsyganenko driver that will never be
+  // used by the field evaluator.
+  (void)StringVector;
+  exit(__LINE__,__FILE__,
+       "Error: T05Data cannot be used when _PIC_COUPLER_MODE_ == "
+       "_PIC_COUPLER_MODE__SWMF_. In SWMF-coupled builds, AMPS obtains B from "
+       "the SWMF coupler through PIC::CPLR; remove T05Data/T05 configuration "
+       "from the input file.");
+#else
   for (auto& it : StringVector) {
     replace(it,"="," ");
     replace(it,","," ");
@@ -227,6 +246,7 @@ void Earth::Parser::SetT05DataFile(vector<string>& StringVector) {
     }
     else exit(__LINE__,__FILE__,"Error: the option is not recognized");
   }
+#endif
 }
 
 void Earth::Parser::BackgroundModelT96(vector<string>& StringVector) {
@@ -235,6 +255,19 @@ void Earth::Parser::BackgroundModelT96(vector<string>& StringVector) {
 
   if (_reading_mode!=_reading_mode_pre_init) return;
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // T96 is a standalone Tsyganenko background model.  It is mutually exclusive
+  // with live SWMF coupling because the SWMF build obtains the magnetic field
+  // from SWMF state variables already imported into the AMPS cell buffers.  Do
+  // not silently ignore the user's T96 block: that would make the input file
+  // appear to control the field while the run actually uses SWMF fields.
+  (void)StringVector;
+  exit(__LINE__,__FILE__,
+       "Error: T96 background model cannot be selected when "
+       "_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_. In SWMF-coupled builds, "
+       "magnetic-field access must go through PIC::CPLR/SWMF; remove the T96 "
+       "block from the input file.");
+#else
   Earth::BackgroundMagneticFieldModelType=Earth::_t96;
 
   for (auto& it : StringVector) { 
@@ -243,7 +276,7 @@ void Earth::Parser::BackgroundModelT96(vector<string>& StringVector) {
 
     istringstream iss(it);
     iss >> sub;
- 
+
     if (sub=="solar_wind_pressure") {
       iss >> sub;
       t=atof(sub.c_str());
@@ -268,6 +301,7 @@ void Earth::Parser::BackgroundModelT96(vector<string>& StringVector) {
       exit(__LINE__,__FILE__,"Error: the option is unknown");
     }
   }
+#endif
 }
 
 void Earth::Parser::BackgroundModelT05(vector<string>& StringVector) {
@@ -276,6 +310,18 @@ void Earth::Parser::BackgroundModelT05(vector<string>& StringVector) {
 
   if (_reading_mode!=_reading_mode_pre_init) return;
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // T05 is a standalone Tsyganenko background model.  In SWMF-coupled builds it
+  // must not be configured because AMPS receives the magnetic field from SWMF
+  // and accesses it with PIC::CPLR::GetBackgroundMagneticField().  Keeping this
+  // branch as an explicit error catches inconsistent legacy input files early.
+  (void)StringVector;
+  exit(__LINE__,__FILE__,
+       "Error: T05 background model cannot be selected when "
+       "_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_. In SWMF-coupled builds, "
+       "magnetic-field access must go through PIC::CPLR/SWMF; remove the T05 "
+       "block from the input file.");
+#else
   Earth::BackgroundMagneticFieldModelType=Earth::_t05;
 
   for (auto& it : StringVector) {
@@ -324,6 +370,7 @@ void Earth::Parser::BackgroundModelT05(vector<string>& StringVector) {
       exit(__LINE__,__FILE__,"Error: the option is unknown");
     }
   }
+#endif
 }
 
 

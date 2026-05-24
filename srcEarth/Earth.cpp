@@ -12,8 +12,11 @@
 #include "pic.h"
 #include "Earth.h"
 #include "3d_forward/ForwardParticleMovers.h"
+
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
 #include "T96Interface.h"
 #include "T05Interface.h"
+#endif
 
 void amps_time_step();
 
@@ -494,6 +497,7 @@ double Earth::BC::sphereInjectionRate(int spec,void *SphereDataPointer) {
 
 //init the Earth magnetosphere model
 void Earth::Init() {
+  #if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
   //init the T96 model
   if (T96::active_flag==true) {
     ::T96::SetSolarWindPressure(T96::solar_wind_pressure);
@@ -510,7 +514,7 @@ void Earth::Init() {
     ::T05::SetBZIMF(T05::bz);
     ::T05::SetW(T05::W[0],T05::W[1],T05::W[2],T05::W[3],T05::W[4],T05::W[5]);
   }
-
+  #endif
 
 
   //init the composition gourp tables
@@ -646,7 +650,7 @@ void Earth::InitMagneticField(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
         int i,j,k;
         double *xNodeMin=startNode->xmin;
         double *xNodeMax=startNode->xmax;
-        double x[3],B[3],xCell[3];
+        double x[3],B[3]={0.0,0.0,0.0},xCell[3];
         PIC::Mesh::cDataCenterNode *CenterNode;
 
         //set the value of the geomagnetic field calculated at the centers of the cells
@@ -673,6 +677,7 @@ void Earth::InitMagneticField(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
         xCell[2]=(xNodeMin[2]+(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_*(0.5+k));
 
         //calculate the geomagnetic field
+	#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
         if (Earth::BackgroundMagneticFieldModelType==Earth::_undef) {
           switch (_PIC_COUPLER_MODE_) {
           case _PIC_COUPLER_MODE__T96_:
@@ -708,6 +713,7 @@ void Earth::InitMagneticField(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
             *((double*)(offset+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+idim*sizeof(double)))=0.0;
           }
         }
+        #endif //#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_ 
       }
 
     }

@@ -33,9 +33,20 @@
 
 #include "pic.h"
 #include "../Earth.h"
+
+//--------------------------------------------------------------------------------------
+// Tsyganenko model interfaces are standalone/empirical field backends.
+//--------------------------------------------------------------------------------------
+// They must not be included or configured when AMPS is compiled as a live SWMF-coupled
+// component.  In _PIC_COUPLER_MODE__SWMF_ builds, the magnetic field and plasma-flow
+// state are supplied by SWMF and exposed through the standard PIC::CPLR accessors.
+// Keeping these includes out of SWMF builds prevents accidental references to
+// T96/T05/TA16 symbols and avoids unnecessary Geopack/Tsyganenko link dependencies.
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
 #include "../../interface/T96Interface.h"
 #include "../../interface/T05Interface.h"
 #include "../../interface/TA16Interface.h"
+#endif
 
 void amps_init_mesh();
 void amps_init();
@@ -165,6 +176,23 @@ static cInternalSphericalData* sAbsorptionSphere = nullptr;
 //  Helper: configure background field (identical to Mode3D path)
 // ============================================================================
 static void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // Live SWMF-coupled build.
+  //
+  // T96/T05/TA16 are standalone empirical field models.  They must not be selected,
+  // initialized, or linked when AMPS is compiled as an SWMF component.  In that mode
+  // SWMF supplies the MHD state, including the magnetic field and plasma velocity, and
+  // the AMPS coupler exposes those fields through PIC::CPLR::GetBackgroundMagneticField()
+  // and PIC::CPLR::GetBackgroundElectricField().
+  //
+  // Keep the local Earth model selector neutral so any downstream code that checks the
+  // legacy model flag does not accidentally interpret the run as a Tsyganenko run.  The
+  // actual field access in ElectricField.cpp and the particle movers must go through
+  // the PIC::CPLR SWMF path.
+  (void)prm;
+  Earth::BackgroundMagneticFieldModelType = Earth::_undef;
+  return;
+#else
   Earth::T96::active_flag = false;
   Earth::T05::active_flag = false;
   Earth::BackgroundMagneticFieldModelType = Earth::_undef;
@@ -211,11 +239,31 @@ static void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
   }
   // DIPOLE is handled implicitly (no active_flag needed; the field evaluator
   // falls through to the IGRF/analytic dipole path when all model flags are false).
+#endif
 }
 
 // ============================================================================
 //  Helper: initialise B/E field values in all AMR cells
 // ============================================================================
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+static void InitMeshFields(const EarthUtil::AmpsParam& prm,
+                           cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  // Live SWMF-coupled build.
+  //
+  // Do not pre-fill the DATAFILE magnetic/electric-field buffers here.  In SWMF
+  // mode those buffers are not the authoritative field source; the standard AMPS
+  // particle movers access fields through PIC::CPLR, which dispatches to the SWMF
+  // cell-centered data imported from the MHD component.  ElectricField.cpp follows
+  // the same policy by calling PIC::CPLR::GetBackgroundMagneticField() and
+  // PIC::CPLR::GetBackgroundElectricField().
+  //
+  // Leaving this routine as a no-op prevents accidental writes to DATAFILE storage
+  // in a build whose coupler mode is SWMF, while preserving the call site in Run()
+  // so the non-SWMF and SWMF startup sequence remain structurally identical.
+  (void)prm;
+  (void)node;
+}
+#else
 static void InitMeshFields(const EarthUtil::AmpsParam& prm,
                            cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   const int iMin = -_GHOST_CELLS_X_, iMax = _GHOST_CELLS_X_ + _BLOCK_CELLS_X_ - 1;
@@ -264,6 +312,7 @@ static void InitMeshFields(const EarthUtil::AmpsParam& prm,
         InitMeshFields(prm, node->downNode[i]);
   }
 }
+#endif
 
 // ============================================================================
 //  Helper: evaluate time step
@@ -1204,8 +1253,12 @@ int Run(const EarthUtil::AmpsParam& prm) {
   // Give the AMPS-signature forward movers access to the same parsed field-model
   // configuration used by Mode3D.  The standard AMPS mover signature cannot carry
   // an AmpsParam object, but RK4/GC/HYBRID need it in order to reproduce the 3-D
-  // path's field access policy: AMR interpolation of DATAFILE fields by default,
-  // or direct analytic EvaluateBackgroundMagneticFieldSI() calls when requested.
+  // path's field access policy:
+  //   • non-SWMF builds: AMR interpolation of DATAFILE fields by default, or direct
+  //     analytic EvaluateBackgroundMagneticFieldSI() calls when requested;
+  //   • SWMF builds: standard PIC::CPLR access to the SWMF-imported magnetic field
+  //     and ideal-MHD electric field, as implemented in ElectricField.cpp and the
+  //     AMPS coupler path.
   Earth::Earth3DForward::ConfigureFieldEvaluation(prm);
 
   // Select the energy-sampling branch for the outer-boundary source.  The string
@@ -1251,10 +1304,12 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //   (a) UserDefinedExtraSourceRate -- for the particle weight path (MOP pattern)
   //   (b) s_prm (via SetPrm)         -- so InitDirectionIMF()'s default case can
   //                                    call EvaluateBackgroundMagneticFieldSI
-  //   (c) the field model state      -- ConfigureBackgroundFieldModel sets the
+  //   (c) the field model state      -- in non-SWMF builds,
+  //                                    ConfigureBackgroundFieldModel sets the
   //                                    T96/T05/TA16 active flags and calls their
-  //                                    Init(); EvaluateBackgroundMagneticFieldSI
-  //                                    dispatches on those flags at runtime.
+  //                                    Init(); in SWMF builds this routine is a
+  //                                    deliberate no-op because fields come from
+  //                                    PIC::CPLR/SWMF.
   //
   // (a) cf. srcMOP/main.cpp:238 -- UserDefinedExtraSourceRate set before amps_init.
   PIC::ParticleWeightTimeStep::UserDefinedExtraSourceRate = BoundaryInjectionSourceRate;
@@ -1269,8 +1324,10 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //     EvaluateBackgroundMagneticFieldSI(b, x, prm).
   Earth::BoundingBoxInjection::SetPrm(prm);
 
-  // (c) set active flags and initialise T96/T05/TA16 before amps_init() fires
-  //     InitDirectionIMF(), which evaluates the background field.
+  // (c) configure the standalone field-model state before amps_init() fires
+  //     InitDirectionIMF(), which evaluates the background field.  In live SWMF
+  //     coupling this is intentionally a no-op: the SWMF component, not a
+  //     Tsyganenko wrapper, supplies the field through PIC::CPLR.
   //     ConfigureBackgroundFieldModel does not touch the mesh, so it is safe
   //     to call here before amps_init_mesh().
   ConfigureBackgroundFieldModel(prm);
@@ -1310,8 +1367,10 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //--------------------------------------------------------------------------
   // 3. Background field model (mesh-dependent setup, e.g. InitMeshFields)
   //--------------------------------------------------------------------------
-  // ConfigureBackgroundFieldModel was already called above (step 2c). The
-  // mesh cells are populated here now that amps_init() has allocated blocks.
+  // ConfigureBackgroundFieldModel was already called above (step 2c).  In
+  // non-SWMF builds, InitMeshFields below populates the DATAFILE B/E buffers
+  // used by the 3D path.  In SWMF builds, InitMeshFields is a no-op because the
+  // authoritative B/E fields are already exposed through the AMPS/SWMF coupler.
 
   //--------------------------------------------------------------------------
   // 4. Initialise B/E fields in all mesh cells

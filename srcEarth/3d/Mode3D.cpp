@@ -8,9 +8,12 @@
 #include <iostream>
 
 #include "pic.h"
+
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
 #include "../../interface/T96Interface.h"
 #include "../../interface/T05Interface.h"
 #include "../../interface/TA16Interface.h"
+#endif
 
 void amps_init_mesh();
 void amps_init();
@@ -41,6 +44,22 @@ void ApplyParsedDomain(const EarthUtil::AmpsParam& prm) {
 }
 
 void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // In the live AMPS--SWMF coupling mode the background magnetic field is not
+  // selected from the standalone Tsyganenko/TA16 wrappers.  SWMF supplies the
+  // MHD state to AMPS through PIC::CPLR, and the field that should be used by
+  // particle movers / diagnostics is exposed by the standard AMPS coupler
+  // accessors:
+  //
+  //   PIC::CPLR::InitInterpolationStencil(...)
+  //   PIC::CPLR::GetBackgroundMagneticField(...)
+  //
+  // Therefore this setup routine must be a no-op in SWMF builds: do not set
+  // Earth::T96/Earth::T05 active flags and do not call ::T96::Init(),
+  // ::T05::Init(), or ::TA16::Init().  Those model interfaces may not even be
+  // linked in the coupled executable.
+  (void)prm;
+#else
   Earth::T96::active_flag=false;
   Earth::T05::active_flag=false;
   Earth::BackgroundMagneticFieldModelType=Earth::_undef;
@@ -90,6 +109,7 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
     ::TA16::SetBYIMF(prm.field.imfBy_nT*_NANO_);
     ::TA16::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
   }
+#endif
 }
 
 // Traverse the full AMR tree and write B and E into every cell's data buffer,
@@ -101,6 +121,23 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
 //     unconditionally writing zero.
 void InitMeshFields(const EarthUtil::AmpsParam& prm,
                     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // In SWMF-coupled builds the cell-centered B and E values are owned by the
+  // live coupler data structures, not by the DATAFILE/MULTIFILE buffers that
+  // this standalone initializer fills.  Overwriting DATAFILE fields here would
+  // create a second, stale field source and would bypass the AMPS/SWMF access
+  // pattern used elsewhere:
+  //
+  //   PIC::CPLR::GetBackgroundMagneticField(...)
+  //   PIC::CPLR::GetBackgroundElectricField(...)
+  //
+  // Leave the mesh field buffers untouched; downstream field evaluation must
+  // obtain the coupled fields through PIC::CPLR.
+  (void)prm;
+  (void)startNode;
+  return;
+#endif
+
   const int iMin=-_GHOST_CELLS_X_, iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
   const int jMin=-_GHOST_CELLS_Y_, jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
   const int kMin=-_GHOST_CELLS_Z_, kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
@@ -302,12 +339,16 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //    that downstream utilities (Tecplot writers, MPI_Barrier, etc.) behave
   //    correctly.  Every rank now owns the complete AMR tree.
   //
-  // 3. Sphere and field-model configuration (diagnostic; same as before).
+  // 3. Sphere and field-model configuration.
+  //    In standalone/non-SWMF builds this configures the selected background
+  //    Tsyganenko/TA16 model.  In SWMF-coupled builds this is intentionally a
+  //    no-op because the field source is the AMPS/SWMF coupler.
   //
   // 4. Field initialisation in mesh cells (diagnostic Tecplot output).
-  //    The cutoff solver uses direct Tsyganenko calls per step — it does NOT
-  //    read stored mesh-cell field values — so this step is optional for the
-  //    cutoff workflow but is retained for Mode3D diagnostic outputs.
+  //    In standalone/non-SWMF builds this fills DATAFILE-style mesh buffers
+  //    with the configured B/E fields.  In SWMF-coupled builds it is a no-op:
+  //    the authoritative B/E values remain in the live coupler data and are
+  //    accessed through PIC::CPLR.
   //
   // 5. RunCutoffRigidity: MPI × OpenMP parallel cutoff computation.
   //    - Static point distribution across MPI ranks (each rank independent).
@@ -359,8 +400,14 @@ int Run(const EarthUtil::AmpsParam& prm) {
 
   //----------------------------------------------------------------------------
   // Mesh field initialisation (diagnostic Tecplot output)
-  // The cutoff solver reads field values from these mesh cells during particle
-  // tracing (see cMode3DMeshFieldEval in CutoffRigidityMode3D.cpp).
+  //
+  // Standalone/non-SWMF builds:
+  //   Fill DATAFILE-style B/E buffers with the selected analytic/Tsyganenko field.
+  //
+  // SWMF-coupled builds:
+  //   InitMeshFields() intentionally returns without writing DATAFILE buffers.
+  //   The magnetic/electric fields are the live SWMF-coupled fields exposed by
+  //   PIC::CPLR::GetBackgroundMagneticField/ElectricField.
   //----------------------------------------------------------------------------
   InitMeshFields(prm, PIC::Mesh::mesh->rootTree);
 

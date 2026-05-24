@@ -38,11 +38,21 @@
 //   - Quick validation that the particle mover conserves energy
 //   - Teaching/demonstration runs
 //
-// The field evaluator is encapsulated in the concrete class TsyganenkoFieldEval
-// (implements IGridlessFieldEvaluator). It is constructed once per run and shared
-// across all trajectory integrations. The Geopack RECALC state (dipole tilt,
-// geodipole axis direction) is initialised once from the epoch string, cached,
-// and not re-evaluated between trajectories.
+// SWMF-COUPLED BUILD (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_):
+//   Tsyganenko models are not used in this mode.  Instead, GetB_T() follows the
+//   same AMPS coupler path used by the standard particle movers:
+//       PIC::CPLR::InitInterpolationStencil(x,node)
+//       PIC::CPLR::GetBackgroundMagneticField(B)
+//   In the SWMF coupler this samples the magnetic field imported from SWMF and
+//   stored in AMPS' cell-centered data buffers.  This keeps the gridless cutoff
+//   calculation consistent with the live SWMF-coupled AMPS state and avoids any
+//   dependency on T96/T05/T01/TA15/TA16 or Geopack symbols in the SWMF build.
+//
+// The field evaluator is encapsulated in cFieldEvaluator (implements
+// IGridlessFieldEvaluator). It is constructed once per run and shared across all
+// trajectory integrations. In non-SWMF Tsyganenko runs the Geopack RECALC state
+// (dipole tilt, geodipole axis direction) is initialised from the epoch string,
+// cached, and refreshed when trajectory-point epochs require it.
 //
 //======================================================================================
 // PARTICLE TRACING -- INNER LOOP
@@ -228,14 +238,27 @@
 
 #include "constants.h"
 #include "constants.PlanetaryData.h"
-#include "GeopackInterface.h"
 #include "DipoleInterface.h"
 
+//--------------------------------------------------------------------------------------
+// Tsyganenko / Geopack interfaces are not valid in the live SWMF-coupled build.
+//--------------------------------------------------------------------------------------
+// In _PIC_COUPLER_MODE__SWMF_ mode the magnetic field used by AMPS is the field
+// imported from SWMF into the AMPS cell-centered data buffer and accessed through
+// PIC::CPLR::GetBackgroundMagneticField().  Therefore the gridless cutoff solver must
+// not include or call the Tsyganenko wrappers (T96/T05/T01/TA15/TA16) in that build.
+//
+// Keeping these includes behind the same compile-time guard as the call sites avoids
+// accidental link dependencies on the Tsyganenko/Geopack libraries when AMPS is built
+// as an SWMF-coupled component.
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+#include "GeopackInterface.h"
 #include "T96Interface.h"
 #include "T05Interface.h"
 #include "T01Interface.h"
 #include "TA15Interface.h"
 #include "TA16Interface.h"
+#endif
 
 // Compute Stormer vertical-cutoff coefficient R0(M) in GV, using the *same* dipole moment
 // normalization as the dipole B-field implementation.
@@ -358,6 +381,16 @@ static inline double RigidityFromMomentum_GV(double p,double q_C_abs) {
 class cFieldEvaluator : public IGridlessFieldEvaluator {
 public:
   explicit cFieldEvaluator(const EarthUtil::AmpsParam& p) : prm(p) {
+    // Configure analytic dipole parameters.  These values are used only when the
+    // user explicitly requests FIELD_MODEL=DIPOLE; in the live SWMF-coupled build
+    // the normal production path instead samples the magnetic field imported from
+    // SWMF through PIC::CPLR.
+    Earth::GridlessMode::Dipole::SetMomentScale(prm.field.dipoleMoment_Me);
+    Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
+
+    PS = 0.170481; // same default as interfaces
+
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
     // For Tsyganenko models we need Geopack initialization.
     //
     // IMPORTANT NOTE (coordinate transforms vs magnetic field evaluation):
@@ -377,10 +410,6 @@ public:
       currentEpoch_ = prm.field.epoch;
     }
 
-    // Configure analytic dipole parameters (used only when FIELD_MODEL=DIPOLE).
-    Earth::GridlessMode::Dipole::SetMomentScale(prm.field.dipoleMoment_Me);
-    Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
-
     EarthUtil::BuildTsParmod(prm.field, Model(), PARMOD);
     if (Model()=="TA15N") TA15::SetVersion(TA15::Version_N);
     else if (Model()=="TA15B") TA15::SetVersion(TA15::Version_B);
@@ -395,7 +424,12 @@ public:
       // "End of file" runtime error instead of a useful diagnostic.
       TA16::VerifyCoeffFile(__LINE__,__FILE__);
     }
-    PS = 0.170481; // same default as interfaces
+#else
+    // In live SWMF coupling, the field is already provided on the AMPS mesh by the
+    // SWMF coupler.  Do not initialise Geopack and do not touch the Tsyganenko
+    // wrappers/Fortran common blocks in this compilation mode.
+    currentEpoch_ = prm.field.epoch;
+#endif
   }
 
   // Return the canonical (normalised) model name.
@@ -487,6 +521,13 @@ public:
   //     (e.g. sub-minute time steps that don't affect the epoch string).
   void ReinitGeopack(const std::string& epoch,
                      const EarthUtil::TsDriverTable* driverTable = nullptr) {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+    // Live SWMF coupling obtains B directly from the AMPS/SWMF coupler buffers.
+    // There is no Geopack/Tsyganenko state to refresh in this compilation mode.
+    (void)epoch;
+    (void)driverTable;
+    return;
+#else
     if (Model() == "DIPOLE") return;  // analytic dipole has no Geopack dependency
 
     const bool epochChanged   = (epoch != currentEpoch_);
@@ -547,6 +588,7 @@ public:
       Geopack::Init(epoch.c_str(), "GSM");
       currentEpoch_ = epoch;  // remember for the guard check on the next call
     }
+#endif
   }
 
   void GetB_T(const V3& x_m, V3& B_T) const override {
@@ -559,6 +601,63 @@ public:
       return;
     }
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+    // Live SWMF-coupled path.
+    //
+    // Tsyganenko models are intentionally disabled when AMPS is compiled as an
+    // SWMF-coupled component.  In this mode the magnetic field used everywhere
+    // else in AMPS is not evaluated through T96/T05/T01/TA15/TA16.  It is the
+    // cell-centered B supplied by SWMF and stored in the AMPS coupler buffer.
+    //
+    // To remain consistent with the rest of AMPS, sample that same background
+    // field through the standard AMPS coupler workflow:
+    //   1. locate the AMR block containing x_m,
+    //   2. build the interpolation stencil with PIC::CPLR::InitInterpolationStencil,
+    //   3. call PIC::CPLR::GetBackgroundMagneticField(B), which dispatches to
+    //      SWMF::GetBackgroundMagneticField(...) in _PIC_COUPLER_MODE__SWMF_.
+    //
+    // Units: RecieveCenterPointData stores the SWMF B values directly in the AMPS
+    // cell buffer.  The standard PIC::CPLR accessor is therefore the authoritative
+    // source for the units used by the coupled AMPS runtime; GetB_T returns those
+    // same values to the gridless particle mover.
+    double x_arr[3]={x_m.x,x_m.y,x_m.z};
+
+    if (PIC::Mesh::mesh == NULL) {
+      exit(__LINE__,__FILE__,
+           "Error in CutoffRigidityGridless::GetB_T: PIC::Mesh::mesh is NULL; "
+           "cannot interpolate SWMF-coupled magnetic field");
+    }
+
+    // Keep a thread-local starting node for the AMR search.  This mirrors the way
+    // standard AMPS movers use their current particle node as the search seed and
+    // avoids repeatedly searching from the root during long gridless trajectories.
+    static thread_local cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* swmfLastNode = NULL;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
+      (swmfLastNode != NULL)
+        ? PIC::Mesh::mesh->findTreeNode(x_arr,swmfLastNode)
+        : PIC::Mesh::mesh->findTreeNode(x_arr);
+
+    // If the local seeded search failed, retry from the root before reporting a
+    // real out-of-mesh condition.  This makes the cache safe across large particle
+    // jumps or AMR-block changes.
+    if (node == NULL) node = PIC::Mesh::mesh->findTreeNode(x_arr);
+
+    if (node == NULL) {
+      exit(__LINE__,__FILE__,
+           "Error in CutoffRigidityGridless::GetB_T: point is outside the AMPS mesh; "
+           "cannot interpolate SWMF-coupled magnetic field");
+    }
+    swmfLastNode = node;
+
+    double b_swmf[3]={0.0,0.0,0.0};
+    PIC::CPLR::InitInterpolationStencil(x_arr,node);
+    PIC::CPLR::GetBackgroundMagneticField(b_swmf);
+
+    B_T.x = b_swmf[0];
+    B_T.y = b_swmf[1];
+    B_T.z = b_swmf[2];
+    return;
+#else
     double x_arr[3]={x_m.x,x_m.y,x_m.z};
     double b_total[3]={0.0,0.0,0.0};
 
@@ -597,6 +696,7 @@ public:
     B_T.x = b_total[0];
     B_T.y = b_total[1];
     B_T.z = b_total[2];
+#endif
   }
 
 private:
@@ -2341,6 +2441,7 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
     //
     // Assumption (explicitly requested): SPICE is always available in the intended
     // execution environment, so we do not add fallback logic here.
+    #ifndef _NO_SPICE_CALLS_
     SpiceDouble xGEO[3]={ xShellCartesian.x, xShellCartesian.y, xShellCartesian.z };
     static std::string epoch="";
     static SpiceDouble rot[3][3];
@@ -2355,8 +2456,11 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
 
     SpiceDouble xGSM[3];
     mxv_c(rot, xGEO, xGSM);
-
     return {xGSM[0],xGSM[1],xGSM[2]};
+    #endif
+
+    //when SPICE is not avaible -> return the original locations 
+    return {xShellCartesian.x, xShellCartesian.y, xShellCartesian.z };
   };
 
   //====================================================================================
