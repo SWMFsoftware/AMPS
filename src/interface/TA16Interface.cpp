@@ -147,9 +147,9 @@ void TA16::GetMagneticField(double *B,double *x) {
   }
   else {
     double xLocal_GSM[3],bTA16_GSM[3];
-    mxv_c(UserFrame2GSM,xLocal,xLocal_GSM);
+    Geopack::MatrixVectorMultiply(UserFrame2GSM,xLocal,xLocal_GSM);
     rbf_model_2016_(&IOPT,PARMOD,&PS,xLocal_GSM+0,xLocal_GSM+1,xLocal_GSM+2,bTA16_GSM+0,bTA16_GSM+1,bTA16_GSM+2);
-    mxv_c(GSM2UserFrame,bTA16_GSM,bTA16);
+    Geopack::MatrixVectorMultiply(GSM2UserFrame,bTA16_GSM,bTA16);
   }
 
   IGRF::GetMagneticField(B,x);

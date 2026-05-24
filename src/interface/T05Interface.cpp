@@ -48,15 +48,14 @@ void T05::LoadDataFile(const char* fname) {
     Data.push_back(t);
   }
 
-  //calcualte et and order the data vector        
+  // Calculate the time tag used to order the driver data vector.
+  //
+  // The SPICE/no-SPICE implementation is centralized in Geopack.  Normal builds
+  // preserve the original SPICE ephemeris-time conversion.  Builds compiled
+  // with _NO_SPICE_CALLS_ use a monotonic no-rotation/no-SPICE fallback that is
+  // sufficient for sorting the driver records.
   for (auto& el : Data) {
-    char line[100];
-    double et;
-
-    sprintf(line,"%i-%iT%i:%i:00",el.IYEAR,el.IDAY,el.IHOUR,el.MIN);
-    str2et_c(line,&et);
-
-    el.et=et;
+    el.et=Geopack::DriverTimeTagFromYearDoy(el.IYEAR,el.IDAY,el.IHOUR,el.MIN,0);
   }
 
   //sort the data vector according to et
@@ -120,9 +119,9 @@ void T05::GetMagneticField(double *B,double *x) {
   else {
     double xLocal_GSM[3],bT05_GSM[3];
 
-    mxv_c(UserFrame2GSM,xLocal,xLocal_GSM);
+    Geopack::MatrixVectorMultiply(UserFrame2GSM,xLocal,xLocal_GSM);
     t04_s_(&IOPT,PARMOD,&PS,xLocal_GSM+0,xLocal_GSM+1,xLocal_GSM+2,bT05_GSM+0,bT05_GSM+1,bT05_GSM+2); 
-    mxv_c(GSM2UserFrame,bT05_GSM,bT05);
+    Geopack::MatrixVectorMultiply(GSM2UserFrame,bT05_GSM,bT05);
   } 
 
 

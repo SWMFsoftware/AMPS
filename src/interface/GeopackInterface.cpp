@@ -10,6 +10,10 @@
 
 #include "GeopackInterface.h"
 
+#ifndef _NO_SPICE_CALLS_
+#include "SpiceUsr.h"
+#endif
+
 #include "pic.h"
 #include "constants.h"
 #include "constants.PlanetaryData.h"
@@ -44,32 +48,62 @@ extern "C"{
 }
 
 
+void Geopack::SetFrameRotation(const char* Epoch,const std::string& FromFrame,const char* ToFrame,
+                               double From2To[3][3],double To2From[3][3],bool& RotateFlag) {
+  SetIdentityMatrix(From2To);
+  SetIdentityMatrix(To2From);
+  RotateFlag=false;
+
+  if (FromFrame==ToFrame) return;
+
+#ifndef _NO_SPICE_CALLS_
+  double et;
+  RotateFlag=true;
+  utc2et_c(Epoch,&et);
+  pxform_c(FromFrame.c_str(),ToFrame,et,From2To);
+  pxform_c(ToFrame,FromFrame.c_str(),et,To2From);
+#else
+  // No SPICE kernels/frames are available in this build.  Interpret the
+  // request as a no-rotation run: keep identity matrices and leave RotateFlag
+  // false so downstream field routines use the supplied coordinates directly.
+  (void)Epoch;
+  (void)FromFrame;
+  (void)ToFrame;
+#endif
+}
+
+
+double Geopack::DriverTimeTagFromYearDoy(int Year,int DayOfYear,int Hour,int Minute,int Second) {
+#ifndef _NO_SPICE_CALLS_
+  char line[100];
+  double et;
+
+  // Preserve the original SPICE ephemeris-time conversion for normal builds.
+  // The T05 driver gives the date as year + day-of-year + hour/minute/second.
+  sprintf(line,"%i-%iT%i:%i:%i",Year,DayOfYear,Hour,Minute,Second);
+  str2et_c(line,&et);
+
+  return et;
+#else
+  // In no-SPICE builds this value is used only for ordering time-tagged driver
+  // records.  It is monotonic for valid driver tables and does not attempt to
+  // reproduce SPICE ephemeris time exactly.
+  return (((static_cast<double>(Year)*367.0 + static_cast<double>(DayOfYear))*24.0
+          + static_cast<double>(Hour))*60.0 + static_cast<double>(Minute))*60.0
+          + static_cast<double>(Second);
+#endif
+}
+
+
 void Geopack::Init(const char* Epoch,std::string FrameNameIn) {
   CiFileOperations Parser;
 
   UserFrameName=FrameNameIn;
 
-  if (UserFrameName!="GSE") {
-    double et;
-
-    Rotate2GSE=true;
-
-    utc2et_c(Epoch,&et);
-
-    pxform_c(UserFrameName.c_str(),"GSE",et,UserFrame2GSE);
-    pxform_c("GSE",UserFrameName.c_str(),et,GSE2UserFrame);
-  }
-
-  if (UserFrameName!="GSM") {
-    double et;
-
-    Rotate2GSM=true;
-
-    utc2et_c(Epoch,&et);
-
-    pxform_c(UserFrameName.c_str(),"GSM",et,UserFrame2GSM);
-    pxform_c("GSM",UserFrameName.c_str(),et,GSM2UserFrame);
-  }
+  // Configure optional frame rotations.  When _NO_SPICE_CALLS_ is defined,
+  // SetFrameRotation leaves the matrices as identity and disables rotation.
+  SetFrameRotation(Epoch,UserFrameName,"GSE",UserFrame2GSE,GSE2UserFrame,Rotate2GSE);
+  SetFrameRotation(Epoch,UserFrameName,"GSM",UserFrame2GSM,GSM2UserFrame,Rotate2GSM);
 
 
 
@@ -137,7 +171,7 @@ void Geopack::IGRF::GetMagneticField(double *B,double *x) {
 
   //convert xLocal in Usr Frame to xLocalGSE
   if (Rotate2GSM==true) {
-    mxv_c(UserFrame2GSM,xLocal,xLocalGSM);
+    MatrixVectorMultiply(UserFrame2GSM,xLocal,xLocalGSM);
   }
   else {
     memcpy(xLocalGSM,xLocal,3*sizeof(double));
@@ -148,7 +182,7 @@ void Geopack::IGRF::GetMagneticField(double *B,double *x) {
   
   //cover bGSM to b in the User frame
   if (Rotate2GSM==true) {
-    mxv_c(GSM2UserFrame,bGSM,B);
+    MatrixVectorMultiply(GSM2UserFrame,bGSM,B);
     for (idim=0;idim<3;idim++) B[idim]*=_NANO_;
   }
   else {

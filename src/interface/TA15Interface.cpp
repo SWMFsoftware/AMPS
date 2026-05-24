@@ -87,9 +87,9 @@ void TA15::GetMagneticField(double *B,double *x) {
   }
   else {
     double xLocal_GSM[3],bTA15_GSM[3];
-    mxv_c(UserFrame2GSM,xLocal,xLocal_GSM);
+    Geopack::MatrixVectorMultiply(UserFrame2GSM,xLocal,xLocal_GSM);
     CallTA15_Fortran(&IOPT,PARMOD,&PS,xLocal_GSM+0,xLocal_GSM+1,xLocal_GSM+2,bTA15_GSM+0,bTA15_GSM+1,bTA15_GSM+2,Version);
-    mxv_c(GSM2UserFrame,bTA15_GSM,bTA15);
+    Geopack::MatrixVectorMultiply(GSM2UserFrame,bTA15_GSM,bTA15);
   }
 
   // Internal field

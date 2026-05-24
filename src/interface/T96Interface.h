@@ -26,7 +26,6 @@
 #include <signal.h>
 #include <string>
 
-#include "SpiceUsr.h"
 
 
 #ifndef _INTERFACE_T96INTERFACE_H_
@@ -50,27 +49,10 @@ namespace T96 {
 
     UserFrameName=FrameNameIn;
 
-    if (UserFrameName!="GSM") {
-      double et;
-
-      Rotate2GSM=true;
-
-      utc2et_c(Epoch,&et);
-
-      pxform_c(UserFrameName.c_str(),"GSM",et,UserFrame2GSM);
-      pxform_c("GSM",UserFrameName.c_str(),et,GSM2UserFrame);
-    }
-
-    if (UserFrameName!="GSE") {
-      double et;
-
-      Rotate2GSE=true;
-
-      utc2et_c(Epoch,&et);
-
-      pxform_c(UserFrameName.c_str(),"GSE",et,UserFrame2GSE);
-      pxform_c("GSE",UserFrameName.c_str(),et,GSE2UserFrame);
-    }
+    // Configure optional frame rotations.  When _NO_SPICE_CALLS_ is defined,
+    // SetFrameRotation leaves the matrices as identity and disables rotation.
+    Geopack::SetFrameRotation(Epoch,UserFrameName,"GSM",UserFrame2GSM,GSM2UserFrame,Rotate2GSM);
+    Geopack::SetFrameRotation(Epoch,UserFrameName,"GSE",UserFrame2GSE,GSE2UserFrame,Rotate2GSE);
   }
 
 

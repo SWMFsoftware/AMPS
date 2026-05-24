@@ -77,9 +77,9 @@ void T01::GetMagneticField(double *B,double *x) {
   else {
     // Rotate the position into GSM, evaluate, then rotate the field back.
     double xLocal_GSM[3],bT01_GSM[3];
-    mxv_c(UserFrame2GSM,xLocal,xLocal_GSM);
+    Geopack::MatrixVectorMultiply(UserFrame2GSM,xLocal,xLocal_GSM);
     t01_01_(&IOPT,PARMOD,&PS,xLocal_GSM+0,xLocal_GSM+1,xLocal_GSM+2,bT01_GSM+0,bT01_GSM+1,bT01_GSM+2);
-    mxv_c(GSM2UserFrame,bT01_GSM,bT01);
+    Geopack::MatrixVectorMultiply(GSM2UserFrame,bT01_GSM,bT01);
   }
 
   // Internal Earth's field (IGRF) in SI.
