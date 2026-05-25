@@ -2762,8 +2762,11 @@ sub ReadInterfaceBlock {
     #substitute separators by 'spaces'
     $InputLine=~s/[=,]/ /g;
     ($InputLine,$InputComment)=split(' ',$InputLine,2);
-  
-    if (uc($InputLine) eq "CELL_CENTERED_LINEAR_INTERPOLATION_MODE") {
+
+    if (uc($InputLine) eq "SET_OFF") { 
+      add_line_makefile_local("INTERFACE=off",1);
+    }
+    elsif (uc($InputLine) eq "CELL_CENTERED_LINEAR_INTERPOLATION_MODE") {
       # turn interface for AMR interpolation on/off
       ($InputLine,$InputComment)=split(' ',$InputComment,2);
       $InputLine=~s/ //g;

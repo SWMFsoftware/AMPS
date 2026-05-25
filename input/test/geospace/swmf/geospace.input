@@ -1,6 +1,10 @@
 
 #include input/earth-geospace_boundary_injection_sw_t96.input
 
+#main
+  CouplerMode=swmf! T05; //T96 !!!file(batsrus) !file(batsrus) !!T96 !!geopack !!!!(batsrus) !!!ices !!off, ices, swmf
+#endmain
+
 #General
   TrajectoryTracing=on 
   MaxSampledTrajectoryNumber=1000
@@ -20,12 +24,10 @@
 
   define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) Earth::Earth3DForward::MoverManager(ptr,LocalTimeStep,node)
 
-  CouplerMode=swmf! T05; //T96 !!!file(batsrus) !file(batsrus) !!T96 !!geopack !!!!(batsrus) !!!ices !!off, ices, swmf
-
-
 #endGeneral
 
 #interface
+  set_off
   cell_centered_linear_interpolation_mode=amps !!off !amps,swmf,off
   cell_centered_linear_interpolation_src=default
 
