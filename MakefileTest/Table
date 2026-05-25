@@ -8169,17 +8169,30 @@ Outs=test_Geospace-SWMF-AMPS--trajectory test_Geospace-SWMF-AMPS--volume
 Compile=
 >>>@echo "test_Geospace-SWMF-AMPS_compile..." > test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
 
-<<<ifeq ($(wildcard SWMF/*),)
->>>@echo "========================================" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
->>>@echo "ERROR: SWMF is not installed in the AMPS directory." | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
->>>@echo "ERROR: SWMF cannot be installed from an interactive job running the test." | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
->>>@echo "ERROR: Please install SWMF manually in the AMPS directory before re-running this test:" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
->>>@echo "ERROR:   cd <AMPS_DIRECTORY>" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
->>>@echo "ERROR:   git clone git@github.com:SWMFsoftware/SWMF" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
->>>@echo "ERROR:   cd SWMF && ./Config.pl -install" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
->>>@echo "========================================" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
->>>@false
-<<<else
+>>>-if [ ! -d SWMF ]; then \
+>>>  echo "SWMF not found. Attempting to install..." | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff; \
+>>>  git clone --depth 1 git@github.com:SWMFsoftware/SWMF; \
+>>>  ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data; \
+>>>  if [ "$(COMPILE.c)" = "icc" ]; then \
+>>>    cd SWMF && ./Config.pl -sleep=10 -install -compiler=ifort,iccmpicxx; \
+>>>  elif [ "$(COMPILE.c)" = "gcc" ]; then \
+>>>    cd SWMF && ./Config.pl -sleep=10 -install -compiler=gfortran,gcc_mpicc; \
+>>>  elif [ "$(COMPILE.c)" = "pgcc" ]; then \
+>>>    cd SWMF && ./Config.pl -sleep=10 -install -compiler=pgf90,pgccmpicxx; \
+>>>  fi; \
+>>>fi
+
+>>>if [ ! -d SWMF ]; then \
+>>>  echo "========================================" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff; \
+>>>  echo "ERROR: SWMF is not installed and automatic installation failed." | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff; \
+>>>  echo "ERROR: SWMF cannot be installed from an interactive job running the test." | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff; \
+>>>  echo "ERROR: Please install SWMF manually in the AMPS directory before re-running this test:" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff; \
+>>>  echo "ERROR:   cd <AMPS_DIRECTORY>" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff; \
+>>>  echo "ERROR:   git clone git@github.com:SWMFsoftware/SWMF" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff; \
+>>>  echo "ERROR:   cd SWMF && ./Config.pl -install" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff; \
+>>>  echo "========================================" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff; \
+>>>  false; \
+>>>fi
 
 >>>@echo "SWMF is installed. Proceeding with test setup..." >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
 
@@ -8194,8 +8207,6 @@ Compile=
 >>>cd SWMF; $(MAKE) -j
 
 >>>@echo "test_Geospace-SWMF-AMPS_compile... done" >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
-
-<<<endif
 
 
 Rundir=
