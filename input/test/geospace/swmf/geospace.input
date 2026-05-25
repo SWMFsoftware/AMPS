@@ -3,6 +3,12 @@
 
 #main
   CouplerMode=swmf! T05; //T96 !!!file(batsrus) !file(batsrus) !!T96 !!geopack !!!!(batsrus) !!!ices !!off, ices, swmf
+
+  !PT/plots
+  ErrorLog=PT/amps_error.log
+  DiagnosticStream=PT
+  OutputDirectory=PT/plots
+
 #endmain
 
 #General
