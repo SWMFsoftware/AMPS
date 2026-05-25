@@ -32,6 +32,9 @@
 #include "TA16Interface.h"
 #include "3d/Mode3D.h"
 #include "3d_forward/Density3D.h"
+#include "3d_forward/Mode3DForward.h"
+#include "3d_forward/SphereFlux3D.h"
+#include "3d_forward_swmf/Mode3DForwardSWMF.h"
 
 namespace MAIN_LIB_GEO {
   void amps_init_mesh();
@@ -184,13 +187,26 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
 
 void amps_init_mesh() {
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // ── Pre-mesh initialization for the SWMF-coupled 3d_forward path ─────────
+  // Must be the very first call in amps_init_mesh() so that:
+  //   (a) Earth::ModelMode is set to BoundaryInjectionMode before the
+  //       BoundaryInjectionMode check below, routing this function into
+  //       MAIN_LIB_GEO::amps_init_mesh() (which calls Earth::Init_AfterParser()).
+  //   (b) cDensity3D::ConfigureEnergyGrid() is called before
+  //       PIC::IndividualModelSampling::RequestSamplingData is pushed and
+  //       before PIC::Mesh::initCellSamplingDataBuffer() allocates per-cell
+  //       sampling buffers — the buffer size depends on nEnergyBins.
+  Earth::Mode3DForwardSWMF::amps_pre_init();
+#endif
 
   // Register cDensity3D sampling — mirrors Earth::Sampling::ParticleData::Init().
   // RequestSamplingData MUST be pushed here, before PIC::Mesh::initCellSamplingDataBuffer()
   // (called later in this function), which iterates PIC::IndividualModelSampling::
   // RequestSamplingData to size and allocate each cell's sampling buffer.
   // Energy-grid parameters (nEnergyBins etc.) are set in Mode3DForward::Run()
-  // before amps_init_mesh() so the callback sees the correct buffer size.
+  // (standalone) or Mode3DForwardSWMF::amps_pre_init() (SWMF) before this
+  // function runs, so the callback sees the correct buffer size.
   PIC::IndividualModelSampling::RequestSamplingData.push_back(
       Earth::Mode3DForward::cDensity3D::RequestSamplingData);
 
@@ -465,6 +481,12 @@ void amps_init_mesh() {
    //set up the time step
    PIC::ParticleWeightTimeStep::LocalTimeStep=localTimeStep;
    PIC::ParticleWeightTimeStep::initTimeStep();
+
+   #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+   Earth::Mode3DForwardSWMF::amps_init();
+   return;
+   #endif
+
    
 
    //set up the particle weight
@@ -772,6 +794,14 @@ void amps_init_mesh() {
    }
 #endif //_PIC_COUPLER_MODE_
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+   // Initialize the SWMF-coupled 3-D forward energetic-particle branch after the
+   // generic AMPS core initialization.  Mode3DForwardSWMF is intentionally only
+   // a middleman: it loads coupled-run parameters, forces the field policy to SWMF,
+   // and reuses the runtime initialization implemented in srcEarth/3d_forward.
+   //Earth::Mode3DForwardSWMF::amps_init();
+#endif
+
 
 
     //init particle weight of neutral species that primary source is sputtering
@@ -788,8 +818,96 @@ void amps_init_mesh() {
 
  //time step
 
-void amps_time_step () {
-  
+void amps_time_step() {
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // =========================================================================
+  // 3d_forward_swmf path
+  // =========================================================================
+  //
+  // This branch handles the per-coupling-step work for the SWMF-coupled 3-D
+  // forward energetic-particle solver.  It mirrors the inner body of the
+  // standalone Mode3DForward::Run() loop, reusing the same 3d_forward
+  // infrastructure wired up by Mode3DForwardSWMF::amps_init():
+  //
+  //  Callbacks / state already registered in amps_init():
+  //  ┌──────────────────────────────────────────────────────────────────────┐
+  //  │  PIC::BC::UserDefinedParticleInjectionFunction                       │
+  //  │      = Earth::Mode3DForward::InjectParticles                         │
+  //  │  PIC::ParticleWeightTimeStep::UserDefinedExtraSourceRate              │
+  //  │      = Earth::Mode3DForward::BoundaryInjectionSourceRate             │
+  //  │  Earth::Sampling::ParticleData::SampleParticleDataCallbacks          │
+  //  │      += Earth::Mode3DForward::cDensity3D::SampleParticleData         │
+  //  │  ExternalSamplingLocalVariables (via RegisterSamplingRoutine):        │
+  //  │      sample  = Earth::Mode3DForward::cSphereFlux3D::SampleTimeStep   │
+  //  │      output  = Earth::Mode3DForward::cSphereFlux3D::OutputSampledData│
+  //  │  PIC::Mover::BackwardTimeIntegrationMode = _PIC_MODE_OFF_            │
+  //  │  PIC::SamplingMode = _RESTART_SAMPLING_MODE_                         │
+  //  └──────────────────────────────────────────────────────────────────────┘
+  //
+  //  PIC::TimeStep() therefore drives the complete forward step:
+  //    1. Inject particles at the outer boundary  (InjectParticles)
+  //    2. Advance particles forward in time        (Earth3DForward::MoverManager)
+  //    3. Sample volumetric density per cell       (cDensity3D::SampleParticleData)
+  //    4. Accumulate inner-sphere flux             (cSphereFlux3D::SampleTimeStep +
+  //                                                 SampleParticleImpact on hit)
+  //    5. Write Tecplot / sphere-flux output at the configured AMPS output
+  //       interval (cDensity3D::OutputSampledModelData and
+  //                 cSphereFlux3D::OutputSampledData via ExternalSampling)
+  //
+  if (Earth::ModelMode == Earth::BoundaryInjectionMode) {
+
+    // -- Static step counter (equivalent to 'iter' in Mode3DForward::Run()) --
+    static long int sForwardStep = 0;
+
+    // -- Advance one AMPS time step -------------------------------------------
+    // Mirrors:  amps_time_step()  inside Mode3DForward::Run()'s loop.
+    // Injection, particle motion, density / sphere-flux sampling, and periodic
+    // Tecplot output are all dispatched from inside PIC::TimeStep() via the
+    // callbacks registered above.  No explicit injection or sampling call is
+    // needed here.
+    PIC::TimeStep();
+
+    ++sForwardStep;
+
+    // -- Progress report every 100 steps -------------------------------------
+    // Mirrors the iter%100 diagnostic block in Mode3DForward::Run().
+    // Reuses the same 3d_forward module-level state (sDt, sSpecies,
+    // BoundaryInjectionSourceRate, InjectionEnergyDistributionName) so the
+    // SWMF-coupled and standalone progress lines look identical.
+    if (PIC::ThisThread == 0 && sForwardStep % 100 == 0) {
+      const long int nParticles = PIC::ParticleBuffer::GetAllPartNum();
+      const double   injRate    =
+          Earth::Mode3DForward::BoundaryInjectionSourceRate(
+              Earth::Mode3DForward::sSpecies);
+
+      std::printf("[Mode3DForwardSWMF] step=%ld  nParticles=%ld"
+                  "  dt=%.4g s  injRate=%.4g s^-1  energySampling=%s\n",
+                  sForwardStep,
+                  nParticles,
+                  Earth::Mode3DForward::sDt,
+                  injRate,
+                  Earth::Mode3DForward::InjectionEnergyDistributionName(
+                      Earth::Mode3DForward::sInjectionEnergyDistribution));
+      std::fflush(stdout);
+    }
+
+    // -- Sphere-flux output note ---------------------------------------------
+    // In standalone Run(), cSphereFlux3D::OutputSampledData is called
+    // explicitly after the loop to guarantee a final output even when the run
+    // is too short to reach the AMPS output interval.  In the SWMF path the
+    // run duration is controlled by the coupler, so there is no single "end of
+    // run" point here.  cSphereFlux3D is registered via RegisterSamplingRoutine
+    // so PIC::TimeStep() (call above) already triggers OutputSampledData at
+    // every configured AMPS output interval — no additional explicit call is
+    // required.
+
+    return;
+  }
+#endif // _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+
+  // =========================================================================
+  // Default path: CutoffRigidityMode, ImpulseSourceMode, or non-SWMF builds.
+  // =========================================================================
   PIC::TimeStep();
-  
 }

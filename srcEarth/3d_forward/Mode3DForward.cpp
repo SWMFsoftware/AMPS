@@ -72,10 +72,10 @@ static constexpr double DtCellFrac   = 0.25;
 // ============================================================================
 //  Module-level state (set in Run, read by injection/sphere callbacks)
 // ============================================================================
-static double sParticleWeight      = 1.0;   // nominal physical particles per simulation particle
-static int    sNParticlesPerIter   = 1000;  // simulation particles requested per iteration
-static double sDt                  = 1.0;   // time step [s]
-static int    sSpecies             = 0;     // AMPS species index for injection
+double sParticleWeight      = 1.0;   // nominal physical particles per simulation particle
+int    sNParticlesPerIter   = 1000;  // simulation particles requested per iteration
+double sDt                  = 1.0;   // time step [s]
+int    sSpecies             = 0;     // AMPS species index for injection
 
 // Runtime particle-trajectory controls for 3d_forward.  These values are set
 // from EarthUtil::AmpsParam, which is populated by #PARTICLE_TRAJECTORY in the
@@ -83,31 +83,11 @@ static int    sSpecies             = 0;     // AMPS species index for injection
 // _PIC_PARTICLE_TRACKER_MODE_ switch: the compile-time switch decides whether
 // trajectory tracking exists at all, while these runtime values decide whether
 // this particular run initializes trajectory records and what cap is applied.
-static bool   sInitializeParticleTrajectories = false;
-static int    sMaxParticleTrajectories        = 0;
+bool   sInitializeParticleTrajectories = false;
+int    sMaxParticleTrajectories        = 0;
 
-// ============================================================================
-//  Energy-sampling branch used by the forward boundary injector
-// ============================================================================
-//
-// The original 3d_forward implementation sampled the injected kinetic energy from
-// the physical differential intensity J(E).  That is statistically optimal for the
-// total source rate, but it heavily undersamples the high-energy tail when J(E) is
-// steep.  The LOG_UNIFORM branch added here samples E uniformly in log(E) and then
-// applies an individual-particle statistical-weight correction so that the expected
-// physical injection spectrum is still exactly the input spectrum.
-//
-// The selection is intentionally represented by a small enum and a parser function
-// rather than hard-wiring CLI strings throughout the injector.  When the same
-// selection is later exposed in the input file, only the parser needs to populate
-// Mode3DForwardOptions::injectionEnergyDistribution; the injection code below will
-// not need to change.
-enum class InjectionEnergyDistribution {
-  SPECTRUM_WEIGHTED,  // current/default branch: proposal pdf p(E) ∝ J(E)
-  LOG_UNIFORM         // high-energy-friendly branch: proposal pdf p(E) ∝ 1/E
-};
 
-static InjectionEnergyDistribution sInjectionEnergyDistribution =
+InjectionEnergyDistribution sInjectionEnergyDistribution =
     InjectionEnergyDistribution::SPECTRUM_WEIGHTED;
 
 static std::string FormatEnergyMeVForSpectrumKey(double value) {
@@ -119,7 +99,7 @@ static std::string FormatEnergyMeVForSpectrumKey(double value) {
   return out.str();
 }
 
-static std::map<std::string, std::string> BuildForwardInjectionSpectrumMap(
+std::map<std::string, std::string> BuildForwardInjectionSpectrumMap(
     const EarthUtil::AmpsParam& prm) {
   // In 3d_forward mode, #DENSITY_3D is the authoritative energy grid for the
   // simulated particles: it controls the energy bins written to the volumetric
@@ -137,7 +117,7 @@ static std::map<std::string, std::string> BuildForwardInjectionSpectrumMap(
   return spectrum;
 }
 
-static const char* InjectionEnergyDistributionName(InjectionEnergyDistribution mode) {
+const char* InjectionEnergyDistributionName(InjectionEnergyDistribution mode) {
   switch (mode) {
     case InjectionEnergyDistribution::SPECTRUM_WEIGHTED: return "SPECTRUM";
     case InjectionEnergyDistribution::LOG_UNIFORM:       return "LOG_UNIFORM";
@@ -145,7 +125,7 @@ static const char* InjectionEnergyDistributionName(InjectionEnergyDistribution m
   return "UNKNOWN";
 }
 
-static InjectionEnergyDistribution ParseInjectionEnergyDistribution(const std::string& value) {
+InjectionEnergyDistribution ParseInjectionEnergyDistribution(const std::string& value) {
   const std::string u = EarthUtil::ToUpper(value);
 
   // SPECTRUM/SPECTRUM_WEIGHTED is the legacy/current behavior.  Energies are drawn
@@ -170,12 +150,12 @@ static InjectionEnergyDistribution ParseInjectionEnergyDistribution(const std::s
 }
 
 // Pointer to the inner absorbing sphere (set by InitAbsorptionSphere)
-static cInternalSphericalData* sAbsorptionSphere = nullptr;
+cInternalSphericalData* sAbsorptionSphere = nullptr;
 
 // ============================================================================
 //  Helper: configure background field (identical to Mode3D path)
 // ============================================================================
-static void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
+void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
   // Live SWMF-coupled build.
   //
@@ -319,7 +299,7 @@ static void InitMeshFields(const EarthUtil::AmpsParam& prm,
 // ============================================================================
 //  dt = DtCellFrac * min_cell_size / v_max(DENS_EMAX)
 //
-static double EvaluateTimeStep(const EarthUtil::AmpsParam& prm) {
+double EvaluateTimeStep(const EarthUtil::AmpsParam& prm) {
   // Maximum particle speed: relativistic speed at DENS_EMAX
   const double mass   = PIC::MolecularData::GetMass(sSpecies);
   const double E_max  = prm.density3d.Emax_MeV * MeV_in_J;
@@ -396,7 +376,7 @@ static double EvaluateTimeStep(const EarthUtil::AmpsParam& prm) {
 // Integrated over the total outer rectangular boundary area A_boundary:
 //   R_total = pi x integral J(E) dE x A_boundary        [particles s^-1]
 //
-static double BoundaryInjectionSourceRate(int spec) {
+double BoundaryInjectionSourceRate(int spec) {
   // Only the species used by this forward run contributes a non-zero rate.
   if (spec != sSpecies) return 0.0;
 
@@ -461,7 +441,7 @@ static int ForwardModeParticleSphereInteraction(
 // ============================================================================
 //  Helper: initialise the inner absorbing sphere
 // ============================================================================
-static void InitAbsorptionSphere(const EarthUtil::AmpsParam& prm) {
+void InitAbsorptionSphere(const EarthUtil::AmpsParam& prm) {
   // Earth::Planet is set by amps_init_mesh() when RigidityCalculationMode == _sphere.
   // In Mode3DForward we always use a sphere, so re-configure it here unconditionally.
   sAbsorptionSphere = static_cast<cInternalSphericalData*>(Earth::Planet);
@@ -594,7 +574,7 @@ static cBoundaryInjectionTable sBndTable;
 // ---------------------------------------------------------------------------
 // InitBoundaryInjectionTable — analogous to SEP::InitEnergySpectrum()
 // ---------------------------------------------------------------------------
-static void InitBoundaryInjectionTable() {
+void InitBoundaryInjectionTable() {
   if (sBndTable.initialized) return;
 
   // ---- 1. Log-uniform energy bins over the spectrum range ----
@@ -930,7 +910,7 @@ struct cForwardInjectionCandidate {
 //   PIC::BC::UserDefinedParticleInjectionFunction = MOP::InjectParticles;
 // PIC::TimeStep() (via amps_time_step()) then calls it automatically each
 // iteration — no explicit call is needed in the main loop.
-static long int InjectParticles() {
+long int InjectParticles() {
   const int nParticles = sNParticlesPerIter;
 
   // Pre-compute injection tables from gSpectrum on first call (lazy, idempotent).
@@ -1500,7 +1480,20 @@ int Run(const EarthUtil::AmpsParam& prm) {
   // 11. Main loop
   //--------------------------------------------------------------------------
   PIC::Mover::BackwardTimeIntegrationMode = _PIC_MODE_OFF_; // forward in time
-  PIC::SamplingMode = _RESTART_SAMPLING_MODE_; 
+
+  // MAIN_LIB_GEO::amps_init_mesh() (called via the BoundaryInjectionMode path
+  // in amps_init_mesh()) sets
+  //   PIC::Mover::ProcessOutsideDomainParticles =
+  //       Earth::CutoffRigidity::ProcessOutsideDomainParticles
+  // because the GEO mesh-init is shared with the cutoff-rigidity mode.
+  // That handler must not fire during a forward run — forward particles that
+  // exit the domain should simply be discarded by the standard AMPS domain
+  // boundary logic, not processed as cutoff-rigidity test particles.
+  // The SWMF-coupled path resets this in Mode3DForwardSWMF::amps_init();
+  // do the same here for the standalone path.
+  PIC::Mover::ProcessOutsideDomainParticles = nullptr;
+
+  PIC::SamplingMode = _RESTART_SAMPLING_MODE_;
 
   const int nIter = prm.mode3dForward.nIterations;
 

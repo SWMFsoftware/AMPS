@@ -43,9 +43,24 @@
 //  10. Main loop: inject → advance → sample → repeat for N_iterations.
 //  11. Final Tecplot output of sampled density.
 //
+// SHARED SYMBOLS
+// --------------
+// Several symbols below (state variables, helpers) have external linkage so that the
+// SWMF middleman (3d_forward_swmf/Mode3DForwardSWMF.cpp) can reuse the same injection
+// and sampling infrastructure without duplicating code.  Internal-only helpers
+// (FormatEnergyMeVForSpectrumKey, InitMeshFields, sampling helpers, etc.) remain
+// static in Mode3DForward.cpp.
+//
 //======================================================================================
 
 #include "../util/amps_param_parser.h"
+
+#include <map>
+#include <string>
+
+// Forward declaration — avoids pulling all of pic.h into headers that only need
+// a pointer to cInternalSphericalData (e.g. Mode3DForwardSWMF.cpp).
+struct cInternalSphericalData;
 
 namespace Earth {
 namespace Mode3DForward {
@@ -57,6 +72,42 @@ namespace Mode3DForward {
 // All cleanup (MPI, memory) is the caller's responsibility after Run() returns.
 //
 int Run(const EarthUtil::AmpsParam& prm);
+
+// ---------------------------------------------------------------------------
+// Energy-sampling distribution for the outer-boundary source
+// ---------------------------------------------------------------------------
+// Moved to the header so Mode3DForwardSWMF can reference the type and call
+// ParseInjectionEnergyDistribution without a separate enum declaration.
+//
+enum class InjectionEnergyDistribution {
+  SPECTRUM_WEIGHTED,  // proposal pdf p(E) ∝ J(E)  (default)
+  LOG_UNIFORM         // proposal pdf p(E) ∝ 1/E   (high-energy-friendly)
+};
+
+// ---------------------------------------------------------------------------
+// Module-level state — external linkage for SWMF middleman
+// ---------------------------------------------------------------------------
+extern double sParticleWeight;       // nominal physical particles per sim particle
+extern int    sNParticlesPerIter;    // simulation particles requested per iteration
+extern double sDt;                   // time step [s]
+extern int    sSpecies;              // AMPS species index for injection
+extern bool   sInitializeParticleTrajectories;
+extern int    sMaxParticleTrajectories;
+extern InjectionEnergyDistribution sInjectionEnergyDistribution;
+extern cInternalSphericalData*     sAbsorptionSphere;
+
+// ---------------------------------------------------------------------------
+// Helper functions — external linkage for SWMF middleman
+// ---------------------------------------------------------------------------
+InjectionEnergyDistribution        ParseInjectionEnergyDistribution(const std::string& value);
+const char*                        InjectionEnergyDistributionName(InjectionEnergyDistribution mode);
+void                               ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm);
+std::map<std::string, std::string> BuildForwardInjectionSpectrumMap(const EarthUtil::AmpsParam& prm);
+double                             EvaluateTimeStep(const EarthUtil::AmpsParam& prm);
+double                             BoundaryInjectionSourceRate(int spec);
+long int                           InjectParticles();
+void                               InitAbsorptionSphere(const EarthUtil::AmpsParam& prm);
+void                               InitBoundaryInjectionTable();
 
 } // namespace Mode3DForward
 } // namespace Earth

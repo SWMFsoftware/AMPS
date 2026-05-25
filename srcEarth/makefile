@@ -25,6 +25,7 @@ MAINLIBOBJ = Earth_Sampling.o \
 	3d_forward/SphereFlux3D.o \
 	3d_forward/ForwardParticleMovers.o \
 	3d_forward/Mode3DForward.o \
+	3d_forward_swmf/Mode3DForwardSWMF.o \
 	util/amps_param_parser.o \
 	util/cutoff_cli.o \
 	boundary/spectrum.o \
