@@ -8153,3 +8153,94 @@ Check=
 >>>@echo Test test_Earth-3d_forward-t96 verification completed: `date`
 
 <#
+
+==============================================================================
+Test for Coupled SWMF/AMPS Geospace Simulation:
+H+ trajectory and volume output driven by SWMF SWPC magnetosphere
+==============================================================================
+
+#>
+Name=test/Geospace-SWMF-AMPS
+Time=30
+Type=swmf
+
+Outs=test_Geospace-SWMF-AMPS--trajectory test_Geospace-SWMF-AMPS--volume
+
+Compile=
+>>>@echo "test_Geospace-SWMF-AMPS_compile..." > test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+
+<<<ifeq ($(wildcard SWMF/*),)
+>>>@echo "========================================" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>@echo "ERROR: SWMF is not installed in the AMPS directory." | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>@echo "ERROR: SWMF cannot be installed from an interactive job running the test." | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>@echo "ERROR: Please install SWMF manually in the AMPS directory before re-running this test:" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>@echo "ERROR:   cd <AMPS_DIRECTORY>" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>@echo "ERROR:   git clone git@github.com:SWMFsoftware/SWMF" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>@echo "ERROR:   cd SWMF && ./Config.pl -install" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>@echo "========================================" | tee -a test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>@false
+<<<else
+
+>>>@echo "SWMF is installed. Proceeding with test setup..." >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+
+>>>@echo "Running SWMF test_swpc..." >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>cd SWMF; $(MAKE) -j test_swpc
+
+>>>@echo "Installing AMPS as PT component..." >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>cd SWMF; ./Config.pl -v=PT/AMPS
+>>>cd SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/geospace/swmf/geospace,amps-test=on
+
+>>>@echo "Compiling SWMF with AMPS..." >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>cd SWMF; $(MAKE) -j
+
+>>>@echo "test_Geospace-SWMF-AMPS_compile... done" >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+
+<<<endif
+
+
+Rundir=
+>>>@echo "test_Geospace-SWMF-AMPS_rundir..." >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>cp input/test/geospace/swmf/* SWMF/run_test
+>>>@echo "test_Geospace-SWMF-AMPS_rundir... done" >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+
+
+Run=
+>>>@echo "test_Geospace-SWMF-AMPS_run..." >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>@echo Test test_Geospace-SWMF-AMPS has started: `date`
+
+>>>cd SWMF/run_test; mpirun -np 20 ./SWMF.exe > runlog
+
+>>>@echo "test_Geospace-SWMF-AMPS_run... done" >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>@echo Test test_Geospace-SWMF-AMPS has finished: `date`
+
+
+Check=
+>>>@echo "test_Geospace-SWMF-AMPS_check..." >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+
+>>>-@utility/ReduceFile.pl SWMF/run_test/PT/plots/amps.TrajectoryTracking.out=1.s=0.H_PLUS1.dat 10000
+>>>-@utility/ReduceFile.pl SWMF/run_test/PT/plots/pic.H_PLUS1.s=0.out=1.dat 1000
+
+>>>@echo "--- Trajectory subtest ---" >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  SWMF/run_test/PT/plots/amps.TrajectoryTracking.out=1.s=0.H_PLUS1.dat.Reduced.Step=10000 \
+>>>  output/test_Geospace-SWMF-AMPS/amps.TrajectoryTracking.out=1.s=0.H_PLUS1.dat.Reduced.Step=10000 \
+>>>  > test_Geospace-SWMF-AMPS--trajectory$(TESTGeospace-SWMF-AMPS-REF).diff
+
+>>>@echo "--- Volume subtest ---" >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  SWMF/run_test/PT/plots/pic.H_PLUS1.s=0.out=1.dat.Reduced.Step=1000 \
+>>>  output/test_Geospace-SWMF-AMPS/pic.H_PLUS1.s=0.out=1.dat.Reduced.Step=1000 \
+>>>  > test_Geospace-SWMF-AMPS--volume$(TESTGeospace-SWMF-AMPS-REF).diff
+
+>>>@cat test_Geospace-SWMF-AMPS--trajectory$(TESTGeospace-SWMF-AMPS-REF).diff \
+>>>    test_Geospace-SWMF-AMPS--volume$(TESTGeospace-SWMF-AMPS-REF).diff \
+>>>    > test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+
+>>>@ls -l test_Geospace-SWMF-AMPS--trajectory$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>@ls -l test_Geospace-SWMF-AMPS--volume$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>@ls -l test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
+>>>@echo Test test_Geospace-SWMF-AMPS verification completed: `date`
+
+<#
