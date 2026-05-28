@@ -1527,8 +1527,8 @@ void amps_init() {
   //TECPLOT
   //read the background data
    
-   if (PIC::CPLR::DATAFILE::BinaryFileExists("EUROPA-BATSRUS-HIGH")==true)  {
-     PIC::CPLR::DATAFILE::LoadBinaryFile("EUROPA-BATSRUS-HIGH");
+   if (PIC::CPLR::DATAFILE::BinaryFileExists("EUROPA-BATSRUS-MED")==true)  {
+     PIC::CPLR::DATAFILE::LoadBinaryFile("EUROPA-BATSRUS-MED");
     }
    else  {
    double xminTECPLOT[3]={-5.1,-5.1,-5.1},xmaxTECPLOT[3]={5.1,5.1,5.1};
@@ -1591,7 +1591,7 @@ void amps_init() {
    //PIC::CPLR::DATAFILE::TECPLOT::ImportData(Europa::BackgroundPlasmaFileName);//relative path to data cplr directory 
    //PIC::CPLR::DATAFILE::TECPLOT::ImportData("Europa_3D_MultiFluid_MHD_output.plt");//relative path to data cplr directory
    printf("before import data\n");
-   PIC::CPLR::DATAFILE::TECPLOT::ImportData("Europa_3D_MultiFluidMHD_Case2_HighDensity.plt");
+   PIC::CPLR::DATAFILE::TECPLOT::ImportData("Europa_3D_MultiFluidMHD_Case2_MediumDensity.plt");
 
    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
      //GenerateVarForRelativisticGCA(node);
@@ -1604,7 +1604,7 @@ void amps_init() {
    
    
    PIC::Mesh::mesh->outputMeshDataTECPLOT("after_import.dat",0);
-   PIC::CPLR::DATAFILE::SaveBinaryFile("EUROPA-BATSRUS-HIGH");
+   PIC::CPLR::DATAFILE::SaveBinaryFile("EUROPA-BATSRUS-MED");
    }//else {
   #else
     exit(__LINE__,__FILE__,"ERROR: unrecognized datafile reader mode");
@@ -2063,7 +2063,7 @@ void init_test_particle_weight(int spec){
   double sphereArea = 4* Pi * rLoc * rLoc; 
   double dy = yLoc[1]-yLoc[0];
   double dz = zLoc[1]-zLoc[0];
-  double OpTotalFlux_thermal = 1.5e13*dy*dz;
+  double OpTotalFlux_thermal = 1.25e13*dy*dz;
   //Op flux at 5R is aboout 5.8e12/m^2 s
   //O2+ integral flux at 1.1R is about 1e11 m^-2 s^-1
   //  test_prod[0] = 10000/PIC::ParticleWeightTimeStep::GlobalTimeStep[_O_PLUS_SPEC_]*PIC::ParticleWeightTimeStep::GlobalParticleWeight[_O_PLUS_SPEC_];
@@ -2117,7 +2117,7 @@ void init_test_particle_weight(int spec){
   case _O2_PLUS_THERMAL_SPEC_:
     {
       //  double O2pTotalFlux_thermal = 1e11 * 4*Pi * 1.1* rSphere*1.1* rSphere ;//s^-1 based on the MHD model results
-      double O2pTotalFlux_thermal = 3e25; //s^-1 based on the MHD model results high case
+      double O2pTotalFlux_thermal = 2e25; //s^-1 based on the MHD model results med case
 
       PIC::ParticleWeightTimeStep::GlobalParticleWeight[_O2_PLUS_THERMAL_SPEC_]= 
 	O2pTotalFlux_thermal*PIC::ParticleWeightTimeStep::GlobalTimeStep[_O2_PLUS_THERMAL_SPEC_]/nTotal;
@@ -2626,7 +2626,7 @@ void amps_time_step () {
   if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
     //PIC::RequiredSampleLength*=2;
     //if (PIC::RequiredSampleLength>5000) PIC::RequiredSampleLength=5000;
-    PIC::RequiredSampleLength=3000;    
+    PIC::RequiredSampleLength=3000; 
     
     LastDataOutputFileNumber=PIC::DataOutputFileNumber;
     if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;

@@ -634,13 +634,17 @@ double Europa::SurfaceInteraction::yield_e(int prodSpec, double E){
   z2 = 2./3.*1. + 1./3.*8.;
   theta   = 45/180.*Pi;  
   E_keV = E*1e-3;
-  
+  //modified based on new results from carmack &loeffler 2024 PSJ
   if (prodSpec==_H2O_SPEC_){
-    return 0.17;
+    
+    if (E>=500 && E<=10000){
+      return 631.051 * E^(-1.34414)
+	}
+    return 0.0;
     
   }else if (prodSpec==_O2_SPEC_){
-    double qO2, Ea, x0, UO2, R0,a,d,Y_O2;
-    
+    double qO2, Ea, x0, UO2, R0,a,d,Y_O2,go2;
+    /*
     qO2   = 1000.;// % [-]                                                                                         
     Ea    = 0.06*ele; //% [J]                                                                                         
     x0    = 2.8e-9;//% [m]                                                                                         
@@ -651,6 +655,20 @@ double Europa::SurfaceInteraction::yield_e(int prodSpec, double E){
 
     Y_O2 = E_keV/UO2 * x0 /(d*cos(theta))*(1.0-exp(-d*cos(theta)/x0))*(1.0+qO2*exp(-Ea/(kb*T)));
     Y_O2 *= 0.3;
+    */
+
+    qO2   = 960.;// % [-]                                                                                         
+    Ea    = 0.062*ele; //% [J]                                                                                         
+    x0    = 3.6e-9;//% [m]                                                                                         
+    //UO2   = 0.2; //  % [keV]
+    go2 = 5.8e-4; //ev-1
+    R0    = 46e-9; // % [m]                                                                                         
+    a     = 1.76; //   % [-]                                                                                         
+    d     = R0*pow(E_keV,a); 
+
+    Y_O2 = E * go2 * x0 /(d*cos(theta))*(1.0-exp(-d*cos(theta)/x0))*(1.0+qO2*exp(-Ea/(kb*T)));
+    Y_O2 *= 0.12;
+   
     
     return Y_O2;
   }
