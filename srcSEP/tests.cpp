@@ -415,6 +415,7 @@ void FTE_Convectoin() {
   ptr=PB::GetNewParticle();
   PB::SetI(0,ptr);
   PB::SetIndividualStatWeightCorrection(1.0,ptr);
+  PB::SetFieldLineId(0,ptr);
 
   for (auto Vertex=FL::FieldLinesAll[0].GetFirstVertex();Vertex!=NULL;Vertex=Vertex->GetNext()) {
     cVertexData t;
