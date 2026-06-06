@@ -3577,11 +3577,15 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
     //.........................................................................
     inline void SetFieldLineId(int FieldLineId, long int ptr) {
+      if (_PIC_PARTICLE_DATA__FIELD_LINE_ID_OFFSET_<0) exit(__LINE__,__FILE__,"Error: out of range");
+
       *(int*)(ParticleDataBuffer +ptr*ParticleDataLength + _PIC_PARTICLE_DATA__FIELD_LINE_ID_OFFSET_) = FieldLineId;
     }
 
     //.........................................................................
     inline void SetFieldLineId(int FieldLineId, byte* ParticleDataStart) {
+      if (_PIC_PARTICLE_DATA__FIELD_LINE_ID_OFFSET_<0) exit(__LINE__,__FILE__,"Error: out of range");
+
       *(int*)(ParticleDataStart + _PIC_PARTICLE_DATA__FIELD_LINE_ID_OFFSET_) = FieldLineId;
     }
     //.........................................................................
@@ -3596,11 +3600,15 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
     //.........................................................................
     inline void SetFieldLineCoord(double FieldLineCoord, long int ptr) {
+      if (_PIC_PARTICLE_DATA__FIELD_LINE_COORD_OFFSET_<0) exit(__LINE__,__FILE__,"Error: out of range");
+
       *(double*)(ParticleDataBuffer +ptr*ParticleDataLength +_PIC_PARTICLE_DATA__FIELD_LINE_COORD_OFFSET_)= FieldLineCoord;
     }
 
     //.........................................................................
     inline void SetFieldLineCoord(double FieldLineCoord,byte* ParticleDataStart){
+      if (_PIC_PARTICLE_DATA__FIELD_LINE_COORD_OFFSET_<0) exit(__LINE__,__FILE__,"Error: out of range");
+
       *(double*)(ParticleDataStart +_PIC_PARTICLE_DATA__FIELD_LINE_COORD_OFFSET_)= FieldLineCoord;
     }
 

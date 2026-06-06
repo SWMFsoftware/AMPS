@@ -216,7 +216,7 @@
     #define _PIC_PARTICLE_DATA__WEIGHT_OVER_TIME_STEP_LENGTH_  0
 #endif//_USE_SAVE_PARTICLE_WEIGHT_OVER_LOCAL_TIME_STEP_
 
-#if _USE_FIELD_LINE_ID_ == _PIC_MODE_ON_
+#if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
     #define _PIC_PARTICLE_DATA__FIELD_LINE_ID_OFFSET_ \
     (_PIC_PARTICLE_DATA__BASIC_DATA_LENGTH_ +			\
      _PIC_PARTICLE_DATA__WEIGHT_CORRECTION_LENGTH_ +		\
@@ -230,9 +230,9 @@
 #else
     #define _PIC_PARTICLE_DATA__FIELD_LINE_ID_OFFSET_   -1
     #define _PIC_PARTICLE_DATA__FIELD_LINE_ID_LENGTH_    0
-#endif//_USE_FIELD_LINE_ID_
+#endif//_PIC_FIELD_LINE_MODE_ 
 
-#if _USE_FIELD_LINE_COORD_ == _PIC_MODE_ON_
+#if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
     #define _PIC_PARTICLE_DATA__FIELD_LINE_COORD_OFFSET_ \
     (_PIC_PARTICLE_DATA__BASIC_DATA_LENGTH_ +\
      _PIC_PARTICLE_DATA__WEIGHT_CORRECTION_LENGTH_ +		\
@@ -274,12 +274,16 @@
 	//   - Users can force enable/disable independently by defining
 	//     _USE_PARTICLE_V_PARALLEL_NORM_ before including this header.
 	//==========================================================================
-	#ifndef _USE_PARTICLE_V_PARALLEL_NORM_
-	  #if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) || (_USE_MAGNETIC_MOMENT_ == _PIC_MODE_ON_)
+	  #if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
 	    #undef _USE_PARTICLE_V_PARALLEL_NORM_
 	    #define _USE_PARTICLE_V_PARALLEL_NORM_ _PIC_MODE_ON_
 	  #endif
-	#endif
+
+          #if _USE_MAGNETIC_MOMENT_ == _PIC_MODE_ON_ 
+            #undef _USE_PARTICLE_V_PARALLEL_NORM_
+            #define _USE_PARTICLE_V_PARALLEL_NORM_ _PIC_MODE_ON_
+          #endif
+
 
 	// Layout definition:
 	//   - LENGTH macros are defined first (0 when feature is OFF).
