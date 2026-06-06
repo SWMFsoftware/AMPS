@@ -1226,7 +1226,10 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
   //get D_mu_mu and evaluate the time substep 
   D_mumu=QLT::calculateDmuMu(v,mu,rHelio); 
 
-  dmu_mean=sqrt(2.0*D_mumu*dtTotal)*0.0797885; // means of |NormalDistribution|=0.0797885 
+  // Mean of |N(0,1)| is sqrt(2/pi)=0.7978845608.  The old value
+  // was smaller by a factor of ten, which made the adaptive substep
+  // estimate under-resolve pitch-angle scattering.
+  dmu_mean=sqrt(2.0*D_mumu*dtTotal)*0.7978845608028654;
 
   if (dmu_mean>0.2) {
     double t=0.2/dmu_mean;
@@ -1246,8 +1249,14 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
   double B;
 
   while (TimeCounter<dtTotal) {
+    // Clip the last substep to the remaining AMPS time step.  Without this,
+    // the mover can advance a particle longer than dtTotal when dt does not
+    // divide dtTotal exactly.
+    double dtStep=dt;
+    if (TimeCounter+dtStep>dtTotal) dtStep=dtTotal-TimeCounter;
+
     D_mumu=QLT::calculateDmuMu(v,mu,rHelio);
-    ds=vParallel*dt;
+    ds=vParallel*dtStep;
     
     //calculate L 
     if (Segment!=LastSegment) {
@@ -1273,17 +1282,20 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
       LastSegment=Segment;
     } 
 
-    dmu=-(1.0-mu*mu)/(2.0*L)*v*dt;
-    dmu+=sqrt(2.0*D_mumu*dt)*Vector3D::Distribution::Normal(); 
+    dmu=-(1.0-mu*mu)/(2.0*L)*v*dtStep;
+    dmu+=sqrt(2.0*D_mumu*dtStep)*Vector3D::Distribution::Normal(); 
     mu+=dmu;
 
+    // Reflect pitch-angle cosine at the physical boundaries mu=+/-1.
+    // The previous wrap-around logic mapped, for example, mu=1.1 to 0.1,
+    // which created an artificial large-angle scattering event.
     while ((-1.0>mu)||(mu>1.0)) {
-      if (mu>1.0) mu-=1.0;
-      if (mu<-1.0) mu=-1.0+(fabs(mu)-1.0); 
+      if (mu>1.0) mu=2.0-mu;
+      if (mu<-1.0) mu=-2.0-mu; 
     }
 
-    if (mu==1.0) mu=0.99;
-    if (mu==-1.0) mu=-1.0+0.001; 
+    if (mu>=1.0) mu=1.0-1.0E-12;
+    if (mu<=-1.0) mu=-1.0+1.0E-12; 
 
 
     vParallel=mu*v; 
@@ -1311,11 +1323,11 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
 
       switch (PerpScatteringMode) {
       case PerpScatteringMode_MeanFreePath:
-        r=sqrt(r*r+vNormal*dt*(2.0*sin_theta*r+vNormal*dt));
+        r=sqrt(r*r+vNormal*dtStep*(2.0*sin_theta*r+vNormal*dtStep));
         break;
       case PerpScatteringMode_diffusion:
         D_perp=QLT1::calculatePerpendicularDiffusion(rHelio,Speed,B);
-        dr=sqrt(2.0*D_perp*dt)*Vector3D::Distribution::Normal();
+        dr=sqrt(2.0*D_perp*dtStep)*Vector3D::Distribution::Normal();
         r=sqrt(r*r+dr*dr+2.0*r*dr*sin_theta);
         break;
       default:
@@ -1325,7 +1337,7 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
       *((double*)(ParticleData+SEP::Offset::RadialLocation))=r;
     }
 
-    TimeCounter+=dt;
+    TimeCounter+=dtStep;
 
     Segment->GetCartesian(x,FieldLineCoord);
     rHelio=Vector3D::Length(x);
@@ -2003,13 +2015,20 @@ auto AdvanceLocation_RK4 = [&](double dt) -> bool {
       }
     }
     else {
-      // Not enough time left for scattering
-      if (AdvanceLocation(dtTotal - timeCounter) == false) return _PARTICLE_LEFT_THE_DOMAIN_;
+      // Not enough time left for scattering.  Advance and diffuse only for
+      // the remaining time.  The previous code used the full stochastic
+      // scattering time dt for perpendicular diffusion and timeCounter,
+      // which could greatly exceed dtTotal when no scattering occurred.
+      double dtStep=dtTotal-timeCounter;
+      if (AdvanceLocation(dtStep) == false) return _PARTICLE_LEFT_THE_DOMAIN_;
 
       // Apply perpendicular diffusion
       if (SEP::PerpendicularDiffusionMode==true) {
-        if (PerpendicularDiffusion(dt) == false) return _PARTICLE_LEFT_THE_DOMAIN_; 
+        if (PerpendicularDiffusion(dtStep) == false) return _PARTICLE_LEFT_THE_DOMAIN_; 
       }
+
+      timeCounter += dtStep;
+      continue;
     } 
 
     timeCounter += dt;

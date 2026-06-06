@@ -345,7 +345,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
     for (int i=0;i<npart;i++) pAbsTable[i]=p_const,WeightCorrectionTable[i]=1.0;
     break;
-  defaut:
+  default:
     exit(__LINE__,__FILE__,"Error: the option is unknown");
   }  
 

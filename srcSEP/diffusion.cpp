@@ -382,15 +382,19 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   }
   
   double k,P,c,absB,dB,SummW,omega,dB2,absB2,r2;
+
+  // GetIMF() initializes r2.  The previous code used r2 to compute iR
+  // before this call, which made the radial bin depend on uninitialized
+  // stack memory and could select an arbitrary turbulence spectrum.
+  GetIMF(absB,dB,SummW,FieldLineCoord,Segment,r2);
+  absB2=absB*absB;
+  dB2=dB*dB;
+
   double dR=Rmax/nR;
   int iR=sqrt(r2)/dR;
 
   if (iR<0) iR=0;
   if (iR>=nR) iR=nR-1;
-  
-  GetIMF(absB,dB,SummW,FieldLineCoord,Segment,r2);
-  absB2=absB*absB;
-  dB2=dB*dB;
   
   //reference values of k_max and k_min at 1 AU
   //k_max and k_min are scaled with B, which is turne is scaled with 1/R^2
@@ -484,13 +488,15 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   if (iR>=nR) iR=nR-1; 
   if (iR<0) iR=0; 
 
-  double dB,dB2,absB=sqrt(absB2);
+  double dB=0.0,dB2=0.0,absB=sqrt(absB2);
 
   switch (Mode) {
   case _awsom:
     //(db/b)^2 = (W+ + W-)*mu0 / {(W+ + W-)*mu0 + B^2)
-     
-    dB2=SummW*VacuumPermeability/(SummW*VacuumPermeability+absB2);
+    // Convert the dimensionless ratio to dB^2.  The previous code stored
+    // only the ratio in dB2 and then overwrote it below with dB*dB, while
+    // dB was uninitialized in the AWSoM branch.
+    dB2=SummW*VacuumPermeability/(SummW*VacuumPermeability+absB2)*absB2;
     if (dB2>absB2) dB2=absB2;
     break;
   case _fraction: 
@@ -501,9 +507,6 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   default:
     exit(__LINE__,__FILE__,"Error: the option is unknown");
   }
-
-
-  dB2=dB*dB;
   
   k=(vParallel!=0.0) ? omega/fabs(vParallel) : k_max;
 
