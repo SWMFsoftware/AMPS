@@ -314,14 +314,35 @@ auto CalculateWaveEnergyDensity = [&]() {
                 double volume = SEP::FieldLine::GetSegmentVolume(segment, fl);
 
                 if (energy_data && density_data && volume > 0.0) {
-                    // Process all elements using SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy.length
-                    for (int i = 0; i < SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy.length; i++) {
-                        density_data[i] = energy_data[i] / volume;
+                    // CellIntegratedWaveEnergy stores the conservative variables
+                    // E+ and E- integrated over the current magnetic-tube segment.
+                    // WaveEnergyDensity is the printable AMPS field-line datum used
+                    // in amps.FieldLines.out=*.dat.  Its first two elements must be
+                    // the plotted wave-energy densities W+ and W-, while its third
+                    // element is the normalized cross helicity sigma_c.  We keep
+                    // sigma_c in the same datum as W+ and W- rather than registering
+                    // a separate output datum so that the generic field-line writer
+                    // prints the three turbulence diagnostics as one adjacent block:
+                    //   "W+", "W-", "sigma_c".
+                    const double Wplus  = energy_data[0] / volume;
+                    const double Wminus = energy_data[1] / volume;
 
-                        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-                          validate_numeric(density_data[i],__LINE__,__FILE__);
-			}
+                    density_data[0] = Wplus;
+                    density_data[1] = Wminus;
+
+                    // sigma_c is the normalized Elsasser/turbulence imbalance.  It
+                    // is bounded by [-1,1] for non-negative W+ and W-.  A zero value
+                    // is used when both wave populations vanish to avoid division by
+                    // zero and to keep the output finite.
+                    const double Wsum = Wplus + Wminus;
+                    density_data[2] = (Wsum > 0.0) ? (Wplus - Wminus) / Wsum : 0.0;
+
+                    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+                      validate_numeric(density_data[0],__LINE__,__FILE__);
+                      validate_numeric(density_data[1],__LINE__,__FILE__);
+                      validate_numeric(density_data[2],__LINE__,__FILE__);
                     }
+
                     local_count++;
                 }
             }

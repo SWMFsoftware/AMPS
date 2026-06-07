@@ -5,7 +5,18 @@
 bool SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag=true;
 
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy(2,"\"Integrated W+\",\"Integrated W-\"",false);
-PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity(2,"\"W+\",\"W-\"",true);
+// This printable field-line segment datum is used directly by the generic
+// AMPS/PIC::FieldLine::Output() writer.  Keep the wave-density quantities and
+// the derived normalized cross helicity in the SAME datum so they appear as
+// adjacent columns in amps.FieldLines.out=*.dat and are updated together.
+//
+//   WaveEnergyDensity[0] = W+      = E+ / V_segment
+//   WaveEnergyDensity[1] = W-      = E- / V_segment
+//   WaveEnergyDensity[2] = sigma_c = (W+ - W-) / (W+ + W-)
+//
+// The last argument must remain true; otherwise the generic AMPS field-line
+// output machinery will not print these columns.
+PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity(3,"\"W+\",\"W-\",\"sigma_c\"",true);
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyGrowthRate(2,"\"dW+/dt\",\"dW-/dt\"",true);
 
 namespace SEP {
