@@ -59,8 +59,10 @@ void UpdateIntegratedEnergyFromSpectrum(PIC::Datum::cDatumStored& IntegratedWave
 
 // Rescale the spectrum so its branch sums match the supplied integrated energy
 // while preserving the current spectral shape whenever possible.  This is used
-// after legacy operators that are still formulated for integrated energies only,
-// such as the present shock-injection/reflection/cascade kernels.
+// after operators that are still formulated for integrated energies only.  In
+// the current code path this is still needed for the shock turbulence source,
+// while advection, particle coupling, reflection, and cascade all have explicit
+// wave-number-resolved implementations below.
 void ProjectIntegratedEnergyToSpectrum(PIC::Datum::cDatumStored& IntegratedWaveEnergy);
 
 // Capture/enforce the fixed right-boundary W-(k) density.  This mirrors the
@@ -74,6 +76,30 @@ void EnforceRightBoundarySpectrumInitialCondition();
 // lines.  E_+(k_j) propagates outward to increasing segment index; E_-(k_j)
 // propagates inward to decreasing segment index.
 void AdvectSpectrumAllFieldLines(double dt, double TurbulenceLevelBeginning, double TurbulenceLevelEnd);
+
+// Fully spectral reflection operator.  Reflection converts E_+(k_j) into
+// E_-(k_j), and conversely, within the same wave-number bin.  The operation is
+// conservative for each bin separately: E_+(k_j)+E_-(k_j) is unchanged by
+// reflection.  The rate is computed from the same large-scale Alfvén-speed
+// gradient used by the legacy integrated operator, but applied independently to
+// every k-bin instead of to branch-integrated energies.
+void ReflectSpectrumAllFieldLines(
+    double dt,
+    double C_reflection,
+    double grad_floor = 0.0,
+    bool enable_logging = false);
+
+// Fully spectral nonlinear cascade operator.  The operator moves wave energy in
+// log-k space from bin j to bin j+1 and removes only the flux that reaches the
+// top of the resolved wave-number range.  The cascade rate is evaluated per
+// branch and per k-bin from the local counter-propagating bin energy.
+void CascadeSpectrumAllFieldLines(
+    double dt,
+    double C_nl,
+    double lambda_perp_m,
+    bool enable_cross_helicity_modulation,
+    bool two_sweep_imex,
+    bool enable_logging = false);
 
 // CFL estimate for the spectral advection.  It uses the same geometry and
 // Alfvén-speed constraint as the integrated advection because every spectral bin

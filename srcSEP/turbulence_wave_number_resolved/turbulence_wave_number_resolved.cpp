@@ -25,12 +25,15 @@ a minimally invasive way:
     WaveEnergyDensity.  Therefore, after every spectral operation, this file
     refreshes CellIntegratedWaveEnergy by summing the spectral bins.
 
-  * Operators that have not yet been written in spectral form in the legacy code
-    (shock injection, reflection, nonlinear cascade) may still be called on the
-    integrated energy.  ProjectIntegratedEnergyToSpectrum() then maps the new
-    integrated value back to the spectrum while preserving the previous spectral
-    shape if one exists.  This preserves compatibility without pretending that
-    those operators are already full spectral cascade/reflection solvers.
+  * Advection, particle coupling, reflection, and nonlinear cascade are all
+    implemented directly on E_±(k_j).  The compact integrated E_± datum is kept
+    only as a diagnostic/compatibility view obtained by summing the spectral
+    bins after each spectral operator.
+
+  * The shock-turbulence source is still formulated as an integrated energy
+    increment.  ProjectIntegratedEnergyToSpectrum() is therefore retained for
+    that one operator: it maps the shock-updated integrated energy back to the
+    spectrum while preserving the previous spectral shape whenever possible.
 
 The code below is intentionally verbose.  The detailed comments explain the
 units and data layout at every modified location because these arrays are easy
@@ -206,9 +209,200 @@ inline double ComputeAdvectiveFluxFromDensity(
   return (std::isfinite(flux) && flux > 0.0) ? flux : 0.0;
 }
 
+// Return a small, always-positive denominator for divisions that are allowed to
+// approach zero only because a physical quantity is absent.  The value is small
+// enough to be irrelevant for normal heliospheric parameters, but it prevents a
+// zero density, zero length, or zero wave energy from producing NaN values that
+// can contaminate all spectral bins after MPI synchronization.
+inline double PositiveFloor(double x, double floor_value) {
+  return (std::isfinite(x) && x > floor_value) ? x : floor_value;
+}
+
+// Extract the proton mass density at the center of a field-line segment.  The
+// spectral cascade operator uses the same Elsasser-energy normalization as the
+// integrated cascade operator, W^±=(rho/4) Z_±^2.  Therefore a local mass density
+// is needed to convert wave-energy density into the counter-propagating Elsasser
+// amplitude that controls nonlinear decorrelation.
+bool GetSegmentMassDensity(
+    PIC::FieldLine::cFieldLineSegment* segment,
+    double& rho) {
+  if (!segment) return false;
+
+  double n_sw = 0.0;
+  segment->GetPlasmaDensity(0.5,n_sw);
+
+  // In the rest of the SEP turbulence code GetPlasmaDensity() is interpreted as
+  // a proton number density.  Keep the same convention here so the spectral and
+  // integrated cascade operators use the same physical normalization.
+  rho = n_sw*_H__MASS_;
+
+  return std::isfinite(rho) && rho > 0.0;
+}
+
 // Branch helper: the first NK entries are E+(k), the second NK entries are E-(k).
+// The helpers are defined before all spectral operators because advection,
+// reflection, cascade, diagnostics, and particle coupling all use the same
+// memory layout.  Keeping the indexing in one place reduces the chance of
+// accidentally mixing E+ and E- bins when new spectral operators are added.
 inline int OffsetPlus(int j) { return j; }
 inline int OffsetMinus(int j) { return NK+j; }
+
+// Compute the large-scale, non-WKB reflection rate for a single segment.  This
+// is the same physical rate used by the legacy integrated reflection operator,
+// but this helper returns it to the wave-number-resolved code so the rate can be
+// applied to every E_+(k_j),E_-(k_j) bin independently.
+//
+// The estimate is based on the gradient of the Alfvén speed along the magnetic
+// field line:
+//
+//   G_R = C_R/2 * | V_A * d ln(V_A) / ds | .
+//
+// Reflection does not move energy in k-space; it changes the propagation branch
+// at the same wave number.  Therefore the caller uses this scalar G_R to mix
+// E_+(k_j) and E_-(k_j) inside each bin j.
+bool GetSegmentReflectionRate(
+    PIC::FieldLine::cFieldLineSegment* segment,
+    double C_reflection,
+    double grad_floor,
+    double& G_reflection) {
+  namespace FL = PIC::FieldLine;
+
+  G_reflection = 0.0;
+  if (!segment || C_reflection <= 0.0) return false;
+
+  FL::cFieldLineVertex* v0 = segment->GetBegin();
+  FL::cFieldLineVertex* v1 = segment->GetEnd();
+  if (!v0 || !v1) return false;
+
+  const double ds = segment->GetLength();
+  if (!(ds > 0.0) || !std::isfinite(ds)) return false;
+
+  double* B0 = v0->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+  double* B1 = v1->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+  if (!B0 || !B1) return false;
+
+  double n0 = 0.0, n1 = 0.0;
+  v0->GetDatum(FL::DatumAtVertexPlasmaDensity,&n0);
+  v1->GetDatum(FL::DatumAtVertexPlasmaDensity,&n1);
+  if (!(n0 > 0.0) || !(n1 > 0.0)) return false;
+
+  const double B2_0 = B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2];
+  const double B2_1 = B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2];
+  if (!(B2_0 > 0.0) || !(B2_1 > 0.0)) return false;
+
+  const double rho0 = n0*kProtonMass;
+  const double rho1 = n1*kProtonMass;
+  if (!(rho0 > 0.0) || !(rho1 > 0.0)) return false;
+
+  const double ratio = (B2_1*rho0)/(B2_0*rho1);
+  if (!(ratio > 0.0) || !std::isfinite(ratio)) return false;
+
+  const double dlnVA_ds = 0.5*std::log(ratio)/ds;
+  if (grad_floor > 0.0 && std::fabs(dlnVA_ds) < grad_floor) return false;
+
+  const double VA2_0 = B2_0/(kMu0*rho0);
+  const double VA2_1 = B2_1/(kMu0*rho1);
+  if (!(VA2_0 > 0.0) || !(VA2_1 > 0.0)) return false;
+
+  const double VA_c = std::sqrt(0.5*(VA2_0+VA2_1));
+  if (!(VA_c > 0.0) || !std::isfinite(VA_c)) return false;
+
+  G_reflection = 0.5*C_reflection*std::fabs(VA_c*dlnVA_ds);
+  return std::isfinite(G_reflection) && G_reflection > 0.0;
+}
+
+// Apply one explicit, positivity-preserving cascade sweep to one local spectrum.
+//
+// The spectral cascade is represented as an energy flux in logarithmic wave
+// number.  For each branch and each bin j, a fraction of E_±(k_j) is transferred
+// to the next higher-k bin.  The highest bin has no resolved neighbor, so the
+// outgoing flux from that bin is interpreted as unresolved dissipation/heating.
+// This is a simple finite-volume model in ln(k), not a diagnostic rescaling of
+// the integrated spectrum.
+//
+// The nonlinear rate uses the same counter-propagating-wave idea as the legacy
+// integrated operator,
+//
+//   a_±(k_j) = C_nl f_sigma sqrt(W_∓(k_j)) / [sqrt(rho) lambda_perp]
+//              * (k_j/k_min)^(2/3) .
+//
+// The factor (k/k_min)^(2/3) shortens the nonlinear time toward smaller scales,
+// as expected for a Kolmogorov-like cascade.  The exponential fraction
+// 1-exp(-a dt) keeps the update positive even when dt is larger than the local
+// cascade time.
+void CascadeOneSpectralSweep(
+    double* spectrum,
+    double volume,
+    double rho,
+    double dt,
+    double C_nl,
+    double lambda_perp_m,
+    bool enable_cross_helicity_modulation,
+    double& transferred_energy,
+    double& dissipated_energy) {
+
+  if (!spectrum) return;
+  if (!(volume > 0.0) || !(rho > 0.0) || !(dt > 0.0)) return;
+  if (!(C_nl > 0.0) || !(lambda_perp_m > 0.0)) return;
+
+  const double sqrt_rho = std::sqrt(PositiveFloor(rho,1.0e-60));
+  const double lambda = PositiveFloor(lambda_perp_m,1.0);
+
+  std::vector<double> transfer_plus(NK,0.0);
+  std::vector<double> transfer_minus(NK,0.0);
+
+  for (int j=0; j<NK; ++j) {
+    const double Eplus = std::max(0.0,spectrum[OffsetPlus(j)]);
+    const double Eminus = std::max(0.0,spectrum[OffsetMinus(j)]);
+
+    const double Wplus = Eplus/volume;
+    const double Wminus = Eminus/volume;
+
+    // Per-bin normalized cross helicity.  When one branch is absent, nonlinear
+    // interaction should be strongly suppressed because Alfvénic cascade needs
+    // counter-propagating wave packets.  This mirrors the integrated cascade
+    // option, but applies the suppression separately at each k_j.
+    double f_sigma = 1.0;
+    if (enable_cross_helicity_modulation) {
+      const double Wsum = Wplus + Wminus;
+      if (Wsum > 0.0) {
+        const double sigma_c = (Wplus-Wminus)/Wsum;
+        f_sigma = std::sqrt(std::max(0.0,1.0-sigma_c*sigma_c));
+      }
+      else {
+        f_sigma = 0.0;
+      }
+    }
+
+    const double k_ratio = PositiveFloor(KCenter(j)/K_MIN,1.0);
+    const double spectral_rate_factor = std::pow(k_ratio,2.0/3.0);
+
+    const double a_plus = C_nl*f_sigma*std::sqrt(std::max(0.0,Wminus))/(sqrt_rho*lambda)*spectral_rate_factor;
+    const double a_minus = C_nl*f_sigma*std::sqrt(std::max(0.0,Wplus))/(sqrt_rho*lambda)*spectral_rate_factor;
+
+    const double frac_plus = (a_plus > 0.0 && std::isfinite(a_plus)) ? (1.0-std::exp(-a_plus*dt)) : 0.0;
+    const double frac_minus = (a_minus > 0.0 && std::isfinite(a_minus)) ? (1.0-std::exp(-a_minus*dt)) : 0.0;
+
+    transfer_plus[j] = Eplus*std::min(1.0,std::max(0.0,frac_plus));
+    transfer_minus[j] = Eminus*std::min(1.0,std::max(0.0,frac_minus));
+  }
+
+  for (int j=0; j<NK; ++j) {
+    spectrum[OffsetPlus(j)] = std::max(0.0,spectrum[OffsetPlus(j)]-transfer_plus[j]);
+    spectrum[OffsetMinus(j)] = std::max(0.0,spectrum[OffsetMinus(j)]-transfer_minus[j]);
+
+    if (j+1 < NK) {
+      spectrum[OffsetPlus(j+1)] += transfer_plus[j];
+      spectrum[OffsetMinus(j+1)] += transfer_minus[j];
+      transferred_energy += transfer_plus[j] + transfer_minus[j];
+    }
+    else {
+      // Energy that leaves the resolved k-range at k_max is not placed into an
+      // unresolved spectral bin.  It is counted as turbulent dissipation/heating.
+      dissipated_energy += transfer_plus[j] + transfer_minus[j];
+    }
+  }
+}
 
 // Sum one branch of the spectral datum.
 inline double SumBranch(const double* spectrum, bool plus_branch) {
@@ -673,6 +867,147 @@ double GetGlobalMaxStableTimeStep() {
   // model, so the spectral solver can reuse the integrated solver's global CFL
   // estimate exactly.
   return SEP::AlfvenTurbulence_Kolmogorov::GetGlobalMaxStableTimeStep();
+}
+
+void ReflectSpectrumAllFieldLines(
+    double dt,
+    double C_reflection,
+    double grad_floor,
+    bool enable_logging) {
+
+  if (dt <= 0.0 || C_reflection <= 0.0) return;
+
+  int processed_segments = 0;
+  int updated_bins = 0;
+  double total_abs_exchanged = 0.0;
+
+  for (int field_line_idx=0; field_line_idx<PIC::FieldLine::nFieldLine; ++field_line_idx) {
+    PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
+    if (!field_line) continue;
+
+    const int nseg = field_line->GetTotalSegmentNumber();
+    for (int i=0; i<nseg; ++i) {
+      PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(i);
+      if (!segment || segment->Thread != PIC::ThisThread) continue;
+
+      double* spectrum = segment->GetDatum_ptr(SpectralWaveEnergy);
+      if (!spectrum) continue;
+
+      double G_reflection = 0.0;
+      if (!GetSegmentReflectionRate(segment,C_reflection,grad_floor,G_reflection)) continue;
+
+      // Reflection is a branch-conversion process, not a k-space cascade.  For
+      // each wave number, keep the bin energy E_tot(k_j)=E_+(k_j)+E_-(k_j)
+      // fixed and relax the branch imbalance toward zero:
+      //
+      //   d/dt [E_+ - E_-] = -2 G_R [E_+ - E_-] .
+      //
+      // The exact exponential update below is positive and conservative for
+      // every bin separately.  It avoids the previous approximation used in the
+      // wave-number-resolved mode, where the integrated E_± were reflected first
+      // and the result was projected back onto the spectrum.
+      const double factor = std::exp(-2.0*G_reflection*dt);
+
+      for (int j=0; j<NK; ++j) {
+        const double Eplus_old = std::max(0.0,spectrum[OffsetPlus(j)]);
+        const double Eminus_old = std::max(0.0,spectrum[OffsetMinus(j)]);
+        const double Etot = Eplus_old + Eminus_old;
+        if (Etot <= 0.0) continue;
+
+        const double imbalance_old = Eplus_old - Eminus_old;
+        const double imbalance_new = imbalance_old*factor;
+
+        const double Eplus_new = std::max(0.0,0.5*(Etot+imbalance_new));
+        const double Eminus_new = std::max(0.0,Etot-Eplus_new);
+
+        spectrum[OffsetPlus(j)] = Eplus_new;
+        spectrum[OffsetMinus(j)] = Eminus_new;
+
+        total_abs_exchanged += std::fabs(Eplus_new-Eplus_old) + std::fabs(Eminus_new-Eminus_old);
+        updated_bins++;
+      }
+
+      processed_segments++;
+    }
+  }
+
+  // The right boundary is prescribed as a pre-existing W-(k) reservoir.  Keep it
+  // fixed even after reflection, because otherwise reflection inside the last
+  // segment could slowly change the imposed boundary condition itself.
+  EnforceRightBoundarySpectrumInitialCondition();
+  PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(SpectralWaveEnergy);
+
+  if (enable_logging && PIC::ThisThread == 0) {
+    std::cout << "Wave-number-resolved reflection processed " << processed_segments
+              << " local segments and " << updated_bins
+              << " spectral bins; total absolute branch exchange = "
+              << total_abs_exchanged << " J.\n";
+  }
+}
+
+void CascadeSpectrumAllFieldLines(
+    double dt,
+    double C_nl,
+    double lambda_perp_m,
+    bool enable_cross_helicity_modulation,
+    bool two_sweep_imex,
+    bool enable_logging) {
+
+  if (dt <= 0.0 || C_nl <= 0.0 || lambda_perp_m <= 0.0) return;
+
+  const int nsweep = two_sweep_imex ? 2 : 1;
+  const double dt_sweep = dt/static_cast<double>(nsweep);
+
+  int processed_segments = 0;
+  double transferred_energy = 0.0;
+  double dissipated_energy = 0.0;
+
+  for (int sweep=0; sweep<nsweep; ++sweep) {
+    for (int field_line_idx=0; field_line_idx<PIC::FieldLine::nFieldLine; ++field_line_idx) {
+      PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
+      if (!field_line) continue;
+
+      const int nseg = field_line->GetTotalSegmentNumber();
+      for (int i=0; i<nseg; ++i) {
+        PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(i);
+        if (!segment || segment->Thread != PIC::ThisThread) continue;
+
+        double* spectrum = segment->GetDatum_ptr(SpectralWaveEnergy);
+        if (!spectrum) continue;
+
+        const double volume = SEP::FieldLine::GetSegmentVolume(segment,field_line_idx);
+        if (!(volume > 0.0)) continue;
+
+        double rho = 0.0;
+        if (!GetSegmentMassDensity(segment,rho)) continue;
+
+        // The sweep is local to one segment.  It moves energy from low k to high
+        // k within the same segment and branch.  It does not advect energy along
+        // the field line; spatial transport has already been handled by
+        // AdvectSpectrumAllFieldLines().  This operator therefore represents the
+        // nonlinear spectral transfer/dissipation part of the turbulence model.
+        CascadeOneSpectralSweep(
+            spectrum,volume,rho,dt_sweep,C_nl,lambda_perp_m,
+            enable_cross_helicity_modulation,transferred_energy,dissipated_energy);
+
+        if (sweep == 0) processed_segments++;
+      }
+    }
+  }
+
+  // The last-segment W-(k) boundary condition represents imposed pre-existing
+  // inward turbulence.  Do not let the local cascade operator deplete or reshape
+  // that boundary spectrum.
+  EnforceRightBoundarySpectrumInitialCondition();
+  PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(SpectralWaveEnergy);
+
+  if (enable_logging && PIC::ThisThread == 0) {
+    std::cout << "Wave-number-resolved spectral cascade processed "
+              << processed_segments << " local segments with " << nsweep
+              << " sweep(s); energy moved to higher k = " << transferred_energy
+              << " J, unresolved dissipation at k_max = " << dissipated_energy
+              << " J.\n";
+  }
 }
 
 

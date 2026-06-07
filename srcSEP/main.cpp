@@ -596,20 +596,25 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
       if (SEP::AlfvenTurbulence_Kolmogorov::Reflection::active==true) {
         double C_reflection=0.6;
 
-        SEP::AlfvenTurbulence_Kolmogorov::Reflection::ReflectTurbulenceEnergyAllFieldLines(PIC::ParticleWeightTimeStep::GlobalTimeStep[0],C_reflection,0.0,false);
-
         if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
-          // Reflection is currently inherited from the legacy integrated-energy
-          // operator.  Re-project the changed branch-integrated energy to the
-          // spectral datum, preserving the current E±(k) shape branch by branch.
-          // A future fully spectral reflection operator can replace this step.
-          SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::ProjectIntegratedEnergyToSpectrum(
-              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
-          SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::EnforceRightBoundarySpectrumInitialCondition();
+          // Fully spectral reflection: convert E+(k_j) and E-(k_j) into one
+          // another at the same wave-number bin j.  This replaces the older
+          // compatibility path that first reflected the branch-integrated E± and
+          // then projected the result back onto E±(k).  The integrated datum is
+          // refreshed afterward only so the compact W+,W-,sigma_c diagnostics and
+          // legacy helper routines continue to see the branch sums.
+          SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::ReflectSpectrumAllFieldLines(
+              PIC::ParticleWeightTimeStep::GlobalTimeStep[0],C_reflection,0.0,false);
+
           SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::UpdateIntegratedEnergyFromSpectrum(
+              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+          PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(
               SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
         }
         else {
+          SEP::AlfvenTurbulence_Kolmogorov::Reflection::ReflectTurbulenceEnergyAllFieldLines(
+              PIC::ParticleWeightTimeStep::GlobalTimeStep[0],C_reflection,0.0,false);
+
           // Reflection can convert part of W+ into W- in the boundary segment.
           // Keep the last-segment W- fixed to the captured initial value so the
           // boundary condition remains prescribed rather than dynamically evolved.
@@ -631,22 +636,31 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
         // Optional: stronger physics
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableCrossHelicityModulation(true);
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableTwoSweepIMEX(true);
-        SEP::AlfvenTurbulence_Kolmogorov::Cascade::CascadeTurbulenceEnergyAllFieldLines(PIC::ParticleWeightTimeStep::GlobalTimeStep[0],/*enable_logging=*/ false);
 
         if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
-          // The present nonlinear cascade kernel is still branch-integrated.
-          // Preserve compatibility by applying it to CellIntegratedWaveEnergy,
-          // then rescale E±(k) to match the new integrated branch sums while
-          // retaining the current spectral shape.  This keeps advection and
-          // particle coupling k-resolved without silently inventing a spectral
-          // cascade law that is not yet implemented.
-          SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::ProjectIntegratedEnergyToSpectrum(
-              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
-          SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::EnforceRightBoundarySpectrumInitialCondition();
+          // Fully spectral cascade: move energy in log-k space within each
+          // segment, from bin j to j+1, using the same model parameters as the
+          // integrated cascade configuration above: C_nl=0.8, lambda_perp=1e7 m,
+          // cross-helicity modulation ON, and a two-sweep update.  Only the
+          // energy that reaches k_max is removed as unresolved dissipation.
+          // The compact integrated datum is then refreshed as the sum over k.
+          SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::CascadeSpectrumAllFieldLines(
+              PIC::ParticleWeightTimeStep::GlobalTimeStep[0],
+              0.8,     // C_nl, same value used by the legacy cascade operator
+              1.0e7,   // lambda_perp [m], same 10,000 km value used above
+              true,    // enable per-bin cross-helicity modulation
+              true,    // two half-sweeps for a Picard-like update
+              false);  // enable_logging
+
           SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::UpdateIntegratedEnergyFromSpectrum(
+              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+          PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(
               SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
         }
         else {
+          SEP::AlfvenTurbulence_Kolmogorov::Cascade::CascadeTurbulenceEnergyAllFieldLines(
+              PIC::ParticleWeightTimeStep::GlobalTimeStep[0],/*enable_logging=*/ false);
+
           // Nonlinear cascade/damping changes both Elsasser wave populations.
           // Restore only the outer-boundary W- value; all interior segments and
           // the outer-boundary W+ outflow remain governed by the cascade update.
