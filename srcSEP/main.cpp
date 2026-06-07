@@ -143,10 +143,27 @@ int main(int argc,char **argv) {
   //output parameters of the sshock 
   SEP::sw1d.write_tecplot_shock_vs_time(2.0*24.0*3600, 200, "shock_vs_time.dat");
 
+  // --------------------------------------------------------------------------
+  // Configure the optional turbulence physics from command-line options before
+  // registering AMPS field-line datums.  The selected turbulence model affects
+  // which segment datums must be allocated.  In particular, the new
+  // wave-number-resolved model needs an additional 2*NK spectral-energy datum.
+  // --------------------------------------------------------------------------
+  SEP::Util::CLI::ApplyTurbulenceOptions(cli_options);
+  if (PIC::ThisThread == 0) SEP::Util::CLI::PrintTurbulenceOptions(cli_options, std::cout);
+
   //setup datum to store the segment's data for the Alfven turbulence model 
   if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) { 
     PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy); 
     PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
+
+    // The wave-number-resolved model stores E+(k_j) and E-(k_j) in an
+    // additional hidden segment datum.  It is registered only when selected by
+    // the CLI to avoid increasing memory in legacy integrated-turbulence runs.
+    if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
+      PIC::FieldLine::cFieldLineSegment::AddDatumStored(
+          &SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergy);
+    }
 
     PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
     PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S_pm);
@@ -162,18 +179,6 @@ int main(int argc,char **argv) {
   //set up datum to store distance of a field line vertex to the location of the shock 
   PIC::FieldLine::UserDefinedfDataProcessingManager=SEP::FieldLine::CalculateVertexShockDistances; 
 
-  // --------------------------------------------------------------------------
-  // Configure the optional turbulence physics from command-line options.
-  // Historically the standalone driver hard-coded all three switches to true:
-  //   ParticleCouplingMode = true, Cascade::active = true, Reflection::active = true.
-  // ApplyTurbulenceOptions() preserves those defaults but allows batch runs to
-  // disable individual physics terms without recompiling.  The summary printed
-  // on MPI rank 0 records the exact run-time configuration in the job log.
-  // --------------------------------------------------------------------------
-  SEP::Util::CLI::ApplyTurbulenceOptions(cli_options);
-  if (PIC::ThisThread == 0) SEP::Util::CLI::PrintTurbulenceOptions(cli_options, std::cout);
-
- 
   amps_init_mesh();
   amps_init();
 
@@ -233,16 +238,33 @@ int main(int argc,char **argv) {
   SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,1);
 
   // Capture the right-boundary W- initial condition after the turbulence wave
-  // energy has been initialized and the edge data have been synchronized.  The
-  // last segment then represents pre-existing heliospheric inward-propagating
-  // turbulence.  Subsequent turbulence operators restore this value so the
-  // boundary does not drain away by advection and does not grow from an
-  // artificial injected source.
-  SEP::AlfvenTurbulence_Kolmogorov::ResetRightBoundaryEminusInitialCondition();
-  SEP::AlfvenTurbulence_Kolmogorov::CaptureRightBoundaryEminusInitialCondition(
-      SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
-  SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
-      SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+  // energy has been initialized and the edge data have been synchronized.
+  //
+  // Legacy/integrated model:
+  //   store one W- density at the last segment.
+  //
+  // Wave-number-resolved model:
+  //   first expand the integrated E+,E- initial condition into E+(k_j),E-(k_j)
+  //   using the Kolmogorov log-bin weights, then store the full W-(k_j) density
+  //   at the last segment.  This keeps the right boundary fixed as a
+  //   pre-existing spectral turbulence reservoir rather than an artificial
+  //   time-growing source.
+  if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
+    SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::InitializeSpectrumFromIntegratedEnergy(
+        SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+    SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::ResetRightBoundarySpectrumInitialCondition();
+    SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::CaptureRightBoundarySpectrumInitialCondition();
+    SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::EnforceRightBoundarySpectrumInitialCondition();
+    SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::UpdateIntegratedEnergyFromSpectrum(
+        SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+  }
+  else {
+    SEP::AlfvenTurbulence_Kolmogorov::ResetRightBoundaryEminusInitialCondition();
+    SEP::AlfvenTurbulence_Kolmogorov::CaptureRightBoundaryEminusInitialCondition(
+        SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+    SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
+        SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+  }
 
 
   //set background plasma density 
@@ -421,6 +443,17 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
 
 	 SEP::ParticleSource::ShockWave::ShockTurbulenceEnergyInjection(rsh0, rsh1, PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
 
+         // The present shock turbulence source is formulated for the legacy
+         // branch-integrated E+ and E- datum.  In the wave-number-resolved
+         // model, immediately project the updated integrated shock increment
+         // back to E±(k_j), preserving the local spectral shape where possible
+         // and using a Kolmogorov distribution only when a branch previously had
+         // no spectral energy.
+         if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
+           SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::ProjectIntegratedEnergyToSpectrum(
+               SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+         }
+
 	 rsh0=rsh1;
       }
 
@@ -451,14 +484,31 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
 //		    SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S,
 //		   PIC::ParticleWeightTimeStep::GlobalTimeStep[0]); 
 
-      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::WaveParticleCouplingManager(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
-		      PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
+      if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
+        // New spectral coupling: G±(k_j) modifies the same E±(k_j) bin, and
+        // the equal-and-opposite particle energy change is redistributed only
+        // to particles whose resonant wave number falls into that bin.
+        SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::WaveParticleCouplingManager(
+            SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
+            PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
 
-      // The wave-particle coupling operator updates E+ and E- in every segment.
-      // Re-apply the fixed right-boundary W- condition immediately afterward so
-      // the boundary remains equal to the pre-existing initial turbulence state.
-      SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
-          SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+        SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::EnforceRightBoundarySpectrumInitialCondition();
+        SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::UpdateIntegratedEnergyFromSpectrum(
+            SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+      }
+      else {
+        // Legacy coupling: growth rates are integrated over k before the two
+        // branch-integrated energies E+ and E- are updated.
+        SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::WaveParticleCouplingManager(
+            SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
+            PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
+
+        // The wave-particle coupling operator updates E+ and E- in every segment.
+        // Re-apply the fixed right-boundary W- condition immediately afterward so
+        // the boundary remains equal to the pre-existing initial turbulence state.
+        SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
+            SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+      }
       }
 
 
@@ -499,27 +549,44 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
 
           const double dt_subcycle = std::min(dt_cfl_turbulence, dt_total_turbulence - dt_done_turbulence);
 
-          SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAllFieldLines(
-              DeltaE_plus, DeltaE_minus,
-              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
-              dt_subcycle,
-              0.01,  // inner-boundary W+ source level
-              0.0);  // retained argument; right-boundary W- is fixed to its captured initial value
+          if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
+            // Spectral advection: every E+(k_j) and E-(k_j) bin is transported
+            // independently with the same finite-volume Alfvénic flux geometry.
+            // The compact integrated datum is refreshed afterward so the rest of
+            // the model and the standard output still see E+ and E-.
+            SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::AdvectSpectrumAllFieldLines(
+                dt_subcycle,
+                0.01,  // inner-boundary total W+ turbulence level, distributed over k
+                0.0);  // retained argument; spectral right-boundary W-(k) is fixed
 
-          // The advection operator updates only locally-owned field-line segments.
-          // The next subcycle reads neighbor states to compute finite-volume face
-          // fluxes.  Refresh the ghost/edge copies after every subcycle; otherwise
-          // MPI-domain interfaces use stale E+/E- values during all later subcycles,
-          // producing artificial jumps and incorrect interior evolution of W+/W-.
-          PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(
-              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+            SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::UpdateIntegratedEnergyFromSpectrum(
+                SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+            PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(
+                SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+          }
+          else {
+            SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAllFieldLines(
+                DeltaE_plus, DeltaE_minus,
+                SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
+                dt_subcycle,
+                0.01,  // inner-boundary W+ source level
+                0.0);  // retained argument; right-boundary W- is fixed to its captured initial value
 
-          // MPI synchronization may overwrite the locally prescribed boundary-cell
-          // value on the owner rank.  Restore the fixed right-boundary W- density
-          // immediately after synchronization so both diagnostics and subsequent
-          // flux calculations use the intended pre-existing turbulence value.
-          SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
-              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+            // The advection operator updates only locally-owned field-line segments.
+            // The next subcycle reads neighbor states to compute finite-volume face
+            // fluxes.  Refresh the ghost/edge copies after every subcycle; otherwise
+            // MPI-domain interfaces use stale E+/E- values during all later subcycles,
+            // producing artificial jumps and incorrect interior evolution of W+/W-.
+            PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(
+                SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+
+            // MPI synchronization may overwrite the locally prescribed boundary-cell
+            // value on the owner rank.  Restore the fixed right-boundary W- density
+            // immediately after synchronization so both diagnostics and subsequent
+            // flux calculations use the intended pre-existing turbulence value.
+            SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
+                SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+          }
 
           dt_done_turbulence += dt_subcycle;
         }
@@ -531,11 +598,24 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
 
         SEP::AlfvenTurbulence_Kolmogorov::Reflection::ReflectTurbulenceEnergyAllFieldLines(PIC::ParticleWeightTimeStep::GlobalTimeStep[0],C_reflection,0.0,false);
 
-        // Reflection can convert part of W+ into W- in the boundary segment.
-        // Keep the last-segment W- fixed to the captured initial value so the
-        // boundary condition remains prescribed rather than dynamically evolved.
-        SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
-            SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+        if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
+          // Reflection is currently inherited from the legacy integrated-energy
+          // operator.  Re-project the changed branch-integrated energy to the
+          // spectral datum, preserving the current E±(k) shape branch by branch.
+          // A future fully spectral reflection operator can replace this step.
+          SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::ProjectIntegratedEnergyToSpectrum(
+              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+          SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::EnforceRightBoundarySpectrumInitialCondition();
+          SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::UpdateIntegratedEnergyFromSpectrum(
+              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+        }
+        else {
+          // Reflection can convert part of W+ into W- in the boundary segment.
+          // Keep the last-segment W- fixed to the captured initial value so the
+          // boundary condition remains prescribed rather than dynamically evolved.
+          SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
+              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+        }
       }
 
       // Configure cascade
@@ -553,22 +633,46 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableTwoSweepIMEX(true);
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::CascadeTurbulenceEnergyAllFieldLines(PIC::ParticleWeightTimeStep::GlobalTimeStep[0],/*enable_logging=*/ false);
 
-        // Nonlinear cascade/damping changes both Elsasser wave populations.
-        // Restore only the outer-boundary W- value; all interior segments and
-        // the outer-boundary W+ outflow remain governed by the cascade update.
-        SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
-            SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+        if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
+          // The present nonlinear cascade kernel is still branch-integrated.
+          // Preserve compatibility by applying it to CellIntegratedWaveEnergy,
+          // then rescale E±(k) to match the new integrated branch sums while
+          // retaining the current spectral shape.  This keeps advection and
+          // particle coupling k-resolved without silently inventing a spectral
+          // cascade law that is not yet implemented.
+          SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::ProjectIntegratedEnergyToSpectrum(
+              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+          SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::EnforceRightBoundarySpectrumInitialCondition();
+          SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::UpdateIntegratedEnergyFromSpectrum(
+              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+        }
+        else {
+          // Nonlinear cascade/damping changes both Elsasser wave populations.
+          // Restore only the outer-boundary W- value; all interior segments and
+          // the outer-boundary W+ outflow remain governed by the cascade update.
+          SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
+              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+        }
       }
 
     
       //scatter wave energy   
-      PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+      if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
+        PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(
+            SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergy);
+        SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::EnforceRightBoundarySpectrumInitialCondition();
+        SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::UpdateIntegratedEnergyFromSpectrum(
+            SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+      }
+      else {
+        PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
 
-      // Edge synchronization can refresh data stored on field-line boundaries.
-      // Enforce the prescribed right-boundary W- value once more before derived
-      // wave-energy-density diagnostics are calculated.
-      SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
-          SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+        // Edge synchronization can refresh data stored on field-line boundaries.
+        // Enforce the prescribed right-boundary W- value once more before derived
+        // wave-energy-density diagnostics are calculated.
+        SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
+            SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+      }
 
 
       //calculate the wave energy density 

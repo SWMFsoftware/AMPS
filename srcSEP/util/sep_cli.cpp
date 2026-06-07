@@ -40,6 +40,29 @@ bool ParseBoolValue(const std::string& raw_value, bool& value) {
   return false;
 }
 
+
+// Parse the turbulence model selector.  This deliberately accepts several
+// spellings used in notes/scripts so users do not need to remember one exact
+// token.  The model name controls only the representation of wave energy; the
+// independent switches --coupling, --cascade, and --reflection still turn the
+// corresponding physics on/off.
+bool ParseTurbulenceModelValue(const std::string& raw_value, Options::TurbulenceModel& value) {
+  const std::string v = ToLower(raw_value);
+
+  if (v == "integrated" || v == "legacy" || v == "old" || v == "branch-integrated") {
+    value = Options::TurbulenceModel::Integrated;
+    return true;
+  }
+
+  if (v == "wave-number-resolved" || v == "wavenumber-resolved" ||
+      v == "k-resolved" || v == "k" || v == "spectral" || v == "new") {
+    value = Options::TurbulenceModel::WaveNumberResolved;
+    return true;
+  }
+
+  return false;
+}
+
 // Split options of the form "--option=value".  If there is no '=' character,
 // option_name receives the complete argument and option_value is left empty.
 void SplitOption(const std::string& arg, std::string& option_name, std::string& option_value) {
@@ -126,6 +149,16 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "                               between W+ and W- waves.\n"
       << "  --no-reflection              Shortcut for --reflection off.\n"
       << "\n"
+      << "Turbulence representation:\n"
+      << "  --turbulence-model <integrated|wave-number-resolved>\n"
+      << "                               Select the turbulence-energy representation.\n"
+      << "                               integrated: legacy/default E+,E- only.\n"
+      << "                               wave-number-resolved: store and advect E±(k_j);\n"
+      << "                               particle coupling modifies the resonant k-bin.\n"
+      << "  --turbulence-model=...      Same option using --option=value syntax.\n"
+      << "  --wave-number-resolved      Shortcut for --turbulence-model wave-number-resolved.\n"
+      << "  --integrated-turbulence     Shortcut for --turbulence-model integrated.\n"
+      << "\n"
       << "Diagnostics and development tests:\n"
       << "  --test-manager <on|off>      Enable/disable the standalone SEP TestManager()\n"
       << "                               diagnostics after AMPS/field-line initialization.\n"
@@ -141,12 +174,13 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "enable/disable, and enabled/disabled.\n"
       << "\n"
       << "Defaults:\n"
-      << "  coupling=on, cascade=on, reflection=on, test-manager=off.\n"
+      << "  coupling=on, cascade=on, reflection=on, turbulence-model=integrated, test-manager=off.\n"
       << "\n"
       << "Examples:\n"
       << "  " << exe << " --coupling off --cascade off --reflection off\n"
       << "  " << exe << " --coupling-mode=on --no-cascade --reflection=on\n"
-      << "  " << exe << " --run-test-manager\n";
+      << "  " << exe << " --run-test-manager\n"
+      << "  " << exe << " --turbulence-model wave-number-resolved --coupling on\n";
 }
 
 bool ParseCommandLine(int argc, char** argv, Options& options,
@@ -189,11 +223,44 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
       continue;
     }
 
+    if (option_name == "--turbulence-model") {
+      std::string raw_value;
+      if (!GetOptionValue(argc, argv, i, option_name, value_from_equals, raw_value, err)) return false;
+
+      Options::TurbulenceModel parsed_model = Options::TurbulenceModel::Integrated;
+      if (!ParseTurbulenceModelValue(raw_value, parsed_model)) {
+        err << "ERROR: invalid value '" << raw_value << "' for --turbulence-model. "
+            << "Use integrated or wave-number-resolved.\n";
+        return false;
+      }
+
+      options.turbulenceModel = parsed_model;
+      continue;
+    }
+
     if (option_name == "--test-manager" || option_name == "--testmanager") {
       if (!ParseBooleanOption(argc, argv, i, option_name, value_from_equals,
                               "SEP TestManager diagnostics", options.runTestManager, err)) {
         return false;
       }
+      continue;
+    }
+
+    if (option_name == "--wave-number-resolved" || option_name == "--k-resolved" || option_name == "--spectral-turbulence") {
+      if (!value_from_equals.empty()) {
+        err << "ERROR: option '" << option_name << "' does not take a value.\n";
+        return false;
+      }
+      options.turbulenceModel = Options::TurbulenceModel::WaveNumberResolved;
+      continue;
+    }
+
+    if (option_name == "--integrated-turbulence" || option_name == "--legacy-turbulence") {
+      if (!value_from_equals.empty()) {
+        err << "ERROR: option '" << option_name << "' does not take a value.\n";
+        return false;
+      }
+      options.turbulenceModel = Options::TurbulenceModel::Integrated;
       continue;
     }
 
@@ -258,6 +325,15 @@ void ApplyTurbulenceOptions(const Options& options) {
   SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode = options.particleCouplingMode;
   SEP::AlfvenTurbulence_Kolmogorov::Cascade::active = options.cascadeActive;
   SEP::AlfvenTurbulence_Kolmogorov::Reflection::active = options.reflectionActive;
+
+  // Select the wave-energy representation.  This affects only the turbulence
+  // energy transport/coupling kernels.  All existing output and scattering code
+  // still sees the integrated CellIntegratedWaveEnergy datum, which the new
+  // spectral model keeps synchronized by summing over k-bins.
+  SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::TurbulenceModelMode =
+      (options.turbulenceModel == Options::TurbulenceModel::WaveNumberResolved)
+          ? SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::ModelMode::WaveNumberResolved
+          : SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::ModelMode::Integrated;
 }
 
 void PrintTurbulenceOptions(const Options& options, std::ostream& out) {
@@ -265,6 +341,9 @@ void PrintTurbulenceOptions(const Options& options, std::ostream& out) {
       << "  particle/turbulence coupling: " << (options.particleCouplingMode ? "on" : "off") << "\n"
       << "  nonlinear cascade:            " << (options.cascadeActive ? "on" : "off") << "\n"
       << "  wave reflection:               " << (options.reflectionActive ? "on" : "off") << "\n"
+      << "  turbulence model:              "
+      << (options.turbulenceModel == Options::TurbulenceModel::WaveNumberResolved
+              ? "wave-number-resolved" : "integrated") << "\n"
       << "  TestManager diagnostics:       " << (options.runTestManager ? "on" : "off") << "\n";
 }
 

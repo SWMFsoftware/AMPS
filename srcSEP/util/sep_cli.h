@@ -19,6 +19,13 @@ struct Options {
   bool cascadeActive = true;
   bool reflectionActive = true;
 
+  // Select how Alfvén turbulence energy is represented and evolved.
+  // "integrated" is the legacy/default model with only E+ and E- per segment.
+  // "wave-number-resolved" stores E+(k_j) and E-(k_j), advects each k-bin,
+  // and applies particle growth/damping to the resonant k-bin.
+  enum class TurbulenceModel { Integrated, WaveNumberResolved };
+  TurbulenceModel turbulenceModel = TurbulenceModel::Integrated;
+
   // Run the standalone SEP TestManager diagnostics.  These diagnostics are
   // useful during development but can be intrusive and expensive in normal
   // production runs, so the command-line default is intentionally OFF.

@@ -1,0 +1,93 @@
+#ifndef SEP_TURBULENCE_WAVE_NUMBER_RESOLVED_H
+#define SEP_TURBULENCE_WAVE_NUMBER_RESOLVED_H
+
+#include "pic.h"
+#include <vector>
+
+namespace SEP {
+namespace AlfvenTurbulence_Kolmogorov {
+namespace WaveNumberResolved {
+
+// -----------------------------------------------------------------------------
+// Runtime model selection.
+// -----------------------------------------------------------------------------
+// The legacy turbulence model stores and transports only two branch-integrated
+// wave energies per field-line segment:
+//   E+ = integral W+(k) dk,  E- = integral W-(k) dk.
+//
+// The wave-number-resolved option introduced in this directory stores a full
+// log-k distribution for each branch.  The standalone driver selects between the
+// legacy and new treatment through the CLI; the enum is declared here so the
+// parser and the main driver can share one authoritative definition.
+// -----------------------------------------------------------------------------
+enum class ModelMode {
+  Integrated = 0,
+  WaveNumberResolved = 1
+};
+
+extern ModelMode TurbulenceModelMode;
+
+inline bool IsActive() {
+  return TurbulenceModelMode == ModelMode::WaveNumberResolved;
+}
+
+// Segment datum that stores the wave-number-resolved turbulent energy.
+// Layout for every field-line segment:
+//   SpectralWaveEnergy[0 ... NK-1]       = E_+(k_j) [J per log-k bin]
+//   SpectralWaveEnergy[NK ... 2*NK-1]    = E_-(k_j) [J per log-k bin]
+//
+// The quantity stored in each bin is a cell-integrated energy, not an energy
+// density.  The sum over bins equals the legacy branch-integrated segment energy:
+//   sum_j E_+(k_j) = CellIntegratedWaveEnergy[0]
+//   sum_j E_-(k_j) = CellIntegratedWaveEnergy[1]
+//
+// doPrint=false because the ordinary field-line Tecplot file already prints the
+// compact diagnostics W+, W-, and sigma_c from WaveEnergyDensity.  Writing 256
+// spectral columns to every field-line output would make the standard files very
+// large.  A separate spectrum diagnostic writer can be added later if needed.
+extern PIC::Datum::cDatumStored SpectralWaveEnergy;
+
+// Convert a branch-integrated initial condition into a Kolmogorov log-k
+// distribution.  This is called immediately after the legacy initialization
+// routine fills CellIntegratedWaveEnergy.
+void InitializeSpectrumFromIntegratedEnergy(PIC::Datum::cDatumStored& IntegratedWaveEnergy);
+
+// Sum the spectral bins back into the legacy integrated energy datum.  This keeps
+// existing diagnostics, scattering code, shock/cascade/reflection code, and the
+// generic AMPS field-line output compatible with the new spectral model.
+void UpdateIntegratedEnergyFromSpectrum(PIC::Datum::cDatumStored& IntegratedWaveEnergy);
+
+// Rescale the spectrum so its branch sums match the supplied integrated energy
+// while preserving the current spectral shape whenever possible.  This is used
+// after legacy operators that are still formulated for integrated energies only,
+// such as the present shock-injection/reflection/cascade kernels.
+void ProjectIntegratedEnergyToSpectrum(PIC::Datum::cDatumStored& IntegratedWaveEnergy);
+
+// Capture/enforce the fixed right-boundary W-(k) density.  This mirrors the
+// legacy fixed W- boundary condition but applies it independently to every
+// wave-number bin.
+void ResetRightBoundarySpectrumInitialCondition();
+void CaptureRightBoundarySpectrumInitialCondition();
+void EnforceRightBoundarySpectrumInitialCondition();
+
+// Conservative finite-volume advection of every spectral bin along all field
+// lines.  E_+(k_j) propagates outward to increasing segment index; E_-(k_j)
+// propagates inward to decreasing segment index.
+void AdvectSpectrumAllFieldLines(double dt, double TurbulenceLevelBeginning, double TurbulenceLevelEnd);
+
+// CFL estimate for the spectral advection.  It uses the same geometry and
+// Alfvén-speed constraint as the integrated advection because every spectral bin
+// is transported at the Alfvén speed.
+double GetGlobalMaxStableTimeStep();
+
+// Wave-particle coupling for the spectral model.  Existing particle movers fill
+// G_plus_streaming[k] and G_minus_streaming[k].  This routine updates the same
+// k-bin of SpectralWaveEnergy and redistributes the corresponding wave-energy
+// change only to particles resonant with that k-bin.
+void WaveParticleCouplingManager(PIC::Datum::cDatumStored& IntegratedWaveEnergy, double dt);
+
+} // namespace WaveNumberResolved
+} // namespace AlfvenTurbulence_Kolmogorov
+} // namespace SEP
+
+#endif // SEP_TURBULENCE_WAVE_NUMBER_RESOLVED_H
