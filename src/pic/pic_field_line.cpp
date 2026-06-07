@@ -1056,7 +1056,7 @@ namespace PIC {
       FILE* fout;
       fout = fopen(fname,"w");
       
-      fprintf(fout, "TITLE=\"Field line geometry\"");
+      fprintf(fout, "TITLE=\"Field line geometry\"\n");
 
       //if no units are defined in OutputLengthConversionFactor, then set the default to [m] 
       if (PIC::FieldLine::cFieldLine::OutputLengthConversionFactor.second=="") {
