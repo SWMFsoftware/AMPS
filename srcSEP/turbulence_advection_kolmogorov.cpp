@@ -28,7 +28,14 @@ Field Line Discretization:
 
 Boundary Conditions:
 - Inner boundary (segment 0): E+ injection based on coronal turbulence level
-- Outer boundary (last segment): E- injection based on heliospheric turbulence level
+- Outer/right boundary (last segment): fixed pre-existing W- condition.
+  The initial inward-propagating wave energy stored in the last segment is
+  captured immediately after the turbulence initial condition is generated and
+  is then restored after each turbulence operator.  During advection the last
+  segment acts as a fixed W- reservoir: it can provide an inward W- flux to the
+  interior, but its own W- value is not depleted by that flux.  This represents
+  pre-existing heliospheric turbulence at the computational boundary rather
+  than an artificial time-growing source.
 - Turbulence level: Dimensionless fraction of magnetic field energy density B²/(2μ₀)
 
 ALGORITHM OVERVIEW:
@@ -50,7 +57,10 @@ ALGORITHM OVERVIEW:
 
 3. BOUNDARY CONDITIONS:
    - Segment 0: Add E+ injection from inner boundary turbulence level
-   - Last segment: Add E- injection from outer boundary turbulence level
+   - Last segment: keep the pre-existing W- value fixed.  The fixed boundary
+     value supplies the inward W- flux into the domain but is restored after
+     the update so the boundary cell does not drift away from the initial
+     turbulence condition.
 
 4. ENERGY UPDATE:
    - Apply all DeltaE changes to segment wave energies
@@ -71,7 +81,10 @@ Boundary Energy Injection:
   Φ_BC = V_A × (TurbulenceLevel × B²/(2μ₀)) × A × dt [J]
 
 Energy Conservation:
-  E_i^{n+1} = E_i^n + Σ(flux_in) - Σ(flux_out)
+  E_i^{n+1} = E_i^n + Σ(flux_in) - Σ(flux_out) for interior cells.
+  The fixed right-boundary W- reservoir is intentionally non-conservative with
+  respect to the finite computational domain: it supplies the inward boundary
+  flux while its prescribed initial value is restored after the update.
 
 MPI PARALLELIZATION:
 --------------------
@@ -89,6 +102,13 @@ Memory Optimization:
 - On-demand data reading: No global energy arrays stored
 - Minimal memory footprint: O(1) per processed segment
 - Neighbor data read only when calculating cross-process fluxes
+
+IMPORTANT NUMERICAL NOTE:
+-------------------------
+The routine is an explicit finite-volume update and must be called with a time
+step that satisfies the Alfvén CFL condition.  The driver should subcycle this
+advection step when the particle time step is larger than the global value
+returned by GetGlobalMaxStableTimeStep().
 
 PARAMETERS:
 -----------
@@ -123,11 +143,12 @@ TurbulenceLevelBeginning [IN]:
   Typical range: 0.01-0.5 (1% to 50% of magnetic energy)
 
 TurbulenceLevelEnd [IN]:
-  Type: double  
+  Type: double
   Units: dimensionless
-  Description: Turbulence level at field line outer boundary (heliosphere)
-  Physical meaning: Fraction of magnetic field energy density B²/(2μ₀)
-  Typical range: 0.01-0.5 (1% to 50% of magnetic energy)
+  Description: Retained for backward-compatible call signatures.  The current
+  production boundary condition no longer injects W- from this value.  Instead,
+  the initial W- stored in the last segment is used as a fixed pre-existing
+  outer-boundary reservoir and is restored after the update.
 
 REQUIREMENTS:
 -------------
@@ -147,7 +168,7 @@ NUMERICAL STABILITY:
 CFL Condition: dt < min(Δx_i / V_A_i) for all segments i
 Flux Limiting: Prevents energy from becoming negative
 Upwind Scheme: Maintains numerical stability for wave transport
-Conservative Updates: Preserves total energy during interior advection
+Conservative Updates: Preserves total energy during interior advection; the fixed right-boundary W- reservoir is a prescribed boundary condition
 
 TYPICAL USAGE:
 --------------
@@ -158,7 +179,7 @@ std::vector<std::vector<double>> DeltaE_plus, DeltaE_minus;
 // Set simulation parameters  
 double dt = 10.0;  // 10 second time step
 double turb_inner = 0.1;  // 10% turbulence at inner boundary
-double turb_outer = 0.05; // 5% turbulence at outer boundary
+double turb_outer = 0.0;  // retained argument; W- is held at its initial boundary value
 
 // Perform wave energy advection
 SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAllFieldLines(
@@ -194,10 +215,113 @@ bool SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode=true;
 namespace SEP {
 namespace AlfvenTurbulence_Kolmogorov {
 
+namespace {
+
+// -----------------------------------------------------------------------------
+// Fixed right-boundary W- state
+// -----------------------------------------------------------------------------
+// The right boundary represents the outer end of an open heliospheric field line.
+// For the requested boundary condition, the inward-propagating wave population
+// W- at this boundary is not a time-dependent numerical source and is not an
+// open-outflow value that is allowed to decay.  Instead, it is the pre-existing
+// ambient turbulence prescribed by the initial condition.  We therefore record
+// the initial cell-integrated E- value in the last segment of each field line
+// and restore that value after each turbulence operator.
+//
+// The arrays are indexed by AMPS field-line number.  Only the MPI rank that owns
+// the last segment of a field line stores/enforces the value for that line; other
+// ranks leave the marker unset.  This avoids modifying non-local AMPS data.
+std::vector<double> RightBoundaryInitialEminus;
+std::vector<char>   RightBoundaryInitialEminusIsSet;
+int RightBoundaryInitialNFieldLine = -1;
+
+void EnsureRightBoundaryStorage() {
+    if (RightBoundaryInitialNFieldLine != PIC::FieldLine::nFieldLine) {
+        RightBoundaryInitialEminus.assign(PIC::FieldLine::nFieldLine, 0.0);
+        RightBoundaryInitialEminusIsSet.assign(PIC::FieldLine::nFieldLine, 0);
+        RightBoundaryInitialNFieldLine = PIC::FieldLine::nFieldLine;
+    }
+}
+
+} // anonymous namespace
+
+void ResetRightBoundaryEminusInitialCondition() {
+    // Clear the cached boundary state.  Use this if the field lines are rebuilt
+    // or if a new turbulence initial condition is generated during the same run.
+    RightBoundaryInitialEminus.clear();
+    RightBoundaryInitialEminusIsSet.clear();
+    RightBoundaryInitialNFieldLine = -1;
+}
+
+void CaptureRightBoundaryEminusInitialCondition(
+    PIC::Datum::cDatumStored& WaveEnergy
+) {
+    EnsureRightBoundaryStorage();
+
+    for (int field_line_idx = 0; field_line_idx < PIC::FieldLine::nFieldLine; ++field_line_idx) {
+        PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
+        if (!field_line) continue;
+
+        const int num_segments = field_line->GetTotalSegmentNumber();
+        if (num_segments <= 0) continue;
+
+        PIC::FieldLine::cFieldLineSegment* segment_last = field_line->GetSegment(num_segments - 1);
+        if (!segment_last || segment_last->Thread != PIC::ThisThread) continue;
+
+        double* wave_data = segment_last->GetDatum_ptr(WaveEnergy);
+        if (!wave_data) continue;
+
+        // Store the initial cell-integrated inward wave energy E- [J].  The
+        // output may be interpreted as W- after division by segment volume, but
+        // the transported AMPS datum itself stores cell-integrated energies.
+        // Preserving E- keeps the boundary datum fixed; for a static field-line
+        // geometry this is equivalent to preserving the boundary W- value.
+        RightBoundaryInitialEminus[field_line_idx] = wave_data[1];
+        RightBoundaryInitialEminusIsSet[field_line_idx] = 1;
+    }
+}
+
+void EnforceRightBoundaryEminusInitialCondition(
+    PIC::Datum::cDatumStored& WaveEnergy
+) {
+    EnsureRightBoundaryStorage();
+
+    for (int field_line_idx = 0; field_line_idx < PIC::FieldLine::nFieldLine; ++field_line_idx) {
+        PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
+        if (!field_line) continue;
+
+        const int num_segments = field_line->GetTotalSegmentNumber();
+        if (num_segments <= 0) continue;
+
+        PIC::FieldLine::cFieldLineSegment* segment_last = field_line->GetSegment(num_segments - 1);
+        if (!segment_last || segment_last->Thread != PIC::ThisThread) continue;
+
+        double* wave_data = segment_last->GetDatum_ptr(WaveEnergy);
+        if (!wave_data) continue;
+
+        // If the user forgot to call CaptureRightBoundaryEminusInitialCondition()
+        // explicitly after initialization, capture the first value encountered.
+        // In the normal driver this path should not be used because the capture
+        // is done immediately after InitializeWaveEnergyFromPhysicalParameters().
+        if (!RightBoundaryInitialEminusIsSet[field_line_idx]) {
+            RightBoundaryInitialEminus[field_line_idx] = wave_data[1];
+            RightBoundaryInitialEminusIsSet[field_line_idx] = 1;
+        }
+
+        // Apply the fixed boundary condition only to E-/W-.  E+ at the outer
+        // boundary remains an outflow quantity and can leave the domain normally.
+        wave_data[1] = RightBoundaryInitialEminus[field_line_idx];
+
+        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+            validate_numeric(wave_data[1], __LINE__, __FILE__);
+        }
+    }
+}
+
 void AdvectTurbulenceEnergyAllFieldLines(
     std::vector<std::vector<double>>& DeltaE_plus,      // Energy changes for E+ waves [field_line][segment]
     std::vector<std::vector<double>>& DeltaE_minus,     // Energy changes for E- waves [field_line][segment]
-    const PIC::Datum::cDatumStored& WaveEnergyDensity,  // Wave energy datum
+    PIC::Datum::cDatumStored& WaveEnergyDensity,        // Wave energy datum
     double dt,                                          // Time step [s]
     double TurbulenceLevelBeginning,                    // Turbulence level at field line beginning
     double TurbulenceLevelEnd                           // Turbulence level at field line end
@@ -211,6 +335,13 @@ void AdvectTurbulenceEnergyAllFieldLines(
     const double proton_mass = 1.67262192e-27;  // Proton mass [kg]
     
     int processed_field_lines = 0;
+
+    // Make sure the fixed right-boundary W- cache exists.  If it has not been
+    // explicitly initialized by the driver, EnforceRightBoundaryEminusInitialCondition()
+    // below will lazily capture the first encountered value.  The driver still
+    // calls CaptureRightBoundaryEminusInitialCondition() immediately after the
+    // turbulence initial condition is generated, which is the preferred path.
+    EnsureRightBoundaryStorage();
     
     // Ensure DeltaE arrays are properly sized
     if (DeltaE_plus.size() != PIC::FieldLine::nFieldLine) {
@@ -248,10 +379,21 @@ void AdvectTurbulenceEnergyAllFieldLines(
         DeltaE_minus[field_line_idx].assign(num_segments, 0.0);
         
         // ========================================================================
-        // PROCESS INTERIOR SEGMENTS (EXCLUDING FIRST AND LAST)
+        // PROCESS ALL SEGMENTS WITH EXPLICIT BOUNDARY TREATMENT
         // ========================================================================
-        
-        // Loop through all segments except the first and the last one (inner segments only)
+        //
+        // Each local segment can lose E+ through its right face and E- through its
+        // left face.  If the neighboring segment exists, that loss is deposited in
+        // the neighbor.  The two physical boundaries are treated differently:
+        //
+        //   * Inner/left boundary: E- is allowed to leave the domain toward the Sun.
+        //   * Outer/right boundary: W- is a fixed pre-existing turbulence value.
+        //     The last segment supplies an inward E- flux to the interior, but the
+        //     same amount is NOT subtracted from the last segment.  The final
+        //     enforcement step restores the initial boundary value exactly.
+        //
+        // The explicit i>0 and i<num_segments-1 checks also avoid the old invalid
+        // calls GetSegment(-1) and GetSegment(num_segments).
         for (int i = 0; i < num_segments ; ++i) {
             PIC::FieldLine::cFieldLineSegment* segment_i = field_line->GetSegment(i);
             if (!segment_i || segment_i->Thread != PIC::ThisThread) {
@@ -342,9 +484,19 @@ void AdvectTurbulenceEnergyAllFieldLines(
                 }
             }
             
-            // Decrement outward fluxes from current segment
+            // Decrement outward fluxes from current segment.
+            //
+            // E+ is always an outflow through the right face of the source segment.
+            // E- normally leaves through the left face of the source segment, but
+            // for the last segment this would deplete the imposed outer-boundary
+            // pre-existing W- reservoir.  Therefore, for i == num_segments-1 we
+            // still use dE_minus to feed the left neighbor, but we do not subtract
+            // it from the boundary segment itself.  This is the finite-volume form
+            // of a fixed Dirichlet boundary value for W- at the right boundary.
             DeltaE_plus[field_line_idx][i] -= dE_plus;
-            DeltaE_minus[field_line_idx][i] -= dE_minus;
+            if (i != num_segments - 1) {
+                DeltaE_minus[field_line_idx][i] -= dE_minus;
+            }
 
            if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
              validate_numeric(dE_plus,__LINE__,__FILE__);
@@ -356,8 +508,10 @@ void AdvectTurbulenceEnergyAllFieldLines(
             // HANDLE INWARD FLUXES BASED ON NEIGHBOR PROCESS ASSIGNMENT
             // ====================================================================
             
-            // Check if (i-1) segment is assigned to the same process
-            PIC::FieldLine::cFieldLineSegment* segment_left = field_line->GetSegment(i-1);
+            // Check if the left neighbor exists and is assigned to the same process.
+            // For i == 0 there is no left neighbor: E- leaving through this face is
+            // an open inner-boundary outflow and should not be deposited anywhere.
+            PIC::FieldLine::cFieldLineSegment* segment_left = (i > 0) ? field_line->GetSegment(i-1) : nullptr;
             if (segment_left && segment_left->Thread == PIC::ThisThread) {
                 // Same process: add dE- to DeltaE_minus[i-1]
                 DeltaE_minus[field_line_idx][i-1] += dE_minus;
@@ -411,8 +565,10 @@ void AdvectTurbulenceEnergyAllFieldLines(
                 }
             }
             
-            // Check if (i+1) segment is assigned to the same process
-            PIC::FieldLine::cFieldLineSegment* segment_right = field_line->GetSegment(i+1);
+            // Check if the right neighbor exists and is assigned to the same process.
+            // For the last segment there is no right neighbor: E+ leaving through
+            // this face is an open outer-boundary outflow.
+            PIC::FieldLine::cFieldLineSegment* segment_right = (i < num_segments - 1) ? field_line->GetSegment(i+1) : nullptr;
             if (segment_right && segment_right->Thread == PIC::ThisThread) {
                 // Same process: add dE+ to DeltaE_plus[i+1]
                 DeltaE_plus[field_line_idx][i+1] += dE_plus;
@@ -496,46 +652,32 @@ void AdvectTurbulenceEnergyAllFieldLines(
             }
         }
         
-        // Process segment (num_segments - 1) (end of field line)
-        PIC::FieldLine::cFieldLineSegment* segment_last = field_line->GetSegment(num_segments - 1);
-        if (segment_last && segment_last->Thread == PIC::ThisThread) {
-            // Calculate inward E- flux from "end of field line BC"
-            PIC::FieldLine::cFieldLineVertex* vertex_end = segment_last->GetEnd();
-            if (vertex_end) {
-                double* x_end = vertex_end->GetX();
-                
-                double* B0_end = vertex_end->GetDatum_ptr(FL::DatumAtVertexMagneticField);
-                double n_sw_end;
-                vertex_end->GetDatum(FL::DatumAtVertexPlasmaDensity, &n_sw_end);
-                
-                if (B0_end && n_sw_end > 0.0) {
-                    double B_mag_end = std::sqrt(B0_end[0]*B0_end[0] + 
-                                                B0_end[1]*B0_end[1] + 
-                                                B0_end[2]*B0_end[2]);
-                    double rho_end = n_sw_end * proton_mass;
-                    double V_A_end = B_mag_end / std::sqrt(mu0 * rho_end);
-                    
-                    double radius_end = SEP::FieldLine::MagneticTubeRadius(x_end, field_line_idx);
-                    double boundary_area = M_PI * radius_end * radius_end;
-                    
-                    // Calculate reference energy density from magnetic field energy
-                    double reference_energy_density = (B_mag_end * B_mag_end) / (2.0 * mu0);
-                    double wave_energy_density_end = TurbulenceLevelEnd * TurbulenceLevelEnd * reference_energy_density;
-
-                    double wave_energy_minus_density_end=0.5*wave_energy_density_end; 
-                    double flux_rate_incoming = V_A_end * wave_energy_minus_density_end * boundary_area;
-                    double energy_flux_incoming = flux_rate_incoming * dt;
-                    
-                    DeltaE_minus[field_line_idx][num_segments - 1] += energy_flux_incoming;
-                }
-            }
-        }
+        // Process segment (num_segments - 1) (end of field line).
+        //
+        // The requested boundary condition is not an open W- outflow and not a
+        // time-growing imposed W- source.  Instead, the last segment contains the
+        // pre-existing inward-propagating turbulence specified by the initial
+        // condition.  Its E-/W- value is held fixed.
+        //
+        // Consequence for the finite-volume update:
+        //   - E+ can leave the last segment through the right boundary.
+        //   - The fixed last-segment E- value can provide an inward flux to the
+        //     interior through the interface with segment num_segments-2.
+        //   - No additional DeltaE_minus is added here from TurbulenceLevelEnd.
+        //
+        // The TurbulenceLevelEnd argument is retained only for backward-compatible
+        // call signatures.  To change the fixed boundary value, change the initial
+        // turbulence profile before calling CaptureRightBoundaryEminusInitialCondition().
+        (void)TurbulenceLevelEnd;
         
         // ========================================================================
         // ADJUST ENERGY LEVELS FOR ALL LOCAL SEGMENTS
         // ========================================================================
         
-        // Loop through all segments and adjust the energy levels
+        // Loop through all segments and adjust the energy levels.
+        // The fixed right-boundary W- value is restored after this loop so that
+        // round-off, coupling to neighboring segments, or future edits in this
+        // routine cannot drift the boundary away from the captured initial value.
         for (int i = 0; i < num_segments; ++i) {
             PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(i);
             if (!segment || segment->Thread != PIC::ThisThread) {
@@ -554,14 +696,22 @@ void AdvectTurbulenceEnergyAllFieldLines(
             }
         }
         
+        // Re-apply the fixed outer-boundary W- condition after the advection
+        // update.  This guarantees that the last segment remains equal to the
+        // pre-existing initial turbulence value, while the interior still feels
+        // the inward flux supplied by that boundary value.
+        EnforceRightBoundaryEminusInitialCondition(WaveEnergyDensity);
+
         processed_field_lines++;
     }
     
     if (rank == 0) {
         std::cout << "Memory-optimized turbulence energy advection completed for " << processed_field_lines 
                   << " field lines" << std::endl;
-        std::cout << "Boundary turbulence levels - Beginning: " << TurbulenceLevelBeginning 
-                  << ", End: " << TurbulenceLevelEnd << std::endl;
+        std::cout << "Boundary turbulence levels - Beginning: " << TurbulenceLevelBeginning
+                  << ", Right-boundary W- fixed to captured initial value" << std::endl;
+        std::cout << "Outer turbulence boundary: fixed pre-existing W- reservoir; "
+                  << "no time-growing W- source is injected" << std::endl;
         std::cout << "DeltaE arrays populated for particle-wave coupling" << std::endl;
     }
 }

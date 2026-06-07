@@ -13,6 +13,8 @@
 #include <iostream>
 #include <iostream>
 #include <fstream>
+#include <algorithm>
+#include <cmath>
 #include <time.h>
 
 #include <sys/time.h>
@@ -27,6 +29,7 @@
 //the particle class
 #include "constants.h"
 #include "sep.h"
+#include "util/sep_cli.h"
 
 #include "tests.h"
 
@@ -107,6 +110,24 @@ void advance_sw1d(double dt) {
 int main(int argc,char **argv) {
   //      MPI_Init(&argc,&argv);
 
+  // --------------------------------------------------------------------------
+  // Parse standalone-driver command-line options before the AMPS/SEP model is
+  // initialized.  The CLI is intentionally kept in srcSEP/util so the parsing
+  // logic is separated from the physics driver and can be reused or extended
+  // without cluttering main.cpp.  If the user requests help, exit immediately
+  // before reading input files or allocating AMPS data structures.
+  // --------------------------------------------------------------------------
+  SEP::Util::CLI::Options cli_options;
+  if (!SEP::Util::CLI::ParseCommandLine(argc, argv, cli_options, std::cout, std::cerr)) {
+    if (PIC::ThisThread == 0) SEP::Util::CLI::PrintHelp(argv[0], std::cerr);
+    return 1;
+  }
+
+  if (cli_options.printHelp) {
+    if (PIC::ThisThread == 0) SEP::Util::CLI::PrintHelp(argv[0], std::cout);
+    return 0;
+  }
+
 
   SEP::ShockModelType=SEP::cShockModelType::SwCme1d;
 
@@ -141,10 +162,16 @@ int main(int argc,char **argv) {
   //set up datum to store distance of a field line vertex to the location of the shock 
   PIC::FieldLine::UserDefinedfDataProcessingManager=SEP::FieldLine::CalculateVertexShockDistances; 
 
-  //the up the model 
-  SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode=true;
-  SEP::AlfvenTurbulence_Kolmogorov::Cascade::active=true;
-  SEP::AlfvenTurbulence_Kolmogorov::Reflection::active=true;
+  // --------------------------------------------------------------------------
+  // Configure the optional turbulence physics from command-line options.
+  // Historically the standalone driver hard-coded all three switches to true:
+  //   ParticleCouplingMode = true, Cascade::active = true, Reflection::active = true.
+  // ApplyTurbulenceOptions() preserves those defaults but allows batch runs to
+  // disable individual physics terms without recompiling.  The summary printed
+  // on MPI rank 0 records the exact run-time configuration in the job log.
+  // --------------------------------------------------------------------------
+  SEP::Util::CLI::ApplyTurbulenceOptions(cli_options);
+  if (PIC::ThisThread == 0) SEP::Util::CLI::PrintTurbulenceOptions(cli_options, std::cout);
 
  
   amps_init_mesh();
@@ -153,8 +180,28 @@ int main(int argc,char **argv) {
   //init the Alfven turbulence IC
   if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::ModelInit::Init(); 
 
-  if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) { 
-    TestManager();
+  // --------------------------------------------------------------------------
+  // Optional development diagnostics.
+  //
+  // TestManager() performs standalone field-line/model tests and is useful when
+  // debugging the SEP/turbulence implementation.  It should not run by default
+  // in production simulations because it can add extra diagnostic work/output
+  // and may change the intended run flow.  The CLI therefore leaves it OFF
+  // unless explicitly requested with one of:
+  //   --test-manager on
+  //   --testmanager on
+  //   --run-test-manager
+  // The compile-time field-line mode check is kept because TestManager() relies
+  // on the field-line infrastructure being present.
+  // --------------------------------------------------------------------------
+  if (cli_options.runTestManager) {
+    if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) {
+      TestManager();
+    }
+    else if (PIC::ThisThread == 0) {
+      std::cout << "WARNING: --run-test-manager/--test-manager was requested, "
+                << "but _PIC_FIELD_LINE_MODE_ is OFF; TestManager() is skipped.\n";
+    }
   }
 
   int TotalIterations=(_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_) ? PIC::RequiredSampleLength+10 : 100000001;  
@@ -184,6 +231,18 @@ int main(int argc,char **argv) {
 
   SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,0);
   SEP::AlfvenTurbulence_Kolmogorov::TestPrintEPlusValues(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,1);
+
+  // Capture the right-boundary W- initial condition after the turbulence wave
+  // energy has been initialized and the edge data have been synchronized.  The
+  // last segment then represents pre-existing heliospheric inward-propagating
+  // turbulence.  Subsequent turbulence operators restore this value so the
+  // boundary does not drain away by advection and does not grow from an
+  // artificial injected source.
+  SEP::AlfvenTurbulence_Kolmogorov::ResetRightBoundaryEminusInitialCondition();
+  SEP::AlfvenTurbulence_Kolmogorov::CaptureRightBoundaryEminusInitialCondition(
+      SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+  SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
+      SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
 
 
   //set background plasma density 
@@ -373,18 +432,89 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
 
       SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::WaveParticleCouplingManager(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
 		      PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
+
+      // The wave-particle coupling operator updates E+ and E- in every segment.
+      // Re-apply the fixed right-boundary W- condition immediately afterward so
+      // the boundary remains equal to the pre-existing initial turbulence state.
+      SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
+          SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
       }
 
 
-      //advect turbulence energy 
-      SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAllFieldLines(DeltaE_plus, DeltaE_minus,SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
-			      PIC::ParticleWeightTimeStep::GlobalTimeStep[0],0.01,0.01);
+      // ----------------------------------------------------------------------
+      // Advect turbulence energy along field lines.
+      //
+      // The explicit wave-energy advection step is limited by an Alfven-speed
+      // CFL condition.  The particle global time step can be much larger than
+      // the Alfven crossing time of the smallest field-line segment, especially
+      // near boundaries.  Advancing the turbulence with the full particle time
+      // step can therefore pile energy up at the edge cells.  Subcycle the
+      // turbulence advection with the global stable time step returned by
+      // GetGlobalMaxStableTimeStep().  The function already includes its own
+      // safety factor when estimating the CFL limit.
+      //
+      // The last segment of each field line is treated as a fixed reservoir of
+      // pre-existing inward-propagating turbulence W-.  The initial W- value is
+      // captured after the turbulence initial condition is generated and is
+      // restored after each turbulence operator.  This prevents the right
+      // boundary from either draining away by advection or growing by an
+      // artificial source.  The TurbulenceLevelEnd argument is retained only for
+      // backward-compatible call signatures and is not used to inject W-.
+      // ----------------------------------------------------------------------
+      {
+        const double dt_total_turbulence = PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+        double dt_done_turbulence = 0.0;
+
+        while (dt_done_turbulence < dt_total_turbulence) {
+          double dt_cfl_turbulence = SEP::AlfvenTurbulence_Kolmogorov::GetGlobalMaxStableTimeStep();
+
+          // Guard against invalid CFL estimates.  This should only happen if no
+          // valid local field-line segment is found, but using the remaining
+          // time avoids an infinite loop and preserves the previous behavior in
+          // that degenerate case.
+          if (dt_cfl_turbulence <= 0.0 || !std::isfinite(dt_cfl_turbulence)) {
+            dt_cfl_turbulence = dt_total_turbulence - dt_done_turbulence;
+          }
+
+          const double dt_subcycle = std::min(dt_cfl_turbulence, dt_total_turbulence - dt_done_turbulence);
+
+          SEP::AlfvenTurbulence_Kolmogorov::AdvectTurbulenceEnergyAllFieldLines(
+              DeltaE_plus, DeltaE_minus,
+              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
+              dt_subcycle,
+              0.01,  // inner-boundary W+ source level
+              0.0);  // retained argument; right-boundary W- is fixed to its captured initial value
+
+          // The advection operator updates only locally-owned field-line segments.
+          // The next subcycle reads neighbor states to compute finite-volume face
+          // fluxes.  Refresh the ghost/edge copies after every subcycle; otherwise
+          // MPI-domain interfaces use stale E+/E- values during all later subcycles,
+          // producing artificial jumps and incorrect interior evolution of W+/W-.
+          PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(
+              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+
+          // MPI synchronization may overwrite the locally prescribed boundary-cell
+          // value on the owner rank.  Restore the fixed right-boundary W- density
+          // immediately after synchronization so both diagnostics and subsequent
+          // flux calculations use the intended pre-existing turbulence value.
+          SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
+              SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+
+          dt_done_turbulence += dt_subcycle;
+        }
+      }
 
       //model the effect of wave reflection 
       if (SEP::AlfvenTurbulence_Kolmogorov::Reflection::active==true) {
         double C_reflection=0.6;
 
-        SEP::AlfvenTurbulence_Kolmogorov::Reflection::ReflectTurbulenceEnergyAllFieldLines(PIC::ParticleWeightTimeStep::GlobalTimeStep[0],C_reflection,0.0,false); 
+        SEP::AlfvenTurbulence_Kolmogorov::Reflection::ReflectTurbulenceEnergyAllFieldLines(PIC::ParticleWeightTimeStep::GlobalTimeStep[0],C_reflection,0.0,false);
+
+        // Reflection can convert part of W+ into W- in the boundary segment.
+        // Keep the last-segment W- fixed to the captured initial value so the
+        // boundary condition remains prescribed rather than dynamically evolved.
+        SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
+            SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
       }
 
       // Configure cascade
@@ -401,11 +531,23 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableCrossHelicityModulation(true);
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::EnableTwoSweepIMEX(true);
         SEP::AlfvenTurbulence_Kolmogorov::Cascade::CascadeTurbulenceEnergyAllFieldLines(PIC::ParticleWeightTimeStep::GlobalTimeStep[0],/*enable_logging=*/ false);
+
+        // Nonlinear cascade/damping changes both Elsasser wave populations.
+        // Restore only the outer-boundary W- value; all interior segments and
+        // the outer-boundary W+ outflow remain governed by the cascade update.
+        SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
+            SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
       }
 
     
       //scatter wave energy   
       PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+
+      // Edge synchronization can refresh data stored on field-line boundaries.
+      // Enforce the prescribed right-boundary W- value once more before derived
+      // wave-energy-density diagnostics are calculated.
+      SEP::AlfvenTurbulence_Kolmogorov::EnforceRightBoundaryEminusInitialCondition(
+          SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
 
 
       //calculate the wave energy density 

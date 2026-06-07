@@ -76,15 +76,18 @@ namespace AlfvenTurbulence_Kolmogorov {
      *        Dimensionless fraction of magnetic field energy density B²/(2μ₀)
      *        Typical range: 0.01-0.5 (1% to 50% of magnetic energy)
      * 
-     * @param TurbulenceLevelEnd [IN] Outer boundary turbulence level  
-     *        Dimensionless fraction of magnetic field energy density B²/(2μ₀)
-     *        Typical range: 0.01-0.5 (1% to 50% of magnetic energy)
+     * @param TurbulenceLevelEnd [IN] Retained for backward-compatible call
+     *        signatures.  The production boundary condition no longer injects
+     *        W- from this value.  Instead, W- in the last segment is held fixed
+     *        to the captured initial pre-existing turbulence value.
      * 
      * @note Function is MPI-parallel safe: only modifies locally-owned segments
      * @note Memory optimized: reads wave energy data on-demand
-     * @note Energy conservative: strict conservation during interior advection
+     * @note Interior conservative: fixed boundary reservoir can exchange energy with domain
      * 
-     * @warning Time step must satisfy CFL stability condition
+     * @warning Time step must satisfy CFL stability condition.  If the particle
+     *          time step is larger than GetGlobalMaxStableTimeStep(), the driver
+     *          should subcycle this routine.
      * @warning Requires valid magnetic field and plasma density data at vertices
      * 
      * @see Example usage in turbulence_advection_kolmogorov.cpp
@@ -94,10 +97,49 @@ namespace AlfvenTurbulence_Kolmogorov {
     void AdvectTurbulenceEnergyAllFieldLines(
         std::vector<std::vector<double>>& DeltaE_plus,
         std::vector<std::vector<double>>& DeltaE_minus,
-        const PIC::Datum::cDatumStored& WaveEnergyDensity,
+        PIC::Datum::cDatumStored& WaveEnergyDensity,
         double dt,
         double TurbulenceLevelBeginning,
         double TurbulenceLevelEnd
+    );
+
+    /**
+     * @brief Reset the cached fixed right-boundary W- state.
+     *
+     * Use this before regenerating the turbulence initial condition or after
+     * rebuilding field lines.  The cache is indexed by field-line number and is
+     * filled by CaptureRightBoundaryEminusInitialCondition().
+     */
+    void ResetRightBoundaryEminusInitialCondition();
+
+    /**
+     * @brief Capture the initial pre-existing W- value at the right boundary.
+     *
+     * The turbulence model stores cell-integrated wave energies in the AMPS
+     * datum: wave_data[0] = E+ and wave_data[1] = E-.  This routine stores
+     * wave_data[1] from the last segment of each field line owned by the local
+     * MPI rank.  That value is later restored by
+     * EnforceRightBoundaryEminusInitialCondition(), making the outer boundary
+     * a fixed reservoir of pre-existing inward-propagating turbulence.
+     *
+     * Call this immediately after InitializeWaveEnergyFromPhysicalParameters()
+     * and the required MPI edge synchronization.
+     */
+    void CaptureRightBoundaryEminusInitialCondition(
+        PIC::Datum::cDatumStored& WaveEnergy
+    );
+
+    /**
+     * @brief Enforce the fixed right-boundary W- initial condition.
+     *
+     * Restores the cached initial E-/W- value in the last segment of each field
+     * line.  This should be called after turbulence operators that can modify
+     * wave_data[1], including wave-particle coupling, advection, reflection,
+     * and nonlinear cascade.  Only E-/W- is fixed; E+ remains an outer-boundary
+     * outflow quantity.
+     */
+    void EnforceRightBoundaryEminusInitialCondition(
+        PIC::Datum::cDatumStored& WaveEnergy
     );
 
     // ========================================================================
@@ -319,7 +361,7 @@ void SimulationTimeStep() {
         WaveEnergyDensity, 
         10.0,   // 10 second time step
         0.1,    // 10% turbulence at inner boundary
-        0.05    // 5% turbulence at outer boundary  
+        0.0     // retained argument; W- fixed to captured initial boundary value
     );
     
     // Use for particle coupling
@@ -362,7 +404,7 @@ void AdvancedSimulationStep(double dt_requested) {
         WaveEnergyDensity, 
         dt_actual,
         0.1,    // 10% turbulence at inner boundary (corona)
-        0.05    // 5% turbulence at outer boundary (heliosphere)
+        0.0     // retained argument; W- fixed to captured initial boundary value
     );
     
     // 5. Check energy conservation
@@ -433,7 +475,7 @@ void MainSimulationLoop() {
             DeltaE_plus, DeltaE_minus,
             WaveEnergyDensity, dt,
             GetTurbulenceLevelAtSun(t),        // Time-dependent boundary condition
-            GetTurbulenceLevelAtHeliosphere(t) // Time-dependent boundary condition
+            0.0  // retained argument; W- fixed to captured initial boundary value
         );
         
         // 5. Apply particle physics with wave coupling
