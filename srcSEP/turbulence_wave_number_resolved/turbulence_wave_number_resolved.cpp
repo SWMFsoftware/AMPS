@@ -46,6 +46,12 @@ wave-number bin, not pointwise spectral densities.
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <cstdio>
+#include <sstream>
+#include <iomanip>
+#include <fstream>
 #include <limits>
 #include <vector>
 
@@ -667,6 +673,157 @@ double GetGlobalMaxStableTimeStep() {
   // model, so the spectral solver can reuse the integrated solver's global CFL
   // estimate exactly.
   return SEP::AlfvenTurbulence_Kolmogorov::GetGlobalMaxStableTimeStep();
+}
+
+
+void OutputSpectrumTecplot2D(long int iteration, double simulation_time) {
+  // Only one MPI rank should create the diagnostic file.  The spectral datum is
+  // synchronized with MPIAllGatherDatumStoredAtEdge() before this writer is
+  // called from the main loop, so rank 0 can traverse FieldLinesAll and print a
+  // complete Tecplot view without every rank opening the same file.
+  if (PIC::ThisThread != 0) return;
+
+  // The writer is meaningful only for the spectral model.  Keeping the guard in
+  // the routine itself makes accidental calls harmless when the legacy
+  // branch-integrated turbulence model is selected from the CLI.
+  if (!IsActive()) return;
+
+  // Store spectral diagnostics in a dedicated subdirectory of the usual AMPS
+  // output directory.  That keeps the potentially large 2-D spectrum files
+  // separate from the compact field-line output amps.FieldLines.out=*.dat.
+  const char* base_dir = (PIC::OutputDataFileDirectory && PIC::OutputDataFileDirectory[0] != '\0')
+                         ? PIC::OutputDataFileDirectory : ".";
+
+  char spectrum_dir[1024];
+  std::snprintf(spectrum_dir,sizeof(spectrum_dir),"%s/turbulence_wave_number_resolved",base_dir);
+
+  // POSIX mkdir is used for consistency with the rest of the AMPS/SEP source
+  // tree.  Ignore EEXIST-like failures here: if the directory already exists,
+  // the following file open will succeed; if creation truly failed, the open
+  // below will report the problem.
+  mkdir(spectrum_dir,0777);
+
+  char fname[1200];
+  std::snprintf(fname,sizeof(fname),"%s/spectrum.iter=%08ld.dat",spectrum_dir,iteration);
+
+  std::ofstream fout(fname);
+  if (!fout.is_open()) {
+    std::cerr << "WARNING: could not open wave-number-resolved turbulence spectrum output file '"
+              << fname << "' for writing.\n";
+    return;
+  }
+
+  // Put the shock location directly into the Tecplot title.  This mirrors the
+  // field-line title hook used for amps.FieldLines.out=*.dat and lets a Tecplot
+  // animation identify where the CME/shock is relative to the spectral
+  // turbulence features at the same simulation time.
+  double r_shock = 0.0;
+  const char* shock_model_name = "unknown";
+
+  switch (SEP::ShockModelType) {
+  case SEP::cShockModelType::Analytic1D:
+    r_shock = SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
+    shock_model_name = "analytic-1D";
+    break;
+  case SEP::cShockModelType::SwCme1d:
+    r_shock = SEP::SW1DAdapter::gState.r_sh_m;
+    shock_model_name = "SW-CME-1D";
+    break;
+  }
+
+  fout.setf(std::ios::scientific);
+  fout << std::setprecision(16);
+
+  fout << "TITLE=\"Wave-number-resolved Alfven turbulence spectrum; "
+       << "time=" << simulation_time << " s; "
+       << "shock model=" << shock_model_name << "; "
+       << "R_sh=" << r_shock << " m = " << (r_shock/_AU_)
+       << " AU = " << (r_shock/_SUN__RADIUS_) << " R_s\"\n";
+
+  fout << "VARIABLES=\"s[m]\",\"s[AU]\",\"k[m^-1]\",\"log10(k)\","
+       << "\"W+[J/m^3 per log-k bin]\",\"W-[J/m^3 per log-k bin]\",\"sigma_c(k)\"\n";
+
+  // Each field line is written as a separate ordered 2-D zone.  The horizontal
+  // Tecplot index I corresponds to segment-center distance from the beginning of
+  // the field line.  The vertical index J corresponds to the logarithmic k-grid.
+  // Data are written with J as the outer loop and I as the inner loop, so the
+  // first row of a zone is W(s,k_min) along the field line, followed by the next
+  // wave-number row.
+  for (int field_line_idx=0; field_line_idx<PIC::FieldLine::nFieldLine; ++field_line_idx) {
+    PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
+    if (!field_line) continue;
+
+    const int nseg = field_line->GetTotalSegmentNumber();
+    if (nseg <= 0) continue;
+
+    std::vector<double> s_center(nseg,0.0);
+    std::vector<double> volume(nseg,0.0);
+    std::vector<double*> spectrum_ptr(nseg,nullptr);
+
+    double s_begin = 0.0;
+    for (int i=0; i<nseg; ++i) {
+      PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(i);
+      if (!segment) {
+        s_center[i] = s_begin;
+        volume[i] = 0.0;
+        spectrum_ptr[i] = nullptr;
+        continue;
+      }
+
+      double segment_length = 0.0;
+      PIC::FieldLine::cFieldLineVertex* begin_vertex = segment->GetBegin();
+      PIC::FieldLine::cFieldLineVertex* end_vertex = segment->GetEnd();
+      if (begin_vertex && end_vertex) {
+        double* xb = begin_vertex->GetX();
+        double* xe = end_vertex->GetX();
+        if (xb && xe) {
+          const double dx = xe[0]-xb[0];
+          const double dy = xe[1]-xb[1];
+          const double dz = xe[2]-xb[2];
+          segment_length = std::sqrt(dx*dx + dy*dy + dz*dz);
+        }
+      }
+
+      // The spectrum is stored as segment-integrated energy per logarithmic
+      // wave-number bin.  To output a density, divide each bin by exactly the
+      // same magnetic-tube segment volume used for the compact W+,W- diagnostics.
+      s_center[i] = s_begin + 0.5*segment_length;
+      volume[i] = SEP::FieldLine::GetSegmentVolume(segment,field_line_idx);
+      spectrum_ptr[i] = segment->GetDatum_ptr(SpectralWaveEnergy);
+
+      s_begin += segment_length;
+    }
+
+    fout << "ZONE T=\"FieldLine " << field_line_idx << "\", I=" << nseg
+         << ", J=" << NK << ", DATAPACKING=POINT\n";
+
+    for (int j=0; j<NK; ++j) {
+      const double k = KCenter(j);
+      const double log10k = (k > 0.0) ? std::log10(k) : -300.0;
+
+      for (int i=0; i<nseg; ++i) {
+        double Wplus = 0.0;
+        double Wminus = 0.0;
+
+        if (spectrum_ptr[i] && volume[i] > 0.0) {
+          Wplus  = std::max(0.0,spectrum_ptr[i][OffsetPlus(j)]) / volume[i];
+          Wminus = std::max(0.0,spectrum_ptr[i][OffsetMinus(j)]) / volume[i];
+        }
+
+        const double Wsum = Wplus + Wminus;
+        const double sigma_c = (Wsum > 0.0) ? (Wplus-Wminus)/Wsum : 0.0;
+
+        fout << s_center[i] << ' ' << (s_center[i]/_AU_) << ' '
+             << k << ' ' << log10k << ' '
+             << Wplus << ' ' << Wminus << ' ' << sigma_c << "\n";
+      }
+    }
+  }
+
+  fout.close();
+
+  std::cout << "Wrote wave-number-resolved turbulence spectrum Tecplot file: "
+            << fname << "\n";
 }
 
 void WaveParticleCouplingManager(PIC::Datum::cDatumStored& IntegratedWaveEnergy, double dt) {

@@ -678,6 +678,32 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
       //calculate the wave energy density 
       CalculateWaveEnergyDensity();
 
+      // --------------------------------------------------------------------
+      // Optional 2-D spectral turbulence diagnostics.
+      //
+      // This output exists only for the wave-number-resolved model because the
+      // legacy model does not store E+(k_j) and E-(k_j).  The diagnostic is
+      // intentionally controlled by a CLI cadence rather than written every
+      // iteration: one file contains all field lines, all segments, and all
+      // 128 wave-number bins, so output every time step can become large.
+      //
+      // The call is placed here, after all wave-energy source/transport terms
+      // and after CalculateWaveEnergyDensity(), so the compact W+,W-,sigma_c
+      // field-line output and the spectral W±(s,k),sigma_c(s,k) output refer
+      // to the same turbulence state.  The shock model was advanced near the
+      // beginning of this iteration, so the output title includes the current
+      // shock location at this simulation time.
+      // --------------------------------------------------------------------
+      if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive() &&
+          cli_options.spectralOutputInterval > 0 &&
+          ((niter+1) % cli_options.spectralOutputInterval == 0)) {
+        PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(
+            SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergy);
+
+        SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::OutputSpectrumTecplot2D(
+            niter+1,SimulationTime);
+      }
+
 /*
       if ((niter+1)%2==0)  {   
          char fname[300];

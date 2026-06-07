@@ -31,6 +31,13 @@ struct Options {
   // production runs, so the command-line default is intentionally OFF.
   bool runTestManager = false;
 
+  // Frequency, in main-loop iterations, for writing the large Tecplot 2-D
+  // wave-number-resolved spectrum diagnostic.  The default of 100 keeps the
+  // output volume manageable while still giving useful temporal resolution.
+  // A value of 0 disables this diagnostic completely.  The option is ignored
+  // unless the wave-number-resolved turbulence model is selected.
+  int spectralOutputInterval = 100;
+
   bool printHelp = false;
 };
 

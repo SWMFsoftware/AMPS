@@ -80,6 +80,26 @@ void AdvectSpectrumAllFieldLines(double dt, double TurbulenceLevelBeginning, dou
 // is transported at the Alfvén speed.
 double GetGlobalMaxStableTimeStep();
 
+// -----------------------------------------------------------------------------
+// Tecplot diagnostics for the wave-number-resolved model.
+// -----------------------------------------------------------------------------
+// Write a two-dimensional Tecplot POINT file containing the spectral turbulence
+// state as a function of distance from the beginning of each magnetic field line
+// and wave number.  The horizontal coordinate is the field-line arclength s at
+// the segment center.  The vertical coordinate is the logarithmic wave-number
+// grid k_j.  For each (s_i,k_j) point the file stores the wave-energy densities
+// W_+(k_j)=E_+(k_j)/V_i and W_-(k_j)=E_-(k_j)/V_i, together with the
+// normalized spectral cross helicity
+//
+//   sigma_c(k_j) = [W_+(k_j)-W_-(k_j)]/[W_+(k_j)+W_-(k_j)] .
+//
+// The routine is intentionally a diagnostic writer only: it does not change the
+// spectral or integrated turbulence state.  The caller should invoke it after
+// the spectral datum has been MPI-synchronized and after the shock model has
+// been advanced for the current time step, so that the TITLE line contains the
+// same simulation time and shock location as the data being analyzed.
+void OutputSpectrumTecplot2D(long int iteration, double simulation_time);
+
 // Wave-particle coupling for the spectral model.  Existing particle movers fill
 // G_plus_streaming[k] and G_minus_streaming[k].  This routine updates the same
 // k-bin of SpectralWaveEnergy and redistributes the corresponding wave-energy

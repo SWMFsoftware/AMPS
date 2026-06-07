@@ -2,8 +2,11 @@
 #include "../sep.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cctype>
+#include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <string>
 
 namespace SEP {
@@ -122,6 +125,34 @@ bool ParseBooleanOption(int argc, char** argv, int& i,
   return true;
 }
 
+// Parse a non-negative integer option.  This is used for diagnostic-output
+// cadence controls where zero has a useful meaning: disable that diagnostic.
+// strtol is used instead of atoi so malformed values such as "10abc" are
+// rejected rather than silently truncated.
+bool ParseNonNegativeIntegerOption(int argc, char** argv, int& i,
+                                   const std::string& option_name,
+                                   const std::string& value_from_equals,
+                                   const char* description,
+                                   int& destination,
+                                   std::ostream& err) {
+  std::string raw_value;
+  if (!GetOptionValue(argc, argv, i, option_name, value_from_equals, raw_value, err)) return false;
+
+  errno = 0;
+  char* end_ptr = nullptr;
+  const long parsed_value = std::strtol(raw_value.c_str(), &end_ptr, 10);
+
+  if (errno != 0 || end_ptr == raw_value.c_str() || (end_ptr && *end_ptr != '\0') ||
+      parsed_value < 0 || parsed_value > std::numeric_limits<int>::max()) {
+    err << "ERROR: invalid value '" << raw_value << "' for " << description
+        << ". Use a non-negative integer; 0 disables the diagnostic.\n";
+    return false;
+  }
+
+  destination = static_cast<int>(parsed_value);
+  return true;
+}
+
 } // anonymous namespace
 
 void PrintHelp(const char* program_name, std::ostream& out) {
@@ -159,6 +190,18 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  --wave-number-resolved      Shortcut for --turbulence-model wave-number-resolved.\n"
       << "  --integrated-turbulence     Shortcut for --turbulence-model integrated.\n"
       << "\n"
+      << "Wave-number-resolved spectrum output:\n"
+      << "  --spectrum-output-interval <N>\n"
+      << "                               Write the Tecplot 2-D W+/- (s,k), sigma_c(s,k)\n"
+      << "                               diagnostic every N main-loop iterations when\n"
+      << "                               --turbulence-model wave-number-resolved is active.\n"
+      << "                               Default: N=100.  Use N=0 to disable.\n"
+      << "  --spectrum-output-interval=... Same option using --option=value syntax.\n"
+      << "  --wave-number-output-interval <N>\n"
+      << "                               Alias for --spectrum-output-interval.\n"
+      << "  --turbulence-spectrum-output-interval <N>\n"
+      << "                               Alias for --spectrum-output-interval.\n"
+      << "\n"
       << "Diagnostics and development tests:\n"
       << "  --test-manager <on|off>      Enable/disable the standalone SEP TestManager()\n"
       << "                               diagnostics after AMPS/field-line initialization.\n"
@@ -174,13 +217,15 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "enable/disable, and enabled/disabled.\n"
       << "\n"
       << "Defaults:\n"
-      << "  coupling=on, cascade=on, reflection=on, turbulence-model=integrated, test-manager=off.\n"
+      << "  coupling=on, cascade=on, reflection=on, turbulence-model=integrated, test-manager=off,\n"
+      << "  spectrum-output-interval=100.\n"
       << "\n"
       << "Examples:\n"
       << "  " << exe << " --coupling off --cascade off --reflection off\n"
       << "  " << exe << " --coupling-mode=on --no-cascade --reflection=on\n"
       << "  " << exe << " --run-test-manager\n"
-      << "  " << exe << " --turbulence-model wave-number-resolved --coupling on\n";
+      << "  " << exe << " --turbulence-model wave-number-resolved --coupling on\n"
+      << "  " << exe << " --wave-number-resolved --spectrum-output-interval 25\n";
 }
 
 bool ParseCommandLine(int argc, char** argv, Options& options,
@@ -235,6 +280,18 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
       }
 
       options.turbulenceModel = parsed_model;
+      continue;
+    }
+
+    if (option_name == "--spectrum-output-interval" ||
+        option_name == "--wave-number-output-interval" ||
+        option_name == "--turbulence-spectrum-output-interval" ||
+        option_name == "--spectral-output-interval") {
+      if (!ParseNonNegativeIntegerOption(argc, argv, i, option_name, value_from_equals,
+                                         "wave-number-resolved spectrum output interval",
+                                         options.spectralOutputInterval, err)) {
+        return false;
+      }
       continue;
     }
 
@@ -344,6 +401,8 @@ void PrintTurbulenceOptions(const Options& options, std::ostream& out) {
       << "  turbulence model:              "
       << (options.turbulenceModel == Options::TurbulenceModel::WaveNumberResolved
               ? "wave-number-resolved" : "integrated") << "\n"
+      << "  spectrum output interval:      " << options.spectralOutputInterval
+      << " iteration(s)" << (options.spectralOutputInterval == 0 ? " (disabled)" : "") << "\n"
       << "  TestManager diagnostics:       " << (options.runTestManager ? "on" : "off") << "\n";
 }
 
