@@ -80,6 +80,14 @@ ModelMode TurbulenceModelMode = ModelMode::Integrated;
 // inward-wave bins.  The string name is empty because doPrint=false.
 PIC::Datum::cDatumStored SpectralWaveEnergy(2*NK,"",false);
 
+// Hidden diagnostic datum for wave-energy exchange rates.  It is intentionally
+// not printed by the generic AMPS field-line writer because the number of
+// columns would be large: two branches times several source terms times NK
+// wave-number bins.  OutputSpectrumTecplot2D() writes these rates in a dedicated
+// 2-D Tecplot file together with W_+(s,k), W_-(s,k), and sigma_c(k).
+PIC::Datum::cDatumStored SpectralWaveEnergyExchangeRate(
+    2*nSpectralEnergyExchangeRateComponents*NK,"",false);
+
 namespace {
 
 const double kTinyEnergy = 1.0e-300;
@@ -247,6 +255,53 @@ bool GetSegmentMassDensity(
 inline int OffsetPlus(int j) { return j; }
 inline int OffsetMinus(int j) { return NK+j; }
 
+// Index helper for SpectralWaveEnergyExchangeRate.  All exchange-rate terms use
+// the same branch/k layout as SpectralWaveEnergy, but include an additional
+// component index that identifies the physical process.  The helper is kept in
+// one place so future diagnostics do not accidentally mix branch, component,
+// and wave-number offsets.
+inline int RateOffset(int branch, int component, int j) {
+  return ((branch*nSpectralEnergyExchangeRateComponents + component)*NK + j);
+}
+
+inline int BranchPlus() { return 0; }
+inline int BranchMinus() { return 1; }
+
+// Add a signed integrated exchange rate to the hidden diagnostic datum.  The
+// operators work with cell-integrated bin energies E_\pm(k_j) [J per log-k bin],
+// so the natural rate accumulated here is dE/dt [J/s per log-k bin].  The
+// Tecplot writer later divides by the segment volume to obtain the plotted
+// density rate dW/dt [J m^{-3} s^{-1} per log-k bin].
+inline void AddIntegratedEnergyExchangeRate(
+    double* rates,
+    int branch,
+    SpectralEnergyExchangeRateComponent component,
+    int j,
+    double dE,
+    double dt_normalization) {
+
+  if (!rates) return;
+  if (branch != BranchPlus() && branch != BranchMinus()) return;
+  if (component < 0 || component >= nSpectralEnergyExchangeRateComponents) return;
+  if (j < 0 || j >= NK) return;
+  if (!(dt_normalization > 0.0) || !std::isfinite(dt_normalization)) return;
+  if (!std::isfinite(dE)) return;
+
+  rates[RateOffset(branch,component,j)] += dE/dt_normalization;
+}
+
+// Compute a safe normalized rate (1/W) dW/dt.  This quantity is useful because
+// it is the local e-folding rate of the wave-energy density.  The floor avoids
+// extremely large diagnostic values in bins where the wave energy is exactly
+// zero; those bins carry no physical turbulence and a normalized rate would be
+// ill-defined.
+inline double NormalizedRate(double density_rate, double wave_density) {
+  const double floor = 1.0e-300;
+  if (!(wave_density > floor) || !std::isfinite(wave_density)) return 0.0;
+  if (!std::isfinite(density_rate)) return 0.0;
+  return density_rate/wave_density;
+}
+
 // Compute the large-scale, non-WKB reflection rate for a single segment.  This
 // is the same physical rate used by the legacy integrated reflection operator,
 // but this helper returns it to the wave-number-resolved code so the rate can be
@@ -332,9 +387,11 @@ bool GetSegmentReflectionRate(
 // cascade time.
 void CascadeOneSpectralSweep(
     double* spectrum,
+    double* exchange_rates,
     double volume,
     double rho,
     double dt,
+    double rate_normalization_dt,
     double C_nl,
     double lambda_perp_m,
     bool enable_cross_helicity_modulation,
@@ -344,6 +401,14 @@ void CascadeOneSpectralSweep(
   if (!spectrum) return;
   if (!(volume > 0.0) || !(rho > 0.0) || !(dt > 0.0)) return;
   if (!(C_nl > 0.0) || !(lambda_perp_m > 0.0)) return;
+
+  // For diagnostics, an operator called with multiple sub-sweeps should report
+  // the average exchange rate over the full physical operator time step, not
+  // the instantaneous rate within one sub-sweep.  rate_normalization_dt is
+  // therefore the total CascadeSpectrumAllFieldLines() dt, while dt is the
+  // sub-sweep time used by this explicit update.
+  const double rate_dt = (rate_normalization_dt > 0.0 && std::isfinite(rate_normalization_dt))
+                         ? rate_normalization_dt : dt;
 
   const double sqrt_rho = std::sqrt(PositiveFloor(rho,1.0e-60));
   const double lambda = PositiveFloor(lambda_perp_m,1.0);
@@ -394,11 +459,32 @@ void CascadeOneSpectralSweep(
     if (j+1 < NK) {
       spectrum[OffsetPlus(j+1)] += transfer_plus[j];
       spectrum[OffsetMinus(j+1)] += transfer_minus[j];
+
+      // Cascade is an exchange in wave-number space.  At a given k-bin it is a
+      // signed source/sink: the donor bin loses energy and the receiving bin
+      // gains the same amount.  Recording both signs lets the Tecplot output show
+      // where the cascade is depleting power and where it is depositing power in
+      // the resolved spectrum.
+      AddIntegratedEnergyExchangeRate(exchange_rates,BranchPlus(),RateCascade,j,
+          -transfer_plus[j],rate_dt);
+      AddIntegratedEnergyExchangeRate(exchange_rates,BranchMinus(),RateCascade,j,
+          -transfer_minus[j],rate_dt);
+      AddIntegratedEnergyExchangeRate(exchange_rates,BranchPlus(),RateCascade,j+1,
+          +transfer_plus[j],rate_dt);
+      AddIntegratedEnergyExchangeRate(exchange_rates,BranchMinus(),RateCascade,j+1,
+          +transfer_minus[j],rate_dt);
+
       transferred_energy += transfer_plus[j] + transfer_minus[j];
     }
     else {
       // Energy that leaves the resolved k-range at k_max is not placed into an
       // unresolved spectral bin.  It is counted as turbulent dissipation/heating.
+      // In the diagnostic rate, this is a true sink from the highest resolved bin.
+      AddIntegratedEnergyExchangeRate(exchange_rates,BranchPlus(),RateCascade,j,
+          -transfer_plus[j],rate_dt);
+      AddIntegratedEnergyExchangeRate(exchange_rates,BranchMinus(),RateCascade,j,
+          -transfer_minus[j],rate_dt);
+
       dissipated_energy += transfer_plus[j] + transfer_minus[j];
     }
   }
@@ -560,6 +646,38 @@ void ResetRightBoundarySpectrumInitialCondition() {
   RightBoundaryInitialWminusSpectrum.clear();
   RightBoundaryInitialSpectrumIsSet.clear();
   RightBoundaryInitialSpectrumNFieldLine = -1;
+}
+
+void ResetSpectralEnergyExchangeRates() {
+  // The exchange-rate datum is a per-iteration diagnostic.  It must be cleared
+  // before the wave-particle coupling, reflection, and cascade operators are
+  // applied; otherwise the Tecplot file would show an accumulated history rather
+  // than the rate associated with the current main-loop update.
+  //
+  // Only the owner rank writes locally-owned segments.  The MPI gather at the
+  // end makes the zeroed values visible in the replicated FieldLinesAll arrays
+  // used by rank 0 for output.
+  if (!IsActive()) return;
+
+  const int n = SpectralWaveEnergyExchangeRate.length;
+
+  for (int field_line_idx=0; field_line_idx<PIC::FieldLine::nFieldLine; ++field_line_idx) {
+    PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
+    if (!field_line) continue;
+
+    const int nseg = field_line->GetTotalSegmentNumber();
+    for (int i=0; i<nseg; ++i) {
+      PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(i);
+      if (!segment || segment->Thread != PIC::ThisThread) continue;
+
+      double* rates = segment->GetDatum_ptr(SpectralWaveEnergyExchangeRate);
+      if (!rates) continue;
+
+      for (int q=0; q<n; ++q) rates[q] = 0.0;
+    }
+  }
+
+  PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(SpectralWaveEnergyExchangeRate);
 }
 
 void InitializeSpectrumFromIntegratedEnergy(PIC::Datum::cDatumStored& IntegratedWaveEnergy) {
@@ -891,6 +1009,7 @@ void ReflectSpectrumAllFieldLines(
       if (!segment || segment->Thread != PIC::ThisThread) continue;
 
       double* spectrum = segment->GetDatum_ptr(SpectralWaveEnergy);
+      double* exchange_rates = segment->GetDatum_ptr(SpectralWaveEnergyExchangeRate);
       if (!spectrum) continue;
 
       double G_reflection = 0.0;
@@ -922,6 +1041,16 @@ void ReflectSpectrumAllFieldLines(
 
         spectrum[OffsetPlus(j)] = Eplus_new;
         spectrum[OffsetMinus(j)] = Eminus_new;
+
+        // Reflection changes the propagation branch at fixed wave number.  The
+        // diagnostic records the signed change of each branch in the same bin.
+        // For a perfectly conservative reflection update, the plus and minus
+        // rates at a given k-bin should sum to zero, apart from roundoff and any
+        // boundary enforcement applied after the operator.
+        AddIntegratedEnergyExchangeRate(exchange_rates,BranchPlus(),RateReflection,j,
+            Eplus_new-Eplus_old,dt);
+        AddIntegratedEnergyExchangeRate(exchange_rates,BranchMinus(),RateReflection,j,
+            Eminus_new-Eminus_old,dt);
 
         total_abs_exchanged += std::fabs(Eplus_new-Eplus_old) + std::fabs(Eminus_new-Eminus_old);
         updated_bins++;
@@ -973,6 +1102,7 @@ void CascadeSpectrumAllFieldLines(
         if (!segment || segment->Thread != PIC::ThisThread) continue;
 
         double* spectrum = segment->GetDatum_ptr(SpectralWaveEnergy);
+        double* exchange_rates = segment->GetDatum_ptr(SpectralWaveEnergyExchangeRate);
         if (!spectrum) continue;
 
         const double volume = SEP::FieldLine::GetSegmentVolume(segment,field_line_idx);
@@ -987,7 +1117,7 @@ void CascadeSpectrumAllFieldLines(
         // AdvectSpectrumAllFieldLines().  This operator therefore represents the
         // nonlinear spectral transfer/dissipation part of the turbulence model.
         CascadeOneSpectralSweep(
-            spectrum,volume,rho,dt_sweep,C_nl,lambda_perp_m,
+            spectrum,exchange_rates,volume,rho,dt_sweep,dt,C_nl,lambda_perp_m,
             enable_cross_helicity_modulation,transferred_energy,dissipated_energy);
 
         if (sweep == 0) processed_segments++;
@@ -1012,16 +1142,24 @@ void CascadeSpectrumAllFieldLines(
 
 
 void OutputSpectrumTecplot2D(long int iteration, double simulation_time) {
-  // Only one MPI rank should create the diagnostic file.  The spectral datum is
-  // synchronized with MPIAllGatherDatumStoredAtEdge() before this writer is
-  // called from the main loop, so rank 0 can traverse FieldLinesAll and print a
-  // complete Tecplot view without every rank opening the same file.
-  if (PIC::ThisThread != 0) return;
-
   // The writer is meaningful only for the spectral model.  Keeping the guard in
   // the routine itself makes accidental calls harmless when the legacy
   // branch-integrated turbulence model is selected from the CLI.
   if (!IsActive()) return;
+
+  // Synchronize the per-operator exchange-rate diagnostic before rank 0 writes
+  // the file.  Unlike the compact spectral energy datum, this rate datum is not
+  // used by the physics operators on other ranks; it exists only for output.
+  // Doing the gather here keeps the output routine self-contained and avoids
+  // requiring every call site to remember to gather both the spectrum and the
+  // diagnostic-rate arrays.
+  PIC::FieldLine::Parallel::MPIAllGatherDatumStoredAtEdge(SpectralWaveEnergyExchangeRate);
+
+  // Only one MPI rank should create the diagnostic file.  The spectral datum and
+  // the exchange-rate datum have now been synchronized, so rank 0 can traverse
+  // FieldLinesAll and print a complete Tecplot view without every rank opening
+  // the same file.
+  if (PIC::ThisThread != 0) return;
 
   // Store spectral diagnostics in a dedicated subdirectory of the usual AMPS
   // output directory.  That keeps the potentially large 2-D spectrum files
@@ -1076,7 +1214,15 @@ void OutputSpectrumTecplot2D(long int iteration, double simulation_time) {
        << " AU = " << (r_shock/_SUN__RADIUS_) << " R_s\"\n";
 
   fout << "VARIABLES=\"s[m]\",\"s[AU]\",\"k[m^-1]\",\"log10(k)\","
-       << "\"W+[J/m^3 per log-k bin]\",\"W-[J/m^3 per log-k bin]\",\"sigma_c(k)\"\n";
+       << "\"W+[J/m^3 per log-k bin]\",\"W-[J/m^3 per log-k bin]\",\"sigma_c(k)\","
+       << "\"dW+dt_cascade[J/m^3/s per log-k bin]\",\"dW-dt_cascade[J/m^3/s per log-k bin]\","
+       << "\"dW+dt_particle_excitation[J/m^3/s per log-k bin]\",\"dW-dt_particle_excitation[J/m^3/s per log-k bin]\","
+       << "\"dW+dt_particle_damping[J/m^3/s per log-k bin]\",\"dW-dt_particle_damping[J/m^3/s per log-k bin]\","
+       << "\"dW+dt_particle_net[J/m^3/s per log-k bin]\",\"dW-dt_particle_net[J/m^3/s per log-k bin]\","
+       << "\"dW+dt_reflection[J/m^3/s per log-k bin]\",\"dW-dt_reflection[J/m^3/s per log-k bin]\","
+       << "\"dW+dt_total[J/m^3/s per log-k bin]\",\"dW-dt_total[J/m^3/s per log-k bin]\","
+       << "\"dWdt_total_both[J/m^3/s per log-k bin]\","
+       << "\"nu_total_plus[s^-1]\",\"nu_total_minus[s^-1]\",\"nu_total_both[s^-1]\"\n";
 
   // Each field line is written as a separate ordered 2-D zone.  The horizontal
   // Tecplot index I corresponds to segment-center distance from the beginning of
@@ -1094,6 +1240,7 @@ void OutputSpectrumTecplot2D(long int iteration, double simulation_time) {
     std::vector<double> s_center(nseg,0.0);
     std::vector<double> volume(nseg,0.0);
     std::vector<double*> spectrum_ptr(nseg,nullptr);
+    std::vector<double*> rate_ptr(nseg,nullptr);
 
     double s_begin = 0.0;
     for (int i=0; i<nseg; ++i) {
@@ -1102,6 +1249,7 @@ void OutputSpectrumTecplot2D(long int iteration, double simulation_time) {
         s_center[i] = s_begin;
         volume[i] = 0.0;
         spectrum_ptr[i] = nullptr;
+        rate_ptr[i] = nullptr;
         continue;
       }
 
@@ -1125,6 +1273,7 @@ void OutputSpectrumTecplot2D(long int iteration, double simulation_time) {
       s_center[i] = s_begin + 0.5*segment_length;
       volume[i] = SEP::FieldLine::GetSegmentVolume(segment,field_line_idx);
       spectrum_ptr[i] = segment->GetDatum_ptr(SpectralWaveEnergy);
+      rate_ptr[i] = segment->GetDatum_ptr(SpectralWaveEnergyExchangeRate);
 
       s_begin += segment_length;
     }
@@ -1148,9 +1297,56 @@ void OutputSpectrumTecplot2D(long int iteration, double simulation_time) {
         const double Wsum = Wplus + Wminus;
         const double sigma_c = (Wsum > 0.0) ? (Wplus-Wminus)/Wsum : 0.0;
 
+        // Exchange-rate diagnostics are stored as integrated dE/dt values.
+        // Convert them to density rates dW/dt by dividing by the same segment
+        // volume used for W_+ and W_-.  If a segment is absent or has no rate
+        // datum, all diagnostic rates are printed as zero so the Tecplot grid
+        // remains rectangular.
+        auto rate_density = [&](int branch, SpectralEnergyExchangeRateComponent component) -> double {
+          if (!rate_ptr[i] || !(volume[i] > 0.0)) return 0.0;
+          const double value = rate_ptr[i][RateOffset(branch,component,j)]/volume[i];
+          return std::isfinite(value) ? value : 0.0;
+        };
+
+        const double cascade_plus = rate_density(BranchPlus(),RateCascade);
+        const double cascade_minus = rate_density(BranchMinus(),RateCascade);
+
+        const double particle_excitation_plus = rate_density(BranchPlus(),RateParticleExcitation);
+        const double particle_excitation_minus = rate_density(BranchMinus(),RateParticleExcitation);
+
+        const double particle_damping_plus = rate_density(BranchPlus(),RateParticleDamping);
+        const double particle_damping_minus = rate_density(BranchMinus(),RateParticleDamping);
+
+        const double particle_net_plus = rate_density(BranchPlus(),RateParticleNet);
+        const double particle_net_minus = rate_density(BranchMinus(),RateParticleNet);
+
+        const double reflection_plus = rate_density(BranchPlus(),RateReflection);
+        const double reflection_minus = rate_density(BranchMinus(),RateReflection);
+
+        // The total source/sink rate reported here intentionally includes only
+        // local exchange processes requested for this diagnostic: spectral
+        // cascade/dissipation, particle excitation/damping, and wave reflection.
+        // Spatial advection and boundary fluxes are not included because they
+        // redistribute turbulence along the field line rather than represent a
+        // local physical exchange between waves, particles, and unresolved scales.
+        const double total_plus = cascade_plus + particle_net_plus + reflection_plus;
+        const double total_minus = cascade_minus + particle_net_minus + reflection_minus;
+        const double total_both = total_plus + total_minus;
+
+        const double nu_plus = NormalizedRate(total_plus,Wplus);
+        const double nu_minus = NormalizedRate(total_minus,Wminus);
+        const double nu_both = NormalizedRate(total_both,Wsum);
+
         fout << s_center[i] << ' ' << (s_center[i]/_AU_) << ' '
              << k << ' ' << log10k << ' '
-             << Wplus << ' ' << Wminus << ' ' << sigma_c << "\n";
+             << Wplus << ' ' << Wminus << ' ' << sigma_c << ' '
+             << cascade_plus << ' ' << cascade_minus << ' '
+             << particle_excitation_plus << ' ' << particle_excitation_minus << ' '
+             << particle_damping_plus << ' ' << particle_damping_minus << ' '
+             << particle_net_plus << ' ' << particle_net_minus << ' '
+             << reflection_plus << ' ' << reflection_minus << ' '
+             << total_plus << ' ' << total_minus << ' ' << total_both << ' '
+             << nu_plus << ' ' << nu_minus << ' ' << nu_both << "\n";
       }
     }
   }
@@ -1177,6 +1373,7 @@ void WaveParticleCouplingManager(PIC::Datum::cDatumStored& IntegratedWaveEnergy,
       if (!segment || segment->Thread != PIC::ThisThread) continue;
 
       double* spectrum = segment->GetDatum_ptr(SpectralWaveEnergy);
+      double* exchange_rates = segment->GetDatum_ptr(SpectralWaveEnergyExchangeRate);
       double* G_plus = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming);
       double* G_minus = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::G_minus_streaming);
       double* gamma_plus = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::gamma_plus_array);
@@ -1199,6 +1396,35 @@ void WaveParticleCouplingManager(PIC::Datum::cDatumStored& IntegratedWaveEnergy,
 
         spectrum[OffsetPlus(j)] = std::max(0.0,Eplus_new);
         spectrum[OffsetMinus(j)] = std::max(0.0,Eminus_new);
+
+        // Record wave-particle exchange rates before the streaming arrays are
+        // cleared.  Positive dE_wave means particle streaming has excited/grown
+        // the wave bin.  Negative dE_wave means the wave bin has been damped and
+        // the corresponding energy has been transferred to particles.  The
+        // Tecplot output contains excitation and damping separately, plus their
+        // signed net sum, so users can distinguish where particles amplify waves
+        // from where waves energize/damp particles.
+        if (dEplus_wave >= 0.0) {
+          AddIntegratedEnergyExchangeRate(exchange_rates,BranchPlus(),RateParticleExcitation,j,
+              dEplus_wave,dt);
+        }
+        else {
+          AddIntegratedEnergyExchangeRate(exchange_rates,BranchPlus(),RateParticleDamping,j,
+              dEplus_wave,dt);
+        }
+        AddIntegratedEnergyExchangeRate(exchange_rates,BranchPlus(),RateParticleNet,j,
+            dEplus_wave,dt);
+
+        if (dEminus_wave >= 0.0) {
+          AddIntegratedEnergyExchangeRate(exchange_rates,BranchMinus(),RateParticleExcitation,j,
+              dEminus_wave,dt);
+        }
+        else {
+          AddIntegratedEnergyExchangeRate(exchange_rates,BranchMinus(),RateParticleDamping,j,
+              dEminus_wave,dt);
+        }
+        AddIntegratedEnergyExchangeRate(exchange_rates,BranchMinus(),RateParticleNet,j,
+            dEminus_wave,dt);
 
         total_wave_energy_change += dEplus_wave + dEminus_wave;
 

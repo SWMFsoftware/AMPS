@@ -163,6 +163,13 @@ int main(int argc,char **argv) {
     if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
       PIC::FieldLine::cFieldLineSegment::AddDatumStored(
           &SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergy);
+
+      // Hidden diagnostic datum used by the 2-D spectrum writer.  It stores the
+      // per-bin wave-energy exchange rates caused by cascade, particle coupling,
+      // and reflection during the current main-loop iteration.  It is registered
+      // only in wave-number-resolved mode to avoid extra memory in legacy runs.
+      PIC::FieldLine::cFieldLineSegment::AddDatumStored(
+          &SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergyExchangeRate);
     }
 
     PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
@@ -455,6 +462,16 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
          }
 
 	 rsh0=rsh1;
+      }
+
+      if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
+        // Reset per-bin source/sink diagnostics after the shock source has been
+        // applied and before particle coupling/reflection/cascade for this
+        // iteration.  The requested Tecplot diagnostics describe the exchange
+        // rates due to cascade, particle interaction, and reflection only; shock
+        // injection and spatial advection are not included in these local-rate
+        // columns.
+        SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::ResetSpectralEnergyExchangeRates();
       }
 
       if (SEP::ParticleMoverPtr!=SEP::ParticleMover_FocusedTransport_WaveScattering) { // in case SEP::ParticleMover_FocusedTransport_WaveScattering(), particle/turbulence coupling is already done 

@@ -44,8 +44,50 @@ inline bool IsActive() {
 // doPrint=false because the ordinary field-line Tecplot file already prints the
 // compact diagnostics W+, W-, and sigma_c from WaveEnergyDensity.  Writing 256
 // spectral columns to every field-line output would make the standard files very
-// large.  A separate spectrum diagnostic writer can be added later if needed.
+// large.  The dedicated OutputSpectrumTecplot2D() routine writes the spectral
+// state and exchange-rate diagnostics in a separate 2-D Tecplot file.
 extern PIC::Datum::cDatumStored SpectralWaveEnergy;
+
+// -----------------------------------------------------------------------------
+// Wave-energy exchange-rate diagnostics.
+// -----------------------------------------------------------------------------
+// The spectrum output file is most useful when it contains not only the current
+// wave energy density W_\pm(s,k), but also the local rates that changed that
+// wave energy during the current global iteration.  These rates are stored in a
+// hidden field-line segment datum and are written by OutputSpectrumTecplot2D().
+//
+// The stored values are CELL-INTEGRATED rates [J/s per log-k bin].  The Tecplot
+// writer divides them by the same magnetic-tube segment volume used for W_\pm
+// so the output columns are density rates [J m^{-3} s^{-1} per log-k bin].
+//
+// Layout for SpectralWaveEnergyExchangeRate:
+//   branch=0: outward waves, E_+(k_j)
+//   branch=1: inward  waves, E_-(k_j)
+//   component enumerated below
+//   j=0,...,NK-1
+//
+//   index = ((branch*nSpectralEnergyExchangeRateComponents + component)*NK + j)
+//
+// The particle terms are split into excitation and damping so the diagnostic can
+// distinguish growth of wave energy by particle streaming from damping/energy
+// transfer from waves to particles.  By convention excitation is stored positive
+// and damping is stored negative; their sum is the net particle term.
+// -----------------------------------------------------------------------------
+enum SpectralEnergyExchangeRateComponent {
+  RateCascade = 0,
+  RateParticleExcitation = 1,
+  RateParticleDamping = 2,
+  RateParticleNet = 3,
+  RateReflection = 4,
+  nSpectralEnergyExchangeRateComponents = 5
+};
+
+extern PIC::Datum::cDatumStored SpectralWaveEnergyExchangeRate;
+
+// Clear the diagnostic exchange-rate datum at the beginning of a main iteration.
+// The rates represent only the source/sink terms accumulated since the most
+// recent reset; they are not time histories.
+void ResetSpectralEnergyExchangeRates();
 
 // Convert a branch-integrated initial condition into a Kolmogorov log-k
 // distribution.  This is called immediately after the legacy initialization
