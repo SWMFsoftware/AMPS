@@ -241,6 +241,233 @@ int GetKBinIndex(double k_val) {
     return j;
 }
 
+// ============================================================================
+// HELPER FUNCTIONS USED BY WAVE-PARTICLE FLUX ACCUMULATION
+// ============================================================================
+//
+// The routines below are intentionally small and local to this translation unit.
+// They make AccumulateParticleFluxForWaveCoupling() robust in the cases that are
+// common in field-line SEP transport:
+//
+//   * a particle can leave the field-line domain before the end of the AMPS time
+//     step, in which case the mover passes s_finish < 0 as an exit sentinel;
+//   * only the portion of the trajectory that remains inside the field line
+//     should contribute to wave growth/damping;
+//   * the resonance condition is branch dependent because outward and inward
+//     Alfv'en waves have opposite phase speeds; and
+//   * a single Monte-Carlo particle with a very large statistical weight must not
+//     be allowed to create an unbounded source term in one k-bin.
+//
+// These helpers do not change particle transport.  They only control how the
+// already-computed particle path is mapped into the turbulence growth-rate
+// accumulators G_plus_streaming and G_minus_streaming.
+
+inline double ClampUnitInterval(double x) {
+    if (!std::isfinite(x)) return 0.0;
+    if (x < 0.0) return 0.0;
+    if (x > 1.0) return 1.0;
+    return x;
+}
+
+inline bool IsKResolved(double k) {
+    // Do not clamp out-of-range resonances into the nearest bin.  If the resonant
+    // wave number is outside the represented spectral interval, this turbulence
+    // model simply has no resolved wave mode with which the particle can exchange
+    // energy, so the contribution must be skipped.
+    return std::isfinite(k) && k >= K_MIN && k <= K_MAX;
+}
+
+inline double LimitedStreamingContribution(double dG, double dt) {
+    // G_plus_streaming/G_minus_streaming are later interpreted as local growth or
+    // damping rates.  A pathological single-particle contribution with |2*dG*dt|
+    // >> 1 would either erase a wave-number bin in one step or drive it to
+    // overflow.  The coupling manager has its own bin-level limiter, but this
+    // local guard prevents a single bad Monte-Carlo particle from poisoning the
+    // MPI-reduced accumulator before the manager sees it.
+    if (!std::isfinite(dG)) return 0.0;
+
+    const double max_exponent_per_particle = 5.0e-2; // enforce |2*dG*dt| <= 0.05
+    const double dt_safe = (std::isfinite(dt) && dt > 0.0) ? dt : 1.0;
+    const double max_abs_dG = max_exponent_per_particle/(2.0*dt_safe);
+
+    if (std::fabs(dG) > max_abs_dG) {
+        static int nLimiterWarnings = 0;
+        if (nLimiterWarnings < 40) {
+            std::cerr << "Warning: limiting a single-particle wave-growth "
+                      << "contribution from " << dG << " to "
+                      << std::copysign(max_abs_dG,dG)
+                      << " s^-1.  This prevents one Monte-Carlo particle from "
+                      << "forcing |2 gamma dt| > 0.05 in one coupling sample."
+                      << std::endl;
+            ++nLimiterWarnings;
+        }
+        return std::copysign(max_abs_dG,dG);
+    }
+
+    return dG;
+}
+
+inline bool DecodeClippedFieldLinePath(
+    PIC::FieldLine::cFieldLine* field_line,
+    double s_start,
+    double s_finish,
+    double totalTraversedPath,
+    int& seg_start_idx,
+    double& frac_start,
+    int& seg_finish_idx,
+    double& frac_finish,
+    int& seg_min,
+    int& seg_max) {
+
+    if (field_line == nullptr) return false;
+    const int num_segments = field_line->GetTotalSegmentNumber();
+    if (num_segments <= 0) return false;
+
+    if (!std::isfinite(s_start)) return false;
+
+    // Field-line coordinates are encoded as segment_index + fractional_position.
+    // The start coordinate must be inside the field-line domain because the mover
+    // is calling this routine for a particle that was transported from a valid
+    // field-line position.
+    seg_start_idx = static_cast<int>(std::floor(s_start));
+    frac_start = ClampUnitInterval(s_start - seg_start_idx);
+
+    if (seg_start_idx < 0 || seg_start_idx >= num_segments) return false;
+
+    if (std::isfinite(s_finish) && s_finish >= 0.0) {
+        // Normal case: the particle remains on the field line at the end of the
+        // time step.  Decode the final coordinate and clip very small coordinate
+        // overshoots at the outer edge to the boundary.
+        seg_finish_idx = static_cast<int>(std::floor(s_finish));
+        frac_finish = s_finish - seg_finish_idx;
+
+        if (seg_finish_idx < 0) {
+            seg_finish_idx = 0;
+            frac_finish = 0.0;
+        }
+        else if (seg_finish_idx >= num_segments) {
+            seg_finish_idx = num_segments - 1;
+            frac_finish = 1.0;
+        }
+        else {
+            frac_finish = ClampUnitInterval(frac_finish);
+        }
+    }
+    else {
+        // Exit-sentinel case.  In the SEP field-line movers, s_finish < 0 means
+        // that the particle left the field-line domain before the end of the time
+        // step.  That does NOT mean the particle made no contribution.  It should
+        // contribute along the in-domain part of its path, from s_start to the
+        // field-line boundary that it crossed.  The sign of totalTraversedPath
+        // identifies which boundary was crossed.
+        if (!std::isfinite(totalTraversedPath) || totalTraversedPath == 0.0) return false;
+
+        if (totalTraversedPath < 0.0) {
+            // Particle moved toward decreasing field-line coordinate and exited
+            // through the beginning of the field line.
+            seg_finish_idx = 0;
+            frac_finish = 0.0;
+        }
+        else {
+            // Particle moved toward increasing field-line coordinate and exited
+            // through the far end of the field line.
+            seg_finish_idx = num_segments - 1;
+            frac_finish = 1.0;
+        }
+    }
+
+    seg_min = std::max(0,std::min(seg_start_idx,seg_finish_idx));
+    seg_max = std::min(num_segments-1,std::max(seg_start_idx,seg_finish_idx));
+
+    return seg_min <= seg_max;
+}
+
+inline double GetDirectionalPathInSegment(
+    PIC::FieldLine::cFieldLineSegment* segment,
+    int seg_idx,
+    int seg_start_idx,
+    double frac_start,
+    int seg_finish_idx,
+    double frac_finish) {
+
+    if (segment == nullptr) return 0.0;
+    const double segment_length = segment->GetLength();
+    if (!(segment_length > 0.0) || !std::isfinite(segment_length)) return 0.0;
+
+    // Direction of travel in field-line coordinate space.  For an exit through a
+    // boundary, DecodeClippedFieldLinePath() has already replaced the sentinel by
+    // the appropriate boundary coordinate, so this logic also handles particles
+    // that leave the field line during the time step.
+    const bool moving_forward =
+        (seg_finish_idx > seg_start_idx) ||
+        (seg_finish_idx == seg_start_idx && frac_finish >= frac_start);
+
+    if (seg_start_idx == seg_finish_idx && seg_idx == seg_start_idx) {
+        return (frac_finish - frac_start)*segment_length;
+    }
+
+    if (seg_idx == seg_start_idx) {
+        return moving_forward ? (1.0-frac_start)*segment_length
+                              : -frac_start*segment_length;
+    }
+
+    if (seg_idx == seg_finish_idx) {
+        return moving_forward ? frac_finish*segment_length
+                              : (frac_finish-1.0)*segment_length;
+    }
+
+    return moving_forward ? segment_length : -segment_length;
+}
+
+inline void AccumulateBranchStreamingContribution(
+    double* G_data,
+    int branch_sign,
+    int seg_idx,
+    long int particle_index,
+    double weighted_flux_prefactor,
+    double vParallel,
+    double v_magnitude,
+    double gamma_rel,
+    double vA,
+    double Omega,
+    double dt) {
+
+    if (G_data == nullptr) return;
+
+    // Branch convention used by the existing SEP turbulence model:
+    //   branch_sign = +1 -> outward-propagating wave population, G_plus
+    //   branch_sign = -1 -> inward-propagating wave population, G_minus
+    // The branch-dependent resonance denominator is |v_parallel - sigma v_A|.
+    // This is consistent with the exact Alfv'en-wave resonance condition in the
+    // plasma frame and avoids assigning all particles to a bin based on the older
+    // approximation k = Omega/(|mu| v), which ignores the wave phase speed.
+    const double K_sigma = vParallel - branch_sign*vA;
+    const double denom = gamma_rel*std::fabs(K_sigma);
+
+    if (!(denom > 0.0) || !std::isfinite(denom) || !std::isfinite(Omega)) return;
+
+    const double k_res = std::fabs(Omega)/denom;
+    if (!IsKResolved(k_res)) return;
+
+    const int j = GetKBinIndex(k_res);
+    const double k_j = K_MIN*std::exp(j*DLNK);
+    if (!(k_j > 0.0) || !std::isfinite(k_j)) return;
+
+    // The 1/k factor belongs to the log-k bin normalization.  It must be applied
+    // at the branch-specific resonant bin, not at a bin selected from the
+    // approximate branch-independent resonance.
+    const double dG_raw = (weighted_flux_prefactor/k_j)*K_sigma;
+    const double dG = LimitedStreamingContribution(dG_raw,dt);
+
+    if (!std::isfinite(dG)) return;
+
+    G_data[j] += dG;
+
+    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+        validate_numeric(G_data[j],__LINE__,__FILE__);
+    }
+}
+
 
 // ============================================================================
 // UTILITY FUNCTION: CALCULATE TOTAL PARTICLE ENERGY WITH RANGE ANALYSIS
@@ -877,261 +1104,134 @@ void AccumulateParticleFluxForWaveCoupling(
     int field_line_idx,                          // Field line index
     long int particle_index,                     // Particle index parameter
     double dt,                                   // Time step [s]
-    double speed,                               // Particle speed magnitude [m/s]
-    double s_start,                             // Start position along field line [m]
-    double s_finish,                            // End position along field line [m]
-    double totalTraversedPath                   // Signed parallel path length [m] (+ outward, - inward)
+    double speed,                                // Particle speed magnitude [m/s]
+    double s_start,                              // Start position along field line [segment+fraction]
+    double s_finish,                             // End position along field line [segment+fraction] or <0 exit sentinel
+    double totalTraversedPath                    // Signed parallel path length [m] (+ outward, - inward)
 ) {
     /*
     BIDIRECTIONAL MOTION HANDLING:
-    - totalTraversedPath > 0: Particle moving away from Sun (outward, μ > 0)
-    - totalTraversedPath < 0: Particle moving toward Sun (inward, μ < 0)  
-    - μ = totalTraversedPath / (speed * dt) = v_parallel / v_total
-    
-    The pitch angle cosine μ determines wave-particle resonance:
-    - μ > 0: Particle moving outward, resonates differently with ± waves
-    - μ < 0: Particle moving inward, resonates differently with ± waves
-    - |μ| determines the resonant wavenumber: k_res = Ω_c / |μ v|
-    
-    Note: totalTraversedPath should be the signed parallel displacement,
-    where the sign indicates direction relative to the magnetic field.
+    - totalTraversedPath > 0: Particle moving away from Sun (outward, mu > 0)
+    - totalTraversedPath < 0: Particle moving toward Sun (inward, mu < 0)
+    - mu = totalTraversedPath / (speed * dt) = v_parallel / v_total
+
+    IMPORTANT EXIT-BOUNDARY HANDLING:
+    s_finish < 0 does not mean that the particle made no contribution.  It means
+    that the particle left the field-line domain before the end of the AMPS time
+    step.  The particle still contributes to wave growth/damping along the
+    portion of the trajectory that was inside the field line.  The helper
+    DecodeClippedFieldLinePath() converts the exit sentinel to the appropriate
+    field-line boundary coordinate and integrates only over the in-domain path.
     */
-    // ========================================================================
-    // INPUT VALIDATION
-    // ========================================================================
+
     if (field_line_idx < 0 || field_line_idx >= PIC::FieldLine::nFieldLine) {
-        std::cerr << "Error: Invalid field line index (" << field_line_idx 
+        std::cerr << "Error: Invalid field line index (" << field_line_idx
                   << ") in AccumulateParticleFluxForWaveCoupling" << std::endl;
         return;
     }
-    
-    if (particle_index < 0) {
-        std::cerr << "Error: Invalid particle index (" << particle_index 
-                  << ") in AccumulateParticleFluxForWaveCoupling" << std::endl;
+
+    if (particle_index < 0 || !(dt > 0.0) || !std::isfinite(dt) ||
+        !(speed > 0.0) || !std::isfinite(speed) ||
+        !std::isfinite(totalTraversedPath)) {
         return;
     }
-    
-    if (dt <= 0.0) {
-        std::cerr << "Error: Invalid time step (dt=" << dt << ")" << std::endl;
-        return;
-    }
-    
-    // ========================================================================
-    // GET FIELD LINE AND DETERMINE TRAVERSED SEGMENTS
-    // ========================================================================
-    PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
-    
-    // ========================================================================
-    // DECODE FIELD LINE COORDINATES AND CALCULATE TRAJECTORY
-    // ========================================================================
-    // Field line coordinates format: s = (segment_index).(fractional_position)
-    // Extract segment indices and fractional positions
-    int seg_start_idx = (int)floor(s_start);
-    double frac_start = s_start - seg_start_idx;
-    
-    int seg_finish_idx = (int)floor(s_finish);
-    double frac_finish = s_finish - seg_finish_idx;
-    
-    // Calculate pitch angle cosine from speed and parallel displacement
-    // Account for bidirectional motion: particles can move toward or away from Sun
-    double mu = 0.0;
-    if (speed > 1.0e-20) {
-        // Use the provided totalTraversedPath which includes directional information
-        // μ = v_parallel / v_total, where v_parallel = totalTraversedPath / dt
-        mu = totalTraversedPath / (speed * dt);
-        
-        // Clamp μ to valid range [-1, 1] (physical constraint)
-        mu = std::max(-1.0, std::min(1.0, mu));
-    } else {
-        return; // No movement, no contribution
-    }
-    
-    // ========================================================================
-    // CALCULATE PARTICLE PROPERTIES (INDEPENDENT OF SEGMENTS)
-    // ========================================================================
-    // Use provided speed directly
-    double v_magnitude = speed;
-    
-    // Skip particles with negligible velocity
-    if (v_magnitude < 1.0e-20) {
-        return;
-    }
-    
-    // Calculate relativistic momentum: p = γ m v
-    double gamma_rel = 1.0 / sqrt(1.0 - (v_magnitude*v_magnitude)/
-                                 (PhysicsConstants::C_LIGHT*PhysicsConstants::C_LIGHT));
-    double p_momentum = gamma_rel * M * v_magnitude;  // [kg⋅m/s]
-    
-    // Skip particles outside the momentum range represented by the coupling
-    // model.  This is not a fatal particle-transport error: a particle can be
-    // valid for SEP transport while being too slow or too energetic to be
-    // represented by the current wave-particle coupling grid.  In that case the
-    // particle should simply not contribute to the wave-growth accumulators.
-    if (!(p_momentum >= P_MIN && p_momentum <= P_MAX) || !std::isfinite(p_momentum)) {
-        return;
-    }
-    
-    // ========================================================================
-    // GET PARTICLE STATISTICAL WEIGHT USING SPECIES-SPECIFIC CALCULATION
-    // ========================================================================
-    // Get particle species number for this particle
+
+    const double v_magnitude = speed;
+    const double vParallel = totalTraversedPath/dt;
+    if (!std::isfinite(vParallel) || std::fabs(vParallel) < 1.0e-20) return;
+
+    double mu = vParallel/v_magnitude;
+    if (!std::isfinite(mu)) return;
+    mu = std::max(-1.0,std::min(1.0,mu));
+
+    const double beta2 = (v_magnitude*v_magnitude)/(PhysicsConstants::C_LIGHT*PhysicsConstants::C_LIGHT);
+    if (!(beta2 >= 0.0) || beta2 >= 1.0 || !std::isfinite(beta2)) return;
+
+    const double gamma_rel = 1.0/std::sqrt(1.0-beta2);
+    const double p_momentum = gamma_rel*M*v_magnitude;
+
+    // The coupling grid covers only a prescribed momentum range.  Particles
+    // outside that interval remain valid transport particles but are not included
+    // in the turbulence growth-rate source term.
+    if (!(p_momentum >= P_MIN && p_momentum <= P_MAX) || !std::isfinite(p_momentum)) return;
+
     int particle_species = PIC::ParticleBuffer::GetI(particle_index);
-    if (particle_species < 0 || particle_species >= PIC::nTotalSpecies) {
-        std::cerr << "Error: Invalid particle species (" << particle_species 
-                  << ") for particle " << particle_index << std::endl;
+    if (particle_species < 0 || particle_species >= PIC::nTotalSpecies) return;
+
+    const double w_i = PIC::ParticleWeightTimeStep::GlobalParticleWeight[particle_species] *
+                       PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particle_index);
+    if (!(w_i > 0.0) || !std::isfinite(w_i)) return;
+
+    PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
+
+    int seg_start_idx = 0, seg_finish_idx = 0, seg_min = 0, seg_max = -1;
+    double frac_start = 0.0, frac_finish = 0.0;
+
+    if (!DecodeClippedFieldLinePath(field_line,s_start,s_finish,totalTraversedPath,
+                                    seg_start_idx,frac_start,
+                                    seg_finish_idx,frac_finish,
+                                    seg_min,seg_max)) {
         return;
     }
-    
-    // Calculate species-specific statistical weight
-    double w_i = PIC::ParticleWeightTimeStep::GlobalParticleWeight[particle_species] * 
-                 PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particle_index);
-    
-    if (w_i <= 0.0) {
-        std::cerr << "Warning: Invalid particle weight (" << w_i 
-                  << ") for particle " << particle_index << std::endl;
-        return;
-    }
-    
-    // ========================================================================
-    // LOOP THROUGH ALL SEGMENTS TRAVERSED BY PARTICLE
-    // ========================================================================
-    // Determine range of segments that the particle trajectory intersects
-    int seg_min = std::min(seg_start_idx, seg_finish_idx);
-    int seg_max = std::max(seg_start_idx, seg_finish_idx);
-    
-    int num_segments = field_line->GetTotalSegmentNumber();
-    
-    // Ensure segment indices are within valid range
-    seg_min = std::max(0, seg_min);
-    seg_max = std::min(num_segments - 1, seg_max);
-    
+
+    const double path_norm_full_step = std::fabs(totalTraversedPath);
+    if (!(path_norm_full_step > 0.0) || !std::isfinite(path_norm_full_step)) return;
+
     for (int seg_idx = seg_min; seg_idx <= seg_max; ++seg_idx) {
         PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
-        
-        // ====================================================================
-        // CALCULATE DIRECTIONAL PATH LENGTH WITHIN THIS SEGMENT
-        // ====================================================================
-        double ds_seg = 0.0;
-        
-        if (seg_start_idx == seg_finish_idx && seg_idx == seg_start_idx) {
-            // Particle starts and ends in the same segment
-            double segment_length = segment->GetLength();
-            ds_seg = (frac_finish - frac_start) * segment_length;  // Directional: can be negative
-            
-        } else if (seg_idx == seg_start_idx) {
-            // First segment: from start position to end of segment
-            double segment_length = segment->GetLength();
-            if (seg_start_idx < seg_finish_idx) {
-                // Moving forward: from frac_start to 1.0
-                ds_seg = (1.0 - frac_start) * segment_length;
-            } else {
-                // Moving backward: from frac_start to 0.0
-                ds_seg = -frac_start * segment_length;
-            }
-            
-        } else if (seg_idx == seg_finish_idx) {
-            // Last segment: from beginning of segment to finish position
-            double segment_length = segment->GetLength();
-            if (seg_start_idx < seg_finish_idx) {
-                // Moving forward: from 0.0 to frac_finish
-                ds_seg = frac_finish * segment_length;
-            } else {
-                // Moving backward: from 1.0 to frac_finish
-                ds_seg = (frac_finish - 1.0) * segment_length;
-            }
-            
-        } else {
-            // Middle segment: entire segment length with direction
-            double segment_length = segment->GetLength();
-            if (seg_start_idx < seg_finish_idx) {
-                // Moving forward: positive full segment length
-                ds_seg = segment_length;
-            } else {
-                // Moving backward: negative full segment length
-                ds_seg = -segment_length;
-            }
-        }
-        
-        // Skip if path length in segment is negligible (but keep sign)
-        if (fabs(ds_seg) < 1.0e-20) {
-            continue;
-        }
-        
-        // ====================================================================
-        // GET LOCAL PLASMA PARAMETERS FOR THIS SEGMENT
-        // ====================================================================
-        double B0, rho;
-        segment->GetPlasmaDensity(0.5, rho);  // Get density at segment midpoint
-        rho *= _H__MASS_;  // Convert number density to mass density
-        
-        // Get magnetic field from field line
-        double B[3];
-	PIC::FieldLine::FieldLinesAll[field_line_idx].GetMagneticField(B,0.5+seg_idx);
-	B0=Vector3D::Length(B);
+        if (segment == nullptr) continue;
 
-        
-        // Calculate local plasma parameters
-        double vAc = B0 / sqrt(VacuumPermeability * rho);                  // Alfvén speed [m/s]
-        double Omega = Q * B0 / M;                               // Proton cyclotron frequency [rad/s]
-        double pref = (PI * PI) * Omega * Omega / (B0 * B0);    // Normalization factor
-        
-        // Get segment volume using proper SEP function
-        double V_cell = SEP::FieldLine::GetSegmentVolume(segment, field_line_idx);
-        if (V_cell <= 0.0) {
-            std::cerr << "Warning: Invalid segment volume (" << V_cell 
-                      << ") in segment " << seg_idx << std::endl;
-            continue;
-        }
-        double Vinv = 1.0 / V_cell;  // Inverse volume [m⁻³]
-        
-        // ====================================================================
-        // CALCULATE RESONANT WAVENUMBER AND K-BIN
-        // ====================================================================
-        // Cyclotron resonance condition: ω - k‖ v‖ = ±Ω
-        // For Alfvén waves: ω ≈ k‖ v_A, so k_res = Ω / |μ v|
-        double kRes = Omega / (fabs(mu) * v_magnitude);  // Resonant wavenumber [m⁻¹]
-        
-        // Find corresponding k-bin index
-        int j = GetKBinIndex(kRes);
-        
-        // Initialize k-grid for this calculation
-        double k_j = K_MIN * exp(j * DLNK);  // k value for bin j
-        
-        // ====================================================================
-        // CALCULATE PARTICLE CONTRIBUTION TO STREAMING INTEGRALS
-        // ====================================================================
-        // Calculate coefficient following pseudo-code
-        // Note: ds_seg is now directional and can be negative
-        double p2v = p_momentum * p_momentum * v_magnitude;  // p² v term
-        double coeff = 2.0* Pi*pref * w_i * p2v * (ds_seg / v_magnitude) / 
-                      (2.0 * dt * DLNP) * Vinv / k_j;
-        
-        // ====================================================================
-        // ACCESS INTERMEDIATE STREAMING ARRAYS AND ACCUMULATE
-        // ====================================================================
+        const double ds_seg = GetDirectionalPathInSegment(segment,seg_idx,
+                                                          seg_start_idx,frac_start,
+                                                          seg_finish_idx,frac_finish);
+        if (std::fabs(ds_seg) < 1.0e-20 || !std::isfinite(ds_seg)) continue;
+
+        double time_weight = std::fabs(ds_seg)/path_norm_full_step;
+        if (!std::isfinite(time_weight) || time_weight <= 0.0) continue;
+        if (time_weight > 1.0) time_weight = 1.0;
+
+        double rho_number = 0.0;
+        segment->GetPlasmaDensity(0.5,rho_number);
+        const double rho = rho_number*_H__MASS_;
+
+        double B[3];
+        PIC::FieldLine::FieldLinesAll[field_line_idx].GetMagneticField(B,0.5+seg_idx);
+        const double B0 = Vector3D::Length(B);
+
+        if (!(rho > 0.0) || !std::isfinite(rho) || !(B0 > 0.0) || !std::isfinite(B0)) continue;
+
+        const double vA = B0/std::sqrt(VacuumPermeability*rho);
+        const double Omega = Q*B0/M;
+        const double pref = (PI*PI)*Omega*Omega/(B0*B0);
+        if (!std::isfinite(vA) || !std::isfinite(Omega) || !std::isfinite(pref)) continue;
+
+        const double V_cell = SEP::FieldLine::GetSegmentVolume(segment,field_line_idx);
+        if (!(V_cell > 0.0) || !std::isfinite(V_cell)) continue;
+
         double* G_plus_data = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming);
         double* G_minus_data = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::G_minus_streaming);
-        
-        if (!G_plus_data || !G_minus_data) {
-            std::cerr << "Error: Cannot access G_plus/G_minus streaming arrays in segment " 
-                      << seg_idx << std::endl;
-            continue;
-        }
-        
-        // Add particle contribution to streaming sums using exact QLT kernel
-        // Thread-safe accumulation (assumes single-threaded access per segment)
-        // Note: coeff now includes directional ds_seg which can be positive or negative
-	
-	
-	//particles with mu>0 interactes for Inward wave; and particles with mu<0 interacts only with outward wave  
-        if (mu<0.0) G_plus_data[j]  += coeff * (v_magnitude * mu - vAc);  // Outward waves (+ direction)
-        if (mu>0.0) G_minus_data[j] += coeff * (v_magnitude * mu + vAc);  // Inward waves (- direction)
+        if (G_plus_data == nullptr || G_minus_data == nullptr) continue;
 
-        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-           validate_numeric(G_plus_data[j],-100.0,50.0,__LINE__,__FILE__);
-	   validate_numeric(G_minus_data[j],-100.0,50.0,__LINE__,__FILE__);
-        }
+        const double p2v = p_momentum*p_momentum*v_magnitude;
+        const double weighted_flux_prefactor =
+            2.0*PI*pref*w_i*p2v/(2.0*DLNP) * (1.0/V_cell) * time_weight;
+        if (!std::isfinite(weighted_flux_prefactor)) continue;
 
+        // Deposit only to the branch that can resonate with the particle's signed
+        // motion, using the branch-specific resonant wave number.  Out-of-range
+        // resonances are skipped rather than clamped into edge bins.
+        if (mu < 0.0) {
+            AccumulateBranchStreamingContribution(G_plus_data,+1,seg_idx,particle_index,
+                                                  weighted_flux_prefactor,
+                                                  vParallel,v_magnitude,gamma_rel,
+                                                  vA,Omega,dt);
+        }
+        if (mu > 0.0) {
+            AccumulateBranchStreamingContribution(G_minus_data,-1,seg_idx,particle_index,
+                                                  weighted_flux_prefactor,
+                                                  vParallel,v_magnitude,gamma_rel,
+                                                  vA,Omega,dt);
+        }
     }
 }
 
@@ -2468,76 +2568,40 @@ void AccumulateParticleFluxForWaveCoupling(
     PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
     
     // ========================================================================
-    // DECODE FIELD LINE COORDINATES AND CALCULATE TRAJECTORY
+    // DECODE FIELD-LINE COORDINATES AND CLIP THE TRAJECTORY TO THE DOMAIN
     // ========================================================================
-    // Field line coordinates format: s = (segment_index).(fractional_position)
-    // Extract segment indices and fractional positions
-    int seg_start_idx = (int)floor(s_start);
-    double frac_start = s_start - seg_start_idx;
-    
-    int seg_finish_idx = (int)floor(s_finish);
-    double frac_finish = s_finish - seg_finish_idx;
-    
-    // ========================================================================
-    // LOOP THROUGH ALL SEGMENTS TRAVERSED BY PARTICLE
-    // ========================================================================
-    // Determine range of segments that the particle trajectory intersects
-    int seg_min = std::min(seg_start_idx, seg_finish_idx);
-    int seg_max = std::max(seg_start_idx, seg_finish_idx);
-    
-    int num_segments = field_line->GetTotalSegmentNumber();
-    
-    // Ensure segment indices are within valid range
-    seg_min = std::max(0, seg_min);
-    seg_max = std::min(num_segments - 1, seg_max);
-    
+    // s_finish < 0 is used by SEP field-line movers as an exit sentinel: the
+    // particle left the field line before the end of the time step.  Such a
+    // particle still contributes to wave growth/damping along the portion of its
+    // trajectory that remained inside the field line.  DecodeClippedFieldLinePath()
+    // replaces the sentinel by the physical boundary coordinate crossed by the
+    // particle and returns the range of field-line segments that the in-domain
+    // portion of the trajectory intersects.
+    int seg_start_idx = 0, seg_finish_idx = 0, seg_min = 0, seg_max = -1;
+    double frac_start = 0.0, frac_finish = 0.0;
+
+    if (!DecodeClippedFieldLinePath(field_line,s_start,s_finish,totalTraversedPath,
+                                    seg_start_idx,frac_start,
+                                    seg_finish_idx,frac_finish,
+                                    seg_min,seg_max)) {
+        return;
+    }
+
     for (int seg_idx = seg_min; seg_idx <= seg_max; ++seg_idx) {
         PIC::FieldLine::cFieldLineSegment* segment = field_line->GetSegment(seg_idx);
-        
+        if (segment == nullptr) continue;
+
         // ====================================================================
         // CALCULATE DIRECTIONAL PATH LENGTH WITHIN THIS SEGMENT
         // ====================================================================
-        double ds_seg = 0.0;
-        
-        if (seg_start_idx == seg_finish_idx && seg_idx == seg_start_idx) {
-            // Particle starts and ends in the same segment
-            double segment_length = segment->GetLength();
-            ds_seg = (frac_finish - frac_start) * segment_length;  // Directional: can be negative
-            
-        } else if (seg_idx == seg_start_idx) {
-            // First segment: from start position to end of segment
-            double segment_length = segment->GetLength();
-            if (seg_start_idx < seg_finish_idx) {
-                // Moving forward: from frac_start to 1.0
-                ds_seg = (1.0 - frac_start) * segment_length;
-            } else {
-                // Moving backward: from frac_start to 0.0
-                ds_seg = -frac_start * segment_length;
-            }
-            
-        } else if (seg_idx == seg_finish_idx) {
-            // Last segment: from beginning of segment to finish position
-            double segment_length = segment->GetLength();
-            if (seg_start_idx < seg_finish_idx) {
-                // Moving forward: from 0.0 to frac_finish
-                ds_seg = frac_finish * segment_length;
-            } else {
-                // Moving backward: from 1.0 to frac_finish
-                ds_seg = (frac_finish - 1.0) * segment_length;
-            }
-            
-        } else {
-            // Middle segment: entire segment length with direction
-            double segment_length = segment->GetLength();
-            if (seg_start_idx < seg_finish_idx) {
-                // Moving forward: positive full segment length
-                ds_seg = segment_length;
-            } else {
-                // Moving backward: negative full segment length
-                ds_seg = -segment_length;
-            }
-        }
-        
+        // The returned ds_seg is signed in the field-line coordinate direction.
+        // Its absolute value determines the residence fraction; its sign is not
+        // used to decide the interacting wave branch because the branch selection
+        // is already determined by the signed vParallel/mu.
+        double ds_seg = GetDirectionalPathInSegment(segment,seg_idx,
+                                                    seg_start_idx,frac_start,
+                                                    seg_finish_idx,frac_finish);
+
         // Skip if path length in segment is negligible (but keep sign)
         if (fabs(ds_seg) < 1.0e-20) {
             continue;
@@ -2646,14 +2710,28 @@ void AccumulateParticleFluxForWaveCoupling(
         PIC::FieldLine::FieldLinesAll[field_line_idx].GetMagneticField(B, 0.5 + seg_idx);
         B0 = Vector3D::Length(B);
         
-        // Calculate local plasma parameters
-        double vAc = B0 / sqrt(VacuumPermeability * rho);                  // Alfvén speed [m/s]
+        // Calculate local plasma parameters.  Every quantity used in the
+        // streaming source term is checked before it contributes to G_±.  The
+        // previous implementation could form extremely large values when B, rho,
+        // volume, or the resonant wave number were outside the physically valid
+        // range; those values were then amplified by MPI reduction.
+        if (!(rho > 0.0) || !std::isfinite(rho) || !(B0 > 0.0) || !std::isfinite(B0)) {
+            continue;
+        }
+
+        double vAc = B0 / sqrt(VacuumPermeability * rho);        // Alfvén speed [m/s]
         double Omega = Q * B0 / M;                               // Proton cyclotron frequency [rad/s]
-        double pref = (PI * PI) * Omega * Omega / (B0 * B0);    // Normalization factor
+        double pref = (PI * PI) * Omega * Omega / (B0 * B0);     // Normalization factor
+        if (!std::isfinite(vAc) || !std::isfinite(Omega) || !std::isfinite(pref)) {
+            continue;
+        }
         
-        // Get segment volume using proper SEP function
+        // Get segment volume using proper SEP function.  The growth-rate source is
+        // a cell-local density/rate, so the Monte-Carlo contribution is normalized
+        // by the magnetic-tube segment volume.  Invalid or tiny volumes are skipped
+        // rather than allowed to produce unbounded source terms.
         double V_cell = SEP::FieldLine::GetSegmentVolume(segment, field_line_idx);
-        if (V_cell <= 0.0) {
+        if (!(V_cell > 0.0) || !std::isfinite(V_cell)) {
             std::cerr << "Warning: Invalid segment volume (" << V_cell 
                       << ") in segment " << seg_idx << std::endl;
             continue;
@@ -2661,40 +2739,7 @@ void AccumulateParticleFluxForWaveCoupling(
         double Vinv = 1.0 / V_cell;  // Inverse volume [m⁻³]
         
         // ====================================================================
-        // CALCULATE RESONANT WAVENUMBER AND K-BIN
-        // ====================================================================
-        // Cyclotron resonance condition: ω - k‖ v‖ = ±Ω
-        // For Alfvén waves: ω ≈ k‖ v_A, so k_res = Ω / |μ v_total|
-        // where v_total = sqrt(vParallel² + vNormal²)
-        double kRes = Omega / (fabs(mu) * v_magnitude);  // Resonant wavenumber [m⁻¹]
-        
-        // Find corresponding k-bin index
-        int j = GetKBinIndex(kRes);
-        
-        // Initialize k-grid for this calculation
-        double k_j = K_MIN * exp(j * DLNK);  // k value for bin j
-        
-        // ====================================================================
-        // CALCULATE FLUX FUNCTION VALUES
-        // ====================================================================
-        // Calculate local QLT kernel values for both wave modes
-        // K_σ = v_total × μ - σ × v_A, where σ = ±1 for wave direction
-        double K_plus = v_magnitude * mu - vAc;   // Kernel for outward waves (σ = +1)
-        double K_minus = v_magnitude * mu + vAc;  // Kernel for inward waves (σ = -1)
-        
-        // Calculate base flux function coefficient (without time weighting)
-        double p2v = p_momentum * p_momentum * v_magnitude;  // p² v term
-        double flux_coeff = 2.0 * PI * pref * w_i * p2v / 
-                           (2.0 * DLNP) * Vinv / k_j;
-        
-        // ====================================================================
-        // APPLY TIME WEIGHTING AND ACCUMULATE FLUX CONTRIBUTIONS
-        // ====================================================================
-        // Apply time weighting to flux coefficient
-        double weighted_flux_coeff = flux_coeff * time_weight;
-        
-        // ====================================================================
-        // ACCESS INTERMEDIATE STREAMING ARRAYS AND ACCUMULATE
+        // ACCESS INTERMEDIATE STREAMING ARRAYS
         // ====================================================================
         double* G_plus_data = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming);
         double* G_minus_data = segment->GetDatum_ptr(SEP::AlfvenTurbulence_Kolmogorov::G_minus_streaming);
@@ -2705,28 +2750,52 @@ void AccumulateParticleFluxForWaveCoupling(
             continue;
         }
         
-        // Add particle contribution to streaming sums using exact QLT kernel
-        // Thread-safe accumulation (assumes single-threaded access per segment)
-        // Apply time weighting to each contribution
-        
-        // Wave-particle resonance rules:
-        // μ < 0 (inward motion): particle interacts with outward waves (G_plus)
-        // μ > 0 (outward motion): particle interacts with inward waves (G_minus)
-        if (mu < 0.0) {  // Inward motion
-            G_plus_data[j] += weighted_flux_coeff * K_plus;   // Time-weighted outward wave contribution
+        // ====================================================================
+        // BRANCH-SPECIFIC RESONANCE AND ACCUMULATION
+        // ====================================================================
+        // The older code computed a single approximate resonant wave number,
+        // k=Omega/(|mu|v), and deposited either G+ or G- into that same bin.  That
+        // ignores the Alfvén-wave phase speed and can put the particle source into
+        // the wrong bin when v_A is not negligible.  It also allowed out-of-range
+        // resonances to be clamped into the first/last k-bin.
+        //
+        // Here the resonance is evaluated separately for the two wave branches:
+        //
+        //   k_sigma = |Omega| / [ gamma |v_parallel - sigma v_A| ],
+        //
+        // with sigma=+1 for outward waves and sigma=-1 for inward waves.  If the
+        // resonant wave number is outside [K_MIN,K_MAX], the particle simply has no
+        // represented wave mode to interact with and its contribution is skipped.
+        const double p2v = p_momentum * p_momentum * v_magnitude;  // p² v term
+        const double weighted_flux_prefactor =
+            2.0 * PI * pref * w_i * p2v / (2.0 * DLNP) * Vinv * time_weight;
+
+        if (!std::isfinite(weighted_flux_prefactor)) continue;
+
+        // Wave-particle resonance rules used in this model:
+        //   mu < 0: inward-moving particles resonate with outward waves (G_plus)
+        //   mu > 0: outward-moving particles resonate with inward waves (G_minus)
+        if (mu < 0.0) {
+            AccumulateBranchStreamingContribution(G_plus_data,+1,seg_idx,particle_index,
+                                                  weighted_flux_prefactor,
+                                                  vParallel,v_magnitude,gamma_rel,
+                                                  vAc,Omega,dt);
         }
-        if (mu > 0.0) {  // Outward motion
-            G_minus_data[j] += weighted_flux_coeff * K_minus; // Time-weighted inward wave contribution
+        if (mu > 0.0) {
+            AccumulateBranchStreamingContribution(G_minus_data,-1,seg_idx,particle_index,
+                                                  weighted_flux_prefactor,
+                                                  vParallel,v_magnitude,gamma_rel,
+                                                  vAc,Omega,dt);
         }
 
-	/*
-        if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-            validate_numeric(G_plus_data[j], -100.0, 50.0, __LINE__, __FILE__);
-            validate_numeric(G_minus_data[j], -100.0, 50.0, __LINE__, __FILE__);
-            validate_numeric(time_weight, 0.0, 1.0, __LINE__, __FILE__);
-            validate_numeric(dt_segment, 0.0, dt*(1.0+1.0E-8), __LINE__, __FILE__);
-        }
-	*/
+	
+        //if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+            //validate_numeric(G_plus_data[j], -1000.0, 1000.0, __LINE__, __FILE__);
+            //validate_numeric(G_minus_data[j], -1000.0, 1000.0, __LINE__, __FILE__);
+            //validate_numeric(time_weight, 0.0, 1.0, __LINE__, __FILE__);
+            //validate_numeric(dt_segment, 0.0, dt*(1.0+1.0E-8), __LINE__, __FILE__);
+        //}
+	
     }
 }
 
