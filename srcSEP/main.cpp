@@ -30,6 +30,7 @@
 #include "constants.h"
 #include "sep.h"
 #include "util/sep_cli.h"
+#include "debug/sep_debug_fieldline_datum.h"
 
 #include "tests.h"
 
@@ -410,6 +411,73 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
 
   //time step
   for (long int niter=0;niter<TotalIterations;niter++) {
+    // ----------------------------------------------------------------------
+    // Debug-only validation of field-line datums at the very beginning of the
+    // main iteration.
+    //
+    // This check is intentionally placed before amps_time_step(), shock
+    // injection, particle/turbulence coupling, advection, reflection, cascade,
+    // and all MPI synchronization performed later in the iteration.  If an AMPS
+    // field-line MPI unpack routine later finds a non-finite or overflowed
+    // value, these pre-iteration checks help determine whether the bad value
+    // already existed in the local field-line state or was created by one of the
+    // subsequent operators / MPI reductions in the current iteration.
+    //
+    // The helper takes the datum as an argument, so additional datums can be
+    // checked by adding one more call here.  The calls are protected by the AMPS
+    // debugger-mode macro and are therefore inactive in normal production runs.
+    // ----------------------------------------------------------------------
+    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+      SEP::Debug::ValidateFieldLineDatum(
+          SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy,
+          "CellIntegratedWaveEnergy",
+          "beginning of main iteration",
+          niter,
+          __LINE__,
+          __FILE__);
+
+      SEP::Debug::ValidateFieldLineDatum(
+          SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity,
+          "WaveEnergyDensity",
+          "beginning of main iteration",
+          niter,
+          __LINE__,
+          __FILE__);
+
+      SEP::Debug::ValidateFieldLineDatum(
+          SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming,
+          "G_plus_streaming",
+          "beginning of main iteration",
+          niter,
+          __LINE__,
+          __FILE__);
+
+      SEP::Debug::ValidateFieldLineDatum(
+          SEP::AlfvenTurbulence_Kolmogorov::G_minus_streaming,
+          "G_minus_streaming",
+          "beginning of main iteration",
+          niter,
+          __LINE__,
+          __FILE__);
+
+      if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
+        SEP::Debug::ValidateFieldLineDatum(
+            SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergy,
+            "WaveNumberResolved::SpectralWaveEnergy",
+            "beginning of main iteration",
+            niter,
+            __LINE__,
+            __FILE__);
+
+        SEP::Debug::ValidateFieldLineDatum(
+            SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergyExchangeRate,
+            "WaveNumberResolved::SpectralWaveEnergyExchangeRate",
+            "beginning of main iteration",
+            niter,
+            __LINE__,
+            __FILE__);
+      }
+    }
     //SEP::InitDriftVelData();
     
     static double rsh0=SEP::ParticleSource::ShockWave::Tenishev2005::rShock; 
