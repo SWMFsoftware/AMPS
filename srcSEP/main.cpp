@@ -408,9 +408,52 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
   vector<vector<double> > DeltaE_plus, DeltaE_minus;
 
 
+  // --------------------------------------------------------------------------
+  // ResetWaveParticleStreamingAccumulators()
+  // --------------------------------------------------------------------------
+  // G_plus_streaming and G_minus_streaming are not physical wave-energy state
+  // variables.  They are one-time Monte-Carlo accumulators filled by the particle
+  // mover during the current AMPS time step and then MPI-summed before the
+  // turbulence wave-particle coupling manager is called.  Therefore they must be
+  // zeroed on every MPI rank, on every local/ghost copy of every field-line
+  // segment, before particles are moved.  If stale values remain on non-owning
+  // ranks, MPIAllReduceDatumStoredAtEdge() can repeatedly re-sum old source terms
+  // and produce artificially large growth/damping rates.
+  //
+  // Keep the reset local to main.cpp rather than relying on a coupling manager to
+  // clear only owned segments after use.  The particle mover is the producer of
+  // these source terms, so the safe place to clear them is immediately before the
+  // particle mover is entered through amps_time_step().
+  // --------------------------------------------------------------------------
+  auto ResetWaveParticleStreamingAccumulators = []() {
+    auto ResetDatum = [](PIC::Datum::cDatumStored& Datum) {
+      for (int iFieldLine=0; iFieldLine<PIC::FieldLine::nFieldLine; ++iFieldLine) {
+        for (PIC::FieldLine::cFieldLineSegment* Segment =
+                 PIC::FieldLine::FieldLinesAll[iFieldLine].GetFirstSegment();
+             Segment != NULL;
+             Segment = Segment->GetNext()) {
+          double* data = Segment->GetDatum_ptr(Datum);
+          if (data == NULL) continue;
+
+          for (int i=0; i<Datum.length; ++i) data[i]=0.0;
+        }
+      }
+    };
+
+    ResetDatum(SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming);
+    ResetDatum(SEP::AlfvenTurbulence_Kolmogorov::G_minus_streaming);
+    ResetDatum(SEP::AlfvenTurbulence_Kolmogorov::gamma_plus_array);
+    ResetDatum(SEP::AlfvenTurbulence_Kolmogorov::gamma_minus_array);
+  };
+
 
   //time step
   for (long int niter=0;niter<TotalIterations;niter++) {
+    if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag &&
+        SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode) {
+      ResetWaveParticleStreamingAccumulators();
+    }
+
     // ----------------------------------------------------------------------
     // Debug-only validation of field-line datums at the very beginning of the
     // main iteration.
@@ -479,7 +522,7 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::GetSegmentVolume;
       }
     }
     //SEP::InitDriftVelData();
-    
+
     static double rsh0=SEP::ParticleSource::ShockWave::Tenishev2005::rShock; 
     
     if (niter==0) {
