@@ -150,6 +150,8 @@ MORE:
 
 
 #include "sep.h"
+#include <algorithm>
+#include <cmath>
 
 namespace SEP {
 namespace AlfvenTurbulence_Kolmogorov {
@@ -175,6 +177,54 @@ const double P_MAX = 1.0e-17; // Maximum momentum [kg⋅m/s]
 // Grid spacing in logarithmic coordinates
 const double DLNK = log(K_MAX / K_MIN) / (NK - 1); // log-k spacing
 const double DLNP = log(P_MAX / P_MIN) / (NP - 1); // log-p spacing (for normalization)
+
+// ============================================================================
+// PARTICLE-ENERGY FLOOR USED BY WAVE-PARTICLE REDISTRIBUTION
+// ============================================================================
+//
+// The wave-particle coupling model is defined only for particles whose momentum
+// is inside [P_MIN,P_MAX].  A numerical redistribution step must therefore never
+// decelerate a particle below the lower boundary of that interval.  In addition,
+// keep an explicit hard floor of 1 m/s so the AMPS particle buffer never receives
+// exactly zero velocity from this coupling module.  Zero-speed particles later
+// make pitch-angle and energy-bin sampling ill-defined.
+//
+// These helpers are intentionally local to the coupling module.  They do not
+// modify particle injection or the general SEP mover; they only constrain the
+// amount of kinetic energy that the wave-particle source term is allowed to remove
+// from a particle during one redistribution update.
+inline double CouplingMinimumSpeed(double mass) {
+    const double user_floor_speed = 1.0; // [m/s] hard numerical lower bound
+    if (!(mass > 0.0) || !std::isfinite(mass)) return user_floor_speed;
+
+    const double mc = mass*SpeedOfLight;
+    if (!(mc > 0.0) || !std::isfinite(mc)) return user_floor_speed;
+
+    const double p_over_mc = P_MIN/mc;
+    const double gamma_floor = sqrt(1.0 + p_over_mc*p_over_mc);
+    const double v_from_pmin = P_MIN/(gamma_floor*mass);
+    if (!(v_from_pmin > 0.0) || !std::isfinite(v_from_pmin)) return user_floor_speed;
+
+    return std::max(user_floor_speed,v_from_pmin);
+}
+
+inline double CouplingKineticEnergyFloor(double mass) {
+    if (!(mass > 0.0) || !std::isfinite(mass)) return 0.0;
+
+    const double pc = P_MIN*SpeedOfLight;
+    const double mc2 = mass*SpeedOfLight*SpeedOfLight;
+    const double kinetic_floor_from_p = sqrt(pc*pc + mc2*mc2) - mc2;
+
+    const double v_floor = CouplingMinimumSpeed(mass);
+    const double beta2 = (v_floor*v_floor)/(SpeedOfLight*SpeedOfLight);
+    double kinetic_floor_from_v = 0.0;
+    if (beta2 > 0.0 && beta2 < 1.0) {
+        const double gamma = 1.0/sqrt(1.0-beta2);
+        kinetic_floor_from_v = (gamma-1.0)*mc2;
+    }
+
+    return std::max(kinetic_floor_from_p,kinetic_floor_from_v);
+}
 
 // ============================================================================
 // HELPER FUNCTION: FIND K-BIN INDEX
@@ -912,8 +962,12 @@ void AccumulateParticleFluxForWaveCoupling(
                                  (PhysicsConstants::C_LIGHT*PhysicsConstants::C_LIGHT));
     double p_momentum = gamma_rel * M * v_magnitude;  // [kg⋅m/s]
     
-    // Skip particles outside momentum range of interest
-    if (p_momentum < P_MIN || p_momentum > P_MAX) {
+    // Skip particles outside the momentum range represented by the coupling
+    // model.  This is not a fatal particle-transport error: a particle can be
+    // valid for SEP transport while being too slow or too energetic to be
+    // represented by the current wave-particle coupling grid.  In that case the
+    // particle should simply not contribute to the wave-growth accumulators.
+    if (!(p_momentum >= P_MIN && p_momentum <= P_MAX) || !std::isfinite(p_momentum)) {
         return;
     }
     
@@ -1412,7 +1466,8 @@ void RedistributeWaveEnergyToParticles(
     // ========================================================================
     if (!segment || segment->Thread != PIC::ThisThread || 
         (sigma != -1 && sigma != 1) || 
-        particle_energy_change * particle_energy_change < 1.0e-50) {
+        !std::isfinite(particle_energy_change) ||
+        fabs(particle_energy_change) < 1.0e-50) {
         return;
     }
 
@@ -1427,7 +1482,10 @@ void RedistributeWaveEnergyToParticles(
     segment->GetMagneticField(0.5, B);
     const double B0 = Vector3D::Length(B);
     
+    if (!(rho > 0.0) || !std::isfinite(rho) || !(B0 > 0.0) || !std::isfinite(B0)) return;
+
     const double vA = B0 / sqrt(VacuumPermeability * rho);  // Alfvén speed [m/s]
+    if (!std::isfinite(vA)) return;
     const double sigma_vA = sigma * vA;  // Pre-calculate sigma * vA
     const double SpeedOfLight2 = SpeedOfLight * SpeedOfLight;  // Cache c²
 
@@ -1458,7 +1516,7 @@ void RedistributeWaveEnergyToParticles(
         // Fast magnitude calculation
         const double v2 = vParallel * vParallel + vNormal * vNormal;
         
-        if (v2 < 1.0e-40) { // v² < threshold avoids sqrt
+        if (!std::isfinite(v2) || v2 < 1.0e-40 || v2 >= SpeedOfLight2) { // v² < threshold avoids sqrt
             p = PIC::ParticleBuffer::GetNext(p);
             continue;
         }
@@ -1527,16 +1585,40 @@ void RedistributeWaveEnergyToParticles(
         // INLINE MOMENTUM AND WEIGHT CALCULATIONS
         // ====================================================================
         const int species = PIC::ParticleBuffer::GetI(p);
+        if (species < 0 || species >= PIC::nTotalSpecies) {
+            p = PIC::ParticleBuffer::GetNext(p);
+            continue;
+        }
         const double mass = PIC::MolecularData::GetMass(species);
+        if (!(mass > 0.0) || !std::isfinite(mass)) {
+            p = PIC::ParticleBuffer::GetNext(p);
+            continue;
+        }
         
         // Fast relativistic momentum calculation
         const double gamma_inv2 = 1.0 - v2 / SpeedOfLight2;
+        if (!(gamma_inv2 > 0.0) || !std::isfinite(gamma_inv2)) {
+            p = PIC::ParticleBuffer::GetNext(p);
+            continue;
+        }
         const double gamma = 1.0 / sqrt(gamma_inv2);
         const double p_momentum = gamma * mass * v_mag;
+        if (!(p_momentum >= P_MIN && p_momentum <= P_MAX) || !std::isfinite(p_momentum) ||
+            v_mag < CouplingMinimumSpeed(mass)) {
+            // Slow/out-of-range particles are valid transport particles, but the
+            // turbulence coupling model does not represent their resonances.
+            // Do not let them participate in energy redistribution.
+            p = PIC::ParticleBuffer::GetNext(p);
+            continue;
+        }
         
         // Statistical weight calculation
         const double w_cnt = PIC::ParticleWeightTimeStep::GlobalParticleWeight[species] * 
                             PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+        if (!(w_cnt > 0.0) || !std::isfinite(w_cnt)) {
+            p = PIC::ParticleBuffer::GetNext(p);
+            continue;
+        }
         
         // QLT kernel: K_σ = v_i μ_i - σ v_A (pre-calculated sigma_vA)
         const double K_sigma = v_mag * mu_i - sigma_vA;
@@ -1592,40 +1674,46 @@ void RedistributeWaveEnergyToParticles(
         // CALCULATE ENERGY CHANGE
         // ====================================================================
         const double dE_i = scale * wi_s;
-        const double dE_physical = dE_i / stat_weight[i];
+        double dE_physical = dE_i / stat_weight[i];
+        if (!std::isfinite(dE_physical)) continue;
         
         // Current kinetic energy calculation
         const double v_current = current_speed[i];
         const double v2_current = v_current * v_current;
+        if (!(v_current >= CouplingMinimumSpeed(particle_mass[i])) ||
+            !(v2_current > 0.0) || v2_current >= SpeedOfLight2 || !std::isfinite(v2_current)) continue;
         const double gamma_current = 1.0 / sqrt(1.0 - v2_current / SpeedOfLight2);
         const double Ek_current = (gamma_current - 1.0) * particle_mass[i] * SpeedOfLight2;
+        if (!(Ek_current > 0.0) || !std::isfinite(Ek_current)) continue;
         
-        // New kinetic energy with floor at zero
+        // New kinetic energy with a coupling floor, not with a zero-energy floor.
+        // A particle below this floor would be outside [P_MIN,P_MAX] and should
+        // not interact with the resolved turbulence; writing zero velocity into
+        // the particle buffer also breaks downstream sampling.
+        const double kinetic_floor = std::max(CouplingKineticEnergyFloor(particle_mass[i]),1.0e-30);
+        if (Ek_current + dE_physical < kinetic_floor) dE_physical = kinetic_floor - Ek_current;
         double Ek_new = Ek_current + dE_physical;
-        if (Ek_new < 0.0) Ek_new = 0.0;
+        if (!(Ek_new > 0.0) || !std::isfinite(Ek_new)) continue;
         
         // ====================================================================
         // FAST VELOCITY UPDATE
         // ====================================================================
-        if (Ek_new > 0.0) {
-            // New Lorentz factor and velocity
-            const double gamma_new = Ek_new / (particle_mass[i] * SpeedOfLight2) + 1.0;
-            const double gamma_new2 = gamma_new * gamma_new;
-            const double v_new = SpeedOfLight * sqrt(1.0 - 1.0 / gamma_new2);
-            
-            // Scale factor to preserve pitch angle
-            const double scale_factor = v_new / v_current;
-            const double vParallel_new = current_vParallel[i] * scale_factor;
-            const double vNormal_new = current_vNormal[i] * scale_factor;
-            
-            // Update particle buffer (minimal function calls)
-            PIC::ParticleBuffer::SetVParallel(vParallel_new, particle_idx[i]);
-            PIC::ParticleBuffer::SetVNormal(vNormal_new, particle_idx[i]);
-        } else {
-            // Zero energy case
-            PIC::ParticleBuffer::SetVParallel(0.0, particle_idx[i]);
-            PIC::ParticleBuffer::SetVNormal(0.0, particle_idx[i]);
-        }
+        const double gamma_new = Ek_new / (particle_mass[i] * SpeedOfLight2) + 1.0;
+        if (!(gamma_new > 1.0) || !std::isfinite(gamma_new)) continue;
+        const double gamma_new2 = gamma_new * gamma_new;
+        double v_new = SpeedOfLight * sqrt(std::max(0.0,1.0 - 1.0 / gamma_new2));
+        const double v_floor = CouplingMinimumSpeed(particle_mass[i]);
+        if (v_new < v_floor) v_new = v_floor;
+        
+        // Scale factor to preserve pitch angle
+        const double scale_factor = v_new / v_current;
+        if (!std::isfinite(scale_factor)) continue;
+        const double vParallel_new = current_vParallel[i] * scale_factor;
+        const double vNormal_new = current_vNormal[i] * scale_factor;
+        
+        // Update particle buffer (minimal function calls)
+        PIC::ParticleBuffer::SetVParallel(vParallel_new, particle_idx[i]);
+        PIC::ParticleBuffer::SetVNormal(vNormal_new, particle_idx[i]);
     }
     
     // ========================================================================
@@ -1653,7 +1741,8 @@ void RedistributeWaveEnergyToParticles(
     
     // Fast input validation
     if (!segment || segment->Thread != PIC::ThisThread || 
-        particle_energy_change * particle_energy_change < 1.0e-50) {
+        !std::isfinite(particle_energy_change) ||
+        fabs(particle_energy_change) < 1.0e-50) {
         return;
     }
     
@@ -1667,7 +1756,9 @@ void RedistributeWaveEnergyToParticles(
     double B[3];
     segment->GetMagneticField(0.5, B);
     const double B0 = Vector3D::Length(B);
+    if (!(rho > 0.0) || !std::isfinite(rho) || !(B0 > 0.0) || !std::isfinite(B0)) return;
     const double vA = B0 / sqrt(VacuumPermeability * rho);
+    if (!std::isfinite(vA)) return;
     const double SpeedOfLight2 = SpeedOfLight * SpeedOfLight;
     
     // ========================================================================
@@ -1694,7 +1785,7 @@ void RedistributeWaveEnergyToParticles(
         const double vNormal = PIC::ParticleBuffer::GetVNormal(p);
         const double v2 = vParallel * vParallel + vNormal * vNormal;
         
-        if (v2 < 1.0e-40) {
+        if (!std::isfinite(v2) || v2 < 1.0e-40 || v2 >= SpeedOfLight2) {
             p = PIC::ParticleBuffer::GetNext(p);
             continue;
         }
@@ -1754,15 +1845,32 @@ void RedistributeWaveEnergyToParticles(
         
         // Get particle properties
         const int species = PIC::ParticleBuffer::GetI(p);
+        if (species < 0 || species >= PIC::nTotalSpecies) {
+            p = PIC::ParticleBuffer::GetNext(p);
+            continue;
+        }
         const double mass = PIC::MolecularData::GetMass(species);
+        if (!(mass > 0.0) || !std::isfinite(mass)) {
+            p = PIC::ParticleBuffer::GetNext(p);
+            continue;
+        }
         
         // Momentum calculation
         const double gamma = 1.0 / sqrt(1.0 - v2 / SpeedOfLight2);
         const double p_momentum = gamma * mass * v_mag;
+        if (!(p_momentum >= P_MIN && p_momentum <= P_MAX) || !std::isfinite(p_momentum) ||
+            v_mag < CouplingMinimumSpeed(mass)) {
+            p = PIC::ParticleBuffer::GetNext(p);
+            continue;
+        }
         
         // Statistical weight
         const double w_cnt = PIC::ParticleWeightTimeStep::GlobalParticleWeight[species] * 
                             PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+        if (!(w_cnt > 0.0) || !std::isfinite(w_cnt)) {
+            p = PIC::ParticleBuffer::GetNext(p);
+            continue;
+        }
         
         // Combined kernel strength for both modes
         const double K_plus = v_mag * mu_i - vA;
@@ -1814,30 +1922,35 @@ void RedistributeWaveEnergyToParticles(
         if (wi_s * wi_s < 1.0e-60) continue;
         
         const double dE_i = scale * wi_s;
-        const double dE_physical = dE_i / stat_weight[i];
+        double dE_physical = dE_i / stat_weight[i];
+        if (!std::isfinite(dE_physical)) continue;
         
         // Current energy
         const double v_current = current_speed[i];
         const double v2_current = v_current * v_current;
+        if (!(v_current >= CouplingMinimumSpeed(particle_mass[i])) ||
+            !(v2_current > 0.0) || v2_current >= SpeedOfLight2 || !std::isfinite(v2_current)) continue;
         const double gamma_current = 1.0 / sqrt(1.0 - v2_current / SpeedOfLight2);
         const double Ek_current = (gamma_current - 1.0) * particle_mass[i] * SpeedOfLight2;
+        if (!(Ek_current > 0.0) || !std::isfinite(Ek_current)) continue;
         
-        // New energy
+        // New energy with coupling floor; never write zero velocity.
+        const double kinetic_floor = std::max(CouplingKineticEnergyFloor(particle_mass[i]),1.0e-30);
+        if (Ek_current + dE_physical < kinetic_floor) dE_physical = kinetic_floor - Ek_current;
         double Ek_new = Ek_current + dE_physical;
-        if (Ek_new < 0.0) Ek_new = 0.0;
+        if (!(Ek_new > 0.0) || !std::isfinite(Ek_new)) continue;
         
         // Update velocities
-        if (Ek_new > 0.0) {
-            const double gamma_new = Ek_new / (particle_mass[i] * SpeedOfLight2) + 1.0;
-            const double v_new = SpeedOfLight * sqrt(1.0 - 1.0 / (gamma_new * gamma_new));
-            const double scale_factor = v_new / v_current;
-            
-            PIC::ParticleBuffer::SetVParallel(current_vParallel[i] * scale_factor, particle_idx[i]);
-            PIC::ParticleBuffer::SetVNormal(current_vNormal[i] * scale_factor, particle_idx[i]);
-        } else {
-            PIC::ParticleBuffer::SetVParallel(0.0, particle_idx[i]);
-            PIC::ParticleBuffer::SetVNormal(0.0, particle_idx[i]);
-        }
+        const double gamma_new = Ek_new / (particle_mass[i] * SpeedOfLight2) + 1.0;
+        if (!(gamma_new > 1.0) || !std::isfinite(gamma_new)) continue;
+        double v_new = SpeedOfLight * sqrt(std::max(0.0,1.0 - 1.0 / (gamma_new * gamma_new)));
+        const double v_floor = CouplingMinimumSpeed(particle_mass[i]);
+        if (v_new < v_floor) v_new = v_floor;
+        const double scale_factor = v_new / v_current;
+        if (!std::isfinite(scale_factor)) continue;
+        
+        PIC::ParticleBuffer::SetVParallel(current_vParallel[i] * scale_factor, particle_idx[i]);
+        PIC::ParticleBuffer::SetVNormal(current_vNormal[i] * scale_factor, particle_idx[i]);
     }
     
     // ========================================================================
@@ -2317,15 +2430,15 @@ void AccumulateParticleFluxForWaveCoupling(
                                  (SpeedOfLight*SpeedOfLight));
     double p_momentum = gamma_rel * M * v_magnitude;  // [kg⋅m/s]
     
-    // Check particles outside momentum range of interest
-    if (p_momentum < P_MIN || p_momentum > P_MAX) {
-        char error_msg[512];
-        sprintf(error_msg, 
-            "Particle momentum (%.6e kg⋅m/s) outside range [%.6e, %.6e]. "
-            "Particle: speed=%.6e m/s, vParallel=%.6e m/s, vNormal=%.6e m/s. "
-            "Please increase momentum range P_MIN/P_MAX in wave-particle coupling.",
-            p_momentum, P_MIN, P_MAX, v_magnitude, vParallel, vNormal);
-        exit(__LINE__, __FILE__, error_msg);
+    // Check particles outside the momentum range represented by the coupling
+    // model.  This is not a fatal particle-transport error: a particle can be
+    // valid for SEP transport while being too slow or too energetic to be
+    // represented by the current wave-particle coupling grid.  In that case the
+    // particle should simply not contribute to G_+(k) or G_-(k).  Treating this
+    // condition as fatal caused runs to stop after strong damping drove a small
+    // number of Monte-Carlo particles below P_MIN.
+    if (!(p_momentum >= P_MIN && p_momentum <= P_MAX) || !std::isfinite(p_momentum)) {
+        return;
     }
     
     // ========================================================================
@@ -2431,26 +2544,88 @@ void AccumulateParticleFluxForWaveCoupling(
         }
         
         // ====================================================================
-        // CALCULATE TIME SPENT IN THIS SEGMENT
+        // CALCULATE THE FRACTION OF THE PARTICLE TIME STEP SPENT IN THIS SEGMENT
         // ====================================================================
-        // Time spent in segment based on TRANSLATIONAL motion along field line
-        // Time = |path length in segment| / |parallel velocity|
-        double dt_segment = fabs(ds_seg) / fabs(vParallel);  // [s]
-        
-        // Calculate time weighting factor: fraction of total time step spent in this segment
-        double time_weight = dt_segment / dt;  // Dimensionless [0, 1]
-        
-        // Ensure time weighting is physical (can't spend more than total time in segment)
-        if (time_weight > 1.0) {
-           if (time_weight > 1.0+1.0E-8) {
-	      char error_msg[256];
-	      snprintf(error_msg, sizeof(error_msg), 
-	        "Error: Time weight (%f) > 1.0 in segment %d. This indicates a serious computational error.",
-					                  time_weight, seg_idx);
-	      exit(__LINE__, __FILE__, error_msg);
-	   }
+        // The coupling source term is accumulated along the portion of the particle
+        // trajectory that crossed this field-line segment.  The previous
+        // implementation estimated the residence fraction as
+        //
+        //     time_weight = ( |ds_seg| / |v_parallel| ) / dt .
+        //
+        // Algebraically this is equivalent to |ds_seg|/|v_parallel dt|, but it is
+        // numerically more fragile because it divides by two independently rounded
+        // quantities.  For particles that spend almost the whole time step in one
+        // segment, roundoff can make the ratio slightly larger than unity.  That is
+        // the failure mode seen in the debugger: the particle displacement was
+        // consistent with v_parallel*dt, but the reconstructed segment path made
+        // time_weight = 1 + eps.  Such a case should not terminate the run.
+        //
+        // Use the total field-line distance actually passed by the mover,
+        // totalTraversedPath, as the normalization.  Its sign indicates whether the
+        // particle moved forward or backward along the field line; the residence time
+        // fraction is positive and therefore uses absolute distances.  If
+        // totalTraversedPath is unavailable or nearly zero, fall back to
+        // |v_parallel|dt.  This keeps the coupling diagnostic robust for very small
+        // displacements and for future movers that may not provide totalTraversedPath.
+        double path_norm = fabs(totalTraversedPath);
+        const double fallback_path_norm = fabs(vParallel) * dt;
 
-	   time_weight=1.0;
+        if (!std::isfinite(path_norm) || path_norm < 1.0e-100) path_norm = fallback_path_norm;
+
+        if (!std::isfinite(path_norm) || path_norm < 1.0e-100) {
+            // This should be unreachable because vParallel and dt were checked above,
+            // but keeping this guard avoids creating NaNs in the coupling accumulators
+            // if a future mover calls this routine with a degenerate trajectory.
+            continue;
+        }
+
+        double time_weight = fabs(ds_seg) / path_norm;  // Dimensionless residence fraction
+
+        // The geometric reconstruction of ds_seg uses field-line segment lengths and
+        // fractional segment coordinates, while totalTraversedPath comes from the
+        // particle mover.  Small differences are expected at segment boundaries and
+        // for particles that remain in one segment.  A value slightly above one is
+        // therefore a roundoff/coordinate-reconstruction artifact, not a fatal error.
+        //
+        // For larger inconsistencies, we still avoid terminating the production run:
+        // the physically meaningful residence fraction cannot exceed one, so clamp it
+        // and print a limited diagnostic.  This prevents a single pathological particle
+        // from killing the simulation while preserving enough information to diagnose
+        // a mover/field-line-coordinate issue if it happens repeatedly.
+        if (!std::isfinite(time_weight) || time_weight < 0.0) {
+            static int nBadTimeWeightWarnings = 0;
+            if (nBadTimeWeightWarnings < 20) {
+                std::cerr << "Warning: invalid wave-particle coupling time_weight="
+                          << time_weight << " in segment " << seg_idx
+                          << "; ds_seg=" << ds_seg
+                          << "; totalTraversedPath=" << totalTraversedPath
+                          << "; vParallel=" << vParallel
+                          << "; dt=" << dt
+                          << ". Segment contribution is skipped." << std::endl;
+                ++nBadTimeWeightWarnings;
+            }
+            continue;
+        }
+
+        if (time_weight > 1.0) {
+            static int nTimeWeightClampWarnings = 0;
+
+            if (time_weight > 1.0 + 1.0e-6 && nTimeWeightClampWarnings < 20) {
+                std::cerr << "Warning: wave-particle coupling residence fraction "
+                          << time_weight << " exceeds unity in segment " << seg_idx
+                          << "; clamping to 1.0.  This usually indicates a small "
+                          << "mismatch between field-line fractional coordinates and "
+                          << "the mover-provided totalTraversedPath, or a particle "
+                          << "crossing a segment boundary within roundoff."
+                          << " ds_seg=" << ds_seg
+                          << "; totalTraversedPath=" << totalTraversedPath
+                          << "; path_norm=" << path_norm
+                          << "; vParallel=" << vParallel
+                          << "; dt=" << dt << std::endl;
+                ++nTimeWeightClampWarnings;
+            }
+
+            time_weight = 1.0;
         }
 
         
