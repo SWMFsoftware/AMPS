@@ -9,7 +9,7 @@ MAINLIBOBJ = exosphere_module.o  main_lib.o inner_boundary_injection.o outer_bou
 # the physics driver.  It is archived into main.a because only the standalone
 # executable uses these run-time switches; the AMPS library objects remain
 # independent of the CLI.
-MAINOBJ = main.o util/sep_cli.o  
+MAINOBJ = main.o util/sep_cli.o debug/sep_debug_fieldline_datum.o  
 
 lib : $(MAINLIBOBJ)
 	ar -rc mainlib.a $(MAINLIBOBJ)
