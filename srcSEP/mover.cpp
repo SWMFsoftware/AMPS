@@ -1221,14 +1221,35 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
   Speed=sqrt(vNormal*vNormal+vParallel*vParallel);
 
   v=sqrt(vParallel*vParallel+vNormal*vNormal);
+
+  // ---------------------------------------------------------------------------
+  // Numerical/physical sanity check.  The focused-transport mover is formulated
+  // in terms of the pitch-angle cosine mu=v_parallel/v.  A zero-speed particle
+  // would therefore immediately generate a division by zero and later could be
+  // written back to the particle buffer as v_parallel=v_normal=0.  Such a particle
+  // is not a valid SEP macro-particle; it usually indicates an injection or an
+  // earlier mover/coupling error.  Stop with a detailed message instead of
+  // silently propagating NaNs or zero velocities into the turbulence coupling.
+  // ---------------------------------------------------------------------------
+  const double MinFocusedTransportSpeed=1.0; // [m/s], only a numerical floor
+  if ((isfinite(v)==false)||(v<=MinFocusedTransportSpeed)) {
+    char msg[512];
+    sprintf(msg,
+        "Error: ParticleMover_FTE received a particle with invalid/zero speed. "
+        "v=%e m/s, vParallel=%e m/s, vNormal=%e m/s, fieldLine=%i, coord=%e. "
+        "A focused-transport particle must have non-zero speed because mu=vParallel/v.",
+        v,vParallel,vNormal,iFieldLine,FieldLineCoord);
+    exit(__LINE__,__FILE__,msg);
+  }
+
   mu=vParallel/v;
 
   //get D_mu_mu and evaluate the time substep 
   D_mumu=QLT::calculateDmuMu(v,mu,rHelio); 
 
-  // Mean of |N(0,1)| is sqrt(2/pi)=0.7978845608.  The old value
-  // was smaller by a factor of ten, which made the adaptive substep
-  // estimate under-resolve pitch-angle scattering.
+  // Mean absolute value of a standard normal deviate is sqrt(2/pi)=0.79788456.
+  // The previous value was smaller by a factor of ten, which made the adaptive
+  // substep estimate inconsistent with the actual stochastic pitch-angle kick.
   dmu_mean=sqrt(2.0*D_mumu*dtTotal)*0.7978845608028654;
 
   if (dmu_mean>0.2) {
@@ -1249,14 +1270,25 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
   double B;
 
   while (TimeCounter<dtTotal) {
-    // Clip the last substep to the remaining AMPS time step.  Without this,
-    // the mover can advance a particle longer than dtTotal when dt does not
-    // divide dtTotal exactly.
-    double dtStep=dt;
-    if (TimeCounter+dtStep>dtTotal) dtStep=dtTotal-TimeCounter;
+    // Clip the local substep to the remaining part of the AMPS particle time step.
+    // Without this clipping, the last substep can advance the particle and the
+    // turbulence-coupling path integral beyond dtTotal.
+    double dt_step=std::min(dt,dtTotal-TimeCounter);
+    if (dt_step<=0.0) break;
 
     D_mumu=QLT::calculateDmuMu(v,mu,rHelio);
-    ds=vParallel*dtStep;
+
+    // Store the velocity components used during this explicit transport substep.
+    // The pitch angle is updated below for the next substep, but the spatial
+    // displacement over the current substep is computed with the old velocity.
+    // These same old components must be passed to the wave-particle coupling
+    // accumulator so that the resonant streaming source is consistent with the
+    // path actually traveled by the particle.
+    double vParallel_substep=vParallel;
+    double vNormal_substep=vNormal;
+
+    ds=vParallel_substep*dt_step;
+    double FieldLineCoordStart=FieldLineCoord;
     
     //calculate L 
     if (Segment!=LastSegment) {
@@ -1278,24 +1310,38 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
 	dB+=t*t;
       }
 
-      L=-Segment->GetLength()*sqrt(B/dB);
+      if ((dB>0.0)&&(B>0.0)) {
+        L=-Segment->GetLength()*sqrt(B/dB);
+      }
+      else {
+        // Uniform |B| over the segment gives an infinite focusing length and
+        // therefore no deterministic focusing contribution.
+        L=1.0e100;
+      }
       LastSegment=Segment;
     } 
 
-    dmu=-(1.0-mu*mu)/(2.0*L)*v*dtStep;
-    dmu+=sqrt(2.0*D_mumu*dtStep)*Vector3D::Distribution::Normal(); 
+    dmu=0.0;
+    if ((isfinite(L)==true)&&(fabs(L)>1.0e-100)) {
+      dmu=-(1.0-mu*mu)/(2.0*L)*v*dt_step;
+    }
+    if ((D_mumu>0.0)&&(isfinite(D_mumu)==true)) {
+      dmu+=sqrt(2.0*D_mumu*dt_step)*Vector3D::Distribution::Normal();
+    }
     mu+=dmu;
 
-    // Reflect pitch-angle cosine at the physical boundaries mu=+/-1.
-    // The previous wrap-around logic mapped, for example, mu=1.1 to 0.1,
-    // which created an artificial large-angle scattering event.
+    // Reflect the pitch-angle cosine at the physical boundaries mu=+/-1.  The
+    // earlier implementation wrapped mu by subtracting one, e.g. 1.1 -> 0.1,
+    // which is not a reflecting boundary and produces an artificial large-angle
+    // scattering event.  The reflection below preserves the distance beyond the
+    // boundary: 1.1 -> 0.9 and -1.1 -> -0.9.
     while ((-1.0>mu)||(mu>1.0)) {
       if (mu>1.0) mu=2.0-mu;
-      if (mu<-1.0) mu=-2.0-mu; 
+      if (mu<-1.0) mu=-2.0-mu;
     }
 
-    if (mu>=1.0) mu=1.0-1.0E-12;
-    if (mu<=-1.0) mu=-1.0+1.0E-12; 
+    if (mu>1.0-1.0e-12) mu=1.0-1.0e-12;
+    if (mu<-1.0+1.0e-12) mu=-1.0+1.0e-12; 
 
 
     vParallel=mu*v; 
@@ -1305,6 +1351,26 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
       //the particle has left the simulation, and it is need to be deleted
       PIC::ParticleBuffer::DeleteParticle(ptr);
       return _PARTICLE_LEFT_THE_DOMAIN_;
+    }
+
+    // Feed the manager-based wave-particle coupling with the actual path traveled
+    // during this focused-transport substep.  This is the missing link that makes
+    // the default FTE mover compatible with both the integrated and the
+    // wave-number-resolved turbulence models: the coupling manager can update
+    // E_+(k) and E_-(k) only after the mover fills G_+(k) and G_-(k).
+    //
+    // The normalization time passed to AccumulateParticleFluxForWaveCoupling() is
+    // dtTotal, not dt_step.  The coupling arrays represent the time-averaged
+    // streaming source over the full AMPS particle step.  Since this mover can split
+    // dtTotal into several substeps, each substep contributes only the fraction of
+    // the full-step path/time it actually covers.
+    if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag &&
+        SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode &&
+        fabs(ds)>0.0) {
+      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::AccumulateParticleFluxForWaveCoupling(
+          iFieldLine,ptr,dtTotal,
+          vParallel_substep,vNormal_substep,
+          FieldLineCoordStart,FieldLineCoord,ds);
     }
 
 
@@ -1323,11 +1389,11 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
 
       switch (PerpScatteringMode) {
       case PerpScatteringMode_MeanFreePath:
-        r=sqrt(r*r+vNormal*dtStep*(2.0*sin_theta*r+vNormal*dtStep));
+        r=sqrt(r*r+vNormal*dt_step*(2.0*sin_theta*r+vNormal*dt_step));
         break;
       case PerpScatteringMode_diffusion:
         D_perp=QLT1::calculatePerpendicularDiffusion(rHelio,Speed,B);
-        dr=sqrt(2.0*D_perp*dtStep)*Vector3D::Distribution::Normal();
+        dr=sqrt(2.0*D_perp*dt_step)*Vector3D::Distribution::Normal();
         r=sqrt(r*r+dr*dr+2.0*r*dr*sin_theta);
         break;
       default:
@@ -1337,15 +1403,25 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
       *((double*)(ParticleData+SEP::Offset::RadialLocation))=r;
     }
 
-    TimeCounter+=dtStep;
+    TimeCounter+=dt_step;
 
     Segment->GetCartesian(x,FieldLineCoord);
     rHelio=Vector3D::Length(x);
   }
 
   //set the new values of the normal and parallel particle velocities 
-  vNormal=sqrt(1.0-mu*mu)*v;
-  if (isfinite(vNormal)==false) exit(__LINE__,__FILE__,"Error: nan is found");  
+  // Use a guarded square-root argument because roundoff can make 1-mu^2 slightly
+  // negative when |mu| is extremely close to one.
+  vNormal=sqrt(std::max(0.0,1.0-mu*mu))*v;
+  if ((isfinite(vNormal)==false)||(isfinite(vParallel)==false)||
+      (sqrt(vParallel*vParallel+vNormal*vNormal)<=MinFocusedTransportSpeed)) {
+    char msg[512];
+    sprintf(msg,
+        "Error: ParticleMover_FTE produced an invalid/zero final velocity. "
+        "vParallel=%e m/s, vNormal=%e m/s, mu=%e, speed=%e m/s, fieldLine=%i, coord=%e",
+        vParallel,vNormal,mu,sqrt(vParallel*vParallel+vNormal*vNormal),iFieldLine,FieldLineCoord);
+    exit(__LINE__,__FILE__,msg);
+  }
   
   PB::SetVParallel(vParallel,ParticleData);
   PB::SetVNormal(vNormal,ParticleData);
@@ -2015,20 +2091,13 @@ auto AdvanceLocation_RK4 = [&](double dt) -> bool {
       }
     }
     else {
-      // Not enough time left for scattering.  Advance and diffuse only for
-      // the remaining time.  The previous code used the full stochastic
-      // scattering time dt for perpendicular diffusion and timeCounter,
-      // which could greatly exceed dtTotal when no scattering occurred.
-      double dtStep=dtTotal-timeCounter;
-      if (AdvanceLocation(dtStep) == false) return _PARTICLE_LEFT_THE_DOMAIN_;
+      // Not enough time left for scattering
+      if (AdvanceLocation(dtTotal - timeCounter) == false) return _PARTICLE_LEFT_THE_DOMAIN_;
 
       // Apply perpendicular diffusion
       if (SEP::PerpendicularDiffusionMode==true) {
-        if (PerpendicularDiffusion(dtStep) == false) return _PARTICLE_LEFT_THE_DOMAIN_; 
+        if (PerpendicularDiffusion(dt) == false) return _PARTICLE_LEFT_THE_DOMAIN_; 
       }
-
-      timeCounter += dtStep;
-      continue;
     } 
 
     timeCounter += dt;
