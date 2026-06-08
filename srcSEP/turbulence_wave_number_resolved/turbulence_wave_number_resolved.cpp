@@ -68,6 +68,8 @@ using SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::K_MAX;
 using SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::DLNK;
 using SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::Q;
 using SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::M;
+using SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::P_MIN;
+using SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::P_MAX;
 using SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::GetKBinIndex;
 using SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::RedistributeWaveEnergyToParticles;
 
@@ -302,6 +304,62 @@ inline double NormalizedRate(double density_rate, double wave_density) {
   return density_rate/wave_density;
 }
 
+// Apply one linear wave-particle growth/damping update in a way that cannot
+// generate NaN values.  The formal coupling equation used in this module is
+//
+//     E_j^{n+1} = E_j^n exp(2 gamma_j dt) .
+//
+// In floating-point arithmetic the product 0*exp(+large) is dangerous: exp can
+// overflow to infinity and the product 0*inf becomes NaN.  That is exactly the
+// failure mode seen in debugging when a bin had Eminus_old=0 but the particle
+// streaming accumulator produced a very large/non-finite gamma value.  A zero
+// wave-energy bin cannot exchange finite energy through the multiplicative
+// growth law unless an explicit seed source is added, so we return zero for
+// empty bins.  For non-empty bins the exponent is clipped to a conservative
+// finite range.  This keeps the operator numerically well defined while still
+// allowing very strong growth/damping over one coupling time step.
+inline double SafeWaveParticleEnergyUpdate(double E_old, double gamma, double dt) {
+  if (!std::isfinite(E_old) || E_old <= kTinyEnergy) return 0.0;
+  if (!std::isfinite(gamma) || !(dt > 0.0) || !std::isfinite(dt)) return E_old;
+
+  double exponent = 2.0*gamma*dt;
+  if (!std::isfinite(exponent)) return E_old;
+
+  // The wave-particle source is applied explicitly at the cadence of the main
+  // SEP time step.  If |gamma|*dt is large, the formal exponential update can
+  // request a huge change of one k-bin in a single call.  That is numerically
+  // dangerous for two reasons:
+  //   (1) a very large positive dE_wave must be removed from the finite set of
+  //       resonant Monte-Carlo particles and can drive one or more particles to
+  //       essentially zero momentum;
+  //   (2) a very large negative dE_wave can over-damp a wave bin and make the
+  //       subsequent particle-energy redistribution extremely noisy.
+  // Therefore the explicit coupling operator is limited to a modest fractional
+  // change of the local wave-bin energy per call.  This is equivalent to a local
+  // subcycling/stability condition 2 |gamma| dt <~ max_fractional_change, but it
+  // avoids adding another nested loop here.  A more sophisticated future version
+  // can replace this limiter with true coupling subcycling.
+  const double max_fractional_change = 0.10; // at most 10% of E_old per call
+
+  // Compute the fractional update as exp(exponent)-1.  Clamp the exponent first
+  // to avoid overflow in exp() even when gamma is large.  The subsequent clamp
+  // on fractional_change is the physical/numerical limiter used by the explicit
+  // coupling update.
+  const double max_exponent_for_exp = 50.0;
+  if (exponent >  max_exponent_for_exp) exponent =  max_exponent_for_exp;
+  if (exponent < -max_exponent_for_exp) exponent = -max_exponent_for_exp;
+
+  double fractional_change = std::exp(exponent) - 1.0;
+  if (!std::isfinite(fractional_change)) return E_old;
+
+  if (fractional_change >  max_fractional_change) fractional_change =  max_fractional_change;
+  if (fractional_change < -max_fractional_change) fractional_change = -max_fractional_change;
+
+  const double E_new = E_old*(1.0 + fractional_change);
+  if (!std::isfinite(E_new) || E_new < 0.0) return E_old;
+  return E_new;
+}
+
 // Compute the large-scale, non-WKB reflection rate for a single segment.  This
 // is the same physical rate used by the legacy integrated reflection operator,
 // but this helper returns it to the wave-number-resolved code so the rate can be
@@ -498,6 +556,207 @@ inline double SumBranch(const double* spectrum, bool plus_branch) {
   return sum;
 }
 
+
+// Relativistic kinetic energy corresponding to the lower momentum boundary of
+// the wave-particle coupling model.  The coupling arrays G_+(k),G_-(k) represent
+// only particles whose momenta are in [P_MIN,P_MAX].  When the wave-particle
+// energy exchange removes energy from particles, each resonant particle must be
+// kept above this floor so that the next call to AccumulateParticleFluxForWaveCoupling()
+// does not encounter an artificially created near-zero-speed particle.  The
+// returned value is the physical kinetic energy of one real particle [J].
+inline double CouplingMomentumFloorKineticEnergy(double mass) {
+  if (!(mass > 0.0) || !std::isfinite(mass)) return 0.0;
+  const double pc = P_MIN*SpeedOfLight;
+  const double mc2 = mass*SpeedOfLight*SpeedOfLight;
+  const double total_energy = std::sqrt(pc*pc + mc2*mc2);
+  const double kinetic_floor = total_energy - mc2;
+  if (!(kinetic_floor > 0.0) || !std::isfinite(kinetic_floor)) return 0.0;
+  return kinetic_floor;
+}
+
+// Minimum speed allowed after a wave-particle energy-exchange update.
+//
+// The coupling model represents only particles inside the momentum interval
+// [P_MIN,P_MAX].  In earlier tests a large explicit energy exchange could remove
+// enough kinetic energy from a Monte-Carlo particle that the velocity written back
+// to the AMPS particle buffer became exactly zero.  Such a particle is outside
+// the modeled resonance range and later causes unrelated sampling code to compute
+// invalid pitch-angle/energy-bin indices.
+//
+// Use the larger of two floors:
+//   (1) 1 m/s, requested as a hard numerical lower bound so no coupling update can
+//       write an exactly zero or sub-1 m/s speed;
+//   (2) the relativistic speed corresponding to P_MIN for the particle species.
+//       This is the physically meaningful floor for this coupling model because
+//       particles below it should not interact with the resolved turbulence bins.
+inline double CouplingMinimumSpeed(double mass) {
+  const double user_floor_speed = 1.0; // [m/s], hard lower limit requested for safety
+  if (!(mass > 0.0) || !std::isfinite(mass)) return user_floor_speed;
+
+  const double mc = mass*SpeedOfLight;
+  if (!(mc > 0.0) || !std::isfinite(mc)) return user_floor_speed;
+
+  const double p_over_mc = P_MIN/mc;
+  const double gamma_floor = std::sqrt(1.0 + p_over_mc*p_over_mc);
+  const double v_from_pmin = (P_MIN/(gamma_floor*mass));
+
+  if (!(v_from_pmin > 0.0) || !std::isfinite(v_from_pmin)) return user_floor_speed;
+  return std::max(user_floor_speed,v_from_pmin);
+}
+
+// Relativistic kinetic energy corresponding to a requested speed.  This helper is
+// used only for floors/limiters, so it returns zero if the input is not physical.
+inline double KineticEnergyFromSpeed(double mass, double speed) {
+  if (!(mass > 0.0) || !std::isfinite(mass)) return 0.0;
+  if (!(speed > 0.0) || !std::isfinite(speed) || speed >= SpeedOfLight) return 0.0;
+  const double beta2 = (speed*speed)/(SpeedOfLight*SpeedOfLight);
+  const double gamma = 1.0/std::sqrt(1.0-beta2);
+  if (!(gamma >= 1.0) || !std::isfinite(gamma)) return 0.0;
+  return (gamma-1.0)*mass*SpeedOfLight*SpeedOfLight;
+}
+
+// Kinetic-energy floor used by all spectral redistribution operations.  It is the
+// larger of the P_MIN momentum floor and the explicit 1 m/s speed floor.
+inline double CouplingKineticEnergyFloor(double mass) {
+  const double floor_by_p = CouplingMomentumFloorKineticEnergy(mass);
+  const double floor_by_v = KineticEnergyFromSpeed(mass,CouplingMinimumSpeed(mass));
+  return std::max(floor_by_p,floor_by_v);
+}
+
+// Convert a growth/damping rate to the number of explicit coupling subcycles.
+// The particle streaming arrays are accumulated over the main particle time step,
+// so gamma is held fixed during the subcycles.  The subcycling is only a numerical
+// stabilizer for the explicit energy exchange E -> E exp(2 gamma dt): it limits
+// how much wave energy is exchanged with the finite Monte-Carlo particle ensemble
+// in any one redistribution call.
+inline int CouplingSubcycleCount(double gamma_plus, double gamma_minus, double dt) {
+  if (!(dt > 0.0) || !std::isfinite(dt)) return 1;
+  double gmax = 0.0;
+  if (std::isfinite(gamma_plus))  gmax = std::max(gmax,std::fabs(gamma_plus));
+  if (std::isfinite(gamma_minus)) gmax = std::max(gmax,std::fabs(gamma_minus));
+  if (!(gmax > 0.0)) return 1;
+
+  // Keep |2 gamma dt_sub| <= 0.05.  This is deliberately stricter than the
+  // 10% single-call wave-energy limiter in SafeWaveParticleEnergyUpdate(); the
+  // combination prevents both wave-bin over-damping and excessive particle
+  // deceleration in sparse resonant bins.
+  const double max_exponent_per_subcycle = 0.05;
+  int n = (int)std::ceil((2.0*gmax*dt)/max_exponent_per_subcycle);
+  if (n < 1) n = 1;
+
+  // A hard cap prevents a rare pathological gamma from producing an enormous
+  // loop count.  If this cap is reached, SafeWaveParticleEnergyUpdate() and the
+  // particle-energy capacity limiter still keep the update finite and positive.
+  if (n > 200) n = 200;
+  return n;
+}
+
+// Estimate how much Monte-Carlo particle energy can be removed from the particles
+// resonant with a given wave branch and wave-number bin without pushing any of
+// those particles below the momentum range represented by the coupling model.
+// The result is a macroparticle/statistical energy [J], i.e. the same units as
+// particle_energy_change and dE_wave used by the coupling manager.
+//
+// This helper deliberately mirrors the particle selection rules in
+// RedistributeWaveNumberBinEnergyToParticles(): same branch convention, same
+// resonant k-bin, same species/statistical weight checks.  The manager uses the
+// returned capacity to limit positive wave growth, because positive dE_wave is
+// paid for by a negative particle_energy_change = -dE_wave.
+double EstimateResonantParticleEnergyLossCapacity(
+    PIC::FieldLine::cFieldLineSegment* segment,
+    int sigma,
+    int kbin) {
+
+  if (!segment || segment->Thread != PIC::ThisThread) return 0.0;
+  if (sigma != +1 && sigma != -1) return 0.0;
+  if (kbin < 0 || kbin >= NK) return 0.0;
+
+  double B[3];
+  segment->GetMagneticField(0.5,B);
+  const double B0 = Vector3D::Length(B);
+  if (!(B0 > 0.0) || !std::isfinite(B0)) return 0.0;
+
+  const double c2 = SpeedOfLight*SpeedOfLight;
+  double capacity = 0.0;
+
+  long int p = segment->FirstParticleIndex;
+  while (p != -1) {
+    const double vParallel = PIC::ParticleBuffer::GetVParallel(p);
+    const double vNormal = PIC::ParticleBuffer::GetVNormal(p);
+    const double v2 = vParallel*vParallel + vNormal*vNormal;
+
+    if (!std::isfinite(v2) || v2 <= 0.0 || v2 >= c2) {
+      p = PIC::ParticleBuffer::GetNext(p);
+      continue;
+    }
+
+    const double v_mag = std::sqrt(v2);
+    const double mu = vParallel/v_mag;
+
+    if ((sigma > 0 && mu > 0.0) || (sigma < 0 && mu < 0.0) || std::fabs(mu) < 1.0e-12) {
+      p = PIC::ParticleBuffer::GetNext(p);
+      continue;
+    }
+
+    const double Omega = std::fabs(Q)*B0/M;
+    if (!(Omega > 0.0) || !std::isfinite(Omega)) {
+      p = PIC::ParticleBuffer::GetNext(p);
+      continue;
+    }
+
+    const double kRes = Omega/(std::fabs(mu)*v_mag);
+    if (!(kRes > 0.0) || !std::isfinite(kRes) || GetKBinIndex(kRes) != kbin) {
+      p = PIC::ParticleBuffer::GetNext(p);
+      continue;
+    }
+
+    const int species = PIC::ParticleBuffer::GetI(p);
+    if (species < 0 || species >= PIC::nTotalSpecies) {
+      p = PIC::ParticleBuffer::GetNext(p);
+      continue;
+    }
+
+    const double mass = PIC::MolecularData::GetMass(species);
+    const double stat_weight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[species] *
+                               PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+    if (!(mass > 0.0) || !std::isfinite(mass) || !(stat_weight > 0.0) || !std::isfinite(stat_weight)) {
+      p = PIC::ParticleBuffer::GetNext(p);
+      continue;
+    }
+
+    const double gamma = 1.0/std::sqrt(1.0-v2/c2);
+    if (!std::isfinite(gamma)) {
+      p = PIC::ParticleBuffer::GetNext(p);
+      continue;
+    }
+
+    const double p_momentum = gamma*mass*v_mag;
+    if (!(p_momentum >= P_MIN && p_momentum <= P_MAX) || !std::isfinite(p_momentum)) {
+      p = PIC::ParticleBuffer::GetNext(p);
+      continue;
+    }
+
+    const double Ek_current = (gamma-1.0)*mass*c2;
+    const double Ek_floor = CouplingKineticEnergyFloor(mass);
+    const double available_physical = Ek_current - Ek_floor;
+
+    if (available_physical > 0.0 && std::isfinite(available_physical)) {
+      capacity += stat_weight*available_physical;
+    }
+
+    p = PIC::ParticleBuffer::GetNext(p);
+  }
+
+  if (!(capacity > 0.0) || !std::isfinite(capacity)) return 0.0;
+
+  // Keep an additional safety factor: even if a set of resonant particles could
+  // in principle provide the full capacity, removing all of it in one coupling
+  // call would make the Monte-Carlo representation extremely noisy.  This factor
+  // acts like an energy-exchange CFL condition for the particle population.
+  const double max_particle_loss_fraction_per_call = 0.10;
+  return max_particle_loss_fraction_per_call*capacity;
+}
+
 // Redistribute a wave-energy change for a single k-bin to particles that are
 // resonant with that same k-bin and wave branch.
 //
@@ -515,19 +774,27 @@ void RedistributeWaveNumberBinEnergyToParticles(
   if (!segment || segment->Thread != PIC::ThisThread) return;
   if (sigma != +1 && sigma != -1) return;
   if (kbin < 0 || kbin >= NK) return;
+
+  // The wave-particle coupling manager calls this routine once per branch and
+  // wave-number bin.  A non-finite particle_energy_change means the upstream
+  // wave-energy update became invalid.  Never pass such a value into the particle
+  // buffer update: otherwise dE_i, dE_physical, and finally the velocity scaling
+  // become NaN and can leave particles with zero or corrupted velocity.
+  if (!std::isfinite(particle_energy_change)) return;
   if (std::fabs(particle_energy_change) < 1.0e-50) return;
 
   double rho_tmp = 0.0;
   segment->GetPlasmaDensity(0.5,rho_tmp);
   const double rho = rho_tmp * _H__MASS_;
-  if (rho <= 0.0) return;
+  if (!(rho > 0.0) || !std::isfinite(rho)) return;
 
   double B[3];
   segment->GetMagneticField(0.5,B);
   const double B0 = Vector3D::Length(B);
-  if (B0 <= 0.0) return;
+  if (!(B0 > 0.0) || !std::isfinite(B0)) return;
 
   const double vA = B0/std::sqrt(VacuumPermeability*rho);
+  if (!std::isfinite(vA)) return;
   const double sigma_vA = sigma*vA;
   const double c2 = SpeedOfLight*SpeedOfLight;
 
@@ -547,7 +814,7 @@ void RedistributeWaveNumberBinEnergyToParticles(
     const double vNormal = PIC::ParticleBuffer::GetVNormal(p);
     const double v2 = vParallel*vParallel + vNormal*vNormal;
 
-    if (v2 <= 0.0 || v2 >= c2) {
+    if (!std::isfinite(v2) || v2 <= 0.0 || v2 >= c2) {
       p = PIC::ParticleBuffer::GetNext(p);
       continue;
     }
@@ -564,7 +831,15 @@ void RedistributeWaveNumberBinEnergyToParticles(
     }
 
     const double Omega = std::fabs(Q)*B0/M;
+    if (!(Omega > 0.0) || !std::isfinite(Omega)) {
+      p = PIC::ParticleBuffer::GetNext(p);
+      continue;
+    }
     const double kRes = Omega/(std::fabs(mu)*v_mag);
+    if (!(kRes > 0.0) || !std::isfinite(kRes)) {
+      p = PIC::ParticleBuffer::GetNext(p);
+      continue;
+    }
     const int particle_kbin = GetKBinIndex(kRes);
 
     if (particle_kbin != kbin) {
@@ -579,12 +854,43 @@ void RedistributeWaveNumberBinEnergyToParticles(
     }
 
     const double mass = PIC::MolecularData::GetMass(species);
+    if (!(mass > 0.0) || !std::isfinite(mass)) {
+      p = PIC::ParticleBuffer::GetNext(p);
+      continue;
+    }
     const double gamma = 1.0/std::sqrt(1.0-v2/c2);
+    if (!std::isfinite(gamma)) {
+      p = PIC::ParticleBuffer::GetNext(p);
+      continue;
+    }
     const double p_momentum = gamma*mass*v_mag;
+
+    // Particles outside the momentum interval represented by the coupling model
+    // are valid transport particles, but they should not participate in the
+    // wave-particle energy exchange.  Skipping them here is consistent with
+    // AccumulateParticleFluxForWaveCoupling(), which bins only particles in
+    // [P_MIN,P_MAX].  It also prevents the redistribution step from further
+    // decelerating a particle that has already fallen below the modeled
+    // resonant-momentum range.
+    if (!(p_momentum >= P_MIN && p_momentum <= P_MAX) || !std::isfinite(p_momentum)) {
+      p = PIC::ParticleBuffer::GetNext(p);
+      continue;
+    }
+
+    // Very slow particles are outside the resonance range represented by the
+    // wave-number-resolved turbulence model.  They must not be used as an energy
+    // reservoir for wave growth/damping, otherwise the redistribution step can
+    // repeatedly remove energy from already-depleted Monte-Carlo particles and
+    // eventually write zero velocities into the particle buffer.
+    if (v_mag < CouplingMinimumSpeed(mass)) {
+      p = PIC::ParticleBuffer::GetNext(p);
+      continue;
+    }
+
     const double w_cnt = PIC::ParticleWeightTimeStep::GlobalParticleWeight[species] *
                          PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
 
-    if (w_cnt <= 0.0) {
+    if (!(w_cnt > 0.0) || !std::isfinite(w_cnt)) {
       p = PIC::ParticleBuffer::GetNext(p);
       continue;
     }
@@ -606,37 +912,83 @@ void RedistributeWaveNumberBinEnergyToParticles(
     p = PIC::ParticleBuffer::GetNext(p);
   }
 
-  // If no particles are resonant with this exact bin, fall back to the legacy
-  // branch redistribution.  This prevents wave-energy changes from being lost
-  // in very sparse Monte-Carlo cells while still using the bin-resolved path
-  // whenever resonant particles are present.
-  if (particle_idx.empty() || std::fabs(Wsum) < 1.0e-60) {
-    RedistributeWaveEnergyToParticles(segment,particle_energy_change,sigma);
+  // If no particles are resonant with this exact bin, there is no well-defined
+  // bin-resolved particle population to receive or supply the requested energy.
+  // The older integrated model used a branch-wide fallback in this situation,
+  // but that is not appropriate for the fully spectral model: it can transfer
+  // energy to particles that are not resonant with the current k bin and, in the
+  // wave-growth case, can remove energy from already slow particles.  Therefore
+  // the spectral redistribution returns without modifying any particle when the
+  // exact-bin resonant population is empty.
+  if (particle_idx.empty() || !std::isfinite(Wsum) || std::fabs(Wsum) < 1.0e-60) {
+    // No particles are resonant with this exact spectral bin.  Do not fall back
+    // to the old branch-integrated redistribution here.  That fallback deposits
+    // energy into a broad branch-selected particle population and can also remove
+    // energy from particles that do not belong to the current k bin.  In a fully
+    // spectral model, if no resonant particles exist in a bin, that bin cannot
+    // exchange particle energy during this call.  The coupling manager limits
+    // wave growth using EstimateResonantParticleEnergyLossCapacity(), so this
+    // return avoids creating near-zero-speed particles while preserving the
+    // wave-number locality of the model.
     return;
   }
 
   const double scale = particle_energy_change/Wsum;
+  if (!std::isfinite(scale)) return;
   for (std::size_t i=0; i<particle_idx.size(); ++i) {
     const double dE_i = scale*resonance_weight[i];
-    const double dE_physical = dE_i/stat_weight[i];
+    if (!std::isfinite(dE_i) || !(stat_weight[i] > 0.0) || !std::isfinite(stat_weight[i])) continue;
+
+    double dE_physical = dE_i/stat_weight[i];
+    if (!std::isfinite(dE_physical)) continue;
 
     const double v_current = current_speed[i];
-    const double gamma_current = 1.0/std::sqrt(1.0-v_current*v_current/c2);
-    const double Ek_current = (gamma_current-1.0)*particle_mass[i]*c2;
-    double Ek_new = Ek_current + dE_physical;
-    if (Ek_new < 0.0) Ek_new = 0.0;
+    if (!(v_current > 0.0) || v_current >= SpeedOfLight || !std::isfinite(v_current)) continue;
 
-    if (Ek_new > 0.0) {
-      const double gamma_new = Ek_new/(particle_mass[i]*c2) + 1.0;
-      const double v_new = SpeedOfLight*std::sqrt(1.0 - 1.0/(gamma_new*gamma_new));
-      const double scale_v = v_new/v_current;
-      PIC::ParticleBuffer::SetVParallel(current_vParallel[i]*scale_v,particle_idx[i]);
-      PIC::ParticleBuffer::SetVNormal(current_vNormal[i]*scale_v,particle_idx[i]);
+    const double gamma_current = 1.0/std::sqrt(1.0-v_current*v_current/c2);
+    if (!std::isfinite(gamma_current)) continue;
+
+    const double Ek_current = (gamma_current-1.0)*particle_mass[i]*c2;
+    if (!(Ek_current > 0.0) || !std::isfinite(Ek_current)) continue;
+
+    // Do not allow the redistribution step to create a particle below the
+    // momentum range represented by the wave-particle coupling model.  The floor
+    // is not an arbitrary tiny number: it is the relativistic kinetic energy
+    // corresponding to P_MIN for this particle species.  If the requested
+    // particle loss would push the particle below that floor, cap the loss.
+    // The manager also limits the total requested loss before calling this
+    // routine, but this per-particle cap is kept as a final local safeguard
+    // against statistical-weight imbalance in sparse cells.
+    const double kinetic_energy_floor = std::max(CouplingKineticEnergyFloor(particle_mass[i]),
+                                                1.0e-30);
+    if (Ek_current + dE_physical < kinetic_energy_floor) {
+      dE_physical = kinetic_energy_floor - Ek_current;
     }
-    else {
-      PIC::ParticleBuffer::SetVParallel(0.0,particle_idx[i]);
-      PIC::ParticleBuffer::SetVNormal(0.0,particle_idx[i]);
-    }
+
+    const double Ek_new = Ek_current + dE_physical;
+    if (!(Ek_new > 0.0) || !std::isfinite(Ek_new)) continue;
+
+    const double gamma_new = Ek_new/(particle_mass[i]*c2) + 1.0;
+    if (!(gamma_new > 1.0) || !std::isfinite(gamma_new)) continue;
+
+    const double v_new_sq_arg = 1.0 - 1.0/(gamma_new*gamma_new);
+    if (!(v_new_sq_arg > 0.0) || !std::isfinite(v_new_sq_arg)) continue;
+
+    double v_new = SpeedOfLight*std::sqrt(v_new_sq_arg);
+
+    // Final velocity guard.  The kinetic-energy floor above should already keep
+    // v_new above the P_MIN/1 m/s floor.  Keep this explicit speed-space clamp as
+    // a last line of defense against roundoff in the relativistic conversion
+    // Ek -> gamma -> v.  The direction/pitch angle is preserved by rescaling both
+    // velocity components by the same factor.
+    const double v_floor = CouplingMinimumSpeed(particle_mass[i]);
+    if (v_new < v_floor) v_new = v_floor;
+
+    const double scale_v = v_new/v_current;
+    if (!std::isfinite(scale_v)) continue;
+
+    PIC::ParticleBuffer::SetVParallel(current_vParallel[i]*scale_v,particle_idx[i]);
+    PIC::ParticleBuffer::SetVNormal(current_vNormal[i]*scale_v,particle_idx[i]);
   }
 }
 
@@ -1382,20 +1734,85 @@ void WaveParticleCouplingManager(PIC::Datum::cDatumStored& IntegratedWaveEnergy,
       if (!spectrum || !G_plus || !G_minus || !gamma_plus || !gamma_minus) continue;
 
       for (int j=0; j<NK; ++j) {
-        gamma_plus[j] = G_plus[j];
-        gamma_minus[j] = G_minus[j];
+        // The streaming arrays are filled by the particle mover and may be zero in
+        // bins with no resonant particles.  Treat any non-finite accumulator as no
+        // coupling for this bin.  This prevents one corrupted particle diagnostic
+        // from contaminating the whole spectrum with NaNs.
+        gamma_plus[j]  = std::isfinite(G_plus[j])  ? G_plus[j]  : 0.0;
+        gamma_minus[j] = std::isfinite(G_minus[j]) ? G_minus[j] : 0.0;
 
-        const double Eplus_old = std::max(0.0,spectrum[OffsetPlus(j)]);
-        const double Eminus_old = std::max(0.0,spectrum[OffsetMinus(j)]);
+        const double Eplus_old_raw = spectrum[OffsetPlus(j)];
+        const double Eminus_old_raw = spectrum[OffsetMinus(j)];
+        const double Eplus_old = (std::isfinite(Eplus_old_raw) && Eplus_old_raw > 0.0) ? Eplus_old_raw : 0.0;
+        const double Eminus_old = (std::isfinite(Eminus_old_raw) && Eminus_old_raw > 0.0) ? Eminus_old_raw : 0.0;
 
-        const double Eplus_new = Eplus_old * std::exp(2.0*gamma_plus[j]*dt);
-        const double Eminus_new = Eminus_old * std::exp(2.0*gamma_minus[j]*dt);
+        double Eplus_current = Eplus_old;
+        double Eminus_current = Eminus_old;
+        double dEplus_wave = 0.0;
+        double dEminus_wave = 0.0;
 
-        const double dEplus_wave = Eplus_new - Eplus_old;
-        const double dEminus_wave = Eminus_new - Eminus_old;
+        // Explicit wave-particle exchange subcycling.
+        //
+        // The streaming arrays G_+(k),G_-(k) are accumulated during particle
+        // transport over the main AMPS particle time step.  If the resulting
+        // gamma_j is large, applying E_j -> E_j exp(2 gamma_j dt) in one step can
+        // request a wave-energy change that is too large for the finite number of
+        // resonant Monte-Carlo particles in this segment and k bin.  That is how
+        // particles were driven below the represented resonance range, eventually
+        // reaching zero speed and crashing the sampling code.
+        //
+        // Keep gamma fixed for the main step, but split the explicit energy
+        // exchange into smaller subcycles.  Each subcycle applies a limited wave
+        // update, caps positive wave growth by the particle energy available above
+        // the coupling floor, and immediately transfers the equal-and-opposite
+        // energy to particles resonant with this same k bin.  This is an
+        // energy-exchange CFL control; it does not change spatial advection or
+        // particle trajectories, only the stiffness of the local wave-particle
+        // source term.
+        const int n_coupling_subcycles = CouplingSubcycleCount(gamma_plus[j],gamma_minus[j],dt);
+        const double dt_coupling_sub = dt/((double)n_coupling_subcycles);
 
-        spectrum[OffsetPlus(j)] = std::max(0.0,Eplus_new);
-        spectrum[OffsetMinus(j)] = std::max(0.0,Eminus_new);
+        for (int isub=0; isub<n_coupling_subcycles; ++isub) {
+          double dEplus_step = SafeWaveParticleEnergyUpdate(Eplus_current,gamma_plus[j],dt_coupling_sub) - Eplus_current;
+          double dEminus_step = SafeWaveParticleEnergyUpdate(Eminus_current,gamma_minus[j],dt_coupling_sub) - Eminus_current;
+
+          if (!std::isfinite(dEplus_step)) dEplus_step = 0.0;
+          if (!std::isfinite(dEminus_step)) dEminus_step = 0.0;
+
+          // Positive dE_wave means that particle streaming grows the wave bin.
+          // The equal-and-opposite particle energy change is negative, so the
+          // resonant Monte-Carlo particles must supply that energy.  Limit the
+          // wave growth to the energy that can be removed from particles while
+          // keeping every contributing particle above the P_MIN/1 m/s coupling
+          // floor.  Re-evaluate the capacity every subcycle because the particle
+          // velocities may have just been changed by the previous subcycle.
+          if (dEplus_step > 0.0) {
+            const double particle_capacity = EstimateResonantParticleEnergyLossCapacity(segment,+1,j);
+            if (!(particle_capacity > 0.0) || !std::isfinite(particle_capacity)) dEplus_step = 0.0;
+            else if (dEplus_step > particle_capacity) dEplus_step = particle_capacity;
+          }
+
+          if (dEminus_step > 0.0) {
+            const double particle_capacity = EstimateResonantParticleEnergyLossCapacity(segment,-1,j);
+            if (!(particle_capacity > 0.0) || !std::isfinite(particle_capacity)) dEminus_step = 0.0;
+            else if (dEminus_step > particle_capacity) dEminus_step = particle_capacity;
+          }
+
+          Eplus_current = std::max(0.0,Eplus_current + dEplus_step);
+          Eminus_current = std::max(0.0,Eminus_current + dEminus_step);
+          dEplus_wave += dEplus_step;
+          dEminus_wave += dEminus_step;
+
+          // Transfer the equal-and-opposite energy change to particles resonant
+          // with the same wave-number bin.  This is done inside the subcycle so
+          // no single call can remove an excessive amount of energy from an
+          // individual Monte-Carlo particle.
+          RedistributeWaveNumberBinEnergyToParticles(segment,-dEplus_step,+1,j);
+          RedistributeWaveNumberBinEnergyToParticles(segment,-dEminus_step,-1,j);
+        }
+
+        spectrum[OffsetPlus(j)] = Eplus_current;
+        spectrum[OffsetMinus(j)] = Eminus_current;
 
         // Record wave-particle exchange rates before the streaming arrays are
         // cleared.  Positive dE_wave means particle streaming has excited/grown
@@ -1403,7 +1820,9 @@ void WaveParticleCouplingManager(PIC::Datum::cDatumStored& IntegratedWaveEnergy,
         // the corresponding energy has been transferred to particles.  The
         // Tecplot output contains excitation and damping separately, plus their
         // signed net sum, so users can distinguish where particles amplify waves
-        // from where waves energize/damp particles.
+        // from where waves energize/damp particles.  The rate normalization is
+        // the original main-step dt, not the subcycle dt, because the diagnostic
+        // represents the net exchange rate over the main iteration.
         if (dEplus_wave >= 0.0) {
           AddIntegratedEnergyExchangeRate(exchange_rates,BranchPlus(),RateParticleExcitation,j,
               dEplus_wave,dt);
@@ -1426,14 +1845,9 @@ void WaveParticleCouplingManager(PIC::Datum::cDatumStored& IntegratedWaveEnergy,
         AddIntegratedEnergyExchangeRate(exchange_rates,BranchMinus(),RateParticleNet,j,
             dEminus_wave,dt);
 
-        total_wave_energy_change += dEplus_wave + dEminus_wave;
-
-        // Transfer the equal-and-opposite energy change to particles resonant
-        // with the same wave-number bin.  This is the key difference from the
-        // integrated model, where all k-bin changes are summed before particle
-        // redistribution.
-        RedistributeWaveNumberBinEnergyToParticles(segment,-dEplus_wave,+1,j);
-        RedistributeWaveNumberBinEnergyToParticles(segment,-dEminus_wave,-1,j);
+        if (std::isfinite(dEplus_wave) && std::isfinite(dEminus_wave)) {
+          total_wave_energy_change += dEplus_wave + dEminus_wave;
+        }
 
         // Streaming arrays are one-time accumulators for the current time step.
         G_plus[j] = 0.0;
