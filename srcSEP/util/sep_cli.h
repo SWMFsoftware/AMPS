@@ -26,6 +26,25 @@ struct Options {
   enum class TurbulenceModel { Integrated, WaveNumberResolved };
   TurbulenceModel turbulenceModel = TurbulenceModel::Integrated;
 
+  // Select the particle mover used by SEP::ParticleMoverPtr.
+  //
+  // The default is the historical focused-transport-equation mover
+  // ParticleMover_FTE.  This mover now also calls
+  // AccumulateParticleFluxForWaveCoupling(), so it can feed the manager-based
+  // particle/turbulence coupling used by the wave-number-resolved model.  The
+  // event-driven FTE mover is still available for tests of event-driven
+  // scattering, but it is no longer the only mover that fills G_+(k),G_-(k).
+  enum class ParticleMover {
+    FTE,
+    FocusedTransportEventDriven,
+    FocusedTransportWaveScattering,
+    ParkerDxx,
+    ParkerMeanFreePath,
+    MeanFreePathScattering,
+    Tenishev2005FieldLine
+  };
+  ParticleMover particleMover = ParticleMover::FTE;
+
   // Run the standalone SEP TestManager diagnostics.  These diagnostics are
   // useful during development but can be intrusive and expensive in normal
   // production runs, so the command-line default is intentionally OFF.
