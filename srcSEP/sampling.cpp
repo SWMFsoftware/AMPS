@@ -1,6 +1,9 @@
 
 #include "sep.h"
 
+#include <cmath>
+#include <iostream>
+
 SEP::Sampling::cSamplingBuffer **SEP::Sampling::SamplingBufferTable=NULL;
 vector<double> SEP::Sampling::SamplingHeliocentricDistanceList;
 
@@ -36,6 +39,161 @@ array_3d<double> SEP::Sampling::MeanFreePath::SamplingTable;
 
 //sample particle's D\mu\mu 
 
+// ============================================================================
+// Local sampling-safety helpers
+// ============================================================================
+//
+// The SEP sampling manager is a diagnostic routine: it converts particle
+// velocities into sampled pitch-angle, energy, Larmor-radius, displacement,
+// and mean-free-path distributions.  It must therefore never contaminate a
+// sampled array with NaN/Inf.  The particle mover should keep particle states
+// physical, but sampling is often the first place where a bad particle is
+// exposed because relativistic energy conversion is singular at v=c and because
+// NaN + valid_number remains NaN forever in accumulated diagnostics.
+//
+// These helpers deliberately do not modify the particle stored in the AMPS
+// particle buffer.  They only decide whether the particle is safe to sample and
+// apply a conservative subluminal cap to the speed used by diagnostic energy
+// conversion.  State repair belongs in the mover; diagnostic sampling should
+// either use a safe value or skip the particle.
+// ============================================================================
+namespace {
+
+  // Numerical floor used only for diagnostic sampling.  A zero-speed particle
+  // makes the pitch-angle cosine mu=v_parallel/|v| undefined.  If a particle
+  // reaches this point with a speed below the floor, sampling skips it rather
+  // than placing it into an arbitrary pitch-angle bin.
+  constexpr double SEP_SAMPLING_MIN_SPEED = 1.0; // [m/s]
+
+  // Relativistic energy and momentum conversions become singular at v=c.  The
+  // event-driven mover applies the same type of cap before writing velocities
+  // back to the particle buffer, but the sampling layer applies its own guard so
+  // that a single pathological particle cannot create NaN/Inf in diagnostic
+  // arrays or in PIC::FieldLine::DatumAtVertexParticleEnergy.
+  constexpr double SEP_SAMPLING_MAX_BETA = 1.0 - 1.0e-12;
+
+  // Limit warning output.  A bad-particle population can otherwise flood stdout
+  // and make MPI debugging impossible.  The validation itself is applied to
+  // every particle; only the textual diagnostics are rate-limited.
+  constexpr int SEP_SAMPLING_MAX_WARNINGS = 64;
+  int SEP_SAMPLING_WARNING_COUNT = 0;
+
+  inline void SamplingWarning(const char* reason, long int ptr, int spec,
+                              int iFieldLine, double vParallel, double vNormal,
+                              double speed, double fieldLineCoord) {
+    if (SEP_SAMPLING_WARNING_COUNT >= SEP_SAMPLING_MAX_WARNINGS) return;
+
+    ++SEP_SAMPLING_WARNING_COUNT;
+    std::cerr
+        << "SEP::Sampling::Manager warning: skipping unsafe particle sample"
+        << " reason=\"" << reason << "\""
+        << " rank=" << PIC::ThisThread
+        << " ptr=" << ptr
+        << " spec=" << spec
+        << " field_line=" << iFieldLine
+        << " vParallel=" << vParallel
+        << " vNormal=" << vNormal
+        << " speed=" << speed
+        << " FieldLineCoord=" << fieldLineCoord
+        << std::endl;
+  }
+
+  inline bool ValidateSamplingSpecies(int spec, long int ptr, int iFieldLine) {
+    if (spec < 0 || spec >= PIC::nTotalSpecies) {
+      SamplingWarning("invalid species index", ptr, spec, iFieldLine,
+                      0.0, 0.0, 0.0, 0.0);
+      return false;
+    }
+
+    const double mass = PIC::MolecularData::GetMass(spec);
+    if (!isfinite(mass) || mass <= 0.0) {
+      SamplingWarning("invalid species mass", ptr, spec, iFieldLine,
+                      0.0, 0.0, 0.0, 0.0);
+      return false;
+    }
+
+    return true;
+  }
+
+  inline bool BuildSafeSamplingKinematics(long int ptr, int spec, int iFieldLine,
+                                          PIC::ParticleBuffer::byte* ParticleData,
+                                          double v[3], double& speed,
+                                          double& mu, double& energy) {
+    namespace PB = PIC::ParticleBuffer;
+
+    v[0] = PB::GetVParallel(ParticleData);
+    v[1] = PB::GetVNormal(ParticleData);
+    v[2] = 0.0;
+
+    const double fieldLineCoord = PB::GetFieldLineCoord(ParticleData);
+
+    // If either velocity component is non-finite, any subsequent diagnostic
+    // quantity derived from it would also be non-finite.  The sample is skipped
+    // instead of allowing the bad value to enter an accumulated array.
+    if (!isfinite(v[0]) || !isfinite(v[1])) {
+      SamplingWarning("non-finite velocity component", ptr, spec, iFieldLine,
+                      v[0], v[1], NAN, fieldLineCoord);
+      return false;
+    }
+
+    const double speed2 = v[0]*v[0] + v[1]*v[1];
+    if (!isfinite(speed2) || speed2 < SEP_SAMPLING_MIN_SPEED*SEP_SAMPLING_MIN_SPEED) {
+      SamplingWarning("speed is non-finite or below sampling floor", ptr, spec,
+                      iFieldLine, v[0], v[1], sqrt(fabs(speed2)), fieldLineCoord);
+      return false;
+    }
+
+    speed = sqrt(speed2);
+
+    // Cap only the diagnostic speed used for the relativistic energy conversion.
+    // The direction information, including mu, is still computed from the stored
+    // velocity components.  The actual particle velocity in the buffer is not
+    // changed here.
+    const double maxSamplingSpeed = SEP_SAMPLING_MAX_BETA*SpeedOfLight;
+    if (speed >= maxSamplingSpeed) {
+      SamplingWarning("speed at/above relativistic sampling cap", ptr, spec,
+                      iFieldLine, v[0], v[1], speed, fieldLineCoord);
+      speed = maxSamplingSpeed;
+    }
+
+    mu = v[0]/sqrt(speed2);
+    if (!isfinite(mu)) {
+      SamplingWarning("non-finite pitch-angle cosine", ptr, spec, iFieldLine,
+                      v[0], v[1], speed, fieldLineCoord);
+      return false;
+    }
+
+    // Roundoff can put |mu| slightly above unity when v_parallel dominates the
+    // perpendicular component.  Clamp only the tiny numerical overshoot.  Larger
+    // problems would already have been caught by the finite/speed tests above.
+    if (mu >  1.0) mu =  1.0;
+    if (mu < -1.0) mu = -1.0;
+
+    energy = Relativistic::Speed2E(speed, PIC::MolecularData::GetMass(spec));
+    if (!isfinite(energy) || energy <= 0.0) {
+      SamplingWarning("invalid relativistic sampling energy", ptr, spec,
+                      iFieldLine, v[0], v[1], speed, fieldLineCoord);
+      return false;
+    }
+
+    return true;
+  }
+
+  inline bool SafeSamplingWeight(PIC::ParticleBuffer::byte* ParticleData, int spec,
+                                 long int ptr, int iFieldLine, double& ParticleWeight) {
+    ParticleWeight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+    ParticleWeight *= PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+
+    if (!isfinite(ParticleWeight) || ParticleWeight < 0.0) {
+      SamplingWarning("invalid particle statistical weight", ptr, spec, iFieldLine,
+                      0.0, 0.0, 0.0,
+                      PIC::ParticleBuffer::GetFieldLineCoord(ParticleData));
+      return false;
+    }
+
+    return true;
+  }
+}
 
 void SEP::Sampling::Init() {
   namespace FL=PIC::FieldLine; 
@@ -142,33 +300,91 @@ void SEP::Sampling::Manager() {
           PB::byte* ParticleData=PB::GetParticleDataPointer(ptr);
           spec=PB::GetI(ParticleData);
 
-          v[0]=PB::GetVParallel(ParticleData);
-          v[1]=PB::GetVNormal(ParticleData);
-          v[2]=0.0;
+          // ------------------------------------------------------------------
+          // Build a safe diagnostic kinematic state before any sampling array is
+          // updated.  The sampled field-line/vertex particle-energy diagnostics
+          // are accumulated quantities; once NaN enters them, every subsequent
+          // MPI reduction and output will remain NaN.  Sampling therefore uses a
+          // defensive policy:
+          //   * particles with non-finite velocity components are skipped;
+          //   * particles with speed below the diagnostic floor are skipped
+          //     because mu=v_parallel/|v| is undefined there;
+          //   * speeds at or above c are capped only for the diagnostic
+          //     relativistic energy conversion.  The particle buffer itself is
+          //     not modified here; state repair remains the responsibility of
+          //     the mover.
+          // ------------------------------------------------------------------
+          if (!ValidateSamplingSpecies(spec,ptr,iFieldLine)) {
+            ptr=PB::GetNext(ptr);
+            continue;
+          }
 
-	  rLarmor= PIC::MolecularData::GetMass(spec)*v[1]/fabs(PIC::MolecularData::GetElectricCharge(spec)*MiddleB); 
-
-          speed=sqrt(v[0]*v[0]+v[1]*v[1]);
-          if (speed>0.99*SpeedOfLight) speed=0.99*SpeedOfLight;
-          e=Relativistic::Speed2E(speed,PIC::MolecularData::GetMass(spec)); 
-          iE=log(e/SEP::Sampling::PitchAngle::emin)/SEP::Sampling::PitchAngle::dLogE; 
-
-          if (iE>=SEP::Sampling::PitchAngle::nEnergySamplingIntervals) iE=SEP::Sampling::PitchAngle::nEnergySamplingIntervals-1; 
-          if (iE<0)iE=0;
-
-          mu=v[0]/sqrt(v[0]*v[0]+v[1]*v[1]);
-          iMu=(int)((mu+1.0)/SEP::Sampling::PitchAngle::dMu);
-          if (iMu>=SEP::Sampling::PitchAngle::nMuIntervals) iMu=SEP::Sampling::PitchAngle::nMuIntervals-1; 
-
+          if (!BuildSafeSamplingKinematics(ptr,spec,iFieldLine,ParticleData,
+                                           v,speed,mu,e)) {
+            ptr=PB::GetNext(ptr);
+            continue;
+          }
 
           FieldLineCoord=PB::GetFieldLineCoord(ParticleData);
+          if (!isfinite(FieldLineCoord)) {
+            SamplingWarning("non-finite field-line coordinate",ptr,spec,iFieldLine,
+                            v[0],v[1],speed,FieldLineCoord);
+            ptr=PB::GetNext(ptr);
+            continue;
+          }
+
+          // Larmor-radius sampling uses the local field magnitude at the segment
+          // midpoint.  If the magnetic field, charge, or perpendicular velocity
+          // is not usable, only the Larmor-radius diagnostic is skipped; the
+          // energy/pitch-angle/radial samples can still be valid.
+          const double charge = PIC::MolecularData::GetElectricCharge(spec);
+          const double mass = PIC::MolecularData::GetMass(spec);
+          if (isfinite(MiddleB) && fabs(MiddleB) > 0.0 &&
+              isfinite(charge) && fabs(charge) > 0.0 &&
+              isfinite(v[1])) {
+            rLarmor= mass*v[1]/fabs(charge*MiddleB);
+          }
+          else {
+            rLarmor=NAN;
+          }
+
+          if (!isfinite(SEP::Sampling::PitchAngle::emin) ||
+              SEP::Sampling::PitchAngle::emin <= 0.0 ||
+              !isfinite(SEP::Sampling::PitchAngle::dLogE) ||
+              SEP::Sampling::PitchAngle::dLogE <= 0.0) {
+            SamplingWarning("invalid energy sampling grid",ptr,spec,iFieldLine,
+                            v[0],v[1],speed,FieldLineCoord);
+            ptr=PB::GetNext(ptr);
+            continue;
+          }
+
+          iE=(int)(log(e/SEP::Sampling::PitchAngle::emin)/SEP::Sampling::PitchAngle::dLogE);
+
+          if (iE>=SEP::Sampling::PitchAngle::nEnergySamplingIntervals) iE=SEP::Sampling::PitchAngle::nEnergySamplingIntervals-1;
+          if (iE<0)iE=0;
+
+          iMu=(int)((mu+1.0)/SEP::Sampling::PitchAngle::dMu);
+          if (iMu>=SEP::Sampling::PitchAngle::nMuIntervals) iMu=SEP::Sampling::PitchAngle::nMuIntervals-1;
+          if (iMu<0) iMu=0;
+
+
           FL::FieldLinesAll[iFieldLine].GetCartesian(x,FieldLineCoord);
+          if (!isfinite(x[0]) || !isfinite(x[1]) || !isfinite(x[2])) {
+            SamplingWarning("non-finite Cartesian position from field-line coordinate",
+                            ptr,spec,iFieldLine,v[0],v[1],speed,FieldLineCoord);
+            ptr=PB::GetNext(ptr);
+            continue;
+          }
 
           iR=(int)(Vector3D::Length(x)/SEP::Sampling::PitchAngle::dR);
           if (iR>=SEP::Sampling::PitchAngle::nRadiusIntervals) iR=SEP::Sampling::PitchAngle::nRadiusIntervals-1;
+          if (iR<0) iR=0;
 
-          double ParticleWeight= PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
-          ParticleWeight*=PB::GetIndividualStatWeightCorrection(ParticleData);
+          double ParticleWeight;
+          if (!SafeSamplingWeight(ParticleData,spec,ptr,iFieldLine,ParticleWeight)) {
+            ptr=PB::GetNext(ptr);
+            continue;
+          }
 
           SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable(iMu,iE,iR,iFieldLine)+=ParticleWeight;
           SEP::Sampling::PitchAngle::PitchAngleRSamplingTable(iMu,iR,iFieldLine)+=ParticleWeight;

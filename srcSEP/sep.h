@@ -1678,26 +1678,74 @@ extern bool               gClampSheath;    // optional monotonic clamp flag
           v[1]=PB::GetVNormal(ParticleData);
           v[2]=0.0;
 
+          // ------------------------------------------------------------------
+          // Defensive diagnostic sampling guard.
+          //
+          // This buffer is used only for sampled spectra and pitch-angle
+          // diagnostics.  It should never insert NaN/Inf into the sampled arrays:
+          // the arrays are later MPI-reduced, and one NaN would permanently
+          // contaminate the output.  The particle mover is responsible for
+          // repairing or deleting invalid particles; this diagnostic routine
+          // simply skips particles whose velocity cannot be converted safely to
+          // energy and pitch angle.  The same subluminal cap used in
+          // SEP::Sampling::Manager is applied here before the relativistic energy
+          // conversion, because Speed2E(v) is singular at v=c.
+          // ------------------------------------------------------------------
+          if (!isfinite(v[0]) || !isfinite(v[1])) {
+            ptr=PB::GetNext(ParticleData);
+            continue;
+          }
 
-          mu=v[0]/sqrt(v[0]*v[0]+v[1]*v[1]);
+          const double speed2=v[0]*v[0]+v[1]*v[1];
+          if (!isfinite(speed2) || speed2<1.0) {
+            ptr=PB::GetNext(ParticleData);
+            continue;
+          }
+
+          double speed=sqrt(speed2);
+          const double maxSamplingSpeed=(1.0-1.0e-12)*SpeedOfLight;
+          if (speed>=maxSamplingSpeed) speed=maxSamplingSpeed;
+
+          mu=v[0]/sqrt(speed2);
+          if (!isfinite(mu)) {
+            ptr=PB::GetNext(ParticleData);
+            continue;
+          }
+          if (mu> 1.0) mu= 1.0;
+          if (mu<-1.0) mu=-1.0;
+
           m0=PIC::MolecularData::GetMass(spec);
+          if (!isfinite(m0) || m0<=0.0) {
+            ptr=PB::GetNext(ParticleData);
+            continue;
+          }
 
           if (PB::GetFieldLineId(ParticleData)!=iFieldLine) {
             ptr=PB::GetNext(ParticleData);
             continue;
           } 
           
+          e=0.0;
+
           switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
           case _PIC_MODE_OFF_: 
-            e=m0*Vector3D::DotProduct(v,v)/2.0;
+            e=m0*speed2/2.0;
             break;
 
           case _PIC_MODE_ON_: 
-            e=Relativistic::Speed2E(Vector3D::Length(v),m0);
+            e=Relativistic::Speed2E(speed,m0);
             break;
           }
 
-          e=Relativistic::Speed2E(Vector3D::Length(v),m0);
+          // The older code recomputed e with the relativistic expression
+          // unconditionally after the switch.  Keep the selected mover mode, but
+          // require the diagnostic energy and the logarithmic binning grid to be
+          // valid before computing a bin index.
+          if (!isfinite(e) || e<=0.0 || !isfinite(MinEnergy) || MinEnergy<=0.0 ||
+              !isfinite(dLogEnergy) || dLogEnergy<=0.0) {
+            ptr=PB::GetNext(ParticleData);
+            continue;
+          }
 
 double e_mev=e*J2MeV;
 
