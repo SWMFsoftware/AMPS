@@ -92,6 +92,8 @@ PIC::FieldLine::Parallel::MPIBcastDatumStoredAtVertexFieldLine(0, temperatureDat
 #include "pic.h"
 #include <iostream>
 #include <vector>
+#include <cmath>
+
 
 namespace PIC {
 namespace FieldLine {
@@ -178,6 +180,81 @@ int CountProcessVertices(int target_process) {
     return process_vertices;
 }
 
+// Return true for sampled vertex datums.  Sampled datums are accumulators
+// created from particles during a sampling window.  They are diagnostics, not
+// primary plasma or geometry state variables.  If a sampled datum contains NaN
+// or Inf, it usually means an invalid particle contribution contaminated the
+// diagnostic buffer; allowing that value into MPI reduction spreads the NaN to
+// every rank.  Stored datums are not sanitized here because non-finite stored
+// plasma/field state should remain a hard debugger error.
+inline bool IsSampledVertexDatum(PIC::Datum::cDatum* S) {
+    return (S!=nullptr) &&
+           ((S->type == PIC::Datum::cDatum::Sampled_) ||
+            (S->type == PIC::Datum::cDatum::Timed_) ||
+            (S->type == PIC::Datum::cDatum::Weighted_));
+}
+
+// Conservative numerical range for sampled diagnostics.  The upper bound is far
+// below DBL_MAX so summing several ranks cannot immediately overflow, but far
+// above any meaningful sampled particle energy/speed/weight expected in AMPS.
+inline bool IsSafeSampledVertexDatumValue(double value) {
+    const double MaxAbsSampledVertexDatumValue = 1.0e300;
+    return std::isfinite(value) && (std::fabs(value) < MaxAbsSampledVertexDatumValue);
+}
+
+inline bool ShouldPrintVertexDatumSanitizerWarning() {
+    static int nWarningsPrinted = 0;
+    if (nWarningsPrinted < 100) {
+        nWarningsPrinted++;
+        return true;
+    }
+    return false;
+}
+
+inline double SanitizeSampledVertexDatumForMPI(PIC::Datum::cDatum* S,
+                                               double value,
+                                               double* storage_location,
+                                               const char* stage,
+                                               const char* vertex_role,
+                                               int iFieldLine,
+                                               int species,
+                                               int component,
+                                               int buffer_index,
+                                               PIC::FieldLine::cFieldLineSegment* Segment,
+                                               PIC::FieldLine::cFieldLineVertex* Vertex) {
+    if (IsSampledVertexDatum(S)==false) return value;
+    if (IsSafeSampledVertexDatumValue(value)==true) return value;
+
+    // A sampled diagnostic value is invalid.  Reset the completed sampling
+    // buffer value itself, not only the MPI buffer entry.  Otherwise the same
+    // stale NaN would be encountered again at the next output call.  This is a
+    // downstream protection layer: the sampling code also validates new
+    // contributions before they are accumulated, but this sanitizer catches
+    // values that were already present in the completed buffer before the patch
+    // or values that reached the buffer through another sampling path.
+    if (storage_location!=nullptr) *storage_location = 0.0;
+
+    if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) &&
+        ShouldPrintVertexDatumSanitizerWarning()) {
+        std::cerr << "Warning: sanitized non-finite sampled field-line vertex datum before/after MPI reduction"
+                  << "; stage=" << ((stage!=nullptr) ? stage : "unknown")
+                  << "; datum=" << ((S!=nullptr) ? S->name : "NULL")
+                  << "; rank=" << PIC::ThisThread
+                  << "; field_line=" << iFieldLine
+                  << "; vertex=" << ((vertex_role!=nullptr) ? vertex_role : "unknown")
+                  << "; species=" << species
+                  << "; component=" << component
+                  << "; datum_length=" << ((S!=nullptr) ? S->length : -1)
+                  << "; buffer_index=" << buffer_index
+                  << "; bad_value=" << value
+                  << "; segment_ptr=" << Segment
+                  << "; vertex_ptr=" << Vertex
+                  << std::endl;
+    }
+
+    return 0.0;
+}
+
 // Pack all field line vertex data into a contiguous buffer (species-aware)
 int PackAllFieldLinesVertexData(PIC::Datum::cDatum* S, std::vector<double>& buffer) {
     int total_vertices = CountTotalVertices();
@@ -207,10 +284,14 @@ int PackAllFieldLinesVertexData(PIC::Datum::cDatum* S, std::vector<double>& buff
                     for (int species = 0; species < PIC::nTotalSpecies; species++) {
                         for (int i = 0; i < S->length; i++) {
                             int data_idx = species * S->length + i;
-                            buffer[element_index++] = vertex_data[data_idx];
+                            double value_to_pack = SanitizeSampledVertexDatumForMPI(
+                                S,vertex_data[data_idx],vertex_data+data_idx,
+                                "pack-before-all-rank-reduction","begin",
+                                iFieldLine,species,i,element_index,Segment,BeginVertex);
+                            buffer[element_index++] = value_to_pack;
                             
                             if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-                                validate_numeric(vertex_data[data_idx], __LINE__, __FILE__);
+                                validate_numeric(value_to_pack, __LINE__, __FILE__);
                             }
                         }
                     }
@@ -232,10 +313,14 @@ int PackAllFieldLinesVertexData(PIC::Datum::cDatum* S, std::vector<double>& buff
                         for (int species = 0; species < PIC::nTotalSpecies; species++) {
                             for (int i = 0; i < S->length; i++) {
                                 int data_idx = species * S->length + i;
-                                buffer[element_index++] = vertex_data[data_idx];
+                                double value_to_pack = SanitizeSampledVertexDatumForMPI(
+                                    S,vertex_data[data_idx],vertex_data+data_idx,
+                                    "pack-before-all-rank-reduction","end",
+                                    iFieldLine,species,i,element_index,Segment,EndVertex);
+                                buffer[element_index++] = value_to_pack;
                                 
                                 if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-                                    validate_numeric(vertex_data[data_idx], __LINE__, __FILE__);
+                                    validate_numeric(value_to_pack, __LINE__, __FILE__);
                                 }
                             }
                         }
@@ -275,10 +360,15 @@ void UnpackAllFieldLinesVertexData(PIC::Datum::cDatum* S, const std::vector<doub
                     for (int species = 0; species < PIC::nTotalSpecies; species++) {
                         for (int i = 0; i < S->length; i++) {
                             int data_idx = species * S->length + i;
-                            vertex_data[data_idx] = buffer[element_index++];
+                            double value_from_reduce = buffer[element_index++];
+                            value_from_reduce = SanitizeSampledVertexDatumForMPI(
+                                S,value_from_reduce,vertex_data+data_idx,
+                                "unpack-after-all-rank-reduction","begin",
+                                iFieldLine,species,i,element_index-1,Segment,BeginVertex);
+                            vertex_data[data_idx] = value_from_reduce;
                             
                             if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-                                validate_numeric(vertex_data[data_idx], __LINE__, __FILE__);
+                                validate_numeric(value_from_reduce, __LINE__, __FILE__);
                             }
                         }
                     }
@@ -300,10 +390,15 @@ void UnpackAllFieldLinesVertexData(PIC::Datum::cDatum* S, const std::vector<doub
                         for (int species = 0; species < PIC::nTotalSpecies; species++) {
                             for (int i = 0; i < S->length; i++) {
                                 int data_idx = species * S->length + i;
-                                vertex_data[data_idx] = buffer[element_index++];
+                                double value_from_reduce = buffer[element_index++];
+                                value_from_reduce = SanitizeSampledVertexDatumForMPI(
+                                    S,value_from_reduce,vertex_data+data_idx,
+                                    "unpack-after-all-rank-reduction","end",
+                                    iFieldLine,species,i,element_index-1,Segment,EndVertex);
+                                vertex_data[data_idx] = value_from_reduce;
                                 
                                 if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-                                    validate_numeric(vertex_data[data_idx], __LINE__, __FILE__);
+                                    validate_numeric(value_from_reduce, __LINE__, __FILE__);
                                 }
                             }
                         }
@@ -351,7 +446,11 @@ int PackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, std::vect
                 for (int species = 0; species < PIC::nTotalSpecies; species++) {
                     for (int i = 0; i < S->length; i++) {
                         int data_idx = species * S->length + i;
-                        buffer[element_index++] = vertex_data[data_idx];
+                        double value_to_pack = SanitizeSampledVertexDatumForMPI(
+                            S,vertex_data[data_idx],vertex_data+data_idx,
+                            "pack-field-line-before-reduction","begin",
+                            field_line_idx,species,i,element_index,Segment,BeginVertex);
+                        buffer[element_index++] = value_to_pack;
                     }
                 }
             } else {
@@ -371,7 +470,11 @@ int PackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, std::vect
                     for (int species = 0; species < PIC::nTotalSpecies; species++) {
                         for (int i = 0; i < S->length; i++) {
                             int data_idx = species * S->length + i;
-                            buffer[element_index++] = vertex_data[data_idx];
+                            double value_to_pack = SanitizeSampledVertexDatumForMPI(
+                                S,vertex_data[data_idx],vertex_data+data_idx,
+                                "pack-field-line-before-reduction","end",
+                                field_line_idx,species,i,element_index,Segment,EndVertex);
+                            buffer[element_index++] = value_to_pack;
                         }
                     }
                 } else {
@@ -412,7 +515,12 @@ void UnpackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, const 
                 for (int species = 0; species < PIC::nTotalSpecies; species++) {
                     for (int i = 0; i < S->length; i++) {
                         int data_idx = species * S->length + i;
-                        vertex_data[data_idx] = buffer[element_index++];
+                        double value_from_reduce = buffer[element_index++];
+                        value_from_reduce = SanitizeSampledVertexDatumForMPI(
+                            S,value_from_reduce,vertex_data+data_idx,
+                            "unpack-field-line-after-reduction","begin",
+                            field_line_idx,species,i,element_index-1,Segment,BeginVertex);
+                        vertex_data[data_idx] = value_from_reduce;
                     }
                 }
             } else {
@@ -432,7 +540,12 @@ void UnpackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, const 
                     for (int species = 0; species < PIC::nTotalSpecies; species++) {
                         for (int i = 0; i < S->length; i++) {
                             int data_idx = species * S->length + i;
-                            vertex_data[data_idx] = buffer[element_index++];
+                            double value_from_reduce = buffer[element_index++];
+                            value_from_reduce = SanitizeSampledVertexDatumForMPI(
+                                S,value_from_reduce,vertex_data+data_idx,
+                                "unpack-field-line-after-reduction","end",
+                                field_line_idx,species,i,element_index-1,Segment,EndVertex);
+                            vertex_data[data_idx] = value_from_reduce;
                         }
                     }
                 } else {

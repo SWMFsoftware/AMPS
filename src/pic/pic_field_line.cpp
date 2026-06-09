@@ -1161,6 +1161,69 @@ switch (DIM) {
       }
     }
 
+    namespace {
+      // ---------------------------------------------------------------------
+      // Defensive helpers for field-line vertex sampling.
+      //
+      // The field-line output samples particle quantities to vertices and later
+      // reduces those sampled quantities over MPI.  A single NaN in a sampled
+      // diagnostic such as DatumAtVertexParticleEnergy is sticky: subsequent
+      // additions keep the value NaN and the failure may only be observed much
+      // later in PIC::FieldLine::Parallel::PackAllFieldLinesVertexData().
+      //
+      // Sampling is diagnostic and must not repair or alter the particle state.
+      // Therefore the policy here is: validate every quantity used to form a
+      // sampled value; skip the particle for this diagnostic sample if the state
+      // is outside the safe numerical range; and cap only the diagnostic speed
+      // used in the relativistic energy conversion so that Speed2E() is never
+      // evaluated at v >= c.  The mover remains responsible for preventing bad
+      // particles from being produced in the first place.
+      // ---------------------------------------------------------------------
+      inline bool IsSafeFieldLineSamplingValue(double v) {
+        const double MaxAbsSamplingValue = 1.0e300;
+        return std::isfinite(v) && (std::fabs(v) < MaxAbsSamplingValue);
+      }
+
+      inline double ClampFieldLineSamplingPitchAngleCosine(double mu) {
+        if (mu >  1.0) return  1.0;
+        if (mu < -1.0) return -1.0;
+        return mu;
+      }
+
+      inline bool ShouldPrintFieldLineSamplingWarning() {
+        // Keep diagnostics useful without flooding a parallel run.  The skipped
+        // samples are diagnostic-only events; a small number of warnings is
+        // enough to identify the failure mode while keeping stdout/stderr usable.
+        static int nWarningsPrinted = 0;
+        if (nWarningsPrinted < 25) {
+          nWarningsPrinted++;
+          return true;
+        }
+        return false;
+      }
+
+      inline void PrintFieldLineSamplingWarning(const char* reason,long int ptr,int spec,
+          int iFieldLine,double S,double Weight,double vParallel,double vNormal,
+          double Speed,double extra0=0.0,double extra1=0.0) {
+        if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) && ShouldPrintFieldLineSamplingWarning()) {
+          std::cerr << "Warning: skipping field-line vertex particle sample: "
+                    << reason
+                    << "; rank=" << PIC::ThisThread
+                    << "; ptr=" << ptr
+                    << "; spec=" << spec
+                    << "; field_line=" << iFieldLine
+                    << "; s=" << S
+                    << "; weight=" << Weight
+                    << "; vParallel=" << vParallel
+                    << "; vNormal=" << vNormal
+                    << "; speed=" << Speed
+                    << "; extra0=" << extra0
+                    << "; extra1=" << extra1
+                    << std::endl;
+        }
+      }
+    }
+
     void Sampling(long int ptr, double Weight, char* CellSamplingBuffer){
       // namespace alias
       namespace PB = PIC::ParticleBuffer;
@@ -1169,16 +1232,53 @@ switch (DIM) {
       int iFieldLine = PB::GetFieldLineId(ptr);
       double TimeStep,S = PB::GetFieldLineCoord(ptr);
 
-      // weights of vertices
-      double w = S - (int)S;
+      // Validate the field-line coordinate before it is used to access the
+      // field-line container.  Invalid field-line coordinates can occur for
+      // particles that have just left a field line or for particles whose mover
+      // state was corrupted earlier.  Sampling is diagnostic, so the safe action
+      // is to skip this particle instead of letting it contaminate the sampled
+      // vertex arrays.
+      if ((iFieldLine<0)||(iFieldLine>=nFieldLine)||
+          (IsSafeFieldLineSamplingValue(S)==false)) {
+        PrintFieldLineSamplingWarning("invalid field-line coordinate",ptr,-1,
+            iFieldLine,S,Weight,0.0,0.0,0.0);
+        return;
+      }
+
+      cFieldLineSegment* CurrentSegment=FieldLinesAll[iFieldLine].GetSegment(S);
+      if (CurrentSegment==NULL) {
+        PrintFieldLineSamplingWarning("null segment for field-line coordinate",ptr,-1,
+            iFieldLine,S,Weight,0.0,0.0,0.0);
+        return;
+      }
+
+      // weights of vertices.  The interpolation weight is a diagnostic weight
+      // between the begin and end vertices of the containing segment.  Roundoff
+      // near a segment boundary can put the fractional part marginally outside
+      // [0,1]; clamp that small numerical overshoot so a valid particle does not
+      // generate a negative sampled contribution.
+      double w = S - floor(S);
+      if (w<0.0) w=0.0;
+      if (w>1.0) w=1.0;
 
       //magnetic field
       double B[3],l[3];
 
       FieldLinesAll[iFieldLine].GetMagneticField(B,S);
-      FieldLinesAll[iFieldLine].GetSegment(S)->GetDir(l);
+      CurrentSegment->GetDir(l);
 
       double AbsB = pow(B[0]*B[0]+B[1]*B[1]+B[2]*B[2], 0.5);
+      if ((IsSafeFieldLineSamplingValue(B[0])==false)||
+          (IsSafeFieldLineSamplingValue(B[1])==false)||
+          (IsSafeFieldLineSamplingValue(B[2])==false)||
+          (IsSafeFieldLineSamplingValue(l[0])==false)||
+          (IsSafeFieldLineSamplingValue(l[1])==false)||
+          (IsSafeFieldLineSamplingValue(l[2])==false)||
+          (IsSafeFieldLineSamplingValue(AbsB)==false)) {
+        PrintFieldLineSamplingWarning("invalid magnetic field or field-line direction",ptr,-1,
+            iFieldLine,S,Weight,0.0,0.0,0.0,AbsB);
+        return;
+      }
 
       //magnetic moment, mass, velocity and energy
       double mu = PB::GetMagneticMoment(ptr);
@@ -1186,85 +1286,151 @@ switch (DIM) {
       double v[3],Speed;
       double x[3];
 
+      if ((spec<0)||(spec>=PIC::nTotalSpecies)) {
+        PrintFieldLineSamplingWarning("invalid species index",ptr,spec,
+            iFieldLine,S,Weight,0.0,0.0,0.0);
+        return;
+      }
+
+      if ((IsSafeFieldLineSamplingValue(Weight)==false)||(Weight<=0.0)) {
+        PrintFieldLineSamplingWarning("invalid particle statistical weight",ptr,spec,
+            iFieldLine,S,Weight,0.0,0.0,0.0);
+        return;
+      }
+
       //PB::GetV(v, ptr);
 
-      //time step 
+      //time step
       switch (_SIMULATION_TIME_STEP_MODE_) {
       case _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_:
         TimeStep=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
 	break;
       case _SINGLE_GLOBAL_TIME_STEP_:
         TimeStep=PIC::ParticleWeightTimeStep::GlobalParticleWeight[0];
-        break;	
+        break;
       default:
 	exit(__LINE__,__FILE__,"Error: not implemented");
+      }
+
+      if (IsSafeFieldLineSamplingValue(TimeStep)==false) {
+        PrintFieldLineSamplingWarning("invalid sampling time step",ptr,spec,
+            iFieldLine,S,Weight,0.0,0.0,0.0,TimeStep);
+        return;
       }
 
       v[0]=PB::GetVParallel(ptr);
       v[1]=PB::GetVNormal(ptr);
       v[2]=0.0;
-      
-      Speed=Vector3D::Length(v);  
+
+      if ((IsSafeFieldLineSamplingValue(v[0])==false)||
+          (IsSafeFieldLineSamplingValue(v[1])==false)) {
+        PrintFieldLineSamplingWarning("invalid particle velocity components",ptr,spec,
+            iFieldLine,S,Weight,v[0],v[1],0.0);
+        return;
+      }
+
+      Speed=Vector3D::Length(v);
+
+      // Keep the sampler out of the singular point of relativistic energy
+      // conversion.  This cap is used only for diagnostic conversion to energy;
+      // it does not change the stored particle velocity.  The mover has its own
+      // responsibility to keep particles subluminal.
+      const double MinFieldLineSamplingSpeed=1.0;
+      const double MaxFieldLineSamplingSpeed=(1.0-1.0e-12)*SpeedOfLight;
+      if ((IsSafeFieldLineSamplingValue(Speed)==false)||(Speed<MinFieldLineSamplingSpeed)) {
+        PrintFieldLineSamplingWarning("invalid or too small particle speed",ptr,spec,
+            iFieldLine,S,Weight,v[0],v[1],Speed);
+        return;
+      }
+
+      double DiagnosticSpeed=Speed;
+      if (DiagnosticSpeed>MaxFieldLineSamplingSpeed) DiagnosticSpeed=MaxFieldLineSamplingSpeed;
 
       double CosPitchAngleSign=(v[0]*Vector3D::DotProduct(B,l)>0.0) ? 1.0 : -1.0;
 
       PB::GetX(x, ptr);
 
       double m0= PIC::MolecularData::GetMass(spec);
-      double absv=pow(v[0]*v[0]+v[1]*v[1]+v[2]*v[2], 0.5);
-      double E = mu*AbsB + 0.5 * m0 * (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
-      
-      double CosPitchAngle=v[0]/absv; 
-     
+      if ((IsSafeFieldLineSamplingValue(m0)==false)||(m0<=0.0)) {
+        PrintFieldLineSamplingWarning("invalid species mass",ptr,spec,
+            iFieldLine,S,Weight,v[0],v[1],Speed,m0);
+        return;
+      }
 
-      E=Relativistic::Speed2E(Speed,m0);
+      double E=Relativistic::Speed2E(DiagnosticSpeed,m0);
+      if ((IsSafeFieldLineSamplingValue(E)==false)||(E<0.0)) {
+        PrintFieldLineSamplingWarning("invalid diagnostic kinetic energy",ptr,spec,
+            iFieldLine,S,Weight,v[0],v[1],Speed,E);
+        return;
+      }
+
+      double CosPitchAngle=ClampFieldLineSamplingPitchAngleCosine(v[0]/Speed);
 
       // volume
-      double volume = 0.0; FieldLinesAll[iFieldLine].GetSegment(S)->GetLength();
+      double volume = 0.0;
 
       if (SegmentVolume!=NULL) {
-        volume=SegmentVolume(FieldLinesAll[iFieldLine].GetSegment(S),iFieldLine);
+        volume=SegmentVolume(CurrentSegment,iFieldLine);
       }
       else {
         exit(__LINE__,__FILE__,"Error: hook SegmentVolume is not initialized; provide a function for calculating the volumne of a segment of a field line (e.g., SEP::FieldLine::GetSegmentVolume in srcSEP/shock_injection.cpp");
       }
-    
-       
+
+      if ((IsSafeFieldLineSamplingValue(volume)==false)||(volume<=0.0)) {
+        PrintFieldLineSamplingWarning("invalid field-line segment volume",ptr,spec,
+            iFieldLine,S,Weight,v[0],v[1],Speed,volume);
+        return;
+      }
+
+
       //sample to vertices
-      cFieldLineVertex* V=FieldLinesAll[iFieldLine].GetSegment(S)->GetBegin();
+      cFieldLineVertex* V=CurrentSegment->GetBegin();
+      cFieldLineVertex* Vnext=(V!=NULL) ? V->GetNext() : NULL;
+      if ((V==NULL)||(Vnext==NULL)) {
+        PrintFieldLineSamplingWarning("invalid vertex connectivity for sampling",ptr,spec,
+            iFieldLine,S,Weight,v[0],v[1],Speed);
+        return;
+      }
+
+      const double SafeFluxSpeed=Speed;
+
+      // The actual calls below use the guarded cFieldLineVertex::SampleDatum()
+      // implementation.  The per-contribution guard in cFieldLineVertex protects
+      // every sampled datum from NaN/Inf, while the checks above make sure the
+      // quantities used here are physically and numerically well-defined.
       V->SampleDatum(DatumAtVertexNumberDensity,Weight/volume, spec, (1-w));
       V->SampleDatum(DatumAtVertexParticleWeight,Weight,spec, (1-w));
       V->SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (1-w));
       V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E*J2MeV,spec, (1-w));
       V->SampleDatum(DatumAtVertexParticleSpeed,Weight*Speed,spec, (1-w));
 
-      //sample binned number density 
+      //sample binned number density
       int ibin=DatumAtVertexNumberDensityEnergyBinned.GetBinIndex(E*J2MeV);
-      if (ibin>=0) V->SampleDatum(DatumAtVertexNumberDensityEnergyBinned,Weight/volume, spec, ibin,(1-w));  
-
+      if (ibin>=0) V->SampleDatum(DatumAtVertexNumberDensityEnergyBinned,Weight/volume, spec, ibin,(1-w));
 
       V->SampleDatum(DatumAtVertexParticleCosPitchAngle,Weight*CosPitchAngle,spec, (1-w));
       V->SampleDatum(DatumAtVertexParticleAbsCosPitchAngle,Weight*fabs(CosPitchAngle),spec, (1-w));
 
       if (CosPitchAngleSign>0.0) {
         V->SampleDatum(DatumAtVertexNumberDensity_mu_positive,Weight/volume, spec, (1-w));
-        V->SampleDatum(DatumAtVertexParticleFlux_mu_positive,Weight*Vector3D::Length(v)/volume, spec, (1-w));
+        V->SampleDatum(DatumAtVertexParticleFlux_mu_positive,Weight*SafeFluxSpeed/volume, spec, (1-w));
       }
       else {
         V->SampleDatum(DatumAtVertexNumberDensity_mu_negative,Weight/volume, spec, (1-w));
-        V->SampleDatum(DatumAtVertexParticleFlux_mu_negative,Weight*Vector3D::Length(v)/volume, spec, (1-w));  
+        V->SampleDatum(DatumAtVertexParticleFlux_mu_negative,Weight*SafeFluxSpeed/volume, spec, (1-w));
       }
 
       if (DatumAtVertexFluence.is_active()==true) {
         double t;
 
         V->GetDatum(DatumAtVertexFluence,t);
-        t+=Weight/volume*Vector3D::Length(v)*(1-w)/volume*TimeStep;
-        V->SetDatum(DatumAtVertexFluence,t);
+        if (IsSafeFieldLineSamplingValue(t)==false) t=0.0;
+        t+=Weight/volume*SafeFluxSpeed*(1-w)/volume*TimeStep;
+        if (IsSafeFieldLineSamplingValue(t)==true) V->SetDatum(DatumAtVertexFluence,t);
       }
 
 
-      V = V->GetNext();
+      V = Vnext;
       V->SampleDatum(DatumAtVertexNumberDensity,Weight/volume,spec,  (w));
       V->SampleDatum(DatumAtVertexParticleWeight,Weight,spec, (w));
       V->SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (w));
@@ -1278,25 +1444,32 @@ switch (DIM) {
 
       if (CosPitchAngleSign>0.0) {
         V->SampleDatum(DatumAtVertexNumberDensity_mu_positive,Weight/volume, spec, (w));
-        V->SampleDatum(DatumAtVertexParticleFlux_mu_positive,Weight*Vector3D::Length(v)/volume, spec, (w));
+        V->SampleDatum(DatumAtVertexParticleFlux_mu_positive,Weight*SafeFluxSpeed/volume, spec, (w));
       }
       else {
         V->SampleDatum(DatumAtVertexNumberDensity_mu_negative,Weight/volume, spec, (w));
-        V->SampleDatum(DatumAtVertexParticleFlux_mu_negative,Weight*Vector3D::Length(v)/volume, spec, (w));
+        V->SampleDatum(DatumAtVertexParticleFlux_mu_negative,Weight*SafeFluxSpeed/volume, spec, (w));
       }
 
       if (DatumAtVertexFluence.is_active()==true) {
         double t;
 
         V->GetDatum(DatumAtVertexFluence,t);
-        t+=Weight/volume*Vector3D::Length(v)*(w)/volume*TimeStep;
-        V->SetDatum(DatumAtVertexFluence,t);
+        if (IsSafeFieldLineSamplingValue(t)==false) t=0.0;
+        t+=Weight/volume*SafeFluxSpeed*(w)/volume*TimeStep;
+        if (IsSafeFieldLineSamplingValue(t)==true) V->SetDatum(DatumAtVertexFluence,t);
       }
 
 
       //.........................
-      if (CellSamplingBuffer!=NULL) {
-        *((double*)(CellSamplingBuffer+DatumAtGridParticleEnergy.offset))+=Weight*E;
+      if ((CellSamplingBuffer!=NULL)&&(DatumAtGridParticleEnergy.offset>=0)) {
+        double* grid_energy=(double*)(CellSamplingBuffer+DatumAtGridParticleEnergy.offset);
+        if (IsSafeFieldLineSamplingValue(*grid_energy)==false) *grid_energy=0.0;
+        const double dEGrid=Weight*E;
+        if (IsSafeFieldLineSamplingValue(dEGrid)==true) {
+          const double updated=*grid_energy+dEGrid;
+          if (IsSafeFieldLineSamplingValue(updated)==true) *grid_energy=updated;
+        }
       }
     }
 

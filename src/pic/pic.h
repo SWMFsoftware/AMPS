@@ -919,16 +919,64 @@ namespace PIC {
 
       //.......................................................................
       // sample data
+      //
+      // Sampling is an accumulation operation: once a NaN/Inf is added to a
+      // sampled diagnostic, every later addition and MPI reduction keeps the
+      // value non-finite.  That is particularly dangerous for weighted field-line
+      // vertex diagnostics such as DatumAtVertexParticleEnergy because they are
+      // reduced only when output is generated, so a single bad particle sampled
+      // many iterations earlier can stop the run much later inside MPI packing.
+      //
+      // The following helper routines make the low-level vertex sampling methods
+      // defensive.  They do not modify the particle state and they do not change
+      // the physical mover.  They only prevent diagnostic accumulators from being
+      // contaminated by invalid contributions.  The producer of an invalid
+      // particle should still be diagnosed by mover-level checks; this guard keeps
+      // the sampling/output subsystem from spreading that invalid value.
+      static inline bool IsSafeSampledDatumValue(double v) {
+        const double MaxAbsSampledDatumValue = 1.0e300;
+        return std::isfinite(v) && (std::fabs(v) < MaxAbsSampledDatumValue);
+      }
+
+      static inline void AddSafeSampledDatumContribution(double* target,double contribution) {
+        if (target==NULL) return;
+
+        // If the accumulator has already been contaminated by a previous bad
+        // contribution, reset it before adding the current finite contribution.
+        // This is a diagnostic safeguard: sampled values are regenerated every
+        // sampling window and should never require NaN/Inf to represent physics.
+        if (IsSafeSampledDatumValue(*target)==false) *target=0.0;
+
+        // Ignore non-finite or effectively overflowing contributions.  Adding
+        // such a value would make the accumulated diagnostic unusable and would
+        // usually be detected only later, during the field-line MPI reduction.
+        if (IsSafeSampledDatumValue(contribution)==false) return;
+
+        const double updated=*target+contribution;
+        *target=(IsSafeSampledDatumValue(updated)==true) ? updated : 0.0;
+      }
+
       inline void SampleDatum(PIC::Datum::cDatumSampled& Datum,double* In, int spec, double weight=1.0) {
-        if (Datum.offset>=0) for (int i=0; i<Datum.length; i++)  *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CollectingSamplingOffset+Datum.offset))+= In[i] * weight;
+        if ((Datum.offset>=0)&&(In!=NULL)&&(spec>=0)&&(spec<PIC::nTotalSpecies)&&IsSafeSampledDatumValue(weight)) {
+          for (int i=0; i<Datum.length; i++) {
+            double* target=i + Datum.length * spec + (double*)(AssociatedDataPointer + CollectingSamplingOffset+Datum.offset);
+            AddSafeSampledDatumContribution(target,In[i] * weight);
+          }
+        }
       }
 
       inline void SampleDatum(Datum::cDatumSampled& Datum, double In, int spec,double weight=1.0) {
-        if (Datum.offset>=0) *(spec + (double*)(AssociatedDataPointer + CollectingSamplingOffset+Datum.offset))+= In * weight;
+        if ((Datum.offset>=0)&&(spec>=0)&&(spec<PIC::nTotalSpecies)&&IsSafeSampledDatumValue(weight)) {
+          double* target=spec + (double*)(AssociatedDataPointer + CollectingSamplingOffset+Datum.offset);
+          AddSafeSampledDatumContribution(target,In * weight);
+        }
       }
 
       inline void SampleDatum(Datum::cDatumSampled& Datum, double In, int spec,int idx,double weight=1.0) {
-        if (Datum.offset>=0) *(idx+Datum.length * spec + (double*)(AssociatedDataPointer + CollectingSamplingOffset+Datum.offset))+= In * weight;
+        if ((Datum.offset>=0)&&(spec>=0)&&(spec<PIC::nTotalSpecies)&&(idx>=0)&&(idx<Datum.length)&&IsSafeSampledDatumValue(weight)) {
+          double* target=idx+Datum.length * spec + (double*)(AssociatedDataPointer + CollectingSamplingOffset+Datum.offset);
+          AddSafeSampledDatumContribution(target,In * weight);
+        }
       }
 
 
