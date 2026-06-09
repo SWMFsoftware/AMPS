@@ -57,6 +57,16 @@ struct Options {
   // unless the wave-number-resolved turbulence model is selected.
   int spectralOutputInterval = 100;
 
+  // Number of SEP macroparticles injected on each active field line injection
+  // event.  This maps directly to
+  // SEP::FieldLine::InjectionParameters::nParticlesPerIteration, whose legacy
+  // hard-coded default is 300 in field_line.cpp.  The option is exposed through
+  // the CLI because convergence/noise tests often require changing the number
+  // of injected macroparticles without recompiling.  The value must be positive:
+  // zero injected particles would make the injection weight correction formulas
+  // singular and would silently disable the SEP source.
+  int injectionParticlesPerIteration = 300;
+
   bool printHelp = false;
 };
 

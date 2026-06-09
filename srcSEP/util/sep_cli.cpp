@@ -233,6 +233,35 @@ bool ParseNonNegativeIntegerOption(int argc, char** argv, int& i,
   return true;
 }
 
+// Parse a strictly positive integer option.  This is separate from the
+// non-negative diagnostic-cadence parser above because injection-particle counts
+// are used in denominators in field_line.cpp when computing particle-weight
+// correction factors.  Accepting zero would therefore create either a singular
+// weight or a run with a silently disabled injection source.
+bool ParsePositiveIntegerOption(int argc, char** argv, int& i,
+                                const std::string& option_name,
+                                const std::string& value_from_equals,
+                                const char* description,
+                                int& destination,
+                                std::ostream& err) {
+  std::string raw_value;
+  if (!GetOptionValue(argc, argv, i, option_name, value_from_equals, raw_value, err)) return false;
+
+  errno = 0;
+  char* end_ptr = nullptr;
+  const long parsed_value = std::strtol(raw_value.c_str(), &end_ptr, 10);
+
+  if (errno != 0 || end_ptr == raw_value.c_str() || (end_ptr && *end_ptr != '\0') ||
+      parsed_value <= 0 || parsed_value > std::numeric_limits<int>::max()) {
+    err << "ERROR: invalid value '" << raw_value << "' for " << description
+        << ". Use a positive integer greater than zero.\n";
+    return false;
+  }
+
+  destination = static_cast<int>(parsed_value);
+  return true;
+}
+
 } // anonymous namespace
 
 void PrintHelp(const char* program_name, std::ostream& out) {
@@ -289,6 +318,21 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "                                 mean-free-path-scattering\n"
       << "                                 tenishev-2005-fl\n"
       << "\n"
+      << "Field-line SEP injection controls:\n"
+      << "  --particles-per-iteration <N>\n"
+      << "                               Set SEP::FieldLine::InjectionParameters::\n"
+      << "                               nParticlesPerIteration.  Default: N=300.\n"
+      << "                               This controls the target number of injected\n"
+      << "                               SEP macroparticles per active injection event;\n"
+      << "                               the code adjusts statistical weights when the\n"
+      << "                               physical injection estimate differs from N.\n"
+      << "                               N must be a positive integer.\n"
+      << "  --particles-per-iteration=... Same option using --option=value syntax.\n"
+      << "  --n-particles-per-iteration <N>\n"
+      << "                               Alias for --particles-per-iteration.\n"
+      << "  --injection-particles-per-iteration <N>\n"
+      << "                               Alias for --particles-per-iteration.\n"
+      << "\n"
       << "Wave-number-resolved spectrum output:\n"
       << "  --spectrum-output-interval <N>\n"
       << "                               Write the Tecplot 2-D W+/- (s,k), sigma_c(s,k)\n"
@@ -317,7 +361,7 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "\n"
       << "Defaults:\n"
       << "  coupling=on, cascade=on, reflection=on, turbulence-model=integrated, particle-mover=fte,\n"
-      << "  test-manager=off, spectrum-output-interval=100.\n"
+      << "  particles-per-iteration=300, test-manager=off, spectrum-output-interval=100.\n"
       << "\n"
       << "Examples:\n"
       << "  " << exe << " --coupling off --cascade off --reflection off\n"
@@ -325,6 +369,7 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  " << exe << " --run-test-manager\n"
       << "  " << exe << " --turbulence-model wave-number-resolved --coupling on\n"
       << "  " << exe << " --wave-number-resolved --particle-mover focused-transport-event-driven --coupling on\n"
+      << "  " << exe << " --particles-per-iteration 1000\n"
       << "  " << exe << " --wave-number-resolved --spectrum-output-interval 25\n";
 }
 
@@ -398,6 +443,18 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
       }
 
       options.particleMover = parsed_mover;
+      continue;
+    }
+
+    if (option_name == "--particles-per-iteration" ||
+        option_name == "--n-particles-per-iteration" ||
+        option_name == "--injection-particles-per-iteration" ||
+        option_name == "--field-line-injection-particles") {
+      if (!ParsePositiveIntegerOption(argc, argv, i, option_name, value_from_equals,
+                                      "field-line injection particles per iteration",
+                                      options.injectionParticlesPerIteration, err)) {
+        return false;
+      }
       continue;
     }
 
@@ -501,6 +558,20 @@ void ApplyTurbulenceOptions(const Options& options) {
   SEP::AlfvenTurbulence_Kolmogorov::Cascade::active = options.cascadeActive;
   SEP::AlfvenTurbulence_Kolmogorov::Reflection::active = options.reflectionActive;
 
+  // Configure the field-line SEP injection macroparticle count.
+  //
+  // This option writes the variable defined in field_line.cpp:
+  //   SEP::FieldLine::InjectionParameters::nParticlesPerIteration
+  //
+  // The injection routine uses this number as the target Monte-Carlo particle
+  // count and compensates differences between the physically estimated source
+  // strength and the requested macroparticle count by adjusting statistical
+  // weights.  Applying the CLI value here, after the optional post-compile
+  // input file is parsed in main.cpp and before particle injection starts, lets
+  // command-line runs override the hard-coded default without recompilation.
+  SEP::FieldLine::InjectionParameters::nParticlesPerIteration =
+      options.injectionParticlesPerIteration;
+
   // Select the particle mover.
   //
   // The mover choice is kept in the same CLI utility as the turbulence options
@@ -554,6 +625,7 @@ void PrintTurbulenceOptions(const Options& options, std::ostream& out) {
       << (options.turbulenceModel == Options::TurbulenceModel::WaveNumberResolved
               ? "wave-number-resolved" : "integrated") << "\n"
       << "  particle mover:                " << ParticleMoverName(options.particleMover) << "\n"
+      << "  injected particles/iteration:  " << options.injectionParticlesPerIteration << "\n"
       << "  spectrum output interval:      " << options.spectralOutputInterval
       << " iteration(s)" << (options.spectralOutputInterval == 0 ? " (disabled)" : "") << "\n"
       << "  TestManager diagnostics:       " << (options.runTestManager ? "on" : "off") << "\n";
