@@ -685,6 +685,12 @@ namespace EarthUtil {
   struct CalcMode {
     std::string target{"CUTOFF_RIGIDITY"};
     std::string fieldEvalMethod{"GRIDLESS"};
+
+    // True only when CALC_TARGET appears explicitly in #CALCULATION_MODE.
+    // The target default remains CUTOFF_RIGIDITY for backward compatibility in
+    // standalone tools, but the SWMF coupling bridge uses this flag to avoid
+    // accidentally converting old 3d_forward input files into cutoff runs.
+    bool targetExplicit{false};
   };
 
   //====================================================================================

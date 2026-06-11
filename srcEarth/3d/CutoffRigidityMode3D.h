@@ -160,6 +160,7 @@
 #define _SRC_EARTH_3D_CUTOFFRIGIDITYMODE3D_H_
 
 #include "../util/amps_param_parser.h"
+#include <string>
 
 namespace Earth {
 namespace Mode3D {
@@ -175,6 +176,18 @@ namespace Mode3D {
 // Throws std::runtime_error on invalid input or runtime failures.
 //--------------------------------------------------------------------------------------
 int RunCutoffRigidity(const EarthUtil::AmpsParam& prm);
+
+// Set an optional suffix appended to all RunCutoffRigidity output files.
+//
+// Default/standalone behavior is unchanged when the suffix is empty:
+//   cutoff_3d_points.dat
+//   cutoff_3d_shells.dat
+//
+// SWMF-coupled runs call amps_time_step() multiple times for successive MHD
+// snapshots.  In that case the coupling bridge sets a suffix such as
+//   .swmf_n000003_t000600.000s
+// before each cutoff calculation so every snapshot writes a distinct file.
+void SetCutoffOutputFileSuffix(const std::string& suffix);
 
 } // namespace Mode3D
 } // namespace Earth

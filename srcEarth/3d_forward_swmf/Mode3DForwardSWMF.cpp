@@ -50,6 +50,8 @@
 #include "../3d_forward/ForwardParticleMovers.h"
 #include "../3d_forward/Density3D.h"
 #include "../3d_forward/SphereFlux3D.h"
+#include "../3d/Mode3D.h"
+#include "../3d/CutoffRigidityMode3D.h"
 #include "../boundary/spectrum.h"
 #include "../util/amps_param_parser.h"
 #include "../Earth.h"
@@ -58,6 +60,10 @@
 
 #include <iostream>
 #include <stdexcept>
+#include <sstream>
+#include <iomanip>
+#include <cmath>
+#include <algorithm>
 
 namespace Earth {
 namespace Mode3DForwardSWMF {
@@ -71,8 +77,62 @@ namespace Mode3DForwardSWMF {
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
 static EarthUtil::AmpsParam s_prm;
 static bool                 s_pre_initialized = false;
+static long int             s_cutoff_call_counter = 0;
+static double               s_cutoff_elapsed_time_s = 0.0;
 #endif
 
+
+namespace {
+
+bool IsCutoffTarget_(const EarthUtil::AmpsParam& prm) {
+  // The parser default is CUTOFF_RIGIDITY for standalone backward
+  // compatibility.  In coupled SWMF runs, require an explicit CALC_TARGET so
+  // old 3d_forward input files that omit #CALCULATION_MODE keep their
+  // historical forward-injection behavior.
+  return prm.calc.targetExplicit &&
+         EarthUtil::ToUpper(prm.calc.target) == "CUTOFF_RIGIDITY";
+}
+
+bool IsForwardTarget_(const EarthUtil::AmpsParam& prm) {
+  return !IsCutoffTarget_(prm);
+}
+
+void ApplyParsedDomainForCutoff_(const EarthUtil::AmpsParam& prm) {
+  Earth::Mode3D::ParsedDomainActive = true;
+  Earth::Mode3D::ParsedDomainMin[0] = prm.domain.xMin * 1000.0;
+  Earth::Mode3D::ParsedDomainMin[1] = prm.domain.yMin * 1000.0;
+  Earth::Mode3D::ParsedDomainMin[2] = prm.domain.zMin * 1000.0;
+  Earth::Mode3D::ParsedDomainMax[0] = prm.domain.xMax * 1000.0;
+  Earth::Mode3D::ParsedDomainMax[1] = prm.domain.yMax * 1000.0;
+  Earth::Mode3D::ParsedDomainMax[2] = prm.domain.zMax * 1000.0;
+}
+
+std::string FormatCutoffOutputSuffix_(long int callIndex,double tSim_s) {
+  std::ostringstream ss;
+  ss << ".swmf_n" << std::setw(6) << std::setfill('0') << callIndex
+     << "_t" << std::setw(12) << std::setfill('0')
+     << std::fixed << std::setprecision(3) << std::max(0.0,tSim_s) << "s";
+  return ss.str();
+}
+
+double CoupledCutoffOutputDtSeconds_(const EarthUtil::AmpsParam& prm) {
+  // amps_time_step() does not receive an explicit SWMF time argument.  Use the
+  // configured temporal field-update cadence when present; otherwise fall back
+  // to the AMPS particle time step if it is available.  The call index is always
+  // included in the file name, so outputs remain unique even if this fallback is
+  // zero.  A future SWMF-side hook can update s_cutoff_elapsed_time_s directly
+  // before calling amps_time_step() if exact MHD time stamps are required.
+  if (prm.temporal.fieldUpdateDt_min > 0.0) return prm.temporal.fieldUpdateDt_min * 60.0;
+
+  if (PIC::nTotalSpecies > 0) {
+    const double dt = PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+    if (std::isfinite(dt) && dt > 0.0) return dt;
+  }
+
+  return 0.0;
+}
+
+} // anonymous namespace
 
 //======================================================================================
 // amps_pre_init  —  MUST be called before amps_init_mesh()
@@ -106,11 +166,30 @@ void amps_pre_init() {
   s_prm = EarthUtil::ParseAmpsParamFile(inputFile);
 
   // Mark the parameter object as SWMF-coupled: forces field access through
-  // PIC::CPLR instead of Tsyganenko/DATAFILE in all shared 3d_forward helpers.
+  // PIC::CPLR instead of Tsyganenko/DATAFILE in the shared 3-D helpers.
   s_prm.field.model                       = "SWMF";
   s_prm.calc.fieldEvalMethod              = "SWMF";
   s_prm.mode3d.forceAnalyticMagneticField = false;
 
+  if (IsCutoffTarget_(s_prm)) {
+    // Coupled cutoff-rigidity mode.  Keep the regular AMPS/SWMF mesh path, but
+    // route per-coupling-step work to RunCutoffRigidity() instead of the
+    // 3d_forward injector.  The cutoff tracer will sample the current SWMF
+    // fields through Earth::Mode3D::EvaluateBackgroundMagneticFieldSI().
+    Earth::ModelMode = Earth::CutoffRigidityMode;
+    ApplyParsedDomainForCutoff_(s_prm);
+
+    s_pre_initialized = true;
+
+    if (PIC::ThisThread == 0)
+      std::cout << "[Mode3DForwardSWMF] amps_pre_init complete:"
+                << " ModelMode=CutoffRigidityMode"
+                << ", field source=PIC::CPLR/SWMF"
+                << ", output will be timestamped per amps_time_step().\n";
+    return;
+  }
+
+  // Historical coupled 3d_forward mode.
   // ── Fix Gap 1 ────────────────────────────────────────────────────────────
   // Set Earth::ModelMode before amps_init_mesh() is called.
   // main_lib.cpp::amps_init_mesh() checks this at its entry:
@@ -181,6 +260,27 @@ void amps_init() {
 
   // Use the prm already parsed in amps_pre_init() — do not re-read the file.
   const EarthUtil::AmpsParam& prm = s_prm;
+
+  if (IsCutoffTarget_(prm)) {
+    // Coupled cutoff-rigidity mode needs only the generic AMPS/PIC
+    // initialization already performed in main_lib.cpp before this hook is
+    // called.  Do not register forward-injection callbacks.  The actual cutoff
+    // calculation is launched from amps_cutoff_time_step() each time SWMF calls
+    // amps_time_step(), after the current MHD fields have been imported.
+    Earth::ModelMode = Earth::CutoffRigidityMode;
+    ApplyParsedDomainForCutoff_(prm);
+
+    for (int s=0; s<PIC::nTotalSpecies; ++s) {
+      PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(s,1.0);
+    }
+
+    PIC::Mover::BackwardTimeIntegrationMode = _PIC_MODE_OFF_;
+
+    if (PIC::ThisThread == 0)
+      std::cout << "[Mode3DForwardSWMF] Initialized SWMF-coupled cutoff-rigidity runtime. "
+                << "Each amps_time_step() call will write a timestamped cutoff snapshot.\n";
+    return;
+  }
 
   if (PIC::ThisThread == 0)
     std::cout << "[Mode3DForwardSWMF] amps_init: completing coupled 3d_forward setup.\n";
@@ -323,6 +423,62 @@ void amps_init() {
               << ", nEnergyBins=" << Mode3DForward::cDensity3D::nEnergyBins
               << "\n";
   }
+#endif
+}
+
+
+bool IsForwardMode() {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return false;
+#else
+  return s_pre_initialized && IsForwardTarget_(s_prm);
+#endif
+}
+
+bool IsCutoffRigidityMode() {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return false;
+#else
+  return s_pre_initialized && IsCutoffTarget_(s_prm);
+#endif
+}
+
+void amps_cutoff_time_step() {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return;
+#else
+  if (!s_pre_initialized) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] amps_cutoff_time_step() called before amps_pre_init().");
+  }
+
+  if (!IsCutoffTarget_(s_prm)) return;
+
+  const long int callIndex = s_cutoff_call_counter;
+  const double   tSim_s    = s_cutoff_elapsed_time_s;
+  const std::string suffix = FormatCutoffOutputSuffix_(callIndex,tSim_s);
+
+  Earth::Mode3D::SetCutoffOutputFileSuffix(suffix);
+
+  if (PIC::ThisThread == 0) {
+    std::cout << "[Mode3DForwardSWMF] cutoff snapshot " << callIndex
+              << ": t_sim=" << tSim_s << " s, suffix='" << suffix << "'.\n";
+    std::cout.flush();
+  }
+
+  try {
+    Earth::Mode3D::RunCutoffRigidity(s_prm);
+  }
+  catch (const std::exception& e) {
+    std::ostringstream msg;
+    msg << "[Mode3DForwardSWMF] SWMF-coupled cutoff-rigidity calculation failed: "
+        << e.what();
+    const std::string text = msg.str();
+    exit(__LINE__,__FILE__,text.c_str());
+  }
+
+  ++s_cutoff_call_counter;
+  s_cutoff_elapsed_time_s += CoupledCutoffOutputDtSeconds_(s_prm);
 #endif
 }
 

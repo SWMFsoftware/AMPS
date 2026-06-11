@@ -2304,7 +2304,10 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else rejectUnknownKeyword();
     }
     else if (section=="#CALCULATION_MODE") {
-      if (uKey=="CALC_TARGET") p.calc.target=ToUpper(val);
+      if (uKey=="CALC_TARGET") {
+        p.calc.target=ToUpper(val);
+        p.calc.targetExplicit=true;
+      }
       else if (uKey=="FIELD_EVAL_METHOD") p.calc.fieldEvalMethod=ToUpper(val);
       else rejectUnknownKeyword();
     }

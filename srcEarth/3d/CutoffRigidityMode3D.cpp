@@ -829,6 +829,25 @@ static V3 LocationToX0m(const EarthUtil::AmpsParam& prm, int loc,
 }
 
 //======================================================================================
+// SECTION 12.5 — OUTPUT FILE NAMING
+//======================================================================================
+//
+// Standalone 3-D cutoff runs historically write fixed file names
+// (cutoff_3d_points.dat, cutoff_3d_shells.dat).  A live SWMF-coupled run can call
+// amps_time_step() repeatedly for different MHD snapshots.  Reusing the fixed names
+// would overwrite the previous cutoff products.
+//
+// The optional suffix below is therefore appended immediately before ".dat".  The
+// default empty suffix preserves the standalone file contract exactly.
+//======================================================================================
+
+static std::string gCutoffOutputFileSuffix;
+
+static std::string CutoffOutputFileName(const char* stem) {
+    return std::string(stem) + gCutoffOutputFileSuffix + ".dat";
+}
+
+//======================================================================================
 // SECTION 13 — TECPLOT OUTPUT WRITERS
 //======================================================================================
 //
@@ -888,8 +907,9 @@ static void WriteTecplot3DPoints(const EarthUtil::AmpsParam& prm,
                                  const std::vector<double>& Rc,
                                  const std::vector<double>& Emin,
                                  int nLoc) {
-    FILE* f = std::fopen("cutoff_3d_points.dat", "w");
-    if (!f) throw std::runtime_error("Cannot write cutoff_3d_points.dat");
+    const std::string fname = CutoffOutputFileName("cutoff_3d_points");
+    FILE* f = std::fopen(fname.c_str(), "w");
+    if (!f) throw std::runtime_error("Cannot write " + fname);
 
     const bool hasTraj = (EarthUtil::ToUpper(prm.output.mode) == "TRAJECTORY" &&
                           !prm.output.trajectories.empty());
@@ -920,8 +940,9 @@ static void WriteTecplot3DPoints(const EarthUtil::AmpsParam& prm,
 static void WriteTecplot3DPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
                                                        const std::vector<double>& Rc_num_GV,
                                                        int nLoc) {
-    FILE* f = std::fopen("cutoff_3d_points_dipole_compare.dat", "w");
-    if (!f) throw std::runtime_error("Cannot write Tecplot file: cutoff_3d_points_dipole_compare.dat");
+    const std::string fname = CutoffOutputFileName("cutoff_3d_points_dipole_compare");
+    FILE* f = std::fopen(fname.c_str(), "w");
+    if (!f) throw std::runtime_error("Cannot write Tecplot file: " + fname);
 
     EnsureDipoleAnalyticState3D(prm);
 
@@ -950,8 +971,9 @@ static void WriteTecplot3DShells(const EarthUtil::AmpsParam& prm,
                                  const std::vector<std::vector<double>>& RcShell,
                                  const std::vector<std::vector<double>>& EminShell,
                                  int nLon, int nLat, double d_deg) {
-    FILE* f = std::fopen("cutoff_3d_shells.dat", "w");
-    if (!f) throw std::runtime_error("Cannot write cutoff_3d_shells.dat");
+    const std::string fname = CutoffOutputFileName("cutoff_3d_shells");
+    FILE* f = std::fopen(fname.c_str(), "w");
+    if (!f) throw std::runtime_error("Cannot write " + fname);
 
     std::fprintf(f, "TITLE=\"Mode3D Cutoff Rigidity (SHELLS)\"\n");
     std::fprintf(f, "VARIABLES=\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"\n");
@@ -982,8 +1004,9 @@ static void WriteTecplot3DShells_DipoleAnalyticCompare(
                                  const EarthUtil::AmpsParam& prm,
                                  const std::vector<std::vector<double>>& RcShell,
                                  int nLon, int nLat, double d_deg) {
-    FILE* f = std::fopen("cutoff_3d_shells_dipole_compare.dat", "w");
-    if (!f) throw std::runtime_error("Cannot write Tecplot file: cutoff_3d_shells_dipole_compare.dat");
+    const std::string fname = CutoffOutputFileName("cutoff_3d_shells_dipole_compare");
+    FILE* f = std::fopen(fname.c_str(), "w");
+    if (!f) throw std::runtime_error("Cannot write Tecplot file: " + fname);
 
     EnsureDipoleAnalyticState3D(prm);
 
@@ -1042,6 +1065,10 @@ static void WriteTecplot3DShells_DipoleAnalyticCompare(
 
 namespace Earth {
 namespace Mode3D {
+
+void SetCutoffOutputFileSuffix(const std::string& suffix) {
+    gCutoffOutputFileSuffix = suffix;
+}
 
 int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
 
@@ -1326,12 +1353,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
             }
 
             WriteTecplot3DPoints(prm, rcAll, eminAll, nLoc);
-            std::cout << "Wrote: cutoff_3d_points.dat\n";
+            std::cout << "Wrote: " << CutoffOutputFileName("cutoff_3d_points") << "\n";
 
 #if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
             if (EarthUtil::ToUpper(prm.field.model) == "DIPOLE") {
                 WriteTecplot3DPoints_DipoleAnalyticCompare(prm, rcAll, nLoc);
-                std::cout << "Wrote: cutoff_3d_points_dipole_compare.dat\n";
+                std::cout << "Wrote: " << CutoffOutputFileName("cutoff_3d_points_dipole_compare") << "\n";
             }
 #endif
 
@@ -1352,12 +1379,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
             }
 
             WriteTecplot3DShells(prm, RcShell, EminShell, nLon, nLat, d_deg);
-            std::cout << "Wrote: cutoff_3d_shells.dat\n";
+            std::cout << "Wrote: " << CutoffOutputFileName("cutoff_3d_shells") << "\n";
 
 #if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
             if (EarthUtil::ToUpper(prm.field.model) == "DIPOLE") {
                 WriteTecplot3DShells_DipoleAnalyticCompare(prm, RcShell, nLon, nLat, d_deg);
-                std::cout << "Wrote: cutoff_3d_shells_dipole_compare.dat\n";
+                std::cout << "Wrote: " << CutoffOutputFileName("cutoff_3d_shells_dipole_compare") << "\n";
             }
 #endif
         }

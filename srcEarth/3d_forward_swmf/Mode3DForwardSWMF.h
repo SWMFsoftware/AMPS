@@ -44,6 +44,18 @@ void amps_pre_init();
 // Completes the SWMF-coupled 3d_forward runtime initialization.
 void amps_init();
 
+// Return true when AMPS_PARAM.in selects the SWMF-coupled 3-D forward solver.
+// This is the historical coupled mode.
+bool IsForwardMode();
+
+// Return true when AMPS_PARAM.in selects CALC_TARGET = CUTOFF_RIGIDITY.
+// In this mode each amps_time_step() call computes a cutoff-rigidity snapshot
+// using the current SWMF-coupled fields and writes timestamped output files.
+bool IsCutoffRigidityMode();
+
+// Per-coupling-call cutoff-rigidity driver used by main_lib.cpp::amps_time_step().
+void amps_cutoff_time_step();
+
 } // namespace Mode3DForwardSWMF
 } // namespace Earth
 

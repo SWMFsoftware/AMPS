@@ -822,6 +822,22 @@ void amps_time_step() {
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
   // =========================================================================
+  // SWMF-coupled cutoff-rigidity path
+  // =========================================================================
+  //
+  // When AMPS_PARAM.in selects CALC_TARGET = CUTOFF_RIGIDITY, the live SWMF
+  // coupling calls amps_time_step() once per coupled MHD snapshot.  Do not
+  // advance a forward-injection particle population.  Instead, compute a fresh
+  // 3-D cutoff-rigidity product using the current SWMF B/E fields exposed by
+  // PIC::CPLR.  The coupling bridge appends a call/time suffix to every output
+  // file so successive calls do not overwrite earlier snapshots.
+  //
+  if (Earth::Mode3DForwardSWMF::IsCutoffRigidityMode()) {
+    Earth::Mode3DForwardSWMF::amps_cutoff_time_step();
+    return;
+  }
+
+  // =========================================================================
   // 3d_forward_swmf path
   // =========================================================================
   //
