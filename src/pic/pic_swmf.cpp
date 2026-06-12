@@ -480,6 +480,70 @@ void PIC::CPLR::SWMF::ResetCenterPointProcessingFlag() {
   }
 }
 
+void PIC::CPLR::SWMF::Debug::RedefineMagneticField(fMagneticField f) {
+  int thread,i,j,k;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+  PIC::Mesh::cDataBlockAMR *block;
+  PIC::Mesh::cDataCenterNode *cell;
+
+  if (f==NULL) exit(__LINE__,__FILE__,
+      "Error: PIC::CPLR::SWMF::Debug::RedefineMagneticField() received NULL function pointer");
+
+  if (PIC::Mesh::mesh==NULL) exit(__LINE__,__FILE__,
+      "Error: PIC::CPLR::SWMF::Debug::RedefineMagneticField() called before PIC::Mesh::mesh is initialized");
+
+  if (PIC::CPLR::SWMF::MagneticFieldOffset<0) exit(__LINE__,__FILE__,
+      "Error: PIC::CPLR::SWMF::Debug::RedefineMagneticField() called before the SWMF magnetic-field buffer is allocated");
+
+  double x[3],b[3];
+
+  // Use the same ownership/de-duplication pattern as the AMPS/SWMF coupling
+  // receive path.  This updates the locally owned cells and the domain-boundary
+  // ghost cells that can participate in interpolation stencils, while avoiding
+  // duplicate calls for cells reachable through both lists.
+  PIC::CPLR::SWMF::ResetCenterPointProcessingFlag();
+
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) if ((block=node->block)!=NULL) {
+    for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
+      for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) {
+        for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
+          cell=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
+
+          if (cell!=NULL) if (cell->nodeDescriptor.nodeProcessedFlag==_OFF_AMR_MESH_) {
+            cell->GetX(x);
+            f(x,b);
+
+            memcpy(cell->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset,
+                   b,3*sizeof(double));
+
+            cell->nodeDescriptor.nodeProcessedFlag=_ON_AMR_MESH_;
+          }
+        }
+      }
+    }
+  }
+
+  for (thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) for (node=PIC::Mesh::mesh->DomainBoundaryLayerNodesList[thread];node!=NULL;node=node->nextNodeThisThread) if ((block=node->block)!=NULL)  {
+    for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
+      for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) {
+        for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
+          cell=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
+
+          if (cell!=NULL) if (cell->nodeDescriptor.nodeProcessedFlag==_OFF_AMR_MESH_) {
+            cell->GetX(x);
+            f(x,b);
+
+            memcpy(cell->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset,
+                   b,3*sizeof(double));
+
+            cell->nodeDescriptor.nodeProcessedFlag=_ON_AMR_MESH_;
+          }
+        }
+      }
+    }
+  }
+}
+
 
 void PIC::CPLR::SWMF::GetCenterPointNumber(int *nCenterPoints,fTestPointInsideDomain TestPointInsideDomain) {
   int thread,i,j,k;

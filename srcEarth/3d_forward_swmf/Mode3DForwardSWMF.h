@@ -53,6 +53,10 @@ bool IsForwardMode();
 // using the current SWMF-coupled fields and writes timestamped output files.
 bool IsCutoffRigidityMode();
 
+// Replace the SWMF-coupled cell-centered magnetic field with the analytic dipole
+// configured by DIPOLE_MOMENT and DIPOLE_TILT in AMPS_PARAM.in.
+void RedefineSWMFCoupledMagneticFieldToAnalyticDipole();
+
 // Per-coupling-call cutoff-rigidity driver used by main_lib.cpp::amps_time_step().
 void amps_cutoff_time_step();
 

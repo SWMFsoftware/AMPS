@@ -52,6 +52,7 @@
 #include "../3d_forward/SphereFlux3D.h"
 #include "../3d/Mode3D.h"
 #include "../3d/CutoffRigidityMode3D.h"
+#include "../gridless/DipoleInterface.h"
 #include "../boundary/spectrum.h"
 #include "../util/amps_param_parser.h"
 #include "../Earth.h"
@@ -83,6 +84,10 @@ static double               s_cutoff_elapsed_time_s = 0.0;
 
 
 namespace {
+
+void AnalyticDipoleMagneticField_(double *xIn,double *bOut) {
+  Earth::GridlessMode::Dipole::GetB_Tesla(xIn,bOut);
+}
 
 bool IsCutoffTarget_(const EarthUtil::AmpsParam& prm) {
   // The parser default is CUTOFF_RIGIDITY for standalone backward
@@ -440,6 +445,30 @@ bool IsCutoffRigidityMode() {
   return false;
 #else
   return s_pre_initialized && IsCutoffTarget_(s_prm);
+#endif
+}
+
+void RedefineSWMFCoupledMagneticFieldToAnalyticDipole() {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return;
+#else
+  if (!s_pre_initialized) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] RedefineSWMFCoupledMagneticFieldToAnalyticDipole() called before amps_pre_init().");
+  }
+
+  Earth::GridlessMode::Dipole::SetMomentScale(s_prm.field.dipoleMoment_Me);
+  Earth::GridlessMode::Dipole::SetTiltDeg(s_prm.field.dipoleTilt_deg);
+
+  PIC::CPLR::SWMF::Debug::RedefineMagneticField(AnalyticDipoleMagneticField_);
+
+  if (PIC::ThisThread == 0) {
+    std::cout << "[Mode3DForwardSWMF] Replaced SWMF-coupled cell-centered B field "
+              << "with analytic dipole:"
+              << " DIPOLE_MOMENT=" << s_prm.field.dipoleMoment_Me
+              << ", DIPOLE_TILT=" << s_prm.field.dipoleTilt_deg << " deg.\n";
+    std::cout.flush();
+  }
 #endif
 }
 

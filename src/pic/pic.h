@@ -7447,6 +7447,16 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
       // Calculates the divergence of plasma velocity for each cell
       void CalculatePlasmaDivU();
 
+      // Debug helpers for live SWMF coupling.  These routines operate on the
+      // same cell-centered coupler buffer filled by RecieveCenterPointData(),
+      // so all standard accessors, interpolation stencils, and particle movers
+      // continue to use the modified field without any model-side changes.
+      namespace Debug {
+        typedef void (*fMagneticField)(double *xIn,double *bOut);
+
+        void RedefineMagneticField(fMagneticField f);
+      }
+
       //output the interpolated data into a file
       int RequestDataBuffer(int offset);
       void PrintVariableList(FILE* fout,int DataSetNumber);

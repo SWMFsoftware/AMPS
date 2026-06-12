@@ -833,6 +833,7 @@ void amps_time_step() {
   // file so successive calls do not overwrite earlier snapshots.
   //
   if (Earth::Mode3DForwardSWMF::IsCutoffRigidityMode()) {
+    Earth::Mode3DForwardSWMF::RedefineSWMFCoupledMagneticFieldToAnalyticDipole();
     Earth::Mode3DForwardSWMF::amps_cutoff_time_step();
     PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_coupled_data.dat", 0);
     return;
