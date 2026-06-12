@@ -6366,7 +6366,7 @@ Compile=
 Run=
 >>>@echo "test_Earth-cutoff-rigidity-gridless-steadystate_t96_run..." >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
 >>>@echo Test test_Earth-cutoff-rigidity-gridless-steadystate_t96 has started: `date`
->>>cp input/test/geospace/* $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96DIR)
+>>>cp input/test/geospace/*in* $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96DIR)
 
 >>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
 >>>@echo "Running cutoff rigidity for a set of points" >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
@@ -6432,7 +6432,7 @@ Compile=
 Run=
 >>>@echo "test_Earth-vertical-cutoff-rigidity-gridless_run..." >> test_Earth-vertical-cutoff-rigidity-gridless$(TESTEarth-vertical-cutoff-rigidity-gridless-REF).diff
 >>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless has started: `date`
->>>cp input/test/geospace/* $(TESTEarth-vertical-cutoff-rigidity-gridlessDIR)
+>>>cp input/test/geospace/*in* $(TESTEarth-vertical-cutoff-rigidity-gridlessDIR)
 
 >>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless$(TESTEarth-vertical-cutoff-rigidity-gridless-REF).diff
 >>>@echo "Running vertical cutoff rigidity for a set of points (dipole)" >> test_Earth-vertical-cutoff-rigidity-gridless$(TESTEarth-vertical-cutoff-rigidity-gridless-REF).diff
@@ -6530,7 +6530,7 @@ Compile=
 Run=
 >>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-hybrid_run..." >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
 >>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-hybrid has started: `date`
->>>cp input/test/geospace/* $(TESTEarth-vertical-cutoff-rigidity-gridless-hybridDIR)
+>>>cp input/test/geospace/*in* $(TESTEarth-vertical-cutoff-rigidity-gridless-hybridDIR)
 
 >>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
 >>>@echo "Running vertical cutoff rigidity for a set of points (dipole, HYBRID mover)" >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
@@ -7795,7 +7795,7 @@ Compile=
 Run=
 >>>@echo "test_Earth-cutoff-rigidity-3d_run..." >> test_Earth-cutoff-rigidity-3d$(TESTEarth-cutoff-rigidity-3d-REF).diff
 >>>@echo Test test_Earth-cutoff-rigidity-3d has started: `date`
->>>cp input/test/geospace/* $(TESTEarth-cutoff-rigidity-3dDIR)
+>>>cp input/test/geospace/*in* $(TESTEarth-cutoff-rigidity-3dDIR)
 
 >>>@echo "========================================" >> test_Earth-cutoff-rigidity-3d$(TESTEarth-cutoff-rigidity-3d-REF).diff
 >>>@echo "Running 3D cutoff rigidity for a set of points (dipole)" >> test_Earth-cutoff-rigidity-3d$(TESTEarth-cutoff-rigidity-3d-REF).diff
@@ -7886,7 +7886,7 @@ Compile=
 Run=
 >>>@echo "test_Earth-cutoff-rigidity-3d-analytic_run..." >> test_Earth-cutoff-rigidity-3d-analytic$(TESTEarth-cutoff-rigidity-3d-analytic-REF).diff
 >>>@echo Test test_Earth-cutoff-rigidity-3d-analytic has started: `date`
->>>cp input/test/geospace/* $(TESTEarth-cutoff-rigidity-3d-analyticDIR)
+>>>cp input/test/geospace/*in* $(TESTEarth-cutoff-rigidity-3d-analyticDIR)
 
 >>>@echo "========================================" >> test_Earth-cutoff-rigidity-3d-analytic$(TESTEarth-cutoff-rigidity-3d-analytic-REF).diff
 >>>@echo "Running 3D cutoff rigidity for a set of points (dipole, analytic field)" >> test_Earth-cutoff-rigidity-3d-analytic$(TESTEarth-cutoff-rigidity-3d-analytic-REF).diff
