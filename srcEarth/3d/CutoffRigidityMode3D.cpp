@@ -314,6 +314,19 @@ public:
             return;
         }
 
+	if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_) {
+          double B[3];
+
+          PIC::CPLR::InitInterpolationStencil(xArr,node);
+	  PIC::CPLR::GetBackgroundMagneticField(B);
+
+          B_T.x = B[0];
+          B_T.y = B[1];
+          B_T.z = B[2];
+
+	  return;
+	}
+
         if (!PIC::CPLR::DATAFILE::Offset::MagneticField.active) {
             B_T.x = B_T.y = B_T.z = 0.0;
             return;
