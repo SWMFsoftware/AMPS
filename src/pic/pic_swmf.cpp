@@ -480,6 +480,21 @@ void PIC::CPLR::SWMF::ResetCenterPointProcessingFlag() {
   }
 }
 
+// Debug helper for replacing the magnetic field already stored in the SWMF coupler
+// associated-data buffer.
+//
+// This routine is intentionally generic: the caller supplies f(x,b), where x is the
+// cell-center coordinate and b is the replacement magnetic field.  The field is written
+// into PIC::CPLR::SWMF::MagneticFieldOffset, the same location used by
+// RecieveCenterPointData().  Therefore all downstream AMPS/SWMF field interpolation
+// routines see the replacement field without any changes.
+//
+// Scope:
+//   This AMPS-level helper follows the normal coupler receive lists and updates the
+//   blocks that are allocated on the current rank (local domain plus boundary/ghost
+//   blocks).  It is useful for quick local debug overrides.  The Earth Mode3DForwardSWMF
+//   cutoff preparation code provides the stronger replicated-full-AMR version needed
+//   for SWMF-coupled cutoff tracing.
 void PIC::CPLR::SWMF::Debug::RedefineMagneticField(fMagneticField f) {
   int thread,i,j,k;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
@@ -498,9 +513,10 @@ void PIC::CPLR::SWMF::Debug::RedefineMagneticField(fMagneticField f) {
   double x[3],b[3];
 
   // Use the same ownership/de-duplication pattern as the AMPS/SWMF coupling
-  // receive path.  This updates the locally owned cells and the domain-boundary
-  // ghost cells that can participate in interpolation stencils, while avoiding
-  // duplicate calls for cells reachable through both lists.
+  // receive path.  ResetCenterPointProcessingFlag() marks all accessible center
+  // nodes as unprocessed; each subsequent loop flips the flag after writing B.  This
+  // avoids duplicate calls for cells reachable through both the local-domain list and
+  // the domain-boundary-layer list.
   PIC::CPLR::SWMF::ResetCenterPointProcessingFlag();
 
   for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) if ((block=node->block)!=NULL) {
