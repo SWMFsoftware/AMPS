@@ -53,6 +53,39 @@ bool IsForwardMode();
 // using the current SWMF-coupled fields and writes timestamped output files.
 bool IsCutoffRigidityMode();
 
+// Copy the suffix used by the most recent SWMF-coupled cutoff-rigidity output.
+//
+// The suffix includes the leading separator and excludes the final file
+// extension.  Example:
+//
+//   .swmf_n000003_t000600.000s
+//
+// This accessor is used by companion diagnostic outputs that are written after
+// amps_cutoff_time_step() and must be grouped with the cutoff files from the same
+// coupling call.  The function deliberately returns the already-generated suffix
+// rather than formatting a new one, so all products remain synchronized if the
+// cutoff naming convention changes.
+void GetLastCutoffOutputStamp(char* stamp,int stampLength);
+
+// Build a companion output filename using the most recent cutoff-output suffix.
+//
+// Example call:
+//
+//   GetLastCutoffOutputFileName(fname,sizeof(fname),
+//                               "amps_coupled_data",".dat");
+//
+// Example result:
+//
+//   amps_coupled_data.swmf_n000003_t000600.000s.dat
+//
+// The function validates the output buffer size and stops with an explicit error
+// if the name would be truncated, because truncation could make different SWMF
+// coupling snapshots overwrite each other.
+void GetLastCutoffOutputFileName(char* fileName,
+                                 int fileNameLength,
+                                 const char* stem,
+                                 const char* extension=".dat");
+
 // Allocate all AMR leaf blocks on every MPI rank and gather the SWMF-coupled
 // cell-centered magnetic field into those blocks.
 //
