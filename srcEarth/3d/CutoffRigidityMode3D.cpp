@@ -1083,7 +1083,7 @@ void SetCutoffOutputFileSuffix(const std::string& suffix) {
     gCutoffOutputFileSuffix = suffix;
 }
 
-int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
+int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool showProgressBar) {
 
     //==================================================================================
     // 14.1 — MPI initialisation guard
@@ -1222,7 +1222,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
 
         std::cout
             << "N_locations    : " << nLoc  << "\n"
-            << "MPI ranks      : " << mpiSize << " (replicated domain, static partition)\n";
+            << "MPI ranks      : " << mpiSize << " (replicated domain, static partition)\n"
+            << "Progress bar   : " << (showProgressBar ? "ON" : "OFF") << "\n";
 
 #ifdef _OPENMP
         std::cout << "OpenMP threads : " << omp_get_max_threads()
@@ -1257,6 +1258,120 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     const int locStart  = mpiRank * nPerRank;
     const int locEnd    = (mpiRank == mpiSize - 1) ? nLoc : locStart + nPerRank;
     const int nLocal    = locEnd - locStart;
+
+    //==================================================================================
+    // 14.8b — Optional progress reporting
+    //==================================================================================
+    // The gridless cutoff solver reports global task progress from its rank-0
+    // master scheduler. Mode3D intentionally uses a static replicated-domain
+    // decomposition with no inter-rank communication during the compute phase;
+    // therefore, when enabled, the progress report is printed independently by
+    // each MPI rank for that rank's local point slice.
+    //
+    // The visual style and information content match the gridless cutoff bar:
+    //   [POINTS] or [SHELL i/N alt=...] [rank r] [####----] percent
+    //   (Loc done/total, Task done/total) ETA hh:mm:ss
+    //
+    // In Mode3D, one OpenMP work item is one observation location. Each such
+    // location internally computes all sampled directions and the bisection
+    // search, so the local "Task" count is intentionally equal to the local
+    // "Loc" count. This keeps the meaning precise without adding MPI traffic
+    // inside the computation loop.
+    //==================================================================================
+
+    const long long totalTasksLocal = static_cast<long long>(nLocal);
+    long long doneTasksLocal = 0;
+
+    std::vector<int> locDonePerShellLocal((size_t)std::max(nShells,0),0);
+    std::vector<int> locTotalPerShellLocal((size_t)std::max(nShells,0),0);
+
+    if (isShells) {
+        for (int globalIdx=locStart; globalIdx<locEnd; ++globalIdx) {
+            const int s = globalIdx / nPtsShell;
+            if (s>=0 && s<nShells) locTotalPerShellLocal[(size_t)s]++;
+        }
+    }
+
+    auto mode3d_now_seconds = []() -> double { return MPI_Wtime(); };
+    const double progressStartTime = mode3d_now_seconds();
+    double progressLastPrintTime = -1.0;
+
+    auto mode3d_fmt_hms = [](double s)->std::string {
+        if (s < 0.0) return std::string("--:--:--");
+        long long is = (long long)std::llround(s);
+        long long hh = is/3600; is-=hh*3600;
+        long long mm = is/60;   is-=mm*60;
+        long long ss = is;
+        char buf[64];
+        std::snprintf(buf,sizeof(buf),"%02lld:%02lld:%02lld",hh,mm,ss);
+        return std::string(buf);
+    };
+
+    auto maybePrintProgress = [&](long long doneTasks, bool forcePrint) {
+        if (!showProgressBar) return;
+
+        const double t = mode3d_now_seconds();
+        if (!forcePrint) {
+            if (progressLastPrintTime < 0.0) progressLastPrintTime = t;
+            if (t - progressLastPrintTime < 1.0) return;
+        }
+        progressLastPrintTime = t;
+
+        const long long totalTasks = totalTasksLocal;
+        const double frac = (totalTasks>0) ?
+            (double(doneTasks)/double(totalTasks)) : 1.0;
+
+        const double dt = t - progressStartTime;
+        const double rate = (dt>0.0) ? (double(doneTasks)/dt) : 0.0;
+        double eta_s = -1.0;
+        if (rate>0.0 && totalTasks>doneTasks)
+            eta_s = double(totalTasks-doneTasks)/rate;
+
+        const int barW = 36;
+        int filled = (int)std::floor(frac*barW + 0.5);
+        if (filled < 0) filled = 0;
+        if (filled > barW) filled = barW;
+
+        std::ostringstream line;
+
+        if (isPoints) {
+            if (outputMode == "TRAJECTORY") line << "[TRAJECTORY] ";
+            else line << "[POINTS] ";
+        }
+        else {
+            int curShell = 0;
+            for (int s=0; s<nShells; ++s) {
+                if (locTotalPerShellLocal[(size_t)s] == 0) continue;
+                if (locDonePerShellLocal[(size_t)s] < locTotalPerShellLocal[(size_t)s]) {
+                    curShell = s;
+                    break;
+                }
+                curShell = s;
+            }
+            const double alt_km = prm.output.shellAlt_km[(size_t)curShell];
+            line << "[SHELL " << (curShell+1) << "/" << nShells
+                 << " alt=" << alt_km << "km] ";
+        }
+
+        line << "[rank " << mpiRank << "] ";
+
+        line << "[";
+        for (int i=0;i<barW;i++) line << (i<filled ? "#" : "-");
+        line << "] ";
+
+        line.setf(std::ios::fixed);
+        line.precision(1);
+        line << (frac*100.0) << "%  ";
+
+        line << "(Loc " << doneTasks << "/" << totalTasks << ", "
+             << "Task " << doneTasks << "/" << totalTasks << ")  "
+             << "ETA " << mode3d_fmt_hms(eta_s) << "\n";
+
+        std::cout << line.str();
+        std::cout.flush();
+    };
+
+    maybePrintProgress(0,true);
 
     // Local result arrays (indexed 0..nLocal-1)
     std::vector<double> rcLocal(nLocal, -1.0);
@@ -1310,8 +1425,28 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
                 }
             }
 
+            if (showProgressBar) {
+                #pragma omp critical(Mode3DProgressPrint)
+                {
+                    ++doneTasksLocal;
+                    if (isShells) {
+                        const int shellIdx = globalIdx / nPtsShell;
+                        if (shellIdx>=0 && shellIdx<nShells)
+                            locDonePerShellLocal[(size_t)shellIdx]++;
+                    }
+                    maybePrintProgress(doneTasksLocal,false);
+                }
+            }
+
         } // omp for
     } // omp parallel
+
+    if (showProgressBar) {
+        #pragma omp critical(Mode3DProgressPrint)
+        {
+            maybePrintProgress(totalTasksLocal,true);
+        }
+    }
 
     //==================================================================================
     // 14.10 — MPI gather: collect results from all ranks onto rank 0

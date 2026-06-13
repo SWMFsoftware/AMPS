@@ -496,7 +496,7 @@ void amps_cutoff_time_step() {
   }
 
   try {
-    Earth::Mode3D::RunCutoffRigidity(s_prm);
+    Earth::Mode3D::RunCutoffRigidity(s_prm,true);
   }
   catch (const std::exception& e) {
     std::ostringstream msg;

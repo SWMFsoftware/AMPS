@@ -175,7 +175,10 @@ namespace Mode3D {
 // Returns 0 on success.
 // Throws std::runtime_error on invalid input or runtime failures.
 //--------------------------------------------------------------------------------------
-int RunCutoffRigidity(const EarthUtil::AmpsParam& prm);
+// If showProgressBar is true, each MPI rank prints a time-throttled progress
+// bar for its local static point slice. The default is false to preserve
+// existing quiet/production behavior.
+int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool showProgressBar=false);
 
 // Set an optional suffix appended to all RunCutoffRigidity output files.
 //
