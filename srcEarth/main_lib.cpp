@@ -835,24 +835,18 @@ void amps_time_step() {
   if (Earth::Mode3DForwardSWMF::IsCutoffRigidityMode()) {
     Earth::Mode3DForwardSWMF::amps_cutoff_time_step();
 
-    // Write the coupled AMPS mesh dump with the same call/time stamp that was
-    // just used by amps_cutoff_time_step() for the calculated cutoff-rigidity
-    // products.  This prevents successive SWMF coupling calls from overwriting
-    // amps_coupled_data.dat and makes every AMPS mesh dump directly traceable to
-    // the cutoff files produced from the same imported GM fields.
-    //
-    // The stamp itself is not formatted here on purpose.  It is generated once in
-    // Mode3DForwardSWMF::amps_cutoff_time_step(), cached there, and read back by
-    // GetLastCutoffOutputFileName().  That keeps all coupled-cutoff outputs on a
-    // single naming convention if the suffix format is changed later.
-    char ampsCoupledDataFileName[256];
-    Earth::Mode3DForwardSWMF::GetLastCutoffOutputFileName(
-        ampsCoupledDataFileName,
-        static_cast<int>(sizeof(ampsCoupledDataFileName)),
-        "amps_coupled_data",
-        ".dat");
+    // Write the diagnostic dump of the coupled AMPS mesh with the same suffix
+    // used by the cutoff-rigidity products produced above.  The suffix is built
+    // inside Mode3DForwardSWMF from PIC::SimulationTime::TimeCounter, which is
+    // the authoritative AMPS/SWMF simulation clock for the PT component.  This
+    // keeps amps_coupled_data.* paired one-to-one with the cutoff output from
+    // the same coupled snapshot and prevents later snapshots from overwriting
+    // earlier amps_coupled_data.dat files.
+    const std::string coupledDataFileName =
+        Earth::Mode3DForwardSWMF::GetLastCutoffOutputFileName(
+            "amps_coupled_data", ".dat");
 
-    PIC::Mesh::mesh->outputMeshDataTECPLOT(ampsCoupledDataFileName, 0);
+    PIC::Mesh::mesh->outputMeshDataTECPLOT(coupledDataFileName.c_str(), 0);
     return;
   }
 
