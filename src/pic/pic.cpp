@@ -48,7 +48,8 @@ int PIC::TimeStep() {
    static double summIterationExecutionTime=0.0;
 
    //update the global simualtion time step 
-   if (_SIMULATION_TIME_STEP_MODE_==_SINGLE_GLOBAL_TIME_STEP_) {
+   //when _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_: the simulation time comes from the SWMF 
+   if ((_SIMULATION_TIME_STEP_MODE_==_SINGLE_GLOBAL_TIME_STEP_)&&(_PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_)) {
      PIC::SimulationTime::TimeCounter+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
    }
 

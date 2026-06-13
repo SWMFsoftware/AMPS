@@ -432,6 +432,7 @@ extern "C" {
      static int ncalls=0;
 
      ncalls++;
+     PIC::SimulationTime::TimeCounter=*TimeSimulation;
 
      if ((PIC::SamplingMode==_TEMP_DISABLED_SAMPLING_MODE_)&&(ncalls%SamplingOutputCadence==0)) {
        PIC::SamplingMode=_SINGLE_OUTPUT_FILE_SAMPING_MODE_;
