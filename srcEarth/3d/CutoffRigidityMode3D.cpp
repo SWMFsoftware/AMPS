@@ -1260,36 +1260,56 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool showProgressBar) {
     const int nLocal    = locEnd - locStart;
 
     //==================================================================================
-    // 14.8b — Optional progress reporting
+    // 14.8b — Optional global progress reporting
     //==================================================================================
-    // The gridless cutoff solver reports global task progress from its rank-0
-    // master scheduler. Mode3D intentionally uses a static replicated-domain
-    // decomposition with no inter-rank communication during the compute phase;
-    // therefore, when enabled, the progress report is printed independently by
-    // each MPI rank for that rank's local point slice.
+    // The gridless cutoff solver prints one global progress bar from its root
+    // scheduler.  For Mode3D the cutoff locations are distributed statically
+    // across MPI ranks, so there is no central scheduler.  To keep the same
+    // user-facing behaviour without requiring MPI calls from OpenMP worker
+    // threads, the progress-enabled path below computes the local work in a
+    // sequence of synchronized batches:
     //
-    // The visual style and information content match the gridless cutoff bar:
-    //   [POINTS] or [SHELL i/N alt=...] [rank r] [####----] percent
-    //   (Loc done/total, Task done/total) ETA hh:mm:ss
+    //   1. every MPI rank computes the next batch of its own locations with
+    //      OpenMP;
+    //   2. all ranks enter the same MPI_Allreduce calls;
+    //   3. rank 0 receives the summed number of completed locations/tasks and
+    //      prints the single global progress bar.
     //
-    // In Mode3D, one OpenMP work item is one observation location. Each such
-    // location internally computes all sampled directions and the bisection
-    // search, so the local "Task" count is intentionally equal to the local
-    // "Loc" count. This keeps the meaning precise without adding MPI traffic
-    // inside the computation loop.
+    // When showProgressBar=false, RunCutoffRigidity keeps the original fast
+    // path: one OpenMP loop over this rank's entire local location range and no
+    // extra inter-rank synchronization during the compute phase.
+    //
+    // In Mode3D, one task is one observation location.  Each location internally
+    // performs the selected direction sampling and rigidity bisection, so the
+    // global "Task" count is intentionally identical to the global "Loc" count.
     //==================================================================================
 
-    const long long totalTasksLocal = static_cast<long long>(nLocal);
-    long long doneTasksLocal = 0;
+    const long long totalTasksGlobal = static_cast<long long>(nLoc);
+    long long doneTasksLocal  = 0;
+    long long doneTasksGlobal = 0;
 
     std::vector<int> locDonePerShellLocal((size_t)std::max(nShells,0),0);
+    std::vector<int> locDonePerShellGlobal((size_t)std::max(nShells,0),0);
     std::vector<int> locTotalPerShellLocal((size_t)std::max(nShells,0),0);
+    std::vector<int> locTotalPerShellGlobal((size_t)std::max(nShells,0),0);
 
-    if (isShells) {
+    if (showProgressBar && isShells) {
         for (int globalIdx=locStart; globalIdx<locEnd; ++globalIdx) {
             const int s = globalIdx / nPtsShell;
             if (s>=0 && s<nShells) locTotalPerShellLocal[(size_t)s]++;
         }
+
+        // The shell totals are needed by rank 0 to report per-shell progress.
+        // In the MPI-parallel Mode3D algorithm different ranks may work on
+        // different shells at the same time.  Therefore there is no single
+        // globally meaningful "current shell".  The progress line below reports
+        // total job progress and a compact per-shell completion summary instead
+        // of inferring a shell label from the global linear task counter.
+        // This collective is used only when the progress bar is enabled, so the
+        // default no-progress path remains free of extra progress synchronization.
+        MPI_Allreduce(locTotalPerShellLocal.data(),
+                      locTotalPerShellGlobal.data(),
+                      nShells, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
     }
 
     auto mode3d_now_seconds = []() -> double { return MPI_Wtime(); };
@@ -1307,8 +1327,11 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool showProgressBar) {
         return std::string(buf);
     };
 
-    auto maybePrintProgress = [&](long long doneTasks, bool forcePrint) {
+    auto maybePrintProgress = [&](long long doneTasks,
+                                  const std::vector<int>& shellDoneGlobal,
+                                  bool forcePrint) {
         if (!showProgressBar) return;
+        if (mpiRank != 0) return;
 
         const double t = mode3d_now_seconds();
         if (!forcePrint) {
@@ -1317,7 +1340,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool showProgressBar) {
         }
         progressLastPrintTime = t;
 
-        const long long totalTasks = totalTasksLocal;
+        const long long totalTasks = totalTasksGlobal;
         const double frac = (totalTasks>0) ?
             (double(doneTasks)/double(totalTasks)) : 1.0;
 
@@ -1339,21 +1362,35 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool showProgressBar) {
             else line << "[POINTS] ";
         }
         else {
-            int curShell = 0;
-            for (int s=0; s<nShells; ++s) {
-                if (locTotalPerShellLocal[(size_t)s] == 0) continue;
-                if (locDonePerShellLocal[(size_t)s] < locTotalPerShellLocal[(size_t)s]) {
-                    curShell = s;
-                    break;
-                }
-                curShell = s;
+            // Do not print "SHELL i/N" here.  With MPI domain/work splitting,
+            // rank 0, rank 1, ... may simultaneously work on locations that
+            // belong to different altitude shells.  A single "current shell"
+            // would therefore be misleading.  Label the job as a multi-shell
+            // calculation and include the actual per-shell counters below.
+            line << "[SHELLS " << nShells << " zones";
+
+            if (nShells == 1) {
+                line << " alt=" << prm.output.shellAlt_km[0] << "km";
             }
-            const double alt_km = prm.output.shellAlt_km[(size_t)curShell];
-            line << "[SHELL " << (curShell+1) << "/" << nShells
-                 << " alt=" << alt_km << "km] ";
+            else if (nShells > 1 && nShells <= 4) {
+                line << " alt=";
+                for (int s=0; s<nShells; ++s) {
+                    if (s) line << ",";
+                    line << prm.output.shellAlt_km[(size_t)s];
+                }
+                line << "km";
+            }
+            else if (nShells > 4) {
+                line << " alt=" << prm.output.shellAlt_km.front()
+                     << ".." << prm.output.shellAlt_km.back() << "km";
+            }
+
+            line << "] ";
         }
 
-        line << "[rank " << mpiRank << "] ";
+        // Keep the same visual style as the rank-local bar, but make explicit
+        // that this line is the root-rank summary over all MPI processes.
+        line << "[rank 0/global over " << mpiSize << " MPI ranks] ";
 
         line << "[";
         for (int i=0;i<barW;i++) line << (i<filled ? "#" : "-");
@@ -1364,14 +1401,72 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool showProgressBar) {
         line << (frac*100.0) << "%  ";
 
         line << "(Loc " << doneTasks << "/" << totalTasks << ", "
-             << "Task " << doneTasks << "/" << totalTasks << ")  "
-             << "ETA " << mode3d_fmt_hms(eta_s) << "\n";
+             << "Task " << doneTasks << "/" << totalTasks;
+
+        if (isShells && nShells > 0) {
+            line << "; Shells ";
+
+            if (nShells <= 4) {
+                // For the common small number of altitude shells, show every
+                // shell explicitly.  These counters come from MPI_Allreduce and
+                // therefore summarize work completed by all ranks, not just
+                // rank 0.
+                for (int s=0; s<nShells; ++s) {
+                    if (s) line << ", ";
+
+                    const int shellDone  = shellDoneGlobal[(size_t)s];
+                    const int shellTotal = locTotalPerShellGlobal[(size_t)s];
+                    const double shellPct = (shellTotal > 0)
+                        ? 100.0*double(shellDone)/double(shellTotal)
+                        : 100.0;
+
+                    line << (s+1) << ":"
+                         << shellDone << "/" << shellTotal
+                         << " " << shellPct << "%";
+                }
+            }
+            else {
+                // For many shells, keep the line short: report how many shells
+                // are complete and identify the least-complete shell, which is
+                // the useful diagnostic when progress is imbalanced.
+                int nCompleteShells = 0;
+                int slowestShell = -1;
+                double slowestFrac = 2.0;
+
+                for (int s=0; s<nShells; ++s) {
+                    const int shellDone  = shellDoneGlobal[(size_t)s];
+                    const int shellTotal = locTotalPerShellGlobal[(size_t)s];
+                    const double shellFrac = (shellTotal > 0)
+                        ? double(shellDone)/double(shellTotal)
+                        : 1.0;
+
+                    if (shellFrac >= 1.0) nCompleteShells++;
+                    if (shellFrac < slowestFrac) {
+                        slowestFrac = shellFrac;
+                        slowestShell = s;
+                    }
+                }
+
+                line << nCompleteShells << "/" << nShells << " complete";
+                if (slowestShell >= 0) {
+                    const int shellDone = shellDoneGlobal[(size_t)slowestShell];
+                    const int shellTotal = locTotalPerShellGlobal[(size_t)slowestShell];
+                    line << ", slowest " << (slowestShell+1) << ":"
+                         << shellDone << "/" << shellTotal
+                         << " " << (100.0*slowestFrac) << "%";
+                }
+            }
+        }
+
+        line << ")  ETA " << mode3d_fmt_hms(eta_s) << "\n";
 
         std::cout << line.str();
         std::cout.flush();
     };
 
-    maybePrintProgress(0,true);
+    if (showProgressBar) {
+        maybePrintProgress(0,locDonePerShellGlobal,true);
+    }
 
     // Local result arrays (indexed 0..nLocal-1)
     std::vector<double> rcLocal(nLocal, -1.0);
@@ -1392,59 +1487,99 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool showProgressBar) {
     // thread-safe without any explicit protection.
     //==================================================================================
 
-    #pragma omp parallel
-    {
-        // Thread-private mesh field evaluator.
-        // Constructed once per thread; lastNode_ starts as nullptr and is
-        // updated on every GetB_T call as the particle moves through the mesh.
-        cMode3DMeshFieldEval threadField(prm);
+    auto computeLocalLocation = [&](int localIdx,
+                                    cMode3DMeshFieldEval& threadField) {
+        const int globalIdx = locStart + localIdx;
 
-        #pragma omp for schedule(dynamic, 1)
-        for (int localIdx = 0; localIdx < nLocal; ++localIdx) {
-            const int globalIdx = locStart + localIdx;
+        // Reconstruct the observation position for this point.
+        const V3 x0_m = LocationToX0m(prm, globalIdx, nLon, nLat, d_deg, nPtsShell);
 
-            // Reconstruct the observation position for this point.
-            const V3 x0_m = LocationToX0m(prm, globalIdx, nLon, nLat, d_deg, nPtsShell);
+        // Compute the minimum cutoff rigidity over all sampled directions.
+        // The mesh field is the same for all points (initialized once by
+        // InitMeshFields in Mode3D::Run before this parallel section).
+        const double rc = ComputeCutoffAtPoint_GV(
+            prm, threadField, x0_m, dirs, samplingVertical,
+            q_C, m0, box, Rmin, Rmax);
 
-            // Compute the minimum cutoff rigidity over all sampled directions.
-            // The mesh field is the same for all points (initialized once by
-            // InitMeshFields in Mode3D::Run before this parallel section).
-            const double rc = ComputeCutoffAtPoint_GV(
-                prm, threadField, x0_m, dirs, samplingVertical,
-                q_C, m0, box, Rmin, Rmax);
+        // localIdx is unique in the OpenMP schedule, so no synchronization is
+        // needed for these two stores.
+        rcLocal[(size_t)localIdx] = rc;
+        if (rc > 0.0) {
+            const double pCut = MomentumFromRigidity_GV(rc, qabs);
+            eminLocal[(size_t)localIdx] = KineticEnergyFromMomentum_MeV(pCut, m0);
+        }
+    };
 
-            // Store result — each localIdx is unique to this thread in the
-            // dynamic schedule, so the critical section is a no-op in practice
-            // but guards against any future collapse/vectorisation reordering.
-            #pragma omp critical
-            {
-                rcLocal[(size_t)localIdx]   = rc;
-                if (rc > 0.0) {
-                    const double pCut = MomentumFromRigidity_GV(rc, qabs);
-                    eminLocal[(size_t)localIdx] = KineticEnergyFromMomentum_MeV(pCut, m0);
-                }
+    if (!showProgressBar) {
+        // Fast path: no progress output and no inter-rank synchronization until
+        // the final MPI_Gatherv.  This preserves the original performance
+        // behaviour for the default RunCutoffRigidity(prm) call.
+        #pragma omp parallel
+        {
+            // Thread-private mesh field evaluator.
+            // Constructed once per thread; lastNode_ starts as nullptr and is
+            // updated on every GetB_T call as the particle moves through the mesh.
+            cMode3DMeshFieldEval threadField(prm);
+
+            #pragma omp for schedule(dynamic, 1)
+            for (int localIdx = 0; localIdx < nLocal; ++localIdx) {
+                computeLocalLocation(localIdx,threadField);
             }
+        }
+    }
+    else {
+        // Progress path: compute all ranks in the same number of batches.  This
+        // guarantees that every rank enters the same MPI_Allreduce sequence,
+        // avoiding deadlocks and avoiding MPI calls from OpenMP worker threads.
+        const int nProgressBatches = std::max(1,std::min(nLoc,200));
 
-            if (showProgressBar) {
-                #pragma omp critical(Mode3DProgressPrint)
+        for (int ibatch=0; ibatch<nProgressBatches; ++ibatch) {
+            const int batchBegin = (int)(
+                (static_cast<long long>(nLocal) * ibatch) / nProgressBatches);
+            const int batchEnd = (int)(
+                (static_cast<long long>(nLocal) * (ibatch+1)) / nProgressBatches);
+
+            if (batchEnd > batchBegin) {
+                #pragma omp parallel
                 {
-                    ++doneTasksLocal;
-                    if (isShells) {
+                    cMode3DMeshFieldEval threadField(prm);
+
+                    #pragma omp for schedule(dynamic, 1)
+                    for (int localIdx = batchBegin; localIdx < batchEnd; ++localIdx) {
+                        computeLocalLocation(localIdx,threadField);
+                    }
+                }
+
+                // Update this rank's completed-location counters after the
+                // OpenMP workers finish the batch.  These counters are used only
+                // for progress reporting; the actual results are already stored
+                // in rcLocal/eminLocal.
+                doneTasksLocal += static_cast<long long>(batchEnd-batchBegin);
+
+                if (isShells) {
+                    for (int localIdx=batchBegin; localIdx<batchEnd; ++localIdx) {
+                        const int globalIdx = locStart + localIdx;
                         const int shellIdx = globalIdx / nPtsShell;
                         if (shellIdx>=0 && shellIdx<nShells)
                             locDonePerShellLocal[(size_t)shellIdx]++;
                     }
-                    maybePrintProgress(doneTasksLocal,false);
                 }
             }
 
-        } // omp for
-    } // omp parallel
+            // Sum completed work over all ranks.  Only rank 0 renders the line;
+            // every rank still participates in the collective so the global
+            // number represents the full MPI job, not only the root rank.
+            MPI_Allreduce(&doneTasksLocal,&doneTasksGlobal,
+                          1,MPI_LONG_LONG,MPI_SUM,MPI_COMM_WORLD);
 
-    if (showProgressBar) {
-        #pragma omp critical(Mode3DProgressPrint)
-        {
-            maybePrintProgress(totalTasksLocal,true);
+            if (isShells) {
+                MPI_Allreduce(locDonePerShellLocal.data(),
+                              locDonePerShellGlobal.data(),
+                              nShells,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
+            }
+
+            maybePrintProgress(doneTasksGlobal,locDonePerShellGlobal,
+                               ibatch == nProgressBatches-1);
         }
     }
 
