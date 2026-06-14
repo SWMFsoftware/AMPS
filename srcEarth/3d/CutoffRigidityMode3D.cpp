@@ -102,7 +102,8 @@
 //   The global-B materialization is completed before entering RunCutoffRigidity().
 //   During the computation phase there is no field communication; after the
 //   computation phase, MPI_Gatherv collects the per-rank result arrays (Rc, Emin)
-//   at rank 0.
+//   at rank 0.  If DIRECTIONAL_MAP=T, the same gather pattern is reused for the
+//   flattened directional-map array Rc(location, lon/lat sky cell).
 //
 //======================================================================================
 
@@ -138,6 +139,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <iostream>
+#include <limits>
 
 // MPI (always compiled in; see design notes in header)
 #include <mpi.h>
@@ -195,6 +197,89 @@ static inline double v3norm(const V3& a) {
 static inline V3 v3unit(const V3& a) {
     const double n = v3norm(a);
     return (n > 0.0) ? mul(1.0/n, a) : V3{0.0, 0.0, 0.0};
+}
+
+//======================================================================================
+// SECTION 2.5 — DIRECTIONAL-MAP FRAME HELPERS
+//======================================================================================
+//
+// The optional DIRECTIONAL_MAP diagnostic asks for Rc as a function of arrival
+// direction on a regular lon/lat sky grid.  The gridless cutoff solver already
+// established the convention used here, and the standalone mesh-based Mode3D
+// implementation intentionally reuses the same convention so the two paths can
+// be compared file-by-file:
+//
+//   * the sky-map labels are global spherical longitude/latitude in SM;
+//   * particle tracing still happens in GSM, because the mesh-field snapshot is
+//     stored in the same GSM Cartesian coordinates used by the rest of Mode3D;
+//   * each map-cell direction is therefore constructed in SM and then rotated to
+//     GSM with a SPICE pxform("SM","GSM",epoch) matrix when SPICE is available;
+//   * if the executable was built without SPICE, or the frame transform is not
+//     available at run time, the code falls back to identity.  The calculation is
+//     still performed, but the map is effectively labeled in GSM.
+//
+// These helpers are deliberately local to this file.  They are small copies of
+// the gridless helpers, avoiding a new linkage dependency while keeping the math
+// and comments synchronized with the already-tested gridless implementation.
+//======================================================================================
+
+struct Mat3 {
+    double a[3][3];
+};
+
+static inline Mat3 Identity3() {
+    Mat3 R{};
+    R.a[0][0]=1.0; R.a[0][1]=0.0; R.a[0][2]=0.0;
+    R.a[1][0]=0.0; R.a[1][1]=1.0; R.a[1][2]=0.0;
+    R.a[2][0]=0.0; R.a[2][1]=0.0; R.a[2][2]=1.0;
+    return R;
+}
+
+static inline V3 Apply(const Mat3& R, const V3& v) {
+    return V3{
+        R.a[0][0]*v.x + R.a[0][1]*v.y + R.a[0][2]*v.z,
+        R.a[1][0]*v.x + R.a[1][1]*v.y + R.a[1][2]*v.z,
+        R.a[2][0]*v.x + R.a[2][1]*v.y + R.a[2][2]*v.z
+    };
+}
+
+static inline Mat3 GetSpiceRotationOrIdentity3D(const char* fromFrame,
+                                                const char* toFrame,
+                                                const std::string& epoch,
+                                                bool& ok) {
+    ok = false;
+    Mat3 R = Identity3();
+
+#ifndef _NO_SPICE_CALLS_
+    try {
+        // SPICE expects ephemeris time.  The epoch string is already parsed and
+        // used elsewhere in Mode3D, so the same user-provided UTC string is used
+        // here to make the map direction labels consistent with the field epoch.
+        SpiceDouble et = 0.0;
+        str2et_c(epoch.c_str(), &et);
+
+        SpiceDouble m[3][3];
+        pxform_c(fromFrame, toFrame, et, m);
+
+        for (int i=0;i<3;i++) {
+            for (int j=0;j<3;j++) R.a[i][j] = m[i][j];
+        }
+        ok = true;
+    }
+    catch (...) {
+        // CSPICE is a C library, but some local wrappers/builds can still route
+        // errors through exceptions.  A failed transform must not abort the cutoff
+        // calculation; it only means the directional labels cannot be rotated from
+        // SM to GSM, so identity is used and ok=false is reported in the banner.
+        ok = false;
+    }
+#else
+    (void)fromFrame;
+    (void)toFrame;
+    (void)epoch;
+#endif
+
+    return R;
 }
 
 //======================================================================================
@@ -871,6 +956,109 @@ static std::string CutoffOutputFileName(const char* stem) {
 }
 
 //======================================================================================
+// SECTION 12.6 — DIRECTIONAL-MAP CONFIGURATION AND CELL GEOMETRY
+//======================================================================================
+//
+// This structure collects every quantity needed to compute and write the optional
+// directional cutoff sky maps.  Keeping it in one object avoids passing several
+// loosely-related integers/doubles through the OpenMP worker lambda and through
+// the Tecplot writer.
+//
+// enabled:
+//   True only when DIRECTIONAL_MAP=T.  The parser already stores that keyword in
+//   prm.cutoff.directionalMap; this block is the first place where standalone
+//   Mode3D acts on it.
+//
+// nLon/nLat/nCells:
+//   Regular lon/lat grid dimensions.  Longitude covers [0,360) and latitude
+//   covers [-90,+90] inclusively, matching the gridless directional-map writer.
+//
+// R_label2gsm:
+//   Direction-label frame to tracing-frame rotation.  The label frame is SM by
+//   convention; the tracing frame is GSM because the mesh-based field evaluator
+//   and Mode3D trajectory geometry are both in GSM Cartesian coordinates.
+//======================================================================================
+
+struct DirectionalMapConfig3D {
+    bool enabled{false};
+    double lonRes_deg{0.0};
+    double latRes_deg{0.0};
+    int nLon{0};
+    int nLat{0};
+    int nCells{0};
+    bool spiceOk{false};
+    Mat3 R_label2gsm{Identity3()};
+};
+
+static DirectionalMapConfig3D ConfigureDirectionalMap3D(const EarthUtil::AmpsParam& prm) {
+    DirectionalMapConfig3D cfg;
+    cfg.enabled = prm.cutoff.directionalMap;
+
+    if (!cfg.enabled) return cfg;
+
+    cfg.lonRes_deg = prm.cutoff.dirMapLonRes_deg;
+    cfg.latRes_deg = prm.cutoff.dirMapLatRes_deg;
+
+    if (!(cfg.lonRes_deg > 0.0) || !(cfg.latRes_deg > 0.0)) {
+        throw std::runtime_error(
+            "Mode3D cutoff: DIRMAP_LON_RES and DIRMAP_LAT_RES must be > 0 "
+            "when DIRECTIONAL_MAP=T.");
+    }
+
+    // Reuse the gridless convention exactly.  Rounding allows common values such
+    // as 7.5, 10, 15, 30 degrees to produce the expected integer grid size even
+    // if the decimal representation is not exact.
+    cfg.nLon = static_cast<int>(std::floor(360.0/cfg.lonRes_deg + 0.5));
+    cfg.nLat = static_cast<int>(std::floor(180.0/cfg.latRes_deg + 0.5)) + 1;
+    cfg.nCells = cfg.nLon * cfg.nLat;
+
+    if (cfg.nLon <= 0 || cfg.nLat <= 0 || cfg.nCells <= 0) {
+        throw std::runtime_error(
+            "Mode3D cutoff: invalid directional-map grid size derived from "
+            "DIRMAP_LON_RES/DIRMAP_LAT_RES.");
+    }
+
+    // Direction labels are in SM; tracing directions must be in GSM.  When SPICE
+    // is unavailable, GetSpiceRotationOrIdentity3D returns identity and sets
+    // spiceOk=false.  Rank 0 prints a warning later, after MPI rank is known.
+    cfg.R_label2gsm = GetSpiceRotationOrIdentity3D(
+        "SM", "GSM", prm.field.epoch, cfg.spiceOk);
+
+    return cfg;
+}
+
+static V3 DirectionalMapCellDirectionGSM3D(const DirectionalMapConfig3D& cfg,
+                                           int cellId) {
+    // Cell indexing convention is shared with gridless:
+    //   cellId = iLon + nLon*jLat
+    // where lon increases fastest in the Tecplot POINT zone.
+    const int iLon = cellId % cfg.nLon;
+    const int jLat = cellId / cfg.nLon;
+
+    double lon_deg = cfg.lonRes_deg * iLon;
+    double lat_deg = -90.0 + cfg.latRes_deg * jLat;
+    if (lat_deg > 90.0) lat_deg = 90.0;
+
+    // Build the unit arrival direction in the labeling frame (SM).  This is a
+    // global spherical direction, not a geographic position and not a local ENU
+    // direction at the observation point.
+    const double lon = lon_deg * M_PI/180.0;
+    const double lat = lat_deg * M_PI/180.0;
+    const double cl  = std::cos(lat);
+    const V3 dirLabel{cl*std::cos(lon), cl*std::sin(lon), std::sin(lat)};
+
+    // Rotate to GSM for tracing.  v3unit protects against a malformed transform
+    // or roundoff at the poles; the input vector is already unit length.
+    return v3unit(Apply(cfg.R_label2gsm, dirLabel));
+}
+
+static std::string DirectionalMapOutputFileName3D(int locId) {
+    char stem[128];
+    std::snprintf(stem, sizeof(stem), "cutoff_3d_dir_map_loc_%06d", locId);
+    return CutoffOutputFileName(stem);
+}
+
+//======================================================================================
 // SECTION 13 — TECPLOT OUTPUT WRITERS
 //======================================================================================
 //
@@ -1020,6 +1208,65 @@ static void WriteTecplot3DShells(const EarthUtil::AmpsParam& prm,
                          EminShell[s][(size_t)k]);
         }
     }
+    std::fclose(f);
+}
+
+static void WriteTecplot3DDirectionalMap_Location(
+                                 const EarthUtil::AmpsParam& prm,
+                                 int locId,
+                                 const V3& x0_m,
+                                 const DirectionalMapConfig3D& cfg,
+                                 const std::vector<double>& RcCell,
+                                 double qabs,
+                                 double m0_kg) {
+    (void)prm; // Reserved for future metadata fields; keep writer signature symmetric with other writers.
+
+    // One Tecplot file is written per observation location.  This mirrors the
+    // existing gridless naming/output strategy but uses a Mode3D-specific stem so
+    // the mesh-based standalone products do not overwrite gridless products.
+    const std::string fname = DirectionalMapOutputFileName3D(locId);
+    FILE* f = std::fopen(fname.c_str(), "w");
+    if (!f) throw std::runtime_error("Cannot write Tecplot directional map: " + fname);
+
+    const double x_km = x0_m.x / 1000.0;
+    const double y_km = x0_m.y / 1000.0;
+    const double z_km = x0_m.z / 1000.0;
+
+    std::fprintf(f, "TITLE=\"Mode3D directional cutoff rigidity sky-map (location %d)\"\n", locId);
+    std::fprintf(f, "VARIABLES=\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"\n");
+
+    // The zone title records the observation point in km.  The direction labels
+    // are SM lon/lat when SPICE SM->GSM was available; otherwise the code used
+    // identity and the labels are effectively GSM.  The fallback status is printed
+    // in the run banner rather than repeated in every data row.
+    std::fprintf(f,
+        "ZONE T=\"loc=%d x_km=%g y_km=%g z_km=%g frame=%s\" I=%d J=%d F=POINT\n",
+        locId, x_km, y_km, z_km,
+        cfg.spiceOk ? "SM" : "GSM_fallback",
+        cfg.nLon, cfg.nLat);
+
+    // Row ordering matches DirectionalMapCellDirectionGSM3D():
+    //   cellId = iLon + nLon*jLat
+    // Tecplot reads this as an I=nLon, J=nLat POINT zone.
+    for (int j=0; j<cfg.nLat; ++j) {
+        double lat_deg = -90.0 + cfg.latRes_deg * j;
+        if (lat_deg > 90.0) lat_deg = 90.0;
+
+        for (int i=0; i<cfg.nLon; ++i) {
+            const int cellId = i + cfg.nLon*j;
+            const double lon_deg = cfg.lonRes_deg * i;
+            const double rc = RcCell[(size_t)cellId];
+
+            double Emin = -1.0;
+            if (rc > 0.0) {
+                const double pCut = MomentumFromRigidity_GV(rc, qabs);
+                Emin = KineticEnergyFromMomentum_MeV(pCut, m0_kg);
+            }
+
+            std::fprintf(f, "%e %e %e %e\n", lon_deg, lat_deg, rc, Emin);
+        }
+    }
+
     std::fclose(f);
 }
 
@@ -1242,6 +1489,25 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         throw std::runtime_error("Mode3D cutoff: no observation points/shells defined.");
 
     //==================================================================================
+    // 14.6b — Optional directional cutoff sky-map setup
+    //==================================================================================
+    //
+    // DIRECTIONAL_MAP is independent of CUTOFF_SAMPLING:
+    //   - CUTOFF_SAMPLING controls the primary scalar cutoff written to
+    //     cutoff_3d_points.dat or cutoff_3d_shells.dat.
+    //   - DIRECTIONAL_MAP=T requests an additional diagnostic product: Rc for
+    //     every lon/lat arrival-direction cell at every observation location.
+    //
+    // This is intentionally enabled for POINTS, TRAJECTORY, and SHELLS.  For
+    // SHELLS this can create many files, but the keyword is explicit and the old
+    // particle-based cutoff code also wrote one directional map per location.
+    //==================================================================================
+
+    const DirectionalMapConfig3D dirMapCfg = ConfigureDirectionalMap3D(prm);
+    const long long tasksPerLocation =
+        1LL + (dirMapCfg.enabled ? static_cast<long long>(dirMapCfg.nCells) : 0LL);
+
+    //==================================================================================
     // 14.7 — Run summary (rank 0 only)
     //==================================================================================
 
@@ -1262,6 +1528,21 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 
         std::cout
             << "N_locations    : " << nLoc  << "\n"
+            << "Directional map: " << (dirMapCfg.enabled ? "ON" : "OFF") << "\n";
+
+        if (dirMapCfg.enabled) {
+            std::cout
+                << "  DIRMAP grid  : " << dirMapCfg.nLon << " x " << dirMapCfg.nLat
+                << " (" << dirMapCfg.nCells << " directions/location)\n"
+                << "  DIRMAP res   : lon " << dirMapCfg.lonRes_deg
+                << " deg, lat " << dirMapCfg.latRes_deg << " deg\n"
+                << "  DIRMAP frame : "
+                << (dirMapCfg.spiceOk ? "SM labels -> GSM tracing"
+                                      : "GSM fallback (SM->GSM SPICE unavailable)")
+                << "\n";
+        }
+
+        std::cout
             << "MPI ranks      : " << mpiSize << " (global B cache, static work partition)\n"
             << "Progress bar   : ON\n";
 
@@ -1319,14 +1600,24 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     // path: one OpenMP loop over this rank's entire local location range and no
     // extra inter-rank synchronization during the compute phase.
     //
-    // In Mode3D, one task is one observation location.  Each location internally
-    // performs the selected direction sampling and rigidity bisection, so the
-    // global "Task" count is intentionally identical to the global "Loc" count.
+    // Progress task accounting:
+    //   - the primary scalar cutoff contributes one coarse task per location;
+    //   - if DIRECTIONAL_MAP=T, each sky-map cell contributes one additional
+    //     trajectory-search task for that same location.
+    //
+    // The computation is still scheduled by location (for simple MPI/OpenMP
+    // ownership), so task completion advances in location-sized chunks.  The
+    // Task counter nevertheless reflects the actual added directional-map work,
+    // which is important because DIRMAP grids can dominate the runtime.
     //==================================================================================
 
-    const long long totalTasksGlobal = static_cast<long long>(nLoc);
-    long long doneTasksLocal  = 0;
-    long long doneTasksGlobal = 0;
+    const long long totalLocationsGlobal = static_cast<long long>(nLoc);
+    const long long totalTasksGlobal = totalLocationsGlobal * tasksPerLocation;
+
+    long long doneLocationsLocal  = 0;
+    long long doneLocationsGlobal = 0;
+    long long doneTasksLocal      = 0;
+    long long doneTasksGlobal     = 0;
 
     std::vector<int> locDonePerShellLocal((size_t)std::max(nShells,0),0);
     std::vector<int> locDonePerShellGlobal((size_t)std::max(nShells,0),0);
@@ -1367,7 +1658,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         return std::string(buf);
     };
 
-    auto maybePrintProgress = [&](long long doneTasks,
+    auto maybePrintProgress = [&](long long doneLocations,
+                                  long long doneTasks,
                                   const std::vector<int>& shellDoneGlobal,
                                   bool forcePrint) {
         if (!showProgressBar) return;
@@ -1381,6 +1673,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         progressLastPrintTime = t;
 
         const long long totalTasks = totalTasksGlobal;
+        const long long totalLocations = totalLocationsGlobal;
         const double frac = (totalTasks>0) ?
             (double(doneTasks)/double(totalTasks)) : 1.0;
 
@@ -1440,7 +1733,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         line.precision(1);
         line << (frac*100.0) << "%  ";
 
-        line << "(Loc " << doneTasks << "/" << totalTasks << ", "
+        line << "(Loc " << doneLocations << "/" << totalLocations << ", "
              << "Task " << doneTasks << "/" << totalTasks;
 
         if (isShells && nShells > 0) {
@@ -1505,12 +1798,26 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     };
 
     if (showProgressBar) {
-        maybePrintProgress(0,locDonePerShellGlobal,true);
+        maybePrintProgress(0,0,locDonePerShellGlobal,true);
     }
 
     // Local result arrays (indexed 0..nLocal-1)
     std::vector<double> rcLocal(nLocal, -1.0);
     std::vector<double> eminLocal(nLocal, -1.0);
+
+    // Optional directional-map results.  The layout is rank-local but otherwise
+    // identical to the final rank-0 layout:
+    //
+    //   dirMapLocal[ localIdx*nCells + cellId ] = Rc_GV(location, sky cell)
+    //
+    // localIdx is the same local location index used by rcLocal/eminLocal.
+    // cellId follows the Tecplot ordering iLon + nLon*jLat.  This flat layout
+    // lets MPI_Gatherv collect the maps with the same displacements as the scalar
+    // cutoff arrays, simply multiplied by nCells.
+    std::vector<double> dirMapLocal;
+    if (dirMapCfg.enabled) {
+        dirMapLocal.assign((size_t)nLocal * (size_t)dirMapCfg.nCells, -1.0);
+    }
 
     //==================================================================================
     // 14.9 — OpenMP parallel loop over local points
@@ -1547,6 +1854,28 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         if (rc > 0.0) {
             const double pCut = MomentumFromRigidity_GV(rc, qabs);
             eminLocal[(size_t)localIdx] = KineticEnergyFromMomentum_MeV(pCut, m0);
+        }
+
+        // Optional directional cutoff map.
+        //
+        // This loop computes Rc for every requested sky-map direction and stores
+        // each directional value, not the minimum over directions.  Therefore the
+        // per-location upper-bound optimization used by ComputeCutoffAtPoint_GV
+        // must NOT be applied here: a directional map needs the physical cutoff
+        // of each cell independently, even if some other direction at the same
+        // location has already produced a lower Rc.
+        //
+        // The same thread-private mesh-field evaluator is reused for all cells of
+        // this location.  That preserves the lastNode_ cache across adjacent
+        // trajectories and avoids rebuilding any field-management state.
+        if (dirMapCfg.enabled) {
+            const size_t base = (size_t)localIdx * (size_t)dirMapCfg.nCells;
+            for (int cellId=0; cellId<dirMapCfg.nCells; ++cellId) {
+                const V3 dir_gsm = DirectionalMapCellDirectionGSM3D(dirMapCfg, cellId);
+                dirMapLocal[base + (size_t)cellId] = CutoffForDir_GV(
+                    prm, threadField, x0_m, dir_gsm,
+                    q_C, m0, box, Rmin, Rmax);
+            }
         }
     };
 
@@ -1596,7 +1925,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 // OpenMP workers finish the batch.  These counters are used only
                 // for progress reporting; the actual results are already stored
                 // in rcLocal/eminLocal.
-                doneTasksLocal += static_cast<long long>(batchEnd-batchBegin);
+                const long long nBatchLocations = static_cast<long long>(batchEnd-batchBegin);
+                doneLocationsLocal += nBatchLocations;
+                doneTasksLocal     += nBatchLocations * tasksPerLocation;
 
                 if (isShells) {
                     for (int localIdx=batchBegin; localIdx<batchEnd; ++localIdx) {
@@ -1611,6 +1942,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             // Sum completed work over all ranks.  Only rank 0 renders the line;
             // every rank still participates in the collective so the global
             // number represents the full MPI job, not only the root rank.
+            MPI_Allreduce(&doneLocationsLocal,&doneLocationsGlobal,
+                          1,MPI_LONG_LONG,MPI_SUM,MPI_COMM_WORLD);
+
             MPI_Allreduce(&doneTasksLocal,&doneTasksGlobal,
                           1,MPI_LONG_LONG,MPI_SUM,MPI_COMM_WORLD);
 
@@ -1620,7 +1954,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                               nShells,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
             }
 
-            maybePrintProgress(doneTasksGlobal,locDonePerShellGlobal,
+            maybePrintProgress(doneLocationsGlobal,doneTasksGlobal,locDonePerShellGlobal,
                                ibatch == nProgressBatches-1);
         }
     }
@@ -1659,6 +1993,59 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     MPI_Gatherv(eminLocal.data(), nLocal, MPI_DOUBLE,
                 eminAll.data(), recvCounts.data(), displs.data(), MPI_DOUBLE,
                 0, MPI_COMM_WORLD);
+
+    // Optional directional-map gather.
+    //
+    // The scalar arrays gather nLocal doubles per rank.  The directional map has
+    // nCells doubles per location, so the counts/displacements are the scalar
+    // counts/displacements multiplied by nCells.  This reuses the same static
+    // location decomposition and keeps rank-0 storage ordered by global location:
+    //
+    //   dirMapAll[ globalLoc*nCells + cellId ]
+    //
+    // The gathered array can be large for SHELLS mode, but the allocation happens
+    // only when the explicit DIRECTIONAL_MAP=T diagnostic is requested.
+    std::vector<double> dirMapAll;
+    if (dirMapCfg.enabled) {
+        std::vector<int> recvCountsMap(mpiSize, 0);
+        std::vector<int> displsMap(mpiSize, 0);
+
+        if (mpiRank == 0) {
+            for (int r=0; r<mpiSize; ++r) {
+                const long long countMap =
+                    static_cast<long long>(recvCounts[(size_t)r]) *
+                    static_cast<long long>(dirMapCfg.nCells);
+                const long long dispMap =
+                    static_cast<long long>(displs[(size_t)r]) *
+                    static_cast<long long>(dirMapCfg.nCells);
+
+                if (countMap > static_cast<long long>(std::numeric_limits<int>::max()) ||
+                    dispMap   > static_cast<long long>(std::numeric_limits<int>::max())) {
+                    throw std::runtime_error(
+                        "Mode3D cutoff: directional-map MPI_Gatherv count exceeds INT_MAX. "
+                        "Use a coarser DIRMAP grid or fewer locations per run.");
+                }
+
+                recvCountsMap[(size_t)r] = static_cast<int>(countMap);
+                displsMap[(size_t)r]     = static_cast<int>(dispMap);
+            }
+
+            dirMapAll.assign((size_t)nLoc * (size_t)dirMapCfg.nCells, -1.0);
+        }
+
+        const long long sendCountMapLL =
+            static_cast<long long>(nLocal) * static_cast<long long>(dirMapCfg.nCells);
+        if (sendCountMapLL > static_cast<long long>(std::numeric_limits<int>::max())) {
+            throw std::runtime_error(
+                "Mode3D cutoff: local directional-map MPI_Gatherv count exceeds INT_MAX. "
+                "Use a coarser DIRMAP grid or fewer locations per rank.");
+        }
+        const int sendCountMap = static_cast<int>(sendCountMapLL);
+
+        MPI_Gatherv(dirMapLocal.data(), sendCountMap, MPI_DOUBLE,
+                    dirMapAll.data(), recvCountsMap.data(), displsMap.data(), MPI_DOUBLE,
+                    0, MPI_COMM_WORLD);
+    }
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -1713,6 +2100,45 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             }
 #endif
         }
+
+        // -----------------------------------------------------------------------------
+        // Optional directional sky-map output.
+        //
+        // The computation and MPI_Gatherv above filled dirMapAll in global location
+        // order.  We now write one Tecplot file per location, reusing the same
+        // LocationToX0m() mapping used for the primary cutoff calculation so that
+        // POINTS, TRAJECTORY, and SHELLS all get maps anchored at exactly the same
+        // physical coordinates as the scalar Rc outputs.
+        //
+        // File naming:
+        //   cutoff_3d_dir_map_loc_000000.dat
+        //   cutoff_3d_dir_map_loc_000001.dat
+        //   ...
+        //
+        // If a live SWMF-coupled caller installed a cutoff-output suffix with
+        // SetCutoffOutputFileSuffix(), the suffix is applied before .dat by
+        // DirectionalMapOutputFileName3D(), matching the scalar cutoff files.
+        // -----------------------------------------------------------------------------
+        if (dirMapCfg.enabled) {
+            for (int locId=0; locId<nLoc; ++locId) {
+                const V3 x0_m = LocationToX0m(prm, locId, nLon, nLat, d_deg, nPtsShell);
+
+                std::vector<double> RcCell((size_t)dirMapCfg.nCells, -1.0);
+                const size_t base = (size_t)locId * (size_t)dirMapCfg.nCells;
+                for (int cellId=0; cellId<dirMapCfg.nCells; ++cellId) {
+                    RcCell[(size_t)cellId] = dirMapAll[base + (size_t)cellId];
+                }
+
+                WriteTecplot3DDirectionalMap_Location(
+                    prm, locId, x0_m, dirMapCfg, RcCell, qabs, m0);
+            }
+
+            std::cout << "Wrote: " << nLoc
+                      << " directional cutoff map file(s): "
+                      << "cutoff_3d_dir_map_loc_######"
+                      << gCutoffOutputFileSuffix << ".dat\n";
+        }
+
         std::cout.flush();
     }
 
