@@ -85,14 +85,24 @@
 // MPI_Initialized() so that runs launched under mpirun (which calls MPI_Init
 // before main()) are not broken.
 //
+// Mesh/field distribution:
+//   Mode3D::Run now initializes AMPS with the normal distributed MPI domain
+//   decomposition.  Before this solver starts, Mode3D::GlobalMagneticField has
+//   already allocated missing nonlocal leaf blocks on every rank and populated them
+//   with a replicated read-only cell-centered B snapshot.  Therefore trajectory
+//   tracing can remain local-memory-only even though the mesh was not created with
+//   independentDomainMode=true.
+//
 // Point distribution: static block decomposition.
 //   nLocal = nLoc / mpiSize  (floor)
 //   rank k owns points [k*nLocal, (k+1)*nLocal)
 //   last rank picks up the remainder: [(mpiSize-1)*nLocal, nLoc)
 //
 // Communication:
-//   After the computation phase, MPI_Gatherv collects the per-rank result arrays
-//   (Rc, Emin) at rank 0.  No communication during computation.
+//   The global-B materialization is completed before entering RunCutoffRigidity().
+//   During the computation phase there is no field communication; after the
+//   computation phase, MPI_Gatherv collects the per-rank result arrays (Rc, Emin)
+//   at rank 0.
 //
 //======================================================================================
 

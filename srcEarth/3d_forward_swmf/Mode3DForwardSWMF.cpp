@@ -52,6 +52,7 @@
 #include "../3d_forward/SphereFlux3D.h"
 #include "../3d/Mode3D.h"
 #include "../3d/CutoffRigidityMode3D.h"
+#include "../3d/GlobalMagneticField.h"
 #include "../gridless/DipoleInterface.h"
 #include "../boundary/spectrum.h"
 #include "../util/amps_param_parser.h"
@@ -163,404 +164,14 @@ std::string FormatCutoffOutputSuffix_(long int callIndex) {
 }
 
 //======================================================================================
-// SWMF-COUPLED CUTOFF: GLOBAL CELL-CENTERED MAGNETIC FIELD MATERIALIZATION
+// SWMF-coupled cutoff global-B materialization is now implemented by the shared
+// Earth::Mode3D::GlobalMagneticField helper.  Keeping the data-management code in one
+// location prevents the standalone cutoff path and the SWMF-coupled cutoff path from
+// diverging: both assign Temp_ID values, allocate nonlocal blocks, gather owner-cell B,
+// and reconstruct ghost-cell values in exactly the same way.  The public SWMF wrapper
+// below supplies the SWMF magnetic-field storage offset and performs SWMF-specific
+// readiness checks before delegating to the shared helper.
 //======================================================================================
-//
-// Normal SWMF coupling in AMPS is memory-local:
-//   * on an MPI rank, AMPS allocates blocks owned by that rank plus the usual
-//     domain-boundary/ghost-layer blocks;
-//   * RecieveCenterPointData() stores the coupled magnetic field only in those
-//     allocated blocks, at
-//       cell->GetAssociatedDataBufferPointer() + PIC::CPLR::SWMF::MagneticFieldOffset;
-//   * blocks owned by other MPI ranks normally have node->block == NULL on this rank.
-//
-// That is efficient for local particle transport, but it is not enough for backward
-// cutoff tracing.  A single trajectory can move through any region of the global AMR
-// tree, and the Mode3D cutoff evaluator expects the magnetic field to be available
-// wherever findTreeNode(x,...) lands on the local process.
-//
-// The helpers below convert the distributed SWMF field into a replicated, read-only
-// mesh field immediately before each cutoff snapshot:
-//
-//   1. Walk the replicated AMR tree and assign each used leaf block a deterministic
-//      global dense index in node->Temp_ID.  The AMR tree topology is the same on all
-//      ranks, so this traversal produces identical IDs everywhere.
-//
-//   2. Allocate any missing leaf blocks on every rank.  This makes node->block valid
-//      for all used leaves on every process, which is what the cutoff tracer needs.
-//
-//   3. On each rank, pack only the interior cells of leaf blocks whose owner is that
-//      rank (node->Thread == PIC::ThisThread).  Ghost cells are intentionally not used
-//      as sources, because the SWMF owner block is the authoritative copy.
-//
-//   4. MPI_Allreduce the dense B array and an integer ownership mask.  After the
-//      reduction, every rank has a global cell-centered B cache for every interior
-//      cell in every used AMR leaf.
-//
-//   5. Populate all allocated blocks, including their ghost cells.  Each ghost-cell
-//      center is mapped back to the owning leaf/interior-cell index through the AMR
-//      tree, then filled from the global cache.  This gives the standard AMPS
-//      cell-centered interpolation routines the same data layout they normally see.
-//
-// The global B arrays exist only inside PrepareGlobalSWMFCoupledMagneticFieldForCutoff().
-// The persistent state is the magnetic field written back into each cell's associated
-// data buffer.  After that, Earth::Mode3D::RunCutoffRigidity() can use the existing
-// mesh-based GetB path without knowing whether the field came from SWMF, an analytic
-// debug override, or a standalone field initializer.
-//======================================================================================
-
-typedef cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> cAMRNode;
-
-// Number of interior cell centers stored per AMR block.  The global dense cache
-// below deliberately indexes only physical/interior cells.  Ghost cells are later
-// reconstructed by mapping their center coordinates to an owning interior cell.
-long int InteriorCellsPerBlock_() {
-  return static_cast<long int>(_BLOCK_CELLS_X_) *
-         static_cast<long int>(_BLOCK_CELLS_Y_) *
-         static_cast<long int>(_BLOCK_CELLS_Z_);
-}
-
-// Convert a block-local interior index (i,j,k) to a compact row-major scalar index.
-// The order must be consistent everywhere because it is used to build MPI-reduced
-// dense arrays, not just local temporary arrays.
-long int InteriorCellIndex_(int i,int j,int k) {
-  return static_cast<long int>(i) +
-         static_cast<long int>(_BLOCK_CELLS_X_) *
-         (static_cast<long int>(j) +
-          static_cast<long int>(_BLOCK_CELLS_Y_) * static_cast<long int>(k));
-}
-
-// Dense global index of an interior cell.  node->Temp_ID is assigned by
-// AssignGlobalLeafTempIds_() immediately before packing and is valid only for this
-// global-B materialization pass.
-long int GlobalCellIndex_(cAMRNode *node,int i,int j,int k) {
-  return node->Temp_ID * InteriorCellsPerBlock_() + InteriorCellIndex_(i,j,k);
-}
-
-// Assign deterministic dense IDs to all leaf blocks that participate in the
-// calculation.  The SWMF/AMPS AMR tree is replicated across MPI ranks, therefore the
-// same recursive traversal gives every process the same Temp_ID for the same leaf.
-// Non-used leaves and non-leaf nodes are marked with Temp_ID=-1 so they cannot be
-// accidentally inserted into the global cache.
-void AssignGlobalLeafTempIds_(cAMRNode *node,long int& nUsedLeafBlocks) {
-  if (node==NULL) return;
-
-  if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
-    if (node->IsUsedInCalculationFlag==true) {
-      node->Temp_ID = nUsedLeafBlocks++;
-    }
-    else {
-      node->Temp_ID = -1;
-    }
-
-    return;
-  }
-
-  node->Temp_ID = -1;
-  for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) {
-    AssignGlobalLeafTempIds_(node->downNode[nDownNode],nUsedLeafBlocks);
-  }
-}
-
-// Collect the used leaves after IDs are assigned.  Keeping a vector avoids repeated
-// full-tree traversals in the packing/allocation/population stages and keeps the
-// subsequent code independent of the AMR-tree recursion details.
-void CollectUsedLeafNodes_(cAMRNode *node,std::vector<cAMRNode*>& nodes) {
-  if (node==NULL) return;
-
-  if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
-    if ((node->IsUsedInCalculationFlag==true) && (node->Temp_ID>=0)) nodes.push_back(node);
-    return;
-  }
-
-  for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) {
-    CollectUsedLeafNodes_(node->downNode[nDownNode],nodes);
-  }
-}
-
-// Ensure that every used AMR leaf has an allocated block on this MPI rank.
-//
-// In ordinary SWMF-coupled execution, node->block is allocated only for the local
-// domain and boundary/ghost blocks.  The cutoff tracer is different: it may follow a
-// particle through regions owned by other MPI ranks, so every rank needs block data
-// for every used leaf.  Temporarily enabling AllowBlockAllocation lets us allocate
-// those missing blocks while preserving the caller's original allocation policy.
-long int AllocateMissingBlocks_(const std::vector<cAMRNode*>& nodes) {
-  long int nAllocated=0;
-
-  if (PIC::Mesh::mesh==NULL) return 0;
-
-  // Respect the caller's original allocation policy.  We override it only inside
-  // this helper because the global cutoff snapshot requires replicated blocks.
-  const bool savedAllowBlockAllocation = PIC::Mesh::mesh->AllowBlockAllocation;
-  PIC::Mesh::mesh->AllowBlockAllocation = true;
-
-  for (std::vector<cAMRNode*>::const_iterator it=nodes.begin();it!=nodes.end();++it) {
-    cAMRNode *node = *it;
-
-    // Blocks owned by other ranks are normally absent here.  Allocate them so that
-    // findTreeNode()+cell interpolation can work locally during backward tracing.
-    if (node->block==NULL) {
-      PIC::Mesh::mesh->AllocateBlock(node);
-      if (node->block!=NULL) nAllocated++;
-    }
-
-    // Mirror the AMR-node global ID into the block for diagnostics and for any
-    // future cell-level code that reaches the block before the node.
-    if (node->block!=NULL) node->block->Temp_ID = node->Temp_ID;
-  }
-
-  PIC::Mesh::mesh->AllowBlockAllocation = savedAllowBlockAllocation;
-
-  return nAllocated;
-}
-
-// MPI_Allreduce wrapper for large double arrays.
-//
-// MPI count arguments are int in the MPI-1/2 interface used here.  A large SWMF AMR
-// mesh can exceed a safe single-call count, so the reduction is chunked.  The operation
-// is SUM because only the owner rank contributes nonzero B for each interior cell.
-void AllreduceDoubleVector_(const std::vector<double>& local,std::vector<double>& global) {
-  global.assign(local.size(),0.0);
-
-  const long int n = static_cast<long int>(local.size());
-  const long int chunkMax = 100000000;
-
-  for (long int offset=0;offset<n;offset+=chunkMax) {
-    const long int chunk = std::min(chunkMax,n-offset);
-    MPI_Allreduce((void*)(&local[offset]),&global[offset],static_cast<int>(chunk),
-                  MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-  }
-}
-
-// Same chunked reduction for the integer ownership mask.  The mask counts how many
-// ranks supplied each global cell.  The normal value after reduction should be one;
-// division by the mask makes the code robust to duplicate contributors, while the
-// final completeness check still verifies that every interior cell was provided.
-void AllreduceIntVector_(const std::vector<int>& local,std::vector<int>& global) {
-  global.assign(local.size(),0);
-
-  const long int n = static_cast<long int>(local.size());
-  const long int chunkMax = 100000000;
-
-  for (long int offset=0;offset<n;offset+=chunkMax) {
-    const long int chunk = std::min(chunkMax,n-offset);
-    MPI_Allreduce((void*)(&local[offset]),&global[offset],static_cast<int>(chunk),
-                  MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-  }
-}
-
-// Locate which interior cell of 'node' contains coordinate x.
-//
-// This is used mainly for ghost-cell reconstruction.  A ghost cell attached to one
-// allocated block is not globally unique; its center lies inside a neighboring owner
-// leaf.  We find that owner leaf first, then use this helper to convert the ghost-cell
-// center into the owner's interior (i,j,k).  A small tolerance handles roundoff when a
-// point lies exactly on a block boundary.
-bool GetInteriorCellIndexForPoint_(const double *x,cAMRNode *node,int ijk[3]) {
-  const int nCells[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
-
-  for (int idim=0;idim<3;idim++) {
-    const double dx = (node->xmax[idim]-node->xmin[idim]) / static_cast<double>(nCells[idim]);
-
-    if (!(dx>0.0)) return false;
-
-    int idx = static_cast<int>(std::floor((x[idim]-node->xmin[idim])/dx));
-
-    if (idx<0) {
-      if (x[idim] < node->xmin[idim]-1.0e-10*dx) return false;
-      idx = 0;
-    }
-
-    if (idx>=nCells[idim]) {
-      if (x[idim] > node->xmax[idim]+1.0e-10*dx) return false;
-      idx = nCells[idim]-1;
-    }
-
-    ijk[idim]=idx;
-  }
-
-  return true;
-}
-
-// Pack authoritative SWMF magnetic field values from this rank into a dense global
-// array layout.
-//
-// Only owner blocks are packed (node->Thread == PIC::ThisThread).  Even if ghost or
-// boundary copies exist on this rank, they are intentionally ignored as sources so that
-// each global interior cell has a single authoritative contributor.  The B values are
-// read from the same associated-data offset filled by PIC::CPLR::SWMF::RecieveCenterPointData().
-long int PackOwnedInteriorMagneticField_(const std::vector<cAMRNode*>& nodes,
-                                         std::vector<double>& localB,
-                                         std::vector<int>& localMask) {
-  long int nPacked=0;
-
-  for (std::vector<cAMRNode*>::const_iterator it=nodes.begin();it!=nodes.end();++it) {
-    cAMRNode *node = *it;
-
-    // The SWMF coupler's authoritative interior values live on the block owner.
-    // Do not pack ghost copies; otherwise the MPI sum would double count cells.
-    if (node->Thread!=PIC::ThisThread) continue;
-    if (node->block==NULL) continue;
-
-    for (int i=0;i<_BLOCK_CELLS_X_;i++) {
-      for (int j=0;j<_BLOCK_CELLS_Y_;j++) {
-        for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
-          PIC::Mesh::cDataCenterNode *cell =
-              node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
-
-          if (cell==NULL) continue;
-
-          const long int c = GlobalCellIndex_(node,i,j,k);
-          const long int b = 3*c;
-
-          // Copy the three magnetic-field components from the SWMF-associated-data
-          // buffer into the dense layout.  Units are unchanged: the coupler stores
-          // B in the units expected by the existing AMPS field-evaluation path.
-          memcpy(&localB[b],
-                 cell->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset,
-                 3*sizeof(double));
-
-          // Mark this global cell as present.  After MPI_Allreduce, a value of 1
-          // means exactly one owner provided the field; 0 means missing.
-          localMask[c]=1;
-          nPacked++;
-        }
-      }
-    }
-  }
-
-  return nPacked;
-}
-
-// Write the MPI-reduced global magnetic field back into every allocated block.
-//
-// The loop includes both interior and ghost cells because AMPS interpolation stencils
-// can request ghost-cell values near block boundaries.  For every cell center, we find
-// the global owner leaf and copy the owner interior-cell B into the local cell's SWMF
-// associated-data slot.  Cells whose centers cannot be mapped to a used owner leaf are
-// set to zero and counted; these are normally outside the calculation domain and should
-// not be touched by valid cutoff trajectories/interpolation stencils.
-long int PopulateAllocatedBlocksFromGlobalMagneticField_(const std::vector<cAMRNode*>& nodes,
-                                                        const std::vector<double>& globalB,
-                                                        const std::vector<int>& globalMask) {
-  long int nMissing=0;
-
-  for (std::vector<cAMRNode*>::const_iterator it=nodes.begin();it!=nodes.end();++it) {
-    cAMRNode *node = *it;
-
-    if (node->block==NULL) continue;
-
-    for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
-      for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) {
-        for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
-          PIC::Mesh::cDataCenterNode *cell =
-              node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
-
-          if (cell==NULL) continue;
-
-          double *x = cell->GetX();
-
-          // For interior cells, 'owner' is normally 'node'.  For ghost cells, this
-          // maps the ghost-cell center to the neighboring AMR leaf that physically
-          // owns that point.
-          cAMRNode *owner = PIC::Mesh::mesh->findTreeNode(x,node);
-
-          if ((owner==NULL) || (owner->Temp_ID<0) ||
-              (owner->IsUsedInCalculationFlag==false)) {
-            // The cell center is outside the used AMR domain.  Keep the data buffer
-            // finite and count it for diagnostics; valid cutoff trajectories should
-            // exit the domain before relying on such a value.
-            double zero[3] = {0.0,0.0,0.0};
-            memcpy(cell->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset,
-                   zero,3*sizeof(double));
-            nMissing++;
-            continue;
-          }
-
-          int ijk[3];
-          if (GetInteriorCellIndexForPoint_(x,owner,ijk)==false) {
-            double zero[3] = {0.0,0.0,0.0};
-            memcpy(cell->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset,
-                   zero,3*sizeof(double));
-            nMissing++;
-            continue;
-          }
-
-          const long int c = GlobalCellIndex_(owner,ijk[0],ijk[1],ijk[2]);
-
-          if ((c<0) || (c>=static_cast<long int>(globalMask.size())) ||
-              (globalMask[c]<=0)) {
-            double zero[3] = {0.0,0.0,0.0};
-            memcpy(cell->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset,
-                   zero,3*sizeof(double));
-            nMissing++;
-            continue;
-          }
-
-          double b[3];
-          // Usually globalMask[c] == 1.  Averaging keeps the operation safe if the
-          // same cell is contributed more than once by a future coupler variant.
-          b[0]=globalB[3*c+0]/static_cast<double>(globalMask[c]);
-          b[1]=globalB[3*c+1]/static_cast<double>(globalMask[c]);
-          b[2]=globalB[3*c+2]/static_cast<double>(globalMask[c]);
-
-          memcpy(cell->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset,
-                 b,3*sizeof(double));
-        }
-      }
-    }
-  }
-
-  return nMissing;
-}
-
-// Debug-field replacement for all currently allocated blocks.
-//
-// This is used by RedefineSWMFCoupledMagneticFieldToAnalyticDipole().  It is kept
-// separate from PrepareGlobalSWMFCoupledMagneticFieldForCutoff(): the debug path writes
-// B directly from an analytic callback, while the production path gathers the B that
-// was imported from SWMF.  The callback signature matches PIC::CPLR::SWMF::Debug.
-long int RedefineAllAllocatedMagneticField_(void (*f)(double*,double*)) {
-  long int nCells=0;
-
-  if (f==NULL) return 0;
-
-  // Step 1: assign deterministic dense global IDs to used AMR leaves.
-  long int nUsedLeafBlocks=0;
-  AssignGlobalLeafTempIds_(PIC::Mesh::mesh->rootTree,nUsedLeafBlocks);
-
-  // Step 2: collect the same ordered list of used leaves on every rank.
-  std::vector<cAMRNode*> nodes;
-  nodes.reserve(static_cast<size_t>(std::max(static_cast<long int>(0),nUsedLeafBlocks)));
-  CollectUsedLeafNodes_(PIC::Mesh::mesh->rootTree,nodes);
-
-  double x[3],b[3];
-
-  for (std::vector<cAMRNode*>::const_iterator it=nodes.begin();it!=nodes.end();++it) {
-    cAMRNode *node = *it;
-    if (node->block==NULL) continue;
-
-    for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
-      for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) {
-        for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
-          PIC::Mesh::cDataCenterNode *cell =
-              node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
-
-          if (cell==NULL) continue;
-
-          cell->GetX(x);
-          f(x,b);
-          memcpy(cell->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset,
-                 b,3*sizeof(double));
-          nCells++;
-        }
-      }
-    }
-  }
-
-  return nCells;
-}
 
 } // anonymous namespace
 
@@ -902,85 +513,15 @@ void PrepareGlobalSWMFCoupledMagneticFieldForCutoff(bool verbose) {
          "[Mode3DForwardSWMF] PrepareGlobalSWMFCoupledMagneticFieldForCutoff() called before the first SWMF coupling data receive.");
   }
 
-  // Step 1: assign deterministic dense global IDs to used AMR leaves.
-  long int nUsedLeafBlocks=0;
-  AssignGlobalLeafTempIds_(PIC::Mesh::mesh->rootTree,nUsedLeafBlocks);
-
-  // Step 2: collect the same ordered list of used leaves on every rank.
-  std::vector<cAMRNode*> nodes;
-  nodes.reserve(static_cast<size_t>(std::max(static_cast<long int>(0),nUsedLeafBlocks)));
-  CollectUsedLeafNodes_(PIC::Mesh::mesh->rootTree,nodes);
-
-  // Dense global storage contains only interior cells.  Ghost-cell values are
-  // regenerated from these interior cells after the MPI gather is complete.
-  const long int nInteriorCells = nUsedLeafBlocks * InteriorCellsPerBlock_();
-
-  std::vector<double> localB(static_cast<size_t>(3*nInteriorCells),0.0);
-  std::vector<double> globalB;
-  std::vector<int> localMask(static_cast<size_t>(nInteriorCells),0);
-  std::vector<int> globalMask;
-
-  // Step 3: allocate missing nonlocal blocks so every rank has the full AMR mesh
-  // represented by actual cDataBlockAMR objects.
-  const long int nNewlyAllocatedBlocks = AllocateMissingBlocks_(nodes);
-
-  // Step 4: pack this rank's authoritative owner cells into the dense local cache.
-  const long int nPackedLocal = PackOwnedInteriorMagneticField_(nodes,localB,localMask);
-
-  // Step 5: make the dense cell-centered B cache globally available on every rank.
-  AllreduceDoubleVector_(localB,globalB);
-  AllreduceIntVector_(localMask,globalMask);
-
-  // Step 6: write the global B values back into all allocated cells, including
-  // ghost cells, so existing AMPS interpolation routines can be used unchanged.
-  const long int nMissingLocal =
-      PopulateAllocatedBlocksFromGlobalMagneticField_(nodes,globalB,globalMask);
-
-  long int nPackedGlobal=0;
-  MPI_Allreduce((void*)&nPackedLocal,&nPackedGlobal,1,MPI_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-
-  long int nNewlyAllocatedMin=0,nNewlyAllocatedMax=0;
-  MPI_Allreduce((void*)&nNewlyAllocatedBlocks,&nNewlyAllocatedMin,1,MPI_LONG,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce((void*)&nNewlyAllocatedBlocks,&nNewlyAllocatedMax,1,MPI_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
-
-  long int nMissingMin=0,nMissingMax=0;
-  MPI_Allreduce((void*)&nMissingLocal,&nMissingMin,1,MPI_LONG,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce((void*)&nMissingLocal,&nMissingMax,1,MPI_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
-
-  // A complete coupled snapshot must supply every used leaf's interior-cell B.
-  // If not, cutoff tracing would silently encounter uninitialized field values, so
-  // fail early with an explicit diagnostic.
-  if (nPackedGlobal!=nInteriorCells) {
-    std::ostringstream msg;
-    msg << "[Mode3DForwardSWMF] Global SWMF magnetic-field gather is incomplete: "
-        << "received " << nPackedGlobal << " owner interior cells, expected "
-        << nInteriorCells << ".";
-    const std::string text = msg.str();
-    exit(__LINE__,__FILE__,text.c_str());
-  }
-
-  // Print a compact summary from rank 0.  The min..max ranges show whether all ranks
-  // allocated the same number of missing blocks and whether any ranks had ghost cells
-  // outside the used AMR domain.
-  if ((verbose==true) && (PIC::ThisThread==0)) {
-    std::cout << "[Mode3DForwardSWMF] Prepared global SWMF B field for cutoff:"
-              << " usedLeafBlocks=" << nUsedLeafBlocks
-              << ", ownerInteriorCells=" << nPackedGlobal
-              << ", newlyAllocatedBlocksPerRank=" << nNewlyAllocatedMin;
-
-    if (nNewlyAllocatedMax!=nNewlyAllocatedMin) {
-      std::cout << ".." << nNewlyAllocatedMax;
-    }
-
-    std::cout << ", missingGhostCellsPerRank=" << nMissingMin;
-
-    if (nMissingMax!=nMissingMin) {
-      std::cout << ".." << nMissingMax;
-    }
-
-    std::cout << ".\n";
-    std::cout.flush();
-  }
+  // Reuse the same generic global-B materialization machinery used by the standalone
+  // Mode3D cutoff path.  The only SWMF-specific detail is the storage offset passed
+  // below: the coupled magnetic field lives at PIC::CPLR::SWMF::MagneticFieldOffset
+  // inside each cell-associated data buffer, whereas standalone Mode3D passes the
+  // DATAFILE offset returned by GlobalMagneticField::DataFileMagneticFieldDataOffset().
+  Earth::Mode3D::GlobalMagneticField::MaterializeCellCenteredMagneticFieldForCutoff(
+      "Mode3DForwardSWMF",
+      PIC::CPLR::SWMF::MagneticFieldOffset,
+      verbose);
 #endif
 }
 
@@ -1010,7 +551,17 @@ void RedefineSWMFCoupledMagneticFieldToAnalyticDipole() {
   Earth::GridlessMode::Dipole::SetMomentScale(s_prm.field.dipoleMoment_Me);
   Earth::GridlessMode::Dipole::SetTiltDeg(s_prm.field.dipoleTilt_deg);
 
-  const long int nCells = RedefineAllAllocatedMagneticField_(AnalyticDipoleMagneticField_);
+  // Use the generic global-field utility rather than the old SWMF-local copy of the
+  // block-allocation traversal.  allocateMissingBlocks=true makes the debug dipole
+  // override behave like the production cutoff path: all used leaves are available on
+  // every rank before the field values are written.
+  const long int nCells =
+      Earth::Mode3D::GlobalMagneticField::RedefineAllAllocatedMagneticField(
+          "Mode3DForwardSWMF",
+          PIC::CPLR::SWMF::MagneticFieldOffset,
+          AnalyticDipoleMagneticField_,
+          true,
+          false);
 
   if (PIC::ThisThread == 0) {
     std::cout << "[Mode3DForwardSWMF] Replaced SWMF-coupled cell-centered B field "

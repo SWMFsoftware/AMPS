@@ -1,6 +1,7 @@
 #include "Mode3D.h"
 #include "ElectricField.h"
 #include "CutoffRigidityMode3D.h"
+#include "GlobalMagneticField.h"
 
 #include <cstdio>
 #include <cmath>
@@ -317,80 +318,64 @@ void InitSphere() {
 
 int Run(const EarthUtil::AmpsParam& prm) {
   //============================================================================
-  // Mode3D::Run — entry point for the 3D cutoff rigidity workflow.
+  // Mode3D::Run — entry point for the standalone 3-D cutoff-rigidity workflow.
   //
-  // Initialisation sequence
+  // Initialization sequence
   // -----------------------
-  // 1. Mark execution mode and configure domain bounds from prm so that
-  //    RunCutoffRigidity can read ParsedDomainMin/Max without re-parsing.
+  // 1. Mark execution mode and configure the physical domain bounds from prm.
+  //    main_lib.cpp::amps_init_mesh() reads ParsedDomainMin/Max while building the
+  //    AMR tree, and RunCutoffRigidity() later uses the same values for the outer
+  //    escape box.  This keeps mesh geometry and trajectory classification aligned.
   //
-  // 2. REPLICATED-DOMAIN mesh initialisation.
-  //    Requirement: "the entire domain needs to be allocated for each MPI
-  //    process" (design spec §3).
+  // 2. Use the normal AMPS MPI initialization, not independentDomainMode.
+  //    Earlier standalone cutoff code called
   //
-  //    Standard amps_init_mesh() distributes AMR blocks across ranks using
-  //    PIC::nTotalThreads.  To replicate the domain on every rank we
-  //    temporarily override:
+  //       PIC::InitMPI(/*independentDomainMode=*/true)
   //
-  //       PIC::nTotalThreads = 1   → all blocks assigned to "thread 0" of
-  //       PIC::ThisThread    = 0     each rank's private single-rank view.
+  //    so that every MPI process built a private complete copy of the AMR mesh.
+  //    That is no longer needed.  The current path initializes AMPS in the standard
+  //    distributed-domain mode used elsewhere in the model.
   //
-  //    After amps_init_mesh() returns, the true MPI topology is restored so
-  //    that downstream utilities (Tecplot writers, MPI_Barrier, etc.) behave
-  //    correctly.  Every rank now owns the complete AMR tree.
+  // 3. Fill the selected standalone B/E field into the owner-rank DATAFILE cell
+  //    buffers.  At this point only the normal distributed set of blocks is
+  //    allocated on each rank.
   //
-  // 3. Sphere and field-model configuration.
-  //    In standalone/non-SWMF builds this configures the selected background
-  //    Tsyganenko/TA16 model.  In SWMF-coupled builds this is intentionally a
-  //    no-op because the field source is the AMPS/SWMF coupler.
+  // 4. Materialize a global read-only magnetic-field snapshot for cutoff tracing.
+  //    This reuses the same data-management strategy developed for the SWMF-coupled
+  //    cutoff path:
   //
-  // 4. Field initialisation in mesh cells (diagnostic Tecplot output).
-  //    In standalone/non-SWMF builds this fills DATAFILE-style mesh buffers
-  //    with the configured B/E fields.  In SWMF-coupled builds it is a no-op:
-  //    the authoritative B/E values remain in the live coupler data and are
-  //    accessed through PIC::CPLR.
+  //       assign deterministic node->Temp_ID values,
+  //       allocate missing leaf blocks on every rank,
+  //       pack only owner-rank interior-cell B values,
+  //       MPI_Allreduce the dense B cache and presence mask,
+  //       populate all allocated interior and ghost cells from that cache.
   //
-  // 5. RunCutoffRigidity: MPI × OpenMP parallel cutoff computation.
-  //    - Static point distribution across MPI ranks (each rank independent).
-  //    - OpenMP threads within each rank parallelise over individual points.
-  //    - No MPI communication during computation.
-  //    - Rank 0 gathers scalar results and writes Tecplot output files.
+  //    After this step each MPI rank can trace its assigned cutoff trajectories
+  //    through the whole AMR domain using the existing cell-centered interpolation
+  //    code.  The ranks are no longer independent private AMPS universes; they are
+  //    normal MPI ranks sharing one MPI_GLOBAL_COMMUNICATOR.
+  //
+  // 5. RunCutoffRigidity performs MPI × OpenMP work distribution:
+  //    - static point distribution across MPI ranks;
+  //    - OpenMP parallelism over points/directions inside each rank;
+  //    - rank 0 gathers scalar Rc/Emin products and writes Tecplot output.
   //============================================================================
 
   Earth::ModelMode = Earth::CutoffRigidityMode;
   ApplyParsedDomain(prm);
 
-  // ---- Replicated-domain initialisation -----------------------------------
+  // ---- Standard distributed-domain initialization --------------------------
   //
-  // Requirement: every MPI process must independently own the COMPLETE AMR
-  // mesh so that backtracing calculations are fully independent across ranks.
-  //
-  // Mechanism:
-  //   PIC::InitMPI(/*independentDomainMode=*/true) calls
-  //   MPI_Comm_split(MPI_COMM_WORLD, worldRank, 0, &MPI_GLOBAL_COMMUNICATOR)
-  //   before querying rank/size.  Each process therefore obtains:
-  //       PIC::ThisThread    = 0
-  //       PIC::nTotalThreads = 1
-  //   from its private singleton communicator.
-  //
-  //   Because the AMPS mesh partitioner uses PIC::nTotalThreads to divide AMR
-  //   blocks, setting it to 1 causes amps_init_mesh() to assign ALL blocks to
-  //   "rank 0" — which is every process, each in its own singleton universe.
-  //   The result is an identical, complete AMR tree on every rank.
-  //
-  //   The singleton communicator persists for the lifetime of the run: the
-  //   !initialized guard inside InitMPI() ensures that subsequent calls from
-  //   Init_BeforeParser / amps_init leave MPI_GLOBAL_COMMUNICATOR unchanged,
-  //   so no manual save-and-restore of PIC::nTotalThreads is needed.
-  //
-  //   MPI_COMM_WORLD remains intact; RunCutoffRigidity uses it directly for
-  //   inter-rank point distribution and result gathering.
+  // Do not request independentDomainMode here.  We want the usual AMPS MPI domain
+  // decomposition so owner blocks are distributed across ranks.  The global B-field
+  // materialization below will later allocate nonlocal blocks and gather the owner
+  // cell-centered magnetic field into them specifically for cutoff tracing.
   // -------------------------------------------------------------------------
-  PIC::InitMPI(/*independentDomainMode=*/true);
+  PIC::InitMPI();
   Exosphere::Init_SPICE();
 
-  amps_init_mesh();   // every rank builds the complete AMR tree
-  amps_init();        // block allocation, data-offset registration
+  amps_init_mesh();   // build the replicated AMR tree topology and distributed blocks
+  amps_init();        // data-offset registration and cutoff-mode particle settings
 
   //----------------------------------------------------------------------------
   // Sphere and field-model configuration
@@ -411,40 +396,41 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //----------------------------------------------------------------------------
   InitMeshFields(prm, PIC::Mesh::mesh->rootTree);
 
-  // Guard against concurrent file writes in replicated-domain mode.
-  //
-  // In the standard AMPS distributed-domain mode PIC::nTotalThreads > 1 and
-  // outputMeshDataTECPLOT handles MPI coordination internally via
-  // MPI_GLOBAL_COMMUNICATOR (each rank writes only its own blocks; rank 0
-  // assembles the file).  That path is safe and unchanged.
-  //
-  // In replicated-domain mode (PIC::InitMPI(true)) every rank sees
-  // PIC::nTotalThreads == 1 and PIC::ThisThread == 0 because each rank has
-  // its own singleton MPI_GLOBAL_COMMUNICATOR.  Without the guard below all N
-  // MPI_COMM_WORLD processes would call outputMeshDataTECPLOT simultaneously
-  // and write to the same file concurrently, corrupting the output.
-  //
-  // Fix: when PIC::nTotalThreads == 1 (replicated-domain), only the process
-  // whose rank in MPI_COMM_WORLD is 0 writes the file.  All other processes
-  // skip the call entirely.  The resulting file is identical to a normal
-  // single-process run because every rank holds the complete mesh.
+  // Diagnostic mesh output of the distributed owner/local field immediately after
+  // initialization.  This is intentionally written BEFORE the global cutoff snapshot
+  // allocates nonlocal blocks on every rank; at this point outputMeshDataTECPLOT sees
+  // the normal AMPS parallel ownership layout and can assemble a clean file.
   if (prm.mode3d.outputInitializedFile) {
-    if (PIC::nTotalThreads != 1) {
-      // Standard distributed-domain mode: outputMeshDataTECPLOT handles MPI.
-      PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_3d_initialized.data.dat", 0);
-    } else {
-      // Replicated-domain mode: only MPI_COMM_WORLD rank 0 writes.
-      int worldRank = 0;
-      MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);
-      if (worldRank == 0) {
-        PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_3d_initialized.data.dat", 0);
-      }
-    }
+    PIC::Mesh::mesh->outputMeshDataTECPLOT("amps_3d_initialized.data.dat", 0);
   }
+
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  // ---- Replicate the standalone magnetic field for cutoff tracing -----------
+  //
+  // InitMeshFields() just filled B on the owner/local DATAFILE cells that exist in
+  // the normal distributed AMPS mesh.  The cutoff tracer on each rank can move a
+  // particle through any AMR block, so before RunCutoffRigidity() starts we create
+  // a read-only global B snapshot on every rank.  The helper below is the same
+  // generic data-management operation used by the SWMF-coupled cutoff path; only
+  // the cell-data offset differs.
+  //
+  // The electric field is not gathered here because the 3-D cutoff mover uses only
+  // B for rigidity classification.  If a future cutoff formulation needs E, the
+  // same helper pattern can be extended to another vector slot.
+  if (!PIC::CPLR::DATAFILE::Offset::MagneticField.active) {
+    exit(__LINE__,__FILE__,
+         "[Mode3D] DATAFILE magnetic-field offset is inactive before standalone 3-D cutoff materialization.");
+  }
+
+  Earth::Mode3D::GlobalMagneticField::MaterializeCellCenteredMagneticFieldForCutoff(
+      "Mode3D",
+      Earth::Mode3D::GlobalMagneticField::DataFileMagneticFieldDataOffset(),
+      true);
+#endif
 
   //----------------------------------------------------------------------------
   // Cutoff rigidity computation (MPI_COMM_WORLD × OpenMP)
-  // Each rank independently processes its static point slice; OpenMP threads
+  // Each normal MPI rank processes its static point slice; OpenMP threads
   // within each rank parallelise over individual trajectory points.
   //----------------------------------------------------------------------------
   std::cout << "[Mode3D] Starting cutoff rigidity calculation...\n";
