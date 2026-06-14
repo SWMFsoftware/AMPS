@@ -833,7 +833,83 @@ void amps_time_step() {
   // file so successive calls do not overwrite earlier snapshots.
   //
   if (Earth::Mode3DForwardSWMF::IsCutoffRigidityMode()) {
+    // ---------------------------------------------------------------------
+    // Temporary local control for the cadence of SWMF-coupled cutoff output.
+    // ---------------------------------------------------------------------
+    // Meaning:
+    //   CoupledCutoffCalculationTimeInterval_s is the requested simulation-time
+    //   interval, in seconds, between two expensive cutoff-rigidity
+    //   calculations in the SWMF-coupled PT component.  The clock used below is
+    //   PIC::SimulationTime::TimeCounter, so the cadence is based on the actual
+    //   AMPS/SWMF simulation time rather than on the number of coupling calls.
+    //
+    // Why the variable is placed here:
+    //   This is intentionally a clearly named local const near the top of the
+    //   cutoff branch so it is easy to find and edit while the feature is being
+    //   tested.  The next intended step is to move this value out of
+    //   amps_time_step() and read it from AMPS_PARAM.in, without changing the
+    //   cadence logic below.
+    //
+    // Temporary value:
+    //   Use 1 h as the current hard-coded cadence.  This matches the common
+    //   GM->PT coupling interval used for this cutoff-rigidity test setup.  Set
+    //   the value to 0.0 or a negative number to restore the old behavior of
+    //   calculating the cutoff at every SWMF/PT coupling callback.
+    const double CoupledCutoffCalculationTimeInterval_s = 3600.0;
+
+    // Keep the last simulation time at which the cutoff calculation was actually
+    // performed.  These variables are local to amps_time_step(), but static so
+    // they retain their values across repeated SWMF coupling callbacks.  They
+    // will naturally disappear when the cadence control is moved into the
+    // Mode3DForwardSWMF runtime state/input-parameter infrastructure.
+    static bool   IsFirstCoupledCutoffCalculation = true;
+    static double LastCoupledCutoffCalculationTime_s = -1.0e100;
+
+    // Use TimeCounter directly because it is the authoritative AMPS simulation
+    // time visible to the PT component in the SWMF-coupled run.  The cutoff
+    // output-stamp code uses the same clock, so the cadence decision and the
+    // file-name time stamp are based on the same simulation-time source.
+    const double CurrentCoupledSimulationTime_s = PIC::SimulationTime::TimeCounter;
+
+    // A small tolerance avoids accidentally skipping an output because of roundoff
+    // when TimeCounter is very close to the requested cadence boundary.  The
+    // tolerance is scaled by the interval so it remains negligible physically but
+    // useful numerically for both short and long output cadences.
+    const double CutoffCadenceTolerance_s =
+        1.0e-10 * ((CoupledCutoffCalculationTimeInterval_s > 1.0) ?
+                   CoupledCutoffCalculationTimeInterval_s : 1.0);
+
+    // Decide whether this SWMF/PT callback should produce a new cutoff snapshot.
+    // The first callback always runs.  A non-positive interval is treated as
+    // "run every callback" to keep an easy escape hatch that reproduces the
+    // previous behavior exactly.  If the simulation clock ever moves backward
+    // inside the same executable instance, run once immediately and reset the
+    // reference time; this makes restart/test workflows robust.
+    const double TimeSinceLastCoupledCutoff_s =
+        CurrentCoupledSimulationTime_s - LastCoupledCutoffCalculationTime_s;
+
+    const bool DoCoupledCutoffCalculation =
+        IsFirstCoupledCutoffCalculation ||
+        (CoupledCutoffCalculationTimeInterval_s <= 0.0) ||
+        (TimeSinceLastCoupledCutoff_s < -CutoffCadenceTolerance_s) ||
+        (TimeSinceLastCoupledCutoff_s + CutoffCadenceTolerance_s >=
+            CoupledCutoffCalculationTimeInterval_s);
+
+    if (!DoCoupledCutoffCalculation) {
+      // This call belongs to the cutoff-rigidity PT mode, so there is no
+      // forward-particle update to perform when the cadence gate says to skip
+      // the expensive cutoff calculation.  Return immediately and wait for a
+      // later SWMF/PT callback whose TimeCounter has advanced far enough.
+      return;
+    }
+
     Earth::Mode3DForwardSWMF::amps_cutoff_time_step();
+
+    // Record the actual simulation time after a successful cutoff call.  This
+    // makes the next cadence test measure the interval between completed cutoff
+    // calculations, not merely between attempted calls.
+    IsFirstCoupledCutoffCalculation = false;
+    LastCoupledCutoffCalculationTime_s = CurrentCoupledSimulationTime_s;
 
     // Write the diagnostic dump of the coupled AMPS mesh with the same suffix
     // used by the cutoff-rigidity products produced above.  The suffix is built
