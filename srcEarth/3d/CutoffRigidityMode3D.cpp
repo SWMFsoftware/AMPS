@@ -1093,7 +1093,37 @@ void SetCutoffOutputFileSuffix(const std::string& suffix) {
     gCutoffOutputFileSuffix = suffix;
 }
 
-int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool showProgressBar) {
+int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar) {
+
+    //==================================================================================
+    // 14.0 — Progress-reporting default for user-facing Mode3D cutoff runs
+    //==================================================================================
+    // Historically the second argument defaulted to false, and the standalone caller was
+    // expected to pass true when the command-line -mode 3d workflow should display a
+    // progress bar.  In practice this is fragile: an older caller, a stale object file, or
+    // another direct call to RunCutoffRigidity(prm) silently reverts the banner to
+    //
+    //     Progress bar   : OFF
+    //
+    // even though the standalone 3-D cutoff calculation is the interactive path where
+    // progress feedback is needed most.
+    //
+    // Make the default robust inside the implementation itself.  Explicit true remains
+    // true; omitted/false arguments are promoted to true for this Mode3D driver.  The
+    // progress-enabled branch below still computes exactly the same cutoffs; it only adds
+    // synchronized batches and rank-0 progress output.  This guarantees that any
+    // user-facing standalone 3-D cutoff entry path reports progress consistently.
+    //==================================================================================
+    (void)requestedProgressBar;
+
+    // Force progress reporting in the standalone 3-D cutoff implementation.
+    //
+    // This local constant is intentionally not derived from the function argument.
+    // The old API default was false, and stale/direct call sites can still pass false.
+    // By using a local compile-time constant for the banner, progress counters, and
+    // compute-branch selection below, the user-facing standalone cutoff path cannot
+    // silently fall back to the no-progress branch.
+    const bool showProgressBar = true;
 
     //==================================================================================
     // 14.1 — MPI initialisation guard
@@ -1232,8 +1262,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool showProgressBar) {
 
         std::cout
             << "N_locations    : " << nLoc  << "\n"
-            << "MPI ranks      : " << mpiSize << " (replicated domain, static partition)\n"
-            << "Progress bar   : " << (showProgressBar ? "ON" : "OFF") << "\n";
+            << "MPI ranks      : " << mpiSize << " (global B cache, static work partition)\n"
+            << "Progress bar   : ON\n";
 
 #ifdef _OPENMP
         std::cout << "OpenMP threads : " << omp_get_max_threads()
@@ -1521,9 +1551,11 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool showProgressBar) {
     };
 
     if (!showProgressBar) {
-        // Fast path: no progress output and no inter-rank synchronization until
-        // the final MPI_Gatherv.  This preserves the original performance
-        // behaviour for the default RunCutoffRigidity(prm) call.
+        // Fast path retained only for source-level symmetry with older versions.
+        // It is unreachable in the standalone 3-D cutoff driver because
+        // showProgressBar is forced true at the top of this function.
+        // Keeping the block avoids a larger refactor while documenting the old
+        // no-progress behavior.
         #pragma omp parallel
         {
             // Thread-private mesh field evaluator.

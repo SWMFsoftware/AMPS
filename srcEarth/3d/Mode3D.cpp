@@ -430,17 +430,31 @@ int Run(const EarthUtil::AmpsParam& prm) {
 
   //----------------------------------------------------------------------------
   // Cutoff rigidity computation (MPI_COMM_WORLD × OpenMP)
-  // Each normal MPI rank processes its static point slice; OpenMP threads
-  // within each rank parallelise over individual trajectory points.
+  //
+  // The standalone 3-D cutoff path now uses the same normal distributed MPI
+  // layout as the SWMF-coupled cutoff path.  Each rank owns a static slice of
+  // observation locations, but every rank has a read-only global B-field snapshot
+  // prepared above, so trajectory tracing can cross the whole AMR domain.
+  //
+  // Pass showProgressBar=true explicitly for source-level clarity.  The
+  // implementation also promotes the user-facing Mode3D cutoff path to progress
+  // reporting internally, so older direct calls to RunCutoffRigidity(prm) cannot
+  // silently print "Progress bar   : OFF".  The progress-enabled branch performs
+  // synchronized compute batches and MPI_Allreduce calls for the completed
+  // location counters.
   //----------------------------------------------------------------------------
-  std::cout << "[Mode3D] Starting cutoff rigidity calculation...\n";
-  std::cout.flush();
+  if (PIC::ThisThread == 0) {
+    std::cout << "[Mode3D] Starting cutoff rigidity calculation...\n";
+    std::cout.flush();
+  }
 
-  const int status = RunCutoffRigidity(prm);
+  const int status = RunCutoffRigidity(prm,/*showProgressBar=*/true);
 
-  std::cout << "[Mode3D] Cutoff rigidity calculation complete (status="
-            << status << ").\n";
-  std::cout.flush();
+  if (PIC::ThisThread == 0) {
+    std::cout << "[Mode3D] Cutoff rigidity calculation complete (status="
+              << status << ").\n";
+    std::cout.flush();
+  }
 
   return status;
 }
