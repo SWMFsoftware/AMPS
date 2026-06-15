@@ -45,6 +45,32 @@
 
 namespace {
 
+void InitStandaloneSpiceBeforeParamParsing(const char* modeName) {
+#ifndef _NO_SPICE_CALLS_
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  // The standalone command-line modes parse AMPS_PARAM.in before the normal AMPS
+  // mesh/PIC initialization path is entered.  That parser can already need SPICE:
+  // for example, Tsyganenko driver files are converted from UTC strings to SPICE
+  // ephemeris time while ParseAmpsParamFile() is reading #TEMPORAL or
+  // #BACKGROUND_FIELD/DRIVER_FILE.  Without furnishing the SPICE kernels first,
+  // str2et_c() may fail even though the later Mode3D/Mode3DForward runtime would
+  // initialize SPICE before tracing particles.
+  //
+  // Do this only in standalone/non-SWMF builds.  In the live AMPS--SWMF coupling
+  // configuration, SWMF owns the coupled runtime initialization sequence and may
+  // furnish SPICE kernels through its own component setup.  Calling the standalone
+  // SPICE initialization here would be both unnecessary and potentially confusing
+  // because -mode 3d is not the normal coupled-SWMF entry point.
+  (void)modeName;
+  Exosphere::Init_SPICE();
+#else
+  (void)modeName;
+#endif
+#else
+  (void)modeName;
+#endif
+}
+
 bool ApplyCutoffMoverCli(const EarthUtil::CliOptions& cli) {
   if (cli.mover.empty()) return true;
 
@@ -1529,6 +1555,12 @@ int main(int argc,char **argv) {
           std::cerr << EarthUtil::HelpMessage(argv[0]);
           return 1;
         }
+        // Initialize SPICE before reading AMPS_PARAM.in when this executable has
+        // SPICE support and is not running as an SWMF-coupled component.  This is
+        // needed because the parser itself may load time-dependent Tsyganenko
+        // driving files and convert their UTC timestamps to SPICE ET.
+        InitStandaloneSpiceBeforeParamParsing("3d");
+
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
 
         // Mode3D-specific CLI overrides. Defaults are deliberately conservative:
@@ -1568,6 +1600,11 @@ int main(int argc,char **argv) {
           std::cerr << EarthUtil::HelpMessage(argv[0]);
           return 1;
         }
+        // Same early-SPICE requirement as -mode 3d: 3-D forward runs can also use
+        // the standalone background-field parser, and future/diagnostic inputs may
+        // contain timestamped driver tables.
+        InitStandaloneSpiceBeforeParamParsing("3d_forward");
+
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
 
         // ---- CLI overrides for 3d_forward ----
