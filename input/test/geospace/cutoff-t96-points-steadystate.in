@@ -3,12 +3,6 @@
 ! Run: SEP_Sep2017_VanAllenProbeA
 ! ═══════════════════════════════════════════════════════════════
 
-#RUN_INFO
-RUN_ID                 SEP_Sep2017_VanAllenProbeA
-PI_NAME                Unknown
-PI_EMAIL               unknown@unknown.edu
-SCIENCE_GOAL           storm_validation
-
 ! ── Calculation mode (Step 2) ──────────────────────────────────
 ! CALC_TARGET: what the run computes (cutoff rigidity, flux, or both).
 ! FIELD_EVAL_METHOD: how B/E are evaluated (analytic vs grid interpolation).
@@ -44,7 +38,6 @@ IMF_BX                 0.00          ! nT IMF Bx
 EPOCH                  2017-09-10T16:00  ! UTC snapshot
 
 #DOMAIN_BOUNDARY
-BOUNDARY_TYPE          BOX  ! rectangular box in GSM
 DOMAIN_X_MAX           15.0         ! RE dayside
 DOMAIN_X_MIN           -60.0        ! RE nightside
 DOMAIN_Y_MAX           25.0         ! RE dusk
@@ -55,7 +48,6 @@ R_INNER                1.0           ! RE inner loss sphere
 
 #TEMPORAL
 TEMPORAL_MODE          STEADY_STATE
-EPOCH                  2017-09-10T16:00
 
 #SPECTRUM
 SPECTRUM_TYPE          POWER_LAW
@@ -68,24 +60,12 @@ SPEC_EMAX              1000.0       ! MeV/n
 #OUTPUT_DOMAIN
 OUTPUT_MODE            POINTS
 FLUX_DT                1.0           ! min (trajectory cadence; ignored for POINTS/SHELLS)
-N_POINTS               2                 ! number of points provided below
 POINTS_BEGIN
-POINT                 7000 0 0
+!POINT                 7000 0 0
 POINT                 9000 0 0
 POINTS_END
 
-#OUTPUT_OPTIONS
-FLUX_TYPE              DIFFERENTIAL
-OUTPUT_CUTOFF          T                    ! cutoff rigidity maps
-OUTPUT_PITCH           F                    ! pitch angle distributions
-OUTPUT_FORMAT          NETCDF4
-OUTPUT_COORDS          GEO
-ENERGY_BINS            1 5 10 30 100 300 1000   ! MeV/n
 
 #NUMERICAL
-N_PARTICLES            10000              ! test particles per injection
-MAX_BOUNCE             500                ! max mirror reflections
 DT_TRACE               1.0               ! s integration step
-PITCH_ISOTROPIC        T                 ! isotropic injection
 
-#END
