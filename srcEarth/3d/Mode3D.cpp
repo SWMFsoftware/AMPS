@@ -1,6 +1,7 @@
 #include "Mode3D.h"
 #include "ElectricField.h"
 #include "CutoffRigidityMode3D.h"
+#include "DensityMode3D.h"
 #include "GlobalMagneticField.h"
 
 #include <cstdio>
@@ -43,6 +44,32 @@ double ParsedDomainMin[3]={0.0,0.0,0.0};
 double ParsedDomainMax[3]={0.0,0.0,0.0};
 
 namespace {
+
+//--------------------------------------------------------------------------------------
+// Mode3D calculation-target helpers
+//--------------------------------------------------------------------------------------
+//
+// The parser stores CALC_TARGET as one string for backward compatibility.  For Mode3D we
+// intentionally accept both historical single-product tokens and compact combined tokens
+// so one input file can request:
+//   CALC_TARGET  CUTOFF_RIGIDITY                 -> cutoff only
+//   CALC_TARGET  DENSITY_SPECTRUM                -> density + flux only
+//   CALC_TARGET  CUTOFF_RIGIDITY+DENSITY_SPECTRUM -> both products from one field snapshot
+//
+// We use substring tests rather than a rigid enum so separators such as '+', ',', or
+// whitespace (if preserved by an input reader) all work.  The solver still fails below if
+// neither recognized product is requested.
+static bool Mode3DTargetRequestsCutoff(const EarthUtil::AmpsParam& prm) {
+  const std::string t = EarthUtil::ToUpper(prm.calc.target);
+  return t.find("CUTOFF") != std::string::npos || t=="ALL" || t=="BOTH";
+}
+
+static bool Mode3DTargetRequestsDensityFlux(const EarthUtil::AmpsParam& prm) {
+  const std::string t = EarthUtil::ToUpper(prm.calc.target);
+  return t.find("DENSITY") != std::string::npos || t.find("FLUX") != std::string::npos ||
+         t=="ALL" || t=="BOTH";
+}
+
 
 void ApplyParsedDomain(const EarthUtil::AmpsParam& prm) {
   ParsedDomainActive=true;
@@ -653,6 +680,7 @@ int Run(const EarthUtil::AmpsParam& prm) {
     // Tell the cutoff writer to append the snapshot suffix before ".dat".  This
     // prevents outputs from later snapshots from overwriting earlier snapshots.
     SetCutoffOutputFileSuffix(suffix);
+    SetDensityOutputFileSuffix(suffix);
 
     if (PIC::ThisThread == 0) {
       std::cout << "[Mode3D] Preparing magnetic-field snapshot "
@@ -670,32 +698,66 @@ int Run(const EarthUtil::AmpsParam& prm) {
     Mode3DPrepareMagneticFieldSnapshot(snap,suffix,/*verbose=*/true);
 
     //------------------------------------------------------------------------
-    // Cutoff rigidity computation (MPI_COMM_WORLD × OpenMP)
+    // Requested physics products for this snapshot
     //------------------------------------------------------------------------
-    // The standalone 3-D cutoff path uses the normal distributed MPI layout plus
-    // the replicated global B snapshot prepared above.  The same RunCutoffRigidity
-    // function is intentionally reused for single-snapshot and time-series runs.
+    // Both products below use the same prepared mesh-field snapshot.  Running them
+    // consecutively here guarantees that, when the input requests
+    // CUTOFF_RIGIDITY+DENSITY_SPECTRUM, cutoff, directional maps, density, spectra,
+    // and flux are all derived from the identical magnetic-field state and carry the
+    // same snapshot suffix in their file names.
     //------------------------------------------------------------------------
-    if (PIC::ThisThread == 0) {
-      std::cout << "[Mode3D] Starting cutoff rigidity calculation for snapshot "
-                << (iSnapshot+1) << "/" << snapshotEpochs.size() << "...\n";
-      std::cout.flush();
+    const bool doCutoff      = Mode3DTargetRequestsCutoff(snap);
+    const bool doDensityFlux = Mode3DTargetRequestsDensityFlux(snap);
+
+    if (!doCutoff && !doDensityFlux) {
+      std::ostringstream msg;
+      msg << "Unsupported CALC_TARGET for -mode 3d: '" << snap.calc.target
+          << "'. Supported targets include CUTOFF_RIGIDITY, DENSITY_SPECTRUM, "
+          << "and CUTOFF_RIGIDITY+DENSITY_SPECTRUM.";
+      throw std::runtime_error(msg.str());
     }
 
-    const int status = RunCutoffRigidity(snap,/*showProgressBar=*/true);
-    if (status != 0) finalStatus = status;
+    if (doCutoff) {
+      if (PIC::ThisThread == 0) {
+        std::cout << "[Mode3D] Starting cutoff rigidity calculation for snapshot "
+                  << (iSnapshot+1) << "/" << snapshotEpochs.size() << "...\n";
+        std::cout.flush();
+      }
 
-    if (PIC::ThisThread == 0) {
-      std::cout << "[Mode3D] Cutoff rigidity calculation complete for snapshot "
-                << (iSnapshot+1) << "/" << snapshotEpochs.size()
-                << " (status=" << status << ").\n";
-      std::cout.flush();
+      const int status = RunCutoffRigidity(snap,/*showProgressBar=*/true);
+      if (status != 0) finalStatus = status;
+
+      if (PIC::ThisThread == 0) {
+        std::cout << "[Mode3D] Cutoff rigidity calculation complete for snapshot "
+                  << (iSnapshot+1) << "/" << snapshotEpochs.size()
+                  << " (status=" << status << ").\n";
+        std::cout.flush();
+      }
+    }
+
+    if (doDensityFlux) {
+      if (PIC::ThisThread == 0) {
+        std::cout << "[Mode3D] Starting density/flux calculation for snapshot "
+                  << (iSnapshot+1) << "/" << snapshotEpochs.size() << "...\n";
+        std::cout.flush();
+      }
+
+      const int status = RunDensityAndFlux(snap);
+      if (status != 0) finalStatus = status;
+
+      if (PIC::ThisThread == 0) {
+        std::cout << "[Mode3D] Density/flux calculation complete for snapshot "
+                  << (iSnapshot+1) << "/" << snapshotEpochs.size()
+                  << " (status=" << status << ").\n";
+        std::cout.flush();
+      }
     }
   }
 
   // Reset the global suffix so a future in-process caller starts from the legacy
   // filename convention unless it explicitly installs another suffix.
   SetCutoffOutputFileSuffix("");
+  SetDensityOutputFileSuffix("");
 
   return finalStatus;
 }

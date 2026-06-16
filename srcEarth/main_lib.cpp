@@ -825,12 +825,12 @@ void amps_time_step() {
   // SWMF-coupled cutoff-rigidity path
   // =========================================================================
   //
-  // When AMPS_PARAM.in selects CALC_TARGET = CUTOFF_RIGIDITY, the live SWMF
-  // coupling calls amps_time_step() once per coupled MHD snapshot.  Do not
-  // advance a forward-injection particle population.  Instead, compute a fresh
-  // 3-D cutoff-rigidity product using the current SWMF B/E fields exposed by
-  // PIC::CPLR.  The coupling bridge appends a call/time suffix to every output
-  // file so successive calls do not overwrite earlier snapshots.
+  // When AMPS_PARAM.in explicitly selects a Mode3D backward product (cutoff,
+  // density/flux, or both), the live SWMF coupling calls amps_time_step() once per
+  // coupled MHD snapshot.  Do not advance a forward-injection particle population.
+  // Instead, compute the requested mesh-field products using the current SWMF B/E
+  // fields exposed by PIC::CPLR.  The coupling bridge appends a call/time suffix to
+  // every output file so successive calls do not overwrite earlier snapshots.
   //
   if (Earth::Mode3DForwardSWMF::IsCutoffRigidityMode()) {
     // ---------------------------------------------------------------------
@@ -850,12 +850,13 @@ void amps_time_step() {
     //   amps_time_step() and read it from AMPS_PARAM.in, without changing the
     //   cadence logic below.
     //
-    // Temporary value:
-    //   Use 1 h as the current hard-coded cadence.  This matches the common
-    //   GM->PT coupling interval used for this cutoff-rigidity test setup.  Set
-    //   the value to 0.0 or a negative number to restore the old behavior of
-    //   calculating the cutoff at every SWMF/PT coupling callback.
-    const double CoupledCutoffCalculationTimeInterval_s = 3600.0;
+    // Input-driven value:
+    //   Mode3DForwardSWMF::GetCoupledCalculationCadenceSeconds() reads
+    //   #TEMPORAL/FIELD_UPDATE_DT when available, so the live SWMF-coupled path uses
+    //   the same physical-time spacing concept as the standalone Tsyganenko
+    //   time-series path.  A non-positive cadence means calculate on every callback.
+    const double CoupledCutoffCalculationTimeInterval_s =
+        Earth::Mode3DForwardSWMF::GetCoupledCalculationCadenceSeconds();
 
     // Keep the last simulation time at which the cutoff calculation was actually
     // performed.  These variables are local to amps_time_step(), but static so

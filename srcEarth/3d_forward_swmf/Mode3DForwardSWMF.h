@@ -50,10 +50,18 @@ void amps_init();
 // This is the historical coupled mode.
 bool IsForwardMode();
 
-// Return true when AMPS_PARAM.in selects CALC_TARGET = CUTOFF_RIGIDITY.
-// In this mode each amps_time_step() call computes a cutoff-rigidity snapshot
-// using the current SWMF-coupled fields and writes timestamped output files.
+// Return true when AMPS_PARAM.in selects any backward mesh-field diagnostic product
+// handled by the Mode3D/SWMF bridge: cutoff, density/flux, or both.
+//
+// The historical function name is retained because main_lib.cpp already uses it to
+// route away from the forward-injection particle update.  In current code it should be
+// read as "is this a Mode3D backward-product mode?" rather than cutoff-only.
 bool IsCutoffRigidityMode();
+
+// Requested simulation-time cadence [s] between expensive SWMF-coupled backward-product
+// calculations.  The value is read from #TEMPORAL/FIELD_UPDATE_DT when present; a
+// non-positive return value means "run every SWMF/PT callback".
+double GetCoupledCalculationCadenceSeconds();
 
 // Allocate all AMR leaf blocks on every MPI rank and gather the SWMF-coupled
 // cell-centered magnetic field into those blocks.
@@ -84,7 +92,9 @@ void PrepareGlobalSWMFCoupledMagneticFieldForCutoff(bool verbose=true);
 // AMR blocks.
 void RedefineSWMFCoupledMagneticFieldToAnalyticDipole();
 
-// Per-coupling-call cutoff-rigidity driver used by main_lib.cpp::amps_time_step().
+// Per-coupling-call backward-product driver used by main_lib.cpp::amps_time_step().
+// Depending on CALC_TARGET, this computes cutoff only, cutoff+density/flux, or
+// density/flux only from the current SWMF mesh-field snapshot.
 void amps_cutoff_time_step();
 
 // Return a file name that uses the same stamp as the most recent

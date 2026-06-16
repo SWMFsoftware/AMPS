@@ -2686,8 +2686,22 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
   }
 
+  // Resolve product-selection requests from CALC_TARGET.
+  //
+  // Historically CALC_TARGET was a single exact token.  Mode3D now supports combined
+  // products such as CUTOFF_RIGIDITY+DENSITY_SPECTRUM so cutoff, density, and flux can
+  // be generated from the same magnetic-field snapshot.  The parser therefore validates
+  // each product if its name appears anywhere in the target string; the runtime mode
+  // (-mode gridless, -mode 3d, or SWMF-coupled 3d) decides which field backend to use.
+  const std::string calcTargetUpper = ToUpper(p.calc.target);
+  const bool calcRequestsCutoff = (calcTargetUpper.find("CUTOFF") != std::string::npos) ||
+                                  calcTargetUpper=="ALL" || calcTargetUpper=="BOTH";
+  const bool calcRequestsDensityFlux = (calcTargetUpper.find("DENSITY") != std::string::npos) ||
+                                       (calcTargetUpper.find("FLUX")    != std::string::npos) ||
+                                       calcTargetUpper=="ALL" || calcTargetUpper=="BOTH";
+
   // Validate cutoff controls if requested.
-  if (ToUpper(p.calc.target)=="CUTOFF_RIGIDITY") {
+  if (calcRequestsCutoff) {
     if (!(p.cutoff.eMin_MeV>0.0)) {
       exit(__LINE__,__FILE__,"CUTOFF_EMIN must be > 0 (MeV/n)");
     }
@@ -2724,8 +2738,11 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
   }
 
-  // Validate density/spectrum controls if requested.
-  if (ToUpper(p.calc.target)=="DENSITY_SPECTRUM") {
+  // Validate density/spectrum controls if requested.  Do not require
+  // FIELD_EVAL_METHOD=GRIDLESS here: in -mode 3d the same DensitySpectrumParam block is
+  // deliberately consumed by the mesh-field density/flux backend, and in SWMF-coupled
+  // mode the field method is set to SWMF by the coupling bridge.
+  if (calcRequestsDensityFlux) {
     if (!(p.densitySpectrum.Emin_MeV>0.0)) {
       exit(__LINE__,__FILE__,"DS_EMIN must be > 0 (MeV)");
     }
@@ -2743,9 +2760,6 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
     if (p.numerics.maxTraceDistance_Re < 0.0) {
       exit(__LINE__,__FILE__,"MAX_TRACE_DISTANCE must be >= 0 (0 means: disabled)");
-    }
-    if (ToUpper(p.calc.fieldEvalMethod)!="GRIDLESS") {
-      exit(__LINE__,__FILE__,"DENSITY_SPECTRUM currently requires FIELD_EVAL_METHOD = GRIDLESS");
     }
     // Validate DS_BOUNDARY_MODE token.
     const std::string bm = ToUpper(p.densitySpectrum.boundaryMode);

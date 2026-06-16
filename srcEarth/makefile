@@ -22,6 +22,7 @@ MAINLIBOBJ = Earth_Sampling.o \
 	3d/ElectricField.o \
 	3d/GlobalMagneticField.o \
 	3d/CutoffRigidityMode3D.o \
+	3d/DensityMode3D.o \
 	3d_forward/Density3D.o \
 	3d_forward/SphereFlux3D.o \
 	3d_forward/ForwardParticleMovers.o \

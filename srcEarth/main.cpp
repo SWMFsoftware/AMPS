@@ -1541,6 +1541,9 @@ int main(int argc,char **argv) {
 	  return EXIT_SUCCESS;
         }
         if (target=="DENSITY_SPECTRUM") {
+          if (EarthUtil::ToUpper(p.calc.fieldEvalMethod)!="GRIDLESS") {
+            throw std::runtime_error("-mode gridless with CALC_TARGET=DENSITY_SPECTRUM requires FIELD_EVAL_METHOD=GRIDLESS");
+          }
           Earth::GridlessMode::RunDensityAndSpectrum(p);
 	  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 	  MPI_Finalize();

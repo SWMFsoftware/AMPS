@@ -52,6 +52,7 @@
 #include "../3d_forward/SphereFlux3D.h"
 #include "../3d/Mode3D.h"
 #include "../3d/CutoffRigidityMode3D.h"
+#include "../3d/DensityMode3D.h"
 #include "../3d/GlobalMagneticField.h"
 #include "../gridless/DipoleInterface.h"
 #include "../boundary/spectrum.h"
@@ -103,17 +104,29 @@ void AnalyticDipoleMagneticField_(double *xIn,double *bOut) {
   Earth::GridlessMode::Dipole::GetB_Tesla(xIn,bOut);
 }
 
-bool IsCutoffTarget_(const EarthUtil::AmpsParam& prm) {
-  // The parser default is CUTOFF_RIGIDITY for standalone backward
-  // compatibility.  In coupled SWMF runs, require an explicit CALC_TARGET so
-  // old 3d_forward input files that omit #CALCULATION_MODE keep their
-  // historical forward-injection behavior.
+bool TargetRequestsCutoff_(const EarthUtil::AmpsParam& prm) {
+  const std::string t = EarthUtil::ToUpper(prm.calc.target);
+  return t.find("CUTOFF") != std::string::npos || t=="ALL" || t=="BOTH";
+}
+
+bool TargetRequestsDensityFlux_(const EarthUtil::AmpsParam& prm) {
+  const std::string t = EarthUtil::ToUpper(prm.calc.target);
+  return t.find("DENSITY") != std::string::npos || t.find("FLUX") != std::string::npos ||
+         t=="ALL" || t=="BOTH";
+}
+
+bool IsBackwardProductTarget_(const EarthUtil::AmpsParam& prm) {
+  // The parser default is CUTOFF_RIGIDITY for standalone backward compatibility.
+  // In coupled SWMF runs, keep requiring an explicit CALC_TARGET so old coupled
+  // 3d_forward inputs that omit #CALCULATION_MODE keep their historical forward
+  // particle-injection behavior.  Once CALC_TARGET is explicit, allow cutoff,
+  // density/flux, or both.
   return prm.calc.targetExplicit &&
-         EarthUtil::ToUpper(prm.calc.target) == "CUTOFF_RIGIDITY";
+         (TargetRequestsCutoff_(prm) || TargetRequestsDensityFlux_(prm));
 }
 
 bool IsForwardTarget_(const EarthUtil::AmpsParam& prm) {
-  return !IsCutoffTarget_(prm);
+  return !IsBackwardProductTarget_(prm);
 }
 
 void ApplyParsedDomainForCutoff_(const EarthUtil::AmpsParam& prm) {
@@ -212,11 +225,11 @@ void amps_pre_init() {
   s_prm.calc.fieldEvalMethod              = "SWMF";
   s_prm.mode3d.forceAnalyticMagneticField = false;
 
-  if (IsCutoffTarget_(s_prm)) {
-    // Coupled cutoff-rigidity mode.  Keep the regular AMPS/SWMF mesh path, but
-    // route per-coupling-step work to RunCutoffRigidity() instead of the
-    // 3d_forward injector.  The cutoff tracer will sample the current SWMF
-    // fields through Earth::Mode3D::EvaluateBackgroundMagneticFieldSI().
+  if (IsBackwardProductTarget_(s_prm)) {
+    // Coupled Mode3D backward-product mode.  Keep the regular AMPS/SWMF mesh path,
+    // but route per-coupling-step work to the Mode3D backward-product driver instead
+    // of the 3d_forward injector.  The mesh tracer will sample the current SWMF
+    // fields through the globalized PIC::CPLR magnetic-field data.
     Earth::ModelMode = Earth::CutoffRigidityMode;
     ApplyParsedDomainForCutoff_(s_prm);
 
@@ -302,12 +315,13 @@ void amps_init() {
   // Use the prm already parsed in amps_pre_init() — do not re-read the file.
   const EarthUtil::AmpsParam& prm = s_prm;
 
-  if (IsCutoffTarget_(prm)) {
-    // Coupled cutoff-rigidity mode needs only the generic AMPS/PIC
+  if (IsBackwardProductTarget_(prm)) {
+    // Coupled Mode3D backward-product mode needs only the generic AMPS/PIC
     // initialization already performed in main_lib.cpp before this hook is
-    // called.  Do not register forward-injection callbacks.  The actual cutoff
-    // calculation is launched from amps_cutoff_time_step() each time SWMF calls
-    // amps_time_step(), after the current MHD fields have been imported.
+    // called.  Do not register forward-injection callbacks.  The requested
+    // cutoff and/or density/flux calculation is launched from amps_cutoff_time_step()
+    // each time the cadence gate accepts an SWMF/PT callback and the current MHD
+    // fields have been imported.
     Earth::ModelMode = Earth::CutoffRigidityMode;
     ApplyParsedDomainForCutoff_(prm);
 
@@ -480,7 +494,25 @@ bool IsCutoffRigidityMode() {
 #if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
   return false;
 #else
-  return s_pre_initialized && IsCutoffTarget_(s_prm);
+  return s_pre_initialized && IsBackwardProductTarget_(s_prm);
+#endif
+}
+
+
+double GetCoupledCalculationCadenceSeconds() {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return 0.0;
+#else
+  // FIELD_UPDATE_DT is the standalone Mode3D control for the physical time spacing
+  // between magnetic-field snapshots in a driver-file run.  In live SWMF coupling the
+  // snapshots arrive through repeated AMPS/SWMF callbacks, but the same user intent
+  // applies: run expensive backward products every FIELD_UPDATE_DT minutes of actual
+  // simulation time.  If FIELD_UPDATE_DT is absent/non-positive, keep the previous
+  // one-hour default; users can set FIELD_UPDATE_DT <= 0 in future input conventions
+  // to request every callback once parser semantics allow explicit nonpositive values.
+  if (s_prm.temporal.fieldUpdateDt_min > 0.0)
+    return 60.0*s_prm.temporal.fieldUpdateDt_min;
+  return 3600.0;
 #endif
 }
 
@@ -583,7 +615,7 @@ void amps_cutoff_time_step() {
          "[Mode3DForwardSWMF] amps_cutoff_time_step() called before amps_pre_init().");
   }
 
-  if (!IsCutoffTarget_(s_prm)) return;
+  if (!IsBackwardProductTarget_(s_prm)) return;
 
   const long int callIndex = s_cutoff_call_counter;
   const double   tSim_s    = CurrentCutoffOutputTimeSeconds_();
@@ -596,6 +628,7 @@ void amps_cutoff_time_step() {
   s_last_cutoff_output_suffix_valid = true;
 
   Earth::Mode3D::SetCutoffOutputFileSuffix(suffix);
+  Earth::Mode3D::SetDensityOutputFileSuffix(suffix);
 
   if (PIC::ThisThread == 0) {
     std::cout << "[Mode3DForwardSWMF] cutoff snapshot " << callIndex
@@ -609,13 +642,21 @@ void amps_cutoff_time_step() {
     // before starting any backward tracing.
     PrepareGlobalSWMFCoupledMagneticFieldForCutoff(true);
 
-    // Run the Mode3D cutoff solver with progress reporting enabled for the coupled
-    // snapshot.  RunCutoffRigidity() defaults to no progress bar for other callers.
-    Earth::Mode3D::RunCutoffRigidity(s_prm,true);
+    // Run the products requested by CALC_TARGET.  Both products intentionally share
+    // the same globalized SWMF B snapshot prepared above, so cutoff, directional maps,
+    // density, spectra, and flux are physically synchronized and carry the same output
+    // suffix.  This mirrors the standalone Mode3D time-series driver, except that the
+    // magnetic snapshot comes from live SWMF coupling instead of a Tsyganenko driver file.
+    if (TargetRequestsCutoff_(s_prm)) {
+      Earth::Mode3D::RunCutoffRigidity(s_prm,true);
+    }
+    if (TargetRequestsDensityFlux_(s_prm)) {
+      Earth::Mode3D::RunDensityAndFlux(s_prm);
+    }
   }
   catch (const std::exception& e) {
     std::ostringstream msg;
-    msg << "[Mode3DForwardSWMF] SWMF-coupled cutoff-rigidity calculation failed: "
+    msg << "[Mode3DForwardSWMF] SWMF-coupled backward-product calculation failed: "
         << e.what();
     const std::string text = msg.str();
     exit(__LINE__,__FILE__,text.c_str());

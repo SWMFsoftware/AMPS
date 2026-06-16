@@ -662,7 +662,8 @@ static bool TraceAllowed3D(const EarthUtil::AmpsParam& prm,
                             double q_C,
                             double m0_kg,
                             const DomainBox3D& box,
-                            double maxTime_s = -1.0) {
+                            double maxTime_s = -1.0,
+                            Earth::GridlessMode::TrajectoryExitState* exitState = nullptr) {
     const double qabs = std::fabs(q_C);
     const double pMag = MomentumFromRigidity_GV(R_GV, qabs);
 
@@ -702,7 +703,43 @@ static bool TraceAllowed3D(const EarthUtil::AmpsParam& prm,
 
         // Boundary classification BEFORE the push (consistent with gridless).
         if (LostInnerSphere3D(x, box.rInner)) return false; // FORBIDDEN
-        if (!InsideBox3D(x, box))             return true;  // ALLOWED
+        if (!InsideBox3D(x, box)) {
+            // Particle has escaped the outer Mode3D box: trajectory is ALLOWED.
+            //
+            // Density/flux in ANISOTROPIC boundary mode needs the asymptotic exit
+            // state so it can evaluate the boundary pitch-angle distribution and
+            // optional spatial modulation in exactly the same manner as the gridless
+            // density solver.  The cutoff-rigidity calculation does not request this
+            // information, so the extra work is skipped unless exitState!=nullptr.
+            if (exitState) {
+                exitState->x_exit_m[0] = x.x;
+                exitState->x_exit_m[1] = x.y;
+                exitState->x_exit_m[2] = x.z;
+
+                // Recover velocity direction from relativistic momentum p=gamma*m*v.
+                // The common scalar factor 1/(gamma*m) cancels during normalization,
+                // but computing v explicitly keeps the intent clear and matches the
+                // gridless TraceAllowedSharedEx implementation.
+                const double p2n = dot(p,p);
+                const double mc  = m0_kg*SpeedOfLight;
+                const double gExit = std::sqrt(1.0 + p2n/(mc*mc));
+                const V3 vExit = v3unit(mul(1.0/(gExit*m0_kg), p));
+                exitState->v_exit_unit[0] = vExit.x;
+                exitState->v_exit_unit[1] = vExit.y;
+                exitState->v_exit_unit[2] = vExit.z;
+
+                // Pitch-angle cosine at the exit point.  The mesh field is valid up
+                // to the last in-domain cell; when the point has just crossed outside
+                // the box GetB_T may return zero.  In that case use cosAlpha=0, the
+                // same conservative fallback used by gridless when |B| is unavailable.
+                V3 Bexit; field.GetB_T(x, Bexit);
+                const double Bnorm = v3norm(Bexit);
+                exitState->cosAlpha = (Bnorm > 0.0)
+                    ? dot(vExit, mul(1.0/Bnorm, Bexit))
+                    : 0.0;
+            }
+            return true;  // ALLOWED
+        }
 
         const double timeRemaining = maxTraceTime_s - tTrace;
 
@@ -2151,7 +2188,66 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         if (!fin) MPI_Finalize();
     }
 
+
     return 0;
+}
+
+//======================================================================================
+// PUBLIC SHARED MESH TRAJECTORY CLASSIFIER
+//======================================================================================
+//
+// Mode3D density/flux must compute the same transmissivity as the gridless density
+// solver, but using the already-materialized AMR mesh field rather than direct
+// Tsyganenko calls.  The two wrappers below provide that bridge: they expose the
+// internal TraceAllowed3D() kernel through the same plain-array interface used by
+// GridlessMode::TraceAllowedShared/Ex().
+//
+// Important implementation notes:
+//   * The field evaluator is intentionally constructed per trajectory call instead of
+//     cached in thread-local storage.  It stores a reference to `prm`; caching it across
+//     standalone time snapshots would risk a dangling reference after the snapshot-local
+//     AmpsParam copy goes out of scope.  The evaluator itself is lightweight: the heavy
+//     state is the read-only AMR tree and cell data already resident in memory.
+//   * The domain box is reconstructed from Mode3D::ParsedDomainMin/Max each call.  Those
+//     values are set once before mesh construction in standalone mode and by the SWMF
+//     pre-init hook in coupled mode, so they are the authoritative trajectory geometry.
+//   * TraceAllowedMeshEx fills the same TrajectoryExitState structure as gridless so the
+//     anisotropic-density code can be backend-agnostic.
+//======================================================================================
+
+bool TraceAllowedMeshEx(const EarthUtil::AmpsParam& prm,
+                        const double x0_m_arr[3],
+                        const double v0_unit_arr[3],
+                        double R_GV,
+                        Earth::GridlessMode::TrajectoryExitState* exitState,
+                        double maxTraceTimeOverride_s) {
+    DomainBox3D box;
+    box.xMin = Earth::Mode3D::ParsedDomainMin[0];
+    box.xMax = Earth::Mode3D::ParsedDomainMax[0];
+    box.yMin = Earth::Mode3D::ParsedDomainMin[1];
+    box.yMax = Earth::Mode3D::ParsedDomainMax[1];
+    box.zMin = Earth::Mode3D::ParsedDomainMin[2];
+    box.zMax = Earth::Mode3D::ParsedDomainMax[2];
+    box.rInner = _EARTH__RADIUS_;
+
+    cMode3DMeshFieldEval field(prm);
+    const V3 x0_m{ x0_m_arr[0], x0_m_arr[1], x0_m_arr[2] };
+    const V3 v0_unit = v3unit(V3{ v0_unit_arr[0], v0_unit_arr[1], v0_unit_arr[2] });
+
+    const double q_C   = prm.species.charge_e * ElectronCharge;
+    const double m0_kg = prm.species.mass_amu * _AMU_;
+
+    return TraceAllowed3D(prm, field, x0_m, v0_unit, R_GV, q_C, m0_kg,
+                          box, maxTraceTimeOverride_s, exitState);
+}
+
+bool TraceAllowedMesh(const EarthUtil::AmpsParam& prm,
+                      const double x0_m[3],
+                      const double v0_unit[3],
+                      double R_GV,
+                      double maxTraceTimeOverride_s) {
+    return TraceAllowedMeshEx(prm, x0_m, v0_unit, R_GV, nullptr,
+                              maxTraceTimeOverride_s);
 }
 
 } // namespace Mode3D
