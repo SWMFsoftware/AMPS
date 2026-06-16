@@ -1389,8 +1389,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     }
 
     int mpiRank = 0, mpiSize = 1;
-    MPI_Comm_rank(MPI_COMM_WORLD, &mpiRank);
-    MPI_Comm_size(MPI_COMM_WORLD, &mpiSize);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &mpiRank);
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &mpiSize);
 
     //==================================================================================
     // 14.2 — Species constants
@@ -1640,7 +1640,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         // default no-progress path remains free of extra progress synchronization.
         MPI_Allreduce(locTotalPerShellLocal.data(),
                       locTotalPerShellGlobal.data(),
-                      nShells, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+                      nShells, MPI_INT, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
     }
 
     auto mode3d_now_seconds = []() -> double { return MPI_Wtime(); };
@@ -1943,15 +1943,15 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             // every rank still participates in the collective so the global
             // number represents the full MPI job, not only the root rank.
             MPI_Allreduce(&doneLocationsLocal,&doneLocationsGlobal,
-                          1,MPI_LONG_LONG,MPI_SUM,MPI_COMM_WORLD);
+                          1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
             MPI_Allreduce(&doneTasksLocal,&doneTasksGlobal,
-                          1,MPI_LONG_LONG,MPI_SUM,MPI_COMM_WORLD);
+                          1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
             if (isShells) {
                 MPI_Allreduce(locDonePerShellLocal.data(),
                               locDonePerShellGlobal.data(),
-                              nShells,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
+                              nShells,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
             }
 
             maybePrintProgress(doneLocationsGlobal,doneTasksGlobal,locDonePerShellGlobal,
@@ -1973,7 +1973,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     std::vector<int> displs(mpiSize, 0);
 
     // Each rank announces its nLocal to rank 0
-    MPI_Gather(&nLocal, 1, MPI_INT, recvCounts.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Gather(&nLocal, 1, MPI_INT, recvCounts.data(), 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
 
     std::vector<double> rcAll, eminAll;
     if (mpiRank == 0) {
@@ -1988,11 +1988,11 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 
     MPI_Gatherv(rcLocal.data(),   nLocal, MPI_DOUBLE,
                 rcAll.data(),   recvCounts.data(), displs.data(), MPI_DOUBLE,
-                0, MPI_COMM_WORLD);
+                0, MPI_GLOBAL_COMMUNICATOR);
 
     MPI_Gatherv(eminLocal.data(), nLocal, MPI_DOUBLE,
                 eminAll.data(), recvCounts.data(), displs.data(), MPI_DOUBLE,
-                0, MPI_COMM_WORLD);
+                0, MPI_GLOBAL_COMMUNICATOR);
 
     // Optional directional-map gather.
     //
@@ -2044,10 +2044,10 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 
         MPI_Gatherv(dirMapLocal.data(), sendCountMap, MPI_DOUBLE,
                     dirMapAll.data(), recvCountsMap.data(), displsMap.data(), MPI_DOUBLE,
-                    0, MPI_COMM_WORLD);
+                    0, MPI_GLOBAL_COMMUNICATOR);
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
     //==================================================================================
     // 14.11 — Output (rank 0 only)
