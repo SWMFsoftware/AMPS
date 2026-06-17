@@ -129,6 +129,85 @@ bool IsForwardTarget_(const EarthUtil::AmpsParam& prm) {
   return !IsBackwardProductTarget_(prm);
 }
 
+// Return the physical simulation-time interval, in seconds, between two
+// expensive SWMF-coupled backward-product calculations.  Backward products are
+// the particle-backtracking diagnostics handled by Mode3D in a coupled PT run:
+// cutoff rigidity, density/flux, or both.  The same helper is used by two
+// pieces of code that must stay synchronized:
+//
+//   1. main_lib.cpp::amps_time_step(), through the public
+//      GetCoupledCalculationCadenceSeconds(), uses this value to decide whether
+//      the current SWMF callback should run a new backtracking calculation or
+//      be skipped until the next requested physical time.
+//
+//   2. ConfigureBackwardProductGlobalTimeStep_(), below, writes the same value
+//      into PIC::ParticleWeightTimeStep::GlobalTimeStep[0].  In SWMF-coupled
+//      runs that array is also visible to the generic AMPS/PT time-step
+//      infrastructure.  For cutoff/density backtracking there is no forward
+//      particle population whose CFL/gyro time step should control the PT
+//      component.  Therefore species 0 is assigned the diagnostic cadence
+//      itself: one PT time step corresponds to one requested cutoff/density
+//      calculation interval.
+//
+// Units: #TEMPORAL/FIELD_UPDATE_DT is specified in minutes in AMPS_PARAM.in;
+// this helper returns seconds.  If the input does not provide a positive value,
+// preserve the historical coupled-diagnostic default of one hour.
+double BackwardProductCadenceSecondsFromPrm_(const EarthUtil::AmpsParam& prm) {
+  if (prm.temporal.fieldUpdateDt_min > 0.0) {
+    return 60.0*prm.temporal.fieldUpdateDt_min;
+  }
+
+  return 3600.0;
+}
+
+// Configure the AMPS/PIC global time step used by the SWMF-coupled Mode3D
+// backtracking products.  This function is intentionally private to the SWMF
+// bridge because standalone Mode3D does not use PIC::SimulationTime to schedule
+// a live coupled component; standalone snapshot looping is driven directly by
+// the parsed input file.
+//
+// Why GlobalTimeStep[0] must be set here:
+//   The cutoff and density/flux products are not advanced by a normal forward
+//   particle push.  They are instantaneous diagnostics computed by backward
+//   tracing many test trajectories through the current meshed magnetic field.
+//   In a live SWMF-coupled run the physically meaningful interval is therefore
+//   the interval between two diagnostic evaluations, not a particle CFL time
+//   step.  Assigning GlobalTimeStep[0] to that interval makes the PT component's
+//   species-0 time step consistent with the cadence gate that actually launches
+//   the calculations.
+//
+// Only species zero is modified because the backtracking products currently use
+// the proton/species-0 conventions throughout the Mode3D cutoff and density
+// modules.  Forward 3d_forward_swmf runs are not affected; they overwrite
+// GlobalTimeStep[species] later with the true forward-particle integration step.
+//
+// The function returns the value written so callers can include it in diagnostic
+// messages without recomputing or risking a mismatch.
+double ConfigureBackwardProductGlobalTimeStep_(const EarthUtil::AmpsParam& prm,
+                                               bool verbose) {
+  const double cadence_s = BackwardProductCadenceSecondsFromPrm_(prm);
+
+  if (!std::isfinite(cadence_s) || cadence_s <= 0.0) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] Invalid coupled Mode3D backward-product cadence. "
+         "#TEMPORAL/FIELD_UPDATE_DT must define a positive interval in minutes, "
+         "or be omitted to use the one-hour default.");
+  }
+
+  PIC::ParticleWeightTimeStep::GlobalTimeStep[0] = cadence_s;
+
+  if (verbose && PIC::ThisThread == 0) {
+    std::cout << "[Mode3DForwardSWMF] Set "
+              << "PIC::ParticleWeightTimeStep::GlobalTimeStep[0]="
+              << cadence_s
+              << " s for SWMF-coupled Mode3D backward products "
+              << "(cutoff and/or density/flux cadence).\n";
+    std::cout.flush();
+  }
+
+  return cadence_s;
+}
+
 void ApplyParsedDomainForCutoff_(const EarthUtil::AmpsParam& prm) {
   Earth::Mode3D::ParsedDomainActive = true;
   Earth::Mode3D::ParsedDomainMin[0] = prm.domain.xMin * 1000.0;
@@ -329,11 +408,22 @@ void amps_init() {
       PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(s,1.0);
     }
 
+    // Synchronize the generic AMPS/PIC species-0 time step with the physical
+    // cadence of the SWMF-coupled backtracking diagnostics.  The cadence gate in
+    // main_lib.cpp uses exactly the same value through
+    // GetCoupledCalculationCadenceSeconds(), so the stored time step, skip/run
+    // decision, and output timestamps are all based on one common interval.
+    const double backwardProductCadence_s =
+        ConfigureBackwardProductGlobalTimeStep_(prm,/*verbose=*/true);
+
     PIC::Mover::BackwardTimeIntegrationMode = _PIC_MODE_OFF_;
 
     if (PIC::ThisThread == 0)
-      std::cout << "[Mode3DForwardSWMF] Initialized SWMF-coupled cutoff-rigidity runtime. "
-                << "Each amps_time_step() call will write a timestamped cutoff snapshot.\n";
+      std::cout << "[Mode3DForwardSWMF] Initialized SWMF-coupled Mode3D "
+                << "backward-product runtime. Calculation cadence="
+                << backwardProductCadence_s
+                << " s; each accepted amps_time_step() call writes "
+                << "timestamped cutoff/density outputs as requested by CALC_TARGET.\n";
     return;
   }
 
@@ -503,16 +593,12 @@ double GetCoupledCalculationCadenceSeconds() {
 #if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
   return 0.0;
 #else
-  // FIELD_UPDATE_DT is the standalone Mode3D control for the physical time spacing
-  // between magnetic-field snapshots in a driver-file run.  In live SWMF coupling the
-  // snapshots arrive through repeated AMPS/SWMF callbacks, but the same user intent
-  // applies: run expensive backward products every FIELD_UPDATE_DT minutes of actual
-  // simulation time.  If FIELD_UPDATE_DT is absent/non-positive, keep the previous
-  // one-hour default; users can set FIELD_UPDATE_DT <= 0 in future input conventions
-  // to request every callback once parser semantics allow explicit nonpositive values.
-  if (s_prm.temporal.fieldUpdateDt_min > 0.0)
-    return 60.0*s_prm.temporal.fieldUpdateDt_min;
-  return 3600.0;
+  // Keep the public cadence query bit-for-bit consistent with the value written
+  // to PIC::ParticleWeightTimeStep::GlobalTimeStep[0] in amps_init().  Do not
+  // duplicate the FIELD_UPDATE_DT parsing/default logic here; otherwise the PT
+  // scheduler time step and the cutoff/density cadence gate could drift apart
+  // after a future input-format edit.
+  return BackwardProductCadenceSecondsFromPrm_(s_prm);
 #endif
 }
 
