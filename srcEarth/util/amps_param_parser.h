@@ -830,6 +830,19 @@ namespace EarthUtil {
     // false: AMR interpolation from cell-centered data populated by InitMeshFields().
     // true : direct analytic/background evaluator call via EvaluateBackgroundMagneticFieldSI().
     bool forceAnalyticMagneticField{false};
+
+    // Backward density/spectrum intra-rank parallel backend.
+    //   OPENMP  : use the existing OpenMP loops over energies/directions.
+    //   THREADS : use direct std::thread workers over observation locations and suppress
+    //             nested OpenMP inside those workers.
+    //   SERIAL  : no shared-memory parallelism inside each MPI rank.
+    // Empty means use the code default (OPENMP unless overridden by environment).
+    std::string densityParallelBackend{""};
+
+    // Per-MPI-rank shared-memory thread count used by the selected backend.
+    // 0 means automatic: use OMP_NUM_THREADS/omp_get_max_threads for OpenMP-aware
+    // builds or hardware_concurrency for the direct std::thread backend.
+    int densityThreads{0};
   };
 
   //====================================================================================

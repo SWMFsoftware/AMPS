@@ -1588,6 +1588,25 @@ int main(int argc,char **argv) {
           }
         }
 
+        // Mode3D density-backtracking shared-memory backend.  These settings are
+        // intentionally stored in AmpsParam so the same RunDensityAndFlux() code path
+        // can be used by standalone Mode3D and the SWMF-coupled backward products.
+        if (!cli.densityParallelBackend.empty()) {
+          const std::string backend = EarthUtil::ToUpper(cli.densityParallelBackend);
+          if (backend=="OPENMP" || backend=="OMP" || backend=="THREADS" ||
+              backend=="THREAD" || backend=="STD_THREAD" || backend=="STD_THREADS" ||
+              backend=="SERIAL" || backend=="NONE") {
+            p.mode3d.densityParallelBackend = backend;
+          }
+          else {
+            std::cerr << "Error: unknown -density-parallel backend '"
+                      << cli.densityParallelBackend
+                      << "'. Valid values: OPENMP, THREADS, SERIAL.\n";
+            return 1;
+          }
+        }
+        if (cli.densityThreads > 0) p.mode3d.densityThreads = cli.densityThreads;
+
         // Keep the trajectory integrator identical to the gridless path when
         // the user selects a mover on the command line.
         if (!ApplyCutoffMoverCli(cli)) return 1;

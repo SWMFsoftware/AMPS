@@ -881,6 +881,13 @@ Common options:
 
 -mode3d-field-eval <INTERPOLATION|ANALYTIC>
     For standalone Mode3D, choose whether tracing uses mesh interpolation or direct analytic/background evaluation.
+
+-density-parallel <OPENMP|THREADS|SERIAL>
+    Select the shared-memory backend for Mode3D density backtracking within each MPI process.
+    OPENMP preserves the existing OpenMP loops. THREADS uses direct std::thread workers over observation locations and suppresses nested OpenMP inside those workers. SERIAL disables intra-rank shared-memory parallelism.
+
+-density-threads <N>
+    Number of shared-memory workers per MPI process. For OPENMP this sets omp_set_num_threads(N). For THREADS this sets the number of std::thread workers. N=0 means automatic.
 ```
 
 Forward-mode options:
@@ -1181,6 +1188,14 @@ Standalone mesh-backed cutoff plus density/flux:
 ```bash
 mpirun -np 8 ./amps -mode 3d -i mode3d_products.in
 ```
+
+Standalone mesh-backed density/flux using direct threads inside each MPI rank:
+
+```bash
+mpirun -np 8 ./amps -mode 3d -i mode3d_products.in -density-parallel THREADS -density-threads 8
+```
+
+In SWMF-coupled PT runs the standalone CLI is usually not used; the same backend can be selected from the input file with `DENSITY_PARALLEL THREADS` and `DENSITY_THREADS 8` in `#NUMERICAL` or `#DENSITY_SPECTRUM`, or with environment variables `AMPS_MODE3D_DENSITY_PARALLEL=THREADS` and `AMPS_MODE3D_DENSITY_THREADS=8`.
 
 Standalone mesh-backed direct-field cross-check:
 

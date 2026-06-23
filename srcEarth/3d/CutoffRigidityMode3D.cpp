@@ -136,6 +136,7 @@
 #include <vector>
 #include <algorithm>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <iostream>
@@ -381,11 +382,11 @@ public:
 
             // Evaluate with the same function used by InitMeshFields().  This path
             // may touch shared model state (Tsyganenko/TA Fortran common blocks, or
-            // the dipole helper state), so serialize it when OpenMP is enabled.
-#ifdef _OPENMP
-#pragma omp critical(Mode3DAnalyticMagneticFieldEval)
-#endif
+            // the dipole helper state), so serialize it for both OpenMP and direct
+            // std::thread density workers.
+            static std::mutex analyticFieldMutex;
             {
+                std::lock_guard<std::mutex> lock(analyticFieldMutex);
                 Earth::Mode3D::EvaluateBackgroundMagneticFieldSI(B, xArr, prm_);
             }
 
@@ -409,18 +410,53 @@ public:
             return;
         }
 
-	if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_) {
-          double B[3];
+        if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_) {
+            // Do not call PIC::CPLR::InitInterpolationStencil() +
+            // PIC::CPLR::GetBackgroundMagneticField() here.  In AMPS hybrid builds,
+            // GetBackgroundMagneticField(B) reads the global
+            // CellCentered::StencilTable[omp_get_thread_num()]. That is correct inside
+            // an OpenMP team, but plain std::thread workers all see OpenMP thread id 0
+            // and would race on the same stencil entry.  Build a stack-local stencil
+            // instead and read the already materialized SWMF cell-centered B field
+            // directly from PIC::CPLR::SWMF::MagneticFieldOffset.  This exactly matches
+            // the cell accessor in AMPS (SWMF::GetBackgroundMagneticField(cell) is a
+            // memcpy from that offset) while keeping both OpenMP and std::thread paths
+            // thread-safe.
+            if (PIC::CPLR::SWMF::MagneticFieldOffset < 0) {
+                B_T.x = B_T.y = B_T.z = 0.0;
+                return;
+            }
 
-          PIC::CPLR::InitInterpolationStencil(xArr,node);
-	  PIC::CPLR::GetBackgroundMagneticField(B);
+            PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
+            PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xArr,node,Stencil);
 
-          B_T.x = B[0];
-          B_T.y = B[1];
-          B_T.z = B[2];
+            if (Stencil.Length <= 0) {
+                B_T.x = B_T.y = B_T.z = 0.0;
+                return;
+            }
 
-	  return;
-	}
+            double B[3] = {0.0,0.0,0.0};
+            double BCell[3];
+
+            for (int iStencil = 0; iStencil < Stencil.Length; ++iStencil) {
+                PIC::Mesh::cDataCenterNode* center = Stencil.cell[iStencil];
+                if (center == nullptr) continue;
+
+                const char* data =
+                    PIC::CPLR::SWMF::MagneticFieldOffset + center->GetAssociatedDataBufferPointer();
+                std::memcpy(BCell,data,3*sizeof(double));
+
+                const double w = Stencil.Weight[iStencil];
+                B[0] += w*BCell[0];
+                B[1] += w*BCell[1];
+                B[2] += w*BCell[2];
+            }
+
+            B_T.x = B[0];
+            B_T.y = B[1];
+            B_T.z = B[2];
+            return;
+        }
 
         if (!PIC::CPLR::DATAFILE::Offset::MagneticField.active) {
             B_T.x = B_T.y = B_T.z = 0.0;

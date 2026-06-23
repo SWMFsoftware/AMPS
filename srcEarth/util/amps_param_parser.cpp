@@ -2490,6 +2490,14 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="MAX_STEPS") p.numerics.maxSteps=std::stoi(val);
       else if (uKey=="MAX_TRACE_TIME") p.numerics.maxTraceTime_s=std::stod(val);
       else if (uKey=="MAX_TRACE_DISTANCE") p.numerics.maxTraceDistance_Re=std::stod(val);
+      else if (uKey=="DENSITY_PARALLEL" || uKey=="DENSITY_BACKEND" ||
+               uKey=="MODE3D_DENSITY_PARALLEL" || uKey=="MODE3D_DENSITY_BACKEND") {
+        p.mode3d.densityParallelBackend=ToUpper(Trim(val));
+      }
+      else if (uKey=="DENSITY_THREADS" || uKey=="DENSITY_NTHREADS" ||
+               uKey=="MODE3D_DENSITY_THREADS" || uKey=="MODE3D_DENSITY_NTHREADS") {
+        p.mode3d.densityThreads=std::stoi(val);
+      }
       else if (uKey=="DS_BOUNDARY_MODE") {
         // Legacy inputs placed this density/spectrum setting in #NUMERICAL.
         // Keep it recognized, but route it to the same destination as the
@@ -2586,6 +2594,16 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="DS_MAX_TRAJ_TIME") p.densitySpectrum.maxTrajTime_s=std::stod(val);
       else if (uKey=="DS_ENERGY_SPACING") p.densitySpectrum.spacing=ParseEnergySpacingToken(val);
       else if (uKey=="DS_BOUNDARY_MODE") p.densitySpectrum.boundaryMode=ToUpper(val);
+      else if (uKey=="DS_PARALLEL" || uKey=="DS_BACKEND" ||
+               uKey=="DENSITY_PARALLEL" || uKey=="DENSITY_BACKEND" ||
+               uKey=="MODE3D_DENSITY_PARALLEL" || uKey=="MODE3D_DENSITY_BACKEND") {
+        p.mode3d.densityParallelBackend=ToUpper(Trim(val));
+      }
+      else if (uKey=="DS_THREADS" || uKey=="DS_NTHREADS" ||
+               uKey=="DENSITY_THREADS" || uKey=="DENSITY_NTHREADS" ||
+               uKey=="MODE3D_DENSITY_THREADS" || uKey=="MODE3D_DENSITY_NTHREADS") {
+        p.mode3d.densityThreads=std::stoi(val);
+      }
       else rejectUnknownKeyword();
     }
     else if (section=="#SPECTRUM") {
@@ -2796,6 +2814,21 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
     if (p.numerics.maxTraceDistance_Re < 0.0) {
       exit(__LINE__,__FILE__,"MAX_TRACE_DISTANCE must be >= 0 (0 means: disabled)");
+    }
+    if (p.mode3d.densityThreads < 0) {
+      exit(__LINE__,__FILE__,"DENSITY_THREADS/MODE3D_DENSITY_THREADS must be >= 0 (0 means: automatic)");
+    }
+    if (!p.mode3d.densityParallelBackend.empty()) {
+      const std::string db = ToUpper(p.mode3d.densityParallelBackend);
+      if (db!="OPENMP" && db!="OMP" && db!="THREAD" && db!="THREADS" &&
+          db!="STD_THREAD" && db!="STD_THREADS" && db!="SERIAL" && db!="NONE" &&
+          db!="OFF") {
+        std::ostringstream _exit_msg;
+        _exit_msg << "DENSITY_PARALLEL/MODE3D_DENSITY_PARALLEL must be OPENMP, THREADS, or SERIAL (got '"
+                  << p.mode3d.densityParallelBackend << "')";
+        exit(__LINE__,__FILE__,_exit_msg.str().c_str());
+      }
+      p.mode3d.densityParallelBackend = db;
     }
     // Validate DS_BOUNDARY_MODE token.
     const std::string bm = ToUpper(p.densitySpectrum.boundaryMode);

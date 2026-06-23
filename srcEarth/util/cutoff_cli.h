@@ -70,6 +70,17 @@
 //       ANALYTIC calls the same background-field function used to initialize the
 //       mesh cell centers.
 //
+//   -density-parallel <OPENMP|THREADS|SERIAL>
+//       Select the shared-memory backend used by Mode3D density backtracking inside
+//       each MPI process. OPENMP preserves the legacy OpenMP path; THREADS uses a
+//       direct std::thread work queue over observation locations; SERIAL disables
+//       intra-rank shared-memory parallelism.
+//
+//   -density-threads <int>
+//       Number of shared-memory workers per MPI process for the selected density
+//       backend. For OPENMP this calls omp_set_num_threads(N); for THREADS it sets
+//       the number of std::thread workers.
+//
 //   -max-trace-distance <double>
 //       Override #NUMERICAL MAX_TRACE_DISTANCE from the input file.
 //       Units: Earth radii (Re) of cumulative traced path length.
@@ -154,6 +165,15 @@ namespace EarthUtil {
     // Empty or INTERPOLATION uses the AMR interpolation stencil.
     // ANALYTIC calls Earth::Mode3D::EvaluateBackgroundMagneticFieldSI directly.
     std::string mode3dFieldEval{""};
+
+    // -density-parallel <OPENMP|THREADS|SERIAL>
+    // Optional Mode3D density-backtracking shared-memory backend override.
+    // Empty string means: use default/environment.
+    std::string densityParallelBackend{""};
+
+    // -density-threads <int>
+    // Number of shared-memory workers per MPI process. 0 means automatic/default.
+    int densityThreads{0};
 
     // -max-trace-distance <double>
     // Optional CLI override for #NUMERICAL MAX_TRACE_DISTANCE.

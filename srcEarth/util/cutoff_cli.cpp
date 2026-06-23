@@ -45,6 +45,8 @@
 //     -mode3d-field-eval <INTERPOLATION|ANALYTIC>        3D B-field source during tracing.
 //     -density-mode <ISOTROPIC|ANISOTROPIC>
 //                              Override DS_BOUNDARY_MODE from input file.
+//     -density-parallel <OPENMP|THREADS|SERIAL>          Mode3D density backend.
+//     -density-threads <int>                             threads per MPI process.
 //
 //   See amps_param_parser.h for a full description of the input file format.
 //
@@ -89,6 +91,25 @@ CliOptions ParseCli(int argc,char** argv) {
       // Supported values (case-insensitive): ISOTROPIC | ANISOTROPIC
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density-mode");
       opt.densityMode=argv[++i];
+    }
+    else if (a=="-density-parallel" || a=="--density-parallel" ||
+             a=="-mode3d-density-parallel" || a=="--mode3d-density-parallel" ||
+             a=="-mode3d-density-backend" || a=="--mode3d-density-backend") {
+      // Select shared-memory backend for Mode3D density backtracking within each
+      // MPI process.  Validated in main after parsing.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density-parallel");
+      opt.densityParallelBackend=argv[++i];
+    }
+    else if (a=="-density-threads" || a=="--density-threads" ||
+             a=="-mode3d-density-threads" || a=="--mode3d-density-threads" ||
+             a=="-n-density-threads" || a=="--n-density-threads") {
+      // Number of shared-memory workers per MPI rank for Mode3D density
+      // backtracking.  For OPENMP this maps to omp_set_num_threads(N); for
+      // THREADS it is the number of std::thread workers.  0 means automatic.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density-threads");
+      opt.densityThreads=std::stoi(argv[++i]);
+      if (opt.densityThreads < 0)
+        exit(__LINE__,__FILE__,"-density-threads must be >= 0 (0 means automatic)");
     }
     else if (a=="-mode3d-output-initialized" || a=="--mode3d-output-initialized" ||
              a=="-output-3d-initialized" || a=="--output-3d-initialized") {
@@ -293,6 +314,20 @@ std::string HelpMessage(const char* progName) {
   out << "        ANALYTIC       Call the same background-field evaluator used to prepopulate\n";
   out << "                       the mesh cell centers. Alias: --mode3d-analytic-field.\n\n";
 
+  out << "  -density-parallel | --density-parallel <OPENMP|THREADS|SERIAL>   (optional)\n";
+  out << "      Select the Mode3D density-backtracking shared-memory backend inside\n";
+  out << "      each MPI process. OPENMP preserves the existing OpenMP loops; THREADS\n";
+  out << "      uses direct std::thread workers over observation locations and disables\n";
+  out << "      nested OpenMP inside those workers; SERIAL disables intra-rank shared\n";
+  out << "      memory parallelism. Aliases: --mode3d-density-parallel,\n";
+  out << "      --mode3d-density-backend.\n\n";
+
+  out << "  -density-threads | --density-threads <N>   (optional; 0=automatic)\n";
+  out << "      Number of shared-memory workers per MPI process for Mode3D density\n";
+  out << "      backtracking. For OPENMP this calls omp_set_num_threads(N). For THREADS\n";
+  out << "      this sets the number of std::thread workers. Aliases:\n";
+  out << "      --mode3d-density-threads, --n-density-threads.\n\n";
+
   out << "  -max-trace-distance | --max-trace-distance <double>   (optional)\n";
   out << "\n";
   out << "3D Forward mode options (-mode 3d_forward):\n\n";
@@ -424,6 +459,8 @@ std::string HelpMessage(const char* progName) {
   out << "    -mode3d-output-initialized is supplied.\n";
   out << "  * Mode3D magnetic-field tracing uses interpolation by default; use\n";
   out << "    -mode3d-field-eval ANALYTIC for direct background-field evaluation.\n";
+  out << "  * Mode3D density backtracking can use -density-parallel OPENMP or THREADS;\n";
+  out << "    use -density-threads N to set workers per MPI process.\n";
   out << "  * MPI: rank 0 is master scheduler; ranks 1..N-1 are workers.\n";
   out << "    Dynamic point-level scheduling; no static decomposition.\n";
   out << "  * See AnisotropicSpectrum.h for the full physics derivation of the\n";

@@ -56,14 +56,18 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
+#include <cstdlib>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -82,6 +86,92 @@ static inline bool InsideOpenMPParallelRegion_() {
 #else
   return false;
 #endif
+}
+
+// Direct std::thread density workers run outside OpenMP.  Guard nested OpenMP loops
+// with this thread-local flag so THREADS mode does not oversubscribe by launching
+// OpenMP teams inside every std::thread worker.
+static thread_local bool gInsideDirectDensityWorker_ = false;
+
+struct DirectDensityWorkerScope_ {
+  DirectDensityWorkerScope_()  { gInsideDirectDensityWorker_ = true; }
+  ~DirectDensityWorkerScope_() { gInsideDirectDensityWorker_ = false; }
+};
+
+static inline bool InsideDirectDensityWorker_() {
+  return gInsideDirectDensityWorker_;
+}
+
+enum class DensityParallelBackend_ { OPENMP, THREADS, SERIAL };
+
+static const char* DensityParallelBackendName_(DensityParallelBackend_ backend) {
+  switch (backend) {
+  case DensityParallelBackend_::OPENMP:  return "OPENMP";
+  case DensityParallelBackend_::THREADS: return "THREADS";
+  case DensityParallelBackend_::SERIAL:  return "SERIAL";
+  }
+  return "UNKNOWN";
+}
+
+static int ParsePositiveIntEnv_(const char* name) {
+  const char* v = std::getenv(name);
+  if (v == nullptr || *v == '\0') return 0;
+  try {
+    const int n = std::stoi(std::string(v));
+    return (n > 0) ? n : 0;
+  }
+  catch (...) {
+    return 0;
+  }
+}
+
+static DensityParallelBackend_ ResolveDensityParallelBackend_(const EarthUtil::AmpsParam& prm) {
+  std::string token = prm.mode3d.densityParallelBackend;
+  if (token.empty()) {
+    const char* env = std::getenv("AMPS_MODE3D_DENSITY_PARALLEL");
+    if (env != nullptr) token = env;
+  }
+
+  token = EarthUtil::ToUpper(token);
+  if (token.empty() || token == "OPENMP" || token == "OMP") {
+#ifdef _OPENMP
+    return DensityParallelBackend_::OPENMP;
+#else
+    return DensityParallelBackend_::SERIAL;
+#endif
+  }
+  if (token == "THREAD" || token == "THREADS" || token == "STD_THREAD" ||
+      token == "STD_THREADS" || token == "PTHREAD" || token == "PTHREADS") {
+    return DensityParallelBackend_::THREADS;
+  }
+  if (token == "SERIAL" || token == "NONE" || token == "OFF") {
+    return DensityParallelBackend_::SERIAL;
+  }
+
+  std::ostringstream msg;
+  msg << "Mode3D density: unknown density parallel backend '" << token
+      << "'. Valid values: OPENMP, THREADS, SERIAL.";
+  exit(__LINE__,__FILE__,msg.str().c_str());
+  return DensityParallelBackend_::SERIAL;
+}
+
+static int ResolveDensityThreadCount_(const EarthUtil::AmpsParam& prm,
+                                      DensityParallelBackend_ backend) {
+  int n = prm.mode3d.densityThreads;
+  if (n <= 0) n = ParsePositiveIntEnv_("AMPS_MODE3D_DENSITY_THREADS");
+  if (n <= 0) n = ParsePositiveIntEnv_("OMP_NUM_THREADS");
+
+#ifdef _OPENMP
+  if (n <= 0 && backend == DensityParallelBackend_::OPENMP) n = omp_get_max_threads();
+#endif
+
+  if (n <= 0) {
+    const unsigned hw = std::thread::hardware_concurrency();
+    n = (hw > 0) ? (int)hw : 1;
+  }
+
+  if (n < 1) n = 1;
+  return n;
 }
 
 static inline double Norm_(const V3& a) {
@@ -245,6 +335,12 @@ static V3 ShellLocationGSM_m_(const EarthUtil::AmpsParam& prm,
   if (EarthUtil::ToUpper(prm.field.model) == "DIPOLE") return xFixed;
 
 #ifndef _NO_SPICE_CALLS_
+  // SPICE itself and this small rotation cache are shared state.  Protect this
+  // location transform so direct std::thread density workers cannot race while
+  // updating cachedEpoch/rot or calling SPICE routines.
+  static std::mutex spiceRotationMutex;
+  std::lock_guard<std::mutex> lock(spiceRotationMutex);
+
   static std::string cachedEpoch;
   static SpiceDouble rot[3][3];
   if (cachedEpoch != prm.field.epoch) {
@@ -334,7 +430,7 @@ static double ComputeT_atEnergy_Mode3D_(const EarthUtil::AmpsParam& prm,
   double weightSum = 0.0;
 
 #ifdef _OPENMP
-#pragma omp parallel for default(none) shared(dirs,prm,x0_arr,Rgv,maxTrajTime_s,doAnisotropic,anisoPar) reduction(+:weightSum) if(!InsideOpenMPParallelRegion_() && (int)dirs.size() > 1) schedule(dynamic)
+#pragma omp parallel for default(none) shared(dirs,prm,x0_arr,Rgv,maxTrajTime_s,doAnisotropic,anisoPar) reduction(+:weightSum) if(!InsideOpenMPParallelRegion_() && !InsideDirectDensityWorker_() && (int)dirs.size() > 1) schedule(dynamic)
 #endif
   for (int idir=0; idir<(int)dirs.size(); ++idir) {
     const V3& arrivalDir = dirs[(std::size_t)idir];
@@ -407,6 +503,15 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
   const bool doAnisotropic = (EarthUtil::ToUpper(prm.densitySpectrum.boundaryMode) == "ANISOTROPIC");
   const double qabs_C = std::fabs(prm.species.charge_e)*QE;
   const double m0_kg  = prm.species.mass_amu*AMU;
+
+  const DensityParallelBackend_ densityBackend = ResolveDensityParallelBackend_(prm);
+  const int densityThreadCount = ResolveDensityThreadCount_(prm,densityBackend);
+
+#ifdef _OPENMP
+  if (densityBackend == DensityParallelBackend_::OPENMP && densityThreadCount > 0) {
+    omp_set_num_threads(densityThreadCount);
+  }
+#endif
 
   //====================================================================================
   // Global progress-bar bookkeeping
@@ -582,18 +687,35 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
     const V3 x0_m = LocationByIndex_m_(prm,loc,nLon,nLat,res_deg,nPtsShell);
     std::vector<double> T((std::size_t)nE,0.0);
 
+    // The OpenMP loop is inside a C++ lambda.  With default(none), GCC treats
+    // variables captured by the enclosing lambda as closure members and may not
+    // accept them in the OpenMP data-sharing clauses by their original names.
+    // Use local pointer/value aliases declared inside this lambda body, and
+    // reference only those aliases inside the parallel region.
+    const int nE_local = nE;
+    const std::vector<double>* E_MeV_ptr = &E_MeV;
+    const EarthUtil::AmpsParam* prm_ptr = &prm;
+    const std::vector<V3>* dirsUse_ptr = &dirsUse;
+    const EarthUtil::AnisotropyParam* aniso_ptr = &prm.anisotropy;
+    const bool doAnisotropic_local = doAnisotropic;
+    const double qabs_C_local = qabs_C;
+    const double m0_kg_local = m0_kg;
+    const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
+                                ? prm.densitySpectrum.maxTrajTime_s
+                                : -1.0;
+
 #ifdef _OPENMP
-#pragma omp parallel for default(none) shared(T,E_MeV,prm,x0_m,dirsUse,doAnisotropic,qabs_C,m0_kg,nE) if(nE > 1) schedule(dynamic)
+#pragma omp parallel for default(none) \
+  shared(T,x0_m,E_MeV_ptr,prm_ptr,dirsUse_ptr,aniso_ptr) \
+  firstprivate(nE_local,doAnisotropic_local,qabs_C_local,m0_kg_local,maxTraceTime_s) \
+  if(!InsideDirectDensityWorker_() && nE_local > 1) schedule(dynamic)
 #endif
-    for (int ie=0; ie<nE; ++ie) {
-      const double Ej  = E_MeV[(std::size_t)ie]*MEV_TO_J;
-      const double Rgv = RigidityFromEnergy_GV_(Ej,qabs_C,m0_kg);
-      const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
-                                  ? prm.densitySpectrum.maxTrajTime_s
-                                  : -1.0;
-      T[(std::size_t)ie] = ComputeT_atEnergy_Mode3D_(prm,x0_m,Rgv,dirsUse,
-                                                     maxTraceTime_s,doAnisotropic,
-                                                     prm.anisotropy);
+    for (int ie=0; ie<nE_local; ++ie) {
+      const double Ej  = (*E_MeV_ptr)[(std::size_t)ie]*MEV_TO_J;
+      const double Rgv = RigidityFromEnergy_GV_(Ej,qabs_C_local,m0_kg_local);
+      T[(std::size_t)ie] = ComputeT_atEnergy_Mode3D_(*prm_ptr,x0_m,Rgv,*dirsUse_ptr,
+                                                     maxTraceTime_s,doAnisotropic_local,
+                                                     *aniso_ptr);
     }
 
     std::vector<double> EjGrid((std::size_t)nE,0.0), densIntegrand((std::size_t)nE,0.0);
@@ -620,19 +742,68 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
 
   maybePrintProgress(0,0,locDonePerShellGlobal,true);
 
-  // Use the same synchronized-batch strategy as the cutoff solver.  The batch count is
-  // capped so progress reporting adds at most a small number of collective calls even for
-  // very large shell maps, while still updating often enough to be useful interactively.
-  const int nProgressBatches = std::max(1,std::min(nLoc,200));
+  // Use a synchronized-batch strategy for progress reporting, but do not make the
+  // batches so small that the direct-thread backend is serialized.  The old
+  // choice min(nLoc,200) can be pathological for coarse shell maps: for example,
+  // with nLoc=180 and 10 MPI ranks each rank owns about 18 locations, while 180
+  // progress batches gives only 0 or 1 local location per batch.  Then
+  // nWorkers=min(densityThreadCount,nWork) becomes 1 even when DENSITY_THREADS=8.
+  int nProgressBatches = std::max(1,std::min(nLoc,200));
+  if (densityBackend == DensityParallelBackend_::THREADS && densityThreadCount > 1) {
+    const int targetWorkPerBatch = std::max(densityThreadCount*4,densityThreadCount);
+    const int byThreadChunk = (nLocal + targetWorkPerBatch - 1) / targetWorkPerBatch;
+
+    // Keep progress useful, but prefer fewer/larger batches so all requested
+    // worker threads have enough independent locations to pull from the queue.
+    nProgressBatches = std::max(1,std::min(200,std::max(1,byThreadChunk)));
+
+    // There is no benefit in having more progress batches than local work items.
+    if (nLocal > 0) nProgressBatches = std::min(nProgressBatches,nLocal);
+  }
 
   for (int ibatch=0; ibatch<nProgressBatches; ++ibatch) {
     const int localBatchBegin = (int)((static_cast<long long>(nLocal) * ibatch) / nProgressBatches);
     const int localBatchEnd   = (int)((static_cast<long long>(nLocal) * (ibatch+1)) / nProgressBatches);
 
     if (localBatchEnd > localBatchBegin) {
-      for (int localIdx=localBatchBegin; localIdx<localBatchEnd; ++localIdx) {
-        const int loc = iBegin + localIdx;
-        computeOneLocation(loc);
+      if (densityBackend == DensityParallelBackend_::THREADS && densityThreadCount > 1) {
+        const int nWork = localBatchEnd - localBatchBegin;
+        const int nWorkers = std::max(1,std::min(densityThreadCount,nWork));
+        std::atomic<int> nextLocalIdx(localBatchBegin);
+        std::vector<std::thread> workers;
+        workers.reserve((std::size_t)nWorkers);
+
+        for (int iw=0; iw<nWorkers; ++iw) {
+          workers.emplace_back([&]() {
+            DirectDensityWorkerScope_ workerScope;
+            for (;;) {
+              const int localIdx = nextLocalIdx.fetch_add(1,std::memory_order_relaxed);
+              if (localIdx >= localBatchEnd) break;
+              const int loc = iBegin + localIdx;
+              computeOneLocation(loc);
+            }
+          });
+        }
+
+        for (std::thread& worker : workers) worker.join();
+      }
+      else {
+        const bool suppressNestedOpenMP =
+            (densityBackend == DensityParallelBackend_::SERIAL ||
+             densityBackend == DensityParallelBackend_::THREADS);
+        if (suppressNestedOpenMP) {
+          DirectDensityWorkerScope_ serialScope;
+          for (int localIdx=localBatchBegin; localIdx<localBatchEnd; ++localIdx) {
+            const int loc = iBegin + localIdx;
+            computeOneLocation(loc);
+          }
+        }
+        else {
+          for (int localIdx=localBatchBegin; localIdx<localBatchEnd; ++localIdx) {
+            const int loc = iBegin + localIdx;
+            computeOneLocation(loc);
+          }
+        }
       }
 
       const long long nBatchLocations = (long long)(localBatchEnd-localBatchBegin);
@@ -828,6 +999,9 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
     exit(__LINE__,__FILE__,"Mode3D density/flux: no observation points or shell cells are defined");
   }
 
+  const DensityParallelBackend_ densityBackendForBanner = ResolveDensityParallelBackend_(prm);
+  const int densityThreadsForBanner = ResolveDensityThreadCount_(prm,densityBackendForBanner);
+
   if (mpiRank==0) {
     std::cout << "================ Mode3D mesh density & flux ================\n";
     std::cout << "Field model     : " << prm.field.model << "\n";
@@ -844,6 +1018,8 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
     std::cout << "Boundary mode   : " << prm.densitySpectrum.boundaryMode << "\n";
     std::cout << "Output mode     : " << outputMode << ", N_locations=" << nLoc << "\n";
     std::cout << "MPI ranks       : " << mpiSize << " (replicated mesh-field snapshot)\n";
+    std::cout << "Density backend : " << DensityParallelBackendName_(densityBackendForBanner)
+              << ", threads/MPI rank=" << densityThreadsForBanner << "\n";
     std::cout << "Progress bar    : ON\n";
     if (!gDensityOutputFileSuffix.empty()) std::cout << "Output suffix   : " << gDensityOutputFileSuffix << "\n";
     std::cout << "============================================================\n";
