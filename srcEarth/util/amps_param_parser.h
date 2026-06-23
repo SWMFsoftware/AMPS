@@ -1014,6 +1014,7 @@ namespace EarthUtil {
     std::string eventEnd;
 
     // FIELD_UPDATE_DT [min]: cadence at which the magnetic field model is updated.
+    // Fractional values are allowed, e.g. FIELD_UPDATE_DT 0.5 means 30 seconds.
     double fieldUpdateDt_min{5.0};
 
     // INJECT_DT [min]: cadence at which particles are injected along the trajectory.

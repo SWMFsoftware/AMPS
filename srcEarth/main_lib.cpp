@@ -833,6 +833,16 @@ void amps_time_step() {
   // every output file so successive calls do not overwrite earlier snapshots.
   //
   if (Earth::Mode3DForwardSWMF::IsCutoffRigidityMode()) {
+    // Do not consume the first-cadence slot before the SWMF coupler has filled
+    // the B/E buffers on the AMPS mesh.  Some coupled runs can call the PT
+    // component before the first MHD-to-PT data receive.  In that case simply
+    // return and wait: the static cadence state below is intentionally left
+    // untouched, so the first actual cutoff/density calculation happens on the
+    // first callback after PIC::CPLR::SWMF::FirstCouplingOccured becomes true.
+    if (!Earth::Mode3DForwardSWMF::ReadyForBackwardProductCalculation(true)) {
+      return;
+    }
+
     // ---------------------------------------------------------------------
     // Temporary local control for the cadence of SWMF-coupled cutoff output.
     // ---------------------------------------------------------------------

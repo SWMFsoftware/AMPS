@@ -240,10 +240,10 @@ The coupled cadence is controlled by:
 
 ```text
 #TEMPORAL
-FIELD_UPDATE_DT  <minutes>
+FIELD_UPDATE_DT  <minutes, floating point allowed>
 ```
 
-In the coupled case, `FIELD_UPDATE_DT` means: run the expensive backward products approximately every requested number of minutes of SWMF/PT simulation time, using `PIC::SimulationTime::TimeCounter` for the file stamp.
+In the coupled case, `FIELD_UPDATE_DT` means: run the expensive backward products approximately every requested number of minutes of SWMF/PT simulation time, using `PIC::SimulationTime::TimeCounter` for the file stamp. Fractional minutes are accepted, for example `FIELD_UPDATE_DT 0.5` requests a 30-second cadence.
 
 ---
 

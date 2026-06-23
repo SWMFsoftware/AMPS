@@ -63,6 +63,18 @@ bool IsCutoffRigidityMode();
 // non-positive return value means "run every SWMF/PT callback".
 double GetCoupledCalculationCadenceSeconds();
 
+// Return true only after the SWMF-coupled backtracing products have everything
+// needed to use a valid coupled MHD snapshot.  main_lib.cpp calls this before
+// applying the cutoff/density cadence gate, so early PT callbacks that occur
+// before the first SWMF data receive do not consume the "first calculation" slot.
+//
+// The check is collective over MPI ranks and requires:
+//   * amps_pre_init() has completed;
+//   * PIC::Mesh::mesh is allocated;
+//   * PIC::CPLR::SWMF::MagneticFieldOffset is valid;
+//   * PIC::CPLR::SWMF::FirstCouplingOccured is true on every rank.
+bool ReadyForBackwardProductCalculation(bool verbose=true);
+
 // Allocate all AMR leaf blocks on every MPI rank and gather the SWMF-coupled
 // cell-centered magnetic field into those blocks.
 //

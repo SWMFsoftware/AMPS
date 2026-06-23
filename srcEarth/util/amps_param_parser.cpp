@@ -323,6 +323,42 @@ static inline void SplitKV(const std::string& line,std::string& key,std::string&
   value=Trim(value);
 }
 
+static inline double ParsePositiveFiniteDouble(const std::string& value,
+                                               const std::string& keyword,
+                                               int lineNo) {
+  const std::string text = Trim(value);
+  std::size_t parsedChars = 0;
+  double result = 0.0;
+
+  try {
+    result = std::stod(text,&parsedChars);
+  }
+  catch (...) {
+    std::ostringstream _exit_msg;
+    _exit_msg << keyword << " at line " << lineNo
+              << " must be a positive finite floating-point value; got '"
+              << text << "'.";
+    exit(__LINE__,__FILE__,_exit_msg.str().c_str());
+  }
+
+  if (parsedChars != text.size()) {
+    std::ostringstream _exit_msg;
+    _exit_msg << keyword << " at line " << lineNo
+              << " has extra characters after the numeric value: '"
+              << text.substr(parsedChars) << "'. Put units/comments after '!'.";
+    exit(__LINE__,__FILE__,_exit_msg.str().c_str());
+  }
+
+  if (!std::isfinite(result) || result <= 0.0) {
+    std::ostringstream _exit_msg;
+    _exit_msg << keyword << " at line " << lineNo
+              << " must be positive and finite; got " << text << ".";
+    exit(__LINE__,__FILE__,_exit_msg.str().c_str());
+  }
+
+  return result;
+}
+
 static inline std::string StripComment(const std::string& line) {
   size_t p=line.find('!');
   if (p==std::string::npos) return line;
@@ -2573,7 +2609,7 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       if      (uKey=="TEMPORAL_MODE")    p.temporal.mode=ToUpper(val);
       else if (uKey=="EVENT_START")      p.temporal.eventStart=Trim(val);
       else if (uKey=="EVENT_END")        p.temporal.eventEnd=Trim(val);
-      else if (uKey=="FIELD_UPDATE_DT")  p.temporal.fieldUpdateDt_min=std::stod(val);
+      else if (uKey=="FIELD_UPDATE_DT")  p.temporal.fieldUpdateDt_min=ParsePositiveFiniteDouble(val,"#TEMPORAL/FIELD_UPDATE_DT",lineNo);
       else if (uKey=="INJECT_DT")        p.temporal.injectDt_min=std::stod(val);
       else if (uKey=="TS_INPUT_MODE")    p.temporal.tsInputMode=ToUpper(val);
       else if (uKey=="TS_INPUT_FILE")    p.temporal.tsInputFile=Trim(val);

@@ -602,6 +602,58 @@ double GetCoupledCalculationCadenceSeconds() {
 #endif
 }
 
+bool ReadyForBackwardProductCalculation(bool verbose) {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return false;
+#else
+  int preInitLocal = s_pre_initialized ? 1 : 0;
+  int meshLocal    = (PIC::Mesh::mesh != NULL) ? 1 : 0;
+  int bOffsetLocal = (PIC::CPLR::SWMF::MagneticFieldOffset >= 0) ? 1 : 0;
+  int coupledLocal = PIC::CPLR::SWMF::FirstCouplingOccured ? 1 : 0;
+
+  int preInitGlobal = 0;
+  int meshGlobal    = 0;
+  int bOffsetGlobal = 0;
+  int coupledGlobal = 0;
+
+  MPI_Allreduce((void*)&preInitLocal,&preInitGlobal,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&meshLocal,&meshGlobal,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&bOffsetLocal,&bOffsetGlobal,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&coupledLocal,&coupledGlobal,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+
+  const bool ready =
+      (preInitGlobal == 1) &&
+      (meshGlobal    == 1) &&
+      (bOffsetGlobal == 1) &&
+      (coupledGlobal == 1);
+
+  if (!ready) {
+    static bool reportedWaiting = false;
+
+    if (verbose && PIC::ThisThread == 0 && !reportedWaiting) {
+      std::cout << "[Mode3DForwardSWMF] Waiting to calculate SWMF-coupled "
+                << "Mode3D backward products until the first complete coupling "
+                << "snapshot is available: "
+                << "preInit=" << preInitGlobal
+                << ", mesh=" << meshGlobal
+                << ", magneticFieldOffset=" << bOffsetGlobal
+                << ", firstCoupling=" << coupledGlobal
+                << ".\n";
+      std::cout.flush();
+    }
+
+    reportedWaiting = true;
+    return false;
+  }
+
+  return true;
+#endif
+}
+
 // Public preparation hook called immediately before the SWMF-coupled cutoff solver.
 //
 // This routine intentionally performs all expensive globalisation work once per cutoff
