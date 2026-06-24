@@ -103,6 +103,7 @@ PICOBJ = pic.o \
 	ecsim/get_stencil.o \
 	ecsim/get_stencil_legacy_wrapper.o \
 	ecsim/domain_bc.o \
+	parallel/parallel_affinity.o \
 	mesh/domain_boundary_bc_collectors.o \
 	$(PAR_HALO_SYNC_OBJ) \
 	parallel/init_send_halo.o \

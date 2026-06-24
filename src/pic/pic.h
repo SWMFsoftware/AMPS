@@ -73,6 +73,7 @@
 #endif
 
 #include "units/pic_units_normalization.h"
+#include "parallel/parallel_affinity.h"
 
 using namespace std;
 
