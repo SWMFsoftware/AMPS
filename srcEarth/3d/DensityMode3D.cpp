@@ -174,6 +174,56 @@ static int ResolveDensityThreadCount_(const EarthUtil::AmpsParam& prm,
   return n;
 }
 
+//--------------------------------------------------------------------------------------
+// Optional MPI-rank affinity repair for the direct std::thread density backend
+//--------------------------------------------------------------------------------------
+//
+// Why this is here:
+//   The THREADS backend creates std::thread workers inside each MPI rank.  On some
+//   systems the MPI launcher initially pins each rank to one CPU core.  All worker
+//   threads inherit that one-core affinity mask, so many workers are created but all
+//   execute on the same CPU.  Manually running
+//
+//     taskset -apc <CPUSET> <PID>
+//
+//   on the rank process fixes that by widening the allowed CPU mask.  The helper below
+//   performs the same operation automatically immediately before the first density worker
+//   threads are launched.
+//
+// Why this is called only for THREADS:
+//   OPENMP has its own placement controls (OMP_PROC_BIND, OMP_PLACES, launcher binding,
+//   etc.).  This repair is specifically for the direct std::thread path and should not
+//   unexpectedly alter pure serial, OpenMP, or unrelated particle-model execution paths.
+//
+// Why this is once-only:
+//   Affinity is a process property inherited by subsequently created threads.  Calling it
+//   once before the first density-worker pool is sufficient for normal SWMF/AMPS runs and
+//   avoids printing the same diagnostic banner at every coupled output time.  If a system
+//   actively re-pins ranks later in the run, set the CPU mask manually or change this
+//   helper to call PIC::Parallel::SetWideAffinityForScheduler() every density timestep.
+//
+// How CPUSET is chosen:
+//   PIC::Parallel::SetWideAffinityForScheduler() first checks environment variables
+//
+//     PIC_PARALLEL_CPUSET
+//     AMPS_MODE3D_DENSITY_CPUSET
+//
+//   and otherwise uses the online CPU list on the current node, for example "0-39".
+//   This is the wide-affinity / scheduler-decides mode: individual worker threads are
+//   not pinned to specific cores; Linux is simply allowed to schedule them on any CPU in
+//   the widened mask.
+//--------------------------------------------------------------------------------------
+static void ApplyWideAffinityForDirectDensityThreadsOnce_(DensityParallelBackend_ backend,
+                                                          int densityThreadCount) {
+  if (backend != DensityParallelBackend_::THREADS || densityThreadCount <= 1) return;
+
+  static bool applied = false;
+  if (applied) return;
+  applied = true;
+
+  PIC::Parallel::SetWideAffinityForScheduler();
+}
+
 static inline double Norm_(const V3& a) {
   return std::sqrt(a.x*a.x + a.y*a.y + a.z*a.z);
 }
@@ -506,6 +556,12 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
 
   const DensityParallelBackend_ densityBackend = ResolveDensityParallelBackend_(prm);
   const int densityThreadCount = ResolveDensityThreadCount_(prm,densityBackend);
+
+  // If the direct std::thread backend is selected, repair/widen the MPI-rank CPU
+  // affinity before any density worker threads are created.  This reproduces the
+  // manual `taskset -apc` operation that is needed on systems where the MPI runtime
+  // pins each rank to one CPU.  The function is a no-op for OPENMP/SERIAL backends.
+  ApplyWideAffinityForDirectDensityThreadsOnce_(densityBackend,densityThreadCount);
 
 #ifdef _OPENMP
   if (densityBackend == DensityParallelBackend_::OPENMP && densityThreadCount > 0) {
