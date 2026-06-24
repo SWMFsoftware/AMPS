@@ -135,12 +135,15 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <atomic>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <iostream>
 #include <limits>
+#include <thread>
 
 // MPI (always compiled in; see design notes in header)
 #include <mpi.h>
@@ -184,6 +187,153 @@ namespace {
 // This eliminates the per-step mutex that the gridless evaluator needs around its
 // Tsyganenko Fortran calls, giving substantially better OpenMP scaling.
 //======================================================================================
+
+
+//======================================================================================
+// SECTION 1.5 — MODE3D CUTOFF PARALLEL BACKEND SELECTION
+//======================================================================================
+//
+// The cutoff calculation is embarrassingly parallel over observation locations: every
+// location owns an independent set of rigidity searches and trajectory backtraces, and
+// the only communication after the field snapshot is prepared is the final MPI gather.
+// Older versions used only OpenMP inside each MPI rank.  The density-backtracking path
+// later added a direct std::thread backend because some platforms showed problems with
+// OpenMP placement and/or OpenMP interaction with shared AMPS/SWMF state.  The cutoff
+// path now uses the same user settings so one input deck controls both particle-free
+// backward products:
+//
+//   #NUMERICAL
+//   DENSITY_PARALLEL  OPENMP | THREADS | SERIAL
+//   DENSITY_THREADS   <N>
+//
+// Naming note:
+//   The keywords keep the historical DENSITY_* names because they were introduced first
+//   for density/flux products.  In Mode3D they should now be read as the generic
+//   particle-free backward-product parallel backend.  They affect both density/flux and
+//   cutoff calculations.
+//
+// Backend meanings in this file:
+//   OPENMP : use the existing OpenMP parallel-for over local observation locations;
+//            DENSITY_THREADS, if positive, is passed to omp_set_num_threads().
+//   THREADS: use direct std::thread workers over local observation locations; before
+//            creating workers, widen this MPI rank's CPU affinity with
+//            PIC::Parallel::SetWideAffinityForScheduler(), matching the density path.
+//   SERIAL : no intra-rank threading; MPI decomposition remains active.
+//
+// Thread-safety note:
+//   Each OpenMP thread or std::thread worker constructs its own cMode3DMeshFieldEval.
+//   The evaluator reads from the replicated, read-only AMR magnetic-field snapshot and
+//   owns its own lastNode_ cache, so no worker shares interpolation/cache state.
+//======================================================================================
+
+enum class CutoffParallelBackend_ { OPENMP, THREADS, SERIAL };
+
+static const char* CutoffParallelBackendName_(CutoffParallelBackend_ backend) {
+    switch (backend) {
+    case CutoffParallelBackend_::OPENMP:  return "OPENMP";
+    case CutoffParallelBackend_::THREADS: return "THREADS";
+    case CutoffParallelBackend_::SERIAL:  return "SERIAL";
+    }
+    return "UNKNOWN";
+}
+
+// Parse a positive integer environment variable.  Invalid, empty, zero, and negative
+// values intentionally resolve to 0, which means "not specified" to the caller.
+static int ParsePositiveIntEnvForCutoff_(const char* name) {
+    const char* v = std::getenv(name);
+    if (v == nullptr || *v == '\0') return 0;
+    try {
+        const int n = std::stoi(std::string(v));
+        return (n > 0) ? n : 0;
+    }
+    catch (...) {
+        return 0;
+    }
+}
+
+// Resolve the cutoff backend from the same keyword/environment variable used by the
+// density calculation.  This keeps coupled runs simple: selecting THREADS once enables
+// the direct-thread backend for both CUTOFF_RIGIDITY and DENSITY_SPECTRUM targets.
+static CutoffParallelBackend_ ResolveCutoffParallelBackend_(const EarthUtil::AmpsParam& prm) {
+    std::string token = prm.mode3d.densityParallelBackend;
+    if (token.empty()) {
+        const char* env = std::getenv("AMPS_MODE3D_DENSITY_PARALLEL");
+        if (env != nullptr) token = env;
+    }
+
+    token = EarthUtil::ToUpper(token);
+    if (token.empty() || token == "OPENMP" || token == "OMP") {
+#ifdef _OPENMP
+        return CutoffParallelBackend_::OPENMP;
+#else
+        return CutoffParallelBackend_::SERIAL;
+#endif
+    }
+
+    if (token == "THREAD" || token == "THREADS" || token == "STD_THREAD" ||
+        token == "STD_THREADS" || token == "PTHREAD" || token == "PTHREADS") {
+        return CutoffParallelBackend_::THREADS;
+    }
+
+    if (token == "SERIAL" || token == "NONE" || token == "OFF") {
+        return CutoffParallelBackend_::SERIAL;
+    }
+
+    std::ostringstream msg;
+    msg << "Mode3D cutoff: unknown DENSITY_PARALLEL/MODE3D_DENSITY_PARALLEL backend '"
+        << token << "'. Valid values: OPENMP, THREADS, SERIAL.";
+    exit(__LINE__,__FILE__,msg.str().c_str());
+    return CutoffParallelBackend_::SERIAL;
+}
+
+// Resolve the number of intra-rank workers for cutoff.  The priority order matches the
+// density calculation:
+//   1. DENSITY_THREADS from the input file;
+//   2. AMPS_MODE3D_DENSITY_THREADS from the environment;
+//   3. OMP_NUM_THREADS from the environment;
+//   4. omp_get_max_threads() for OPENMP builds/backends;
+//   5. std::thread::hardware_concurrency() as a final fallback.
+static int ResolveCutoffThreadCount_(const EarthUtil::AmpsParam& prm,
+                                     CutoffParallelBackend_ backend) {
+    int n = prm.mode3d.densityThreads;
+    if (n <= 0) n = ParsePositiveIntEnvForCutoff_("AMPS_MODE3D_DENSITY_THREADS");
+    if (n <= 0) n = ParsePositiveIntEnvForCutoff_("OMP_NUM_THREADS");
+
+#ifdef _OPENMP
+    if (n <= 0 && backend == CutoffParallelBackend_::OPENMP) n = omp_get_max_threads();
+#endif
+
+    if (n <= 0) {
+        const unsigned hw = std::thread::hardware_concurrency();
+        n = (hw > 0) ? static_cast<int>(hw) : 1;
+    }
+
+    if (n < 1) n = 1;
+    return n;
+}
+
+// Widen the MPI-rank CPU affinity once before direct std::thread cutoff workers are
+// created.  This is intentionally the same policy as the density path: if a launcher
+// pins each MPI rank to a single CPU, all std::thread workers would otherwise inherit
+// that one-core mask.  PIC::Parallel::SetWideAffinityForScheduler() performs the
+// equivalent of
+//
+//   taskset -apc <CPUSET> <rank_pid>
+//
+// where <CPUSET> is either PIC_PARALLEL_CPUSET / AMPS_MODE3D_DENSITY_CPUSET or the
+// online CPU list detected on the current node.  This is "wide affinity": workers are
+// not pinned individually; the OS scheduler is allowed to place them on any CPU in the
+// widened mask.
+static void ApplyWideAffinityForDirectCutoffThreadsOnce_(CutoffParallelBackend_ backend,
+                                                         int cutoffThreadCount) {
+    if (backend != CutoffParallelBackend_::THREADS || cutoffThreadCount <= 1) return;
+
+    static bool applied = false;
+    if (applied) return;
+    applied = true;
+
+    PIC::Parallel::SetWideAffinityForScheduler();
+}
 
 //======================================================================================
 // SECTION 2 — SMALL VECTOR HELPERS
@@ -954,8 +1104,17 @@ static std::string EpochForLocation(const EarthUtil::AmpsParam& prm, int loc) {
 // POINTS / TRAJECTORY: prm.output.points[loc] in km → metres.
 // SHELLS: lon/lat/alt grid node → GSM metres via SPICE (or identity for DIPOLE).
 //
+// Thread-safety note:
+//   The cutoff std::thread backend may call LocationToX0m() concurrently from several
+//   worker threads.  The SPICE branch below uses a small cached rotation matrix for the
+//   shell grid.  Protecting that cache is inexpensive because the location transform is
+//   performed once per observation location, while the expensive work is the many
+//   trajectory traces launched from that location.
+//
 // Logic is identical to the LocationToX0m lambda in CutoffRigidityGridless.cpp.
 // Replicated here to avoid a cross-module dependency on a local lambda.
+static std::mutex gLocationToX0mSpiceMutex_;
+
 static V3 LocationToX0m(const EarthUtil::AmpsParam& prm, int loc,
                          int nLon, int nLat,
                          double d_deg, int nPtsShell) {
@@ -990,18 +1149,22 @@ static V3 LocationToX0m(const EarthUtil::AmpsParam& prm, int loc,
 
     // External models: rotate from Earth-fixed (ITRF93) to GSM via SPICE.
 #ifndef _NO_SPICE_CALLS_
-    static std::string cachedEpoch;
-    static SpiceDouble rot[3][3];
-    if (cachedEpoch != prm.field.epoch) {
-        cachedEpoch = prm.field.epoch;
-        SpiceDouble et;
-        str2et_c(prm.field.epoch.c_str(), &et);
-        pxform_c("ITRF93", "GSM", et, rot);
+    {
+        std::lock_guard<std::mutex> lock(gLocationToX0mSpiceMutex_);
+
+        static std::string cachedEpoch;
+        static SpiceDouble rot[3][3];
+        if (cachedEpoch != prm.field.epoch) {
+            cachedEpoch = prm.field.epoch;
+            SpiceDouble et;
+            str2et_c(prm.field.epoch.c_str(), &et);
+            pxform_c("ITRF93", "GSM", et, rot);
+        }
+        SpiceDouble xGEO[3] = {xCart.x, xCart.y, xCart.z};
+        SpiceDouble xGSM[3];
+        mxv_c(rot, xGEO, xGSM);
+        return V3{xGSM[0], xGSM[1], xGSM[2]};
     }
-    SpiceDouble xGEO[3] = {xCart.x, xCart.y, xCart.z};
-    SpiceDouble xGSM[3];
-    mxv_c(rot, xGEO, xGSM);
-    return V3{xGSM[0], xGSM[1], xGSM[2]};
 #else
     // SPICE unavailable: return un-rotated position (acceptable for DIPOLE; warn
     // for external models, but do not hard-fail to allow non-SPICE builds).
@@ -1654,6 +1817,45 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     const int nLocal    = locEnd - locStart;
 
     //==================================================================================
+    // 14.8a — Intra-rank parallel backend selection
+    //==================================================================================
+    // The cutoff calculation now shares the same Mode3D parallel controls that were
+    // introduced for density/flux backtracking:
+    //
+    //   DENSITY_PARALLEL  OPENMP | THREADS | SERIAL
+    //   DENSITY_THREADS   <N>
+    //
+    // When THREADS is selected, a direct std::thread worker pool is used over the local
+    // observation locations owned by this MPI rank.  Before that worker pool is created,
+    // the MPI-rank affinity is widened by PIC::Parallel::SetWideAffinityForScheduler()
+    // so worker threads are not forced onto a single CPU by launcher-level rank pinning.
+    //==================================================================================
+
+    const CutoffParallelBackend_ cutoffBackend = ResolveCutoffParallelBackend_(prm);
+    const int cutoffThreadCount = ResolveCutoffThreadCount_(prm,cutoffBackend);
+
+    ApplyWideAffinityForDirectCutoffThreadsOnce_(cutoffBackend,cutoffThreadCount);
+
+#ifdef _OPENMP
+    if (cutoffBackend == CutoffParallelBackend_::OPENMP && cutoffThreadCount > 0) {
+        omp_set_num_threads(cutoffThreadCount);
+    }
+#endif
+
+    if (mpiRank == 0) {
+        std::cout
+            << "Cutoff backend : " << CutoffParallelBackendName_(cutoffBackend) << "\n"
+            << "Cutoff workers : " << cutoffThreadCount
+            << " per rank (from DENSITY_THREADS/AMPS_MODE3D_DENSITY_THREADS)\n";
+        if (cutoffBackend == CutoffParallelBackend_::THREADS) {
+            std::cout
+                << "Affinity mode  : wide MPI-rank mask via "
+                << "PIC::Parallel::SetWideAffinityForScheduler()\n";
+        }
+        std::cout.flush();
+    }
+
+    //==================================================================================
     // 14.8b — Optional global progress reporting
     //==================================================================================
     // The gridless cutoff solver prints one global progress bar from its root
@@ -1893,54 +2095,57 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     }
 
     //==================================================================================
-    // 14.9 — OpenMP parallel loop over local points
+    // 14.9 — Intra-rank parallel loop over local points
     //==================================================================================
     //
-    // Requirement 3: Parallelization of calculation for individual points with OpenMP.
+    // Work unit:
+    //   One work item is one observation location owned by this MPI rank.  A location may
+    //   involve many trajectory integrations: the scalar cutoff scans all requested arrival
+    //   directions and, if DIRECTIONAL_MAP=T, every sky-map direction is also solved.
     //
-    // Each OpenMP thread owns a PRIVATE cMode3DMeshFieldEval instance.
-    // The evaluator reads from the frozen AMR mesh (no shared mutable state),
-    // so no mutex or synchronisation is needed between threads.
+    // Thread-private field evaluator:
+    //   Each OpenMP thread or direct std::thread worker constructs its own
+    //   cMode3DMeshFieldEval.  The evaluator reads from the frozen AMR mesh snapshot and
+    //   owns its own lastNode_ cache, so the trajectory tracer does not share mutable
+    //   interpolation state between workers.
     //
-    // The mutable lastNode_ cache inside cMode3DMeshFieldEval is per-instance
-    // (and therefore per-thread), so findTreeNode() hint updates are naturally
-    // thread-safe without any explicit protection.
+    // Backends:
+    //   OPENMP  — legacy OpenMP region with one private field evaluator per OpenMP thread.
+    //   THREADS — direct std::thread workers pulling localIdx values from an atomic queue.
+    //             This is useful on systems where OpenMP placement is problematic but
+    //             std::thread workers run correctly once the MPI-rank affinity mask is
+    //             widened by PIC::Parallel::SetWideAffinityForScheduler().
+    //   SERIAL  — one field evaluator in the calling thread; useful for debugging or for
+    //             avoiding all intra-rank thread activity.
     //==================================================================================
 
     auto computeLocalLocation = [&](int localIdx,
                                     cMode3DMeshFieldEval& threadField) {
         const int globalIdx = locStart + localIdx;
 
-        // Reconstruct the observation position for this point.
+        // Reconstruct the observation position for this point.  In SHELLS mode this may
+        // use the SPICE rotation cache protected above by gLocationToX0mSpiceMutex_.
         const V3 x0_m = LocationToX0m(prm, globalIdx, nLon, nLat, d_deg, nPtsShell);
 
-        // Compute the minimum cutoff rigidity over all sampled directions.
-        // The mesh field is the same for all points (initialized once by
-        // InitMeshFields in Mode3D::Run before this parallel section).
+        // Compute the minimum cutoff rigidity over all sampled directions.  The mesh field
+        // is the same for all points and was initialized once before this function was
+        // called by InitMeshFields() / the SWMF-coupled global-field materialization path.
         const double rc = ComputeCutoffAtPoint_GV(
             prm, threadField, x0_m, dirs, samplingVertical,
             q_C, m0, box, Rmin, Rmax);
 
-        // localIdx is unique in the OpenMP schedule, so no synchronization is
-        // needed for these two stores.
+        // localIdx is unique in all backends, so no synchronization is needed for these
+        // stores.  The MPI gather later places this rank-local slab into the global array.
         rcLocal[(size_t)localIdx] = rc;
         if (rc > 0.0) {
             const double pCut = MomentumFromRigidity_GV(rc, qabs);
             eminLocal[(size_t)localIdx] = KineticEnergyFromMomentum_MeV(pCut, m0);
         }
 
-        // Optional directional cutoff map.
-        //
-        // This loop computes Rc for every requested sky-map direction and stores
-        // each directional value, not the minimum over directions.  Therefore the
-        // per-location upper-bound optimization used by ComputeCutoffAtPoint_GV
-        // must NOT be applied here: a directional map needs the physical cutoff
-        // of each cell independently, even if some other direction at the same
-        // location has already produced a lower Rc.
-        //
-        // The same thread-private mesh-field evaluator is reused for all cells of
-        // this location.  That preserves the lastNode_ cache across adjacent
-        // trajectories and avoids rebuilding any field-management state.
+        // Optional directional cutoff map.  This loop computes Rc for each map direction
+        // independently and stores the directional value itself, not the minimum over
+        // directions.  Therefore the scalar-cutoff per-location upper-bound optimisation
+        // must not be used here.
         if (dirMapCfg.enabled) {
             const size_t base = (size_t)localIdx * (size_t)dirMapCfg.nCells;
             for (int cellId=0; cellId<dirMapCfg.nCells; ++cellId) {
@@ -1952,30 +2157,92 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         }
     };
 
-    if (!showProgressBar) {
-        // Fast path retained only for source-level symmetry with older versions.
-        // It is unreachable in the standalone 3-D cutoff driver because
-        // showProgressBar is forced true at the top of this function.
-        // Keeping the block avoids a larger refactor while documenting the old
-        // no-progress behavior.
-        #pragma omp parallel
+    // Helper used by both the progress and no-progress branches.  Keeping the dispatch in
+    // one lambda ensures that OPENMP, THREADS, and SERIAL compute exactly the same local
+    // locations and differ only in how those independent locations are scheduled.
+    auto computeLocalRange = [&](int batchBegin, int batchEnd) {
+        if (batchEnd <= batchBegin) return;
+
+        if (cutoffBackend == CutoffParallelBackend_::THREADS && cutoffThreadCount > 1) {
+            const int nWork = batchEnd - batchBegin;
+            const int nWorkers = std::max(1,std::min(cutoffThreadCount,nWork));
+
+            // Atomic work queue over local location indices.  Each worker owns its field
+            // evaluator and repeatedly pulls the next location until the batch is empty.
+            std::atomic<int> nextLocalIdx(batchBegin);
+            std::vector<std::thread> workers;
+            workers.reserve((size_t)nWorkers);
+
+            for (int iw=0; iw<nWorkers; ++iw) {
+                workers.emplace_back([&]() {
+                    cMode3DMeshFieldEval threadField(prm);
+
+                    for (;;) {
+                        const int localIdx = nextLocalIdx.fetch_add(1,std::memory_order_relaxed);
+                        if (localIdx >= batchEnd) break;
+                        computeLocalLocation(localIdx,threadField);
+                    }
+                });
+            }
+
+            for (std::thread& worker : workers) worker.join();
+            return;
+        }
+
+        if (cutoffBackend == CutoffParallelBackend_::SERIAL) {
+            // Explicit serial backend.  This path is useful for debugging numerical
+            // reproducibility because it removes all intra-rank scheduling variation.
+            cMode3DMeshFieldEval threadField(prm);
+            for (int localIdx=batchBegin; localIdx<batchEnd; ++localIdx) {
+                computeLocalLocation(localIdx,threadField);
+            }
+            return;
+        }
+
+        // OPENMP backend.  The pragma is guarded so non-OpenMP builds still compile and
+        // fall back to a single-thread loop.  Each OpenMP worker gets its own field
+        // evaluator outside the omp for loop.
+#ifdef _OPENMP
+#pragma omp parallel
+#endif
         {
-            // Thread-private mesh field evaluator.
-            // Constructed once per thread; lastNode_ starts as nullptr and is
-            // updated on every GetB_T call as the particle moves through the mesh.
             cMode3DMeshFieldEval threadField(prm);
 
-            #pragma omp for schedule(dynamic, 1)
-            for (int localIdx = 0; localIdx < nLocal; ++localIdx) {
+#ifdef _OPENMP
+#pragma omp for schedule(dynamic, 1)
+#endif
+            for (int localIdx=batchBegin; localIdx<batchEnd; ++localIdx) {
                 computeLocalLocation(localIdx,threadField);
             }
         }
+    };
+
+    if (!showProgressBar) {
+        // Fast path retained for source-level symmetry with older versions.  The current
+        // user-facing Mode3D cutoff driver forces showProgressBar=true, but keeping this
+        // block makes direct/internal calls behave correctly if that policy is relaxed.
+        computeLocalRange(0,nLocal);
     }
     else {
-        // Progress path: compute all ranks in the same number of batches.  This
-        // guarantees that every rank enters the same MPI_Allreduce sequence,
-        // avoiding deadlocks and avoiding MPI calls from OpenMP worker threads.
-        const int nProgressBatches = std::max(1,std::min(nLoc,200));
+        // Progress path: all ranks must execute the same number of MPI_Allreduce calls.
+        // Therefore nProgressBatches must be identical on every rank.  For the THREADS
+        // backend, however, the batches must not be so small that a rank has only one
+        // local location per batch; that would serialize the direct thread worker pool.
+        //
+        // We compute the largest local work count over all MPI ranks, then choose a common
+        // batch count based on that maximum.  This keeps the collective sequence identical
+        // while providing larger batches that can feed several std::thread workers.
+        int nLocalMax = 0;
+        MPI_Allreduce(&nLocal,&nLocalMax,1,MPI_INT,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+
+        int nProgressBatches = std::max(1,std::min(nLoc,200));
+        if (cutoffBackend == CutoffParallelBackend_::THREADS && cutoffThreadCount > 1) {
+            const int targetWorkPerBatch = std::max(cutoffThreadCount*4,cutoffThreadCount);
+            const int byThreadChunk = (nLocalMax + targetWorkPerBatch - 1) / targetWorkPerBatch;
+
+            nProgressBatches = std::max(1,std::min(200,std::max(1,byThreadChunk)));
+            if (nLocalMax > 0) nProgressBatches = std::min(nProgressBatches,nLocalMax);
+        }
 
         for (int ibatch=0; ibatch<nProgressBatches; ++ibatch) {
             const int batchBegin = (int)(
@@ -1984,20 +2251,11 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 (static_cast<long long>(nLocal) * (ibatch+1)) / nProgressBatches);
 
             if (batchEnd > batchBegin) {
-                #pragma omp parallel
-                {
-                    cMode3DMeshFieldEval threadField(prm);
+                computeLocalRange(batchBegin,batchEnd);
 
-                    #pragma omp for schedule(dynamic, 1)
-                    for (int localIdx = batchBegin; localIdx < batchEnd; ++localIdx) {
-                        computeLocalLocation(localIdx,threadField);
-                    }
-                }
-
-                // Update this rank's completed-location counters after the
-                // OpenMP workers finish the batch.  These counters are used only
-                // for progress reporting; the actual results are already stored
-                // in rcLocal/eminLocal.
+                // Update this rank's completed-location counters after the worker backend
+                // finishes the batch.  These counters are used only for progress reporting;
+                // the actual results are already stored in rcLocal/eminLocal/dirMapLocal.
                 const long long nBatchLocations = static_cast<long long>(batchEnd-batchBegin);
                 doneLocationsLocal += nBatchLocations;
                 doneTasksLocal     += nBatchLocations * tasksPerLocation;
@@ -2012,9 +2270,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 }
             }
 
-            // Sum completed work over all ranks.  Only rank 0 renders the line;
-            // every rank still participates in the collective so the global
-            // number represents the full MPI job, not only the root rank.
+            // Sum completed work over all ranks.  Only rank 0 renders the line; every
+            // rank still participates in the collective so the global number represents
+            // the full MPI job, not only the root rank.
             MPI_Allreduce(&doneLocationsLocal,&doneLocationsGlobal,
                           1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 

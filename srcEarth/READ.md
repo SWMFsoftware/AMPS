@@ -60,6 +60,14 @@ srcEarth/3d_forward_swmf/Mode3DForwardSWMF.cpp
 srcEarth/3d_forward_swmf/Mode3DForwardSWMF.h
     SWMF-coupled bridge. In coupled builds it supports both historical forward
     injection and the newer Mode3D backward products driven by live SWMF fields.
+
+parallel_affinity.h
+parallel_affinity.cpp
+    Main AMPS/PIC affinity helpers under namespace PIC::Parallel. These files
+    are not srcEarth-local files; they are intended to be compiled by the main
+    AMPS build system and made available through the AMPS include path. The
+    Mode3D direct-thread cutoff/density backends call these helpers to widen
+    the MPI-rank CPU affinity mask before std::thread workers are created.
 ```
 
 ---
@@ -131,6 +139,12 @@ Mode3D products:
 - optional energy-channel integral fluxes;
 - standalone single-snapshot runs;
 - standalone time-series runs over multiple Tsyganenko-driver snapshots.
+
+The expensive Mode3D backward products can use one of three intra-rank
+shared-memory backends, selected by the `#NUMERICAL` keywords
+`DENSITY_PARALLEL` and `DENSITY_THREADS` or by the standalone CLI options
+`-density-parallel` and `-density-threads`. The names are historical: the
+same settings now apply to both `CUTOFF_RIGIDITY` and `DENSITY_SPECTRUM`.
 
 Typical output files for a single snapshot:
 
@@ -218,6 +232,11 @@ CALC_TARGET DENSITY_SPECTRUM
 CALC_TARGET CUTOFF_RIGIDITY+DENSITY_SPECTRUM
 CALC_TARGET ALL
 ```
+
+The coupled backward-product path uses the same Mode3D shared-memory backend
+as standalone Mode3D. In particular, `DENSITY_PARALLEL THREADS` enables
+direct `std::thread` workers for cutoff and density calculations inside each
+MPI rank, and `DENSITY_THREADS` sets the worker count.
 
 At every accepted coupled snapshot, the bridge:
 
@@ -404,6 +423,89 @@ This gives all ranks access to the global B field while preserving the normal AM
 ### 6.3 SWMF coupled
 
 In coupled mode, the global B-field materialization is repeated for every accepted SWMF/PT snapshot before the backward products are computed.
+
+### 6.4 Intra-rank shared-memory backends for Mode3D backward products
+
+Mode3D cutoff and density/flux products can use three shared-memory backends
+inside each MPI rank:
+
+```text
+DENSITY_PARALLEL SERIAL
+DENSITY_PARALLEL OPENMP
+DENSITY_PARALLEL THREADS
+```
+
+Despite the `DENSITY_` prefix, these settings control both the cutoff and
+density/flux backward products. The prefix is kept for compatibility with
+older input files and command-line options.
+
+`SERIAL` disables intra-rank parallelism. MPI decomposition over locations is
+still used.
+
+`OPENMP` preserves the OpenMP implementation. For density it parallelizes the
+energy/direction work where enabled. For cutoff it uses OpenMP over the local
+observation-location loop. This backend is useful when the OpenMP runtime and
+MPI launcher are known to place threads correctly.
+
+`THREADS` uses direct `std::thread` workers over local observation locations.
+It intentionally suppresses nested OpenMP inside those workers to avoid
+oversubscription. This backend is often preferable when OpenMP interpolation
+stencil state or MPI/OpenMP placement is problematic.
+
+The worker count is controlled by:
+
+```text
+DENSITY_THREADS <N>
+```
+
+or by the standalone CLI option:
+
+```bash
+-density-threads <N>
+```
+
+`N > 1` requests that many workers per MPI rank. `N = 0` asks the code to
+choose automatically from environment/runtime information. For production
+runs, the number of MPI ranks per node times `DENSITY_THREADS` should not
+exceed the number of CPU cores allocated on that node.
+
+For the direct-thread backend, the code calls:
+
+```cpp
+PIC::Parallel::SetWideAffinityForScheduler();
+```
+
+before the cutoff or density worker pool is created. This reproduces the
+manual operation:
+
+```bash
+taskset -apc <CPUSET> <rank_pid>
+```
+
+for each MPI rank. It does not pin individual worker threads to fixed cores;
+it widens the allowed CPU mask of the rank so the Linux scheduler can move
+those threads among the allowed CPUs. By default the CPU set is read from:
+
+```text
+/sys/devices/system/cpu/online
+```
+
+The automatic CPU set can be overridden with either environment variable:
+
+```bash
+export AMPS_MODE3D_DENSITY_CPUSET=0-39
+export PIC_PARALLEL_CPUSET=0-39
+```
+
+If the batch scheduler or MPI runtime restricts a rank to one CPU with a
+cgroup/cpuset, affinity widening cannot escape that restriction. The actual
+mask can be checked at runtime from the job log through the diagnostic printed
+by `PIC::Parallel::PrintCurrentAffinity()`, or manually with:
+
+```bash
+grep Cpus_allowed_list /proc/<pid>/status
+ps -L -p <pid> -o pid,tid,psr,pcpu,state,comm
+```
 
 ---
 
@@ -651,6 +753,8 @@ DT_TRACE             1.0
 MAX_STEPS            300000
 MAX_TRACE_TIME       7200.0
 MAX_TRACE_DISTANCE   0.0
+DENSITY_PARALLEL     THREADS
+DENSITY_THREADS      8
 ```
 
 Meanings:
@@ -660,7 +764,14 @@ DT_TRACE            initial trajectory time step [s]
 MAX_STEPS           maximum integration steps per trajectory
 MAX_TRACE_TIME      maximum integration time per trajectory [s]
 MAX_TRACE_DISTANCE  cumulative path-length cap [Re]; <=0 disables it
+DENSITY_PARALLEL    SERIAL, OPENMP, or THREADS for Mode3D cutoff/density products
+DENSITY_THREADS     shared-memory worker count per MPI rank; 0 means automatic
 ```
+
+`DENSITY_PARALLEL` and `DENSITY_THREADS` apply to both Mode3D cutoff and
+density/flux calculations. The `DENSITY_` prefix is historical. In SWMF-coupled
+backward-product runs these keywords can be used in the PT `AMPS_PARAM.in` to
+select direct-thread or OpenMP execution without standalone CLI options.
 
 Forward-mode controls also accepted here:
 
@@ -883,11 +994,10 @@ Common options:
     For standalone Mode3D, choose whether tracing uses mesh interpolation or direct analytic/background evaluation.
 
 -density-parallel <OPENMP|THREADS|SERIAL>
-    Select the shared-memory backend for Mode3D density backtracking within each MPI process.
-    OPENMP preserves the existing OpenMP loops. THREADS uses direct std::thread workers over observation locations and suppresses nested OpenMP inside those workers. SERIAL disables intra-rank shared-memory parallelism.
+    Select the shared-memory backend for Mode3D backward products within each MPI process. Despite the name, this option now applies to both cutoff and density/flux calculations. OPENMP preserves the OpenMP loops. THREADS uses direct std::thread workers over observation locations and suppresses nested OpenMP inside those workers. SERIAL disables intra-rank shared-memory parallelism.
 
 -density-threads <N>
-    Number of shared-memory workers per MPI process. For OPENMP this sets omp_set_num_threads(N). For THREADS this sets the number of std::thread workers. N=0 means automatic.
+    Number of shared-memory workers per MPI process for Mode3D cutoff and density/flux products. For OPENMP this sets omp_set_num_threads(N). For THREADS this sets the number of std::thread workers. N=0 means automatic.
 ```
 
 Forward-mode options:
@@ -959,6 +1069,29 @@ DS_BOUNDARY_MODE   ISOTROPIC
 
 This produces cutoff, directional maps, density, local spectrum, and flux files from the same mesh field.
 
+To use the direct-thread backend for both cutoff and density/flux in this run,
+add to `#NUMERICAL`:
+
+```text
+#NUMERICAL
+DENSITY_PARALLEL THREADS
+DENSITY_THREADS  8
+```
+
+or use the standalone CLI override:
+
+```bash
+mpirun -np 4 ./amps -mode 3d -i AMPS_PARAM.in -density-parallel THREADS -density-threads 8
+```
+
+For the `THREADS` backend, each MPI rank attempts to widen its CPU affinity
+mask before creating worker threads. If needed, override the detected node CPU
+set, for example:
+
+```bash
+export AMPS_MODE3D_DENSITY_CPUSET=0-39
+```
+
 ### 10.3 Density/flux only
 
 ```text
@@ -1003,9 +1136,13 @@ FIELD_EVAL_METHOD  SWMF
 
 #TEMPORAL
 FIELD_UPDATE_DT    15
+
+#NUMERICAL
+DENSITY_PARALLEL   THREADS
+DENSITY_THREADS    8
 ```
 
-The coupled bridge reads `AMPS_PARAM.in`, waits for SWMF field updates, and runs the requested products at the configured cadence.
+The coupled bridge reads `AMPS_PARAM.in`, waits for SWMF field updates, and runs the requested products at the configured cadence. The `DENSITY_PARALLEL` and `DENSITY_THREADS` settings are used by both the cutoff and density portions of the coupled backward-product calculation.
 
 ---
 
@@ -1157,6 +1294,42 @@ In coupled mode, backward products require explicit `CALC_TARGET`. If `CALC_TARG
 
 Standalone time-series operation and frame transforms require SPICE. Rebuild without `_NO_SPICE_CALLS_` if the run needs UTC-to-ET conversion, driver-file interpolation, SM/GSM directional-map rotation, or trajectory frame conversion.
 
+### Direct-thread backend creates workers but all run on one CPU
+
+If `DENSITY_PARALLEL THREADS` creates the requested worker count but `top -H`
+or `ps -L` shows that all worker threads run on the same `PSR` CPU, check the
+rank affinity mask:
+
+```bash
+grep Cpus_allowed_list /proc/<pid>/status
+ps -L -p <pid> -o pid,tid,psr,pcpu,state,comm
+```
+
+The direct-thread backend calls `PIC::Parallel::SetWideAffinityForScheduler()`
+before creating cutoff/density workers. This is equivalent to:
+
+```bash
+taskset -apc <CPUSET> <pid>
+```
+
+and should widen the rank affinity mask when the scheduler allows it. The CPU
+set is auto-detected from `/sys/devices/system/cpu/online`, but it can be
+overridden with:
+
+```bash
+export AMPS_MODE3D_DENSITY_CPUSET=0-39
+```
+
+or:
+
+```bash
+export PIC_PARALLEL_CPUSET=0-39
+```
+
+If `Cpus_allowed_list` remains a single CPU, the batch system or MPI runtime is
+still restricting the rank through a cpuset/cgroup, and the code cannot move
+threads outside that allowed set.
+
 ### No useful density/flux values
 
 Check:
@@ -1189,11 +1362,13 @@ Standalone mesh-backed cutoff plus density/flux:
 mpirun -np 8 ./amps -mode 3d -i mode3d_products.in
 ```
 
-Standalone mesh-backed density/flux using direct threads inside each MPI rank:
+Standalone mesh-backed cutoff/density products using direct threads inside each MPI rank:
 
 ```bash
-mpirun -np 8 ./amps -mode 3d -i mode3d_products.in -density-parallel THREADS -density-threads 8
+mpirun -np 4 ./amps -mode 3d -i mode3d_products.in -density-parallel THREADS -density-threads 8
 ```
+
+This backend applies to `CUTOFF_RIGIDITY`, `DENSITY_SPECTRUM`, and `CUTOFF_RIGIDITY+DENSITY_SPECTRUM`. Choose the MPI-rank count and thread count so that `ranks_per_node * density_threads` does not exceed the cores allocated per node.
 
 In SWMF-coupled PT runs the standalone CLI is usually not used; the same backend can be selected from the input file with `DENSITY_PARALLEL THREADS` and `DENSITY_THREADS 8` in `#NUMERICAL` or `#DENSITY_SPECTRUM`, or with environment variables `AMPS_MODE3D_DENSITY_PARALLEL=THREADS` and `AMPS_MODE3D_DENSITY_THREADS=8`.
 
