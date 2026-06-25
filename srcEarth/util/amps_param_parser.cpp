@@ -2591,6 +2591,16 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
                uKey=="BACKWARD_THREADS" || uKey=="BACKWARD_NTHREADS") {
         p.mode3d.densityThreads=std::stoi(val);
       }
+      else if (uKey=="MODE3D_MPI_SCHEDULER" || uKey=="MODE3D_MPI_BACKEND" ||
+               uKey=="BACKTRACK_MPI_SCHEDULER" || uKey=="BACKTRACK_MPI_BACKEND" ||
+               uKey=="BACKWARD_MPI_SCHEDULER" || uKey=="BACKWARD_MPI_BACKEND") {
+        p.mode3d.mpiScheduler=ToUpper(Trim(val));
+      }
+      else if (uKey=="MODE3D_MPI_DYNAMIC_CHUNK" || uKey=="MODE3D_MPI_CHUNK" ||
+               uKey=="BACKTRACK_MPI_DYNAMIC_CHUNK" || uKey=="BACKTRACK_MPI_CHUNK" ||
+               uKey=="BACKWARD_MPI_DYNAMIC_CHUNK" || uKey=="BACKWARD_MPI_CHUNK") {
+        p.mode3d.mpiDynamicChunk=std::stoi(val);
+      }
       else if (uKey=="DS_BOUNDARY_MODE") {
         // Legacy inputs placed this density/spectrum setting in #NUMERICAL.
         // Keep it recognized, but route it to the same destination as the
@@ -2702,6 +2712,16 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
                uKey=="BACKTRACK_THREADS" || uKey=="BACKTRACK_NTHREADS" ||
                uKey=="BACKWARD_THREADS" || uKey=="BACKWARD_NTHREADS") {
         p.mode3d.densityThreads=std::stoi(val);
+      }
+      else if (uKey=="MODE3D_MPI_SCHEDULER" || uKey=="MODE3D_MPI_BACKEND" ||
+               uKey=="BACKTRACK_MPI_SCHEDULER" || uKey=="BACKTRACK_MPI_BACKEND" ||
+               uKey=="BACKWARD_MPI_SCHEDULER" || uKey=="BACKWARD_MPI_BACKEND") {
+        p.mode3d.mpiScheduler=ToUpper(Trim(val));
+      }
+      else if (uKey=="MODE3D_MPI_DYNAMIC_CHUNK" || uKey=="MODE3D_MPI_CHUNK" ||
+               uKey=="BACKTRACK_MPI_DYNAMIC_CHUNK" || uKey=="BACKTRACK_MPI_CHUNK" ||
+               uKey=="BACKWARD_MPI_DYNAMIC_CHUNK" || uKey=="BACKWARD_MPI_CHUNK") {
+        p.mode3d.mpiDynamicChunk=std::stoi(val);
       }
       else rejectUnknownKeyword();
     }
@@ -2943,6 +2963,26 @@ if (ToUpper(p.field.model)=="DIPOLE") {
         exit(__LINE__,__FILE__,_exit_msg.str().c_str());
       }
       p.mode3d.densityParallelBackend = db;
+    }
+
+    if (!p.mode3d.mpiScheduler.empty()) {
+      const std::string ms = ToUpper(p.mode3d.mpiScheduler);
+      if (ms!="DYNAMIC" && ms!="DYN" && ms!="QUEUE" &&
+          ms!="WORK_QUEUE" && ms!="WORKQUEUE" &&
+          ms!="BLOCK_CYCLIC" && ms!="BLOCKCYCLIC" && ms!="CYCLIC" &&
+          ms!="ROUND_ROBIN" && ms!="ROUNDROBIN" &&
+          ms!="STATIC" && ms!="CONTIGUOUS" && ms!="BLOCK" && ms!="SLAB") {
+        std::ostringstream _exit_msg;
+        _exit_msg << "MODE3D_MPI_SCHEDULER/BACKTRACK_MPI_SCHEDULER must be DYNAMIC, BLOCK_CYCLIC, or STATIC (got '"
+                  << p.mode3d.mpiScheduler << "')";
+        exit(__LINE__,__FILE__,_exit_msg.str().c_str());
+      }
+      p.mode3d.mpiScheduler = ms;
+    }
+
+    if (p.mode3d.mpiDynamicChunk < 0) {
+      exit(__LINE__,__FILE__,
+           "MODE3D_MPI_DYNAMIC_CHUNK/BACKTRACK_MPI_DYNAMIC_CHUNK must be >= 0 (0 means: automatic)");
     }
   }
 

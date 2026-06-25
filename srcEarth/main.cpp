@@ -1607,6 +1607,31 @@ int main(int argc,char **argv) {
         }
         if (cli.densityThreads > 0) p.mode3d.densityThreads = cli.densityThreads;
 
+        // Inter-rank scheduler for standalone Mode3D backward products.  This controls
+        // how MPI ranks receive global observation locations.  DYNAMIC uses the new
+        // MPI one-sided work queue; BLOCK_CYCLIC/STATIC are deterministic fallback
+        // schedulers.  The actual scheduler object is created inside the Mode3D cutoff
+        // and density routines after MPI has been initialized.
+        if (!cli.mode3dMpiScheduler.empty()) {
+          const std::string sched = EarthUtil::ToUpper(cli.mode3dMpiScheduler);
+          if (sched=="DYNAMIC" || sched=="DYN" || sched=="QUEUE" ||
+              sched=="WORK_QUEUE" || sched=="WORKQUEUE" ||
+              sched=="BLOCK_CYCLIC" || sched=="BLOCKCYCLIC" || sched=="CYCLIC" ||
+              sched=="ROUND_ROBIN" || sched=="ROUNDROBIN" ||
+              sched=="STATIC" || sched=="CONTIGUOUS" || sched=="BLOCK" || sched=="SLAB") {
+            p.mode3d.mpiScheduler = sched;
+          }
+          else {
+            std::cerr << "Error: unknown -mode3d-mpi-scheduler value '"
+                      << cli.mode3dMpiScheduler
+                      << "'. Valid values: DYNAMIC, BLOCK_CYCLIC, STATIC.\n";
+            return 1;
+          }
+        }
+        if (cli.mode3dMpiDynamicChunk > 0) {
+          p.mode3d.mpiDynamicChunk = cli.mode3dMpiDynamicChunk;
+        }
+
         // Optional single-point Mode3D cutoff diagnostic.  This does not change the
         // main cutoff map; it only writes a rigidity-classification scan before the
         // full calculation so numerical/bracketing issues can be isolated.

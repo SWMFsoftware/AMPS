@@ -155,6 +155,13 @@ Clearer aliases are also accepted: `MODE3D_PARALLEL`, `MODE3D_THREADS`,
 `-mode3d-parallel`, `-mode3d-threads`, `-backtrack-parallel`, and
 `-backtrack-threads`.
 
+The same products can also use an inter-rank scheduler selected with
+`MODE3D_MPI_SCHEDULER` or the CLI option `-mode3d-mpi-scheduler`. The default
+`DYNAMIC` scheduler uses an MPI one-sided atomic work queue, while
+`BLOCK_CYCLIC` and `STATIC` are deterministic fallback schedules. The optional
+`MODE3D_MPI_DYNAMIC_CHUNK` / `-mode3d-mpi-dynamic-chunk` value controls how many
+global observation locations a rank fetches at a time.
+
 Typical output files for a single snapshot:
 
 ```text
@@ -461,9 +468,15 @@ observation-location loop. This backend is useful when the OpenMP runtime and
 MPI launcher are known to place threads correctly.
 
 `THREADS` uses direct `std::thread` workers over local observation locations.
-It intentionally suppresses nested OpenMP inside those workers to avoid
-oversubscription. This backend is often preferable when OpenMP interpolation
-stencil state or MPI/OpenMP placement is problematic.
+The worker scheduling is dynamic inside each MPI rank: a single thread-safe
+atomic counter stores the next local location to process, and every worker calls
+`fetch_add()` to grab another location as soon as it becomes idle. This avoids
+static per-thread chunks, which are inefficient for cutoff calculations because
+near-cutoff trajectories can take much longer than quickly escaping or quickly
+forbidden trajectories. The direct-thread backend intentionally suppresses
+nested OpenMP inside those workers to avoid oversubscription. This backend is
+often preferable when OpenMP interpolation stencil state or MPI/OpenMP placement
+is problematic.
 
 The worker count is controlled by:
 
@@ -766,25 +779,40 @@ DT_TRACE             1.0
 MAX_STEPS            300000
 MAX_TRACE_TIME       7200.0
 MAX_TRACE_DISTANCE   0.0
-DENSITY_PARALLEL     THREADS
-DENSITY_THREADS      8
+MODE3D_PARALLEL           THREADS
+MODE3D_THREADS            8
+MODE3D_MPI_SCHEDULER      DYNAMIC
+MODE3D_MPI_DYNAMIC_CHUNK  64
 ```
 
 Meanings:
 
 ```text
-DT_TRACE            initial trajectory time step [s]
-MAX_STEPS           maximum integration steps per trajectory
-MAX_TRACE_TIME      maximum integration time per trajectory [s]
-MAX_TRACE_DISTANCE  cumulative path-length cap [Re]; <=0 disables it
-DENSITY_PARALLEL    SERIAL, OPENMP, or THREADS for Mode3D cutoff/density products
-DENSITY_THREADS     shared-memory worker count per MPI rank; 0 means automatic
+DT_TRACE                  initial trajectory time step [s]
+MAX_STEPS                 maximum integration steps per trajectory
+MAX_TRACE_TIME            maximum integration time per trajectory [s]
+MAX_TRACE_DISTANCE        cumulative path-length cap [Re]; <=0 disables it
+MODE3D_PARALLEL           SERIAL, OPENMP, or THREADS for Mode3D cutoff/density products
+MODE3D_THREADS            shared-memory worker count per MPI rank; 0 means automatic
+MODE3D_MPI_SCHEDULER      DYNAMIC, BLOCK_CYCLIC, or STATIC inter-rank scheduler
+MODE3D_MPI_DYNAMIC_CHUNK  global locations per MPI atomic fetch; 0 means automatic
 ```
 
-`DENSITY_PARALLEL` and `DENSITY_THREADS` apply to both Mode3D cutoff and
-density/flux calculations. The `DENSITY_` prefix is historical. In SWMF-coupled
-backward-product runs these keywords can be used in the PT `AMPS_PARAM.in` to
-select direct-thread or OpenMP execution without standalone CLI options.
+`MODE3D_PARALLEL` and `MODE3D_THREADS` are the preferred names for the
+shared-memory backend. The historical aliases `DENSITY_PARALLEL` and
+`DENSITY_THREADS` still work and apply to both Mode3D cutoff and density/flux
+calculations. In SWMF-coupled backward-product runs these keywords can be used in
+the PT `AMPS_PARAM.in` to select direct-thread or OpenMP execution without
+standalone CLI options.
+
+`MODE3D_MPI_SCHEDULER` controls load balance between MPI ranks. `DYNAMIC` is the
+default and recommended setting for shell cutoff maps because trajectory cost is
+not uniform in longitude/latitude: each rank atomically fetches a chunk of global
+locations, processes it, and then fetches the next available chunk. `BLOCK_CYCLIC`
+reproduces the previous deterministic partition `rank r = r, r+nRanks, ...`.
+`STATIC` assigns one contiguous slab per rank and is mainly for regression tests.
+`MODE3D_MPI_DYNAMIC_CHUNK` trades load balance against scheduler overhead; values
+near `2–8 * MODE3D_THREADS` are usually reasonable starting points.
 
 Forward-mode controls also accepted here:
 
@@ -1399,7 +1427,10 @@ ps -L -p <pid> -o pid,tid,psr,pcpu,state,comm
 ```
 
 The direct-thread backend calls `PIC::Parallel::SetWideAffinityForScheduler()`
-before creating cutoff/density workers. This is equivalent to:
+before creating cutoff/density workers. The dynamic scheduler can only use CPUs
+that are present in the MPI rank affinity mask, so the affinity widening remains
+important even though work assignment among threads is now dynamic. This is
+equivalent to:
 
 ```bash
 taskset -apc <CPUSET> <pid>

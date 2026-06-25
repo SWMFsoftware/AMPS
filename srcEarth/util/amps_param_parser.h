@@ -127,6 +127,10 @@
 //     MAX_TRACE_TIME          <double>   ! hard cap on integration time [s]
 //     MAX_TRACE_DISTANCE      <double>   ! hard cap on cumulative trace distance [Re]
 //                                        ! 0 or negative => disabled
+//     MODE3D_PARALLEL         OPENMP | THREADS | SERIAL
+//     MODE3D_THREADS          <int>      ! workers per MPI rank; 0 => automatic
+//     MODE3D_MPI_SCHEDULER    DYNAMIC | BLOCK_CYCLIC | STATIC
+//     MODE3D_MPI_DYNAMIC_CHUNK <int>     ! locations per dynamic MPI chunk; 0 => auto
 //
 //   #SPECTRUM
 //     (stored both as a raw key/value map in AmpsParam.spectrum and as a
@@ -913,6 +917,17 @@ namespace EarthUtil {
     // 0 means automatic: use OMP_NUM_THREADS/omp_get_max_threads for OpenMP-aware
     // builds or hardware_concurrency for the direct std::thread backend.
     int densityThreads{0};
+
+    // Inter-rank scheduler for standalone Mode3D backtracking products.
+    //   DYNAMIC      : ranks atomically fetch chunks of global locations with MPI RMA.
+    //   BLOCK_CYCLIC : rank r computes r, r+nRanks, r+2*nRanks, ...
+    //   STATIC       : rank r computes one contiguous block.
+    // Empty means the shared resolver default is used; current default is DYNAMIC.
+    std::string mpiScheduler{""};
+
+    // Chunk size, in global observation locations, for MODE3D_MPI_SCHEDULER=DYNAMIC.
+    // 0 means automatic, usually several chunks per worker per rank.
+    int mpiDynamicChunk{0};
   };
 
   //====================================================================================

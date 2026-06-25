@@ -432,25 +432,32 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
   local.flux_ch_flat.assign((std::size_t)nCh*(std::size_t)nLoc,0.0);
 
   //====================================================================================
-  // MPI location decomposition
+  // MPI location scheduling
   //====================================================================================
-  // The mesh-field snapshot has already been materialized into all AMR leaf blocks that
-  // the tracer may visit.  Therefore any rank can compute any observation location.
-  // Use the same block-cyclic work partition as the Mode3D cutoff calculation:
+  // As in the Mode3D cutoff solver, every MPI rank has access to the materialized
+  // mesh-field snapshot.  The inter-rank scheduler therefore operates on global
+  // observation-location indices rather than on rank-owned mesh subdomains.
   //
-  //   rank r owns global locations r, r+nRanks, r+2*nRanks, ...
-  //
-  // This avoids assigning one contiguous longitude/latitude/shell slab to a rank and
-  // improves MPI load balance when backtracking cost varies geographically.  Results are
-  // stored directly into global-size local arrays at the global location index; the final
-  // MPI_Allreduce combines those non-overlapping contributions into full arrays.
+  // DYNAMIC uses an MPI one-sided atomic work queue: the rank/main thread fetches a
+  // chunk of global locations and then the intra-rank backend computes that chunk.  MPI
+  // is never called from std::thread workers, so MPI_THREAD_MULTIPLE is not required.
+  // BLOCK_CYCLIC and STATIC keep deterministic fallback schedules for debugging.
   //====================================================================================
-  std::vector<int> localToGlobalIdx;
-  localToGlobalIdx.reserve((std::size_t)((nLoc + mpiSize - 1) / mpiSize));
-  for (int loc=mpiRank; loc<nLoc; loc+=mpiSize) {
-    localToGlobalIdx.push_back(loc);
+  const Earth::Mode3D::MpiScheduler mpiScheduler =
+      Earth::Mode3D::ResolveMpiScheduler(prm,"Mode3D density/flux");
+
+  std::vector<int> rankWorkList;
+  if (mpiScheduler == Earth::Mode3D::MpiScheduler::BLOCK_CYCLIC) {
+    rankWorkList.reserve((std::size_t)((nLoc + mpiSize - 1) / mpiSize));
+    for (int loc=mpiRank; loc<nLoc; loc+=mpiSize) rankWorkList.push_back(loc);
   }
-  const int nLocal = (int)localToGlobalIdx.size();
+  else if (mpiScheduler == Earth::Mode3D::MpiScheduler::STATIC) {
+    const int begin = (int)((static_cast<long long>(nLoc) * mpiRank) / mpiSize);
+    const int end   = (int)((static_cast<long long>(nLoc) * (mpiRank+1)) / mpiSize);
+    rankWorkList.reserve((std::size_t)std::max(0,end-begin));
+    for (int loc=begin; loc<end; ++loc) rankWorkList.push_back(loc);
+  }
+  const int nLocalStatic = (int)rankWorkList.size();
 
   const bool doAnisotropic = (EarthUtil::ToUpper(prm.densitySpectrum.boundaryMode) == "ANISOTROPIC");
   const double qabs_C = std::fabs(prm.species.charge_e)*QE;
@@ -458,6 +465,8 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
 
   const DensityParallelBackend_ densityBackend = ResolveDensityParallelBackend_(prm);
   const int densityThreadCount = ResolveDensityThreadCount_(prm,densityBackend);
+  const long long mpiDynamicChunk = Earth::Mode3D::ResolveMpiDynamicChunk(
+      prm,densityThreadCount,static_cast<long long>(nLoc));
 
   // If the direct std::thread backend is selected, repair/widen the MPI-rank CPU
   // affinity before any density worker threads are created.  This reproduces the
@@ -509,17 +518,25 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
   std::vector<int> locTotalPerShellGlobal((std::size_t)std::max(nShells,0),0);
 
   if (isShells && nShells > 0) {
-    for (int localIdx=0; localIdx<nLocal; ++localIdx) {
-      const int loc = localToGlobalIdx[(std::size_t)localIdx];
-      const int shellIdx = loc / std::max(1,nPtsShell);
-      if (shellIdx>=0 && shellIdx<nShells) locTotalPerShellLocal[(std::size_t)shellIdx]++;
+    if (mpiScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
+      // In dynamic mode no rank has a predetermined shell subset.  The denominator is
+      // a property of the global shell grid itself: each shell contains nPtsShell
+      // locations.  Fill it directly and avoid an unnecessary collective.
+      for (int s=0; s<nShells; ++s) locTotalPerShellGlobal[(std::size_t)s] = nPtsShell;
     }
+    else {
+      for (int localIdx=0; localIdx<nLocalStatic; ++localIdx) {
+        const int loc = rankWorkList[(std::size_t)localIdx];
+        const int shellIdx = loc / std::max(1,nPtsShell);
+        if (shellIdx>=0 && shellIdx<nShells) locTotalPerShellLocal[(std::size_t)shellIdx]++;
+      }
 
-    // Rank 0 needs the denominator for every shell in order to print meaningful
-    // per-shell progress.  The allreduce is outside the compute loop and is used only
-    // for diagnostics; it does not participate in the physical calculation.
-    MPI_Allreduce(locTotalPerShellLocal.data(), locTotalPerShellGlobal.data(),
-                  nShells, MPI_INT, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+      // Rank 0 needs the denominator for every shell in order to print meaningful
+      // per-shell progress.  The allreduce is outside the compute loop and is used only
+      // for diagnostics; it does not participate in the physical calculation.
+      MPI_Allreduce(locTotalPerShellLocal.data(), locTotalPerShellGlobal.data(),
+                    nShells, MPI_INT, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+    }
   }
 
   auto mode3d_density_now_seconds = []() -> double { return MPI_Wtime(); };
@@ -699,105 +716,182 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
     }
   };
 
-  maybePrintProgress(0,0,locDonePerShellGlobal,true);
+  auto computeGlobalRange = [&](int begin, int end) {
+    if (end <= begin) return;
 
-  // Use a synchronized-batch strategy for progress reporting, but do not make the
-  // batches so small that the direct-thread backend is serialized.  The old
-  // choice min(nLoc,200) can be pathological for coarse shell maps: for example,
-  // with nLoc=180 and 10 MPI ranks each rank owns about 18 locations, while 180
-  // progress batches gives only 0 or 1 local location per batch.  Then
-  // nWorkers=min(densityThreadCount,nWork) becomes 1 even when DENSITY_THREADS=8.
-  int nProgressBatches = std::max(1,std::min(nLoc,200));
-  if (densityBackend == DensityParallelBackend_::THREADS && densityThreadCount > 1) {
-    int nLocalMax = 0;
-    MPI_Allreduce(&nLocal,&nLocalMax,1,MPI_INT,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+    if (densityBackend == DensityParallelBackend_::THREADS && densityThreadCount > 1) {
+      const int nWork = end - begin;
+      const int nWorkers = std::max(1,std::min(densityThreadCount,nWork));
+      // Thread-safe dynamic work queue over the contiguous global-location chunk fetched
+      // by this MPI rank.  The atomic is local to this rank and assigns each global
+      // location to exactly one std::thread worker.  MPI is not called inside workers.
+      std::atomic<int> nextLoc(begin);
+      std::vector<std::thread> workers;
+      workers.reserve((std::size_t)nWorkers);
 
-    const int targetWorkPerBatch = std::max(densityThreadCount*4,densityThreadCount);
-    const int byThreadChunk = (nLocalMax + targetWorkPerBatch - 1) / targetWorkPerBatch;
-
-    // Every MPI rank must use the same number of progress batches because the loop below
-    // contains MPI_Allreduce calls.  Use the global maximum local-work count to keep the
-    // collective sequence identical while still making direct-thread batches large enough
-    // to feed the requested worker pool.
-    nProgressBatches = std::max(1,std::min(200,std::max(1,byThreadChunk)));
-
-    // There is no benefit in having more progress batches than the busiest rank has
-    // local work items.
-    if (nLocalMax > 0) nProgressBatches = std::min(nProgressBatches,nLocalMax);
-  }
-
-  for (int ibatch=0; ibatch<nProgressBatches; ++ibatch) {
-    const int localBatchBegin = (int)((static_cast<long long>(nLocal) * ibatch) / nProgressBatches);
-    const int localBatchEnd   = (int)((static_cast<long long>(nLocal) * (ibatch+1)) / nProgressBatches);
-
-    if (localBatchEnd > localBatchBegin) {
-      if (densityBackend == DensityParallelBackend_::THREADS && densityThreadCount > 1) {
-        const int nWork = localBatchEnd - localBatchBegin;
-        const int nWorkers = std::max(1,std::min(densityThreadCount,nWork));
-        std::atomic<int> nextLocalIdx(localBatchBegin);
-        std::vector<std::thread> workers;
-        workers.reserve((std::size_t)nWorkers);
-
-        for (int iw=0; iw<nWorkers; ++iw) {
-          workers.emplace_back([&]() {
-            DirectDensityWorkerScope_ workerScope;
-            for (;;) {
-              const int localIdx = nextLocalIdx.fetch_add(1,std::memory_order_relaxed);
-              if (localIdx >= localBatchEnd) break;
-              const int loc = localToGlobalIdx[(std::size_t)localIdx];
-              computeOneLocation(loc);
-            }
-          });
-        }
-
-        for (std::thread& worker : workers) worker.join();
-      }
-      else {
-        const bool suppressNestedOpenMP =
-            (densityBackend == DensityParallelBackend_::SERIAL ||
-             densityBackend == DensityParallelBackend_::THREADS);
-        if (suppressNestedOpenMP) {
-          DirectDensityWorkerScope_ serialScope;
-          for (int localIdx=localBatchBegin; localIdx<localBatchEnd; ++localIdx) {
-            const int loc = localToGlobalIdx[(std::size_t)localIdx];
+      for (int iw=0; iw<nWorkers; ++iw) {
+        workers.emplace_back([&]() {
+          DirectDensityWorkerScope_ workerScope;
+          for (;;) {
+            const int loc = nextLoc.fetch_add(1,std::memory_order_relaxed);
+            if (loc >= end) break;
             computeOneLocation(loc);
           }
-        }
-        else {
-          for (int localIdx=localBatchBegin; localIdx<localBatchEnd; ++localIdx) {
-            const int loc = localToGlobalIdx[(std::size_t)localIdx];
-            computeOneLocation(loc);
-          }
-        }
+        });
       }
 
-      const long long nBatchLocations = (long long)(localBatchEnd-localBatchBegin);
-      doneLocationsLocal += nBatchLocations;
-      doneTasksLocal     += nBatchLocations * tasksPerLocation;
-
-      if (isShells && nShells > 0) {
-        for (int localIdx=localBatchBegin; localIdx<localBatchEnd; ++localIdx) {
-          const int loc = localToGlobalIdx[(std::size_t)localIdx];
-          const int shellIdx = loc / std::max(1,nPtsShell);
-          if (shellIdx>=0 && shellIdx<nShells) locDonePerShellLocal[(std::size_t)shellIdx]++;
-        }
-      }
+      for (std::thread& worker : workers) worker.join();
+      return;
     }
 
-    // Every rank enters the same collectives even when its local batch is empty.  This is
-    // essential for MPI correctness: the collective sequence must be identical on all
-    // ranks.  Rank 0 then prints the global state, not only its own local slab.
+    const bool suppressNestedOpenMP =
+        (densityBackend == DensityParallelBackend_::SERIAL ||
+         densityBackend == DensityParallelBackend_::THREADS);
+    if (suppressNestedOpenMP) {
+      DirectDensityWorkerScope_ serialScope;
+      for (int loc=begin; loc<end; ++loc) computeOneLocation(loc);
+      return;
+    }
+
+    for (int loc=begin; loc<end; ++loc) computeOneLocation(loc);
+  };
+
+  auto computeWorkListRange = [&](int begin, int end) {
+    if (end <= begin) return;
+
+    if (densityBackend == DensityParallelBackend_::THREADS && densityThreadCount > 1) {
+      const int nWork = end - begin;
+      const int nWorkers = std::max(1,std::min(densityThreadCount,nWork));
+      // Thread-safe dynamic work queue over this rank's deterministic work list.
+      // The MPI work distribution is fixed for STATIC/BLOCK_CYCLIC, but the thread
+      // scheduler remains dynamic so one long trajectory does not pin one worker while
+      // other workers sit idle.
+      std::atomic<int> nextLocalIdx(begin);
+      std::vector<std::thread> workers;
+      workers.reserve((std::size_t)nWorkers);
+
+      for (int iw=0; iw<nWorkers; ++iw) {
+        workers.emplace_back([&]() {
+          DirectDensityWorkerScope_ workerScope;
+          for (;;) {
+            const int localIdx = nextLocalIdx.fetch_add(1,std::memory_order_relaxed);
+            if (localIdx >= end) break;
+            const int loc = rankWorkList[(std::size_t)localIdx];
+            computeOneLocation(loc);
+          }
+        });
+      }
+
+      for (std::thread& worker : workers) worker.join();
+      return;
+    }
+
+    const bool suppressNestedOpenMP =
+        (densityBackend == DensityParallelBackend_::SERIAL ||
+         densityBackend == DensityParallelBackend_::THREADS);
+    if (suppressNestedOpenMP) {
+      DirectDensityWorkerScope_ serialScope;
+      for (int localIdx=begin; localIdx<end; ++localIdx) {
+        computeOneLocation(rankWorkList[(std::size_t)localIdx]);
+      }
+      return;
+    }
+
+    for (int localIdx=begin; localIdx<end; ++localIdx) {
+      computeOneLocation(rankWorkList[(std::size_t)localIdx]);
+    }
+  };
+
+  auto accountCompletedGlobalRange = [&](int begin, int end) {
+    const long long nBatchLocations = (long long)std::max(0,end-begin);
+    doneLocationsLocal += nBatchLocations;
+    doneTasksLocal     += nBatchLocations * tasksPerLocation;
+    if (isShells && nShells > 0) {
+      for (int loc=begin; loc<end; ++loc) {
+        const int shellIdx = loc / std::max(1,nPtsShell);
+        if (shellIdx>=0 && shellIdx<nShells) locDonePerShellLocal[(std::size_t)shellIdx]++;
+      }
+    }
+  };
+
+  auto accountCompletedWorkListRange = [&](int begin, int end) {
+    const long long nBatchLocations = (long long)std::max(0,end-begin);
+    doneLocationsLocal += nBatchLocations;
+    doneTasksLocal     += nBatchLocations * tasksPerLocation;
+    if (isShells && nShells > 0) {
+      for (int localIdx=begin; localIdx<end; ++localIdx) {
+        const int loc = rankWorkList[(std::size_t)localIdx];
+        const int shellIdx = loc / std::max(1,nPtsShell);
+        if (shellIdx>=0 && shellIdx<nShells) locDonePerShellLocal[(std::size_t)shellIdx]++;
+      }
+    }
+  };
+
+  maybePrintProgress(0,0,locDonePerShellGlobal,true);
+
+  if (mpiScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
+    // Two-level dynamic scheduling: each rank dynamically fetches chunks from the MPI
+    // RMA counter, and the selected intra-rank backend dynamically computes locations
+    // within that chunk.  No progress collectives are placed inside the work loop, so
+    // ranks are never forced to wait at a synchronization point between chunks.
+    Earth::Mode3D::DynamicMpiLocationScheduler scheduler(
+        MPI_GLOBAL_COMMUNICATOR,
+        static_cast<long long>(nLoc),
+        mpiDynamicChunk,
+        "Mode3D density/flux");
+
+    for (;;) {
+      const long long chunkStartLL = scheduler.FetchNextChunkStart();
+      if (chunkStartLL >= static_cast<long long>(nLoc)) break;
+
+      const long long chunkEndLL = std::min(
+          chunkStartLL + scheduler.ChunkSize(),
+          static_cast<long long>(nLoc));
+
+      const int chunkStart = static_cast<int>(chunkStartLL);
+      const int chunkEnd   = static_cast<int>(chunkEndLL);
+
+      computeGlobalRange(chunkStart,chunkEnd);
+      accountCompletedGlobalRange(chunkStart,chunkEnd);
+    }
+
     MPI_Allreduce(&doneLocationsLocal,&doneLocationsGlobal,
                   1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
     MPI_Allreduce(&doneTasksLocal,&doneTasksGlobal,
                   1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
     if (isShells && nShells > 0) {
-      MPI_Allreduce(locDonePerShellLocal.data(), locDonePerShellGlobal.data(),
-                    nShells, MPI_INT, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+      MPI_Allreduce(locDonePerShellLocal.data(),locDonePerShellGlobal.data(),
+                    nShells,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+    }
+    maybePrintProgress(doneLocationsGlobal,doneTasksGlobal,locDonePerShellGlobal,true);
+  }
+  else {
+    int nProgressBatches = std::max(1,std::min(nLoc,200));
+    if (densityBackend == DensityParallelBackend_::THREADS && densityThreadCount > 1) {
+      nProgressBatches = 1;
     }
 
-    maybePrintProgress(doneLocationsGlobal,doneTasksGlobal,locDonePerShellGlobal,
-                       ibatch == nProgressBatches-1);
+    for (int ibatch=0; ibatch<nProgressBatches; ++ibatch) {
+      const int localBatchBegin = (int)((static_cast<long long>(nLocalStatic) * ibatch) / nProgressBatches);
+      const int localBatchEnd   = (int)((static_cast<long long>(nLocalStatic) * (ibatch+1)) / nProgressBatches);
+
+      if (localBatchEnd > localBatchBegin) {
+        computeWorkListRange(localBatchBegin,localBatchEnd);
+        accountCompletedWorkListRange(localBatchBegin,localBatchEnd);
+      }
+
+      MPI_Allreduce(&doneLocationsLocal,&doneLocationsGlobal,
+                    1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+      MPI_Allreduce(&doneTasksLocal,&doneTasksGlobal,
+                    1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+      if (isShells && nShells > 0) {
+        MPI_Allreduce(locDonePerShellLocal.data(),locDonePerShellGlobal.data(),
+                      nShells,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+      }
+
+      maybePrintProgress(doneLocationsGlobal,doneTasksGlobal,locDonePerShellGlobal,
+                         ibatch == nProgressBatches-1);
+    }
   }
 
   DensityResultBuffers global;
@@ -966,6 +1060,10 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
 
   const DensityParallelBackend_ densityBackendForBanner = ResolveDensityParallelBackend_(prm);
   const int densityThreadsForBanner = ResolveDensityThreadCount_(prm,densityBackendForBanner);
+  const Earth::Mode3D::MpiScheduler mpiSchedulerForBanner =
+      Earth::Mode3D::ResolveMpiScheduler(prm,"Mode3D density/flux");
+  const long long mpiDynamicChunkForBanner = Earth::Mode3D::ResolveMpiDynamicChunk(
+      prm,densityThreadsForBanner,static_cast<long long>(nLoc));
 
   if (mpiRank==0) {
     std::cout << "================ Mode3D mesh density & flux ================\n";
@@ -985,6 +1083,11 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
     std::cout << "MPI ranks       : " << mpiSize << " (replicated mesh-field snapshot)\n";
     std::cout << "Density backend : " << DensityParallelBackendName_(densityBackendForBanner)
               << ", threads/MPI rank=" << densityThreadsForBanner << "\n";
+    std::cout << "MPI scheduler   : " << Earth::Mode3D::MpiSchedulerName(mpiSchedulerForBanner) << "\n";
+    if (mpiSchedulerForBanner == Earth::Mode3D::MpiScheduler::DYNAMIC) {
+      std::cout << "MPI dyn chunk   : " << mpiDynamicChunkForBanner
+                << " global location(s) per atomic fetch\n";
+    }
     std::cout << "Progress bar    : ON\n";
     if (!gDensityOutputFileSuffix.empty()) std::cout << "Output suffix   : " << gDensityOutputFileSuffix << "\n";
     std::cout << "============================================================\n";

@@ -45,8 +45,10 @@
 //     -mode3d-field-eval <INTERPOLATION|ANALYTIC>        3D B-field source during tracing.
 //     -density-mode <ISOTROPIC|ANISOTROPIC>
 //                              Override DS_BOUNDARY_MODE from input file.
-//     -density-parallel <OPENMP|THREADS|SERIAL>          Mode3D density backend.
+//     -density-parallel <OPENMP|THREADS|SERIAL>          Mode3D shared-memory backend.
 //     -density-threads <int>                             threads per MPI process.
+//     -mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC> MPI-rank scheduler.
+//     -mode3d-mpi-dynamic-chunk <int>                    locations per MPI fetch.
 //
 //   See amps_param_parser.h for a full description of the input file format.
 //
@@ -116,6 +118,27 @@ CliOptions ParseCli(int argc,char** argv) {
       opt.densityThreads=std::stoi(argv[++i]);
       if (opt.densityThreads < 0)
         exit(__LINE__,__FILE__,"-density-threads must be >= 0 (0 means automatic)");
+    }
+    else if (a=="-mode3d-mpi-scheduler" || a=="--mode3d-mpi-scheduler" ||
+             a=="-mode3d-mpi-backend" || a=="--mode3d-mpi-backend" ||
+             a=="-backtrack-mpi-scheduler" || a=="--backtrack-mpi-scheduler" ||
+             a=="-backtrack-mpi-backend" || a=="--backtrack-mpi-backend") {
+      // Inter-rank scheduler for standalone Mode3D backward products.
+      // DYNAMIC activates the MPI one-sided atomic work queue; BLOCK_CYCLIC and
+      // STATIC are deterministic fallback/debug schedulers.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -mode3d-mpi-scheduler");
+      opt.mode3dMpiScheduler=argv[++i];
+    }
+    else if (a=="-mode3d-mpi-dynamic-chunk" || a=="--mode3d-mpi-dynamic-chunk" ||
+             a=="-mode3d-mpi-chunk" || a=="--mode3d-mpi-chunk" ||
+             a=="-backtrack-mpi-dynamic-chunk" || a=="--backtrack-mpi-dynamic-chunk" ||
+             a=="-backtrack-mpi-chunk" || a=="--backtrack-mpi-chunk") {
+      // Number of global observation locations fetched per dynamic MPI request.
+      // 0 means automatic; negative values are invalid.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -mode3d-mpi-dynamic-chunk");
+      opt.mode3dMpiDynamicChunk=std::stoi(argv[++i]);
+      if (opt.mode3dMpiDynamicChunk < 0)
+        exit(__LINE__,__FILE__,"-mode3d-mpi-dynamic-chunk must be >= 0 (0 means automatic)");
     }
     else if (a=="-cutoff-debug-scan" || a=="--cutoff-debug-scan" ||
              a=="-mode3d-cutoff-debug-scan" || a=="--mode3d-cutoff-debug-scan") {
@@ -434,6 +457,18 @@ std::string HelpMessage(const char* progName) {
   out << "      backtracking. For OPENMP this calls omp_set_num_threads(N). For THREADS\n";
   out << "      this sets the number of std::thread workers. Aliases:\n";
   out << "      --mode3d-density-threads, --n-density-threads.\n\n";
+  out << "  -mode3d-mpi-scheduler | --mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC>   (optional)\n";
+  out << "      Select the inter-rank scheduler for standalone Mode3D cutoff and\n";
+  out << "      density/flux backtracking. DYNAMIC uses an MPI one-sided atomic work\n";
+  out << "      queue so ranks fetch chunks of global locations as soon as they become\n";
+  out << "      idle. BLOCK_CYCLIC is the previous deterministic rank r, r+Nrank, ...\n";
+  out << "      partition. STATIC assigns one contiguous slab per rank. Aliases:\n";
+  out << "      --backtrack-mpi-scheduler, --mode3d-mpi-backend.\n\n";
+
+  out << "  -mode3d-mpi-dynamic-chunk | --mode3d-mpi-dynamic-chunk <N>   (optional; 0=automatic)\n";
+  out << "      Number of global observation locations fetched per MPI atomic request\n";
+  out << "      when the scheduler is DYNAMIC. Smaller values improve load balance;\n";
+  out << "      larger values reduce MPI scheduler overhead. Alias: --backtrack-mpi-chunk.\n\n";
 
   out << "  -max-trace-distance | --max-trace-distance <double>   (optional)\n";
   out << "\n";

@@ -184,17 +184,25 @@
 //   tracing can remain local-memory-only even though the mesh was not created with
 //   independentDomainMode=true.
 //
-// Point distribution: static block-cyclic decomposition.
-//   rank r owns global locations r, r+mpiSize, r+2*mpiSize, ...
-//   This avoids assigning an entire contiguous latitude/shell band to one rank, which
-//   can badly imbalance cutoff backtracking when trajectory cost varies geographically.
+// Inter-rank scheduling:
+//   The default scheduler is now DYNAMIC.  Rank/main threads atomically fetch chunks
+//   of global observation locations from an MPI one-sided counter.  This allows a rank
+//   that finishes easy trajectories quickly to immediately take more work instead of
+//   waiting for a rank that received a cluster of near-cutoff/high-latitude points.
+//   BLOCK_CYCLIC and STATIC are retained as deterministic fallback/debug schedulers.
+//
+// Two-level parallelism:
+//   The MPI level assigns chunks to ranks.  Inside each rank the selected backend
+//   (OPENMP, THREADS, or SERIAL) schedules locations within the chunk.  In THREADS
+//   mode the intra-rank scheduler is also dynamic and uses std::atomic<int>.  MPI is
+//   called only by the rank/main thread, never by worker threads.
 //
 // Communication:
 //   The global-B materialization is completed before entering RunCutoffRigidity().
-//   During the computation phase there is no field communication; after the
-//   computation phase, MPI_Gatherv collects the per-rank result arrays (Rc, Emin)
-//   at rank 0.  If DIRECTIONAL_MAP=T, the same gather pattern is reused for the
-//   flattened directional-map array Rc(location, lon/lat sky cell).
+//   During trajectory tracing there is no field communication.  At the end, each rank
+//   holds global-indexed result arrays with -1 sentinels for locations it did not
+//   compute; MPI_MAX reductions collect Rc, Emin, and optional directional-map values
+//   on rank 0 in the original global output order.
 //
 //======================================================================================
 
@@ -2648,7 +2656,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         }
 
         std::cout
-            << "MPI ranks      : " << mpiSize << " (global B cache, block-cyclic work partition)\n"
+            << "MPI ranks      : " << mpiSize << " (global B cache; scheduler selected below)\n"
             << "Progress bar   : ON\n";
 
 #ifdef _OPENMP
@@ -2696,57 +2704,45 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     }
 
     //==================================================================================
-    // 14.8 — MPI point distribution
+    // 14.8 — Two-level work scheduling over global Mode3D locations
     //==================================================================================
+    // The Mode3D mesh-field snapshot is replicated/readable on every MPI rank before
+    // this cutoff solver starts.  Therefore any rank can compute any output location.
+    // This section uses that property to support several inter-rank schedulers:
     //
-    // Earlier standalone Mode3D cutoff used a contiguous block of locations per MPI rank:
+    //   STATIC
+    //     Rank r receives one contiguous interval.  This is useful only for debugging
+    //     because shell maps often group expensive latitudes together and imbalance the
+    //     job badly.
     //
-    //   rank k owns [floor(nLoc*k/nRanks), floor(nLoc*(k+1)/nRanks)).
+    //   BLOCK_CYCLIC
+    //     Rank r receives r, r+nRanks, r+2*nRanks, ... .  This was the previous
+    //     improvement over STATIC and remains deterministic/reproducible, but it still
+    //     cannot react when one rank receives a set of unusually long trajectories.
     //
-    // That is numerically correct, but it is a poor load balancer for SHELLS cutoff maps.
-    // In SHELLS mode the flattened location index walks through longitude fastest and
-    // latitude/shell more slowly.  The cost of a cutoff search can vary strongly with
-    // latitude, L shell, magnetic connectivity, and with whether trajectories hit the
-    // inner sphere, escape rapidly, or run close to the maximum trace time.  A contiguous
-    // MPI block can therefore give one rank many expensive locations and another rank
-    // mostly cheap locations.
+    //   DYNAMIC
+    //     Ranks fetch chunks from an MPI one-sided atomic counter.  Once a rank finishes
+    //     its current chunk, it immediately asks for another.  This is the two-level
+    //     scheduler requested for the cutoff calculation: the MPI level dynamically
+    //     balances chunks between ranks, and the THREADS/OpenMP/SERIAL backend below
+    //     schedules the locations inside each chunk within the rank.
     //
-    // Since Mode3D materializes the magnetic/electric field on the AMR mesh available to
-    // every rank, any MPI rank can compute any observation location.  Use a block-cyclic
-    // static distribution with block size one by default:
-    //
-    //   rank r owns global locations r, r+nRanks, r+2*nRanks, ...
-    //
-    // This keeps the no-inter-rank-compute property, requires no MPI communication from
-    // worker threads, and spreads longitude/latitude/shell cost much more evenly.  The
-    // MPI gather below collects the associated global indices and scatters results into
-    // rank-0 arrays in the original global order before writing Tecplot output.
+    // Important MPI-threading rule:
+    //   Only the rank/main thread calls FetchNextChunkStart().  Worker threads never call
+    //   MPI.  The implementation therefore works with the normal MPI_THREAD_FUNNELED or
+    //   even single-thread MPI initialization model and does not require MPI_THREAD_MULTIPLE.
     //==================================================================================
 
-    std::vector<int> localToGlobalIdx;
-    localToGlobalIdx.reserve((size_t)((nLoc + mpiSize - 1) / mpiSize));
-    for (int globalIdx=mpiRank; globalIdx<nLoc; globalIdx+=mpiSize) {
-        localToGlobalIdx.push_back(globalIdx);
-    }
-    const int nLocal = static_cast<int>(localToGlobalIdx.size());
-
     //==================================================================================
-    // 14.8a — Intra-rank parallel backend selection
-    //==================================================================================
-    // The cutoff calculation now shares the same Mode3D parallel controls that were
-    // introduced for density/flux backtracking:
-    //
-    //   DENSITY_PARALLEL  OPENMP | THREADS | SERIAL
-    //   DENSITY_THREADS   <N>
-    //
-    // When THREADS is selected, a direct std::thread worker pool is used over the local
-    // observation locations owned by this MPI rank.  Before that worker pool is created,
-    // the MPI-rank affinity is widened by PIC::Parallel::SetWideAffinityForScheduler()
-    // so worker threads are not forced onto a single CPU by launcher-level rank pinning.
+    // 14.8a — Intra-rank and inter-rank backend selection
     //==================================================================================
 
     const CutoffParallelBackend_ cutoffBackend = ResolveCutoffParallelBackend_(prm);
     const int cutoffThreadCount = ResolveCutoffThreadCount_(prm,cutoffBackend);
+    const Earth::Mode3D::MpiScheduler mpiScheduler =
+        Earth::Mode3D::ResolveMpiScheduler(prm,"Mode3D cutoff");
+    const long long mpiDynamicChunk = Earth::Mode3D::ResolveMpiDynamicChunk(
+        prm,cutoffThreadCount,static_cast<long long>(nLoc));
 
     ApplyWideAffinityForDirectCutoffThreadsOnce_(cutoffBackend,cutoffThreadCount);
 
@@ -2760,7 +2756,13 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         std::cout
             << "Cutoff backend : " << CutoffParallelBackendName_(cutoffBackend) << "\n"
             << "Cutoff workers : " << cutoffThreadCount
-            << " per rank (from DENSITY_THREADS/AMPS_MODE3D_DENSITY_THREADS)\n";
+            << " per rank (from DENSITY_THREADS/AMPS_MODE3D_DENSITY_THREADS)\n"
+            << "MPI scheduler  : " << Earth::Mode3D::MpiSchedulerName(mpiScheduler) << "\n";
+        if (mpiScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
+            std::cout
+                << "MPI dyn chunk  : " << mpiDynamicChunk
+                << " global location(s) per atomic fetch\n";
+        }
         if (cutoffBackend == CutoffParallelBackend_::THREADS) {
             std::cout
                 << "Affinity mode  : wide MPI-rank mask via "
@@ -2770,34 +2772,63 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     }
 
     //==================================================================================
-    // 14.8b — Optional global progress reporting
+    // 14.8b — Rank-local result arrays indexed by GLOBAL location id
     //==================================================================================
-    // The gridless cutoff solver prints one global progress bar from its root
-    // scheduler.  For Mode3D the cutoff locations are distributed statically
-    // across MPI ranks, so there is no central scheduler.  To keep the same
-    // user-facing behaviour without requiring MPI calls from OpenMP worker
-    // threads, the progress-enabled path below computes the local work in a
-    // sequence of synchronized batches:
+    // Dynamic MPI scheduling makes the number and order of locations processed by each
+    // rank unknown until runtime.  To avoid any gather-order assumptions, each rank keeps
+    // full-length result arrays initialized to sentinel values and writes directly to
+    // slot globalIdx.  Because the MPI scheduler guarantees that each globalIdx is issued
+    // to exactly one rank, MPI_MAX at the end selects the one non-sentinel contribution.
     //
-    //   1. every MPI rank computes the next batch of its own locations with
-    //      OpenMP;
-    //   2. all ranks enter the same MPI_Allreduce calls;
-    //   3. rank 0 receives the summed number of completed locations/tasks and
-    //      prints the single global progress bar.
-    //
-    // When showProgressBar=false, RunCutoffRigidity keeps the original fast
-    // path: one OpenMP loop over this rank's entire local location range and no
-    // extra inter-rank synchronization during the compute phase.
-    //
-    // Progress task accounting:
-    //   - the primary scalar cutoff contributes one coarse task per location;
-    //   - if DIRECTIONAL_MAP=T, each sky-map cell contributes one additional
-    //     trajectory-search task for that same location.
-    //
-    // The computation is still scheduled by location (for simple MPI/OpenMP
-    // ownership), so task completion advances in location-sized chunks.  The
-    // Task counter nevertheless reflects the actual added directional-map work,
-    // which is important because DIRMAP grids can dominate the runtime.
+    // Sentinel convention:
+    //   Rc/Emin/dirMap = -1.0 means "this rank did not compute this location".
+    //   Valid cutoff values are >=0, so MPI_MAX is safe even for the polar analytic
+    //   cutoff where Rc can be zero.
+    //==================================================================================
+
+    std::vector<double> rcRank((size_t)nLoc,-1.0);
+    std::vector<double> eminRank((size_t)nLoc,-1.0);
+    std::vector<double> dirMapRank;
+
+    if (dirMapCfg.enabled) {
+        const long long nMapLL = static_cast<long long>(nLoc) *
+                                 static_cast<long long>(dirMapCfg.nCells);
+        if (nMapLL > static_cast<long long>(std::numeric_limits<int>::max())) {
+            throw std::runtime_error(
+                "Mode3D cutoff: directional-map MPI reduction count exceeds INT_MAX. "
+                "Use a coarser DIRMAP grid or split the run into fewer locations.");
+        }
+        dirMapRank.assign((size_t)nMapLL,-1.0);
+    }
+
+    // Deterministic fallback work list for STATIC and BLOCK_CYCLIC.  DYNAMIC does not
+    // use this vector; it obtains global locations from the RMA counter in chunks.
+    std::vector<int> rankWorkList;
+    if (mpiScheduler == Earth::Mode3D::MpiScheduler::BLOCK_CYCLIC) {
+        rankWorkList.reserve((size_t)((nLoc + mpiSize - 1) / mpiSize));
+        for (int globalIdx=mpiRank; globalIdx<nLoc; globalIdx+=mpiSize) {
+            rankWorkList.push_back(globalIdx);
+        }
+    }
+    else if (mpiScheduler == Earth::Mode3D::MpiScheduler::STATIC) {
+        const int begin = (int)((static_cast<long long>(nLoc) * mpiRank) / mpiSize);
+        const int end   = (int)((static_cast<long long>(nLoc) * (mpiRank+1)) / mpiSize);
+        rankWorkList.reserve((size_t)std::max(0,end-begin));
+        for (int globalIdx=begin; globalIdx<end; ++globalIdx) rankWorkList.push_back(globalIdx);
+    }
+
+    const int nLocalStatic = static_cast<int>(rankWorkList.size());
+
+    //==================================================================================
+    // 14.8c — Global progress bookkeeping
+    //==================================================================================
+    // Progress collectives must be executed in the same order by every rank.  For the
+    // deterministic STATIC/BLOCK_CYCLIC schedulers we can still use synchronized batches.
+    // For DYNAMIC, ranks finish chunks at different times and repeatedly call the MPI RMA
+    // counter; inserting progress Allreduces inside that loop would either require a much
+    // more complicated protocol or reintroduce a global synchronization bottleneck.
+    // Therefore DYNAMIC prints start and completion progress only, prioritizing load
+    // balance over intermediate progress updates.
     //==================================================================================
 
     const long long totalLocationsGlobal = static_cast<long long>(nLoc);
@@ -2810,34 +2841,17 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 
     std::vector<int> locDonePerShellLocal((size_t)std::max(nShells,0),0);
     std::vector<int> locDonePerShellGlobal((size_t)std::max(nShells,0),0);
-    std::vector<int> locTotalPerShellLocal((size_t)std::max(nShells,0),0);
     std::vector<int> locTotalPerShellGlobal((size_t)std::max(nShells,0),0);
 
-    if (showProgressBar && isShells) {
-        for (int localIdx=0; localIdx<nLocal; ++localIdx) {
-            const int globalIdx = localToGlobalIdx[(size_t)localIdx];
-            const int s = globalIdx / nPtsShell;
-            if (s>=0 && s<nShells) locTotalPerShellLocal[(size_t)s]++;
-        }
-
-        // The shell totals are needed by rank 0 to report per-shell progress.
-        // In the MPI-parallel Mode3D algorithm different ranks may work on
-        // different shells at the same time.  Therefore there is no single
-        // globally meaningful "current shell".  The progress line below reports
-        // total job progress and a compact per-shell completion summary instead
-        // of inferring a shell label from the global linear task counter.
-        // This collective is used only when the progress bar is enabled, so the
-        // default no-progress path remains free of extra progress synchronization.
-        MPI_Allreduce(locTotalPerShellLocal.data(),
-                      locTotalPerShellGlobal.data(),
-                      nShells, MPI_INT, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+    if (isShells) {
+        for (int s=0; s<nShells; ++s) locTotalPerShellGlobal[(size_t)s] = nPtsShell;
     }
 
     auto mode3d_now_seconds = []() -> double { return MPI_Wtime(); };
     const double progressStartTime = mode3d_now_seconds();
     double progressLastPrintTime = -1.0;
 
-    auto mode3d_fmt_hms = [](double s)->std::string {
+    auto mode3d_fmt_hms = [](double s) -> std::string {
         if (s < 0.0) return std::string("--:--:--");
         long long is = (long long)std::llround(s);
         long long hh = is/3600; is-=hh*3600;
@@ -2852,7 +2866,6 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                                   long long doneTasks,
                                   const std::vector<int>& shellDoneGlobal,
                                   bool forcePrint) {
-        if (!showProgressBar) return;
         if (mpiRank != 0) return;
 
         const double t = mode3d_now_seconds();
@@ -2862,16 +2875,13 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         }
         progressLastPrintTime = t;
 
-        const long long totalTasks = totalTasksGlobal;
-        const long long totalLocations = totalLocationsGlobal;
-        const double frac = (totalTasks>0) ?
-            (double(doneTasks)/double(totalTasks)) : 1.0;
-
+        const double frac = (totalTasksGlobal > 0)
+            ? (double(doneTasks)/double(totalTasksGlobal)) : 1.0;
         const double dt = t - progressStartTime;
-        const double rate = (dt>0.0) ? (double(doneTasks)/dt) : 0.0;
+        const double rate = (dt > 0.0) ? (double(doneTasks)/dt) : 0.0;
         double eta_s = -1.0;
-        if (rate>0.0 && totalTasks>doneTasks)
-            eta_s = double(totalTasks-doneTasks)/rate;
+        if (rate > 0.0 && totalTasksGlobal > doneTasks)
+            eta_s = double(totalTasksGlobal-doneTasks)/rate;
 
         const int barW = 36;
         int filled = (int)std::floor(frac*barW + 0.5);
@@ -2879,19 +2889,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         if (filled > barW) filled = barW;
 
         std::ostringstream line;
-
         if (isPoints) {
-            if (outputMode == "TRAJECTORY") line << "[TRAJECTORY] ";
-            else line << "[POINTS] ";
+            if (outputMode == "TRAJECTORY") line << "[Mode3D cutoff TRAJECTORY] ";
+            else line << "[Mode3D cutoff POINTS] ";
         }
         else {
-            // Do not print "SHELL i/N" here.  With MPI domain/work splitting,
-            // rank 0, rank 1, ... may simultaneously work on locations that
-            // belong to different altitude shells.  A single "current shell"
-            // would therefore be misleading.  Label the job as a multi-shell
-            // calculation and include the actual per-shell counters below.
-            line << "[SHELLS " << nShells << " zones";
-
+            line << "[Mode3D cutoff SHELLS " << nShells << " zones";
             if (nShells == 1) {
                 line << " alt=" << prm.output.shellAlt_km[0] << "km";
             }
@@ -2907,195 +2910,136 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 line << " alt=" << prm.output.shellAlt_km.front()
                      << ".." << prm.output.shellAlt_km.back() << "km";
             }
-
             line << "] ";
         }
 
-        // Keep the same visual style as the rank-local bar, but make explicit
-        // that this line is the root-rank summary over all MPI processes.
         line << "[rank 0/global over " << mpiSize << " MPI ranks] ";
-
         line << "[";
-        for (int i=0;i<barW;i++) line << (i<filled ? "#" : "-");
+        for (int i=0; i<barW; ++i) line << (i<filled ? "#" : "-");
         line << "] ";
 
         line.setf(std::ios::fixed);
         line.precision(1);
         line << (frac*100.0) << "%  ";
+        line << "(Loc " << doneLocations << "/" << totalLocationsGlobal
+             << ", Task " << doneTasks << "/" << totalTasksGlobal;
 
-        line << "(Loc " << doneLocations << "/" << totalLocations << ", "
-             << "Task " << doneTasks << "/" << totalTasks;
-
-        if (isShells && nShells > 0) {
+        if (isShells) {
             line << "; Shells ";
-
             if (nShells <= 4) {
-                // For the common small number of altitude shells, show every
-                // shell explicitly.  These counters come from MPI_Allreduce and
-                // therefore summarize work completed by all ranks, not just
-                // rank 0.
                 for (int s=0; s<nShells; ++s) {
                     if (s) line << ", ";
-
                     const int shellDone  = shellDoneGlobal[(size_t)s];
                     const int shellTotal = locTotalPerShellGlobal[(size_t)s];
-                    const double shellPct = (shellTotal > 0)
-                        ? 100.0*double(shellDone)/double(shellTotal)
-                        : 100.0;
-
-                    line << (s+1) << ":"
-                         << shellDone << "/" << shellTotal
-                         << " " << shellPct << "%";
+                    const double pct = (shellTotal > 0)
+                        ? 100.0*double(shellDone)/double(shellTotal) : 100.0;
+                    line << (s+1) << ":" << shellDone << "/" << shellTotal
+                         << " " << pct << "%";
                 }
             }
             else {
-                // For many shells, keep the line short: report how many shells
-                // are complete and identify the least-complete shell, which is
-                // the useful diagnostic when progress is imbalanced.
                 int nCompleteShells = 0;
                 int slowestShell = -1;
                 double slowestFrac = 2.0;
-
                 for (int s=0; s<nShells; ++s) {
                     const int shellDone  = shellDoneGlobal[(size_t)s];
                     const int shellTotal = locTotalPerShellGlobal[(size_t)s];
                     const double shellFrac = (shellTotal > 0)
-                        ? double(shellDone)/double(shellTotal)
-                        : 1.0;
-
+                        ? double(shellDone)/double(shellTotal) : 1.0;
                     if (shellFrac >= 1.0) nCompleteShells++;
                     if (shellFrac < slowestFrac) {
                         slowestFrac = shellFrac;
                         slowestShell = s;
                     }
                 }
-
                 line << nCompleteShells << "/" << nShells << " complete";
                 if (slowestShell >= 0) {
-                    const int shellDone = shellDoneGlobal[(size_t)slowestShell];
+                    const int shellDone  = shellDoneGlobal[(size_t)slowestShell];
                     const int shellTotal = locTotalPerShellGlobal[(size_t)slowestShell];
                     line << ", slowest " << (slowestShell+1) << ":"
-                         << shellDone << "/" << shellTotal
-                         << " " << (100.0*slowestFrac) << "%";
+                         << shellDone << "/" << shellTotal << " "
+                         << (100.0*slowestFrac) << "%";
                 }
             }
         }
 
         line << ")  ETA " << mode3d_fmt_hms(eta_s) << "\n";
-
         std::cout << line.str();
         std::cout.flush();
     };
 
-    if (showProgressBar) {
-        maybePrintProgress(0,0,locDonePerShellGlobal,true);
-    }
+    auto accountCompletedGlobalRange = [&](int begin, int end) {
+        const long long nDone = static_cast<long long>(std::max(0,end-begin));
+        doneLocationsLocal += nDone;
+        doneTasksLocal     += nDone * tasksPerLocation;
+        if (isShells) {
+            for (int globalIdx=begin; globalIdx<end; ++globalIdx) {
+                const int shellIdx = globalIdx / nPtsShell;
+                if (shellIdx>=0 && shellIdx<nShells)
+                    locDonePerShellLocal[(size_t)shellIdx]++;
+            }
+        }
+    };
 
-    // Local result arrays (indexed 0..nLocal-1)
-    std::vector<double> rcLocal(nLocal, -1.0);
-    std::vector<double> eminLocal(nLocal, -1.0);
-
-    // Optional directional-map results.  The layout is rank-local but otherwise
-    // identical to the final rank-0 layout:
-    //
-    //   dirMapLocal[ localIdx*nCells + cellId ] = Rc_GV(location, sky cell)
-    //
-    // localIdx is the same local location index used by rcLocal/eminLocal.
-    // cellId follows the Tecplot ordering iLon + nLon*jLat.  This flat layout
-    // lets MPI_Gatherv collect the maps with the same displacements as the scalar
-    // cutoff arrays, simply multiplied by nCells.
-    std::vector<double> dirMapLocal;
-    if (dirMapCfg.enabled) {
-        dirMapLocal.assign((size_t)nLocal * (size_t)dirMapCfg.nCells, -1.0);
-    }
+    auto accountCompletedWorkListRange = [&](int begin, int end) {
+        const long long nDone = static_cast<long long>(std::max(0,end-begin));
+        doneLocationsLocal += nDone;
+        doneTasksLocal     += nDone * tasksPerLocation;
+        if (isShells) {
+            for (int localIdx=begin; localIdx<end; ++localIdx) {
+                const int globalIdx = rankWorkList[(size_t)localIdx];
+                const int shellIdx = globalIdx / nPtsShell;
+                if (shellIdx>=0 && shellIdx<nShells)
+                    locDonePerShellLocal[(size_t)shellIdx]++;
+            }
+        }
+    };
 
     //==================================================================================
-    // 14.9 — Intra-rank parallel loop over local points
-    //==================================================================================
-    //
-    // Work unit:
-    //   One work item is one observation location owned by this MPI rank.  A location may
-    //   involve many trajectory integrations: the scalar cutoff scans all requested arrival
-    //   directions and, if DIRECTIONAL_MAP=T, every sky-map direction is also solved.
-    //
-    // Thread-private field evaluator:
-    //   Each OpenMP thread or direct std::thread worker constructs its own
-    //   cMode3DMeshFieldEval.  The evaluator reads from the frozen AMR mesh snapshot and
-    //   owns its own lastNode_ cache, so the trajectory tracer does not share mutable
-    //   interpolation state between workers.
-    //
-    // Backends:
-    //   OPENMP  — legacy OpenMP region with one private field evaluator per OpenMP thread.
-    //   THREADS — direct std::thread workers pulling localIdx values from an atomic queue.
-    //             This is useful on systems where OpenMP placement is problematic but
-    //             std::thread workers run correctly once the MPI-rank affinity mask is
-    //             widened by PIC::Parallel::SetWideAffinityForScheduler().
-    //   SERIAL  — one field evaluator in the calling thread; useful for debugging or for
-    //             avoiding all intra-rank thread activity.
+    // 14.9 — Location computation kernels
     //==================================================================================
 
-    auto computeLocalLocation = [&](int localIdx,
-                                    cMode3DMeshFieldEval& threadField) {
-        const int globalIdx = localToGlobalIdx[(size_t)localIdx];
-
-        // Reconstruct the observation position for this point.  In SHELLS mode this may
-        // use the SPICE rotation cache protected above by gLocationToX0mSpiceMutex_.
+    auto computeGlobalLocation = [&](int globalIdx, cMode3DMeshFieldEval& threadField) {
         const V3 x0_m = LocationToX0m(prm, globalIdx, nLon, nLat, d_deg, nPtsShell);
 
-        // Compute the minimum cutoff rigidity over all sampled directions.  The mesh field
-        // is the same for all points and was initialized once before this function was
-        // called by InitMeshFields() / the SWMF-coupled global-field materialization path.
         const double rc = ComputeCutoffAtPoint_GV(
             prm, threadField, x0_m, dirs, samplingVertical,
             q_C, m0, box, Rmin, Rmax);
 
-        // localIdx is unique in all backends, so no synchronization is needed for these
-        // stores.  The MPI gather later places this rank-local slab into the global array.
-        rcLocal[(size_t)localIdx] = rc;
+        rcRank[(size_t)globalIdx] = rc;
         if (rc > 0.0) {
             const double pCut = MomentumFromRigidity_GV(rc, qabs);
-            eminLocal[(size_t)localIdx] = KineticEnergyFromMomentum_MeV(pCut, m0);
+            eminRank[(size_t)globalIdx] = KineticEnergyFromMomentum_MeV(pCut, m0);
         }
 
-        // Optional directional cutoff map.  This loop computes Rc for each map direction
-        // independently and stores the directional value itself, not the minimum over
-        // directions.  Therefore the scalar-cutoff per-location upper-bound optimisation
-        // must not be used here.
         if (dirMapCfg.enabled) {
-            const size_t base = (size_t)localIdx * (size_t)dirMapCfg.nCells;
+            const size_t base = (size_t)globalIdx * (size_t)dirMapCfg.nCells;
             for (int cellId=0; cellId<dirMapCfg.nCells; ++cellId) {
                 const V3 dir_gsm = DirectionalMapCellDirectionGSM3D(dirMapCfg, cellId);
-                dirMapLocal[base + (size_t)cellId] = CutoffForDir_GV(
+                dirMapRank[base + (size_t)cellId] = CutoffForDir_GV(
                     prm, threadField, x0_m, dir_gsm,
                     q_C, m0, box, Rmin, Rmax);
             }
         }
     };
 
-    // Helper used by both the progress and no-progress branches.  Keeping the dispatch in
-    // one lambda ensures that OPENMP, THREADS, and SERIAL compute exactly the same local
-    // locations and differ only in how those independent locations are scheduled.
-    auto computeLocalRange = [&](int batchBegin, int batchEnd) {
-        if (batchEnd <= batchBegin) return;
+    auto computeGlobalRange = [&](int begin, int end) {
+        if (end <= begin) return;
 
         if (cutoffBackend == CutoffParallelBackend_::THREADS && cutoffThreadCount > 1) {
-            const int nWork = batchEnd - batchBegin;
+            const int nWork = end - begin;
             const int nWorkers = std::max(1,std::min(cutoffThreadCount,nWork));
-
-            // Atomic work queue over local location indices.  Each worker owns its field
-            // evaluator and repeatedly pulls the next location until the batch is empty.
-            std::atomic<int> nextLocalIdx(batchBegin);
+            std::atomic<int> nextGlobalIdx(begin);
             std::vector<std::thread> workers;
             workers.reserve((size_t)nWorkers);
 
             for (int iw=0; iw<nWorkers; ++iw) {
                 workers.emplace_back([&]() {
                     cMode3DMeshFieldEval threadField(prm);
-
                     for (;;) {
-                        const int localIdx = nextLocalIdx.fetch_add(1,std::memory_order_relaxed);
-                        if (localIdx >= batchEnd) break;
-                        computeLocalLocation(localIdx,threadField);
+                        const int globalIdx = nextGlobalIdx.fetch_add(1,std::memory_order_relaxed);
+                        if (globalIdx >= end) break;
+                        computeGlobalLocation(globalIdx,threadField);
                     }
                 });
             }
@@ -3105,98 +3049,134 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         }
 
         if (cutoffBackend == CutoffParallelBackend_::SERIAL) {
-            // Explicit serial backend.  This path is useful for debugging numerical
-            // reproducibility because it removes all intra-rank scheduling variation.
             cMode3DMeshFieldEval threadField(prm);
-            for (int localIdx=batchBegin; localIdx<batchEnd; ++localIdx) {
-                computeLocalLocation(localIdx,threadField);
+            for (int globalIdx=begin; globalIdx<end; ++globalIdx) {
+                computeGlobalLocation(globalIdx,threadField);
             }
             return;
         }
 
-        // OPENMP backend.  The pragma is guarded so non-OpenMP builds still compile and
-        // fall back to a single-thread loop.  Each OpenMP worker gets its own field
-        // evaluator outside the omp for loop.
 #ifdef _OPENMP
 #pragma omp parallel
 #endif
         {
             cMode3DMeshFieldEval threadField(prm);
-
 #ifdef _OPENMP
 #pragma omp for schedule(dynamic, 1)
 #endif
-            for (int localIdx=batchBegin; localIdx<batchEnd; ++localIdx) {
-                computeLocalLocation(localIdx,threadField);
+            for (int globalIdx=begin; globalIdx<end; ++globalIdx) {
+                computeGlobalLocation(globalIdx,threadField);
             }
         }
     };
 
-    if (!showProgressBar) {
-        // Fast path retained for source-level symmetry with older versions.  The current
-        // user-facing Mode3D cutoff driver forces showProgressBar=true, but keeping this
-        // block makes direct/internal calls behave correctly if that policy is relaxed.
-        computeLocalRange(0,nLocal);
+    auto computeWorkListRange = [&](int begin, int end) {
+        if (end <= begin) return;
+
+        if (cutoffBackend == CutoffParallelBackend_::THREADS && cutoffThreadCount > 1) {
+            const int nWork = end - begin;
+            const int nWorkers = std::max(1,std::min(cutoffThreadCount,nWork));
+            std::atomic<int> nextLocalIdx(begin);
+            std::vector<std::thread> workers;
+            workers.reserve((size_t)nWorkers);
+
+            for (int iw=0; iw<nWorkers; ++iw) {
+                workers.emplace_back([&]() {
+                    cMode3DMeshFieldEval threadField(prm);
+                    for (;;) {
+                        const int localIdx = nextLocalIdx.fetch_add(1,std::memory_order_relaxed);
+                        if (localIdx >= end) break;
+                        const int globalIdx = rankWorkList[(size_t)localIdx];
+                        computeGlobalLocation(globalIdx,threadField);
+                    }
+                });
+            }
+
+            for (std::thread& worker : workers) worker.join();
+            return;
+        }
+
+        if (cutoffBackend == CutoffParallelBackend_::SERIAL) {
+            cMode3DMeshFieldEval threadField(prm);
+            for (int localIdx=begin; localIdx<end; ++localIdx) {
+                computeGlobalLocation(rankWorkList[(size_t)localIdx],threadField);
+            }
+            return;
+        }
+
+#ifdef _OPENMP
+#pragma omp parallel
+#endif
+        {
+            cMode3DMeshFieldEval threadField(prm);
+#ifdef _OPENMP
+#pragma omp for schedule(dynamic, 1)
+#endif
+            for (int localIdx=begin; localIdx<end; ++localIdx) {
+                computeGlobalLocation(rankWorkList[(size_t)localIdx],threadField);
+            }
+        }
+    };
+
+    maybePrintProgress(0,0,locDonePerShellGlobal,true);
+
+    if (mpiScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
+        // Collective construction of the RMA counter.  After construction, each rank
+        // independently fetches chunks.  No MPI call is made from inside worker threads.
+        Earth::Mode3D::DynamicMpiLocationScheduler scheduler(
+            MPI_GLOBAL_COMMUNICATOR,
+            static_cast<long long>(nLoc),
+            mpiDynamicChunk,
+            "Mode3D cutoff");
+
+        for (;;) {
+            const long long chunkStartLL = scheduler.FetchNextChunkStart();
+            if (chunkStartLL >= static_cast<long long>(nLoc)) break;
+
+            const long long chunkEndLL = std::min(
+                chunkStartLL + scheduler.ChunkSize(),
+                static_cast<long long>(nLoc));
+
+            const int chunkStart = static_cast<int>(chunkStartLL);
+            const int chunkEnd   = static_cast<int>(chunkEndLL);
+
+            computeGlobalRange(chunkStart,chunkEnd);
+            accountCompletedGlobalRange(chunkStart,chunkEnd);
+        }
+
+        MPI_Allreduce(&doneLocationsLocal,&doneLocationsGlobal,
+                      1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Allreduce(&doneTasksLocal,&doneTasksGlobal,
+                      1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+        if (isShells) {
+            MPI_Allreduce(locDonePerShellLocal.data(),locDonePerShellGlobal.data(),
+                          nShells,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+        }
+        maybePrintProgress(doneLocationsGlobal,doneTasksGlobal,locDonePerShellGlobal,true);
     }
     else {
-        // Progress path: all ranks must execute the same number of MPI_Allreduce calls.
-        // Therefore nProgressBatches must be identical on every rank.  For the THREADS
-        // backend, however, the batches must not be so small that a rank has only one
-        // local location per batch; that would serialize the direct thread worker pool.
-        //
-        // We compute the largest local work count over all MPI ranks, then choose a common
-        // batch count based on that maximum.  This keeps the collective sequence identical
-        // while providing larger batches that can feed several std::thread workers.
-        int nLocalMax = 0;
-        MPI_Allreduce(&nLocal,&nLocalMax,1,MPI_INT,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
-
         int nProgressBatches = std::max(1,std::min(nLoc,200));
         if (cutoffBackend == CutoffParallelBackend_::THREADS && cutoffThreadCount > 1) {
-            const int targetWorkPerBatch = std::max(cutoffThreadCount*4,cutoffThreadCount);
-            const int byThreadChunk = (nLocalMax + targetWorkPerBatch - 1) / targetWorkPerBatch;
-
-            nProgressBatches = std::max(1,std::min(200,std::max(1,byThreadChunk)));
-            if (nLocalMax > 0) nProgressBatches = std::min(nProgressBatches,nLocalMax);
+            nProgressBatches = 1;
         }
 
         for (int ibatch=0; ibatch<nProgressBatches; ++ibatch) {
             const int batchBegin = (int)(
-                (static_cast<long long>(nLocal) * ibatch) / nProgressBatches);
+                (static_cast<long long>(nLocalStatic) * ibatch) / nProgressBatches);
             const int batchEnd = (int)(
-                (static_cast<long long>(nLocal) * (ibatch+1)) / nProgressBatches);
+                (static_cast<long long>(nLocalStatic) * (ibatch+1)) / nProgressBatches);
 
             if (batchEnd > batchBegin) {
-                computeLocalRange(batchBegin,batchEnd);
-
-                // Update this rank's completed-location counters after the worker backend
-                // finishes the batch.  These counters are used only for progress reporting;
-                // the actual results are already stored in rcLocal/eminLocal/dirMapLocal.
-                const long long nBatchLocations = static_cast<long long>(batchEnd-batchBegin);
-                doneLocationsLocal += nBatchLocations;
-                doneTasksLocal     += nBatchLocations * tasksPerLocation;
-
-                if (isShells) {
-                    for (int localIdx=batchBegin; localIdx<batchEnd; ++localIdx) {
-                        const int globalIdx = localToGlobalIdx[(size_t)localIdx];
-                        const int shellIdx = globalIdx / nPtsShell;
-                        if (shellIdx>=0 && shellIdx<nShells)
-                            locDonePerShellLocal[(size_t)shellIdx]++;
-                    }
-                }
+                computeWorkListRange(batchBegin,batchEnd);
+                accountCompletedWorkListRange(batchBegin,batchEnd);
             }
 
-            // Sum completed work over all ranks.  Only rank 0 renders the line; every
-            // rank still participates in the collective so the global number represents
-            // the full MPI job, not only the root rank.
             MPI_Allreduce(&doneLocationsLocal,&doneLocationsGlobal,
                           1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-
             MPI_Allreduce(&doneTasksLocal,&doneTasksGlobal,
                           1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-
             if (isShells) {
-                MPI_Allreduce(locDonePerShellLocal.data(),
-                              locDonePerShellGlobal.data(),
+                MPI_Allreduce(locDonePerShellLocal.data(),locDonePerShellGlobal.data(),
                               nShells,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
             }
 
@@ -3206,137 +3186,34 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     }
 
     //==================================================================================
-    // 14.10 — MPI gather: collect results from all ranks onto rank 0
+    // 14.10 — MPI reduction: combine global-indexed rank-local result arrays
     //==================================================================================
-    //
-    // Each rank contributes nLocal values for Rc and Emin plus nLocal global-location
-    // indices.  Rank 0 scatters the gathered values into global output order.
+    // Since each rank writes values directly into globalIdx slots and leaves all other
+    // slots at -1, the result combination is a simple MPI_MAX reduction to rank 0.  This
+    // is independent of the scheduler: STATIC, BLOCK_CYCLIC, and DYNAMIC all share the
+    // same output path, eliminating the gather-order bugs that can appear when the local
+    // work order changes.
     //==================================================================================
 
-    // Build displacement and count arrays for MPI_Gatherv on rank 0.  Because the
-    // MPI work distribution is block-cyclic rather than contiguous, rank 0 also gathers
-    // the global location id associated with each local result and scatters the received
-    // values into rcAll/eminAll in the original global order.
-    std::vector<int> recvCounts(mpiSize, 0);
-    std::vector<int> displs(mpiSize, 0);
-
-    MPI_Gather(&nLocal, 1, MPI_INT,
-               recvCounts.data(), 1, MPI_INT,
-               0, MPI_GLOBAL_COMMUNICATOR);
-
-    int totalRecv = 0;
-    std::vector<int> idxRecv;
-    std::vector<double> rcRecv, eminRecv;
-    std::vector<double> rcAll, eminAll;
-
+    std::vector<double> rcAll, eminAll, dirMapAll;
     if (mpiRank == 0) {
-        int offset = 0;
-        for (int r = 0; r < mpiSize; ++r) {
-            displs[r] = offset;
-            offset   += recvCounts[(size_t)r];
-        }
-        totalRecv = offset;
-
-        idxRecv.resize((size_t)totalRecv, -1);
-        rcRecv.resize((size_t)totalRecv, -1.0);
-        eminRecv.resize((size_t)totalRecv, -1.0);
-        rcAll.resize((size_t)nLoc, -1.0);
-        eminAll.resize((size_t)nLoc, -1.0);
+        rcAll.assign((size_t)nLoc,-1.0);
+        eminAll.assign((size_t)nLoc,-1.0);
     }
 
-    MPI_Gatherv(localToGlobalIdx.data(), nLocal, MPI_INT,
-                idxRecv.data(), recvCounts.data(), displs.data(), MPI_INT,
-                0, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Reduce(rcRank.data(),
+               (mpiRank==0 ? rcAll.data() : nullptr),
+               nLoc,MPI_DOUBLE,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Reduce(eminRank.data(),
+               (mpiRank==0 ? eminAll.data() : nullptr),
+               nLoc,MPI_DOUBLE,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
 
-    MPI_Gatherv(rcLocal.data(), nLocal, MPI_DOUBLE,
-                rcRecv.data(), recvCounts.data(), displs.data(), MPI_DOUBLE,
-                0, MPI_GLOBAL_COMMUNICATOR);
-
-    MPI_Gatherv(eminLocal.data(), nLocal, MPI_DOUBLE,
-                eminRecv.data(), recvCounts.data(), displs.data(), MPI_DOUBLE,
-                0, MPI_GLOBAL_COMMUNICATOR);
-
-    if (mpiRank == 0) {
-        for (int i=0; i<totalRecv; ++i) {
-            const int globalIdx = idxRecv[(size_t)i];
-            if (globalIdx < 0 || globalIdx >= nLoc) {
-                std::ostringstream msg;
-                msg << "Mode3D cutoff: invalid gathered global location index "
-                    << globalIdx << " at receive slot " << i << ".";
-                throw std::runtime_error(msg.str());
-            }
-            rcAll[(size_t)globalIdx]   = rcRecv[(size_t)i];
-            eminAll[(size_t)globalIdx] = eminRecv[(size_t)i];
-        }
-    }
-
-    // Optional directional-map gather.
-    //
-    // The rank-local directional map is still stored as localIdx-major:
-    //
-    //   dirMapLocal[localIdx*nCells + cellId]
-    //
-    // Because localIdx no longer corresponds to a contiguous global-location block, rank
-    // 0 first receives the packed rank-local map slabs, then uses idxRecv to unpack each
-    // local slab into:
-    //
-    //   dirMapAll[globalIdx*nCells + cellId]
-    //
-    // in the original global output order.
-    std::vector<double> dirMapAll;
     if (dirMapCfg.enabled) {
-        std::vector<int> recvCountsMap(mpiSize, 0);
-        std::vector<int> displsMap(mpiSize, 0);
-        std::vector<double> dirMapRecv;
-
-        if (mpiRank == 0) {
-            for (int r=0; r<mpiSize; ++r) {
-                const long long countMap =
-                    static_cast<long long>(recvCounts[(size_t)r]) *
-                    static_cast<long long>(dirMapCfg.nCells);
-                const long long dispMap =
-                    static_cast<long long>(displs[(size_t)r]) *
-                    static_cast<long long>(dirMapCfg.nCells);
-
-                if (countMap > static_cast<long long>(std::numeric_limits<int>::max()) ||
-                    dispMap   > static_cast<long long>(std::numeric_limits<int>::max())) {
-                    throw std::runtime_error(
-                        "Mode3D cutoff: directional-map MPI_Gatherv count exceeds INT_MAX. "
-                        "Use a coarser DIRMAP grid or fewer locations per run.");
-                }
-
-                recvCountsMap[(size_t)r] = static_cast<int>(countMap);
-                displsMap[(size_t)r]     = static_cast<int>(dispMap);
-            }
-
-            dirMapRecv.assign((size_t)totalRecv * (size_t)dirMapCfg.nCells, -1.0);
-            dirMapAll.assign((size_t)nLoc * (size_t)dirMapCfg.nCells, -1.0);
-        }
-
-        const long long sendCountMapLL =
-            static_cast<long long>(nLocal) * static_cast<long long>(dirMapCfg.nCells);
-        if (sendCountMapLL > static_cast<long long>(std::numeric_limits<int>::max())) {
-            throw std::runtime_error(
-                "Mode3D cutoff: local directional-map MPI_Gatherv count exceeds INT_MAX. "
-                "Use a coarser DIRMAP grid or fewer locations per rank.");
-        }
-        const int sendCountMap = static_cast<int>(sendCountMapLL);
-
-        MPI_Gatherv(dirMapLocal.data(), sendCountMap, MPI_DOUBLE,
-                    dirMapRecv.data(), recvCountsMap.data(), displsMap.data(), MPI_DOUBLE,
-                    0, MPI_GLOBAL_COMMUNICATOR);
-
-        if (mpiRank == 0) {
-            for (int i=0; i<totalRecv; ++i) {
-                const int globalIdx = idxRecv[(size_t)i];
-                const size_t srcBase = (size_t)i * (size_t)dirMapCfg.nCells;
-                const size_t dstBase = (size_t)globalIdx * (size_t)dirMapCfg.nCells;
-                for (int cellId=0; cellId<dirMapCfg.nCells; ++cellId) {
-                    dirMapAll[dstBase + (size_t)cellId] =
-                        dirMapRecv[srcBase + (size_t)cellId];
-                }
-            }
-        }
+        const int nMap = static_cast<int>(dirMapRank.size());
+        if (mpiRank == 0) dirMapAll.assign((size_t)nMap,-1.0);
+        MPI_Reduce(dirMapRank.data(),
+                   (mpiRank==0 ? dirMapAll.data() : nullptr),
+                   nMap,MPI_DOUBLE,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
     }
 
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);

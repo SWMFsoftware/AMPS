@@ -81,6 +81,12 @@
 //       backend. For OPENMP this calls omp_set_num_threads(N); for THREADS it sets
 //       the number of std::thread workers.
 //
+//   -mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC>
+//       Select the inter-rank scheduler for standalone Mode3D cutoff/density runs.
+//
+//   -mode3d-mpi-dynamic-chunk <int>
+//       Number of global locations per dynamic MPI fetch. 0 means automatic.
+//
 //   -cutoff-search <UPPER_SCAN|BINARY>
 //       Select the standalone Mode3D cutoff search algorithm.  UPPER_SCAN is
 //       penumbra-safe and is the default; BINARY is the legacy endpoint method.
@@ -182,6 +188,16 @@ namespace EarthUtil {
     // -density-threads <int>
     // Number of shared-memory workers per MPI process. 0 means automatic/default.
     int densityThreads{0};
+
+    // -mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC>
+    // Inter-rank scheduler for standalone Mode3D backtracking products.
+    // Empty string means: use input-file/default value.
+    std::string mode3dMpiScheduler{""};
+
+    // -mode3d-mpi-dynamic-chunk <int>
+    // Number of global locations fetched per MPI atomic request in DYNAMIC mode.
+    // 0 means: no CLI override / automatic when used from input defaults.
+    int mode3dMpiDynamicChunk{0};
 
     // -cutoff-debug-scan <lon_deg> <lat_deg> <alt_km>
     // Optional Mode3D cutoff diagnostic.  When enabled, rank 0 writes a rigidity

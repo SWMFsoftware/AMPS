@@ -20,6 +20,8 @@
 #endif
 
 #include <cstdlib>
+#include <algorithm>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -42,6 +44,161 @@ static int ParsePositiveIntEnv_(const char* name) {
 }
 
 } // namespace
+
+const char* MpiSchedulerName(MpiScheduler scheduler) {
+  switch (scheduler) {
+  case MpiScheduler::BLOCK_CYCLIC: return "BLOCK_CYCLIC";
+  case MpiScheduler::STATIC:       return "STATIC";
+  case MpiScheduler::DYNAMIC:      return "DYNAMIC";
+  }
+  return "UNKNOWN";
+}
+
+MpiScheduler ResolveMpiScheduler(const EarthUtil::AmpsParam& prm,
+                                 const char* diagnosticContext) {
+  // The user-facing keyword is deliberately generic: the same inter-rank scheduler
+  // applies to cutoff rigidity and density/flux because both products operate on the
+  // same Mode3D list of observation locations.  Keep environment fallback support for
+  // quick tests on HPC systems where editing the input deck is inconvenient.
+  std::string token = prm.mode3d.mpiScheduler;
+  if (token.empty()) {
+    const char* env = std::getenv("AMPS_MODE3D_MPI_SCHEDULER");
+    if (env != nullptr) token = env;
+  }
+
+  token = EarthUtil::ToUpper(token);
+
+  // DYNAMIC is the new default because it is the only scheduler that can rebalance
+  // work between MPI ranks when trajectory cost is strongly nonuniform over a shell.
+  // BLOCK_CYCLIC remains available for deterministic regression runs and for MPI
+  // implementations where RMA atomics are known to be problematic.
+  if (token.empty() || token == "DYNAMIC" || token == "DYN" || token == "QUEUE" ||
+      token == "WORK_QUEUE" || token == "WORKQUEUE") {
+    return MpiScheduler::DYNAMIC;
+  }
+
+  if (token == "BLOCK_CYCLIC" || token == "BLOCKCYCLIC" || token == "CYCLIC" ||
+      token == "ROUND_ROBIN" || token == "ROUNDROBIN") {
+    return MpiScheduler::BLOCK_CYCLIC;
+  }
+
+  if (token == "STATIC" || token == "CONTIGUOUS" || token == "BLOCK" ||
+      token == "SLAB") {
+    return MpiScheduler::STATIC;
+  }
+
+  std::ostringstream msg;
+  msg << diagnosticContext
+      << ": unknown MODE3D_MPI_SCHEDULER/BACKTRACK_MPI_SCHEDULER value '"
+      << token << "'. Valid values: DYNAMIC, BLOCK_CYCLIC, STATIC.";
+  exit(__LINE__,__FILE__,msg.str().c_str());
+  return MpiScheduler::DYNAMIC;
+}
+
+long long ResolveMpiDynamicChunk(const EarthUtil::AmpsParam& prm,
+                                 int workerCount,
+                                 long long nGlobalLocations) {
+  long long chunk = static_cast<long long>(prm.mode3d.mpiDynamicChunk);
+
+  if (chunk <= 0) {
+    const char* env = std::getenv("AMPS_MODE3D_MPI_DYNAMIC_CHUNK");
+    if (env != nullptr && *env != '\0') {
+      try { chunk = std::stoll(std::string(env)); }
+      catch (...) { chunk = 0; }
+    }
+  }
+
+  if (chunk <= 0) {
+    // Automatic chunk-size heuristic:
+    //   * at least one location per worker so all direct threads can participate;
+    //   * normally four locations per worker to amortize MPI_Fetch_and_op overhead;
+    //   * never larger than the whole job.
+    // This is intentionally conservative.  Users with very expensive/variable traces
+    // can reduce MODE3D_MPI_DYNAMIC_CHUNK; users with tiny/cheap locations can increase
+    // it to reduce scheduler traffic.
+    const long long workers = static_cast<long long>(std::max(1,workerCount));
+    chunk = std::max(1LL,4LL*workers);
+  }
+
+  if (nGlobalLocations > 0) chunk = std::min(chunk,nGlobalLocations);
+  return std::max(1LL,chunk);
+}
+
+DynamicMpiLocationScheduler::DynamicMpiLocationScheduler(
+    MPI_Comm comm,
+    long long nGlobalLocations,
+    long long chunkSize,
+    const char* diagnosticContext)
+  : comm_(comm),
+    nGlobalLocations_(nGlobalLocations),
+    chunkSize_(std::max(1LL,chunkSize)),
+    exposedCounter_(0) {
+
+  if (comm_ == MPI_COMM_NULL) {
+    exit(__LINE__,__FILE__,"DynamicMpiLocationScheduler: invalid MPI communicator");
+  }
+
+  MPI_Comm_rank(comm_,&rank_);
+
+  if (nGlobalLocations_ < 0) {
+    std::ostringstream msg;
+    msg << diagnosticContext << ": negative number of global locations in dynamic MPI scheduler.";
+    exit(__LINE__,__FILE__,msg.str().c_str());
+  }
+
+  // All ranks must collectively create the RMA window.  Rank 0 exposes one 64-bit
+  // counter.  Non-root ranks expose zero bytes; they still participate in the same
+  // window and can atomically update rank 0's counter.
+  void* base = (rank_ == 0) ? static_cast<void*>(&exposedCounter_) : nullptr;
+  MPI_Aint nBytes = (rank_ == 0) ? static_cast<MPI_Aint>(sizeof(long long)) : 0;
+
+  const int ierr = MPI_Win_create(base,
+                                  nBytes,
+                                  static_cast<int>(sizeof(long long)),
+                                  MPI_INFO_NULL,
+                                  comm_,
+                                  &win_);
+  if (ierr != MPI_SUCCESS) {
+    std::ostringstream msg;
+    msg << diagnosticContext << ": MPI_Win_create failed in dynamic Mode3D scheduler.";
+    exit(__LINE__,__FILE__,msg.str().c_str());
+  }
+
+  // The window creation is collective, but an explicit barrier makes the ordering
+  // self-documenting: no rank can fetch from the counter before rank 0 has initialized
+  // and exposed it.  This is a setup-only synchronization, not inside the work loop.
+  MPI_Barrier(comm_);
+}
+
+DynamicMpiLocationScheduler::~DynamicMpiLocationScheduler() {
+  if (win_ != MPI_WIN_NULL) {
+    MPI_Win_free(&win_);
+    win_ = MPI_WIN_NULL;
+  }
+}
+
+long long DynamicMpiLocationScheduler::FetchNextChunkStart() {
+  long long start = 0;
+  const long long increment = chunkSize_;
+
+  // MPI_Fetch_and_op with MPI_SUM is an atomic fetch-add on rank 0's exposed counter.
+  // The returned value is unique for each caller and is the first global location in
+  // that caller's chunk.  Exclusive lock is conservative and widely supported.  This
+  // function is intentionally called only by the rank/main thread, not by std::thread
+  // workers, so the code does not require MPI_THREAD_MULTIPLE.
+  MPI_Win_lock(MPI_LOCK_EXCLUSIVE,0,0,win_);
+  MPI_Fetch_and_op(&increment,
+                   &start,
+                   MPI_LONG_LONG,
+                   0,
+                   0,
+                   MPI_SUM,
+                   win_);
+  MPI_Win_flush(0,win_);
+  MPI_Win_unlock(0,win_);
+
+  return start;
+}
 
 const char* ParallelBackendName(ParallelBackend backend) {
   switch (backend) {
