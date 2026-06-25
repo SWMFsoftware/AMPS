@@ -1607,6 +1607,55 @@ int main(int argc,char **argv) {
         }
         if (cli.densityThreads > 0) p.mode3d.densityThreads = cli.densityThreads;
 
+        // Optional single-point Mode3D cutoff diagnostic.  This does not change the
+        // main cutoff map; it only writes a rigidity-classification scan before the
+        // full calculation so numerical/bracketing issues can be isolated.
+        if (cli.cutoffDebugScan) {
+          p.cutoff.debugRigidityScan = true;
+          p.cutoff.debugScanLon_deg  = cli.cutoffDebugScanLon_deg;
+          p.cutoff.debugScanLat_deg  = cli.cutoffDebugScanLat_deg;
+          p.cutoff.debugScanAlt_km   = cli.cutoffDebugScanAlt_km;
+        }
+        if (cli.cutoffDebugScanN > 0) {
+          p.cutoff.debugScanN = cli.cutoffDebugScanN;
+        }
+        if (!cli.cutoffDebugScanFile.empty()) {
+          p.cutoff.debugScanFile = cli.cutoffDebugScanFile;
+        }
+        if (cli.cutoffDebugExit) {
+          p.cutoff.debugExitTrace = true;
+          p.cutoff.debugExitLon_deg = cli.cutoffDebugExitLon_deg;
+          p.cutoff.debugExitLat_deg = cli.cutoffDebugExitLat_deg;
+          p.cutoff.debugExitAlt_km = cli.cutoffDebugExitAlt_km;
+        }
+        if (cli.cutoffDebugExitR_GV > 0.0) {
+          p.cutoff.debugExitR_GV = cli.cutoffDebugExitR_GV;
+        }
+        if (cli.cutoffDebugExitN > 0) {
+          p.cutoff.debugExitN = cli.cutoffDebugExitN;
+        }
+        if (!cli.cutoffDebugExitFile.empty()) {
+          p.cutoff.debugExitFile = cli.cutoffDebugExitFile;
+        }
+        if (!cli.cutoffSearchAlgorithm.empty()) {
+          const std::string alg = EarthUtil::ToUpper(cli.cutoffSearchAlgorithm);
+          if (alg=="UPPER_SCAN" || alg=="UPPER" || alg=="SCAN" || alg=="PENUMBRA") {
+            p.cutoff.searchAlgorithm = "UPPER_SCAN";
+          }
+          else if (alg=="BINARY" || alg=="ENDPOINT_BINARY" || alg=="LEGACY_BINARY") {
+            p.cutoff.searchAlgorithm = "BINARY";
+          }
+          else {
+            std::cerr << "Error: unknown -cutoff-search algorithm '"
+                      << cli.cutoffSearchAlgorithm
+                      << "'. Valid values: UPPER_SCAN or BINARY.\n";
+            return 1;
+          }
+        }
+        if (cli.cutoffUpperScanN > 0) {
+          p.cutoff.upperScanN = cli.cutoffUpperScanN;
+        }
+
         // Keep the trajectory integrator identical to the gridless path when
         // the user selects a mover on the command line.
         if (!ApplyCutoffMoverCli(cli)) return 1;

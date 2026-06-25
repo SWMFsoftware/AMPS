@@ -81,6 +81,14 @@
 //       backend. For OPENMP this calls omp_set_num_threads(N); for THREADS it sets
 //       the number of std::thread workers.
 //
+//   -cutoff-search <UPPER_SCAN|BINARY>
+//       Select the standalone Mode3D cutoff search algorithm.  UPPER_SCAN is
+//       penumbra-safe and is the default; BINARY is the legacy endpoint method.
+//
+//   -cutoff-upper-scan-n <int>
+//       Number of log-spaced rigidity samples used by UPPER_SCAN.  If omitted,
+//       the solver reuses CUTOFF_NENERGY from the input file.
+//
 //   -max-trace-distance <double>
 //       Override #NUMERICAL MAX_TRACE_DISTANCE from the input file.
 //       Units: Earth radii (Re) of cumulative traced path length.
@@ -167,13 +175,47 @@ namespace EarthUtil {
     std::string mode3dFieldEval{""};
 
     // -density-parallel <OPENMP|THREADS|SERIAL>
-    // Optional Mode3D density-backtracking shared-memory backend override.
+    // Optional Mode3D backward-product shared-memory backend override.
     // Empty string means: use default/environment.
     std::string densityParallelBackend{""};
 
     // -density-threads <int>
     // Number of shared-memory workers per MPI process. 0 means automatic/default.
     int densityThreads{0};
+
+    // -cutoff-debug-scan <lon_deg> <lat_deg> <alt_km>
+    // Optional Mode3D cutoff diagnostic.  When enabled, rank 0 writes a rigidity
+    // classification table for the selected spherical-shell location before the
+    // full cutoff calculation starts.  This is useful for dipole/Störmer tests and
+    // for diagnosing endpoint/bracketing problems.
+    bool cutoffDebugScan{false};
+    double cutoffDebugScanLon_deg{0.0};
+    double cutoffDebugScanLat_deg{0.0};
+    double cutoffDebugScanAlt_km{-1.0};
+    int cutoffDebugScanN{0};
+    std::string cutoffDebugScanFile{""};
+
+    // -cutoff-debug-exit <lon_deg> <lat_deg> <alt_km>
+    // Optional Mode3D trajectory-exit diagnostic.  It writes the terminal reason,
+    // raw exit point, reconstructed boundary-crossing point, rigidity conservation,
+    // and dipole canonical-momentum invariant for the selected vertical trajectory.
+    bool cutoffDebugExit{false};
+    double cutoffDebugExitLon_deg{0.0};
+    double cutoffDebugExitLat_deg{0.0};
+    double cutoffDebugExitAlt_km{-1.0};
+    double cutoffDebugExitR_GV{-1.0};
+    int cutoffDebugExitN{0};
+    std::string cutoffDebugExitFile{""};
+
+    // -cutoff-search <UPPER_SCAN|BINARY>
+    // Optional override for #CUTOFF_RIGIDITY / CUTOFF_SEARCH_ALGORITHM.
+    // Empty means use the input-file/default value.
+    std::string cutoffSearchAlgorithm{""};
+
+    // -cutoff-upper-scan-n <int>
+    // Optional override for #CUTOFF_RIGIDITY / CUTOFF_UPPER_SCAN_N.
+    // 0 means no CLI override.
+    int cutoffUpperScanN{0};
 
     // -max-trace-distance <double>
     // Optional CLI override for #NUMERICAL MAX_TRACE_DISTANCE.

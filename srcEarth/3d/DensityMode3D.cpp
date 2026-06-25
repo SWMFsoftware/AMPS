@@ -34,6 +34,7 @@
 #include "DensityMode3D.h"
 #include "CutoffRigidityMode3D.h"  // TraceAllowedMesh/Ex and TrajectoryExitState
 #include "Mode3D.h"
+#include "Mode3DParallel.h"
 
 #include "pic.h"
 #include "Earth.h"
@@ -102,126 +103,25 @@ static inline bool InsideDirectDensityWorker_() {
   return gInsideDirectDensityWorker_;
 }
 
-enum class DensityParallelBackend_ { OPENMP, THREADS, SERIAL };
+using DensityParallelBackend_ = Earth::Mode3D::ParallelBackend;
 
 static const char* DensityParallelBackendName_(DensityParallelBackend_ backend) {
-  switch (backend) {
-  case DensityParallelBackend_::OPENMP:  return "OPENMP";
-  case DensityParallelBackend_::THREADS: return "THREADS";
-  case DensityParallelBackend_::SERIAL:  return "SERIAL";
-  }
-  return "UNKNOWN";
-}
-
-static int ParsePositiveIntEnv_(const char* name) {
-  const char* v = std::getenv(name);
-  if (v == nullptr || *v == '\0') return 0;
-  try {
-    const int n = std::stoi(std::string(v));
-    return (n > 0) ? n : 0;
-  }
-  catch (...) {
-    return 0;
-  }
+  return Earth::Mode3D::ParallelBackendName(backend);
 }
 
 static DensityParallelBackend_ ResolveDensityParallelBackend_(const EarthUtil::AmpsParam& prm) {
-  std::string token = prm.mode3d.densityParallelBackend;
-  if (token.empty()) {
-    const char* env = std::getenv("AMPS_MODE3D_DENSITY_PARALLEL");
-    if (env != nullptr) token = env;
-  }
-
-  token = EarthUtil::ToUpper(token);
-  if (token.empty() || token == "OPENMP" || token == "OMP") {
-#ifdef _OPENMP
-    return DensityParallelBackend_::OPENMP;
-#else
-    return DensityParallelBackend_::SERIAL;
-#endif
-  }
-  if (token == "THREAD" || token == "THREADS" || token == "STD_THREAD" ||
-      token == "STD_THREADS" || token == "PTHREAD" || token == "PTHREADS") {
-    return DensityParallelBackend_::THREADS;
-  }
-  if (token == "SERIAL" || token == "NONE" || token == "OFF") {
-    return DensityParallelBackend_::SERIAL;
-  }
-
-  std::ostringstream msg;
-  msg << "Mode3D density: unknown density parallel backend '" << token
-      << "'. Valid values: OPENMP, THREADS, SERIAL.";
-  exit(__LINE__,__FILE__,msg.str().c_str());
-  return DensityParallelBackend_::SERIAL;
+  return Earth::Mode3D::ResolveParallelBackend(prm,"Mode3D density/flux");
 }
 
 static int ResolveDensityThreadCount_(const EarthUtil::AmpsParam& prm,
                                       DensityParallelBackend_ backend) {
-  int n = prm.mode3d.densityThreads;
-  if (n <= 0) n = ParsePositiveIntEnv_("AMPS_MODE3D_DENSITY_THREADS");
-  if (n <= 0) n = ParsePositiveIntEnv_("OMP_NUM_THREADS");
-
-#ifdef _OPENMP
-  if (n <= 0 && backend == DensityParallelBackend_::OPENMP) n = omp_get_max_threads();
-#endif
-
-  if (n <= 0) {
-    const unsigned hw = std::thread::hardware_concurrency();
-    n = (hw > 0) ? (int)hw : 1;
-  }
-
-  if (n < 1) n = 1;
-  return n;
+  return Earth::Mode3D::ResolveParallelThreadCount(prm,backend);
 }
 
-//--------------------------------------------------------------------------------------
-// Optional MPI-rank affinity repair for the direct std::thread density backend
-//--------------------------------------------------------------------------------------
-//
-// Why this is here:
-//   The THREADS backend creates std::thread workers inside each MPI rank.  On some
-//   systems the MPI launcher initially pins each rank to one CPU core.  All worker
-//   threads inherit that one-core affinity mask, so many workers are created but all
-//   execute on the same CPU.  Manually running
-//
-//     taskset -apc <CPUSET> <PID>
-//
-//   on the rank process fixes that by widening the allowed CPU mask.  The helper below
-//   performs the same operation automatically immediately before the first density worker
-//   threads are launched.
-//
-// Why this is called only for THREADS:
-//   OPENMP has its own placement controls (OMP_PROC_BIND, OMP_PLACES, launcher binding,
-//   etc.).  This repair is specifically for the direct std::thread path and should not
-//   unexpectedly alter pure serial, OpenMP, or unrelated particle-model execution paths.
-//
-// Why this is once-only:
-//   Affinity is a process property inherited by subsequently created threads.  Calling it
-//   once before the first density-worker pool is sufficient for normal SWMF/AMPS runs and
-//   avoids printing the same diagnostic banner at every coupled output time.  If a system
-//   actively re-pins ranks later in the run, set the CPU mask manually or change this
-//   helper to call PIC::Parallel::SetWideAffinityForScheduler() every density timestep.
-//
-// How CPUSET is chosen:
-//   PIC::Parallel::SetWideAffinityForScheduler() first checks environment variables
-//
-//     PIC_PARALLEL_CPUSET
-//     AMPS_MODE3D_DENSITY_CPUSET
-//
-//   and otherwise uses the online CPU list on the current node, for example "0-39".
-//   This is the wide-affinity / scheduler-decides mode: individual worker threads are
-//   not pinned to specific cores; Linux is simply allowed to schedule them on any CPU in
-//   the widened mask.
-//--------------------------------------------------------------------------------------
 static void ApplyWideAffinityForDirectDensityThreadsOnce_(DensityParallelBackend_ backend,
                                                           int densityThreadCount) {
-  if (backend != DensityParallelBackend_::THREADS || densityThreadCount <= 1) return;
-
-  static bool applied = false;
-  if (applied) return;
-  applied = true;
-
-  PIC::Parallel::SetWideAffinityForScheduler();
+  Earth::Mode3D::ApplyWideAffinityForDirectThreadsOnce(backend,densityThreadCount,
+                                                       "Mode3D density/flux");
 }
 
 static inline double Norm_(const V3& a) {
@@ -532,23 +432,25 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
   local.flux_ch_flat.assign((std::size_t)nCh*(std::size_t)nLoc,0.0);
 
   //====================================================================================
-  // Static MPI location decomposition
+  // MPI location decomposition
   //====================================================================================
   // The mesh-field snapshot has already been materialized into all AMR leaf blocks that
-  // the tracer may visit.  Therefore the density/flux calculation can use the same work
-  // ownership model as the Mode3D cutoff calculation:
+  // the tracer may visit.  Therefore any rank can compute any observation location.
+  // Use the same block-cyclic work partition as the Mode3D cutoff calculation:
   //
-  //   * every rank owns one contiguous slab of observation locations;
-  //   * tracing for a location is local-memory-only and requires no field communication;
-  //   * after all locations are complete, MPI_Allreduce combines non-overlapping result
-  //     slabs into full arrays on every rank.
+  //   rank r owns global locations r, r+nRanks, r+2*nRanks, ...
   //
-  // This decomposition is intentionally independent of the AMR mesh decomposition.  It is
-  // a calculation-work partition, not a field-data ownership partition.
+  // This avoids assigning one contiguous longitude/latitude/shell slab to a rank and
+  // improves MPI load balance when backtracking cost varies geographically.  Results are
+  // stored directly into global-size local arrays at the global location index; the final
+  // MPI_Allreduce combines those non-overlapping contributions into full arrays.
   //====================================================================================
-  const int iBegin = (int)(((long long)nLoc * (long long)mpiRank) / (long long)mpiSize);
-  const int iEnd   = (int)(((long long)nLoc * (long long)(mpiRank+1)) / (long long)mpiSize);
-  const int nLocal = iEnd - iBegin;
+  std::vector<int> localToGlobalIdx;
+  localToGlobalIdx.reserve((std::size_t)((nLoc + mpiSize - 1) / mpiSize));
+  for (int loc=mpiRank; loc<nLoc; loc+=mpiSize) {
+    localToGlobalIdx.push_back(loc);
+  }
+  const int nLocal = (int)localToGlobalIdx.size();
 
   const bool doAnisotropic = (EarthUtil::ToUpper(prm.densitySpectrum.boundaryMode) == "ANISOTROPIC");
   const double qabs_C = std::fabs(prm.species.charge_e)*QE;
@@ -607,7 +509,8 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
   std::vector<int> locTotalPerShellGlobal((std::size_t)std::max(nShells,0),0);
 
   if (isShells && nShells > 0) {
-    for (int loc=iBegin; loc<iEnd; ++loc) {
+    for (int localIdx=0; localIdx<nLocal; ++localIdx) {
+      const int loc = localToGlobalIdx[(std::size_t)localIdx];
       const int shellIdx = loc / std::max(1,nPtsShell);
       if (shellIdx>=0 && shellIdx<nShells) locTotalPerShellLocal[(std::size_t)shellIdx]++;
     }
@@ -806,15 +709,21 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
   // nWorkers=min(densityThreadCount,nWork) becomes 1 even when DENSITY_THREADS=8.
   int nProgressBatches = std::max(1,std::min(nLoc,200));
   if (densityBackend == DensityParallelBackend_::THREADS && densityThreadCount > 1) {
-    const int targetWorkPerBatch = std::max(densityThreadCount*4,densityThreadCount);
-    const int byThreadChunk = (nLocal + targetWorkPerBatch - 1) / targetWorkPerBatch;
+    int nLocalMax = 0;
+    MPI_Allreduce(&nLocal,&nLocalMax,1,MPI_INT,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
 
-    // Keep progress useful, but prefer fewer/larger batches so all requested
-    // worker threads have enough independent locations to pull from the queue.
+    const int targetWorkPerBatch = std::max(densityThreadCount*4,densityThreadCount);
+    const int byThreadChunk = (nLocalMax + targetWorkPerBatch - 1) / targetWorkPerBatch;
+
+    // Every MPI rank must use the same number of progress batches because the loop below
+    // contains MPI_Allreduce calls.  Use the global maximum local-work count to keep the
+    // collective sequence identical while still making direct-thread batches large enough
+    // to feed the requested worker pool.
     nProgressBatches = std::max(1,std::min(200,std::max(1,byThreadChunk)));
 
-    // There is no benefit in having more progress batches than local work items.
-    if (nLocal > 0) nProgressBatches = std::min(nProgressBatches,nLocal);
+    // There is no benefit in having more progress batches than the busiest rank has
+    // local work items.
+    if (nLocalMax > 0) nProgressBatches = std::min(nProgressBatches,nLocalMax);
   }
 
   for (int ibatch=0; ibatch<nProgressBatches; ++ibatch) {
@@ -835,7 +744,7 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
             for (;;) {
               const int localIdx = nextLocalIdx.fetch_add(1,std::memory_order_relaxed);
               if (localIdx >= localBatchEnd) break;
-              const int loc = iBegin + localIdx;
+              const int loc = localToGlobalIdx[(std::size_t)localIdx];
               computeOneLocation(loc);
             }
           });
@@ -850,13 +759,13 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
         if (suppressNestedOpenMP) {
           DirectDensityWorkerScope_ serialScope;
           for (int localIdx=localBatchBegin; localIdx<localBatchEnd; ++localIdx) {
-            const int loc = iBegin + localIdx;
+            const int loc = localToGlobalIdx[(std::size_t)localIdx];
             computeOneLocation(loc);
           }
         }
         else {
           for (int localIdx=localBatchBegin; localIdx<localBatchEnd; ++localIdx) {
-            const int loc = iBegin + localIdx;
+            const int loc = localToGlobalIdx[(std::size_t)localIdx];
             computeOneLocation(loc);
           }
         }
@@ -868,7 +777,7 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
 
       if (isShells && nShells > 0) {
         for (int localIdx=localBatchBegin; localIdx<localBatchEnd; ++localIdx) {
-          const int loc = iBegin + localIdx;
+          const int loc = localToGlobalIdx[(std::size_t)localIdx];
           const int shellIdx = loc / std::max(1,nPtsShell);
           if (shellIdx>=0 && shellIdx<nShells) locDonePerShellLocal[(std::size_t)shellIdx]++;
         }

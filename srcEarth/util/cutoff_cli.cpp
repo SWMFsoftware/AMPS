@@ -94,7 +94,11 @@ CliOptions ParseCli(int argc,char** argv) {
     }
     else if (a=="-density-parallel" || a=="--density-parallel" ||
              a=="-mode3d-density-parallel" || a=="--mode3d-density-parallel" ||
-             a=="-mode3d-density-backend" || a=="--mode3d-density-backend") {
+             a=="-mode3d-density-backend" || a=="--mode3d-density-backend" ||
+             a=="-mode3d-parallel" || a=="--mode3d-parallel" ||
+             a=="-mode3d-backend" || a=="--mode3d-backend" ||
+             a=="-backtrack-parallel" || a=="--backtrack-parallel" ||
+             a=="-backtrack-backend" || a=="--backtrack-backend") {
       // Select shared-memory backend for Mode3D density backtracking within each
       // MPI process.  Validated in main after parsing.
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density-parallel");
@@ -102,6 +106,8 @@ CliOptions ParseCli(int argc,char** argv) {
     }
     else if (a=="-density-threads" || a=="--density-threads" ||
              a=="-mode3d-density-threads" || a=="--mode3d-density-threads" ||
+             a=="-mode3d-threads" || a=="--mode3d-threads" ||
+             a=="-backtrack-threads" || a=="--backtrack-threads" ||
              a=="-n-density-threads" || a=="--n-density-threads") {
       // Number of shared-memory workers per MPI rank for Mode3D density
       // backtracking.  For OPENMP this maps to omp_set_num_threads(N); for
@@ -110,6 +116,77 @@ CliOptions ParseCli(int argc,char** argv) {
       opt.densityThreads=std::stoi(argv[++i]);
       if (opt.densityThreads < 0)
         exit(__LINE__,__FILE__,"-density-threads must be >= 0 (0 means automatic)");
+    }
+    else if (a=="-cutoff-debug-scan" || a=="--cutoff-debug-scan" ||
+             a=="-mode3d-cutoff-debug-scan" || a=="--mode3d-cutoff-debug-scan") {
+      // Convenience CLI for the Mode3D cutoff rigidity classification diagnostic.
+      // The input-file equivalent is CUTOFF_DEBUG_RIGIDITY_SCAN=T plus the
+      // CUTOFF_DEBUG_SCAN_LON/LAT/ALT keywords in #CUTOFF_RIGIDITY.
+      if (i+3>=argc)
+        exit(__LINE__,__FILE__,"Missing values after -cutoff-debug-scan; expected lon_deg lat_deg alt_km");
+      opt.cutoffDebugScan=true;
+      opt.cutoffDebugScanLon_deg=std::stod(argv[++i]);
+      opt.cutoffDebugScanLat_deg=std::stod(argv[++i]);
+      opt.cutoffDebugScanAlt_km=std::stod(argv[++i]);
+      if (opt.cutoffDebugScanLat_deg < -90.0 || opt.cutoffDebugScanLat_deg > 90.0)
+        exit(__LINE__,__FILE__,"-cutoff-debug-scan latitude must be in [-90,90] degrees");
+    }
+    else if (a=="-cutoff-debug-scan-n" || a=="--cutoff-debug-scan-n") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-debug-scan-n");
+      opt.cutoffDebugScanN=std::stoi(argv[++i]);
+      if (opt.cutoffDebugScanN < 2)
+        exit(__LINE__,__FILE__,"-cutoff-debug-scan-n must be >= 2");
+    }
+    else if (a=="-cutoff-debug-scan-file" || a=="--cutoff-debug-scan-file") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-debug-scan-file");
+      opt.cutoffDebugScanFile=argv[++i];
+      if (opt.cutoffDebugScanFile.empty())
+        exit(__LINE__,__FILE__,"-cutoff-debug-scan-file must not be empty");
+    }
+    else if (a=="-cutoff-debug-exit" || a=="--cutoff-debug-exit" ||
+             a=="-mode3d-cutoff-debug-exit" || a=="--mode3d-cutoff-debug-exit") {
+      // Detailed exit-classifier diagnostic for one vertical trajectory point.
+      // Use -cutoff-debug-exit-r to trace one specific rigidity, or omit it to
+      // write a small rigidity list similar to -cutoff-debug-scan.
+      if (i+3>=argc)
+        exit(__LINE__,__FILE__,"Missing values after -cutoff-debug-exit; expected lon_deg lat_deg alt_km");
+      opt.cutoffDebugExit=true;
+      opt.cutoffDebugExitLon_deg=std::stod(argv[++i]);
+      opt.cutoffDebugExitLat_deg=std::stod(argv[++i]);
+      opt.cutoffDebugExitAlt_km=std::stod(argv[++i]);
+      if (opt.cutoffDebugExitLat_deg < -90.0 || opt.cutoffDebugExitLat_deg > 90.0)
+        exit(__LINE__,__FILE__,"-cutoff-debug-exit latitude must be in [-90,90] degrees");
+    }
+    else if (a=="-cutoff-debug-exit-r" || a=="--cutoff-debug-exit-r" ||
+             a=="-cutoff-debug-exit-r-gv" || a=="--cutoff-debug-exit-r-gv") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-debug-exit-r");
+      opt.cutoffDebugExitR_GV=std::stod(argv[++i]);
+    }
+    else if (a=="-cutoff-debug-exit-n" || a=="--cutoff-debug-exit-n") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-debug-exit-n");
+      opt.cutoffDebugExitN=std::stoi(argv[++i]);
+      if (opt.cutoffDebugExitN < 2)
+        exit(__LINE__,__FILE__,"-cutoff-debug-exit-n must be >= 2");
+    }
+    else if (a=="-cutoff-debug-exit-file" || a=="--cutoff-debug-exit-file") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-debug-exit-file");
+      opt.cutoffDebugExitFile=argv[++i];
+      if (opt.cutoffDebugExitFile.empty())
+        exit(__LINE__,__FILE__,"-cutoff-debug-exit-file must not be empty");
+    }
+    else if (a=="-cutoff-search" || a=="--cutoff-search" ||
+             a=="-cutoff-search-algorithm" || a=="--cutoff-search-algorithm" ||
+             a=="-mode3d-cutoff-search" || a=="--mode3d-cutoff-search") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-search");
+      opt.cutoffSearchAlgorithm=argv[++i];
+    }
+    else if (a=="-cutoff-upper-scan-n" || a=="--cutoff-upper-scan-n" ||
+             a=="-cutoff-search-n" || a=="--cutoff-search-n" ||
+             a=="-mode3d-cutoff-search-n" || a=="--mode3d-cutoff-search-n") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-upper-scan-n");
+      opt.cutoffUpperScanN=std::stoi(argv[++i]);
+      if (opt.cutoffUpperScanN < 2)
+        exit(__LINE__,__FILE__,"-cutoff-upper-scan-n must be >= 2");
     }
     else if (a=="-mode3d-output-initialized" || a=="--mode3d-output-initialized" ||
              a=="-output-3d-initialized" || a=="--output-3d-initialized") {
@@ -313,6 +390,36 @@ std::string HelpMessage(const char* progName) {
   out << "        INTERPOLATION  Use the AMR-aware cell-centered interpolation stencil.\n";
   out << "        ANALYTIC       Call the same background-field evaluator used to prepopulate\n";
   out << "                       the mesh cell centers. Alias: --mode3d-analytic-field.\n\n";
+
+  out << "  -cutoff-debug-scan | --cutoff-debug-scan <lon_deg> <lat_deg> <alt_km>   (optional)\n";
+  out << "      In -mode 3d cutoff runs, write a rigidity-classification table for one\n";
+  out << "      spherical-shell location before the full cutoff calculation starts. The\n";
+  out << "      table lists R_GV, TraceAllowed3D(R), and the analytic Störmer vertical\n";
+  out << "      cutoff for DIPOLE fields. It is intended for diagnosing cases where the\n";
+  out << "      endpoint test returns the lower rigidity bound on large shell grids.\n";
+  out << "      Optional controls: --cutoff-debug-scan-n <N>,\n";
+  out << "      --cutoff-debug-scan-file <file>. Input-file equivalents are\n";
+  out << "      CUTOFF_DEBUG_RIGIDITY_SCAN, CUTOFF_DEBUG_SCAN_LON/LAT/ALT/N/FILE.\n\n";
+
+  out << "  -cutoff-debug-exit | --cutoff-debug-exit <lon_deg> <lat_deg> <alt_km>   (optional)\n";
+  out << "      In -mode 3d cutoff runs, write a trajectory-exit diagnostic for one\n";
+  out << "      selected vertical backtrace. The file records terminal reason, raw exit\n";
+  out << "      point, reconstructed boundary-crossing point and face, box overshoot,\n";
+  out << "      rigidity conservation, and the centered-dipole canonical invariant.\n";
+  out << "      Optional controls: --cutoff-debug-exit-r <R_GV>,\n";
+  out << "      --cutoff-debug-exit-n <N>, --cutoff-debug-exit-file <file>.\n";
+  out << "      Input-file equivalents are CUTOFF_DEBUG_EXIT_TRACE and\n";
+  out << "      CUTOFF_DEBUG_EXIT_LON/LAT/ALT/R_GV/N/FILE.\n\n";
+
+  out << "  -cutoff-search | --cutoff-search <UPPER_SCAN|BINARY>   (optional)\n";
+  out << "      In standalone -mode 3d cutoff runs, select the rigidity-search algorithm.\n";
+  out << "      UPPER_SCAN is the default and is penumbra-safe: it scans from Rmin to\n";
+  out << "      Rmax, finds the highest forbidden sampled rigidity, then bisects the\n";
+  out << "      final forbidden/allowed transition. BINARY restores the legacy endpoint\n";
+  out << "      bisection and assumes TraceAllowed(R) is monotonic.\n";
+  out << "      Optional control: --cutoff-upper-scan-n <N>. If omitted, UPPER_SCAN\n";
+  out << "      uses CUTOFF_NENERGY samples. Input-file equivalents are\n";
+  out << "      CUTOFF_SEARCH_ALGORITHM and CUTOFF_UPPER_SCAN_N.\n\n";
 
   out << "  -density-parallel | --density-parallel <OPENMP|THREADS|SERIAL>   (optional)\n";
   out << "      Select the Mode3D density-backtracking shared-memory backend inside\n";

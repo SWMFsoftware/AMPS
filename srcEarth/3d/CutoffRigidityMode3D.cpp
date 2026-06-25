@@ -2,8 +2,88 @@
 // CutoffRigidityMode3D.cpp
 //======================================================================================
 //
-// See CutoffRigidityMode3D.h for the full design rationale, parallelisation strategy,
-// and input/output contract.  This file documents implementation specifics.
+// Standalone Mode3D cutoff-rigidity solver.
+//
+// This file computes cutoff rigidity by backward-tracing test particles through the
+// Mode3D magnetic-field mesh.  It is used when the Earth model is run in standalone
+// ``-mode 3d`` rather than through the SWMF coupler.  In this mode the background
+// magnetic field is already sampled and stored on the AMPS AMR mesh; trajectory
+// integration therefore reuses the same mesh-field evaluator that is used for
+// Mode3D density/flux backtracking.
+//
+// High-level algorithm
+// --------------------
+// For each requested observation location on a POINTS, SHELLS, or TRAJECTORY output
+// set, the code performs the following operations:
+//
+//   1. Convert the output location to GSM Cartesian coordinates in metres.
+//
+//   2. Choose the arrival direction(s).
+//        * VERTICAL sampling uses the local outward radial direction as the arrival
+//          direction.
+//        * ISOTROPIC sampling uses a Fibonacci sphere of directions.
+//
+//   3. For each direction, launch the mathematically reversed particle in the
+//      opposite direction and integrate it through the mesh field.
+//        * Escape through the outer Mode3D box means the rigidity/direction is
+//          ALLOWED.
+//        * Contact with the inner Earth-loss sphere means FORBIDDEN.
+//        * Reaching the time, step, or path-length limit without escape is treated
+//          conservatively as FORBIDDEN.
+//
+//   4. Determine the cutoff rigidity for that direction.  The default method is the
+//      penumbra-safe UPPER_SCAN algorithm described in detail below.  The older
+//      endpoint binary search remains available for regression tests.
+//
+//   5. For an isotropic point cutoff, return the minimum directional cutoff over
+//      the sampled directions.  When DIRECTIONAL_MAP=T, also save each directional
+//      cutoff on the sky grid.
+//
+// Penumbra-safe upper cutoff algorithm
+// ------------------------------------
+// A simple binary search is valid only if the trajectory classifier
+//
+//      allowed(R) = TraceAllowed3D(R)
+//
+// is monotonic: forbidden below the cutoff and allowed above it.  Dipole shell tests
+// at high latitude show that this is not always true.  Small allowed pockets can
+// appear below the final transition (the classic penumbra problem).  In that case
+// the legacy endpoint logic
+//
+//      if allowed(Rmin) and allowed(Rmax), return Rmin
+//
+// is wrong, because Rmin may lie inside a low-rigidity allowed pocket while higher
+// rigidities are still forbidden.
+//
+// The default UPPER_SCAN algorithm therefore defines and returns the upper cutoff:
+// the lowest rigidity above the highest forbidden interval sampled in the requested
+// search bracket.  Operationally, for one point/direction it does this:
+//
+//   1. Build a rigidity grid from Rmin to Rmax.
+//      Log spacing is used for positive Rmin because SEP/geospace cutoff searches
+//      cover multiple decades in rigidity.
+//
+//   2. Evaluate allowed(R_i) at every grid point.
+//
+//   3. If the highest sampled point Rmax is forbidden, report ``no cutoff in the
+//      requested bracket`` using the existing -1 return convention.
+//
+//   4. Starting at Rmax, scan downward until the highest forbidden grid point is
+//      found.  The next-higher point is necessarily allowed because the downward
+//      scan starts inside the allowed top branch.
+//
+//   5. Refine only this final forbidden/allowed transition by local bisection.
+//      Lower-rigidity allowed pockets are intentionally ignored because they do not
+//      define the upper cutoff.
+//
+// This algorithm is more expensive than endpoint binary search because it performs
+// a coarse scan before bisection, but it is robust for the high-latitude dipole
+// shell cases where allowed(R) is non-monotonic.  The number of scan points is
+// controlled by CUTOFF_UPPER_SCAN_N; if that key is absent, CUTOFF_NENERGY is reused
+// so existing input files still provide a meaningful scan density.
+//
+// See CutoffRigidityMode3D.h for the broader design rationale, parallelisation
+// strategy, and input/output contract.  This file documents implementation details.
 //
 //======================================================================================
 // THREAD SAFETY — TSYGANENKO FORTRAN COMMON BLOCKS
@@ -65,11 +145,22 @@
 // RIGIDITY SEARCH
 //======================================================================================
 //
-// Identical to the gridless solver's CutoffForDirection_GV:
+// Mode3D now uses a penumbra-safe upper-cutoff search by default.  The earlier
+// endpoint-only binary search assumed that TraceAllowed3D(R) was monotonic
+// (forbidden below Rc, allowed above Rc).  Dipole shell tests at high latitude
+// showed low-rigidity allowed pockets below the Störmer cutoff; the endpoint test
+// then returned Rmin as soon as TraceAllowed3D(Rmin)==true.
 //
-//   1. Quick endpoint checks at Rmin and Rmax.
-//   2. Binary search while (hi - lo) > max(1e-3 GV, 1e-6 * max(|Rmin|,|Rmax|)).
-//   3. Return hi (first allowed rigidity from below).
+// The default UPPER_SCAN algorithm instead:
+//   1. Samples TraceAllowed3D(R) on a log-spaced rigidity grid.
+//   2. Scans downward from Rmax and finds the highest forbidden sampled rigidity.
+//   3. Refines the transition between that forbidden sample and the next-higher
+//      allowed sample with bisection.
+//
+// This returns the upper cutoff: the lowest rigidity above which the sampled
+// trajectory family is allowed.  It deliberately ignores allowed pockets below
+// the final forbidden/allowed transition.  The legacy endpoint binary method is
+// still available with CUTOFF_SEARCH_ALGORITHM BINARY.
 //
 // Per-location upper-bound optimisation:
 //   Once a direction with cutoff Rc_found is known for a point, later directions
@@ -93,10 +184,10 @@
 //   tracing can remain local-memory-only even though the mesh was not created with
 //   independentDomainMode=true.
 //
-// Point distribution: static block decomposition.
-//   nLocal = nLoc / mpiSize  (floor)
-//   rank k owns points [k*nLocal, (k+1)*nLocal)
-//   last rank picks up the remainder: [(mpiSize-1)*nLocal, nLoc)
+// Point distribution: static block-cyclic decomposition.
+//   rank r owns global locations r, r+mpiSize, r+2*mpiSize, ...
+//   This avoids assigning an entire contiguous latitude/shell band to one rank, which
+//   can badly imbalance cutoff backtracking when trajectory cost varies geographically.
 //
 // Communication:
 //   The global-B materialization is completed before entering RunCutoffRigidity().
@@ -110,6 +201,7 @@
 #include "CutoffRigidityMode3D.h"
 #include "Mode3D.h"
 #include "ElectricField.h"
+#include "Mode3DParallel.h"
 
 // AMPS framework
 #include "pic.h"
@@ -226,113 +318,25 @@ namespace {
 //   owns its own lastNode_ cache, so no worker shares interpolation/cache state.
 //======================================================================================
 
-enum class CutoffParallelBackend_ { OPENMP, THREADS, SERIAL };
+using CutoffParallelBackend_ = Earth::Mode3D::ParallelBackend;
 
 static const char* CutoffParallelBackendName_(CutoffParallelBackend_ backend) {
-    switch (backend) {
-    case CutoffParallelBackend_::OPENMP:  return "OPENMP";
-    case CutoffParallelBackend_::THREADS: return "THREADS";
-    case CutoffParallelBackend_::SERIAL:  return "SERIAL";
-    }
-    return "UNKNOWN";
+    return Earth::Mode3D::ParallelBackendName(backend);
 }
 
-// Parse a positive integer environment variable.  Invalid, empty, zero, and negative
-// values intentionally resolve to 0, which means "not specified" to the caller.
-static int ParsePositiveIntEnvForCutoff_(const char* name) {
-    const char* v = std::getenv(name);
-    if (v == nullptr || *v == '\0') return 0;
-    try {
-        const int n = std::stoi(std::string(v));
-        return (n > 0) ? n : 0;
-    }
-    catch (...) {
-        return 0;
-    }
-}
-
-// Resolve the cutoff backend from the same keyword/environment variable used by the
-// density calculation.  This keeps coupled runs simple: selecting THREADS once enables
-// the direct-thread backend for both CUTOFF_RIGIDITY and DENSITY_SPECTRUM targets.
 static CutoffParallelBackend_ ResolveCutoffParallelBackend_(const EarthUtil::AmpsParam& prm) {
-    std::string token = prm.mode3d.densityParallelBackend;
-    if (token.empty()) {
-        const char* env = std::getenv("AMPS_MODE3D_DENSITY_PARALLEL");
-        if (env != nullptr) token = env;
-    }
-
-    token = EarthUtil::ToUpper(token);
-    if (token.empty() || token == "OPENMP" || token == "OMP") {
-#ifdef _OPENMP
-        return CutoffParallelBackend_::OPENMP;
-#else
-        return CutoffParallelBackend_::SERIAL;
-#endif
-    }
-
-    if (token == "THREAD" || token == "THREADS" || token == "STD_THREAD" ||
-        token == "STD_THREADS" || token == "PTHREAD" || token == "PTHREADS") {
-        return CutoffParallelBackend_::THREADS;
-    }
-
-    if (token == "SERIAL" || token == "NONE" || token == "OFF") {
-        return CutoffParallelBackend_::SERIAL;
-    }
-
-    std::ostringstream msg;
-    msg << "Mode3D cutoff: unknown DENSITY_PARALLEL/MODE3D_DENSITY_PARALLEL backend '"
-        << token << "'. Valid values: OPENMP, THREADS, SERIAL.";
-    exit(__LINE__,__FILE__,msg.str().c_str());
-    return CutoffParallelBackend_::SERIAL;
+    return Earth::Mode3D::ResolveParallelBackend(prm,"Mode3D cutoff");
 }
 
-// Resolve the number of intra-rank workers for cutoff.  The priority order matches the
-// density calculation:
-//   1. DENSITY_THREADS from the input file;
-//   2. AMPS_MODE3D_DENSITY_THREADS from the environment;
-//   3. OMP_NUM_THREADS from the environment;
-//   4. omp_get_max_threads() for OPENMP builds/backends;
-//   5. std::thread::hardware_concurrency() as a final fallback.
 static int ResolveCutoffThreadCount_(const EarthUtil::AmpsParam& prm,
                                      CutoffParallelBackend_ backend) {
-    int n = prm.mode3d.densityThreads;
-    if (n <= 0) n = ParsePositiveIntEnvForCutoff_("AMPS_MODE3D_DENSITY_THREADS");
-    if (n <= 0) n = ParsePositiveIntEnvForCutoff_("OMP_NUM_THREADS");
-
-#ifdef _OPENMP
-    if (n <= 0 && backend == CutoffParallelBackend_::OPENMP) n = omp_get_max_threads();
-#endif
-
-    if (n <= 0) {
-        const unsigned hw = std::thread::hardware_concurrency();
-        n = (hw > 0) ? static_cast<int>(hw) : 1;
-    }
-
-    if (n < 1) n = 1;
-    return n;
+    return Earth::Mode3D::ResolveParallelThreadCount(prm,backend);
 }
 
-// Widen the MPI-rank CPU affinity once before direct std::thread cutoff workers are
-// created.  This is intentionally the same policy as the density path: if a launcher
-// pins each MPI rank to a single CPU, all std::thread workers would otherwise inherit
-// that one-core mask.  PIC::Parallel::SetWideAffinityForScheduler() performs the
-// equivalent of
-//
-//   taskset -apc <CPUSET> <rank_pid>
-//
-// where <CPUSET> is either PIC_PARALLEL_CPUSET / AMPS_MODE3D_DENSITY_CPUSET or the
-// online CPU list detected on the current node.  This is "wide affinity": workers are
-// not pinned individually; the OS scheduler is allowed to place them on any CPU in the
-// widened mask.
 static void ApplyWideAffinityForDirectCutoffThreadsOnce_(CutoffParallelBackend_ backend,
                                                          int cutoffThreadCount) {
-    if (backend != CutoffParallelBackend_::THREADS || cutoffThreadCount <= 1) return;
-
-    static bool applied = false;
-    if (applied) return;
-    applied = true;
-
-    PIC::Parallel::SetWideAffinityForScheduler();
+    Earth::Mode3D::ApplyWideAffinityForDirectThreadsOnce(backend,cutoffThreadCount,
+                                                         "Mode3D cutoff");
 }
 
 //======================================================================================
@@ -977,40 +981,421 @@ static bool TraceAllowed3D(const EarthUtil::AmpsParam& prm,
     return false;
 }
 
+
+//======================================================================================
+// SECTION 8.1 — OPTIONAL DETAILED EXIT-CLASSIFIER DIAGNOSTIC
+//======================================================================================
+//
+// The production TraceAllowed3D() routine intentionally returns only a boolean:
+//   true  -> the reversed trajectory escaped through the outer Mode3D domain box;
+//   false -> the trajectory was lost or did not escape before a numerical limit.
+//
+// That minimal interface is ideal for cutoff and density calculations, but it hides
+// information that is essential when validating the trajectory classifier. In pure
+// dipole tests, especially at high latitude where penumbral allowed/forbidden bands
+// appear, we need to verify that an "allowed" result really means that the trajectory
+// crossed the outer boundary, not that it stopped because of a timeout, step limit,
+// invalid time step, or inner-sphere hit.
+//
+// The detailed diagnostic below repeats the same integration loop as TraceAllowed3D(),
+// but records the terminal state, the reason for termination, and several consistency
+// quantities:
+//
+//   * raw terminal point x_terminal_m: the position after the step that left the box;
+//   * last in-domain point x_last_inside_m: the previous position;
+//   * linearly reconstructed boundary crossing x_boundary_m, face name, and overshoot;
+//   * start/end rigidity conservation error (E=0 in the dipole test);
+//   * canonical angular momentum about the dipole symmetry axis for FIELD_MODEL=DIPOLE.
+//
+// The canonical invariant is
+//
+//     P_axis = [ r x (p + q A) ] . m_hat,
+//
+// where A = (mu0/4pi) (m x r)/r^3 is the centered-dipole vector potential and m_hat
+// is the dipole-axis unit vector. For a static aligned or tilted centered dipole this
+// quantity should be conserved because the field is axisymmetric about m_hat. The
+// diagnostic writes the relative change only as a check; the classifier decision itself
+// is still based solely on the same boundary logic used by TraceAllowed3D().
+//
+// This debug path is deliberately not used in the production cutoff loop. It is a
+// single-point/single-scan validation tool enabled by CUTOFF_DEBUG_EXIT_TRACE.
+//======================================================================================
+
+enum class TraceExitReason3D {
+    OUTER_BOX,
+    INNER_SPHERE_PRE,
+    INNER_SPHERE_STEP,
+    TIME_LIMIT,
+    STEP_LIMIT,
+    DISTANCE_LIMIT,
+    INVALID_DT,
+    UNKNOWN
+};
+
+static const char* TraceExitReasonName3D_(TraceExitReason3D r) {
+    switch (r) {
+        case TraceExitReason3D::OUTER_BOX:         return "OUTER_BOX";
+        case TraceExitReason3D::INNER_SPHERE_PRE:  return "INNER_SPHERE_PRE";
+        case TraceExitReason3D::INNER_SPHERE_STEP: return "INNER_SPHERE_STEP";
+        case TraceExitReason3D::TIME_LIMIT:        return "TIME_LIMIT";
+        case TraceExitReason3D::STEP_LIMIT:        return "STEP_LIMIT";
+        case TraceExitReason3D::DISTANCE_LIMIT:    return "DISTANCE_LIMIT";
+        case TraceExitReason3D::INVALID_DT:        return "INVALID_DT";
+        default:                                   return "UNKNOWN";
+    }
+}
+
+static const char* MoverTypeName3D_(MoverType m) {
+    switch (m) {
+        case MoverType::BORIS:  return "BORIS";
+        case MoverType::RK2:    return "RK2";
+        case MoverType::RK4:    return "RK4";
+        case MoverType::RK6:    return "RK6";
+        case MoverType::GC2:    return "GC2";
+        case MoverType::GC4:    return "GC4";
+        case MoverType::GC6:    return "GC6";
+        case MoverType::HYBRID: return "HYBRID";
+        default:                return "UNKNOWN";
+    }
+}
+
+struct TraceDetailedResult3D {
+    bool allowed{false};
+    TraceExitReason3D reason{TraceExitReason3D::UNKNOWN};
+
+    double R_in_GV{0.0};
+    double R_terminal_GV{0.0};
+    double relRigidityError{0.0};
+
+    double t_s{0.0};
+    int nSteps{0};
+    double path_m{0.0};
+
+    V3 x0_m{0.0,0.0,0.0};
+    V3 xLastInside_m{0.0,0.0,0.0};
+    V3 xTerminal_m{0.0,0.0,0.0};
+    V3 xBoundary_m{0.0,0.0,0.0};
+
+    double boundaryAlpha{-1.0};
+    double boundaryOvershoot_m{0.0};
+    double terminalBoxMargin_m{0.0};
+    std::string boundaryFace{"NONE"};
+
+    double pAxis0{std::numeric_limits<double>::quiet_NaN()};
+    double pAxisTerminal{std::numeric_limits<double>::quiet_NaN()};
+    double relPAxisError{std::numeric_limits<double>::quiet_NaN()};
+};
+
+static double BoxMinimumSignedMargin3D_(const V3& x, const DomainBox3D& box) {
+    // Positive value: point is inside all six faces; magnitude is the distance to the
+    // nearest face. Negative value: point is outside at least one face; magnitude is
+    // the penetration distance through the most violated face.
+    return std::min({x.x - box.xMin, box.xMax - x.x,
+                     x.y - box.yMin, box.yMax - x.y,
+                     x.z - box.zMin, box.zMax - x.z});
+}
+
+static void FindFirstBoxCrossing3D_(const V3& xin,
+                                    const V3& xout,
+                                    const DomainBox3D& box,
+                                    V3& xcross,
+                                    double& alpha,
+                                    std::string& face) {
+    // Reconstruct where the last integration segment crossed the rectangular Mode3D
+    // domain. The mover returns only the post-step point, which can lie a finite
+    // distance outside the box. Linear interpolation is sufficient for this diagnostic
+    // because the reconstructed point is not fed back into the production classifier.
+    const V3 dx = sub(xout,xin);
+    double best = 2.0;
+    std::string bestFace = "NONE";
+
+    auto consider = [&](double a, const char* name) {
+        if (a >= 0.0 && a <= 1.0 && a < best) {
+            best = a;
+            bestFace = name;
+        }
+    };
+
+    if (dx.x > 0.0) consider((box.xMax - xin.x)/dx.x,"XMAX");
+    if (dx.x < 0.0) consider((box.xMin - xin.x)/dx.x,"XMIN");
+    if (dx.y > 0.0) consider((box.yMax - xin.y)/dx.y,"YMAX");
+    if (dx.y < 0.0) consider((box.yMin - xin.y)/dx.y,"YMIN");
+    if (dx.z > 0.0) consider((box.zMax - xin.z)/dx.z,"ZMAX");
+    if (dx.z < 0.0) consider((box.zMin - xin.z)/dx.z,"ZMIN");
+
+    if (best <= 1.0) {
+        alpha = best;
+        xcross = add(xin,mul(best,dx));
+        face = bestFace;
+    }
+    else {
+        alpha = -1.0;
+        xcross = xout;
+        face = "UNKNOWN";
+    }
+}
+
+static V3 DipoleVectorPotential_Tm_(const V3& x_m) {
+    // Centered-dipole vector potential in SI units:
+    //   A(r) = (mu0/4pi) (m x r) / r^3.
+    // The result has units T*m = Wb/m, and q*A has the same units as mechanical
+    // momentum. This expression is used only by the invariant diagnostic.
+    const double r2 = dot(x_m,x_m);
+    if (!(r2 > 0.0)) return {0.0,0.0,0.0};
+    const double r = std::sqrt(r2);
+    const double r3 = r2*r;
+
+    const double M = Earth::GridlessMode::Dipole::gParams.momentScale_Me *
+                     Earth::GridlessMode::Dipole::M_E_Am2;
+    const V3 mvec{M*Earth::GridlessMode::Dipole::gParams.m_hat[0],
+                  M*Earth::GridlessMode::Dipole::gParams.m_hat[1],
+                  M*Earth::GridlessMode::Dipole::gParams.m_hat[2]};
+    constexpr double mu0_over_4pi = 1.0e-7;
+    return mul(mu0_over_4pi/r3,cross(mvec,x_m));
+}
+
+static double DipoleCanonicalPAxis_(const EarthUtil::AmpsParam& prm,
+                                    const V3& x_m,
+                                    const V3& p,
+                                    double q_C) {
+    // Canonical angular momentum about the dipole symmetry axis. This is conserved for
+    // the ideal centered dipole because the vector potential and Hamiltonian are
+    // invariant under rotations around the dipole axis.
+    if (EarthUtil::ToUpper(prm.field.model) != "DIPOLE") {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const V3 A = DipoleVectorPotential_Tm_(x_m);
+    const V3 canonicalMomentum = add(p,mul(q_C,A));
+    const V3 axis{Earth::GridlessMode::Dipole::gParams.m_hat[0],
+                  Earth::GridlessMode::Dipole::gParams.m_hat[1],
+                  Earth::GridlessMode::Dipole::gParams.m_hat[2]};
+    return dot(cross(x_m,canonicalMomentum),axis);
+}
+
+static TraceDetailedResult3D TraceDetailed3D_(const EarthUtil::AmpsParam& prm,
+                                              cMode3DMeshFieldEval& field,
+                                              const V3& x0_m,
+                                              const V3& v0_unit,
+                                              double R_GV,
+                                              double q_C,
+                                              double m0_kg,
+                                              const DomainBox3D& box,
+                                              double maxTime_s = -1.0) {
+    TraceDetailedResult3D out;
+    out.R_in_GV = R_GV;
+    out.x0_m = x0_m;
+    out.xLastInside_m = x0_m;
+    out.xTerminal_m = x0_m;
+    out.xBoundary_m = x0_m;
+
+    const double qabs = std::fabs(q_C);
+    const double pMag = MomentumFromRigidity_GV(R_GV,qabs);
+    V3 p = mul(pMag,v0_unit);
+    const V3 p0 = p;
+    V3 x = x0_m;
+    V3 xLastInside = x0_m;
+
+    const double maxTraceTime_s =
+        (maxTime_s > 0.0)
+            ? maxTime_s
+            : ((prm.cutoff.maxTrajTime_s > 0.0)
+               ? prm.cutoff.maxTrajTime_s
+               : prm.numerics.maxTraceTime_s);
+
+    const double maxDist_m =
+        (prm.numerics.maxTraceDistance_Re > 0.0)
+            ? prm.numerics.maxTraceDistance_Re * _EARTH__RADIUS_
+            : -1.0;
+
+    ResetHybridTrajectoryContext(x0_m, box.rInner);
+
+    double tTrace = 0.0;
+    int nSteps = 0;
+    double sDist = 0.0;
+
+    auto finalize = [&](TraceExitReason3D reason, bool allowed) {
+        out.allowed = allowed;
+        out.reason = reason;
+        out.t_s = tTrace;
+        out.nSteps = nSteps;
+        out.path_m = sDist;
+        out.xLastInside_m = xLastInside;
+        out.xTerminal_m = x;
+        out.R_terminal_GV = RigidityFromMomentum_GV(std::sqrt(std::max(0.0,dot(p,p))),qabs);
+        out.relRigidityError = (std::fabs(out.R_in_GV) > 0.0)
+            ? (out.R_terminal_GV - out.R_in_GV)/out.R_in_GV
+            : 0.0;
+        out.terminalBoxMargin_m = BoxMinimumSignedMargin3D_(x,box);
+
+        if (reason == TraceExitReason3D::OUTER_BOX) {
+            FindFirstBoxCrossing3D_(xLastInside,x,box,out.xBoundary_m,
+                                    out.boundaryAlpha,out.boundaryFace);
+            out.boundaryOvershoot_m = v3norm(sub(x,out.xBoundary_m));
+        }
+        else {
+            out.xBoundary_m = x;
+            out.boundaryAlpha = -1.0;
+            out.boundaryFace = "NONE";
+            out.boundaryOvershoot_m = 0.0;
+        }
+
+        out.pAxis0 = DipoleCanonicalPAxis_(prm,x0_m,p0,q_C);
+        out.pAxisTerminal = DipoleCanonicalPAxis_(prm,x,p,q_C);
+        if (std::isfinite(out.pAxis0) && std::fabs(out.pAxis0) > 0.0) {
+            out.relPAxisError = (out.pAxisTerminal - out.pAxis0)/out.pAxis0;
+        }
+    };
+
+    while (nSteps < prm.numerics.maxSteps &&
+           tTrace < maxTraceTime_s &&
+           (maxDist_m <= 0.0 || sDist < maxDist_m)) {
+
+        if (LostInnerSphere3D(x, box.rInner)) {
+            finalize(TraceExitReason3D::INNER_SPHERE_PRE,false);
+            return out;
+        }
+        if (!InsideBox3D(x, box)) {
+            finalize(TraceExitReason3D::OUTER_BOX,true);
+            return out;
+        }
+
+        const double timeRemaining = maxTraceTime_s - tTrace;
+
+        bool useGuidingCenterForThisStep = false;
+        const MoverType mover = GetDefaultMoverType();
+        if (mover == MoverType::GC2 || mover == MoverType::GC4 || mover == MoverType::GC6) {
+            useGuidingCenterForThisStep = true;
+        } else if (mover == MoverType::HYBRID) {
+            useGuidingCenterForThisStep = HybridPrepareStepUseGuidingCenter(x, p, q_C, field);
+        }
+
+        const double dt = SelectDt3D(prm, field, x, p, q_C, m0_kg, box,
+                                      timeRemaining, useGuidingCenterForThisStep);
+        if (!(dt > 0.0) || !std::isfinite(dt)) {
+            finalize(TraceExitReason3D::INVALID_DT,false);
+            return out;
+        }
+
+        const V3 xPrev = x;
+        xLastInside = xPrev;
+        if (!StepParticleChecked(gDefaultMover, x, p, q_C, m0_kg, dt, field, box.rInner)) {
+            finalize(TraceExitReason3D::INNER_SPHERE_STEP,false);
+            return out;
+        }
+
+        sDist  += v3norm(sub(x, xPrev));
+        tTrace += dt;
+        ++nSteps;
+    }
+
+    if (nSteps >= prm.numerics.maxSteps) {
+        finalize(TraceExitReason3D::STEP_LIMIT,false);
+    }
+    else if (maxDist_m > 0.0 && sDist >= maxDist_m) {
+        finalize(TraceExitReason3D::DISTANCE_LIMIT,false);
+    }
+    else if (tTrace >= maxTraceTime_s) {
+        finalize(TraceExitReason3D::TIME_LIMIT,false);
+    }
+    else {
+        finalize(TraceExitReason3D::UNKNOWN,false);
+    }
+
+    return out;
+}
+
 //======================================================================================
 // SECTION 9 — CUTOFF SEARCH FOR ONE DIRECTION
 //======================================================================================
 //
-// CutoffForDir_GV finds the cutoff rigidity for a single (point, direction) pair
-// using the same binary-search algorithm as CutoffForDirection_GV in the gridless
-// solver, including the interval-collapse guard and the per-location upper-bound
-// optimisation hook (rHi_GV may be set to the current best Rc for this location).
+// CutoffForDir_GV is the scalar rigidity solver for exactly one observation point and
+// exactly one arrival direction.  It is called many times by ComputeCutoffAtPoint_GV:
+// once for VERTICAL sampling, or once per sky direction for ISOTROPIC sampling.
+//
+// Important conventions:
+//
+//   * dir_unit is the physical ARRIVAL direction at the observation point.
+//     Backward tracing launches the reversed particle along -dir_unit.
+//
+//   * Rmin_GV and Rmax_GV are already converted from the input energy range to
+//     magnetic rigidity in GV.  This routine does not know about kinetic energy,
+//     species energy per nucleon, or output units.
+//
+//   * Return value > 0 means a cutoff was found in GV.
+//     Return value < 0 keeps the legacy convention meaning: no allowed top branch
+//     was found within [Rmin_GV, Rmax_GV], i.e. the cutoff is above Rmax or the
+//     trajectory classifier never escaped at the sampled upper bound.
+//
+//   * The UPPER_SCAN search returns the upper cutoff, not the first allowed pocket.
+//     This is the physically useful quantity for cutoff maps because it defines the
+//     rigidity above which particles are continuously allowed, ignoring lower-rigidity
+//     penumbral windows.
+//
+// Two algorithms are available:
+//
+//   1. ENDPOINT_BINARY / BINARY / LEGACY_BINARY
+//      Kept only for comparison with older results.  It tests the two endpoints and
+//      then assumes monotonic allowed(R).  It can return Rmin incorrectly when Rmin
+//      lies inside a low-rigidity allowed pocket.
+//
+//   2. UPPER_SCAN (default)
+//      First samples the full bracket, locates the highest forbidden sample, then
+//      bisects only that final forbidden/allowed transition.  This handles
+//      non-monotonic allowed(R) sequences observed in the dipole shell regression
+//      test near |latitude|≈60 degrees.
+//
+// Per-location upper-bound optimisation:
+//
+//   The isotropic point cutoff is the minimum over directions.  Once a direction has
+//   produced Rc_found for a point, later directions cannot lower the point cutoff if
+//   their directional cutoff is above Rc_found.  Therefore ComputeCutoffAtPoint_GV can
+//   pass Rmax=min(original_Rmax, Rc_found) to subsequent directions.  This makes the
+//   search cheaper while preserving the minimum-direction cutoff definition.
 //======================================================================================
 
-static double CutoffForDir_GV(const EarthUtil::AmpsParam& prm,
-                               cMode3DMeshFieldEval& field,
-                               const V3& x0_m,
-                               const V3& dir_unit,   // ARRIVAL direction (backtraced as -dir)
-                               double q_C, double m0_kg,
-                               const DomainBox3D& box,
-                               double Rmin_GV, double Rmax_GV) {
-    // Backtracing convention: launch the reversed particle in direction -dir_unit
+static double CutoffForDirEndpointBinary_GV(const EarthUtil::AmpsParam& prm,
+                                             cMode3DMeshFieldEval& field,
+                                             const V3& x0_m,
+                                             const V3& dir_unit,   // ARRIVAL direction (backtraced as -dir)
+                                             double q_C, double m0_kg,
+                                             const DomainBox3D& box,
+                                             double Rmin_GV, double Rmax_GV) {
+    // Legacy monotonic solver.
+    //
+    // This routine is intentionally simple and intentionally preserved: it is useful
+    // when comparing new Mode3D cutoff maps against archived results that were produced
+    // with the original endpoint-binary method.  It should NOT be used as the default
+    // for production dipole or magnetospheric shell maps because it assumes a monotonic
+    // classifier.
+    //
+    // Backtracing convention:
+    //   dir_unit is the particle arrival direction at the observation location.  A
+    //   backward trajectory is equivalent to launching the reversed particle along
+    //   -dir_unit with the same charge sign convention used by the shared mover code.
     const V3 v0 = mul(-1.0, dir_unit);
 
-    // Degenerate bracket guard
+    // The bisection tolerance follows the historical cutoff implementation: an
+    // absolute 1 MV tolerance, or a much smaller relative tolerance for very large
+    // brackets.  The absolute tolerance dominates in normal geospace use and is more
+    // meaningful than oversolving the trajectory classifier, whose uncertainty is set
+    // by step-size and boundary-contact tests.
     const double tolAbs = 1.0e-3;
     const double tolRel = 1.0e-6 * std::max(std::fabs(Rmin_GV), std::fabs(Rmax_GV));
     const double tol    = std::max(tolAbs, tolRel);
     if (Rmax_GV < Rmin_GV) return -1.0;
 
-    // Quick endpoint classification
+    // Endpoint tests.  This is exactly where the old method can fail: if Rmin is in a
+    // low-rigidity allowed pocket and Rmax is also allowed, alo&&ahi causes immediate
+    // return of Rmin even if forbidden rigidities exist between them.
     const bool alo = TraceAllowed3D(prm, field, x0_m, v0, Rmin_GV, q_C, m0_kg, box);
     const bool ahi = TraceAllowed3D(prm, field, x0_m, v0, Rmax_GV, q_C, m0_kg, box);
 
-    if (alo && ahi) return Rmin_GV; // already allowed at minimum → cutoff ≤ Rmin
-    if (!ahi)       return -1.0;    // still forbidden at maximum → no cutoff in bracket
+    if (alo && ahi) return Rmin_GV;  // valid only if allowed(R) is monotonic
+    if (!ahi)       return -1.0;     // no allowed upper branch inside the bracket
 
-    // Binary search while interval is wider than tolerance
+    // Standard binary search on the assumed final transition.  The invariant is
+    // lo=forbidden and hi=allowed.
     double lo = Rmin_GV, hi = Rmax_GV;
     while ((hi - lo) > tol) {
         const double mid = 0.5*(lo + hi);
@@ -1018,6 +1403,187 @@ static double CutoffForDir_GV(const EarthUtil::AmpsParam& prm,
         if (a) hi = mid; else lo = mid;
     }
     return hi;
+}
+
+static int CutoffUpperScanPointCount_(const EarthUtil::AmpsParam& prm) {
+    // Decide how many coarse samples are used by UPPER_SCAN before the final local
+    // bisection.  This number controls two things:
+    //
+    //   * robustness: a finer grid is less likely to skip a narrow forbidden band near
+    //     the true upper cutoff;
+    //   * cost: every grid point requires a complete trajectory trace.
+    //
+    // CUTOFF_UPPER_SCAN_N is the explicit new control.  If it is not provided, reuse
+    // CUTOFF_NENERGY.  Reusing the existing parameter is intentional: older input files
+    // that already requested a fine cutoff-energy grid automatically get a similarly
+    // fine penumbra scan without another required keyword.
+    if (prm.cutoff.upperScanN > 0) return std::max(2,prm.cutoff.upperScanN);
+    return std::max(8,prm.cutoff.nEnergy);
+}
+
+static std::vector<double> BuildCutoffSearchGrid_GV_(double Rmin_GV,
+                                                     double Rmax_GV,
+                                                     int nScan) {
+    // Build the coarse rigidity grid used by UPPER_SCAN.  The grid is strictly local to
+    // one point/direction; it is not an output energy grid and it is not shared among
+    // MPI ranks.
+    //
+    // Positive-rigidity searches use logarithmic spacing.  This is important because
+    // geospace cutoffs may span from tens of MV to many GV.  A linear grid over that
+    // interval would waste nearly all samples at high rigidity and could miss a
+    // low-rigidity upper cutoff such as the 0.16 GV transition in the dipole |lat|=60
+    // regression case.
+    //
+    // The fallback linear branch exists only for completeness if a future input permits
+    // Rmin<=0; current physical rigidity brackets should always be positive.
+    std::vector<double> grid;
+    if (!(Rmax_GV >= Rmin_GV) || !(Rmax_GV > 0.0)) return grid;
+
+    nScan = std::max(2,nScan);
+    grid.reserve((size_t)nScan);
+
+    if (Rmin_GV > 0.0) {
+        const double lmin = std::log(Rmin_GV);
+        const double lmax = std::log(Rmax_GV);
+        for (int i=0;i<nScan;i++) {
+            const double a = (nScan == 1) ? 0.0 : (double)i/(double)(nScan-1);
+            grid.push_back(std::exp((1.0-a)*lmin + a*lmax));
+        }
+    }
+    else {
+        for (int i=0;i<nScan;i++) {
+            const double a = (nScan == 1) ? 0.0 : (double)i/(double)(nScan-1);
+            grid.push_back((1.0-a)*Rmin_GV + a*Rmax_GV);
+        }
+    }
+
+    // Force exact endpoints.  This avoids tiny roundoff shifts introduced by exp/log
+    // and keeps diagnostic output and endpoint comparisons reproducible.
+    grid.front() = Rmin_GV;
+    grid.back()  = Rmax_GV;
+    return grid;
+}
+
+static double RefineForbiddenAllowedTransition_GV_(const EarthUtil::AmpsParam& prm,
+                                                   cMode3DMeshFieldEval& field,
+                                                   const V3& x0_m,
+                                                   const V3& v0,
+                                                   double q_C, double m0_kg,
+                                                   const DomainBox3D& box,
+                                                   double Rforbid_GV,
+                                                   double Rallow_GV) {
+    // Refine one already-bracketed forbidden/allowed transition.
+    //
+    // Preconditions established by CutoffForDirUpperScan_GV:
+    //   TraceAllowed3D(Rforbid_GV) == false
+    //   TraceAllowed3D(Rallow_GV)  == true
+    //   Rforbid_GV < Rallow_GV
+    //
+    // This local bisection does NOT attempt to solve the entire possibly non-monotonic
+    // allowed(R) function.  It is applied only to the highest forbidden sample found by
+    // the downward scan.  At that point we are refining the final top-branch boundary,
+    // which is the definition of the upper cutoff used here.
+    const double tolAbs = 1.0e-3;
+    const double tolRel = 1.0e-6 * std::max(std::fabs(Rforbid_GV),std::fabs(Rallow_GV));
+    const double tol    = std::max(tolAbs,tolRel);
+
+    double lo = Rforbid_GV; // invariant: lo is forbidden
+    double hi = Rallow_GV;  // invariant: hi is allowed
+
+    while ((hi - lo) > tol) {
+        const double mid = 0.5*(lo + hi);
+        const bool allowed = TraceAllowed3D(prm,field,x0_m,v0,mid,q_C,m0_kg,box);
+        if (allowed) hi = mid;
+        else         lo = mid;
+    }
+
+    // Return the allowed side of the bracket: the smallest allowed rigidity resolved
+    // to the requested tolerance.
+    return hi;
+}
+
+static double CutoffForDirUpperScan_GV(const EarthUtil::AmpsParam& prm,
+                                       cMode3DMeshFieldEval& field,
+                                       const V3& x0_m,
+                                       const V3& dir_unit,   // ARRIVAL direction (backtraced as -dir)
+                                       double q_C, double m0_kg,
+                                       const DomainBox3D& box,
+                                       double Rmin_GV, double Rmax_GV) {
+    // Penumbra-safe upper-cutoff search.
+    //
+    // This is the production/default solver.  It avoids the bad endpoint-binary
+    // behavior observed in the dipole shell test at |lat|=60 deg, where the lowest
+    // sampled rigidity was allowed, several intermediate rigidities were forbidden,
+    // and all high rigidities were allowed.  The correct map value is the final upper
+    // transition near the Störmer cutoff, not the low-rigidity allowed pocket.
+
+    // Backtracing convention: launch the reversed particle in direction -dir_unit.
+    const V3 v0 = mul(-1.0, dir_unit);
+
+    if (Rmax_GV < Rmin_GV) return -1.0;
+
+    // Coarse rigidity scan.  Each grid point is expensive because it is a complete
+    // trajectory integration, but the scan is what makes the method robust to
+    // non-monotonic allowed/forbidden sequences.
+    const int nScan = CutoffUpperScanPointCount_(prm);
+    const std::vector<double> grid = BuildCutoffSearchGrid_GV_(Rmin_GV,Rmax_GV,nScan);
+    if (grid.size() < 2) return -1.0;
+
+    // Store the classifier result as bytes instead of bool.  std::vector<bool> uses a
+    // packed proxy specialization that is inconvenient for debugging and can create
+    // surprising behavior when references are taken.  A byte array is explicit and
+    // still tiny compared with the trajectory cost.
+    std::vector<unsigned char> allowed(grid.size(),0);
+    for (size_t i=0;i<grid.size();++i) {
+        allowed[i] = TraceAllowed3D(prm,field,x0_m,v0,grid[i],q_C,m0_kg,box) ? 1 : 0;
+    }
+
+    // The top branch must be allowed for an upper cutoff to exist within the requested
+    // search interval.  If Rmax is still forbidden, the final transition is above the
+    // bracket, so return the existing negative sentinel.  The output layer writes that
+    // as missing/no-cutoff according to its normal convention.
+    if (!allowed.back()) return -1.0;
+
+    // Walk downward from Rmax.  The first forbidden point encountered is the highest
+    // forbidden sampled rigidity.  Since allowed.back()==true and we are scanning from
+    // high to low, the next-higher sample grid[i+1] is on the final allowed branch.
+    // Bisection between grid[i] and grid[i+1] returns the upper cutoff.
+    for (int i=(int)grid.size()-2;i>=0;--i) {
+        if (!allowed[(size_t)i]) {
+            return RefineForbiddenAllowedTransition_GV_(prm,field,x0_m,v0,q_C,m0_kg,
+                                                        box,grid[(size_t)i],grid[(size_t)i+1]);
+        }
+    }
+
+    // No forbidden sample was found anywhere in the bracket.  That means the entire
+    // sampled interval is allowed, so the upper cutoff lies below Rmin or cannot be
+    // resolved with the requested lower bound.  Return Rmin to keep the output finite
+    // and to match the old convention for an everywhere-allowed bracket.
+    return Rmin_GV;
+}
+
+static double CutoffForDir_GV(const EarthUtil::AmpsParam& prm,
+                              cMode3DMeshFieldEval& field,
+                              const V3& x0_m,
+                              const V3& dir_unit,   // ARRIVAL direction (backtraced as -dir)
+                              double q_C, double m0_kg,
+                              const DomainBox3D& box,
+                              double Rmin_GV, double Rmax_GV) {
+    // Public dispatcher used by the rest of this file.  Keeping the algorithm choice
+    // centralized is important because cutoff maps, directional maps, and the debug
+    // scan should all use the same selected production algorithm unless they explicitly
+    // call the legacy/debug helpers.
+    const std::string alg = EarthUtil::ToUpper(prm.cutoff.searchAlgorithm);
+
+    if (alg=="BINARY" || alg=="ENDPOINT_BINARY" || alg=="LEGACY_BINARY") {
+        return CutoffForDirEndpointBinary_GV(prm,field,x0_m,dir_unit,
+                                             q_C,m0_kg,box,Rmin_GV,Rmax_GV);
+    }
+
+    // Default: penumbra-safe upper cutoff.  Unknown strings are validated by the input
+    // parser, so reaching this branch means UPPER_SCAN or one of its accepted aliases.
+    return CutoffForDirUpperScan_GV(prm,field,x0_m,dir_unit,
+                                    q_C,m0_kg,box,Rmin_GV,Rmax_GV);
 }
 
 //======================================================================================
@@ -1345,9 +1911,310 @@ static double StormerVerticalCutoff_GV(const EarthUtil::AmpsParam& prm,
 
 static void EnsureDipoleAnalyticState3D(const EarthUtil::AmpsParam& prm) {
     // Mode3D does not necessarily construct the gridless cFieldEvaluator that
-    // initializes Dipole::gParams, so set the dipole axis explicitly before any
-    // analytic Størmer comparison is written.
+    // initializes Dipole::gParams.  Set both the magnitude scale and the axis before
+    // any analytic Störmer comparison or dipole invariant diagnostic is written.
+    Earth::GridlessMode::Dipole::SetMomentScale(prm.field.dipoleMoment_Me);
     Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
+}
+
+
+//======================================================================================
+// SECTION 13.0a — SINGLE-POINT RIGIDITY CLASSIFICATION DEBUG SCAN
+//======================================================================================
+//
+// This diagnostic is intentionally independent of the main POINTS/SHELLS output grid.
+// It evaluates the same TraceAllowed3D() kernel used by CutoffForDir_GV() at one
+// spherical lon/lat/alt location and writes the allowed/forbidden classification as a
+// function of rigidity.  For a clean centered-dipole vertical test the classification
+// should be monotonic around the analytic Störmer cutoff: low R forbidden, high R
+// allowed.  If Rmin is already classified as allowed at an intermediate latitude, the
+// production cutoff search correctly returns Rmin, but the scan file reveals whether
+// that is a real penumbra/non-monotonic effect or a trajectory-classification error.
+//
+// Input controls live in #CUTOFF_RIGIDITY:
+//   CUTOFF_DEBUG_RIGIDITY_SCAN T
+//   CUTOFF_DEBUG_SCAN_LON      <deg>
+//   CUTOFF_DEBUG_SCAN_LAT      <deg>
+//   CUTOFF_DEBUG_SCAN_ALT      <km>
+//   CUTOFF_DEBUG_SCAN_N        <N>
+//   CUTOFF_DEBUG_SCAN_FILE     <file>
+//======================================================================================
+
+static V3 DebugScanSphericalPosition_m_(double lon_deg, double lat_deg, double alt_km) {
+    const double deg2rad = M_PI / 180.0;
+    const double lon = lon_deg * deg2rad;
+    const double lat = lat_deg * deg2rad;
+    const double r_m = _EARTH__RADIUS_ + alt_km * 1000.0;
+
+    const double clat = std::cos(lat);
+    return V3{r_m * clat * std::cos(lon),
+              r_m * clat * std::sin(lon),
+              r_m * std::sin(lat)};
+}
+
+static void AddDebugRigidityValue_(std::vector<double>& values,
+                                   double R_GV,
+                                   double Rmin_GV,
+                                   double Rmax_GV) {
+    if (!std::isfinite(R_GV) || !(R_GV > 0.0)) return;
+
+    // Keep the scan focused on the actual production bracket.  Tiny tolerance prevents
+    // roundoff from dropping exact endpoints.
+    const double tol = 1.0e-12 * std::max(std::fabs(Rmin_GV), std::fabs(Rmax_GV));
+    if (R_GV < Rmin_GV - tol || R_GV > Rmax_GV + tol) return;
+
+    values.push_back(std::max(Rmin_GV,std::min(Rmax_GV,R_GV)));
+}
+
+static std::vector<double> BuildDebugRigidityList_(const EarthUtil::AmpsParam& prm,
+                                                   double Rmin_GV,
+                                                   double Rmax_GV,
+                                                   double RcStormer_GV) {
+    std::vector<double> values;
+    values.reserve((size_t)std::max(8,prm.cutoff.debugScanN) + 32);
+
+    AddDebugRigidityValue_(values,Rmin_GV,Rmin_GV,Rmax_GV);
+    AddDebugRigidityValue_(values,Rmax_GV,Rmin_GV,Rmax_GV);
+
+    // A small set of human-readable rigidity landmarks makes the output easy to inspect
+    // for the current dipole-shell problem without requiring the user to tune the input.
+    const double landmarks[] = {0.03,0.05,0.1,0.2,0.5,0.8,1.0,1.16,1.5,2.0,5.0,10.0,20.0};
+    for (double R : landmarks) AddDebugRigidityValue_(values,R,Rmin_GV,Rmax_GV);
+
+    // Add values clustered around the analytic vertical cutoff if it is available.
+    if (RcStormer_GV > 0.0 && std::isfinite(RcStormer_GV)) {
+        const double factors[] = {0.25,0.5,0.75,0.9,0.95,0.98,1.0,1.02,1.05,1.1,1.25,1.5,2.0,4.0};
+        for (double f : factors) AddDebugRigidityValue_(values,f*RcStormer_GV,Rmin_GV,Rmax_GV);
+    }
+
+    // Log-spaced production-bracket scan.  This captures unexpected non-monotonic
+    // allowed/forbidden islands even when they do not coincide with the landmarks.
+    const int nLog = std::max(2,prm.cutoff.debugScanN);
+    const double lmin = std::log(Rmin_GV);
+    const double lmax = std::log(Rmax_GV);
+    for (int i=0; i<nLog; ++i) {
+        const double a = (nLog==1) ? 0.0 : double(i)/double(nLog-1);
+        AddDebugRigidityValue_(values,std::exp((1.0-a)*lmin + a*lmax),Rmin_GV,Rmax_GV);
+    }
+
+    std::sort(values.begin(),values.end());
+    values.erase(std::unique(values.begin(),values.end(),[](double a,double b) {
+        const double scale = std::max(1.0,std::max(std::fabs(a),std::fabs(b)));
+        return std::fabs(a-b) <= 1.0e-8 * scale;
+    }), values.end());
+
+    return values;
+}
+
+static void WriteMode3DCutoffDebugRigidityScan_(const EarthUtil::AmpsParam& prm,
+                                                cMode3DMeshFieldEval& field,
+                                                double q_C,
+                                                double m0_kg,
+                                                const DomainBox3D& box,
+                                                double Rmin_GV,
+                                                double Rmax_GV) {
+    double alt_km = prm.cutoff.debugScanAlt_km;
+    if (!(alt_km >= 0.0)) {
+        if (!prm.output.shellAlt_km.empty()) alt_km = prm.output.shellAlt_km.front();
+        else alt_km = 0.0;
+    }
+
+    const V3 x0_m = DebugScanSphericalPosition_m_(prm.cutoff.debugScanLon_deg,
+                                                  prm.cutoff.debugScanLat_deg,
+                                                  alt_km);
+
+    const bool isDipole = (EarthUtil::ToUpper(prm.field.model) == "DIPOLE");
+    double RcStormer_GV = -1.0;
+    if (isDipole) {
+        EnsureDipoleAnalyticState3D(prm);
+        RcStormer_GV = StormerVerticalCutoff_GV(prm,x0_m);
+    }
+
+    // Use the same vertical-arrival convention as ComputeCutoffAtPoint_GV(): the
+    // arriving particle direction is toward Earth, and backtracing launches -dir.
+    const V3 arrivalDir = v3unit(mul(-1.0,x0_m));
+    const V3 v0 = mul(-1.0,arrivalDir);
+
+    const double RcSelected_GV = CutoffForDir_GV(prm,field,x0_m,arrivalDir,
+                                                 q_C,m0_kg,box,Rmin_GV,Rmax_GV);
+    const double RcEndpointBinary_GV = CutoffForDirEndpointBinary_GV(prm,field,x0_m,arrivalDir,
+                                                                     q_C,m0_kg,box,Rmin_GV,Rmax_GV);
+    const double RcUpperScan_GV = CutoffForDirUpperScan_GV(prm,field,x0_m,arrivalDir,
+                                                           q_C,m0_kg,box,Rmin_GV,Rmax_GV);
+
+    const std::vector<double> Rlist = BuildDebugRigidityList_(prm,Rmin_GV,Rmax_GV,RcStormer_GV);
+
+    const std::string fname = prm.cutoff.debugScanFile.empty()
+                            ? CutoffOutputFileName("cutoff_3d_debug_rigidity_scan")
+                            : prm.cutoff.debugScanFile;
+
+    FILE* f = std::fopen(fname.c_str(),"w");
+    if (!f) {
+        std::ostringstream msg;
+        msg << "Mode3D cutoff debug scan: cannot open output file '" << fname << "'.";
+        throw std::runtime_error(msg.str());
+    }
+
+    std::fprintf(f,"TITLE=\"Mode3D Cutoff Rigidity Debug Scan\"\n");
+    std::fprintf(f,"VARIABLES=\"R_GV\" \"allowed\" \"expected_allowed_stormer\" \"R_over_Rc_stormer\" \"Rc_selected_GV\" \"Rc_endpoint_binary_GV\" \"Rc_upper_scan_GV\" \"Rc_stormer_GV\"\n");
+    std::fprintf(f,"# field_model=%s sampling=%s\n",prm.field.model.c_str(),prm.cutoff.sampling.c_str());
+    std::fprintf(f,"# lon_deg=% .12e lat_deg=% .12e alt_km=% .12e\n",
+                 prm.cutoff.debugScanLon_deg,prm.cutoff.debugScanLat_deg,alt_km);
+    std::fprintf(f,"# x_m=% .12e y_m=% .12e z_m=% .12e r_Re=% .12e\n",
+                 x0_m.x,x0_m.y,x0_m.z,v3norm(x0_m)/_EARTH__RADIUS_);
+    std::fprintf(f,"# Rmin_GV=% .12e Rmax_GV=% .12e Rc_selected_GV=% .12e Rc_endpoint_binary_GV=% .12e Rc_upper_scan_GV=% .12e Rc_stormer_GV=% .12e\n",
+                 Rmin_GV,Rmax_GV,RcSelected_GV,RcEndpointBinary_GV,RcUpperScan_GV,RcStormer_GV);
+    std::fprintf(f,"# cutoff_search_algorithm=%s cutoff_upper_scan_n=%d\n",
+                 prm.cutoff.searchAlgorithm.c_str(),CutoffUpperScanPointCount_(prm));
+    std::fprintf(f,"# expected_allowed_stormer is meaningful only for FIELD_MODEL=DIPOLE and vertical cutoff.\n");
+    std::fprintf(f,"ZONE T=\"lon=%g lat=%g alt=%g km\" I=%zu F=POINT\n",
+                 prm.cutoff.debugScanLon_deg,prm.cutoff.debugScanLat_deg,alt_km,Rlist.size());
+
+    for (double R_GV : Rlist) {
+        const bool allowed = TraceAllowed3D(prm,field,x0_m,v0,R_GV,q_C,m0_kg,box);
+        const int expected = (RcStormer_GV > 0.0 && std::isfinite(RcStormer_GV))
+                           ? ((R_GV >= RcStormer_GV) ? 1 : 0)
+                           : -1;
+        const double rover = (RcStormer_GV > 0.0 && std::isfinite(RcStormer_GV))
+                           ? R_GV/RcStormer_GV
+                           : -1.0;
+
+        std::fprintf(f,"% .12e %d %d % .12e % .12e % .12e % .12e % .12e\n",
+                     R_GV,allowed ? 1 : 0,expected,rover,
+                     RcSelected_GV,RcEndpointBinary_GV,RcUpperScan_GV,RcStormer_GV);
+    }
+
+    std::fclose(f);
+
+    std::cout << "Mode3D cutoff debug scan wrote: " << fname
+              << " (lon=" << prm.cutoff.debugScanLon_deg
+              << " deg, lat=" << prm.cutoff.debugScanLat_deg
+              << " deg, alt=" << alt_km << " km, "
+              << Rlist.size() << " rigidity samples)\n";
+}
+
+
+static void WriteMode3DCutoffDebugExitTrace_(const EarthUtil::AmpsParam& prm,
+                                             cMode3DMeshFieldEval& field,
+                                             double q_C,
+                                             double m0_kg,
+                                             const DomainBox3D& box,
+                                             double Rmin_GV,
+                                             double Rmax_GV) {
+    // Single-point trajectory-exit diagnostic. Unlike the compact rigidity scan above,
+    // this file is about the terminal state of the trajectory classifier. It answers
+    // the question: when TraceAllowed3D says "allowed", did the trajectory actually
+    // leave the Mode3D outer box, through which face, and with what numerical overshoot?
+    double alt_km = prm.cutoff.debugExitAlt_km;
+    if (!(alt_km >= 0.0)) {
+        if (!prm.output.shellAlt_km.empty()) alt_km = prm.output.shellAlt_km.front();
+        else alt_km = 0.0;
+    }
+
+    const V3 x0_m = DebugScanSphericalPosition_m_(prm.cutoff.debugExitLon_deg,
+                                                  prm.cutoff.debugExitLat_deg,
+                                                  alt_km);
+
+    const bool isDipole = (EarthUtil::ToUpper(prm.field.model) == "DIPOLE");
+    double RcStormer_GV = -1.0;
+    if (isDipole) {
+        EnsureDipoleAnalyticState3D(prm);
+        RcStormer_GV = StormerVerticalCutoff_GV(prm,x0_m);
+    }
+
+    const V3 arrivalDir = v3unit(mul(-1.0,x0_m));
+    const V3 v0 = mul(-1.0,arrivalDir);
+
+    std::vector<double> Rlist;
+    if (prm.cutoff.debugExitR_GV > 0.0) {
+        Rlist.push_back(prm.cutoff.debugExitR_GV);
+    }
+    else {
+        EarthUtil::AmpsParam tmp = prm;
+        tmp.cutoff.debugScanN = (prm.cutoff.debugExitN > 0) ? prm.cutoff.debugExitN : prm.cutoff.debugScanN;
+        Rlist = BuildDebugRigidityList_(tmp,Rmin_GV,Rmax_GV,RcStormer_GV);
+    }
+
+    const std::string fname = prm.cutoff.debugExitFile.empty()
+                            ? CutoffOutputFileName("cutoff_3d_debug_exit_trace")
+                            : prm.cutoff.debugExitFile;
+
+    FILE* f = std::fopen(fname.c_str(),"w");
+    if (!f) {
+        std::ostringstream msg;
+        msg << "Mode3D cutoff exit diagnostic: cannot open output file '" << fname << "'.";
+        throw std::runtime_error(msg.str());
+    }
+
+    std::fprintf(f,"TITLE=\"Mode3D Cutoff Trajectory Exit Diagnostic\"\n");
+    std::fprintf(f,"VARIABLES=\"R_GV\" \"allowed\" \"reason_id\" \"reason\" ");
+    std::fprintf(f,"\"t_s\" \"n_steps\" \"path_Re\" \"R_terminal_GV\" \"rel_dR\" ");
+    std::fprintf(f,"\"face\" \"box_margin_km\" \"overshoot_km\" \"alpha_cross\" ");
+    std::fprintf(f,"\"x_exit_km\" \"y_exit_km\" \"z_exit_km\" ");
+    std::fprintf(f,"\"r_exit_Re\" \"lon_exit_deg\" \"lat_exit_deg\" ");
+    std::fprintf(f,"\"x_cross_km\" \"y_cross_km\" \"z_cross_km\" ");
+    std::fprintf(f,"\"r_cross_Re\" \"lon_cross_deg\" \"lat_cross_deg\" ");
+    std::fprintf(f,"\"rel_dP_axis\" \"P_axis0\" \"P_axis_terminal\" \"Rc_stormer_GV\"\n");
+    std::fprintf(f,"# field_model=%s sampling=VERTICAL mover=%s\n",
+                 prm.field.model.c_str(),MoverTypeName3D_(GetDefaultMoverType()));
+    std::fprintf(f,"# lon_deg=% .12e lat_deg=% .12e alt_km=% .12e\n",
+                 prm.cutoff.debugExitLon_deg,prm.cutoff.debugExitLat_deg,alt_km);
+    std::fprintf(f,"# x0_m=% .12e y0_m=% .12e z0_m=% .12e r0_Re=% .12e\n",
+                 x0_m.x,x0_m.y,x0_m.z,v3norm(x0_m)/_EARTH__RADIUS_);
+    std::fprintf(f,"# Rmin_GV=% .12e Rmax_GV=% .12e Rc_stormer_GV=% .12e\n",
+                 Rmin_GV,Rmax_GV,RcStormer_GV);
+    std::fprintf(f,"# reason_id: 0=OUTER_BOX 1=INNER_SPHERE_PRE 2=INNER_SPHERE_STEP 3=TIME_LIMIT 4=STEP_LIMIT 5=DISTANCE_LIMIT 6=INVALID_DT 7=UNKNOWN\n");
+    std::fprintf(f,"# allowed=1 is valid only when reason=OUTER_BOX. Any timeout/step/distance/inner-sphere reason is forbidden.\n");
+    std::fprintf(f,"# rel_dR checks rigidity conservation in E=0. rel_dP_axis checks canonical angular momentum about the dipole axis for FIELD_MODEL=DIPOLE.\n");
+    std::fprintf(f,"ZONE T=\"exit diagnostic lon=%g lat=%g alt=%g km\" I=%zu F=POINT\n",
+                 prm.cutoff.debugExitLon_deg,prm.cutoff.debugExitLat_deg,alt_km,Rlist.size());
+
+    auto lonlat = [](const V3& x, double& lon_deg, double& lat_deg) {
+        const double r = v3norm(x);
+        if (!(r > 0.0)) { lon_deg = 0.0; lat_deg = 0.0; return; }
+        lon_deg = std::atan2(x.y,x.x)*180.0/M_PI;
+        if (lon_deg < 0.0) lon_deg += 360.0;
+        lat_deg = std::asin(std::max(-1.0,std::min(1.0,x.z/r)))*180.0/M_PI;
+    };
+
+    for (double R_GV : Rlist) {
+        TraceDetailedResult3D tr = TraceDetailed3D_(prm,field,x0_m,v0,R_GV,q_C,m0_kg,box);
+        double lonExit=0.0, latExit=0.0, lonCross=0.0, latCross=0.0;
+        lonlat(tr.xTerminal_m,lonExit,latExit);
+        lonlat(tr.xBoundary_m,lonCross,latCross);
+
+        std::fprintf(f,
+            "% .12e %d %d \"%s\" % .12e %d % .12e % .12e % .12e \"%s\" % .12e % .12e % .12e "
+            "% .12e % .12e % .12e % .12e % .12e % .12e "
+            "% .12e % .12e % .12e % .12e % .12e % .12e "
+            "% .12e % .12e % .12e % .12e\n",
+            R_GV,
+            tr.allowed ? 1 : 0,
+            (int)tr.reason,
+            TraceExitReasonName3D_(tr.reason),
+            tr.t_s,
+            tr.nSteps,
+            tr.path_m/_EARTH__RADIUS_,
+            tr.R_terminal_GV,
+            tr.relRigidityError,
+            tr.boundaryFace.c_str(),
+            tr.terminalBoxMargin_m/1000.0,
+            tr.boundaryOvershoot_m/1000.0,
+            tr.boundaryAlpha,
+            tr.xTerminal_m.x/1000.0,tr.xTerminal_m.y/1000.0,tr.xTerminal_m.z/1000.0,
+            v3norm(tr.xTerminal_m)/_EARTH__RADIUS_,lonExit,latExit,
+            tr.xBoundary_m.x/1000.0,tr.xBoundary_m.y/1000.0,tr.xBoundary_m.z/1000.0,
+            v3norm(tr.xBoundary_m)/_EARTH__RADIUS_,lonCross,latCross,
+            tr.relPAxisError,tr.pAxis0,tr.pAxisTerminal,RcStormer_GV);
+    }
+
+    std::fclose(f);
+
+    std::cout << "Mode3D cutoff exit diagnostic wrote: " << fname
+              << " (lon=" << prm.cutoff.debugExitLon_deg
+              << " deg, lat=" << prm.cutoff.debugExitLat_deg
+              << " deg, alt=" << alt_km << " km, "
+              << Rlist.size() << " trajectory traces)\n";
 }
 
 static void WriteTecplot3DPoints(const EarthUtil::AmpsParam& prm,
@@ -1756,6 +2623,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             << " (q=" << prm.species.charge_e << " e"
             << ", m=" << prm.species.mass_amu << " amu)\n"
             << "Rigidity range : [" << Rmin << ", " << Rmax << "] GV\n"
+            << "Cutoff search  : " << prm.cutoff.searchAlgorithm
+            << " (upper-scan N=" << CutoffUpperScanPointCount_(prm) << ")\n"
             << "Sampling       : " << (samplingVertical ? "VERTICAL" : "ISOTROPIC") << "\n";
 
         if (!samplingVertical)
@@ -1779,7 +2648,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         }
 
         std::cout
-            << "MPI ranks      : " << mpiSize << " (global B cache, static work partition)\n"
+            << "MPI ranks      : " << mpiSize << " (global B cache, block-cyclic work partition)\n"
             << "Progress bar   : ON\n";
 
 #ifdef _OPENMP
@@ -1799,22 +2668,67 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     }
 
     //==================================================================================
-    // 14.8 — Static MPI point distribution
+    // 14.7a — Optional single-point rigidity classification scan
     //==================================================================================
     //
-    // Requirement 1: Each MPI process is INDEPENDENT (no inter-rank communication
-    //                during computation).
-    // Requirement 3: Parallelization of individual points with OpenMP (within rank).
-    //
-    // Simple static block decomposition:
-    //   rank k owns points [locStart, locEnd).
-    //   Last rank picks up any remainder so all points are covered.
+    // This debug test uses the same TraceAllowed3D/CutoffForDir_GV kernels as the full
+    // cutoff calculation, but only for one lon/lat/alt point.  It is intentionally run
+    // by rank 0 before the MPI location decomposition so it can diagnose numerical
+    // classification/bracketing problems independently of MPI gather/order issues.
     //==================================================================================
 
-    const int nPerRank  = nLoc / mpiSize;
-    const int locStart  = mpiRank * nPerRank;
-    const int locEnd    = (mpiRank == mpiSize - 1) ? nLoc : locStart + nPerRank;
-    const int nLocal    = locEnd - locStart;
+    if (prm.cutoff.debugRigidityScan) {
+        if (mpiRank == 0) {
+            cMode3DMeshFieldEval debugField(prm);
+            WriteMode3DCutoffDebugRigidityScan_(prm,debugField,q_C,m0,box,Rmin,Rmax);
+            std::cout.flush();
+        }
+        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+    }
+
+    if (prm.cutoff.debugExitTrace) {
+        if (mpiRank == 0) {
+            cMode3DMeshFieldEval debugField(prm);
+            WriteMode3DCutoffDebugExitTrace_(prm,debugField,q_C,m0,box,Rmin,Rmax);
+            std::cout.flush();
+        }
+        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+    }
+
+    //==================================================================================
+    // 14.8 — MPI point distribution
+    //==================================================================================
+    //
+    // Earlier standalone Mode3D cutoff used a contiguous block of locations per MPI rank:
+    //
+    //   rank k owns [floor(nLoc*k/nRanks), floor(nLoc*(k+1)/nRanks)).
+    //
+    // That is numerically correct, but it is a poor load balancer for SHELLS cutoff maps.
+    // In SHELLS mode the flattened location index walks through longitude fastest and
+    // latitude/shell more slowly.  The cost of a cutoff search can vary strongly with
+    // latitude, L shell, magnetic connectivity, and with whether trajectories hit the
+    // inner sphere, escape rapidly, or run close to the maximum trace time.  A contiguous
+    // MPI block can therefore give one rank many expensive locations and another rank
+    // mostly cheap locations.
+    //
+    // Since Mode3D materializes the magnetic/electric field on the AMR mesh available to
+    // every rank, any MPI rank can compute any observation location.  Use a block-cyclic
+    // static distribution with block size one by default:
+    //
+    //   rank r owns global locations r, r+nRanks, r+2*nRanks, ...
+    //
+    // This keeps the no-inter-rank-compute property, requires no MPI communication from
+    // worker threads, and spreads longitude/latitude/shell cost much more evenly.  The
+    // MPI gather below collects the associated global indices and scatters results into
+    // rank-0 arrays in the original global order before writing Tecplot output.
+    //==================================================================================
+
+    std::vector<int> localToGlobalIdx;
+    localToGlobalIdx.reserve((size_t)((nLoc + mpiSize - 1) / mpiSize));
+    for (int globalIdx=mpiRank; globalIdx<nLoc; globalIdx+=mpiSize) {
+        localToGlobalIdx.push_back(globalIdx);
+    }
+    const int nLocal = static_cast<int>(localToGlobalIdx.size());
 
     //==================================================================================
     // 14.8a — Intra-rank parallel backend selection
@@ -1900,7 +2814,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     std::vector<int> locTotalPerShellGlobal((size_t)std::max(nShells,0),0);
 
     if (showProgressBar && isShells) {
-        for (int globalIdx=locStart; globalIdx<locEnd; ++globalIdx) {
+        for (int localIdx=0; localIdx<nLocal; ++localIdx) {
+            const int globalIdx = localToGlobalIdx[(size_t)localIdx];
             const int s = globalIdx / nPtsShell;
             if (s>=0 && s<nShells) locTotalPerShellLocal[(size_t)s]++;
         }
@@ -2121,7 +3036,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 
     auto computeLocalLocation = [&](int localIdx,
                                     cMode3DMeshFieldEval& threadField) {
-        const int globalIdx = locStart + localIdx;
+        const int globalIdx = localToGlobalIdx[(size_t)localIdx];
 
         // Reconstruct the observation position for this point.  In SHELLS mode this may
         // use the SPICE rotation cache protected above by gLocationToX0mSpiceMutex_.
@@ -2262,7 +3177,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 
                 if (isShells) {
                     for (int localIdx=batchBegin; localIdx<batchEnd; ++localIdx) {
-                        const int globalIdx = locStart + localIdx;
+                        const int globalIdx = localToGlobalIdx[(size_t)localIdx];
                         const int shellIdx = globalIdx / nPtsShell;
                         if (shellIdx>=0 && shellIdx<nShells)
                             locDonePerShellLocal[(size_t)shellIdx]++;
@@ -2294,52 +3209,85 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     // 14.10 — MPI gather: collect results from all ranks onto rank 0
     //==================================================================================
     //
-    // Each rank contributes nLocal doubles for Rc and Emin.
-    // MPI_Gatherv handles the variable block sizes that arise from the remainder
-    // clause in the static partition (last rank may have a larger slice).
+    // Each rank contributes nLocal values for Rc and Emin plus nLocal global-location
+    // indices.  Rank 0 scatters the gathered values into global output order.
     //==================================================================================
 
-    // Build displacement and count arrays for MPI_Gatherv on rank 0
+    // Build displacement and count arrays for MPI_Gatherv on rank 0.  Because the
+    // MPI work distribution is block-cyclic rather than contiguous, rank 0 also gathers
+    // the global location id associated with each local result and scatters the received
+    // values into rcAll/eminAll in the original global order.
     std::vector<int> recvCounts(mpiSize, 0);
     std::vector<int> displs(mpiSize, 0);
 
-    // Each rank announces its nLocal to rank 0
-    MPI_Gather(&nLocal, 1, MPI_INT, recvCounts.data(), 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&nLocal, 1, MPI_INT,
+               recvCounts.data(), 1, MPI_INT,
+               0, MPI_GLOBAL_COMMUNICATOR);
 
+    int totalRecv = 0;
+    std::vector<int> idxRecv;
+    std::vector<double> rcRecv, eminRecv;
     std::vector<double> rcAll, eminAll;
+
     if (mpiRank == 0) {
         int offset = 0;
         for (int r = 0; r < mpiSize; ++r) {
             displs[r] = offset;
-            offset   += recvCounts[r];
+            offset   += recvCounts[(size_t)r];
         }
+        totalRecv = offset;
+
+        idxRecv.resize((size_t)totalRecv, -1);
+        rcRecv.resize((size_t)totalRecv, -1.0);
+        eminRecv.resize((size_t)totalRecv, -1.0);
         rcAll.resize((size_t)nLoc, -1.0);
         eminAll.resize((size_t)nLoc, -1.0);
     }
 
-    MPI_Gatherv(rcLocal.data(),   nLocal, MPI_DOUBLE,
-                rcAll.data(),   recvCounts.data(), displs.data(), MPI_DOUBLE,
+    MPI_Gatherv(localToGlobalIdx.data(), nLocal, MPI_INT,
+                idxRecv.data(), recvCounts.data(), displs.data(), MPI_INT,
+                0, MPI_GLOBAL_COMMUNICATOR);
+
+    MPI_Gatherv(rcLocal.data(), nLocal, MPI_DOUBLE,
+                rcRecv.data(), recvCounts.data(), displs.data(), MPI_DOUBLE,
                 0, MPI_GLOBAL_COMMUNICATOR);
 
     MPI_Gatherv(eminLocal.data(), nLocal, MPI_DOUBLE,
-                eminAll.data(), recvCounts.data(), displs.data(), MPI_DOUBLE,
+                eminRecv.data(), recvCounts.data(), displs.data(), MPI_DOUBLE,
                 0, MPI_GLOBAL_COMMUNICATOR);
+
+    if (mpiRank == 0) {
+        for (int i=0; i<totalRecv; ++i) {
+            const int globalIdx = idxRecv[(size_t)i];
+            if (globalIdx < 0 || globalIdx >= nLoc) {
+                std::ostringstream msg;
+                msg << "Mode3D cutoff: invalid gathered global location index "
+                    << globalIdx << " at receive slot " << i << ".";
+                throw std::runtime_error(msg.str());
+            }
+            rcAll[(size_t)globalIdx]   = rcRecv[(size_t)i];
+            eminAll[(size_t)globalIdx] = eminRecv[(size_t)i];
+        }
+    }
 
     // Optional directional-map gather.
     //
-    // The scalar arrays gather nLocal doubles per rank.  The directional map has
-    // nCells doubles per location, so the counts/displacements are the scalar
-    // counts/displacements multiplied by nCells.  This reuses the same static
-    // location decomposition and keeps rank-0 storage ordered by global location:
+    // The rank-local directional map is still stored as localIdx-major:
     //
-    //   dirMapAll[ globalLoc*nCells + cellId ]
+    //   dirMapLocal[localIdx*nCells + cellId]
     //
-    // The gathered array can be large for SHELLS mode, but the allocation happens
-    // only when the explicit DIRECTIONAL_MAP=T diagnostic is requested.
+    // Because localIdx no longer corresponds to a contiguous global-location block, rank
+    // 0 first receives the packed rank-local map slabs, then uses idxRecv to unpack each
+    // local slab into:
+    //
+    //   dirMapAll[globalIdx*nCells + cellId]
+    //
+    // in the original global output order.
     std::vector<double> dirMapAll;
     if (dirMapCfg.enabled) {
         std::vector<int> recvCountsMap(mpiSize, 0);
         std::vector<int> displsMap(mpiSize, 0);
+        std::vector<double> dirMapRecv;
 
         if (mpiRank == 0) {
             for (int r=0; r<mpiSize; ++r) {
@@ -2361,6 +3309,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 displsMap[(size_t)r]     = static_cast<int>(dispMap);
             }
 
+            dirMapRecv.assign((size_t)totalRecv * (size_t)dirMapCfg.nCells, -1.0);
             dirMapAll.assign((size_t)nLoc * (size_t)dirMapCfg.nCells, -1.0);
         }
 
@@ -2374,8 +3323,20 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         const int sendCountMap = static_cast<int>(sendCountMapLL);
 
         MPI_Gatherv(dirMapLocal.data(), sendCountMap, MPI_DOUBLE,
-                    dirMapAll.data(), recvCountsMap.data(), displsMap.data(), MPI_DOUBLE,
+                    dirMapRecv.data(), recvCountsMap.data(), displsMap.data(), MPI_DOUBLE,
                     0, MPI_GLOBAL_COMMUNICATOR);
+
+        if (mpiRank == 0) {
+            for (int i=0; i<totalRecv; ++i) {
+                const int globalIdx = idxRecv[(size_t)i];
+                const size_t srcBase = (size_t)i * (size_t)dirMapCfg.nCells;
+                const size_t dstBase = (size_t)globalIdx * (size_t)dirMapCfg.nCells;
+                for (int cellId=0; cellId<dirMapCfg.nCells; ++cellId) {
+                    dirMapAll[dstBase + (size_t)cellId] =
+                        dirMapRecv[srcBase + (size_t)cellId];
+                }
+            }
+        }
     }
 
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);

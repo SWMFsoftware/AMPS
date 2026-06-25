@@ -43,11 +43,14 @@ srcEarth/gridless/AnisotropicSpectrum.cpp
 srcEarth/3d/Mode3D.cpp
 srcEarth/3d/CutoffRigidityMode3D.cpp
 srcEarth/3d/DensityMode3D.cpp
+srcEarth/3d/Mode3DParallel.cpp
+srcEarth/3d/Mode3DParallel.h
 srcEarth/3d/ElectricField.cpp
 srcEarth/3d/GlobalMagneticField.cpp
     Mesh-backed 3-D backward products: cutoff, directional cutoff maps,
-    density/flux, standalone time snapshots, field initialization, and global
-    replicated B-field materialization.
+    density/flux, standalone time snapshots, field initialization, global
+    replicated B-field materialization, and the shared OpenMP/THREADS/SERIAL
+    backend selector used by both cutoff and density/flux.
 
 srcEarth/3d_forward/Mode3DForward.cpp
 srcEarth/3d_forward/ForwardParticleMovers.cpp
@@ -116,6 +119,8 @@ mpirun -np 8 ./amps -mode 3d -i AMPS_PARAM.in
 
 Mode3D uses the AMPS AMR mesh as the field backend. The standalone code initializes the requested background magnetic field on mesh cell centers, then materializes a replicated read-only B-field snapshot on every MPI rank so any rank can backtrace through the whole domain.
 
+Because every rank can access the full replicated mesh field, the standalone backward products use a block-cyclic MPI work partition for observation locations: rank `r` computes locations `r`, `r+nRanks`, `r+2*nRanks`, and so on. This avoids assigning one contiguous longitude/latitude/shell slab to a rank and gives substantially better MPI load balance for cutoff and density/flux backtracking in `SHELLS` mode.
+
 This mode now supports three product selections from the same prepared mesh-field snapshot:
 
 ```text
@@ -145,6 +150,10 @@ shared-memory backends, selected by the `#NUMERICAL` keywords
 `DENSITY_PARALLEL` and `DENSITY_THREADS` or by the standalone CLI options
 `-density-parallel` and `-density-threads`. The names are historical: the
 same settings now apply to both `CUTOFF_RIGIDITY` and `DENSITY_SPECTRUM`.
+Clearer aliases are also accepted: `MODE3D_PARALLEL`, `MODE3D_THREADS`,
+`BACKTRACK_PARALLEL`, and `BACKTRACK_THREADS`; similarly, the CLI accepts
+`-mode3d-parallel`, `-mode3d-threads`, `-backtrack-parallel`, and
+`-backtrack-threads`.
 
 Typical output files for a single snapshot:
 
@@ -433,6 +442,10 @@ inside each MPI rank:
 DENSITY_PARALLEL SERIAL
 DENSITY_PARALLEL OPENMP
 DENSITY_PARALLEL THREADS
+
+# Equivalent clearer aliases:
+MODE3D_PARALLEL   THREADS
+BACKTRACK_THREADS 8
 ```
 
 Despite the `DENSITY_` prefix, these settings control both the cutoff and
@@ -795,10 +808,29 @@ CUTOFF_EMAX            20000.0
 CUTOFF_NENERGY         50
 CUTOFF_MAX_PARTICLES   500
 CUTOFF_MAX_TRAJ_TIME   60.0
+CUTOFF_SEARCH_ALGORITHM UPPER_SCAN
+CUTOFF_UPPER_SCAN_N    50
 CUTOFF_SAMPLING        ISOTROPIC
 DIRECTIONAL_MAP        T
 DIRMAP_LON_RES         30
 DIRMAP_LAT_RES         30
+
+# Optional one-point allowed(R) debug scan for dipole/Störmer tests
+CUTOFF_DEBUG_RIGIDITY_SCAN T
+CUTOFF_DEBUG_SCAN_LON      0.0
+CUTOFF_DEBUG_SCAN_LAT     -40.0
+CUTOFF_DEBUG_SCAN_ALT    9000.0
+CUTOFF_DEBUG_SCAN_N        40
+CUTOFF_DEBUG_SCAN_FILE     cutoff_3d_debug_latm40.dat
+
+# Optional one-point trajectory-exit diagnostic
+CUTOFF_DEBUG_EXIT_TRACE    T
+CUTOFF_DEBUG_EXIT_LON      0.0
+CUTOFF_DEBUG_EXIT_LAT     -60.0
+CUTOFF_DEBUG_EXIT_ALT    9000.0
+CUTOFF_DEBUG_EXIT_R_GV    -1.0
+CUTOFF_DEBUG_EXIT_N        40
+CUTOFF_DEBUG_EXIT_FILE     cutoff_3d_debug_exit_latm60.dat
 ```
 
 Meanings:
@@ -808,10 +840,59 @@ CUTOFF_EMIN / CUTOFF_EMAX     energy/range bounds [MeV/n]
 CUTOFF_NENERGY                number of samples used by the cutoff search
 CUTOFF_MAX_PARTICLES          direction/sample cap per location
 CUTOFF_MAX_TRAJ_TIME          cutoff-specific trajectory time cap [s]
+CUTOFF_SEARCH_ALGORITHM       UPPER_SCAN (default) or BINARY
+CUTOFF_UPPER_SCAN_N           samples for UPPER_SCAN; 0/omitted uses CUTOFF_NENERGY
 CUTOFF_SAMPLING               VERTICAL or ISOTROPIC
 DIRECTIONAL_MAP               write directional sky-map products
 DIRMAP_LON_RES/LAT_RES        sky-map angular resolution [deg]
+CUTOFF_DEBUG_RIGIDITY_SCAN    enable one-point TraceAllowed3D(R) diagnostic
+CUTOFF_DEBUG_SCAN_LON/LAT/ALT selected spherical-shell point for the diagnostic
+CUTOFF_DEBUG_SCAN_N           number of log-spaced R samples; landmarks are added
+CUTOFF_DEBUG_SCAN_FILE        diagnostic output file name
+CUTOFF_DEBUG_EXIT_TRACE       enable one-point trajectory-exit diagnostic
+CUTOFF_DEBUG_EXIT_LON/LAT/ALT selected spherical-shell point for the exit diagnostic
+CUTOFF_DEBUG_EXIT_R_GV        one rigidity to trace [GV]; <=0 writes a diagnostic list
+CUTOFF_DEBUG_EXIT_N           number of list samples when R_GV<=0
+CUTOFF_DEBUG_EXIT_FILE        trajectory-exit diagnostic output file name
 ```
+
+
+The default `UPPER_SCAN` cutoff search is penumbra-safe. It samples `TraceAllowed3D(R)` from `CUTOFF_EMIN` to `CUTOFF_EMAX`, scans downward from the highest rigidity to find the highest forbidden sample, and then bisects the final forbidden/allowed transition. This avoids the old endpoint-binary failure in which a low-rigidity allowed pocket caused the solver to return `Rmin` for high-latitude dipole-shell points. Use `CUTOFF_SEARCH_ALGORITHM BINARY` only to reproduce the legacy endpoint-only behavior.
+
+The debug scan writes a table with `R_GV`, the actual `TraceAllowed3D`
+classification, and the analytic Störmer vertical cutoff when `FIELD_MODEL` is
+`DIPOLE`. It is useful when a shell map returns the lower rigidity bound at only
+some latitude bands: the table shows whether `Rmin` is truly being classified as
+allowed or whether the error comes from MPI/thread output ordering. The same scan
+can be enabled from the command line with:
+
+```bash
+./amps -mode 3d -i AMPS_PARAM_3d_dipole_shells.in \
+  -cutoff-debug-scan 0 -40 9000 \
+  -cutoff-debug-scan-file cutoff_3d_debug_latm40.dat
+```
+
+The exit diagnostic is a stronger trajectory-classifier test. It repeats the same
+vertical backtrace used by the cutoff solver at one selected point and writes the
+termination reason and boundary-crossing geometry. For a trajectory counted as
+allowed, the row must have `reason=OUTER_BOX`; time limits, step limits, distance
+limits, and inner-sphere hits are forbidden. The file also reports the raw terminal
+point, the linearly reconstructed box-crossing point/face, the box overshoot, the
+relative rigidity error, and for a centered dipole the relative error in the
+canonical angular momentum about the dipole axis,
+`[r x (p + qA)] . m_hat`. This checks whether an allowed low-rigidity pocket is a
+true outer-boundary escape or a classifier/integration artifact. Example:
+
+```bash
+./amps -mode 3d -i AMPS_PARAM_3d_dipole_shells.in \
+  -cutoff-debug-exit 0 -60 9000 \
+  -cutoff-debug-exit-r 0.0136992266 \
+  -cutoff-debug-exit-file cutoff_3d_debug_exit_latm60_rmin.dat
+```
+
+If `-cutoff-debug-exit-r` or `CUTOFF_DEBUG_EXIT_R_GV` is omitted or non-positive,
+the exit diagnostic writes a small rigidity list, including log-spaced samples and
+Störmer-neighborhood landmarks when `FIELD_MODEL=DIPOLE`.
 
 ### 8.10 `#DENSITY_SPECTRUM`
 
@@ -993,6 +1074,15 @@ Common options:
 -mode3d-field-eval <INTERPOLATION|ANALYTIC>
     For standalone Mode3D, choose whether tracing uses mesh interpolation or direct analytic/background evaluation.
 
+-cutoff-debug-scan <lon_deg> <lat_deg> <alt_km>
+    In standalone Mode3D cutoff runs, write the one-point rigidity classification diagnostic before the full cutoff map. Optional: -cutoff-debug-scan-n <N> and -cutoff-debug-scan-file <file>.
+
+-cutoff-debug-exit <lon_deg> <lat_deg> <alt_km>
+    In standalone Mode3D cutoff runs, write the one-point trajectory-exit diagnostic. Optional: -cutoff-debug-exit-r <R_GV>, -cutoff-debug-exit-n <N>, and -cutoff-debug-exit-file <file>.
+
+-cutoff-search <UPPER_SCAN|BINARY>
+    Select the cutoff-search algorithm. UPPER_SCAN is the default penumbra-safe upper-cutoff search; BINARY restores the legacy endpoint-only bisection. Optional: -cutoff-upper-scan-n <N>.
+
 -density-parallel <OPENMP|THREADS|SERIAL>
     Select the shared-memory backend for Mode3D backward products within each MPI process. Despite the name, this option now applies to both cutoff and density/flux calculations. OPENMP preserves the OpenMP loops. THREADS uses direct std::thread workers over observation locations and suppresses nested OpenMP inside those workers. SERIAL disables intra-rank shared-memory parallelism.
 
@@ -1173,9 +1263,12 @@ cutoff_3d_shells.dat
 cutoff_3d_dir_map_loc_000000.dat
 cutoff_3d_points_dipole_compare.dat
 cutoff_3d_shells_dipole_compare.dat
+cutoff_3d_debug_rigidity_scan.dat
 ```
 
 The dipole comparison files are diagnostic/benchmark products for DIPOLE runs.
+`cutoff_3d_debug_rigidity_scan.dat` is written only when the one-point cutoff
+debug scan is enabled.
 
 ### Mode3D density/flux
 

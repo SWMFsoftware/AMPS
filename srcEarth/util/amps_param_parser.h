@@ -50,6 +50,12 @@
 //     DIRECTIONAL_MAP         T|F        ! enable directional cutoff sky-map output
 //     DIRMAP_LON_RES          <double>   ! longitude resolution [deg] for sky-map
 //     DIRMAP_LAT_RES          <double>   ! latitude resolution [deg] for sky-map
+//     CUTOFF_SEARCH_ALGORITHM <string>   ! UPPER_SCAN (default) or BINARY
+//     CUTOFF_UPPER_SCAN_N     <int>      ! samples for UPPER_SCAN; 0 => CUTOFF_NENERGY
+//     CUTOFF_DEBUG_RIGIDITY_SCAN T|F     ! write one-point allowed(R) scan
+//     CUTOFF_DEBUG_SCAN_*               ! lon/lat/alt/N/file controls for that scan
+//     CUTOFF_DEBUG_EXIT_TRACE T|F        ! write one-point trajectory-exit diagnostic
+//     CUTOFF_DEBUG_EXIT_*               ! lon/lat/alt/R/N/file controls for exit test
 //
 //   #DENSITY_SPECTRUM
 //     DS_EMIN                 <double>   ! MeV/n; lower energy bound
@@ -283,6 +289,22 @@ namespace EarthUtil {
     //     MAX_TRACE_TIME.
     double maxTrajTime_s{0.0}; // CUTOFF_MAX_TRAJ_TIME
 
+    // Rigidity-search algorithm for each point/direction.
+    //
+    // UPPER_SCAN (default): penumbra-safe search.  Sample TraceAllowed(R) on a
+    // log-spaced grid, find the highest forbidden sampled rigidity, then refine
+    // the final forbidden/allowed transition.  This avoids returning Rmin when
+    // low-rigidity allowed pockets exist below the physical upper cutoff.
+    //
+    // BINARY: legacy endpoint-only binary search.  This is faster but assumes
+    // TraceAllowed(R) is monotonic and can return Rmin if Rmin happens to be
+    // allowed inside a penumbra-like allowed pocket.
+    std::string searchAlgorithm{"UPPER_SCAN"}; // CUTOFF_SEARCH_ALGORITHM
+
+    // Number of samples for UPPER_SCAN.  If <=0, the solver reuses
+    // CUTOFF_NENERGY so existing inputs control the scan resolution.
+    int upperScanN{0}; // CUTOFF_UPPER_SCAN_N
+
     // Cutoff sampling mode.
     //
     // VERTICAL:
@@ -313,6 +335,54 @@ namespace EarthUtil {
     bool directionalMap{false};          // DIRECTIONAL_MAP
     double dirMapLonRes_deg{10.0};       // DIRMAP_LON_RES
     double dirMapLatRes_deg{10.0};       // DIRMAP_LAT_RES
+
+    // Optional diagnostic: run a rigidity classification scan at one user-selected
+    // spherical-shell location before the full cutoff map is computed.  This is a
+    // debugging/regression aid for centered-dipole validation: the output shows
+    // TraceAllowed3D(R) over a range of rigidities, next to the analytic Störmer
+    // vertical cutoff.  It helps distinguish a true trajectory-classification problem
+    // from MPI/thread output-indexing errors.
+    //
+    // Input-file keys in #CUTOFF_RIGIDITY:
+    //   CUTOFF_DEBUG_RIGIDITY_SCAN  T|F
+    //   CUTOFF_DEBUG_SCAN_LON       <deg>
+    //   CUTOFF_DEBUG_SCAN_LAT       <deg>
+    //   CUTOFF_DEBUG_SCAN_ALT       <km>   (if <0, use first SHELL_ALTITUDES value or 0)
+    //   CUTOFF_DEBUG_SCAN_N         <int>  (number of log-spaced points, landmarks added)
+    //   CUTOFF_DEBUG_SCAN_FILE      <file>
+    bool debugRigidityScan{false};
+    double debugScanLon_deg{0.0};
+    double debugScanLat_deg{0.0};
+    double debugScanAlt_km{-1.0};
+    int debugScanN{40};
+    std::string debugScanFile{"cutoff_3d_debug_rigidity_scan.dat"};
+
+    // Optional diagnostic: repeat the trajectory classifier at one selected
+    // spherical-shell location and write the terminal/exit state.  This is designed
+    // for dipole validation of the OUTER_BOX classification: it records the reason
+    // for termination, the raw exit point, the linearly reconstructed box-crossing
+    // point, rigidity conservation, and the dipole-axis canonical angular-momentum
+    // invariant.
+    //
+    // If CUTOFF_DEBUG_EXIT_R_GV > 0, only that one rigidity is traced.
+    // If CUTOFF_DEBUG_EXIT_R_GV <= 0, the diagnostic traces a rigidity list built
+    // similarly to CUTOFF_DEBUG_RIGIDITY_SCAN, with CUTOFF_DEBUG_EXIT_N samples.
+    //
+    // Input-file keys in #CUTOFF_RIGIDITY:
+    //   CUTOFF_DEBUG_EXIT_TRACE  T|F
+    //   CUTOFF_DEBUG_EXIT_LON    <deg>
+    //   CUTOFF_DEBUG_EXIT_LAT    <deg>
+    //   CUTOFF_DEBUG_EXIT_ALT    <km>
+    //   CUTOFF_DEBUG_EXIT_R_GV   <GV>   (optional; <=0 means scan/list mode)
+    //   CUTOFF_DEBUG_EXIT_N      <int>  (used only when R_GV<=0)
+    //   CUTOFF_DEBUG_EXIT_FILE   <file>
+    bool debugExitTrace{false};
+    double debugExitLon_deg{0.0};
+    double debugExitLat_deg{0.0};
+    double debugExitAlt_km{-1.0};
+    double debugExitR_GV{-1.0};
+    int debugExitN{40};
+    std::string debugExitFile{"cutoff_3d_debug_exit_trace.dat"};
   };
 
   //====================================================================================

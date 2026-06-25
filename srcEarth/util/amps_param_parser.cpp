@@ -2357,15 +2357,102 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       // If omitted, the solver will fall back to #NUMERICAL MAX_TRACE_TIME.
       else if (uKey=="CUTOFF_MAX_TRAJ_TIME") p.cutoff.maxTrajTime_s=std::stod(val);
 
+      // Rigidity-search strategy.  UPPER_SCAN is the penumbra-safe default;
+      // BINARY is the legacy endpoint-only method.
+      else if (uKey=="CUTOFF_SEARCH_ALGORITHM" ||
+               uKey=="CUTOFF_SEARCH" ||
+               uKey=="CUTOFF_RIGIDITY_SEARCH") {
+        p.cutoff.searchAlgorithm=ToUpper(Trim(val));
+      }
+      else if (uKey=="CUTOFF_UPPER_SCAN_N" ||
+               uKey=="CUTOFF_SEARCH_N" ||
+               uKey=="CUTOFF_SCAN_N") {
+        p.cutoff.upperScanN=std::stoi(val);
+      }
+
       // Cutoff sampling strategy: VERTICAL or ISOTROPIC.
       // We store the string in uppercase for robust comparisons later.
       else if (uKey=="CUTOFF_SAMPLING") p.cutoff.sampling=ToUpper(val);
+
+      // Optional Mode3D rigidity-classification diagnostic.
+      // This writes TraceAllowed3D(R) at one spherical-shell location before the
+      // full cutoff map is computed.  It is used to diagnose endpoint/bracketing
+      // problems in dipole/Störmer validation runs.
+      else if (uKey=="CUTOFF_DEBUG_RIGIDITY_SCAN" ||
+               uKey=="DEBUG_RIGIDITY_SCAN" ||
+               uKey=="CUTOFF_RIGIDITY_SCAN_TEST" ||
+               uKey=="CUTOFF_DEBUG_SCAN") {
+        p.cutoff.debugRigidityScan=ToBool(val);
+      }
+      else if (uKey=="CUTOFF_DEBUG_SCAN_LON" ||
+               uKey=="DEBUG_SCAN_LON" ||
+               uKey=="DEBUG_SCAN_LON_DEG") {
+        p.cutoff.debugScanLon_deg=std::stod(val);
+      }
+      else if (uKey=="CUTOFF_DEBUG_SCAN_LAT" ||
+               uKey=="DEBUG_SCAN_LAT" ||
+               uKey=="DEBUG_SCAN_LAT_DEG") {
+        p.cutoff.debugScanLat_deg=std::stod(val);
+      }
+      else if (uKey=="CUTOFF_DEBUG_SCAN_ALT" ||
+               uKey=="CUTOFF_DEBUG_SCAN_ALT_KM" ||
+               uKey=="DEBUG_SCAN_ALT" ||
+               uKey=="DEBUG_SCAN_ALT_KM") {
+        p.cutoff.debugScanAlt_km=std::stod(val);
+      }
+      else if (uKey=="CUTOFF_DEBUG_SCAN_N" ||
+               uKey=="DEBUG_SCAN_N" ||
+               uKey=="DEBUG_SCAN_NPOINTS") {
+        p.cutoff.debugScanN=std::stoi(val);
+      }
+      else if (uKey=="CUTOFF_DEBUG_SCAN_FILE" ||
+               uKey=="DEBUG_SCAN_FILE") {
+        p.cutoff.debugScanFile=Trim(val);
+      }
+
+      // Optional trajectory-exit diagnostic.  This uses the same selected point style
+      // as the rigidity scan but writes the terminal state/reason for each traced R.
+      else if (uKey=="CUTOFF_DEBUG_EXIT_TRACE" ||
+               uKey=="DEBUG_EXIT_TRACE" ||
+               uKey=="CUTOFF_EXIT_TRACE_TEST") {
+        p.cutoff.debugExitTrace=ToBool(val);
+      }
+      else if (uKey=="CUTOFF_DEBUG_EXIT_LON" ||
+               uKey=="DEBUG_EXIT_LON" ||
+               uKey=="DEBUG_EXIT_LON_DEG") {
+        p.cutoff.debugExitLon_deg=std::stod(val);
+      }
+      else if (uKey=="CUTOFF_DEBUG_EXIT_LAT" ||
+               uKey=="DEBUG_EXIT_LAT" ||
+               uKey=="DEBUG_EXIT_LAT_DEG") {
+        p.cutoff.debugExitLat_deg=std::stod(val);
+      }
+      else if (uKey=="CUTOFF_DEBUG_EXIT_ALT" ||
+               uKey=="CUTOFF_DEBUG_EXIT_ALT_KM" ||
+               uKey=="DEBUG_EXIT_ALT" ||
+               uKey=="DEBUG_EXIT_ALT_KM") {
+        p.cutoff.debugExitAlt_km=std::stod(val);
+      }
+      else if (uKey=="CUTOFF_DEBUG_EXIT_R_GV" ||
+               uKey=="CUTOFF_DEBUG_EXIT_R" ||
+               uKey=="DEBUG_EXIT_R_GV") {
+        p.cutoff.debugExitR_GV=std::stod(val);
+      }
+      else if (uKey=="CUTOFF_DEBUG_EXIT_N" ||
+               uKey=="DEBUG_EXIT_N" ||
+               uKey=="DEBUG_EXIT_NPOINTS") {
+        p.cutoff.debugExitN=std::stoi(val);
+      }
+      else if (uKey=="CUTOFF_DEBUG_EXIT_FILE" ||
+               uKey=="DEBUG_EXIT_FILE") {
+        p.cutoff.debugExitFile=Trim(val);
+      }
 
       // Directional Rc sky-map controls.
       // Notes:
       //   - These are used only in the gridless cutoff solver.
       //   - A directional map is a diagnostic product; it can be expensive.
-      else if (uKey=="DIRECTIONAL_MAP") p.cutoff.directionalMap=ToBool(val);
+      else if (uKey=="DIRECTIONAL_MAP" || uKey=="CUTOFF_DIRECTIONAL_MAP") p.cutoff.directionalMap=ToBool(val);
       else if (uKey=="DIRMAP_LON_RES") p.cutoff.dirMapLonRes_deg=std::stod(val);
       else if (uKey=="DIRMAP_LAT_RES") p.cutoff.dirMapLatRes_deg=std::stod(val);
       else rejectUnknownKeyword();
@@ -2491,11 +2578,17 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="MAX_TRACE_TIME") p.numerics.maxTraceTime_s=std::stod(val);
       else if (uKey=="MAX_TRACE_DISTANCE") p.numerics.maxTraceDistance_Re=std::stod(val);
       else if (uKey=="DENSITY_PARALLEL" || uKey=="DENSITY_BACKEND" ||
-               uKey=="MODE3D_DENSITY_PARALLEL" || uKey=="MODE3D_DENSITY_BACKEND") {
+               uKey=="MODE3D_DENSITY_PARALLEL" || uKey=="MODE3D_DENSITY_BACKEND" ||
+               uKey=="MODE3D_PARALLEL" || uKey=="MODE3D_BACKEND" ||
+               uKey=="BACKTRACK_PARALLEL" || uKey=="BACKTRACK_BACKEND" ||
+               uKey=="BACKWARD_PARALLEL" || uKey=="BACKWARD_BACKEND") {
         p.mode3d.densityParallelBackend=ToUpper(Trim(val));
       }
       else if (uKey=="DENSITY_THREADS" || uKey=="DENSITY_NTHREADS" ||
-               uKey=="MODE3D_DENSITY_THREADS" || uKey=="MODE3D_DENSITY_NTHREADS") {
+               uKey=="MODE3D_DENSITY_THREADS" || uKey=="MODE3D_DENSITY_NTHREADS" ||
+               uKey=="MODE3D_THREADS" || uKey=="MODE3D_NTHREADS" ||
+               uKey=="BACKTRACK_THREADS" || uKey=="BACKTRACK_NTHREADS" ||
+               uKey=="BACKWARD_THREADS" || uKey=="BACKWARD_NTHREADS") {
         p.mode3d.densityThreads=std::stoi(val);
       }
       else if (uKey=="DS_BOUNDARY_MODE") {
@@ -2596,12 +2689,18 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="DS_BOUNDARY_MODE") p.densitySpectrum.boundaryMode=ToUpper(val);
       else if (uKey=="DS_PARALLEL" || uKey=="DS_BACKEND" ||
                uKey=="DENSITY_PARALLEL" || uKey=="DENSITY_BACKEND" ||
-               uKey=="MODE3D_DENSITY_PARALLEL" || uKey=="MODE3D_DENSITY_BACKEND") {
+               uKey=="MODE3D_DENSITY_PARALLEL" || uKey=="MODE3D_DENSITY_BACKEND" ||
+               uKey=="MODE3D_PARALLEL" || uKey=="MODE3D_BACKEND" ||
+               uKey=="BACKTRACK_PARALLEL" || uKey=="BACKTRACK_BACKEND" ||
+               uKey=="BACKWARD_PARALLEL" || uKey=="BACKWARD_BACKEND") {
         p.mode3d.densityParallelBackend=ToUpper(Trim(val));
       }
       else if (uKey=="DS_THREADS" || uKey=="DS_NTHREADS" ||
                uKey=="DENSITY_THREADS" || uKey=="DENSITY_NTHREADS" ||
-               uKey=="MODE3D_DENSITY_THREADS" || uKey=="MODE3D_DENSITY_NTHREADS") {
+               uKey=="MODE3D_DENSITY_THREADS" || uKey=="MODE3D_DENSITY_NTHREADS" ||
+               uKey=="MODE3D_THREADS" || uKey=="MODE3D_NTHREADS" ||
+               uKey=="BACKTRACK_THREADS" || uKey=="BACKTRACK_NTHREADS" ||
+               uKey=="BACKWARD_THREADS" || uKey=="BACKWARD_NTHREADS") {
         p.mode3d.densityThreads=std::stoi(val);
       }
       else rejectUnknownKeyword();
@@ -2765,8 +2864,85 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     if (!(p.cutoff.nEnergy>=1)) {
       exit(__LINE__,__FILE__,"CUTOFF_NENERGY must be >= 1");
     }
+    {
+      const std::string cutoffSearch = ToUpper(p.cutoff.searchAlgorithm);
+      if (!(cutoffSearch=="UPPER_SCAN" || cutoffSearch=="UPPER" ||
+            cutoffSearch=="SCAN" || cutoffSearch=="PENUMBRA" ||
+            cutoffSearch=="BINARY" || cutoffSearch=="ENDPOINT_BINARY" ||
+            cutoffSearch=="LEGACY_BINARY")) {
+        exit(__LINE__,__FILE__,
+             "CUTOFF_SEARCH_ALGORITHM must be UPPER_SCAN or BINARY");
+      }
+      if (cutoffSearch=="UPPER" || cutoffSearch=="SCAN" || cutoffSearch=="PENUMBRA")
+        p.cutoff.searchAlgorithm="UPPER_SCAN";
+      else if (cutoffSearch=="ENDPOINT_BINARY" || cutoffSearch=="LEGACY_BINARY")
+        p.cutoff.searchAlgorithm="BINARY";
+      else
+        p.cutoff.searchAlgorithm=cutoffSearch;
+    }
+    if (p.cutoff.upperScanN < 0) {
+      exit(__LINE__,__FILE__,"CUTOFF_UPPER_SCAN_N must be >= 0 (0 means: use CUTOFF_NENERGY)");
+    }
+    if (p.cutoff.upperScanN > 0 && p.cutoff.upperScanN < 2) {
+      exit(__LINE__,__FILE__,"CUTOFF_UPPER_SCAN_N must be >= 2 when specified");
+    }
     if (p.cutoff.maxParticlesPerPoint < 1) {
       exit(__LINE__,__FILE__,"CUTOFF_MAX_PARTICLES must be >= 1");
+    }
+    if (p.cutoff.debugRigidityScan) {
+      if (p.cutoff.debugScanN < 2) {
+        exit(__LINE__,__FILE__,"CUTOFF_DEBUG_SCAN_N must be >= 2");
+      }
+      if (p.cutoff.debugScanFile.empty()) {
+        exit(__LINE__,__FILE__,"CUTOFF_DEBUG_SCAN_FILE must not be empty");
+      }
+      if (!std::isfinite(p.cutoff.debugScanLon_deg) ||
+          !std::isfinite(p.cutoff.debugScanLat_deg) ||
+          !std::isfinite(p.cutoff.debugScanAlt_km)) {
+        exit(__LINE__,__FILE__,"CUTOFF_DEBUG_SCAN_LON/LAT/ALT must be finite numbers");
+      }
+      if (p.cutoff.debugScanLat_deg < -90.0 || p.cutoff.debugScanLat_deg > 90.0) {
+        exit(__LINE__,__FILE__,"CUTOFF_DEBUG_SCAN_LAT must be in [-90,90] degrees");
+      }
+    }
+    if (p.cutoff.debugExitTrace) {
+      if (p.cutoff.debugExitN < 2) {
+        exit(__LINE__,__FILE__,"CUTOFF_DEBUG_EXIT_N must be >= 2");
+      }
+      if (p.cutoff.debugExitFile.empty()) {
+        exit(__LINE__,__FILE__,"CUTOFF_DEBUG_EXIT_FILE must not be empty");
+      }
+      if (!std::isfinite(p.cutoff.debugExitLon_deg) ||
+          !std::isfinite(p.cutoff.debugExitLat_deg) ||
+          !std::isfinite(p.cutoff.debugExitAlt_km) ||
+          !std::isfinite(p.cutoff.debugExitR_GV)) {
+        exit(__LINE__,__FILE__,"CUTOFF_DEBUG_EXIT_LON/LAT/ALT/R_GV must be finite numbers");
+      }
+      if (p.cutoff.debugExitLat_deg < -90.0 || p.cutoff.debugExitLat_deg > 90.0) {
+        exit(__LINE__,__FILE__,"CUTOFF_DEBUG_EXIT_LAT must be in [-90,90] degrees");
+      }
+    }
+  }
+
+  // Validate shared Mode3D backward-product parallel controls if cutoff or density/flux
+  // is requested.  The DENSITY_* names are historical; in Mode3D they control the
+  // generic intra-rank backend for both cutoff rigidity and density/flux.  Therefore
+  // cutoff-only inputs should catch invalid backend/thread settings during parsing too.
+  if (calcRequestsCutoff || calcRequestsDensityFlux) {
+    if (p.mode3d.densityThreads < 0) {
+      exit(__LINE__,__FILE__,"DENSITY_THREADS/MODE3D_THREADS/BACKTRACK_THREADS must be >= 0 (0 means: automatic)");
+    }
+    if (!p.mode3d.densityParallelBackend.empty()) {
+      const std::string db = ToUpper(p.mode3d.densityParallelBackend);
+      if (db!="OPENMP" && db!="OMP" && db!="THREAD" && db!="THREADS" &&
+          db!="STD_THREAD" && db!="STD_THREADS" && db!="PTHREAD" && db!="PTHREADS" &&
+          db!="SERIAL" && db!="NONE" && db!="OFF") {
+        std::ostringstream _exit_msg;
+        _exit_msg << "DENSITY_PARALLEL/MODE3D_PARALLEL/BACKTRACK_PARALLEL must be OPENMP, THREADS, or SERIAL (got '"
+                  << p.mode3d.densityParallelBackend << "')";
+        exit(__LINE__,__FILE__,_exit_msg.str().c_str());
+      }
+      p.mode3d.densityParallelBackend = db;
     }
   }
 
@@ -2814,21 +2990,6 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
     if (p.numerics.maxTraceDistance_Re < 0.0) {
       exit(__LINE__,__FILE__,"MAX_TRACE_DISTANCE must be >= 0 (0 means: disabled)");
-    }
-    if (p.mode3d.densityThreads < 0) {
-      exit(__LINE__,__FILE__,"DENSITY_THREADS/MODE3D_DENSITY_THREADS must be >= 0 (0 means: automatic)");
-    }
-    if (!p.mode3d.densityParallelBackend.empty()) {
-      const std::string db = ToUpper(p.mode3d.densityParallelBackend);
-      if (db!="OPENMP" && db!="OMP" && db!="THREAD" && db!="THREADS" &&
-          db!="STD_THREAD" && db!="STD_THREADS" && db!="SERIAL" && db!="NONE" &&
-          db!="OFF") {
-        std::ostringstream _exit_msg;
-        _exit_msg << "DENSITY_PARALLEL/MODE3D_DENSITY_PARALLEL must be OPENMP, THREADS, or SERIAL (got '"
-                  << p.mode3d.densityParallelBackend << "')";
-        exit(__LINE__,__FILE__,_exit_msg.str().c_str());
-      }
-      p.mode3d.densityParallelBackend = db;
     }
     // Validate DS_BOUNDARY_MODE token.
     const std::string bm = ToUpper(p.densitySpectrum.boundaryMode);
