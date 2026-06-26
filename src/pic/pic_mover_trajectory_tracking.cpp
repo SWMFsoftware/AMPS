@@ -4,7 +4,55 @@
 //static short** PIC::Mover::cellIntersectTypeArr=NULL;
 static std::vector<short> NodeTypeArr_all;
 static std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>  NodeArr_type2, NodeArr_all;
-static short** cellIntersectTypeArr=NULL;  
+static short** cellIntersectTypeArr=NULL;
+
+// spherical internal boundary: use analytic sphere interception
+//  triangulated internal boundary: use cut-triangle interception
+static bool IsSphereGeometry() {
+  cInternalBoundaryConditionsDescriptor SphereDescriptor;
+  SphereDescriptor=PIC::BC::InternalBoundary::Sphere::RegisterInternalSphere();
+  if  (SphereDescriptor.BondaryType ==_INTERNAL_BOUNDARY_TYPE_SPHERE_){
+    return true;
+  }else{
+    return false;
+  }
+}
+
+static double SphereIntersectionTime(const double *x,const double *v,double radius) {
+  const double dist=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
+  if (dist<=radius) return -2.0; // particle is already inside the sphere
+
+  const double vMag=sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
+  if (vMag<1.0e-5) return -1.0; // effectively stationary
+
+  const double cosAngle=(v[0]*x[0]+v[1]*x[1]+v[2]*x[2])/(dist*vMag);
+  if (cosAngle>0.0) return -1.0; // moving away from the sphere
+
+  const double b=dist*sqrt(1.0-cosAngle*cosAngle);
+  if (b>radius) return -1.0; // misses the sphere
+
+  const double a=-dist*cosAngle;
+  return (a-sqrt(radius*radius-b*b))/vMag;
+}
+
+static int ProcessSphereBoundaryIntersectionAndDelete(
+    int spec,long int ptr,double *x,double *v,double dtTotal,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  if (PIC::Mesh::mesh->InternalBoundaryList.empty()) {
+    exit(__LINE__,__FILE__,"Error: sphere geometry selected but no internal boundary is registered");
+  }
+
+  void *BoundaryElement=PIC::Mesh::mesh->InternalBoundaryList.front().BoundaryElement;
+  cInternalSphericalData_UserDefined::fParticleSphereInteraction ParticleSphereInteraction=
+    ((cInternalSphericalData*)BoundaryElement)->ParticleSphereInteraction;
+
+  if (ParticleSphereInteraction!=NULL) {
+    ParticleSphereInteraction(spec,ptr,x,v,dtTotal,(void*)startNode,BoundaryElement);
+  }
+
+  PIC::ParticleBuffer::DeleteParticle(ptr);
+  return _PARTICLE_LEFT_THE_DOMAIN_;
+}
 
 bool PIC::Mover::IsSetCellIntersectTypes(){
   if (cellIntersectTypeArr){
@@ -129,11 +177,11 @@ void PIC::Mover::SetBlockCellIntersectTypes(){
   }
   */
   //short cellIntersectTypeArr[][]
-  int nNode_type2 = NodeArr_type2.size();
+  const int nNode_type2 = NodeArr_type2.size();
   printf("nNode_type2:%d\n", nNode_type2);
   printf("before allocation cellIntersectTypeArr:%p\n",cellIntersectTypeArr);
-  cellIntersectTypeArr = new short * [nNode_type2];
-  cellIntersectTypeArr[0] = new short [nNode_type2*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  cellIntersectTypeArr = new short * [(nNode_type2>0) ? nNode_type2 : 1];
+  cellIntersectTypeArr[0] = (nNode_type2>0) ? new short [nNode_type2*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_] : NULL;
   printf("after allocation cellIntersectTypeArr:%p\n",cellIntersectTypeArr);
   for (int i=1; i<nNode_type2; i++) {
     cellIntersectTypeArr[i]=cellIntersectTypeArr[i-1]+_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_; 
@@ -238,12 +286,12 @@ short PIC::Mover::CellIntersectType(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node
   */
   i = nodeIndexInArr(node);
 
-  short blockType = NodeTypeArr_all[i];
   if (i==-1) {
-    printf("node:%p, NodeArr_all.size():%ld,threadid:%d \n", node,NodeArr_all.size(),PIC::ThisThread);
+    printf("node:%p, NodeArr_all.size():%ld,threadid:%d \n", node,(long)NodeArr_all.size(),PIC::ThisThread);
     
     exit(__LINE__,__FILE__,"Error: the node is not in the array processed by  SetBlockCellIntersectTypes()");
   }
+  short blockType = NodeTypeArr_all[i];
 
   if (blockType==1 || blockType==3){
     return blockType;
@@ -346,6 +394,7 @@ void findNeibNodesWithCutCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,
 }
 int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,bool firstBoundaryFlag) {
   namespace PB = PIC::ParticleBuffer;
+  const bool isSphere=IsSphereGeometry();
   //if firstBoundaryFlag is true, the particle is injected from the boundary
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
   PIC::ParticleBuffer::byte *ParticleData;
@@ -525,35 +574,35 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
   const int _block_bounday=0;
   const int _cut_triangle=1;
   const int _normal=2;
+  static int nDeleteSurface=0;
   static std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>  neibNodeArr;
   static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  lastNode=NULL;
   bool intersectCutCell=false;
   int code;
-
+  bool intersectTestSphere=false;
 
   static long int meshID = -1;
-  
-  if (meshID!=PIC::Mesh::mesh->GetMeshID() || meshID==-1){
-    //re-do mesh related functions if mesh changes
-    printf("cellIntersectTypeArr cleaned in pic_mover_traj\n");
+  if (!isSphere) {
+    if (meshID!=PIC::Mesh::mesh->GetMeshID() || meshID==-1){
+      // Rebuild cut-cell classification only for triangulated bodies.
+      printf("cellIntersectTypeArr cleaned in pic_mover_traj\n");
 
-    if (cellIntersectTypeArr!=NULL){
-      delete [] cellIntersectTypeArr[0];
-      delete [] cellIntersectTypeArr;
-      cellIntersectTypeArr=NULL;
+      if (cellIntersectTypeArr!=NULL){
+        delete [] cellIntersectTypeArr[0];
+        delete [] cellIntersectTypeArr;
+        cellIntersectTypeArr=NULL;
+      }
+      NodeTypeArr_all.clear();
+      NodeArr_type2.clear();
+      NodeArr_all.clear();
+      
+      meshID=PIC::Mesh::mesh->GetMeshID();
+      printf("SetBlockCellIntersectTypes() called in pic_mover_traj, thread_id:%d\n", PIC::ThisThread);
+      SetBlockCellIntersectTypes();
+      findNeibNodesWithCutCell(startNode,neibNodeArr,intersectCutCell);
+      lastNode=startNode;
     }
-    NodeTypeArr_all.clear();
-    NodeArr_type2.clear();
-    NodeArr_all.clear();
-    
-    meshID=PIC::Mesh::mesh->GetMeshID();
-    printf("SetBlockCellIntersectTypes() called in pic_mover_traj, thread_id:%d\n", PIC::ThisThread);
-    SetBlockCellIntersectTypes();
-    //MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-    findNeibNodesWithCutCell(startNode,  neibNodeArr, intersectCutCell);
-    lastNode =startNode;
   }
-  
 
   if (lastNode!=startNode){
     findNeibNodesWithCutCell(startNode,  neibNodeArr, intersectCutCell);
@@ -564,18 +613,51 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
   
   bool isTest=false;
   //if (ptr==60572 && PIC::ThisThread==0) isTest=true;
+  double accl[3],dt0=dtTotal;
+  _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(accl,spec,ptr,xInit,vInit,startNode);
 
+  /*
+  if (ptr==39703 && PIC::ThisThread==6) {
+    double rr = sqrt(xInit[0]*xInit[0]+xInit[1]*xInit[1]+xInit[2]*xInit[2]);
+    rr /= _RADIUS_(_TARGET_);
+    printf("test particle ptr:%d, thread:%d, xInit:%e,%e,%e,vInit:%e,%e,%e, rr:%e, xInit*vInit:%e \n",ptr, PIC::ThisThread, xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2],rr, xInit[0]*vInit[0]+xInit[1]*vInit[1]+xInit[2]*vInit[2]); 
+  }
+  */
+  
   //printf("mover called, x:%e,%e,%e, v:%e,%e,%e\n", xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2]);
+  if (sqrt(xInit[0]*xInit[0]+xInit[1]*xInit[1]+xInit[2]*xInit[2])<4e6) intersectTestSphere=true;
 
   while (dtTotal>0.0){
-    CutTriangleFlightTime=GetCutSurfaceIntersectionTime(CutTriangleFace,ExcludeCutTriangleFace,xInit,vInit,startNode);
+    if (!isSphere) {
+      CutTriangleFlightTime=GetCutSurfaceIntersectionTime(CutTriangleFace,ExcludeCutTriangleFace,xInit,vInit,startNode);
+    }
+    else {
+      CutTriangleFlightTime=SphereIntersectionTime(xInit,vInit,_RADIUS_(_TARGET_));
+      /*
+      printf("flighttime:%e, xInit:%e,%e,%e, vInit:%e,%e,%e,dotprod:%e, radius:%e \n",CutTriangleFlightTime, xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2],
+	     xInit[0]*vInit[0]+xInit[1]*vInit[1]+xInit[2]*vInit[2], _RADIUS_(_TARGET_) );
+      */
+      
+      if (fabs(CutTriangleFlightTime+2)<1e-5  && firstBoundaryFlag==false){
+	//inside the body at other iterations
+	/*
+	nDeleteSurface++;
+	printf("nDeleteSurface:%d, CutTriangleFlightTime:%e, firstBoundaryFlag:%s\n",nDeleteSurface,CutTriangleFlightTime,firstBoundaryFlag?"T":"F");
+	*/
+        return ProcessSphereBoundaryIntersectionAndDelete(spec,ptr,xInit,vInit,dtTotal,startNode);
+      }
+    }
+
     if (isTest) {
       printf("test1 xInit:%e,%e,%e, vInit:%e,%e,%e,startNode:%p, xmin:%e,%e,%e, xmax:%e,%e,%e,startNode->Thread:%d, startNode->block:%s,dtTotal:%e \n",xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2],startNode,
 	     startNode->xmin[0],startNode->xmin[1],startNode->xmin[2],startNode->xmax[0], startNode->xmax[1],startNode->xmax[2], startNode->Thread, startNode->block?"T":"F",dtTotal);     
     }
+    
+    /*
     if (CutTriangleFlightTime>0.0){
       //printf("flighttime:%e, xInit:%e,%e,%e, vInit:%e,%e,%e,normal:%e,%e,%e,x0:%e,%e,%e  \n",CutTriangleFlightTime, xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2], CutTriangleFace->ExternalNormal[0],CutTriangleFace->ExternalNormal[1],CutTriangleFace->ExternalNormal[2],CutTriangleFace->x0Face[0],CutTriangleFace->x0Face[1],CutTriangleFace->x0Face[2]);
     }
+    */
 
     if (isTest) {
       printf("CutTriangleFlightTime:%e\n", CutTriangleFlightTime);
@@ -615,9 +697,15 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 	}     
       }
     }
+    /*
+    if (IntersectionMode==_cut_triangle){
+      printf("cut triagnle\n");
+    }else if (IntersectionMode==_normal){
+      printf("normal\n");      
+    }
+    */
 
-    
-    
+
     switch(IntersectionMode){
            
     case _block_bounday:
@@ -676,39 +764,34 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
       if (testNode==NULL) {
 	//for (int i=0;i<3;i++) xInit[idim]=x_test[idim];
 	//intersects with outer bounary
-	
-        exit(__LINE__,__FILE__,"Error: the following \'switch\' operator need to be implemented");
-	
-/*
-switch (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_) {
-    case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE_:
-        //printf("delete test1\n");
-        PIC::ParticleBuffer::DeleteParticle(ptr);
-        //printf("nDeleteExternal:%d, x_test:%e,%e,%e\n", nDeleteExternal, x_test[0],x_test[1],x_test[2]);
-        nDeleteExternal++;
-        return _PARTICLE_LEFT_THE_DOMAIN_;
-    case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_:
-        //code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,startNode);
-        exit(__LINE__,__FILE__,"Error: branch _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_ is not implemented");
+#if _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE_
+	//printf("delete test1\n");
+	PIC::ParticleBuffer::DeleteParticle(ptr);
+	//printf("nDeleteExternal:%d, x_test:%e,%e,%e\n", nDeleteExternal, x_test[0],x_test[1],x_test[2]);
+	nDeleteExternal++;
+	return _PARTICLE_LEFT_THE_DOMAIN_;
+#elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
+    //code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,startNode);
+    
+    
+    exit(__LINE__,__FILE__,"Error: branch _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_ is not implemented");
+    
+#elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_
+    exit(__LINE__,__FILE__,"Error: not implemented");
+#elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_
+    //reflect the particle back into the domain
+    {
+      double c=0.0;
+      for (int idim=0;idim<3;idim++) c+=ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*vInit[idim];
+      for (int idim=0;idim<3;idim++) vInit[idim]-=2.0*c*ExternalBoundaryFaceTable[nIntersectionFace].norm[idim];
+      //startNode stays the same
+      //xInit stays the same
+    }
 
-    case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_:
-        exit(__LINE__,__FILE__,"Error: not implemented");
-    case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_:
-        //reflect the particle back into the domain
-        {
-          double c=0.0;
-          for (int idim=0;idim<3;idim++) c+=ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*vInit[idim];
-          for (int idim=0;idim<3;idim++) vInit[idim]-=2.0*c*ExternalBoundaryFaceTable[nIntersectionFace].norm[idim];
-          //startNode stays the same
-          //xInit stays the same
-        }
-
-        code=_PARTICLE_REJECTED_ON_THE_FACE_;
-        break;
-    default:
-        exit(__LINE__,__FILE__,"Error: the option is unknown");
-}
-*/
+    code=_PARTICLE_REJECTED_ON_THE_FACE_;
+#else
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+#endif
 
       }else{
 	//enter a new non-null block
@@ -734,15 +817,17 @@ switch (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_) {
 	 
 	  //printf("block particle removed\n");
 	  //remove particle if it goes outside neib blocks
+	  
+	  //printf("nDeleteBlock:%d, x_test:%e,%e,%e,ptr:%d,threadid:%d\n", nDeleteBlock, x_test[0],x_test[1],x_test[2],ptr,PIC::ThisThread);
 	  /*
-	  printf("nDeleteBlock:%d, x_test:%e,%e,%e,ptr:%d,threadid:%d\n", nDeleteBlock, x_test[0],x_test[1],x_test[2],ptr,PIC::ThisThread);
 	  for (int i=0; i<neibNodeArr.size(); i++) {
 	    //if (neibNodeArr[i]==testNode) isNeib=true;
 	    printf("neib block:%d,neibNodeArr:%p, xmin:%e,%e,%e, xmax:%e,%e,%e\n", i,neibNodeArr[i], neibNodeArr[i]->xmin[0], neibNodeArr[i]->xmin[1],neibNodeArr[i]->xmin[2],
 		   neibNodeArr[i]->xmax[0],neibNodeArr[i]->xmax[1],neibNodeArr[i]->xmax[2]);
 	  }
-	  nDeleteBlock++;
 	  */
+	  nDeleteBlock++;
+	  
 
 	  PIC::ParticleBuffer::DeleteParticle(ptr);
 	  return _PARTICLE_LEFT_THE_DOMAIN_;
@@ -756,18 +841,16 @@ switch (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_) {
     case _cut_triangle:
       {
 	if (isTest) printf("cut triangle\n");
-
-      code=(ProcessTriangleCutFaceIntersection!=NULL) ? ProcessTriangleCutFaceIntersection(ptr,xInit,vInit,CutTriangleFace,startNode) : _PARTICLE_DELETED_ON_THE_FACE_;
-      //for the comet test
-      //if (code==_PARTICLE_DELETED_ON_THE_FACE_) {
-      if (isTest) printf("cut triangle deleted\n");
-      //printf("cut triangle dtTotal:%e,CutTriangleFlightTime:%e\n ",dtTotal, CutTriangleFlightTime);
-	PIC::ParticleBuffer::DeleteParticle(ptr);
-	return _PARTICLE_LEFT_THE_DOMAIN_;
-	//}
-      dtTotal -=CutTriangleFlightTime;
-      //if paritcle is not deleted, new xInit,vInit and startNode should 
-      //be given in ProcessTriangleCutFaceIntersection
+        if (!isSphere){
+          code=(ProcessTriangleCutFaceIntersection!=NULL) ? ProcessTriangleCutFaceIntersection(ptr,xInit,vInit,CutTriangleFace,startNode) : _PARTICLE_DELETED_ON_THE_FACE_;
+          // For the current trajectory-tracking use, hitting the body removes the particle.
+          if (isTest) printf("cut triangle deleted\n");
+          PIC::ParticleBuffer::DeleteParticle(ptr);
+          return _PARTICLE_LEFT_THE_DOMAIN_;
+        }
+        else{
+          return ProcessSphereBoundaryIntersectionAndDelete(spec,ptr,xInit,vInit,dtTotal,startNode);
+        }
       }
       break;
 
@@ -798,41 +881,36 @@ switch (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_) {
 	if (testNode==NULL) {
 	//for (int i=0;i<3;i++) xInit[idim]=x_test[idim];
 	//intersects with outer bounary
-switch (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_) {
-    case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE_:
-        //printf("delete test2 out\n");
-        //printf("nDeleteExternal:%d, x_test:%e,%e,%e\n", nDeleteExternal, xInit[0],xInit[1],xInit[2]);
-        nDeleteExternal++;
+#if _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE_
+	  //printf("delete test2 out\n");
+	  //printf("nDeleteExternal:%d, x_test:%e,%e,%e\n", nDeleteExternal, xInit[0],xInit[1],xInit[2]);
+	  nDeleteExternal++;
+	  
+	PIC::ParticleBuffer::DeleteParticle(ptr);
+	return _PARTICLE_LEFT_THE_DOMAIN_;
+#elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
+   // code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,startNode);
+    //xInit,vInit, startNode may change inside the user defined function
+	
+	
+  exit(__LINE__,__FILE__,"Error: branch _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_ is not implemented");
 
-        PIC::ParticleBuffer::DeleteParticle(ptr);
-        return _PARTICLE_LEFT_THE_DOMAIN_;
-    case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_:
-        // code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,startNode);
-        //xInit,vInit, startNode may change inside the user defined function
+#elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_
+    exit(__LINE__,__FILE__,"Error: not implemented");
+#elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_
+    //reflect the particle back into the domain
+    {
+      double c=0.0;
+      for (int idim=0;idim<3;idim++) c+=ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*vInit[idim];
+      for (int idim=0;idim<3;idim++) vInit[idim]-=2.0*c*ExternalBoundaryFaceTable[nIntersectionFace].norm[idim];
+      //startNode stays the same
+      //xInit stays the same
+    }
 
-        exit(__LINE__,__FILE__,"Error: branch _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_ is not implemented");
-    case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_:
-        exit(__LINE__,__FILE__,"Error: not implemented");
-    case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_:
-        //reflect the particle back into the domain
-         exit(__LINE__,__FILE__,"Error: the following \'switch\' operator need to be implemented");
- 
-        
-/*
-        {
-            double c=0.0;
-            for (int idim=0;idim<3;idim++) c+=ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*vInit[idim];
-            for (int idim=0;idim<3;idim++) vInit[idim]-=2.0*c*ExternalBoundaryFaceTable[nIntersectionFace].norm[idim];
-            //startNode stays the same
-            //xInit stays the same
-        }
-*/
-
-        code=_PARTICLE_REJECTED_ON_THE_FACE_;
-        break;
-    default:
-        exit(__LINE__,__FILE__,"Error: the option is unknown");
-}
+    code=_PARTICLE_REJECTED_ON_THE_FACE_;
+#else
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+#endif
 
 	}else{
 	//enter a  non-null block
@@ -867,7 +945,7 @@ switch (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_) {
       break;
     }
 
-
+    if (!isSphere){
     //check if the particle enters into cells inside the body
     if (nodeIndexInArr(startNode)==-1){
       /*
@@ -888,32 +966,57 @@ switch (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_) {
       printf("nodeIndexInArr(startNode):%d,PIC::Mover::CellIntersectType(startNode,xInit):%d,xInit:%e,%e,%e\n",nodeIndexInArr(startNode),PIC::Mover::CellIntersectType(startNode,xInit),xInit[0],xInit[1],xInit[2]);
       printf("end of the loop dtTotal:%e\n",  dtTotal);
     }
+    }
+
+    if (isSphere){
+      double rr = sqrt(xInit[0]*xInit[0]+xInit[1]*xInit[1]+xInit[2]*xInit[2]);
+      if (rr < _RADIUS_(_TARGET_)) {
+        return ProcessSphereBoundaryIntersectionAndDelete(spec,ptr,xInit,vInit,dtTotal,startNode);
+      }
+    }
 
   }//while (dtTotal>0.0)
 
 
 
   newNode = startNode;
+  /*
+  if (sqrt(xInit[0]*xInit[0]+xInit[1]*xInit[1]+xInit[2]*xInit[2])>4e6 && intersectTestSphere){
+      
+    double tempWeight =PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr);
+    double newParticleWeight = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]*tempWeight;
+    Europa::Sampling::TotalProductionFlux1[spec] +=newParticleWeight;
 
+  }
+  */
+  
+  for (int idim=0; idim<3; idim++) vInit[idim] = vInit[idim]+accl[idim]*dt0;
+  /*
+  if (spec==_O2_SPEC_){
+    printf("O2 accl:%e,%e,%e\n", accl[0],accl[1],accl[2]);
+  }
+  */
   memcpy(xFinal,xInit,3*sizeof(double));
   memcpy(vFinal,vInit,3*sizeof(double));
+
 
   
   
   //save the trajectory point
-if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) {
+#if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
   PIC::ParticleTracker::RecordTrajectoryPoint(xFinal,vFinal,spec,ParticleData,(void*)newNode);
-
-if (_PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_) {
+#if _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_
+  //if (ptr==39703 && PIC::ThisThread==6){ 
   PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(xFinal,vFinal,spec,ParticleData,(void*)newNode);
-}
-}
+  //}
+#endif
+#endif
 
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
   if (PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,newNode,false)==-1) {
-    printf("test 2 xFinal:%e,%e,%e, newNode->xmin:%e,%e,%e, newNode->xmax:%e,%e,%e,ptr:%ld\n",xFinal[0],xFinal[1],xFinal[2],newNode->xmin[0],newNode->xmin[1],
+    printf("test 2 xFinal:%e,%e,%e, newNode->xmin:%e,%e,%e, newNode->xmax:%e,%e,%e,ptr:%d\n",xFinal[0],xFinal[1],xFinal[2],newNode->xmin[0],newNode->xmin[1],
 	   newNode->xmin[2], newNode->xmax[0],newNode->xmax[1],newNode->xmax[2],ptr);
     exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
   }
@@ -1356,14 +1459,11 @@ double vInit_debug[3]={vInit[0],vInit[1],vInit[2]};
       if (newNode==NULL) exit(__LINE__,__FILE__,"Error: cannot find the node");
     }
 
-switch (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_) {
-  case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_:
+#if _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
     code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,newNode);
-    break;
-  case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_:
-    exit(__LINE__,__FILE__,"Error: not implemented");
-    break;
-  case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_:
+#elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_
+    exit(_LINE__,__FILE__,"Error: not implemented");
+#elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_
     //reflect the particle back into the domain
     {
       double c=0.0;
@@ -1372,10 +1472,12 @@ switch (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_) {
     }
 
     code=_PARTICLE_REJECTED_ON_THE_FACE_;
-    break;
-  default:
+#else
     exit(__LINE__,__FILE__,"Error: the option is unknown");
-}
+#endif
+
+
+
 
     //       }
 #endif //_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE
@@ -1391,13 +1493,13 @@ switch (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_) {
   }
 
   //save the trajectory point
-if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) {
+#if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
   PIC::ParticleTracker::RecordTrajectoryPoint(xFinal,vFinal,spec,ParticleData,(void*)newNode);
 
-if (_PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_) {
+#if _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_
   PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(xFinal,vFinal,spec,ParticleData,(void*)newNode);
-}
-}
+#endif
+#endif
 
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
@@ -1449,8 +1551,4 @@ if (_PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_) 
 
   return _PARTICLE_MOTION_FINISHED_;
 }
-
-
-
-
 
