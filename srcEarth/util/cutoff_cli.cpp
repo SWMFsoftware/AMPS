@@ -48,6 +48,7 @@
 //     -density-parallel <OPENMP|THREADS|SERIAL>          Mode3D shared-memory backend.
 //     -density-threads <int>                             threads per MPI process.
 //     -mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC> MPI-rank scheduler.
+//       Gridless aliases: -gridless-mpi-scheduler, -gridless-mpi-dynamic-chunk.
 //     -mode3d-mpi-dynamic-chunk <int>                    locations per MPI fetch.
 //
 //   See amps_param_parser.h for a full description of the input file format.
@@ -98,6 +99,8 @@ CliOptions ParseCli(int argc,char** argv) {
              a=="-mode3d-density-parallel" || a=="--mode3d-density-parallel" ||
              a=="-mode3d-density-backend" || a=="--mode3d-density-backend" ||
              a=="-mode3d-parallel" || a=="--mode3d-parallel" ||
+             a=="-gridless-parallel" || a=="--gridless-parallel" ||
+             a=="-gridless-backend" || a=="--gridless-backend" ||
              a=="-mode3d-backend" || a=="--mode3d-backend" ||
              a=="-backtrack-parallel" || a=="--backtrack-parallel" ||
              a=="-backtrack-backend" || a=="--backtrack-backend") {
@@ -109,6 +112,7 @@ CliOptions ParseCli(int argc,char** argv) {
     else if (a=="-density-threads" || a=="--density-threads" ||
              a=="-mode3d-density-threads" || a=="--mode3d-density-threads" ||
              a=="-mode3d-threads" || a=="--mode3d-threads" ||
+             a=="-gridless-threads" || a=="--gridless-threads" ||
              a=="-backtrack-threads" || a=="--backtrack-threads" ||
              a=="-n-density-threads" || a=="--n-density-threads") {
       // Number of shared-memory workers per MPI rank for Mode3D density
@@ -121,6 +125,8 @@ CliOptions ParseCli(int argc,char** argv) {
     }
     else if (a=="-mode3d-mpi-scheduler" || a=="--mode3d-mpi-scheduler" ||
              a=="-mode3d-mpi-backend" || a=="--mode3d-mpi-backend" ||
+             a=="-gridless-mpi-scheduler" || a=="--gridless-mpi-scheduler" ||
+             a=="-gridless-mpi-backend" || a=="--gridless-mpi-backend" ||
              a=="-backtrack-mpi-scheduler" || a=="--backtrack-mpi-scheduler" ||
              a=="-backtrack-mpi-backend" || a=="--backtrack-mpi-backend") {
       // Inter-rank scheduler for standalone Mode3D backward products.
@@ -131,6 +137,8 @@ CliOptions ParseCli(int argc,char** argv) {
     }
     else if (a=="-mode3d-mpi-dynamic-chunk" || a=="--mode3d-mpi-dynamic-chunk" ||
              a=="-mode3d-mpi-chunk" || a=="--mode3d-mpi-chunk" ||
+             a=="-gridless-mpi-dynamic-chunk" || a=="--gridless-mpi-dynamic-chunk" ||
+             a=="-gridless-mpi-chunk" || a=="--gridless-mpi-chunk" ||
              a=="-backtrack-mpi-dynamic-chunk" || a=="--backtrack-mpi-dynamic-chunk" ||
              a=="-backtrack-mpi-chunk" || a=="--backtrack-mpi-chunk") {
       // Number of global observation locations fetched per dynamic MPI request.

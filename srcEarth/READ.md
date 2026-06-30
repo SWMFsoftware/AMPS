@@ -96,6 +96,8 @@ CALC_TARGET DENSITY_SPECTRUM
 
 The gridless density/flux calculation is a backward-tracing calculation. It does not inject particles forward in time. For each observation point and energy, the code samples arrival directions, backtraces each direction, computes the allowed fraction, multiplies the boundary spectrum by that transmissivity, and integrates the result into density and flux.
 
+Gridless cutoff and gridless density/flux now use the same collective MPI scheduling model as standalone Mode3D. The default scheduler is `DYNAMIC`: all MPI ranks, including rank 0, atomically fetch chunks of global gridless work tasks from an MPI one-sided work queue. For cutoff, a work task is one cutoff-sampling direction or one directional-map cell. For density/flux, a work task is a small block of arrival directions for one fixed observation point and energy. Deterministic fallback schedulers are available for regression runs: `BLOCK_CYCLIC` and `STATIC`.
+
 Typical output files:
 
 ```text
@@ -119,7 +121,7 @@ mpirun -np 8 ./amps -mode 3d -i AMPS_PARAM.in
 
 Mode3D uses the AMPS AMR mesh as the field backend. The standalone code initializes the requested background magnetic field on mesh cell centers, then materializes a replicated read-only B-field snapshot on every MPI rank so any rank can backtrace through the whole domain.
 
-Because every rank can access the full replicated mesh field, the standalone backward products use a block-cyclic MPI work partition for observation locations: rank `r` computes locations `r`, `r+nRanks`, `r+2*nRanks`, and so on. This avoids assigning one contiguous longitude/latitude/shell slab to a rank and gives substantially better MPI load balance for cutoff and density/flux backtracking in `SHELLS` mode.
+Because every rank can access the full replicated mesh field, the standalone backward products use a selectable MPI scheduler over global observation locations. The default `DYNAMIC` scheduler uses an MPI one-sided atomic work queue; ranks fetch chunks of locations as soon as they become idle. `BLOCK_CYCLIC` and `STATIC` remain available for deterministic regression/debug runs.
 
 This mode now supports three product selections from the same prepared mesh-field snapshot:
 
@@ -161,6 +163,36 @@ The same products can also use an inter-rank scheduler selected with
 `BLOCK_CYCLIC` and `STATIC` are deterministic fallback schedules. The optional
 `MODE3D_MPI_DYNAMIC_CHUNK` / `-mode3d-mpi-dynamic-chunk` value controls how many
 global observation locations a rank fetches at a time.
+### Gridless and Mode3D MPI dynamic scheduler
+
+The same inter-rank scheduler controls gridless and standalone Mode3D backward products:
+
+```text
+#NUMERICAL
+MODE3D_MPI_SCHEDULER      DYNAMIC        # DYNAMIC | BLOCK_CYCLIC | STATIC
+MODE3D_MPI_DYNAMIC_CHUNK  64             # 0 means automatic
+```
+
+Gridless-specific aliases are accepted and write to the same internal settings:
+
+```text
+#NUMERICAL
+GRIDLESS_MPI_SCHEDULER      DYNAMIC
+GRIDLESS_MPI_DYNAMIC_CHUNK  64
+```
+
+CLI aliases are also accepted:
+
+```bash
+mpirun -np 8 ./amps -mode gridless -i AMPS_PARAM.in \
+  -gridless-mpi-scheduler DYNAMIC \
+  -gridless-mpi-dynamic-chunk 64
+```
+
+`DYNAMIC` uses `MPI_Fetch_and_op` on a rank-0-owned counter. MPI calls are made only by the rank/main thread; worker threads do not call MPI, so the implementation does not require `MPI_THREAD_MULTIPLE`. For Mode3D, the chunk unit is a spatial location. For gridless cutoff, the chunk unit is a cutoff-direction or directional-map task. For gridless density/flux, the chunk unit is a direction-block task for one point and one energy. Smaller chunk sizes improve load balance for highly variable trajectories; larger chunks reduce MPI scheduling overhead. Good starting values are 32, 64, or 128.
+
+Gridless cutoff and gridless density/flux also keep a live rank-0 progress bar in MPI mode. Because the collective scheduler no longer sends every result through rank 0, progress is tracked with a second MPI one-sided counter that records completed tasks, not assigned chunks. Rank 0 periodically reads that counter and prints the usual ASCII progress line. The progress unit is therefore the scheduler task: cutoff direction/directional-map task for gridless cutoff, and direction-block task for gridless density/flux.
+
 
 Typical output files for a single snapshot:
 
@@ -595,10 +627,14 @@ The parser is strict: unknown sections or unknown keywords are fatal. This is in
 
 ```text
 #RUN_INFO
-RUN_ID  my_run_name
+RUN_ID        my_run_name
+PI_NAME       Dr. Jane Smith      # optional provenance metadata
+PI_EMAIL      j.smith@example.edu # optional provenance metadata
+INSTITUTION   Example Institute   # optional provenance metadata
+SCIENCE_GOAL  storm_validation    # optional provenance metadata
 ```
 
-`RUN_ID` is a user label. It does not by itself alter the calculation.
+`RUN_ID` is a user label. The optional metadata keys are accepted for CCMC/Runs-on-Request compatibility and provenance; they do not by themselves alter the calculation.
 
 ### 8.2 `#CALCULATION_MODE`
 
@@ -686,6 +722,20 @@ DRIVER_FILE or MAGNETIC_DRIVER_FILE
 
 Model aliases like `TS05` are normalized to the canonical names used internally.
 
+CCMC/Runs-on-Request style `TS05_*` and `T05_*` aliases are accepted for the same background drivers:
+
+```text
+TS05_DST  or T05_DST   -> DST
+TS05_PDYN or T05_PDYN  -> PDYN
+TS05_BX   or T05_BX    -> IMF_BX
+TS05_BY   or T05_BY    -> IMF_BY
+TS05_BZ   or T05_BZ    -> IMF_BZ
+TS05_VX   or T05_VX    -> SW_VX
+TS05_NSW  or T05_NSW   -> SW_N
+```
+
+Generic aliases such as `BYIMF`, `BZIMF`, `BXIMF`, `VSW`, `NSW`, and `DEN_P` are also accepted where applicable.
+
 ### 8.5 `#ELECTRIC_FIELD`
 
 ```text
@@ -725,6 +775,17 @@ R_INNER        1 Re
 Lengths can be provided using inline units where supported by the parser, for example `Re` or `km`. The solver internally uses SI meters.
 
 The outer box defines escape. `R_INNER` defines the absorbing loss sphere.
+
+Additional CCMC/Runs-on-Request boundary keywords are accepted by the parser:
+
+```text
+BOUNDARY_TYPE   BOX | SHUE
+SHUE_R0         AUTO or numeric token
+SHUE_ALPHA      AUTO or numeric token
+DOMAIN_X_TAIL   <length>   # mapped to DOMAIN_XMIN with nightside sign
+```
+
+In the current standalone Mode3D implementation, `SHUE_*` values are stored for provenance/future use; the active trajectory-classification boundary remains the parsed Mode3D box/cap unless a Shue-boundary implementation is added later.
 
 ### 8.7 `#OUTPUT_DOMAIN`
 
@@ -813,6 +874,14 @@ reproduces the previous deterministic partition `rank r = r, r+nRanks, ...`.
 `STATIC` assigns one contiguous slab per rank and is mainly for regression tests.
 `MODE3D_MPI_DYNAMIC_CHUNK` trades load balance against scheduler overhead; values
 near `2–8 * MODE3D_THREADS` are usually reasonable starting points.
+
+Additional CCMC/Runs-on-Request compatibility keys are accepted here:
+
+```text
+N_PARTICLES      # stored; also maps to FORWARD_N_PARTICLES for 3d_forward
+MAX_BOUNCE       # stored for provenance; not an active Mode3D backtracking limit
+PITCH_ISOTROPIC  # stored for provenance; active angular controls are CUTOFF_SAMPLING, DS_BOUNDARY_MODE, and #BOUNDARY_ANISOTROPY
+```
 
 Forward-mode controls also accepted here:
 

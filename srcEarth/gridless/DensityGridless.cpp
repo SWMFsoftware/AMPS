@@ -183,31 +183,28 @@
  * -----------------------------------------------------------------------------
  * 6. MPI SCHEDULING FOR DENSITY/SPECTRUM
  * -----------------------------------------------------------------------------
- * Density mode uses *point-level* dynamic scheduling (one observation point per
- * MPI task), analogous to the cutoff solver but with heavier payloads:
+ * Density/flux mode uses the same collective MPI scheduler as standalone Mode3D.
+ * The work space is much finer than one observation point:
  *
- *   ResultMsg for density:
- *     { int pointIdx, double density, double T[nEnergyPoints] }
+ *   taskId -> (point-or-shell-node index, energy index, direction-block index)
  *
- * Each worker:
- *   (a) Receives a TaskMsg containing a point index.
- *   (b) Evaluates ComputeT_atEnergy at all nEnergyPoints energies for that point.
- *   (c) Integrates n_tot using the trapezoidal rule.
- *   (d) Sends { pointIdx, n_tot, T[0..N-1] } back to master rank 0.
- *   (e) Requests the next task.
+ * A direction block is a small contiguous batch of sampled arrival directions.  This
+ * granularity is important because the cost of one trajectory can vary strongly with
+ * rigidity, direction, and access class.  The default DYNAMIC scheduler lets all MPI
+ * ranks, including rank 0, atomically fetch chunks of task ids from an MPI one-sided
+ * counter.  BLOCK_CYCLIC and STATIC are deterministic fallback schedulers for
+ * regression/debug runs.
  *
- * Master rank 0:
- *   (a) Dispatches tasks in point-index order (not spatial order) to minimize
- *       wait time for the first result.
- *   (b) Collects results and stores them in a per-point array indexed by pointIdx.
- *   (c) After all results are in, writes both output files in the original point
- *       order regardless of which worker processed which point.
+ * Each rank accumulates local partial sums by global (point,energy) index:
  *
- * Because the T[] array can be large (nEnergyPoints doubles per point), the result
- * message size is variable. MPI_Send with MPI_DOUBLE handles this transparently.
+ *   partialWeight[ip,ie] = sum of allowed/anisotropy weights over directions
+ *   dirsDone[ip,ie]      = number of sampled directions contributing
  *
- * SHELLS mode uses the same protocol with the observation point being a (shell, lon, lat)
- * tuple encoded as a single integer index.
+ * At the end of the work loop, MPI_SUM reductions assemble the full transmissivity
+ * array on rank 0.  Rank 0 forms T(E)=partialWeight/Ndirs and then performs the
+ * density and flux energy integrations.  Because reductions are indexed by global
+ * output location and energy, the final result is independent of task order and
+ * scheduler choice.
  *
  * -----------------------------------------------------------------------------
  * 7. PROGRESS REPORTING
@@ -244,6 +241,7 @@
 #include "CutoffRigidityGridless.h" // shared trajectory classifier used directly by density
 #include "GridlessParticleMovers.h"   // shared V3 helpers / mover vocabulary used across gridless modules
 #include "AnisotropicSpectrum.h"      // EvalAnisotropyFactor for ANISOTROPIC boundary mode
+#include "../3d/Mode3DParallel.h"    // shared MPI dynamic work-queue scheduler
 
 #include "../boundary/spectrum.h"  // ::gSpectrum and spectrum metadata writers
 
@@ -257,6 +255,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <limits>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -1213,176 +1212,255 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     prog.finish((long long)nPoints);
   }
   else {
-    // Parallel dynamic scheduling.
+    //==================================================================================
+    // COLLECTIVE MPI SCHEDULER -- gridless density/spectrum, POINTS/TRAJECTORY
+    //==================================================================================
     //
-    // LOAD-BALANCING IMPROVEMENT
-    // --------------------------
-    // The original MPI implementation used one *point* as the scheduling unit. That is
-    // simple, but it can leave noticeable load imbalance because the actual expensive
-    // work is not "one point"; it is "one backtraced transmissivity evaluation at one
-    // point and one energy". Different energies can have very different tracing costs,
-    // especially near transmissivity transitions / cutoff-like behavior, so assigning a
-    // whole point to one worker can make that worker busy for much longer than others.
+    // The work unit is a small direction block for one fixed (point, energy) pair:
     //
-    // Here we switch to an even finer scheduler whose MPI work unit is a *small
-    // block of traced trajectories* for one fixed (point,energy) pair.
+    //   taskId -> (point index, energy index, direction-block index)
     //
-    // TOTAL KNOWN WORK
-    //   For POINTS mode the total number of traced trajectories is known exactly at the
-    //   start of the run:
+    // This is deliberately finer than assigning a full point, because the expensive
+    // piece is trajectory tracing and trajectory cost varies strongly with direction,
+    // energy, location, and magnetic connectivity.  The scheduler mirrors the Mode3D
+    // dynamic MPI queue: in DYNAMIC mode all ranks, including rank 0, atomically fetch
+    // chunks of task ids from an MPI RMA counter; in BLOCK_CYCLIC/STATIC mode the same
+    // task space is assigned deterministically for reproducibility tests.
     //
-    //      totalTraj = nPoints * nE * nDirs
+    // Each rank accumulates only two local arrays indexed by the global (point,energy)
+    // pair:
+    //   partialWeightLocal[ip,ie] = sum of allowed/anisotropy weights over directions;
+    //   dirsDoneLocal[ip,ie]      = number of sampled directions contributing.
     //
-    //   where nDirs is the number of sampled arrival directions actually used in the
-    //   calculation (full grid or user-requested subsample).
-    //
-    // WHY BLOCK THE DIRECTIONS
-    //   Sending one MPI message per single trajectory would maximize balance but would
-    //   also flood the code with very small MPI messages. Instead we batch a modest
-    //   number of trajectories (here 32, which lies in the requested 10–50 range) into
-    //   one work item. This keeps the granularity fine enough to smooth out stragglers
-    //   while still amortizing MPI latency over a meaningful amount of physics work.
-    //
-    // LINEAR TASK SPACE
-    //   A task id now corresponds to:
-    //
-    //      taskId -> (point index, energy index, direction-block index)
-    //
-    //   The worker computes the partial weight sum over only that direction block and
-    //   returns it to rank 0. Rank 0 accumulates block sums until all directions for an
-    //   energy are complete, forms T(E)=weightSum/N_dirs, and once all energies of one
-    //   point are complete performs the cheap density / flux reductions.
-    const int TAG_TASK=100, TAG_RES_META=200, TAG_RES_VAL=201;
-    const int kTrajBatch = 32; // Deliberately in the requested 10–50 range.
+    // At the end, MPI_SUM reductions assemble the total direction weight and direction
+    // count on rank 0.  Rank 0 then forms T(E)=weight/nDirs and performs exactly the
+    // same density and flux integrations used by the serial path.  This keeps result
+    // reconstruction independent of task order and avoids rank-0 master/worker message
+    // bottlenecks.
+    //==================================================================================
+    const int kTrajBatch = 32; // small but nontrivial; one task = up to 32 trajectories
     const int nDirs = (int)dirsUse.size();
     const int nDirBlocks = std::max(1, (nDirs + kTrajBatch - 1) / kTrajBatch);
+    const long long totalTasks = (long long)nPoints * (long long)nE * (long long)nDirBlocks;
+    const long long totalTraj  = (long long)nPoints * (long long)nE * (long long)nDirs;
+
+    const Earth::Mode3D::MpiScheduler gridlessScheduler =
+        Earth::Mode3D::ResolveMpiScheduler(prm,"Gridless density POINTS");
+    const long long gridlessChunk =
+        Earth::Mode3D::ResolveMpiDynamicChunk(prm,1,totalTasks);
+
     if (mpiRank==0) {
-      ProgressBar prog(mpiRank, DensityGridless_PointLikeProgressLabel(prm));
-
-      const long long totalTasks = (long long)nPoints * (long long)nE * (long long)nDirBlocks;
-      const long long totalTraj  = (long long)nPoints * (long long)nE * (long long)nDirs;
-      long long nextTask = 0;
-      long long doneTraj = 0;
-
-      std::vector<std::vector<double>> partialWeight((size_t)nPoints, std::vector<double>((size_t)nE, 0.0));
-      std::vector<std::vector<int>>    dirsDone     ((size_t)nPoints, std::vector<int>((size_t)nE, 0));
-      std::vector<int> energiesDone((size_t)nPoints, 0);
-
-      for (int r=1; r<mpiSize; r++) {
-        long long taskId = (nextTask < totalTasks) ? nextTask++ : -1;
-        MPI_Send(&taskId, 1, MPI_LONG_LONG, r, TAG_TASK, MPI_COMM_WORLD);
+      std::cout << "[gridless-density][MPI] scheduler     : "
+                << Earth::Mode3D::MpiSchedulerName(gridlessScheduler) << "\n";
+      if (gridlessScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
+        std::cout << "[gridless-density][MPI] dynamic chunk : " << gridlessChunk
+                  << " direction-block task(s) per atomic fetch\n";
       }
+      std::cout.flush();
+    }
 
-      while (doneTraj < totalTraj) {
-        // Receive the result in two explicitly typed messages instead of one raw struct.
-        //
-        // WHY THIS IS SAFER THAN MPI_BYTE + C++ STRUCT
-        //   The earlier implementation sent a locally defined C++ struct as a blob of bytes.
-        //   That usually works on homogeneous systems, but it relies on compiler-specific
-        //   padding / layout rules and therefore is more fragile than necessary.
-        //
-        //   Here the worker sends:
-        //     1) a fixed-length integer metadata packet: [point index, energy index,
-        //        first direction, one-past-last direction]
-        //     2) one double containing the partial accumulated weight for that block
-        //
-        //   This keeps the protocol explicit, typed, and independent of struct packing.
-        int meta[4];
-        double weightSum = 0.0;
-        MPI_Status st;
-        MPI_Recv(meta, 4, MPI_INT, MPI_ANY_SOURCE, TAG_RES_META, MPI_COMM_WORLD, &st);
-        MPI_Recv(&weightSum, 1, MPI_DOUBLE, st.MPI_SOURCE, TAG_RES_VAL, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    std::vector<double> partialWeightLocal((size_t)nPoints*(size_t)nE,0.0);
+    std::vector<int>    dirsDoneLocal     ((size_t)nPoints*(size_t)nE,0);
+    long long localTasks = 0;
+    long long localTraj  = 0;
 
-        const int idx       = meta[0];
-        const int ie        = meta[1];
-        const int idirBegin = meta[2];
-        const int idirEnd   = meta[3];
+    auto ProcessTaskId = [&](long long taskId) {
+      const long long perPoint = (long long)nE * (long long)nDirBlocks;
+      const int idx = (int)(taskId / perPoint);
+      const long long rem1 = taskId - (long long)idx * perPoint;
+      const int ie = (int)(rem1 / (long long)nDirBlocks);
+      const int iblock = (int)(rem1 - (long long)ie * (long long)nDirBlocks);
+      const int idirBegin = iblock * kTrajBatch;
+      const int idirEnd = std::min(idirBegin + kTrajBatch, nDirs);
+      const int batchCount = idirEnd - idirBegin;
 
-        const int batchCount = idirEnd - idirBegin;
-        doneTraj += (long long)batchCount;
+      const EarthUtil::Vec3 pk = prm.output.points[idx];
+      const V3 x0_m { pk.x*1000.0, pk.y*1000.0, pk.z*1000.0 };
 
-        partialWeight[(size_t)idx][(size_t)ie] += weightSum;
-        dirsDone[(size_t)idx][(size_t)ie] += batchCount;
+      // Build a private parameter copy for this point.  In TRAJECTORY mode it carries
+      // the sample-specific epoch and interpolated Tsyganenko drivers.  MPI ranks are
+      // separate processes, so the copy and any thread-local field-evaluator cache are
+      // not shared across ranks.
+      EarthUtil::AmpsParam prmForPoint = DensityGridless_BuildParamForPointLikeLocation(prm, idx);
 
-        if (dirsDone[(size_t)idx][(size_t)ie] == nDirs) {
-          T_byPoint[(size_t)idx][(size_t)ie] = partialWeight[(size_t)idx][(size_t)ie] / (double)nDirs;
-          energiesDone[(size_t)idx]++;
+      const double Ej = E_MeV[ie]*MEV_TO_J;
+      const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prmForPoint.species.charge_e)*QE,
+                                               prmForPoint.species.mass_amu*AMU);
+      const double maxTraceTime_s = (prmForPoint.densitySpectrum.maxTrajTime_s > 0.0)
+                                      ? prmForPoint.densitySpectrum.maxTrajTime_s
+                                      : -1.0;
 
-          if (energiesDone[(size_t)idx] == nE) {
-            DensityGridless_SetSpectrumForPointLikeLocation(prm, idx);
-            const std::vector<double>& T = T_byPoint[(size_t)idx];
+      const double weightSum = ComputeWeightBlockAtEnergy(prmForPoint, x0_m, Rgv, dirsUse,
+                                                          idirBegin, idirEnd,
+                                                          maxTraceTime_s,
+                                                          doAnisotropic,
+                                                          prmForPoint.anisotropy);
 
-            std::vector<double> integrand(nE,0.0);
-            std::vector<double> EjGrid(nE,0.0);
-            for (int ie=0; ie<nE; ++ie) {
-              const double Ej = E_MeV[ie]*MEV_TO_J;
-              EjGrid[ie] = Ej;
-              const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
-              const double Jb = ::gSpectrum.GetSpectrum(Ej); // boundary spectrum per Joule
-              const double Jloc = T[ie] * Jb;
-              integrand[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
-            }
+      const size_t flat = (size_t)idx*(size_t)nE + (size_t)ie;
+      partialWeightLocal[flat] += weightSum;
+      dirsDoneLocal[flat] += batchCount;
+      localTasks++;
+      localTraj += (long long)batchCount;
+    };
 
-            density_m3[(size_t)idx] = Trapz(EjGrid, integrand);
-            flux_tot_m2s1[(size_t)idx] = FluxIntegrateTotal(E_MeV, T);
-            for (int ic = 0; ic < nCh; ++ic) {
-              flux_ch[ic][(size_t)idx] = FluxIntegrateChannel(
-                  E_MeV, T,
-                  prm.fluxChannels[ic].E1_MeV,
-                  prm.fluxChannels[ic].E2_MeV);
-            }
+    // Live progress for the collective MPI scheduler.
+    //
+    // The old gridless density path printed progress only in the serial/MPI-root
+    // workflow.  With the collective scheduler, all ranks compute independently and
+    // rank 0 no longer receives one result message per task.  We therefore use an MPI
+    // RMA completion counter: every rank adds the number of tasks it has completed,
+    // and rank 0 periodically reads the global count to update the same ASCII progress
+    // bar used by the serial path.  The counter records COMPLETED direction-block
+    // tasks, not assigned chunks.
+    ProgressBar prog(mpiRank, std::string(DensityGridless_PointLikeProgressLabel(prm)) + " MPI tasks");
+    Earth::Mode3D::DynamicMpiProgressCounter progressCounter(MPI_COMM_WORLD,
+                                                             totalTasks,
+                                                             "Gridless density POINTS progress");
+    const long long progressFlushEvery = std::max(1LL,gridlessChunk);
+    long long progressPending = 0;
+
+    auto FlushProgress = [&](bool forcePrint=false) {
+      if (progressPending > 0) {
+        progressCounter.Add(progressPending);
+        progressPending = 0;
+      }
+      if (mpiRank == 0) {
+        const long long done = progressCounter.Get();
+        if (forcePrint) prog.finish(totalTasks);
+        else prog.update(done,totalTasks);
+      }
+    };
+
+    auto NoteProgress = [&](long long completedTasks) {
+      if (completedTasks <= 0) return;
+      progressPending += completedTasks;
+      if (progressPending >= progressFlushEvery) FlushProgress(false);
+    };
+
+    if (totalTasks > 0) {
+      if (gridlessScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
+        Earth::Mode3D::DynamicMpiLocationScheduler sched(MPI_COMM_WORLD,
+                                                         totalTasks,
+                                                         gridlessChunk,
+                                                         "Gridless density POINTS");
+        while (true) {
+          const long long startTask = sched.FetchNextChunkStart();
+          if (startTask >= totalTasks) break;
+          const long long endTask = std::min(startTask + sched.ChunkSize(), totalTasks);
+          for (long long taskId=startTask; taskId<endTask; ++taskId) ProcessTaskId(taskId);
+          NoteProgress(endTask-startTask);
+        }
+      }
+      else if (gridlessScheduler == Earth::Mode3D::MpiScheduler::BLOCK_CYCLIC) {
+        for (long long taskId=(long long)mpiRank; taskId<totalTasks; taskId+=(long long)mpiSize) {
+          ProcessTaskId(taskId);
+          NoteProgress(1);
+        }
+      }
+      else {
+        const long long startTask = (totalTasks * (long long)mpiRank) / (long long)mpiSize;
+        const long long endTask   = (totalTasks * (long long)(mpiRank+1)) / (long long)mpiSize;
+        for (long long taskId=startTask; taskId<endTask; ++taskId) {
+          ProcessTaskId(taskId);
+          NoteProgress(1);
+        }
+      }
+    }
+
+    FlushProgress(false);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (mpiRank == 0) prog.finish(totalTasks);
+
+    std::vector<double> partialWeightRoot;
+    std::vector<int>    dirsDoneRoot;
+    if (mpiRank==0) {
+      partialWeightRoot.assign(partialWeightLocal.size(),0.0);
+      dirsDoneRoot.assign(dirsDoneLocal.size(),0);
+    }
+
+    MPI_Reduce(partialWeightLocal.data(),
+               (mpiRank==0 ? partialWeightRoot.data() : nullptr),
+               (int)partialWeightLocal.size(),
+               MPI_DOUBLE,
+               MPI_SUM,
+               0,
+               MPI_COMM_WORLD);
+    MPI_Reduce(dirsDoneLocal.data(),
+               (mpiRank==0 ? dirsDoneRoot.data() : nullptr),
+               (int)dirsDoneLocal.size(),
+               MPI_INT,
+               MPI_SUM,
+               0,
+               MPI_COMM_WORLD);
+
+    std::vector<long long> taskCounts;
+    std::vector<long long> trajCounts;
+    if (mpiRank==0) {
+      taskCounts.assign((size_t)mpiSize,0);
+      trajCounts.assign((size_t)mpiSize,0);
+    }
+    MPI_Gather(&localTasks,1,MPI_LONG_LONG,(mpiRank==0 ? taskCounts.data() : nullptr),1,MPI_LONG_LONG,0,MPI_COMM_WORLD);
+    MPI_Gather(&localTraj, 1,MPI_LONG_LONG,(mpiRank==0 ? trajCounts.data() : nullptr),1,MPI_LONG_LONG,0,MPI_COMM_WORLD);
+
+    if (mpiRank==0) {
+      T_byPoint.assign(nPoints, std::vector<double>(nE, 0.0));
+
+      for (int ip=0; ip<nPoints; ++ip) {
+        std::vector<double>& T = T_byPoint[(size_t)ip];
+        for (int ie=0; ie<nE; ++ie) {
+          const size_t flat = (size_t)ip*(size_t)nE + (size_t)ie;
+          if (dirsDoneRoot[flat] != nDirs) {
+            std::ostringstream msg;
+            msg << "Gridless density MPI reduction error at point " << ip
+                << ", energy index " << ie << ": dirsDone=" << dirsDoneRoot[flat]
+                << ", expected " << nDirs;
+            exit(__LINE__,__FILE__,msg.str().c_str());
           }
+          T[(size_t)ie] = partialWeightRoot[flat] / (double)nDirs;
         }
 
-        prog.update(doneTraj, totalTraj);
+        DensityGridless_SetSpectrumForPointLikeLocation(prm, ip);
+        std::vector<double> integrand(nE,0.0);
+        std::vector<double> EjGrid(nE,0.0);
+        for (int ie=0; ie<nE; ++ie) {
+          const double Ej = E_MeV[ie]*MEV_TO_J;
+          EjGrid[ie] = Ej;
+          const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
+          const double Jb = ::gSpectrum.GetSpectrum(Ej);
+          const double Jloc = T[(size_t)ie] * Jb;
+          integrand[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
+        }
 
-        long long taskId = (nextTask < totalTasks) ? nextTask++ : -1;
-        MPI_Send(&taskId, 1, MPI_LONG_LONG, st.MPI_SOURCE, TAG_TASK, MPI_COMM_WORLD);
+        density_m3[(size_t)ip] = Trapz(EjGrid, integrand);
+        flux_tot_m2s1[(size_t)ip] = FluxIntegrateTotal(E_MeV, T);
+        for (int ic = 0; ic < nCh; ++ic) {
+          flux_ch[ic][(size_t)ip] = FluxIntegrateChannel(E_MeV, T,
+                                                          prm.fluxChannels[ic].E1_MeV,
+                                                          prm.fluxChannels[ic].E2_MeV);
+        }
       }
 
-      prog.finish(totalTraj);
-    }
-    else {
-      while (true) {
-        long long taskId = -1;
-        MPI_Recv(&taskId, 1, MPI_LONG_LONG, 0, TAG_TASK, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        if (taskId < 0) break;
-
-        const long long perPoint = (long long)nE * (long long)nDirBlocks;
-        const int idx = (int)(taskId / perPoint);
-        const long long rem1 = taskId - (long long)idx * perPoint;
-        const int ie = (int)(rem1 / (long long)nDirBlocks);
-        const int iblock = (int)(rem1 - (long long)ie * (long long)nDirBlocks);
-        const int idirBegin = iblock * kTrajBatch;
-        const int idirEnd = std::min(idirBegin + kTrajBatch, nDirs);
-
-        const EarthUtil::Vec3 pk = prm.output.points[idx];
-        const V3 x0_m { pk.x*1000.0, pk.y*1000.0, pk.z*1000.0 };
-
-        // Each MPI rank is a separate process, so the returned parameter block is
-        // private to the current worker task.
-        EarthUtil::AmpsParam prmForPoint = DensityGridless_BuildParamForPointLikeLocation(prm, idx);
-
-        const double Ej = E_MeV[ie]*MEV_TO_J;
-        const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prmForPoint.species.charge_e)*QE,
-                                                 prmForPoint.species.mass_amu*AMU);
-        const double maxTraceTime_s = (prmForPoint.densitySpectrum.maxTrajTime_s > 0.0)
-                                        ? prmForPoint.densitySpectrum.maxTrajTime_s
-                                        : -1.0;
-
-        const double weightSum = ComputeWeightBlockAtEnergy(prmForPoint, x0_m, Rgv, dirsUse,
-                                                            idirBegin, idirEnd,
-                                                            maxTraceTime_s,
-                                                            doAnisotropic,
-                                                            prmForPoint.anisotropy);
-
-        // Send the result back in two typed messages rather than as a raw struct.
-        // The metadata packet fully identifies the finished block, and the separate
-        // floating-point message carries the accumulated partial weight.
-        int meta[4] = {idx, ie, idirBegin, idirEnd};
-        MPI_Send(meta, 4, MPI_INT, 0, TAG_RES_META, MPI_COMM_WORLD);
-        MPI_Send(&weightSum, 1, MPI_DOUBLE, 0, TAG_RES_VAL, MPI_COMM_WORLD);
+      long long sumTasks=0, sumTraj=0;
+      long long minTasks=(mpiSize>0 ? taskCounts[0] : 0), maxTasks=minTasks;
+      for (int r=0; r<mpiSize; ++r) {
+        sumTasks += taskCounts[(size_t)r];
+        sumTraj  += trajCounts[(size_t)r];
+        minTasks = std::min(minTasks,taskCounts[(size_t)r]);
+        maxTasks = std::max(maxTasks,taskCounts[(size_t)r]);
       }
+      std::cout << "[gridless-density][MPI] Task distribution check:\n";
+      std::cout << "  totalTasks expected = " << totalTasks << ", computed = " << sumTasks << "\n";
+      std::cout << "  totalTraj  expected = " << totalTraj  << ", computed = " << sumTraj  << "\n";
+      std::cout << "  per-rank tasks min/avg/max = " << minTasks << " / "
+                << (double(sumTasks)/double(std::max(1,mpiSize))) << " / " << maxTasks << "\n";
+      for (int r=0; r<mpiSize; ++r) {
+        std::cout << "    rank " << r << ": " << taskCounts[(size_t)r]
+                  << " tasks, " << trajCounts[(size_t)r] << " trajectories\n";
+      }
+      if (sumTasks != totalTasks || sumTraj != totalTraj) {
+        std::cout << "[gridless-density][MPI][WARNING] dynamic scheduler task count mismatch.\n";
+      }
+      std::cout.flush();
     }
   }
 
@@ -1732,135 +1810,244 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
       prog.finish((long long)nPts);
     }
     else {
-      // Parallel dynamic scheduling for SHELLS mode.
+      //==============================================================================
+      // COLLECTIVE MPI SCHEDULER -- gridless density/spectrum, SHELLS
+      //==============================================================================
+      // The shell calculation uses the same global task space as POINTS mode:
       //
-      // The work unit mirrors the new POINTS-mode scheduler: one MPI task covers a
-      // small batch of traced directions for a fixed (shell point, energy) pair.
-      // This provides finer balancing than assigning a whole shell point to one rank,
-      // while still avoiding the excessive MPI overhead that one-message-per-trajectory
-      // would create.
-      const int TAG_TASK=100, TAG_RES_META=200, TAG_RES_VAL=201;
-      const int kTrajBatch = 32; // Deliberately in the requested 10–50 range.
+      //   taskId -> (shell-point index, energy index, direction-block index)
+      //
+      // The scheduler is collective over all ranks.  In DYNAMIC mode, each rank grabs
+      // chunks from the same MPI RMA atomic counter used by standalone Mode3D.  In the
+      // deterministic fallback modes, the identical task id space is partitioned by
+      // block-cyclic or contiguous static assignment.  Local partial sums are reduced by
+      // global (point,energy) index, which guarantees that output order is independent
+      // of which rank happened to process each task.
+      //==============================================================================
+      const int kTrajBatch = 32;
       const int nDirs = (int)dirsUse.size();
       const int nDirBlocks = std::max(1, (nDirs + kTrajBatch - 1) / kTrajBatch);
+      const long long totalTasks = (long long)nPts * (long long)nE * (long long)nDirBlocks;
+      const long long totalTraj  = (long long)nPts * (long long)nE * (long long)nDirs;
+
+      const Earth::Mode3D::MpiScheduler gridlessScheduler =
+          Earth::Mode3D::ResolveMpiScheduler(prm,"Gridless density SHELLS");
+      const long long gridlessChunk =
+          Earth::Mode3D::ResolveMpiDynamicChunk(prm,1,totalTasks);
 
       if (mpiRank==0) {
         int shellIdx = 0;
         for (size_t si = 0; si < prm.output.shellAlt_km.size(); ++si) {
           if (std::fabs(prm.output.shellAlt_km[si] - alt_km) < 0.01) { shellIdx = (int)si; break; }
         }
-        std::ostringstream lbl;
-        lbl << "[SHELL " << (shellIdx + 1) << "/" << prm.output.shellAlt_km.size()
-            << " alt=" << alt_km << "km]";
-        ProgressBar prog(mpiRank, lbl.str());
-
-        const long long totalTasks = (long long)nPts * (long long)nE * (long long)nDirBlocks;
-        const long long totalTraj  = (long long)nPts * (long long)nE * (long long)nDirs;
-        long long nextTask = 0;
-        long long doneTraj = 0;
-
-        std::vector<std::vector<double>> partialWeight((size_t)nPts, std::vector<double>((size_t)nE, 0.0));
-        std::vector<std::vector<int>>    dirsDone     ((size_t)nPts, std::vector<int>((size_t)nE, 0));
-        std::vector<int> energiesDone((size_t)nPts, 0);
-
-        for (int r=1; r<mpiSize; r++) {
-          long long taskId = (nextTask < totalTasks) ? nextTask++ : -1;
-          MPI_Send(&taskId, 1, MPI_LONG_LONG, r, TAG_TASK, MPI_COMM_WORLD);
+        std::cout << "[gridless-density][MPI] shell " << (shellIdx+1)
+                  << "/" << prm.output.shellAlt_km.size()
+                  << " alt=" << alt_km << " km scheduler : "
+                  << Earth::Mode3D::MpiSchedulerName(gridlessScheduler) << "\n";
+        if (gridlessScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
+          std::cout << "[gridless-density][MPI] dynamic chunk : " << gridlessChunk
+                    << " direction-block task(s) per atomic fetch\n";
         }
+        std::cout.flush();
+      }
 
-        while (doneTraj < totalTraj) {
-          // Receive shell-mode worker results in two typed messages.  This avoids
-          // sending a raw packed C++ struct over MPI and therefore avoids any hidden
-          // dependence on compiler-inserted padding bytes.
-          int meta[4];
-          double weightSum = 0.0;
-          MPI_Status st;
-          MPI_Recv(meta, 4, MPI_INT, MPI_ANY_SOURCE, TAG_RES_META, MPI_COMM_WORLD, &st);
-          MPI_Recv(&weightSum, 1, MPI_DOUBLE, st.MPI_SOURCE, TAG_RES_VAL, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      std::vector<double> partialWeightLocal((size_t)nPts*(size_t)nE,0.0);
+      std::vector<int>    dirsDoneLocal     ((size_t)nPts*(size_t)nE,0);
+      long long localTasks=0, localTraj=0;
 
-          const int idx       = meta[0];
-          const int ie        = meta[1];
-          const int idirBegin = meta[2];
-          const int idirEnd   = meta[3];
+      auto ProcessTaskId = [&](long long taskId) {
+        const long long perPoint = (long long)nE * (long long)nDirBlocks;
+        const int idx = (int)(taskId / perPoint);
+        const long long rem1 = taskId - (long long)idx * perPoint;
+        const int ie  = (int)(rem1 / (long long)nDirBlocks);
+        const int iblock = (int)(rem1 - (long long)ie * (long long)nDirBlocks);
+        const int idirBegin = iblock * kTrajBatch;
+        const int idirEnd = std::min(idirBegin + kTrajBatch, nDirs);
+        const int batchCount = idirEnd - idirBegin;
 
-          const int batchCount = idirEnd - idirBegin;
-          doneTraj += (long long)batchCount;
-          partialWeight[(size_t)idx][(size_t)ie] += weightSum;
-          dirsDone[(size_t)idx][(size_t)ie] += batchCount;
+        const auto& pk = shellPts_km[idx];
+        const V3 x0_m{pk.x*1000.0, pk.y*1000.0, pk.z*1000.0};
 
-          if (dirsDone[(size_t)idx][(size_t)ie] == nDirs) {
-            T_byPoint[(size_t)idx][(size_t)ie] = partialWeight[(size_t)idx][(size_t)ie] / (double)nDirs;
-            energiesDone[(size_t)idx]++;
+        const double Ej = E_MeV[ie]*MEV_TO_J;
+        const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE,
+                                                 prm.species.mass_amu*AMU);
+        const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
+                                        ? prm.densitySpectrum.maxTrajTime_s
+                                        : -1.0;
+        const double weightSum = ComputeWeightBlockAtEnergy(prm, x0_m, Rgv, dirsUse,
+                                                            idirBegin, idirEnd,
+                                                            maxTraceTime_s,
+                                                            doAnisotropic,
+                                                            prm.anisotropy);
 
-            if (energiesDone[(size_t)idx] == nE) {
-              DensityGridless_SetSpectrumEpochUTC(prm.field.epoch);
-              const std::vector<double>& T = T_byPoint[(size_t)idx];
-              std::vector<double> g(nE,0.0);
-              std::vector<double> EjGrid(nE,0.0);
-              for (int ie=0; ie<nE; ++ie) {
-                const double Ej = E_MeV[ie]*MEV_TO_J;
-                EjGrid[ie]=Ej;
-                const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
-                const double Jb = ::gSpectrum.GetSpectrum(Ej);
-                const double Jloc = T[ie]*Jb;
-                g[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
-              }
-              nTot_m3[(size_t)idx] = Trapz(EjGrid, g);
-              for (int ic=0; ic<nIntervals; ++ic) {
-                const double dE = EjGrid[ic+1] - EjGrid[ic];
-                nChan_m3[ic][(size_t)idx] = 0.5*(g[ic] + g[ic+1]) * dE;
-              }
-              flux_tot_m2s1[(size_t)idx] = FluxIntegrateTotal(E_MeV, T);
-              for (int icf=0; icf<nFluxCh; ++icf) {
-                flux_ch[icf][(size_t)idx] = FluxIntegrateChannel(E_MeV, T,
-                                                                     prm.fluxChannels[icf].E1_MeV,
-                                                                     prm.fluxChannels[icf].E2_MeV);
-              }
+        const size_t flat = (size_t)idx*(size_t)nE + (size_t)ie;
+        partialWeightLocal[flat] += weightSum;
+        dirsDoneLocal[flat] += batchCount;
+        localTasks++;
+        localTraj += (long long)batchCount;
+      };
+
+      // Live progress for this shell's collective MPI scheduler.  The progress unit is
+      // again a direction-block task, because that is what the dynamic queue actually
+      // balances across ranks.  The label preserves the old shell-style progress output
+      // while reporting task completion for the new fine-grained scheduler.
+      int shellIdxForProgress = 0;
+      for (size_t si = 0; si < prm.output.shellAlt_km.size(); ++si) {
+        if (std::fabs(prm.output.shellAlt_km[si] - alt_km) < 0.01) {
+          shellIdxForProgress = (int)si;
+          break;
+        }
+      }
+      std::ostringstream progressLabel;
+      progressLabel << "[SHELL " << (shellIdxForProgress + 1) << "/"
+                    << prm.output.shellAlt_km.size() << " alt=" << alt_km
+                    << "km] MPI tasks";
+      ProgressBar prog(mpiRank, progressLabel.str());
+      Earth::Mode3D::DynamicMpiProgressCounter progressCounter(MPI_COMM_WORLD,
+                                                               totalTasks,
+                                                               "Gridless density SHELLS progress");
+      const long long progressFlushEvery = std::max(1LL,gridlessChunk);
+      long long progressPending = 0;
+
+      auto FlushProgress = [&](bool forcePrint=false) {
+        if (progressPending > 0) {
+          progressCounter.Add(progressPending);
+          progressPending = 0;
+        }
+        if (mpiRank == 0) {
+          const long long done = progressCounter.Get();
+          if (forcePrint) prog.finish(totalTasks);
+          else prog.update(done,totalTasks);
+        }
+      };
+
+      auto NoteProgress = [&](long long completedTasks) {
+        if (completedTasks <= 0) return;
+        progressPending += completedTasks;
+        if (progressPending >= progressFlushEvery) FlushProgress(false);
+      };
+
+      if (totalTasks > 0) {
+        if (gridlessScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
+          Earth::Mode3D::DynamicMpiLocationScheduler sched(MPI_COMM_WORLD,
+                                                           totalTasks,
+                                                           gridlessChunk,
+                                                           "Gridless density SHELLS");
+          while (true) {
+            const long long startTask = sched.FetchNextChunkStart();
+            if (startTask >= totalTasks) break;
+            const long long endTask = std::min(startTask + sched.ChunkSize(), totalTasks);
+            for (long long taskId=startTask; taskId<endTask; ++taskId) ProcessTaskId(taskId);
+            NoteProgress(endTask-startTask);
+          }
+        }
+        else if (gridlessScheduler == Earth::Mode3D::MpiScheduler::BLOCK_CYCLIC) {
+          for (long long taskId=(long long)mpiRank; taskId<totalTasks; taskId+=(long long)mpiSize) {
+            ProcessTaskId(taskId);
+            NoteProgress(1);
+          }
+        }
+        else {
+          const long long startTask = (totalTasks * (long long)mpiRank) / (long long)mpiSize;
+          const long long endTask   = (totalTasks * (long long)(mpiRank+1)) / (long long)mpiSize;
+          for (long long taskId=startTask; taskId<endTask; ++taskId) {
+            ProcessTaskId(taskId);
+            NoteProgress(1);
+          }
+        }
+      }
+
+      FlushProgress(false);
+      MPI_Barrier(MPI_COMM_WORLD);
+      if (mpiRank == 0) prog.finish(totalTasks);
+
+      std::vector<double> partialWeightRoot;
+      std::vector<int>    dirsDoneRoot;
+      if (mpiRank==0) {
+        partialWeightRoot.assign(partialWeightLocal.size(),0.0);
+        dirsDoneRoot.assign(dirsDoneLocal.size(),0);
+      }
+
+      MPI_Reduce(partialWeightLocal.data(),
+                 (mpiRank==0 ? partialWeightRoot.data() : nullptr),
+                 (int)partialWeightLocal.size(),
+                 MPI_DOUBLE,
+                 MPI_SUM,
+                 0,
+                 MPI_COMM_WORLD);
+      MPI_Reduce(dirsDoneLocal.data(),
+                 (mpiRank==0 ? dirsDoneRoot.data() : nullptr),
+                 (int)dirsDoneLocal.size(),
+                 MPI_INT,
+                 MPI_SUM,
+                 0,
+                 MPI_COMM_WORLD);
+
+      std::vector<long long> taskCounts, trajCounts;
+      if (mpiRank==0) { taskCounts.assign((size_t)mpiSize,0); trajCounts.assign((size_t)mpiSize,0); }
+      MPI_Gather(&localTasks,1,MPI_LONG_LONG,(mpiRank==0 ? taskCounts.data() : nullptr),1,MPI_LONG_LONG,0,MPI_COMM_WORLD);
+      MPI_Gather(&localTraj, 1,MPI_LONG_LONG,(mpiRank==0 ? trajCounts.data() : nullptr),1,MPI_LONG_LONG,0,MPI_COMM_WORLD);
+
+      if (mpiRank==0) {
+        for (int idx=0; idx<nPts; ++idx) {
+          std::vector<double>& T = T_byPoint[(size_t)idx];
+          for (int ie=0; ie<nE; ++ie) {
+            const size_t flat = (size_t)idx*(size_t)nE + (size_t)ie;
+            if (dirsDoneRoot[flat] != nDirs) {
+              std::ostringstream msg;
+              msg << "Gridless shell density MPI reduction error at shell point " << idx
+                  << ", energy index " << ie << ": dirsDone=" << dirsDoneRoot[flat]
+                  << ", expected " << nDirs;
+              exit(__LINE__,__FILE__,msg.str().c_str());
             }
+            T[(size_t)ie] = partialWeightRoot[flat] / (double)nDirs;
           }
 
-          prog.update(doneTraj, totalTraj);
-
-          long long taskId = (nextTask < totalTasks) ? nextTask++ : -1;
-          MPI_Send(&taskId, 1, MPI_LONG_LONG, st.MPI_SOURCE, TAG_TASK, MPI_COMM_WORLD);
+          DensityGridless_SetSpectrumEpochUTC(prm.field.epoch);
+          std::vector<double> g(nE,0.0);
+          std::vector<double> EjGrid(nE,0.0);
+          for (int ie=0; ie<nE; ++ie) {
+            const double Ej = E_MeV[ie]*MEV_TO_J;
+            EjGrid[ie]=Ej;
+            const double v = SpeedFromEnergy(Ej, prm.species.mass_amu*AMU);
+            const double Jb = ::gSpectrum.GetSpectrum(Ej);
+            const double Jloc = T[(size_t)ie]*Jb;
+            g[ie] = (v>0.0) ? (4.0*M_PI*Jloc/v) : 0.0;
+          }
+          nTot_m3[(size_t)idx] = Trapz(EjGrid, g);
+          for (int ic=0; ic<nIntervals; ++ic) {
+            const double dE = EjGrid[ic+1] - EjGrid[ic];
+            nChan_m3[ic][(size_t)idx] = 0.5*(g[ic] + g[ic+1]) * dE;
+          }
+          flux_tot_m2s1[(size_t)idx] = FluxIntegrateTotal(E_MeV, T);
+          for (int icf=0; icf<nFluxCh; ++icf) {
+            flux_ch[icf][(size_t)idx] = FluxIntegrateChannel(E_MeV, T,
+                                                               prm.fluxChannels[icf].E1_MeV,
+                                                               prm.fluxChannels[icf].E2_MeV);
+          }
         }
 
-        prog.finish(totalTraj);
-      }
-      else {
-        while (true) {
-          long long taskId = -1;
-          MPI_Recv(&taskId, 1, MPI_LONG_LONG, 0, TAG_TASK, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-          if (taskId < 0) break;
-
-          const long long perPoint = (long long)nE * (long long)nDirBlocks;
-          const int idx = (int)(taskId / perPoint);
-          const long long rem1 = taskId - (long long)idx * perPoint;
-          const int ie  = (int)(rem1 / (long long)nDirBlocks);
-          const int iblock = (int)(rem1 - (long long)ie * (long long)nDirBlocks);
-          const int idirBegin = iblock * kTrajBatch;
-          const int idirEnd = std::min(idirBegin + kTrajBatch, nDirs);
-
-          const auto& pk = shellPts_km[idx];
-          const V3 x0_m{pk.x*1000.0, pk.y*1000.0, pk.z*1000.0};
-
-          const double Ej = E_MeV[ie]*MEV_TO_J;
-          const double Rgv = RigidityFromEnergy_GV(Ej, std::abs(prm.species.charge_e)*QE,
-                                                   prm.species.mass_amu*AMU);
-          const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
-                                          ? prm.densitySpectrum.maxTrajTime_s
-                                          : -1.0;
-          const double weightSum = ComputeWeightBlockAtEnergy(prm, x0_m, Rgv, dirsUse,
-                                                              idirBegin, idirEnd,
-                                                              maxTraceTime_s,
-                                                              doAnisotropic,
-                                                              prm.anisotropy);
-
-          // Send shell-mode results as two typed messages rather than a raw struct.
-          int meta[4] = {idx, ie, idirBegin, idirEnd};
-          MPI_Send(meta, 4, MPI_INT, 0, TAG_RES_META, MPI_COMM_WORLD);
-          MPI_Send(&weightSum, 1, MPI_DOUBLE, 0, TAG_RES_VAL, MPI_COMM_WORLD);
+        long long sumTasks=0, sumTraj=0;
+        long long minTasks=(mpiSize>0 ? taskCounts[0] : 0), maxTasks=minTasks;
+        for (int r=0; r<mpiSize; ++r) {
+          sumTasks += taskCounts[(size_t)r];
+          sumTraj  += trajCounts[(size_t)r];
+          minTasks = std::min(minTasks,taskCounts[(size_t)r]);
+          maxTasks = std::max(maxTasks,taskCounts[(size_t)r]);
         }
+        std::cout << "[gridless-density][MPI] Shell task distribution check:\n";
+        std::cout << "  totalTasks expected = " << totalTasks << ", computed = " << sumTasks << "\n";
+        std::cout << "  totalTraj  expected = " << totalTraj  << ", computed = " << sumTraj  << "\n";
+        std::cout << "  per-rank tasks min/avg/max = " << minTasks << " / "
+                  << (double(sumTasks)/double(std::max(1,mpiSize))) << " / " << maxTasks << "\n";
+        for (int r=0; r<mpiSize; ++r) {
+          std::cout << "    rank " << r << ": " << taskCounts[(size_t)r]
+                    << " tasks, " << trajCounts[(size_t)r] << " trajectories\n";
+        }
+        if (sumTasks != totalTasks || sumTraj != totalTraj) {
+          std::cout << "[gridless-density][MPI][WARNING] dynamic scheduler task count mismatch.\n";
+        }
+        std::cout.flush();
       }
     }
 

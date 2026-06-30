@@ -134,28 +134,25 @@
 //     Emin = (gamma - 1) * m0 * c^2 / QE / 1e6   [MeV]
 //
 //======================================================================================
-// MPI WORKER LOOP
+// MPI WORK SCHEDULING
 //======================================================================================
 //
-// Rank 0 (master):
-//   while there are unfinished points:
-//     wait for any worker to send ResultMsg (blocking MPI_Recv from MPI_ANY_SOURCE)
-//     if it's a real result: store it
-//     send the next unfinished point index as TaskMsg to that worker
-//   broadcast N sentinels (pointIdx = -1), one per worker, to terminate them
-//   collect any in-flight results
+// Gridless cutoff uses the same collective dynamic MPI strategy as standalone Mode3D.
+// The work space is linearized into independent tasks:
+//   - one primary cutoff-sampling direction at one observation location, or
+//   - one optional directional-map cell at one observation point.
 //
-// Ranks 1..N-1 (workers):
-//   while true:
-//     send a request message to master (or wait for initial task)
-//     receive TaskMsg
-//     if pointIdx == -1: break (done)
-//     process the full point (all directions, all rigidities in bisection)
-//     send ResultMsg back to master
+// In the default DYNAMIC scheduler, all MPI ranks participate in the calculation.  Each
+// rank atomically fetches a chunk of task ids from an MPI one-sided counter, processes
+// those tasks locally, and fetches another chunk until the task space is exhausted.
+// Rank 0 therefore does real trajectory work instead of acting only as a master.
 //
-// This protocol ensures no idle time: as soon as a worker finishes one point it
-// is immediately assigned the next, regardless of whether other workers are still
-// working on slower points.
+// Deterministic fallback schedulers are available for regression tests:
+//   BLOCK_CYCLIC : rank r processes tasks r, r+nRanks, r+2*nRanks, ...
+//   STATIC       : rank r processes one contiguous task block.
+//
+// Results are stored by global output index and reduced to rank 0 after the work loop.
+// This avoids order-dependent gathers and makes the output independent of the scheduler.
 //
 //======================================================================================
 // OUTPUT FORMAT (Tecplot ASCII)
@@ -183,6 +180,7 @@
 #include "pic.h"
 #include "CutoffRigidityGridless.h"
 #include "DipoleInterface.h" 
+#include "../3d/Mode3DParallel.h" // shared MPI dynamic work-queue scheduler
 
 //--------------------------------------------------------------------------------------
 // Shared particle movers (extracted)
@@ -212,6 +210,7 @@
 #include <numeric>
 #include <memory>
 #include <sstream>
+#include <limits>
 #include <mpi.h> 
 
 //--------------------------------------------------------------------------------------
@@ -1885,19 +1884,20 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   //     (e.g., a few points), we may have fewer tasks than cores and waste compute.
   //
   // Strategy implemented here:
-  //   - Define a "task" as:  (location_id, direction_id)
-  //       -> compute the cutoff rigidity for that single direction at that location
-  //          (internally: endpoint checks + bisection).
-  //   - Total number of tasks = N_locations * N_directions, typically >> #cores.
-  //   - Use a master/worker dynamic scheduler:
-  //       * Rank 0 is the master: it feeds tasks to workers as they become idle and
-  //         accumulates results for each location.
-  //       * Ranks 1..(size-1) are workers: each runs expensive trajectory tracing for
-  //         the task assigned, and returns the result.
+  //   - Define a "task" as one independent cutoff-direction calculation:
+  //       * primary sampling: (location_id, sampling_direction_id);
+  //       * optional map:     (point_id, directional_map_cell_id).
+  //   - Total number of tasks is usually much larger than the number of MPI ranks.
+  //   - Use the same collective scheduler as standalone Mode3D:
+  //       * DYNAMIC: all ranks atomically fetch chunks from an MPI RMA work queue;
+  //       * BLOCK_CYCLIC: deterministic rank r, r+nRanks, ... assignment;
+  //       * STATIC: deterministic contiguous block assignment.
   //
   // Benefits:
-  //   - Excellent load balance even with highly variable trajectory wall times.
-  //   - Scales well even when N_locations is small, because we have many tasks.
+  //   - Rank 0 participates in trajectory tracing instead of acting only as a master.
+  //   - Work is load-balanced even when trajectory walltime varies strongly.
+  //   - Results are reduced by global output index, so output ordering is independent
+  //     of which rank processed each task.
   //
   // Important note about MPI initialization:
   //   - You requested "assume MPI is always on", so we include mpi.h unconditionally
@@ -2213,13 +2213,13 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   }
 
   //====================================================================================
-  // MASTER/WORKER message protocol
+  // Gridless task and result records
   //
-  // We keep messages minimal to reduce MPI overhead:
-  //   Task:   {int locationId; int dirId;}
-  //   Result: {int locationId; double RcDir;}
-  //
-  // The worker recomputes x0_m from locationId and reads dir vector from dirs[dirId].
+  // These small records identify one independent unit of cutoff work and its result.
+  // They are no longer sent through a rank-0 master/worker protocol in the default
+  // path; instead, all ranks decode task ids from the collective MPI work queue and
+  // use these records locally.  Keeping the explicit record structure makes the code
+  // readable and also preserves a clean hook for future diagnostics.
   //====================================================================================
   // Task kinds:
   //   TASK_SAMPLING: compute Rc for one sampling direction (isotropic grid or vertical)
@@ -2268,15 +2268,13 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   // Result message mirrors task identification so the master can reduce/store.
   struct ResultMsg { int type; int loc; int idx; double rc; };
 
-  const int TAG_TASK   = 1001;
-  const int TAG_RESULT = 1002;
-  const int TAG_STOP   = 1003;
+  // Historical MPI message tags are no longer needed by the collective scheduler.
+  // Keep the task/result structures above, but avoid any rank-0 master/worker traffic.
 
   //====================================================================================
-  // Rank-0 progress reporting
-  //
-  // We print infrequently (time-throttled) to avoid turning stdout into a scalability
-  // bottleneck. The "done" count here refers to completed TRAJECTORY tasks, not locations.
+  // Rank-0 progress reporting helper retained for future live-progress extensions.
+  // The collective scheduler currently prints task-distribution diagnostics after the
+  // MPI reductions rather than updating a master-side progress bar.
   //====================================================================================
   auto nowSeconds = []() -> double {
     return MPI_Wtime();
@@ -2383,6 +2381,89 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
   std::cout.flush();
 };
 
+//====================================================================================
+// Collective-scheduler live progress helper (rank 0 only)
+//
+// The original gridless progress bar was driven by rank-0 master/worker messages.
+// After switching to the collective MPI scheduler, rank 0 no longer receives every
+// individual result as a message.  Progress therefore has to be counted separately.
+//
+// The work loops below use DynamicMpiProgressCounter, an MPI RMA completion counter
+// shared by all ranks.  Each rank increments that counter only after it has actually
+// finished a chunk of trajectory tasks.  Rank 0 periodically reads the counter and
+// calls this lambda.  Thus the displayed fraction is based on COMPLETED work, not on
+// merely ASSIGNED work.
+//
+// We print task progress because tasks are the true load-balanced units in gridless
+// cutoff: one location-direction pair or one directional-map cell.  The approximate
+// location count is shown only as a user-friendly secondary number; it should not be
+// interpreted as the exact number of locations whose final Rc has already been
+// reduced on rank 0.
+//====================================================================================
+auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTotalTasks,
+                                      long long progressSamplingTasks, bool force=false) {
+  if (mpiRank != 0) return;
+
+  static double tLast = -1.0;
+  const double t = nowSeconds();
+  if (!force && tLast >= 0.0 && (t - tLast) < 1.0) return;
+  tLast = t;
+
+  if (doneTasks < 0) doneTasks = 0;
+  if (doneTasks > progressTotalTasks) doneTasks = progressTotalTasks;
+
+  const double frac = (progressTotalTasks>0) ? double(doneTasks)/double(progressTotalTasks) : 1.0;
+  const double dt = t - tStart;
+  const double rate = (dt>0.0) ? double(doneTasks)/dt : 0.0;
+  double eta_s = -1.0;
+  if (rate>0.0 && progressTotalTasks>doneTasks) eta_s = double(progressTotalTasks-doneTasks)/rate;
+
+  auto fmt_hms = [](double s)->std::string{
+    if (s < 0.0) return std::string("--:--:--");
+    long long is = (long long)std::llround(s);
+    long long hh = is/3600; is-=hh*3600;
+    long long mm = is/60;   is-=mm*60;
+    long long ss = is;
+    char buf[64];
+    std::snprintf(buf,sizeof(buf),"%02lld:%02lld:%02lld",hh,mm,ss);
+    return std::string(buf);
+  };
+
+  // Approximate location count from completed primary sampling tasks.  Directional-map
+  // tasks, if enabled, are not part of the primary location cutoff and are therefore
+  // excluded from this estimate.
+  const long long donePrimary = std::min(doneTasks,progressSamplingTasks);
+  const int locApprox = (nDirSampling>0)
+      ? std::min(nLoc,(int)(donePrimary/(long long)nDirSampling))
+      : 0;
+
+  if (isPoints) {
+    std::cout << CutoffGridless_PointLikeProgressLabel(prm) << " ";
+  }
+  else {
+    const int curShell = std::min(std::max(0, locApprox / std::max(1,nPtsShell)),
+                                  std::max(0,nShells-1));
+    const double alt_km = prm.output.shellAlt_km[(size_t)curShell];
+    std::cout << "[SHELL " << (curShell+1) << "/" << nShells
+              << " alt=" << alt_km << "km] ";
+  }
+
+  const int barW = 36;
+  const int filled = (int)std::floor(frac*barW + 0.5);
+
+  std::cout << "[rank 0] [";
+  for (int i=0;i<barW;i++) std::cout << (i<filled ? "#" : "-");
+  std::cout << "] ";
+
+  std::cout << std::fixed;
+  std::cout.precision(1);
+  std::cout << (frac*100.0) << "%  ";
+  std::cout << "(Loc~ " << locApprox << "/" << nLoc << ", "
+            << "Task " << doneTasks << "/" << progressTotalTasks << ")  "
+            << "ETA " << fmt_hms(eta_s) << "\n";
+  std::cout.flush();
+};
+
   //====================================================================================
   // Helper: reconstruct the starting position x0_m [m] from a flattened locationId.
   //
@@ -2464,7 +2545,7 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
   };
 
   //====================================================================================
-  // Storage for final results (computed on master, then written to Tecplot).
+  // Storage for final results (reduced to rank 0, then written to Tecplot).
   //
   // NOTE:
   //   We only need per-location minimum cutoff (min over directions). We do not store
@@ -2477,17 +2558,24 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
   //   RcDirMap[ pointId*nDirMapCells + cellId ]
   // where cellId = iLon + nLonMap*jLat.
   //
-  // We store this only on the master (rank 0). It can be large, but for POINTS
-  // mode the number of points is typically modest.
+  // Local buffers exist on all ranks and are reduced to rank 0.  It can be large,
+  // but directional maps are enabled only for POINTS mode where the number of points
+  // is typically modest.
   std::vector<double> RcDirMap;
 
-  if (mpiRank==0) {
-    RcMin.assign((size_t)nLoc, -1.0);
-    EminMin.assign((size_t)nLoc, -1.0);
+  // Allocate result arrays on every rank.
+  //
+  // The newer collective MPI scheduler lets *all* ranks, including rank 0, compute
+  // independent gridless trajectory tasks.  Therefore each rank needs local result
+  // buffers.  Only the entries corresponding to tasks actually processed by the rank
+  // are modified; at the end the local buffers are reduced to rank 0 by global task
+  // index.  This global-index reduction avoids all ordering assumptions and is the
+  // same design principle used by the Mode3D dynamic scheduler.
+  RcMin.assign((size_t)nLoc, -1.0);
+  EminMin.assign((size_t)nLoc, -1.0);
 
-    if (doDirMap) {
-      RcDirMap.assign((size_t)prm.output.points.size() * (size_t)nDirMapCells, -1.0);
-    }
+  if (doDirMap) {
+    RcDirMap.assign((size_t)prm.output.points.size() * (size_t)nDirMapCells, -1.0);
   }
 
   //----------------------------------------------------------------------------------
@@ -2502,432 +2590,329 @@ auto maybePrintProgress = [&](long long doneTasks, long long totalTasks,
   //   (B) Optional directional sky-map tasks (POINTS only, if enabled):
   //       Total = nPoints * nDirMapCells
   //
-  // We schedule both families through the same dynamic master/worker scheduler.
+  // We schedule both families through the same collective MPI scheduler.
   const long long totalSamplingTasks = (long long)nLoc * (long long)nDirSampling;
   const long long totalDirMapTasks   = (doDirMap ? (long long)prm.output.points.size() * (long long)nDirMapCells : 0LL);
   const long long totalTasks = totalSamplingTasks + totalDirMapTasks;
 
-  // Each worker counts how many trajectory-tasks it actually computed.
-  // This is used at the end to *prove* tasks were distributed (no duplicated work).
+  // Each rank counts how many trajectory-tasks it actually computed.
+  // This is used at the end to verify that no tasks were dropped or duplicated.
   long long myTasksProcessed = 0;
 
   //====================================================================================
-  // WORKER LOOP
-  //
-  // Workers wait for tasks, compute the cutoff for one direction, and send back results.
+  // COLLECTIVE MPI SCHEDULER -- two-level dynamic design, gridless cutoff
   //====================================================================================
-  auto WorkerLoop = [&]() {
-    while (true) {
-      MPI_Status st;
-      TaskMsg task;
+  //
+  // Older gridless versions used a rank-0 master/worker protocol: rank 0 assigned one
+  // task at a time to ranks 1..N-1 and collected returned results.  That was dynamic,
+  // but it had two practical limitations:
+  //   (1) rank 0 did not participate in the expensive trajectory tracing; and
+  //   (2) all work distribution passed through rank 0, making scheduling more fragile
+  //       for very large direction/energy/task counts.
+  //
+  // This implementation mirrors the standalone Mode3D scheduler.  All MPI ranks join
+  // one collective work queue.  In DYNAMIC mode the queue is an MPI one-sided atomic
+  // fetch-add counter; each rank repeatedly grabs a chunk of linear task ids and then
+  // processes that chunk locally.  No worker thread calls MPI, so MPI_THREAD_MULTIPLE is
+  // not required.  In STATIC/BLOCK_CYCLIC modes we use deterministic task assignments,
+  // primarily for regression/debug runs.
+  //
+  // Gridless cutoff has a finer natural task space than Mode3D.  A task is not just a
+  // spatial location; it is one of:
+  //   TASK_SAMPLING : one primary cutoff-sampling direction for one location;
+  //   TASK_DIRMAP   : one optional directional-map sky cell for one point.
+  //
+  // Each task writes into a global-indexed local buffer:
+  //   RcMin[loc]        receives the minimum primary cutoff over directions;
+  //   RcDirMap[ip,cell] receives the directional-map cutoff for that exact cell.
+  // Because the task-to-output mapping is global and unique, the final MPI_Reduce is
+  // simple and order-independent:
+  //   RcMin    : MPI_MIN over positive cutoffs, with +infinity as missing sentinel;
+  //   RcDirMap : MPI_MAX over entries initialized to -1, because each cell is computed
+  //              by exactly one rank.
+  //
+  // This design gives true dynamic balancing across MPI ranks and lets rank 0 compute
+  // physics work, while preserving deterministic output ordering on rank 0.
+  //====================================================================================
 
-      MPI_Recv(&task, (int)sizeof(TaskMsg), MPI_BYTE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &st);
+  // Decode a linear task id into an explicit task description.  Keeping this mapping in
+  // one lambda ensures that DYNAMIC, BLOCK_CYCLIC, and STATIC modes all compute exactly
+  // the same set of physics tasks and differ only in who computes each task.
+  auto DecodeTask = [&](long long taskId) -> TaskMsg {
+    if (taskId < totalSamplingTasks) {
+      const int loc = (int)(taskId / nDirSampling);
+      const int idx = (int)(taskId - (long long)loc*nDirSampling);
 
-      if (st.MPI_TAG == TAG_STOP) {
-        // Master tells us there is no more work.
-        break;
+      // In the old rank-0 master scheduler the master could shrink rHi_GV for later
+      // directions of a location after it learned a better minimum.  The collective
+      // scheduler deliberately avoids such cross-rank mutable state: all ranks can fetch
+      // work independently without asking rank 0.  We therefore use the full bracket.
+      // This is slightly more expensive for ISOTROPIC cutoff, but it is mathematically
+      // identical and removes the serial scheduling bottleneck.
+      return TaskMsg{ TASK_SAMPLING, loc, idx, Rmin, Rmax };
+    }
+
+    const long long rem = taskId - totalSamplingTasks;
+    const int pointId = (int)(rem / nDirMapCells);
+    const int cellId  = (int)(rem - (long long)pointId*nDirMapCells);
+    return TaskMsg{ TASK_DIRMAP, pointId, cellId, Rmin, Rmax };
+  };
+
+  // Compute one decoded task and return the result.  This is the same trajectory work
+  // that used to live in the worker loop, now factored out so both collective dynamic
+  // and deterministic fallback schedulers share a single source of physics behavior.
+  auto ProcessTask = [&](const TaskMsg& task) -> ResultMsg {
+    // Update Geopack/Tsyganenko state for this location's epoch before tracing.  For
+    // POINTS/SHELLS this is a no-op after the first call; for TRAJECTORY mode this is
+    // what makes each sample use its own timestamp and driver-table values.
+    field.ReinitGeopack(CutoffGridless_PointLikeSampleEpochUTC(prm, task.loc),
+                        (prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable));
+
+    const V3 x0_m = LocationToX0m(task.loc);
+    double rc = -1.0;
+
+    if (task.type == TASK_SAMPLING) {
+      V3 dir;
+      if (samplingVertical) {
+        dir = mul(-1.0, unit(x0_m));
+      }
+      else {
+        dir = dirs[(size_t)task.idx];
       }
 
-      // Defensive: only TAG_TASK is expected here.
-      if (st.MPI_TAG != TAG_TASK) {
-        continue;
+      rc = CutoffForDirection_GV(x0_m, dir, task.rLo_GV, task.rHi_GV);
+    }
+    else if (task.type == TASK_DIRMAP) {
+      const int cellId = task.idx;
+      const int iLon = cellId % nLonMap;
+      const int jLat = cellId / nLonMap;
+
+      double lon_deg = lonRes_deg * iLon;
+      double lat_deg = -90.0 + latRes_deg * jLat;
+      if (lat_deg > 90.0) lat_deg = 90.0;
+
+      const double lon = lon_deg * M_PI/180.0;
+      const double lat = lat_deg * M_PI/180.0;
+      const double cl  = std::cos(lat);
+      const V3 dir_sm { cl*std::cos(lon), cl*std::sin(lon), std::sin(lat) };
+      const V3 dir_gsm = unit(Apply(R_sm2gsm, dir_sm));
+
+      rc = CutoffForDirection_GV(x0_m, dir_gsm, task.rLo_GV, task.rHi_GV);
+    }
+
+    return ResultMsg{ task.type, task.loc, task.idx, rc };
+  };
+
+  // Apply one completed task to this rank's local output buffers.  The final MPI_Reduce
+  // combines the local buffers on rank 0.  This function must be called only by the rank
+  // main thread; if a future intra-rank thread pool is added around gridless cutoff, make
+  // the per-rank updates thread-local or guard them with atomics/reductions.
+  auto AccumulateResultLocal = [&](const ResultMsg& res) {
+    if (res.type == TASK_SAMPLING) {
+      if (res.rc > 0.0 && res.loc >= 0 && res.loc < nLoc) {
+        double& cur = RcMin[(size_t)res.loc];
+        cur = (cur < 0.0) ? res.rc : std::min(cur,res.rc);
       }
-
-
-      // Count this task. Each task corresponds to one (locationId,dirId) trajectory.
-      // If scheduling is correct, the sum of these counters over ranks 1..N-1 should
-      // equal totalTasks.
-      myTasksProcessed++;
-
-      // Update Geopack for this location's epoch before tracing.
-      // In TRAJECTORY mode each point carries a distinct UTC timestamp, so the
-      // dipole tilt (set by Geopack RECALC inside ReinitGeopack) must be
-      // refreshed for every new location. ReinitGeopack is a no-op when the
-      // epoch string is unchanged (POINTS / SHELLS mode, or consecutive tasks
-      // for the same location).
-      field.ReinitGeopack(CutoffGridless_PointLikeSampleEpochUTC(prm, task.loc), (prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable));
-
-      // Reconstruct start position (needed for both task types).
-      const V3 x0_m = LocationToX0m(task.loc);
-
-      // Compute direction cutoff depending on task type.
-      double rc = -1.0;
-
-      if (task.type == TASK_SAMPLING) {
-        // Primary cutoff sampling direction.
-        //
-        // ISOTROPIC: use the precomputed direction grid (dirs[idx]).
-        // VERTICAL : ignore idx and compute the local vertical arrival direction
-        //            toward Earth: d = -unit(r0).
-        V3 dir;
-        if (samplingVertical) {
-          dir = mul(-1.0, unit(x0_m));
-        } else {
-          dir = dirs[(size_t)task.idx];
-        }
-
-        rc = CutoffForDirection_GV(x0_m, dir, task.rLo_GV, task.rHi_GV);
+    }
+    else if (res.type == TASK_DIRMAP) {
+      if (doDirMap && res.loc >= 0 && res.idx >= 0) {
+        RcDirMap[(size_t)res.loc*(size_t)nDirMapCells + (size_t)res.idx] = res.rc;
       }
-      else if (task.type == TASK_DIRMAP) {
-        // Directional sky-map cell.
-        //
-        // UPDATED (per request): parameterize the sky-map in the global SM frame,
-        // then transform the direction into GSM using SPICE.
-        //
-        // IMPORTANT: do NOT confuse "labeling / sampling" frame with the physics
-        // tracing frame. The particle tracing is always performed in GSM because
-        // the external field models (T96/T05) are defined in GSM.
-        //
-        // Lon/Lat meaning here is explicitly *directional* (arrival direction):
-        //   - lon_SM_deg = atan2(dy,dx)  mapped to [0,360)
-        //   - lat_SM_deg = asin(dz)      mapped to [-90,90]
-        //
-        // We sample these angles on a rectangular lon/lat grid and convert
-        // (lon_SM,lat_SM) -> d_SM using the standard spherical parameterization.
-        // Then we rotate d_SM into GSM:
-        //    d_GSM = R_SM->GSM(epoch) * d_SM
-        // and run the cutoff search using d_GSM.
-        //
-        // FUTURE REPLACEMENT HOOK:
-        //   If later you prefer a different plotting frame (e.g., GCE, GEO),
-        //   change ONLY the SPICE frame names in the rotation definition above
-        //   (R_sm2gsm), and keep the math below identical.
-        //
-        // Cell indexing convention:
-        //   cellId = iLon + nLonMap*jLat
-        // where:
-        //   iLon in [0,nLonMap)
-        //   jLat in [0,nLatMap)
-        //   lon_deg = lonRes_deg * iLon
-        //   lat_deg = -90 + latRes_deg * jLat  (clamped to +90 for the last row)
-        const int cellId = task.idx;
-        const int iLon = cellId % nLonMap;
-        const int jLat = cellId / nLonMap;
-
-        double lon_deg = lonRes_deg * iLon;
-        double lat_deg = -90.0 + latRes_deg * jLat;
-        if (lat_deg > 90.0) lat_deg = 90.0;
-
-        // Build unit direction in SM from global spherical lon/lat.
-        // Note: lon_deg is sampled on [0,360) and lat_deg on [-90,90].
-        const double lon = lon_deg * M_PI/180.0;
-        const double lat = lat_deg * M_PI/180.0;
-        const double cl  = std::cos(lat);
-        const V3 dir_sm { cl*std::cos(lon), cl*std::sin(lon), std::sin(lat) };
-
-        // Transform the direction to GSM (for tracing).
-        const V3 dir_gsm = unit(Apply(R_sm2gsm, dir_sm));
-
-        // Compute cutoff for this arrival direction (in GSM).
-        rc = CutoffForDirection_GV(x0_m, dir_gsm, task.rLo_GV, task.rHi_GV);
-      }
-
-      ResultMsg res{ task.type, task.loc, task.idx, rc };
-      MPI_Send(&res, (int)sizeof(ResultMsg), MPI_BYTE, 0, TAG_RESULT, MPI_COMM_WORLD);
     }
   };
 
-  //====================================================================================
-  // MASTER SCHEDULER
-  //
-  // Rank 0 feeds tasks to workers as they become available. This is the key piece
-  // that keeps the cluster busy when trajectory costs vary widely.
-  //====================================================================================
-  auto MasterScheduler = [&]() {
-    // Edge case: running with a single rank -> just do serial execution.
-    if (mpiSize==1) {
-      if (mpiRank==0) std::cout << "[gridless][MPI] size==1 -> serial fallback.\n";
+  const Earth::Mode3D::MpiScheduler gridlessScheduler =
+      Earth::Mode3D::ResolveMpiScheduler(prm,"Gridless cutoff");
+  const long long gridlessChunk =
+      Earth::Mode3D::ResolveMpiDynamicChunk(prm,1,totalTasks);
 
-      for (int loc=0; loc<nLoc; loc++) {
-        // Update Geopack for this location's epoch before tracing.
-        // In TRAJECTORY mode each point has its own timestamp; in POINTS/SHELLS
-        // mode this is a no-op (epoch hasn't changed).
-        field.ReinitGeopack(CutoffGridless_PointLikeSampleEpochUTC(prm, loc), (prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable));
-
-        const V3 x0_m = LocationToX0m(loc);
-
-        double rcMin = -1.0;
-        for (int dId=0; dId<nDirSampling; dId++) {
-          V3 dir;
-          if (samplingVertical) {
-            // Local vertical arrival direction toward Earth.
-            dir = mul(-1.0, unit(x0_m));
-          } else {
-            dir = dirs[(size_t)dId];
-          }
-
-          // Optimization requested by user:
-          //   When multiple directions are searched for the SAME location, use the
-          //   best cutoff already found at that location as the upper bound for all
-          //   later directions. Since the final isotropic cutoff is the MINIMUM over
-          //   directions, later directions cannot improve the location cutoff above
-          //   the current minimum, so searching beyond that value is unnecessary.
-          //
-          // This optimization is relevant only to the primary sampling directions.
-          // It must NOT be applied to the optional directional map, because the map
-          // needs each direction's own cutoff, not the minimum over all directions.
-          const double rHiThis_GV = (!samplingVertical && rcMin>0.0) ? std::min(Rmax, rcMin) : Rmax;
-
-          const double rc = CutoffForDirection_GV(x0_m, dir, Rmin, rHiThis_GV);
-          if (rc>0.0) rcMin = (rcMin<0.0) ? rc : std::min(rcMin, rc);
-        }
-
-        RcMin[(size_t)loc] = rcMin;
-        if (rcMin>0.0) {
-          const double pCut = MomentumFromRigidity_GV(rcMin, qabs);
-          EminMin[(size_t)loc] = KineticEnergyFromMomentum_MeV(pCut, m0);
-        }
-
-        // Optional directional sky-map (POINTS only).
-        if (doDirMap) {
-          const int pointId = loc;
-          const LocalENUFrame fr = BuildLocalENU_GSM(x0_m);
-          (void)fr; // silence unused warning in case doDirMap is compiled out later
-
-          for (int cell=0; cell<nDirMapCells; cell++) {
-            const int iLon = cell % nLonMap;
-            const int jLat = cell / nLonMap;
-            double lon_deg = lonRes_deg * iLon;
-            double lat_deg = -90.0 + latRes_deg * jLat;
-            if (lat_deg > 90.0) lat_deg = 90.0;
-
-            const V3 dirMap = LocalLonLatToDir_GSM(BuildLocalENU_GSM(x0_m), lon_deg, lat_deg);
-            const double rc = CutoffForDirection_GV(x0_m, dirMap, Rmin, Rmax);
-            RcDirMap[(size_t)pointId*(size_t)nDirMapCells + (size_t)cell] = rc;
-          }
-        }
-      }
-
-      return;
+  if (mpiRank==0) {
+    std::cout << "[gridless][MPI] scheduler     : "
+              << Earth::Mode3D::MpiSchedulerName(gridlessScheduler) << "\n";
+    if (gridlessScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
+      std::cout << "[gridless][MPI] dynamic chunk : " << gridlessChunk
+                << " gridless task(s) per atomic fetch\n";
     }
-
-
-// Next task to issue (linearized over both task families).
-long long nextTask = 0;
-long long doneTasks = 0;
-
-// Decode a linear task index into a TaskMsg.
-// This isolates the scheduling logic so we can extend task families without
-// rewriting the master/worker protocol.
-auto DecodeTask = [&](long long taskId) -> TaskMsg {
-  if (taskId < totalSamplingTasks) {
-    const int loc = (int)(taskId / nDirSampling);
-    const int idx = (int)(taskId - (long long)loc*nDirSampling);
-
-    // Default rigidity bracket for a primary sampling task.
-    double rLoTask_GV = Rmin;
-    double rHiTask_GV = Rmax;
-
-    // Optimization requested by user:
-    //   For multiple primary sampling directions at the same location, use the
-    //   currently known minimum cutoff at that location as the upper bound for
-    //   any later directions that have not yet been dispatched.
-    //
-    // This works because the final isotropic cutoff is the MINIMUM over sampled
-    // directions. Once a direction with cutoff Rc_found has already been found,
-    // searching another direction above Rc_found cannot improve the final answer.
-    //
-    // IMPORTANT:
-    //   This optimization is intentionally limited to the primary sampling tasks.
-    //   Directional sky-map tasks must keep their full bracket because they need
-    //   the cutoff of EACH individual direction, not the minimum over directions.
-    if (mpiRank==0 && !samplingVertical && !RcMin.empty()) {
-      const double cur = RcMin[(size_t)loc];
-      if (cur > 0.0) rHiTask_GV = std::min(rHiTask_GV, cur);
-    }
-
-    return TaskMsg{ TASK_SAMPLING, loc, idx, rLoTask_GV, rHiTask_GV };
+    std::cout.flush();
   }
 
-  // Directional sky-map tasks start after sampling tasks.
-  const long long rem = taskId - totalSamplingTasks;
-  const int pointId = (int)(rem / nDirMapCells);
-  const int cellId  = (int)(rem - (long long)pointId*nDirMapCells);
-  return TaskMsg{ TASK_DIRMAP, pointId, cellId, Rmin, Rmax };
-};
+  // Missing sentinel for MPI_MIN.  Local arrays use -1 for user-facing output, but
+  // MPI_MIN would incorrectly preserve -1.  Convert missing values to +infinity before
+  // reduction, then convert them back on rank 0.
+  const double missingMin = std::numeric_limits<double>::infinity();
+  std::vector<double> RcMinReduce((size_t)nLoc, missingMin);
+  for (int loc=0; loc<nLoc; ++loc) RcMinReduce[(size_t)loc] = missingMin;
 
-//----------------------------------------------------------------------------------
-// Location-level completion tracking (for user-visible progress reporting)
-//
-// We schedule work as (locationId,dirId) tasks, but users naturally think in terms
-// of "how many points/shell nodes are finished?".
-//
-// A location is COMPLETE only when *all* its direction tasks have returned.
-// We track that with a simple countdown initialized to nDir for each location.
-//
-// For SHELLS, we also track completion per shell index so the progress line can
-// report "SHELL i/N alt=..." similar to the legacy serial output.
-//----------------------------------------------------------------------------------
-// Location completion tracking:
-// If directional maps are enabled, we treat a location as "complete" only when
-// BOTH the primary cutoff sampling tasks AND all its map cells are finished.
-const int tasksPerLocation = nDirSampling + ((doDirMap && isPoints) ? nDirMapCells : 0);
-std::vector<int> locRemain((size_t)nLoc, tasksPerLocation);
-int locDone = 0;
-std::vector<int> locDonePerShell;
-if (!isPoints) locDonePerShell.assign((size_t)nShells, 0);
-
-    // 1) Prime the workers with one task each (or until we run out of tasks).
-    const int nWorkers = mpiSize - 1;
-    for (int w=1; w<=nWorkers; w++) {
-      if (nextTask >= totalTasks) break;
-
-      TaskMsg t = DecodeTask(nextTask);
-      MPI_Send(&t, (int)sizeof(TaskMsg), MPI_BYTE, w, TAG_TASK, MPI_COMM_WORLD);
-      nextTask++;
+  auto ComputeTaskId = [&](long long counterValue, long long localOffset) -> long long {
+    if (gridlessScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
+      return counterValue + localOffset;
     }
+    if (gridlessScheduler == Earth::Mode3D::MpiScheduler::BLOCK_CYCLIC) {
+      return (counterValue + localOffset) * (long long)mpiSize + (long long)mpiRank;
+    }
+    // STATIC: counterValue is the first task in this rank's contiguous block.
+    return counterValue + localOffset;
+  };
 
-    // 2) Receive results and keep issuing new tasks until completion.
-    while (doneTasks < totalTasks) {
-      MPI_Status st;
-      ResultMsg res;
+  // Live progress counter for all collective scheduler modes.
+  //
+  // Each rank buffers a small number of completed tasks locally and periodically adds
+  // that count to an MPI RMA counter on rank 0.  Buffering avoids one RMA update per
+  // trajectory task while still keeping the progress bar responsive.  The flush size
+  // follows the dynamic scheduling chunk so the progress cadence tracks the same work
+  // granularity used for load balancing.
+  Earth::Mode3D::DynamicMpiProgressCounter progressCounter(MPI_COMM_WORLD,
+                                                           totalTasks,
+                                                           "Gridless cutoff progress");
+  const long long progressFlushEvery = std::max(1LL,gridlessChunk);
+  long long progressPending = 0;
 
-      MPI_Recv(&res, (int)sizeof(ResultMsg), MPI_BYTE, MPI_ANY_SOURCE, TAG_RESULT, MPI_COMM_WORLD, &st);
-      doneTasks++;
+  auto FlushProgress = [&](bool forcePrint=false) {
+    if (progressPending > 0) {
+      progressCounter.Add(progressPending);
+      progressPending = 0;
+    }
+    if (mpiRank == 0) printCollectiveTaskProgress(progressCounter.Get(),totalTasks,totalSamplingTasks,forcePrint);
+  };
 
-      // Update master-side storage.
-      if (res.type == TASK_SAMPLING) {
-        // Update per-location minimum cutoff (isotropic = min over directions;
-        // vertical = min over a single direction).
-        if (res.rc > 0.0) {
-          double& cur = RcMin[(size_t)res.loc];
-          cur = (cur<0.0) ? res.rc : std::min(cur, res.rc);
+  auto NoteTaskComplete = [&]() {
+    ++myTasksProcessed;
+    ++progressPending;
+    if (progressPending >= progressFlushEvery) FlushProgress(false);
+  };
+
+  if (totalTasks > 0) {
+    if (gridlessScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
+      Earth::Mode3D::DynamicMpiLocationScheduler sched(MPI_COMM_WORLD,
+                                                       totalTasks,
+                                                       gridlessChunk,
+                                                       "Gridless cutoff");
+      while (true) {
+        const long long startTask = sched.FetchNextChunkStart();
+        if (startTask >= totalTasks) break;
+        const long long endTask = std::min(startTask + sched.ChunkSize(), totalTasks);
+        for (long long taskId=startTask; taskId<endTask; ++taskId) {
+          const ResultMsg res = ProcessTask(DecodeTask(taskId));
+          AccumulateResultLocal(res);
+          NoteTaskComplete();
         }
       }
-      else if (res.type == TASK_DIRMAP) {
-        // Store Rc for this directional map cell.
-        if (doDirMap) {
-          RcDirMap[(size_t)res.loc*(size_t)nDirMapCells + (size_t)res.idx] = res.rc;
-        }
-      }
-
-      //--------------------------------------------------------------------------------
-      // Mark this (location,dir) task as completed.
-      //
-      // A location is 'done' only after ALL directions have been processed.
-      // Tracking this lets the progress bar show both Task and Location completion.
-      //--------------------------------------------------------------------------------
-      {
-        const int loc = res.loc;
-        if (loc >= 0 && loc < nLoc) {
-          locRemain[(size_t)loc]--;
-          if (locRemain[(size_t)loc] == 0) {
-            locDone++;
-            if (!isPoints) {
-              const int s = loc / nPtsShell;
-              if (s >= 0 && s < nShells) locDonePerShell[(size_t)s]++;
-            }
-          }
-        }
-      }
-
-      // Print progress occasionally (throttled).
-      maybePrintProgress(doneTasks, totalTasks, locDone, locDonePerShell);
-
-      // Send a new task to the worker that just returned, or stop it if we're done.
-      if (nextTask < totalTasks) {
-        TaskMsg t = DecodeTask(nextTask);
-        MPI_Send(&t, (int)sizeof(TaskMsg), MPI_BYTE, st.MPI_SOURCE, TAG_TASK, MPI_COMM_WORLD);
-        nextTask++;
-      } else {
-        // No more tasks left -> stop this worker.
-        TaskMsg stopMsg{ -1, -1, -1, 0.0, 0.0 };
-        MPI_Send(&stopMsg, (int)sizeof(TaskMsg), MPI_BYTE, st.MPI_SOURCE, TAG_STOP, MPI_COMM_WORLD);
+    }
+    else if (gridlessScheduler == Earth::Mode3D::MpiScheduler::BLOCK_CYCLIC) {
+      for (long long taskId=(long long)mpiRank; taskId<totalTasks; taskId+=(long long)mpiSize) {
+        const ResultMsg res = ProcessTask(DecodeTask(taskId));
+        AccumulateResultLocal(res);
+        NoteTaskComplete();
       }
     }
-
-    // 3) Ensure any workers that never received a STOP also get one.
-    //    (This can happen when totalTasks < #workers).
-    for (int w=1; w<mpiSize; w++) {
-      // We attempt a nonblocking "probe" for safety; if a worker is still waiting,
-      // it will receive the stop message. If it already exited, the message is harmless.
-      TaskMsg stopMsg{ -1, -1, -1, 0.0, 0.0 };
-      MPI_Send(&stopMsg, (int)sizeof(TaskMsg), MPI_BYTE, w, TAG_STOP, MPI_COMM_WORLD);
+    else {
+      const long long startTask = (totalTasks * (long long)mpiRank) / (long long)mpiSize;
+      const long long endTask   = (totalTasks * (long long)(mpiRank+1)) / (long long)mpiSize;
+      for (long long taskId=startTask; taskId<endTask; ++taskId) {
+        const ResultMsg res = ProcessTask(DecodeTask(taskId));
+        AccumulateResultLocal(res);
+        NoteTaskComplete();
+      }
     }
+  }
 
-    // 4) Convert RcMin -> EminMin (rank 0 only) after all *sampling* tasks
-    //    have been reduced.
-    for (int loc=0; loc<nLoc; loc++) {
-      const double rc = RcMin[(size_t)loc];
-      if (rc>0.0) {
-        const double pCut = MomentumFromRigidity_GV(rc,qabs);
+  // Flush each rank's last partial progress update, then synchronize once so rank 0's
+  // forced final line can show a true 100% before the reduction/output phase begins.
+  FlushProgress(false);
+  MPI_Barrier(MPI_COMM_WORLD);
+  if (mpiRank == 0) printCollectiveTaskProgress(progressCounter.Get(),totalTasks,totalSamplingTasks,true);
+
+  // Reduce primary cutoff minima to rank 0.
+  for (int loc=0; loc<nLoc; ++loc) {
+    const double rc = RcMin[(size_t)loc];
+    RcMinReduce[(size_t)loc] = (rc > 0.0) ? rc : missingMin;
+  }
+
+  std::vector<double> RcMinRoot;
+  if (mpiRank==0) RcMinRoot.assign((size_t)nLoc, missingMin);
+  MPI_Reduce(RcMinReduce.data(),
+             (mpiRank==0 ? RcMinRoot.data() : nullptr),
+             nLoc,
+             MPI_DOUBLE,
+             MPI_MIN,
+             0,
+             MPI_COMM_WORLD);
+
+  if (mpiRank==0) {
+    for (int loc=0; loc<nLoc; ++loc) {
+      const double rc = RcMinRoot[(size_t)loc];
+      RcMin[(size_t)loc] = std::isfinite(rc) ? rc : -1.0;
+      if (RcMin[(size_t)loc] > 0.0) {
+        const double pCut = MomentumFromRigidity_GV(RcMin[(size_t)loc],qabs);
         EminMin[(size_t)loc] = KineticEnergyFromMomentum_MeV(pCut,m0);
       }
+      else {
+        EminMin[(size_t)loc] = -1.0;
+      }
     }
-  };
-
-  //====================================================================================
-  // Run: master or worker
-  //====================================================================================
-  if (mpiRank==0) {
-    MasterScheduler();
-  } else {
-    WorkerLoop();
   }
 
-  
+  // Reduce directional map cells to rank 0.  Each cell is computed by exactly one task;
+  // all other ranks leave it at -1, so MPI_MAX selects the computed value.
+  if (doDirMap) {
+    std::vector<double> RcDirMapRoot;
+    if (mpiRank==0) RcDirMapRoot.assign(RcDirMap.size(),-1.0);
+    MPI_Reduce(RcDirMap.data(),
+               (mpiRank==0 ? RcDirMapRoot.data() : nullptr),
+               (int)RcDirMap.size(),
+               MPI_DOUBLE,
+               MPI_MAX,
+               0,
+               MPI_COMM_WORLD);
+    if (mpiRank==0) RcDirMap.swap(RcDirMapRoot);
+  }
 
-      //====================================================================================
-      // POST-RUN DIAGNOSTIC: Verify that tasks were truly distributed (no duplicated work)
-      //
-      // Symptom you observed:
-      //   "All processes output the progress bar" and the intervals between progress prints
-      //   increase over time. The second effect is normal when some tasks become long:
-      //   the master blocks in MPI_Recv waiting for a worker to finish, so it cannot print
-      //   at a fixed cadence. The first effect is usually stdout interleaving/tagging by
-      //   the MPI launcher, or accidental worker printing.
-      //
-      // The definitive check is to count how many tasks each rank actually executed.
-      // Each worker increments myTasksProcessed once per received TAG_TASK message.
-      //
-      // We gather these counts on rank 0 and print:
-      //   - per-rank counts
-      //   - sum over workers
-      // and we compare sum to totalTasks.
-      //
-      // If scheduling is correct:
-      //   sum_{r=1..size-1} myTasksProcessed[r] == totalTasks
-      // (rank 0 does not compute tasks in this design).
-      //====================================================================================
-      std::vector<long long> taskCounts;
-      if (mpiRank == 0) taskCounts.assign((size_t)mpiSize, 0);
 
-      MPI_Gather(&myTasksProcessed, 1, MPI_LONG_LONG,
-                 (mpiRank==0 ? taskCounts.data() : nullptr), 1, MPI_LONG_LONG,
-                 0, MPI_COMM_WORLD);
+  //====================================================================================
+  // POST-RUN DIAGNOSTIC: verify task distribution
+  //====================================================================================
+  // The collective scheduler lets rank 0 participate in trajectory tracing.  Therefore
+  // the correct conservation check is now the sum over *all* ranks, not only workers.
+  // This diagnostic is intentionally kept because it is the quickest way to spot a
+  // broken dynamic work queue: the sum of processed task counts must exactly equal the
+  // linear task-space size.
+  //====================================================================================
+  std::vector<long long> taskCounts;
+  if (mpiRank == 0) taskCounts.assign((size_t)mpiSize, 0);
 
-      if (mpiRank == 0) {
-        long long sumWorkers = 0;
-        long long minW = (mpiSize>1 ? taskCounts[1] : 0);
-        long long maxW = (mpiSize>1 ? taskCounts[1] : 0);
+  MPI_Gather(&myTasksProcessed, 1, MPI_LONG_LONG,
+             (mpiRank==0 ? taskCounts.data() : nullptr), 1, MPI_LONG_LONG,
+             0, MPI_COMM_WORLD);
 
-        for (int r=1; r<mpiSize; ++r) {
-          sumWorkers += taskCounts[(size_t)r];
-          minW = std::min(minW, taskCounts[(size_t)r]);
-          maxW = std::max(maxW, taskCounts[(size_t)r]);
-        }
+  if (mpiRank == 0) {
+    long long sumAll = 0;
+    long long minR = (mpiSize>0 ? taskCounts[0] : 0);
+    long long maxR = (mpiSize>0 ? taskCounts[0] : 0);
 
-        std::cout << "[gridless][MPI] Task distribution check:\n";
-        std::cout << "  totalTasks (expected) = " << totalTasks << "\n";
-        std::cout << "  sum(worker tasks)     = " << sumWorkers << "\n";
-        if (mpiSize > 1) {
-          std::cout << "  per-worker min/avg/max = " << minW
-                    << " / " << (double(sumWorkers)/double(mpiSize-1))
-                    << " / " << maxW << "\n";
-        }
-        for (int r=0; r<mpiSize; ++r) {
-          std::cout << "    rank " << r << ": " << taskCounts[(size_t)r] << " tasks\n";
-        }
+    for (int r=0; r<mpiSize; ++r) {
+      sumAll += taskCounts[(size_t)r];
+      minR = std::min(minR, taskCounts[(size_t)r]);
+      maxR = std::max(maxR, taskCounts[(size_t)r]);
+    }
 
-        if (sumWorkers != totalTasks) {
-          std::cout << "[gridless][MPI][WARNING] sum(worker tasks) != totalTasks.\n"
-                    << "  This can happen only if:\n"
-                    << "   - rank 0 also computed tasks (not in this design), or\n"
-                    << "   - tasks were dropped/duplicated due to a scheduler bug.\n"
-                    << "  Investigate immediately if this persists.\n";
-        }
-        std::cout.flush();
-      }
+    std::cout << "[gridless][MPI] Task distribution check:\n";
+    std::cout << "  totalTasks (expected) = " << totalTasks << "\n";
+    std::cout << "  sum(all rank tasks)   = " << sumAll << "\n";
+    if (mpiSize > 0) {
+      std::cout << "  per-rank min/avg/max  = " << minR
+                << " / " << (double(sumAll)/double(std::max(1,mpiSize)))
+                << " / " << maxR << "\n";
+    }
+    for (int r=0; r<mpiSize; ++r) {
+      std::cout << "    rank " << r << ": " << taskCounts[(size_t)r] << " tasks\n";
+    }
+
+    if (sumAll != totalTasks) {
+      std::cout << "[gridless][MPI][WARNING] sum(all rank tasks) != totalTasks.\n"
+                << "  Tasks were dropped or duplicated by the scheduler; investigate immediately.\n";
+    }
+    std::cout.flush();
+  }
 
   //====================================================================================
   // Output (rank 0 only)

@@ -1622,7 +1622,7 @@ int main(int argc,char **argv) {
             p.mode3d.mpiScheduler = sched;
           }
           else {
-            std::cerr << "Error: unknown -mode3d-mpi-scheduler value '"
+            std::cerr << "Error: unknown -mode3d-mpi-scheduler/-gridless-mpi-scheduler value '"
                       << cli.mode3dMpiScheduler
                       << "'. Valid values: DYNAMIC, BLOCK_CYCLIC, STATIC.\n";
             return 1;

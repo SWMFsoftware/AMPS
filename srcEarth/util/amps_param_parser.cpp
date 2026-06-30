@@ -2337,6 +2337,14 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
 
     if (section=="#RUN_INFO") {
       if (uKey=="RUN_ID") p.runId=val;
+      else if (uKey=="PI_NAME" || uKey=="PI_EMAIL" ||
+               uKey=="INSTITUTION" || uKey=="SCIENCE_GOAL") {
+        // CCMC/Runs-on-Request files often include provenance metadata in
+        // #RUN_INFO. These values do not affect the physics or numerics, but
+        // they are legitimate input-file metadata. Store them rather than
+        // rejecting the file under strict validation.
+        p.runInfo[uKey]=val;
+      }
       else rejectUnknownKeyword();
     }
     else if (section=="#CALCULATION_MODE") {
@@ -2471,13 +2479,44 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       }
       else if (uKey=="DIPOLE_MOMENT") p.field.dipoleMoment_Me=std::stod(val);
       else if (uKey=="DIPOLE_TILT" || uKey=="DIPOLE_TILT_DEG") p.field.dipoleTilt_deg=std::stod(val);
-      else if (uKey=="DST") p.field.dst_nT=std::stod(val);
-      else if (uKey=="PDYN") p.field.pdyn_nPa=std::stod(val);
-      else if (uKey=="IMF_BY") p.field.imfBy_nT=std::stod(val);
-      else if (uKey=="IMF_BZ") p.field.imfBz_nT=std::stod(val);
-      else if (uKey=="IMF_BX") p.field.imfBx_nT=std::stod(val);
-      else if (uKey=="SW_VX") p.field.swVx_kms=std::stod(val);
-      else if (uKey=="SW_N") p.field.swN_cm3=std::stod(val);
+      // Magnetic-driver parameters.
+      //
+      // The internal names are intentionally model-neutral (DST, PDYN, IMF_BZ,
+      // ...), but CCMC/Runs-on-Request style files often prefix the same keys
+      // with the selected Tsyganenko model name, for example TS05_DST or
+      // TS05_BZ. Accept both styles and map them to the same BackgroundField
+      // storage. FIELD_MODEL=TS05 is normalized to canonical model name T05;
+      // the TS05_* aliases are only input-file spelling compatibility.
+      else if (uKey=="DST" || uKey=="SYM_H" || uKey=="SYMH" ||
+               uKey=="T05_DST" || uKey=="TS05_DST" ||
+               uKey=="T05_SYMH" || uKey=="TS05_SYMH") {
+        p.field.dst_nT=std::stod(val);
+      }
+      else if (uKey=="PDYN" || uKey=="P_DYN" || uKey=="SW_PDYNP" ||
+               uKey=="T05_PDYN" || uKey=="TS05_PDYN") {
+        p.field.pdyn_nPa=std::stod(val);
+      }
+      else if (uKey=="IMF_BY" || uKey=="BYIMF" || uKey=="BY" ||
+               uKey=="T05_BY" || uKey=="TS05_BY") {
+        p.field.imfBy_nT=std::stod(val);
+      }
+      else if (uKey=="IMF_BZ" || uKey=="BZIMF" || uKey=="BZ" ||
+               uKey=="T05_BZ" || uKey=="TS05_BZ") {
+        p.field.imfBz_nT=std::stod(val);
+      }
+      else if (uKey=="IMF_BX" || uKey=="BXIMF" || uKey=="BX" ||
+               uKey=="T05_BX" || uKey=="TS05_BX") {
+        p.field.imfBx_nT=std::stod(val);
+      }
+      else if (uKey=="SW_VX" || uKey=="VX" || uKey=="VSW" ||
+               uKey=="T05_VX" || uKey=="TS05_VX") {
+        p.field.swVx_kms=std::stod(val);
+      }
+      else if (uKey=="SW_N" || uKey=="NSW" || uKey=="N_SW" ||
+               uKey=="DENSITY" || uKey=="DEN_P" ||
+               uKey=="T05_NSW" || uKey=="TS05_NSW") {
+        p.field.swN_cm3=std::stod(val);
+      }
       else if (uKey=="G1") p.field.g[0]=std::stod(val);
       else if (uKey=="G2") p.field.g[1]=std::stod(val);
       else if (uKey=="G3") p.field.g[2]=std::stod(val);
@@ -2540,7 +2579,33 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="DOMAIN_Z_MAX" || uKey=="DOMAIN_ZMAX") p.domain.zMax=ParseLengthToKm(val,commentText);
       else if (uKey=="DOMAIN_Z_MIN" || uKey=="DOMAIN_ZMIN") p.domain.zMin=ParseLengthToKm(val,commentText);
       else if (uKey=="R_INNER") p.domain.rInner=ParseLengthToKm(val,commentText);
-      else rejectUnknownKeyword();
+      else if (uKey=="DOMAIN_X_TAIL" || uKey=="X_TAIL") {
+        // RoR inputs may specify a flat nightside cap as a positive or negative
+        // tail distance in Re/km. The rectangular Mode3D domain represents this
+        // as the minimum GSM X boundary; enforce the expected nightside sign.
+        const double xTail_km = ParseLengthToKm(val,commentText);
+        p.domain.xMin = (xTail_km <= 0.0) ? xTail_km : -xTail_km;
+      }
+      else if (uKey=="BOUNDARY_TYPE") {
+        // Recognize SHUE/BOX declarations. SHUE is stored for provenance and
+        // future use; current standalone Mode3D cutoff still uses the parsed
+        // rectangular/capped bounds for trajectory classification.
+        p.domain.boundaryType=ToUpper(Trim(val));
+      }
+      else if (uKey=="SHUE_R0") {
+        // May be a number or AUTO. Keep as a token because the present domain
+        // object has no Shue implementation yet.
+        p.domain.shueR0Token=Trim(val);
+      }
+      else if (uKey=="SHUE_ALPHA") {
+        // May be a number or AUTO. Keep as a token because the present domain
+        // object has no Shue implementation yet.
+        p.domain.shueAlphaToken=Trim(val);
+      }
+      else {
+        p.domain.raw[uKey]=val;
+        rejectUnknownKeyword();
+      }
     }
     else if (section=="#OUTPUT_DOMAIN") {
       if (uKey=="OUTPUT_MODE") p.output.mode=ToUpper(val);
@@ -2577,9 +2642,29 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="MAX_STEPS") p.numerics.maxSteps=std::stoi(val);
       else if (uKey=="MAX_TRACE_TIME") p.numerics.maxTraceTime_s=std::stod(val);
       else if (uKey=="MAX_TRACE_DISTANCE") p.numerics.maxTraceDistance_Re=std::stod(val);
+      else if (uKey=="N_PARTICLES") {
+        // RoR-style generic particle count. For the forward-mode injector this
+        // is equivalent to FORWARD_N_PARTICLES; cutoff/density backtracking use
+        // their own CUTOFF_* / DS_* counters.
+        p.numerics.nParticles=std::stoi(val);
+        p.mode3dForward.nParticlesPerIter=p.numerics.nParticles;
+      }
+      else if (uKey=="MAX_BOUNCE") {
+        // Reserved compatibility keyword. The present backtracing termination
+        // controls are MAX_STEPS, MAX_TRACE_TIME, MAX_TRACE_DISTANCE, and optional
+        // cutoff/density-specific time caps.
+        p.numerics.maxBounce=std::stoi(val);
+      }
+      else if (uKey=="PITCH_ISOTROPIC") {
+        // Generic RoR boundary-pitch flag. Store it for diagnostics/provenance;
+        // Mode3D density/cutoff backtracking uses CUTOFF_SAMPLING, DS_BOUNDARY_MODE,
+        // and #BOUNDARY_ANISOTROPY for its active angular controls.
+        p.numerics.pitchIsotropic=ToBool(val);
+      }
       else if (uKey=="DENSITY_PARALLEL" || uKey=="DENSITY_BACKEND" ||
                uKey=="MODE3D_DENSITY_PARALLEL" || uKey=="MODE3D_DENSITY_BACKEND" ||
                uKey=="MODE3D_PARALLEL" || uKey=="MODE3D_BACKEND" ||
+               uKey=="GRIDLESS_PARALLEL" || uKey=="GRIDLESS_BACKEND" ||
                uKey=="BACKTRACK_PARALLEL" || uKey=="BACKTRACK_BACKEND" ||
                uKey=="BACKWARD_PARALLEL" || uKey=="BACKWARD_BACKEND") {
         p.mode3d.densityParallelBackend=ToUpper(Trim(val));
@@ -2587,16 +2672,19 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="DENSITY_THREADS" || uKey=="DENSITY_NTHREADS" ||
                uKey=="MODE3D_DENSITY_THREADS" || uKey=="MODE3D_DENSITY_NTHREADS" ||
                uKey=="MODE3D_THREADS" || uKey=="MODE3D_NTHREADS" ||
+               uKey=="GRIDLESS_THREADS" || uKey=="GRIDLESS_NTHREADS" ||
                uKey=="BACKTRACK_THREADS" || uKey=="BACKTRACK_NTHREADS" ||
                uKey=="BACKWARD_THREADS" || uKey=="BACKWARD_NTHREADS") {
         p.mode3d.densityThreads=std::stoi(val);
       }
       else if (uKey=="MODE3D_MPI_SCHEDULER" || uKey=="MODE3D_MPI_BACKEND" ||
+               uKey=="GRIDLESS_MPI_SCHEDULER" || uKey=="GRIDLESS_MPI_BACKEND" ||
                uKey=="BACKTRACK_MPI_SCHEDULER" || uKey=="BACKTRACK_MPI_BACKEND" ||
                uKey=="BACKWARD_MPI_SCHEDULER" || uKey=="BACKWARD_MPI_BACKEND") {
         p.mode3d.mpiScheduler=ToUpper(Trim(val));
       }
       else if (uKey=="MODE3D_MPI_DYNAMIC_CHUNK" || uKey=="MODE3D_MPI_CHUNK" ||
+               uKey=="GRIDLESS_MPI_DYNAMIC_CHUNK" || uKey=="GRIDLESS_MPI_CHUNK" ||
                uKey=="BACKTRACK_MPI_DYNAMIC_CHUNK" || uKey=="BACKTRACK_MPI_CHUNK" ||
                uKey=="BACKWARD_MPI_DYNAMIC_CHUNK" || uKey=="BACKWARD_MPI_CHUNK") {
         p.mode3d.mpiDynamicChunk=std::stoi(val);
@@ -2701,6 +2789,7 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
                uKey=="DENSITY_PARALLEL" || uKey=="DENSITY_BACKEND" ||
                uKey=="MODE3D_DENSITY_PARALLEL" || uKey=="MODE3D_DENSITY_BACKEND" ||
                uKey=="MODE3D_PARALLEL" || uKey=="MODE3D_BACKEND" ||
+               uKey=="GRIDLESS_PARALLEL" || uKey=="GRIDLESS_BACKEND" ||
                uKey=="BACKTRACK_PARALLEL" || uKey=="BACKTRACK_BACKEND" ||
                uKey=="BACKWARD_PARALLEL" || uKey=="BACKWARD_BACKEND") {
         p.mode3d.densityParallelBackend=ToUpper(Trim(val));
@@ -2709,16 +2798,19 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
                uKey=="DENSITY_THREADS" || uKey=="DENSITY_NTHREADS" ||
                uKey=="MODE3D_DENSITY_THREADS" || uKey=="MODE3D_DENSITY_NTHREADS" ||
                uKey=="MODE3D_THREADS" || uKey=="MODE3D_NTHREADS" ||
+               uKey=="GRIDLESS_THREADS" || uKey=="GRIDLESS_NTHREADS" ||
                uKey=="BACKTRACK_THREADS" || uKey=="BACKTRACK_NTHREADS" ||
                uKey=="BACKWARD_THREADS" || uKey=="BACKWARD_NTHREADS") {
         p.mode3d.densityThreads=std::stoi(val);
       }
       else if (uKey=="MODE3D_MPI_SCHEDULER" || uKey=="MODE3D_MPI_BACKEND" ||
+               uKey=="GRIDLESS_MPI_SCHEDULER" || uKey=="GRIDLESS_MPI_BACKEND" ||
                uKey=="BACKTRACK_MPI_SCHEDULER" || uKey=="BACKTRACK_MPI_BACKEND" ||
                uKey=="BACKWARD_MPI_SCHEDULER" || uKey=="BACKWARD_MPI_BACKEND") {
         p.mode3d.mpiScheduler=ToUpper(Trim(val));
       }
       else if (uKey=="MODE3D_MPI_DYNAMIC_CHUNK" || uKey=="MODE3D_MPI_CHUNK" ||
+               uKey=="GRIDLESS_MPI_DYNAMIC_CHUNK" || uKey=="GRIDLESS_MPI_CHUNK" ||
                uKey=="BACKTRACK_MPI_DYNAMIC_CHUNK" || uKey=="BACKTRACK_MPI_CHUNK" ||
                uKey=="BACKWARD_MPI_DYNAMIC_CHUNK" || uKey=="BACKWARD_MPI_CHUNK") {
         p.mode3d.mpiDynamicChunk=std::stoi(val);
@@ -2738,9 +2830,24 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else rejectUnknownKeyword();
     }
     else if (section=="#OUTPUT_OPTIONS") {
-      // Reserved section.  Do not silently accept arbitrary keys: an option placed
-      // here currently has no consumer and would not affect the model output.
-      rejectUnknownKeyword();
+      if (uKey=="OUTPUT_COORDS" || uKey=="COORDS") {
+        // Some RoR files place the coordinate selector in #OUTPUT_OPTIONS rather
+        // than #OUTPUT_DOMAIN. Route it to the same destination.
+        p.output.coords=ToUpper(Trim(val));
+        p.outputOptions[uKey]=val;
+      }
+      else if (uKey=="FLUX_TYPE" || uKey=="OUTPUT_CUTOFF" ||
+               uKey=="OUTPUT_PITCH" || uKey=="OUTPUT_FORMAT" ||
+               uKey=="ENERGY_BINS") {
+        // Recognized RoR output-product metadata. These options are not all
+        // consumed by the current standalone Mode3D implementation, but accepting
+        // and storing them avoids rejecting otherwise valid generated inputs.
+        p.outputOptions[uKey]=val;
+      }
+      else {
+        // Keep strict validation for genuinely unknown output options.
+        rejectUnknownKeyword();
+      }
     }
     else if (section=="#TEMPORAL") {
       if      (uKey=="TEMPORAL_MODE")    p.temporal.mode=ToUpper(val);
@@ -2950,7 +3057,7 @@ if (ToUpper(p.field.model)=="DIPOLE") {
   // cutoff-only inputs should catch invalid backend/thread settings during parsing too.
   if (calcRequestsCutoff || calcRequestsDensityFlux) {
     if (p.mode3d.densityThreads < 0) {
-      exit(__LINE__,__FILE__,"DENSITY_THREADS/MODE3D_THREADS/BACKTRACK_THREADS must be >= 0 (0 means: automatic)");
+      exit(__LINE__,__FILE__,"DENSITY_THREADS/MODE3D_THREADS/GRIDLESS_THREADS/BACKTRACK_THREADS must be >= 0 (0 means: automatic)");
     }
     if (!p.mode3d.densityParallelBackend.empty()) {
       const std::string db = ToUpper(p.mode3d.densityParallelBackend);
@@ -2958,7 +3065,7 @@ if (ToUpper(p.field.model)=="DIPOLE") {
           db!="STD_THREAD" && db!="STD_THREADS" && db!="PTHREAD" && db!="PTHREADS" &&
           db!="SERIAL" && db!="NONE" && db!="OFF") {
         std::ostringstream _exit_msg;
-        _exit_msg << "DENSITY_PARALLEL/MODE3D_PARALLEL/BACKTRACK_PARALLEL must be OPENMP, THREADS, or SERIAL (got '"
+        _exit_msg << "DENSITY_PARALLEL/MODE3D_PARALLEL/GRIDLESS_PARALLEL/BACKTRACK_PARALLEL must be OPENMP, THREADS, or SERIAL (got '"
                   << p.mode3d.densityParallelBackend << "')";
         exit(__LINE__,__FILE__,_exit_msg.str().c_str());
       }
@@ -2973,7 +3080,7 @@ if (ToUpper(p.field.model)=="DIPOLE") {
           ms!="ROUND_ROBIN" && ms!="ROUNDROBIN" &&
           ms!="STATIC" && ms!="CONTIGUOUS" && ms!="BLOCK" && ms!="SLAB") {
         std::ostringstream _exit_msg;
-        _exit_msg << "MODE3D_MPI_SCHEDULER/BACKTRACK_MPI_SCHEDULER must be DYNAMIC, BLOCK_CYCLIC, or STATIC (got '"
+        _exit_msg << "MODE3D_MPI_SCHEDULER/GRIDLESS_MPI_SCHEDULER/BACKTRACK_MPI_SCHEDULER must be DYNAMIC, BLOCK_CYCLIC, or STATIC (got '"
                   << p.mode3d.mpiScheduler << "')";
         exit(__LINE__,__FILE__,_exit_msg.str().c_str());
       }
@@ -2982,7 +3089,7 @@ if (ToUpper(p.field.model)=="DIPOLE") {
 
     if (p.mode3d.mpiDynamicChunk < 0) {
       exit(__LINE__,__FILE__,
-           "MODE3D_MPI_DYNAMIC_CHUNK/BACKTRACK_MPI_DYNAMIC_CHUNK must be >= 0 (0 means: automatic)");
+           "MODE3D_MPI_DYNAMIC_CHUNK/GRIDLESS_MPI_DYNAMIC_CHUNK/BACKTRACK_MPI_DYNAMIC_CHUNK must be >= 0 (0 means: automatic)");
     }
   }
 

@@ -62,6 +62,13 @@ MpiScheduler ResolveMpiScheduler(const EarthUtil::AmpsParam& prm,
   // quick tests on HPC systems where editing the input deck is inconvenient.
   std::string token = prm.mode3d.mpiScheduler;
   if (token.empty()) {
+    // Gridless and Mode3D share the same scheduler resolver.  Keep the original
+    // AMPS_MODE3D_* environment names and also accept explicit AMPS_GRIDLESS_*
+    // aliases for clarity in gridless-only batch scripts.
+    const char* env = std::getenv("AMPS_GRIDLESS_MPI_SCHEDULER");
+    if (env != nullptr) token = env;
+  }
+  if (token.empty()) {
     const char* env = std::getenv("AMPS_MODE3D_MPI_SCHEDULER");
     if (env != nullptr) token = env;
   }
@@ -89,7 +96,7 @@ MpiScheduler ResolveMpiScheduler(const EarthUtil::AmpsParam& prm,
 
   std::ostringstream msg;
   msg << diagnosticContext
-      << ": unknown MODE3D_MPI_SCHEDULER/BACKTRACK_MPI_SCHEDULER value '"
+      << ": unknown MODE3D_MPI_SCHEDULER/GRIDLESS_MPI_SCHEDULER/BACKTRACK_MPI_SCHEDULER value '"
       << token << "'. Valid values: DYNAMIC, BLOCK_CYCLIC, STATIC.";
   exit(__LINE__,__FILE__,msg.str().c_str());
   return MpiScheduler::DYNAMIC;
@@ -100,6 +107,13 @@ long long ResolveMpiDynamicChunk(const EarthUtil::AmpsParam& prm,
                                  long long nGlobalLocations) {
   long long chunk = static_cast<long long>(prm.mode3d.mpiDynamicChunk);
 
+  if (chunk <= 0) {
+    const char* env = std::getenv("AMPS_GRIDLESS_MPI_DYNAMIC_CHUNK");
+    if (env != nullptr && *env != '\0') {
+      try { chunk = std::stoll(std::string(env)); }
+      catch (...) { chunk = 0; }
+    }
+  }
   if (chunk <= 0) {
     const char* env = std::getenv("AMPS_MODE3D_MPI_DYNAMIC_CHUNK");
     if (env != nullptr && *env != '\0') {
@@ -114,7 +128,7 @@ long long ResolveMpiDynamicChunk(const EarthUtil::AmpsParam& prm,
     //   * normally four locations per worker to amortize MPI_Fetch_and_op overhead;
     //   * never larger than the whole job.
     // This is intentionally conservative.  Users with very expensive/variable traces
-    // can reduce MODE3D_MPI_DYNAMIC_CHUNK; users with tiny/cheap locations can increase
+    // can reduce MODE3D_MPI_DYNAMIC_CHUNK/GRIDLESS_MPI_DYNAMIC_CHUNK; users with tiny/cheap locations can increase
     // it to reduce scheduler traffic.
     const long long workers = static_cast<long long>(std::max(1,workerCount));
     chunk = std::max(1LL,4LL*workers);
@@ -198,6 +212,99 @@ long long DynamicMpiLocationScheduler::FetchNextChunkStart() {
   MPI_Win_unlock(0,win_);
 
   return start;
+}
+
+DynamicMpiProgressCounter::DynamicMpiProgressCounter(
+    MPI_Comm comm,
+    long long totalWork,
+    const char* diagnosticContext)
+  : comm_(comm),
+    totalWork_(std::max(0LL,totalWork)),
+    exposedCounter_(0) {
+
+  if (comm_ == MPI_COMM_NULL) {
+    exit(__LINE__,__FILE__,"DynamicMpiProgressCounter: invalid MPI communicator");
+  }
+
+  MPI_Comm_rank(comm_,&rank_);
+
+  // All ranks collectively create the progress-counter window.  Rank 0 exposes one
+  // 64-bit integer; other ranks expose zero bytes but can still atomically update
+  // rank 0's counter.  This is exactly the same RMA pattern used by the dynamic work
+  // scheduler, but the semantic meaning is different: this counter records completed
+  // work, not assigned work.
+  void* base = (rank_ == 0) ? const_cast<long long*>(&exposedCounter_) : nullptr;
+  MPI_Aint nBytes = (rank_ == 0) ? static_cast<MPI_Aint>(sizeof(long long)) : 0;
+
+  const int ierr = MPI_Win_create(base,
+                                  nBytes,
+                                  static_cast<int>(sizeof(long long)),
+                                  MPI_INFO_NULL,
+                                  comm_,
+                                  &win_);
+  if (ierr != MPI_SUCCESS) {
+    std::ostringstream msg;
+    msg << diagnosticContext << ": MPI_Win_create failed for progress counter.";
+    exit(__LINE__,__FILE__,msg.str().c_str());
+  }
+
+  // Make construction ordering explicit.  This is outside the expensive trajectory
+  // loop and therefore has negligible cost.
+  MPI_Barrier(comm_);
+}
+
+DynamicMpiProgressCounter::~DynamicMpiProgressCounter() {
+  if (win_ != MPI_WIN_NULL) {
+    MPI_Win_free(&win_);
+    win_ = MPI_WIN_NULL;
+  }
+}
+
+void DynamicMpiProgressCounter::Add(long long delta) {
+  if (delta <= 0 || totalWork_ <= 0) return;
+
+  // Atomic add to rank 0's exposed counter.  The progress counter is updated only
+  // by MPI rank/main threads after they complete a chunk of local work.  Worker
+  // threads do not call MPI, so this remains compatible with MPI implementations
+  // initialized below MPI_THREAD_MULTIPLE.
+  MPI_Win_lock(MPI_LOCK_EXCLUSIVE,0,0,win_);
+  MPI_Accumulate(&delta,
+                 1,
+                 MPI_LONG_LONG,
+                 0,
+                 0,
+                 1,
+                 MPI_LONG_LONG,
+                 MPI_SUM,
+                 win_);
+  MPI_Win_flush(0,win_);
+  MPI_Win_unlock(0,win_);
+}
+
+long long DynamicMpiProgressCounter::Get() const {
+  if (totalWork_ <= 0) return 0;
+
+  long long value = 0;
+  const long long zero = 0;
+
+  // Fetch-and-add with zero is an atomic read that is safe even while other ranks are
+  // concurrently adding completed chunks.  We use an RMA read instead of directly
+  // looking at rank 0's local memory so the code does not depend on subtle cache
+  // synchronization behavior of passive-target windows.
+  MPI_Win_lock(MPI_LOCK_SHARED,0,0,win_);
+  MPI_Fetch_and_op(const_cast<long long*>(&zero),
+                   &value,
+                   MPI_LONG_LONG,
+                   0,
+                   0,
+                   MPI_SUM,
+                   win_);
+  MPI_Win_flush(0,win_);
+  MPI_Win_unlock(0,win_);
+
+  if (value < 0) value = 0;
+  if (totalWork_ > 0 && value > totalWork_) value = totalWork_;
+  return value;
 }
 
 const char* ParallelBackendName(ParallelBackend backend) {

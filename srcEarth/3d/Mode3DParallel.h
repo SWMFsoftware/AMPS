@@ -21,7 +21,7 @@ enum class ParallelBackend {
 };
 
 
-// Inter-rank work scheduler used by standalone Mode3D backward products.
+// Inter-rank work scheduler used by standalone Mode3D and gridless backward products.
 //
 // BLOCK_CYCLIC preserves the previous deterministic rank assignment:
 //   rank r computes r, r+nRanks, r+2*nRanks, ...
@@ -43,7 +43,7 @@ enum class MpiScheduler {
 const char* MpiSchedulerName(MpiScheduler scheduler);
 
 // Resolve the inter-rank scheduler from input/environment.
-// The input keywords are MODE3D_MPI_SCHEDULER / BACKTRACK_MPI_SCHEDULER.
+// The input keywords are MODE3D_MPI_SCHEDULER / GRIDLESS_MPI_SCHEDULER / BACKTRACK_MPI_SCHEDULER.
 // The environment fallback is AMPS_MODE3D_MPI_SCHEDULER.
 MpiScheduler ResolveMpiScheduler(const EarthUtil::AmpsParam& prm,
                                  const char* diagnosticContext="Mode3D");
@@ -89,6 +89,44 @@ private:
   long long nGlobalLocations_{0};
   long long chunkSize_{1};
   long long exposedCounter_{0};
+};
+
+// Small MPI RMA completion counter used for live progress reporting in dynamic
+// or deterministic collective schedulers.
+//
+// This class is intentionally separate from DynamicMpiLocationScheduler:
+//   * DynamicMpiLocationScheduler counts work that has been ASSIGNED.
+//   * DynamicMpiProgressCounter counts work that has actually COMPLETED.
+//
+// Keeping these counters separate prevents the progress bar from racing ahead when
+// a rank fetches a large chunk but has not finished computing it yet.  All ranks
+// can call Add(delta) from the rank/main thread after a chunk of tasks finishes;
+// rank 0 can periodically call Get() to print an accurate global completion count.
+// No worker thread should call this object, so MPI_THREAD_MULTIPLE is not needed.
+class DynamicMpiProgressCounter {
+public:
+  DynamicMpiProgressCounter(MPI_Comm comm,
+                            long long totalWork,
+                            const char* diagnosticContext="Mode3D progress");
+  ~DynamicMpiProgressCounter();
+
+  DynamicMpiProgressCounter(const DynamicMpiProgressCounter&) = delete;
+  DynamicMpiProgressCounter& operator=(const DynamicMpiProgressCounter&) = delete;
+
+  // Add completed work units to the global counter.  A non-positive delta is ignored.
+  void Add(long long delta);
+
+  // Atomically read the current global completion count without modifying it.
+  long long Get() const;
+
+  long long TotalWork() const { return totalWork_; }
+
+private:
+  MPI_Comm comm_{MPI_COMM_NULL};
+  MPI_Win win_{MPI_WIN_NULL};
+  int rank_{0};
+  long long totalWork_{0};
+  mutable long long exposedCounter_{0};
 };
 
 // Return a stable printable name for logs and diagnostics.

@@ -82,10 +82,10 @@
 //       the number of std::thread workers.
 //
 //   -mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC>
-//       Select the inter-rank scheduler for standalone Mode3D cutoff/density runs.
+//       Select the inter-rank scheduler for standalone Mode3D and gridless cutoff/density runs.
 //
 //   -mode3d-mpi-dynamic-chunk <int>
-//       Number of global locations per dynamic MPI fetch. 0 means automatic.
+//       Number of Mode3D locations or gridless task chunks per dynamic MPI fetch. 0 means automatic.
 //
 //   -cutoff-search <UPPER_SCAN|BINARY>
 //       Select the standalone Mode3D cutoff search algorithm.  UPPER_SCAN is
@@ -190,12 +190,12 @@ namespace EarthUtil {
     int densityThreads{0};
 
     // -mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC>
-    // Inter-rank scheduler for standalone Mode3D backtracking products.
+    // Inter-rank scheduler for standalone Mode3D and gridless backtracking products.
     // Empty string means: use input-file/default value.
     std::string mode3dMpiScheduler{""};
 
     // -mode3d-mpi-dynamic-chunk <int>
-    // Number of global locations fetched per MPI atomic request in DYNAMIC mode.
+    // Number of locations/tasks fetched per MPI atomic request in DYNAMIC mode.
     // 0 means: no CLI override / automatic when used from input defaults.
     int mode3dMpiDynamicChunk{0};
 

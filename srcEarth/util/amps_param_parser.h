@@ -271,6 +271,22 @@ namespace EarthUtil {
     double yMin{-25.0}, yMax{25.0};
     double zMin{-20.0}, zMax{20.0};
     double rInner{2.0}; // [km] inner loss sphere radius
+
+    // Runs-on-Request / CCMC-style inputs may describe the outer boundary with
+    // magnetopause-oriented keywords such as BOUNDARY_TYPE=SHUE, SHUE_R0=AUTO,
+    // and SHUE_ALPHA=AUTO.  The standalone Mode3D code in this source tree still
+    // uses the rectangular/capped domain above for particle classification, but
+    // keeping these tokens in the parsed configuration lets the strict parser
+    // accept RoR files without silently discarding what the user requested.
+    // A future Shue-boundary implementation can consume the stored values here.
+    std::string boundaryType{"BOX"};
+    std::string shueR0Token;
+    std::string shueAlphaToken;
+
+    // Extra boundary metadata recognized for forward compatibility.  This is not
+    // the global unknown-key sink: keys placed here are explicitly accepted
+    // compatibility options.
+    std::map<std::string,std::string> raw;
   };
 
   struct CutoffScan {
@@ -732,6 +748,15 @@ namespace EarthUtil {
     int maxSteps{300000};
     double maxTraceTime_s{7200.0};
 
+    // Compatibility fields for CCMC/Runs-on-Request particle-control keywords.
+    // They are parsed so strict validation accepts the input file.  At present
+    // Mode3D cutoff/density backtracking does not consume all of them directly;
+    // solver-specific particle counts remain controlled by CUTOFF_* and DS_*
+    // settings.
+    int nParticles{0};          // N_PARTICLES, 0 means not specified
+    int maxBounce{0};           // MAX_BOUNCE, 0 means not specified
+    bool pitchIsotropic{true};  // PITCH_ISOTROPIC
+
     // MAX_TRACE_DISTANCE [Re]
     // -----------------------
     // Optional hard cap on the *cumulative path length* traveled by a single
@@ -1130,6 +1155,10 @@ namespace EarthUtil {
 
   struct AmpsParam {
     std::string runId{"UNKNOWN"};
+
+    // Non-physics run metadata from #RUN_INFO.  These keys are useful for
+    // provenance in Runs-on-Request files but do not change the numerical model.
+    std::map<std::string,std::string> runInfo;
 
     CalcMode calc;
     Mode3DOptions mode3d;
