@@ -105,27 +105,45 @@
 //      extra cost of TraceAllowedSharedEx over TraceAllowedShared.
 //
 //======================================================================================
-// CUTOFF RIGIDITY SEARCH (bisection)
+// CUTOFF RIGIDITY SEARCH (penumbra-safe UPPER_SCAN, same idea as Mode3D)
 //======================================================================================
 //
-// For each direction d at each observation point x0:
+// For each direction d at each observation point x0, the production/default search is
+// not a single endpoint-driven binary search.  Endpoint binary search assumes that the
+// trajectory classifier is monotonic in rigidity:
 //
-//   Let R_lo = Rmin (e.g., 0.01 GV), R_hi = Rmax (e.g., 20 GV).
+//   low rigidity  -> FORBIDDEN
+//   high rigidity -> ALLOWED
 //
-//   Binary search for N_bisect iterations (typically 20-30):
-//     R_mid = (R_lo + R_hi) / 2
-//     result = TraceAllowedShared(x0, -d, R_mid)
-//     if ALLOWED: R_hi = R_mid    (can access at this rigidity; try lower)
-//     if FORBIDDEN: R_lo = R_mid  (cannot access; try higher)
+// That assumption fails in penumbral regions, where the access sequence can alternate:
 //
-//   After N_bisect iterations, the cutoff for direction d is R_lo (the highest
-//   rigidity that was classified FORBIDDEN, i.e., the transition from blocked to
-//   unblocked going upward in rigidity).
+//   ALLOWED, FORBIDDEN, ALLOWED, FORBIDDEN, ..., ALLOWED
 //
-//   The effective cutoff for point x0 (ISOTROPIC sampling mode) is:
-//     Rc(x0) = min over all directions d of { cutoff(d) }
+// If Rmin happens to be allowed, a legacy endpoint-binary algorithm can return Rmin even
+// though a higher forbidden island still exists and the physically useful upper cutoff is
+// near the final forbidden-to-allowed transition.  This was the same failure mode fixed in
+// standalone Mode3D.
 //
-//   In VERTICAL sampling mode only d = -r0/|r0| (the local zenith) is used.
+// The default gridless algorithm now mirrors Mode3D:
+//
+//   1. Build a coarse logarithmic rigidity grid from Rmin to Rmax.
+//      Log spacing is important because the useful range can span tens of MV to many GV;
+//      a linear grid would waste samples at high rigidity and may miss low-rigidity
+//      transitions.
+//
+//   2. Evaluate TraceAllowedImpl() at every grid vertex.
+//
+//   3. Starting from Rmax, scan downward until the highest FORBIDDEN grid vertex is found.
+//      The next-higher grid vertex must be on the final allowed branch.
+//
+//   4. Refine only that final FORBIDDEN/ALLOWED bracket by bisection.
+//
+// This returns Rc_upper: the lowest rigidity above which the sampled access is continuous
+// to Rmax.  The legacy endpoint-binary method remains available through
+// CUTOFF_SEARCH_ALGORITHM BINARY for comparison/debugging.
+//
+// The point cutoff for ISOTROPIC sampling remains the minimum cutoff over all sampled
+// arrival directions.  In VERTICAL sampling mode only the local vertical direction is used.
 //
 // Energy conversion:
 //   Kinetic energy Emin [MeV] corresponding to Rc [GV] for species (q, m0):
@@ -2007,6 +2025,11 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     std::cout << "Species         : " << prm.species.name << " (q=" << prm.species.charge_e
               << " e, m=" << prm.species.mass_amu << " amu)\n";
     std::cout << "Rigidity bracket: [" << Rmin << ", " << Rmax << "] GV\n";
+    std::cout << "Cutoff search   : " << prm.cutoff.searchAlgorithm
+              << " (upper-scan N="
+              << ((prm.cutoff.upperScanN > 0) ? std::max(2,prm.cutoff.upperScanN)
+                                               : std::max(8,prm.cutoff.nEnergy))
+              << ")\n";
     std::cout << "CUTOFF_SAMPLING : " << (samplingVertical ? "VERTICAL" : "ISOTROPIC") << "\n";
     if (!samplingVertical) {
       std::cout << "Directions grid : " << dirs.size()
@@ -2046,58 +2069,182 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   //   - If direction never becomes allowed up to Rmax -> return -1 (no cutoff / forbidden).
   //   - Else return the cutoff rigidity for this direction (>= Rmin).
   //====================================================================================
-  auto CutoffForDirection_GV = [&](const V3& x0_m, const V3& dir_unit, double Rmin_GV, double Rmax_GV) -> double {
-    // Backtrace convention: initial velocity points opposite to the desired arrival direction.
+  //====================================================================================
+  // Cutoff search helpers for one (location, arrival-direction) task
+  //====================================================================================
+  //
+  // These helpers intentionally mirror the standalone Mode3D implementation.  The
+  // important behavior is the coarse LOGARITHMIC scan before local bisection:
+  //
+  //   R_i = exp( (1-a_i)*log(Rmin) + a_i*log(Rmax) ),  a_i=i/(N-1)
+  //
+  // The downward scan through those grid vertices finds the highest forbidden sample.
+  // Only that final forbidden/allowed pair is refined by bisection.  This is more robust
+  // than a global endpoint binary search in penumbral regions because it does not assume
+  // that allowed(R) is monotonic over the whole [Rmin,Rmax] interval.
+  //====================================================================================
+
+  auto CutoffUpperScanPointCount = [&]() -> int {
+    // CUTOFF_UPPER_SCAN_N is the explicit production/debug control.  If it is omitted,
+    // reuse CUTOFF_NENERGY so older input decks that already requested a fine cutoff
+    // energy grid automatically get a similarly fine upper-cutoff scan.
+    if (prm.cutoff.upperScanN > 0) return std::max(2, prm.cutoff.upperScanN);
+    return std::max(8, prm.cutoff.nEnergy);
+  };
+
+  auto BuildCutoffSearchGrid_GV = [&](double Rmin_GV, double Rmax_GV, int nScan) -> std::vector<double> {
+    // Build the coarse rigidity vertices used by the penumbra-safe upper-cutoff search.
+    // The grid is local to this one task and is deliberately independent of MPI rank,
+    // scheduler mode, and output ordering.  Therefore SERIAL, STATIC, BLOCK_CYCLIC, and
+    // DYNAMIC MPI execution all test exactly the same rigidities for a given point and
+    // arrival direction.
+    std::vector<double> grid;
+    if (!(Rmax_GV >= Rmin_GV) || !(Rmax_GV > 0.0)) return grid;
+
+    nScan = std::max(2, nScan);
+    grid.reserve((size_t)nScan);
+
+    if (Rmin_GV > 0.0) {
+      // Normal physical branch: rigidities are positive, so use logarithmic spacing.
+      // This concentrates samples by relative interval, which is appropriate when the
+      // cutoff can be anywhere from ~0.01 GV to many GV.
+      const double lmin = std::log(Rmin_GV);
+      const double lmax = std::log(Rmax_GV);
+      for (int i=0; i<nScan; ++i) {
+        const double a = (nScan == 1) ? 0.0 : (double)i/(double)(nScan-1);
+        grid.push_back(std::exp((1.0-a)*lmin + a*lmax));
+      }
+    }
+    else {
+      // Defensive fallback only.  Current rigidity brackets should be strictly positive.
+      for (int i=0; i<nScan; ++i) {
+        const double a = (nScan == 1) ? 0.0 : (double)i/(double)(nScan-1);
+        grid.push_back((1.0-a)*Rmin_GV + a*Rmax_GV);
+      }
+    }
+
+    // Force exact endpoints so diagnostic comparisons and restart/regression tests are not
+    // affected by tiny exp/log roundoff differences.
+    grid.front() = Rmin_GV;
+    grid.back()  = Rmax_GV;
+    return grid;
+  };
+
+  auto RefineForbiddenAllowedTransition_GV = [&](const V3& x0_m,
+                                                 const V3& v0,
+                                                 double Rforbid_GV,
+                                                 double Rallow_GV) -> double {
+    // Refine a bracket that is already known to straddle the FINAL upper-cutoff branch:
+    //   TraceAllowedImpl(Rforbid_GV) == false
+    //   TraceAllowedImpl(Rallow_GV)  == true
+    //   Rforbid_GV < Rallow_GV
+    //
+    // This bisection is local; it does not try to solve the whole possibly non-monotonic
+    // access function.  The coarse high-to-low scan has already selected the uppermost
+    // forbidden sample, so this interval is the one associated with Rc_upper.
+    const double tolAbs_GV = 1.0e-3;
+    const double tolRel    = 1.0e-6;
+    const double tol_GV = std::max(tolAbs_GV,
+                                   tolRel*std::max(std::fabs(Rforbid_GV), std::fabs(Rallow_GV)));
+
+    double lo = Rforbid_GV; // invariant: lo is forbidden
+    double hi = Rallow_GV;  // invariant: hi is allowed
+
+    while ((hi - lo) > tol_GV) {
+      const double mid = 0.5*(lo + hi);
+      const bool allowed = TraceAllowedImpl(prm, field, x0_m, v0, mid, -1.0);
+      if (allowed) hi = mid;
+      else         lo = mid;
+    }
+
+    // Return the allowed side of the final bracket: the smallest allowed rigidity resolved
+    // to the requested tolerance.
+    return hi;
+  };
+
+  auto CutoffForDirectionEndpointBinary_GV = [&](const V3& x0_m,
+                                                  const V3& dir_unit,
+                                                  double Rmin_GV,
+                                                  double Rmax_GV) -> double {
+    // Legacy/debug algorithm.  This is intentionally kept to allow A/B comparisons with
+    // earlier gridless runs, but it is not robust in penumbral cases because it assumes
+    // allowed(R) is monotonic from Rmin to Rmax.
     const V3 v0 = mul(-1.0, dir_unit);
 
-    // Degenerate / already-collapsed bracket protection.
-    //
-    // This can happen after the new per-location upper-bound optimization has
-    // tightened the search interval for later directions of the same location.
-    // If the available interval is already essentially zero, we do not need a full
-    // bisection search any more.
+    if (Rmax_GV < Rmin_GV) return -1.0;
+
     const double intervalTolAbs_GV = 1.0e-3;
     const double intervalTolRel    = 1.0e-6;
     const double intervalTol_GV = std::max(intervalTolAbs_GV,
                                            intervalTolRel*std::max(std::fabs(Rmin_GV), std::fabs(Rmax_GV)));
 
-    if (Rmax_GV < Rmin_GV) return -1.0;
+    if ((Rmax_GV - Rmin_GV) <= intervalTol_GV) return Rmax_GV;
 
-    // Quick endpoint classification:
     const bool alo = TraceAllowedImpl(prm,field,x0_m,v0,Rmin_GV,-1.0);
     const bool ahi = TraceAllowedImpl(prm,field,x0_m,v0,Rmax_GV,-1.0);
 
-    // If already allowed at Rmin, the cutoff for this direction is at/below Rmin.
     if (alo && ahi) return Rmin_GV;
+    if (!ahi)       return -1.0;
 
-    // If still forbidden at Rmax, there is no allowed trajectory in the bracket.
-    if (!ahi) return -1.0;
-
-    // Otherwise: bracket exists (forbidden at Rmin, allowed at Rmax). Refine by bisection.
-    //
-    // UPDATED per request:
-    //   The stopping criterion is no longer a fixed total number of iterations.
-    //   Instead, we stop when the current uncertainty interval [lo,hi] becomes
-    //   sufficiently small in rigidity space.
-    //
-    // Why this is better:
-    //   - It ties the termination directly to the quantity of interest, namely the
-    //     uncertainty of the cutoff rigidity.
-    //   - If the bracket has already been reduced by the per-location optimization,
-    //     the search will naturally terminate sooner.
-    //   - If the user requests a very large initial energy / rigidity range, we no
-    //     longer spend a hardwired number of iterations regardless of the actual
-    //     width remaining.
     double lo=Rmin_GV, hi=Rmax_GV;
-
     while ((hi - lo) > intervalTol_GV) {
       const double mid=0.5*(lo+hi);
       const bool a = TraceAllowedImpl(prm,field,x0_m,v0,mid,-1.0);
       if (a) hi=mid; else lo=mid;
     }
 
-    // "hi" is our conservative estimate of the first allowed rigidity for this direction.
     return hi;
+  };
+
+  auto CutoffForDirectionUpperScan_GV = [&](const V3& x0_m,
+                                             const V3& dir_unit,
+                                             double Rmin_GV,
+                                             double Rmax_GV) -> double {
+    // Production/default algorithm.  This is the gridless equivalent of Mode3D's
+    // CutoffForDirUpperScan_GV().
+    const V3 v0 = mul(-1.0, dir_unit);
+
+    if (Rmax_GV < Rmin_GV) return -1.0;
+
+    const int nScan = CutoffUpperScanPointCount();
+    const std::vector<double> grid = BuildCutoffSearchGrid_GV(Rmin_GV,Rmax_GV,nScan);
+    if (grid.size() < 2) return -1.0;
+
+    // Use a byte vector rather than std::vector<bool>; the latter has a proxy/bit-packed
+    // specialization that is inconvenient for debugging and can surprise future edits.
+    std::vector<unsigned char> allowed(grid.size(),0);
+    for (size_t i=0; i<grid.size(); ++i) {
+      allowed[i] = TraceAllowedImpl(prm,field,x0_m,v0,grid[i],-1.0) ? 1 : 0;
+    }
+
+    // If the largest tested rigidity is still forbidden, the upper cutoff is outside the
+    // requested search bracket.  Preserve the existing missing/no-cutoff sentinel.
+    if (!allowed.back()) return -1.0;
+
+    // Scan downward from Rmax and refine the first forbidden sample encountered.  This is
+    // the final/top forbidden island below the continuously allowed branch.
+    for (int i=(int)grid.size()-2; i>=0; --i) {
+      if (!allowed[(size_t)i]) {
+        return RefineForbiddenAllowedTransition_GV(x0_m,v0,grid[(size_t)i],grid[(size_t)i+1]);
+      }
+    }
+
+    // The entire bracket is allowed, so the upper cutoff is below Rmin or unresolved with
+    // the specified lower bound.  Return Rmin, matching the historical finite convention.
+    return Rmin_GV;
+  };
+
+  auto CutoffForDirection_GV = [&](const V3& x0_m, const V3& dir_unit, double Rmin_GV, double Rmax_GV) -> double {
+    // Central dispatcher so primary cutoff tasks, directional-map tasks, and future debug
+    // calls use the same selected algorithm.
+    const std::string alg = EarthUtil::ToUpper(prm.cutoff.searchAlgorithm);
+
+    if (alg=="BINARY" || alg=="ENDPOINT_BINARY" || alg=="LEGACY_BINARY") {
+      return CutoffForDirectionEndpointBinary_GV(x0_m, dir_unit, Rmin_GV, Rmax_GV);
+    }
+
+    // Default and parser-accepted aliases: UPPER_SCAN / UPPERSCAN / SCAN.
+    return CutoffForDirectionUpperScan_GV(x0_m, dir_unit, Rmin_GV, Rmax_GV);
   };
 
   //====================================================================================
@@ -2721,6 +2868,29 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     }
   };
 
+  //================================================================================
+  // MPI load balancing for gridless cutoff
+  //================================================================================
+  // The original gridless cutoff path assigned a fixed subset of points/directions to
+  // each MPI rank.  That is deterministic but poorly balanced because a cutoff trace
+  // can terminate almost immediately for one rigidity/direction and can run close to
+  // MAX_TRACE_TIME, STEP_LIMIT, or DISTANCE_LIMIT for another.
+  //
+  // To match the Mode3D behavior, the work is represented as a flat global task list:
+  //   task 0 ... totalSamplingTasks-1        : cutoff search samples/directions
+  //   task totalSamplingTasks ... totalTasks : optional directional-map cells
+  //
+  // The selected scheduler controls how MPI ranks consume this same task list:
+  //   DYNAMIC      : ranks atomically fetch chunks from an MPI RMA counter;
+  //   BLOCK_CYCLIC : rank r processes r, r+nRanks, r+2*nRanks, ...;
+  //   STATIC       : rank r processes one contiguous block.
+  //
+  // Only the rank/main thread calls the MPI scheduler and progress counter.  No worker
+  // thread calls MPI, so the implementation does not require MPI_THREAD_MULTIPLE.
+  // Results are accumulated into arrays indexed by the global location/direction id and
+  // are reduced at the end; therefore output order is independent of which rank happens
+  // to process a dynamically assigned task.
+  //================================================================================
   const Earth::Mode3D::MpiScheduler gridlessScheduler =
       Earth::Mode3D::ResolveMpiScheduler(prm,"Gridless cutoff");
   const long long gridlessChunk =

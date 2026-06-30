@@ -1244,6 +1244,21 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     const long long totalTasks = (long long)nPoints * (long long)nE * (long long)nDirBlocks;
     const long long totalTraj  = (long long)nPoints * (long long)nE * (long long)nDirs;
 
+    //===============================================================================
+    // MPI load balancing for gridless density/flux POINTS and TRAJECTORY-like samples
+    //===============================================================================
+    // Each task covers one small direction block for one output point and one energy.
+    // This fine granularity is intentional: individual backtraced directions can have
+    // very different costs because some escape quickly while others mirror, drift, or
+    // run to the configured trajectory limits.
+    //
+    // DYNAMIC uses the same MPI RMA chunk counter as Mode3D.  A rank fetches a chunk of
+    // global task ids, computes those tasks locally, accumulates partial weights in
+    // arrays indexed by the global (point,energy) pair, then fetches another chunk.
+    // The final MPI_SUM reductions assemble the full transmission function on rank 0.
+    // Because tasks are identified by global indices, the result is independent of
+    // scheduling order.
+    //===============================================================================
     const Earth::Mode3D::MpiScheduler gridlessScheduler =
         Earth::Mode3D::ResolveMpiScheduler(prm,"Gridless density POINTS");
     const long long gridlessChunk =
@@ -1830,6 +1845,19 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
       const long long totalTasks = (long long)nPts * (long long)nE * (long long)nDirBlocks;
       const long long totalTraj  = (long long)nPts * (long long)nE * (long long)nDirs;
 
+      //=============================================================================
+      // MPI load balancing for gridless density/flux SHELLS
+      //=============================================================================
+      // The shell calculation uses the same dynamic task-space idea as POINTS, but
+      // the global task id decodes to (shell, latitude, longitude, energy, direction
+      // block).  This avoids assigning a whole latitude band or shell slab to one
+      // MPI rank, which is a common source of poor balance near cutoff boundaries.
+      //
+      // Dynamic scheduling changes only who computes a task; it does not change the
+      // numerical reduction.  Each task contributes to global-indexed local arrays and
+      // the MPI reductions reconstruct the shell in canonical longitude/latitude/shell
+      // order, independent of the order in which ranks fetched chunks.
+      //=============================================================================
       const Earth::Mode3D::MpiScheduler gridlessScheduler =
           Earth::Mode3D::ResolveMpiScheduler(prm,"Gridless density SHELLS");
       const long long gridlessChunk =

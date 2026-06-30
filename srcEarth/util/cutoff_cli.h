@@ -88,12 +88,16 @@
 //       Number of Mode3D locations or gridless task chunks per dynamic MPI fetch. 0 means automatic.
 //
 //   -cutoff-search <UPPER_SCAN|BINARY>
-//       Select the standalone Mode3D cutoff search algorithm.  UPPER_SCAN is
-//       penumbra-safe and is the default; BINARY is the legacy endpoint method.
+//       Select the scalar cutoff-rigidity search algorithm used by both standalone
+//       Mode3D and gridless cutoff.  UPPER_SCAN is penumbra-safe and is the
+//       default; BINARY is the legacy endpoint method.  Mode-specific aliases are
+//       also accepted, including -mode3d-cutoff-search and -gridless-cutoff-search.
 //
 //   -cutoff-upper-scan-n <int>
-//       Number of log-spaced rigidity samples used by UPPER_SCAN.  If omitted,
-//       the solver reuses CUTOFF_NENERGY from the input file.
+//       Number of log-spaced rigidity samples used by UPPER_SCAN before the final
+//       forbidden/allowed bisection.  If omitted, the solver reuses CUTOFF_NENERGY
+//       from the input file.  The aliases -mode3d-cutoff-search-n and
+//       -gridless-cutoff-search-n are accepted.
 //
 //   -max-trace-distance <double>
 //       Override #NUMERICAL MAX_TRACE_DISTANCE from the input file.
@@ -225,11 +229,15 @@ namespace EarthUtil {
 
     // -cutoff-search <UPPER_SCAN|BINARY>
     // Optional override for #CUTOFF_RIGIDITY / CUTOFF_SEARCH_ALGORITHM.
+    // This generic option, together with -mode3d-cutoff-search and
+    // -gridless-cutoff-search aliases, is applied in both standalone backward
+    // modes by ApplyCommonBackwardCli() in srcEarth/main.cpp.
     // Empty means use the input-file/default value.
     std::string cutoffSearchAlgorithm{""};
 
     // -cutoff-upper-scan-n <int>
     // Optional override for #CUTOFF_RIGIDITY / CUTOFF_UPPER_SCAN_N.
+    // Applies to both Mode3D and gridless UPPER_SCAN searches.
     // 0 means no CLI override.
     int cutoffUpperScanN{0};
 

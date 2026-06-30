@@ -86,6 +86,99 @@ bool ApplyCutoffMoverCli(const EarthUtil::CliOptions& cli) {
   return true;
 }
 
+
+bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
+                            EarthUtil::AmpsParam& p,
+                            const char* modeName) {
+  //=================================================================================
+  // Apply CLI overrides shared by standalone Mode3D and gridless backward products.
+  //=================================================================================
+  // Historically these options were added first for Mode3D and were applied only in
+  // the `-mode 3d` branch below.  That was confusing after the gridless cutoff code
+  // was updated to use the same UPPER_SCAN rigidity search and the same MPI scheduler
+  // helper as Mode3D: the parser accepted generic flags such as `-cutoff-search` and
+  // gridless aliases such as `-gridless-mpi-scheduler`, but in `-mode gridless` those
+  // values were not copied into AmpsParam before the solver was launched.
+  //
+  // Keep the command-line semantics here, in one place, so that the following flags
+  // have identical meaning in both standalone execution paths:
+  //
+  //   -cutoff-search <UPPER_SCAN|BINARY>
+  //   -cutoff-upper-scan-n <N>
+  //   -mode3d-mpi-scheduler / -gridless-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC>
+  //   -mode3d-mpi-dynamic-chunk / -gridless-mpi-dynamic-chunk <N>
+  //
+  // The actual algorithms are still implemented in the solvers.  This routine only
+  // validates user-facing tokens and stores the normalized values in AmpsParam.
+  // Returning false lets main() print a clean error and stop before MPI work starts.
+  //=================================================================================
+
+  const std::string modeLabel = (modeName != nullptr && *modeName != '\0') ? modeName : "standalone";
+
+  // Inter-rank scheduler for backward trajectory products.  Both Mode3D and gridless
+  // call Earth::Mode3D::ResolveMpiScheduler(), which reads p.mode3d.mpiScheduler even
+  // when the solver is gridless.  The name is historical; the setting now means the
+  // generic MPI scheduler for backward cutoff/density calculations.
+  if (!cli.mode3dMpiScheduler.empty()) {
+    const std::string sched = EarthUtil::ToUpper(cli.mode3dMpiScheduler);
+    if (sched=="DYNAMIC" || sched=="DYN" || sched=="QUEUE" ||
+        sched=="WORK_QUEUE" || sched=="WORKQUEUE" ||
+        sched=="BLOCK_CYCLIC" || sched=="BLOCKCYCLIC" || sched=="CYCLIC" ||
+        sched=="ROUND_ROBIN" || sched=="ROUNDROBIN" ||
+        sched=="STATIC" || sched=="CONTIGUOUS" || sched=="BLOCK" || sched=="SLAB") {
+      p.mode3d.mpiScheduler = sched;
+    }
+    else {
+      std::cerr << "Error: unknown MPI scheduler value '"
+                << cli.mode3dMpiScheduler
+                << "' for " << modeLabel
+                << ". Valid values: DYNAMIC, BLOCK_CYCLIC, STATIC.\n";
+      return false;
+    }
+  }
+
+  // Chunk size for DYNAMIC MPI scheduling.  A positive command-line value overrides
+  // the input deck.  A zero or absent CLI value keeps the input/default behavior; the
+  // resolver later interprets non-positive values as "automatic" and chooses a chunk
+  // size proportional to the number of workers.
+  if (cli.mode3dMpiDynamicChunk > 0) {
+    p.mode3d.mpiDynamicChunk = cli.mode3dMpiDynamicChunk;
+  }
+
+  // Penumbra-safe cutoff search.  UPPER_SCAN first evaluates a log-spaced rigidity
+  // grid, searches from high to low rigidity for the highest forbidden sample, and
+  // only then bisects the final forbidden/allowed bracket.  BINARY restores the old
+  // endpoint method for reproducibility tests.  The setting is intentionally generic
+  // because both Mode3D and gridless cutoff now use the same search definition.
+  if (!cli.cutoffSearchAlgorithm.empty()) {
+    const std::string alg = EarthUtil::ToUpper(cli.cutoffSearchAlgorithm);
+    if (alg=="UPPER_SCAN" || alg=="UPPERSCAN" || alg=="UPPER" ||
+        alg=="SCAN" || alg=="PENUMBRA") {
+      p.cutoff.searchAlgorithm = "UPPER_SCAN";
+    }
+    else if (alg=="BINARY" || alg=="ENDPOINT_BINARY" ||
+            alg=="LEGACY_BINARY" || alg=="LEGACY") {
+      p.cutoff.searchAlgorithm = "BINARY";
+    }
+    else {
+      std::cerr << "Error: unknown cutoff-search algorithm '"
+                << cli.cutoffSearchAlgorithm
+                << "' for " << modeLabel
+                << ". Valid values: UPPER_SCAN or BINARY.\n";
+      return false;
+    }
+  }
+
+  // Number of log-spaced samples used by UPPER_SCAN before local bisection.  The CLI
+  // parser already rejects values smaller than 2 when the option is present.  Here a
+  // positive value simply overrides CUTOFF_UPPER_SCAN_N from the input file.
+  if (cli.cutoffUpperScanN > 0) {
+    p.cutoff.upperScanN = cli.cutoffUpperScanN;
+  }
+
+  return true;
+}
+
 } // namespace
 
 extern int nZenithElements;
@@ -1526,6 +1619,13 @@ int main(int argc,char **argv) {
 
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
 
+        // Apply command-line overrides that are common to the standalone backward
+        // products before dispatching to the gridless cutoff or density/flux solver.
+        // This is important for options such as -cutoff-search and
+        // -gridless-mpi-scheduler: they are parsed by the generic CLI layer, but the
+        // solver sees them only after they are copied into AmpsParam here.
+        if (!ApplyCommonBackwardCli(cli,p,"gridless")) return 1;
+
 	//set up mover type used in the calculation 
         if (!ApplyCutoffMoverCli(cli)) return 1;
 
@@ -1565,6 +1665,11 @@ int main(int argc,char **argv) {
         InitStandaloneSpiceBeforeParamParsing("3d");
 
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
+
+        // Apply command-line overrides shared by Mode3D and gridless backward
+        // calculations.  This includes the penumbra-safe cutoff-search controls
+        // and the dynamic MPI scheduler controls.
+        if (!ApplyCommonBackwardCli(cli,p,"mode 3d")) return 1;
 
         // Mode3D-specific CLI overrides. Defaults are deliberately conservative:
         // do not write the potentially large initialized-mesh Tecplot file, and
@@ -1607,30 +1712,8 @@ int main(int argc,char **argv) {
         }
         if (cli.densityThreads > 0) p.mode3d.densityThreads = cli.densityThreads;
 
-        // Inter-rank scheduler for standalone Mode3D backward products.  This controls
-        // how MPI ranks receive global observation locations.  DYNAMIC uses the new
-        // MPI one-sided work queue; BLOCK_CYCLIC/STATIC are deterministic fallback
-        // schedulers.  The actual scheduler object is created inside the Mode3D cutoff
-        // and density routines after MPI has been initialized.
-        if (!cli.mode3dMpiScheduler.empty()) {
-          const std::string sched = EarthUtil::ToUpper(cli.mode3dMpiScheduler);
-          if (sched=="DYNAMIC" || sched=="DYN" || sched=="QUEUE" ||
-              sched=="WORK_QUEUE" || sched=="WORKQUEUE" ||
-              sched=="BLOCK_CYCLIC" || sched=="BLOCKCYCLIC" || sched=="CYCLIC" ||
-              sched=="ROUND_ROBIN" || sched=="ROUNDROBIN" ||
-              sched=="STATIC" || sched=="CONTIGUOUS" || sched=="BLOCK" || sched=="SLAB") {
-            p.mode3d.mpiScheduler = sched;
-          }
-          else {
-            std::cerr << "Error: unknown -mode3d-mpi-scheduler/-gridless-mpi-scheduler value '"
-                      << cli.mode3dMpiScheduler
-                      << "'. Valid values: DYNAMIC, BLOCK_CYCLIC, STATIC.\n";
-            return 1;
-          }
-        }
-        if (cli.mode3dMpiDynamicChunk > 0) {
-          p.mode3d.mpiDynamicChunk = cli.mode3dMpiDynamicChunk;
-        }
+        // Generic MPI-scheduler CLI overrides are applied by ApplyCommonBackwardCli()
+        // immediately after parsing AMPS_PARAM.in.
 
         // Optional single-point Mode3D cutoff diagnostic.  This does not change the
         // main cutoff map; it only writes a rigidity-classification scan before the
@@ -1662,24 +1745,9 @@ int main(int argc,char **argv) {
         if (!cli.cutoffDebugExitFile.empty()) {
           p.cutoff.debugExitFile = cli.cutoffDebugExitFile;
         }
-        if (!cli.cutoffSearchAlgorithm.empty()) {
-          const std::string alg = EarthUtil::ToUpper(cli.cutoffSearchAlgorithm);
-          if (alg=="UPPER_SCAN" || alg=="UPPER" || alg=="SCAN" || alg=="PENUMBRA") {
-            p.cutoff.searchAlgorithm = "UPPER_SCAN";
-          }
-          else if (alg=="BINARY" || alg=="ENDPOINT_BINARY" || alg=="LEGACY_BINARY") {
-            p.cutoff.searchAlgorithm = "BINARY";
-          }
-          else {
-            std::cerr << "Error: unknown -cutoff-search algorithm '"
-                      << cli.cutoffSearchAlgorithm
-                      << "'. Valid values: UPPER_SCAN or BINARY.\n";
-            return 1;
-          }
-        }
-        if (cli.cutoffUpperScanN > 0) {
-          p.cutoff.upperScanN = cli.cutoffUpperScanN;
-        }
+        // Generic cutoff-search CLI overrides are applied by ApplyCommonBackwardCli()
+        // immediately after parsing AMPS_PARAM.in so the same -cutoff-search and
+        // -cutoff-upper-scan-n flags affect both -mode 3d and -mode gridless.
 
         // Keep the trajectory integrator identical to the gridless path when
         // the user selects a mover on the command line.

@@ -954,9 +954,11 @@ CUTOFF_DEBUG_EXIT_FILE        trajectory-exit diagnostic output file name
 ```
 
 
-The default `UPPER_SCAN` cutoff search is penumbra-safe. It samples `TraceAllowed3D(R)` from `CUTOFF_EMIN` to `CUTOFF_EMAX`, scans downward from the highest rigidity to find the highest forbidden sample, and then bisects the final forbidden/allowed transition. This avoids the old endpoint-binary failure in which a low-rigidity allowed pocket caused the solver to return `Rmin` for high-latitude dipole-shell points. Use `CUTOFF_SEARCH_ALGORITHM BINARY` only to reproduce the legacy endpoint-only behavior.
+The default `UPPER_SCAN` cutoff search is penumbra-safe and is used by both standalone `mode 3d` and gridless cutoff. It builds a logarithmic rigidity grid from `CUTOFF_EMIN`/`CUTOFF_EMAX`, evaluates the trajectory classifier at each grid vertex, scans downward from the highest rigidity to find the highest forbidden sample, and then bisects the final forbidden/allowed transition. This avoids the old endpoint-binary failure in which a low-rigidity allowed pocket caused the solver to return `Rmin` for high-latitude dipole-shell points. Use `CUTOFF_SEARCH_ALGORITHM BINARY` only to reproduce the legacy endpoint-only behavior.
 
-The debug scan writes a table with `R_GV`, the actual `TraceAllowed3D`
+The command-line form is also shared by both modes. For example, both `-mode 3d` and `-mode gridless` honor `-cutoff-search UPPER_SCAN` and `-cutoff-upper-scan-n <N>`. The mode-specific aliases `-mode3d-cutoff-search` and `-gridless-cutoff-search` are accepted for clarity in batch scripts, but they write to the same internal cutoff-search settings.
+
+The Mode3D debug scan writes a table with `R_GV`, the actual trajectory-classifier
 classification, and the analytic Störmer vertical cutoff when `FIELD_MODEL` is
 `DIPOLE`. It is useful when a shell map returns the lower rigidity bound at only
 some latitude bands: the table shows whether `Rmin` is truly being classified as
@@ -1178,7 +1180,7 @@ Common options:
     In standalone Mode3D cutoff runs, write the one-point trajectory-exit diagnostic. Optional: -cutoff-debug-exit-r <R_GV>, -cutoff-debug-exit-n <N>, and -cutoff-debug-exit-file <file>.
 
 -cutoff-search <UPPER_SCAN|BINARY>
-    Select the cutoff-search algorithm. UPPER_SCAN is the default penumbra-safe upper-cutoff search; BINARY restores the legacy endpoint-only bisection. Optional: -cutoff-upper-scan-n <N>.
+    Select the cutoff-search algorithm in both standalone Mode3D and gridless cutoff. UPPER_SCAN is the default penumbra-safe upper-cutoff search; BINARY restores the legacy endpoint-only bisection. Optional: -cutoff-upper-scan-n <N>. Mode-specific aliases are also accepted: -mode3d-cutoff-search, -gridless-cutoff-search, -mode3d-cutoff-search-n, and -gridless-cutoff-search-n.
 
 -density-parallel <OPENMP|THREADS|SERIAL>
     Select the shared-memory backend for Mode3D backward products within each MPI process. Despite the name, this option now applies to both cutoff and density/flux calculations. OPENMP preserves the OpenMP loops. THREADS uses direct std::thread workers over observation locations and suppresses nested OpenMP inside those workers. SERIAL disables intra-rank shared-memory parallelism.

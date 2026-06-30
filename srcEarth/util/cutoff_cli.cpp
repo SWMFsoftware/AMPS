@@ -50,6 +50,8 @@
 //     -mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC> MPI-rank scheduler.
 //       Gridless aliases: -gridless-mpi-scheduler, -gridless-mpi-dynamic-chunk.
 //     -mode3d-mpi-dynamic-chunk <int>                    locations per MPI fetch.
+//     -cutoff-search <UPPER_SCAN|BINARY>                 cutoff search in 3d/gridless.
+//     -cutoff-upper-scan-n <int>                         log-grid samples for UPPER_SCAN.
 //
 //   See amps_param_parser.h for a full description of the input file format.
 //
@@ -207,13 +209,23 @@ CliOptions ParseCli(int argc,char** argv) {
     }
     else if (a=="-cutoff-search" || a=="--cutoff-search" ||
              a=="-cutoff-search-algorithm" || a=="--cutoff-search-algorithm" ||
-             a=="-mode3d-cutoff-search" || a=="--mode3d-cutoff-search") {
+             a=="-mode3d-cutoff-search" || a=="--mode3d-cutoff-search" ||
+             a=="-gridless-cutoff-search" || a=="--gridless-cutoff-search" ||
+             a=="-backtrack-cutoff-search" || a=="--backtrack-cutoff-search") {
+      // Select the scalar cutoff-rigidity search algorithm used by both standalone
+      // Mode3D and gridless cutoff.  The option is kept generic because the actual
+      // solver mode is chosen later by -mode; here we only store the requested token.
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-search");
       opt.cutoffSearchAlgorithm=argv[++i];
     }
     else if (a=="-cutoff-upper-scan-n" || a=="--cutoff-upper-scan-n" ||
              a=="-cutoff-search-n" || a=="--cutoff-search-n" ||
-             a=="-mode3d-cutoff-search-n" || a=="--mode3d-cutoff-search-n") {
+             a=="-mode3d-cutoff-search-n" || a=="--mode3d-cutoff-search-n" ||
+             a=="-gridless-cutoff-search-n" || a=="--gridless-cutoff-search-n" ||
+             a=="-gridless-cutoff-upper-scan-n" || a=="--gridless-cutoff-upper-scan-n" ||
+             a=="-backtrack-cutoff-search-n" || a=="--backtrack-cutoff-search-n") {
+      // Number of log-spaced samples used by the UPPER_SCAN pre-scan before the
+      // final local bisection.  Applies to both -mode 3d and -mode gridless.
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-upper-scan-n");
       opt.cutoffUpperScanN=std::stoi(argv[++i]);
       if (opt.cutoffUpperScanN < 2)
@@ -443,14 +455,16 @@ std::string HelpMessage(const char* progName) {
   out << "      CUTOFF_DEBUG_EXIT_LON/LAT/ALT/R_GV/N/FILE.\n\n";
 
   out << "  -cutoff-search | --cutoff-search <UPPER_SCAN|BINARY>   (optional)\n";
-  out << "      In standalone -mode 3d cutoff runs, select the rigidity-search algorithm.\n";
-  out << "      UPPER_SCAN is the default and is penumbra-safe: it scans from Rmin to\n";
-  out << "      Rmax, finds the highest forbidden sampled rigidity, then bisects the\n";
-  out << "      final forbidden/allowed transition. BINARY restores the legacy endpoint\n";
-  out << "      bisection and assumes TraceAllowed(R) is monotonic.\n";
-  out << "      Optional control: --cutoff-upper-scan-n <N>. If omitted, UPPER_SCAN\n";
-  out << "      uses CUTOFF_NENERGY samples. Input-file equivalents are\n";
-  out << "      CUTOFF_SEARCH_ALGORITHM and CUTOFF_UPPER_SCAN_N.\n\n";
+  out << "      Select the scalar cutoff-rigidity search algorithm in both standalone\n";
+  out << "      -mode 3d and -mode gridless cutoff runs. UPPER_SCAN is the default and\n";
+  out << "      is penumbra-safe: it first evaluates a log-spaced rigidity grid from\n";
+  out << "      Rmin to Rmax, scans from high to low rigidity for the highest forbidden\n";
+  out << "      sample, then bisects only that final forbidden/allowed interval. BINARY\n";
+  out << "      restores the legacy endpoint bisection and assumes TraceAllowed(R) is\n";
+  out << "      monotonic. Gridless aliases: --gridless-cutoff-search and\n";
+  out << "      --gridless-cutoff-search-n. Optional control: --cutoff-upper-scan-n <N>.\n";
+  out << "      If omitted, UPPER_SCAN uses CUTOFF_NENERGY samples. Input-file\n";
+  out << "      equivalents are CUTOFF_SEARCH_ALGORITHM and CUTOFF_UPPER_SCAN_N.\n\n";
 
   out << "  -density-parallel | --density-parallel <OPENMP|THREADS|SERIAL>   (optional)\n";
   out << "      Select the Mode3D density-backtracking shared-memory backend inside\n";
