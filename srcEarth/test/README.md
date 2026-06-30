@@ -67,3 +67,24 @@ python srcEarth/test/C2/run_C2.py --mode gridless
 C2 also accepts `--max-trace-time` and `--max-trace-distance`; these values are
 written into the generated input file so the effect of finite-time or
 finite-distance trajectory classification can be tested explicitly.
+
+## C3 — Penumbra, Rc_upper, and UPPER_SCAN regression
+
+C3 targets the high-latitude outer-shell dipole point where a simple endpoint
+binary search can collapse to the lower rigidity bound.  It runs BINARY and
+UPPER_SCAN by default and applies the PASS/FAIL gate to UPPER_SCAN.
+
+```bash
+python srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval ANALYTIC
+python srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval MESH
+python srcEarth/test/C3/run_C3.py --mode gridless
+```
+
+The target is `lat=±60 deg`, `alt=9000 km`, where the analytical vertical
+Størmer cutoff is about `0.160 GV`.  Since `CUTOFF_EMIN=1 MeV/n` corresponds to
+`Rmin≈0.043331 GV`, a numerical result near `Rmin` indicates lower-boundary
+collapse or long-time leakage rather than the true upper cutoff.
+
+C3 accepts `--max-trace-time`, `--max-trace-distance`, and `--dt-trace` so the
+finite-time / finite-distance trajectory classification sensitivity can be
+studied explicitly.

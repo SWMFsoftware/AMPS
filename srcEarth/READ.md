@@ -1646,3 +1646,343 @@ mpirun -np 8 ./amps -mode 3d_forward -i forward3d.in -forward-niter 1000 -forwar
 - Bruno, A. et al. (2014/2016), PAMELA SEP trajectory-analysis papers, including arXiv:1412.1765 and arXiv:1601.05407. These papers use realistic geomagnetic backtracing/asymptotic exposure to reconstruct SEP spectra and pitch-angle distributions.
 - Adriani, O. et al. (2016), *PAMELA's measurements of geomagnetic cutoff variations during the 14 December 2006 storm*, arXiv:1602.05509. This is a direct storm-time proton cutoff-latitude validation target.
 - Dmitriev, A. V., Jayachandran, P. T., and Tsai, L.-C. (2013), *Elliptical model of cutoff boundaries for the solar energetic particles measured by POES satellites in December 2006*, arXiv:1305.6710. This provides an empirical SEP cutoff-boundary comparison for high-latitude flux penetration.
+
+---
+
+## Validation test suite (`srcEarth/test`)
+
+The directory `srcEarth/test` contains executable regression/validation tests for
+the AMPS SEP geospace cutoff, density, and flux products.  Each validation test
+is placed in its own subdirectory, for example `srcEarth/test/C1`, and contains:
+
+* a Python driver script that launches AMPS, parses the output, and reports
+  PASS/FAIL;
+* the AMPS input file used by the test;
+* analytical reference values or external reference tables when applicable;
+* a local README describing the purpose of the test.
+
+The scripts are intended to be run from the directory containing the `amps`
+executable.  AMPS is launched through `mpirun`; every script accepts the common
+parallel options:
+
+```bash
+-np N       number of MPI ranks, default 4
+-nt N       number of threads per MPI rank, default 16
+--amps EXE  AMPS executable path, default ./amps
+--mpirun EXE MPI launcher, default mpirun
+```
+
+The `-np` and `-nt` defaults provide a compact validation
+configuration used for the geospace backward-tracing tests: enough MPI ranks to
+exercise the inter-rank scheduler and enough threads per rank to exercise the
+intra-rank dynamic work queue.
+
+### C1 — Pure dipole vertical Størmer cutoff
+
+Directory: `srcEarth/test/C1`
+
+Driver:
+
+```bash
+python srcEarth/test/C1/run_C1.py -np 4 -nt 16
+```
+
+Purpose.  C1 validates the most basic cutoff calculation before any IGRF,
+Tsyganenko, SWMF, density, or flux validation is attempted.  The test uses
+standalone `-mode 3d`, a centered aligned dipole, no electric field, vertical
+arrival directions, two spherical shells, and the shared `UPPER_SCAN` cutoff
+algorithm.  The reference solution is the analytical vertical Størmer cutoff,
+
+```text
+Rc = R0 cos^4(lambda) / r_RE^2,
+```
+
+where `lambda` is magnetic latitude and `r_RE` is geocentric radius in Earth
+radii.  This test primarily checks rigidity/energy conversion, charge/sign
+convention, vertical backtracing, the Mode3D shell output path, and the
+consistency of the numerical cutoff with the analytical dipole limit.
+
+Input files:
+
+```text
+srcEarth/test/C1/AMPS_PARAM_C1.in          # backward-compatible Mode3D alias
+srcEarth/test/C1/AMPS_PARAM_C1_mode3d.in   # parser-compatible Mode3D template
+srcEarth/test/C1/AMPS_PARAM_C1_gridless.in # parser-compatible gridless template
+```
+
+The active keywords in these C1 templates are kept close to the working
+CCMC/RoR-style `AMPS_PARAM_test.in` layout.  Newer validation controls that may
+not be accepted as input-file keywords by every checkout are passed by the Python
+harness on the AMPS command line.  Examples are `-cutoff-search UPPER_SCAN`,
+`-mode3d-field-eval ANALYTIC`, `-mode3d-mpi-scheduler`, and the thread-count
+options.  Use `--no-cutoff-search-cli` only as a fallback for older CLI builds.
+
+Reference values:
+
+```text
+srcEarth/test/C1/reference_C1_stormer.csv
+```
+
+AMPS output parsed by the test:
+
+```text
+cutoff_3d_shells_dipole_compare.dat
+```
+
+Test artifacts written to the run directory:
+
+```text
+C1_amps.log
+C1_summary.csv
+C1_result.json
+C1_stormer_comparison.png   # written when matplotlib is available
+```
+
+Acceptance logic.  The script compares the longitude-averaged numerical cutoff
+at latitudes ±60°, ±30°, and 0° against the independent Størmer reference at 500
+km and 9000 km.  Mid-latitude points are checked more tightly than high-latitude
+points because high-latitude access is more sensitive to the finite domain,
+penumbra structure, and mesh interpolation.  The analytical `Rc_vert_GV` column
+written by AMPS is also compared against the independent reference table to catch
+accidental changes in constants or units.
+
+A failing C1 result should be treated as a gate failure: later IGRF,
+Tsyganenko, scheduler, density, and event-level tests should not be interpreted
+until the pure-dipole cutoff baseline is fixed.
+
+---
+
+## Validation test harness: `srcEarth/test`
+
+Executable validation tests are stored under `srcEarth/test`.  Each test has its
+own directory containing a Python driver, AMPS input files, and any analytical or
+external reference data needed by the test.  The Python drivers are launched from
+the directory containing the `amps` executable and run AMPS through `mpirun`.
+
+Common options used by the test harness are:
+
+```bash
+-np <N>     number of MPI ranks passed to mpirun; default 4
+-nt <N>     number of threads per MPI rank; default 16
+--amps      path to the AMPS executable; default ./amps
+--mpirun    MPI launcher; default mpirun
+--skip-run  analyze existing output in the test work directory
+```
+
+### C1 — pure dipole vertical Størmer cutoff
+
+C1 is the first cutoff-regression test.  It validates the vertical cutoff in a
+centered aligned dipole against the analytical Størmer expression
+`Rc = R0 cos^4(lambda)/r_RE^2`.  It supports both standalone Mode3D and gridless
+execution:
+
+```bash
+python srcEarth/test/C1/run_C1.py --mode 3d -np 4 -nt 16
+python srcEarth/test/C1/run_C1.py --mode gridless -np 4 -nt 16
+```
+
+For Mode3D, C1 also exposes the field-evaluation backend used by the trajectory
+tracer:
+
+```bash
+python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC
+python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval MESH
+```
+
+The `ANALYTIC` case passes the AMPS CLI option
+`-mode3d-field-eval ANALYTIC`, for example:
+
+```bash
+mpirun -np 4 ./amps -mode 3d -i AMPS_PARAM_C1.in \
+  -mode3d-field-eval ANALYTIC
+```
+
+The C1 input is parser-compatible and close to the working
+`AMPS_PARAM_test.in` file: it does not activate `#TEMPORAL`, does not use active
+`#END`, and leaves current-code controls such as UPPER_SCAN and dynamic
+scheduler selection to the CLI.
+
+This is important because it bypasses mesh interpolation for analytic background
+fields such as the centered dipole and the Tsyganenko family, isolating the
+particle pusher, cutoff search, and trajectory classifier.  The `MESH` case keeps
+the mesh-stored Mode3D path and is therefore the appropriate companion test for
+field materialization and interpolation effects.
+
+### C2 — dipole longitude and north/south symmetry
+
+Directory: `srcEarth/test/C2`
+
+Driver:
+
+```bash
+python srcEarth/test/C2/run_C2.py -np 4 -nt 16
+```
+
+Purpose.  C2 is the symmetry companion to C1.  In a centered aligned dipole, the
+vertical Størmer cutoff depends only on magnetic latitude and geocentric radius,
+not on longitude, and it is symmetric between `+lambda` and `-lambda`.  C2 runs a
+9000 km shell and verifies two quantities:
+
+```text
+max_lon(Rc) - min_lon(Rc) at fixed latitude
+Rc(+latitude, longitude) - Rc(-latitude, longitude)
+```
+
+The input uses the parser-compatible shell syntax supported by the current AMPS
+input reader:
+
+```text
+#OUTPUT_DOMAIN
+OUTPUT_MODE            SHELLS
+SHELL_COUNT            1
+SHELL_ALTS_KM          9000.0
+SHELL_RES_DEG          30
+```
+
+The shorthand sometimes used in the validation-plan prose, for example
+`SHELL_LON_DEG` or `SHELL_LAT_DEG`, is not used because it is not a recognized
+parser keyword.  The Python script extracts the required points from the full
+shell output.
+
+Execution examples:
+
+```bash
+python srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval ANALYTIC
+python srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval MESH
+python srcEarth/test/C2/run_C2.py --mode gridless
+python srcEarth/test/C2/run_C2.py --mode gridless --max-trace-distance 300
+```
+
+Input files:
+
+```text
+srcEarth/test/C2/AMPS_PARAM_C2.in          # backward-compatible Mode3D alias
+srcEarth/test/C2/AMPS_PARAM_C2_mode3d.in   # parser-compatible Mode3D template
+srcEarth/test/C2/AMPS_PARAM_C2_gridless.in # parser-compatible gridless template
+```
+
+Reference values:
+
+```text
+srcEarth/test/C2/reference_C2_stormer_symmetry.csv
+```
+
+AMPS output parsed by the test:
+
+```text
+cutoff_3d_shells_dipole_compare.dat
+cutoff_gridless_shells_dipole_compare.dat
+```
+
+Test artifacts written to the run directory:
+
+```text
+C2_amps.log
+C2_longitude_summary.csv
+C2_north_south_summary.csv
+C2_result.json
+C2_symmetry.png   # written when matplotlib is available
+```
+
+Acceptance logic.  C2 primarily gates symmetry, while C1 remains the absolute
+Størmer cutoff gate.  The C2 script reports absolute Størmer residuals as
+diagnostics but uses longitude spread and north/south paired differences for
+PASS/FAIL.  This makes C2 useful for diagnosing finite-domain, finite-time, or
+finite-distance classification artifacts: such artifacts often appear as a
+longitude-dependent cutoff on a formally longitude-symmetric dipole field.
+
+### C3 — penumbra, Rc_upper, and UPPER_SCAN regression
+
+Directory: `srcEarth/test/C3`
+
+Driver:
+
+```bash
+python srcEarth/test/C3/run_C3.py -np 4 -nt 16
+```
+
+Purpose.  C3 checks the cutoff-search algorithm at the high-latitude outer-shell
+point that is most sensitive to non-monotonic allowed/forbidden rigidity access:
+
+```text
+lon = 0 deg
+lat = -60 deg
+alt = 9000 km
+FIELD_MODEL = DIPOLE
+CUTOFF_SAMPLING = VERTICAL
+```
+
+For the centered aligned dipole, the analytical vertical Størmer cutoff at this
+point is about `0.159984 GV`.  The C3 input sets `CUTOFF_EMIN=1 MeV/n`, which is
+`Rmin≈0.043331 GV` for protons.  A result close to this lower rigidity bound is a
+lower-boundary collapse or low-rigidity leakage signature and should not be
+accepted as the upper cutoff.
+
+The script runs two search algorithms by default:
+
+```text
+BINARY      legacy/diagnostic endpoint-binary search
+UPPER_SCAN  production search used for validation
+```
+
+Only `UPPER_SCAN` is a PASS/FAIL gate by default.  The BINARY run is archived and
+reported because it is useful for diagnosing the historical endpoint-binary
+failure, but the harness does not require BINARY to fail unless
+`--require-binary-collapse` is specified.
+
+Execution examples:
+
+```bash
+python srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval ANALYTIC
+python srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval MESH
+python srcEarth/test/C3/run_C3.py --mode gridless
+python srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN --cutoff-scan-n 200
+python srcEarth/test/C3/run_C3.py --mode gridless --max-trace-distance 300
+```
+
+Input files:
+
+```text
+srcEarth/test/C3/AMPS_PARAM_C3.in          # backward-compatible Mode3D alias
+srcEarth/test/C3/AMPS_PARAM_C3_mode3d.in   # parser-compatible Mode3D template
+srcEarth/test/C3/AMPS_PARAM_C3_gridless.in # parser-compatible gridless template
+```
+
+Reference values:
+
+```text
+srcEarth/test/C3/reference_C3_penumbra.csv
+```
+
+The C3 templates keep the parser-compatible shell syntax:
+
+```text
+#OUTPUT_DOMAIN
+OUTPUT_MODE            SHELLS
+SHELL_COUNT            1
+SHELL_ALTS_KM          9000.0
+SHELL_RES_DEG          30
+```
+
+and the script extracts `lat=±60 deg` and selected longitudes from the shell
+output.  The templates also include an active `MAX_TRACE_DISTANCE` keyword.  This
+is deliberate: C3 is sensitive to long-time numerical leakage of quasi-trapped
+low-rigidity trajectories, so both time and cumulative-distance caps should be
+recorded in the validation artifacts.
+
+AMPS output parsed by the test:
+
+```text
+cutoff_3d_shells_dipole_compare.dat
+cutoff_gridless_shells_dipole_compare.dat
+```
+
+Test artifacts written to the run directory:
+
+```text
+C3_summary.csv
+C3_result.json
+C3_penumbra_comparison.png   # written when matplotlib is available
+binary/C3_binary_amps.log
+upper_scan/C3_upper_scan_amps.log
+```
