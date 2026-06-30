@@ -97,6 +97,37 @@ CliOptions ParseCli(int argc,char** argv) {
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density-mode");
       opt.densityMode=argv[++i];
     }
+    else if (a=="-density-transmission-mode" || a=="--density-transmission-mode" ||
+             a=="-density-transmission" || a=="--density-transmission" ||
+             a=="-ds-transmission-mode" || a=="--ds-transmission-mode") {
+      // Select how the density/flux solver samples the transmission function T(E,Omega).
+      // DIRECT keeps the legacy energy grid.  SCAN and ADAPTIVE use a log-spaced
+      // rigidity grid, which is more appropriate near cutoffs and penumbra.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density-transmission-mode");
+      opt.densityTransmissionMode=argv[++i];
+    }
+    else if (a=="-density-transmission-scan-n" || a=="--density-transmission-scan-n" ||
+             a=="-density-transmission-n" || a=="--density-transmission-n" ||
+             a=="-ds-transmission-scan-n" || a=="--ds-transmission-scan-n") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density-transmission-scan-n");
+      opt.densityTransmissionScanN=std::stoi(argv[++i]);
+      if (opt.densityTransmissionScanN < 0)
+        exit(__LINE__,__FILE__,"-density-transmission-scan-n must be >= 0");
+    }
+    else if (a=="-density-transmission-refine-n" || a=="--density-transmission-refine-n" ||
+             a=="-ds-transmission-refine-n" || a=="--ds-transmission-refine-n") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density-transmission-refine-n");
+      opt.densityTransmissionRefineN=std::stoi(argv[++i]);
+      if (opt.densityTransmissionRefineN < 0)
+        exit(__LINE__,__FILE__,"-density-transmission-refine-n must be >= 0");
+    }
+    else if (a=="-density-transmission-max-n" || a=="--density-transmission-max-n" ||
+             a=="-ds-transmission-max-n" || a=="--ds-transmission-max-n") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density-transmission-max-n");
+      opt.densityTransmissionMaxN=std::stoi(argv[++i]);
+      if (opt.densityTransmissionMaxN < 0)
+        exit(__LINE__,__FILE__,"-density-transmission-max-n must be >= 0");
+    }
     else if (a=="-density-parallel" || a=="--density-parallel" ||
              a=="-mode3d-density-parallel" || a=="--mode3d-density-parallel" ||
              a=="-mode3d-density-backend" || a=="--mode3d-density-backend" ||
@@ -423,6 +454,17 @@ std::string HelpMessage(const char* progName) {
   out << "            Physically appropriate for: SEP events (field-aligned PAD),\n";
   out << "            radiation belt pancake distributions, bidirectional streaming,\n";
   out << "            day/night asymmetric CME-driven boundary conditions.\n\n";
+  out << "  -density-transmission-mode <DIRECT|SCAN|ADAPTIVE>   (optional)\n";
+  out << "      Select how density/flux samples the transmission function T(E).\n";
+  out << "      DIRECT keeps the legacy DS energy grid. SCAN and ADAPTIVE evaluate\n";
+  out << "      T on a log-spaced rigidity grid converted back to kinetic energy,\n";
+  out << "      which better resolves cutoff/penumbra structure before folding with\n";
+  out << "      the boundary spectrum. Applies to both gridless and Mode3D density/flux.\n";
+  out << "      Optional controls: --density-transmission-scan-n <N>,\n";
+  out << "      --density-transmission-refine-n <N>, --density-transmission-max-n <N>.\n";
+  out << "      Input-file equivalents are DS_TRANSMISSION_MODE and\n";
+  out << "      DS_TRANSMISSION_SCAN_N/REFINE_N/MAX_N.\n\n";
+
   out << "  -mode3d-output-initialized | --mode3d-output-initialized   (optional; default: off)\n";
   out << "      In -mode 3d, write amps_3d_initialized.data.dat after the AMR mesh\n";
   out << "      cell-centered B/E fields have been initialized. This diagnostic file can\n";

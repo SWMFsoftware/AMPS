@@ -145,6 +145,18 @@ static double RigidityFromEnergy_GV_(double E_J, double qabs_C, double m0_kg) {
   return R_V * 1.0e-9;
 }
 
+// Inverse of RigidityFromEnergy_GV_().  Magnetic access is controlled primarily by
+// rigidity R=pc/|q|, but the boundary spectrum and density integral are functions of
+// kinetic energy.  Transmission-scan mode therefore constructs a log grid in R and
+// converts each node back to kinetic energy before calling the spectrum evaluator.
+static double EnergyFromRigidity_MeV_(double R_GV, double qabs_C, double m0_kg) {
+  if (!(R_GV > 0.0) || !(qabs_C > 0.0) || !(m0_kg > 0.0)) return 0.0;
+  const double mc2 = m0_kg*C_LIGHT*C_LIGHT;
+  const double pc_J = (R_GV*1.0e9) * qabs_C;
+  const double Etot = std::sqrt(pc_J*pc_J + mc2*mc2);
+  return (Etot - mc2) / MEV_TO_J;
+}
+
 static double SpeedFromEnergy_(double E_J, double m0_kg) {
   const double mc2   = m0_kg*C_LIGHT*C_LIGHT;
   const double gamma = 1.0 + E_J/mc2;
@@ -188,25 +200,59 @@ static std::string FormatEnergyBoundForName_(double E_MeV) {
 // Energy and direction grids
 //--------------------------------------------------------------------------------------
 static std::vector<double> BuildEnergyGrid_MeV_(const EarthUtil::AmpsParam& prm) {
-  const int n = prm.densitySpectrum.nPoints();
-  if (n < 2) exit(__LINE__,__FILE__,"Mode3D density requires DS_NINTERVALS >= 1");
+  const int nLegacy = prm.densitySpectrum.nPoints();
+  if (nLegacy < 2) exit(__LINE__,__FILE__,"Mode3D density requires DS_NINTERVALS >= 1");
 
-  std::vector<double> E((std::size_t)n,0.0);
   const double Emin = prm.densitySpectrum.Emin_MeV;
   const double Emax = prm.densitySpectrum.Emax_MeV;
+  const std::string transmissionMode = EarthUtil::ToUpper(prm.densitySpectrum.transmissionMode);
 
+  // DIRECT is the legacy behavior: the same energy grid controls both output and
+  // quadrature.  SCAN/ADAPTIVE deliberately switch the independent variable used for
+  // sampling to rigidity.  This matters near geomagnetic cutoffs because allowed/forbidden
+  // access is organized in R=pc/q, not in kinetic energy, and a uniform/log energy grid
+  // can under-resolve low-rigidity penumbra structure.
+  if (transmissionMode=="SCAN" || transmissionMode=="ADAPTIVE") {
+    const double qabs_C = std::fabs(prm.species.charge_e)*QE;
+    const double m0_kg  = prm.species.mass_amu*AMU;
+    int nScan = prm.densitySpectrum.transmissionScanN;
+    if (nScan <= 0) nScan = nLegacy;
+    if (prm.densitySpectrum.transmissionMaxN > 0)
+      nScan = std::min(nScan,prm.densitySpectrum.transmissionMaxN);
+    nScan = std::max(2,nScan);
+
+    const double Rmin = RigidityFromEnergy_GV_(Emin*MEV_TO_J,qabs_C,m0_kg);
+    const double Rmax = RigidityFromEnergy_GV_(Emax*MEV_TO_J,qabs_C,m0_kg);
+    if (!(Rmin > 0.0) || !(Rmax > Rmin))
+      exit(__LINE__,__FILE__,"Cannot build density transmission rigidity grid: invalid species charge/mass or energy bounds");
+
+    std::vector<double> E((std::size_t)nScan,0.0);
+    const double logRmin = std::log(Rmin);
+    const double logRmax = std::log(Rmax);
+    for (int i=0;i<nScan;i++) {
+      const double a = (double)i/(double)(nScan-1);
+      const double R = std::exp(logRmin + a*(logRmax-logRmin));
+      E[(std::size_t)i] = EnergyFromRigidity_MeV_(R,qabs_C,m0_kg);
+    }
+    // Exact endpoints avoid tiny roundoff differences in channel clipping and filenames.
+    E.front() = Emin;
+    E.back()  = Emax;
+    return E;
+  }
+
+  std::vector<double> E((std::size_t)nLegacy,0.0);
   if (prm.densitySpectrum.spacing == EarthUtil::DensitySpectrumParam::Spacing::LOG) {
     const double logMin = std::log(Emin);
     const double logMax = std::log(Emax);
-    for (int i=0;i<n;i++) {
-      const double a = (double)i/(double)(n-1);
+    for (int i=0;i<nLegacy;i++) {
+      const double a = (double)i/(double)(nLegacy-1);
       E[(std::size_t)i] = std::exp(logMin + a*(logMax-logMin));
     }
   }
   else {
-    for (int i=0;i<n;i++) {
-      const double a = (double)i/(double)(n-1);
-      E[(std::size_t)i] = Emin + a*(Emax-Emin);
+    for (int i=0;i<nLegacy;i++) {
+      const double a = (double)i/(double)(nLegacy-1);
+      E[(std::size_t)i] = Emin + a*(Emax-Emin)*a;
     }
   }
   return E;
@@ -362,6 +408,70 @@ static double FluxIntegrateInterval_(const std::vector<double>& E_MeV,
     s += 0.5*(Ji+Ji1)*(Ei1_J-Ei_J);
   }
   return 4.0*M_PI*s;
+}
+
+
+//--------------------------------------------------------------------------------------
+// Transmission diagnostics derived from T(E)
+//--------------------------------------------------------------------------------------
+struct TransmissionDiagnostics_ {
+  double RcLower_GV{0.0};
+  double RcUpper_GV{0.0};
+  double RcEffective_GV{0.0};
+  double PenumbraWidth_GV{0.0};
+  double THigh{0.0};
+};
+
+static TransmissionDiagnostics_ ComputeTransmissionDiagnostics_(
+    const EarthUtil::AmpsParam& prm,
+    const std::vector<double>& E_MeV,
+    const std::vector<double>& T) {
+  TransmissionDiagnostics_ d;
+  if (E_MeV.size() != T.size() || E_MeV.size() < 2) return d;
+
+  const double qabs_C = std::fabs(prm.species.charge_e)*QE;
+  const double m0_kg  = prm.species.mass_amu*AMU;
+  std::vector<double> R(E_MeV.size(),0.0);
+  for (std::size_t i=0;i<E_MeV.size();++i)
+    R[i] = RigidityFromEnergy_GV_(E_MeV[i]*MEV_TO_J,qabs_C,m0_kg);
+
+  // Direction-integrated transmissivity does not generally approach 1 at high energy:
+  // even if all magnetically connected directions are allowed, the inner loss sphere
+  // and finite domain can occult part of the sampled sky.  Therefore diagnostics are
+  // normalized to THigh = T(Emax) rather than to unity.
+  d.THigh = std::max(0.0,T.back());
+  const double tiny = 1.0e-12;
+  const double tol  = 1.0e-3;
+  if (!(d.THigh > tiny)) return d;
+
+  int iLower = -1;
+  for (int i=0;i<(int)T.size();++i) {
+    if (T[(std::size_t)i] > tiny*d.THigh) { iLower = i; break; }
+  }
+  if (iLower >= 0) d.RcLower_GV = R[(std::size_t)iLower];
+
+  int iLastBelowHigh = -1;
+  for (int i=0;i<(int)T.size();++i) {
+    if (T[(std::size_t)i] < (1.0-tol)*d.THigh) iLastBelowHigh = i;
+  }
+  if (iLastBelowHigh < 0) d.RcUpper_GV = R.front();
+  else if (iLastBelowHigh+1 < (int)R.size()) d.RcUpper_GV = R[(std::size_t)iLastBelowHigh+1];
+  else d.RcUpper_GV = R.back();
+
+  // Effective cutoff for a grey transmission curve.  For a binary access function with
+  // T=0 below cutoff and T=THigh above cutoff, the integral below returns the exact
+  // cutoff.  In a penumbra it returns the sharp-step cutoff that blocks the same area
+  // under 1-T/THigh.  This is the density/flux analogue of an effective rigidity.
+  double blockedArea = 0.0;
+  for (std::size_t i=0;i+1<R.size();++i) {
+    const double f0 = 1.0 - std::max(0.0,std::min(1.0,T[i]/d.THigh));
+    const double f1 = 1.0 - std::max(0.0,std::min(1.0,T[i+1]/d.THigh));
+    blockedArea += 0.5*(f0+f1)*(R[i+1]-R[i]);
+  }
+  d.RcEffective_GV = R.front() + blockedArea;
+  d.RcEffective_GV = std::max(R.front(),std::min(R.back(),d.RcEffective_GV));
+  d.PenumbraWidth_GV = std::max(0.0,d.RcUpper_GV - d.RcLower_GV);
+  return d;
 }
 
 //--------------------------------------------------------------------------------------
@@ -923,13 +1033,20 @@ static void WritePointOutputs_(const EarthUtil::AmpsParam& prm,
   {
     std::ofstream out(DensityOutputFileName_("mode3d_points_density"));
     out << "TITLE=\"Mode3D mesh-field energetic particle density\"\n";
-    out << "VARIABLES=\"X_km\" \"Y_km\" \"Z_km\" \"N_m^-3\" \"N_cm^-3\"\n";
+    out << "VARIABLES=\"X_km\" \"Y_km\" \"Z_km\" \"N_m^-3\" \"N_cm^-3\" "
+        << "\"Rc_lower_GV\" \"Rc_effective_GV\" \"Rc_upper_GV\" \"PenumbraWidth_GV\" \"T_high\"\n";
     out << "ZONE T=\"density\" I=" << nLoc << " F=POINT\n";
     for (int i=0;i<nLoc;i++) {
       const auto& p0 = prm.output.points[(std::size_t)i];
       const double n_m3  = res.density_m3[(std::size_t)i];
       const double n_cm3 = n_m3*1.0e-6;
-      out << p0.x << " " << p0.y << " " << p0.z << " " << n_m3 << " " << n_cm3 << "\n";
+      std::vector<double> Tloc((std::size_t)nE,0.0);
+      for (int ie=0; ie<nE; ++ie)
+        Tloc[(std::size_t)ie] = res.T_flat[(std::size_t)i*(std::size_t)nE + (std::size_t)ie];
+      const TransmissionDiagnostics_ td = ComputeTransmissionDiagnostics_(prm,E_MeV,Tloc);
+      out << p0.x << " " << p0.y << " " << p0.z << " " << n_m3 << " " << n_cm3
+          << " " << td.RcLower_GV << " " << td.RcEffective_GV << " " << td.RcUpper_GV
+          << " " << td.PenumbraWidth_GV << " " << td.THigh << "\n";
     }
   }
 
@@ -968,7 +1085,7 @@ static void WriteShellOutputs_(const EarthUtil::AmpsParam& prm,
                                int nLon,int nLat,double res_deg,int nPtsShell,
                                const std::vector<double>& E_MeV,
                                const DensityResultBuffers& res) {
-  (void)E_MeV;
+  const int nE = (int)E_MeV.size();
   const int nShells = (int)prm.output.shellAlt_km.size();
   const int nCh     = (int)prm.fluxChannels.size();
   const int nLoc    = nShells*nPtsShell;
@@ -980,7 +1097,8 @@ static void WriteShellOutputs_(const EarthUtil::AmpsParam& prm,
 
     out << "TITLE=\"Mode3D mesh-field density and flux shell alt="
         << prm.output.shellAlt_km[(std::size_t)s] << " km\"\n";
-    out << "VARIABLES=\"Lon_deg\" \"Lat_deg\" \"N_m^-3\" \"N_cm^-3\" \"F_tot_m2s1\"";
+    out << "VARIABLES=\"Lon_deg\" \"Lat_deg\" \"N_m^-3\" \"N_cm^-3\" \"F_tot_m2s1\" "
+        << "\"Rc_lower_GV\" \"Rc_effective_GV\" \"Rc_upper_GV\" \"PenumbraWidth_GV\" \"T_high\"";
     for (int ic=0; ic<nCh; ++ic) out << " \"F_" << prm.fluxChannels[(std::size_t)ic].name << "_m2s1\"";
     out << "\n";
     out << "ZONE T=\"shell\" I=" << nLon << " J=" << nLat << " F=POINT\n";
@@ -992,8 +1110,14 @@ static void WriteShellOutputs_(const EarthUtil::AmpsParam& prm,
         const double lon = res_deg*(double)i;
         const int loc = s*nPtsShell + j*nLon + i;
         const double n_m3 = res.density_m3[(std::size_t)loc];
+        std::vector<double> Tloc((std::size_t)nE,0.0);
+        for (int ie=0; ie<nE; ++ie)
+          Tloc[(std::size_t)ie] = res.T_flat[(std::size_t)loc*(std::size_t)nE + (std::size_t)ie];
+        const TransmissionDiagnostics_ td = ComputeTransmissionDiagnostics_(prm,E_MeV,Tloc);
         out << lon << " " << lat << " " << n_m3 << " " << n_m3*1.0e-6
-            << " " << res.flux_total_m2s1[(std::size_t)loc];
+            << " " << res.flux_total_m2s1[(std::size_t)loc]
+            << " " << td.RcLower_GV << " " << td.RcEffective_GV << " " << td.RcUpper_GV
+            << " " << td.PenumbraWidth_GV << " " << td.THigh;
         for (int ic=0; ic<nCh; ++ic) out << " " << res.flux_ch_flat[(std::size_t)ic*(std::size_t)nLoc + (std::size_t)loc];
         out << "\n";
       }
@@ -1073,6 +1197,16 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
               << " e, m=" << prm.species.mass_amu << " amu)\n";
     std::cout << "Energy grid     : [" << prm.densitySpectrum.Emin_MeV << ", "
               << prm.densitySpectrum.Emax_MeV << "] MeV, Npoints=" << nE << "\n";
+    std::cout << "Transmission    : " << EarthUtil::ToUpper(prm.densitySpectrum.transmissionMode);
+    if (EarthUtil::ToUpper(prm.densitySpectrum.transmissionMode)!="DIRECT") {
+      std::cout << " (log-rigidity scan";
+      if (prm.densitySpectrum.transmissionScanN > 0)
+        std::cout << ", requested N=" << prm.densitySpectrum.transmissionScanN;
+      if (prm.densitySpectrum.transmissionRefineN > 0)
+        std::cout << ", refine N=" << prm.densitySpectrum.transmissionRefineN << " reserved";
+      std::cout << ")";
+    }
+    std::cout << "\n";
     std::cout << "Directions      : " << dirsUse.size() << " / " << dirsFull.size()
               << " (" << nZenith << "x" << nAz << ")";
     if (prm.densitySpectrum.maxParticlesPerPoint > 0)

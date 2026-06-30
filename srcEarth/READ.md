@@ -377,6 +377,43 @@ F(x0) = 4*pi * integral[ J_local(E; x0) dE ]
 
 Additional user-defined energy channels can be integrated using `#ENERGY_CHANNELS`.
 
+#### Transmission-grid option for density/flux
+
+The density/flux calculation must resolve the transmission function, not just a scalar cutoff.  In geomagnetic access calculations the natural independent variable is rigidity, and the allowed/forbidden pattern can contain penumbra intervals.  The cutoff solver handles this with an upper-cutoff rigidity scan.  Density/flux now has the analogous option at the transmissivity level:
+
+```text
+DS_TRANSMISSION_MODE     DIRECT | SCAN | ADAPTIVE
+DS_TRANSMISSION_SCAN_N   <int>
+DS_TRANSMISSION_REFINE_N <int>   # parsed/reserved for future per-location refinement
+DS_TRANSMISSION_MAX_N    <int>   # optional cap on scan nodes
+DS_TRANSMISSION_SAVE     T|F     # parsed/provenance flag; spectra already save T(E)
+```
+
+`DIRECT` is the legacy behavior: `T(E)` is evaluated on the user energy grid defined by `DS_EMIN`, `DS_EMAX`, `DS_NINTERVALS`, and `DS_ENERGY_SPACING`.
+
+`SCAN` builds a log-spaced grid in rigidity between the rigidities corresponding to `DS_EMIN` and `DS_EMAX`, converts each rigidity node back to kinetic energy, and evaluates `T(E)` on that grid before the spectrum, density, and flux integrals are performed.  This is more appropriate near cutoffs because particle access is controlled by `R = pc/|q|`, while the boundary spectrum is tabulated in energy.
+
+`ADAPTIVE` is currently implemented as the same fixed log-rigidity scan as `SCAN`, with `DS_TRANSMISSION_REFINE_N` parsed and documented for future per-location interval refinement.  The fixed scan was chosen first because all output locations then share the same energy axis, which keeps Tecplot output, MPI reductions, and regression comparisons deterministic.
+
+The output density files now also include diagnostic columns derived from the saved transmission curve:
+
+```text
+Rc_lower_GV
+Rc_effective_GV
+Rc_upper_GV
+PenumbraWidth_GV
+T_high
+```
+
+These values are diagnostics only.  The flux and density integrals use the full sampled `T(E)` curve.  `Rc_effective_GV` is computed as the sharp-step rigidity that blocks the same normalized area under `1 - T(R)/T_high`; this is useful for comparing density/flux behavior with cutoff maps while retaining the full transmission function for the actual calculation.
+
+Supporting references and motivation:
+
+- Smart and Shea / Cooke et al. cutoff-rigidity terminology defines lower, upper, and effective cutoffs and emphasizes penumbra/transmission behavior rather than a single universal cutoff.
+- Bobik et al. (GeoMag/HelMod, 2013) describe Lorentz backtracing with IGRF plus Tsyganenko T96/T05, classifying trajectories by outer/inner boundary access and estimating rigidity cutoffs.
+- Boschini et al. (2013) use backtracing with T96/T05 to reconstruct asymptotic directions and access for AMS-02, including East-West and active/quiet comparisons.
+- PAMELA SEP analyses use trajectory reconstruction/asymptotic exposure to infer pitch-angle-dependent SEP spectra and geomagnetic cutoff behavior.
+
 ### 4.4 3-D forward Monte Carlo transport
 
 The forward mode uses a different algorithm:
@@ -1004,6 +1041,8 @@ DS_ENERGY_SPACING  LOG
 DS_MAX_PARTICLES   500
 DS_MAX_TRAJ_TIME   60.0
 DS_BOUNDARY_MODE   ISOTROPIC
+DS_TRANSMISSION_MODE     SCAN
+DS_TRANSMISSION_SCAN_N   80
 ```
 
 Meanings:
@@ -1011,10 +1050,15 @@ Meanings:
 ```text
 DS_EMIN / DS_EMAX       density/flux energy bounds [MeV/n]
 DS_NINTERVALS           number of energy intervals; number of grid points is +1
-DS_ENERGY_SPACING       LOG or LINEAR
+DS_ENERGY_SPACING       LOG or LINEAR; used directly only in DIRECT transmission mode
 DS_MAX_PARTICLES        total trajectory cap per observation point; 0 means no cap
 DS_MAX_TRAJ_TIME        density-specific trajectory time cap [s]
 DS_BOUNDARY_MODE        ISOTROPIC or ANISOTROPIC
+DS_TRANSMISSION_MODE    DIRECT, SCAN, or ADAPTIVE
+DS_TRANSMISSION_SCAN_N  number of log-rigidity nodes used by SCAN/ADAPTIVE; 0 => DS_NINTERVALS+1
+DS_TRANSMISSION_REFINE_N parsed/reserved for future per-location adaptive refinement
+DS_TRANSMISSION_MAX_N   optional cap on the number of transmission scan nodes
+DS_TRANSMISSION_SAVE    parsed/provenance flag; spectrum files already write T(E)
 ```
 
 For Mode3D density/flux, the direction set follows the gridless convention: a 24 x 48 direction grid is built, then optionally reduced deterministically if `DS_MAX_PARTICLES` is positive.
@@ -1163,6 +1207,18 @@ Common options:
 
 -density-mode <ISOTROPIC|ANISOTROPIC>
     Override DS_BOUNDARY_MODE for density/flux calculations.
+
+-density-transmission-mode <DIRECT|SCAN|ADAPTIVE>
+    Override DS_TRANSMISSION_MODE for both gridless and Mode3D density/flux.
+
+-density-transmission-scan-n <N>
+    Override DS_TRANSMISSION_SCAN_N.
+
+-density-transmission-refine-n <N>
+    Override DS_TRANSMISSION_REFINE_N.  Parsed and stored for future per-location adaptive refinement.
+
+-density-transmission-max-n <N>
+    Override DS_TRANSMISSION_MAX_N.
 
 -max-trace-distance <Re>
     Override MAX_TRACE_DISTANCE.
@@ -1579,3 +1635,14 @@ Forward Monte Carlo 3-D run:
 mpirun -np 8 ./amps -mode 3d_forward -i forward3d.in -forward-niter 1000 -forward-nparticles 1000
 ```
 
+
+### References for transmissivity/cutoff terminology and density/flux validation
+
+- Cooke, D. J., Humble, J. E., Shea, M. A., Smart, D. F., Lund, N., Rasmussen, I. L., Byrnak, B., Goret, P., and Petrou, N. (1991), *On cosmic-ray cut-off terminology*, Il Nuovo Cimento C. This is the standard reference for lower/upper/effective cutoff and penumbra terminology.
+- Smart, D. F. and Shea, M. A. (2001), *Geomagnetic Cutoff Rigidity Computer Program*, Final Report, Air Force Research Laboratory. This is a practical trajectory-tracing/cutoff reference used by many radiation-environment workflows.
+- Smart, D. F. and Shea, M. A. (2009), *Fifty years of progress in geomagnetic cutoff rigidity determinations*, Advances in Space Research, 44, 1107-1123. This review summarizes cutoff-rigidity calculation methods and their historical use.
+- Bobik, P. et al. (2013), *GeoMag and HelMod webmodels version for magnetosphere and heliosphere transport of cosmic rays*, arXiv:1307.5196. GeoMag solves the Lorentz equation with IGRF plus Tsyganenko T96/T05 and classifies trajectories by outer/inner boundary access.
+- Boschini, M. J. et al. (2013), *Geomagnetic Backtracing: A comparison of Tsyganenko 1996 and 2005 External Field models with AMS-02 data*, arXiv:1307.5192. This supports validation of directional access, asymptotic directions, East-West effects, and T96/T05 model sensitivity.
+- Bruno, A. et al. (2014/2016), PAMELA SEP trajectory-analysis papers, including arXiv:1412.1765 and arXiv:1601.05407. These papers use realistic geomagnetic backtracing/asymptotic exposure to reconstruct SEP spectra and pitch-angle distributions.
+- Adriani, O. et al. (2016), *PAMELA's measurements of geomagnetic cutoff variations during the 14 December 2006 storm*, arXiv:1602.05509. This is a direct storm-time proton cutoff-latitude validation target.
+- Dmitriev, A. V., Jayachandran, P. T., and Tsai, L.-C. (2013), *Elliptical model of cutoff boundaries for the solar energetic particles measured by POES satellites in December 2006*, arXiv:1305.6710. This provides an empirical SEP cutoff-boundary comparison for high-latitude flux penetration.

@@ -115,6 +115,61 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
 
   const std::string modeLabel = (modeName != nullptr && *modeName != '\0') ? modeName : "standalone";
 
+  // Density boundary-spectrum mode.  Keep this in the common helper because both
+  // gridless and Mode3D density/flux solvers read the same DensitySpectrumParam.
+  // The old CLI parser accepted -density-mode but the standalone dispatch path did
+  // not consistently copy it into AmpsParam; applying it here makes the flag effective
+  // in both backward modes.
+  if (!cli.densityMode.empty()) {
+    const std::string dm = EarthUtil::ToUpper(cli.densityMode);
+    if (dm=="ISOTROPIC" || dm=="ISO" || dm=="UNIFORM") {
+      p.densitySpectrum.boundaryMode = "ISOTROPIC";
+    }
+    else if (dm=="ANISOTROPIC" || dm=="ANISO") {
+      p.densitySpectrum.boundaryMode = "ANISOTROPIC";
+    }
+    else {
+      std::cerr << "Error: unknown -density-mode '" << cli.densityMode
+                << "' for " << modeLabel
+                << ". Valid values: ISOTROPIC or ANISOTROPIC.\n";
+      return false;
+    }
+  }
+
+  // Density/flux transmission-function sampling.  DIRECT keeps the legacy user energy
+  // grid.  SCAN and ADAPTIVE switch the density/flux backtracing grid to a log-spaced
+  // rigidity scan.  This is analogous to the cutoff upper scan, but density/flux keeps
+  // the full T(E) curve and integrates it instead of reducing it to one cutoff number.
+  if (!cli.densityTransmissionMode.empty()) {
+    const std::string tm = EarthUtil::ToUpper(cli.densityTransmissionMode);
+    if (tm=="DIRECT" || tm=="LEGACY") p.densitySpectrum.transmissionMode = "DIRECT";
+    else if (tm=="SCAN" || tm=="RIGIDITY_SCAN" || tm=="RIGIDITY")
+      p.densitySpectrum.transmissionMode = "SCAN";
+    else if (tm=="ADAPTIVE" || tm=="ADAPT")
+      p.densitySpectrum.transmissionMode = "ADAPTIVE";
+    else {
+      std::cerr << "Error: unknown -density-transmission-mode '"
+                << cli.densityTransmissionMode
+                << "' for " << modeLabel
+                << ". Valid values: DIRECT, SCAN, ADAPTIVE.\n";
+      return false;
+    }
+  }
+  if (cli.densityTransmissionScanN > 0)
+    p.densitySpectrum.transmissionScanN = cli.densityTransmissionScanN;
+  if (cli.densityTransmissionRefineN > 0)
+    p.densitySpectrum.transmissionRefineN = cli.densityTransmissionRefineN;
+  if (cli.densityTransmissionMaxN > 0)
+    p.densitySpectrum.transmissionMaxN = cli.densityTransmissionMaxN;
+  if (p.densitySpectrum.transmissionMaxN > 0 &&
+      p.densitySpectrum.transmissionScanN > p.densitySpectrum.transmissionMaxN) {
+    std::cerr << "Error: density transmission scan N ("
+              << p.densitySpectrum.transmissionScanN
+              << ") exceeds max N (" << p.densitySpectrum.transmissionMaxN
+              << ") for " << modeLabel << ".\n";
+    return false;
+  }
+
   // Inter-rank scheduler for backward trajectory products.  Both Mode3D and gridless
   // call Earth::Mode3D::ResolveMpiScheduler(), which reads p.mode3d.mpiScheduler even
   // when the solver is gridless.  The name is historical; the setting now means the

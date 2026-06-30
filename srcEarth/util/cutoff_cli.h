@@ -172,6 +172,22 @@ namespace EarthUtil {
     //               requires a #BOUNDARY_ANISOTROPY section in the input file.
     std::string densityMode{""};
 
+    // -density-transmission-mode DIRECT|SCAN|ADAPTIVE
+    // Controls the energy/rigidity nodes on which density/flux transmissivity T is
+    // evaluated.  DIRECT keeps the legacy DS energy grid.  SCAN/ADAPTIVE build a
+    // log-spaced rigidity grid converted back to kinetic energy for spectrum folding.
+    std::string densityTransmissionMode{""};
+
+    // -density-transmission-scan-n <int>
+    // Number of rigidity scan points for SCAN/ADAPTIVE mode. 0 means no CLI override.
+    int densityTransmissionScanN{0};
+
+    // -density-transmission-refine-n <int> and -density-transmission-max-n <int>
+    // Parsed for forward-compatible input decks; current production output uses the
+    // fixed scan grid so all locations have the same Tecplot energy axis.
+    int densityTransmissionRefineN{0};
+    int densityTransmissionMaxN{0};
+
     // -mode3d-output-initialized
     // Boolean flag. When true, Mode3D::Run writes the initialized AMR mesh fields
     // to amps_3d_initialized.data.dat. The default is false to avoid creating this

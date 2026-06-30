@@ -2785,6 +2785,28 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="DS_MAX_TRAJ_TIME") p.densitySpectrum.maxTrajTime_s=std::stod(val);
       else if (uKey=="DS_ENERGY_SPACING") p.densitySpectrum.spacing=ParseEnergySpacingToken(val);
       else if (uKey=="DS_BOUNDARY_MODE") p.densitySpectrum.boundaryMode=ToUpper(val);
+      else if (uKey=="DS_TRANSMISSION_MODE" || uKey=="DENSITY_TRANSMISSION_MODE" ||
+               uKey=="DS_TRANSMISSION" || uKey=="DENSITY_TRANSMISSION") {
+        // Density/flux is controlled by a transmission function T(E,Omega).  This
+        // token selects whether the solver evaluates T on the legacy user energy
+        // grid (DIRECT) or on a rigidity scan better suited for cutoff/penumbra
+        // structure (SCAN/ADAPTIVE).  Validation is done after parsing so aliases
+        // can be accepted uniformly.
+        p.densitySpectrum.transmissionMode=ToUpper(Trim(val));
+      }
+      else if (uKey=="DS_TRANSMISSION_SCAN_N" || uKey=="DENSITY_TRANSMISSION_SCAN_N" ||
+               uKey=="DS_TRANSMISSION_N" || uKey=="DENSITY_TRANSMISSION_N") {
+        p.densitySpectrum.transmissionScanN=std::stoi(val);
+      }
+      else if (uKey=="DS_TRANSMISSION_REFINE_N" || uKey=="DENSITY_TRANSMISSION_REFINE_N") {
+        p.densitySpectrum.transmissionRefineN=std::stoi(val);
+      }
+      else if (uKey=="DS_TRANSMISSION_MAX_N" || uKey=="DENSITY_TRANSMISSION_MAX_N") {
+        p.densitySpectrum.transmissionMaxN=std::stoi(val);
+      }
+      else if (uKey=="DS_TRANSMISSION_SAVE" || uKey=="DENSITY_TRANSMISSION_SAVE") {
+        p.densitySpectrum.transmissionSave=ToBool(val);
+      }
       else if (uKey=="DS_PARALLEL" || uKey=="DS_BACKEND" ||
                uKey=="DENSITY_PARALLEL" || uKey=="DENSITY_BACKEND" ||
                uKey=="MODE3D_DENSITY_PARALLEL" || uKey=="MODE3D_DENSITY_BACKEND" ||
@@ -3138,6 +3160,31 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     if (p.numerics.maxTraceDistance_Re < 0.0) {
       exit(__LINE__,__FILE__,"MAX_TRACE_DISTANCE must be >= 0 (0 means: disabled)");
     }
+    // Validate transmission-function controls.
+    {
+      const std::string tm = ToUpper(p.densitySpectrum.transmissionMode);
+      if (tm=="DIRECT" || tm=="LEGACY") p.densitySpectrum.transmissionMode="DIRECT";
+      else if (tm=="SCAN" || tm=="RIGIDITY_SCAN" || tm=="RIGIDITY") p.densitySpectrum.transmissionMode="SCAN";
+      else if (tm=="ADAPTIVE" || tm=="ADAPT") p.densitySpectrum.transmissionMode="ADAPTIVE";
+      else {
+        std::ostringstream _exit_msg;
+        _exit_msg << "DS_TRANSMISSION_MODE must be DIRECT, SCAN, or ADAPTIVE (got '"
+                  << p.densitySpectrum.transmissionMode << "')";
+        exit(__LINE__,__FILE__,_exit_msg.str().c_str());
+      }
+      if (p.densitySpectrum.transmissionScanN < 0)
+        exit(__LINE__,__FILE__,"DS_TRANSMISSION_SCAN_N must be >= 0 (0 means automatic)");
+      if (p.densitySpectrum.transmissionRefineN < 0)
+        exit(__LINE__,__FILE__,"DS_TRANSMISSION_REFINE_N must be >= 0");
+      if (p.densitySpectrum.transmissionMaxN < 0)
+        exit(__LINE__,__FILE__,"DS_TRANSMISSION_MAX_N must be >= 0");
+      if (p.densitySpectrum.transmissionMaxN > 0 &&
+          p.densitySpectrum.transmissionScanN > p.densitySpectrum.transmissionMaxN) {
+        exit(__LINE__,__FILE__,
+             "DS_TRANSMISSION_SCAN_N must not exceed DS_TRANSMISSION_MAX_N when the max is set");
+      }
+    }
+
     // Validate DS_BOUNDARY_MODE token.
     const std::string bm = ToUpper(p.densitySpectrum.boundaryMode);
     if (bm!="ISOTROPIC" && bm!="ANISOTROPIC") {

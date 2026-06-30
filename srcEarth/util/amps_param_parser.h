@@ -68,6 +68,11 @@
 //       ISOTROPIC (default): T(E;x0) = N_allowed/N_dirs, uniform boundary spectrum
 //       ANISOTROPIC:         T_aniso(E;x0) = (1/N_dirs)*sum_k A_k*f_PAD_k*f_spatial_k
 //                            requires #BOUNDARY_ANISOTROPY section
+//     DS_TRANSMISSION_MODE    DIRECT | SCAN | ADAPTIVE
+//       DIRECT:              use the legacy user energy grid for T(E)
+//       SCAN/ADAPTIVE:       use a log-spaced rigidity grid converted to energy
+//     DS_TRANSMISSION_SCAN_N  <int>  number of scan nodes; 0 => DS_NINTERVALS+1
+//     DS_TRANSMISSION_REFINE_N / MAX_N / SAVE: parsed diagnostic/reserved controls
 //
 //   #PARTICLE_TRAJECTORY    (optional; used by -mode 3d_forward)
 //     INITIALIZE_TRAJECTORIES T|F        ! runtime gate for AMPS trajectory records
@@ -473,6 +478,46 @@ namespace EarthUtil {
     //   The PAD and spatial modulation models are controlled by #BOUNDARY_ANISOTROPY.
     //   Requires TraceAllowedSharedEx() to return exit state per trajectory.
     std::string boundaryMode{"ISOTROPIC"}; // DS_BOUNDARY_MODE
+
+    //==================================================================================
+    // Transmission-function controls for density/flux products.
+    //==================================================================================
+    // Density/flux calculations do not collapse magnetospheric access to one scalar
+    // cutoff rigidity.  The physically relevant object is the transmission function
+    // T(E,Omega), because density and flux are energy/direction integrals over the
+    // accessible part of phase space.
+    //
+    // DIRECT (default):
+    //   Preserve legacy behavior: evaluate T only on the user energy grid defined by
+    //   DS_EMIN, DS_EMAX, DS_NINTERVALS, and DS_ENERGY_SPACING.
+    //
+    // SCAN:
+    //   Replace the integration/output energy nodes by a log-spaced *rigidity* scan.
+    //   This is analogous to the cutoff UPPER_SCAN pre-scan: rigidity is the natural
+    //   access coordinate, while kinetic energy is only the spectral coordinate.
+    //
+    // ADAPTIVE:
+    //   Currently uses the same production grid as SCAN, but keeps a separate token so
+    //   validation decks can be written with the intended semantics.  The per-location
+    //   refinement hook can be added later without changing input files.
+    std::string transmissionMode{"DIRECT"}; // DS_TRANSMISSION_MODE: DIRECT|SCAN|ADAPTIVE
+
+    // Number of rigidity samples used when transmissionMode is SCAN or ADAPTIVE.
+    // If <=0, the code uses nIntervals+1 so existing input decks keep the same number
+    // of output points while switching from an energy grid to a rigidity grid.
+    int transmissionScanN{0}; // DS_TRANSMISSION_SCAN_N
+
+    // Reserved refinement controls.  They are parsed, validated, documented, and printed
+    // so users can standardize input decks now.  The current implementation does not add
+    // per-location variable-size refinement records to the production Tecplot output; the
+    // fixed rigidity scan is the implemented robust path.
+    int transmissionRefineN{0}; // DS_TRANSMISSION_REFINE_N
+    int transmissionMaxN{0};    // DS_TRANSMISSION_MAX_N
+
+    // Optional diagnostic flag.  The current writers already save spectrum/transmission
+    // curves by default for POINTS and comparison modes; this flag documents the intended
+    // control and is used in banners/README.
+    bool transmissionSave{false}; // DS_TRANSMISSION_SAVE
   };
 
   //====================================================================================
