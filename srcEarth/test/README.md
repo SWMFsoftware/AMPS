@@ -88,3 +88,46 @@ collapse or long-time leakage rather than the true upper cutoff.
 C3 accepts `--max-trace-time`, `--max-trace-distance`, and `--dt-trace` so the
 finite-time / finite-distance trajectory classification sensitivity can be
 studied explicitly.
+
+## C4 — Parser-safe trajectory integration convergence
+
+C4 replaces the earlier non-parser-safe invariant diagnostic.  The current code
+does not recognize `CUTOFF_DEBUG_EXIT_TRACE` or the related
+`CUTOFF_DEBUG_EXIT_*` keywords, so C4 uses only production parser keywords and
+checks ordinary cutoff shell output against the analytical vertical Størmer
+solution.
+
+The script runs a centered dipole shell at 9000 km for a sweep of `DT_TRACE`
+values and checks selected longitudes/latitudes for convergence toward the
+Størmer cutoff.
+
+```bash
+python srcEarth/test/C4/run_C4.py --mode 3d --mode3d-field-eval ANALYTIC
+python srcEarth/test/C4/run_C4.py --mode 3d --mode3d-field-eval MESH --dt-sweep 1.0,0.5,0.25
+python srcEarth/test/C4/run_C4.py --mode gridless --max-trace-distance 300
+```
+
+C4 records `MAX_TRACE_TIME` and `MAX_TRACE_DISTANCE`, because finite-time and
+finite-distance caps can affect near-cutoff trajectory classification.
+
+
+### ADAPTIVE_DT time-step control
+
+`ADAPTIVE_DT` is a `#NUMERICAL` switch shared by Mode3D and gridless backward
+cutoff/density tracing:
+
+```text
+ADAPTIVE_DT T   # default: DT_TRACE is the maximum allowed adaptive step
+ADAPTIVE_DT F   # fixed-step regression mode: use DT_TRACE directly
+```
+
+The command-line override is:
+
+```bash
+-adaptive-dt T|F
+```
+
+Aliases `-fixed-dt`, `-no-adaptive-dt`, and `-use-adaptive-dt` are also accepted.
+Use `ADAPTIVE_DT F` for pusher convergence tests where changing `DT_TRACE` must
+change the actual integration step.  Production runs should normally use the
+default adaptive mode.
