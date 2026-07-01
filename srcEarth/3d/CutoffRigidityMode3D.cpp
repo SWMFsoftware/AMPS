@@ -703,7 +703,7 @@ static std::vector<V3> BuildFibonacciDirs(int nDir) {
 }
 
 //======================================================================================
-// SECTION 7 — ADAPTIVE TIME STEP SELECTOR
+// SECTION 7 — TIME STEP SELECTOR
 //======================================================================================
 //
 // Mirrors SelectAdaptiveDt in CutoffRigidityGridless.cpp exactly, differing only in
@@ -725,15 +725,21 @@ static std::vector<V3> BuildFibonacciDirs(int nDir) {
 // the particle is nearly stationary.
 //======================================================================================
 
-static inline double SelectDt3D(const EarthUtil::AmpsParam& prm,
+static inline double SelectTraceDt3D(const EarthUtil::AmpsParam& prm,
                                   const cMode3DMeshFieldEval& field,
                                   const V3& x, const V3& p,
                                   double q_C, double m0_kg,
                                   const DomainBox3D& box,
                                   double timeRemaining_s,
                                   bool useGuidingCenterForThisStep) {
+    // ADAPTIVE_DT controls the interpretation of DT_TRACE:
+    //   ADAPTIVE_DT=T (default): DT_TRACE is the maximum step and the code may
+    //                            reduce it using gyro and boundary limiters.
+    //   ADAPTIVE_DT=F          : DT_TRACE is the actual fixed step, except for the
+    //                            final trim to the remaining trace-time budget.
     double dt = prm.numerics.dtTrace_s;
     if (timeRemaining_s < dt) dt = timeRemaining_s;
+    if (!prm.numerics.adaptiveDt) return dt;
 
     // Relativistic kinematics — shared by both branches.
     const double p2    = dot(p, p);
@@ -944,7 +950,7 @@ static bool TraceAllowed3D(const EarthUtil::AmpsParam& prm,
         // ---- Mover-branch decision (mirrors TraceAllowedImpl exactly) ----------
         //
         // The branch flag drives two downstream decisions:
-        //   1. SelectDt3D: skip gyro-angle limiter and use |v_parallel| for the
+        //   1. SelectTraceDt3D: skip gyro-angle limiter and use |v_parallel| for the
         //      boundary limiter when in GC mode (see Section 7).
         //   2. StepParticleChecked: dispatches to the mover selected by gDefaultMover,
         //      which may be BORIS, RK4, GC4, HYBRID, etc. depending on the -mover flag.
@@ -968,8 +974,8 @@ static bool TraceAllowed3D(const EarthUtil::AmpsParam& prm,
         }
         // -------------------------------------------------------------------------
 
-        // Adaptive dt — branch-aware (see Section 7).
-        const double dt = SelectDt3D(prm, field, x, p, q_C, m0_kg, box,
+        // Time-step selection — branch-aware in adaptive mode (see Section 7).
+        const double dt = SelectTraceDt3D(prm, field, x, p, q_C, m0_kg, box,
                                       timeRemaining, useGuidingCenterForThisStep);
 
         // Advance one step.  StepParticleChecked dispatches to gDefaultMover and
@@ -1278,8 +1284,8 @@ static TraceDetailedResult3D TraceDetailed3D_(const EarthUtil::AmpsParam& prm,
             useGuidingCenterForThisStep = HybridPrepareStepUseGuidingCenter(x, p, q_C, field);
         }
 
-        const double dt = SelectDt3D(prm, field, x, p, q_C, m0_kg, box,
-                                      timeRemaining, useGuidingCenterForThisStep);
+        const double dt = SelectTraceDt3D(prm, field, x, p, q_C, m0_kg, box,
+                                          timeRemaining, useGuidingCenterForThisStep);
         if (!(dt > 0.0) || !std::isfinite(dt)) {
             finalize(TraceExitReason3D::INVALID_DT,false);
             return out;
@@ -2665,6 +2671,43 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 #else
         std::cout << "OpenMP threads : 1 (built without OpenMP)\n";
 #endif
+
+        const double effectiveMaxTraceTime_s =
+            (prm.cutoff.maxTrajTime_s > 0.0) ? prm.cutoff.maxTrajTime_s
+                                             : prm.numerics.maxTraceTime_s;
+
+        std::cout
+            << "Particle mover: " << MoverTypeName3D_(GetDefaultMoverType()) << "\n"
+            << "Trace controls:\n"
+            << "  ADAPTIVE_DT          : " << (prm.numerics.adaptiveDt ? "T" : "F") << "\n"
+            << "  DT_TRACE [s]         : " << prm.numerics.dtTrace_s
+            << (prm.numerics.adaptiveDt ? "  (maximum allowed dt)"
+                                        : "  (fixed pusher dt)") << "\n"
+            << "  effective dt rule    : "
+            << (prm.numerics.adaptiveDt
+                  ? "min(DT_TRACE, gyro-angle limiter, boundary-distance limiter, remaining time)"
+                  : "min(DT_TRACE, remaining time)")
+            << "\n"
+            << "  MAX_TRACE_TIME [s]   : " << prm.numerics.maxTraceTime_s << "\n"
+            << "  CUTOFF_MAX_TRAJ_TIME : ";
+        if (prm.cutoff.maxTrajTime_s > 0.0) std::cout << prm.cutoff.maxTrajTime_s << " s\n";
+        else std::cout << "not set; use MAX_TRACE_TIME\n";
+        std::cout
+            << "  effective cutoff cap : " << effectiveMaxTraceTime_s << " s\n"
+            << "  MAX_TRACE_DISTANCE   : ";
+        if (prm.numerics.maxTraceDistance_Re > 0.0) {
+            std::cout << prm.numerics.maxTraceDistance_Re
+                      << " Re (cumulative path length)\n";
+        } else {
+            std::cout << "disabled\n";
+        }
+        std::cout
+            << "  MAX_STEPS            : " << prm.numerics.maxSteps << "\n";
+        if (prm.numerics.adaptiveDt) {
+            std::cout
+                << "  adaptive constants   : gyro angle <= 0.15 rad; "
+                << "step <= 20% nearest boundary distance\n";
+        }
 
         std::cout
             << "Domain [m]     : x[" << box.xMin << "," << box.xMax << "] "

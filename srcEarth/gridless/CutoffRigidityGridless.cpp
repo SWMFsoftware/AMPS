@@ -294,6 +294,21 @@ using Earth::GridlessMode::StormerVerticalCoeff_GV;
 
 namespace {
 
+
+static const char* MoverTypeNameGridless_(MoverType m) {
+  switch (m) {
+    case MoverType::BORIS:  return "BORIS";
+    case MoverType::RK2:    return "RK2";
+    case MoverType::RK4:    return "RK4";
+    case MoverType::RK6:    return "RK6";
+    case MoverType::GC2:    return "GC2";
+    case MoverType::GC4:    return "GC4";
+    case MoverType::GC6:    return "GC6";
+    case MoverType::HYBRID: return "HYBRID";
+    default:                return "UNKNOWN";
+  }
+}
+
 /*
 //--------------------------------------------------------------------------------------
 // Legacy local V3 + vector ops (kept for reference; DO NOT DELETE)
@@ -1015,8 +1030,8 @@ static inline double EstimateHybridAdiabaticity(const cFieldEvaluator& field,
   return rho_m/Leff_m;
 }
 
-static inline double SelectAdaptiveDt(const EarthUtil::AmpsParam& prm,
-                                      const cFieldEvaluator& field,
+static inline double SelectTraceDt(const EarthUtil::AmpsParam& prm,
+                                    const cFieldEvaluator& field,
                                       const V3& x,
                                       const V3& p,
                                       double q_C,
@@ -1024,9 +1039,14 @@ static inline double SelectAdaptiveDt(const EarthUtil::AmpsParam& prm,
                                       const DomainBoxRe& boxRe,
                                       double timeRemaining_s,
                                       bool useGuidingCenterForThisStep) {
-  // DT_TRACE from input remains the *maximum* allowed step in the adaptive mode.
+  // ADAPTIVE_DT controls the interpretation of DT_TRACE:
+  //   ADAPTIVE_DT=T (default): DT_TRACE is the maximum step and the code may
+  //                            reduce it using gyro and boundary limiters.
+  //   ADAPTIVE_DT=F          : DT_TRACE is the actual fixed step, except for the
+  //                            final trim to the remaining trace-time budget.
   double dt = prm.numerics.dtTrace_s;
   if (timeRemaining_s < dt) dt = timeRemaining_s;
+  if (!prm.numerics.adaptiveDt) return dt;
 
   // Compute relativistic gamma and speed from momentum p = gamma m v.
   const double p2 = dot(p,p);
@@ -1247,11 +1267,13 @@ static bool TraceAllowedImpl(const EarthUtil::AmpsParam& prm,
       useGuidingCenterForThisStep = HybridPrepareStepUseGuidingCenter(x,p,q,field);
     }
 
-    // Automatic dt selection now happens AFTER the branch decision.  In particular,
-    // GC steps are no longer constrained by the local gyrofrequency, because that
-    // fast timescale is absent from the GC equations themselves.
-    const double dt = SelectAdaptiveDt(prm,field,x,p,q,m0,boxRe,timeRemaining_s,
-                                       useGuidingCenterForThisStep);
+    // Time-step selection now happens AFTER the branch decision.  In adaptive mode,
+    // GC steps are no longer constrained by the local gyrofrequency because that
+    // fast timescale is absent from the GC equations themselves.  If ADAPTIVE_DT=F,
+    // SelectTraceDt simply returns the fixed DT_TRACE value (trimmed only to the
+    // remaining allowed trace time).
+    const double dt = SelectTraceDt(prm,field,x,p,q,m0,boxRe,timeRemaining_s,
+                                    useGuidingCenterForThisStep);
 
     // Advance one step with the selected mover.
     // Important cutoff-specific rule: if the trajectory enters the inner sphere
@@ -2052,7 +2074,37 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
               << "y[" << boxRe.yMin << "," << boxRe.yMax << "] "
               << "z[" << boxRe.zMin << "," << boxRe.zMax << "] "
               << "rInner=" << boxRe.rInner << "\n";
-    std::cout << "dtTrace max [s] : " << prm.numerics.dtTrace_s << "  (adaptive upper bound)\n";
+    const double effectiveMaxTraceTime_s =
+      (prm.cutoff.maxTrajTime_s > 0.0) ? prm.cutoff.maxTrajTime_s
+                                       : prm.numerics.maxTraceTime_s;
+    std::cout << "Particle mover : " << MoverTypeNameGridless_(GetDefaultMoverType()) << "\n";
+    std::cout << "Trace controls :\n";
+    std::cout << "  ADAPTIVE_DT          : " << (prm.numerics.adaptiveDt ? "T" : "F") << "\n";
+    std::cout << "  DT_TRACE [s]         : " << prm.numerics.dtTrace_s
+              << (prm.numerics.adaptiveDt ? "  (maximum allowed dt)"
+                                          : "  (fixed pusher dt)") << "\n";
+    std::cout << "  effective dt rule    : "
+              << (prm.numerics.adaptiveDt
+                    ? "min(DT_TRACE, gyro-angle limiter, boundary-distance limiter, remaining time)"
+                    : "min(DT_TRACE, remaining time)")
+              << "\n";
+    std::cout << "  MAX_TRACE_TIME [s]   : " << prm.numerics.maxTraceTime_s << "\n";
+    std::cout << "  CUTOFF_MAX_TRAJ_TIME : "
+              << (prm.cutoff.maxTrajTime_s > 0.0 ? prm.cutoff.maxTrajTime_s : 0.0)
+              << (prm.cutoff.maxTrajTime_s > 0.0 ? " s" : "  (not set; use MAX_TRACE_TIME)")
+              << "\n";
+    std::cout << "  effective cutoff cap : " << effectiveMaxTraceTime_s << " s\n";
+    std::cout << "  MAX_TRACE_DISTANCE   : ";
+    if (prm.numerics.maxTraceDistance_Re > 0.0) {
+      std::cout << prm.numerics.maxTraceDistance_Re << " Re"
+                << " (cumulative path length)\n";
+    } else {
+      std::cout << "disabled\n";
+    }
+    std::cout << "  MAX_STEPS            : " << prm.numerics.maxSteps << "\n";
+    if (prm.numerics.adaptiveDt) {
+      std::cout << "  adaptive constants   : gyro angle <= 0.15 rad; step <= 20% nearest boundary distance\n";
+    }
     std::cout << "MPI ranks       : " << mpiSize
               << " (trajectory-based dynamic scheduling)\n";
     std::cout << "==========================================================\n";

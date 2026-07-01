@@ -63,6 +63,28 @@
 #include "specfunc.h"
 
 #include <sstream>
+#include <algorithm>
+#include <cctype>
+
+
+namespace {
+
+std::string UpperCliToken(std::string s) {
+  std::transform(s.begin(),s.end(),s.begin(),[](unsigned char c){ return (char)std::toupper(c); });
+  return s;
+}
+
+bool ParseCliBoolToken(const std::string& value,const char* optionName) {
+  const std::string v=UpperCliToken(value);
+  if (v=="T" || v=="TRUE" || v=="YES" || v=="Y" || v=="1" || v=="ON") return true;
+  if (v=="F" || v=="FALSE" || v=="NO" || v=="N" || v=="0" || v=="OFF") return false;
+  std::ostringstream msg;
+  msg << optionName << " expects T/F, TRUE/FALSE, YES/NO, 1/0, or ON/OFF (got '" << value << "')";
+  exit(__LINE__,__FILE__,msg.str().c_str());
+  return false;
+}
+
+} // namespace
 
 namespace EarthUtil {
 
@@ -278,6 +300,17 @@ CliOptions ParseCli(int argc,char** argv) {
     else if (a=="-mode3d-analytic-field" || a=="--mode3d-analytic-field") {
       // Convenience alias for the common diagnostic/comparison use case.
       opt.mode3dFieldEval="ANALYTIC";
+    }
+    else if (a=="-adaptive-dt" || a=="--adaptive-dt") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -adaptive-dt");
+      opt.adaptiveDt = ParseCliBoolToken(argv[++i],"-adaptive-dt") ? 1 : 0;
+    }
+    else if (a=="-fixed-dt" || a=="--fixed-dt" ||
+             a=="-no-adaptive-dt" || a=="--no-adaptive-dt") {
+      opt.adaptiveDt = 0;
+    }
+    else if (a=="-use-adaptive-dt" || a=="--use-adaptive-dt") {
+      opt.adaptiveDt = 1;
     }
     else if (a=="-max-trace-distance" || a=="--max-trace-distance") {
       // CLI override for the global cumulative trace-distance cap.
@@ -624,8 +657,21 @@ std::string HelpMessage(const char* progName) {
   out << "      --gridless-mpi-chunk. Input-file analogue: MODE3D_MPI_DYNAMIC_CHUNK or\n";
   out << "      GRIDLESS_MPI_DYNAMIC_CHUNK.\n\n";
 
+  out << "  -adaptive-dt | --adaptive-dt <T|F>   (optional; default from input/default: T)\n";
+  out << "      Select the trajectory time-step policy for Mode3D and gridless backward\n";
+  out << "      tracing. With ADAPTIVE_DT=T, DT_TRACE is a maximum step and the solver\n";
+  out << "      reduces the actual step using gyro-resolution and boundary-distance\n";
+  out << "      limiters. With ADAPTIVE_DT=F, DT_TRACE is used as the fixed pusher step\n";
+  out << "      except for the last trim to MAX_TRACE_TIME/CUTOFF_MAX_TRAJ_TIME.\n";
+  out << "      Aliases: --fixed-dt, --no-adaptive-dt, --use-adaptive-dt.\n";
+  out << "      Input-file analogue (#NUMERICAL): ADAPTIVE_DT T|F.\n\n";
+
   out << "  -max-trace-distance | --max-trace-distance <double>   (optional)\n";
-  out << "\n";
+  out << "      Override #NUMERICAL / MAX_TRACE_DISTANCE from the input file. Units are\n";
+  out << "      Earth radii of cumulative path length. 0 disables the cap. This is useful\n";
+  out << "      for preventing quasi-trapped trajectories from accumulating arbitrarily\n";
+  out << "      long paths before being conservatively classified as not allowed.\n\n";
+
   out << "3D Forward mode options (-mode 3d_forward):\n\n";
   out << "  -forward-niter | --forward-niter <int>   (optional)\n";
   out << "      Override FORWARD_N_ITERATIONS from the input file.\n";
@@ -728,8 +774,9 @@ std::string HelpMessage(const char* progName) {
   out << "    POINTS_END\n\n";
 
   out << "  #NUMERICAL\n";
-  out << "    DT_TRACE           <double>   initial time step [s]\n";
+  out << "    DT_TRACE           <double>   fixed step when ADAPTIVE_DT=F; max step when ADAPTIVE_DT=T\n";
   out << "    MAX_STEPS          <int>      hard step count cap\n";
+  out << "    ADAPTIVE_DT        T|F        T/default: automatic gyro/boundary limited dt; F: fixed DT_TRACE\n";
   out << "    MAX_TRACE_TIME     <double>   hard integration time cap [s]\n";
   out << "    MAX_TRACE_DISTANCE <double>   hard cumulative trace-distance cap [Re]\n\n";
 

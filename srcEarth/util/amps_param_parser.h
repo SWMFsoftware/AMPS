@@ -127,7 +127,10 @@
 //     (coordinates in km, GSM by default)
 //
 //   #NUMERICAL
-//     DT_TRACE                <double>   ! initial time step [s]
+//     DT_TRACE                <double>   ! trace time step [s]; fixed step when ADAPTIVE_DT=F,
+//                                        ! maximum step when ADAPTIVE_DT=T
+//     ADAPTIVE_DT             T|F        ! T/default: automatic gyro/boundary-limited step
+//                                        ! F: use fixed DT_TRACE except for final time-limit trim
 //     MAX_STEPS               <int>      ! hard cap on integration steps
 //     MAX_TRACE_TIME          <double>   ! hard cap on integration time [s]
 //     MAX_TRACE_DISTANCE      <double>   ! hard cap on cumulative trace distance [Re]
@@ -790,6 +793,17 @@ namespace EarthUtil {
 
   struct Numerical {
     double dtTrace_s{1.0};
+
+    // ADAPTIVE_DT
+    // -----------
+    // true  (default): DT_TRACE is an upper bound; the solvers reduce the actual
+    //                  step using gyro-resolution and boundary-distance limiters.
+    // false          : DT_TRACE is used as a fixed integration step, except for a
+    //                  final trim to the remaining allowed trace time.  This mode
+    //                  is mainly for convergence/regression tests where the user
+    //                  wants DT_TRACE itself to control the pusher accuracy.
+    bool adaptiveDt{true};
+
     int maxSteps{300000};
     double maxTraceTime_s{7200.0};
 

@@ -105,6 +105,8 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
   //
   //   -cutoff-search <UPPER_SCAN|BINARY>
   //   -cutoff-upper-scan-n <N>
+  //   -adaptive-dt <T|F>
+  //   -max-trace-distance <Re>
   //   -mode3d-mpi-scheduler / -gridless-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC>
   //   -mode3d-mpi-dynamic-chunk / -gridless-mpi-dynamic-chunk <N>
   //
@@ -229,6 +231,21 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
   // positive value simply overrides CUTOFF_UPPER_SCAN_N from the input file.
   if (cli.cutoffUpperScanN > 0) {
     p.cutoff.upperScanN = cli.cutoffUpperScanN;
+  }
+
+  // Trajectory time-step policy.  In adaptive mode DT_TRACE is a maximum step and
+  // the pusher may reduce it using gyro/boundary criteria.  In fixed-step mode
+  // DT_TRACE is used directly (except for trimming the last step to the remaining
+  // trace-time cap).  This switch is useful for pusher/time-step convergence tests.
+  if (cli.adaptiveDt >= 0) {
+    p.numerics.adaptiveDt = (cli.adaptiveDt != 0);
+  }
+
+  // Optional cumulative path-length cap in Earth radii.  Keep this next to
+  // ADAPTIVE_DT because both are numerical trajectory-control overrides shared by
+  // Mode3D and gridless backward products.
+  if (cli.maxTraceDistance_Re >= 0.0) {
+    p.numerics.maxTraceDistance_Re = cli.maxTraceDistance_Re;
   }
 
   return true;

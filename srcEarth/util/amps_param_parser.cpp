@@ -2639,6 +2639,10 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
     }
     else if (section=="#NUMERICAL") {
       if (uKey=="DT_TRACE") p.numerics.dtTrace_s=std::stod(val);
+      else if (uKey=="ADAPTIVE_DT" || uKey=="TRACE_ADAPTIVE_DT" ||
+               uKey=="USE_ADAPTIVE_DT" || uKey=="AUTO_DT") {
+        p.numerics.adaptiveDt=ToBool(val);
+      }
       else if (uKey=="MAX_STEPS") p.numerics.maxSteps=std::stoi(val);
       else if (uKey=="MAX_TRACE_TIME") p.numerics.maxTraceTime_s=std::stod(val);
       else if (uKey=="MAX_TRACE_DISTANCE") p.numerics.maxTraceDistance_Re=std::stod(val);
@@ -2986,6 +2990,23 @@ if (ToUpper(p.field.model)=="DIPOLE") {
       // token that the caller may want to inspect later.
       if (temporalMode.empty() || temporalMode == "PARAMS") p.temporal.tsInputMode = "FILE";
     }
+  }
+
+
+  // Validate global trajectory-control settings used by both cutoff and density/flux
+  // backtracing.  ADAPTIVE_DT only changes how DT_TRACE is interpreted; the remaining
+  // hard limits keep the same meaning in fixed-step and adaptive-step modes.
+  if (!(p.numerics.dtTrace_s > 0.0)) {
+    exit(__LINE__,__FILE__,"DT_TRACE must be > 0 s");
+  }
+  if (p.numerics.maxSteps <= 0) {
+    exit(__LINE__,__FILE__,"MAX_STEPS must be > 0");
+  }
+  if (!(p.numerics.maxTraceTime_s > 0.0)) {
+    exit(__LINE__,__FILE__,"MAX_TRACE_TIME must be > 0 s");
+  }
+  if (p.numerics.maxTraceDistance_Re < 0.0) {
+    exit(__LINE__,__FILE__,"MAX_TRACE_DISTANCE must be >= 0 (0 means: disabled)");
   }
 
   // Resolve product-selection requests from CALC_TARGET.

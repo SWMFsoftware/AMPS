@@ -99,6 +99,10 @@
 //       from the input file.  The aliases -mode3d-cutoff-search-n and
 //       -gridless-cutoff-search-n are accepted.
 //
+//   -adaptive-dt <T|F>
+//       Override #NUMERICAL ADAPTIVE_DT.  T/default means DT_TRACE is a maximum
+//       adaptive-step bound; F means fixed-step tracing with DT_TRACE.
+//
 //   -max-trace-distance <double>
 //       Override #NUMERICAL MAX_TRACE_DISTANCE from the input file.
 //       Units: Earth radii (Re) of cumulative traced path length.
@@ -256,6 +260,14 @@ namespace EarthUtil {
     // Applies to both Mode3D and gridless UPPER_SCAN searches.
     // 0 means no CLI override.
     int cutoffUpperScanN{0};
+
+    // -adaptive-dt T|F
+    // Optional CLI override for #NUMERICAL ADAPTIVE_DT.
+    // Sentinel convention:
+    //   -1 : no CLI override supplied; use input file/default value
+    //    0 : fixed-step tracing; DT_TRACE is used directly
+    //    1 : adaptive-step tracing; DT_TRACE is the maximum allowed step
+    int adaptiveDt{-1};
 
     // -max-trace-distance <double>
     // Optional CLI override for #NUMERICAL MAX_TRACE_DISTANCE.
