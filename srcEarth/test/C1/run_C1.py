@@ -401,9 +401,9 @@ def parse_args() -> argparse.Namespace:
         epilog=textwrap.dedent("""
         Examples:
           python srcEarth/test/C1/run_C1.py
-          python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16
+        W python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC -np 18 -nt 16
           python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 8
-          python srcEarth/test/C1/run_C1.py --mode gridless -np 4 -nt 16
+        W python srcEarth/test/C1/run_C1.py --mode gridless -np 4 -nt 16
           python srcEarth/test/C1/run_C1.py --no-cutoff-search-cli  # fallback for older CLI
           python srcEarth/test/C1/run_C1.py --skip-run --workdir test_output/C1_3d
         """)
