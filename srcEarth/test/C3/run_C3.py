@@ -373,10 +373,10 @@ def parse_args():
         epilog=textwrap.dedent("""
         Examples:
           python srcEarth/test/C3/run_C3.py
-          python srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16
-          python srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16
-          python srcEarth/test/C3/run_C3.py --mode gridless --max-trace-distance 300
-          python srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN --cutoff-scan-n 200
+        W python srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16
+        W python srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16
+        W python srcEarth/test/C3/run_C3.py --mode gridless --max-trace-distance 300
+        W python srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN --cutoff-scan-n 200
           python srcEarth/test/C3/run_C3.py --skip-run --workdir test_output/C3_gridless
         """)
     )

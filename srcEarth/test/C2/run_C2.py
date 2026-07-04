@@ -438,10 +438,9 @@ def parse_args() -> argparse.Namespace:
         epilog=textwrap.dedent("""
         Examples:
           python srcEarth/test/C2/run_C2.py
-          python srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
+        W python srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
           python srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
-          python srcEarth/test/C2/run_C2.py --mode gridless -np 4 -nt 16
-          python srcEarth/test/C2/run_C2.py --mode gridless -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
+        W python srcEarth/test/C2/run_C2.py --mode gridless -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
           python srcEarth/test/C2/run_C2.py --skip-run --workdir test_output/C2_gridless
         """)
     )
