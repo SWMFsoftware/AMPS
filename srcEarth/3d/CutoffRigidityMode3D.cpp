@@ -242,6 +242,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <iostream>
+#include <fstream>
 #include <limits>
 #include <thread>
 
@@ -1032,7 +1033,7 @@ static bool TraceAllowed3D(const EarthUtil::AmpsParam& prm,
 // is still based solely on the same boundary logic used by TraceAllowed3D().
 //
 // This debug path is deliberately not used in the production cutoff loop. It is a
-// single-point/single-scan validation tool enabled by CUTOFF_DEBUG_EXIT_TRACE.
+// trajectory-list validation tool enabled by CUTOFF_DEBUG_EXIT_TRACE.
 //======================================================================================
 
 enum class TraceExitReason3D {
@@ -2108,6 +2109,121 @@ static void WriteMode3DCutoffDebugRigidityScan_(const EarthUtil::AmpsParam& prm,
 }
 
 
+struct DebugExitTrajectoryCase3D {
+    int id{0};
+    std::string label{"case"};
+    double lon_deg{0.0};
+    double lat_deg{0.0};
+    double alt_km{0.0};
+    double R_GV{0.0};
+};
+
+static std::string QuoteSafeTecplotString3D_(std::string s) {
+    // Tecplot ASCII strings are written in double quotes.  Keep user labels useful
+    // but remove characters that would break the single combined diagnostic file.
+    for (char& c : s) {
+        if (c == '"' || c == '\\') c = '_';
+        if (c == '\t' || c == '\r' || c == '\n') c = '_';
+    }
+    if (s.empty()) s = "case";
+    return s;
+}
+
+static std::vector<DebugExitTrajectoryCase3D>
+LoadMode3DDebugExitCaseList_(const std::string& listFile) {
+    // Read a user-provided trajectory list.  The list format is intentionally
+    // simple so validation scripts can create it without knowing AMPS internals:
+    //
+    //   # lon_deg lat_deg alt_km R_GV [label]
+    //     0.0    -60.0  9000.0 0.080 low_latm60
+    //
+    // Commas are accepted as whitespace, and both '#' and '!' start comments.
+    // R_GV is an absolute rigidity.  A separate validation harness can compute it
+    // from factors times an analytical cutoff if desired.
+    std::ifstream in(listFile.c_str());
+    if (!in) {
+        std::ostringstream msg;
+        msg << "Mode3D cutoff exit diagnostic: cannot open trajectory list file '"
+            << listFile << "'.";
+        throw std::runtime_error(msg.str());
+    }
+
+    std::vector<DebugExitTrajectoryCase3D> cases;
+    std::string line;
+    int lineNo = 0;
+    while (std::getline(in,line)) {
+        ++lineNo;
+        const std::size_t hash = line.find('#');
+        const std::size_t bang = line.find('!');
+        std::size_t cut = std::string::npos;
+        if (hash != std::string::npos) cut = hash;
+        if (bang != std::string::npos) cut = (cut == std::string::npos) ? bang : std::min(cut,bang);
+        if (cut != std::string::npos) line.erase(cut);
+        std::replace(line.begin(),line.end(),',',' ');
+
+        std::istringstream iss(line);
+        DebugExitTrajectoryCase3D c;
+        if (!(iss >> c.lon_deg >> c.lat_deg >> c.alt_km >> c.R_GV)) {
+            // Empty/comment-only lines are skipped.  Non-empty malformed lines are
+            // reported so a misspelled C4 list does not silently reduce coverage.
+            std::string rest;
+            std::istringstream check(line);
+            if (check >> rest) {
+                std::ostringstream msg;
+                msg << "Mode3D cutoff exit diagnostic: malformed line " << lineNo
+                    << " in '" << listFile
+                    << "'. Expected: lon_deg lat_deg alt_km R_GV [label].";
+                throw std::runtime_error(msg.str());
+            }
+            continue;
+        }
+        if (!(std::isfinite(c.lon_deg) && std::isfinite(c.lat_deg) &&
+              std::isfinite(c.alt_km) && std::isfinite(c.R_GV))) {
+            std::ostringstream msg;
+            msg << "Mode3D cutoff exit diagnostic: non-finite value on line "
+                << lineNo << " in '" << listFile << "'.";
+            throw std::runtime_error(msg.str());
+        }
+        if (c.lat_deg < -90.0 || c.lat_deg > 90.0) {
+            std::ostringstream msg;
+            msg << "Mode3D cutoff exit diagnostic: latitude outside [-90,90] on line "
+                << lineNo << " in '" << listFile << "'.";
+            throw std::runtime_error(msg.str());
+        }
+        if (!(c.alt_km >= 0.0)) {
+            std::ostringstream msg;
+            msg << "Mode3D cutoff exit diagnostic: altitude must be >=0 on line "
+                << lineNo << " in '" << listFile << "'.";
+            throw std::runtime_error(msg.str());
+        }
+        if (!(c.R_GV > 0.0)) {
+            std::ostringstream msg;
+            msg << "Mode3D cutoff exit diagnostic: R_GV must be >0 on line "
+                << lineNo << " in '" << listFile << "'.";
+            throw std::runtime_error(msg.str());
+        }
+
+        std::string label;
+        if (iss >> label) c.label = label;
+        else {
+            std::ostringstream lbl;
+            lbl << "case" << cases.size();
+            c.label = lbl.str();
+        }
+        c.id = static_cast<int>(cases.size());
+        c.label = QuoteSafeTecplotString3D_(c.label);
+        cases.push_back(c);
+    }
+
+    if (cases.empty()) {
+        std::ostringstream msg;
+        msg << "Mode3D cutoff exit diagnostic: trajectory list file '"
+            << listFile << "' contains no valid cases.";
+        throw std::runtime_error(msg.str());
+    }
+    return cases;
+}
+
 static void WriteMode3DCutoffDebugExitTrace_(const EarthUtil::AmpsParam& prm,
                                              cMode3DMeshFieldEval& field,
                                              double q_C,
@@ -2115,38 +2231,61 @@ static void WriteMode3DCutoffDebugExitTrace_(const EarthUtil::AmpsParam& prm,
                                              const DomainBox3D& box,
                                              double Rmin_GV,
                                              double Rmax_GV) {
-    // Single-point trajectory-exit diagnostic. Unlike the compact rigidity scan above,
-    // this file is about the terminal state of the trajectory classifier. It answers
-    // the question: when TraceAllowed3D says "allowed", did the trajectory actually
-    // leave the Mode3D outer box, through which face, and with what numerical overshoot?
-    double alt_km = prm.cutoff.debugExitAlt_km;
-    if (!(alt_km >= 0.0)) {
-        if (!prm.output.shellAlt_km.empty()) alt_km = prm.output.shellAlt_km.front();
-        else alt_km = 0.0;
-    }
-
-    const V3 x0_m = DebugScanSphericalPosition_m_(prm.cutoff.debugExitLon_deg,
-                                                  prm.cutoff.debugExitLat_deg,
-                                                  alt_km);
-
+    // Trajectory-exit diagnostic.  This file is about the terminal state of the
+    // trajectory classifier. It answers the question: when TraceAllowed3D says
+    // "allowed", did the trajectory actually leave the Mode3D outer box, through
+    // which face, and with what numerical overshoot?
+    //
+    // Two input styles are supported:
+    //   * legacy single-point mode: CUTOFF_DEBUG_EXIT_LON/LAT/ALT plus one R or an
+    //     internally generated R scan;
+    //   * list mode: CUTOFF_DEBUG_EXIT_LIST_FILE contains many lon/lat/alt/R cases.
+    //
+    // The diagnostic is intentionally executed by MPI rank 0 before the normal
+    // Mode3D location scheduler starts.  That guarantees exactly one output file
+    // even when the AMPS run was launched with many MPI ranks and/or worker threads.
     const bool isDipole = (EarthUtil::ToUpper(prm.field.model) == "DIPOLE");
-    double RcStormer_GV = -1.0;
-    if (isDipole) {
-        EnsureDipoleAnalyticState3D(prm);
-        RcStormer_GV = StormerVerticalCutoff_GV(prm,x0_m);
-    }
+    if (isDipole) EnsureDipoleAnalyticState3D(prm);
 
-    const V3 arrivalDir = v3unit(mul(-1.0,x0_m));
-    const V3 v0 = mul(-1.0,arrivalDir);
-
-    std::vector<double> Rlist;
-    if (prm.cutoff.debugExitR_GV > 0.0) {
-        Rlist.push_back(prm.cutoff.debugExitR_GV);
+    std::vector<DebugExitTrajectoryCase3D> cases;
+    if (!prm.cutoff.debugExitListFile.empty()) {
+        cases = LoadMode3DDebugExitCaseList_(prm.cutoff.debugExitListFile);
     }
     else {
-        EarthUtil::AmpsParam tmp = prm;
-        tmp.cutoff.debugScanN = (prm.cutoff.debugExitN > 0) ? prm.cutoff.debugExitN : prm.cutoff.debugScanN;
-        Rlist = BuildDebugRigidityList_(tmp,Rmin_GV,Rmax_GV,RcStormer_GV);
+        double alt_km = prm.cutoff.debugExitAlt_km;
+        if (!(alt_km >= 0.0)) {
+            if (!prm.output.shellAlt_km.empty()) alt_km = prm.output.shellAlt_km.front();
+            else alt_km = 0.0;
+        }
+
+        const V3 x0_m = DebugScanSphericalPosition_m_(prm.cutoff.debugExitLon_deg,
+                                                      prm.cutoff.debugExitLat_deg,
+                                                      alt_km);
+        double RcStormer_GV = -1.0;
+        if (isDipole) RcStormer_GV = StormerVerticalCutoff_GV(prm,x0_m);
+
+        std::vector<double> Rlist;
+        if (prm.cutoff.debugExitR_GV > 0.0) {
+            Rlist.push_back(prm.cutoff.debugExitR_GV);
+        }
+        else {
+            EarthUtil::AmpsParam tmp = prm;
+            tmp.cutoff.debugScanN = (prm.cutoff.debugExitN > 0) ? prm.cutoff.debugExitN : prm.cutoff.debugScanN;
+            Rlist = BuildDebugRigidityList_(tmp,Rmin_GV,Rmax_GV,RcStormer_GV);
+        }
+
+        for (std::size_t i=0; i<Rlist.size(); ++i) {
+            DebugExitTrajectoryCase3D c;
+            c.id = static_cast<int>(i);
+            std::ostringstream lbl;
+            lbl << "legacy_" << i;
+            c.label = lbl.str();
+            c.lon_deg = prm.cutoff.debugExitLon_deg;
+            c.lat_deg = prm.cutoff.debugExitLat_deg;
+            c.alt_km = alt_km;
+            c.R_GV = Rlist[i];
+            cases.push_back(c);
+        }
     }
 
     const std::string fname = prm.cutoff.debugExitFile.empty()
@@ -2161,7 +2300,8 @@ static void WriteMode3DCutoffDebugExitTrace_(const EarthUtil::AmpsParam& prm,
     }
 
     std::fprintf(f,"TITLE=\"Mode3D Cutoff Trajectory Exit Diagnostic\"\n");
-    std::fprintf(f,"VARIABLES=\"R_GV\" \"allowed\" \"reason_id\" \"reason\" ");
+    std::fprintf(f,"VARIABLES=\"case_id\" \"label\" \"lon0_deg\" \"lat0_deg\" \"alt0_km\" ");
+    std::fprintf(f,"\"R_GV\" \"allowed\" \"reason_id\" \"reason\" ");
     std::fprintf(f,"\"t_s\" \"n_steps\" \"path_Re\" \"R_terminal_GV\" \"rel_dR\" ");
     std::fprintf(f,"\"face\" \"box_margin_km\" \"overshoot_km\" \"alpha_cross\" ");
     std::fprintf(f,"\"x_exit_km\" \"y_exit_km\" \"z_exit_km\" ");
@@ -2171,17 +2311,14 @@ static void WriteMode3DCutoffDebugExitTrace_(const EarthUtil::AmpsParam& prm,
     std::fprintf(f,"\"rel_dP_axis\" \"P_axis0\" \"P_axis_terminal\" \"Rc_stormer_GV\"\n");
     std::fprintf(f,"# field_model=%s sampling=VERTICAL mover=%s\n",
                  prm.field.model.c_str(),MoverTypeName3D_(GetDefaultMoverType()));
-    std::fprintf(f,"# lon_deg=% .12e lat_deg=% .12e alt_km=% .12e\n",
-                 prm.cutoff.debugExitLon_deg,prm.cutoff.debugExitLat_deg,alt_km);
-    std::fprintf(f,"# x0_m=% .12e y0_m=% .12e z0_m=% .12e r0_Re=% .12e\n",
-                 x0_m.x,x0_m.y,x0_m.z,v3norm(x0_m)/_EARTH__RADIUS_);
-    std::fprintf(f,"# Rmin_GV=% .12e Rmax_GV=% .12e Rc_stormer_GV=% .12e\n",
-                 Rmin_GV,Rmax_GV,RcStormer_GV);
+    std::fprintf(f,"# Rmin_GV=% .12e Rmax_GV=% .12e\n",Rmin_GV,Rmax_GV);
+    if (!prm.cutoff.debugExitListFile.empty()) {
+        std::fprintf(f,"# input_list_file=%s\n",prm.cutoff.debugExitListFile.c_str());
+    }
     std::fprintf(f,"# reason_id: 0=OUTER_BOX 1=INNER_SPHERE_PRE 2=INNER_SPHERE_STEP 3=TIME_LIMIT 4=STEP_LIMIT 5=DISTANCE_LIMIT 6=INVALID_DT 7=UNKNOWN\n");
     std::fprintf(f,"# allowed=1 is valid only when reason=OUTER_BOX. Any timeout/step/distance/inner-sphere reason is forbidden.\n");
     std::fprintf(f,"# rel_dR checks rigidity conservation in E=0. rel_dP_axis checks canonical angular momentum about the dipole axis for FIELD_MODEL=DIPOLE.\n");
-    std::fprintf(f,"ZONE T=\"exit diagnostic lon=%g lat=%g alt=%g km\" I=%zu F=POINT\n",
-                 prm.cutoff.debugExitLon_deg,prm.cutoff.debugExitLat_deg,alt_km,Rlist.size());
+    std::fprintf(f,"ZONE T=\"exit diagnostic trajectory list\" I=%zu F=POINT\n",cases.size());
 
     auto lonlat = [](const V3& x, double& lon_deg, double& lat_deg) {
         const double r = v3norm(x);
@@ -2191,18 +2328,27 @@ static void WriteMode3DCutoffDebugExitTrace_(const EarthUtil::AmpsParam& prm,
         lat_deg = std::asin(std::max(-1.0,std::min(1.0,x.z/r)))*180.0/M_PI;
     };
 
-    for (double R_GV : Rlist) {
-        TraceDetailedResult3D tr = TraceDetailed3D_(prm,field,x0_m,v0,R_GV,q_C,m0_kg,box);
+    for (const DebugExitTrajectoryCase3D& c : cases) {
+        const V3 x0_m = DebugScanSphericalPosition_m_(c.lon_deg,c.lat_deg,c.alt_km);
+        double RcStormer_GV = -1.0;
+        if (isDipole) RcStormer_GV = StormerVerticalCutoff_GV(prm,x0_m);
+
+        const V3 arrivalDir = v3unit(mul(-1.0,x0_m));
+        const V3 v0 = mul(-1.0,arrivalDir);
+        TraceDetailedResult3D tr = TraceDetailed3D_(prm,field,x0_m,v0,c.R_GV,q_C,m0_kg,box);
+
         double lonExit=0.0, latExit=0.0, lonCross=0.0, latCross=0.0;
         lonlat(tr.xTerminal_m,lonExit,latExit);
         lonlat(tr.xBoundary_m,lonCross,latCross);
 
         std::fprintf(f,
-            "% .12e %d %d \"%s\" % .12e %d % .12e % .12e % .12e \"%s\" % .12e % .12e % .12e "
+            "%d \"%s\" % .12e % .12e % .12e % .12e %d %d \"%s\" % .12e %d % .12e % .12e % .12e \"%s\" % .12e % .12e % .12e "
             "% .12e % .12e % .12e % .12e % .12e % .12e "
             "% .12e % .12e % .12e % .12e % .12e % .12e "
             "% .12e % .12e % .12e % .12e\n",
-            R_GV,
+            c.id,
+            c.label.c_str(),
+            c.lon_deg,c.lat_deg,c.alt_km,c.R_GV,
             tr.allowed ? 1 : 0,
             (int)tr.reason,
             TraceExitReasonName3D_(tr.reason),
@@ -2225,10 +2371,11 @@ static void WriteMode3DCutoffDebugExitTrace_(const EarthUtil::AmpsParam& prm,
     std::fclose(f);
 
     std::cout << "Mode3D cutoff exit diagnostic wrote: " << fname
-              << " (lon=" << prm.cutoff.debugExitLon_deg
-              << " deg, lat=" << prm.cutoff.debugExitLat_deg
-              << " deg, alt=" << alt_km << " km, "
-              << Rlist.size() << " trajectory traces)\n";
+              << " (" << cases.size() << " trajectory traces";
+    if (!prm.cutoff.debugExitListFile.empty()) {
+        std::cout << ", list=" << prm.cutoff.debugExitListFile;
+    }
+    std::cout << ")\n";
 }
 
 static void WriteTecplot3DPoints(const EarthUtil::AmpsParam& prm,

@@ -1,159 +1,115 @@
-# C4 — Parser-safe trace-control and mover convergence
+# C4 — Mode3D trajectory-exit classifier and invariant diagnostic
 
-C4 validates the trajectory integration path without using any non-implemented
-parser keywords.  It can be run as a trace-control sweep, a mover
-cross-comparison, or both.  The earlier design used a hypothetical detailed exit diagnostic
-(`CUTOFF_DEBUG_EXIT_TRACE` and related `CUTOFF_DEBUG_EXIT_*` keywords).  Those
-keywords are **not recognized by the current parser**, so this test was rewritten
-as a parser-safe convergence test.
+C4 is a low-level trajectory-quality test for the Mode3D backward-tracing kernel.  It is not a global cutoff-map validation test.  C1, C2, and C3 compare cutoff values against the analytical Størmer result and exercise the penumbra-aware cutoff search.  C4 instead asks whether individual trajectories are integrated and classified in a physically credible way before the same mover is trusted by cutoff, density, spectrum, or flux products.
 
-The test runs an ordinary centered-dipole vertical cutoff calculation on a shell
-at 9000 km for a sweep of `DT_TRACE` values and, optionally, a sweep of particle
-movers selected with `--movers`.  The output cutoff rigidities are
-compared with the analytical vertical Størmer cutoff:
+## What C4 tests
+
+For each selected start location and rigidity, the test launches the normal AMPS Mode3D vertical backtrace and saves the detailed terminal state.  The Python harness then checks three things:
+
+1. **Trajectory-exit classification.**  A trajectory with rigidity above the analytical vertical Størmer cutoff should escape through the Mode3D outer box and be reported as `allowed=1` with `reason=OUTER_BOX`.  A trajectory below the cutoff should not be counted as allowed; acceptable forbidden outcomes include inner-sphere loss, time limit, step limit, distance limit, or another non-outer-boundary terminal reason.
+
+2. **Rigidity/energy conservation.**  In the C4 input file the field is a static centered dipole and the electric field is off.  The magnetic force should not change kinetic energy, so the diagnostic records `rel_dR`.  The default hard tolerance is `--dR-tol=1e-6`.
+
+3. **Canonical dipole-axis momentum diagnostic.**  For an aligned centered dipole, the canonical angular momentum about the dipole axis should be approximately conserved.  The diagnostic records `rel_dP_axis`.  This is recorded by default and can be made a hard failure with `--fail-on-paxis --paxis-tol=1e-5`.
+
+The purpose is to catch problems such as incorrect terminal-state classification, artificial energy drift, bad boundary crossing logic, or an inconsistent pusher before those issues are hidden inside a shell map or a density/flux integral.
+
+## Single-run many-trajectory diagnostic
+
+Older versions of the C4 harness restarted AMPS once for every trajectory because the debug-exit interface accepted only one `(lon, lat, alt, R)` case at a time.  The current implementation fixes that by using:
 
 ```text
-Rc = 14.9 cos^4(lambda) / r_RE^2  GV
+CUTOFF_DEBUG_EXIT_TRACE      T
+CUTOFF_DEBUG_EXIT_LIST_FILE  c4_debug_trajectories.dat
+CUTOFF_DEBUG_EXIT_FILE       cutoff_3d_debug_exit_trace.dat
 ```
 
-The checked locations are, by default:
+The list file contains all trajectories to trace in one AMPS run:
 
 ```text
-altitude:   9000 km
-latitudes:  -60, -30, 0, +30, +60 deg
-longitudes: 0, 90, 180, 270 deg
+# lon_deg lat_deg alt_km R_GV label
+0.0 -60.0 9000.0 8.0000e-02 low_latm60
+0.0 -60.0 9000.0 3.2000e-01 high_latm60
+0.0   0.0 9000.0 1.2800e+00 low_lat0
+0.0   0.0 9000.0 5.1200e+00 high_lat0
 ```
 
-This is an indirect pusher/regression test.  As the trajectory step is reduced,
-the cutoff values should remain stable and close to the analytical Størmer
-reference, with no artificial longitude or north/south asymmetry.  Because
-`ADAPTIVE_DT=T` can make `DT_TRACE` only an upper bound, mover-to-mover
-comparisons are often more informative than a pure `DT_TRACE` sweep.
+The output is one combined Tecplot-style ASCII file, `cutoff_3d_debug_exit_trace.dat`.  AMPS rank 0 writes this diagnostic before the normal Mode3D MPI location scheduler starts.  Therefore the diagnostic output remains a single file even when AMPS is launched with multiple MPI processes and multiple Mode3D worker threads.
 
-## Run
+## Running the test
 
 Run from the directory containing the `amps` executable:
 
 ```bash
-python srcEarth/test/C4/run_C4.py -np 4 -nt 16
+srcEarth/test/C4/run_C4.py -np 4 -nt 16
 ```
 
-Defaults are `-np 4` and `-nt 16`.  AMPS is launched through `mpirun`.
-
-Useful variants:
+Recommended explicit command:
 
 ```bash
-python srcEarth/test/C4/run_C4.py --mode 3d --mode3d-field-eval ANALYTIC
-python srcEarth/test/C4/run_C4.py --mode 3d --mode3d-field-eval MESH --dt-sweep 1.0,0.5,0.25
-python srcEarth/test/C4/run_C4.py --mode gridless --max-trace-distance 300
-python srcEarth/test/C4/run_C4.py --dt-sweep 1.0,0.5,0.25,0.125
-python srcEarth/test/C4/run_C4.py --movers BORIS,RK4,RK6 --adaptive-dt F
+srcEarth/test/C4/run_C4.py \
+  --factors=0.5,2.0 \
+  --lats=-60,-30,0,30,60 \
+  --lons=0 \
+  --alt=9000 \
+  -np 4 \
+  -nt 16
 ```
 
-## Files
+The harness also accepts the form without `=` for negative latitude lists, for example:
+
+```bash
+srcEarth/test/C4/run_C4.py --factors 0.5,2.0 --lats -60,-30,0,30,60
+```
+
+The script normalizes that command before calling `argparse` so `-60,-30,...` is not mistaken for an option.
+
+## Important options
 
 ```text
-run_C4.py                           Python harness
-AMPS_PARAM_C4.in                    backward-compatible alias for Mode3D template
-AMPS_PARAM_C4_mode3d.in             parser-compatible Mode3D input template
-AMPS_PARAM_C4_gridless.in           parser-compatible gridless input template
-reference_C4_stormer_convergence.csv analytical target values
+--lats             comma-separated start latitudes, default -60,-30,0,30,60
+--lons             comma-separated start longitudes, default 0
+--factors          rigidities as factors times Rc_Stormer, default 0.5,2.0
+--dt-sweep         DT_TRACE values; each value is one AMPS run, default 0.25
+--movers           mover list; each mover is one AMPS run, default BORIS
+--adaptive-dt      T or F, default T
+--dR-tol           hard tolerance on |rel_dR|, default 1e-6
+--fail-on-paxis    make |rel_dP_axis| a hard pass/fail quantity
+--paxis-tol        tolerance used with --fail-on-paxis, default 1e-5
 ```
 
-The input template uses the same parser-compatible CCMC/RoR-style layout as the
-working C1 input.  The Python harness edits only parser-supported keywords:
-
-```text
-FIELD_EVAL_METHOD
-CUTOFF_MAX_TRAJ_TIME
-SHELL_ALTS_KM
-SHELL_RES_DEG
-DT_TRACE
-MAX_TRACE_TIME
-MAX_TRACE_DISTANCE
-```
-
-Mover, scheduler, and thread controls are passed on the AMPS command line:
-
-```text
--mover BORIS|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID
--mode3d-field-eval ANALYTIC|MESH|GRID_3D
--mode3d-parallel THREADS
--mode3d-threads <nt>
--mode3d-mpi-scheduler DYNAMIC|BLOCK_CYCLIC|STATIC
--mode3d-mpi-dynamic-chunk <N>
--gridless-mpi-scheduler DYNAMIC|BLOCK_CYCLIC|STATIC
--gridless-mpi-dynamic-chunk <N>
--density-parallel THREADS
--density-threads <nt>
-```
+A command with one mover and one `DT_TRACE` value launches AMPS once and traces all requested trajectories inside that single run.  A mover sweep or a `DT_TRACE` sweep still launches one AMPS run per configuration because the mover and timestep are global run settings.
 
 ## Outputs
 
-The default run directory is `test_output/C4_3d_analytic`.  Summary files are
-written at the root of the run directory:
+For each mover/timestep case, the run directory contains:
 
 ```text
-reference_C4_stormer_convergence.csv
-C4_summary.csv
-C4_case_metrics.csv
-C4_result.json
-C4_convergence.png        # written when matplotlib is available
+AMPS_PARAM_C4.in                    rendered AMPS input file
+c4_debug_trajectories.dat           many-trajectory input list for AMPS
+cutoff_3d_debug_exit_trace.dat      one combined AMPS diagnostic output
+C4_expected_cases.csv               expected cases generated by the harness
+C4_amps.log                         AMPS stdout/stderr log
 ```
 
-Each `(mover, DT_TRACE)` case has its own subdirectory containing the generated
-input, AMPS log, and cutoff shell output.
-
-## Notes
-
-`MAX_TRACE_TIME` and `MAX_TRACE_DISTANCE` are part of the validation state.  If
-the caps are too loose, low-rigidity quasi-trapped trajectories can leak to the
-finite outer box and be misclassified as allowed.  If the caps are too tight,
-truly allowed near-cutoff trajectories can be stopped too early.  C4 exposes
-both controls so the convergence of the cutoff result can be tested explicitly.
-
-
-### ADAPTIVE_DT time-step control
-
-`ADAPTIVE_DT` is a `#NUMERICAL` switch shared by Mode3D and gridless backward
-cutoff/density tracing:
+The top-level C4 work directory contains:
 
 ```text
-ADAPTIVE_DT T   # default: DT_TRACE is the maximum allowed adaptive step
-ADAPTIVE_DT F   # fixed-step regression mode: use DT_TRACE directly
+C4_summary.csv       one row per trajectory with pass/fail checks
+C4_case_metrics.csv  one row per mover/timestep configuration
+C4_result.json       machine-readable test result
 ```
 
-The command-line override is:
+## Interpreting failures
 
-```bash
--adaptive-dt T|F
-```
+- `expected OUTER_BOX but got ...`: the high-rigidity trajectory did not escape as expected.  This can indicate a pusher problem, a boundary configuration issue, too small a maximum trace time/distance, or a field-evaluation problem.
 
-Aliases `-fixed-dt`, `-no-adaptive-dt`, and `-use-adaptive-dt` are also accepted.
-Use `ADAPTIVE_DT F` for pusher convergence tests where changing `DT_TRACE` must
-change the actual integration step.  Production runs should normally use the
-default adaptive mode.
+- `expected not OUTER_BOX but got OUTER_BOX`: the low-rigidity trajectory was classified as allowed.  This may indicate a true penumbral allowed island, but for the default factor `0.5` it is usually a useful warning that the chosen case is not a clean below-cutoff trajectory.  Try a smaller factor such as `--factors=0.25,2.0` if this occurs systematically.
 
+- `|rel_dR| > tolerance`: the trajectory is gaining or losing rigidity in a static magnetic field.  Try `--adaptive-dt F --dt-sweep=1.0,0.5,0.25,0.125` to separate fixed-step pusher convergence from classifier effects.
 
-### Run-banner diagnostics
+- large `rel_dP_axis`: the dipole-axis canonical invariant is drifting.  This is not a hard failure unless `--fail-on-paxis` is set, but it is useful for comparing movers and timestep settings.
 
-Mode3D and gridless cutoff runs print the trace-control state in the AMPS banner:
+## What C4 does not test
 
-```text
-Particle mover
-ADAPTIVE_DT
-DT_TRACE and whether it is a fixed step or maximum allowed step
-effective dt rule
-MAX_TRACE_TIME
-CUTOFF_MAX_TRAJ_TIME
-effective cutoff trace-time cap
-MAX_TRACE_DISTANCE
-MAX_STEPS
-adaptive limiter constants when ADAPTIVE_DT=T
-```
-
-This is important for interpreting C4.  If `ADAPTIVE_DT=T`, decreasing
-`DT_TRACE` may not change the actual pusher step because the gyro-angle or
-boundary-distance limiter can already be smaller.  In that case, the useful
-convergence check is the mover/cap sensitivity, not the nominal `DT_TRACE`
-sequence alone.
+C4 does not validate the global cutoff map, longitude symmetry, mesh interpolation convergence, or realistic IGRF/Tsyganenko morphology.  Those are covered by other validation tests.  C4 is intentionally narrower: it verifies that a single backtraced trajectory terminates for the right reason and conserves the quantities it should conserve in the clean dipole, `E=0` limit.

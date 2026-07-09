@@ -1,11 +1,10 @@
 ! ═══════════════════════════════════════════════════════════════
 ! AMPS SEP geospace validation test C4
-! Parser-safe dipole trajectory-integration convergence, Mode3D
+! Mode3D trajectory-exit classifier and invariant diagnostic, Mode3D
 !
-! No CUTOFF_DEBUG_EXIT_* keywords are used here: those diagnostics are not
-! recognized by the current parser.  The Python harness edits only parser-
-! supported production keywords such as DT_TRACE, ADAPTIVE_DT,
-! MAX_TRACE_TIME, and MAX_TRACE_DISTANCE.
+! The Python harness enables CUTOFF_DEBUG_EXIT_LIST_FILE so all selected
+! diagnostic trajectories are traced during one AMPS run and written to one
+! combined output file for post-run analysis.
 ! ═══════════════════════════════════════════════════════════════
 
 #CALCULATION_MODE

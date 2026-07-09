@@ -1814,6 +1814,10 @@ int main(int argc,char **argv) {
         if (cli.cutoffDebugExitN > 0) {
           p.cutoff.debugExitN = cli.cutoffDebugExitN;
         }
+        if (!cli.cutoffDebugExitListFile.empty()) {
+          p.cutoff.debugExitTrace = true;
+          p.cutoff.debugExitListFile = cli.cutoffDebugExitListFile;
+        }
         if (!cli.cutoffDebugExitFile.empty()) {
           p.cutoff.debugExitFile = cli.cutoffDebugExitFile;
         }

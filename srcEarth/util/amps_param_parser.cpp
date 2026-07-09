@@ -2451,6 +2451,12 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
                uKey=="DEBUG_EXIT_NPOINTS") {
         p.cutoff.debugExitN=std::stoi(val);
       }
+      else if (uKey=="CUTOFF_DEBUG_EXIT_LIST_FILE" ||
+               uKey=="CUTOFF_DEBUG_EXIT_TRAJECTORY_LIST" ||
+               uKey=="DEBUG_EXIT_LIST_FILE") {
+        p.cutoff.debugExitListFile=Trim(val);
+        if (!p.cutoff.debugExitListFile.empty()) p.cutoff.debugExitTrace=true;
+      }
       else if (uKey=="CUTOFF_DEBUG_EXIT_FILE" ||
                uKey=="DEBUG_EXIT_FILE") {
         p.cutoff.debugExitFile=Trim(val);
@@ -3082,14 +3088,21 @@ if (ToUpper(p.field.model)=="DIPOLE") {
       if (p.cutoff.debugExitFile.empty()) {
         exit(__LINE__,__FILE__,"CUTOFF_DEBUG_EXIT_FILE must not be empty");
       }
-      if (!std::isfinite(p.cutoff.debugExitLon_deg) ||
-          !std::isfinite(p.cutoff.debugExitLat_deg) ||
-          !std::isfinite(p.cutoff.debugExitAlt_km) ||
-          !std::isfinite(p.cutoff.debugExitR_GV)) {
-        exit(__LINE__,__FILE__,"CUTOFF_DEBUG_EXIT_LON/LAT/ALT/R_GV must be finite numbers");
+      if (!p.cutoff.debugExitListFile.empty()) {
+        // The list file is opened by the solver in the run directory.  It contains
+        // all lon/lat/alt/R validation trajectories, so no single-point coordinate
+        // validation is needed here.
       }
-      if (p.cutoff.debugExitLat_deg < -90.0 || p.cutoff.debugExitLat_deg > 90.0) {
-        exit(__LINE__,__FILE__,"CUTOFF_DEBUG_EXIT_LAT must be in [-90,90] degrees");
+      else {
+        if (!std::isfinite(p.cutoff.debugExitLon_deg) ||
+            !std::isfinite(p.cutoff.debugExitLat_deg) ||
+            !std::isfinite(p.cutoff.debugExitAlt_km) ||
+            !std::isfinite(p.cutoff.debugExitR_GV)) {
+          exit(__LINE__,__FILE__,"CUTOFF_DEBUG_EXIT_LON/LAT/ALT/R_GV must be finite numbers");
+        }
+        if (p.cutoff.debugExitLat_deg < -90.0 || p.cutoff.debugExitLat_deg > 90.0) {
+          exit(__LINE__,__FILE__,"CUTOFF_DEBUG_EXIT_LAT must be in [-90,90] degrees");
+        }
       }
     }
   }

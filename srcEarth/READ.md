@@ -957,14 +957,16 @@ CUTOFF_DEBUG_SCAN_ALT    9000.0
 CUTOFF_DEBUG_SCAN_N        40
 CUTOFF_DEBUG_SCAN_FILE     cutoff_3d_debug_latm40.dat
 
-# Optional one-point trajectory-exit diagnostic
-CUTOFF_DEBUG_EXIT_TRACE    T
-CUTOFF_DEBUG_EXIT_LON      0.0
-CUTOFF_DEBUG_EXIT_LAT     -60.0
-CUTOFF_DEBUG_EXIT_ALT    9000.0
-CUTOFF_DEBUG_EXIT_R_GV    -1.0
-CUTOFF_DEBUG_EXIT_N        40
-CUTOFF_DEBUG_EXIT_FILE     cutoff_3d_debug_exit_latm60.dat
+# Optional trajectory-exit diagnostic.  Either use one selected point, or
+# provide CUTOFF_DEBUG_EXIT_LIST_FILE to trace many trajectories in one run.
+CUTOFF_DEBUG_EXIT_TRACE      T
+CUTOFF_DEBUG_EXIT_LON        0.0
+CUTOFF_DEBUG_EXIT_LAT       -60.0
+CUTOFF_DEBUG_EXIT_ALT      9000.0
+CUTOFF_DEBUG_EXIT_R_GV      -1.0
+CUTOFF_DEBUG_EXIT_N          40
+CUTOFF_DEBUG_EXIT_LIST_FILE  c4_debug_trajectories.dat
+CUTOFF_DEBUG_EXIT_FILE       cutoff_3d_debug_exit_trace.dat
 ```
 
 Meanings:
@@ -983,11 +985,12 @@ CUTOFF_DEBUG_RIGIDITY_SCAN    enable one-point TraceAllowed3D(R) diagnostic
 CUTOFF_DEBUG_SCAN_LON/LAT/ALT selected spherical-shell point for the diagnostic
 CUTOFF_DEBUG_SCAN_N           number of log-spaced R samples; landmarks are added
 CUTOFF_DEBUG_SCAN_FILE        diagnostic output file name
-CUTOFF_DEBUG_EXIT_TRACE       enable one-point trajectory-exit diagnostic
-CUTOFF_DEBUG_EXIT_LON/LAT/ALT selected spherical-shell point for the exit diagnostic
-CUTOFF_DEBUG_EXIT_R_GV        one rigidity to trace [GV]; <=0 writes a diagnostic list
-CUTOFF_DEBUG_EXIT_N           number of list samples when R_GV<=0
-CUTOFF_DEBUG_EXIT_FILE        trajectory-exit diagnostic output file name
+CUTOFF_DEBUG_EXIT_TRACE       enable trajectory-exit diagnostic
+CUTOFF_DEBUG_EXIT_LON/LAT/ALT selected spherical-shell point for legacy one-point mode
+CUTOFF_DEBUG_EXIT_R_GV        one rigidity to trace [GV]; <=0 writes a diagnostic list in one-point mode
+CUTOFF_DEBUG_EXIT_N           number of list samples when R_GV<=0 in one-point mode
+CUTOFF_DEBUG_EXIT_LIST_FILE   optional many-trajectory input list: lon_deg lat_deg alt_km R_GV [label]
+CUTOFF_DEBUG_EXIT_FILE        single combined trajectory-exit diagnostic output file name
 ```
 
 
@@ -1009,15 +1012,17 @@ can be enabled from the command line with:
 ```
 
 The exit diagnostic is a stronger trajectory-classifier test. It repeats the same
-vertical backtrace used by the cutoff solver at one selected point and writes the
-termination reason and boundary-crossing geometry. For a trajectory counted as
-allowed, the row must have `reason=OUTER_BOX`; time limits, step limits, distance
-limits, and inner-sphere hits are forbidden. The file also reports the raw terminal
-point, the linearly reconstructed box-crossing point/face, the box overshoot, the
-relative rigidity error, and for a centered dipole the relative error in the
-canonical angular momentum about the dipole axis,
-`[r x (p + qA)] . m_hat`. This checks whether an allowed low-rigidity pocket is a
-true outer-boundary escape or a classifier/integration artifact. Example:
+vertical backtrace used by the cutoff solver and writes the termination reason and
+boundary-crossing geometry. For a trajectory counted as allowed, the row must have
+`reason=OUTER_BOX`; time limits, step limits, distance limits, and inner-sphere
+hits are forbidden. The file also reports the raw terminal point, the linearly
+reconstructed box-crossing point/face, the box overshoot, the relative rigidity
+error, and for a centered dipole the relative error in the canonical angular
+momentum about the dipole axis, `[r x (p + qA)] . m_hat`. This checks whether an
+allowed low-rigidity pocket is a true outer-boundary escape or a
+classifier/integration artifact.
+
+Single-point example:
 
 ```bash
 ./amps -mode 3d -i AMPS_PARAM_3d_dipole_shells.in \
@@ -1027,8 +1032,31 @@ true outer-boundary escape or a classifier/integration artifact. Example:
 ```
 
 If `-cutoff-debug-exit-r` or `CUTOFF_DEBUG_EXIT_R_GV` is omitted or non-positive,
-the exit diagnostic writes a small rigidity list, including log-spaced samples and
-Störmer-neighborhood landmarks when `FIELD_MODEL=DIPOLE`.
+the single-point diagnostic writes a small rigidity list, including log-spaced
+samples and Störmer-neighborhood landmarks when `FIELD_MODEL=DIPOLE`.
+
+Many-trajectory example, used by validation test C4:
+
+```text
+# c4_debug_trajectories.dat
+# lon_deg lat_deg alt_km R_GV label
+0.0 -60.0 9000.0 8.0e-02 low_latm60
+0.0 -60.0 9000.0 3.2e-01 high_latm60
+0.0   0.0 9000.0 1.28e+00 low_lat0
+0.0   0.0 9000.0 5.12e+00 high_lat0
+```
+
+```bash
+./amps -mode 3d -i AMPS_PARAM_3d_dipole_shells.in \
+  -cutoff-debug-exit-list c4_debug_trajectories.dat \
+  -cutoff-debug-exit-file cutoff_3d_debug_exit_trace.dat
+```
+
+All rows from `CUTOFF_DEBUG_EXIT_LIST_FILE` are traced during the same AMPS run and
+written to one combined `CUTOFF_DEBUG_EXIT_FILE`. The diagnostic is performed by
+rank 0 before the normal Mode3D MPI location scheduler starts, so the output file
+remains single and deterministic even when the run uses multiple MPI ranks and
+Mode3D worker threads.
 
 ### 8.10 `#DENSITY_SPECTRUM`
 
@@ -1233,7 +1261,10 @@ Common options:
     In standalone Mode3D cutoff runs, write the one-point rigidity classification diagnostic before the full cutoff map. Optional: -cutoff-debug-scan-n <N> and -cutoff-debug-scan-file <file>.
 
 -cutoff-debug-exit <lon_deg> <lat_deg> <alt_km>
-    In standalone Mode3D cutoff runs, write the one-point trajectory-exit diagnostic. Optional: -cutoff-debug-exit-r <R_GV>, -cutoff-debug-exit-n <N>, and -cutoff-debug-exit-file <file>.
+    In standalone Mode3D cutoff runs, write the legacy one-point trajectory-exit diagnostic. Optional: -cutoff-debug-exit-r <R_GV>, -cutoff-debug-exit-n <N>, and -cutoff-debug-exit-file <file>.
+
+-cutoff-debug-exit-list <file>
+    In standalone Mode3D cutoff runs, trace all diagnostic trajectories listed in <file> during one AMPS run and write one combined output file. Each non-comment line is: lon_deg lat_deg alt_km R_GV [label].
 
 -cutoff-search <UPPER_SCAN|BINARY>
     Select the cutoff-search algorithm in both standalone Mode3D and gridless cutoff. UPPER_SCAN is the default penumbra-safe upper-cutoff search; BINARY restores the legacy endpoint-only bisection. Optional: -cutoff-upper-scan-n <N>. Mode-specific aliases are also accepted: -mode3d-cutoff-search, -gridless-cutoff-search, -mode3d-cutoff-search-n, and -gridless-cutoff-search-n.

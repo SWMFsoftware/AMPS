@@ -54,8 +54,8 @@
 //     CUTOFF_UPPER_SCAN_N     <int>      ! samples for UPPER_SCAN; 0 => CUTOFF_NENERGY
 //     CUTOFF_DEBUG_RIGIDITY_SCAN T|F     ! write one-point allowed(R) scan
 //     CUTOFF_DEBUG_SCAN_*               ! lon/lat/alt/N/file controls for that scan
-//     CUTOFF_DEBUG_EXIT_TRACE T|F        ! write one-point trajectory-exit diagnostic
-//     CUTOFF_DEBUG_EXIT_*               ! lon/lat/alt/R/N/file controls for exit test
+//     CUTOFF_DEBUG_EXIT_TRACE T|F        ! write trajectory-exit diagnostic
+//     CUTOFF_DEBUG_EXIT_*               ! lon/lat/alt/R/N/list/file controls for exit test
 //
 //   #DENSITY_SPECTRUM
 //     DS_EMIN                 <double>   ! MeV/n; lower energy bound
@@ -397,19 +397,30 @@ namespace EarthUtil {
     // similarly to CUTOFF_DEBUG_RIGIDITY_SCAN, with CUTOFF_DEBUG_EXIT_N samples.
     //
     // Input-file keys in #CUTOFF_RIGIDITY:
-    //   CUTOFF_DEBUG_EXIT_TRACE  T|F
-    //   CUTOFF_DEBUG_EXIT_LON    <deg>
-    //   CUTOFF_DEBUG_EXIT_LAT    <deg>
-    //   CUTOFF_DEBUG_EXIT_ALT    <km>
-    //   CUTOFF_DEBUG_EXIT_R_GV   <GV>   (optional; <=0 means scan/list mode)
-    //   CUTOFF_DEBUG_EXIT_N      <int>  (used only when R_GV<=0)
-    //   CUTOFF_DEBUG_EXIT_FILE   <file>
+    //   CUTOFF_DEBUG_EXIT_TRACE      T|F
+    //   CUTOFF_DEBUG_EXIT_LON        <deg>
+    //   CUTOFF_DEBUG_EXIT_LAT        <deg>
+    //   CUTOFF_DEBUG_EXIT_ALT        <km>
+    //   CUTOFF_DEBUG_EXIT_R_GV       <GV>   (optional; <=0 means scan/list mode)
+    //   CUTOFF_DEBUG_EXIT_N          <int>  (used only when R_GV<=0)
+    //   CUTOFF_DEBUG_EXIT_LIST_FILE  <file> (optional many-trajectory list)
+    //   CUTOFF_DEBUG_EXIT_FILE       <file> (single combined output file)
+    //
+    // If CUTOFF_DEBUG_EXIT_LIST_FILE is set, the listed trajectories replace the
+    // single LON/LAT/ALT/R selection.  Each non-comment line in the list must be:
+    //
+    //   lon_deg lat_deg alt_km R_GV [label]
+    //
+    // The diagnostic is written by rank 0 before the normal Mode3D work scheduler,
+    // so the output is one deterministic file even when AMPS is launched with many
+    // MPI ranks and/or threads.
     bool debugExitTrace{false};
     double debugExitLon_deg{0.0};
     double debugExitLat_deg{0.0};
     double debugExitAlt_km{-1.0};
     double debugExitR_GV{-1.0};
     int debugExitN{40};
+    std::string debugExitListFile{""};
     std::string debugExitFile{"cutoff_3d_debug_exit_trace.dat"};
   };
 

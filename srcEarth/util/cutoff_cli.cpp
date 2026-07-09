@@ -254,6 +254,15 @@ CliOptions ParseCli(int argc,char** argv) {
       if (opt.cutoffDebugExitN < 2)
         exit(__LINE__,__FILE__,"-cutoff-debug-exit-n must be >= 2");
     }
+    else if (a=="-cutoff-debug-exit-list" || a=="--cutoff-debug-exit-list" ||
+             a=="-cutoff-debug-exit-list-file" || a=="--cutoff-debug-exit-list-file" ||
+             a=="-mode3d-cutoff-debug-exit-list" || a=="--mode3d-cutoff-debug-exit-list") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-debug-exit-list");
+      opt.cutoffDebugExit=true;
+      opt.cutoffDebugExitListFile=argv[++i];
+      if (opt.cutoffDebugExitListFile.empty())
+        exit(__LINE__,__FILE__,"-cutoff-debug-exit-list must not be empty");
+    }
     else if (a=="-cutoff-debug-exit-file" || a=="--cutoff-debug-exit-file") {
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-debug-exit-file");
       opt.cutoffDebugExitFile=argv[++i];
@@ -561,6 +570,14 @@ std::string HelpMessage(const char* progName) {
   out << "      --cutoff-debug-exit-n <N>, --cutoff-debug-exit-file <file>.\n";
   out << "      Input-file equivalents are CUTOFF_DEBUG_EXIT_TRACE and\n";
   out << "      CUTOFF_DEBUG_EXIT_LON/LAT/ALT/R_GV/N/FILE.\n\n";
+
+  out << "  -cutoff-debug-exit-list | --cutoff-debug-exit-list <file>   (optional)\n";
+  out << "      In -mode 3d cutoff runs, trace all diagnostic trajectories listed in\n";
+  out << "      <file> during one AMPS run and write one combined output file. Each\n";
+  out << "      non-comment line must contain: lon_deg lat_deg alt_km R_GV [label].\n";
+  out << "      Commas are accepted as whitespace; '#' and '!' start comments. The\n";
+  out << "      output file is still selected with --cutoff-debug-exit-file. Input-file\n";
+  out << "      equivalent: CUTOFF_DEBUG_EXIT_LIST_FILE.\n\n";
 
   out << "  -cutoff-search | --cutoff-search <UPPER_SCAN|BINARY>   (optional)\n";
   out << "      What this command does:\n";

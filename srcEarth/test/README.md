@@ -89,26 +89,36 @@ C3 accepts `--max-trace-time`, `--max-trace-distance`, and `--dt-trace` so the
 finite-time / finite-distance trajectory classification sensitivity can be
 studied explicitly.
 
-## C4 — Parser-safe trajectory integration convergence
+## C4 — Mode3D trajectory-exit classifier and invariant diagnostic
 
-C4 replaces the earlier non-parser-safe invariant diagnostic.  The current code
-does not recognize `CUTOFF_DEBUG_EXIT_TRACE` or the related
-`CUTOFF_DEBUG_EXIT_*` keywords, so C4 uses only production parser keywords and
-checks ordinary cutoff shell output against the analytical vertical Størmer
-solution.
+C4 uses the Mode3D `CUTOFF_DEBUG_EXIT_LIST_FILE` diagnostic to trace many selected
+vertical trajectories in one AMPS run and write one combined
+`cutoff_3d_debug_exit_trace.dat` file.  It is not a shell-map cutoff-accuracy
+test.  Instead, it checks whether individual trajectories terminate for the
+right reason and conserve the quantities they should conserve in a static
+centered dipole with `E=0`.
 
-The script runs a centered dipole shell at 9000 km for a sweep of `DT_TRACE`
-values and checks selected longitudes/latitudes for convergence toward the
-Størmer cutoff.
+The harness generates `c4_debug_trajectories.dat` with all requested
+`lon_deg lat_deg alt_km R_GV label` cases, launches AMPS once per mover/DT_TRACE
+configuration, and then checks:
+
+- high-rigidity cases above the analytical Størmer cutoff exit through `OUTER_BOX`;
+- low-rigidity cases below the cutoff are not counted as allowed;
+- `rel_dR` stays below the requested tolerance;
+- `rel_dP_axis` is recorded and can be made a hard failure with `--fail-on-paxis`.
 
 ```bash
-python srcEarth/test/C4/run_C4.py --mode 3d --mode3d-field-eval ANALYTIC
-python srcEarth/test/C4/run_C4.py --mode 3d --mode3d-field-eval MESH --dt-sweep 1.0,0.5,0.25
-python srcEarth/test/C4/run_C4.py --mode gridless --max-trace-distance 300
+srcEarth/test/C4/run_C4.py --factors=0.5,2.0 --lats=-60,-30,0,30,60
+srcEarth/test/C4/run_C4.py --adaptive-dt F --dt-sweep=1.0,0.5,0.25
+srcEarth/test/C4/run_C4.py --fail-on-paxis --paxis-tol=1e-5
 ```
 
-C4 records `MAX_TRACE_TIME` and `MAX_TRACE_DISTANCE`, because finite-time and
-finite-distance caps can affect near-cutoff trajectory classification.
+A single mover and single `DT_TRACE` value produces one AMPS run regardless of how
+many latitudes, longitudes, or rigidity factors are requested.  Mover and
+`DT_TRACE` sweeps still launch one run per configuration because those are global
+AMPS settings.  The debug-exit file is written by rank 0 before the normal Mode3D
+MPI scheduler starts, so it remains one file even with multiple MPI ranks and
+threads.
 
 
 ### ADAPTIVE_DT time-step control

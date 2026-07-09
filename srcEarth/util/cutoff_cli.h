@@ -236,15 +236,18 @@ namespace EarthUtil {
     std::string cutoffDebugScanFile{""};
 
     // -cutoff-debug-exit <lon_deg> <lat_deg> <alt_km>
+    // -cutoff-debug-exit-list <file>
     // Optional Mode3D trajectory-exit diagnostic.  It writes the terminal reason,
     // raw exit point, reconstructed boundary-crossing point, rigidity conservation,
-    // and dipole canonical-momentum invariant for the selected vertical trajectory.
+    // and dipole canonical-momentum invariant.  The list form traces many
+    // lon/lat/alt/R cases in one AMPS run and still produces one output file.
     bool cutoffDebugExit{false};
     double cutoffDebugExitLon_deg{0.0};
     double cutoffDebugExitLat_deg{0.0};
     double cutoffDebugExitAlt_km{-1.0};
     double cutoffDebugExitR_GV{-1.0};
     int cutoffDebugExitN{0};
+    std::string cutoffDebugExitListFile{""};
     std::string cutoffDebugExitFile{""};
 
     // -cutoff-search <UPPER_SCAN|BINARY>
