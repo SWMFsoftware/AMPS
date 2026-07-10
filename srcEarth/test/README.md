@@ -2,7 +2,7 @@
 
 This directory contains executable regression/validation tests for the AMPS
 Earth SEP/geospace backward products.  Each test is stored in its own directory
-(`C1`, `C2`, ..., `F1`, `F2`, `F3`, `F5`, `F11`, `F15`, ...).  Test scripts are intended to be executed
+(`C1`, `C2`, ..., `F1`, `F2`, `F3`, `F4`, `F5`, `F11`, `F15`, ...).  Test scripts are intended to be executed
 from the directory containing the `amps` executable, not from inside the test
 subdirectory.
 
@@ -244,6 +244,30 @@ python srcEarth/test/F3/run_F3.py --dry-run
 ```
 
 F3 writes `F3_summary.csv`, `F3_result.json`, and `reference_F3_dipole_cutoff_used.csv` under `test_output/F3_gridless`. The default repository reference table is `srcEarth/test/F3/reference_F3_dipole_cutoff.csv`.
+
+## F4 — Transmission reconstruction consistency
+
+F4 isolates the exact file/spectrum reconstruction identities in the gridless density/flux path. It runs a centered aligned dipole with `DS_TRANSMISSION_MODE SCAN` and power-law boundary flux at the validation-plan diagnostic latitudes `-60, -30, 0, 30, 60 deg` on the 9000 km shell.
+
+The reference solution is internal and exact:
+
+```text
+J_local(E) = T(E) J_boundary(E)
+n          = 4π ∫ J_local(E) / v(E) dE
+F          = 4π ∫ J_local(E) dE
+F_channel  = 4π ∫_channel J_local(E) dE
+```
+
+The summary file therefore reports residuals with `expected_value=0`; those zero entries mean zero reconstruction error, not zero physical density or flux.
+
+```bash
+python srcEarth/test/F4/run_F4.py -np 4 -nt 16
+python srcEarth/test/F4/run_F4.py --scan-n 160 --nintervals 240
+python srcEarth/test/F4/run_F4.py --lons 0,90 --lats -60,-30,0,30,60
+python srcEarth/test/F4/run_F4.py --dry-run
+```
+
+F4 writes `F4_summary.csv`, `F4_result.json`, and `reference_F4_reconstruction_used.csv` under `test_output/F4_gridless`. The repository reference/check table is `srcEarth/test/F4/reference_F4_reconstruction.csv`.
 
 ## F5 — Directional anisotropy / PAD mapping
 

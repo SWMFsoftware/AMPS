@@ -52,6 +52,9 @@ last pass:
 !P srcEarth/test/F3/run_F3.py -np 4 -nt 16
 !last pass:
 
+!P srcEarth/test/F4/run_F4.py -np 4 -nt 16
+!last pass: 
+
 P srcEarth/test/F5/run_F5.py -np 4 -nt 16
 last pass:
 P srcEarth/test/F11/run_F11.py -np 4 -nt 16

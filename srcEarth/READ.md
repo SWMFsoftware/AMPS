@@ -2411,6 +2411,61 @@ reference_F3_dipole_cutoff_used.csv
 ```
 
 
+### F4 — transmission reconstruction consistency
+
+Directory: `srcEarth/test/F4`
+
+Driver:
+
+```bash
+python srcEarth/test/F4/run_F4.py -np 4 -nt 16
+```
+
+Purpose.  F4 is the exact closure test for the gridless density/flux workflow.  It uses `FIELD_MODEL DIPOLE`, `DS_TRANSMISSION_MODE SCAN`, `DS_TRANSMISSION_SAVE T`, and a power-law boundary spectrum at diagnostic points on the 9000 km shell.  The default latitude set is
+
+```text
+lat = -60, -30, 0, 30, 60 deg
+lon = 0 deg
+```
+
+The reference is internal and exact rather than an external cutoff formula:
+
+```text
+J_local(E) = T(E) * J_boundary(E)
+n           = 4*pi*int J_local(E)/v(E) dE
+F           = 4*pi*int J_local(E) dE
+F_channel   = 4*pi*int_channel J_local(E) dE
+```
+
+The runner reads `gridless_points_spectrum.dat`, reconstructs density and every requested integral-flux channel, and compares those values with `gridless_points_density.dat` and `gridless_points_flux.dat`.  It also verifies that the saved boundary spectrum matches the imposed power law and that `T(E)` remains in `[0,1]`.
+
+Input and reference/check files:
+
+```text
+srcEarth/test/F4/AMPS_PARAM_F4_gridless.in
+srcEarth/test/F4/reference_F4_reconstruction.csv
+```
+
+AMPS output parsed by the test:
+
+```text
+gridless_points_density.dat
+gridless_points_spectrum.dat
+gridless_points_flux.dat
+```
+
+Test artifacts written to the run directory:
+
+```text
+F4_amps.log
+F4_summary.csv
+F4_result.json
+reference_F4_reconstruction_used.csv
+```
+
+All rows in `F4_summary.csv` are residual/error checks with `expected_value=0.0`.  These zeros mean zero reconstruction error, not zero physical density or flux.
+
+
 ### F5 — directional anisotropy / PAD mapping
 
 Directory: `srcEarth/test/F5`
