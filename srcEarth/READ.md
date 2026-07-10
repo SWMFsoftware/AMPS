@@ -2277,6 +2277,39 @@ F2_result.json
 F2 uses the same `FIELD_MODEL NONE` gridless branch introduced for F1.  The summary table uses `expected_value` and `check_type`, so zero expected values denote zero residuals/error metrics rather than zero physical flux.
 
 
+### F11 — anisotropic PAD model sum-check
+
+Directory: `srcEarth/test/F11`
+
+Driver:
+
+```bash
+python srcEarth/test/F11/run_F11.py -np 4 -nt 16
+```
+
+Purpose.  F11 exercises the parser-supported anisotropic PAD models
+`ISOTROPIC`, `SINALPHA_N`, `COSALPHA_N`, and `BIDIRECTIONAL` through
+`#BOUNDARY_ANISOTROPY`.  It uses a dipole gridless density/spectrum setup and
+checks exact PAD identities rather than an absolute density reference:
+
+```text
+BA_PAD_EXPONENT=0  -> every PAD model reduces to isotropic
+COSALPHA_N(n)      -> identical to BIDIRECTIONAL(n)
+```
+
+The runner compares total density, integral flux channels, and the saved
+`spectrum` quantities `T(E)`, `J_boundary(E)`, and `J_local(E)` for those
+identity pairs.  The default matrix covers exponents `0, 1, 2, 4, 8` and writes
+one rendered-input directory per model/exponent under `test_output/F11_gridless`.
+
+Input and reference files:
+
+```text
+srcEarth/test/F11/AMPS_PARAM_F11_gridless.in
+srcEarth/test/F11/reference_F11_pad_identities.csv
+```
+
+
 ### F15 — density normalization from differential flux
 
 Directory: `srcEarth/test/F15`

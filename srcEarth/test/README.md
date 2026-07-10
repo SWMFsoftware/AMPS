@@ -2,7 +2,7 @@
 
 This directory contains executable regression/validation tests for the AMPS
 Earth SEP/geospace backward products.  Each test is stored in its own directory
-(`C1`, `C2`, ..., `F1`, `F2`, `F15`, ...).  Test scripts are intended to be executed
+(`C1`, `C2`, ..., `F1`, `F2`, `F11`, `F15`, ...).  Test scripts are intended to be executed
 from the directory containing the `amps` executable, not from inside the test
 subdirectory.
 
@@ -196,6 +196,27 @@ python srcEarth/test/F2/run_F2.py --dry-run
 ```
 
 F2 writes `F2_summary.csv` and `F2_result.json` under `test_output/F2_gridless`. The physical target values are stored in `srcEarth/test/F2/reference_F2_power_law.csv`. The summary file uses `check_type` and `expected_value`, so zero expected values appear only for residual/error metrics such as `T(E)-1` or file-vs-spectrum reconstruction error.
+
+## F11 — Anisotropic PAD model sum-check
+
+F11 validates exact identities in the gridless anisotropic boundary-spectrum path. It uses `FIELD_MODEL DIPOLE`, `DS_BOUNDARY_MODE ANISOTROPIC`, `DS_TRANSMISSION_MODE SCAN`, and a parser-compatible `#BOUNDARY_ANISOTROPY` section.
+
+The reference solution is pairwise and exact:
+
+```text
+BA_PAD_EXPONENT=0:  ISOTROPIC = SINALPHA_N = COSALPHA_N = BIDIRECTIONAL
+COSALPHA_N(n):      COSALPHA_N = BIDIRECTIONAL for the same n
+```
+
+The runner compares total density, integral-flux channels, `T(E)`, `J_boundary(E)`, and `J_local(E)` for the identity pairs at one low-latitude and one mid/high-latitude point.
+
+```bash
+python srcEarth/test/F11/run_F11.py -np 4 -nt 16
+python srcEarth/test/F11/run_F11.py --models ISOTROPIC,COSALPHA_N,BIDIRECTIONAL --exponents 0,2,4
+python srcEarth/test/F11/run_F11.py --dry-run
+```
+
+F11 writes one case directory per PAD model/exponent under `test_output/F11_gridless`, plus `F11_summary.csv`, `F11_result.json`, and `reference_F11_pad_identities_used.csv`. The repository reference table is `srcEarth/test/F11/reference_F11_pad_identities.csv`.
 
 ## F15 — Density normalization from differential flux
 
