@@ -50,6 +50,9 @@
 //     -mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC> MPI-rank scheduler.
 //       Gridless aliases: -gridless-mpi-scheduler, -gridless-mpi-dynamic-chunk.
 //     -mode3d-mpi-dynamic-chunk <int>                    locations per MPI fetch.
+//     -mode3d-mesh-res-earth-re <double>                 optional AMR resolution at Earth.
+//     -mode3d-mesh-res-boundary-re <double>              optional AMR resolution at boundary.
+//     -mode3d-mesh-coarsening <LINEAR|LOG|POWER|...>     optional radial coarsening law.
 //     -cutoff-search <UPPER_SCAN|BINARY>                 cutoff search in 3d/gridless.
 //     -cutoff-upper-scan-n <int>                         log-grid samples for UPPER_SCAN.
 //
@@ -202,6 +205,41 @@ CliOptions ParseCli(int argc,char** argv) {
       opt.mode3dMpiDynamicChunk=std::stoi(argv[++i]);
       if (opt.mode3dMpiDynamicChunk < 0)
         exit(__LINE__,__FILE__,"-mode3d-mpi-dynamic-chunk must be >= 0 (0 means automatic)");
+    }
+    else if (a=="-mode3d-mesh-res-earth-re" || a=="--mode3d-mesh-res-earth-re" ||
+             a=="-mode3d-mesh-resolution-earth-re" || a=="--mode3d-mesh-resolution-earth-re") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -mode3d-mesh-res-earth-re");
+      opt.mode3dMeshResEarth_Re=std::stod(argv[++i]);
+      if (opt.mode3dMeshResEarth_Re <= 0.0)
+        exit(__LINE__,__FILE__,"-mode3d-mesh-res-earth-re must be > 0");
+    }
+    else if (a=="-mode3d-mesh-res-boundary-re" || a=="--mode3d-mesh-res-boundary-re" ||
+             a=="-mode3d-mesh-res-outer-re" || a=="--mode3d-mesh-res-outer-re" ||
+             a=="-mode3d-mesh-resolution-boundary-re" || a=="--mode3d-mesh-resolution-boundary-re") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -mode3d-mesh-res-boundary-re");
+      opt.mode3dMeshResBoundary_Re=std::stod(argv[++i]);
+      if (opt.mode3dMeshResBoundary_Re <= 0.0)
+        exit(__LINE__,__FILE__,"-mode3d-mesh-res-boundary-re must be > 0");
+    }
+    else if (a=="-mode3d-mesh-r-boundary-re" || a=="--mode3d-mesh-r-boundary-re" ||
+             a=="-mode3d-mesh-r-outer-re" || a=="--mode3d-mesh-r-outer-re" ||
+             a=="-mode3d-mesh-outer-radius-re" || a=="--mode3d-mesh-outer-radius-re") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -mode3d-mesh-r-boundary-re");
+      opt.mode3dMeshOuterRadius_Re=std::stod(argv[++i]);
+      if (opt.mode3dMeshOuterRadius_Re <= 1.0)
+        exit(__LINE__,__FILE__,"-mode3d-mesh-r-boundary-re must be > 1 Re");
+    }
+    else if (a=="-mode3d-mesh-coarsening" || a=="--mode3d-mesh-coarsening" ||
+             a=="-mode3d-mesh-profile" || a=="--mode3d-mesh-profile") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -mode3d-mesh-coarsening");
+      opt.mode3dMeshCoarsening=argv[++i];
+    }
+    else if (a=="-mode3d-mesh-exponent" || a=="--mode3d-mesh-exponent" ||
+             a=="-mode3d-mesh-coarsening-exponent" || a=="--mode3d-mesh-coarsening-exponent") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -mode3d-mesh-exponent");
+      opt.mode3dMeshExponent=std::stod(argv[++i]);
+      if (opt.mode3dMeshExponent <= 0.0)
+        exit(__LINE__,__FILE__,"-mode3d-mesh-exponent must be > 0");
     }
     else if (a=="-cutoff-debug-scan" || a=="--cutoff-debug-scan" ||
              a=="-mode3d-cutoff-debug-scan" || a=="--mode3d-cutoff-debug-scan") {
@@ -550,6 +588,21 @@ std::string HelpMessage(const char* progName) {
   out << "        INTERPOLATION  Use the AMR-aware cell-centered interpolation stencil.\n";
   out << "        ANALYTIC       Call the same background-field evaluator used to prepopulate\n";
   out << "                       the mesh cell centers. Alias: --mode3d-analytic-field.\n\n";
+
+  out << "  -mode3d-mesh-res-earth-re <dRe> -mode3d-mesh-res-boundary-re <dRe>   (optional)\n";
+  out << "      In standalone -mode 3d, replace the historical hard-coded AMR\n";
+  out << "      localResolution() function with a simple radial mesh profile.  The first\n";
+  out << "      value is the requested cell resolution near r=1 Re; the second is the\n";
+  out << "      requested resolution at the outer domain boundary.  If neither value is\n";
+  out << "      supplied in the input file or CLI, the old hard-coded resolution is used.\n";
+  out << "      Optional controls:\n";
+  out << "        --mode3d-mesh-coarsening <LINEAR|LOG|EXPONENTIAL|POWER|CONSTANT>\n";
+  out << "        --mode3d-mesh-exponent <p>          shape parameter for POWER\n";
+  out << "        --mode3d-mesh-r-boundary-re <R>     override auto boundary radius\n";
+  out << "      Input-file analogue (#MODE3D_MESH):\n";
+  out << "        MODE3D_MESH_RES_EARTH_RE     0.05\n";
+  out << "        MODE3D_MESH_RES_BOUNDARY_RE  0.50\n";
+  out << "        MODE3D_MESH_COARSENING       LOG\n\n";
 
   out << "  -cutoff-debug-scan | --cutoff-debug-scan <lon_deg> <lat_deg> <alt_km>   (optional)\n";
   out << "      In -mode 3d cutoff runs, write a rigidity-classification table for one\n";

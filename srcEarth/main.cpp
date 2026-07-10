@@ -87,6 +87,72 @@ bool ApplyCutoffMoverCli(const EarthUtil::CliOptions& cli) {
 }
 
 
+#ifndef AMPS_EARTH_RADIUS_KM
+static const double kCliEarthRadiusKm = 6371.2;
+#else
+static const double kCliEarthRadiusKm = AMPS_EARTH_RADIUS_KM;
+#endif
+
+bool ApplyMode3DMeshResolutionCli(const EarthUtil::CliOptions& cli,
+                                  EarthUtil::AmpsParam& p) {
+  const bool anyCliMesh =
+      cli.mode3dMeshResEarth_Re > 0.0 ||
+      cli.mode3dMeshResBoundary_Re > 0.0 ||
+      cli.mode3dMeshOuterRadius_Re > 0.0 ||
+      !cli.mode3dMeshCoarsening.empty() ||
+      cli.mode3dMeshExponent > 0.0;
+
+  if (!anyCliMesh) return true;
+
+  p.mode3d.meshResolutionProfileActive = true;
+
+  if (cli.mode3dMeshResEarth_Re > 0.0)
+    p.mode3d.meshResolutionEarth_km = cli.mode3dMeshResEarth_Re * kCliEarthRadiusKm;
+  if (cli.mode3dMeshResBoundary_Re > 0.0)
+    p.mode3d.meshResolutionBoundary_km = cli.mode3dMeshResBoundary_Re * kCliEarthRadiusKm;
+  if (cli.mode3dMeshOuterRadius_Re > 0.0)
+    p.mode3d.meshResolutionOuterRadius_km = cli.mode3dMeshOuterRadius_Re * kCliEarthRadiusKm;
+  if (!cli.mode3dMeshCoarsening.empty())
+    p.mode3d.meshResolutionCoarsening = EarthUtil::ToUpper(cli.mode3dMeshCoarsening);
+  if (cli.mode3dMeshExponent > 0.0)
+    p.mode3d.meshResolutionExponent = cli.mode3dMeshExponent;
+
+  // If the CLI is the first place where the mesh profile is requested, both endpoint
+  // resolutions are required.  If the input file already supplied one endpoint, the
+  // CLI can override only the other.
+  if (!(p.mode3d.meshResolutionEarth_km > 0.0)) {
+    std::cerr << "Error: Mode3D mesh profile requires an Earth-side resolution. "
+              << "Use --mode3d-mesh-res-earth-re <dRe> or "
+              << "MODE3D_MESH_RES_EARTH_RE in #MODE3D_MESH.\n";
+    return false;
+  }
+  if (!(p.mode3d.meshResolutionBoundary_km > 0.0)) {
+    std::cerr << "Error: Mode3D mesh profile requires an outer-boundary resolution. "
+              << "Use --mode3d-mesh-res-boundary-re <dRe> or "
+              << "MODE3D_MESH_RES_BOUNDARY_RE in #MODE3D_MESH.\n";
+    return false;
+  }
+
+  const std::string c = EarthUtil::ToUpper(p.mode3d.meshResolutionCoarsening);
+  if (!(c=="LINEAR" || c=="LIN" ||
+        c=="LOG" || c=="LOGARITHMIC" || c=="GEOMETRIC" ||
+        c=="EXP" || c=="EXPONENTIAL" ||
+        c=="POWER" || c=="POW" || c=="EXPONENT" || c=="POLYNOMIAL" ||
+        c=="CONSTANT" || c=="CONST" || c=="UNIFORM")) {
+    std::cerr << "Error: unknown --mode3d-mesh-coarsening '"
+              << p.mode3d.meshResolutionCoarsening
+              << "'. Valid values: LINEAR, LOG/EXPONENTIAL, POWER, CONSTANT.\n";
+    return false;
+  }
+  if (!(p.mode3d.meshResolutionExponent > 0.0)) {
+    std::cerr << "Error: --mode3d-mesh-exponent must be > 0.\n";
+    return false;
+  }
+
+  return true;
+}
+
+
 bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
                             EarthUtil::AmpsParam& p,
                             const char* modeName) {
@@ -1742,6 +1808,7 @@ int main(int argc,char **argv) {
         // calculations.  This includes the penumbra-safe cutoff-search controls
         // and the dynamic MPI scheduler controls.
         if (!ApplyCommonBackwardCli(cli,p,"mode 3d")) return 1;
+        if (!ApplyMode3DMeshResolutionCli(cli,p)) return 1;
 
         // Mode3D-specific CLI overrides. Defaults are deliberately conservative:
         // do not write the potentially large initialized-mesh Tecplot file, and
@@ -1846,6 +1913,7 @@ int main(int argc,char **argv) {
         InitStandaloneSpiceBeforeParamParsing("3d_forward");
 
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
+        if (!ApplyMode3DMeshResolutionCli(cli,p)) return 1;
 
         // ---- CLI overrides for 3d_forward ----
         // Shared flag: diagnostic initialized-mesh Tecplot file.

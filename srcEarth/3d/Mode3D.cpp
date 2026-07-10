@@ -43,6 +43,16 @@ bool ParsedDomainActive=false;
 double ParsedDomainMin[3]={0.0,0.0,0.0};
 double ParsedDomainMax[3]={0.0,0.0,0.0};
 
+// User-defined Mode3D AMR mesh-resolution profile.  These globals are read by
+// main_lib.cpp::localResolution() while AMPS builds the tree.  The inactive default
+// preserves the historical hard-coded resolution function exactly.
+bool MeshResolutionProfileActive=false;
+double MeshResolutionEarth_m=0.0;
+double MeshResolutionBoundary_m=0.0;
+double MeshResolutionOuterRadius_Re=0.0;
+double MeshResolutionExponent=1.0;
+int MeshResolutionCoarseningCode=0; // 0=LINEAR, 1=LOG/EXPONENTIAL, 2=POWER, 3=CONSTANT
+
 namespace {
 
 //--------------------------------------------------------------------------------------
@@ -79,6 +89,18 @@ void ApplyParsedDomain(const EarthUtil::AmpsParam& prm) {
   ParsedDomainMax[0]=prm.domain.xMax*1000.0;
   ParsedDomainMax[1]=prm.domain.yMax*1000.0;
   ParsedDomainMax[2]=prm.domain.zMax*1000.0;
+}
+
+static double MaxAbsDomainFaceRadiusRe(const EarthUtil::AmpsParam& prm) {
+  const double rEarth_km = _EARTH__RADIUS_ / 1000.0;
+  double rmax_km = 0.0;
+  rmax_km = std::max(rmax_km, std::fabs(prm.domain.xMin));
+  rmax_km = std::max(rmax_km, std::fabs(prm.domain.xMax));
+  rmax_km = std::max(rmax_km, std::fabs(prm.domain.yMin));
+  rmax_km = std::max(rmax_km, std::fabs(prm.domain.yMax));
+  rmax_km = std::max(rmax_km, std::fabs(prm.domain.zMin));
+  rmax_km = std::max(rmax_km, std::fabs(prm.domain.zMax));
+  return (rEarth_km > 0.0) ? (rmax_km / rEarth_km) : 0.0;
 }
 
 void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
@@ -577,6 +599,87 @@ void Mode3DPrepareMagneticFieldSnapshot(const EarthUtil::AmpsParam& snap,
 
 } // namespace
 
+void ConfigureMeshResolutionProfile(const EarthUtil::AmpsParam& prm) {
+  MeshResolutionProfileActive = prm.mode3d.meshResolutionProfileActive;
+
+  if (!MeshResolutionProfileActive) {
+    MeshResolutionEarth_m=0.0;
+    MeshResolutionBoundary_m=0.0;
+    MeshResolutionOuterRadius_Re=0.0;
+    MeshResolutionExponent=1.0;
+    MeshResolutionCoarseningCode=0;
+    return;
+  }
+
+  MeshResolutionEarth_m = prm.mode3d.meshResolutionEarth_km * 1000.0;
+  MeshResolutionBoundary_m = prm.mode3d.meshResolutionBoundary_km * 1000.0;
+  MeshResolutionExponent = prm.mode3d.meshResolutionExponent;
+
+  if (prm.mode3d.meshResolutionOuterRadius_km > 0.0) {
+    MeshResolutionOuterRadius_Re = (prm.mode3d.meshResolutionOuterRadius_km * 1000.0) / _EARTH__RADIUS_;
+  }
+  else {
+    MeshResolutionOuterRadius_Re = MaxAbsDomainFaceRadiusRe(prm);
+  }
+  if (!(MeshResolutionOuterRadius_Re > 1.0)) MeshResolutionOuterRadius_Re = 1.01;
+
+  const std::string c = EarthUtil::ToUpper(prm.mode3d.meshResolutionCoarsening);
+  if (c=="LOG" || c=="EXP" || c=="EXPONENTIAL" || c=="GEOMETRIC" || c=="LOGARITHMIC")
+    MeshResolutionCoarseningCode=1;
+  else if (c=="POWER" || c=="POW" || c=="EXPONENT" || c=="POLYNOMIAL")
+    MeshResolutionCoarseningCode=2;
+  else if (c=="CONSTANT" || c=="CONST" || c=="UNIFORM")
+    MeshResolutionCoarseningCode=3;
+  else
+    MeshResolutionCoarseningCode=0;
+
+  if (PIC::ThisThread == 0) {
+    std::cout << "[Mode3D mesh] User-defined AMR resolution profile: "
+              << "res_earth=" << MeshResolutionEarth_m/_EARTH__RADIUS_ << " Re, "
+              << "res_boundary=" << MeshResolutionBoundary_m/_EARTH__RADIUS_ << " Re, "
+              << "r_boundary=" << MeshResolutionOuterRadius_Re << " Re, "
+              << "coarsening=" << c << ", exponent=" << MeshResolutionExponent
+              << std::endl;
+  }
+}
+
+double ConfiguredMeshResolutionSI(const double *x) {
+  if (!MeshResolutionProfileActive) return -1.0;
+
+  double r2=0.0;
+  for (int idim=0; idim<DIM; ++idim) r2 += x[idim]*x[idim];
+  const double r_Re = std::sqrt(r2) / _EARTH__RADIUS_;
+
+  double t = 0.0;
+  if (MeshResolutionOuterRadius_Re > 1.0) {
+    t = (r_Re - 1.0) / (MeshResolutionOuterRadius_Re - 1.0);
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+  }
+
+  const double a = MeshResolutionEarth_m;
+  const double b = MeshResolutionBoundary_m;
+
+  if (!(a > 0.0) || !(b > 0.0)) return -1.0;
+
+  switch (MeshResolutionCoarseningCode) {
+    case 1: { // LOG/EXPONENTIAL/GEOMETRIC interpolation in resolution.
+      return std::exp(std::log(a) + t*(std::log(b)-std::log(a)));
+    }
+    case 2: { // POWER profile in normalized altitude.
+      const double tt = std::pow(t,MeshResolutionExponent);
+      return a + (b-a)*tt;
+    }
+    case 3: { // CONSTANT/UNIFORM resolution.
+      return a;
+    }
+    case 0:
+    default: { // LINEAR profile.
+      return a + (b-a)*t;
+    }
+  }
+}
+
 int Run(const EarthUtil::AmpsParam& prm) {
   //============================================================================
   // Mode3D::Run — entry point for the standalone 3-D cutoff-rigidity workflow.
@@ -633,6 +736,7 @@ int Run(const EarthUtil::AmpsParam& prm) {
   // cell-centered magnetic field into them specifically for cutoff tracing.
   // -------------------------------------------------------------------------
   PIC::InitMPI();
+  ConfigureMeshResolutionProfile(prm);
   Exosphere::Init_SPICE();
 
   amps_init_mesh();   // build the replicated AMR tree topology and distributed blocks

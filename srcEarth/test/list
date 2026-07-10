@@ -1,21 +1,21 @@
-initial setup:
-make test_Earth-cutoff-rigidity-3d-analytic_compile -j
+!initial setup:
+!make test_Earth-cutoff-rigidity-3d-analytic_compile -j
 
 
-W python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16
-F python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16 
-W python srcEarth/test/C1/run_C1.py --mode gridless -np 4 -nt 16
+P srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16
+P srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16 
+P srcEarth/test/C1/run_C1.py --mode gridless -np 4 -nt 16
 
-W python srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
-W python srcEarth/test/C2/run_C2.py --mode gridless -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
+P srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
+P srcEarth/test/C2/run_C2.py --mode gridless -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
 F srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80
 
-W python srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16
-W python srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16
-W python srcEarth/test/C3/run_C3.py --mode gridless --max-trace-distance 300
-W python srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN --cutoff-scan-n 200
+P srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16
+P srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16
+P srcEarth/test/C3/run_C3.py --mode gridless --max-trace-distance 300
+P srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN --cutoff-scan-n 200
 
 
-W srcEarth/test/C4/run_C4.py --factors=0.5,2.0 --lats=-60,-30,0,30,60
+P srcEarth/test/C4/run_C4.py --factors=0.5,2.0 --lats=-60,-30,0,30,60
 F srcEarth/test/C4/run_C4.py --adaptive-dt F --dt-sweep=1.0,0.5,0.25 
 F srcEarth/test/C4/run_C4.py --fail-on-paxis --paxis-tol=1e-5

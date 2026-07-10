@@ -27,6 +27,7 @@
 #include "GeopackInterface.h"
 #include "T96Interface.h"
 #include "T05Interface.h"
+#include "3d/Mode3D.h"
 
 extern int nZenithElements;
 extern int nAzimuthalElements;
@@ -52,6 +53,11 @@ double sodiumTotalProductionRate(int SourceProcessCode=-1) {
 //the mesh resolution
 double localSphericalSurfaceResolution(double *x) {
   double res,r,l[3] = {1.0,0.0,0.0};
+
+  if (Earth::Mode3D::MeshResolutionProfileActive) {
+    const double configuredRes = Earth::Mode3D::ConfiguredMeshResolutionSI(x);
+    if (configuredRes > 0.0) return configuredRes;
+  }
 
 
 /*
@@ -82,6 +88,11 @@ double localSphericalSurfaceResolution(double *x) {
 
 double localResolution(double *x) {
   double res;
+
+  if (Earth::Mode3D::MeshResolutionProfileActive) {
+    const double configuredRes = Earth::Mode3D::ConfiguredMeshResolutionSI(x);
+    if (configuredRes > 0.0) return configuredRes;
+  }
 
   if ( (strcmp(Earth::Mesh::sign,"0x301020156361a50")!=0)) {
     //test mesh
@@ -273,11 +284,23 @@ void amps_init_mesh() {
  PIC::Mesh::mesh->memoryAllocationReport();
  
  
- char mesh[200]="";
+ char mesh[512]="";
  bool NewMeshGeneratedFlag=false;
  FILE *fmesh=NULL;
  
- sprintf(mesh,"amr.sig=%s.mesh->bin",Earth::Mesh::sign);
+ if (Earth::Mode3D::MeshResolutionProfileActive) {
+   snprintf(mesh,sizeof(mesh),
+            "amr.sig=%s.mode3dmesh.re%.6g.rb%.6g.ro%.6g.c%d.p%.6g.mesh->bin",
+            Earth::Mesh::sign,
+            Earth::Mode3D::MeshResolutionEarth_m/_RADIUS_(_EARTH_),
+            Earth::Mode3D::MeshResolutionBoundary_m/_RADIUS_(_EARTH_),
+            Earth::Mode3D::MeshResolutionOuterRadius_Re,
+            Earth::Mode3D::MeshResolutionCoarseningCode,
+            Earth::Mode3D::MeshResolutionExponent);
+ }
+ else {
+   snprintf(mesh,sizeof(mesh),"amr.sig=%s.mesh->bin",Earth::Mesh::sign);
+ }
  fmesh=fopen(mesh,"r");
  
  if (fmesh!=NULL) {
@@ -290,6 +313,11 @@ void amps_init_mesh() {
    if (PIC::Mesh::mesh->ThisThread==0) {
      PIC::Mesh::mesh->buildMesh();
      PIC::Mesh::mesh->saveMeshFile("mesh->msh");
+     // Also save under the cache filename that was checked above.  When the
+     // user-defined Mode3D mesh-resolution profile is active, this filename
+     // contains the profile parameters so a later run cannot accidentally reuse
+     // a mesh built with a different resolution law.
+     PIC::Mesh::mesh->saveMeshFile(mesh);
      MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
    }
    else {

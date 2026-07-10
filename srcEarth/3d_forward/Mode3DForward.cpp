@@ -15,6 +15,7 @@
 
 #include "../boundary/spectrum.h"
 #include "../3d/ElectricField.h"
+#include "../3d/Mode3D.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -1313,6 +1314,7 @@ int Run(const EarthUtil::AmpsParam& prm) {
   ConfigureBackgroundFieldModel(prm);
 
   PIC::InitMPI();
+  Earth::Mode3D::ConfigureMeshResolutionProfile(prm);
 
 #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
   // Configure the model-level runtime gate in the Earth particle-tracker

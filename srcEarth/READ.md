@@ -1257,6 +1257,13 @@ Common options:
 -mode3d-field-eval <INTERPOLATION|ANALYTIC>
     For standalone Mode3D, choose whether tracing uses mesh interpolation or direct analytic/background evaluation.
 
+-mode3d-mesh-res-earth-re <dRe>
+-mode3d-mesh-res-boundary-re <dRe>
+-mode3d-mesh-coarsening <LINEAR|LOG|EXPONENTIAL|POWER|CONSTANT>
+-mode3d-mesh-exponent <p>
+-mode3d-mesh-r-boundary-re <R>
+    Optional standalone Mode3D AMR mesh-resolution profile. If omitted, the historical hard-coded localResolution() function is used unchanged. If enabled, dRe near Earth and dRe at the external boundary define the requested cell-size profile. The boundary radius is inferred from the parsed 3-D domain unless overridden.
+
 -cutoff-debug-scan <lon_deg> <lat_deg> <alt_km>
     In standalone Mode3D cutoff runs, write the one-point rigidity classification diagnostic before the full cutoff map. Optional: -cutoff-debug-scan-n <N> and -cutoff-debug-scan-file <file>.
 
@@ -1491,7 +1498,51 @@ and standard AMPS mesh outputs containing `Density3D` variables.
 
 ---
 
-## 12. Validation and development recommendations
+## 12. Mode3D AMR mesh-resolution profile
+
+By default, standalone Mode3D keeps the historical hard-coded AMR resolution function in `main_lib.cpp::localResolution()`. This preserves backward compatibility for existing runs.
+
+For validation runs that need controlled mesh convergence, especially `-mode3d-field-eval MESH`, the AMR resolution can now be specified from the input file or from the CLI. The profile is radial: it interpolates between a requested resolution at the Earth and a requested resolution at the external domain boundary.
+
+Input-file example:
+
+```text
+#MODE3D_MESH
+MODE3D_MESH_RES_EARTH_RE     0.05      ! requested cell size near r=1 Re
+MODE3D_MESH_RES_BOUNDARY_RE  0.50      ! requested cell size at the outer boundary
+MODE3D_MESH_COARSENING       LOG       ! LINEAR | LOG | EXPONENTIAL | POWER | CONSTANT
+MODE3D_MESH_EXPONENT         1.5       ! used by POWER/EXPONENT only
+!MODE3D_MESH_R_BOUNDARY_RE   29.0      ! optional; otherwise inferred from DOMAIN_*
+```
+
+Equivalent CLI example:
+
+```bash
+./amps -mode 3d -i AMPS_PARAM.in \
+  -mode3d-field-eval MESH \
+  -mode3d-mesh-res-earth-re 0.05 \
+  -mode3d-mesh-res-boundary-re 0.50 \
+  -mode3d-mesh-coarsening LOG
+```
+
+Coarsening choices:
+
+```text
+LINEAR       res(r) = res_Earth + t * (res_boundary - res_Earth)
+LOG          geometric interpolation of the resolution; aliases: EXPONENTIAL, GEOMETRIC
+POWER        res(r) = res_Earth + (res_boundary - res_Earth) * t^p
+CONSTANT     res(r) = res_Earth everywhere in the domain
+```
+
+where `t = clamp((r/Re - 1)/(R_boundary/Re - 1), 0, 1)`. The inferred `R_boundary` is the maximum absolute parsed domain face distance. For example, a box with `DOMAIN_X/Y/Z = ±29 Re` uses approximately `R_boundary = 29 Re`.
+
+When the custom profile is active, the mesh cache filename includes the requested profile parameters so that AMPS does not accidentally reuse a mesh generated with a different resolution profile.
+
+This option is mainly intended for C5-style mesh-convergence validation. C1 should still be interpreted as the clean analytical-dipole benchmark when run with `-mode3d-field-eval ANALYTIC`; the MESH branch tests the additional AMR field materialization and interpolation error.
+
+---
+
+## 13. Validation and development recommendations
 
 1. Start with `DIPOLE` and `CUTOFF_SAMPLING VERTICAL` when validating a new build.
 2. Compare gridless and Mode3D with `-mode3d-field-eval ANALYTIC` to separate interpolation issues from trajectory-integration issues.
@@ -1503,7 +1554,7 @@ and standard AMPS mesh outputs containing `Density3D` variables.
 
 ---
 
-## 13. Known scope boundaries
+## 14. Known scope boundaries
 
 The current Earth energetic-particle model is primarily a magnetic-access and test-particle transport tool. The backward products do not yet represent a full radiation-belt transport solver.
 

@@ -204,6 +204,7 @@ static const std::vector<std::string>& RecognizedAmpsParamSections() {
     "#DOMAIN_BOUNDARY",
     "#OUTPUT_DOMAIN",
     "#NUMERICAL",
+    "#MODE3D_MESH",
     "#DENSITY_3D",
     "#PARTICLE_TRAJECTORY",
     "#DENSITY_SPECTRUM",
@@ -990,6 +991,94 @@ static double ParseLengthToKm(const std::string& token,const std::string& unitHi
 
   // Backward-compatible default when no units are provided anywhere.
   return value; // km
+}
+
+// Parse a Mode3D mesh-resolution length.  Canonical keys end in _RE or _KM;
+// those suffixes are treated as explicit unit hints when the value itself does
+// not carry an inline unit.  Generic aliases without a unit suffix may still use
+// inline units (e.g., 0.05Re or 300km) or a comment unit hint; otherwise they
+// fall back to ParseLengthToKm()'s historical km default.
+static double ParseMode3DMeshLengthToKm(const std::string& key,
+                                        const std::string& val,
+                                        const std::string& commentText) {
+  const std::string k=ToUpper(Trim(key));
+  if (k.size()>=3 && k.compare(k.size()-3,3,"_RE")==0) {
+    return ParseLengthToKm(val,"Re");
+  }
+  if (k.size()>=3 && k.compare(k.size()-3,3,"_KM")==0) {
+    return ParseLengthToKm(val,"km");
+  }
+  return ParseLengthToKm(val,commentText);
+}
+
+static void ParseMode3DMeshKeyword(AmpsParam& p,
+                                   const std::string& uKey,
+                                   const std::string& val,
+                                   const std::string& commentText) {
+  if (uKey=="MODE3D_MESH_RES_EARTH_RE" ||
+      uKey=="MODE3D_MESH_RESOLUTION_EARTH_RE" ||
+      uKey=="MODE3D_MESH_EARTH_RES_RE" ||
+      uKey=="MODE3D_MESH_RES_EARTH_KM" ||
+      uKey=="MODE3D_MESH_RESOLUTION_EARTH_KM" ||
+      uKey=="MODE3D_MESH_EARTH_RES_KM" ||
+      uKey=="MODE3D_MESH_RES_EARTH" ||
+      uKey=="MODE3D_MESH_RESOLUTION_EARTH") {
+    p.mode3d.meshResolutionEarth_km=ParseMode3DMeshLengthToKm(uKey,val,commentText);
+    p.mode3d.meshResolutionProfileActive=true;
+  }
+  else if (uKey=="MODE3D_MESH_RES_BOUNDARY_RE" ||
+           uKey=="MODE3D_MESH_RESOLUTION_BOUNDARY_RE" ||
+           uKey=="MODE3D_MESH_BOUNDARY_RES_RE" ||
+           uKey=="MODE3D_MESH_RES_OUTER_RE" ||
+           uKey=="MODE3D_MESH_RESOLUTION_OUTER_RE" ||
+           uKey=="MODE3D_MESH_OUTER_RES_RE" ||
+           uKey=="MODE3D_MESH_RES_BOUNDARY_KM" ||
+           uKey=="MODE3D_MESH_RESOLUTION_BOUNDARY_KM" ||
+           uKey=="MODE3D_MESH_BOUNDARY_RES_KM" ||
+           uKey=="MODE3D_MESH_RES_OUTER_KM" ||
+           uKey=="MODE3D_MESH_RESOLUTION_OUTER_KM" ||
+           uKey=="MODE3D_MESH_OUTER_RES_KM" ||
+           uKey=="MODE3D_MESH_RES_BOUNDARY" ||
+           uKey=="MODE3D_MESH_RESOLUTION_BOUNDARY" ||
+           uKey=="MODE3D_MESH_RES_OUTER" ||
+           uKey=="MODE3D_MESH_RESOLUTION_OUTER") {
+    p.mode3d.meshResolutionBoundary_km=ParseMode3DMeshLengthToKm(uKey,val,commentText);
+    p.mode3d.meshResolutionProfileActive=true;
+  }
+  else if (uKey=="MODE3D_MESH_R_BOUNDARY_RE" ||
+           uKey=="MODE3D_MESH_R_OUTER_RE" ||
+           uKey=="MODE3D_MESH_OUTER_RADIUS_RE" ||
+           uKey=="MODE3D_MESH_BOUNDARY_RADIUS_RE" ||
+           uKey=="MODE3D_MESH_R_BOUNDARY_KM" ||
+           uKey=="MODE3D_MESH_R_OUTER_KM" ||
+           uKey=="MODE3D_MESH_OUTER_RADIUS_KM" ||
+           uKey=="MODE3D_MESH_BOUNDARY_RADIUS_KM" ||
+           uKey=="MODE3D_MESH_R_BOUNDARY" ||
+           uKey=="MODE3D_MESH_R_OUTER" ||
+           uKey=="MODE3D_MESH_OUTER_RADIUS" ||
+           uKey=="MODE3D_MESH_BOUNDARY_RADIUS") {
+    p.mode3d.meshResolutionOuterRadius_km=ParseMode3DMeshLengthToKm(uKey,val,commentText);
+    p.mode3d.meshResolutionProfileActive=true;
+  }
+  else if (uKey=="MODE3D_MESH_COARSENING" ||
+           uKey=="MODE3D_MESH_COARSENING_TYPE" ||
+           uKey=="MODE3D_MESH_PROFILE" ||
+           uKey=="MODE3D_MESH_RESOLUTION_PROFILE") {
+    p.mode3d.meshResolutionCoarsening=ToUpper(Trim(val));
+    p.mode3d.meshResolutionProfileActive=true;
+  }
+  else if (uKey=="MODE3D_MESH_EXPONENT" ||
+           uKey=="MODE3D_MESH_COARSENING_EXPONENT" ||
+           uKey=="MODE3D_MESH_POWER" ||
+           uKey=="MODE3D_MESH_COARSENING_POWER") {
+    p.mode3d.meshResolutionExponent=std::stod(val);
+    p.mode3d.meshResolutionProfileActive=true;
+  }
+  else {
+    std::ostringstream _exit_msg;
+    _exit_msg << "Unknown #MODE3D_MESH keyword: " << uKey;
+    exit(__LINE__,__FILE__,_exit_msg.str().c_str());
+  }
 }
 
 // Parse a sequence of length values from a whitespace-separated string. Units may
@@ -2643,6 +2732,12 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         rejectUnknownKeyword();
       }
     }
+    else if (section=="#MODE3D_MESH") {
+      // Optional standalone Mode3D AMR resolution profile.  If no keywords from
+      // this section are present, main_lib.cpp keeps using the historical hard-coded
+      // localResolution() function.
+      ParseMode3DMeshKeyword(p,uKey,val,commentText);
+    }
     else if (section=="#NUMERICAL") {
       if (uKey=="DT_TRACE") p.numerics.dtTrace_s=std::stod(val);
       else if (uKey=="ADAPTIVE_DT" || uKey=="TRACE_ADAPTIVE_DT" ||
@@ -2698,6 +2793,11 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
                uKey=="BACKTRACK_MPI_DYNAMIC_CHUNK" || uKey=="BACKTRACK_MPI_CHUNK" ||
                uKey=="BACKWARD_MPI_DYNAMIC_CHUNK" || uKey=="BACKWARD_MPI_CHUNK") {
         p.mode3d.mpiDynamicChunk=std::stoi(val);
+      }
+      else if (uKey.rfind("MODE3D_MESH_",0)==0) {
+        // Allow the same mesh-resolution controls in #NUMERICAL for compact test
+        // inputs, but keep #MODE3D_MESH as the preferred/documented section.
+        ParseMode3DMeshKeyword(p,uKey,val,commentText);
       }
       else if (uKey=="DS_BOUNDARY_MODE") {
         // Legacy inputs placed this density/spectrum setting in #NUMERICAL.
@@ -3146,6 +3246,36 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     if (p.mode3d.mpiDynamicChunk < 0) {
       exit(__LINE__,__FILE__,
            "MODE3D_MPI_DYNAMIC_CHUNK/GRIDLESS_MPI_DYNAMIC_CHUNK/BACKTRACK_MPI_DYNAMIC_CHUNK must be >= 0 (0 means: automatic)");
+    }
+  }
+
+  if (p.mode3d.meshResolutionProfileActive) {
+    if (!(p.mode3d.meshResolutionEarth_km > 0.0)) {
+      exit(__LINE__,__FILE__,
+           "MODE3D_MESH_RES_EARTH_RE/KM must be specified and > 0 when using a user-defined Mode3D mesh profile");
+    }
+    if (!(p.mode3d.meshResolutionBoundary_km > 0.0)) {
+      exit(__LINE__,__FILE__,
+           "MODE3D_MESH_RES_BOUNDARY_RE/KM must be specified and > 0 when using a user-defined Mode3D mesh profile");
+    }
+    if (p.mode3d.meshResolutionOuterRadius_km < 0.0) {
+      exit(__LINE__,__FILE__,
+           "MODE3D_MESH_R_BOUNDARY_RE/KM must be >= 0 when specified (0 means: infer from domain)");
+    }
+    const std::string mc = ToUpper(Trim(p.mode3d.meshResolutionCoarsening));
+    if (mc=="LINEAR" || mc=="LIN") p.mode3d.meshResolutionCoarsening="LINEAR";
+    else if (mc=="LOG" || mc=="LOGARITHMIC" || mc=="GEOMETRIC" ||
+             mc=="EXP" || mc=="EXPONENTIAL") p.mode3d.meshResolutionCoarsening="LOG";
+    else if (mc=="POWER" || mc=="POW" || mc=="EXPONENT" || mc=="POLYNOMIAL") p.mode3d.meshResolutionCoarsening="POWER";
+    else if (mc=="CONSTANT" || mc=="CONST" || mc=="UNIFORM") p.mode3d.meshResolutionCoarsening="CONSTANT";
+    else {
+      std::ostringstream _exit_msg;
+      _exit_msg << "MODE3D_MESH_COARSENING must be LINEAR, LOG/EXPONENTIAL, POWER, or CONSTANT (got '"
+                << p.mode3d.meshResolutionCoarsening << "')";
+      exit(__LINE__,__FILE__,_exit_msg.str().c_str());
+    }
+    if (!(p.mode3d.meshResolutionExponent > 0.0) || !std::isfinite(p.mode3d.meshResolutionExponent)) {
+      exit(__LINE__,__FILE__,"MODE3D_MESH_EXPONENT must be finite and > 0");
     }
   }
 

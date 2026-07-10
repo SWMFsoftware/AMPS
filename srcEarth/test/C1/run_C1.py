@@ -403,6 +403,7 @@ def parse_args() -> argparse.Namespace:
           python srcEarth/test/C1/run_C1.py
         W python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC -np 18 -nt 16
         W python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval MESH -np 18 -nt 16 
+          python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval MESH --mode3d-mesh-res-earth-re 0.05 --mode3d-mesh-res-boundary-re 0.50 --mode3d-mesh-coarsening LOG
         W python srcEarth/test/C1/run_C1.py --mode gridless -np 4 -nt 16
           python srcEarth/test/C1/run_C1.py --no-cutoff-search-cli  # fallback for older CLI
           python srcEarth/test/C1/run_C1.py --skip-run --workdir test_output/C1_3d
@@ -414,6 +415,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mode3d-field-eval", "--field-eval", dest="mode3d_field_eval", default="ANALYTIC", choices=["ANALYTIC", "MESH", "GRID_3D"], help="Mode3D field backend passed as -mode3d-field-eval; default: ANALYTIC")
     parser.add_argument("--scheduler", default="DYNAMIC", choices=["DYNAMIC", "BLOCK_CYCLIC", "STATIC"], help="MPI scheduler to use for the selected mode; default: DYNAMIC")
     parser.add_argument("--dynamic-chunk", type=int, default=0, help="dynamic MPI chunk size; 0 means AMPS auto heuristic; default: 0")
+    parser.add_argument("--mode3d-mesh-res-earth-re", type=float, default=None, help="optional AMPS CLI override: requested Mode3D AMR resolution near Earth, in Re")
+    parser.add_argument("--mode3d-mesh-res-boundary-re", type=float, default=None, help="optional AMPS CLI override: requested Mode3D AMR resolution at the outer boundary, in Re")
+    parser.add_argument("--mode3d-mesh-coarsening", default=None, choices=["LINEAR", "LOG", "EXPONENTIAL", "POWER", "CONSTANT"], help="optional AMPS CLI override for radial AMR coarsening profile")
+    parser.add_argument("--mode3d-mesh-exponent", type=float, default=None, help="optional AMPS CLI override for POWER coarsening exponent")
+    parser.add_argument("--mode3d-mesh-r-boundary-re", type=float, default=None, help="optional AMPS CLI override for mesh-profile outer radius, in Re")
     parser.add_argument("--no-cutoff-search-cli", action="store_true", help="do not pass -cutoff-search/-cutoff-upper-scan-n; useful for older parser/CLI checkouts")
     parser.add_argument("--amps", default="./amps", help="AMPS executable path, relative to the launch directory; default: ./amps")
     parser.add_argument("--mpirun", default="mpirun", help="MPI launcher executable; default: mpirun")
@@ -433,6 +439,14 @@ def main() -> int:
         raise SystemExit("-nt must be >= 1")
     if args.dynamic_chunk < 0:
         raise SystemExit("--dynamic-chunk must be >= 0")
+    if args.mode3d_mesh_res_earth_re is not None and args.mode3d_mesh_res_earth_re <= 0.0:
+        raise SystemExit("--mode3d-mesh-res-earth-re must be > 0")
+    if args.mode3d_mesh_res_boundary_re is not None and args.mode3d_mesh_res_boundary_re <= 0.0:
+        raise SystemExit("--mode3d-mesh-res-boundary-re must be > 0")
+    if args.mode3d_mesh_exponent is not None and args.mode3d_mesh_exponent <= 0.0:
+        raise SystemExit("--mode3d-mesh-exponent must be > 0")
+    if args.mode3d_mesh_r_boundary_re is not None and args.mode3d_mesh_r_boundary_re <= 1.0:
+        raise SystemExit("--mode3d-mesh-r-boundary-re must be > 1")
 
     launch_dir = Path.cwd().resolve()
     script_dir = Path(__file__).resolve().parent
@@ -495,6 +509,16 @@ def main() -> int:
                 "-mode3d-mpi-scheduler", args.scheduler,
                 "-mode3d-mpi-dynamic-chunk", str(args.dynamic_chunk),
             ]
+            if args.mode3d_mesh_res_earth_re is not None:
+                cmd += ["-mode3d-mesh-res-earth-re", str(args.mode3d_mesh_res_earth_re)]
+            if args.mode3d_mesh_res_boundary_re is not None:
+                cmd += ["-mode3d-mesh-res-boundary-re", str(args.mode3d_mesh_res_boundary_re)]
+            if args.mode3d_mesh_coarsening is not None:
+                cmd += ["-mode3d-mesh-coarsening", args.mode3d_mesh_coarsening]
+            if args.mode3d_mesh_exponent is not None:
+                cmd += ["-mode3d-mesh-exponent", str(args.mode3d_mesh_exponent)]
+            if args.mode3d_mesh_r_boundary_re is not None:
+                cmd += ["-mode3d-mesh-r-boundary-re", str(args.mode3d_mesh_r_boundary_re)]
         else:
             cmd += [
                 "-gridless-mpi-scheduler", args.scheduler,

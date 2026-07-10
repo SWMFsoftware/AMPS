@@ -140,6 +140,13 @@
 //     MODE3D_MPI_SCHEDULER    DYNAMIC | BLOCK_CYCLIC | STATIC
 //     MODE3D_MPI_DYNAMIC_CHUNK <int>     ! locations per dynamic MPI chunk; 0 => auto
 //
+//   #MODE3D_MESH                  (optional; only affects -mode 3d AMR mesh build)
+//     MODE3D_MESH_RES_EARTH_RE     <double>   ! requested AMR resolution near 1 Re, in Re
+//     MODE3D_MESH_RES_BOUNDARY_RE  <double>   ! requested AMR resolution at outer boundary, in Re
+//     MODE3D_MESH_COARSENING       LINEAR | LOG | EXPONENTIAL | POWER | CONSTANT
+//     MODE3D_MESH_EXPONENT         <double>   ! POWER/EXPONENT shape parameter; default 1
+//     MODE3D_MESH_R_BOUNDARY_RE    <double>   ! optional outer-radius override; default: domain max extent
+//
 //   #SPECTRUM
 //     (stored both as a raw key/value map in AmpsParam.spectrum and as a
 //      typed metadata view in AmpsParam.particleSpectrum; the downstream
@@ -999,6 +1006,31 @@ namespace EarthUtil {
     // false: AMR interpolation from cell-centered data populated by InitMeshFields().
     // true : direct analytic/background evaluator call via EvaluateBackgroundMagneticFieldSI().
     bool forceAnalyticMagneticField{false};
+
+    // Optional user-defined AMR mesh-resolution profile for standalone -mode 3d.
+    //
+    // Backward compatibility: meshResolutionProfileActive=false leaves the existing
+    // hard-coded main_lib.cpp::localResolution() behavior unchanged.  When active,
+    // localResolution() uses a simple radial profile between a requested resolution
+    // at r≈1 Re and a requested resolution at the outer 3-D domain boundary.
+    //
+    // Canonical input-file section/keys:
+    //   #MODE3D_MESH
+    //     MODE3D_MESH_RES_EARTH_RE     <double>
+    //     MODE3D_MESH_RES_BOUNDARY_RE  <double>
+    //     MODE3D_MESH_COARSENING       LINEAR|LOG|EXPONENTIAL|POWER|CONSTANT
+    //     MODE3D_MESH_EXPONENT         <double>   (used by POWER/EXPONENT)
+    //     MODE3D_MESH_R_BOUNDARY_RE    <double>   (optional; auto from domain when <=0)
+    //
+    // Units: resolutions and the optional boundary radius are stored in km in the
+    // parser so Re/km suffixes can be accepted consistently.  Mode3D converts them
+    // to SI/Re before mesh construction.
+    bool meshResolutionProfileActive{false};
+    double meshResolutionEarth_km{0.0};
+    double meshResolutionBoundary_km{0.0};
+    double meshResolutionOuterRadius_km{0.0};
+    std::string meshResolutionCoarsening{"LINEAR"};
+    double meshResolutionExponent{1.0};
 
     // Backward density/spectrum intra-rank parallel backend.
     //   OPENMP  : use the existing OpenMP loops over energies/directions.

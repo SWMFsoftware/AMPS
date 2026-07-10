@@ -112,6 +112,14 @@
 //       This mirrors MAX_TRACE_TIME, but limits total geometric distance traveled
 //       by a trajectory rather than elapsed integration time.
 //
+//   -mode3d-mesh-res-earth-re <double>
+//   -mode3d-mesh-res-boundary-re <double>
+//   -mode3d-mesh-coarsening <LINEAR|LOG|EXPONENTIAL|POWER|CONSTANT>
+//   -mode3d-mesh-exponent <double>
+//   -mode3d-mesh-r-boundary-re <double>
+//       Optional standalone -mode 3d AMR mesh-resolution profile.  If omitted,
+//       the current hard-coded main_lib.cpp localResolution() profile is used.
+//
 //======================================================================================
 // USAGE EXAMPLES
 //======================================================================================
@@ -283,6 +291,20 @@ namespace EarthUtil {
     //   = 0   : explicitly disable the cumulative-distance cap
     //   > 0   : enable/override the cap
     double maxTraceDistance_Re{-1.0};
+
+    // Optional CLI override for the standalone Mode3D AMR mesh-resolution profile.
+    // These values are expressed in Earth radii for CLI simplicity.  The parser
+    // stores the input-file equivalents internally in km, so main.cpp converts the
+    // CLI values before merging them into AmpsParam.
+    //
+    // Sentinel convention for the numeric fields:
+    //   < 0 : no CLI override supplied
+    //   > 0 : apply/override that value
+    double mode3dMeshResEarth_Re{-1.0};
+    double mode3dMeshResBoundary_Re{-1.0};
+    double mode3dMeshOuterRadius_Re{-1.0};
+    std::string mode3dMeshCoarsening{""};
+    double mode3dMeshExponent{-1.0};
 
     // -----------------------------------------------------------------------
     // -mode 3d_forward specific options
