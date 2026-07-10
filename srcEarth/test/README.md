@@ -320,6 +320,30 @@ python srcEarth/test/F11/run_F11.py --dry-run
 
 F11 writes one case directory per PAD model/exponent under `test_output/F11_gridless`, plus `F11_summary.csv`, `F11_result.json`, and `reference_F11_pad_identities_used.csv`. The repository reference table is `srcEarth/test/F11/reference_F11_pad_identities.csv`.
 
+## F12 — Day/night spatial boundary anisotropy identities
+
+F12 validates exact identities in the `DAYSIDE_NIGHTSIDE` spatial boundary model used by the gridless anisotropic density/spectrum path. It uses `FIELD_MODEL NONE`, `R_INNER=0`, `BA_PAD_MODEL=ISOTROPIC`, and diagnostic points on the GSM Y-Z plane (`X=0`) so every sampled trajectory is allowed and the direction grid is paired under `x -> -x`.
+
+The exact references are:
+
+```text
+DAYSIDE_NIGHTSIDE(1,1)   = UNIFORM
+DAY_ONLY(1,0)            = 0.5 * UNIFORM
+NIGHT_ONLY(0,1)          = 0.5 * UNIFORM
+DAY_ONLY + NIGHT_ONLY    = UNIFORM
+DAYSIDE_NIGHTSIDE(2,0.5) = 1.25 * UNIFORM
+```
+
+The runner checks density, total flux, channel fluxes, saved `T(E)`, `J_boundary(E)`, and `J_local(E)`.
+
+```bash
+python srcEarth/test/F12/run_F12.py -np 4 -nt 16
+python srcEarth/test/F12/run_F12.py --ratio-tol 1e-12 --spectrum-tol 1e-12
+python srcEarth/test/F12/run_F12.py --dry-run
+```
+
+F12 writes one case directory per spatial model/factor combination under `test_output/F12_gridless`, plus `F12_summary.csv`, `F12_result.json`, and `reference_F12_daynight_step_used.csv`. The repository reference table is `srcEarth/test/F12/reference_F12_daynight_step.csv`.
+
 ## F15 — Density normalization from differential flux
 
 F15 checks the conversion from isotropic directional differential flux to density through the relativistic speed factor:

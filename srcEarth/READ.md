@@ -2543,6 +2543,40 @@ srcEarth/test/F11/reference_F11_pad_identities.csv
 ```
 
 
+### F12 — day/night spatial boundary anisotropy identities
+
+Directory: `srcEarth/test/F12`
+
+Driver:
+
+```bash
+python srcEarth/test/F12/run_F12.py -np 4 -nt 16
+```
+
+Purpose.  F12 validates the parser-supported `DAYSIDE_NIGHTSIDE` spatial boundary weighting in the gridless anisotropic density/spectrum path.  It uses `FIELD_MODEL NONE`, `EFIELD_MODEL NONE`, `R_INNER=0`, `BA_PAD_MODEL=ISOTROPIC`, and output points with `X=0`.  In that geometry every sampled trajectory is allowed and the deterministic direction grid is exactly paired under `x -> -x`, so half of the exits are dayside (`x_exit>0`) and half are nightside (`x_exit<=0`).
+
+The exact references are
+
+```text
+DAYSIDE_NIGHTSIDE(1,1)   = UNIFORM
+DAY_ONLY(1,0)            = 0.5 * UNIFORM
+NIGHT_ONLY(0,1)          = 0.5 * UNIFORM
+DAY_ONLY + NIGHT_ONLY    = UNIFORM
+DAYSIDE_NIGHTSIDE(2,0.5) = 1.25 * UNIFORM
+```
+
+The runner checks those identities for total density, omnidirectional integral flux, every requested energy channel, saved `T(E)`, `J_boundary(E)`, and `J_local(E)`.
+
+Input and reference files:
+
+```text
+srcEarth/test/F12/AMPS_PARAM_F12_gridless.in
+srcEarth/test/F12/reference_F12_daynight_step.csv
+```
+
+The runner writes one case directory per spatial model/factor combination under `test_output/F12_gridless`, plus `F12_summary.csv`, `F12_result.json`, and `reference_F12_daynight_step_used.csv`.
+
+
 ### F15 — density normalization from differential flux
 
 Directory: `srcEarth/test/F15`
