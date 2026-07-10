@@ -1,0 +1,11 @@
+check_id,check_type,expected_value,tolerance,units,description
+mode3d_vs_gridless_midlat,cross_solver_relative_difference,0,1.0e-2,relative,Mode3D and gridless centered-dipole cutoffs should agree within 1 percent away from high-latitude penumbra-sensitive points.
+mode3d_vs_gridless_highlat,cross_solver_relative_difference,0,5.0e-2,relative,Mode3D and gridless high-latitude cutoffs should agree within 5 percent because these points are more sensitive to penumbra and finite-trajectory classification.
+mode3d_vs_stormer_midlat,analytic_stormer_relative_error,0,5.0e-2,relative,Mode3D analytical-field cutoff should be close to vertical Størmer cutoff at |lat| <= 30 deg.
+gridless_vs_stormer_midlat,analytic_stormer_relative_error,0,5.0e-2,relative,Gridless cutoff should be close to vertical Størmer cutoff at |lat| <= 30 deg.
+mode3d_vs_stormer_highlat,analytic_stormer_relative_error,0,2.5e-1,relative,Mode3D high-latitude cutoff has looser tolerance because of penumbra and finite escape-classification sensitivity.
+gridless_vs_stormer_highlat,analytic_stormer_relative_error,0,2.5e-1,relative,Gridless high-latitude cutoff has looser tolerance because of penumbra and finite escape-classification sensitivity.
+longitude_spread_mode3d,longitude_symmetry_relative_spread,0,3.0e-2,relative,Centered aligned dipole Mode3D solution should be independent of longitude at fixed altitude and latitude.
+longitude_spread_gridless,longitude_symmetry_relative_spread,0,3.0e-2,relative,Centered aligned dipole gridless solution should be independent of longitude at fixed altitude and latitude.
+north_south_mode3d,north_south_relative_difference,0,3.0e-2,relative,Centered aligned dipole Mode3D solution should be symmetric between +lat and -lat.
+north_south_gridless,north_south_relative_difference,0,3.0e-2,relative,Centered aligned dipole gridless solution should be symmetric between +lat and -lat.

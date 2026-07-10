@@ -2157,6 +2157,79 @@ binary/C11_binary_amps.log
 upper_scan/C11_upper_scan_amps.log
 ```
 
+### C14 — Mode3D/gridless cross-solver consistency
+
+Directory: `srcEarth/test/C14`
+
+Driver:
+
+```bash
+python srcEarth/test/C14/run_C14.py -np 4 -nt 16
+```
+
+Purpose.  C14 compares the standalone Mode3D and gridless backward cutoff
+implementations on the same centered aligned-dipole vertical-cutoff shell
+problem.  The two solvers share production algorithms such as `UPPER_SCAN` and
+dynamic MPI scheduling, but they still represent fields and locations through
+different code paths.  Agreement demonstrates cross-solver consistency rather
+than only internal reproducibility.
+
+Default physical setup:
+
+```text
+FIELD_MODEL = DIPOLE
+CUTOFF_SAMPLING = VERTICAL
+CUTOFF_SEARCH = UPPER_SCAN
+alt = 500, 9000 km
+lon = 0, 30, ..., 330 deg
+lat = -60, -30, 0, 30, 60 deg
+```
+
+The analytical reference for both solver outputs is the centered-dipole vertical
+Størmer cutoff,
+
+```text
+Rc = R0 cos^4(lambda) / r_RE^2 .
+```
+
+Execution examples:
+
+```bash
+python srcEarth/test/C14/run_C14.py -np 4 -nt 16
+python srcEarth/test/C14/run_C14.py --mode3d-field-eval MESH -np 4 -nt 16
+python srcEarth/test/C14/run_C14.py --scheduler STATIC --dynamic-chunk 0
+python srcEarth/test/C14/run_C14.py --lons 0,90,180,270 --lats -60,-30,0,30,60
+python srcEarth/test/C14/run_C14.py --dry-run
+```
+
+Input files and reference table:
+
+```text
+srcEarth/test/C14/AMPS_PARAM_C14_mode3d.in
+srcEarth/test/C14/AMPS_PARAM_C14_gridless.in
+srcEarth/test/C14/reference_C14_cross_solver.csv
+```
+
+Acceptance checks:
+
+```text
+Mode3D/gridless relative difference:  < 1% for |lat| <= 30 deg
+Mode3D/gridless relative difference:  < 5% for high-latitude points
+Mode3D and gridless Størmer residual: < 5% mid-latitude, < 25% high-latitude
+longitude spread and north/south residuals remain small for each solver
+```
+
+Test artifacts written to the run directory:
+
+```text
+C14_summary.csv
+C14_result.json
+C14_mode3d_vs_gridless.png   # written when matplotlib is available
+reference_C14_cross_solver_generated.csv
+mode3d/C14_3d_amps.log
+gridless/C14_gridless_amps.log
+```
+
 ### C4 — parser-safe trace-control and mover convergence
 
 Directory: `srcEarth/test/C4`

@@ -68,3 +68,6 @@ last pass:
 P srcEarth/test/F12/run_F12.py -np 4 -nt 16
 last pass:
 
+P srcEarth/test/C14/run_C14.py -np 4 -nt 16
+last pass:
+

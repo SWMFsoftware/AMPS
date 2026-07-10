@@ -2,7 +2,7 @@
 
 This directory contains executable regression/validation tests for the AMPS
 Earth SEP/geospace backward products.  Each test is stored in its own directory
-(`C1`, `C2`, ..., `F1`, `F2`, `F3`, `F4`, `F5`, `F11`, `F15`, ...).  Test scripts are intended to be executed
+(`C1`, `C2`, ..., `C11`, `C14`, `F1`, `F2`, `F3`, `F4`, `F5`, `F11`, `F12`, `F15`, `F16`, ...).  Test scripts are intended to be executed
 from the directory containing the `amps` executable, not from inside the test
 subdirectory.
 
@@ -157,6 +157,26 @@ and at `alt=500 km` as diagnostics.
 C11 writes `C11_summary.csv`, `C11_result.json`, and the generated reference
 table under `test_output/C11_mode3d`.  Each algorithm subdirectory contains the
 rendered input, AMPS log, shell cutoff output, and a debug rigidity scan file.
+
+## C14 — Mode3D versus gridless cross-solver consistency
+
+C14 runs the same centered aligned-dipole vertical cutoff shell problem through the Mode3D and gridless standalone solver paths.  It checks solver-to-solver agreement and compares both solvers with the analytical vertical Størmer cutoff,
+
+```text
+Rc = R0 cos^4(lambda) / r_RE^2 .
+```
+
+The default target grid follows the validation-plan C14 shell set: altitudes `500` and `9000 km`, longitudes `0, 30, ..., 330 deg`, and latitudes `-60, -30, 0, 30, 60 deg`.  The runner also checks longitude invariance and north/south symmetry for each solver.
+
+```bash
+python srcEarth/test/C14/run_C14.py -np 4 -nt 16
+python srcEarth/test/C14/run_C14.py --mode3d-field-eval MESH -np 4 -nt 16
+python srcEarth/test/C14/run_C14.py --scheduler STATIC --dynamic-chunk 0
+python srcEarth/test/C14/run_C14.py --lons 0,90,180,270 --lats -60,-30,0,30,60
+python srcEarth/test/C14/run_C14.py --dry-run
+```
+
+C14 writes one Mode3D subdirectory and one gridless subdirectory under `test_output/C14_cross_solver`, plus `C14_summary.csv`, `C14_result.json`, and `reference_C14_cross_solver_generated.csv`.  The repository reference/check table is `srcEarth/test/C14/reference_C14_cross_solver.csv`.
 
 ## C17 — Dipole charge-sign and velocity-reversal symmetry
 
