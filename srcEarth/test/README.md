@@ -344,4 +344,24 @@ python srcEarth/test/F15/run_F15.py --dry-run
 ```
 
 F15 writes one case directory per center energy under `test_output/F15_gridless`, plus `F15_summary.csv`, `F15_result.json`, and `reference_F15_top_hat_generated.csv` at the top level.  The default repository reference is stored in `srcEarth/test/F15/reference_F15_top_hat.csv`.
+## F16 — Blocked-access zero-flux regression
+
+F16 validates the exact zero-access limit in the gridless density/flux path. It uses `FIELD_MODEL NONE`, a nonzero power-law boundary spectrum, and places every diagnostic point inside the inner absorbing sphere. Since the trajectory classifier checks `R_INNER` before the first push, every sampled direction and energy must be forbidden:
+
+```text
+T(E)       = 0
+J_local(E) = T(E) J_boundary(E) = 0
+n          = 4π ∫ J_local(E)/v(E) dE = 0
+F          = 4π ∫ J_local(E) dE = 0
+```
+
+The runner checks zero total density, zero total flux, zero channel fluxes, zero saved transmission, zero local spectrum, exact `J_local(E)=T(E)J_boundary(E)` closure, and confirms that the incident boundary spectrum is nonzero.
+
+```bash
+python srcEarth/test/F16/run_F16.py -np 4 -nt 16
+python srcEarth/test/F16/run_F16.py --nintervals 160 --zero-flux-tol 1e-250
+python srcEarth/test/F16/run_F16.py --dry-run
+```
+
+F16 writes `F16_summary.csv`, `F16_result.json`, and `reference_F16_blocked_access_used.csv` under `test_output/F16_gridless`. The repository reference/check table is `srcEarth/test/F16/reference_F16_blocked_access.csv`.
 

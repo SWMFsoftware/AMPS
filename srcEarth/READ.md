@@ -2574,6 +2574,40 @@ srcEarth/test/F15/reference_F15_top_hat.csv
 The runner writes per-case directories under `test_output/F15_gridless`, each containing the rendered input, the generated TABLE spectrum, AMPS log, and the usual gridless density/spectrum/flux files.  The top-level F15 work directory contains `F15_summary.csv`, `F15_result.json`, and `reference_F15_top_hat_generated.csv`.
 
 
+### F16 — blocked-access zero-flux regression
+
+Directory: `srcEarth/test/F16`
+
+Driver:
+
+```bash
+python srcEarth/test/F16/run_F16.py -np 4 -nt 16
+```
+
+Purpose.  F16 checks the exact zero-transmission limit of the gridless density/spectrum workflow.  It uses a nonzero power-law incident spectrum, but every diagnostic point is placed inside the inner absorbing sphere.  Because the trajectory classifier checks `R_INNER` before the first integration step, every direction and energy must be rejected immediately.
+
+The analytical reference is therefore
+
+```text
+T(E) = 0
+J_local(E) = 0
+n = 0
+F_total = 0
+F_channel = 0
+```
+
+This catches leakage through blocked locations, stale transmission arrays, uninitialized channel fluxes, and zero-signal normalization errors.  The runner also verifies that `J_boundary(E)` remains positive so the test is a blocked-access limit rather than a zero-input spectrum case.
+
+Input and reference files:
+
+```text
+srcEarth/test/F16/AMPS_PARAM_F16_gridless.in
+srcEarth/test/F16/reference_F16_blocked_access.csv
+```
+
+The runner writes `F16_summary.csv`, `F16_result.json`, and `reference_F16_blocked_access_used.csv` under `test_output/F16_gridless`.
+
+
 ### ADAPTIVE_DT time-step control
 
 `ADAPTIVE_DT` is a `#NUMERICAL` switch shared by Mode3D and gridless backward

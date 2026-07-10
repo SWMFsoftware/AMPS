@@ -61,3 +61,7 @@ P srcEarth/test/F11/run_F11.py -np 4 -nt 16
 last pass: 051b56bee19aa654427411f55f8f9b1bf58fe0da
 P srcEarth/test/F15/run_F15.py -np 4 -nt 16
 last pass:
+
+P srcEarth/test/F16/run_F16.py -np 4 -nt 16
+last pass:
+
