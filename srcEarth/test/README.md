@@ -197,6 +197,37 @@ python srcEarth/test/F2/run_F2.py --dry-run
 
 F2 writes `F2_summary.csv` and `F2_result.json` under `test_output/F2_gridless`. The physical target values are stored in `srcEarth/test/F2/reference_F2_power_law.csv`. The summary file uses `check_type` and `expected_value`, so zero expected values appear only for residual/error metrics such as `T(E)-1` or file-vs-spectrum reconstruction error.
 
+
+## F5 — Directional anisotropy / PAD mapping
+
+F5 validates the nontrivial pitch-angle-distribution mapping in the gridless anisotropic density/spectrum path. It runs three parser-supported PAD cases with the same dipole field, energy grid, and boundary spectrum:
+
+```text
+ISOTROPIC
+COSALPHA_N, BA_PAD_EXPONENT=2
+SINALPHA_N, BA_PAD_EXPONENT=2
+```
+
+The primary reference is exact: `sin^2(alpha) + cos^2(alpha) = 1`. Therefore the runner checks the complement identities
+
+```text
+T_sin(E) + T_cos(E) = T_iso(E)
+J_local_sin(E) + J_local_cos(E) = J_local_iso(E)
+n_sin + n_cos = n_iso
+F_sin + F_cos = F_iso
+```
+
+at three diagnostic locations: 8 Re equator, 8 Re magnetic pole, and 6 Re equator. It also writes and checks a high-energy straight-line semi-analytic PAD reference for `density_aniso/density_isotropic`; those checks are intentionally looser because they neglect finite magnetic bending.
+
+```bash
+python srcEarth/test/F5/run_F5.py -np 4 -nt 16
+python srcEarth/test/F5/run_F5.py --scan-n 128 --nintervals 96
+python srcEarth/test/F5/run_F5.py --semi-n-theta 240 --semi-n-phi 480
+python srcEarth/test/F5/run_F5.py --dry-run
+```
+
+F5 writes one case directory per PAD model under `test_output/F5_gridless`, plus `F5_summary.csv`, `F5_result.json`, and `reference_F5_pad_mapping_used.csv`. The repository reference table is `srcEarth/test/F5/reference_F5_pad_mapping.csv`.
+
 ## F11 — Anisotropic PAD model sum-check
 
 F11 validates exact identities in the gridless anisotropic boundary-spectrum path. It uses `FIELD_MODEL DIPOLE`, `DS_BOUNDARY_MODE ANISOTROPIC`, `DS_TRANSMISSION_MODE SCAN`, and a parser-compatible `#BOUNDARY_ANISOTROPY` section.

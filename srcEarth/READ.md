@@ -2277,6 +2277,51 @@ F2_result.json
 F2 uses the same `FIELD_MODEL NONE` gridless branch introduced for F1.  The summary table uses `expected_value` and `check_type`, so zero expected values denote zero residuals/error metrics rather than zero physical flux.
 
 
+
+### F5 — directional anisotropy / PAD mapping
+
+Directory: `srcEarth/test/F5`
+
+Driver:
+
+```bash
+python srcEarth/test/F5/run_F5.py -np 4 -nt 16
+```
+
+Purpose.  F5 validates the parser-supported pitch-angle-distribution mapping in the gridless anisotropic density/spectrum path using a nontrivial `BA_PAD_EXPONENT=2` case.  The runner renders and runs three cases with identical field, spectrum, energy grid, points, and transmission settings:
+
+```text
+BA_PAD_MODEL ISOTROPIC
+BA_PAD_MODEL COSALPHA_N   BA_PAD_EXPONENT 2
+BA_PAD_MODEL SINALPHA_N   BA_PAD_EXPONENT 2
+```
+
+The primary reference is the exact complement identity
+
+```text
+sin^2(alpha) + cos^2(alpha) = 1
+```
+
+which implies, point-by-point and energy-by-energy,
+
+```text
+T_sin(E) + T_cos(E) = T_iso(E)
+J_local_sin(E) + J_local_cos(E) = J_local_iso(E)
+n_sin + n_cos = n_iso
+F_sin + F_cos = F_iso
+```
+
+F5 also computes a high-energy straight-line semi-analytic PAD reference for the density ratios at three diagnostic points: 8 Re equator, 8 Re magnetic pole, and 6 Re equator.  These ratio checks are looser than the complement identity because they intentionally neglect finite magnetic bending.
+
+Input and reference files:
+
+```text
+srcEarth/test/F5/AMPS_PARAM_F5_gridless.in
+srcEarth/test/F5/reference_F5_pad_mapping.csv
+```
+
+The runner writes one case directory per PAD model under `test_output/F5_gridless`, plus `F5_summary.csv`, `F5_result.json`, and `reference_F5_pad_mapping_used.csv`.
+
 ### F11 — anisotropic PAD model sum-check
 
 Directory: `srcEarth/test/F11`
