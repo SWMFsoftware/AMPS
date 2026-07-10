@@ -2,7 +2,7 @@
 
 This directory contains executable regression/validation tests for the AMPS
 Earth SEP/geospace backward products.  Each test is stored in its own directory
-(`C1`, `C2`, ..., `F1`, `F2`, ...).  Test scripts are intended to be executed
+(`C1`, `C2`, ..., `F1`, `F2`, `F15`, ...).  Test scripts are intended to be executed
 from the directory containing the `amps` executable, not from inside the test
 subdirectory.
 
@@ -196,4 +196,29 @@ python srcEarth/test/F2/run_F2.py --dry-run
 ```
 
 F2 writes `F2_summary.csv` and `F2_result.json` under `test_output/F2_gridless`. The physical target values are stored in `srcEarth/test/F2/reference_F2_power_law.csv`. The summary file uses `check_type` and `expected_value`, so zero expected values appear only for residual/error metrics such as `T(E)-1` or file-vs-spectrum reconstruction error.
+
+## F15 — Density normalization from differential flux
+
+F15 checks the conversion from isotropic directional differential flux to density through the relativistic speed factor:
+
+```text
+n = 4π ∫ J(E)/v(E) dE
+```
+
+It uses `FIELD_MODEL NONE`, `R_INNER=0`, and four independent narrow TABLE top-hat spectra centered at `1, 10, 100, 1000 MeV`.  For each top-hat interval `[E1,E2]`, the references are closed form:
+
+```text
+F = 4π J0 (E2 - E1)
+n = 4π J0/c * [sqrt(E2(E2+2m)) - sqrt(E1(E1+2m))]
+```
+
+The runner samples one point at the box center and one off-center point near the boundary; both must agree because the transport is all-open.
+
+```bash
+python srcEarth/test/F15/run_F15.py -np 4 -nt 16
+python srcEarth/test/F15/run_F15.py --nintervals 256 --density-tol 1e-6
+python srcEarth/test/F15/run_F15.py --dry-run
+```
+
+F15 writes one case directory per center energy under `test_output/F15_gridless`, plus `F15_summary.csv`, `F15_result.json`, and `reference_F15_top_hat_generated.csv` at the top level.  The default repository reference is stored in `srcEarth/test/F15/reference_F15_top_hat.csv`.
 

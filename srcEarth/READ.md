@@ -2277,6 +2277,37 @@ F2_result.json
 F2 uses the same `FIELD_MODEL NONE` gridless branch introduced for F1.  The summary table uses `expected_value` and `check_type`, so zero expected values denote zero residuals/error metrics rather than zero physical flux.
 
 
+### F15 — density normalization from differential flux
+
+Directory: `srcEarth/test/F15`
+
+Driver:
+
+```bash
+python srcEarth/test/F15/run_F15.py -np 4 -nt 16
+```
+
+Purpose.  F15 isolates the density normalization step in the zero-field, all-open limit.  It runs one TABLE top-hat spectrum per center energy, with default centers `1, 10, 100, 1000 MeV`.  Each case uses `FIELD_MODEL NONE`, `EFIELD_MODEL NONE`, `R_INNER=0`, and `DS_TRANSMISSION_MODE DIRECT`, so `T(E)=1` and `J_local(E)=J_boundary(E)`.
+
+For a finite top-hat with constant directional differential flux `J0` on `[E1,E2]`, the reference flux and density are
+
+```text
+F = 4π J0 (E2 - E1)
+n = 4π J0/c * [sqrt(E2(E2+2m)) - sqrt(E1(E1+2m))]
+```
+
+where energies and the proton rest mass `m` are in MeV.  The density formula directly checks the relativistic `1/v(E)` factor because `v(E)/c = sqrt(E(E+2m))/(E+m)`.
+
+Input and reference files:
+
+```text
+srcEarth/test/F15/AMPS_PARAM_F15_gridless.in
+srcEarth/test/F15/reference_F15_top_hat.csv
+```
+
+The runner writes per-case directories under `test_output/F15_gridless`, each containing the rendered input, the generated TABLE spectrum, AMPS log, and the usual gridless density/spectrum/flux files.  The top-level F15 work directory contains `F15_summary.csv`, `F15_result.json`, and `reference_F15_top_hat_generated.csv`.
+
+
 ### ADAPTIVE_DT time-step control
 
 `ADAPTIVE_DT` is a `#NUMERICAL` switch shared by Mode3D and gridless backward
