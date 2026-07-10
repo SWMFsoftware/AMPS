@@ -2074,6 +2074,89 @@ binary/C3_binary_amps.log
 upper_scan/C3_upper_scan_amps.log
 ```
 
+### C11 — penumbra-pocket BINARY Rmin-collapse regression
+
+Directory: `srcEarth/test/C11`
+
+Driver:
+
+```bash
+python srcEarth/test/C11/run_C11.py -np 4 -nt 16
+```
+
+Purpose.  C11 isolates the historical endpoint-binary failure that motivated the
+penumbra-safe `UPPER_SCAN` cutoff search.  At the high-latitude dipole-shell
+point
+
+```text
+lon = 0 deg
+lat = -60 deg
+alt = 9000 km
+FIELD_MODEL = DIPOLE
+CUTOFF_SAMPLING = VERTICAL
+```
+
+an isolated low-rigidity allowed pocket can cause the legacy `BINARY` search to
+return the lower search bound.  The C11 input sets `CUTOFF_EMIN=0.05 MeV/n`,
+which corresponds to `Rmin≈9.6866e-3 GV` for protons, while the analytical
+vertical Størmer upper cutoff at the primary point is about `0.159972 GV`.
+
+The script runs two algorithms by default:
+
+```text
+BINARY      legacy endpoint-only search; expected to reproduce the Rmin collapse
+UPPER_SCAN  production search; expected to recover the upper Størmer cutoff
+```
+
+Unlike C3, where BINARY is mostly diagnostic, C11 deliberately requires the
+primary BINARY run to reproduce the known Rmin-collapse signature.  This makes
+C11 a code-level regression guard for that specific historical behavior.  If the
+legacy BINARY path is removed or intentionally fixed, the test expectation should
+be updated with the code change.
+
+Execution examples:
+
+```bash
+python srcEarth/test/C11/run_C11.py --mode3d-field-eval ANALYTIC
+python srcEarth/test/C11/run_C11.py --mode3d-field-eval MESH
+python srcEarth/test/C11/run_C11.py --algorithms UPPER_SCAN --cutoff-scan-n 200
+python srcEarth/test/C11/run_C11.py --target-alts 500,9000 --target-lats -60,60
+python srcEarth/test/C11/run_C11.py --dry-run
+```
+
+Input files and reference table:
+
+```text
+srcEarth/test/C11/AMPS_PARAM_C11.in
+srcEarth/test/C11/AMPS_PARAM_C11_mode3d.in
+srcEarth/test/C11/reference_C11_penumbra_pocket.csv
+```
+
+C11 is Mode3D-only because it uses the single-point
+`CUTOFF_DEBUG_RIGIDITY_SCAN` diagnostic.  The generated input enables that
+diagnostic at the primary point and writes one scan file per algorithm:
+
+```text
+binary/C11_binary_debug_rigidity_scan.dat
+upper_scan/C11_upper_scan_debug_rigidity_scan.dat
+```
+
+The debug scan reports `Rc_selected_GV`, `Rc_endpoint_binary_GV`,
+`Rc_upper_scan_GV`, and `Rc_stormer_GV`.  C11 requires the endpoint-binary value
+to be near `Rmin` and the UPPER_SCAN value to be close to the Størmer upper
+cutoff.
+
+Test artifacts written to the run directory:
+
+```text
+C11_summary.csv
+C11_result.json
+C11_binary_vs_upper_scan.png   # written when matplotlib is available
+reference_C11_penumbra_pocket_generated.csv
+binary/C11_binary_amps.log
+upper_scan/C11_upper_scan_amps.log
+```
+
 ### C4 — parser-safe trace-control and mover convergence
 
 Directory: `srcEarth/test/C4`

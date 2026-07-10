@@ -41,6 +41,9 @@ last pass:
 F srcEarth/test/C5/run_C5.py --use-legacy-mesh-resolution
 last pass:
 
+P srcEarth/test/C11/run_C11.py -np 4 -nt 16
+last pass:
+
 P srcEarth/test/F1/run_F1.py -np 4 -nt 16
 last pass:
 P srcEarth/test/F2/run_F2.py -np 4 -nt 16

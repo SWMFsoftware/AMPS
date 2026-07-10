@@ -132,6 +132,32 @@ Use `ADAPTIVE_DT F` for pusher convergence tests where changing `DT_TRACE` must
 change the actual integration step.  Production runs should normally use the
 default adaptive mode.
 
+## C11 — Penumbra-pocket regression: BINARY Rmin-collapse defect
+
+C11 targets the code-level cutoff-search defect that motivated `UPPER_SCAN`.  At
+the high-latitude dipole-shell point `lon=0 deg, lat=-60 deg, alt=9000 km`, the
+legacy endpoint `BINARY` search can return the lower search boundary when an
+isolated low-rigidity allowed pocket is present.  The production `UPPER_SCAN`
+search should instead return the final upper cutoff, close to the analytical
+vertical Størmer value.
+
+```bash
+python srcEarth/test/C11/run_C11.py -np 4 -nt 16
+python srcEarth/test/C11/run_C11.py --algorithms UPPER_SCAN --cutoff-scan-n 200
+python srcEarth/test/C11/run_C11.py --mode3d-field-eval MESH -np 4 -nt 16
+python srcEarth/test/C11/run_C11.py --dry-run
+```
+
+The test is Mode3D-only because it uses the `CUTOFF_DEBUG_RIGIDITY_SCAN`
+diagnostic.  The primary acceptance check requires `BINARY` to reproduce the
+known Rmin-collapse signature and requires `UPPER_SCAN` to recover the Størmer
+upper cutoff.  The runner also checks repeat shell-output points at `lat=+60 deg`
+and at `alt=500 km` as diagnostics.
+
+C11 writes `C11_summary.csv`, `C11_result.json`, and the generated reference
+table under `test_output/C11_mode3d`.  Each algorithm subdirectory contains the
+rendered input, AMPS log, shell cutoff output, and a debug rigidity scan file.
+
 ## C17 — Dipole charge-sign and velocity-reversal symmetry
 
 C17 checks the exact Lorentz-force time-reversal symmetry in a static centered
