@@ -26,3 +26,4 @@ F srcEarth/test/C5/run_C5.py --coarsening LINEAR --res-earth-series 0.1,0.05 --r
 F srcEarth/test/C5/run_C5.py --use-legacy-mesh-resolution
 
 P srcEarth/test/F1/run_F1.py -np 4 -nt 16
+P srcEarth/test/F2/run_F2.py -np 4 -nt 16

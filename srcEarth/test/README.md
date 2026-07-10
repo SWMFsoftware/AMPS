@@ -183,3 +183,17 @@ F1 writes `F1_summary.csv` and `F1_result.json` under
 supports `FIELD_MODEL NONE` by returning `B=(0,0,0)` and skipping
 Geopack/Tsyganenko initialization.
 
+## F2 — Power-law energy integration
+
+F2 uses the same zero-field transport setup as F1 but focuses on the energy folding. It samples one Cartesian point with `T(E)=1` and checks the imposed power-law spectrum against analytical energy integrals.
+
+The validation-plan energy bins `1, 3, 10, 30, 100, 300, 1000 MeV` are encoded as parser-compatible `#ENERGY_CHANNELS`, while `DS_NINTERVALS=960` supplies a fine log-spaced quadrature grid.
+
+```bash
+python srcEarth/test/F2/run_F2.py -np 4 -nt 16
+python srcEarth/test/F2/run_F2.py --nintervals 1920 --integration-tol 5e-5
+python srcEarth/test/F2/run_F2.py --dry-run
+```
+
+F2 writes `F2_summary.csv` and `F2_result.json` under `test_output/F2_gridless`. The physical target values are stored in `srcEarth/test/F2/reference_F2_power_law.csv`. The summary file uses `check_type` and `expected_value`, so zero expected values appear only for residual/error metrics such as `T(E)-1` or file-vs-spectrum reconstruction error.
+

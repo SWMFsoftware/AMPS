@@ -2233,6 +2233,50 @@ F1 requires the gridless field evaluator branch for `FIELD_MODEL NONE`, which
 returns `B=(0,0,0)` and leaves all Tsyganenko/Geopack state untouched.
 
 
+### F2 — power-law energy integration
+
+Directory: `srcEarth/test/F2`
+
+Driver:
+
+```bash
+python srcEarth/test/F2/run_F2.py -np 4 -nt 16
+```
+
+Purpose.  F2 validates the energy-folding part of the density/flux workflow in a zero-field, all-open transport problem.  Since `T(E)=1`, the saved differential spectrum must reproduce the imposed power law and the total/channel fluxes must match the analytical integrals of
+
+```text
+J(E) = SPEC_J0 * (E / SPEC_E0)^(-SPEC_GAMMA)
+```
+
+over the validation energy bins `1, 3, 10, 30, 100, 300, 1000 MeV`.  In the parser-compatible input file, those bins are represented with `#ENERGY_CHANNELS`; the production quadrature uses a fine log grid, `DS_NINTERVALS=960` by default.  Density is compared with an independent high-resolution reference for `4π∫J(E)/v(E)dE`.
+
+Input and reference files:
+
+```text
+srcEarth/test/F2/AMPS_PARAM_F2_gridless.in
+srcEarth/test/F2/reference_F2_power_law.csv
+```
+
+AMPS output parsed by the test:
+
+```text
+gridless_points_density.dat
+gridless_points_spectrum.dat
+gridless_points_flux.dat
+```
+
+Test artifacts written to the run directory:
+
+```text
+F2_amps.log
+F2_summary.csv
+F2_result.json
+```
+
+F2 uses the same `FIELD_MODEL NONE` gridless branch introduced for F1.  The summary table uses `expected_value` and `check_type`, so zero expected values denote zero residuals/error metrics rather than zero physical flux.
+
+
 ### ADAPTIVE_DT time-step control
 
 `ADAPTIVE_DT` is a `#NUMERICAL` switch shared by Mode3D and gridless backward
