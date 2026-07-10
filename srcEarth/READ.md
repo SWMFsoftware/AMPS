@@ -2277,6 +2277,56 @@ F2_result.json
 F2 uses the same `FIELD_MODEL NONE` gridless branch introduced for F1.  The summary table uses `expected_value` and `check_type`, so zero expected values denote zero residuals/error metrics rather than zero physical flux.
 
 
+### F3 — dipole cutoff-filtered flux
+
+Directory: `srcEarth/test/F3`
+
+Driver:
+
+```bash
+python srcEarth/test/F3/run_F3.py -np 4 -nt 16
+```
+
+Purpose.  F3 is the first end-to-end magnetic-access flux test in the validation campaign.  It uses `FIELD_MODEL DIPOLE`, `DS_TRANSMISSION_MODE SCAN`, and the same power-law spectrum as F1/F2, but samples explicit points on the 9000 km shell.  The default rendered point set follows the validation-plan latitude profile
+
+```text
+lat = -70, -60, -45, -30, 0, 30, 45, 60, 70 deg
+lon = 0, 90 deg
+```
+
+The external reference is a Størmer hard-cutoff approximation folded analytically with the power-law spectrum:
+
+```text
+Rc(lambda,r) = 14.9 cos^4(lambda) / r_RE^2 GV
+F_ch = 4*pi*T_open*int_{max(E1,Ecut)}^{E2} J0*(E/E0)^(-gamma) dE
+```
+
+Here `Ecut` is obtained by converting `Rc` to proton kinetic energy, and `T_open` is the analytic straight-line open-sky fraction outside the inner absorbing sphere.  This comparison is intentionally approximate: the AMPS run traces the full directional access map and includes penumbra, while the reference collapses access to a vertical step function.  The runner therefore also performs tight exact/internal checks on `J_local(E)=T(E)J_boundary(E)`, density and flux reconstruction from the saved spectrum, longitude symmetry, north/south symmetry, and the expected increase in access toward high absolute latitude.
+
+Input and reference files:
+
+```text
+srcEarth/test/F3/AMPS_PARAM_F3_gridless.in
+srcEarth/test/F3/reference_F3_dipole_cutoff.csv
+```
+
+AMPS output parsed by the test:
+
+```text
+gridless_points_density.dat
+gridless_points_spectrum.dat
+gridless_points_flux.dat
+```
+
+Test artifacts written to the run directory:
+
+```text
+F3_amps.log
+F3_summary.csv
+F3_result.json
+reference_F3_dipole_cutoff_used.csv
+```
+
 
 ### F5 — directional anisotropy / PAD mapping
 

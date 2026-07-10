@@ -6,11 +6,21 @@ Input file format:
   ! this is a comment
 
   P command expected to return exit code 0
+  last pass: optional git commit id for this individual test
+
   F command expected to return nonzero exit code
+  last pass: optional git commit id for this individual test
 
 Blank lines are ignored.  Lines beginning with '!' after leading whitespace are
 ignored.  The first non-whitespace token on a test line must be P or F; the rest
-of the line is executed as the command.
+of the line is executed as the command.  A test command may optionally be
+followed by a metadata line beginning with 'last pass:'.  Metadata lines are
+associated with the immediately preceding test command and are not executed.
+
+Use --update-last-pass to rewrite the 'last pass:' line of each test whose
+actual result matches the expected P/F marker.  Existing metadata lines are
+updated in place; missing metadata lines are inserted below the corresponding
+test command.
 
 By default commands are executed through the user's shell so that ordinary test
 commands, environment variables, and shell wrappers work as written.  Use
@@ -32,8 +42,10 @@ import asyncio
 import csv
 import json
 import os
+import re
 import shlex
 import signal
+import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -41,12 +53,14 @@ from pathlib import Path
 from typing import Iterable, List, Optional
 
 
-@dataclass(frozen=True)
+@dataclass
 class TestCase:
     index: int
     line_no: int
     expected: str  # "P" or "F"
     command: str
+    last_pass: Optional[str] = None
+    last_pass_line_no: Optional[int] = None
 
 
 @dataclass
@@ -61,18 +75,47 @@ class TestResult:
     elapsed_s: float
     command: str
     log_file: str
+    last_pass: Optional[str] = None
+    last_pass_line_no: Optional[int] = None
+
+
+LAST_PASS_RE = re.compile(r"^(?P<prefix>\s*last\s+pass\s*:\s*)(?P<value>.*)$", re.IGNORECASE)
 
 
 def parse_test_file(path: Path) -> List[TestCase]:
     tests: List[TestCase] = []
+    pending_metadata_test: Optional[TestCase] = None
 
     with path.open("r", encoding="utf-8", errors="replace") as f:
         for line_no, raw in enumerate(f, start=1):
             line = raw.strip()
 
             if not line:
+                # Allow a blank line between a command and its metadata, but do
+                # not otherwise give blank lines semantic meaning.
                 continue
+
             if line.startswith("!"):
+                # Section comments are not metadata.  Reset the pending command
+                # so a later stray 'last pass:' line is reported clearly.
+                pending_metadata_test = None
+                continue
+
+            last_pass_match = LAST_PASS_RE.match(raw.rstrip("\n"))
+            if last_pass_match:
+                if pending_metadata_test is None:
+                    raise ValueError(
+                        f"Invalid test-list line {line_no}: 'last pass:' must "
+                        "immediately follow a P/F command"
+                    )
+                if pending_metadata_test.last_pass_line_no is not None:
+                    raise ValueError(
+                        f"Invalid test-list line {line_no}: duplicate 'last pass:' "
+                        f"metadata for test from line {pending_metadata_test.line_no}"
+                    )
+                pending_metadata_test.last_pass = last_pass_match.group("value").strip()
+                pending_metadata_test.last_pass_line_no = line_no
+                pending_metadata_test = None
                 continue
 
             parts = line.split(maxsplit=1)
@@ -82,14 +125,14 @@ def parse_test_file(path: Path) -> List[TestCase]:
                     f"or 'F <command>', got: {raw.rstrip()}"
                 )
 
-            tests.append(
-                TestCase(
-                    index=len(tests) + 1,
-                    line_no=line_no,
-                    expected=parts[0].upper(),
-                    command=parts[1].strip(),
-                )
+            test = TestCase(
+                index=len(tests) + 1,
+                line_no=line_no,
+                expected=parts[0].upper(),
+                command=parts[1].strip(),
             )
+            tests.append(test)
+            pending_metadata_test = test
 
     return tests
 
@@ -202,6 +245,8 @@ async def run_one_test(
             elapsed_s=elapsed,
             command=test.command,
             log_file=str(log_path),
+            last_pass=test.last_pass,
+            last_pass_line_no=test.last_pass_line_no,
         )
 
 
@@ -271,6 +316,8 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
         "timed_out",
         "elapsed_s",
         "log_file",
+        "last_pass",
+        "last_pass_line_no",
         "command",
     ]
 
@@ -320,6 +367,80 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
         actual_failed_txt_path,
         actual_failed_csv_path,
     )
+
+def get_git_commit_id(workdir: Path) -> str:
+    """Return the current git commit hash for the requested working tree."""
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(workdir),
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError(
+            "could not determine the current git commit id; run from inside a "
+            "git work tree or pass --commit-id explicitly"
+        ) from exc
+
+    commit_id = completed.stdout.strip()
+    if not commit_id:
+        raise RuntimeError("git rev-parse HEAD returned an empty commit id")
+    return commit_id
+
+
+def update_last_pass_entries(test_file: Path, tests: List[TestCase], results: List[TestResult], commit_id: str) -> int:
+    """
+    Update the test-list 'last pass:' metadata for tests that matched reference.
+
+    A matched test means that the actual P/F result equals the expected P/F marker
+    in the list.  Therefore expected-failure tests are updated only when they fail
+    as expected; unexpected passes/failures leave their previous metadata intact.
+    """
+    passed_by_line = {r.line_no for r in results if r.matched_reference}
+    tests_by_line = {t.line_no: t for t in tests}
+
+    update_existing_line: dict[int, str] = {}
+    insert_after_line: dict[int, str] = {}
+
+    for line_no in passed_by_line:
+        test = tests_by_line[line_no]
+        if test.last_pass_line_no is None:
+            insert_after_line[test.line_no] = commit_id
+        else:
+            update_existing_line[test.last_pass_line_no] = commit_id
+
+    if not update_existing_line and not insert_after_line:
+        return 0
+
+    original_lines = test_file.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+    new_lines: List[str] = []
+
+    for line_no, raw in enumerate(original_lines, start=1):
+        if line_no in update_existing_line:
+            newline = "\n" if raw.endswith("\n") else ""
+            stripped = raw.rstrip("\n")
+            match = LAST_PASS_RE.match(stripped)
+            if match:
+                indent_match = re.match(r"^(\s*)", match.group("prefix"))
+                indent = indent_match.group(1) if indent_match else ""
+                prefix = f"{indent}last pass: "
+            else:
+                prefix = "last pass: "
+            new_lines.append(f"{prefix}{update_existing_line[line_no]}{newline}")
+        else:
+            new_lines.append(raw)
+
+        if line_no in insert_after_line:
+            new_lines.append(f"last pass: {insert_after_line[line_no]}\n")
+
+    tmp_path = test_file.with_name(test_file.name + ".tmp")
+    tmp_path.write_text("".join(new_lines), encoding="utf-8")
+    tmp_path.replace(test_file)
+    return len(update_existing_line) + len(insert_after_line)
+
 
 def print_final_summary(
     results: List[TestResult],
@@ -430,6 +551,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         action="store_true",
         help="Parse and list tests without executing them",
     )
+    parser.add_argument(
+        "--update-last-pass",
+        action="store_true",
+        help=(
+            "After running tests, update or insert the 'last pass:' git commit id "
+            "for each test whose actual result matches the expected P/F marker"
+        ),
+    )
+    parser.add_argument(
+        "--commit-id",
+        default=None,
+        help=(
+            "Commit id to write with --update-last-pass; default: current "
+            "'git rev-parse HEAD' in --workdir"
+        ),
+    )
 
     args = parser.parse_args(argv)
 
@@ -462,7 +599,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.dry_run:
         print("\nDry run test list:")
         for t in tests:
-            print(f"  #{t.index:03d} line {t.line_no}: expected {t.expected}: {t.command}")
+            suffix = f"; last pass: {t.last_pass}" if t.last_pass else "; last pass: <none>"
+            print(f"  #{t.index:03d} line {t.line_no}: expected {t.expected}: {t.command}{suffix}")
         return 0
 
     try:
@@ -497,6 +635,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         actual_failed_txt_path=actual_failed_txt_path,
         actual_failed_csv_path=actual_failed_csv_path,
     )
+
+    if args.update_last_pass:
+        try:
+            commit_id = args.commit_id or get_git_commit_id(workdir)
+            n_updated = update_last_pass_entries(test_file, tests, results, commit_id)
+        except Exception as exc:
+            print(f"ERROR updating last-pass metadata: {exc}", file=sys.stderr)
+            return 2
+        print(
+            f"Updated {n_updated} last-pass entr{'y' if n_updated == 1 else 'ies'} "
+            f"in {test_file} to commit {commit_id}"
+        )
 
     return 0 if all(r.matched_reference for r in results) else 1
 

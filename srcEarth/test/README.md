@@ -2,7 +2,7 @@
 
 This directory contains executable regression/validation tests for the AMPS
 Earth SEP/geospace backward products.  Each test is stored in its own directory
-(`C1`, `C2`, ..., `F1`, `F2`, `F11`, `F15`, ...).  Test scripts are intended to be executed
+(`C1`, `C2`, ..., `F1`, `F2`, `F3`, `F5`, `F11`, `F15`, ...).  Test scripts are intended to be executed
 from the directory containing the `amps` executable, not from inside the test
 subdirectory.
 
@@ -197,6 +197,27 @@ python srcEarth/test/F2/run_F2.py --dry-run
 
 F2 writes `F2_summary.csv` and `F2_result.json` under `test_output/F2_gridless`. The physical target values are stored in `srcEarth/test/F2/reference_F2_power_law.csv`. The summary file uses `check_type` and `expected_value`, so zero expected values appear only for residual/error metrics such as `T(E)-1` or file-vs-spectrum reconstruction error.
 
+## F3 — Dipole cutoff-filtered flux
+
+F3 is the first magnetic-access flux test. It runs gridless density/spectrum in a centered aligned dipole using `DS_TRANSMISSION_MODE SCAN`, a power-law boundary spectrum, and explicit points on the 9000 km shell. The default points follow the validation-plan latitude profile `-70, -60, -45, -30, 0, 30, 45, 60, 70 deg` at longitudes `0` and `90 deg`.
+
+The external reference is the vertical Størmer hard-cutoff approximation folded analytically with the power-law spectrum:
+
+```text
+Rc(lambda,r) = 14.9 cos^4(lambda) / r_RE^2 GV
+F_ch = 4*pi*T_open*int_{max(E1,Ecut)}^{E2} J0*(E/E0)^(-gamma) dE
+```
+
+where `Ecut` is the proton kinetic energy corresponding to `Rc`, and `T_open` is the analytic straight-line open-sky fraction outside the inner absorbing sphere. The F3 analytical comparison is intentionally looser than F1/F2/F15 because the numerical solver evaluates a full directional access map with penumbra, while the reference collapses access to a vertical step function. The runner also applies tighter internal checks: `J_local(E)=T(E)J_boundary(E)`, file-vs-spectrum flux reconstruction, longitude symmetry, north/south symmetry, and the expected increase of flux toward high absolute latitude.
+
+```bash
+python srcEarth/test/F3/run_F3.py -np 4 -nt 16
+python srcEarth/test/F3/run_F3.py --lons 0,90,180,270
+python srcEarth/test/F3/run_F3.py --analytic-flux-tol 0.75 --rc-tol 0.75
+python srcEarth/test/F3/run_F3.py --dry-run
+```
+
+F3 writes `F3_summary.csv`, `F3_result.json`, and `reference_F3_dipole_cutoff_used.csv` under `test_output/F3_gridless`. The default repository reference table is `srcEarth/test/F3/reference_F3_dipole_cutoff.csv`.
 
 ## F5 — Directional anisotropy / PAD mapping
 
