@@ -132,26 +132,19 @@ Use `ADAPTIVE_DT F` for pusher convergence tests where changing `DT_TRACE` must
 change the actual integration step.  Production runs should normally use the
 default adaptive mode.
 
-## C6 — IGRF / realistic global cutoff morphology
+## C17 — Dipole charge-sign and velocity-reversal symmetry
 
-C6 computes a global vertical cutoff-rigidity shell map at 500 km using a realistic internal geomagnetic-field geometry.  It verifies broad map morphology rather than a point-by-point analytical solution: low-latitude cutoffs should be high, polar cutoffs should be low, the equator-to-pole contrast should be large, and the map should show longitude structure.  When requested, the same map is compared across `DYNAMIC`, `BLOCK_CYCLIC`, and `STATIC` MPI schedulers.
-
-Default run:
-
-```bash
-python srcEarth/test/C6/run_C6.py -np 4 -nt 16
-```
-
-Full scheduler-regression run:
+C17 checks the exact Lorentz-force time-reversal symmetry in a static centered
+dipole with E=0.  It runs a positive-charge and a negative-charge case with the
+same mass and compares directional cutoff maps using the reversal relation
+`(lon, lat) -> (lon + 180 deg, -lat)`.
 
 ```bash
-python srcEarth/test/C6/run_C6.py --schedulers DYNAMIC,BLOCK_CYCLIC,STATIC -np 4 -nt 16
+python srcEarth/test/C17/run_C17.py -np 4 -nt 16
+python srcEarth/test/C17/run_C17.py --dir-lon-res 60 --dir-lat-res 30 -np 2 -nt 8
+python srcEarth/test/C17/run_C17.py --movers BORIS,RK4,RK6
 ```
 
-Fast smoke test:
-
-```bash
-python srcEarth/test/C6/run_C6.py --quick -np 2 -nt 8
-```
-
-The current standalone Mode3D field dispatcher may not expose pure `FIELD_MODEL IGRF`; therefore the default C6 input uses `FIELD_MODEL T96` with quiet external drivers, exercising the IGRF/Geopack setup and realistic internal-field coordinate transforms without requiring a separate IGRF-only selector.
+The main outputs are `C17_summary.csv`,
+`C17_pairwise_directional_residuals.csv`, `C17_result.json`, and
+`reference_C17_symmetry.csv` under `test_output/C17_gridless`.

@@ -1,0 +1,83 @@
+! ═══════════════════════════════════════════════════════════════
+! AMPS SEP geospace validation test C17
+! Dipole charge-sign and velocity-reversal symmetry
+!
+! Parser-compatible gridless input template.  run_C17.py renders the
+! observation POINTS block and runs the same centered dipole case twice:
+!   Run A: q = +1, arrival direction v
+!   Run B: q = -1, arrival direction -v
+!
+! The analytical reference is the exact Lorentz-force time-reversal symmetry
+! for static B, E=0.  Current AMPS output exposes directional cutoff maps, so
+! the runner compares Rc_q(dir) with Rc_-q(-dir) and also constructs a derived
+! step-transmission check at selected rigidities.
+! ═══════════════════════════════════════════════════════════════
+
+#RUN_INFO
+RUN_ID                 __RUN_ID__
+
+#CALCULATION_MODE
+CALC_TARGET            CUTOFF_RIGIDITY
+FIELD_EVAL_METHOD      GRIDLESS
+
+#CUTOFF_RIGIDITY
+CUTOFF_EMIN            __CUTOFF_EMIN_MEV__
+CUTOFF_EMAX            __CUTOFF_EMAX_MEV__
+CUTOFF_MAX_PARTICLES   __CUTOFF_MAX_PARTICLES__
+CUTOFF_NENERGY         __CUTOFF_NENERGY__
+CUTOFF_SAMPLING        ISOTROPIC
+DIRECTIONAL_MAP        T
+DIRMAP_LON_RES         __DIRMAP_LON_RES__
+DIRMAP_LAT_RES         __DIRMAP_LAT_RES__
+CUTOFF_SEARCH_ALGORITHM UPPER_SCAN
+CUTOFF_UPPER_SCAN_N    __CUTOFF_UPPER_SCAN_N__
+CUTOFF_MAX_TRAJ_TIME   __MAX_TRACE_TIME__
+
+#PARTICLE_SPECIES
+SPECIES                __SPECIES_NAME__
+CHARGE                 __CHARGE__
+MASS_AMU               __MASS_AMU__
+
+#BACKGROUND_FIELD
+FIELD_MODEL            DIPOLE
+DIPOLE_MOMENT          1.00
+DIPOLE_TILT            0.0
+
+#DOMAIN_BOUNDARY
+DOMAIN_X_MAX           35.0         ! Re
+DOMAIN_X_MIN           -35.0        ! Re
+DOMAIN_Y_MAX           35.0         ! Re
+DOMAIN_Y_MIN           -35.0        ! Re
+DOMAIN_Z_MAX           35.0         ! Re
+DOMAIN_Z_MIN           -35.0        ! Re
+R_INNER                1.0          ! Re
+
+#ELECTRIC_FIELD
+! No active electric-field keyword is set.  The default parser state is E=0.
+
+#SPECTRUM
+SPECTRUM_TYPE          POWER_LAW
+SPEC_J0                1.00e+4
+SPEC_GAMMA             3.50
+SPEC_E0                10.0
+SPEC_EMIN              1.0
+SPEC_EMAX              1000.0
+
+#OUTPUT_DOMAIN
+OUTPUT_MODE            POINTS
+COORDS                 GSM
+POINTS_BEGIN
+__POINTS_BLOCK__
+POINTS_END
+
+#NUMERICAL
+DT_TRACE               __DT_TRACE__
+ADAPTIVE_DT            __ADAPTIVE_DT__
+MAX_TRACE_TIME         __MAX_TRACE_TIME__
+MAX_TRACE_DISTANCE     __MAX_TRACE_DISTANCE_RE__
+GRIDLESS_MPI_SCHEDULER __GRIDLESS_MPI_SCHEDULER__
+GRIDLESS_MPI_DYNAMIC_CHUNK __GRIDLESS_MPI_DYNAMIC_CHUNK__
+GRIDLESS_PARALLEL      THREADS
+GRIDLESS_THREADS       __GRIDLESS_THREADS__
+
+!#END
