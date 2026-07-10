@@ -759,6 +759,11 @@ DRIVER_FILE or MAGNETIC_DRIVER_FILE
 
 Model aliases like `TS05` are normalized to the canonical names used internally.
 
+For gridless density/flux validation, `FIELD_MODEL NONE` is also supported. It
+returns a zero magnetic field and skips Geopack/Tsyganenko initialization; this
+mode is intended for normalization tests such as F1 rather than physical
+geospace production runs.
+
 CCMC/Runs-on-Request style `TS05_*` and `T05_*` aliases are accepted for the same background drivers:
 
 ```text
@@ -2168,6 +2173,64 @@ dt_*/C4_amps.log
 Too-loose caps can let quasi-trapped low-rigidity trajectories leak to the outer
 box, while too-tight caps can stop truly allowed near-cutoff trajectories before
 they escape.  C4 exposes both controls explicitly.
+
+
+### F1 — zero-field density/flux normalization
+
+Directory: `srcEarth/test/F1`
+
+Driver:
+
+```bash
+python srcEarth/test/F1/run_F1.py -np 4 -nt 16
+```
+
+Purpose.  F1 is the first density/flux normalization test.  It uses a deliberately
+trivial transport problem:
+
+```text
+FIELD_MODEL          NONE
+EFIELD_MODEL         NONE
+R_INNER              0.0 km
+DS_TRANSMISSION_MODE DIRECT
+SPECTRUM_TYPE        POWER_LAW
+SPEC_J0              1.0
+SPEC_E0              10.0 MeV
+SPEC_GAMMA           3.5
+SPEC_EMIN/SPEC_EMAX  1.0 / 1000.0 MeV
+```
+
+With `B=0` and no absorbing inner sphere, every straight-line trajectory from the
+ten requested points exits the outer box.  Therefore the reference solution is
+`T(E)=1`, `J_local(E)=J_boundary(E)`, omnidirectional flux `4π∫J(E)dE`, and
+density `4π∫J(E)/v(E)dE`.  The test verifies absolute normalization,
+energy-channel fluxes, spectrum-file consistency, and zero spatial variation.
+
+Input and reference files:
+
+```text
+srcEarth/test/F1/AMPS_PARAM_F1_gridless.in
+srcEarth/test/F1/reference_F1_zero_field.csv
+```
+
+AMPS output parsed by the test:
+
+```text
+gridless_points_density.dat
+gridless_points_spectrum.dat
+gridless_points_flux.dat
+```
+
+Test artifacts written to the run directory:
+
+```text
+F1_amps.log
+F1_summary.csv
+F1_result.json
+```
+
+F1 requires the gridless field evaluator branch for `FIELD_MODEL NONE`, which
+returns `B=(0,0,0)` and leaves all Tsyganenko/Geopack state untouched.
 
 
 ### ADAPTIVE_DT time-step control

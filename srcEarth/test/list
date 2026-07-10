@@ -1,5 +1,6 @@
 !initial setup:
 !make test_Earth-cutoff-rigidity-3d-analytic_compile -j
+!./srcEarth/test/test_runner.py -j 6 ./srcEarth/test/list
 
 
 P srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16
@@ -23,3 +24,5 @@ F srcEarth/test/C4/run_C4.py --fail-on-paxis --paxis-tol=1e-5
 F srcEarth/test/C5/run_C5.py --res-earth-series 0.2,0.1,0.05 --res-boundary-series 1.0,0.75,0.5
 F srcEarth/test/C5/run_C5.py --coarsening LINEAR --res-earth-series 0.1,0.05 --res-boundary-series 0.75,0.5
 F srcEarth/test/C5/run_C5.py --use-legacy-mesh-resolution
+
+P srcEarth/test/F1/run_F1.py -np 4 -nt 16

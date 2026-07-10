@@ -148,3 +148,38 @@ python srcEarth/test/C17/run_C17.py --movers BORIS,RK4,RK6
 The main outputs are `C17_summary.csv`,
 `C17_pairwise_directional_residuals.csv`, `C17_result.json`, and
 `reference_C17_symmetry.csv` under `test_output/C17_gridless`.
+
+## F1 — Zero-field density/flux normalization
+
+F1 is the first density/flux validation test from `validation.docx`. It isolates
+the normalization and output-integration path by using a zero magnetic field and
+no inner absorbing boundary:
+
+```text
+FIELD_MODEL            NONE
+EFIELD_MODEL           NONE
+R_INNER                0.0
+DS_TRANSMISSION_MODE   DIRECT
+SPECTRUM_TYPE          POWER_LAW
+SPEC_J0/SPEC_E0/GAMMA  1.0 / 10.0 MeV / 3.5
+SPEC_EMIN/SPEC_EMAX    1.0 / 1000.0 MeV
+```
+
+In this setup every backtraced direction from every point exits the domain
+without magnetic bending or absorption, so the reference solution is
+`T(E)=1`, `J_local(E)=J_boundary(E)`, total flux `4π∫J(E)dE`, and density
+`4π∫J(E)/v(E)dE`. The test samples ten Cartesian points and requires zero
+spatial variation within roundoff.
+
+```bash
+python srcEarth/test/F1/run_F1.py -np 4 -nt 16
+python srcEarth/test/F1/run_F1.py -np 1 -nt 1
+python srcEarth/test/F1/run_F1.py --dry-run
+```
+
+F1 writes `F1_summary.csv` and `F1_result.json` under
+`test_output/F1_gridless`. The reference values are stored in
+`srcEarth/test/F1/reference_F1_zero_field.csv`. The gridless field evaluator now
+supports `FIELD_MODEL NONE` by returning `B=(0,0,0)` and skipping
+Geopack/Tsyganenko initialization.
+
