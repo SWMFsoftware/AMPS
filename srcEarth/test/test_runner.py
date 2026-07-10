@@ -18,9 +18,13 @@ followed by a metadata line beginning with 'last pass:'.  Metadata lines are
 associated with the immediately preceding test command and are not executed.
 
 Use --update-last-pass to rewrite the 'last pass:' line of each test whose
-actual result matches the expected P/F marker.  Existing metadata lines are
-updated in place; missing metadata lines are inserted below the corresponding
-test command.
+command actually exited 0 on this run, regardless of its P/F marker.
+Existing metadata lines are updated in place; missing metadata lines are
+inserted below the corresponding test command.  This is independent of
+whether the result matched the reference marker: an F-marked test that
+unexpectedly exits 0 still gets its 'last pass:' commit id updated (it will
+also show up in <report-prefix>_to_address.txt as an unexpected pass, since
+its marker likely needs to be revisited).
 
 By default commands are executed through the user's shell so that ordinary test
 commands, environment variables, and shell wrappers work as written.  Use
@@ -393,13 +397,16 @@ def get_git_commit_id(workdir: Path) -> str:
 
 def update_last_pass_entries(test_file: Path, tests: List[TestCase], results: List[TestResult], commit_id: str) -> int:
     """
-    Update the test-list 'last pass:' metadata for tests that matched reference.
+    Update the test-list 'last pass:' metadata for tests whose command actually
+    exited 0 on this run.
 
-    A matched test means that the actual P/F result equals the expected P/F marker
-    in the list.  Therefore expected-failure tests are updated only when they fail
-    as expected; unexpected passes/failures leave their previous metadata intact.
+    This tracks the literal exit status of each command (actual == "P"),
+    independent of the test's P/F marker in the list.  An F-marked test that
+    unexpectedly exits 0 still gets its 'last pass:' commit id updated, since
+    the command did in fact pass; it will also appear in the to-address report
+    as an unexpected pass so the marker itself can be revisited separately.
     """
-    passed_by_line = {r.line_no for r in results if r.matched_reference}
+    passed_by_line = {r.line_no for r in results if r.actual == "P"}
     tests_by_line = {t.line_no: t for t in tests}
 
     update_existing_line: dict[int, str] = {}
@@ -556,7 +563,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         action="store_true",
         help=(
             "After running tests, update or insert the 'last pass:' git commit id "
-            "for each test whose actual result matches the expected P/F marker"
+            "for each test whose command actually exited 0 this run, regardless "
+            "of its P/F marker"
         ),
     )
     parser.add_argument(
