@@ -132,47 +132,26 @@ Use `ADAPTIVE_DT F` for pusher convergence tests where changing `DT_TRACE` must
 change the actual integration step.  Production runs should normally use the
 default adaptive mode.
 
-## C5 — Dipole mesh-interpolation convergence
+## C6 — IGRF / realistic global cutoff morphology
 
-C5 validates the Mode3D mesh-backed magnetic-field path.  It runs a centered
-aligned dipole shell at 9000 km with `-mode3d-field-eval MESH` and compares the
-cutoff profile with the analytical vertical Størmer solution while sweeping a
-small set of Mode3D mesh-resolution profiles.
+C6 computes a global vertical cutoff-rigidity shell map at 500 km using a realistic internal geomagnetic-field geometry.  It verifies broad map morphology rather than a point-by-point analytical solution: low-latitude cutoffs should be high, polar cutoffs should be low, the equator-to-pole contrast should be large, and the map should show longitude structure.  When requested, the same map is compared across `DYNAMIC`, `BLOCK_CYCLIC`, and `STATIC` MPI schedulers.
 
-```bash
-python srcEarth/test/C5/run_C5.py -np 4 -nt 16
-```
-
-By default, C5 first runs an `ANALYTIC` baseline to verify that the pusher and
-cutoff search are functioning, then runs three MESH cases:
-
-```text
-dR_Earth = 0.20 Re, dR_boundary = 1.00 Re
-dR_Earth = 0.10 Re, dR_boundary = 0.75 Re
-dR_Earth = 0.05 Re, dR_boundary = 0.50 Re
-```
-
-These are passed with the Mode3D mesh-resolution CLI controls:
+Default run:
 
 ```bash
--mode3d-mesh-res-earth-re <dRe>
--mode3d-mesh-res-boundary-re <dRe>
--mode3d-mesh-coarsening <LINEAR|LOG|EXPONENTIAL|GEOMETRIC|POWER|CONSTANT>
--mode3d-mesh-exponent <p>
--mode3d-mesh-r-boundary-re <R>
+python srcEarth/test/C6/run_C6.py -np 4 -nt 16
 ```
 
-Useful variants:
+Full scheduler-regression run:
 
 ```bash
-python srcEarth/test/C5/run_C5.py --res-earth-series 0.10,0.05 --res-boundary-series 0.75,0.50
-python srcEarth/test/C5/run_C5.py --coarsening LINEAR
-python srcEarth/test/C5/run_C5.py --use-legacy-mesh-resolution
-python srcEarth/test/C5/run_C5.py --no-convergence-gate
+python srcEarth/test/C6/run_C6.py --schedulers DYNAMIC,BLOCK_CYCLIC,STATIC -np 4 -nt 16
 ```
 
-C5 writes `C5_latitude_summary.csv`, `C5_aggregate_summary.csv`,
-`C5_result.json`, and optionally `C5_mesh_convergence.png`.  If C1/ANALYTIC
-passes but C5 fails, the likely issue is field materialization on the AMR mesh,
-mesh resolution, interpolation, ghost-cell filling, MPI global field replication,
-or thread safety in the mesh-backed field path.
+Fast smoke test:
+
+```bash
+python srcEarth/test/C6/run_C6.py --quick -np 2 -nt 8
+```
+
+The current standalone Mode3D field dispatcher may not expose pure `FIELD_MODEL IGRF`; therefore the default C6 input uses `FIELD_MODEL T96` with quiet external drivers, exercising the IGRF/Geopack setup and realistic internal-field coordinate transforms without requiring a separate IGRF-only selector.
