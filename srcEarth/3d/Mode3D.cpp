@@ -648,7 +648,19 @@ double ConfiguredMeshResolutionSI(const double *x) {
 
   double r2=0.0;
   for (int idim=0; idim<DIM; ++idim) r2 += x[idim]*x[idim];
-  const double r_Re = std::sqrt(r2) / _EARTH__RADIUS_;
+  const double r = std::sqrt(r2);
+  const double r_Re = r / _EARTH__RADIUS_;
+
+  // Preserve the legacy AMR behavior inside the loss sphere.  The Mode3D mesh
+  // exists in a Cartesian box that includes the inactive Earth interior, but
+  // particle tracing stops at the inner boundary and does not need a finely
+  // resolved interior volume.  Applying the user requested near-Earth surface
+  // resolution throughout r < Re can create a very large number of unnecessary
+  // AMR blocks and may make validation cases such as C5 fail before they ever
+  // test the mesh-interpolated field.  The old localResolution() path used a
+  // coarse cell size for r < 0.98 Re; keep that protection when the optional
+  // user-defined radial profile is active.
+  if (r < 0.98*_EARTH__RADIUS_) return _EARTH__RADIUS_;
 
   double t = 0.0;
   if (MeshResolutionOuterRadius_Re > 1.0) {

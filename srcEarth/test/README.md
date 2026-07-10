@@ -89,36 +89,26 @@ C3 accepts `--max-trace-time`, `--max-trace-distance`, and `--dt-trace` so the
 finite-time / finite-distance trajectory classification sensitivity can be
 studied explicitly.
 
-## C4 — Mode3D trajectory-exit classifier and invariant diagnostic
+## C4 — Parser-safe trajectory integration convergence
 
-C4 uses the Mode3D `CUTOFF_DEBUG_EXIT_LIST_FILE` diagnostic to trace many selected
-vertical trajectories in one AMPS run and write one combined
-`cutoff_3d_debug_exit_trace.dat` file.  It is not a shell-map cutoff-accuracy
-test.  Instead, it checks whether individual trajectories terminate for the
-right reason and conserve the quantities they should conserve in a static
-centered dipole with `E=0`.
+C4 replaces the earlier non-parser-safe invariant diagnostic.  The current code
+does not recognize `CUTOFF_DEBUG_EXIT_TRACE` or the related
+`CUTOFF_DEBUG_EXIT_*` keywords, so C4 uses only production parser keywords and
+checks ordinary cutoff shell output against the analytical vertical Størmer
+solution.
 
-The harness generates `c4_debug_trajectories.dat` with all requested
-`lon_deg lat_deg alt_km R_GV label` cases, launches AMPS once per mover/DT_TRACE
-configuration, and then checks:
-
-- high-rigidity cases above the analytical Størmer cutoff exit through `OUTER_BOX`;
-- low-rigidity cases below the cutoff are not counted as allowed;
-- `rel_dR` stays below the requested tolerance;
-- `rel_dP_axis` is recorded and can be made a hard failure with `--fail-on-paxis`.
+The script runs a centered dipole shell at 9000 km for a sweep of `DT_TRACE`
+values and checks selected longitudes/latitudes for convergence toward the
+Størmer cutoff.
 
 ```bash
-srcEarth/test/C4/run_C4.py --factors=0.5,2.0 --lats=-60,-30,0,30,60
-srcEarth/test/C4/run_C4.py --adaptive-dt F --dt-sweep=1.0,0.5,0.25
-srcEarth/test/C4/run_C4.py --fail-on-paxis --paxis-tol=1e-5
+python srcEarth/test/C4/run_C4.py --mode 3d --mode3d-field-eval ANALYTIC
+python srcEarth/test/C4/run_C4.py --mode 3d --mode3d-field-eval MESH --dt-sweep 1.0,0.5,0.25
+python srcEarth/test/C4/run_C4.py --mode gridless --max-trace-distance 300
 ```
 
-A single mover and single `DT_TRACE` value produces one AMPS run regardless of how
-many latitudes, longitudes, or rigidity factors are requested.  Mover and
-`DT_TRACE` sweeps still launch one run per configuration because those are global
-AMPS settings.  The debug-exit file is written by rank 0 before the normal Mode3D
-MPI scheduler starts, so it remains one file even with multiple MPI ranks and
-threads.
+C4 records `MAX_TRACE_TIME` and `MAX_TRACE_DISTANCE`, because finite-time and
+finite-distance caps can affect near-cutoff trajectory classification.
 
 
 ### ADAPTIVE_DT time-step control
@@ -141,3 +131,48 @@ Aliases `-fixed-dt`, `-no-adaptive-dt`, and `-use-adaptive-dt` are also accepted
 Use `ADAPTIVE_DT F` for pusher convergence tests where changing `DT_TRACE` must
 change the actual integration step.  Production runs should normally use the
 default adaptive mode.
+
+## C5 — Dipole mesh-interpolation convergence
+
+C5 validates the Mode3D mesh-backed magnetic-field path.  It runs a centered
+aligned dipole shell at 9000 km with `-mode3d-field-eval MESH` and compares the
+cutoff profile with the analytical vertical Størmer solution while sweeping a
+small set of Mode3D mesh-resolution profiles.
+
+```bash
+python srcEarth/test/C5/run_C5.py -np 4 -nt 16
+```
+
+By default, C5 first runs an `ANALYTIC` baseline to verify that the pusher and
+cutoff search are functioning, then runs three MESH cases:
+
+```text
+dR_Earth = 0.20 Re, dR_boundary = 1.00 Re
+dR_Earth = 0.10 Re, dR_boundary = 0.75 Re
+dR_Earth = 0.05 Re, dR_boundary = 0.50 Re
+```
+
+These are passed with the Mode3D mesh-resolution CLI controls:
+
+```bash
+-mode3d-mesh-res-earth-re <dRe>
+-mode3d-mesh-res-boundary-re <dRe>
+-mode3d-mesh-coarsening <LINEAR|LOG|EXPONENTIAL|GEOMETRIC|POWER|CONSTANT>
+-mode3d-mesh-exponent <p>
+-mode3d-mesh-r-boundary-re <R>
+```
+
+Useful variants:
+
+```bash
+python srcEarth/test/C5/run_C5.py --res-earth-series 0.10,0.05 --res-boundary-series 0.75,0.50
+python srcEarth/test/C5/run_C5.py --coarsening LINEAR
+python srcEarth/test/C5/run_C5.py --use-legacy-mesh-resolution
+python srcEarth/test/C5/run_C5.py --no-convergence-gate
+```
+
+C5 writes `C5_latitude_summary.csv`, `C5_aggregate_summary.csv`,
+`C5_result.json`, and optionally `C5_mesh_convergence.png`.  If C1/ANALYTIC
+passes but C5 fails, the likely issue is field materialization on the AMR mesh,
+mesh resolution, interpolation, ghost-cell filling, MPI global field replication,
+or thread safety in the mesh-backed field path.

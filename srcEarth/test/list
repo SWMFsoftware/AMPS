@@ -19,3 +19,7 @@ P srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN --cutoff-scan-n 200
 P srcEarth/test/C4/run_C4.py --factors=0.5,2.0 --lats=-60,-30,0,30,60
 F srcEarth/test/C4/run_C4.py --adaptive-dt F --dt-sweep=1.0,0.5,0.25 
 F srcEarth/test/C4/run_C4.py --fail-on-paxis --paxis-tol=1e-5
+
+F srcEarth/test/C5/run_C5.py --res-earth-series 0.2,0.1,0.05 --res-boundary-series 1.0,0.75,0.5
+F srcEarth/test/C5/run_C5.py --coarsening LINEAR --res-earth-series 0.1,0.05 --res-boundary-series 0.75,0.5
+F srcEarth/test/C5/run_C5.py --use-legacy-mesh-resolution
