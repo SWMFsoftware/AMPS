@@ -1,6 +1,10 @@
 
 #include "pic.h"
 
+#ifndef _TARGET_
+#define _TARGET_ _TARGET_NONE_ 
+#endif
+
 //static short** PIC::Mover::cellIntersectTypeArr=NULL;
 static std::vector<short> NodeTypeArr_all;
 static std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>  NodeArr_type2, NodeArr_all;
