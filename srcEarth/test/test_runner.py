@@ -78,8 +78,17 @@ each command to the estimated ``-nt`` value, which can reduce hidden nested
 threading in libraries.  Existing values are preserved unless
 ``--overwrite-thread-env`` is also supplied.
 
-Result handling
----------------
+Progress and result handling
+----------------------------
+The runner reports progress in two places.  First, when a command has passed the
+command-count and resource-count throttles and is actually being launched, it
+prints a ``[START]`` line.  This is important for resource-aware scheduling: a
+large test may run alone for a long time while other tests wait for slots, and a
+silent terminal can otherwise look like a hung runner.  Second, as soon as each
+command finishes, the runner prints the historical completion line beginning with
+``[OK]`` or ``[MISMATCH]``.  That completion line is intentionally kept compatible
+with the original runner output.
+
 The process exit status is converted to actual P/F.  Timeouts and launch errors
 are treated as actual F.  The full JSON/CSV reports include the slot estimate and
 acquired slot count for each test.  Two triage reports are also written:
@@ -438,6 +447,7 @@ async def run_one_test(
     default_nt: int,
     set_thread_env_vars: bool,
     preserve_thread_env: bool,
+    print_start: bool,
 ) -> TestResult:
     """Run one command after passing command-count and slot-count gates.
 
@@ -462,6 +472,18 @@ async def run_one_test(
             # The base environment is never mutated, so concurrently running tests
             # cannot accidentally change each other's thread settings.
             env = set_thread_env(base_env, nt, preserve_thread_env) if set_thread_env_vars else base_env
+
+            if print_start:
+                # Print after both throttles have been acquired and immediately
+                # before the subprocess is created.  A command may spend a long
+                # time waiting for CPU slots in resource-aware mode; printing at
+                # this point makes it clear which tests are actually running.
+                print(
+                    f"[START] #{test.index:03d} line {test.line_no}: "
+                    f"slots={effective_slots}/{requested_slots}, "
+                    f"command={test.command}",
+                    flush=True,
+                )
 
             with log_path.open("wb") as log:
                 header = (
@@ -576,6 +598,7 @@ async def run_all_tests(
     default_nt: int,
     set_thread_env_vars: bool,
     preserve_thread_env: bool,
+    print_start: bool,
 ) -> List[TestResult]:
     """Schedule all tests concurrently and return results in list order.
 
@@ -607,6 +630,7 @@ async def run_all_tests(
                 default_nt=default_nt,
                 set_thread_env_vars=set_thread_env_vars,
                 preserve_thread_env=preserve_thread_env,
+                print_start=print_start,
             )
         )
         for test in tests
@@ -617,13 +641,16 @@ async def run_all_tests(
         result = await task
         results.append(result)
         status = "OK" if result.matched_reference else "MISMATCH"
+        # Keep this completion line compatible with the original runner.
+        # Several validation workflows grep for the leading [OK]/[MISMATCH]
+        # pattern, so detailed slot diagnostics remain in the reports/logs and
+        # in the [START] progress line rather than changing this status record.
         print(
             f"[{status}] #{result.index:03d} line {result.line_no}: "
             f"expected {result.expected}, actual {result.actual}, "
-            f"exit={result.exit_code}, {result.elapsed_s:.1f}s, "
-            f"slots={result.effective_slots}/{result.requested_slots}"
+            f"exit={result.exit_code}, {result.elapsed_s:.1f}s",
+            flush=True,
         )
-        sys.stdout.flush()
 
     results.sort(key=lambda r: r.index)
     return results
@@ -942,6 +969,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Parse and list tests without executing them",
     )
     parser.add_argument(
+        "--no-start-progress",
+        action="store_true",
+        help=(
+            "Do not print [START] lines when commands acquire resources and launch; "
+            "completion [OK]/[MISMATCH] lines are still printed"
+        ),
+    )
+    parser.add_argument(
         "--update-last-pass",
         action="store_true",
         help=(
@@ -1027,6 +1062,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 default_nt=args.default_nt,
                 set_thread_env_vars=args.set_thread_env,
                 preserve_thread_env=not args.overwrite_thread_env,
+                print_start=not args.no_start_progress,
             )
         )
     except KeyboardInterrupt:
