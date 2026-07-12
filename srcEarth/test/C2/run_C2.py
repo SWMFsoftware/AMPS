@@ -440,6 +440,7 @@ def parse_args() -> argparse.Namespace:
           python srcEarth/test/C2/run_C2.py
         W python srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
           python srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
+          python srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval MESH --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 3 --mode3d-mesh-coarsening LINEAR
         W python srcEarth/test/C2/run_C2.py --mode gridless -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
           python srcEarth/test/C2/run_C2.py --skip-run --workdir test_output/C2_gridless
         """)
@@ -450,6 +451,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mode3d-field-eval", "--field-eval", dest="mode3d_field_eval", default="ANALYTIC", choices=["ANALYTIC", "MESH", "GRID_3D"], help="Mode3D field backend passed as -mode3d-field-eval; default: ANALYTIC")
     parser.add_argument("--scheduler", default="DYNAMIC", choices=["DYNAMIC", "BLOCK_CYCLIC", "STATIC"], help="MPI scheduler to use for the selected mode; default: DYNAMIC")
     parser.add_argument("--dynamic-chunk", type=int, default=0, help="dynamic MPI chunk size; 0 means AMPS auto heuristic; default: 0")
+    parser.add_argument("--mode3d-mesh-res-earth-re", type=float, default=None, help="optional Mode3D AMR resolution near Earth, in Re; passed to AMPS as -mode3d-mesh-res-earth-re")
+    parser.add_argument("--mode3d-mesh-res-boundary-re", type=float, default=None, help="optional Mode3D AMR resolution at the outer boundary, in Re; passed to AMPS as -mode3d-mesh-res-boundary-re")
+    parser.add_argument("--mode3d-mesh-coarsening", "--coarsening", dest="mode3d_mesh_coarsening", default=None, choices=["LINEAR", "LOG", "EXPONENTIAL", "GEOMETRIC", "POWER", "CONSTANT"], help="optional AMPS radial AMR coarsening profile; --coarsening is a C1-compatible alias")
+    parser.add_argument("--mode3d-mesh-exponent", "--exponent", dest="mode3d_mesh_exponent", type=float, default=None, help="optional AMPS POWER-coarsening exponent, in Re mesh-profile controls")
+    parser.add_argument("--mode3d-mesh-r-boundary-re", "--r-boundary-re", dest="mode3d_mesh_r_boundary_re", type=float, default=None, help="optional AMPS mesh-profile outer radius, in Re")
     parser.add_argument("--cutoff-scan-n", type=int, default=80, help="number of UPPER_SCAN rigidity samples passed to AMPS; default: 80")
     parser.add_argument("--no-cutoff-search-cli", action="store_true", help="do not pass -cutoff-search/-cutoff-upper-scan-n; useful for older CLI checkouts")
     parser.add_argument("--dt-trace", type=float, default=1.0, help="DT_TRACE value written into the generated input; default: 1.0 s")
@@ -478,6 +484,16 @@ def main() -> int:
         raise SystemExit("-nt must be >= 1")
     if args.dynamic_chunk < 0:
         raise SystemExit("--dynamic-chunk must be >= 0")
+    if args.mode3d_mesh_res_earth_re is not None and args.mode3d_mesh_res_earth_re <= 0.0:
+        raise SystemExit("--mode3d-mesh-res-earth-re must be > 0")
+    if args.mode3d_mesh_res_boundary_re is not None and args.mode3d_mesh_res_boundary_re <= 0.0:
+        raise SystemExit("--mode3d-mesh-res-boundary-re must be > 0")
+    if args.mode3d_mesh_exponent is not None and args.mode3d_mesh_exponent <= 0.0:
+        raise SystemExit("--mode3d-mesh-exponent must be > 0")
+    if args.mode3d_mesh_r_boundary_re is not None and args.mode3d_mesh_r_boundary_re <= 1.0:
+        raise SystemExit("--mode3d-mesh-r-boundary-re must be > 1")
+    if args.mode == "gridless" and any(x is not None for x in (args.mode3d_mesh_res_earth_re, args.mode3d_mesh_res_boundary_re, args.mode3d_mesh_coarsening, args.mode3d_mesh_exponent, args.mode3d_mesh_r_boundary_re)):
+        raise SystemExit("Mode3D mesh-resolution options can only be used with --mode 3d")
     if args.cutoff_scan_n < 1:
         raise SystemExit("--cutoff-scan-n must be >= 1")
     if args.max_trace_distance < 0.0:
@@ -541,6 +557,16 @@ def main() -> int:
                 "-mode3d-mpi-scheduler", args.scheduler,
                 "-mode3d-mpi-dynamic-chunk", str(args.dynamic_chunk),
             ]
+            if args.mode3d_mesh_res_earth_re is not None:
+                cmd += ["-mode3d-mesh-res-earth-re", str(args.mode3d_mesh_res_earth_re)]
+            if args.mode3d_mesh_res_boundary_re is not None:
+                cmd += ["-mode3d-mesh-res-boundary-re", str(args.mode3d_mesh_res_boundary_re)]
+            if args.mode3d_mesh_coarsening is not None:
+                cmd += ["-mode3d-mesh-coarsening", args.mode3d_mesh_coarsening]
+            if args.mode3d_mesh_exponent is not None:
+                cmd += ["-mode3d-mesh-exponent", str(args.mode3d_mesh_exponent)]
+            if args.mode3d_mesh_r_boundary_re is not None:
+                cmd += ["-mode3d-mesh-r-boundary-re", str(args.mode3d_mesh_r_boundary_re)]
         else:
             cmd += [
                 "-gridless-mpi-scheduler", args.scheduler,
@@ -586,6 +612,11 @@ def main() -> int:
         "mode3d_field_eval": args.mode3d_field_eval if args.mode == "3d" else None,
         "scheduler": args.scheduler,
         "dynamic_chunk": args.dynamic_chunk,
+        "mode3d_mesh_res_earth_re": args.mode3d_mesh_res_earth_re if args.mode == "3d" else None,
+        "mode3d_mesh_res_boundary_re": args.mode3d_mesh_res_boundary_re if args.mode == "3d" else None,
+        "mode3d_mesh_coarsening": args.mode3d_mesh_coarsening if args.mode == "3d" else None,
+        "mode3d_mesh_exponent": args.mode3d_mesh_exponent if args.mode == "3d" else None,
+        "mode3d_mesh_r_boundary_re": args.mode3d_mesh_r_boundary_re if args.mode == "3d" else None,
         "cutoff_scan_n": args.cutoff_scan_n,
         "max_trace_time": args.max_trace_time,
         "max_trace_distance": args.max_trace_distance,
@@ -606,6 +637,19 @@ def main() -> int:
     print("mode=%s np=%d nt=%d scheduler=%s" % (args.mode, args.np, args.nt, args.scheduler))
     if args.mode == "3d":
         print("mode3d_field_eval=%s" % args.mode3d_field_eval)
+        mesh_info = []
+        if args.mode3d_mesh_res_earth_re is not None:
+            mesh_info.append("res_earth_re=%g" % args.mode3d_mesh_res_earth_re)
+        if args.mode3d_mesh_res_boundary_re is not None:
+            mesh_info.append("res_boundary_re=%g" % args.mode3d_mesh_res_boundary_re)
+        if args.mode3d_mesh_coarsening is not None:
+            mesh_info.append("coarsening=%s" % args.mode3d_mesh_coarsening)
+        if args.mode3d_mesh_exponent is not None:
+            mesh_info.append("exponent=%g" % args.mode3d_mesh_exponent)
+        if args.mode3d_mesh_r_boundary_re is not None:
+            mesh_info.append("r_boundary_re=%g" % args.mode3d_mesh_r_boundary_re)
+        if mesh_info:
+            print("mode3d_mesh=" + ", ".join(mesh_info))
     print("altitude=%g km" % TARGET_ALT_KM)
     print("\nLongitude symmetry:")
     for row in lon_summary:
