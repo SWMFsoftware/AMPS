@@ -7184,6 +7184,20 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     //the maximum number of the elements in the interpolation stencil
     const int nMaxStencilLength=64;
 
+    /*
+     * Maximum length of a cell-centered row stencil.
+     *
+     * A regular AMPS interpolation stencil can contain as many as 64 physical
+     * center nodes. Near a coarse/fine interface the interpolation routine can
+     * additionally blend that coarse-grid stencil with an eight-point fine-grid
+     * stencil. The legacy pointer stencil merges coincident center-node pointers
+     * as it is assembled, but the decomposition-independent row stencil must also
+     * be able to represent the intermediate, not-yet-merged set safely. Twice the
+     * legacy limit therefore leaves sufficient room for the current algorithms
+     * without changing the legacy limit.
+     */
+    const int nMaxRowStencilLength=2*nMaxStencilLength;
+
     template <class T>
     class cStencilGeneric {
     public:
@@ -7278,6 +7292,155 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
       }
     };
 
+    /*
+     * Decomposition-independent description of a cell-centered interpolation
+     * row.
+     *
+     * The legacy cStencil stores pointers to allocated cDataCenterNode objects.
+     * That representation is intentionally retained because it is used by the
+     * existing particle movers and field interpolation code. It cannot, however,
+     * describe a stencil cell that belongs to a block not allocated on the
+     * current MPI rank. cRowStencil stores only mesh topology and geometry:
+     *
+     *   - a pointer to the AMR tree node that owns the physical cell;
+     *   - the cell indices i, j, and k local to that tree node; and
+     *   - the interpolation weight.
+     *
+     * No cDataBlockAMR or cDataCenterNode allocation is required. Consequently
+     * the same row stencil is produced on every MPI rank that has the replicated
+     * AMR tree, regardless of the block decomposition. This is useful for
+     * interpolation from compact globally replicated data sets such as the
+     * magnetic and electric fields used by cutoff-rigidity tracing.
+     */
+    class cRowStencil {
+    public:
+      class cElement {
+      public:
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+        int i,j,k;
+        double Weight;
+      };
+
+      int Length;
+      cElement Element[nMaxRowStencilLength];
+
+      _TARGET_DEVICE_ _TARGET_HOST_
+      cRowStencil() {flush();}
+
+      _TARGET_DEVICE_ _TARGET_HOST_
+      cRowStencil(bool InitFlag) {if (InitFlag==true) flush();}
+
+      /* Remove all elements without touching any mesh data. */
+      _TARGET_DEVICE_ _TARGET_HOST_
+      void flush() {Length=0;}
+
+      /* Return the sum of the current interpolation weights. */
+      _TARGET_DEVICE_ _TARGET_HOST_
+      double GetWeightSum() const {
+        double res=0.0;
+
+        for (int iElement=0;iElement<Length;iElement++) res+=Element[iElement].Weight;
+        return res;
+      }
+
+      /*
+       * Add one physical cell to the row. Entries that identify the same AMR
+       * node and the same local cell are merged. Merging is required when the
+       * coarse/fine transition stencil is blended with the fine-grid stencil.
+       */
+      _TARGET_DEVICE_ _TARGET_HOST_
+      void AddCell(double w,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,int i,int j,int k) {
+        if (w<0.0) exit(__LINE__,__FILE__,"Error: found a negative interpolation weight");
+        if (node==NULL) exit(__LINE__,__FILE__,"Error: a row-stencil element has a NULL AMR node");
+
+        for (int iElement=0;iElement<Length;iElement++) {
+          if ((Element[iElement].node==node) &&
+              (Element[iElement].i==i) &&
+              (Element[iElement].j==j) &&
+              (Element[iElement].k==k)) {
+            Element[iElement].Weight+=w;
+            return;
+          }
+        }
+
+        if (Length==nMaxRowStencilLength) {
+          exit(__LINE__,__FILE__,"Error: the row stencil length exceeds 'nMaxRowStencilLength'. Increase the limit.");
+        }
+
+        Element[Length].node=node;
+        Element[Length].i=i;
+        Element[Length].j=j;
+        Element[Length].k=k;
+        Element[Length].Weight=w;
+        Length++;
+      }
+
+      /* Scale every interpolation coefficient by the same factor. */
+      _TARGET_DEVICE_ _TARGET_HOST_
+      void MultiplyScalar(double a) {
+        for (int iElement=0;iElement<Length;iElement++) Element[iElement].Weight*=a;
+      }
+
+      /* Merge another row stencil into this one. */
+      _TARGET_DEVICE_ _TARGET_HOST_
+      void Add(const cRowStencil *t) {
+        if (t==NULL) return;
+
+        for (int iElement=0;iElement<t->Length;iElement++) {
+          AddCell(t->Element[iElement].Weight,t->Element[iElement].node,
+              t->Element[iElement].i,t->Element[iElement].j,t->Element[iElement].k);
+        }
+      }
+
+      /* Normalize the retained interpolation weights to unit sum. */
+      _TARGET_DEVICE_ _TARGET_HOST_
+      void Normalize() {
+        const double norm=GetWeightSum();
+
+        if (norm>0.0) {
+          for (int iElement=0;iElement<Length;iElement++) Element[iElement].Weight/=norm;
+        }
+      }
+
+      /*
+       * Remove an element by its current array index. By default, the weights of
+       * all remaining elements are immediately renormalized. This operation
+       * supports user-defined validity tests: call GetElementCoordinate(), test
+       * the location in application code, and call RemoveElement() when the
+       * point must not participate in interpolation.
+       *
+       * The routine returns false for an invalid index and true after a removal.
+       */
+      _TARGET_DEVICE_ _TARGET_HOST_
+      bool RemoveElement(int iElement,bool RenormalizeWeights=true) {
+        if ((iElement<0)||(iElement>=Length)) return false;
+
+        for (int i=iElement;i<Length-1;i++) Element[i]=Element[i+1];
+        Length--;
+
+        if (RenormalizeWeights==true) Normalize();
+        return true;
+      }
+
+      /*
+       * Calculate the physical center coordinates of an element without using
+       * node->block. The method therefore works for both locally allocated and
+       * remote cells. The indices are interior indices of Element[].node.
+       */
+      _TARGET_DEVICE_ _TARGET_HOST_
+      void GetElementCoordinate(int iElement,double *x) const {
+        if ((iElement<0)||(iElement>=Length)) {
+          exit(__LINE__,__FILE__,"Error: row-stencil element index is out of range");
+        }
+
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=Element[iElement].node;
+
+        x[0]=node->xmin[0]+(Element[iElement].i+0.5)*(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
+        x[1]=node->xmin[1]+(Element[iElement].j+0.5)*(node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_;
+        x[2]=node->xmin[2]+(Element[iElement].k+0.5)*(node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_;
+      }
+    };
+
     //corner based interpolation routines
     namespace CornerBased {
       typedef PIC::InterpolationRoutines::cStencilGeneric<PIC::Mesh::cDataCornerNode> cStencil;
@@ -7354,7 +7517,19 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
         //interpolation functions
         _TARGET_HOST_ _TARGET_DEVICE_
-        void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
+        void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil=NULL);
+
+        /*
+         * Convenience overload for callers that only need the
+         * decomposition-independent row. The temporary pointer stencil keeps
+         * all legacy construction and fallback logic in one implementation.
+         */
+        _TARGET_HOST_ _TARGET_DEVICE_
+        inline void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::cRowStencil& RowStencil) {
+          PIC::InterpolationRoutines::CellCentered::cStencil LocalStencil;
+
+          InitStencil(x,node,LocalStencil,&RowStencil);
+        }
 
         _TARGET_HOST_ _TARGET_DEVICE_
         inline PIC::InterpolationRoutines::CellCentered::cStencil *InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL) {
@@ -7364,12 +7539,12 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
           int ThreadOpenMP=0;
           #endif
 
-          InitStencil(x,node,PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP]);
+          InitStencil(x,node,PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP],NULL);
           return PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP;
         } 
 
         _TARGET_HOST_ _TARGET_DEVICE_
-        void GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
+        void GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil=NULL);
 
         _TARGET_HOST_ _TARGET_DEVICE_
         inline PIC::InterpolationRoutines::CellCentered::cStencil *GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
@@ -7379,12 +7554,12 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
           int ThreadOpenMP=0;
           #endif
  
-          GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,x,node,PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP]);
+          GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,x,node,PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP],NULL);
           return PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP; 
         }
 
         _TARGET_HOST_ _TARGET_DEVICE_
-        void GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
+        void GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil=NULL);
 
         _TARGET_HOST_ _TARGET_DEVICE_
         inline PIC::InterpolationRoutines::CellCentered::cStencil *GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
@@ -7394,7 +7569,7 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
           int ThreadOpenMP=0;
           #endif
 
-          GetTriliniarInterpolationMutiBlockStencil(x,xStencilMin,xStencilMax,node,PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP]);
+          GetTriliniarInterpolationMutiBlockStencil(x,xStencilMin,xStencilMax,node,PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP],NULL);
           return PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP;
         }           
       }

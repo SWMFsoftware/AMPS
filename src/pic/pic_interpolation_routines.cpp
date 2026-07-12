@@ -17,6 +17,123 @@ int PIC::InterpolationRoutines::CellCentered::Linear::INTERFACE::iBlockFoundCurr
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* PIC::InterpolationRoutines::CellCentered::Linear::INTERFACE::BlockFound[PIC::InterpolationRoutines::CellCentered::Linear::INTERFACE::nBlockFoundMax];
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* PIC::InterpolationRoutines::CellCentered::Linear::INTERFACE::last=NULL;
 
+namespace {
+  typedef cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> cInterpolationTreeNode;
+
+  /*
+   * Add a row-stencil entry identified by a physical cell-center coordinate.
+   *
+   * The AMR tree is replicated by AMPS, while node->block is distributed. This
+   * helper intentionally uses only the tree geometry. It resolves a cell center
+   * to the leaf tree node that owns that center and converts the coordinate to
+   * an interior (i,j,k) index in that node. The resulting identifier is therefore
+   * independent of which MPI rank owns the corresponding cDataBlockAMR.
+   */
+  _TARGET_HOST_ _TARGET_DEVICE_
+  bool AddRowStencilCellByCoordinate(PIC::InterpolationRoutines::cRowStencil *RowStencil,double Weight,
+      const double *xIn,cInterpolationTreeNode *StartNode) {
+    if (RowStencil==NULL) return false;
+
+    double x[3]={xIn[0],xIn[1],xIn[2]};
+
+    /*
+     * Non-periodic ghost centers outside the global domain do not correspond to
+     * physical cells and are omitted, matching cStencilGeneric::AddCell(). For a
+     * periodic mesh, map the center back into the primary global box so the row
+     * references the physical periodic image rather than a ghost index.
+     */
+    for (int d=0;d<3;d++) {
+      const double xmin=PIC::Mesh::mesh->xGlobalMin[d];
+      const double xmax=PIC::Mesh::mesh->xGlobalMax[d];
+
+      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+        const double length=xmax-xmin;
+
+        if (length>0.0) {
+          while (x[d]<xmin) x[d]+=length;
+          while (x[d]>xmax) x[d]-=length;
+        }
+      }
+      else if ((x[d]<xmin)||(x[d]>xmax)) return false;
+    }
+
+    cInterpolationTreeNode *CellNode=PIC::Mesh::mesh->findTreeNode(x,StartNode);
+
+    if ((CellNode==NULL)||(CellNode->IsUsedInCalculationFlag==false)) return false;
+
+    const int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+    int ijk[3];
+
+    for (int d=0;d<3;d++) {
+      const double blockLength=CellNode->xmax[d]-CellNode->xmin[d];
+      const double xLoc=(x[d]-CellNode->xmin[d])/blockLength*nCells[d];
+
+      ijk[d]=(int)floor(xLoc);
+
+      /* Protect against roundoff when a coordinate is infinitesimally outside a
+       * block face. A genuine out-of-range index is rejected. */
+      if ((ijk[d]<0)&&(xLoc>-1.0e-10)) ijk[d]=0;
+      if ((ijk[d]>=nCells[d])&&(xLoc<nCells[d]+1.0e-10)) ijk[d]=nCells[d]-1;
+      if ((ijk[d]<0)||(ijk[d]>=nCells[d])) return false;
+    }
+
+    RowStencil->AddCell(Weight,CellNode,ijk[0],ijk[1],ijk[2]);
+    return true;
+  }
+
+  /*
+   * Add a row-stencil entry from indices measured in SourceNode. The indices may
+   * be ghost indices such as -1 or _BLOCK_CELLS_X_. They are first converted to
+   * a physical center coordinate and then canonicalized to the owning leaf node
+   * by AddRowStencilCellByCoordinate().
+   */
+  _TARGET_HOST_ _TARGET_DEVICE_
+  bool AddRowStencilCell(PIC::InterpolationRoutines::cRowStencil *RowStencil,double Weight,
+      cInterpolationTreeNode *SourceNode,int i,int j,int k) {
+    if ((RowStencil==NULL)||(SourceNode==NULL)) return false;
+
+    const int ijk[3]={i,j,k};
+    const int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+    double x[3];
+
+    for (int d=0;d<3;d++) {
+      const double dx=(SourceNode->xmax[d]-SourceNode->xmin[d])/nCells[d];
+      x[d]=SourceNode->xmin[d]+(ijk[d]+0.5)*dx;
+    }
+
+    return AddRowStencilCellByCoordinate(RowStencil,Weight,x,SourceNode);
+  }
+
+  /* Build the one-cell row used by the legacy constant-interpolation fallback. */
+  _TARGET_HOST_ _TARGET_DEVICE_
+  void BuildConstantRowStencil(double *x,cInterpolationTreeNode *node,
+      PIC::InterpolationRoutines::cRowStencil *RowStencil) {
+    if (RowStencil==NULL) return;
+
+    RowStencil->flush();
+    AddRowStencilCellByCoordinate(RowStencil,1.0,x,node);
+  }
+
+  /*
+   * Add a center-node pointer while merging duplicate pointers. The legacy
+   * multiblock routine obtains this behavior through cStencilGeneric::Add(); the
+   * helper preserves it when the stencil is assembled directly element by
+   * element alongside the row stencil.
+   */
+  _TARGET_HOST_ _TARGET_DEVICE_
+  void AddPhysicalStencilCell(PIC::InterpolationRoutines::CellCentered::cStencil &Stencil,
+      double Weight,PIC::Mesh::cDataCenterNode *cell,int LocalCellID) {
+    for (int iElement=0;iElement<Stencil.Length;iElement++) {
+      if (Stencil.cell[iElement]==cell) {
+        Stencil.Weight[iElement]+=Weight;
+        return;
+      }
+    }
+
+    Stencil.AddCell(Weight,cell,LocalCellID);
+  }
+}
+
 //the locally ordered interpolation coeffcients for the corner based interpolation procedure
 //thread_local double PIC::InterpolationRoutines::CornerBased::InterpolationCoefficientTable_LocalNodeOrder[8]={0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
 
@@ -104,7 +221,7 @@ void PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(double *x,c
 
 //determine the stencil for the cell centered linear interpolation using interpolation library from ../share/Library/src/
 _TARGET_HOST_ _TARGET_DEVICE_
-void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn_D,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil) {
+void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn_D,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil) {
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   int ThreadOpenMP=omp_get_thread_num();
@@ -117,6 +234,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
   #endif
 
   Stencil.flush();
+  if (RowStencil!=NULL) RowStencil->flush();
 
   // macro switch is needed in the case some other interpolation is used
   // and interface function is not compiled
@@ -126,7 +244,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
       node=PIC::Mesh::mesh->findTreeNode(XyzIn_D);
 
       if (node==NULL) exit(__LINE__,__FILE__,"Error: the location is outside of the computational domain");
-      if (node->block==NULL) {
+      if ((node->block==NULL)&&(RowStencil==NULL)) {
         char msg[200];
 
         #ifndef __CUDA_ARCH__
@@ -138,7 +256,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         #endif
       }
     }
-    else if (node->block==NULL) {
+    else if ((node->block==NULL)&&(RowStencil==NULL)) {
       char msg[200];
 
       #ifndef __CUDA_ARCH__
@@ -164,19 +282,19 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
     #if _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE_ == _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE__AMPS_
     //in case the mesh is uniform (_AMR_MESH_TYPE_ == _AMR_MESH_TYPE__UNIFORM_) -> use simple trilinear interpolation
     if (_AMR_MESH_TYPE_ == _AMR_MESH_TYPE__UNIFORM_) {
-      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil);
       return;
     }
 
     //if the point of interest is deep inside the block or all neighbors of the block has the same resolution level -> use simple trilinear interpolation
     if ((node->RefinmentLevel==node->minNeibRefinmentLevel)&&(node->RefinmentLevel==node->maxNeibRefinmentLevel)) {
       //all blocks around has the same level of the resolution
-      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil);
       return;
     }
     else if ((1.0<iLoc)&&(iLoc<_BLOCK_CELLS_X_-1) && (1.0<jLoc)&&(jLoc<_BLOCK_CELLS_Y_-1) && (1.0<kLoc)&&(kLoc<_BLOCK_CELLS_Z_-1)) {
       //the point is deep inside the block
-      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil);
       return;
     }
     else if (node->RefinmentLevel==node->minNeibRefinmentLevel) {
@@ -184,7 +302,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         //1. the point is deeper than a half cell size insode the block
         //2. the block is geometrically largest among the neibours
         //3. -> it is only the intermal points of the block that will be used in the stencil
-        GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil);
+        GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil);
         return;
       }
       else  {
@@ -206,7 +324,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
           xStencilMax[idim]=xStencilMin[idim]+dxCell[idim];
         }
 
-        GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,node,Stencil);
+        GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,node,Stencil,RowStencil);
         return;
       }
     }
@@ -528,7 +646,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
           xStencilMax[idim]=xStencilMin[idim]+dxCell[idim];
         }
 
-        GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,CoarserBlock,Stencil);
+        GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,CoarserBlock,Stencil,RowStencil);
 
 
         /* the following is used to get continuous interpolsation
@@ -543,13 +661,23 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
 
         if ((0.5<dmin)&&(dmin<=1.0)) {
           PIC::InterpolationRoutines::CellCentered::cStencil FineStencil;
+          PIC::InterpolationRoutines::cRowStencil FineRowStencil;
+          PIC::InterpolationRoutines::cRowStencil *FineRowStencilPtr=(RowStencil==NULL) ? NULL : &FineRowStencil;
 
-          GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,FineStencil);
+          GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,FineStencil,FineRowStencilPtr);
 
           Stencil.MultiplyScalar(1.0-(dmin-0.5)/0.5);
           FineStencil.MultiplyScalar((dmin-0.5)/0.5);
 
           Stencil.Add(&FineStencil);
+
+          /* Apply exactly the same continuous coarse/fine blending to the
+           * decomposition-independent row. */
+          if (RowStencil!=NULL) {
+            RowStencil->MultiplyScalar(1.0-(dmin-0.5)/0.5);
+            FineRowStencil.MultiplyScalar((dmin-0.5)/0.5);
+            RowStencil->Add(&FineRowStencil);
+          }
         }
 
         return;
@@ -572,14 +700,14 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         xStencilMax[idim]=xStencilMin[idim]+dxCell[idim];
       }
 
-      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil);
       return;
     }
 
     #elif _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE_ == _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE__SWMF_
     if ( ((node->RefinmentLevel==node->minNeibRefinmentLevel)&&(node->RefinmentLevel==node->maxNeibRefinmentLevel)) ||
         (0.5<iLoc)&&(iLoc<_BLOCK_CELLS_X_-0.5) && (0.5<jLoc)&&(jLoc<_BLOCK_CELLS_Y_-0.5) && (0.5<kLoc)&&(kLoc<_BLOCK_CELLS_Z_-0.5) ) {
-      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil);
       return;
     }
 
@@ -588,7 +716,9 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
     if( fabs(iLoc-0.5-(long)iLoc) < PrecisionCellCenter &&
         fabs(jLoc-0.5-(long)jLoc) < PrecisionCellCenter &&
         fabs(kLoc-0.5-(long)kLoc) < PrecisionCellCenter   ){
-          PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node,Stencil); 
+          BuildConstantRowStencil(XyzIn_D,node,RowStencil);
+          if (node->block!=NULL) PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node,Stencil);
+          else Stencil.flush();
           return;
     }
 
@@ -620,6 +750,9 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
     // size of the stencil and weights are known
     // need to identify cells in the stencil
     // NOTE: FORTRAN is column-major for 2D arrays like iIndexes_II
+    bool PhysicalStencilAvailable=true;
+    bool TopologicalStencilAvailable=true;
+
     for (int iCellStencil = 0; iCellStencil < nCellStencil; iCellStencil++) {
       int ind[3]={0,0,0};
       PIC::Mesh::cDataBlockAMR  *block;
@@ -631,22 +764,49 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         ind[i]    = iIndexes_II[1+i  +iCellStencil*(nIndexes+1)]-1;
       int iBlock  = iIndexes_II[1+DIM+iCellStencil*(nIndexes+1)];
 
+      /* The FORTRAN library has already returned a topological cell
+       * identifier. Store it before checking local allocation so the optional
+       * row remains complete on ranks that do not own the block. */
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *StencilNode=NULL;
+
+      if ((iBlock>=0)&&(iBlock<INTERFACE::nBlockFoundMax)) StencilNode=INTERFACE::BlockFound[iBlock];
+
+      if (StencilNode!=NULL) {
+        if (RowStencil!=NULL) RowStencil->AddCell(WeightStencil[iCellStencil],StencilNode,ind[0],ind[1],ind[2]);
+      }
+      else {
+        TopologicalStencilAvailable=false;
+      }
+
       //retrieve the pointer to the current cell
-      if ((block=INTERFACE::BlockFound[iBlock]->block)==NULL) {
-        PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node,Stencil);
-        return;
+      if ((StencilNode==NULL)||((block=StencilNode->block)==NULL)) {
+        PhysicalStencilAvailable=false;
+        continue;
       }
 
       cell=block->GetCenterNode(_getCenterNodeLocalNumber(ind[0],ind[1],ind[2]));
 
       if (cell==NULL) {
-        //there is no enough information to build up linear interpolation -> use constant interpolation
-        PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node,Stencil);
-        return;
+        //there is not enough local information to build the pointer stencil
+        PhysicalStencilAvailable=false;
+        continue;
       }
 
       int nd=_getCenterNodeLocalNumber(ind[0],ind[1],ind[2]);
-      Stencil.AddCell(WeightStencil[iCellStencil],INTERFACE::BlockFound[iBlock]->block->GetCenterNode(nd),nd);
+      Stencil.AddCell(WeightStencil[iCellStencil],StencilNode->block->GetCenterNode(nd),nd);
+    }
+
+    if ((RowStencil!=NULL)&&(TopologicalStencilAvailable==false)) BuildConstantRowStencil(XyzIn_D,node,RowStencil);
+
+    if (PhysicalStencilAvailable==false) {
+      /* Preserve the legacy fallback whenever the containing block is local. If
+       * the caller explicitly requested a row for a remote containing block,
+       * there is no valid local pointer stencil; return it empty while keeping
+       * the complete row. */
+      if (node->block!=NULL) PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node,Stencil);
+      else Stencil.flush();
+
+      return;
     }
     #else  //_PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE_ _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE__AMPS_
     exit(__LINE__,__FILE__,"Error: the option is unknown");
@@ -657,12 +817,12 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
 
 //triliniar interpolation used inside blocks
 _TARGET_HOST_ _TARGET_DEVICE_
-void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil) {
+void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil) {
   PIC::Mesh::cDataCenterNode *cell;
   PIC::Mesh::cDataBlockAMR *block;
 
   block=node->block;
-  if (block==NULL) exit(__LINE__,__FILE__,"Error: the block is node allocated");
+  if ((block==NULL)&&(RowStencil==NULL)) exit(__LINE__,__FILE__,"Error: the block is not allocated");
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   int ThreadOpenMP=omp_get_thread_num();
@@ -672,6 +832,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 
   //flush the stencil
   Stencil.flush();
+  if (RowStencil!=NULL) RowStencil->flush();
 
   //determine the aray of the cell's pointer that will be used in the interpolation stencil
   double w[3],InterpolationWeight;
@@ -688,10 +849,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 
   for (i=0;i<2;i++) for (j=0;j<2;j++) for (k=0;k<2;k++) {
     nd=_getCenterNodeLocalNumber(i0+i,j0+j,k0+k);
-    cell=block->GetCenterNode(nd);
-
-    if (cell!=NULL) {
-      switch (i+2*j+4*k) {
+    switch (i+2*j+4*k) {
       case 0+0*2+0*4:
         InterpolationWeight=(1.0-w[0])*(1.0-w[1])*(1.0-w[2]);
         break;
@@ -720,15 +878,26 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 
       default:
         exit(__LINE__,__FILE__,"Error: the option is not defined");
-      }
+    }
 
+    /* Populate the topological row even if this rank has no cDataCenterNode for
+     * the cell. Ghost indices are canonicalized to the owning leaf node. */
+    AddRowStencilCell(RowStencil,InterpolationWeight,node,i0+i,j0+j,k0+k);
+
+    cell=(block==NULL) ? NULL : block->GetCenterNode(nd);
+
+    if (cell!=NULL) {
       Stencil.AddCell(InterpolationWeight,cell,nd);
     }
   }
 
+  /* If non-periodic support points fell outside the global box, normalize the
+   * retained physical row. Remote allocation never affects this normalization. */
+  if ((RowStencil!=NULL)&&(RowStencil->Length>0)&&(RowStencil->Length!=8)) RowStencil->Normalize();
+
   if (Stencil.Length==0) {
-    //no cell have been found -> use a canstarnt interpolation stencil
-    PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node,Stencil);
+    //no local cell has been found -> retain the legacy constant fallback when possible
+    if (block!=NULL) PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node,Stencil);
     return;
   }
   else if (StencilTable->Length!=8) {
@@ -740,104 +909,55 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 
 
 _TARGET_HOST_ _TARGET_DEVICE_
-void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil) {
+void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil) {
   long int nd;
   PIC::Mesh::cDataCenterNode *cell;
 
   Stencil.flush();
+  if (RowStencil!=NULL) RowStencil->flush();
 
-  class cMultiBlockStencil {
-  public:
-    int ijk[3];
-    double x[3];
-    PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
-  };
+  /*
+   * xStencilMin and xStencilMax are retained in the public interface for
+   * backward compatibility. The existing AMPS algorithm reconstructs the same
+   * limits from x and node, so these arguments remain intentionally unused.
+   */
+  (void)xStencilMin;
+  (void)xStencilMax;
 
-  cMultiBlockStencil StencilTable[2][2][2];
-
-  int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+  const int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
   double dxCell[3];
   int idim;
 
-
   for (idim=0;idim<3;idim++) dxCell[idim]=(node->xmax[idim]-node->xmin[idim])/nCells[idim];
 
-  //determine coordinates of the stencil nodes
-  int di,dj,dk,ijkStencilMin[3];
+  //determine the lower logical coarse-center index and local coordinates
+  int ijkStencilMin[3];
+  double xStencilLower[3],xLoc[3];
 
   for (idim=0;idim<3;idim++) {
     ijkStencilMin[idim]=(x[idim]-node->xmin[idim]<0.5*dxCell[idim]) ? -1 : (int)((x[idim]-node->xmin[idim]-0.5*dxCell[idim])/dxCell[idim]);
-  }
+    xStencilLower[idim]=node->xmin[idim]+(ijkStencilMin[idim]+0.5)*dxCell[idim];
 
-  for (di=0;di<2;di++) for (dj=0;dj<2;dj++) for (dk=0;dk<2;dk++) {
-    StencilTable[di][dj][dk].ijk[0]=ijkStencilMin[0]+di;
-    StencilTable[di][dj][dk].ijk[1]=ijkStencilMin[1]+dj;
-    StencilTable[di][dj][dk].ijk[2]=ijkStencilMin[2]+dk;
-
-    for (idim=0;idim<3;idim++) {
-      StencilTable[di][dj][dk].x[idim]=node->xmin[idim]+(StencilTable[di][dj][dk].ijk[idim]+0.5)*dxCell[idim];
-    }
-
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *StencilNode=PIC::Mesh::mesh->findTreeNode(StencilTable[di][dj][dk].x,node);
-    bool return_const_stencil=false;
-
-    if (StencilNode==NULL) return_const_stencil=true;
-    else if (StencilNode->IsUsedInCalculationFlag==false) return_const_stencil=true;
-
-    if (return_const_stencil==true) {
-      node=PIC::Mesh::mesh->findTreeNode(x,node);
-      PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node,Stencil);
-      return;
-    }
-
-    //init the corner of the stencil
-    if (StencilNode->RefinmentLevel==node->RefinmentLevel) {
-      //both blocks have the save refinment levels
-      nd=_getCenterNodeLocalNumber(StencilTable[di][dj][dk].ijk[0],StencilTable[di][dj][dk].ijk[1],StencilTable[di][dj][dk].ijk[2]);
-      cell=node->block->GetCenterNode(nd);//getCenterNodeLocalNumber(i,j,k));
-
-      if (cell!=NULL) {
-        StencilTable[di][dj][dk].Stencil.AddCell(1.0,cell,nd);
-      }
-      else {
-        node=PIC::Mesh::mesh->findTreeNode(x,node);
-        PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node,Stencil);
-        return;
-      }
-    }
-    else {
-     //the block has a higher resolution level
-     int iNeib[3];
-
-     for (idim=0;idim<3;idim++) iNeib[idim]=2*((int)((StencilTable[di][dj][dk].x[idim]-StencilNode->xmin[idim])/dxCell[idim]));
-
-     for (int ii=0;ii<2;ii++) for (int jj=0;jj<2;jj++) for (int kk=0;kk<2;kk++) {
-       nd=_getCenterNodeLocalNumber(iNeib[0]+ii,iNeib[1]+jj,iNeib[2]+kk);
-       cell=StencilNode->block->GetCenterNode(nd);
-
-       if (cell!=NULL) {
-         StencilTable[di][dj][dk].Stencil.AddCell(1.0/8.0,cell,nd);
-       }
-       else {
-         node=PIC::Mesh::mesh->findTreeNode(x,node);
-         PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node,Stencil);
-         return;
-       }
-     }
-    }
-  }
-
-  //calcualte local coordinates
-  double xLoc[3];
-
-  for (idim=0;idim<3;idim++) {
-    xLoc[idim]=(x[idim]-StencilTable[0][0][0].x[idim])/dxCell[idim];
+    xLoc[idim]=(x[idim]-xStencilLower[idim])/dxCell[idim];
     if (xLoc[idim]<0.0) xLoc[idim]=0.0;
     if (xLoc[idim]>1.0) xLoc[idim]=1.0;
   }
 
-  //determine the interpolation coefficients
-  for (di=0;di<2;di++) for (dj=0;dj<2;dj++) for (dk=0;dk<2;dk++) {
+  bool GeometryAvailable=true;
+  bool PhysicalStencilAvailable=true;
+
+  /*
+   * Visit the eight logical coarse-lattice support points in the same order as
+   * the legacy implementation. The final trilinear coefficient is known here,
+   * so row entries can be appended directly without allocating a second array of
+   * full-size row stencils on the stack.
+   */
+  for (int di=0;di<2;di++) for (int dj=0;dj<2;dj++) for (int dk=0;dk<2;dk++) {
+    int ijk[3]={ijkStencilMin[0]+di,ijkStencilMin[1]+dj,ijkStencilMin[2]+dk};
+    double xLogical[3];
+
+    for (idim=0;idim<3;idim++) xLogical[idim]=node->xmin[idim]+(ijk[idim]+0.5)*dxCell[idim];
+
     double StencilElementWeight;
 
     switch (di+2*dj+4*dk) {
@@ -871,8 +991,81 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
       exit(__LINE__,__FILE__,"Error: the option is not defined");
     }
 
-    StencilTable[di][dj][dk].Stencil.MultiplyScalar(StencilElementWeight);
-    Stencil.Add(&StencilTable[di][dj][dk].Stencil);
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *StencilNode=PIC::Mesh::mesh->findTreeNode(xLogical,node);
+
+    if ((StencilNode==NULL)||(StencilNode->IsUsedInCalculationFlag==false)) {
+      GeometryAvailable=false;
+      continue;
+    }
+
+    if (StencilNode->RefinmentLevel==node->RefinmentLevel) {
+      /*
+       * Same-level data are read by the legacy implementation through the
+       * reference block and its ghost cells. Keep that pointer path unchanged.
+       * The row path canonicalizes the possibly-ghost index to the owning node.
+       */
+      AddRowStencilCell(RowStencil,StencilElementWeight,node,ijk[0],ijk[1],ijk[2]);
+
+      nd=_getCenterNodeLocalNumber(ijk[0],ijk[1],ijk[2]);
+      cell=(node->block==NULL) ? NULL : node->block->GetCenterNode(nd);
+
+      if (cell!=NULL) AddPhysicalStencilCell(Stencil,StencilElementWeight,cell,nd);
+      else PhysicalStencilAvailable=false;
+    }
+    else {
+      /*
+       * A logical coarse center covered by a finer block is represented by the
+       * average of its 2x2x2 fine cells. This is the existing AMPS 2:1 AMR rule.
+       * The row entries are created even if StencilNode->block is remote.
+       */
+      int iNeib[3];
+
+      for (idim=0;idim<3;idim++) {
+        iNeib[idim]=2*((int)((xLogical[idim]-StencilNode->xmin[idim])/dxCell[idim]));
+      }
+
+      for (int ii=0;ii<2;ii++) for (int jj=0;jj<2;jj++) for (int kk=0;kk<2;kk++) {
+        const int iFine=iNeib[0]+ii;
+        const int jFine=iNeib[1]+jj;
+        const int kFine=iNeib[2]+kk;
+        const double FineCellWeight=(1.0/8.0)*StencilElementWeight;
+
+        AddRowStencilCell(RowStencil,FineCellWeight,StencilNode,iFine,jFine,kFine);
+
+        nd=_getCenterNodeLocalNumber(iFine,jFine,kFine);
+        cell=(StencilNode->block==NULL) ? NULL : StencilNode->block->GetCenterNode(nd);
+
+        if (cell!=NULL) AddPhysicalStencilCell(Stencil,FineCellWeight,cell,nd);
+        else PhysicalStencilAvailable=false;
+      }
+    }
+  }
+
+  if (GeometryAvailable==false) {
+    /* The old implementation falls back to constant interpolation when any
+     * logical support point is outside the active mesh. Mirror that choice for
+     * both representations. */
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *InterpolationNode=PIC::Mesh::mesh->findTreeNode(x,node);
+
+    BuildConstantRowStencil(x,InterpolationNode,RowStencil);
+
+    if ((InterpolationNode!=NULL)&&(InterpolationNode->block!=NULL)) {
+      PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,InterpolationNode,Stencil);
+    }
+    else Stencil.flush();
+
+    return;
+  }
+
+  if (PhysicalStencilAvailable==false) {
+    /* Preserve the legacy constant fallback for local interpolation while the
+     * optional row keeps the complete decomposition-independent linear stencil. */
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *InterpolationNode=PIC::Mesh::mesh->findTreeNode(x,node);
+
+    if ((InterpolationNode!=NULL)&&(InterpolationNode->block!=NULL)) {
+      PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,InterpolationNode,Stencil);
+    }
+    else Stencil.flush();
   }
 }
 
