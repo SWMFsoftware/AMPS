@@ -37,7 +37,7 @@ CUTOFF_EMAX            20000.0      ! MeV/n
 CUTOFF_MAX_PARTICLES   500          ! per injection point
 CUTOFF_NENERGY         50           ! log-spaced energy bins
 CUTOFF_SAMPLING        VERTICAL     ! VERTICAL or ISOTROPIC
-CUTOFF_MAX_TRAJ_TIME   600        ! sec — max trajectory integration time
+CUTOFF_MAX_TRAJ_TIME   600.0! sec — max trajectory integration time
 
 #PARTICLE_SPECIES
 SPECIES                PROTON
@@ -51,12 +51,12 @@ DIPOLE_TILT            0.0          ! deg from GSM Z-axis
 
 #DOMAIN_BOUNDARY
 !BOUNDARY_TYPE          BOX          ! rectangular box in GSM
-DOMAIN_X_MAX           35.0         ! RE dayside
-DOMAIN_X_MIN           -35.0        ! RE nightside
-DOMAIN_Y_MAX           35.0         ! RE dusk
-DOMAIN_Y_MIN           -35.0        ! RE dawn
-DOMAIN_Z_MAX           35.0         ! RE north
-DOMAIN_Z_MIN           -35.0        ! RE south
+DOMAIN_X_MAX           75.0         ! RE dayside
+DOMAIN_X_MIN           -75.0        ! RE nightside
+DOMAIN_Y_MAX           75.0         ! RE dusk
+DOMAIN_Y_MIN           -75.0        ! RE dawn
+DOMAIN_Z_MAX           75.0         ! RE north
+DOMAIN_Z_MIN           -75.0        ! RE south
 R_INNER                1.0          ! RE inner loss sphere
 
 #ELECTRIC_FIELD
@@ -104,8 +104,15 @@ SHELL_RES_DEG          30
 !   -mode3d-mpi-dynamic-chunk <chunk>
 !N_PARTICLES            10000
 !MAX_BOUNCE             500
-DT_TRACE               1.0          ! s integration step
-MAX_TRACE_TIME         600
-MAX_TRACE_DISTANCE     400          ! Re; 0 disables cumulative distance cap
+DT_TRACE               1.0! s integration step
+MAX_TRACE_TIME         600.0
+MAX_TRACE_DISTANCE     300.0! Re; 0 disables cumulative distance cap
 
 !#END
+
+! ── C2 harness run-time settings, supplied through CLI ─────────
+! C2_NT                  16
+! C2_MPI_SCHEDULER       DYNAMIC
+! C2_MPI_DYNAMIC_CHUNK   0
+! C2_CUTOFF_SEARCH       UPPER_SCAN
+! C2_CUTOFF_SCAN_N       80
