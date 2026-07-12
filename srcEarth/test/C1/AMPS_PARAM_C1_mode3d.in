@@ -51,12 +51,12 @@ DIPOLE_TILT            0.0          ! deg from GSM Z-axis
 
 #DOMAIN_BOUNDARY
 !BOUNDARY_TYPE          BOX          ! rectangular box in GSM
-DOMAIN_X_MAX           35.0         ! RE dayside
-DOMAIN_X_MIN           -35.0        ! RE nightside
-DOMAIN_Y_MAX           35.0         ! RE dusk
-DOMAIN_Y_MIN           -35.0        ! RE dawn
-DOMAIN_Z_MAX           35.0         ! RE north
-DOMAIN_Z_MIN           -35.0        ! RE south
+DOMAIN_X_MAX           55.0         ! RE dayside
+DOMAIN_X_MIN           -55.0        ! RE nightside
+DOMAIN_Y_MAX           55.0         ! RE dusk
+DOMAIN_Y_MIN           -55.0        ! RE dawn
+DOMAIN_Z_MAX           55.0         ! RE north
+DOMAIN_Z_MIN           -55.0        ! RE south
 R_INNER                1.0          ! RE inner loss sphere
 
 #ELECTRIC_FIELD
@@ -109,3 +109,10 @@ MAX_TRACE_TIME         600          ! sec — max trajectory integration time
 MAX_TRACE_DISTANCE     400.0      ! Re; cumulative trajectory length cap
 
 !#END
+
+! ── C1 harness run-time settings, supplied through CLI ─────────
+! C1_NT                  16
+! C1_MPI_SCHEDULER       DYNAMIC
+! C1_MPI_DYNAMIC_CHUNK   0
+! C1_CUTOFF_SEARCH       UPPER_SCAN
+! C1_CUTOFF_SCAN_N       80
