@@ -55,6 +55,47 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 void SetCutoffOutputFileSuffix(const std::string& suffix);
 
 
+//--------------------------------------------------------------------------------------
+// Mode3D dipole mesh-interpolation accuracy statistics
+//
+// For FIELD_MODEL=DIPOLE with mesh-backed field evaluation, every requested magnetic
+// field sample can be compared with the exact analytic dipole at the same coordinate.
+// The statistics are sample-weighted: repeated evaluations along particle trajectories
+// are counted repeatedly because they represent the actual field determinations used by
+// the calculation.  Each worker accumulates locally; the public report routine performs
+// one MPI reduction after all workers have completed.
+//--------------------------------------------------------------------------------------
+struct DipoleMagneticFieldErrorStatistics {
+  unsigned long long sampleCount;
+  double meanRelativeError;
+  double maxRelativeError;
+  double maxErrorLocation_m[3];
+  bool valid;
+
+  DipoleMagneticFieldErrorStatistics() :
+    sampleCount(0), meanRelativeError(0.0), maxRelativeError(0.0), valid(false) {
+    maxErrorLocation_m[0]=0.0;
+    maxErrorLocation_m[1]=0.0;
+    maxErrorLocation_m[2]=0.0;
+  }
+};
+
+// Reset rank-local accumulators and enable sampling only when the selected field model
+// is DIPOLE and the Mode3D evaluator is using the mesh rather than the forced analytic
+// diagnostic path.  Call once immediately before a cutoff or density/flux calculation.
+void ResetDipoleMagneticFieldErrorStatistics(const EarthUtil::AmpsParam& prm);
+
+// Combine rank-local statistics over MPI_GLOBAL_COMMUNICATOR, print the global sample
+// count, mean relative error, maximum relative error, and maximum-error coordinate on
+// rank zero, and return the same global values on every rank.  The relative error is
+//
+//   |B_mesh - B_dipole| / |B_dipole|.
+//
+// If sampling was not enabled, the routine returns valid=false and prints nothing.
+DipoleMagneticFieldErrorStatistics ReportDipoleMagneticFieldErrorStatistics(
+    const char* calculationLabel);
+
+
 // Mesh-backed trajectory classifier shared with Mode3D density/flux.
 //
 // These functions expose the exact same backward-tracing kernel used internally by

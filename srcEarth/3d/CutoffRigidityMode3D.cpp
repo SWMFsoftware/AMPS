@@ -244,6 +244,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <fstream>
+#include <iomanip>
 #include <limits>
 #include <thread>
 
@@ -499,6 +500,154 @@ static inline bool LostInnerSphere3D(const V3& x, double rInner) {
 }
 
 //======================================================================================
+// SECTION 4.5 — DIPOLE MESH-FIELD ERROR STATISTICS
+//======================================================================================
+//
+// A Mode3D DIPOLE run has an exact reference field available at every coordinate.  This
+// makes it possible to measure the error introduced by cell-centering, AMR interpolation,
+// and the compact-global-array/row-stencil path using the exact samples requested by the
+// trajectory mover.
+//
+// Performance design:
+//   * GetB_T() is called very frequently, so it must not acquire a shared mutex for every
+//     sample.
+//   * Each cMode3DMeshFieldEval object therefore owns a small local accumulator.
+//   * The evaluator destructor merges that accumulator into one rank-local object under
+//     a mutex.  This produces at most one lock operation per evaluator/trajectory worker,
+//     not one lock operation per magnetic-field sample.
+//   * At the end of the physical calculation, one MPI reduction combines counts and sums.
+//     MPI_MAXLOC selects the rank that owns the global maximum, and that rank broadcasts
+//     the corresponding coordinate.
+//
+// The mean is intentionally sample-weighted.  If a trajectory evaluates the field many
+// times in one region, those repeated determinations are counted repeatedly because they
+// are the values that actually control the numerical trajectory and cutoff result.
+//======================================================================================
+
+struct cDipoleFieldErrorLocalStats_ {
+    unsigned long long sampleCount;
+    long double relativeErrorSum;
+    double maxRelativeError;
+    double maxErrorLocation_m[3];
+
+    cDipoleFieldErrorLocalStats_() :
+      sampleCount(0), relativeErrorSum(0.0L), maxRelativeError(-1.0) {
+        maxErrorLocation_m[0]=0.0;
+        maxErrorLocation_m[1]=0.0;
+        maxErrorLocation_m[2]=0.0;
+    }
+
+    void Add(double relativeError,const double x_m[3]) {
+        if (!std::isfinite(relativeError) || relativeError<0.0) return;
+
+        ++sampleCount;
+        relativeErrorSum+=static_cast<long double>(relativeError);
+
+        if (relativeError>maxRelativeError) {
+            maxRelativeError=relativeError;
+            maxErrorLocation_m[0]=x_m[0];
+            maxErrorLocation_m[1]=x_m[1];
+            maxErrorLocation_m[2]=x_m[2];
+        }
+    }
+};
+
+struct cDipoleFieldErrorRankStats_ {
+    std::mutex mutex;
+    unsigned long long sampleCount;
+    long double relativeErrorSum;
+    double maxRelativeError;
+    double maxErrorLocation_m[3];
+
+    cDipoleFieldErrorRankStats_() :
+      sampleCount(0), relativeErrorSum(0.0L), maxRelativeError(-1.0) {
+        maxErrorLocation_m[0]=0.0;
+        maxErrorLocation_m[1]=0.0;
+        maxErrorLocation_m[2]=0.0;
+    }
+};
+
+static cDipoleFieldErrorRankStats_ gDipoleFieldErrorRankStats_;
+static std::atomic<bool> gDipoleFieldErrorSamplingActive_(false);
+
+static void MergeDipoleFieldErrorLocalStats_(
+    const cDipoleFieldErrorLocalStats_& localStats) {
+
+    if (localStats.sampleCount==0) return;
+
+    std::lock_guard<std::mutex> lock(gDipoleFieldErrorRankStats_.mutex);
+    gDipoleFieldErrorRankStats_.sampleCount+=localStats.sampleCount;
+    gDipoleFieldErrorRankStats_.relativeErrorSum+=localStats.relativeErrorSum;
+
+    if (localStats.maxRelativeError>gDipoleFieldErrorRankStats_.maxRelativeError) {
+        gDipoleFieldErrorRankStats_.maxRelativeError=localStats.maxRelativeError;
+        gDipoleFieldErrorRankStats_.maxErrorLocation_m[0]=localStats.maxErrorLocation_m[0];
+        gDipoleFieldErrorRankStats_.maxErrorLocation_m[1]=localStats.maxErrorLocation_m[1];
+        gDipoleFieldErrorRankStats_.maxErrorLocation_m[2]=localStats.maxErrorLocation_m[2];
+    }
+}
+
+// Evaluate the configured analytic dipole directly from the input parameters rather
+// than through Dipole::gParams.  The latter is shared mutable state and is configured by
+// several initialization paths; using the explicit formula here makes the diagnostic
+// thread-safe and guarantees that the reference field corresponds exactly to `prm`.
+static bool EvaluateConfiguredDipoleReference_(
+    const EarthUtil::AmpsParam& prm,const double x_m[3],double B_T[3]) {
+
+    const double x=x_m[0],y=x_m[1],z=x_m[2];
+    const double r2=x*x+y*y+z*z;
+    if (!(r2>0.0) || !std::isfinite(r2)) return false;
+
+    const double r=std::sqrt(r2);
+    const double r3=r2*r;
+    const double r5=r3*r2;
+
+    const double tiltRad=prm.field.dipoleTilt_deg*
+        Earth::GridlessMode::Dipole::PI/180.0;
+    const double moment=prm.field.dipoleMoment_Me*
+        Earth::GridlessMode::Dipole::M_E_Am2;
+
+    const double mx=moment*std::sin(tiltRad);
+    const double my=0.0;
+    const double mz=moment*std::cos(tiltRad);
+    const double mdotr=mx*x+my*y+mz*z;
+    const double c=Earth::GridlessMode::Dipole::mu0_over_4pi;
+
+    B_T[0]=c*(3.0*x*mdotr/r5-mx/r3);
+    B_T[1]=c*(3.0*y*mdotr/r5-my/r3);
+    B_T[2]=c*(3.0*z*mdotr/r5-mz/r3);
+
+    return std::isfinite(B_T[0]) && std::isfinite(B_T[1]) &&
+           std::isfinite(B_T[2]);
+}
+
+static void RecordDipoleFieldError_(
+    const EarthUtil::AmpsParam& prm,const double x_m[3],const double BMesh_T[3],
+    cDipoleFieldErrorLocalStats_& localStats) {
+
+    double BReference_T[3]={0.0,0.0,0.0};
+    if (!EvaluateConfiguredDipoleReference_(prm,x_m,BReference_T)) return;
+
+    const double referenceNorm2=
+        BReference_T[0]*BReference_T[0]+
+        BReference_T[1]*BReference_T[1]+
+        BReference_T[2]*BReference_T[2];
+
+    // The analytic centered dipole is nonzero at every finite r>0.  Keep an explicit
+    // denominator guard so this diagnostic remains numerically safe if the model or
+    // domain is changed in the future.
+    if (!(referenceNorm2>std::numeric_limits<double>::min())) return;
+
+    const double dBx=BMesh_T[0]-BReference_T[0];
+    const double dBy=BMesh_T[1]-BReference_T[1];
+    const double dBz=BMesh_T[2]-BReference_T[2];
+    const double differenceNorm2=dBx*dBx+dBy*dBy+dBz*dBz;
+    const double relativeError=std::sqrt(differenceNorm2/referenceNorm2);
+
+    localStats.Add(relativeError,x_m);
+}
+
+//======================================================================================
 // SECTION 5 — MESH-BASED FIELD EVALUATOR (per-thread)
 //======================================================================================
 //
@@ -524,7 +673,22 @@ static inline bool LostInnerSphere3D(const V3& x, double rInner) {
 class cMode3DMeshFieldEval : public IGridlessFieldEvaluator {
 public:
     explicit cMode3DMeshFieldEval(const EarthUtil::AmpsParam& prm)
-      : prm_(prm), lastNode_(nullptr) {}
+      : prm_(prm), lastNode_(nullptr),
+        sampleDipoleFieldError_(
+            gDipoleFieldErrorSamplingActive_.load(std::memory_order_acquire) &&
+            EarthUtil::ToUpper(prm.field.model)=="DIPOLE" &&
+            !prm.mode3d.forceAnalyticMagneticField) {}
+
+    // Merge this evaluator's private samples only once, after the worker or trajectory
+    // has finished.  This keeps the high-frequency GetB_T() path lock-free.
+    ~cMode3DMeshFieldEval() override {
+        if (sampleDipoleFieldError_) {
+            MergeDipoleFieldErrorLocalStats_(dipoleFieldErrorLocalStats_);
+        }
+    }
+
+    cMode3DMeshFieldEval(const cMode3DMeshFieldEval&)=delete;
+    cMode3DMeshFieldEval& operator=(const cMode3DMeshFieldEval&)=delete;
 
     // Evaluate B [Tesla] at x_m [m].  The optional analytic path is retained for
     // diagnostic comparisons.  The production mesh path uses the compact global B
@@ -585,6 +749,14 @@ public:
         B_T.x = B[0];
         B_T.y = B[1];
         B_T.z = B[2];
+
+        // For a mesh-backed DIPOLE run, compare the field value that will actually be
+        // returned to the mover with the exact analytic dipole at the same coordinate.
+        // The local accumulator is mutable because GetB_T() is logically const from the
+        // mover's perspective while diagnostic counters are observational state only.
+        if (sampleDipoleFieldError_) {
+            RecordDipoleFieldError_(prm_,xArr,B,dipoleFieldErrorLocalStats_);
+        }
     }
 
 private:
@@ -593,6 +765,11 @@ private:
     // Mutable so a logically const field evaluation can update the tree-search hint.
     // The hint points only into the replicated tree and is private to this evaluator.
     mutable cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* lastNode_;
+
+    // Sampling is fixed when the evaluator is constructed.  Reset/report operations are
+    // performed only before worker creation and after all workers join, respectively.
+    const bool sampleDipoleFieldError_;
+    mutable cDipoleFieldErrorLocalStats_ dipoleFieldErrorLocalStats_;
 };
 
 //======================================================================================
@@ -2520,6 +2697,146 @@ static void WriteTecplot3DShells_DipoleAnalyticCompare(
 namespace Earth {
 namespace Mode3D {
 
+void ResetDipoleMagneticFieldErrorStatistics(const EarthUtil::AmpsParam& prm) {
+    // Sampling is meaningful only for the mesh-backed DIPOLE evaluator.  The forced
+    // analytic path already returns the reference field directly and would trivially
+    // report zero error rather than measuring AMR/interpolation accuracy.
+    const bool enable=
+        (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") &&
+        !prm.mode3d.forceAnalyticMagneticField;
+
+    // Reset before publishing the active flag.  Callers invoke this routine before any
+    // trajectory worker is created, so no evaluator can merge concurrently with reset.
+    {
+        std::lock_guard<std::mutex> lock(gDipoleFieldErrorRankStats_.mutex);
+        gDipoleFieldErrorRankStats_.sampleCount=0;
+        gDipoleFieldErrorRankStats_.relativeErrorSum=0.0L;
+        gDipoleFieldErrorRankStats_.maxRelativeError=-1.0;
+        gDipoleFieldErrorRankStats_.maxErrorLocation_m[0]=0.0;
+        gDipoleFieldErrorRankStats_.maxErrorLocation_m[1]=0.0;
+        gDipoleFieldErrorRankStats_.maxErrorLocation_m[2]=0.0;
+    }
+
+    gDipoleFieldErrorSamplingActive_.store(enable,std::memory_order_release);
+}
+
+DipoleMagneticFieldErrorStatistics ReportDipoleMagneticFieldErrorStatistics(
+    const char* calculationLabel) {
+
+    DipoleMagneticFieldErrorStatistics result;
+
+    // Disable construction of new sampling evaluators before reading the rank-local
+    // accumulator.  The normal call sites reach this routine only after every worker has
+    // joined and every cMode3DMeshFieldEval destructor has merged its local samples.
+    const bool wasActive=
+        gDipoleFieldErrorSamplingActive_.exchange(false,std::memory_order_acq_rel);
+    if (!wasActive) return result;
+
+    unsigned long long localCount=0;
+    long double localSum=0.0L;
+    double localMax=-1.0;
+    double localMaxLocation_m[3]={0.0,0.0,0.0};
+
+    {
+        std::lock_guard<std::mutex> lock(gDipoleFieldErrorRankStats_.mutex);
+        localCount=gDipoleFieldErrorRankStats_.sampleCount;
+        localSum=gDipoleFieldErrorRankStats_.relativeErrorSum;
+        localMax=gDipoleFieldErrorRankStats_.maxRelativeError;
+        localMaxLocation_m[0]=gDipoleFieldErrorRankStats_.maxErrorLocation_m[0];
+        localMaxLocation_m[1]=gDipoleFieldErrorRankStats_.maxErrorLocation_m[1];
+        localMaxLocation_m[2]=gDipoleFieldErrorRankStats_.maxErrorLocation_m[2];
+    }
+
+    int mpiInitialized=0,mpiFinalized=0;
+    MPI_Initialized(&mpiInitialized);
+    if (mpiInitialized) MPI_Finalized(&mpiFinalized);
+    const bool mpiActive=(mpiInitialized!=0 && mpiFinalized==0);
+
+    unsigned long long globalCount=localCount;
+    long double globalSum=localSum;
+    double globalMax=localMax;
+    double globalMaxLocation_m[3]={
+        localMaxLocation_m[0],localMaxLocation_m[1],localMaxLocation_m[2]};
+    int mpiRank=0;
+
+    if (mpiActive) {
+        MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&mpiRank);
+
+        MPI_Allreduce(&localCount,&globalCount,1,MPI_UNSIGNED_LONG_LONG,MPI_SUM,
+                      MPI_GLOBAL_COMMUNICATOR);
+        MPI_Allreduce(&localSum,&globalSum,1,MPI_LONG_DOUBLE,MPI_SUM,
+                      MPI_GLOBAL_COMMUNICATOR);
+
+        // MPI_MAXLOC returns both the maximum error and the rank on which it occurred.
+        // Broadcasting from that rank preserves the exact sample coordinate associated
+        // with the reported global maximum.
+        struct cMaxLocPair_ { double value; int rank; };
+        cMaxLocPair_ localPair={localMax,mpiRank};
+        cMaxLocPair_ globalPair={-1.0,0};
+        MPI_Allreduce(&localPair,&globalPair,1,MPI_DOUBLE_INT,MPI_MAXLOC,
+                      MPI_GLOBAL_COMMUNICATOR);
+
+        globalMax=globalPair.value;
+        if (mpiRank==globalPair.rank) {
+            globalMaxLocation_m[0]=localMaxLocation_m[0];
+            globalMaxLocation_m[1]=localMaxLocation_m[1];
+            globalMaxLocation_m[2]=localMaxLocation_m[2];
+        }
+        MPI_Bcast(globalMaxLocation_m,3,MPI_DOUBLE,globalPair.rank,
+                  MPI_GLOBAL_COMMUNICATOR);
+    }
+
+    if (globalCount>0 && globalMax>=0.0) {
+        result.valid=true;
+        result.sampleCount=globalCount;
+        result.meanRelativeError=static_cast<double>(
+            globalSum/static_cast<long double>(globalCount));
+        result.maxRelativeError=globalMax;
+        result.maxErrorLocation_m[0]=globalMaxLocation_m[0];
+        result.maxErrorLocation_m[1]=globalMaxLocation_m[1];
+        result.maxErrorLocation_m[2]=globalMaxLocation_m[2];
+    }
+
+    if (!mpiActive || mpiRank==0) {
+        const char* label=(calculationLabel!=nullptr && calculationLabel[0]!='\0') ?
+            calculationLabel : "Mode3D calculation";
+        const double invRe=1.0/_EARTH__RADIUS_;
+
+        std::ostringstream out;
+        out << std::scientific << std::setprecision(8)
+            << "========== Mode3D DIPOLE magnetic-field interpolation error ==========\n"
+            << "Calculation                 : " << label << "\n"
+            << "Definition                  : |B_mesh-B_dipole|/|B_dipole|\n"
+            << "Number of field samples     : " << result.sampleCount << "\n";
+
+        if (result.valid) {
+            out << "Sample mean relative error  : " << result.meanRelativeError << "\n"
+                << "Maximum relative error      : " << result.maxRelativeError << "\n"
+                << "Max-error location [m]      : "
+                << result.maxErrorLocation_m[0] << " "
+                << result.maxErrorLocation_m[1] << " "
+                << result.maxErrorLocation_m[2] << "\n"
+                << "Max-error location [km]     : "
+                << result.maxErrorLocation_m[0]/1000.0 << " "
+                << result.maxErrorLocation_m[1]/1000.0 << " "
+                << result.maxErrorLocation_m[2]/1000.0 << "\n"
+                << "Max-error location [Re]     : "
+                << result.maxErrorLocation_m[0]*invRe << " "
+                << result.maxErrorLocation_m[1]*invRe << " "
+                << result.maxErrorLocation_m[2]*invRe << "\n";
+        }
+        else {
+            out << "Status                      : no valid in-domain field samples were collected\n";
+        }
+
+        out << "=======================================================================\n";
+        std::cout << out.str();
+        std::cout.flush();
+    }
+
+    return result;
+}
+
 void SetCutoffOutputFileSuffix(const std::string& suffix) {
     gCutoffOutputFileSuffix = suffix;
 }
@@ -2575,6 +2892,11 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     int mpiRank = 0, mpiSize = 1;
     MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &mpiRank);
     MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &mpiSize);
+
+    // Start a fresh sample-weighted DIPOLE interpolation diagnostic for this cutoff
+    // calculation.  The helper silently disables itself for non-DIPOLE models and for
+    // -mode3d-field-eval ANALYTIC, so production behavior is unchanged in those cases.
+    ResetDipoleMagneticFieldErrorStatistics(prm);
 
     //==================================================================================
     // 14.2 — Species constants
@@ -3420,6 +3742,11 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 
         std::cout.flush();
     }
+
+    // All field evaluators have been destroyed at this point.  Reduce their rank-local
+    // DIPOLE interpolation samples and print the global mean, maximum, and maximum-error
+    // coordinate before MPI can be finalized by this routine.
+    ReportDipoleMagneticFieldErrorStatistics("Mode3D cutoff rigidity");
 
     //==================================================================================
     // 14.12 — MPI finalise (only if we initialised MPI in this function)

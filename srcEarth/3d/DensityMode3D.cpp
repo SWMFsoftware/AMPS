@@ -1139,6 +1139,11 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
   MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&mpiRank);
   MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR,&mpiSize);
 
+  // Start a new sample-weighted magnetic-field accuracy diagnostic for this density/flux
+  // calculation.  ResetDipoleMagneticFieldErrorStatistics() enables collection only for
+  // mesh-backed DIPOLE runs, so no extra analytic evaluations are made for other models.
+  ResetDipoleMagneticFieldErrorStatistics(prm);
+
   const std::string outputMode = EarthUtil::ToUpper(prm.output.mode);
   if (outputMode!="POINTS" && outputMode!="TRAJECTORY" && outputMode!="SHELLS") {
     exit(__LINE__,__FILE__,"Mode3D density/flux supports OUTPUT_MODE POINTS, TRAJECTORY, or SHELLS");
@@ -1244,6 +1249,11 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
     }
     std::cout.flush();
   }
+
+  // Every TraceAllowedMesh() call has returned, so all per-trajectory field evaluators
+  // have merged their local DIPOLE samples.  Perform one global reduction and print the
+  // mean/max interpolation error and the location of the maximum before returning.
+  ReportDipoleMagneticFieldErrorStatistics("Mode3D density and flux");
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   return 0;

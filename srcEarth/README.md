@@ -246,3 +246,50 @@ The following comparisons should be run before removing any legacy reference bra
 6. **SWMF snapshot:** compare compact B and derived E against direct owner-cell values.
 7. **Time series:** verify that `Temp_ID` is reset and arrays are rebuilt for every field snapshot.
 8. **Memory scaling:** confirm that increasing MPI rank count does not allocate additional global AMPS blocks and that per-rank growth is limited to compact B/E/presence arrays.
+
+## Mode3D DIPOLE magnetic-field interpolation error statistics
+
+For a mesh-backed `FIELD_MODEL DIPOLE` calculation, the exact analytic field is known at
+all trajectory sample coordinates. Mode3D now uses this reference to measure the error of
+the actual compact-array and row-stencil field value returned to the particle mover.
+
+For each successful mesh-field evaluation, the diagnostic records
+
+```text
+relative_error = |B_mesh - B_dipole| / |B_dipole|
+```
+
+The statistics are sample-weighted. A coordinate visited repeatedly by the trajectory
+integrator contributes repeatedly because those are the field determinations that affect
+the calculated trajectory. Every field evaluator keeps a private count, error sum,
+maximum error, and maximum-error coordinate. It merges those values into a rank-local
+accumulator only when the evaluator is destroyed, avoiding a mutex in the high-frequency
+field-evaluation path. At the end of cutoff or density/flux processing, MPI reductions
+produce the global sample count, mean relative error, and maximum relative error.
+`MPI_MAXLOC` identifies the rank containing the maximum and that rank broadcasts the
+associated location.
+
+Rank zero prints a summary similar to
+
+```text
+========== Mode3D DIPOLE magnetic-field interpolation error ==========
+Calculation                 : Mode3D cutoff rigidity
+Definition                  : |B_mesh-B_dipole|/|B_dipole|
+Number of field samples     : ...
+Sample mean relative error  : ...
+Maximum relative error      : ...
+Max-error location [m]      : x y z
+Max-error location [km]     : x y z
+Max-error location [Re]     : x y z
+=======================================================================
+```
+
+The diagnostic is automatically enabled only when
+
+- the selected field model is `DIPOLE`; and
+- Mode3D uses mesh-backed field evaluation.
+
+It is disabled for `-mode3d-field-eval ANALYTIC`, because that path directly returns the
+reference field and would only report a trivial zero interpolation error. A new statistics
+window is started independently for each cutoff and density/flux calculation, including
+each separately processed time snapshot.
