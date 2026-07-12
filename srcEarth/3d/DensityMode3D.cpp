@@ -544,8 +544,8 @@ static DensityResultBuffers ComputeAllLocations_(const EarthUtil::AmpsParam& prm
   //====================================================================================
   // MPI location scheduling
   //====================================================================================
-  // As in the Mode3D cutoff solver, every MPI rank has access to the materialized
-  // mesh-field snapshot.  The inter-rank scheduler therefore operates on global
+  // As in the Mode3D cutoff solver, every MPI rank has access to the compact global
+  // B/E arrays.  The inter-rank scheduler therefore operates on global
   // observation-location indices rather than on rank-owned mesh subdomains.
   //
   // DYNAMIC uses an MPI one-sided atomic work queue: the rank/main thread fetches a
@@ -1145,10 +1145,10 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
   }
 
   // Time-dependent boundary spectra are selected once per magnetic-field snapshot.  This
-  // matches the mesh-field contract: every call to RunDensityAndFlux() sees one already
-  // materialized field snapshot and should fold it with the boundary spectrum at the same
-  // epoch.  TRAJECTORY per-sample epochs are intentionally not used to mutate gSpectrum
-  // here because the mesh itself is not re-materialized per spacecraft sample.
+  // matches the snapshot contract: every call to RunDensityAndFlux() sees one already
+  // assembled compact field snapshot and should fold it with the boundary spectrum at
+  // the same epoch.  TRAJECTORY per-sample epochs are intentionally not used to mutate
+  // gSpectrum because the global arrays are not rebuilt per spacecraft sample.
   ::gSpectrum.SetEvaluationEpochUTC(prm.field.epoch);
 
   const int nZenith = 24;
@@ -1214,7 +1214,7 @@ int RunDensityAndFlux(const EarthUtil::AmpsParam& prm) {
     std::cout << "\n";
     std::cout << "Boundary mode   : " << prm.densitySpectrum.boundaryMode << "\n";
     std::cout << "Output mode     : " << outputMode << ", N_locations=" << nLoc << "\n";
-    std::cout << "MPI ranks       : " << mpiSize << " (replicated mesh-field snapshot)\n";
+    std::cout << "MPI ranks       : " << mpiSize << " (compact global field arrays)\n";
     std::cout << "Density backend : " << DensityParallelBackendName_(densityBackendForBanner)
               << ", threads/MPI rank=" << densityThreadsForBanner << "\n";
     std::cout << "MPI scheduler   : " << Earth::Mode3D::MpiSchedulerName(mpiSchedulerForBanner) << "\n";

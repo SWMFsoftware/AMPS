@@ -256,13 +256,12 @@ std::string FormatCutoffOutputSuffix_(long int callIndex) {
 }
 
 //======================================================================================
-// SWMF-coupled cutoff global-B materialization is now implemented by the shared
-// Earth::Mode3D::GlobalMagneticField helper.  Keeping the data-management code in one
-// location prevents the standalone cutoff path and the SWMF-coupled cutoff path from
-// diverging: both assign Temp_ID values, allocate nonlocal blocks, gather owner-cell B,
-// and reconstruct ghost-cell values in exactly the same way.  The public SWMF wrapper
-// below supplies the SWMF magnetic-field storage offset and performs SWMF-specific
-// readiness checks before delegating to the shared helper.
+// SWMF-coupled cutoff global-field assembly is implemented by the shared
+// Earth::Mode3D::GlobalMagneticField helper.  Both standalone and coupled paths reset
+// and assign node->Temp_ID, gather owner interior cells, and create compact global B/E
+// arrays.  No nonlocal AMR blocks or ghost-cell state vectors are allocated.  For SWMF,
+// B is read from MagneticFieldOffset and E is reconstructed as -v x B from
+// BulkVelocityOffset.
 //======================================================================================
 
 } // anonymous namespace
@@ -609,11 +608,13 @@ bool ReadyForBackwardProductCalculation(bool verbose) {
   int preInitLocal = s_pre_initialized ? 1 : 0;
   int meshLocal    = (PIC::Mesh::mesh != NULL) ? 1 : 0;
   int bOffsetLocal = (PIC::CPLR::SWMF::MagneticFieldOffset >= 0) ? 1 : 0;
+  int vOffsetLocal = (PIC::CPLR::SWMF::BulkVelocityOffset >= 0) ? 1 : 0;
   int coupledLocal = PIC::CPLR::SWMF::FirstCouplingOccured ? 1 : 0;
 
   int preInitGlobal = 0;
   int meshGlobal    = 0;
   int bOffsetGlobal = 0;
+  int vOffsetGlobal = 0;
   int coupledGlobal = 0;
 
   MPI_Allreduce((void*)&preInitLocal,&preInitGlobal,1,MPI_INT,MPI_MIN,
@@ -622,6 +623,8 @@ bool ReadyForBackwardProductCalculation(bool verbose) {
                 MPI_GLOBAL_COMMUNICATOR);
   MPI_Allreduce((void*)&bOffsetLocal,&bOffsetGlobal,1,MPI_INT,MPI_MIN,
                 MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&vOffsetLocal,&vOffsetGlobal,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
   MPI_Allreduce((void*)&coupledLocal,&coupledGlobal,1,MPI_INT,MPI_MIN,
                 MPI_GLOBAL_COMMUNICATOR);
 
@@ -629,6 +632,7 @@ bool ReadyForBackwardProductCalculation(bool verbose) {
       (preInitGlobal == 1) &&
       (meshGlobal    == 1) &&
       (bOffsetGlobal == 1) &&
+      (vOffsetGlobal == 1) &&
       (coupledGlobal == 1);
 
   if (!ready) {
@@ -641,6 +645,7 @@ bool ReadyForBackwardProductCalculation(bool verbose) {
                 << "preInit=" << preInitGlobal
                 << ", mesh=" << meshGlobal
                 << ", magneticFieldOffset=" << bOffsetGlobal
+                << ", bulkVelocityOffset=" << vOffsetGlobal
                 << ", firstCoupling=" << coupledGlobal
                 << ".\n";
       std::cout.flush();
@@ -683,14 +688,19 @@ void PrepareGlobalSWMFCoupledMagneticFieldForCutoff(bool verbose) {
          "[Mode3DForwardSWMF] PrepareGlobalSWMFCoupledMagneticFieldForCutoff() called before the first SWMF coupling data receive.");
   }
 
-  // Reuse the same generic global-B materialization machinery used by the standalone
-  // Mode3D cutoff path.  The only SWMF-specific detail is the storage offset passed
-  // below: the coupled magnetic field lives at PIC::CPLR::SWMF::MagneticFieldOffset
-  // inside each cell-associated data buffer, whereas standalone Mode3D passes the
-  // DATAFILE offset returned by GlobalMagneticField::DataFileMagneticFieldDataOffset().
-  Earth::Mode3D::GlobalMagneticField::MaterializeCellCenteredMagneticFieldForCutoff(
+  if (PIC::CPLR::SWMF::BulkVelocityOffset<0) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] SWMF bulk-velocity buffer is unavailable; cannot assemble the compact global E=-v x B field.");
+  }
+
+  // Assemble compact fields from authoritative owner cells.  The globally replicated
+  // AMR tree supplies geometry and node->Temp_ID indexing; row-stencil interpolation
+  // later accesses these arrays without requiring remote block allocation.
+  Earth::Mode3D::GlobalMagneticField::AssembleCellCenteredFieldsForCutoff(
       "Mode3DForwardSWMF",
       PIC::CPLR::SWMF::MagneticFieldOffset,
+      -1,
+      PIC::CPLR::SWMF::BulkVelocityOffset,
       verbose);
 #endif
 }
@@ -721,16 +731,12 @@ void RedefineSWMFCoupledMagneticFieldToAnalyticDipole() {
   Earth::GridlessMode::Dipole::SetMomentScale(s_prm.field.dipoleMoment_Me);
   Earth::GridlessMode::Dipole::SetTiltDeg(s_prm.field.dipoleTilt_deg);
 
-  // Use the generic global-field utility rather than the old SWMF-local copy of the
-  // block-allocation traversal.  allocateMissingBlocks=true makes the debug dipole
-  // override behave like the production cutoff path: all used leaves are available on
-  // every rank before the field values are written.
+  // Replace only the compact global B array.  The helper evaluates cell-center
+  // coordinates directly from tree geometry and does not allocate remote blocks.
   const long int nCells =
-      Earth::Mode3D::GlobalMagneticField::RedefineAllAllocatedMagneticField(
+      Earth::Mode3D::GlobalMagneticField::RedefineGlobalMagneticField(
           "Mode3DForwardSWMF",
-          PIC::CPLR::SWMF::MagneticFieldOffset,
           AnalyticDipoleMagneticField_,
-          true,
           false);
 
   if (PIC::ThisThread == 0) {
@@ -738,7 +744,7 @@ void RedefineSWMFCoupledMagneticFieldToAnalyticDipole() {
               << "with analytic dipole:"
               << " DIPOLE_MOMENT=" << s_prm.field.dipoleMoment_Me
               << ", DIPOLE_TILT=" << s_prm.field.dipoleTilt_deg << " deg"
-              << ", updatedCellsOnThisRank=" << nCells << ".\n";
+              << ", updatedGlobalCells=" << nCells << ".\n";
     std::cout.flush();
   }
 #endif
@@ -776,12 +782,12 @@ void amps_cutoff_time_step() {
 
   try {
     // The cutoff solver can run trajectories across the entire AMR domain on each
-    // MPI rank.  Materialize the distributed SWMF B field into replicated cell data
+    // MPI rank.  Assemble the distributed SWMF fields into compact global arrays
     // before starting any backward tracing.
     PrepareGlobalSWMFCoupledMagneticFieldForCutoff(true);
 
     // Run the products requested by CALC_TARGET.  Both products intentionally share
-    // the same globalized SWMF B snapshot prepared above, so cutoff, directional maps,
+    // the same compact SWMF B/E snapshot prepared above, so cutoff, directional maps,
     // density, spectra, and flux are physically synchronized and carry the same output
     // suffix.  This mirrors the standalone Mode3D time-series driver, except that the
     // magnetic snapshot comes from live SWMF coupling instead of a Tsyganenko driver file.

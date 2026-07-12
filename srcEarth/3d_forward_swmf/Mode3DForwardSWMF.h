@@ -72,36 +72,23 @@ double GetCoupledCalculationCadenceSeconds();
 //   * amps_pre_init() has completed;
 //   * PIC::Mesh::mesh is allocated;
 //   * PIC::CPLR::SWMF::MagneticFieldOffset is valid;
+//   * PIC::CPLR::SWMF::BulkVelocityOffset is valid;
 //   * PIC::CPLR::SWMF::FirstCouplingOccured is true on every rank.
 bool ReadyForBackwardProductCalculation(bool verbose=true);
 
-// Allocate all AMR leaf blocks on every MPI rank and gather the SWMF-coupled
-// cell-centered magnetic field into those blocks.
+// Assemble compact global SWMF B/E arrays before a backward-product calculation.
 //
-// Why this is needed:
-//   In a normal coupled AMPS/SWMF MPI run, only local domain blocks and boundary
-//   ghost blocks have node->block allocated on each process.  The SWMF coupler
-//   therefore fills B only for that local subset.  Backward cutoff tracing is not
-//   local in that sense: one particle trajectory can cross into any AMR block, and
-//   the Mode3D mesh-field evaluator expects the requested cell data to exist on
-//   the rank performing the tracing.
-//
-// What this routine does before RunCutoffRigidity():
-//   1. gives every used AMR leaf a deterministic dense global ID;
-//   2. allocates missing blocks locally on every MPI rank;
-//   3. packs owner-rank interior-cell B from PIC::CPLR::SWMF::MagneticFieldOffset;
-//   4. uses MPI_Allreduce to replicate the global cell-centered B cache;
-//   5. fills all local blocks, including ghost cells, from that replicated cache.
-//
-// After it returns, the existing Mode3D interpolation code can use the SWMF field
-// exactly as if the full mesh had been local from the beginning.  The default
-// verbose=true prints one rank-0 diagnostic summary per cutoff snapshot.
+// The routine resets and assigns deterministic node->Temp_ID values over the global
+// AMR tree, gathers owner interior-cell B and plasma velocity, derives E=-v x B, and
+// MPI-replicates only the compact physical arrays.  No nonlocal cDataBlockAMR objects
+// or ghost-cell state vectors are allocated.  Mode3D field evaluation subsequently
+// uses cRowStencil entries to address remote cells by (node->Temp_ID,i,j,k).
 void PrepareGlobalSWMFCoupledMagneticFieldForCutoff(bool verbose=true);
 
 // Replace the SWMF-coupled cell-centered magnetic field with the analytic dipole
 // configured by DIPOLE_MOMENT and DIPOLE_TILT in AMPS_PARAM.in.  The function
-// remains available as a debug override and operates on all currently allocated
-// AMR blocks.
+// remains available as a debug override and replaces the compact global B array
+// directly from tree-derived cell-center coordinates.
 void RedefineSWMFCoupledMagneticFieldToAnalyticDipole();
 
 // Per-coupling-call backward-product driver used by main_lib.cpp::amps_time_step().

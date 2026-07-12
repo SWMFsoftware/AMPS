@@ -5,89 +5,124 @@
 // GlobalMagneticField.h
 //======================================================================================
 //
-// Shared support for backward cutoff-rigidity calculations that are executed with a
-// distributed AMPS mesh.
+// Compact, decomposition-independent cell-centered field storage for Mode3D backward
+// trajectory calculations.
 //
-// In the old standalone 3-D cutoff path each MPI rank called
+// AMPS keeps the AMR tree topology on every MPI rank, but allocates cDataBlockAMR and
+// cDataCenterNode objects only for the rank-local domain and a limited neighbor layer.
+// A cutoff-rigidity trajectory can cross the complete magnetosphere, so field lookup
+// cannot depend on the local block allocation.  Replicating every AMPS block solves
+// that problem but also replicates every cell-associated state vector and all ghost
+// storage, which is prohibitively expensive for realistic SWMF meshes.
 //
-//   PIC::InitMPI(/*independentDomainMode=*/true)
+// This module instead replicates only compact B and E arrays.  Every used AMR leaf is
+// assigned a deterministic dense index in node->Temp_ID.  A physical interior cell is
+// addressed by
 //
-// and therefore built a complete private copy of the AMR domain.  That made field
-// interpolation simple, but it bypassed the normal AMPS parallel-domain layout and
-// duplicated all mesh/block memory on every rank from the start of the run.
+//   globalCell = node->Temp_ID * (Nx*Ny*Nz)
+//              + i + Nx*(j + Ny*k).
 //
-// The SWMF-coupled cutoff path later implemented a better approach: keep the normal
-// AMPS distributed mesh during initialization, then immediately before cutoff tracing
-// materialize a read-only global magnetic-field snapshot on every MPI rank.  The
-// generic helper declared here is that data-management operation factored out so it
-// can be reused by both
-//
-//   * standalone 3-D cutoff: source/destination is the DATAFILE magnetic-field slot;
-//   * SWMF-coupled cutoff:   source/destination is the SWMF coupler magnetic-field slot.
-//
-// The helper does not know how the magnetic field was produced.  It only needs the
-// byte offset, relative to cDataCenterNode::GetAssociatedDataBufferPointer(), where
-// the three double precision B components are stored.
+// Field interpolation uses PIC::InterpolationRoutines::cRowStencil.  A row-stencil
+// element contains the owning tree node, interior (i,j,k), and interpolation weight,
+// and therefore remains valid even when the corresponding node->block is NULL on the
+// current rank.
 //======================================================================================
+
+#include "pic.h"
 
 namespace Earth {
 namespace Mode3D {
 namespace GlobalMagneticField {
 
-// Compact diagnostic summary returned by MaterializeCellCenteredMagneticFieldForCutoff().
-// The values are useful for rank-0 log messages and for debugging incomplete gathers.
+// Public node alias used by the row-stencil field-evaluation interface.
+typedef cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> cAMRNode;
+
+// Diagnostic summary returned after a compact global field snapshot is assembled.
 struct MaterializationStats {
   long int usedLeafBlocks;
   long int ownerInteriorCells;
   long int expectedInteriorCells;
-  long int newlyAllocatedBlocksMin;
-  long int newlyAllocatedBlocksMax;
-  long int missingGhostCellsMin;
-  long int missingGhostCellsMax;
+  long int missingInteriorCells;
+  long int duplicateInteriorCells;
+  long int magneticFieldBytes;
+  long int electricFieldBytes;
+  bool electricFieldReadFromBuffer;
+  bool electricFieldDerivedFromVelocity;
 
   MaterializationStats() :
     usedLeafBlocks(0), ownerInteriorCells(0), expectedInteriorCells(0),
-    newlyAllocatedBlocksMin(0), newlyAllocatedBlocksMax(0),
-    missingGhostCellsMin(0), missingGhostCellsMax(0) {}
+    missingInteriorCells(0), duplicateInteriorCells(0),
+    magneticFieldBytes(0), electricFieldBytes(0),
+    electricFieldReadFromBuffer(false),
+    electricFieldDerivedFromVelocity(false) {}
 };
 
-// Return the absolute DATAFILE magnetic-field offset in a cell-associated data buffer.
-// This is the offset corresponding to the layout used by Mode3D::InitMeshFields().
+// Return absolute DATAFILE offsets relative to
+// cDataCenterNode::GetAssociatedDataBufferPointer().
 long int DataFileMagneticFieldDataOffset();
+long int DataFileElectricFieldDataOffset();
 
-// Build a replicated, read-only cell-centered magnetic-field snapshot on every MPI rank.
+// Assemble compact global B and E arrays on every MPI rank.
 //
-// Parameters:
-//   diagnosticTag
-//     Short text used in log/error messages, e.g. "Mode3D" or "Mode3DForwardSWMF".
+// magneticFieldDataOffset:
+//   Required absolute offset of three consecutive double-precision B components.
 //
-//   magneticFieldDataOffset
-//     Absolute byte offset from cell->GetAssociatedDataBufferPointer() to Bx.  By and
-//     Bz must follow immediately as the next two doubles.  This intentionally supports
-//     both DATAFILE and SWMF-coupler storage without branching inside the helper.
+// electricFieldDataOffset:
+//   Optional absolute offset of three consecutive E components.  Pass -1 when E is
+//   not stored directly.
 //
-//   verbose
-//     If true, rank 0 prints a one-line summary.
+// plasmaVelocityDataOffset:
+//   Optional absolute offset of three consecutive plasma-velocity components.  When
+//   electricFieldDataOffset is negative and this offset is nonnegative, E is derived
+//   cell-by-cell as E = -v x B.  This is the SWMF ideal-MHD field path.
 //
-// Operation:
-//   1. assign deterministic global Temp_ID values to all used AMR leaves;
-//   2. allocate missing leaf blocks locally so every rank has every used leaf;
-//   3. pack only owner-rank interior-cell B values into a dense array;
-//   4. MPI_Allreduce the dense B array and an integer presence mask;
-//   5. fill every allocated block, including ghost cells, from the global cache.
-//
-// After this call, the usual AMPS cell-centered interpolation routines can be used
-// unchanged during cutoff trajectory tracing even though the run was initialized with
-// the normal distributed MPI domain decomposition.
+// When neither E source is available, a valid zero electric field is stored.  The
+// routine resets node->Temp_ID over the complete tree before assigning new dense IDs;
+// callers must not overwrite Temp_ID while the snapshot is in use.
+MaterializationStats AssembleCellCenteredFieldsForCutoff(
+    const char* diagnosticTag,
+    long int magneticFieldDataOffset,
+    long int electricFieldDataOffset=-1,
+    long int plasmaVelocityDataOffset=-1,
+    bool verbose=true);
+
+// Backward-compatible B-only entry point.  Existing call sites can continue using this
+// function; it now creates compact arrays and a zero E array instead of allocating and
+// populating nonlocal AMR blocks.
 MaterializationStats MaterializeCellCenteredMagneticFieldForCutoff(
     const char* diagnosticTag,
     long int magneticFieldDataOffset,
     bool verbose=true);
 
-// Debug/utility path: replace B in all currently used leaves with a callback-generated
-// field.  This is used by the SWMF bridge's analytic-dipole debug override.  The same
-// block-allocation logic is available here so the override can operate on a fully
-// replicated cutoff mesh when requested.
+// Interpolate a compact global field with an AMPS decomposition-independent row
+// stencil.  Return false only when no snapshot is ready, the point is outside the used
+// AMR tree, or no interpolation row can be constructed.  A malformed Temp_ID or a
+// missing row cell is a fatal consistency error because silently dropping that cell
+// would change the physical interpolation result.
+bool InterpolateMagneticField(const double* x,cAMRNode* node,double* B);
+bool InterpolateElectricField(const double* x,cAMRNode* node,double* E);
+
+// Direct cell access is useful for diagnostics and unit tests.  The indices must be
+// interior indices of the supplied owning leaf node.
+bool GetCellCenteredMagneticField(cAMRNode* node,int i,int j,int k,double* B);
+bool GetCellCenteredElectricField(cAMRNode* node,int i,int j,int k,double* E);
+
+bool GlobalFieldsReady();
+long int GlobalCellCount();
+void ClearGlobalFields();
+
+// Replace the compact global magnetic field by values generated from a coordinate
+// callback.  No AMPS block allocation is performed.  The electric field is reset to
+// zero because it would generally be inconsistent with the replacement B field.
+long int RedefineGlobalMagneticField(
+    const char* diagnosticTag,
+    void (*fieldCallback)(double*,double*),
+    bool verbose=true);
+
+// Compatibility wrapper for the previous replicated-block debug API.  The data offset
+// and allocateMissingBlocks arguments are retained so old callers compile, but the
+// implementation intentionally updates only the compact global array and never
+// allocates nonlocal blocks.
 long int RedefineAllAllocatedMagneticField(
     const char* diagnosticTag,
     long int magneticFieldDataOffset,

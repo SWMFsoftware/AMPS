@@ -204,25 +204,12 @@ void InitMeshFields(const EarthUtil::AmpsParam& prm,
 
   if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
     if (startNode->block!=NULL) {
-      // In the original standalone cutoff implementation every MPI rank used
-      // independentDomainMode=true, so the fact that a leaf had an allocated
-      // block meant that the current rank was responsible for initializing it.
-      //
-      // The new standalone cutoff path deliberately uses the normal distributed
-      // AMPS domain decomposition during field initialization and then builds a
-      // replicated read-only B-field cache immediately before tracing.  After
-      // that cache/materialization step, all used leaf blocks may remain
-      // allocated on every MPI rank.  This becomes important for time-dependent
-      // Tsyganenko runs: on the second and later snapshots InitMeshFields() is
-      // called again while those replicated non-owner blocks already exist.
-      //
-      // Only the AMPS owner rank (startNode->Thread) is allowed to recompute the
-      // cell-centered field here.  The global-field materialization helper packs
-      // owner interior cells, MPI-reduces them, and then overwrites every
-      // replicated block/ghost cell from that authoritative cache.  If this
-      // routine also initialized non-owner replicated blocks, it would waste a
-      // large amount of CPU time and could leave confusing stale values in
-      // buffers before the materialization pass.
+      // Mode3D uses the normal distributed AMPS domain decomposition.  Only the
+      // owner rank initializes a leaf's cell-centered B/E buffers.  Immediately
+      // before backtracing, the compact global-field helper gathers owner interior
+      // cells into dense B/E arrays indexed by node->Temp_ID.  It does not allocate
+      // nonlocal blocks or reconstruct ghost-cell buffers, so nonowner block data
+      // must never be treated as authoritative here.
       if (startNode->Thread!=PIC::ThisThread) return;
 
       const int S=(kMax-kMin+1)*(jMax-jMin+1)*(iMax-iMin+1);
@@ -562,11 +549,9 @@ void Mode3DPrepareMagneticFieldSnapshot(const EarthUtil::AmpsParam& snap,
   // simply resets the internal Mode3D model flags.
   ConfigureBackgroundFieldModel(snap);
 
-  // Fill the DATAFILE B/E buffers on all currently allocated blocks.  During the
-  // first snapshot this is the normal distributed AMPS mesh; after the global-B
-  // materialization step below it also includes replicated nonlocal blocks.  That
-  // is safe: the subsequent gather packs only node->Thread==PIC::ThisThread owner
-  // cells as authoritative values, so nonowner recalculations are ignored.
+  // Fill DATAFILE B/E buffers only on owner-rank blocks of the normal distributed
+  // AMPS mesh.  The compact global arrays assembled below copy authoritative interior
+  // cells from those owners and never allocate nonlocal blocks.
   InitMeshFields(snap,PIC::Mesh::mesh->rootTree);
 
   // Optional diagnostic output of the initialized cell-centered field.  Append the
@@ -578,19 +563,24 @@ void Mode3DPrepareMagneticFieldSnapshot(const EarthUtil::AmpsParam& snap,
   }
 
 #if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
-  // Replicate the owner-rank cell-centered B field to every MPI process for this
-  // snapshot.  The same reusable helper is called for every snapshot, so the code
-  // path is identical to the single-snapshot standalone cutoff and to the SWMF
-  // coupled data-management strategy.
+  // Assemble compact global B and E arrays for this snapshot.  The AMR tree is
+  // already global; node->Temp_ID provides the block index and row-stencil
+  // interpolation resolves cells without requiring node->block on this rank.
   if (!PIC::CPLR::DATAFILE::Offset::MagneticField.active) {
     exit(__LINE__,__FILE__,
          "[Mode3D] DATAFILE magnetic-field offset is inactive before standalone "
          "3-D cutoff materialization.");
   }
 
-  Earth::Mode3D::GlobalMagneticField::MaterializeCellCenteredMagneticFieldForCutoff(
+  const long int electricFieldOffset =
+      PIC::CPLR::DATAFILE::Offset::ElectricField.active ?
+      Earth::Mode3D::GlobalMagneticField::DataFileElectricFieldDataOffset() : -1;
+
+  Earth::Mode3D::GlobalMagneticField::AssembleCellCenteredFieldsForCutoff(
       "Mode3D",
       Earth::Mode3D::GlobalMagneticField::DataFileMagneticFieldDataOffset(),
+      electricFieldOffset,
+      -1,
       verbose);
 #else
   (void)verbose;
@@ -716,20 +706,16 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //    buffers.  At this point only the normal distributed set of blocks is
   //    allocated on each rank.
   //
-  // 4. Materialize a global read-only magnetic-field snapshot for cutoff tracing.
-  //    This reuses the same data-management strategy developed for the SWMF-coupled
-  //    cutoff path:
+  // 4. Assemble compact global read-only B/E arrays for cutoff tracing:
   //
-  //       assign deterministic node->Temp_ID values,
-  //       allocate missing leaf blocks on every rank,
-  //       pack only owner-rank interior-cell B values,
-  //       MPI_Allreduce the dense B cache and presence mask,
-  //       populate all allocated interior and ghost cells from that cache.
+  //       reset Temp_ID throughout the global AMR tree,
+  //       assign deterministic dense Temp_ID values to used leaves,
+  //       pack owner-rank interior-cell B/E values,
+  //       MPI_Allreduce the compact arrays and one presence entry per cell.
   //
-  //    After this step each MPI rank can trace its assigned cutoff trajectories
-  //    through the whole AMR domain using the existing cell-centered interpolation
-  //    code.  The ranks are no longer independent private AMPS universes; they are
-  //    normal MPI ranks sharing one MPI_GLOBAL_COMMUNICATOR.
+  //    No nonlocal AMR blocks or ghost-cell state vectors are allocated.  During
+  //    tracing, the field evaluator builds a decomposition-independent row stencil
+  //    and maps each (node,i,j,k) entry to Temp_ID*(Nx*Ny*Nz)+localCellIndex.
   //
   // 5. RunCutoffRigidity performs MPI × OpenMP work distribution:
   //    - static point distribution across MPI ranks;
@@ -742,10 +728,9 @@ int Run(const EarthUtil::AmpsParam& prm) {
 
   // ---- Standard distributed-domain initialization --------------------------
   //
-  // Do not request independentDomainMode here.  We want the usual AMPS MPI domain
-  // decomposition so owner blocks are distributed across ranks.  The global B-field
-  // materialization below will later allocate nonlocal blocks and gather the owner
-  // cell-centered magnetic field into them specifically for cutoff tracing.
+  // Do not request independentDomainMode here.  Owner blocks remain distributed.
+  // The compact global-field assembly copies only B/E values from owner interior
+  // cells; it never changes the AMPS block allocation.
   // -------------------------------------------------------------------------
   PIC::InitMPI();
   ConfigureMeshResolutionProfile(prm);
@@ -767,7 +752,7 @@ int Run(const EarthUtil::AmpsParam& prm) {
   // The parser has already loaded the Tsyganenko driver file, if requested, into
   // prm.temporal.driverTable.  For every epoch below we interpolate that table into
   // a temporary AmpsParam copy and then reuse the normal single-snapshot field
-  // initialization + global-B materialization + cutoff solver.
+  // initialization + compact global-field assembly + cutoff solver.
   const std::vector<std::string> snapshotEpochs = Mode3DBuildSnapshotEpochs(prm);
 
   if (PIC::ThisThread == 0) {
@@ -809,7 +794,7 @@ int Run(const EarthUtil::AmpsParam& prm) {
 
     // Reuse the existing single-snapshot data-management path for every time.
     // This call reinitializes the selected Tsyganenko/dipole field, writes it into
-    // the mesh DATAFILE buffers, and materializes a global read-only B snapshot on
+    // the mesh DATAFILE buffers, and assembles compact global read-only B/E arrays on
     // every MPI process for the cutoff tracer.
     Mode3DPrepareMagneticFieldSnapshot(snap,suffix,/*verbose=*/true);
 

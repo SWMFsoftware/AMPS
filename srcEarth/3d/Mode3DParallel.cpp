@@ -5,7 +5,7 @@
 // Shared parallel-backend selection for mesh-backed Mode3D backward products.
 //
 // Both cutoff rigidity and density/flux are embarrassingly parallel over observation
-// locations once the magnetic field has been materialized on the AMR mesh.  The two
+// locations once the compact global field arrays have been assembled.  The two
 // solvers used to carry separate copies of the same backend-resolution code.  Keeping
 // the logic here guarantees that standalone Mode3D and SWMF-coupled Mode3D interpret
 // DENSITY_PARALLEL / DENSITY_THREADS exactly the same way for both products.

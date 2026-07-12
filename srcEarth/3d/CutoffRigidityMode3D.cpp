@@ -177,12 +177,12 @@
 // before main()) are not broken.
 //
 // Mesh/field distribution:
-//   Mode3D::Run now initializes AMPS with the normal distributed MPI domain
+//   Mode3D::Run initializes AMPS with the normal distributed MPI domain
 //   decomposition.  Before this solver starts, Mode3D::GlobalMagneticField has
-//   already allocated missing nonlocal leaf blocks on every rank and populated them
-//   with a replicated read-only cell-centered B snapshot.  Therefore trajectory
-//   tracing can remain local-memory-only even though the mesh was not created with
-//   independentDomainMode=true.
+//   assembled compact global B/E arrays indexed by node->Temp_ID and local interior
+//   cell indices.  The AMR tree is global, but nonlocal cDataBlockAMR objects are not
+//   allocated.  Field evaluation uses a decomposition-independent row stencil, so
+//   trajectory tracing remains local-memory-only on every MPI rank.
 //
 // Inter-rank scheduling:
 //   The default scheduler is now DYNAMIC.  Rank/main threads atomically fetch chunks
@@ -198,7 +198,7 @@
 //   called only by the rank/main thread, never by worker threads.
 //
 // Communication:
-//   The global-B materialization is completed before entering RunCutoffRigidity().
+//   The compact global-field assembly is completed before entering RunCutoffRigidity().
 //   During trajectory tracing there is no field communication.  At the end, each rank
 //   holds global-indexed result arrays with -1 sentinels for locations it did not
 //   compute; MPI_MAX reductions collect Rc, Emin, and optional directional-map values
@@ -209,6 +209,7 @@
 #include "CutoffRigidityMode3D.h"
 #include "Mode3D.h"
 #include "ElectricField.h"
+#include "GlobalMagneticField.h"
 #include "Mode3DParallel.h"
 
 // AMPS framework
@@ -323,8 +324,8 @@ namespace {
 //
 // Thread-safety note:
 //   Each OpenMP thread or std::thread worker constructs its own cMode3DMeshFieldEval.
-//   The evaluator reads from the replicated, read-only AMR magnetic-field snapshot and
-//   owns its own lastNode_ cache, so no worker shares interpolation/cache state.
+//   The evaluator reads the compact global B array through a stack-local row stencil
+//   and owns its own lastNode_ cache, so no worker shares interpolation/cache state.
 //======================================================================================
 
 using CutoffParallelBackend_ = Earth::Mode3D::ParallelBackend;
@@ -501,52 +502,42 @@ static inline bool LostInnerSphere3D(const V3& x, double rInner) {
 // SECTION 5 — MESH-BASED FIELD EVALUATOR (per-thread)
 //======================================================================================
 //
-// cMode3DMeshFieldEval interpolates the magnetic field that InitMeshFields() stored in the
-// AMPS AMR cell-centre data buffers.  It is the Mode3D replacement for the gridless
-// cFieldEvaluator (which calls Tsyganenko Fortran directly).
+// cMode3DMeshFieldEval evaluates the compact globally replicated magnetic field built
+// by Mode3D::GlobalMagneticField.  It still implements IGridlessFieldEvaluator, so the
+// shared Boris/RK/guiding-center mover infrastructure remains unchanged.
 //
-// Design:
-//   - Implements IGridlessFieldEvaluator so all shared mover infrastructure
-//     (StepParticleChecked, HybridPrepareStepUseGuidingCenter, etc.) is reused
-//     without modification.
-//   - Each OpenMP thread holds its own instance; the mutable lastNode_ member
-//     caches the most recently found AMR block, accelerating findTreeNode() when
-//     consecutive GetB_T calls are within the same block (the common case for a
-//     particle advancing in small steps).
-//   - No mutex: the AMR tree and cell data are READ-ONLY during particle tracing.
+// The evaluator keeps only a tree-node search hint.  It never dereferences node->block:
+// the containing AMR leaf may be remote and unallocated on this MPI rank.  The compact
+// field module asks AMPS to build a stack-local cRowStencil containing
 //
-// Field data layout for each stencil cell (mirrors InitMeshFields write):
-//   ptr = center->GetAssociatedDataBufferPointer()
-//       + PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin
-//       + PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset
-//       + PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset
-//       + idim * sizeof(double)      (idim = 0,1,2 for Bx,By,Bz)
+//   (owning tree node, interior i/j/k, interpolation weight),
 //
-// Fallback: if the particle is outside all allocated blocks (e.g. just before the
-// outer-boundary escape check fires), GetB_T returns B = 0.  The integration loop
-// detects the escape on the very next geometry check, so the zero-field step is
-// never used to advance the trajectory classification.
+// and applies that row to arrays indexed by node->Temp_ID.  This preserves AMPS'
+// cell-centered linear interpolation, including multiblock coarse/fine reconstruction
+// and fine-side blending, without replicating AMPS blocks or ghost-cell state vectors.
+//
+// Each worker owns its evaluator and row stencil is stack-local, so the path is safe
+// for OpenMP and plain std::thread workers.  The global arrays are assembled before
+// trajectory tracing and are read-only during the calculation.
 //======================================================================================
 
 class cMode3DMeshFieldEval : public IGridlessFieldEvaluator {
 public:
     explicit cMode3DMeshFieldEval(const EarthUtil::AmpsParam& prm)
-      : prm_(prm), model_(EarthUtil::ToUpper(prm.field.model)), lastNode_(nullptr) {}
+      : prm_(prm), lastNode_(nullptr) {}
 
-    // Evaluate B [Tesla] at position x_m [m]. By default this uses AMR-aware
-    // interpolation from the cell-centered values written by InitMeshFields().
-    // When requested from the CLI, it instead calls the same background-field
-    // evaluator used by InitMeshFields() to prepopulate those cell centers.
+    // Evaluate B [Tesla] at x_m [m].  The optional analytic path is retained for
+    // diagnostic comparisons.  The production mesh path uses the compact global B
+    // array and decomposition-independent row-stencil interpolation.
     void GetB_T(const V3& x_m, V3& B_T) const override {
         double xArr[3] = {x_m.x, x_m.y, x_m.z};
 
         if (prm_.mode3d.forceAnalyticMagneticField) {
             double B[3] = {0.0, 0.0, 0.0};
 
-            // Evaluate with the same function used by InitMeshFields().  This path
-            // may touch shared model state (Tsyganenko/TA Fortran common blocks, or
-            // the dipole helper state), so serialize it for both OpenMP and direct
-            // std::thread density workers.
+            // Analytic field wrappers may use shared Fortran/common-block state.
+            // Serialize this debug path; compact-array interpolation below requires
+            // no lock.
             static std::mutex analyticFieldMutex;
             {
                 std::lock_guard<std::mutex> lock(analyticFieldMutex);
@@ -559,107 +550,36 @@ public:
             return;
         }
 
-        // Locate the leaf block that contains xArr.
-        // The lastNode_ hint makes subsequent calls O(1) when the particle stays
-        // in the same block between integration steps.
+        if (!Earth::Mode3D::GlobalMagneticField::GlobalFieldsReady()) {
+            exit(__LINE__,__FILE__,
+                 "[Mode3D] compact global fields are not assembled before mesh-field evaluation.");
+        }
+
+        // findTreeNode() operates on the globally replicated AMR topology and does
+        // not require the corresponding data block to be allocated locally.  The
+        // last-node hint makes consecutive trajectory samples in one leaf inexpensive.
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
             PIC::Mesh::mesh->findTreeNode(xArr, lastNode_);
-        lastNode_ = node;          // update hint for next call
+        lastNode_ = node;
 
-        if (node == nullptr || node->block == nullptr) {
-            // Particle is outside the domain or in an unallocated block.
-            // Return zero; the caller's boundary check will handle this.
+        if (node == nullptr) {
+            // Outside the used AMR domain.  The trajectory geometry check classifies
+            // the outer-boundary escape; returning zero here preserves the historical
+            // evaluator contract for a point sampled just beyond the box.
             B_T.x = B_T.y = B_T.z = 0.0;
             return;
         }
 
-        if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_) {
-            // Do not call PIC::CPLR::InitInterpolationStencil() +
-            // PIC::CPLR::GetBackgroundMagneticField() here.  In AMPS hybrid builds,
-            // GetBackgroundMagneticField(B) reads the global
-            // CellCentered::StencilTable[omp_get_thread_num()]. That is correct inside
-            // an OpenMP team, but plain std::thread workers all see OpenMP thread id 0
-            // and would race on the same stencil entry.  Build a stack-local stencil
-            // instead and read the already materialized SWMF cell-centered B field
-            // directly from PIC::CPLR::SWMF::MagneticFieldOffset.  This exactly matches
-            // the cell accessor in AMPS (SWMF::GetBackgroundMagneticField(cell) is a
-            // memcpy from that offset) while keeping both OpenMP and std::thread paths
-            // thread-safe.
-            if (PIC::CPLR::SWMF::MagneticFieldOffset < 0) {
-                B_T.x = B_T.y = B_T.z = 0.0;
-                return;
-            }
-
-            PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
-            PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xArr,node,Stencil);
-
-            if (Stencil.Length <= 0) {
-                B_T.x = B_T.y = B_T.z = 0.0;
-                return;
-            }
-
-            double B[3] = {0.0,0.0,0.0};
-            double BCell[3];
-
-            for (int iStencil = 0; iStencil < Stencil.Length; ++iStencil) {
-                PIC::Mesh::cDataCenterNode* center = Stencil.cell[iStencil];
-                if (center == nullptr) continue;
-
-                const char* data =
-                    PIC::CPLR::SWMF::MagneticFieldOffset + center->GetAssociatedDataBufferPointer();
-                std::memcpy(BCell,data,3*sizeof(double));
-
-                const double w = Stencil.Weight[iStencil];
-                B[0] += w*BCell[0];
-                B[1] += w*BCell[1];
-                B[2] += w*BCell[2];
-            }
-
-            B_T.x = B[0];
-            B_T.y = B[1];
-            B_T.z = B[2];
-            return;
-        }
-
-        if (!PIC::CPLR::DATAFILE::Offset::MagneticField.active) {
-            B_T.x = B_T.y = B_T.z = 0.0;
-            return;
-        }
-
-        // Build AMPS' cell-centred linear interpolation stencil at the particle
-        // position.  This routine is AMR-aware: when the particle is near a
-        // refinement boundary it constructs a multi-block stencil and blends
-        // fine/coarse stencils as needed, instead of assuming a uniform local
-        // trilinear stencil.
-        PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
-        PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xArr, node, Stencil);
-
-        if (Stencil.Length <= 0) {
-            B_T.x = B_T.y = B_T.z = 0.0;
-            return;
-        }
-
-        // Interpolate B from the cell-centred values written by InitMeshFields().
-        // DATAFILE::GetBackgroundData applies the same offset chain used when the
-        // data were stored:
-        //   CenterNodeAssociatedDataOffsetBegin + CurrDataFileOffset
-        //   + Offset::MagneticField.RelativeOffset.
         double B[3] = {0.0, 0.0, 0.0};
-        double BCell[3];
+        const bool ok =
+            Earth::Mode3D::GlobalMagneticField::InterpolateMagneticField(
+                xArr,node,B);
 
-        for (int iStencil = 0; iStencil < Stencil.Length; ++iStencil) {
-            PIC::Mesh::cDataCenterNode* center = Stencil.cell[iStencil];
-            if (center == nullptr) continue;
-
-            PIC::CPLR::DATAFILE::GetBackgroundData(
-                BCell, 3,
-                PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,
-                center);
-
-            const double w = Stencil.Weight[iStencil];
-            B[0] += w * BCell[0];
-            B[1] += w * BCell[1];
-            B[2] += w * BCell[2];
+        if (!ok) {
+            // A valid used leaf must always produce a row.  Treat failure as a setup
+            // error rather than advancing a trajectory through an artificial zero field.
+            exit(__LINE__,__FILE__,
+                 "[Mode3D] failed to construct a compact-array magnetic-field interpolation row.");
         }
 
         B_T.x = B[0];
@@ -669,9 +589,9 @@ public:
 
 private:
     const EarthUtil::AmpsParam& prm_;
-    std::string model_;
 
-    // Mutable so GetB_T can update the search hint while remaining logically const.
+    // Mutable so a logically const field evaluation can update the tree-search hint.
+    // The hint points only into the replicated tree and is private to this evaluator.
     mutable cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* lastNode_;
 };
 
@@ -2896,8 +2816,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     //==================================================================================
     // 14.8 — Two-level work scheduling over global Mode3D locations
     //==================================================================================
-    // The Mode3D mesh-field snapshot is replicated/readable on every MPI rank before
-    // this cutoff solver starts.  Therefore any rank can compute any output location.
+    // The compact global field arrays are readable on every MPI rank before this
+    // cutoff solver starts.  Therefore any rank can compute any output location.
     // This section uses that property to support several inter-rank schedulers:
     //
     //   STATIC
@@ -3519,8 +3439,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 //======================================================================================
 //
 // Mode3D density/flux must compute the same transmissivity as the gridless density
-// solver, but using the already-materialized AMR mesh field rather than direct
-// Tsyganenko calls.  The two wrappers below provide that bridge: they expose the
+// solver, but using row-stencil interpolation from compact global fields rather than
+// direct Tsyganenko calls.  The two wrappers below provide that bridge: they expose the
 // internal TraceAllowed3D() kernel through the same plain-array interface used by
 // GridlessMode::TraceAllowedShared/Ex().
 //
@@ -3529,7 +3449,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 //     cached in thread-local storage.  It stores a reference to `prm`; caching it across
 //     standalone time snapshots would risk a dangling reference after the snapshot-local
 //     AmpsParam copy goes out of scope.  The evaluator itself is lightweight: the heavy
-//     state is the read-only AMR tree and cell data already resident in memory.
+//     state is the read-only AMR tree and compact global field arrays.
 //   * The domain box is reconstructed from Mode3D::ParsedDomainMin/Max each call.  Those
 //     values are set once before mesh construction in standalone mode and by the SWMF
 //     pre-init hook in coupled mode, so they are the authoritative trajectory geometry.

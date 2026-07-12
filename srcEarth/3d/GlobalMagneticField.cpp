@@ -2,25 +2,17 @@
 // GlobalMagneticField.cpp
 //======================================================================================
 //
-// Generic materialization of a distributed AMPS cell-centered magnetic field into a
-// replicated, read-only field snapshot for 3-D backward cutoff-rigidity tracing.
+// Compact global cell-centered B/E storage for Mode3D backward trajectory tracing.
 //
-// The implementation is deliberately independent of the physical field source.  The
-// caller passes the byte offset of the three B components in each cell-associated data
-// buffer.  Therefore the same data-management machinery serves
-//
-//   * standalone 3-D cutoff, where Mode3D::InitMeshFields() writes DATAFILE B; and
-//   * SWMF-coupled cutoff, where PIC::CPLR::SWMF writes coupled B.
-//
-// Only the interior cells of owner blocks are used as MPI sources.  Ghost cells are
-// reconstructed after the gather by mapping each ghost-cell center to the owner AMR
-// leaf that physically contains the point.  This avoids double counting ghost copies
-// and gives AMPS' existing interpolation stencils the ghost-cell values they expect.
+// Only owner-rank interior cells are packed.  MPI_Allreduce then creates identical
+// compact arrays on every process.  The AMR tree itself is already globally replicated
+// by AMPS, so node->Temp_ID plus local interior cell indices provide a complete global
+// address without allocating remote cDataBlockAMR objects or reconstructing ghost-cell
+// buffers.  Field evaluation is performed with cRowStencil, whose entries identify the
+// physical owning leaf and interior (i,j,k) even for unallocated remote blocks.
 //======================================================================================
 
 #include "GlobalMagneticField.h"
-
-#include "pic.h"
 
 #include <algorithm>
 #include <cmath>
@@ -37,28 +29,27 @@ namespace Mode3D {
 namespace GlobalMagneticField {
 namespace {
 
-// Short alias used throughout this file.  The helper works on the AMR nodes owned by
-// the global PIC mesh instance; it does not create or modify the AMR topology itself.
-typedef cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> cAMRNode;
+// Compact arrays replicated on every MPI rank.  They are assembled before entering
+// the parallel trajectory calculation and remain read-only while worker threads are
+// active, so interpolation requires no mutex.
+std::vector<double> GlobalMagneticField_;
+std::vector<double> GlobalElectricField_;
+std::vector<int> GlobalCellPresence_;
+long int GlobalUsedLeafBlocks_=0;
+long int GlobalInteriorCellCount_=0;
+bool GlobalFieldsReady_=false;
 
-// Return a safe diagnostic tag.  Avoiding a null pointer in log/error construction
-// keeps the materialization helper usable from defensive/debug call sites.
 std::string SafeTag_(const char* diagnosticTag) {
   return (diagnosticTag!=NULL && diagnosticTag[0]!='\0') ?
          std::string(diagnosticTag) : std::string("Mode3D::GlobalMagneticField");
 }
 
-// Number of physical/interior cell centers stored per AMR block.  The global dense
-// cache indexes only these cells; ghost cells are filled later from the owner cells.
 long int InteriorCellsPerBlock_() {
   return static_cast<long int>(_BLOCK_CELLS_X_) *
          static_cast<long int>(_BLOCK_CELLS_Y_) *
          static_cast<long int>(_BLOCK_CELLS_Z_);
 }
 
-// Convert a block-local interior index (i,j,k) into a compact row-major scalar index.
-// The exact order is not physically important, but it must be deterministic and the
-// same on every rank because the arrays are reduced with MPI_Allreduce.
 long int InteriorCellIndex_(int i,int j,int k) {
   return static_cast<long int>(i) +
          static_cast<long int>(_BLOCK_CELLS_X_) *
@@ -66,45 +57,49 @@ long int InteriorCellIndex_(int i,int j,int k) {
           static_cast<long int>(_BLOCK_CELLS_Y_) * static_cast<long int>(k));
 }
 
-// Dense global cell index.  node->Temp_ID is assigned by AssignGlobalLeafTempIds_()
-// immediately before the gather; it is intentionally treated as temporary scratch
-// state for this materialization pass.
-long int GlobalCellIndex_(cAMRNode *node,int i,int j,int k) {
-  return node->Temp_ID * InteriorCellsPerBlock_() + InteriorCellIndex_(i,j,k);
+long int GlobalCellIndex_(cAMRNode* node,int i,int j,int k) {
+  return node->Temp_ID*InteriorCellsPerBlock_()+InteriorCellIndex_(i,j,k);
 }
 
-// Assign deterministic dense IDs to all used AMR leaf blocks.
-//
-// AMPS stores the AMR tree topology on every MPI rank even when the data blocks are
-// distributed.  A recursive traversal in a fixed child order therefore assigns the
-// same Temp_ID to the same physical leaf on every process.  These IDs become the block
-// component of the dense global cache index.
-void AssignGlobalLeafTempIds_(cAMRNode *node,long int& nUsedLeafBlocks) {
+// Temp_ID is scratch storage used by several AMPS algorithms.  Reset every tree node
+// before assigning field-array IDs so stale values from a previous mesh operation or
+// snapshot can never alias a valid global-field row.  Resetting non-leaf and unused
+// nodes is important because a row-stencil consistency error must be detected rather
+// than accidentally indexing an old field location.
+void ResetTreeTempIds_(cAMRNode* node) {
+  if (node==NULL) return;
+
+  node->Temp_ID=-1;
+  if (node->block!=NULL) node->block->Temp_ID=-1;
+
+  if (node->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_) {
+    for (int i=0;i<(1<<_MESH_DIMENSION_);i++) {
+      ResetTreeTempIds_(node->downNode[i]);
+    }
+  }
+}
+
+// Assign deterministic dense IDs by traversing the globally replicated tree in fixed
+// child order.  Because every rank has the same tree topology, a given physical leaf
+// obtains the same Temp_ID on every rank without communication.
+void AssignGlobalLeafTempIds_(cAMRNode* node,long int& nUsedLeafBlocks) {
   if (node==NULL) return;
 
   if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
     if (node->IsUsedInCalculationFlag==true) {
-      node->Temp_ID = nUsedLeafBlocks++;
-    }
-    else {
-      node->Temp_ID = -1;
+      node->Temp_ID=nUsedLeafBlocks++;
+      if (node->block!=NULL) node->block->Temp_ID=node->Temp_ID;
     }
 
     return;
   }
 
-  // Non-leaf nodes must never be used as dense-cache entries.
-  node->Temp_ID = -1;
-
-  for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) {
-    AssignGlobalLeafTempIds_(node->downNode[nDownNode],nUsedLeafBlocks);
+  for (int i=0;i<(1<<_MESH_DIMENSION_);i++) {
+    AssignGlobalLeafTempIds_(node->downNode[i],nUsedLeafBlocks);
   }
 }
 
-// Collect the used leaves after IDs are assigned.  Keeping an ordered vector avoids
-// repeated full-tree traversals and guarantees all later loops use the same order on
-// all ranks.
-void CollectUsedLeafNodes_(cAMRNode *node,std::vector<cAMRNode*>& nodes) {
+void CollectUsedLeafNodes_(cAMRNode* node,std::vector<cAMRNode*>& nodes) {
   if (node==NULL) return;
 
   if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
@@ -114,129 +109,57 @@ void CollectUsedLeafNodes_(cAMRNode *node,std::vector<cAMRNode*>& nodes) {
     return;
   }
 
-  for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) {
-    CollectUsedLeafNodes_(node->downNode[nDownNode],nodes);
+  for (int i=0;i<(1<<_MESH_DIMENSION_);i++) {
+    CollectUsedLeafNodes_(node->downNode[i],nodes);
   }
 }
 
-// Ensure every used AMR leaf has an allocated cDataBlockAMR on this rank.
-//
-// In normal AMPS distributed-domain mode only local owner blocks and a limited set of
-// neighbor/ghost blocks are allocated.  Backward cutoff tracing is nonlocal: one rank
-// may trace a particle through any block while processing its assigned observation
-// point.  Therefore we allocate missing blocks after mesh generation, just before the
-// cutoff run, rather than forcing independent full-domain MPI initialization.
-long int AllocateMissingBlocks_(const std::vector<cAMRNode*>& nodes) {
-  long int nAllocated=0;
-
-  if (PIC::Mesh::mesh==NULL) return 0;
-
-  // Preserve the caller's allocation policy.  Some AMPS code intentionally disables
-  // block allocation while manipulating only the tree; we override that policy only
-  // within this helper because a replicated cutoff snapshot explicitly requires it.
-  const bool savedAllowBlockAllocation = PIC::Mesh::mesh->AllowBlockAllocation;
-  PIC::Mesh::mesh->AllowBlockAllocation = true;
-
-  for (std::vector<cAMRNode*>::const_iterator it=nodes.begin();it!=nodes.end();++it) {
-    cAMRNode *node = *it;
-
-    if (node->block==NULL) {
-      PIC::Mesh::mesh->AllocateBlock(node);
-      if (node->block!=NULL) nAllocated++;
-    }
-
-    // Mirror the temporary global ID into the block.  The interpolation code uses the
-    // node pointer, but this is useful for diagnostics and for future code that starts
-    // from block-level data.
-    if (node->block!=NULL) node->block->Temp_ID = node->Temp_ID;
-  }
-
-  PIC::Mesh::mesh->AllowBlockAllocation = savedAllowBlockAllocation;
-
-  return nAllocated;
-}
-
-// Chunked MPI_Allreduce for large double vectors.  MPI count arguments are int in the
-// MPI interface used by AMPS; chunking keeps very large AMR caches below that limit.
-void AllreduceDoubleVector_(const std::vector<double>& local,std::vector<double>& global) {
-  global.assign(local.size(),0.0);
-
-  const long int n = static_cast<long int>(local.size());
-  const long int chunkMax = 100000000;
+// MPI count parameters are int in the interface used by AMPS.  Reduce large arrays in
+// bounded chunks and use MPI_IN_PLACE so no second full-sized receive array is needed.
+void AllreduceDoubleVectorInPlace_(std::vector<double>& data) {
+  const long int n=static_cast<long int>(data.size());
+  const long int chunkMax=100000000;
 
   for (long int offset=0;offset<n;offset+=chunkMax) {
-    const long int chunk = std::min(chunkMax,n-offset);
-    MPI_Allreduce((void*)(&local[offset]),&global[offset],static_cast<int>(chunk),
+    const int chunk=static_cast<int>(std::min(chunkMax,n-offset));
+    MPI_Allreduce(MPI_IN_PLACE,&data[static_cast<size_t>(offset)],chunk,
                   MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
   }
 }
 
-// Chunked MPI_Allreduce for integer masks.  A reduced mask value of 1 is the normal
-// case: exactly one owner rank supplied that interior cell.  Values larger than one
-// are averaged when writing B back; a zero triggers an explicit incomplete-gather
-// failure before the cutoff calculation begins.
-void AllreduceIntVector_(const std::vector<int>& local,std::vector<int>& global) {
-  global.assign(local.size(),0);
-
-  const long int n = static_cast<long int>(local.size());
-  const long int chunkMax = 100000000;
+void AllreduceIntVectorInPlace_(std::vector<int>& data) {
+  const long int n=static_cast<long int>(data.size());
+  const long int chunkMax=100000000;
 
   for (long int offset=0;offset<n;offset+=chunkMax) {
-    const long int chunk = std::min(chunkMax,n-offset);
-    MPI_Allreduce((void*)(&local[offset]),&global[offset],static_cast<int>(chunk),
+    const int chunk=static_cast<int>(std::min(chunkMax,n-offset));
+    MPI_Allreduce(MPI_IN_PLACE,&data[static_cast<size_t>(offset)],chunk,
                   MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
   }
 }
 
-// Locate the interior cell of 'node' that contains coordinate x.
-//
-// This is needed for ghost-cell reconstruction.  A ghost cell belongs to the local
-// allocated block object, but its center physically lies inside a neighboring owner
-// leaf.  Once findTreeNode() identifies that owner leaf, this routine converts the
-// coordinate into the owner's interior (i,j,k).  Small boundary tolerances absorb
-// roundoff when x lies numerically on a cell or block face.
-bool GetInteriorCellIndexForPoint_(const double *x,cAMRNode *node,int ijk[3]) {
-  const int nCells[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
-
-  for (int idim=0;idim<3;idim++) {
-    const double dx = (node->xmax[idim]-node->xmin[idim]) /
-                      static_cast<double>(nCells[idim]);
-
-    if (!(dx>0.0)) return false;
-
-    int idx = static_cast<int>(std::floor((x[idim]-node->xmin[idim])/dx));
-
-    if (idx<0) {
-      if (x[idim] < node->xmin[idim]-1.0e-10*dx) return false;
-      idx = 0;
-    }
-
-    if (idx>=nCells[idim]) {
-      if (x[idim] > node->xmax[idim]+1.0e-10*dx) return false;
-      idx = nCells[idim]-1;
-    }
-
-    ijk[idim]=idx;
-  }
-
-  return true;
+void Cross_(const double* a,const double* b,double* c) {
+  c[0]=a[1]*b[2]-a[2]*b[1];
+  c[1]=a[2]*b[0]-a[0]*b[2];
+  c[2]=a[0]*b[1]-a[1]*b[0];
 }
 
-// Pack authoritative magnetic-field values from owner blocks into the dense local
-// contribution arrays.
-//
-// Only node->Thread == PIC::ThisThread contributes.  Non-owner blocks may exist on a
-// rank either because AMPS created ghost/boundary blocks or because this helper has
-// just allocated a full replicated mesh.  Packing them would double-count cells and
-// could use stale/uninitialized ghost data, so they are deliberately ignored.
-long int PackOwnedInteriorMagneticField_(const std::vector<cAMRNode*>& nodes,
-                                         long int magneticFieldDataOffset,
-                                         std::vector<double>& localB,
-                                         std::vector<int>& localMask) {
+// Pack only authoritative owner-rank interior cells.  Nonowner blocks can be present
+// because AMPS keeps a local neighbor layer, but those copies may contain stale ghost
+// data and must never contribute to the global snapshot.
+long int PackOwnedInteriorFields_(
+    const std::vector<cAMRNode*>& nodes,
+    long int magneticFieldDataOffset,
+    long int electricFieldDataOffset,
+    long int plasmaVelocityDataOffset,
+    std::vector<double>& magneticField,
+    std::vector<double>& electricField,
+    std::vector<int>& presence) {
+
   long int nPacked=0;
 
   for (std::vector<cAMRNode*>::const_iterator it=nodes.begin();it!=nodes.end();++it) {
-    cAMRNode *node = *it;
+    cAMRNode* node=*it;
 
     if (node->Thread!=PIC::ThisThread) continue;
     if (node->block==NULL) continue;
@@ -244,21 +167,43 @@ long int PackOwnedInteriorMagneticField_(const std::vector<cAMRNode*>& nodes,
     for (int i=0;i<_BLOCK_CELLS_X_;i++) {
       for (int j=0;j<_BLOCK_CELLS_Y_;j++) {
         for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
-          PIC::Mesh::cDataCenterNode *cell =
+          PIC::Mesh::cDataCenterNode* cell=
               node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
 
           if (cell==NULL) continue;
 
-          const long int c = GlobalCellIndex_(node,i,j,k);
-          const long int b = 3*c;
+          const long int cellIndex=GlobalCellIndex_(node,i,j,k);
+          const long int vectorIndex=3*cellIndex;
+          char* data=cell->GetAssociatedDataBufferPointer();
 
-          // The caller supplied the physical storage location.  In standalone Mode3D
-          // this points at DATAFILE B; in SWMF-coupled cutoff it points at SWMF B.
-          std::memcpy(&localB[b],
-                      cell->GetAssociatedDataBufferPointer()+magneticFieldDataOffset,
-                      3*sizeof(double));
+          std::memcpy(&magneticField[static_cast<size_t>(vectorIndex)],
+                      data+magneticFieldDataOffset,3*sizeof(double));
 
-          localMask[c]=1;
+          if (electricFieldDataOffset>=0) {
+            // Standalone DATAFILE path: E was initialized explicitly in the same
+            // cell-associated buffer as B.
+            std::memcpy(&electricField[static_cast<size_t>(vectorIndex)],
+                        data+electricFieldDataOffset,3*sizeof(double));
+          }
+          else if (plasmaVelocityDataOffset>=0) {
+            // SWMF path: E is not stored as an independent field.  Reconstruct the
+            // cell-centered ideal-MHD field from the imported plasma velocity and B.
+            double velocity[3],b[3],vxB[3];
+            std::memcpy(velocity,data+plasmaVelocityDataOffset,3*sizeof(double));
+            std::memcpy(b,data+magneticFieldDataOffset,3*sizeof(double));
+            Cross_(velocity,b,vxB);
+
+            electricField[static_cast<size_t>(vectorIndex+0)]=-vxB[0];
+            electricField[static_cast<size_t>(vectorIndex+1)]=-vxB[1];
+            electricField[static_cast<size_t>(vectorIndex+2)]=-vxB[2];
+          }
+          else {
+            // No electric-field source was requested.  The vector was initialized to
+            // zero, so no write is required.  Keeping an explicitly valid zero array
+            // simplifies future movers that request both fields.
+          }
+
+          presence[static_cast<size_t>(cellIndex)]=1;
           nPacked++;
         }
       }
@@ -268,82 +213,117 @@ long int PackOwnedInteriorMagneticField_(const std::vector<cAMRNode*>& nodes,
   return nPacked;
 }
 
-// Write the MPI-reduced magnetic field back into every allocated block, including
-// ghost cells.  Ghost cells are reconstructed by asking the global AMR tree which
-// owner leaf contains the ghost-cell center and copying the corresponding owner
-// interior-cell value from the global cache.
-long int PopulateAllocatedBlocksFromGlobalMagneticField_(
-    const std::vector<cAMRNode*>& nodes,
-    long int magneticFieldDataOffset,
-    const std::vector<double>& globalB,
-    const std::vector<int>& globalMask) {
-
-  long int nMissing=0;
-
-  for (std::vector<cAMRNode*>::const_iterator it=nodes.begin();it!=nodes.end();++it) {
-    cAMRNode *node = *it;
-
-    if (node->block==NULL) continue;
-
-    for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
-      for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) {
-        for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
-          PIC::Mesh::cDataCenterNode *cell =
-              node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
-
-          if (cell==NULL) continue;
-
-          double *x = cell->GetX();
-
-          // For interior cells this usually returns 'node'.  For ghost cells it maps
-          // the ghost-center coordinate to the neighboring owner leaf.
-          cAMRNode *owner = PIC::Mesh::mesh->findTreeNode(x,node);
-
-          if ((owner==NULL) || (owner->Temp_ID<0) ||
-              (owner->IsUsedInCalculationFlag==false)) {
-            // The cell center lies outside the used AMR domain.  Store a finite value
-            // and count it.  Valid cutoff trajectories should leave the box before
-            // depending on such a ghost value.
-            double zero[3] = {0.0,0.0,0.0};
-            std::memcpy(cell->GetAssociatedDataBufferPointer()+magneticFieldDataOffset,
-                        zero,3*sizeof(double));
-            nMissing++;
-            continue;
-          }
-
-          int ijk[3];
-          if (GetInteriorCellIndexForPoint_(x,owner,ijk)==false) {
-            double zero[3] = {0.0,0.0,0.0};
-            std::memcpy(cell->GetAssociatedDataBufferPointer()+magneticFieldDataOffset,
-                        zero,3*sizeof(double));
-            nMissing++;
-            continue;
-          }
-
-          const long int c = GlobalCellIndex_(owner,ijk[0],ijk[1],ijk[2]);
-
-          if ((c<0) || (c>=static_cast<long int>(globalMask.size())) ||
-              (globalMask[c]<=0)) {
-            double zero[3] = {0.0,0.0,0.0};
-            std::memcpy(cell->GetAssociatedDataBufferPointer()+magneticFieldDataOffset,
-                        zero,3*sizeof(double));
-            nMissing++;
-            continue;
-          }
-
-          double b[3];
-          b[0]=globalB[3*c+0]/static_cast<double>(globalMask[c]);
-          b[1]=globalB[3*c+1]/static_cast<double>(globalMask[c]);
-          b[2]=globalB[3*c+2]/static_cast<double>(globalMask[c]);
-
-          std::memcpy(cell->GetAssociatedDataBufferPointer()+magneticFieldDataOffset,
-                      b,3*sizeof(double));
-        }
-      }
-    }
+void ValidateMeshAndOffset_(const std::string& tag,long int magneticFieldDataOffset) {
+  if (PIC::Mesh::mesh==NULL) {
+    const std::string msg="["+tag+"] compact global field assembly called before PIC::Mesh::mesh is initialized.";
+    exit(__LINE__,__FILE__,msg.c_str());
   }
 
-  return nMissing;
+  if (PIC::Mesh::mesh->rootTree==NULL) {
+    const std::string msg="["+tag+"] compact global field assembly called before the AMR root tree exists.";
+    exit(__LINE__,__FILE__,msg.c_str());
+  }
+
+  if (magneticFieldDataOffset<0) {
+    const std::string msg="["+tag+"] compact global field assembly received a negative magnetic-field data offset.";
+    exit(__LINE__,__FILE__,msg.c_str());
+  }
+}
+
+// Validate one row-stencil element and return its compact global cell index.  A bad
+// Temp_ID after assembly means some other code reused Temp_ID while the snapshot was
+// active; continuing would read an unrelated field cell and silently corrupt particle
+// trajectories, so this is intentionally fatal.
+long int CheckedGlobalCellIndex_(cAMRNode* node,int i,int j,int k,const char* fieldName) {
+  if (node==NULL) {
+    std::string msg="[Mode3D::GlobalMagneticField] NULL AMR node in ";
+    msg+=fieldName;
+    msg+=" row stencil.";
+    exit(__LINE__,__FILE__,msg.c_str());
+  }
+
+  if ((i<0)||(i>=_BLOCK_CELLS_X_) ||
+      (j<0)||(j>=_BLOCK_CELLS_Y_) ||
+      (k<0)||(k>=_BLOCK_CELLS_Z_)) {
+    std::ostringstream msg;
+    msg << "[Mode3D::GlobalMagneticField] non-interior row-stencil index for "
+        << fieldName << ": (" << i << "," << j << "," << k << ").";
+    const std::string text=msg.str();
+    exit(__LINE__,__FILE__,text.c_str());
+  }
+
+  if ((node->Temp_ID<0)||(node->Temp_ID>=GlobalUsedLeafBlocks_)) {
+    std::ostringstream msg;
+    msg << "[Mode3D::GlobalMagneticField] invalid node->Temp_ID=" << node->Temp_ID
+        << " while evaluating " << fieldName
+        << ". Temp_ID must not be reused after compact global fields are assembled.";
+    const std::string text=msg.str();
+    exit(__LINE__,__FILE__,text.c_str());
+  }
+
+  const long int cellIndex=GlobalCellIndex_(node,i,j,k);
+
+  if ((cellIndex<0)||(cellIndex>=GlobalInteriorCellCount_) ||
+      (GlobalCellPresence_[static_cast<size_t>(cellIndex)]!=1)) {
+    std::ostringstream msg;
+    msg << "[Mode3D::GlobalMagneticField] missing compact global " << fieldName
+        << " value for Temp_ID=" << node->Temp_ID
+        << ", cell=(" << i << "," << j << "," << k << ").";
+    const std::string text=msg.str();
+    exit(__LINE__,__FILE__,text.c_str());
+  }
+
+  return cellIndex;
+}
+
+bool GetCellCenteredField_(cAMRNode* node,int i,int j,int k,double* field,
+                           const std::vector<double>& storage,const char* fieldName) {
+  if ((field==NULL)||(GlobalFieldsReady_==false)) return false;
+
+  const long int cellIndex=CheckedGlobalCellIndex_(node,i,j,k,fieldName);
+  const long int vectorIndex=3*cellIndex;
+
+  field[0]=storage[static_cast<size_t>(vectorIndex+0)];
+  field[1]=storage[static_cast<size_t>(vectorIndex+1)];
+  field[2]=storage[static_cast<size_t>(vectorIndex+2)];
+  return true;
+}
+
+bool InterpolateField_(const double* x,cAMRNode* node,double* field,
+                       const std::vector<double>& storage,const char* fieldName) {
+  if ((x==NULL)||(field==NULL)||(GlobalFieldsReady_==false)) return false;
+
+  double xLocal[3]={x[0],x[1],x[2]};
+  cAMRNode* interpolationNode=node;
+
+  if (interpolationNode==NULL) {
+    interpolationNode=PIC::Mesh::mesh->findTreeNode(xLocal);
+  }
+
+  if (interpolationNode==NULL) return false;
+
+  // The row-only overload intentionally does not require interpolationNode->block.
+  // AMPS constructs the same geometric linear/multiblock/blended stencil as the
+  // legacy pointer path, but records owning nodes and interior cell indices.
+  PIC::InterpolationRoutines::cRowStencil row;
+  PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(
+      xLocal,interpolationNode,row);
+
+  if (row.Length<=0) return false;
+
+  field[0]=field[1]=field[2]=0.0;
+
+  for (int s=0;s<row.Length;s++) {
+    const PIC::InterpolationRoutines::cRowStencil::cElement& e=row.Element[s];
+    const long int cellIndex=CheckedGlobalCellIndex_(e.node,e.i,e.j,e.k,fieldName);
+    const long int vectorIndex=3*cellIndex;
+
+    field[0]+=e.Weight*storage[static_cast<size_t>(vectorIndex+0)];
+    field[1]+=e.Weight*storage[static_cast<size_t>(vectorIndex+1)];
+    field[2]+=e.Weight*storage[static_cast<size_t>(vectorIndex+2)];
+  }
+
+  return true;
 }
 
 } // anonymous namespace
@@ -354,111 +334,239 @@ long int DataFileMagneticFieldDataOffset() {
          PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
 }
 
-MaterializationStats MaterializeCellCenteredMagneticFieldForCutoff(
+long int DataFileElectricFieldDataOffset() {
+  return PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin +
+         PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset +
+         PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+}
+
+MaterializationStats AssembleCellCenteredFieldsForCutoff(
     const char* diagnosticTag,
     long int magneticFieldDataOffset,
+    long int electricFieldDataOffset,
+    long int plasmaVelocityDataOffset,
     bool verbose) {
 
-  const std::string tag = SafeTag_(diagnosticTag);
-
-  if (PIC::Mesh::mesh==NULL) {
-    const std::string msg = "[" + tag + "] global magnetic-field materialization called before PIC::Mesh::mesh is initialized.";
-    exit(__LINE__,__FILE__,msg.c_str());
-  }
-
-  if (PIC::Mesh::mesh->rootTree==NULL) {
-    const std::string msg = "[" + tag + "] global magnetic-field materialization called before the AMR root tree exists.";
-    exit(__LINE__,__FILE__,msg.c_str());
-  }
-
-  if (magneticFieldDataOffset<0) {
-    const std::string msg = "[" + tag + "] global magnetic-field materialization received a negative B-field data offset.";
-    exit(__LINE__,__FILE__,msg.c_str());
-  }
+  const std::string tag=SafeTag_(diagnosticTag);
+  ValidateMeshAndOffset_(tag,magneticFieldDataOffset);
 
   MaterializationStats stats;
 
-  // Step 1: give every used AMR leaf the same dense global ID on every rank.
+  // Invalidate the previous snapshot before touching Temp_ID or resizing arrays.  A
+  // concurrent field evaluation during assembly would otherwise observe a mixture of
+  // old indices and new storage.  Assembly is expected to run before worker threads.
+  GlobalFieldsReady_=false;
+
+  // The explicit reset is required because Temp_ID is shared scratch storage in AMPS.
+  // IDs are then reassigned deterministically over the complete global tree.
+  ResetTreeTempIds_(PIC::Mesh::mesh->rootTree);
   long int nUsedLeafBlocks=0;
   AssignGlobalLeafTempIds_(PIC::Mesh::mesh->rootTree,nUsedLeafBlocks);
-  stats.usedLeafBlocks = nUsedLeafBlocks;
 
-  // Step 2: build the ordered leaf list used by all subsequent passes.
   std::vector<cAMRNode*> nodes;
   nodes.reserve(static_cast<size_t>(std::max(static_cast<long int>(0),nUsedLeafBlocks)));
   CollectUsedLeafNodes_(PIC::Mesh::mesh->rootTree,nodes);
 
-  // Dense storage for owner interior-cell values.  There are no ghost cells here;
-  // ghost values are derived after the MPI reduction.
-  const long int nInteriorCells = nUsedLeafBlocks * InteriorCellsPerBlock_();
-  stats.expectedInteriorCells = nInteriorCells;
-
-  std::vector<double> localB(static_cast<size_t>(3*nInteriorCells),0.0);
-  std::vector<double> globalB;
-  std::vector<int> localMask(static_cast<size_t>(nInteriorCells),0);
-  std::vector<int> globalMask;
-
-  // Step 3: allocate nonlocal blocks on this rank.  This is what replaces the old
-  // independentDomainMode=true startup: normal MPI domain decomposition is preserved
-  // until this explicit replicated cutoff snapshot is needed.
-  const long int nNewlyAllocatedBlocks = AllocateMissingBlocks_(nodes);
-
-  // Step 4: pack this rank's authoritative owner blocks.
-  const long int nPackedLocal =
-      PackOwnedInteriorMagneticField_(nodes,magneticFieldDataOffset,localB,localMask);
-
-  // Step 5: replicate the owner-cell cache onto every rank.
-  AllreduceDoubleVector_(localB,globalB);
-  AllreduceIntVector_(localMask,globalMask);
-
-  // Step 6: populate every allocated block, including ghost cells, from the cache.
-  const long int nMissingLocal =
-      PopulateAllocatedBlocksFromGlobalMagneticField_(nodes,magneticFieldDataOffset,
-                                                     globalB,globalMask);
-
-  long int nPackedGlobal=0;
-  MPI_Allreduce((void*)&nPackedLocal,&nPackedGlobal,1,MPI_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-  stats.ownerInteriorCells = nPackedGlobal;
-
-  MPI_Allreduce((void*)&nNewlyAllocatedBlocks,&stats.newlyAllocatedBlocksMin,1,MPI_LONG,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce((void*)&nNewlyAllocatedBlocks,&stats.newlyAllocatedBlocksMax,1,MPI_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce((void*)&nMissingLocal,&stats.missingGhostCellsMin,1,MPI_LONG,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce((void*)&nMissingLocal,&stats.missingGhostCellsMax,1,MPI_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
-
-  // Every used interior cell must have exactly one owner contribution.  Without this
-  // check a missing local field would silently become zero after the Allreduce and the
-  // cutoff classification could be wrong.
-  if (nPackedGlobal!=nInteriorCells) {
+  if (static_cast<long int>(nodes.size())!=nUsedLeafBlocks) {
     std::ostringstream msg;
-    msg << "[" << tag << "] global magnetic-field gather is incomplete: received "
-        << nPackedGlobal << " owner interior cells, expected " << nInteriorCells
-        << ". Check that the normal AMPS mesh distribution allocated owner blocks "
-        << "before the cutoff materialization step.";
-    const std::string text = msg.str();
+    msg << "[" << tag << "] inconsistent used-leaf traversal: assigned "
+        << nUsedLeafBlocks << " Temp_ID values but collected " << nodes.size()
+        << " leaves.";
+    const std::string text=msg.str();
     exit(__LINE__,__FILE__,text.c_str());
   }
 
-  if ((verbose==true) && (PIC::ThisThread==0)) {
-    std::cout << "[" << tag << "] Prepared global cell-centered B field for cutoff:"
+  const long int nInteriorCells=nUsedLeafBlocks*InteriorCellsPerBlock_();
+
+  GlobalUsedLeafBlocks_=nUsedLeafBlocks;
+  GlobalInteriorCellCount_=nInteriorCells;
+  GlobalMagneticField_.assign(static_cast<size_t>(3*nInteriorCells),0.0);
+  GlobalElectricField_.assign(static_cast<size_t>(3*nInteriorCells),0.0);
+  GlobalCellPresence_.assign(static_cast<size_t>(nInteriorCells),0);
+
+  const long int nPackedLocal=PackOwnedInteriorFields_(
+      nodes,magneticFieldDataOffset,electricFieldDataOffset,
+      plasmaVelocityDataOffset,GlobalMagneticField_,GlobalElectricField_,
+      GlobalCellPresence_);
+
+  // Replicate only the compact physical fields and one integer validity entry per
+  // interior cell.  No cDataBlockAMR, center-node state vector, or ghost cell is
+  // allocated by this operation.
+  AllreduceDoubleVectorInPlace_(GlobalMagneticField_);
+  AllreduceDoubleVectorInPlace_(GlobalElectricField_);
+  AllreduceIntVectorInPlace_(GlobalCellPresence_);
+
+  long int nPackedGlobal=0;
+  MPI_Allreduce((void*)&nPackedLocal,&nPackedGlobal,1,MPI_LONG,MPI_SUM,
+                MPI_GLOBAL_COMMUNICATOR);
+
+  long int nMissing=0,nDuplicate=0;
+  for (long int c=0;c<nInteriorCells;c++) {
+    const int count=GlobalCellPresence_[static_cast<size_t>(c)];
+
+    if (count==0) nMissing++;
+    else if (count>1) nDuplicate++;
+
+    // Average defensively before reporting duplicate ownership.  A duplicate is still
+    // fatal below, but this keeps the arrays finite for debugger inspection.
+    if (count>1) {
+      const double inv=1.0/static_cast<double>(count);
+      for (int d=0;d<3;d++) {
+        GlobalMagneticField_[static_cast<size_t>(3*c+d)]*=inv;
+        GlobalElectricField_[static_cast<size_t>(3*c+d)]*=inv;
+      }
+    }
+  }
+
+  stats.usedLeafBlocks=nUsedLeafBlocks;
+  stats.ownerInteriorCells=nPackedGlobal;
+  stats.expectedInteriorCells=nInteriorCells;
+  stats.missingInteriorCells=nMissing;
+  stats.duplicateInteriorCells=nDuplicate;
+  stats.magneticFieldBytes=static_cast<long int>(GlobalMagneticField_.size()*sizeof(double));
+  stats.electricFieldBytes=static_cast<long int>(GlobalElectricField_.size()*sizeof(double));
+  stats.electricFieldReadFromBuffer=(electricFieldDataOffset>=0);
+  stats.electricFieldDerivedFromVelocity=
+      ((electricFieldDataOffset<0)&&(plasmaVelocityDataOffset>=0));
+
+  if ((nPackedGlobal!=nInteriorCells)||(nMissing!=0)||(nDuplicate!=0)) {
+    std::ostringstream msg;
+    msg << "[" << tag << "] compact global field gather is inconsistent: ownerCells="
+        << nPackedGlobal << ", expected=" << nInteriorCells
+        << ", missing=" << nMissing << ", duplicate=" << nDuplicate
+        << ". Every used interior cell must be supplied by exactly one AMPS owner rank.";
+    const std::string text=msg.str();
+    exit(__LINE__,__FILE__,text.c_str());
+  }
+
+  GlobalFieldsReady_=true;
+
+  if ((verbose==true)&&(PIC::ThisThread==0)) {
+    const double mib=1024.0*1024.0;
+    std::cout << "[" << tag << "] Prepared compact global cell-centered fields:"
               << " usedLeafBlocks=" << stats.usedLeafBlocks
-              << ", ownerInteriorCells=" << stats.ownerInteriorCells
-              << ", newlyAllocatedBlocksPerRank=" << stats.newlyAllocatedBlocksMin;
+              << ", interiorCells=" << stats.expectedInteriorCells
+              << ", B=" << stats.magneticFieldBytes/mib << " MiB"
+              << ", E=" << stats.electricFieldBytes/mib << " MiB"
+              << ", ESource=";
 
-    if (stats.newlyAllocatedBlocksMax!=stats.newlyAllocatedBlocksMin) {
-      std::cout << ".." << stats.newlyAllocatedBlocksMax;
-    }
+    if (stats.electricFieldReadFromBuffer) std::cout << "cell buffer";
+    else if (stats.electricFieldDerivedFromVelocity) std::cout << "-VxB";
+    else std::cout << "zero";
 
-    std::cout << ", missingGhostCellsPerRank=" << stats.missingGhostCellsMin;
-
-    if (stats.missingGhostCellsMax!=stats.missingGhostCellsMin) {
-      std::cout << ".." << stats.missingGhostCellsMax;
-    }
-
-    std::cout << ".\n";
+    std::cout << ". No nonlocal AMR blocks were allocated.\n";
     std::cout.flush();
   }
 
   return stats;
+}
+
+MaterializationStats MaterializeCellCenteredMagneticFieldForCutoff(
+    const char* diagnosticTag,long int magneticFieldDataOffset,bool verbose) {
+  return AssembleCellCenteredFieldsForCutoff(
+      diagnosticTag,magneticFieldDataOffset,-1,-1,verbose);
+}
+
+bool GetCellCenteredMagneticField(cAMRNode* node,int i,int j,int k,double* B) {
+  return GetCellCenteredField_(node,i,j,k,B,GlobalMagneticField_,"magnetic field");
+}
+
+bool GetCellCenteredElectricField(cAMRNode* node,int i,int j,int k,double* E) {
+  return GetCellCenteredField_(node,i,j,k,E,GlobalElectricField_,"electric field");
+}
+
+bool InterpolateMagneticField(const double* x,cAMRNode* node,double* B) {
+  return InterpolateField_(x,node,B,GlobalMagneticField_,"magnetic field");
+}
+
+bool InterpolateElectricField(const double* x,cAMRNode* node,double* E) {
+  return InterpolateField_(x,node,E,GlobalElectricField_,"electric field");
+}
+
+bool GlobalFieldsReady() {
+  return GlobalFieldsReady_;
+}
+
+long int GlobalCellCount() {
+  return GlobalInteriorCellCount_;
+}
+
+void ClearGlobalFields() {
+  GlobalFieldsReady_=false;
+  GlobalUsedLeafBlocks_=0;
+  GlobalInteriorCellCount_=0;
+  GlobalMagneticField_.clear();
+  GlobalElectricField_.clear();
+  GlobalCellPresence_.clear();
+}
+
+long int RedefineGlobalMagneticField(
+    const char* diagnosticTag,
+    void (*fieldCallback)(double*,double*),
+    bool verbose) {
+
+  const std::string tag=SafeTag_(diagnosticTag);
+  if (fieldCallback==NULL) return 0;
+
+  if ((PIC::Mesh::mesh==NULL)||(PIC::Mesh::mesh->rootTree==NULL)) {
+    const std::string msg="["+tag+"] global magnetic-field redefinition called before the AMR tree is initialized.";
+    exit(__LINE__,__FILE__,msg.c_str());
+  }
+
+  GlobalFieldsReady_=false;
+  ResetTreeTempIds_(PIC::Mesh::mesh->rootTree);
+
+  long int nUsedLeafBlocks=0;
+  AssignGlobalLeafTempIds_(PIC::Mesh::mesh->rootTree,nUsedLeafBlocks);
+
+  std::vector<cAMRNode*> nodes;
+  nodes.reserve(static_cast<size_t>(nUsedLeafBlocks));
+  CollectUsedLeafNodes_(PIC::Mesh::mesh->rootTree,nodes);
+
+  const long int nInteriorCells=nUsedLeafBlocks*InteriorCellsPerBlock_();
+  GlobalUsedLeafBlocks_=nUsedLeafBlocks;
+  GlobalInteriorCellCount_=nInteriorCells;
+  GlobalMagneticField_.assign(static_cast<size_t>(3*nInteriorCells),0.0);
+  GlobalElectricField_.assign(static_cast<size_t>(3*nInteriorCells),0.0);
+  GlobalCellPresence_.assign(static_cast<size_t>(nInteriorCells),1);
+
+  double x[3],b[3];
+
+  for (std::vector<cAMRNode*>::const_iterator it=nodes.begin();it!=nodes.end();++it) {
+    cAMRNode* node=*it;
+    const double dx[3]={
+      (node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_,
+      (node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_,
+      (node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_};
+
+    for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+      for (int j=0;j<_BLOCK_CELLS_Y_;j++) {
+        for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+          x[0]=node->xmin[0]+(i+0.5)*dx[0];
+          x[1]=node->xmin[1]+(j+0.5)*dx[1];
+          x[2]=node->xmin[2]+(k+0.5)*dx[2];
+          fieldCallback(x,b);
+
+          const long int c=GlobalCellIndex_(node,i,j,k);
+          GlobalMagneticField_[static_cast<size_t>(3*c+0)]=b[0];
+          GlobalMagneticField_[static_cast<size_t>(3*c+1)]=b[1];
+          GlobalMagneticField_[static_cast<size_t>(3*c+2)]=b[2];
+        }
+      }
+    }
+  }
+
+  GlobalFieldsReady_=true;
+
+  if ((verbose==true)&&(PIC::ThisThread==0)) {
+    std::cout << "[" << tag << "] Replaced compact global B field from callback:"
+              << " usedLeafBlocks=" << nUsedLeafBlocks
+              << ", interiorCells=" << nInteriorCells
+              << ". E was reset to zero; no AMR blocks were allocated.\n";
+    std::cout.flush();
+  }
+
+  return nInteriorCells;
 }
 
 long int RedefineAllAllocatedMagneticField(
@@ -468,75 +576,12 @@ long int RedefineAllAllocatedMagneticField(
     bool allocateMissingBlocks,
     bool verbose) {
 
-  const std::string tag = SafeTag_(diagnosticTag);
-
-  if (fieldCallback==NULL) return 0;
-
-  if (PIC::Mesh::mesh==NULL || PIC::Mesh::mesh->rootTree==NULL) {
-    const std::string msg = "[" + tag + "] magnetic-field redefinition called before the AMR mesh is initialized.";
-    exit(__LINE__,__FILE__,msg.c_str());
-  }
-
-  if (magneticFieldDataOffset<0) {
-    const std::string msg = "[" + tag + "] magnetic-field redefinition received a negative B-field data offset.";
-    exit(__LINE__,__FILE__,msg.c_str());
-  }
-
-  long int nUsedLeafBlocks=0;
-  AssignGlobalLeafTempIds_(PIC::Mesh::mesh->rootTree,nUsedLeafBlocks);
-
-  std::vector<cAMRNode*> nodes;
-  nodes.reserve(static_cast<size_t>(std::max(static_cast<long int>(0),nUsedLeafBlocks)));
-  CollectUsedLeafNodes_(PIC::Mesh::mesh->rootTree,nodes);
-
-  long int nNewlyAllocatedBlocks=0;
-  if (allocateMissingBlocks==true) {
-    nNewlyAllocatedBlocks = AllocateMissingBlocks_(nodes);
-  }
-
-  long int nCells=0;
-  double x[3],b[3];
-
-  for (std::vector<cAMRNode*>::const_iterator it=nodes.begin();it!=nodes.end();++it) {
-    cAMRNode *node = *it;
-    if (node->block==NULL) continue;
-
-    for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
-      for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) {
-        for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
-          PIC::Mesh::cDataCenterNode *cell =
-              node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
-
-          if (cell==NULL) continue;
-
-          cell->GetX(x);
-          fieldCallback(x,b);
-          std::memcpy(cell->GetAssociatedDataBufferPointer()+magneticFieldDataOffset,
-                      b,3*sizeof(double));
-          nCells++;
-        }
-      }
-    }
-  }
-
-  long int nCellsGlobal=0;
-  long int nAllocatedMin=0,nAllocatedMax=0;
-  MPI_Allreduce((void*)&nCells,&nCellsGlobal,1,MPI_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce((void*)&nNewlyAllocatedBlocks,&nAllocatedMin,1,MPI_LONG,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce((void*)&nNewlyAllocatedBlocks,&nAllocatedMax,1,MPI_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
-
-  if ((verbose==true) && (PIC::ThisThread==0)) {
-    std::cout << "[" << tag << "] Redefined cell-centered B field on replicated cutoff mesh:"
-              << " usedLeafBlocks=" << nUsedLeafBlocks
-              << ", localCellsOnRank0=" << nCells
-              << ", totalCellsOverRanks=" << nCellsGlobal
-              << ", newlyAllocatedBlocksPerRank=" << nAllocatedMin;
-    if (nAllocatedMax!=nAllocatedMin) std::cout << ".." << nAllocatedMax;
-    std::cout << ".\n";
-    std::cout.flush();
-  }
-
-  return nCells;
+  // Preserve the old function signature for source compatibility.  The two arguments
+  // below described writes into replicated AMPS cell buffers; compact-array operation
+  // deliberately ignores them and never allocates a nonlocal block.
+  (void)magneticFieldDataOffset;
+  (void)allocateMissingBlocks;
+  return RedefineGlobalMagneticField(diagnosticTag,fieldCallback,verbose);
 }
 
 } // namespace GlobalMagneticField

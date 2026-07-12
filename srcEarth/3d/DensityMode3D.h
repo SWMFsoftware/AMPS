@@ -7,9 +7,9 @@
 // This module intentionally mirrors the physics of gridless/DensityGridless.cpp:
 // it computes energetic-particle density and flux from backward trajectory
 // transmissivity, not from forward Monte-Carlo residence-time sampling.  The only
-// intended difference is the magnetic-field backend: Mode3D reads the cell-centered
-// magnetic field already materialized on the AMPS AMR mesh, while gridless evaluates
-// Tsyganenko/dipole fields directly at every trajectory step.
+// intended difference is the magnetic-field backend: Mode3D interpolates compact
+// global cell-centered arrays with a decomposition-independent row stencil, while
+// gridless evaluates Tsyganenko/dipole fields directly at every trajectory step.
 //
 //======================================================================================
 

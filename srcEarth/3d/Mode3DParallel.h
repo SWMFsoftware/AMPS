@@ -13,7 +13,7 @@ namespace Mode3D {
 // Shared intra-rank backend used by mesh-backed backward products in Mode3D.
 // The same controls intentionally drive cutoff rigidity and density/flux so a
 // single AMPS_PARAM.in deck selects the backend for all expensive backtracking
-// products that operate on the already-materialized AMR magnetic-field snapshot.
+// products that operate on the already-assembled compact global field snapshot.
 enum class ParallelBackend {
   OPENMP,   // OpenMP team inside each MPI rank.
   THREADS,  // Direct std::thread worker pool inside each MPI rank.

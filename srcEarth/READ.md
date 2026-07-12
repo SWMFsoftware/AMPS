@@ -455,17 +455,13 @@ T05
 TA16
 ```
 
-The field is first written into owner-rank DATAFILE cell buffers. Then `GlobalMagneticField::MaterializeCellCenteredMagneticFieldForCutoff()` assigns dense leaf IDs, allocates missing leaf blocks on all MPI ranks, gathers owner-cell B values, and fills all replicated blocks/ghost cells. After that step, the normal AMPS interpolation stencil can be used from any MPI rank.
+The field is first written into owner-rank DATAFILE cell buffers. Then `GlobalMagneticField::AssembleCellCenteredFieldsForCutoff()` resets and assigns dense `node->Temp_ID` values, gathers owner-cell B/E values into compact global arrays, and verifies exactly one owner contribution per physical cell. No nonlocal AMR blocks or ghost-cell state vectors are allocated. Field evaluation uses the decomposition-independent AMPS row stencil.
 
 ### 5.3 SWMF-coupled Mode3D magnetic fields
 
 In coupled mode, the field comes from the SWMF coupler data buffer, not from standalone Tsyganenko/DIPOLE initialization.
 
-The same global materialization helper is used, but the source offset is:
-
-```cpp
-PIC::CPLR::SWMF::MagneticFieldOffset
-```
+The same compact global-field helper is used. B is read from `PIC::CPLR::SWMF::MagneticFieldOffset`; E is reconstructed from `PIC::CPLR::SWMF::BulkVelocityOffset` as `E = -v x B`.
 
 ### 5.4 Electric field options
 
@@ -490,7 +486,7 @@ Gridless mode does not need a field mesh. Work is distributed over observation l
 
 ### 6.2 Standalone Mode3D
 
-Standalone Mode3D no longer uses independent private MPI domains for cutoff calculations. It uses the normal distributed AMPS mesh initialization and then builds a replicated read-only magnetic-field snapshot for tracing.
+Standalone Mode3D no longer uses independent private MPI domains for cutoff calculations. It uses the normal distributed AMPS mesh initialization and then assembles compact global B/E arrays for tracing.
 
 The intended sequence is:
 
@@ -499,15 +495,15 @@ PIC::InitMPI()
 amps_init_mesh()
 amps_init()
 InitMeshFields()
-GlobalMagneticField::MaterializeCellCenteredMagneticFieldForCutoff()
+GlobalMagneticField::AssembleCellCenteredFieldsForCutoff()
 RunCutoffRigidity() and/or RunDensityAndFlux()
 ```
 
-This gives all ranks access to the global B field while preserving the normal AMPS MPI domain decomposition during initialization.
+This gives all ranks access to global B/E values through row-stencil interpolation while preserving the normal AMPS block decomposition and avoiding replicated blocks.
 
 ### 6.3 SWMF coupled
 
-In coupled mode, the global B-field materialization is repeated for every accepted SWMF/PT snapshot before the backward products are computed.
+In coupled mode, compact B/E assembly is repeated for every accepted SWMF/PT snapshot before the backward products are computed.
 
 ### 6.4 Intra-rank shared-memory backends for Mode3D backward products
 
