@@ -26,72 +26,113 @@ Use cases
    actual P/F states.
 2. Run many short serial tests concurrently without changing the individual
    test wrappers.
-3. Run MPI/OpenMP AMPS tests concurrently while avoiding CPU oversubscription.
-   This is important for commands such as
+3. Run MPI/OpenMP AMPS tests concurrently while avoiding physical memory
+   oversubscription, by watching real available memory instead of a static
+   per-command CPU estimate.  This matters for commands such as
 
        srcEarth/test/C3/run_C3.py -np 4 -nt 16
 
-   where one command can already consume 64 CPU execution slots.
+   where several such commands running at once can exhaust physical memory
+   even though nothing here changes how many ranks or threads any one of
+   them uses.
 4. Keep per-test provenance by updating each test's ``last pass:`` commit id
    after successful command execution.
 
 Scheduling algorithm
 --------------------
-The runner uses two independent throttles:
+Concurrency is governed by two independent things:
 
-* Command throttle: ``-j/--jobs`` is a traditional asyncio semaphore limiting
-  how many test commands can be active at once.  This preserves the old behavior
-  and prevents launching an unbounded number of subprocesses.
+* ``-j``/``--jobs`` is a hard ceiling on how many commands may be running at
+  once.
 
-* Resource throttle: in ``--resource-mode auto`` each command is assigned an
-  estimated slot weight.  The estimate is parsed from common AMPS/MPI wrapper
-  options, especially ``-np``/``--np`` and ``-nt``/``--nt``.  A command with
-  ``-np 4 -nt 16`` requests ``4*16 = 64`` slots.  The weighted slot limiter only
-  launches a command when the current free-slot count is large enough.
+* A physical-memory ramp-up gate.  Commands are never rewritten: every test
+  always runs with exactly the ``-np``/``-nt`` (or any other options) it was
+  written with.  Instead of estimating CPU cost ahead of time, the runner
+  watches real memory headroom and paces new launches against it:
 
-The two throttles are intentionally combined.  For example, ``-j 8 --max-slots
-128`` allows up to eight active commands, but only if their estimated total CPU
-slot use stays below 128.  This permits safe concurrency among small tests while
-preventing several large MPI/OpenMP jobs from starting together and failing due
-to thread/process oversubscription.
+    1. Start a test.
+    2. Wait ``--memory-check-interval`` seconds (default 60).
+    3. Check available physical memory. If more than
+       ``--min-free-memory-fraction`` (default 0.5, i.e. half) of total
+       physical memory is still available, start another test.
+    4. Repeat until ``-j`` tests are running concurrently.
 
-Slot detection and fallbacks
-----------------------------
-If ``--max-slots`` is not supplied, the runner tries to infer the allocation from
-common scheduler variables such as ``SLURM_CPUS_ON_NODE``, ``PBS_NP``, ``NSLOTS``,
-or from the number of entries in ``PBS_NODEFILE``.  If no scheduler allocation is
-visible, it falls back to ``os.cpu_count()``.  The environment variable
-``TEST_RUNNER_MAX_SLOTS`` can be used to override this detection without changing
-command lines.
+  The only launches exempt from this gate are ones where nothing of this
+  runner's is currently running: the very first test of the run, and any
+  later launch that happens to start right after the pool has fully drained
+  back to zero.  In both cases there is no in-flight test to pace against, so
+  waiting out a stale timer would just be dead time; the runner launches
+  immediately (after a best-effort memory reading for display) and the
+  pacing clock restarts from that launch.  Every other launch -- ramping up
+  toward ``-j`` while other tests are still running, or backfilling a slot
+  next to tests that are still running -- waits out the interval-and-headroom
+  check described above.  If memory is too tight, the runner keeps waiting
+  and rechecking on that cadence rather than giving up: unlike a fixed
+  CPU-slot pool, memory headroom can recover on its own as other tests
+  finish or the kernel reclaims cache, so there is nothing to deadlock on.
 
-The slot estimator is deliberately conservative and non-invasive: it never
-rewrites a test command.  If a command does not contain recognizable MPI/thread
-options, ``--default-np`` and ``--default-nt`` are used, both defaulting to 1.
-If an individual command requests more slots than the configured pool, it is
-allowed to acquire the whole pool and run alone rather than deadlocking forever.
+  One consequence worth knowing: concurrency can only build up between tests
+  that are actually running at the same time the gate re-checks.  A test
+  that finishes faster than ``--memory-check-interval`` never gets a sibling
+  launched next to it -- by the time the next launch is allowed, it has
+  already exited, so that pair effectively runs serially regardless of
+  ``-j``.  For AMPS's MPI/OpenMP tests (tens of seconds to tens of minutes)
+  this is rarely an issue at the 60s default; a validation list dominated by
+  short/cheap tests will see less concurrency than ``-j`` suggests unless
+  ``--memory-check-interval`` is lowered to something shorter than those
+  tests' typical runtime.
+
+An earlier version of this runner estimated CPU cost from ``-np``/``-nt`` and
+used it both to cap concurrency and to silently lower a test's ``-nt`` so more
+tests would fit an assumed CPU budget. That changed what was actually being
+validated -- a test's reference P/F result reflects the process/thread count
+it was authored and last validated with, not whatever a scheduling formula
+computed for a given ``-j`` -- and the CPU estimate never modeled memory,
+which is what concurrently running MPI ranks actually contend for regardless
+of how many OpenMP threads each rank uses. This version tracks only real
+memory headroom and never touches a test's command line. Pass
+``--no-memory-gate`` to fall back to plain ``-j``-limited concurrency with no
+pacing or memory checks at all (every test launches as soon as a ``-j`` slot
+is free) -- also needed on systems without ``/proc/meminfo``.
+
+Memory detection
+----------------
+Available memory is read from ``/proc/meminfo``'s ``MemAvailable`` field,
+which already accounts for reclaimable page cache/buffers and is a much
+better estimate of "how much can a new allocation actually get" than raw free
+memory. Kernels too old to report ``MemAvailable`` fall back to ``MemFree +
+Buffers + Cached``. This is Linux-specific; on a system without
+``/proc/meminfo`` the runner exits immediately with an explanatory error
+before running anything, unless ``--no-memory-gate`` is given.
 
 Thread environment policy
 -------------------------
 By default the runner does not alter ``OMP_NUM_THREADS`` or BLAS thread-count
-environment variables.  Passing ``--set-thread-env`` sets those variables for
-each command to the estimated ``-nt`` value, which can reduce hidden nested
-threading in libraries.  Existing values are preserved unless
-``--overwrite-thread-env`` is also supplied.
+environment variables. Passing ``--set-thread-env`` sets those variables for
+each command to its own parsed ``-nt`` value, which can reduce hidden nested
+threading in libraries. Existing values are preserved unless
+``--overwrite-thread-env`` is also supplied. This never changes what ``-nt``
+a command is launched with; it only sets environment variables to match the
+value the command already declares.
 
 Progress and result handling
 ----------------------------
-The runner reports progress in two places.  First, when a command has passed the
-command-count and resource-count throttles and is actually being launched, it
-prints a ``[START]`` line.  This is important for resource-aware scheduling: a
-large test may run alone for a long time while other tests wait for slots, and a
-silent terminal can otherwise look like a hung runner.  Second, as soon as each
-command finishes, the runner prints the historical completion line beginning with
-``[OK]`` or ``[MISMATCH]``.  That completion line is intentionally kept compatible
-with the original runner output.
+The runner reports progress in three places. First, when a command has
+passed the ``-j`` job-count limit and the memory gate and is actually being
+launched, it prints a ``[START]`` line together with the memory headroom
+observed at that moment. Second, if the memory gate is currently blocking the
+next launch, the runner prints a ``[WAITING]`` line on the same cadence as
+``--memory-check-interval`` showing the most recently observed free-memory
+fraction, so a terminal that is simply waiting out the gate does not look
+like a hung runner. Third, as soon as each command finishes, the runner
+prints the historical completion line beginning with ``[OK]`` or
+``[MISMATCH]``; that line is intentionally kept compatible with the original
+runner output.
 
-The process exit status is converted to actual P/F.  Timeouts and launch errors
-are treated as actual F.  The full JSON/CSV reports include the slot estimate and
-acquired slot count for each test.  Two triage reports are also written:
+The process exit status is converted to actual P/F. Timeouts and launch
+errors are treated as actual F. The full JSON/CSV reports include each
+test's parsed ``-np``/``-nt`` and the physical-memory reading observed at the
+moment it was launched. Two triage reports are also written:
 
   <report-prefix>_to_address.txt/.csv
       tests whose actual P/F result does not match the reference P/F marker;
@@ -100,7 +141,7 @@ acquired slot count for each test.  Two triage reports are also written:
       all commands that returned actual F, including expected-failure tests.
 
 Use ``--update-last-pass`` to rewrite the ``last pass:`` line of each test whose
-command actually exited 0 on this run.  Existing metadata lines are updated in
+command actually exited 0 on this run. Existing metadata lines are updated in
 place; missing metadata lines are inserted below the corresponding test command.
 This is independent of whether the result matched the reference marker: an
 F-marked test that unexpectedly exits 0 still gets its ``last pass:`` commit id
@@ -137,11 +178,6 @@ class TestCase:
 
 @dataclass
 class TestResult:
-    # requested_slots is the raw estimate from the command line, while
-    # effective_slots is the number actually acquired from the slot limiter.
-    # They differ only when a single command asks for more slots than the
-    # configured pool; in that case the command receives the full pool and runs
-    # alone.
     index: int
     line_no: int
     expected: str
@@ -152,74 +188,40 @@ class TestResult:
     elapsed_s: float
     command: str
     log_file: str
-    requested_slots: int = 1
-    effective_slots: int = 1
-    slot_details: str = ""
+    np_value: int = 1
+    nt_value: int = 1
+    np_nt_details: str = ""
+    mem_total_bytes: Optional[int] = None
+    mem_available_bytes_at_launch: Optional[int] = None
+    mem_available_fraction_at_launch: Optional[float] = None
     last_pass: Optional[str] = None
     last_pass_line_no: Optional[int] = None
+
+
+@dataclass
+class TestPlan:
+    """Per-test info the dispatcher and ``run_one_test`` need.
+
+    There is no launch-time command rewriting: ``np_value``/``nt_value`` are
+    parsed only for reporting and for ``--set-thread-env``. The command that
+    actually runs is always ``test.command``, unmodified.
+    """
+
+    test: TestCase
+    np_value: int
+    nt_value: int
+    np_nt_details: str
 
 
 LAST_PASS_RE = re.compile(r"^(?P<prefix>\s*last\s+pass\s*:\s*)(?P<value>.*)$", re.IGNORECASE)
 
 
-class WeightedSlotLimiter:
-    """Async weighted semaphore used to cap total estimated CPU slots.
-
-    ``asyncio.Semaphore`` only models one identical token per job.  That is not
-    enough for the AMPS validation suite because two commands can be very
-    different in cost: one may be a quick Python-only check, while another may
-    launch ``mpirun -np 4`` with 16 OpenMP threads per rank.  This class models
-    a pool of weighted slots instead.  Each test requests N slots; the coroutine
-    blocks until at least N slots are available, then subtracts N from the pool.
-
-    The class is intentionally minimal: it lives in this single script, uses one
-    ``asyncio.Condition`` for all waiters, and relies on the caller to release
-    exactly the number of slots returned by ``acquire``.
-    """
-
-    def __init__(self, capacity: int):
-        if capacity < 1:
-            raise ValueError("slot capacity must be >= 1")
-        self.capacity = capacity
-        self._available = capacity
-        self._cond = asyncio.Condition()
-
-    async def acquire(self, slots: int) -> int:
-        """Reserve up to ``slots`` CPU slots and return the acquired weight.
-
-        A command can request more slots than ``capacity`` if, for example, the
-        test list says ``-np 8 -nt 32`` but the current developer laptop exposes
-        only 16 CPUs.  Refusing to run such a command would be inconvenient, and
-        waiting for 256 free slots would deadlock.  Therefore a too-large command
-        is capped to ``capacity`` and runs exclusively.
-        """
-        effective_slots = min(max(1, int(slots)), self.capacity)
-        async with self._cond:
-            # Condition.wait() is used in a loop because multiple tests may wake
-            # up when one job finishes; only the first ones that fit should start.
-            while self._available < effective_slots:
-                await self._cond.wait()
-            self._available -= effective_slots
-        return effective_slots
-
-    async def release(self, slots: int) -> None:
-        """Return previously acquired slots and wake blocked launchers."""
-        effective_slots = min(max(1, int(slots)), self.capacity)
-        async with self._cond:
-            self._available += effective_slots
-            # Clamp defensively so a future bug in caller release accounting does
-            # not leave the limiter with more slots than its configured capacity.
-            if self._available > self.capacity:
-                self._available = self.capacity
-            self._cond.notify_all()
-
-
 def _parse_positive_int(text: str) -> Optional[int]:
     """Parse an integer-like value and reject zero/negative values.
 
-    Scheduler variables sometimes arrive as strings and some wrapper scripts pass
-    values that look like floats, e.g. ``"4.0"``.  Accepting ``int(float(x))``
-    makes the parser tolerant without allowing invalid nonpositive slot counts.
+    Some wrapper scripts pass values that look like floats, e.g. ``"4.0"``.
+    Accepting ``int(float(x))`` makes the parser tolerant without allowing
+    invalid nonpositive values.
     """
     try:
         value = int(float(str(text)))
@@ -229,13 +231,7 @@ def _parse_positive_int(text: str) -> Optional[int]:
 
 
 def _option_values(argv: List[str], names: Iterable[str]) -> List[str]:
-    """Return values for options that can appear as ``--x v`` or ``--x=v``.
-
-    This helper intentionally does not use argparse because the command belongs
-    to an arbitrary test runner, not to this script.  It performs a lightweight
-    scan that is sufficient for the AMPS wrappers and direct ``mpirun`` commands
-    in the validation list.
-    """
+    """Return values for options that can appear as ``--x v`` or ``--x=v``."""
     names = set(names)
     values: List[str] = []
     i = 0
@@ -263,35 +259,20 @@ def _first_positive_option(argv: List[str], names: Iterable[str]) -> Optional[in
     return None
 
 
-def estimate_test_slots(command: str, default_np: int, default_nt: int) -> tuple[int, int, int, str]:
-    """Estimate MPI ranks, threads per rank, and total CPU slots for one test.
+def parse_np_nt(command: str, default_np: int, default_nt: int) -> tuple[int, int, str]:
+    """Parse MPI rank count and thread count out of a command, for reporting only.
 
-    The validation list can contain heterogeneous commands: Python wrappers,
-    direct ``mpirun`` invocations, shell fragments, or serial tools.  The runner
-    needs a cheap estimate before launching the command.  The convention used by
-    AMPS tests is that MPI rank count is carried by ``-np``/``--np`` or related
-    aliases, and OpenMP/thread count is carried by ``-nt``/``--nt`` or specific
-    AMPS options such as ``--mode3d-threads``.
-
-    The estimate is
-
-        slots = max(1, np * nt)
-
-    where missing values fall back to ``--default-np`` and ``--default-nt``.  The
-    function returns both the numeric estimate and a short string that is copied
-    into logs/reports so failed tests can be triaged together with their resource
-    assumptions.
+    This used to feed a CPU-slot scheduling estimate; it no longer does.
+    Nothing in this module uses the returned values to change scheduling or
+    to rewrite a command. They are kept so reports stay informative and so
+    ``--set-thread-env`` still has an ``-nt`` value to propagate into
+    thread-count environment variables.
     """
     try:
-        # shlex gives shell-like tokenization without executing the command.  It
-        # correctly handles quoted paths/arguments in most test-list entries.
         argv = shlex.split(command, posix=True)
     except ValueError:
-        # If a command has unmatched quotes, let the test itself fail later, but
-        # still produce a conservative slot estimate instead of aborting parsing.
         argv = command.split()
 
-    # Recognize both direct mpirun-style rank options and wrapper aliases.
     np_value = _first_positive_option(argv, ["-np", "-n", "--np", "--n", "--mpi-ranks"])
     nt_value = _first_positive_option(
         argv,
@@ -310,55 +291,18 @@ def estimate_test_slots(command: str, default_np: int, default_nt: int) -> tuple
     if nt_value is None:
         nt_value = max(1, default_nt)
 
-    slots = max(1, np_value * nt_value)
-    details = f"np={np_value}, nt={nt_value}, slots={slots}"
-    return np_value, nt_value, slots, details
-
-
-def detect_default_max_slots() -> int:
-    """Pick a conservative total slot count for the current batch run.
-
-    Priority order:
-    1. Explicit ``TEST_RUNNER_MAX_SLOTS`` override.
-    2. Common scheduler environment variables.
-    3. ``PBS_NODEFILE`` line count, which is common on Pleiades-style systems.
-    4. Local CPU count as a last resort for workstation/developer use.
-    """
-    for name in (
-        "TEST_RUNNER_MAX_SLOTS",
-        "SLURM_CPUS_ON_NODE",
-        "SLURM_CPUS_PER_TASK",
-        "PBS_NP",
-        "LSB_DJOB_NUMPROC",
-        "NSLOTS",
-    ):
-        value = os.environ.get(name)
-        parsed = _parse_positive_int(value) if value else None
-        if parsed is not None:
-            return parsed
-
-    # PBS_NODEFILE often contains one line per allocated CPU slot.
-    pbs_nodefile = os.environ.get("PBS_NODEFILE")
-    if pbs_nodefile:
-        try:
-            with open(pbs_nodefile, "r", encoding="utf-8", errors="replace") as f:
-                n = sum(1 for line in f if line.strip())
-            if n > 0:
-                return n
-        except OSError:
-            pass
-
-    return os.cpu_count() or 1
+    details = f"np={np_value}, nt={nt_value}"
+    return np_value, nt_value, details
 
 
 def set_thread_env(base_env: dict, nt: int, only_if_missing: bool) -> dict:
     """Return environment for one command with optional thread-count controls.
 
     AMPS wrappers normally receive ``-nt`` explicitly, but imported numerical
-    libraries can still start their own thread pools.  Setting these variables is
-    optional because some HPC environments already configure them carefully.
-    ``only_if_missing`` preserves existing settings unless the user requested
-    ``--overwrite-thread-env``.
+    libraries can still start their own thread pools. Setting these variables
+    is optional because some HPC environments already configure them
+    carefully. ``only_if_missing`` preserves existing settings unless the
+    user requested ``--overwrite-thread-env``.
     """
     env = base_env.copy()
     if nt < 1:
@@ -384,7 +328,7 @@ def parse_test_file(path: Path) -> List[TestCase]:
                 continue
 
             if line.startswith("!"):
-                # Section comments are not metadata.  Reset the pending command
+                # Section comments are not metadata. Reset the pending command
                 # so a later stray 'last pass:' line is reported clearly.
                 pending_metadata_test = None
                 continue
@@ -433,155 +377,225 @@ def safe_log_name(test: TestCase) -> str:
     return f"test_{test.index:03d}_line_{test.line_no}_{base}.log"
 
 
+def read_proc_meminfo(path: str = "/proc/meminfo") -> dict[str, int]:
+    """Parse /proc/meminfo into a dict of field name -> value in bytes."""
+    info: dict[str, int] = {}
+    unit_multiplier = {"b": 1, "kb": 1024, "mb": 1024**2, "gb": 1024**3}
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            if ":" not in line:
+                continue
+            key, _, rest = line.partition(":")
+            tokens = rest.split()
+            if not tokens:
+                continue
+            try:
+                value = int(tokens[0])
+            except ValueError:
+                continue
+            unit = tokens[1].lower() if len(tokens) > 1 else "kb"
+            info[key.strip()] = value * unit_multiplier.get(unit, 1024)
+    return info
+
+
+def read_memory_totals() -> tuple[int, int]:
+    """Return (total_bytes, available_bytes) for physical memory.
+
+    Uses ``/proc/meminfo``'s ``MemAvailable`` when present (Linux 3.14+),
+    which already accounts for reclaimable page cache/buffers and is a far
+    better estimate of real headroom than ``MemFree`` alone. Falls back to
+    ``MemFree + Buffers + Cached`` on older kernels. Raises ``RuntimeError``
+    with an actionable message if memory cannot be read at all (e.g.
+    non-Linux), so callers can fail fast instead of silently mis-scheduling.
+    """
+    try:
+        info = read_proc_meminfo()
+    except OSError as exc:
+        raise RuntimeError(
+            "could not read /proc/meminfo to track available physical memory "
+            "(memory tracking currently requires Linux); pass --no-memory-gate "
+            "to run with plain -j concurrency and no memory checks"
+        ) from exc
+
+    total = info.get("MemTotal")
+    if not total:
+        raise RuntimeError("/proc/meminfo did not report a usable MemTotal")
+
+    available = info.get("MemAvailable")
+    if available is None:
+        available = info.get("MemFree", 0) + info.get("Buffers", 0) + info.get("Cached", 0)
+
+    return total, available
+
+
+def format_bytes(n: int) -> str:
+    """Human-readable binary size, e.g. 134744072192 -> '125.5 GiB'."""
+    value = float(n)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if value < 1024.0:
+            return f"{value:.1f} {unit}"
+        value /= 1024.0
+    return f"{value:.1f} TiB"
+
+
+def build_test_plan(test: TestCase, *, default_np: int, default_nt: int) -> TestPlan:
+    np_value, nt_value, details = parse_np_nt(test.command, default_np, default_nt)
+    return TestPlan(test=test, np_value=np_value, nt_value=nt_value, np_nt_details=details)
+
+
 async def run_one_test(
-    test: TestCase,
+    plan: TestPlan,
     *,
-    job_semaphore: asyncio.Semaphore,
-    slot_limiter: Optional[WeightedSlotLimiter],
     workdir: Path,
     log_dir: Path,
     timeout_s: Optional[float],
     use_shell: bool,
     base_env: dict,
-    default_np: int,
-    default_nt: int,
     set_thread_env_vars: bool,
     preserve_thread_env: bool,
     print_start: bool,
+    mem_total_bytes: Optional[int],
+    mem_available_bytes: Optional[int],
 ) -> TestResult:
-    """Run one command after passing command-count and slot-count gates.
+    """Run one already-scheduled command, exactly as written in the test list.
 
-    The order is intentional: first acquire the simple job semaphore, then the
-    weighted slot limiter.  This keeps the number of coroutines waiting on CPU
-    slots bounded by ``-j`` while still preventing overcommit among the active
-    candidates.  Slot acquisition happens before the subprocess is created, so a
-    test never starts unless its estimated resources are available.
+    This coroutine does not wait on any throttle itself; ``run_all_tests``
+    decides when a ``-j`` slot and the memory gate both allow a launch, then
+    creates this task. Nothing here -- or anywhere else in this module --
+    ever rewrites ``plan.test.command``: it always runs with the same
+    ``-np``/``-nt``/other options it was authored with.
     """
-    _np, nt, requested_slots, slot_details = estimate_test_slots(test.command, default_np, default_nt)
-    effective_slots = requested_slots
+    test = plan.test
+    log_path = log_dir / safe_log_name(test)
+    start = time.monotonic()
+    exit_code: Optional[int] = None
+    timed_out = False
 
-    async with job_semaphore:
-        if slot_limiter is not None:
-            effective_slots = await slot_limiter.acquire(requested_slots)
-        try:
-            log_path = log_dir / safe_log_name(test)
-            start = time.monotonic()
-            exit_code: Optional[int] = None
-            timed_out = False
-            # Build a per-command environment after the slot estimate is known.
-            # The base environment is never mutated, so concurrently running tests
-            # cannot accidentally change each other's thread settings.
-            env = set_thread_env(base_env, nt, preserve_thread_env) if set_thread_env_vars else base_env
+    env = set_thread_env(base_env, plan.nt_value, preserve_thread_env) if set_thread_env_vars else base_env
 
-            if print_start:
-                # Print after both throttles have been acquired and immediately
-                # before the subprocess is created.  A command may spend a long
-                # time waiting for CPU slots in resource-aware mode; printing at
-                # this point makes it clear which tests are actually running.
-                print(
-                    f"[START] #{test.index:03d} line {test.line_no}: "
-                    f"slots={effective_slots}/{requested_slots}, "
-                    f"command={test.command}",
-                    flush=True,
-                )
+    mem_fraction = (
+        mem_available_bytes / mem_total_bytes
+        if (mem_total_bytes and mem_available_bytes is not None)
+        else None
+    )
 
-            with log_path.open("wb") as log:
-                header = (
-                    f"# Test {test.index} from line {test.line_no}\n"
-                    f"# Expected: {test.expected}\n"
-                    f"# Command: {test.command}\n"
-                    f"# Workdir: {workdir}\n"
-                    f"# Resource estimate: {slot_details}; acquired={effective_slots}\n"
-                    f"# Started: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                    f"{'=' * 80}\n"
-                )
-                log.write(header.encode("utf-8", errors="replace"))
-                log.flush()
-
-                try:
-                    if use_shell:
-                        # start_new_session=True makes timeout cleanup kill the
-                        # whole process group, including mpirun-launched children
-                        # when they remain in the same session.
-                        proc = await asyncio.create_subprocess_shell(
-                            test.command,
-                            cwd=str(workdir),
-                            stdout=log,
-                            stderr=asyncio.subprocess.STDOUT,
-                            env=env,
-                            start_new_session=True,
-                        )
-                    else:
-                        argv = shlex.split(test.command)
-                        if not argv:
-                            raise ValueError("empty command")
-                        proc = await asyncio.create_subprocess_exec(
-                            *argv,
-                            cwd=str(workdir),
-                            stdout=log,
-                            stderr=asyncio.subprocess.STDOUT,
-                            env=env,
-                            start_new_session=True,
-                        )
-
-                    try:
-                        exit_code = await asyncio.wait_for(proc.wait(), timeout=timeout_s)
-                    except asyncio.TimeoutError:
-                        timed_out = True
-                        try:
-                            os.killpg(proc.pid, signal.SIGTERM)
-                        except ProcessLookupError:
-                            pass
-                        try:
-                            await asyncio.wait_for(proc.wait(), timeout=10.0)
-                        except asyncio.TimeoutError:
-                            try:
-                                os.killpg(proc.pid, signal.SIGKILL)
-                            except ProcessLookupError:
-                                pass
-                            await proc.wait()
-                        exit_code = proc.returncode
-
-                except Exception as exc:  # launch failure is also a failed test
-                    log.write(f"\nERROR launching command: {exc}\n".encode("utf-8", errors="replace"))
-                    exit_code = None
-
-                elapsed = time.monotonic() - start
-                footer = (
-                    f"\n{'=' * 80}\n"
-                    f"# Finished: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                    f"# Elapsed seconds: {elapsed:.3f}\n"
-                    f"# Timed out: {timed_out}\n"
-                    f"# Exit code: {exit_code}\n"
-                )
-                log.write(footer.encode("utf-8", errors="replace"))
-
-            actual = "P" if (exit_code == 0 and not timed_out) else "F"
-            matched = actual == test.expected
-
-            return TestResult(
-                index=test.index,
-                line_no=test.line_no,
-                expected=test.expected,
-                actual=actual,
-                matched_reference=matched,
-                exit_code=exit_code,
-                timed_out=timed_out,
-                elapsed_s=elapsed,
-                command=test.command,
-                log_file=str(log_path),
-                requested_slots=requested_slots,
-                effective_slots=effective_slots,
-                slot_details=slot_details,
-                last_pass=test.last_pass,
-                last_pass_line_no=test.last_pass_line_no,
+    if print_start:
+        if mem_fraction is not None:
+            mem_note = (
+                f"mem_avail={mem_fraction:.0%} "
+                f"({format_bytes(mem_available_bytes)}/{format_bytes(mem_total_bytes)}), "
             )
-        finally:
-            # Release slots even if command launch fails, the test times out, or
-            # the Python wrapper raises.  Without this finally block, one failed
-            # launch could starve the remaining queued tests.
-            if slot_limiter is not None:
-                await slot_limiter.release(effective_slots)
+        else:
+            mem_note = ""
+        print(
+            f"[START] #{test.index:03d} line {test.line_no}: "
+            f"{mem_note}command={test.command}",
+            flush=True,
+        )
+
+    if mem_fraction is not None:
+        mem_line = (
+            f"# Memory at launch: {mem_fraction:.1%} available "
+            f"({format_bytes(mem_available_bytes)} / {format_bytes(mem_total_bytes)})\n"
+        )
+    else:
+        mem_line = "# Memory at launch: not tracked (--no-memory-gate)\n"
+
+    with log_path.open("wb") as log:
+        header = (
+            f"# Test {test.index} from line {test.line_no}\n"
+            f"# Expected: {test.expected}\n"
+            f"# Command: {test.command}\n"
+            f"# Workdir: {workdir}\n"
+            f"# {plan.np_nt_details}\n"
+            f"{mem_line}"
+            f"# Started: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"{'=' * 80}\n"
+        )
+        log.write(header.encode("utf-8", errors="replace"))
+        log.flush()
+
+        try:
+            if use_shell:
+                # start_new_session=True makes timeout cleanup kill the whole
+                # process group, including mpirun-launched children when they
+                # remain in the same session.
+                proc = await asyncio.create_subprocess_shell(
+                    test.command,
+                    cwd=str(workdir),
+                    stdout=log,
+                    stderr=asyncio.subprocess.STDOUT,
+                    env=env,
+                    start_new_session=True,
+                )
+            else:
+                argv = shlex.split(test.command)
+                if not argv:
+                    raise ValueError("empty command")
+                proc = await asyncio.create_subprocess_exec(
+                    *argv,
+                    cwd=str(workdir),
+                    stdout=log,
+                    stderr=asyncio.subprocess.STDOUT,
+                    env=env,
+                    start_new_session=True,
+                )
+
+            try:
+                exit_code = await asyncio.wait_for(proc.wait(), timeout=timeout_s)
+            except asyncio.TimeoutError:
+                timed_out = True
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=10.0)
+                except asyncio.TimeoutError:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    await proc.wait()
+                exit_code = proc.returncode
+
+        except Exception as exc:  # launch failure is also a failed test
+            log.write(f"\nERROR launching command: {exc}\n".encode("utf-8", errors="replace"))
+            exit_code = None
+
+        elapsed = time.monotonic() - start
+        footer = (
+            f"\n{'=' * 80}\n"
+            f"# Finished: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"# Elapsed seconds: {elapsed:.3f}\n"
+            f"# Timed out: {timed_out}\n"
+            f"# Exit code: {exit_code}\n"
+        )
+        log.write(footer.encode("utf-8", errors="replace"))
+
+    actual = "P" if (exit_code == 0 and not timed_out) else "F"
+    matched = actual == test.expected
+
+    return TestResult(
+        index=test.index,
+        line_no=test.line_no,
+        expected=test.expected,
+        actual=actual,
+        matched_reference=matched,
+        exit_code=exit_code,
+        timed_out=timed_out,
+        elapsed_s=elapsed,
+        command=test.command,
+        log_file=str(log_path),
+        np_value=plan.np_value,
+        nt_value=plan.nt_value,
+        np_nt_details=plan.np_nt_details,
+        mem_total_bytes=mem_total_bytes,
+        mem_available_bytes_at_launch=mem_available_bytes,
+        mem_available_fraction_at_launch=mem_fraction,
+        last_pass=test.last_pass,
+        last_pass_line_no=test.last_pass_line_no,
+    )
 
 
 async def run_all_tests(
@@ -592,65 +606,172 @@ async def run_all_tests(
     log_dir: Path,
     timeout_s: Optional[float],
     use_shell: bool,
-    resource_mode: str,
-    max_slots: int,
     default_np: int,
     default_nt: int,
     set_thread_env_vars: bool,
     preserve_thread_env: bool,
     print_start: bool,
+    memory_gate_enabled: bool,
+    min_free_memory_fraction: float,
+    memory_check_interval: float,
 ) -> List[TestResult]:
-    """Schedule all tests concurrently and return results in list order.
+    """Schedule tests behind a -j job-count cap and a physical-memory ramp-up gate.
 
-    All tasks are created immediately so asyncio can keep the pipeline full.
-    Actual subprocess launch is gated inside ``run_one_test`` by both the job
-    semaphore and, when enabled, the weighted slot limiter.  Results are printed
-    as soon as each test finishes, then sorted by test index before being written
-    to reports.
+    A launch into an empty pool -- the first test of the run, or any later
+    test that starts once nothing else is running -- always launches
+    immediately. Every other launch attempt -- ramping up toward ``jobs``
+    concurrent tests while others are still running, or backfilling a slot
+    next to tests that are still running -- must wait at least
+    ``memory_check_interval`` seconds since the previous launch attempt and
+    then observe more than ``min_free_memory_fraction`` of total physical
+    memory still available. Tests are launched in list order; there is no
+    per-test resource estimate to reorder around, since every test is
+    subject to exactly the same gate regardless of its own ``-np``/``-nt``.
     """
-    job_semaphore = asyncio.Semaphore(jobs)
-    slot_limiter = WeightedSlotLimiter(max_slots) if resource_mode == "auto" else None
     log_dir.mkdir(parents=True, exist_ok=True)
-
-    # Capture the parent environment once.  Each test gets either this dict or a
-    # copied/thread-limited variant derived from it.
     base_env = os.environ.copy()
-    tasks = [
-        asyncio.create_task(
-            run_one_test(
-                test,
-                job_semaphore=job_semaphore,
-                slot_limiter=slot_limiter,
-                workdir=workdir,
-                log_dir=log_dir,
-                timeout_s=timeout_s,
-                use_shell=use_shell,
-                base_env=base_env,
-                default_np=default_np,
-                default_nt=default_nt,
-                set_thread_env_vars=set_thread_env_vars,
-                preserve_thread_env=preserve_thread_env,
-                print_start=print_start,
-            )
-        )
-        for test in tests
-    ]
 
+    pending: List[TestPlan] = [
+        build_test_plan(test, default_np=default_np, default_nt=default_nt) for test in tests
+    ]
+    running: dict[asyncio.Task[TestResult], TestPlan] = {}
     results: List[TestResult] = []
-    for task in asyncio.as_completed(tasks):
-        result = await task
-        results.append(result)
-        status = "OK" if result.matched_reference else "MISMATCH"
-        # Keep this completion line compatible with the original runner.
-        # Several validation workflows grep for the leading [OK]/[MISMATCH]
-        # pattern, so detailed slot diagnostics remain in the reports/logs and
-        # in the [START] progress line rather than changing this status record.
-        print(
-            f"[{status}] #{result.index:03d} line {result.line_no}: "
-            f"expected {result.expected}, actual {result.actual}, "
-            f"exit={result.exit_code}, {result.elapsed_s:.1f}s",
-            flush=True,
+
+    last_check_time: Optional[float] = None
+    last_known_total: Optional[int] = None
+    last_known_available: Optional[int] = None
+
+    def try_gate() -> bool:
+        """Return True if a new test may launch right now.
+
+        A launch into an empty pool -- nothing of this runner's currently
+        running -- always launches immediately and unconditionally: this
+        covers the first test of the run, and any later test that starts
+        once everything before it has finished. There is no in-flight
+        launch to pace against in that case. Every other attempt must wait
+        at least ``memory_check_interval`` seconds since the previous
+        attempt (successful or not), then observe more than
+        ``min_free_memory_fraction`` of total physical memory free. A
+        transient failure to read /proc/meminfo during one of those later
+        checks is treated as "not enough information to launch yet" rather
+        than aborting the run, and is retried on the same cadence.
+
+        Whenever this performs an actual memory read, it records the
+        reading in the enclosing ``last_known_*`` variables so callers (the
+        [START] line and TestResult) can report it even on calls that
+        return False. It also prints a [WAITING] line itself whenever a
+        real check comes back insufficient -- this is the only place that
+        happens, since a blocked launch can occur equally whether other
+        tests are currently running (the common case once the pool is warm)
+        or not, and only this function knows when a check was actually
+        performed rather than skipped for still being inside the pacing
+        window.
+        """
+        nonlocal last_check_time, last_known_total, last_known_available
+        if not memory_gate_enabled:
+            return True
+
+        now = time.monotonic()
+        if not running:
+            # Nothing of ours is currently running, so there is no ongoing
+            # ramp-up to pace against: launch immediately. This always covers
+            # the very first test of the run, and also re-covers any later
+            # point where the pool has fully drained before the next test
+            # starts -- there is no in-flight memory footprint left over from
+            # a stale pacing timer to wait out. Still take a best-effort
+            # reading for display; it does not gate this launch.
+            last_check_time = now
+            try:
+                last_known_total, last_known_available = read_memory_totals()
+            except RuntimeError:
+                pass
+            return True
+
+        if last_check_time is not None and (now - last_check_time) < memory_check_interval:
+            return False
+
+        last_check_time = now
+        try:
+            total, available = read_memory_totals()
+        except RuntimeError as exc:
+            if print_start:
+                print(
+                    f"[WAITING] memory check failed ({exc}); will retry in "
+                    f"{memory_check_interval:.0f}s ({len(running)} test(s) currently running)",
+                    flush=True,
+                )
+            return False
+        last_known_total, last_known_available = total, available
+        if available > min_free_memory_fraction * total:
+            return True
+        if print_start:
+            print(
+                f"[WAITING] {available / total:.0%} of physical memory free "
+                f"(need > {min_free_memory_fraction:.0%}); holding off starting "
+                f"another test, rechecking in {memory_check_interval:.0f}s "
+                f"({len(running)} test(s) currently running)",
+                flush=True,
+            )
+        return False
+
+    while pending or running:
+        while pending and len(running) < jobs:
+            if not try_gate():
+                break
+            plan = pending.pop(0)
+            task = asyncio.create_task(
+                run_one_test(
+                    plan,
+                    workdir=workdir,
+                    log_dir=log_dir,
+                    timeout_s=timeout_s,
+                    use_shell=use_shell,
+                    base_env=base_env,
+                    set_thread_env_vars=set_thread_env_vars,
+                    preserve_thread_env=preserve_thread_env,
+                    print_start=print_start,
+                    mem_total_bytes=last_known_total,
+                    mem_available_bytes=last_known_available,
+                )
+            )
+            running[task] = plan
+
+        if not running:
+            # Defensive fallback, not expected in normal operation: try_gate()
+            # always admits a launch into an empty pool unconditionally, so
+            # reaching here with pending tests left would mean that invariant
+            # broke. Don't crash the run over a scheduling bug -- wait a
+            # moment and retry -- but say so loudly, since it would indicate
+            # something worth investigating rather than ordinary memory
+            # pressure (which is already reported from inside try_gate).
+            print(
+                "[WAITING] scheduler made no progress this cycle although the "
+                "pool is empty (unexpected); retrying",
+                flush=True,
+            )
+            await asyncio.sleep(memory_check_interval if memory_gate_enabled else 1.0)
+            continue
+
+        if pending and len(running) < jobs and memory_gate_enabled and last_check_time is not None:
+            wait_timeout = max(0.1, memory_check_interval - (time.monotonic() - last_check_time))
+        else:
+            wait_timeout = None
+
+        done, _pending_tasks = await asyncio.wait(
+            running.keys(), timeout=wait_timeout, return_when=asyncio.FIRST_COMPLETED
         )
+
+        for task in done:
+            plan = running.pop(task)
+            result = await task
+            results.append(result)
+            status = "OK" if result.matched_reference else "MISMATCH"
+            print(
+                f"[{status}] #{result.index:03d} line {result.line_no}: "
+                f"expected {result.expected}, actual {result.actual}, "
+                f"exit={result.exit_code}, {result.elapsed_s:.1f}s",
+                flush=True,
+            )
 
     results.sort(key=lambda r: r.index)
     return results
@@ -677,13 +798,16 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
         "exit_code",
         "timed_out",
         "elapsed_s",
+        "command",
         "log_file",
-        "requested_slots",
-        "effective_slots",
-        "slot_details",
+        "np_value",
+        "nt_value",
+        "np_nt_details",
+        "mem_total_bytes",
+        "mem_available_bytes_at_launch",
+        "mem_available_fraction_at_launch",
         "last_pass",
         "last_pass_line_no",
-        "command",
     ]
 
     def write_csv(path: Path, rows: List[TestResult]) -> None:
@@ -693,6 +817,8 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
             for r in rows:
                 row = asdict(r)
                 row["elapsed_s"] = f"{r.elapsed_s:.6f}"
+                if r.mem_available_fraction_at_launch is not None:
+                    row["mem_available_fraction_at_launch"] = f"{r.mem_available_fraction_at_launch:.6f}"
                 writer.writerow(row)
 
     def write_txt(path: Path, title: str, rows: List[TestResult]) -> None:
@@ -704,6 +830,13 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
                 f.write("None.\n")
                 return
             for r in rows:
+                if r.mem_total_bytes and r.mem_available_bytes_at_launch is not None:
+                    mem_line = (
+                        f"  memory:   {r.mem_available_fraction_at_launch:.0%} available at launch "
+                        f"({format_bytes(r.mem_available_bytes_at_launch)} / {format_bytes(r.mem_total_bytes)})\n"
+                    )
+                else:
+                    mem_line = "  memory:   not tracked (--no-memory-gate)\n"
                 f.write(
                     f"#{r.index:03d} line {r.line_no}\n"
                     f"  expected: {r.expected}\n"
@@ -711,7 +844,8 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
                     f"  exit:     {r.exit_code}\n"
                     f"  timeout:  {r.timed_out}\n"
                     f"  elapsed:  {r.elapsed_s:.3f} s\n"
-                    f"  slots:    {r.effective_slots}/{r.requested_slots} ({r.slot_details})\n"
+                    f"  {r.np_nt_details}\n"
+                    f"{mem_line}"
                     f"  log:      {r.log_file}\n"
                     f"  command:  {r.command}\n\n"
                 )
@@ -733,6 +867,7 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
         actual_failed_txt_path,
         actual_failed_csv_path,
     )
+
 
 def get_git_commit_id(workdir: Path) -> str:
     """Return the current git commit hash for the requested working tree."""
@@ -763,7 +898,7 @@ def update_last_pass_entries(test_file: Path, tests: List[TestCase], results: Li
     exited 0 on this run.
 
     This tracks the literal exit status of each command (actual == "P"),
-    independent of the test's P/F marker in the list.  An F-marked test that
+    independent of the test's P/F marker in the list. An F-marked test that
     unexpectedly exits 0 still gets its 'last pass:' commit id updated, since
     the command did in fact pass; it will also appear in the to-address report
     as an unexpected pass so the marker itself can be revisited separately.
@@ -860,7 +995,7 @@ def print_final_summary(
         print("\nTests to address: none; all actual results match the reference P/F markers.")
 
     # This second list is useful when the reference file intentionally contains
-    # expected-failure tests.  It shows every command that physically failed,
+    # expected-failure tests. It shows every command that physically failed,
     # even when that failure matched an expected F marker.
     if actual_failed:
         print("\nAll actual failed commands, including expected F tests:")
@@ -871,6 +1006,7 @@ def print_final_summary(
                 f"exit={r.exit_code}, log={r.log_file}\n"
                 f"      {r.command}"
             )
+
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
@@ -889,47 +1025,68 @@ def main(argv: Optional[List[str]] = None) -> int:
         type=int,
         help="Number of tests to run concurrently; overrides the positional jobs value",
     )
-    # Resource-aware scheduling controls.  These are intentionally runner-level
-    # options rather than test-list syntax so existing validation lists keep
-    # working unchanged.
+    # Memory-aware scheduling controls. These are runner-level options rather
+    # than test-list syntax so existing validation lists keep working
+    # unchanged, and no test's -np/-nt is ever rewritten because of them.
     parser.add_argument(
-        "--resource-mode",
-        choices=["auto", "off"],
-        default="auto",
+        "--min-free-memory-fraction",
+        type=float,
+        default=0.5,
         help=(
-            "Resource-aware scheduling mode. auto reserves estimated CPU slots "
-            "from -np/-nt before launching each command; off keeps the old pure "
-            "command-count behavior. Default: auto"
+            "Before starting another concurrent test, require more than this "
+            "fraction of total physical memory (from /proc/meminfo's "
+            "MemAvailable) to still be free. Default: 0.5 (more than half)."
         ),
     )
     parser.add_argument(
-        "--max-slots",
-        type=int,
-        default=None,
+        "--memory-check-interval",
+        type=float,
+        default=60.0,
         help=(
-            "Maximum total CPU slots to run concurrently in --resource-mode auto; "
-            "default: TEST_RUNNER_MAX_SLOTS, scheduler allocation variables, "
-            "PBS_NODEFILE count, or os.cpu_count()"
+            "Seconds to wait after a test launch attempt before considering "
+            "another (giving a just-started test time to reach its "
+            "steady-state memory footprint), and how often to recheck while "
+            "waiting for memory to free up. A launch into an empty pool "
+            "(the first test of the run, or any later test that starts once "
+            "nothing else is running) is exempt and always starts "
+            "immediately, since there is no in-flight test to pace against. "
+            "Default: 60."
+        ),
+    )
+    parser.add_argument(
+        "--no-memory-gate",
+        action="store_true",
+        help=(
+            "Disable the physical-memory ramp-up gate; launch tests up to -j "
+            "immediately with no pacing or memory checks, like plain "
+            "job-count-limited concurrency. Also needed on systems without "
+            "/proc/meminfo."
         ),
     )
     parser.add_argument(
         "--default-np",
         type=int,
         default=1,
-        help="MPI rank estimate for commands that do not contain -np/--np; default: 1",
+        help=(
+            "MPI rank count assumed for commands without -np/--np; used only "
+            "for reporting and --set-thread-env, not for scheduling. Default: 1"
+        ),
     )
     parser.add_argument(
         "--default-nt",
         type=int,
         default=1,
-        help="thread estimate for commands that do not contain -nt/--nt; default: 1",
+        help=(
+            "Thread count assumed for commands without -nt/--nt; used only "
+            "for reporting and --set-thread-env, not for scheduling. Default: 1"
+        ),
     )
     parser.add_argument(
         "--set-thread-env",
         action="store_true",
         help=(
             "Set OMP_NUM_THREADS/OPENBLAS_NUM_THREADS/MKL_NUM_THREADS/NUMEXPR_NUM_THREADS "
-            "for each launched command to the estimated -nt value"
+            "for each launched command to its own parsed -nt value"
         ),
     )
     parser.add_argument(
@@ -972,8 +1129,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--no-start-progress",
         action="store_true",
         help=(
-            "Do not print [START] lines when commands acquire resources and launch; "
-            "completion [OK]/[MISMATCH] lines are still printed"
+            "Do not print [START]/[WAITING] lines when commands launch or the "
+            "memory gate blocks the next launch; completion [OK]/[MISMATCH] "
+            "lines are still printed"
         ),
     )
     parser.add_argument(
@@ -1005,11 +1163,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.error("--default-np must be >= 1")
     if args.default_nt < 1:
         parser.error("--default-nt must be >= 1")
-    # Resolve the total slot budget once at startup.  All test commands in this
-    # invocation share the same budget.
-    max_slots = args.max_slots if args.max_slots is not None else detect_default_max_slots()
-    if max_slots < 1:
-        parser.error("--max-slots must be >= 1")
+    if not (0.0 <= args.min_free_memory_fraction <= 1.0):
+        parser.error("--min-free-memory-fraction must be between 0 and 1")
+    if args.memory_check_interval < 0:
+        parser.error("--memory-check-interval must be >= 0")
+
+    memory_gate_enabled = not args.no_memory_gate
 
     test_file = Path(args.test_file).expanduser().resolve()
     workdir = Path(args.workdir).expanduser().resolve()
@@ -1026,24 +1185,53 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"No tests found in {test_file}")
         return 0
 
+    # Fail fast, before running anything, if memory can't be tracked at all.
+    mem_total_at_start: Optional[int] = None
+    mem_available_at_start: Optional[int] = None
+    if memory_gate_enabled:
+        try:
+            mem_total_at_start, mem_available_at_start = read_memory_totals()
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+
     print(f"Parsed {len(tests)} tests from {test_file}")
     print(f"Concurrent jobs: {jobs}")
-    print(f"Resource mode: {args.resource_mode}")
-    if args.resource_mode == "auto":
-        print(f"Max CPU slots: {max_slots}")
+    if memory_gate_enabled:
+        print(
+            f"Memory gate: start next test only when > {args.min_free_memory_fraction:.0%} "
+            f"of physical memory is free, rechecked every {args.memory_check_interval:.0f}s "
+            "after each launch attempt (launches into an empty pool are exempt)"
+        )
+        print(
+            f"Physical memory: {format_bytes(mem_total_at_start)} total, "
+            f"{format_bytes(mem_available_at_start)} available now "
+            f"({mem_available_at_start / mem_total_at_start:.0%})"
+        )
+    else:
+        print("Memory gate: disabled (--no-memory-gate); launching up to -j immediately")
     print(f"Workdir: {workdir}")
     print(f"Execution mode: {'no shell' if args.no_shell else 'shell'}")
 
     if args.dry_run:
-        # Dry-run is also useful for checking the scheduler's interpretation of
-        # resource requests before launching expensive MPI jobs.
+        # Dry-run lists the tests and their parsed np/nt, but actual
+        # concurrency now depends on runtime memory use, so it cannot be
+        # previewed the way the old CPU-slot plan could be.
         print("\nDry run test list:")
         for t in tests:
-            _np, _nt, slots, slot_details = estimate_test_slots(t.command, args.default_np, args.default_nt)
+            plan = build_test_plan(t, default_np=args.default_np, default_nt=args.default_nt)
             suffix = f"; last pass: {t.last_pass}" if t.last_pass else "; last pass: <none>"
             print(
                 f"  #{t.index:03d} line {t.line_no}: expected {t.expected}: "
-                f"slots={slots} ({slot_details}): {t.command}{suffix}"
+                f"{plan.np_nt_details}: {t.command}{suffix}"
+            )
+        if memory_gate_enabled:
+            print(
+                f"\nActual concurrency depends on runtime memory use and cannot be "
+                f"previewed here: once a test is already running, the next one only "
+                f"starts once > {args.min_free_memory_fraction:.0%} of physical memory "
+                f"is free, checked every {args.memory_check_interval:.0f}s (a launch "
+                f"into an idle pool always starts immediately)."
             )
         return 0
 
@@ -1056,13 +1244,14 @@ def main(argv: Optional[List[str]] = None) -> int:
                 log_dir=log_dir,
                 timeout_s=args.timeout,
                 use_shell=not args.no_shell,
-                resource_mode=args.resource_mode,
-                max_slots=max_slots,
                 default_np=args.default_np,
                 default_nt=args.default_nt,
                 set_thread_env_vars=args.set_thread_env,
                 preserve_thread_env=not args.overwrite_thread_env,
                 print_start=not args.no_start_progress,
+                memory_gate_enabled=memory_gate_enabled,
+                min_free_memory_fraction=args.min_free_memory_fraction,
+                memory_check_interval=args.memory_check_interval,
             )
         )
     except KeyboardInterrupt:
