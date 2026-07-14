@@ -2740,29 +2740,6 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
     }
     else if (section=="#NUMERICAL") {
       if (uKey=="DT_TRACE") p.numerics.dtTrace_s=std::stod(val);
-      else if (uKey=="DT_FRACTION" || uKey=="TRACE_DT_FRACTION" ||
-               uKey=="TIME_STEP_FRACTION" || uKey=="TRACE_TIME_STEP_FRACTION") {
-        // Global reduction factor for the actual trace step selected by the solver.
-        // This differs from DT_TRACE: in adaptive mode DT_TRACE remains the maximum
-        // candidate step, then gyro/boundary limiters act, then this fraction is
-        // applied.  It is useful for mover-specific convergence studies because the
-        // input deck can keep one physical DT_TRACE while testing smaller actual dt.
-        p.numerics.dtFraction=std::stod(val);
-      }
-      else if (uKey=="MOVER_DT_FRACTION" || uKey=="MOVER_TRACE_DT_FRACTION") {
-        // Format: MOVER:factor or MOVER=factor.  The parser stores the mover token
-        // in upper-case; main/runtime code canonicalizes actual CLI mover names with
-        // ParseMoverType()/MoverTypeToString().
-        const std::string spec=Trim(val);
-        size_t sep=spec.find(':');
-        if (sep==std::string::npos) sep=spec.find('=');
-        if (sep==std::string::npos || sep==0 || sep+1>=spec.size()) {
-          exit(__LINE__,__FILE__,"MOVER_DT_FRACTION expects MOVER:factor, e.g. HC4:0.25");
-        }
-        const std::string mover=ToUpper(Trim(spec.substr(0,sep)));
-        const double fraction=std::stod(Trim(spec.substr(sep+1)));
-        p.numerics.moverDtFraction[mover]=fraction;
-      }
       else if (uKey=="ADAPTIVE_DT" || uKey=="TRACE_ADAPTIVE_DT" ||
                uKey=="USE_ADAPTIVE_DT" || uKey=="AUTO_DT") {
         p.numerics.adaptiveDt=ToBool(val);
@@ -3136,14 +3113,6 @@ if (ToUpper(p.field.model)=="DIPOLE") {
   }
   if (p.numerics.maxTraceDistance_Re < 0.0) {
     exit(__LINE__,__FILE__,"MAX_TRACE_DISTANCE must be >= 0 (0 means: disabled)");
-  }
-  if (!(p.numerics.dtFraction > 0.0) || p.numerics.dtFraction > 1.0) {
-    exit(__LINE__,__FILE__,"TRACE_DT_FRACTION/DT_FRACTION must satisfy 0 < fraction <= 1");
-  }
-  for (const auto& kv : p.numerics.moverDtFraction) {
-    if (!(kv.second > 0.0) || kv.second > 1.0) {
-      exit(__LINE__,__FILE__,"MOVER_DT_FRACTION values must satisfy 0 < fraction <= 1");
-    }
   }
 
   // Resolve product-selection requests from CALC_TARGET.

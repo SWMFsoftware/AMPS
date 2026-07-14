@@ -362,24 +362,11 @@ Useful options:
   -i <file>
       AMPS parameter file.
 
-  -mover <BORIS|BORIS_SDC|HC4|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>
+  -mover <BORIS|HC4|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>
       Override the default/shared mover.
 
       HC4 aliases accepted by the parser include HIGUERA_CARY4,
       HIGUERA-CARY4, HC_YOSHIDA4, BORIS4, and BORIS_YOSHIDA4.
-      BORIS_SDC aliases include BORIS-SDC, BORISSDC, and BSDC.
-      BORIS_SDC is experimental and restored for mover-comparison tests.
-
-  -trace-dt-fraction <f>  or  -dt-fraction <f>
-      Global post-selector trace timestep multiplier, with 0 < f <= 1.
-      In adaptive mode the code first computes the normal adaptive step
-      min(DT_TRACE, gyro limiter, boundary limiter, remaining time), then
-      multiplies it by f.  Default f=1 preserves previous behavior.
-
-  -mover-dt-fraction <MOVER:f>
-      Repeatable mover-specific timestep multiplier.  Example:
-        -mover HC4 -mover-dt-fraction HC4:0.25
-      The effective factor is global_fraction * mover_specific_fraction.
 
   -density-mode <ISOTROPIC|ANISOTROPIC>
       Override DS_BOUNDARY_MODE for density/spectrum runs.

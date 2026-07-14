@@ -14,7 +14,6 @@
 #include <fstream>
 #include <time.h>
 #include <cstdlib>
-#include <sstream>
 
 
 #include <sys/time.h>
@@ -78,7 +77,7 @@ bool ApplyCutoffMoverCli(const EarthUtil::CliOptions& cli) {
   MoverType moverType;
   if (!ParseMoverType(cli.mover, moverType)) {
     std::cerr << "Error: unknown mover option -mover " << cli.mover
-              << ". Allowed: BORIS, BORIS_SDC, HC4, RK2, RK4, RK6, GC2, GC4, GC6, HYBRID"
+              << ". Allowed: BORIS, HC4, RK2, RK4, RK6, GC2, GC4, GC6, HYBRID"
               << std::endl;
     return false;
   }
@@ -93,52 +92,6 @@ static const double kCliEarthRadiusKm = 6371.2;
 #else
 static const double kCliEarthRadiusKm = AMPS_EARTH_RADIUS_KM;
 #endif
-
-
-static bool ParseMoverDtFractionSpec(const std::string& spec,
-                                      std::string& canonicalMover,
-                                      double& fraction) {
-  // Accepted CLI syntax is MOVER:fraction or MOVER=fraction.  The function lives in
-  // main.cpp rather than util/cutoff_cli.cpp because main.cpp can call ParseMoverType()
-  // and MoverTypeToString(), so aliases such as BORIS-SDC, BSDC, HIGUERA_CARY4, and
-  // BORIS4 are normalized to the same internal key used by the time-step selector.
-  size_t sep = spec.find(':');
-  if (sep == std::string::npos) sep = spec.find('=');
-  if (sep == std::string::npos || sep == 0 || sep+1 >= spec.size()) {
-    std::cerr << "Error: -mover-dt-fraction expects MOVER:fraction, e.g. HC4:0.25"
-              << std::endl;
-    return false;
-  }
-
-  const std::string moverText = spec.substr(0, sep);
-  const std::string valueText = spec.substr(sep+1);
-
-  MoverType moverType;
-  if (!ParseMoverType(moverText, moverType)) {
-    std::cerr << "Error: unknown mover in -mover-dt-fraction '" << moverText
-              << "'. Allowed: BORIS, BORIS_SDC, HC4, RK2, RK4, RK6, GC2, GC4, GC6, HYBRID"
-              << std::endl;
-    return false;
-  }
-
-  try {
-    fraction = std::stod(valueText);
-  }
-  catch (...) {
-    std::cerr << "Error: could not parse fraction in -mover-dt-fraction '" << spec << "'"
-              << std::endl;
-    return false;
-  }
-
-  if (!(fraction > 0.0) || fraction > 1.0) {
-    std::cerr << "Error: -mover-dt-fraction requires 0 < fraction <= 1"
-              << std::endl;
-    return false;
-  }
-
-  canonicalMover = MoverTypeToString(moverType);
-  return true;
-}
 
 bool ApplyMode3DMeshResolutionCli(const EarthUtil::CliOptions& cli,
                                   EarthUtil::AmpsParam& p) {
@@ -352,21 +305,6 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
   // trace-time cap).  This switch is useful for pusher/time-step convergence tests.
   if (cli.adaptiveDt >= 0) {
     p.numerics.adaptiveDt = (cli.adaptiveDt != 0);
-  }
-
-  // Optional global and per-mover time-step reduction factors.  These are applied
-  // after the normal fixed/adaptive step selector has produced the candidate dt.
-  // The default 1.0 path is exactly backward compatible; a value such as 0.25 means
-  // "use one quarter of the dt that the existing selector would otherwise use."
-  if (cli.traceDtFraction > 0.0) {
-    p.numerics.dtFraction = cli.traceDtFraction;
-  }
-
-  for (const std::string& spec : cli.moverDtFractionSpecs) {
-    std::string moverKey;
-    double fraction = 1.0;
-    if (!ParseMoverDtFractionSpec(spec, moverKey, fraction)) return false;
-    p.numerics.moverDtFraction[moverKey] = fraction;
   }
 
   // Optional cumulative path-length cap in Earth radii.  Keep this next to

@@ -69,37 +69,8 @@ failure.
 
 ## Particle mover selection
 
-The C1 Python runner accepts `--mover <name>` and passes it to AMPS as
-`-mover <name>`.  If `--mover` is omitted, the runner does not pass `-mover`,
-preserving the AMPS input/default mover used by older C1 runs.
-
-Useful examples:
-
-```bash
-python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC --mover RK4
-python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC --mover HC4
-python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC --mover BORIS_SDC
-```
-
-`BORIS_SDC` is restored as an **experimental** mover alongside `HC4`.  It uses
-subcycled midpoint Boris/Higuera-Cary sweeps and is intended for validation and
-comparison, not as the default production mover.  `HC4` is the fourth-order
-Higuera-Cary/Boris Yoshida-composed mover.
-
-The runner also exposes timestep-reduction controls that are forwarded to AMPS:
-
-```bash
-# Use one quarter of the actual step selected for every mover
-python srcEarth/test/C1/run_C1.py --mover HC4 --dt-fraction 0.25
-
-# Apply the reduction only when HC4 is the active mover
-python srcEarth/test/C1/run_C1.py --mover HC4 --mover-dt-fraction HC4:0.25
-
-# Compare the experimental Boris-SDC branch with a smaller actual step
-python srcEarth/test/C1/run_C1.py --mover BORIS_SDC --mover-dt-fraction BORIS_SDC:0.1
-```
-
-These fractions are applied after the regular fixed/adaptive timestep selector.
-For example, with `ADAPTIVE_DT=T`, AMPS first computes the normal gyro/boundary
-limited timestep, then multiplies it by the requested fraction.
-
+The C1 Python runner accepts `--mover HC4` and passes it to AMPS as `-mover HC4`.
+If `--mover` is omitted, the runner does not pass `-mover`, preserving the AMPS
+input/default mover used by older C1 runs.  HC4 is the fourth-order
+Higuera-Cary/Boris composition intended to combine RK4-like smooth-field accuracy
+with Boris-like rigidity conservation for E=0 magnetic tracing.

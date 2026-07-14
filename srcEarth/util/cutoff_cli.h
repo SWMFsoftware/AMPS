@@ -30,10 +30,8 @@
 //   -mover <string>
 //       Select the particle integration algorithm.
 //       Recognised values (case-insensitive):
-//         BORIS     Relativistic Boris pusher (default; recommended for all production runs)
-//         BORIS_SDC Experimental Boris-SDC-style subcycled midpoint-Boris mover
-//         HC4       Fourth-order Higuera-Cary/Boris composition
-//         RK2       Runge-Kutta 2nd order (Heun)
+//         BORIS   Relativistic Boris pusher (default; recommended for all production runs)
+//         RK2     Runge-Kutta 2nd order (Heun)
 //         RK4     Runge-Kutta 4th order (classical)
 //         RK6     Runge-Kutta 6th order
 //         GC2     Guiding-center equations integrated with RK2
@@ -157,7 +155,6 @@
 #define _SRC_EARTH_UTIL_CUTOFF_CLI_H_
 
 #include <string>
-#include <vector>
 
 namespace EarthUtil {
 
@@ -172,8 +169,7 @@ namespace EarthUtil {
     //
     // Supported values (case-insensitive):
     //   BORIS           : classic relativistic Boris pusher (legacy default)
-    //   BORIS_SDC       : experimental Boris-SDC-style subcycled midpoint-Boris mover
-    //   HC4             : fourth-order Higuera-Cary/Boris composition; RK4-like accuracy with Boris-like rigidity conservation
+    //   HC4           : fourth-order Higuera-Cary/Boris composition; RK4-like accuracy with Boris-like rigidity conservation
     //   RK2/RK4/RK6   : explicit full-orbit Runge-Kutta movers of order 2/4/6
     //   GC2/GC4/GC6   : guiding-center movers integrated with RK2/RK4/RK6
     //   HYBRID        : per-step switch between RK4 and GC4 using a local
@@ -181,17 +177,6 @@ namespace EarthUtil {
     //
     // If empty, the executable should use its default setting.
     std::string mover{""};
-
-    // -trace-dt-fraction <f> / -dt-fraction <f>
-    // Optional global multiplier applied after the standard fixed/adaptive trace-dt
-    // selector.  Sentinel: <0 means no CLI override.  Valid explicit values are
-    // 0 < f <= 1.
-    double traceDtFraction{-1.0};
-
-    // -mover-dt-fraction <MOVER>:<f>
-    // Optional repeatable per-mover dt multipliers.  These strings are parsed and
-    // canonicalized in main.cpp because that file can call ParseMoverType().
-    std::vector<std::string> moverDtFractionSpecs;
 
     // -density-mode ISOTROPIC|ANISOTROPIC
     // Overrides DS_BOUNDARY_MODE from the input file.

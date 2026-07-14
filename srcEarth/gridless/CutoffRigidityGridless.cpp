@@ -298,7 +298,6 @@ namespace {
 static const char* MoverTypeNameGridless_(MoverType m) {
   switch (m) {
     case MoverType::BORIS:  return "BORIS";
-    case MoverType::BORIS_SDC: return "BORIS_SDC";
     case MoverType::HC4:    return "HC4";
     case MoverType::RK2:    return "RK2";
     case MoverType::RK4:    return "RK4";
@@ -438,8 +437,10 @@ public:
     // because Geopack commonly provides GEO<->GSM helpers in other projects. That
     // is NOT the design in this solver; keep Geopack confined to IGRF.
     // For the analytic DIPOLE model we do NOT call Geopack at all; this avoids
-    // link-time dependencies and keeps the dipole test self-contained.
-    if (Model()!="DIPOLE") {
+    // link-time dependencies and keeps the dipole test self-contained.  The
+    // explicit NONE model is the zero-field validation backend used by F1; it
+    // also needs no Geopack/Tsyganenko state.
+    if (Model()!="DIPOLE" && Model()!="NONE") {
       Geopack::Init(prm.field.epoch.c_str(),"GSM");
       currentEpoch_ = prm.field.epoch;
     }
@@ -514,7 +515,7 @@ public:
   // WHAT THIS FUNCTION DOES
   //
   //   Step 1 — Guard conditions.
-  //     If the model is DIPOLE, return immediately (no Geopack dependency).
+  //     If the model is DIPOLE or NONE, return immediately (no Geopack dependency).
   //     If neither the epoch nor the driver parameters have changed since the
   //     last call, return immediately (avoids re-entering the Fortran library
   //     for every trajectory that happens to share the same rounded timestamp).
@@ -548,7 +549,7 @@ public:
   //     Alternating between nullptr and a valid table is not tested.
   //
   // NO-OP CONDITIONS (fast path)
-  //   Model == DIPOLE  : always no-op.
+  //   Model == DIPOLE or NONE  : always no-op.
   //   epoch unchanged AND driverTable == nullptr  : no-op (nothing to update).
   //   epoch unchanged AND driverTable non-null    : PARMOD still updated because
   //     the driver parameters may have changed even when the string is identical
@@ -562,7 +563,7 @@ public:
     (void)driverTable;
     return;
 #else
-    if (Model() == "DIPOLE") return;  // analytic dipole has no Geopack dependency
+    if (Model() == "DIPOLE" || Model() == "NONE") return;  // analytic/zero-field cases have no Geopack dependency
 
     const bool epochChanged   = (epoch != currentEpoch_);
     const bool hasDriverTable = (driverTable && !driverTable->empty());
@@ -626,6 +627,14 @@ public:
   }
 
   void GetB_T(const V3& x_m, V3& B_T) const override {
+    // Explicit zero-field branch used by density/flux normalization validation.
+    // With FIELD_MODEL=NONE, particles move in straight lines and any non-unity
+    // transmissivity comes only from geometric loss/escape boundaries.
+    if (Model()=="NONE") {
+      B_T.x=0.0; B_T.y=0.0; B_T.z=0.0;
+      return;
+    }
+
     // Dipole branch: internal field only, analytic, no IGRF/external field.
     if (Model()=="DIPOLE") {
       double x_arr[3]={x_m.x,x_m.y,x_m.z};
@@ -724,7 +733,7 @@ public:
       TA16::GetMagneticField(b_total,x_arr);
     }
     else {
-      throw std::runtime_error("Unsupported FIELD_MODEL in gridless solver: "+Model()+" (implemented via interfaces in this archive: T96,T01,T05,TA15N,TA15B,TA16,DIPOLE)");
+      throw std::runtime_error("Unsupported FIELD_MODEL in gridless solver: "+Model()+" (implemented via interfaces in this archive: NONE,T96,T01,T05,TA15N,TA15B,TA16,DIPOLE)");
     }
 
     B_T.x = b_total[0];
@@ -1032,40 +1041,6 @@ static inline double EstimateHybridAdiabaticity(const cFieldEvaluator& field,
   return rho_m/Leff_m;
 }
 
-
-static inline double TraceDtFractionForMover(const EarthUtil::AmpsParam& prm,
-                                             MoverType mover) {
-  // Return the multiplier applied to the *actual* trace step after the normal
-  // fixed/adaptive selector has already chosen dt.  This is intentionally a pure
-  // reduction factor: default 1.0 is exactly backward compatible, while values such
-  // as 0.5 or 0.25 give a conservative convergence/stability test for a mover
-  // without changing DT_TRACE or the physical run setup.
-  double f = prm.numerics.dtFraction;
-  const auto it = prm.numerics.moverDtFraction.find(MoverTypeToString(mover));
-  if (it != prm.numerics.moverDtFraction.end()) f *= it->second;
-  if (!(f > 0.0)) f = 1.0;
-  if (f > 1.0) f = 1.0;
-  return f;
-}
-
-static inline double ApplyTraceDtFraction(const EarthUtil::AmpsParam& prm,
-                                          MoverType mover,
-                                          double dt,
-                                          double timeRemaining_s) {
-  const double f = TraceDtFractionForMover(prm, mover);
-  if (f == 1.0) return dt;
-
-  // Apply the fraction after all regular limiters.  Keep only a tiny absolute floor
-  // so a deliberately small fraction is not undone by the legacy travel-distance
-  // progress floor.  This is important for HC4/BORIS_SDC convergence tests where the
-  // user explicitly asks for, for example, one quarter of the adaptive step.
-  dt *= f;
-  const double tinyFloor = std::max(1.0e-12, 1.0e-12 * std::max(prm.numerics.dtTrace_s, 1.0));
-  if (dt < tinyFloor) dt = tinyFloor;
-  if (timeRemaining_s > 0.0) dt = std::min(dt, timeRemaining_s);
-  return dt;
-}
-
 static inline double SelectTraceDt(const EarthUtil::AmpsParam& prm,
                                     const cFieldEvaluator& field,
                                       const V3& x,
@@ -1082,8 +1057,7 @@ static inline double SelectTraceDt(const EarthUtil::AmpsParam& prm,
   //                            final trim to the remaining trace-time budget.
   double dt = prm.numerics.dtTrace_s;
   if (timeRemaining_s < dt) dt = timeRemaining_s;
-  const MoverType activeMover = GetDefaultMoverType();
-  if (!prm.numerics.adaptiveDt) return ApplyTraceDtFraction(prm, activeMover, dt, timeRemaining_s);
+  if (!prm.numerics.adaptiveDt) return dt;
 
   // Compute relativistic gamma and speed from momentum p = gamma m v.
   const double p2 = dot(p,p);
@@ -1174,7 +1148,7 @@ static inline double SelectTraceDt(const EarthUtil::AmpsParam& prm,
   dt = std::max(dtFloor, dt);
   if (timeRemaining_s > 0.0) dt = std::min(dt, timeRemaining_s);
 
-  return ApplyTraceDtFraction(prm, activeMover, dt, timeRemaining_s);
+  return dt;
 }
 
 static bool TraceAllowedImpl(const EarthUtil::AmpsParam& prm,
@@ -2125,9 +2099,6 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
                     ? "min(DT_TRACE, gyro-angle limiter, boundary-distance limiter, remaining time)"
                     : "min(DT_TRACE, remaining time)")
               << "\n";
-    std::cout << "  TRACE_DT_FRACTION    : " << TraceDtFractionForMover(prm, GetDefaultMoverType())
-              << "  (global=" << prm.numerics.dtFraction
-              << "; active mover=" << MoverTypeToString(GetDefaultMoverType()) << ")\n";
     std::cout << "  MAX_TRACE_TIME [s]   : " << prm.numerics.maxTraceTime_s << "\n";
     std::cout << "  CUTOFF_MAX_TRAJ_TIME : "
               << (prm.cutoff.maxTrajTime_s > 0.0 ? prm.cutoff.maxTrajTime_s : 0.0)

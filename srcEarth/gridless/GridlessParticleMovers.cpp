@@ -778,54 +778,6 @@ static void HC4StepUnchecked(V3& x_m, V3& p_SI,
   HigueraCaryMagneticMidpointStep(x_m, p_SI, q_C, m0_kg, w1*dt, field);
 }
 
-//--------------------------------------------------------------------------------------
-// Experimental Boris-SDC style mover
-//--------------------------------------------------------------------------------------
-//
-// This routine restores the BORIS_SDC mover as an explicitly experimental option.  It
-// is intentionally implemented in terms of the same symmetric magnetic midpoint kernel
-// used by HC4, not in terms of the historical endpoint-sampled Boris branch.  For the
-// present backward cutoff and density tracers the electric field is zero, so the most
-// important reliability property is exact magnetic-energy/rigidity conservation: every
-// internal sweep is a Boris/Higuera-Cary Cayley rotation and preserves |p| to roundoff.
-//
-// The implementation below is deliberately conservative:
-//
-//   BORIS_SDC(dt) = H2(dt/N) repeated N times, with N=4 internal correction sweeps.
-//
-// In a full collocation SDC formulation, one would store solution values on Lobatto
-// nodes and iteratively correct the residual of the integral equation.  That machinery
-// is useful for general E(x,t), time-dependent fields, and strict high-order proofs.
-// The current AMPS backward tracer is simpler: E=0 and the dominant practical failure
-// mode is accumulated gyrophase/field-curvature error while preserving rigidity.  A
-// subcycled Boris/Higuera-Cary sweep addresses that failure mode while keeping the
-// pusher robust and easy to audit.  Because this is not yet a fully validated
-// production high-order SDC implementation, the user-facing documentation labels it
-// EXPERIMENTAL and keeps HC4/RK4 as the main high-accuracy comparison branches.
-//
-// References:
-//   Winkel, Speck & Ruprecht, J. Comput. Phys. 295, 456-474, 2015,
-//     "A high-order Boris integrator" / Boris-SDC construction.
-//   Boris, 1970; Birdsall & Langdon, 1991, for the magnetic rotation kernel.
-//--------------------------------------------------------------------------------------
-static void BorisSDCStepUnchecked(V3& x_m, V3& p_SI,
-                                  double q_C, double m0_kg,
-                                  double dt,
-                                  const IGridlessFieldEvaluator& field) {
-  static const int nSweeps = 4;
-  const double h = dt / double(nSweeps);
-  for (int i=0; i<nSweeps; ++i) {
-    HigueraCaryMagneticMidpointStep(x_m, p_SI, q_C, m0_kg, h, field);
-  }
-}
-
-void BorisSDCStep(V3& x_m, V3& p_SI,
-                  double q_C, double m0_kg,
-                  double dt,
-                  const IGridlessFieldEvaluator& field) {
-  BorisSDCStepUnchecked(x_m, p_SI, q_C, m0_kg, dt, field);
-}
-
 void BorisStep(V3& x_m, V3& p_SI, double q_C, double m0_kg, double dt,
                const IGridlessFieldEvaluator& field) {
   V3 B_T; field.GetB_T(x_m,B_T);
@@ -1013,7 +965,6 @@ static std::string ToUpperCopy(std::string s) {
 bool ParseMoverType(const std::string& s, MoverType& out) {
   const std::string u = ToUpperCopy(s);
   if (u=="BORIS") { out = MoverType::BORIS; return true; }
-  if (u=="BORIS_SDC" || u=="BORIS-SDC" || u=="BORISSDC" || u=="BSDC") { out = MoverType::BORIS_SDC; return true; }
   if (u=="HC4" || u=="HIGUERACARY4" || u=="HIGUERA-CARY4" || u=="HIGUERA_CARY4" ||
       u=="HC_YOSHIDA4" || u=="HC-YOSHIDA4" || u=="BORIS4" || u=="BORIS-YOSHIDA4" ||
       u=="BORIS_YOSHIDA4") { out = MoverType::HC4; return true; }
@@ -1030,7 +981,6 @@ bool ParseMoverType(const std::string& s, MoverType& out) {
 const char* MoverTypeToString(MoverType m) {
   switch (m) {
     case MoverType::BORIS: return "BORIS";
-    case MoverType::BORIS_SDC: return "BORIS_SDC";
     case MoverType::HC4:   return "HC4";
     case MoverType::RK2:   return "RK2";
     case MoverType::RK4:   return "RK4";
@@ -1051,9 +1001,6 @@ void StepParticle(MoverType mover,
   switch (mover) {
     case MoverType::BORIS:
       BorisStep(x_m, p_SI, q_C, m0_kg, dt, field);
-      break;
-    case MoverType::BORIS_SDC:
-      BorisSDCStep(x_m, p_SI, q_C, m0_kg, dt, field);
       break;
     case MoverType::HC4:
       HC4Step(x_m, p_SI, q_C, m0_kg, dt, field);
@@ -1096,22 +1043,6 @@ bool StepParticleChecked(MoverType mover,
       const V3 x0 = x_m;
       BorisStep(x_m, p_SI, q_C, m0_kg, dt, field);
       return !SegmentHitsInnerSphere(x0, x_m, rInner_m) && !InsideInnerSphereM(x_m, rInner_m);
-    }
-    case MoverType::BORIS_SDC: {
-      // BORIS_SDC already performs several internal midpoint Boris sweeps.  For loss
-      // detection we still check physical macro-subsegments, not hidden algebraic
-      // correction stages.  This keeps the experimental mover conservative near the
-      // inner sphere and mirrors the HC4 checked-path philosophy.
-      const int nCheck = 4;
-      const double dtSub = dt / double(nCheck);
-      for (int i=0; i<nCheck; ++i) {
-        const V3 x0 = x_m;
-        BorisSDCStepUnchecked(x_m, p_SI, q_C, m0_kg, dtSub, field);
-        if (SegmentHitsInnerSphere(x0, x_m, rInner_m) || InsideInnerSphereM(x_m, rInner_m)) {
-          return false;
-        }
-      }
-      return true;
     }
     case MoverType::HC4: {
       // HC4 is a fourth-order composition with a negative internal substep.  Those
