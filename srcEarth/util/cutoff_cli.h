@@ -41,7 +41,7 @@
 //                 sufficiently adiabatic for guiding-center transport
 //       In gridless and backward 3D modes, all listed values are handled by the
 //       shared GridlessParticleMovers layer. In 3d_forward mode, the AMPS-signature
-//       mover manager currently supports BORIS, RK4, GC/GC4, and HYBRID. BORIS_SDC is currently implemented in the shared gridless/backward 3D tracing layer.
+//       mover manager currently supports BORIS, RK4, GC/GC4, and HYBRID. HC4 is available in gridless/backward 3-D tracing.
 //       If omitted, the default mover (BORIS) is used.
 //       The string is stored as-is; translation to the concrete mover is done by the caller.
 //
@@ -169,6 +169,7 @@ namespace EarthUtil {
     //
     // Supported values (case-insensitive):
     //   BORIS           : classic relativistic Boris pusher (legacy default)
+    //   HC4           : fourth-order Higuera-Cary/Boris composition; RK4-like accuracy with Boris-like rigidity conservation
     //   RK2/RK4/RK6   : explicit full-orbit Runge-Kutta movers of order 2/4/6
     //   GC2/GC4/GC6   : guiding-center movers integrated with RK2/RK4/RK6
     //   HYBRID        : per-step switch between RK4 and GC4 using a local

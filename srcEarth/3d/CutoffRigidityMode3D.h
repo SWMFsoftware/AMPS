@@ -195,10 +195,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 void SetCutoffOutputFileSuffix(const std::string& suffix);
 
 // Reset/report validation statistics for the Mode3D DIPOLE mesh magnetic field.
-// These functions are no-ops for non-DIPOLE or analytic-field-evaluation runs unless
-// the mesh-field evaluator has accumulated samples.  They are called by density/flux
-// validation runs so the log records the mean/max interpolation error of B and the
-// location where the maximum occurred.
+// Density/flux diagnostics call these wrappers around the trajectory workload.
+// They are harmless when no mesh-field samples are accumulated, but their definitions
+// must be linked whenever DensityMode3D.cpp references them.
 void ResetDipoleMagneticFieldErrorStatistics(const EarthUtil::AmpsParam& prm);
 void ReportDipoleMagneticFieldErrorStatistics(const char* label);
 

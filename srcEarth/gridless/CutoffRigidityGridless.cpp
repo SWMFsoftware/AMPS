@@ -298,7 +298,7 @@ namespace {
 static const char* MoverTypeNameGridless_(MoverType m) {
   switch (m) {
     case MoverType::BORIS:  return "BORIS";
-    case MoverType::BORIS_SDC: return "BORIS_SDC";
+    case MoverType::HC4:    return "HC4";
     case MoverType::RK2:    return "RK2";
     case MoverType::RK4:    return "RK4";
     case MoverType::RK6:    return "RK6";

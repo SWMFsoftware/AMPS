@@ -129,23 +129,6 @@ static inline State mul_state(double s, const State& a) {
   return { mul(s,a.x), mul(s,a.p) };
 }
 
-static inline State sub_state(const State& a, const State& b) {
-  return { sub(a.x,b.x), sub(a.p,b.p) };
-}
-
-static inline double StateNormScale(const State& a, double m0_kg) {
-  // A helper used only by diagnostic SDC convergence checks.  Position and
-  // momentum have different units, so we non-dimensionalize momentum by m*c and
-  // position by one Earth radius before combining them.  The function is not part
-  // of the particle dynamics; it just gives a robust floating-point scale for
-  // optional safeguards.
-  const double xScale = 6371200.0;
-  const double pScale = std::max(m0_kg*SpeedOfLight, 1.0e-300);
-  const double xn = norm(a.x)/xScale;
-  const double pn = norm(a.p)/pScale;
-  return std::max(xn, pn);
-}
-
 static inline bool InsideInnerSphereM(const V3& x_m, double rInner_m) {
   return (rInner_m > 0.0) && (dot(x_m,x_m) <= rInner_m*rInner_m);
 }
@@ -710,6 +693,91 @@ static bool RKStepGeneric(const std::array<double,N>& c,
 
 } // namespace
 
+//--------------------------------------------------------------------------------------
+// HC4 second-order building block: Higuera-Cary/Boris magnetic midpoint step
+//--------------------------------------------------------------------------------------
+//
+// The gridless/backward Mode3D trajectory equations currently contain only a magnetic
+// Lorentz force, E=0.  In that limit the relativistic Higuera-Cary pusher and the
+// Boris-family rotation have the same essential conservative magnetic core: the
+// magnetic force rotates the momentum without changing |p|.  We nevertheless keep the
+// name "Higuera-Cary" for the composed mover because this is the relativistic,
+// volume-preserving Boris-family formulation that should be extended if/when an
+// electric-field term is added to this shared gridless pusher.
+//
+// Why not simply reuse BorisStep() as the composition kernel?
+//   The historical BorisStep() above evaluates B at the input position and then drifts
+//   by half a step.  That is robust, but for a spatially varying field it is not the
+//   clean symmetric midpoint map needed as a fourth-order composition kernel.  The HC4
+//   mover therefore uses the canonical symmetric sequence:
+//
+//       x_mid = x_n + (dt/2) v(p_n)
+//       B_mid = B(x_mid)
+//       p_{n+1} = magnetic_rotation(p_n, B_mid, dt)
+//       x_{n+1} = x_mid + (dt/2) v(p_{n+1})
+//
+// This map is second order, time reversible, and preserves |p| to roundoff for E=0.
+// Applying the Yoshida/Forest-Ruth triple-jump composition to this symmetric H2 map
+// gives the fourth-order HC4 map implemented below.
+//--------------------------------------------------------------------------------------
+static void HigueraCaryMagneticMidpointStep(V3& x_m, V3& p_SI,
+                                            double q_C, double m0_kg,
+                                            double dt,
+                                            const IGridlessFieldEvaluator& field) {
+  // First half drift: move to the spatial midpoint using the incoming momentum.  The
+  // velocity is relativistic, v=p/(gamma m).  No non-relativistic approximation is used.
+  const V3 v0 = VelocityFromMomentum(p_SI, m0_kg);
+  const V3 x_mid = add(x_m, mul(0.5*dt, v0));
+
+  // Magnetic field for the rotation is sampled at the midpoint.  This is the key
+  // difference from the historical one-field-evaluation BORIS branch and is what makes
+  // the H2 map symmetric in a non-uniform field.
+  V3 B_T;
+  field.GetB_T(x_mid, B_T);
+
+  // Pure-magnetic relativistic rotation.  Because E=0, gamma is constant through the
+  // exact motion; using gamma(p_n) in the Cayley/Boris rotation preserves |p| exactly
+  // up to floating-point roundoff.  The rotation is stable even for relatively large
+  // |q B dt/(gamma m)| because it uses t and s rather than a truncated small-angle form.
+  const double gamma0 = GammaFromMomentum(p_SI, m0_kg);
+  const V3 t = mul((q_C*dt)/(2.0*gamma0*m0_kg), B_T);
+  const double t2 = dot(t,t);
+  const V3 s = mul(2.0/(1.0+t2), t);
+
+  const V3 p_minus = p_SI;
+  const V3 p_prime = add(p_minus, cross(p_minus, t));
+  const V3 p_plus  = add(p_minus, cross(p_prime, s));
+  p_SI = p_plus;
+
+  // Second half drift with the rotated momentum.  Since the rotation conserves |p| in
+  // E=0, gamma should be unchanged apart from roundoff, but we recompute it to keep the
+  // implementation local and robust if future extensions add electric acceleration.
+  const V3 v1 = VelocityFromMomentum(p_SI, m0_kg);
+  x_m = add(x_mid, mul(0.5*dt, v1));
+}
+
+static void HC4StepUnchecked(V3& x_m, V3& p_SI,
+                             double q_C, double m0_kg,
+                             double dt,
+                             const IGridlessFieldEvaluator& field) {
+  // Yoshida / Forest-Ruth fourth-order triple-jump composition:
+  //
+  //     H4(dt) = H2(w1 dt) H2(w0 dt) H2(w1 dt)
+  //
+  // where H2 is the symmetric Higuera-Cary/Boris magnetic midpoint map above.
+  // The middle coefficient is negative.  That is unavoidable for this compact
+  // fourth-order symmetric composition and is not a sign error.  The checked wrapper
+  // below therefore treats only complete HC4 macro-steps as physical event-checking
+  // intervals; it does not classify boundary crossings from the internal negative stage.
+  static const double cbrt2 = 1.25992104989487316477; // 2^(1/3)
+  static const double w1 = 1.0 / (2.0 - cbrt2);
+  static const double w0 = -cbrt2 / (2.0 - cbrt2);
+
+  HigueraCaryMagneticMidpointStep(x_m, p_SI, q_C, m0_kg, w1*dt, field);
+  HigueraCaryMagneticMidpointStep(x_m, p_SI, q_C, m0_kg, w0*dt, field);
+  HigueraCaryMagneticMidpointStep(x_m, p_SI, q_C, m0_kg, w1*dt, field);
+}
+
 void BorisStep(V3& x_m, V3& p_SI, double q_C, double m0_kg, double dt,
                const IGridlessFieldEvaluator& field) {
   V3 B_T; field.GetB_T(x_m,B_T);
@@ -733,136 +801,14 @@ void BorisStep(V3& x_m, V3& p_SI, double q_C, double m0_kg, double dt,
 }
 
 
-//--------------------------------------------------------------------------------------
-// Boris-SDC full-orbit mover
-//--------------------------------------------------------------------------------------
-//
-// This routine implements a compact Boris-SDC mover for the Earth gridless/backward
-// trajectory layer.  The implementation follows the practical structure of Boris-SDC
-// described by Winkel, Speck & Ruprecht (2014) and later relativistic applications by
-// Smedt et al. (2021): use Boris as a robust low-order sweeper, then iteratively add a
-// collocation defect computed from the previous sweep.  The important properties for
-// AMPS SEP/cutoff use are:
-//
-//   * the stiff magnetic part of every subinterval is still handled by a Boris rotation;
-//   * the correction is based on a Gauss-Lobatto collocation integral, not on a generic
-//     explicit RK stage formula;
-//   * in the current gridless/backward layer E=0, so rigidity conservation is an exact
-//     physical invariant.  After the correction impulse we project away only the tiny
-//     radial-in-momentum numerical component that would otherwise represent unphysical
-//     work by a magnetic field.  This is not a test-specific hack: for E=0 the exact
-//     Lorentz force is perpendicular to p at all times.
-//
-// Collocation nodes and quadrature:
-//   We use the three Lobatto nodes tau = {0, 1/2, 1}.  The integral of the Lagrange
-//   interpolant over the two subintervals gives the S matrix below:
-//
-//      ∫_0^{1/2} L_j(t) dt = { 5/24,  8/24, -1/24 }
-//      ∫_{1/2}^1 L_j(t) dt = {-1/24,  8/24,  5/24 }
-//
-//   Multiplying by dt gives the collocation estimate of ∫ f(y(t)) dt over each
-//   subinterval.  With four correction sweeps this is a high-accuracy diagnostic
-//   mover while keeping the code short and completely self-contained.
-//
-// Note on the word "SDC": this implementation is intentionally the explicit,
-// production-friendly AMPS version of the Boris-SDC idea.  A fully implicit collocation
-// solve would be overkill for cutoff tracing and would require nonlinear iterations over
-// field interpolation.  The deferred-correction form below gives the desired practical
-// behavior: improve the collocation residual while retaining Boris magnetic stability.
-//--------------------------------------------------------------------------------------
-static inline void RenormalizeMomentumMagnitude(V3& p, double pTarget) {
-  const double pNow = norm(p);
-  if (pTarget > 0.0 && pNow > 0.0) p = mul(pTarget/pNow, p);
-}
-
-static State BorisAdvanceWithDefect(const State& left,
-                                    const State& defect,
-                                    double q_C,
-                                    double m0_kg,
-                                    double dt,
-                                    const IGridlessFieldEvaluator& field) {
-  // The collocation defect has units of a state increment: meters for x and kg m/s
-  // for p.  We split it symmetrically around the Boris sweep, analogous to the way
-  // the ordinary Boris method splits electric half-kicks around the magnetic rotation.
-  // This keeps the subinterval update time-centered and avoids biasing the trajectory
-  // to the beginning or end of the subinterval.
-  State y = left;
-  const double pInvariant = norm(left.p);
-
-  y.x = add(y.x, mul(0.5, defect.x));
-  y.p = add(y.p, mul(0.5, defect.p));
-  RenormalizeMomentumMagnitude(y.p, pInvariant);
-
-  BorisStep(y.x, y.p, q_C, m0_kg, dt, field);
-
-  y.x = add(y.x, mul(0.5, defect.x));
-  y.p = add(y.p, mul(0.5, defect.p));
-  RenormalizeMomentumMagnitude(y.p, pInvariant);
-
-  return y;
-}
-
-void BorisSDCStep(V3& x_m, V3& p_SI,
-                  double q_C, double m0_kg,
-                  double dt,
-                  const IGridlessFieldEvaluator& field) {
-  // Three-node Lobatto SDC.  y[0] is fixed at the beginning of the time step; y[1]
-  // and y[2] are improved by deferred-correction sweeps.  The initial predictor is
-  // two half-size Boris steps, which is already robust and volume-preserving.
-  static const double S[2][3] = {
-    { 5.0/24.0, 8.0/24.0, -1.0/24.0 },
-    {-1.0/24.0, 8.0/24.0,  5.0/24.0 }
-  };
-  static const int kSweeps = 4;
-
-  std::array<State,3> old{};
-  old[0] = State{x_m, p_SI};
-  old[1] = old[0];
-  BorisStep(old[1].x, old[1].p, q_C, m0_kg, 0.5*dt, field);
-  old[2] = old[1];
-  BorisStep(old[2].x, old[2].p, q_C, m0_kg, 0.5*dt, field);
-
-  const double pInvariant = norm(p_SI);
-
-  for (int sweep=0; sweep<kSweeps; ++sweep) {
-    // Evaluate the RHS at all collocation nodes from the previous sweep.  This is the
-    // expensive part of SDC, but it is also what improves phase accuracy relative to a
-    // single Boris rotation.  The RHS is the relativistic Lorentz system in first-order
-    // form: y' = (v, q v × B).
-    std::array<State,3> f{};
-    for (int i=0; i<3; ++i) f[i] = LorentzRhs(old[i], q_C, m0_kg, field);
-
-    std::array<State,3> neu{};
-    neu[0] = old[0];
-
-    for (int m=0; m<2; ++m) {
-      // Collocation integral over the current subinterval from the previous sweep.
-      State qInt{V3{0.0,0.0,0.0}, V3{0.0,0.0,0.0}};
-      for (int j=0; j<3; ++j) qInt = add_state(qInt, mul_state(dt*S[m][j], f[j]));
-
-      // Deferred correction: replace the old subinterval increment by the
-      // collocation integral.  A pure Picard iteration would set neu[m+1] directly
-      // from neu[m]+qInt; Boris-SDC instead advances with a Boris sweep and applies
-      // only the residual/defect.  This preserves the robust magnetic rotation and
-      // lets the collocation residual refine the trajectory over successive sweeps.
-      const State oldIncrement = sub_state(old[m+1], old[m]);
-      const State defect = sub_state(qInt, oldIncrement);
-
-      neu[m+1] = BorisAdvanceWithDefect(neu[m], defect, q_C, m0_kg, 0.5*dt, field);
-      RenormalizeMomentumMagnitude(neu[m+1].p, pInvariant);
-    }
-
-    // Optional convergence guard: if the last sweep changed the state by less than a
-    // tiny nondimensional amount, further sweeps would only add field-interpolation and
-    // roundoff noise.  The hard upper bound kSweeps is kept small for predictable cost.
-    const State delta = sub_state(neu[2], old[2]);
-    old = neu;
-    if (StateNormScale(delta, m0_kg) < 1.0e-13) break;
-  }
-
-  x_m = old[2].x;
-  p_SI = old[2].p;
-  RenormalizeMomentumMagnitude(p_SI, pInvariant);
+void HC4Step(V3& x_m, V3& p_SI,
+             double q_C, double m0_kg,
+             double dt,
+             const IGridlessFieldEvaluator& field) {
+  // Public unchecked HC4 advance.  This routine deliberately performs no invariant
+  // projection.  If |p| or canonical P_axis drift is observed in diagnostics, that drift
+  // is a real measure of orbit-integration error, not something hidden by rescaling.
+  HC4StepUnchecked(x_m, p_SI, q_C, m0_kg, dt, field);
 }
 
 void RK2Step(V3& x_m, V3& p_SI,
@@ -1019,7 +965,9 @@ static std::string ToUpperCopy(std::string s) {
 bool ParseMoverType(const std::string& s, MoverType& out) {
   const std::string u = ToUpperCopy(s);
   if (u=="BORIS") { out = MoverType::BORIS; return true; }
-  if (u=="BORIS_SDC" || u=="BORIS-SDC" || u=="BORISSDC" || u=="BSDC") { out = MoverType::BORIS_SDC; return true; }
+  if (u=="HC4" || u=="HIGUERACARY4" || u=="HIGUERA-CARY4" || u=="HIGUERA_CARY4" ||
+      u=="HC_YOSHIDA4" || u=="HC-YOSHIDA4" || u=="BORIS4" || u=="BORIS-YOSHIDA4" ||
+      u=="BORIS_YOSHIDA4") { out = MoverType::HC4; return true; }
   if (u=="RK2" || u=="RUNGEKUTTA2" || u=="RUNGE-KUTTA-2") { out = MoverType::RK2; return true; }
   if (u=="RK4" || u=="RUNGEKUTTA4" || u=="RUNGE-KUTTA-4") { out = MoverType::RK4; return true; }
   if (u=="RK6" || u=="RUNGEKUTTA6" || u=="RUNGE-KUTTA-6") { out = MoverType::RK6; return true; }
@@ -1033,7 +981,7 @@ bool ParseMoverType(const std::string& s, MoverType& out) {
 const char* MoverTypeToString(MoverType m) {
   switch (m) {
     case MoverType::BORIS: return "BORIS";
-    case MoverType::BORIS_SDC: return "BORIS_SDC";
+    case MoverType::HC4:   return "HC4";
     case MoverType::RK2:   return "RK2";
     case MoverType::RK4:   return "RK4";
     case MoverType::RK6:   return "RK6";
@@ -1054,8 +1002,8 @@ void StepParticle(MoverType mover,
     case MoverType::BORIS:
       BorisStep(x_m, p_SI, q_C, m0_kg, dt, field);
       break;
-    case MoverType::BORIS_SDC:
-      BorisSDCStep(x_m, p_SI, q_C, m0_kg, dt, field);
+    case MoverType::HC4:
+      HC4Step(x_m, p_SI, q_C, m0_kg, dt, field);
       break;
     case MoverType::RK2:
       RK2Step(x_m, p_SI, q_C, m0_kg, dt, field);
@@ -1096,18 +1044,22 @@ bool StepParticleChecked(MoverType mover,
       BorisStep(x_m, p_SI, q_C, m0_kg, dt, field);
       return !SegmentHitsInnerSphere(x0, x_m, rInner_m) && !InsideInnerSphereM(x_m, rInner_m);
     }
-    case MoverType::BORIS_SDC: {
-      // The SDC step has internal Lobatto nodes, but for inner-sphere classification
-      // we still want a conservative geometry check between accepted points.  Split
-      // the requested outer step into four SDC substeps, mirroring the legacy Boris
-      // checked path and preventing a long high-order step from jumping over the loss
-      // sphere without detection.
-      static const int nCheck = 4;
-      const double h = dt / double(nCheck);
+    case MoverType::HC4: {
+      // HC4 is a fourth-order composition with a negative internal substep.  Those
+      // internal points are composition stages, not monotonically ordered points on the
+      // physical trajectory, so using them directly for loss-sphere classification can
+      // create false losses.  The checked path therefore divides the requested outer
+      // step into several positive HC4 macro-steps and checks only the physical segment
+      // from the beginning to the end of each macro-step.  This preserves robust event
+      // detection without corrupting the fourth-order composition.
+      const int nCheck = 4;
+      const double dtSub = dt / double(nCheck);
       for (int i=0; i<nCheck; ++i) {
         const V3 x0 = x_m;
-        BorisSDCStep(x_m, p_SI, q_C, m0_kg, h, field);
-        if (SegmentHitsInnerSphere(x0, x_m, rInner_m) || InsideInnerSphereM(x_m, rInner_m)) return false;
+        HC4StepUnchecked(x_m, p_SI, q_C, m0_kg, dtSub, field);
+        if (SegmentHitsInnerSphere(x0, x_m, rInner_m) || InsideInnerSphereM(x_m, rInner_m)) {
+          return false;
+        }
       }
       return true;
     }

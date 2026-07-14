@@ -363,43 +363,39 @@ static inline V3 v3unit(const V3& a) {
     return (n > 0.0) ? mul(1.0/n, a) : V3{0.0, 0.0, 0.0};
 }
 
-
 //======================================================================================
 // SECTION 2.1 — DIPOLE MESH-FIELD ERROR STATISTICS
 //======================================================================================
 //
-// Purpose
-// -------
-// In a Mode3D DIPOLE validation run there are two independent ways to evaluate B(x):
+// Density/flux validation can compare the magnetic field actually used by the
+// Mode3D mesh-backed trajectory tracer with the exact analytic dipole field.
+// DensityMode3D.cpp calls the two public functions defined near the bottom of this file:
 //
-//   1. the analytic dipole evaluator in srcEarth/gridless/DipoleInterface.h; and
-//   2. the Mode3D AMR mesh value, obtained by interpolating the cell-centered B field
-//      that was sampled during mesh initialization.
+//   Earth::Mode3D::ResetDipoleMagneticFieldErrorStatistics(prm)
+//   Earth::Mode3D::ReportDipoleMagneticFieldErrorStatistics(label)
 //
-// The density/flux backtracing path can call
-//   Earth::Mode3D::ResetDipoleMagneticFieldErrorStatistics(...)
-// before it starts tracing and
-//   Earth::Mode3D::ReportDipoleMagneticFieldErrorStatistics(...)
-// after it finishes.  Those public wrappers are defined near the bottom of this file.
-// The actual samples are accumulated here, directly in the mesh-field evaluator, so the
-// reported statistics measure the same B values that the trajectory pusher used.
+// The linker error reported by the build occurs when those functions are declared/called
+// but no translation unit defines them.  The implementation below provides the missing
+// definitions and, when the mesh-backed field evaluator is used in FIELD_MODEL DIPOLE,
+// accumulates actual interpolation-error samples.
 //
 // What is measured
 // ----------------
-// For each interpolated mesh-field sample in a DIPOLE run we compute
+// For each mesh-field evaluation in a DIPOLE run, we compute
 //
-//     rel_err = |B_mesh - B_analytic| / max(|B_analytic|, tiny)
+//     rel_err = |B_mesh - B_dipole| / max(|B_dipole|, tiny).
 //
-// and accumulate the sample count, the sum of rel_err, and the largest rel_err together
-// with its location and both B vectors.  At report time the per-rank values are reduced
-// over MPI and rank 0 prints the global mean, maximum, and max-error location.
+// The local MPI rank stores the sample count, sum(rel_err), maximum rel_err, and the
+// location/B vectors at the maximum.  The report routine reduces the count/sum over MPI
+// and broadcasts the max-error details from the rank that owns the global maximum.
 //
 // Thread-safety
 // -------------
-// Trajectory tracing can be OpenMP- or std::thread-parallel inside each MPI rank.  The
-// statistics are therefore protected by a small mutex.  This diagnostic is intended for
-// validation runs; in production non-DIPOLE runs the accumulation path returns
-// immediately and the overhead is zero except for a string comparison in the caller.
+// The trajectory workload can be OpenMP- or std::thread-parallel.  A small mutex protects
+// the statistics accumulator.  The analytic dipole helper also has mutable global state
+// (moment scale and tilt), so the set/evaluate sequence is serialized separately.  The
+// overhead is incurred only for FIELD_MODEL DIPOLE mesh-backed validation runs; for other
+// field models this path returns immediately.
 //======================================================================================
 
 struct DipoleMagneticFieldErrorStats_ {
@@ -427,7 +423,7 @@ struct DipoleMagneticFieldErrorStats_ {
 static std::mutex gDipoleBErrorMutex_;
 static DipoleMagneticFieldErrorStats_ gDipoleBErrorStats_;
 
-static inline double Norm3_(const double a[3]) {
+static inline double Norm3Array_(const double a[3]) {
     return std::sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
 }
 
@@ -448,9 +444,6 @@ static void AccumulateDipoleMagneticFieldErrorStatistics_(const EarthUtil::AmpsP
 
     double BAnalytic_T[3] = {0.0,0.0,0.0};
 
-    // DipoleInterface stores the moment scale and tilt in a small global state.  The
-    // Mode3D analytic-field path uses the same helper.  Protect the state update +
-    // evaluation so validation with multiple trajectory threads remains deterministic.
     static std::mutex dipoleAnalyticMutex;
     {
         std::lock_guard<std::mutex> lock(dipoleAnalyticMutex);
@@ -465,8 +458,8 @@ static void AccumulateDipoleMagneticFieldErrorStatistics_(const EarthUtil::AmpsP
         BMesh_T[2] - BAnalytic_T[2]
     };
 
-    const double denom = std::max(Norm3_(BAnalytic_T),1.0e-300);
-    const double relErr = Norm3_(dB) / denom;
+    const double denom = std::max(Norm3Array_(BAnalytic_T),1.0e-300);
+    const double relErr = Norm3Array_(dB) / denom;
     if (!std::isfinite(relErr)) return;
 
     std::lock_guard<std::mutex> lock(gDipoleBErrorMutex_);
@@ -743,6 +736,7 @@ public:
             B_T.x = B[0];
             B_T.y = B[1];
             B_T.z = B[2];
+            AccumulateDipoleMagneticFieldErrorStatistics_(prm_,xArr,B);
             return;
         }
 
@@ -790,11 +784,6 @@ public:
         B_T.x = B[0];
         B_T.y = B[1];
         B_T.z = B[2];
-
-        // Validation diagnostic: when the requested background field is DIPOLE and
-        // Mode3D is using the mesh-backed field evaluator, compare the interpolated
-        // mesh B against the analytic dipole at the exact trajectory point.  The
-        // public Reset/Report functions reduce these samples across MPI ranks.
         AccumulateDipoleMagneticFieldErrorStatistics_(prm_,xArr,B);
     }
 
@@ -1194,7 +1183,7 @@ static const char* TraceExitReasonName3D_(TraceExitReason3D r) {
 static const char* MoverTypeName3D_(MoverType m) {
     switch (m) {
         case MoverType::BORIS:  return "BORIS";
-        case MoverType::BORIS_SDC: return "BORIS_SDC";
+        case MoverType::HC4:    return "HC4";
         case MoverType::RK2:    return "RK2";
         case MoverType::RK4:    return "RK4";
         case MoverType::RK6:    return "RK6";
@@ -2733,18 +2722,14 @@ namespace Earth {
 namespace Mode3D {
 
 void ResetDipoleMagneticFieldErrorStatistics(const EarthUtil::AmpsParam& prm) {
-    // Reset is intentionally collective in meaning but local in implementation:
-    // every MPI rank owns only the statistics accumulated by its own trajectory
-    // workers.  The density/cutoff drivers call this on all ranks before the
-    // traced workload starts, so clearing the local accumulator is sufficient.
+    // The reset is local to each MPI rank.  Density/cutoff drivers call this routine
+    // on every rank before the traced workload begins; the report routine performs the
+    // collective reduction after all workers have finished.
     (void)prm;
     ResetDipoleMagneticFieldErrorStatisticsLocal_();
 }
 
 void ReportDipoleMagneticFieldErrorStatistics(const char* label) {
-    // All ranks must enter this routine together.  We use reductions/gathering rather
-    // than printing from every rank so validation logs contain one compact global
-    // summary with the location of the worst error.
     int mpiRank=0, mpiSize=1;
     MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&mpiRank);
     MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR,&mpiSize);
@@ -2765,7 +2750,6 @@ void ReportDipoleMagneticFieldErrorStatistics(const char* label) {
 
     MPI_Allreduce(&localMax,&globalMax,1,MPI_DOUBLE_INT,MPI_MAXLOC,MPI_GLOBAL_COMMUNICATOR);
 
-    // Broadcast the max-error details from the rank that owns the global maximum.
     double maxPack[10] = {0.0};
     if (local.nSamples > 0 && mpiRank == globalMax.rank) {
         maxPack[0] = local.maxRelErr;
@@ -2796,7 +2780,7 @@ void ReportDipoleMagneticFieldErrorStatistics(const char* label) {
                       << maxPack[7] << " " << maxPack[8] << " " << maxPack[9] << "\n";
         }
         else {
-            std::cout << "No samples were accumulated.  This is expected for non-DIPOLE runs,\n"
+            std::cout << "No samples were accumulated. This is expected for non-DIPOLE runs,\n"
                       << "analytic-field-evaluation runs, or code paths that do not use the\n"
                       << "Mode3D mesh magnetic-field evaluator.\n";
         }

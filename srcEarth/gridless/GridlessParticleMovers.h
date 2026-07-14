@@ -82,26 +82,48 @@
 //
 // Recommended for all production cutoff-rigidity and density/spectrum calculations.
 //
-// ---- BORIS_SDC (Boris spectral deferred correction) -------------------------------
+// ---- HC4 (fourth-order Higuera-Cary / composed Boris mover) -----------------------
 //
-// Boris-SDC is a high-order extension of the Boris idea: a Boris-like,
-// magnetic-rotation-preserving sweep is used as the low-order preconditioner inside
-// a spectral-deferred-correction / collocation iteration.  The implementation in this
-// file uses three Gauss-Lobatto nodes (0, 1/2, 1) and several correction sweeps.
-// That gives a compact, robust fourth-order-or-better diagnostic mover for the
-// static E=0 geomagnetic tracing problem while retaining the most important Boris
-// property for cutoff work: the magnetic part of each subinterval advance is still a
-// Boris rotation rather than a generic explicit Runge-Kutta update.
+// HC4 is the high-accuracy, Boris-robust full-orbit mover intended for cutoff
+// tracing when RK4 accuracy is desired but long-time magnetic invariants must remain
+// well controlled.  In the gridless/backward 3-D tracer the electric field is zero,
+// so the relativistic Higuera-Cary pusher reduces to an energy-conserving magnetic
+// rotation with the same Boris/Cayley rotation structure.  The important improvement
+// over the historical BORIS step is how the second-order building block is used:
 //
-// References for the algorithmic idea:
-//   * Winkel, Speck & Ruprecht, "A high-order Boris integrator", JCP / arXiv:1409.5677.
-//   * Smedt et al., "New applications for the Boris-SDC algorithm for plasma
-//     simulations", arXiv:2110.08024, including relativistic Boris-SDC tests.
+//   H2(dt) = half drift -> evaluate B at the midpoint -> magnetic rotation
+//            -> half drift
 //
-// In this Earth SEP implementation, BORIS_SDC is intended as a high-accuracy
-// trajectory/invariant diagnostic and as a possible production pusher when trajectory
-// phase accuracy is more important than raw speed.  BORIS remains the cheapest and
-// most conservative production default.
+// H2 is symmetric/time-reversible for a static magnetic field.  HC4 composes this
+// second-order map with the Yoshida/Forest-Ruth triple-jump coefficients,
+//
+//   H4(dt) = H2(w1 dt) H2(w0 dt) H2(w1 dt)
+//   w1 =  1 / (2 - 2^(1/3))
+//   w0 = -2^(1/3) / (2 - 2^(1/3)) .
+//
+// The result is formally fourth-order for smooth fields, but each sub-map is still a
+// Boris/Higuera-Cary magnetic rotation and therefore preserves |p| to roundoff for
+// E=0.  This is the desired compromise for AMPS cutoff work:
+//
+//   - RK4-like fourth-order orbit accuracy in smooth fields,
+//   - Boris-like energy/rigidity robustness for pure magnetic tracing,
+//   - exact time reversibility of the composed map when the field is static,
+//   - no after-the-fact projection of rigidity or P_axis diagnostics.
+//
+// References for the algorithmic ingredients:
+//   Higuera & Cary, Physics of Plasmas, 2017: relativistic volume-preserving
+//     Boris-family mover with correct drift behavior.
+//   Yoshida, Physics Letters A, 1990: composition of symmetric second-order
+//     integrators to obtain fourth-order symplectic/time-reversible maps.
+//   Forest & Ruth, Physica D, 1990: fourth-order canonical symplectic integration.
+//   Birdsall & Langdon, Plasma Physics via Computer Simulation, 1991: Boris
+//     magnetic rotation and particle-in-cell mover foundations.
+//
+// Important implementation note: the Yoshida triple-jump has a negative middle
+// coefficient.  That is normal for fourth-order symmetric compositions.  For domain
+// crossing checks, the checked HC4 path subdivides the outer step into small positive
+// HC4 macro-steps and tests only the physical macro-step endpoints/segments, avoiding
+// false loss/escape decisions from internal negative-time composition stages.
 //
 // ---- RK2 (Heun / modified Euler) --------------------------------------------------
 //
@@ -217,6 +239,7 @@
 //
 // N_CHECK is chosen based on the mover type:
 //   Boris  -> N_CHECK = 4  (cheap; subdivide into 4 half-step pairs)
+//   HC4    -> N_CHECK = 4  (positive macro-substeps; do not test negative internal stages)
 //   RK2/4/6 -> use intermediate stage positions already computed
 //
 // When the function returns false, x and p are at the detected contact point.
@@ -279,7 +302,7 @@ public:
 
 enum class MoverType {
   BORIS,
-  BORIS_SDC,
+  HC4,
   RK2,
   RK4,
   RK6,
@@ -372,10 +395,10 @@ void BorisStep(V3& x_m, V3& p_SI,
                double dt,
                const IGridlessFieldEvaluator& field);
 
-void BorisSDCStep(V3& x_m, V3& p_SI,
-                  double q_C, double m0_kg,
-                  double dt,
-                  const IGridlessFieldEvaluator& field);
+void HC4Step(V3& x_m, V3& p_SI,
+             double q_C, double m0_kg,
+             double dt,
+             const IGridlessFieldEvaluator& field);
 
 void RK2Step(V3& x_m, V3& p_SI,
              double q_C, double m0_kg,

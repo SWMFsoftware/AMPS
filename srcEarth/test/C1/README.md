@@ -65,3 +65,12 @@ C1_stormer_comparison.png      # if matplotlib is available
 
 It returns exit code `0` for pass and nonzero for an AMPS execution or validation
 failure.
+
+
+## Particle mover selection
+
+The C1 Python runner accepts `--mover HC4` and passes it to AMPS as `-mover HC4`.
+If `--mover` is omitted, the runner does not pass `-mover`, preserving the AMPS
+input/default mover used by older C1 runs.  HC4 is the fourth-order
+Higuera-Cary/Boris composition intended to combine RK4-like smooth-field accuracy
+with Boris-like rigidity conservation for E=0 magnetic tracing.

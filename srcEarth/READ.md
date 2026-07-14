@@ -1230,8 +1230,35 @@ Common options:
 -i <file>
     AMPS_PARAM input file.
 
--mover <BORIS|BORIS_SDC|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>
-    Select backward tracing mover for gridless/Mode3D, or the supported subset for 3d_forward. BORIS_SDC is available in the shared gridless/backward 3D tracing layer as a high-order Boris spectral-deferred-correction mover.
+-mover <BORIS|HC4|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>
+    Select backward tracing mover for gridless/Mode3D, or the supported subset for 3d_forward.
+    HC4 is a fourth-order Higuera-Cary/Boris composition intended for RK4-like
+    orbit accuracy with Boris-like rigidity conservation in E=0 magnetic tracing.
+
+
+HC4 mover notes:
+
+```text
+HC4 = H2(w1 dt) H2(w0 dt) H2(w1 dt)
+w1 =  1 / (2 - 2^(1/3))
+w0 = -2^(1/3) / (2 - 2^(1/3))
+```
+
+Here `H2` is a symmetric relativistic Higuera-Cary/Boris magnetic midpoint
+step: half drift, evaluate `B` at the midpoint, rotate momentum with the
+Boris/Cayley magnetic rotation, then half drift.  In the current backward
+tracing layer `E=0`, so this base step preserves `|p|` to roundoff.  The
+Yoshida/Forest-Ruth composition raises the smooth-field order to four without
+adding any artificial projection of rigidity or canonical invariants.  The
+checked HC4 path subdivides the outer step into positive HC4 macro-steps for
+loss-sphere event detection, because the internal fourth-order composition
+contains a negative middle substep that should not be interpreted as a physical
+trajectory segment.
+
+References: Higuera & Cary (Physics of Plasmas, 2017) for the relativistic
+Boris-family mover; Yoshida (Physics Letters A, 1990) and Forest & Ruth
+(Physica D, 1990) for fourth-order composition of symmetric second-order maps;
+Birdsall & Langdon (1991) for the Boris magnetic rotation.
 
 -density-mode <ISOTROPIC|ANISOTROPIC>
     Override DS_BOUNDARY_MODE for density/flux calculations.
@@ -2117,13 +2144,8 @@ python srcEarth/test/C4/run_C4.py --mode 3d --mode3d-field-eval ANALYTIC
 python srcEarth/test/C4/run_C4.py --mode 3d --mode3d-field-eval MESH --dt-sweep 1.0,0.5,0.25
 python srcEarth/test/C4/run_C4.py --mode gridless --max-trace-distance 300
 python srcEarth/test/C4/run_C4.py --dt-sweep 1.0,0.5,0.25,0.125
-python srcEarth/test/C4/run_C4.py --movers BORIS,BORIS_SDC,RK4,RK6 --adaptive-dt F
+python srcEarth/test/C4/run_C4.py --movers BORIS,RK4,RK6 --adaptive-dt F
 ```
-
-BORIS_SDC note: C4 is a good first diagnostic for the new high-order Boris-SDC
-mover.  A useful comparison is `--movers BORIS,BORIS_SDC,RK4 --adaptive-dt T`
-for production-like adaptive stepping, followed by `--adaptive-dt F` with a
-small `--dt-sweep` to separate time-step convergence from mover structure.
 
 Input files:
 
