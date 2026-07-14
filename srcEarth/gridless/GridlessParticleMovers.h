@@ -82,6 +82,32 @@
 //
 // Recommended for all production cutoff-rigidity and density/spectrum calculations.
 //
+// ---- BORIS_SDC (experimental Boris spectral-deferred-correction style mover) ------
+//
+// BORIS_SDC is kept as an experimental high-robustness mover for comparison with HC4,
+// RK4, and the production BORIS branch.  The implementation intentionally uses the
+// same conservative magnetic midpoint kernel as HC4, but advances one requested outer
+// step by several smaller Boris/Higuera-Cary sweeps.  In the strict numerical-analysis
+// sense this is a compact Boris-SDC *style* implementation rather than a fully general
+// collocation solver for arbitrary E and B; it is nevertheless useful for AMPS because
+// the backward cutoff tracer currently integrates pure magnetic motion (E=0).
+//
+// Practical interpretation:
+//   - each internal sweep is a Boris/Higuera-Cary rotation and therefore preserves
+//     |p| to roundoff in E=0,
+//   - the smaller internal substeps reduce gyrophase and field-curvature error,
+//   - the mover is deliberately marked experimental because its order and error
+//     constants must be validated with C1/C4 before production use,
+//   - HC4 remains the preferred fourth-order Boris-family branch.
+//
+// References and context:
+//   - Boris, 1970 / Birdsall & Langdon, 1991: magnetic rotation used as the robust
+//     low-order pusher.
+//   - Winkel, Speck, Ruprecht, 2015: Boris-SDC idea for constructing high-order
+//     charged-particle integrators using Boris sweeps.
+//   - Ricketson & Chacón, 2020s relativistic Boris-SDC work: high-order extensions
+//     of Boris-like pushers for relativistic charged-particle trajectories.
+//
 // ---- HC4 (fourth-order Higuera-Cary / composed Boris mover) -----------------------
 //
 // HC4 is the high-accuracy, Boris-robust full-orbit mover intended for cutoff
@@ -302,6 +328,7 @@ public:
 
 enum class MoverType {
   BORIS,
+  BORIS_SDC,
   HC4,
   RK2,
   RK4,
@@ -394,6 +421,11 @@ void BorisStep(V3& x_m, V3& p_SI,
                double q_C, double m0_kg,
                double dt,
                const IGridlessFieldEvaluator& field);
+
+void BorisSDCStep(V3& x_m, V3& p_SI,
+                  double q_C, double m0_kg,
+                  double dt,
+                  const IGridlessFieldEvaluator& field);
 
 void HC4Step(V3& x_m, V3& p_SI,
              double q_C, double m0_kg,

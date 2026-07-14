@@ -812,6 +812,23 @@ namespace EarthUtil {
   struct Numerical {
     double dtTrace_s{1.0};
 
+    // TRACE_DT_FRACTION / DT_FRACTION
+    // --------------------------------
+    // Optional global multiplier applied to the *actual* trace step after the
+    // normal fixed/adaptive selector has chosen it.  The default 1.0 preserves
+    // previous behavior exactly.  Values in (0,1] let validation runs make a
+    // mover more conservative without changing DT_TRACE itself.
+    double dtFraction{1.0};
+
+    // MOVER_DT_FRACTION <MOVER>:<fraction>
+    // ------------------------------------
+    // Per-mover multipliers.  The runtime canonicalizes mover names with
+    // MoverTypeToString(), so examples are "RK4":0.5, "HC4":0.25,
+    // "BORIS_SDC":0.1.  The active fraction is
+    //     dtFraction * moverDtFraction[active_mover]
+    // if the mover-specific entry exists, or just dtFraction otherwise.
+    std::map<std::string,double> moverDtFraction;
+
     // ADAPTIVE_DT
     // -----------
     // true  (default): DT_TRACE is an upper bound; the solvers reduce the actual

@@ -116,6 +116,23 @@ CliOptions ParseCli(int argc,char** argv) {
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -mover");
       opt.mover=argv[++i];
     }
+    else if (a=="-trace-dt-fraction" || a=="--trace-dt-fraction" ||
+             a=="-dt-fraction" || a=="--dt-fraction" ||
+             a=="-time-step-fraction" || a=="--time-step-fraction") {
+      // Global post-selector dt multiplier.  Validation is done here so a typo such
+      // as --dt-fraction 2.0 fails before a long run starts.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -trace-dt-fraction");
+      opt.traceDtFraction=std::stod(argv[++i]);
+      if (!(opt.traceDtFraction > 0.0) || opt.traceDtFraction > 1.0)
+        exit(__LINE__,__FILE__,"-trace-dt-fraction must satisfy 0 < fraction <= 1");
+    }
+    else if (a=="-mover-dt-fraction" || a=="--mover-dt-fraction" ||
+             a=="-mover-time-step-fraction" || a=="--mover-time-step-fraction") {
+      // Repeatable option; parse canonical mover names later in main.cpp.  Accepted
+      // format is MOVER:factor or MOVER=factor, e.g. HC4:0.25 or RK4=0.5.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -mover-dt-fraction");
+      opt.moverDtFractionSpecs.push_back(argv[++i]);
+    }
     else if (a=="-density-mode" || a=="--density-mode") {
       // Overrides DS_BOUNDARY_MODE from the input file.
       // Supported values (case-insensitive): ISOTROPIC | ANISOTROPIC
@@ -489,12 +506,16 @@ std::string HelpMessage(const char* progName) {
   out << "      Path to the AMPS_PARAM-format input file. Controls all physics and\n";
   out << "      geometry parameters. See 'Input file sections' below for a summary.\n\n";
 
-  out << "  -mover | --mover <BORIS|HC4|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>   (optional; default: BORIS)\n";
+  out << "  -mover | --mover <BORIS|BORIS_SDC|HC4|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>   (optional; default: BORIS)\n";
   out << "      Select the particle integration algorithm.\n";
   out << "        BORIS   Relativistic Boris pusher. Volume-preserving (symplectic),\n";
   out << "                time-reversible, one field evaluation per step. Recommended\n";
   out << "                for all production runs. Validated against Stormer analytic\n";
   out << "                cutoffs on dipole fields.\n";
+  out << "        BORIS_SDC Experimental Boris-SDC-style subcycled midpoint-Boris mover.\n";
+  out << "                Restored for validation/comparison alongside HC4; not the default.\n";
+  out << "        HC4     Fourth-order Higuera-Cary/Boris Yoshida composition. Intended\n";
+  out << "                as the high-accuracy Boris-family full-orbit mover.\n";
   out << "        RK2     Runge-Kutta 2nd order (Heun). Two field evaluations per step.\n";
   out << "                Useful as a quick sanity check against Boris.\n";
   out << "        RK4     Runge-Kutta 4th order. Four field evaluations per step.\n";
@@ -512,6 +533,16 @@ std::string HelpMessage(const char* progName) {
   out << "      BORIS, RK4, GC/GC4, and HYBRID. HC4/RK2/RK6/GC2/GC6 remain available in\n";
   out << "      gridless/backward 3D tracing through the shared gridless mover layer.\n";
   out << "      When provided, overrides any mover setting in the input file.\n\n";
+
+  out << "  -trace-dt-fraction | --dt-fraction <f>   (optional; 0 < f <= 1)\n";
+  out << "      Multiplies the actual trace step after the normal fixed/adaptive selector\n";
+  out << "      has chosen it. In adaptive mode this means: DT_TRACE maximum -> gyro and\n";
+  out << "      boundary limiters -> fraction. Use this for convergence tests without\n";
+  out << "      editing DT_TRACE in the input file.\n\n";
+  out << "  -mover-dt-fraction | --mover-time-step-fraction <MOVER:f>   (repeatable)\n";
+  out << "      Applies an additional multiplier only when the selected mover is active,\n";
+  out << "      for example --mover-dt-fraction HC4:0.25 or --mover-dt-fraction RK4=0.5.\n";
+  out << "      The effective fraction is global_fraction * mover_specific_fraction.\n\n";
 
   out << "  -density-mode | --density-mode <ISOTROPIC|ANISOTROPIC>   (optional)\n";
   out << "      Override DS_BOUNDARY_MODE from the input file.\n";

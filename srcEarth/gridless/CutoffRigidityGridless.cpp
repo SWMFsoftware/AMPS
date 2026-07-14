@@ -298,6 +298,7 @@ namespace {
 static const char* MoverTypeNameGridless_(MoverType m) {
   switch (m) {
     case MoverType::BORIS:  return "BORIS";
+    case MoverType::BORIS_SDC: return "BORIS_SDC";
     case MoverType::HC4:    return "HC4";
     case MoverType::RK2:    return "RK2";
     case MoverType::RK4:    return "RK4";
@@ -1031,6 +1032,40 @@ static inline double EstimateHybridAdiabaticity(const cFieldEvaluator& field,
   return rho_m/Leff_m;
 }
 
+
+static inline double TraceDtFractionForMover(const EarthUtil::AmpsParam& prm,
+                                             MoverType mover) {
+  // Return the multiplier applied to the *actual* trace step after the normal
+  // fixed/adaptive selector has already chosen dt.  This is intentionally a pure
+  // reduction factor: default 1.0 is exactly backward compatible, while values such
+  // as 0.5 or 0.25 give a conservative convergence/stability test for a mover
+  // without changing DT_TRACE or the physical run setup.
+  double f = prm.numerics.dtFraction;
+  const auto it = prm.numerics.moverDtFraction.find(MoverTypeToString(mover));
+  if (it != prm.numerics.moverDtFraction.end()) f *= it->second;
+  if (!(f > 0.0)) f = 1.0;
+  if (f > 1.0) f = 1.0;
+  return f;
+}
+
+static inline double ApplyTraceDtFraction(const EarthUtil::AmpsParam& prm,
+                                          MoverType mover,
+                                          double dt,
+                                          double timeRemaining_s) {
+  const double f = TraceDtFractionForMover(prm, mover);
+  if (f == 1.0) return dt;
+
+  // Apply the fraction after all regular limiters.  Keep only a tiny absolute floor
+  // so a deliberately small fraction is not undone by the legacy travel-distance
+  // progress floor.  This is important for HC4/BORIS_SDC convergence tests where the
+  // user explicitly asks for, for example, one quarter of the adaptive step.
+  dt *= f;
+  const double tinyFloor = std::max(1.0e-12, 1.0e-12 * std::max(prm.numerics.dtTrace_s, 1.0));
+  if (dt < tinyFloor) dt = tinyFloor;
+  if (timeRemaining_s > 0.0) dt = std::min(dt, timeRemaining_s);
+  return dt;
+}
+
 static inline double SelectTraceDt(const EarthUtil::AmpsParam& prm,
                                     const cFieldEvaluator& field,
                                       const V3& x,
@@ -1047,7 +1082,8 @@ static inline double SelectTraceDt(const EarthUtil::AmpsParam& prm,
   //                            final trim to the remaining trace-time budget.
   double dt = prm.numerics.dtTrace_s;
   if (timeRemaining_s < dt) dt = timeRemaining_s;
-  if (!prm.numerics.adaptiveDt) return dt;
+  const MoverType activeMover = GetDefaultMoverType();
+  if (!prm.numerics.adaptiveDt) return ApplyTraceDtFraction(prm, activeMover, dt, timeRemaining_s);
 
   // Compute relativistic gamma and speed from momentum p = gamma m v.
   const double p2 = dot(p,p);
@@ -1138,7 +1174,7 @@ static inline double SelectTraceDt(const EarthUtil::AmpsParam& prm,
   dt = std::max(dtFloor, dt);
   if (timeRemaining_s > 0.0) dt = std::min(dt, timeRemaining_s);
 
-  return dt;
+  return ApplyTraceDtFraction(prm, activeMover, dt, timeRemaining_s);
 }
 
 static bool TraceAllowedImpl(const EarthUtil::AmpsParam& prm,
@@ -2089,6 +2125,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
                     ? "min(DT_TRACE, gyro-angle limiter, boundary-distance limiter, remaining time)"
                     : "min(DT_TRACE, remaining time)")
               << "\n";
+    std::cout << "  TRACE_DT_FRACTION    : " << TraceDtFractionForMover(prm, GetDefaultMoverType())
+              << "  (global=" << prm.numerics.dtFraction
+              << "; active mover=" << MoverTypeToString(GetDefaultMoverType()) << ")\n";
     std::cout << "  MAX_TRACE_TIME [s]   : " << prm.numerics.maxTraceTime_s << "\n";
     std::cout << "  CUTOFF_MAX_TRAJ_TIME : "
               << (prm.cutoff.maxTrajTime_s > 0.0 ? prm.cutoff.maxTrajTime_s : 0.0)

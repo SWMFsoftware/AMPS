@@ -10,6 +10,14 @@ last pass: c8207997bd0b2c0ff46d40a0aa45668d54d0f537
 P srcEarth/test/C1/run_C1.py --mode gridless -np 4 -nt 16
 last pass: c8207997bd0b2c0ff46d40a0aa45668d54d0f537
 
+srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16 --mover HC4
+last pass:
+srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16 --mover RK4 
+last pass:
+srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16 --mover BORIS 
+last pass:
+
+
 P srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
 last pass: c8207997bd0b2c0ff46d40a0aa45668d54d0f537
 P srcEarth/test/C2/run_C2.py --mode gridless -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 

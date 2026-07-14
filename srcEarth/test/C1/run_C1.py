@@ -442,6 +442,10 @@ def build_amps_command(args, amps_path, mesh_case=None):
     # Mode3D and gridless tracing.
     if args.mover:
         cmd += ["-mover", args.mover]
+    if args.dt_fraction is not None:
+        cmd += ["-trace-dt-fraction", str(args.dt_fraction)]
+    for spec in args.mover_dt_fraction:
+        cmd += ["-mover-dt-fraction", spec]
 
     if args.mode == "3d":
         cmd += [
@@ -558,6 +562,7 @@ def parse_args() -> argparse.Namespace:
           python srcEarth/test/C1/run_C1.py
         W python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC -np 18 -nt 16
           python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC --mover HC4 -np 4 -nt 16
+          python srcEarth/test/C1/run_C1.py --mode 3d --mover HC4 --mover-dt-fraction HC4:0.25
         W python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval MESH -np 18 -nt 16 
           python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval MESH --mode3d-mesh-res-earth-re 0.05 --mode3d-mesh-res-boundary-re 0.50 --mode3d-mesh-coarsening LOG
           python srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval MESH --coarsening LINEAR --res-earth-series 0.1,0.05 --res-boundary-series 0.75,0.5
@@ -570,7 +575,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-nt", type=int, default=16, help="number of threads per MPI rank; default: 16")
     parser.add_argument("--mode", choices=["3d", "gridless"], default="3d", help="AMPS mode to validate; default: 3d")
     parser.add_argument("--mode3d-field-eval", "--field-eval", dest="mode3d_field_eval", default="ANALYTIC", choices=["ANALYTIC", "MESH", "GRID_3D"], help="Mode3D field backend passed as -mode3d-field-eval; default: ANALYTIC")
-    parser.add_argument("--mover", default=None, choices=["BORIS", "HC4", "HIGUERA_CARY4", "HIGUERA-CARY4", "BORIS4", "BORIS_SDC", "BORIS-SDC", "BORISSDC", "BSDC", "RK2", "RK4", "RK6", "GC2", "GC4", "GC6", "HYBRID"], help="optional particle mover passed to AMPS as -mover; default: preserve AMPS/input-file default")
+    parser.add_argument("--mover", default=None, choices=["BORIS", "BORIS_SDC", "BORIS-SDC", "BORISSDC", "BSDC", "HC4", "HIGUERA_CARY4", "HIGUERA-CARY4", "HC_YOSHIDA4", "HC-YOSHIDA4", "BORIS4", "BORIS_YOSHIDA4", "BORIS-YOSHIDA4", "RK2", "RK4", "RK6", "GC2", "GC4", "GC6", "HYBRID"], help="optional particle mover passed to AMPS as -mover; default: preserve AMPS/input-file default")
+    parser.add_argument("--dt-fraction", "--trace-dt-fraction", dest="dt_fraction", type=float, default=None, help="optional global multiplier for the actual trace step selected by AMPS; must satisfy 0 < f <= 1")
+    parser.add_argument("--mover-dt-fraction", action="append", default=[], help="optional repeatable mover-specific dt multiplier passed to AMPS as MOVER:fraction, e.g. HC4:0.25 or BORIS_SDC:0.1")
     parser.add_argument("--scheduler", default="DYNAMIC", choices=["DYNAMIC", "BLOCK_CYCLIC", "STATIC"], help="MPI scheduler to use for the selected mode; default: DYNAMIC")
     parser.add_argument("--dynamic-chunk", type=int, default=0, help="dynamic MPI chunk size; 0 means AMPS auto heuristic; default: 0")
     parser.add_argument("--mode3d-mesh-res-earth-re", type=float, default=None, help="optional single-run AMPS CLI override: requested Mode3D AMR resolution near Earth, in Re")
@@ -600,6 +607,11 @@ def main() -> int:
         raise SystemExit("-nt must be >= 1")
     if args.dynamic_chunk < 0:
         raise SystemExit("--dynamic-chunk must be >= 0")
+    if args.dt_fraction is not None and not (0.0 < args.dt_fraction <= 1.0):
+        raise SystemExit("--dt-fraction/--trace-dt-fraction must satisfy 0 < f <= 1")
+    for spec in args.mover_dt_fraction:
+        if (":" not in spec) and ("=" not in spec):
+            raise SystemExit("--mover-dt-fraction expects MOVER:fraction or MOVER=fraction")
     if args.mode3d_mesh_res_earth_re is not None and args.mode3d_mesh_res_earth_re <= 0.0:
         raise SystemExit("--mode3d-mesh-res-earth-re must be > 0")
     if args.mode3d_mesh_res_boundary_re is not None and args.mode3d_mesh_res_boundary_re <= 0.0:
@@ -718,6 +730,8 @@ def main() -> int:
                 "mode": args.mode,
                 "mode3d_field_eval": args.mode3d_field_eval,
                 "mover": args.mover,
+                "dt_fraction": args.dt_fraction,
+                "mover_dt_fraction": args.mover_dt_fraction,
                 "scheduler": args.scheduler,
                 "dynamic_chunk": args.dynamic_chunk,
                 "cutoff_search_cli_enabled": not args.no_cutoff_search_cli,
@@ -759,6 +773,8 @@ def main() -> int:
             "mode": args.mode,
             "mode3d_field_eval": args.mode3d_field_eval,
             "mover": args.mover,
+            "dt_fraction": args.dt_fraction,
+            "mover_dt_fraction": args.mover_dt_fraction,
             "scheduler": args.scheduler,
             "dynamic_chunk": args.dynamic_chunk,
             "cutoff_search_cli_enabled": not args.no_cutoff_search_cli,
@@ -773,7 +789,7 @@ def main() -> int:
 
         print("\nC1 mesh-series summary")
         print("======================")
-        print("mode=%s field_eval=%s mover=%s np=%d nt=%d scheduler=%s" % (args.mode, args.mode3d_field_eval, args.mover or "AMPS_DEFAULT", args.np, args.nt, args.scheduler))
+        print("mode=%s field_eval=%s mover=%s np=%d nt=%d scheduler=%s dt_fraction=%s mover_dt_fraction=%s" % (args.mode, args.mode3d_field_eval, args.mover or "AMPS_DEFAULT", args.np, args.nt, args.scheduler, args.dt_fraction, ",".join(args.mover_dt_fraction) if args.mover_dt_fraction else "<none>"))
         for case in mesh_cases:
             print("  %s: earth=%g Re boundary=%g Re coarsening=%s exponent=%g Rb=%g Re" % (
                 case.label, case.res_earth_re, case.res_boundary_re, case.coarsening, case.exponent, case.r_boundary_re
@@ -845,6 +861,8 @@ def main() -> int:
         "mode": args.mode,
         "mode3d_field_eval": args.mode3d_field_eval if args.mode == "3d" else None,
         "mover": args.mover,
+        "dt_fraction": args.dt_fraction,
+        "mover_dt_fraction": args.mover_dt_fraction,
         "scheduler": args.scheduler,
         "dynamic_chunk": args.dynamic_chunk,
         "cutoff_search_cli_enabled": not args.no_cutoff_search_cli,
@@ -860,7 +878,7 @@ def main() -> int:
 
     print("\nC1 summary")
     print("==========")
-    print("mode=%s mover=%s np=%d nt=%d scheduler=%s" % (args.mode, args.mover or "AMPS_DEFAULT", args.np, args.nt, args.scheduler))
+    print("mode=%s mover=%s np=%d nt=%d scheduler=%s dt_fraction=%s mover_dt_fraction=%s" % (args.mode, args.mover or "AMPS_DEFAULT", args.np, args.nt, args.scheduler, args.dt_fraction, ",".join(args.mover_dt_fraction) if args.mover_dt_fraction else "<none>"))
     if args.mode == "3d":
         print("mode3d_field_eval=%s" % args.mode3d_field_eval)
     for row in summary:

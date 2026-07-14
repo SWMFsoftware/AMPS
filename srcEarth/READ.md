@@ -1230,13 +1230,23 @@ Common options:
 -i <file>
     AMPS_PARAM input file.
 
--mover <BORIS|HC4|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>
+-mover <BORIS|BORIS_SDC|HC4|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>
     Select backward tracing mover for gridless/Mode3D, or the supported subset for 3d_forward.
     HC4 is a fourth-order Higuera-Cary/Boris composition intended for RK4-like
     orbit accuracy with Boris-like rigidity conservation in E=0 magnetic tracing.
+    BORIS_SDC is restored as an experimental Boris-SDC-style mover for validation
+    and comparison alongside HC4.
+
+-trace-dt-fraction <f> | -dt-fraction <f>
+    Global multiplier applied to the actual trace timestep after the normal
+    fixed/adaptive selector has chosen it.  Valid range: 0 < f <= 1.
+
+-mover-dt-fraction <MOVER:f>
+    Repeatable per-mover multiplier.  Example: `-mover HC4 -mover-dt-fraction HC4:0.25`.
+    The effective factor is `global_fraction * mover_specific_fraction`.
 
 
-HC4 mover notes:
+HC4 and BORIS_SDC mover notes:
 
 ```text
 HC4 = H2(w1 dt) H2(w0 dt) H2(w1 dt)
@@ -2241,3 +2251,10 @@ This is important for interpreting C4.  If `ADAPTIVE_DT=T`, decreasing
 boundary-distance limiter can already be smaller.  In that case, the useful
 convergence check is the mover/cap sensitivity, not the nominal `DT_TRACE`
 sequence alone.
+
+
+BORIS_SDC is intentionally labeled experimental.  It uses several conservative
+midpoint Boris/Higuera-Cary sweeps inside one requested outer step.  The purpose is
+to provide a Boris-family comparison branch with stronger gyrophase resolution while
+preserving rigidity in the current E=0 backward tracer.  It should be validated with
+C1/C4 before production use.
