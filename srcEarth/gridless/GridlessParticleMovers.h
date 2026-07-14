@@ -82,6 +82,27 @@
 //
 // Recommended for all production cutoff-rigidity and density/spectrum calculations.
 //
+// ---- BORIS_SDC (Boris spectral deferred correction) -------------------------------
+//
+// Boris-SDC is a high-order extension of the Boris idea: a Boris-like,
+// magnetic-rotation-preserving sweep is used as the low-order preconditioner inside
+// a spectral-deferred-correction / collocation iteration.  The implementation in this
+// file uses three Gauss-Lobatto nodes (0, 1/2, 1) and several correction sweeps.
+// That gives a compact, robust fourth-order-or-better diagnostic mover for the
+// static E=0 geomagnetic tracing problem while retaining the most important Boris
+// property for cutoff work: the magnetic part of each subinterval advance is still a
+// Boris rotation rather than a generic explicit Runge-Kutta update.
+//
+// References for the algorithmic idea:
+//   * Winkel, Speck & Ruprecht, "A high-order Boris integrator", JCP / arXiv:1409.5677.
+//   * Smedt et al., "New applications for the Boris-SDC algorithm for plasma
+//     simulations", arXiv:2110.08024, including relativistic Boris-SDC tests.
+//
+// In this Earth SEP implementation, BORIS_SDC is intended as a high-accuracy
+// trajectory/invariant diagnostic and as a possible production pusher when trajectory
+// phase accuracy is more important than raw speed.  BORIS remains the cheapest and
+// most conservative production default.
+//
 // ---- RK2 (Heun / modified Euler) --------------------------------------------------
 //
 // Two-stage explicit Runge-Kutta. Second-order accurate in time. Two field evaluations
@@ -258,6 +279,7 @@ public:
 
 enum class MoverType {
   BORIS,
+  BORIS_SDC,
   RK2,
   RK4,
   RK6,
@@ -349,6 +371,11 @@ void BorisStep(V3& x_m, V3& p_SI,
                double q_C, double m0_kg,
                double dt,
                const IGridlessFieldEvaluator& field);
+
+void BorisSDCStep(V3& x_m, V3& p_SI,
+                  double q_C, double m0_kg,
+                  double dt,
+                  const IGridlessFieldEvaluator& field);
 
 void RK2Step(V3& x_m, V3& p_SI,
              double q_C, double m0_kg,

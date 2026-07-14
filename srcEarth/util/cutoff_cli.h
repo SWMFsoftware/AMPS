@@ -41,7 +41,7 @@
 //                 sufficiently adiabatic for guiding-center transport
 //       In gridless and backward 3D modes, all listed values are handled by the
 //       shared GridlessParticleMovers layer. In 3d_forward mode, the AMPS-signature
-//       mover manager currently supports BORIS, RK4, GC/GC4, and HYBRID.
+//       mover manager currently supports BORIS, RK4, GC/GC4, and HYBRID. BORIS_SDC is currently implemented in the shared gridless/backward 3D tracing layer.
 //       If omitted, the default mover (BORIS) is used.
 //       The string is stored as-is; translation to the concrete mover is done by the caller.
 //

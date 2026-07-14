@@ -196,6 +196,7 @@ be documented here unless the gridless field evaluator itself supports them.
 The gridless CLI and shared mover layer support the following trajectory movers:
 
   BORIS
+  BORIS_SDC
   RK2
   RK4
   RK6
@@ -215,6 +216,13 @@ General guidance:
 
   - BORIS:
       recommended default for most cutoff and density runs.
+
+  - BORIS_SDC:
+      high-order Boris spectral-deferred-correction mover.  It uses three
+      Gauss-Lobatto collocation nodes and repeated Boris sweeps to improve
+      trajectory phase accuracy while keeping the magnetic rotation Boris-like.
+      Use it for trajectory-quality diagnostics, C4-style invariant checks, and
+      production comparisons where ordinary Boris is robust but too low order.
 
   - RK2 / RK4 / RK6:
       explicit full-orbit alternatives mainly useful for cross-checks,
@@ -329,7 +337,7 @@ Useful options:
   -i <file>
       AMPS parameter file.
 
-  -mover <BORIS|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>
+  -mover <BORIS|BORIS_SDC|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>
       Override the default/shared mover.
 
   -density-mode <ISOTROPIC|ANISOTROPIC>
@@ -501,6 +509,7 @@ Density / spectrum, anisotropic boundary:
 
 Cross-check with a different mover:
 
+  ./amps -mode gridless -i my_run.in -mover BORIS_SDC
   ./amps -mode gridless -i my_run.in -mover RK4
 
 --------------------------------------------------------------------------------

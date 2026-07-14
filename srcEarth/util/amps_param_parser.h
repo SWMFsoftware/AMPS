@@ -960,7 +960,7 @@ namespace EarthUtil {
     std::string injectionEnergyDistribution{"SPECTRUM"};
 
     // Active particle mover used by the single AMPS-signature 3d_forward mover
-    // manager.  Supported values: BORIS, RK4, GC/GC4, HYBRID.
+    // manager.  Supported values: BORIS, RK4, GC/GC4, HYBRID. The shared gridless/backward tracer also supports BORIS_SDC.
     //
     // CURRENT POLICY: this active value is set from the CLI (-mover) or remains BORIS.
     // The input-file parser does not currently change it.  This is intentional: the

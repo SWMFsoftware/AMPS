@@ -455,13 +455,17 @@ T05
 TA16
 ```
 
-The field is first written into owner-rank DATAFILE cell buffers. Then `GlobalMagneticField::AssembleCellCenteredFieldsForCutoff()` resets and assigns dense `node->Temp_ID` values, gathers owner-cell B/E values into compact global arrays, and verifies exactly one owner contribution per physical cell. No nonlocal AMR blocks or ghost-cell state vectors are allocated. Field evaluation uses the decomposition-independent AMPS row stencil.
+The field is first written into owner-rank DATAFILE cell buffers. Then `GlobalMagneticField::MaterializeCellCenteredMagneticFieldForCutoff()` assigns dense leaf IDs, allocates missing leaf blocks on all MPI ranks, gathers owner-cell B values, and fills all replicated blocks/ghost cells. After that step, the normal AMPS interpolation stencil can be used from any MPI rank.
 
 ### 5.3 SWMF-coupled Mode3D magnetic fields
 
 In coupled mode, the field comes from the SWMF coupler data buffer, not from standalone Tsyganenko/DIPOLE initialization.
 
-The same compact global-field helper is used. B is read from `PIC::CPLR::SWMF::MagneticFieldOffset`; E is reconstructed from `PIC::CPLR::SWMF::BulkVelocityOffset` as `E = -v x B`.
+The same global materialization helper is used, but the source offset is:
+
+```cpp
+PIC::CPLR::SWMF::MagneticFieldOffset
+```
 
 ### 5.4 Electric field options
 
@@ -486,7 +490,7 @@ Gridless mode does not need a field mesh. Work is distributed over observation l
 
 ### 6.2 Standalone Mode3D
 
-Standalone Mode3D no longer uses independent private MPI domains for cutoff calculations. It uses the normal distributed AMPS mesh initialization and then assembles compact global B/E arrays for tracing.
+Standalone Mode3D no longer uses independent private MPI domains for cutoff calculations. It uses the normal distributed AMPS mesh initialization and then builds a replicated read-only magnetic-field snapshot for tracing.
 
 The intended sequence is:
 
@@ -495,15 +499,15 @@ PIC::InitMPI()
 amps_init_mesh()
 amps_init()
 InitMeshFields()
-GlobalMagneticField::AssembleCellCenteredFieldsForCutoff()
+GlobalMagneticField::MaterializeCellCenteredMagneticFieldForCutoff()
 RunCutoffRigidity() and/or RunDensityAndFlux()
 ```
 
-This gives all ranks access to global B/E values through row-stencil interpolation while preserving the normal AMPS block decomposition and avoiding replicated blocks.
+This gives all ranks access to the global B field while preserving the normal AMPS MPI domain decomposition during initialization.
 
 ### 6.3 SWMF coupled
 
-In coupled mode, compact B/E assembly is repeated for every accepted SWMF/PT snapshot before the backward products are computed.
+In coupled mode, the global B-field materialization is repeated for every accepted SWMF/PT snapshot before the backward products are computed.
 
 ### 6.4 Intra-rank shared-memory backends for Mode3D backward products
 
@@ -754,11 +758,6 @@ DRIVER_FILE or MAGNETIC_DRIVER_FILE
 ```
 
 Model aliases like `TS05` are normalized to the canonical names used internally.
-
-For gridless density/flux validation, `FIELD_MODEL NONE` is also supported. It
-returns a zero magnetic field and skips Geopack/Tsyganenko initialization; this
-mode is intended for normalization tests such as F1 rather than physical
-geospace production runs.
 
 CCMC/Runs-on-Request style `TS05_*` and `T05_*` aliases are accepted for the same background drivers:
 
@@ -1231,8 +1230,8 @@ Common options:
 -i <file>
     AMPS_PARAM input file.
 
--mover <BORIS|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>
-    Select backward tracing mover for gridless/Mode3D, or the supported subset for 3d_forward.
+-mover <BORIS|BORIS_SDC|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>
+    Select backward tracing mover for gridless/Mode3D, or the supported subset for 3d_forward. BORIS_SDC is available in the shared gridless/backward 3D tracing layer as a high-order Boris spectral-deferred-correction mover.
 
 -density-mode <ISOTROPIC|ANISOTROPIC>
     Override DS_BOUNDARY_MODE for density/flux calculations.
@@ -2070,162 +2069,6 @@ binary/C3_binary_amps.log
 upper_scan/C3_upper_scan_amps.log
 ```
 
-### C11 — penumbra-pocket BINARY Rmin-collapse regression
-
-Directory: `srcEarth/test/C11`
-
-Driver:
-
-```bash
-python srcEarth/test/C11/run_C11.py -np 4 -nt 16
-```
-
-Purpose.  C11 isolates the historical endpoint-binary failure that motivated the
-penumbra-safe `UPPER_SCAN` cutoff search.  At the high-latitude dipole-shell
-point
-
-```text
-lon = 0 deg
-lat = -60 deg
-alt = 9000 km
-FIELD_MODEL = DIPOLE
-CUTOFF_SAMPLING = VERTICAL
-```
-
-an isolated low-rigidity allowed pocket can cause the legacy `BINARY` search to
-return the lower search bound.  The C11 input sets `CUTOFF_EMIN=0.05 MeV/n`,
-which corresponds to `Rmin≈9.6866e-3 GV` for protons, while the analytical
-vertical Størmer upper cutoff at the primary point is about `0.159972 GV`.
-
-The script runs two algorithms by default:
-
-```text
-BINARY      legacy endpoint-only search; expected to reproduce the Rmin collapse
-UPPER_SCAN  production search; expected to recover the upper Størmer cutoff
-```
-
-Unlike C3, where BINARY is mostly diagnostic, C11 deliberately requires the
-primary BINARY run to reproduce the known Rmin-collapse signature.  This makes
-C11 a code-level regression guard for that specific historical behavior.  If the
-legacy BINARY path is removed or intentionally fixed, the test expectation should
-be updated with the code change.
-
-Execution examples:
-
-```bash
-python srcEarth/test/C11/run_C11.py --mode3d-field-eval ANALYTIC
-python srcEarth/test/C11/run_C11.py --mode3d-field-eval MESH
-python srcEarth/test/C11/run_C11.py --algorithms UPPER_SCAN --cutoff-scan-n 200
-python srcEarth/test/C11/run_C11.py --target-alts 500,9000 --target-lats -60,60
-python srcEarth/test/C11/run_C11.py --dry-run
-```
-
-Input files and reference table:
-
-```text
-srcEarth/test/C11/AMPS_PARAM_C11.in
-srcEarth/test/C11/AMPS_PARAM_C11_mode3d.in
-srcEarth/test/C11/reference_C11_penumbra_pocket.csv
-```
-
-C11 is Mode3D-only because it uses the single-point
-`CUTOFF_DEBUG_RIGIDITY_SCAN` diagnostic.  The generated input enables that
-diagnostic at the primary point and writes one scan file per algorithm:
-
-```text
-binary/C11_binary_debug_rigidity_scan.dat
-upper_scan/C11_upper_scan_debug_rigidity_scan.dat
-```
-
-The debug scan reports `Rc_selected_GV`, `Rc_endpoint_binary_GV`,
-`Rc_upper_scan_GV`, and `Rc_stormer_GV`.  C11 requires the endpoint-binary value
-to be near `Rmin` and the UPPER_SCAN value to be close to the Størmer upper
-cutoff.
-
-Test artifacts written to the run directory:
-
-```text
-C11_summary.csv
-C11_result.json
-C11_binary_vs_upper_scan.png   # written when matplotlib is available
-reference_C11_penumbra_pocket_generated.csv
-binary/C11_binary_amps.log
-upper_scan/C11_upper_scan_amps.log
-```
-
-### C14 — Mode3D/gridless cross-solver consistency
-
-Directory: `srcEarth/test/C14`
-
-Driver:
-
-```bash
-python srcEarth/test/C14/run_C14.py -np 4 -nt 16
-```
-
-Purpose.  C14 compares the standalone Mode3D and gridless backward cutoff
-implementations on the same centered aligned-dipole vertical-cutoff shell
-problem.  The two solvers share production algorithms such as `UPPER_SCAN` and
-dynamic MPI scheduling, but they still represent fields and locations through
-different code paths.  Agreement demonstrates cross-solver consistency rather
-than only internal reproducibility.
-
-Default physical setup:
-
-```text
-FIELD_MODEL = DIPOLE
-CUTOFF_SAMPLING = VERTICAL
-CUTOFF_SEARCH = UPPER_SCAN
-alt = 500, 9000 km
-lon = 0, 30, ..., 330 deg
-lat = -60, -30, 0, 30, 60 deg
-```
-
-The analytical reference for both solver outputs is the centered-dipole vertical
-Størmer cutoff,
-
-```text
-Rc = R0 cos^4(lambda) / r_RE^2 .
-```
-
-Execution examples:
-
-```bash
-python srcEarth/test/C14/run_C14.py -np 4 -nt 16
-python srcEarth/test/C14/run_C14.py --mode3d-field-eval MESH -np 4 -nt 16
-python srcEarth/test/C14/run_C14.py --scheduler STATIC --dynamic-chunk 0
-python srcEarth/test/C14/run_C14.py --lons 0,90,180,270 --lats -60,-30,0,30,60
-python srcEarth/test/C14/run_C14.py --dry-run
-```
-
-Input files and reference table:
-
-```text
-srcEarth/test/C14/AMPS_PARAM_C14_mode3d.in
-srcEarth/test/C14/AMPS_PARAM_C14_gridless.in
-srcEarth/test/C14/reference_C14_cross_solver.csv
-```
-
-Acceptance checks:
-
-```text
-Mode3D/gridless relative difference:  < 1% for |lat| <= 30 deg
-Mode3D/gridless relative difference:  < 5% for high-latitude points
-Mode3D and gridless Størmer residual: < 5% mid-latitude, < 25% high-latitude
-longitude spread and north/south residuals remain small for each solver
-```
-
-Test artifacts written to the run directory:
-
-```text
-C14_summary.csv
-C14_result.json
-C14_mode3d_vs_gridless.png   # written when matplotlib is available
-reference_C14_cross_solver_generated.csv
-mode3d/C14_3d_amps.log
-gridless/C14_gridless_amps.log
-```
-
 ### C4 — parser-safe trace-control and mover convergence
 
 Directory: `srcEarth/test/C4`
@@ -2274,8 +2117,13 @@ python srcEarth/test/C4/run_C4.py --mode 3d --mode3d-field-eval ANALYTIC
 python srcEarth/test/C4/run_C4.py --mode 3d --mode3d-field-eval MESH --dt-sweep 1.0,0.5,0.25
 python srcEarth/test/C4/run_C4.py --mode gridless --max-trace-distance 300
 python srcEarth/test/C4/run_C4.py --dt-sweep 1.0,0.5,0.25,0.125
-python srcEarth/test/C4/run_C4.py --movers BORIS,RK4,RK6 --adaptive-dt F
+python srcEarth/test/C4/run_C4.py --movers BORIS,BORIS_SDC,RK4,RK6 --adaptive-dt F
 ```
+
+BORIS_SDC note: C4 is a good first diagnostic for the new high-order Boris-SDC
+mover.  A useful comparison is `--movers BORIS,BORIS_SDC,RK4 --adaptive-dt T`
+for production-like adaptive stepping, followed by `--adaptive-dt F` with a
+small `--dt-sweep` to separate time-step convergence from mover structure.
 
 Input files:
 
@@ -2325,390 +2173,6 @@ dt_*/C4_amps.log
 Too-loose caps can let quasi-trapped low-rigidity trajectories leak to the outer
 box, while too-tight caps can stop truly allowed near-cutoff trajectories before
 they escape.  C4 exposes both controls explicitly.
-
-
-### F1 — zero-field density/flux normalization
-
-Directory: `srcEarth/test/F1`
-
-Driver:
-
-```bash
-python srcEarth/test/F1/run_F1.py -np 4 -nt 16
-```
-
-Purpose.  F1 is the first density/flux normalization test.  It uses a deliberately
-trivial transport problem:
-
-```text
-FIELD_MODEL          NONE
-EFIELD_MODEL         NONE
-R_INNER              0.0 km
-DS_TRANSMISSION_MODE DIRECT
-SPECTRUM_TYPE        POWER_LAW
-SPEC_J0              1.0
-SPEC_E0              10.0 MeV
-SPEC_GAMMA           3.5
-SPEC_EMIN/SPEC_EMAX  1.0 / 1000.0 MeV
-```
-
-With `B=0` and no absorbing inner sphere, every straight-line trajectory from the
-ten requested points exits the outer box.  Therefore the reference solution is
-`T(E)=1`, `J_local(E)=J_boundary(E)`, omnidirectional flux `4π∫J(E)dE`, and
-density `4π∫J(E)/v(E)dE`.  The test verifies absolute normalization,
-energy-channel fluxes, spectrum-file consistency, and zero spatial variation.
-
-Input and reference files:
-
-```text
-srcEarth/test/F1/AMPS_PARAM_F1_gridless.in
-srcEarth/test/F1/reference_F1_zero_field.csv
-```
-
-AMPS output parsed by the test:
-
-```text
-gridless_points_density.dat
-gridless_points_spectrum.dat
-gridless_points_flux.dat
-```
-
-Test artifacts written to the run directory:
-
-```text
-F1_amps.log
-F1_summary.csv
-F1_result.json
-```
-
-F1 requires the gridless field evaluator branch for `FIELD_MODEL NONE`, which
-returns `B=(0,0,0)` and leaves all Tsyganenko/Geopack state untouched.
-
-
-### F2 — power-law energy integration
-
-Directory: `srcEarth/test/F2`
-
-Driver:
-
-```bash
-python srcEarth/test/F2/run_F2.py -np 4 -nt 16
-```
-
-Purpose.  F2 validates the energy-folding part of the density/flux workflow in a zero-field, all-open transport problem.  Since `T(E)=1`, the saved differential spectrum must reproduce the imposed power law and the total/channel fluxes must match the analytical integrals of
-
-```text
-J(E) = SPEC_J0 * (E / SPEC_E0)^(-SPEC_GAMMA)
-```
-
-over the validation energy bins `1, 3, 10, 30, 100, 300, 1000 MeV`.  In the parser-compatible input file, those bins are represented with `#ENERGY_CHANNELS`; the production quadrature uses a fine log grid, `DS_NINTERVALS=960` by default.  Density is compared with an independent high-resolution reference for `4π∫J(E)/v(E)dE`.
-
-Input and reference files:
-
-```text
-srcEarth/test/F2/AMPS_PARAM_F2_gridless.in
-srcEarth/test/F2/reference_F2_power_law.csv
-```
-
-AMPS output parsed by the test:
-
-```text
-gridless_points_density.dat
-gridless_points_spectrum.dat
-gridless_points_flux.dat
-```
-
-Test artifacts written to the run directory:
-
-```text
-F2_amps.log
-F2_summary.csv
-F2_result.json
-```
-
-F2 uses the same `FIELD_MODEL NONE` gridless branch introduced for F1.  The summary table uses `expected_value` and `check_type`, so zero expected values denote zero residuals/error metrics rather than zero physical flux.
-
-
-### F3 — dipole cutoff-filtered flux
-
-Directory: `srcEarth/test/F3`
-
-Driver:
-
-```bash
-python srcEarth/test/F3/run_F3.py -np 4 -nt 16
-```
-
-Purpose.  F3 is the first end-to-end magnetic-access flux test in the validation campaign.  It uses `FIELD_MODEL DIPOLE`, `DS_TRANSMISSION_MODE SCAN`, and the same power-law spectrum as F1/F2, but samples explicit points on the 9000 km shell.  The default rendered point set follows the validation-plan latitude profile
-
-```text
-lat = -70, -60, -45, -30, 0, 30, 45, 60, 70 deg
-lon = 0, 90 deg
-```
-
-The external reference is a Størmer hard-cutoff approximation folded analytically with the power-law spectrum:
-
-```text
-Rc(lambda,r) = 14.9 cos^4(lambda) / r_RE^2 GV
-F_ch = 4*pi*T_open*int_{max(E1,Ecut)}^{E2} J0*(E/E0)^(-gamma) dE
-```
-
-Here `Ecut` is obtained by converting `Rc` to proton kinetic energy, and `T_open` is the analytic straight-line open-sky fraction outside the inner absorbing sphere.  This comparison is intentionally approximate: the AMPS run traces the full directional access map and includes penumbra, while the reference collapses access to a vertical step function.  The runner therefore also performs tight exact/internal checks on `J_local(E)=T(E)J_boundary(E)`, density and flux reconstruction from the saved spectrum, longitude symmetry, north/south symmetry, and the expected increase in access toward high absolute latitude.
-
-Input and reference files:
-
-```text
-srcEarth/test/F3/AMPS_PARAM_F3_gridless.in
-srcEarth/test/F3/reference_F3_dipole_cutoff.csv
-```
-
-AMPS output parsed by the test:
-
-```text
-gridless_points_density.dat
-gridless_points_spectrum.dat
-gridless_points_flux.dat
-```
-
-Test artifacts written to the run directory:
-
-```text
-F3_amps.log
-F3_summary.csv
-F3_result.json
-reference_F3_dipole_cutoff_used.csv
-```
-
-
-### F4 — transmission reconstruction consistency
-
-Directory: `srcEarth/test/F4`
-
-Driver:
-
-```bash
-python srcEarth/test/F4/run_F4.py -np 4 -nt 16
-```
-
-Purpose.  F4 is the exact closure test for the gridless density/flux workflow.  It uses `FIELD_MODEL DIPOLE`, `DS_TRANSMISSION_MODE SCAN`, `DS_TRANSMISSION_SAVE T`, and a power-law boundary spectrum at diagnostic points on the 9000 km shell.  The default latitude set is
-
-```text
-lat = -60, -30, 0, 30, 60 deg
-lon = 0 deg
-```
-
-The reference is internal and exact rather than an external cutoff formula:
-
-```text
-J_local(E) = T(E) * J_boundary(E)
-n           = 4*pi*int J_local(E)/v(E) dE
-F           = 4*pi*int J_local(E) dE
-F_channel   = 4*pi*int_channel J_local(E) dE
-```
-
-The runner reads `gridless_points_spectrum.dat`, reconstructs density and every requested integral-flux channel, and compares those values with `gridless_points_density.dat` and `gridless_points_flux.dat`.  It also verifies that the saved boundary spectrum matches the imposed power law and that `T(E)` remains in `[0,1]`.
-
-Input and reference/check files:
-
-```text
-srcEarth/test/F4/AMPS_PARAM_F4_gridless.in
-srcEarth/test/F4/reference_F4_reconstruction.csv
-```
-
-AMPS output parsed by the test:
-
-```text
-gridless_points_density.dat
-gridless_points_spectrum.dat
-gridless_points_flux.dat
-```
-
-Test artifacts written to the run directory:
-
-```text
-F4_amps.log
-F4_summary.csv
-F4_result.json
-reference_F4_reconstruction_used.csv
-```
-
-All rows in `F4_summary.csv` are residual/error checks with `expected_value=0.0`.  These zeros mean zero reconstruction error, not zero physical density or flux.
-
-
-### F5 — directional anisotropy / PAD mapping
-
-Directory: `srcEarth/test/F5`
-
-Driver:
-
-```bash
-python srcEarth/test/F5/run_F5.py -np 4 -nt 16
-```
-
-Purpose.  F5 validates the parser-supported pitch-angle-distribution mapping in the gridless anisotropic density/spectrum path using a nontrivial `BA_PAD_EXPONENT=2` case.  The runner renders and runs three cases with identical field, spectrum, energy grid, points, and transmission settings:
-
-```text
-BA_PAD_MODEL ISOTROPIC
-BA_PAD_MODEL COSALPHA_N   BA_PAD_EXPONENT 2
-BA_PAD_MODEL SINALPHA_N   BA_PAD_EXPONENT 2
-```
-
-The primary reference is the exact complement identity
-
-```text
-sin^2(alpha) + cos^2(alpha) = 1
-```
-
-which implies, point-by-point and energy-by-energy,
-
-```text
-T_sin(E) + T_cos(E) = T_iso(E)
-J_local_sin(E) + J_local_cos(E) = J_local_iso(E)
-n_sin + n_cos = n_iso
-F_sin + F_cos = F_iso
-```
-
-F5 also computes a high-energy straight-line semi-analytic PAD reference for the density ratios at three diagnostic points: 8 Re equator, 8 Re magnetic pole, and 6 Re equator.  These ratio checks are looser than the complement identity because they intentionally neglect finite magnetic bending.
-
-Input and reference files:
-
-```text
-srcEarth/test/F5/AMPS_PARAM_F5_gridless.in
-srcEarth/test/F5/reference_F5_pad_mapping.csv
-```
-
-The runner writes one case directory per PAD model under `test_output/F5_gridless`, plus `F5_summary.csv`, `F5_result.json`, and `reference_F5_pad_mapping_used.csv`.
-
-### F11 — anisotropic PAD model sum-check
-
-Directory: `srcEarth/test/F11`
-
-Driver:
-
-```bash
-python srcEarth/test/F11/run_F11.py -np 4 -nt 16
-```
-
-Purpose.  F11 exercises the parser-supported anisotropic PAD models
-`ISOTROPIC`, `SINALPHA_N`, `COSALPHA_N`, and `BIDIRECTIONAL` through
-`#BOUNDARY_ANISOTROPY`.  It uses a dipole gridless density/spectrum setup and
-checks exact PAD identities rather than an absolute density reference:
-
-```text
-BA_PAD_EXPONENT=0  -> every PAD model reduces to isotropic
-COSALPHA_N(n)      -> identical to BIDIRECTIONAL(n)
-```
-
-The runner compares total density, integral flux channels, and the saved
-`spectrum` quantities `T(E)`, `J_boundary(E)`, and `J_local(E)` for those
-identity pairs.  The default matrix covers exponents `0, 1, 2, 4, 8` and writes
-one rendered-input directory per model/exponent under `test_output/F11_gridless`.
-
-Input and reference files:
-
-```text
-srcEarth/test/F11/AMPS_PARAM_F11_gridless.in
-srcEarth/test/F11/reference_F11_pad_identities.csv
-```
-
-
-### F12 — day/night spatial boundary anisotropy identities
-
-Directory: `srcEarth/test/F12`
-
-Driver:
-
-```bash
-python srcEarth/test/F12/run_F12.py -np 4 -nt 16
-```
-
-Purpose.  F12 validates the parser-supported `DAYSIDE_NIGHTSIDE` spatial boundary weighting in the gridless anisotropic density/spectrum path.  It uses `FIELD_MODEL NONE`, `EFIELD_MODEL NONE`, `R_INNER=0`, `BA_PAD_MODEL=ISOTROPIC`, and output points with `X=0`.  In that geometry every sampled trajectory is allowed and the deterministic direction grid is exactly paired under `x -> -x`, so half of the exits are dayside (`x_exit>0`) and half are nightside (`x_exit<=0`).
-
-The exact references are
-
-```text
-DAYSIDE_NIGHTSIDE(1,1)   = UNIFORM
-DAY_ONLY(1,0)            = 0.5 * UNIFORM
-NIGHT_ONLY(0,1)          = 0.5 * UNIFORM
-DAY_ONLY + NIGHT_ONLY    = UNIFORM
-DAYSIDE_NIGHTSIDE(2,0.5) = 1.25 * UNIFORM
-```
-
-The runner checks those identities for total density, omnidirectional integral flux, every requested energy channel, saved `T(E)`, `J_boundary(E)`, and `J_local(E)`.
-
-Input and reference files:
-
-```text
-srcEarth/test/F12/AMPS_PARAM_F12_gridless.in
-srcEarth/test/F12/reference_F12_daynight_step.csv
-```
-
-The runner writes one case directory per spatial model/factor combination under `test_output/F12_gridless`, plus `F12_summary.csv`, `F12_result.json`, and `reference_F12_daynight_step_used.csv`.
-
-
-### F15 — density normalization from differential flux
-
-Directory: `srcEarth/test/F15`
-
-Driver:
-
-```bash
-python srcEarth/test/F15/run_F15.py -np 4 -nt 16
-```
-
-Purpose.  F15 isolates the density normalization step in the zero-field, all-open limit.  It runs one TABLE top-hat spectrum per center energy, with default centers `1, 10, 100, 1000 MeV`.  Each case uses `FIELD_MODEL NONE`, `EFIELD_MODEL NONE`, `R_INNER=0`, and `DS_TRANSMISSION_MODE DIRECT`, so `T(E)=1` and `J_local(E)=J_boundary(E)`.
-
-For a finite top-hat with constant directional differential flux `J0` on `[E1,E2]`, the reference flux and density are
-
-```text
-F = 4π J0 (E2 - E1)
-n = 4π J0/c * [sqrt(E2(E2+2m)) - sqrt(E1(E1+2m))]
-```
-
-where energies and the proton rest mass `m` are in MeV.  The density formula directly checks the relativistic `1/v(E)` factor because `v(E)/c = sqrt(E(E+2m))/(E+m)`.
-
-Input and reference files:
-
-```text
-srcEarth/test/F15/AMPS_PARAM_F15_gridless.in
-srcEarth/test/F15/reference_F15_top_hat.csv
-```
-
-The runner writes per-case directories under `test_output/F15_gridless`, each containing the rendered input, the generated TABLE spectrum, AMPS log, and the usual gridless density/spectrum/flux files.  The top-level F15 work directory contains `F15_summary.csv`, `F15_result.json`, and `reference_F15_top_hat_generated.csv`.
-
-
-### F16 — blocked-access zero-flux regression
-
-Directory: `srcEarth/test/F16`
-
-Driver:
-
-```bash
-python srcEarth/test/F16/run_F16.py -np 4 -nt 16
-```
-
-Purpose.  F16 checks the exact zero-transmission limit of the gridless density/spectrum workflow.  It uses a nonzero power-law incident spectrum, but every diagnostic point is placed inside the inner absorbing sphere.  Because the trajectory classifier checks `R_INNER` before the first integration step, every direction and energy must be rejected immediately.
-
-The analytical reference is therefore
-
-```text
-T(E) = 0
-J_local(E) = 0
-n = 0
-F_total = 0
-F_channel = 0
-```
-
-This catches leakage through blocked locations, stale transmission arrays, uninitialized channel fluxes, and zero-signal normalization errors.  The runner also verifies that `J_boundary(E)` remains positive so the test is a blocked-access limit rather than a zero-input spectrum case.
-
-Input and reference files:
-
-```text
-srcEarth/test/F16/AMPS_PARAM_F16_gridless.in
-srcEarth/test/F16/reference_F16_blocked_access.csv
-```
-
-The runner writes `F16_summary.csv`, `F16_result.json`, and `reference_F16_blocked_access_used.csv` under `test_output/F16_gridless`.
 
 
 ### ADAPTIVE_DT time-step control

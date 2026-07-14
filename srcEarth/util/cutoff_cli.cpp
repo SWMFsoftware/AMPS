@@ -40,7 +40,7 @@
 //     -h | --help              Print this message and exit.
 //     -mode <3d|gridless>      Select solver mode.
 //     -i <file>                Input parameter file (AMPS_PARAM format).
-//     -mover <BORIS|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>   Particle mover (default: BORIS).
+//     -mover <BORIS|BORIS_SDC|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>   Particle mover (default: BORIS).
 //     -mode3d-output-initialized                         Write amps_3d_initialized.data.dat.
 //     -mode3d-field-eval <INTERPOLATION|ANALYTIC>        3D B-field source during tracing.
 //     -density-mode <ISOTROPIC|ANISOTROPIC>
@@ -489,12 +489,17 @@ std::string HelpMessage(const char* progName) {
   out << "      Path to the AMPS_PARAM-format input file. Controls all physics and\n";
   out << "      geometry parameters. See 'Input file sections' below for a summary.\n\n";
 
-  out << "  -mover | --mover <BORIS|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>   (optional; default: BORIS)\n";
+  out << "  -mover | --mover <BORIS|BORIS_SDC|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>   (optional; default: BORIS)\n";
   out << "      Select the particle integration algorithm.\n";
   out << "        BORIS   Relativistic Boris pusher. Volume-preserving (symplectic),\n";
   out << "                time-reversible, one field evaluation per step. Recommended\n";
   out << "                for all production runs. Validated against Stormer analytic\n";
   out << "                cutoffs on dipole fields.\n";
+  out << "        BORIS_SDC\n";
+  out << "                Boris spectral-deferred-correction mover using three Lobatto\n";
+  out << "                collocation nodes and Boris sweeps. Intended for high-accuracy\n";
+  out << "                trajectory/invariant diagnostics when more phase accuracy than\n";
+  out << "                ordinary Boris is needed without switching to generic RK.\n";
   out << "        RK2     Runge-Kutta 2nd order (Heun). Two field evaluations per step.\n";
   out << "                Useful as a quick sanity check against Boris.\n";
   out << "        RK4     Runge-Kutta 4th order. Four field evaluations per step.\n";
@@ -509,7 +514,7 @@ std::string HelpMessage(const char* progName) {
   out << "                GC4, otherwise it falls back to full-orbit RK4. Intended to\n";
   out << "                support a larger but still physically correct dt.\n";
   out << "      In -mode 3d_forward, the AMPS-signature mover dispatcher supports\n";
-  out << "      BORIS, RK4, GC/GC4, and HYBRID. RK2/RK6/GC2/GC6 remain available in\n";
+  out << "      BORIS, RK4, GC/GC4, and HYBRID. BORIS_SDC and RK2/RK6/GC2/GC6 remain available in\n";
   out << "      gridless/backward 3D tracing through the shared gridless mover layer.\n";
   out << "      When provided, overrides any mover setting in the input file.\n\n";
 

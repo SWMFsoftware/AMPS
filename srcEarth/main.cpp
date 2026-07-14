@@ -77,7 +77,7 @@ bool ApplyCutoffMoverCli(const EarthUtil::CliOptions& cli) {
   MoverType moverType;
   if (!ParseMoverType(cli.mover, moverType)) {
     std::cerr << "Error: unknown mover option -mover " << cli.mover
-              << ". Allowed: BORIS, RK2, RK4, RK6, GC2, GC4, GC6, HYBRID"
+              << ". Allowed: BORIS, BORIS_SDC, RK2, RK4, RK6, GC2, GC4, GC6, HYBRID"
               << std::endl;
     return false;
   }

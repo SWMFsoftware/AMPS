@@ -71,7 +71,7 @@ The script normalizes that command before calling `argparse` so `-60,-30,...` is
 --lons             comma-separated start longitudes, default 0
 --factors          rigidities as factors times Rc_Stormer, default 0.5,2.0
 --dt-sweep         DT_TRACE values; each value is one AMPS run, default 0.25
---movers           mover list; each mover is one AMPS run, default BORIS
+--movers           mover list; each mover is one AMPS run, default BORIS; BORIS_SDC is supported
 --adaptive-dt      T or F, default T
 --dR-tol           hard tolerance on |rel_dR|, default 1e-6
 --fail-on-paxis    make |rel_dP_axis| a hard pass/fail quantity
@@ -113,3 +113,14 @@ C4_result.json       machine-readable test result
 ## What C4 does not test
 
 C4 does not validate the global cutoff map, longitude symmetry, mesh interpolation convergence, or realistic IGRF/Tsyganenko morphology.  Those are covered by other validation tests.  C4 is intentionally narrower: it verifies that a single backtraced trajectory terminates for the right reason and conserves the quantities it should conserve in the clean dipole, `E=0` limit.
+
+
+## BORIS_SDC mover
+
+`BORIS_SDC` is the high-order Boris spectral-deferred-correction mover added to the shared gridless/backward 3D tracing layer.  It keeps Boris magnetic-rotation sweeps as the low-order building block, then applies Gauss-Lobatto collocation corrections.  In C4 it is useful for checking whether a higher-order, Boris-like full-orbit mover improves trajectory invariants relative to RK4 without giving up the robustness of Boris.
+
+Example:
+
+```bash
+srcEarth/test/C4/run_C4.py --movers=BORIS,BORIS_SDC,RK4 --adaptive-dt T
+```

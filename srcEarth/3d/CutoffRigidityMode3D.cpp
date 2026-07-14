@@ -177,12 +177,12 @@
 // before main()) are not broken.
 //
 // Mesh/field distribution:
-//   Mode3D::Run initializes AMPS with the normal distributed MPI domain
+//   Mode3D::Run now initializes AMPS with the normal distributed MPI domain
 //   decomposition.  Before this solver starts, Mode3D::GlobalMagneticField has
-//   assembled compact global B/E arrays indexed by node->Temp_ID and local interior
-//   cell indices.  The AMR tree is global, but nonlocal cDataBlockAMR objects are not
-//   allocated.  Field evaluation uses a decomposition-independent row stencil, so
-//   trajectory tracing remains local-memory-only on every MPI rank.
+//   already allocated missing nonlocal leaf blocks on every rank and populated them
+//   with a replicated read-only cell-centered B snapshot.  Therefore trajectory
+//   tracing can remain local-memory-only even though the mesh was not created with
+//   independentDomainMode=true.
 //
 // Inter-rank scheduling:
 //   The default scheduler is now DYNAMIC.  Rank/main threads atomically fetch chunks
@@ -198,7 +198,7 @@
 //   called only by the rank/main thread, never by worker threads.
 //
 // Communication:
-//   The compact global-field assembly is completed before entering RunCutoffRigidity().
+//   The global-B materialization is completed before entering RunCutoffRigidity().
 //   During trajectory tracing there is no field communication.  At the end, each rank
 //   holds global-indexed result arrays with -1 sentinels for locations it did not
 //   compute; MPI_MAX reductions collect Rc, Emin, and optional directional-map values
@@ -209,7 +209,6 @@
 #include "CutoffRigidityMode3D.h"
 #include "Mode3D.h"
 #include "ElectricField.h"
-#include "GlobalMagneticField.h"
 #include "Mode3DParallel.h"
 
 // AMPS framework
@@ -244,7 +243,6 @@
 #include <stdexcept>
 #include <iostream>
 #include <fstream>
-#include <iomanip>
 #include <limits>
 #include <thread>
 
@@ -325,8 +323,8 @@ namespace {
 //
 // Thread-safety note:
 //   Each OpenMP thread or std::thread worker constructs its own cMode3DMeshFieldEval.
-//   The evaluator reads the compact global B array through a stack-local row stencil
-//   and owns its own lastNode_ cache, so no worker shares interpolation/cache state.
+//   The evaluator reads from the replicated, read-only AMR magnetic-field snapshot and
+//   owns its own lastNode_ cache, so no worker shares interpolation/cache state.
 //======================================================================================
 
 using CutoffParallelBackend_ = Earth::Mode3D::ParallelBackend;
@@ -363,6 +361,131 @@ static inline double v3norm(const V3& a) {
 static inline V3 v3unit(const V3& a) {
     const double n = v3norm(a);
     return (n > 0.0) ? mul(1.0/n, a) : V3{0.0, 0.0, 0.0};
+}
+
+
+//======================================================================================
+// SECTION 2.1 — DIPOLE MESH-FIELD ERROR STATISTICS
+//======================================================================================
+//
+// Purpose
+// -------
+// In a Mode3D DIPOLE validation run there are two independent ways to evaluate B(x):
+//
+//   1. the analytic dipole evaluator in srcEarth/gridless/DipoleInterface.h; and
+//   2. the Mode3D AMR mesh value, obtained by interpolating the cell-centered B field
+//      that was sampled during mesh initialization.
+//
+// The density/flux backtracing path can call
+//   Earth::Mode3D::ResetDipoleMagneticFieldErrorStatistics(...)
+// before it starts tracing and
+//   Earth::Mode3D::ReportDipoleMagneticFieldErrorStatistics(...)
+// after it finishes.  Those public wrappers are defined near the bottom of this file.
+// The actual samples are accumulated here, directly in the mesh-field evaluator, so the
+// reported statistics measure the same B values that the trajectory pusher used.
+//
+// What is measured
+// ----------------
+// For each interpolated mesh-field sample in a DIPOLE run we compute
+//
+//     rel_err = |B_mesh - B_analytic| / max(|B_analytic|, tiny)
+//
+// and accumulate the sample count, the sum of rel_err, and the largest rel_err together
+// with its location and both B vectors.  At report time the per-rank values are reduced
+// over MPI and rank 0 prints the global mean, maximum, and max-error location.
+//
+// Thread-safety
+// -------------
+// Trajectory tracing can be OpenMP- or std::thread-parallel inside each MPI rank.  The
+// statistics are therefore protected by a small mutex.  This diagnostic is intended for
+// validation runs; in production non-DIPOLE runs the accumulation path returns
+// immediately and the overhead is zero except for a string comparison in the caller.
+//======================================================================================
+
+struct DipoleMagneticFieldErrorStats_ {
+    long long nSamples;
+    double sumRelErr;
+    double maxRelErr;
+    double maxX_m[3];
+    double maxBMesh_T[3];
+    double maxBAnalytic_T[3];
+
+    DipoleMagneticFieldErrorStats_() { clear(); }
+
+    void clear() {
+        nSamples = 0;
+        sumRelErr = 0.0;
+        maxRelErr = -1.0;
+        for (int i=0;i<3;i++) {
+            maxX_m[i] = 0.0;
+            maxBMesh_T[i] = 0.0;
+            maxBAnalytic_T[i] = 0.0;
+        }
+    }
+};
+
+static std::mutex gDipoleBErrorMutex_;
+static DipoleMagneticFieldErrorStats_ gDipoleBErrorStats_;
+
+static inline double Norm3_(const double a[3]) {
+    return std::sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
+}
+
+static void ResetDipoleMagneticFieldErrorStatisticsLocal_() {
+    std::lock_guard<std::mutex> lock(gDipoleBErrorMutex_);
+    gDipoleBErrorStats_.clear();
+}
+
+static void AccumulateDipoleMagneticFieldErrorStatistics_(const EarthUtil::AmpsParam& prm,
+                                                          const double x_m[3],
+                                                          const double BMesh_T[3]) {
+    if (EarthUtil::ToUpper(prm.field.model) != "DIPOLE") return;
+
+    if (!std::isfinite(x_m[0]) || !std::isfinite(x_m[1]) || !std::isfinite(x_m[2]) ||
+        !std::isfinite(BMesh_T[0]) || !std::isfinite(BMesh_T[1]) || !std::isfinite(BMesh_T[2])) {
+        return;
+    }
+
+    double BAnalytic_T[3] = {0.0,0.0,0.0};
+
+    // DipoleInterface stores the moment scale and tilt in a small global state.  The
+    // Mode3D analytic-field path uses the same helper.  Protect the state update +
+    // evaluation so validation with multiple trajectory threads remains deterministic.
+    static std::mutex dipoleAnalyticMutex;
+    {
+        std::lock_guard<std::mutex> lock(dipoleAnalyticMutex);
+        Earth::GridlessMode::Dipole::SetMomentScale(prm.field.dipoleMoment_Me);
+        Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
+        Earth::GridlessMode::Dipole::GetB_Tesla(x_m,BAnalytic_T);
+    }
+
+    const double dB[3] = {
+        BMesh_T[0] - BAnalytic_T[0],
+        BMesh_T[1] - BAnalytic_T[1],
+        BMesh_T[2] - BAnalytic_T[2]
+    };
+
+    const double denom = std::max(Norm3_(BAnalytic_T),1.0e-300);
+    const double relErr = Norm3_(dB) / denom;
+    if (!std::isfinite(relErr)) return;
+
+    std::lock_guard<std::mutex> lock(gDipoleBErrorMutex_);
+    gDipoleBErrorStats_.nSamples++;
+    gDipoleBErrorStats_.sumRelErr += relErr;
+
+    if (relErr > gDipoleBErrorStats_.maxRelErr) {
+        gDipoleBErrorStats_.maxRelErr = relErr;
+        for (int i=0;i<3;i++) {
+            gDipoleBErrorStats_.maxX_m[i] = x_m[i];
+            gDipoleBErrorStats_.maxBMesh_T[i] = BMesh_T[i];
+            gDipoleBErrorStats_.maxBAnalytic_T[i] = BAnalytic_T[i];
+        }
+    }
+}
+
+static DipoleMagneticFieldErrorStats_ SnapshotDipoleMagneticFieldErrorStatisticsLocal_() {
+    std::lock_guard<std::mutex> lock(gDipoleBErrorMutex_);
+    return gDipoleBErrorStats_;
 }
 
 //======================================================================================
@@ -500,208 +623,55 @@ static inline bool LostInnerSphere3D(const V3& x, double rInner) {
 }
 
 //======================================================================================
-// SECTION 4.5 — DIPOLE MESH-FIELD ERROR STATISTICS
-//======================================================================================
-//
-// A Mode3D DIPOLE run has an exact reference field available at every coordinate.  This
-// makes it possible to measure the error introduced by cell-centering, AMR interpolation,
-// and the compact-global-array/row-stencil path using the exact samples requested by the
-// trajectory mover.
-//
-// Performance design:
-//   * GetB_T() is called very frequently, so it must not acquire a shared mutex for every
-//     sample.
-//   * Each cMode3DMeshFieldEval object therefore owns a small local accumulator.
-//   * The evaluator destructor merges that accumulator into one rank-local object under
-//     a mutex.  This produces at most one lock operation per evaluator/trajectory worker,
-//     not one lock operation per magnetic-field sample.
-//   * At the end of the physical calculation, one MPI reduction combines counts and sums.
-//     MPI_MAXLOC selects the rank that owns the global maximum, and that rank broadcasts
-//     the corresponding coordinate.
-//
-// The mean is intentionally sample-weighted.  If a trajectory evaluates the field many
-// times in one region, those repeated determinations are counted repeatedly because they
-// are the values that actually control the numerical trajectory and cutoff result.
-//======================================================================================
-
-struct cDipoleFieldErrorLocalStats_ {
-    unsigned long long sampleCount;
-    long double relativeErrorSum;
-    double maxRelativeError;
-    double maxErrorLocation_m[3];
-
-    cDipoleFieldErrorLocalStats_() :
-      sampleCount(0), relativeErrorSum(0.0L), maxRelativeError(-1.0) {
-        maxErrorLocation_m[0]=0.0;
-        maxErrorLocation_m[1]=0.0;
-        maxErrorLocation_m[2]=0.0;
-    }
-
-    void Add(double relativeError,const double x_m[3]) {
-        if (!std::isfinite(relativeError) || relativeError<0.0) return;
-
-        ++sampleCount;
-        relativeErrorSum+=static_cast<long double>(relativeError);
-
-        if (relativeError>maxRelativeError) {
-            maxRelativeError=relativeError;
-            maxErrorLocation_m[0]=x_m[0];
-            maxErrorLocation_m[1]=x_m[1];
-            maxErrorLocation_m[2]=x_m[2];
-        }
-    }
-};
-
-struct cDipoleFieldErrorRankStats_ {
-    std::mutex mutex;
-    unsigned long long sampleCount;
-    long double relativeErrorSum;
-    double maxRelativeError;
-    double maxErrorLocation_m[3];
-
-    cDipoleFieldErrorRankStats_() :
-      sampleCount(0), relativeErrorSum(0.0L), maxRelativeError(-1.0) {
-        maxErrorLocation_m[0]=0.0;
-        maxErrorLocation_m[1]=0.0;
-        maxErrorLocation_m[2]=0.0;
-    }
-};
-
-static cDipoleFieldErrorRankStats_ gDipoleFieldErrorRankStats_;
-static std::atomic<bool> gDipoleFieldErrorSamplingActive_(false);
-
-static void MergeDipoleFieldErrorLocalStats_(
-    const cDipoleFieldErrorLocalStats_& localStats) {
-
-    if (localStats.sampleCount==0) return;
-
-    std::lock_guard<std::mutex> lock(gDipoleFieldErrorRankStats_.mutex);
-    gDipoleFieldErrorRankStats_.sampleCount+=localStats.sampleCount;
-    gDipoleFieldErrorRankStats_.relativeErrorSum+=localStats.relativeErrorSum;
-
-    if (localStats.maxRelativeError>gDipoleFieldErrorRankStats_.maxRelativeError) {
-        gDipoleFieldErrorRankStats_.maxRelativeError=localStats.maxRelativeError;
-        gDipoleFieldErrorRankStats_.maxErrorLocation_m[0]=localStats.maxErrorLocation_m[0];
-        gDipoleFieldErrorRankStats_.maxErrorLocation_m[1]=localStats.maxErrorLocation_m[1];
-        gDipoleFieldErrorRankStats_.maxErrorLocation_m[2]=localStats.maxErrorLocation_m[2];
-    }
-}
-
-// Evaluate the configured analytic dipole directly from the input parameters rather
-// than through Dipole::gParams.  The latter is shared mutable state and is configured by
-// several initialization paths; using the explicit formula here makes the diagnostic
-// thread-safe and guarantees that the reference field corresponds exactly to `prm`.
-static bool EvaluateConfiguredDipoleReference_(
-    const EarthUtil::AmpsParam& prm,const double x_m[3],double B_T[3]) {
-
-    const double x=x_m[0],y=x_m[1],z=x_m[2];
-    const double r2=x*x+y*y+z*z;
-    if (!(r2>0.0) || !std::isfinite(r2)) return false;
-
-    const double r=std::sqrt(r2);
-    const double r3=r2*r;
-    const double r5=r3*r2;
-
-    const double tiltRad=prm.field.dipoleTilt_deg*
-        Earth::GridlessMode::Dipole::PI/180.0;
-    const double moment=prm.field.dipoleMoment_Me*
-        Earth::GridlessMode::Dipole::M_E_Am2;
-
-    const double mx=moment*std::sin(tiltRad);
-    const double my=0.0;
-    const double mz=moment*std::cos(tiltRad);
-    const double mdotr=mx*x+my*y+mz*z;
-    const double c=Earth::GridlessMode::Dipole::mu0_over_4pi;
-
-    B_T[0]=c*(3.0*x*mdotr/r5-mx/r3);
-    B_T[1]=c*(3.0*y*mdotr/r5-my/r3);
-    B_T[2]=c*(3.0*z*mdotr/r5-mz/r3);
-
-    return std::isfinite(B_T[0]) && std::isfinite(B_T[1]) &&
-           std::isfinite(B_T[2]);
-}
-
-static void RecordDipoleFieldError_(
-    const EarthUtil::AmpsParam& prm,const double x_m[3],const double BMesh_T[3],
-    cDipoleFieldErrorLocalStats_& localStats) {
-
-    double BReference_T[3]={0.0,0.0,0.0};
-    if (!EvaluateConfiguredDipoleReference_(prm,x_m,BReference_T)) return;
-
-    const double referenceNorm2=
-        BReference_T[0]*BReference_T[0]+
-        BReference_T[1]*BReference_T[1]+
-        BReference_T[2]*BReference_T[2];
-
-    // The analytic centered dipole is nonzero at every finite r>0.  Keep an explicit
-    // denominator guard so this diagnostic remains numerically safe if the model or
-    // domain is changed in the future.
-    if (!(referenceNorm2>std::numeric_limits<double>::min())) return;
-
-    const double dBx=BMesh_T[0]-BReference_T[0];
-    const double dBy=BMesh_T[1]-BReference_T[1];
-    const double dBz=BMesh_T[2]-BReference_T[2];
-    const double differenceNorm2=dBx*dBx+dBy*dBy+dBz*dBz;
-    const double relativeError=std::sqrt(differenceNorm2/referenceNorm2);
-
-    localStats.Add(relativeError,x_m);
-}
-
-//======================================================================================
 // SECTION 5 — MESH-BASED FIELD EVALUATOR (per-thread)
 //======================================================================================
 //
-// cMode3DMeshFieldEval evaluates the compact globally replicated magnetic field built
-// by Mode3D::GlobalMagneticField.  It still implements IGridlessFieldEvaluator, so the
-// shared Boris/RK/guiding-center mover infrastructure remains unchanged.
+// cMode3DMeshFieldEval interpolates the magnetic field that InitMeshFields() stored in the
+// AMPS AMR cell-centre data buffers.  It is the Mode3D replacement for the gridless
+// cFieldEvaluator (which calls Tsyganenko Fortran directly).
 //
-// The evaluator keeps only a tree-node search hint.  It never dereferences node->block:
-// the containing AMR leaf may be remote and unallocated on this MPI rank.  The compact
-// field module asks AMPS to build a stack-local cRowStencil containing
+// Design:
+//   - Implements IGridlessFieldEvaluator so all shared mover infrastructure
+//     (StepParticleChecked, HybridPrepareStepUseGuidingCenter, etc.) is reused
+//     without modification.
+//   - Each OpenMP thread holds its own instance; the mutable lastNode_ member
+//     caches the most recently found AMR block, accelerating findTreeNode() when
+//     consecutive GetB_T calls are within the same block (the common case for a
+//     particle advancing in small steps).
+//   - No mutex: the AMR tree and cell data are READ-ONLY during particle tracing.
 //
-//   (owning tree node, interior i/j/k, interpolation weight),
+// Field data layout for each stencil cell (mirrors InitMeshFields write):
+//   ptr = center->GetAssociatedDataBufferPointer()
+//       + PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin
+//       + PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset
+//       + PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset
+//       + idim * sizeof(double)      (idim = 0,1,2 for Bx,By,Bz)
 //
-// and applies that row to arrays indexed by node->Temp_ID.  This preserves AMPS'
-// cell-centered linear interpolation, including multiblock coarse/fine reconstruction
-// and fine-side blending, without replicating AMPS blocks or ghost-cell state vectors.
-//
-// Each worker owns its evaluator and row stencil is stack-local, so the path is safe
-// for OpenMP and plain std::thread workers.  The global arrays are assembled before
-// trajectory tracing and are read-only during the calculation.
+// Fallback: if the particle is outside all allocated blocks (e.g. just before the
+// outer-boundary escape check fires), GetB_T returns B = 0.  The integration loop
+// detects the escape on the very next geometry check, so the zero-field step is
+// never used to advance the trajectory classification.
 //======================================================================================
 
 class cMode3DMeshFieldEval : public IGridlessFieldEvaluator {
 public:
     explicit cMode3DMeshFieldEval(const EarthUtil::AmpsParam& prm)
-      : prm_(prm), lastNode_(nullptr),
-        sampleDipoleFieldError_(
-            gDipoleFieldErrorSamplingActive_.load(std::memory_order_acquire) &&
-            EarthUtil::ToUpper(prm.field.model)=="DIPOLE" &&
-            !prm.mode3d.forceAnalyticMagneticField) {}
+      : prm_(prm), model_(EarthUtil::ToUpper(prm.field.model)), lastNode_(nullptr) {}
 
-    // Merge this evaluator's private samples only once, after the worker or trajectory
-    // has finished.  This keeps the high-frequency GetB_T() path lock-free.
-    ~cMode3DMeshFieldEval() override {
-        if (sampleDipoleFieldError_) {
-            MergeDipoleFieldErrorLocalStats_(dipoleFieldErrorLocalStats_);
-        }
-    }
-
-    cMode3DMeshFieldEval(const cMode3DMeshFieldEval&)=delete;
-    cMode3DMeshFieldEval& operator=(const cMode3DMeshFieldEval&)=delete;
-
-    // Evaluate B [Tesla] at x_m [m].  The optional analytic path is retained for
-    // diagnostic comparisons.  The production mesh path uses the compact global B
-    // array and decomposition-independent row-stencil interpolation.
+    // Evaluate B [Tesla] at position x_m [m]. By default this uses AMR-aware
+    // interpolation from the cell-centered values written by InitMeshFields().
+    // When requested from the CLI, it instead calls the same background-field
+    // evaluator used by InitMeshFields() to prepopulate those cell centers.
     void GetB_T(const V3& x_m, V3& B_T) const override {
         double xArr[3] = {x_m.x, x_m.y, x_m.z};
 
         if (prm_.mode3d.forceAnalyticMagneticField) {
             double B[3] = {0.0, 0.0, 0.0};
 
-            // Analytic field wrappers may use shared Fortran/common-block state.
-            // Serialize this debug path; compact-array interpolation below requires
-            // no lock.
+            // Evaluate with the same function used by InitMeshFields().  This path
+            // may touch shared model state (Tsyganenko/TA Fortran common blocks, or
+            // the dipole helper state), so serialize it for both OpenMP and direct
+            // std::thread density workers.
             static std::mutex analyticFieldMutex;
             {
                 std::lock_guard<std::mutex> lock(analyticFieldMutex);
@@ -714,62 +684,126 @@ public:
             return;
         }
 
-        if (!Earth::Mode3D::GlobalMagneticField::GlobalFieldsReady()) {
-            exit(__LINE__,__FILE__,
-                 "[Mode3D] compact global fields are not assembled before mesh-field evaluation.");
-        }
-
-        // findTreeNode() operates on the globally replicated AMR topology and does
-        // not require the corresponding data block to be allocated locally.  The
-        // last-node hint makes consecutive trajectory samples in one leaf inexpensive.
+        // Locate the leaf block that contains xArr.
+        // The lastNode_ hint makes subsequent calls O(1) when the particle stays
+        // in the same block between integration steps.
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
             PIC::Mesh::mesh->findTreeNode(xArr, lastNode_);
-        lastNode_ = node;
+        lastNode_ = node;          // update hint for next call
 
-        if (node == nullptr) {
-            // Outside the used AMR domain.  The trajectory geometry check classifies
-            // the outer-boundary escape; returning zero here preserves the historical
-            // evaluator contract for a point sampled just beyond the box.
+        if (node == nullptr || node->block == nullptr) {
+            // Particle is outside the domain or in an unallocated block.
+            // Return zero; the caller's boundary check will handle this.
             B_T.x = B_T.y = B_T.z = 0.0;
             return;
         }
 
-        double B[3] = {0.0, 0.0, 0.0};
-        const bool ok =
-            Earth::Mode3D::GlobalMagneticField::InterpolateMagneticField(
-                xArr,node,B);
+        if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_) {
+            // Do not call PIC::CPLR::InitInterpolationStencil() +
+            // PIC::CPLR::GetBackgroundMagneticField() here.  In AMPS hybrid builds,
+            // GetBackgroundMagneticField(B) reads the global
+            // CellCentered::StencilTable[omp_get_thread_num()]. That is correct inside
+            // an OpenMP team, but plain std::thread workers all see OpenMP thread id 0
+            // and would race on the same stencil entry.  Build a stack-local stencil
+            // instead and read the already materialized SWMF cell-centered B field
+            // directly from PIC::CPLR::SWMF::MagneticFieldOffset.  This exactly matches
+            // the cell accessor in AMPS (SWMF::GetBackgroundMagneticField(cell) is a
+            // memcpy from that offset) while keeping both OpenMP and std::thread paths
+            // thread-safe.
+            if (PIC::CPLR::SWMF::MagneticFieldOffset < 0) {
+                B_T.x = B_T.y = B_T.z = 0.0;
+                return;
+            }
 
-        if (!ok) {
-            // A valid used leaf must always produce a row.  Treat failure as a setup
-            // error rather than advancing a trajectory through an artificial zero field.
-            exit(__LINE__,__FILE__,
-                 "[Mode3D] failed to construct a compact-array magnetic-field interpolation row.");
+            PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
+            PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xArr,node,Stencil);
+
+            if (Stencil.Length <= 0) {
+                B_T.x = B_T.y = B_T.z = 0.0;
+                return;
+            }
+
+            double B[3] = {0.0,0.0,0.0};
+            double BCell[3];
+
+            for (int iStencil = 0; iStencil < Stencil.Length; ++iStencil) {
+                PIC::Mesh::cDataCenterNode* center = Stencil.cell[iStencil];
+                if (center == nullptr) continue;
+
+                const char* data =
+                    PIC::CPLR::SWMF::MagneticFieldOffset + center->GetAssociatedDataBufferPointer();
+                std::memcpy(BCell,data,3*sizeof(double));
+
+                const double w = Stencil.Weight[iStencil];
+                B[0] += w*BCell[0];
+                B[1] += w*BCell[1];
+                B[2] += w*BCell[2];
+            }
+
+            B_T.x = B[0];
+            B_T.y = B[1];
+            B_T.z = B[2];
+            return;
+        }
+
+        if (!PIC::CPLR::DATAFILE::Offset::MagneticField.active) {
+            B_T.x = B_T.y = B_T.z = 0.0;
+            return;
+        }
+
+        // Build AMPS' cell-centred linear interpolation stencil at the particle
+        // position.  This routine is AMR-aware: when the particle is near a
+        // refinement boundary it constructs a multi-block stencil and blends
+        // fine/coarse stencils as needed, instead of assuming a uniform local
+        // trilinear stencil.
+        PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
+        PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xArr, node, Stencil);
+
+        if (Stencil.Length <= 0) {
+            B_T.x = B_T.y = B_T.z = 0.0;
+            return;
+        }
+
+        // Interpolate B from the cell-centred values written by InitMeshFields().
+        // DATAFILE::GetBackgroundData applies the same offset chain used when the
+        // data were stored:
+        //   CenterNodeAssociatedDataOffsetBegin + CurrDataFileOffset
+        //   + Offset::MagneticField.RelativeOffset.
+        double B[3] = {0.0, 0.0, 0.0};
+        double BCell[3];
+
+        for (int iStencil = 0; iStencil < Stencil.Length; ++iStencil) {
+            PIC::Mesh::cDataCenterNode* center = Stencil.cell[iStencil];
+            if (center == nullptr) continue;
+
+            PIC::CPLR::DATAFILE::GetBackgroundData(
+                BCell, 3,
+                PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,
+                center);
+
+            const double w = Stencil.Weight[iStencil];
+            B[0] += w * BCell[0];
+            B[1] += w * BCell[1];
+            B[2] += w * BCell[2];
         }
 
         B_T.x = B[0];
         B_T.y = B[1];
         B_T.z = B[2];
 
-        // For a mesh-backed DIPOLE run, compare the field value that will actually be
-        // returned to the mover with the exact analytic dipole at the same coordinate.
-        // The local accumulator is mutable because GetB_T() is logically const from the
-        // mover's perspective while diagnostic counters are observational state only.
-        if (sampleDipoleFieldError_) {
-            RecordDipoleFieldError_(prm_,xArr,B,dipoleFieldErrorLocalStats_);
-        }
+        // Validation diagnostic: when the requested background field is DIPOLE and
+        // Mode3D is using the mesh-backed field evaluator, compare the interpolated
+        // mesh B against the analytic dipole at the exact trajectory point.  The
+        // public Reset/Report functions reduce these samples across MPI ranks.
+        AccumulateDipoleMagneticFieldErrorStatistics_(prm_,xArr,B);
     }
 
 private:
     const EarthUtil::AmpsParam& prm_;
+    std::string model_;
 
-    // Mutable so a logically const field evaluation can update the tree-search hint.
-    // The hint points only into the replicated tree and is private to this evaluator.
+    // Mutable so GetB_T can update the search hint while remaining logically const.
     mutable cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* lastNode_;
-
-    // Sampling is fixed when the evaluator is constructed.  Reset/report operations are
-    // performed only before worker creation and after all workers join, respectively.
-    const bool sampleDipoleFieldError_;
-    mutable cDipoleFieldErrorLocalStats_ dipoleFieldErrorLocalStats_;
 };
 
 //======================================================================================
@@ -1160,6 +1194,7 @@ static const char* TraceExitReasonName3D_(TraceExitReason3D r) {
 static const char* MoverTypeName3D_(MoverType m) {
     switch (m) {
         case MoverType::BORIS:  return "BORIS";
+        case MoverType::BORIS_SDC: return "BORIS_SDC";
         case MoverType::RK2:    return "RK2";
         case MoverType::RK4:    return "RK4";
         case MoverType::RK6:    return "RK6";
@@ -2698,143 +2733,75 @@ namespace Earth {
 namespace Mode3D {
 
 void ResetDipoleMagneticFieldErrorStatistics(const EarthUtil::AmpsParam& prm) {
-    // Sampling is meaningful only for the mesh-backed DIPOLE evaluator.  The forced
-    // analytic path already returns the reference field directly and would trivially
-    // report zero error rather than measuring AMR/interpolation accuracy.
-    const bool enable=
-        (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") &&
-        !prm.mode3d.forceAnalyticMagneticField;
-
-    // Reset before publishing the active flag.  Callers invoke this routine before any
-    // trajectory worker is created, so no evaluator can merge concurrently with reset.
-    {
-        std::lock_guard<std::mutex> lock(gDipoleFieldErrorRankStats_.mutex);
-        gDipoleFieldErrorRankStats_.sampleCount=0;
-        gDipoleFieldErrorRankStats_.relativeErrorSum=0.0L;
-        gDipoleFieldErrorRankStats_.maxRelativeError=-1.0;
-        gDipoleFieldErrorRankStats_.maxErrorLocation_m[0]=0.0;
-        gDipoleFieldErrorRankStats_.maxErrorLocation_m[1]=0.0;
-        gDipoleFieldErrorRankStats_.maxErrorLocation_m[2]=0.0;
-    }
-
-    gDipoleFieldErrorSamplingActive_.store(enable,std::memory_order_release);
+    // Reset is intentionally collective in meaning but local in implementation:
+    // every MPI rank owns only the statistics accumulated by its own trajectory
+    // workers.  The density/cutoff drivers call this on all ranks before the
+    // traced workload starts, so clearing the local accumulator is sufficient.
+    (void)prm;
+    ResetDipoleMagneticFieldErrorStatisticsLocal_();
 }
 
-DipoleMagneticFieldErrorStatistics ReportDipoleMagneticFieldErrorStatistics(
-    const char* calculationLabel) {
+void ReportDipoleMagneticFieldErrorStatistics(const char* label) {
+    // All ranks must enter this routine together.  We use reductions/gathering rather
+    // than printing from every rank so validation logs contain one compact global
+    // summary with the location of the worst error.
+    int mpiRank=0, mpiSize=1;
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&mpiRank);
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR,&mpiSize);
 
-    DipoleMagneticFieldErrorStatistics result;
+    const DipoleMagneticFieldErrorStats_ local = SnapshotDipoleMagneticFieldErrorStatisticsLocal_();
 
-    // Disable construction of new sampling evaluators before reading the rank-local
-    // accumulator.  The normal call sites reach this routine only after every worker has
-    // joined and every cMode3DMeshFieldEval destructor has merged its local samples.
-    const bool wasActive=
-        gDipoleFieldErrorSamplingActive_.exchange(false,std::memory_order_acq_rel);
-    if (!wasActive) return result;
+    long long nGlobal = 0;
+    double sumGlobal = 0.0;
 
-    unsigned long long localCount=0;
-    long double localSum=0.0L;
-    double localMax=-1.0;
-    double localMaxLocation_m[3]={0.0,0.0,0.0};
+    MPI_Reduce((void*)&local.nSamples,&nGlobal,1,MPI_LONG_LONG,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Reduce((void*)&local.sumRelErr,&sumGlobal,1,MPI_DOUBLE,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
 
-    {
-        std::lock_guard<std::mutex> lock(gDipoleFieldErrorRankStats_.mutex);
-        localCount=gDipoleFieldErrorRankStats_.sampleCount;
-        localSum=gDipoleFieldErrorRankStats_.relativeErrorSum;
-        localMax=gDipoleFieldErrorRankStats_.maxRelativeError;
-        localMaxLocation_m[0]=gDipoleFieldErrorRankStats_.maxErrorLocation_m[0];
-        localMaxLocation_m[1]=gDipoleFieldErrorRankStats_.maxErrorLocation_m[1];
-        localMaxLocation_m[2]=gDipoleFieldErrorRankStats_.maxErrorLocation_m[2];
+    struct MaxLoc_ { double value; int rank; } localMax, globalMax;
+    localMax.value = (local.nSamples > 0) ? local.maxRelErr : -1.0;
+    localMax.rank = mpiRank;
+    globalMax.value = -1.0;
+    globalMax.rank = 0;
+
+    MPI_Allreduce(&localMax,&globalMax,1,MPI_DOUBLE_INT,MPI_MAXLOC,MPI_GLOBAL_COMMUNICATOR);
+
+    // Broadcast the max-error details from the rank that owns the global maximum.
+    double maxPack[10] = {0.0};
+    if (local.nSamples > 0 && mpiRank == globalMax.rank) {
+        maxPack[0] = local.maxRelErr;
+        for (int i=0;i<3;i++) maxPack[1+i] = local.maxX_m[i];
+        for (int i=0;i<3;i++) maxPack[4+i] = local.maxBMesh_T[i];
+        for (int i=0;i<3;i++) maxPack[7+i] = local.maxBAnalytic_T[i];
     }
+    MPI_Bcast(maxPack,10,MPI_DOUBLE,globalMax.rank,MPI_GLOBAL_COMMUNICATOR);
 
-    int mpiInitialized=0,mpiFinalized=0;
-    MPI_Initialized(&mpiInitialized);
-    if (mpiInitialized) MPI_Finalized(&mpiFinalized);
-    const bool mpiActive=(mpiInitialized!=0 && mpiFinalized==0);
+    if (mpiRank == 0) {
+        const char* tag = (label != NULL && label[0] != '\0') ? label : "Mode3D";
+        std::cout << "\n" << tag << " DIPOLE mesh magnetic-field error statistics\n";
+        std::cout << "--------------------------------------------------------\n";
+        std::cout << "samples: " << nGlobal << "\n";
 
-    unsigned long long globalCount=localCount;
-    long double globalSum=localSum;
-    double globalMax=localMax;
-    double globalMaxLocation_m[3]={
-        localMaxLocation_m[0],localMaxLocation_m[1],localMaxLocation_m[2]};
-    int mpiRank=0;
-
-    if (mpiActive) {
-        MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&mpiRank);
-
-        MPI_Allreduce(&localCount,&globalCount,1,MPI_UNSIGNED_LONG_LONG,MPI_SUM,
-                      MPI_GLOBAL_COMMUNICATOR);
-        MPI_Allreduce(&localSum,&globalSum,1,MPI_LONG_DOUBLE,MPI_SUM,
-                      MPI_GLOBAL_COMMUNICATOR);
-
-        // MPI_MAXLOC returns both the maximum error and the rank on which it occurred.
-        // Broadcasting from that rank preserves the exact sample coordinate associated
-        // with the reported global maximum.
-        struct cMaxLocPair_ { double value; int rank; };
-        cMaxLocPair_ localPair={localMax,mpiRank};
-        cMaxLocPair_ globalPair={-1.0,0};
-        MPI_Allreduce(&localPair,&globalPair,1,MPI_DOUBLE_INT,MPI_MAXLOC,
-                      MPI_GLOBAL_COMMUNICATOR);
-
-        globalMax=globalPair.value;
-        if (mpiRank==globalPair.rank) {
-            globalMaxLocation_m[0]=localMaxLocation_m[0];
-            globalMaxLocation_m[1]=localMaxLocation_m[1];
-            globalMaxLocation_m[2]=localMaxLocation_m[2];
-        }
-        MPI_Bcast(globalMaxLocation_m,3,MPI_DOUBLE,globalPair.rank,
-                  MPI_GLOBAL_COMMUNICATOR);
-    }
-
-    if (globalCount>0 && globalMax>=0.0) {
-        result.valid=true;
-        result.sampleCount=globalCount;
-        result.meanRelativeError=static_cast<double>(
-            globalSum/static_cast<long double>(globalCount));
-        result.maxRelativeError=globalMax;
-        result.maxErrorLocation_m[0]=globalMaxLocation_m[0];
-        result.maxErrorLocation_m[1]=globalMaxLocation_m[1];
-        result.maxErrorLocation_m[2]=globalMaxLocation_m[2];
-    }
-
-    if (!mpiActive || mpiRank==0) {
-        const char* label=(calculationLabel!=nullptr && calculationLabel[0]!='\0') ?
-            calculationLabel : "Mode3D calculation";
-        const double invRe=1.0/_EARTH__RADIUS_;
-
-        std::ostringstream out;
-        out << std::scientific << std::setprecision(8)
-            << "========== Mode3D DIPOLE magnetic-field interpolation error ==========\n"
-            << "Calculation                 : " << label << "\n"
-            << "Definition                  : |B_mesh-B_dipole|/|B_dipole|\n"
-            << "Number of field samples     : " << result.sampleCount << "\n";
-
-        if (result.valid) {
-            out << "Sample mean relative error  : " << result.meanRelativeError << "\n"
-                << "Maximum relative error      : " << result.maxRelativeError << "\n"
-                << "Max-error location [m]      : "
-                << result.maxErrorLocation_m[0] << " "
-                << result.maxErrorLocation_m[1] << " "
-                << result.maxErrorLocation_m[2] << "\n"
-                << "Max-error location [km]     : "
-                << result.maxErrorLocation_m[0]/1000.0 << " "
-                << result.maxErrorLocation_m[1]/1000.0 << " "
-                << result.maxErrorLocation_m[2]/1000.0 << "\n"
-                << "Max-error location [Re]     : "
-                << result.maxErrorLocation_m[0]*invRe << " "
-                << result.maxErrorLocation_m[1]*invRe << " "
-                << result.maxErrorLocation_m[2]*invRe << "\n";
+        if (nGlobal > 0) {
+            const double meanRel = sumGlobal / static_cast<double>(nGlobal);
+            std::cout << "mean relative |B_mesh-B_dipole|/|B_dipole|: " << meanRel << "\n";
+            std::cout << "max  relative |B_mesh-B_dipole|/|B_dipole|: " << maxPack[0]
+                      << " on MPI rank " << globalMax.rank << "\n";
+            std::cout << "max-error location x_km: "
+                      << maxPack[1]*1.0e-3 << " "
+                      << maxPack[2]*1.0e-3 << " "
+                      << maxPack[3]*1.0e-3 << "\n";
+            std::cout << "B_mesh_T at max error: "
+                      << maxPack[4] << " " << maxPack[5] << " " << maxPack[6] << "\n";
+            std::cout << "B_dipole_T at max error: "
+                      << maxPack[7] << " " << maxPack[8] << " " << maxPack[9] << "\n";
         }
         else {
-            out << "Status                      : no valid in-domain field samples were collected\n";
+            std::cout << "No samples were accumulated.  This is expected for non-DIPOLE runs,\n"
+                      << "analytic-field-evaluation runs, or code paths that do not use the\n"
+                      << "Mode3D mesh magnetic-field evaluator.\n";
         }
-
-        out << "=======================================================================\n";
-        std::cout << out.str();
         std::cout.flush();
     }
-
-    return result;
 }
 
 void SetCutoffOutputFileSuffix(const std::string& suffix) {
@@ -2892,11 +2859,6 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     int mpiRank = 0, mpiSize = 1;
     MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &mpiRank);
     MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &mpiSize);
-
-    // Start a fresh sample-weighted DIPOLE interpolation diagnostic for this cutoff
-    // calculation.  The helper silently disables itself for non-DIPOLE models and for
-    // -mode3d-field-eval ANALYTIC, so production behavior is unchanged in those cases.
-    ResetDipoleMagneticFieldErrorStatistics(prm);
 
     //==================================================================================
     // 14.2 — Species constants
@@ -3138,8 +3100,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     //==================================================================================
     // 14.8 — Two-level work scheduling over global Mode3D locations
     //==================================================================================
-    // The compact global field arrays are readable on every MPI rank before this
-    // cutoff solver starts.  Therefore any rank can compute any output location.
+    // The Mode3D mesh-field snapshot is replicated/readable on every MPI rank before
+    // this cutoff solver starts.  Therefore any rank can compute any output location.
     // This section uses that property to support several inter-rank schedulers:
     //
     //   STATIC
@@ -3743,11 +3705,6 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         std::cout.flush();
     }
 
-    // All field evaluators have been destroyed at this point.  Reduce their rank-local
-    // DIPOLE interpolation samples and print the global mean, maximum, and maximum-error
-    // coordinate before MPI can be finalized by this routine.
-    ReportDipoleMagneticFieldErrorStatistics("Mode3D cutoff rigidity");
-
     //==================================================================================
     // 14.12 — MPI finalise (only if we initialised MPI in this function)
     //==================================================================================
@@ -3766,8 +3723,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 //======================================================================================
 //
 // Mode3D density/flux must compute the same transmissivity as the gridless density
-// solver, but using row-stencil interpolation from compact global fields rather than
-// direct Tsyganenko calls.  The two wrappers below provide that bridge: they expose the
+// solver, but using the already-materialized AMR mesh field rather than direct
+// Tsyganenko calls.  The two wrappers below provide that bridge: they expose the
 // internal TraceAllowed3D() kernel through the same plain-array interface used by
 // GridlessMode::TraceAllowedShared/Ex().
 //
@@ -3776,7 +3733,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 //     cached in thread-local storage.  It stores a reference to `prm`; caching it across
 //     standalone time snapshots would risk a dangling reference after the snapshot-local
 //     AmpsParam copy goes out of scope.  The evaluator itself is lightweight: the heavy
-//     state is the read-only AMR tree and compact global field arrays.
+//     state is the read-only AMR tree and cell data already resident in memory.
 //   * The domain box is reconstructed from Mode3D::ParsedDomainMin/Max each call.  Those
 //     values are set once before mesh construction in standalone mode and by the SWMF
 //     pre-init hook in coupled mode, so they are the authoritative trajectory geometry.
