@@ -29,8 +29,17 @@ from pathlib import Path
 TEST_ID = "F2"
 TEST_NAME = "Power-law energy integration"
 
+# Keep the validation-side particle constants identical to the constants used by
+# DensityGridless.cpp.  F2 reconstructs density by integrating J(E)/v(E), so a
+# rounded proton rest energy can create a small but systematic file-versus-
+# spectrum discrepancy even when the AMPS output itself is internally correct.
 C_LIGHT = 299792458.0
-MP_MEV = 938.2720813
+ELEMENTARY_CHARGE_C = 1.602176634e-19
+AMU_KG = 1.66053906660e-27
+MEV_TO_J = 1.0e6 * ELEMENTARY_CHARGE_C
+PROTON_MASS_AMU = 1.007276466621
+PROTON_REST_ENERGY_MEV = PROTON_MASS_AMU * AMU_KG * C_LIGHT ** 2 / MEV_TO_J
+
 J0 = 1.0
 E0 = 10.0
 GAMMA = 3.5
@@ -53,7 +62,14 @@ def j_boundary(E_MeV):
 
 
 def speed_from_energy(E_MeV):
-    gamma = 1.0 + E_MeV / MP_MEV
+    """Return the relativistic proton speed using the solver's exact constants.
+
+    AMPS_PARAM_F2_gridless.in fixes MASS_AMU to PROTON_MASS_AMU.  Deriving the
+    rest energy from the same mass and SI conversion constants as the solver
+    prevents the Python harness from introducing an artificial density error at
+    the stringent file-versus-spectrum consistency tolerance.
+    """
+    gamma = 1.0 + E_MeV / PROTON_REST_ENERGY_MEV
     beta2 = max(0.0, 1.0 - 1.0 / (gamma * gamma))
     return C_LIGHT * math.sqrt(beta2)
 
@@ -286,10 +302,21 @@ def analyze(workdir, reference_csv, args):
     def add_check(name, value, expected_value, rel_tol=None, abs_tol=None, units="", note="",
                   check_type="error_metric"):
         abs_err = abs(value - expected_value)
-        rel_err = abs_err / max(abs(expected_value), 1.0e-300)
+
+        # A conventional relative error is undefined when the expected value is
+        # exactly zero.  Dividing by an artificial 1e-300 floor previously made
+        # small zero-target metrics appear as meaningless values near 1e294.
+        # Store None instead: csv.DictWriter emits an empty field and json.dump
+        # emits null, while the absolute tolerance remains the pass/fail test.
+        rel_err = None if expected_value == 0.0 else abs_err / abs(expected_value)
+
         ok = True
         if rel_tol is not None:
-            ok = ok and (rel_err <= rel_tol)
+            # F2 currently applies relative tolerances only to nonzero physical
+            # references.  Treat a future zero-reference relative check as a
+            # failed/invalid comparison rather than silently manufacturing a
+            # denominator and potentially reporting a false pass.
+            ok = ok and (rel_err is not None) and (rel_err <= rel_tol)
         if abs_tol is not None:
             ok = ok and (abs_err <= abs_tol)
         checks.append({
@@ -430,7 +457,13 @@ def analyze(workdir, reference_csv, args):
         print("Failed checks:")
         for c in checks:
             if not c["passed"]:
-                print("  - {check}: type={check_type}, value={value:.6e}, expected={expected_value:.6e}, rel={rel_error:.3e}, abs={abs_error:.3e}".format(**c))
+                # Zero-reference metrics intentionally have rel_error=None.
+                # Format that case explicitly so a failed absolute check is
+                # reported cleanly instead of raising a TypeError while trying
+                # to apply a floating-point format to None.
+                rel_text = "n/a" if c["rel_error"] is None else "%.3e" % c["rel_error"]
+                print("  - {check}: type={check_type}, value={value:.6e}, expected={expected_value:.6e}, rel={rel}, abs={abs_error:.3e}".format(
+                    rel=rel_text, **c))
     return passed
 
 
@@ -487,6 +520,19 @@ def parse_args():
     return p.parse_args()
 
 
+def finish_test(passed):
+    """Print the C-test-style final result and return its shell exit code.
+
+    The final text and process return value are generated from the same Boolean,
+    which guarantees that automation cannot observe exit status 0 together with
+    ``RESULT: FAIL`` or exit status 1 together with ``RESULT: PASS``.  This is
+    important because humans normally read the final line while higher-level
+    test drivers determine success from the process exit status.
+    """
+    print("\nRESULT: %s" % ("PASS" if passed else "FAIL"))
+    return 0 if passed else 1
+
+
 def main():
     args = parse_args()
     if args.np < 1:
@@ -534,13 +580,21 @@ def main():
             rc = subprocess.call(cmd, cwd=str(workdir), stdout=log, stderr=subprocess.STDOUT)
         if rc != 0:
             print("AMPS failed with exit code %d; see %s" % (rc, workdir / "F2_amps.log"))
-            return rc
+
+            # A nonzero AMPS status means that F2 did not complete successfully.
+            # Preserve the original AMPS code in the diagnostic message above,
+            # but normalize the validation runner itself to the repository-wide
+            # convention: print RESULT: FAIL and return the test-level code 1.
+            return finish_test(False)
     else:
         if not workdir.exists():
             raise SystemExit("--skip-run requested but workdir does not exist: %s" % workdir)
 
     ok = analyze(workdir, reference_csv, args)
-    return 0 if ok else 1
+
+    # Match the C-test runners: RESULT is the final status line, and the shell
+    # exit value is derived by the same helper from the same analysis Boolean.
+    return finish_test(ok)
 
 
 if __name__ == "__main__":
