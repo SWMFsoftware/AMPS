@@ -17,8 +17,11 @@ CUTOFF_EMAX            20000.0      ! MeV/n
 CUTOFF_MAX_PARTICLES   500          ! per injection point
 CUTOFF_NENERGY         50           ! log-spaced energy bins
 CUTOFF_SAMPLING        VERTICAL     ! VERTICAL or ISOTROPIC
-CUTOFF_MAX_TRAJ_TIME   600          ! sec; kept consistent with MAX_TRACE_TIME
+CUTOFF_MAX_TRAJ_TIME   600! sec; kept consistent with MAX_TRACE_TIME
 
+CUTOFF_DEBUG_EXIT_TRACE               T
+CUTOFF_DEBUG_EXIT_LIST_FILE               c4_debug_trajectories.dat
+CUTOFF_DEBUG_EXIT_FILE               cutoff_3d_debug_exit_trace.dat
 #PARTICLE_SPECIES
 SPECIES                PROTON
 CHARGE                 1            ! elementary charge
@@ -31,12 +34,12 @@ DIPOLE_TILT            0.0          ! deg from GSM Z-axis
 
 #DOMAIN_BOUNDARY
 !BOUNDARY_TYPE          BOX          ! rectangular box in GSM
-DOMAIN_X_MAX           35.0         ! RE dayside
-DOMAIN_X_MIN           -35.0        ! RE nightside
-DOMAIN_Y_MAX           35.0         ! RE dusk
-DOMAIN_Y_MIN           -35.0        ! RE dawn
-DOMAIN_Z_MAX           35.0         ! RE north
-DOMAIN_Z_MIN           -35.0        ! RE south
+DOMAIN_X_MAX           75.0         ! RE dayside
+DOMAIN_X_MIN           -75.0        ! RE nightside
+DOMAIN_Y_MAX           75.0         ! RE dusk
+DOMAIN_Y_MIN           -75.0        ! RE dawn
+DOMAIN_Z_MAX           75.0         ! RE north
+DOMAIN_Z_MIN           -75.0        ! RE south
 R_INNER                1.0          ! RE inner loss sphere
 
 #ELECTRIC_FIELD
@@ -59,8 +62,8 @@ SPEC_EMAX              1000.0
 #OUTPUT_DOMAIN
 OUTPUT_MODE            SHELLS
 SHELL_COUNT            1
-SHELL_ALTS_KM          9000.0
-SHELL_RES_DEG          30
+SHELL_ALTS_KM          9000
+SHELL_RES_DEG          180
 
 #OUTPUT_OPTIONS
 !OUTPUT_CUTOFF          T
@@ -74,9 +77,9 @@ SHELL_RES_DEG          30
 !   -mode3d-threads <nt>
 !N_PARTICLES            10000
 !MAX_BOUNCE             500
-ADAPTIVE_DT            T            ! T: automatic gyro/boundary-limited dt; F: fixed DT_TRACE
-DT_TRACE               0.25
+ADAPTIVE_DT            F! T: automatic gyro/boundary-limited dt; F: fixed DT_TRACE
+DT_TRACE               1
 MAX_TRACE_TIME         600
-MAX_TRACE_DISTANCE     0.0
+MAX_TRACE_DISTANCE     400
 
 !#END
