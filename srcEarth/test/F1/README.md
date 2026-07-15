@@ -54,6 +54,8 @@ gridless_points_spectrum.dat
 gridless_points_flux.dat
 ```
 
+AMPS writes all floating-point values with `std::numeric_limits<double>::max_digits10` precision. This guarantees a lossless text round trip for IEEE-754 `double` values and allows the harness to reconstruct density and flux from the spectrum file without errors caused by six-digit stream formatting.
+
 The harness writes:
 
 ```text
@@ -64,6 +66,24 @@ F1_summary.csv
 F1_result.json
 ```
 
+At the end of a completed validation, the runner prints the same final status
+format used by the C-test runners:
+
+```text
+RESULT: PASS
+```
+
+or:
+
+```text
+RESULT: FAIL
+```
+
+The process exit status is generated from the same Boolean as this printed
+result: `0` for PASS and `1` for FAIL. A nonzero AMPS execution status is also
+reported as `RESULT: FAIL` and normalized to test-runner exit status `1`; the
+original AMPS exit value remains in the preceding diagnostic message. `--dry-run`
+only prints the command and exits `0` without claiming that the validation passed.
 
 `F1_summary.csv` uses the columns:
 
@@ -80,7 +100,13 @@ F1 applies four groups of checks:
 3. Flux in the LOW, MID, HIGH, and FULL energy channels matches the closed-form power-law channel integrals.
 4. Spatial variation of density and flux across the ten points is zero within roundoff.
 
-The reference file stores only the continuous analytical physical target values. In `F1_summary.csv`, the old ambiguous `reference` column has been replaced by `expected_value`, and a `check_type` column separates `physical_reference` checks from `error_metric` checks. Zero expected values therefore mean that the expected error or deviation is zero, not that the physical density or flux is zero. The script also reconstructs density and flux directly from `gridless_points_spectrum.dat` to verify that the output files are internally consistent.
+The reference file stores only the continuous analytical physical target values. In `F1_summary.csv`, the old ambiguous `reference` column has been replaced by `expected_value`, and a `check_type` column separates `physical_reference` checks from `error_metric` checks. Zero expected values therefore mean that the expected error or deviation is zero, not that the physical density or flux is zero. For such zero-target metrics, conventional relative error is undefined; the harness writes an empty CSV field / JSON `null` for `rel_error` and uses the specified absolute tolerance. This avoids misleading values near `1e294` that resulted from dividing by an artificial `1e-300` denominator.
+
+The script also reconstructs density and flux directly from `gridless_points_spectrum.dat` to verify that the output files are internally consistent. Its relativistic speed calculation derives the proton rest energy from the same `MASS_AMU`, atomic-mass-unit constant, elementary charge, and speed of light used by `DensityGridless.cpp`, so the reconstruction check does not contain a test-harness mass mismatch. The continuous density value in `reference_F1_zero_field.csv` is evaluated with those same constants.
+
+## Numerical accuracy and energy resolution
+
+F1 intentionally retains `DS_NINTERVALS=80` and the default 2% physical-reference tolerance. The solver integrates on a logarithmic energy grid with a trapezoidal rule in energy, while the reference values are continuous closed-form/high-resolution integrals. For the steep `E^-3.5` test spectrum, the 80-interval quadrature is expected to overestimate total flux by about 0.98% and density by about 1.24%; this is discretization error, not a trajectory or normalization defect. Increase `DS_NINTERVALS` when a study requires a smaller continuous-integral error, recognizing that the trajectory count and runtime increase approximately in proportion to the number of energy intervals.
 
 ## Code requirement
 

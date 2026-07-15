@@ -334,6 +334,23 @@ static constexpr double MEV_TO_J = 1.0e6 * QE;
 
 static constexpr double RE_KM = 6371.2;
 
+//--------------------------------------------------------------------------------------
+// Lossless ASCII precision for scientific output
+//--------------------------------------------------------------------------------------
+// The density, spectrum, and flux files are consumed by validation scripts that
+// reconstruct integrals from the serialized values.  The default iostream precision
+// is only six significant digits, which is adequate for visualization but not for a
+// round-trip consistency check: independently rounded spectrum and integral values
+// can differ by several parts per million.
+//
+// max_digits10 is the number of base-10 digits required to guarantee that a finite
+// IEEE-754 double written as text and read back produces the original binary value.
+// Applying it once immediately after each output stream is opened preserves the
+// numerical result without forcing a particular fixed/scientific presentation.
+static inline void DensityGridless_ConfigureLosslessAsciiOutput(std::ostream& out) {
+  out << std::setprecision(std::numeric_limits<double>::max_digits10);
+}
+
 struct DomainBoxRe {
   double xMin,xMax,yMin,yMax,zMin,zMax,rInner;
 };
@@ -1591,6 +1608,8 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     // File 1: densities
     {
       std::ofstream out("gridless_points_density.dat");
+      // Preserve every double needed by downstream reconstruction and regression tests.
+      DensityGridless_ConfigureLosslessAsciiOutput(out);
       out << "TITLE=\"Gridless energetic particle density (POINTS/TRAJECTORY)\"\n";
       DensityGridless_WritePointLikeVariablePrefix(out, prm);
       out << "\"X_km\" \"Y_km\" \"Z_km\" \"N_m^-3\" \"N_cm^-3\" "
@@ -1611,6 +1630,8 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     // File 2: spectra
     {
       std::ofstream out("gridless_points_spectrum.dat");
+      // Preserve every double needed by downstream reconstruction and regression tests.
+      DensityGridless_ConfigureLosslessAsciiOutput(out);
       out << "TITLE=\"Gridless energetic particle spectrum (POINTS/TRAJECTORY)\"\n";
       out << "VARIABLES=\"E_MeV\" \"T\" \"J_boundary_perMeV\" \"J_local_perMeV\"\n";
 
@@ -1651,6 +1672,8 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     //--------------------------------------------------------------------------
     {
       std::ofstream out("gridless_points_flux.dat");
+      // Preserve every double needed by downstream reconstruction and regression tests.
+      DensityGridless_ConfigureLosslessAsciiOutput(out);
       out << "TITLE=\"Gridless omnidirectional integral flux (POINTS/TRAJECTORY)\"\n";
 
       // Build variable list header dynamically.
@@ -2205,6 +2228,9 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
       std::ostringstream fn;
       fn << "gridless_shell_" << (int)std::round(alt_km) << "km_density_channels.dat";
       std::ofstream out(fn.str());
+      // Use the same round-trip-safe precision as POINTS output so shell files can
+      // also be used in strict numerical comparisons without serialization noise.
+      DensityGridless_ConfigureLosslessAsciiOutput(out);
       out << "TITLE=\"Gridless energetic particle density (SHELL alt=" << alt_km << " km)\"\n";
       // Match the structured (I,J) Tecplot layout used by the cutoff-rigidity tool.
       // We write lon/lat grids (not X/Y/Z) because Tecplot structured grids are
