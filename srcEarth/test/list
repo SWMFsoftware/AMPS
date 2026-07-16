@@ -4,40 +4,40 @@
 
 
 P srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 P srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16 --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 3 --mode3d-mesh-coarsening LINEAR 
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 P srcEarth/test/C1/run_C1.py --mode gridless -np 4 -nt 16
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 
 P srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 P srcEarth/test/C2/run_C2.py --mode gridless -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 P srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 2 --mode3d-mesh-coarsening LINEAR
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 
 P srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 P srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 P srcEarth/test/C3/run_C3.py --mode gridless --max-trace-distance 300
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 P srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN --cutoff-scan-n 200
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 
 
 P srcEarth/test/C4/run_C4.py --factors=0.5,2.0 --lats=-60,-30,0,30,60
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 F srcEarth/test/C4/run_C4.py --adaptive-dt F --dt-sweep=1.0,0.5,0.25 
 last pass:
 F srcEarth/test/C4/run_C4.py --fail-on-paxis --paxis-tol=1e-5
 last pass:
 
 P srcEarth/test/C4/run_C4.py --adaptive-dt T --movers HC4
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 P srcEarth/test/C4/run_C4.py --adaptive-dt T --movers BORIS
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 
 
 F srcEarth/test/C5/run_C5.py --res-earth-series 0.2,0.1,0.05 --res-boundary-series 1.0,0.75,0.5
@@ -48,12 +48,12 @@ F srcEarth/test/C5/run_C5.py --use-legacy-mesh-resolution
 last pass:
 
 P srcEarth/test/C11/run_C11.py -np 4 -nt 16
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 
 P srcEarth/test/F1/run_F1.py -np 4 -nt 16
-last pass:
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 P srcEarth/test/F2/run_F2.py -np 4 -nt 16
-last pass:
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 
 !P srcEarth/test/F3/run_F3.py -np 4 -nt 16
 !last pass:
@@ -62,17 +62,17 @@ last pass:
 !last pass: 
 
 P srcEarth/test/F5/run_F5.py -np 4 -nt 16
-last pass:
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 P srcEarth/test/F11/run_F11.py -np 4 -nt 16
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 P srcEarth/test/F15/run_F15.py -np 4 -nt 16
 last pass:
 
 P srcEarth/test/F16/run_F16.py -np 4 -nt 16
-last pass: 7892e776037be20037fea8500f54aea93319fa0a
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 
 P srcEarth/test/F12/run_F12.py -np 4 -nt 16
-last pass:
+last pass: 5af188550a018af93dff6c60dec0c14955a1c3d3
 
 P srcEarth/test/C14/run_C14.py -np 4 -nt 16
 last pass:
