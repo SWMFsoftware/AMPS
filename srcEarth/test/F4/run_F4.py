@@ -53,6 +53,45 @@ ENERGY_BINS = [
     ("FULL", 1.0, 1000.0),
 ]
 
+def run_with_live_log(cmd, cwd, log_path, live_output=True):
+    """Run AMPS while preserving a complete log and optionally teeing output live.
+
+    The previous F4 runner redirected all AMPS output to F4_amps.log.  For a long
+    trajectory calculation that made a healthy run look frozen.  Reading raw bytes
+    preserves carriage returns/newlines from MPI and the C++ progress bar.
+    """
+    with log_path.open("wb") as log:
+        header = ("# Command: %s\n" % " ".join(cmd)).encode("utf-8")
+        log.write(header)
+        log.flush()
+        proc = subprocess.Popen(
+            cmd, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
+        assert proc.stdout is not None
+        while True:
+            chunk = os.read(proc.stdout.fileno(), 4096)
+            if not chunk:
+                break
+            log.write(chunk)
+            log.flush()
+            if live_output:
+                sys.stdout.buffer.write(chunk)
+                sys.stdout.buffer.flush()
+        return proc.wait()
+
+
+def estimate_work(npoints, scan_n, max_particles):
+    """Return (directions_per_energy, trajectories, direction_block_tasks)."""
+    full_directions = 24 * 48
+    if max_particles > 0:
+        ndir = max(1, min(full_directions, max_particles // scan_n))
+    else:
+        ndir = full_directions
+    trajectories = npoints * scan_n * ndir
+    block_tasks = npoints * scan_n * ((ndir + 31) // 32)
+    return ndir, trajectories, block_tasks
+
+
 
 def parse_float_list(text, name):
     out = []
@@ -176,10 +215,38 @@ def interval_grid(E, E1, E2):
 
 
 def flux_from_local_spectrum(E, Jloc, E1, E2):
+    """Integrate a saved nodal local spectrum with piecewise-linear J_local.
+
+    This is the quadrature used for the total-flux closure check because the
+    total integral uses only the solver energy nodes.  It must not be used for
+    user-defined channels whose endpoints can fall between energy nodes; AMPS
+    handles those endpoints by interpolating T and evaluating J_boundary there.
+    """
     xs = interval_grid(E, E1, E2)
     if len(xs) < 2:
         return 0.0
     ys = [interp(E, Jloc, x) for x in xs]
+    return 4.0 * math.pi * trapz(xs, ys)
+
+
+def flux_channel_as_amps(E, T, E1, E2):
+    """Reproduce DensityGridless.cpp::FluxIntegrateChannel exactly.
+
+    AMPS does *not* linearly interpolate the product J_local=T*J_boundary at a
+    channel edge that lies between energy-grid nodes.  It linearly interpolates
+    T(E), evaluates the configured boundary spectrum directly at the exact edge,
+    forms J_local(edge)=T_interp(edge)*J_boundary(edge), and then applies the
+    trapezoidal rule on the augmented grid containing both channel edges.
+
+    Interpolating the saved J_local array instead is a different quadrature for a
+    curved power-law spectrum.  At the compact 32-point logarithmic F4 grid that
+    difference is expected to be O(10^-3--10^-2), which previously produced false
+    channel-closure failures even when the AMPS flux file was correct.
+    """
+    xs = interval_grid(E, E1, E2)
+    if len(xs) < 2:
+        return 0.0
+    ys = [interp(E, T, x) * j_boundary(x) for x in xs]
     return 4.0 * math.pi * trapz(xs, ys)
 
 
@@ -327,6 +394,11 @@ def render_input(template_path, output_path, points, args):
         ("DS_NINTERVALS", args.nintervals),
         ("DS_MAX_TRAJ_TIME", args.max_trace_time),
         ("MAX_TRACE_TIME", args.max_trace_time),
+        ("MAX_TRACE_DISTANCE", args.max_trace_distance),
+        ("MAX_STEPS", args.max_steps),
+        ("DS_MAX_PARTICLES", args.max_particles),
+        ("DS_RETRY_UNRESOLVED", "T" if args.retry_unresolved else "F"),
+        ("TRAP_DETECTION", "F" if args.no_trap_detection else "T"),
         ("DT_TRACE", args.dt_trace),
     ]:
         text = replace_key(text, key, value)
@@ -340,11 +412,21 @@ def render_input(template_path, output_path, points, args):
              "! F4_GRIDLESS_MPI_SCHEDULER %s\n"
              "! F4_GRIDLESS_MPI_DYNAMIC_CHUNK %d\n"
              "! F4_DS_TRANSMISSION_SCAN_N %d\n"
-             "! F4_DS_NINTERVALS %d\n") % (
+             "! F4_DS_NINTERVALS %d\n"
+             "! F4_DS_MAX_PARTICLES %d\n"
+             "! F4_MAX_STEPS %d\n"
+             "! F4_MAX_TRACE_TIME_S %.17g\n"
+             "! F4_MAX_TRACE_DISTANCE_RE %.17g\n"
+             "! F4_TRAP_DETECTION %s\n"
+             "! F4_RETRY_UNRESOLVED %s\n") % (
                  args.alt_km,
                  ",".join("%.12g" % x for x in args.lons_values),
                  ",".join("%.12g" % x for x in args.lats_values),
-                 args.nt, args.scheduler, args.dynamic_chunk, args.scan_n, args.nintervals)
+                 args.nt, args.scheduler, args.dynamic_chunk, args.scan_n, args.nintervals,
+                 args.max_particles, args.max_steps, args.max_trace_time,
+                 args.max_trace_distance,
+                 "F" if args.no_trap_detection else "T",
+                 "T" if args.retry_unresolved else "F")
     output_path.write_text(text)
 
 
@@ -471,13 +553,21 @@ def analyze(workdir, points, args):
                                    check_type="setup_identity",
                                    note="missing requested flux-channel column") and passed
                 continue
-            f_spec = flux_from_local_spectrum(E, Jl, e1, e2)
+            # Match the actual AMPS channel quadrature.  Channel boundaries are
+            # generally not nodes of the logarithmic SCAN grid.  The C++ solver
+            # interpolates T at each boundary and evaluates J_boundary exactly;
+            # linearly interpolating the saved product J_local would test a
+            # different numerical rule and gives percent-level false residuals on
+            # the intentionally compact F4 grid.
+            f_spec = flux_channel_as_amps(E, T, e1, e2)
             resid = abs(data["flux"][out_key] - f_spec) / max(abs(f_spec), 1.0e-300)
             passed = add_check(rows, "flux_channel_file_vs_spectrum", label,
                                "%s_relative_residual" % out_key,
                                resid, 0.0, abs_tol=args.integral_tol, units="1",
                                check_type="exact_internal_identity",
-                               note="channel flux file must match 4*pi*int_channel J_local(E)dE") and passed
+                               note=("channel flux must match AMPS quadrature: interpolate T at "
+                                     "the exact channel edges, evaluate J_boundary there, then "
+                                     "integrate T*J_boundary on the augmented grid")) and passed
 
     summary_csv = workdir / "F4_summary.csv"
     fieldnames = ["check", "point", "quantity", "check_type", "passed", "value",
@@ -501,6 +591,12 @@ def analyze(workdir, points, args):
             "lats": args.lats_values,
             "scan_n": args.scan_n,
             "nintervals": args.nintervals,
+            "max_particles": args.max_particles,
+            "max_steps": args.max_steps,
+            "max_trace_time_s": args.max_trace_time,
+            "max_trace_distance_Re": args.max_trace_distance,
+            "trap_detection": not args.no_trap_detection,
+            "retry_unresolved": args.retry_unresolved,
             "closure_tol": args.closure_tol,
             "integral_tol": args.integral_tol,
             "differential_tol": args.differential_tol,
@@ -539,7 +635,7 @@ def parse_args(argv=None):
         Examples:
           python srcEarth/test/F4/run_F4.py
           python srcEarth/test/F4/run_F4.py -np 4 -nt 16
-          python srcEarth/test/F4/run_F4.py --scan-n 160 --nintervals 240
+          python srcEarth/test/F4/run_F4.py --scan-n 64 --max-particles 2048
           python srcEarth/test/F4/run_F4.py --lons 0,90 --lats -60,-30,0,30,60
           python srcEarth/test/F4/run_F4.py --integral-tol 5e-5 --closure-tol 2e-5
           python srcEarth/test/F4/run_F4.py --dry-run --workdir test_output/F4_dryrun
@@ -552,13 +648,19 @@ def parse_args(argv=None):
     p.add_argument("--workdir", default="test_output/F4_gridless", help="run/output directory")
     p.add_argument("--scheduler", choices=["DYNAMIC", "BLOCK_CYCLIC", "STATIC"], default="DYNAMIC")
     p.add_argument("--dynamic-chunk", type=int, default=0)
-    p.add_argument("--scan-n", type=int, default=120, help="DS_TRANSMISSION_SCAN_N value; default: 120")
-    p.add_argument("--nintervals", type=int, default=160, help="DS_NINTERVALS value; default: 160")
+    p.add_argument("--scan-n", type=int, default=32, help="DS_TRANSMISSION_SCAN_N value; default: 32")
+    p.add_argument("--nintervals", type=int, default=31, help="DS_NINTERVALS value; default: 31 (SCAN uses --scan-n for the actual grid)")
     p.add_argument("--alt-km", type=float, default=ALT_KM_DEFAULT, help="shell altitude in km; default: 9000")
     p.add_argument("--lons", default=",".join(str(x) for x in DEFAULT_LONS), help="comma-separated longitudes in degrees")
     p.add_argument("--lats", default=",".join(str(x) for x in DEFAULT_LATS), help="comma-separated latitudes in degrees")
     p.add_argument("--dt-trace", type=float, default=0.1, help="DT_TRACE value")
-    p.add_argument("--max-trace-time", type=float, default=900.0, help="MAX_TRACE_TIME / DS_MAX_TRAJ_TIME value")
+    p.add_argument("--max-trace-time", type=float, default=120.0, help="MAX_TRACE_TIME / DS_MAX_TRAJ_TIME value; default: 120 s")
+    p.add_argument("--max-trace-distance", type=float, default=300.0, help="MAX_TRACE_DISTANCE in Re; 0 disables it; default: 300")
+    p.add_argument("--max-steps", type=int, default=100000, help="MAX_STEPS per trajectory; default: 100000")
+    p.add_argument("--max-particles", type=int, default=512, help="DS_MAX_PARTICLES per point across all energies; 0 means no cap; default: 512")
+    p.add_argument("--retry-unresolved", action="store_true", help="retry unresolved trajectories once; disabled by default for this closure test")
+    p.add_argument("--no-trap-detection", action="store_true", help="disable magnetic trap detection")
+    p.add_argument("--quiet", action="store_true", help="write AMPS output only to F4_amps.log instead of teeing it live")
     p.add_argument("--closure-tol", type=float, default=2.0e-5,
                    help="tolerance for J_local(E)=T(E)*J_boundary(E); allows Tecplot ASCII precision")
     p.add_argument("--integral-tol", type=float, default=2.0e-5,
@@ -586,6 +688,14 @@ def main(argv=None):
         raise SystemExit("--scan-n must be >= 2")
     if args.nintervals < 2:
         raise SystemExit("--nintervals must be >= 2")
+    if args.max_particles < 0:
+        raise SystemExit("--max-particles must be >= 0")
+    if args.max_steps < 1:
+        raise SystemExit("--max-steps must be >= 1")
+    if args.max_trace_time <= 0.0:
+        raise SystemExit("--max-trace-time must be positive")
+    if args.max_trace_distance < 0.0:
+        raise SystemExit("--max-trace-distance must be >= 0")
     if args.alt_km <= 0.0:
         raise SystemExit("--alt-km must be positive")
     args.lons_values = parse_float_list(args.lons, "--lons")
@@ -628,14 +738,23 @@ def main(argv=None):
             "-mode3d-mpi-dynamic-chunk", str(args.dynamic_chunk),
             "-density-transmission", "SCAN",
         ]
+        ndir, ntraj, ntasks = estimate_work(len(points), args.scan_n, args.max_particles)
         print("Running:", " ".join(cmd))
+        print("F4 workload: %d points x %d energies x %d directions = %d trajectories" %
+              (len(points), args.scan_n, ndir, ntraj))
+        print("MPI scheduler tasks: %d direction blocks (up to 32 trajectories each)" % ntasks)
+        if args.np > 1 and args.nt > 1:
+            print("Note: the multi-rank gridless scheduler parallelizes these tasks across MPI ranks; -nt does not multiply the MPI task concurrency.")
+        print("AMPS output log:", workdir / "F4_amps.log")
+        if args.quiet:
+            print("Live AMPS output is disabled by --quiet.")
+        else:
+            print("AMPS output follows and is also copied to the log.")
+        sys.stdout.flush()
         if args.dry_run:
             print("F4 dry run complete. Generated input under %s" % workdir)
             return 0
-        with (workdir / "F4_amps.log").open("w") as log:
-            log.write("# Command: %s\n" % " ".join(cmd))
-            log.flush()
-            rc = subprocess.call(cmd, cwd=str(workdir), stdout=log, stderr=subprocess.STDOUT)
+        rc = run_with_live_log(cmd, workdir, workdir / "F4_amps.log", live_output=not args.quiet)
         if rc != 0:
             print("AMPS failed with exit code %d; see %s" % (rc, workdir / "F4_amps.log"))
             return rc

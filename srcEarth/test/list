@@ -62,8 +62,8 @@ last pass: 0588ddb3c3be386c75a85a2aa4feb4a733600878
 P srcEarth/test/F3/run_F3.py --mover HC4 --lons 0 --lats 45 --scan-n 24 --directions-per-energy 288 --max-trace-time 600 --max-steps 1000000 --boundary-refine-tol-m 10 --unresolved-tol 0.01 --retry-unresolved --dynamic-chunk 1 -np 18
 last pass: 0588ddb3c3be386c75a85a2aa4feb4a733600878
 
-!P srcEarth/test/F4/run_F4.py -np 4 -nt 16
-!last pass: 
+P srcEarth/test/F4/run_F4.py -np 4 -nt 16
+last pass: 
 
 P srcEarth/test/F5/run_F5.py -np 4 -nt 16
 last pass: 0588ddb3c3be386c75a85a2aa4feb4a733600878
