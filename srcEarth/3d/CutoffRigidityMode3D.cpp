@@ -119,14 +119,14 @@
 // ADAPTIVE TIME STEP
 //======================================================================================
 //
-// Identical policy to SelectAdaptiveDt in CutoffRigidityGridless.cpp:
+// Identical policy to SelectTraceDt in CutoffRigidityGridless.cpp:
 //   dt = min(DT_TRACE_max,
-//            GYRO_ANGLE_LIMIT / omega_c,
-//            TRAVEL_FRACTION * d_nearest / v,
+//            GYRO_ANGLE_LIMIT / omega_c,   // full-orbit branches only
 //            time_remaining)
 //
-// GYRO_ANGLE_LIMIT = 0.15 rad   (limits Boris rotation error per step)
-// TRAVEL_FRACTION  = 0.20       (limits overshoot near domain boundaries)
+// GYRO_ANGLE_LIMIT = 0.15 rad.  Inner-sphere and outer-box crossings are detected
+// explicitly on every accepted numerical trajectory chord, so no asymptotic
+// distance-to-boundary limiter is used.
 //
 //======================================================================================
 // DOMAIN GEOMETRY
@@ -207,6 +207,9 @@
 //======================================================================================
 
 #include "CutoffRigidityMode3D.h"
+#include "util/TrajectoryBoundary.h"
+#include "util/TrajectoryTimeStep.h"
+#include "util/TrajectoryTrapDetector.h"
 #include "Mode3D.h"
 #include "ElectricField.h"
 #include "GlobalMagneticField.h"
@@ -814,16 +817,78 @@ static std::vector<V3> BuildFibonacciDirs(int nDir) {
 // SelectDt3D, for exactly the same reason as in the gridless solver:
 //   - GC steps do not advance the fast gyrophase, so the gyro-angle limit is
 //     irrelevant and must be skipped to avoid unnecessarily small steps.
-//   - The dominant GC transport speed is |v_parallel| (field-aligned motion),
-//     not the full particle speed |v|.  Using |v| for the boundary limiter in the
-//     GC branch makes steps artificially small and wastes integration budget.
-//
-// The floor expression is identical to the gridless formula, including the
-// 100 km / vForBoundaryLimiter term that guarantees forward progress even when
-// the particle is nearly stationary.
+// The numerical safeguard is identical to the corrected gridless policy: a valid
+// positive step selected by the physical upper bounds is never increased.  In
+// particular, no minimum travel distance is imposed on full-orbit trajectories.
 //======================================================================================
 
-static inline double SelectTraceDt3D(const EarthUtil::AmpsParam& prm,
+enum class TraceIntegrationPolicy3D {
+    StructuredAccurate,
+    LegacyCutoffCompatible
+};
+
+// Preserve the pre-F3 cutoff integration policy for Boolean cutoff searches.  The
+// historical C-series references were generated with this boundary-distance limiter
+// and 100-km minimum-displacement floor.  Structured density/F3 trajectories use the
+// corrected upper-bound-only selector below and therefore retain the F3 fix.
+static inline double SelectLegacyCutoffTraceDt3D(const EarthUtil::AmpsParam& prm,
+                                  const cMode3DMeshFieldEval& field,
+                                  const V3& x, const V3& p,
+                                  double q_C, double m0_kg,
+                                  const DomainBox3D& box,
+                                  double timeRemaining_s,
+                                  bool useGuidingCenterForThisStep) {
+    double dt=prm.numerics.dtTrace_s;
+    if (timeRemaining_s<dt) dt=timeRemaining_s;
+    if (!prm.numerics.adaptiveDt) return dt;
+
+    const double p2=dot(p,p);
+    const double mc=m0_kg*SpeedOfLight;
+    const double gamma=std::sqrt(1.0+p2/(mc*mc));
+    const double pMag=std::sqrt(std::max(0.0,p2));
+    const double vMag=(gamma>0.0 && m0_kg>0.0) ? pMag/(gamma*m0_kg) : 0.0;
+
+    V3 B; field.GetB_T(x,B);
+    const double Bmag=v3norm(B);
+    if (!useGuidingCenterForThisStep) {
+        const double gyroAngleLimit=0.15;
+        if (Bmag>0.0) {
+            const double omega=std::fabs(q_C)*Bmag/(gamma*m0_kg);
+            if (omega>0.0) dt=std::min(dt,gyroAngleLimit/omega);
+        }
+    }
+
+    const double dxp=box.xMax-x.x;
+    const double dxm=x.x-box.xMin;
+    const double dyp=box.yMax-x.y;
+    const double dym=x.y-box.yMin;
+    const double dzp=box.zMax-x.z;
+    const double dzm=x.z-box.zMin;
+    const double dBox=std::min({dxp,dxm,dyp,dym,dzp,dzm});
+    const double dBoxSafe=(dBox<0.0) ? 1.0e300 : dBox;
+    const double dInner=std::max(0.0,v3norm(x)-box.rInner);
+    const double dNear=std::min(dBoxSafe,dInner);
+
+    double vForBoundaryLimiter=vMag;
+    if (useGuidingCenterForThisStep && Bmag>0.0) {
+        const V3 bHat=mul(1.0/Bmag,B);
+        const double pPar=dot(p,bHat);
+        const double vParAbs=std::fabs(pPar)/(gamma*m0_kg);
+        vForBoundaryLimiter=std::max(vParAbs,1.0e-12);
+    }
+    if (vForBoundaryLimiter>0.0 && dNear<1.0e299)
+        dt=std::min(dt,0.20*dNear/vForBoundaryLimiter);
+
+    const double safeSpeed=std::max(vForBoundaryLimiter,1.0e-12);
+    const double dtFloor=std::max(
+        std::max(1.0e-12,1.0e-9*std::max(prm.numerics.dtTrace_s,1.0)),
+        100.0e3/safeSpeed);
+    dt=std::max(dtFloor,dt);
+    if (timeRemaining_s>0.0) dt=std::min(dt,timeRemaining_s);
+    return dt;
+}
+
+static inline double SelectStructuredTraceDt3D(const EarthUtil::AmpsParam& prm,
                                   const cMode3DMeshFieldEval& field,
                                   const V3& x, const V3& p,
                                   double q_C, double m0_kg,
@@ -832,22 +897,18 @@ static inline double SelectTraceDt3D(const EarthUtil::AmpsParam& prm,
                                   bool useGuidingCenterForThisStep) {
     // ADAPTIVE_DT controls the interpretation of DT_TRACE:
     //   ADAPTIVE_DT=T (default): DT_TRACE is the maximum step and the code may
-    //                            reduce it using gyro and boundary limiters.
+    //                            reduce it using the gyro-angle limiter.
     //   ADAPTIVE_DT=F          : DT_TRACE is the actual fixed step, except for the
     //                            final trim to the remaining trace-time budget.
     double dt = prm.numerics.dtTrace_s;
-    if (timeRemaining_s < dt) dt = timeRemaining_s;
-    if (!prm.numerics.adaptiveDt) return dt;
+    if (!prm.numerics.adaptiveDt)
+        return Earth::TrajectoryTimeStep::FinalizeUpperBoundedStep(dt,timeRemaining_s);
 
     // Relativistic kinematics — shared by both branches.
     const double p2    = dot(p, p);
     const double mc    = m0_kg * SpeedOfLight;
     const double gamma = std::sqrt(1.0 + p2 / (mc*mc));
-    const double pMag  = std::sqrt(std::max(0.0, p2));
-    const double vMag  = (gamma > 0.0 && m0_kg > 0.0) ? pMag / (gamma*m0_kg) : 0.0;
-
-    // Evaluate B once; reused for the gyro limiter (full-orbit) and the
-    // |v_parallel| boundary limiter (GC branch).
+    // Evaluate B once for full-orbit gyro-resolution control.
     V3 B; field.GetB_T(x, B);
     const double Bmag = v3norm(B);
 
@@ -867,63 +928,44 @@ static inline double SelectTraceDt3D(const EarthUtil::AmpsParam& prm,
         }
     }
 
-    // (2) Geometry-aware travel constraint (branch-aware speed selection).
-    //
-    // Limit the per-step displacement to TRAVEL_FRACTION = 20% of the distance
-    // to the nearest stopping surface (outer box face or inner loss sphere).
-    // This prevents large overshoot near classification boundaries.
-    //
-    // The effective "transport speed" differs between branches:
-    //   Full-orbit branch: use full particle speed |v|.
-    //   GC branch:         use |v_parallel| = |p · B̂| / (γ m₀).
-    //     Rationale: in the GC approximation the guiding centre drifts along
-    //     the field line at |v_parallel|; the drift velocities (grad-B, curvature)
-    //     are generally much smaller and are already captured by the mover.
-    //     Using |v| would impose the same small dt as the full-orbit branch and
-    //     negate the efficiency gain of the GC representation.
-    const double dxp = box.xMax - x.x;  const double dxm = x.x - box.xMin;
-    const double dyp = box.yMax - x.y;  const double dym = x.y - box.yMin;
-    const double dzp = box.zMax - x.z;  const double dzm = x.z - box.zMin;
-    // dBox is the distance to the nearest outer-box face (metres).
-    // If the particle is outside the box, all differences are negative; we treat
-    // that as "box distance = large" because the escape check fires immediately.
-    const double dBox  = std::min({dxp, dxm, dyp, dym, dzp, dzm});
-    const double dBoxSafe = (dBox < 0.0) ? 1.0e300 : dBox;
+    // Boundary crossings are detected explicitly after each accepted mover step.
+    // Do not constrain dt to a fraction of the remaining boundary distance: that
+    // policy approaches the surface asymptotically and can prevent a crossing from
+    // ever being observed.  The user cap, gyro-angle cap, and remaining-time cap
+    // determine dt; exact segment/sphere and segment/box intersections classify events.
+    (void)box;
 
-    const double r      = v3norm(x);
-    const double dInner = std::max(0.0, r - box.rInner); // dist to inner sphere
-    const double dNear  = std::min(dBoxSafe, dInner);
+    // Never increase a valid positive step after applying the user, gyro-angle,
+    // upper bounds.  The former 100-km/v floor overrode those accuracy
+    // limits and could severely under-resolve low-energy gyromotion.  Keep only a
+    // tiny fallback for invalid/non-positive values; a physically required small
+    // positive step is left unchanged.
+    return Earth::TrajectoryTimeStep::FinalizeUpperBoundedStep(dt,timeRemaining_s);
+}
 
-    const double kTravelFraction = 0.20;
-    double vForBoundaryLimiter = vMag;
-    if (useGuidingCenterForThisStep && Bmag > 0.0) {
-        const V3 bHat    = mul(1.0 / Bmag, B);
-        const double pPar    = dot(p, bHat);
-        const double vParAbs = std::fabs(pPar) / (gamma * m0_kg);
-        vForBoundaryLimiter  = std::max(vParAbs, 1.0e-12);
-    }
-    if (vForBoundaryLimiter > 0.0 && dNear < 1.0e299)
-        dt = std::min(dt, kTravelFraction * dNear / vForBoundaryLimiter);
-
-    // Floor — identical to the gridless formula.
-    // The 100 km / v term (100.0e3 / vForBoundaryLimiter) guarantees at least one
-    // step across a 100 km segment regardless of how small the gyro or travel
-    // limits become, preventing stagnation when |B| is very large.
-    const double dtFloor = std::max(
-        std::max(1.0e-12, 1.0e-9 * std::max(prm.numerics.dtTrace_s, 1.0)),
-        100.0e3 / vForBoundaryLimiter);
-    dt = std::max(dtFloor, dt);
-    if (timeRemaining_s > 0.0) dt = std::min(dt, timeRemaining_s);
-
-    return dt;
+static inline double SelectTraceDt3D(const EarthUtil::AmpsParam& prm,
+                                  const cMode3DMeshFieldEval& field,
+                                  const V3& x, const V3& p,
+                                  double q_C, double m0_kg,
+                                  const DomainBox3D& box,
+                                  double timeRemaining_s,
+                                  bool useGuidingCenterForThisStep,
+                                  TraceIntegrationPolicy3D policy) {
+    return policy==TraceIntegrationPolicy3D::LegacyCutoffCompatible
+        ? SelectLegacyCutoffTraceDt3D(prm,field,x,p,q_C,m0_kg,box,
+                                      timeRemaining_s,useGuidingCenterForThisStep)
+        : SelectStructuredTraceDt3D(prm,field,x,p,q_C,m0_kg,box,
+                                    timeRemaining_s,useGuidingCenterForThisStep);
 }
 
 //======================================================================================
 // SECTION 8 — CORE BACKTRACER
 //======================================================================================
 //
-// TraceAllowed3D integrates one reversed particle trajectory and classifies it as
-// ALLOWED (escaped outer box) or FORBIDDEN (hit inner sphere or exceeded limits).
+// TraceTrajectory3D integrates one reversed particle trajectory and returns an
+// explicit physical or numerical termination state.  The legacy TraceAllowed3D
+// wrapper retries unresolved trajectories once and never silently maps a numerical
+// limit to physical FORBIDDEN.
 //
 // This function is a direct port of TraceAllowedImpl from CutoffRigidityGridless.cpp.
 // The only structural differences are:
@@ -956,6 +998,231 @@ static inline double SelectTraceDt3D(const EarthUtil::AmpsParam& prm,
 //   - StepParticleChecked calls field.GetB_T which reads from the frozen AMR mesh (no mutex).
 //======================================================================================
 
+static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
+                            const EarthUtil::AmpsParam& prm,
+                            cMode3DMeshFieldEval& field,
+                            const V3& x0_m,
+                            const V3& v0_unit,
+                            double R_GV,
+                            double q_C,
+                            double m0_kg,
+                            const DomainBox3D& box,
+                            double maxTime_s = -1.0,
+                            bool captureExitState = false,
+                            TraceIntegrationPolicy3D integrationPolicy =
+                                TraceIntegrationPolicy3D::StructuredAccurate) {
+    using Earth::GridlessMode::TrajectoryResult;
+    using Earth::GridlessMode::TrajectoryTermination;
+    using Earth::TrajectoryBoundary::EventType;
+
+    TrajectoryResult result;
+    const double qabs=std::fabs(q_C);
+    const double pMag=MomentumFromRigidity_GV(R_GV,qabs);
+    V3 p=mul(pMag,v0_unit);
+    V3 x=x0_m;
+
+    Earth::TrajectoryBoundary::Box boundaryBox;
+    boundaryBox.min[0]=box.xMin; boundaryBox.max[0]=box.xMax;
+    boundaryBox.min[1]=box.yMin; boundaryBox.max[1]=box.yMax;
+    boundaryBox.min[2]=box.zMin; boundaryBox.max[2]=box.zMax;
+    boundaryBox.innerRadius=box.rInner;
+
+    Earth::TrajectoryTrap::Config trapConfig;
+    trapConfig.enabled=prm.numerics.trapDetection;
+    trapConfig.minMirrorPoints=prm.numerics.trapMinMirrorPoints;
+    trapConfig.minBounceCycles=prm.numerics.trapMinBounceCycles;
+    trapConfig.outerMargin_m=prm.numerics.trapOuterMargin_Re*_EARTH__RADIUS_;
+    trapConfig.radialEnvelopeTolerance_m=
+        prm.numerics.trapRadialGrowthTolerance_Re*_EARTH__RADIUS_;
+    trapConfig.energyRelativeTolerance=prm.numerics.trapEnergyRelativeTolerance;
+    trapConfig.parallelDeadband=prm.numerics.trapParallelDeadband;
+    Earth::TrajectoryTrap::Detector trapDetector(trapConfig,boundaryBox);
+
+    const double maxTraceTime_s=(maxTime_s>0.0)
+        ? maxTime_s
+        : ((prm.cutoff.maxTrajTime_s>0.0) ? prm.cutoff.maxTrajTime_s
+                                          : prm.numerics.maxTraceTime_s);
+    const double maxDist_m=(prm.numerics.maxTraceDistance_Re>0.0)
+        ? prm.numerics.maxTraceDistance_Re*_EARTH__RADIUS_ : -1.0;
+
+    ResetHybridTrajectoryContext(x0_m,box.rInner);
+    double tTrace=0.0;
+    int nSteps=0;
+    double sDist=0.0;
+
+    auto Finalize=[&](TrajectoryTermination termination) {
+        result.termination=termination;
+        result.traceTime_s=tTrace;
+        result.traceDistance_m=sDist;
+        result.steps=nSteps;
+        result.mirrorPoints=trapDetector.mirrorPoints();
+        result.bounceCycles=trapDetector.bounceCycles();
+        result.momentumRelativeSpread=trapDetector.momentumRelativeSpread();
+        return result;
+    };
+
+    auto PopulateExit=[&](const Earth::TrajectoryBoundary::Event& event,
+                          const V3& xBefore,const V3& xAfter,
+                          const V3& pBefore,const V3& pAfter)->bool {
+        if (!captureExitState) return true;
+        result.exitState.x_exit_m[0]=event.position[0];
+        result.exitState.x_exit_m[1]=event.position[1];
+        result.exitState.x_exit_m[2]=event.position[2];
+        const double a=std::max(0.0,std::min(1.0,event.fraction));
+        const V3 pCross=add(pBefore,mul(a,sub(pAfter,pBefore)));
+        const double p2=dot(pCross,pCross);
+        const double mc=m0_kg*SpeedOfLight;
+        const double gamma=std::sqrt(1.0+p2/(mc*mc));
+        if (!(gamma>0.0) || !std::isfinite(gamma)) return false;
+        const V3 vExit=v3unit(mul(1.0/(gamma*m0_kg),pCross));
+        result.exitState.v_exit_unit[0]=vExit.x;
+        result.exitState.v_exit_unit[1]=vExit.y;
+        result.exitState.v_exit_unit[2]=vExit.z;
+
+        const V3 chord=sub(xAfter,xBefore);
+        const double chordLength=v3norm(chord);
+        double insetFraction=0.0;
+        if (chordLength>0.0)
+            insetFraction=std::min(a,std::max(1.0,prm.numerics.boundaryEventTolerance_m)/chordLength);
+        const V3 xEval=add(xBefore,mul(std::max(0.0,a-insetFraction),chord));
+        V3 Bexit; field.GetB_T(xEval,Bexit);
+        const double Bnorm=v3norm(Bexit);
+        if (!(Bnorm>0.0) || !std::isfinite(Bnorm)) return false;
+        result.exitState.cosAlpha=dot(vExit,mul(1.0/Bnorm,Bexit));
+        return std::isfinite(result.exitState.cosAlpha);
+    };
+
+    if (trapConfig.enabled) {
+        V3 B0; field.GetB_T(x,B0);
+        const double xTrap[3]={x.x,x.y,x.z};
+        const double pTrap[3]={p.x,p.y,p.z};
+        const double bTrap[3]={B0.x,B0.y,B0.z};
+        trapDetector.Update(xTrap,pTrap,bTrap);
+    }
+
+    while (nSteps<prm.numerics.maxSteps && tTrace<maxTraceTime_s &&
+           (maxDist_m<=0.0 || sDist<maxDist_m)) {
+        const double xArr[3]={x.x,x.y,x.z};
+        if (!Earth::TrajectoryBoundary::IsFinitePoint(xArr) ||
+            !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
+            return Finalize(TrajectoryTermination::NumericalFailure);
+        if (Earth::TrajectoryBoundary::InsideInnerSphere(
+                xArr,boundaryBox,0.0))
+            return Finalize(TrajectoryTermination::InnerBoundaryForbidden);
+        if (!Earth::TrajectoryBoundary::InsideBox(
+                xArr,boundaryBox,0.0)) {
+            Earth::TrajectoryBoundary::Event event;
+            event.type=EventType::OuterBox;
+            event.fraction=0.0;
+            event.position[0]=x.x; event.position[1]=x.y; event.position[2]=x.z;
+            if (!PopulateExit(event,x,x,p,p))
+                return Finalize(TrajectoryTermination::InvalidField);
+            return Finalize(TrajectoryTermination::OuterBoundaryAllowed);
+        }
+
+        const double timeRemaining=maxTraceTime_s-tTrace;
+        bool useGuidingCenterForThisStep=false;
+        const MoverType mover=GetDefaultMoverType();
+        if (mover==MoverType::GC2 || mover==MoverType::GC4 || mover==MoverType::GC6)
+            useGuidingCenterForThisStep=true;
+        else if (mover==MoverType::HYBRID)
+            useGuidingCenterForThisStep=HybridPrepareStepUseGuidingCenter(x,p,q_C,field);
+
+        const double dt=SelectTraceDt3D(prm,field,x,p,q_C,m0_kg,box,timeRemaining,
+                                        useGuidingCenterForThisStep,integrationPolicy);
+        if (!(dt>0.0) || !std::isfinite(dt))
+            return Finalize(TrajectoryTermination::InvalidTimeStep);
+
+        const V3 xPrev=x;
+        const V3 pPrev=p;
+        if (!StepParticleChecked(gDefaultMover,x,p,q_C,m0_kg,dt,field,box.rInner))
+            return Finalize(TrajectoryTermination::InnerBoundaryForbidden);
+
+        const double xPrevArr[3]={xPrev.x,xPrev.y,xPrev.z};
+        const double xArrAfter[3]={x.x,x.y,x.z};
+        if (!Earth::TrajectoryBoundary::IsFinitePoint(xArrAfter) ||
+            !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
+            return Finalize(TrajectoryTermination::NumericalFailure);
+
+        Earth::TrajectoryBoundary::Event event;
+        if (integrationPolicy==TraceIntegrationPolicy3D::StructuredAccurate) {
+            event=Earth::TrajectoryBoundary::FindFirstEvent(
+                xPrevArr,xArrAfter,boundaryBox,prm.numerics.boundaryEventTolerance_m);
+        }
+        const double ds=v3norm(sub(x,xPrev));
+        if (std::isfinite(ds)) sDist+=ds;
+        tTrace+=dt;
+        ++nSteps;
+
+        if (integrationPolicy==TraceIntegrationPolicy3D::StructuredAccurate) {
+            if (event.type==EventType::InnerSphere)
+                return Finalize(TrajectoryTermination::InnerBoundaryForbidden);
+            if (event.type==EventType::OuterBox) {
+                if (!PopulateExit(event,xPrev,x,pPrev,p))
+                    return Finalize(TrajectoryTermination::InvalidField);
+                return Finalize(TrajectoryTermination::OuterBoundaryAllowed);
+            }
+        }
+
+        if (trapConfig.enabled) {
+            V3 Btrap; field.GetB_T(x,Btrap);
+            const double xTrap[3]={x.x,x.y,x.z};
+            const double pTrap[3]={p.x,p.y,p.z};
+            const double bTrap[3]={Btrap.x,Btrap.y,Btrap.z};
+            if (trapDetector.Update(xTrap,pTrap,bTrap))
+                return Finalize(TrajectoryTermination::MagneticallyTrappedForbidden);
+        }
+    }
+
+    if (nSteps>=prm.numerics.maxSteps)
+        return Finalize(TrajectoryTermination::StepLimit);
+    if (maxDist_m>0.0 && sDist>=maxDist_m)
+        return Finalize(TrajectoryTermination::DistanceLimit);
+    if (tTrace>=maxTraceTime_s)
+        return Finalize(TrajectoryTermination::TimeLimit);
+    return Finalize(TrajectoryTermination::NumericalFailure);
+}
+
+static Earth::GridlessMode::TrajectoryResult TraceTrajectory3DWithSingleRetry(
+                            const EarthUtil::AmpsParam& prm,
+                            cMode3DMeshFieldEval& field,
+                            const V3& x0_m,
+                            const V3& v0_unit,
+                            double R_GV,
+                            double q_C,
+                            double m0_kg,
+                            const DomainBox3D& box,
+                            double maxTime_s,
+                            bool captureExitState) {
+    auto result=TraceTrajectory3D(prm,field,x0_m,v0_unit,R_GV,q_C,m0_kg,box,
+                                  maxTime_s,captureExitState,
+                                  TraceIntegrationPolicy3D::LegacyCutoffCompatible);
+    if (result.resolved() ||
+        Earth::GridlessMode::IsTraceLimitTermination(result.termination))
+        return result;
+    if (!Earth::GridlessMode::IsRetryableNumericalTermination(result.termination))
+        return result;
+
+    // Retry only genuine numerical failures.  Configured time/step/distance caps are
+    // valid cutoff stopping rules and are mapped to FORBIDDEN by the Boolean wrapper.
+    EarthUtil::AmpsParam retryPrm=prm;
+    retryPrm.numerics.dtTrace_s=std::max(1.0e-12,0.5*prm.numerics.dtTrace_s);
+    retryPrm.numerics.maxSteps=(prm.numerics.maxSteps<=std::numeric_limits<int>::max()/2)
+        ? 2*prm.numerics.maxSteps : std::numeric_limits<int>::max();
+    double retryTime=maxTime_s;
+    if (retryTime>0.0) retryTime*=2.0;
+    else {
+        const double base=(prm.cutoff.maxTrajTime_s>0.0)
+            ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s;
+        retryTime=2.0*base;
+    }
+    result=TraceTrajectory3D(retryPrm,field,x0_m,v0_unit,R_GV,q_C,m0_kg,box,
+                             retryTime,captureExitState,
+                             TraceIntegrationPolicy3D::LegacyCutoffCompatible);
+    result.retryCount=1;
+    return result;
+}
+
 static bool TraceAllowed3D(const EarthUtil::AmpsParam& prm,
                             cMode3DMeshFieldEval& field,
                             const V3& x0_m,
@@ -966,131 +1233,21 @@ static bool TraceAllowed3D(const EarthUtil::AmpsParam& prm,
                             const DomainBox3D& box,
                             double maxTime_s = -1.0,
                             Earth::GridlessMode::TrajectoryExitState* exitState = nullptr) {
-    const double qabs = std::fabs(q_C);
-    const double pMag = MomentumFromRigidity_GV(R_GV, qabs);
-
-    V3 p = mul(pMag, v0_unit);
-    V3 x = x0_m;
-
-    // Per-trajectory time limit (mirrors TraceAllowedImpl priority: per-call
-    // override > #CUTOFF_RIGIDITY CUTOFF_MAX_TRAJ_TIME > #NUMERICAL MAX_TRACE_TIME).
-    const double maxTraceTime_s =
-        (maxTime_s > 0.0)
-            ? maxTime_s
-            : ((prm.cutoff.maxTrajTime_s > 0.0)
-               ? prm.cutoff.maxTrajTime_s
-               : prm.numerics.maxTraceTime_s);
-
-    // Optional cumulative path-length cap (MAX_TRACE_DISTANCE in Re → metres).
-    const double maxDist_m =
-        (prm.numerics.maxTraceDistance_Re > 0.0)
-            ? prm.numerics.maxTraceDistance_Re * _EARTH__RADIUS_
-            : -1.0;
-
-    // Reset thread-local HYBRID context for this trajectory.
-    // Every backtraced trajectory must start in the full-orbit (RK) branch;
-    // the HYBRID mover only switches to GC after observing consecutive
-    // adiabatic steps away from the launch point and the loss sphere.
-    // Resetting here prevents state leakage from one bisection step to the next.
-    // This call is harmless for all non-HYBRID movers.
-    ResetHybridTrajectoryContext(x0_m, box.rInner);
-
-    double tTrace = 0.0;
-    int    nSteps = 0;
-    double sDist  = 0.0;
-
-    while (nSteps < prm.numerics.maxSteps &&
-           tTrace < maxTraceTime_s &&
-           (maxDist_m <= 0.0 || sDist < maxDist_m)) {
-
-        // Boundary classification BEFORE the push (consistent with gridless).
-        if (LostInnerSphere3D(x, box.rInner)) return false; // FORBIDDEN
-        if (!InsideBox3D(x, box)) {
-            // Particle has escaped the outer Mode3D box: trajectory is ALLOWED.
-            //
-            // Density/flux in ANISOTROPIC boundary mode needs the asymptotic exit
-            // state so it can evaluate the boundary pitch-angle distribution and
-            // optional spatial modulation in exactly the same manner as the gridless
-            // density solver.  The cutoff-rigidity calculation does not request this
-            // information, so the extra work is skipped unless exitState!=nullptr.
-            if (exitState) {
-                exitState->x_exit_m[0] = x.x;
-                exitState->x_exit_m[1] = x.y;
-                exitState->x_exit_m[2] = x.z;
-
-                // Recover velocity direction from relativistic momentum p=gamma*m*v.
-                // The common scalar factor 1/(gamma*m) cancels during normalization,
-                // but computing v explicitly keeps the intent clear and matches the
-                // gridless TraceAllowedSharedEx implementation.
-                const double p2n = dot(p,p);
-                const double mc  = m0_kg*SpeedOfLight;
-                const double gExit = std::sqrt(1.0 + p2n/(mc*mc));
-                const V3 vExit = v3unit(mul(1.0/(gExit*m0_kg), p));
-                exitState->v_exit_unit[0] = vExit.x;
-                exitState->v_exit_unit[1] = vExit.y;
-                exitState->v_exit_unit[2] = vExit.z;
-
-                // Pitch-angle cosine at the exit point.  The mesh field is valid up
-                // to the last in-domain cell; when the point has just crossed outside
-                // the box GetB_T may return zero.  In that case use cosAlpha=0, the
-                // same conservative fallback used by gridless when |B| is unavailable.
-                V3 Bexit; field.GetB_T(x, Bexit);
-                const double Bnorm = v3norm(Bexit);
-                exitState->cosAlpha = (Bnorm > 0.0)
-                    ? dot(vExit, mul(1.0/Bnorm, Bexit))
-                    : 0.0;
-            }
-            return true;  // ALLOWED
-        }
-
-        const double timeRemaining = maxTraceTime_s - tTrace;
-
-        // ---- Mover-branch decision (mirrors TraceAllowedImpl exactly) ----------
-        //
-        // The branch flag drives two downstream decisions:
-        //   1. SelectTraceDt3D: skip gyro-angle limiter and use |v_parallel| for the
-        //      boundary limiter when in GC mode (see Section 7).
-        //   2. StepParticleChecked: dispatches to the mover selected by gDefaultMover,
-        //      which may be BORIS, RK4, GC4, HYBRID, etc. depending on the -mover flag.
-        //
-        // Control flow (identical to TraceAllowedImpl):
-        //   - GC2/GC4/GC6: always GC → useGuidingCenterForThisStep = true.
-        //   - HYBRID:       per-step decision from HybridPrepareStepUseGuidingCenter.
-        //                   The function reads local adiabaticity and trajectory history
-        //                   from thread-local storage; it returns the branch choice for
-        //                   the UPCOMING step and updates the history counters.
-        //   - All others (BORIS, RK2, RK4, RK6): full-orbit → flag stays false.
-        bool useGuidingCenterForThisStep = false;
-        const MoverType mover = GetDefaultMoverType();
-        if (mover == MoverType::GC2 ||
-            mover == MoverType::GC4 ||
-            mover == MoverType::GC6) {
-            useGuidingCenterForThisStep = true;
-        } else if (mover == MoverType::HYBRID) {
-            useGuidingCenterForThisStep =
-                HybridPrepareStepUseGuidingCenter(x, p, q_C, field);
-        }
-        // -------------------------------------------------------------------------
-
-        // Time-step selection — branch-aware in adaptive mode (see Section 7).
-        const double dt = SelectTraceDt3D(prm, field, x, p, q_C, m0_kg, box,
-                                      timeRemaining, useGuidingCenterForThisStep);
-
-        // Advance one step.  StepParticleChecked dispatches to gDefaultMover and
-        // returns false immediately if the inner loss sphere is contacted during any
-        // intermediate stage of the integrator (RK sub-steps or Boris half-steps).
-        const V3 xPrev = x;
-        if (!StepParticleChecked(gDefaultMover, x, p, q_C, m0_kg, dt, field, box.rInner)) {
-            return false; // FORBIDDEN (mid-step inner-sphere contact)
-        }
-
-        sDist  += v3norm(sub(x, xPrev));
-        tTrace += dt;
-        ++nSteps;
+    const auto result=TraceTrajectory3DWithSingleRetry(
+        prm,field,x0_m,v0_unit,R_GV,q_C,m0_kg,box,maxTime_s,exitState!=nullptr);
+    if (result.allowed()) {
+        if (exitState) *exitState=result.exitState;
+        return true;
     }
+    if (Earth::GridlessMode::IsCutoffForbiddenTermination(result.termination))
+        return false;
 
-    // Conservative fallback: time/step/distance cap reached without escape.
-    return false;
+    std::ostringstream msg;
+    msg << "Failed Mode3D cutoff trajectory after numerical retry: termination="
+        << Earth::GridlessMode::TrajectoryTerminationName(result.termination)
+        << ", R_GV=" << R_GV << ", steps=" << result.steps
+        << ", trace_time_s=" << result.traceTime_s;
+    throw std::runtime_error(msg.str());
 }
 
 
@@ -1098,9 +1255,10 @@ static bool TraceAllowed3D(const EarthUtil::AmpsParam& prm,
 // SECTION 8.1 — OPTIONAL DETAILED EXIT-CLASSIFIER DIAGNOSTIC
 //======================================================================================
 //
-// The production TraceAllowed3D() routine intentionally returns only a boolean:
-//   true  -> the reversed trajectory escaped through the outer Mode3D domain box;
-//   false -> the trajectory was lost or did not escape before a numerical limit.
+// The production structured tracer returns an explicit termination state.  The
+// legacy TraceAllowed3D() Boolean wrapper maps configured time/step/distance limits
+// to FORBIDDEN, while structured callers preserve those outcomes as unresolved.
+// Genuine numerical failures are retried once and then reported as errors.
 //
 // That minimal interface is ideal for cutoff and density calculations, but it hides
 // information that is essential when validating the trajectory classifier. In pure
@@ -1384,7 +1542,8 @@ static TraceDetailedResult3D TraceDetailed3D_(const EarthUtil::AmpsParam& prm,
         }
 
         const double dt = SelectTraceDt3D(prm, field, x, p, q_C, m0_kg, box,
-                                          timeRemaining, useGuidingCenterForThisStep);
+                                          timeRemaining, useGuidingCenterForThisStep,
+                                          TraceIntegrationPolicy3D::LegacyCutoffCompatible);
         if (!(dt > 0.0) || !std::isfinite(dt)) {
             finalize(TraceExitReason3D::INVALID_DT,false);
             return out;
@@ -1642,27 +1801,18 @@ static double CutoffForDirUpperScan_GV(const EarthUtil::AmpsParam& prm,
     const std::vector<double> grid = BuildCutoffSearchGrid_GV_(Rmin_GV,Rmax_GV,nScan);
     if (grid.size() < 2) return -1.0;
 
-    // Store the classifier result as bytes instead of bool.  std::vector<bool> uses a
-    // packed proxy specialization that is inconvenient for debugging and can create
-    // surprising behavior when references are taken.  A byte array is explicit and
-    // still tiny compared with the trajectory cost.
-    std::vector<unsigned char> allowed(grid.size(),0);
-    for (size_t i=0;i<grid.size();++i) {
-        allowed[i] = TraceAllowed3D(prm,field,x0_m,v0,grid[i],q_C,m0_kg,box) ? 1 : 0;
-    }
+    // Evaluate from the top of the rigidity bracket downward.  The upper cutoff is
+    // defined by the first forbidden sample below the continuously allowed top branch,
+    // so samples below that point cannot affect the answer.  The previous implementation
+    // evaluated the entire grid from Rmin upward; for MESH fields this spent most of the
+    // runtime on low-rigidity trapped trajectories before any location could complete.
+    if (!TraceAllowed3D(prm,field,x0_m,v0,grid.back(),q_C,m0_kg,box))
+        return -1.0;
 
-    // The top branch must be allowed for an upper cutoff to exist within the requested
-    // search interval.  If Rmax is still forbidden, the final transition is above the
-    // bracket, so return the existing negative sentinel.  The output layer writes that
-    // as missing/no-cutoff according to its normal convention.
-    if (!allowed.back()) return -1.0;
-
-    // Walk downward from Rmax.  The first forbidden point encountered is the highest
-    // forbidden sampled rigidity.  Since allowed.back()==true and we are scanning from
-    // high to low, the next-higher sample grid[i+1] is on the final allowed branch.
-    // Bisection between grid[i] and grid[i+1] returns the upper cutoff.
     for (int i=(int)grid.size()-2;i>=0;--i) {
-        if (!allowed[(size_t)i]) {
+        const bool allowed=TraceAllowed3D(
+            prm,field,x0_m,v0,grid[(size_t)i],q_C,m0_kg,box);
+        if (!allowed) {
             return RefineForbiddenAllowedTransition_GV_(prm,field,x0_m,v0,q_C,m0_kg,
                                                         box,grid[(size_t)i],grid[(size_t)i+1]);
         }
@@ -3075,7 +3225,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                                         : "  (fixed pusher dt)") << "\n"
             << "  effective dt rule    : "
             << (prm.numerics.adaptiveDt
-                  ? "min(DT_TRACE, gyro-angle limiter, boundary-distance limiter, remaining time)"
+                  ? "legacy cutoff compatibility: gyro/boundary upper limits plus 100-km/v floor"
                   : "min(DT_TRACE, remaining time)")
             << "\n"
             << "  MAX_TRACE_TIME [s]   : " << prm.numerics.maxTraceTime_s << "\n"
@@ -3096,7 +3246,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         if (prm.numerics.adaptiveDt) {
             std::cout
                 << "  adaptive constants   : gyro angle <= 0.15 rad; "
-                << "step <= 20% nearest boundary distance\n";
+                << "step <= 20% nearest boundary; legacy 100-km minimum displacement\n";
         }
 
         std::cout
@@ -3785,6 +3935,32 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 //     anisotropic-density code can be backend-agnostic.
 //======================================================================================
 
+Earth::GridlessMode::TrajectoryResult TraceTrajectoryMesh(
+                        const EarthUtil::AmpsParam& prm,
+                        const double x0_m_arr[3],
+                        const double v0_unit_arr[3],
+                        double R_GV,
+                        bool captureExitState,
+                        double maxTraceTimeOverride_s) {
+    DomainBox3D box;
+    box.xMin=Earth::Mode3D::ParsedDomainMin[0];
+    box.xMax=Earth::Mode3D::ParsedDomainMax[0];
+    box.yMin=Earth::Mode3D::ParsedDomainMin[1];
+    box.yMax=Earth::Mode3D::ParsedDomainMax[1];
+    box.zMin=Earth::Mode3D::ParsedDomainMin[2];
+    box.zMax=Earth::Mode3D::ParsedDomainMax[2];
+    box.rInner=_EARTH__RADIUS_;
+
+    cMode3DMeshFieldEval field(prm);
+    const V3 x0_m{x0_m_arr[0],x0_m_arr[1],x0_m_arr[2]};
+    const V3 v0_unit=v3unit(V3{v0_unit_arr[0],v0_unit_arr[1],v0_unit_arr[2]});
+    const double q_C=prm.species.charge_e*ElectronCharge;
+    const double m0_kg=prm.species.mass_amu*_AMU_;
+    return TraceTrajectory3D(prm,field,x0_m,v0_unit,R_GV,q_C,m0_kg,box,
+                             maxTraceTimeOverride_s,captureExitState,
+                             TraceIntegrationPolicy3D::StructuredAccurate);
+}
+
 bool TraceAllowedMeshEx(const EarthUtil::AmpsParam& prm,
                         const double x0_m_arr[3],
                         const double v0_unit_arr[3],
@@ -3792,31 +3968,36 @@ bool TraceAllowedMeshEx(const EarthUtil::AmpsParam& prm,
                         Earth::GridlessMode::TrajectoryExitState* exitState,
                         double maxTraceTimeOverride_s) {
     DomainBox3D box;
-    box.xMin = Earth::Mode3D::ParsedDomainMin[0];
-    box.xMax = Earth::Mode3D::ParsedDomainMax[0];
-    box.yMin = Earth::Mode3D::ParsedDomainMin[1];
-    box.yMax = Earth::Mode3D::ParsedDomainMax[1];
-    box.zMin = Earth::Mode3D::ParsedDomainMin[2];
-    box.zMax = Earth::Mode3D::ParsedDomainMax[2];
-    box.rInner = _EARTH__RADIUS_;
-
+    box.xMin=Earth::Mode3D::ParsedDomainMin[0]; box.xMax=Earth::Mode3D::ParsedDomainMax[0];
+    box.yMin=Earth::Mode3D::ParsedDomainMin[1]; box.yMax=Earth::Mode3D::ParsedDomainMax[1];
+    box.zMin=Earth::Mode3D::ParsedDomainMin[2]; box.zMax=Earth::Mode3D::ParsedDomainMax[2];
+    box.rInner=_EARTH__RADIUS_;
     cMode3DMeshFieldEval field(prm);
-    const V3 x0_m{ x0_m_arr[0], x0_m_arr[1], x0_m_arr[2] };
-    const V3 v0_unit = v3unit(V3{ v0_unit_arr[0], v0_unit_arr[1], v0_unit_arr[2] });
+    const V3 x0_m{x0_m_arr[0],x0_m_arr[1],x0_m_arr[2]};
+    const V3 v0_unit=v3unit(V3{v0_unit_arr[0],v0_unit_arr[1],v0_unit_arr[2]});
+    const auto result=TraceTrajectory3DWithSingleRetry(
+        prm,field,x0_m,v0_unit,R_GV,prm.species.charge_e*ElectronCharge,
+        prm.species.mass_amu*_AMU_,box,maxTraceTimeOverride_s,exitState!=nullptr);
+    if (result.allowed()) {
+        if (exitState) *exitState=result.exitState;
+        return true;
+    }
+    if (Earth::GridlessMode::IsCutoffForbiddenTermination(result.termination))
+        return false;
 
-    const double q_C   = prm.species.charge_e * ElectronCharge;
-    const double m0_kg = prm.species.mass_amu * _AMU_;
-
-    return TraceAllowed3D(prm, field, x0_m, v0_unit, R_GV, q_C, m0_kg,
-                          box, maxTraceTimeOverride_s, exitState);
+    std::ostringstream msg;
+    msg << "Failed Mode3D trajectory after numerical retry: termination="
+        << Earth::GridlessMode::TrajectoryTerminationName(result.termination)
+        << ", R_GV=" << R_GV;
+    throw std::runtime_error(msg.str());
 }
 
 bool TraceAllowedMesh(const EarthUtil::AmpsParam& prm,
-                      const double x0_m[3],
-                      const double v0_unit[3],
+                      const double x0_m_arr[3],
+                      const double v0_unit_arr[3],
                       double R_GV,
                       double maxTraceTimeOverride_s) {
-    return TraceAllowedMeshEx(prm, x0_m, v0_unit, R_GV, nullptr,
+    return TraceAllowedMeshEx(prm,x0_m_arr,v0_unit_arr,R_GV,nullptr,
                               maxTraceTimeOverride_s);
 }
 

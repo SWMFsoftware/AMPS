@@ -75,7 +75,8 @@
 //       (c) Integrate with Boris pusher + adaptive dt until:
 //             i.  Particle escapes the outer domain box -> ALLOWED
 //             ii. Particle hits the inner loss sphere   -> FORBIDDEN
-//             iii.Integration time/step limit reached   -> FORBIDDEN (conservative)
+//             iii.Stable trapped orbit detected          -> FORBIDDEN
+//             iv. Numerical time/step/field limit reached -> UNRESOLVED
 //       (d) Narrow the bisection interval based on allowed/forbidden outcome.
 //
 //   Step 3 -- Aggregate.
@@ -188,6 +189,8 @@
 #include "util/amps_param_parser.h"
 #include "GridlessParticleMovers.h"
 
+#include "../util/TrajectoryTermination.h"
+
 namespace Earth {
   namespace GridlessMode {
     // Execute the gridless cutoff-rigidity workflow described above.
@@ -228,7 +231,10 @@ namespace Earth {
     // RETURN VALUE
     // ------------
     //   true  -> trajectory escapes the outer domain before entering the inner sphere
-    //   false -> trajectory hits the inner sphere or fails to escape before limits
+    //   false -> physical inner-boundary/trapped loss, or a configured time/step/
+    //            distance safety limit.  Genuine numerical failures are retried once
+    //            and then throw.  New code that needs to distinguish limit outcomes
+    //            must use TraceTrajectoryShared() and inspect the termination reason.
     //
     // PERFORMANCE NOTE
     // ----------------
@@ -261,6 +267,36 @@ namespace Earth {
                              // standard geophysics convention (cosAlpha > 0 means
                              // particle moves along the field).
     };
+
+
+    struct TrajectoryResult {
+      TrajectoryTermination termination{TrajectoryTermination::NumericalFailure};
+      TrajectoryExitState exitState{{0.0,0.0,0.0},{0.0,0.0,0.0},0.0};
+      double traceTime_s{0.0};
+      double traceDistance_m{0.0};
+      int steps{0};
+      int retryCount{0};
+      int mirrorPoints{0};
+      int bounceCycles{0};
+      double momentumRelativeSpread{0.0};
+
+      bool allowed() const { return IsAllowedTermination(termination); }
+      bool resolved() const { return IsResolvedTermination(termination); }
+    };
+
+    // Structured trajectory APIs used by density/transmission and diagnostics.
+    // They preserve numerical-limit states instead of folding them into FORBIDDEN.
+    TrajectoryResult TraceTrajectoryShared(const EarthUtil::AmpsParam& p,
+                                            const double x0_m[3],
+                                            const double v0_unit[3],
+                                            double R_GV,
+                                            double maxTraceTimeOverride_s=-1.0);
+
+    TrajectoryResult TraceTrajectorySharedEx(const EarthUtil::AmpsParam& p,
+                                              const double x0_m[3],
+                                              const double v0_unit[3],
+                                              double R_GV,
+                                              double maxTraceTimeOverride_s=-1.0);
 
     // Identical physics to TraceAllowedShared but also fills *exitState when the
     // trajectory is allowed.  exitState may be nullptr; if so this call is

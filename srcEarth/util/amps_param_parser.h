@@ -73,6 +73,18 @@
 //       SCAN/ADAPTIVE:       use a log-spaced rigidity grid converted to energy
 //     DS_TRANSMISSION_SCAN_N  <int>  number of scan nodes; 0 => DS_NINTERVALS+1
 //     DS_TRANSMISSION_REFINE_N / MAX_N / SAVE: parsed diagnostic/reserved controls
+//     DS_UNRESOLVED_TOL       <double>   ! maximum accepted unresolved fraction [0,1]
+//     DS_RETRY_UNRESOLVED     T|F        ! retry unresolved trajectories once
+//     DS_SAVE_TERMINATION_SUMMARY T|F    ! write per-point/energy termination counts
+//
+//   #NUMERICAL trapped-orbit controls (static fields only; disabled by default)
+//     TRAP_DETECTION T|F
+//     TRAP_MIN_MIRROR_POINTS <int>
+//     TRAP_MIN_BOUNCES <int>
+//     TRAP_OUTER_MARGIN_RE <double>
+//     TRAP_RADIAL_GROWTH_TOL_RE <double>
+//     TRAP_ENERGY_REL_TOL <double>
+//     TRAP_PARALLEL_DEADBAND <double>
 //
 //   #PARTICLE_TRAJECTORY    (optional; used by -mode 3d_forward)
 //     INITIALIZE_TRAJECTORIES T|F        ! runtime gate for AMPS trajectory records
@@ -129,12 +141,15 @@
 //   #NUMERICAL
 //     DT_TRACE                <double>   ! trace time step [s]; fixed step when ADAPTIVE_DT=F,
 //                                        ! maximum step when ADAPTIVE_DT=T
-//     ADAPTIVE_DT             T|F        ! T/default: automatic gyro/boundary-limited step
-//                                        ! F: use fixed DT_TRACE except for final time-limit trim
+//     ADAPTIVE_DT             T|F        ! T/default: gyro-limited step plus exact
+//                                        ! boundary-event detection; F: fixed DT_TRACE
+//                                        ! except for final time-limit trim
 //     MAX_STEPS               <int>      ! hard cap on integration steps
 //     MAX_TRACE_TIME          <double>   ! hard cap on integration time [s]
 //     MAX_TRACE_DISTANCE      <double>   ! hard cap on cumulative trace distance [Re]
 //                                        ! 0 or negative => disabled
+//     BOUNDARY_EVENT_TOL_M    <double>   ! chord/surface crossing tolerance [m]
+//     BOUNDARY_EVENT_MAX_ITER <int>      ! reserved curved-step refinement control
 //     MODE3D_PARALLEL         OPENMP | THREADS | SERIAL
 //     MODE3D_THREADS          <int>      ! workers per MPI rank; 0 => automatic
 //     MODE3D_MPI_SCHEDULER    DYNAMIC | BLOCK_CYCLIC | STATIC
@@ -539,6 +554,14 @@ namespace EarthUtil {
     // curves by default for POINTS and comparison modes; this flag documents the intended
     // control and is used in banners/README.
     bool transmissionSave{false}; // DS_TRANSMISSION_SAVE
+
+    // Explicit unresolved-trajectory policy.  Outer-box escapes, inner-sphere impacts,
+    // and (when deliberately enabled for a static field) conservative trapped-orbit
+    // detections are physical classifications.  Time/step/distance/invalid/numerical
+    // terminations are excluded from the resolved transmissivity denominator.
+    double unresolvedTolerance{0.01}; // DS_UNRESOLVED_TOL, fraction in [0,1]
+    bool retryUnresolved{false};      // DS_RETRY_UNRESOLVED
+    bool saveTerminationSummary{true}; // DS_SAVE_TERMINATION_SUMMARY
   };
 
   //====================================================================================
@@ -824,6 +847,25 @@ namespace EarthUtil {
 
     int maxSteps{300000};
     double maxTraceTime_s{7200.0};
+
+    // Boundary-event reconstruction controls shared by gridless and Mode3D
+    // backtracers.  Each accepted mover step is treated as a trajectory chord and
+    // intersected analytically with the inner sphere and outer Cartesian box.
+    // The tolerance is geometric only; it must never be used to increase dt.
+    double boundaryEventTolerance_m{1.0};
+    int boundaryEventMaxIterations{40}; // reserved for future curved-step refinement
+
+    // Optional conservative trapped-orbit classification for static magnetic fields.
+    // It is disabled by default because time-dependent fields require a separate policy.
+    // When enabled, repeated mirror points and stable bounce envelopes may terminate a
+    // trajectory as physically forbidden instead of letting it expire at a time limit.
+    bool trapDetection{false};
+    int trapMinMirrorPoints{8};
+    int trapMinBounceCycles{4};
+    double trapOuterMargin_Re{1.0};
+    double trapRadialGrowthTolerance_Re{0.05};
+    double trapEnergyRelativeTolerance{1.0e-4};
+    double trapParallelDeadband{1.0e-6};
 
     // Compatibility fields for CCMC/Runs-on-Request particle-control keywords.
     // They are parsed so strict validation accepts the input file.  At present

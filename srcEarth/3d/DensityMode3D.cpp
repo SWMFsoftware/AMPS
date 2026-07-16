@@ -486,34 +486,43 @@ static double ComputeT_atEnergy_Mode3D_(const EarthUtil::AmpsParam& prm,
                                         const EarthUtil::AnisotropyParam& anisoPar) {
   if (dirs.empty()) return 0.0;
 
-  const double x0_arr[3] = {x0_m.x,x0_m.y,x0_m.z};
-  double weightSum = 0.0;
+  const double x0_arr[3]={x0_m.x,x0_m.y,x0_m.z};
+  double weightSum=0.0;
+  int resolvedCount=0;
 
 #ifdef _OPENMP
-#pragma omp parallel for default(none) shared(dirs,prm,x0_arr,Rgv,maxTrajTime_s,doAnisotropic,anisoPar) reduction(+:weightSum) if(!InsideOpenMPParallelRegion_() && !InsideDirectDensityWorker_() && (int)dirs.size() > 1) schedule(dynamic)
+#pragma omp parallel for default(none) shared(dirs,prm,x0_arr,Rgv,maxTrajTime_s,doAnisotropic,anisoPar) reduction(+:weightSum,resolvedCount) if(!InsideOpenMPParallelRegion_() && !InsideDirectDensityWorker_() && (int)dirs.size() > 1) schedule(dynamic)
 #endif
   for (int idir=0; idir<(int)dirs.size(); ++idir) {
-    const V3& arrivalDir = dirs[(std::size_t)idir];
+    const V3& arrivalDir=dirs[(std::size_t)idir];
+    const V3 vTry=mul(-1.0,arrivalDir);
+    const double v0_arr[3]={vTry.x,vTry.y,vTry.z};
 
-    // Backtrace convention is identical to gridless: a particle observed arriving
-    // from `arrivalDir` is integrated backward with initial velocity -arrivalDir.
-    const V3 vTry = mul(-1.0, arrivalDir);
-    const double v0_arr[3] = {vTry.x,vTry.y,vTry.z};
+    auto result=Earth::Mode3D::TraceTrajectoryMesh(
+        prm,x0_arr,v0_arr,Rgv,doAnisotropic,maxTrajTime_s);
+    if (!result.resolved() && prm.densitySpectrum.retryUnresolved) {
+      EarthUtil::AmpsParam retryPrm=prm;
+      retryPrm.numerics.dtTrace_s=std::max(1.0e-12,0.5*prm.numerics.dtTrace_s);
+      retryPrm.numerics.maxSteps=(prm.numerics.maxSteps<=std::numeric_limits<int>::max()/2)
+        ? 2*prm.numerics.maxSteps : std::numeric_limits<int>::max();
+      const double retryBase=(maxTrajTime_s>0.0)
+          ? maxTrajTime_s
+          : ((prm.cutoff.maxTrajTime_s>0.0)
+             ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s);
+      const double retryTime=2.0*retryBase;
+      result=Earth::Mode3D::TraceTrajectoryMesh(
+          retryPrm,x0_arr,v0_arr,Rgv,doAnisotropic,retryTime);
+    }
 
-    if (doAnisotropic) {
-      Earth::GridlessMode::TrajectoryExitState exitSt;
-      if (Earth::Mode3D::TraceAllowedMeshEx(prm,x0_arr,v0_arr,Rgv,&exitSt,maxTrajTime_s)) {
-        weightSum += EvalAnisotropyFactor(anisoPar, exitSt.cosAlpha, exitSt.x_exit_m);
-      }
-    }
-    else {
-      if (Earth::Mode3D::TraceAllowedMesh(prm,x0_arr,v0_arr,Rgv,maxTrajTime_s)) {
-        weightSum += 1.0;
-      }
-    }
+    if (!result.resolved()) continue;
+    ++resolvedCount;
+    if (!result.allowed()) continue;
+    weightSum += doAnisotropic
+        ? EvalAnisotropyFactor(anisoPar,result.exitState.cosAlpha,result.exitState.x_exit_m)
+        : 1.0;
   }
 
-  return weightSum / (double)dirs.size();
+  return resolvedCount>0 ? weightSum/(double)resolvedCount : 0.0;
 }
 
 struct DensityResultBuffers {

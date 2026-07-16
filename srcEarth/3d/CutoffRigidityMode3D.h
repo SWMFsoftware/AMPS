@@ -108,13 +108,25 @@ DipoleMagneticFieldErrorStatistics ReportDipoleMagneticFieldErrorStatistics(
 //   R_GV      — rigidity [GV]
 //   maxTraceTimeOverride_s > 0 overrides #CUTOFF_RIGIDITY/#NUMERICAL time caps
 //
-// Return value:
+// Return value for the legacy Boolean wrappers:
 //   true  = trajectory escaped the outer Mode3D domain before hitting the loss sphere
-//   false = trajectory hit the inner sphere or exceeded integration limits
+//   false = trajectory hit the inner sphere, was identified as trapped, or reached a
+//           configured time/step/distance safety limit
+// Genuine numerical failures are retried once and then raise std::runtime_error.
+// New density/diagnostic code should use TraceTrajectoryMesh() to preserve and inspect
+// the explicit unresolved termination state, including limit terminations used by F3.
 //
 // TraceAllowedMeshEx additionally fills GridlessMode::TrajectoryExitState for allowed
 // trajectories; this is needed by DS_BOUNDARY_MODE=ANISOTROPIC so the boundary PAD and
 // spatial weighting can be evaluated at the asymptotic exit location/direction.
+Earth::GridlessMode::TrajectoryResult TraceTrajectoryMesh(
+                      const EarthUtil::AmpsParam& prm,
+                      const double x0_m[3],
+                      const double v0_unit[3],
+                      double R_GV,
+                      bool captureExitState=false,
+                      double maxTraceTimeOverride_s=-1.0);
+
 bool TraceAllowedMesh(const EarthUtil::AmpsParam& prm,
                       const double x0_m[3],
                       const double v0_unit[3],

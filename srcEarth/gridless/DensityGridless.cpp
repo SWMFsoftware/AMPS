@@ -56,7 +56,10 @@
  * classify each direction via backtracing. Define:
  *
  *   A_k(E; x0) = 1  if direction k is ALLOWED (escapes outer box)
- *             = 0  otherwise (hits loss sphere or times out).
+ *             = 0  if it hits the loss sphere or is conservatively classified
+ *                  as magnetically trapped in a validated static field.
+ * Numerical-limit outcomes remain unresolved and are excluded from the physical
+ * transmission denominator.
  *
  * The (isotropic) transmissivity is approximated by a simple directional average:
  *
@@ -153,7 +156,7 @@
  * same function.
  *
  * Signature:
- *   static double ComputeT_atEnergy(
+ *   static TrajectoryBlockResult ComputeT_atEnergy(
  *       const EarthUtil::AmpsParam& prm,
  *       const V3& x0_m,
  *       double Rgv,
@@ -163,18 +166,16 @@
  *       const EarthUtil::AnisotropyParam& anisoPar);
  *
  * Operation:
- *   double weightSum = 0.0;
- *   for each direction d in dirs:
- *     if doAnisotropic:
- *       TrajectoryExitState exit = {};
- *       allowed = TraceAllowedSharedEx(prm, x0, d, Rgv, &exit, maxTrajTime_s)
- *       if allowed:
- *         weightSum += EvalAnisotropyFactor(anisoPar, exit.cosAlpha, exit.x_exit_m)
- *     else:
- *       allowed = TraceAllowedShared(prm, x0, d, Rgv, maxTrajTime_s)
- *       if allowed:
- *         weightSum += 1.0
- *   return weightSum / dirs.size()
+ *   For every sampled direction, call the structured trajectory tracer and record
+ *   its explicit termination category.  Only OUTER_BOUNDARY_ALLOWED and
+ *   INNER_BOUNDARY_FORBIDDEN are physically resolved.  Optional retry uses a smaller
+ *   DT_TRACE and larger limits.  Unresolved trajectories are reported and excluded
+ *   from the physical denominator:
+ *
+ *     T_resolved = allowed_weight / (N_allowed + N_forbidden).
+ *
+ *   For anisotropic boundaries, an allowed trajectory contributes the evaluated PAD
+ *   and spatial weight at its reconstructed outer-boundary exit state.
  *
  * The rationale for this extraction is described in DensityGridless.h: prior to
  * this refactor the inner loop appeared four times (serial/parallel x POINTS/SHELLS),
@@ -198,10 +199,12 @@
  * Each rank accumulates local partial sums by global (point,energy) index:
  *
  *   partialWeight[ip,ie] = sum of allowed/anisotropy weights over directions
- *   dirsDone[ip,ie]      = number of sampled directions contributing
+ *   dirsDone[ip,ie]      = number of sampled directions attempted
+ *   resolved[ip,ie]      = number of physical allowed/forbidden terminations
+ *   termination[ip,ie,k] = count for every explicit termination category
  *
  * At the end of the work loop, MPI_SUM reductions assemble the full transmissivity
- * array on rank 0.  Rank 0 forms T(E)=partialWeight/Ndirs and then performs the
+ * array on rank 0.  Rank 0 forms T(E)=partialWeight/Nresolved and then performs the
  * density and flux energy integrations.  Because reductions are indexed by global
  * output location and energy, the final result is independent of task order and
  * scheduler choice.
@@ -254,6 +257,7 @@
 #include <iomanip>
 
 #include <algorithm>
+#include <array>
 #include <iostream>
 #include <limits>
 
@@ -826,87 +830,57 @@ static TransmissionDiagnostics ComputeTransmissionDiagnostics(const EarthUtil::A
 //   doAnisotropic : false -> isotropic branch, true -> anisotropic branch
 //   anisoPar      : anisotropy parameters (only used when doAnisotropic=true)
 //====================================================================================
-static double ComputeT_atEnergy(const EarthUtil::AmpsParam& prm,
-                                 const V3& x0_m,
-                                 double Rgv,
-                                 const std::vector<V3>& dirs,
-                                 double maxTrajTime_s,
-                                 bool doAnisotropic,
-                                 const EarthUtil::AnisotropyParam& anisoPar) {
-  const double x0_arr[3] = {x0_m.x, x0_m.y, x0_m.z};
-  double weightSum = 0.0;
+static constexpr int kTerminationCount =
+    static_cast<int>(Earth::GridlessMode::TrajectoryTermination::Count);
 
-  // The direction loop is embarrassingly parallel because each backtraced trajectory
-  // is completely independent from the others: one launch direction produces exactly
-  // one allowed/forbidden classification (and, in ANISOTROPIC mode, one independent
-  // anisotropy weight). The only shared quantity is the accumulated scalar weightSum,
-  // which is handled with an OpenMP reduction.
-  //
-  // IMPORTANT: the loop is executed in parallel only when we are *not* already inside
-  // another OpenMP region. This prevents nested parallelism when the caller has already
-  // parallelized the outer energy loop for the same observation point.
-#ifdef _OPENMP
-#pragma omp parallel for default(none) shared(dirs, prm, x0_arr, Rgv, maxTrajTime_s, doAnisotropic, anisoPar) reduction(+:weightSum) if(!DensityGridless_IsInsideOpenMPParallelRegion() && (int)dirs.size() > 1) schedule(dynamic)
-#endif
-  for (int idir = 0; idir < (int)dirs.size(); ++idir) {
-    const auto& d = dirs[idir];
+struct TrajectoryBlockResult {
+  double weightSum{0.0};
+  int sampled{0};
+  int resolved{0};
+  int retried{0};
+  std::array<int,kTerminationCount> terminationCounts{};
 
-    // Backtrace convention: launch opposite to the desired arrival direction.
-    const V3 vTry = mul(-1.0, d);
-    const double v0_arr[3] = {vTry.x, vTry.y, vTry.z};
-
-    if (doAnisotropic) {
-      // ANISOTROPIC branch: call the extended tracer to get exit state.
-      Earth::GridlessMode::TrajectoryExitState exitSt;
-      if (Earth::GridlessMode::TraceAllowedSharedEx(
-              prm, x0_arr, v0_arr, Rgv, &exitSt, maxTrajTime_s)) {
-        weightSum += EvalAnisotropyFactor(anisoPar, exitSt.cosAlpha, exitSt.x_exit_m);
-      }
-    } else {
-      // ISOTROPIC branch: boolean classification, weight = 1 for allowed.
-      if (Earth::GridlessMode::TraceAllowedShared(
-              prm, x0_arr, v0_arr, Rgv, maxTrajTime_s)) {
-        weightSum += 1.0;
-      }
-    }
+  int unresolved() const { return sampled-resolved; }
+  double transmission() const {
+    return resolved>0 ? weightSum/static_cast<double>(resolved) : 0.0;
   }
+};
 
-  return weightSum / static_cast<double>(dirs.size());
+static Earth::GridlessMode::TrajectoryResult TraceDensityDirection(
+    const EarthUtil::AmpsParam& prm,
+    const double x0_arr[3],
+    const double v0_arr[3],
+    double Rgv,
+    double maxTrajTime_s,
+    bool captureExit) {
+  using Earth::GridlessMode::TrajectoryResult;
+
+  TrajectoryResult result = captureExit
+      ? Earth::GridlessMode::TraceTrajectorySharedEx(prm,x0_arr,v0_arr,Rgv,maxTrajTime_s)
+      : Earth::GridlessMode::TraceTrajectoryShared(prm,x0_arr,v0_arr,Rgv,maxTrajTime_s);
+
+  if (!result.resolved() && prm.densitySpectrum.retryUnresolved) {
+    EarthUtil::AmpsParam retryPrm=prm;
+    retryPrm.numerics.dtTrace_s=std::max(1.0e-12,0.5*prm.numerics.dtTrace_s);
+    retryPrm.numerics.maxSteps=(prm.numerics.maxSteps<=std::numeric_limits<int>::max()/2)
+        ? 2*prm.numerics.maxSteps : std::numeric_limits<int>::max();
+    double retryTime=maxTrajTime_s;
+    if (retryTime>0.0) retryTime*=2.0;
+    else {
+      const double base=(prm.cutoff.maxTrajTime_s>0.0)
+          ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s;
+      retryTime=2.0*base;
+    }
+    result = captureExit
+        ? Earth::GridlessMode::TraceTrajectorySharedEx(retryPrm,x0_arr,v0_arr,Rgv,retryTime)
+        : Earth::GridlessMode::TraceTrajectoryShared(retryPrm,x0_arr,v0_arr,Rgv,retryTime);
+    result.retryCount=1;
+  }
+  return result;
 }
 
-//====================================================================================
-// ComputeWeightBlockAtEnergy  —  partial direction-block helper for fine MPI balance
-//====================================================================================
-// This helper evaluates only a contiguous sub-range of the sampled arrival directions
-// for one fixed observation point and one fixed energy / rigidity.
-//
-// WHY THIS EXISTS
-//   The original MPI work decomposition assigned one entire point, then later one whole
-//   (point,energy) pair, to a worker. That is still sometimes too coarse because the
-//   actual expensive physics work is the set of independent traced trajectories over the
-//   sampled directions. In difficult regions some direction traces can be much slower
-//   than others, so a worker that owns a "bad" full energy sample can still become a
-//   straggler.
-//
-//   To make the scheduling even finer without exploding the MPI message count, we group
-//   a *small batch* of directions (typically 10–50 trajectories) into one MPI task.
-//   Rank 0 later accumulates the returned partial weights from all batches belonging to
-//   the same (point,energy) pair and divides by the total number of sampled directions.
-//
-// MATHEMATICAL EQUIVALENCE
-//   This is an exact repartitioning of the same sum already used by ComputeT_atEnergy():
-//
-//      weightSum(E,x0) = sum_over_dirs w_k
-//      T(E,x0)         = weightSum / N_dirs
-//
-//   We simply compute the sum in chunks:
-//
-//      weightSum = sum_over_blocks [ sum_over_dirs_in_block w_k ]
-//
-//   Therefore the final transmissivity is bitwise-identical up to normal floating-point
-//   reordering effects that are already unavoidable in parallel reductions.
-//====================================================================================
-static double ComputeWeightBlockAtEnergy(const EarthUtil::AmpsParam& prm,
+static TrajectoryBlockResult ComputeWeightBlockAtEnergy(
+                                         const EarthUtil::AmpsParam& prm,
                                          const V3& x0_m,
                                          double Rgv,
                                          const std::vector<V3>& dirs,
@@ -915,35 +889,40 @@ static double ComputeWeightBlockAtEnergy(const EarthUtil::AmpsParam& prm,
                                          double maxTrajTime_s,
                                          bool doAnisotropic,
                                          const EarthUtil::AnisotropyParam& anisoPar) {
-  const double x0_arr[3] = {x0_m.x, x0_m.y, x0_m.z};
-  double weightSum = 0.0;
+  TrajectoryBlockResult block;
+  const double x0_arr[3]={x0_m.x,x0_m.y,x0_m.z};
 
-  // Each trajectory in the requested sub-range is independent. We intentionally do not
-  // open another OpenMP region here because the MPI work unit is already deliberately
-  // small (10–50 trajectories). Creating nested thread teams for such small batches
-  // would usually add more overhead than benefit and would also complicate reasoning
-  // about the intended MPI-vs-OpenMP work split.
-  for (int idir = idirBegin; idir < idirEnd; ++idir) {
-    const auto& d = dirs[(size_t)idir];
-    const V3 vTry = mul(-1.0, d);
-    const double v0_arr[3] = {vTry.x, vTry.y, vTry.z};
+  for (int idir=idirBegin; idir<idirEnd; ++idir) {
+    const auto& d=dirs[(size_t)idir];
+    const V3 vTry=mul(-1.0,d);
+    const double v0_arr[3]={vTry.x,vTry.y,vTry.z};
+    auto result=TraceDensityDirection(prm,x0_arr,v0_arr,Rgv,maxTrajTime_s,doAnisotropic);
 
-    if (doAnisotropic) {
-      Earth::GridlessMode::TrajectoryExitState exitSt;
-      if (Earth::GridlessMode::TraceAllowedSharedEx(
-              prm, x0_arr, v0_arr, Rgv, &exitSt, maxTrajTime_s)) {
-        weightSum += EvalAnisotropyFactor(anisoPar, exitSt.cosAlpha, exitSt.x_exit_m);
-      }
-    }
-    else {
-      if (Earth::GridlessMode::TraceAllowedShared(
-              prm, x0_arr, v0_arr, Rgv, maxTrajTime_s)) {
-        weightSum += 1.0;
-      }
-    }
+    ++block.sampled;
+    if (result.retryCount>0) ++block.retried;
+    const int iterm=static_cast<int>(result.termination);
+    if (iterm>=0 && iterm<kTerminationCount) ++block.terminationCounts[(size_t)iterm];
+
+    if (!result.resolved()) continue;
+    ++block.resolved;
+    if (!result.allowed()) continue;
+
+    block.weightSum += doAnisotropic
+        ? EvalAnisotropyFactor(anisoPar,result.exitState.cosAlpha,result.exitState.x_exit_m)
+        : 1.0;
   }
+  return block;
+}
 
-  return weightSum;
+static TrajectoryBlockResult ComputeT_atEnergy(const EarthUtil::AmpsParam& prm,
+                                 const V3& x0_m,
+                                 double Rgv,
+                                 const std::vector<V3>& dirs,
+                                 double maxTrajTime_s,
+                                 bool doAnisotropic,
+                                 const EarthUtil::AnisotropyParam& anisoPar) {
+  return ComputeWeightBlockAtEnergy(prm,x0_m,Rgv,dirs,0,(int)dirs.size(),
+                                    maxTrajTime_s,doAnisotropic,anisoPar);
 }
 
 //--------------------------------------------------------------------------------------
@@ -1210,6 +1189,21 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     std::cout << "Epoch           : " << prm.field.epoch << "\n";
     std::cout << "Species         : " << prm.species.name << " (q=" << prm.species.charge_e
               << " e, m=" << prm.species.mass_amu << " amu)\n";
+    // Print the resolved runtime mover, not merely the input/default token.  This
+    // makes F3 mover-comparison runs self-describing in F3_amps.log and confirms
+    // that the runner's optional -mover override reached the shared tracer.
+    std::cout << "Particle mover  : " << MoverTypeToString(GetDefaultMoverType()) << "\n";
+    std::cout << "Adaptive dt     : " << (prm.numerics.adaptiveDt ? "T" : "F")
+              << " (DT_TRACE=" << prm.numerics.dtTrace_s << " s)\n";
+    std::cout << "Trap detection  : " << (prm.numerics.trapDetection ? "T" : "F");
+    if (prm.numerics.trapDetection) {
+      std::cout << " (mirror points>=" << prm.numerics.trapMinMirrorPoints
+                << ", bounce cycles>=" << prm.numerics.trapMinBounceCycles
+                << ", outer margin=" << prm.numerics.trapOuterMargin_Re << " Re"
+                << ", radial tol=" << prm.numerics.trapRadialGrowthTolerance_Re << " Re"
+                << ", energy tol=" << prm.numerics.trapEnergyRelativeTolerance << ")";
+    }
+    std::cout << "\n";
     std::cout << "Energy grid     : [" << prm.densitySpectrum.Emin_MeV << ", " << prm.densitySpectrum.Emax_MeV
               << "] MeV, Npoints=" << nE << " (" << (prm.densitySpectrum.spacing==EarthUtil::DensitySpectrumParam::Spacing::LOG?"LOG":"LINEAR")
               << ")\n";
@@ -1259,7 +1253,18 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
   // flux_ch[ic][ip] = integral flux in channel ic at point ip  [m^-2 s^-1]
   std::vector< std::vector<double> > flux_ch(nCh, std::vector<double>(nPoints, 0.0));
   std::vector< std::vector<double> > T_byPoint;
-  if (mpiRank==0) T_byPoint.assign(nPoints, std::vector<double>(nE, 0.0));
+  std::vector< std::array<int,kTerminationCount> > terminationByPointEnergy;
+  std::vector<int> resolvedByPointEnergy;
+  std::vector<int> sampledByPointEnergy;
+  std::vector<int> retriedByPointEnergy;
+  if (mpiRank==0) {
+    T_byPoint.assign(nPoints, std::vector<double>(nE, 0.0));
+    terminationByPointEnergy.assign((size_t)nPoints*(size_t)nE,
+                                    std::array<int,kTerminationCount>{});
+    resolvedByPointEnergy.assign((size_t)nPoints*(size_t)nE,0);
+    sampledByPointEnergy.assign((size_t)nPoints*(size_t)nE,0);
+    retriedByPointEnergy.assign((size_t)nPoints*(size_t)nE,0);
+  }
 
   // Master/worker scheduling over point indices.
   if (mpiSize==1) {
@@ -1281,6 +1286,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       DensityGridless_SetSpectrumEpochUTC(prmForPoint.field.epoch);
 
       std::vector<double> T(nE,0.0);
+      std::vector<TrajectoryBlockResult> blockResults((size_t)nE);
 
       // Each energy point can be processed independently: rigidity depends only on the
       // current grid energy, while transmissivity T(E) is computed from a self-contained
@@ -1292,7 +1298,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       // penumbra before being classified. Dynamic scheduling improves load balance among
       // threads for such irregular work.
 #ifdef _OPENMP
-#pragma omp parallel for default(none) shared(T, E_MeV, prmForPoint, x0_m, dirsUse, doAnisotropic, nE) if(nE > 1) schedule(dynamic)
+#pragma omp parallel for default(none) shared(T, blockResults, E_MeV, prmForPoint, x0_m, dirsUse, doAnisotropic, nE) if(nE > 1) schedule(dynamic)
 #endif
       for (int ie=0; ie<nE; ++ie) {
         const double Ej = E_MeV[ie]*MEV_TO_J;
@@ -1303,8 +1309,18 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
         // ComputeT_atEnergy handles both ISOTROPIC and ANISOTROPIC branches.
         // prmForPoint carries the per-point epoch so the thread-local field-evaluator
         // cache inside TraceAllowedShared/Ex re-initializes Geopack correctly.
-        T[ie] = ComputeT_atEnergy(prmForPoint, x0_m, Rgv, dirsUse, maxTraceTime_s,
-                                  doAnisotropic, prmForPoint.anisotropy);
+        blockResults[(size_t)ie] = ComputeT_atEnergy(prmForPoint, x0_m, Rgv, dirsUse,
+                                                          maxTraceTime_s, doAnisotropic,
+                                                          prmForPoint.anisotropy);
+        T[ie] = blockResults[(size_t)ie].transmission();
+      }
+
+      for (int ie=0; ie<nE; ++ie) {
+        const size_t flat=(size_t)ip*(size_t)nE+(size_t)ie;
+        terminationByPointEnergy[flat]=blockResults[(size_t)ie].terminationCounts;
+        resolvedByPointEnergy[flat]=blockResults[(size_t)ie].resolved;
+        sampledByPointEnergy[flat]=blockResults[(size_t)ie].sampled;
+        retriedByPointEnergy[flat]=blockResults[(size_t)ie].retried;
       }
 
       // Density integral
@@ -1351,13 +1367,13 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     // chunks of task ids from an MPI RMA counter; in BLOCK_CYCLIC/STATIC mode the same
     // task space is assigned deterministically for reproducibility tests.
     //
-    // Each rank accumulates only two local arrays indexed by the global (point,energy)
-    // pair:
-    //   partialWeightLocal[ip,ie] = sum of allowed/anisotropy weights over directions;
-    //   dirsDoneLocal[ip,ie]      = number of sampled directions contributing.
+    // Each rank accumulates global-(point,energy)-indexed arrays for allowed weight,
+    // attempted directions, resolved directions, retries, and every explicit termination
+    // category.
     //
-    // At the end, MPI_SUM reductions assemble the total direction weight and direction
-    // count on rank 0.  Rank 0 then forms T(E)=weight/nDirs and performs exactly the
+    // At the end, MPI_SUM reductions assemble those arrays on rank 0.  Rank 0 then forms
+    // T(E)=weight/Nresolved (never weight/Nsampled when unresolved trajectories exist)
+    // and performs exactly the
     // same density and flux integrations used by the serial path.  This keeps result
     // reconstruction independent of task order and avoids rank-0 master/worker message
     // bottlenecks.
@@ -1400,6 +1416,9 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
 
     std::vector<double> partialWeightLocal((size_t)nPoints*(size_t)nE,0.0);
     std::vector<int>    dirsDoneLocal     ((size_t)nPoints*(size_t)nE,0);
+    std::vector<int>    resolvedLocal     ((size_t)nPoints*(size_t)nE,0);
+    std::vector<int>    retriedLocal      ((size_t)nPoints*(size_t)nE,0);
+    std::vector<int>    terminationLocal  ((size_t)nPoints*(size_t)nE*(size_t)kTerminationCount,0);
     long long localTasks = 0;
     long long localTraj  = 0;
 
@@ -1429,15 +1448,19 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
                                       ? prmForPoint.densitySpectrum.maxTrajTime_s
                                       : -1.0;
 
-      const double weightSum = ComputeWeightBlockAtEnergy(prmForPoint, x0_m, Rgv, dirsUse,
-                                                          idirBegin, idirEnd,
-                                                          maxTraceTime_s,
-                                                          doAnisotropic,
-                                                          prmForPoint.anisotropy);
+      const TrajectoryBlockResult block = ComputeWeightBlockAtEnergy(
+          prmForPoint, x0_m, Rgv, dirsUse, idirBegin, idirEnd, maxTraceTime_s,
+          doAnisotropic, prmForPoint.anisotropy);
 
       const size_t flat = (size_t)idx*(size_t)nE + (size_t)ie;
-      partialWeightLocal[flat] += weightSum;
-      dirsDoneLocal[flat] += batchCount;
+      partialWeightLocal[flat] += block.weightSum;
+      dirsDoneLocal[flat] += block.sampled;
+      resolvedLocal[flat] += block.resolved;
+      retriedLocal[flat] += block.retried;
+      for (int iterm=0; iterm<kTerminationCount; ++iterm) {
+        terminationLocal[flat*(size_t)kTerminationCount+(size_t)iterm] +=
+            block.terminationCounts[(size_t)iterm];
+      }
       localTasks++;
       localTraj += (long long)batchCount;
     };
@@ -1512,9 +1535,15 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
 
     std::vector<double> partialWeightRoot;
     std::vector<int>    dirsDoneRoot;
+    std::vector<int>    resolvedRoot;
+    std::vector<int>    retriedRoot;
+    std::vector<int>    terminationRoot;
     if (mpiRank==0) {
       partialWeightRoot.assign(partialWeightLocal.size(),0.0);
       dirsDoneRoot.assign(dirsDoneLocal.size(),0);
+      resolvedRoot.assign(resolvedLocal.size(),0);
+      retriedRoot.assign(retriedLocal.size(),0);
+      terminationRoot.assign(terminationLocal.size(),0);
     }
 
     MPI_Reduce(partialWeightLocal.data(),
@@ -1526,11 +1555,16 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
                MPI_COMM_WORLD);
     MPI_Reduce(dirsDoneLocal.data(),
                (mpiRank==0 ? dirsDoneRoot.data() : nullptr),
-               (int)dirsDoneLocal.size(),
-               MPI_INT,
-               MPI_SUM,
-               0,
-               MPI_COMM_WORLD);
+               (int)dirsDoneLocal.size(), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(resolvedLocal.data(),
+               (mpiRank==0 ? resolvedRoot.data() : nullptr),
+               (int)resolvedLocal.size(), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(retriedLocal.data(),
+               (mpiRank==0 ? retriedRoot.data() : nullptr),
+               (int)retriedLocal.size(), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(terminationLocal.data(),
+               (mpiRank==0 ? terminationRoot.data() : nullptr),
+               (int)terminationLocal.size(), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
 
     std::vector<long long> taskCounts;
     std::vector<long long> trajCounts;
@@ -1555,7 +1589,15 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
                 << ", expected " << nDirs;
             exit(__LINE__,__FILE__,msg.str().c_str());
           }
-          T[(size_t)ie] = partialWeightRoot[flat] / (double)nDirs;
+          const int nResolved=resolvedRoot[flat];
+          T[(size_t)ie] = nResolved>0 ? partialWeightRoot[flat]/(double)nResolved : 0.0;
+          resolvedByPointEnergy[flat]=nResolved;
+          sampledByPointEnergy[flat]=dirsDoneRoot[flat];
+          retriedByPointEnergy[flat]=retriedRoot[flat];
+          for (int iterm=0; iterm<kTerminationCount; ++iterm) {
+            terminationByPointEnergy[flat][(size_t)iterm]=
+                terminationRoot[flat*(size_t)kTerminationCount+(size_t)iterm];
+          }
         }
 
         DensityGridless_SetSpectrumForPointLikeLocation(prm, ip);
@@ -1605,6 +1647,69 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
 
   // Rank 0 writes Tecplot outputs.
   if (mpiRank==0) {
+    // Explicit termination accounting.  Physical transmission excludes unresolved
+    // trajectories from its denominator; this file preserves the full accounting so
+    // validation can fail on excessive unresolved fractions instead of silently
+    // interpreting time/step/numerical limits as geomagnetic shielding.
+    double maxUnresolvedFraction=0.0;
+    if (prm.densitySpectrum.saveTerminationSummary) {
+      std::ofstream out("gridless_termination_summary.dat");
+      DensityGridless_ConfigureLosslessAsciiOutput(out);
+      out << "TITLE=\"Gridless trajectory termination summary\"\n";
+      out << "VARIABLES=\"point_index\" \"E_MeV\" \"N_sampled\" \"N_retried\" \"N_resolved\" "
+          << "\"N_allowed\" \"N_forbidden\" \"N_inner_forbidden\" \"N_trapped\" "
+          << "\"N_time_limit\" \"N_step_limit\" \"N_distance_limit\" "
+          << "\"N_invalid_dt\" \"N_invalid_field\" \"N_numerical_failure\" "
+          << "\"T_resolved\" \"T_all\" \"unresolved_fraction\"\n";
+      out << "ZONE T=\"termination\" I=" << (nPoints*nE) << " F=POINT\n";
+      for (int ip=0; ip<nPoints; ++ip) {
+        for (int ie=0; ie<nE; ++ie) {
+          const size_t flat=(size_t)ip*(size_t)nE+(size_t)ie;
+          const auto& c=terminationByPointEnergy[flat];
+          const int sampled=sampledByPointEnergy[flat];
+          const int resolved=resolvedByPointEnergy[flat];
+          const int allowed=c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::OuterBoundaryAllowed)];
+          const int innerForbidden=c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::InnerBoundaryForbidden)];
+          const int trapped=c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::MagneticallyTrappedForbidden)];
+          const int forbidden=innerForbidden+trapped;
+          const double unresolvedFraction=sampled>0 ? double(sampled-resolved)/double(sampled) : 1.0;
+          maxUnresolvedFraction=std::max(maxUnresolvedFraction,unresolvedFraction);
+          const double tResolved=resolved>0 ? double(allowed)/double(resolved) : 0.0;
+          const double tAll=sampled>0 ? double(allowed)/double(sampled) : 0.0;
+          out << ip << " " << E_MeV[(size_t)ie] << " " << sampled << " "
+              << retriedByPointEnergy[flat] << " " << resolved << " " << allowed << " " << forbidden << " "
+              << innerForbidden << " " << trapped << " "
+              << c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::TimeLimit)] << " "
+              << c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::StepLimit)] << " "
+              << c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::DistanceLimit)] << " "
+              << c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::InvalidTimeStep)] << " "
+              << c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::InvalidField)] << " "
+              << c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::NumericalFailure)] << " "
+              << tResolved << " " << tAll << " " << unresolvedFraction << "\n";
+        }
+      }
+    }
+    else {
+      for (size_t flat=0; flat<sampledByPointEnergy.size(); ++flat) {
+        const int sampled=sampledByPointEnergy[flat];
+        const int resolved=resolvedByPointEnergy[flat];
+        maxUnresolvedFraction=std::max(maxUnresolvedFraction,
+            sampled>0 ? double(sampled-resolved)/double(sampled) : 1.0);
+      }
+    }
+    const std::ios::fmtflags savedFlags=std::cout.flags();
+    const std::streamsize savedPrecision=std::cout.precision();
+    std::cout << std::defaultfloat << std::setprecision(17)
+              << "[gridless-density][termination] max unresolved fraction = "
+              << maxUnresolvedFraction << " (tolerance="
+              << prm.densitySpectrum.unresolvedTolerance << ")\n";
+    std::cout.flags(savedFlags);
+    std::cout.precision(savedPrecision);
+    if (maxUnresolvedFraction > prm.densitySpectrum.unresolvedTolerance) {
+      std::cout << "[gridless-density][termination][WARNING] unresolved fraction exceeds tolerance; "
+                << "validation must fail rather than treating unresolved trajectories as forbidden.\n";
+    }
+
     // File 1: densities
     {
       std::ofstream out("gridless_points_density.dat");
@@ -1824,6 +1929,21 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
     std::cout << "Epoch           : " << prm.field.epoch << "\n";
     std::cout << "Species         : " << prm.species.name << " (q=" << prm.species.charge_e
               << " e, m=" << prm.species.mass_amu << " amu)\n";
+    // Print the resolved runtime mover, not merely the input/default token.  This
+    // makes F3 mover-comparison runs self-describing in F3_amps.log and confirms
+    // that the runner's optional -mover override reached the shared tracer.
+    std::cout << "Particle mover  : " << MoverTypeToString(GetDefaultMoverType()) << "\n";
+    std::cout << "Adaptive dt     : " << (prm.numerics.adaptiveDt ? "T" : "F")
+              << " (DT_TRACE=" << prm.numerics.dtTrace_s << " s)\n";
+    std::cout << "Trap detection  : " << (prm.numerics.trapDetection ? "T" : "F");
+    if (prm.numerics.trapDetection) {
+      std::cout << " (mirror points>=" << prm.numerics.trapMinMirrorPoints
+                << ", bounce cycles>=" << prm.numerics.trapMinBounceCycles
+                << ", outer margin=" << prm.numerics.trapOuterMargin_Re << " Re"
+                << ", radial tol=" << prm.numerics.trapRadialGrowthTolerance_Re << " Re"
+                << ", energy tol=" << prm.numerics.trapEnergyRelativeTolerance << ")";
+    }
+    std::cout << "\n";
     std::cout << "Energy grid     : [" << prm.densitySpectrum.Emin_MeV << ", " << prm.densitySpectrum.Emax_MeV
               << "] MeV, Npoints=" << nE << " (" << (prm.densitySpectrum.spacing==EarthUtil::DensitySpectrumParam::Spacing::LOG?"LOG":"LINEAR")
               << ")\n";
@@ -1937,7 +2057,7 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
                                           ? prm.densitySpectrum.maxTrajTime_s
                                           : -1.0;
           T[ie] = ComputeT_atEnergy(prm, x0_m, Rgv, dirsUse, maxTraceTime_s,
-                                    doAnisotropic, prm.anisotropy);
+                                    doAnisotropic, prm.anisotropy).transmission();
         }
 
         std::vector<double> g(nE,0.0);
@@ -2025,6 +2145,7 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
 
       std::vector<double> partialWeightLocal((size_t)nPts*(size_t)nE,0.0);
       std::vector<int>    dirsDoneLocal     ((size_t)nPts*(size_t)nE,0);
+      std::vector<int>    resolvedLocal     ((size_t)nPts*(size_t)nE,0);
       long long localTasks=0, localTraj=0;
 
       auto ProcessTaskId = [&](long long taskId) {
@@ -2046,15 +2167,14 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
         const double maxTraceTime_s = (prm.densitySpectrum.maxTrajTime_s > 0.0)
                                         ? prm.densitySpectrum.maxTrajTime_s
                                         : -1.0;
-        const double weightSum = ComputeWeightBlockAtEnergy(prm, x0_m, Rgv, dirsUse,
-                                                            idirBegin, idirEnd,
-                                                            maxTraceTime_s,
-                                                            doAnisotropic,
-                                                            prm.anisotropy);
+        const TrajectoryBlockResult block = ComputeWeightBlockAtEnergy(
+            prm, x0_m, Rgv, dirsUse, idirBegin, idirEnd, maxTraceTime_s,
+            doAnisotropic, prm.anisotropy);
 
         const size_t flat = (size_t)idx*(size_t)nE + (size_t)ie;
-        partialWeightLocal[flat] += weightSum;
-        dirsDoneLocal[flat] += batchCount;
+        partialWeightLocal[flat] += block.weightSum;
+        dirsDoneLocal[flat] += block.sampled;
+        resolvedLocal[flat] += block.resolved;
         localTasks++;
         localTraj += (long long)batchCount;
       };
@@ -2135,9 +2255,11 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
 
       std::vector<double> partialWeightRoot;
       std::vector<int>    dirsDoneRoot;
+      std::vector<int>    resolvedRoot;
       if (mpiRank==0) {
         partialWeightRoot.assign(partialWeightLocal.size(),0.0);
         dirsDoneRoot.assign(dirsDoneLocal.size(),0);
+        resolvedRoot.assign(resolvedLocal.size(),0);
       }
 
       MPI_Reduce(partialWeightLocal.data(),
@@ -2149,11 +2271,10 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
                  MPI_COMM_WORLD);
       MPI_Reduce(dirsDoneLocal.data(),
                  (mpiRank==0 ? dirsDoneRoot.data() : nullptr),
-                 (int)dirsDoneLocal.size(),
-                 MPI_INT,
-                 MPI_SUM,
-                 0,
-                 MPI_COMM_WORLD);
+                 (int)dirsDoneLocal.size(), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+      MPI_Reduce(resolvedLocal.data(),
+                 (mpiRank==0 ? resolvedRoot.data() : nullptr),
+                 (int)resolvedLocal.size(), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
 
       std::vector<long long> taskCounts, trajCounts;
       if (mpiRank==0) { taskCounts.assign((size_t)mpiSize,0); trajCounts.assign((size_t)mpiSize,0); }
@@ -2172,7 +2293,8 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
                   << ", expected " << nDirs;
               exit(__LINE__,__FILE__,msg.str().c_str());
             }
-            T[(size_t)ie] = partialWeightRoot[flat] / (double)nDirs;
+            T[(size_t)ie] = resolvedRoot[flat]>0
+                ? partialWeightRoot[flat]/(double)resolvedRoot[flat] : 0.0;
           }
 
           DensityGridless_SetSpectrumEpochUTC(prm.field.epoch);

@@ -257,13 +257,45 @@ F_ch = 4*pi*T_open*int_{max(E1,Ecut)}^{E2} J0*(E/E0)^(-gamma) dE
 where `Ecut` is the proton kinetic energy corresponding to `Rc`, and `T_open` is the analytic straight-line open-sky fraction outside the inner absorbing sphere. The F3 analytical comparison is intentionally looser than F1/F2/F15 because the numerical solver evaluates a full directional access map with penumbra, while the reference collapses access to a vertical step function. The runner also applies tighter internal checks: `J_local(E)=T(E)J_boundary(E)`, file-vs-spectrum flux reconstruction, longitude symmetry, north/south symmetry, and the expected increase of flux toward high absolute latitude.
 
 ```bash
-python srcEarth/test/F3/run_F3.py -np 4 -nt 16
+python srcEarth/test/F3/run_F3.py -np 4
+python srcEarth/test/F3/run_F3.py --fast -np 4
+python srcEarth/test/F3/run_F3.py --mover BORIS --lons 0 --lats 45 --scan-n 40 --directions-per-energy 1152 -np 18
 python srcEarth/test/F3/run_F3.py --lons 0,90,180,270
 python srcEarth/test/F3/run_F3.py --analytic-flux-tol 0.75 --rc-tol 0.75
 python srcEarth/test/F3/run_F3.py --dry-run
 ```
 
-F3 writes `F3_summary.csv`, `F3_result.json`, and `reference_F3_dipole_cutoff_used.csv` under `test_output/F3_gridless`. The default repository reference table is `srcEarth/test/F3/reference_F3_dipole_cutoff.csv`.
+For routine regression testing, `--fast` retains both longitudes and the
+representative latitudes `-70,-45,0,45,70 deg`, while reducing the log-rigidity
+scan from 100 to 12 samples and using a deterministic 288-direction full-sky
+subset.  The subset preserves all 24 zenith levels and 12 evenly spaced azimuths
+per level.  This lowers the trajectory count from 2,073,600 to 34,560—exactly
+60x—while preserving the equatorial/intermediate/high-latitude access contrast,
+north/south symmetry, longitude symmetry, channel folding, and latitude-trend
+checks.  The full profile remains the release/accuracy-validation configuration.
+The runner uses MPI ranks only and forces one computational thread per rank;
+increase `-np` rather than `-nt` for additional parallelism.  `--mover` accepts
+`BORIS`, `HC4`, `RK2`, `RK4`, `RK6`, `GC2`, `GC4`, `GC6`, or `HYBRID` and passes
+the explicit selection to AMPS.  If it is omitted, the executable default is
+preserved.  The shared gridless and Mode3D adaptive selectors no longer impose either the
+former `100 km / v` minimum-displacement floor or the asymptotic
+`0.2*distance_to_boundary/v` limiter.  Every accepted numerical trajectory chord is
+intersected explicitly with the inner sphere and outer box.  The tracer returns
+separate allowed, forbidden, time-limit, step-limit, distance-limit, invalid-step,
+invalid-field, and numerical-failure states.  Density/transmission excludes unresolved
+states from the physical denominator and writes `gridless_termination_summary.dat`.
+For the static dipole, F3 also enables conservative trapped-orbit classification:
+repeated mirror points, stable bounce envelopes, outer-boundary clearance, and momentum
+conservation are all required before a trajectory is counted as trapped/forbidden.  F3
+checks count closure and enforces `--unresolved-tol`.  Use `--no-trap-detection` for a
+diagnostic comparison, `--retry-unresolved` for one stricter retry, and
+`python srcEarth/test/F3/run_boundary_unit_test.py` for the standalone
+boundary/termination/trapping unit test.
+
+F3 writes `F3_summary.csv`, `F3_result.json`,
+`gridless_termination_summary.dat`, and `reference_F3_dipole_cutoff_used.csv` under
+`test_output/F3_gridless`. The default repository reference table is
+`srcEarth/test/F3/reference_F3_dipole_cutoff.csv`.
 
 ## F4 — Transmission reconstruction consistency
 

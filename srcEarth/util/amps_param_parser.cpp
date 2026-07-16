@@ -2746,6 +2746,24 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       }
       else if (uKey=="MAX_STEPS") p.numerics.maxSteps=std::stoi(val);
       else if (uKey=="MAX_TRACE_TIME") p.numerics.maxTraceTime_s=std::stod(val);
+      else if (uKey=="BOUNDARY_EVENT_TOL_M" || uKey=="BOUNDARY_REFINE_TOL_M")
+        p.numerics.boundaryEventTolerance_m=std::stod(val);
+      else if (uKey=="BOUNDARY_EVENT_MAX_ITER" || uKey=="BOUNDARY_REFINE_MAX_ITER")
+        p.numerics.boundaryEventMaxIterations=std::stoi(val);
+      else if (uKey=="TRAP_DETECTION" || uKey=="TRACE_TRAP_DETECTION")
+        p.numerics.trapDetection=ToBool(val);
+      else if (uKey=="TRAP_MIN_MIRROR_POINTS")
+        p.numerics.trapMinMirrorPoints=std::stoi(val);
+      else if (uKey=="TRAP_MIN_BOUNCES" || uKey=="TRAP_MIN_BOUNCE_CYCLES")
+        p.numerics.trapMinBounceCycles=std::stoi(val);
+      else if (uKey=="TRAP_OUTER_MARGIN_RE")
+        p.numerics.trapOuterMargin_Re=std::stod(val);
+      else if (uKey=="TRAP_RADIAL_GROWTH_TOL_RE" || uKey=="TRAP_RADIAL_ENVELOPE_TOL_RE")
+        p.numerics.trapRadialGrowthTolerance_Re=std::stod(val);
+      else if (uKey=="TRAP_ENERGY_REL_TOL")
+        p.numerics.trapEnergyRelativeTolerance=std::stod(val);
+      else if (uKey=="TRAP_PARALLEL_DEADBAND")
+        p.numerics.trapParallelDeadband=std::stod(val);
       else if (uKey=="MAX_TRACE_DISTANCE") p.numerics.maxTraceDistance_Re=std::stod(val);
       else if (uKey=="N_PARTICLES") {
         // RoR-style generic particle count. For the forward-mode injector this
@@ -2916,6 +2934,16 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       }
       else if (uKey=="DS_TRANSMISSION_SAVE" || uKey=="DENSITY_TRANSMISSION_SAVE") {
         p.densitySpectrum.transmissionSave=ToBool(val);
+      }
+      else if (uKey=="DS_UNRESOLVED_TOL" || uKey=="DENSITY_UNRESOLVED_TOL") {
+        p.densitySpectrum.unresolvedTolerance=std::stod(val);
+      }
+      else if (uKey=="DS_RETRY_UNRESOLVED" || uKey=="DENSITY_RETRY_UNRESOLVED") {
+        p.densitySpectrum.retryUnresolved=ToBool(val);
+      }
+      else if (uKey=="DS_SAVE_TERMINATION_SUMMARY" ||
+               uKey=="DENSITY_SAVE_TERMINATION_SUMMARY") {
+        p.densitySpectrum.saveTerminationSummary=ToBool(val);
       }
       else if (uKey=="DS_PARALLEL" || uKey=="DS_BACKEND" ||
                uKey=="DENSITY_PARALLEL" || uKey=="DENSITY_BACKEND" ||
@@ -3113,6 +3141,36 @@ if (ToUpper(p.field.model)=="DIPOLE") {
   }
   if (p.numerics.maxTraceDistance_Re < 0.0) {
     exit(__LINE__,__FILE__,"MAX_TRACE_DISTANCE must be >= 0 (0 means: disabled)");
+  }
+  if (!(p.numerics.boundaryEventTolerance_m >= 0.0) ||
+      !std::isfinite(p.numerics.boundaryEventTolerance_m)) {
+    exit(__LINE__,__FILE__,"BOUNDARY_EVENT_TOL_M must be finite and >= 0");
+  }
+  if (p.numerics.boundaryEventMaxIterations < 1) {
+    exit(__LINE__,__FILE__,"BOUNDARY_EVENT_MAX_ITER must be >= 1");
+  }
+  if (p.numerics.trapMinMirrorPoints < 2) {
+    exit(__LINE__,__FILE__,"TRAP_MIN_MIRROR_POINTS must be >= 2");
+  }
+  if (p.numerics.trapMinBounceCycles < 1) {
+    exit(__LINE__,__FILE__,"TRAP_MIN_BOUNCES must be >= 1");
+  }
+  if (!(p.numerics.trapOuterMargin_Re >= 0.0) ||
+      !std::isfinite(p.numerics.trapOuterMargin_Re)) {
+    exit(__LINE__,__FILE__,"TRAP_OUTER_MARGIN_RE must be finite and >= 0");
+  }
+  if (!(p.numerics.trapRadialGrowthTolerance_Re >= 0.0) ||
+      !std::isfinite(p.numerics.trapRadialGrowthTolerance_Re)) {
+    exit(__LINE__,__FILE__,"TRAP_RADIAL_GROWTH_TOL_RE must be finite and >= 0");
+  }
+  if (!(p.numerics.trapEnergyRelativeTolerance >= 0.0) ||
+      !std::isfinite(p.numerics.trapEnergyRelativeTolerance)) {
+    exit(__LINE__,__FILE__,"TRAP_ENERGY_REL_TOL must be finite and >= 0");
+  }
+  if (!(p.numerics.trapParallelDeadband >= 0.0 &&
+        p.numerics.trapParallelDeadband < 1.0) ||
+      !std::isfinite(p.numerics.trapParallelDeadband)) {
+    exit(__LINE__,__FILE__,"TRAP_PARALLEL_DEADBAND must be finite and in [0,1)");
   }
 
   // Resolve product-selection requests from CALC_TARGET.
@@ -3323,6 +3381,11 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
     if (p.numerics.maxTraceDistance_Re < 0.0) {
       exit(__LINE__,__FILE__,"MAX_TRACE_DISTANCE must be >= 0 (0 means: disabled)");
+    }
+    if (!(p.densitySpectrum.unresolvedTolerance >= 0.0 &&
+          p.densitySpectrum.unresolvedTolerance <= 1.0) ||
+        !std::isfinite(p.densitySpectrum.unresolvedTolerance)) {
+      exit(__LINE__,__FILE__,"DS_UNRESOLVED_TOL must be finite and in [0,1]");
     }
     // Validate transmission-function controls.
     {
