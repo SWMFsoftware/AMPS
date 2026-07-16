@@ -139,6 +139,14 @@ moment it was launched. Two triage reports are also written:
       these are the tests that require investigation.
   <report-prefix>_actual_failed.txt/.csv
       all commands that returned actual F, including expected-failure tests.
+  <report-prefix>_last_pass_failed.txt/.csv
+      tests that have a non-empty ``last pass:`` provenance entry in the list but
+      returned actual F in the current run; these are regressions relative to a
+      previously passing commit.
+  <report-prefix>_new_or_unexpected_passed.txt/.csv
+      tests that returned actual P even though their ``last pass:`` entry is
+      empty/missing, or the list currently marks them as expected F; these need
+      either a ``last pass:`` update or a P/F marker review.
 
 Use ``--update-last-pass`` to rewrite the ``last pass:`` line of each test whose
 command actually exited 0 on this run. Existing metadata lines are updated in
@@ -777,13 +785,17 @@ async def run_all_tests(
     return results
 
 
-def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path, Path, Path, Path, Path, Path]:
+def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path, Path, Path, Path, Path, Path, Path, Path, Path, Path]:
     json_path = report_prefix.with_suffix(".json")
     csv_path = report_prefix.with_suffix(".csv")
     to_address_txt_path = report_prefix.with_name(report_prefix.name + "_to_address.txt")
     to_address_csv_path = report_prefix.with_name(report_prefix.name + "_to_address.csv")
     actual_failed_txt_path = report_prefix.with_name(report_prefix.name + "_actual_failed.txt")
     actual_failed_csv_path = report_prefix.with_name(report_prefix.name + "_actual_failed.csv")
+    last_pass_failed_txt_path = report_prefix.with_name(report_prefix.name + "_last_pass_failed.txt")
+    last_pass_failed_csv_path = report_prefix.with_name(report_prefix.name + "_last_pass_failed.csv")
+    new_or_unexpected_passed_txt_path = report_prefix.with_name(report_prefix.name + "_new_or_unexpected_passed.txt")
+    new_or_unexpected_passed_csv_path = report_prefix.with_name(report_prefix.name + "_new_or_unexpected_passed.csv")
 
     with json_path.open("w", encoding="utf-8") as f:
         json.dump([asdict(r) for r in results], f, indent=2)
@@ -844,6 +856,7 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
                     f"  exit:     {r.exit_code}\n"
                     f"  timeout:  {r.timed_out}\n"
                     f"  elapsed:  {r.elapsed_s:.3f} s\n"
+                    f"  last pass: {(r.last_pass or '<empty>')}\n"
                     f"  {r.np_nt_details}\n"
                     f"{mem_line}"
                     f"  log:      {r.log_file}\n"
@@ -852,12 +865,21 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
 
     to_address = [r for r in results if not r.matched_reference]
     actual_failed = [r for r in results if r.actual == "F"]
+    last_pass_failed, new_or_unexpected_passed = list_delta_rows(results)
 
     write_csv(csv_path, results)
     write_csv(to_address_csv_path, to_address)
     write_csv(actual_failed_csv_path, actual_failed)
+    write_csv(last_pass_failed_csv_path, last_pass_failed)
+    write_csv(new_or_unexpected_passed_csv_path, new_or_unexpected_passed)
     write_txt(to_address_txt_path, "Tests to address: actual result differs from reference P/F", to_address)
     write_txt(actual_failed_txt_path, "Actual failed commands: exit code was nonzero or timed out", actual_failed)
+    write_txt(last_pass_failed_txt_path, "Previously passing tests that failed in this run", last_pass_failed)
+    write_txt(
+        new_or_unexpected_passed_txt_path,
+        "Tests that passed but need last-pass or P/F marker review",
+        new_or_unexpected_passed,
+    )
 
     return (
         json_path,
@@ -866,6 +888,10 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
         to_address_csv_path,
         actual_failed_txt_path,
         actual_failed_csv_path,
+        last_pass_failed_txt_path,
+        last_pass_failed_csv_path,
+        new_or_unexpected_passed_txt_path,
+        new_or_unexpected_passed_csv_path,
     )
 
 
@@ -946,6 +972,38 @@ def update_last_pass_entries(test_file: Path, tests: List[TestCase], results: Li
     return len(update_existing_line) + len(insert_after_line)
 
 
+
+
+def has_nonempty_last_pass(result: TestResult) -> bool:
+    """Return True when the test-list provenance field is present and non-empty.
+
+    The parser stores a blank metadata line such as ``last pass:`` as an empty
+    string and stores a completely missing line as ``None``.  For the regression
+    summary both cases mean "no known passing commit", so they are treated the
+    same here.  Whitespace-only values are also considered empty.
+    """
+    return bool((result.last_pass or "").strip())
+
+
+def list_delta_rows(results: List[TestResult]) -> tuple[List[TestResult], List[TestResult]]:
+    """Return the two user-facing deltas between the list metadata and this run.
+
+    ``last_pass_failed`` identifies regressions: a test that has a non-empty
+    ``last pass:`` value was known to pass at some commit, but failed now.
+
+    ``new_or_unexpected_passed`` identifies tests whose current success should
+    change the list: either the test has no passing commit recorded yet, or the
+    list still marks it as an expected failure even though the command now exits
+    successfully.  The two conditions intentionally form a union, so an
+    F-marked test with an empty ``last pass:`` appears only once.
+    """
+    last_pass_failed = [r for r in results if has_nonempty_last_pass(r) and r.actual == "F"]
+    new_or_unexpected_passed = [
+        r for r in results
+        if r.actual == "P" and ((not has_nonempty_last_pass(r)) or r.expected == "F")
+    ]
+    return last_pass_failed, new_or_unexpected_passed
+
 def print_final_summary(
     results: List[TestResult],
     *,
@@ -955,6 +1013,10 @@ def print_final_summary(
     to_address_csv_path: Path,
     actual_failed_txt_path: Path,
     actual_failed_csv_path: Path,
+    last_pass_failed_txt_path: Path,
+    last_pass_failed_csv_path: Path,
+    new_or_unexpected_passed_txt_path: Path,
+    new_or_unexpected_passed_csv_path: Path,
 ) -> None:
     n = len(results)
     n_expected_pass = sum(r.expected == "P" for r in results)
@@ -966,6 +1028,7 @@ def print_final_summary(
     n_timeout = sum(r.timed_out for r in results)
     to_address = [r for r in results if not r.matched_reference]
     actual_failed = [r for r in results if r.actual == "F"]
+    last_pass_failed, new_or_unexpected_passed = list_delta_rows(results)
 
     print("\nSummary")
     print("-------")
@@ -981,6 +1044,10 @@ def print_final_summary(
     print(f"To-address CSV:     {to_address_csv_path}")
     print(f"Actual-failed text: {actual_failed_txt_path}")
     print(f"Actual-failed CSV:  {actual_failed_csv_path}")
+    print(f"Last-pass-failed text: {last_pass_failed_txt_path}")
+    print(f"Last-pass-failed CSV:  {last_pass_failed_csv_path}")
+    print(f"New/unexpected passed text: {new_or_unexpected_passed_txt_path}")
+    print(f"New/unexpected passed CSV:  {new_or_unexpected_passed_csv_path}")
 
     if to_address:
         print("\nTests to address: actual result differs from reference P/F")
@@ -993,6 +1060,40 @@ def print_final_summary(
             )
     else:
         print("\nTests to address: none; all actual results match the reference P/F markers.")
+
+    print("\nTest-list delta summary")
+    print("-----------------------")
+    print(
+        "Previously passing tests that failed: "
+        f"{len(last_pass_failed)} "
+        "(non-empty 'last pass:' but actual F)"
+    )
+    if last_pass_failed:
+        for r in last_pass_failed:
+            print(
+                f"  #{r.index:03d} line {r.line_no}: last pass {r.last_pass}; "
+                f"expected {r.expected}, actual F, exit={r.exit_code}, log={r.log_file}\n"
+                f"      {r.command}"
+            )
+
+    print(
+        "Passed tests needing list update/review: "
+        f"{len(new_or_unexpected_passed)} "
+        "(empty/missing 'last pass:' or expected F, but actual P)"
+    )
+    if new_or_unexpected_passed:
+        for r in new_or_unexpected_passed:
+            reasons = []
+            if not has_nonempty_last_pass(r):
+                reasons.append("empty last pass")
+            if r.expected == "F":
+                reasons.append("marked F")
+            reason_text = ", ".join(reasons) if reasons else "needs review"
+            print(
+                f"  #{r.index:03d} line {r.line_no}: {reason_text}; "
+                f"expected {r.expected}, actual P, exit={r.exit_code}, log={r.log_file}\n"
+                f"      {r.command}"
+            )
 
     # This second list is useful when the reference file intentionally contains
     # expected-failure tests. It shows every command that physically failed,
@@ -1265,6 +1366,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         to_address_csv_path,
         actual_failed_txt_path,
         actual_failed_csv_path,
+        last_pass_failed_txt_path,
+        last_pass_failed_csv_path,
+        new_or_unexpected_passed_txt_path,
+        new_or_unexpected_passed_csv_path,
     ) = write_reports(results, report_prefix)
     print_final_summary(
         results,
@@ -1274,6 +1379,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         to_address_csv_path=to_address_csv_path,
         actual_failed_txt_path=actual_failed_txt_path,
         actual_failed_csv_path=actual_failed_csv_path,
+        last_pass_failed_txt_path=last_pass_failed_txt_path,
+        last_pass_failed_csv_path=last_pass_failed_csv_path,
+        new_or_unexpected_passed_txt_path=new_or_unexpected_passed_txt_path,
+        new_or_unexpected_passed_csv_path=new_or_unexpected_passed_csv_path,
     )
 
     if args.update_last_pass:
