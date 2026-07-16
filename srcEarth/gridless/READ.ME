@@ -56,14 +56,17 @@ ALLOWED if the time-reversed trajectory launched from x0 escapes through the
 outer domain boundary before intersecting the inner loss sphere. Otherwise it is
 considered FORBIDDEN.
 
-This is the same “allowed vs forbidden” classifier used by both major gridless
-products in this directory:
+Cutoff rigidity and density/spectrum share the same field models, movers,
+geometry, and trajectory implementation, but they intentionally expose different
+result contracts:
 
-  - cutoff rigidity;
-  - density / spectrum / integral flux.
+  - cutoff rigidity uses a legacy Boolean classifier;
+  - density / spectrum / integral flux uses a structured trajectory result.
 
-Keeping a shared classifier is intentional: both science products must use the
-same field model, same geometry, same time stepping, and same stopping rules.
+The structured result distinguishes physical forbidden trajectories from
+numerical time/step/distance limits.  The Boolean cutoff wrapper maps those
+configured limits to forbidden for backward compatibility.  This caller-specific
+interpretation is implemented in the shared tracer and is described in Section 6.
 
 
 2.2 Cutoff rigidity mode
@@ -261,14 +264,20 @@ HC4 implementation details:
   Ruth (1990) for fourth-order composition; Birdsall & Langdon (1991) for Boris
   particle pushing.
 
-Time stepping is adaptive and controlled by the shared mover layer. In broad
-terms the step size is restricted by:
+Time stepping is adaptive, but the final selector depends on the caller's
+trajectory contract:
 
-  - a gyro-angle criterion, and
-  - a geometric criterion tied to distance from the outer box and inner sphere.
+  - StructuredAccurate (density/F3): DT_TRACE, gyro angle, and remaining time are
+    upper bounds; no minimum-displacement floor is allowed; accepted trajectory
+    chords are intersected explicitly with the inner sphere and outer box.
 
-The stepper also includes explicit checking for crossing of the inner loss sphere
-within a step so that absorption is not missed by a large step.
+  - LegacyCutoffCompatible (Boolean cutoff): retains the historical boundary-
+    distance limiter and 100 km/speed minimum-displacement floor used by the
+    existing cutoff references.
+
+The mover also includes checked handling of inner-sphere crossings.  The exact
+first-event chord policy is used by structured trajectories; the legacy endpoint
+policy is retained only for Boolean cutoff compatibility.
 
 --------------------------------------------------------------------------------
 6. Geometry and stopping conditions
@@ -279,14 +288,74 @@ The gridless domain is defined by:
   - an outer rectangular box (#DOMAIN_BOUNDARY), and
   - an inner absorbing sphere of radius R_INNER.
 
-Trajectory classification uses the following logic:
+The structured trajectory result uses:
 
-  OUTSIDE OUTER BOX  -> ALLOWED
-  HIT INNER SPHERE   -> FORBIDDEN
-  EXCEED STEP/TIME/DISTANCE CAP -> FORBIDDEN (conservative)
+  OUTER_BOUNDARY_ALLOWED
+  INNER_BOUNDARY_FORBIDDEN
+  MAGNETICALLY_TRAPPED_FORBIDDEN
+  TIME_LIMIT / STEP_LIMIT / DISTANCE_LIMIT
+  INVALID_TIME_STEP / INVALID_FIELD / NUMERICAL_FAILURE
 
-The inner sphere is a simple loss-surface proxy. It is not a detailed atmosphere,
-ionosphere, or loss-cone model.
+Density/transmission calculations keep the limit and failure states unresolved.
+They compute physical transmission only from allowed plus physically forbidden
+samples and report the unresolved fraction separately.
+
+The Boolean cutoff classifier applies the historical cutoff convention:
+
+  OUTER BOUNDARY ESCAPE                   -> true
+  INNER IMPACT OR VALIDATED TRAPPING       -> false
+  CONFIGURED STEP/TIME/DISTANCE CAP        -> false
+  INVALID STEP/FIELD/NUMERICAL FAILURE     -> retry once, then throw
+
+A trace-limit result is not retried in cutoff mode.  Repeating it only increases
+runtime and does not remove an unchanged distance cap.  The inner sphere remains
+a simple loss-surface proxy; it is not a detailed atmosphere, ionosphere, or
+loss-cone model.
+
+--------------------------------------------------------------------------------
+6.1 F3-compatible structured tracing and cutoff compatibility
+--------------------------------------------------------------------------------
+
+The implementation uses one termination enumeration and two caller policies.
+This prevents the F3 density calculation from counting an incomplete trajectory
+as physical loss while preserving the historical Boolean behavior expected by
+cutoff maps and C-series regression tests.
+
+Structured APIs:
+
+  TraceTrajectoryShared()
+  TraceTrajectorySharedEx()
+
+Boolean compatibility APIs:
+
+  TraceAllowedShared()
+  TraceAllowedSharedEx()
+
+The structured APIs select `StructuredAccurate`.  Every accepted chord is tested
+for the first analytic inner-sphere or outer-box intersection.  The time-step
+selector never raises a smaller accuracy-limited step.  Time, step, and distance
+caps are returned to the caller as unresolved termination states.
+
+The Boolean APIs select `LegacyCutoffCompatible`.  They retain the pre-F3
+boundary-distance limiter and 100-km minimum-displacement floor.  A finite cap
+returns false, while invalid-step, invalid-field, and numerical-failure outcomes
+receive one retry with stricter numerical settings.
+
+`MAX_TRACE_DISTANCE` is accumulated path length in Earth radii, not geocentric
+radius.  A value of zero disables only that cap.  `MAX_TRACE_TIME` and
+`MAX_STEPS` remain active.
+
+For a static field, optional trap detection can return
+`MAGNETICALLY_TRAPPED_FORBIDDEN` after repeated mirror points, complete bounce
+cycles, stable radial envelopes, outer-boundary clearance, and acceptable
+momentum conservation.  Trap detection can save work, but Boolean cutoff
+correctness does not depend on recognizing every trapped orbit because an
+undetected orbit still returns false at a configured cap.
+
+The scalar cutoff `UPPER_SCAN` also evaluates its logarithmic grid from Rmax
+downward.  It stops at the first forbidden point below the allowed top branch and
+bisects only that final bracket.  This preserves the upper-cutoff definition while
+avoiding expensive lower-rigidity trajectories that cannot change the result.
 
 --------------------------------------------------------------------------------
 7. Input-file interface

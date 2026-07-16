@@ -74,3 +74,25 @@ If `--mover` is omitted, the runner does not pass `-mover`, preserving the AMPS
 input/default mover used by older C1 runs.  HC4 is the fourth-order
 Higuera-Cary/Boris composition intended to combine RK4-like smooth-field accuracy
 with Boris-like rigidity conservation for E=0 magnetic tracing.
+
+## Compatibility with the F3 structured tracer
+
+This cutoff test intentionally uses the Boolean cutoff contract, not F3's
+structured density/transmission contract.  The underlying source now has two
+explicit internal policies:
+
+```text
+StructuredAccurate       structured F3/density trajectories
+LegacyCutoffCompatible   Boolean cutoff searches
+```
+
+For this test, inner impact, validated trapping, and configured
+`TIME_LIMIT`/`STEP_LIMIT`/`DISTANCE_LIMIT` outcomes all classify the trial
+rigidity as forbidden (`false`).  A configured limit is not retried.  Only an
+invalid step, invalid field, or numerical integration failure receives one
+stricter retry and can abort the run if it remains unresolved.
+
+This preserves the finite-cap behavior used to generate the pre-F3 cutoff
+references while allowing F3 to retain the same limit outcomes as explicit
+unresolved samples.  The distinction is implemented in the C++ Boolean versus
+structured APIs; the test runner does not relabel output after the calculation.

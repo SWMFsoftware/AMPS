@@ -293,3 +293,115 @@ It is disabled for `-mode3d-field-eval ANALYTIC`, because that path directly ret
 reference field and would only report a trivial zero interpolation error. A new statistics
 window is started independently for each cutoff and density/flux calculation, including
 each separately processed time snapshot.
+
+## F3 structured tracing and backward-compatible cutoff behavior
+
+The F3 density/flux implementation required more information than the historical
+Boolean cutoff classifier could provide.  A trajectory can now terminate as
+allowed, physically forbidden, capped by a numerical safety limit, or failed
+numerically.  At the same time, pre-existing cutoff products and C-series
+reference tests depend on the historical convention that a trajectory which does
+not escape before a configured time/step/distance cap is Boolean forbidden.
+
+The implementation preserves both requirements through caller-specific policies
+rather than globally redefining a termination state.
+
+### Structured versus Boolean interfaces
+
+Structured density/diagnostic callers use:
+
+```cpp
+Earth::GridlessMode::TraceTrajectoryShared(...)
+Earth::GridlessMode::TraceTrajectorySharedEx(...)
+Earth::Mode3D::TraceTrajectoryMesh(...)
+```
+
+They receive `TrajectoryResult` and preserve `TIME_LIMIT`, `STEP_LIMIT`, and
+`DISTANCE_LIMIT` as unresolved.
+
+Cutoff searches and older callers use the Boolean interfaces:
+
+```cpp
+Earth::GridlessMode::TraceAllowedShared(...)
+Earth::GridlessMode::TraceAllowedSharedEx(...)
+Earth::Mode3D::TraceAllowedMesh(...)
+Earth::Mode3D::TraceAllowedMeshEx(...)
+```
+
+plus private Mode3D/gridless cutoff wrappers.  Those interfaces map inner impact,
+validated trapping, and configured trace limits to `false`; outer escape maps to
+`true`.  Invalid steps, invalid fields, and numerical failures are retried once
+with stricter settings and throw if they remain failures.
+
+The shared helpers in `util/TrajectoryTermination.h` make this distinction
+explicit.  `IsResolvedTermination()` remains unchanged for F3.  The new
+`IsCutoffForbiddenTermination()` is applied only at Boolean cutoff boundaries.
+
+### Internal integration policies
+
+Both Mode3D and gridless tracing select one of two policies:
+
+```text
+StructuredAccurate       F3 and structured density/diagnostic APIs
+LegacyCutoffCompatible   Boolean cutoff APIs and C-series regressions
+```
+
+`StructuredAccurate` treats all timestep restrictions as upper bounds, removes
+the old `100 km/v` minimum-step floor and asymptotic boundary-distance limiter,
+and classifies the first analytic intersection of each accepted trajectory chord
+with the inner sphere or outer box.  This provides the unambiguous termination
+accounting required by F3.
+
+`LegacyCutoffCompatible` retains the pre-F3 boundary-distance limiter,
+`100 km/v` floor, and cutoff endpoint behavior.  It is intentionally confined to
+Boolean cutoff calculations so existing dipole cutoff/penumbra references are
+not changed by the F3 accuracy correction.
+
+### Safety limits and retry behavior
+
+For structured results:
+
+```text
+TIME_LIMIT, STEP_LIMIT, DISTANCE_LIMIT -> unresolved and reported
+```
+
+For Boolean cutoff results:
+
+```text
+TIME_LIMIT, STEP_LIMIT, DISTANCE_LIMIT -> false
+```
+
+Limit outcomes are not retried by cutoff wrappers.  Genuine numerical outcomes
+(`INVALID_TIME_STEP`, `INVALID_FIELD`, `NUMERICAL_FAILURE`) receive one retry
+with half `DT_TRACE`, up to twice the step count, and twice the effective time
+cap.  This prevents a normal trapped low-rigidity trajectory from aborting an
+entire shell while retaining fail-fast diagnostics for an actual field or mover
+problem.
+
+### Descending upper-cutoff scan
+
+The penumbra-safe `UPPER_SCAN` now evaluates its unchanged logarithmic rigidity
+grid from `Rmax` downward.  It stops at the first forbidden sample and bisects the
+bracket between that sample and the allowed sample immediately above it.  This
+returns the same highest forbidden-to-allowed transition as a complete scan, but
+skips lower-rigidity samples that cannot change `Rc_upper` and that are commonly
+the most expensive MESH trajectories.
+
+This change is important for C2/C3/C11 performance: location-level progress no
+longer waits for every low-rigidity trapped trajectory before the upper branch is
+identified.
+
+### Validation documentation
+
+Detailed behavior, parameter semantics, and the C1/C2/C3/C11/F3 validation
+matrix are documented in:
+
+```text
+srcEarth/test/README.md
+srcEarth/test/F3/README.md
+srcEarth/test/C1/README.md
+srcEarth/test/C2/README.md
+srcEarth/test/C3/README.md
+srcEarth/test/C11/README.md
+srcEarth/gridless/READ.ME
+```

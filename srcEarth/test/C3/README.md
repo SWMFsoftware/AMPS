@@ -147,3 +147,39 @@ upper_scan/                    # UPPER_SCAN AMPS run directory, if requested
 
 Each algorithm subdirectory contains its own generated `AMPS_PARAM_C3.in`, AMPS
 log, and AMPS cutoff output.
+
+## Compatibility with the F3 structured tracer
+
+This cutoff test intentionally uses the Boolean cutoff contract, not F3's
+structured density/transmission contract.  The underlying source now has two
+explicit internal policies:
+
+```text
+StructuredAccurate       structured F3/density trajectories
+LegacyCutoffCompatible   Boolean cutoff searches
+```
+
+For this test, inner impact, validated trapping, and configured
+`TIME_LIMIT`/`STEP_LIMIT`/`DISTANCE_LIMIT` outcomes all classify the trial
+rigidity as forbidden (`false`).  A configured limit is not retried.  Only an
+invalid step, invalid field, or numerical integration failure receives one
+stricter retry and can abort the run if it remains unresolved.
+
+This preserves the finite-cap behavior used to generate the pre-F3 cutoff
+references while allowing F3 to retain the same limit outcomes as explicit
+unresolved samples.  The distinction is implemented in the C++ Boolean versus
+structured APIs; the test runner does not relabel output after the calculation.
+
+
+### Descending `UPPER_SCAN` definition
+
+`UPPER_SCAN` first requires `Rmax` to be allowed.  It then scans the logarithmic
+rigidity grid downward.  The first forbidden sample and the immediately higher
+allowed sample bracket the final upper transition; only that interval is
+bisected.  If every grid sample is allowed, the routine returns `Rmin`.  If
+`Rmax` is forbidden, it returns the legacy negative sentinel indicating that no
+allowed upper branch was found inside the search interval.
+
+This is penumbra-safe because it does not assume monotonic access over the full
+interval, and it is faster than evaluating all low-rigidity samples after the
+upper transition is already known.

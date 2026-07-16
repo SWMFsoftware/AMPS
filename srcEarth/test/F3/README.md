@@ -247,6 +247,209 @@ The lightweight geometry/status unit test can be run without AMPS:
 python srcEarth/test/F3/run_boundary_unit_test.py
 ```
 
+## Compatibility implementation: F3 accuracy without breaking cutoff regressions
+
+F3 and the older C-series cutoff tests intentionally do not use the same final
+Boolean interpretation, even though they share field models, movers, geometry,
+and most of the trajectory kernel.  This distinction is required because F3
+must quantify unresolved sampling, while a cutoff search must provide a Boolean
+classification at every trial rigidity.
+
+### Structured F3 call path
+
+The F3 density/transmission calculation calls the structured interfaces:
+
+```cpp
+Earth::GridlessMode::TraceTrajectoryShared(...)
+Earth::GridlessMode::TraceTrajectorySharedEx(...)
+```
+
+Mode3D density/diagnostic calculations use the corresponding:
+
+```cpp
+Earth::Mode3D::TraceTrajectoryMesh(...)
+```
+
+These calls select the internal `StructuredAccurate` integration policy and
+return a complete `TrajectoryResult`.  They do not fold trace limits into
+forbidden.  The result includes the termination code, elapsed time, cumulative
+path length, step count, retry count, trap-detector counters, momentum spread,
+and optionally the outer-boundary exit state.
+
+For F3, the categories are accumulated as:
+
+```text
+N_allowed    = OUTER_BOUNDARY_ALLOWED
+N_forbidden  = INNER_BOUNDARY_FORBIDDEN + MAGNETICALLY_TRAPPED_FORBIDDEN
+N_unresolved = TIME_LIMIT + STEP_LIMIT + DISTANCE_LIMIT
+             + INVALID_TIME_STEP + INVALID_FIELD + NUMERICAL_FAILURE
+```
+
+The physical transmission is then:
+
+```text
+T_resolved = N_allowed / (N_allowed + N_forbidden)
+```
+
+and the independently reported unresolved fraction is:
+
+```text
+unresolved_fraction = N_unresolved / N_sampled
+```
+
+This prevents a user-selected numerical cap from masquerading as a physical
+loss mechanism.
+
+### Cutoff compatibility call path
+
+The C-series cutoff searches call Boolean interfaces, including the internal
+Mode3D/gridless cutoff classifiers and the exported `TraceAllowed*` wrappers.
+Those calls select `LegacyCutoffCompatible` integration and interpret:
+
+```text
+INNER_BOUNDARY_FORBIDDEN       -> false
+MAGNETICALLY_TRAPPED_FORBIDDEN -> false
+TIME_LIMIT                     -> false
+STEP_LIMIT                     -> false
+DISTANCE_LIMIT                 -> false
+OUTER_BOUNDARY_ALLOWED         -> true
+```
+
+The limit mapping restores the historical cutoff meaning: the particle was not
+shown to have access before the configured safety cap.  It does **not** modify
+the structured result returned to F3.
+
+Only `INVALID_TIME_STEP`, `INVALID_FIELD`, and `NUMERICAL_FAILURE` are retried by
+the Boolean wrappers.  A limit is not retried, because the limit itself is the
+configured classification rule and retrying can double the cost without changing
+the answer.  If a genuine numerical failure survives the stricter retry, the
+calculation still terminates with a diagnostic rather than silently treating a
+broken integration as forbidden.
+
+### Why two time-step policies are retained
+
+The F3 corrections changed two historical cutoff stepping behaviors:
+
+1. The `100 km / v` minimum-displacement floor was removed because it could
+   increase a timestep that had already been reduced by the gyro-angle accuracy
+   requirement.
+2. The `0.2 * distance_to_boundary / v` limiter was removed because repeated
+   proportional shortening can approach a boundary asymptotically.
+
+Those changes are correct for a resolved density/transmission calculation, but
+they also change the detailed Boolean penumbra sampled by old cutoff reference
+runs.  The implementation therefore keeps both policies explicitly:
+
+| Detail | F3 `StructuredAccurate` | Cutoff `LegacyCutoffCompatible` |
+|---|---|---|
+| `DT_TRACE` | Upper bound | Base value, subject to legacy controls |
+| Gyro-angle limiter | Upper bound | Applied |
+| Remaining trace time | Upper bound | Applied |
+| `100 km / v` floor | Removed | Retained |
+| `0.2*d_boundary/v` limiter | Removed | Retained |
+| Boundary decision | First analytic chord event | Legacy cutoff endpoint path |
+| Trace limit | Unresolved | Boolean forbidden |
+| Retry on trace limit | Optional F3 accounting retry | No |
+| Retry on numerical failure | Reported by structured workflow | One stricter retry |
+
+The policy split is inside the C++ tracer, not in the test harness.  A production
+cutoff run and a C-series test therefore exercise the same behavior.
+
+### Exact boundary processing used by F3
+
+For `StructuredAccurate`, every accepted numerical step supplies a segment
+`x_before -> x_after`.  The boundary utility computes the first intersection
+fraction along that segment with:
+
+- the inner absorbing sphere; and
+- the six faces of the outer Cartesian box.
+
+The earliest valid event wins.  This matters when one step is long enough to
+cross a surface and end beyond it, or in a pathological case where a segment
+could intersect more than one surface.  An outer event can also populate the
+interpolated exit state needed by anisotropic boundary spectra.
+
+`BOUNDARY_EVENT_MAX_ITER` remains accepted for input compatibility, but the
+current line/sphere and line/box intersections are analytic; they do not use an
+iterative root solve.  `BOUNDARY_REFINE_TOL_M` controls geometric tolerances and
+the inward offset used when evaluating the field at an outer exit.
+
+### Finite limits remain useful
+
+F3 does not require all safety caps to be disabled.  They protect a production
+run from an unexpectedly expensive orbit and quantify how much of the sampled
+phase space is unresolved.  In particular:
+
+```text
+MAX_TRACE_TIME      limits elapsed integration time
+MAX_STEPS           limits accepted mover steps
+MAX_TRACE_DISTANCE  limits cumulative traveled path in Re
+```
+
+`MAX_TRACE_DISTANCE 0.0` disables only the cumulative path-length cap.  It does
+not disable time or step limits.  A trapped particle can accumulate a large path
+length while remaining spatially close to Earth, so path length must not be
+confused with radial distance.
+
+For F3, a cap should be selected together with `--unresolved-tol`.  A run passes
+only when its unresolved fraction is acceptably small; the code does not obtain a
+clean transmission merely by relabeling capped trajectories as forbidden.
+
+### Trap detection is an accelerator and physical classifier, not a fallback
+
+The static-dipole trap detector can terminate a confidently trapped orbit before
+it consumes a time or distance cap.  Its decision requires multiple independent
+conditions: mirror-point count, complete bounce cycles, stable radial envelopes,
+outer-boundary margin, and momentum conservation.  A trajectory that does not
+meet all conditions remains unresolved if it later reaches a numerical cap.
+
+The Boolean cutoff path can also use the detector, but cutoff compatibility does
+not depend on it.  A trapped orbit that is not detected still reaches a finite
+cap and returns `false` rather than aborting the scan.
+
+### `UPPER_SCAN` optimization used by the cutoff tests
+
+F3 does not use the scalar cutoff `UPPER_SCAN` for every directional transmission
+sample; nevertheless, the F3-compatible source changes must coexist with the
+C3/C11 upper-cutoff algorithm and large C2 shell runs.
+
+The coarse rigidity grid is now traversed from `Rmax` downward.  Once the first
+forbidden sample is encountered, the immediately higher sample is the allowed
+side of the highest transition, and only that pair is bisected.  Lower samples
+cannot change `Rc_upper`.  This avoids spending most of a MESH run on trapped
+low-rigidity trajectories while the location progress remains at zero.
+
+The descending traversal uses the same logarithmic grid and returns the same
+upper bracket as the prior full-grid evaluation.  It changes evaluation order and
+cost, not the mathematical definition of the upper cutoff.
+
+### Files and tests covering the implementation
+
+Core implementation:
+
+```text
+srcEarth/util/TrajectoryTermination.h
+srcEarth/gridless/CutoffRigidityGridless.cpp
+srcEarth/gridless/CutoffRigidityGridless.h
+srcEarth/3d/CutoffRigidityMode3D.cpp
+srcEarth/3d/CutoffRigidityMode3D.h
+```
+
+Primary validation:
+
+```text
+F3   structured termination accounting and flux folding
+C1   absolute dipole cutoff
+C2   longitude and north/south symmetry, including MESH
+C3   upper-cutoff/penumbra regression
+C11  BINARY collapse diagnostic and UPPER_SCAN recovery
+```
+
+The standalone F3 unit test verifies the geometry/status primitives without a
+full AMPS build.  The full regression suite is still required to validate the
+compiled executable, MPI/thread configuration, field backend, and generated
+reference products.
+
 ## Progress and hang diagnostics
 
 F3 is substantially more expensive than F1/F2 because every energy/rigidity
