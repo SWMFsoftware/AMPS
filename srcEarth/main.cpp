@@ -299,6 +299,27 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
     p.cutoff.upperScanN = cli.cutoffUpperScanN;
   }
 
+  // Boolean cutoff trajectory integration policy.  Keep LEGACY as the global
+  // default for backward compatibility, while allowing tests such as C14 to
+  // request the corrected F3-quality integrator explicitly.
+  if (!cli.cutoffTracePolicy.empty()) {
+    const std::string policy=EarthUtil::ToUpper(cli.cutoffTracePolicy);
+    if (policy=="LEGACY" || policy=="COMPATIBLE" ||
+        policy=="LEGACY_CUTOFF" || policy=="C_SERIES") {
+      p.cutoff.traceIntegrationPolicy="LEGACY";
+    }
+    else if (policy=="ACCURATE" || policy=="STRUCTURED" ||
+             policy=="F3" || policy=="UPPER_BOUNDED") {
+      p.cutoff.traceIntegrationPolicy="ACCURATE";
+    }
+    else {
+      std::cerr << "Error: unknown cutoff trace policy '"
+                << cli.cutoffTracePolicy << "' for " << modeLabel
+                << ". Valid values: LEGACY or ACCURATE.\n";
+      return false;
+    }
+  }
+
   // Trajectory time-step policy.  In adaptive mode DT_TRACE is a maximum step and
   // the pusher may reduce it using gyro/boundary criteria.  In fixed-step mode
   // DT_TRACE is used directly (except for trimming the last step to the remaining

@@ -331,6 +331,13 @@ CliOptions ParseCli(int argc,char** argv) {
       if (opt.cutoffUpperScanN < 2)
         exit(__LINE__,__FILE__,"-cutoff-upper-scan-n must be >= 2");
     }
+    else if (a=="-cutoff-trace-policy" || a=="--cutoff-trace-policy" ||
+             a=="-cutoff-integration-policy" || a=="--cutoff-integration-policy" ||
+             a=="-mode3d-cutoff-trace-policy" || a=="--mode3d-cutoff-trace-policy" ||
+             a=="-gridless-cutoff-trace-policy" || a=="--gridless-cutoff-trace-policy") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-trace-policy");
+      opt.cutoffTracePolicy=argv[++i];
+    }
     else if (a=="-mode3d-output-initialized" || a=="--mode3d-output-initialized" ||
              a=="-output-3d-initialized" || a=="--output-3d-initialized") {
       // Optional Mode3D diagnostic output. Kept as a boolean flag because the
@@ -666,6 +673,17 @@ std::string HelpMessage(const char* progName) {
   out << "      Input-file analogue (#CUTOFF_RIGIDITY or #NUMERICAL):\n";
   out << "        CUTOFF_SEARCH_ALGORITHM  UPPER_SCAN   ! UPPER_SCAN | BINARY\n";
   out << "        CUTOFF_UPPER_SCAN_N      80           ! log-rigidity pre-scan nodes\n\n";
+
+  out << "  -cutoff-trace-policy | --cutoff-trace-policy <LEGACY|ACCURATE>   (optional)\n";
+  out << "      Selects the numerical integration policy used by Boolean cutoff\n";
+  out << "      trajectory classification in both standalone Mode3D and gridless.\n";
+  out << "        LEGACY    Default. Preserves historical C-series numerics, including\n";
+  out << "                  the boundary-distance limiter and 100-km minimum step.\n";
+  out << "        ACCURATE  Uses the corrected F3 upper-bound-only timestep and exact\n";
+  out << "                  segment/boundary event classification.\n";
+  out << "      Time, step, and distance limits remain FORBIDDEN in the Boolean cutoff\n";
+  out << "      API under either policy; structured F3 results remain unchanged.\n";
+  out << "      Input-file analogue: CUTOFF_TRACE_POLICY LEGACY|ACCURATE.\n\n";
 
   out << "  -density-parallel | --density-parallel <OPENMP|THREADS|SERIAL>   (optional)\n";
   out << "      Select the Mode3D density-backtracking shared-memory backend inside\n";

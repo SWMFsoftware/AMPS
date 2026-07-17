@@ -827,6 +827,15 @@ enum class TraceIntegrationPolicy3D {
     LegacyCutoffCompatible
 };
 
+static inline TraceIntegrationPolicy3D CutoffTraceIntegrationPolicy3D(
+        const EarthUtil::AmpsParam& prm) {
+    const std::string policy=EarthUtil::ToUpper(prm.cutoff.traceIntegrationPolicy);
+    return (policy=="ACCURATE" || policy=="STRUCTURED" || policy=="F3" ||
+            policy=="UPPER_BOUNDED")
+        ? TraceIntegrationPolicy3D::StructuredAccurate
+        : TraceIntegrationPolicy3D::LegacyCutoffCompatible;
+}
+
 // Preserve the pre-F3 cutoff integration policy for Boolean cutoff searches.  The
 // historical C-series references were generated with this boundary-distance limiter
 // and 100-km minimum-displacement floor.  Structured density/F3 trajectories use the
@@ -1194,9 +1203,11 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3DWithSingleRetry(
                             const DomainBox3D& box,
                             double maxTime_s,
                             bool captureExitState) {
+    const TraceIntegrationPolicy3D integrationPolicy=
+        CutoffTraceIntegrationPolicy3D(prm);
     auto result=TraceTrajectory3D(prm,field,x0_m,v0_unit,R_GV,q_C,m0_kg,box,
                                   maxTime_s,captureExitState,
-                                  TraceIntegrationPolicy3D::LegacyCutoffCompatible);
+                                  integrationPolicy);
     if (result.resolved() ||
         Earth::GridlessMode::IsTraceLimitTermination(result.termination))
         return result;
@@ -1218,7 +1229,7 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3DWithSingleRetry(
     }
     result=TraceTrajectory3D(retryPrm,field,x0_m,v0_unit,R_GV,q_C,m0_kg,box,
                              retryTime,captureExitState,
-                             TraceIntegrationPolicy3D::LegacyCutoffCompatible);
+                             integrationPolicy);
     result.retryCount=1;
     return result;
 }
@@ -3179,6 +3190,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             << "Rigidity range : [" << Rmin << ", " << Rmax << "] GV\n"
             << "Cutoff search  : " << prm.cutoff.searchAlgorithm
             << " (upper-scan N=" << CutoffUpperScanPointCount_(prm) << ")\n"
+            << "Trace policy   : " << prm.cutoff.traceIntegrationPolicy << "\n"
             << "Sampling       : " << (samplingVertical ? "VERTICAL" : "ISOTROPIC") << "\n";
 
         if (!samplingVertical)

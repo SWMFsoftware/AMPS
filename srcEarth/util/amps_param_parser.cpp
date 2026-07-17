@@ -2467,6 +2467,15 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         p.cutoff.upperScanN=std::stoi(val);
       }
 
+      // Select the numerical integration policy used by the Boolean cutoff
+      // classifier.  This is deliberately separate from the structured F3
+      // trajectory API, which always uses the corrected accurate policy.
+      else if (uKey=="CUTOFF_TRACE_POLICY" ||
+               uKey=="CUTOFF_INTEGRATION_POLICY" ||
+               uKey=="CUTOFF_TRAJECTORY_POLICY") {
+        p.cutoff.traceIntegrationPolicy=ToUpper(Trim(val));
+      }
+
       // Cutoff sampling strategy: VERTICAL or ISOTROPIC.
       // We store the string in uppercase for robust comparisons later.
       else if (uKey=="CUTOFF_SAMPLING") p.cutoff.sampling=ToUpper(val);
@@ -3219,6 +3228,21 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
     if (p.cutoff.upperScanN > 0 && p.cutoff.upperScanN < 2) {
       exit(__LINE__,__FILE__,"CUTOFF_UPPER_SCAN_N must be >= 2 when specified");
+    }
+    {
+      const std::string policy=ToUpper(p.cutoff.traceIntegrationPolicy);
+      if (policy=="LEGACY" || policy=="COMPATIBLE" ||
+          policy=="LEGACY_CUTOFF" || policy=="C_SERIES") {
+        p.cutoff.traceIntegrationPolicy="LEGACY";
+      }
+      else if (policy=="ACCURATE" || policy=="STRUCTURED" ||
+               policy=="F3" || policy=="UPPER_BOUNDED") {
+        p.cutoff.traceIntegrationPolicy="ACCURATE";
+      }
+      else {
+        exit(__LINE__,__FILE__,
+             "CUTOFF_TRACE_POLICY must be LEGACY or ACCURATE");
+      }
     }
     if (p.cutoff.maxParticlesPerPoint < 1) {
       exit(__LINE__,__FILE__,"CUTOFF_MAX_PARTICLES must be >= 1");

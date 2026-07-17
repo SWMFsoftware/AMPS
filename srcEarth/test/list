@@ -81,3 +81,7 @@ last pass: 0588ddb3c3be386c75a85a2aa4feb4a733600878
 P srcEarth/test/C14/run_C14.py -np 4 -nt 16
 last pass:
 
+P srcEarth/test/C14/run_C14.py --check-profile CROSS_SOLVER --mode3d-field-eval MESH --cutoff-scan-n 100 --cutoff-trace-policy LEGACY --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 3 --mode3d-mesh-coarsening LINEAR -np 4 -nt 16
+last pass:
+
+

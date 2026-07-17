@@ -1048,6 +1048,15 @@ enum class TraceIntegrationPolicy {
   LegacyCutoffCompatible
 };
 
+static inline TraceIntegrationPolicy CutoffTraceIntegrationPolicy(
+    const EarthUtil::AmpsParam& prm) {
+  const std::string policy=EarthUtil::ToUpper(prm.cutoff.traceIntegrationPolicy);
+  return (policy=="ACCURATE" || policy=="STRUCTURED" || policy=="F3" ||
+          policy=="UPPER_BOUNDED")
+      ? TraceIntegrationPolicy::StructuredAccurate
+      : TraceIntegrationPolicy::LegacyCutoffCompatible;
+}
+
 // Legacy cutoff calculations intentionally retain the pre-F3 integration policy.
 // The historical C-series reference solutions were generated with a boundary-distance
 // limiter and a 100-km minimum-displacement floor.  Although that floor is not suitable
@@ -1424,9 +1433,10 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryWithSingleRetry(
                              double R_GV,
                              double maxTraceTimeOverride_s,
                              bool captureExitState) {
+  const TraceIntegrationPolicy integrationPolicy=CutoffTraceIntegrationPolicy(prm);
   auto result=TraceTrajectoryImpl(prm,field,x0_m,v0_unit,R_GV,
                                   maxTraceTimeOverride_s,captureExitState,
-                                  TraceIntegrationPolicy::LegacyCutoffCompatible);
+                                  integrationPolicy);
   if (result.resolved() ||
       Earth::GridlessMode::IsTraceLimitTermination(result.termination))
     return result;
@@ -1449,7 +1459,7 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryWithSingleRetry(
   }
   result=TraceTrajectoryImpl(retryPrm,field,x0_m,v0_unit,R_GV,
                              retryTime,captureExitState,
-                             TraceIntegrationPolicy::LegacyCutoffCompatible);
+                             integrationPolicy);
   result.retryCount=1;
   return result;
 }
@@ -2250,6 +2260,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
               << ((prm.cutoff.upperScanN > 0) ? std::max(2,prm.cutoff.upperScanN)
                                                : std::max(8,prm.cutoff.nEnergy))
               << ")\n";
+    std::cout << "Trace policy    : " << prm.cutoff.traceIntegrationPolicy << "\n";
     std::cout << "CUTOFF_SAMPLING : " << (samplingVertical ? "VERTICAL" : "ISOTROPIC") << "\n";
     if (!samplingVertical) {
       std::cout << "Directions grid : " << dirs.size()

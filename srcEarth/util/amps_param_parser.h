@@ -355,6 +355,20 @@ namespace EarthUtil {
     // CUTOFF_NENERGY so existing inputs control the scan resolution.
     int upperScanN{0}; // CUTOFF_UPPER_SCAN_N
 
+    // Numerical integration policy used by the Boolean cutoff classifier.
+    //
+    // LEGACY (default): preserve the historical C-series cutoff behavior,
+    // including the boundary-distance limiter and the 100-km minimum travel
+    // distance per full-orbit step.  This is the backward-compatible default
+    // for existing C1/C2/C3/C11 references.
+    //
+    // ACCURATE: use the corrected F3 integration policy.  DT_TRACE and the
+    // gyro-angle condition are strict upper bounds, no minimum displacement is
+    // imposed, and segment/boundary intersections are classified explicitly.
+    // Time/step/distance limits are still interpreted as FORBIDDEN by the
+    // Boolean cutoff API; only the numerical integration policy changes.
+    std::string traceIntegrationPolicy{"LEGACY"}; // CUTOFF_TRACE_POLICY
+
     // Cutoff sampling mode.
     //
     // VERTICAL:

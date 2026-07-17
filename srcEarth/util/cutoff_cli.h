@@ -273,6 +273,14 @@ namespace EarthUtil {
     // 0 means no CLI override.
     int cutoffUpperScanN{0};
 
+    // -cutoff-trace-policy <LEGACY|ACCURATE>
+    // Optional override for #CUTOFF_RIGIDITY / CUTOFF_TRACE_POLICY.
+    // The default remains LEGACY so existing cutoff regression tests retain
+    // their historical numerical trajectory policy.  ACCURATE selects the
+    // corrected upper-bound-only timestep and exact boundary-event handling
+    // used by the structured F3 tracer.
+    std::string cutoffTracePolicy{""};
+
     // -adaptive-dt T|F
     // Optional CLI override for #NUMERICAL ADAPTIVE_DT.
     // Sentinel convention:
