@@ -591,10 +591,11 @@ static void MergeDipoleFieldErrorLocalStats_(
 }
 
 // Evaluate the configured analytic dipole directly from the input parameters rather
-// than through Dipole::gParams.  The latter is shared mutable state and is configured by
-// several initialization paths; using the explicit formula here makes the diagnostic
-// thread-safe and guarantees that the reference field corresponds exactly to `prm`.
-static bool EvaluateConfiguredDipoleReference_(
+// than through Dipole::gParams. The latter is shared mutable state and is configured by
+// several initialization paths. Using the explicit formula here makes both the mesh-field
+// diagnostic and the threaded Mode3D analytic trajectory evaluator reentrant, while also
+// guaranteeing that the evaluated field corresponds exactly to `prm`.
+static bool EvaluateConfiguredDipoleField_(
     const EarthUtil::AmpsParam& prm,const double x_m[3],double B_T[3]) {
 
     const double x=x_m[0],y=x_m[1],z=x_m[2];
@@ -629,7 +630,7 @@ static void RecordDipoleFieldError_(
     cDipoleFieldErrorLocalStats_& localStats) {
 
     double BReference_T[3]={0.0,0.0,0.0};
-    if (!EvaluateConfiguredDipoleReference_(prm,x_m,BReference_T)) return;
+    if (!EvaluateConfiguredDipoleField_(prm,x_m,BReference_T)) return;
 
     const double referenceNorm2=
         BReference_T[0]*BReference_T[0]+
@@ -701,6 +702,41 @@ public:
 
         if (prm_.mode3d.forceAnalyticMagneticField) {
             double B[3] = {0.0, 0.0, 0.0};
+
+            const std::string model =
+              EarthUtil::ToUpper(prm_.field.model);
+
+            // These models are implemented entirely by reentrant C++ code and
+            // therefore may be evaluated concurrently by trajectory worker threads.
+            if (model == "NONE") {
+              B_T.x = 0.0;
+              B_T.y = 0.0;
+              B_T.z = 0.0;
+              return;
+            }
+
+            // Evaluate the centered dipole with the stateless helper defined
+            // above. The helper receives the moment scale and tilt through `prm_`
+            // and uses only stack-local variables; it does not call SetMomentScale(),
+            // SetTiltDeg(), or read/write Dipole::gParams. Consequently, independent
+            // trajectory workers can evaluate the analytic dipole concurrently and
+            // do not serialize on the empirical-field mutex below.
+            //
+            // Do not replace this call with the historical two-argument
+            // Dipole::GetB_Tesla(x,B) interface in this threaded path. That interface
+            // reads the process-global Dipole::gParams object and is safe only after
+            // the global parameters have been initialized and remain immutable.
+            if (model == "DIPOLE") {
+                if (!EvaluateConfiguredDipoleField_(prm_,xArr,B)) {
+                    exit(__LINE__,__FILE__,
+                         "[Mode3D] invalid position or non-finite analytic dipole field.");
+                }
+
+                B_T.x = B[0];
+                B_T.y = B[1];
+                B_T.z = B[2];
+                return;
+            }
 
             // Analytic field wrappers may use shared Fortran/common-block state.
             // Serialize this debug path; compact-array interpolation below requires
