@@ -34,8 +34,16 @@ from pathlib import Path
 TEST_ID = "F15"
 TEST_NAME = "Density normalization from differential flux"
 
+# Use the same physical constants and particle mass as DensityGridless.cpp and
+# AMPS_PARAM_F15_gridless.in.  Deriving the rest energy instead of hard-coding
+# a rounded proton value prevents the test harness from introducing a small
+# artificial density mismatch in the relativistic 1/v(E) reference.
 C_LIGHT = 299792458.0
-MP_MEV = 938.2720813
+ELEMENTARY_CHARGE_C = 1.602176634e-19
+MEV_TO_J = 1.0e6 * ELEMENTARY_CHARGE_C
+AMU_KG = 1.66053906660e-27
+PROTON_MASS_AMU = 1.007276466621
+MP_MEV = PROTON_MASS_AMU * AMU_KG * C_LIGHT ** 2 / MEV_TO_J
 J0_DEFAULT = 1.0
 WIDTH_FRAC_DEFAULT = 0.02
 CASE_CENTERS_DEFAULT = [1.0, 10.0, 100.0, 1000.0]

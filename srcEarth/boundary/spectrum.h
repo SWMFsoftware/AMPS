@@ -293,8 +293,17 @@ public:
   double GetSpectrum(double E_J) const {
     if (!(E_J > 0.0)) return 0.0;
 
-    const double E_MeV = E_J / MeV_IN_J;
-    if (E_MeV < spec_emin_MeV_ || E_MeV > spec_emax_MeV_) return 0.0;
+    double E_MeV = E_J / MeV_IN_J;
+
+    // Energy-grid values used by the density/flux integrators are commonly
+    // constructed in MeV, converted to Joules, and then converted back to MeV
+    // here.  A mathematically exact endpoint such as 0.99 or 99 MeV can move a
+    // few floating-point ulps below SPEC_EMIN during that round trip.  A strict
+    // comparison would then classify the first integration node as outside the
+    // spectrum and incorrectly remove half of the first trapezoid.  Accept and
+    // clamp values that differ from either configured bound only by roundoff;
+    // values farther outside the support remain zero exactly as before.
+    if (!ClampEnergyToConfiguredSupport_(E_MeV)) return 0.0;
 
     const double val_perMeV = GetSpectrumPerMeV_(E_MeV);
     if (!(val_perMeV > 0.0)) return 0.0;
@@ -307,7 +316,12 @@ public:
    */
   double GetSpectrumPerMeV(double E_MeV) const {
     if (!(E_MeV > 0.0)) return 0.0;
-    if (E_MeV < spec_emin_MeV_ || E_MeV > spec_emax_MeV_) return 0.0;
+
+    // Apply the same endpoint policy as GetSpectrum().  Keeping both public
+    // entry points consistent prevents a caller using MeV directly from seeing
+    // different support behavior than a caller using Joules.
+    if (!ClampEnergyToConfiguredSupport_(E_MeV)) return 0.0;
+
     return GetSpectrumPerMeV_(E_MeV);
   }
 
@@ -327,6 +341,51 @@ public:
   }
 
 private:
+  /**
+   * @brief Accept an energy inside the configured spectrum support, allowing
+   *        only a floating-point roundoff-sized excursion at either endpoint.
+   *
+   * Spectrum energies frequently follow the path
+   *
+   *   MeV -> Joules -> MeV.
+   *
+   * The result can differ from the original endpoint by one or several ulps.
+   * Such a value is physically the endpoint and must not be rejected.  The
+   * tolerance is relative to the largest relevant energy scale and is kept at
+   * only 32 machine epsilons, so it cannot mask a physically meaningful value
+   * outside [SPEC_EMIN,SPEC_EMAX].  Accepted near-endpoint values are clamped
+   * to the exact configured bound before table interpolation or analytic
+   * spectrum evaluation.
+   *
+   * @param[in,out] E_MeV Energy in MeV.  It is clamped to a configured bound
+   *                     only when it lies within the roundoff tolerance.
+   * @return true when the energy belongs to the support; false when it is
+   *         genuinely outside the configured interval or is non-finite.
+   */
+  bool ClampEnergyToConfiguredSupport_(double& E_MeV) const noexcept {
+    if (!std::isfinite(E_MeV)) return false;
+
+    const double scale = std::max({
+        1.0,
+        std::fabs(E_MeV),
+        std::fabs(spec_emin_MeV_),
+        std::fabs(spec_emax_MeV_)
+    });
+
+    const double tolerance =
+        32.0 * std::numeric_limits<double>::epsilon() * scale;
+
+    if (E_MeV < spec_emin_MeV_ - tolerance ||
+        E_MeV > spec_emax_MeV_ + tolerance) {
+      return false;
+    }
+
+    if (E_MeV < spec_emin_MeV_) E_MeV = spec_emin_MeV_;
+    if (E_MeV > spec_emax_MeV_) E_MeV = spec_emax_MeV_;
+
+    return true;
+  }
+
   // ---------- Internal evaluation ----------
   double GetSpectrumPerMeV_(double E_MeV) const {
     switch (type_) {

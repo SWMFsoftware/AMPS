@@ -44,13 +44,33 @@ and, for protons,
 n = 4π J0/c * [sqrt(E2(E2 + 2m)) - sqrt(E1(E1 + 2m))]
 ```
 
-where `E1`, `E2`, and `m = 938.2720813 MeV` are in MeV.  This follows from
+where `E1`, `E2`, and `m` are in MeV.  The runner derives `m` from the
+same `MASS_AMU = 1.007276466621`, atomic-mass-unit constant, elementary
+charge, and speed of light used by `DensityGridless.cpp` (approximately
+`938.272088161 MeV`).  This follows from
 
 ```text
 v(E)/c = sqrt(E(E+2m)) / (E+m)
 ```
 
 so the test directly exercises the relativistic `1/v(E)` density factor.
+
+
+## Spectrum-endpoint roundoff protection
+
+F15 deliberately places `SPEC_EMIN` and `SPEC_EMAX` exactly on the two TABLE
+spectrum nodes.  The density solver evaluates the spectrum after converting an
+energy from MeV to Joules and back to MeV.  Values such as `0.99` and `99` MeV
+can return a few floating-point ulps below the original lower bound.  A strict
+`E < SPEC_EMIN` comparison would therefore set the first spectrum node to zero
+and remove half of the first trapezoidal integration cell, producing an
+approximately `0.388%` common error in both flux and density.
+
+`cSpectrum::GetSpectrum()` and `GetSpectrumPerMeV()` now accept and clamp only
+roundoff-sized endpoint excursions (32 machine epsilons at the local energy
+scale).  Energies genuinely outside the configured support still return zero.
+This behavior is part of what F15 protects: broad-spectrum tests such as F1,
+F2, and F4 do not necessarily expose a one-node endpoint loss.
 
 ## Run
 
