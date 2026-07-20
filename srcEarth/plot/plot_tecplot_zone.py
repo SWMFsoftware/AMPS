@@ -163,18 +163,26 @@ def reshape_zone(zone, variables, lon_name, lat_name, value_name):
     return lon, lat, val
 
 
-def plot_zone(path, zone_spec, value_name, lon_name, lat_name, output, show, contour, levels, dpi):
+def plot_zone(path, zone_spec, value_name, lon_name, lat_name, output, show, contour, levels, dpi, cmap=None):
     variables, zones = read_tecplot_point_file(path)
     zone_index, zone = select_zone(zones, zone_spec)
     lon, lat, val = reshape_zone(zone, variables, lon_name, lat_name, value_name)
 
     fig, ax = plt.subplots(figsize=(9, 4.8))
 
+    # Preserve the historical behavior when --cmap is omitted: Matplotlib
+    # chooses the colormap from its active configuration (normally viridis).
+    # When a name is supplied, resolve it here so an invalid name produces a
+    # clear command-line error before Matplotlib starts drawing the plot.
+    plot_kwargs = {}
+    if cmap is not None:
+        plot_kwargs["cmap"] = plt.get_cmap(cmap)
+
     if contour:
-        m = ax.contourf(lon, lat, val, levels=levels)
+        m = ax.contourf(lon, lat, val, levels=levels, **plot_kwargs)
     else:
         # shading='auto' supports both center-like and edge-like coordinates.
-        m = ax.pcolormesh(lon, lat, val, shading="auto")
+        m = ax.pcolormesh(lon, lat, val, shading="auto", **plot_kwargs)
 
     cbar = fig.colorbar(m, ax=ax)
     cbar.set_label(value_name)
@@ -226,6 +234,15 @@ Examples:
   Use filled contours instead of pcolormesh:
     ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_n000000_t00000000.000s.dat -z 1 --var Rc_GV --contour --levels 40
 
+  Select a Matplotlib colormap:
+    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_n000000_t00000000.000s.dat -z 1 --var Rc_GV --cmap plasma
+
+  Reverse a colormap by adding the _r suffix:
+    ./plot_tecplot_zone.py -f cutoff_3d_shells.swmf_n000000_t00000000.000s.dat -z 1 --var Rc_GV --cmap coolwarm_r
+
+Common colormap names:
+  viridis, plasma, inferno, magma, cividis, coolwarm, seismic, jet
+
 Common variables in cutoff shell files:
   lon_deg     longitude coordinate
   lat_deg     latitude coordinate
@@ -259,6 +276,16 @@ Common variables in cutoff shell files:
     )
     parser.add_argument("--list-zones", action="store_true", help="List zones and variables, then exit.")
     parser.add_argument("--contour", action="store_true", help="Use contourf instead of pcolormesh.")
+    parser.add_argument(
+        "--cmap",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Matplotlib colormap name, for example viridis, plasma, inferno, "
+            "coolwarm, or seismic. Add the _r suffix to reverse a map. "
+            "If omitted, preserve Matplotlib's current default colormap."
+        ),
+    )
     parser.add_argument(
         "--levels",
         type=int,
@@ -294,6 +321,7 @@ Common variables in cutoff shell files:
             contour=args.contour,
             levels=args.levels,
             dpi=args.dpi,
+            cmap=args.cmap,
         )
         return 0
 
