@@ -1,0 +1,78 @@
+! ============================================================================
+! AMPS Earth validation test C6: global effective vertical cutoff rigidity
+!
+! This template is rendered independently for every reference epoch.  C6 uses
+! the internal IGRF field only and traces vertically incident protons from a
+! geodetic 20-km shell.  PENUMBRA_SCAN evaluates one complete rigidity sequence
+! and writes Rc_lower, Rc_effective, and Rc_upper.  The published Smart--Shea,
+! CARI-7, and Gerontidou tables contain Rc_effective, so that is the quantity
+! compared by run_C6.py.
+!
+! Do not replace PENUMBRA_SCAN with UPPER_SCAN for this test: Rc_upper is not the
+! published effective cutoff when allowed and forbidden bands alternate in the
+! penumbra.
+! ============================================================================
+
+#CALCULATION_MODE
+CALC_TARGET             CUTOFF_RIGIDITY
+FIELD_EVAL_METHOD       GRIDLESS
+
+#CUTOFF_RIGIDITY
+CUTOFF_EMIN             __CUTOFF_EMIN_MEV__
+CUTOFF_EMAX             __CUTOFF_EMAX_MEV__
+CUTOFF_MAX_PARTICLES    1
+CUTOFF_NENERGY          50
+CUTOFF_SAMPLING         VERTICAL
+CUTOFF_SEARCH_ALGORITHM PENUMBRA_SCAN
+CUTOFF_UPPER_SCAN_N     __CUTOFF_SCAN_N__
+CUTOFF_SCAN_SPACING     LINEAR
+CUTOFF_TRACE_POLICY     __CUTOFF_TRACE_POLICY__
+CUTOFF_MAX_TRAJ_TIME    __MAX_TRACE_TIME_S__
+
+#PARTICLE_SPECIES
+SPECIES                 PROTON
+CHARGE                  1
+MASS_AMU                __MASS_AMU__
+
+#BACKGROUND_FIELD
+FIELD_MODEL             IGRF
+EPOCH                   __EPOCH_UTC__
+
+#DOMAIN_BOUNDARY
+DOMAIN_X_MIN            -__DOMAIN_HALF_SIZE_RE__
+DOMAIN_X_MAX             __DOMAIN_HALF_SIZE_RE__
+DOMAIN_Y_MIN            -__DOMAIN_HALF_SIZE_RE__
+DOMAIN_Y_MAX             __DOMAIN_HALF_SIZE_RE__
+DOMAIN_Z_MIN            -__DOMAIN_HALF_SIZE_RE__
+DOMAIN_Z_MAX             __DOMAIN_HALF_SIZE_RE__
+R_INNER                  1.0
+
+#SPECTRUM
+! A spectrum is required by the common parser but is not used by cutoff tracing.
+SPECTRUM_TYPE           POWER_LAW
+SPEC_J0                 1.0
+SPEC_GAMMA              2.0
+SPEC_E0                 1000.0
+SPEC_EMIN               1.0
+SPEC_EMAX               20000.0
+
+#OUTPUT_DOMAIN
+OUTPUT_MODE             SHELLS
+SHELL_COUNT             1
+SHELL_ALTS_KM           __ALTITUDE_KM__
+SHELL_LON_RES_DEG       __SHELL_LON_RES_DEG__
+SHELL_LAT_RES_DEG       __SHELL_LAT_RES_DEG__
+SHELL_GEOMETRY          GEODETIC
+
+#OUTPUT_OPTIONS
+OUTPUT_COORDS           GEO
+
+#NUMERICAL
+DT_TRACE                __DT_TRACE_S__
+ADAPTIVE_DT             __ADAPTIVE_DT__
+MAX_STEPS               __MAX_STEPS__
+MAX_TRACE_TIME          __MAX_TRACE_TIME_S__
+MAX_TRACE_DISTANCE      __MAX_TRACE_DISTANCE_RE__
+TRAP_DETECTION          __TRAP_DETECTION__
+
+!#END
