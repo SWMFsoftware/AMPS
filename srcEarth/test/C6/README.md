@@ -31,8 +31,12 @@ trajectory were integrated correctly.
 
 The implementation evaluates the complete `PENUMBRA_SCAN` access sequence,
 refines every resolved access transition, and integrates the allowed rigidity
-width.  Any `TIME_LIMIT`, `STEP_LIMIT`, or `DISTANCE_LIMIT` sample leaves the
-effective cutoff unresolved rather than silently counting it as forbidden.
+width.  Under the C6 reference-compatible default, a trajectory that reaches
+`TIME_LIMIT`, `STEP_LIMIT`, or `DISTANCE_LIMIT` without escaping is classified
+as forbidden, matching the finite-trajectory convention used to construct the
+published cutoff tables.  Invalid field values, invalid time steps, and true
+numerical failures remain errors.  The strict `UNRESOLVED` policy remains
+available for diagnostic tests such as C14.
 
 ## Required model support added for C6
 
