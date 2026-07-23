@@ -2,158 +2,475 @@
 """
 Concurrent pass/fail test runner for AMPS validation commands.
 
-Purpose
--------
-The validation list contains shell commands marked with an expected result:
+===============================================================================
+TEST-LIST FILE FORMAT
+===============================================================================
 
-  ! this is a comment
+The positional ``test_file`` argument is a plain-text list of validation
+commands.  The file supports two source-entry forms:
 
-  P command expected to return exit code 0
-  last pass: optional git commit id for this individual test
+1. the historical scalar form, which describes one command; and
+2. an optional ``for`` form, which expands one command template into several
+   independent test variants.
 
-  F command expected to return nonzero exit code
-  last pass: optional git commit id for this individual test
+A list that contains no ``for`` declarations is parsed and executed with the
+historical behavior.  Loop support is additive; it does not change the command,
+expected status, metadata, log naming, scheduling, or report semantics of an
+ordinary scalar entry.
 
-Blank lines are ignored.  Lines beginning with '!' after leading whitespace are
-ignored.  The first non-whitespace token on a test line must be P or F; the rest
-of the line is executed as the command.  A test command may optionally be
-followed by a metadata line beginning with 'last pass:'.  Metadata lines are
-associated with the immediately preceding test command and are not executed.
+The examples below use ``P`` for a command expected to pass, meaning exit code
+zero, and ``F`` for a command expected to fail, meaning any nonzero exit code.
+Timeouts and launch errors are treated as actual ``F`` results.
 
-Use cases
----------
-1. Run the full validation list and report mismatches between expected and
-   actual P/F states.
-2. Run many short serial tests concurrently without changing the individual
-   test wrappers.
-3. Run MPI/OpenMP AMPS tests concurrently while avoiding physical memory
-   oversubscription, by watching real available memory instead of a static
-   per-command CPU estimate.  This matters for commands such as
+-------------------------------------------------------------------------------
+1. Comments and blank lines
+-------------------------------------------------------------------------------
 
-       srcEarth/test/C3/run_C3.py -np 4 -nt 16
+A comment begins when the first non-whitespace character is ``!``::
 
-   where several such commands running at once can exhaust physical memory
-   even though nothing here changes how many ranks or threads any one of
-   them uses.
-4. Keep per-test provenance by updating each test's ``last pass:`` commit id
-   after successful command execution.
+    ! Run the analytic dipole cutoff tests.
+        ! Leading whitespace before ! is allowed.
 
-Scheduling algorithm
---------------------
-Concurrency is governed by two independent things:
+Blank lines and comment lines are never executed.
 
-* ``-j``/``--jobs`` is a hard ceiling on how many commands may be running at
-  once.
+Blank lines may appear:
 
-* A physical-memory ramp-up gate.  Commands are never rewritten: every test
-  always runs with exactly the ``-np``/``-nt`` (or any other options) it was
-  written with.  Instead of estimating CPU cost ahead of time, the runner
-  watches real memory headroom and paces new launches against it:
+* between a ``for`` declaration and its command template;
+* between a command and its optional ``last pass:`` line; or
+* between unrelated test entries.
 
-    1. Start a test.
-    2. Wait ``--memory-check-interval`` seconds (default 60).
-    3. Check available physical memory. If more than
-       ``--min-free-memory-fraction`` (default 0.5, i.e. half) of total
-       physical memory is still available, start another test.
-    4. Repeat until ``-j`` tests are running concurrently.
+A comment line closes the optional ``last pass:`` association for the preceding
+command.  Therefore, put ``last pass:`` before an intervening comment.  A
+comment between a ``for`` declaration and its command is allowed and does not
+cancel the pending loop declaration.
 
-  The only launches exempt from this gate are ones where nothing of this
-  runner's is currently running: the very first test of the run, and any
-  later launch that happens to start right after the pool has fully drained
-  back to zero.  In both cases there is no in-flight test to pace against, so
-  waiting out a stale timer would just be dead time; the runner launches
-  immediately (after a best-effort memory reading for display) and the
-  pacing clock restarts from that launch.  Every other launch -- ramping up
-  toward ``-j`` while other tests are still running, or backfilling a slot
-  next to tests that are still running -- waits out the interval-and-headroom
-  check described above.  If memory is too tight, the runner keeps waiting
-  and rechecking on that cadence rather than giving up: unlike a fixed
-  CPU-slot pool, memory headroom can recover on its own as other tests
-  finish or the kernel reclaims cache, so there is nothing to deadlock on.
+-------------------------------------------------------------------------------
+2. Historical scalar entry
+-------------------------------------------------------------------------------
 
-  One consequence worth knowing: concurrency can only build up between tests
-  that are actually running at the same time the gate re-checks.  A test
-  that finishes faster than ``--memory-check-interval`` never gets a sibling
-  launched next to it -- by the time the next launch is allowed, it has
-  already exited, so that pair effectively runs serially regardless of
-  ``-j``.  For AMPS's MPI/OpenMP tests (tens of seconds to tens of minutes)
-  this is rarely an issue at the 60s default; a validation list dominated by
-  short/cheap tests will see less concurrency than ``-j`` suggests unless
-  ``--memory-check-interval`` is lowered to something shorter than those
-  tests' typical runtime.
+The historical syntax is::
 
-An earlier version of this runner estimated CPU cost from ``-np``/``-nt`` and
-used it both to cap concurrency and to silently lower a test's ``-nt`` so more
-tests would fit an assumed CPU budget. That changed what was actually being
-validated -- a test's reference P/F result reflects the process/thread count
-it was authored and last validated with, not whatever a scheduling formula
-computed for a given ``-j`` -- and the CPU estimate never modeled memory,
-which is what concurrently running MPI ranks actually contend for regardless
-of how many OpenMP threads each rank uses. This version tracks only real
-memory headroom and never touches a test's command line. Pass
-``--no-memory-gate`` to fall back to plain ``-j``-limited concurrency with no
-pacing or memory checks at all (every test launches as soon as a ``-j`` slot
-is free) -- also needed on systems without ``/proc/meminfo``.
+    P <shell command>
+    last pass: <optional git commit id>
 
-Memory detection
-----------------
-Available memory is read from ``/proc/meminfo``'s ``MemAvailable`` field,
-which already accounts for reclaimable page cache/buffers and is a much
-better estimate of "how much can a new allocation actually get" than raw free
-memory. Kernels too old to report ``MemAvailable`` fall back to ``MemFree +
-Buffers + Cached``. This is Linux-specific; on a system without
-``/proc/meminfo`` the runner exits immediately with an explanatory error
-before running anything, unless ``--no-memory-gate`` is given.
+or::
 
-Thread environment policy
--------------------------
-By default the runner does not alter ``OMP_NUM_THREADS`` or BLAS thread-count
-environment variables. Passing ``--set-thread-env`` sets those variables for
-each command to its own parsed ``-nt`` value, which can reduce hidden nested
-threading in libraries. Existing values are preserved unless
-``--overwrite-thread-env`` is also supplied. This never changes what ``-nt``
-a command is launched with; it only sets environment variables to match the
-value the command already declares.
+    F <shell command>
+    last pass: <optional git commit id>
 
-Progress and result handling
-----------------------------
-The runner reports progress in three places. First, when a command has
-passed the ``-j`` job-count limit and the memory gate and is actually being
-launched, it prints a ``[START]`` line together with the memory headroom
-observed at that moment. Second, if the memory gate is currently blocking the
-next launch, the runner prints a ``[WAITING]`` line on the same cadence as
-``--memory-check-interval`` showing the most recently observed free-memory
-fraction, so a terminal that is simply waiting out the gate does not look
-like a hung runner. Third, as soon as each command finishes, the runner
-prints the historical completion line beginning with ``[OK]`` or
-``[MISMATCH]``; that line is intentionally kept compatible with the original
-runner output.
+Examples::
 
-The process exit status is converted to actual P/F. Timeouts and launch
-errors are treated as actual F. The full JSON/CSV reports include each
-test's parsed ``-np``/``-nt`` and the physical-memory reading observed at the
-moment it was launched. Two triage reports are also written:
+    P srcEarth/test/C1/run_C1.py --mode gridless -np 4 -nt 16
+    last pass: 95469cd297ec8494614c0adefee04da69d6488e6
 
-  <report-prefix>_to_address.txt/.csv
-      tests whose actual P/F result does not match the reference P/F marker;
-      these are the tests that require investigation.
-  <report-prefix>_actual_failed.txt/.csv
-      all commands that returned actual F, including expected-failure tests.
-  <report-prefix>_last_pass_failed.txt/.csv
-      tests that have a non-empty ``last pass:`` provenance entry in the list but
-      returned actual F in the current run; these are regressions relative to a
-      previously passing commit.
-  <report-prefix>_new_or_unexpected_passed.txt/.csv
-      tests that returned actual P even though their ``last pass:`` entry is
-      empty/missing, or the list currently marks them as expected F; these need
-      either a ``last pass:`` update or a P/F marker review.
+    F srcEarth/test/experimental/run_expected_failure.py
+    last pass:
 
-Use ``--update-last-pass`` to rewrite the ``last pass:`` line of each test whose
-command actually exited 0 on this run. Existing metadata lines are updated in
-place; missing metadata lines are inserted below the corresponding test command.
-This is independent of whether the result matched the reference marker: an
-F-marked test that unexpectedly exits 0 still gets its ``last pass:`` commit id
-updated and is also reported as an unexpected pass.
+The ``last pass:`` line is optional.  Its value records the git commit at which
+that individual command was last observed to return exit code zero.  It is
+provenance, not the expected status: an entry marked ``F`` may still have a
+non-empty ``last pass:`` value from an earlier revision.
+
+For scalar entries:
+
+* ``P`` or ``F`` must be the first non-whitespace token;
+* everything after that token is retained as the command string;
+* the command is not rewritten by this runner;
+* a scalar ``last pass:`` value belongs only to that command; and
+* ``--update-last-pass`` keeps the scalar metadata format.
+
+-------------------------------------------------------------------------------
+3. One-variable loop entry
+-------------------------------------------------------------------------------
+
+A loop declaration applies to the next non-comment test command only::
+
+    for $m={RK4,HC4}
+    {P,P} srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN \
+        --cutoff-scan-n 200 --mover $m
+    last pass: {commit-for-RK4,commit-for-HC4}
+
+The example expands, in order, to::
+
+    P srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN \
+        --cutoff-scan-n 200 --mover RK4
+
+    P srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN \
+        --cutoff-scan-n 200 --mover HC4
+
+Each expansion is a fully independent test.  It receives its own:
+
+* sequential test index;
+* expected P/F value;
+* timeout and exit-status classification;
+* scheduler slot;
+* log file;
+* elapsed time;
+* JSON and CSV report row;
+* terminal start/completion message; and
+* ``last pass`` provenance element.
+
+The source command line is not executed directly.  Only its expanded commands
+are scheduled.
+
+-------------------------------------------------------------------------------
+4. Loop declaration grammar
+-------------------------------------------------------------------------------
+
+The accepted loop declaration is conceptually::
+
+    for $name={value1,value2,...} [$other={value1,value2,...} ...]
+
+Variable names must match::
+
+    [A-Za-z_][A-Za-z0-9_]*
+
+Valid examples::
+
+    for $m={RK4,HC4}
+    for $policy={LEGACY,ACCURATE}
+    for $m={RK4,HC4}, $policy={LEGACY,ACCURATE}
+    for $np={1,2,4} $nt={1,8,16}
+
+Spaces and commas may separate assignments.  Variable names may not be
+repeated on one declaration.  Empty value lists and empty loop values are not
+accepted.
+
+Loop values are comma-separated using Python's CSV parser.  This permits a
+quoted value to contain a comma, for example::
+
+    for $label={plain,"value,with,commas"}
+
+Whitespace surrounding an unquoted value is removed.  Braces are structural
+and nested braces are not supported.
+
+A loop declaration is an instruction to this test runner; it is not a shell
+``for`` command and is never passed to ``/bin/sh``.
+
+-------------------------------------------------------------------------------
+5. Variable references and substitution
+-------------------------------------------------------------------------------
+
+A command template may reference a declared variable as either::
+
+    $name
+    ${name}
+
+Example::
+
+    for $m={RK4,HC4}
+    P srcEarth/test/C3/run_C3.py --mover ${m}
+
+Substitution is textual and occurs before the command is scheduled.  Values are
+inserted exactly as written in the loop declaration.  Therefore, quote loop
+values or command positions appropriately when a value contains shell-special
+characters or whitespace.
+
+Every variable declared by the pending loop must appear at least once in the
+command template.  A declaration such as::
+
+    for $m={RK4,HC4}
+    P command-without-a-mover-option
+
+is rejected because it would create duplicate commands accidentally.
+
+References to variables that were not declared by the pending loop are left
+unchanged.  This preserves legitimate shell references such as ``$HOME`` or
+``${PATH}``.  The list parser does not perform shell environment expansion;
+the shell sees any undeclared references when the command is eventually run.
+
+A loop declaration is consumed by exactly one command.  A second ``for`` line
+before a command, or a ``for`` line at end of file with no following command,
+is an error.
+
+-------------------------------------------------------------------------------
+6. Multiple variables and expansion order
+-------------------------------------------------------------------------------
+
+More than one variable creates a Cartesian product::
+
+    for $m={RK4,HC4} $policy={LEGACY,ACCURATE}
+    P command --mover $m --cutoff-trace-policy $policy
+
+The expansion order is deterministic and follows declaration order, with the
+rightmost variable changing fastest::
+
+    1. m=RK4, policy=LEGACY
+    2. m=RK4, policy=ACCURATE
+    3. m=HC4, policy=LEGACY
+    4. m=HC4, policy=ACCURATE
+
+This order is important because the expected-status vector and ``last pass``
+vector are positional and must use this same order.
+
+The total variant count is the product of the value-list lengths.  For example,
+three movers and two trace policies produce six tests.
+
+-------------------------------------------------------------------------------
+7. Expected-result syntax for loops
+-------------------------------------------------------------------------------
+
+A looped command accepts either a scalar expected state or a vector.
+
+Scalar form::
+
+    for $m={RK4,HC4}
+    P command --mover $m
+
+The scalar is replicated, so the example is equivalent to ``{P,P}``.
+
+Per-variant form::
+
+    for $m={RK4,HC4}
+    {P,F} command --mover $m
+
+The vector length must exactly equal the number of expanded commands.  Every
+item must be ``P`` or ``F``.  A vector status without a preceding ``for``
+declaration is invalid.
+
+For a Cartesian product, the status vector follows the expansion order shown
+above.  For example::
+
+    for $m={RK4,HC4} $policy={LEGACY,ACCURATE}
+    {P,P,F,P} command --mover $m --policy $policy
+
+assigns the four statuses to variants 1 through 4 in that order.
+
+-------------------------------------------------------------------------------
+8. ``last pass:`` syntax for loops
+-------------------------------------------------------------------------------
+
+Looped entries accept scalar or vector provenance.
+
+Scalar shorthand::
+
+    last pass: abc123
+
+means that every expansion initially receives ``abc123`` as its known-passing
+commit.  This shorthand is convenient when all variants were validated at the
+same revision.
+
+Explicit vector::
+
+    last pass: {abc123,def456}
+
+assigns one value to each expansion.  The vector length must equal the variant
+count and uses the same deterministic expansion order as the status vector.
+
+Empty vector elements are allowed and mean that no passing commit is known for
+that variant::
+
+    last pass: {abc123,,def456}
+
+Unmatched braces or the wrong number of elements are errors.  Commit strings
+are treated as opaque metadata; the runner does not require a particular hash
+length.
+
+A ``last pass:`` line belongs to the immediately preceding source command entry
+after ignoring blank lines.  Duplicate metadata lines for one source entry are
+rejected.
+
+-------------------------------------------------------------------------------
+9. ``--update-last-pass`` behavior
+-------------------------------------------------------------------------------
+
+After execution, ``--update-last-pass`` obtains the selected commit id and
+updates only variants whose actual result is ``P``.  Expected status does not
+control the update: even a command marked expected ``F`` is updated if it
+actually exits zero.
+
+For a scalar entry::
+
+    P command
+    last pass: old
+
+becomes::
+
+    P command
+    last pass: new-commit
+
+when the command passes.
+
+For a looped entry, metadata is always written back as an explicit vector so
+that later partial updates remain possible.  If only RK4 passes::
+
+    for $m={RK4,HC4}
+    {P,P} command --mover $m
+    last pass: {old-rk4,old-hc4}
+
+becomes::
+
+    for $m={RK4,HC4}
+    {P,P} command --mover $m
+    last pass: {new-commit,old-hc4}
+
+A failing variant preserves its previous value.  If it had no previous value,
+its vector element remains empty.  If metadata was absent, a new scalar or
+vector ``last pass:`` line is inserted immediately below the source command.
+The file is rewritten through a temporary sibling file and then atomically
+replaced.
+
+-------------------------------------------------------------------------------
+10. Compact grammar summary
+-------------------------------------------------------------------------------
+
+The effective list grammar is::
+
+    file          := { blank | comment | entry }
+    comment       := optional-space "!" text
+    entry         := [ loop-declaration blank-or-comment* ] test-line
+                     [ blank* last-pass-line ]
+    loop-decl     := "for" assignment { separator assignment }
+    assignment    := "$" name "={" csv-values "}"
+    test-line     := expected whitespace command
+    expected      := "P" | "F" | "{" status-list "}"
+    status-list   := status { "," status }
+    status        := "P" | "F"
+    last-pass     := "last pass:" [ scalar | "{" csv-values-with-empty "}" ]
+
+This is descriptive rather than a shell grammar.  Actual validation is stricter
+in several useful ways: undeclared duplicate loop variables are rejected,
+declared variables must be referenced, vector sizes must match the expansion
+count, and unexpected text on a loop line is rejected rather than ignored.
+
+===============================================================================
+HOW LOOP ENTRIES ARE IMPLEMENTED
+===============================================================================
+
+The implementation deliberately expands loops at parse time instead of adding
+special cases to the scheduler or process runner.
+
+1. ``parse_test_file()`` reads source lines and maintains two temporary states:
+   ``pending_loop`` for a declaration waiting for its command, and
+   ``pending_metadata_tests`` for the just-created scalar test or variant group
+   that may receive a ``last pass:`` line.
+
+2. ``_parse_loop_declaration()`` validates assignments and their CSV value
+   lists.  Duplicate names, empty lists, malformed separators, unexpected
+   trailing text, and nested/unmatched braces are rejected with source line
+   numbers.
+
+3. ``_expand_loop_bindings()`` uses ``itertools.product`` to create a stable
+   Cartesian product.  Python product order gives the documented rule that the
+   rightmost value list changes fastest.
+
+4. ``_substitute_loop_variables()`` replaces declared ``$name`` and
+   ``${name}`` references.  It first verifies that every declared name is used.
+   Undeclared references remain untouched for later shell expansion.
+
+5. ``_parse_expected_values()`` and ``_parse_last_pass_values()`` replicate a
+   scalar or validate a positional vector against the exact variant count.
+
+6. Each expansion becomes an ordinary ``TestCase``.  In addition to the final
+   command and expected result, it retains the source template, source line,
+   loop line, ordered bindings, one-based variant index, and total variant
+   count.  Ordinary entries have empty bindings and variant count one.
+
+7. From that point forward, the dispatcher treats every variant like any other
+   test.  There is no loop-aware subprocess path.  This ensures that timeouts,
+   memory pacing, ``-j`` concurrency, environment handling, exit-code mapping,
+   logs, JSON/CSV output, and triage reports have identical semantics for looped
+   and non-looped commands.
+
+8. Log names include the expanded-test index and command source information, so
+   variants do not overwrite each other.  Human-readable output and reports add
+   a stable suffix such as ``variant 2/4 [m=RK4, policy=ACCURATE]``.
+
+9. ``update_last_pass_entries()`` groups expanded tests by the original command
+   source line.  It updates elements by one-based variant index, preserves
+   failed variants, and writes one metadata line for the complete source entry.
+
+10. Because loops are flattened before scheduling, the job limit counts
+    variants, not source templates.  A two-mover entry consumes two ordinary
+    test positions and may run concurrently if the scheduler permits it.
+
+===============================================================================
+GENERAL RUNNER PURPOSE AND SCHEDULING
+===============================================================================
+
+The runner has five main uses:
+
+1. Run the validation list and report mismatches between expected and actual
+   P/F states.
+2. Run independent test wrappers concurrently without changing those wrappers.
+3. Protect physical memory while several MPI/OpenMP AMPS commands coexist.
+4. Maintain per-command or per-variant ``last pass`` provenance.
+5. Expand one command template over movers or future CLI parameters without
+   duplicating the full entry.
+
+Concurrency is governed by two independent mechanisms:
+
+* ``-j``/``--jobs`` is a hard ceiling on simultaneously running expanded
+  commands.
+* Unless ``--no-memory-gate`` is used, a physical-memory ramp-up gate controls
+  when another command may start.
+
+The runner never changes a command's ``-np``, ``-nt``, mover, or other CLI
+arguments.  Parsed MPI-rank and thread counts are used only for reporting and,
+when requested, thread-count environment variables.
+
+Memory-gated launch sequence:
+
+1. Start a command when no runner-owned command is active, or when both a job
+   slot and the memory gate permit it.
+2. Wait ``--memory-check-interval`` seconds before ramping up beside active
+   commands.
+3. Read physical-memory availability.
+4. Launch another command only when available memory exceeds
+   ``--min-free-memory-fraction`` of total memory.
+5. If memory is below the threshold, keep waiting and rechecking; do not rewrite
+   or discard a test.
+
+The first command after the pool becomes empty launches immediately because
+there is no active workload against which to pace it.  Short tests that finish
+before the next memory check may therefore run effectively serially unless the
+check interval is reduced.
+
+Available memory comes from Linux ``/proc/meminfo``.  ``MemAvailable`` is used
+when present; older kernels fall back to ``MemFree + Buffers + Cached``.  On a
+system without ``/proc/meminfo``, use ``--no-memory-gate``.
+
+By default the runner does not modify ``OMP_NUM_THREADS`` or BLAS thread-count
+environment variables.  ``--set-thread-env`` sets them to the command's parsed
+``-nt`` value, while ``--overwrite-thread-env`` permits replacing values already
+present in the environment.  Neither option changes the command line.
+
+===============================================================================
+RESULTS, REPORTS, AND PROVENANCE
+===============================================================================
+
+Actual result classification is:
+
+* exit code 0 -> actual ``P``;
+* nonzero exit code -> actual ``F``;
+* timeout -> actual ``F``; and
+* process-launch error -> actual ``F``.
+
+The expected marker and actual result are compared independently.  Reports
+retain both values, the command, loop bindings, source and variant indices,
+parsed ``-np``/``-nt``, runtime, timeout state, exit code, launch-time memory,
+log path, and provenance.
+
+The standard reports include JSON and CSV output plus triage subsets:
+
+``<prefix>_to_address``
+    Actual P/F does not match the expected marker.
+
+``<prefix>_actual_failed``
+    Every actual failure, including failures that were expected.
+
+``<prefix>_last_pass_failed``
+    Actual failures whose scalar or per-variant ``last pass`` value is nonempty;
+    these are regressions relative to a previously passing revision.
+
+``<prefix>_new_or_unexpected_passed``
+    Actual passes with missing/empty provenance, or commands currently marked
+    expected ``F`` that unexpectedly passed.
+
+Progress is printed at command launch, while waiting for memory, and when each
+command completes.  Looped variants are labeled with their ordered bindings so
+an RK4 failure cannot be confused with the HC4 expansion of the same source
+entry.
 """
 
 from __future__ import annotations
@@ -169,7 +486,8 @@ import signal
 import subprocess
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from itertools import product
 from pathlib import Path
 from typing import Iterable, List, Optional
 
@@ -182,6 +500,15 @@ class TestCase:
     command: str
     last_pass: Optional[str] = None
     last_pass_line_no: Optional[int] = None
+
+    # Loop-expanded tests retain enough source information to make reports and
+    # --update-last-pass unambiguous.  variant_index is one-based so it matches
+    # the order visible in {P,F,...} and last pass: {hash,...} list syntax.
+    template_command: Optional[str] = None
+    loop_line_no: Optional[int] = None
+    loop_bindings: dict[str, str] = field(default_factory=dict)
+    variant_index: int = 1
+    variant_count: int = 1
 
 
 @dataclass
@@ -204,6 +531,11 @@ class TestResult:
     mem_available_fraction_at_launch: Optional[float] = None
     last_pass: Optional[str] = None
     last_pass_line_no: Optional[int] = None
+    template_command: Optional[str] = None
+    loop_line_no: Optional[int] = None
+    loop_bindings: dict[str, str] = field(default_factory=dict)
+    variant_index: int = 1
+    variant_count: int = 1
 
 
 @dataclass
@@ -222,6 +554,210 @@ class TestPlan:
 
 
 LAST_PASS_RE = re.compile(r"^(?P<prefix>\s*last\s+pass\s*:\s*)(?P<value>.*)$", re.IGNORECASE)
+TEST_LINE_RE = re.compile(
+    r"^\s*(?P<expected>P|F|\{[^{}]*\})\s+(?P<command>.+?)\s*$",
+    re.IGNORECASE,
+)
+LOOP_LINE_RE = re.compile(r"^\s*for\b(?P<body>.*)$", re.IGNORECASE)
+LOOP_ASSIGN_RE = re.compile(
+    r"\$(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*\{(?P<values>[^{}]*)\}"
+)
+VARIABLE_REF_RE = re.compile(
+    r"\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|"
+    r"(?P<plain>[A-Za-z_][A-Za-z0-9_]*))"
+)
+
+
+def _parse_comma_list(text: str, *, what: str, allow_empty: bool) -> List[str]:
+    """Parse one comma-separated list used inside ``{...}`` syntax.
+
+    The standard :mod:`csv` parser is used intentionally so quoted values such
+    as ``"--label=a,b"`` can contain a comma.  Whitespace around unquoted
+    values is ignored.  Empty items are permitted only for ``last pass`` lists,
+    where an empty field means that the corresponding loop variant has no known
+    passing commit yet.
+    """
+    try:
+        rows = list(csv.reader([text], skipinitialspace=True))
+    except csv.Error as exc:
+        raise ValueError(f"invalid {what} list {{{text}}}: {exc}") from exc
+
+    if len(rows) != 1:
+        raise ValueError(f"invalid {what} list {{{text}}}")
+
+    values = [value.strip() for value in rows[0]]
+    if not values or (len(values) == 1 and values[0] == ""):
+        if allow_empty:
+            return [""]
+        raise ValueError(f"{what} list must contain at least one value")
+    if not allow_empty and any(value == "" for value in values):
+        raise ValueError(f"{what} list contains an empty value")
+    return values
+
+
+def _parse_loop_declaration(raw: str, line_no: int) -> List[tuple[str, List[str]]]:
+    """Parse ``for $name={v1,v2}`` assignments from one list-file line.
+
+    More than one assignment is allowed.  Their Cartesian product is expanded
+    in declaration order, with the rightmost variable changing fastest.  For
+    example ``for $m={RK4,HC4} $dt={1,0.5}`` produces four variants:
+    ``(RK4,1)``, ``(RK4,0.5)``, ``(HC4,1)``, and ``(HC4,0.5)``.
+    """
+    match = LOOP_LINE_RE.match(raw)
+    if match is None:
+        raise ValueError(f"Invalid loop declaration on line {line_no}: {raw.rstrip()}")
+
+    body = match.group("body")
+    assignments: List[tuple[str, List[str]]] = []
+    seen: set[str] = set()
+    cursor = 0
+
+    for assignment in LOOP_ASSIGN_RE.finditer(body):
+        # Only whitespace and optional commas may separate assignments.  This
+        # catches misspellings instead of silently ignoring part of a loop line.
+        gap = body[cursor:assignment.start()]
+        if gap.strip(" \t,"):
+            raise ValueError(
+                f"Invalid loop declaration on line {line_no}: unexpected text {gap!r}"
+            )
+
+        name = assignment.group("name")
+        if name in seen:
+            raise ValueError(
+                f"Invalid loop declaration on line {line_no}: duplicate variable ${name}"
+            )
+        seen.add(name)
+
+        values = _parse_comma_list(
+            assignment.group("values"),
+            what=f"values for ${name}",
+            allow_empty=False,
+        )
+        assignments.append((name, values))
+        cursor = assignment.end()
+
+    tail = body[cursor:]
+    if tail.strip(" \t,"):
+        raise ValueError(
+            f"Invalid loop declaration on line {line_no}: unexpected text {tail!r}"
+        )
+    if not assignments:
+        raise ValueError(
+            f"Invalid loop declaration on line {line_no}: expected syntax "
+            "'for $name={value1,value2}'"
+        )
+    return assignments
+
+
+def _expand_loop_bindings(
+    assignments: List[tuple[str, List[str]]],
+) -> List[dict[str, str]]:
+    """Return deterministic Cartesian-product bindings for a loop declaration."""
+    names = [name for name, _values in assignments]
+    value_sets = [values for _name, values in assignments]
+    return [dict(zip(names, combination)) for combination in product(*value_sets)]
+
+
+def _substitute_loop_variables(
+    template: str,
+    bindings: dict[str, str],
+    *,
+    line_no: int,
+) -> str:
+    """Substitute declared ``$name``/``${name}`` references in a command.
+
+    References to undeclared shell variables are deliberately left untouched.
+    Every declared loop variable must appear in the command template; otherwise
+    the parser fails instead of launching duplicate commands accidentally.
+    """
+    referenced = {
+        match.group("braced") or match.group("plain")
+        for match in VARIABLE_REF_RE.finditer(template)
+    }
+    missing = [name for name in bindings if name not in referenced]
+    if missing:
+        names = ", ".join(f"${name}" for name in missing)
+        raise ValueError(
+            f"Invalid looped test on line {line_no}: declared variable(s) {names} "
+            "are not referenced by the command"
+        )
+
+    def replace(match: re.Match[str]) -> str:
+        name = match.group("braced") or match.group("plain")
+        return bindings.get(name, match.group(0))
+
+    return VARIABLE_REF_RE.sub(replace, template)
+
+
+def _parse_expected_values(token: str, count: int, *, line_no: int) -> List[str]:
+    """Expand scalar ``P``/``F`` or validate a per-variant ``{P,F,...}`` list."""
+    upper = token.upper()
+    if upper in {"P", "F"}:
+        return [upper] * count
+
+    if not (token.startswith("{") and token.endswith("}")):
+        raise ValueError(f"Invalid expected-status token on line {line_no}: {token}")
+    values = [
+        value.upper()
+        for value in _parse_comma_list(
+            token[1:-1], what="expected-status", allow_empty=False
+        )
+    ]
+    invalid = [value for value in values if value not in {"P", "F"}]
+    if invalid:
+        raise ValueError(
+            f"Invalid expected-status list on line {line_no}: values must be P or F"
+        )
+    if len(values) != count:
+        raise ValueError(
+            f"Invalid expected-status list on line {line_no}: got {len(values)} "
+            f"value(s), but the loop expands to {count} command(s)"
+        )
+    return values
+
+
+def _parse_last_pass_values(value: str, count: int, *, line_no: int) -> List[str]:
+    """Parse scalar or per-variant provenance for one source test entry.
+
+    A scalar commit on a looped entry is accepted as shorthand for the same
+    known-passing commit on every expansion.  ``--update-last-pass`` rewrites
+    looped entries in explicit ``{hash1,hash2,...}`` form so later partial
+    updates remain possible.
+    """
+    stripped = value.strip()
+    if stripped.startswith("{") or stripped.endswith("}"):
+        if not (stripped.startswith("{") and stripped.endswith("}")):
+            raise ValueError(
+                f"Invalid 'last pass:' metadata on line {line_no}: unmatched braces"
+            )
+        values = _parse_comma_list(
+            stripped[1:-1], what="last-pass", allow_empty=True
+        )
+        if len(values) != count:
+            raise ValueError(
+                f"Invalid 'last pass:' list on line {line_no}: got {len(values)} "
+                f"value(s), but the loop expands to {count} command(s)"
+            )
+        return values
+
+    return [stripped] * count
+
+
+def format_loop_bindings(bindings: dict[str, str]) -> str:
+    """Return a compact stable label such as ``m=RK4, dt=0.5`` for reports."""
+    return ", ".join(f"{name}={value}" for name, value in bindings.items())
+
+
+def format_variant_suffix(
+    bindings: dict[str, str], variant_index: int, variant_count: int
+) -> str:
+    """Return a user-facing loop-variant suffix, or an empty string."""
+    if not bindings:
+        return ""
+    return (
+        f" variant {variant_index}/{variant_count} "
+        f"[{format_loop_bindings(bindings)}]"
+    )
 
 
 def _parse_positive_int(text: str) -> Optional[int]:
@@ -323,56 +859,148 @@ def set_thread_env(base_env: dict, nt: int, only_if_missing: bool) -> dict:
 
 
 def parse_test_file(path: Path) -> List[TestCase]:
+    """Parse legacy P/F entries and optional one-entry loop declarations.
+
+    Backward-compatible scalar entry::
+
+        P command --option value
+        last pass: abc123
+
+    Generic loop entry::
+
+        for $m={RK4,HC4}
+        {P,P} command --mover $m
+        last pass: {abc123,def456}
+
+    A loop declaration applies to the next non-comment test command only.  Each
+    expansion becomes an independent :class:`TestCase`, so scheduling, logs,
+    reports, timeouts, and exit-status comparisons work exactly as they do for
+    ordinary entries.  The source line and variant index are retained so
+    ``--update-last-pass`` can update the matching element of the metadata list.
+    """
     tests: List[TestCase] = []
-    pending_metadata_test: Optional[TestCase] = None
+    pending_metadata_tests: Optional[List[TestCase]] = None
+    pending_loop: Optional[List[tuple[str, List[str]]]] = None
+    pending_loop_line_no: Optional[int] = None
 
     with path.open("r", encoding="utf-8", errors="replace") as f:
         for line_no, raw in enumerate(f, start=1):
             line = raw.strip()
 
             if not line:
-                # Allow a blank line between a command and its metadata, but do
-                # not otherwise give blank lines semantic meaning.
+                # Blank lines are ignored. They may separate a loop declaration
+                # from its command or a command from its metadata.
                 continue
 
             if line.startswith("!"):
-                # Section comments are not metadata. Reset the pending command
-                # so a later stray 'last pass:' line is reported clearly.
-                pending_metadata_test = None
+                # Preserve the historical rule that a comment ends the metadata
+                # association with the preceding command. A comment between a
+                # loop declaration and its command is allowed and does not discard
+                # the pending loop.
+                pending_metadata_tests = None
                 continue
 
             last_pass_match = LAST_PASS_RE.match(raw.rstrip("\n"))
             if last_pass_match:
-                if pending_metadata_test is None:
+                if pending_metadata_tests is None:
                     raise ValueError(
                         f"Invalid test-list line {line_no}: 'last pass:' must "
-                        "immediately follow a P/F command"
+                        "immediately follow a P/F command or loop-expanded command"
                     )
-                if pending_metadata_test.last_pass_line_no is not None:
+                if any(test.last_pass_line_no is not None for test in pending_metadata_tests):
                     raise ValueError(
                         f"Invalid test-list line {line_no}: duplicate 'last pass:' "
-                        f"metadata for test from line {pending_metadata_test.line_no}"
+                        f"metadata for test from line {pending_metadata_tests[0].line_no}"
                     )
-                pending_metadata_test.last_pass = last_pass_match.group("value").strip()
-                pending_metadata_test.last_pass_line_no = line_no
-                pending_metadata_test = None
+
+                values = _parse_last_pass_values(
+                    last_pass_match.group("value"),
+                    len(pending_metadata_tests),
+                    line_no=line_no,
+                )
+                for test, value in zip(pending_metadata_tests, values):
+                    test.last_pass = value
+                    test.last_pass_line_no = line_no
+                pending_metadata_tests = None
                 continue
 
-            parts = line.split(maxsplit=1)
-            if len(parts) != 2 or parts[0].upper() not in {"P", "F"}:
+            loop_match = LOOP_LINE_RE.match(raw.rstrip("\n"))
+            if loop_match:
+                # A loop declaration is a new source entry and therefore closes
+                # the optional metadata window for the preceding command.
+                pending_metadata_tests = None
+                if pending_loop is not None:
+                    raise ValueError(
+                        f"Invalid test-list line {line_no}: loop from line "
+                        f"{pending_loop_line_no} has no following test command"
+                    )
+                pending_loop = _parse_loop_declaration(raw.rstrip("\n"), line_no)
+                pending_loop_line_no = line_no
+                continue
+
+            match = TEST_LINE_RE.match(raw.rstrip("\n"))
+            if match is None:
                 raise ValueError(
-                    f"Invalid test-list line {line_no}: expected 'P <command>' "
-                    f"or 'F <command>', got: {raw.rstrip()}"
+                    f"Invalid test-list line {line_no}: expected 'P <command>', "
+                    f"'F <command>', or a looped '{{P,F,...}} <command>' entry; "
+                    f"got: {raw.rstrip()}"
                 )
 
-            test = TestCase(
-                index=len(tests) + 1,
+            expected_token = match.group("expected")
+            template_command = match.group("command").strip()
+
+            if pending_loop is None:
+                if expected_token.startswith("{"):
+                    raise ValueError(
+                        f"Invalid test-list line {line_no}: a vector expected-status "
+                        "marker requires a preceding 'for $name={...}' declaration"
+                    )
+                bindings_list = [{}]
+            else:
+                bindings_list = _expand_loop_bindings(pending_loop)
+
+            expected_values = _parse_expected_values(
+                expected_token,
+                len(bindings_list),
                 line_no=line_no,
-                expected=parts[0].upper(),
-                command=parts[1].strip(),
             )
-            tests.append(test)
-            pending_metadata_test = test
+
+            expanded_tests: List[TestCase] = []
+            for variant_index, (bindings, expected) in enumerate(
+                zip(bindings_list, expected_values), start=1
+            ):
+                command = (
+                    template_command
+                    if not bindings
+                    else _substitute_loop_variables(
+                        template_command,
+                        bindings,
+                        line_no=line_no,
+                    )
+                )
+                test = TestCase(
+                    index=len(tests) + 1,
+                    line_no=line_no,
+                    expected=expected,
+                    command=command,
+                    template_command=template_command if bindings else None,
+                    loop_line_no=pending_loop_line_no if bindings else None,
+                    loop_bindings=dict(bindings),
+                    variant_index=variant_index,
+                    variant_count=len(bindings_list),
+                )
+                tests.append(test)
+                expanded_tests.append(test)
+
+            pending_metadata_tests = expanded_tests
+            pending_loop = None
+            pending_loop_line_no = None
+
+    if pending_loop is not None:
+        raise ValueError(
+            f"Invalid test list: loop declaration on line {pending_loop_line_no} "
+            "has no following test command"
+        )
 
     return tests
 
@@ -495,8 +1123,14 @@ async def run_one_test(
             )
         else:
             mem_note = ""
+        loop_note = (
+            f" variant {test.variant_index}/{test.variant_count} "
+            f"[{format_loop_bindings(test.loop_bindings)}]"
+            if test.loop_bindings
+            else ""
+        )
         print(
-            f"[START] #{test.index:03d} line {test.line_no}: "
+            f"[START] #{test.index:03d} line {test.line_no}{loop_note}: "
             f"{mem_note}command={test.command}",
             flush=True,
         )
@@ -510,9 +1144,22 @@ async def run_one_test(
         mem_line = "# Memory at launch: not tracked (--no-memory-gate)\n"
 
     with log_path.open("wb") as log:
+        loop_header = (
+            f"# Loop variant: {test.variant_index}/{test.variant_count}; "
+            f"{format_loop_bindings(test.loop_bindings)}\n"
+            if test.loop_bindings
+            else ""
+        )
+        template_header = (
+            f"# Command template: {test.template_command}\n"
+            if test.template_command is not None
+            else ""
+        )
         header = (
             f"# Test {test.index} from line {test.line_no}\n"
+            f"{loop_header}"
             f"# Expected: {test.expected}\n"
+            f"{template_header}"
             f"# Command: {test.command}\n"
             f"# Workdir: {workdir}\n"
             f"# {plan.np_nt_details}\n"
@@ -603,6 +1250,11 @@ async def run_one_test(
         mem_available_fraction_at_launch=mem_fraction,
         last_pass=test.last_pass,
         last_pass_line_no=test.last_pass_line_no,
+        template_command=test.template_command,
+        loop_line_no=test.loop_line_no,
+        loop_bindings=dict(test.loop_bindings),
+        variant_index=test.variant_index,
+        variant_count=test.variant_count,
     )
 
 
@@ -774,8 +1426,14 @@ async def run_all_tests(
             result = await task
             results.append(result)
             status = "OK" if result.matched_reference else "MISMATCH"
+            loop_note = (
+                f" variant {result.variant_index}/{result.variant_count} "
+                f"[{format_loop_bindings(result.loop_bindings)}]"
+                if result.loop_bindings
+                else ""
+            )
             print(
-                f"[{status}] #{result.index:03d} line {result.line_no}: "
+                f"[{status}] #{result.index:03d} line {result.line_no}{loop_note}: "
                 f"expected {result.expected}, actual {result.actual}, "
                 f"exit={result.exit_code}, {result.elapsed_s:.1f}s",
                 flush=True,
@@ -820,6 +1478,11 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
         "mem_available_fraction_at_launch",
         "last_pass",
         "last_pass_line_no",
+        "template_command",
+        "loop_line_no",
+        "loop_bindings",
+        "variant_index",
+        "variant_count",
     ]
 
     def write_csv(path: Path, rows: List[TestResult]) -> None:
@@ -849,8 +1512,15 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
                     )
                 else:
                     mem_line = "  memory:   not tracked (--no-memory-gate)\n"
+                loop_line = (
+                    f"  variant:  {r.variant_index}/{r.variant_count} "
+                    f"[{format_loop_bindings(r.loop_bindings)}]\n"
+                    if r.loop_bindings
+                    else ""
+                )
                 f.write(
                     f"#{r.index:03d} line {r.line_no}\n"
+                    f"{loop_line}"
                     f"  expected: {r.expected}\n"
                     f"  actual:   {r.actual}\n"
                     f"  exit:     {r.exit_code}\n"
@@ -918,34 +1588,83 @@ def get_git_commit_id(workdir: Path) -> str:
     return commit_id
 
 
-def update_last_pass_entries(test_file: Path, tests: List[TestCase], results: List[TestResult], commit_id: str) -> int:
-    """
-    Update the test-list 'last pass:' metadata for tests whose command actually
-    exited 0 on this run.
+def update_last_pass_entries(
+    test_file: Path,
+    tests: List[TestCase],
+    results: List[TestResult],
+    commit_id: str,
+) -> int:
+    """Update scalar and loop-vector ``last pass:`` metadata after a run.
 
-    This tracks the literal exit status of each command (actual == "P"),
-    independent of the test's P/F marker in the list. An F-marked test that
-    unexpectedly exits 0 still gets its 'last pass:' commit id updated, since
-    the command did in fact pass; it will also appear in the to-address report
-    as an unexpected pass so the marker itself can be revisited separately.
+    Ordinary entries retain the historical scalar format::
+
+        last pass: <commit>
+
+    Looped entries are always written in explicit expansion order::
+
+        last pass: {<commit-for-variant-1>,<commit-for-variant-2>,...}
+
+    Only variants that actually passed in the current run are changed.  Failed
+    variants preserve their previous commit, or remain empty when no passing
+    commit was known.  This is important for mixed expectation/result vectors:
+    one successful mover must not overwrite provenance for another mover that
+    failed.
     """
-    passed_by_line = {r.line_no for r in results if r.actual == "P"}
-    tests_by_line = {t.line_no: t for t in tests}
+    results_by_key = {
+        (result.line_no, result.variant_index): result
+        for result in results
+    }
+
+    tests_by_source_line: dict[int, List[TestCase]] = {}
+    for test in tests:
+        tests_by_source_line.setdefault(test.line_no, []).append(test)
 
     update_existing_line: dict[int, str] = {}
     insert_after_line: dict[int, str] = {}
 
-    for line_no in passed_by_line:
-        test = tests_by_line[line_no]
-        if test.last_pass_line_no is None:
-            insert_after_line[test.line_no] = commit_id
+    for source_line, variants in tests_by_source_line.items():
+        variants.sort(key=lambda test: test.variant_index)
+        values = [(test.last_pass or "").strip() for test in variants]
+        changed = False
+
+        for position, test in enumerate(variants):
+            result = results_by_key.get((source_line, test.variant_index))
+            if result is not None and result.actual == "P":
+                values[position] = commit_id
+                changed = True
+
+        if not changed:
+            continue
+
+        if len(variants) == 1 and not variants[0].loop_bindings:
+            metadata_value = values[0]
         else:
-            update_existing_line[test.last_pass_line_no] = commit_id
+            # Commit hashes cannot contain commas or braces. Empty fields are
+            # intentional and represent variants with no known passing commit.
+            metadata_value = "{" + ",".join(values) + "}"
+
+        metadata_lines = {
+            test.last_pass_line_no
+            for test in variants
+            if test.last_pass_line_no is not None
+        }
+        if len(metadata_lines) > 1:
+            raise RuntimeError(
+                f"internal error: variants from test-list line {source_line} "
+                "refer to different 'last pass:' metadata lines"
+            )
+
+        if metadata_lines:
+            update_existing_line[next(iter(metadata_lines))] = metadata_value
+        else:
+            insert_after_line[source_line] = metadata_value
 
     if not update_existing_line and not insert_after_line:
         return 0
 
-    original_lines = test_file.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+    original_lines = test_file.read_text(
+        encoding="utf-8", errors="replace"
+    ).splitlines(keepends=True)
     new_lines: List[str] = []
 
     for line_no, raw in enumerate(original_lines, start=1):
@@ -959,7 +1678,9 @@ def update_last_pass_entries(test_file: Path, tests: List[TestCase], results: Li
                 prefix = f"{indent}last pass: "
             else:
                 prefix = "last pass: "
-            new_lines.append(f"{prefix}{update_existing_line[line_no]}{newline}")
+            new_lines.append(
+                f"{prefix}{update_existing_line[line_no]}{newline}"
+            )
         else:
             new_lines.append(raw)
 
@@ -1053,8 +1774,9 @@ def print_final_summary(
         print("\nTests to address: actual result differs from reference P/F")
         for r in to_address:
             reason = "unexpected failure" if r.expected == "P" and r.actual == "F" else "unexpected pass"
+            variant = format_variant_suffix(r.loop_bindings, r.variant_index, r.variant_count)
             print(
-                f"  #{r.index:03d} line {r.line_no}: {reason}; "
+                f"  #{r.index:03d} line {r.line_no}{variant}: {reason}; "
                 f"expected {r.expected}, actual {r.actual}, exit={r.exit_code}, log={r.log_file}\n"
                 f"      {r.command}"
             )
@@ -1070,8 +1792,9 @@ def print_final_summary(
     )
     if last_pass_failed:
         for r in last_pass_failed:
+            variant = format_variant_suffix(r.loop_bindings, r.variant_index, r.variant_count)
             print(
-                f"  #{r.index:03d} line {r.line_no}: last pass {r.last_pass}; "
+                f"  #{r.index:03d} line {r.line_no}{variant}: last pass {r.last_pass}; "
                 f"expected {r.expected}, actual F, exit={r.exit_code}, log={r.log_file}\n"
                 f"      {r.command}"
             )
@@ -1083,6 +1806,7 @@ def print_final_summary(
     )
     if new_or_unexpected_passed:
         for r in new_or_unexpected_passed:
+            variant = format_variant_suffix(r.loop_bindings, r.variant_index, r.variant_count)
             reasons = []
             if not has_nonempty_last_pass(r):
                 reasons.append("empty last pass")
@@ -1090,7 +1814,7 @@ def print_final_summary(
                 reasons.append("marked F")
             reason_text = ", ".join(reasons) if reasons else "needs review"
             print(
-                f"  #{r.index:03d} line {r.line_no}: {reason_text}; "
+                f"  #{r.index:03d} line {r.line_no}{variant}: {reason_text}; "
                 f"expected {r.expected}, actual P, exit={r.exit_code}, log={r.log_file}\n"
                 f"      {r.command}"
             )
@@ -1102,8 +1826,9 @@ def print_final_summary(
         print("\nAll actual failed commands, including expected F tests:")
         for r in actual_failed:
             marker = "expected" if r.expected == "F" else "unexpected"
+            variant = format_variant_suffix(r.loop_bindings, r.variant_index, r.variant_count)
             print(
-                f"  #{r.index:03d} line {r.line_no}: {marker} actual F; "
+                f"  #{r.index:03d} line {r.line_no}{variant}: {marker} actual F; "
                 f"exit={r.exit_code}, log={r.log_file}\n"
                 f"      {r.command}"
             )
@@ -1111,7 +1836,19 @@ def print_final_summary(
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Run P/F commands from a test list concurrently and compare with reference pass/fail markers."
+        description=(
+            "Run P/F commands from a test list concurrently and compare with "
+            "reference pass/fail markers."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Loop syntax in the list file:\n"
+            "  for $m={RK4,HC4}\n"
+            "  {P,P} command --mover $m\n"
+            "  last pass: {commit-for-RK4,commit-for-HC4}\n\n"
+            "Without a preceding 'for' line, the historical scalar P/F and "
+            "last-pass behavior is unchanged."
+        ),
     )
     parser.add_argument("test_file", help="Path to the test list file")
     parser.add_argument(
@@ -1296,7 +2033,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
 
-    print(f"Parsed {len(tests)} tests from {test_file}")
+    source_entries = len({test.line_no for test in tests})
+    if source_entries == len(tests):
+        print(f"Parsed {len(tests)} tests from {test_file}")
+    else:
+        print(
+            f"Parsed {source_entries} source test entries expanding to "
+            f"{len(tests)} tests from {test_file}"
+        )
     print(f"Concurrent jobs: {jobs}")
     if memory_gate_enabled:
         print(
@@ -1322,8 +2066,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         for t in tests:
             plan = build_test_plan(t, default_np=args.default_np, default_nt=args.default_nt)
             suffix = f"; last pass: {t.last_pass}" if t.last_pass else "; last pass: <none>"
+            variant = (
+                f"; variant {t.variant_index}/{t.variant_count} "
+                f"[{format_loop_bindings(t.loop_bindings)}]"
+                if t.loop_bindings
+                else ""
+            )
             print(
-                f"  #{t.index:03d} line {t.line_no}: expected {t.expected}: "
+                f"  #{t.index:03d} line {t.line_no}: expected {t.expected}{variant}: "
                 f"{plan.np_nt_details}: {t.command}{suffix}"
             )
         if memory_gate_enabled:
