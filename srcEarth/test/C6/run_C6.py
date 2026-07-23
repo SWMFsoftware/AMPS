@@ -146,6 +146,10 @@ class CaseMetrics:
     epoch_year: int
     source: str
     reference_path: str
+    cutoff_scan_n: int
+    scan_spacing_gv: float
+    backtrace_charge: str
+    trace_limit_policy: str
     n_reference: int
     n_matched: int
     n_valid: int
@@ -448,7 +452,12 @@ def replace_input_directive(text: str, directive: str, value: str) -> str:
 
         # A fixed-width directive field keeps generated inputs easy to compare
         # with the checked-in baseline while allowing long directive names.
-        output_lines.append("%-24s%s%s" % (directive, value, trailing_comment))
+        # Use a field wider than the longest supported directive and always keep at
+        # least one separating space.  The earlier 24-character field was too short
+        # for CUTOFF_TRACE_LIMIT_POLICY and produced an invalid concatenated token.
+        field_width = max(32, len(directive) + 1)
+        output_lines.append(("%%-%ds%%s%%s" % field_width) %
+                            (directive, value, trailing_comment))
 
     if matches != 1:
         raise RuntimeError(
@@ -566,6 +575,8 @@ def render_input(input_path: Path, output_path: Path, plan: CasePlan, args: argp
         "CUTOFF_EMAX": "%.15g" % kinetic_energy_mev_from_rigidity_gv(args.rigidity_max_gv),
         "CUTOFF_UPPER_SCAN_N": str(args.cutoff_scan_n),
         "CUTOFF_TRACE_POLICY": args.cutoff_trace_policy,
+        "CUTOFF_BACKTRACE_CHARGE": args.backtrace_charge,
+        "CUTOFF_TRACE_LIMIT_POLICY": args.trace_limit_policy,
         "CUTOFF_MAX_TRAJ_TIME": "%.12g" % args.max_trace_time,
         "MASS_AMU": "%.15g" % PROTON_MASS_AMU,
         "EPOCH": "%04d-01-01T00:00:00" % plan.epoch_year,
@@ -808,6 +819,14 @@ def compare_case(
         epoch_year=plan.epoch_year,
         source=plan.reference_rows[0].source,
         reference_path=str(plan.reference_path),
+        # Record the methodological settings in every case result.  These values
+        # materially affect effective-cutoff comparability and therefore belong in
+        # the provenance rather than only in the generated AMPS input file.
+        cutoff_scan_n=args.cutoff_scan_n,
+        scan_spacing_gv=(args.rigidity_max_gv - args.rigidity_min_gv) /
+                        (args.cutoff_scan_n - 1),
+        backtrace_charge=args.backtrace_charge,
+        trace_limit_policy=args.trace_limit_policy,
         n_reference=n_reference,
         n_matched=n_matched,
         n_valid=n_valid,
@@ -922,6 +941,18 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                         help="LINEAR scan vertices; 2000 gives 0.01 GV spacing over 0.01..20 GV")
     parser.add_argument("--cutoff-trace-policy", choices=("ACCURATE", "LEGACY"), default="ACCURATE")
     parser.add_argument(
+        "--backtrace-charge", choices=("REVERSED", "SAME"), default="REVERSED",
+        help=("charge convention for the outward reverse trajectory; REVERSED "
+              "matches Smart--Shea/CARI antiparticle backtracing, while SAME "
+              "reproduces the historical AMPS convention")
+    )
+    parser.add_argument(
+        "--trace-limit-policy", choices=("FORBIDDEN", "UNRESOLVED"), default="FORBIDDEN",
+        help=("classification of time/step/distance caps in PENUMBRA_SCAN; "
+              "FORBIDDEN matches finite-trajectory cutoff tables, while UNRESOLVED "
+              "is the strict C14-style three-state policy")
+    )
+    parser.add_argument(
         "--domain-half-size-re", type=float, default=25.0,
         help=("outer Cartesian tracing-box half-size in Earth radii; the "
               "runner converts this value to numerical kilometers in the "
@@ -963,6 +994,14 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("require 0 <= rigidity-min < rigidity-max")
     if args.cutoff_scan_n < 2:
         raise SystemExit("--cutoff-scan-n must be at least 2")
+    scan_step_gv = (args.rigidity_max_gv - args.rigidity_min_gv) / (args.cutoff_scan_n - 1)
+    if scan_step_gv > 0.011:
+        print(
+            "C6 warning: requested rigidity spacing is %.5g GV; the published "
+            "tables use approximately 0.01 GV. Use the default "
+            "--cutoff-scan-n 2000 for the reference-resolution validation." % scan_step_gv,
+            file=sys.stderr,
+        )
     if args.domain_half_size_re <= 1.01:
         raise SystemExit(
             "--domain-half-size-re must exceed the Earth/shell radius; "

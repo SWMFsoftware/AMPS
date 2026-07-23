@@ -38,6 +38,10 @@ CUTOFF_SEARCH_ALGORITHM PENUMBRA_SCAN
 CUTOFF_UPPER_SCAN_N     2000
 CUTOFF_SCAN_SPACING     LINEAR
 CUTOFF_TRACE_POLICY     ACCURATE
+! Smart--Shea/CARI reverse tracing launches the charge-reversed particle outward.
+! A finite non-escaping trajectory is counted as forbidden by the reference method.
+CUTOFF_BACKTRACE_CHARGE REVERSED
+CUTOFF_TRACE_LIMIT_POLICY FORBIDDEN
 CUTOFF_MAX_TRAJ_TIME    600.0
 
 #PARTICLE_SPECIES

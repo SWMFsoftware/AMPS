@@ -969,6 +969,8 @@ CUTOFF_MAX_PARTICLES   500
 CUTOFF_MAX_TRAJ_TIME   60.0
 CUTOFF_SEARCH_ALGORITHM UPPER_SCAN
 CUTOFF_UPPER_SCAN_N    50
+CUTOFF_BACKTRACE_CHARGE SAME
+CUTOFF_TRACE_LIMIT_POLICY UNRESOLVED
 CUTOFF_SAMPLING        ISOTROPIC
 DIRECTIONAL_MAP        T
 DIRMAP_LON_RES         30
@@ -1001,8 +1003,10 @@ CUTOFF_EMIN / CUTOFF_EMAX     energy/range bounds [MeV/n]
 CUTOFF_NENERGY                number of samples used by the cutoff search
 CUTOFF_MAX_PARTICLES          direction/sample cap per location
 CUTOFF_MAX_TRAJ_TIME          cutoff-specific trajectory time cap [s]
-CUTOFF_SEARCH_ALGORITHM       UPPER_SCAN (default) or BINARY
-CUTOFF_UPPER_SCAN_N           samples for UPPER_SCAN; 0/omitted uses CUTOFF_NENERGY
+CUTOFF_SEARCH_ALGORITHM       UPPER_SCAN (default), PENUMBRA_SCAN, or BINARY
+CUTOFF_UPPER_SCAN_N           samples for UPPER_SCAN/PENUMBRA_SCAN; 0/omitted uses CUTOFF_NENERGY
+CUTOFF_BACKTRACE_CHARGE       SAME (default) or REVERSED
+CUTOFF_TRACE_LIMIT_POLICY     UNRESOLVED (default) or FORBIDDEN
 CUTOFF_SAMPLING               VERTICAL or ISOTROPIC
 DIRECTIONAL_MAP               write directional sky-map products
 DIRMAP_LON_RES/LAT_RES        sky-map angular resolution [deg]
@@ -1019,9 +1023,13 @@ CUTOFF_DEBUG_EXIT_FILE        single combined trajectory-exit diagnostic output 
 ```
 
 
-The default `UPPER_SCAN` cutoff search is penumbra-safe and is used by both standalone `mode 3d` and gridless cutoff. It builds a logarithmic rigidity grid from `CUTOFF_EMIN`/`CUTOFF_EMAX`, evaluates the trajectory classifier at each grid vertex, scans downward from the highest rigidity to find the highest forbidden sample, and then bisects the final forbidden/allowed transition. This avoids the old endpoint-binary failure in which a low-rigidity allowed pocket caused the solver to return `Rmin` for high-latitude dipole-shell points. Use `CUTOFF_SEARCH_ALGORITHM BINARY` only to reproduce the legacy endpoint-only behavior.
+The default `UPPER_SCAN` cutoff search is penumbra-safe and is used by both standalone `mode 3d` and gridless cutoff. It builds a rigidity grid from `CUTOFF_EMIN`/`CUTOFF_EMAX`, evaluates the trajectory classifier at each grid vertex, scans downward from the highest rigidity to find the highest forbidden sample, and then bisects the final forbidden/allowed transition. `PENUMBRA_SCAN` retains the complete allowed/forbidden sequence and additionally reports lower, effective, and upper cutoff rigidities. Use `CUTOFF_SEARCH_ALGORITHM BINARY` only to reproduce the legacy endpoint-only behavior.
 
-The command-line form is also shared by both modes. For example, both `-mode 3d` and `-mode gridless` honor `-cutoff-search UPPER_SCAN` and `-cutoff-upper-scan-n <N>`. The mode-specific aliases `-mode3d-cutoff-search` and `-gridless-cutoff-search` are accepted for clarity in batch scripts, but they write to the same internal cutoff-search settings.
+`CUTOFF_BACKTRACE_CHARGE` controls the charge used for the outward trajectory launched by the gridless backward-access calculation. `SAME` preserves the historical AMPS convention and uses the configured species charge. `REVERSED` changes only the trace charge sign, so an outward trajectory for a positive incoming particle is integrated as a negative particle. This is the conventional charge-reversal construction used by the Smart--Shea/CARI trajectory tables. The physical species mass, reported rigidity, and input spectrum are unchanged. The default remains `SAME` so existing tests and production inputs do not change silently; C6 writes `REVERSED` explicitly.
+
+`CUTOFF_TRACE_LIMIT_POLICY` controls how a gridless `PENUMBRA_SCAN` trajectory that reaches `MAX_TRACE_TIME`, `CUTOFF_MAX_TRAJ_TIME`, `MAX_STEPS`, or `MAX_TRACE_DISTANCE` is represented in a cutoff scan. `UNRESOLVED` preserves the strict diagnostic behavior: any such sample invalidates an effective-cutoff integral. `FORBIDDEN` treats a bounded trajectory that did not reach the outer escape boundary before the configured safety limit as forbidden. This matches the finite allowed/forbidden trajectory-table convention used by C6. Genuine numerical failures, invalid field values, and non-finite particle states remain errors under either policy. The default remains `UNRESOLVED`; C6 writes `FORBIDDEN` explicitly.
+
+The command-line cutoff-search form is shared by both modes. For example, both `-mode 3d` and `-mode gridless` honor `-cutoff-search PENUMBRA_SCAN` and `-cutoff-upper-scan-n <N>`. The mode-specific aliases `-mode3d-cutoff-search` and `-gridless-cutoff-search` are accepted for clarity in batch scripts, but they write to the same internal cutoff-search settings. The backtrace-charge and trace-limit policies are currently selected in the input file; the C6 runner exposes them as `--backtrace-charge` and `--trace-limit-policy` and writes the corresponding input directives.
 
 The Mode3D debug scan writes a table with `R_GV`, the actual trajectory-classifier
 classification, and the analytic Störmer vertical cutoff when `FIELD_MODEL` is

@@ -259,3 +259,38 @@ hide unresolved trajectory terminations; those are reported separately.
 `tools/build_reference_tables.py` documents the extraction workflow and can
 recreate the CSVs from locally downloaded source PDF/text/XLSX files.  Source
 files are not redistributed by this test.
+
+## Reverse-trajectory and finite-limit conventions
+
+C6 deliberately uses two settings that differ from the backward-compatible AMPS
+cutoff defaults:
+
+```text
+CUTOFF_BACKTRACE_CHARGE    REVERSED
+CUTOFF_TRACE_LIMIT_POLICY  FORBIDDEN
+```
+
+`REVERSED` launches the charge-reversed particle outward while reversing the
+arrival velocity. This is the conventional antiparticle construction used by
+Smart--Shea/CARI: it reconstructs the path of a positive incoming cosmic ray by
+forward-integrating a negative particle from the observation point. `SAME` is
+retained only to reproduce historical AMPS cutoff results.
+
+`FORBIDDEN` maps a trajectory that reaches `MAX_TRACE_TIME`, `MAX_STEPS`, or
+`MAX_TRACE_DISTANCE` without escaping to the forbidden state used by traditional
+finite-trajectory cutoff tables. `UNRESOLVED` remains available for strict
+numerical tests such as C14, where a safety cap must not be interpreted as a
+physical result. Invalid field values, invalid time steps, and numerical failures
+remain errors under both policies.
+
+The C6 runner exposes the corresponding options:
+
+```bash
+--backtrace-charge REVERSED
+--trace-limit-policy FORBIDDEN
+```
+
+For a publication-resolution comparison, retain the default
+`--cutoff-scan-n 2000`, which gives a 0.01-GV linear spacing over 0.01--20 GV.
+A value such as 400 is useful for a quick diagnostic but does not reproduce the
+rigidity resolution of the reference tables.

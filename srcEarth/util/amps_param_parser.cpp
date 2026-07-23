@@ -2479,6 +2479,26 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         p.cutoff.traceIntegrationPolicy=ToUpper(Trim(val));
       }
 
+      // Charge convention for the outward reverse trajectory.  Keep this separate
+      // from PARTICLE_SPECIES/CHARGE: the latter describes the physical incoming
+      // particle, whereas this option controls the numerically integrated
+      // time-reversed trajectory.
+      else if (uKey=="CUTOFF_BACKTRACE_CHARGE" ||
+               uKey=="CUTOFF_BACKTRACE_CHARGE_CONVENTION" ||
+               uKey=="BACKTRACE_CHARGE_CONVENTION") {
+        p.cutoff.backtraceChargeConvention=ToUpper(Trim(val));
+      }
+
+      // Policy for finite integration caps in the three-state PENUMBRA_SCAN.
+      // Numerical/field failures are not affected; only TIME_LIMIT, STEP_LIMIT, and
+      // DISTANCE_LIMIT may be mapped to PHYSICAL_FORBIDDEN for reference-table
+      // compatibility.
+      else if (uKey=="CUTOFF_TRACE_LIMIT_POLICY" ||
+               uKey=="CUTOFF_LIMIT_POLICY" ||
+               uKey=="CUTOFF_LIMIT_CLASSIFICATION") {
+        p.cutoff.traceLimitPolicy=ToUpper(Trim(val));
+      }
+
       // Cutoff sampling strategy: VERTICAL or ISOTROPIC.
       // We store the string in uppercase for robust comparisons later.
       else if (uKey=="CUTOFF_SAMPLING") p.cutoff.sampling=ToUpper(val);
@@ -3278,6 +3298,37 @@ if (ToUpper(p.field.model)=="DIPOLE") {
       else {
         exit(__LINE__,__FILE__,
              "CUTOFF_TRACE_POLICY must be LEGACY or ACCURATE");
+      }
+    }
+    {
+      const std::string convention=ToUpper(Trim(p.cutoff.backtraceChargeConvention));
+      if (convention=="SAME" || convention=="SAME_SIGN" ||
+          convention=="LEGACY" || convention=="HISTORICAL") {
+        p.cutoff.backtraceChargeConvention="SAME";
+      }
+      else if (convention=="REVERSED" || convention=="REVERSE" ||
+               convention=="OPPOSITE" || convention=="ANTIPARTICLE" ||
+               convention=="PHYSICAL") {
+        p.cutoff.backtraceChargeConvention="REVERSED";
+      }
+      else {
+        exit(__LINE__,__FILE__,
+             "CUTOFF_BACKTRACE_CHARGE must be SAME or REVERSED");
+      }
+    }
+    {
+      const std::string policy=ToUpper(Trim(p.cutoff.traceLimitPolicy));
+      if (policy=="UNRESOLVED" || policy=="STRICT" ||
+          policy=="THREE_STATE") {
+        p.cutoff.traceLimitPolicy="UNRESOLVED";
+      }
+      else if (policy=="FORBIDDEN" || policy=="LEGACY" ||
+               policy=="REFERENCE" || policy=="CUTOFF_TABLE") {
+        p.cutoff.traceLimitPolicy="FORBIDDEN";
+      }
+      else {
+        exit(__LINE__,__FILE__,
+             "CUTOFF_TRACE_LIMIT_POLICY must be UNRESOLVED or FORBIDDEN");
       }
     }
     if (p.cutoff.maxParticlesPerPoint < 1) {

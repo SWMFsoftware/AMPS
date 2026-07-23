@@ -1257,8 +1257,19 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
   using Earth::TrajectoryBoundary::EventType;
 
   TrajectoryResult result;
-  const double q = prm.species.charge_e * ElectronCharge;
-  const double qabs = std::fabs(q);
+
+  // Backtracing is integrated forward in numerical time from the observation
+  // point toward the outer boundary.  For a physically correct reverse
+  // trajectory, time reversal of q v x B requires reversing the charge sign as
+  // well as reversing the velocity.  Historical AMPS cutoff calculations
+  // reversed only the velocity, so the input-selectable convention preserves
+  // those archived results while allowing reference-table validation to use the
+  // conventional antiparticle construction.
+  const double qPhysical = prm.species.charge_e * ElectronCharge;
+  const bool reverseBacktraceCharge =
+      EarthUtil::ToUpper(prm.cutoff.backtraceChargeConvention)=="REVERSED";
+  const double q = reverseBacktraceCharge ? -qPhysical : qPhysical;
+  const double qabs = std::fabs(qPhysical);
   const double m0 = prm.species.mass_amu * _AMU_;
 
   const double pMag = MomentumFromRigidity_GV(R_GV,qabs);
@@ -2381,6 +2392,11 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
                                                : std::max(8,prm.cutoff.nEnergy))
               << ")\n";
     std::cout << "Trace policy    : " << prm.cutoff.traceIntegrationPolicy << "\n";
+    std::cout << "Backtrace charge: " << prm.cutoff.backtraceChargeConvention
+              << (EarthUtil::ToUpper(prm.cutoff.backtraceChargeConvention)=="REVERSED"
+                    ? " (q_trace=-q_species)" : " (q_trace=q_species; legacy)")
+              << "\n";
+    std::cout << "Trace-limit class: " << prm.cutoff.traceLimitPolicy << "\n";
     std::cout << "CUTOFF_SAMPLING : " << (samplingVertical ? "VERTICAL" : "ISOTROPIC") << "\n";
     if (!samplingVertical) {
       std::cout << "Directions grid : " << dirs.size()
@@ -2581,8 +2597,16 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     if (tr.allowed()) return EarthUtil::CutoffSampleState::Allowed;
     if (Earth::GridlessMode::IsPhysicalForbiddenTermination(tr.termination))
       return EarthUtil::CutoffSampleState::PhysicalForbidden;
-    if (Earth::GridlessMode::IsTraceLimitTermination(tr.termination))
+    if (Earth::GridlessMode::IsTraceLimitTermination(tr.termination)) {
+      // Strict numerical validation keeps finite safety limits explicit.  Published
+      // world-grid cutoff tables, however, use the traditional finite-trajectory
+      // convention in which an orbit that has not escaped by the stopping criterion
+      // is counted as forbidden.  Make that methodological choice explicit rather
+      // than silently changing PENUMBRA_SCAN semantics for all callers.
+      if (EarthUtil::ToUpper(prm.cutoff.traceLimitPolicy)=="FORBIDDEN")
+        return EarthUtil::CutoffSampleState::PhysicalForbidden;
       return EarthUtil::CutoffSampleState::Unresolved;
+    }
 
     std::ostringstream msg;
     msg << "Gridless PENUMBRA_SCAN trajectory failed after numerical retry: termination="

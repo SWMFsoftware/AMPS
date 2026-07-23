@@ -392,6 +392,38 @@ namespace EarthUtil {
     // Boolean cutoff API; only the numerical integration policy changes.
     std::string traceIntegrationPolicy{"LEGACY"}; // CUTOFF_TRACE_POLICY
 
+    // Charge sign used by the numerically forward-integrated reverse trajectory.
+    //
+    // SAME (backward-compatible default):
+    //   Use the species charge exactly as configured in #PARTICLE_SPECIES while
+    //   launching the velocity opposite to the arrival direction.  This preserves
+    //   historical AMPS cutoff results, but it is not the conventional antiparticle
+    //   backtracing construction used by Smart--Shea/CARI trajectory tables.
+    //
+    // REVERSED:
+    //   Negate the species charge for the outward reverse trajectory.  A positive
+    //   incoming cosmic-ray trajectory is then reconstructed by launching a negative
+    //   particle outward from the observation point, as required by time reversal of
+    //   the Lorentz equation.  Rigidity-to-momentum conversion still uses |q|, so only
+    //   the curvature orientation changes.
+    std::string backtraceChargeConvention{"SAME"}; // CUTOFF_BACKTRACE_CHARGE
+
+    // Classification of a trajectory that reaches a configured time, step, or
+    // cumulative-distance safety cap before hitting either physical boundary.
+    //
+    // UNRESOLVED (backward-compatible PENUMBRA_SCAN default):
+    //   Preserve the third state explicitly.  This is the conservative choice for
+    //   strict numerical tests such as C14 because a safety cap is not itself a
+    //   physical proof that the trajectory is forbidden.
+    //
+    // FORBIDDEN:
+    //   Interpret a non-escaping trajectory at the configured cap as forbidden.
+    //   This matches the traditional finite-trajectory cutoff-table convention and
+    //   is required for direct Smart--Shea/CARI/Gerontidou effective-cutoff
+    //   comparisons.  Genuine invalid-field/time-step/numerical failures remain
+    //   errors and are never converted to forbidden.
+    std::string traceLimitPolicy{"UNRESOLVED"}; // CUTOFF_TRACE_LIMIT_POLICY
+
     // Cutoff sampling mode.
     //
     // VERTICAL:
