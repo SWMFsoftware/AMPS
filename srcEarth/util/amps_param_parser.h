@@ -105,7 +105,10 @@
 //
 //   #BACKGROUND_FIELD
 //     FIELD_MODEL             T96 | T05 | DIPOLE
-//     EPOCH                   <ISO datetime>   ! e.g. 2003-11-20T06:00
+//     EPOCH                   <UTC datetime>   ! recommended: 2010-01-01T00:00:00
+//                                              ! initializes Geopack/IGRF, Tsyganenko
+//                                              ! dipole tilt, and frame rotations;
+//                                              ! CLI --epoch overrides this value
 //     DST                     <double>   ! nT
 //     PDYN                    <double>   ! nPa
 //     IMF_BY                  <double>   ! nT (GSM Y component of IMF)
@@ -680,7 +683,38 @@ namespace EarthUtil {
     // Set via keyword TA16_COEFF_FILE in #BACKGROUND_FIELD.
     std::string ta16CoeffFile;
 
-    // Snapshot time
+    // Global background-field snapshot/reference epoch.
+    //
+    // INPUT FILE
+    // ----------
+    // The value is selected with the EPOCH keyword inside #BACKGROUND_FIELD:
+    //
+    //   #BACKGROUND_FIELD
+    //   FIELD_MODEL  T96
+    //   EPOCH        2010-01-01T00:00:00
+    //
+    // Recommended representation is an ISO-like UTC timestamp
+    // YYYY-MM-DDTHH:MM:SS.  A space separator is also retained as part of the
+    // value because the parser stores everything after the key; the command-line
+    // form must quote such a value to protect it from shell tokenization.
+    //
+    // RUNTIME USE
+    // -----------
+    // This one value is consumed consistently by the standalone field/trajectory
+    // workflows.  It determines the Geopack RECALC/IGRF coefficient epoch, the
+    // Tsyganenko dipole tilt, SPICE frame rotations, Mode3D mesh-field snapshot, and
+    // the reference time used by snapshot driver/spectrum selection.
+    //
+    // CLI PRECEDENCE
+    // --------------
+    // main.cpp applies a non-empty -epoch/--epoch value after the input file has
+    // been parsed and before any field initialization.  The resulting precedence is
+    //
+    //   CLI --epoch  >  #BACKGROUND_FIELD EPOCH  >  this compiled default.
+    //
+    // In TRAJECTORY temporal mode, explicitly time-tagged trajectory samples may
+    // still select per-sample epochs; this field remains the global snapshot and
+    // fallback/reference epoch.
     std::string epoch{"2000-01-01T00:00"};
 
     // Optional external driver table file specified directly in #BACKGROUND_FIELD

@@ -156,6 +156,20 @@ cInternalSphericalData* sAbsorptionSphere = nullptr;
 // ============================================================================
 //  Helper: configure background field (identical to Mode3D path)
 // ============================================================================
+//
+// EPOCH SELECTION CONTRACT
+// ------------------------
+// `prm.field.epoch` is the authoritative snapshot/reference epoch for standalone
+// 3d_forward runs.  It is populated from #BACKGROUND_FIELD / EPOCH and may be
+// overridden by -epoch/--epoch in main.cpp before Run() is entered.  Do not use
+// Exosphere::SimulationStartTimeString here: that global belongs to the historical
+// AMPS application startup path and can retain a value unrelated to the standalone
+// AMPS_PARAM input.  Using it would make the CLI appear to accept --epoch while the
+// actual T96/T05/TA16 initialization silently continued at another time.
+//
+// Passing prm.field.epoch directly keeps forward mode consistent with Mode3D and
+// gridless mode and ensures that the selected epoch controls Geopack RECALC/IGRF
+// coefficients, the Tsyganenko dipole tilt, and all epoch-dependent frame rotations.
 void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
   // Live SWMF-coupled build.
@@ -190,7 +204,7 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
     ::T96::SetDST(Earth::T96::dst);
     ::T96::SetBYIMF(Earth::T96::by);
     ::T96::SetBZIMF(Earth::T96::bz);
-    ::T96::Init(Exosphere::SimulationStartTimeString, Exosphere::SO_FRAME);
+    ::T96::Init(prm.field.epoch.c_str(), Exosphere::SO_FRAME);
   }
   else if (model == "T05") {
     Earth::BackgroundMagneticFieldModelType = Earth::_t05;
@@ -207,7 +221,7 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
     ::T05::SetBZIMF(Earth::T05::bz);
     ::T05::SetW(Earth::T05::W[0], Earth::T05::W[1], Earth::T05::W[2],
                 Earth::T05::W[3], Earth::T05::W[4], Earth::T05::W[5]);
-    ::T05::Init(Exosphere::SimulationStartTimeString, Exosphere::SO_FRAME);
+    ::T05::Init(prm.field.epoch.c_str(), Exosphere::SO_FRAME);
   }
   else if (model == "TA16") {
     if (!prm.field.ta16CoeffFile.empty())
@@ -216,7 +230,7 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
     ::TA16::SetSymHc(prm.field.dst_nT * _NANO_);
     ::TA16::SetXIND(prm.field.xind);
     ::TA16::SetBYIMF(prm.field.imfBy_nT * _NANO_);
-    ::TA16::Init(Exosphere::SimulationStartTimeString, Exosphere::SO_FRAME);
+    ::TA16::Init(prm.field.epoch.c_str(), Exosphere::SO_FRAME);
   }
   // DIPOLE is handled implicitly (no active_flag needed; the field evaluator
   // falls through to the IGRF/analytic dipole path when all model flags are false).
@@ -1467,7 +1481,8 @@ int Run(const EarthUtil::AmpsParam& prm) {
   InitBoundaryInjectionTable();
 
   if (PIC::ThisThread == 0)
-    std::cout << "[Mode3DForward] Particle mover: "
+    std::cout << "[Mode3DForward] Epoch: " << prm.field.epoch << "\n"
+              << "[Mode3DForward] Particle mover: "
               << Earth::Earth3DForward::GetMoverName() << "\n"
               << "[Mode3DForward] Boundary injection: energySampling="
               << InjectionEnergyDistributionName(sInjectionEnergyDistribution) << "\n"

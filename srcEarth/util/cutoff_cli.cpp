@@ -40,6 +40,7 @@
 //     -h | --help              Print this message and exit.
 //     -mode <3d|gridless>      Select solver mode.
 //     -i <file>                Input parameter file (AMPS_PARAM format).
+//     -epoch <UTC>             Override #BACKGROUND_FIELD / EPOCH after parsing.
 //     -mover <BORIS|HC4|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>   Particle mover (default: BORIS).
 //     -mode3d-output-initialized                         Write amps_3d_initialized.data.dat.
 //     -mode3d-field-eval <INTERPOLATION|ANALYTIC>        3D B-field source during tracing.
@@ -107,6 +108,19 @@ CliOptions ParseCli(int argc,char** argv) {
     else if (a=="-i") {
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -i");
       opt.inputFile=argv[++i];
+    }
+    else if (a=="-epoch" || a=="--epoch" ||
+             a=="-field-epoch" || a=="--field-epoch" ||
+             a=="-background-field-epoch" || a=="--background-field-epoch") {
+      // Store the timestamp verbatim.  Do not initialize Geopack here: the input
+      // file has not been parsed yet and ParseCli() deliberately has no dependency
+      // on AmpsParam or any field-model interface.  main.cpp applies this value to
+      // p.field.epoch after ParseAmpsParamFile(), which gives the CLI explicit
+      // precedence while ensuring the final epoch is established before the first
+      // Geopack/Tsyganenko/SPICE or mesh-field initialization call.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -epoch");
+      opt.epoch=argv[++i];
+      if (opt.epoch.empty()) exit(__LINE__,__FILE__,"-epoch requires a non-empty UTC timestamp");
     }
     else if (a=="-mover" || a=="--mover") {
       // We store the mover choice as a string. The *executable* should translate this
@@ -496,6 +510,26 @@ std::string HelpMessage(const char* progName) {
   out << "      Path to the AMPS_PARAM-format input file. Controls all physics and\n";
   out << "      geometry parameters. See 'Input file sections' below for a summary.\n\n";
 
+  out << "  -epoch | --epoch <UTC timestamp>   (optional)\n";
+  out << "      Override the background-field epoch from the input file. The override\n";
+  out << "      is applied after AMPS_PARAM.in is parsed but before Geopack RECALC,\n";
+  out << "      IGRF/Tsyganenko initialization, SPICE frame rotations, mesh-field\n";
+  out << "      construction, or particle tracing. Therefore all products in the run\n";
+  out << "      use the same selected snapshot/reference epoch.\n";
+  out << "\n";
+  out << "      Recommended format: YYYY-MM-DDTHH:MM:SS\n";
+  out << "      Example: --epoch 2010-01-01T00:00:00\n";
+  out << "      If a timestamp contains a space rather than 'T', quote it in the shell,\n";
+  out << "      for example --epoch \"2010-01-01 00:00:00\".\n";
+  out << "\n";
+  out << "      The equivalent input-file command is placed in #BACKGROUND_FIELD:\n";
+  out << "        #BACKGROUND_FIELD\n";
+  out << "        FIELD_MODEL  T96\n";
+  out << "        EPOCH        2010-01-01T00:00:00\n";
+  out << "\n";
+  out << "      Precedence: --epoch > input-file EPOCH > default 2000-01-01T00:00.\n";
+  out << "      Aliases: --field-epoch and --background-field-epoch.\n\n";
+
   out << "  -mover | --mover <BORIS|HC4|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>   (optional; default: BORIS)\n";
   out << "      Select the particle integration algorithm.\n";
   out << "        BORIS   Relativistic Boris pusher. Volume-preserving (symplectic),\n";
@@ -844,7 +878,10 @@ std::string HelpMessage(const char* progName) {
 
   out << "  #BACKGROUND_FIELD\n";
   out << "    FIELD_MODEL        T96 | T05 | DIPOLE\n";
-  out << "    EPOCH              <ISO datetime>    e.g. 2003-11-20T06:00\n";
+  out << "    EPOCH              <UTC datetime>    e.g. 2010-01-01T00:00:00\n";
+  out << "                       Selects the Geopack/IGRF coefficient epoch,\n";
+  out << "                       Tsyganenko dipole tilt, and time-dependent frame\n";
+  out << "                       rotations. Override at runtime with --epoch.\n";
   out << "    DST / PDYN / IMF_BY / IMF_BZ         driving parameters [nT / nPa]\n";
   out << "    T05_W1 .. T05_W6   storm-time history integrals (T05 only)\n";
   out << "    DIPOLE_MOMENT      <double>   multiple of Earth dipole M_E (DIPOLE only)\n";
@@ -885,7 +922,7 @@ std::string HelpMessage(const char* progName) {
   // -----------------------------------------------------------------------
   out << "Notes:\n";
   out << "  * All input positions assumed in GSM coordinates [km]; no transform applied.\n";
-  out << "  * -mover and -density-mode override the corresponding input file settings.\n";
+  out << "  * --epoch, -mover, and -density-mode override corresponding input-file settings.\n";
   out << "  * Mode3D writes amps_3d_initialized.data.dat only when\n";
   out << "    -mode3d-output-initialized is supplied.\n";
   out << "  * Mode3D magnetic-field tracing uses interpolation by default; use\n";

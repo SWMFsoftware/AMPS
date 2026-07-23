@@ -1,5 +1,29 @@
 # SEP-in-geospace model: compact global fields in Mode3D
 
+
+## Selecting the background-field epoch
+
+The global background-field snapshot/reference time is selected in the input file with
+`EPOCH` inside `#BACKGROUND_FIELD`:
+
+```text
+#BACKGROUND_FIELD
+FIELD_MODEL  T96
+EPOCH        2010-01-01T00:00:00
+```
+
+The recommended format is `YYYY-MM-DDTHH:MM:SS`.  This epoch is used when initializing
+Geopack/IGRF coefficients, Tsyganenko dipole tilt, SPICE coordinate rotations, and the
+Mode3D field snapshot.  It can be overridden without editing the input file:
+
+```bash
+./amps -mode gridless -i AMPS_PARAM.in --epoch 1965-01-01T00:00:00
+./amps -mode 3d       -i AMPS_PARAM.in --epoch 2010-01-01T00:00:00
+```
+
+The precedence is `--epoch` > input-file `EPOCH` > the compiled default
+`2000-01-01T00:00`.  A timestamp containing a space must be quoted in the shell.
+
 ## Purpose
 
 Mode3D backward calculations trace an energetic particle through the complete AMR domain. The AMPS mesh uses normal MPI domain decomposition: every rank has the global AMR tree, but only the owner domain and a limited neighbor layer have allocated `cDataBlockAMR` objects. A trajectory assigned to one MPI rank can enter any leaf of the global tree, so field interpolation must not depend on whether that leaf's block is allocated locally.

@@ -1,5 +1,29 @@
 # AMPS Earth Energetic-Particle Model
 
+
+## Selecting the background-field epoch
+
+The global background-field snapshot/reference time is selected in the input file with
+`EPOCH` inside `#BACKGROUND_FIELD`:
+
+```text
+#BACKGROUND_FIELD
+FIELD_MODEL  T96
+EPOCH        2010-01-01T00:00:00
+```
+
+The recommended format is `YYYY-MM-DDTHH:MM:SS`.  This epoch is used when initializing
+Geopack/IGRF coefficients, Tsyganenko dipole tilt, SPICE coordinate rotations, and the
+Mode3D field snapshot.  It can be overridden without editing the input file:
+
+```bash
+./amps -mode gridless -i AMPS_PARAM.in --epoch 1965-01-01T00:00:00
+./amps -mode 3d       -i AMPS_PARAM.in --epoch 2010-01-01T00:00:00
+```
+
+The precedence is `--epoch` > input-file `EPOCH` > the compiled default
+`2000-01-01T00:00`.  A timestamp containing a space must be quoted in the shell.
+
 This directory contains the Earth/geospace energetic-particle tools used by AMPS in standalone runs and in SWMF-coupled PT runs. The code supports three main execution paths:
 
 1. `-mode gridless` — backward trajectory tracing with direct magnetic-field evaluation.

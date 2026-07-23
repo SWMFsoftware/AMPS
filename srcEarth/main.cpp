@@ -14,6 +14,8 @@
 #include <fstream>
 #include <time.h>
 #include <cstdlib>
+#include <algorithm>
+#include <cctype>
 
 
 #include <sys/time.h>
@@ -69,6 +71,87 @@ void InitStandaloneSpiceBeforeParamParsing(const char* modeName) {
 #else
   (void)modeName;
 #endif
+}
+
+
+std::string TrimCliWhitespace(const std::string& value) {
+  // Return a copy with leading and trailing C-locale whitespace removed.
+  //
+  // The AMPS parameter parser has an internal Trim() helper, but that helper is
+  // intentionally private to amps_param_parser.cpp and is therefore not part of
+  // the EarthUtil public interface.  Keep the CLI merge code self-contained
+  // instead of depending on an implementation-only parser function.
+  //
+  // Cast each character to unsigned char before std::isspace().  Passing a
+  // negative signed-char value directly to the C character-classification
+  // functions has undefined behavior.
+  const auto isNotSpace = [](unsigned char ch) {
+    return std::isspace(ch) == 0;
+  };
+
+  const auto begin = std::find_if(value.begin(), value.end(), isNotSpace);
+  if (begin == value.end()) return std::string();
+
+  const auto end = std::find_if(value.rbegin(), value.rend(), isNotSpace).base();
+  return std::string(begin, end);
+}
+
+bool ApplyEpochCli(const EarthUtil::CliOptions& cli,
+                   EarthUtil::AmpsParam& p,
+                   const char* modeName) {
+  //=================================================================================
+  // Apply the global background-field epoch selected on the command line.
+  //=================================================================================
+  // The input parser already supports
+  //
+  //   #BACKGROUND_FIELD
+  //   EPOCH  YYYY-MM-DDTHH:MM:SS
+  //
+  // and stores that value in p.field.epoch.  The CLI layer intentionally stores
+  // --epoch separately in CliOptions because ParseCli() runs before the input file is
+  // read and must remain independent of the physics/parser implementation.  This
+  // helper is the single merge point between those two configuration sources.
+  //
+  // PRECEDENCE
+  // ----------
+  //   non-empty CLI --epoch  >  input-file EPOCH  >  BackgroundField default
+  //
+  // INITIALIZATION ORDER
+  // --------------------
+  // main() calls this helper immediately after ParseAmpsParamFile() and before the
+  // selected solver is launched.  As a result, the final p.field.epoch is already
+  // fixed when the runtime later performs any of the following operations:
+  //
+  //   * Geopack::Init() / RECALC_08 coefficient and dipole-tilt initialization;
+  //   * T96/T01/T05/TA15/TA16 model initialization;
+  //   * SPICE frame-rotation construction;
+  //   * Mode3D mesh magnetic-field materialization;
+  //   * gridless, backward-3D, or forward-3D trajectory calculations;
+  //   * snapshot spectrum/driver-table selection that uses the global reference time.
+  //
+  // The timestamp is deliberately not reinterpreted or rewritten here.  Geopack and
+  // SPICE already consume the same string elsewhere in the code, and preserving it
+  // avoids introducing a second date parser with subtly different accepted formats.
+  // The recommended user-facing representation is ISO-like UTC
+  // YYYY-MM-DDTHH:MM:SS; timestamps containing spaces must be quoted in the shell.
+  //
+  // For TRAJECTORY temporal mode, individual trajectory records may carry their own
+  // per-sample epochs.  This option sets the global snapshot/reference epoch and does
+  // not erase those explicitly time-tagged samples.
+  //=================================================================================
+
+  if (cli.epoch.empty()) return true;
+
+  const std::string epoch = TrimCliWhitespace(cli.epoch);
+  if (epoch.empty()) {
+    std::cerr << "Error: --epoch for "
+              << ((modeName!=nullptr && *modeName!='\0') ? modeName : "standalone mode")
+              << " must contain a non-empty UTC timestamp.\n";
+    return false;
+  }
+
+  p.field.epoch = epoch;
+  return true;
 }
 
 bool ApplyCutoffMoverCli(const EarthUtil::CliOptions& cli) {
@@ -1778,6 +1861,10 @@ int main(int argc,char **argv) {
 
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
 
+        // Establish the final global epoch before any field or trajectory runtime is
+        // entered.  A non-empty CLI value overrides #BACKGROUND_FIELD / EPOCH.
+        if (!ApplyEpochCli(cli,p,"gridless")) return 1;
+
         // Apply command-line overrides that are common to the standalone backward
         // products before dispatching to the gridless cutoff or density/flux solver.
         // This is important for options such as -cutoff-search and
@@ -1824,6 +1911,11 @@ int main(int argc,char **argv) {
         InitStandaloneSpiceBeforeParamParsing("3d");
 
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
+
+        // Apply --epoch before Mode3D initializes the background field or populates
+        // the AMR mesh.  This guarantees the mesh and analytic evaluator use the same
+        // epoch selected by the user.
+        if (!ApplyEpochCli(cli,p,"mode 3d")) return 1;
 
         // Apply command-line overrides shared by Mode3D and gridless backward
         // calculations.  This includes the penumbra-safe cutoff-search controls
@@ -1934,6 +2026,10 @@ int main(int argc,char **argv) {
         InitStandaloneSpiceBeforeParamParsing("3d_forward");
 
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
+
+        // Forward transport must use the same CLI-overridden epoch during mesh-field
+        // initialization, injection-coordinate transforms, and particle propagation.
+        if (!ApplyEpochCli(cli,p,"mode 3d_forward")) return 1;
         if (!ApplyMode3DMeshResolutionCli(cli,p)) return 1;
 
         // ---- CLI overrides for 3d_forward ----

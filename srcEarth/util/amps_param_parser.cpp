@@ -2638,7 +2638,25 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="BZ6" || uKey=="TA15_BZ6" || uKey=="TA16_BZ6") p.field.bzAvg[5]=std::stod(val);
       else if (uKey=="XIND" || uKey=="TA15_XIND") p.field.xind=std::stod(val);
       else if (uKey=="TA16_COEFF_FILE") p.field.ta16CoeffFile=Trim(val);
-      else if (uKey=="EPOCH") p.field.epoch=val;
+      else if (uKey=="EPOCH") {
+        // Store the complete value after the EPOCH keyword rather than taking only
+        // the first whitespace-delimited token.  This intentionally accepts both
+        //
+        //   EPOCH  2010-01-01T00:00:00
+        //   EPOCH  2010-01-01 00:00:00
+        //
+        // because the general parser tokenization keeps all text after the key in
+        // `val`.  No Geopack/SPICE initialization is performed while parsing: the
+        // final value may still be overridden by CLI --epoch in main.cpp.  Solver
+        // startup later passes the merged p.field.epoch to the model and coordinate
+        // initialization routines.
+        p.field.epoch=Trim(val);
+        if (p.field.epoch.empty()) {
+          std::ostringstream msg;
+          msg << "#BACKGROUND_FIELD EPOCH requires a non-empty UTC timestamp";
+          exit(__LINE__,__FILE__,msg.str().c_str());
+        }
+      }
       else if (uKey=="DRIVER_FILE" || uKey=="MAGNETIC_DRIVER_FILE") {
         // Allow the magnetic-field driver table to be declared next to the
         // Tsyganenko model selection inside #BACKGROUND_FIELD, e.g.

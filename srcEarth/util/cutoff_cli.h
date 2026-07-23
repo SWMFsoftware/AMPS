@@ -27,6 +27,17 @@
 //       Path to the AMPS_PARAM-format input file. Parsed by ParseAmpsParamFile.
 //       Required unless -h is given.
 //
+//   -epoch | --epoch <UTC>
+//       Override #BACKGROUND_FIELD / EPOCH after the input file is parsed and
+//       before any Geopack, Tsyganenko, SPICE-frame, mesh-field, or trajectory
+//       initialization occurs.  Recommended syntax:
+//         YYYY-MM-DDTHH:MM:SS
+//       Example:
+//         --epoch 2010-01-01T00:00:00
+//       If the timestamp contains spaces, quote it in the shell.  If omitted, the
+//       input-file EPOCH value is used; if the input file also omits EPOCH, the
+//       existing default 2000-01-01T00:00 remains unchanged.
+//
 //   -mover <string>
 //       Select the particle integration algorithm.
 //       Recognised values (case-insensitive):
@@ -130,6 +141,9 @@
 //   Density/spectrum, anisotropic boundary, override from command line:
 //     ./amps -mode gridless -i run.in -density-mode ANISOTROPIC
 //
+//   Select a different background-field epoch without editing run.in:
+//     ./amps -mode gridless -i run.in --epoch 2010-01-01T00:00:00
+//
 //   Density/spectrum, RK4 mover for comparison:
 //     ./amps -mode gridless -i run.in -mover RK4
 //
@@ -162,6 +176,26 @@ namespace EarthUtil {
     bool help{false};
     std::string mode{""};
     std::string inputFile{""};
+
+    // -epoch | --epoch <UTC>
+    // ---------------------------------------------------------------------
+    // Optional command-line override for #BACKGROUND_FIELD / EPOCH.
+    //
+    // Why this value is stored separately from AmpsParam here:
+    //   ParseCli() intentionally knows nothing about the input-file parser or
+    //   field-model implementation.  It records only what the user supplied on
+    //   the command line.  main.cpp parses AMPS_PARAM.in first and then applies
+    //   this non-empty string to p.field.epoch.  Consequently the precedence is:
+    //
+    //       CLI --epoch  >  #BACKGROUND_FIELD EPOCH  >  compiled default
+    //
+    // The override is applied before any field initialization, so the selected
+    // time is used consistently by Geopack RECALC/IGRF coefficients, Tsyganenko
+    // dipole tilt, SPICE frame rotations, mesh field materialization, and
+    // backward/forward trajectory products.  Empty means that no CLI override
+    // was supplied and the parsed input/default value must remain unchanged.
+    std::string epoch{""};
+
     // Particle mover selection.
     // NOTE: This is intentionally a *string* here to keep the CLI independent of the
     // gridless integrator implementation. The executable can translate this string into
