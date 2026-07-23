@@ -1,16 +1,25 @@
 ! ============================================================================
 ! AMPS Earth validation test C6: global effective vertical cutoff rigidity
 !
-! This template is rendered independently for every reference epoch.  C6 uses
-! the internal IGRF field only and traces vertically incident protons from a
-! geodetic 20-km shell.  PENUMBRA_SCAN evaluates one complete rigidity sequence
-! and writes Rc_lower, Rc_effective, and Rc_upper.  The published Smart--Shea,
-! CARI-7, and Gerontidou tables contain Rc_effective, so that is the quantity
-! compared by run_C6.py.
+! This file is a complete, directly runnable numerical input for the default
+! C6 INITIAL case (Smart--Shea epoch 2000).  It intentionally contains no
+! placeholder tokens, shell variables, or arithmetic expressions.
 !
-! Do not replace PENUMBRA_SCAN with UPPER_SCAN for this test: Rc_upper is not the
-! published effective cutoff when allowed and forbidden bands alternate in the
-! penumbra.
+! run_C6.py copies this file into each case directory and updates only the
+! explicitly named directives whose numerical values differ by subtest, epoch,
+! shell resolution, or CLI option.  The runner does not perform free-form text
+! substitution.  Consequently, every generated AMPS_PARAM_C6.in remains a
+! valid, human-readable AMPS input containing the exact values used in the run.
+!
+! C6 uses the internal IGRF field only and traces vertically incident protons
+! from a geodetic 20-km shell.  PENUMBRA_SCAN evaluates one complete rigidity
+! sequence and writes Rc_lower, Rc_effective, and Rc_upper.  The published
+! Smart--Shea, CARI-7, and Gerontidou tables contain Rc_effective, so that is the
+! quantity compared by run_C6.py.
+!
+! Do not replace PENUMBRA_SCAN with UPPER_SCAN for this test: Rc_upper is not
+! the published effective cutoff when allowed and forbidden bands alternate in
+! the geomagnetic penumbra.
 ! ============================================================================
 
 #CALCULATION_MODE
@@ -18,34 +27,38 @@ CALC_TARGET             CUTOFF_RIGIDITY
 FIELD_EVAL_METHOD       GRIDLESS
 
 #CUTOFF_RIGIDITY
-CUTOFF_EMIN             __CUTOFF_EMIN_MEV__
-CUTOFF_EMAX             __CUTOFF_EMAX_MEV__
+! The numerical energy limits below correspond to proton rigidities of
+! 0.01 GV and 20.0 GV for MASS_AMU=1.007276466621.
+CUTOFF_EMIN             0.0532879330303331
+CUTOFF_EMAX             19083.7246781813
 CUTOFF_MAX_PARTICLES    1
 CUTOFF_NENERGY          50
 CUTOFF_SAMPLING         VERTICAL
 CUTOFF_SEARCH_ALGORITHM PENUMBRA_SCAN
-CUTOFF_UPPER_SCAN_N     __CUTOFF_SCAN_N__
+CUTOFF_UPPER_SCAN_N     2000
 CUTOFF_SCAN_SPACING     LINEAR
-CUTOFF_TRACE_POLICY     __CUTOFF_TRACE_POLICY__
-CUTOFF_MAX_TRAJ_TIME    __MAX_TRACE_TIME_S__
+CUTOFF_TRACE_POLICY     ACCURATE
+CUTOFF_MAX_TRAJ_TIME    600.0
 
 #PARTICLE_SPECIES
 SPECIES                 PROTON
 CHARGE                  1
-MASS_AMU                __MASS_AMU__
+MASS_AMU                1.007276466621
 
 #BACKGROUND_FIELD
 FIELD_MODEL             IGRF
-EPOCH                   __EPOCH_UTC__
+EPOCH                   2000-01-01T00:00:00
 
 #DOMAIN_BOUNDARY
-DOMAIN_X_MIN            -__DOMAIN_HALF_SIZE_RE__
-DOMAIN_X_MAX             __DOMAIN_HALF_SIZE_RE__
-DOMAIN_Y_MIN            -__DOMAIN_HALF_SIZE_RE__
-DOMAIN_Y_MAX             __DOMAIN_HALF_SIZE_RE__
-DOMAIN_Z_MIN            -__DOMAIN_HALF_SIZE_RE__
-DOMAIN_Z_MAX             __DOMAIN_HALF_SIZE_RE__
-R_INNER                  1.0
+! All bare length values in this section are kilometers.  The outer box below
+! is +/-25 Earth radii using Re=6371.2 km; R_INNER is one Earth radius.
+DOMAIN_X_MIN            -159280.0
+DOMAIN_X_MAX             159280.0
+DOMAIN_Y_MIN            -159280.0
+DOMAIN_Y_MAX             159280.0
+DOMAIN_Z_MIN            -159280.0
+DOMAIN_Z_MAX             159280.0
+R_INNER                  6371.2
 
 #SPECTRUM
 ! A spectrum is required by the common parser but is not used by cutoff tracing.
@@ -59,20 +72,20 @@ SPEC_EMAX               20000.0
 #OUTPUT_DOMAIN
 OUTPUT_MODE             SHELLS
 SHELL_COUNT             1
-SHELL_ALTS_KM           __ALTITUDE_KM__
-SHELL_LON_RES_DEG       __SHELL_LON_RES_DEG__
-SHELL_LAT_RES_DEG       __SHELL_LAT_RES_DEG__
+SHELL_ALTS_KM           20.0
+SHELL_LON_RES_DEG       30.0
+SHELL_LAT_RES_DEG       5.0
 SHELL_GEOMETRY          GEODETIC
 
 #OUTPUT_OPTIONS
 OUTPUT_COORDS           GEO
 
 #NUMERICAL
-DT_TRACE                __DT_TRACE_S__
-ADAPTIVE_DT             __ADAPTIVE_DT__
-MAX_STEPS               __MAX_STEPS__
-MAX_TRACE_TIME          __MAX_TRACE_TIME_S__
-MAX_TRACE_DISTANCE      __MAX_TRACE_DISTANCE_RE__
-TRAP_DETECTION          __TRAP_DETECTION__
+DT_TRACE                0.2
+ADAPTIVE_DT             T
+MAX_STEPS               500000
+MAX_TRACE_TIME          600.0
+MAX_TRACE_DISTANCE      400.0
+TRAP_DETECTION          T
 
 !#END

@@ -57,6 +57,13 @@ C_LIGHT_M_S = 299792458.0
 EV_J = 1.602176634e-19
 MEV_J = 1.0e6 * EV_J
 
+# The common AMPS parameter parser stores DOMAIN_* and R_INNER in kilometers.
+# The C6 CLI deliberately exposes the outer-domain half-size in Earth radii
+# because that is the natural scale for magnetospheric cutoff tracing.  Convert
+# exactly once in the runner before writing the numerical AMPS input.  This
+# value matches kEarthRadiusKm in util/amps_param_parser.cpp.
+EARTH_RADIUS_KM = 6371.2
+
 CANONICAL_MOVERS = (
     "BORIS", "HC4", "RK2", "RK4", "RK6",
     "GC2", "GC4", "GC6", "HYBRID",
@@ -405,31 +412,187 @@ def build_case_plans(args: argparse.Namespace, script_dir: Path) -> Tuple[List[C
     return plans, inventories
 
 
-def render_input(template_path: Path, output_path: Path, plan: CasePlan, args: argparse.Namespace) -> None:
-    """Render one self-describing AMPS input for one epoch/reference grid."""
-    text = template_path.read_text()
-    replacements = {
-        "__CUTOFF_EMIN_MEV__": "%.15g" % kinetic_energy_mev_from_rigidity_gv(args.rigidity_min_gv),
-        "__CUTOFF_EMAX_MEV__": "%.15g" % kinetic_energy_mev_from_rigidity_gv(args.rigidity_max_gv),
-        "__CUTOFF_SCAN_N__": str(args.cutoff_scan_n),
-        "__CUTOFF_TRACE_POLICY__": args.cutoff_trace_policy,
-        "__MASS_AMU__": "%.15g" % PROTON_MASS_AMU,
-        "__EPOCH_UTC__": "%04d-01-01T00:00:00" % plan.epoch_year,
-        "__DOMAIN_HALF_SIZE_RE__": "%.12g" % args.domain_half_size_re,
-        "__ALTITUDE_KM__": "%.12g" % plan.reference_rows[0].altitude_km,
-        "__SHELL_LON_RES_DEG__": "%.12g" % plan.shell_lon_res_deg,
-        "__SHELL_LAT_RES_DEG__": "%.12g" % plan.shell_lat_res_deg,
-        "__DT_TRACE_S__": "%.12g" % args.dt_trace,
-        "__ADAPTIVE_DT__": args.adaptive_dt,
-        "__MAX_STEPS__": str(args.max_steps),
-        "__MAX_TRACE_TIME_S__": "%.12g" % args.max_trace_time,
-        "__MAX_TRACE_DISTANCE_RE__": "%.12g" % args.max_trace_distance,
-        "__TRAP_DETECTION__": args.trap_detection,
+def replace_input_directive(text: str, directive: str, value: str) -> str:
+    """Replace exactly one AMPS input directive while preserving readability.
+
+    C6 keeps ``AMPS_PARAM_C6_gridless.in`` as a valid numerical baseline rather
+    than as a collection of ``__PLACEHOLDER__`` tokens.  This helper therefore
+    edits the input structurally: it finds a non-comment line whose first token
+    is *directive* and replaces only that directive's value.  Section headers,
+    explanatory comments, blank lines, and any trailing ``!`` comment are kept.
+
+    Requiring exactly one match catches misspelled, duplicated, or removed
+    directives immediately.  That is safer than unrestricted ``str.replace``:
+    a replacement cannot accidentally alter a comment, another parameter name,
+    or an unrelated number that happens to have the same textual value.
+    """
+    source_lines = text.splitlines()
+    output_lines: List[str] = []
+    matches = 0
+
+    for line in source_lines:
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith(("!", "#")):
+            output_lines.append(line)
+            continue
+
+        fields = stripped.split(None, 1)
+        if fields[0] != directive:
+            output_lines.append(line)
+            continue
+
+        matches += 1
+        trailing_comment = ""
+        if len(fields) == 2 and "!" in fields[1]:
+            trailing_comment = "  !" + fields[1].split("!", 1)[1]
+
+        # A fixed-width directive field keeps generated inputs easy to compare
+        # with the checked-in baseline while allowing long directive names.
+        output_lines.append("%-24s%s%s" % (directive, value, trailing_comment))
+
+    if matches != 1:
+        raise RuntimeError(
+            "expected exactly one %s directive in the C6 numerical input; found %d" %
+            (directive, matches)
+        )
+
+    return "\n".join(output_lines) + "\n"
+
+
+def validate_numerical_input(text: str) -> None:
+    """Reject unresolved template variables in a generated C6 input.
+
+    The AMPS input language still uses categorical tokens such as ``IGRF``,
+    ``PROTON``, ``LINEAR``, and the logical values ``T``/``F``.  Here
+    "numerical input" means that every quantity that is physically numerical
+    is written as a literal number and that no runner placeholder or shell
+    variable remains for AMPS to interpret.
+    """
+    active_lines = [
+        line for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith(("!", "#"))
+    ]
+    unresolved = sorted(set(re.findall(
+        r"__[A-Za-z0-9_]+__", "\n".join(active_lines)
+    )))
+    if unresolved:
+        raise RuntimeError(
+            "generated C6 input contains unresolved placeholder(s): %s" %
+            ", ".join(unresolved)
+        )
+
+    numeric_directives = {
+        "CUTOFF_EMIN", "CUTOFF_EMAX", "CUTOFF_MAX_PARTICLES",
+        "CUTOFF_NENERGY", "CUTOFF_UPPER_SCAN_N", "CUTOFF_MAX_TRAJ_TIME",
+        "CHARGE", "MASS_AMU", "DOMAIN_X_MIN", "DOMAIN_X_MAX",
+        "DOMAIN_Y_MIN", "DOMAIN_Y_MAX", "DOMAIN_Z_MIN", "DOMAIN_Z_MAX",
+        "R_INNER", "SPEC_J0", "SPEC_GAMMA", "SPEC_E0", "SPEC_EMIN",
+        "SPEC_EMAX", "SHELL_COUNT", "SHELL_ALTS_KM",
+        "SHELL_LON_RES_DEG", "SHELL_LAT_RES_DEG", "DT_TRACE",
+        "MAX_STEPS", "MAX_TRACE_TIME", "MAX_TRACE_DISTANCE",
     }
-    for key, value in replacements.items():
-        if key not in text:
-            raise RuntimeError("input template is missing placeholder %s" % key)
-        text = text.replace(key, value)
+    found: Dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("!", "#")):
+            continue
+        fields = stripped.split()
+        if fields and fields[0] in numeric_directives:
+            if len(fields) < 2:
+                raise RuntimeError("numeric directive %s has no value" % fields[0])
+            found[fields[0]] = fields[1]
+
+    missing = sorted(numeric_directives - set(found))
+    if missing:
+        raise RuntimeError(
+            "generated C6 input is missing numeric directive(s): %s" %
+            ", ".join(missing)
+        )
+    for directive, value in sorted(found.items()):
+        try:
+            number = float(value)
+        except ValueError as exc:
+            raise RuntimeError(
+                "C6 directive %s must contain a numerical literal, got %r" %
+                (directive, value)
+            ) from exc
+        if not math.isfinite(number):
+            raise RuntimeError(
+                "C6 directive %s must contain a finite numerical literal, got %r" %
+                (directive, value)
+            )
+
+    # Geometry consistency check.  The parser interprets bare DOMAIN_* and
+    # R_INNER values as kilometers.  A previous C6 input wrote the intended
+    # values 25 Re and 1 Re as bare numbers 25 and 1; AMPS therefore created a
+    # +/-25-km box around Earth.  Every 20-km-altitude shell point started
+    # outside that box and was immediately classified as escaped/allowed,
+    # producing Rc=Rmin everywhere.  Reject that failure mode before launching
+    # a potentially expensive MPI calculation.
+    numeric = {key: float(value) for key, value in found.items()}
+    outer_half_size_km = min(
+        numeric["DOMAIN_X_MAX"], -numeric["DOMAIN_X_MIN"],
+        numeric["DOMAIN_Y_MAX"], -numeric["DOMAIN_Y_MIN"],
+        numeric["DOMAIN_Z_MAX"], -numeric["DOMAIN_Z_MIN"],
+    )
+    maximum_shell_radius_km = 6378.137 + float(found["SHELL_ALTS_KM"])
+    if outer_half_size_km <= maximum_shell_radius_km:
+        raise RuntimeError(
+            "C6 outer domain is too small: minimum Cartesian half-size is "
+            "%.6g km, but the geodetic shell reaches at least %.6g km. "
+            "DOMAIN_* values are kilometers; convert --domain-half-size-re "
+            "to km before writing the AMPS input." %
+            (outer_half_size_km, maximum_shell_radius_km)
+        )
+    if not (0.0 < numeric["R_INNER"] < maximum_shell_radius_km):
+        raise RuntimeError(
+            "C6 R_INNER must be a positive kilometer value below the shell "
+            "radius; got %.6g km for a shell radius of at least %.6g km" %
+            (numeric["R_INNER"], maximum_shell_radius_km)
+        )
+
+
+def render_input(input_path: Path, output_path: Path, plan: CasePlan, args: argparse.Namespace) -> None:
+    """Copy the numerical baseline and update case-dependent directives.
+
+    The checked-in input is valid for the default INITIAL/2000 case.  Other C6
+    cases differ only in a controlled set of values.  Updating directives by
+    name preserves a fully numerical generated input and makes the exact run
+    configuration inspectable without knowing Python placeholder syntax.
+    """
+    text = input_path.read_text()
+    values = {
+        "CUTOFF_EMIN": "%.15g" % kinetic_energy_mev_from_rigidity_gv(args.rigidity_min_gv),
+        "CUTOFF_EMAX": "%.15g" % kinetic_energy_mev_from_rigidity_gv(args.rigidity_max_gv),
+        "CUTOFF_UPPER_SCAN_N": str(args.cutoff_scan_n),
+        "CUTOFF_TRACE_POLICY": args.cutoff_trace_policy,
+        "CUTOFF_MAX_TRAJ_TIME": "%.12g" % args.max_trace_time,
+        "MASS_AMU": "%.15g" % PROTON_MASS_AMU,
+        "EPOCH": "%04d-01-01T00:00:00" % plan.epoch_year,
+        # DOMAIN_* and R_INNER are stored by AMPS in kilometers.  Keep the
+        # human-facing CLI in Earth radii, but emit only explicit numerical km
+        # values in AMPS_PARAM_C6.in.
+        "DOMAIN_X_MIN": "%.12g" % (-args.domain_half_size_re * EARTH_RADIUS_KM),
+        "DOMAIN_X_MAX": "%.12g" % ( args.domain_half_size_re * EARTH_RADIUS_KM),
+        "DOMAIN_Y_MIN": "%.12g" % (-args.domain_half_size_re * EARTH_RADIUS_KM),
+        "DOMAIN_Y_MAX": "%.12g" % ( args.domain_half_size_re * EARTH_RADIUS_KM),
+        "DOMAIN_Z_MIN": "%.12g" % (-args.domain_half_size_re * EARTH_RADIUS_KM),
+        "DOMAIN_Z_MAX": "%.12g" % ( args.domain_half_size_re * EARTH_RADIUS_KM),
+        "R_INNER": "%.12g" % EARTH_RADIUS_KM,
+        "SHELL_ALTS_KM": "%.12g" % plan.reference_rows[0].altitude_km,
+        "SHELL_LON_RES_DEG": "%.12g" % plan.shell_lon_res_deg,
+        "SHELL_LAT_RES_DEG": "%.12g" % plan.shell_lat_res_deg,
+        "DT_TRACE": "%.12g" % args.dt_trace,
+        "ADAPTIVE_DT": args.adaptive_dt,
+        "MAX_STEPS": str(args.max_steps),
+        "MAX_TRACE_TIME": "%.12g" % args.max_trace_time,
+        "MAX_TRACE_DISTANCE": "%.12g" % args.max_trace_distance,
+        "TRAP_DETECTION": args.trap_detection,
+    }
+    for directive, value in values.items():
+        text = replace_input_directive(text, directive, value)
+
+    validate_numerical_input(text)
     text += (
         "\n! C6_SUBTEST              %s\n"
         "! C6_REFERENCE_FILE        %s\n"
@@ -758,7 +921,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--cutoff-scan-n", type=int, default=2000,
                         help="LINEAR scan vertices; 2000 gives 0.01 GV spacing over 0.01..20 GV")
     parser.add_argument("--cutoff-trace-policy", choices=("ACCURATE", "LEGACY"), default="ACCURATE")
-    parser.add_argument("--domain-half-size-re", type=float, default=25.0)
+    parser.add_argument(
+        "--domain-half-size-re", type=float, default=25.0,
+        help=("outer Cartesian tracing-box half-size in Earth radii; the "
+              "runner converts this value to numerical kilometers in the "
+              "AMPS input")
+    )
     parser.add_argument("--dt-trace", type=float, default=0.2)
     parser.add_argument("--adaptive-dt", choices=("T", "F"), default="T")
     parser.add_argument("--max-steps", type=int, default=500000)
@@ -795,6 +963,11 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("require 0 <= rigidity-min < rigidity-max")
     if args.cutoff_scan_n < 2:
         raise SystemExit("--cutoff-scan-n must be at least 2")
+    if args.domain_half_size_re <= 1.01:
+        raise SystemExit(
+            "--domain-half-size-re must exceed the Earth/shell radius; "
+            "use a magnetospheric value such as 25"
+        )
     for name in ("required_valid_fraction", "required_pass_fraction"):
         value = getattr(args, name)
         if not (0.0 <= value <= 1.0):
@@ -843,7 +1016,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     amps_path = Path(args.amps)
     if not amps_path.is_absolute():
         amps_path = (launch_dir / amps_path).resolve()
-    template = script_dir / "AMPS_PARAM_C6_gridless.in"
+    numerical_input = script_dir / "AMPS_PARAM_C6_gridless.in"
     commands: List[Dict[str, object]] = []
     all_metrics: List[CaseMetrics] = []
     overall_pass = True
@@ -854,7 +1027,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         # --output-file supplies an externally generated Tecplot file.
         case_dir.mkdir(parents=True, exist_ok=True)
         if not args.skip_run:
-            render_input(template, case_dir / "AMPS_PARAM_C6.in", plan, args)
+            render_input(numerical_input, case_dir / "AMPS_PARAM_C6.in", plan, args)
             write_reference_subset(case_dir / "reference_C6_selected.csv", plan.reference_rows)
 
         command = [

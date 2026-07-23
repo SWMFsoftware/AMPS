@@ -169,6 +169,42 @@ python srcEarth/test/C6/run_C6.py --subtest INITIAL --mover RK4
 When `--mover` is omitted, the runner passes no mover override and preserves the
 current AMPS default.
 
+## Numerical AMPS input file
+
+`AMPS_PARAM_C6_gridless.in` is a complete, directly runnable input for the
+default `INITIAL` epoch-2000 case.  Every physical quantity is written as an
+explicit numerical literal; the file contains no `__PLACEHOLDER__` fields,
+shell variables, or expressions that AMPS must expand.  Categorical AMPS tokens
+such as `IGRF`, `PROTON`, `LINEAR`, `ACCURATE`, and logical `T`/`F` values remain
+in their required parser form.
+
+For another subtest or CLI configuration, `run_C6.py` copies that numerical
+baseline and replaces a controlled list of directives by name.  It then verifies
+that all required numerical directives are present, finite, and parseable and
+that no placeholder token remains.  Thus, the generated `AMPS_PARAM_C6.in` in
+each case directory shows the exact numerical values supplied to AMPS and can be
+rerun directly without the Python runner.
+
+### Domain length units
+
+`DOMAIN_X_MIN/MAX`, `DOMAIN_Y_MIN/MAX`, `DOMAIN_Z_MIN/MAX`, and `R_INNER` are
+interpreted by the common AMPS parser as **kilometers** when the value has no
+unit suffix.  C6 exposes `--domain-half-size-re` in Earth radii for convenience,
+but converts it numerically using `Re = 6371.2 km` before writing the input.  The
+default generated geometry is therefore:
+
+```text
+DOMAIN_X_MIN/MAX  = -159280 / +159280 km   (= +/-25 Re)
+DOMAIN_Y_MIN/MAX  = -159280 / +159280 km
+DOMAIN_Z_MIN/MAX  = -159280 / +159280 km
+R_INNER           = 6371.2 km              (= 1 Re)
+```
+
+The runner checks that the geodetic shell lies inside the outer box and outside
+`R_INNER`.  This prevents a unit mistake from classifying every trajectory as
+an immediate outer-boundary escape and returning the lower rigidity bound at
+every location.
+
 ## Reference-only and dry-run checks
 
 Validate file schemas, uniqueness, and coverage without AMPS:
@@ -187,7 +223,7 @@ python srcEarth/test/C6/run_C6.py --subtest INITIAL --dry-run
 
 Each expanded epoch case writes:
 
-- `AMPS_PARAM_C6.in` — rendered, self-describing input;
+- `AMPS_PARAM_C6.in` — fully numerical, self-describing input used by AMPS;
 - `reference_C6_selected.csv` — exact rows used in that case;
 - `C6_amps.log` — combined AMPS output;
 - `C6_comparison.csv` — point-by-point reference/model comparison;

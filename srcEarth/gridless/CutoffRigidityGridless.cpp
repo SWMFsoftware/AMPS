@@ -3869,8 +3869,27 @@ if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
     }
 
     if (prm.output.mode!="TRAJECTORY" && prm.output.coords!="GSM") {
-      std::cout << "[gridless] NOTE: OUTPUT_COORDS=" << prm.output.coords
-                << ". This prototype interprets positions as GSM.\n";
+      // Shell longitude/latitude are Earth-fixed geographic coordinates.  For
+      // realistic fields (including IGRF-only C6), LocationToX0m() and
+      // LocationToVerticalArrivalDir() rotate the WGS-84 position and local
+      // vertical from ITRF93/GEO into GSM at prm.field.epoch before tracing.
+      // DIPOLE intentionally preserves its analytic native frame.
+#ifndef _NO_SPICE_CALLS_
+      if (prm.output.mode=="SHELLS" &&
+          EarthUtil::ToUpper(prm.field.model)!="DIPOLE") {
+        std::cout << "[gridless] SHELL coordinates: " << prm.output.coords
+                  << " (WGS-84/ITRF93) -> GSM at epoch "
+                  << prm.field.epoch << ".\n";
+      }
+      else {
+        std::cout << "[gridless] NOTE: OUTPUT_COORDS=" << prm.output.coords
+                  << "; point-like Cartesian inputs remain interpreted as GSM.\n";
+      }
+#else
+      std::cout << "[gridless] WARNING: OUTPUT_COORDS=" << prm.output.coords
+                << " but this build has _NO_SPICE_CALLS_; GEO->GSM shell "
+                   "rotation falls back to identity.\n";
+#endif
     }
 
     std::cout.flush();
