@@ -79,6 +79,18 @@ namespace Geopack {
     void GetMagneticField(double *B,double *x);
   }
 
+  // Initialize the epoch-dependent GEOPACK state.
+  //
+  // The caller must pass the final epoch selected by the AMPS configuration
+  // merge (CLI --epoch, otherwise #BACKGROUND_FIELD/EPOCH, otherwise the
+  // compiled input default).  Init() uses the same timestamp for two coupled
+  // tasks:
+  //   1. construct optional SPICE user-frame <-> GSM/GSE rotations; and
+  //   2. call RECALC_08 with year/day-of-year/time so IGRF coefficients and
+  //      the geomagnetic dipole tilt are initialized consistently.
+  //
+  // Accepted user-facing forms are documented in GeopackInterface.cpp.  The
+  // recommended form is YYYY-MM-DDTHH:MM:SS.
   void Init(const char* Epoch,std::string FrameNameIn);
 }
 
