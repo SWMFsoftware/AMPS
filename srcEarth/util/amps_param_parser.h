@@ -50,8 +50,9 @@
 //     DIRECTIONAL_MAP         T|F        ! enable directional cutoff sky-map output
 //     DIRMAP_LON_RES          <double>   ! longitude resolution [deg] for sky-map
 //     DIRMAP_LAT_RES          <double>   ! latitude resolution [deg] for sky-map
-//     CUTOFF_SEARCH_ALGORITHM <string>   ! UPPER_SCAN (default) or BINARY
-//     CUTOFF_UPPER_SCAN_N     <int>      ! samples for UPPER_SCAN; 0 => CUTOFF_NENERGY
+//     CUTOFF_SEARCH_ALGORITHM <string>   ! UPPER_SCAN (default), PENUMBRA_SCAN, or BINARY
+//     CUTOFF_UPPER_SCAN_N     <int>      ! samples for UPPER/PENUMBRA scan; 0 => CUTOFF_NENERGY
+//     CUTOFF_SCAN_SPACING     LOG | LINEAR ! rigidity-node spacing; default LOG
 //     CUTOFF_DEBUG_RIGIDITY_SCAN T|F     ! write one-point allowed(R) scan
 //     CUTOFF_DEBUG_SCAN_*               ! lon/lat/alt/N/file controls for that scan
 //     CUTOFF_DEBUG_EXIT_TRACE T|F        ! write trajectory-exit diagnostic
@@ -104,7 +105,7 @@
 //     SPECIES_MASS_AMU        <double>   ! mass in atomic mass units
 //
 //   #BACKGROUND_FIELD
-//     FIELD_MODEL             T96 | T05 | DIPOLE
+//     FIELD_MODEL             IGRF | T96 | T01 | T05 | TA15N | TA15B | TA16 | DIPOLE
 //     EPOCH                   <UTC datetime>   ! recommended: 2010-01-01T00:00:00
 //                                              ! initializes Geopack/IGRF, Tsyganenko
 //                                              ! dipole tilt, and frame rotations;
@@ -133,7 +134,10 @@
 //     OUTPUT_MODE             POINTS | SHELLS
 //     COORDS                  GSM | GEO | GSE      ! coordinate label (not transformed)
 //     SHELL_ALTITUDES         <double> [<double> ...] ! km above Earth's surface; space-separated
-//     SHELL_RES               <double>   ! angular resolution [deg] for lon/lat grid
+//     SHELL_RES               <double>   ! common angular resolution [deg]
+//     SHELL_LON_RES_DEG       <double>   ! optional longitude-specific resolution
+//     SHELL_LAT_RES_DEG       <double>   ! optional latitude-specific resolution
+//     SHELL_GEOMETRY          SPHERICAL | GEODETIC ! default SPHERICAL
 //     POINTS_BEGIN
 //       x1 y1 z1
 //       x2 y2 z2
@@ -349,14 +353,30 @@ namespace EarthUtil {
     // the final forbidden/allowed transition.  This avoids returning Rmin when
     // low-rigidity allowed pockets exist below the physical upper cutoff.
     //
+    // PENUMBRA_SCAN: evaluate one complete rigidity grid, retain explicit
+    // ALLOWED / PHYSICAL_FORBIDDEN / UNRESOLVED states, and extract both the
+    // lower and upper cutoff from that one scan.  This mode is intended for C14
+    // and currently requires VERTICAL sampling so the reported band belongs to
+    // one unambiguous arrival direction.
+    //
     // BINARY: legacy endpoint-only binary search.  This is faster but assumes
     // TraceAllowed(R) is monotonic and can return Rmin if Rmin happens to be
     // allowed inside a penumbra-like allowed pocket.
     std::string searchAlgorithm{"UPPER_SCAN"}; // CUTOFF_SEARCH_ALGORITHM
 
-    // Number of samples for UPPER_SCAN.  If <=0, the solver reuses
+    // Number of samples for UPPER_SCAN or PENUMBRA_SCAN.  If <=0, the solver reuses
     // CUTOFF_NENERGY so existing inputs control the scan resolution.
     int upperScanN{0}; // CUTOFF_UPPER_SCAN_N
+
+    // Spacing of the rigidity vertices used by UPPER_SCAN/PENUMBRA_SCAN.
+    //
+    // LOG (default) preserves the historical behavior and is efficient when one scan
+    // must cover several decades in rigidity.  LINEAR is required by validation data
+    // sets whose published effective cutoff was computed by summing equal-width
+    // rigidity bins (for example the Smart--Shea/CARI/Gerontidou world grids).
+    // The default remains LOG so all existing tests and production input files retain
+    // exactly their previous sampling grid.
+    std::string scanSpacing{"LOG"}; // CUTOFF_SCAN_SPACING: LOG|LINEAR
 
     // Numerical integration policy used by the Boolean cutoff classifier.
     //
@@ -640,6 +660,7 @@ namespace EarthUtil {
     //   "TA15N"                            Tsyganenko-Andreeva (2015) northward
     //   "TA15B"                            Tsyganenko-Andreeva (2015) southward
     //   "TA16"    "TA16RBF"               Tsyganenko-Andreeva (2016)
+    //   "IGRF"                             Geopack internal field only (no external model)
     //   "DIPOLE"                           Analytic centered dipole (internal only)
     std::string model{"T96"};
 
@@ -853,9 +874,25 @@ namespace EarthUtil {
     std::string trajFile;               // TRAJ_FILE
     double fluxDt_min{1.0};             // FLUX_DT  [min]
 
-    // SHELLS: altitudes in km + resolution in degrees.
+    // SHELLS: altitudes in km and angular resolution in degrees.
+    //
+    // shellRes_deg is the backward-compatible common resolution.  When either of the
+    // axis-specific values is positive it overrides the common value on that axis.
+    // This permits reference grids such as 5 deg latitude x 30 deg longitude without
+    // forcing AMPS to calculate the unused intermediate longitudes.
     std::vector<double> shellAlt_km;
     double shellRes_deg{15.0};
+    double shellLonRes_deg{-1.0}; // SHELL_LON_RES_DEG; <=0 -> shellRes_deg
+    double shellLatRes_deg{-1.0}; // SHELL_LAT_RES_DEG; <=0 -> shellRes_deg
+
+    // Geometry used to convert shell latitude/longitude/altitude into Cartesian
+    // positions and the local vertical direction.
+    //
+    // SPHERICAL (default) reproduces the historical Earth-radius shell.  GEODETIC
+    // uses the WGS-84/GEOPACK reference ellipsoid and the ellipsoid normal as the
+    // vertical.  The latter is necessary for direct comparison with published world
+    // grids specified as height above the International Reference Ellipsoid.
+    std::string shellGeometry{"SPHERICAL"}; // SHELL_GEOMETRY: SPHERICAL|GEODETIC
 
     // Helper utilities used by the parser and the solvers.
     inline bool HasTrajectorySamples() const {

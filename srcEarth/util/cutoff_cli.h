@@ -98,11 +98,13 @@
 //   -mode3d-mpi-dynamic-chunk <int>
 //       Number of Mode3D locations or gridless task chunks per dynamic MPI fetch. 0 means automatic.
 //
-//   -cutoff-search <UPPER_SCAN|BINARY>
-//       Select the scalar cutoff-rigidity search algorithm used by both standalone
-//       Mode3D and gridless cutoff.  UPPER_SCAN is penumbra-safe and is the
-//       default; BINARY is the legacy endpoint method.  Mode-specific aliases are
-//       also accepted, including -mode3d-cutoff-search and -gridless-cutoff-search.
+//   -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|BINARY>
+//       Select the cutoff-rigidity search product used by both standalone Mode3D
+//       and gridless cutoff. UPPER_SCAN returns the upper penumbra edge;
+//       PENUMBRA_SCAN evaluates the full access sequence and enables lower,
+//       effective, and upper cutoffs; BINARY is the legacy endpoint method.
+//       Mode-specific aliases are also accepted, including
+//       -mode3d-cutoff-search and -gridless-cutoff-search.
 //
 //   -cutoff-upper-scan-n <int>
 //       Number of log-spaced rigidity samples used by UPPER_SCAN before the final
@@ -293,17 +295,20 @@ namespace EarthUtil {
     std::string cutoffDebugExitListFile{""};
     std::string cutoffDebugExitFile{""};
 
-    // -cutoff-search <UPPER_SCAN|BINARY>
+    // -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|BINARY>
     // Optional override for #CUTOFF_RIGIDITY / CUTOFF_SEARCH_ALGORITHM.
+    // UPPER_SCAN, PENUMBRA_SCAN, and BINARY are normalized and validated by
+    // ApplyCommonBackwardCli() in srcEarth/main.cpp. PENUMBRA_SCAN must remain a
+    // distinct value because it requests a complete access sequence and an
+    // effective-cutoff product, not merely an upper-cutoff transition.
     // This generic option, together with -mode3d-cutoff-search and
-    // -gridless-cutoff-search aliases, is applied in both standalone backward
-    // modes by ApplyCommonBackwardCli() in srcEarth/main.cpp.
+    // -gridless-cutoff-search aliases, is applied in both standalone backward modes.
     // Empty means use the input-file/default value.
     std::string cutoffSearchAlgorithm{""};
 
     // -cutoff-upper-scan-n <int>
     // Optional override for #CUTOFF_RIGIDITY / CUTOFF_UPPER_SCAN_N.
-    // Applies to both Mode3D and gridless UPPER_SCAN searches.
+    // Applies to both Mode3D and gridless UPPER_SCAN/PENUMBRA_SCAN searches.
     // 0 means no CLI override.
     int cutoffUpperScanN{0};
 

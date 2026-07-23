@@ -1325,8 +1325,8 @@ Birdsall & Langdon (1991) for the Boris magnetic rotation.
 -cutoff-debug-exit-list <file>
     In standalone Mode3D cutoff runs, trace all diagnostic trajectories listed in <file> during one AMPS run and write one combined output file. Each non-comment line is: lon_deg lat_deg alt_km R_GV [label].
 
--cutoff-search <UPPER_SCAN|BINARY>
-    Select the cutoff-search algorithm in both standalone Mode3D and gridless cutoff. UPPER_SCAN is the default penumbra-safe upper-cutoff search; BINARY restores the legacy endpoint-only bisection. Optional: -cutoff-upper-scan-n <N>. Mode-specific aliases are also accepted: -mode3d-cutoff-search, -gridless-cutoff-search, -mode3d-cutoff-search-n, and -gridless-cutoff-search-n.
+-cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|BINARY>
+    Select the cutoff-search product in both standalone Mode3D and gridless cutoff. UPPER_SCAN returns the upper penumbra edge. PENUMBRA_SCAN evaluates the complete rigidity sequence and enables lower, effective, and upper cutoff values; use it for comparisons with published effective-cutoff tables such as Smart--Shea, CARI-7, and Gerontidou et al. BINARY restores the legacy endpoint-only bisection. Optional: -cutoff-upper-scan-n <N>. Mode-specific aliases are also accepted: -mode3d-cutoff-search, -gridless-cutoff-search, -mode3d-cutoff-search-n, and -gridless-cutoff-search-n.
 
 -density-parallel <OPENMP|THREADS|SERIAL>
     Select the shared-memory backend for Mode3D backward products within each MPI process. Despite the name, this option now applies to both cutoff and density/flux calculations. OPENMP preserves the OpenMP loops. THREADS uses direct std::thread workers over observation locations and suppresses nested OpenMP inside those workers. SERIAL disables intra-rank shared-memory parallelism.

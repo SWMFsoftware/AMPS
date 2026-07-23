@@ -54,7 +54,7 @@
 //     -mode3d-mesh-res-earth-re <double>                 optional AMR resolution at Earth.
 //     -mode3d-mesh-res-boundary-re <double>              optional AMR resolution at boundary.
 //     -mode3d-mesh-coarsening <LINEAR|LOG|POWER|...>     optional radial coarsening law.
-//     -cutoff-search <UPPER_SCAN|BINARY>                 cutoff search in 3d/gridless.
+//     -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|BINARY>   cutoff search in 3d/gridless.
 //     -cutoff-upper-scan-n <int>                         log-grid samples for UPPER_SCAN.
 //
 //   See amps_param_parser.h for a full description of the input file format.
@@ -673,7 +673,7 @@ std::string HelpMessage(const char* progName) {
   out << "      output file is still selected with --cutoff-debug-exit-file. Input-file\n";
   out << "      equivalent: CUTOFF_DEBUG_EXIT_LIST_FILE.\n\n";
 
-  out << "  -cutoff-search | --cutoff-search <UPPER_SCAN|BINARY>   (optional)\n";
+  out << "  -cutoff-search | --cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|BINARY>   (optional)\n";
   out << "      What this command does:\n";
   out << "        Selects how the scalar cutoff rigidity Rc is extracted from repeated\n";
   out << "        trajectory classifications TraceAllowed(R). It applies to both\n";
@@ -691,22 +691,31 @@ std::string HelpMessage(const char* progName) {
   out << "                    Rmax, scan from high to low rigidity for the highest\n";
   out << "                    forbidden sample, then bisect only the final\n";
   out << "                    forbidden/allowed interval. This returns Rc_upper.\n";
-  out << "        BINARY      Legacy endpoint bisection. Use only for debugging or for\n";
-  out << "                    monotonic test problems, because it is not penumbra-safe.\n";
+  out << "        PENUMBRA_SCAN  Evaluate the complete rigidity sequence and retain all\n";
+  out << "                       allowed, forbidden, and unresolved states. This mode\n";
+  out << "                       produces lower, effective, and upper cutoff values and\n";
+  out << "                       is required when comparing with published effective-\n";
+  out << "                       cutoff tables such as Smart--Shea, CARI-7, and\n";
+  out << "                       Gerontidou et al.\n";
+  out << "        BINARY         Legacy endpoint bisection. Use only for debugging or\n";
+  out << "                       monotonic test problems, because it is not penumbra-safe.\n";
   out << "\n";
   out << "      Optional controls and aliases:\n";
   out << "        --cutoff-upper-scan-n <N>       log-rigidity samples used before bisection\n";
   out << "        --gridless-cutoff-search <...>  gridless-specific alias\n";
   out << "        --gridless-cutoff-search-n <N>  gridless-specific alias for scan count\n";
-  out << "        If N is omitted, UPPER_SCAN uses CUTOFF_NENERGY samples.\n";
+  out << "        If N is omitted, UPPER_SCAN and PENUMBRA_SCAN use the input/default\n";
+  out << "        scan count.\n";
   out << "\n";
   out << "      CLI example:\n";
   out << "        " << progName << " -mode 3d -i run.in -cutoff-search UPPER_SCAN -cutoff-upper-scan-n 80\n";
   out << "        " << progName << " -mode gridless -i run.in -cutoff-search UPPER_SCAN -cutoff-upper-scan-n 80\n";
+  out << "        " << progName << " -mode gridless -i run.in -cutoff-search PENUMBRA_SCAN -cutoff-upper-scan-n 400\n";
   out << "\n";
   out << "      Input-file analogue (#CUTOFF_RIGIDITY or #NUMERICAL):\n";
-  out << "        CUTOFF_SEARCH_ALGORITHM  UPPER_SCAN   ! UPPER_SCAN | BINARY\n";
-  out << "        CUTOFF_UPPER_SCAN_N      80           ! log-rigidity pre-scan nodes\n\n";
+  out << "        CUTOFF_SEARCH_ALGORITHM  PENUMBRA_SCAN\n";
+  out << "        CUTOFF_UPPER_SCAN_N      400          ! coarse rigidity scan nodes\n";
+  out << "        ! Valid algorithms: UPPER_SCAN | PENUMBRA_SCAN | BINARY\n\n";
 
   out << "  -cutoff-trace-policy | --cutoff-trace-policy <LEGACY|ACCURATE>   (optional)\n";
   out << "      Selects the numerical integration policy used by Boolean cutoff\n";

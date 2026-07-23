@@ -141,6 +141,12 @@
 // to Rmax.  The legacy endpoint-binary method remains available through
 // CUTOFF_SEARCH_ALGORITHM BINARY for comparison/debugging.
 //
+// CUTOFF_SEARCH_ALGORITHM PENUMBRA_SCAN is intentionally separate.  It evaluates one
+// complete increasing rigidity grid, preserves configured TIME/STEP/DISTANCE limits as
+// UNRESOLVED rather than Boolean forbidden, and derives both Rc_lower and Rc_upper from
+// that shared sequence.  C14 uses the dedicated product so the analytical Størmer lower
+// cutoff is never confused with the historical upper-cutoff map.
+//
 // The point cutoff for ISOTROPIC sampling remains the minimum cutoff over all sampled
 // arrival directions.  In VERTICAL sampling mode only the local vertical direction is used.
 //
@@ -199,6 +205,7 @@
 #include "util/TrajectoryBoundary.h"
 #include "util/TrajectoryTimeStep.h"
 #include "util/TrajectoryTrapDetector.h"
+#include "util/CutoffBandSearch.h"
 #include "DipoleInterface.h" 
 #include "../3d/Mode3DParallel.h" // shared MPI dynamic work-queue scheduler
 
@@ -646,6 +653,19 @@ public:
       return;
     }
 
+    // IGRF-only branch used by C6 and other internal-field validation runs.
+    // Geopack::Init(...,"GSM") in the constructor has already selected the
+    // requested epoch and initialized RECALC_08.  This call evaluates only the
+    // internal spherical-harmonic field; no T96/T01/T05/TA15/TA16 contribution
+    // is added.  Coordinates and the returned field are both in GSM SI units.
+    if (Model()=="IGRF") {
+      double x_arr[3]={x_m.x,x_m.y,x_m.z};
+      double b_arr[3]={0.0,0.0,0.0};
+      Geopack::IGRF::GetMagneticField(b_arr,x_arr);
+      B_T.x=b_arr[0]; B_T.y=b_arr[1]; B_T.z=b_arr[2];
+      return;
+    }
+
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     // Live SWMF-coupled path.
     //
@@ -735,7 +755,7 @@ public:
       TA16::GetMagneticField(b_total,x_arr);
     }
     else {
-      throw std::runtime_error("Unsupported FIELD_MODEL in gridless solver: "+Model()+" (implemented via interfaces in this archive: NONE,T96,T01,T05,TA15N,TA15B,TA16,DIPOLE)");
+      throw std::runtime_error("Unsupported FIELD_MODEL in gridless solver: "+Model()+" (implemented via interfaces in this archive: NONE,IGRF,T96,T01,T05,TA15N,TA15B,TA16,DIPOLE)");
     }
 
     B_T.x = b_total[0];
@@ -1914,7 +1934,8 @@ static void WriteTecplotPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam&
 }
 
 static void WriteTecplotShells(const std::vector<double>& shellAlt_km,
-                               double res_deg,
+                               double lonRes_deg,
+                               double latRes_deg,
                                const std::vector< std::vector<double> >& RcShell,
                                const std::vector< std::vector<double> >& EminShell) {
   // One file with multiple Tecplot zones, one per altitude.
@@ -1924,8 +1945,8 @@ static void WriteTecplotShells(const std::vector<double>& shellAlt_km,
   std::fprintf(f,"TITLE=\"Cutoff Rigidity (Gridless Shells)\"\n");
   std::fprintf(f,"VARIABLES=\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"\n");
 
-  const int nLon = static_cast<int>(std::floor(360.0/res_deg + 0.5));
-  const int nLat = static_cast<int>(std::floor(180.0/res_deg + 0.5)) + 1; // include poles
+  const int nLon = static_cast<int>(std::floor(360.0/lonRes_deg + 0.5));
+  const int nLat = static_cast<int>(std::floor(180.0/latRes_deg + 0.5)) + 1; // include poles
 
   for (size_t s=0;s<shellAlt_km.size();s++) {
     const double alt=shellAlt_km[s];
@@ -1933,11 +1954,11 @@ static void WriteTecplotShells(const std::vector<double>& shellAlt_km,
 
     // k = i + nLon*j ordering
     for (int j=0;j<nLat;j++) {
-      double lat=-90.0 + res_deg*j;
+      double lat=-90.0 + latRes_deg*j;
       if (lat>90.0) lat=90.0;
 
       for (int i=0;i<nLon;i++) {
-        double lon = res_deg*i;
+        double lon = lonRes_deg*i;
         int k=i+nLon*j;
 
         std::fprintf(f,"%e %e %e %e\n", lon, lat, 
@@ -1978,7 +1999,8 @@ static void WriteTecplotShells(const std::vector<double>& shellAlt_km,
 //======================================================================================
 static void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam& prm,
                                                      const std::vector<double>& shellAlt_km,
-                                                     double res_deg,
+                                                     double lonRes_deg,
+                                                     double latRes_deg,
                                                      const std::vector< std::vector<double> >& RcShell) {
   FILE* f=std::fopen("cutoff_gridless_shells_dipole_compare.dat","w");
   if (!f) throw std::runtime_error("Cannot write Tecplot file: cutoff_gridless_shells_dipole_compare.dat");
@@ -1986,8 +2008,8 @@ static void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam&
   std::fprintf(f,"TITLE=\"Dipole Cutoff Rigidity (Shells): Numeric vs Analytic Vertical\"\n");
   std::fprintf(f,"VARIABLES=\"lon_deg\",\"lat_deg\",\"x_km\",\"y_km\",\"z_km\",\"Rc_num_GV\",\"Rc_vert_GV\",\"rel_err\"\n");
 
-  const int nLon = static_cast<int>(std::floor(360.0/res_deg + 0.5));
-  const int nLat = static_cast<int>(std::floor(180.0/res_deg + 0.5)) + 1; // include poles
+  const int nLon = static_cast<int>(std::floor(360.0/lonRes_deg + 0.5));
+  const int nLat = static_cast<int>(std::floor(180.0/latRes_deg + 0.5)) + 1; // include poles
 
   // Unit dipole axis used by DipoleInterface.
   const double mx = Earth::GridlessMode::Dipole::gParams.m_hat[0];
@@ -2004,7 +2026,7 @@ static void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam&
     const double R0 = StormerVerticalCoeff_GV(prm.field.dipoleMoment_Me, _EARTH__RADIUS_);
 
     for (int j=0;j<nLat;j++) {
-      double lat_deg = -90.0 + res_deg*j;
+      double lat_deg = -90.0 + latRes_deg*j;
       if (lat_deg>90.0) lat_deg=90.0;
 
       const double lat = lat_deg*Pi/180.0;
@@ -2012,7 +2034,7 @@ static void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam&
       const double slat = std::sin(lat);
 
       for (int i=0;i<nLon;i++) {
-        const double lon_deg = res_deg*i;
+        const double lon_deg = lonRes_deg*i;
         const double lon = lon_deg*Pi/180.0;
 
         const double clon = std::cos(lon);
@@ -2044,6 +2066,104 @@ static void WriteTecplotShells_DipoleAnalyticCompare(const EarthUtil::AmpsParam&
     }
   }
 
+  std::fclose(f);
+}
+
+static void WriteTecplotShells_Penumbra(
+                                const EarthUtil::AmpsParam& prm,
+                                const std::vector<double>& shellAlt_km,
+                                double lonRes_deg,
+                                double latRes_deg,
+                                const std::vector<double>& lower,
+                                const std::vector<double>& effective,
+                                const std::vector<double>& upper,
+                                const std::vector<int>& nTransitions,
+                                const std::vector<int>& nAllowedIntervals,
+                                const std::vector<int>& nUnresolved,
+                                const std::vector<int>& lowerBracketUnresolved,
+                                const std::vector<int>& upperBracketUnresolved,
+                                const std::vector<int>& lowerBelowRange,
+                                const std::vector<int>& lowerAboveRange,
+                                const std::vector<int>& upperBelowRange,
+                                const std::vector<int>& upperAboveRange) {
+  // C14/PENUMBRA_SCAN writes a dedicated file rather than changing the historical
+  // scalar shell format.  Existing readers continue to see Rc_GV=Rc_upper_GV in
+  // cutoff_gridless_shells.dat, while this file exposes both transitions and the
+  // topology needed to decide whether a strict analytical comparison is meaningful.
+  FILE* f=std::fopen("cutoff_gridless_shells_penumbra.dat","w");
+  if (!f) throw std::runtime_error(
+      "Cannot write Tecplot file: cutoff_gridless_shells_penumbra.dat");
+
+  std::fprintf(f,"TITLE=\"Gridless vertical cutoff band from one PENUMBRA_SCAN\"\n");
+  std::fprintf(f,
+      "VARIABLES=\"lon_deg\",\"lat_deg\",\"x_km\",\"y_km\",\"z_km\","
+      "\"Rc_lower_GV\",\"Rc_effective_GV\",\"Rc_upper_GV\","
+      "\"PenumbraWidth_GV\","
+      "\"Rc_stormer_GV\",\"lower_rel_err_vs_stormer\","
+      "\"upper_rel_offset_vs_stormer\",\"n_allowed_intervals\","
+      "\"n_transitions\",\"n_unresolved\",\"lower_bracket_unresolved\","
+      "\"upper_bracket_unresolved\",\"lower_below_range\","
+      "\"lower_above_range\",\"upper_below_range\","
+      "\"upper_above_range\"\n");
+
+  const int nLon=static_cast<int>(std::floor(360.0/lonRes_deg+0.5));
+  const int nLat=static_cast<int>(std::floor(180.0/latRes_deg+0.5))+1;
+  const int nPts=nLon*nLat;
+  const double mx=Earth::GridlessMode::Dipole::gParams.m_hat[0];
+  const double my=Earth::GridlessMode::Dipole::gParams.m_hat[1];
+  const double mz=Earth::GridlessMode::Dipole::gParams.m_hat[2];
+  const double R0=StormerVerticalCoeff_GV(
+      prm.field.dipoleMoment_Me,_EARTH__RADIUS_);
+
+  for (std::size_t shell=0; shell<shellAlt_km.size(); ++shell) {
+    const double alt_km=shellAlt_km[shell];
+    const double r_m=_EARTH__RADIUS_+alt_km*1000.0;
+    std::fprintf(f,"ZONE T=\"alt_km=%g\" I=%d J=%d F=POINT\n",alt_km,nLon,nLat);
+
+    for (int j=0; j<nLat; ++j) {
+      double lat_deg=-90.0+latRes_deg*j;
+      if (lat_deg>90.0) lat_deg=90.0;
+      const double lat=lat_deg*Pi/180.0;
+      const double clat=std::cos(lat);
+      const double slat=std::sin(lat);
+      for (int i=0; i<nLon; ++i) {
+        const double lon_deg=lonRes_deg*i;
+        const double lon=lon_deg*Pi/180.0;
+        const double clon=std::cos(lon);
+        const double slon=std::sin(lon);
+        const double rhatx=clat*clon;
+        const double rhaty=clat*slon;
+        const double rhatz=slat;
+        const double sinLam=mx*rhatx+my*rhaty+mz*rhatz;
+        const double cosLam=std::sqrt(std::max(0.0,1.0-sinLam*sinLam));
+        const double rRe=r_m/_EARTH__RADIUS_;
+        const double rcStormer=R0*prm.field.dipoleMoment_Me*
+                               std::pow(cosLam,4)/(rRe*rRe);
+        const std::size_t idx=shell*static_cast<std::size_t>(nPts)+
+                              static_cast<std::size_t>(i+nLon*j);
+        const double rcLower=lower[idx];
+        const double rcEffective=effective[idx];
+        const double rcUpper=upper[idx];
+        const double width=(rcLower>0.0 && rcUpper>0.0)
+            ? std::max(0.0,rcUpper-rcLower) : -1.0;
+        const double lowerRel=(rcLower>0.0 && rcStormer>0.0)
+            ? (rcLower-rcStormer)/rcStormer : 0.0;
+        const double upperRel=(rcUpper>0.0 && rcStormer>0.0)
+            ? (rcUpper-rcStormer)/rcStormer : 0.0;
+
+        std::fprintf(f,
+            "% .12e % .12e % .12e % .12e % .12e "
+            "% .12e % .12e % .12e % .12e % .12e % .12e % .12e "
+            "%d %d %d %d %d %d %d %d %d\n",
+            lon_deg,lat_deg,r_m*rhatx/1000.0,r_m*rhaty/1000.0,
+            r_m*rhatz/1000.0,rcLower,rcEffective,rcUpper,width,rcStormer,
+            lowerRel,upperRel,nAllowedIntervals[idx],nTransitions[idx],
+            nUnresolved[idx],lowerBracketUnresolved[idx],
+            upperBracketUnresolved[idx],lowerBelowRange[idx],
+            lowerAboveRange[idx],upperBelowRange[idx],upperAboveRange[idx]);
+      }
+    }
+  }
   std::fclose(f);
 }
 
@@ -2366,22 +2486,25 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     nScan = std::max(2, nScan);
     grid.reserve((size_t)nScan);
 
-    if (Rmin_GV > 0.0) {
-      // Normal physical branch: rigidities are positive, so use logarithmic spacing.
-      // This concentrates samples by relative interval, which is appropriate when the
-      // cutoff can be anywhere from ~0.01 GV to many GV.
-      const double lmin = std::log(Rmin_GV);
-      const double lmax = std::log(Rmax_GV);
+    const std::string spacing=EarthUtil::ToUpper(prm.cutoff.scanSpacing);
+    if (spacing=="LINEAR" || !(Rmin_GV>0.0)) {
+      // Equal-width rigidity bins are important for effective-cutoff validation:
+      // published Smart--Shea/CARI/Gerontidou values use the allowed fraction of a
+      // constant-Delta-R scan through the penumbra.  The parser validates the token;
+      // the non-positive-Rmin case is a defensive linear fallback.
       for (int i=0; i<nScan; ++i) {
-        const double a = (nScan == 1) ? 0.0 : (double)i/(double)(nScan-1);
-        grid.push_back(std::exp((1.0-a)*lmin + a*lmax));
+        const double a=(double)i/(double)(nScan-1);
+        grid.push_back((1.0-a)*Rmin_GV+a*Rmax_GV);
       }
     }
     else {
-      // Defensive fallback only.  Current rigidity brackets should be strictly positive.
+      // Backward-compatible production default: logarithmic spacing concentrates
+      // vertices by relative interval across a multi-decade rigidity bracket.
+      const double lmin=std::log(Rmin_GV);
+      const double lmax=std::log(Rmax_GV);
       for (int i=0; i<nScan; ++i) {
-        const double a = (nScan == 1) ? 0.0 : (double)i/(double)(nScan-1);
-        grid.push_back((1.0-a)*Rmin_GV + a*Rmax_GV);
+        const double a=(double)i/(double)(nScan-1);
+        grid.push_back(std::exp((1.0-a)*lmin+a*lmax));
       }
     }
 
@@ -2422,6 +2545,118 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     // Return the allowed side of the final bracket: the smallest allowed rigidity resolved
     // to the requested tolerance.
     return hi;
+  };
+
+
+  //====================================================================================
+  // PENUMBRA_SCAN: one complete access scan with explicit unresolved states
+  //====================================================================================
+  //
+  // The scalar UPPER_SCAN above is optimized to stop at the first forbidden sample
+  // encountered while scanning downward from Rmax.  C14 needs more information: the
+  // first access transition (Rc_lower), the final access transition (Rc_upper), the
+  // number of allowed islands, and whether configured safety limits contaminate either
+  // bracket.  PENUMBRA_SCAN therefore evaluates every coarse node exactly once and uses
+  // the shared field-independent topology analyzer in util/CutoffBandSearch.h.
+  struct CutoffBandResultGridless_ {
+    double lower_GV{-1.0};
+    double effective_GV{-1.0};
+    double upper_GV{-1.0};
+    int nTransitions{0};
+    int nAllowedIntervals{0};
+    int nUnresolved{0};
+    int lowerBracketUnresolved{0};
+    int upperBracketUnresolved{0};
+    int lowerBelowRange{0};
+    int lowerAboveRange{0};
+    int upperBelowRange{0};
+    int upperAboveRange{0};
+  };
+
+  auto ClassifyCutoffSample = [&](const V3& x0_m,
+                                  const V3& v0,
+                                  double R_GV) -> EarthUtil::CutoffSampleState {
+    const auto tr=TraceTrajectoryWithSingleRetry(
+        prm,field,x0_m,v0,R_GV,-1.0,false);
+    if (tr.allowed()) return EarthUtil::CutoffSampleState::Allowed;
+    if (Earth::GridlessMode::IsPhysicalForbiddenTermination(tr.termination))
+      return EarthUtil::CutoffSampleState::PhysicalForbidden;
+    if (Earth::GridlessMode::IsTraceLimitTermination(tr.termination))
+      return EarthUtil::CutoffSampleState::Unresolved;
+
+    std::ostringstream msg;
+    msg << "Gridless PENUMBRA_SCAN trajectory failed after numerical retry: termination="
+        << Earth::GridlessMode::TrajectoryTerminationName(tr.termination)
+        << ", R_GV=" << R_GV << ", steps=" << tr.steps
+        << ", trace_time_s=" << tr.traceTime_s;
+    throw std::runtime_error(msg.str());
+  };
+
+  auto CutoffForDirectionPenumbraScan_GV = [&](const V3& x0_m,
+                                                const V3& dir_unit,
+                                                double Rmin_GV,
+                                                double Rmax_GV)
+      -> CutoffBandResultGridless_ {
+    CutoffBandResultGridless_ out;
+    if (Rmax_GV<Rmin_GV) return out;
+
+    const V3 v0=mul(-1.0,dir_unit);
+    const int nScan=CutoffUpperScanPointCount();
+    const std::vector<double> grid=BuildCutoffSearchGrid_GV(Rmin_GV,Rmax_GV,nScan);
+    if (grid.size()<2) return out;
+
+    std::vector<EarthUtil::CutoffSampleState> states(grid.size());
+    for (std::size_t i=0; i<grid.size(); ++i)
+      states[i]=ClassifyCutoffSample(x0_m,v0,grid[i]);
+
+    const EarthUtil::CutoffBandTopology topology=
+        EarthUtil::AnalyzeCutoffBandSamples(states);
+    out.nTransitions=topology.nTransitions;
+    out.nAllowedIntervals=topology.nAllowedIntervals;
+    out.nUnresolved=topology.nUnresolved;
+    out.lowerBracketUnresolved=topology.lowerBracketUnresolved ? 1 : 0;
+    out.upperBracketUnresolved=topology.upperBracketUnresolved ? 1 : 0;
+    out.lowerBelowRange=topology.lowerBelowRange ? 1 : 0;
+    out.lowerAboveRange=topology.lowerAboveRange ? 1 : 0;
+    out.upperBelowRange=topology.upperBelowRange ? 1 : 0;
+    out.upperAboveRange=topology.upperAboveRange ? 1 : 0;
+
+    auto classify=[&](double R_GV) {
+      return ClassifyCutoffSample(x0_m,v0,R_GV);
+    };
+
+    if (topology.lowerBelowRange) out.lower_GV=grid.front();
+    else if (topology.lowerForbiddenIndex>=0 && topology.lowerAllowedIndex>=0) {
+      const auto refined=EarthUtil::RefineCutoffTransition(
+          grid[static_cast<std::size_t>(topology.lowerForbiddenIndex)],
+          grid[static_cast<std::size_t>(topology.lowerAllowedIndex)],classify);
+      out.lower_GV=refined.cutoff_GV;
+      if (refined.unresolved) out.lowerBracketUnresolved=1;
+    }
+
+    if (topology.allAllowed) out.upper_GV=grid.front();
+    else if (topology.upperForbiddenIndex>=0 && topology.upperAllowedIndex>=0) {
+      const auto refined=EarthUtil::RefineCutoffTransition(
+          grid[static_cast<std::size_t>(topology.upperForbiddenIndex)],
+          grid[static_cast<std::size_t>(topology.upperAllowedIndex)],classify);
+      out.upper_GV=refined.cutoff_GV;
+      if (refined.unresolved) out.upperBracketUnresolved=1;
+    }
+
+    // Integrate the full resolved access pattern with the shared field-independent
+    // helper.  Keeping this logic in CutoffBandSearch.h makes the published
+    // effective-cutoff definition independently unit-testable and prevents a future
+    // Mode3D implementation from acquiring a different penumbra convention.
+    if (out.lower_GV>=0.0 && out.upper_GV>=out.lower_GV &&
+        topology.nUnresolved==0 && !out.lowerBracketUnresolved &&
+        !out.upperBracketUnresolved) {
+      const EarthUtil::EffectiveCutoffIntegration effective=
+          EarthUtil::IntegrateEffectiveCutoff(
+              grid,states,out.lower_GV,out.upper_GV,classify);
+      if (!effective.unresolved) out.effective_GV=effective.cutoff_GV;
+    }
+
+    return out;
   };
 
   auto CutoffForDirectionEndpointBinary_GV = [&](const V3& x0_m,
@@ -2524,14 +2759,19 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   }
 
   // Shell grid geometry (only used in SHELLS mode).
-  const double d_deg = isShells ? prm.output.shellRes_deg : 0.0;
+  const double shellLonRes_deg = isShells
+      ? ((prm.output.shellLonRes_deg>0.0) ? prm.output.shellLonRes_deg : prm.output.shellRes_deg)
+      : 0.0;
+  const double latResShell_deg = isShells
+      ? ((prm.output.shellLatRes_deg>0.0) ? prm.output.shellLatRes_deg : prm.output.shellRes_deg)
+      : 0.0;
   // Number of shells (altitude surfaces) requested in SHELLS mode.
   // NOTE: We define this here (next to other shell geometry quantities) so that
   //       progress reporting and per-shell completion tracking can use it without
   //       relying on any later declarations.
   const int nShells = isShells ? static_cast<int>(prm.output.shellAlt_km.size()) : 0;
-  const int nLon = isShells ? static_cast<int>(std::floor(360.0/d_deg + 0.5)) : 0;
-  const int nLat = isShells ? static_cast<int>(std::floor(180.0/d_deg + 0.5)) + 1 : 0;
+  const int nLon = isShells ? static_cast<int>(std::floor(360.0/shellLonRes_deg + 0.5)) : 0;
+  const int nLat = isShells ? static_cast<int>(std::floor(180.0/latResShell_deg + 0.5)) + 1 : 0;
   const int nPtsShell = isShells ? (nLon*nLat) : 0;
 
   // Total number of locations in this run.
@@ -2667,8 +2907,27 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     double rHi_GV;
   };
 
-  // Result message mirrors task identification so the master can reduce/store.
-  struct ResultMsg { int type; int loc; int idx; double rc; };
+  // Result message mirrors task identification and carries the complete cutoff band.
+  // For UPPER_SCAN/BINARY, lower and upper are both set to the scalar Rc and all
+  // diagnostics are zero.  PENUMBRA_SCAN fills every field from the one-pass scan.
+  struct ResultMsg {
+    int type;
+    int loc;
+    int idx;
+    double rc;
+    double rcLower;
+    double rcEffective;
+    double rcUpper;
+    int nTransitions;
+    int nAllowedIntervals;
+    int nUnresolved;
+    int lowerBracketUnresolved;
+    int upperBracketUnresolved;
+    int lowerBelowRange;
+    int lowerAboveRange;
+    int upperBelowRange;
+    int upperAboveRange;
+  };
 
   // Historical MPI message tags are no longer needed by the collective scheduler.
   // Keep the task/result structures above, but avoid any rank-0 master/worker traffic.
@@ -2881,6 +3140,54 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   //     avoids introducing a frame rotation into a model that is intended to be
   //     interpreted in that same lon/lat-defined spherical frame.
   //====================================================================================
+  // Build the Earth-fixed Cartesian position and local outward vertical for one
+  // shell grid point.  SPHERICAL preserves the historical geocentric shell.  GEODETIC
+  // uses the WGS-84 ellipsoid constants also used by GEOPACK's GEODGEO_08 routine.
+  // Returning the normal separately is essential: on an ellipsoid the geodetic vertical
+  // is not exactly parallel to the geocentric radius vector except at the equator and
+  // poles.
+  auto ShellPointAndVerticalGeo = [&](double lon_deg,double lat_deg,double alt_km,
+                                      V3& xGeo_m,V3& upGeo) {
+    const double lon=lon_deg*M_PI/180.0;
+    const double lat=lat_deg*M_PI/180.0;
+    const double cl=std::cos(lat),sl=std::sin(lat);
+    const double co=std::cos(lon),so=std::sin(lon);
+    upGeo={cl*co,cl*so,sl};
+
+    if (EarthUtil::ToUpper(prm.output.shellGeometry)=="GEODETIC") {
+      constexpr double a_m=6378137.0;
+      constexpr double e2=6.6943799901413165e-3;
+      const double N=a_m/std::sqrt(1.0-e2*sl*sl);
+      const double h=alt_km*1000.0;
+      xGeo_m={(N+h)*cl*co,(N+h)*cl*so,(N*(1.0-e2)+h)*sl};
+    }
+    else {
+      const double r_m=_RADIUS_(_EARTH_)+alt_km*1000.0;
+      xGeo_m={r_m*upGeo.x,r_m*upGeo.y,r_m*upGeo.z};
+    }
+  };
+
+  // Rotate an Earth-fixed vector into GSM using exactly the same epoch as the IGRF
+  // coefficients.  Position and direction vectors use the same rotation because the
+  // transformation is orthogonal; only the position carries physical length units.
+  auto GeoVectorToGsm = [&](const V3& vGeo) -> V3 {
+#ifndef _NO_SPICE_CALLS_
+    static std::string cachedEpoch;
+    static SpiceDouble rot[3][3];
+    if (cachedEpoch!=prm.field.epoch) {
+      cachedEpoch=prm.field.epoch;
+      SpiceDouble et=0.0;
+      str2et_c(prm.field.epoch.c_str(),&et);
+      pxform_c("ITRF93","GSM",et,rot);
+    }
+    SpiceDouble in[3]={vGeo.x,vGeo.y,vGeo.z},out[3];
+    mxv_c(rot,in,out);
+    return {out[0],out[1],out[2]};
+#else
+    return vGeo;
+#endif
+  };
+
   auto LocationToX0m = [&](int locationId) -> V3 {
     if (isPoints) {
       const auto& P = prm.output.points[(size_t)locationId];
@@ -2894,56 +3201,37 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     const int iLon = k % nLon;
     const int jLat = k / nLon;
 
-    double lon = d_deg * iLon;
-    double lat = -90.0 + d_deg * jLat;
+    double lon = shellLonRes_deg * iLon;
+    double lat = -90.0 + latResShell_deg * jLat;
     if (lat > 90.0) lat = 90.0;
 
-    const double alt_km = prm.output.shellAlt_km[(size_t)s];
-    const double r_m = (_RADIUS_(_EARTH_) + alt_km*1000.0);
+    const double alt_km=prm.output.shellAlt_km[(size_t)s];
+    V3 xGeo,upGeo;
+    ShellPointAndVerticalGeo(lon,lat,alt_km,xGeo,upGeo);
 
-    const double lonRad = lon*M_PI/180.0;
-    const double latRad = lat*M_PI/180.0;
-    const double cl = std::cos(latRad);
+    // Idealized DIPOLE runs intentionally keep the shell in the analytic dipole frame.
+    // Every realistic internal/external model, including IGRF-only C6, receives the
+    // Earth-fixed point rotated into GSM at the selected epoch.
+    if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") return xGeo;
+    return GeoVectorToGsm(xGeo);
+  };
 
-    // Cartesian point generated directly from the requested shell lon/lat/alt.
-    // This is the geometry the user has in mind when defining the shell grid.
-    const V3 xShellCartesian = { r_m*cl*std::cos(lonRad), r_m*cl*std::sin(lonRad), r_m*std::sin(latRad) };
+  auto LocationToVerticalArrivalDir = [&](int locationId,const V3& x0_m) -> V3 {
+    if (isPoints) return mul(-1.0,unit(x0_m));
 
-    // User-requested special case:
-    //   In pure DIPOLE mode, do NOT rotate the shell point into GSM.
-    //   We keep the point exactly as determined from lon/lat on the sphere.
-    //   This is desirable for idealized dipole studies, where lon/lat are intended
-    //   to define the analysis location directly rather than through a time-dependent
-    //   Earth-fixed -> GSM transformation.
-    if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
-      return xShellCartesian;
-    }
+    const int s=locationId/nPtsShell;
+    const int k=locationId-s*nPtsShell;
+    const int iLon=k%nLon;
+    const int jLat=k/nLon;
+    const double lon=shellLonRes_deg*iLon;
+    double lat=-90.0+latResShell_deg*jLat;
+    if (lat>90.0) lat=90.0;
 
-    // External field models (for example T96/T05) are evaluated in GSM. For those
-    // models we rotate the Earth-fixed shell location into GSM using the run epoch.
-    //
-    // Assumption (explicitly requested): SPICE is always available in the intended
-    // execution environment, so we do not add fallback logic here.
-    #ifndef _NO_SPICE_CALLS_
-    SpiceDouble xGEO[3]={ xShellCartesian.x, xShellCartesian.y, xShellCartesian.z };
-    static std::string epoch="";
-    static SpiceDouble rot[3][3];
-
-    if (epoch!=prm.field.epoch) {
-      epoch=prm.field.epoch;
-
-      SpiceDouble et;
-      str2et_c(prm.field.epoch.c_str(), &et);
-      pxform_c("ITRF93", "GSM", et, rot);
-    }
-
-    SpiceDouble xGSM[3];
-    mxv_c(rot, xGEO, xGSM);
-    return {xGSM[0],xGSM[1],xGSM[2]};
-    #endif
-
-    //when SPICE is not avaible -> return the original locations 
-    return {xShellCartesian.x, xShellCartesian.y, xShellCartesian.z };
+    V3 xGeo,upGeo;
+    ShellPointAndVerticalGeo(lon,lat,prm.output.shellAlt_km[(size_t)s],xGeo,upGeo);
+    const V3 up=(EarthUtil::ToUpper(prm.field.model)=="DIPOLE")
+        ? upGeo : GeoVectorToGsm(upGeo);
+    return mul(-1.0,unit(up));
   };
 
   //====================================================================================
@@ -2955,6 +3243,18 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   //====================================================================================
   std::vector<double> RcMin;
   std::vector<double> EminMin;
+  std::vector<double> RcLower;
+  std::vector<double> RcEffective;
+  std::vector<double> RcUpper;
+  std::vector<int> NTransitions;
+  std::vector<int> NAllowedIntervals;
+  std::vector<int> NUnresolved;
+  std::vector<int> LowerBracketUnresolved;
+  std::vector<int> UpperBracketUnresolved;
+  std::vector<int> LowerBelowRange;
+  std::vector<int> LowerAboveRange;
+  std::vector<int> UpperBelowRange;
+  std::vector<int> UpperAboveRange;
 
   // Directional sky-map storage (POINTS only). Flattened as:
   //   RcDirMap[ pointId*nDirMapCells + cellId ]
@@ -2975,6 +3275,18 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   // same design principle used by the Mode3D dynamic scheduler.
   RcMin.assign((size_t)nLoc, -1.0);
   EminMin.assign((size_t)nLoc, -1.0);
+  RcLower.assign((size_t)nLoc,-1.0);
+  RcEffective.assign((size_t)nLoc,-1.0);
+  RcUpper.assign((size_t)nLoc,-1.0);
+  NTransitions.assign((size_t)nLoc,-1);
+  NAllowedIntervals.assign((size_t)nLoc,-1);
+  NUnresolved.assign((size_t)nLoc,-1);
+  LowerBracketUnresolved.assign((size_t)nLoc,-1);
+  UpperBracketUnresolved.assign((size_t)nLoc,-1);
+  LowerBelowRange.assign((size_t)nLoc,-1);
+  LowerAboveRange.assign((size_t)nLoc,-1);
+  UpperBelowRange.assign((size_t)nLoc,-1);
+  UpperAboveRange.assign((size_t)nLoc,-1);
 
   if (doDirMap) {
     RcDirMap.assign((size_t)prm.output.points.size() * (size_t)nDirMapCells, -1.0);
@@ -3071,18 +3383,28 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
                         (prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable));
 
     const V3 x0_m = LocationToX0m(task.loc);
-    double rc = -1.0;
+    double rc=-1.0;
+    CutoffBandResultGridless_ band;
 
     if (task.type == TASK_SAMPLING) {
       V3 dir;
-      if (samplingVertical) {
-        dir = mul(-1.0, unit(x0_m));
+      if (samplingVertical) dir=LocationToVerticalArrivalDir(task.loc,x0_m);
+      else dir=dirs[(size_t)task.idx];
+
+      if (EarthUtil::ToUpper(prm.cutoff.searchAlgorithm)=="PENUMBRA_SCAN") {
+        if (!samplingVertical) {
+          throw std::runtime_error(
+              "Gridless PENUMBRA_SCAN requires CUTOFF_SAMPLING VERTICAL");
+        }
+        band=CutoffForDirectionPenumbraScan_GV(
+            x0_m,dir,task.rLo_GV,task.rHi_GV);
+        rc=band.upper_GV;
       }
       else {
-        dir = dirs[(size_t)task.idx];
+        rc=CutoffForDirection_GV(x0_m,dir,task.rLo_GV,task.rHi_GV);
+        band.lower_GV=rc;
+        band.upper_GV=rc;
       }
-
-      rc = CutoffForDirection_GV(x0_m, dir, task.rLo_GV, task.rHi_GV);
     }
     else if (task.type == TASK_DIRMAP) {
       const int cellId = task.idx;
@@ -3102,7 +3424,13 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
       rc = CutoffForDirection_GV(x0_m, dir_gsm, task.rLo_GV, task.rHi_GV);
     }
 
-    return ResultMsg{ task.type, task.loc, task.idx, rc };
+    return ResultMsg{
+      task.type,task.loc,task.idx,rc,band.lower_GV,band.effective_GV,band.upper_GV,
+      band.nTransitions,band.nAllowedIntervals,band.nUnresolved,
+      band.lowerBracketUnresolved,band.upperBracketUnresolved,
+      band.lowerBelowRange,band.lowerAboveRange,
+      band.upperBelowRange,band.upperAboveRange
+    };
   };
 
   // Apply one completed task to this rank's local output buffers.  The final MPI_Reduce
@@ -3111,9 +3439,25 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   // the per-rank updates thread-local or guard them with atomics/reductions.
   auto AccumulateResultLocal = [&](const ResultMsg& res) {
     if (res.type == TASK_SAMPLING) {
-      if (res.rc > 0.0 && res.loc >= 0 && res.loc < nLoc) {
-        double& cur = RcMin[(size_t)res.loc];
-        cur = (cur < 0.0) ? res.rc : std::min(cur,res.rc);
+      if (res.loc>=0 && res.loc<nLoc) {
+        if (res.rc>0.0) {
+          double& cur=RcMin[(size_t)res.loc];
+          cur=(cur<0.0) ? res.rc : std::min(cur,res.rc);
+        }
+        // PENUMBRA_SCAN is restricted to one vertical direction, so these values are
+        // unique per location rather than reductions over several directional bands.
+        RcLower[(size_t)res.loc]=res.rcLower;
+        RcEffective[(size_t)res.loc]=res.rcEffective;
+        RcUpper[(size_t)res.loc]=res.rcUpper;
+        NTransitions[(size_t)res.loc]=res.nTransitions;
+        NAllowedIntervals[(size_t)res.loc]=res.nAllowedIntervals;
+        NUnresolved[(size_t)res.loc]=res.nUnresolved;
+        LowerBracketUnresolved[(size_t)res.loc]=res.lowerBracketUnresolved;
+        UpperBracketUnresolved[(size_t)res.loc]=res.upperBracketUnresolved;
+        LowerBelowRange[(size_t)res.loc]=res.lowerBelowRange;
+        LowerAboveRange[(size_t)res.loc]=res.lowerAboveRange;
+        UpperBelowRange[(size_t)res.loc]=res.upperBelowRange;
+        UpperAboveRange[(size_t)res.loc]=res.upperAboveRange;
       }
     }
     else if (res.type == TASK_DIRMAP) {
@@ -3277,6 +3621,74 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     }
   }
 
+  // PENUMBRA_SCAN diagnostics use -1 sentinels and are produced by exactly one vertical
+  // task per location.  MPI_MAX therefore selects the unique computed contribution
+  // without imposing any ordering assumption on the collective scheduler.
+  std::vector<double> RcLowerRoot, RcEffectiveRoot, RcUpperRoot;
+  std::vector<int> NTransitionsRoot, NAllowedIntervalsRoot, NUnresolvedRoot;
+  std::vector<int> LowerBracketUnresolvedRoot, UpperBracketUnresolvedRoot;
+  std::vector<int> LowerBelowRangeRoot, LowerAboveRangeRoot;
+  std::vector<int> UpperBelowRangeRoot, UpperAboveRangeRoot;
+  if (mpiRank==0) {
+    RcLowerRoot.assign((size_t)nLoc,-1.0);
+    RcEffectiveRoot.assign((size_t)nLoc,-1.0);
+    RcUpperRoot.assign((size_t)nLoc,-1.0);
+    NTransitionsRoot.assign((size_t)nLoc,-1);
+    NAllowedIntervalsRoot.assign((size_t)nLoc,-1);
+    NUnresolvedRoot.assign((size_t)nLoc,-1);
+    LowerBracketUnresolvedRoot.assign((size_t)nLoc,-1);
+    UpperBracketUnresolvedRoot.assign((size_t)nLoc,-1);
+    LowerBelowRangeRoot.assign((size_t)nLoc,-1);
+    LowerAboveRangeRoot.assign((size_t)nLoc,-1);
+    UpperBelowRangeRoot.assign((size_t)nLoc,-1);
+    UpperAboveRangeRoot.assign((size_t)nLoc,-1);
+  }
+  MPI_Reduce(RcLower.data(),(mpiRank==0 ? RcLowerRoot.data() : nullptr),
+             nLoc,MPI_DOUBLE,MPI_MAX,0,MPI_COMM_WORLD);
+  MPI_Reduce(RcEffective.data(),(mpiRank==0 ? RcEffectiveRoot.data() : nullptr),
+             nLoc,MPI_DOUBLE,MPI_MAX,0,MPI_COMM_WORLD);
+  MPI_Reduce(RcUpper.data(),(mpiRank==0 ? RcUpperRoot.data() : nullptr),
+             nLoc,MPI_DOUBLE,MPI_MAX,0,MPI_COMM_WORLD);
+  MPI_Reduce(NTransitions.data(),(mpiRank==0 ? NTransitionsRoot.data() : nullptr),
+             nLoc,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+  MPI_Reduce(NAllowedIntervals.data(),
+             (mpiRank==0 ? NAllowedIntervalsRoot.data() : nullptr),
+             nLoc,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+  MPI_Reduce(NUnresolved.data(),(mpiRank==0 ? NUnresolvedRoot.data() : nullptr),
+             nLoc,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+  MPI_Reduce(LowerBracketUnresolved.data(),
+             (mpiRank==0 ? LowerBracketUnresolvedRoot.data() : nullptr),
+             nLoc,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+  MPI_Reduce(UpperBracketUnresolved.data(),
+             (mpiRank==0 ? UpperBracketUnresolvedRoot.data() : nullptr),
+             nLoc,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+  MPI_Reduce(LowerBelowRange.data(),
+             (mpiRank==0 ? LowerBelowRangeRoot.data() : nullptr),
+             nLoc,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+  MPI_Reduce(LowerAboveRange.data(),
+             (mpiRank==0 ? LowerAboveRangeRoot.data() : nullptr),
+             nLoc,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+  MPI_Reduce(UpperBelowRange.data(),
+             (mpiRank==0 ? UpperBelowRangeRoot.data() : nullptr),
+             nLoc,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+  MPI_Reduce(UpperAboveRange.data(),
+             (mpiRank==0 ? UpperAboveRangeRoot.data() : nullptr),
+             nLoc,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+  if (mpiRank==0) {
+    RcLower.swap(RcLowerRoot);
+    RcEffective.swap(RcEffectiveRoot);
+    RcUpper.swap(RcUpperRoot);
+    NTransitions.swap(NTransitionsRoot);
+    NAllowedIntervals.swap(NAllowedIntervalsRoot);
+    NUnresolved.swap(NUnresolvedRoot);
+    LowerBracketUnresolved.swap(LowerBracketUnresolvedRoot);
+    UpperBracketUnresolved.swap(UpperBracketUnresolvedRoot);
+    LowerBelowRange.swap(LowerBelowRangeRoot);
+    LowerAboveRange.swap(LowerAboveRangeRoot);
+    UpperBelowRange.swap(UpperBelowRangeRoot);
+    UpperAboveRange.swap(UpperAboveRangeRoot);
+  }
+
   // Reduce directional map cells to rank 0.  Each cell is computed by exactly one task;
   // all other ranks leave it at -1, so MPI_MAX selects the computed value.
   if (doDirMap) {
@@ -3433,7 +3845,7 @@ if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
         std::cout << "Shell alt=" << prm.output.shellAlt_km[s] << " km done.\n";
       }
 
-      WriteTecplotShells(prm.output.shellAlt_km,prm.output.shellRes_deg,RcShell,EminShell);
+      WriteTecplotShells(prm.output.shellAlt_km,shellLonRes_deg,latResShell_deg,RcShell,EminShell);
       std::cout << "Wrote Tecplot: cutoff_gridless_shells.dat\n";
 
       // In nightly test mode, produce an analytic-vs-numeric comparison for the DIPOLE case
@@ -3441,10 +3853,19 @@ if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
       // formatted as a multi-zone shells file (I/J grid per altitude).
 #if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
       if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
-        WriteTecplotShells_DipoleAnalyticCompare(prm,prm.output.shellAlt_km,prm.output.shellRes_deg,RcShell);
+        WriteTecplotShells_DipoleAnalyticCompare(prm,prm.output.shellAlt_km,shellLonRes_deg,latResShell_deg,RcShell);
         std::cout << "Wrote Tecplot: cutoff_gridless_shells_dipole_compare.dat\n";
       }
 #endif
+      if (EarthUtil::ToUpper(prm.cutoff.searchAlgorithm)=="PENUMBRA_SCAN") {
+        WriteTecplotShells_Penumbra(
+            prm,prm.output.shellAlt_km,shellLonRes_deg,latResShell_deg,
+            RcLower,RcEffective,RcUpper,NTransitions,NAllowedIntervals,NUnresolved,
+            LowerBracketUnresolved,UpperBracketUnresolved,
+            LowerBelowRange,LowerAboveRange,
+            UpperBelowRange,UpperAboveRange);
+        std::cout << "Wrote Tecplot: cutoff_gridless_shells_penumbra.dat\n";
+      }
     }
 
     if (prm.output.mode!="TRAJECTORY" && prm.output.coords!="GSM") {

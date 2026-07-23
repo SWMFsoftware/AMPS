@@ -1508,6 +1508,7 @@ void EarthUtil::TsDriverTable::ApplyToField(const EarthUtil::TsDriverRecord& rec
 //   "TA15N" — Tsyganenko-Andreeva (2015), northward IMF variant
 //   "TA15B" — Tsyganenko-Andreeva (2015), southward IMF variant
 //   "TA16"  — Tsyganenko-Andreeva (2016) (future; Fortran not yet linked)
+//   "IGRF"  — Geopack internal field only; no external-field call
 //   "DIPOLE"— Analytic centred dipole; no external-field call
 //
 // EXTENSIBILITY
@@ -1922,8 +1923,9 @@ static std::vector<std::string> RequiredColumnsForModel(const std::string& model
 
   const std::string m = ToUpper(Trim(model));
 
-  // DIPOLE: analytic internal field only; no external Fortran call, no inputs.
-  if (m == "DIPOLE") return {};
+  // DIPOLE and IGRF are internal-field-only models.  Neither consumes a
+  // time-dependent solar-wind/Tsyganenko driver table.
+  if (m == "DIPOLE" || m == "IGRF") return {};
 
   // T96: driven by [Pdyn, Dst, By, Bz] only.
   // PARMOD: [0]=Pdyn [1]=Dst [2]=By [3]=Bz [4..10]=0
@@ -2454,8 +2456,9 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       // If omitted, the solver will fall back to #NUMERICAL MAX_TRACE_TIME.
       else if (uKey=="CUTOFF_MAX_TRAJ_TIME") p.cutoff.maxTrajTime_s=std::stod(val);
 
-      // Rigidity-search strategy.  UPPER_SCAN is the penumbra-safe default;
-      // BINARY is the legacy endpoint-only method.
+      // Rigidity-search strategy.  UPPER_SCAN is the penumbra-safe scalar
+      // default; PENUMBRA_SCAN evaluates one full grid and reports both lower
+      // and upper cutoff; BINARY is the legacy endpoint-only method.
       else if (uKey=="CUTOFF_SEARCH_ALGORITHM" ||
                uKey=="CUTOFF_SEARCH" ||
                uKey=="CUTOFF_RIGIDITY_SEARCH") {
@@ -2479,6 +2482,8 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       // Cutoff sampling strategy: VERTICAL or ISOTROPIC.
       // We store the string in uppercase for robust comparisons later.
       else if (uKey=="CUTOFF_SAMPLING") p.cutoff.sampling=ToUpper(val);
+      else if (uKey=="CUTOFF_SCAN_SPACING" || uKey=="CUTOFF_RIGIDITY_SPACING")
+        p.cutoff.scanSpacing=ToUpper(Trim(val));
 
       // Optional Mode3D rigidity-classification diagnostic.
       // This writes TraceAllowed3D(R) at one spherical-shell location before the
@@ -2743,6 +2748,9 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         p.output.shellAlt_km.insert(p.output.shellAlt_km.end(),t.begin(),t.end());  
       }
       else if (uKey=="SHELL_RES_DEG" || uKey=="SHELL_RES") p.output.shellRes_deg=std::stod(val);
+      else if (uKey=="SHELL_LON_RES_DEG" || uKey=="SHELL_LON_RES") p.output.shellLonRes_deg=std::stod(val);
+      else if (uKey=="SHELL_LAT_RES_DEG" || uKey=="SHELL_LAT_RES") p.output.shellLatRes_deg=std::stod(val);
+      else if (uKey=="SHELL_GEOMETRY") p.output.shellGeometry=ToUpper(Trim(val));
       else if (uKey=="SHELL_COUNT") {
         // Legacy/self-documenting input files sometimes specify SHELL_COUNT next to
         // SHELL_ALTS_KM.  The actual number of shells is determined by the number
@@ -3228,18 +3236,28 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     {
       const std::string cutoffSearch = ToUpper(p.cutoff.searchAlgorithm);
       if (!(cutoffSearch=="UPPER_SCAN" || cutoffSearch=="UPPER" ||
-            cutoffSearch=="SCAN" || cutoffSearch=="PENUMBRA" ||
+            cutoffSearch=="SCAN" ||
+            cutoffSearch=="PENUMBRA_SCAN" || cutoffSearch=="BOTH" ||
+            cutoffSearch=="FULL_SCAN" || cutoffSearch=="CUTOFF_BAND" ||
             cutoffSearch=="BINARY" || cutoffSearch=="ENDPOINT_BINARY" ||
             cutoffSearch=="LEGACY_BINARY")) {
         exit(__LINE__,__FILE__,
-             "CUTOFF_SEARCH_ALGORITHM must be UPPER_SCAN or BINARY");
+             "CUTOFF_SEARCH_ALGORITHM must be UPPER_SCAN, PENUMBRA_SCAN, or BINARY");
       }
-      if (cutoffSearch=="UPPER" || cutoffSearch=="SCAN" || cutoffSearch=="PENUMBRA")
+      if (cutoffSearch=="UPPER" || cutoffSearch=="SCAN")
         p.cutoff.searchAlgorithm="UPPER_SCAN";
+      else if (cutoffSearch=="BOTH" || cutoffSearch=="FULL_SCAN" ||
+               cutoffSearch=="CUTOFF_BAND")
+        p.cutoff.searchAlgorithm="PENUMBRA_SCAN";
       else if (cutoffSearch=="ENDPOINT_BINARY" || cutoffSearch=="LEGACY_BINARY")
         p.cutoff.searchAlgorithm="BINARY";
       else
         p.cutoff.searchAlgorithm=cutoffSearch;
+    }
+    if (p.cutoff.searchAlgorithm=="PENUMBRA_SCAN" &&
+        ToUpper(p.cutoff.sampling)!="VERTICAL") {
+      exit(__LINE__,__FILE__,
+           "PENUMBRA_SCAN currently requires CUTOFF_SAMPLING VERTICAL");
     }
     if (p.cutoff.upperScanN < 0) {
       exit(__LINE__,__FILE__,"CUTOFF_UPPER_SCAN_N must be >= 0 (0 means: use CUTOFF_NENERGY)");
@@ -3504,6 +3522,22 @@ if (ToUpper(p.field.model)=="DIPOLE") {
   //  - TABLE spectra preserve the user table points
   //  - Analytic spectra are sampled with log-spaced energies (200 points by default)
   ::WriteSpectrumInputTecplot("spectrum_input.dat", ::gSpectrum);
+
+  {
+    const std::string spacing=ToUpper(Trim(p.cutoff.scanSpacing));
+    if (spacing!="LOG" && spacing!="LINEAR")
+      exit(__LINE__,__FILE__,"CUTOFF_SCAN_SPACING must be LOG or LINEAR");
+    p.cutoff.scanSpacing=spacing;
+
+    const std::string geometry=ToUpper(Trim(p.output.shellGeometry));
+    if (geometry!="SPHERICAL" && geometry!="GEODETIC")
+      exit(__LINE__,__FILE__,"SHELL_GEOMETRY must be SPHERICAL or GEODETIC");
+    p.output.shellGeometry=geometry;
+    if (!(p.output.shellRes_deg>0.0))
+      exit(__LINE__,__FILE__,"SHELL_RES_DEG must be positive");
+    if (p.output.shellLonRes_deg==0.0 || p.output.shellLatRes_deg==0.0)
+      exit(__LINE__,__FILE__,"SHELL_LON_RES_DEG and SHELL_LAT_RES_DEG must be positive when specified");
+  }
 
   return p;
 }

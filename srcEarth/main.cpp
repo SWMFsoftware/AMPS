@@ -351,16 +351,32 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
     p.mode3d.mpiDynamicChunk = cli.mode3dMpiDynamicChunk;
   }
 
-  // Penumbra-safe cutoff search.  UPPER_SCAN first evaluates a log-spaced rigidity
-  // grid, searches from high to low rigidity for the highest forbidden sample, and
-  // only then bisects the final forbidden/allowed bracket.  BINARY restores the old
-  // endpoint method for reproducibility tests.  The setting is intentionally generic
-  // because both Mode3D and gridless cutoff now use the same search definition.
+  // Select the rigidity-search product used by the standalone cutoff calculation.
+  //
+  // UPPER_SCAN preserves the historical scalar upper-cutoff product.  It searches a
+  // coarse rigidity grid for the highest forbidden sample and then refines only the
+  // final forbidden/allowed transition.
+  //
+  // PENUMBRA_SCAN is intentionally a distinct algorithm, not an alias for UPPER_SCAN.
+  // It evaluates the complete increasing rigidity grid, preserves ALLOWED,
+  // PHYSICAL_FORBIDDEN, and UNRESOLVED states, and derives lower, effective, and upper
+  // cutoff quantities from the same access sequence.  C6 requires this mode because
+  // the Smart--Shea, CARI-7, and Gerontidou reference tables contain effective cutoff
+  // rigidity rather than only the upper edge of the penumbra.
+  //
+  // BINARY retains the legacy endpoint-only bisection for regression/debugging.  The
+  // option is shared by Mode3D and gridless; each solver still validates whether the
+  // requested product is supported for its sampling configuration.
   if (!cli.cutoffSearchAlgorithm.empty()) {
     const std::string alg = EarthUtil::ToUpper(cli.cutoffSearchAlgorithm);
     if (alg=="UPPER_SCAN" || alg=="UPPERSCAN" || alg=="UPPER" ||
-        alg=="SCAN" || alg=="PENUMBRA") {
+        alg=="SCAN") {
       p.cutoff.searchAlgorithm = "UPPER_SCAN";
+    }
+    else if (alg=="PENUMBRA_SCAN" || alg=="PENUMBRASCAN" ||
+             alg=="PENUMBRA" || alg=="FULL_SCAN" ||
+             alg=="CUTOFF_BAND" || alg=="BAND") {
+      p.cutoff.searchAlgorithm = "PENUMBRA_SCAN";
     }
     else if (alg=="BINARY" || alg=="ENDPOINT_BINARY" ||
             alg=="LEGACY_BINARY" || alg=="LEGACY") {
@@ -370,14 +386,15 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
       std::cerr << "Error: unknown cutoff-search algorithm '"
                 << cli.cutoffSearchAlgorithm
                 << "' for " << modeLabel
-                << ". Valid values: UPPER_SCAN or BINARY.\n";
+                << ". Valid values: UPPER_SCAN, PENUMBRA_SCAN, or BINARY.\n";
       return false;
     }
   }
 
-  // Number of log-spaced samples used by UPPER_SCAN before local bisection.  The CLI
-  // parser already rejects values smaller than 2 when the option is present.  Here a
-  // positive value simply overrides CUTOFF_UPPER_SCAN_N from the input file.
+  // Number of coarse rigidity samples used by UPPER_SCAN or PENUMBRA_SCAN before
+  // local transition refinement.  The historical keyword/CLI name is retained for
+  // backward compatibility.  A positive CLI value overrides CUTOFF_UPPER_SCAN_N from
+  // the input file for either scan algorithm.
   if (cli.cutoffUpperScanN > 0) {
     p.cutoff.upperScanN = cli.cutoffUpperScanN;
   }
