@@ -24,6 +24,20 @@ requires the AMPS PENUMBRA_SCAN output column Rc_effective_GV.  Rc_lower and
 Rc_upper are retained in the detailed comparison CSV for diagnosing differences
 in the access penumbra, but neither is used as the external reference quantity.
 
+The same reference cases can be executed with two independent AMPS field paths:
+
+  GRIDLESS
+      Evaluates IGRF directly at every trajectory sample.
+
+  GRIDDED
+      Initializes IGRF on the standalone Mode3D AMR mesh and evaluates the
+      trajectory field through the production mesh interpolation stencil.
+
+  BOTH
+      Runs both paths in separate case directories.  Each path is judged against
+      the external table with identical physical settings; the resulting files
+      can also be compared directly to isolate mesh/interpolation error.
+
 The runner is intentionally self-contained and has no mandatory non-standard
 Python dependency.  Matplotlib is used only when available to create diagnostic
 plots; missing Matplotlib never changes pass/fail status.
@@ -46,7 +60,12 @@ from pathlib import Path
 from typing import Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 TEST_ID = "C6"
-TEST_NAME = "Global IGRF effective vertical-cutoff validation"
+TEST_NAME = "Global IGRF effective vertical-cutoff validation (gridless/gridded)"
+
+SOLVER_CHOICES = ("GRIDLESS", "GRIDDED", "BOTH")
+MODE3D_MESH_COARSENING_CHOICES = (
+    "LINEAR", "LOG", "EXPONENTIAL", "GEOMETRIC", "POWER", "CONSTANT",
+)
 
 # The particle mass is written to the AMPS input and reused when converting the
 # requested rigidity bracket into CUTOFF_EMIN/CUTOFF_EMAX.  Keeping one constant
@@ -142,6 +161,7 @@ class ModelRow:
 
 @dataclass
 class CaseMetrics:
+    solver: str
     subtest: str
     epoch_year: int
     source: str
@@ -468,7 +488,7 @@ def replace_input_directive(text: str, directive: str, value: str) -> str:
     return "\n".join(output_lines) + "\n"
 
 
-def validate_numerical_input(text: str) -> None:
+def validate_numerical_input(text: str, solver: str) -> None:
     """Reject unresolved template variables in a generated C6 input.
 
     The AMPS input language still uses categorical tokens such as ``IGRF``,
@@ -500,6 +520,12 @@ def validate_numerical_input(text: str) -> None:
         "SHELL_LON_RES_DEG", "SHELL_LAT_RES_DEG", "DT_TRACE",
         "MAX_STEPS", "MAX_TRACE_TIME", "MAX_TRACE_DISTANCE",
     }
+    if solver == "GRIDDED":
+        numeric_directives.update({
+            "MODE3D_MESH_RES_EARTH_RE",
+            "MODE3D_MESH_RES_BOUNDARY_RE",
+            "MODE3D_MESH_EXPONENT",
+        })
     found: Dict[str, str] = {}
     for line in text.splitlines():
         stripped = line.strip()
@@ -561,7 +587,8 @@ def validate_numerical_input(text: str) -> None:
         )
 
 
-def render_input(input_path: Path, output_path: Path, plan: CasePlan, args: argparse.Namespace) -> None:
+def render_input(input_path: Path, output_path: Path, plan: CasePlan,
+                 args: argparse.Namespace, solver: str) -> None:
     """Copy the numerical baseline and update case-dependent directives.
 
     The checked-in input is valid for the default INITIAL/2000 case.  Other C6
@@ -600,18 +627,27 @@ def render_input(input_path: Path, output_path: Path, plan: CasePlan, args: argp
         "MAX_TRACE_DISTANCE": "%.12g" % args.max_trace_distance,
         "TRAP_DETECTION": args.trap_detection,
     }
+    if solver == "GRIDDED":
+        values.update({
+            "MODE3D_MESH_RES_EARTH_RE": "%.12g" % args.mode3d_mesh_res_earth_re,
+            "MODE3D_MESH_RES_BOUNDARY_RE": "%.12g" % args.mode3d_mesh_res_boundary_re,
+            "MODE3D_MESH_COARSENING": args.mode3d_mesh_coarsening,
+            "MODE3D_MESH_EXPONENT": "%.12g" % args.mode3d_mesh_exponent,
+        })
     for directive, value in values.items():
         text = replace_input_directive(text, directive, value)
 
-    validate_numerical_input(text)
+    validate_numerical_input(text, solver)
     text += (
         "\n! C6_SUBTEST              %s\n"
         "! C6_REFERENCE_FILE        %s\n"
         "! C6_REFERENCE_ROWS        %d\n"
         "! C6_RIGIDITY_RANGE_GV     %.12g %.12g\n"
-        "! C6_MOVER                 %s\n" %
+        "! C6_MOVER                 %s\n"
+        "! C6_SOLVER                %s\n" %
         (plan.subtest, plan.reference_path.name, len(plan.reference_rows),
-         args.rigidity_min_gv, args.rigidity_max_gv, args.mover or "AMPS_DEFAULT")
+         args.rigidity_min_gv, args.rigidity_max_gv, args.mover or "AMPS_DEFAULT",
+         solver)
     )
     output_path.write_text(text)
 
@@ -647,7 +683,7 @@ def normalize_variable_name(name: str) -> str:
 
 
 def parse_tecplot_penumbra(path: Path) -> List[ModelRow]:
-    """Read the C6 columns from cutoff_gridless_shells_penumbra.dat."""
+    """Read the common C6 columns from a gridless or Mode3D penumbra file."""
     variables: List[str] = []
     numeric_rows: List[List[float]] = []
     with path.open("r") as stream:
@@ -727,6 +763,7 @@ def compare_case(
     plan: CasePlan,
     model_rows: Sequence[ModelRow],
     args: argparse.Namespace,
+    solver: str,
 ) -> Tuple[List[Dict[str, object]], CaseMetrics]:
     """Match coordinates, write per-point diagnostics, and evaluate C6 criteria."""
     model_by_key = {coordinate_key(row.latitude_deg, row.longitude_deg_east): row for row in model_rows}
@@ -744,7 +781,8 @@ def compare_case(
         model = model_by_key.get(key)
         if model is None:
             detailed.append({
-                **asdict(ref), "matched": False, "valid": False, "passed": False,
+                **asdict(ref), "solver": solver,
+                "matched": False, "valid": False, "passed": False,
                 "failure_reason": "missing_model_coordinate",
             })
             continue
@@ -781,6 +819,7 @@ def compare_case(
                 n_pass += 1
         detailed.append({
             **asdict(ref),
+            "solver": solver,
             "matched": True,
             "valid": valid,
             "rc_lower_model_gv": model.rc_lower_gv,
@@ -815,6 +854,7 @@ def compare_case(
         and rmse <= args.rmse_max_gv
     )
     metrics = CaseMetrics(
+        solver=solver,
         subtest=plan.subtest,
         epoch_year=plan.epoch_year,
         source=plan.reference_rows[0].source,
@@ -908,6 +948,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         epilog=(
             "Examples:\n"
             "  run_C6.py --subtest INITIAL -np 8\n"
+            "  run_C6.py --subtest INITIAL --solver GRIDDED -np 8 -nt 16\n"
+            "  run_C6.py --subtest INITIAL --solver BOTH -np 8 -nt 16\n"
             "  run_C6.py --subtest COMPLETE --complete-epochs 2010 --complete-grid-step-deg 5\n"
             "  run_C6.py --subtest COMPLETE --full-grid --complete-epochs 2000\n"
             "  run_C6.py --subtest MODERN --modern-epochs 2015\n"
@@ -916,14 +958,41 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--subtest", choices=("INITIAL", "COMPLETE", "MODERN", "ALL"), default="ALL")
+    parser.add_argument(
+        "--solver", choices=SOLVER_CHOICES, default="GRIDLESS",
+        help=("AMPS field path: GRIDLESS evaluates IGRF directly; GRIDDED uses "
+              "the standalone Mode3D AMR mesh and interpolation stencil; BOTH "
+              "runs both paths with identical reference/trajectory settings")
+    )
     parser.add_argument("-np", type=int, default=4, help="MPI ranks")
-    parser.add_argument("-nt", type=int, default=16, help="intra-rank gridless threads")
+    parser.add_argument("-nt", type=int, default=16,
+                        help="intra-rank trajectory threads for the selected solver")
     parser.add_argument("--amps", default="./amps", help="AMPS executable, relative to launch directory")
     parser.add_argument("--mpirun", default="mpirun", help="MPI launcher")
     parser.add_argument("--workdir", default=None, help="output root; default: test_output/C6")
     parser.add_argument("--mover", type=parse_mover_name, default=None, metavar="NAME", help="optional AMPS mover override")
     parser.add_argument("--scheduler", choices=("DYNAMIC", "BLOCK_CYCLIC", "STATIC"), default="DYNAMIC")
-    parser.add_argument("--dynamic-chunk", type=int, default=1, help="gridless MPI dynamic chunk")
+    parser.add_argument("--dynamic-chunk", type=int, default=1,
+                        help="MPI dynamic-scheduler chunk for either solver")
+
+    parser.add_argument(
+        "--mode3d-mesh-res-earth-re", type=float, default=0.02, metavar="DRE",
+        help=("GRIDDED AMR cell-size target near one Earth radius, in Re; "
+              "smaller values reduce interpolation error but increase mesh cost")
+    )
+    parser.add_argument(
+        "--mode3d-mesh-res-boundary-re", type=float, default=2.0, metavar="DRE",
+        help="GRIDDED AMR cell-size target at the outer tracing boundary, in Re"
+    )
+    parser.add_argument(
+        "--mode3d-mesh-coarsening", choices=MODE3D_MESH_COARSENING_CHOICES,
+        default="LOG",
+        help="GRIDDED radial AMR resolution profile"
+    )
+    parser.add_argument(
+        "--mode3d-mesh-exponent", type=float, default=1.0,
+        help="GRIDDED POWER-profile exponent; retained numerically for all profiles"
+    )
 
     parser.add_argument("--complete-epochs", default="1965,1980,1990,1995,2000,2010")
     parser.add_argument("--complete-grid-step-deg", type=float, default=10.0,
@@ -1007,12 +1076,70 @@ def validate_args(args: argparse.Namespace) -> None:
             "--domain-half-size-re must exceed the Earth/shell radius; "
             "use a magnetospheric value such as 25"
         )
+    if args.dynamic_chunk < 0:
+        raise SystemExit("--dynamic-chunk must be non-negative")
+    if args.mode3d_mesh_res_earth_re <= 0.0:
+        raise SystemExit("--mode3d-mesh-res-earth-re must be positive")
+    if args.mode3d_mesh_res_boundary_re <= 0.0:
+        raise SystemExit("--mode3d-mesh-res-boundary-re must be positive")
+    if args.mode3d_mesh_exponent <= 0.0:
+        raise SystemExit("--mode3d-mesh-exponent must be positive")
     for name in ("required_valid_fraction", "required_pass_fraction"):
         value = getattr(args, name)
         if not (0.0 <= value <= 1.0):
             raise SystemExit("--%s must be in [0,1]" % name.replace("_", "-"))
-    if args.output_file and args.subtest == "ALL":
-        raise SystemExit("--output-file requires a single --subtest and a single selected epoch")
+    if args.output_file and (args.subtest == "ALL" or args.solver == "BOTH"):
+        raise SystemExit(
+            "--output-file requires one --subtest, one expanded epoch, and one solver"
+        )
+
+
+def selected_solvers(args: argparse.Namespace) -> Tuple[str, ...]:
+    """Expand the user-facing BOTH selector into deterministic execution order."""
+    if args.solver == "BOTH":
+        return ("GRIDLESS", "GRIDDED")
+    return (args.solver,)
+
+
+def build_amps_command(args: argparse.Namespace, amps_path: Path, solver: str) -> List[str]:
+    """Construct one solver command while keeping all physical options common.
+
+    Only the field-evaluation/scheduling backend differs between the branches.
+    The rigidity scan, mover, trace policy, epoch, charge convention, shell
+    geometry, and reference subset remain identical and are supplied through the
+    generated numerical input or the common command prefix.
+    """
+    mode = "gridless" if solver == "GRIDLESS" else "3d"
+    command = [
+        args.mpirun, "-np", str(args.np), str(amps_path),
+        "-mode", mode, "-i", "AMPS_PARAM_C6.in",
+        "-cutoff-search", "PENUMBRA_SCAN",
+        "-cutoff-upper-scan-n", str(args.cutoff_scan_n),
+        "-cutoff-trace-policy", args.cutoff_trace_policy,
+    ]
+    if args.mover:
+        command += ["-mover", args.mover]
+
+    if solver == "GRIDLESS":
+        command += [
+            "-gridless-mpi-scheduler", args.scheduler,
+            "-gridless-mpi-dynamic-chunk", str(args.dynamic_chunk),
+            "-density-parallel", "THREADS",
+            "-density-threads", str(args.nt),
+        ]
+    else:
+        command += [
+            "-mode3d-field-eval", "MESH",
+            "-mode3d-parallel", "THREADS",
+            "-mode3d-threads", str(args.nt),
+            "-mode3d-mpi-scheduler", args.scheduler,
+            "-mode3d-mpi-dynamic-chunk", str(args.dynamic_chunk),
+            "-mode3d-mesh-res-earth-re", "%.12g" % args.mode3d_mesh_res_earth_re,
+            "-mode3d-mesh-res-boundary-re", "%.12g" % args.mode3d_mesh_res_boundary_re,
+            "-mode3d-mesh-coarsening", args.mode3d_mesh_coarsening,
+            "-mode3d-mesh-exponent", "%.12g" % args.mode3d_mesh_exponent,
+        ]
+    return command
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -1026,11 +1153,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("%s reference setup failed: %s" % (TEST_ID, exc), file=sys.stderr)
         return 2
 
-    if args.output_file and len(plans) != 1:
-        print("--output-file requires exactly one expanded C6 case", file=sys.stderr)
+    solvers = selected_solvers(args)
+    if args.output_file and (len(plans) != 1 or len(solvers) != 1):
+        print("--output-file requires exactly one expanded C6 case and one solver",
+              file=sys.stderr)
         return 2
 
     default_work_name = TEST_ID if args.subtest == "ALL" else "%s_%s" % (TEST_ID, args.subtest.lower())
+    if args.solver == "GRIDDED":
+        default_work_name += "_gridded"
+    elif args.solver == "BOTH":
+        default_work_name += "_both"
     work_root = Path(args.workdir) if args.workdir else Path("test_output") / default_work_name
     if not work_root.is_absolute():
         work_root = (launch_dir / work_root).resolve()
@@ -1055,72 +1188,85 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     amps_path = Path(args.amps)
     if not amps_path.is_absolute():
         amps_path = (launch_dir / amps_path).resolve()
-    numerical_input = script_dir / "AMPS_PARAM_C6_gridless.in"
     commands: List[Dict[str, object]] = []
     all_metrics: List[CaseMetrics] = []
     overall_pass = True
 
     for plan in plans:
-        case_dir = work_root / plan.case_name
-        # The analysis products belong in the case directory even when --skip-run or
-        # --output-file supplies an externally generated Tecplot file.
-        case_dir.mkdir(parents=True, exist_ok=True)
-        if not args.skip_run:
-            render_input(numerical_input, case_dir / "AMPS_PARAM_C6.in", plan, args)
-            write_reference_subset(case_dir / "reference_C6_selected.csv", plan.reference_rows)
+        for solver in solvers:
+            # Preserve the historical directory layout for the default one-solver
+            # run.  BOTH needs a solver level so the two AMPS executables cannot
+            # overwrite identically named inputs, logs, Tecplot files, or plots.
+            case_dir = work_root / plan.case_name
+            if len(solvers) > 1:
+                case_dir = case_dir / solver.lower()
 
-        command = [
-            args.mpirun, "-np", str(args.np), str(amps_path),
-            "-mode", "gridless", "-i", "AMPS_PARAM_C6.in",
-            "-cutoff-search", "PENUMBRA_SCAN",
-            "-cutoff-upper-scan-n", str(args.cutoff_scan_n),
-            "-cutoff-trace-policy", args.cutoff_trace_policy,
-            "-gridless-mpi-scheduler", args.scheduler,
-            "-gridless-mpi-dynamic-chunk", str(args.dynamic_chunk),
-            "-density-parallel", "THREADS",
-            "-density-threads", str(args.nt),
-        ]
-        if args.mover:
-            command += ["-mover", args.mover]
-        commands.append({"case": plan.case_name, "cwd": str(case_dir), "command": command})
-        print("%s %s command:\n  %s" % (TEST_ID, plan.case_name, " ".join(command)))
+            # The analysis products belong in the case directory even when
+            # --skip-run or --output-file supplies an externally generated file.
+            case_dir.mkdir(parents=True, exist_ok=True)
+            template = script_dir / (
+                "AMPS_PARAM_C6_gridless.in" if solver == "GRIDLESS"
+                else "AMPS_PARAM_C6_mode3d.in"
+            )
+            if not args.skip_run:
+                render_input(template, case_dir / "AMPS_PARAM_C6.in", plan, args, solver)
+                write_reference_subset(case_dir / "reference_C6_selected.csv", plan.reference_rows)
 
-        if not args.skip_run and not args.dry_run:
-            rc = run_command(command, case_dir, case_dir / "C6_amps.log")
-            if rc != 0:
-                print("AMPS failed for %s with exit code %d" % (plan.case_name, rc), file=sys.stderr)
-                return rc
+            command = build_amps_command(args, amps_path, solver)
+            case_label = "%s/%s" % (plan.case_name, solver.lower())
+            commands.append({
+                "case": plan.case_name,
+                "solver": solver,
+                "cwd": str(case_dir),
+                "command": command,
+            })
+            print("%s %s command:\n  %s" % (TEST_ID, case_label, " ".join(command)))
 
-        if args.dry_run:
-            continue
+            if not args.skip_run and not args.dry_run:
+                rc = run_command(command, case_dir, case_dir / "C6_amps.log")
+                if rc != 0:
+                    print("AMPS failed for %s with exit code %d" % (case_label, rc),
+                          file=sys.stderr)
+                    return rc
 
-        if args.output_file:
-            output_path = Path(args.output_file).expanduser().resolve()
-        else:
-            output_path = case_dir / "cutoff_gridless_shells_penumbra.dat"
-        if not output_path.exists():
-            print("C6 output not found: %s" % output_path, file=sys.stderr)
-            return 2
-        try:
-            model_rows = parse_tecplot_penumbra(output_path)
-            detailed, metrics = compare_case(plan, model_rows, args)
-        except Exception as exc:
-            print("C6 analysis failed for %s: %s" % (plan.case_name, exc), file=sys.stderr)
-            return 2
-        write_dict_rows(case_dir / "C6_comparison.csv", detailed)
-        (case_dir / "C6_result.json").write_text(json.dumps(asdict(metrics), indent=2) + "\n")
-        make_case_plot(detailed, case_dir / "C6_comparison.png",
-                       "%s %s epoch %d" % (TEST_ID, plan.subtest, plan.epoch_year))
-        all_metrics.append(metrics)
-        overall_pass = overall_pass and metrics.passed
-        print(
-            "%s %s: matched=%d/%d valid=%d pass_fraction=%.3f "
-            "MAE=%.3f GV RMSE=%.3f GV max=%.3f GV -> %s" %
-            (TEST_ID, plan.case_name, metrics.n_matched, metrics.n_reference,
-             metrics.n_valid, metrics.point_pass_fraction,
-             metrics.mean_abs_error_gv, metrics.rmse_gv,
-             metrics.max_abs_error_gv, "PASS" if metrics.passed else "FAIL")
-        )
+            if args.dry_run:
+                continue
+
+            if args.output_file:
+                output_path = Path(args.output_file).expanduser().resolve()
+            elif solver == "GRIDLESS":
+                output_path = case_dir / "cutoff_gridless_shells_penumbra.dat"
+            else:
+                output_path = case_dir / "cutoff_3d_shells_penumbra.dat"
+            if not output_path.exists():
+                print("C6 output not found: %s" % output_path, file=sys.stderr)
+                return 2
+            try:
+                model_rows = parse_tecplot_penumbra(output_path)
+                detailed, metrics = compare_case(plan, model_rows, args, solver)
+            except Exception as exc:
+                print("C6 analysis failed for %s: %s" % (case_label, exc),
+                      file=sys.stderr)
+                return 2
+            write_dict_rows(case_dir / "C6_comparison.csv", detailed)
+            (case_dir / "C6_result.json").write_text(
+                json.dumps(asdict(metrics), indent=2) + "\n"
+            )
+            make_case_plot(
+                detailed, case_dir / "C6_comparison.png",
+                "%s %s %s epoch %d" %
+                (TEST_ID, solver, plan.subtest, plan.epoch_year),
+            )
+            all_metrics.append(metrics)
+            overall_pass = overall_pass and metrics.passed
+            print(
+                "%s %s: matched=%d/%d valid=%d pass_fraction=%.3f "
+                "MAE=%.3f GV RMSE=%.3f GV max=%.3f GV -> %s" %
+                (TEST_ID, case_label, metrics.n_matched, metrics.n_reference,
+                 metrics.n_valid, metrics.point_pass_fraction,
+                 metrics.mean_abs_error_gv, metrics.rmse_gv,
+                 metrics.max_abs_error_gv, "PASS" if metrics.passed else "FAIL")
+            )
 
     (work_root / "C6_commands.json").write_text(json.dumps(commands, indent=2) + "\n")
     if args.dry_run:

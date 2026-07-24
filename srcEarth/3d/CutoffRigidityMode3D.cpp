@@ -19,8 +19,10 @@
 //   1. Convert the output location to GSM Cartesian coordinates in metres.
 //
 //   2. Choose the arrival direction(s).
-//        * VERTICAL sampling uses the local outward radial direction as the arrival
-//          direction.
+//        * VERTICAL sampling uses the inward arrival direction.  On historical
+//          SPHERICAL shells this is the geocentric radial direction.  On
+//          SHELL_GEOMETRY=GEODETIC shells it is the WGS-84 ellipsoid normal rotated
+//          from ITRF93/GEO into GSM at the selected epoch.
 //        * ISOTROPIC sampling uses a Fibonacci sphere of directions.
 //
 //   3. For each direction, launch the mathematically reversed particle in the
@@ -28,12 +30,16 @@
 //        * Escape through the outer Mode3D box means the rigidity/direction is
 //          ALLOWED.
 //        * Contact with the inner Earth-loss sphere means FORBIDDEN.
-//        * Reaching the time, step, or path-length limit without escape is treated
-//          conservatively as FORBIDDEN.
+//        * Reaching the time, step, or path-length limit is interpreted according to
+//          CUTOFF_TRACE_LIMIT_POLICY.  FORBIDDEN reproduces the finite-trajectory
+//          convention used by published world grids; UNRESOLVED preserves a strict
+//          third state for numerical diagnostics.
 //
-//   4. Determine the cutoff rigidity for that direction.  The default method is the
-//      penumbra-safe UPPER_SCAN algorithm described in detail below.  The older
-//      endpoint binary search remains available for regression tests.
+//   4. Determine the cutoff rigidity for that direction.
+//        * UPPER_SCAN returns the final forbidden-to-allowed transition.
+//        * PENUMBRA_SCAN evaluates the complete access sequence and returns lower,
+//          effective, and upper cutoff diagnostics.  C6 uses the effective value.
+//        * BINARY retains the older endpoint-monotonic algorithm for regression.
 //
 //   5. For an isotropic point cutoff, return the minimum directional cutoff over
 //      the sampled directions.  When DIRECTIONAL_MAP=T, also save each directional
@@ -63,7 +69,8 @@
 //      Log spacing is used for positive Rmin because SEP/geospace cutoff searches
 //      cover multiple decades in rigidity.
 //
-//   2. Evaluate allowed(R_i) at every grid point.
+//   2. Evaluate Rmax and then scan downward.  Stop at the first forbidden sample;
+//      lower-rigidity topology cannot change the upper cutoff.
 //
 //   3. If the highest sampled point Rmax is forbidden, report ``no cutoff in the
 //      requested bracket`` using the existing -1 return convention.
@@ -93,27 +100,17 @@
 // (IGRF coefficients, parmod, dipole tilt, etc.).  A common block is a single global
 // region of static storage; it is NOT thread-safe.
 //
-// Field evaluation in Mode3D reads from the AMPS AMR mesh (no Fortran calls,
-// field-evaluation call.  The lock is released immediately afterward, so the critical
-// section contains only the Fortran call itself (typically a few microseconds).
+// The normal GRIDDED/MESH path used by C6 does not call any Fortran model from worker
+// threads.  Mode3D::ConfigureBackgroundFieldModel() initializes the selected epoch,
+// Mode3D::InitMeshFields() samples IGRF into the distributed AMR mesh, and the global
+// field gather completes before RunCutoffRigidity() starts its trajectory workers.
+// Each worker then performs read-only interpolation from the frozen mesh arrays.
 //
-// Why a single mutex rather than per-model mutexes?
-//   All models share the same Geopack common block (RECALC state, dipole tilt).
-//   Separate per-model mutexes would not protect Geopack from concurrent writes by
-//   two threads using different models in a mixed-model run.  A single mutex is the
-//   conservative, correct choice.
-//
-// PERFORMANCE NOTE:
-//   In a typical run with 1152 directions per point and 20 bisection steps, one point
-//   requires ~23 000 Fortran calls.  At ~5 µs/call, a 16-core node running 16 OpenMP
-//   threads in lock-step would spend ~7 ms in the critical section per point, while
-//   each point takes ~115 ms total.  Lock contention is therefore ~6% overhead at 16
-//   threads.  For heavier models (TA16) the fraction is lower because non-Fortran
-//   work (Boris pusher, geometry checks) is also more expensive.
-//
-//   If Fortran-mutex contention ever becomes the bottleneck, the remedy is to link
-//   thread-safe versions of the Fortran libraries (compiled with -frecursive or
-//   equivalent) and remove the mutex.  That change is isolated to this file.
+// The optional ANALYTIC field-evaluation path is different.  NONE and the stateless
+// DIPOLE evaluator are lock-free.  Empirical/Geopack analytic evaluations retain one
+// process-local mutex around the shared common-block call.  The mutex is deliberately
+// bypassed for MESH, so increasing MODE3D_THREADS can parallelize the expensive C6
+// trajectory work without serializing every field sample.
 //
 //======================================================================================
 // ADAPTIVE TIME STEP
@@ -135,8 +132,8 @@
 // Outer box:    Mode3D::ParsedDomainMin[3] / ParsedDomainMax[3]  (SI meters)
 //               Set by ApplyParsedDomain() in Mode3D.cpp from prm.domain (km → m).
 //
-// Inner sphere: radius = _EARTH__RADIUS_  (Earth radius in SI meters)
-//               Centred at origin (GSM).
+// Inner sphere: radius = prm.domain.rInner converted from km to SI meters.
+//               Centred at origin (GSM).  C6 writes 6371.2 km explicitly.
 //
 // These match the geometry established by amps_init_mesh() so that the cutoff tracer
 // and the AMPS particle mover see the same physical domain.
@@ -231,6 +228,7 @@
 
 // Parameter parser
 #include "../util/amps_param_parser.h"
+#include "../util/CutoffBandSearch.h"
 
 // Standard library
 #include <cstdio>
@@ -1061,7 +1059,18 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
     using Earth::TrajectoryBoundary::EventType;
 
     TrajectoryResult result;
-    const double qabs=std::fabs(q_C);
+    // Backtrace charge convention.
+    //
+    // Reversing a physical trajectory in a magnetic field requires reversing
+    // both velocity and charge.  Historical AMPS cutoff calculations reversed
+    // only velocity, so the parser keeps SAME as the global backward-compatible
+    // default.  C6 explicitly selects REVERSED to reproduce the antiparticle
+    // construction used by Smart--Shea/CARI cutoff tables.
+    const double qPhysical=q_C;
+    const bool reverseBacktraceCharge=
+        EarthUtil::ToUpper(prm.cutoff.backtraceChargeConvention)=="REVERSED";
+    const double qTrace=reverseBacktraceCharge ? -qPhysical : qPhysical;
+    const double qabs=std::fabs(qPhysical);
     const double pMag=MomentumFromRigidity_GV(R_GV,qabs);
     V3 p=mul(pMag,v0_unit);
     V3 x=x0_m;
@@ -1171,16 +1180,16 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
         if (mover==MoverType::GC2 || mover==MoverType::GC4 || mover==MoverType::GC6)
             useGuidingCenterForThisStep=true;
         else if (mover==MoverType::HYBRID)
-            useGuidingCenterForThisStep=HybridPrepareStepUseGuidingCenter(x,p,q_C,field);
+            useGuidingCenterForThisStep=HybridPrepareStepUseGuidingCenter(x,p,qTrace,field);
 
-        const double dt=SelectTraceDt3D(prm,field,x,p,q_C,m0_kg,box,timeRemaining,
+        const double dt=SelectTraceDt3D(prm,field,x,p,qTrace,m0_kg,box,timeRemaining,
                                         useGuidingCenterForThisStep,integrationPolicy);
         if (!(dt>0.0) || !std::isfinite(dt))
             return Finalize(TrajectoryTermination::InvalidTimeStep);
 
         const V3 xPrev=x;
         const V3 pPrev=p;
-        if (!StepParticleChecked(gDefaultMover,x,p,q_C,m0_kg,dt,field,box.rInner))
+        if (!StepParticleChecked(gDefaultMover,x,p,qTrace,m0_kg,dt,field,box.rInner))
             return Finalize(TrajectoryTermination::InnerBoundaryForbidden);
 
         const double xPrevArr[3]={xPrev.x,xPrev.y,xPrev.z};
@@ -1740,7 +1749,8 @@ static int CutoffUpperScanPointCount_(const EarthUtil::AmpsParam& prm) {
     return std::max(8,prm.cutoff.nEnergy);
 }
 
-static std::vector<double> BuildCutoffSearchGrid_GV_(double Rmin_GV,
+static std::vector<double> BuildCutoffSearchGrid_GV_(const EarthUtil::AmpsParam& prm,
+                                                     double Rmin_GV,
                                                      double Rmax_GV,
                                                      int nScan) {
     // Build the coarse rigidity grid used by UPPER_SCAN.  The grid is strictly local to
@@ -1761,18 +1771,19 @@ static std::vector<double> BuildCutoffSearchGrid_GV_(double Rmin_GV,
     nScan = std::max(2,nScan);
     grid.reserve((size_t)nScan);
 
-    if (Rmin_GV > 0.0) {
+    const std::string spacing=EarthUtil::ToUpper(prm.cutoff.scanSpacing);
+    if (spacing=="LINEAR" || !(Rmin_GV>0.0)) {
+        for (int i=0;i<nScan;i++) {
+            const double a=(double)i/(double)(nScan-1);
+            grid.push_back((1.0-a)*Rmin_GV+a*Rmax_GV);
+        }
+    }
+    else {
         const double lmin = std::log(Rmin_GV);
         const double lmax = std::log(Rmax_GV);
         for (int i=0;i<nScan;i++) {
             const double a = (nScan == 1) ? 0.0 : (double)i/(double)(nScan-1);
             grid.push_back(std::exp((1.0-a)*lmin + a*lmax));
-        }
-    }
-    else {
-        for (int i=0;i<nScan;i++) {
-            const double a = (nScan == 1) ? 0.0 : (double)i/(double)(nScan-1);
-            grid.push_back((1.0-a)*Rmin_GV + a*Rmax_GV);
         }
     }
 
@@ -1845,7 +1856,7 @@ static double CutoffForDirUpperScan_GV(const EarthUtil::AmpsParam& prm,
     // trajectory integration, but the scan is what makes the method robust to
     // non-monotonic allowed/forbidden sequences.
     const int nScan = CutoffUpperScanPointCount_(prm);
-    const std::vector<double> grid = BuildCutoffSearchGrid_GV_(Rmin_GV,Rmax_GV,nScan);
+    const std::vector<double> grid = BuildCutoffSearchGrid_GV_(prm,Rmin_GV,Rmax_GV,nScan);
     if (grid.size() < 2) return -1.0;
 
     // Evaluate from the top of the rigidity bracket downward.  The upper cutoff is
@@ -1872,6 +1883,134 @@ static double CutoffForDirUpperScan_GV(const EarthUtil::AmpsParam& prm,
     return Rmin_GV;
 }
 
+
+// Complete one-direction cutoff-band result used by PENUMBRA_SCAN.
+//
+// The scalar UPPER_SCAN path intentionally stops after locating the final
+// forbidden-to-allowed transition.  Published effective-cutoff tables require the
+// full allowed/forbidden topology, so PENUMBRA_SCAN records every coarse sample and
+// reports both boundaries plus the integrated effective cutoff.
+struct CutoffBandResult3D_ {
+    double lower_GV{-1.0};
+    double effective_GV{-1.0};
+    double upper_GV{-1.0};
+    int nTransitions{0};
+    int nAllowedIntervals{0};
+    int nUnresolved{0};
+    int lowerBracketUnresolved{0};
+    int upperBracketUnresolved{0};
+    int lowerBelowRange{0};
+    int lowerAboveRange{0};
+    int upperBelowRange{0};
+    int upperAboveRange{0};
+};
+
+static EarthUtil::CutoffSampleState ClassifyCutoffSample3D_(
+                              const EarthUtil::AmpsParam& prm,
+                              cMode3DMeshFieldEval& field,
+                              const V3& x0_m,
+                              const V3& v0,
+                              double R_GV,
+                              double q_C,
+                              double m0_kg,
+                              const DomainBox3D& box) {
+    const auto tr=TraceTrajectory3DWithSingleRetry(
+        prm,field,x0_m,v0,R_GV,q_C,m0_kg,box,-1.0,false);
+
+    if (tr.allowed()) return EarthUtil::CutoffSampleState::Allowed;
+    if (Earth::GridlessMode::IsPhysicalForbiddenTermination(tr.termination))
+        return EarthUtil::CutoffSampleState::PhysicalForbidden;
+
+    if (Earth::GridlessMode::IsTraceLimitTermination(tr.termination)) {
+        // C6 follows the finite-trajectory convention of the published world
+        // grids: a trajectory that does not escape before the configured physical
+        // stopping criterion is counted as forbidden.  Strict numerical tests may
+        // select UNRESOLVED to preserve a third state and invalidate the integral.
+        if (EarthUtil::ToUpper(prm.cutoff.traceLimitPolicy)=="FORBIDDEN")
+            return EarthUtil::CutoffSampleState::PhysicalForbidden;
+        return EarthUtil::CutoffSampleState::Unresolved;
+    }
+
+    std::ostringstream msg;
+    msg << "Mode3D PENUMBRA_SCAN trajectory failed after numerical retry: termination="
+        << Earth::GridlessMode::TrajectoryTerminationName(tr.termination)
+        << ", R_GV=" << R_GV << ", steps=" << tr.steps
+        << ", trace_time_s=" << tr.traceTime_s;
+    throw std::runtime_error(msg.str());
+}
+
+static CutoffBandResult3D_ CutoffForDirPenumbraScan_GV(
+                              const EarthUtil::AmpsParam& prm,
+                              cMode3DMeshFieldEval& field,
+                              const V3& x0_m,
+                              const V3& dir_unit,
+                              double q_C,
+                              double m0_kg,
+                              const DomainBox3D& box,
+                              double Rmin_GV,
+                              double Rmax_GV) {
+    CutoffBandResult3D_ out;
+    if (Rmax_GV<Rmin_GV) return out;
+
+    const V3 v0=mul(-1.0,dir_unit);
+    const int nScan=CutoffUpperScanPointCount_(prm);
+    const std::vector<double> grid=
+        BuildCutoffSearchGrid_GV_(prm,Rmin_GV,Rmax_GV,nScan);
+    if (grid.size()<2) return out;
+
+    std::vector<EarthUtil::CutoffSampleState> states(grid.size());
+    for (std::size_t i=0;i<grid.size();++i) {
+        states[i]=ClassifyCutoffSample3D_(
+            prm,field,x0_m,v0,grid[i],q_C,m0_kg,box);
+    }
+
+    const EarthUtil::CutoffBandTopology topology=
+        EarthUtil::AnalyzeCutoffBandSamples(states);
+    out.nTransitions=topology.nTransitions;
+    out.nAllowedIntervals=topology.nAllowedIntervals;
+    out.nUnresolved=topology.nUnresolved;
+    out.lowerBracketUnresolved=topology.lowerBracketUnresolved ? 1 : 0;
+    out.upperBracketUnresolved=topology.upperBracketUnresolved ? 1 : 0;
+    out.lowerBelowRange=topology.lowerBelowRange ? 1 : 0;
+    out.lowerAboveRange=topology.lowerAboveRange ? 1 : 0;
+    out.upperBelowRange=topology.upperBelowRange ? 1 : 0;
+    out.upperAboveRange=topology.upperAboveRange ? 1 : 0;
+
+    auto classify=[&](double R_GV) {
+        return ClassifyCutoffSample3D_(
+            prm,field,x0_m,v0,R_GV,q_C,m0_kg,box);
+    };
+
+    if (topology.lowerBelowRange) out.lower_GV=grid.front();
+    else if (topology.lowerForbiddenIndex>=0 && topology.lowerAllowedIndex>=0) {
+        const auto refined=EarthUtil::RefineCutoffTransition(
+            grid[(std::size_t)topology.lowerForbiddenIndex],
+            grid[(std::size_t)topology.lowerAllowedIndex],classify);
+        out.lower_GV=refined.cutoff_GV;
+        if (refined.unresolved) out.lowerBracketUnresolved=1;
+    }
+
+    if (topology.allAllowed) out.upper_GV=grid.front();
+    else if (topology.upperForbiddenIndex>=0 && topology.upperAllowedIndex>=0) {
+        const auto refined=EarthUtil::RefineCutoffTransition(
+            grid[(std::size_t)topology.upperForbiddenIndex],
+            grid[(std::size_t)topology.upperAllowedIndex],classify);
+        out.upper_GV=refined.cutoff_GV;
+        if (refined.unresolved) out.upperBracketUnresolved=1;
+    }
+
+    if (out.lower_GV>=0.0 && out.upper_GV>=out.lower_GV &&
+        topology.nUnresolved==0 && !out.lowerBracketUnresolved &&
+        !out.upperBracketUnresolved) {
+        const EarthUtil::EffectiveCutoffIntegration effective=
+            EarthUtil::IntegrateEffectiveCutoff(
+                grid,states,out.lower_GV,out.upper_GV,classify);
+        if (!effective.unresolved) out.effective_GV=effective.cutoff_GV;
+    }
+
+    return out;
+}
+
 static double CutoffForDir_GV(const EarthUtil::AmpsParam& prm,
                               cMode3DMeshFieldEval& field,
                               const V3& x0_m,
@@ -1888,6 +2027,12 @@ static double CutoffForDir_GV(const EarthUtil::AmpsParam& prm,
     if (alg=="BINARY" || alg=="ENDPOINT_BINARY" || alg=="LEGACY_BINARY") {
         return CutoffForDirEndpointBinary_GV(prm,field,x0_m,dir_unit,
                                              q_C,m0_kg,box,Rmin_GV,Rmax_GV);
+    }
+
+    if (alg=="PENUMBRA_SCAN" || alg=="PENUMBRASCAN" ||
+        alg=="FULL_PENUMBRA" || alg=="BAND_SCAN") {
+        return CutoffForDirPenumbraScan_GV(
+            prm,field,x0_m,dir_unit,q_C,m0_kg,box,Rmin_GV,Rmax_GV).effective_GV;
     }
 
     // Default: penumbra-safe upper cutoff.  Unknown strings are validated by the input
@@ -1921,6 +2066,7 @@ static double CutoffForDir_GV(const EarthUtil::AmpsParam& prm,
 static double ComputeCutoffAtPoint_GV(const EarthUtil::AmpsParam& prm,
                                        cMode3DMeshFieldEval& field,
                                        const V3& x0_m,
+                                       const V3& verticalArrivalDir,
                                        const std::vector<V3>& dirs,
                                        bool samplingVertical,
                                        double q_C, double m0_kg,
@@ -1933,9 +2079,11 @@ static double ComputeCutoffAtPoint_GV(const EarthUtil::AmpsParam& prm,
     for (int d = 0; d < nDirs; ++d) {
         V3 dir;
         if (samplingVertical) {
-            // Local vertical: particle arrives from the radially outward direction,
-            // so the arrival direction is toward Earth: dir = -unit(x0).
-            dir = v3unit(mul(-1.0, x0_m));
+            // Local vertical supplied by the location-geometry helper.  For a
+            // spherical shell this is -unit(x0).  For SHELL_GEOMETRY=GEODETIC
+            // it is the inward WGS-84 ellipsoid normal rotated from ITRF93 to
+            // GSM, which is the convention used by the C6 world-grid tables.
+            dir = verticalArrivalDir;
         } else {
             dir = dirs[(size_t)d];
         }
@@ -1991,9 +2139,68 @@ static std::string EpochForLocation(const EarthUtil::AmpsParam& prm, int loc) {
 // Replicated here to avoid a cross-module dependency on a local lambda.
 static std::mutex gLocationToX0mSpiceMutex_;
 
+// Build the Earth-fixed position and outward local vertical for one shell node.
+//
+// SPHERICAL preserves the historical geocentric shell convention.  GEODETIC uses
+// the WGS-84 reference ellipsoid and its surface normal, matching the published C6
+// reference tables.  Position and vertical are returned separately because the
+// geodetic normal is not parallel to the geocentric radius except at the equator and
+// poles.
+static void ShellPointAndVerticalGeo3D_(const EarthUtil::AmpsParam& prm,
+                                        double lon_deg,
+                                        double lat_deg,
+                                        double alt_km,
+                                        V3& xGeo_m,
+                                        V3& upGeo) {
+    const double lon=lon_deg*M_PI/180.0;
+    const double lat=lat_deg*M_PI/180.0;
+    const double cl=std::cos(lat), sl=std::sin(lat);
+    const double co=std::cos(lon), so=std::sin(lon);
+    upGeo=V3{cl*co,cl*so,sl};
+
+    if (EarthUtil::ToUpper(prm.output.shellGeometry)=="GEODETIC") {
+        constexpr double a_m=6378137.0;
+        constexpr double e2=6.6943799901413165e-3;
+        const double N=a_m/std::sqrt(1.0-e2*sl*sl);
+        const double h=alt_km*1000.0;
+        xGeo_m=V3{(N+h)*cl*co,
+                  (N+h)*cl*so,
+                  (N*(1.0-e2)+h)*sl};
+    }
+    else {
+        const double r_m=_RADIUS_(_EARTH_)+alt_km*1000.0;
+        xGeo_m=mul(r_m,upGeo);
+    }
+}
+
+// Rotate one Earth-fixed vector into GSM at the field epoch.  The cached SPICE
+// matrix is shared between position and direction transforms and protected because
+// direct std::thread/OpenMP location workers may request shell geometry concurrently.
+static V3 GeoVectorToGsm3D_(const EarthUtil::AmpsParam& prm,const V3& vGeo) {
+    if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") return vGeo;
+
+#ifndef _NO_SPICE_CALLS_
+    std::lock_guard<std::mutex> lock(gLocationToX0mSpiceMutex_);
+    static std::string cachedEpoch;
+    static SpiceDouble rot[3][3];
+    if (cachedEpoch!=prm.field.epoch) {
+        cachedEpoch=prm.field.epoch;
+        SpiceDouble et=0.0;
+        str2et_c(prm.field.epoch.c_str(),&et);
+        pxform_c("ITRF93","GSM",et,rot);
+    }
+    SpiceDouble in[3]={vGeo.x,vGeo.y,vGeo.z},out[3];
+    mxv_c(rot,in,out);
+    return V3{out[0],out[1],out[2]};
+#else
+    return vGeo;
+#endif
+}
+
 static V3 LocationToX0m(const EarthUtil::AmpsParam& prm, int loc,
                          int nLon, int nLat,
-                         double d_deg, int nPtsShell) {
+                         double lonRes_deg, double latRes_deg,
+                         int nPtsShell) {
     const std::string mode = EarthUtil::ToUpper(prm.output.mode);
     const bool isPoints = (mode == "POINTS" || mode == "TRAJECTORY");
 
@@ -2002,50 +2209,43 @@ static V3 LocationToX0m(const EarthUtil::AmpsParam& prm, int loc,
         return V3{P.x*1000.0, P.y*1000.0, P.z*1000.0};
     }
 
-    // SHELLS
-    const int s    = loc / nPtsShell;
-    const int k    = loc - s*nPtsShell;
-    const int iLon = k % nLon;
-    const int jLat = k / nLon;
+    const int s=loc/nPtsShell;
+    const int k=loc-s*nPtsShell;
+    const int iLon=k%nLon;
+    const int jLat=k/nLon;
+    const double lon=lonRes_deg*iLon;
+    double lat=-90.0+latRes_deg*jLat;
+    if (lat>90.0) lat=90.0;
 
-    double lon = d_deg * iLon;
-    double lat = -90.0 + d_deg * jLat;
-    if (lat > 90.0) lat = 90.0;
+    V3 xGeo,upGeo;
+    ShellPointAndVerticalGeo3D_(prm,lon,lat,
+                                prm.output.shellAlt_km[(size_t)s],xGeo,upGeo);
+    return GeoVectorToGsm3D_(prm,xGeo);
+}
 
-    const double alt_km  = prm.output.shellAlt_km[(size_t)s];
-    const double r_m     = (_RADIUS_(_EARTH_) + alt_km*1000.0);
-    const double lonRad  = lon * M_PI / 180.0;
-    const double latRad  = lat * M_PI / 180.0;
-    const double cl      = std::cos(latRad);
+static V3 LocationToVerticalArrivalDir3D_(const EarthUtil::AmpsParam& prm,
+                                          int loc,
+                                          int nLon, int nLat,
+                                          double lonRes_deg,
+                                          double latRes_deg,
+                                          int nPtsShell,
+                                          const V3& x0_m) {
+    const std::string mode=EarthUtil::ToUpper(prm.output.mode);
+    if (mode=="POINTS" || mode=="TRAJECTORY")
+        return v3unit(mul(-1.0,x0_m));
 
-    const V3 xCart{r_m*cl*std::cos(lonRad), r_m*cl*std::sin(lonRad), r_m*std::sin(latRad)};
+    const int s=loc/nPtsShell;
+    const int k=loc-s*nPtsShell;
+    const int iLon=k%nLon;
+    const int jLat=k/nLon;
+    const double lon=lonRes_deg*iLon;
+    double lat=-90.0+latRes_deg*jLat;
+    if (lat>90.0) lat=90.0;
 
-    // Pure DIPOLE: use the lon/lat-derived position directly (no frame rotation).
-    if (EarthUtil::ToUpper(prm.field.model) == "DIPOLE") return xCart;
-
-    // External models: rotate from Earth-fixed (ITRF93) to GSM via SPICE.
-#ifndef _NO_SPICE_CALLS_
-    {
-        std::lock_guard<std::mutex> lock(gLocationToX0mSpiceMutex_);
-
-        static std::string cachedEpoch;
-        static SpiceDouble rot[3][3];
-        if (cachedEpoch != prm.field.epoch) {
-            cachedEpoch = prm.field.epoch;
-            SpiceDouble et;
-            str2et_c(prm.field.epoch.c_str(), &et);
-            pxform_c("ITRF93", "GSM", et, rot);
-        }
-        SpiceDouble xGEO[3] = {xCart.x, xCart.y, xCart.z};
-        SpiceDouble xGSM[3];
-        mxv_c(rot, xGEO, xGSM);
-        return V3{xGSM[0], xGSM[1], xGSM[2]};
-    }
-#else
-    // SPICE unavailable: return un-rotated position (acceptable for DIPOLE; warn
-    // for external models, but do not hard-fail to allow non-SPICE builds).
-    return xCart;
-#endif
+    V3 xGeo,upGeo;
+    ShellPointAndVerticalGeo3D_(prm,lon,lat,
+                                prm.output.shellAlt_km[(size_t)s],xGeo,upGeo);
+    return v3unit(mul(-1.0,GeoVectorToGsm3D_(prm,upGeo)));
 }
 
 //======================================================================================
@@ -2740,7 +2940,9 @@ static void WriteTecplot3DPoints_DipoleAnalyticCompare(const EarthUtil::AmpsPara
 static void WriteTecplot3DShells(const EarthUtil::AmpsParam& prm,
                                  const std::vector<std::vector<double>>& RcShell,
                                  const std::vector<std::vector<double>>& EminShell,
-                                 int nLon, int nLat, double d_deg) {
+                                 int nLon, int nLat,
+                                 double lonRes_deg,
+                                 double latRes_deg) {
     const std::string fname = CutoffOutputFileName("cutoff_3d_shells");
     FILE* f = std::fopen(fname.c_str(), "w");
     if (!f) throw std::runtime_error("Cannot write " + fname);
@@ -2757,9 +2959,9 @@ static void WriteTecplot3DShells(const EarthUtil::AmpsParam& prm,
         for (int k = 0; k < nPts; ++k) {
             const int    iLon = k % nLon;
             const int    jLat = k / nLon;
-            double lat = -90.0 + d_deg * jLat;
+            double lat = -90.0 + latRes_deg * jLat;
             if (lat > 90.0) lat = 90.0;
-            const double lon  = d_deg * iLon;
+            const double lon  = lonRes_deg * iLon;
 
             std::fprintf(f, "%e %e %e %e\n",
                          lon, lat,
@@ -2767,6 +2969,129 @@ static void WriteTecplot3DShells(const EarthUtil::AmpsParam& prm,
                          EminShell[s][(size_t)k]);
         }
     }
+    std::fclose(f);
+}
+
+// Write the complete vertical-cutoff band diagnostics produced by the Mode3D
+// PENUMBRA_SCAN algorithm.
+//
+// This file intentionally mirrors the gridless
+// cutoff_gridless_shells_penumbra.dat column contract.  Keeping the two output
+// products isomorphic is important for validation tests such as C6: one parser
+// can compare either the direct field evaluator or the mesh-interpolated field
+// against the same published reference table without solver-specific aliases or
+// hidden reinterpretation of the cutoff definition.
+//
+// The arrays passed to this routine are flat GLOBAL-location arrays.  Their
+// ordering is the same ordering used by LocationToX0m():
+//
+//   globalId = shellId*(nLon*nLat) + jLat*nLon + iLon.
+//
+// Thus the writer is independent of the MPI scheduler and of the order in which
+// ranks completed locations.  All arrays have already been reduced to rank 0 by
+// global location id before this routine is called.
+static void WriteTecplot3DShells_Penumbra(
+                                 const EarthUtil::AmpsParam& prm,
+                                 const std::vector<double>& rcLower,
+                                 const std::vector<double>& rcEffective,
+                                 const std::vector<double>& rcUpper,
+                                 const std::vector<int>& nAllowedIntervals,
+                                 const std::vector<int>& nTransitions,
+                                 const std::vector<int>& nUnresolved,
+                                 const std::vector<int>& lowerBracketUnresolved,
+                                 const std::vector<int>& upperBracketUnresolved,
+                                 const std::vector<int>& lowerBelowRange,
+                                 const std::vector<int>& lowerAboveRange,
+                                 const std::vector<int>& upperBelowRange,
+                                 const std::vector<int>& upperAboveRange,
+                                 int nLon, int nLat,
+                                 double lonRes_deg,
+                                 double latRes_deg) {
+    const std::string fname = CutoffOutputFileName("cutoff_3d_shells_penumbra");
+    FILE* f = std::fopen(fname.c_str(), "w");
+    if (!f) throw std::runtime_error("Cannot write " + fname);
+
+    const int nPtsShell = nLon*nLat;
+    const size_t nExpected = prm.output.shellAlt_km.size()*(size_t)nPtsShell;
+
+    // Fail before writing a truncated file if one diagnostic was not allocated,
+    // reduced, or filled consistently with the primary cutoff array.
+    auto requireSize=[&](size_t n,const char* name) {
+        if (n!=nExpected) {
+            std::fclose(f);
+            throw std::runtime_error(
+                std::string("Mode3D penumbra output: array '")+name+
+                "' has size "+std::to_string(n)+", expected "+
+                std::to_string(nExpected)+".");
+        }
+    };
+    requireSize(rcLower.size(),"Rc_lower_GV");
+    requireSize(rcEffective.size(),"Rc_effective_GV");
+    requireSize(rcUpper.size(),"Rc_upper_GV");
+    requireSize(nAllowedIntervals.size(),"n_allowed_intervals");
+    requireSize(nTransitions.size(),"n_transitions");
+    requireSize(nUnresolved.size(),"n_unresolved");
+    requireSize(lowerBracketUnresolved.size(),"lower_bracket_unresolved");
+    requireSize(upperBracketUnresolved.size(),"upper_bracket_unresolved");
+    requireSize(lowerBelowRange.size(),"lower_below_range");
+    requireSize(lowerAboveRange.size(),"lower_above_range");
+    requireSize(upperBelowRange.size(),"upper_below_range");
+    requireSize(upperAboveRange.size(),"upper_above_range");
+
+    std::fprintf(f,"TITLE=\"Mode3D Vertical Cutoff Penumbra Diagnostics\"\n");
+    std::fprintf(f,
+        "VARIABLES=\"lon_deg\",\"lat_deg\",\"x_km\",\"y_km\",\"z_km\","
+        "\"Rc_lower_GV\",\"Rc_effective_GV\",\"Rc_upper_GV\","
+        "\"PenumbraWidth_GV\",\"n_allowed_intervals\",\"n_transitions\","
+        "\"n_unresolved\",\"lower_bracket_unresolved\","
+        "\"upper_bracket_unresolved\",\"lower_below_range\","
+        "\"lower_above_range\",\"upper_below_range\",\"upper_above_range\"\n");
+
+    for (size_t s=0; s<prm.output.shellAlt_km.size(); ++s) {
+        std::fprintf(f,"ZONE T=\"alt_km=%g\" I=%d J=%d F=POINT\n",
+                     prm.output.shellAlt_km[s],nLon,nLat);
+
+        for (int k=0; k<nPtsShell; ++k) {
+            const int iLon=k%nLon;
+            const int jLat=k/nLon;
+            const int globalId=(int)s*nPtsShell+k;
+
+            double lat_deg=-90.0+latRes_deg*jLat;
+            if (lat_deg>90.0) lat_deg=90.0;
+            const double lon_deg=lonRes_deg*iLon;
+
+            // Use the exact same WGS-84/geocentric shell construction and
+            // GEO->GSM transformation as the trajectory launch point.  The
+            // coordinates in this diagnostic file therefore describe the actual
+            // point used by the gridded solver rather than a separately
+            // reconstructed spherical approximation.
+            const V3 x_m=LocationToX0m(
+                prm,globalId,nLon,nLat,lonRes_deg,latRes_deg,nPtsShell);
+
+            const double width=(rcLower[(size_t)globalId]>=0.0 &&
+                                rcUpper[(size_t)globalId]>=0.0)
+                               ? std::max(0.0,rcUpper[(size_t)globalId]-
+                                             rcLower[(size_t)globalId])
+                               : -1.0;
+
+            std::fprintf(f,
+                "%e %e %e %e %e %e %e %e %e %d %d %d %d %d %d %d %d %d\n",
+                lon_deg,lat_deg,x_m.x/1000.0,x_m.y/1000.0,x_m.z/1000.0,
+                rcLower[(size_t)globalId],
+                rcEffective[(size_t)globalId],
+                rcUpper[(size_t)globalId],width,
+                nAllowedIntervals[(size_t)globalId],
+                nTransitions[(size_t)globalId],
+                nUnresolved[(size_t)globalId],
+                lowerBracketUnresolved[(size_t)globalId],
+                upperBracketUnresolved[(size_t)globalId],
+                lowerBelowRange[(size_t)globalId],
+                lowerAboveRange[(size_t)globalId],
+                upperBelowRange[(size_t)globalId],
+                upperAboveRange[(size_t)globalId]);
+        }
+    }
+
     std::fclose(f);
 }
 
@@ -2832,7 +3157,9 @@ static void WriteTecplot3DDirectionalMap_Location(
 static void WriteTecplot3DShells_DipoleAnalyticCompare(
                                  const EarthUtil::AmpsParam& prm,
                                  const std::vector<std::vector<double>>& RcShell,
-                                 int nLon, int nLat, double d_deg) {
+                                 int nLon, int nLat,
+                                 double lonRes_deg,
+                                 double latRes_deg) {
     const std::string fname = CutoffOutputFileName("cutoff_3d_shells_dipole_compare");
     FILE* f = std::fopen(fname.c_str(), "w");
     if (!f) throw std::runtime_error("Cannot write Tecplot file: " + fname);
@@ -2854,9 +3181,9 @@ static void WriteTecplot3DShells_DipoleAnalyticCompare(
         for (int k = 0; k < nPts; ++k) {
             const int    iLon = k % nLon;
             const int    jLat = k / nLon;
-            double lat_deg = -90.0 + d_deg * jLat;
+            double lat_deg = -90.0 + latRes_deg * jLat;
             if (lat_deg > 90.0) lat_deg = 90.0;
-            const double lon_deg = d_deg * iLon;
+            const double lon_deg = lonRes_deg * iLon;
 
             const double lon = lon_deg * M_PI / 180.0;
             const double lat = lat_deg * M_PI / 180.0;
@@ -3162,6 +3489,18 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         throw std::runtime_error("Mode3D cutoff: unsupported CUTOFF_SAMPLING '" +
                                  prm.cutoff.sampling + "'. Use VERTICAL or ISOTROPIC.");
 
+    const std::string cutoffAlgorithm=EarthUtil::ToUpper(prm.cutoff.searchAlgorithm);
+    const bool penumbraScan=(cutoffAlgorithm=="PENUMBRA_SCAN" ||
+                             cutoffAlgorithm=="PENUMBRASCAN" ||
+                             cutoffAlgorithm=="FULL_PENUMBRA" ||
+                             cutoffAlgorithm=="BAND_SCAN");
+    if (penumbraScan && !samplingVertical) {
+        throw std::runtime_error(
+            "Mode3D PENUMBRA_SCAN currently requires CUTOFF_SAMPLING VERTICAL. "
+            "A scalar isotropic minimum does not uniquely define one lower/effective/"
+            "upper cutoff band for the observation point.");
+    }
+
     const int nCutoffDirs = prm.cutoff.maxParticlesPerPoint;
     std::vector<V3> dirs;
     if (!samplingVertical)
@@ -3179,10 +3518,30 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         throw std::runtime_error("Mode3D cutoff: unsupported OUTPUT_MODE '" +
                                  prm.output.mode + "'. Use POINTS, TRAJECTORY, or SHELLS.");
 
-    const double d_deg    = isShells ? prm.output.shellRes_deg : 0.0;
+    // The complete Mode3D penumbra product is currently defined as a structured
+    // shell file because its primary use is global reference-map validation
+    // (C6).  Refuse POINTS/TRAJECTORY here instead of silently writing only the
+    // scalar effective cutoff and losing the lower/upper/topology diagnostics.
+    // A future point-specific writer can remove this restriction without
+    // changing the band-search algorithm itself.
+    if (penumbraScan && !isShells) {
+        throw std::runtime_error(
+            "Mode3D PENUMBRA_SCAN currently requires OUTPUT_MODE SHELLS so that "
+            "cutoff_3d_shells_penumbra.dat can preserve the complete lower/"
+            "effective/upper cutoff diagnostics.");
+    }
+
+    const double shellLonRes_deg = isShells
+        ? ((prm.output.shellLonRes_deg>0.0)
+            ? prm.output.shellLonRes_deg : prm.output.shellRes_deg)
+        : 0.0;
+    const double shellLatRes_deg = isShells
+        ? ((prm.output.shellLatRes_deg>0.0)
+            ? prm.output.shellLatRes_deg : prm.output.shellRes_deg)
+        : 0.0;
     const int    nShells  = isShells ? static_cast<int>(prm.output.shellAlt_km.size()) : 0;
-    const int    nLon     = isShells ? static_cast<int>(std::floor(360.0/d_deg + 0.5)) : 0;
-    const int    nLat     = isShells ? static_cast<int>(std::floor(180.0/d_deg + 0.5)) + 1 : 0;
+    const int    nLon     = isShells ? static_cast<int>(std::floor(360.0/shellLonRes_deg + 0.5)) : 0;
+    const int    nLat     = isShells ? static_cast<int>(std::floor(180.0/shellLatRes_deg + 0.5)) + 1 : 0;
     const int    nPtsShell = isShells ? nLon * nLat : 0;
 
     const int nLoc = isPoints
@@ -3227,6 +3586,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             << "Cutoff search  : " << prm.cutoff.searchAlgorithm
             << " (upper-scan N=" << CutoffUpperScanPointCount_(prm) << ")\n"
             << "Trace policy   : " << prm.cutoff.traceIntegrationPolicy << "\n"
+            << "Scan spacing   : " << prm.cutoff.scanSpacing << "\n"
+            << "Backtrace charge: " << prm.cutoff.backtraceChargeConvention
+            << (EarthUtil::ToUpper(prm.cutoff.backtraceChargeConvention)=="REVERSED"
+                  ? " (q_trace=-q_species)\n"
+                  : " (q_trace=q_species; legacy)\n")
+            << "Trace-limit class: " << prm.cutoff.traceLimitPolicy << "\n"
             << "Sampling       : " << (samplingVertical ? "VERTICAL" : "ISOTROPIC") << "\n";
 
         if (!samplingVertical)
@@ -3420,6 +3785,30 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     std::vector<double> rcRank((size_t)nLoc,-1.0);
     std::vector<double> eminRank((size_t)nLoc,-1.0);
     std::vector<double> dirMapRank;
+
+    // Complete cutoff-band diagnostics are allocated only for PENUMBRA_SCAN.
+    // Every vector is indexed by the global location id, exactly like rcRank.
+    // A negative sentinel means this MPI rank did not own that location; MPI_MAX
+    // therefore reconstructs the global arrays independently of scheduler order.
+    std::vector<double> rcLowerRank,rcEffectiveRank,rcUpperRank;
+    std::vector<int> nTransitionsRank,nAllowedIntervalsRank,nUnresolvedRank;
+    std::vector<int> lowerBracketUnresolvedRank,upperBracketUnresolvedRank;
+    std::vector<int> lowerBelowRangeRank,lowerAboveRangeRank;
+    std::vector<int> upperBelowRangeRank,upperAboveRangeRank;
+    if (penumbraScan) {
+        rcLowerRank.assign((size_t)nLoc,-1.0);
+        rcEffectiveRank.assign((size_t)nLoc,-1.0);
+        rcUpperRank.assign((size_t)nLoc,-1.0);
+        nTransitionsRank.assign((size_t)nLoc,-1);
+        nAllowedIntervalsRank.assign((size_t)nLoc,-1);
+        nUnresolvedRank.assign((size_t)nLoc,-1);
+        lowerBracketUnresolvedRank.assign((size_t)nLoc,-1);
+        upperBracketUnresolvedRank.assign((size_t)nLoc,-1);
+        lowerBelowRangeRank.assign((size_t)nLoc,-1);
+        lowerAboveRangeRank.assign((size_t)nLoc,-1);
+        upperBelowRangeRank.assign((size_t)nLoc,-1);
+        upperAboveRangeRank.assign((size_t)nLoc,-1);
+    }
 
     if (dirMapCfg.enabled) {
         const long long nMapLL = static_cast<long long>(nLoc) *
@@ -3631,11 +4020,35 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     //==================================================================================
 
     auto computeGlobalLocation = [&](int globalIdx, cMode3DMeshFieldEval& threadField) {
-        const V3 x0_m = LocationToX0m(prm, globalIdx, nLon, nLat, d_deg, nPtsShell);
+        const V3 x0_m = LocationToX0m(
+            prm,globalIdx,nLon,nLat,shellLonRes_deg,shellLatRes_deg,nPtsShell);
+        const V3 verticalArrivalDir = LocationToVerticalArrivalDir3D_(
+            prm,globalIdx,nLon,nLat,shellLonRes_deg,shellLatRes_deg,nPtsShell,x0_m);
 
-        const double rc = ComputeCutoffAtPoint_GV(
-            prm, threadField, x0_m, dirs, samplingVertical,
-            q_C, m0, box, Rmin, Rmax);
+        double rc=-1.0;
+        if (penumbraScan) {
+            const CutoffBandResult3D_ band=CutoffForDirPenumbraScan_GV(
+                prm,threadField,x0_m,verticalArrivalDir,
+                q_C,m0,box,Rmin,Rmax);
+            rc=band.effective_GV;
+            rcLowerRank[(size_t)globalIdx]=band.lower_GV;
+            rcEffectiveRank[(size_t)globalIdx]=band.effective_GV;
+            rcUpperRank[(size_t)globalIdx]=band.upper_GV;
+            nTransitionsRank[(size_t)globalIdx]=band.nTransitions;
+            nAllowedIntervalsRank[(size_t)globalIdx]=band.nAllowedIntervals;
+            nUnresolvedRank[(size_t)globalIdx]=band.nUnresolved;
+            lowerBracketUnresolvedRank[(size_t)globalIdx]=band.lowerBracketUnresolved;
+            upperBracketUnresolvedRank[(size_t)globalIdx]=band.upperBracketUnresolved;
+            lowerBelowRangeRank[(size_t)globalIdx]=band.lowerBelowRange;
+            lowerAboveRangeRank[(size_t)globalIdx]=band.lowerAboveRange;
+            upperBelowRangeRank[(size_t)globalIdx]=band.upperBelowRange;
+            upperAboveRangeRank[(size_t)globalIdx]=band.upperAboveRange;
+        }
+        else {
+            rc=ComputeCutoffAtPoint_GV(
+                prm,threadField,x0_m,verticalArrivalDir,dirs,samplingVertical,
+                q_C,m0,box,Rmin,Rmax);
+        }
 
         rcRank[(size_t)globalIdx] = rc;
         if (rc > 0.0) {
@@ -3827,9 +4240,28 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     //==================================================================================
 
     std::vector<double> rcAll, eminAll, dirMapAll;
+    std::vector<double> rcLowerAll,rcEffectiveAll,rcUpperAll;
+    std::vector<int> nTransitionsAll,nAllowedIntervalsAll,nUnresolvedAll;
+    std::vector<int> lowerBracketUnresolvedAll,upperBracketUnresolvedAll;
+    std::vector<int> lowerBelowRangeAll,lowerAboveRangeAll;
+    std::vector<int> upperBelowRangeAll,upperAboveRangeAll;
     if (mpiRank == 0) {
         rcAll.assign((size_t)nLoc,-1.0);
         eminAll.assign((size_t)nLoc,-1.0);
+        if (penumbraScan) {
+            rcLowerAll.assign((size_t)nLoc,-1.0);
+            rcEffectiveAll.assign((size_t)nLoc,-1.0);
+            rcUpperAll.assign((size_t)nLoc,-1.0);
+            nTransitionsAll.assign((size_t)nLoc,-1);
+            nAllowedIntervalsAll.assign((size_t)nLoc,-1);
+            nUnresolvedAll.assign((size_t)nLoc,-1);
+            lowerBracketUnresolvedAll.assign((size_t)nLoc,-1);
+            upperBracketUnresolvedAll.assign((size_t)nLoc,-1);
+            lowerBelowRangeAll.assign((size_t)nLoc,-1);
+            lowerAboveRangeAll.assign((size_t)nLoc,-1);
+            upperBelowRangeAll.assign((size_t)nLoc,-1);
+            upperAboveRangeAll.assign((size_t)nLoc,-1);
+        }
     }
 
     MPI_Reduce(rcRank.data(),
@@ -3838,6 +4270,33 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     MPI_Reduce(eminRank.data(),
                (mpiRank==0 ? eminAll.data() : nullptr),
                nLoc,MPI_DOUBLE,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (penumbraScan) {
+        auto reduceDouble=[&](const std::vector<double>& local,
+                              std::vector<double>& global) {
+            MPI_Reduce(local.data(),
+                       (mpiRank==0 ? global.data() : nullptr),
+                       nLoc,MPI_DOUBLE,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
+        };
+        auto reduceInt=[&](const std::vector<int>& local,
+                           std::vector<int>& global) {
+            MPI_Reduce(local.data(),
+                       (mpiRank==0 ? global.data() : nullptr),
+                       nLoc,MPI_INT,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
+        };
+        reduceDouble(rcLowerRank,rcLowerAll);
+        reduceDouble(rcEffectiveRank,rcEffectiveAll);
+        reduceDouble(rcUpperRank,rcUpperAll);
+        reduceInt(nTransitionsRank,nTransitionsAll);
+        reduceInt(nAllowedIntervalsRank,nAllowedIntervalsAll);
+        reduceInt(nUnresolvedRank,nUnresolvedAll);
+        reduceInt(lowerBracketUnresolvedRank,lowerBracketUnresolvedAll);
+        reduceInt(upperBracketUnresolvedRank,upperBracketUnresolvedAll);
+        reduceInt(lowerBelowRangeRank,lowerBelowRangeAll);
+        reduceInt(lowerAboveRangeRank,lowerAboveRangeAll);
+        reduceInt(upperBelowRangeRank,upperBelowRangeAll);
+        reduceInt(upperAboveRangeRank,upperAboveRangeAll);
+    }
 
     if (dirMapCfg.enabled) {
         const int nMap = static_cast<int>(dirMapRank.size());
@@ -3890,12 +4349,28 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                           << " km done.\n";
             }
 
-            WriteTecplot3DShells(prm, RcShell, EminShell, nLon, nLat, d_deg);
+            WriteTecplot3DShells(
+                prm,RcShell,EminShell,nLon,nLat,shellLonRes_deg,shellLatRes_deg);
             std::cout << "Wrote: " << CutoffOutputFileName("cutoff_3d_shells") << "\n";
+
+            if (penumbraScan) {
+                WriteTecplot3DShells_Penumbra(
+                    prm,
+                    rcLowerAll,rcEffectiveAll,rcUpperAll,
+                    nAllowedIntervalsAll,nTransitionsAll,nUnresolvedAll,
+                    lowerBracketUnresolvedAll,upperBracketUnresolvedAll,
+                    lowerBelowRangeAll,lowerAboveRangeAll,
+                    upperBelowRangeAll,upperAboveRangeAll,
+                    nLon,nLat,shellLonRes_deg,shellLatRes_deg);
+                std::cout << "Wrote: "
+                          << CutoffOutputFileName("cutoff_3d_shells_penumbra")
+                          << "\n";
+            }
 
 #if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
             if (EarthUtil::ToUpper(prm.field.model) == "DIPOLE") {
-                WriteTecplot3DShells_DipoleAnalyticCompare(prm, RcShell, nLon, nLat, d_deg);
+                WriteTecplot3DShells_DipoleAnalyticCompare(
+                    prm,RcShell,nLon,nLat,shellLonRes_deg,shellLatRes_deg);
                 std::cout << "Wrote: " << CutoffOutputFileName("cutoff_3d_shells_dipole_compare") << "\n";
             }
 #endif
@@ -3921,7 +4396,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         // -----------------------------------------------------------------------------
         if (dirMapCfg.enabled) {
             for (int locId=0; locId<nLoc; ++locId) {
-                const V3 x0_m = LocationToX0m(prm, locId, nLon, nLat, d_deg, nPtsShell);
+                const V3 x0_m = LocationToX0m(
+                    prm,locId,nLon,nLat,shellLonRes_deg,shellLatRes_deg,nPtsShell);
 
                 std::vector<double> RcCell((size_t)dirMapCfg.nCells, -1.0);
                 const size_t base = (size_t)locId * (size_t)dirMapCfg.nCells;

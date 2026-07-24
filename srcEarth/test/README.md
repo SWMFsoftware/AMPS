@@ -15,187 +15,24 @@ python srcEarth/test/<TEST_ID>/run_<TEST_ID>.py -np 4 -nt 16
 where `-np` is the number of MPI ranks passed to `mpirun` and `-nt` is the number
 of threads per MPI rank.  Defaults are `-np 4` and `-nt 16`.
 
-## Main test-list runner and parameter loops
+## C6 gridless and gridded external-reference validation
 
-`srcEarth/test/test_runner.py` reads the `srcEarth/test/list` file and executes
-each listed command as an independent pass/fail regression.  The original list
-format remains unchanged:
-
-```text
-P srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN --cutoff-scan-n 200
-last pass: 95469cd297ec8494614c0adefee04da69d6488e6
-```
-
-`P` means that exit code zero is expected. `F` means that a nonzero exit code is
-expected. The optional `last pass:` value records a commit at which that exact
-command exited zero. If no `for` declaration is present, parsing, execution,
-reporting, and `--update-last-pass` behavior are identical to the historical
-runner.
-
-### Looping one command over movers or other CLI values
-
-A `for` declaration expands the immediately following test command:
-
-```text
-for $m={RK4,HC4}
-{P,P} srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN --cutoff-scan-n 200 --mover $m
-last pass: {95469cd297ec8494614c0adefee04da69d6488e6,95469cd297ec8494614c0adefee04da69d6488e6}
-```
-
-This creates two independent scheduled tests:
-
-```text
-P srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN --cutoff-scan-n 200 --mover RK4
-P srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN --cutoff-scan-n 200 --mover HC4
-```
-
-Each expansion receives its own log, exit status, expected result, elapsed time,
-report row, and `last pass` value. A failure of the RK4 variant does not change
-the HC4 result, and vice versa.
-
-The declaration applies to exactly one following source command. A later test is
-not part of the loop unless it has its own `for` line.
-
-### Variable syntax
-
-A variable name begins with a letter or underscore and may contain letters,
-digits, and underscores. Both command-reference forms are accepted:
-
-```text
-$m
-${m}
-```
-
-Values are comma-separated inside braces:
-
-```text
-for $m={BORIS,HC4,RK4,RK6}
-```
-
-Whitespace after commas is ignored. CSV-style quoting can protect commas inside
-a value, although ordinary mover and CLI values normally do not need quotes.
-Every declared variable must be referenced by the command template. This
-prevents a misspelled or unused loop variable from silently launching duplicate
-commands.
-
-### Expected-result vectors
-
-A loop may provide one expected result per expansion:
-
-```text
-for $m={RK4,HC4}
-{P,F} command --mover $m
-```
-
-Here RK4 is expected to pass and HC4 is expected to fail. The vector length must
-exactly match the number of expanded commands.
-
-A scalar marker is shorthand for the same expected result for every expansion:
-
-```text
-for $m={RK4,HC4}
-P command --mover $m
-```
-
-This is equivalent to `{P,P}`.
-
-A vector marker without a preceding `for` declaration is rejected as a list-file
-error rather than being interpreted ambiguously.
-
-### Per-variant `last pass` metadata
-
-For a loop, the recommended form is a vector in the same expansion order:
-
-```text
-last pass: {commit-for-RK4,commit-for-HC4}
-```
-
-An empty element means that no passing commit is currently known for that
-variant:
-
-```text
-last pass: {known-rk4-commit,}
-```
-
-A scalar commit is accepted as shorthand for applying the same known-passing
-commit to every expansion:
-
-```text
-last pass: shared-commit
-```
-
-When `--update-last-pass` is used, looped entries are rewritten in explicit
-vector form. Only variants that actually exit zero are updated. Values for
-failed variants are preserved. For example, if RK4 passes and HC4 fails:
-
-```text
-last pass: {old-rk4,old-hc4}
-```
-
-becomes:
-
-```text
-last pass: {new-current-commit,old-hc4}
-```
-
-This partial-update behavior prevents one mover's successful run from erasing
-the provenance of another mover.
-
-### Multiple loop variables
-
-More than one assignment may appear on a `for` line:
-
-```text
-for $m={RK4,HC4} $policy={LEGACY,ACCURATE}
-P command --mover $m --cutoff-trace-policy $policy
-last pass: {c1,c2,c3,c4}
-```
-
-The runner forms a Cartesian product in declaration order, with the rightmost
-variable changing fastest:
-
-```text
-m=RK4, policy=LEGACY
-m=RK4, policy=ACCURATE
-m=HC4, policy=LEGACY
-m=HC4, policy=ACCURATE
-```
-
-Therefore the expected-status and `last pass` vectors in this example must each
-contain four elements in that order.
-
-### Comments, blank lines, and scope
-
-Blank lines may appear between the `for` declaration, the command, and its
-metadata. A comment line beginning with `!` may appear between a loop declaration
-and its command. As in the historical parser, a comment after a command closes
-the metadata association, so a later `last pass:` line will be rejected rather
-than attached across a section boundary.
-
-### Runner examples
-
-Preview expansion without running commands:
+C6 compares effective vertical cutoff rigidity with the Smart--Shea, CARI-7,
+and Gerontidou world-grid tables.  Its solver selector deliberately separates
+the physical reference case from the field-evaluation implementation:
 
 ```bash
-python srcEarth/test/test_runner.py --dry-run --no-memory-gate srcEarth/test/list
+python srcEarth/test/C6/run_C6.py --subtest INITIAL --solver GRIDLESS -np 4 -nt 16
+python srcEarth/test/C6/run_C6.py --subtest INITIAL --solver GRIDDED  -np 4 -nt 16
+python srcEarth/test/C6/run_C6.py --subtest INITIAL --solver BOTH     -np 4 -nt 16
 ```
 
-Run up to six tests concurrently using the normal memory gate:
-
-```bash
-python srcEarth/test/test_runner.py -j 6 srcEarth/test/list
-```
-
-Run and update scalar or per-variant provenance to the current Git commit:
-
-```bash
-python srcEarth/test/test_runner.py -j 6 srcEarth/test/list --update-last-pass
-```
-
-The JSON and CSV reports include the expanded command, source command template,
-loop-variable bindings, one-based variant index, and total variant count. Text
-reports and terminal progress also identify the loop binding, for example
-`variant 2/2 [m=HC4]`.
+`GRIDLESS` evaluates IGRF directly.  `GRIDDED` builds the same IGRF epoch on
+the standalone Mode3D AMR mesh and traces through the mesh interpolation
+stencil.  Both branches use `PENUMBRA_SCAN` and write compatible lower,
+effective, and upper cutoff diagnostics.  See `C6/README.md` for the reference
+datasets, finite-trajectory convention, numerical inputs, and mesh-convergence
+requirements.
 
 ## F3 and legacy-cutoff compatibility architecture
 
@@ -543,44 +380,6 @@ python srcEarth/test/C4/run_C4.py --mode gridless --max-trace-distance 300
 C4 records `MAX_TRACE_TIME` and `MAX_TRACE_DISTANCE`, because finite-time and
 finite-distance caps can affect near-cutoff trajectory classification.
 
-## C6 — global IGRF effective vertical-cutoff validation
-
-C6 is the first global external-reference cutoff test. It evaluates the internal
-IGRF field at 20 km geodetic altitude and compares the calculated **effective**
-vertical cutoff with three published world-grid families:
-
-```text
-INITIAL  Smart--Shea epoch-2000 printed 5 x 30 degree table
-COMPLETE FAA CARI-7 tables for 1965, 1980, 1990, 1995, 2000, 2010
-MODERN   Gerontidou et al. 2010/2015/2020 grid family
-```
-
-The repository contains the full 386,640-row CARI archive and the
-machine-readable Smart--Shea and author-supplied Gerontidou-2015 grids. The
-modern loader accepts authoritative 2010/2020 CSVs through
-`--modern-reference`; it does not substitute CARI values for missing modern
-data.
-
-C6 adds and uses `FIELD_MODEL IGRF`, `CUTOFF_SCAN_SPACING LINEAR`, independent
-shell longitude/latitude spacing, and `SHELL_GEOMETRY GEODETIC`. The
-`PENUMBRA_SCAN` output now includes `Rc_effective_GV`, calculated from the total
-allowed rigidity width between `Rc_lower_GV` and `Rc_upper_GV`. Numerical
-safety-limit samples leave the effective cutoff unresolved.
-
-```bash
-python srcEarth/test/C6/run_C6.py --subtest INITIAL -np 8 -nt 16
-python srcEarth/test/C6/run_C6.py --subtest COMPLETE --complete-epochs 2010 --complete-grid-step-deg 5
-python srcEarth/test/C6/run_C6.py --subtest COMPLETE --complete-epochs 2000 --full-grid
-python srcEarth/test/C6/run_C6.py --subtest MODERN --modern-epochs 2015
-python srcEarth/test/C6/run_C6.py --validate-references
-python srcEarth/test/C6/run_C6.py --subtest INITIAL --dry-run
-```
-
-The complete one-degree CARI reference is bundled, but the default execution
-uses a 10-degree subset because all six epochs at full spatial and 0.01-GV
-rigidity resolution require hundreds of millions of trajectories. See
-`srcEarth/test/C6/README.md` for reference provenance, optional modern files,
-comparison tolerances, outputs, and the full-grid workflow.
 
 ### ADAPTIVE_DT time-step control
 
@@ -629,50 +428,25 @@ C11 writes `C11_summary.csv`, `C11_result.json`, and the generated reference
 table under `test_output/C11_mode3d`.  Each algorithm subdirectory contains the
 rendered input, AMPS log, shell cutoff output, and a debug rigidity scan file.
 
-## C14 — Mode3D/gridless cutoff-band consistency
+## C14 — Mode3D versus gridless cross-solver consistency
 
-C14 runs the same centered aligned-dipole vertical-cutoff shell problem through
-Mode3D and gridless.  Unlike the historical scalar `UPPER_SCAN`, C14 requests
-`PENUMBRA_SCAN`, evaluates one complete rigidity grid, and reports:
+C14 runs the same centered aligned-dipole vertical cutoff shell problem through the Mode3D and gridless standalone solver paths.  It checks solver-to-solver agreement and compares both solvers with the analytical vertical Størmer cutoff,
 
 ```text
-Rc_lower
-Rc_upper
-PenumbraWidth = Rc_upper - Rc_lower
-n_allowed_intervals
-n_transitions
-n_unresolved
+Rc = R0 cos^4(lambda) / r_RE^2 .
 ```
 
-The analytical vertical Størmer expression is compared with `Rc_lower`; the
-upper endpoint is checked directly between Mode3D and gridless.  This avoids the
-old false failure produced by comparing the Størmer lower cutoff with the upper
-edge of the penumbra.  Time, step, and distance limits remain explicit
-unresolved samples and cannot silently define a strict analytical cutoff.
-
-The default `CROSS_SOLVER` profile checks both endpoints, penumbra width,
-topology, north/south symmetry, and the 90-degree symmetry of the finite
-Cartesian box.  `STRICT_STORMER` additionally requires analytical Mode3D field
-evaluation, the accurate cutoff trace policy, and lower-cutoff agreement with
-Størmer.
+The default target grid follows the validation-plan C14 shell set: altitudes `500` and `9000 km`, longitudes `0, 30, ..., 330 deg`, and latitudes `-60, -30, 0, 30, 60 deg`.  The runner also checks longitude invariance and north/south symmetry for each solver.
 
 ```bash
 python srcEarth/test/C14/run_C14.py -np 4 -nt 16
-python srcEarth/test/C14/run_C14.py --strict-stormer -np 4 -nt 16
-python srcEarth/test/C14/run_C14.py --cutoff-definition LOWER -np 4 -nt 16
-python srcEarth/test/C14/run_C14.py \
-  --mode3d-field-eval MESH \
-  --mode3d-mesh-res-earth-re 0.02 \
-  --mode3d-mesh-res-boundary-re 3 \
-  --mode3d-mesh-coarsening LINEAR -np 4 -nt 16
+python srcEarth/test/C14/run_C14.py --mode3d-field-eval MESH -np 4 -nt 16
+python srcEarth/test/C14/run_C14.py --scheduler STATIC --dynamic-chunk 0
+python srcEarth/test/C14/run_C14.py --lons 0,90,180,270 --lats -60,-30,0,30,60
 python srcEarth/test/C14/run_C14.py --dry-run
 ```
 
-C14 writes dedicated `cutoff_3d_shells_penumbra.dat` and
-`cutoff_gridless_shells_penumbra.dat` files, plus `C14_summary.csv`,
-`C14_result.json`, a comparison plot, and a generated reference table.  See
-`srcEarth/test/C14/README.md` for the complete algorithm description and a
-detailed explanation of every CLI option.
+C14 writes one Mode3D subdirectory and one gridless subdirectory under `test_output/C14_cross_solver`, plus `C14_summary.csv`, `C14_result.json`, and `reference_C14_cross_solver_generated.csv`.  The repository reference/check table is `srcEarth/test/C14/reference_C14_cross_solver.csv`.
 
 ## C17 — Dipole charge-sign and velocity-reversal symmetry
 

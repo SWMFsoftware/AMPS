@@ -1,8 +1,9 @@
 # C6 — global IGRF effective vertical-cutoff validation
 
-C6 compares the AMPS gridless cutoff solver with published global tables of
-**effective vertical cutoff rigidity**.  It contains three independently
-selectable subtests:
+C6 compares AMPS with published global tables of **effective vertical cutoff
+rigidity**.  The same reference cases can be executed with the direct gridless
+IGRF evaluator, the gridded standalone Mode3D AMR field, or both.  It contains
+three independently selectable reference subtests:
 
 | Subtest | Reference | Bundled coverage |
 |---|---|---|
@@ -13,6 +14,36 @@ selectable subtests:
 The test uses `FIELD_MODEL IGRF`; no T96, T01, T05, TA15, or TA16 external
 field is added.  Every case is run at 20 km geodetic altitude with vertical
 incidence.
+
+## Solver variants
+
+Select the field path with:
+
+```text
+--solver GRIDLESS   direct IGRF evaluation at every trajectory sample
+--solver GRIDDED    IGRF materialized on the Mode3D AMR mesh and interpolated
+--solver BOTH       run both paths with otherwise identical settings
+```
+
+`GRIDLESS` remains the default, preserving the original C6 behavior.  The
+gridded branch runs `amps -mode 3d -mode3d-field-eval MESH`; it is not the
+Mode3D `ANALYTIC` shortcut.  Consequently, it validates the additional field
+materialization, distributed mesh gathering, interpolation stencil, and
+out-of-mesh/boundary handling used by production gridded calculations.
+
+The default gridded AMR profile is:
+
+```text
+MODE3D_MESH_RES_EARTH_RE     0.02
+MODE3D_MESH_RES_BOUNDARY_RE  2.0
+MODE3D_MESH_COARSENING       LOG
+MODE3D_MESH_EXPONENT         1.0
+```
+
+These are numerical defaults, not a claim of mesh convergence.  For a final
+validation baseline, repeat the gridded run at successively finer near-Earth
+resolution and verify that `Rc_effective_GV` and the reference-error metrics
+converge.
 
 ## Why C6 needs `Rc_effective_GV`
 
@@ -31,12 +62,9 @@ trajectory were integrated correctly.
 
 The implementation evaluates the complete `PENUMBRA_SCAN` access sequence,
 refines every resolved access transition, and integrates the allowed rigidity
-width.  Under the C6 reference-compatible default, a trajectory that reaches
-`TIME_LIMIT`, `STEP_LIMIT`, or `DISTANCE_LIMIT` without escaping is classified
-as forbidden, matching the finite-trajectory convention used to construct the
-published cutoff tables.  Invalid field values, invalid time steps, and true
-numerical failures remain errors.  The strict `UNRESOLVED` policy remains
-available for diagnostic tests such as C14.
+width.  By default, C6 applies the finite-trajectory reference convention and
+classifies `TIME_LIMIT`, `STEP_LIMIT`, and `DISTANCE_LIMIT` as forbidden.  The
+stricter `UNRESOLVED` policy remains available from the CLI.
 
 ## Required model support added for C6
 
@@ -128,6 +156,36 @@ Initial printed table:
 python srcEarth/test/C6/run_C6.py --subtest INITIAL -np 8 -nt 16
 ```
 
+The same case through the Mode3D field mesh:
+
+```bash
+python srcEarth/test/C6/run_C6.py \
+  --subtest INITIAL \
+  --solver GRIDDED \
+  -np 8 -nt 16
+```
+
+Run both field paths in separate subdirectories:
+
+```bash
+python srcEarth/test/C6/run_C6.py \
+  --subtest INITIAL \
+  --solver BOTH \
+  -np 8 -nt 16
+```
+
+Example gridded mesh-refinement run:
+
+```bash
+python srcEarth/test/C6/run_C6.py \
+  --subtest INITIAL \
+  --solver GRIDDED \
+  --mode3d-mesh-res-earth-re 0.01 \
+  --mode3d-mesh-res-boundary-re 1.0 \
+  --mode3d-mesh-coarsening LOG \
+  -np 8 -nt 16
+```
+
 CARI-7, one epoch on a 5° subset:
 
 ```bash
@@ -175,12 +233,18 @@ current AMPS default.
 
 ## Numerical AMPS input file
 
-`AMPS_PARAM_C6_gridless.in` is a complete, directly runnable input for the
-default `INITIAL` epoch-2000 case.  Every physical quantity is written as an
-explicit numerical literal; the file contains no `__PLACEHOLDER__` fields,
-shell variables, or expressions that AMPS must expand.  Categorical AMPS tokens
-such as `IGRF`, `PROTON`, `LINEAR`, `ACCURATE`, and logical `T`/`F` values remain
-in their required parser form.
+Two complete numerical baselines are checked in:
+
+```text
+AMPS_PARAM_C6_gridless.in   direct field evaluator
+AMPS_PARAM_C6_mode3d.in     Mode3D MESH field evaluator
+```
+
+Both describe the default `INITIAL` epoch-2000 case.  Every physical quantity
+is written as an explicit numerical literal; neither file contains
+`__PLACEHOLDER__` fields, shell variables, or expressions that AMPS must expand.
+Categorical AMPS tokens such as `IGRF`, `PROTON`, `LINEAR`, `ACCURATE`, and
+logical `T`/`F` values remain in their required parser form.
 
 For another subtest or CLI configuration, `run_C6.py` copies that numerical
 baseline and replaces a controlled list of directives by name.  It then verifies
@@ -223,9 +287,16 @@ Render inputs and commands without executing them:
 python srcEarth/test/C6/run_C6.py --subtest INITIAL --dry-run
 ```
 
+To inspect both generated solver inputs:
+
+```bash
+python srcEarth/test/C6/run_C6.py \
+  --subtest INITIAL --solver BOTH --dry-run
+```
+
 ## Output
 
-Each expanded epoch case writes:
+Each expanded epoch/solver case writes:
 
 - `AMPS_PARAM_C6.in` — fully numerical, self-describing input used by AMPS;
 - `reference_C6_selected.csv` — exact rows used in that case;
@@ -233,6 +304,20 @@ Each expanded epoch case writes:
 - `C6_comparison.csv` — point-by-point reference/model comparison;
 - `C6_result.json` — case metrics and pass/fail;
 - `C6_comparison.png` — optional diagnostic plot when Matplotlib is available.
+
+The raw AMPS penumbra file is solver-specific:
+
+```text
+GRIDLESS: cutoff_gridless_shells_penumbra.dat
+GRIDDED : cutoff_3d_shells_penumbra.dat
+```
+
+The two files intentionally use the same cutoff-band column names so the same
+comparison parser and acceptance logic applies to both.
+
+With `--solver BOTH`, each reference case contains `gridless/` and `gridded/`
+subdirectories to prevent the identically named analysis products from
+overwriting one another.
 
 The root directory additionally contains `C6_summary.csv`, `C6_result.json`,
 `C6_commands.json`, and `C6_reference_inventory.json`.
@@ -257,6 +342,12 @@ cases spatial interpolation.  C6 requires by default:
 Use the CLI tolerance options to establish tighter project-specific baselines
 after the first controlled production runs.  Do not relax tolerances merely to
 hide unresolved trajectory terminations; those are reported separately.
+
+The same external-reference thresholds are initially applied to both solvers.
+The gridded branch may require a documented mesh-convergence study before a
+stable regression tolerance is frozen.  A failure that improves systematically
+with smaller `--mode3d-mesh-res-earth-re` is interpolation error, not evidence
+that the IGRF reference or cutoff definition should be changed.
 
 ## Rebuilding the reference CSVs
 

@@ -20,6 +20,7 @@
 #include "../../interface/T96Interface.h"
 #include "../../interface/T05Interface.h"
 #include "../../interface/TA16Interface.h"
+#include "GeopackInterface.h"
 #endif
 
 #include "../gridless/DipoleInterface.h"
@@ -154,6 +155,17 @@ void EvaluateBackgroundMagneticFieldSI(double B[3],const double xGSM_SI[3],const
   EvalSWMFBkgMagneticFieldSI(B,xGSM_SI);
   return;
 #else
+  // IGRF-only standalone field.
+  //
+  // ConfigureBackgroundFieldModel() calls Geopack::Init(epoch,"GSM") once before
+  // the AMR mesh is populated.  Geopack::IGRF::GetMagneticField() then evaluates
+  // only the internal IGRF field at the supplied GSM/SI position; no Tsyganenko
+  // external contribution is added.  This is the field definition required by
+  // the Smart--Shea, CARI-7, and Gerontidou C6 reference tables.
+  if (model=="IGRF") {
+    Geopack::IGRF::GetMagneticField(B,const_cast<double*>(xGSM_SI));
+    return;
+  }
   if (model=="T96") { ::T96::GetMagneticField(B,const_cast<double*>(xGSM_SI)); return; }
   if (model=="T05") { ::T05::GetMagneticField(B,const_cast<double*>(xGSM_SI)); return; }
   if (model=="TA16") { ::TA16::GetMagneticField(B,const_cast<double*>(xGSM_SI)); return; }

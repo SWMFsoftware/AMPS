@@ -25,6 +25,7 @@
 #include "../../interface/T96Interface.h"
 #include "../../interface/T05Interface.h"
 #include "../../interface/TA16Interface.h"
+#include "GeopackInterface.h"
 #endif
 
 void amps_init_mesh();
@@ -125,7 +126,17 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
   Earth::BackgroundMagneticFieldModelType=Earth::_undef;
 
   const std::string model=EarthUtil::ToUpper(prm.field.model);
-  if (model=="T96") {
+  if (model=="IGRF") {
+    // Pure internal-field initialization used by the gridded C6 validation.
+    //
+    // Geopack stores the selected IGRF coefficients and the GSM transformation
+    // state in Fortran common blocks.  Initialize that state once, before
+    // InitMeshFields() traverses the AMR tree.  Mesh population is completed
+    // before any cutoff worker thread starts, so later trajectory evaluation is
+    // a read-only interpolation of the frozen mesh and does not call Geopack.
+    Geopack::Init(prm.field.epoch.c_str(),"GSM");
+  }
+  else if (model=="T96") {
     Earth::BackgroundMagneticFieldModelType=Earth::_t96;
     Earth::T96::active_flag=true;
     Earth::T96::solar_wind_pressure=prm.field.pdyn_nPa*_NANO_;
@@ -176,7 +187,7 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
 // following the same ghost-cell-inclusive iteration pattern used by
 // Earth::InitMagneticField in Earth.cpp.  Unlike that function, this version:
 //   - uses EvaluateBackgroundMagneticFieldSI / EvaluateElectricFieldSI so all
-//     models (T96, T05, TA16, DIPOLE) are handled uniformly, and
+//     standalone models (IGRF, T96, T05, TA16, DIPOLE) are handled uniformly, and
 //   - initialises E from the configured electric-field model instead of
 //     unconditionally writing zero.
 void InitMeshFields(const EarthUtil::AmpsParam& prm,

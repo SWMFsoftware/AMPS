@@ -4,40 +4,40 @@
 
 
 P srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 P srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16 --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 3 --mode3d-mesh-coarsening LINEAR 
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 P srcEarth/test/C1/run_C1.py --mode gridless -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 
 P srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 P srcEarth/test/C2/run_C2.py --mode gridless -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 P srcEarth/test/C2/run_C2.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16 --max-trace-distance 300 --cutoff-scan-n 80 --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 2 --mode3d-mesh-coarsening LINEAR
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 
 P srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 P srcEarth/test/C3/run_C3.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 P srcEarth/test/C3/run_C3.py --mode gridless --max-trace-distance 300
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 P srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN --cutoff-scan-n 200
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 
 
 P srcEarth/test/C4/run_C4.py --factors=0.5,2.0 --lats=-60,-30,0,30,60
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 F srcEarth/test/C4/run_C4.py --adaptive-dt F --dt-sweep=1.0,0.5,0.25 
 last pass:
 F srcEarth/test/C4/run_C4.py --fail-on-paxis --paxis-tol=1e-5
 last pass:
 
 P srcEarth/test/C4/run_C4.py --adaptive-dt T --movers HC4
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 P srcEarth/test/C4/run_C4.py --adaptive-dt T --movers BORIS
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 
 
 F srcEarth/test/C5/run_C5.py --res-earth-series 0.2,0.1,0.05 --res-boundary-series 1.0,0.75,0.5
@@ -47,51 +47,59 @@ last pass:
 F srcEarth/test/C5/run_C5.py --use-legacy-mesh-resolution
 last pass:
 
-! C6 global external-reference checks.  The nightly entries use reduced rigidity
-! and spatial resolution; release validation should use the native grids and the
-! default 2000-node (0.01 GV) scan documented in C6/README.md.
-P srcEarth/test/C6/run_C6.py --subtest INITIAL --cutoff-scan-n 400 -np 4 -nt 16
+! C6 compares with external published cutoff tables and is intentionally not
+! enabled in the routine regression list until site-specific runtime and the
+! GRIDDED mesh-convergence baseline are established.  Remove the leading '!'
+! to schedule either branch.
+srcEarth/test/C6/run_C6.py --subtest INITIAL --cutoff-scan-n 400 --solver GRIDLESS -np 16
 last pass:
-P srcEarth/test/C6/run_C6.py --subtest COMPLETE --complete-epochs 2010 --complete-grid-step-deg 10 --cutoff-scan-n 400 -np 4 -nt 16
+P srcEarth/test/C6/run_C6.py --subtest COMPLETE --complete-epochs 2010 --complete-grid-step-deg 10 --cutoff-scan-n 400 -np 16
 last pass:
-P srcEarth/test/C6/run_C6.py --subtest MODERN --modern-epochs 2015 --cutoff-scan-n 400 -np 4 -nt 16
+P srcEarth/test/C6/run_C6.py --subtest MODERN --modern-epochs 2015 --cutoff-scan-n 400 --solver GRIDLESS -np 16
 last pass:
+
+P srcEarth/test/C6/run_C6.py --subtest INITIAL --solver GRIDDED --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 2 --mode3d-mesh-coarsening LINEAR -np 4 -nt 16 --dynamic-chunk 32 
+last pass:
+P srcEarth/test/C6/run_C6.py --subtest COMPLETE --complete-epochs 2010 --complete-grid-step-deg 10 --cutoff-scan-n 400 --solver GRIDDED --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 2 --mode3d-mesh-coarsening LINEAR -np 4 -nt 16 --dynamic-chunk 32
+last pass:
+P srcEarth/test/C6/run_C6.py --subtest MODERN --modern-epochs 2015 --cutoff-scan-n 400 --solver GRIDDED --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 2 --mode3d-mesh-coarsening LINEAR -np 4 -nt 16 --dynamic-chunk 32
+last pass: 
 
 P srcEarth/test/C11/run_C11.py -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 
 P srcEarth/test/F1/run_F1.py -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 P srcEarth/test/F2/run_F2.py -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 
 !P srcEarth/test/F3/run_F3.py -np 4 -nt 16
 !last pass:
 
 
 P srcEarth/test/F3/run_F3.py --mover HC4 --lons 0 --lats 45 --scan-n 24 --directions-per-energy 288 --max-trace-time 600 --max-steps 1000000 --boundary-refine-tol-m 10 --unresolved-tol 0.01 --retry-unresolved --dynamic-chunk 1 -np 18
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 
 P srcEarth/test/F4/run_F4.py -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 
 P srcEarth/test/F5/run_F5.py -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 P srcEarth/test/F11/run_F11.py -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 P srcEarth/test/F15/run_F15.py -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass:
 
 P srcEarth/test/F16/run_F16.py -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 
 P srcEarth/test/F12/run_F12.py -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 
 P srcEarth/test/C14/run_C14.py -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 
 P srcEarth/test/C14/run_C14.py --check-profile CROSS_SOLVER --mode3d-field-eval MESH --cutoff-scan-n 100 --cutoff-trace-policy LEGACY --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 3 --mode3d-mesh-coarsening LINEAR -np 4 -nt 16
-last pass: bb99f9f89dbdf44c5b980b497794cbf1f6a22832
+last pass: 64419226b8288a2bc7a3af64357fd4c0638bb618
 
 

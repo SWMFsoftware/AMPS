@@ -1602,6 +1602,58 @@ This option is mainly intended for C5-style mesh-convergence validation. C1 shou
 
 ---
 
+## 12.1 IGRF-only Mode3D cutoff validation (C6 GRIDDED)
+
+Standalone Mode3D now supports a pure internal-field mesh for external cutoff
+table validation:
+
+```text
+#CALCULATION_MODE
+CALC_TARGET       CUTOFF_RIGIDITY
+FIELD_EVAL_METHOD GRID_3D
+
+#BACKGROUND_FIELD
+FIELD_MODEL       IGRF
+EPOCH             2000-01-01T00:00:00
+```
+
+`ConfigureBackgroundFieldModel()` initializes Geopack for the selected epoch
+before mesh population. `InitMeshFields()` then evaluates only
+`Geopack::IGRF::GetMagneticField()` at AMR cell centers. No T96/T05/TA16
+external contribution is added. Once the distributed field has been gathered,
+cutoff worker threads use read-only mesh interpolation and do not call the
+Fortran/Geopack evaluator.
+
+For a complete effective-cutoff calculation, select:
+
+```text
+#CUTOFF_RIGIDITY
+CUTOFF_SEARCH_ALGORITHM     PENUMBRA_SCAN
+CUTOFF_SCAN_SPACING         LINEAR
+CUTOFF_BACKTRACE_CHARGE     REVERSED
+CUTOFF_TRACE_LIMIT_POLICY   FORBIDDEN
+CUTOFF_SAMPLING             VERTICAL
+```
+
+Mode3D writes:
+
+```text
+cutoff_3d_shells_penumbra.dat
+```
+
+with the same lower/effective/upper cutoff and topology column names as the
+gridless penumbra product. This shared file contract lets
+`srcEarth/test/C6/run_C6.py` apply one external-reference comparison to either
+solver using `--solver GRIDLESS`, `--solver GRIDDED`, or `--solver BOTH`.
+
+The gridded branch adds interpolation error and must be mesh-converged. The C6
+default `MODE3D_MESH_RES_EARTH_RE=0.02` is an initial validation setting, not a
+universal production tolerance. Repeat the test with a smaller near-Earth cell
+target and confirm that `Rc_effective_GV` and the reference residuals approach
+stable values.
+
+---
+
 ## 13. Validation and development recommendations
 
 1. Start with `DIPOLE` and `CUTOFF_SAMPLING VERTICAL` when validating a new build.
