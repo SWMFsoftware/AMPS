@@ -103,3 +103,24 @@ P srcEarth/test/C14/run_C14.py --check-profile CROSS_SOLVER --mode3d-field-eval 
 last pass: 34c9389ed247f5dc2e543046b9573de397a73426
 
 
+! C7 requires populated external reference tables and is intentionally disabled
+! in the routine regression list. Generate the three acquisition batches with:
+!   python srcEarth/test/C7/run_C7.py --prepare-reference-requests
+! Primary GeoMagSphere checks:
+!P srcEarth/test/C7/run_C7.py --reference srcEarth/test/C7/reference_C7_geomagsphere_t96.csv --source GEOMAGSPHERE --models T96 --solver GRIDLESS -np 4 -nt 16
+!last pass:
+!P srcEarth/test/C7/run_C7.py --reference srcEarth/test/C7/reference_C7_geomagsphere_t05.csv --source GEOMAGSPHERE --models T05 --solver GRIDLESS -np 4 -nt 16
+!last pass:
+! Secondary IZMIRAN T96 check:
+!P srcEarth/test/C7/run_C7.py --reference srcEarth/test/C7/reference_C7_izmiran_t96.csv --source IZMIRAN --models T96 --solver GRIDLESS -np 4 -nt 16
+!last pass:
+! Gridded cross-check example; --dynamic-chunk 0 resolves to -nt:
+!P srcEarth/test/C7/run_C7.py --reference srcEarth/test/C7/reference_C7_geomagsphere_t96.csv --source GEOMAGSPHERE --models T96 --solver GRIDDED --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 2 --mode3d-mesh-coarsening LINEAR --dynamic-chunk 0 -np 4 -nt 16
+!last pass:
+
+P srcEarth/test/C7/run_C7_izmiran.py -np 16
+last pass:
+
+P srcEarth/test/C7/run_C7_izmiran.py --solver GRIDDED -np 4 -nt 16 -mode3d-mesh-coarsening LINEAR
+last pass:
+

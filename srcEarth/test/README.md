@@ -711,3 +711,20 @@ python srcEarth/test/F16/run_F16.py --dry-run
 
 F16 writes `F16_summary.csv`, `F16_result.json`, and `reference_F16_blocked_access_used.csv` under `test_output/F16_gridless`. The repository reference/check table is `srcEarth/test/F16/reference_F16_blocked_access.csv`.
 
+## C7: T96/T05 model-to-model cutoff benchmark
+
+C7 compares AMPS lower, upper, and definition-matched effective vertical cutoff
+rigidities with independent reference calculations at 28 fixed 500-km
+geographic locations. GeoMagSphere supplies the primary T96 and T05 tables;
+IZMIRAN Cutoff2050 supplies a secondary T96 check. The runner supports GRIDLESS,
+GRIDDED, and BOTH AMPS field paths.
+
+Because the external calculators do not provide a stable bulk API, C7 includes
+a deterministic request manifest, strict reference schema, and import utility
+rather than fabricated checked-in cutoff values. See `C7/README.md`.
+
+Prepare the external-calculator request package with:
+
+```bash
+python srcEarth/test/C7/run_C7.py --prepare-reference-requests
+```
