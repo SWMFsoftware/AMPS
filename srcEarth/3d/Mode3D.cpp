@@ -56,6 +56,13 @@ int MeshResolutionCoarseningCode=0; // 0=LINEAR, 1=LOG/EXPONENTIAL, 2=POWER, 3=C
 
 namespace {
 
+// Standalone Mode3D mesh coordinates, trajectory positions, and analytic field
+// evaluation are all expressed in GSM.  Empirical-field wrappers must therefore
+// be initialized in GSM as well; using Exosphere::SO_FRAME here is incorrect
+// because its global default is GSE and rotates the populated field relative to
+// the Mode3D mesh.
+constexpr const char* kStandaloneMode3DFieldFrame = "GSM";
+
 //--------------------------------------------------------------------------------------
 // Mode3D calculation-target helpers
 //--------------------------------------------------------------------------------------
@@ -134,7 +141,7 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
     // InitMeshFields() traverses the AMR tree.  Mesh population is completed
     // before any cutoff worker thread starts, so later trajectory evaluation is
     // a read-only interpolation of the frozen mesh and does not call Geopack.
-    Geopack::Init(prm.field.epoch.c_str(),"GSM");
+    Geopack::Init(prm.field.epoch.c_str(),kStandaloneMode3DFieldFrame);
   }
   else if (model=="T96") {
     Earth::BackgroundMagneticFieldModelType=Earth::_t96;
@@ -147,7 +154,7 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
     ::T96::SetDST(Earth::T96::dst);
     ::T96::SetBYIMF(Earth::T96::by);
     ::T96::SetBZIMF(Earth::T96::bz);
-    ::T96::Init(prm.field.epoch.c_str(),Exosphere::SO_FRAME);
+    ::T96::Init(prm.field.epoch.c_str(),kStandaloneMode3DFieldFrame);
   }
   else if (model=="T05") {
     Earth::BackgroundMagneticFieldModelType=Earth::_t05;
@@ -163,7 +170,7 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
     ::T05::SetBYIMF(Earth::T05::by);
     ::T05::SetBZIMF(Earth::T05::bz);
     ::T05::SetW(Earth::T05::W[0],Earth::T05::W[1],Earth::T05::W[2],Earth::T05::W[3],Earth::T05::W[4],Earth::T05::W[5]);
-    ::T05::Init(prm.field.epoch.c_str(),Exosphere::SO_FRAME);
+    ::T05::Init(prm.field.epoch.c_str(),kStandaloneMode3DFieldFrame);
   }
   else if (model=="TA16") {
     // TA16 does not use BackgroundMagneticFieldModelType — it is driven
@@ -178,7 +185,16 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
     ::TA16::SetSymHc(prm.field.dst_nT*_NANO_);
     ::TA16::SetXIND(prm.field.xind);
     ::TA16::SetBYIMF(prm.field.imfBy_nT*_NANO_);
-    ::TA16::Init(prm.field.epoch.c_str(),Exosphere::SO_FRAME);
+    ::TA16::Init(prm.field.epoch.c_str(),kStandaloneMode3DFieldFrame);
+  }
+
+  if (PIC::ThisThread==0 &&
+      (model=="IGRF" || model=="T96" || model=="T05" || model=="TA16")) {
+    std::cout << "[Mode3D] Mesh coordinate frame: "
+              << kStandaloneMode3DFieldFrame << "\n";
+    std::cout << "[Mode3D] " << model << " interface frame: "
+              << kStandaloneMode3DFieldFrame
+              << " (matches mesh coordinates)\n";
   }
 #endif
 }

@@ -155,8 +155,13 @@ void EvaluateBackgroundMagneticFieldSI(double B[3],const double xGSM_SI[3],const
   EvalSWMFBkgMagneticFieldSI(B,xGSM_SI);
   return;
 #else
-  // IGRF-only standalone field.
+  // Standalone field coordinates are GSM.
   //
+  // ConfigureBackgroundFieldModel() initializes IGRF/T96/T05/TA16 explicitly
+  // in GSM before the AMR mesh is populated.  The xGSM_SI position passed below
+  // is therefore in the same frame expected by every standalone field wrapper.
+  //
+  // IGRF-only standalone field.
   // ConfigureBackgroundFieldModel() calls Geopack::Init(epoch,"GSM") once before
   // the AMR mesh is populated.  Geopack::IGRF::GetMagneticField() then evaluates
   // only the internal IGRF field at the supplied GSM/SI position; no Tsyganenko
