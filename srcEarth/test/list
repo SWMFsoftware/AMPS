@@ -124,3 +124,15 @@ last pass:
 P srcEarth/test/C7/run_C7_izmiran.py --solver GRIDDED -np 4 -nt 16 -mode3d-mesh-coarsening LINEAR
 last pass: 5675c3809750bd208e0260265d7d20f76309e3a9
 
+! C9 PAMELA public-data global-shell validation. Reference/driver checks are
+! inexpensive. The two physical branches are intentionally separate so their
+! last-pass states and runtime failures remain independently visible.
+P srcEarth/test/C9/run_C9.py --validate-references --validate-driver
+last pass:
+P srcEarth/test/C9/run_C9.py --solver GRIDLESS --profile ROUTINE --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 -np 16
+last pass:
+P srcEarth/test/C9/run_C9.py --solver GRIDDED --profile ROUTINE --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 2.0 --mode3d-mesh-coarsening LINEAR -np 4 -nt 16 --dynamic-chunk 64 
+last pass:
+P srcEarth/test/C9/run_C9.py --solver GRIDDED --profile ROUTINE -np 4 -nt 16 --dynamic-chunk 64 
+last pass:
+
