@@ -728,3 +728,40 @@ Prepare the external-calculator request package with:
 ```bash
 python srcEarth/test/C7/run_C7.py --prepare-reference-requests
 ```
+
+## C9: PAMELA public-data global-shell storm cutoff validation
+
+C9 compares time-dependent AMPS IGRF+T05/TS05 vertical proton access on a
+475-km geodetic shell with the numerical AACGM cutoff latitudes in Adriani
+et al. (2016) Supporting Information Table S1. The seven finite rigidity bins
+are represented by their geometric centers. At each selected epoch, the runner
+extracts the `Rc_effective = R` contour independently by longitude and
+hemisphere and compares the aggregated boundary with the published PAMELA
+cutoff latitude.
+
+C9 has explicit GRIDLESS and GRIDDED branches. GRIDLESS evaluates the empirical
+field directly along trajectories. GRIDDED uses the standalone Mode3D AMR mesh
+and interpolation stencil with configurable near-Earth and boundary resolution.
+Both branches use the same driver, shell, rigidity scan, AACGM postprocessing,
+and PAMELA acceptance metrics. `--solver BOTH` runs both and writes an
+additional cross-solver diagnostic.
+
+The five-minute event driver is bundled at
+`srcEarth/test/C9/data/ts05_driving.txt` and is protected by a fixed SHA-256
+digest. The original C6 external-reference validation remains unchanged.
+
+```bash
+python3 srcEarth/test/C9/run_C9.py --validate-references --validate-driver
+python3 srcEarth/test/C9/run_C9.py --solver GRIDLESS --profile ROUTINE \
+  --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 -np 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --profile ROUTINE \
+  --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 \
+  --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 2.0 \
+  --mode3d-mesh-coarsening LINEAR -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver BOTH --profile FULL \
+  --interval-samples 5 -np 8 -nt 16
+```
+
+See `srcEarth/test/C9/README.md` for the geometry approximation, two solver
+branches, AACGM conversion, driver validation, acceptance metrics, output
+products, and known limitations.
