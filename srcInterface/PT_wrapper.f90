@@ -680,20 +680,19 @@ subroutine ConvertVel_HGR_HGI(vHGI,vHGR,xHGR,TimeSim)
   !----------------------------------------------------------------------------
   vHGI=transform_velocity(TimeSim,vHGR,xHGR,'HGR','HGI')
 end subroutine ConvertVel_HGR_HGI
-subroutine GetEarthLocation(xEarthHgi)
-  use CON_axes
+!==============================================================================
+subroutine GetEarthLocation(xEarthHgi_D)
+
+  use CON_axes, ONLY: XyzPlanetHgi_D
   use CON_time, ONLY: tSimulation
 
   implicit none
 
-  real,intent(out)::xEarthHgi(3)
+  real, intent(out):: xEarthHgi_D(3)
 
-  !   call set_hgi_gse_d_planet(tSimulation)
-
-  ! Calculate the planet position in HGI
-  ! In GSE shifted to the center of the Sun the planet is at (-d,0,0)
+  ! Get the planet position in HGI
   !----------------------------------------------------------------------------
-  xEarthHgi = matmul(HgiGse_DD, [-cAU*SunEMBDistance, 0.0, 0.0])
+  xEarthHgi_D = XyzPlanetHgi_D
 
 end subroutine GetEarthLocation
 !=========Stub, to be removed, when the C routine is available=================
