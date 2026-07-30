@@ -12,10 +12,12 @@
 !   * one 475-km geodetic shell;
 !   * vertically incident protons;
 !   * IGRF + T05/TS05 driven by the bundled five-minute C9 driver;
-!   * PENUMBRA_SCAN, retaining Rc_lower, Rc_effective, and Rc_upper;
-!   * the modeled cutoff latitude is the Rc_effective = R contour, converted
-!     from geographic coordinates to AACGM and aggregated over longitude and
-!     both magnetic hemispheres.
+!   * selectable FULL_SCAN or DIRECT_ACCESS numerical products;
+!   * FULL_SCAN uses PENUMBRA_SCAN and the Rc_effective = R contour;
+!   * DIRECT_ACCESS traces only the seven requested rigidities within a selected
+!     absolute geodetic-latitude band and locates the T=0.5 access boundary;
+!   * geographic shell coordinates are converted to AACGM and aggregated over
+!     longitude and both magnetic hemispheres by the Python postprocessor.
 !
 ! This is the Mode3D/GRIDDED companion to AMPS_PARAM_C9_gridless.in.  Both
 ! branches use exactly the same event driver, epochs, shell geometry, rigidity
@@ -26,8 +28,9 @@
 ! both branches isolates mesh/interpolation sensitivity from the PAMELA test.
 !
 ! The Python runner copies this template into every snapshot directory and
-! changes only named directives (EPOCH, DRIVER_FILE, scan count, shell spacing,
-! rigidity bracket, trace time, and Mode3D mesh controls).  The generated input
+! changes only named directives (EPOCH, DRIVER_FILE, cutoff product, explicit
+! rigidity list/access latitude band, scan count, shell spacing, rigidity bracket,
+! trace time, and Mode3D mesh controls). The generated input
 ! and complete launch command are archived with every result.
 ! =============================================================================
 
@@ -43,8 +46,14 @@ CUTOFF_EMAX             705.763955063706
 CUTOFF_MAX_PARTICLES    1
 CUTOFF_NENERGY          50
 CUTOFF_SAMPLING         VERTICAL
+! FULL_SCAN uses PENUMBRA_SCAN and CUTOFF_UPPER_SCAN_N. DIRECT_ACCESS changes
+! CUTOFF_SEARCH_ALGORITHM to RIGIDITY_LIST and traces exactly the list below.
+! The explicit list and latitude band are harmless when PENUMBRA_SCAN is selected.
 CUTOFF_SEARCH_ALGORITHM PENUMBRA_SCAN
 CUTOFF_UPPER_SCAN_N     160
+CUTOFF_RIGIDITY_LIST_GV 0.423556372,0.498397432,0.587877538,0.692820323,0.817006732,0.962081078,1.131017241
+CUTOFF_ACCESS_ABS_LAT_MIN 35.0
+CUTOFF_ACCESS_ABS_LAT_MAX 75.0
 CUTOFF_SCAN_SPACING     LINEAR
 CUTOFF_TRACE_POLICY     ACCURATE
 CUTOFF_BACKTRACE_CHARGE REVERSED
@@ -109,9 +118,11 @@ SPEC_EMIN               1.0
 SPEC_EMAX               2000.0
 
 #OUTPUT_DOMAIN
-! Full geographic shell.  The runner transforms these grid points to AACGM in
-! postprocessing at the exact snapshot epoch.  SHELL_GEOMETRY=GEODETIC follows
-! the current Earth cutoff-test convention.
+! FULL_SCAN evaluates this complete geographic shell. DIRECT_ACCESS preserves
+! the same structured shell definition but the Mode3D scheduler launches
+! trajectories only at nodes within CUTOFF_ACCESS_ABS_LAT_MIN/MAX. The runner
+! transforms retained points to AACGM at the exact snapshot epoch.
+! SHELL_GEOMETRY=GEODETIC follows the current Earth cutoff-test convention.
 OUTPUT_MODE             SHELLS
 SHELL_COUNT             1
 SHELL_ALTS_KM           475.0

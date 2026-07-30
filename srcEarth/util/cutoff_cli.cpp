@@ -54,8 +54,8 @@
 //     -mode3d-mesh-res-earth-re <double>                 optional AMR resolution at Earth.
 //     -mode3d-mesh-res-boundary-re <double>              optional AMR resolution at boundary.
 //     -mode3d-mesh-coarsening <LINEAR|LOG|POWER|...>     optional radial coarsening law.
-//     -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|BINARY>   cutoff search in 3d/gridless.
-//     -cutoff-upper-scan-n <int>                         log-grid samples for UPPER_SCAN.
+//     -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|RIGIDITY_LIST|BINARY>   cutoff product.
+//     -cutoff-upper-scan-n <int>                         scan samples for UPPER/PENUMBRA.
 //
 //   See amps_param_parser.h for a full description of the input file format.
 //
@@ -331,6 +331,29 @@ CliOptions ParseCli(int argc,char** argv) {
       // solver mode is chosen later by -mode; here we only store the requested token.
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-search");
       opt.cutoffSearchAlgorithm=argv[++i];
+    }
+    else if (a=="-cutoff-rigidity-list-gv" || a=="--cutoff-rigidity-list-gv" ||
+             a=="-mode3d-cutoff-rigidity-list-gv" ||
+             a=="--mode3d-cutoff-rigidity-list-gv") {
+      // The list is normally supplied as one comma-separated shell argument.  It is
+      // stored verbatim here and validated later with the same rules as the input-file
+      // CUTOFF_RIGIDITY_LIST_GV directive.
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-rigidity-list-gv");
+      opt.cutoffRigidityListGV=argv[++i];
+      if (opt.cutoffRigidityListGV.empty())
+        exit(__LINE__,__FILE__,"-cutoff-rigidity-list-gv must not be empty");
+    }
+    else if (a=="-cutoff-access-abs-lat-min" || a=="--cutoff-access-abs-lat-min") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-access-abs-lat-min");
+      opt.cutoffAccessAbsLatMin_deg=std::stod(argv[++i]);
+      if (opt.cutoffAccessAbsLatMin_deg<0.0 || opt.cutoffAccessAbsLatMin_deg>90.0)
+        exit(__LINE__,__FILE__,"-cutoff-access-abs-lat-min must be in [0,90] degrees");
+    }
+    else if (a=="-cutoff-access-abs-lat-max" || a=="--cutoff-access-abs-lat-max") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-access-abs-lat-max");
+      opt.cutoffAccessAbsLatMax_deg=std::stod(argv[++i]);
+      if (opt.cutoffAccessAbsLatMax_deg<0.0 || opt.cutoffAccessAbsLatMax_deg>90.0)
+        exit(__LINE__,__FILE__,"-cutoff-access-abs-lat-max must be in [0,90] degrees");
     }
     else if (a=="-cutoff-upper-scan-n" || a=="--cutoff-upper-scan-n" ||
              a=="-cutoff-search-n" || a=="--cutoff-search-n" ||
@@ -673,7 +696,7 @@ std::string HelpMessage(const char* progName) {
   out << "      output file is still selected with --cutoff-debug-exit-file. Input-file\n";
   out << "      equivalent: CUTOFF_DEBUG_EXIT_LIST_FILE.\n\n";
 
-  out << "  -cutoff-search | --cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|BINARY>   (optional)\n";
+  out << "  -cutoff-search | --cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|RIGIDITY_LIST|BINARY>   (optional)\n";
   out << "      What this command does:\n";
   out << "        Selects how the scalar cutoff rigidity Rc is extracted from repeated\n";
   out << "        trajectory classifications TraceAllowed(R). It applies to both\n";
@@ -697,11 +720,17 @@ std::string HelpMessage(const char* progName) {
   out << "                       is required when comparing with published effective-\n";
   out << "                       cutoff tables such as Smart--Shea, CARI-7, and\n";
   out << "                       Gerontidou et al.\n";
+  out << "        RIGIDITY_LIST  Mode3D-only direct-access product. Trace exactly the\n";
+  out << "                       supplied rigidity values at each selected shell node\n";
+  out << "                       and write ALLOWED/FORBIDDEN/UNRESOLVED states.\n";
   out << "        BINARY         Legacy endpoint bisection. Use only for debugging or\n";
   out << "                       monotonic test problems, because it is not penumbra-safe.\n";
   out << "\n";
   out << "      Optional controls and aliases:\n";
-  out << "        --cutoff-upper-scan-n <N>       log-rigidity samples used before bisection\n";
+  out << "        --cutoff-upper-scan-n <N>       scan samples for UPPER/PENUMBRA\n";
+  out << "        --cutoff-rigidity-list-gv <R1,R2,...>  explicit RIGIDITY_LIST nodes [GV]\n";
+  out << "        --cutoff-access-abs-lat-min <deg>      selected geodetic |latitude| minimum\n";
+  out << "        --cutoff-access-abs-lat-max <deg>      selected geodetic |latitude| maximum\n";
   out << "        --gridless-cutoff-search <...>  gridless-specific alias\n";
   out << "        --gridless-cutoff-search-n <N>  gridless-specific alias for scan count\n";
   out << "        If N is omitted, UPPER_SCAN and PENUMBRA_SCAN use the input/default\n";
@@ -711,11 +740,15 @@ std::string HelpMessage(const char* progName) {
   out << "        " << progName << " -mode 3d -i run.in -cutoff-search UPPER_SCAN -cutoff-upper-scan-n 80\n";
   out << "        " << progName << " -mode gridless -i run.in -cutoff-search UPPER_SCAN -cutoff-upper-scan-n 80\n";
   out << "        " << progName << " -mode gridless -i run.in -cutoff-search PENUMBRA_SCAN -cutoff-upper-scan-n 400\n";
+  out << "        " << progName << " -mode 3d -i run.in -cutoff-search RIGIDITY_LIST -cutoff-rigidity-list-gv 0.424,0.498,0.588 -cutoff-access-abs-lat-min 35 -cutoff-access-abs-lat-max 75\n";
   out << "\n";
   out << "      Input-file analogue (#CUTOFF_RIGIDITY or #NUMERICAL):\n";
   out << "        CUTOFF_SEARCH_ALGORITHM  PENUMBRA_SCAN\n";
   out << "        CUTOFF_UPPER_SCAN_N      400          ! coarse rigidity scan nodes\n";
-  out << "        ! Valid algorithms: UPPER_SCAN | PENUMBRA_SCAN | BINARY\n\n";
+  out << "        CUTOFF_RIGIDITY_LIST_GV  0.424,0.498,0.588\n";
+  out << "        CUTOFF_ACCESS_ABS_LAT_MIN 35\n";
+  out << "        CUTOFF_ACCESS_ABS_LAT_MAX 75\n";
+  out << "        ! Valid algorithms: UPPER_SCAN | PENUMBRA_SCAN | RIGIDITY_LIST | BINARY\n\n";
 
   out << "  -cutoff-trace-policy | --cutoff-trace-policy <LEGACY|ACCURATE>   (optional)\n";
   out << "      Selects the numerical integration policy used by Boolean cutoff\n";

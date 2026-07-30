@@ -39,6 +39,9 @@
 //        * UPPER_SCAN returns the final forbidden-to-allowed transition.
 //        * PENUMBRA_SCAN evaluates the complete access sequence and returns lower,
 //          effective, and upper cutoff diagnostics.  C6 uses the effective value.
+//        * RIGIDITY_LIST traces only an explicit set of vertical rigidities and writes
+//          their access states.  It may restrict shell nodes to an absolute geodetic
+//          latitude band and is intended for efficient validation products such as C9.
 //        * BINARY retains the older endpoint-monotonic algorithm for regression.
 //
 //   5. For an isotropic point cutoff, return the minimum directional cutoff over
@@ -1932,7 +1935,7 @@ static EarthUtil::CutoffSampleState ClassifyCutoffSample3D_(
     }
 
     std::ostringstream msg;
-    msg << "Mode3D PENUMBRA_SCAN trajectory failed after numerical retry: termination="
+    msg << "Mode3D cutoff access trajectory failed after numerical retry: termination="
         << Earth::GridlessMode::TrajectoryTerminationName(tr.termination)
         << ", R_GV=" << R_GV << ", steps=" << tr.steps
         << ", trace_time_s=" << tr.traceTime_s;
@@ -3095,6 +3098,83 @@ static void WriteTecplot3DShells_Penumbra(
     std::fclose(f);
 }
 
+// Write the compact direct-access product produced by RIGIDITY_LIST.
+//
+// Unlike PENUMBRA_SCAN, this output does not estimate a scalar cutoff at every shell
+// node. Each row is one independently traced (location, rigidity) pair and records the
+// three-state trajectory classification. A long/row-oriented layout is used instead of
+// one column per rigidity because the requested rigidity list has no fixed width.
+//
+// locationGridIds maps compact work indices back to the complete structured shell index:
+//
+//   gridId = shellId*(nLon*nLat) + jLat*nLon + iLon.
+//
+// This indirection permits RIGIDITY_LIST to skip shell nodes outside the selected
+// latitude band without changing the established SHELLS geometry or full-scan output.
+static void WriteTecplot3DShells_AccessList(
+                                 const EarthUtil::AmpsParam& prm,
+                                 const std::vector<int>& locationGridIds,
+                                 const std::vector<int>& accessState,
+                                 int nLon, int nLat,
+                                 double lonRes_deg,
+                                 double latRes_deg) {
+    const std::string fname=CutoffOutputFileName("cutoff_3d_shells_access");
+    FILE* f=std::fopen(fname.c_str(),"w");
+    if (!f) throw std::runtime_error("Cannot write "+fname);
+
+    const int nRigidity=static_cast<int>(prm.cutoff.rigidityList_GV.size());
+    const std::size_t nExpected=locationGridIds.size()*(std::size_t)nRigidity;
+    if (accessState.size()!=nExpected) {
+        std::fclose(f);
+        throw std::runtime_error(
+            "Mode3D RIGIDITY_LIST output array has size "+
+            std::to_string(accessState.size())+", expected "+
+            std::to_string(nExpected)+".");
+    }
+
+    std::fprintf(f,"TITLE=\"Mode3D Vertical Direct Rigidity Access (SHELLS)\"\n");
+    std::fprintf(f,
+        "VARIABLES=\"shell_index\",\"lon_deg\",\"lat_deg\","
+        "\"x_km\",\"y_km\",\"z_km\",\"rigidity_GV\","
+        "\"access_state\",\"allowed\",\"unresolved\"\n");
+
+    // The selected band is no longer a complete rectangular I/J grid. One POINT zone
+    // accurately describes the retained row count while preserving Tecplot readability.
+    std::fprintf(f,"ZONE T=\"selected_abs_geodetic_lat_%g_to_%g_deg\" I=%zu F=POINT\n",
+                 prm.cutoff.accessAbsLatMin_deg,prm.cutoff.accessAbsLatMax_deg,nExpected);
+
+    const int nPtsShell=nLon*nLat;
+    for (std::size_t workId=0;workId<locationGridIds.size();++workId) {
+        const int gridId=locationGridIds[workId];
+        const int shellId=gridId/nPtsShell;
+        const int k=gridId-shellId*nPtsShell;
+        const int iLon=k%nLon;
+        const int jLat=k/nLon;
+        double lat_deg=-90.0+latRes_deg*jLat;
+        if (lat_deg>90.0) lat_deg=90.0;
+        const double lon_deg=lonRes_deg*iLon;
+        const V3 x_m=LocationToX0m(
+            prm,gridId,nLon,nLat,lonRes_deg,latRes_deg,nPtsShell);
+
+        for (int iRigidity=0;iRigidity<nRigidity;++iRigidity) {
+            const int state=accessState[workId*(std::size_t)nRigidity+
+                                        (std::size_t)iRigidity];
+            const int allowed=(state==(int)EarthUtil::CutoffSampleState::Allowed) ? 1 : 0;
+            const int unresolved=(state==(int)EarthUtil::CutoffSampleState::Unresolved) ? 1 : 0;
+            // Use 15 significant digits for coordinates and rigidity.  In particular,
+            // the C9 postprocessor matches rows to the reference rigidity centers;
+            // the default six digits of %e would round those centers too aggressively.
+            std::fprintf(f,"%d %.15e %.15e %.15e %.15e %.15e %.15e %d %d %d\n",
+                         shellId,lon_deg,lat_deg,
+                         x_m.x/1000.0,x_m.y/1000.0,x_m.z/1000.0,
+                         prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],
+                         state,allowed,unresolved);
+        }
+    }
+
+    std::fclose(f);
+}
+
 static void WriteTecplot3DDirectionalMap_Location(
                                  const EarthUtil::AmpsParam& prm,
                                  int locId,
@@ -3494,11 +3574,16 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                              cutoffAlgorithm=="PENUMBRASCAN" ||
                              cutoffAlgorithm=="FULL_PENUMBRA" ||
                              cutoffAlgorithm=="BAND_SCAN");
-    if (penumbraScan && !samplingVertical) {
+    const bool rigidityListAccess=(cutoffAlgorithm=="RIGIDITY_LIST" ||
+                                   cutoffAlgorithm=="FIXED_RIGIDITY" ||
+                                   cutoffAlgorithm=="FIXED_RIGIDITIES" ||
+                                   cutoffAlgorithm=="ACCESS_LIST" ||
+                                   cutoffAlgorithm=="DIRECT_ACCESS");
+    if ((penumbraScan || rigidityListAccess) && !samplingVertical) {
         throw std::runtime_error(
-            "Mode3D PENUMBRA_SCAN currently requires CUTOFF_SAMPLING VERTICAL. "
-            "A scalar isotropic minimum does not uniquely define one lower/effective/"
-            "upper cutoff band for the observation point.");
+            "Mode3D PENUMBRA_SCAN and RIGIDITY_LIST require CUTOFF_SAMPLING "
+            "VERTICAL. Their structured shell products are defined for one vertical "
+            "arrival direction at each observation point.");
     }
 
     const int nCutoffDirs = prm.cutoff.maxParticlesPerPoint;
@@ -3524,11 +3609,15 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     // scalar effective cutoff and losing the lower/upper/topology diagnostics.
     // A future point-specific writer can remove this restriction without
     // changing the band-search algorithm itself.
-    if (penumbraScan && !isShells) {
+    if ((penumbraScan || rigidityListAccess) && !isShells) {
         throw std::runtime_error(
-            "Mode3D PENUMBRA_SCAN currently requires OUTPUT_MODE SHELLS so that "
-            "cutoff_3d_shells_penumbra.dat can preserve the complete lower/"
-            "effective/upper cutoff diagnostics.");
+            "Mode3D PENUMBRA_SCAN and RIGIDITY_LIST currently require OUTPUT_MODE "
+            "SHELLS so their structured validation diagnostics retain geographic "
+            "longitude/latitude metadata.");
+    }
+    if (rigidityListAccess && prm.cutoff.rigidityList_GV.empty()) {
+        throw std::runtime_error(
+            "Mode3D RIGIDITY_LIST requires a non-empty CUTOFF_RIGIDITY_LIST_GV.");
     }
 
     const double shellLonRes_deg = isShells
@@ -3544,12 +3633,39 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     const int    nLat     = isShells ? static_cast<int>(std::floor(180.0/shellLatRes_deg + 0.5)) + 1 : 0;
     const int    nPtsShell = isShells ? nLon * nLat : 0;
 
-    const int nLoc = isPoints
+    const int nAllLocations=isPoints
                    ? static_cast<int>(prm.output.points.size())
-                   : nShells * nPtsShell;
+                   : nShells*nPtsShell;
 
-    if (nLoc == 0)
-        throw std::runtime_error("Mode3D cutoff: no observation points/shells defined.");
+    // Map compact scheduler indices to complete shell-grid indices. Full scans retain
+    // the historical identity mapping. RIGIDITY_LIST keeps only nodes inside the
+    // requested absolute geodetic-latitude band while retaining all longitudes and both
+    // hemispheres. The complete grid id is preserved for exact launch coordinates.
+    std::vector<int> locationGridIds;
+    locationGridIds.reserve((std::size_t)nAllLocations);
+    if (rigidityListAccess) {
+        const double eps=1.0e-10;
+        for (int gridId=0;gridId<nAllLocations;++gridId) {
+            const int k=gridId%nPtsShell;
+            const int jLat=k/nLon;
+            double lat_deg=-90.0+shellLatRes_deg*jLat;
+            if (lat_deg>90.0) lat_deg=90.0;
+            const double absLat=std::fabs(lat_deg);
+            if (absLat+eps>=prm.cutoff.accessAbsLatMin_deg &&
+                absLat-eps<=prm.cutoff.accessAbsLatMax_deg)
+                locationGridIds.push_back(gridId);
+        }
+    }
+    else {
+        for (int gridId=0;gridId<nAllLocations;++gridId)
+            locationGridIds.push_back(gridId);
+    }
+
+    const int nLoc=static_cast<int>(locationGridIds.size());
+    if (nLoc==0)
+        throw std::runtime_error(
+            "Mode3D cutoff: no locations remain after applying the requested output "
+            "geometry/access latitude band.");
 
     //==================================================================================
     // 14.6b — Optional directional cutoff sky-map setup
@@ -3567,8 +3683,14 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     //==================================================================================
 
     const DirectionalMapConfig3D dirMapCfg = ConfigureDirectionalMap3D(prm);
-    const long long tasksPerLocation =
-        1LL + (dirMapCfg.enabled ? static_cast<long long>(dirMapCfg.nCells) : 0LL);
+    if (rigidityListAccess && dirMapCfg.enabled) {
+        throw std::runtime_error(
+            "Mode3D RIGIDITY_LIST does not support DIRECTIONAL_MAP. The direct-access "
+            "product is already defined as one vertical trajectory per listed rigidity.");
+    }
+    const long long tasksPerLocation=rigidityListAccess
+        ? static_cast<long long>(prm.cutoff.rigidityList_GV.size())
+        : 1LL+(dirMapCfg.enabled ? static_cast<long long>(dirMapCfg.nCells) : 0LL);
 
     //==================================================================================
     // 14.7 — Run summary (rank 0 only)
@@ -3583,8 +3705,24 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             << " (q=" << prm.species.charge_e << " e"
             << ", m=" << prm.species.mass_amu << " amu)\n"
             << "Rigidity range : [" << Rmin << ", " << Rmax << "] GV\n"
-            << "Cutoff search  : " << prm.cutoff.searchAlgorithm
-            << " (upper-scan N=" << CutoffUpperScanPointCount_(prm) << ")\n"
+            << "Cutoff search  : " << prm.cutoff.searchAlgorithm;
+        if (rigidityListAccess) {
+            std::cout << " (" << prm.cutoff.rigidityList_GV.size()
+                      << " explicit rigidity values)\n"
+                      << "Access |lat|  : [" << prm.cutoff.accessAbsLatMin_deg
+                      << ", " << prm.cutoff.accessAbsLatMax_deg
+                      << "] geodetic deg\n"
+                      << "Rigidity list : ";
+            for (std::size_t i=0;i<prm.cutoff.rigidityList_GV.size();++i) {
+                if (i) std::cout << ",";
+                std::cout << prm.cutoff.rigidityList_GV[i];
+            }
+            std::cout << " GV\n";
+        }
+        else {
+            std::cout << " (upper-scan N=" << CutoffUpperScanPointCount_(prm) << ")\n";
+        }
+        std::cout
             << "Trace policy   : " << prm.cutoff.traceIntegrationPolicy << "\n"
             << "Scan spacing   : " << prm.cutoff.scanSpacing << "\n"
             << "Backtrace charge: " << prm.cutoff.backtraceChargeConvention
@@ -3599,7 +3737,11 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                       << " (Fibonacci sphere)\n";
 
         std::cout
-            << "N_locations    : " << nLoc  << "\n"
+            << "N_locations    : " << nLoc  << "\n";
+        if (rigidityListAccess)
+            std::cout << "Shell grid total: " << nAllLocations
+                      << " (latitude-band selection retained " << nLoc << ")\n";
+        std::cout
             << "Directional map: " << (dirMapCfg.enabled ? "ON" : "OFF") << "\n";
 
         if (dirMapCfg.enabled) {
@@ -3786,6 +3928,21 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     std::vector<double> eminRank((size_t)nLoc,-1.0);
     std::vector<double> dirMapRank;
 
+    // Direct-access states use compact [work location][rigidity] indexing. -1 is the
+    // uncomputed MPI sentinel; valid values are the CutoffSampleState integers 0, 1, 2.
+    std::vector<int> accessStateRank;
+    const int nAccessRigidities=rigidityListAccess
+        ? static_cast<int>(prm.cutoff.rigidityList_GV.size()) : 0;
+    if (rigidityListAccess) {
+        const long long nState=static_cast<long long>(nLoc)*nAccessRigidities;
+        if (nState>static_cast<long long>(std::numeric_limits<int>::max())) {
+            throw std::runtime_error(
+                "Mode3D RIGIDITY_LIST MPI reduction count exceeds INT_MAX; split the "
+                "shell/rigidity list into smaller runs.");
+        }
+        accessStateRank.assign((std::size_t)nState,-1);
+    }
+
     // Complete cutoff-band diagnostics are allocated only for PENUMBRA_SCAN.
     // Every vector is indexed by the global location id, exactly like rcRank.
     // A negative sentinel means this MPI rank did not own that location; MPI_MAX
@@ -3864,7 +4021,11 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     std::vector<int> locTotalPerShellGlobal((size_t)std::max(nShells,0),0);
 
     if (isShells) {
-        for (int s=0; s<nShells; ++s) locTotalPerShellGlobal[(size_t)s] = nPtsShell;
+        for (int workId=0;workId<nLoc;++workId) {
+            const int shellIdx=locationGridIds[(std::size_t)workId]/nPtsShell;
+            if (shellIdx>=0 && shellIdx<nShells)
+                locTotalPerShellGlobal[(std::size_t)shellIdx]++;
+        }
     }
 
     auto mode3d_now_seconds = []() -> double { return MPI_Wtime(); };
@@ -3994,7 +4155,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         doneTasksLocal     += nDone * tasksPerLocation;
         if (isShells) {
             for (int globalIdx=begin; globalIdx<end; ++globalIdx) {
-                const int shellIdx = globalIdx / nPtsShell;
+                const int shellIdx=locationGridIds[(std::size_t)globalIdx]/nPtsShell;
                 if (shellIdx>=0 && shellIdx<nShells)
                     locDonePerShellLocal[(size_t)shellIdx]++;
             }
@@ -4007,8 +4168,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         doneTasksLocal     += nDone * tasksPerLocation;
         if (isShells) {
             for (int localIdx=begin; localIdx<end; ++localIdx) {
-                const int globalIdx = rankWorkList[(size_t)localIdx];
-                const int shellIdx = globalIdx / nPtsShell;
+                const int globalIdx=rankWorkList[(size_t)localIdx];
+                const int shellIdx=locationGridIds[(std::size_t)globalIdx]/nPtsShell;
                 if (shellIdx>=0 && shellIdx<nShells)
                     locDonePerShellLocal[(size_t)shellIdx]++;
             }
@@ -4020,10 +4181,27 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     //==================================================================================
 
     auto computeGlobalLocation = [&](int globalIdx, cMode3DMeshFieldEval& threadField) {
-        const V3 x0_m = LocationToX0m(
-            prm,globalIdx,nLon,nLat,shellLonRes_deg,shellLatRes_deg,nPtsShell);
-        const V3 verticalArrivalDir = LocationToVerticalArrivalDir3D_(
-            prm,globalIdx,nLon,nLat,shellLonRes_deg,shellLatRes_deg,nPtsShell,x0_m);
+        // globalIdx is the compact scheduler index. gridId is its location in the
+        // complete shell geometry; they differ only for latitude-banded RIGIDITY_LIST.
+        const int gridId=locationGridIds[(std::size_t)globalIdx];
+        const V3 x0_m=LocationToX0m(
+            prm,gridId,nLon,nLat,shellLonRes_deg,shellLatRes_deg,nPtsShell);
+        const V3 verticalArrivalDir=LocationToVerticalArrivalDir3D_(
+            prm,gridId,nLon,nLat,shellLonRes_deg,shellLatRes_deg,nPtsShell,x0_m);
+
+        if (rigidityListAccess) {
+            // Backtrace the reversed particle opposite the requested arrival direction.
+            // Every list entry is independent and retained in deterministic input order.
+            const V3 v0=mul(-1.0,verticalArrivalDir);
+            const std::size_t base=(std::size_t)globalIdx*(std::size_t)nAccessRigidities;
+            for (int iRigidity=0;iRigidity<nAccessRigidities;++iRigidity) {
+                const EarthUtil::CutoffSampleState state=ClassifyCutoffSample3D_(
+                    prm,threadField,x0_m,v0,
+                    prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
+                accessStateRank[base+(std::size_t)iRigidity]=static_cast<int>(state);
+            }
+            return;
+        }
 
         double rc=-1.0;
         if (penumbraScan) {
@@ -4240,6 +4418,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     //==================================================================================
 
     std::vector<double> rcAll, eminAll, dirMapAll;
+    std::vector<int> accessStateAll;
     std::vector<double> rcLowerAll,rcEffectiveAll,rcUpperAll;
     std::vector<int> nTransitionsAll,nAllowedIntervalsAll,nUnresolvedAll;
     std::vector<int> lowerBracketUnresolvedAll,upperBracketUnresolvedAll;
@@ -4248,6 +4427,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     if (mpiRank == 0) {
         rcAll.assign((size_t)nLoc,-1.0);
         eminAll.assign((size_t)nLoc,-1.0);
+        if (rigidityListAccess)
+            accessStateAll.assign(accessStateRank.size(),-1);
         if (penumbraScan) {
             rcLowerAll.assign((size_t)nLoc,-1.0);
             rcEffectiveAll.assign((size_t)nLoc,-1.0);
@@ -4270,6 +4451,13 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     MPI_Reduce(eminRank.data(),
                (mpiRank==0 ? eminAll.data() : nullptr),
                nLoc,MPI_DOUBLE,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (rigidityListAccess) {
+        MPI_Reduce(accessStateRank.data(),
+                   (mpiRank==0 ? accessStateAll.data() : nullptr),
+                   static_cast<int>(accessStateRank.size()),MPI_INT,MPI_MAX,0,
+                   MPI_GLOBAL_COMMUNICATOR);
+    }
 
     if (penumbraScan) {
         auto reduceDouble=[&](const std::vector<double>& local,
@@ -4313,7 +4501,14 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     //==================================================================================
 
     if (mpiRank == 0) {
-        if (isPoints) {
+        if (rigidityListAccess) {
+            WriteTecplot3DShells_AccessList(
+                prm,locationGridIds,accessStateAll,
+                nLon,nLat,shellLonRes_deg,shellLatRes_deg);
+            std::cout << "Wrote: "
+                      << CutoffOutputFileName("cutoff_3d_shells_access") << "\n";
+        }
+        else if (isPoints) {
             // Console summary
             for (int i = 0; i < nLoc; ++i) {
                 const auto& P = prm.output.points[(size_t)i];
@@ -4396,8 +4591,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         // -----------------------------------------------------------------------------
         if (dirMapCfg.enabled) {
             for (int locId=0; locId<nLoc; ++locId) {
-                const V3 x0_m = LocationToX0m(
-                    prm,locId,nLon,nLat,shellLonRes_deg,shellLatRes_deg,nPtsShell);
+                const int gridId=locationGridIds[(std::size_t)locId];
+                const V3 x0_m=LocationToX0m(
+                    prm,gridId,nLon,nLat,shellLonRes_deg,shellLatRes_deg,nPtsShell);
 
                 std::vector<double> RcCell((size_t)dirMapCfg.nCells, -1.0);
                 const size_t base = (size_t)locId * (size_t)dirMapCfg.nCells;

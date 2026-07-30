@@ -2248,6 +2248,18 @@ namespace Earth {
 namespace GridlessMode {
 
 int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
+  // RIGIDITY_LIST is intentionally a Mode3D-only output product.  It filters shell
+  // launch locations by absolute geodetic latitude and writes one access-state row per
+  // requested rigidity.  The gridless implementation is organized around complete
+  // scalar or penumbra cutoff searches and has no matching output contract.  Refuse the
+  // request explicitly so it cannot fall through to BINARY/UPPER_SCAN and create a
+  // scientifically mislabeled file.  C9 exposes DIRECT_ACCESS only for GRIDDED.
+  if (EarthUtil::ToUpper(prm.cutoff.searchAlgorithm)=="RIGIDITY_LIST") {
+    throw std::runtime_error(
+        "Gridless cutoff does not support RIGIDITY_LIST/DIRECT_ACCESS; "
+        "use standalone Mode3D (-mode 3d) or select PENUMBRA_SCAN.");
+  }
+
   //====================================================================================
   // MPI PARALLEL EXECUTION MODEL (TRAJECTORY-BASED DYNAMIC SCHEDULING)
   //

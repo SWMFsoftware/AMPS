@@ -731,37 +731,34 @@ python srcEarth/test/C7/run_C7.py --prepare-reference-requests
 
 ## C9: PAMELA public-data global-shell storm cutoff validation
 
-C9 compares time-dependent AMPS IGRF+T05/TS05 vertical proton access on a
-475-km geodetic shell with the numerical AACGM cutoff latitudes in Adriani
-et al. (2016) Supporting Information Table S1. The seven finite rigidity bins
-are represented by their geometric centers. At each selected epoch, the runner
-extracts the `Rc_effective = R` contour independently by longitude and
-hemisphere and compares the aggregated boundary with the published PAMELA
-cutoff latitude.
+C9 compares time-dependent AMPS IGRF+T05/TS05 vertical proton access at 475 km
+with Adriani et al. (2016) Supporting Information Table S1. The seven finite
+rigidity bins are represented by their geometric centers and model geographic
+shell points are converted to AACGM at each exact snapshot epoch.
 
-C9 has explicit GRIDLESS and GRIDDED branches. GRIDLESS evaluates the empirical
-field directly along trajectories. GRIDDED uses the standalone Mode3D AMR mesh
-and interpolation stencil with configurable near-Earth and boundary resolution.
-Both branches use the same driver, shell, rigidity scan, AACGM postprocessing,
-and PAMELA acceptance metrics. `--solver BOTH` runs both and writes an
-additional cross-solver diagnostic.
+C9 now exposes two numerical products:
 
-The five-minute event driver is bundled at
-`srcEarth/test/C9/data/ts05_driving.txt` and is protected by a fixed SHA-256
-digest. The original C6 external-reference validation remains unchanged.
+- `--cutoff-evaluation FULL_SCAN` (default) runs the complete `PENUMBRA_SCAN`
+  shell and extracts `Rc_effective = R`. It supports GRIDLESS, GRIDDED, and BOTH.
+- `--cutoff-evaluation DIRECT_ACCESS` is GRIDDED-only. Mode3D traces exactly the
+  seven PAMELA rigidities within a configurable absolute geodetic-latitude band
+  and extracts the forbidden-to-allowed `T=0.5` latitude boundary. With the
+  default 35-75 degree band, 30-degree longitude grid, and 2-degree latitude
+  grid, it reduces the nominal per-snapshot work from 174,720 to 3,360
+  trajectories.
+
+The five-minute driver is bundled at `srcEarth/test/C9/data/ts05_driving.txt`
+and protected by a fixed SHA-256 digest. Every sample command includes an
+explicit `--epoch` and the same epoch is archived in its generated input file.
+The original C6 validation remains unchanged.
 
 ```bash
 python3 srcEarth/test/C9/run_C9.py --validate-references --validate-driver
-python3 srcEarth/test/C9/run_C9.py --solver GRIDLESS --profile ROUTINE \
-  --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 -np 16
-python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --profile ROUTINE \
-  --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 \
-  --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 2.0 \
-  --mode3d-mesh-coarsening LINEAR -np 4 -nt 16
-python3 srcEarth/test/C9/run_C9.py --solver BOTH --profile FULL \
-  --interval-samples 5 -np 8 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --profile ROUTINE --interval-samples 5 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 75 --dynamic-chunk 64 -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --profile ROUTINE --cutoff-scan-n 160 --dynamic-chunk 64 -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver BOTH --cutoff-evaluation FULL_SCAN --profile FULL --interval-samples 5 -np 8 -nt 16
 ```
 
-See `srcEarth/test/C9/README.md` for the geometry approximation, two solver
-branches, AACGM conversion, driver validation, acceptance metrics, output
-products, and known limitations.
+See `srcEarth/test/C9/README.md` for product definitions, geometry, direct-access
+state coding, AACGM boundary extraction, convergence checks, outputs, and known
+limitations.

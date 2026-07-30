@@ -7,15 +7,22 @@ public-data test: it does not require the nonpublic Resurs-DK1 attitude,
 spacecraft mounting matrix, or event-level PAMELA look directions.
 
 For every selected 94-minute PAMELA interval, the runner evaluates one or more
-T05/TS05 magnetic-field snapshots on a 475-km geodetic shell.  C9 has two
-numerically independent AMPS branches: GRIDLESS directly evaluates the
-empirical field along each trajectory, while GRIDDED samples the same field on
-the Mode3D AMR mesh and uses mesh interpolation during tracing.  Both branches
-trace vertical protons and write the complete PENUMBRA_SCAN cutoff band.  The
-postprocessor converts each geographic shell point to AACGM latitude and finds,
-for each published rigidity-bin geometric center, the contour
+T05/TS05 magnetic-field snapshots on a 475-km geodetic shell. C9 has two
+numerically independent AMPS branches: GRIDLESS directly evaluates the empirical
+field along each trajectory, while GRIDDED samples the same field on the Mode3D
+AMR mesh and uses mesh interpolation during tracing.
+
+The backward-compatible FULL_SCAN product uses PENUMBRA_SCAN on the complete
+shell and extracts the contour
 
     Rc_effective(latitude, longitude, time) = rigidity_center.
+
+The optional GRIDDED-only DIRECT_ACCESS product instead traces exactly the seven
+PAMELA rigidity centers at shell nodes inside a configurable absolute geodetic
+latitude band. Its modeled boundary is the latitude where the binary vertical
+access state changes from forbidden to allowed, linearly interpreted as the
+T=0.5 crossing between adjacent latitude samples. This avoids constructing a
+160-node penumbra scan at shell locations that are irrelevant to the comparison.
 
 The contour is calculated independently at each sampled longitude and magnetic
 hemisphere.  The primary modeled latitude is the mean of the per-snapshot
@@ -66,6 +73,7 @@ EV_J = 1.602176634e-19
 MEV_J = 1.0e6 * EV_J
 BUNDLED_DRIVER_SHA256 = "cb3f3f1959763660beb1e26e5a49489b132708944fb91c4e1ee37cfc3a6c4317"
 SOLVERS = ("GRIDLESS", "GRIDDED", "BOTH")
+CUTOFF_EVALUATIONS = ("FULL_SCAN", "DIRECT_ACCESS")
 
 PROFILE_TIMES = {
     # Fast end-to-end geometry/output check: shock interval and storm minimum.
@@ -134,6 +142,25 @@ class ShellRow:
     lower_above_range: int
     upper_below_range: int
     upper_above_range: int
+    aacgm_latitude_deg: Optional[float] = None
+
+
+@dataclass
+class AccessRow:
+    """One Mode3D RIGIDITY_LIST trajectory classification.
+
+    ``access_state`` uses the C++ CutoffSampleState numeric contract:
+    0=PHYSICAL_FORBIDDEN, 1=ALLOWED, 2=UNRESOLVED.  The duplicated Boolean
+    ``allowed`` and ``unresolved`` columns are retained in the AMPS output for
+    human readability; the parser verifies that they agree with the state code.
+    """
+
+    longitude_deg: float
+    latitude_deg: float
+    rigidity_gv: float
+    access_state: int
+    allowed: int
+    unresolved: int
     aacgm_latitude_deg: Optional[float] = None
 
 
@@ -439,7 +466,16 @@ def render_input(template: Path, destination: Path, epoch: datetime,
     replacements = {
         "CUTOFF_EMIN": "%.15g" % kinetic_energy_mev_from_rigidity_gv(args.rigidity_min_gv),
         "CUTOFF_EMAX": "%.15g" % kinetic_energy_mev_from_rigidity_gv(args.rigidity_max_gv),
+        "CUTOFF_SEARCH_ALGORITHM": (
+            "RIGIDITY_LIST" if args.cutoff_evaluation == "DIRECT_ACCESS"
+            else "PENUMBRA_SCAN"
+        ),
         "CUTOFF_UPPER_SCAN_N": str(args.cutoff_scan_n),
+        "CUTOFF_RIGIDITY_LIST_GV": ",".join(
+            "%.12g" % value for value in args.direct_rigidities_gv
+        ),
+        "CUTOFF_ACCESS_ABS_LAT_MIN": "%.8g" % args.access_abs_lat_min_deg,
+        "CUTOFF_ACCESS_ABS_LAT_MAX": "%.8g" % args.access_abs_lat_max_deg,
         "CUTOFF_MAX_TRAJ_TIME": "%.8g" % args.max_trace_time,
         "EPOCH": format_utc(epoch, suffix_z=False),
         "DRIVER_FILE": str(driver.resolve()),
@@ -458,16 +494,35 @@ def render_input(template: Path, destination: Path, epoch: datetime,
     destination.write_text(replace_directives(template.read_text(), replacements))
 
 
-def command_for(args: argparse.Namespace, amps: Path, solver: str) -> List[str]:
+def command_for(args: argparse.Namespace, amps: Path, solver: str,
+                epoch: datetime) -> List[str]:
+    """Build the exact per-snapshot AMPS command shown in logs and provenance.
+
+    The epoch is passed both in the generated input deck and explicitly on the
+    command line. The visible CLI override makes five-snapshot runs auditable and
+    protects against accidentally launching a sample from the wrong working
+    directory while retaining the self-contained input file.
+    """
     chunk = resolved_dynamic_chunk(args, solver)
     command = [
         args.mpirun, "-np", str(args.np), str(amps),
         "-mode", "gridless" if solver == "GRIDLESS" else "3d",
-        "-i", "AMPS_PARAM_C9.in",
-        "-cutoff-search", "PENUMBRA_SCAN",
-        "-cutoff-upper-scan-n", str(args.cutoff_scan_n),
+        "-i", "AMPS_PARAM_C9.in", "--epoch", format_utc(epoch, suffix_z=False),
+        "-cutoff-search", (
+            "RIGIDITY_LIST" if args.cutoff_evaluation == "DIRECT_ACCESS"
+            else "PENUMBRA_SCAN"
+        ),
         "-cutoff-trace-policy", args.cutoff_trace_policy,
     ]
+    if args.cutoff_evaluation == "FULL_SCAN":
+        command += ["-cutoff-upper-scan-n", str(args.cutoff_scan_n)]
+    else:
+        command += [
+            "-cutoff-rigidity-list-gv",
+            ",".join("%.12g" % value for value in args.direct_rigidities_gv),
+            "-cutoff-access-abs-lat-min", str(args.access_abs_lat_min_deg),
+            "-cutoff-access-abs-lat-max", str(args.access_abs_lat_max_deg),
+        ]
     if solver == "GRIDLESS":
         command += [
             "-gridless-mpi-scheduler", args.scheduler,
@@ -596,7 +651,81 @@ def parse_tecplot_shell_penumbra(path: Path) -> List[ShellRow]:
     return rows
 
 
-def add_aacgm_latitudes(rows: Sequence[ShellRow], epoch: datetime,
+def parse_tecplot_shell_access(path: Path) -> List[AccessRow]:
+    """Read the long-form Mode3D RIGIDITY_LIST shell product.
+
+    The parser uses the Tecplot VARIABLES record rather than fixed positions so
+    future diagnostic columns can be appended without changing C9. Required
+    scientific fields remain strict, and the redundant state/Boolean columns are
+    cross-checked to catch a writer or reduction error immediately.
+    """
+    variables: List[str] = []
+    numeric_rows: List[Tuple[int, List[float]]] = []
+    with path.open() as stream:
+        for line_number, raw in enumerate(stream, start=1):
+            text = raw.strip()
+            if not text:
+                continue
+            upper = text.upper()
+            if upper.startswith("VARIABLES"):
+                variables = [normalize_tecplot_variable_name(value)
+                             for value in re.findall(r'"([^"]+)"', text)]
+                continue
+            if upper.startswith(("TITLE", "ZONE")):
+                continue
+            try:
+                numeric_rows.append(
+                    (line_number, [float(token) for token in text.split()])
+                )
+            except ValueError as exc:
+                raise ValueError(
+                    "%s line %d is not a numeric Tecplot row: %s" %
+                    (path, line_number, text)
+                ) from exc
+
+    required = {"lon_deg", "lat_deg", "rigidity_gv", "access_state",
+                "allowed", "unresolved"}
+    if not variables:
+        raise ValueError("Tecplot VARIABLES record not found in %s" % path)
+    missing = sorted(required - set(variables))
+    if missing:
+        raise ValueError("%s is missing required direct-access variable(s): %s" %
+                         (path, ", ".join(missing)))
+    index = {name: variables.index(name) for name in required}
+
+    rows: List[AccessRow] = []
+    for line_number, values in numeric_rows:
+        if len(values) != len(variables):
+            raise ValueError(
+                "%s line %d has %d columns, but VARIABLES defines %d" %
+                (path, line_number, len(values), len(variables))
+            )
+        state = int(round(values[index["access_state"]]))
+        allowed = int(round(values[index["allowed"]]))
+        unresolved = int(round(values[index["unresolved"]]))
+        if state not in (0, 1, 2):
+            raise ValueError("%s line %d has invalid access_state=%d" %
+                             (path, line_number, state))
+        if allowed != (1 if state == 1 else 0):
+            raise ValueError("%s line %d has inconsistent allowed flag" %
+                             (path, line_number))
+        if unresolved != (1 if state == 2 else 0):
+            raise ValueError("%s line %d has inconsistent unresolved flag" %
+                             (path, line_number))
+        rows.append(AccessRow(
+            longitude_deg=float(values[index["lon_deg"]]) % 360.0,
+            latitude_deg=float(values[index["lat_deg"]]),
+            rigidity_gv=float(values[index["rigidity_gv"]]),
+            access_state=state,
+            allowed=allowed,
+            unresolved=unresolved,
+        ))
+    if not rows:
+        raise ValueError("no direct-access shell rows parsed from %s" % path)
+    return rows
+
+
+def add_aacgm_latitudes(rows: Sequence[object], epoch: datetime,
                         altitude_km: float) -> None:
     try:
         import aacgmv2  # type: ignore
@@ -712,6 +841,94 @@ def estimate_boundaries(rows: Sequence[ShellRow], rigidities: Sequence[float],
     return estimates
 
 
+def interpolate_access_crossing(profile: Sequence[AccessRow]) -> Tuple[Optional[float], int]:
+    """Locate the equator-to-pole forbidden-to-allowed T=0.5 boundary.
+
+    Direct access samples have transmission values 0 or 1. Between adjacent
+    resolved latitude nodes C9 uses linear interpolation, so the half-transmission
+    crossing is their midpoint. Unresolved nodes break a bracket rather than being
+    silently reclassified. The returned transition count includes every resolved
+    state change and therefore flags allowed islands or reversals as nonmonotonic.
+    """
+    usable = [row for row in profile
+              if row.aacgm_latitude_deg is not None
+              and row.access_state in (0, 1, 2)
+              and 20.0 <= abs(float(row.aacgm_latitude_deg)) <= 85.0]
+    usable.sort(key=lambda row: abs(float(row.aacgm_latitude_deg)))
+    boundary: Optional[float] = None
+    state_changes = 0
+    for lower, upper in zip(usable, usable[1:]):
+        # UNRESOLVED means the trajectory classifier could not make a physical
+        # access decision.  It must break the latitude bracket: dropping it from
+        # the profile would incorrectly interpolate across an unknown state.
+        if lower.access_state == 2 or upper.access_state == 2:
+            continue
+        if lower.access_state == upper.access_state:
+            continue
+        state_changes += 1
+        if lower.access_state == 0 and upper.access_state == 1 and boundary is None:
+            boundary = 0.5 * (abs(float(lower.aacgm_latitude_deg)) +
+                              abs(float(upper.aacgm_latitude_deg)))
+    return boundary, state_changes
+
+
+def estimate_access_boundaries(rows: Sequence[AccessRow],
+                               rigidities: Sequence[float]) -> List[BoundaryEstimate]:
+    """Aggregate direct-access latitude crossings like the FULL_SCAN product."""
+    longitudes = sorted({round(row.longitude_deg, 8) for row in rows})
+    estimates: List[BoundaryEstimate] = []
+    for rigidity in rigidities:
+        rigidity_rows = [row for row in rows
+                         if math.isclose(row.rigidity_gv, rigidity,
+                                         rel_tol=0.0, abs_tol=5.0e-9)]
+        values: List[float] = []
+        north: List[float] = []
+        south: List[float] = []
+        nonmonotonic = 0
+        for longitude in longitudes:
+            longitude_rows = [row for row in rigidity_rows
+                              if abs(row.longitude_deg - longitude) < 1.0e-6]
+            for hemisphere in (1, -1):
+                profile = [row for row in longitude_rows
+                           if row.aacgm_latitude_deg is not None
+                           and (1 if row.aacgm_latitude_deg >= 0.0 else -1) == hemisphere]
+                crossing, n_changes = interpolate_access_crossing(profile)
+                if n_changes > 1:
+                    nonmonotonic += 1
+                if crossing is not None:
+                    values.append(crossing)
+                    (north if hemisphere > 0 else south).append(crossing)
+        n_requested = len(longitudes) * 2
+        if values:
+            north_median = statistics.median(north) if north else None
+            south_median = statistics.median(south) if south else None
+            estimates.append(BoundaryEstimate(
+                rigidity_gv=rigidity,
+                cutoff_aacgm_deg=statistics.median(values),
+                cutoff_mean_deg=statistics.fmean(values),
+                cutoff_std_deg=statistics.stdev(values) if len(values) > 1 else 0.0,
+                cutoff_min_deg=min(values), cutoff_max_deg=max(values),
+                north_median_deg=north_median, south_median_deg=south_median,
+                north_south_difference_deg=(
+                    north_median - south_median
+                    if north_median is not None and south_median is not None else None),
+                n_valid_crossings=len(values),
+                n_requested_crossings=n_requested,
+                n_nonmonotonic_profiles=nonmonotonic,
+            ))
+        else:
+            estimates.append(BoundaryEstimate(
+                rigidity_gv=rigidity, cutoff_aacgm_deg=None,
+                cutoff_mean_deg=None, cutoff_std_deg=None,
+                cutoff_min_deg=None, cutoff_max_deg=None,
+                north_median_deg=None, south_median_deg=None,
+                north_south_difference_deg=None,
+                n_valid_crossings=0, n_requested_crossings=n_requested,
+                n_nonmonotonic_profiles=nonmonotonic,
+            ))
+    return estimates
+
+
 def pearson(x: Sequence[float], y: Sequence[float]) -> Optional[float]:
     if len(x) < 2:
         return None
@@ -738,16 +955,41 @@ def write_dict_rows(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
 
 
 def make_plot(comparison: Sequence[Mapping[str, object]], output: Path, solver: str) -> None:
+    """Plot PAMELA and AMPS cutoff latitudes plus their residuals.
+
+    Plotting convention is intentionally rigidity-centric: PAMELA and AMPS use
+    the same color for a given rigidity.  Data source is distinguished only by
+    line style and marker (PAMELA: dashed/circle; AMPS: solid/x).  This avoids
+    the misleading impression that a PAMELA curve and its corresponding AMPS
+    curve are unrelated series.
+
+    PAMELA statistical uncertainties are shown as error bars when they are
+    present in the comparison table.  The legend is split into a compact
+    rigidity-color legend and a two-entry source-style legend so that seven
+    rigidity bins do not produce fourteen visually redundant entries.
+    """
     try:
         import matplotlib.pyplot as plt  # type: ignore
+        from matplotlib.lines import Line2D  # type: ignore
     except ImportError:
         return
+
     valid = [row for row in comparison if row.get("amps_cutoff_aacgm_deg") not in (None, "")]
     if not valid:
         return
+
     bins = sorted({float(row["rigidity_center_gv"]) for row in valid})
     figure, axes = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
-    for rigidity in bins:
+
+    # Obtain one color per rigidity from Matplotlib's active color cycle.
+    # The same color is then reused for PAMELA, AMPS, and the residual curve.
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    if not color_cycle:
+        color_cycle = ["C%d" % index for index in range(max(1, len(bins)))]
+
+    rigidity_handles = []
+    for index, rigidity in enumerate(bins):
+        color = color_cycle[index % len(color_cycle)]
         subset = sorted(
             [row for row in valid if math.isclose(float(row["rigidity_center_gv"]), rigidity)],
             key=lambda row: str(row["interval_midpoint_utc"]),
@@ -756,19 +998,47 @@ def make_plot(comparison: Sequence[Mapping[str, object]], output: Path, solver: 
         reference = [float(row["pamela_cutoff_aacgm_deg"]) for row in subset]
         model = [float(row["amps_cutoff_aacgm_deg"]) for row in subset]
         residual = [m - r for m, r in zip(model, reference)]
+        sigma_minus = [float(row.get("pamela_sigma_minus_deg") or 0.0) for row in subset]
+        sigma_plus = [float(row.get("pamela_sigma_plus_deg") or 0.0) for row in subset]
         label = "%.3f GV" % rigidity
-        axes[0].plot(times, reference, marker="o", linestyle="--", label="PAMELA " + label)
-        axes[0].plot(times, model, marker="x", linestyle="-", label="AMPS " + label)
-        axes[1].plot(times, residual, marker="o", label=label)
+
+        axes[0].errorbar(
+            times, reference, yerr=[sigma_minus, sigma_plus], color=color,
+            marker="o", linestyle="--", linewidth=1.4, markersize=4.5,
+            capsize=2.0, elinewidth=0.8, alpha=0.95,
+        )
+        axes[0].plot(
+            times, model, color=color, marker="x", linestyle="-",
+            linewidth=1.5, markersize=5.0,
+        )
+        axes[1].plot(
+            times, residual, color=color, marker="o", linestyle="-",
+            linewidth=1.3, markersize=4.5, label=label,
+        )
+        rigidity_handles.append(Line2D([0], [0], color=color, linewidth=2.0, label=label))
+
     axes[0].set_ylabel("cutoff |AACGM latitude| [deg]")
     axes[0].set_title("C9 %s: PAMELA Table S1 versus AMPS global-shell estimate" % solver)
     axes[0].grid(True, alpha=0.3)
-    axes[0].legend(ncol=2, fontsize=8)
-    axes[1].axhline(0.0, linestyle="--", linewidth=1)
+
+    rigidity_legend = axes[0].legend(
+        handles=rigidity_handles, title="Rigidity", ncol=4, fontsize=8,
+        title_fontsize=8, loc="lower right",
+    )
+    axes[0].add_artist(rigidity_legend)
+    source_handles = [
+        Line2D([0], [0], color="black", marker="o", linestyle="--",
+               linewidth=1.4, markersize=4.5, label="PAMELA (Table S1)"),
+        Line2D([0], [0], color="black", marker="x", linestyle="-",
+               linewidth=1.5, markersize=5.0, label="AMPS"),
+    ]
+    axes[0].legend(handles=source_handles, loc="upper left", fontsize=8)
+
+    axes[1].axhline(0.0, color="black", linestyle="--", linewidth=1)
     axes[1].set_ylabel("AMPS - PAMELA [deg]")
     axes[1].set_xlabel("UTC")
     axes[1].grid(True, alpha=0.3)
-    axes[1].legend(ncol=4, fontsize=8)
+    axes[1].legend(title="Rigidity", ncol=4, fontsize=8, title_fontsize=8)
     figure.autofmt_xdate()
     figure.tight_layout()
     figure.savefig(output, dpi=160)
@@ -956,10 +1226,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
   Run only the GRIDLESS branch:
     python3 srcEarth/test/C9/run_C9.py --solver GRIDLESS --profile ROUTINE -np 16
 
-  Run only the GRIDDED Mode3D branch:
-    python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --profile ROUTINE -np 4 -nt 16
+  Run the fast GRIDDED direct-access product:
+    python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --profile ROUTINE -np 4 -nt 16
 
-  Run both branches for every interval with five snapshots:
+  Run the legacy complete PENUMBRA_SCAN product:
+    python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --profile ROUTINE -np 4 -nt 16
+
+  Run both full-scan branches for every interval with five snapshots:
     python3 srcEarth/test/C9/run_C9.py --solver BOTH --profile FULL --interval-samples 5 -np 8 -nt 16
 """,
     )
@@ -970,6 +1243,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                         help="Equally spaced TS05 snapshots per 94-minute interval")
     parser.add_argument("--solver", type=str.upper, choices=SOLVERS, default="BOTH",
                         help="AMPS field-evaluation branch to run")
+    parser.add_argument(
+        "--cutoff-evaluation", type=str.upper, choices=CUTOFF_EVALUATIONS,
+        default="FULL_SCAN",
+        help=("FULL_SCAN uses complete PENUMBRA_SCAN on the full shell; "
+              "DIRECT_ACCESS is a GRIDDED-only fixed-rigidity latitude-band product"),
+    )
     parser.add_argument("--reference", default=str(script_dir / "reference_C9_pamela_table_s1.csv"))
     bundled_driver = script_dir / "data" / "ts05_driving.txt"
     parser.add_argument(
@@ -1008,6 +1287,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--altitude-km", type=float, default=475.0)
     parser.add_argument("--shell-lon-res-deg", type=float, default=30.0)
     parser.add_argument("--shell-lat-res-deg", type=float, default=2.0)
+    parser.add_argument("--access-abs-lat-min-deg", type=float, default=35.0,
+                        help="DIRECT_ACCESS geodetic absolute-latitude lower bound")
+    parser.add_argument("--access-abs-lat-max-deg", type=float, default=75.0,
+                        help="DIRECT_ACCESS geodetic absolute-latitude upper bound")
     parser.add_argument("--max-trace-time", type=float, default=20.0)
     parser.add_argument("--min-valid-fraction", type=float, default=0.85)
     parser.add_argument("--max-rmse-deg", type=float, default=3.0)
@@ -1019,8 +1302,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.interval_samples < 1:
         parser.error("--interval-samples must be >= 1")
-    if args.cutoff_scan_n < 2:
-        parser.error("--cutoff-scan-n must be >= 2")
+    if args.cutoff_evaluation == "FULL_SCAN" and args.cutoff_scan_n < 2:
+        parser.error("--cutoff-scan-n must be >= 2 for FULL_SCAN")
+    if args.cutoff_evaluation == "DIRECT_ACCESS" and args.solver != "GRIDDED":
+        parser.error("DIRECT_ACCESS is implemented only for --solver GRIDDED")
+    if not (0.0 <= args.access_abs_lat_min_deg < args.access_abs_lat_max_deg <= 90.0):
+        parser.error("require 0 <= access-abs-lat-min < access-abs-lat-max <= 90")
     if not (0.0 < args.rigidity_min_gv < args.rigidity_max_gv):
         parser.error("require 0 < rigidity-min < rigidity-max")
     if args.shell_lon_res_deg <= 0.0 or args.shell_lat_res_deg <= 0.0:
@@ -1059,6 +1346,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                          key=lambda row: row.rigidity_center_gv)
         for midpoint in midpoints
     }
+    # Every Table-S1 interval uses the same seven bins. Derive the direct list from the
+    # checked reference rather than duplicating rounded constants in code or templates.
+    args.direct_rigidities_gv = sorted({
+        row.rigidity_center_gv for midpoint in midpoints
+        for row in reference_by_midpoint[midpoint]
+    })
     all_sample_times = [
         sample for midpoint in midpoints
         for sample in interval_sample_times(reference_by_midpoint[midpoint], args.interval_samples)
@@ -1141,7 +1434,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "AMPS_PARAM_C9_gridless.in" if solver == "GRIDLESS"
             else "AMPS_PARAM_C9_mode3d.in"
         )
-        command = command_for(args, amps, solver)
         command_inventory: List[Dict[str, object]] = []
         interval_models: Dict[datetime, Dict[float, Dict[str, object]]] = {}
         all_model_rows: List[Dict[str, object]] = []
@@ -1161,6 +1453,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 input_path = sample_dir / "AMPS_PARAM_C9.in"
                 if not args.skip_run:
                     render_input(template, input_path, epoch, driver_copy, args, solver)
+                command = command_for(args, amps, solver, epoch)
                 inventory_row = {
                     "solver": solver,
                     "interval_midpoint_utc": format_utc(midpoint),
@@ -1168,6 +1461,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "cwd": str(sample_dir),
                     "command": command,
                     "resolved_dynamic_chunk": resolved_dynamic_chunk(args, solver),
+                    "cutoff_evaluation": args.cutoff_evaluation,
                 }
                 command_inventory.append(inventory_row)
                 combined_commands.append(inventory_row)
@@ -1185,19 +1479,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 if args.dry_run:
                     continue
 
-                output_name = (
-                    "cutoff_gridless_shells_penumbra.dat"
-                    if solver == "GRIDLESS" else "cutoff_3d_shells_penumbra.dat"
-                )
+                if args.cutoff_evaluation == "DIRECT_ACCESS":
+                    output_name = "cutoff_3d_shells_access.dat"
+                else:
+                    output_name = (
+                        "cutoff_gridless_shells_penumbra.dat"
+                        if solver == "GRIDLESS" else "cutoff_3d_shells_penumbra.dat"
+                    )
                 output_path = sample_dir / output_name
                 if not output_path.exists():
                     print("C9 %s output not found: %s" %
                           (solver, output_path), file=sys.stderr)
                     return 2
                 try:
-                    shell_rows = parse_tecplot_shell_penumbra(output_path)
-                    add_aacgm_latitudes(shell_rows, epoch, args.altitude_km)
-                    estimates = estimate_boundaries(shell_rows, rigidities)
+                    if args.cutoff_evaluation == "DIRECT_ACCESS":
+                        access_rows = parse_tecplot_shell_access(output_path)
+                        add_aacgm_latitudes(access_rows, epoch, args.altitude_km)
+                        estimates = estimate_access_boundaries(access_rows, rigidities)
+                    else:
+                        shell_rows = parse_tecplot_shell_penumbra(output_path)
+                        add_aacgm_latitudes(shell_rows, epoch, args.altitude_km)
+                        estimates = estimate_boundaries(shell_rows, rigidities)
                 except Exception as exc:
                     print("C9 %s postprocessing failed in %s: %s" %
                           (solver, sample_dir, exc), file=sys.stderr)
@@ -1282,6 +1584,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "altitude_km": args.altitude_km,
             "vertical_incidence": True,
             "rigidity_bin_representation": "geometric center",
+            "cutoff_evaluation": args.cutoff_evaluation,
+            "modeled_boundary_definition": (
+                "vertical T=0.5 forbidden-to-allowed latitude crossing"
+                if args.cutoff_evaluation == "DIRECT_ACCESS" else
+                "Rc_effective equals rigidity-bin geometric center"
+            ),
+            "direct_access_rigidities_gv": (
+                args.direct_rigidities_gv
+                if args.cutoff_evaluation == "DIRECT_ACCESS" else None
+            ),
+            "direct_access_abs_geodetic_latitude_band_deg": (
+                [args.access_abs_lat_min_deg, args.access_abs_lat_max_deg]
+                if args.cutoff_evaluation == "DIRECT_ACCESS" else None
+            ),
             "shell_longitude_resolution_deg": args.shell_lon_res_deg,
             "shell_latitude_resolution_deg": args.shell_lat_res_deg,
             "cutoff_scan_n": args.cutoff_scan_n,
@@ -1306,8 +1622,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "metrics": asdict(metrics),
             "limitations": [
                 "Global-shell public-data approximation; not an exact PAMELA orbit/attitude reproduction.",
-                "Rc_effective contour is used as the modeled vertical cutoff boundary.",
-                "Default routine profile samples each 94-minute interval only at its midpoint.",
+                ("DIRECT_ACCESS estimates a T=0.5 boundary between adjacent binary "
+                 "latitude samples; FULL_SCAN instead uses the Rc_effective contour."
+                 if args.cutoff_evaluation == "DIRECT_ACCESS" else
+                 "FULL_SCAN uses the Rc_effective contour as the modeled vertical cutoff boundary."),
+                ("This run samples each 94-minute interval only at its midpoint."
+                 if args.interval_samples == 1 else
+                 "This run averages %d samples distributed across each 94-minute interval."
+                 % args.interval_samples),
                 ("Mode3D result includes field-mesh interpolation error."
                  if solver == "GRIDDED" else
                  "Gridless result directly evaluates the empirical field along trajectories."),
@@ -1353,6 +1675,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "test_name": TEST_NAME,
         "requested_solver": args.solver,
         "selected_solvers": list(selected_solvers(args.solver)),
+        "cutoff_evaluation": args.cutoff_evaluation,
         "profile": args.profile,
         "driver": asdict(driver_info),
         "branches": {

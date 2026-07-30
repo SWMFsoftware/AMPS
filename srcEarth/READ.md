@@ -969,6 +969,11 @@ CUTOFF_MAX_PARTICLES   500
 CUTOFF_MAX_TRAJ_TIME   60.0
 CUTOFF_SEARCH_ALGORITHM UPPER_SCAN
 CUTOFF_UPPER_SCAN_N    50
+# Mode3D-only alternative: direct states at explicit rigidity values and a
+# selected shell latitude band. These controls are ignored by other algorithms.
+CUTOFF_RIGIDITY_LIST_GV 0.424,0.498,0.588,0.693,0.817,0.962,1.131
+CUTOFF_ACCESS_ABS_LAT_MIN 35
+CUTOFF_ACCESS_ABS_LAT_MAX 75
 CUTOFF_BACKTRACE_CHARGE SAME
 CUTOFF_TRACE_LIMIT_POLICY UNRESOLVED
 CUTOFF_SAMPLING        ISOTROPIC
@@ -1003,8 +1008,10 @@ CUTOFF_EMIN / CUTOFF_EMAX     energy/range bounds [MeV/n]
 CUTOFF_NENERGY                number of samples used by the cutoff search
 CUTOFF_MAX_PARTICLES          direction/sample cap per location
 CUTOFF_MAX_TRAJ_TIME          cutoff-specific trajectory time cap [s]
-CUTOFF_SEARCH_ALGORITHM       UPPER_SCAN (default), PENUMBRA_SCAN, or BINARY
+CUTOFF_SEARCH_ALGORITHM       UPPER_SCAN (default), PENUMBRA_SCAN, RIGIDITY_LIST, or BINARY
 CUTOFF_UPPER_SCAN_N           samples for UPPER_SCAN/PENUMBRA_SCAN; 0/omitted uses CUTOFF_NENERGY
+CUTOFF_RIGIDITY_LIST_GV       positive, strictly increasing explicit rigidity values [GV]
+CUTOFF_ACCESS_ABS_LAT_MIN/MAX Mode3D RIGIDITY_LIST geodetic |latitude| launch band [deg]
 CUTOFF_BACKTRACE_CHARGE       SAME (default) or REVERSED
 CUTOFF_TRACE_LIMIT_POLICY     UNRESOLVED (default) or FORBIDDEN
 CUTOFF_SAMPLING               VERTICAL or ISOTROPIC
@@ -1021,6 +1028,15 @@ CUTOFF_DEBUG_EXIT_N           number of list samples when R_GV<=0 in one-point m
 CUTOFF_DEBUG_EXIT_LIST_FILE   optional many-trajectory input list: lon_deg lat_deg alt_km R_GV [label]
 CUTOFF_DEBUG_EXIT_FILE        single combined trajectory-exit diagnostic output file name
 ```
+
+`RIGIDITY_LIST` is a Mode3D-only direct-access product for `OUTPUT_MODE SHELLS`
+and `CUTOFF_SAMPLING VERTICAL`. It traces one trajectory for every requested
+`(selected shell node, rigidity)` pair and writes
+`cutoff_3d_shells_access.dat`. Access states are `0=PHYSICAL_FORBIDDEN`,
+`1=ALLOWED`, and `2=UNRESOLVED`. The absolute-latitude limits select geodetic
+shell nodes while retaining all configured longitudes and both hemispheres.
+`PENUMBRA_SCAN` remains available unchanged for full lower/effective/upper
+cutoff diagnostics.
 
 
 The default `UPPER_SCAN` cutoff search is penumbra-safe and is used by both standalone `mode 3d` and gridless cutoff. It builds a rigidity grid from `CUTOFF_EMIN`/`CUTOFF_EMAX`, evaluates the trajectory classifier at each grid vertex, scans downward from the highest rigidity to find the highest forbidden sample, and then bisects the final forbidden/allowed transition. `PENUMBRA_SCAN` retains the complete allowed/forbidden sequence and additionally reports lower, effective, and upper cutoff rigidities. Use `CUTOFF_SEARCH_ALGORITHM BINARY` only to reproduce the legacy endpoint-only behavior.

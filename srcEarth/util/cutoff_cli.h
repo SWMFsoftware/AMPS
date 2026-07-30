@@ -98,19 +98,24 @@
 //   -mode3d-mpi-dynamic-chunk <int>
 //       Number of Mode3D locations or gridless task chunks per dynamic MPI fetch. 0 means automatic.
 //
-//   -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|BINARY>
-//       Select the cutoff-rigidity search product used by both standalone Mode3D
-//       and gridless cutoff. UPPER_SCAN returns the upper penumbra edge;
-//       PENUMBRA_SCAN evaluates the full access sequence and enables lower,
-//       effective, and upper cutoffs; BINARY is the legacy endpoint method.
+//   -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|RIGIDITY_LIST|BINARY>
+//       Select the cutoff-rigidity product. UPPER_SCAN returns the upper penumbra
+//       edge; PENUMBRA_SCAN evaluates the full access sequence; RIGIDITY_LIST is a
+//       Mode3D-only direct-access product at explicitly supplied rigidity values;
+//       BINARY is the legacy endpoint method.
 //       Mode-specific aliases are also accepted, including
 //       -mode3d-cutoff-search and -gridless-cutoff-search.
 //
 //   -cutoff-upper-scan-n <int>
 //       Number of log-spaced rigidity samples used by UPPER_SCAN before the final
-//       forbidden/allowed bisection.  If omitted, the solver reuses CUTOFF_NENERGY
-//       from the input file.  The aliases -mode3d-cutoff-search-n and
-//       -gridless-cutoff-search-n are accepted.
+//       forbidden/allowed bisection.  If omitted, the solver reuses CUTOFF_NENERGY.
+//
+//   -cutoff-rigidity-list-gv <comma-separated-list>
+//       Explicit positive rigidity values traced by RIGIDITY_LIST, in GV.
+//
+//   -cutoff-access-abs-lat-min/max <deg>
+//       Restrict the Mode3D RIGIDITY_LIST launch grid to a geodetic absolute-latitude
+//       band while retaining both hemispheres and all configured longitudes.
 //
 //   -adaptive-dt <T|F>
 //       Override #NUMERICAL ADAPTIVE_DT.  T/default means DT_TRACE is a maximum
@@ -311,6 +316,17 @@ namespace EarthUtil {
     // Applies to both Mode3D and gridless UPPER_SCAN/PENUMBRA_SCAN searches.
     // 0 means no CLI override.
     int cutoffUpperScanN{0};
+
+    // -cutoff-rigidity-list-gv <comma-separated-list>
+    // Raw CLI text is retained here and parsed only when merging CLI overrides into
+    // AmpsParam.  Keeping it as text allows ParseCli() to remain independent of the
+    // scientific validation rules (positive, strictly increasing rigidity values).
+    std::string cutoffRigidityListGV{""};
+
+    // Optional Mode3D RIGIDITY_LIST geodetic absolute-latitude band overrides.
+    // Negative sentinels mean no CLI override; zero is a valid lower bound.
+    double cutoffAccessAbsLatMin_deg{-1.0};
+    double cutoffAccessAbsLatMax_deg{-1.0};
 
     // -cutoff-trace-policy <LEGACY|ACCURATE>
     // Optional override for #CUTOFF_RIGIDITY / CUTOFF_TRACE_POLICY.

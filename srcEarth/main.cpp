@@ -1,4 +1,5 @@
 
+#include <cmath>
 #include <stdio.h>
 #include <stdlib.h>
 #include <vector>
@@ -94,6 +95,64 @@ std::string TrimCliWhitespace(const std::string& value) {
 
   const auto end = std::find_if(value.rbegin(), value.rend(), isNotSpace).base();
   return std::string(begin, end);
+}
+
+std::vector<double> ParseCutoffRigidityListCli_(const std::string& text,
+                                                 std::string& errorMessage) {
+  // Parse the command-line counterpart of CUTOFF_RIGIDITY_LIST_GV.
+  //
+  // ParseCli() stores this option as text to keep the generic CLI layer independent
+  // of scientific validation.  The merge stage accepts commas and whitespace, rejects
+  // a partial parse, and enforces the same positive/strictly-increasing contract as the
+  // AMPS input parser.  A strict parser prevents a malformed list from silently dropping
+  // one of the requested validation rigidities.
+  std::string normalized=text;
+  std::replace(normalized.begin(),normalized.end(),',',' ');
+
+  std::vector<double> values;
+  std::size_t pos=0;
+  while (pos<normalized.size()) {
+    while (pos<normalized.size() &&
+           std::isspace(static_cast<unsigned char>(normalized[pos]))) ++pos;
+    if (pos>=normalized.size()) break;
+
+    std::size_t consumed=0;
+    double value=0.0;
+    try {
+      value=std::stod(normalized.substr(pos),&consumed);
+    }
+    catch (const std::exception&) {
+      errorMessage="cannot parse rigidity list near '"+normalized.substr(pos)+"'";
+      return {};
+    }
+    if (consumed==0) {
+      errorMessage="cannot parse rigidity list near '"+normalized.substr(pos)+"'";
+      return {};
+    }
+    pos+=consumed;
+    if (pos<normalized.size() &&
+        !std::isspace(static_cast<unsigned char>(normalized[pos]))) {
+      errorMessage="unexpected character in rigidity list near '"+normalized.substr(pos)+"'";
+      return {};
+    }
+    values.push_back(value);
+  }
+
+  if (values.empty()) {
+    errorMessage="rigidity list is empty";
+    return {};
+  }
+  for (std::size_t i=0;i<values.size();++i) {
+    if (!(values[i]>0.0) || !std::isfinite(values[i])) {
+      errorMessage="all rigidity-list values must be finite and > 0 GV";
+      return {};
+    }
+    if (i>0 && !(values[i]>values[i-1])) {
+      errorMessage="rigidity-list values must be strictly increasing";
+      return {};
+    }
+  }
+  return values;
 }
 
 bool ApplyEpochCli(const EarthUtil::CliOptions& cli,
@@ -378,6 +437,11 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
              alg=="CUTOFF_BAND" || alg=="BAND") {
       p.cutoff.searchAlgorithm = "PENUMBRA_SCAN";
     }
+    else if (alg=="RIGIDITY_LIST" || alg=="FIXED_RIGIDITY" ||
+             alg=="FIXED_RIGIDITIES" || alg=="ACCESS_LIST" ||
+             alg=="DIRECT_ACCESS") {
+      p.cutoff.searchAlgorithm = "RIGIDITY_LIST";
+    }
     else if (alg=="BINARY" || alg=="ENDPOINT_BINARY" ||
             alg=="LEGACY_BINARY" || alg=="LEGACY") {
       p.cutoff.searchAlgorithm = "BINARY";
@@ -386,7 +450,42 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
       std::cerr << "Error: unknown cutoff-search algorithm '"
                 << cli.cutoffSearchAlgorithm
                 << "' for " << modeLabel
-                << ". Valid values: UPPER_SCAN, PENUMBRA_SCAN, or BINARY.\n";
+                << ". Valid values: UPPER_SCAN, PENUMBRA_SCAN, RIGIDITY_LIST, or BINARY.\n";
+      return false;
+    }
+  }
+
+  // RIGIDITY_LIST traces a compact explicit set instead of scanning the entire bracket.
+  // A non-empty command-line list overrides the input deck, following the same precedence
+  // rule as the other cutoff controls.  Latitude limits select launch nodes only; both
+  // hemispheres and every configured shell longitude remain represented.
+  if (!cli.cutoffRigidityListGV.empty()) {
+    std::string error;
+    const std::vector<double> values=ParseCutoffRigidityListCli_(
+        cli.cutoffRigidityListGV,error);
+    if (values.empty()) {
+      std::cerr << "Error: invalid -cutoff-rigidity-list-gv for " << modeLabel
+                << ": " << error << ".\n";
+      return false;
+    }
+    p.cutoff.rigidityList_GV=values;
+  }
+  if (cli.cutoffAccessAbsLatMin_deg>=0.0)
+    p.cutoff.accessAbsLatMin_deg=cli.cutoffAccessAbsLatMin_deg;
+  if (cli.cutoffAccessAbsLatMax_deg>=0.0)
+    p.cutoff.accessAbsLatMax_deg=cli.cutoffAccessAbsLatMax_deg;
+
+  if (EarthUtil::ToUpper(p.cutoff.searchAlgorithm)=="RIGIDITY_LIST") {
+    if (p.cutoff.rigidityList_GV.empty()) {
+      std::cerr << "Error: RIGIDITY_LIST requires -cutoff-rigidity-list-gv or "
+                << "CUTOFF_RIGIDITY_LIST_GV for " << modeLabel << ".\n";
+      return false;
+    }
+    if (!(p.cutoff.accessAbsLatMin_deg>=0.0 &&
+          p.cutoff.accessAbsLatMax_deg<=90.0 &&
+          p.cutoff.accessAbsLatMax_deg>p.cutoff.accessAbsLatMin_deg)) {
+      std::cerr << "Error: RIGIDITY_LIST requires 0 <= access latitude min < max <= 90 "
+                << "degrees for " << modeLabel << ".\n";
       return false;
     }
   }

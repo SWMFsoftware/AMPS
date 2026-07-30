@@ -136,3 +136,5 @@ last pass:
 P srcEarth/test/C9/run_C9.py --solver GRIDDED --profile ROUTINE -np 4 -nt 16 --dynamic-chunk 64 
 last pass:
 
+P srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --profile ROUTINE --interval-samples 5 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 75 --output-root test_output/C9_direct --amps /home/vtenishe/T11/AMPS/amps --shell-lon-res-deg 30 --shell-lat-res-deg 2 --dynamic-chunk 64 -np 8 -nt 16 
+last pass:

@@ -50,8 +50,11 @@
 //     DIRECTIONAL_MAP         T|F        ! enable directional cutoff sky-map output
 //     DIRMAP_LON_RES          <double>   ! longitude resolution [deg] for sky-map
 //     DIRMAP_LAT_RES          <double>   ! latitude resolution [deg] for sky-map
-//     CUTOFF_SEARCH_ALGORITHM <string>   ! UPPER_SCAN (default), PENUMBRA_SCAN, or BINARY
+//     CUTOFF_SEARCH_ALGORITHM <string>   ! UPPER_SCAN, PENUMBRA_SCAN, RIGIDITY_LIST, or BINARY
 //     CUTOFF_UPPER_SCAN_N     <int>      ! samples for UPPER/PENUMBRA scan; 0 => CUTOFF_NENERGY
+//     CUTOFF_RIGIDITY_LIST_GV <list>     ! comma/space-separated positive GV values for RIGIDITY_LIST
+//     CUTOFF_ACCESS_ABS_LAT_MIN <double>  ! geodetic |latitude| lower bound [deg] for RIGIDITY_LIST
+//     CUTOFF_ACCESS_ABS_LAT_MAX <double>  ! geodetic |latitude| upper bound [deg] for RIGIDITY_LIST
 //     CUTOFF_SCAN_SPACING     LOG | LINEAR ! rigidity-node spacing; default LOG
 //     CUTOFF_DEBUG_RIGIDITY_SCAN T|F     ! write one-point allowed(R) scan
 //     CUTOFF_DEBUG_SCAN_*               ! lon/lat/alt/N/file controls for that scan
@@ -367,6 +370,33 @@ namespace EarthUtil {
     // Number of samples for UPPER_SCAN or PENUMBRA_SCAN.  If <=0, the solver reuses
     // CUTOFF_NENERGY so existing inputs control the scan resolution.
     int upperScanN{0}; // CUTOFF_UPPER_SCAN_N
+
+    // Explicit rigidity nodes for the Mode3D RIGIDITY_LIST product.
+    //
+    // RIGIDITY_LIST is not a cutoff search: it traces exactly one vertical trajectory
+    // for every requested rigidity at every selected shell location and writes the
+    // resulting ALLOWED / PHYSICAL_FORBIDDEN / UNRESOLVED access state.  This product
+    // is intended for validation data sets (such as C9/PAMELA) that require access at
+    // a small, known rigidity set rather than a complete 100--400 point penumbra scan.
+    //
+    // Input syntax accepts commas and/or whitespace, for example:
+    //
+    //   CUTOFF_RIGIDITY_LIST_GV  0.424, 0.498, 0.588, 0.693
+    //
+    // Post-parse validation requires positive, strictly increasing values so the
+    // output order is deterministic and accidental duplicate trajectories are caught.
+    std::vector<double> rigidityList_GV; // CUTOFF_RIGIDITY_LIST_GV
+
+    // Optional geodetic absolute-latitude band used only by RIGIDITY_LIST.
+    //
+    // A full shell remains the backward-compatible default (0--90 degrees).  A test
+    // that knows its access boundary is confined to mid/high latitudes can reduce work
+    // substantially by selecting, for example, 35 <= |lat_geodetic| <= 75.  Both
+    // hemispheres and every configured longitude are retained.  These limits select
+    // trajectory launch locations; AACGM conversion and boundary extraction remain a
+    // postprocessing responsibility.
+    double accessAbsLatMin_deg{0.0};  // CUTOFF_ACCESS_ABS_LAT_MIN
+    double accessAbsLatMax_deg{90.0}; // CUTOFF_ACCESS_ABS_LAT_MAX
 
     // Spacing of the rigidity vertices used by UPPER_SCAN/PENUMBRA_SCAN.
     //

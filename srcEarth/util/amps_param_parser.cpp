@@ -158,6 +158,34 @@ static inline std::string ToLower(std::string s) {
   return s;
 }
 
+// Parse a comma- and/or whitespace-separated floating-point list used by compact
+// AMPS_PARAM directives such as CUTOFF_RIGIDITY_LIST_GV.  Delimiters are normalized
+// to spaces before std::istringstream extraction so either of these forms is valid:
+//
+//   0.424,0.498,0.588
+//   0.424 0.498 0.588
+//
+// The helper deliberately rejects any non-numeric trailing token.  Silently accepting
+// a partial list could omit a requested validation rigidity while still producing a
+// plausible-looking output file.
+static std::vector<double> ParseStrictDoubleList_(const std::string& text,
+                                                   const std::string& keyword) {
+  std::string normalized=text;
+  std::replace(normalized.begin(),normalized.end(),',',' ');
+
+  std::istringstream in(normalized);
+  std::vector<double> values;
+  double value=0.0;
+  while (in >> value) values.push_back(value);
+
+  if (!in.eof()) {
+    std::ostringstream msg;
+    msg << "Cannot parse " << keyword << " as a numeric list: '" << text << "'";
+    exit(__LINE__,__FILE__,msg.str().c_str());
+  }
+  return values;
+}
+
 bool ToBool(const std::string& sIn) {
   std::string s=ToUpper(Trim(sIn));
   if (s=="T"||s=="TRUE"||s=="1"||s=="YES"||s=="Y") return true;
@@ -2469,6 +2497,19 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
                uKey=="CUTOFF_SCAN_N") {
         p.cutoff.upperScanN=std::stoi(val);
       }
+      else if (uKey=="CUTOFF_RIGIDITY_LIST_GV" ||
+               uKey=="CUTOFF_FIXED_RIGIDITIES_GV" ||
+               uKey=="CUTOFF_ACCESS_RIGIDITIES_GV") {
+        p.cutoff.rigidityList_GV=ParseStrictDoubleList_(val,uKey);
+      }
+      else if (uKey=="CUTOFF_ACCESS_ABS_LAT_MIN" ||
+               uKey=="CUTOFF_ACCESS_LAT_ABS_MIN") {
+        p.cutoff.accessAbsLatMin_deg=std::stod(val);
+      }
+      else if (uKey=="CUTOFF_ACCESS_ABS_LAT_MAX" ||
+               uKey=="CUTOFF_ACCESS_LAT_ABS_MAX") {
+        p.cutoff.accessAbsLatMax_deg=std::stod(val);
+      }
 
       // Select the numerical integration policy used by the Boolean cutoff
       // classifier.  This is deliberately separate from the structured F3
@@ -3259,25 +3300,58 @@ if (ToUpper(p.field.model)=="DIPOLE") {
             cutoffSearch=="SCAN" ||
             cutoffSearch=="PENUMBRA_SCAN" || cutoffSearch=="BOTH" ||
             cutoffSearch=="FULL_SCAN" || cutoffSearch=="CUTOFF_BAND" ||
+            cutoffSearch=="RIGIDITY_LIST" || cutoffSearch=="FIXED_RIGIDITY" ||
+            cutoffSearch=="FIXED_RIGIDITIES" || cutoffSearch=="ACCESS_LIST" ||
+            cutoffSearch=="DIRECT_ACCESS" ||
             cutoffSearch=="BINARY" || cutoffSearch=="ENDPOINT_BINARY" ||
             cutoffSearch=="LEGACY_BINARY")) {
         exit(__LINE__,__FILE__,
-             "CUTOFF_SEARCH_ALGORITHM must be UPPER_SCAN, PENUMBRA_SCAN, or BINARY");
+             "CUTOFF_SEARCH_ALGORITHM must be UPPER_SCAN, PENUMBRA_SCAN, "
+             "RIGIDITY_LIST, or BINARY");
       }
       if (cutoffSearch=="UPPER" || cutoffSearch=="SCAN")
         p.cutoff.searchAlgorithm="UPPER_SCAN";
       else if (cutoffSearch=="BOTH" || cutoffSearch=="FULL_SCAN" ||
                cutoffSearch=="CUTOFF_BAND")
         p.cutoff.searchAlgorithm="PENUMBRA_SCAN";
+      else if (cutoffSearch=="FIXED_RIGIDITY" ||
+               cutoffSearch=="FIXED_RIGIDITIES" || cutoffSearch=="ACCESS_LIST" ||
+               cutoffSearch=="DIRECT_ACCESS")
+        p.cutoff.searchAlgorithm="RIGIDITY_LIST";
       else if (cutoffSearch=="ENDPOINT_BINARY" || cutoffSearch=="LEGACY_BINARY")
         p.cutoff.searchAlgorithm="BINARY";
       else
         p.cutoff.searchAlgorithm=cutoffSearch;
     }
-    if (p.cutoff.searchAlgorithm=="PENUMBRA_SCAN" &&
+    if ((p.cutoff.searchAlgorithm=="PENUMBRA_SCAN" ||
+         p.cutoff.searchAlgorithm=="RIGIDITY_LIST") &&
         ToUpper(p.cutoff.sampling)!="VERTICAL") {
       exit(__LINE__,__FILE__,
-           "PENUMBRA_SCAN currently requires CUTOFF_SAMPLING VERTICAL");
+           "PENUMBRA_SCAN and RIGIDITY_LIST require CUTOFF_SAMPLING VERTICAL");
+    }
+    if (p.cutoff.searchAlgorithm=="RIGIDITY_LIST") {
+      if (p.cutoff.rigidityList_GV.empty()) {
+        exit(__LINE__,__FILE__,
+             "RIGIDITY_LIST requires a non-empty CUTOFF_RIGIDITY_LIST_GV");
+      }
+      for (std::size_t i=0;i<p.cutoff.rigidityList_GV.size();++i) {
+        const double value=p.cutoff.rigidityList_GV[i];
+        if (!(value>0.0) || !std::isfinite(value)) {
+          exit(__LINE__,__FILE__,
+               "CUTOFF_RIGIDITY_LIST_GV values must be finite and > 0 GV");
+        }
+        if (i>0 && !(value>p.cutoff.rigidityList_GV[i-1])) {
+          exit(__LINE__,__FILE__,
+               "CUTOFF_RIGIDITY_LIST_GV values must be strictly increasing");
+        }
+      }
+      if (!(p.cutoff.accessAbsLatMin_deg>=0.0 &&
+            p.cutoff.accessAbsLatMax_deg<=90.0 &&
+            p.cutoff.accessAbsLatMax_deg>p.cutoff.accessAbsLatMin_deg)) {
+        exit(__LINE__,__FILE__,
+             "RIGIDITY_LIST requires 0 <= CUTOFF_ACCESS_ABS_LAT_MIN < "
+             "CUTOFF_ACCESS_ABS_LAT_MAX <= 90 degrees");
+      }
     }
     if (p.cutoff.upperScanN < 0) {
       exit(__LINE__,__FILE__,"CUTOFF_UPPER_SCAN_N must be >= 0 (0 means: use CUTOFF_NENERGY)");
