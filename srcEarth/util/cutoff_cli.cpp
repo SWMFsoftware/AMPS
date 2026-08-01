@@ -337,7 +337,8 @@ CliOptions ParseCli(int argc,char** argv) {
              a=="--mode3d-cutoff-rigidity-list-gv") {
       // The list is normally supplied as one comma-separated shell argument.  It is
       // stored verbatim here and validated later with the same rules as the input-file
-      // CUTOFF_RIGIDITY_LIST_GV directive.
+      // CUTOFF_RIGIDITY_LIST_GV directive.  RIGIDITY_LIST traces only these values;
+      // PENUMBRA_SCAN may use the same option to save exact companion access states.
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-rigidity-list-gv");
       opt.cutoffRigidityListGV=argv[++i];
       if (opt.cutoffRigidityListGV.empty())
@@ -728,7 +729,7 @@ std::string HelpMessage(const char* progName) {
   out << "\n";
   out << "      Optional controls and aliases:\n";
   out << "        --cutoff-upper-scan-n <N>       scan samples for UPPER/PENUMBRA\n";
-  out << "        --cutoff-rigidity-list-gv <R1,R2,...>  explicit RIGIDITY_LIST nodes [GV]\n";
+  out << "        --cutoff-rigidity-list-gv <R1,R2,...>  explicit access-state nodes [GV]\n";
   out << "        --cutoff-access-abs-lat-min <deg>      selected geodetic |latitude| minimum\n";
   out << "        --cutoff-access-abs-lat-max <deg>      selected geodetic |latitude| maximum\n";
   out << "        --gridless-cutoff-search <...>  gridless-specific alias\n";
@@ -740,6 +741,7 @@ std::string HelpMessage(const char* progName) {
   out << "        " << progName << " -mode 3d -i run.in -cutoff-search UPPER_SCAN -cutoff-upper-scan-n 80\n";
   out << "        " << progName << " -mode gridless -i run.in -cutoff-search UPPER_SCAN -cutoff-upper-scan-n 80\n";
   out << "        " << progName << " -mode gridless -i run.in -cutoff-search PENUMBRA_SCAN -cutoff-upper-scan-n 400\n";
+  out << "        " << progName << " -mode 3d -i run.in -cutoff-search PENUMBRA_SCAN -cutoff-upper-scan-n 160 -cutoff-rigidity-list-gv 0.424,0.498,0.588\n";
   out << "        " << progName << " -mode 3d -i run.in -cutoff-search RIGIDITY_LIST -cutoff-rigidity-list-gv 0.424,0.498,0.588 -cutoff-access-abs-lat-min 35 -cutoff-access-abs-lat-max 75\n";
   out << "\n";
   out << "      Input-file analogue (#CUTOFF_RIGIDITY or #NUMERICAL):\n";

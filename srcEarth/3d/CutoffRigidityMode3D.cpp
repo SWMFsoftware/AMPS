@@ -3117,8 +3117,16 @@ static void WriteTecplot3DShells_AccessList(
                                  const std::vector<int>& accessState,
                                  int nLon, int nLat,
                                  double lonRes_deg,
-                                 double latRes_deg) {
-    const std::string fname=CutoffOutputFileName("cutoff_3d_shells_access");
+                                 double latRes_deg,
+                                 const std::string& outputStem,
+                                 const std::string& productLabel) {
+    // The same long-form schema is used by two calculation paths:
+    //   * RIGIDITY_LIST writes the fast latitude-banded direct-access product;
+    //   * PENUMBRA_SCAN writes exact access states at the PAMELA rigidities in
+    //     addition to its complete Rc_lower/Rc_effective/Rc_upper diagnostics.
+    // Keeping one writer prevents the C9 postprocessor from acquiring hidden
+    // solver-dependent column conventions.
+    const std::string fname=CutoffOutputFileName(outputStem.c_str());
     FILE* f=std::fopen(fname.c_str(),"w");
     if (!f) throw std::runtime_error("Cannot write "+fname);
 
@@ -3127,21 +3135,21 @@ static void WriteTecplot3DShells_AccessList(
     if (accessState.size()!=nExpected) {
         std::fclose(f);
         throw std::runtime_error(
-            "Mode3D RIGIDITY_LIST output array has size "+
+            "Mode3D fixed-rigidity access output array has size "+
             std::to_string(accessState.size())+", expected "+
             std::to_string(nExpected)+".");
     }
 
-    std::fprintf(f,"TITLE=\"Mode3D Vertical Direct Rigidity Access (SHELLS)\"\n");
+    std::fprintf(f,"TITLE=\"%s\"\n",productLabel.c_str());
     std::fprintf(f,
         "VARIABLES=\"shell_index\",\"lon_deg\",\"lat_deg\","
         "\"x_km\",\"y_km\",\"z_km\",\"rigidity_GV\","
         "\"access_state\",\"allowed\",\"unresolved\"\n");
 
-    // The selected band is no longer a complete rectangular I/J grid. One POINT zone
-    // accurately describes the retained row count while preserving Tecplot readability.
-    std::fprintf(f,"ZONE T=\"selected_abs_geodetic_lat_%g_to_%g_deg\" I=%zu F=POINT\n",
-                 prm.cutoff.accessAbsLatMin_deg,prm.cutoff.accessAbsLatMax_deg,nExpected);
+    // A POINT zone works for both the complete FULL_SCAN shell and the compact
+    // DIRECT_ACCESS latitude band. The explicit lon/lat columns retain all geometry;
+    // the row count remains valid even when the selected nodes are not rectangular.
+    std::fprintf(f,"ZONE T=\"fixed_rigidity_access\" I=%zu F=POINT\n",nExpected);
 
     const int nPtsShell=nLon*nLat;
     for (std::size_t workId=0;workId<locationGridIds.size();++workId) {
@@ -3579,6 +3587,16 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                                    cutoffAlgorithm=="FIXED_RIGIDITIES" ||
                                    cutoffAlgorithm=="ACCESS_LIST" ||
                                    cutoffAlgorithm=="DIRECT_ACCESS");
+    // A FULL_SCAN C9 run still needs the seven exact fixed-rigidity
+    // classifications in order to calculate the same PAMELA_T50 observable as
+    // DIRECT_ACCESS.  A non-empty CUTOFF_RIGIDITY_LIST_GV therefore requests a
+    // companion access-state product during PENUMBRA_SCAN.  This adds only the
+    // explicitly listed trajectories and does not alter the 160-node penumbra
+    // grid or any Rc_lower/Rc_effective/Rc_upper result.
+    const bool saveReferenceAccessStates=(
+        penumbraScan && !prm.cutoff.rigidityList_GV.empty());
+    const bool hasAccessStateProduct=(
+        rigidityListAccess || saveReferenceAccessStates);
     if ((penumbraScan || rigidityListAccess) && !samplingVertical) {
         throw std::runtime_error(
             "Mode3D PENUMBRA_SCAN and RIGIDITY_LIST require CUTOFF_SAMPLING "
@@ -3721,6 +3739,14 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         }
         else {
             std::cout << " (upper-scan N=" << CutoffUpperScanPointCount_(prm) << ")\n";
+            if (saveReferenceAccessStates) {
+                std::cout << "Saved access rigidities: ";
+                for (std::size_t i=0;i<prm.cutoff.rigidityList_GV.size();++i) {
+                    if (i) std::cout << ",";
+                    std::cout << prm.cutoff.rigidityList_GV[i];
+                }
+                std::cout << " GV (PAMELA_T50 companion product)\n";
+            }
         }
         std::cout
             << "Trace policy   : " << prm.cutoff.traceIntegrationPolicy << "\n"
@@ -3931,14 +3957,14 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     // Direct-access states use compact [work location][rigidity] indexing. -1 is the
     // uncomputed MPI sentinel; valid values are the CutoffSampleState integers 0, 1, 2.
     std::vector<int> accessStateRank;
-    const int nAccessRigidities=rigidityListAccess
+    const int nAccessRigidities=hasAccessStateProduct
         ? static_cast<int>(prm.cutoff.rigidityList_GV.size()) : 0;
-    if (rigidityListAccess) {
+    if (hasAccessStateProduct) {
         const long long nState=static_cast<long long>(nLoc)*nAccessRigidities;
         if (nState>static_cast<long long>(std::numeric_limits<int>::max())) {
             throw std::runtime_error(
-                "Mode3D RIGIDITY_LIST MPI reduction count exceeds INT_MAX; split the "
-                "shell/rigidity list into smaller runs.");
+                "Mode3D fixed-rigidity access-state MPI reduction count exceeds "
+                "INT_MAX; split the shell/rigidity list into smaller runs.");
         }
         accessStateRank.assign((std::size_t)nState,-1);
     }
@@ -4221,6 +4247,25 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             lowerAboveRangeRank[(size_t)globalIdx]=band.lowerAboveRange;
             upperBelowRangeRank[(size_t)globalIdx]=band.upperBelowRange;
             upperAboveRangeRank[(size_t)globalIdx]=band.upperAboveRange;
+
+            if (saveReferenceAccessStates) {
+                // Classify the exact observational rigidities with the identical
+                // trajectory kernel and field evaluator used by PENUMBRA_SCAN.  We
+                // intentionally evaluate the exact requested values rather than
+                // borrowing the nearest regular scan node: the C9 bins are not
+                // generally coincident with a 160-point linear grid, and nearest-node
+                // substitution would introduce a method-dependent rigidity offset.
+                const V3 v0=mul(-1.0,verticalArrivalDir);
+                const std::size_t base=(std::size_t)globalIdx*
+                                       (std::size_t)nAccessRigidities;
+                for (int iRigidity=0;iRigidity<nAccessRigidities;++iRigidity) {
+                    const EarthUtil::CutoffSampleState state=ClassifyCutoffSample3D_(
+                        prm,threadField,x0_m,v0,
+                        prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
+                    accessStateRank[base+(std::size_t)iRigidity]=
+                        static_cast<int>(state);
+                }
+            }
         }
         else {
             rc=ComputeCutoffAtPoint_GV(
@@ -4427,7 +4472,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     if (mpiRank == 0) {
         rcAll.assign((size_t)nLoc,-1.0);
         eminAll.assign((size_t)nLoc,-1.0);
-        if (rigidityListAccess)
+        if (hasAccessStateProduct)
             accessStateAll.assign(accessStateRank.size(),-1);
         if (penumbraScan) {
             rcLowerAll.assign((size_t)nLoc,-1.0);
@@ -4452,7 +4497,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                (mpiRank==0 ? eminAll.data() : nullptr),
                nLoc,MPI_DOUBLE,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
 
-    if (rigidityListAccess) {
+    if (hasAccessStateProduct) {
         MPI_Reduce(accessStateRank.data(),
                    (mpiRank==0 ? accessStateAll.data() : nullptr),
                    static_cast<int>(accessStateRank.size()),MPI_INT,MPI_MAX,0,
@@ -4504,7 +4549,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         if (rigidityListAccess) {
             WriteTecplot3DShells_AccessList(
                 prm,locationGridIds,accessStateAll,
-                nLon,nLat,shellLonRes_deg,shellLatRes_deg);
+                nLon,nLat,shellLonRes_deg,shellLatRes_deg,
+                "cutoff_3d_shells_access",
+                "Mode3D direct fixed-rigidity vertical access on SHELLS");
             std::cout << "Wrote: "
                       << CutoffOutputFileName("cutoff_3d_shells_access") << "\n";
         }
@@ -4560,6 +4607,22 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 std::cout << "Wrote: "
                           << CutoffOutputFileName("cutoff_3d_shells_penumbra")
                           << "\n";
+
+                if (saveReferenceAccessStates) {
+                    // FULL_SCAN keeps the full structured shell, so its compact
+                    // work index is the complete shell-grid index.  The companion
+                    // file has exactly the same row schema as DIRECT_ACCESS and is
+                    // consumed by the same PAMELA_T50 postprocessor.
+                    WriteTecplot3DShells_AccessList(
+                        prm,locationGridIds,accessStateAll,
+                        nLon,nLat,shellLonRes_deg,shellLatRes_deg,
+                        "cutoff_3d_shells_pamela_access",
+                        "Mode3D PENUMBRA_SCAN exact PAMELA-rigidity access states");
+                    std::cout << "Wrote: "
+                              << CutoffOutputFileName(
+                                     "cutoff_3d_shells_pamela_access")
+                              << "\n";
+                }
             }
 
 #if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_

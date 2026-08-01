@@ -13,9 +13,11 @@
 !   * vertically incident protons;
 !   * IGRF + T05/TS05 driven by the bundled five-minute C9 driver;
 !   * PENUMBRA_SCAN, retaining Rc_lower, Rc_effective, and Rc_upper;
-!   * the modeled cutoff latitude is the Rc_effective = R contour, converted
-!     from geographic coordinates to AACGM and aggregated over longitude and
-!     both magnetic hemispheres.
+!   * an additional exact-rigidity access-state product at the seven PAMELA
+!     geometric-center rigidities;
+!   * the primary modeled cutoff is the longitude-averaged T=0.5 boundary,
+!     evaluated over the same configured geodetic latitude band as the GRIDDED
+!     DIRECT_ACCESS product and then converted to AACGM in each hemisphere.
 !
 ! The Python runner copies this template into every snapshot directory and
 ! changes only named directives (EPOCH, DRIVER_FILE, scan count/resolution,
@@ -38,6 +40,17 @@ CUTOFF_SAMPLING         VERTICAL
 CUTOFF_SEARCH_ALGORITHM PENUMBRA_SCAN
 CUTOFF_UPPER_SCAN_N     160
 CUTOFF_SCAN_SPACING     LINEAR
+! During PENUMBRA_SCAN a non-empty rigidity list requests an additional
+! long-form access-state file at these exact values. The complete 160-node scan
+! and Rc_lower/Rc_effective/Rc_upper outputs are unchanged. C9 uses the companion
+! states to calculate the same PAMELA_T50 observable as the Mode3D branches.
+CUTOFF_RIGIDITY_LIST_GV 0.423556372,0.498397432,0.587877538,0.692820323,0.817006732,0.962081078,1.131017241
+! GRIDLESS does not execute RIGIDITY_LIST, so these directives do not reduce
+! the C++ full-shell work. The runner nevertheless uses the same values to filter
+! the companion access rows before AACGM/T50 fitting, keeping the scientific
+! latitude domain identical to GRIDDED DIRECT_ACCESS and GRIDDED FULL_SCAN.
+CUTOFF_ACCESS_ABS_LAT_MIN 35.0
+CUTOFF_ACCESS_ABS_LAT_MAX 75.0
 CUTOFF_TRACE_POLICY     ACCURATE
 CUTOFF_BACKTRACE_CHARGE REVERSED
 CUTOFF_TRACE_LIMIT_POLICY FORBIDDEN

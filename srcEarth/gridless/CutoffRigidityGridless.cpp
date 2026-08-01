@@ -206,7 +206,7 @@
 #include "util/TrajectoryTimeStep.h"
 #include "util/TrajectoryTrapDetector.h"
 #include "util/CutoffBandSearch.h"
-#include "DipoleInterface.h" 
+#include "DipoleInterface.h"
 #include "../3d/Mode3DParallel.h" // shared MPI dynamic work-queue scheduler
 
 //--------------------------------------------------------------------------------------
@@ -238,7 +238,7 @@
 #include <memory>
 #include <sstream>
 #include <limits>
-#include <mpi.h> 
+#include <mpi.h>
 
 //--------------------------------------------------------------------------------------
 // OPTIONAL SPICE SUPPORT (FRAME TRANSFORMS)
@@ -1938,7 +1938,7 @@ static void WriteTecplotPoints_DipoleAnalyticCompare(const EarthUtil::AmpsParam&
 
     const double rel = (Rc_vert>0.0 && Rc_num>0.0) ? (Rc_num-Rc_vert)/Rc_vert : 0.0;
 
-        std::fprintf(f,"%zu %e %e %e %e %e %e \n", i, points[i].x,points[i].y,points[i].z,Rc_num, Rc_vert, rel); 
+        std::fprintf(f,"%zu %e %e %e %e %e %e \n", i, points[i].x,points[i].y,points[i].z,Rc_num, Rc_vert, rel);
   }
 
   std::fclose(f);
@@ -1972,7 +1972,7 @@ static void WriteTecplotShells(const std::vector<double>& shellAlt_km,
         double lon = lonRes_deg*i;
         int k=i+nLon*j;
 
-        std::fprintf(f,"%e %e %e %e\n", lon, lat, 
+        std::fprintf(f,"%e %e %e %e\n", lon, lat,
           RcShell[s][k], EminShell[s][k]);
       }
     }
@@ -2172,6 +2172,79 @@ static void WriteTecplotShells_Penumbra(
             nUnresolved[idx],lowerBracketUnresolved[idx],
             upperBracketUnresolved[idx],lowerBelowRange[idx],
             lowerAboveRange[idx],upperBelowRange[idx],upperAboveRange[idx]);
+      }
+    }
+  }
+  std::fclose(f);
+}
+
+
+// Write the exact fixed-rigidity access states requested alongside PENUMBRA_SCAN.
+//
+// C9 uses this companion product to calculate the same longitude-averaged PAMELA_T50
+// observable for GRIDLESS FULL_SCAN and GRIDDED FULL_SCAN/DIRECT_ACCESS.  The file is
+// deliberately long-form: one row per (shell location, rigidity), with the same
+// access-state contract used by Mode3D (0=physical forbidden, 1=allowed,
+// 2=unresolved).  Keeping an explicit state column avoids reconstructing binary access
+// from Rc_lower/Rc_effective/Rc_upper, which is impossible in a non-monotonic penumbra.
+static void WriteTecplotShells_PamelaAccess(
+                                const EarthUtil::AmpsParam& prm,
+                                const std::vector<double>& shellAlt_km,
+                                double lonRes_deg,
+                                double latRes_deg,
+                                const std::vector<int>& accessState) {
+  const int nRigidity=static_cast<int>(prm.cutoff.rigidityList_GV.size());
+  const int nLon=static_cast<int>(std::floor(360.0/lonRes_deg+0.5));
+  const int nLat=static_cast<int>(std::floor(180.0/latRes_deg+0.5))+1;
+  const int nPts=nLon*nLat;
+  const std::size_t nLocations=shellAlt_km.size()*static_cast<std::size_t>(nPts);
+  const std::size_t nExpected=nLocations*static_cast<std::size_t>(nRigidity);
+  if (accessState.size()!=nExpected) {
+    throw std::runtime_error(
+        "Gridless PAMELA access output array has size "+
+        std::to_string(accessState.size())+", expected "+
+        std::to_string(nExpected)+".");
+  }
+
+  FILE* f=std::fopen("cutoff_gridless_shells_pamela_access.dat","w");
+  if (!f) throw std::runtime_error(
+      "Cannot write Tecplot file: cutoff_gridless_shells_pamela_access.dat");
+
+  std::fprintf(f,"TITLE=\"Gridless PENUMBRA_SCAN exact PAMELA-rigidity access states\"\n");
+  std::fprintf(f,
+      "VARIABLES=\"shell_index\",\"lon_deg\",\"lat_deg\","
+      "\"x_km\",\"y_km\",\"z_km\",\"rigidity_GV\","
+      "\"access_state\",\"allowed\",\"unresolved\"\n");
+  std::fprintf(f,"ZONE T=\"fixed_rigidity_access\" I=%zu F=POINT\n",nExpected);
+
+  for (std::size_t shell=0;shell<shellAlt_km.size();++shell) {
+    const double r_m=_EARTH__RADIUS_+shellAlt_km[shell]*1000.0;
+    for (int j=0;j<nLat;++j) {
+      double lat_deg=-90.0+latRes_deg*j;
+      if (lat_deg>90.0) lat_deg=90.0;
+      const double lat=lat_deg*Pi/180.0;
+      const double clat=std::cos(lat),slat=std::sin(lat);
+      for (int i=0;i<nLon;++i) {
+        const double lon_deg=lonRes_deg*i;
+        const double lon=lon_deg*Pi/180.0;
+        const double clon=std::cos(lon),slon=std::sin(lon);
+        const std::size_t location=shell*static_cast<std::size_t>(nPts)+
+                                   static_cast<std::size_t>(i+nLon*j);
+        for (int iRigidity=0;iRigidity<nRigidity;++iRigidity) {
+          const int state=accessState[
+              location*static_cast<std::size_t>(nRigidity)+
+              static_cast<std::size_t>(iRigidity)];
+          const int allowed=(state==static_cast<int>(
+              EarthUtil::CutoffSampleState::Allowed)) ? 1 : 0;
+          const int unresolved=(state==static_cast<int>(
+              EarthUtil::CutoffSampleState::Unresolved)) ? 1 : 0;
+          std::fprintf(f,
+              "%zu %.15e %.15e %.15e %.15e %.15e %.15e %d %d %d\n",
+              shell,lon_deg,lat_deg,
+              r_m*clat*clon/1000.0,r_m*clat*slon/1000.0,r_m*slat/1000.0,
+              prm.cutoff.rigidityList_GV[static_cast<std::size_t>(iRigidity)],
+              state,allowed,unresolved);
+        }
       }
     }
   }
@@ -3291,6 +3364,17 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   std::vector<int> LowerAboveRange;
   std::vector<int> UpperBelowRange;
   std::vector<int> UpperAboveRange;
+  // A non-empty rigidity list during vertical PENUMBRA_SCAN requests exact
+  // observational access states in addition to the integrated cutoff band.  Each MPI
+  // rank keeps a full sentinel-filled array because dynamic scheduling makes the set of
+  // locations processed by a rank unknown until runtime.
+  const bool savePamelaAccessStates=(
+      isShells && samplingVertical &&
+      EarthUtil::ToUpper(prm.cutoff.searchAlgorithm)=="PENUMBRA_SCAN" &&
+      !prm.cutoff.rigidityList_GV.empty());
+  const int nPamelaAccessRigidities=savePamelaAccessStates
+      ? static_cast<int>(prm.cutoff.rigidityList_GV.size()) : 0;
+  std::vector<int> PamelaAccessStates;
 
   // Directional sky-map storage (POINTS only). Flattened as:
   //   RcDirMap[ pointId*nDirMapCells + cellId ]
@@ -3323,6 +3407,15 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   LowerAboveRange.assign((size_t)nLoc,-1);
   UpperBelowRange.assign((size_t)nLoc,-1);
   UpperAboveRange.assign((size_t)nLoc,-1);
+  if (savePamelaAccessStates) {
+    const long long nState=static_cast<long long>(nLoc)*nPamelaAccessRigidities;
+    if (nState>static_cast<long long>(std::numeric_limits<int>::max())) {
+      throw std::runtime_error(
+          "Gridless PAMELA access-state reduction count exceeds INT_MAX; split "
+          "the shell or rigidity list into smaller runs.");
+    }
+    PamelaAccessStates.assign(static_cast<std::size_t>(nState),-1);
+  }
 
   if (doDirMap) {
     RcDirMap.assign((size_t)prm.output.points.size() * (size_t)nDirMapCells, -1.0);
@@ -3435,6 +3528,21 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
         band=CutoffForDirectionPenumbraScan_GV(
             x0_m,dir,task.rLo_GV,task.rHi_GV);
         rc=band.upper_GV;
+
+        if (savePamelaAccessStates) {
+          // Evaluate the exact reference rigidities, not the nearest regular scan
+          // nodes.  The direct and full-scan C9 products therefore feed identical
+          // physical states into the common PAMELA_T50 postprocessor.
+          const V3 v0=mul(-1.0,dir);
+          const std::size_t base=static_cast<std::size_t>(task.loc)*
+                                 static_cast<std::size_t>(nPamelaAccessRigidities);
+          for (int iRigidity=0;iRigidity<nPamelaAccessRigidities;++iRigidity) {
+            PamelaAccessStates[base+static_cast<std::size_t>(iRigidity)]=
+                static_cast<int>(ClassifyCutoffSample(
+                    x0_m,v0,prm.cutoff.rigidityList_GV[
+                        static_cast<std::size_t>(iRigidity)]));
+          }
+        }
       }
       else {
         rc=CutoffForDirection_GV(x0_m,dir,task.rLo_GV,task.rHi_GV);
@@ -3725,6 +3833,19 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     UpperAboveRange.swap(UpperAboveRangeRoot);
   }
 
+  // Reduce the fixed-rigidity states with MPI_MAX.  Valid states are 0, 1,
+  // and 2; -1 is the uncomputed sentinel, and each location is owned by exactly one
+  // vertical sampling task.  The reduction is therefore independent of scheduler order.
+  if (savePamelaAccessStates) {
+    std::vector<int> PamelaAccessStatesRoot;
+    if (mpiRank==0) PamelaAccessStatesRoot.assign(PamelaAccessStates.size(),-1);
+    MPI_Reduce(PamelaAccessStates.data(),
+               (mpiRank==0 ? PamelaAccessStatesRoot.data() : nullptr),
+               static_cast<int>(PamelaAccessStates.size()),MPI_INT,MPI_MAX,0,
+               MPI_COMM_WORLD);
+    if (mpiRank==0) PamelaAccessStates.swap(PamelaAccessStatesRoot);
+  }
+
   // Reduce directional map cells to rank 0.  Each cell is computed by exactly one task;
   // all other ranks leave it at -1, so MPI_MAX selects the computed value.
   if (doDirMap) {
@@ -3853,7 +3974,7 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
 // production outputs unchanged and to avoid extra I/O for regular runs.
 // In nightly test mode, produce an analytic-vs-numeric comparison for the DIPOLE case.
 // This avoids extra I/O for regular runs.
-#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_ 
+#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
 if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
   WriteTecplotPoints_DipoleAnalyticCompare(prm,prm.output.points,Rc);
 }
@@ -3901,6 +4022,13 @@ if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
             LowerBelowRange,LowerAboveRange,
             UpperBelowRange,UpperAboveRange);
         std::cout << "Wrote Tecplot: cutoff_gridless_shells_penumbra.dat\n";
+        if (savePamelaAccessStates) {
+          WriteTecplotShells_PamelaAccess(
+              prm,prm.output.shellAlt_km,shellLonRes_deg,latResShell_deg,
+              PamelaAccessStates);
+          std::cout << "Wrote Tecplot: "
+                    << "cutoff_gridless_shells_pamela_access.dat\n";
+        }
       }
     }
 

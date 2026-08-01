@@ -43,11 +43,12 @@ The agreed routine defaults are:
 | Rigidity representation | geometric center of each Table-S1 bin |
 | Field model | IGRF + T05/TS05 |
 | Driver cadence | 5 minutes |
-| Cutoff evaluation | `FULL_SCAN` by default; optional GRIDDED `DIRECT_ACCESS` |
+| Cutoff evaluation | `FULL_SCAN` by default; optional fast GRIDDED `DIRECT_ACCESS` |
 | Backtrace convention | reversed velocity and charge |
 | Trace-limit policy | forbidden |
 | Geographic shell spacing | 30 deg longitude x 2 deg latitude |
 | Routine temporal sampling | one field snapshot at each Table-S1 midpoint |
+| Primary observable | longitude-averaged, hemisphere-resolved `PAMELA_T50` |
 | Solver selection | `BOTH` for `FULL_SCAN`; `GRIDDED` for `DIRECT_ACCESS` |
 | Mode3D near-Earth mesh target | 0.02 Re |
 | Mode3D boundary mesh target | 2.0 Re |
@@ -72,153 +73,191 @@ copying rounded values from this README.
 
 ## 3. Numerical products and solver branches
 
-C9 separates the **scientific boundary definition/product** from the magnetic-
-field evaluation branch.
+C9 separates the **scientific comparison observable** from the numerical way
+that fixed-rigidity access states are obtained. Both products now use the same
+primary observable, `PAMELA_T50`, so their PASS/FAIL results are directly
+comparable.
 
-### `FULL_SCAN` - backward-compatible default
+### Common primary observable: `PAMELA_T50`
 
-`FULL_SCAN` preserves the original C9 implementation. At every node of the
-complete configured shell, AMPS evaluates a `PENUMBRA_SCAN` with
-`--cutoff-scan-n` rigidity samples. The postprocessor locates the
-`Rc_effective = R` contour for every PAMELA rigidity.
+For each of the seven exact Table-S1 rigidity centers, AMPS writes one access
+state at every retained shell node:
 
-`FULL_SCAN` supports `GRIDLESS`, `GRIDDED`, and `BOTH`. It is the reference
-product for penumbra topology, `Rc_lower`, `Rc_effective`, and `Rc_upper`
-sensitivity, and cross-solver mesh comparisons.
+```text
+0 = PHYSICAL_FORBIDDEN
+1 = ALLOWED
+2 = UNRESOLVED
+```
+
+Before AACGM conversion, the Python postprocessor restricts both products to
+the same configured absolute-geodetic-latitude band. This is required because
+`FULL_SCAN` contains the complete shell whereas `DIRECT_ACCESS` calculates only
+the retained band; fitting different latitude domains can move an isotonic
+crossing even when the common access states are identical. The retained nodes
+are then converted to AACGM at the exact epoch, used to construct a
+longitude-averaged transmission profile separately in the north and south
+hemispheres, fitted by weighted nondecreasing isotonic regression, and
+interpolated at transmission 0.5. Both hemispheres must explicitly bracket the
+crossing, and each boundary must remain at least
+`--t50-min-edge-margin-deg` inside the retained AACGM coverage. The final
+modeled latitude is the median of the two hemisphere T50 values.
+
+The same postprocessing function is used for `FULL_SCAN` and `DIRECT_ACCESS`.
+This removes the previous definition mismatch in which the full scan used
+`Rc_effective = R` while direct access used the first individual longitude
+transition.
+
+### `FULL_SCAN` - complete penumbra plus exact PAMELA access
+
+`FULL_SCAN` runs the configured `PENUMBRA_SCAN` over the complete shell. In
+addition to the regular scan, the solver independently classifies the seven
+exact PAMELA rigidity centers. This produces both the traditional penumbra
+quantities and the fixed-rigidity access states required by `PAMELA_T50`.
 
 Raw products:
 
 ```text
 GRIDLESS: cutoff_gridless_shells_penumbra.dat
+          cutoff_gridless_shells_pamela_access.dat
 GRIDDED : cutoff_3d_shells_penumbra.dat
+          cutoff_3d_shells_pamela_access.dat
 ```
 
-### `DIRECT_ACCESS` - efficient GRIDDED validation product
+`Rc_lower`, `Rc_effective`, and `Rc_upper` remain available as diagnostic
+observables through `--comparison-observable`, but `PAMELA_T50` is the default
+and is used for the primary scientific pass/fail decision.
 
-`DIRECT_ACCESS` launches `RIGIDITY_LIST` in standalone Mode3D. It traces exactly
-the seven geometric-center rigidities derived from the checked reference CSV,
-rather than constructing a 160-node rigidity scan at every location. It also
-retains only shell nodes satisfying
+With 160 regular scan values, the nominal coarse work is up to 167 rigidity
+classifications per shell location before any penumbra refinement:
+
+```text
+1092 locations x (160 scan values + 7 exact PAMELA values)
+= 182,364 nominal classifications per snapshot
+```
+
+### `DIRECT_ACCESS` - efficient GRIDDED product
+
+`DIRECT_ACCESS` launches `RIGIDITY_LIST` in standalone Mode3D. It traces only
+the seven exact PAMELA rigidities and retains shell nodes satisfying
 
 ```text
 access_abs_lat_min <= |geodetic latitude| <= access_abs_lat_max
 ```
 
-while keeping both hemispheres and all configured longitudes. The default band
-is 35-75 degrees. For the default 30-degree x 2-degree shell this retains 480
-of 1092 locations. The nominal trajectory count per snapshot changes from
+while keeping both hemispheres and all configured longitudes. The default
+35-75 degree band retains 480 of 1092 nodes for the 30-degree x 2-degree shell:
 
 ```text
-FULL_SCAN:     1092 locations x 160 scan nodes = 174,720 trajectories
-DIRECT_ACCESS:  480 locations x   7 rigidities =   3,360 trajectories
+480 locations x 7 rigidities = 3,360 trajectories per snapshot
 ```
 
-which is approximately a 50-fold reduction before differences in trajectory
-termination time are considered.
-
-For each longitude, rigidity, and hemisphere, rows are ordered by absolute
-AACGM latitude. The modeled boundary is the first resolved transition moving
-poleward from `PHYSICAL_FORBIDDEN` to `ALLOWED`. Because the two sampled
-transmission values are 0 and 1, linear interpolation places the `T=0.5`
-boundary halfway between the adjacent latitude nodes. Unresolved nodes are not
-reclassified and cannot form a boundary bracket.
-
-`DIRECT_ACCESS` is intentionally GRIDDED-only. Selecting it with `GRIDLESS` or
-`BOTH` is rejected explicitly. Its raw product is:
+This is approximately a 54-fold nominal reduction relative to the complete
+160+7 full-shell calculation. `DIRECT_ACCESS` is intentionally GRIDDED-only.
+Its raw product is:
 
 ```text
 cutoff_3d_shells_access.dat
 ```
 
-The file uses one row per `(shell node, rigidity)` and records numeric access
-state (`0=PHYSICAL_FORBIDDEN`, `1=ALLOWED`, `2=UNRESOLVED`) together with
-redundant `allowed` and `unresolved` flags that the C9 parser cross-checks.
+The direct file and both full-scan companion files use the same long-form schema
+and redundant state flags; the parser cross-checks them before scientific
+postprocessing. For the primary T50 reduction, `FULL_SCAN` is filtered to the
+same geodetic band used by `DIRECT_ACCESS`; the complete full-shell files remain
+unchanged and continue to support global maps and Rc diagnostics.
 
 ### Field-evaluation branches
 
-For a selected product, C9 applies the same event times, driver, trajectory limits,
-AACGM conversion, aggregation, and PAMELA acceptance metrics to the supported
-field-evaluation branches.
-
-### `GRIDLESS`
-
-The executable is launched with `-mode gridless`. IGRF+T05 is evaluated
-directly at trajectory positions. The numerical template is:
-
-```text
-AMPS_PARAM_C9_gridless.in
-```
-
-The raw penumbra product is:
-
-```text
-cutoff_gridless_shells_penumbra.dat
-```
-
-### `GRIDDED`
-
-The executable is launched with `-mode 3d`, `-mode3d-field-eval MESH`, and the
-Mode3D thread/MPI scheduler controls. IGRF+T05 is first sampled onto the
-standalone AMR mesh; trajectory field values then come from the Mode3D
-interpolation stencil. The numerical template is:
-
-```text
-AMPS_PARAM_C9_mode3d.in
-```
-
-`GRIDDED` writes `cutoff_3d_shells_penumbra.dat` for `FULL_SCAN` or
-`cutoff_3d_shells_access.dat` for `DIRECT_ACCESS`.
-
-The production starting mesh is 0.02 Re near Earth and 2.0 Re at the outer
-boundary with linear coarsening. A 0.01-Re near-Earth rerun is recommended for
-mesh-convergence work.
-
-`--solver BOTH` remains the default for `FULL_SCAN`. Each branch is independently
-judged against PAMELA. When both are run together, C9 also writes a
-GRIDDED-minus-GRIDLESS diagnostic; it does not replace either observational
-pass/fail decision. `DIRECT_ACCESS` requires `--solver GRIDDED`.
+`GRIDLESS` evaluates IGRF+T05 directly along trajectories. `GRIDDED` samples the
+field onto the standalone Mode3D AMR mesh and uses mesh interpolation during
+backtracing. `--solver BOTH` independently compares both branches with PAMELA
+and writes GRIDDED-minus-GRIDLESS diagnostics. `DIRECT_ACCESS` requires
+`--solver GRIDDED`.
 
 ## 4. Postprocessing and boundary extraction
 
-### FULL_SCAN boundary
+### Common `PAMELA_T50` algorithm
 
-For `FULL_SCAN`, each branch evaluates the complete 475-km geographic shell and
-returns `Rc_lower_GV`, `Rc_effective_GV`, `Rc_upper_GV`, and penumbra topology.
-The C9 comparison uses `Rc_effective_GV`; lower and upper values remain
-available for sensitivity diagnostics. The postprocessor reads columns by name
-from the Tecplot `VARIABLES` record because GRIDLESS and GRIDDED have different
-numbers of solver-specific diagnostic columns.
-
-For each longitude and AACGM hemisphere, rows are sorted from low to high
-absolute AACGM latitude. C9 finds the first poleward crossing
+For each rigidity and hemisphere, access rows are grouped into independent
+longitude profiles and sampled on a common absolute-AACGM latitude grid. At
+each latitude, the raw transmission is the mean of all resolved longitude
+contributions:
 
 ```text
-Rc_effective > R  ->  Rc_effective <= R
+T_raw = sum(access_state for resolved longitudes) / N_resolved
 ```
 
-and linearly interpolates its latitude.
+A grid point is excluded when the resolved-longitude fraction is below
+`--t50-min-resolved-longitude-fraction` (default 0.80). C9 never interpolates
+through an unresolved trajectory.
 
-### DIRECT_ACCESS boundary
+Finite longitude sampling and real access islands can make the raw transmission
+locally nonmonotonic. The runner therefore uses a weighted pool-adjacent-
+violators algorithm to obtain the least-squares nondecreasing transmission
+profile. The weight at each latitude is the number of resolved longitudes. The
+T=0.5 crossing is linearly interpolated from the fitted profile; the center of
+a finite T=0.5 plateau is used when one occurs.
 
-For `DIRECT_ACCESS`, the raw rows already contain one binary/three-state access
-classification at each requested rigidity. For each rigidity, longitude, and
-hemisphere, C9 finds the first resolved poleward transition
+North and south are processed independently. A primary boundary is valid only
+when both hemispheres explicitly begin below and end above T=0.5, and when the
+crossing is separated from both retained profile edges by at least the configured
+AACGM margin. C9 records the raw and isotonic boundaries, isotonic adjustment
+RMS, unresolved fraction, resolved-longitude coverage, bracket status, edge
+margin, north-south difference, and the number of individual longitude profiles
+with more than one resolved state change.
+
+The default fitting grid is 0.25 degree AACGM and can be changed with
+`--t50-grid-step-deg`. The default edge margin is 1 degree AACGM and can be
+changed with `--t50-min-edge-margin-deg`. These controls affect only
+postprocessing quality checks and interpolation; the underlying trajectory
+latitude spacing remains `--shell-lat-res-deg`.
+
+### Optional FULL_SCAN/DIRECT_ACCESS state-consistency gate
+
+The strongest check of method consistency is performed before AACGM conversion
+or T50 fitting. Run one product, then point the other product at the first output
+root with `--access-consistency-root`. For every matching GRIDDED snapshot, C9 compares the raw three-state
+classification at the exact same longitude, geodetic latitude, and PAMELA
+rigidity. It also compares all common trajectory/mesh directives in the two
+generated `AMPS_PARAM_C9.in` files, verifies that their copied driver files have
+the same SHA-256 digest, and checks the common command-line controls recorded in
+`C9_amps.log`. Product-specific controls such as `PENUMBRA_SCAN` versus
+`RIGIDITY_LIST` are intentionally excluded.
+
+Resolved rows must agree at or above `--min-access-state-agreement` (default
+0.999), while the fraction unresolved in either product must not exceed
+`--max-access-unresolved-fraction` (default 0.01). Missing keys or configuration differences are always a failure because they
+indicate different shell settings, rigidity lists, selected epochs,
+`--interval-samples`, drivers, movers, trace controls, or mesh settings. When
+requested, this consistency check is a numerical acceptance gate in addition to
+the independent PAMELA metrics.
+
+The comparison deliberately uses a separately generated output root instead of
+launching both expensive calculations automatically. This keeps runtime and
+failure provenance clear while still requiring identical epoch/sample directory
+names.
+
+### Full-scan diagnostic contours
+
+`FULL_SCAN` also reads `Rc_lower_GV`, `Rc_effective_GV`, `Rc_upper_GV`, and
+penumbra topology by column name from the Tecplot `VARIABLES` record. These can
+be selected with:
 
 ```text
-PHYSICAL_FORBIDDEN (T=0)  ->  ALLOWED (T=1)
+--comparison-observable RC_LOWER
+--comparison-observable RC_EFFECTIVE
+--comparison-observable RC_UPPER
+--comparison-observable ALL
 ```
 
-and places the `T=0.5` boundary halfway between those adjacent AACGM latitude
-nodes. A state of `UNRESOLVED` breaks the bracket. More than one resolved state
-change in a profile is counted as a nonmonotonic diagnostic.
+`ALL` writes every diagnostic boundary product but retains `PAMELA_T50` for the
+primary comparison. Rc contours are diagnostics and no longer substitute for
+the PAMELA-like T50 observable.
 
-### Geographic-to-AACGM conversion
+### Geographic-to-AACGM conversion and temporal aggregation
 
-For every retained AMPS shell point, `run_C9.py` calls `aacgmv2` at the exact
-snapshot UTC and 475-km altitude. This is required because Table S1 is in AACGM
-latitude, not geographic or GSM latitude. AACGM conversion failures near the
-magnetic equator are ignored; the validation boundary is in the mid/high-
-latitude band.
+For every retained shell point, `run_C9.py` calls `aacgmv2` at the exact
+snapshot UTC and 475-km altitude. AACGM failures near the magnetic equator are
+ignored because the validation boundary lies in the mid/high-latitude band.
 
 Install the dependency with:
 
@@ -226,15 +265,17 @@ Install the dependency with:
 python3 -m pip install -r srcEarth/test/C9/requirements.txt
 ```
 
-For either product, the primary modeled cutoff latitude for one snapshot is the
-**median** of all valid longitude/hemisphere crossings. Output also retains the
-mean, standard deviation, range, north and south medians, north-south
-difference, crossing coverage, and nonmonotonic-profile count.
+For `--interval-samples N > 1`, the modeled Table-S1 interval is the arithmetic
+mean of the N independently evaluated snapshot boundaries. `N` applies to every
+selected PAMELA interval and every selected solver branch. Before execution,
+the runner prints the full launch arithmetic, for example:
 
-For `--interval-samples N > 1`, the modeled PAMELA interval is the arithmetic
-mean of the N snapshot medians. Each generated command includes an explicit
-`--epoch`, and each sample also has a self-contained input file with the same
-`EPOCH` directive.
+```text
+7 intervals x 5 samples/interval x 1 solver branch = 35 AMPS launches
+```
+
+Each command includes an explicit `--epoch`, and the generated input file stores
+the same `EPOCH` directive.
 
 ## 5. Reference data
 
@@ -385,33 +426,54 @@ Custom Table-S1 midpoints can be selected with a comma-separated list:
 
 ## 8. Commands
 
-Run the efficient GRIDDED product with five samples per PAMELA interval:
+Run the efficient GRIDDED regression product at one midpoint per interval:
 
 ```bash
-python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --profile ROUTINE --interval-samples 5 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 75 --output-root test_output/C9_direct --amps /home/vtenishe/T11/AMPS/amps --shell-lon-res-deg 30 --shell-lat-res-deg 2 --dynamic-chunk 64 -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 75 --output-root test_output/C9_direct --amps /home/vtenishe/T11/AMPS/amps --shell-lon-res-deg 30 --shell-lat-res-deg 2 --t50-grid-step-deg 0.25 --t50-min-resolved-longitude-fraction 0.8 --dynamic-chunk 64 -np 4 -nt 16
 ```
 
-Run the backward-compatible complete GRIDDED penumbra scan:
+Run the complete GRIDDED penumbra scan with the same primary T50 observable:
 
 ```bash
-python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --profile ROUTINE --interval-samples 1 --output-root test_output/C9_full --amps /home/vtenishe/T11/AMPS/amps --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 --dynamic-chunk 64 -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C9_full --amps /home/vtenishe/T11/AMPS/amps --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 --t50-grid-step-deg 0.25 --t50-min-resolved-longitude-fraction 0.8 --dynamic-chunk 64 -np 4 -nt 16
 ```
 
-Run both field-evaluation branches with the full scan:
+Verify that the complete scan and direct product make the same raw access
+decisions. The DIRECT_ACCESS output must already exist with the same timestamps,
+`--interval-samples`, shell geometry, exact rigidity list, mesh settings, mover,
+and trace policy:
 
 ```bash
-python3 srcEarth/test/C9/run_C9.py --solver BOTH --cutoff-evaluation FULL_SCAN --profile ROUTINE --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C9_full_verified --access-consistency-root test_output/C9_direct --amps /home/vtenishe/T11/AMPS/amps --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 75 --t50-grid-step-deg 0.25 --t50-min-resolved-longitude-fraction 0.8 --t50-min-edge-margin-deg 1.0 --min-access-state-agreement 0.999 --max-access-unresolved-fraction 0.01 --dynamic-chunk 64 -np 4 -nt 16
 ```
 
-Preview the exact per-sample commands and generated inputs without launching
-AMPS:
+The same check can be added while reprocessing an existing full-scan tree:
 
 ```bash
-python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --profile SMOKE --interval-samples 5 --dry-run --output-root test_output/C9_direct_dry -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --skip-run --keep --output-root test_output/C9_full --access-consistency-root test_output/C9_direct
 ```
 
-Use `--skip-run --keep` with the same product and output root to reprocess
-existing raw files without recalculating trajectories.
+Write T50 plus all full-scan Rc diagnostics without changing the primary
+pass/fail observable:
+
+```bash
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable ALL --profile ROUTINE --interval-samples 1 --output-root test_output/C9_all_observables --amps /home/vtenishe/T11/AMPS/amps --cutoff-scan-n 160 --dynamic-chunk 64 -np 4 -nt 16
+```
+
+Run a five-sample diagnostic of only the storm minimum interval:
+
+```bash
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable PAMELA_T50 --timestamps 2006-12-15T03:03:00Z --interval-samples 5 --output-root test_output/C9_0303_5samples --amps /home/vtenishe/T11/AMPS/amps --dynamic-chunk 64 -np 4 -nt 16
+```
+
+Preview commands and the launch count without running AMPS:
+
+```bash
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable PAMELA_T50 --profile SMOKE --interval-samples 5 --dry-run --output-root test_output/C9_direct_dry -np 4 -nt 16
+```
+
+Use `--skip-run --keep` with the same product, observable, sample count, and
+output root to reprocess existing raw files.
 
 ## 9. Numerical controls
 
@@ -420,6 +482,7 @@ Useful options are:
 ```text
 --solver GRIDLESS|GRIDDED|BOTH
 --cutoff-evaluation FULL_SCAN|DIRECT_ACCESS
+--comparison-observable PAMELA_T50|RC_LOWER|RC_EFFECTIVE|RC_UPPER|ALL
 -np 4
 -nt 16
 --scheduler DYNAMIC
@@ -429,8 +492,14 @@ Useful options are:
 --mode3d-mesh-coarsening LINEAR
 --mode3d-mesh-exponent 1.0
 --cutoff-scan-n 160                 # FULL_SCAN only
---access-abs-lat-min-deg 35          # DIRECT_ACCESS only
---access-abs-lat-max-deg 75          # DIRECT_ACCESS only
+--access-abs-lat-min-deg 35          # common T50 domain; also DIRECT C++ work band
+--access-abs-lat-max-deg 75          # common T50 domain; also DIRECT C++ work band
+--t50-grid-step-deg 0.25
+--t50-min-resolved-longitude-fraction 0.80
+--t50-min-edge-margin-deg 1.0
+--access-consistency-root test_output/C9_direct
+--min-access-state-agreement 0.999
+--max-access-unresolved-fraction 0.01
 --rigidity-min-gv 0.30
 --rigidity-max-gv 1.35
 --shell-lon-res-deg 30
@@ -463,9 +532,17 @@ Recommended convergence checks are:
 --shell-lat-res-deg 2
 --shell-lat-res-deg 1
 
-# Product-definition comparison
---cutoff-evaluation DIRECT_ACCESS
---cutoff-evaluation FULL_SCAN
+# Common-observable method comparison
+--cutoff-evaluation DIRECT_ACCESS --comparison-observable PAMELA_T50
+--cutoff-evaluation FULL_SCAN --comparison-observable PAMELA_T50
+
+# Exact state-by-state method comparison (run second product with first root)
+--access-consistency-root test_output/C9_direct
+--min-access-state-agreement 0.999
+--max-access-unresolved-fraction 0.01
+
+# Full-scan definition diagnostics
+--comparison-observable ALL
 
 # Temporal averaging
 --interval-samples 1
@@ -487,6 +564,8 @@ spacecraft-acceptance reproduction.
 | PAMELA/AMPS correlation | >= 0.80 |
 | Lowest-bin storm suppression | 4-9 deg |
 | Time of lowest-bin minimum | within 100 min |
+| Resolved FULL_SCAN/DIRECT_ACCESS state agreement | >= 0.999 when consistency root is supplied |
+| Unresolved in either compared access product | <= 0.01 when consistency root is supplied |
 
 All thresholds are CLI-configurable. The runner also reports:
 
@@ -527,11 +606,25 @@ shown as error bars.  A snapshot contains:
 ```text
 AMPS_PARAM_C9.in
 C9_amps.log
-cutoff_gridless_shells_penumbra.dat  # GRIDLESS FULL_SCAN
-cutoff_3d_shells_penumbra.dat        # GRIDDED FULL_SCAN
-cutoff_3d_shells_access.dat          # GRIDDED DIRECT_ACCESS
-C9_snapshot_boundaries.csv
+cutoff_gridless_shells_penumbra.dat       # GRIDLESS FULL_SCAN diagnostics
+cutoff_gridless_shells_pamela_access.dat   # GRIDLESS FULL_SCAN T50 states
+cutoff_3d_shells_penumbra.dat             # GRIDDED FULL_SCAN diagnostics
+cutoff_3d_shells_pamela_access.dat         # GRIDDED FULL_SCAN T50 states
+cutoff_3d_shells_access.dat                # GRIDDED DIRECT_ACCESS T50 states
+C9_snapshot_boundaries.csv                 # selected primary observable
+C9_snapshot_boundaries_pamela_t50.csv
+C9_snapshot_boundaries_rc_lower.csv        # FULL_SCAN / ALL
+C9_snapshot_boundaries_rc_effective.csv    # FULL_SCAN / ALL
+C9_snapshot_boundaries_rc_upper.csv        # FULL_SCAN / ALL
+C9_snapshot_t50_profiles.csv               # raw and isotonic T profiles
+C9_access_consistency.json                    # optional per-snapshot raw-state check
+C9_access_consistency_differences.csv         # optional mismatches/missing keys
 ```
+
+When `--access-consistency-root` is used, the GRIDDED branch additionally writes
+`C9_access_consistency.json`, `C9_access_consistency_snapshots.csv`, and
+`C9_access_consistency_differences.csv` at the branch root. The final branch
+PASS requires both the PAMELA comparison and the configured access-state gate.
 
 The exact driver, generated input, command line, and comparison settings are
 therefore archived with every run.
@@ -555,10 +648,11 @@ PAMELA global cutoff maps can be treated as C9B.
 Other known approximations are:
 
 - one geometric-center rigidity represents each finite PAMELA rigidity bin;
-- `FULL_SCAN` uses `Rc_effective = R`; `DIRECT_ACCESS` uses an adjacent-node `T=0.5` crossing;
+- `FULL_SCAN` and `DIRECT_ACCESS` use the same longitude-averaged `PAMELA_T50` observable and the same configured geodetic fitting band; Rc contours are diagnostic only;
 - default temporal sampling uses the interval midpoint only;
 - longitude and both hemispheres are aggregated instead of following the orbit;
-- `DIRECT_ACCESS` assumes the selected geodetic latitude band brackets every cutoff;
+- both T50 products require the selected geodetic latitude band to bracket T=0.5 in both hemispheres and to leave the requested AACGM edge margin; otherwise the boundary is invalid;
+- the isotonic T50 estimate reduces longitude-sampling reversals but does not reproduce PAMELA detector acceptance or its exact orbit;
 - geodetic vertical is used rather than the exact instrument boresight;
 - the GRIDDED branch adds finite mesh resolution and interpolation error, which
   must be assessed with the supplied mesh controls.

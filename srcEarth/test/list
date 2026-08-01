@@ -140,5 +140,9 @@ last pass: 2f82e8b60873876963470cf009e9d1ae5dd02823
 F srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --profile ROUTINE --interval-samples 1 --output-root test_output/C9_full --amps /home/vtenishe/T11/AMPS/amps --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 --dynamic-chunk 64 -np 8 -nt 16
 last pass:
 
+P srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C9_full_verified --access-consistency-root test_output/C9_direct --amps /home/vtenishe/T11/AMPS/amps --cutoff-scan-n 160 --shell-lon-res-deg 30 --shell-lat-res-deg 2 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 75 --t50-grid-step-deg 0.25 --t50-min-resolved-longitude-fraction 0.8 --t50-min-edge-margin-deg 1.0 --min-access-state-agreement 0.999 --max-access-unresolved-fraction 0.01 --dynamic-chunk 32 -np 8 -nt 16
+last pass:
 
+P srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C9_direct --amps /home/vtenishe/T11/AMPS/amps --shell-lon-res-deg 30 --shell-lat-res-deg 2 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 75 --t50-grid-step-deg 0.25 --t50-min-resolved-longitude-fraction 0.8 --t50-min-edge-margin-deg 1.0 --dynamic-chunk 23 -np 8 -nt 16
+last pass:
 

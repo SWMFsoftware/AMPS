@@ -733,32 +733,40 @@ python srcEarth/test/C7/run_C7.py --prepare-reference-requests
 
 C9 compares time-dependent AMPS IGRF+T05/TS05 vertical proton access at 475 km
 with Adriani et al. (2016) Supporting Information Table S1. The seven finite
-rigidity bins are represented by their geometric centers and model geographic
-shell points are converted to AACGM at each exact snapshot epoch.
+rigidity bins are represented by their exact geometric centers and shell points
+are converted to AACGM at each snapshot epoch.
 
-C9 now exposes two numerical products:
+Both numerical products now use the same primary observable:
 
-- `--cutoff-evaluation FULL_SCAN` (default) runs the complete `PENUMBRA_SCAN`
-  shell and extracts `Rc_effective = R`. It supports GRIDLESS, GRIDDED, and BOTH.
-- `--cutoff-evaluation DIRECT_ACCESS` is GRIDDED-only. Mode3D traces exactly the
-  seven PAMELA rigidities within a configurable absolute geodetic-latitude band
-  and extracts the forbidden-to-allowed `T=0.5` latitude boundary. With the
-  default 35-75 degree band, 30-degree longitude grid, and 2-degree latitude
-  grid, it reduces the nominal per-snapshot work from 174,720 to 3,360
-  trajectories.
+- `PAMELA_T50` is the latitude where the longitude-averaged resolved vertical
+  transmission reaches 0.5, calculated separately in each hemisphere after a
+  weighted monotonic isotonic fit. Both products are restricted to the same
+  configured geodetic latitude band and must explicitly bracket the crossing.
+- `FULL_SCAN` runs the complete penumbra scan and also saves exact access states
+  at the seven PAMELA rigidities. It retains `Rc_lower`, `Rc_effective`, and
+  `Rc_upper` as diagnostics.
+- `DIRECT_ACCESS` is GRIDDED-only and traces only the seven exact rigidities in
+  a configurable latitude band. With the default geometry it uses 3,360
+  trajectories per snapshot versus up to 182,364 nominal full-scan/exact-state
+  classifications.
 
 The five-minute driver is bundled at `srcEarth/test/C9/data/ts05_driving.txt`
 and protected by a fixed SHA-256 digest. Every sample command includes an
-explicit `--epoch` and the same epoch is archived in its generated input file.
+explicit `--epoch`. The runner prints the total launch count before execution;
+`--interval-samples N` means N launches per selected interval and solver branch.
+An optional `--access-consistency-root` numerical gate compares exact GRIDDED
+FULL_SCAN and DIRECT_ACCESS states at matching epochs, nodes, and rigidities and
+verifies their common input/command configuration.
 The original C6 validation remains unchanged.
 
 ```bash
 python3 srcEarth/test/C9/run_C9.py --validate-references --validate-driver
-python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --profile ROUTINE --interval-samples 5 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 75 --dynamic-chunk 64 -np 4 -nt 16
-python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --profile ROUTINE --cutoff-scan-n 160 --dynamic-chunk 64 -np 4 -nt 16
-python3 srcEarth/test/C9/run_C9.py --solver BOTH --cutoff-evaluation FULL_SCAN --profile FULL --interval-samples 5 -np 8 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --dynamic-chunk 64 -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable PAMELA_T50 --profile ROUTINE --cutoff-scan-n 160 --dynamic-chunk 64 -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable ALL --profile ROUTINE --cutoff-scan-n 160 --dynamic-chunk 64 -np 4 -nt 16
+python3 srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C9_full_verified --access-consistency-root test_output/C9_direct --cutoff-scan-n 160 --dynamic-chunk 64 -np 4 -nt 16
 ```
 
-See `srcEarth/test/C9/README.md` for product definitions, geometry, direct-access
-state coding, AACGM boundary extraction, convergence checks, outputs, and known
-limitations.
+See `srcEarth/test/C9/README.md` for the shared T50 algorithm, exact-state
+outputs, numerical controls, diagnostic Rc contours, convergence checks,
+outputs, and limitations.

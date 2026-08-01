@@ -371,13 +371,13 @@ namespace EarthUtil {
     // CUTOFF_NENERGY so existing inputs control the scan resolution.
     int upperScanN{0}; // CUTOFF_UPPER_SCAN_N
 
-    // Explicit rigidity nodes for the Mode3D RIGIDITY_LIST product.
+    // Explicit fixed-rigidity nodes used by access-state validation products.
     //
-    // RIGIDITY_LIST is not a cutoff search: it traces exactly one vertical trajectory
-    // for every requested rigidity at every selected shell location and writes the
-    // resulting ALLOWED / PHYSICAL_FORBIDDEN / UNRESOLVED access state.  This product
-    // is intended for validation data sets (such as C9/PAMELA) that require access at
-    // a small, known rigidity set rather than a complete 100--400 point penumbra scan.
+    // RIGIDITY_LIST traces only these values at the selected latitude-band nodes.
+    // PENUMBRA_SCAN may also carry a non-empty list; in that case the complete scan is
+    // unchanged and the exact listed access states are written as a companion product.
+    // C9 uses that companion file so FULL_SCAN and DIRECT_ACCESS are reduced through
+    // the same PAMELA_T50 postprocessor rather than compared with different observables.
     //
     // Input syntax accepts commas and/or whitespace, for example:
     //

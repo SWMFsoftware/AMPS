@@ -2882,3 +2882,16 @@ This is important for interpreting C4.  If `ADAPTIVE_DT=T`, decreasing
 boundary-distance limiter can already be smaller.  In that case, the useful
 convergence check is the mover/cap sensitivity, not the nominal `DT_TRACE`
 sequence alone.
+
+## C9 PAMELA storm-time cutoff validation
+
+`srcEarth/test/C9/run_C9.py` supports `FULL_SCAN` and GRIDDED `DIRECT_ACCESS`.
+Both products use the same primary `PAMELA_T50` observable and the same
+configured absolute-geodetic-latitude fitting band: fixed-rigidity access states
+are averaged over longitudes in each AACGM hemisphere, fitted by weighted
+nondecreasing isotonic regression, explicitly bracketed, and interpolated at
+transmission 0.5. `FULL_SCAN` additionally retains `Rc_lower`, `Rc_effective`,
+and `Rc_upper` as diagnostics. An optional `--access-consistency-root` gate
+compares exact FULL_SCAN and DIRECT_ACCESS classifications at matching nodes and
+epochs and verifies their common input/command configuration. See
+`srcEarth/test/C9/README.md` for commands and outputs.

@@ -13,11 +13,13 @@
 !   * vertically incident protons;
 !   * IGRF + T05/TS05 driven by the bundled five-minute C9 driver;
 !   * selectable FULL_SCAN or DIRECT_ACCESS numerical products;
-!   * FULL_SCAN uses PENUMBRA_SCAN and the Rc_effective = R contour;
-!   * DIRECT_ACCESS traces only the seven requested rigidities within a selected
-!     absolute geodetic-latitude band and locates the T=0.5 access boundary;
-!   * geographic shell coordinates are converted to AACGM and aggregated over
-!     longitude and both magnetic hemispheres by the Python postprocessor.
+!   * FULL_SCAN uses PENUMBRA_SCAN, retains Rc diagnostics, and additionally
+!     classifies the seven exact PAMELA rigidities on the complete shell;
+!   * DIRECT_ACCESS traces only those seven rigidities within a selected
+!     absolute geodetic-latitude band;
+!   * both products are filtered to the same band and reduced by the identical
+!     longitude-averaged, hemisphere-resolved T=0.5 Python postprocessor;
+!   * Rc_lower, Rc_effective, and Rc_upper remain full-scan diagnostics only.
 !
 ! This is the Mode3D/GRIDDED companion to AMPS_PARAM_C9_gridless.in.  Both
 ! branches use exactly the same event driver, epochs, shell geometry, rigidity
@@ -46,9 +48,12 @@ CUTOFF_EMAX             705.763955063706
 CUTOFF_MAX_PARTICLES    1
 CUTOFF_NENERGY          50
 CUTOFF_SAMPLING         VERTICAL
-! FULL_SCAN uses PENUMBRA_SCAN and CUTOFF_UPPER_SCAN_N. DIRECT_ACCESS changes
-! CUTOFF_SEARCH_ALGORITHM to RIGIDITY_LIST and traces exactly the list below.
-! The explicit list and latitude band are harmless when PENUMBRA_SCAN is selected.
+! FULL_SCAN uses PENUMBRA_SCAN and CUTOFF_UPPER_SCAN_N, then independently
+! classifies every exact rigidity below and writes a companion PAMELA-access file.
+! DIRECT_ACCESS changes the algorithm to RIGIDITY_LIST and traces only this list.
+! The C++ latitude filter is applied only by DIRECT_ACCESS, while FULL_SCAN keeps
+! the complete shell. The Python T50 reducer filters both access products to the
+! same bounds, so the primary scientific comparison uses an identical domain.
 CUTOFF_SEARCH_ALGORITHM PENUMBRA_SCAN
 CUTOFF_UPPER_SCAN_N     160
 CUTOFF_RIGIDITY_LIST_GV 0.423556372,0.498397432,0.587877538,0.692820323,0.817006732,0.962081078,1.131017241

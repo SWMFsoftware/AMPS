@@ -3329,11 +3329,16 @@ if (ToUpper(p.field.model)=="DIPOLE") {
       exit(__LINE__,__FILE__,
            "PENUMBRA_SCAN and RIGIDITY_LIST require CUTOFF_SAMPLING VERTICAL");
     }
-    if (p.cutoff.searchAlgorithm=="RIGIDITY_LIST") {
-      if (p.cutoff.rigidityList_GV.empty()) {
-        exit(__LINE__,__FILE__,
-             "RIGIDITY_LIST requires a non-empty CUTOFF_RIGIDITY_LIST_GV");
-      }
+    // A rigidity list is mandatory for RIGIDITY_LIST and optional for
+    // PENUMBRA_SCAN.  In the latter case it requests exact fixed-rigidity access
+    // states as a companion diagnostic (used by C9/PAMELA_T50) without changing
+    // the regular penumbra grid or effective-cutoff integration.
+    if (p.cutoff.searchAlgorithm=="RIGIDITY_LIST" &&
+        p.cutoff.rigidityList_GV.empty()) {
+      exit(__LINE__,__FILE__,
+           "RIGIDITY_LIST requires a non-empty CUTOFF_RIGIDITY_LIST_GV");
+    }
+    if (!p.cutoff.rigidityList_GV.empty()) {
       for (std::size_t i=0;i<p.cutoff.rigidityList_GV.size();++i) {
         const double value=p.cutoff.rigidityList_GV[i];
         if (!(value>0.0) || !std::isfinite(value)) {
@@ -3345,13 +3350,14 @@ if (ToUpper(p.field.model)=="DIPOLE") {
                "CUTOFF_RIGIDITY_LIST_GV values must be strictly increasing");
         }
       }
-      if (!(p.cutoff.accessAbsLatMin_deg>=0.0 &&
-            p.cutoff.accessAbsLatMax_deg<=90.0 &&
-            p.cutoff.accessAbsLatMax_deg>p.cutoff.accessAbsLatMin_deg)) {
-        exit(__LINE__,__FILE__,
-             "RIGIDITY_LIST requires 0 <= CUTOFF_ACCESS_ABS_LAT_MIN < "
-             "CUTOFF_ACCESS_ABS_LAT_MAX <= 90 degrees");
-      }
+    }
+    if (p.cutoff.searchAlgorithm=="RIGIDITY_LIST" &&
+        !(p.cutoff.accessAbsLatMin_deg>=0.0 &&
+          p.cutoff.accessAbsLatMax_deg<=90.0 &&
+          p.cutoff.accessAbsLatMax_deg>p.cutoff.accessAbsLatMin_deg)) {
+      exit(__LINE__,__FILE__,
+           "RIGIDITY_LIST requires 0 <= CUTOFF_ACCESS_ABS_LAT_MIN < "
+           "CUTOFF_ACCESS_ABS_LAT_MAX <= 90 degrees");
     }
     if (p.cutoff.upperScanN < 0) {
       exit(__LINE__,__FILE__,"CUTOFF_UPPER_SCAN_N must be >= 0 (0 means: use CUTOFF_NENERGY)");
