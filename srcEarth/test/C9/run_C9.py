@@ -842,7 +842,10 @@ ACCESS_CONSISTENCY_INPUT_DIRECTIVES = (
 ACCESS_CONSISTENCY_COMMAND_OPTIONS = (
     "-np", "-mode", "--epoch", "-cutoff-trace-policy",
     "-cutoff-rigidity-list-gv", "-mode3d-field-eval", "-mode3d-parallel",
-    "-mode3d-threads", "-mode3d-mpi-scheduler", "-mode3d-mpi-dynamic-chunk",
+    "-mode3d-threads", "-mode3d-mpi-scheduler",
+    # Dynamic chunk controls work scheduling only. It may legitimately differ
+    # between FULL_SCAN and DIRECT_ACCESS and must not invalidate a comparison
+    # when the complete fixed-rigidity state tables agree.
     "-mode3d-mesh-res-earth-re", "-mode3d-mesh-res-boundary-re",
     "-mode3d-mesh-coarsening", "-mode3d-mesh-exponent", "-mover",
 )
@@ -1910,11 +1913,21 @@ def compare(reference_rows: Sequence[ReferenceRow], interval_models: Mapping[dat
             value = interval_models.get(row.midpoint, {}).get(low_rigidity, {}).get("cutoff_aacgm_deg")
             if value is not None:
                 low_model.append((row.midpoint, float(value)))
-        if low_model:
+        # Storm suppression is defined relative to the first selected
+        # pre-storm reference epoch, not the first epoch for which T50 happens
+        # to be available. Otherwise missing early boundaries silently move the
+        # baseline into the storm main phase and produce a misleading small
+        # suppression.
+        baseline_value = interval_models.get(
+            low_ref[0].midpoint, {}
+        ).get(low_rigidity, {}).get("cutoff_aacgm_deg")
+        if low_model and baseline_value is not None:
             modeled_min = min(low_model, key=lambda item: item[1])
             modeled_min_time = format_utc(modeled_min[0])
-            modeled_suppression = low_model[0][1] - modeled_min[1]
-            time_error = abs((modeled_min[0] - observed_min.midpoint).total_seconds()) / 60.0
+            modeled_suppression = float(baseline_value) - modeled_min[1]
+            time_error = abs(
+                (modeled_min[0] - observed_min.midpoint).total_seconds()
+            ) / 60.0
 
     numerical_pass = (
         valid_fraction >= args.min_valid_fraction
