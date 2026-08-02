@@ -125,14 +125,17 @@ diagnostics:
 
 - `P6` and `P7` are `PRIMARY` and control the default model/data PASS/FAIL
   metrics after background correction and independent-pass quality checks.
-- `P8` and `P9` are `DIAGNOSTIC`. They remain in every CSV and plot, but do not
-  control PASS/FAIL until their broad integral response and historical
-  subcommutation are forward-folded through an event spectrum.
+- `P8` and `P9` are `DIAGNOSTIC`. Every pass-level crossing is retained, but
+  only cells supported by at least two quality-eligible crossings, two pass
+  legs, and two spacecraft are used in connected diagnostic means. Sparse or
+  cross-channel-outlier cells remain visible as open markers and are written to
+  `C10_diagnostic_flags.csv`; they never control PASS/FAIL.
 
-This does not hide disagreement in P8/P9: `C10_result.json` reports separate
-per-channel bias, RMSE, correlation, and coverage, plus an all-channel
-diagnostic RMSE. It prevents a known detector-response approximation from being
-misidentified as a code error.
+The comparison plots average POES and AMPS over the exact same paired
+hemisphere/MLT cells. This prevents a sparse P9 observation from being compared
+with an AMPS mean over many unobserved sectors. `C10_result.json` reports robust
+and unfiltered per-channel metrics separately, so observational-quality
+filtering cannot hide disagreement.
 
 ## 4. Can the reference solution be extracted from publications?
 
@@ -298,7 +301,12 @@ The default extraction settings are:
 | MLT-bin width | 3 hours |
 | minimum primary P6/P7 crossings per cell | 2 |
 | minimum distinct primary pass legs per cell | 2 |
-| minimum diagnostic P8/P9 crossings per cell | 1 |
+| minimum diagnostic P8/P9 quality-eligible crossings per cell | 2 |
+| minimum diagnostic pass legs per cell | 2 |
+| minimum diagnostic spacecraft per cell | 2 |
+| minimum P8/P9 transition-support samples | 3 |
+| minimum P8/P9 robust contrast/noise | 3 |
+| P8-minus-P9 outlier rule | median + 4 robust sigma, with 6° fallback |
 
 ### 6.6 Products created by the builder
 
@@ -396,6 +404,27 @@ published an important notice about older unpacking-software behavior. C10:
 
 Use the processed Level-2 files or corrected unpacking software. Do not use the
 obsolete buggy C unpacker.
+
+### 7.2 P8/P9 cross-channel and coverage safeguards
+
+P8 and P9 from the same pass leg are compared before aggregation. The builder
+computes `delta = |latitude_P8| - |latitude_P9|` and flags an anomalously large
+positive separation using a robust median/MAD threshold, never using AMPS to
+select or reject observations. A flagged P9 crossing remains in
+`C10_poes_boundary_crossings.csv` with `P9_CROSS_CHANNEL_OUTLIER`, but it is
+excluded from robust diagnostic aggregation.
+
+Each fitted leg also records the number of samples supporting the central
+T20-T80 transition and a nonparametric plateau-minus-background contrast/noise
+ratio. P8/P9 crossings that lack transition support or contrast remain available
+for inspection but are not quality eligible. Reference cells carry
+`diagnostic_eligible`, `quality_status`, eligible-crossing count, outlier count,
+and support/noise summaries.
+
+The runner writes `C10_diagnostic_flags.csv` for sparse cells, cross-channel
+outliers, and diagnostic residuals larger than 5 degrees. Connected P8/P9 curves
+require at least two robust paired cells; isolated estimates are shown as open
+markers annotated with their paired-cell count.
 
 ### 7.2 Detector degradation
 
@@ -746,244 +775,66 @@ The runner obtains `sym_h_nt` directly from column 9 of the verified C9 TS05
 driver at each midpoint; the observational CSV no longer needs to duplicate
 that value.
 
-============================================================================================================
-Below is the complete `/bin/tcsh` sequence. It requires **no `sudo`** and installs everything inside:
+## 17. Validation-integrity plots and model-only convergence
+
+The connected curves in `C10_comparison.png` and `C10_mlt_comparison.png` now
+represent the same cells that are allowed to support a validation statement:
+
+- P6/P7 connected curves use only `acceptance_eligible=TRUE` cells;
+- P6/P7 `PRIMARY_PLOT_ONLY` cells remain as open markers;
+- P8/P9 connected curves use only robust `diagnostic_eligible=TRUE` cells; and
+- every POES mean and its AMPS mean use the identical paired row set.
+
+This presentation change does not remove rows and does not change the frozen
+P6/P7 acceptance metrics.
+
+Additional branch products are:
 
 ```text
-~/T11/AMPS/srcEarth/test/C10/.venv
+C10_driver_audit.json
+C10_driver_snapshot_inputs.csv
+C10_epoch_bias.csv
+C10_epoch_bias.png
+C10_mlt_residual_epoch_balanced.csv
+C10_mlt_residual_epoch_balanced.png
+C10_mlt_decomposition_summary.json
+C10_model_convergence.csv                 # with --model-convergence-root
+C10_model_convergence.json                # with --model-convergence-root
 ```
 
-It assumes the AMPS executable and MPI are already available, as in your previous C10 run.
-
-## 1. Check AMPS, MPI, and Python
-
-```tcsh
-cd ~/T11/AMPS && test -x amps && echo "AMPS executable: OK" && which mpirun && python3 --version
-```
-
-## 2. Remove an incomplete environment and prepare directories
-
-This removes only the C10-local Python environment, not data or model results:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && rm -rf .venv && mkdir -p data/reference_source
-```
-
-## 3. Install `virtualenv` in your user account
-
-```tcsh
-python3 -m pip install --user virtualenv
-```
-
-Make user-installed commands visible:
-
-```tcsh
-setenv PATH "${HOME}/.local/bin:${PATH}"
-```
-
-Create the environment:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && python3 -m virtualenv .venv
-```
-
-## 4. Activate the `tcsh` environment
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh
-```
-
-The prompt should begin with:
+The epoch/MLT decomposition fits
 
 ```text
-(.venv)
+residual(epoch, MLT) = epoch_offset(epoch) + zero_mean_MLT_shape(MLT) + error
 ```
 
-Confirm that the environment Python is being used:
+separately for each channel and hemisphere, using only predeclared acceptance or
+robust-diagnostic cells. It makes time-dependent bias and MLT-shape error visible
+as separate diagnostics. The fitted terms are never subtracted from AMPS and do
+not enter PASS/FAIL.
+
+For temporal sampling, use at least five snapshots across each two-hour
+observational window. A defensible convergence check compares five and nine
+snapshots with `--model-convergence-root`. For spatial convergence, use the same
+option for two runs that differ only in the predeclared mesh or shell resolution.
+The comparison uses current-AMPS minus counterpart-AMPS boundaries; it does not
+look at which run has a smaller observational residual.
+
+Example convergence gate:
 
 ```tcsh
-which python && python --version && python -m pip --version
+python run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --profile ROUTINE --interval-samples 9 --output-root test_output/C10_9sample --model-convergence-root test_output/C10_5sample --require-model-convergence --min-model-convergence-common-fraction 0.95 --max-model-convergence-rmse-deg 0.25 --max-model-convergence-abs-deg 0.75 -np 8 -nt 16
 ```
 
-`which python` should point to:
+The runner verifies that both runs identify the same solver, cutoff-evaluation
+product, comparison observable, reference SHA-256, and driver SHA-256 before a
+model-convergence result can pass.
 
-```text
-/home/vtenishe/T11/AMPS/srcEarth/test/C10/.venv/bin/python
-```
+No event-fitted latitude offset, effective-rigidity adjustment, detector-channel
+rescaling, or other empirical correction is implemented. Full detector-response
+folding still requires an independently specified official response table and an
+independently measured event spectrum. Until that forward operator is available,
+the nominal lower-threshold mapping remains explicit and P8/P9 remain diagnostic.
 
-## 5. Install all Python dependencies
-
-The `pip<25.1` constraint is appropriate for the Python 3.8 installation previously used on this machine:
-
-```tcsh
-python -m pip install --upgrade "pip<25.1" setuptools wheel
-```
-
-Install the C10 dependencies:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && python -m pip install -r requirements.txt
-```
-
-Verify all required packages:
-
-```tcsh
-python -c "import numpy, matplotlib, aacgmv2, cdflib; print('C10 Python dependencies installed successfully'); print('numpy:',numpy.__version__); print('matplotlib:',matplotlib.__version__); print('aacgmv2:',aacgmv2.__version__); print('cdflib:',cdflib.__version__)"
-```
-
-## 6. Fallback when the system Python has no `pip`
-
-Run this instead of Steps 3–5 only when `python3 -m pip` is unavailable:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && rm -rf .venv && curl -fL https://bootstrap.pypa.io/virtualenv.pyz -o "${HOME}/virtualenv.pyz" && python3 "${HOME}/virtualenv.pyz" .venv && source .venv/bin/activate.csh && python -m pip install --upgrade "pip<25.1" setuptools wheel && python -m pip install -r requirements.txt
-```
-
-Verify:
-
-```tcsh
-python -c "import numpy, matplotlib, aacgmv2, cdflib; print('C10 Python environment is ready')"
-```
-
-## 7. Compile-check the scripts and run offline tests
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python -m py_compile poes_sem2.py download_poes_sem2.py build_poes_reference.py run_C10.py && python -m unittest discover -s tests -v
-```
-
-Run the runner’s internal self-test:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python run_C10.py --self-test
-```
-
-## 8. Verify that the December 2006 TS05 driver exists
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && test -s ../C9/data/ts05_driving.txt && echo "C9/C10 TS05 driver: OK" && sha256sum ../C9/data/ts05_driving.txt
-```
-
-The expected checksum for the driver previously used by C9 is:
-
-```text
-cb3f3f1959763660beb1e26e5a49489b132708944fb91c4e1ee37cfc3a6c4317
-```
-
-Validate it through the C10 runner:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python run_C10.py --validate-driver
-```
-
-C10 automatically uses:
-
-```text
-srcEarth/test/C9/data/ts05_driving.txt
-```
-
-when no local C10 copy is present.
-
-## 9. Download the NOAA/NCEI measurements
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python download_poes_sem2.py --start 2006-12-05 --end 2006-12-16 --satellites n15,n16,n17,n18,m02 --format txt --output-dir data/reference_source |& tee C10_download.log
-```
-
-Inspect the downloaded inventory:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && find data/reference_source -type f | sort
-```
-
-Check for zero-byte files:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && find data/reference_source -type f -size 0 -print
-```
-
-Inspect the download manifest:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && python -m json.tool data/reference_source/download_manifest.json | less
-```
-
-If zero-byte files are reported, remove and redownload them:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && find data/reference_source -type f -size 0 -delete && source .venv/bin/activate.csh && python download_poes_sem2.py --start 2006-12-05 --end 2006-12-16 --satellites n15,n16,n17,n18,m02 --format txt --output-dir data/reference_source |& tee C10_redownload.log
-```
-
-## 10. Build the improved reference solution
-
-This generates the background-normalized, isotonic T50 reference and keeps the final comparison file gzip-compressed:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python build_poes_reference.py --input-dir data/reference_source --event-start 2006-12-14T00:00:00Z --event-end 2006-12-16T12:00:00Z --crossing-method BACKGROUND_NORMALIZED_ISOTONIC --minimum-background-samples 3 --minimum-crossings-per-cell 2 --minimum-diagnostic-crossings-per-cell 1 --minimum-distinct-pass-legs-per-cell 2 --acceptance-window-stride-hours 2 --crossings-output C10_poes_boundary_crossings.csv --reference-output reference_C10_poes_meped_boundary.csv.gz --manifest-output C10_reference_manifest.json --summary-output C10_reference_summary.json |& tee C10_build_reference.log
-```
-
-## 11. Check the generated reference products
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && gzip -t reference_C10_poes_meped_boundary.csv.gz && ls -lh C10_poes_boundary_crossings.csv reference_C10_poes_meped_boundary.csv.gz C10_reference_manifest.json C10_reference_summary.json
-```
-
-Count reference rows:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && echo "Crossing file lines:" && wc -l C10_poes_boundary_crossings.csv && echo "Compressed reference lines:" && gzip -cd reference_C10_poes_meped_boundary.csv.gz | wc -l
-```
-
-Inspect the beginning of the reference:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && gzip -cd reference_C10_poes_meped_boundary.csv.gz | head -10
-```
-
-Inspect the build summary:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && python -m json.tool C10_reference_summary.json
-```
-
-## 12. Validate the reference, driver, and installation
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python run_C10.py --validate-references --reference reference_C10_poes_meped_boundary.csv.gz && python run_C10.py --validate-driver && python run_C10.py --self-test
-```
-
-## 13. Run the fast C10 code-validation calculation
-
-Use `DIRECT_ACCESS` first:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root ~/T11/AMPS/test_output/C10_direct --amps ~/T11/AMPS/amps --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-profile-fraction 0.66 --t50-min-edge-margin-deg 1.0 --dynamic-chunk 32 -np 8 -nt 16 |& tee C10_direct.log
-```
-
-## 14. Run the full product and compare it with direct access
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python run_C10.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root ~/T11/AMPS/test_output/C10_full --access-consistency-root ~/T11/AMPS/test_output/C10_direct --amps ~/T11/AMPS/amps --cutoff-scan-n 120 --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-profile-fraction 0.66 --t50-min-edge-margin-deg 1.0 --dynamic-chunk 32 -np 8 -nt 16 |& tee C10_full.log
-```
-
-## 15. Reactivate the environment later
-
-For every new terminal:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh
-```
-
-Deactivate it with:
-
-```tcsh
-deactivate
-```
-
-## Complete setup in one command
-
-This performs environment creation, dependency installation, tests, data download, reference construction, and validation. It does not start the expensive AMPS calculation:
-
-```tcsh
-cd ~/T11/AMPS/srcEarth/test/C10 && rm -rf .venv && mkdir -p data/reference_source && python3 -m pip install --user virtualenv && setenv PATH "${HOME}/.local/bin:${PATH}" && python3 -m virtualenv .venv && source .venv/bin/activate.csh && python -m pip install --upgrade "pip<25.1" setuptools wheel && python -m pip install -r requirements.txt && python -m py_compile poes_sem2.py download_poes_sem2.py build_poes_reference.py run_C10.py && python -m unittest discover -s tests -v && python download_poes_sem2.py --start 2006-12-05 --end 2006-12-16 --satellites n15,n16,n17,n18,m02 --format txt --output-dir data/reference_source && python build_poes_reference.py --input-dir data/reference_source --event-start 2006-12-14T00:00:00Z --event-end 2006-12-16T12:00:00Z --crossing-method BACKGROUND_NORMALIZED_ISOTONIC --minimum-background-samples 3 --minimum-crossings-per-cell 2 --minimum-diagnostic-crossings-per-cell 1 --minimum-distinct-pass-legs-per-cell 2 --acceptance-window-stride-hours 2 --crossings-output C10_poes_boundary_crossings.csv --reference-output reference_C10_poes_meped_boundary.csv.gz --manifest-output C10_reference_manifest.json --summary-output C10_reference_summary.json && gzip -t reference_C10_poes_meped_boundary.csv.gz && python run_C10.py --validate-references --reference reference_C10_poes_meped_boundary.csv.gz && python run_C10.py --validate-driver && python run_C10.py --self-test
-```
-
+This update modifies runner postprocessing only. It does not require a new
+`reference_C10_poes_meped_boundary.csv.gz`.

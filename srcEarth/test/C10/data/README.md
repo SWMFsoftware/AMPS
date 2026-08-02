@@ -562,7 +562,15 @@ python build_poes_reference.py \
   --step-hours 1 \
   --mlt-bin-hours 3 \
   --minimum-crossings-per-cell 2 \
-  --minimum-diagnostic-crossings-per-cell 1 \
+  --minimum-diagnostic-crossings-per-cell 2 \
+  --minimum-diagnostic-distinct-pass-legs-per-cell 2 \
+  --minimum-diagnostic-distinct-satellites-per-cell 2 \
+  --minimum-primary-transition-samples 2 \
+  --minimum-diagnostic-transition-samples 3 \
+  --minimum-diagnostic-contrast-to-noise 3 \
+  --p8-p9-outlier-sigma 4 \
+  --p8-p9-minimum-pairs 6 \
+  --p8-p9-fallback-max-separation-deg 6 \
   --minimum-distinct-pass-legs-per-cell 2 \
   --acceptance-window-stride-hours 2 \
   --crossings-output C10_poes_boundary_crossings.csv \
@@ -627,7 +635,14 @@ Important scientific settings are:
 | `--step-hours` | 1 | separation between adjacent window centers |
 | `--mlt-bin-hours` | 3 | MLT-bin width |
 | `--minimum-crossings-per-cell` | 2 | crossings required for PRIMARY P6/P7 cells |
-| `--minimum-diagnostic-crossings-per-cell` | 1 | crossings required to retain a P8/P9 diagnostic cell |
+| `--minimum-diagnostic-crossings-per-cell` | 2 | quality-eligible crossings required for a robust P8/P9 cell |
+| `--minimum-diagnostic-distinct-pass-legs-per-cell` | 2 | independent diagnostic pass legs |
+| `--minimum-diagnostic-distinct-satellites-per-cell` | 2 | independent diagnostic spacecraft |
+| `--minimum-primary-transition-samples` | 2 | central-profile support for P6/P7 |
+| `--minimum-diagnostic-transition-samples` | 3 | central-profile support for P8/P9 |
+| `--minimum-diagnostic-contrast-to-noise` | 3 | robust plateau/background contrast-noise requirement |
+| `--p8-p9-outlier-sigma` | 4 | robust upper-separation threshold multiplier |
+| `--p8-p9-fallback-max-separation-deg` | 6 | conservative limit when too few pass pairs exist |
 | `--minimum-distinct-pass-legs-per-cell` | 2 | independent pass legs required by a primary cell |
 | `--acceptance-window-stride-hours` | 2 | nonoverlapping midpoint stride used for PASS/FAIL |
 
@@ -711,11 +726,28 @@ calibration covariance.
 
 Each crossing is tagged `PRIMARY` (P6/P7) or `DIAGNOSTIC` (P8/P9). All channels
 are aggregated into two-hour windows stepped by one hour and three-hour MLT
-bins. A primary cell is populated only when it has at least two crossings from
-at least two distinct pass legs. Only primary cells whose midpoints lie on the
-configured two-hour nonoverlapping stride are marked `acceptance_eligible`.
-Overlapping primary cells and all P8/P9 cells remain available for plots and
-per-channel diagnostic metrics.
+bins. P6/P7 acceptance still requires two crossings, two pass legs, and the
+nonoverlapping two-hour stride. P8/P9 receive an independent robust-diagnostic
+gate requiring two quality-eligible crossings, two pass legs, and two
+spacecraft. Sparse and cross-channel-outlier diagnostic cells retain a numerical
+estimate and explicit `quality_status`, but `diagnostic_eligible=FALSE` keeps
+them out of connected means and robust metrics.
+
+### 10.7 P8/P9 observational consistency and noise diagnostics
+
+For each pass leg containing both P8 and P9, the builder records the P8-minus-P9
+boundary separation. A P9 point above the robust median-plus-four-MAD limit (or
+above the conservative 6-degree fallback when the sample is small) is tagged
+`P9_CROSS_CHANNEL_OUTLIER` and excluded from robust aggregation. This test is
+measurement-only and never compares with AMPS while deciding eligibility.
+
+The pass-level CSV also records `transition_support_samples`,
+`contrast_to_noise_ratio`, `cross_channel_delta_p8_p9_deg`,
+`cross_channel_outlier`, and `aggregate_eligible`. The compressed reference adds
+`diagnostic_eligible`, `quality_status`, `n_aggregate_eligible_crossings`,
+`n_cross_channel_outliers`, and median support/noise fields. Rebuild the
+reference after installing this version; older schemas are intentionally
+rejected.
 
 ### 10.7 Legacy threshold sensitivity
 

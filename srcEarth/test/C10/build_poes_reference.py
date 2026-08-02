@@ -40,6 +40,7 @@ from poes_sem2 import (
     extract_boundary_crossings,
     load_observations,
     sha256_file,
+    summarize_cross_channel_quality,
     write_crossings_csv,
     write_manifest,
     write_reference_csv,
@@ -104,8 +105,19 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--mlt-bin-hours", type=float, default=3.0)
     parser.add_argument("--minimum-crossings-per-cell", type=int, default=2,
                         help="Minimum crossings for primary P6/P7 cells")
-    parser.add_argument("--minimum-diagnostic-crossings-per-cell", type=int, default=1)
-    parser.add_argument("--minimum-distinct-pass-legs-per-cell", type=int, default=2)
+    parser.add_argument("--minimum-diagnostic-crossings-per-cell", type=int, default=2,
+                        help="Minimum quality-eligible P8/P9 crossings for a robust diagnostic cell")
+    parser.add_argument("--minimum-distinct-pass-legs-per-cell", type=int, default=2,
+                        help="Minimum independent pass legs for primary P6/P7 cells")
+    parser.add_argument("--minimum-diagnostic-distinct-pass-legs-per-cell", type=int, default=2)
+    parser.add_argument("--minimum-diagnostic-distinct-satellites-per-cell", type=int, default=2)
+    parser.add_argument("--minimum-primary-transition-samples", type=int, default=2)
+    parser.add_argument("--minimum-diagnostic-transition-samples", type=int, default=3)
+    parser.add_argument("--minimum-diagnostic-contrast-to-noise", type=float, default=3.0,
+                        help="Robust plateau-minus-background contrast/noise ratio for P8/P9")
+    parser.add_argument("--p8-p9-outlier-sigma", type=float, default=4.0)
+    parser.add_argument("--p8-p9-minimum-pairs", type=int, default=6)
+    parser.add_argument("--p8-p9-fallback-max-separation-deg", type=float, default=6.0)
     parser.add_argument("--acceptance-window-stride-hours", type=float, default=2.0,
                         help="Non-overlapping midpoint stride used by the validation gate")
     parser.add_argument("--crossings-output", type=Path, default=Path("C10_poes_boundary_crossings.csv"))
@@ -140,6 +152,18 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error("--minimum-diagnostic-crossings-per-cell must be >= 1")
     if args.minimum_distinct_pass_legs_per_cell < 1:
         parser.error("--minimum-distinct-pass-legs-per-cell must be >= 1")
+    if args.minimum_diagnostic_distinct_pass_legs_per_cell < 1:
+        parser.error("--minimum-diagnostic-distinct-pass-legs-per-cell must be >= 1")
+    if args.minimum_diagnostic_distinct_satellites_per_cell < 1:
+        parser.error("--minimum-diagnostic-distinct-satellites-per-cell must be >= 1")
+    if args.minimum_primary_transition_samples < 1 or args.minimum_diagnostic_transition_samples < 1:
+        parser.error("minimum transition-sample requirements must be >= 1")
+    if args.minimum_diagnostic_contrast_to_noise < 0.0:
+        parser.error("--minimum-diagnostic-contrast-to-noise must be >= 0")
+    if args.p8_p9_outlier_sigma < 0.0 or args.p8_p9_minimum_pairs < 1:
+        parser.error("P8/P9 robust outlier settings are invalid")
+    if args.p8_p9_fallback_max_separation_deg <= 0.0:
+        parser.error("--p8-p9-fallback-max-separation-deg must be > 0")
     if args.window_hours <= 0.0 or args.step_hours <= 0.0:
         parser.error("--window-hours and --step-hours must be > 0")
     if args.acceptance_window_stride_hours <= 0.0:
@@ -203,6 +227,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         maximum_transition_width_deg=args.maximum_transition_width_deg,
         maximum_isotonic_rms=args.maximum_isotonic_rms,
         minimum_edge_margin_deg=args.minimum_edge_margin_deg,
+        minimum_primary_transition_samples=args.minimum_primary_transition_samples,
+        minimum_diagnostic_transition_samples=args.minimum_diagnostic_transition_samples,
+        minimum_diagnostic_contrast_to_noise=args.minimum_diagnostic_contrast_to_noise,
+        p8_p9_outlier_sigma=args.p8_p9_outlier_sigma,
+        p8_p9_minimum_pairs=args.p8_p9_minimum_pairs,
+        p8_p9_fallback_max_separation_deg=args.p8_p9_fallback_max_separation_deg,
     )
     if not crossings:
         print(
@@ -224,6 +254,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         minimum_crossings_per_cell=args.minimum_crossings_per_cell,
         minimum_diagnostic_crossings_per_cell=args.minimum_diagnostic_crossings_per_cell,
         minimum_distinct_pass_legs_per_cell=args.minimum_distinct_pass_legs_per_cell,
+        minimum_diagnostic_distinct_pass_legs_per_cell=(
+            args.minimum_diagnostic_distinct_pass_legs_per_cell),
+        minimum_diagnostic_distinct_satellites_per_cell=(
+            args.minimum_diagnostic_distinct_satellites_per_cell),
         acceptance_window_stride_hours=args.acceptance_window_stride_hours,
     )
 
@@ -247,6 +281,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "minimum_crossings_per_cell": args.minimum_crossings_per_cell,
         "minimum_diagnostic_crossings_per_cell": args.minimum_diagnostic_crossings_per_cell,
         "minimum_distinct_pass_legs_per_cell": args.minimum_distinct_pass_legs_per_cell,
+        "minimum_diagnostic_distinct_pass_legs_per_cell": (
+            args.minimum_diagnostic_distinct_pass_legs_per_cell),
+        "minimum_diagnostic_distinct_satellites_per_cell": (
+            args.minimum_diagnostic_distinct_satellites_per_cell),
+        "minimum_primary_transition_samples": args.minimum_primary_transition_samples,
+        "minimum_diagnostic_transition_samples": args.minimum_diagnostic_transition_samples,
+        "minimum_diagnostic_contrast_to_noise": args.minimum_diagnostic_contrast_to_noise,
+        "p8_p9_outlier_sigma": args.p8_p9_outlier_sigma,
+        "p8_p9_minimum_pairs": args.p8_p9_minimum_pairs,
+        "p8_p9_fallback_max_separation_deg": args.p8_p9_fallback_max_separation_deg,
         "acceptance_window_stride_hours": args.acceptance_window_stride_hours,
         "boundary_definition": "background_normalized_isotonic_T50",
         "validation_gate": "P6_P7_primary_independent_windows",
@@ -265,6 +309,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "n_reference_cells": len(cells),
         "n_nonmissing_reference_cells": sum(not cell.missing for cell in cells),
         "n_acceptance_eligible_cells": sum(cell.acceptance_eligible for cell in cells),
+        "n_diagnostic_eligible_cells": sum(cell.diagnostic_eligible for cell in cells),
+        "n_sparse_diagnostic_cells": sum(
+            cell.quality_status in ("DIAGNOSTIC_SPARSE", "DIAGNOSTIC_CROSS_CHANNEL_OUTLIER")
+            for cell in cells),
+        "n_cross_channel_outlier_cells": sum(cell.n_cross_channel_outliers > 0 for cell in cells),
+        "cross_channel_quality": summarize_cross_channel_quality(crossings),
         "n_primary_crossings": sum(row.validation_role == "PRIMARY" for row in crossings),
         "n_diagnostic_crossings": sum(row.validation_role == "DIAGNOSTIC" for row in crossings),
         "reference_compression": "gzip",

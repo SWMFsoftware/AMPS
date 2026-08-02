@@ -56,7 +56,7 @@ import math
 import re
 import statistics
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
@@ -161,6 +161,11 @@ class BoundaryCrossing:
     quality_flags: str
     source_file: str
     source_sha256: str
+    transition_support_samples: int = 0
+    contrast_to_noise_ratio: Optional[float] = None
+    cross_channel_delta_p8_p9_deg: Optional[float] = None
+    cross_channel_outlier: bool = False
+    aggregate_eligible: bool = True
 
 
 @dataclass(frozen=True)
@@ -191,6 +196,12 @@ class ReferenceCell:
     source: str
     source_ref: str
     notes: str
+    diagnostic_eligible: bool = False
+    quality_status: str = "UNSPECIFIED"
+    n_aggregate_eligible_crossings: int = 0
+    n_cross_channel_outliers: int = 0
+    median_transition_support_samples: Optional[float] = None
+    median_contrast_to_noise_ratio: Optional[float] = None
 
 
 def normalize_name(name: str) -> str:
@@ -679,11 +690,103 @@ def _interpolate_observations(
     return when, geo_lat, geo_lon, altitude, aacgm_lat, mlt
 
 
+def _robust_scale(values: Sequence[float]) -> float:
+    """Return a robust one-sigma scale, with a standard-deviation fallback."""
+
+    finite = [float(value) for value in values if math.isfinite(float(value))]
+    if len(finite) < 2:
+        return 0.0
+    center = statistics.median(finite)
+    mad = statistics.median(abs(value - center) for value in finite)
+    scale = 1.4826 * mad
+    if scale > 0.0:
+        return scale
+    return statistics.stdev(finite) if len(finite) > 1 else 0.0
+
+
+def _append_quality_flag(flags: str, flag: str) -> str:
+    parts = [item for item in str(flags).split(";") if item]
+    if flag not in parts:
+        parts.append(flag)
+    return ";".join(parts)
+
+
+def flag_p8_p9_cross_channel_outliers(
+    crossings: Sequence[BoundaryCrossing],
+    sigma_multiplier: float = 4.0,
+    minimum_pairs: int = 6,
+    fallback_max_separation_deg: float = 6.0,
+) -> List[BoundaryCrossing]:
+    """Flag anomalously equatorward P9 crossings using same-pass P8/P9 pairs.
+
+    The comparison is observational only: for each pass leg, ``delta`` is the
+    absolute-AACGM P8 boundary minus the P9 boundary.  The upper limit is the
+    larger of a conservative fixed separation and a robust median-plus-MAD
+    threshold.  Flagged P9 rows remain in the pass-level CSV but are excluded
+    from robust binned diagnostics.
+    """
+
+    keyed: Dict[Tuple[str, str], Dict[str, BoundaryCrossing]] = {}
+    for row in crossings:
+        if row.channel in ("P8", "P9"):
+            keyed.setdefault((row.pass_id, row.leg), {})[row.channel] = row
+    deltas = [
+        abs(pair["P8"].aacgm_lat_deg) - abs(pair["P9"].aacgm_lat_deg)
+        for pair in keyed.values() if "P8" in pair and "P9" in pair
+    ]
+    if deltas:
+        center = statistics.median(deltas)
+        robust_sigma = _robust_scale(deltas)
+        robust_limit = center + sigma_multiplier * robust_sigma
+        upper_limit = max(fallback_max_separation_deg, robust_limit)
+    else:
+        center = robust_sigma = 0.0
+        upper_limit = fallback_max_separation_deg
+    # With very few pairs, do not allow a small accidental MAD to tighten the
+    # fixed, physically conservative diagnostic limit.
+    if len(deltas) < minimum_pairs:
+        upper_limit = fallback_max_separation_deg
+
+    result: List[BoundaryCrossing] = []
+    for row in crossings:
+        pair = keyed.get((row.pass_id, row.leg), {})
+        if row.channel == "P9" and "P8" in pair and "P9" in pair:
+            delta = abs(pair["P8"].aacgm_lat_deg) - abs(pair["P9"].aacgm_lat_deg)
+            outlier = delta > upper_limit
+            flags = _append_quality_flag(row.quality_flags, "P8_P9_CROSS_CHANNEL_CHECKED")
+            if outlier:
+                flags = _append_quality_flag(flags, "P9_CROSS_CHANNEL_OUTLIER")
+            row = replace(
+                row,
+                quality_flags=flags,
+                cross_channel_delta_p8_p9_deg=delta,
+                cross_channel_outlier=outlier,
+                aggregate_eligible=(row.aggregate_eligible and not outlier),
+            )
+        result.append(row)
+    return result
+
+
+def summarize_cross_channel_quality(crossings: Sequence[BoundaryCrossing]) -> Dict[str, object]:
+    """Summarize P8/P9 pass-pair diagnostics for manifests and logs."""
+
+    checked = [row for row in crossings
+               if row.channel == "P9" and row.cross_channel_delta_p8_p9_deg is not None]
+    deltas = [float(row.cross_channel_delta_p8_p9_deg) for row in checked]
+    return {
+        "n_p8_p9_pass_leg_pairs": len(checked),
+        "n_p9_cross_channel_outliers": sum(row.cross_channel_outlier for row in checked),
+        "median_p8_minus_p9_boundary_deg": statistics.median(deltas) if deltas else None,
+        "robust_sigma_p8_minus_p9_boundary_deg": _robust_scale(deltas) if deltas else None,
+    }
+
+
 def _background_normalized_leg_crossing(
     leg: Sequence[Observation],
     channel: str,
     plateau: float,
     minimum_abs_lat_deg: float,
+    polar_plateau_abs_lat_deg: float,
     minimum_background_samples: int,
     minimum_leg_samples: int,
     minimum_plateau_to_low_ratio: float,
@@ -691,7 +794,7 @@ def _background_normalized_leg_crossing(
     maximum_isotonic_rms: float,
     minimum_edge_margin_deg: float,
 ) -> Optional[Dict[str, object]]:
-    """Fit one leg and return a quality-controlled background-normalized T50."""
+    """Fit one leg and return a background-normalized T50 plus diagnostics."""
 
     valid = [row for row in leg if channel in row.flux_by_channel]
     if len(valid) < minimum_leg_samples:
@@ -703,7 +806,8 @@ def _background_normalized_leg_crossing(
     ]
     if len(background_rows) < minimum_background_samples:
         return None
-    background = statistics.median(row.flux_by_channel[channel] for row in background_rows)
+    background_values = [row.flux_by_channel[channel] for row in background_rows]
+    background = statistics.median(background_values)
     if not math.isfinite(background) or background < 0.0 or plateau <= background:
         return None
     ratio = plateau / max(background, 1.0e-30)
@@ -714,7 +818,6 @@ def _background_normalized_leg_crossing(
     latitudes = [abs(row.aacgm_lat_deg) for row in ordered]
     denominator = plateau - background
     normalized = [(row.flux_by_channel[channel] - background) / denominator for row in ordered]
-    # Limit isolated spikes before PAVA without forcing the final fit into [0,1].
     clipped = [min(1.5, max(-0.5, value)) for value in normalized]
     fitted = _isotonic_nondecreasing(clipped)
     rms = math.sqrt(statistics.fmean((a - b) ** 2 for a, b in zip(clipped, fitted)))
@@ -735,6 +838,21 @@ def _background_normalized_leg_crossing(
     if (lat50 - latitudes[0] < minimum_edge_margin_deg
             or latitudes[-1] - lat50 < minimum_edge_margin_deg):
         return None
+
+    # Count actual records supporting the central transition, rather than only
+    # the two records used for T50 interpolation.  P8/P9 profiles with one jump
+    # can otherwise look precise despite weak statistics.
+    transition_support = sum(0.20 <= value <= 0.80 for value in fitted)
+    polar_values = [
+        row.flux_by_channel[channel] for row in valid
+        if abs(row.aacgm_lat_deg) >= polar_plateau_abs_lat_deg
+    ]
+    background_noise = _robust_scale(background_values)
+    polar_noise = _robust_scale(polar_values)
+    combined_noise = math.hypot(background_noise, polar_noise)
+    contrast_to_noise = (
+        (plateau - background) / combined_noise if combined_noise > 0.0 else float("inf")
+    )
 
     first, second = ordered[upper - 1], ordered[upper]
     when, geo_lat, geo_lon, altitude, aacgm_lat, mlt = _interpolate_observations(
@@ -765,6 +883,8 @@ def _background_normalized_leg_crossing(
         "uncertainty": uncertainty,
         "n_background_samples": len(background_rows),
         "n_leg_samples": len(ordered),
+        "transition_support_samples": transition_support,
+        "contrast_to_noise_ratio": contrast_to_noise,
         "threshold_flux": background + 0.5 * (plateau - background),
     }
 
@@ -782,6 +902,12 @@ def extract_boundary_crossings(
     maximum_transition_width_deg: float = 15.0,
     maximum_isotonic_rms: float = 0.35,
     minimum_edge_margin_deg: float = 0.5,
+    minimum_primary_transition_samples: int = 2,
+    minimum_diagnostic_transition_samples: int = 3,
+    minimum_diagnostic_contrast_to_noise: float = 3.0,
+    p8_p9_outlier_sigma: float = 4.0,
+    p8_p9_minimum_pairs: int = 6,
+    p8_p9_fallback_max_separation_deg: float = 6.0,
 ) -> List[BoundaryCrossing]:
     """Extract quality-controlled cutoff boundaries from all valid polar passes.
 
@@ -841,6 +967,7 @@ def extract_boundary_crossings(
                         channel=channel,
                         plateau=plateau,
                         minimum_abs_lat_deg=minimum_abs_lat_deg,
+                        polar_plateau_abs_lat_deg=polar_plateau_abs_lat_deg,
                         minimum_background_samples=minimum_background_samples,
                         minimum_leg_samples=minimum_leg_samples,
                         minimum_plateau_to_low_ratio=minimum_plateau_to_low_ratio,
@@ -863,6 +990,18 @@ def extract_boundary_crossings(
                     uncertainty = float(fit["uncertainty"])
                     n_background = int(fit["n_background_samples"])
                     n_leg = int(fit["n_leg_samples"])
+                    transition_support = int(fit["transition_support_samples"])
+                    contrast_to_noise = float(fit["contrast_to_noise_ratio"])
+                    required_support = (minimum_primary_transition_samples
+                                        if CHANNEL_VALIDATION_ROLE[channel] == "PRIMARY"
+                                        else minimum_diagnostic_transition_samples)
+                    aggregate_eligible = transition_support >= required_support
+                    if transition_support < required_support:
+                        flags.append("INSUFFICIENT_TRANSITION_SUPPORT")
+                    if (CHANNEL_VALIDATION_ROLE[channel] == "DIAGNOSTIC"
+                            and contrast_to_noise < minimum_diagnostic_contrast_to_noise):
+                        aggregate_eligible = False
+                        flags.append("LOW_DIAGNOSTIC_CONTRAST_TO_NOISE")
                     when = fit["when"]
                     geo_lat = float(fit["geo_lat"])
                     geo_lon = float(fit["geo_lon"])
@@ -894,6 +1033,9 @@ def extract_boundary_crossings(
                     lat25 = lat50 = lat75 = width = isotonic_rms = None
                     n_background = len(background_rows)
                     n_leg = len(leg)
+                    transition_support = 0
+                    contrast_to_noise = None
+                    aggregate_eligible = False
                     flags.append("LEGACY_UNCORRECTED_HALF_POLAR_PLATEAU")
 
                 crossings.append(BoundaryCrossing(
@@ -930,7 +1072,16 @@ def extract_boundary_crossings(
                     quality_flags=";".join(flags),
                     source_file=first.source_file,
                     source_sha256=first.source_sha256,
+                    transition_support_samples=transition_support,
+                    contrast_to_noise_ratio=contrast_to_noise,
+                    aggregate_eligible=aggregate_eligible,
                 ))
+    crossings = flag_p8_p9_cross_channel_outliers(
+        crossings,
+        sigma_multiplier=p8_p9_outlier_sigma,
+        minimum_pairs=p8_p9_minimum_pairs,
+        fallback_max_separation_deg=p8_p9_fallback_max_separation_deg,
+    )
     crossings.sort(key=lambda row: (row.crossing_time_utc, row.channel, row.hemisphere, row.satellite, row.leg))
     return crossings
 
@@ -964,17 +1115,21 @@ def aggregate_crossings(
     step_hours: float = 1.0,
     mlt_bin_centers: Sequence[float] = tuple(float(v) for v in range(0, 24, 3)),
     minimum_crossings_per_cell: int = 2,
-    minimum_diagnostic_crossings_per_cell: int = 1,
+    minimum_diagnostic_crossings_per_cell: int = 2,
     minimum_distinct_pass_legs_per_cell: int = 2,
+    minimum_diagnostic_distinct_pass_legs_per_cell: int = 2,
+    minimum_diagnostic_distinct_satellites_per_cell: int = 2,
     acceptance_window_stride_hours: float = 2.0,
     source_ref: str = "Dmitriev et al. (2010), doi:10.1029/2010JA015380",
 ) -> List[ReferenceCell]:
-    """Aggregate measured crossings while retaining validation eligibility.
+    """Aggregate crossings without hiding sparse or anomalous diagnostics.
 
-    All one-hour-step cells remain available for plots.  Only background-corrected
-    P6/P7 cells with enough independent pass legs and lying on the configured
-    non-overlapping acceptance stride contribute to the default code-validation
-    gate.  P8/P9 are always retained as diagnostics.
+    Every cell with at least one measured crossing retains a boundary estimate.
+    P6/P7 control PASS/FAIL only when their independent-window requirements are
+    met.  P8/P9 receive a separate ``diagnostic_eligible`` flag requiring robust
+    pass-leg and multi-satellite support and excluding cross-channel outliers.
+    Sparse diagnostic estimates remain in the reference and comparison CSV but
+    are not connected into the main diagnostic curves.
     """
 
     half_window = timedelta(hours=0.5 * window_hours)
@@ -985,67 +1140,101 @@ def aggregate_crossings(
         start = midpoint - half_window
         end = midpoint + half_window
         offset_hours = (midpoint - event_start).total_seconds() / 3600.0
-        if acceptance_window_stride_hours > 0.0:
-            q = offset_hours / acceptance_window_stride_hours
-            independent_window = math.isclose(q, round(q), rel_tol=0.0, abs_tol=1.0e-8)
-        else:
-            independent_window = True
+        q = offset_hours / acceptance_window_stride_hours
+        independent_window = math.isclose(q, round(q), rel_tol=0.0, abs_tol=1.0e-8)
 
         for channel, threshold_mev in CHANNEL_THRESHOLDS_MEV.items():
             rigidity = proton_rigidity_gv_from_kinetic_energy_mev(threshold_mev)
             role = CHANNEL_VALIDATION_ROLE[channel]
-            required_count = (minimum_crossings_per_cell if role == "PRIMARY"
-                              else minimum_diagnostic_crossings_per_cell)
             for hemisphere in ("N", "S"):
                 for mlt_center in mlt_bin_centers:
-                    selected = [
+                    selected_all = [
                         row for row in crossings
                         if row.channel == channel
                         and row.hemisphere == hemisphere
                         and start <= row.crossing_time_utc < end
                         and math.isclose(nearest_mlt_bin(row.mlt_hour, mlt_bin_centers), mlt_center)
                     ]
-                    pass_legs = {row.pass_id + ":" + row.leg for row in selected}
-                    satellite_set = {row.satellite for row in selected}
-                    enough_independent_legs = len(pass_legs) >= minimum_distinct_pass_legs_per_cell
-                    valid = len(selected) >= required_count and (
-                        role != "PRIMARY" or enough_independent_legs
+                    selected_eligible = [row for row in selected_all if row.aggregate_eligible]
+                    eligible_pass_legs = {row.pass_id + ":" + row.leg for row in selected_eligible}
+                    eligible_satellites = {row.satellite for row in selected_eligible}
+                    all_pass_legs = {row.pass_id + ":" + row.leg for row in selected_all}
+                    all_satellites = {row.satellite for row in selected_all}
+
+                    primary_robust = (
+                        role == "PRIMARY"
+                        and len(selected_eligible) >= minimum_crossings_per_cell
+                        and len(eligible_pass_legs) >= minimum_distinct_pass_legs_per_cell
+                    )
+                    diagnostic_robust = (
+                        role == "DIAGNOSTIC"
+                        and len(selected_eligible) >= minimum_diagnostic_crossings_per_cell
+                        and len(eligible_pass_legs) >= minimum_diagnostic_distinct_pass_legs_per_cell
+                        and len(eligible_satellites) >= minimum_diagnostic_distinct_satellites_per_cell
                     )
                     acceptance_eligible = (
-                        valid
-                        and role == "PRIMARY"
-                        and independent_window
-                        and all(row.crossing_method == "BACKGROUND_NORMALIZED_ISOTONIC" for row in selected)
+                        primary_robust and independent_window
+                        and all(row.crossing_method == "BACKGROUND_NORMALIZED_ISOTONIC"
+                                for row in selected_eligible)
                     )
+                    diagnostic_eligible = bool(diagnostic_robust)
 
-                    latitudes = [abs(row.aacgm_lat_deg) for row in selected]
-                    altitudes = [row.altitude_km for row in selected]
-                    widths = [row.transition_width_deg for row in selected
+                    # Prefer quality-eligible crossings, but preserve a sparse
+                    # diagnostic estimate when no robust set exists.
+                    estimate_rows = selected_eligible if selected_eligible else selected_all
+                    latitudes = [abs(row.aacgm_lat_deg) for row in estimate_rows]
+                    altitudes = [row.altitude_km for row in estimate_rows]
+                    widths = [row.transition_width_deg for row in estimate_rows
                               if row.transition_width_deg is not None]
-                    if valid:
+                    supports = [row.transition_support_samples for row in estimate_rows]
+                    cnr_values = [float(row.contrast_to_noise_ratio) for row in estimate_rows
+                                  if row.contrast_to_noise_ratio is not None
+                                  and math.isfinite(float(row.contrast_to_noise_ratio))]
+                    if estimate_rows:
                         boundary = statistics.median(latitudes)
                         if len(latitudes) > 1:
-                            robust_sigma = 1.4826 * statistics.median(abs(value - boundary) for value in latitudes)
+                            robust_sigma = 1.4826 * statistics.median(
+                                abs(value - boundary) for value in latitudes)
                         else:
-                            robust_sigma = selected[0].boundary_uncertainty_deg
+                            robust_sigma = estimate_rows[0].boundary_uncertainty_deg
                         sigma = max(
                             0.25,
                             robust_sigma,
-                            statistics.fmean(row.boundary_uncertainty_deg for row in selected),
+                            statistics.fmean(row.boundary_uncertainty_deg for row in estimate_rows),
                         )
                         altitude = statistics.fmean(altitudes)
                     else:
                         boundary = sigma = None
-                        altitude = statistics.fmean(altitudes) if altitudes else 850.0
-                    satellites = ";".join(sorted(satellite_set))
+                        altitude = 850.0
+
+                    n_outliers = sum(row.cross_channel_outlier for row in selected_all)
+                    if not selected_all:
+                        quality_status = "MISSING"
+                    elif acceptance_eligible:
+                        quality_status = "PRIMARY_ACCEPTANCE"
+                    elif role == "PRIMARY":
+                        quality_status = "PRIMARY_PLOT_ONLY"
+                    elif diagnostic_eligible:
+                        quality_status = "DIAGNOSTIC_ROBUST"
+                    elif n_outliers:
+                        quality_status = "DIAGNOSTIC_CROSS_CHANNEL_OUTLIER"
+                    else:
+                        quality_status = "DIAGNOSTIC_SPARSE"
+
+                    satellites = ";".join(sorted(all_satellites))
                     median_width = statistics.median(widths) if widths else None
                     notes = (
-                        "Background-normalized isotonic T50; median of accepted inbound/outbound "
-                        "pass-leg crossings; nominal lower-threshold rigidity."
+                        "Background-normalized isotonic T50; median of pass-leg crossings; "
+                        "nominal lower-threshold rigidity."
                     )
                     if role == "DIAGNOSTIC":
-                        notes += " Diagnostic-only until MEPED response folding is implemented."
-                    if valid and not acceptance_eligible and role == "PRIMARY":
+                        notes += (
+                            " P8/P9 are diagnostic-only until detector-response folding; "
+                            "robust curves require multiple pass legs and satellites."
+                        )
+                    if quality_status in ("DIAGNOSTIC_SPARSE", "DIAGNOSTIC_CROSS_CHANNEL_OUTLIER"):
+                        notes += " Retained in detailed output but excluded from robust diagnostic means."
+                    if role == "PRIMARY" and not acceptance_eligible and estimate_rows:
                         notes += " Retained for plotting but excluded from the independent-window acceptance gate."
 
                     cells.append(ReferenceCell(
@@ -1063,18 +1252,27 @@ def aggregate_crossings(
                         boundary_aacgm_lat_deg=boundary,
                         sigma_deg=sigma,
                         altitude_km=altitude,
-                        n_crossings=len(selected),
-                        n_distinct_pass_legs=len(pass_legs),
-                        n_distinct_satellites=len(satellite_set),
+                        n_crossings=len(selected_all),
+                        n_distinct_pass_legs=len(all_pass_legs),
+                        n_distinct_satellites=len(all_satellites),
                         median_transition_width_deg=median_width,
-                        background_corrected=bool(selected) and all(
-                            row.crossing_method == "BACKGROUND_NORMALIZED_ISOTONIC" for row in selected
+                        background_corrected=bool(estimate_rows) and all(
+                            row.crossing_method == "BACKGROUND_NORMALIZED_ISOTONIC"
+                            for row in estimate_rows
                         ),
                         satellites=satellites,
-                        missing=not valid,
+                        missing=not bool(estimate_rows),
                         source="POES_NCEI_LEVEL2_16SEC",
                         source_ref=source_ref,
                         notes=notes,
+                        diagnostic_eligible=diagnostic_eligible,
+                        quality_status=quality_status,
+                        n_aggregate_eligible_crossings=len(selected_eligible),
+                        n_cross_channel_outliers=n_outliers,
+                        median_transition_support_samples=(
+                            statistics.median(supports) if supports else None),
+                        median_contrast_to_noise_ratio=(
+                            statistics.median(cnr_values) if cnr_values else None),
                     ))
     return cells
 
@@ -1140,11 +1338,15 @@ def write_reference_csv(cells: Sequence[ReferenceCell], output: Path, manifest_s
         "boundary_aacgm_lat_deg", "sigma_deg", "altitude_km", "n_crossings",
         "n_distinct_pass_legs", "n_distinct_satellites",
         "median_transition_width_deg", "background_corrected",
+        "diagnostic_eligible", "quality_status",
+        "n_aggregate_eligible_crossings", "n_cross_channel_outliers",
+        "median_transition_support_samples", "median_contrast_to_noise_ratio",
         "satellites", "missing", "source", "source_ref", "notes",
     ]
     with _open_reference_text_output(output) as stream:
         stream.write("# C10 real POES/MetOp SEM-2 MEPED cutoff-boundary reference\n")
         stream.write("# reference_kind=POES_NCEI_LEVEL2_16SEC\n")
+        stream.write("# reference_schema=C10_POES_T50_V3\n")
         stream.write("# boundary_definition=background_normalized_isotonic_T50\n")
         stream.write("# rigidity_mapping=nominal_integral_channel_lower_threshold\n"
                      "# validation_gate=P6_P7_primary_independent_windows;P8_P9_diagnostic\n")
@@ -1174,6 +1376,16 @@ def write_reference_csv(cells: Sequence[ReferenceCell], output: Path, manifest_s
                 "median_transition_width_deg": ("" if cell.median_transition_width_deg is None
                                                 else f"{cell.median_transition_width_deg:.5f}"),
                 "background_corrected": "TRUE" if cell.background_corrected else "FALSE",
+                "diagnostic_eligible": "TRUE" if cell.diagnostic_eligible else "FALSE",
+                "quality_status": cell.quality_status,
+                "n_aggregate_eligible_crossings": cell.n_aggregate_eligible_crossings,
+                "n_cross_channel_outliers": cell.n_cross_channel_outliers,
+                "median_transition_support_samples": (
+                    "" if cell.median_transition_support_samples is None
+                    else f"{cell.median_transition_support_samples:.3f}"),
+                "median_contrast_to_noise_ratio": (
+                    "" if cell.median_contrast_to_noise_ratio is None
+                    else f"{cell.median_contrast_to_noise_ratio:.5f}"),
                 "satellites": cell.satellites,
                 "missing": "TRUE" if cell.missing else "FALSE",
                 "source": cell.source,
@@ -1212,6 +1424,12 @@ def write_manifest(
         "n_reference_cells": len(cells),
         "n_nonmissing_reference_cells": sum(not cell.missing for cell in cells),
         "n_acceptance_eligible_cells": sum(cell.acceptance_eligible for cell in cells),
+        "n_diagnostic_eligible_cells": sum(cell.diagnostic_eligible for cell in cells),
+        "n_sparse_diagnostic_cells": sum(
+            cell.quality_status in ("DIAGNOSTIC_SPARSE", "DIAGNOSTIC_CROSS_CHANNEL_OUTLIER")
+            for cell in cells),
+        "n_cross_channel_outlier_cells": sum(cell.n_cross_channel_outliers > 0 for cell in cells),
+        "cross_channel_quality": summarize_cross_channel_quality(crossings),
         "n_primary_crossings": sum(row.validation_role == "PRIMARY" for row in crossings),
         "n_diagnostic_crossings": sum(row.validation_role == "DIAGNOSTIC" for row in crossings),
     }
