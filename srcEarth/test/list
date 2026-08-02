@@ -140,3 +140,5 @@ last pass: 59012e116c62393cf7fbc61addb1531bd474bf1a
 P srcEarth/test/C9/run_C9.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable PAMELA_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C9_direct_85 --amps /home/vtenishe/T11/AMPS/amps --shell-lon-res-deg 30 --shell-lat-res-deg 2 --access-abs-lat-min-deg 35 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-longitude-fraction 0.8 --t50-min-edge-margin-deg 1.0 --dynamic-chunk 32 -np 8 -nt 16
 last pass: 59012e116c62393cf7fbc61addb1531bd474bf1a
 
+P ./srcEarth/test/C10/run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --output-root test_output/C10_direct --amps "${cwd}/amps" --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-profile-fraction 0.66 --t50-min-edge-margin-deg 1.0 --dynamic-chunk 32 -np 8 -nt 16
+last pass:
