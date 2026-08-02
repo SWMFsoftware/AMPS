@@ -6,9 +6,11 @@ This module contains the parts of C10 that are independent of AMPS:
 * reading the historical NOAA/NCEI 16-second Level-2 SEM-2 files;
 * converting sub-satellite positions to AACGM latitude and magnetic local time;
 * separating the data into individual polar passes;
-* finding the 50-percent-of-polar-cap-flux cutoff on each pass leg; and
-* aggregating those individual measurements into the two-hour, one-hour-step
-  windows used by the December-2006 POES cutoff-boundary literature.
+* estimating a low-latitude background and a polar-cap plateau for each pass leg;
+* fitting a monotonic background-normalized transmission profile;
+* finding the T=0.25, 0.50, and 0.75 boundaries and transition width; and
+* aggregating accepted crossings into a reference grid while preserving
+  independent-pass and validation-role metadata.
 
 The code intentionally keeps the measurement-level product.  A binned reference
 CSV is convenient for a regression test, but the individual boundary crossings
@@ -24,12 +26,14 @@ requirements and its fields are documented by NCEI's ``readme_16s_ascii.txt``.
 
 Scientific boundary definition
 ------------------------------
-Dmitriev et al. (2010) define a cutoff latitude as the invariant latitude where
-an SEP channel falls to one half of its mean intensity in the polar cap.  C10
-implements that definition separately on the inbound and outbound legs of each
-polar pass.  The polar-cap plateau is estimated from samples above a configured
-absolute AACGM latitude (75 degrees by default).  The crossing is interpolated
-between the two adjacent 16-second records that bracket 0.5 times the plateau.
+Dmitriev et al. (2010) define a cutoff latitude from the transition between the
+equatorward background and the polar-cap SEP intensity.  The production C10
+reference uses the background-normalized transmission
+``T=(F-F_background)/(F_polar-F_background)`` and locates T=0.5 on a monotonic
+isotonic fit to each inbound and outbound leg.  T25 and T75 are retained as
+quality diagnostics and define the transition width.  The older uncorrected
+``0.5*F_polar`` crossing remains available only as a diagnostic compatibility
+mode.
 
 Important limitation
 --------------------
@@ -51,6 +55,7 @@ import json
 import math
 import re
 import statistics
+import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -67,6 +72,17 @@ CHANNEL_THRESHOLDS_MEV: Mapping[str, float] = {
     "P7": 36.0,
     "P8": 70.0,
     "P9": 140.0,
+}
+
+# P6 and P7 are used for the default code-validation gate.  P8 and P9 remain
+# valuable diagnostics, but their broad integral response and subcommutated
+# historical archive representation require response folding before they can be
+# used as equal-weight quantitative validation channels.
+CHANNEL_VALIDATION_ROLE: Mapping[str, str] = {
+    "P6": "PRIMARY",
+    "P7": "PRIMARY",
+    "P8": "DIAGNOSTIC",
+    "P9": "DIAGNOSTIC",
 }
 
 CHANNEL_VARIABLE_ALIASES: Mapping[str, Tuple[str, ...]] = {
@@ -105,14 +121,21 @@ class Observation:
 
 @dataclass(frozen=True)
 class BoundaryCrossing:
-    """One measured half-polar-cap-flux crossing on one pass leg."""
+    """One measured cutoff crossing on one polar-pass leg.
+
+    Production rows use a background-normalized monotonic transmission fit.
+    The extra diagnostics make it possible to distinguish a code failure from a
+    poor or contaminated observational transition.
+    """
 
     event_id: str
     satellite: str
     channel: str
+    validation_role: str
     energy_threshold_mev: float
     assigned_rigidity_gv: float
     mapping_method: str
+    crossing_method: str
     hemisphere: str
     pass_id: str
     leg: str
@@ -125,8 +148,15 @@ class BoundaryCrossing:
     polar_plateau_flux: float
     half_plateau_flux: float
     low_latitude_flux: Optional[float]
+    normalized_t25_aacgm_lat_deg: Optional[float]
+    normalized_t50_aacgm_lat_deg: Optional[float]
+    normalized_t75_aacgm_lat_deg: Optional[float]
+    transition_width_deg: Optional[float]
+    isotonic_rms: Optional[float]
+    plateau_to_background_ratio: Optional[float]
     boundary_uncertainty_deg: float
     n_polar_samples: int
+    n_background_samples: int
     n_leg_samples: int
     quality_flags: str
     source_file: str
@@ -144,12 +174,18 @@ class ReferenceCell:
     rigidity_gv: float
     energy_threshold_mev: float
     channel: str
+    validation_role: str
+    acceptance_eligible: bool
     hemisphere: str
     mlt_hour: float
     boundary_aacgm_lat_deg: Optional[float]
     sigma_deg: Optional[float]
     altitude_km: float
     n_crossings: int
+    n_distinct_pass_legs: int
+    n_distinct_satellites: int
+    median_transition_width_deg: Optional[float]
+    background_corrected: bool
     satellites: str
     missing: bool
     source: str
@@ -464,10 +500,18 @@ def add_aacgm_coordinates(raw_rows: Sequence[Mapping[str, object]], path: Path) 
 
 
 def load_observations(paths: Sequence[Path], default_altitude_km: float = 850.0) -> List[Observation]:
-    """Read, convert, concatenate, and time-sort multiple daily files."""
+    """Read, convert, concatenate, and time-sort multiple daily files.
+
+    Zero-byte files are skipped with a warning because an interrupted transfer
+    must not prevent use of the remaining constellation.  A non-empty malformed
+    file still raises an exception so scientific corruption is never hidden.
+    """
 
     observations: List[Observation] = []
     for path in paths:
+        if path.stat().st_size == 0:
+            print(f"warning: skipping empty Level-2 source file: {path}", file=sys.stderr)
+            continue
         raw = read_level2_file(path, default_altitude_km)
         observations.extend(add_aacgm_coordinates(raw, path))
     observations.sort(key=lambda row: (row.satellite, row.time_utc))
@@ -546,7 +590,7 @@ def _interpolate_crossing(
 
 
 def _find_leg_crossing(leg: Sequence[Observation], channel: str, target: float) -> Optional[Tuple[Observation, Observation, float, float]]:
-    """Find the equatorward-most adjacent pair that brackets the half-flux level."""
+    """Legacy equatorward-most adjacent pair bracketing an absolute flux level."""
 
     candidates: List[Tuple[float, Observation, Observation, float, float]] = []
     for first, second in zip(leg[:-1], leg[1:]):
@@ -563,6 +607,168 @@ def _find_leg_crossing(leg: Sequence[Observation], channel: str, target: float) 
     return first, second, f1, f2
 
 
+def _isotonic_nondecreasing(values: Sequence[float], weights: Optional[Sequence[float]] = None) -> List[float]:
+    """Weighted pool-adjacent-violators fit with no third-party dependency."""
+
+    if not values:
+        return []
+    if weights is None:
+        weights = [1.0] * len(values)
+    if len(weights) != len(values):
+        raise ValueError("isotonic weights and values must have the same length")
+
+    blocks: List[List[float]] = []  # [start, end, weighted_mean, total_weight]
+    for index, (value, weight) in enumerate(zip(values, weights)):
+        if not math.isfinite(value) or not math.isfinite(weight) or weight <= 0.0:
+            raise ValueError("isotonic input must contain finite values and positive weights")
+        blocks.append([float(index), float(index), float(value), float(weight)])
+        while len(blocks) >= 2 and blocks[-2][2] > blocks[-1][2]:
+            right = blocks.pop()
+            left = blocks.pop()
+            total_weight = left[3] + right[3]
+            mean = (left[2] * left[3] + right[2] * right[3]) / total_weight
+            blocks.append([left[0], right[1], mean, total_weight])
+
+    fitted = [0.0] * len(values)
+    for first, last, mean, _weight in blocks:
+        for index in range(int(first), int(last) + 1):
+            fitted[index] = mean
+    return fitted
+
+
+def _monotonic_level_crossing(
+    latitudes: Sequence[float],
+    fitted: Sequence[float],
+    level: float,
+) -> Optional[Tuple[float, int, float]]:
+    """Interpolate a level crossing in a nondecreasing fitted profile.
+
+    Returns ``(latitude, upper_index, fraction)`` where ``fraction`` is measured
+    from ``upper_index-1`` to ``upper_index``.  Edge-only values are rejected so
+    the result is always explicitly bracketed by two measured records.
+    """
+
+    if len(latitudes) != len(fitted) or len(latitudes) < 2:
+        return None
+    for upper in range(1, len(fitted)):
+        lower = upper - 1
+        y0, y1 = fitted[lower], fitted[upper]
+        if y0 <= level <= y1 and not math.isclose(y0, y1):
+            fraction = (level - y0) / (y1 - y0)
+            x = latitudes[lower] + fraction * (latitudes[upper] - latitudes[lower])
+            return x, upper, fraction
+    return None
+
+
+def _interpolate_observations(
+    first: Observation,
+    second: Observation,
+    fraction: float,
+) -> Tuple[datetime, float, float, float, float, float]:
+    """Interpolate time and location using a precomputed profile fraction."""
+
+    fraction = min(1.0, max(0.0, fraction))
+    duration = second.time_utc - first.time_utc
+    when = first.time_utc + timedelta(seconds=duration.total_seconds() * fraction)
+    geo_lat = first.geographic_lat_deg + fraction * (second.geographic_lat_deg - first.geographic_lat_deg)
+    lon_delta = ((second.geographic_lon_deg - first.geographic_lon_deg + 180.0) % 360.0) - 180.0
+    geo_lon = ((first.geographic_lon_deg + fraction * lon_delta + 180.0) % 360.0) - 180.0
+    altitude = first.altitude_km + fraction * (second.altitude_km - first.altitude_km)
+    aacgm_lat = first.aacgm_lat_deg + fraction * (second.aacgm_lat_deg - first.aacgm_lat_deg)
+    mlt = _interpolate_circular_hour(first.mlt_hour, second.mlt_hour, fraction)
+    return when, geo_lat, geo_lon, altitude, aacgm_lat, mlt
+
+
+def _background_normalized_leg_crossing(
+    leg: Sequence[Observation],
+    channel: str,
+    plateau: float,
+    minimum_abs_lat_deg: float,
+    minimum_background_samples: int,
+    minimum_leg_samples: int,
+    minimum_plateau_to_low_ratio: float,
+    maximum_transition_width_deg: float,
+    maximum_isotonic_rms: float,
+    minimum_edge_margin_deg: float,
+) -> Optional[Dict[str, object]]:
+    """Fit one leg and return a quality-controlled background-normalized T50."""
+
+    valid = [row for row in leg if channel in row.flux_by_channel]
+    if len(valid) < minimum_leg_samples:
+        return None
+
+    background_rows = [
+        row for row in valid
+        if abs(row.aacgm_lat_deg) <= minimum_abs_lat_deg + 5.0
+    ]
+    if len(background_rows) < minimum_background_samples:
+        return None
+    background = statistics.median(row.flux_by_channel[channel] for row in background_rows)
+    if not math.isfinite(background) or background < 0.0 or plateau <= background:
+        return None
+    ratio = plateau / max(background, 1.0e-30)
+    if ratio < minimum_plateau_to_low_ratio:
+        return None
+
+    ordered = sorted(valid, key=lambda row: abs(row.aacgm_lat_deg))
+    latitudes = [abs(row.aacgm_lat_deg) for row in ordered]
+    denominator = plateau - background
+    normalized = [(row.flux_by_channel[channel] - background) / denominator for row in ordered]
+    # Limit isolated spikes before PAVA without forcing the final fit into [0,1].
+    clipped = [min(1.5, max(-0.5, value)) for value in normalized]
+    fitted = _isotonic_nondecreasing(clipped)
+    rms = math.sqrt(statistics.fmean((a - b) ** 2 for a, b in zip(clipped, fitted)))
+    if rms > maximum_isotonic_rms:
+        return None
+
+    t25 = _monotonic_level_crossing(latitudes, fitted, 0.25)
+    t50 = _monotonic_level_crossing(latitudes, fitted, 0.50)
+    t75 = _monotonic_level_crossing(latitudes, fitted, 0.75)
+    if t25 is None or t50 is None or t75 is None:
+        return None
+    lat25, _, _ = t25
+    lat50, upper, fraction = t50
+    lat75, _, _ = t75
+    transition_width = lat75 - lat25
+    if transition_width <= 0.0 or transition_width > maximum_transition_width_deg:
+        return None
+    if (lat50 - latitudes[0] < minimum_edge_margin_deg
+            or latitudes[-1] - lat50 < minimum_edge_margin_deg):
+        return None
+
+    first, second = ordered[upper - 1], ordered[upper]
+    when, geo_lat, geo_lon, altitude, aacgm_lat, mlt = _interpolate_observations(
+        first, second, fraction
+    )
+    local_spacing = abs(latitudes[upper] - latitudes[upper - 1])
+    uncertainty = max(
+        0.25,
+        0.5 * local_spacing,
+        0.25 * transition_width,
+        0.5 * rms * transition_width,
+    )
+    return {
+        "first": first,
+        "when": when,
+        "geo_lat": geo_lat,
+        "geo_lon": geo_lon,
+        "altitude": altitude,
+        "aacgm_lat": aacgm_lat,
+        "mlt": mlt,
+        "background": background,
+        "ratio": ratio,
+        "t25": lat25,
+        "t50": lat50,
+        "t75": lat75,
+        "transition_width": transition_width,
+        "isotonic_rms": rms,
+        "uncertainty": uncertainty,
+        "n_background_samples": len(background_rows),
+        "n_leg_samples": len(ordered),
+        "threshold_flux": background + 0.5 * (plateau - background),
+    }
+
+
 def extract_boundary_crossings(
     observations: Sequence[Observation],
     event_id: str = "STORM_2006_12",
@@ -571,8 +777,22 @@ def extract_boundary_crossings(
     minimum_polar_samples: int = 4,
     minimum_plateau_to_low_ratio: float = 2.0,
     minimum_leg_samples: int = 4,
+    minimum_background_samples: int = 3,
+    crossing_method: str = "BACKGROUND_NORMALIZED_ISOTONIC",
+    maximum_transition_width_deg: float = 15.0,
+    maximum_isotonic_rms: float = 0.35,
+    minimum_edge_margin_deg: float = 0.5,
 ) -> List[BoundaryCrossing]:
-    """Extract half-polar-cap-flux boundaries from all valid polar passes."""
+    """Extract quality-controlled cutoff boundaries from all valid polar passes.
+
+    ``BACKGROUND_NORMALIZED_ISOTONIC`` is the production method.  The legacy
+    ``HALF_POLAR_PLATEAU`` mode is retained only to diagnose the effect of the
+    historical uncorrected threshold.
+    """
+
+    crossing_method = crossing_method.upper()
+    if crossing_method not in ("BACKGROUND_NORMALIZED_ISOTONIC", "HALF_POLAR_PLATEAU"):
+        raise ValueError("unknown crossing_method: %s" % crossing_method)
 
     passes = split_polar_passes(
         observations,
@@ -606,41 +826,85 @@ def extract_boundary_crossings(
             plateau = statistics.median(polar_fluxes)
             if not math.isfinite(plateau) or plateau <= 0.0:
                 continue
-            half_level = 0.5 * plateau
-            low_fluxes = [
-                row.flux_by_channel[channel]
-                for row in polar_pass
-                if abs(row.aacgm_lat_deg) <= minimum_abs_lat_deg + 5.0
-                and channel in row.flux_by_channel
-            ]
-            low_flux = statistics.median(low_fluxes) if low_fluxes else None
-            if low_flux is not None and plateau / max(low_flux, 1.0e-30) < minimum_plateau_to_low_ratio:
-                continue
 
             for leg_name, leg in legs.items():
-                if len(leg) < minimum_leg_samples:
-                    continue
-                bracket = _find_leg_crossing(leg, channel, half_level)
-                if bracket is None:
-                    continue
-                first, second, f1, f2 = bracket
-                (_fraction, when, geo_lat, geo_lon, altitude,
-                 aacgm_lat, mlt) = _interpolate_crossing(first, second, f1, f2, half_level)
-                spacing = abs(abs(second.aacgm_lat_deg) - abs(first.aacgm_lat_deg))
-                uncertainty = max(0.20, 0.5 * spacing)
                 flags: List[str] = []
-                if low_flux is None:
-                    flags.append("NO_LOW_LATITUDE_BACKGROUND")
                 if channel in ("P8", "P9"):
-                    flags.append("P8_P9_SUBCOMMUTATED_ARCHIVE_CHANNEL")
+                    flags.extend([
+                        "DIAGNOSTIC_INTEGRAL_RESPONSE_NOT_FOLDED",
+                        "P8_P9_SUBCOMMUTATED_ARCHIVE_CHANNEL",
+                    ])
+
+                if crossing_method == "BACKGROUND_NORMALIZED_ISOTONIC":
+                    fit = _background_normalized_leg_crossing(
+                        leg=leg,
+                        channel=channel,
+                        plateau=plateau,
+                        minimum_abs_lat_deg=minimum_abs_lat_deg,
+                        minimum_background_samples=minimum_background_samples,
+                        minimum_leg_samples=minimum_leg_samples,
+                        minimum_plateau_to_low_ratio=minimum_plateau_to_low_ratio,
+                        maximum_transition_width_deg=maximum_transition_width_deg,
+                        maximum_isotonic_rms=maximum_isotonic_rms,
+                        minimum_edge_margin_deg=minimum_edge_margin_deg,
+                    )
+                    if fit is None:
+                        continue
+                    first = fit["first"]
+                    flags.append("BACKGROUND_NORMALIZED_T50")
+                    threshold_flux = float(fit["threshold_flux"])
+                    background = float(fit["background"])
+                    ratio = float(fit["ratio"])
+                    lat25 = float(fit["t25"])
+                    lat50 = float(fit["t50"])
+                    lat75 = float(fit["t75"])
+                    width = float(fit["transition_width"])
+                    isotonic_rms = float(fit["isotonic_rms"])
+                    uncertainty = float(fit["uncertainty"])
+                    n_background = int(fit["n_background_samples"])
+                    n_leg = int(fit["n_leg_samples"])
+                    when = fit["when"]
+                    geo_lat = float(fit["geo_lat"])
+                    geo_lon = float(fit["geo_lon"])
+                    altitude = float(fit["altitude"])
+                    aacgm_lat = float(fit["aacgm_lat"])
+                    mlt = float(fit["mlt"])
+                else:
+                    if len(leg) < minimum_leg_samples:
+                        continue
+                    half_level = 0.5 * plateau
+                    bracket = _find_leg_crossing(leg, channel, half_level)
+                    if bracket is None:
+                        continue
+                    first, second, f1, f2 = bracket
+                    (_fraction, when, geo_lat, geo_lon, altitude,
+                     aacgm_lat, mlt) = _interpolate_crossing(first, second, f1, f2, half_level)
+                    spacing = abs(abs(second.aacgm_lat_deg) - abs(first.aacgm_lat_deg))
+                    uncertainty = max(0.25, 0.5 * spacing)
+                    background_rows = [
+                        row for row in leg
+                        if channel in row.flux_by_channel
+                        and abs(row.aacgm_lat_deg) <= minimum_abs_lat_deg + 5.0
+                    ]
+                    background = (statistics.median(row.flux_by_channel[channel] for row in background_rows)
+                                  if background_rows else None)
+                    ratio = (plateau / max(background, 1.0e-30)
+                             if background is not None else None)
+                    threshold_flux = half_level
+                    lat25 = lat50 = lat75 = width = isotonic_rms = None
+                    n_background = len(background_rows)
+                    n_leg = len(leg)
+                    flags.append("LEGACY_UNCORRECTED_HALF_POLAR_PLATEAU")
 
                 crossings.append(BoundaryCrossing(
                     event_id=event_id,
                     satellite=first.satellite,
                     channel=channel,
+                    validation_role=CHANNEL_VALIDATION_ROLE[channel],
                     energy_threshold_mev=threshold_mev,
                     assigned_rigidity_gv=proton_rigidity_gv_from_kinetic_energy_mev(threshold_mev),
                     mapping_method="NOMINAL_INTEGRAL_CHANNEL_LOWER_THRESHOLD",
+                    crossing_method=crossing_method,
                     hemisphere=hemisphere,
                     pass_id=pass_id,
                     leg=leg_name,
@@ -651,11 +915,18 @@ def extract_boundary_crossings(
                     aacgm_lat_deg=aacgm_lat,
                     mlt_hour=mlt,
                     polar_plateau_flux=plateau,
-                    half_plateau_flux=half_level,
-                    low_latitude_flux=low_flux,
+                    half_plateau_flux=threshold_flux,
+                    low_latitude_flux=background,
+                    normalized_t25_aacgm_lat_deg=lat25,
+                    normalized_t50_aacgm_lat_deg=lat50,
+                    normalized_t75_aacgm_lat_deg=lat75,
+                    transition_width_deg=width,
+                    isotonic_rms=isotonic_rms,
+                    plateau_to_background_ratio=ratio,
                     boundary_uncertainty_deg=uncertainty,
                     n_polar_samples=len(polar_fluxes),
-                    n_leg_samples=len(leg),
+                    n_background_samples=n_background,
+                    n_leg_samples=n_leg,
                     quality_flags=";".join(flags),
                     source_file=first.source_file,
                     source_sha256=first.source_sha256,
@@ -692,10 +963,19 @@ def aggregate_crossings(
     window_hours: float = 2.0,
     step_hours: float = 1.0,
     mlt_bin_centers: Sequence[float] = tuple(float(v) for v in range(0, 24, 3)),
-    minimum_crossings_per_cell: int = 1,
+    minimum_crossings_per_cell: int = 2,
+    minimum_diagnostic_crossings_per_cell: int = 1,
+    minimum_distinct_pass_legs_per_cell: int = 2,
+    acceptance_window_stride_hours: float = 2.0,
     source_ref: str = "Dmitriev et al. (2010), doi:10.1029/2010JA015380",
 ) -> List[ReferenceCell]:
-    """Aggregate individual measured crossings into the C10 reference grid."""
+    """Aggregate measured crossings while retaining validation eligibility.
+
+    All one-hour-step cells remain available for plots.  Only background-corrected
+    P6/P7 cells with enough independent pass legs and lying on the configured
+    non-overlapping acceptance stride contribute to the default code-validation
+    gate.  P8/P9 are always retained as diagnostics.
+    """
 
     half_window = timedelta(hours=0.5 * window_hours)
     midpoints = hourly_window_midpoints(event_start, event_end, step_hours)
@@ -704,8 +984,18 @@ def aggregate_crossings(
     for midpoint in midpoints:
         start = midpoint - half_window
         end = midpoint + half_window
+        offset_hours = (midpoint - event_start).total_seconds() / 3600.0
+        if acceptance_window_stride_hours > 0.0:
+            q = offset_hours / acceptance_window_stride_hours
+            independent_window = math.isclose(q, round(q), rel_tol=0.0, abs_tol=1.0e-8)
+        else:
+            independent_window = True
+
         for channel, threshold_mev in CHANNEL_THRESHOLDS_MEV.items():
             rigidity = proton_rigidity_gv_from_kinetic_energy_mev(threshold_mev)
+            role = CHANNEL_VALIDATION_ROLE[channel]
+            required_count = (minimum_crossings_per_cell if role == "PRIMARY"
+                              else minimum_diagnostic_crossings_per_cell)
             for hemisphere in ("N", "S"):
                 for mlt_center in mlt_bin_centers:
                     selected = [
@@ -715,21 +1005,49 @@ def aggregate_crossings(
                         and start <= row.crossing_time_utc < end
                         and math.isclose(nearest_mlt_bin(row.mlt_hour, mlt_bin_centers), mlt_center)
                     ]
-                    valid = len(selected) >= minimum_crossings_per_cell
+                    pass_legs = {row.pass_id + ":" + row.leg for row in selected}
+                    satellite_set = {row.satellite for row in selected}
+                    enough_independent_legs = len(pass_legs) >= minimum_distinct_pass_legs_per_cell
+                    valid = len(selected) >= required_count and (
+                        role != "PRIMARY" or enough_independent_legs
+                    )
+                    acceptance_eligible = (
+                        valid
+                        and role == "PRIMARY"
+                        and independent_window
+                        and all(row.crossing_method == "BACKGROUND_NORMALIZED_ISOTONIC" for row in selected)
+                    )
+
                     latitudes = [abs(row.aacgm_lat_deg) for row in selected]
                     altitudes = [row.altitude_km for row in selected]
+                    widths = [row.transition_width_deg for row in selected
+                              if row.transition_width_deg is not None]
                     if valid:
                         boundary = statistics.median(latitudes)
                         if len(latitudes) > 1:
                             robust_sigma = 1.4826 * statistics.median(abs(value - boundary) for value in latitudes)
                         else:
                             robust_sigma = selected[0].boundary_uncertainty_deg
-                        sigma = max(0.20, robust_sigma, statistics.fmean(row.boundary_uncertainty_deg for row in selected))
+                        sigma = max(
+                            0.25,
+                            robust_sigma,
+                            statistics.fmean(row.boundary_uncertainty_deg for row in selected),
+                        )
                         altitude = statistics.fmean(altitudes)
                     else:
                         boundary = sigma = None
                         altitude = statistics.fmean(altitudes) if altitudes else 850.0
-                    satellites = ";".join(sorted({row.satellite for row in selected}))
+                    satellites = ";".join(sorted(satellite_set))
+                    median_width = statistics.median(widths) if widths else None
+                    notes = (
+                        "Background-normalized isotonic T50; median of accepted inbound/outbound "
+                        "pass-leg crossings; nominal lower-threshold rigidity."
+                    )
+                    if role == "DIAGNOSTIC":
+                        notes += " Diagnostic-only until MEPED response folding is implemented."
+                    if valid and not acceptance_eligible and role == "PRIMARY":
+                        notes += " Retained for plotting but excluded from the independent-window acceptance gate."
+
                     cells.append(ReferenceCell(
                         event_id="STORM_2006_12",
                         interval_midpoint_utc=midpoint,
@@ -738,20 +1056,25 @@ def aggregate_crossings(
                         rigidity_gv=rigidity,
                         energy_threshold_mev=threshold_mev,
                         channel=channel,
+                        validation_role=role,
+                        acceptance_eligible=acceptance_eligible,
                         hemisphere=hemisphere,
                         mlt_hour=float(mlt_center),
                         boundary_aacgm_lat_deg=boundary,
                         sigma_deg=sigma,
                         altitude_km=altitude,
                         n_crossings=len(selected),
+                        n_distinct_pass_legs=len(pass_legs),
+                        n_distinct_satellites=len(satellite_set),
+                        median_transition_width_deg=median_width,
+                        background_corrected=bool(selected) and all(
+                            row.crossing_method == "BACKGROUND_NORMALIZED_ISOTONIC" for row in selected
+                        ),
                         satellites=satellites,
                         missing=not valid,
                         source="POES_NCEI_LEVEL2_16SEC",
                         source_ref=source_ref,
-                        notes=(
-                            "Median of independent inbound/outbound half-polar-cap-flux crossings; "
-                            "rigidity is mapped from the channel nominal lower threshold."
-                        ),
+                        notes=notes,
                     ))
     return cells
 
@@ -812,15 +1135,19 @@ def write_reference_csv(cells: Sequence[ReferenceCell], output: Path, manifest_s
     output.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
         "event_id", "interval_midpoint_utc", "interval_start_utc", "interval_end_utc",
-        "rigidity_gv", "energy_threshold_mev", "channel", "hemisphere", "mlt_hour",
+        "rigidity_gv", "energy_threshold_mev", "channel", "validation_role",
+        "acceptance_eligible", "hemisphere", "mlt_hour",
         "boundary_aacgm_lat_deg", "sigma_deg", "altitude_km", "n_crossings",
+        "n_distinct_pass_legs", "n_distinct_satellites",
+        "median_transition_width_deg", "background_corrected",
         "satellites", "missing", "source", "source_ref", "notes",
     ]
     with _open_reference_text_output(output) as stream:
         stream.write("# C10 real POES/MetOp SEM-2 MEPED cutoff-boundary reference\n")
         stream.write("# reference_kind=POES_NCEI_LEVEL2_16SEC\n")
-        stream.write("# boundary_definition=50_percent_of_median_polar_cap_flux\n")
-        stream.write("# rigidity_mapping=nominal_integral_channel_lower_threshold\n")
+        stream.write("# boundary_definition=background_normalized_isotonic_T50\n")
+        stream.write("# rigidity_mapping=nominal_integral_channel_lower_threshold\n"
+                     "# validation_gate=P6_P7_primary_independent_windows;P8_P9_diagnostic\n")
         if manifest_sha256:
             stream.write(f"# provenance_manifest_sha256={manifest_sha256}\n")
         writer = csv.DictWriter(stream, fieldnames=fieldnames)
@@ -834,12 +1161,19 @@ def write_reference_csv(cells: Sequence[ReferenceCell], output: Path, manifest_s
                 "rigidity_gv": f"{cell.rigidity_gv:.9f}",
                 "energy_threshold_mev": f"{cell.energy_threshold_mev:.3f}",
                 "channel": cell.channel,
+                "validation_role": cell.validation_role,
+                "acceptance_eligible": "TRUE" if cell.acceptance_eligible else "FALSE",
                 "hemisphere": cell.hemisphere,
                 "mlt_hour": f"{cell.mlt_hour:.1f}",
                 "boundary_aacgm_lat_deg": "" if cell.boundary_aacgm_lat_deg is None else f"{cell.boundary_aacgm_lat_deg:.5f}",
                 "sigma_deg": "" if cell.sigma_deg is None else f"{cell.sigma_deg:.5f}",
                 "altitude_km": f"{cell.altitude_km:.3f}",
                 "n_crossings": cell.n_crossings,
+                "n_distinct_pass_legs": cell.n_distinct_pass_legs,
+                "n_distinct_satellites": cell.n_distinct_satellites,
+                "median_transition_width_deg": ("" if cell.median_transition_width_deg is None
+                                                else f"{cell.median_transition_width_deg:.5f}"),
+                "background_corrected": "TRUE" if cell.background_corrected else "FALSE",
                 "satellites": cell.satellites,
                 "missing": "TRUE" if cell.missing else "FALSE",
                 "source": cell.source,
@@ -870,12 +1204,16 @@ def write_manifest(
             channel: {
                 "nominal_lower_threshold_mev": energy,
                 "assigned_rigidity_gv": proton_rigidity_gv_from_kinetic_energy_mev(energy),
+                "validation_role": CHANNEL_VALIDATION_ROLE[channel],
             }
             for channel, energy in CHANNEL_THRESHOLDS_MEV.items()
         },
         "n_crossings": len(crossings),
         "n_reference_cells": len(cells),
         "n_nonmissing_reference_cells": sum(not cell.missing for cell in cells),
+        "n_acceptance_eligible_cells": sum(cell.acceptance_eligible for cell in cells),
+        "n_primary_crossings": sum(row.validation_role == "PRIMARY" for row in crossings),
+        "n_diagnostic_crossings": sum(row.validation_role == "DIAGNOSTIC" for row in crossings),
     }
     output.write_text(json.dumps(payload, indent=2) + "\n")
     return sha256_file(output)

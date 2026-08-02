@@ -11,7 +11,10 @@ The output is split into three products:
 
 ``reference_C10_poes_meped_boundary.csv.gz``
     A two-hour-window, one-hour-step, 3-hour-MLT-bin table used by ``run_C10.py``.
-    Empty cells are retained and explicitly marked ``missing=TRUE``.
+    Empty cells are retained and explicitly marked ``missing=TRUE``.  P6/P7
+    background-normalized cells on non-overlapping windows form the default
+    code-validation gate; P8/P9 remain diagnostic until response folding is
+    implemented.
 
 ``C10_reference_manifest.json``
     Source-file SHA-256 values, extraction settings, channel-to-rigidity mapping,
@@ -56,7 +59,11 @@ def parse_utc(text: str) -> datetime:
 
 
 def discover_source_files(input_dir: Path) -> List[Path]:
-    """Recursively find supported Level-2 files while excluding manifests."""
+    """Recursively find supported Level-2 files while excluding manifests.
+
+    Zero-byte files are returned so ``main`` can report and record them before
+    passing only non-empty products to the scientific parser.
+    """
 
     files = [
         path for path in input_dir.rglob("*")
@@ -78,14 +85,29 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--minimum-pass-abs-lat-deg", type=float, default=45.0)
     parser.add_argument("--polar-plateau-abs-lat-deg", type=float, default=75.0)
     parser.add_argument("--minimum-polar-samples", type=int, default=4)
+    parser.add_argument("--minimum-background-samples", type=int, default=3)
     parser.add_argument("--minimum-plateau-to-low-ratio", type=float, default=2.0)
     parser.add_argument("--minimum-leg-samples", type=int, default=4)
+    parser.add_argument(
+        "--crossing-method", type=str.upper,
+        choices=("BACKGROUND_NORMALIZED_ISOTONIC", "HALF_POLAR_PLATEAU"),
+        default="BACKGROUND_NORMALIZED_ISOTONIC",
+        help="Production background-corrected T50 or legacy diagnostic threshold",
+    )
+    parser.add_argument("--maximum-transition-width-deg", type=float, default=15.0)
+    parser.add_argument("--maximum-isotonic-rms", type=float, default=0.35)
+    parser.add_argument("--minimum-edge-margin-deg", type=float, default=0.5)
     parser.add_argument("--window-hours", type=float, default=2.0,
                         help="Published Dmitriev-style fit/aggregation window")
     parser.add_argument("--step-hours", type=float, default=1.0,
                         help="Step between adjacent reference-window centers")
     parser.add_argument("--mlt-bin-hours", type=float, default=3.0)
-    parser.add_argument("--minimum-crossings-per-cell", type=int, default=1)
+    parser.add_argument("--minimum-crossings-per-cell", type=int, default=2,
+                        help="Minimum crossings for primary P6/P7 cells")
+    parser.add_argument("--minimum-diagnostic-crossings-per-cell", type=int, default=1)
+    parser.add_argument("--minimum-distinct-pass-legs-per-cell", type=int, default=2)
+    parser.add_argument("--acceptance-window-stride-hours", type=float, default=2.0,
+                        help="Non-overlapping midpoint stride used by the validation gate")
     parser.add_argument("--crossings-output", type=Path, default=Path("C10_poes_boundary_crossings.csv"))
     parser.add_argument(
         "--reference-output", type=Path,
@@ -106,13 +128,40 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             "--reference-output must end in .csv.gz; "
             "the production C10 reference is kept gzip-compressed"
         )
+    if args.minimum_polar_samples < 1:
+        parser.error("--minimum-polar-samples must be >= 1")
+    if args.minimum_background_samples < 1:
+        parser.error("--minimum-background-samples must be >= 1")
+    if args.minimum_leg_samples < 2:
+        parser.error("--minimum-leg-samples must be >= 2")
+    if args.minimum_crossings_per_cell < 1:
+        parser.error("--minimum-crossings-per-cell must be >= 1")
+    if args.minimum_diagnostic_crossings_per_cell < 1:
+        parser.error("--minimum-diagnostic-crossings-per-cell must be >= 1")
+    if args.minimum_distinct_pass_legs_per_cell < 1:
+        parser.error("--minimum-distinct-pass-legs-per-cell must be >= 1")
+    if args.window_hours <= 0.0 or args.step_hours <= 0.0:
+        parser.error("--window-hours and --step-hours must be > 0")
+    if args.acceptance_window_stride_hours <= 0.0:
+        parser.error("--acceptance-window-stride-hours must be > 0")
+    if args.maximum_transition_width_deg <= 0.0:
+        parser.error("--maximum-transition-width-deg must be > 0")
+    if args.maximum_isotonic_rms < 0.0:
+        parser.error("--maximum-isotonic-rms must be >= 0")
+    if args.minimum_edge_margin_deg < 0.0:
+        parser.error("--minimum-edge-margin-deg must be >= 0")
+    if args.crossing_method == "HALF_POLAR_PLATEAU":
+        print(
+            "warning: HALF_POLAR_PLATEAU is a legacy diagnostic and does not produce "
+            "acceptance-eligible reference cells", file=sys.stderr,
+        )
     return args
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
-    source_files = discover_source_files(args.input_dir)
-    if not source_files:
+    discovered_source_files = discover_source_files(args.input_dir)
+    if not discovered_source_files:
         print(
             f"No supported Level-2 files were found below {args.input_dir}.\n"
             "Run download_poes_sem2.py first or copy the NCEI daily files into that directory.",
@@ -120,7 +169,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         return 2
 
-    print(f"Reading {len(source_files)} NCEI Level-2 files...")
+    empty_source_files = [path for path in discovered_source_files if path.stat().st_size == 0]
+    source_files = [path for path in discovered_source_files if path.stat().st_size > 0]
+    for path in empty_source_files:
+        print(f"warning: ignoring zero-byte Level-2 file: {path}", file=sys.stderr)
+    if not source_files:
+        print(
+            "All discovered Level-2 files are empty. Remove them and rerun "
+            "download_poes_sem2.py --overwrite.",
+            file=sys.stderr,
+        )
+        return 2
+
+    print(
+        f"Reading {len(source_files)} non-empty NCEI Level-2 files"
+        f" ({len(empty_source_files)} empty file(s) skipped)..."
+    )
     observations = load_observations(source_files, args.default_altitude_km)
     observations = [row for row in observations if args.event_start <= row.time_utc <= args.event_end]
     if not observations:
@@ -132,8 +196,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         minimum_abs_lat_deg=args.minimum_pass_abs_lat_deg,
         polar_plateau_abs_lat_deg=args.polar_plateau_abs_lat_deg,
         minimum_polar_samples=args.minimum_polar_samples,
+        minimum_background_samples=args.minimum_background_samples,
         minimum_plateau_to_low_ratio=args.minimum_plateau_to_low_ratio,
         minimum_leg_samples=args.minimum_leg_samples,
+        crossing_method=args.crossing_method,
+        maximum_transition_width_deg=args.maximum_transition_width_deg,
+        maximum_isotonic_rms=args.maximum_isotonic_rms,
+        minimum_edge_margin_deg=args.minimum_edge_margin_deg,
     )
     if not crossings:
         print(
@@ -153,6 +222,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         step_hours=args.step_hours,
         mlt_bin_centers=mlt_bins,
         minimum_crossings_per_cell=args.minimum_crossings_per_cell,
+        minimum_diagnostic_crossings_per_cell=args.minimum_diagnostic_crossings_per_cell,
+        minimum_distinct_pass_legs_per_cell=args.minimum_distinct_pass_legs_per_cell,
+        acceptance_window_stride_hours=args.acceptance_window_stride_hours,
     )
 
     configuration = {
@@ -162,22 +234,39 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "minimum_pass_abs_lat_deg": args.minimum_pass_abs_lat_deg,
         "polar_plateau_abs_lat_deg": args.polar_plateau_abs_lat_deg,
         "minimum_polar_samples": args.minimum_polar_samples,
+        "minimum_background_samples": args.minimum_background_samples,
         "minimum_plateau_to_low_ratio": args.minimum_plateau_to_low_ratio,
         "minimum_leg_samples": args.minimum_leg_samples,
+        "crossing_method": args.crossing_method,
+        "maximum_transition_width_deg": args.maximum_transition_width_deg,
+        "maximum_isotonic_rms": args.maximum_isotonic_rms,
+        "minimum_edge_margin_deg": args.minimum_edge_margin_deg,
         "window_hours": args.window_hours,
         "step_hours": args.step_hours,
         "mlt_bins": mlt_bins,
         "minimum_crossings_per_cell": args.minimum_crossings_per_cell,
-        "boundary_definition": "50_percent_of_median_flux_at_abs_AACGM_latitude_ge_75_deg",
+        "minimum_diagnostic_crossings_per_cell": args.minimum_diagnostic_crossings_per_cell,
+        "minimum_distinct_pass_legs_per_cell": args.minimum_distinct_pass_legs_per_cell,
+        "acceptance_window_stride_hours": args.acceptance_window_stride_hours,
+        "boundary_definition": "background_normalized_isotonic_T50",
+        "validation_gate": "P6_P7_primary_independent_windows",
+        "diagnostic_channels": ["P8", "P9"],
+        "empty_source_files_skipped": [str(path) for path in empty_source_files],
         "papers_are_not_numerical_reference": True,
     }
 
     summary = {
+        "n_source_files_discovered": len(discovered_source_files),
         "n_source_files": len(source_files),
+        "n_empty_source_files_skipped": len(empty_source_files),
+        "empty_source_files_skipped": [str(path) for path in empty_source_files],
         "n_observations": len(observations),
         "n_crossings": len(crossings),
         "n_reference_cells": len(cells),
         "n_nonmissing_reference_cells": sum(not cell.missing for cell in cells),
+        "n_acceptance_eligible_cells": sum(cell.acceptance_eligible for cell in cells),
+        "n_primary_crossings": sum(row.validation_role == "PRIMARY" for row in crossings),
+        "n_diagnostic_crossings": sum(row.validation_role == "DIAGNOSTIC" for row in crossings),
         "reference_compression": "gzip",
         "satellites": sorted({row.satellite for row in observations}),
         "channels": sorted({row.channel for row in crossings}),

@@ -1,3 +1,7 @@
+! Validation roles: P6/P7 are the primary background-normalized code-validation
+! channels. P8/P9 exact states are retained as diagnostics until detector-response
+! folding is implemented; they do not control the default model/data PASS/FAIL gate.
+!
 ! =============================================================================
 ! AMPS Earth validation C10 GRIDLESS branch:
 !   POES/MetOp MEPED proton-access-boundary storm validation

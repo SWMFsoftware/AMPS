@@ -69,6 +69,16 @@ The first command should normally print nothing. Section 8 explains how to
 recover from empty, truncated, or non-data files.
 
 ### 2.4 Build the reference solution
+### 2.4a Production processing and validation roles
+
+The default builder does **not** use an uncorrected `0.5 * polar_flux`
+threshold. For each pass leg it estimates an equatorward background, normalizes
+the flux between that background and the polar plateau, fits a monotonic
+isotonic profile, and locates `T=0.25`, `0.50`, and `0.75`. P6/P7 form the
+primary code-validation gate. P8/P9 are preserved as diagnostics because the
+current model still assigns their nominal lower-threshold rigidities rather than
+folding the full detector response.
+
 
 ```tcsh
 python build_poes_reference.py \
@@ -541,12 +551,20 @@ python build_poes_reference.py \
   --minimum-pass-abs-lat-deg 45 \
   --polar-plateau-abs-lat-deg 75 \
   --minimum-polar-samples 4 \
+  --minimum-background-samples 3 \
   --minimum-plateau-to-low-ratio 2 \
   --minimum-leg-samples 4 \
+  --crossing-method BACKGROUND_NORMALIZED_ISOTONIC \
+  --maximum-transition-width-deg 15 \
+  --maximum-isotonic-rms 0.35 \
+  --minimum-edge-margin-deg 0.5 \
   --window-hours 2 \
   --step-hours 1 \
   --mlt-bin-hours 3 \
-  --minimum-crossings-per-cell 1 \
+  --minimum-crossings-per-cell 2 \
+  --minimum-diagnostic-crossings-per-cell 1 \
+  --minimum-distinct-pass-legs-per-cell 2 \
+  --acceptance-window-stride-hours 2 \
   --crossings-output C10_poes_boundary_crossings.csv \
   --reference-output reference_C10_poes_meped_boundary.csv.gz \
   --manifest-output C10_reference_manifest.json \
@@ -598,12 +616,20 @@ Important scientific settings are:
 | `--minimum-pass-abs-lat-deg` | 45 | lowest absolute latitude kept in a polar pass |
 | `--polar-plateau-abs-lat-deg` | 75 | minimum latitude used for polar-cap flux |
 | `--minimum-polar-samples` | 4 | samples required for plateau estimation |
+| `--minimum-background-samples` | 3 | equatorward samples required on each leg |
 | `--minimum-plateau-to-low-ratio` | 2 | required polar-to-lower-latitude contrast |
 | `--minimum-leg-samples` | 4 | samples required on a pass leg |
+| `--crossing-method` | `BACKGROUND_NORMALIZED_ISOTONIC` | production T25/T50/T75 fit; legacy method is diagnostic only |
+| `--maximum-transition-width-deg` | 15 | reject excessively broad transitions |
+| `--maximum-isotonic-rms` | 0.35 | reject strongly nonmonotonic normalized profiles |
+| `--minimum-edge-margin-deg` | 0.5 | require the fitted T50 away from the retained latitude edge |
 | `--window-hours` | 2 | aggregation-window width |
 | `--step-hours` | 1 | separation between adjacent window centers |
 | `--mlt-bin-hours` | 3 | MLT-bin width |
-| `--minimum-crossings-per-cell` | 1 | crossings required for a populated cell |
+| `--minimum-crossings-per-cell` | 2 | crossings required for PRIMARY P6/P7 cells |
+| `--minimum-diagnostic-crossings-per-cell` | 1 | crossings required to retain a P8/P9 diagnostic cell |
+| `--minimum-distinct-pass-legs-per-cell` | 2 | independent pass legs required by a primary cell |
+| `--acceptance-window-stride-hours` | 2 | nonoverlapping midpoint stride used for PASS/FAIL |
 
 Do not relax the quality thresholds merely to force a nonempty result. First
 inspect the source format, event coverage, individual flux profiles, and pass-
@@ -652,60 +678,51 @@ outbound/pole-to-equator leg
 The legs are processed separately because they occur at different times and
 usually at different MLT.
 
-### 10.4 Estimate the polar-cap level
+### 10.4 Estimate the two normalization levels
 
-For one pass, channel, and hemisphere, valid samples satisfying:
+For each pass and channel, the polar plateau is the median valid flux at
+`|AACGM latitude| >= 75 deg`. For each inbound or outbound leg independently,
+the equatorward background is the median valid flux in the lowest retained
+latitude band (by default 45–50 degrees absolute AACGM latitude). A leg is
+rejected when either estimate lacks enough samples, the plateau is not above the
+background, or the plateau/background contrast is below the configured ratio.
 
-```text
-|AACGM latitude| >= 75 degrees
-```
+### 10.5 Fit the observed transmission and locate T50
 
-are used to estimate the polar-cap signal. The median is used to reduce
-sensitivity to isolated spikes.
-
-### 10.5 Locate the observed boundary
-
-The observational boundary level is:
+The normalized profile is
 
 ```text
-0.5 * median polar-cap channel flux
+Tobs = (F - Fbackground) / (Fpolar - Fbackground).
 ```
 
-On each pass leg, the algorithm finds adjacent records that bracket this level
-and linearly interpolates the crossing time, geographic position, AACGM
-latitude, MLT, and altitude.
+Samples are ordered from equator to pole and fitted with a nondecreasing
+pool-adjacent-violators isotonic regression. The builder requires explicitly
+bracketed T25, T50, and T75 crossings. It records the T25–T75 transition width
+and isotonic RMS and rejects unbracketed, edge-clipped, excessively broad, or
+strongly nonmonotonic transitions. Time, geographic position, altitude, AACGM
+latitude, and MLT are interpolated at the fitted T50.
 
-Every accepted crossing is written to:
+The stored uncertainty is the maximum of a 0.25-degree floor, half the local
+sampling interval, one quarter of the transition width, and an isotonic-residual
+term. This is still a regression-test uncertainty rather than a full instrument
+calibration covariance.
 
-```text
-C10_poes_boundary_crossings.csv
-```
+### 10.6 Assign validation roles and aggregate
 
-### 10.6 Aggregate crossings into the runner reference
+Each crossing is tagged `PRIMARY` (P6/P7) or `DIAGNOSTIC` (P8/P9). All channels
+are aggregated into two-hour windows stepped by one hour and three-hour MLT
+bins. A primary cell is populated only when it has at least two crossings from
+at least two distinct pass legs. Only primary cells whose midpoints lie on the
+configured two-hour nonoverlapping stride are marked `acceptance_eligible`.
+Overlapping primary cells and all P8/P9 cells remain available for plots and
+per-channel diagnostic metrics.
 
-Crossings are grouped by:
+### 10.7 Legacy threshold sensitivity
 
-```text
-overlapping time window
-channel / nominal rigidity
-hemisphere
-MLT bin
-```
-
-The standard grid uses two-hour windows, one-hour steps, and three-hour MLT
-bins. Cells with inadequate coverage remain in the reference with
-`missing=TRUE`; they are not silently interpolated or filled.
-
-The resulting grid is written directly to:
-
-```text
-reference_C10_poes_meped_boundary.csv.gz
-```
-
-The gzip stream is deterministic: identical source files and settings produce
-identical compressed bytes and therefore a reproducible SHA-256 digest.
-
----
+`--crossing-method HALF_POLAR_PLATEAU` reproduces the older direct
+`0.5 * Fpolar` crossing for sensitivity studies. The resulting cells are never
+marked acceptance eligible and cannot be used for the default code-validation
+gate.
 
 ## 11. Generated outputs
 
@@ -732,7 +749,7 @@ altitude_km
 aacgm_lat_deg
 mlt_hour
 polar_plateau_flux
-half_plateau_flux
+half_plateau_flux  # legacy column name; stores the actual fitted T50 flux
 boundary_uncertainty_deg
 quality_flags
 source_file
@@ -758,12 +775,18 @@ interval_end_utc
 rigidity_gv
 energy_threshold_mev
 channel
+validation_role
+acceptance_eligible
 hemisphere
 mlt_hour
 boundary_aacgm_lat_deg
 sigma_deg
 altitude_km
 n_crossings
+n_distinct_pass_legs
+n_distinct_satellites
+median_transition_width_deg
+background_corrected
 satellites
 missing
 source
@@ -1139,3 +1162,21 @@ manifests, settings, output products, and checksums.
 - [`../CHANGES.md`](../CHANGES.md): implementation history.
 - [`../../validation.docx`](../../validation.docx): complete Earth-model
   validation campaign description.
+
+
+## 18. Rebuild required after the improved-processing update
+
+The current runner rejects an older reference that lacks `validation_role`,
+`acceptance_eligible`, and `background_corrected`. Re-run the builder; do not
+simply add columns to the old CSV because the actual T50 values must be
+re-extracted from the daily measurements. A successful summary must report a
+nonzero `n_acceptance_eligible_cells`.
+
+Use these checks after rebuilding:
+
+```tcsh
+python -m json.tool C10_reference_summary.json | grep -E \
+  'n_(primary|diagnostic|acceptance|crossings)'
+gzip -cd reference_C10_poes_meped_boundary.csv.gz | head -8
+python run_C10.py --validate-references
+```

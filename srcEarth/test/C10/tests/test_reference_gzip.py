@@ -32,12 +32,18 @@ def one_cell() -> ReferenceCell:
         rigidity_gv=0.174013525,
         energy_threshold_mev=16.0,
         channel="P6",
+        validation_role="PRIMARY",
+        acceptance_eligible=True,
         hemisphere="N",
         mlt_hour=0.0,
         boundary_aacgm_lat_deg=65.25,
         sigma_deg=0.5,
         altitude_km=850.0,
         n_crossings=2,
+        n_distinct_pass_legs=2,
+        n_distinct_satellites=2,
+        median_transition_width_deg=4.0,
+        background_corrected=True,
         satellites="NOAA-15;NOAA-18",
         missing=False,
         source="POES_NCEI_LEVEL2_16SEC",
@@ -80,6 +86,9 @@ class GzipReferenceTests(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0].channel, "P6")
             self.assertAlmostEqual(rows[0].boundary_lat_deg or 0.0, 65.25)
+            self.assertEqual(rows[0].validation_role, "PRIMARY")
+            self.assertTrue(rows[0].acceptance_eligible)
+            self.assertTrue(rows[0].background_corrected)
 
 
 if __name__ == "__main__":

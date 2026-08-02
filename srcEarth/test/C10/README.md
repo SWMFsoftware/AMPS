@@ -1,470 +1,310 @@
-# C10 observational data and reference-solution construction
+# C10 — POES/MetOp MEPED measured proton-access-boundary validation
 
-## 1. Purpose of this directory
+## 1. Purpose
 
-This directory contains the **external observational inputs** used by the C10
-validation test and the provenance records needed to reproduce the numerical
-reference solution.
+C10 is a real-measurement AMPS validation test for storm-time geomagnetic
+proton access at low-Earth-orbit altitude. It is designed as a companion to C9:
 
-C10 compares AMPS storm-time proton access boundaries with boundaries extracted
-from the NOAA/NCEI historical POES/MetOp SEM-2 Level-2 archive. The publications
-listed in [`../REFERENCES.md`](../REFERENCES.md) define the instrument, channel
-response, data format, quality issues, and boundary-extraction method, but they
-do not contain the complete pass-level numerical reference. The numerical C10
-reference must therefore be generated from the archived measurements.
+- C9 compares AMPS with PAMELA cutoff latitudes.
+- C10 compares AMPS with cutoff boundaries extracted from the NOAA POES/MetOp
+  Space Environment Monitor-2 (SEM-2), Medium Energy Proton and Electron
+  Detector (MEPED), omnidirectional proton channels.
 
-The normal directory layout is:
+The primary event is the December 2006 solar-particle event and geomagnetic
+storm. NOAA-15, NOAA-16, NOAA-17, NOAA-18, and MetOp-02 sampled both polar caps
+at approximately 800–850 km altitude. The constellation provides many more
+local-time samples than a single spacecraft and permits validation of:
 
-```text
-srcEarth/test/C10/
-├── data/
-│   ├── README.md                         this document
-│   ├── reference_source/                 downloaded NCEI daily files
-│   │   └── download_manifest.json        URL/size/SHA-256 inventory
-│   └── ts05_driving.txt                  optional local copy of the C9 driver
-├── C10_poes_boundary_crossings.csv       generated pass-level observations
-├── reference_C10_poes_meped_boundary.csv generated runner reference
-├── C10_reference_manifest.json           generated scientific provenance
-└── C10_reference_summary.json            generated extraction summary
-```
+1. equatorward storm-time boundary motion;
+2. recovery of the boundary;
+3. north/south differences;
+4. magnetic-local-time asymmetry; and
+5. GRIDLESS versus GRIDDED field-evaluation sensitivity.
 
-Raw NCEI daily files should remain below `data/reference_source/`. Generated
-crossing and reference products are written in the C10 directory by default so
-that `run_C10.py` can find them without an additional path argument.
+C10 does **not** use the synthetic reference table that was present in the
+initial scaffold. A scientifically eligible run requires a reference rebuilt
+from the historical NOAA/NCEI Level-2 archive.
 
-## 2. What is—and is not—the C10 reference solution
+## 2. Scientific observable
 
-The authoritative observational product is:
+For each MEPED omnidirectional integral-proton channel, C10 now uses a
+**background-normalized transmission boundary** on each pass leg:
 
 ```text
-C10_poes_boundary_crossings.csv
+Tobs(lambda) = (F(lambda) - Fbackground) / (Fpolar - Fbackground)
 ```
 
-Each row represents one measured inbound or outbound satellite-pass crossing
-of the 50%-of-polar-cap-flux boundary for one MEPED omnidirectional proton
-channel.
+The production boundary is the explicitly bracketed `Tobs = 0.5` crossing. The
+implemented algorithm is:
 
-The file consumed directly by the C10 runner is:
+1. convert each 16-second sub-satellite position to AACGM latitude and MLT;
+2. split the series into individual single-hemisphere polar passes and inbound/
+   outbound legs;
+3. estimate `Fpolar` from the median flux at `|AACGM latitude| >= 75 deg`;
+4. estimate `Fbackground` independently on each leg from its equatorward
+   samples;
+5. fit a nondecreasing isotonic profile to the normalized transmission;
+6. interpolate `T25`, `T50`, and `T75`, retaining the transition width and fit
+   residual as quality diagnostics;
+7. reject legs with insufficient background/plateau samples, poor contrast, an
+   unbracketed edge crossing, excessive transition width, or excessive
+   nonmonotonicity; and
+8. retain every accepted crossing in the pass-level product.
+
+The old `0.5 * Fpolar` threshold is available only through
+`--crossing-method HALF_POLAR_PLATEAU` for diagnostic sensitivity studies; it
+does not produce acceptance-eligible cells. The aggregated reference keeps
+one-hour-step cells for plotting, but the default PASS/FAIL gate uses only
+nonoverlapping, background-corrected cells with at least two distinct pass legs.
+
+For morphology diagnostics, the runner also fits a three-parameter first
+harmonic to invariant colatitude versus MLT. This is a compact representation of
+mean expansion, first-order asymmetry amplitude, and phase. It is **not** the
+full five-parameter geometric ellipse used in the published Dmitriev model; the
+primary C10 pass/fail comparison remains the individual MLT-bin boundary
+latitudes.
+
+### Common model observable: `ACCESS_T50`
+
+C10 now follows the same two-product design as C9.  Both the complete
+`FULL_SCAN` calculation and the accelerated `DIRECT_ACCESS` calculation write
+exact access states at the four MEPED channel rigidities.  The primary model
+boundary is built from those states in exactly the same way for both products:
+
+1. retain the common 45°–85° absolute-geodetic-latitude band;
+2. transform every shell node to AACGM latitude and MLT at the snapshot epoch;
+3. group exact-rigidity longitude profiles by hemisphere and MLT sector;
+4. evaluate the resolved allowed-state fraction on a common AACGM-latitude grid;
+5. apply weighted nondecreasing isotonic regression; and
+6. interpolate the explicitly bracketed transmission crossing at `T=0.5`.
+
+This observable is selected with:
 
 ```text
-reference_C10_poes_meped_boundary.csv
+--comparison-observable ACCESS_T50
 ```
 
-It is derived from the crossing table by aggregating measurements into
-overlapping time windows, hemispheres, channels, and MLT bins. It is not a
-synthetic curve and it must not be replaced by digitized points from a paper or
-by a published empirical fit.
+It is the default and is directly comparable between the two numerical modes.
+For `FULL_SCAN`, the traditional `Rc_lower`, `Rc_effective`, and `Rc_upper`
+contours remain available as diagnostics through `--comparison-observable
+RC_LOWER`, `RC_EFFECTIVE`, `RC_UPPER`, or `ALL`.  The older
+`--boundary-cutoff effective` option remains as a compatibility alias when no
+explicit comparison observable is supplied.
 
-The checked-in five-line `reference_C10_poes_meped_boundary.csv` is only a
-placeholder. `run_C10.py --validate-references` deliberately rejects it until
-`build_poes_reference.py` successfully writes archive-derived rows.
+## 3. MEPED channels and nominal rigidities
 
-## 3. Measurement source
+C10 uses the four high-energy omnidirectional proton channels contained in the
+historical 16-second Level-2 files:
 
-Use the NOAA National Centers for Environmental Information historical
-POES/MetOp Space Environment Monitor archive:
+| Channel | Nominal integral threshold | Assigned proton rigidity |
+|---|---:|---:|
+| P6 | >16 MeV | 0.174013525 GV |
+| P7 | >36 MeV | 0.262395866 GV |
+| P8 | >70 MeV | 0.369131538 GV |
+| P9 | >=140 MeV | 0.531334344 GV |
+
+The rigidity is calculated from the nominal lower energy threshold:
+
+```text
+R = sqrt(T * (T + 2 mp c^2)) / 1000    [GV for a proton]
+```
+
+This mapping is transparent and reproducible, but it is an approximation:
+MEPED channels are integral response functions, not monochromatic rigidity
+bins. A later high-fidelity extension can convolve the published detector
+response with an assumed or independently measured SEP spectrum and assign an
+effective rigidity. Every C10 row records the channel, threshold, mapping
+method, and source-file checksum so this approximation cannot be mistaken for
+an instrument calibration.
+
+
+### Validation roles of the four channels
+
+C10 deliberately separates code-validation channels from instrument-response
+diagnostics:
+
+- `P6` and `P7` are `PRIMARY` and control the default model/data PASS/FAIL
+  metrics after background correction and independent-pass quality checks.
+- `P8` and `P9` are `DIAGNOSTIC`. They remain in every CSV and plot, but do not
+  control PASS/FAIL until their broad integral response and historical
+  subcommutation are forward-folded through an event spectrum.
+
+This does not hide disagreement in P8/P9: `C10_result.json` reports separate
+per-channel bias, RMSE, correlation, and coverage, plus an all-channel
+diagnostic RMSE. It prevents a known detector-response approximation from being
+misidentified as a code error.
+
+## 4. Can the reference solution be extracted from publications?
+
+**No—not completely. The archive data are required.**
+
+The publications and technical documents are sufficient to determine:
+
+- the instrument design and channel definitions;
+- the historical file columns and units;
+- the cutoff extraction method;
+- the spacecraft constellation used;
+- the two-hour/one-hour-step boundary-aggregation methodology;
+- known detector and processing limitations; and
+- qualitative and fitted-model behavior.
+
+They do **not** provide the complete numerical list of pass-level P6–P9 cutoff
+crossings for every satellite, hemisphere, time, and MLT. Figures can be
+digitized, and published regression coefficients can reproduce the published
+empirical model, but neither is equivalent to an independent measurement
+reference. The C10 observational reference must therefore be generated from the
+NOAA/NCEI Level-2 archive.
+
+The papers are used to define and justify the extraction algorithm. The archive
+files supply the actual numerical measurements.
+
+## 5. Official data source
+
+Use the NOAA National Centers for Environmental Information POES/MetOp SEM
+archive:
 
 ```text
 https://www.ncei.noaa.gov/data/poes-metop-space-environment-monitor/
 ```
 
-For the December 2006 C10 event, the intended processed product is the
-historical Level-2, version `v01r00`, 16-second product:
+For December 2006 the appropriate product is the historical processed Level-2,
+16-second data, version `v01r00`:
 
 ```text
 access/l2/v01r00/txt/2006/
 access/l2/v01r00/cdf/2006/
 ```
 
-The ASCII product is recommended because it is human-readable and does not
-require a CDF library. The CDF reader is available for users who maintain a CDF
-mirror.
+The ASCII product is recommended for C10 because:
 
-The standard C10 download includes these historical spacecraft tokens:
+- it is directly documented by `readme_16s_ascii.txt`;
+- it requires no CDF library;
+- it contains the needed time, sub-satellite latitude/longitude, L value, MLT,
+  and `mepomp6`–`mepomp9` channels; and
+- it is straightforward to inspect and checksum.
 
-| Token | Spacecraft |
-|---|---|
-| `n15` | NOAA-15 |
-| `n16` | NOAA-16 |
-| `n17` | NOAA-17 |
-| `n18` | NOAA-18 |
-| `m02` | MetOp-02 / MetOp-A |
+CDF input is also supported through `cdflib`.
 
-The preferred source interval is 5–16 December 2006. This provides event
-context around the main 14–16 December validation interval and allows the
-source measurements to be inspected independently of the final extraction
-window.
+### Satellites
 
-## 4. Python setup without administrator privileges
-
-### 4.1 Data download requires no extra packages
-
-`download_poes_sem2.py` uses only the Python standard library. The raw archive
-files can be downloaded before creating an environment or installing any
-packages.
-
-### 4.2 Recommended `/bin/tcsh` environment
-
-The following procedure installs everything under the user's home directory and
-does not require `sudo`, `apt`, or write access to `/usr`.
-
-Run from `srcEarth/test/C10`:
-
-```tcsh
-python3 -m pip install --user virtualenv
-setenv PATH "${HOME}/.local/bin:${PATH}"
-python3 -m virtualenv .venv
-source .venv/bin/activate.csh
-python -m pip install "pip<25.1"
-python -m pip install -r requirements.txt
-```
-
-The `pip<25.1` constraint is useful on systems that still provide Python 3.8.
-After activation, verify the scientific dependencies:
-
-```tcsh
-python -c "import numpy, matplotlib, aacgmv2; print('C10 dependencies are available')"
-```
-
-For ASCII input, `cdflib` is not used during reference construction even though
-it is listed as an optional dependency. For CDF input, verify it as well:
-
-```tcsh
-python -c "import cdflib; print('CDF support is available')"
-```
-
-To leave the environment:
-
-```tcsh
-deactivate
-```
-
-### 4.3 Standalone `virtualenv` fallback
-
-If `python3 -m pip` cannot install `virtualenv`, obtain the standalone
-application in the user's home directory:
-
-```tcsh
-curl -L https://bootstrap.pypa.io/virtualenv.pyz -o "$HOME/virtualenv.pyz"
-python3 "$HOME/virtualenv.pyz" .venv
-source .venv/bin/activate.csh
-python -m pip install "pip<25.1"
-python -m pip install -r requirements.txt
-```
-
-Do not run `apt install python3-venv` on a system where you do not have root
-access. The C10 reference can be built entirely in a user-local environment.
-
-## 5. Downloading the NCEI source data
-
-All commands in the remainder of this document are run from:
+Download the available daily files for:
 
 ```text
-srcEarth/test/C10
+n15  NOAA-15
+n16  NOAA-16
+n17  NOAA-17
+n18  NOAA-18
+m02  MetOp-02 / MetOp-A
 ```
 
-### 5.1 Automatic archive discovery and download
+MetOp-02 began supplying SEM-2 data in December 2006. The downloader tolerates
+missing daily files and records exactly what was obtained.
 
-The recommended command is:
+## 6. Detailed procedure for obtaining the reference data
 
-```tcsh
-python download_poes_sem2.py --start 2006-12-05 --end 2006-12-16 --satellites n15,n16,n17,n18,m02 --format txt --output-dir data/reference_source
+### 6.1 Install the reference-pipeline dependencies
+
+From the C10 directory:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install -r requirements.txt
+```
+
+`aacgmv2` is required to recompute AACGM latitude and MLT consistently.
+`cdflib` is needed only when using CDF rather than ASCII.
+
+### 6.2 Download the recommended event interval
+
+The paper studied the longer 5–15 December SEP interval. For the C10 storm test,
+the most important interval is 14–16 December. Downloading 5–16 December gives
+extra quiet/event context and allows independent inspection:
+
+```bash
+python3 download_poes_sem2.py --start 2006-12-05 --end 2006-12-16 --satellites n15,n16,n17,n18,m02 --format txt --output-dir data/reference_source
 ```
 
 The downloader:
 
-1. starts at the official NCEI Level-2 2006 directory;
-2. recursively reads ordinary directory-index pages;
-3. selects files matching the requested date and spacecraft tokens;
-4. downloads the matching daily products without changing their contents; and
-5. writes `data/reference_source/download_manifest.json`.
-
-Each manifest entry records:
+1. begins at the official NCEI 2006 Level-2 directory;
+2. recursively reads directory indexes;
+3. selects requested spacecraft/date files;
+4. downloads them without altering their contents; and
+5. writes:
 
 ```text
-original URL
-local path
-file name
-byte count
-SHA-256 digest
-download/reuse status
+data/reference_source/download_manifest.json
 ```
 
-The manifest is part of the scientific provenance. Do not delete or manually
-edit it after a successful download.
+The manifest contains each original URL, local path, byte count, and SHA-256.
+Do not delete it.
 
-### 5.2 Re-download existing files
+### 6.3 Manual download fallback
 
-Use `--overwrite` to replace existing files:
+Some networks permit file downloads but block recursive directory-index access.
+In that case:
 
-```tcsh
-python download_poes_sem2.py --start 2006-12-05 --end 2006-12-16 --satellites n15,n16,n17,n18,m02 --format txt --output-dir data/reference_source --overwrite
-```
-
-This is appropriate after an interrupted transfer or when the file inventory
-contains zero-byte files.
-
-### 5.3 Manual URL-list fallback
-
-Some institutional networks allow direct file downloads but block recursive
-indexing. In that situation:
-
-1. open the official NCEI `txt/2006/` directory in a browser;
-2. identify the exact daily-file URLs for the requested spacecraft and dates;
-3. save one exact HTTPS URL per line in `poes_urls.txt`; and
+1. open the official `txt/2006/` directory in a browser;
+2. locate the daily files for `n15`, `n16`, `n17`, `n18`, and `m02`;
+3. copy their exact HTTPS URLs into a text file, one URL per line; and
 4. run:
 
-```tcsh
-python download_poes_sem2.py --url-list poes_urls.txt --format txt --output-dir data/reference_source
+```bash
+python3 download_poes_sem2.py --url-list poes_urls.txt --format txt --output-dir data/reference_source
 ```
 
-Blank lines and lines beginning with `#` are ignored. This route produces the
-same checksum manifest as automatic discovery.
+This path still creates the same checksum manifest.
 
-### 5.4 Expected number of source files
+### 6.4 Verify the archive files before extraction
 
-A request for 12 days and five spacecraft can produce as many as 60 daily files,
-but a smaller number is not automatically an error. A spacecraft may not have a
-published product for every requested day. Scientific usability is determined
-from the actual observation and crossing counts, not from an assumed exact file
-count.
+List the files and inspect the manifest:
 
-## 6. Mandatory source-file checks
-
-Perform these checks before building the reference.
-
-### 6.1 List the inventory
-
-```tcsh
-find data/reference_source -type f | sort
+```bash
+find data/reference_source -maxdepth 2 -type f -print | sort
+python3 -m json.tool data/reference_source/download_manifest.json | less
 ```
 
-### 6.2 Inspect the download manifest
-
-```tcsh
-python -m json.tool data/reference_source/download_manifest.json | less
-```
-
-### 6.3 Detect zero-byte files
-
-```tcsh
-find data/reference_source -type f -size 0 -print
-```
-
-A zero-byte file contains no measurements. Depending on the installed C10
-revision, the builder either skips it with a warning or stops with a diagnostic
-such as:
+For an ASCII file, verify that its header contains at least:
 
 ```text
-File preview: <empty file>
+year mo dy hr mi second sslat sslon lval mlt mepomp6 mepomp7 mepomp8 mepomp9
 ```
 
-The preferred correction is to remove and redownload the file:
+NCEI documents the 16-second timestamps as the center of each averaged interval.
 
-```tcsh
-find data/reference_source -type f -size 0 -delete
-python download_poes_sem2.py --start 2006-12-05 --end 2006-12-16 --satellites n15,n16,n17,n18,m02 --format txt --output-dir data/reference_source
+### 6.5 Build the pass-level and binned references
+
+```bash
+python3 build_poes_reference.py --input-dir data/reference_source --event-start 2006-12-14T00:00:00Z --event-end 2006-12-16T12:00:00Z --crossings-output C10_poes_boundary_crossings.csv --reference-output reference_C10_poes_meped_boundary.csv.gz --manifest-output C10_reference_manifest.json
 ```
 
-When the same satellite-day product remains unavailable, remove the empty file
-and continue with the rest of the constellation. Record the missing product in
-the run notes and evaluate its effect on crossing and MLT coverage.
+The default extraction settings are:
 
-### 6.4 Detect HTML or archive error pages saved as data
+| Parameter | Default |
+|---|---:|
+| minimum pass latitude | 45° absolute AACGM |
+| polar plateau latitude | 75° absolute AACGM |
+| minimum polar samples | 4 |
+| minimum background samples per leg | 3 |
+| minimum plateau/background ratio | 2 |
+| production boundary | background-normalized isotonic T50 |
+| maximum T25–T75 transition width | 15° |
+| maximum isotonic RMS | 0.35 |
+| aggregation window | 2 hours |
+| plotting-window step | 1 hour |
+| acceptance-window stride | 2 hours (nonoverlapping) |
+| MLT-bin width | 3 hours |
+| minimum primary P6/P7 crossings per cell | 2 |
+| minimum distinct primary pass legs per cell | 2 |
+| minimum diagnostic P8/P9 crossings per cell | 1 |
 
-```tcsh
-foreach f (`find data/reference_source -type f -name '*.txt'`)
-    grep -qi -E '<html|access denied|not found|forbidden' "$f"
-    if ($status == 0) echo "possible non-data response: $f"
-end
-```
+### 6.6 Products created by the builder
 
-Any identified response page must be deleted and downloaded again from the
-correct file URL.
+#### `C10_poes_boundary_crossings.csv`
 
-### 6.5 Inspect one ASCII product
-
-```tcsh
-set f = `find data/reference_source -type f -name '*.txt' -size +0c | head -1`
-echo "$f"
-head -5 "$f"
-```
-
-Historical products may contain either:
-
-- an explicit column-name header; or
-- a documented fixed-order numerical layout without a header.
-
-Recent C10 parsers recognize both forms. The explicit-header form must contain
-fields equivalent to:
-
-```text
-year mo dy hr mi second sslat sslon mepomp6 mepomp7 mepomp8 mepomp9
-```
-
-For a headerless product, inspect the first nonblank record:
-
-```tcsh
-awk 'NF && $1 !~ /^#/ {print "fields in first data row:", NF; exit}' "$f"
-```
-
-The documented headerless 16-second layout contains at least 41 numerical
-fields. A nonempty file that matches neither layout is treated as malformed and
-must not be silently included in the reference.
-
-### 6.6 Verify local files against the manifest
-
-The builder writes a second scientific manifest, but it is useful to verify the
-raw download inventory independently. A simple spot check is:
-
-```tcsh
-sha256sum "$f"
-```
-
-Compare the value with the corresponding `sha256` field in
-`download_manifest.json`.
-
-## 7. Building the archive-derived reference
-
-### 7.1 Standard reference-build command
-
-```tcsh
-python build_poes_reference.py --input-dir data/reference_source --event-start 2006-12-14T00:00:00Z --event-end 2006-12-16T12:00:00Z --crossings-output C10_poes_boundary_crossings.csv --reference-output reference_C10_poes_meped_boundary.csv --manifest-output C10_reference_manifest.json --summary-output C10_reference_summary.json
-```
-
-A successful run ends with messages naming all four outputs and returns status
-zero. In `tcsh`, check the status immediately:
-
-```tcsh
-echo "build exit status = $status"
-```
-
-### 7.2 Capture a complete build log
-
-To retain both standard output and errors:
-
-```tcsh
-python build_poes_reference.py --input-dir data/reference_source --event-start 2006-12-14T00:00:00Z --event-end 2006-12-16T12:00:00Z --crossings-output C10_poes_boundary_crossings.csv --reference-output reference_C10_poes_meped_boundary.csv --manifest-output C10_reference_manifest.json --summary-output C10_reference_summary.json |& tee C10_build_reference.log
-```
-
-With a pipeline, the shell status may reflect `tee` rather than the Python
-process. Therefore, verify the output files rather than assuming the build
-succeeded merely because the prompt returned.
-
-### 7.3 Default extraction settings
-
-| Option | Default | Role |
-|---|---:|---|
-| `--default-altitude-km` | 850 | fallback when altitude is absent |
-| `--minimum-pass-abs-lat-deg` | 45 | minimum absolute AACGM latitude retained in a polar pass |
-| `--polar-plateau-abs-lat-deg` | 75 | latitude threshold for estimating polar-cap flux |
-| `--minimum-polar-samples` | 4 | minimum valid samples in the plateau estimate |
-| `--minimum-plateau-to-low-ratio` | 2 | rejects passes without adequate polar enhancement |
-| `--minimum-leg-samples` | 4 | minimum samples on an inbound/outbound leg |
-| `--window-hours` | 2 | width of the aggregation window |
-| `--step-hours` | 1 | separation of adjacent window centers |
-| `--mlt-bin-hours` | 3 | magnetic-local-time bin width |
-| `--minimum-crossings-per-cell` | 1 | observations required for a populated reference cell |
-
-Display the exact options supported by the installed code with:
-
-```tcsh
-python build_poes_reference.py --help
-```
-
-Do not relax quality thresholds merely to force a nonempty reference. First
-inspect individual passes, channel values, source formats, and event coverage.
-
-## 8. Scientific extraction performed by the builder
-
-The builder follows this sequence.
-
-### 8.1 Read and normalize measurements
-
-For every supported daily file, the reader:
-
-1. infers the spacecraft identity from the file name;
-2. reads the 16-second epoch and geographic sub-satellite position;
-3. reads MEPED omnidirectional proton channels P6–P9;
-4. rejects negative fill values, nonfinite values, and unphysical large archive
-   values;
-5. uses the file altitude when available or the explicit fallback altitude;
-6. recomputes AACGM latitude and MLT with `aacgmv2`; and
-7. retains source-file identity and checksum information.
-
-### 8.2 Map channel thresholds to nominal proton rigidities
-
-The nominal channels are:
-
-| Channel | Nominal lower threshold | Assigned rigidity |
-|---|---:|---:|
-| P6 | 16 MeV | 0.174013525 GV |
-| P7 | 36 MeV | 0.262395866 GV |
-| P8 | 70 MeV | 0.369131538 GV |
-| P9 | 140 MeV | 0.531334344 GV |
-
-The rigidity is calculated from the proton kinetic-energy threshold. This is a
-transparent nominal mapping, not a full convolution of the integral detector
-response with an event spectrum.
-
-### 8.3 Separate polar passes and pass legs
-
-Measurements are grouped into single-spacecraft, single-hemisphere polar
-passes. Each pass is split near its highest absolute AACGM latitude into:
-
-```text
-inbound/equator-to-pole leg
-outbound/pole-to-equator leg
-```
-
-The two legs are analyzed independently because they occur at different times
-and often at different MLT.
-
-### 8.4 Estimate the polar-cap plateau
-
-For one spacecraft pass, channel, and hemisphere, valid measurements at:
-
-```text
-|AACGM latitude| >= polar-plateau threshold
-```
-
-are used to estimate the polar-cap channel level. The implemented reference
-level is based on the median of the retained polar samples, making it less
-sensitive to isolated spikes than a simple mean.
-
-### 8.5 Locate the half-flux boundary
-
-The boundary level is:
-
-```text
-0.5 × polar-cap plateau
-```
-
-For each leg, the algorithm locates adjacent records bracketing that level and
-linearly interpolates the crossing time, geographic position, AACGM latitude,
-MLT, and altitude. Each accepted crossing becomes one row in
-`C10_poes_boundary_crossings.csv`.
-
-### 8.6 Aggregate crossings for the AMPS comparison
-
-Pass-level crossings are then grouped by:
-
-```text
-overlapping time window
-channel/nominal rigidity
-hemisphere
-MLT bin
-```
-
-Cells lacking enough observations are retained explicitly with `missing=TRUE`.
-The runner excludes missing cells from numerical metrics; it does not fill or
-interpolate them.
-
-## 9. Generated products
-
-### 9.1 `C10_poes_boundary_crossings.csv`
-
-This is the primary measurement-level product. It includes fields such as:
+One row per measured pass-leg crossing. Important columns include:
 
 ```text
 satellite
@@ -481,275 +321,669 @@ altitude_km
 aacgm_lat_deg
 mlt_hour
 polar_plateau_flux
-half_plateau_flux
+half_plateau_flux (the actual T50 flux; background + 0.5*(plateau-background))
 boundary_uncertainty_deg
 quality_flags
 source_file
 source_sha256
 ```
 
-Use this file to inspect individual satellite passes, spacecraft subsets,
-hemispheric differences, and MLT coverage.
+This file is the authoritative C10 observational product.
 
-### 9.2 `reference_C10_poes_meped_boundary.csv`
+#### `reference_C10_poes_meped_boundary.csv.gz`
 
-This is the numerical table consumed by `run_C10.py`. Important columns include:
+The windowed table consumed by `run_C10.py`. It contains every configured
+window/channel/hemisphere/MLT cell. Cells without a measurement are retained as:
+
+```text
+missing=TRUE
+```
+
+The runner excludes missing cells from numerical metrics rather than filling or
+interpolating them.
+
+This production reference is always written and kept as gzip-compressed CSV.
+`run_C10.py` reads it directly; do not decompress it before a run.  The builder
+uses a deterministic gzip header (`mtime=0` and no embedded source filename),
+so identical source measurements and processing settings produce identical
+compressed bytes and SHA-256 values.  To inspect it without modifying it:
+
+```bash
+gzip -cd reference_C10_poes_meped_boundary.csv.gz | head
+```
+
+For a previously generated uncompressed reference, either regenerate it with
+the updated builder or migrate it once with:
+
+```bash
+gzip -n -9 reference_C10_poes_meped_boundary.csv
+```
+
+The `-n` option omits the original filename and timestamp from the gzip header.
+
+#### `C10_reference_manifest.json`
+
+Contains:
+
+- extraction configuration;
+- source file names, sizes, and SHA-256 values;
+- channel threshold and rigidity mapping;
+- number of pass-level crossings;
+- total and nonmissing reference-cell counts; and
+- generation time.
+
+Archive this file with any published or regression result.
+
+### 6.7 Validate the generated reference
+
+```bash
+python3 run_C10.py --validate-references --reference reference_C10_poes_meped_boundary.csv.gz
+```
+
+The validator checks the complete grid shape, coordinate ranges, and source
+labels. It permits explicitly missing cells.
+
+## 7. Quality-control details
+
+### 7.1 P8/P9 subcommutation
+
+Historical P8 and P9 readouts share a telemetry word and alternate. NCEI
+published an important notice about older unpacking-software behavior. C10:
+
+- treats zero, negative fill, and unphysical very large values as missing;
+- never linearly fills absent P8/P9 samples before finding a crossing; and
+- adds a `P8_P9_SUBCOMMUTATED_ARCHIVE_CHANNEL` flag to those crossings.
+
+Use the processed Level-2 files or corrected unpacking software. Do not use the
+obsolete buggy C unpacker.
+
+### 7.2 Detector degradation
+
+MEPED proton detectors degrade with accumulated radiation dose. This is crucial
+for long-term quantitative flux studies. For C10, the production boundary is defined by background-normalized
+transmission within each pass, with T50 located after monotonic isotonic fitting.
+This reduces—but does not completely eliminate—sensitivity to absolute
+calibration and detector degradation. NOAA-15 through
+NOAA-17 were already several years old in 2006, while NOAA-18 and MetOp-02 were
+newer. The pass-level output preserves spacecraft identity so sensitivity tests
+can be run with and without older spacecraft.
+
+### 7.3 Integral-channel interpretation
+
+A half-flux boundary in an integral channel is spectrum dependent. C10's nominal lower-threshold rigidity mapping is adequate for a controlled
+code-regression observable in P6/P7, but it is not a complete instrument response
+model. P8/P9 therefore remain diagnostic until response folding is implemented. Recommended sensitivity studies are:
+
+```text
+P6-P9 nominal threshold mapping
+spacecraft subsets
+Rc_lower / Rc_effective / Rc_upper
+1-hour versus 2-hour windows
+3-hour versus 2-hour MLT bins
+polar plateau threshold 74° / 75° / 76°
+```
+
+### 7.4 Orbit altitude
+
+The historical ASCII documentation emphasizes geographic sub-satellite
+position but an altitude field may not be present in every processed file. The
+reader uses a file altitude when available; otherwise it uses the explicit
+builder default of 850 km. The actual/default altitude is written into the
+crossing and binned products.
+
+## 8. AMPS configuration
+
+C10 separates the magnetic-field solver from the cutoff-evaluation product.
+
+### Field-evaluation branches
+
+- `GRIDLESS` evaluates IGRF+T05 directly during trajectory integration.
+- `GRIDDED` samples the same field on the Mode3D AMR mesh and uses interpolation.
+
+### Cutoff-evaluation products
+
+- `FULL_SCAN` uses `PENUMBRA_SCAN` on the complete configured shell.  It writes
+  `Rc_lower`, `Rc_effective`, and `Rc_upper`, and also writes companion exact-
+  rigidity access states at P6–P9.  It supports `GRIDLESS`, `GRIDDED`, or `BOTH`.
+- `DIRECT_ACCESS` uses `RIGIDITY_LIST`, traces only P6–P9, and restricts work to
+  the configured absolute-geodetic-latitude band.  It is available for
+  `GRIDDED` only because the current gridless solver intentionally does not
+  implement `RIGIDITY_LIST`.
+
+The default comparison observable for both products is `ACCESS_T50`.  A typical
+C10 shell has 91 latitude rows over the full globe, while the 45°–85° direct
+band retains roughly 42 rows.  Combining that spatial reduction with four exact
+rigidities instead of a 120-point scan reduces the nominal trajectory count by
+about a factor of 60–70.  Mesh construction and field initialization are not
+removed, so the wall-clock speedup is smaller when those costs dominate.
+
+Recommended defaults:
+
+| Setting | Value |
+|---|---:|
+| shell altitude | 850 km |
+| shell longitude spacing | 15° |
+| shell latitude spacing | 2° |
+| direct/common latitude band | 45°–85° absolute geodetic |
+| full-scan rigidity samples | 120 |
+| primary observable | `ACCESS_T50` |
+| T50 AACGM grid step | 0.25° |
+| minimum resolved profile fraction | 0.66 |
+| minimum T50 edge margin | 1° |
+| trajectory policy | `ACCURATE` |
+| field | IGRF + T05/TS05 |
+
+The test reuses the checksum-verified December-2006 C9 TS05 driver. The runner
+looks first for `data/ts05_driving.txt` and then for
+`../C9/data/ts05_driving.txt`. The required SHA-256 is checked by the runner.
+
+## 9. Running C10
+
+All commands below are one-line commands run from the C10 directory.
+
+### 9.1 Structural checks
+
+```bash
+python3 -m py_compile poes_sem2.py download_poes_sem2.py build_poes_reference.py run_C10.py && python3 -m unittest discover -s tests -v
+```
+
+```bash
+python3 run_C10.py --validate-references --reference reference_C10_poes_meped_boundary.csv.gz
+```
+
+```bash
+python3 run_C10.py --validate-driver
+```
+
+### 9.2 Fast routine test: `DIRECT_ACCESS`
+
+This is the recommended first production run.  It evaluates the same four
+rigidities used by the reference and avoids the complete penumbra scan:
+
+```bash
+python3 run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root test_output/C10_direct --amps /home/vtenishe/T11/AMPS/amps --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-profile-fraction 0.66 --t50-min-edge-margin-deg 1.0 --dynamic-chunk 32 -np 8 -nt 16
+```
+
+After a one-snapshot-per-window run is stable, repeat with
+`--interval-samples 5` when interval averaging is scientifically needed.
+
+### 9.3 Complete GRIDDED `FULL_SCAN`
+
+Run the complete scan into a separate output tree.  The optional consistency
+root compares every exact P6–P9 state against the prior direct run:
+
+```bash
+python3 run_C10.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root test_output/C10_full --access-consistency-root test_output/C10_direct --amps /home/vtenishe/T11/AMPS/amps --cutoff-scan-n 120 --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-profile-fraction 0.66 --t50-min-edge-margin-deg 1.0 --min-access-state-agreement 0.999 --max-access-unresolved-fraction 0.01 --dynamic-chunk 32 -np 8 -nt 16
+```
+
+### 9.4 Full GRIDLESS/GRIDDED diagnostic run
+
+This retains every `Rc_*` diagnostic and uses `ACCESS_T50` for pass/fail:
+
+```bash
+python3 run_C10.py --solver BOTH --cutoff-evaluation FULL_SCAN --comparison-observable ALL --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root test_output/C10_full_both --amps /home/vtenishe/T11/AMPS/amps --cutoff-scan-n 120 --dynamic-chunk 32 -np 8 -nt 16
+```
+
+### 9.5 Smoke test
+
+```bash
+python3 run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable ACCESS_T50 --profile SMOKE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root test_output/C10_direct_smoke --amps /home/vtenishe/T11/AMPS/amps --dynamic-chunk 32 -np 4 -nt 8
+```
+
+### 9.6 Reprocess existing outputs
+
+Use the same mode and output root that produced the raw files:
+
+```bash
+python3 run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --skip-run --keep --output-root test_output/C10_direct --amps /home/vtenishe/T11/AMPS/amps -np 8 -nt 16
+```
+
+`--skip-run` can change postprocessing and plots, but it cannot add missing shell
+nodes, epochs, rigidities, or a missing full-scan companion access product.
+
+## 10. Runner outputs
+
+For each solver branch the runner writes:
+
+```text
+C10_comparison.csv
+C10_comparison.png
+C10_scatter.png
+C10_mlt_comparison.png
+C10_result.json
+C10_snapshot_t50_profiles.csv
+C10_access_consistency.json                 # when a counterpart root is supplied
+C10_access_consistency_snapshots.csv        # branch-level summary
+C10_access_consistency_differences.csv      # only mismatches/missing keys
+```
+
+### `C10_comparison.png`
+
+A C9-style two-panel figure:
+
+- top: observed POES/MetOp and modeled AMPS cutoff latitude versus UTC, with one
+  color per channel rigidity;
+- bottom: `AMPS - POES` residual versus UTC.
+
+Observed points include reference uncertainties when available.
+
+### `C10_scatter.png`
+
+Observed boundary versus modeled boundary with a 1:1 line, separated by
+rigidity.
+
+### `C10_mlt_comparison.png`
+
+Mean observed and modeled boundary versus MLT, shown separately for northern
+and southern hemispheres.
+
+### `C10_comparison.csv`
+
+One row per selected nonmissing or missing reference cell. It includes:
 
 ```text
 interval_midpoint_utc
-interval_start_utc
-interval_end_utc
 rigidity_gv
-energy_threshold_mev
 channel
 hemisphere
 mlt_hour
-boundary_aacgm_lat_deg
+observed_boundary_aacgm_deg
+modeled_boundary_aacgm_deg
+residual_deg
 sigma_deg
-altitude_km
-n_crossings
-satellites
-missing
-source
-source_ref
-notes
+n_observed_crossings
+observing_satellites
 ```
 
-A valid file must contain numerical rows after the header. A five-line file
-beginning with `C10 reference placeholder` has not been built.
+## 11. Acceptance metrics
 
-### 9.3 `C10_reference_manifest.json`
+The runner reports:
 
-This scientific manifest records:
+- valid modeled/reference fraction;
+- mean bias;
+- mean absolute error;
+- RMSE;
+- maximum absolute error;
+- Pearson correlation;
+- observed and modeled low-rigidity expansion;
+- time of maximum expansion and timing error; and
+- mean observed and modeled MLT-asymmetry amplitude.
+
+Default numerical gates are intentionally initial validation-scale gates:
+
+| Metric | Default requirement |
+|---|---:|
+| valid fraction | >=0.85 |
+| RMSE | <=3° |
+| absolute bias | <=2° |
+| correlation | >=0.80 |
+| modeled low-rigidity expansion | 4°–12° |
+| expansion timing error | <=180 min |
+
+These values should be tightened only after the archive-derived reference and
+controlled convergence studies establish a defensible baseline.
+
+## 12. Recommended convergence and sensitivity studies
+
+```bash
+# Latitude grid
+--shell-lat-res-deg 2
+--shell-lat-res-deg 1
+
+# Longitude / MLT sampling
+--shell-lon-res-deg 15
+--shell-lon-res-deg 7.5
+
+# Full-scan penumbra resolution
+--cutoff-scan-n 120
+--cutoff-scan-n 240
+
+# Common ACCESS_T50 reconstruction
+--t50-grid-step-deg 0.25
+--t50-grid-step-deg 0.125
+--t50-min-resolved-profile-fraction 0.66
+--t50-min-resolved-profile-fraction 1.0
+
+# Time averaging
+--interval-samples 1
+--interval-samples 3
+--interval-samples 5
+
+# Product and boundary definition
+--cutoff-evaluation DIRECT_ACCESS --comparison-observable ACCESS_T50
+--cutoff-evaluation FULL_SCAN --comparison-observable ACCESS_T50
+--cutoff-evaluation FULL_SCAN --comparison-observable RC_LOWER
+--cutoff-evaluation FULL_SCAN --comparison-observable RC_EFFECTIVE
+--cutoff-evaluation FULL_SCAN --comparison-observable RC_UPPER
+```
+
+## 13. File inventory
 
 ```text
-extraction settings
-source-file paths, sizes, and SHA-256 values
-channel threshold and rigidity mapping
-number of pass-level crossings
-number of total and populated reference cells
-generation time
+AMPS_PARAM_C10_gridless.in       GRIDLESS AMPS template
+AMPS_PARAM_C10_mode3d.in         GRIDDED/Mode3D AMPS template
+poes_sem2.py                     archive readers and scientific extraction
+download_poes_sem2.py            official archive downloader + checksums
+build_poes_reference.py          reference builder
+run_C10.py                       AMPS runner, comparison, metrics, plots
+requirements.txt                 Python dependencies
+REFERENCES.md                    ten core dataset/method references
+INSTALL.md                       one-line installation/data/run commands
+CHANGES.md                       file-by-file implementation summary
+VALIDATION.md                    completed checks and required archive validation
+tests/test_reference_pipeline.py offline unit tests
+tests/test_runner_plots.py       comparison-plot smoke tests
+tests/test_cutoff_modes.py       FULL_SCAN/DIRECT_ACCESS unit tests
+data/README.md                   source-data directory instructions
 ```
 
-Archive this manifest with every C10 result. It is distinct from the download
-manifest: the download manifest records network acquisition, while the
-reference manifest records the exact sources and settings used to create the
-numerical reference.
+## 14. Reproducibility checklist
 
-### 9.4 `C10_reference_summary.json`
-
-The summary provides a quick integrity check, including:
+A scientifically reviewable C10 result should archive all of the following:
 
 ```text
-number of source files
-number of observations in the event window
-number of extracted crossings
-number of total reference cells
-number of nonmissing reference cells
-spacecraft represented
-channels represented
-first and last observation times
-output paths and checksums
-```
-
-## 10. Verifying a successful build
-
-Run all of the following:
-
-```tcsh
-ls -l C10_poes_boundary_crossings.csv reference_C10_poes_meped_boundary.csv C10_reference_manifest.json C10_reference_summary.json
-wc -l C10_poes_boundary_crossings.csv reference_C10_poes_meped_boundary.csv
-head -5 reference_C10_poes_meped_boundary.csv
-python -m json.tool C10_reference_summary.json
-```
-
-The reference CSV must contain more than the placeholder/header lines. The
-summary must report nonzero `n_observations`, `n_crossings`, and
-`n_nonmissing_reference_cells`.
-
-Validate the generated table and the shared December-2006 TS05 driver:
-
-```tcsh
-python run_C10.py --validate-references --reference reference_C10_poes_meped_boundary.csv
-python run_C10.py --validate-driver
-```
-
-Or as one command:
-
-```tcsh
-python run_C10.py --validate-references --reference reference_C10_poes_meped_boundary.csv && python run_C10.py --validate-driver
-```
-
-## 11. Troubleshooting
-
-### 11.1 `no reference rows parsed`
-
-Example:
-
-```text
-C10 reference could not be loaded: no reference rows parsed
-```
-
-Cause: the runner is still reading the five-line placeholder or a build that
-failed before writing rows.
-
-Checks:
-
-```tcsh
-wc -l reference_C10_poes_meped_boundary.csv
-head -5 reference_C10_poes_meped_boundary.csv
-ls -l C10_reference_summary.json
-```
-
-Correction: successfully rerun `build_poes_reference.py` before validation.
-
-### 11.2 `File preview: <empty file>`
-
-Cause: a downloaded daily product has zero bytes.
-
-Locate it:
-
-```tcsh
-find data/reference_source -type f -size 0 -print
-```
-
-Delete and redownload it, or remove it and continue with the remaining
-constellation if the archive has no usable product for that spacecraft-day.
-Never create a fabricated replacement.
-
-### 11.3 Header cannot be recognized
-
-Example:
-
-```text
-could not locate an explicit 16-second Level-2 header and could not recognize a headerless NCEI data row
-```
-
-Check whether the file is empty, HTML, truncated, compressed under an unexpected
-suffix, or from a different data product. For a nonempty ASCII file:
-
-```tcsh
-head -10 path/to/file.txt
-awk 'NF && $1 !~ /^#/ {print NF; exit}' path/to/file.txt
-```
-
-Use the documented 16-second Level-2 product rather than an unrelated summary
-or telemetry file.
-
-### 11.4 `No valid observations fall inside the requested event interval`
-
-Check:
-
-- the source-file dates;
-- `--event-start` and `--event-end`;
-- whether the downloaded products contain the intended spacecraft and year;
-- whether time columns were parsed correctly; and
-- whether all relevant channel records were rejected as fill values.
-
-### 11.5 `No boundary crossings were extracted`
-
-Do not immediately loosen thresholds. First inspect:
-
-- whether an SEP enhancement is present in P6–P9;
-- whether each pass reaches the configured polar-plateau latitude;
-- the number of valid polar samples;
-- the plateau-to-low-latitude ratio;
-- P8/P9 alternating telemetry values; and
-- individual flux-versus-AACGM-latitude profiles.
-
-Only after those checks should sensitivity runs change plateau latitude, sample
-counts, or contrast thresholds.
-
-### 11.6 `aacgmv2` import failure
-
-Activate the environment and verify installation:
-
-```tcsh
-source .venv/bin/activate.csh
-python -m pip install -r requirements.txt
-python -c "import aacgmv2; print(aacgmv2.__version__)"
-```
-
-### 11.7 CDF input failure
-
-CDF is optional. For CDF source files:
-
-```tcsh
-python -m pip install cdflib numpy
-python -c "import cdflib, numpy; print('CDF dependencies available')"
-```
-
-When possible, use the ASCII products first because that is the primary tested
-path for C10.
-
-## 12. TS05 driver used by C10
-
-C10 also requires the checksum-verified December-2006 TS05 driver used by C9.
-The runner searches first for:
-
-```text
-data/ts05_driving.txt
-```
-
-and then for the sibling C9 copy:
-
-```text
-../C9/data/ts05_driving.txt
-```
-
-A separate local copy is optional when the sibling C9 file exists. The runner
-verifies the driver's SHA-256 before a scientifically eligible run.
-
-## 13. Running C10 after the reference is built
-
-A routine two-branch run from the C10 directory is:
-
-```tcsh
-python run_C10.py --solver BOTH --profile ROUTINE --reference reference_C10_poes_meped_boundary.csv --boundary-cutoff effective --interval-samples 1 --output-root test_output/C10_real --amps /home/vtenishe/T11/AMPS/amps --cutoff-scan-n 120 --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --dynamic-chunk 32 -np 4 -nt 16
-```
-
-The runner produces C9-style time-series and residual plots, an
-observed-versus-modeled scatter plot, an MLT comparison plot, comparison CSVs,
-and branch result JSON files. See [`../README.md`](../README.md) for complete
-runner behavior and acceptance criteria.
-
-## 14. Reproducibility and archiving
-
-A scientific C10 result should retain:
-
-```text
-all original NCEI daily files
-data/reference_source/download_manifest.json
+original NCEI daily files
+download_manifest.json
 C10_poes_boundary_crossings.csv
-reference_C10_poes_meped_boundary.csv
+reference_C10_poes_meped_boundary.csv.gz
 C10_reference_manifest.json
 C10_reference_summary.json
-C10_build_reference.log
-the TS05 driver and checksum
-all generated AMPS input files and logs
-raw AMPS shell and penumbra products
-comparison CSVs, plots, and result JSON files
+TS05 driver and SHA-256
+all generated AMPS_PARAM_C10.in files
+all C10_amps.log files
+raw AMPS shell/penumbra outputs
+C10_commands.json
+comparison CSVs, plots, and result JSONs
 AMPS git commit and local diff
-Python version and installed-package inventory
+Python package versions
 ```
 
-Record the Python environment with:
+## 15. Known limitations
+
+1. Nominal threshold rigidity is not a full response-function convolution.
+2. The omnidirectional detector response is not identical to a set of vertical
+   trajectories. `ACCESS_T50` is a transparent access-fraction analogue, not a
+   complete detector-response convolution.
+3. Some historical products lack explicit altitude; the configured fallback is
+   recorded.
+4. Sparse MLT coverage produces explicit missing cells.
+5. Detector aging can affect relative profiles differently among satellites.
+6. A two-hour window assumes that the boundary evolves slowly enough for
+   constellation fitting; strong main-phase changes should also be inspected at
+   the pass level.
+7. The observed half-flux definition depends on the polar-cap plateau being
+   well measured during that pass.
+
+These limitations are reasons to retain the crossing-level product and perform
+sensitivity tests—not reasons to replace measurements with a synthetic curve.
+
+
+## 16. References
+
+See [`REFERENCES.md`](REFERENCES.md) for ten core dataset, instrument, calibration, and cutoff-method references, together with a source-by-source assessment of whether each can supply event-level numerical boundaries.
+
+## Improved-reference migration
+
+A reference generated by the older uncorrected half-polar-cap algorithm is not
+accepted by the current runner. Rebuild the compressed file after installing
+this update:
 
 ```tcsh
-python --version
-python -m pip freeze > C10_python_environment.txt
+python build_poes_reference.py \
+  --input-dir data/reference_source \
+  --crossing-method BACKGROUND_NORMALIZED_ISOTONIC \
+  --minimum-background-samples 3 \
+  --minimum-crossings-per-cell 2 \
+  --minimum-distinct-pass-legs-per-cell 2 \
+  --acceptance-window-stride-hours 2 \
+  --reference-output reference_C10_poes_meped_boundary.csv.gz
+
+python run_C10.py --validate-references \
+  --reference reference_C10_poes_meped_boundary.csv.gz
 ```
 
-Do not overwrite a frozen baseline without retaining the previous source files,
-manifests, extraction settings, and checksums.
+The runner obtains `sym_h_nt` directly from column 9 of the verified C9 TS05
+driver at each midpoint; the observational CSV no longer needs to duplicate
+that value.
 
-## 15. Related documentation
+============================================================================================================
+Below is the complete `/bin/tcsh` sequence. It requires **no `sudo`** and installs everything inside:
 
-- [`../README.md`](../README.md): scientific definition, runner, metrics, and
-  complete C10 workflow.
-- [`../INSTALL.md`](../INSTALL.md): compact installation and run commands.
-- [`../REFERENCES.md`](../REFERENCES.md): dataset, instrument, calibration, and
-  cutoff-method references.
-- [`../VALIDATION.md`](../VALIDATION.md): completed software checks and required
-  archive validation.
-- [`../CHANGES.md`](../CHANGES.md): implementation history.
+```text
+~/T11/AMPS/srcEarth/test/C10/.venv
+```
+
+It assumes the AMPS executable and MPI are already available, as in your previous C10 run.
+
+## 1. Check AMPS, MPI, and Python
+
+```tcsh
+cd ~/T11/AMPS && test -x amps && echo "AMPS executable: OK" && which mpirun && python3 --version
+```
+
+## 2. Remove an incomplete environment and prepare directories
+
+This removes only the C10-local Python environment, not data or model results:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && rm -rf .venv && mkdir -p data/reference_source
+```
+
+## 3. Install `virtualenv` in your user account
+
+```tcsh
+python3 -m pip install --user virtualenv
+```
+
+Make user-installed commands visible:
+
+```tcsh
+setenv PATH "${HOME}/.local/bin:${PATH}"
+```
+
+Create the environment:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && python3 -m virtualenv .venv
+```
+
+## 4. Activate the `tcsh` environment
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh
+```
+
+The prompt should begin with:
+
+```text
+(.venv)
+```
+
+Confirm that the environment Python is being used:
+
+```tcsh
+which python && python --version && python -m pip --version
+```
+
+`which python` should point to:
+
+```text
+/home/vtenishe/T11/AMPS/srcEarth/test/C10/.venv/bin/python
+```
+
+## 5. Install all Python dependencies
+
+The `pip<25.1` constraint is appropriate for the Python 3.8 installation previously used on this machine:
+
+```tcsh
+python -m pip install --upgrade "pip<25.1" setuptools wheel
+```
+
+Install the C10 dependencies:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && python -m pip install -r requirements.txt
+```
+
+Verify all required packages:
+
+```tcsh
+python -c "import numpy, matplotlib, aacgmv2, cdflib; print('C10 Python dependencies installed successfully'); print('numpy:',numpy.__version__); print('matplotlib:',matplotlib.__version__); print('aacgmv2:',aacgmv2.__version__); print('cdflib:',cdflib.__version__)"
+```
+
+## 6. Fallback when the system Python has no `pip`
+
+Run this instead of Steps 3–5 only when `python3 -m pip` is unavailable:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && rm -rf .venv && curl -fL https://bootstrap.pypa.io/virtualenv.pyz -o "${HOME}/virtualenv.pyz" && python3 "${HOME}/virtualenv.pyz" .venv && source .venv/bin/activate.csh && python -m pip install --upgrade "pip<25.1" setuptools wheel && python -m pip install -r requirements.txt
+```
+
+Verify:
+
+```tcsh
+python -c "import numpy, matplotlib, aacgmv2, cdflib; print('C10 Python environment is ready')"
+```
+
+## 7. Compile-check the scripts and run offline tests
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python -m py_compile poes_sem2.py download_poes_sem2.py build_poes_reference.py run_C10.py && python -m unittest discover -s tests -v
+```
+
+Run the runner’s internal self-test:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python run_C10.py --self-test
+```
+
+## 8. Verify that the December 2006 TS05 driver exists
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && test -s ../C9/data/ts05_driving.txt && echo "C9/C10 TS05 driver: OK" && sha256sum ../C9/data/ts05_driving.txt
+```
+
+The expected checksum for the driver previously used by C9 is:
+
+```text
+cb3f3f1959763660beb1e26e5a49489b132708944fb91c4e1ee37cfc3a6c4317
+```
+
+Validate it through the C10 runner:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python run_C10.py --validate-driver
+```
+
+C10 automatically uses:
+
+```text
+srcEarth/test/C9/data/ts05_driving.txt
+```
+
+when no local C10 copy is present.
+
+## 9. Download the NOAA/NCEI measurements
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python download_poes_sem2.py --start 2006-12-05 --end 2006-12-16 --satellites n15,n16,n17,n18,m02 --format txt --output-dir data/reference_source |& tee C10_download.log
+```
+
+Inspect the downloaded inventory:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && find data/reference_source -type f | sort
+```
+
+Check for zero-byte files:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && find data/reference_source -type f -size 0 -print
+```
+
+Inspect the download manifest:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && python -m json.tool data/reference_source/download_manifest.json | less
+```
+
+If zero-byte files are reported, remove and redownload them:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && find data/reference_source -type f -size 0 -delete && source .venv/bin/activate.csh && python download_poes_sem2.py --start 2006-12-05 --end 2006-12-16 --satellites n15,n16,n17,n18,m02 --format txt --output-dir data/reference_source |& tee C10_redownload.log
+```
+
+## 10. Build the improved reference solution
+
+This generates the background-normalized, isotonic T50 reference and keeps the final comparison file gzip-compressed:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python build_poes_reference.py --input-dir data/reference_source --event-start 2006-12-14T00:00:00Z --event-end 2006-12-16T12:00:00Z --crossing-method BACKGROUND_NORMALIZED_ISOTONIC --minimum-background-samples 3 --minimum-crossings-per-cell 2 --minimum-diagnostic-crossings-per-cell 1 --minimum-distinct-pass-legs-per-cell 2 --acceptance-window-stride-hours 2 --crossings-output C10_poes_boundary_crossings.csv --reference-output reference_C10_poes_meped_boundary.csv.gz --manifest-output C10_reference_manifest.json --summary-output C10_reference_summary.json |& tee C10_build_reference.log
+```
+
+## 11. Check the generated reference products
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && gzip -t reference_C10_poes_meped_boundary.csv.gz && ls -lh C10_poes_boundary_crossings.csv reference_C10_poes_meped_boundary.csv.gz C10_reference_manifest.json C10_reference_summary.json
+```
+
+Count reference rows:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && echo "Crossing file lines:" && wc -l C10_poes_boundary_crossings.csv && echo "Compressed reference lines:" && gzip -cd reference_C10_poes_meped_boundary.csv.gz | wc -l
+```
+
+Inspect the beginning of the reference:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && gzip -cd reference_C10_poes_meped_boundary.csv.gz | head -10
+```
+
+Inspect the build summary:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && python -m json.tool C10_reference_summary.json
+```
+
+## 12. Validate the reference, driver, and installation
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python run_C10.py --validate-references --reference reference_C10_poes_meped_boundary.csv.gz && python run_C10.py --validate-driver && python run_C10.py --self-test
+```
+
+## 13. Run the fast C10 code-validation calculation
+
+Use `DIRECT_ACCESS` first:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root ~/T11/AMPS/test_output/C10_direct --amps ~/T11/AMPS/amps --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-profile-fraction 0.66 --t50-min-edge-margin-deg 1.0 --dynamic-chunk 32 -np 8 -nt 16 |& tee C10_direct.log
+```
+
+## 14. Run the full product and compare it with direct access
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh && python run_C10.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --comparison-observable ACCESS_T50 --profile ROUTINE --interval-samples 1 --reference reference_C10_poes_meped_boundary.csv.gz --output-root ~/T11/AMPS/test_output/C10_full --access-consistency-root ~/T11/AMPS/test_output/C10_direct --amps ~/T11/AMPS/amps --cutoff-scan-n 120 --shell-lon-res-deg 15 --shell-lat-res-deg 2 --access-abs-lat-min-deg 45 --access-abs-lat-max-deg 85 --t50-grid-step-deg 0.25 --t50-min-resolved-profile-fraction 0.66 --t50-min-edge-margin-deg 1.0 --dynamic-chunk 32 -np 8 -nt 16 |& tee C10_full.log
+```
+
+## 15. Reactivate the environment later
+
+For every new terminal:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && source .venv/bin/activate.csh
+```
+
+Deactivate it with:
+
+```tcsh
+deactivate
+```
+
+## Complete setup in one command
+
+This performs environment creation, dependency installation, tests, data download, reference construction, and validation. It does not start the expensive AMPS calculation:
+
+```tcsh
+cd ~/T11/AMPS/srcEarth/test/C10 && rm -rf .venv && mkdir -p data/reference_source && python3 -m pip install --user virtualenv && setenv PATH "${HOME}/.local/bin:${PATH}" && python3 -m virtualenv .venv && source .venv/bin/activate.csh && python -m pip install --upgrade "pip<25.1" setuptools wheel && python -m pip install -r requirements.txt && python -m py_compile poes_sem2.py download_poes_sem2.py build_poes_reference.py run_C10.py && python -m unittest discover -s tests -v && python download_poes_sem2.py --start 2006-12-05 --end 2006-12-16 --satellites n15,n16,n17,n18,m02 --format txt --output-dir data/reference_source && python build_poes_reference.py --input-dir data/reference_source --event-start 2006-12-14T00:00:00Z --event-end 2006-12-16T12:00:00Z --crossing-method BACKGROUND_NORMALIZED_ISOTONIC --minimum-background-samples 3 --minimum-crossings-per-cell 2 --minimum-diagnostic-crossings-per-cell 1 --minimum-distinct-pass-legs-per-cell 2 --acceptance-window-stride-hours 2 --crossings-output C10_poes_boundary_crossings.csv --reference-output reference_C10_poes_meped_boundary.csv.gz --manifest-output C10_reference_manifest.json --summary-output C10_reference_summary.json && gzip -t reference_C10_poes_meped_boundary.csv.gz && python run_C10.py --validate-references --reference reference_C10_poes_meped_boundary.csv.gz && python run_C10.py --validate-driver && python run_C10.py --self-test
+```
+

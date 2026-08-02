@@ -179,27 +179,57 @@ def read_url_list(path: Path) -> List[str]:
 
 
 def sha256_bytes(data: bytes) -> str:
+    """Return a lowercase SHA-256 digest for downloaded bytes."""
+
     return hashlib.sha256(data).hexdigest()
 
 
+def validate_download_payload(url: str, data: bytes) -> None:
+    """Reject empty and obvious HTML responses before they reach the parser."""
+
+    if not data:
+        raise RuntimeError(f"archive returned an empty file for {url}")
+    prefix = data[:512].lstrip().lower()
+    if prefix.startswith((b"<!doctype html", b"<html", b"<head", b"<body")):
+        raise RuntimeError(f"archive returned an HTML page instead of data for {url}")
+
+
 def download_urls(urls: Sequence[str], output_dir: Path, timeout: float, retries: int, overwrite: bool) -> List[Dict[str, object]]:
-    """Download selected URLs and return manifest entries."""
+    """Download selected URLs and return manifest entries.
+
+    Existing non-empty data are reused unless ``--overwrite`` is requested.
+    Existing zero-byte destinations are re-downloaded automatically.  Failed
+    transfers never leave a ``.part`` file and never replace valid data.
+    """
 
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest: List[Dict[str, object]] = []
     for index, url in enumerate(urls, start=1):
         name = Path(urlparse(url).path).name
         destination = output_dir / name
-        if destination.exists() and not overwrite:
+        destination_existed = destination.exists()
+        had_empty_destination = destination_existed and destination.stat().st_size == 0
+        existing_is_usable = destination_existed and not had_empty_destination
+
+        if existing_is_usable and not overwrite:
             data = destination.read_bytes()
+            validate_download_payload(url, data)
             status = "existing"
         else:
+            if had_empty_destination:
+                print(f"warning: re-downloading zero-byte file {destination}", file=sys.stderr)
             print(f"[{index}/{len(urls)}] downloading {url}")
             data = fetch_bytes(url, timeout, retries)
+            validate_download_payload(url, data)
             temporary = destination.with_suffix(destination.suffix + ".part")
-            temporary.write_bytes(data)
-            temporary.replace(destination)
-            status = "downloaded"
+            try:
+                temporary.write_bytes(data)
+                temporary.replace(destination)
+            finally:
+                if temporary.exists():
+                    temporary.unlink()
+            status = "redownloaded_empty" if had_empty_destination else "downloaded"
+
         manifest.append({
             "url": url,
             "local_path": str(destination),

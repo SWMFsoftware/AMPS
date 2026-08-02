@@ -106,20 +106,26 @@ class BoundaryExtractionTests(unittest.TestCase):
             self.make_pass(),
             minimum_polar_samples=4,
             minimum_leg_samples=4,
+            minimum_background_samples=2,
         )
         # Four channels times inbound/outbound.
         self.assertEqual(len(crossings), 8)
         p6 = [row for row in crossings if row.channel == "P6"]
         self.assertEqual({row.leg for row in p6}, {"INBOUND", "OUTBOUND"})
-        # The five polar samples have median 10, so the 50% level is 5.  Linear
-        # interpolation between 4 at 65 degrees and 6 at 70 degrees gives 67.5.
-        self.assertTrue(all(abs(abs(row.aacgm_lat_deg) - 67.5) < 1.0e-9 for row in p6))
+        # The low-latitude background is 1 and the polar plateau is 10, so the
+        # background-normalized T50 flux is 5.5.  Interpolation between 4 at
+        # 65 degrees and 6 at 70 degrees gives 68.75 degrees.
+        self.assertTrue(all(abs(abs(row.aacgm_lat_deg) - 68.75) < 1.0e-9 for row in p6))
+        self.assertTrue(all(row.crossing_method == "BACKGROUND_NORMALIZED_ISOTONIC" for row in p6))
+        self.assertTrue(all(row.normalized_t25_aacgm_lat_deg is not None for row in p6))
+        self.assertTrue(all(row.transition_width_deg and row.transition_width_deg > 0.0 for row in p6))
 
     def test_crossings_aggregate_into_real_reference_cells(self) -> None:
         crossings = extract_boundary_crossings(
             self.make_pass(),
             minimum_polar_samples=4,
             minimum_leg_samples=4,
+            minimum_background_samples=2,
         )
         cells = aggregate_crossings(
             crossings,
@@ -133,6 +139,11 @@ class BoundaryExtractionTests(unittest.TestCase):
         self.assertTrue(nonmissing)
         self.assertTrue(all(cell.source == "POES_NCEI_LEVEL2_16SEC" for cell in nonmissing))
         self.assertTrue(all(cell.n_crossings >= 1 for cell in nonmissing))
+        primary = [cell for cell in nonmissing if cell.validation_role == "PRIMARY"]
+        diagnostic = [cell for cell in nonmissing if cell.validation_role == "DIAGNOSTIC"]
+        self.assertTrue(primary)
+        self.assertTrue(diagnostic)
+        self.assertTrue(all(cell.background_corrected for cell in nonmissing))
 
 
 if __name__ == "__main__":
