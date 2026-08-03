@@ -1,5 +1,19 @@
 c
 C----------------------------------------------------------------------
+C
+C  THREAD-SAFE/REENTRANT REVISION:
+C
+C  Mutable working values formerly communicated through COMMON blocks
+C  are now local to the top-level calculation and are passed explicitly
+C  by reference to the routines that need them.  Mutable SAVE-based
+C  caches have been removed.  Read-only DATA coefficients remain shared.
+C
+C  This implementation does not depend on OpenMP and can be called from
+C  POSIX threads or OpenMP threads.  Compile with automatic local storage
+C  enabled (for example, -frecursive with GNU Fortran, or the equivalent
+C  option provided by another compiler).
+C
+C----------------------------------------------------------------------
 c
       SUBROUTINE T96_01 (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ)
 C
@@ -499,31 +513,21 @@ C
         IMPLICIT  REAL * 8  (A - H, O - Z)
 C
         DIMENSION A(15),RP(3),RR(3),P(3),R(3)
-        SAVE
 C
       DATA A/-8.411078731,5932254.951,-9073284.93,-11.68794634,
      * 6027598.824,-9218378.368,-6.508798398,-11824.42793,18015.66212,
      * 7.99754043,13.9669886,90.24475036,16.75728834,1015.645781,
      * 1553.493216/
 C
-        DATA M/0/
-C
-        IF (M.NE.0) GOTO 111
-        M=1
-C
-         P(1)=A(10)
-         P(2)=A(11)
-         P(3)=A(12)
-         R(1)=A(13)
-         R(2)=A(14)
-         R(3)=A(15)
-C
+C  These six reciprocals were formerly initialized through a mutable
+C  SAVE cache.  Recomputing them makes the routine reentrant; the cost is
+C  negligible compared with evaluation of the nine harmonics below.
 C
            DO 11 I=1,3
+            P(I)=A(I+9)
+            R(I)=A(I+12)
             RP(I)=1.D0/P(I)
   11        RR(I)=1.D0/R(I)
-C
-  111   CONTINUE
 C
             L=0
 C
@@ -567,8 +571,9 @@ C   AND FOR THE TAIL MODES IT MEANS MAXIMAL BX JUST ABOVE THE SHEET EQUAL 1 nT.
 C
          IMPLICIT REAL*8 (A-H,O-Z)
          DIMENSION ARC(48),ATAIL2(48),ATAIL3(48)
-         COMMON /WARP/ CPSS,SPSS,DPSRR,RPS,WARP,D,XS,ZS,DXSX,DXSY,DXSZ,
-     *   DZSX,DZSY,DZSZ,DZETAS,DDZETADX,DDZETADY,DDZETADZ,ZSWW
+C
+C  All warp quantities below are local to this TAILRC96 invocation.
+C  The subsets needed by the component routines are passed explicitly.
 C
          DATA ARC/-3.087699646,3.516259114,18.81380577,-13.95772338,
      *  -5.497076303,0.1712890838,2.392629189,-2.728020808,-14.79349936,
@@ -652,19 +657,22 @@ C                                        OUT THE SHEET, AS THAT USED IN T89
         DDZETADZ=ZS*DZSZ/DZETAS
 C
         CALL SHLCAR3X3_T96(ARC,X,Y,Z,SPS,WX,WY,WZ)
-        CALL RINGCURR96(X,Y,Z,HX,HY,HZ)
+        CALL RINGCURR96(X,Y,Z,HX,HY,HZ,CPSS,SPSS,DPSRR,XS,
+     *   ZSWW,DXSX,DXSY,DXSZ,DZSX,DZSZ)
         BXRC=WX+HX
         BYRC=WY+HY
         BZRC=WZ+HZ
 C
         CALL SHLCAR3X3_T96(ATAIL2,X,Y,Z,SPS,WX,WY,WZ)
-        CALL TAILDISK_T96(X,Y,Z,HX,HY,HZ)
+        CALL TAILDISK_T96(X,Y,Z,HX,HY,HZ,CPSS,SPSS,DPSRR,XS,
+     *   ZS,DXSX,DXSY,DXSZ,DZETAS,DDZETADX,DDZETADY,
+     *   DDZETADZ,ZSWW)
         BXT2=WX+HX
         BYT2=WY+HY
         BZT2=WZ+HZ
 C
         CALL SHLCAR3X3_T96(ATAIL3,X,Y,Z,SPS,WX,WY,WZ)
-        CALL TAIL87(X,Z,HX,HZ)
+        CALL TAIL87(X,Z,HX,HZ,RPS,WARP,D)
         BXT3=WX+HX
         BYT3=WY
         BZT3=WZ+HZ
@@ -674,7 +682,8 @@ C
 C
 c********************************************************************
 C
-        SUBROUTINE RINGCURR96(X,Y,Z,BX,BY,BZ)
+        SUBROUTINE RINGCURR96(X,Y,Z,BX,BY,BZ,CPSS,SPSS,DPSRR,
+     *   XS,ZS,DXSX,DXSY,DXSZ,DZSX,DZSZ)
 c
 c       THIS SUBROUTINE COMPUTES THE COMPONENTS OF THE RING CURRENT FIELD,
 C        SIMILAR TO THAT DESCRIBED BY TSYGANENKO AND PEREDO (1994).  THE
@@ -691,8 +700,9 @@ C             FOR DETAILS, SEE NB #3, PAGES 70-73
 C
         IMPLICIT REAL*8 (A-H,O-Z)
         DIMENSION F(2),BETA(2)
-        COMMON /WARP/ CPSS,SPSS,DPSRR, XNEXT(3),XS,ZSWARPED,DXSX,DXSY,
-     *   DXSZ,DZSX,DZSYWARPED,DZSZ,OTHER(4),ZS  !  ZS HERE IS WITHOUT Y-Z WARP
+C
+C  CPSS through DZSZ are the ring-current subset of the local warp state.
+C  ZS is the X-Z-warped coordinate without the Y-Z warp.
 C
 
       DATA D0,DELTADX,XD,XLDX /2.,0.,0.,4./  !  ACHTUNG !!  THE RC IS NOW
@@ -776,7 +786,9 @@ C
 C
 C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 C
-         SUBROUTINE TAILDISK_T96(X,Y,Z,BX,BY,BZ)
+         SUBROUTINE TAILDISK_T96(X,Y,Z,BX,BY,BZ,CPSS,SPSS,
+     *    DPSRR,XS,ZS,DXSX,DXSY,DXSZ,DZETAS,DDZETADX,
+     *    DDZETADY,DDZETADZ,ZSWW)
 C
 c
 c       THIS SUBROUTINE COMPUTES THE COMPONENTS OF THE TAIL CURRENT FIELD,
@@ -792,8 +804,6 @@ C             FOR DETAILS, SEE NB #3, PAGES 74-
 C
          IMPLICIT REAL*8 (A-H,O-Z)
          DIMENSION F(4),BETA(4)
-         COMMON /WARP/ CPSS,SPSS,DPSRR,XNEXT(3),XS,ZS,DXSX,DXSY,DXSZ,
-     *    OTHER(3),DZETAS,DDZETADX,DDZETADY,DDZETADZ,ZSWW
 C
          DATA XSHIFT /4.5/
 C
@@ -864,11 +874,9 @@ C
 
 C-------------------------------------------------------------------------
 C
-      SUBROUTINE TAIL87(X,Z,BX,BZ)
+      SUBROUTINE TAIL87(X,Z,BX,BZ,RPS,WARP,D)
 
       IMPLICIT REAL*8 (A-H,O-Z)
-
-      COMMON /WARP/ FIRST(3), RPS,WARP,D, OTHER(13)
 C
 C      'LONG' VERSION OF THE 1987 TAIL MAGNETIC FIELD MODEL
 C              (N.A.TSYGANENKO, PLANET. SPACE SCI., V.35, P.1347, 1987)
@@ -1090,13 +1098,11 @@ C
       IMPLICIT REAL*8 (A-H,O-Z)
 C
       DIMENSION D1(3,26),D2(3,79),XI(4),C1(26),C2(79)
-
-         COMMON /COORD11/ XX1(12),YY1(12)
-         COMMON /RHDR/ RH,DR
-         COMMON /LOOPDIP1/ TILT,XCENTRE(2),RADIUS(2), DIPX,DIPY
+      DIMENSION XX1(12),YY1(12),XCENTRE(2),RADIUS(2)
+      DIMENSION XX2(14),YY2(14),ZZ2(14)
 C
-         COMMON /COORD21/ XX2(14),YY2(14),ZZ2(14)
-         COMMON /DX1/ DX,SCALEIN,SCALEOUT
+C  The Region-1 geometry is constant.  It remains local read-only DATA
+C  here and is passed by reference to DIPLOOP1 and CONDIP1.
 C
       DATA C1/-0.911582E-03,-0.376654E-02,-0.727423E-02,-0.270084E-02,
      * -0.123899E-02,-0.154387E-02,-0.340040E-02,-0.191858E-01,
@@ -1196,7 +1202,8 @@ C      print *, '  LOC=1 (HIGH-LAT)'    !  (test printout; disabled now)
          XI(2)=Y
          XI(3)=Z
          XI(4)=PS
-         CALL  DIPLOOP1(XI,D1)
+         CALL DIPLOOP1(XI,D1,XX1,YY1,TILT,XCENTRE,RADIUS,
+     *    DIPX,DIPY,RH,DR)
           BX=0.D0
           BY=0.D0
           BZ=0.D0
@@ -1213,7 +1220,8 @@ C
          XI(2)=Y
          XI(3)=Z
          XI(4)=PS
-         CALL  CONDIP1(XI,D2)
+         CALL CONDIP1(XI,D2,DX,SCALEIN,SCALEOUT,XX2,YY2,
+     *    ZZ2)
           BX=0.D0
           BY=0.D0
           BZ=0.D0
@@ -1243,7 +1251,8 @@ c                                                      BOUNDARY POINT
          XI(2)=Y1
          XI(3)=Z1
          XI(4)=PS
-         CALL  DIPLOOP1(XI,D1)
+         CALL DIPLOOP1(XI,D1,XX1,YY1,TILT,XCENTRE,RADIUS,
+     *    DIPX,DIPY,RH,DR)
           BX1=0.D0
           BY1=0.D0
           BZ1=0.D0
@@ -1262,7 +1271,8 @@ C                                        BOUNDARY POINT
          XI(2)=Y2
          XI(3)=Z2
          XI(4)=PS
-         CALL  CONDIP1(XI,D2)
+         CALL CONDIP1(XI,D2,DX,SCALEIN,SCALEOUT,XX2,YY2,
+     *    ZZ2)
           BX2=0.D0
           BY2=0.D0
           BZ2=0.D0
@@ -1302,7 +1312,8 @@ C                                               BOUNDARY POINT
          XI(2)=Y1
          XI(3)=Z1
          XI(4)=PS
-         CALL  CONDIP1(XI,D2)
+         CALL CONDIP1(XI,D2,DX,SCALEIN,SCALEOUT,XX2,YY2,
+     *    ZZ2)
           BX1=0.D0
           BY1=0.D0
           BZ1=0.D0
@@ -1321,7 +1332,8 @@ C                                          BOUNDARY POINT
          XI(2)=Y2
          XI(3)=Z2
          XI(4)=PS
-         CALL  DIPLOOP1(XI,D1)
+         CALL DIPLOOP1(XI,D1,XX1,YY1,TILT,XCENTRE,RADIUS,
+     *    DIPX,DIPY,RH,DR)
           BX2=0.D0
           BY2=0.D0
           BZ2=0.D0
@@ -1353,7 +1365,8 @@ C
 C------------------------------------------------------------------------------
 C
 C
-         SUBROUTINE  DIPLOOP1(XI,D)
+         SUBROUTINE DIPLOOP1(XI,D,XX,YY,TILT,XCENTRE,RADIUS,
+     *    DIPX,DIPY,RH,DR)
 C
 C
 C      Calculates dependent model variables and their deriva-
@@ -1379,10 +1392,8 @@ C - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 c
          IMPLICIT  REAL * 8  (A - H, O - Z)
 C
-         COMMON /COORD11/ XX(12),YY(12)
-         COMMON /LOOPDIP1/ TILT,XCENTRE(2),RADIUS(2),  DIPX,DIPY
-         COMMON /RHDR/RH,DR
-         DIMENSION XI(4),D(3,26)
+         DIMENSION XI(4),D(3,26),XX(12),YY(12)
+         DIMENSION XCENTRE(2),RADIUS(2)
 C
            X = XI(1)
            Y = XI(2)
@@ -1569,7 +1580,8 @@ C
       END
 C
 C------------------------------------------------------------------------------
-         SUBROUTINE  CONDIP1(XI,D)
+         SUBROUTINE CONDIP1(XI,D,DX,SCALEIN,SCALEOUT,XX,YY,
+     *    ZZ)
 C
 C      Calculates dependent model variables and their derivatives for given
 C  independent variables and model parameters.  Specifies model functions with
@@ -1592,10 +1604,8 @@ C - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 c
          IMPLICIT  REAL * 8  (A - H, O - Z)
 C
-      COMMON /DX1/ DX,SCALEIN,SCALEOUT
-      COMMON /COORD21/ XX(14),YY(14),ZZ(14)
-c
          DIMENSION XI(4),D(3,79),CF(5),SF(5)
+         DIMENSION XX(14),YY(14),ZZ(14)
 C
            X = XI(1)
            Y = XI(2)
@@ -1956,14 +1966,12 @@ C  RETURNS THE MODEL FIELD FOR THE REGION 2 BIRKELAND CURRENT/PARTIAL RC
 C    (WITHOUT SHIELDING FIELD)
 C
        IMPLICIT REAL*8 (A-H,O-Z)
-       SAVE PSI,CPS,SPS
-       DATA DELARG/0.030D0/,DELARG1/0.015D0/,PSI/10.D0/
+       DATA DELARG/0.030D0/,DELARG1/0.015D0/
 C
-       IF (DABS(PSI-PS).GT.1.D-10) THEN
-         PSI=PS
-         CPS=DCOS(PS)
-         SPS=DSIN(PS)
-       ENDIF
+C  Recompute the two inexpensive tilt functions for each call instead of
+C  retaining mutable SAVE state shared by simultaneous callers.
+       CPS=DCOS(PS)
+       SPS=DSIN(PS)
 C
        XSM=X*CPS-Z*SPS
        ZSM=Z*CPS+X*SPS
@@ -2515,13 +2523,10 @@ C************************************************************************
 C
          DOUBLE PRECISION FUNCTION TKSI(XKSI,XKS0,DXKSI)
          IMPLICIT REAL*8 (A-H,O-Z)
-         SAVE M,TDZ3
-         DATA M/0/
 C
-         IF (M.EQ.0) THEN
+C  TDZ3 depends on DXKSI, so calculate it directly rather than retaining
+C  the first caller's value in mutable SAVE state.
          TDZ3=2.*DXKSI**3
-         M=1
-         ENDIF
 C
          IF (XKSI-XKS0.LT.-DXKSI) TKSII=0.
          IF (XKSI-XKS0.GE.DXKSI)  TKSII=1.
@@ -2552,14 +2557,11 @@ C
 C
 C     WRITEN BY: N. A. TSYGANENKO
 
-      DATA M,PSI/0,5./
-      SAVE M,PSI,SPS,CPS
-      IF(M.EQ.1.AND.ABS(PS-PSI).LT.1.E-5) GOTO 1
+C  Recompute the tilt functions for each invocation.  The old cache
+C  used mutable SAVE variables and was not safe for simultaneous calls.
       SPS=SIN(PS)
       CPS=COS(PS)
-      PSI=PS
-      M=1
-  1   P=X**2
+      P=X**2
       U=Z**2
       V=3.*Z*X
       T=Y**2

@@ -2073,4 +2073,304 @@ C                                           THE MAGNETOSPHERE
 C
 C===================================================================================
 C
+C
+C===================================================================================
+C
+C  REENTRANT IGRF CONTEXT INTERFACE
+C
+C  THE ROUTINES BELOW PROVIDE A THREAD-SAFE IGRF EVALUATION PATH WITHOUT
+C  CHANGING THE LEGACY GEOPACK COMMON BLOCKS OR THE LEGACY PUBLIC ROUTINES.
+C
+C  CONTEXT LIFETIME AND THREADING RULES:
+C
+C   1. CALL IGRF_PREPARE_CONTEXT_08 OUTSIDE ANY PARALLEL REGION.  THAT
+C      ROUTINE CALLS THE LEGACY RECALC_08, WHICH WRITES /GEOPACK1/ AND
+C      /GEOPACK2/, AND THEN COPIES ONLY THE STATE REQUIRED BY IGRF.
+C
+C   2. AFTER PREPARATION, GCTX, HCTX, RECCTX, AND AMAT ARE READ-ONLY.
+C      THE SAME CONTEXT CAN BE SHARED BY POSIX THREADS OR OPENMP THREADS.
+C
+C   3. FIELD EVALUATION MUST USE IGRF_GSW_08_CTX OR IGRF_GEO_08_CTX.
+C      THOSE ROUTINES DO NOT READ OR WRITE ANY COMMON BLOCK.
+C
+C   4. MULTIPLE CONTEXTS FOR DIFFERENT EPOCHS MAY BE PREPARED SERIALLY AND
+C      THEN USED CONCURRENTLY.  CONTEXT PREPARATION ITSELF IS NOT REENTRANT
+C      BECAUSE IT DELIBERATELY REUSES THE UNMODIFIED LEGACY RECALC_08.
+C
+C  THE CONTEXT CONSISTS OF:
+C
+C       GCTX(105), HCTX(105), RECCTX(105) - IGRF COEFFICIENTS
+C       AMAT(3,3)                         - GEO TO GSW ROTATION MATRIX
+C
+C  ALL ARGUMENTS ARE PASSED BY REFERENCE BY THE FORTRAN CALLING CONVENTION.
+C
+      SUBROUTINE IGRF_PREPARE_CONTEXT_08 (IYEAR,IDAY,IHOUR,MIN,ISEC,
+     * VGSEX,VGSEY,VGSEZ,GCTX,HCTX,RECCTX,AMAT)
+C
+C  SERIAL CONTEXT PREPARATION.  DO NOT CALL THIS ROUTINE CONCURRENTLY.
+C
+      DIMENSION GCTX(105),HCTX(105),RECCTX(105),AMAT(3,3)
+C
+      CALL RECALC_08 (IYEAR,IDAY,IHOUR,MIN,ISEC,VGSEX,VGSEY,VGSEZ)
+      CALL IGRF_EXPORT_CONTEXT_08 (GCTX,HCTX,RECCTX,AMAT)
+C
+      RETURN
+      END
+C
+C===================================================================================
+C
+      SUBROUTINE IGRF_EXPORT_CONTEXT_08 (GCTX,HCTX,RECCTX,AMAT)
+C
+C  COPY THE IGRF COEFFICIENTS AND GEO-GSW ROTATION MATRIX FROM THE LEGACY
+C  GEOPACK COMMON BLOCKS.  CALL ONLY AFTER RECALC_08 AND OUTSIDE PARALLEL
+C  FIELD EVALUATION.
+C
+      DIMENSION GCTX(105),HCTX(105),RECCTX(105),AMAT(3,3)
+C
+      COMMON /GEOPACK1/ ST0,CT0,SL0,CL0,CTCL,STCL,CTSL,STSL,SFI,CFI,
+     * SPS,CPS,DS3,CGST,SGST,PSI,A11,A21,A31,A12,A22,A32,A13,A23,A33,
+     * E11,E21,E31,E12,E22,E32,E13,E23,E33
+      COMMON /GEOPACK2/ G(105),H(105),REC(105)
+C
+      DO 10 I=1,105
+        GCTX(I)=G(I)
+        HCTX(I)=H(I)
+        RECCTX(I)=REC(I)
+ 10   CONTINUE
+C
+C  AMAT(ROW,COLUMN) MAPS A GEO VECTOR TO A GSW VECTOR.
+C
+      AMAT(1,1)=A11
+      AMAT(2,1)=A21
+      AMAT(3,1)=A31
+      AMAT(1,2)=A12
+      AMAT(2,2)=A22
+      AMAT(3,2)=A32
+      AMAT(1,3)=A13
+      AMAT(2,3)=A23
+      AMAT(3,3)=A33
+C
+      RETURN
+      END
+C
+C===================================================================================
+C
+      SUBROUTINE GEOGSW_08_CTX (AMAT,XGEO,YGEO,ZGEO,
+     * XGSW,YGSW,ZGSW,J)
+C
+C  REENTRANT GEO <-> GSW TRANSFORMATION USED BY THE CONTEXT-BASED IGRF
+C  ROUTINES.  AMAT IS READ-ONLY AND WAS PRODUCED BY
+C  IGRF_PREPARE_CONTEXT_08 OR IGRF_EXPORT_CONTEXT_08.
+C
+      DIMENSION AMAT(3,3)
+C
+      IF (J.GT.0) THEN
+        XGSW=AMAT(1,1)*XGEO+AMAT(1,2)*YGEO+AMAT(1,3)*ZGEO
+        YGSW=AMAT(2,1)*XGEO+AMAT(2,2)*YGEO+AMAT(2,3)*ZGEO
+        ZGSW=AMAT(3,1)*XGEO+AMAT(3,2)*YGEO+AMAT(3,3)*ZGEO
+      ELSE
+C
+C  THE INVERSE OF THE ORTHONORMAL ROTATION MATRIX IS ITS TRANSPOSE.
+C
+        XGEO=AMAT(1,1)*XGSW+AMAT(2,1)*YGSW+AMAT(3,1)*ZGSW
+        YGEO=AMAT(1,2)*XGSW+AMAT(2,2)*YGSW+AMAT(3,2)*ZGSW
+        ZGEO=AMAT(1,3)*XGSW+AMAT(2,3)*YGSW+AMAT(3,3)*ZGSW
+      ENDIF
+C
+      RETURN
+      END
+C
+C===================================================================================
+C
+      SUBROUTINE IGRF_GSW_08_CTX (G,H,REC,AMAT,XGSW,YGSW,ZGSW,
+     * HXGSW,HYGSW,HZGSW)
+C
+C  REENTRANT VERSION OF IGRF_GSW_08.  THIS ROUTINE CONTAINS NO COMMON,
+C  SAVE, DATA, OR OTHER PERSISTENT MUTABLE STATE.  G, H, REC, AND AMAT
+C  ARE READ-ONLY CONTEXT ARRAYS PREPARED BEFORE PARALLEL EVALUATION.
+C
+      DIMENSION G(105),H(105),REC(105),AMAT(3,3)
+      DIMENSION A(14),B(14)
+C
+      CALL GEOGSW_08_CTX (AMAT,XGEO,YGEO,ZGEO,
+     * XGSW,YGSW,ZGSW,-1)
+      RHO2=XGEO**2+YGEO**2
+      R=SQRT(RHO2+ZGEO**2)
+      C=ZGEO/R
+      RHO=SQRT(RHO2)
+      S=RHO/R
+      IF (S.LT.1.E-5) THEN
+        CF=1.
+        SF=0.
+      ELSE
+        CF=XGEO/RHO
+        SF=YGEO/RHO
+      ENDIF
+C
+      PP=1./R
+      P=PP
+C
+      IRP3=R+2
+      NM=3+30/IRP3
+      IF (NM.GT.13) NM=13
+C
+      K=NM+1
+      DO 150 N=1,K
+        P=P*PP
+        A(N)=P
+ 150    B(N)=P*N
+C
+      P=1.
+      D=0.
+      BBR=0.
+      BBT=0.
+      BBF=0.
+C
+      DO 200 M=1,K
+        IF (M.EQ.1) GOTO 160
+        MM=M-1
+        W=X
+        X=W*CF+Y*SF
+        Y=Y*CF-W*SF
+        GOTO 170
+ 160    X=0.
+        Y=1.
+ 170    Q=P
+        Z=D
+        BI=0.
+        P2=0.
+        D2=0.
+        DO 190 N=M,K
+          AN=A(N)
+          MN=N*(N-1)/2+M
+          E=G(MN)
+          HH=H(MN)
+          W=E*Y+HH*X
+          BBR=BBR+B(N)*W*Q
+          BBT=BBT-AN*W*Z
+          IF (M.EQ.1) GOTO 180
+          QQ=Q
+          IF (S.LT.1.E-5) QQ=Z
+          BI=BI+AN*(E*X-HH*Y)*QQ
+ 180      XK=REC(MN)
+          DP=C*Z-S*Q-XK*D2
+          PM=C*Q-XK*P2
+          D2=Z
+          P2=Q
+          Z=DP
+ 190      Q=PM
+        D=S*D+C*P
+        P=S*P
+        IF (M.EQ.1) GOTO 200
+        BI=BI*MM
+        BBF=BBF+BI
+ 200  CONTINUE
+C
+      BR=BBR
+      BT=BBT
+      IF (S.LT.1.E-5) GOTO 210
+      BF=BBF/S
+      GOTO 211
+ 210  IF (C.LT.0.) BBF=-BBF
+      BF=BBF
+C
+ 211  HE=BR*S+BT*C
+      HXGEO=HE*CF-BF*SF
+      HYGEO=HE*SF+BF*CF
+      HZGEO=BR*C-BT*S
+C
+      CALL GEOGSW_08_CTX (AMAT,HXGEO,HYGEO,HZGEO,
+     * HXGSW,HYGSW,HZGSW,1)
+C
+      RETURN
+      END
+C
+C===================================================================================
+C
+      SUBROUTINE IGRF_GEO_08_CTX (G,H,REC,R,THETA,PHI,
+     * BR,BTHETA,BPHI)
+C
+C  REENTRANT VERSION OF IGRF_GEO_08.  G, H, AND REC ARE READ-ONLY
+C  CONTEXT ARRAYS.  THIS ROUTINE DOES NOT USE ANY GEOPACK COMMON BLOCK.
+C
+      DIMENSION G(105),H(105),REC(105)
+      DIMENSION A(14),B(14)
+C
+      C=COS(THETA)
+      S=SIN(THETA)
+      CF=COS(PHI)
+      SF=SIN(PHI)
+C
+      PP=1./R
+      P=PP
+C
+      IRP3=R+2
+      NM=3+30/IRP3
+      IF (NM.GT.13) NM=13
+C
+      K=NM+1
+      DO 350 N=1,K
+        P=P*PP
+        A(N)=P
+ 350    B(N)=P*N
+C
+      P=1.
+      D=0.
+      BBR=0.
+      BBT=0.
+      BBF=0.
+C
+      DO 400 M=1,K
+        IF (M.EQ.1) GOTO 360
+        MM=M-1
+        W=X
+        X=W*CF+Y*SF
+        Y=Y*CF-W*SF
+        GOTO 370
+ 360    X=0.
+        Y=1.
+ 370    Q=P
+        Z=D
+        BI=0.
+        P2=0.
+        D2=0.
+        DO 390 N=M,K
+          AN=A(N)
+          MN=N*(N-1)/2+M
+          E=G(MN)
+          HH=H(MN)
+          W=E*Y+HH*X
+          BBR=BBR+B(N)*W*Q
+          BBT=BBT-AN*W*Z
+          IF (M.EQ.1) GOTO 380
+          QQ=Q
+          IF (S.LT.1.E-5) QQ=Z
+          BI=BI+AN*(E*X-HH*Y)*QQ
+ 380      XK=REC(MN)
+          DP=C*Z-S*Q-XK*D2
+          PM=C*Q-XK*P2
+          D2=Z
+          P2=Q
+          Z=DP
+ 390      Q=PM
+        D=S*D+C*P
+        P=S*P
+        IF (M.EQ.1) GOTO 400
+        BI=BI*MM
+        BBF=BBF+BI
+ 400  CONTINUE
+C
+      BR=BBR
+      BTHETA=BBT
+      IF (S.LT.1.E-5) GOTO 410
+      BPHI=BBF/S
+      RETURN
+ 410  IF (C.LT.0.) BBF=-BBF
+      BPHI=BBF
+C
+      RETURN
+      END
+C
+C===================================================================================
+C
 c</pre>
