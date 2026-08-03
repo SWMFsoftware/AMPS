@@ -75,6 +75,12 @@
 //       In -mode 3d, write amps_3d_initialized.data.dat after mesh field
 //       initialization. The default is to skip this potentially large diagnostic file.
 //
+//   -mode3d-parallel-field-init
+//       In standalone -mode 3d, populate owner-rank B/E mesh cells with POSIX
+//       threads.  The number of temporary pthread workers is taken from
+//       -mode3d-threads (-density-threads alias).  The calling MPI-rank thread
+//       also evaluates an equal share, so N requests N workers plus the caller.
+//
 //   -mode3d-field-eval <INTERPOLATION|ANALYTIC>
 //       In -mode 3d, select how the magnetic field is evaluated during tracing.
 //       INTERPOLATION (default) uses the AMR cell-centered interpolation stencil.
@@ -247,6 +253,14 @@ namespace EarthUtil {
     // to amps_3d_initialized.data.dat. The default is false to avoid creating this
     // large diagnostic file unless explicitly requested.
     bool mode3dOutputInitialized{false};
+
+    // -mode3d-parallel-field-init
+    // Boolean flag. When present, standalone Mode3D initializes owner-rank AMR
+    // cell-centered B/E fields with a temporary POSIX-thread team.  The number
+    // of temporary pthread workers is the same value selected by
+    // -mode3d-threads/-density-threads.  The calling MPI-rank thread also
+    // evaluates an equal share, so N requests N workers plus the caller.
+    bool mode3dParallelFieldInitialization{false};
 
     // -mode3d-field-eval <INTERPOLATION|ANALYTIC>
     // Optional Mode3D magnetic-field evaluation override.

@@ -47,11 +47,10 @@ void EvalDipoleSI(double B[3],const double x[3],const EarthUtil::AmpsParam& prm)
   // `Earth::GridlessMode::Dipole::gParams` and provides the public helpers
   // `SetMomentScale`, `SetTiltDeg`, and `GetB_Tesla`.
   //
-  // Therefore, for the 3D field initialization path we temporarily configure
-  // the dipole helper from the parsed input parameters and then evaluate the
-  // field at the requested SI position.
-  Earth::GridlessMode::Dipole::SetMomentScale(prm.field.dipoleMoment_Me);
-  Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
+  // ConfigureBackgroundFieldModel() freezes the dipole parameters before mesh
+  // initialization starts.  Do not call the setters here: this evaluator may be
+  // entered concurrently by temporary POSIX field-initialization workers.
+  (void)prm;
   Earth::GridlessMode::Dipole::GetB_Tesla(x,B);
 }
 
@@ -163,10 +162,10 @@ void EvaluateBackgroundMagneticFieldSI(double B[3],const double xGSM_SI[3],const
   //
   // IGRF-only standalone field.
   // ConfigureBackgroundFieldModel() calls Geopack::Init(epoch,"GSM") once before
-  // the AMR mesh is populated.  Geopack::IGRF::GetMagneticField() then evaluates
-  // only the internal IGRF field at the supplied GSM/SI position; no Tsyganenko
-  // external contribution is added.  This is the field definition required by
-  // the Smart--Shea, CARI-7, and Gerontidou C6 reference tables.
+  // the AMR mesh is populated.  The reentrant Geopack IGRF evaluator then reads
+  // the frozen context at the supplied GSM/SI position; no Tsyganenko external
+  // contribution is added.  This is the field definition required by the
+  // Smart--Shea, CARI-7, and Gerontidou C6 reference tables.
   if (model=="IGRF") {
     Geopack::IGRF::GetMagneticField(B,const_cast<double*>(xGSM_SI));
     return;

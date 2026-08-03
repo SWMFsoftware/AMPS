@@ -145,6 +145,15 @@ mpirun -np 8 ./amps -mode 3d -i AMPS_PARAM.in
 
 Mode3D uses the AMPS AMR mesh as the field backend. The standalone code initializes the requested background magnetic field on mesh cell centers, then materializes a replicated read-only B-field snapshot on every MPI rank so any rank can backtrace through the whole domain.
 
+By default, owner-rank B/E mesh population remains serial.  Add
+`-mode3d-parallel-field-init` to use a temporary POSIX-thread team during this
+stage.  The team uses the same per-rank count selected by `-mode3d-threads`
+(`-density-threads` is the historical alias).  For example,
+`-mode3d-threads 16` creates 16 temporary pthread workers, and the calling
+MPI-rank thread evaluates one additional equal share.  The owner-cell range is
+divided into equal static shares because background-field evaluation cost is
+approximately uniform.
+
 Because every rank can access the full replicated mesh field, the standalone backward products use a selectable MPI scheduler over global observation locations. The default `DYNAMIC` scheduler uses an MPI one-sided atomic work queue; ranks fetch chunks of locations as soon as they become idle. `BLOCK_CYCLIC` and `STATIC` remain available for deterministic regression/debug runs.
 
 This mode now supports three product selections from the same prepared mesh-field snapshot:
@@ -1329,6 +1338,13 @@ Birdsall & Langdon (1991) for the Boris magnetic rotation.
 
 -mode3d-output-initialized
     Write initialized 3-D field mesh diagnostic.
+
+-mode3d-parallel-field-init
+    Parallelize standalone Mode3D owner-rank B/E mesh initialization with POSIX
+    threads.  The temporary-worker count is taken from -mode3d-threads; the
+    calling MPI-rank thread also evaluates an equal share, so N creates N
+    pthread workers plus the caller.  Aliases: -bgfield-init-parallel and
+    -mode3d-parallel-bgfield-init.
 
 -mode3d-field-eval <INTERPOLATION|ANALYTIC>
     For standalone Mode3D, choose whether tracing uses mesh interpolation or direct analytic/background evaluation.

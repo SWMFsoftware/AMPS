@@ -1191,6 +1191,13 @@ namespace EarthUtil {
     // Default is false because this is a diagnostic file and can be large.
     bool outputInitializedFile{false};
 
+    // Parallelize standalone Mode3D owner-rank B/E mesh initialization with a
+    // temporary POSIX-thread team.  The number of temporary workers is resolved from
+    // densityThreads/MODE3D_THREADS; the calling MPI-rank thread also participates.
+    // This option is intentionally CLI-only so existing input decks retain the
+    // historical serial initialization behavior unless explicitly requested.
+    bool parallelFieldInitialization{false};
+
     // Magnetic-field source used by the Mode3D cutoff tracer.
     // false: AMR interpolation from cell-centered data populated by InitMeshFields().
     // true : direct analytic/background evaluator call via EvaluateBackgroundMagneticFieldSI().

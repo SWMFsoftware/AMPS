@@ -3,6 +3,8 @@
 #include "CutoffRigidityMode3D.h"
 #include "DensityMode3D.h"
 #include "GlobalMagneticField.h"
+#include "Mode3DParallel.h"
+#include "../gridless/DipoleInterface.h"
 
 #include <cstdio>
 #include <cmath>
@@ -14,6 +16,8 @@
 #include <cctype>
 #include <stdexcept>
 #include <algorithm>
+#include <pthread.h>
+#include <cstring>
 
 #ifndef _NO_SPICE_CALLS_
 #include "SpiceUsr.h"
@@ -133,14 +137,20 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
   Earth::BackgroundMagneticFieldModelType=Earth::_undef;
 
   const std::string model=EarthUtil::ToUpper(prm.field.model);
-  if (model=="IGRF") {
+  if (model=="DIPOLE") {
+    // Configure the shared analytic-dipole parameters once, before any temporary
+    // field-initialization pthreads are launched.  Evaluation then reads this
+    // frozen state only; it must not call the setters concurrently from workers.
+    Earth::GridlessMode::Dipole::SetMomentScale(prm.field.dipoleMoment_Me);
+    Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
+  }
+  else if (model=="IGRF") {
     // Pure internal-field initialization used by the gridded C6 validation.
     //
-    // Geopack stores the selected IGRF coefficients and the GSM transformation
-    // state in Fortran common blocks.  Initialize that state once, before
-    // InitMeshFields() traverses the AMR tree.  Mesh population is completed
-    // before any cutoff worker thread starts, so later trajectory evaluation is
-    // a read-only interpolation of the frozen mesh and does not call Geopack.
+    // Initialize the selected IGRF coefficients and GSM transformation context
+    // once before InitMeshFields() traverses the AMR tree.  The reentrant IGRF
+    // evaluator then reads that frozen context concurrently from the temporary
+    // field-initialization pthreads.
     Geopack::Init(prm.field.epoch.c_str(),kStandaloneMode3DFieldFrame);
   }
   else if (model=="T96") {
@@ -189,7 +199,7 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
   }
 
   if (PIC::ThisThread==0 &&
-      (model=="IGRF" || model=="T96" || model=="T05" || model=="TA16")) {
+      (model=="DIPOLE" || model=="IGRF" || model=="T96" || model=="T05" || model=="TA16")) {
     std::cout << "[Mode3D] Mesh coordinate frame: "
               << kStandaloneMode3DFieldFrame << "\n";
     std::cout << "[Mode3D] " << model << " interface frame: "
@@ -206,25 +216,129 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
 //     standalone models (IGRF, T96, T05, TA16, DIPOLE) are handled uniformly, and
 //   - initialises E from the configured electric-field model instead of
 //     unconditionally writing zero.
-void InitMeshFields(const EarthUtil::AmpsParam& prm,
-                    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
-#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-  // In SWMF-coupled builds the cell-centered B and E values are owned by the
-  // live coupler data structures, not by the DATAFILE/MULTIFILE buffers that
-  // this standalone initializer fills.  Overwriting DATAFILE fields here would
-  // create a second, stale field source and would bypass the AMPS/SWMF access
-  // pattern used elsewhere:
-  //
-  //   PIC::CPLR::GetBackgroundMagneticField(...)
-  //   PIC::CPLR::GetBackgroundElectricField(...)
-  //
-  // Leave the mesh field buffers untouched; downstream field evaluation must
-  // obtain the coupled fields through PIC::CPLR.
-  (void)prm;
-  (void)startNode;
-  return;
-#endif
+//
+// When prm.mode3d.parallelFieldInitialization is true, each MPI rank builds a
+// temporary POSIX-thread team.  The temporary pthread count is the same value
+// resolved from MODE3D_THREADS/-mode3d-threads for the calculation.  The calling
+// MPI-rank thread also participates, so N means N temporary workers plus one
+// caller.  The flat owner-cell range is divided statically by index because every
+// background-field evaluation has approximately the same cost.
+using FieldInitNode = cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>;
 
+struct FieldInitSharedWork {
+  const EarthUtil::AmpsParam* prm{nullptr};
+  const std::vector<FieldInitNode*>* ownerBlocks{nullptr};
+
+  int iMin{0},iCount{0};
+  int jMin{0},jCount{0};
+  int kMin{0},kCount{0};
+  int cellsPerBlock{0};
+  int participantCount{1};
+
+  // Creation gate: workers are not allowed to start until every requested
+  // pthread has been created successfully.  On a partial creation failure the
+  // already-created workers are released with abort=true and joined cleanly.
+  pthread_mutex_t gateMutex;
+  pthread_cond_t gateCond;
+  bool gateReleased{false};
+  bool abort{false};
+};
+
+struct FieldInitWorkerArg {
+  FieldInitSharedWork* shared{nullptr};
+  int participantId{0};
+};
+
+void CollectOwnerFieldInitBlocks(FieldInitNode* node,
+                                 std::vector<FieldInitNode*>& ownerBlocks) {
+  if (node==nullptr) return;
+
+  if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+    if (node->block!=NULL && node->Thread==PIC::ThisThread) {
+      ownerBlocks.push_back(node);
+    }
+    return;
+  }
+
+  for (int i=0;i<(1<<DIM);++i) {
+    if (node->downNode[i]!=NULL) {
+      CollectOwnerFieldInitBlocks(node->downNode[i],ownerBlocks);
+    }
+  }
+}
+
+void InitializeOneMeshFieldCell(const EarthUtil::AmpsParam& prm,
+                                FieldInitNode* node,
+                                int i,int j,int k) {
+  const int nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
+  PIC::Mesh::cDataCenterNode* CenterNode=node->block->GetCenterNode(nd);
+  if (CenterNode==NULL) return;
+
+  char* offset=CenterNode->GetAssociatedDataBufferPointer()
+              +PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin
+              +PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset;
+
+  double xCell[3];
+  xCell[0]=node->xmin[0]+(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_*(0.5+i);
+  xCell[1]=node->xmin[1]+(node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_*(0.5+j);
+  xCell[2]=node->xmin[2]+(node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_*(0.5+k);
+
+  double B[3],E[3];
+  EvaluateBackgroundMagneticFieldSI(B,xCell,prm);
+  EvaluateElectricFieldSI(E,xCell,prm);
+
+  for (int idim=0;idim<3;idim++) {
+    if (PIC::CPLR::DATAFILE::Offset::MagneticField.active==true) {
+      *((double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+idim*sizeof(double)))=B[idim];
+    }
+    if (PIC::CPLR::DATAFILE::Offset::ElectricField.active==true) {
+      *((double*)(offset+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+idim*sizeof(double)))=E[idim];
+    }
+  }
+}
+
+void ProcessFieldInitParticipant(FieldInitSharedWork& shared,
+                                 int participantId) {
+  const std::size_t totalWork=
+      shared.ownerBlocks->size()*static_cast<std::size_t>(shared.cellsPerBlock);
+
+  // Static equal partition.  This formulation distributes a possible remainder
+  // by at most one cell and gives the original MPI-rank thread exactly the same
+  // kind of share as every temporary pthread worker.
+  const std::size_t begin=
+      totalWork*static_cast<std::size_t>(participantId)
+      /static_cast<std::size_t>(shared.participantCount);
+  const std::size_t end=
+      totalWork*static_cast<std::size_t>(participantId+1)
+      /static_cast<std::size_t>(shared.participantCount);
+
+  for (std::size_t flat=begin;flat<end;++flat) {
+    const std::size_t iBlock=flat/static_cast<std::size_t>(shared.cellsPerBlock);
+    int local=static_cast<int>(flat%static_cast<std::size_t>(shared.cellsPerBlock));
+
+    const int i=shared.iMin+local/(shared.jCount*shared.kCount);
+    local%=shared.jCount*shared.kCount;
+    const int j=shared.jMin+local/shared.kCount;
+    const int k=shared.kMin+local%shared.kCount;
+
+    InitializeOneMeshFieldCell(*shared.prm,(*shared.ownerBlocks)[iBlock],i,j,k);
+  }
+}
+
+void* FieldInitPthreadEntry(void* rawArg) {
+  FieldInitWorkerArg* arg=static_cast<FieldInitWorkerArg*>(rawArg);
+  FieldInitSharedWork& shared=*arg->shared;
+
+  pthread_mutex_lock(&shared.gateMutex);
+  while (!shared.gateReleased) pthread_cond_wait(&shared.gateCond,&shared.gateMutex);
+  const bool abort=shared.abort;
+  pthread_mutex_unlock(&shared.gateMutex);
+
+  if (!abort) ProcessFieldInitParticipant(shared,arg->participantId);
+  return nullptr;
+}
+
+void InitMeshFieldsSerial(const EarthUtil::AmpsParam& prm,FieldInitNode* startNode) {
   const int iMin=-_GHOST_CELLS_X_, iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
   const int jMin=-_GHOST_CELLS_Y_, jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
   const int kMin=-_GHOST_CELLS_Z_, kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
@@ -240,50 +354,156 @@ void InitMeshFields(const EarthUtil::AmpsParam& prm,
       if (startNode->Thread!=PIC::ThisThread) return;
 
       const int S=(kMax-kMin+1)*(jMax-jMin+1)*(iMax-iMin+1);
-
       for (int ii=0;ii<S;ii++) {
-        int S1=ii;
-        const int i=iMin+S1/((kMax-kMin+1)*(jMax-jMin+1));
-        S1=S1%((kMax-kMin+1)*(jMax-jMin+1));
-        const int j=jMin+S1/(kMax-kMin+1);
-        const int k=kMin+S1%(kMax-kMin+1);
-
-        const int nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
-        PIC::Mesh::cDataCenterNode* CenterNode=startNode->block->GetCenterNode(nd);
-        if (CenterNode==NULL) continue;
-
-        char* offset=CenterNode->GetAssociatedDataBufferPointer()
-                    +PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin
-                    +PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset;
-
-        double xCell[3];
-        xCell[0]=startNode->xmin[0]+(startNode->xmax[0]-startNode->xmin[0])/_BLOCK_CELLS_X_*(0.5+i);
-        xCell[1]=startNode->xmin[1]+(startNode->xmax[1]-startNode->xmin[1])/_BLOCK_CELLS_Y_*(0.5+j);
-        xCell[2]=startNode->xmin[2]+(startNode->xmax[2]-startNode->xmin[2])/_BLOCK_CELLS_Z_*(0.5+k);
-
-        double B[3],E[3];
-        EvaluateBackgroundMagneticFieldSI(B,xCell,prm);
-        EvaluateElectricFieldSI(E,xCell,prm);
-
-//for (int i=0;i<3;i++) B[i]=xCell[i];
-
-        for (int idim=0;idim<3;idim++) {
-          if (PIC::CPLR::DATAFILE::Offset::MagneticField.active==true) {
-            *((double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+idim*sizeof(double)))=B[idim];
-          }
-          if (PIC::CPLR::DATAFILE::Offset::ElectricField.active==true) {
-            *((double*)(offset+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+idim*sizeof(double)))=E[idim];
-          }
-        }
+        int local=ii;
+        const int i=iMin+local/((kMax-kMin+1)*(jMax-jMin+1));
+        local%=((kMax-kMin+1)*(jMax-jMin+1));
+        const int j=jMin+local/(kMax-kMin+1);
+        const int k=kMin+local%(kMax-kMin+1);
+        InitializeOneMeshFieldCell(prm,startNode,i,j,k);
       }
     }
   }
   else {
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* downNode;
     for (int i=0;i<(1<<DIM);i++) {
-      if ((downNode=startNode->downNode[i])!=NULL) InitMeshFields(prm,downNode);
+      if (startNode->downNode[i]!=NULL) {
+        InitMeshFieldsSerial(prm,startNode->downNode[i]);
+      }
     }
   }
+}
+
+void InitMeshFieldsPthreads(const EarthUtil::AmpsParam& prm,FieldInitNode* startNode) {
+  std::vector<FieldInitNode*> ownerBlocks;
+  CollectOwnerFieldInitBlocks(startNode,ownerBlocks);
+
+  const int temporaryWorkerCount=
+      ResolveParallelThreadCount(prm,ParallelBackend::THREADS);
+  if (temporaryWorkerCount<=0 || ownerBlocks.empty()) {
+    InitMeshFieldsSerial(prm,startNode);
+    return;
+  }
+
+  const int participantCount=temporaryWorkerCount+1;
+
+  ApplyWideAffinityForDirectThreadsOnce(
+      ParallelBackend::THREADS,participantCount,
+      "Mode3D background-field initialization");
+
+  FieldInitSharedWork shared;
+  shared.prm=&prm;
+  shared.ownerBlocks=&ownerBlocks;
+  shared.iMin=-_GHOST_CELLS_X_;
+  shared.jMin=-_GHOST_CELLS_Y_;
+  shared.kMin=-_GHOST_CELLS_Z_;
+  shared.iCount=_BLOCK_CELLS_X_+2*_GHOST_CELLS_X_;
+  shared.jCount=_BLOCK_CELLS_Y_+2*_GHOST_CELLS_Y_;
+  shared.kCount=_BLOCK_CELLS_Z_+2*_GHOST_CELLS_Z_;
+  shared.cellsPerBlock=shared.iCount*shared.jCount*shared.kCount;
+  shared.participantCount=participantCount;
+
+  int rc=pthread_mutex_init(&shared.gateMutex,nullptr);
+  if (rc!=0) {
+    std::ostringstream msg;
+    msg << "[Mode3D] pthread_mutex_init failed during background-field initialization: "
+        << std::strerror(rc) << " (rc=" << rc << ")";
+    exit(__LINE__,__FILE__,msg.str().c_str());
+  }
+
+  rc=pthread_cond_init(&shared.gateCond,nullptr);
+  if (rc!=0) {
+    pthread_mutex_destroy(&shared.gateMutex);
+    std::ostringstream msg;
+    msg << "[Mode3D] pthread_cond_init failed during background-field initialization: "
+        << std::strerror(rc) << " (rc=" << rc << ")";
+    exit(__LINE__,__FILE__,msg.str().c_str());
+  }
+
+  std::vector<pthread_t> threads(static_cast<std::size_t>(temporaryWorkerCount));
+  std::vector<FieldInitWorkerArg> args(static_cast<std::size_t>(temporaryWorkerCount));
+  int nCreated=0;
+
+  for (int iWorker=0;iWorker<temporaryWorkerCount;++iWorker) {
+    args[static_cast<std::size_t>(iWorker)].shared=&shared;
+    args[static_cast<std::size_t>(iWorker)].participantId=iWorker+1;
+
+    rc=pthread_create(&threads[static_cast<std::size_t>(iWorker)],nullptr,
+                      FieldInitPthreadEntry,&args[static_cast<std::size_t>(iWorker)]);
+    if (rc!=0) {
+      pthread_mutex_lock(&shared.gateMutex);
+      shared.abort=true;
+      shared.gateReleased=true;
+      pthread_cond_broadcast(&shared.gateCond);
+      pthread_mutex_unlock(&shared.gateMutex);
+
+      for (int i=0;i<nCreated;++i) {
+        pthread_join(threads[static_cast<std::size_t>(i)],nullptr);
+      }
+      pthread_cond_destroy(&shared.gateCond);
+      pthread_mutex_destroy(&shared.gateMutex);
+
+      std::ostringstream msg;
+      msg << "[Mode3D] pthread_create failed after creating " << nCreated
+          << " of " << temporaryWorkerCount
+          << " temporary background-field workers: " << std::strerror(rc)
+          << " (rc=" << rc << ")";
+      exit(__LINE__,__FILE__,msg.str().c_str());
+    }
+    ++nCreated;
+  }
+
+  if (PIC::ThisThread==0) {
+    const std::size_t totalWork=
+        ownerBlocks.size()*static_cast<std::size_t>(shared.cellsPerBlock);
+    std::cout << "[Mode3D] Parallel background-field initialization: POSIX threads; "
+              << temporaryWorkerCount << " temporary workers + caller ("
+              << participantCount << " equal shares per MPI rank); "
+              << totalWork << " owner-cell slots on rank 0.\n";
+  }
+
+  // Release all temporary workers together, then let the original MPI-rank
+  // thread process participant 0's equal share while the N temporary workers
+  // process shares 1..N.
+  pthread_mutex_lock(&shared.gateMutex);
+  shared.gateReleased=true;
+  pthread_cond_broadcast(&shared.gateCond);
+  pthread_mutex_unlock(&shared.gateMutex);
+
+  ProcessFieldInitParticipant(shared,0);
+
+  int firstJoinError=0;
+  for (int iWorker=0;iWorker<temporaryWorkerCount;++iWorker) {
+    rc=pthread_join(threads[static_cast<std::size_t>(iWorker)],nullptr);
+    if (rc!=0 && firstJoinError==0) firstJoinError=rc;
+  }
+
+  pthread_cond_destroy(&shared.gateCond);
+  pthread_mutex_destroy(&shared.gateMutex);
+
+  if (firstJoinError!=0) {
+    std::ostringstream msg;
+    msg << "[Mode3D] pthread_join failed during background-field initialization: "
+        << std::strerror(firstJoinError) << " (rc=" << firstJoinError << ")";
+    exit(__LINE__,__FILE__,msg.str().c_str());
+  }
+}
+
+void InitMeshFields(const EarthUtil::AmpsParam& prm,FieldInitNode* startNode) {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // In SWMF-coupled builds the cell-centered B and E values are owned by the
+  // live coupler data structures, not by the DATAFILE/MULTIFILE buffers that
+  // this standalone initializer fills.  Leave the mesh field buffers untouched.
+  (void)prm;
+  (void)startNode;
+  return;
+#else
+  if (prm.mode3d.parallelFieldInitialization) {
+    InitMeshFieldsPthreads(prm,startNode);
+  }
+  else {
+    InitMeshFieldsSerial(prm,startNode);
+  }
+#endif
 }
 
 void WriteTecplotMesh(const EarthUtil::AmpsParam& prm,const char* fnameBase) {

@@ -43,6 +43,7 @@
 //     -epoch <UTC>             Override #BACKGROUND_FIELD / EPOCH after parsing.
 //     -mover <BORIS|HC4|RK2|RK4|RK6|GC2|GC4|GC6|HYBRID>   Particle mover (default: BORIS).
 //     -mode3d-output-initialized                         Write amps_3d_initialized.data.dat.
+//     -mode3d-parallel-field-init                        Parallelize B/E mesh initialization.
 //     -mode3d-field-eval <INTERPOLATION|ANALYTIC>        3D B-field source during tracing.
 //     -density-mode <ISOTROPIC|ANISOTROPIC>
 //                              Override DS_BOUNDARY_MODE from input file.
@@ -382,6 +383,14 @@ CliOptions ParseCli(int argc,char** argv) {
       // default behavior should be no output unless explicitly requested.
       opt.mode3dOutputInitialized=true;
     }
+    else if (a=="-mode3d-parallel-field-init" || a=="--mode3d-parallel-field-init" ||
+             a=="-mode3d-parallel-bgfield-init" || a=="--mode3d-parallel-bgfield-init" ||
+             a=="-bgfield-init-parallel" || a=="--bgfield-init-parallel") {
+      // Parallelize only the standalone Mode3D mesh-population stage.  The same
+      // per-rank count selected by -mode3d-threads/-density-threads is used, with
+      // the caller participating in addition to the N temporary pthread workers.
+      opt.mode3dParallelFieldInitialization=true;
+    }
     else if (a=="-mode3d-field-eval" || a=="--mode3d-field-eval" ||
              a=="-mode3d-b-field" || a=="--mode3d-b-field") {
       // Optional Mode3D magnetic-field source during tracing.
@@ -647,6 +656,14 @@ std::string HelpMessage(const char* progName) {
   out << "      In -mode 3d, write amps_3d_initialized.data.dat after the AMR mesh\n";
   out << "      cell-centered B/E fields have been initialized. This diagnostic file can\n";
   out << "      be large, so it is skipped unless this flag is present.\n\n";
+
+  out << "  -mode3d-parallel-field-init | --mode3d-parallel-field-init   (optional; default: off)\n";
+  out << "      In standalone -mode 3d, initialize owner-rank AMR cell-centered B/E\n";
+  out << "      fields with temporary POSIX threads. The worker count is taken from the\n";
+  out << "      same -mode3d-threads/-density-threads value used by the calculation.\n";
+  out << "      N=16 creates 16 temporary pthread workers; the calling MPI-rank thread\n";
+  out << "      evaluates one additional equal share. Aliases: --bgfield-init-parallel and\n";
+  out << "      --mode3d-parallel-bgfield-init.\n\n";
 
   out << "  -mode3d-field-eval | --mode3d-field-eval <INTERPOLATION|ANALYTIC>   (optional; default: INTERPOLATION)\n";
   out << "      In -mode 3d, select the magnetic-field source used during backtracing.\n";

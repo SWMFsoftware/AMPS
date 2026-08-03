@@ -2044,6 +2044,8 @@ int main(int argc,char **argv) {
         // use AMR interpolation during tracing unless direct background-field
         // evaluation is requested explicitly.
         p.mode3d.outputInitializedFile = cli.mode3dOutputInitialized;
+        p.mode3d.parallelFieldInitialization =
+            cli.mode3dParallelFieldInitialization;
         if (!cli.mode3dFieldEval.empty()) {
           const std::string fieldEval = EarthUtil::ToUpper(cli.mode3dFieldEval);
           if (fieldEval=="ANALYTIC" || fieldEval=="DIRECT") {
