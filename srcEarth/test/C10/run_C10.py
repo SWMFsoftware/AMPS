@@ -689,6 +689,8 @@ def command_for(args: argparse.Namespace, amps: Path, solver: str, epoch: dateti
             "-mode3d-mesh-coarsening", args.mode3d_mesh_coarsening,
             "-mode3d-mesh-exponent", str(args.mode3d_mesh_exponent),
         ]
+        if args.mode3d_parallel_field_init:
+            command.append("-mode3d-parallel-field-init")
     if args.mover:
         command += ["-mover", args.mover]
     return command
@@ -1887,6 +1889,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                      "P8/P9 are diagnostics."),
         epilog=("Examples:\n"
                 "  python3 run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --profile ROUTINE -np 8 -nt 16\n"
+                "  python3 run_C10.py --solver GRIDDED --cutoff-evaluation DIRECT_ACCESS --profile ROUTINE -np 8 -nt 16 --mode3d-parallel-field-init\n"
                 "  python3 run_C10.py --solver GRIDDED --cutoff-evaluation FULL_SCAN --profile ROUTINE --access-consistency-root test_output/C10_direct -np 8 -nt 16\n"),
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--profile", type=str.upper, choices=("SMOKE", "ROUTINE", "FULL"), default="ROUTINE")
@@ -1923,6 +1926,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--mpirun", default="mpirun")
     parser.add_argument("-np", dest="np", type=int, default=4)
     parser.add_argument("-nt", dest="nt", type=int, default=16)
+    parser.add_argument(
+        "--mode3d-parallel-field-init", "--parallel-field-init",
+        action="store_true",
+        help=("Parallelize the GRIDDED background magnetic-field initialization "
+              "with POSIX threads. AMPS uses the same worker-thread count supplied "
+              "by -nt/--mode3d-threads for the subsequent Mode3D calculations."),
+    )
     parser.add_argument("--scheduler", type=str.upper, choices=("STATIC", "BLOCK_CYCLIC", "DYNAMIC"), default="DYNAMIC")
     parser.add_argument("--dynamic-chunk", type=int, default=0)
     parser.add_argument("--mover", default="")
