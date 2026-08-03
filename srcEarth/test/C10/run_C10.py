@@ -1582,9 +1582,28 @@ def _mean_and_uncertainty(rows: Sequence[Mapping[str, object]]) -> Tuple[float, 
     return statistics.fmean(observed), statistics.fmean(modeled), sigma_mean
 
 
+def _plot_rows_by_scope(detailed: Sequence[Mapping[str, object]],
+                        include_diagnostics: bool) -> List[Mapping[str, object]]:
+    """Select either primary-only rows or the complete primary+diagnostic set."""
+
+    if include_diagnostics:
+        return list(detailed)
+    return [row for row in detailed
+            if str(row.get("validation_role", "")).strip().upper() != "DIAGNOSTIC"]
+
+
+def _plot_scope_label(include_diagnostics: bool) -> str:
+    return "including diagnostic channels" if include_diagnostics else "primary channels only"
+
+
 def make_plot(detailed: Sequence[Mapping[str, object]], output: Path, solver: str,
-              minimum_diagnostic_paired_cells: int = 2) -> None:
-    """Plot paired observed/model means; sparse diagnostics are open markers."""
+              include_diagnostics: bool = False) -> None:
+    """Plot connected paired POES/AMPS time series for the selected channel scope.
+
+    Every available paired mean participates in a line.  In particular, diagnostic
+    values are no longer emitted as disconnected sparse markers.  Missing epochs are
+    skipped, so matplotlib connects the complete sequence of available values.
+    """
 
     try:
         import matplotlib
@@ -1595,8 +1614,14 @@ def make_plot(detailed: Sequence[Mapping[str, object]], output: Path, solver: st
         print("C10 plot skipped (matplotlib unavailable): %s" % exc, file=sys.stderr)
         return
 
-    rigidities = sorted({float(row["rigidity_gv"]) for row in detailed})
-    times = sorted({_plot_time_value(str(row["interval_midpoint_utc"])) for row in detailed})
+    plot_rows = _plot_rows_by_scope(detailed, include_diagnostics)
+    if not plot_rows:
+        print("C10 plot skipped (no rows for %s)" % _plot_scope_label(include_diagnostics),
+              file=sys.stderr)
+        return
+
+    rigidities = sorted({float(row["rigidity_gv"]) for row in plot_rows})
+    times = sorted({_plot_time_value(str(row["interval_midpoint_utc"])) for row in plot_rows})
     cmap = plt.get_cmap("tab10")
     fig, (ax_top, ax_bottom) = plt.subplots(
         2, 1, figsize=(13, 8.5), sharex=True,
@@ -1605,86 +1630,74 @@ def make_plot(detailed: Sequence[Mapping[str, object]], output: Path, solver: st
 
     for index, rigidity in enumerate(rigidities):
         color = cmap(index % 10)
-        role_values = {str(row.get("validation_role", "")) for row in detailed
+        role_values = {str(row.get("validation_role", "")).strip().upper()
+                       for row in plot_rows
                        if math.isclose(float(row["rigidity_gv"]), rigidity)}
         diagnostic = "DIAGNOSTIC" in role_values and "PRIMARY" not in role_values
         suffix = " (diagnostic)" if diagnostic else ""
-        alpha = 0.65 if diagnostic else 1.0
+        alpha = 0.70 if diagnostic else 1.0
+
+        line_times: List[datetime] = []
         observed_line: List[float] = []
         modeled_line: List[float] = []
         residual_line: List[float] = []
         sigma_line: List[float] = []
-        sparse_points: List[Tuple[datetime, float, float, float, int]] = []
 
         for time_value in times:
             label = format_utc(time_value)
-            selected = [row for row in detailed
+            selected = [row for row in plot_rows
                         if math.isclose(float(row["rigidity_gv"]), rigidity)
                         and row["interval_midpoint_utc"] == label]
             paired = _paired_rows(selected)
-            if diagnostic:
-                robust = _diagnostic_robust_rows(selected)
-                if len(robust) >= minimum_diagnostic_paired_cells:
-                    obs, mod, sigma = _mean_and_uncertainty(robust)
-                    observed_line.append(obs); modeled_line.append(mod)
-                    residual_line.append(mod - obs); sigma_line.append(sigma)
-                else:
-                    observed_line.append(float("nan")); modeled_line.append(float("nan"))
-                    residual_line.append(float("nan")); sigma_line.append(float("nan"))
-                    if paired:
-                        obs, mod, sigma = _mean_and_uncertainty(paired)
-                        sparse_points.append((time_value, obs, mod, sigma, len(paired)))
-            elif paired:
-                obs, mod, sigma = _mean_and_uncertainty(paired)
-                observed_line.append(obs); modeled_line.append(mod)
-                residual_line.append(mod - obs); sigma_line.append(sigma)
-            else:
-                observed_line.append(float("nan")); modeled_line.append(float("nan"))
-                residual_line.append(float("nan")); sigma_line.append(float("nan"))
+            if not paired:
+                continue
+            obs, mod, sigma = _mean_and_uncertainty(paired)
+            line_times.append(time_value)
+            observed_line.append(obs)
+            modeled_line.append(mod)
+            residual_line.append(mod - obs)
+            sigma_line.append(sigma)
 
+        if not line_times:
+            continue
         ax_top.errorbar(
-            times, observed_line, yerr=sigma_line, linestyle="--", marker="o",
+            line_times, observed_line, yerr=sigma_line, linestyle="--", marker="o",
             markersize=4, linewidth=1.2, color=color, capsize=2, alpha=alpha,
             label=f"POES {rigidity:.3f} GV{suffix}",
         )
         ax_top.plot(
-            times, modeled_line, linestyle="-", marker="x", markersize=5,
+            line_times, modeled_line, linestyle="-", marker="x", markersize=5,
             linewidth=1.4, color=color, alpha=alpha,
             label=f"AMPS {rigidity:.3f} GV{suffix}",
         )
         ax_bottom.plot(
-            times, residual_line, linestyle="-", marker="o", markersize=4,
+            line_times, residual_line, linestyle="-", marker="o", markersize=4,
             linewidth=1.2, color=color, alpha=alpha,
             label=f"{rigidity:.3f} GV{suffix}",
         )
-        for time_value, obs, mod, sigma, count in sparse_points:
-            ax_top.errorbar([time_value], [obs], yerr=[sigma], linestyle="none",
-                            marker="o", markersize=6, markerfacecolor="none",
-                            markeredgecolor=color, ecolor=color, capsize=2, alpha=0.8)
-            ax_top.scatter([time_value], [mod], marker="x", color=color, alpha=0.8)
-            ax_bottom.scatter([time_value], [mod - obs], marker="o", facecolors="none",
-                              edgecolors=[color], alpha=0.8)
-            ax_bottom.annotate(f"n={count}", (time_value, mod - obs), xytext=(3, 4),
-                               textcoords="offset points", fontsize=6, color=color)
 
     ax_top.set_ylabel("Cutoff |AACGM latitude| [deg]")
     ax_top.set_title(
-        "C10 %s: paired background-normalized POES/MetOp T50 versus AMPS" % solver)
+        "C10 %s: paired background-normalized POES/MetOp T50 versus AMPS (%s)"
+        % (solver, _plot_scope_label(include_diagnostics)))
     ax_top.grid(alpha=0.3)
-    ax_top.legend(fontsize=8, ncol=4, loc="best")
+    if ax_top.get_legend_handles_labels()[0]:
+        ax_top.legend(fontsize=8, ncol=4, loc="best")
     ax_bottom.axhline(0.0, color="black", linewidth=0.9, linestyle="--")
     ax_bottom.set_ylabel("AMPS - POES [deg]")
     ax_bottom.set_xlabel("UTC")
     ax_bottom.grid(alpha=0.3)
-    ax_bottom.legend(fontsize=8, ncol=4, loc="best")
+    if ax_bottom.get_legend_handles_labels()[0]:
+        ax_bottom.legend(fontsize=8, ncol=4, loc="best")
     ax_bottom.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d\n%H:%M"))
     fig.tight_layout()
     fig.savefig(output, dpi=150)
     plt.close(fig)
 
 
-def make_scatter_plot(detailed: Sequence[Mapping[str, object]], output: Path, solver: str) -> None:
-    """Plot robust points filled and sparse diagnostic points open."""
+def make_scatter_plot(detailed: Sequence[Mapping[str, object]], output: Path, solver: str,
+                      include_diagnostics: bool = False) -> None:
+    """Plot paired observed/model cells for the selected channel scope."""
 
     try:
         import matplotlib
@@ -1694,50 +1707,52 @@ def make_scatter_plot(detailed: Sequence[Mapping[str, object]], output: Path, so
         print("C10 scatter plot skipped: %s" % exc, file=sys.stderr)
         return
 
-    rigidities = sorted({float(row["rigidity_gv"]) for row in detailed})
+    plot_rows = _plot_rows_by_scope(detailed, include_diagnostics)
+    if not plot_rows:
+        print("C10 scatter plot skipped (no rows for %s)"
+              % _plot_scope_label(include_diagnostics), file=sys.stderr)
+        return
+
+    rigidities = sorted({float(row["rigidity_gv"]) for row in plot_rows})
     cmap = plt.get_cmap("tab10")
     fig, ax = plt.subplots(figsize=(7.5, 7.0))
     all_values: List[float] = []
     for index, rigidity in enumerate(rigidities):
-        points = [row for row in _paired_rows(detailed)
+        points = [row for row in _paired_rows(plot_rows)
                   if math.isclose(float(row["rigidity_gv"]), rigidity)]
-        diagnostic = bool(points) and all(
-            str(row.get("validation_role", "")) == "DIAGNOSTIC" for row in points)
-        robust = [row for row in points if not diagnostic or bool(row.get("diagnostic_eligible", False))]
-        sparse = [row for row in points if diagnostic and not bool(row.get("diagnostic_eligible", False))]
+        if not points:
+            continue
+        diagnostic = all(str(row.get("validation_role", "")).strip().upper() == "DIAGNOSTIC"
+                         for row in points)
         color = cmap(index % 10)
         suffix = " (diagnostic)" if diagnostic else ""
-        if robust:
-            x = [float(row["observed_boundary_aacgm_deg"]) for row in robust]
-            y = [float(row["modeled_boundary_aacgm_deg"]) for row in robust]
-            all_values.extend(x + y)
-            ax.scatter(x, y, s=24, alpha=0.60 if diagnostic else 0.80,
-                       color=color, label=f"{rigidity:.3f} GV{suffix}")
-        if sparse:
-            x = [float(row["observed_boundary_aacgm_deg"]) for row in sparse]
-            y = [float(row["modeled_boundary_aacgm_deg"]) for row in sparse]
-            all_values.extend(x + y)
-            ax.scatter(x, y, s=32, alpha=0.75, facecolors="none", edgecolors=[color],
-                       label=(f"{rigidity:.3f} GV sparse/outlier" if not robust else None))
+        x = [float(row["observed_boundary_aacgm_deg"]) for row in points]
+        y = [float(row["modeled_boundary_aacgm_deg"]) for row in points]
+        all_values.extend(x + y)
+        ax.scatter(x, y, s=24, alpha=0.60 if diagnostic else 0.80,
+                   color=color, label=f"{rigidity:.3f} GV{suffix}")
     if all_values:
         lower = min(all_values) - 1.0
         upper = max(all_values) + 1.0
         ax.plot([lower, upper], [lower, upper], "k--", linewidth=1.0)
-        ax.set_xlim(lower, upper); ax.set_ylim(lower, upper)
+        ax.set_xlim(lower, upper)
+        ax.set_ylim(lower, upper)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xlabel("Observed POES boundary [deg AACGM]")
     ax.set_ylabel("AMPS boundary [deg AACGM]")
-    ax.set_title(f"C10 {solver}: paired T50 comparison")
+    ax.set_title("C10 %s: paired T50 comparison (%s)"
+                 % (solver, _plot_scope_label(include_diagnostics)))
     ax.grid(alpha=0.3)
-    ax.legend(fontsize=8)
+    if ax.get_legend_handles_labels()[0]:
+        ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(output, dpi=150)
     plt.close(fig)
 
 
 def make_mlt_plot(detailed: Sequence[Mapping[str, object]], output: Path, solver: str,
-                  minimum_diagnostic_paired_cells: int = 2) -> None:
-    """Plot paired means by MLT, breaking diagnostic curves at sparse sectors."""
+                  include_diagnostics: bool = False) -> None:
+    """Plot connected paired means by MLT for the selected channel scope."""
 
     try:
         import matplotlib
@@ -1747,59 +1762,55 @@ def make_mlt_plot(detailed: Sequence[Mapping[str, object]], output: Path, solver
         print("C10 MLT plot skipped: %s" % exc, file=sys.stderr)
         return
 
-    rigidities = sorted({float(row["rigidity_gv"]) for row in detailed})
-    mlt_values = sorted({float(row["mlt_hour"]) for row in detailed})
+    plot_rows = _plot_rows_by_scope(detailed, include_diagnostics)
+    if not plot_rows:
+        print("C10 MLT plot skipped (no rows for %s)" % _plot_scope_label(include_diagnostics),
+              file=sys.stderr)
+        return
+
+    rigidities = sorted({float(row["rigidity_gv"]) for row in plot_rows})
+    mlt_values = sorted({float(row["mlt_hour"]) for row in plot_rows})
     cmap = plt.get_cmap("tab10")
     fig, (ax_n, ax_s) = plt.subplots(1, 2, figsize=(13, 5.5), sharey=True)
     for axis, hemisphere in ((ax_n, "N"), (ax_s, "S")):
         for index, rigidity in enumerate(rigidities):
-            role_values = {str(row.get("validation_role", "")) for row in detailed
+            role_values = {str(row.get("validation_role", "")).strip().upper()
+                           for row in plot_rows
                            if math.isclose(float(row["rigidity_gv"]), rigidity)}
             diagnostic = "DIAGNOSTIC" in role_values and "PRIMARY" not in role_values
+            line_mlt: List[float] = []
             obs_line: List[float] = []
             mod_line: List[float] = []
-            sparse_points: List[Tuple[float, float, float, int]] = []
             for mlt in mlt_values:
-                selected = [row for row in detailed
+                selected = [row for row in plot_rows
                             if row["hemisphere"] == hemisphere
                             and math.isclose(float(row["rigidity_gv"]), rigidity)
                             and math.isclose(float(row["mlt_hour"]), mlt)]
                 paired = _paired_rows(selected)
-                if diagnostic:
-                    robust = _diagnostic_robust_rows(selected)
-                    if len(robust) >= minimum_diagnostic_paired_cells:
-                        obs, mod, _ = _mean_and_uncertainty(robust)
-                        obs_line.append(obs); mod_line.append(mod)
-                    else:
-                        obs_line.append(float("nan")); mod_line.append(float("nan"))
-                        if paired:
-                            obs, mod, _ = _mean_and_uncertainty(paired)
-                            sparse_points.append((mlt, obs, mod, len(paired)))
-                elif paired:
-                    obs, mod, _ = _mean_and_uncertainty(paired)
-                    obs_line.append(obs); mod_line.append(mod)
-                else:
-                    obs_line.append(float("nan")); mod_line.append(float("nan"))
+                if not paired:
+                    continue
+                obs, mod, _ = _mean_and_uncertainty(paired)
+                line_mlt.append(mlt)
+                obs_line.append(obs)
+                mod_line.append(mod)
+            if not line_mlt:
+                continue
             color = cmap(index % 10)
             suffix = " (diagnostic)" if diagnostic else ""
-            alpha = 0.65 if diagnostic else 1.0
-            axis.plot(mlt_values, obs_line, "--o", color=color, markersize=4, alpha=alpha,
+            alpha = 0.70 if diagnostic else 1.0
+            axis.plot(line_mlt, obs_line, "--o", color=color, markersize=4, alpha=alpha,
                       label=f"POES {rigidity:.3f} GV{suffix}")
-            axis.plot(mlt_values, mod_line, "-x", color=color, markersize=5, alpha=alpha,
+            axis.plot(line_mlt, mod_line, "-x", color=color, markersize=5, alpha=alpha,
                       label=f"AMPS {rigidity:.3f} GV{suffix}")
-            for mlt, obs, mod, count in sparse_points:
-                axis.scatter([mlt], [obs], marker="o", facecolors="none",
-                             edgecolors=[color], alpha=0.8)
-                axis.scatter([mlt], [mod], marker="x", color=color, alpha=0.8)
-                axis.annotate(f"n={count}", (mlt, obs), xytext=(2, 3),
-                              textcoords="offset points", fontsize=6, color=color)
         axis.set_title(f"{hemisphere} hemisphere")
         axis.set_xlabel("Magnetic local time [hour]")
         axis.set_xticks(mlt_values)
         axis.grid(alpha=0.3)
     ax_n.set_ylabel("Mean cutoff |AACGM latitude| [deg]")
-    ax_s.legend(fontsize=7, ncol=2, loc="best")
-    fig.suptitle(f"C10 {solver}: paired T50 MLT dependence")
+    if ax_s.get_legend_handles_labels()[0]:
+        ax_s.legend(fontsize=7, ncol=2, loc="best")
+    fig.suptitle("C10 %s: paired T50 MLT dependence (%s)"
+                 % (solver, _plot_scope_label(include_diagnostics)))
     fig.tight_layout()
     fig.savefig(output, dpi=150)
     plt.close(fig)
@@ -1950,8 +1961,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                         help="Minimum resolved longitude-profile fraction at a T50 grid point")
     parser.add_argument("--t50-min-edge-margin-deg", type=float, default=1.0,
                         help="Minimum T50 distance from retained latitude-domain edges")
-    parser.add_argument("--minimum-diagnostic-paired-cells-for-mean", type=int, default=2,
-                        help="Minimum robust paired cells required to connect a P8/P9 mean")
+    parser.add_argument(
+        "--minimum-diagnostic-paired-cells-for-mean", type=int, default=2,
+        help=("Deprecated plotting threshold retained for CLI compatibility; comparison "
+              "plots now connect every available paired P8/P9 mean"),
+    )
     parser.add_argument("--access-consistency-root", default="",
                         help="Optional output root from the counterpart FULL_SCAN/DIRECT_ACCESS run")
     parser.add_argument("--min-access-state-agreement", type=float, default=0.999)
@@ -2381,11 +2395,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             access_consistency_details)
         write_dict_rows(solver_root / "C10_comparison.csv", detailed)
         write_dict_rows(solver_root / "C10_diagnostic_flags.csv", diagnostic_flag_rows(detailed))
+        # Keep the traditional filenames for the uncluttered primary-channel view,
+        # and write a second complete set that includes P8/P9 diagnostics.
         make_plot(detailed, solver_root / "C10_comparison.png", solver,
-                  args.minimum_diagnostic_paired_cells_for_mean)
-        make_scatter_plot(detailed, solver_root / "C10_scatter.png", solver)
+                  include_diagnostics=False)
+        make_plot(detailed, solver_root / "C10_comparison_with_diagnostics.png", solver,
+                  include_diagnostics=True)
+        make_scatter_plot(detailed, solver_root / "C10_scatter.png", solver,
+                          include_diagnostics=False)
+        make_scatter_plot(detailed, solver_root / "C10_scatter_with_diagnostics.png", solver,
+                          include_diagnostics=True)
         make_mlt_plot(detailed, solver_root / "C10_mlt_comparison.png", solver,
-                      args.minimum_diagnostic_paired_cells_for_mean)
+                      include_diagnostics=False)
+        make_mlt_plot(detailed, solver_root / "C10_mlt_comparison_with_diagnostics.png", solver,
+                      include_diagnostics=True)
         (solver_root / "C10_result.json").write_text(json.dumps({
             "solver": solver, "profile": args.profile,
             "cutoff_evaluation": args.cutoff_evaluation,
@@ -2406,7 +2429,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "requires_background_corrected_reference": True,
                 "requires_independent_windows": True,
                 "diagnostic_means_use_paired_cells_only": True,
-                "minimum_robust_paired_cells_for_connected_diagnostic_mean": (
+                "diagnostic_plot_means_use_all_available_paired_cells": True,
+                "diagnostic_plot_lines_connect_all_available_means": True,
+                "legacy_minimum_diagnostic_paired_cells_for_mean": (
                     args.minimum_diagnostic_paired_cells_for_mean),
                 "sparse_or_cross_channel_outlier_diagnostics_remain_in_C10_diagnostic_flags_csv": True,
             },
