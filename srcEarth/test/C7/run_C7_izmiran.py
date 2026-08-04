@@ -18,9 +18,10 @@ Examples:
     # Run the default GRIDLESS comparison.
     python3 srcEarth/test/C7/run_C7_izmiran.py -np 4
 
-    # Run the Mode3D comparison and select the radial mesh coarsening.
+    # Run Mode3D with POSIX-thread parallel background-field initialization.
     python3 srcEarth/test/C7/run_C7_izmiran.py --solver GRIDDED \
-        -mode3d-mesh-coarsening LINEAR -np 4 -nt 16
+        -mode3d-mesh-coarsening LINEAR -np 4 -nt 16 \
+        --mode3d-parallel-field-init
 
     # Run both field-evaluation paths.
     python3 srcEarth/test/C7/run_C7_izmiran.py --solver BOTH -np 4 -nt 16

@@ -737,6 +737,8 @@ def command_for(args: argparse.Namespace, amps: Path, solver: str) -> List[str]:
         ]
     else:
         command += ["-mode3d-field-eval", "MESH", "-mode3d-parallel", "THREADS", "-mode3d-threads", str(args.nt), "-mode3d-mpi-scheduler", args.scheduler, "-mode3d-mpi-dynamic-chunk", str(chunk), "-mode3d-mesh-res-earth-re", str(args.mode3d_mesh_res_earth_re), "-mode3d-mesh-res-boundary-re", str(args.mode3d_mesh_res_boundary_re), "-mode3d-mesh-coarsening", args.mode3d_mesh_coarsening, "-mode3d-mesh-exponent", str(args.mode3d_mesh_exponent)]
+        if args.mode3d_parallel_field_init:
+            command.append("-mode3d-parallel-field-init")
     return command
 
 
@@ -841,8 +843,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             "    %s --dry-run -np 4\n\n"
             "  Run the bundled IZMIRAN/T96 GRIDLESS comparison:\n"
             "    %s -np 4\n\n"
-            "  Run the Mode3D comparison with linear mesh coarsening:\n"
-            "    %s --solver GRIDDED -mode3d-mesh-coarsening LINEAR -np 4 -nt 16\n\n"
+            "  Run the Mode3D comparison with parallel field initialization:\n"
+            "    %s --solver GRIDDED -mode3d-mesh-coarsening LINEAR "
+            "-np 4 -nt 16 --mode3d-parallel-field-init\n\n"
             "  Run both solver paths:\n"
             "    %s --solver BOTH -np 4 -nt 16"
             % ((example_command,) * 5)
@@ -857,6 +860,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--validate-references", action="store_true")
     parser.add_argument("-np", type=int, default=4)
     parser.add_argument("-nt", type=int, default=16)
+    parser.add_argument(
+        "--mode3d-parallel-field-init", action="store_true",
+        help=("Parallelize Mode3D background magnetic-field initialization with "
+              "the existing -nt POSIX-thread count; GRIDDED runs only"),
+    )
     parser.add_argument("--amps", default="./amps")
     parser.add_argument("--mpirun", default="mpirun")
     parser.add_argument("--workdir", default="test_output/C7")

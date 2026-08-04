@@ -577,6 +577,8 @@ def command_for(args: argparse.Namespace, amps: Path, solver: str,
             "-mode3d-mesh-coarsening", args.mode3d_mesh_coarsening,
             "-mode3d-mesh-exponent", str(args.mode3d_mesh_exponent),
         ]
+        if args.mode3d_parallel_field_init:
+            command.append("-mode3d-parallel-field-init")
     if args.mover:
         command += ["-mover", args.mover]
     return command
@@ -2082,6 +2084,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("-np", type=int, default=4)
     parser.add_argument("-nt", type=int, default=16,
                         help="Mode3D trajectory threads per MPI process")
+    parser.add_argument(
+        "--mode3d-parallel-field-init", action="store_true",
+        help=("Parallelize Mode3D background magnetic-field initialization with "
+              "POSIX threads, using the -nt thread count"),
+    )
     parser.add_argument("--scheduler", type=str.upper, choices=("STATIC", "BLOCK_CYCLIC", "DYNAMIC"), default="DYNAMIC")
     parser.add_argument("--dynamic-chunk", type=int, default=0,
                         help="Scheduler chunk; 0 selects 1 for GRIDLESS and -nt for GRIDDED")
