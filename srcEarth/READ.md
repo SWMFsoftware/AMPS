@@ -2369,6 +2369,57 @@ mode3d/C14_3d_amps.log
 gridless/C14_gridless_amps.log
 ```
 
+### C18 — deterministic POSIX-thread field initialization
+
+Directory: `srcEarth/test/C18`
+
+Driver:
+
+```bash
+python srcEarth/test/C18/run_C18.py --profile ROUTINE -np 4
+```
+
+Purpose. C18 creates a serial runtime baseline for each standalone Mode3D
+magnetic model and compares it with otherwise identical runs using
+`-mode3d-parallel-field-init` and 1, 2, 4, 8, and 16 temporary POSIX workers.
+The cutoff backend is serial by default, which isolates the mesh B/E
+initialization stage. The calling MPI-rank thread participates as one additional
+equal work share, so a request for 16 workers produces 17 initialization
+participants per rank.
+
+C18 has no checked-in numerical reference solution. It fingerprints the
+initialized mesh output and `cutoff_3d_shells_access.dat` from the serial run,
+then requires exact equality for every pthread run and repeat. This is a
+parallel-equivalence regression rather than a physical model validation; C6,
+C7, C9, and C10 retain that role.
+
+Default routine matrix:
+
+```text
+models        DIPOLE, IGRF, T96, T05
+worker counts 1, 2, 4, 8, 16
+repeats       2
+```
+
+Useful commands:
+
+```bash
+python srcEarth/test/C18/run_C18.py --profile SMOKE -np 2
+python srcEarth/test/C18/run_C18.py --self-test
+python srcEarth/test/C18/run_C18.py --dry-run
+python srcEarth/test/C18/run_C18.py --cutoff-backend THREADS -np 4
+```
+
+Test artifacts:
+
+```text
+C18_configuration.json
+C18_commands.json
+C18_comparison.csv
+C18_result.json
+C18_summary.txt
+```
+
 ### C4 — parser-safe trace-control and mover convergence
 
 Directory: `srcEarth/test/C4`
