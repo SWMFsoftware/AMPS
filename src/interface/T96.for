@@ -8,14 +8,19 @@ C  are now local to the top-level calculation and are passed explicitly
 C  by reference to the routines that need them.  Mutable SAVE-based
 C  caches have been removed.  Read-only DATA coefficients remain shared.
 C
-C  This implementation does not depend on OpenMP and can be called from
-C  POSIX threads or OpenMP threads.  Compile with automatic local storage
-C  enabled (for example, -frecursive with GNU Fortran, or the equivalent
-C  option provided by another compiler).
+C  Every SUBROUTINE and FUNCTION in this file is declared RECURSIVE.
+C  Per the Fortran standard, a non-SAVE local of a RECURSIVE procedure
+C  must be given a fresh instance on each invocation, so this forces
+C  automatic (stack) storage regardless of the compiler's default and
+C  regardless of flags such as -fno-automatic.  No special compiler
+C  flag is required for safe concurrent calls from POSIX threads or
+C  OpenMP threads; ensure only that the thread stack size is adequate
+C  (e.g. OMP_STACKSIZE / ulimit -s), since locals are now stack-based.
 C
 C----------------------------------------------------------------------
 c
-      SUBROUTINE T96_01 (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *SUBROUTINE T96_01 (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ)
 C
 c     RELEASE DATE OF THIS VERSION:   JUNE 22, 1996.
 C     LAST UPDATE: MAY 01, 2006:  IN THE S/R DIPOLE, SPS AND CPS WERE ADDED IN THE SAVE STATEMENT
@@ -201,7 +206,8 @@ C
        END
 C=====================================================================
 
-      SUBROUTINE DIPSHLD(PS,X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *SUBROUTINE DIPSHLD(PS,X,Y,Z,BX,BY,BZ)
 C
 C   CALCULATES GSM COMPONENTS OF THE EXTERNAL MAGNETIC FIELD DUE TO
 C    SHIELDING OF THE EARTH'S DIPOLE ONLY
@@ -228,7 +234,8 @@ C+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 C
 C  THIS CODE YIELDS THE SHIELDING FIELD FOR THE PERPENDICULAR DIPOLE
 C
-         SUBROUTINE  CYLHARM( A, X,Y,Z, BX,BY,BZ)
+      RECURSIVE
+     *   SUBROUTINE  CYLHARM( A, X,Y,Z, BX,BY,BZ)
 C
 C
 C   ***  N.A. Tsyganenko ***  Sept. 14-18, 1993; revised March 16, 1994 ***
@@ -301,7 +308,8 @@ c%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 C
 C  THIS CODE YIELDS THE SHIELDING FIELD FOR THE PARALLEL DIPOLE
 C
-         SUBROUTINE  CYLHAR1(A, X,Y,Z, BX,BY,BZ)
+      RECURSIVE
+     *   SUBROUTINE  CYLHAR1(A, X,Y,Z, BX,BY,BZ)
 C
 C
 C   ***  N.A. Tsyganenko ***  Sept. 14-18, 1993; revised March 16, 1994 ***
@@ -371,7 +379,8 @@ C
 
 c%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 C
-      DOUBLE PRECISION FUNCTION BES(X,K)
+      RECURSIVE
+     *DOUBLE PRECISION FUNCTION BES(X,K)
       IMPLICIT REAL*8 (A-H,O-Z)
 C
       IF (K.EQ.0) THEN
@@ -435,7 +444,8 @@ C
       END
 c-------------------------------------------------------------------
 c
-       DOUBLE PRECISION FUNCTION BES0(X)
+      RECURSIVE
+     * DOUBLE PRECISION FUNCTION BES0(X)
 C
         IMPLICIT REAL*8 (A-H,O-Z)
 C
@@ -459,7 +469,8 @@ C
 c
 c--------------------------------------------------------------------------
 c
-       DOUBLE PRECISION FUNCTION BES1(X)
+      RECURSIVE
+     * DOUBLE PRECISION FUNCTION BES1(X)
 C
         IMPLICIT REAL*8 (A-H,O-Z)
 C
@@ -483,7 +494,8 @@ C
        END
 C------------------------------------------------------------
 C
-         SUBROUTINE INTERCON(X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *   SUBROUTINE INTERCON(X,Y,Z,BX,BY,BZ)
 C
 C      Calculates the potential interconnection field inside the magnetosphere,
 c  corresponding to  DELTA_X = 20Re and DELTA_Y = 10Re (NB#3, p.90, 6/6/1996).
@@ -561,7 +573,8 @@ C
       END
 
 C~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      SUBROUTINE TAILRC96(SPS,X,Y,Z,BXRC,BYRC,BZRC,BXT2,BYT2,BZT2,
+      RECURSIVE
+     *SUBROUTINE TAILRC96(SPS,X,Y,Z,BXRC,BYRC,BZRC,BXT2,BYT2,BZT2,
      *   BXT3,BYT3,BZT3)
 c
 c  COMPUTES THE COMPONENTS OF THE FIELD OF THE MODEL RING CURRENT AND THREE
@@ -682,7 +695,8 @@ C
 C
 c********************************************************************
 C
-        SUBROUTINE RINGCURR96(X,Y,Z,BX,BY,BZ,CPSS,SPSS,DPSRR,
+      RECURSIVE
+     *  SUBROUTINE RINGCURR96(X,Y,Z,BX,BY,BZ,CPSS,SPSS,DPSRR,
      *   XS,ZS,DXSX,DXSY,DXSZ,DZSX,DZSZ)
 c
 c       THIS SUBROUTINE COMPUTES THE COMPONENTS OF THE RING CURRENT FIELD,
@@ -786,7 +800,8 @@ C
 C
 C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 C
-         SUBROUTINE TAILDISK_T96(X,Y,Z,BX,BY,BZ,CPSS,SPSS,
+      RECURSIVE
+     *   SUBROUTINE TAILDISK_T96(X,Y,Z,BX,BY,BZ,CPSS,SPSS,
      *    DPSRR,XS,ZS,DXSX,DXSY,DXSZ,DZETAS,DDZETADX,
      *    DDZETADY,DDZETADZ,ZSWW)
 C
@@ -874,7 +889,8 @@ C
 
 C-------------------------------------------------------------------------
 C
-      SUBROUTINE TAIL87(X,Z,BX,BZ,RPS,WARP,D)
+      RECURSIVE
+     *SUBROUTINE TAIL87(X,Z,BX,BZ,RPS,WARP,D)
 
       IMPLICIT REAL*8 (A-H,O-Z)
 C
@@ -993,7 +1009,8 @@ C
 C THIS CODE RETURNS THE SHIELDING FIELD REPRESENTED BY  2x3x3=18 "CARTESIAN"
 C    HARMONICS
 C
-         SUBROUTINE  SHLCAR3X3_T96(A,X,Y,Z,SPS,HX,HY,HZ)
+      RECURSIVE
+     *   SUBROUTINE  SHLCAR3X3_T96(A,X,Y,Z,SPS,HX,HY,HZ)
 C
 C - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 C  The 36 coefficients enter in pairs in the amplitudes of the "cartesian"
@@ -1086,7 +1103,8 @@ C
 C
 C@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 C
-       SUBROUTINE BIRK1TOT_02(PS,X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     * SUBROUTINE BIRK1TOT_02(PS,X,Y,Z,BX,BY,BZ)
 C
 C  THIS IS THE SECOND VERSION OF THE ANALYTICAL MODEL OF THE REGION 1 FIELD
 C   BASED ON A SEPARATE REPRESENTATION OF THE POTENTIAL FIELD IN THE INNER AND
@@ -1365,7 +1383,8 @@ C
 C------------------------------------------------------------------------------
 C
 C
-         SUBROUTINE DIPLOOP1(XI,D,XX,YY,TILT,XCENTRE,RADIUS,
+      RECURSIVE
+     *   SUBROUTINE DIPLOOP1(XI,D,XX,YY,TILT,XCENTRE,RADIUS,
      *    DIPX,DIPY,RH,DR)
 C
 C
@@ -1483,7 +1502,8 @@ C
             END
 c-------------------------------------------------------------------------
 C
-        SUBROUTINE CIRCLE(X,Y,Z,RL,BX,BY,BZ)
+      RECURSIVE
+     *  SUBROUTINE CIRCLE(X,Y,Z,RL,BX,BY,BZ)
 C
 C  RETURNS COMPONENTS OF THE FIELD FROM A CIRCULAR CURRENT LOOP OF RADIUS RL
 C  USES THE SECOND (MORE ACCURATE) APPROXIMATION GIVEN IN ABRAMOWITZ AND STEGUN
@@ -1523,7 +1543,8 @@ C
         END
 C-------------------------------------------------------------
 C
-        SUBROUTINE CROSSLP(X,Y,Z,BX,BY,BZ,XC,RL,AL)
+      RECURSIVE
+     *  SUBROUTINE CROSSLP(X,Y,Z,BX,BY,BZ,XC,RL,AL)
 C
 c   RETURNS FIELD COMPONENTS OF A PAIR OF LOOPS WITH A COMMON CENTER AND
 C    DIAMETER,  COINCIDING WITH THE X AXIS. THE LOOPS ARE INCLINED TO THE
@@ -1550,7 +1571,8 @@ C
 
 C*******************************************************************
 
-       SUBROUTINE DIPXYZ(X,Y,Z,BXX,BYX,BZX,BXY,BYY,BZY,BXZ,BYZ,BZZ)
+      RECURSIVE
+     * SUBROUTINE DIPXYZ(X,Y,Z,BXX,BYX,BZX,BXY,BYY,BZY,BXZ,BYZ,BZZ)
 C
 C       RETURNS THE FIELD COMPONENTS PRODUCED BY THREE DIPOLES, EACH
 C        HAVING M=Me AND ORIENTED PARALLEL TO X,Y, and Z AXIS, RESP.
@@ -1580,7 +1602,8 @@ C
       END
 C
 C------------------------------------------------------------------------------
-         SUBROUTINE CONDIP1(XI,D,DX,SCALEIN,SCALEOUT,XX,YY,
+      RECURSIVE
+     *   SUBROUTINE CONDIP1(XI,D,DX,SCALEIN,SCALEOUT,XX,YY,
      *    ZZ)
 C
 C      Calculates dependent model variables and their derivatives for given
@@ -1739,7 +1762,8 @@ C
 C
 C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 C
-         SUBROUTINE  BIRK1SHLD(PS,X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *   SUBROUTINE  BIRK1SHLD(PS,X,Y,Z,BX,BY,BZ)
 C
 C - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 C
@@ -1846,7 +1870,8 @@ C
 C
 C##########################################################################
 C
-         SUBROUTINE BIRK2TOT_02(PS,X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *   SUBROUTINE BIRK2TOT_02(PS,X,Y,Z,BX,BY,BZ)
 C
           IMPLICIT REAL*8 (A-H,O-Z)
 C
@@ -1862,7 +1887,8 @@ C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 C
 C THIS CODE IS FOR THE FIELD FROM  2x2x2=8 "CARTESIAN" HARMONICS
 C
-         SUBROUTINE  BIRK2SHL(X,Y,Z,PS,HX,HY,HZ)
+      RECURSIVE
+     *   SUBROUTINE  BIRK2SHL(X,Y,Z,PS,HX,HY,HZ)
 C
 C - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 C    The model parameters are provided to this module via common-block /A/.
@@ -1960,7 +1986,8 @@ C
 
 c********************************************************************
 C
-       SUBROUTINE R2_BIRK(X,Y,Z,PS,BX,BY,BZ)
+      RECURSIVE
+     * SUBROUTINE R2_BIRK(X,Y,Z,PS,BX,BY,BZ)
 C
 C  RETURNS THE MODEL FIELD FOR THE REGION 2 BIRKELAND CURRENT/PARTIAL RC
 C    (WITHOUT SHIELDING FIELD)
@@ -2024,7 +2051,8 @@ C
 C****************************************************************
 
 c
-      SUBROUTINE R2INNER (X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *SUBROUTINE R2INNER (X,Y,Z,BX,BY,BZ)
 C
 C
       IMPLICIT REAL*8 (A-H,O-Z)
@@ -2057,7 +2085,8 @@ C
       END
 C-----------------------------------------------------------------------
 
-      SUBROUTINE BCONIC(X,Y,Z,CBX,CBY,CBZ,NMAX)
+      RECURSIVE
+     *SUBROUTINE BCONIC(X,Y,Z,CBX,CBY,CBZ,NMAX)
 C
 c   "CONICAL" HARMONICS
 c
@@ -2104,7 +2133,8 @@ C
 
 C-------------------------------------------------------------------
 C
-       SUBROUTINE DIPDISTR(X,Y,Z,BX,BY,BZ,MODE)
+      RECURSIVE
+     * SUBROUTINE DIPDISTR(X,Y,Z,BX,BY,BZ,MODE)
 C
 C   RETURNS FIELD COMPONENTS FROM A LINEAR DISTRIBUTION OF DIPOLAR SOURCES
 C     ON THE Z-AXIS.  THE PARAMETER MODE DEFINES HOW THE DIPOLE STRENGTH
@@ -2136,7 +2166,8 @@ C
 
 C+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 C
-      SUBROUTINE R2OUTER (X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *SUBROUTINE R2OUTER (X,Y,Z,BX,BY,BZ)
 C
       IMPLICIT REAL*8 (A-H,O-Z)
 C
@@ -2173,7 +2204,8 @@ C                           NOW COMPUTE THE FIELD COMPONENTS:
 C
 C--------------------------------------------------------------------
 C
-       SUBROUTINE LOOPS4(X,Y,Z,BX,BY,BZ,XC,YC,ZC,R,THETA,PHI)
+      RECURSIVE
+     * SUBROUTINE LOOPS4(X,Y,Z,BX,BY,BZ,XC,YC,ZC,R,THETA,PHI)
 C
 C   RETURNS FIELD COMPONENTS FROM A SYSTEM OF 4 CURRENT LOOPS, POSITIONED
 C     SYMMETRICALLY WITH RESPECT TO NOON-MIDNIGHT MERIDIAN AND EQUATORIAL
@@ -2249,7 +2281,8 @@ C-------------------------------------4TH QUADRANT:
 C
 C@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 C
-      SUBROUTINE R2SHEET(X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *SUBROUTINE R2SHEET(X,Y,Z,BX,BY,BZ)
 C
       IMPLICIT REAL*8 (A-H,O-Z)
 C
@@ -2443,7 +2476,8 @@ C
 C
 C^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-      DOUBLE PRECISION FUNCTION XKSI(X,Y,Z)
+      RECURSIVE
+     *DOUBLE PRECISION FUNCTION XKSI(X,Y,Z)
 C
       IMPLICIT REAL*8 (A-H,O-Z)
 C
@@ -2503,7 +2537,8 @@ C
 C
 C--------------------------------------------------------------------
 C
-        FUNCTION FEXP(S,A)
+      RECURSIVE
+     *  FUNCTION FEXP(S,A)
          IMPLICIT REAL*8 (A-H,O-Z)
           DATA E/2.718281828459D0/
           IF (A.LT.0.D0) FEXP=DSQRT(-2.D0*A*E)*S*DEXP(A*S*S)
@@ -2512,7 +2547,8 @@ C
          END
 C
 C-----------------------------------------------------------------------
-        FUNCTION FEXP1(S,A)
+      RECURSIVE
+     *  FUNCTION FEXP1(S,A)
          IMPLICIT REAL*8 (A-H,O-Z)
          IF (A.LE.0.D0) FEXP1=DEXP(A*S*S)
          IF (A.GT.0.D0) FEXP1=DEXP(A*(S*S-1.D0))
@@ -2521,7 +2557,8 @@ C-----------------------------------------------------------------------
 C
 C************************************************************************
 C
-         DOUBLE PRECISION FUNCTION TKSI(XKSI,XKS0,DXKSI)
+      RECURSIVE
+     *   DOUBLE PRECISION FUNCTION TKSI(XKSI,XKS0,DXKSI)
          IMPLICIT REAL*8 (A-H,O-Z)
 C
 C  TDZ3 depends on DXKSI, so calculate it directly rather than retaining
@@ -2545,7 +2582,8 @@ C
 C
 C~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 c
-       SUBROUTINE DIPOLE_T96(PS,X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     * SUBROUTINE DIPOLE_T96(PS,X,Y,Z,BX,BY,BZ)
 C
 C  CALCULATES GSM COMPONENTS OF GEODIPOLE FIELD WITH THE DIPOLE MOMENT
 C  CORRESPONDING TO THE EPOCH OF 1980.

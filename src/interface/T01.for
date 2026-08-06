@@ -7,11 +7,19 @@ c
 c  Mutable working values formerly communicated through COMMON blocks
 c  are now passed explicitly by reference along the call branches that
 c  use them.  The public T01_01 interface is unchanged.  Read-only DATA
-c  coefficient arrays remain shared.  Compile with automatic local
-c  storage (for GNU Fortran, use -frecursive) for concurrent calls from
-c  POSIX threads or OpenMP threads.
+c  coefficient arrays remain shared.
 c
-      SUBROUTINE T01_01 (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ)
+c  Every SUBROUTINE and FUNCTION in this file is declared RECURSIVE.
+c  Per the Fortran standard, a non-SAVE local of a RECURSIVE procedure
+c  must be given a fresh instance on each invocation, so this forces
+c  automatic (stack) storage regardless of the compiler's default and
+c  regardless of flags such as -fno-automatic.  No special compiler
+c  flag is required for safe concurrent calls from POSIX threads or
+c  OpenMP threads; ensure only that the thread stack size is adequate
+c  (e.g. OMP_STACKSIZE / ulimit -s), since locals are now stack-based.
+c
+      RECURSIVE
+     *SUBROUTINE T01_01 (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ)
 c
 c     RELEASE DATE OF THIS VERSION:   AUGUST 8, 2001.
 c
@@ -113,7 +121,8 @@ C
       END
 C
 C================================================================
-      SUBROUTINE EXTALL (IOPGEN,IOPT,IOPB,IOPR,A,NTOT,
+      RECURSIVE
+     *SUBROUTINE EXTALL (IOPGEN,IOPT,IOPB,IOPR,A,NTOT,
      *  PDYN,DST,BYIMF,BZIMF,VBIMF1,VBIMF2,PS,X,Y,Z,
      *  BXCF,BYCF,BZCF,BXT1,BYT1,BZT1,BXT2,BYT2,BZT2,
      *  BXSRC,BYSRC,BZSRC,BXPRC,BYPRC,BZPRC, BXR11,BYR11,BZR11,
@@ -379,7 +388,8 @@ C
 c
 C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 C
-         SUBROUTINE  SHLCAR3X1(X,Y,Z,PS,BX,BY,BZ)
+      RECURSIVE
+     *   SUBROUTINE  SHLCAR3X1(X,Y,Z,PS,BX,BY,BZ)
 C
 C   THIS S/R RETURNS THE SHIELDING FIELD FOR THE EARTH'S DIPOL1,
 C   REPRESENTED BY  2x3x3=18 "CARTESIAN" HARMONICS, tilted with respect
@@ -709,7 +719,8 @@ c
 c#######################################################################
 c
 C
-      SUBROUTINE DEFORME1 (IOPT,PS,X,Y,Z,
+      RECURSIVE
+     *SUBROUTINE DEFORME1 (IOPT,PS,X,Y,Z,
      * RH0_T01,G,DXSHIFT1,DXSHIFT2,D0,DELTADY,
      * BX1,BY1,BZ1,BX2,BY2,BZ2)
 C
@@ -779,7 +790,8 @@ C
 C
 C------------------------------------------------------------------
 C
-      SUBROUTINE WARPE1 (IOPT,PS,X,Y,Z,G,DXSHIFT1,DXSHIFT2,
+      RECURSIVE
+     *SUBROUTINE WARPE1 (IOPT,PS,X,Y,Z,G,DXSHIFT1,DXSHIFT2,
      * D0,DELTADY,BX1,BY1,BZ1,BX2,BY2,BZ2)
 C
 C   CALCULATES GSM COMPONENTS OF THE WARPE1 FIELD FOR TWO TAIL UNIT MODE
@@ -851,7 +863,8 @@ C
 C
 C%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 C
-       SUBROUTINE UNWARPE1 (IOPT,X,Y,Z,DXSHIFT1,DXSHIFT2,
+      RECURSIVE
+     * SUBROUTINE UNWARPE1 (IOPT,X,Y,Z,DXSHIFT1,DXSHIFT2,
      * D0,DELTADY,BX1,BY1,BZ1,BX2,BY2,BZ2)
 
 C   IOPT - TAIL FIELD MODE FLAG:   IOPT=0 - THE TWO TAIL MODES ARE ADDED
@@ -944,7 +957,8 @@ C
 C
 C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 C
-      SUBROUTINE TAILDIS1(D0,DELTADX,DELTADY,X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *SUBROUTINE TAILDIS1(D0,DELTADX,DELTADY,X,Y,Z,BX,BY,BZ)
 c
 c       THIS SUBROUTINE COMPUTES THE COMPONENTS OF THE TAIL CURRENT FIEL
 C       SIMILAR TO THAT DESCRIBED BY TSYGANENKO AND PEREDO (1994).  THE
@@ -1035,7 +1049,8 @@ C
 C THIS CODE RETURNS THE SHIELDING FIELD REPRESENTED BY  5x5=25 "CARTESIA
 C    HARMONICS
 C
-         SUBROUTINE  SHLCAR5X1(A,X,Y,Z,DSHIFT,HX,HY,HZ)
+      RECURSIVE
+     *   SUBROUTINE  SHLCAR5X1(A,X,Y,Z,DSHIFT,HX,HY,HZ)
 C
 C - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 C  The NLIN coefficients are the amplitudes of the "cartesian"
@@ -1089,7 +1104,8 @@ C
 c
 c %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 C
-      SUBROUTINE BIRK_TO1 (IOPB,PS,X,Y,Z,XKAPPA1,XKAPPA2,
+      RECURSIVE
+     *SUBROUTINE BIRK_TO1 (IOPB,PS,X,Y,Z,XKAPPA1,XKAPPA2,
      * BX11,BY11,BZ11,BX12,BY12,BZ12,
      * BX21,BY21,BZ21,BX22,BY22,BZ22)
 C
@@ -1224,7 +1240,8 @@ C
 c %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 c
 c
-      SUBROUTINE BIRK_1N1 (NUMB,MODE,PS,X,Y,Z,XKAPPA,
+      RECURSIVE
+     *SUBROUTINE BIRK_1N1 (NUMB,MODE,PS,X,Y,Z,XKAPPA,
      * BX,BY,BZ)        !   NB# 6
 C
 C  CALCULATES COMPONENTS  OF REGION 1/2 FIELD IN SPHERICAL COORDS.  DERI
@@ -1356,7 +1373,8 @@ C
 c
 C=======================================================================
 c
-      SUBROUTINE TWOCONE1 (A,X,Y,Z,MODE,DTHETA,BX,BY,BZ)
+      RECURSIVE
+     *SUBROUTINE TWOCONE1 (A,X,Y,Z,MODE,DTHETA,BX,BY,BZ)
 C
 C  ADDS FIELDS FROM TWO CONES (NORTHERN AND SOUTHERN), WITH A PROPER SYM
 C  OF THE CURRENT AND FIELD, CORRESPONDING TO THE REGION 1 BIRKELAND CUR
@@ -1375,7 +1393,8 @@ C
 c
 C-----------------------------------------------------------------------
 C
-      SUBROUTINE ONE_CON1(A,X,Y,Z,MODE,DTHETA,BX,BY,BZ)
+      RECURSIVE
+     *SUBROUTINE ONE_CON1(A,X,Y,Z,MODE,DTHETA,BX,BY,BZ)
 c
 c  RETURNS FIELD COMPONENTS FOR A DEFORME1 CONICAL CURRENT SYSTEM, FITTE
 c  HERE ONLY THE NORTHERN CONE IS TAKEN INTO ACCOUNT.
@@ -1435,7 +1454,8 @@ C
        END
 C
 C=======================================================================
-      DOUBLE PRECISION FUNCTION R_1(A,R,THETA)
+      RECURSIVE
+     *DOUBLE PRECISION FUNCTION R_1(A,R,THETA)
       IMPLICIT REAL*8 (A-H,O-Z)
       DIMENSION A(31)
 C
@@ -1450,7 +1470,8 @@ C
 C
 C-----------------------------------------------------------------------
 C
-      DOUBLE PRECISION FUNCTION THETA_1(A,R,THETA)
+      RECURSIVE
+     *DOUBLE PRECISION FUNCTION THETA_1(A,R,THETA)
       IMPLICIT REAL*8 (A-H,O-Z)
       DIMENSION A(31)
 c
@@ -1465,7 +1486,8 @@ C
 C
 c!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 c
-      SUBROUTINE FIALCO1(R,THETA,PHI,BTHETA,BPHI,N,THETA0,DT)
+      RECURSIVE
+     *SUBROUTINE FIALCO1(R,THETA,PHI,BTHETA,BPHI,N,THETA0,DT)
 C
 C  CONICAL MODEL OF BIRKELAND CURRENT FIELD; BASED ON THE OLD S/R FIALCO
 C  NB OF 1985-86-88, NOTE OF MARCH 5, BUT HERE BOTH INPUT AND OUTPUT ARE
@@ -1544,7 +1566,8 @@ C
 C-----------------------------------------------------------------------
 C
 C
-         SUBROUTINE BIRK_SH1 (A,PS,X_SC,X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *   SUBROUTINE BIRK_SH1 (A,PS,X_SC,X,Y,Z,BX,BY,BZ)
 C
        IMPLICIT  REAL * 8  (A - H, O - Z)
          DIMENSION A(86)
@@ -1681,7 +1704,8 @@ C                                         TO TAKE INTO ACCOUNT THE SCALE
 C
 C***********************************************************************
 C
-      SUBROUTINE FULL_R1 (IOPR,PS,X,Y,Z,SC_SY,SC_PR,PHI,
+      RECURSIVE
+     *SUBROUTINE FULL_R1 (IOPR,PS,X,Y,Z,SC_SY,SC_PR,PHI,
      *  BXSRC,BYSRC,BZSRC,BXPRC,BYPRC,BZPRC)
 C
 C   CALCULATES GSM FIELD COMPONENTS OF THE SYMMETRIC (SRC) AND PARTIAL (
@@ -1774,7 +1798,8 @@ C
         END
 C-----------------------------------------------------------------------
 C
-       SUBROUTINE SRC_PR1 (IOPR,SC_SY,SC_PR,PHI,PS,X,Y,Z,BXSRC,BYSRC,
+      RECURSIVE
+     * SUBROUTINE SRC_PR1 (IOPR,SC_SY,SC_PR,PHI,PS,X,Y,Z,BXSRC,BYSRC,
      *    BZSRC,BXPRC,BYPRC,BZPRC)
 C
 C   RETURNS FIELD COMPONENTS FROM A MODEL RING CURRENT, INCLUDING ITS SY
@@ -1869,7 +1894,8 @@ C
 C
 C&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE RC_SYM1 (X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *SUBROUTINE RC_SYM1 (X,Y,Z,BX,BY,BZ)
       IMPLICIT  REAL * 8  (A - H, O - Z)
       DATA DS,DC/1.D-2,0.99994999875D0/, D/1.D-4/,DRD/5.D3/  ! DS=SIN(TH
                                                                         
@@ -1914,7 +1940,8 @@ C                                    TO AVOID THE SINGULARITY PROBLEM
 c
 c&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      DOUBLE PRECISION FUNCTION AP_T01(R,SINT,COST)
+      RECURSIVE
+     *DOUBLE PRECISION FUNCTION AP_T01(R,SINT,COST)
 C
 C      Calculates azimuthal component of the vector potential of the sym
 c  part of the model ring current.
@@ -2031,7 +2058,8 @@ C
 c
 c@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 C
-      SUBROUTINE PRC_SYM1 (X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *SUBROUTINE PRC_SYM1 (X,Y,Z,BX,BY,BZ)
       IMPLICIT  REAL * 8  (A - H, O - Z)
       DATA DS,DC/1.D-2,0.99994999875D0/, D/1.D-4/,DRD/5.D3/  ! DS=SIN(TH
                                                                         
@@ -2077,7 +2105,8 @@ c
 c&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
 C
-      DOUBLE PRECISION FUNCTION APPR1(R,SINT,COST)
+      RECURSIVE
+     *DOUBLE PRECISION FUNCTION APPR1(R,SINT,COST)
 C
 C      Calculates azimuthal component of the vector potential of the sym
 c  part of the model PARTIAL ring current.
@@ -2196,7 +2225,8 @@ C
 C@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 C
 C
-         SUBROUTINE PRC_QUA1 (X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *   SUBROUTINE PRC_QUA1 (X,Y,Z,BX,BY,BZ)
 C
 C  CALCULATES COMPONENTS OF THE FIELD FROM THE "QUADRUPOLE" COMPONENT OF
 C
@@ -2255,7 +2285,8 @@ C
 c
 c&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      DOUBLE PRECISION FUNCTION BR_PRC_1 (R,SINT,COST)
+      RECURSIVE
+     *DOUBLE PRECISION FUNCTION BR_PRC_1 (R,SINT,COST)
 C
 Calculates the radial component of the "quadrupole" part of the model pa
 C
@@ -2325,7 +2356,8 @@ C
 c
 C%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 C
-        DOUBLE PRECISION FUNCTION BT_PRC_1 (R,SINT,COST)
+      RECURSIVE
+     *  DOUBLE PRECISION FUNCTION BT_PRC_1 (R,SINT,COST)
 C
 Calculates the Theta component of the "quadrupole" part of the model par
 C
@@ -2386,7 +2418,8 @@ C
 c
 c@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
-       SUBROUTINE FF1(A,A0,DA,F,FA,FS)
+      RECURSIVE
+     * SUBROUTINE FF1(A,A0,DA,F,FA,FS)
        IMPLICIT  REAL * 8  (A - H, O - Z)
        SQ1=DSQRT((A+A0)**2+DA**2)
        SQ2=DSQRT((A-A0)**2+DA**2)
@@ -2399,7 +2432,8 @@ C
 C|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 C
 C
-         SUBROUTINE RC_SHIEL1 (A,PS,X_SC,X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *   SUBROUTINE RC_SHIEL1 (A,PS,X_SC,X,Y,Z,BX,BY,BZ)
 C
 C   COMPUTES THE COMPONENTS OF THE SHIELDING FIELD FOR THE RING CURRENT
 C       (EITHER PARTIAL OR AXISYMMETRICAL)
@@ -2546,7 +2580,8 @@ C                                         TO TAKE INTO ACCOUNT THE SCALE
 C
 c=======================================================================
 c
-      SUBROUTINE DIPOL1 (PS,X,Y,Z,BX,BY,BZ)
+      RECURSIVE
+     *SUBROUTINE DIPOL1 (PS,X,Y,Z,BX,BY,BZ)
 C
 C     THIS IS A DOUBLE PRECISION ROUTINE, OTHERWISE IDENTICAL TO THE S/R
 C
