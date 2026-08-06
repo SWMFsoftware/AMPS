@@ -6,6 +6,7 @@ from __future__ import annotations
 import csv
 import gzip
 import math
+import re
 import py_compile
 import subprocess
 import sys
@@ -98,11 +99,47 @@ def integration_dry_run() -> None:
                 "C19A integration dry-run wrote %d inputs and %d trajectories; expected 8" %
                 (len(rendered), len(trajectories)))
         for path in rendered:
-            if "__" in path.read_text():
+            text = path.read_text()
+            if re.search(r"__[A-Z0-9_]+__", text):
                 raise SystemExit("unresolved input placeholder in %s" % path)
+            if "DRIVER_FILE" not in text or str(driver.resolve()) not in text:
+                raise SystemExit("generated input does not contain absolute driver path: %s" % path)
+
+
+def validate_committed_inputs() -> None:
+    required_directives = {
+        "CALC_TARGET", "FIELD_EVAL_METHOD", "CUTOFF_EMIN", "CUTOFF_EMAX",
+        "CUTOFF_NENERGY", "CUTOFF_SEARCH_ALGORITHM",
+        "CUTOFF_UPPER_SCAN_N", "CUTOFF_MAX_TRAJ_TIME", "DIRECTIONAL_MAP",
+        "DIRMAP_LON_RES", "DIRMAP_LAT_RES", "SPECIES", "CHARGE",
+        "MASS_AMU", "FIELD_MODEL", "EPOCH", "DRIVER_FILE",
+        "DOMAIN_X_MIN", "DOMAIN_X_MAX", "DOMAIN_Y_MIN", "DOMAIN_Y_MAX",
+        "DOMAIN_Z_MIN", "DOMAIN_Z_MAX", "R_INNER", "SPECTRUM_TYPE",
+        "SPEC_GAMMA", "OUTPUT_MODE", "TRAJ_FRAME", "TRAJ_FILE",
+        "OUTPUT_COORDS", "DT_TRACE", "MAX_STEPS", "MAX_TRACE_TIME",
+        "MAX_TRACE_DISTANCE", "TRAP_DETECTION",
+    }
+    for name in ("AMPS_PARAM_C19_gridless.in", "AMPS_PARAM_C19_mode3d.in"):
+        path = ROOT / name
+        text = path.read_text()
+        if re.search(r"__[A-Z0-9_]+__", text):
+            raise SystemExit("committed input contains a macro placeholder: %s" % path)
+        directives = set()
+        for raw in text.splitlines():
+            stripped = raw.strip()
+            if stripped and not stripped.startswith(("!", "#")):
+                directives.add(stripped.split(None, 1)[0].upper())
+        missing = sorted(required_directives - directives)
+        if missing:
+            raise SystemExit("%s lacks explicit directive(s): %s" %
+                             (path, ", ".join(missing)))
+    trajectory = ROOT / "C19_trajectory.txt"
+    if not trajectory.exists() or not trajectory.read_text().strip():
+        raise SystemExit("committed default C19_trajectory.txt is missing or empty")
 
 
 def main() -> int:
+    validate_committed_inputs()
     scripts = (ROOT / "run_C19.py", ROOT / "build_goes_reference.py")
     for script in scripts:
         print("Compiling", script.name, flush=True)

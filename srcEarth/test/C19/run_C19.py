@@ -281,22 +281,39 @@ def rigidity_gv_from_kinetic_energy_mev(energy_mev: float) -> float:
     return momentum / 1000.0
 
 
-def render_template(template: Path, destination: Path, replacements: Mapping[str, str]) -> None:
-    """Render one solver-specific input template.
+def replace_directives(template_text: str, replacements: Mapping[str, str]) -> str:
+    """Replace named AMPS directives while preserving a complete input deck.
 
-    ``replacements`` contains the union of GRIDLESS and GRIDDED placeholders.
-    A solver-specific template is allowed to omit placeholders used only by the
-    other solver; only placeholders that remain in the rendered file are an
-    error.
+    The committed C19 input files contain concrete, runnable default values.
+    The runner changes only directives whose values vary between spacecraft,
+    epochs, solvers, field models, or command-line settings.  This follows the
+    same pattern as the other Earth validation runners and avoids macro-valued
+    input files.
     """
-    text = template.read_text()
-    for key, value in replacements.items():
-        text = text.replace(key, value)
-    leftovers = sorted(set(re.findall(r"__[A-Z0-9_]+__", text)))
-    if leftovers:
+    remaining = set(replacements)
+    output: List[str] = []
+    for raw in template_text.splitlines():
+        stripped = raw.lstrip()
+        if stripped and not stripped.startswith(("!", "#")):
+            key = stripped.split(None, 1)[0].upper()
+            if key in replacements:
+                indent = raw[:len(raw) - len(stripped)]
+                output.append("%s%-32s%s" % (indent, key, replacements[key]))
+                remaining.remove(key)
+                continue
+        output.append(raw)
+    if remaining:
         raise ValueError(
-            "template contains unresolved placeholder(s): %s" % ", ".join(leftovers))
-    destination.write_text(text)
+            "input template does not contain directive(s): %s" %
+            ", ".join(sorted(remaining)))
+    rendered = "\n".join(output) + "\n"
+    if re.search(r"__[A-Z0-9_]+__", rendered):
+        raise ValueError("rendered input unexpectedly contains a macro placeholder")
+    return rendered
+
+
+def render_template(template: Path, destination: Path, replacements: Mapping[str, str]) -> None:
+    destination.write_text(replace_directives(template.read_text(), replacements))
 
 
 def write_trajectory(path: Path, row: ReferenceRow) -> None:
@@ -937,28 +954,40 @@ def render_case_input(
         reference: ReferenceRow, solver: str, field_model: str, driver: Path,
         ) -> None:
     replacements = {
-        "__RUN_ID__": "C19_%s_%s_%s_%s" % (
+        "RUN_ID": "C19_%s_%s_%s_%s" % (
             solver.lower(), field_model.lower(), reference.spacecraft.lower(),
             timestamp_token(reference.utc)),
-        "__CUTOFF_EMIN_MEV__": "%.12g" % args.cutoff_emin_mev,
-        "__CUTOFF_EMAX_MEV__": "%.12g" % args.cutoff_emax_mev,
-        "__CUTOFF_SCAN_N__": str(args.cutoff_scan_n),
-        "__MAX_TRACE_TIME__": "%.12g" % args.max_trace_time,
-        "__DIRMAP_LON_RES__": "%.12g" % args.dir_lon_res_deg,
-        "__DIRMAP_LAT_RES__": "%.12g" % args.dir_lat_res_deg,
-        "__FIELD_MODEL__": field_model,
-        "__EPOCH__": format_utc(reference.utc, suffix_z=False),
-        "__DRIVER_FILE__": str(driver.resolve()),
-        "__DT_TRACE__": "%.12g" % args.dt_trace,
-        "__MAX_TRACE_DISTANCE_RE__": "%.12g" % args.max_trace_distance_re,
-        "__MPI_SCHEDULER__": args.scheduler,
-        "__DYNAMIC_CHUNK__": str(resolved_dynamic_chunk(args, solver)),
-        "__THREADS__": str(args.nt),
-        "__MESH_RES_EARTH_RE__": "%.12g" % args.mode3d_mesh_res_earth_re,
-        "__MESH_RES_BOUNDARY_RE__": "%.12g" % args.mode3d_mesh_res_boundary_re,
-        "__MESH_COARSENING__": args.mode3d_mesh_coarsening,
-        "__MESH_EXPONENT__": "%.12g" % args.mode3d_mesh_exponent,
+        "CUTOFF_EMIN": "%.12g" % args.cutoff_emin_mev,
+        "CUTOFF_EMAX": "%.12g" % args.cutoff_emax_mev,
+        "CUTOFF_NENERGY": str(args.cutoff_scan_n),
+        "CUTOFF_UPPER_SCAN_N": str(args.cutoff_scan_n),
+        "CUTOFF_MAX_TRAJ_TIME": "%.12g" % args.max_trace_time,
+        "DIRMAP_LON_RES": "%.12g" % args.dir_lon_res_deg,
+        "DIRMAP_LAT_RES": "%.12g" % args.dir_lat_res_deg,
+        "FIELD_MODEL": field_model,
+        "EPOCH": format_utc(reference.utc, suffix_z=False),
+        "DRIVER_FILE": str(driver.resolve()),
+        "SPEC_GAMMA": "%.12g" % args.spectral_index,
+        "DT_TRACE": "%.12g" % args.dt_trace,
+        "MAX_TRACE_TIME": "%.12g" % args.max_trace_time,
+        "MAX_TRACE_DISTANCE": "%.12g" % args.max_trace_distance_re,
     }
+    if solver == "GRIDLESS":
+        replacements.update({
+            "GRIDLESS_MPI_SCHEDULER": args.scheduler,
+            "GRIDLESS_MPI_DYNAMIC_CHUNK": str(resolved_dynamic_chunk(args, solver)),
+            "GRIDLESS_THREADS": str(args.nt),
+        })
+    else:
+        replacements.update({
+            "MODE3D_MESH_RES_EARTH_RE": "%.12g" % args.mode3d_mesh_res_earth_re,
+            "MODE3D_MESH_RES_BOUNDARY_RE": "%.12g" % args.mode3d_mesh_res_boundary_re,
+            "MODE3D_MESH_COARSENING": args.mode3d_mesh_coarsening,
+            "MODE3D_MESH_EXPONENT": "%.12g" % args.mode3d_mesh_exponent,
+            "MODE3D_MPI_SCHEDULER": args.scheduler,
+            "MODE3D_MPI_DYNAMIC_CHUNK": str(resolved_dynamic_chunk(args, solver)),
+            "MODE3D_THREADS": str(args.nt),
+        })
     render_template(template, run_dir / "AMPS_PARAM_C19.in", replacements)
     write_trajectory(run_dir / "C19_trajectory.txt", reference)
 
@@ -1009,6 +1038,7 @@ def self_test() -> int:
         template_args = argparse.Namespace(
             cutoff_emin_mev=0.5, cutoff_emax_mev=500.0, cutoff_scan_n=20,
             max_trace_time=300.0, dir_lon_res_deg=15.0, dir_lat_res_deg=15.0,
+            spectral_index=3.0,
             dt_trace=0.25, max_trace_distance_re=400.0, scheduler="STATIC",
             dynamic_chunk=1, nt=2, mode3d_mesh_res_earth_re=0.1,
             mode3d_mesh_res_boundary_re=2.0, mode3d_mesh_coarsening="LINEAR",
@@ -1021,7 +1051,18 @@ def self_test() -> int:
                               "T05", driver_path)
             rendered = (run_dir / "AMPS_PARAM_C19.in").read_text()
             if re.search(r"__[A-Z0-9_]+__", rendered):
-                raise AssertionError("%s template retained a placeholder" % solver)
+                raise AssertionError("%s input retained a macro placeholder" % solver)
+            required_values = (
+                "FIELD_MODEL                     T05",
+                "EPOCH                           2012-05-17T06:00:00",
+                "CUTOFF_UPPER_SCAN_N             20",
+                "DIRMAP_LON_RES                  15",
+                "DIRMAP_LAT_RES                  15",
+            )
+            for expected in required_values:
+                if expected not in rendered:
+                    raise AssertionError(
+                        "%s named-directive rendering missed %r" % (solver, expected))
 
         model, diagnostics = evaluate_reference_row(
             reference, direction_map, manifest, "GRIDLESS", "T05", 3.0, 0.0)

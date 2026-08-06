@@ -1,29 +1,45 @@
-! ============================================================================
-! AMPS validation test C19A: GOES EPEAD east-west directional SEP access
-! GRIDLESS template. run_C19.py renders one GEO trajectory sample per run.
-! ============================================================================
+! =============================================================================
+! AMPS Earth validation C19A GRIDLESS branch
+! GOES-13/15 EPEAD east-west directional SEP-access validation
+!
+! This is a complete, runnable default input deck.  It represents GOES-13 at
+! 2012-05-17 06:00 UTC and uses direct T05 evaluation along each trajectory.
+! Before a manual run, place the user-supplied driver at:
+!
+!   srcEarth/test/C19/data/ts05_driver_may2012.txt
+!
+! and launch from srcEarth/test/C19 so the relative DRIVER_FILE and TRAJ_FILE
+! paths below resolve.  run_C19.py copies this file into each run directory and
+! changes named directives such as EPOCH, FIELD_MODEL, DRIVER_FILE, directional
+! resolution, scheduler, and thread count.  No macro or placeholder
+! substitution is required.
+! =============================================================================
 
 #RUN_INFO
-RUN_ID                         __RUN_ID__
+RUN_ID                         C19_gridless_t05_goes13_20120517T060000Z
 
 #CALCULATION_MODE
 CALC_TARGET                    CUTOFF_RIGIDITY
 FIELD_EVAL_METHOD              GRIDLESS
 
 #CUTOFF_RIGIDITY
-CUTOFF_EMIN                    __CUTOFF_EMIN_MEV__
-CUTOFF_EMAX                    __CUTOFF_EMAX_MEV__
+! The 0.5-500 MeV bracket contains the nominal P4 (15-40 MeV) and P5
+! (38-82 MeV) response ranges with substantial margin on both sides.
+CUTOFF_EMIN                    0.5
+CUTOFF_EMAX                    500.0
 CUTOFF_MAX_PARTICLES           1
-CUTOFF_NENERGY                 __CUTOFF_SCAN_N__
+CUTOFF_NENERGY                 120
 CUTOFF_SAMPLING                VERTICAL
 CUTOFF_SEARCH_ALGORITHM        UPPER_SCAN
-CUTOFF_UPPER_SCAN_N            __CUTOFF_SCAN_N__
+CUTOFF_UPPER_SCAN_N            120
+CUTOFF_SCAN_SPACING            LINEAR
+CUTOFF_TRACE_POLICY            ACCURATE
 CUTOFF_BACKTRACE_CHARGE        REVERSED
 CUTOFF_TRACE_LIMIT_POLICY      FORBIDDEN
-CUTOFF_MAX_TRAJ_TIME           __MAX_TRACE_TIME__
+CUTOFF_MAX_TRAJ_TIME           300.0
 DIRECTIONAL_MAP                T
-DIRMAP_LON_RES                 __DIRMAP_LON_RES__
-DIRMAP_LAT_RES                 __DIRMAP_LAT_RES__
+DIRMAP_LON_RES                 10.0
+DIRMAP_LAT_RES                 10.0
 
 #PARTICLE_SPECIES
 SPECIES                        PROTON
@@ -31,18 +47,46 @@ CHARGE                         1
 MASS_AMU                       1.007276466621
 
 #BACKGROUND_FIELD
-FIELD_MODEL                    __FIELD_MODEL__
-EPOCH                          __EPOCH__
-DRIVER_FILE                    __DRIVER_FILE__
+! The driver record at EPOCH overrides the parser-safe static values below.
+FIELD_MODEL                    T05
+EPOCH                          2012-05-17T06:00:00
+DRIVER_FILE                    data/ts05_driver_may2012.txt
+DST                            -50.0
+PDYN                           4.0
+IMF_BX                         0.0
+IMF_BY                         0.0
+IMF_BZ                         -5.0
+SW_VX                          -450.0
+SW_N                           5.0
+G1                             0.0
+G2                             0.0
+G3                             0.0
+T05_W1                         0.0
+T05_W2                         0.0
+T05_W3                         0.0
+T05_W4                         0.0
+T05_W5                         0.0
+T05_W6                         0.0
 
 #DOMAIN_BOUNDARY
-DOMAIN_X_MAX                   40.0
-DOMAIN_X_MIN                  -40.0
-DOMAIN_Y_MAX                   40.0
-DOMAIN_Y_MIN                  -40.0
-DOMAIN_Z_MAX                   40.0
-DOMAIN_Z_MIN                  -40.0
-R_INNER                        1.0
+! Bare lengths are kilometers.  The domain extends to +/-40 Earth radii.
+DOMAIN_X_MIN                  -254848.0
+DOMAIN_X_MAX                   254848.0
+DOMAIN_Y_MIN                  -254848.0
+DOMAIN_Y_MAX                   254848.0
+DOMAIN_Z_MIN                  -254848.0
+DOMAIN_Z_MAX                   254848.0
+R_INNER                        6371.2
+
+#SPECTRUM
+! Required by the common parser.  Directional response folding is performed by
+! run_C19.py, which uses the same default gamma=3 unless overridden.
+SPECTRUM_TYPE                  POWER_LAW
+SPEC_J0                        1.0
+SPEC_GAMMA                     3.0
+SPEC_E0                        100.0
+SPEC_EMIN                      0.5
+SPEC_EMAX                      500.0
 
 #OUTPUT_DOMAIN
 OUTPUT_MODE                    TRAJECTORY
@@ -50,14 +94,19 @@ TRAJ_FRAME                     GEO
 TRAJ_FILE                      C19_trajectory.txt
 FLUX_DT                        5.0
 
+#OUTPUT_OPTIONS
+OUTPUT_COORDS                  GEO
+
 #NUMERICAL
-DT_TRACE                       __DT_TRACE__
+DT_TRACE                       0.25
 ADAPTIVE_DT                    T
-MAX_TRACE_TIME                 __MAX_TRACE_TIME__
-MAX_TRACE_DISTANCE             __MAX_TRACE_DISTANCE_RE__
-GRIDLESS_MPI_SCHEDULER         __MPI_SCHEDULER__
-GRIDLESS_MPI_DYNAMIC_CHUNK     __DYNAMIC_CHUNK__
+MAX_STEPS                      500000
+MAX_TRACE_TIME                 300.0
+MAX_TRACE_DISTANCE             400.0
+TRAP_DETECTION                 T
+GRIDLESS_MPI_SCHEDULER         DYNAMIC
+GRIDLESS_MPI_DYNAMIC_CHUNK     1
 GRIDLESS_PARALLEL              THREADS
-GRIDLESS_THREADS               __THREADS__
+GRIDLESS_THREADS               16
 
 !#END

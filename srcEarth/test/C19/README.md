@@ -34,20 +34,67 @@ srcEarth/test/C19/
 ├── build_goes_reference.py
 ├── AMPS_PARAM_C19_mode3d.in
 ├── AMPS_PARAM_C19_gridless.in
+├── C19_trajectory.txt
 ├── event_C19_may2012.json
 └── tests/
     └── run_self_tests.py
 ```
 
 Only source, configuration, documentation, and self-test files are committed.
-The `data/` directory is created automatically when the observational reference
-is generated; downloaded NOAA files, generated reference tables, provenance
-records, and user-supplied magnetic-field drivers are runtime products and are
-not included in this commit package.
+`C19_trajectory.txt` is a concrete GOES-13 example used for a manual one-epoch
+run. The `data/` directory is created automatically when the observational
+reference is generated; downloaded NOAA files, generated reference tables,
+provenance records, and user-supplied magnetic-field drivers are runtime
+products and are not included in this commit package.
 
 Generated observational products are written under `data/` by
 `build_goes_reference.py`. AMPS results are written under
 `test_output/C19_goes_epead_ew/` by default.
+
+## Complete AMPS input decks
+
+`AMPS_PARAM_C19_mode3d.in` and `AMPS_PARAM_C19_gridless.in` contain concrete
+default values for every AMPS directive used by C19A. They contain no macro
+variables or placeholder tokens. The committed defaults describe a T05
+calculation for GOES-13 at 2012-05-17 06:00 UTC with a 10-degree directional
+map, a 0.5-500 MeV cutoff bracket, and 16 shared-memory workers.
+
+The runner does not generate an input deck from macros. It copies the selected
+complete deck and changes only named directives whose values vary between runs:
+
+```text
+RUN_ID
+CUTOFF_EMIN, CUTOFF_EMAX, CUTOFF_NENERGY, CUTOFF_UPPER_SCAN_N
+CUTOFF_MAX_TRAJ_TIME
+DIRMAP_LON_RES, DIRMAP_LAT_RES
+FIELD_MODEL, EPOCH, DRIVER_FILE
+SPEC_GAMMA
+DT_TRACE, MAX_TRACE_TIME, MAX_TRACE_DISTANCE
+GRIDLESS or MODE3D scheduler, chunk, and thread directives
+MODE3D mesh directives for the GRIDDED branch
+```
+
+All remaining physical and numerical controls are explicit in the committed
+files, including field-model fallback parameters, domain dimensions in
+kilometers, particle properties, spectrum-parser defaults, output frame, time
+step, maximum steps, trace limits, and trap detection. Every generated
+`AMPS_PARAM_C19.in` is therefore readable and runnable without a separate macro
+substitution layer.
+
+For a direct manual check, save the driver as
+`srcEarth/test/C19/data/ts05_driver_may2012.txt`, then run from the test
+directory:
+
+```bash
+cd srcEarth/test/C19
+mpirun -np 4 ../../../amps -mode 3d -i AMPS_PARAM_C19_mode3d.in \
+  -mode3d-field-eval MESH -mode3d-parallel THREADS -mode3d-threads 16
+```
+
+The committed `C19_trajectory.txt` supplies the default GOES-13 position. The
+normal `run_C19.py` workflow creates a new one-line trajectory file for each
+selected spacecraft epoch and replaces `DRIVER_FILE` with the absolute path
+passed through `--driver`.
 
 ## Scientific configuration
 
@@ -242,7 +289,7 @@ This executes:
 - Python syntax compilation;
 - reference-builder synthetic parsing/orientation/background test;
 - runner directional-map/aperture/metrics/plot test;
-- rendering checks for both GRIDLESS and GRIDDED input templates;
+- named-directive rendering checks for both complete GRIDLESS and GRIDDED input decks;
 - command-line help checks.
 
 The individual self-tests are also available:
@@ -255,7 +302,7 @@ python3 srcEarth/test/C19/run_C19.py --self-test
 ## 4. Preview commands and generated inputs
 
 A dry run validates the reference and supplied driver, creates every run
-directory, renders `AMPS_PARAM_C19.in` and `C19_trajectory.txt`, and prints the
+directory, copies and updates the complete `AMPS_PARAM_C19.in`, writes `C19_trajectory.txt`, and prints the
 exact AMPS commands without launching AMPS:
 
 ```bash
