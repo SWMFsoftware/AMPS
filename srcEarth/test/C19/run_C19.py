@@ -18,13 +18,13 @@ Routine public-data comparison with T96 and T05::
     python3 srcEarth/test/C19/run_C19.py --profile ROUTINE \
       --solver GRIDDED --models T96,T05 \
       --reference srcEarth/test/C19/data/reference_C19_goes_epead_ew.csv.gz \
-      --driver srcEarth/test/C19/data/ts05_driver_may2012.txt \
+      --driver /path/to/may2012_driver.txt \
       --amps ./amps -np 4 -nt 16
 
 Quick command/input preview::
 
     python3 srcEarth/test/C19/run_C19.py --profile SMOKE --dry-run \
-      --driver srcEarth/test/C19/data/ts05_driver_may2012.txt
+      --driver /path/to/may2012_driver.txt
 
 Exercise parsing, response folding, metrics, and plot generation without AMPS::
 
@@ -282,16 +282,20 @@ def rigidity_gv_from_kinetic_energy_mev(energy_mev: float) -> float:
 
 
 def render_template(template: Path, destination: Path, replacements: Mapping[str, str]) -> None:
+    """Render one solver-specific input template.
+
+    ``replacements`` contains the union of GRIDLESS and GRIDDED placeholders.
+    A solver-specific template is allowed to omit placeholders used only by the
+    other solver; only placeholders that remain in the rendered file are an
+    error.
+    """
     text = template.read_text()
-    missing = []
     for key, value in replacements.items():
-        if key not in text:
-            missing.append(key)
         text = text.replace(key, value)
     leftovers = sorted(set(re.findall(r"__[A-Z0-9_]+__", text)))
-    if missing or leftovers:
-        raise ValueError("template replacement problem; missing=%s leftovers=%s" %
-                         (missing, leftovers))
+    if leftovers:
+        raise ValueError(
+            "template contains unresolved placeholder(s): %s" % ", ".join(leftovers))
     destination.write_text(text)
 
 
@@ -431,24 +435,73 @@ def locate_directional_map(run_dir: Path, solver: str) -> Path:
     return sorted(matches)[0]
 
 
-def load_driver_tilts(path: Path) -> List[Tuple[datetime, float]]:
+def load_driver_tilts(
+        path: Path, required_times: Sequence[datetime] = (),
+        ) -> Tuple[List[Tuple[datetime, float]], Dict[str, object]]:
+    """Validate the standard AMPS 5-minute T96/T05/TS05 driver and read tilt.
+
+    Expected numerical columns are::
+
+      UTC Bx By Bz Vx Vy Vz Np Temp SYM-H IMFflag SWflag Tilt Pdyn W1..W6
+
+    The runner only needs ``Tilt`` for the SM/GSM aperture transform, while AMPS
+    consumes the complete file through ``DRIVER_FILE``.
+    """
     rows: List[Tuple[datetime, float]] = []
+    header_seen = False
     with path.open() as stream:
         for line_number, raw in enumerate(stream, start=1):
             text = raw.strip()
-            if not text or text.startswith(("#", "!")):
+            if not text:
+                continue
+            if text.startswith(("#", "!")):
+                if "YYYY-MM-DDTHH:MM:SS" in text and "Tilt" in text and "W6" in text:
+                    header_seen = True
                 continue
             fields = text.split()
             if len(fields) != 20:
-                raise ValueError("driver line %d has %d fields; expected timestamp + 19 values" %
-                                 (line_number, len(fields)))
+                raise ValueError(
+                    "driver line %d has %d fields; expected timestamp + 19 values" %
+                    (line_number, len(fields)))
             epoch = parse_utc(fields[0])
-            values = [float(value) for value in fields[1:]]
+            try:
+                values = [float(value) for value in fields[1:]]
+            except ValueError as exc:
+                raise ValueError("driver line %d contains a nonnumeric value" % line_number) from exc
+            if rows and epoch <= rows[-1][0]:
+                raise ValueError("driver timestamps are not strictly increasing at line %d" % line_number)
             rows.append((epoch, values[11]))
     if not rows:
         raise ValueError("driver contains no numerical records: %s" % path)
-    rows.sort(key=lambda row: row[0])
-    return rows
+
+    gaps = [(second[0] - first[0]).total_seconds()
+            for first, second in zip(rows, rows[1:])]
+    median_cadence = statistics.median(gaps) if gaps else float("nan")
+    maximum_gap = max(gaps) if gaps else float("nan")
+    if gaps and not 299.0 <= median_cadence <= 301.0:
+        raise ValueError("driver median cadence is not five minutes: %.1f s" % median_cadence)
+    if gaps and maximum_gap > 600.0:
+        raise ValueError("driver contains a gap larger than ten minutes: %.1f s" % maximum_gap)
+    if required_times:
+        first_required = min(required_times)
+        last_required = max(required_times)
+        if first_required < rows[0][0] or last_required > rows[-1][0]:
+            raise ValueError(
+                "driver coverage %s .. %s does not contain selected C19 epochs %s .. %s" %
+                (format_utc(rows[0][0]), format_utc(rows[-1][0]),
+                 format_utc(first_required), format_utc(last_required)))
+
+    info: Dict[str, object] = {
+        "path": str(path.resolve()),
+        "sha256": sha256(path),
+        "n_records": len(rows),
+        "first_epoch_utc": format_utc(rows[0][0]),
+        "last_epoch_utc": format_utc(rows[-1][0]),
+        "median_cadence_seconds": median_cadence,
+        "maximum_gap_seconds": maximum_gap,
+        "standard_header_seen": header_seen,
+    }
+    return rows, info
 
 
 def interpolate_tilt(rows: Sequence[Tuple[datetime, float]], epoch: datetime) -> float:
@@ -768,8 +821,7 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
                             if row.spacecraft == spacecraft and row.channel == channel],
                            key=lambda row: row.utc)
             times = [parse_utc(row.utc) for row in panel]
-            observed = [row.log10_east_west_ratio if False else row.observed_log10_east_west_ratio
-                        for row in panel]
+            observed = [row.observed_log10_east_west_ratio for row in panel]
             modeled = [float("nan") if row.modeled_log10_east_west_ratio is None
                        else row.modeled_log10_east_west_ratio for row in panel]
             axis.plot(times, observed, marker="o", markersize=3, linewidth=1.2,
@@ -937,6 +989,40 @@ def self_test() -> int:
         reference = ReferenceRow(
             parse_utc("2012-05-17T06:00:00Z"), "GOES13", "P4", 15.0, 40.0,
             0.5, math.log10(0.5), -75.0, 0.0, 35786.0, "SYNTHETIC")
+        # Exercise both solver templates and the supplied-driver contract.
+        driver_path = root / "synthetic_driver.txt"
+        driver_lines = [
+            "# YYYY-MM-DDTHH:MM:SS Bx By Bz Vx Vy Vz Np Temp SYM-H IMFflag SWflag Tilt Pdyn W1 W2 W3 W4 W5 W6",
+        ]
+        for minute, tilt in ((55, -0.1), (0, 0.0), (5, 0.1)):
+            hour = 5 if minute == 55 else 6
+            epoch = datetime(2012, 5, 17, hour, minute, tzinfo=timezone.utc)
+            values = [1.0, 2.0, -3.0, -450.0, 0.0, 0.0, 5.0, 100000.0,
+                      -20.0, 1.0, 1.0, tilt, 2.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+            driver_lines.append("%s %s" % (format_utc(epoch, suffix_z=False),
+                                            " ".join(str(value) for value in values)))
+        driver_path.write_text("\n".join(driver_lines) + "\n")
+        _, driver_info = load_driver_tilts(driver_path, [reference.utc])
+        if driver_info["n_records"] != 3:
+            raise AssertionError("synthetic driver validation failed")
+
+        template_args = argparse.Namespace(
+            cutoff_emin_mev=0.5, cutoff_emax_mev=500.0, cutoff_scan_n=20,
+            max_trace_time=300.0, dir_lon_res_deg=15.0, dir_lat_res_deg=15.0,
+            dt_trace=0.25, max_trace_distance_re=400.0, scheduler="STATIC",
+            dynamic_chunk=1, nt=2, mode3d_mesh_res_earth_re=0.1,
+            mode3d_mesh_res_boundary_re=2.0, mode3d_mesh_coarsening="LINEAR",
+            mode3d_mesh_exponent=1.0)
+        for solver, template in (("GRIDLESS", DEFAULT_TEMPLATE_GRIDLESS),
+                                 ("GRIDDED", DEFAULT_TEMPLATE_MODE3D)):
+            run_dir = root / solver.lower()
+            run_dir.mkdir()
+            render_case_input(template_args, template, run_dir, reference, solver,
+                              "T05", driver_path)
+            rendered = (run_dir / "AMPS_PARAM_C19.in").read_text()
+            if re.search(r"__[A-Z0-9_]+__", rendered):
+                raise AssertionError("%s template retained a placeholder" % solver)
+
         model, diagnostics = evaluate_reference_row(
             reference, direction_map, manifest, "GRIDLESS", "T05", 3.0, 0.0)
         if model.status != "VALID" or model.modeled_east_west_ratio is None:
@@ -964,10 +1050,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 Examples:
   python3 srcEarth/test/C19/run_C19.py --self-test
   python3 srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED \\
-    --models T96,T05 --driver srcEarth/test/C19/data/ts05_driver_may2012.txt \\
+    --models T96,T05 --driver /path/to/may2012_driver.txt \\
     --amps ./amps -np 4 -nt 16
   python3 srcEarth/test/C19/run_C19.py --profile ROUTINE --solver BOTH \\
-    --mode3d-parallel-field-init --driver EVENT_DRIVER --amps ./amps
+    --mode3d-parallel-field-init --driver /path/to/may2012_driver.txt --amps ./amps
 """,
     )
     parser.add_argument("--profile", choices=sorted(PROFILE_STEP_MINUTES), default="ROUTINE")
@@ -1074,7 +1160,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         reference_all = load_reference(reference_path)
         reference = select_reference_rows(reference_all, args)
-        driver_tilts = load_driver_tilts(driver_path)
+        driver_tilts, driver_info = load_driver_tilts(
+            driver_path, [row.utc for row in reference])
     except Exception as exc:
         print("C19A input validation failed: %s" % exc, file=sys.stderr)
         return 2
@@ -1189,6 +1276,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "event_manifest_sha256": sha256(manifest_path),
         "driver_path": str(driver_path),
         "driver_sha256": sha256(driver_path),
+        "driver_validation": driver_info,
         "spectral_index": args.spectral_index,
         "instrument_response": "uniform elliptical top-hat inside nominal P4/P5 FOV",
         "observable": "log10(background-subtracted physical EAST/WEST flux ratio)",
