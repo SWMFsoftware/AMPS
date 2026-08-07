@@ -1121,10 +1121,10 @@ Examples:
     parser.add_argument("--dt-trace", type=float, default=0.25)
     parser.add_argument("--max-trace-time", type=float, default=300.0)
     parser.add_argument("--max-trace-distance-re", type=float, default=400.0)
-    parser.add_argument("--mover", default="BORIS")
+    parser.add_argument("--mover", default="RK4")
     parser.add_argument("--scheduler", choices=("STATIC", "BLOCK_CYCLIC", "DYNAMIC"),
                         default="DYNAMIC")
-    parser.add_argument("--dynamic-chunk", type=int, default=0)
+    parser.add_argument("--dynamic-chunk", type=int, default=32)
     parser.add_argument("--mode3d-mesh-res-earth-re", type=float, default=0.05)
     parser.add_argument("--mode3d-mesh-res-boundary-re", type=float, default=2.0)
     parser.add_argument("--mode3d-mesh-coarsening", choices=("LINEAR", "LOG", "POWER"),
