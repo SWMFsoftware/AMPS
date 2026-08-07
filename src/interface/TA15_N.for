@@ -1,6 +1,6 @@
 c********************************************************************************************
 C
-      SUBROUTINE TA_2015_N (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ)    !  A DOUBLE-PRECISION SUBROUTINE
+      RECURSIVE SUBROUTINE TA_2015_N (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ)    !  A DOUBLE-PRECISION SUBROUTINE
 C
 C  RETURNS COMPONENTS OF THE EXTERNAL MAGNETIC FIELD VECTOR (I.E. DUE TO ONLY MAGNETOSPHERIC 
 C  CURRENTS, WITHOUT CONTRIBUTION FROM THE EARTH'S SOURCES), ACCORDING TO THE DATA-BASED MODEL 
@@ -39,12 +39,22 @@ c-------------------------------------------------------------------------------
       EXTERNAL TAIL15_SHIELDEN,SRC_SHIELDEN,PRC_SHIELDEN
       DIMENSION PARMOD(10), PARAMETERS(-10:30), A(24)
 C
+C  Per-call geometry for the two Region-1 FAC modes.  These arrays used to
+C  live in COMMON /XYZN/ and were lazily overwritten when model parameters
+C  changed.  Keeping them in this invocation and passing them explicitly
+C  prevents concurrent TA_2015_N calls from seeing one another's geometry.
+      DIMENSION DD_R1(15),SP_R1(25),CP_R1(25)
+      DIMENSION XXN_R1(15,25),YYN_R1(15,25),ZZN_R1(15,25)
+      DIMENSION XXS_R1(15,25),YYS_R1(15,25),ZZS_R1(15,25)
+C
       PDPM =PARMOD(1) 
       BYIMF=PARMOD(2) 
       BZIMF=PARMOD(3)
       XIND =PARMOD(4)
 
-      IF (XIND.GT.2.D0) PRINT*,'  WARNING: N-INDEX OUT OF ALLOWED RANGE'
+C     Do not perform diagnostic I/O here: concurrent writes through the
+C     process-wide Fortran runtime are an avoidable shared side effect.
+C     The caller remains responsible for validating XIND (normally 0..2).
 
       PS2=PS*PS
       PARAMETERS(-1) = PS
@@ -144,8 +154,9 @@ C
        Theta00 =PARAMETERS(18)
        DTheta00=PARAMETERS(19)
 C
-       CALL R1_FAN_R(Theta00,DTheta00,PS,XX,YY,ZZ,BXR1R_UNSH,BYR1R_UNSH,
-     *      BZR1R_UNSH)                                      ! THE SUFFIX "R" CORRESPONDS TO REGULAR MODE OF R1 FACs
+       CALL R1_FAN_R(Theta00,DTheta00,PS,XX,YY,ZZ,BXR1R_UNSH,
+     *      BYR1R_UNSH,BZR1R_UNSH,CURDPHI_R1,DD_R1,SP_R1,CP_R1,
+     *      XXN_R1,YYN_R1,ZZN_R1,XXS_R1,YYS_R1,ZZS_R1)       ! "R" = REGULAR R1 FAC MODE
        CALL R1_R_SHLN (XX,YY,ZZ,PS,BZIMF,Theta00,DTheta00,   !  SHIELDING FIELD FOR THE "R" MODE
      *                 BXR1R_SHLD,BYR1R_SHLD,BZR1R_SHLD)
 C
@@ -157,7 +168,9 @@ C-------------------------------------------------------------------------------
 C
 C   (6) REGION 1 FACs -  NOW NORTH-SOUTH-ANTISYMMETRIC MODE (A): 
 C
-       CALL R1_FAC_N (PS,XX,YY,ZZ,BXR1A_UNSH,BYR1A_UNSH,BZR1A_UNSH) ! THE SUFFIX "A" CORRESPONDS TO TILT-ANTISYMMETRIC MODE OF R1 FACs
+       CALL R1_FAC_N (PS,XX,YY,ZZ,BXR1A_UNSH,BYR1A_UNSH,
+     *      BZR1A_UNSH,CURDPHI_R1,DD_R1,SP_R1,CP_R1,XXN_R1,
+     *      YYN_R1,ZZN_R1,XXS_R1,YYS_R1,ZZS_R1)              ! TILT-ANTISYMMETRIC R1 FAC MODE
        CALL R1_A_SHLN (XX,YY,ZZ,PS,BZIMF,Theta00,DTheta00,          !  SHIELDING FIELD FOR THE "A" MODE
      *                 BXR1A_SHLD,BYR1A_SHLD,BZR1A_SHLD)
 C
@@ -183,7 +196,7 @@ C
 
 cOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
 c
-      SUBROUTINE TAIL15_SHIELDEN (X,Y,Z,PARAMETERS,BX,BY,BZ)   
+      RECURSIVE SUBROUTINE TAIL15_SHIELDEN (X,Y,Z,PARAMETERS,BX,BY,BZ)   
 C
 C  INPUT:  X, Y, Z  - CARTESIAN GSM POSITION (IN RE)
 C  OUTPUT: BX,BY,BZ - CARTESIAN GSM B-FIELD COMPONENTS
@@ -217,7 +230,7 @@ C
 C
 C================================================================================================
 c
-      SUBROUTINE SRC_SHIELDEN (X,Y,Z,PARAMETERS,BX,BY,BZ)   
+      RECURSIVE SUBROUTINE SRC_SHIELDEN (X,Y,Z,PARAMETERS,BX,BY,BZ)   
 C
 C  INPUT:  X, Y, Z  - CARTESIAN GSM POSITION (IN RE)
 C  OUTPUT: BX,BY,BZ - CARTESIAN GSM B-FIELD COMPONENTS
@@ -243,7 +256,7 @@ C
 C
 C================================================================================================
 c
-      SUBROUTINE PRC_SHIELDEN (X,Y,Z,PARAMETERS,BX,BY,BZ)   
+      RECURSIVE SUBROUTINE PRC_SHIELDEN (X,Y,Z,PARAMETERS,BX,BY,BZ)   
 C
 C  INPUT:  X, Y, Z  - CARTESIAN GSM POSITION (IN RE)
 C  OUTPUT: BX,BY,BZ - CARTESIAN GSM B-FIELD COMPONENTS
@@ -288,7 +301,7 @@ C
 C
 c&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE DEFORM_XZ_YN (PS,PARAMETERS,X,Y,Z,BX,BY,BZ,
+      RECURSIVE SUBROUTINE DEFORM_XZ_YN (PS,PARAMETERS,X,Y,Z,BX,BY,BZ,
      *   B_EXT_UNTILTED)
 C
 C   CALCULATES GSM COMPONENTS OF THE WARPED (IN YZ) & BENT (IN XZ) FIELD, DERIVED FROM A SHIELDED
@@ -476,7 +489,7 @@ C
 C
 C=============================================================================================
 C
-      SUBROUTINE DIPOLE_SHIELN (X,Y,Z,PSI,PDPM,BZIMF,BX,BY,BZ)
+      RECURSIVE SUBROUTINE DIPOLE_SHIELN (X,Y,Z,PSI,PDPM,BZIMF,BX,BY,BZ)
 C
 C   CALCULATES COMPONENTS {FX,FY,FZ} OF THE DIPOLE SHIELDING FIELD VECTOR AT ANY GIVEN POSITION X,Y,Z
 C
@@ -687,7 +700,8 @@ C
 C
 C$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 C
-      SUBROUTINE TAIL15_UNSHIELDEN (DMIDN,PW,XC,RN,X,Y,Z,BX,BY,BZ)
+      RECURSIVE SUBROUTINE TAIL15_UNSHIELDEN (DMIDN,PW,XC,RN,
+     * X,Y,Z,BX,BY,BZ)
       IMPLICIT  REAL * 8  (A - H, O - Z)
 C
 C  Input:  PW - exponent defining the rate of radial decrease of the current in the sheet
@@ -767,7 +781,7 @@ C
 C
 c&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE TAIL15_SHLN (X,Y,Z,BZIMF,PW,XC,RN,FX,FY,FZ)
+      RECURSIVE SUBROUTINE TAIL15_SHLN (X,Y,Z,BZIMF,PW,XC,RN,FX,FY,FZ)
 C
 C   CALCULATES COMPONENTS {FX,FY,FZ} OF THE TAIL15 SHIELDING FIELD VECTOR AT A GIVEN LOCATION {X,Y,Z}
 C
@@ -1020,7 +1034,7 @@ C
 C
 C=======================================================================================
 c
-      SUBROUTINE T89_2_DISK_THNN (X,Y,Z,RMAX,BX,BY,BZ)
+      RECURSIVE SUBROUTINE T89_2_DISK_THNN (X,Y,Z,RMAX,BX,BY,BZ)
 C
 C  A REDUCED VERSION OF THE S/R T89_2_DISK, IN WHICH D=0. IT IS USED IN SHIELD FOR AUXILIARY DISKS.
 C
@@ -1051,7 +1065,7 @@ C
 c
 c&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 c
-      SUBROUTINE SRC_UNSN (EPS,SCALE,X,Y,Z,BX,BY,BZ)
+      RECURSIVE SUBROUTINE SRC_UNSN (EPS,SCALE,X,Y,Z,BX,BY,BZ)
       IMPLICIT REAL*8 (A-H,O-Z)
 c
 C     AUTHOR:  N. A. TSYGANENKO, 2015
@@ -1135,7 +1149,7 @@ c
 c
 C&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE SRC_AXISYMMETRIN (X,Y,Z,BX,BY,BZ)
+      RECURSIVE SUBROUTINE SRC_AXISYMMETRIN (X,Y,Z,BX,BY,BZ)
       IMPLICIT  REAL * 8  (A - H, O - Z)
 c
 C     AUTHOR:  N. A. TSYGANENKO, 2015
@@ -1217,7 +1231,7 @@ C
 C
 C==========================================================================
 C
-      SUBROUTINE SPREAD_LOOP_N (R,D,X,Y,Z,BX,BY,BZ)
+      RECURSIVE SUBROUTINE SPREAD_LOOP_N (R,D,X,Y,Z,BX,BY,BZ)
 C
 C     AUTHOR:  N. A. TSYGANENKO, 2015
 c
@@ -1271,7 +1285,7 @@ C
 C
 C=======================================================================================
 C
-      SUBROUTINE SRC_SHLN (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
+      RECURSIVE SUBROUTINE SRC_SHLN (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
 C
 C   CALCULATES: (1) COMPONENTS OF THE TOTAL SHIELDING FIELD VECTOR AT ANY GIVEN POSITION X,Y,Z
 C               (2) SCALAR PRODUCTS OF THE 'PARTIAL' FIELDS, CORRESPONDING TO EACH LINEAR TERM
@@ -1471,7 +1485,7 @@ C
 C
 C=====================================================================================
 c
-      SUBROUTINE PRC_UNSH_NN (EPS,SCALE,X,Y,Z,BX,BY,BZ)
+      RECURSIVE SUBROUTINE PRC_UNSH_NN (EPS,SCALE,X,Y,Z,BX,BY,BZ)
       IMPLICIT REAL*8 (A-H,O-Z)
 c
 C      AUTHOR:  N. A. TSYGANENKO, 2015
@@ -1554,7 +1568,7 @@ c
 c
 C&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE PRC_NM_UNDEFORMEN (X,Y,Z,BX,BY,BZ)
+      RECURSIVE SUBROUTINE PRC_NM_UNDEFORMEN (X,Y,Z,BX,BY,BZ)
       IMPLICIT REAL*8 (A-H,O-Z)
       CALL SPHCAN (R,T,P,X,Y,Z,-1)
       CALL BRBTBP_PRN (R,T,P,BR,BT,BP)
@@ -1564,7 +1578,7 @@ C
 C
 C#########################################################################
 C
-      SUBROUTINE BRBTBP_PRN (R,T,P,BR,BT,BP) 
+      RECURSIVE SUBROUTINE BRBTBP_PRN (R,T,P,BR,BT,BP) 
       IMPLICIT REAL*8 (A-H,O-Z)
 C
       DATA  ABR01,ABR02,ABR03,ABR04,ABR05,ABR06,ABR07,ABR08,ABR09,ABR10,
@@ -1608,19 +1622,18 @@ C
      *1.537733423D0,1.010006109D0,2.360742095D0,1.907047647D0,    
      *3.557905953D0/    
 C
-      DATA KEEP/0/
-
-      SAVE KEEP
-
-      IF (KEEP.EQ.0) THEN
-       KEEP=1
-       ABR48=ABR48*ABR36
-       ABR49=ABR49*ABR36
-       ABR50=ABR50*ABR36
-       ABT48=ABT48*ABT36
-       ABT49=ABT49*ABT36
-       ABT50=ABT50*ABT36
-      ENDIF
+C
+C  The original routine multiplied six DATA-initialized coefficients on its
+C  first call and guarded that mutation with SAVE KEEP.  Concurrent first
+C  calls could multiply shared coefficients more than once.  Preserve the
+C  exact post-initialization mathematics using invocation-local effective
+C  exponents while leaving the fitted coefficient table immutable.
+      ABR48E=ABR48*ABR36
+      ABR49E=ABR49*ABR36
+      ABR50E=ABR50*ABR36
+      ABT48E=ABT48*ABT36
+      ABT49E=ABT49*ABT36
+      ABT50E=ABT50*ABT36
 
       ST=DSIN(T)
       CT=DCOS(T)
@@ -1678,7 +1691,7 @@ C-----------------------------------------------------
       DF1_46_DDA=-F1_46/(SP46+SM46)*DALPHA*(1.D0/SM46+1.D0/SP46)
 C
       S2=ABR04+ABR05*STA+ABR06*STB
-      DR4=F1_46**ABR48/D2       
+      DR4=F1_46**ABR48E/D2       
       DR5=DR4*STA
       DR6=DR4*STB
 C-----------------------------------------------------
@@ -1696,12 +1709,12 @@ C
       DR9=DR7*STB
 C-----------------------------------------------------
       S4=ABR10+ABR11*STA+ABR12*STB
-      DR10=F1_46**ABR49/D4  
+      DR10=F1_46**ABR49E/D4  
       DR11=DR10*STA
       DR12=DR10*STB
 C-----------------------------------------------------
       S5=ABR13+ABR14*STA+ABR15*STB
-      DR13=F1_46**ABR50/D5  
+      DR13=F1_46**ABR50E/D5  
       DR14=DR13*STA
       DR15=DR13*STB
 C----------------------------------------------------
@@ -1730,25 +1743,25 @@ C
       D_betar_DR=-S1/D1**2*(ABR23/ABR22*(R/ABR22)**(ABR23-1.D0)+
      *ABR51/ABR39**2*BR40**(ABR51-1.D0)*CT2*2.D0*R)
      *           -S2/D2**2*(ABR25/ABR24*(R/ABR24)**(ABR25-1.D0)+
-     *ABR52/ABR40**2*BR41**(ABR52-1.D0)*CT2*2.D0*R)*F1_46**ABR48
+     *ABR52/ABR40**2*BR41**(ABR52-1.D0)*CT2*2.D0*R)*F1_46**ABR48E
      *           -S3/D3**2*(ABR27/ABR26*(R/ABR26)**(ABR27-1.D0)+
      *ABR53/ABR41**2*BR42**(ABR53-1.D0)*CT2*2.D0*R)*F2_47**ABR37
      * *ALPHA**ABR38
      *           -S4/D4**2*(ABR29/ABR28*(R/ABR28)**(ABR29-1.D0)+
-     *ABR54/ABR42**2*BR43**(ABR54-1.D0)*CT2*2.D0*R)*F1_46**ABR49
+     *ABR54/ABR42**2*BR43**(ABR54-1.D0)*CT2*2.D0*R)*F1_46**ABR49E
      *           -S5/D5**2*(ABR31/ABR30*(R/ABR30)**(ABR31-1.D0)+
-     *ABR55/ABR43**2*BR44**(ABR55-1.D0)*CT2*2.D0*R)*F1_46**ABR50
+     *ABR55/ABR43**2*BR44**(ABR55-1.D0)*CT2*2.D0*R)*F1_46**ABR50E
      *           -S6/D6**2*(ABR33/ABR32*(R/ABR32)**(ABR33-1.D0)+
      *ABR56/ABR44**2*BR45**(ABR56-1.D0)*CT2*2.D0*R)*F3_48**ABR36
      * *(1.D0-ALPHA)**ABR38
-     * +S2/D2*ABR48*F1_46**(ABR48-1.D0)*(DF1_46_DAL*DAL_DR
+     * +S2/D2*ABR48E*F1_46**(ABR48E-1.D0)*(DF1_46_DAL*DAL_DR
      * +DF1_46_DDA*DDAL_DR)+
      * +S3/D3*(ABR37*F2_47**(ABR37-1.D0)*(DF2_47_DAL*DAL_DR
      * +DF2_47_DDA*DDAL_DR)*ALPHA**ABR38
      * +F2_47**ABR37*ABR38*ALPHA**(ABR38-1.D0)*DAL_DR)
-     * +S4/D4*ABR49*F1_46**(ABR49-1.D0)*(DF1_46_DAL*DAL_DR
+     * +S4/D4*ABR49E*F1_46**(ABR49E-1.D0)*(DF1_46_DAL*DAL_DR
      * +DF1_46_DDA*DDAL_DR)+
-     * +S5/D5*ABR50*F1_46**(ABR50-1.D0)*(DF1_46_DAL*DAL_DR           
+     * +S5/D5*ABR50E*F1_46**(ABR50E-1.D0)*(DF1_46_DAL*DAL_DR           
      * +DF1_46_DDA*DDAL_DR)+
      * +S6/D6*(ABR36*F3_48**(ABR36-1.D0)*(DF3_48_DAL*DAL_DR
      * +DF3_48_DDA*DDAL_DR)*(1.D0-ALPHA)**ABR38
@@ -1790,7 +1803,7 @@ c
       S2=ABT04+ABT05*STA+ABT06*STB
       DS2DT=4.D0*ST*CT*(ABT05*ABT34*ST2**(2.D0*ABT34-1.D0)
      *  +ABT06*ABT35*ST2**(2.D0*ABT35-1.D0))
-      DR4=F1_46**ABT48/D2       
+      DR4=F1_46**ABT48E/D2       
       DR5=DR4*STA
       DR6=DR4*STB
 C-----------------------------------------------------
@@ -1812,14 +1825,14 @@ C-----------------------------------------------------
       S4=ABT10+ABT11*STA+ABT12*STB
       DS4DT=4.D0*ST*CT*(ABT11*ABT34*ST2**(2.D0*ABT34-1.D0)
      *  +ABT12*ABT35*ST2**(2.D0*ABT35-1.D0))
-      DR10=F1_46**ABT49/D4  
+      DR10=F1_46**ABT49E/D4  
       DR11=DR10*STA
       DR12=DR10*STB
 C-----------------------------------------------------
       S5=ABT13+ABT14*STA+ABT15*STB
       DS5DT=4.D0*ST*CT*(ABT14*ABT34*ST2**(2.D0*ABT34-1.D0)
      *  +ABT15*ABT35*ST2**(2.D0*ABT35-1.D0))
-      DR13=F1_46**ABT50/D5  
+      DR13=F1_46**ABT50E/D5  
       DR14=DR13*STA
       DR15=DR13*STB
 C----------------------------------------------------
@@ -1853,8 +1866,8 @@ C
      *  -1.D0)*(R/ABT39)**2*2.D0*ST*CT
 
      * +(DS2DT/D2+S2/D2**2*ABT52*((R/ABT40)**2*CT2)**(ABT52-1.D0)*
-     *  (R/ABT40)**2*2.D0*ST*CT)*F1_46**ABT48
-     *  +S2/D2*ABT48*F1_46**(ABT48-1.D0)*DF1_46_DAL*DAL_DT
+     *  (R/ABT40)**2*2.D0*ST*CT)*F1_46**ABT48E
+     *  +S2/D2*ABT48E*F1_46**(ABT48E-1.D0)*DF1_46_DAL*DAL_DT
 
      * +(DS3DT/D3+S3/D3**2*ABT53*((R/ABT41)**2*CT2)**(ABT53-1.D0)*
      *  (R/ABT41)**2*2.D0*ST*CT)*F2_47**ABT37*ALPHA**ABT38
@@ -1862,12 +1875,12 @@ C
      * ABT38+S3/D3*ABT38*F2_47**ABT37*ALPHA**(ABT38-1.D0)*DAL_DT
 
      * +(DS4DT/D4+S4/D4**2*ABT54*((R/ABT42)**2*CT2)**(ABT54-1.D0)*
-     *  (R/ABT42)**2*2.D0*ST*CT)*F1_46**ABT49
-     *  +S4/D4*ABT49*F1_46**(ABT49-1.D0)*DF1_46_DAL*DAL_DT
+     *  (R/ABT42)**2*2.D0*ST*CT)*F1_46**ABT49E
+     *  +S4/D4*ABT49E*F1_46**(ABT49E-1.D0)*DF1_46_DAL*DAL_DT
 
      * +(DS5DT/D5+S5/D5**2*ABT55*((R/ABT43)**2*CT2)**(ABT55-1.D0)*
-     *  (R/ABT43)**2*2.D0*ST*CT)*F1_46**ABT50
-     *  +S5/D5*ABT50*F1_46**(ABT50-1.D0)*DF1_46_DAL*DAL_DT
+     *  (R/ABT43)**2*2.D0*ST*CT)*F1_46**ABT50E
+     *  +S5/D5*ABT50E*F1_46**(ABT50E-1.D0)*DF1_46_DAL*DAL_DT
 
      * +(DS6DT/D6+S6/D6**2*ABT56*((R/ABT44)**2*CT2)**(ABT56-1.D0)*
      *  (R/ABT44)**2*2.D0*ST*CT)*F3_48**ABT36*(1.D0-ALPHA)**ABT38
@@ -1884,7 +1897,7 @@ C
 C
 C================================================================================
 c
-      SUBROUTINE SPHCAN (R,THETA,PHI,X,Y,Z,J)  !   IDENTICAL TO SPHCAR_08 FROM GEOPACK-2008 PACKAGE
+      RECURSIVE SUBROUTINE SPHCAN (R,THETA,PHI,X,Y,Z,J)  !   IDENTICAL TO SPHCAR_08 FROM GEOPACK-2008 PACKAGE
 C
 C   CONVERTS SPHERICAL COORDS INTO CARTESIAN ONES AND VICE VERSA
 C    (THETA AND PHI IN RADIANS).
@@ -1926,7 +1939,7 @@ C
 C
 C===========================================================================
 c
-      SUBROUTINE BSPCAN (THETA,PHI,BR,BTHETA,BPHI,BX,BY,BZ)  !  IDENTICAL TO BSPCAR_08 FROM GEOPACK-2008 PACKAGE
+      RECURSIVE SUBROUTINE BSPCAN (THETA,PHI,BR,BTHETA,BPHI,BX,BY,BZ)  !  IDENTICAL TO BSPCAR_08 FROM GEOPACK-2008 PACKAGE
 C
 C   CALCULATES CARTESIAN FIELD COMPONENTS FROM LOCAL SPHERICAL ONES
 C
@@ -1953,7 +1966,7 @@ C
 c
 C=======================================================================================
 C
-      SUBROUTINE PRC_SHLD_NN (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
+      RECURSIVE SUBROUTINE PRC_SHLD_NN (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
 C
 C   CALCULATES: (1) COMPONENTS OF THE TOTAL SHIELDING FIELD VECTOR AT ANY GIVEN POSITION X,Y,Z
 C
@@ -2084,7 +2097,7 @@ C
 C
 C==========================================================================================
 c
-      SUBROUTINE PRC_UNSH_DN (EPS,SCALE,X,Y,Z,BX,BY,BZ)
+      RECURSIVE SUBROUTINE PRC_UNSH_DN (EPS,SCALE,X,Y,Z,BX,BY,BZ)
       IMPLICIT REAL*8 (A-H,O-Z)
 c
       DATA DT0 /0.07D0/  !  controls the noon-midnight angular stretch (radians)
@@ -2172,7 +2185,7 @@ c
 c
 C&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE PRC_DD_UNDEFORMEN (X,Y,Z,BX,BY,BZ)
+      RECURSIVE SUBROUTINE PRC_DD_UNDEFORMEN (X,Y,Z,BX,BY,BZ)
       IMPLICIT REAL*8 (A-H,O-Z)
       X1=-Y
       Y1= X
@@ -2186,7 +2199,7 @@ C
 C
 C=======================================================================================
 C
-      SUBROUTINE PRC_SHLD_DN (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
+      RECURSIVE SUBROUTINE PRC_SHLD_DN (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
 C
 C   CALCULATES: (1) COMPONENTS OF THE TOTAL SHIELDING FIELD VECTOR AT ANY GIVEN POSITION X,Y,Z
 C
@@ -2317,7 +2330,7 @@ C
 C
 C=======================================================================================
 c
-      SUBROUTINE PRCS_UNSN (EPS,SCALE,X,Y,Z,BX,BY,BZ)
+      RECURSIVE SUBROUTINE PRCS_UNSN (EPS,SCALE,X,Y,Z,BX,BY,BZ)
       IMPLICIT REAL*8 (A-H,O-Z)
 c
       DATA DT0 /0.07D0/  !  controls the noon-midnight angular stretch (radians)
@@ -2398,7 +2411,7 @@ c
 c
 C&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE PRCS_AXISYMMETRIN (X,Y,Z,BX,BY,BZ)
+      RECURSIVE SUBROUTINE PRCS_AXISYMMETRIN (X,Y,Z,BX,BY,BZ)
       IMPLICIT  REAL * 8  (A - H, O - Z)
       DATA F1,F2,DR,R1,D1,R2,D2,AL,A1,A2,A3,A4,A5,A6,A7,B1,B2,B3,B4,B5,
      * B6,B7 /-77.8729D0,63.2601D0,2.60373D0,5.49124D0,2.80109D0,
@@ -2478,7 +2491,7 @@ C
 C
 C==========================================================================
 C
-      SUBROUTINE PRCS_SHLN (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
+      RECURSIVE SUBROUTINE PRCS_SHLN (X,Y,Z,BZIMF,EPS,SCALE,FX,FY,FZ)
 C
 C   CALCULATES COMPONENTS OF THE PRCS SHIELDING FIELD VECTOR AT ANY GIVEN POSITION X,Y,Z
 C
@@ -2670,7 +2683,8 @@ C
 C
 c&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 C
-      SUBROUTINE R1_FAN_R (Theta00,DTheta00,PS,X,Y,Z,BX,BY,BZ)  ! THE SUFFIX "R" CORRESPONDS TO REGULAR MODE OF R1 FACs
+      RECURSIVE SUBROUTINE R1_FAN_R (Theta00,DTheta00,PS,X,Y,Z,
+     * BX,BY,BZ,CURDPHI,DD,SP,CP,XXN,YYN,ZZN,XXS,YYS,ZZS)    ! REGULAR R1 FAC MODE
 C
 c   INPUTS:  X,Y,Z   -  GSM position of the observation point (RE),
 c            Theta00 - colatitude of R1 zone at noon (radians)
@@ -2680,11 +2694,12 @@ c   OUTPUT: BX,BY,BZ - field GSM components (nT)
 c
       IMPLICIT REAL*8 (A-H,O-Z)
 C
-      DIMENSION RR(15)
-      COMMON /XYZN/ CURDPHI,DD(15),SP(25),CP(25),XXN(15,25),YYN(15,25),
-     *  ZZN(15,25),XXS(15,25),YYS(15,25),ZZS(15,25)
+      DIMENSION RR(15),DD(15),SP(25),CP(25)
+      DIMENSION XXN(15,25),YYN(15,25),ZZN(15,25)
+      DIMENSION XXS(15,25),YYS(15,25),ZZS(15,25)
 C
-      SAVE
+C  CURDPHI and all geometry arrays are outputs owned by the current
+C  TA_2015_N invocation.  They deliberately replace COMMON /XYZN/.
       DATA RR / 0.D0,1.D0,1.9529D0,3.0653D0,4.4573D0,6.0765D0,7.9188D0, 
      *10.0630D0,12.8026D0,17.2532D0,32.2532D0,47.2532D0,62.2532D0,
      *77.2532D0, 92.2532D0/
@@ -2693,15 +2708,10 @@ C
       DATA D0/0.08D0/
       DATA N/3/             !  designated in the present version of the 2015 paper as "nu"
       DATA MW/25/    !   number of wires, spanning 360-degs of the R1 FAC oval
-      DATA T0,DT0,PS0 /3*10.D0/
 C-----------------------------------------------------------------------------------------------------
-      IF (Theta00.NE.T0.OR.DTheta00.NE.DT0.OR.PS.NE.PS0) 
-     *  THEN                                              !   INITIALIZE ARRAYS ON FIRST CALL (OR IN CASE OF CHANGE
-C                                                               IN THE ABOVE FOUR PARAMETERS)
-      T0=Theta00
-      DT0=DTheta00
-      PS0=PS
-C
+C  Always construct the geometry for this call.  The old parameter-dependent
+C  SAVE cache was faster only in serial use, but it allowed one thread to
+C  overwrite arrays while another thread was evaluating them.
       DPHI=6.283185307D0/MW  ! AZIMUTHAL SUMMATION STEPSIZE IN RADIANS
       CURDPHI=DPHI/2.0D0     ! PEAK CURRENT (PER THE SUMMATION "WIRE" CORRESPONDING TO THAT PEAK),
 C                       ASSUMING THAT THE TOTAL INFLOWING CURRENT FOR THE M=1 MODE EQUALS 1 MEGAAMP
@@ -2760,7 +2770,6 @@ C                                                                 (see Tsyganenk
   2    CONTINUE
   1    CONTINUE
 C
-      ENDIF    !   END OF THE RE-INITIALIZATION OF ARRAYS DUE TO CHANGED VALUES OF Theta00 OR DTheta00
 C---------------------------------------------------------------------------------------------------------
 C
       BXSM=0.D0
@@ -2884,10 +2893,11 @@ C
 C
 C--------------------------------------------------------------------------------------------------------------------
 C
-      SUBROUTINE R1_FAC_N (PS,X,Y,Z,BX,BY,BZ)  !     THE SUFFIX "A" CORRESPONDS TO TILT-ANTISYMMETRIC MODE OF R1 FACs            
+      RECURSIVE SUBROUTINE R1_FAC_N (PS,X,Y,Z,BX,BY,BZ,
+     * CURDPHI,DD,SP,CP,XXN,YYN,ZZN,XXS,YYS,ZZS)           ! TILT-ANTISYMMETRIC R1 FAC MODE
 C                                              !               (that is, downward at NORTHERN DAWN, and SOUTHERN DUSK
 c                                                                       upward at NORTHERN DUSK, and SOUTHERN DAWN 
-c                                              ! must be called after R1_FAC_C (where the common arrays are prepared)
+c                                              ! uses geometry explicitly supplied by R1_FAN_R
 c
 c   This is N-S antisymmetric mode, i.e., Jx(-z)=-Jx(z), Jy(-z)=-Jy(z), and Jz(-z)=Jz(z)
 C
@@ -2897,8 +2907,11 @@ c   OUTPUT: BX,BY,BZ - field GSM components (nT)
 c
       IMPLICIT REAL*8 (A-H,O-Z)
 C
-      COMMON /XYZN/ CURDPHI,DD(15),SP(25),CP(25),XXN(15,25),YYN(15,25),
-     *  ZZN(15,25),XXS(15,25),YYS(15,25),ZZS(15,25)
+      DIMENSION DD(15),SP(25),CP(25)
+      DIMENSION XXN(15,25),YYN(15,25),ZZN(15,25)
+      DIMENSION XXS(15,25),YYS(15,25),ZZS(15,25)
+C  These arrays belong to the current top-level invocation; no COMMON state
+C  is read or modified here.
       DATA MW/25/    !   number of wires, spanning 360-degs of the R1 FAC oval
       DATA CC/15.69563D0/  !  CC=1000.D0/63.712D0  SO THAT, WITH I IN MA AND DISTANCES IN RE, 
 C                               THE OUTPUT IS IN NT (1RE = 6371.2 km)
@@ -3026,7 +3039,7 @@ C
 C
 C===============================================================================================================
 C
-      SUBROUTINE R1_R_SHLN (X,Y,Z,PSI,BZIMF,TH,DTH,FX,FY,FZ)  
+      RECURSIVE SUBROUTINE R1_R_SHLN (X,Y,Z,PSI,BZIMF,TH,DTH,FX,FY,FZ)  
 C
 C   CALCULATES COMPONENTS OF THE SHIELDING FIELD OF THE REGULAR MODE (HENCE "R") OF THE R1 FAC SYSTEM 
 C
@@ -3325,7 +3338,7 @@ C
 C
 c%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 C
-      SUBROUTINE R1_A_SHLN (X,Y,Z,PSI,BZIMF,TH,DTH,FX,FY,FZ)
+      RECURSIVE SUBROUTINE R1_A_SHLN (X,Y,Z,PSI,BZIMF,TH,DTH,FX,FY,FZ)
 C
 C   CALCULATES COMPONENTS OF THE SHIELDING FIELD OF THE ANTISYMMETRIC MODE (HENCE "A") OF THE R1 FAC SYSTEM 
 C
@@ -3625,7 +3638,7 @@ C
 
 C===================================================================================
 c
-       SUBROUTINE DIPOLN(PS,X,Y,Z,BX,BY,BZ)  ! USED ONLY IN THE DIPOLE_SHIELD SUBROUTINE AS AN IMAGE SOURCE 
+       RECURSIVE SUBROUTINE DIPOLN(PS,X,Y,Z,BX,BY,BZ)  ! USED ONLY IN THE DIPOLE_SHIELD SUBROUTINE AS AN IMAGE SOURCE 
 C
 C  CALCULATES GSM COMPONENTS OF GEODIPOLE FIELD WITH THE DIPOLE MOMENT
 C  CORRESPONDING TO THE EPOCH OF 1980.
@@ -3639,14 +3652,12 @@ C     AUTHOR: N. A. TSYGANENKO
 C
       IMPLICIT REAL*8 (A-H,O-Z)
 
-      DATA M,PSI/0,5.D0/
-      SAVE M,PSI,SPS,CPS
-      IF(M.EQ.1.AND.DABS(PS-PSI).LT.1.D-5) GOTO 1
+C  Compute tilt functions locally.  The former SAVE cache (M, PSI, SPS,
+C  CPS) was shared by all callers and could return sine/cosine values for a
+C  different thread's tilt angle.
       SPS=DSIN(PS)
       CPS=DCOS(PS)
-      PSI=PS
-      M=1
-  1   P=X**2
+      P=X**2
       U=Z**2
       V=3.D0*Z*X
       T=Y**2

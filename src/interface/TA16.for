@@ -1,6 +1,6 @@
-c     CORRECTED VERSION OF 11/23/2021 (SEE LINE 271)
+c     CORRECTED VERSION OF 11/23/2021.
+c     THE CORRECTION IS IN THE PXCP TERM BELOW: IT USES ZSM*DCPXZ.
 c
-      SUBROUTINE RBF_MODEL_2016 (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ)     !  A DOUBLE-PRECISION SUBROUTINE
 C
 C  RETURNS COMPONENTS OF THE EXTERNAL MAGNETIC FIELD VECTOR (I.E., DUE TO ONLY MAGNETOSPHERIC CURRENTS, 
 C  WITHOUT CONTRIBUTION FROM THE EARTH'S SOURCES), ACCORDING TO THE DATA-BASED RBF-MODEL DRIVEN BY 
@@ -49,191 +49,263 @@ C
 C  CODED BY: N. A. TSYGANENKO AND V. A. ANDREEVA, version of Oct. 19, 2016
 C
 C------------------------------------------------------------------------------------------
+      RECURSIVE SUBROUTINE RBF_MODEL_2016
+     * (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ)
+C
+C  THREAD-SAFE LEGACY ENTRY POINT WITH PHASE-SEPARATION CONTRACT
+C
+C  The original routine lazily filled SAVE arrays A, XX, YY, ZZ,
+C  and related grid data inside the field call.  That created races
+C  during initialization and made calls depend on mutable IOP state.
+C
+C  During evaluation this routine never modifies model data.  The fast
+C  path is thread-safe only under a phase-separation contract.  Build
+C  the cache once, in one thread, before worker threads are created.
+C  Do not call TA16_INITIALIZE or TA16_SET_COEFF_FILE during field
+C  evaluation.  Thread creation or corresponding OpenMP synchronization
+C  must publish initialized data to workers.  TA16_READY is not atomic.
+C
+C  Without explicit initialization, this routine uses invocation-local
+C  arrays through RBF_MODEL_2016_FILE.  That fallback is fully reentrant
+C  if no thread concurrently changes the process-wide coefficient path.
+C
       IMPLICIT REAL*8 (A-H,O-Z)
-
-C------------------------------------------------------------------------------------------
-C  AMPS MODIFICATION (2026-02-26)
-C------------------------------------------------------------------------------------------
-C  Original Tsyganenko/Andreeva TA16 RBF implementation expects the coefficient file
-C  "TA16_RBF.par" to be present in the current working directory (OPEN ... FILE='TA16_RBF.par').
-C
-C  For AMPS runs (especially on HPC), it is common to keep model coefficient files in a
-C  shared directory and to select them via an input file / environment variable.
-C
-C  To avoid forcing users to copy/symlink TA16_RBF.par into every run directory, we add a
-C  tiny helper setter subroutine that updates the file name used by the OPEN statement.
-C
-C  - Default remains: "TA16_RBF.par" (backward compatible)
-C  - New helper:      CALL TA16_SET_COEFF_FILE('path/to/TA16_RBF.par')
-C
-C  The C++ wrapper (TA16Interface.cpp) exposes this through TA16::SetCoeffFileName(...).
-C------------------------------------------------------------------------------------------
-
-      CHARACTER*256 TA16_COEFF_FILE
+      DIMENSION PARMOD(10)
+      CHARACTER*256 TA16_COEFF_FILE,COEFF_FILE_LOCAL
       COMMON /TA16_COEFF/ TA16_COEFF_FILE
       SAVE /TA16_COEFF/
-      DATA TA16_COEFF_FILE /'TA16_RBF.par'/
+      DIMENSION A_CACHE(23328)
+      DIMENSION XX_CACHE(1296),YY_CACHE(1296),ZZ_CACHE(1296)
+      DIMENSION ST_CACHE(1296),RHO_CACHE(1296)
+      DIMENSION ZSP_CACHE(1296),ZCP_CACHE(1296),RHBR_CACHE(1296)
+      COMMON /TA16_CACHE_D/ A_CACHE,XX_CACHE,YY_CACHE,ZZ_CACHE,
+     * ST_CACHE,RHO_CACHE,ZSP_CACHE,ZCP_CACHE,RHBR_CACHE
+      SAVE /TA16_CACHE_D/
+      INTEGER TA16_READY
+      COMMON /TA16_CACHE_I/ TA16_READY
+      SAVE /TA16_CACHE_I/
 C
-      DIMENSION PARMOD(10),A(23328)                   !SW PARAMETERS AND LINEAR COEFFICIENTS OF RBF-EXPANSIONS
-      DIMENSION XX(1296),YY(1296),ZZ(1296),ST(1296),  ! FORWARDS RBF CENTER COORDINATES AND AUXILIARY PARAMS
-     *          RHO(1296),ZSP(1296),ZCP(1296),RHBR(1296)
+      IF(TA16_READY.EQ.1) THEN
+         CALL RBF_MODEL_2016_EVAL(IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ,
+     *    A_CACHE,XX_CACHE,YY_CACHE,ZZ_CACHE,ST_CACHE,RHO_CACHE,
+     *    ZSP_CACHE,ZCP_CACHE,RHBR_CACHE)
+      ELSE
 C
-      DATA IOP /100001/
-      DATA D/4.D0/
+C  No shared cache exists.  Copy the configured path and use local
+C  arrays.  Concurrent calls obtain independent NEWUNIT values.
+         COEFF_FILE_LOCAL=TA16_COEFF_FILE
+         CALL RBF_MODEL_2016_FILE(IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ,
+     *    COEFF_FILE_LOCAL)
+      ENDIF
+      RETURN
+      END
+C
+C============================================================================
+      RECURSIVE SUBROUTINE RBF_MODEL_2016_FILE
+     * (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ,COEFF_FILE)
+C
+C  Fully reentrant entry point with an explicit coefficient-file
+C  argument.  All coefficient and grid arrays are invocation-local.
+C  Concurrent calls may use different coefficient files.
+C============================================================================
+      IMPLICIT REAL*8 (A-H,O-Z)
+      CHARACTER*(*) COEFF_FILE
+      DIMENSION PARMOD(10),A(23328)
+      DIMENSION XX(1296),YY(1296),ZZ(1296),ST(1296)
+      DIMENSION RHO(1296),ZSP(1296),ZCP(1296),RHBR(1296)
+C
+      CALL TA16_LOAD_DATA(COEFF_FILE,A,XX,YY,ZZ,ST,RHO,ZSP,ZCP,RHBR)
+      CALL RBF_MODEL_2016_EVAL(IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ,
+     * A,XX,YY,ZZ,ST,RHO,ZSP,ZCP,RHBR)
+      RETURN
+      END
+C
+C============================================================================
+      RECURSIVE SUBROUTINE TA16_LOAD_DATA
+     * (COEFF_FILE,A,XX,YY,ZZ,ST,RHO,ZSP,ZCP,RHBR)
+C
+C  Load coefficients and construct the RBF grid in arrays owned by the caller.
+C  There is no SAVE state and no fixed shared I/O unit in this routine.
+C============================================================================
+      IMPLICIT REAL*8 (A-H,O-Z)
+      CHARACTER*(*) COEFF_FILE
+      DIMENSION A(23328),XX(1296),YY(1296),ZZ(1296),ST(1296)
+      DIMENSION RHO(1296),ZSP(1296),ZCP(1296),RHBR(1296)
+C
+C  These DATA-initialized quantities are immutable model constants.  Static
+C  read-only storage is safe for concurrent access.  In particular, unlike
+C  the original code, A10, A11, A13, and A14 are never overwritten.
       DATA PI/3.14159265359D0/
       DATA A0,A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15,A16,
      * A17,A18,A19,A20,A21/12.544D0,-0.194D0,0.305D0,0.0573D0,2.178D0,
-     * 0.0571D0,-0.999D0,16.473D0,0.00152D0,0.382D0,0.0431D0,-0.00763D0,
-     * -0.210D0,0.0405D0,-4.430D0,-0.636D0,-2.600D0,0.832D0,-5.328D0,
-     * 1.103D0,-0.907D0,1.450D0/
+     * 0.0571D0,-0.999D0,16.473D0,0.00152D0,0.382D0,0.0431D0,
+     * -0.00763D0,-0.210D0,0.0405D0,-4.430D0,-0.636D0,-2.600D0,
+     * 0.832D0,-5.328D0,1.103D0,-0.907D0,1.450D0/
 C
-      SAVE
+C  Read coefficients into the supplied coefficient array.  NEWUNIT assigns a
+C  distinct Fortran unit to each simultaneous call, avoiding the original
+C  shared UNIT=777 race.  STATUS='OLD' and ACTION='READ' also document that
+C  the coefficient file is never modified by the model.
+      OPEN(NEWUNIT=IUNIT,FILE=COEFF_FILE,STATUS='OLD',
+     * ACTION='READ')
+      READ(IUNIT,100) A
+ 100  FORMAT(G15.6)
+      CLOSE(IUNIT)
 C
-       IF (IOP.NE.IOPT) THEN
+C----------------------------------------------------------------------------
+C  CREATE THE DETERMINISTIC 3-D KURIHARA GRID OF RBF CENTERS.
 C
-       IOP=IOPT
-       OPEN (UNIT=777,FILE=TA16_COEFF_FILE)  !  MODEL LINEAR COEFFICIENTS A_i,B_i,.. IN THE POLO- AND TORO-EXPANSIONS
-       READ (777,100) A
- 100   FORMAT (G15.6)
-       CLOSE(777)
-C----------------------------------------------------------------------------------------
-C  CREATE A 3D KURIHARA'S GRID OF RBF CENTERS (ONE-TIME-ONLY PROCEDURE)
-C----------------------------------------------------------------------------------------
-      KLAT  =8      ! KLAT IS THE NUMBER OF LATITUDE CIRCLES IN THE NORTHERN HEMISPHERE (EXCLUDING THE POLE)
-      RLOW_GRID  = 3.3D0  !  THE INNERMOST SPHERE RADIUS
-      RHIGH_GRID =16.D0  !  UPPER LIMIT ON THE RADIUS OF OUTERMOST RBF SPHERE
-      XGSW_LIM_DATA =-20.D0  !  UPPER LIMIT ON THE DATA TAILWARD LIMIT
-
-      RH=8.D0      !  HINGING PARAMETERS (SEE TAG-2015)
-      ALPHA=3.D0   !  ALPHA PARAMETER (SEE TAG-2015)
-      NLAT=KLAT+1  ! NLAT IS THE NUMBER OF LATITUDE CIRCLES IN THE NORTHERN HEMISPHERE
-C                     (INCLUDING THE POLE)
+C  This routine has no lazy cache.  The caller selects either local arrays or
+C  explicitly initialized shared arrays that remain read-only during field
+C  evaluation.
+C----------------------------------------------------------------------------
+      KLAT=8
+      RLOW_GRID=3.3D0
+      RHIGH_GRID=16.D0
+      XGSW_LIM_DATA=-20.D0
 C
-      DLAT_DEG=90.D0/(NLAT-0.5D0)  ! ANGULAR INTERVAL BETWEEN THE LATITUDE CIRCLES
+      RH=8.D0
+      ALPHA=3.D0
+      NLAT=KLAT+1
+      DLAT_DEG=90.D0/(NLAT-0.5D0)
 C
       L=0
-      R=RLOW_GRID  !  THE INNERMOST SPHERE RADIUS
-C
-      PD_TR=0.5D0    !  this is just to filter out RBF centers outside the Lin et al model magnetopause
+      R=RLOW_GRID
+      PD_TR=0.5D0
       PM=0.D0
-      BzIMF_TR=0.D0
+      BZIMF_TR=0.D0
       PSI=0.D0
 C
-      DO 911 J=1,100   ! J COUNTS THE NUMBER OF SPHERES WITH RBF CENTERS
-C                              (WHICH IS ACTUALLY MUCH LESS THAN 100)
+C  The simplified Lin et al. boundary used by the original initialization
+C  sets these four fitted terms to zero.  Use local effective values rather
+C  than mutating the DATA-initialized constants A10, A11, A13, and A14.
+      A10E=0.D0
+      A11E=0.D0
+      A13E=0.D0
+      A14E=0.D0
 C
-      DO 912 I=1,NLAT     ! I COUNTS THE LATITUDE CIRCLES (FROM NORTH POLE DOWN TO EQUATOR)
-C
-         XCOLATD=DLAT_DEG*(DFLOAT(I)-1.D0)  !  COLATITUDE OF THE Ith CIRCLE (in degs)
-           NLON=4*(I-1)                     !  NUMBER OF RBF CENTERS ON THE ItH CIRCLE
-           IF (I.NE.1) THEN
-            DLON_DEG=360.D0/NLON          !  LONGITUDE INTERVAL BETWEEN CENTERS (degs)
-           ELSE
-            NLON=1                          !  NUMBER OF RBF CENTERS ON THE NORTH POLE
+      DO 911 J=1,100
+      DO 912 I=1,NLAT
+         XCOLATD=DLAT_DEG*(DFLOAT(I)-1.D0)
+         NLON=4*(I-1)
+         IF(I.NE.1) THEN
+            DLON_DEG=360.D0/NLON
+         ELSE
+            NLON=1
             DLON_DEG=0.D0
-           ENDIF
-            DO 912 K=1,NLON
-             XLOND=(K-1)*DLON_DEG
-             XCOLAT=XCOLATD*0.01745329252D0  ! COLATITUDE and
-             XLON=XLOND*0.01745329252D0      ! LONGITUDE OF THE Lth RBF CENTER
+         ENDIF
 C
-             XXXX=R*DSIN(XCOLAT)*DCOS(XLON)
-             YYYY=R*DSIN(XCOLAT)*DSIN(XLON)
-             ZZZZ=R*DCOS(XCOLAT)
-C----------------------------------------------------------------------------------------------
-C   HERE WE CALCULATE THE DISTANCE FROM THE RBF NODE TO THE LIN ET AL. [2010] MODEL MAGNETOPAUSE.
-C   THE RBF NODES LYING OUTSIDE THE BOUNDARY ARE NOT INCLUDED IN THE GRID
-C----------------------------------------------------------------------------------------------
-      A10=0.D0     !   IN THIS CODE WE ASSUME A SIMPLIFIED VERSION OF THE LIN ET AL MODEL (WITHOUT INDENTATIONS
-      A11=0.D0     !   AND MINOR TILT-INDEPENDENT ASYMMETRIES
-      A13=0.D0
-      A14=0.D0
+         DO 912 K=1,NLON
+            XLOND=(K-1)*DLON_DEG
+            XCOLAT=XCOLATD*0.01745329252D0
+            XLON=XLOND*0.01745329252D0
 C
-      EN=A21
-      ES=A21
-      THETAN=A19+A20*PSI
-      THETAS=A19-A20*PSI
-      CTN=DCOS(THETAN)
-      CTS=DCOS(THETAS)
-      STN=DSIN(THETAN)
-      STS=DSIN(THETAS)
-
-      RHO2=YYYY**2+ZZZZ**2
-      R1=DSQRT(XXXX**2+RHO2)
-      RHO1=DSQRT(RHO2)
-
-      CTT=XXXX/R1
-      STT=DSQRT(YYYY**2+ZZZZ**2)/R1
-      T=DATAN2(STT,CTT)
-      IF (RHO1.GT.1.D-5) THEN  ! WE ARE NOT ON THE X-AXIS - NO SINGULARITIES TO WORRY ABOUT
-        SP=ZZZZ/RHO1
-        CP=YYYY/RHO1
-       ELSE                   ! WE ARE ON THE X-AXIS
-        IF (XXXX.GT.0.D0) THEN     !   IF ON THE DAYSIDE, NO PROBLEM EITHER
-         SP=0.D0
-         CP=1.D0
-        ELSE                  ! WE ARE ON THE TAIL AXIS; TO AVOID SINGULARITY:
-         RM=1000.D0             !  ASSIGN RM=1000 (A CONVENTIONAL SUBSTITUTE VALUE)
-         RETURN               !  AND EXIT
-        ENDIF
-      ENDIF
+            XXXX=R*DSIN(XCOLAT)*DCOS(XLON)
+            YYYY=R*DSIN(XCOLAT)*DSIN(XLON)
+            ZZZZ=R*DCOS(XCOLAT)
 C
-      PSIN=DACOS(CTT*CTN+STT*STN*SP)
-      PSIS=DACOS(CTT*CTS-STT*STS*SP)
+C  Calculate the distance from the RBF node to the simplified Lin et al.
+C  [2010] magnetopause.  Nodes outside the boundary are not retained.
+            EN=A21
+            ES=A21
+            THETAN=A19+A20*PSI
+            THETAS=A19-A20*PSI
+            CTN=DCOS(THETAN)
+            CTS=DCOS(THETAS)
+            STN=DSIN(THETAN)
+            STS=DSIN(THETAS)
 C
-      DN=A16+(A17+A18*PSI)*PSI
-      DS=A16-(A17-A18*PSI)*PSI
+            RHO2=YYYY**2+ZZZZ**2
+            R1=DSQRT(XXXX**2+RHO2)
+            RHO1=DSQRT(RHO2)
 C
-      CN=A14*(PD_TR+PM)**A15
-      CS=CN
+            CTT=XXXX/R1
+            STT=DSQRT(YYYY**2+ZZZZ**2)/R1
+            T=DATAN2(STT,CTT)
+            IF(RHO1.GT.1.D-5) THEN
+               SP=ZZZZ/RHO1
+               CP=YYYY/RHO1
+            ELSE
+               IF(XXXX.GT.0.D0) THEN
+                  SP=0.D0
+                  CP=1.D0
+               ELSE
+                  RM=1000.D0
+                  RETURN
+               ENDIF
+            ENDIF
 C
-      B0=A6+A7*(DEXP(A8*BZIMF_TR)-1.D0)/(DEXP(A9*BZIMF_TR)+1.D0)
-      B1=A10
-      B2=A11+A12*PSI
-      B3=A13
+            PSIN=DACOS(CTT*CTN+STT*STN*SP)
+            PSIS=DACOS(CTT*CTS-STT*STS*SP)
+            DN=A16+(A17+A18*PSI)*PSI
+            DS=A16-(A17-A18*PSI)*PSI
+            CN=A14E*(PD_TR+PM)**A15
+            CS=CN
 C
-      F1=(DSQRT(0.5D0*(1.+CTT))+A5*2.D0*STT*CTT*(1.D0-
-     * DEXP(-T)))**(B0+B1*CP+B2*SP+B3*SP**2)
-      R0=A0*(PD_TR+PM)**A1*(1.D0+A2*(DEXP(A3*BZIMF_TR)-1.D0)/
-     * (DEXP(A4*BZIMF_TR)+1.D0))
-      RM=R0*F1+CN*DEXP(DN*PSIN**EN)+CS*DEXP(DS*PSIS**ES)    ! POSITION OF THE MODEL MAGNETOPAUSE
+            B0=A6+A7*(DEXP(A8*BZIMF_TR)-1.D0)/
+     *       (DEXP(A9*BZIMF_TR)+1.D0)
+            B1=A10E
+            B2=A11E+A12*PSI
+            B3=A13E
 C
-             IF (R.GT.RM) GOTO 912
-             L=L+1                          !  COUNTER OF THE RBF CENTERS
-
-             XX(L)=XXXX
-             YY(L)=YYYY
-             ZZ(L)=ZZZZ
-             ST(L)=DSIN(XCOLAT)
-             RHO(L)=R*ST(L)
-             ZSP(L)=ZZ(L)*DSIN(XLON)
-             ZCP(L)=ZZ(L)*DCOS(XLON)
-             RHBR(L)=RH/R*(1.D0-(1.D0+(R/RH)**ALPHA)**(1.D0/ALPHA))
-
- 912         CONTINUE
-
-             RLAST=R
-             R=R*(NLAT-0.5D0+PI/4.0D0)/(NLAT-0.5D0-PI/4.0D0)  ! INCREMENT R BY A FIXED FACTOR
-             IF (R.GT.RHIGH_GRID) GOTO 913                    ! CENTERS CREATED ONLY INSIDE R=RHIGH
+            F1=(DSQRT(0.5D0*(1.D0+CTT))+
+     *       A5*2.D0*STT*CTT*(1.D0-DEXP(-T)))**
+     *       (B0+B1*CP+B2*SP+B3*SP**2)
+            R0=A0*(PD_TR+PM)**A1*
+     *       (1.D0+A2*(DEXP(A3*BZIMF_TR)-1.D0)/
+     *       (DEXP(A4*BZIMF_TR)+1.D0))
+            RM=R0*F1+CN*DEXP(DN*PSIN**EN)+
+     *       CS*DEXP(DS*PSIS**ES)
+C
+            IF(R.GT.RM) GOTO 912
+            L=L+1
+            XX(L)=XXXX
+            YY(L)=YYYY
+            ZZ(L)=ZZZZ
+            ST(L)=DSIN(XCOLAT)
+            RHO(L)=R*ST(L)
+            ZSP(L)=ZZ(L)*DSIN(XLON)
+            ZCP(L)=ZZ(L)*DCOS(XLON)
+            RHBR(L)=RH/R*
+     *       (1.D0-(1.D0+(R/RH)**ALPHA)**(1.D0/ALPHA))
+ 912     CONTINUE
+C
+         RLAST=R
+         R=R*(NLAT-0.5D0+PI/4.D0)/
+     *    (NLAT-0.5D0-PI/4.D0)
+         IF(R.GT.RHIGH_GRID) GOTO 913
  911  CONTINUE
  913  CONTINUE
-
-       ENDIF    !      END OF GENERATING THE RBF GRID (ONE-TIME-ONLY PROCEDURE)
+      RETURN
+      END
 C
-C--------------------  START CALCULATING THE MODEL B-FIELD  ---------------------------------------
+C============================================================================
+      RECURSIVE SUBROUTINE RBF_MODEL_2016_EVAL
+     * (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ,A,XX,YY,ZZ,ST,RHO,
+     * ZSP,ZCP,RHBR)
 C
-      XSM=X*COS(PS)-Z*SIN(PS)         !  RBF EXPANSIONS ARE IN SM COORDINATES
-      YSM=Y                           !  ->  CONVERT X,Y,Z FROM GSW TO SM 
-      ZSM=Z*COS(PS)+X*SIN(PS)
+C  Pure field-evaluation path with respect to shared model state: all arrays
+C  are supplied by the caller and are read only.  RECURSIVE gives each call
+C  independent scalar temporaries without -frecursive or -fautomatic.
+C============================================================================
+      IMPLICIT REAL*8 (A-H,O-Z)
+      DIMENSION PARMOD(10),A(23328)
+      DIMENSION XX(1296),YY(1296),ZZ(1296),ST(1296)
+      DIMENSION RHO(1296),ZSP(1296),ZCP(1296),RHBR(1296)
+      DATA D/4.D0/
 C
-      PDYN =PARMOD(1)
-      SYMH =PARMOD(2)
-      XIND =PARMOD(3)
+C-------------------- START CALCULATING THE MODEL FIELD ---------------------
+      XSM=X*DCOS(PS)-Z*DSIN(PS)
+      YSM=Y
+      ZSM=Z*DCOS(PS)+X*DSIN(PS)
+C
+      PDYN=PARMOD(1)
+      SYMH=PARMOD(2)
+      XIND=PARMOD(3)
       BYIMF=PARMOD(4)
 C
       FPD=DSQRT(PDYN/2.D0)-1.D0
       SYMH=SYMH/50.D0
-C
       CPS=DCOS(PS)
       SPS=DSIN(PS)
       TPS=SPS/CPS
@@ -243,16 +315,15 @@ C
       BZSM=0.D0
 C
       DO 1 I=1,1296
-C
-         XP = XX(I)
-         YP = YY(I)
-         ZP = ZZ(I)
-         XM = XP
-         YM = YP
-         ZM =-ZP
+         XP=XX(I)
+         YP=YY(I)
+         ZP=ZZ(I)
+         XM=XP
+         YM=YP
+         ZM=-ZP
 C
          DELTA_ZR=RHBR(I)*TPS
-         DTHETA =-DASIN(DELTA_ZR)*ST(I)
+         DTHETA=-DASIN(DELTA_ZR)*ST(I)
          SDT=DSIN(DTHETA)
          CDTM1=DCOS(DTHETA)-1.D0
          DXP=XP*CDTM1+SDT*ZCP(I)
@@ -262,8 +333,10 @@ C
          DYM=YM*CDTM1-SDT*ZSP(I)
          DZM=ZM*CDTM1-RHO(I)*SDT
 C
-         CP=DSQRT((XSM-XP-DXP)**2+(YSM-YP-DYP)**2+(ZSM-ZP-DZP)**2+D**2)    ! RBF Ch_i+
-         CM=DSQRT((XSM-XM-DXM)**2+(YSM-YM-DYM)**2+(ZSM-ZM-DZM)**2+D**2)    ! RBF Ch_i-
+         CP=DSQRT((XSM-XP-DXP)**2+(YSM-YP-DYP)**2+
+     *    (ZSM-ZP-DZP)**2+D**2)
+         CM=DSQRT((XSM-XM-DXM)**2+(YSM-YM-DYM)**2+
+     *    (ZSM-ZM-DZM)**2+D**2)
          DCPX=(XSM-XP-DXP)/CP
          DCMX=(XSM-XM-DXM)/CM
          DCPY=(YSM-YP-DYP)/CP
@@ -291,70 +364,119 @@ C
          TYCM=XSM*DCMZ-ZSM*DCMX
          TZCM=YSM*DCMX-XSM*DCMY
 C
-         PXCP=2.D0*DCPX-XSM*(DCPY2+DCPZ2)+YSM*DCPXY+ZSM*DCPXZ    !  CORRECTION OF 11/23/2021: Z -> ZSM
-         PYCP=2.D0*DCPY-YSM*(DCPX2+DCPZ2)+ZSM*DCPYZ+XSM*DCPXY
-         PZCP=2.D0*DCPZ-ZSM*(DCPX2+DCPY2)+XSM*DCPXZ+YSM*DCPYZ
-         PXCM=2.D0*DCMX-XSM*(DCMY2+DCMZ2)+YSM*DCMXY+ZSM*DCMXZ
-         PYCM=2.D0*DCMY-YSM*(DCMX2+DCMZ2)+ZSM*DCMYZ+XSM*DCMXY
-         PZCM=2.D0*DCMZ-ZSM*(DCMX2+DCMY2)+XSM*DCMXZ+YSM*DCMYZ
+C  CORRECTION OF 11/23/2021 IS RETAINED: THE PXCP TERM USES ZSM.
+         PXCP=2.D0*DCPX-XSM*(DCPY2+DCPZ2)+
+     *    YSM*DCPXY+ZSM*DCPXZ
+         PYCP=2.D0*DCPY-YSM*(DCPX2+DCPZ2)+
+     *    ZSM*DCPYZ+XSM*DCPXY
+         PZCP=2.D0*DCPZ-ZSM*(DCPX2+DCPY2)+
+     *    XSM*DCPXZ+YSM*DCPYZ
+         PXCM=2.D0*DCMX-XSM*(DCMY2+DCMZ2)+
+     *    YSM*DCMXY+ZSM*DCMXZ
+         PYCM=2.D0*DCMY-YSM*(DCMX2+DCMZ2)+
+     *    ZSM*DCMYZ+XSM*DCMXY
+         PZCM=2.D0*DCMZ-ZSM*(DCMX2+DCMY2)+
+     *    XSM*DCMXZ+YSM*DCMYZ
 C
-         CTX = CPS*(TXCP+TXCM)
-         CTY = CPS*(TYCP+TYCM)
-         CTZ = CPS*(TZCP+TZCM)
+         CTX=CPS*(TXCP+TXCM)
+         CTY=CPS*(TYCP+TYCM)
+         CTZ=CPS*(TZCP+TZCM)
+         STX=SPS*(TXCP-TXCM)
+         STY=SPS*(TYCP-TYCM)
+         STZ=SPS*(TZCP-TZCM)
+         CPX=CPS*(PXCP-PXCM)
+         CPY=CPS*(PYCP-PYCM)
+         CPZ=CPS*(PZCP-PZCM)
+         SPX=SPS*(PXCP+PXCM)
+         SPY=SPS*(PYCP+PYCM)
+         SPZ=SPS*(PZCP+PZCM)
 C
-         STX = SPS*(TXCP-TXCM)
-         STY = SPS*(TYCP-TYCM)
-         STZ = SPS*(TZCP-TZCM)
+         ACT=A(I)+A(I+5184)*FPD+A(I+10368)*SYMH+
+     *    A(I+15552)*XIND
+         AST=A(I+1296)+A(I+6480)*FPD+A(I+11664)*SYMH+
+     *    A(I+16848)*XIND
+         AT=A(I+20736)*BYIMF
+         ACP=A(I+2592)+A(I+7776)*FPD+A(I+12960)*SYMH+
+     *    A(I+18144)*XIND
+         ASP=A(I+3888)+A(I+9072)*FPD+A(I+14256)*SYMH+
+     *    A(I+19440)*XIND
+         AP=A(I+22032)*BYIMF
 C
-         CPX = CPS*(PXCP-PXCM)
-         CPY = CPS*(PYCP-PYCM)
-         CPZ = CPS*(PZCP-PZCM)
+         BXSM=BXSM+CTX*ACT+STX*AST+(TXCP-TXCM)*AT+
+     *    CPX*ACP+SPX*ASP+(PXCP+PXCM)*AP
+         BYSM=BYSM+CTY*ACT+STY*AST+(TYCP-TYCM)*AT+
+     *    CPY*ACP+SPY*ASP+(PYCP+PYCM)*AP
+         BZSM=BZSM+CTZ*ACT+STZ*AST+(TZCP-TZCM)*AT+
+     *    CPZ*ACP+SPZ*ASP+(PZCP+PZCM)*AP
+  1   CONTINUE
 C
-         SPX = SPS*(PXCP+PXCM)
-         SPY = SPS*(PYCP+PYCM)
-         SPZ = SPS*(PZCP+PZCM)
-C
-C-----------------   TOTAL FIELD:    -----------------------------------
-
-        ACT=A(I)+A(I+5184)*FPD+A(I+10368)*SYMH+A(I+15552)*XIND
-        AST=A(I+1296)+A(I+6480)*FPD+A(I+11664)*SYMH+A(I+16848)*XIND
-        AT =A(I+20736)*BYIMF
-        ACP=A(I+2592)+A(I+7776)*FPD+A(I+12960)*SYMH+A(I+18144)*XIND
-        ASP=A(I+3888)+A(I+9072)*FPD+A(I+14256)*SYMH+A(I+19440)*XIND
-        AP =A(I+22032)*BYIMF
-
-        BXSM=BXSM+CTX*ACT+STX*AST+(TXCP-TXCM)*AT+CPX*ACP+SPX*ASP
-     *   +(PXCP+PXCM)*AP
-        BYSM=BYSM+CTY*ACT+STY*AST+(TYCP-TYCM)*AT+CPY*ACP+SPY*ASP
-     *   +(PYCP+PYCM)*AP
-        BZSM=BZSM+CTZ*ACT+STZ*AST+(TZCP-TZCM)*AT+CPZ*ACP+SPZ*ASP
-     *   +(PZCP+PZCM)*AP
-C
-  1     CONTINUE
-C-----------------------------------------------------------------------------------------
-C   NOW CONVERT THE OBTAINED MAGNETIC FIELD VECTOR BACK FROM SM TO GSM (GSW) SYSTEM:
-C-----------------------------------------------------------------------------------------
+C  Convert the magnetic field vector from SM back to GSM/GSW.
       BX=BXSM*CPS+BZSM*SPS
       BY=BYSM
       BZ=BZSM*CPS-BXSM*SPS
-C
       RETURN
       END
-CC==========================================================================================
-C  AMPS helper: allow overriding the TA16 coefficient file location at runtime.
 C
-C  Usage from Fortran:
-C    CALL TA16_SET_COEFF_FILE('path/to/TA16_RBF.par')
+C============================================================================
+      RECURSIVE SUBROUTINE TA16_INITIALIZE
 C
-C  This writes into the COMMON block /TA16_COEFF/ shared with RBF_MODEL_2016.
-C==========================================================================================
-      SUBROUTINE TA16_SET_COEFF_FILE(FNAME)
+C  Performance-oriented explicit initialization.  Call exactly once,
+C  from one thread, before creating workers.  Never call while a thread
+C  is evaluating RBF_MODEL_2016.  TA16_READY is not atomic.  Visibility
+C  relies on synchronization at thread creation or at parallel entry.
+C  After publication, cache arrays are read only during evaluation.
+C============================================================================
+      IMPLICIT REAL*8 (A-H,O-Z)
+      CHARACTER*256 TA16_COEFF_FILE
+      COMMON /TA16_COEFF/ TA16_COEFF_FILE
+      SAVE /TA16_COEFF/
+      DIMENSION A_CACHE(23328)
+      DIMENSION XX_CACHE(1296),YY_CACHE(1296),ZZ_CACHE(1296)
+      DIMENSION ST_CACHE(1296),RHO_CACHE(1296)
+      DIMENSION ZSP_CACHE(1296),ZCP_CACHE(1296),RHBR_CACHE(1296)
+      COMMON /TA16_CACHE_D/ A_CACHE,XX_CACHE,YY_CACHE,ZZ_CACHE,
+     * ST_CACHE,RHO_CACHE,ZSP_CACHE,ZCP_CACHE,RHBR_CACHE
+      SAVE /TA16_CACHE_D/
+      INTEGER TA16_READY
+      COMMON /TA16_CACHE_I/ TA16_READY
+      SAVE /TA16_CACHE_I/
+C
+      TA16_READY=0
+      CALL TA16_LOAD_DATA(TA16_COEFF_FILE,A_CACHE,XX_CACHE,
+     * YY_CACHE,ZZ_CACHE,ST_CACHE,RHO_CACHE,ZSP_CACHE,ZCP_CACHE,
+     * RHBR_CACHE)
+      TA16_READY=1
+      RETURN
+      END
+C
+C============================================================================
+      RECURSIVE SUBROUTINE TA16_SET_COEFF_FILE(FNAME)
+C
+C  Set the process-wide coefficient path and initialize the cache.
+C  Call before concurrent field evaluations, never while workers are
+C  evaluating RBF_MODEL_2016.
+C============================================================================
       IMPLICIT REAL*8 (A-H,O-Z)
       CHARACTER*(*) FNAME
       CHARACTER*256 TA16_COEFF_FILE
       COMMON /TA16_COEFF/ TA16_COEFF_FILE
       SAVE /TA16_COEFF/
-
-      TA16_COEFF_FILE = FNAME
+      TA16_COEFF_FILE=FNAME
+      CALL TA16_INITIALIZE
       RETURN
+      END
+C
+C============================================================================
+      BLOCK DATA TA16_DEFAULTS
+C
+C  Initialize configuration metadata only.  Coefficients and grid arrays are
+C  loaded explicitly by TA16_INITIALIZE/TA16_SET_COEFF_FILE, or locally by the
+C  safe fallback path in RBF_MODEL_2016.
+C============================================================================
+      CHARACTER*256 TA16_COEFF_FILE
+      COMMON /TA16_COEFF/ TA16_COEFF_FILE
+      INTEGER TA16_READY
+      COMMON /TA16_CACHE_I/ TA16_READY
+      DATA TA16_COEFF_FILE /'TA16_RBF.par'/
+      DATA TA16_READY /0/
       END
