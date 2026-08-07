@@ -363,8 +363,10 @@ def command_for(args: argparse.Namespace, amps: Path, solver: str) -> List[str]:
 
 
 def run_process(command: Sequence[str], cwd: Path, log_path: Path) -> int:
+    command_text = " ".join(shlex.quote(value) for value in command)
+    print("Running:", command_text, flush=True)
     with log_path.open("w") as log:
-        log.write("Command:\n  %s\n\n" % " ".join(shlex.quote(value) for value in command))
+        log.write("Command:\n  %s\n\n" % command_text)
         log.flush()
         process = subprocess.Popen(
             list(command), cwd=str(cwd), stdout=subprocess.PIPE,
