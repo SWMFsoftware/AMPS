@@ -9,7 +9,12 @@ The observational reference is created by ``build_goes_reference.py``.  AMPS is
 run once for each selected (UTC, spacecraft, solver, field-model) combination.
 A global SM directional cutoff map is folded through a documented top-hat
 approximation to the EPEAD aperture and an incident power-law proton spectrum.
-The primary comparison quantity is log10(EAST/WEST).
+The primary comparison quantity is log10(EAST/WEST).  AMPS directional-map
+vectors are incoming particle arrival/velocity directions, whereas EPEAD EAST/WEST
+labels are telescope look directions; C19 therefore reverses each AMPS map vector
+before aperture folding.  The legacy direct mapping is retained as a diagnostic,
+one-sided zero-transmission saturation is reported explicitly, and the process-exit
+policy never changes the scientific PASS/FAIL label.
 
 Examples
 --------
@@ -119,17 +124,27 @@ class ModelRow:
     spectral_index: float
     map_frame: str
     map_path: str
+    direction_mapping: str
     status: str
 
 
 @dataclass(frozen=True)
 class Metrics:
+    # ``spacecraft`` is either a concrete spacecraft name (GOES13/GOES15) or
+    # ``ALL`` for the aggregate channel metric.  Keeping both levels is useful:
+    # a wrong detector orientation can otherwise be hidden by mixing the two
+    # spacecraft into one statistic.
     solver: str
     field_model: str
+    spacecraft: str
     channel: str
     n_reference: int
     n_valid_model: int
+    n_saturated_model: int
+    n_sign_evaluable: int
     valid_fraction: float
+    saturated_fraction: float
+    sign_evaluable_fraction: float
     sign_agreement_fraction: float
     mean_bias_log10: Optional[float]
     mean_absolute_error_log10: Optional[float]
@@ -568,6 +583,71 @@ def scale(a: Tuple[float, float, float], factor: float) -> Tuple[float, float, f
     return (factor * a[0], factor * a[1], factor * a[2])
 
 
+PRODUCTION_DIRECTION_MAPPING = "AMPS_ARRIVAL_TO_DETECTOR_LOOK"
+LEGACY_DIRECTION_MAPPING = "LEGACY_DIRECT_DIAGNOSTIC"
+DIRECTION_MAPPINGS = (PRODUCTION_DIRECTION_MAPPING, LEGACY_DIRECTION_MAPPING)
+SATURATED_MODEL_STATUSES = frozenset((
+    "ZERO_EAST_TRANSMISSION",
+    "ZERO_WEST_TRANSMISSION",
+))
+
+
+def map_direction_to_detector_look(
+        direction: Tuple[float, float, float], mapping: str
+        ) -> Tuple[float, float, float]:
+    """Convert an AMPS directional-map vector to a detector look direction.
+
+    This conversion is not optional physics tuning.  The AMPS cutoff solvers
+    define ``dir_unit`` as the forward-time *arrival direction* of the particle
+    at the observation point and launch the backward trajectory with ``-dir_unit``.
+    The same source explicitly defines the vertical arrival direction as pointing
+    toward Earth.  Thus the map vector is the incoming particle-velocity
+    direction.
+
+    GOES EPEAD EAST/WEST labels, by contrast, describe telescope *look*
+    directions.  A telescope looking toward +d receives an incoming particle
+    whose velocity is approximately -d.  Therefore the production conversion is
+
+        detector_look = - AMPS_arrival_direction.
+
+    ``LEGACY_DIRECT_DIAGNOSTIC`` reproduces the old C19 behavior only so that an
+    east/west reversal can be diagnosed from the same AMPS map.  It is never used
+    for acceptance.
+    """
+    value = str(mapping).upper()
+    if value == PRODUCTION_DIRECTION_MAPPING:
+        return scale(direction, -1.0)
+    if value == LEGACY_DIRECTION_MAPPING:
+        return direction
+    raise ValueError("unsupported C19 direction mapping: %s" % mapping)
+
+
+def modeled_log_sign(row: ModelRow) -> Optional[int]:
+    """Return the sign of modeled log10(E/W), including one-sided saturation.
+
+    Finite rows use the calculated logarithmic ratio.  If the modeled west
+    transmission is exactly zero, E/W tends to +infinity and therefore has a
+    positive logarithmic sign.  If east is zero and west is positive, E/W is
+    zero and log10(E/W) tends to -infinity.  These saturated results cannot be
+    assigned a finite MAE/RMSE, but they *do* contain strong directional-sign
+    information and must not silently disappear from the sign-agreement metric.
+    """
+    if row.modeled_log10_east_west_ratio is not None:
+        value = float(row.modeled_log10_east_west_ratio)
+        if math.isfinite(value):
+            return -1 if value < 0.0 else (1 if value > 0.0 else 0)
+    if row.status == "ZERO_WEST_TRANSMISSION":
+        return 1
+    if row.status == "ZERO_EAST_TRANSMISSION":
+        return -1
+    return None
+
+
+def observed_log_sign(row: ModelRow) -> int:
+    value = row.observed_log10_east_west_ratio
+    return -1 if value < 0.0 else (1 if value > 0.0 else 0)
+
+
 def spherical_direction(lon_deg: float, lat_deg: float) -> Tuple[float, float, float]:
     lon = math.radians(lon_deg)
     lat = math.radians(lat_deg)
@@ -646,7 +726,19 @@ def fold_aperture(
         equatorial_half_angle: float,
         north_south_half_angle: float,
         gamma: float,
+        direction_mapping: str,
         ) -> Tuple[Optional[float], int, int, List[Dict[str, object]]]:
+    """Fold one physical detector aperture through a directional cutoff map.
+
+    ``detector_basis`` constructs a physical telescope *look direction*.  AMPS
+    directional-map vectors are incoming particle arrival/velocity directions,
+    so production C19 reverses each map vector before testing aperture membership.
+    The old direct comparison is retained only as a diagnostic mapping.
+    """
+    mapping = str(direction_mapping).upper()
+    if mapping not in DIRECTION_MAPPINGS:
+        raise ValueError("unsupported C19 direction mapping: %s" % direction_mapping)
+
     boresight, horizontal, vertical = detector_basis(position_sm, detector_direction)
     weighted_sum = 0.0
     weight_sum = 0.0
@@ -655,6 +747,7 @@ def fold_aperture(
     diagnostic: List[Dict[str, object]] = []
     for cell in direction_map.cells:
         direction = spherical_direction(cell.lon_deg, cell.lat_deg)
+        direction = map_direction_to_detector_look(direction, mapping)
         coordinates = aperture_coordinates(direction, boresight, horizontal, vertical)
         if coordinates is None:
             continue
@@ -671,6 +764,7 @@ def fold_aperture(
             diagnostic.append({
                 "lon_deg": cell.lon_deg, "lat_deg": cell.lat_deg,
                 "detector_direction": detector_direction,
+                "direction_mapping": mapping,
                 "inside_aperture": True, "transmission": None,
                 "cutoff_energy_mev": cell.cutoff_energy_mev,
             })
@@ -683,12 +777,12 @@ def fold_aperture(
         diagnostic.append({
             "lon_deg": cell.lon_deg, "lat_deg": cell.lat_deg,
             "detector_direction": detector_direction,
+            "direction_mapping": mapping,
             "inside_aperture": True, "transmission": transmission,
             "cutoff_energy_mev": cell.cutoff_energy_mev,
         })
     value = weighted_sum / weight_sum if weight_sum > 0.0 else None
     return value, n_cells, n_unresolved, diagnostic
-
 
 def evaluate_reference_row(
         reference: ReferenceRow,
@@ -698,7 +792,19 @@ def evaluate_reference_row(
         field_model: str,
         spectral_index: float,
         tilt_rad: float,
+        direction_mapping: str = PRODUCTION_DIRECTION_MAPPING,
         ) -> Tuple[ModelRow, List[Dict[str, object]]]:
+    """Evaluate one GOES reference row from a completed AMPS direction map.
+
+    Directional-map vectors are converted from AMPS incoming arrival/velocity
+    direction to EPEAD telescope look direction before the aperture fold.
+
+    Status classification intentionally separates *geometrical/aperture* failure
+    from a physically meaningful zero transmission.  Earlier C19 revisions put
+    ``west == 0`` in ``INSUFFICIENT_APERTURE_COVERAGE`` even when tens of valid
+    directional cells were present.  That hid the strongest model prediction
+    (complete blocking of one look direction) and removed it from sign metrics.
+    """
     channel = manifest["channels"][reference.channel]
     position_gsm = (direction_map.x_km, direction_map.y_km, direction_map.z_km)
     if direction_map.frame.upper().startswith("SM"):
@@ -707,6 +813,7 @@ def evaluate_reference_row(
         # With a GSM fallback map, use the GSM position and axes consistently.
         position_sm = position_gsm
 
+    mapping = str(direction_mapping).upper()
     common = dict(
         direction_map=direction_map,
         position_sm=position_sm,
@@ -715,6 +822,7 @@ def evaluate_reference_row(
         equatorial_half_angle=float(channel["equatorial_half_angle_deg"]),
         north_south_half_angle=float(channel["north_south_half_angle_deg"]),
         gamma=spectral_index,
+        direction_mapping=mapping,
     )
     east, n_east, unresolved_east, east_diag = fold_aperture(
         detector_direction="EAST", **common)
@@ -723,18 +831,53 @@ def evaluate_reference_row(
     total_cells = n_east + n_west
     unresolved_fraction = ((unresolved_east + unresolved_west) / float(total_cells)
                            if total_cells else 1.0)
-    if east is None or west is None or west <= 0.0 or n_east == 0 or n_west == 0:
+
+    ratio: Optional[float]
+    log_ratio: Optional[float]
+    residual: Optional[float]
+
+    # Keep each failure/saturation mode distinct.  The order matters: no-cell and
+    # unresolved cases are numerical/coverage problems, while exact zero
+    # transmission with valid aperture cells is a legitimate model outcome.
+    if n_east == 0:
         ratio = log_ratio = residual = None
-        status = "INSUFFICIENT_APERTURE_COVERAGE"
+        status = "NO_EAST_APERTURE_CELLS"
+    elif n_west == 0:
+        ratio = log_ratio = residual = None
+        status = "NO_WEST_APERTURE_CELLS"
+    elif east is None:
+        ratio = log_ratio = residual = None
+        status = "UNRESOLVED_EAST_APERTURE"
+    elif west is None:
+        ratio = log_ratio = residual = None
+        status = "UNRESOLVED_WEST_APERTURE"
+    elif east < 0.0 or west < 0.0:
+        ratio = log_ratio = residual = None
+        status = "NEGATIVE_TRANSMISSION"
+    elif east == 0.0 and west == 0.0:
+        ratio = log_ratio = residual = None
+        status = "ZERO_BOTH_TRANSMISSION"
+    elif east == 0.0:
+        # E/W = 0 and log10(E/W) -> -infinity.  Do not manufacture a finite
+        # epsilon for MAE/RMSE; retain the exact saturation state instead.
+        ratio = 0.0
+        log_ratio = residual = None
+        status = "ZERO_EAST_TRANSMISSION"
+    elif west == 0.0:
+        # E/W -> +infinity.  ``None`` keeps JSON standards-compliant while the
+        # status carries the physically meaningful positive-infinite sign.
+        ratio = log_ratio = residual = None
+        status = "ZERO_WEST_TRANSMISSION"
     else:
         ratio = east / west
-        if ratio <= 0.0:
+        if ratio <= 0.0 or not math.isfinite(ratio):
             log_ratio = residual = None
-            status = "NONPOSITIVE_MODELED_RATIO"
+            status = "NONFINITE_MODELED_RATIO"
         else:
             log_ratio = math.log10(ratio)
             residual = log_ratio - reference.log10_east_west_ratio
             status = "VALID"
+
     row = ModelRow(
         utc=format_utc(reference.utc), spacecraft=reference.spacecraft,
         channel=reference.channel, solver=solver, field_model=field_model,
@@ -748,6 +891,7 @@ def evaluate_reference_row(
         unresolved_direction_fraction=unresolved_fraction,
         spectral_index=spectral_index,
         map_frame=direction_map.frame, map_path=direction_map.path,
+        direction_mapping=mapping,
         status=status,
     )
     diagnostics = east_diag + west_diag
@@ -774,23 +918,62 @@ def pearson(x: Sequence[float], y: Sequence[float]) -> Optional[float]:
 
 
 def calculate_metrics(rows: Sequence[ModelRow], args: argparse.Namespace) -> List[Metrics]:
-    groups = sorted({(row.solver, row.field_model, row.channel) for row in rows})
+    """Calculate spacecraft-resolved and aggregate C19 validation metrics.
+
+    Quantitative errors (bias/MAE/RMSE/correlation) require a finite modeled
+    log-ratio and therefore use only ``status == VALID`` rows.  Sign agreement is
+    intentionally broader: exact one-sided zero transmission is a saturated
+    prediction with a definite +/- sign and is included rather than discarded.
+
+    ``valid_fraction`` retains its historical meaning: fraction with a finite
+    ratio suitable for quantitative comparison.  ``saturated_fraction`` and
+    ``sign_evaluable_fraction`` make the formerly hidden zero-transmission cases
+    explicit.
+    """
+    base_keys = sorted({(row.solver, row.field_model, row.spacecraft, row.channel)
+                        for row in rows})
+    groups: List[Tuple[str, str, str, str]] = list(base_keys)
+
+    # Add one aggregate row per solver/model/channel when more than one
+    # spacecraft contributes.  Per-spacecraft rows remain the acceptance basis as
+    # well, so a convention error on one platform cannot be masked by the other.
+    aggregate_keys = sorted({(row.solver, row.field_model, row.channel) for row in rows})
+    for solver, model, channel in aggregate_keys:
+        spacecraft = {row.spacecraft for row in rows
+                      if (row.solver, row.field_model, row.channel) ==
+                      (solver, model, channel)}
+        if len(spacecraft) > 1:
+            groups.append((solver, model, "ALL", channel))
+
     result: List[Metrics] = []
-    for solver, model, channel in groups:
-        group = [row for row in rows if (row.solver, row.field_model, row.channel)
-                 == (solver, model, channel)]
-        valid = [row for row in group if row.status == "VALID"
-                 and row.modeled_log10_east_west_ratio is not None]
-        observed = [row.observed_log10_east_west_ratio for row in valid]
-        modeled = [float(row.modeled_log10_east_west_ratio) for row in valid]
+    for solver, model, spacecraft, channel in groups:
+        group = [row for row in rows
+                 if row.solver == solver and row.field_model == model
+                 and row.channel == channel
+                 and (spacecraft == "ALL" or row.spacecraft == spacecraft)]
+        finite = [row for row in group if row.status == "VALID"
+                  and row.modeled_log10_east_west_ratio is not None
+                  and math.isfinite(float(row.modeled_log10_east_west_ratio))]
+        saturated = [row for row in group if row.status in SATURATED_MODEL_STATUSES]
+        sign_evaluable = [row for row in group if modeled_log_sign(row) is not None]
+
+        observed = [row.observed_log10_east_west_ratio for row in finite]
+        modeled = [float(row.modeled_log10_east_west_ratio) for row in finite]
         residuals = [mod - obs for obs, mod in zip(observed, modeled)]
-        valid_fraction = len(valid) / float(len(group)) if group else 0.0
+
+        n_reference = len(group)
+        valid_fraction = len(finite) / float(n_reference) if n_reference else 0.0
+        saturated_fraction = len(saturated) / float(n_reference) if n_reference else 0.0
+        sign_evaluable_fraction = (len(sign_evaluable) / float(n_reference)
+                                   if n_reference else 0.0)
         sign_agreement = (
-            sum((obs < 0.0) == (mod < 0.0) for obs, mod in zip(observed, modeled))
-            / float(len(valid)) if valid else 0.0)
+            sum(observed_log_sign(row) == modeled_log_sign(row)
+                for row in sign_evaluable) / float(len(sign_evaluable))
+            if sign_evaluable else 0.0)
         bias = statistics.fmean(residuals) if residuals else None
         mae = statistics.fmean(abs(value) for value in residuals) if residuals else None
-        rmse = math.sqrt(statistics.fmean(value * value for value in residuals)) if residuals else None
+        rmse = (math.sqrt(statistics.fmean(value * value for value in residuals))
+                if residuals else None)
         correlation = pearson(observed, modeled)
         passed = (
             valid_fraction + 1.0e-14 >= args.min_valid_fraction
@@ -800,9 +983,56 @@ def calculate_metrics(rows: Sequence[ModelRow], args: argparse.Namespace) -> Lis
             and correlation is not None and correlation + 1.0e-14 >= args.min_correlation
         )
         result.append(Metrics(
-            solver, model, channel, len(group), len(valid), valid_fraction,
-            sign_agreement, bias, mae, rmse, correlation, passed))
+            solver, model, spacecraft, channel, n_reference, len(finite),
+            len(saturated), len(sign_evaluable), valid_fraction, saturated_fraction,
+            sign_evaluable_fraction, sign_agreement, bias, mae, rmse, correlation,
+            passed))
     return result
+
+
+def padded_limits(values: Sequence[float], fraction: float = 0.08,
+                  min_pad: float = 0.02) -> Tuple[float, float]:
+    """Return data-driven plot limits with modest independent-axis padding."""
+    finite = [float(value) for value in values if math.isfinite(float(value))]
+    if not finite:
+        return -1.0, 1.0
+    lower = min(finite)
+    upper = max(finite)
+    span = upper - lower
+    if span <= 1.0e-12:
+        pad = max(min_pad, 0.10 * max(1.0, abs(lower)))
+    else:
+        pad = max(min_pad, fraction * span)
+    return lower - pad, upper + pad
+
+
+def direction_sense_summary(rows: Sequence[Mapping[str, object]]) -> List[Dict[str, object]]:
+    """Summarize sign agreement for the selected and complementary conventions."""
+    result: List[Dict[str, object]] = []
+    senses = sorted({str(row["sense"]) for row in rows})
+    for sense in senses:
+        subset = [row for row in rows if row["sense"] == sense
+                  and row.get("modeled_sign") is not None]
+        n = len(subset)
+        n_agree = sum(bool(row.get("sign_agrees")) for row in subset)
+        result.append({
+            "sense": sense,
+            "n_sign_evaluable": n,
+            "n_sign_agree": n_agree,
+            "sign_agreement_fraction": n_agree / float(n) if n else 0.0,
+        })
+    return result
+
+
+def scientific_overall_passed(numerical_complete: bool,
+                              observational_passed: bool) -> bool:
+    """Return the scientific C19 PASS/FAIL state.
+
+    This function is intentionally independent of ``--enforce-acceptance``.  The
+    command-line switch controls only the shell exit status; it must never turn a
+    failed observational validation into a scientifically labeled PASS.
+    """
+    return bool(numerical_complete and observational_passed)
 
 
 def write_dict_rows(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
@@ -830,10 +1060,20 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
     if not rows:
         return outputs
 
+    marker_by_spacecraft = {"GOES13": "o", "GOES15": "s"}
+
     for solver, model in sorted({(row.solver, row.field_model) for row in rows}):
         subset = [row for row in rows if row.solver == solver and row.field_model == model]
         panels = sorted({(row.spacecraft, row.channel) for row in subset})
-        fig, axes = plt.subplots(len(panels), 1, figsize=(10.5, max(3.0, 2.5 * len(panels))),
+
+        # ------------------------------------------------------------------
+        # Time series.  Finite modeled values are plotted normally.  Exact
+        # one-sided zero-transmission states cannot be represented on a finite
+        # log axis, so they are explicitly marked at the panel boundary instead
+        # of silently disappearing as NaNs.
+        # ------------------------------------------------------------------
+        fig, axes = plt.subplots(len(panels), 1,
+                                 figsize=(10.5, max(3.0, 2.5 * len(panels))),
                                  sharex=True, squeeze=False)
         for axis, (spacecraft, channel) in zip(axes[:, 0], panels):
             panel = sorted([row for row in subset
@@ -846,8 +1086,35 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
             axis.plot(times, observed, marker="o", markersize=3, linewidth=1.2,
                       label="GOES observed")
             axis.plot(times, modeled, marker="x", markersize=3, linewidth=1.2,
-                      label="AMPS modeled")
+                      label="AMPS modeled (finite)")
             axis.axhline(0.0, linewidth=0.8)
+
+            finite_for_limits = list(observed) + [value for value in modeled
+                                                   if math.isfinite(value)]
+            y_min, y_max = padded_limits(finite_for_limits, fraction=0.10, min_pad=0.05)
+            axis.set_ylim(y_min, y_max)
+            span = y_max - y_min
+            high_marker_y = y_max - 0.03 * span
+            low_marker_y = y_min + 0.03 * span
+            neutral_marker_y = y_min + 0.10 * span
+
+            zero_west = [parse_utc(row.utc) for row in panel
+                         if row.status == "ZERO_WEST_TRANSMISSION"]
+            zero_east = [parse_utc(row.utc) for row in panel
+                         if row.status == "ZERO_EAST_TRANSMISSION"]
+            other_nonfinite = [parse_utc(row.utc) for row in panel
+                               if row.status != "VALID"
+                               and row.status not in SATURATED_MODEL_STATUSES]
+            if zero_west:
+                axis.scatter(zero_west, [high_marker_y] * len(zero_west), marker="^",
+                             label="AMPS W=0 (log E/W -> +inf)")
+            if zero_east:
+                axis.scatter(zero_east, [low_marker_y] * len(zero_east), marker="v",
+                             label="AMPS E=0 (log E/W -> -inf)")
+            if other_nonfinite:
+                axis.scatter(other_nonfinite, [neutral_marker_y] * len(other_nonfinite),
+                             marker="x", label="AMPS unresolved/nonfinite")
+
             axis.set_ylabel("log10(E/W)")
             axis.set_title("%s %s" % (spacecraft, channel))
             axis.grid(True, alpha=0.3)
@@ -855,38 +1122,115 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
         axes[-1, 0].set_xlabel("UTC")
         fig.suptitle("C19A %s %s: GOES vs AMPS east/west ratio" % (solver, model))
         fig.tight_layout()
-        path = output_root / ("C19_comparison_%s_%s.png" % (solver.lower(), model.lower()))
+        path = output_root / ("C19_comparison_%s_%s.png" %
+                              (solver.lower(), model.lower()))
         fig.savefig(path, dpi=160)
         plt.close(fig)
         outputs.append(str(path))
 
-        valid = [row for row in subset if row.status == "VALID"
-                 and row.modeled_log10_east_west_ratio is not None]
-        if valid:
+        finite = [row for row in subset if row.status == "VALID"
+                  and row.modeled_log10_east_west_ratio is not None
+                  and math.isfinite(float(row.modeled_log10_east_west_ratio))]
+        if finite:
+            # --------------------------------------------------------------
+            # Zoomed scatter: x and y limits are intentionally independent.
+            # This makes the finite points use the available plotting area even
+            # when the model is orders of magnitude away from the observations.
+            # A separate parity figure below retains equal axes + the 1:1 line.
+            # --------------------------------------------------------------
             fig, ax = plt.subplots(figsize=(6.4, 6.0))
-            for channel in sorted({row.channel for row in valid}):
-                group = [row for row in valid if row.channel == channel]
+            for spacecraft, channel in sorted({(row.spacecraft, row.channel)
+                                               for row in finite}):
+                group = [row for row in finite
+                         if row.spacecraft == spacecraft and row.channel == channel]
                 ax.scatter([row.observed_log10_east_west_ratio for row in group],
-                           [row.modeled_log10_east_west_ratio for row in group],
-                           label=channel, alpha=0.8)
-            values = ([row.observed_log10_east_west_ratio for row in valid]
-                      + [float(row.modeled_log10_east_west_ratio) for row in valid])
-            lower, upper = min(values), max(values)
-            margin = max(0.05, 0.05 * (upper - lower if upper > lower else 1.0))
-            ax.plot([lower - margin, upper + margin], [lower - margin, upper + margin],
-                    linestyle="--", linewidth=1.0)
+                           [float(row.modeled_log10_east_west_ratio) for row in group],
+                           marker=marker_by_spacecraft.get(spacecraft, "o"),
+                           label="%s %s" % (spacecraft, channel), alpha=0.8)
+            x_values = [row.observed_log10_east_west_ratio for row in finite]
+            y_values = [float(row.modeled_log10_east_west_ratio) for row in finite]
+            x_min, x_max = padded_limits(x_values)
+            y_min, y_max = padded_limits(y_values)
+            ax.set_xlim(x_min, x_max)
+            ax.set_ylim(y_min, y_max)
+            overlap_lower = max(x_min, y_min)
+            overlap_upper = min(x_max, y_max)
+            if overlap_lower < overlap_upper:
+                ax.plot([overlap_lower, overlap_upper],
+                        [overlap_lower, overlap_upper], linestyle="--", linewidth=1.0)
+            else:
+                ax.text(0.02, 0.98, "1:1 line is outside the zoomed view",
+                        transform=ax.transAxes, va="top")
             ax.set_xlabel("Observed log10(E/W)")
             ax.set_ylabel("Modeled log10(E/W)")
-            ax.set_title("C19A %s %s comparison" % (solver, model))
+            ax.set_title("C19A %s %s comparison (zoomed data ranges)" %
+                         (solver, model))
             ax.grid(True, alpha=0.3)
             ax.legend()
             fig.tight_layout()
-            path = output_root / ("C19_scatter_%s_%s.png" % (solver.lower(), model.lower()))
+            path = output_root / ("C19_scatter_%s_%s.png" %
+                                  (solver.lower(), model.lower()))
             fig.savefig(path, dpi=160)
             plt.close(fig)
             outputs.append(str(path))
 
-        fig, axes = plt.subplots(len(panels), 1, figsize=(10.5, max(3.0, 2.5 * len(panels))),
+            # Parity plot: common range is deliberately retained here so the
+            # geometric distance from the 1:1 line is visually meaningful.
+            fig, ax = plt.subplots(figsize=(6.4, 6.0))
+            for spacecraft, channel in sorted({(row.spacecraft, row.channel)
+                                               for row in finite}):
+                group = [row for row in finite
+                         if row.spacecraft == spacecraft and row.channel == channel]
+                ax.scatter([row.observed_log10_east_west_ratio for row in group],
+                           [float(row.modeled_log10_east_west_ratio) for row in group],
+                           marker=marker_by_spacecraft.get(spacecraft, "o"),
+                           label="%s %s" % (spacecraft, channel), alpha=0.8)
+            all_values = x_values + y_values
+            common_min, common_max = padded_limits(all_values, fraction=0.05, min_pad=0.05)
+            ax.set_xlim(common_min, common_max)
+            ax.set_ylim(common_min, common_max)
+            ax.plot([common_min, common_max], [common_min, common_max],
+                    linestyle="--", linewidth=1.0)
+            ax.set_xlabel("Observed log10(E/W)")
+            ax.set_ylabel("Modeled log10(E/W)")
+            ax.set_title("C19A %s %s parity view" % (solver, model))
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+            fig.tight_layout()
+            path = output_root / ("C19_parity_%s_%s.png" %
+                                  (solver.lower(), model.lower()))
+            fig.savefig(path, dpi=160)
+            plt.close(fig)
+            outputs.append(str(path))
+
+            # Residuals expose temporal structure that can be hard to see when
+            # observed and modeled curves live on very different vertical scales.
+            fig, axes = plt.subplots(len(panels), 1,
+                                     figsize=(10.5, max(3.0, 2.3 * len(panels))),
+                                     sharex=True, squeeze=False)
+            for axis, (spacecraft, channel) in zip(axes[:, 0], panels):
+                group = sorted([row for row in finite
+                                if row.spacecraft == spacecraft and row.channel == channel],
+                               key=lambda row: row.utc)
+                if group:
+                    axis.plot([parse_utc(row.utc) for row in group],
+                              [float(row.residual_log10) for row in group],
+                              marker="o", markersize=3, linewidth=1.2)
+                axis.axhline(0.0, linewidth=0.8)
+                axis.set_ylabel("model-observed")
+                axis.set_title("%s %s" % (spacecraft, channel))
+                axis.grid(True, alpha=0.3)
+            axes[-1, 0].set_xlabel("UTC")
+            fig.suptitle("C19A %s %s finite log10(E/W) residuals" % (solver, model))
+            fig.tight_layout()
+            path = output_root / ("C19_residual_%s_%s.png" %
+                                  (solver.lower(), model.lower()))
+            fig.savefig(path, dpi=160)
+            plt.close(fig)
+            outputs.append(str(path))
+
+        fig, axes = plt.subplots(len(panels), 1,
+                                 figsize=(10.5, max(3.0, 2.5 * len(panels))),
                                  sharex=True, squeeze=False)
         for axis, (spacecraft, channel) in zip(axes[:, 0], panels):
             panel = sorted([row for row in subset
@@ -907,12 +1251,12 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
         axes[-1, 0].set_xlabel("UTC")
         fig.suptitle("C19A %s %s modeled broad-aperture transmission" % (solver, model))
         fig.tight_layout()
-        path = output_root / ("C19_transmission_%s_%s.png" % (solver.lower(), model.lower()))
+        path = output_root / ("C19_transmission_%s_%s.png" %
+                              (solver.lower(), model.lower()))
         fig.savefig(path, dpi=160)
         plt.close(fig)
         outputs.append(str(path))
     return outputs
-
 
 def make_aperture_plot(diagnostics: Sequence[Mapping[str, object]], output_path: Path) -> Optional[str]:
     try:
@@ -1006,12 +1350,16 @@ def self_test() -> int:
         ]
         for lat in range(-90, 91, 15):
             for lon in range(0, 360, 15):
-                # At x>0, physical east is near +SM-y (lon 90). Give east a
-                # larger cutoff than west to create E/W < 1.
-                delta_e = abs(((lon - 90 + 180) % 360) - 180)
-                delta_w = abs(((lon - 270 + 180) % 360) - 180)
-                cutoff = 35.0 if delta_e < 45.0 and abs(lat) < 60.0 else 2.0
-                if delta_w < 45.0 and abs(lat) < 60.0:
+                # At x>0, an EAST-looking telescope points toward +SM-y
+                # (lon 90), while particles entering that telescope move toward
+                # -SM-y (AMPS arrival direction lon 270).  Put the large cutoff
+                # around lon 270 so the production arrival->look conversion must
+                # produce E/W < 1.
+                delta_e_velocity = abs(((lon - 270 + 180) % 360) - 180)
+                delta_w_velocity = abs(((lon - 90 + 180) % 360) - 180)
+                cutoff = (35.0 if delta_e_velocity < 45.0 and abs(lat) < 60.0
+                          else 2.0)
+                if delta_w_velocity < 45.0 and abs(lat) < 60.0:
                     cutoff = 2.0
                 lines.append("%g %g %g %g" %
                              (lon, lat, rigidity_gv_from_kinetic_energy_mev(cutoff), cutoff))
@@ -1066,17 +1414,74 @@ def self_test() -> int:
                     raise AssertionError(
                         "%s named-directive rendering missed %r" % (solver, expected))
 
+        # Direction-mapping regression.  The synthetic map follows the AMPS
+        # production definition: map vectors are incoming particle arrival
+        # directions.  The production conversion to telescope look direction must
+        # yield E/W < 1; reproducing the legacy direct comparison must flip it.
         model, diagnostics = evaluate_reference_row(
-            reference, direction_map, manifest, "GRIDLESS", "T05", 3.0, 0.0)
+            reference, direction_map, manifest, "GRIDLESS", "T05", 3.0, 0.0,
+            PRODUCTION_DIRECTION_MAPPING)
+        reversed_model, _ = evaluate_reference_row(
+            reference, direction_map, manifest, "GRIDLESS", "T05", 3.0, 0.0,
+            LEGACY_DIRECTION_MAPPING)
         if model.status != "VALID" or model.modeled_east_west_ratio is None:
             raise AssertionError("synthetic map did not produce a valid model row")
         if not (model.modeled_east_west_ratio < 1.0):
-            raise AssertionError("synthetic east cutoff did not produce E/W < 1")
-        rows = [model]
+            raise AssertionError("production arrival-to-look conversion did not produce E/W < 1")
+        if reversed_model.status != "VALID" or reversed_model.modeled_east_west_ratio is None:
+            raise AssertionError("legacy direct diagnostic did not produce a valid row")
+        if not (reversed_model.modeled_east_west_ratio > 1.0):
+            raise AssertionError("legacy direct mapping did not reverse E/W sign")
+
+        # Saturation regression: a finite aperture with west transmission exactly
+        # zero must be classified as ZERO_WEST_TRANSMISSION rather than as an
+        # aperture-coverage failure, and it must participate in sign diagnostics.
+        saturated_cells = tuple(
+            DirectionCell(cell.lon_deg, cell.lat_deg, cell.rc_gv,
+                          500.0 if abs(((cell.lon_deg - 90 + 180) % 360) - 180) < 45.0
+                          and abs(cell.lat_deg) < 60.0 else cell.cutoff_energy_mev)
+            for cell in direction_map.cells)
+        saturated_map = DirectionMap(direction_map.path, direction_map.frame,
+                                     direction_map.x_km, direction_map.y_km,
+                                     direction_map.z_km, saturated_cells)
+        saturated_model, _ = evaluate_reference_row(
+            reference, saturated_map, manifest, "GRIDLESS", "T05", 3.0, 0.0,
+            PRODUCTION_DIRECTION_MAPPING)
+        if saturated_model.status != "ZERO_WEST_TRANSMISSION":
+            raise AssertionError("zero west transmission was misclassified: %s" %
+                                 saturated_model.status)
+        metric_args = argparse.Namespace(
+            min_valid_fraction=0.0, min_sign_agreement=0.0,
+            min_correlation=-1.0, max_mae_log10=100.0, max_rmse_log10=100.0)
+        saturation_metrics = calculate_metrics([saturated_model], metric_args)
+        if not saturation_metrics or saturation_metrics[0].n_saturated_model != 1:
+            raise AssertionError("saturated result was omitted from C19 metrics")
+        if saturation_metrics[0].n_sign_evaluable != 1:
+            raise AssertionError("saturated result was omitted from sign metric")
+
+        # PASS/FAIL policy regression: a numerically complete run with failed
+        # observational gates must remain a scientific FAIL even when a caller
+        # later chooses not to enforce that failure as a nonzero shell exit code.
+        if scientific_overall_passed(True, False):
+            raise AssertionError("observational FAIL was incorrectly promoted to overall PASS")
+        if not scientific_overall_passed(True, True):
+            raise AssertionError("complete passing validation did not produce overall PASS")
+
+        rows = [model, reversed_model]
         plots = make_comparison_plots(rows, root)
         aperture = make_aperture_plot(diagnostics, root / "C19_aperture_diagnostic.png")
         if not plots or aperture is None:
             raise AssertionError("self-test did not generate plots")
+        expected_plot_names = {
+            "C19_scatter_gridless_t05.png",
+            "C19_parity_gridless_t05.png",
+            "C19_residual_gridless_t05.png",
+        }
+        generated_plot_names = {Path(name).name for name in plots}
+        if not expected_plot_names.issubset(generated_plot_names):
+            raise AssertionError(
+                "self-test did not generate new C19 comparison diagnostics: %s" %
+                sorted(expected_plot_names.difference(generated_plot_names)))
         csv_path = root / "C19_model.csv"
         write_dict_rows(csv_path, [asdict(model)])
         if not csv_path.exists():
@@ -1224,6 +1629,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     commands: List[Dict[str, object]] = []
     model_rows: List[ModelRow] = []
     aperture_diagnostics: List[Dict[str, object]] = []
+    # Diagnostic-only comparison of the production AMPS-arrival -> detector-look
+    # conversion with the legacy direct-vector comparison.  Acceptance always
+    # uses ``model_rows`` (the production conversion), never whichever mapping
+    # happens to agree better with the observations.
+    direction_sense_diagnostics: List[Dict[str, object]] = []
     run_failures: List[Dict[str, object]] = []
 
     print("C19A selected %d reference rows at %d spacecraft epochs" %
@@ -1266,8 +1676,39 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     for reference_row in reference_group:
                         model, diagnostics = evaluate_reference_row(
                             reference_row, direction_map, manifest, solver,
-                            field_model, args.spectral_index, tilt)
+                            field_model, args.spectral_index, tilt,
+                            PRODUCTION_DIRECTION_MAPPING)
+                        alternate_model, _ = evaluate_reference_row(
+                            reference_row, direction_map, manifest, solver,
+                            field_model, args.spectral_index, tilt,
+                            LEGACY_DIRECTION_MAPPING)
                         model_rows.append(model)
+
+                        # Store one row per convention so the diagnostic can be
+                        # filtered and summarized without rerunning AMPS.  The
+                        # alternate result is never inserted into model_rows and
+                        # therefore cannot affect acceptance.
+                        for sense_model in (model, alternate_model):
+                            modeled_sign = modeled_log_sign(sense_model)
+                            direction_sense_diagnostics.append({
+                                "utc": sense_model.utc,
+                                "spacecraft": sense_model.spacecraft,
+                                "channel": sense_model.channel,
+                                "solver": sense_model.solver,
+                                "field_model": sense_model.field_model,
+                                "sense": sense_model.direction_mapping,
+                                "is_selected": (sense_model.direction_mapping ==
+                                                PRODUCTION_DIRECTION_MAPPING),
+                                "observed_log10_east_west_ratio":
+                                    sense_model.observed_log10_east_west_ratio,
+                                "modeled_log10_east_west_ratio":
+                                    sense_model.modeled_log10_east_west_ratio,
+                                "status": sense_model.status,
+                                "modeled_sign": modeled_sign,
+                                "observed_sign": observed_log_sign(sense_model),
+                                "sign_agrees": (modeled_sign is not None and
+                                                modeled_sign == observed_log_sign(sense_model)),
+                            })
                         if not aperture_diagnostics:
                             aperture_diagnostics.extend(diagnostics)
                 except Exception as exc:
@@ -1295,6 +1736,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     write_dict_rows(output_root / "C19_model.csv", [asdict(row) for row in model_rows])
     write_dict_rows(output_root / "C19_comparison.csv", [asdict(row) for row in model_rows])
     write_dict_rows(output_root / "C19_aperture_samples.csv", aperture_diagnostics)
+    write_dict_rows(output_root / "C19_direction_sense_diagnostic.csv",
+                    direction_sense_diagnostics)
     metrics = calculate_metrics(model_rows, args)
     write_dict_rows(output_root / "C19_metrics.csv", [asdict(row) for row in metrics])
     plot_paths = make_comparison_plots(model_rows, output_root)
@@ -1305,6 +1748,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     numerical_complete = not run_failures and bool(model_rows)
     observational_passed = bool(metrics) and all(row.passed for row in metrics)
+    overall_passed = scientific_overall_passed(numerical_complete, observational_passed)
+    sense_summary = direction_sense_summary(direction_sense_diagnostics)
     result = {
         "test_id": "C19A",
         "test_name": "GOES EPEAD east-west directional-access validation",
@@ -1321,6 +1766,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "driver_sha256": sha256(driver_path),
         "driver_validation": driver_info,
         "spectral_index": args.spectral_index,
+        "direction_mapping": PRODUCTION_DIRECTION_MAPPING,
+        "direction_sense_diagnostic": sense_summary,
         "instrument_response": "uniform elliptical top-hat inside nominal P4/P5 FOV",
         "observable": "log10(background-subtracted physical EAST/WEST flux ratio)",
         "n_reference_rows": len(reference),
@@ -1338,7 +1785,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "numerical_complete": numerical_complete,
         "observational_passed": observational_passed,
         "acceptance_enforced": args.enforce_acceptance,
-        "passed": numerical_complete and (observational_passed or not args.enforce_acceptance),
+        # Scientific PASS/FAIL is independent of process-exit policy.  The
+        # --enforce-acceptance switch below controls only whether a scientific
+        # failure becomes exit status 1.
+        "passed": overall_passed,
         "plot_files": plot_paths,
         "limitations": [
             "C19A uses nominal broad top-hat P4/P5 apertures, not a complete energy-angle response matrix.",
@@ -1358,14 +1808,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ]
     for metric in metrics:
         summary_lines.append(
-            "%s %s %s: valid=%.3f sign=%.3f MAE=%s RMSE=%s corr=%s -> %s" % (
-                metric.solver, metric.field_model, metric.channel,
-                metric.valid_fraction, metric.sign_agreement_fraction,
+            "%s %s %s %s: finite=%.3f saturated=%.3f sign-evaluable=%.3f "
+            "sign=%.3f MAE=%s RMSE=%s corr=%s -> %s" % (
+                metric.solver, metric.field_model, metric.spacecraft, metric.channel,
+                metric.valid_fraction, metric.saturated_fraction,
+                metric.sign_evaluable_fraction, metric.sign_agreement_fraction,
                 "NA" if metric.mean_absolute_error_log10 is None else "%.4f" % metric.mean_absolute_error_log10,
                 "NA" if metric.rmse_log10 is None else "%.4f" % metric.rmse_log10,
                 "NA" if metric.correlation is None else "%.4f" % metric.correlation,
                 "PASS" if metric.passed else "FAIL"))
-    summary_lines.append("overall: %s" % ("PASS" if result["passed"] else "FAIL"))
+    for item in sense_summary:
+        summary_lines.append(
+            "direction-sense diagnostic %s: sign=%d/%d (%.3f)" % (
+                item["sense"], item["n_sign_agree"], item["n_sign_evaluable"],
+                item["sign_agreement_fraction"]))
+    summary_lines.extend([
+        "numerical calculation: %s" % ("PASS" if numerical_complete else "FAIL"),
+        "observational validation: %s" % ("PASS" if observational_passed else "FAIL"),
+        "overall: %s" % ("PASS" if overall_passed else "FAIL"),
+        "acceptance enforcement: %s" % ("ON" if args.enforce_acceptance else "OFF"),
+    ])
     (output_root / "C19_summary.txt").write_text("\n".join(summary_lines) + "\n")
     print("\n".join(summary_lines))
 

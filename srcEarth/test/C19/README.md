@@ -341,6 +341,27 @@ python3 srcEarth/test/C19/run_C19.py \
   --amps ./amps
 ```
 
+### 8.7 Direction-mapping diagnostic
+
+The AMPS cutoff implementation and the GOES detector geometry use two different
+vector meanings that must not be conflated:
+
+- the AMPS directional-map vector is the **incoming particle arrival/velocity direction** at the observation point; the cutoff code backtraces by launching the reversed vector, and its vertical-arrival direction points toward Earth;
+- the GOES EPEAD EAST/WEST direction is a telescope **look direction**. A telescope looking toward `+d` receives particles whose forward-time velocity is approximately `-d`.
+
+Therefore the production C19 mapping is fixed as:
+
+```text
+detector look direction = - AMPS directional-map arrival direction
+```
+
+This is implemented in one audited helper in `run_C19.py`; it is not a fit parameter.
+The runner also reproduces the **old direct-vector comparison** in postprocessing
+as `LEGACY_DIRECT_DIAGNOSTIC` and writes both results to
+`C19_direction_sense_diagnostic.csv`. The legacy diagnostic never contributes to
+acceptance. Its purpose is to make an east/west reversal obvious and to preserve a
+direct comparison with older C19 output without rerunning AMPS.
+
 ## 9. Numerical calculation
 
 For each selected spacecraft and epoch, the runner writes a one-line GEO trajectory file:
@@ -352,69 +373,85 @@ UTC latitude_deg longitude_deg_east altitude_km
 AMPS produces a directional cutoff map on a regular global SM longitude/latitude grid. The default map resolution is 10° × 10°. For each P4/P5 detector direction, the runner:
 
 1. rotates the observation position from GSM to SM using the driver dipole tilt;
-2. constructs local physical eastward and westward boresights;
-3. selects SM directional-map cells inside the channel's nominal elliptical aperture;
-4. converts the cutoff rigidity to proton kinetic energy;
-5. integrates `E^-gamma` over the accessible part of the nominal energy interval; and
-6. calculates modeled broad-aperture East and West transmissions and their ratio.
+2. constructs local physical eastward and westward detector boresights;
+3. converts the AMPS incoming arrival/velocity direction to the opposite EPEAD telescope look direction;
+4. selects map cells inside the channel's nominal elliptical aperture;
+5. converts cutoff rigidity to proton kinetic energy;
+6. integrates `E^-gamma` over the accessible part of the nominal energy interval; and
+7. calculates modeled broad-aperture East and West transmissions and their ratio.
 
 The directional map is independent of the scalar `CUTOFF_SAMPLING` result. The input templates retain a single vertical scalar sample while requesting the additional full directional map with `DIRECTIONAL_MAP T`.
 
-### Mode3D cutoff task parallelism
+### 9.1 AMPS arrival direction versus detector look direction
 
-C19 launches one spacecraft position per AMPS run.  In the former Mode3D cutoff
-scheduler, the smallest MPI/thread work item was one observation location.  Therefore a
-C19 GRIDDED launch with `N_locations=1` reduced a requested 16-thread pool to one active
-worker and executed all directional-map trajectories serially inside that worker.
+The production mapping is now explicit and fixed. In the AMPS cutoff source, the
+directional-map vector is called the physical **ARRIVAL direction**. The same code
+uses a vertical arrival direction that points toward Earth and initializes the
+backward trajectory with the opposite vector. Consequently, the map vector is the
+forward-time incoming particle-velocity direction.
 
-The Mode3D cutoff scheduler now flattens independent trajectory products into tasks.  At
-the default 10° × 10° directional resolution:
+The EPEAD EAST/WEST aperture, however, is described by the direction the telescope
+faces. These two vectors are antiparallel. C19 therefore negates every directional-
+map unit vector before testing membership in the physical EAST or WEST aperture.
 
-```text
-longitude cells       = 360/10 = 36
-latitude cells        = 180/10 + 1 = 19
-directional cells     = 36*19 = 684
-primary scalar cutoff = 1
-total cutoff tasks    = 685 per C19 location
-```
+The runner self-test builds a synthetic asymmetric map using this AMPS convention:
+at a point on +SM-X, an EAST-looking telescope faces +SM-Y but particles entering
+that telescope have AMPS arrival direction -SM-Y. The self-test verifies that the
+production mapping gives the expected E/W sign and that the legacy direct mapping
+flips it.
 
-The MPI scheduler distributes these 685 tasks across ranks, and the selected shared-memory
-backend distributes each rank's fetched task range across its workers.  Consequently
-`-np 4 -nt 16` can expose up to 64 concurrent trajectory workers even though the input
-contains only one observation location.
-
-This is safe for the GRIDDED/MESH path because the Mode3D magnetic-field snapshot is a
-complete read-only spatial field `B(x,y,z)`, not one mutable background value.  Each
-worker owns a private `cMode3DMeshFieldEval` (including its tree-search hint and
-interpolation state) and only reads the shared compact field arrays.  Different workers
-can therefore interpolate different field values at different trajectory positions
-simultaneously.
-
-For Mode3D cutoff, `MODE3D_MPI_DYNAMIC_CHUNK` / `-mode3d-mpi-dynamic-chunk` now counts
-**flattened cutoff tasks**, not locations.  Recent C19 runners use a 32-task dynamic chunk
-by default; older runners may derive the GRIDDED chunk from `-nt`.  Either is sufficient
-to feed 16 direct workers when `-nt 16` is selected.  If a manually selected dynamic
-chunk is smaller than the thread count, the Mode3D startup banner prints a warning.
-
-A correctly rebuilt C19 GRIDDED executable should report a task-level banner similar to:
+`C19_direction_sense_diagnostic.csv` contains both mappings for every observation:
 
 ```text
-Cutoff backend : THREADS
-Cutoff workers : 16 per rank
-Work unit      : flattened cutoff trajectory task
-Tasks/location : 685
-Global tasks   : 685
-MPI scheduler  : DYNAMIC
-MPI dyn chunk  : 32 global cutoff task(s) per atomic fetch
+AMPS_ARRIVAL_TO_DETECTOR_LOOK   production; used for all metrics and PASS/FAIL
+LEGACY_DIRECT_DIAGNOSTIC        old direct comparison; diagnostic only
 ```
 
-If a one-location C19 run still reports `global location(s) per atomic fetch` or clamps
-the dynamic chunk to one, that executable still contains the old location-level cutoff
-scheduler.
+This diagnostic is especially useful when comparing new results with an older C19
+run that showed a systematic sign reversal.
 
-`Task` is now the authoritative progress counter.  For task-level products the progress
-line labels the derived location-equivalent counter as `LocEq`; independent tasks from the
-same physical location may finish out of order on different MPI ranks.
+### 9.2 Zero transmission is not aperture failure
+
+Earlier C19 revisions classified a row as `INSUFFICIENT_APERTURE_COVERAGE` whenever the modeled west transmission was zero. That was misleading: a broad aperture could contain dozens of valid cells while the model predicted that the entire channel was geomagnetically blocked.
+
+The runner now uses explicit statuses:
+
+```text
+VALID
+ZERO_EAST_TRANSMISSION
+ZERO_WEST_TRANSMISSION
+ZERO_BOTH_TRANSMISSION
+NO_EAST_APERTURE_CELLS
+NO_WEST_APERTURE_CELLS
+UNRESOLVED_EAST_APERTURE
+UNRESOLVED_WEST_APERTURE
+NEGATIVE_TRANSMISSION
+NONFINITE_MODELED_RATIO
+```
+
+`ZERO_EAST_TRANSMISSION` represents `log10(E/W) -> -infinity`; `ZERO_WEST_TRANSMISSION` represents `log10(E/W) -> +infinity`. C19 does **not** replace either case by an arbitrary epsilon. They therefore do not receive a finite MAE/RMSE value, but they do contribute to the east/west **sign-agreement** metric because their sign is physically unambiguous.
+
+### 9.3 Metrics are reported by spacecraft and in aggregate
+
+Metrics are now produced for each:
+
+```text
+(solver, field model, spacecraft, channel)
+```
+
+and, when both spacecraft are present, an additional `spacecraft=ALL` aggregate is written for each channel. This prevents a GOES-13 orientation problem from being hidden by mixing it with GOES-15, or vice versa.
+
+For each metric row:
+
+- `valid_fraction` is the fraction with a **finite** modeled log ratio suitable for MAE/RMSE/correlation;
+- `saturated_fraction` is the fraction with one-sided zero transmission (`ZERO_EAST_TRANSMISSION` or `ZERO_WEST_TRANSMISSION`);
+- `sign_evaluable_fraction` includes both finite and one-sided saturated results;
+- `sign_agreement_fraction` is evaluated over all sign-evaluable results; and
+- MAE, RMSE, bias, and correlation use only finite `VALID` rows.
+
+This design keeps quantitative metrics mathematically well defined while preventing strong zero-transmission predictions from silently disappearing from the directional validation.
+
+### 9.4 Sensitivity and convergence controls
 
 Important sensitivity controls include:
 
@@ -430,7 +467,7 @@ Important sensitivity controls include:
 --mode3d-mesh-res-earth-re
 ```
 
-Publication results should include convergence tests for angular resolution, rigidity scan, mesh resolution, and assumed spectral index.
+Publication results should include convergence tests for angular resolution, rigidity scan, mesh resolution, and assumed spectral index. A useful initial convergence matrix is 10°, 5°, and 2.5° directional sampling together with `CUTOFF_UPPER_SCAN_N` values such as 120, 240, and 480. In narrow energy channels, a modest cutoff change can move an entire direction from transmitting to completely blocked, so convergence of the zero-transmission fraction is as important as convergence of finite ratios.
 
 ## 10. Outputs
 
@@ -454,37 +491,61 @@ Top-level machine-readable products:
 |---|---|
 | `C19_commands.json` | Every launch command, working directory, epoch, spacecraft, solver, and field model |
 | `C19_reference_used.csv` | Exact selected observational rows |
-| `C19_model.csv` | Modeled E/W ratio, transmissions, aperture counts, status, and map provenance |
-| `C19_comparison.csv` | Observation/model rows and log-ratio residuals |
-| `C19_metrics.csv` | Valid fraction, E/W sign agreement, bias, MAE, RMSE, correlation, and gate result |
-| `C19_aperture_samples.csv` | Cell-level aperture membership and cutoff diagnostics for one representative case |
-| `C19_result.json` | Complete result, thresholds, file hashes, failures, limitations, and overall status |
-| `C19_summary.txt` | Compact human-readable result |
+| `C19_model.csv` | Modeled E/W ratio, transmissions, aperture counts, production direction mapping, status, and map provenance |
+| `C19_comparison.csv` | Observation/model rows and finite log-ratio residuals |
+| `C19_metrics.csv` | Per-spacecraft and aggregate finite/saturated fractions, sign agreement, bias, MAE, RMSE, correlation, and gate result |
+| `C19_direction_sense_diagnostic.csv` | Diagnostic-only comparison of selected and opposite directional-vector conventions |
+| `C19_aperture_samples.csv` | Cell-level aperture membership, production direction mapping, cutoff, and transmission diagnostics for one representative case |
+| `C19_result.json` | Complete result, thresholds, file hashes, direction-sense summary, failures, limitations, and overall scientific status |
+| `C19_summary.txt` | Compact human-readable result with numerical, observational, and overall status separated |
 
 Generated plots for every selected solver/model pair:
 
 ```text
 C19_comparison_<solver>_<model>.png
 C19_scatter_<solver>_<model>.png
+C19_parity_<solver>_<model>.png
+C19_residual_<solver>_<model>.png
 C19_transmission_<solver>_<model>.png
 C19_aperture_diagnostic.png
 ```
 
-The comparison plot shows observed and modeled `log10(E/W)` versus time. The scatter plot shows modeled versus observed log ratio with the 1:1 line. The transmission plot shows modeled broad-aperture East and West transmissions. The aperture diagnostic visualizes which directional-map cells enter the nominal detector response.
+Plot interpretation:
+
+- `C19_comparison_*` shows observed and finite modeled `log10(E/W)` versus time. Exact one-sided zero transmission is displayed explicitly at the top/bottom of the panel instead of disappearing as a NaN.
+- `C19_scatter_*` is the **zoomed** comparison. Observed and modeled axes are scaled independently from their own finite data ranges, so the points occupy the plotting area even when the model is far from the observations. If the 1:1 line is outside that zoomed window, the plot says so explicitly.
+- `C19_parity_*` uses a common x/y range and the 1:1 line. This is the correct figure for visually assessing absolute agreement.
+- `C19_residual_*` shows finite `modeled - observed` log-ratio residuals versus time.
+- `C19_transmission_*` shows broad-aperture East and West modeled transmission and is particularly useful for diagnosing one-sided zero transmission.
+- `C19_aperture_diagnostic.png` visualizes the directional cells entering one representative detector response.
+
+The zoomed scatter and parity plot intentionally answer different questions: the zoomed scatter reveals structure in the finite data, while the parity plot shows how far the model lies from equality.
 
 ## 11. Acceptance behavior
 
-The initial observational thresholds are provisional:
+The initial observational thresholds remain provisional:
 
 ```text
-valid modeled fraction       >= 0.85
+finite modeled fraction      >= 0.85
 correct E/W sign fraction    >= 0.90
 correlation                  >= 0.60
 mean absolute log10 error    <= 0.20
 RMS log10 error              <= 0.30
 ```
 
-By default, the runner reports these gates but returns success when the calculation completed numerically. Add `--enforce-acceptance` to return exit code 1 when an observational gate fails:
+The important change is that **scientific PASS/FAIL is no longer controlled by `--enforce-acceptance`**.
+
+C19 now defines:
+
+```text
+numerical_complete     = all requested AMPS runs/postprocessing completed
+observational_passed   = every reported acceptance metric passed
+overall passed         = numerical_complete AND observational_passed
+```
+
+Therefore, if an individual observational metric says `FAIL`, the scientific `overall:` line also says `FAIL`. The old behavior could print individual failures while still reporting `overall: PASS` merely because acceptance enforcement was disabled; that ambiguity has been removed.
+
+`--enforce-acceptance` now controls **only the program exit status**, which is useful for deciding whether exploratory validation failures should stop a larger automated workflow:
 
 ```bash
 python3 srcEarth/test/C19/run_C19.py \
@@ -492,19 +553,33 @@ python3 srcEarth/test/C19/run_C19.py \
   --enforce-acceptance --amps ./amps -np 4 -nt 16
 ```
 
-Exit codes:
+The summary explicitly separates:
 
 ```text
-0  numerical calculation completed; and observational gates passed when enforced
+numerical calculation: PASS/FAIL
+observational validation: PASS/FAIL
+overall: PASS/FAIL
+acceptance enforcement: ON/OFF
+```
+
+Exit codes remain:
+
+```text
+0  numerical calculation completed; observational failure is allowed only when
+   --enforce-acceptance is OFF
 1  observational gates failed and --enforce-acceptance was requested
 2  input, launch, output, or postprocessing failure
 ```
+
+Thus an exploratory run may still return shell exit code 0 while its scientifically meaningful `overall` result is `FAIL`.
 
 ## 12. Interpretation and limitations
 
 C19A supports the following claim when successful:
 
 > The AMPS cutoff calculator reproduces the sign and broad temporal/energy behavior of the GOES EPEAD East–West proton-access asymmetry for the selected event.
+
+A systematic sign disagreement deserves special attention before model tuning. If an older C19 result has the opposite sign, inspect `C19_direction_sense_diagnostic.csv`: the production `AMPS_ARRIVAL_TO_DETECTOR_LOOK` mapping should be compared with the legacy direct-vector diagnostic. The production minus sign follows from the distinction between incoming particle direction and telescope look direction and should not be treated as a tunable convention.
 
 C19A alone does not support a claim of exact detector count-rate prediction because:
 
@@ -516,7 +591,7 @@ C19A alone does not support a claim of exact detector count-rate prediction beca
 - nominal GEO locations are used unless ephemeris files are supplied; and
 - provisional acceptance thresholds require refinement from multiple events.
 
-A publication-quality extension should include exact ephemeris, detector-response folding, detector-head intercalibration, spectral-slope uncertainty, additional events/yaw states, and T96/T05/SWMF comparisons.
+A publication-quality extension should include exact ephemeris, detector-response folding, detector-head intercalibration, spectral-slope uncertainty, additional events/yaw states, direction-mapping regression checks, angular/rigidity convergence, and T96/T05/SWMF comparisons.
 
 ## 13. Troubleshooting
 
@@ -555,6 +630,21 @@ Verify that AMPS was built with SPICE, the required kernels are available, and t
 ### Directional-map file is missing
 
 Verify that the executable supports `DIRECTIONAL_MAP T`, that `DIRMAP_LON_RES` and `DIRMAP_LAT_RES` are positive, and that the selected UPPER_SCAN calculation completed.
+
+### Modeled E/W has the opposite sign at nearly every epoch
+
+1. Inspect `C19_direction_sense_diagnostic.csv`.
+2. Compare `AMPS_ARRIVAL_TO_DETECTOR_LOOK` with `LEGACY_DIRECT_DIAGNOSTIC` in `C19_summary.txt`.
+3. Confirm that the production result uses `AMPS_ARRIVAL_TO_DETECTOR_LOOK`.
+4. Check the event-specific telemetry-head-to-physical-look-direction mapping independently.
+5. If an older C19 result matches only `LEGACY_DIRECT_DIAGNOSTIC`, that is evidence that the older postprocessor compared AMPS incoming particle direction directly with the telescope look direction.
+
+Do not swap the GOES EAST/WEST labels to compensate. The AMPS-arrival-to-look minus
+sign is part of the detector geometry and is now exercised by the runner self-test.
+
+### Many rows report `ZERO_WEST_TRANSMISSION` or `ZERO_EAST_TRANSMISSION`
+
+This is no longer treated as missing aperture coverage. Check `C19_transmission_*`, `C19_metrics.csv`, and the cutoff-map resolution. A large saturated fraction can be physical, but it can also indicate a directional convention error, an overly coarse angular/rigidity scan, or a cutoff-energy range that brackets the detector channel poorly. Perform the convergence tests described in Section 9.4 before interpreting it as a robust model prediction.
 
 ### Too many launches
 
