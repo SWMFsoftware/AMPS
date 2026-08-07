@@ -251,6 +251,7 @@
 #include <iomanip>
 #include <limits>
 #include <thread>
+#include <chrono>
 
 // MPI (always compiled in; see design notes in header)
 #include <mpi.h>
@@ -3868,34 +3869,70 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     }
 
     //==================================================================================
-    // 14.8 — Two-level work scheduling over global Mode3D locations
+    // 14.8 — Two-level work scheduling over independent cutoff trajectory tasks
     //==================================================================================
-    // The compact global field arrays are readable on every MPI rank before this
-    // cutoff solver starts.  Therefore any rank can compute any output location.
-    // This section uses that property to support several inter-rank schedulers:
     //
-    //   STATIC
-    //     Rank r receives one contiguous interval.  This is useful only for debugging
-    //     because shell maps often group expensive latitudes together and imbalance the
-    //     job badly.
+    // IMPORTANT PERFORMANCE DESIGN
+    // ----------------------------
+    // The old Mode3D scheduler used an observation LOCATION as its indivisible work
+    // unit.  That is efficient for shell calculations containing many locations, but it
+    // leaves almost all CPU resources idle for products such as C19: one observation
+    // location can contain hundreds of independent DIRECTIONAL_MAP trajectories.
     //
-    //   BLOCK_CYCLIC
-    //     Rank r receives r, r+nRanks, r+2*nRanks, ... .  This was the previous
-    //     improvement over STATIC and remains deterministic/reproducible, but it still
-    //     cannot react when one rank receives a set of unusually long trajectories.
+    // The scheduler now flattens every independent trajectory product into a GLOBAL
+    // TASK id.  The mapping is deterministic and requires no task objects or queues:
+    //
+    //   ordinary cutoff without DIRECTIONAL_MAP:
+    //       task(local=0) = primary scalar cutoff for the location
+    //
+    //   ordinary cutoff with DIRECTIONAL_MAP:
+    //       task(local=0) = primary scalar cutoff for the location
+    //       task(local=1) = directional-map cell 0
+    //       task(local=2) = directional-map cell 1
+    //       ...
+    //
+    //   RIGIDITY_LIST access product:
+    //       task(local=i) = classify requested rigidity i at the location
+    //
+    // A global task id therefore decodes as
+    //
+    //       globalLocation = taskId / tasksPerLocation
+    //       localTask      = taskId % tasksPerLocation
+    //
+    // This decomposition is safe because every task writes a disjoint result slot.
+    // The primary task owns rcRank/eminRank and any penumbra-band diagnostics for its
+    // location.  A directional task owns exactly one dirMapRank[location,cell] element.
+    // A RIGIDITY_LIST task owns exactly one accessStateRank[location,rigidity] element.
+    // No mutex is required around those arrays.
+    //
+    // Magnetic-field thread safety is also preserved: every worker constructs its own
+    // cMode3DMeshFieldEval object (including the private lastNode_ search hint and local
+    // interpolation stencil), while the compact global B/E arrays assembled before this
+    // routine are read-only.  Different workers can therefore interpolate B(x) at
+    // different trajectory positions concurrently without changing the background field.
+    //
+    // MPI scheduling modes:
     //
     //   DYNAMIC
-    //     Ranks fetch chunks from an MPI one-sided atomic counter.  Once a rank finishes
-    //     its current chunk, it immediately asks for another.  This is the two-level
-    //     scheduler requested for the cutoff calculation: the MPI level dynamically
-    //     balances chunks between ranks, and the THREADS/OpenMP/SERIAL backend below
-    //     schedules the locations inside each chunk within the rank.
+    //     The RMA counter distributes GLOBAL TASKS rather than global locations.  This
+    //     is essential for a one-location directional product: all MPI ranks can now
+    //     receive useful trajectory work.
     //
-    // Important MPI-threading rule:
-    //   Only the rank/main thread calls FetchNextChunkStart().  Worker threads never call
-    //   MPI.  The implementation therefore works with the normal MPI_THREAD_FUNNELED or
-    //   even single-thread MPI initialization model and does not require MPI_THREAD_MULTIPLE.
+    //   BLOCK_CYCLIC / STATIC
+    //     These deterministic modes also partition GLOBAL TASK ids.  They remain useful
+    //     for regression/debugging and no longer collapse to one worker when nLoc == 1.
+    //
+    // MPI threading rule:
+    //   Only the rank/main thread accesses MPI scheduling/progress objects.  Worker
+    //   threads only evaluate trajectories and write rank-local result slots.  The code
+    //   therefore does NOT require MPI_THREAD_MULTIPLE.
     //==================================================================================
+
+    const long long totalLocationsGlobal = static_cast<long long>(nLoc);
+    const long long totalTasksGlobal = totalLocationsGlobal * tasksPerLocation;
+    if (tasksPerLocation <= 0 || totalTasksGlobal <= 0) {
+        throw std::runtime_error("Mode3D cutoff: invalid flattened cutoff task count.");
+    }
 
     //==================================================================================
     // 14.8a — Intra-rank and inter-rank backend selection
@@ -3905,8 +3942,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     const int cutoffThreadCount = ResolveCutoffThreadCount_(prm,cutoffBackend);
     const Earth::Mode3D::MpiScheduler mpiScheduler =
         Earth::Mode3D::ResolveMpiScheduler(prm,"Mode3D cutoff");
+
+    // MODE3D_MPI_DYNAMIC_CHUNK is interpreted here as a number of flattened CUTOFF
+    // TASKS per RMA fetch.  Density/flux continues to pass its location count to the
+    // same generic resolver, so its work unit remains one observation location.
     const long long mpiDynamicChunk = Earth::Mode3D::ResolveMpiDynamicChunk(
-        prm,cutoffThreadCount,static_cast<long long>(nLoc));
+        prm,cutoffThreadCount,totalTasksGlobal);
 
     ApplyWideAffinityForDirectCutoffThreadsOnce_(cutoffBackend,cutoffThreadCount);
 
@@ -3921,11 +3962,20 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             << "Cutoff backend : " << CutoffParallelBackendName_(cutoffBackend) << "\n"
             << "Cutoff workers : " << cutoffThreadCount
             << " per rank (from DENSITY_THREADS/AMPS_MODE3D_DENSITY_THREADS)\n"
+            << "Work unit      : flattened cutoff trajectory task\n"
+            << "Tasks/location : " << tasksPerLocation << "\n"
+            << "Global tasks   : " << totalTasksGlobal << "\n"
             << "MPI scheduler  : " << Earth::Mode3D::MpiSchedulerName(mpiScheduler) << "\n";
         if (mpiScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
             std::cout
                 << "MPI dyn chunk  : " << mpiDynamicChunk
-                << " global location(s) per atomic fetch\n";
+                << " global cutoff task(s) per atomic fetch\n";
+            if (cutoffBackend == CutoffParallelBackend_::THREADS &&
+                cutoffThreadCount > 1 && mpiDynamicChunk < cutoffThreadCount) {
+                std::cout
+                    << "WARNING        : dynamic chunk < requested thread count; at most "
+                    << mpiDynamicChunk << " direct worker(s) can receive work from one chunk.\n";
+            }
         }
         if (cutoffBackend == CutoffParallelBackend_::THREADS) {
             std::cout
@@ -3936,18 +3986,13 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     }
 
     //==================================================================================
-    // 14.8b — Rank-local result arrays indexed by GLOBAL location id
+    // 14.8b — Rank-local result arrays indexed by GLOBAL location/task coordinates
     //==================================================================================
-    // Dynamic MPI scheduling makes the number and order of locations processed by each
-    // rank unknown until runtime.  To avoid any gather-order assumptions, each rank keeps
-    // full-length result arrays initialized to sentinel values and writes directly to
-    // slot globalIdx.  Because the MPI scheduler guarantees that each globalIdx is issued
-    // to exactly one rank, MPI_MAX at the end selects the one non-sentinel contribution.
-    //
-    // Sentinel convention:
-    //   Rc/Emin/dirMap = -1.0 means "this rank did not compute this location".
-    //   Valid cutoff values are >=0, so MPI_MAX is safe even for the polar analytic
-    //   cutoff where Rc can be zero.
+    // Each rank still owns full-length sentinel-filled result arrays.  Flattening the
+    // scheduler means different elements belonging to the SAME observation location may
+    // now be produced by different MPI ranks.  That is intentional: every element has a
+    // unique task owner and the final MPI_MAX reductions combine the non-sentinel values
+    // independently.  Valid cutoff values are >=0, while -1 means "not computed here".
     //==================================================================================
 
     std::vector<double> rcRank((size_t)nLoc,-1.0);
@@ -3970,9 +4015,6 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     }
 
     // Complete cutoff-band diagnostics are allocated only for PENUMBRA_SCAN.
-    // Every vector is indexed by the global location id, exactly like rcRank.
-    // A negative sentinel means this MPI rank did not own that location; MPI_MAX
-    // therefore reconstructs the global arrays independently of scheduler order.
     std::vector<double> rcLowerRank,rcEffectiveRank,rcUpperRank;
     std::vector<int> nTransitionsRank,nAllowedIntervalsRank,nUnresolvedRank;
     std::vector<int> lowerBracketUnresolvedRank,upperBracketUnresolvedRank;
@@ -4004,53 +4046,57 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         dirMapRank.assign((size_t)nMapLL,-1.0);
     }
 
-    // Deterministic fallback work list for STATIC and BLOCK_CYCLIC.  DYNAMIC does not
-    // use this vector; it obtains global locations from the RMA counter in chunks.
-    std::vector<int> rankWorkList;
-    if (mpiScheduler == Earth::Mode3D::MpiScheduler::BLOCK_CYCLIC) {
-        rankWorkList.reserve((size_t)((nLoc + mpiSize - 1) / mpiSize));
-        for (int globalIdx=mpiRank; globalIdx<nLoc; globalIdx+=mpiSize) {
-            rankWorkList.push_back(globalIdx);
+    // Deterministic schedulers are represented analytically instead of materializing a
+    // potentially huge vector of task ids (a directional map can multiply nLoc by many
+    // hundreds).  `rankTaskCount` is the number of task ids owned by this rank, and the
+    // mapping lambda reconstructs the corresponding global task id on demand.
+    long long rankTaskBegin = 0;
+    long long rankTaskCount = 0;
+    if (mpiScheduler == Earth::Mode3D::MpiScheduler::STATIC) {
+        rankTaskBegin = (totalTasksGlobal * mpiRank) / mpiSize;
+        const long long rankTaskEnd = (totalTasksGlobal * (mpiRank+1)) / mpiSize;
+        rankTaskCount = std::max(0LL,rankTaskEnd-rankTaskBegin);
+    }
+    else if (mpiScheduler == Earth::Mode3D::MpiScheduler::BLOCK_CYCLIC) {
+        if (static_cast<long long>(mpiRank) < totalTasksGlobal) {
+            rankTaskCount = 1LL +
+                (totalTasksGlobal-1LL-static_cast<long long>(mpiRank))/mpiSize;
         }
     }
-    else if (mpiScheduler == Earth::Mode3D::MpiScheduler::STATIC) {
-        const int begin = (int)((static_cast<long long>(nLoc) * mpiRank) / mpiSize);
-        const int end   = (int)((static_cast<long long>(nLoc) * (mpiRank+1)) / mpiSize);
-        rankWorkList.reserve((size_t)std::max(0,end-begin));
-        for (int globalIdx=begin; globalIdx<end; ++globalIdx) rankWorkList.push_back(globalIdx);
-    }
 
-    const int nLocalStatic = static_cast<int>(rankWorkList.size());
+    auto globalTaskFromLocalStatic = [&](long long localTaskIdx) -> long long {
+        if (mpiScheduler == Earth::Mode3D::MpiScheduler::STATIC) {
+            return rankTaskBegin + localTaskIdx;
+        }
+        // BLOCK_CYCLIC: local k owns rank + k*nRanks.
+        return static_cast<long long>(mpiRank) + localTaskIdx*mpiSize;
+    };
 
     //==================================================================================
     // 14.8c — Global progress bookkeeping
     //==================================================================================
-    // Progress collectives must be executed in the same order by every rank.  For the
-    // deterministic STATIC/BLOCK_CYCLIC schedulers we can still use synchronized batches.
-    // For DYNAMIC, ranks finish chunks at different times and repeatedly call the MPI RMA
-    // counter; inserting progress Allreduces inside that loop would either require a much
-    // more complicated protocol or reintroduce a global synchronization bottleneck.
-    // Therefore DYNAMIC prints start and completion progress only, prioritizing load
-    // balance over intermediate progress updates.
+    // Task count, rather than location count, is now the authoritative progress metric.
+    // When tasksPerLocation>1 the displayed LocEq value is a *location-equivalent*
+    // (completedTasks/tasksPerLocation), not a claim that every trajectory belonging to
+    // that many specific locations has already completed.  This avoids expensive
+    // per-location global synchronization while keeping progress meaningful for the
+    // one-location/many-direction C19 workload.
     //==================================================================================
 
-    const long long totalLocationsGlobal = static_cast<long long>(nLoc);
-    const long long totalTasksGlobal = totalLocationsGlobal * tasksPerLocation;
+    long long doneTasksLocal  = 0;
+    long long doneTasksGlobal = 0;
 
-    long long doneLocationsLocal  = 0;
-    long long doneLocationsGlobal = 0;
-    long long doneTasksLocal      = 0;
-    long long doneTasksGlobal     = 0;
-
-    std::vector<int> locDonePerShellLocal((size_t)std::max(nShells,0),0);
-    std::vector<int> locDonePerShellGlobal((size_t)std::max(nShells,0),0);
-    std::vector<int> locTotalPerShellGlobal((size_t)std::max(nShells,0),0);
+    // For deterministic shell runs we retain useful per-shell progress, but count TASKS
+    // because tasks from one shell location may be distributed across multiple ranks.
+    std::vector<long long> taskDonePerShellLocal((size_t)std::max(nShells,0),0);
+    std::vector<long long> taskDonePerShellGlobal((size_t)std::max(nShells,0),0);
+    std::vector<long long> taskTotalPerShellGlobal((size_t)std::max(nShells,0),0);
 
     if (isShells) {
         for (int workId=0;workId<nLoc;++workId) {
             const int shellIdx=locationGridIds[(std::size_t)workId]/nPtsShell;
             if (shellIdx>=0 && shellIdx<nShells)
-                locTotalPerShellGlobal[(std::size_t)shellIdx]++;
+                taskTotalPerShellGlobal[(std::size_t)shellIdx] += tasksPerLocation;
         }
     }
 
@@ -4069,9 +4115,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         return std::string(buf);
     };
 
-    auto maybePrintProgress = [&](long long doneLocations,
-                                  long long doneTasks,
-                                  const std::vector<int>& shellDoneGlobal,
+    auto maybePrintProgress = [&](long long doneTasks,
+                                  const std::vector<long long>& shellTaskDoneGlobal,
+                                  bool shellProgressValid,
                                   bool forcePrint) {
         if (mpiRank != 0) return;
 
@@ -4082,6 +4128,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         }
         progressLastPrintTime = t;
 
+        if (doneTasks < 0) doneTasks = 0;
+        if (doneTasks > totalTasksGlobal) doneTasks = totalTasksGlobal;
+
         const double frac = (totalTasksGlobal > 0)
             ? (double(doneTasks)/double(totalTasksGlobal)) : 1.0;
         const double dt = t - progressStartTime;
@@ -4089,6 +4138,10 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         double eta_s = -1.0;
         if (rate > 0.0 && totalTasksGlobal > doneTasks)
             eta_s = double(totalTasksGlobal-doneTasks)/rate;
+
+        const long long locEquivalent = std::min(
+            totalLocationsGlobal,
+            (tasksPerLocation > 0) ? doneTasks/tasksPerLocation : totalLocationsGlobal);
 
         const int barW = 36;
         int filled = (int)std::floor(frac*barW + 0.5);
@@ -4128,45 +4181,51 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         line.setf(std::ios::fixed);
         line.precision(1);
         line << (frac*100.0) << "%  ";
-        line << "(Loc " << doneLocations << "/" << totalLocationsGlobal
+        line << "(" << (tasksPerLocation>1 ? "LocEq " : "Loc ")
+             << locEquivalent << "/" << totalLocationsGlobal
              << ", Task " << doneTasks << "/" << totalTasksGlobal;
 
         if (isShells) {
-            line << "; Shells ";
-            if (nShells <= 4) {
-                for (int s=0; s<nShells; ++s) {
-                    if (s) line << ", ";
-                    const int shellDone  = shellDoneGlobal[(size_t)s];
-                    const int shellTotal = locTotalPerShellGlobal[(size_t)s];
-                    const double pct = (shellTotal > 0)
-                        ? 100.0*double(shellDone)/double(shellTotal) : 100.0;
-                    line << (s+1) << ":" << shellDone << "/" << shellTotal
-                         << " " << pct << "%";
+            if (shellProgressValid) {
+                line << "; Shell tasks ";
+                if (nShells <= 4) {
+                    for (int s=0; s<nShells; ++s) {
+                        if (s) line << ", ";
+                        const long long shellDone  = shellTaskDoneGlobal[(size_t)s];
+                        const long long shellTotal = taskTotalPerShellGlobal[(size_t)s];
+                        const double pct = (shellTotal > 0)
+                            ? 100.0*double(shellDone)/double(shellTotal) : 100.0;
+                        line << (s+1) << ":" << shellDone << "/" << shellTotal
+                             << " " << pct << "%";
+                    }
+                }
+                else {
+                    int nCompleteShells = 0;
+                    int slowestShell = -1;
+                    double slowestFrac = 2.0;
+                    for (int s=0; s<nShells; ++s) {
+                        const long long shellDone  = shellTaskDoneGlobal[(size_t)s];
+                        const long long shellTotal = taskTotalPerShellGlobal[(size_t)s];
+                        const double shellFrac = (shellTotal > 0)
+                            ? double(shellDone)/double(shellTotal) : 1.0;
+                        if (shellFrac >= 1.0) nCompleteShells++;
+                        if (shellFrac < slowestFrac) {
+                            slowestFrac = shellFrac;
+                            slowestShell = s;
+                        }
+                    }
+                    line << nCompleteShells << "/" << nShells << " complete";
+                    if (slowestShell >= 0) {
+                        const long long shellDone  = shellTaskDoneGlobal[(size_t)slowestShell];
+                        const long long shellTotal = taskTotalPerShellGlobal[(size_t)slowestShell];
+                        line << ", slowest " << (slowestShell+1) << ":"
+                             << shellDone << "/" << shellTotal << " "
+                             << (100.0*slowestFrac) << "%";
+                    }
                 }
             }
             else {
-                int nCompleteShells = 0;
-                int slowestShell = -1;
-                double slowestFrac = 2.0;
-                for (int s=0; s<nShells; ++s) {
-                    const int shellDone  = shellDoneGlobal[(size_t)s];
-                    const int shellTotal = locTotalPerShellGlobal[(size_t)s];
-                    const double shellFrac = (shellTotal > 0)
-                        ? double(shellDone)/double(shellTotal) : 1.0;
-                    if (shellFrac >= 1.0) nCompleteShells++;
-                    if (shellFrac < slowestFrac) {
-                        slowestFrac = shellFrac;
-                        slowestShell = s;
-                    }
-                }
-                line << nCompleteShells << "/" << nShells << " complete";
-                if (slowestShell >= 0) {
-                    const int shellDone  = shellDoneGlobal[(size_t)slowestShell];
-                    const int shellTotal = locTotalPerShellGlobal[(size_t)slowestShell];
-                    line << ", slowest " << (slowestShell+1) << ":"
-                         << shellDone << "/" << shellTotal << " "
-                         << (100.0*slowestFrac) << "%";
-                }
+                line << "; Shell task detail deferred in DYNAMIC mode";
             }
         }
 
@@ -4175,39 +4234,42 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         std::cout.flush();
     };
 
-    auto accountCompletedGlobalRange = [&](int begin, int end) {
-        const long long nDone = static_cast<long long>(std::max(0,end-begin));
-        doneLocationsLocal += nDone;
-        doneTasksLocal     += nDone * tasksPerLocation;
+    auto accountCompletedGlobalTaskRange = [&](long long beginTask, long long endTask) {
+        const long long nDone = std::max(0LL,endTask-beginTask);
+        doneTasksLocal += nDone;
         if (isShells) {
-            for (int globalIdx=begin; globalIdx<end; ++globalIdx) {
+            for (long long taskId=beginTask; taskId<endTask; ++taskId) {
+                const int globalIdx = static_cast<int>(taskId/tasksPerLocation);
                 const int shellIdx=locationGridIds[(std::size_t)globalIdx]/nPtsShell;
                 if (shellIdx>=0 && shellIdx<nShells)
-                    locDonePerShellLocal[(size_t)shellIdx]++;
+                    taskDonePerShellLocal[(size_t)shellIdx]++;
             }
         }
     };
 
-    auto accountCompletedWorkListRange = [&](int begin, int end) {
-        const long long nDone = static_cast<long long>(std::max(0,end-begin));
-        doneLocationsLocal += nDone;
-        doneTasksLocal     += nDone * tasksPerLocation;
+    auto accountCompletedStaticLocalRange = [&](long long beginLocal, long long endLocal) {
+        const long long nDone = std::max(0LL,endLocal-beginLocal);
+        doneTasksLocal += nDone;
         if (isShells) {
-            for (int localIdx=begin; localIdx<end; ++localIdx) {
-                const int globalIdx=rankWorkList[(size_t)localIdx];
+            for (long long localTask=beginLocal; localTask<endLocal; ++localTask) {
+                const long long taskId=globalTaskFromLocalStatic(localTask);
+                const int globalIdx = static_cast<int>(taskId/tasksPerLocation);
                 const int shellIdx=locationGridIds[(std::size_t)globalIdx]/nPtsShell;
                 if (shellIdx>=0 && shellIdx<nShells)
-                    locDonePerShellLocal[(size_t)shellIdx]++;
+                    taskDonePerShellLocal[(size_t)shellIdx]++;
             }
         }
     };
 
     //==================================================================================
-    // 14.9 — Location computation kernels
+    // 14.9 — Flattened cutoff task kernels
     //==================================================================================
 
-    auto computeGlobalLocation = [&](int globalIdx, cMode3DMeshFieldEval& threadField) {
-        // globalIdx is the compact scheduler index. gridId is its location in the
+    auto computeGlobalTask = [&](long long taskId, cMode3DMeshFieldEval& threadField) {
+        const int globalIdx = static_cast<int>(taskId/tasksPerLocation);
+        const long long localTask = taskId%tasksPerLocation;
+
+        // globalIdx is the compact scheduler location. gridId is its location in the
         // complete shell geometry; they differ only for latitude-banded RIGIDITY_LIST.
         const int gridId=locationGridIds[(std::size_t)globalIdx];
         const V3 x0_m=LocationToX0m(
@@ -4216,97 +4278,103 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             prm,gridId,nLon,nLat,shellLonRes_deg,shellLatRes_deg,nPtsShell,x0_m);
 
         if (rigidityListAccess) {
-            // Backtrace the reversed particle opposite the requested arrival direction.
-            // Every list entry is independent and retained in deterministic input order.
+            // One task == one explicitly requested rigidity.  The reversed-particle
+            // backtrace for each rigidity is independent, so a one-location access scan
+            // can now use every configured MPI rank/thread just like a directional map.
+            const int iRigidity=static_cast<int>(localTask);
             const V3 v0=mul(-1.0,verticalArrivalDir);
             const std::size_t base=(std::size_t)globalIdx*(std::size_t)nAccessRigidities;
-            for (int iRigidity=0;iRigidity<nAccessRigidities;++iRigidity) {
-                const EarthUtil::CutoffSampleState state=ClassifyCutoffSample3D_(
-                    prm,threadField,x0_m,v0,
-                    prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
-                accessStateRank[base+(std::size_t)iRigidity]=static_cast<int>(state);
-            }
+            const EarthUtil::CutoffSampleState state=ClassifyCutoffSample3D_(
+                prm,threadField,x0_m,v0,
+                prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
+            accessStateRank[base+(std::size_t)iRigidity]=static_cast<int>(state);
             return;
         }
 
-        double rc=-1.0;
-        if (penumbraScan) {
-            const CutoffBandResult3D_ band=CutoffForDirPenumbraScan_GV(
-                prm,threadField,x0_m,verticalArrivalDir,
-                q_C,m0,box,Rmin,Rmax);
-            rc=band.effective_GV;
-            rcLowerRank[(size_t)globalIdx]=band.lower_GV;
-            rcEffectiveRank[(size_t)globalIdx]=band.effective_GV;
-            rcUpperRank[(size_t)globalIdx]=band.upper_GV;
-            nTransitionsRank[(size_t)globalIdx]=band.nTransitions;
-            nAllowedIntervalsRank[(size_t)globalIdx]=band.nAllowedIntervals;
-            nUnresolvedRank[(size_t)globalIdx]=band.nUnresolved;
-            lowerBracketUnresolvedRank[(size_t)globalIdx]=band.lowerBracketUnresolved;
-            upperBracketUnresolvedRank[(size_t)globalIdx]=band.upperBracketUnresolved;
-            lowerBelowRangeRank[(size_t)globalIdx]=band.lowerBelowRange;
-            lowerAboveRangeRank[(size_t)globalIdx]=band.lowerAboveRange;
-            upperBelowRangeRank[(size_t)globalIdx]=band.upperBelowRange;
-            upperAboveRangeRank[(size_t)globalIdx]=band.upperAboveRange;
+        if (localTask == 0) {
+            // Primary scalar cutoff task.  All per-location scalar/penumbra diagnostics
+            // are written only here, so no directional task can race these slots.
+            double rc=-1.0;
+            if (penumbraScan) {
+                const CutoffBandResult3D_ band=CutoffForDirPenumbraScan_GV(
+                    prm,threadField,x0_m,verticalArrivalDir,
+                    q_C,m0,box,Rmin,Rmax);
+                rc=band.effective_GV;
+                rcLowerRank[(size_t)globalIdx]=band.lower_GV;
+                rcEffectiveRank[(size_t)globalIdx]=band.effective_GV;
+                rcUpperRank[(size_t)globalIdx]=band.upper_GV;
+                nTransitionsRank[(size_t)globalIdx]=band.nTransitions;
+                nAllowedIntervalsRank[(size_t)globalIdx]=band.nAllowedIntervals;
+                nUnresolvedRank[(size_t)globalIdx]=band.nUnresolved;
+                lowerBracketUnresolvedRank[(size_t)globalIdx]=band.lowerBracketUnresolved;
+                upperBracketUnresolvedRank[(size_t)globalIdx]=band.upperBracketUnresolved;
+                lowerBelowRangeRank[(size_t)globalIdx]=band.lowerBelowRange;
+                lowerAboveRangeRank[(size_t)globalIdx]=band.lowerAboveRange;
+                upperBelowRangeRank[(size_t)globalIdx]=band.upperBelowRange;
+                upperAboveRangeRank[(size_t)globalIdx]=band.upperAboveRange;
 
-            if (saveReferenceAccessStates) {
-                // Classify the exact observational rigidities with the identical
-                // trajectory kernel and field evaluator used by PENUMBRA_SCAN.  We
-                // intentionally evaluate the exact requested values rather than
-                // borrowing the nearest regular scan node: the C9 bins are not
-                // generally coincident with a 160-point linear grid, and nearest-node
-                // substitution would introduce a method-dependent rigidity offset.
-                const V3 v0=mul(-1.0,verticalArrivalDir);
-                const std::size_t base=(std::size_t)globalIdx*
-                                       (std::size_t)nAccessRigidities;
-                for (int iRigidity=0;iRigidity<nAccessRigidities;++iRigidity) {
-                    const EarthUtil::CutoffSampleState state=ClassifyCutoffSample3D_(
-                        prm,threadField,x0_m,v0,
-                        prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
-                    accessStateRank[base+(std::size_t)iRigidity]=
-                        static_cast<int>(state);
+                if (saveReferenceAccessStates) {
+                    // Companion observational rigidity classifications remain attached
+                    // to the primary task.  They are a small auxiliary product and use
+                    // disjoint accessStateRank entries, so no additional synchronization
+                    // is needed while directional-map tasks run concurrently.
+                    const V3 v0=mul(-1.0,verticalArrivalDir);
+                    const std::size_t base=(std::size_t)globalIdx*
+                                           (std::size_t)nAccessRigidities;
+                    for (int iRigidity=0;iRigidity<nAccessRigidities;++iRigidity) {
+                        const EarthUtil::CutoffSampleState state=ClassifyCutoffSample3D_(
+                            prm,threadField,x0_m,v0,
+                            prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
+                        accessStateRank[base+(std::size_t)iRigidity]=
+                            static_cast<int>(state);
+                    }
                 }
             }
-        }
-        else {
-            rc=ComputeCutoffAtPoint_GV(
-                prm,threadField,x0_m,verticalArrivalDir,dirs,samplingVertical,
-                q_C,m0,box,Rmin,Rmax);
-        }
-
-        rcRank[(size_t)globalIdx] = rc;
-        if (rc > 0.0) {
-            const double pCut = MomentumFromRigidity_GV(rc, qabs);
-            eminRank[(size_t)globalIdx] = KineticEnergyFromMomentum_MeV(pCut, m0);
-        }
-
-        if (dirMapCfg.enabled) {
-            const size_t base = (size_t)globalIdx * (size_t)dirMapCfg.nCells;
-            for (int cellId=0; cellId<dirMapCfg.nCells; ++cellId) {
-                const V3 dir_gsm = DirectionalMapCellDirectionGSM3D(dirMapCfg, cellId);
-                dirMapRank[base + (size_t)cellId] = CutoffForDir_GV(
-                    prm, threadField, x0_m, dir_gsm,
-                    q_C, m0, box, Rmin, Rmax);
+            else {
+                rc=ComputeCutoffAtPoint_GV(
+                    prm,threadField,x0_m,verticalArrivalDir,dirs,samplingVertical,
+                    q_C,m0,box,Rmin,Rmax);
             }
+
+            rcRank[(size_t)globalIdx] = rc;
+            if (rc > 0.0) {
+                const double pCut = MomentumFromRigidity_GV(rc, qabs);
+                eminRank[(size_t)globalIdx] = KineticEnergyFromMomentum_MeV(pCut, m0);
+            }
+            return;
         }
+
+        // Directional-map task. localTask==1 corresponds to cellId==0.  Exactly one
+        // worker writes each [globalIdx,cellId] slot, making the array lock-free.
+        const int cellId=static_cast<int>(localTask-1LL);
+        const V3 dir_gsm = DirectionalMapCellDirectionGSM3D(dirMapCfg, cellId);
+        const size_t base = (size_t)globalIdx * (size_t)dirMapCfg.nCells;
+        dirMapRank[base + (size_t)cellId] = CutoffForDir_GV(
+            prm, threadField, x0_m, dir_gsm,
+            q_C, m0, box, Rmin, Rmax);
     };
 
-    auto computeGlobalRange = [&](int begin, int end) {
-        if (end <= begin) return;
+    // Compute a contiguous range of GLOBAL task ids.  DYNAMIC scheduling uses this
+    // directly because an MPI fetch returns one contiguous task interval.
+    auto computeGlobalTaskRange = [&](long long beginTask, long long endTask) {
+        if (endTask <= beginTask) return;
 
         if (cutoffBackend == CutoffParallelBackend_::THREADS && cutoffThreadCount > 1) {
-            const int nWork = end - begin;
-            const int nWorkers = std::max(1,std::min(cutoffThreadCount,nWork));
-            std::atomic<int> nextGlobalIdx(begin);
+            const long long nWork = endTask-beginTask;
+            const int nWorkers = static_cast<int>(std::max(
+                1LL,std::min(static_cast<long long>(cutoffThreadCount),nWork)));
+            std::atomic<long long> nextTask(beginTask);
             std::vector<std::thread> workers;
             workers.reserve((size_t)nWorkers);
 
             for (int iw=0; iw<nWorkers; ++iw) {
                 workers.emplace_back([&]() {
+                    // PRIVATE evaluator per worker; compact field arrays are shared read-only.
                     cMode3DMeshFieldEval threadField(prm);
                     for (;;) {
-                        const int globalIdx = nextGlobalIdx.fetch_add(1,std::memory_order_relaxed);
-                        if (globalIdx >= end) break;
-                        computeGlobalLocation(globalIdx,threadField);
+                        const long long taskId = nextTask.fetch_add(1,std::memory_order_relaxed);
+                        if (taskId >= endTask) break;
+                        computeGlobalTask(taskId,threadField);
                     }
                 });
             }
@@ -4317,8 +4385,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 
         if (cutoffBackend == CutoffParallelBackend_::SERIAL) {
             cMode3DMeshFieldEval threadField(prm);
-            for (int globalIdx=begin; globalIdx<end; ++globalIdx) {
-                computeGlobalLocation(globalIdx,threadField);
+            for (long long taskId=beginTask; taskId<endTask; ++taskId) {
+                computeGlobalTask(taskId,threadField);
             }
             return;
         }
@@ -4331,19 +4399,22 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 #ifdef _OPENMP
 #pragma omp for schedule(dynamic, 1)
 #endif
-            for (int globalIdx=begin; globalIdx<end; ++globalIdx) {
-                computeGlobalLocation(globalIdx,threadField);
+            for (long long taskId=beginTask; taskId<endTask; ++taskId) {
+                computeGlobalTask(taskId,threadField);
             }
         }
     };
 
-    auto computeWorkListRange = [&](int begin, int end) {
-        if (end <= begin) return;
+    // Compute a range of rank-local deterministic task indices and map each one to the
+    // corresponding global task id.  This avoids storing O(nLoc*nDirections) task lists.
+    auto computeStaticLocalTaskRange = [&](long long beginLocal, long long endLocal) {
+        if (endLocal <= beginLocal) return;
 
         if (cutoffBackend == CutoffParallelBackend_::THREADS && cutoffThreadCount > 1) {
-            const int nWork = end - begin;
-            const int nWorkers = std::max(1,std::min(cutoffThreadCount,nWork));
-            std::atomic<int> nextLocalIdx(begin);
+            const long long nWork = endLocal-beginLocal;
+            const int nWorkers = static_cast<int>(std::max(
+                1LL,std::min(static_cast<long long>(cutoffThreadCount),nWork)));
+            std::atomic<long long> nextLocal(beginLocal);
             std::vector<std::thread> workers;
             workers.reserve((size_t)nWorkers);
 
@@ -4351,10 +4422,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 workers.emplace_back([&]() {
                     cMode3DMeshFieldEval threadField(prm);
                     for (;;) {
-                        const int localIdx = nextLocalIdx.fetch_add(1,std::memory_order_relaxed);
-                        if (localIdx >= end) break;
-                        const int globalIdx = rankWorkList[(size_t)localIdx];
-                        computeGlobalLocation(globalIdx,threadField);
+                        const long long localTask = nextLocal.fetch_add(1,std::memory_order_relaxed);
+                        if (localTask >= endLocal) break;
+                        computeGlobalTask(globalTaskFromLocalStatic(localTask),threadField);
                     }
                 });
             }
@@ -4365,8 +4435,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 
         if (cutoffBackend == CutoffParallelBackend_::SERIAL) {
             cMode3DMeshFieldEval threadField(prm);
-            for (int localIdx=begin; localIdx<end; ++localIdx) {
-                computeGlobalLocation(rankWorkList[(size_t)localIdx],threadField);
+            for (long long localTask=beginLocal; localTask<endLocal; ++localTask) {
+                computeGlobalTask(globalTaskFromLocalStatic(localTask),threadField);
             }
             return;
         }
@@ -4379,75 +4449,99 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 #ifdef _OPENMP
 #pragma omp for schedule(dynamic, 1)
 #endif
-            for (int localIdx=begin; localIdx<end; ++localIdx) {
-                computeGlobalLocation(rankWorkList[(size_t)localIdx],threadField);
+            for (long long localTask=beginLocal; localTask<endLocal; ++localTask) {
+                computeGlobalTask(globalTaskFromLocalStatic(localTask),threadField);
             }
         }
     };
 
-    maybePrintProgress(0,0,locDonePerShellGlobal,true);
+    maybePrintProgress(0,taskDonePerShellGlobal,true,true);
 
     if (mpiScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
-        // Collective construction of the RMA counter.  After construction, each rank
-        // independently fetches chunks.  No MPI call is made from inside worker threads.
+        // Both RMA objects are constructed collectively.  The work counter hands out
+        // task ids; the separate progress counter records COMPLETED tasks so the bar
+        // cannot race ahead merely because another rank fetched a large chunk.
         Earth::Mode3D::DynamicMpiLocationScheduler scheduler(
             MPI_GLOBAL_COMMUNICATOR,
-            static_cast<long long>(nLoc),
+            totalTasksGlobal,
             mpiDynamicChunk,
-            "Mode3D cutoff");
+            "Mode3D cutoff task scheduler");
+        Earth::Mode3D::DynamicMpiProgressCounter progressCounter(
+            MPI_GLOBAL_COMMUNICATOR,
+            totalTasksGlobal,
+            "Mode3D cutoff task progress");
 
         for (;;) {
-            const long long chunkStartLL = scheduler.FetchNextChunkStart();
-            if (chunkStartLL >= static_cast<long long>(nLoc)) break;
+            const long long chunkStart = scheduler.FetchNextChunkStart();
+            if (chunkStart >= totalTasksGlobal) break;
 
-            const long long chunkEndLL = std::min(
-                chunkStartLL + scheduler.ChunkSize(),
-                static_cast<long long>(nLoc));
+            const long long chunkEnd = std::min(
+                chunkStart + scheduler.ChunkSize(), totalTasksGlobal);
 
-            const int chunkStart = static_cast<int>(chunkStartLL);
-            const int chunkEnd   = static_cast<int>(chunkEndLL);
+            computeGlobalTaskRange(chunkStart,chunkEnd);
+            accountCompletedGlobalTaskRange(chunkStart,chunkEnd);
 
-            computeGlobalRange(chunkStart,chunkEnd);
-            accountCompletedGlobalRange(chunkStart,chunkEnd);
+            // MPI is called only by this rank/main thread after all std::thread/OpenMP
+            // workers for the chunk have completed.
+            progressCounter.Add(chunkEnd-chunkStart);
+            if (mpiRank == 0 && !isShells) {
+                maybePrintProgress(progressCounter.Get(),taskDonePerShellGlobal,false,false);
+            }
         }
 
-        MPI_Allreduce(&doneLocationsLocal,&doneLocationsGlobal,
-                      1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+        // Once the assignment counter is exhausted, some ranks may still be working on
+        // previously fetched chunks. Rank 0 polls the separate COMPLETION counter while
+        // those ranks finish, so a long final C19 trajectory does not leave the progress
+        // display frozen at an old value. Non-root ranks can proceed to the Allreduce
+        // below after their final progressCounter.Add(); they keep the RMA window alive
+        // until rank 0 joins the collective.
+        if (mpiRank == 0) {
+            for (;;) {
+                const long long observed = progressCounter.Get();
+                maybePrintProgress(observed,taskDonePerShellGlobal,false,
+                                   observed >= totalTasksGlobal);
+                if (observed >= totalTasksGlobal) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            }
+        }
+
         MPI_Allreduce(&doneTasksLocal,&doneTasksGlobal,
                       1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
         if (isShells) {
-            MPI_Allreduce(locDonePerShellLocal.data(),locDonePerShellGlobal.data(),
-                          nShells,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+            MPI_Allreduce(taskDonePerShellLocal.data(),taskDonePerShellGlobal.data(),
+                          nShells,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
         }
-        maybePrintProgress(doneLocationsGlobal,doneTasksGlobal,locDonePerShellGlobal,true);
+        maybePrintProgress(doneTasksGlobal,taskDonePerShellGlobal,true,true);
     }
     else {
-        int nProgressBatches = std::max(1,std::min(nLoc,200));
+        // Deterministic schedulers retain synchronized progress batches.  For direct
+        // std::threads we keep one batch so the worker pool is created only once; the
+        // final task count is still exact.
+        int nProgressBatches = static_cast<int>(
+            std::max(1LL,std::min(rankTaskCount,200LL)));
         if (cutoffBackend == CutoffParallelBackend_::THREADS && cutoffThreadCount > 1) {
             nProgressBatches = 1;
         }
 
         for (int ibatch=0; ibatch<nProgressBatches; ++ibatch) {
-            const int batchBegin = (int)(
-                (static_cast<long long>(nLocalStatic) * ibatch) / nProgressBatches);
-            const int batchEnd = (int)(
-                (static_cast<long long>(nLocalStatic) * (ibatch+1)) / nProgressBatches);
+            const long long batchBegin =
+                (rankTaskCount * static_cast<long long>(ibatch)) / nProgressBatches;
+            const long long batchEnd =
+                (rankTaskCount * static_cast<long long>(ibatch+1)) / nProgressBatches;
 
             if (batchEnd > batchBegin) {
-                computeWorkListRange(batchBegin,batchEnd);
-                accountCompletedWorkListRange(batchBegin,batchEnd);
+                computeStaticLocalTaskRange(batchBegin,batchEnd);
+                accountCompletedStaticLocalRange(batchBegin,batchEnd);
             }
 
-            MPI_Allreduce(&doneLocationsLocal,&doneLocationsGlobal,
-                          1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
             MPI_Allreduce(&doneTasksLocal,&doneTasksGlobal,
                           1,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
             if (isShells) {
-                MPI_Allreduce(locDonePerShellLocal.data(),locDonePerShellGlobal.data(),
-                              nShells,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+                MPI_Allreduce(taskDonePerShellLocal.data(),taskDonePerShellGlobal.data(),
+                              nShells,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
             }
 
-            maybePrintProgress(doneLocationsGlobal,doneTasksGlobal,locDonePerShellGlobal,
+            maybePrintProgress(doneTasksGlobal,taskDonePerShellGlobal,true,
                                ibatch == nProgressBatches-1);
         }
     }
@@ -4637,7 +4731,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         // -----------------------------------------------------------------------------
         // Optional directional sky-map output.
         //
-        // The computation and MPI_Gatherv above filled dirMapAll in global location
+        // The computation and MPI reduction above filled dirMapAll in global location
         // order.  We now write one Tecplot file per location, reusing the same
         // LocationToX0m() mapping used for the primary cutoff calculation so that
         // POINTS, TRAJECTORY, and SHELLS all get maps anchored at exactly the same

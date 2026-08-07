@@ -4,11 +4,12 @@
 //
 // Shared parallel-backend selection for mesh-backed Mode3D backward products.
 //
-// Both cutoff rigidity and density/flux are embarrassingly parallel over observation
-// locations once the compact global field arrays have been assembled.  The two
-// solvers used to carry separate copies of the same backend-resolution code.  Keeping
-// the logic here guarantees that standalone Mode3D and SWMF-coupled Mode3D interpret
-// DENSITY_PARALLEL / DENSITY_THREADS exactly the same way for both products.
+// Once the compact global field arrays have been assembled, Mode3D backward products
+// operate on independent work items.  Density/flux uses observation locations; cutoff
+// rigidity now flattens each location into independent trajectory tasks so directional
+// maps and explicit rigidity lists can use all MPI ranks and shared-memory workers even
+// when the run contains only one observation location.  The common backend-resolution
+// logic here guarantees consistent DENSITY_PARALLEL / DENSITY_THREADS handling.
 //======================================================================================
 
 #include "Mode3DParallel.h"
@@ -57,8 +58,9 @@ const char* MpiSchedulerName(MpiScheduler scheduler) {
 MpiScheduler ResolveMpiScheduler(const EarthUtil::AmpsParam& prm,
                                  const char* diagnosticContext) {
   // The user-facing keyword is deliberately generic: the same inter-rank scheduler
-  // applies to cutoff rigidity and density/flux because both products operate on the
-  // same Mode3D list of observation locations.  Keep environment fallback support for
+  // infrastructure applies to cutoff rigidity and density/flux, although the actual
+  // work unit differs (flattened trajectory task for cutoff, location for density).
+  // Keep environment fallback support for
   // quick tests on HPC systems where editing the input deck is inconvenient.
   std::string token = prm.mode3d.mpiScheduler;
   if (token.empty()) {
@@ -104,7 +106,7 @@ MpiScheduler ResolveMpiScheduler(const EarthUtil::AmpsParam& prm,
 
 long long ResolveMpiDynamicChunk(const EarthUtil::AmpsParam& prm,
                                  int workerCount,
-                                 long long nGlobalLocations) {
+                                 long long nGlobalWorkItems) {
   long long chunk = static_cast<long long>(prm.mode3d.mpiDynamicChunk);
 
   if (chunk <= 0) {
@@ -124,17 +126,17 @@ long long ResolveMpiDynamicChunk(const EarthUtil::AmpsParam& prm,
 
   if (chunk <= 0) {
     // Automatic chunk-size heuristic:
-    //   * at least one location per worker so all direct threads can participate;
-    //   * normally four locations per worker to amortize MPI_Fetch_and_op overhead;
+    //   * at least one work item per worker so all direct threads can participate;
+    //   * normally four work items per worker to amortize MPI_Fetch_and_op overhead;
     //   * never larger than the whole job.
-    // This is intentionally conservative.  Users with very expensive/variable traces
-    // can reduce MODE3D_MPI_DYNAMIC_CHUNK/GRIDLESS_MPI_DYNAMIC_CHUNK; users with tiny/cheap locations can increase
-    // it to reduce scheduler traffic.
+    // This is intentionally conservative. Users with very expensive/variable traces
+    // can reduce MODE3D_MPI_DYNAMIC_CHUNK/GRIDLESS_MPI_DYNAMIC_CHUNK; users with
+    // tiny/cheap work items can increase it to reduce scheduler traffic.
     const long long workers = static_cast<long long>(std::max(1,workerCount));
     chunk = std::max(1LL,4LL*workers);
   }
 
-  if (nGlobalLocations > 0) chunk = std::min(chunk,nGlobalLocations);
+  if (nGlobalWorkItems > 0) chunk = std::min(chunk,nGlobalWorkItems);
   return std::max(1LL,chunk);
 }
 

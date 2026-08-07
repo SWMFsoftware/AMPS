@@ -220,6 +220,138 @@ The evaluator no longer branches between DATAFILE and SWMF pointer-stencil acces
 
 The optional direct analytic-field debug path remains available and bypasses the compact arrays.
 
+## Mode3D cutoff task-level MPI/thread parallelization
+
+### Why the scheduler was changed
+
+The Mode3D cutoff solver previously used one **observation location** as the smallest
+schedulable unit.  That works well for global shell scans containing many locations, but
+it performs poorly for directional products with only one or a few locations.  C19 is
+the clearest example: one GOES observation location with a 10-degree directional map has
+684 independent directional trajectories plus one primary scalar cutoff.  The old
+scheduler reported 16 configured workers but reduced the local worker count to one
+because its chunk contained only one location.
+
+The cutoff solver now schedules **independent trajectory tasks**.  For each location the
+flat task layout is:
+
+```text
+ordinary cutoff, no directional map:
+    task 0 = primary scalar cutoff
+
+ordinary cutoff with DIRECTIONAL_MAP:
+    task 0 = primary scalar cutoff
+    task 1 = directional cell 0
+    task 2 = directional cell 1
+    ...
+
+RIGIDITY_LIST:
+    task 0 = requested rigidity 0
+    task 1 = requested rigidity 1
+    ...
+```
+
+For a normal directional run,
+
+```text
+tasks_per_location = 1 + number_of_directional_cells
+total_tasks         = number_of_locations * tasks_per_location
+```
+
+and the global task identifier is decoded without allocating a task list:
+
+```text
+location_id = task_id / tasks_per_location
+local_task  = task_id % tasks_per_location
+```
+
+This same task space is used by `DYNAMIC`, `BLOCK_CYCLIC`, and `STATIC` MPI
+schedulers.  Consequently a one-location calculation can use multiple MPI ranks.
+Inside each rank, `THREADS` or `OPENMP` distributes the rank's task range among the
+configured shared-memory workers.
+
+### Why concurrent trajectories are safe
+
+The background field is **not** a single mutable `B` value shared by all workers.  Before
+backtracing, Mode3D assembles the complete spatial field snapshot into compact global
+arrays representing `B(x,y,z)` (and `E(x,y,z)` when present).  Those arrays are identical
+on all MPI ranks and remain read-only during trajectory integration.
+
+Every worker owns a private `cMode3DMeshFieldEval` object.  In particular, the worker's
+`lastNode_` search hint, interpolation row stencil, and local diagnostic accumulation are
+not shared.  A worker tracing trajectory A can therefore interpolate `B(x_A)` while a
+second worker simultaneously interpolates `B(x_B)` from the same immutable field
+snapshot.  Neither operation changes the field seen by the other trajectory.
+
+The output arrays are also lock-free by construction because each flattened task owns a
+unique result element:
+
+```text
+primary task                 -> rcRank[location], eminRank[location], band diagnostics
+directional task             -> dirMapRank[location, cell]
+RIGIDITY_LIST task           -> accessStateRank[location, rigidity]
+```
+
+No two independent tasks write the same slot.  Final rank-local arrays continue to be
+combined with the existing sentinel-aware MPI reductions.
+
+### MPI thread level
+
+Worker threads never call MPI.  Only the MPI rank/main thread fetches dynamic work,
+updates the completion counter, and performs reductions.  The implementation therefore
+does not require `MPI_THREAD_MULTIPLE`; it remains compatible with the existing
+FUNNELED/single-thread MPI use pattern.
+
+### Dynamic chunk meaning for cutoff
+
+`MODE3D_MPI_DYNAMIC_CHUNK` / `-mode3d-mpi-dynamic-chunk` is now interpreted by the
+Mode3D **cutoff** solver as the number of flattened cutoff tasks fetched per atomic MPI
+request.  Density/flux continues to interpret the same generic control in its own work
+units, which are observation locations.
+
+For the direct `THREADS` backend, use a cutoff chunk at least as large as the requested
+thread count.  Otherwise one fetched chunk cannot feed all local workers.  The solver
+prints a warning when the dynamic cutoff chunk is smaller than the thread count.  For
+example, the current C19 runner commonly requests 32 tasks with `-nt 16`.
+
+With `0` (automatic), the generic resolver selects approximately four work items per
+configured worker, capped by the total job size.
+
+### C19 example
+
+At the C19 default directional resolution:
+
+```text
+longitude cells = 360 / 10 = 36
+latitude cells  = 180 / 10 + 1 = 19
+directional cells = 36 * 19 = 684
+primary scalar cutoff = 1
+--------------------------------
+total tasks/location = 685
+```
+
+A run with four MPI ranks and 16 threads per rank therefore exposes up to 64 concurrent
+trajectory workers instead of the old effective one-worker execution.  The actual speedup
+will depend on trajectory-length imbalance, CPU affinity, memory/cache behavior, and the
+selected particle mover.
+
+The startup banner now reports the real task decomposition, for example:
+
+```text
+Cutoff backend : THREADS
+Cutoff workers : 16 per rank
+Work unit      : flattened cutoff trajectory task
+Tasks/location : 685
+Global tasks   : 685
+MPI scheduler  : DYNAMIC
+MPI dyn chunk  : 32 global cutoff task(s) per atomic fetch
+```
+
+For task-level products the progress line uses `LocEq` (location-equivalent progress)
+and `Task` as the authoritative counter.  `LocEq` is simply
+`completed_tasks/tasks_per_location`; tasks belonging to one physical location may finish
+out of order on different ranks.
+
 ## Error handling
 
 The compact-field implementation treats the following conditions as fatal consistency errors:

@@ -163,7 +163,7 @@
 //     MODE3D_PARALLEL         OPENMP | THREADS | SERIAL
 //     MODE3D_THREADS          <int>      ! workers per MPI rank; 0 => automatic
 //     MODE3D_MPI_SCHEDULER    DYNAMIC | BLOCK_CYCLIC | STATIC
-//     MODE3D_MPI_DYNAMIC_CHUNK <int>     ! locations per dynamic MPI chunk; 0 => auto
+//     MODE3D_MPI_DYNAMIC_CHUNK <int>     ! work items per dynamic MPI chunk; cutoff=trajectory tasks, density=locations; 0 => auto
 //
 //   #MODE3D_MESH                  (optional; only affects -mode 3d AMR mesh build)
 //     MODE3D_MESH_RES_EARTH_RE     <double>   ! requested AMR resolution near 1 Re, in Re

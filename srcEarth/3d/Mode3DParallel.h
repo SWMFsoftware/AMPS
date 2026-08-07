@@ -30,8 +30,9 @@ enum class ParallelBackend {
 // regression/debug option.  It is usually the least balanced scheduler for shell maps.
 //
 // DYNAMIC uses an MPI one-sided atomic counter.  Ranks repeatedly fetch the next
-// chunk of global locations and process that chunk locally.  This is the recommended
-// scheduler for cutoff/density runs where trajectory cost varies strongly with
+// chunk of global work items and process that chunk locally.  The work item is
+// a location for density/flux and a flattened trajectory task for cutoff rigidity.
+// This is the recommended scheduler for cutoff/density runs where cost varies with
 // latitude, rigidity, or connectivity.
 enum class MpiScheduler {
   BLOCK_CYCLIC,
@@ -48,24 +49,26 @@ const char* MpiSchedulerName(MpiScheduler scheduler);
 MpiScheduler ResolveMpiScheduler(const EarthUtil::AmpsParam& prm,
                                  const char* diagnosticContext="Mode3D");
 
-// Resolve the MPI dynamic chunk size.  A value <=0 means automatic.
-// The automatic value is deliberately proportional to the per-rank worker count:
-// large enough to amortize MPI_Fetch_and_op overhead, but small enough for good
-// load balance when expensive trajectories are clustered geographically.
+// Resolve the MPI dynamic chunk size. A value <=0 means automatic. The caller
+// supplies the number of GLOBAL WORK ITEMS: cutoff passes flattened trajectory tasks,
+// density/flux passes locations. The automatic value is proportional to the per-rank
+// worker count so one fetch can feed the local workers without making chunks too coarse.
 long long ResolveMpiDynamicChunk(const EarthUtil::AmpsParam& prm,
                                  int workerCount,
-                                 long long nGlobalLocations);
+                                 long long nGlobalWorkItems);
 
-// Small RAII wrapper around an MPI one-sided atomic global-location counter.
+// Small RAII wrapper around an MPI one-sided atomic global-work counter.
+// The historical class name contains "Location" for source compatibility, but the
+// counter itself is generic and may index flattened cutoff trajectory tasks.
 //
 // Design contract:
 //   * Constructed collectively on all ranks of `comm`.
 //   * Rank 0 owns the exposed counter memory; all other ranks expose zero bytes.
 //   * FetchNextChunkStart() is called independently by each rank, not by worker
 //     threads.  This avoids requiring MPI_THREAD_MULTIPLE.
-//   * The returned value is the first global location in the next chunk.  The caller
-//     should stop when start >= nGlobalLocations and otherwise compute
-//     [start, min(start+chunkSize, nGlobalLocations)).
+//   * The returned value is the first global work-item id in the next chunk.  The caller
+//     should stop when start >= nGlobalWorkItems and otherwise compute
+//     [start, min(start+chunkSize, nGlobalWorkItems)).
 class DynamicMpiLocationScheduler {
 public:
   DynamicMpiLocationScheduler(MPI_Comm comm,

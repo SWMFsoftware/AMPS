@@ -1,214 +1,133 @@
 # C19A — GOES EPEAD East–West directional-access validation
 
-C19A is the public-data directional observational validation for the AMPS
-geomagnetic cutoff calculator. It compares modeled broad-aperture proton access
-with simultaneous eastward- and westward-looking GOES-13 and GOES-15 EPEAD
-measurements during the 17 May 2012 SEP/GLE71 event.
+## 1. Purpose
 
-The test is intentionally distinct from C17:
+C19A is the first observational validation of the **directional** geomagnetic-access capability of the AMPS cutoff calculator. Internal symmetry tests such as C17 can verify charge-sign and velocity-reversal consistency, but they do not establish that the calculated directional access agrees with measurements. C19A compares AMPS directional cutoff maps with simultaneous eastward- and westward-looking proton measurements from the GOES-13 and GOES-15 EPEAD instruments.
 
-- C17 verifies an exact internal charge-sign/velocity-reversal symmetry.
-- C19A tests agreement with directional spacecraft observations.
+The implemented public-data event is the 17 May 2012 SEP/GLE71 event. The default analysis interval is the event decay from 2012-05-17 06:00 UTC through 2012-05-18 06:00 UTC. The prompt onset is excluded because interplanetary beam anisotropy can imitate or obscure a geomagnetic East–West effect.
 
 The primary observable is
 
 ```text
-log10[(background-subtracted physical EAST flux) /
-      (background-subtracted physical WEST flux)]
+log10[(physical EAST background-subtracted flux) /
+      (physical WEST background-subtracted flux)]
 ```
 
-for the P4 and P5 proton channels. The model folds an AMPS directional cutoff
-map through a uniform elliptical top-hat approximation to each detector field
-of view and a common incident spectrum `J(E) proportional to E^-gamma`.
+for EPEAD P4 and P5. A negative value means that the eastward-looking detector measured less flux than the westward-looking detector.
 
-C19A is a broad-aperture validation, not a full detector-response simulation.
-It does not claim to reproduce absolute count rates or the complete EPEAD
-energy-angle response matrix.
+C19A is a **broad-aperture validation**, not a complete detector simulation. It uses nominal energy intervals, a uniform elliptical top-hat angular response, and a common isotropic power-law incident spectrum. It is intended to test the sign, energy dependence, and temporal variability of directional geomagnetic shielding.
 
-## Directory contents
+## 2. Implemented comparison
 
-```text
-srcEarth/test/C19/
-├── README.md
-├── run_C19.py
-├── build_goes_reference.py
-├── AMPS_PARAM_C19_mode3d.in
-├── AMPS_PARAM_C19_gridless.in
-├── C19_trajectory.txt
-├── event_C19_may2012.json
-└── tests/
-    └── run_self_tests.py
-```
+| Item | C19A implementation |
+|---|---|
+| Spacecraft | GOES-13 and GOES-15 |
+| Event | 17 May 2012 SEP/GLE71 decay |
+| Observation cadence | Public NOAA/NCEI 5-minute EPEAD product |
+| Primary channels | P4: 15–40 MeV; P5: 38–82 MeV |
+| P4 nominal FOV | ±45° north–south, ±25° equatorial |
+| P5 nominal FOV | ±60° north–south, ±30° equatorial |
+| Observation | Background-subtracted physical East/West flux ratio |
+| Field models | IGRF + T96 and IGRF + T05/TS05 |
+| Solvers | GRIDDED, GRIDLESS, or BOTH |
+| AMPS product | Global SM directional cutoff map at each GOES position and epoch |
+| Source spectrum | `J(E) ∝ E^-gamma`, default `gamma=3` |
+| Instrument model | Uniform elliptical top-hat response inside nominal FOV |
 
-Only source, configuration, documentation, and self-test files are committed.
-`C19_trajectory.txt` is a concrete GOES-13 example used for a manual one-epoch
-run. The `data/` directory is created automatically when the observational
-reference is generated; downloaded NOAA files, generated reference tables,
-provenance records, and user-supplied magnetic-field drivers are runtime
-products and are not included in this commit package.
+### Event-specific detector orientation
 
-Generated observational products are written under `data/` by
-`build_goes_reference.py`. AMPS results are written under
-`test_output/C19_goes_epead_ew/` by default.
+The NOAA files use invariant telemetry labels `E` and `W`; these labels are not themselves guaranteed to identify physical east and west because GOES-13–15 can change yaw orientation. The May 2012 mapping follows Rodriguez et al. (2014), Table 2:
 
-## Complete AMPS input decks
-
-`AMPS_PARAM_C19_mode3d.in` and `AMPS_PARAM_C19_gridless.in` contain concrete
-default values for every AMPS directive used by C19A. They contain no macro
-variables or placeholder tokens. The committed defaults describe a T05
-calculation for GOES-13 at 2012-05-17 06:00 UTC with a 10-degree directional
-map, a 0.5-500 MeV cutoff bracket, and 16 shared-memory workers.
-
-The runner does not generate an input deck from macros. It copies the selected
-complete deck and changes only named directives whose values vary between runs:
-
-```text
-RUN_ID
-CUTOFF_EMIN, CUTOFF_EMAX, CUTOFF_NENERGY, CUTOFF_UPPER_SCAN_N
-CUTOFF_MAX_TRAJ_TIME
-DIRMAP_LON_RES, DIRMAP_LAT_RES
-FIELD_MODEL, EPOCH, DRIVER_FILE
-SPEC_GAMMA
-DT_TRACE, MAX_TRACE_TIME, MAX_TRACE_DISTANCE
-GRIDLESS or MODE3D scheduler, chunk, and thread directives
-MODE3D mesh directives for the GRIDDED branch
-```
-
-All remaining physical and numerical controls are explicit in the committed
-files, including field-model fallback parameters, domain dimensions in
-kilometers, particle properties, spectrum-parser defaults, output frame, time
-step, maximum steps, trace limits, and trap detection. Every generated
-`AMPS_PARAM_C19.in` is therefore readable and runnable without a separate macro
-substitution layer.
-
-For a direct manual check, save the driver as
-`srcEarth/test/C19/data/ts05_driver_may2012.txt`, then run from the test
-directory:
-
-```bash
-cd srcEarth/test/C19
-mpirun -np 4 ../../../amps -mode 3d -i AMPS_PARAM_C19_mode3d.in \
-  -mode3d-field-eval MESH -mode3d-parallel THREADS -mode3d-threads 16
-```
-
-The committed `C19_trajectory.txt` supplies the default GOES-13 position. The
-normal `run_C19.py` workflow creates a new one-line trajectory file for each
-selected spacecraft epoch and replaces `DRIVER_FILE` with the absolute path
-passed through `--driver`.
-
-## Scientific configuration
-
-### Event
-
-The default manifest selects:
-
-```text
-analysis interval:   2012-05-17 06:00 UTC through 2012-05-18 06:00 UTC
-background interval: 2012-05-16 00:00 UTC through 2012-05-16 12:00 UTC
-spacecraft:          GOES-13 and GOES-15
-channels:            P4 and P5
-```
-
-The prompt event onset is excluded from the default analysis interval to reduce
-contamination by interplanetary directional anisotropy.
-
-### EPEAD channel model
-
-The manifest uses the published nominal channel bounds and fields of view:
-
-| Channel | Nominal energy range | Nominal elliptical half angles |
-|---|---:|---:|
-| P4 | 15–40 MeV | 45° north–south × 25° equatorial |
-| P5 | 38–82 MeV | 60° north–south × 30° equatorial |
-
-For the May 2012 event, the fixed telemetry-head mapping is:
-
-| Spacecraft | Telemetry W head | Telemetry E head |
+| Spacecraft | Telemetry W | Telemetry E |
 |---|---|---|
 | GOES-13 | physical EAST | physical WEST |
 | GOES-15 | physical WEST | physical EAST |
 
-The W/E telemetry labels are invariant instrument labels, not guaranteed
-physical look directions. The event mapping follows the GOES-13/15 orientation
-reported for May 2012 by Rodriguez et al. (2014).
+The mapping is stored in `event_C19_may2012.json`. It must be changed when C19A is extended to a different event.
 
-### Model configurations
-
-The runner supports:
+## 3. Directory contents
 
 ```text
-solver:      GRIDDED, GRIDLESS, or BOTH
-field model: T96, T05, or both
+srcEarth/test/C19/
+├── README.md
+├── AMPS_PARAM_C19_gridless.in
+├── AMPS_PARAM_C19_mode3d.in
+├── build_goes_reference.py
+├── event_C19_may2012.json
+├── references.bib
+├── requirements.txt
+├── run_C19.py
+├── data/
+│   ├── README.md
+│   └── reference_C19_goes_epead_ew_schema.csv
+└── tools/
+    └── prepare_official_ts05_driver.py
 ```
 
-`GRIDDED` initializes the empirical field on the standalone Mode3D AMR mesh and
-traces through the production interpolation stencil. `GRIDLESS` evaluates the
-same empirical model directly along each trajectory.
+Generated data and result files are intentionally not included in the source archive. They are reconstructed from the public source products with recorded SHA-256 provenance.
 
-The user supplies the May 2012 AMPS-format magnetic-field driver. No event
-driver is included in this package.
+## 4. Requirements
 
-## Requirements
+### AMPS executable
 
-- Python 3.8 or newer.
-- An AMPS executable containing:
-  - standalone `gridless` and/or `3d` cutoff modes;
-  - `DIRECTIONAL_MAP` support;
-  - T96 and T05 field evaluation;
-  - GEO trajectory-file conversion through SPICE;
-  - the Mode3D field-mesh interpolation path for `GRIDDED`.
-- `mpirun` available in `PATH`, or another launcher supplied with `--mpirun`.
-- `matplotlib` for comparison plots.
-- Network access only when `build_goes_reference.py --download` is used.
+C19A requires an AMPS executable with:
 
-Install the plotting dependency when it is not already available:
+- standalone Earth `gridless` and/or `3d` cutoff calculations;
+- `DIRECTIONAL_MAP T` output;
+- T96 and T05 field models;
+- SPICE enabled and the required kernels loaded;
+- trajectory input in `TRAJ_FRAME GEO`;
+- MPI; and
+- POSIX-thread field initialization only when `--mode3d-parallel-field-init` is requested.
+
+SPICE is required because each GOES latitude/longitude/altitude sample is transformed from ITRF93/GEO to GSM and because the directional-map labels are defined in SM and rotated to GSM at the selected epoch.
+
+### Python
+
+Python 3.8 or newer is supported. Install the plotting dependency from the repository root:
 
 ```bash
-python3 -m pip install matplotlib
+python3 -m pip install -r srcEarth/test/C19/requirements.txt
 ```
 
-The reference builder itself uses only the Python standard library. A separate
-per-test `requirements.txt` is intentionally not included because matplotlib is
-the only non-standard Python dependency and is commonly shared by the other
-validation runners.
+The data-download and TS05-driver scripts otherwise use only the Python standard library.
 
-## 1. Generate the observational reference
+### MPI launcher
 
-### Automatic NOAA download
+The runner uses `mpirun` by default, as do the other AMPS test runners. Use `--mpirun <launcher>` only when a different command is required by the local system.
 
-From the AMPS codebase root:
+## 5. Obtain and build the observational reference
+
+### 5.1 Public NOAA files
+
+The builder uses these fixed public monthly files from the historical NOAA/SWPC operational-average tree. These exact files preserve the directional `p17ew` E/W-head schema used by C19A. NCEI also publishes a newer Version 1 collection for general GOES 1–15 use; replacing the fixed C19A sources requires revalidating variable definitions, detector-head mapping, quality flags, and the resulting reference.
+
+```text
+GOES-13:
+https://www.ncei.noaa.gov/data/goes-space-environment-monitor/access/avg/2012/05/goes13/csv/g13_epead_p17ew_5m_20120501_20120531.csv
+
+GOES-15:
+https://www.ncei.noaa.gov/data/goes-space-environment-monitor/access/avg/2012/05/goes15/csv/g15_epead_p17ew_5m_20120501_20120531.csv
+```
+
+From the AMPS repository root, download both files and generate the compact reference table:
 
 ```bash
 python3 srcEarth/test/C19/build_goes_reference.py --download
 ```
 
-The script downloads the May 2012 five-minute GOES-13 and GOES-15
-`epead_p17ew` CSV files from the NOAA/NCEI GOES Space Environment Monitor
-archive. It then:
-
-1. reads P4E/P4W and P5E/P5W directional proton fluxes;
-2. applies the event-specific telemetry-head-to-physical-direction mapping;
-3. calculates a separate pre-event median background for each spacecraft,
-   channel, and telemetry head;
-4. subtracts those backgrounds;
-5. rejects invalid, flagged, nonpositive, or low-signal samples;
-6. forms the physical EAST/WEST ratio;
-7. writes a compact compressed reference table and provenance record.
-
-Generated files:
+This writes:
 
 ```text
+srcEarth/test/C19/data/cache/g13_epead_p17ew_5m_20120501_20120531.csv
+srcEarth/test/C19/data/cache/g15_epead_p17ew_5m_20120501_20120531.csv
 srcEarth/test/C19/data/reference_C19_goes_epead_ew.csv.gz
 srcEarth/test/C19/data/reference_C19_goes_epead_ew_provenance.json
 ```
 
-Downloaded source files are cached under:
+The provenance file records the source URLs and SHA-256 values, manifest checksum, background method, directional mapping, and generated-reference checksum.
 
-```text
-srcEarth/test/C19/data/cache/
-```
-
-### Build from already downloaded NOAA files
+To use files downloaded separately:
 
 ```bash
 python3 srcEarth/test/C19/build_goes_reference.py \
@@ -216,242 +135,333 @@ python3 srcEarth/test/C19/build_goes_reference.py \
   --goes15-particle /path/to/g15_epead_p17ew_5m_20120501_20120531.csv
 ```
 
-### Optional ephemeris
+### 5.2 Reference construction
 
-Without ephemeris files, the reference uses the nominal GOES-East and GOES-West
-geostationary slots recorded in the event manifest. For a publication run, pass
-public one-minute ephemeris CSV files when available:
+For every spacecraft, channel, and telemetry head, the script calculates the median valid flux over the manifest background interval:
+
+```text
+2012-05-16 00:00–12:00 UTC
+```
+
+It retains a sample only when:
+
+- both physical directions have finite positive raw flux;
+- available quality flags are zero;
+- both background-subtracted fluxes are positive; and
+- `(raw-background)/background` is at least 3 for both directions by default.
+
+The threshold can be changed explicitly:
+
+```bash
+python3 srcEarth/test/C19/build_goes_reference.py --download \
+  --min-signal-to-background 2.0
+```
+
+Changing this value changes the observational reference and is recorded in the provenance file.
+
+### 5.3 Spacecraft position
+
+The routine reference uses the nominal GOES operational slots from the event manifest:
+
+```text
+GOES-13: 75° W, geostationary altitude
+GOES-15: 135° W, geostationary altitude
+```
+
+NOAA also lists public one-minute ephemeris products for GOES 6–15. For publication runs, download the appropriate May 2012 ephemeris CSV files through the NOAA GOES 1–15 Space Weather Instruments page and pass them to the builder:
 
 ```bash
 python3 srcEarth/test/C19/build_goes_reference.py \
-  --goes13-particle /path/to/goes13_particle.csv \
-  --goes15-particle /path/to/goes15_particle.csv \
+  --goes13-particle /path/to/g13_particle.csv \
+  --goes15-particle /path/to/g15_particle.csv \
   --goes13-ephemeris /path/to/goes13_ephemeris.csv \
   --goes15-ephemeris /path/to/goes15_ephemeris.csv
 ```
 
-The ephemeris parser searches common timestamp, longitude, latitude, and
-altitude column names and uses the nearest record within 180 seconds.
+The ephemeris parser recognizes common UTC, longitude, latitude, and altitude column names. It uses the nearest position within 180 seconds and otherwise falls back to the nominal slot. Every output row records `position_source`.
 
-### Reference-builder quality control
-
-The default signal gate requires both physical look directions to satisfy:
-
-```text
-(raw flux - background) / background >= 3
-```
-
-Override it only for a documented sensitivity study:
-
-```bash
-python3 srcEarth/test/C19/build_goes_reference.py --download \
-  --min-signal-to-background 2
-```
-
-Every generated reference has a JSON provenance file containing source paths,
-source URLs, SHA-256 checksums, direction mapping, background values, processing
-settings, and output checksum.
-
-## 2. Supply the magnetic-field driver
-
-C19A does not generate or bundle the May 2012 T96/T05/TS05 driver. Pass it to
-the runner with `--driver`.
-
-The expected AMPS format is one UTC timestamp plus 19 numerical values:
-
-```text
-# YYYY-MM-DDTHH:MM:SS Bx By Bz Vx Vy Vz Np Temp SYM-H IMFflag SWflag Tilt Pdyn W1 W2 W3 W4 W5 W6
-```
-
-No example driver is committed. The required row format is documented above,
-and the real driver is supplied explicitly with `--driver`.
-
-The real driver must:
-
-- cover every selected C19 reference epoch;
-- have strictly increasing timestamps;
-- have a five-minute median cadence;
-- contain no gap larger than ten minutes;
-- contain all 19 numerical columns on every data row.
-
-AMPS consumes the complete driver through `DRIVER_FILE`. The Python
-postprocessor additionally reads `Tilt` to transform the GEO/GSM observation
-position into the SM frame used to label the directional cutoff map.
-
-## 3. Validate the package before running AMPS
-
-```bash
-python3 srcEarth/test/C19/tests/run_self_tests.py
-```
-
-This executes:
-
-- Python syntax compilation;
-- reference-builder synthetic parsing/orientation/background test;
-- runner directional-map/aperture/metrics/plot test;
-- named-directive rendering checks for both complete GRIDLESS and GRIDDED input decks;
-- command-line help checks.
-
-The individual self-tests are also available:
+### 5.4 Reference-builder self-test
 
 ```bash
 python3 srcEarth/test/C19/build_goes_reference.py --self-test
+```
+
+This uses synthetic NOAA-format files to test header discovery, P4/P5 parsing, quality/background filtering, the event-specific E/W mapping, gzip output, and provenance generation. It does not contact NOAA.
+
+## 6. Obtain and prepare the T05/TS05 driver
+
+The official Tsyganenko archive provides yearly five-minute input files containing IMF, solar-wind, SYM-H, dipole tilt, pressure, and W1–W6. Build the C19A driver with:
+
+```bash
+python3 srcEarth/test/C19/tools/prepare_official_ts05_driver.py
+```
+
+The default source is:
+
+```text
+https://geo.phys.spbu.ru/~tsyganenko/TS05_data_and_stuff/2012_OMNI_5m_with_TS05_variables.zip
+```
+
+The default selected interval is:
+
+```text
+2012-05-16 00:00 UTC through 2012-05-18 06:00 UTC, inclusive
+```
+
+The output is:
+
+```text
+srcEarth/test/C19/data/ts05_driver_may2012.txt
+```
+
+The script copies all physical values and quality flags without interpolation or smoothing and records source URL, archive member, source SHA-256, and selected coverage in comments.
+
+Use an archive downloaded locally:
+
+```bash
+python3 srcEarth/test/C19/tools/prepare_official_ts05_driver.py \
+  --source /path/to/2012_OMNI_5m_with_TS05_variables.zip
+```
+
+Driver-script self-test:
+
+```bash
+python3 srcEarth/test/C19/tools/prepare_official_ts05_driver.py --self-test
+```
+
+Before AMPS is launched, `run_C19.py` independently verifies the timestamp-plus-19-value schema, strict time ordering, five-minute median cadence, maximum ten-minute internal gap, finite values, and coverage of all selected observation epochs.
+
+## 7. Verify the package before a production run
+
+Run all non-network self-tests:
+
+```bash
+python3 srcEarth/test/C19/build_goes_reference.py --self-test
+python3 srcEarth/test/C19/tools/prepare_official_ts05_driver.py --self-test
 python3 srcEarth/test/C19/run_C19.py --self-test
 ```
 
-## 4. Preview commands and generated inputs
+The runner self-test checks directional-map parsing, detector-aperture selection, energy folding, E/W sign, template rendering for both solvers, driver validation, CSV output, and plot generation.
 
-A dry run validates the reference and supplied driver, creates every run
-directory, copies and updates the complete `AMPS_PARAM_C19.in`, writes `C19_trajectory.txt`, and prints the
-exact AMPS commands without launching AMPS:
+After generating the public reference and driver, preview the exact AMPS commands and rendered inputs:
 
 ```bash
 python3 srcEarth/test/C19/run_C19.py \
   --profile SMOKE \
   --solver GRIDDED \
   --models T96,T05 \
-  --driver /path/to/may2012_driver.txt \
+  --dry-run \
   --amps ./amps \
-  -np 4 -nt 16 \
-  --dry-run
+  -np 4 -nt 16
 ```
 
-Inspect the generated files under:
+## 8. Run C19A
 
-```text
-test_output/C19_goes_epead_ew/
-```
+### 8.1 Quick smoke run
 
-## 5. Run C19A
-
-### Recommended first run
+The SMOKE profile selects the first, middle, and last retained observation epoch for each spacecraft:
 
 ```bash
 python3 srcEarth/test/C19/run_C19.py \
   --profile SMOKE \
   --solver GRIDDED \
-  --models T05 \
-  --driver /path/to/may2012_driver.txt \
+  --models T96,T05 \
   --amps ./amps \
   -np 4 -nt 16
 ```
 
-### Routine T96/T05 Mode3D comparison
+### 8.2 Routine regression
+
+The ROUTINE profile samples the generated five-minute reference at 60-minute spacing:
 
 ```bash
 python3 srcEarth/test/C19/run_C19.py \
   --profile ROUTINE \
   --solver GRIDDED \
   --models T96,T05 \
-  --reference srcEarth/test/C19/data/reference_C19_goes_epead_ew.csv.gz \
-  --driver /path/to/may2012_driver.txt \
   --amps ./amps \
   -np 4 -nt 16
 ```
 
-### Compare direct and mesh-interpolated field evaluation
+The default reference and driver paths are used automatically. Explicit equivalents are:
+
+```bash
+--reference srcEarth/test/C19/data/reference_C19_goes_epead_ew.csv.gz
+--driver srcEarth/test/C19/data/ts05_driver_may2012.txt
+```
+
+### 8.3 Parallel Mode3D field initialization
+
+```bash
+python3 srcEarth/test/C19/run_C19.py \
+  --profile ROUTINE \
+  --solver GRIDDED \
+  --models T96,T05 \
+  --mode3d-parallel-field-init \
+  --amps ./amps \
+  -np 4 -nt 16
+```
+
+The same `-nt` value controls the Mode3D cutoff thread backend and the number of temporary POSIX workers requested for background-field initialization. The caller also participates in the field initialization, following the implementation documented by C18.
+
+### 8.4 GRIDLESS/GRIDDED cross-solver run
 
 ```bash
 python3 srcEarth/test/C19/run_C19.py \
   --profile ROUTINE \
   --solver BOTH \
   --models T96,T05 \
-  --driver /path/to/may2012_driver.txt \
   --amps ./amps \
   -np 4 -nt 16
 ```
 
-### Enable POSIX-thread field initialization
-
-This option affects only the `GRIDDED` branch:
+### 8.5 Full five-minute comparison
 
 ```bash
 python3 srcEarth/test/C19/run_C19.py \
-  --profile ROUTINE \
+  --profile FULL \
   --solver GRIDDED \
   --models T96,T05 \
-  --driver /path/to/may2012_driver.txt \
-  --mode3d-parallel-field-init \
   --amps ./amps \
   -np 4 -nt 16
 ```
 
-### Alternative MPI launcher
+This can require many AMPS launches: one launch per selected `(epoch, spacecraft, solver, field model)` group. P4 and P5 share the same directional map for a given group and are folded in postprocessing.
 
-`mpirun` is the default, consistent with the other test runners. Override it as
-needed:
+### 8.6 Custom cadence or time interval
 
 ```bash
 python3 srcEarth/test/C19/run_C19.py \
-  --driver /path/to/may2012_driver.txt \
-  --mpirun mpiexec_mpt
+  --profile FULL \
+  --time-step-minutes 15 \
+  --start 2012-05-17T08:00:00Z \
+  --end   2012-05-17T20:00:00Z \
+  --solver GRIDDED \
+  --models T05 \
+  --amps ./amps
 ```
 
-## Profiles
+## 9. Numerical calculation
 
-| Profile | Reference cadence | Intended use |
-|---|---:|---|
-| `SMOKE` | a small fixed subset | software, parser, and geometry check |
-| `ROUTINE` | 60 minutes per spacecraft | routine model/data validation |
-| `FULL` | all retained five-minute samples | publication and sensitivity studies |
-
-The cadence can be overridden with `--time-step-minutes`; `0` keeps every
-reference epoch.
-
-## Directional calculation
-
-For each selected `(UTC, spacecraft, field model, solver)` combination, the
-runner:
-
-1. writes a one-sample GEO trajectory file;
-2. launches AMPS with `DIRECTIONAL_MAP T`;
-3. reads the SM-labeled global directional cutoff map;
-4. constructs local physical EAST and WEST detector boresights at the
-   spacecraft position;
-5. selects map cells inside the nominal elliptical aperture;
-6. converts each directional cutoff to a P4/P5 channel transmission assuming
-   `J(E) proportional to E^-gamma`;
-7. averages transmission over solid angle;
-8. forms the modeled EAST/WEST ratio;
-9. compares modeled and observed `log10(E/W)`.
-
-The default angular grid is 10° × 10°. Refine it with:
+For each selected spacecraft and epoch, the runner writes a one-line GEO trajectory file:
 
 ```text
+UTC latitude_deg longitude_deg_east altitude_km
+```
+
+AMPS produces a directional cutoff map on a regular global SM longitude/latitude grid. The default map resolution is 10° × 10°. For each P4/P5 detector direction, the runner:
+
+1. rotates the observation position from GSM to SM using the driver dipole tilt;
+2. constructs local physical eastward and westward boresights;
+3. selects SM directional-map cells inside the channel's nominal elliptical aperture;
+4. converts the cutoff rigidity to proton kinetic energy;
+5. integrates `E^-gamma` over the accessible part of the nominal energy interval; and
+6. calculates modeled broad-aperture East and West transmissions and their ratio.
+
+The directional map is independent of the scalar `CUTOFF_SAMPLING` result. The input templates retain a single vertical scalar sample while requesting the additional full directional map with `DIRECTIONAL_MAP T`.
+
+### Mode3D cutoff task parallelism
+
+C19 launches one spacecraft position per AMPS run.  In the former Mode3D cutoff
+scheduler, the smallest MPI/thread work item was one observation location.  Therefore a
+C19 GRIDDED launch with `N_locations=1` reduced a requested 16-thread pool to one active
+worker and executed all directional-map trajectories serially inside that worker.
+
+The Mode3D cutoff scheduler now flattens independent trajectory products into tasks.  At
+the default 10° × 10° directional resolution:
+
+```text
+longitude cells       = 360/10 = 36
+latitude cells        = 180/10 + 1 = 19
+directional cells     = 36*19 = 684
+primary scalar cutoff = 1
+total cutoff tasks    = 685 per C19 location
+```
+
+The MPI scheduler distributes these 685 tasks across ranks, and the selected shared-memory
+backend distributes each rank's fetched task range across its workers.  Consequently
+`-np 4 -nt 16` can expose up to 64 concurrent trajectory workers even though the input
+contains only one observation location.
+
+This is safe for the GRIDDED/MESH path because the Mode3D magnetic-field snapshot is a
+complete read-only spatial field `B(x,y,z)`, not one mutable background value.  Each
+worker owns a private `cMode3DMeshFieldEval` (including its tree-search hint and
+interpolation state) and only reads the shared compact field arrays.  Different workers
+can therefore interpolate different field values at different trajectory positions
+simultaneously.
+
+For Mode3D cutoff, `MODE3D_MPI_DYNAMIC_CHUNK` / `-mode3d-mpi-dynamic-chunk` now counts
+**flattened cutoff tasks**, not locations.  Recent C19 runners use a 32-task dynamic chunk
+by default; older runners may derive the GRIDDED chunk from `-nt`.  Either is sufficient
+to feed 16 direct workers when `-nt 16` is selected.  If a manually selected dynamic
+chunk is smaller than the thread count, the Mode3D startup banner prints a warning.
+
+A correctly rebuilt C19 GRIDDED executable should report a task-level banner similar to:
+
+```text
+Cutoff backend : THREADS
+Cutoff workers : 16 per rank
+Work unit      : flattened cutoff trajectory task
+Tasks/location : 685
+Global tasks   : 685
+MPI scheduler  : DYNAMIC
+MPI dyn chunk  : 32 global cutoff task(s) per atomic fetch
+```
+
+If a one-location C19 run still reports `global location(s) per atomic fetch` or clamps
+the dynamic chunk to one, that executable still contains the old location-level cutoff
+scheduler.
+
+`Task` is now the authoritative progress counter.  For task-level products the progress
+line labels the derived location-equivalent counter as `LocEq`; independent tasks from the
+same physical location may finish out of order on different MPI ranks.
+
+Important sensitivity controls include:
+
+```text
+--spectral-index
 --dir-lon-res-deg
 --dir-lat-res-deg
+--cutoff-scan-n
+--cutoff-emin-mev
+--cutoff-emax-mev
+--dt-trace
+--max-trace-time
+--mode3d-mesh-res-earth-re
 ```
 
-The default spectrum is `gamma=3`; change it with `--spectral-index` and archive
-the sensitivity.
+Publication results should include convergence tests for angular resolution, rigidity scan, mesh resolution, and assumed spectral index.
 
-## Output products
+## 10. Outputs
 
-Top-level files include:
+The top-level output directory defaults to:
 
 ```text
-C19_commands.json
-C19_reference_used.csv
-C19_model.csv
-C19_comparison.csv
-C19_metrics.csv
-C19_aperture_samples.csv
-C19_result.json
-C19_summary.txt
+test_output/C19_goes_epead_ew/
 ```
 
-Per-run directories contain:
+Per-run directories are arranged as:
 
 ```text
-AMPS_PARAM_C19.in
-C19_trajectory.txt
-C19_amps.log
-cutoff_gridless_dir_map_point_0000.dat
-or
-cutoff_3d_dir_map_loc_000000.dat
+<solver>/<field-model>/<spacecraft>/<UTC-token>/
 ```
 
-Plots are generated for each solver/field-model pair:
+Each contains the generated input, trajectory file, AMPS log, and directional-map product.
+
+Top-level machine-readable products:
+
+| Product | Contents |
+|---|---|
+| `C19_commands.json` | Every launch command, working directory, epoch, spacecraft, solver, and field model |
+| `C19_reference_used.csv` | Exact selected observational rows |
+| `C19_model.csv` | Modeled E/W ratio, transmissions, aperture counts, status, and map provenance |
+| `C19_comparison.csv` | Observation/model rows and log-ratio residuals |
+| `C19_metrics.csv` | Valid fraction, E/W sign agreement, bias, MAE, RMSE, correlation, and gate result |
+| `C19_aperture_samples.csv` | Cell-level aperture membership and cutoff diagnostics for one representative case |
+| `C19_result.json` | Complete result, thresholds, file hashes, failures, limitations, and overall status |
+| `C19_summary.txt` | Compact human-readable result |
+
+Generated plots for every selected solver/model pair:
 
 ```text
 C19_comparison_<solver>_<model>.png
@@ -460,105 +470,102 @@ C19_transmission_<solver>_<model>.png
 C19_aperture_diagnostic.png
 ```
 
-## Acceptance metrics
+The comparison plot shows observed and modeled `log10(E/W)` versus time. The scatter plot shows modeled versus observed log ratio with the 1:1 line. The transmission plot shows modeled broad-aperture East and West transmissions. The aperture diagnostic visualizes which directional-map cells enter the nominal detector response.
 
-The runner reports, separately for each solver, field model, and channel:
+## 11. Acceptance behavior
 
-- valid modeled fraction;
-- east/west sign agreement fraction;
-- mean log-ratio bias;
-- mean absolute log-ratio error;
-- log-ratio RMSE;
-- Pearson correlation.
-
-Current thresholds are provisional:
+The initial observational thresholds are provisional:
 
 ```text
-valid fraction       >= 0.85
-sign agreement       >= 0.90
-correlation          >= 0.60
-mean absolute error  <= 0.20 in log10(E/W)
-RMSE                 <= 0.30 in log10(E/W)
+valid modeled fraction       >= 0.85
+correct E/W sign fraction    >= 0.90
+correlation                  >= 0.60
+mean absolute log10 error    <= 0.20
+RMS log10 error              <= 0.30
 ```
 
-By default, these metrics are reported but do not change the process exit code.
-Use `--enforce-acceptance` after the thresholds have been reviewed against the
-actual reference and model sensitivity studies.
+By default, the runner reports these gates but returns success when the calculation completed numerically. Add `--enforce-acceptance` to return exit code 1 when an observational gate fails:
+
+```bash
+python3 srcEarth/test/C19/run_C19.py \
+  --profile ROUTINE --solver GRIDDED --models T96,T05 \
+  --enforce-acceptance --amps ./amps -np 4 -nt 16
+```
 
 Exit codes:
 
 ```text
-0  numerical processing completed; and, when requested, acceptance passed
-1  observational acceptance failed with --enforce-acceptance
-2  missing input, AMPS failure, parse failure, or incomplete numerical result
+0  numerical calculation completed; and observational gates passed when enforced
+1  observational gates failed and --enforce-acceptance was requested
+2  input, launch, output, or postprocessing failure
 ```
 
-## Recommended validation sequence
+## 12. Interpretation and limitations
 
-1. Run both Python self-tests.
-2. Generate the NOAA reference and inspect its provenance and time series.
-3. Validate the supplied magnetic driver and run `--dry-run`.
-4. Run `SMOKE`, `GRIDDED`, `T05`.
-5. Repeat with and without `--mode3d-parallel-field-init`; results should agree.
-6. Run `ROUTINE` for T96 and T05.
-7. Run `BOTH` to quantify GRIDDED–GRIDLESS differences.
-8. Refine the directional grid and Mode3D mesh.
-9. Test spectral-index sensitivity.
-10. Use exact ephemeris and all five-minute samples for publication results.
+C19A supports the following claim when successful:
 
-## Known limitations
+> The AMPS cutoff calculator reproduces the sign and broad temporal/energy behavior of the GOES EPEAD East–West proton-access asymmetry for the selected event.
 
-- The P4/P5 response is a uniform elliptical top-hat, not a measured
-  energy-angle response matrix.
-- No relative calibration correction is currently applied between the two
-  EPEAD heads.
-- The source is isotropic and has a single power-law spectral index.
-- Prompt-onset interplanetary anisotropy is not modeled.
-- Nominal GEO positions are used unless ephemeris files are supplied.
-- The physical W/E mapping is event-specific and must not be reused blindly for
-  another event or yaw state.
-- T96/T05 driver uncertainty and field-model uncertainty are not included in the
-  observational error bars.
+C19A alone does not support a claim of exact detector count-rate prediction because:
 
-These limitations should appear in any publication using C19A.
+- the full energy–angle response matrix is not used;
+- out-of-aperture and secondary responses are not modeled;
+- the two detector heads may retain relative calibration differences;
+- the external SEP spectrum is represented by a common isotropic power law;
+- the prompt event onset is unsuitable when interplanetary anisotropy is large;
+- nominal GEO locations are used unless ephemeris files are supplied; and
+- provisional acceptance thresholds require refinement from multiple events.
 
-## Public data and references
+A publication-quality extension should include exact ephemeris, detector-response folding, detector-head intercalibration, spectral-slope uncertainty, additional events/yaw states, and T96/T05/SWMF comparisons.
 
-### NOAA data
+## 13. Troubleshooting
 
-- NOAA/NCEI GOES 1–15 Space Weather Instruments:
-  https://www.ncei.noaa.gov/products/goes-1-15/space-weather-instruments
-- GOES Space Environment Monitor direct archive:
-  https://www.ncei.noaa.gov/data/goes-space-environment-monitor/access/
-- GOES 1–15 SEM L1B/L2 dataset metadata:
-  https://www.ncei.noaa.gov/access/metadata/landing-page/bin/iso?id=gov.noaa.ncei.swx%3Agoes_sem-l1b-l2_ncei
+### Reference file is missing
 
-### Instrument and East–West references
+```text
+C19A reference is missing ...
+```
 
-1. Rodriguez, J. V., Onsager, T. G., and Mazur, J. E. (2010),
-   “The east–west effect in solar proton flux measurements in geostationary
-   orbit: A new GOES capability,” *Geophysical Research Letters*, 37, L07109.
-   https://doi.org/10.1029/2010GL042531
-2. Rodriguez, J. V., Krosschell, J. C., and Green, J. C. (2014),
-   “Intercalibration of GOES 8–15 solar proton detectors,” *Space Weather*, 12,
-   92–109. https://doi.org/10.1002/2013SW000996
-3. Bruno, A. (2017), “Calibration of the GOES-13/15 high-energy proton
-   detectors based on PAMELA solar energetic particle observations,”
-   *Space Weather*, 15. https://doi.org/10.1002/2017SW001672
+Run:
 
-## Reproducibility record
+```bash
+python3 srcEarth/test/C19/build_goes_reference.py --download
+```
 
-For every scientific run, archive:
+### Driver file is missing
 
-- AMPS code revision;
-- compiler and build configuration;
-- command line;
-- generated `AMPS_PARAM_C19.in` files;
-- supplied driver plus SHA-256;
-- reference table and provenance JSON;
-- event manifest plus SHA-256;
-- MPI launcher and rank count;
-- thread count and field-initialization mode;
-- solver, field model, mover, mesh, and directional resolution;
-- spectral index;
-- all raw directional maps and final C19 CSV/JSON/PNG products.
+Run:
+
+```bash
+python3 srcEarth/test/C19/tools/prepare_official_ts05_driver.py
+```
+
+### `mpirun` is not available
+
+Load the system MPI environment or override the launcher:
+
+```bash
+--mpirun mpiexec_mpt
+```
+
+### GEO trajectory transformation fails
+
+Verify that AMPS was built with SPICE, the required kernels are available, and the epoch is covered. `TRAJ_FRAME GEO` cannot be converted correctly without SPICE.
+
+### Directional-map file is missing
+
+Verify that the executable supports `DIRECTIONAL_MAP T`, that `DIRMAP_LON_RES` and `DIRMAP_LAT_RES` are positive, and that the selected UPPER_SCAN calculation completed.
+
+### Too many launches
+
+Use `--profile SMOKE`, a larger `--time-step-minutes`, one spacecraft, one model, or one solver during debugging.
+
+## 14. References and public sources
+
+1. NOAA National Centers for Environmental Information, *NOAA GOES 1–15 Space Environment Monitor (SEM) L1B & L2 Data, Version 0 (superseded)*, operational 5-minute GOES-13/15 EPEAD `p17ew` subset used by C19A, dataset identifier `gov.noaa.ncei.swx:goes_sem-l1b-l2_swpc`, DSI `2086_01`. NCEI recommends Version 1.0 for general use; C19A retains the fixed historical directional files for reproducibility.
+2. Rodriguez, J. V., T. G. Onsager, and J. E. Mazur (2010), “The east–west effect in solar proton flux measurements in geostationary orbit: A new GOES capability,” *Geophysical Research Letters*, 37, L07109, doi:10.1029/2010GL042531.
+3. Rodriguez, J. V., J. C. Krosschell, and J. C. Green (2014), “Intercalibration of GOES 8–15 solar proton detectors,” *Space Weather*, 12, 92–109, doi:10.1002/2013SW000996.
+4. Kress, B. T., J. V. Rodriguez, J. E. Mazur, and M. Engel (2013), “Modeling solar proton access to geostationary spacecraft with geomagnetic cutoffs,” *Advances in Space Research*, 52(11), 1939–1948, doi:10.1016/j.asr.2013.08.019.
+5. Tsyganenko, N. A., and M. I. Sitnov (2005), “Modeling the dynamics of the inner magnetosphere during strong geomagnetic storms,” *Journal of Geophysical Research*, 110, A03208, doi:10.1029/2004JA010798.
+
+Machine-readable BibTeX entries are provided in `references.bib`.

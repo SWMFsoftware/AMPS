@@ -102,7 +102,7 @@
 //       Select the inter-rank scheduler for standalone Mode3D and gridless cutoff/density runs.
 //
 //   -mode3d-mpi-dynamic-chunk <int>
-//       Number of Mode3D locations or gridless task chunks per dynamic MPI fetch. 0 means automatic.
+//       Number of dynamic MPI work items per fetch. Mode3D cutoff uses flattened trajectory tasks; Mode3D density/flux uses locations. 0 means automatic.
 //
 //   -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|RIGIDITY_LIST|BINARY>
 //       Select the cutoff-rigidity product. UPPER_SCAN returns the upper penumbra

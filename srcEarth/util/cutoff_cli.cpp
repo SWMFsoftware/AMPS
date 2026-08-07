@@ -51,7 +51,7 @@
 //     -density-threads <int>                             threads per MPI process.
 //     -mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC> MPI-rank scheduler.
 //       Gridless aliases: -gridless-mpi-scheduler, -gridless-mpi-dynamic-chunk.
-//     -mode3d-mpi-dynamic-chunk <int>                    locations per MPI fetch.
+//     -mode3d-mpi-dynamic-chunk <int>                    work items per MPI fetch.
 //     -mode3d-mesh-res-earth-re <double>                 optional AMR resolution at Earth.
 //     -mode3d-mesh-res-boundary-re <double>              optional AMR resolution at boundary.
 //     -mode3d-mesh-coarsening <LINEAR|LOG|POWER|...>     optional radial coarsening law.
@@ -796,10 +796,11 @@ std::string HelpMessage(const char* progName) {
   out << "  -mode3d-mpi-scheduler | --mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC>   (optional)\n";
   out << "      What this command does:\n";
   out << "        Selects the MPI-rank work scheduler for standalone Mode3D and\n";
-  out << "        gridless backward calculations. The work unit is a global observation\n";
-  out << "        location for cutoff and a location/energy/direction-block style task\n";
-  out << "        for density/flux. Worker threads inside each rank can still use the\n";
-  out << "        separate -mode3d-parallel/-density-parallel THREADS queue.\n";
+  out << "        gridless backward calculations. Mode3D cutoff uses flattened\n";
+  out << "        trajectory tasks (primary cutoff, directional-map cells, or\n";
+  out << "        rigidity-list entries); Mode3D density/flux keeps observation\n";
+  out << "        locations as its work unit. Worker threads inside each rank use\n";
+  out << "        the selected -mode3d-parallel/-density-parallel backend.\n";
   out << "\n";
   out << "      Why it is important:\n";
   out << "        Backtracing cost varies strongly with location, rigidity, direction,\n";
@@ -831,11 +832,12 @@ std::string HelpMessage(const char* progName) {
   out << "        GRIDLESS_MPI_DYNAMIC_CHUNK  64\n\n";
 
   out << "  -mode3d-mpi-dynamic-chunk | --mode3d-mpi-dynamic-chunk <N>   (optional; 0=automatic)\n";
-  out << "      Set the number of global tasks fetched per MPI atomic request when the\n";
-  out << "      MPI scheduler is DYNAMIC. Smaller chunks reduce tail idle time and help\n";
-  out << "      highly uneven cutoff/flux workloads; larger chunks reduce MPI scheduling\n";
-  out << "      overhead. A practical starting point is 4--8 times the number of threads\n";
-  out << "      per MPI rank, then tune by looking at the end-of-run rank work summary.\n";
+  out << "      Set the number of work items fetched per MPI atomic request when the\n";
+  out << "      MPI scheduler is DYNAMIC. For Mode3D cutoff, one work item is one\n";
+  out << "      independent trajectory task; for Mode3D density/flux it is one\n";
+  out << "      observation location. Smaller chunks improve tail balance; larger\n";
+  out << "      chunks reduce MPI scheduling overhead. Use at least the thread count\n";
+  out << "      per MPI rank when THREADS is selected so one chunk can feed all workers.\n";
   out << "      Aliases: --backtrack-mpi-chunk, --gridless-mpi-dynamic-chunk,\n";
   out << "      --gridless-mpi-chunk. Input-file analogue: MODE3D_MPI_DYNAMIC_CHUNK or\n";
   out << "      GRIDLESS_MPI_DYNAMIC_CHUNK.\n\n";
