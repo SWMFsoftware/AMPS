@@ -2585,17 +2585,16 @@ namespace Earth {
 namespace GridlessMode {
 
 int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
-  // The *primary* shell-oriented RIGIDITY_LIST algorithm remains a Mode3D-only
-  // product because its output contract is tied to the Mode3D structured-shell path.
-  // This does NOT mean gridless lacks direct access for C19: when PENUMBRA_SCAN is used
-  // with DIRECTIONAL_MAP=T and a non-empty CUTOFF_RIGIDITY_LIST_GV, gridless now emits
-  // the same three-state directional A(R,Omega) companion cube as Mode3D.  Refusing the
-  // primary RIGIDITY_LIST token here prevents a shell request from silently falling
-  // through to another search algorithm while preserving full C19 science equivalence.
+  // The shell-oriented RIGIDITY_LIST algorithm remains a Mode3D-only product because
+  // its output contract is tied to the Mode3D structured-shell path.  DIRECT_ACCESS is
+  // different: it is the point/trajectory directional A(R,Omega) product used by C19
+  // and is fully supported in GRIDLESS.  In DIRECT_ACCESS mode GRIDLESS schedules only
+  // the requested (direction,rigidity) trajectories and skips scalar/PENUMBRA cutoff
+  // work that does not enter the detector fold.
   if (EarthUtil::ToUpper(prm.cutoff.searchAlgorithm)=="RIGIDITY_LIST") {
     throw std::runtime_error(
-        "Gridless primary RIGIDITY_LIST is not implemented; for directional direct "
-        "access use PENUMBRA_SCAN + DIRECTIONAL_MAP + CUTOFF_RIGIDITY_LIST_GV.");
+        "Gridless shell-oriented RIGIDITY_LIST is not implemented; use DIRECT_ACCESS "
+        "with DIRECTIONAL_MAP + CUTOFF_RIGIDITY_LIST_GV for point/trajectory access.");
   }
 
   //====================================================================================
@@ -3229,8 +3228,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   //   - Extending to SHELLS is possible but would generate extremely large
   //     outputs; if you need it, we can add a dedicated output mode.
   const bool doDirMap = (prm.cutoff.directionalMap && isPoints);
-  const bool penumbraScanSelected =
-      (EarthUtil::ToUpper(prm.cutoff.searchAlgorithm)=="PENUMBRA_SCAN");
+  const std::string cutoffSearchSelected=EarthUtil::ToUpper(prm.cutoff.searchAlgorithm);
+  const bool penumbraScanSelected=(cutoffSearchSelected=="PENUMBRA_SCAN");
+  const bool directAccessOnly=(cutoffSearchSelected=="DIRECT_ACCESS");
 
   // Directional map grid dimensions. We interpret resolutions in degrees.
   // - lon: [0,360) in steps of lonRes
@@ -3856,8 +3856,22 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   // CUTOFF_RIGIDITY_LIST_GV requests independent three-state classifications at every
   // selected directional cell.  The direct trajectories do not use Rc_effective and
   // therefore preserve allowed/forbidden penumbra structure for detector folding.
+  if (directAccessOnly && !isPoints) {
+    throw std::runtime_error(
+        "Gridless DIRECT_ACCESS requires OUTPUT_MODE POINTS or TRAJECTORY.");
+  }
+  if (directAccessOnly && !doDirMap) {
+    throw std::runtime_error(
+        "Gridless DIRECT_ACCESS requires DIRECTIONAL_MAP T so A(R,Omega) directions are defined.");
+  }
+  if (directAccessOnly && prm.cutoff.rigidityList_GV.empty()) {
+    throw std::runtime_error(
+        "Gridless DIRECT_ACCESS requires a non-empty CUTOFF_RIGIDITY_LIST_GV.");
+  }
+
   const bool saveDirectionalAccessStates=(
-      doDirMap && penumbraScanSelected && !prm.cutoff.rigidityList_GV.empty());
+      doDirMap && !prm.cutoff.rigidityList_GV.empty() &&
+      (penumbraScanSelected || directAccessOnly));
   const int nDirectionalAccessRigidities=saveDirectionalAccessStates
       ? static_cast<int>(prm.cutoff.rigidityList_GV.size()) : 0;
   if (saveDirectionalAccessStates && mpiRank==0) {
@@ -3982,8 +3996,10 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   // All three families share the same collective MPI scheduler.  Direct-access tasks
   // are deliberately independent of the scalar penumbra task so one long cutoff scan
   // cannot serialize the much larger detector-response trajectory set.
-  const long long totalSamplingTasks = (long long)nLoc * (long long)nDirSampling;
-  const long long totalDirMapTasks   = (doDirMap ? (long long)prm.output.points.size() * (long long)nDirMapCells : 0LL);
+  const long long totalSamplingTasks = directAccessOnly
+      ? 0LL : (long long)nLoc * (long long)nDirSampling;
+  const long long totalDirMapTasks   = (doDirMap && !directAccessOnly)
+      ? (long long)prm.output.points.size() * (long long)nDirMapCells : 0LL;
   const long long totalDirAccessTasks = saveDirectionalAccessStates
       ? (long long)prm.output.points.size() * (long long)nDirMapCells *
         (long long)nDirectionalAccessRigidities : 0LL;
@@ -4849,18 +4865,24 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   //====================================================================================
   if (mpiRank==0) {
     if (isPoints) {
-      // Repackage into per-point arrays for Tecplot writer.
+      // DIRECT_ACCESS is intentionally access-only.  Keep the legacy point cutoff
+      // arrays/writer for other algorithms, but do not manufacture -1 scalar products
+      // when those trajectories were deliberately skipped.
       std::vector<double> Rc((size_t)nLoc), Emin((size_t)nLoc);
       for (int i=0;i<nLoc;i++) { Rc[(size_t)i]=RcMin[(size_t)i]; Emin[(size_t)i]=EminMin[(size_t)i]; }
 
-      // Preserve the original per-point console summary (optional; can be large).
-      for (size_t i=0;i<prm.output.points.size();i++) {
-        const auto& P = prm.output.points[i];
-        std::cout << "Point " << i << " (" << P.x << "," << P.y << "," << P.z << ")"
-                  << " -> Rc=" << Rc[i] << " GV, Emin=" << Emin[i] << " MeV\n";
+      if (!directAccessOnly) {
+        for (size_t i=0;i<prm.output.points.size();i++) {
+          const auto& P = prm.output.points[i];
+          std::cout << "Point " << i << " (" << P.x << "," << P.y << "," << P.z << ")"
+                    << " -> Rc=" << Rc[i] << " GV, Emin=" << Emin[i] << " MeV\n";
+        }
+        WriteTecplotPoints(prm,prm.output.points,Rc,Emin);
       }
-
-      WriteTecplotPoints(prm,prm.output.points,Rc,Emin);
+      else {
+        std::cout << "[gridless] DIRECT_ACCESS: skipped scalar cutoff and directional "
+                     "cutoff-map searches; writing A(R,Omega) only.\n";
+      }
 
       //--------------------------------------------------------------------------------
       // Optional directional sky-maps (MPI-parallelized)
@@ -4884,25 +4906,28 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
           char fname[256];
           std::snprintf(fname, sizeof(fname), "cutoff_gridless_dir_map_point_%04zu.dat", ip);
 
-          // Slice out this point's cell array.
-          std::vector<double> RcCell((size_t)nDirMapCells, -1.0);
           const size_t base = ip*(size_t)nDirMapCells;
-          for (int k=0; k<nDirMapCells; k++) RcCell[(size_t)k] = RcDirMap[base + (size_t)k];
+          if (!directAccessOnly) {
+            // Slice out this point's cell array only when a directional cutoff map was
+            // actually scheduled.  DIRECT_ACCESS has no TASK_DIRMAP family.
+            std::vector<double> RcCell((size_t)nDirMapCells, -1.0);
+            for (int k=0; k<nDirMapCells; k++) RcCell[(size_t)k] = RcDirMap[base + (size_t)k];
 
-          WriteTecplotDirectionalMap_Point(fname,
-                                           (int)ip,
-                                           prm.output.points[ip],
-                                           lonRes_deg,
-                                           latRes_deg,
-                                           nLonMap,
-                                           nLatMap,
-                                           EarthUtil::ToUpper(prm.cutoff.dirMapCoverage),
-                                           dirMapFullCellIds,
-                                           RcCell,
-                                           (penumbraScanSelected ? &RcDirMapPenumbra : nullptr),
-                                           base,
-                                           qabs,
-                                           m0);
+            WriteTecplotDirectionalMap_Point(fname,
+                                             (int)ip,
+                                             prm.output.points[ip],
+                                             lonRes_deg,
+                                             latRes_deg,
+                                             nLonMap,
+                                             nLatMap,
+                                             EarthUtil::ToUpper(prm.cutoff.dirMapCoverage),
+                                             dirMapFullCellIds,
+                                             RcCell,
+                                             (penumbraScanSelected ? &RcDirMapPenumbra : nullptr),
+                                             base,
+                                             qabs,
+                                             m0);
+          }
 
           if (saveDirectionalAccessStates) {
             char accessName[256];
@@ -4922,7 +4947,10 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
                 dirMapFullCellIds,prm.cutoff.rigidityList_GV,pointAccess,qabs,m0);
           }
         }
-        std::cout << "Wrote Tecplot: cutoff_gridless_dir_map_point_####.dat (" << prm.output.points.size() << " files)\n";
+        if (!directAccessOnly) {
+          std::cout << "Wrote Tecplot: cutoff_gridless_dir_map_point_####.dat ("
+                    << prm.output.points.size() << " files)\n";
+        }
         if (saveDirectionalAccessStates) {
           std::cout << "Wrote Tecplot: cutoff_gridless_dir_access_point_####.dat ("
                     << prm.output.points.size() << " files)\n";
@@ -4937,11 +4965,12 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
 // In nightly test mode, produce an analytic-vs-numeric comparison for the DIPOLE case.
 // This avoids extra I/O for regular runs.
 #if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
-if (EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
+if (!directAccessOnly && EarthUtil::ToUpper(prm.field.model)=="DIPOLE") {
   WriteTecplotPoints_DipoleAnalyticCompare(prm,prm.output.points,Rc);
 }
 #endif
-      std::cout << "Wrote Tecplot: cutoff_gridless_points.dat\n";
+      if (!directAccessOnly)
+        std::cout << "Wrote Tecplot: cutoff_gridless_points.dat\n";
     } else {
       // SHELLS: RcMin/EminMin are flattened [s*nPtsShell + k].
       if (prm.output.shellAlt_km.empty()) {

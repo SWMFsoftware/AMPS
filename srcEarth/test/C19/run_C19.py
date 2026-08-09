@@ -3,7 +3,7 @@
 
 C19A has one production workflow.  Historical P0/P1/P2 development stages have been
 folded into that workflow rather than exposed as alternate runner modes.  Every normal
-run therefore uses the current three-state PENUMBRA_SCAN/UNRESOLVED trajectory
+run therefore uses the current three-state DIRECT_ACCESS/UNRESOLVED trajectory
 classification, the P1 direct A(E,Omega) detector fold for both GRIDDED Mode3D and
 GRIDLESS, and the P2 production numerical settings/physics hooks.  The runner always writes the standard
 full-event comparison plots after post-processing; no special diagnostic flag is
@@ -999,15 +999,18 @@ def command_for(args: argparse.Namespace, amps: Path, solver: str) -> List[str]:
         "-mode", "gridless" if solver == "GRIDLESS" else "3d",
         "-i", "AMPS_PARAM_C19.in",
         "-mover", args.mover,
-        # P0.1: production C19 now defaults to the existing three-state
-        # PENUMBRA_SCAN path.  The option remains configurable so P0.5 can run
-        # the explicit UPPER_SCAN/FORBIDDEN legacy baseline without editing code.
+        # C19 exposes exactly two current three-state products. DIRECT_ACCESS traces
+        # only A(E,Omega); PENUMBRA_SCAN additionally evaluates the full cutoff band.
         "-cutoff-search", args.cutoff_search,
-        "-cutoff-upper-scan-n", str(args.cutoff_scan_n),
         "-cutoff-dirmap-coverage",
         ("VECTOR_APERTURES" if args.direction_coverage == "INSTRUMENT_APERTURES"
          else "FULL_SPHERE"),
     ]
+    # UPPER_SCAN_N is a PENUMBRA_SCAN diagnostic control and has no role in the
+    # optimized DIRECT_ACCESS task family.  Omit the CLI override in direct mode so
+    # saved commands make it obvious that no hidden 120-point scan is being requested.
+    if args.cutoff_search == "PENUMBRA_SCAN":
+        command += ["-cutoff-upper-scan-n", str(args.cutoff_scan_n)]
     if args.direction_coverage == "INSTRUMENT_APERTURES":
         command += ["-cutoff-dirmap-aperture-file", "C19_directional_apertures.dat"]
     chunk = resolved_dynamic_chunk(args, solver)
@@ -1268,6 +1271,27 @@ def parse_directional_access(path: Path) -> DirectionalAccessCube:
                     "direct access cube energy/rigidity grid differs between sky cells "
                     "%s and %s in %s" % (first_key, key, path))
     return DirectionalAccessCube(str(path), frame, x_km, y_km, z_km, frozen)
+
+
+def direction_map_from_access_cube(access_cube: DirectionalAccessCube) -> DirectionMap:
+    """Build the geometry-only directional map required by the common detector fold.
+
+    DIRECT_ACCESS intentionally does not calculate Rc_lower/effective/upper for every
+    sky cell.  The detector fold still needs the selected sky directions, frame, and
+    observation position.  All of that geometry is already carried by the direct-access
+    cube, so construct a lightweight DirectionMap with NaN scalar-cutoff values and no
+    penumbra diagnostics.  This avoids requiring or accidentally consuming a stale
+    cutoff_3d_dir_map/cutoff_gridless_dir_map file from an earlier PENUMBRA_SCAN run.
+    """
+    cells = tuple(
+        DirectionCell(lon_deg=key[0], lat_deg=key[1],
+                      rc_gv=float("nan"), cutoff_energy_mev=float("nan"))
+        for key in sorted(access_cube.samples, key=lambda item: (item[1], item[0]))
+    )
+    return DirectionMap(
+        path=access_cube.path + "#geometry", frame=access_cube.frame,
+        x_km=access_cube.x_km, y_km=access_cube.y_km, z_km=access_cube.z_km,
+        cells=cells)
 
 
 def load_driver_tilts(
@@ -3128,6 +3152,12 @@ Examples:
     parser.add_argument("--spacecraft", default="GOES13,GOES15")
     parser.add_argument("--channels", default="P4,P5")
     parser.add_argument("--solver", choices=SOLVERS, default="GRIDDED")
+    parser.add_argument(
+        "--cutoff-search", choices=("DIRECT_ACCESS", "PENUMBRA_SCAN"),
+        default="DIRECT_ACCESS",
+        help=("C19 trajectory product: DIRECT_ACCESS (default) traces only the "
+              "detector-response A(E,Omega) grid; PENUMBRA_SCAN additionally computes "
+              "the full lower/effective/upper cutoff topology for every selected direction"))
     parser.add_argument("--models", default="T96,T05")
     parser.add_argument("--event-manifest", default=str(DEFAULT_MANIFEST))
     parser.add_argument("--reference", default=str(DEFAULT_REFERENCE))
@@ -3274,7 +3304,9 @@ Examples:
     # fixes that were validated during P0/P1 and are no longer exposed as switches
     # back to historical behavior.  Keeping them on the Namespace lets the existing
     # input renderer and provenance tables record the exact settings normally.
-    args.cutoff_search = "PENUMBRA_SCAN"
+    # Both supported products use the same three-state trace-limit semantics.
+    # DIRECT_ACCESS is the optimized production default; PENUMBRA_SCAN is retained as
+    # the full diagnostic/convergence mode and can be selected explicitly on the CLI.
     args.trace_limit_policy = "UNRESOLVED"
     # AUTO is retained as an internal provenance token, but now means the same direct
     # A(E,Omega) fold for GRIDDED and GRIDLESS.  It no longer selects a GRIDLESS proxy.
@@ -3509,6 +3541,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "spectrum_source": spectrum.source,
                     "spectrum_gamma": spectrum.gamma,
                     "response_fold_mode": args.response_fold,
+                    "cutoff_search_algorithm": args.cutoff_search,
                     "direction_coverage": args.direction_coverage,
                     "direction_aperture_horizontal_half_angle_deg": args.direction_aperture_horizontal_half_angle_deg,
                     "direction_aperture_vertical_half_angle_deg": args.direction_aperture_vertical_half_angle_deg,
@@ -3539,8 +3572,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         run_failures.append(dict(command_record, return_code=return_code))
                         continue
                 try:
-                    map_path = locate_directional_map(run_dir, solver)
-                    direction_map = parse_directional_map(map_path)
                     access_cube: Optional[DirectionalAccessCube] = None
                     direct_path = locate_directional_access(run_dir, solver)
                     direct_requested = (args.response_fold in ("AUTO", "DIRECT"))
@@ -3550,8 +3581,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 "direct A(E,Omega) output is required but missing in %s" % run_dir)
                         access_cube = parse_directional_access(direct_path)
                         # The C++ output is self-consistent by parser contract; also
-                        # prove that it is the *requested* P1.5 quadrature rather than
-                        # a stale direct-access file left by a different response grid.
+                        # prove that it is the requested detector-response quadrature
+                        # rather than a stale direct-access file from another run.
                         cube_grid = next(iter(access_cube.samples.values()))
                         if len(cube_grid) != len(access_energies) or any(
                                 not math.isclose(sample.energy_mev, expected,
@@ -3560,6 +3591,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             raise ValueError(
                                 "direct access cube energy grid does not match "
                                 "the requested detector-response grid in %s" % direct_path)
+
+                    if args.cutoff_search == "DIRECT_ACCESS":
+                        if access_cube is None:
+                            raise ValueError("DIRECT_ACCESS requires the direct A(E,Omega) cube")
+                        # No Rc directional map is produced in the optimized mode.  Use
+                        # the cube's own frame/position/sky-cell geometry for the common
+                        # detector fold.
+                        direction_map = direction_map_from_access_cube(access_cube)
+                    else:
+                        map_path = locate_directional_map(run_dir, solver)
+                        direction_map = parse_directional_map(map_path)
                     tilt = interpolate_tilt(driver_tilts, epoch)
                     spectrum = spectra[epoch]
                     # Re-resolve the same actual head IDs for post-processing. This

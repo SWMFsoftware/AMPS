@@ -55,7 +55,7 @@
 //     -mode3d-mesh-res-earth-re <double>                 optional AMR resolution at Earth.
 //     -mode3d-mesh-res-boundary-re <double>              optional AMR resolution at boundary.
 //     -mode3d-mesh-coarsening <LINEAR|LOG|POWER|...>     optional radial coarsening law.
-//     -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|RIGIDITY_LIST|BINARY>   cutoff product.
+//     -cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|DIRECT_ACCESS|RIGIDITY_LIST|BINARY>   cutoff product.
 //     -cutoff-upper-scan-n <int>                         scan samples for UPPER/PENUMBRA.
 //
 //   See amps_param_parser.h for a full description of the input file format.
@@ -738,7 +738,7 @@ std::string HelpMessage(const char* progName) {
   out << "      output file is still selected with --cutoff-debug-exit-file. Input-file\n";
   out << "      equivalent: CUTOFF_DEBUG_EXIT_LIST_FILE.\n\n";
 
-  out << "  -cutoff-search | --cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|RIGIDITY_LIST|BINARY>   (optional)\n";
+  out << "  -cutoff-search | --cutoff-search <UPPER_SCAN|PENUMBRA_SCAN|DIRECT_ACCESS|RIGIDITY_LIST|BINARY>   (optional)\n";
   out << "      What this command does:\n";
   out << "        Selects how the scalar cutoff rigidity Rc is extracted from repeated\n";
   out << "        trajectory classifications TraceAllowed(R). It applies to both\n";
@@ -762,9 +762,13 @@ std::string HelpMessage(const char* progName) {
   out << "                       is required when comparing with published effective-\n";
   out << "                       cutoff tables such as Smart--Shea, CARI-7, and\n";
   out << "                       Gerontidou et al.\n";
-  out << "        RIGIDITY_LIST  Mode3D-only direct-access product. Trace exactly the\n";
-  out << "                       supplied rigidity values at each selected shell node\n";
-  out << "                       and write ALLOWED/FORBIDDEN/UNRESOLVED states.\n";
+  out << "        DIRECT_ACCESS  Directional POINTS/TRAJECTORY product for both Mode3D\n";
+  out << "                       and GRIDLESS. Trace only the supplied rigidity values\n";
+  out << "                       at selected DIRECTIONAL_MAP cells and write the direct\n";
+  out << "                       A(R,Omega) states. No scalar or directional cutoff scan\n";
+  out << "                       is performed; this is the efficient C19 science mode.\n";
+  out << "        RIGIDITY_LIST  Mode3D shell-oriented vertical-access product. Trace\n";
+  out << "                       exactly the supplied values at selected shell nodes.\n";
   out << "        BINARY         Legacy endpoint bisection. Use only for debugging or\n";
   out << "                       monotonic test problems, because it is not penumbra-safe.\n";
   out << "\n";
@@ -782,6 +786,8 @@ std::string HelpMessage(const char* progName) {
   out << "        " << progName << " -mode 3d -i run.in -cutoff-search UPPER_SCAN -cutoff-upper-scan-n 80\n";
   out << "        " << progName << " -mode gridless -i run.in -cutoff-search UPPER_SCAN -cutoff-upper-scan-n 80\n";
   out << "        " << progName << " -mode gridless -i run.in -cutoff-search PENUMBRA_SCAN -cutoff-upper-scan-n 400\n";
+  out << "        " << progName << " -mode 3d -i run.in -cutoff-search DIRECT_ACCESS -cutoff-rigidity-list-gv 0.424,0.498,0.588\n";
+  out << "        " << progName << " -mode gridless -i run.in -cutoff-search DIRECT_ACCESS -cutoff-rigidity-list-gv 0.424,0.498,0.588\n";
   out << "        " << progName << " -mode 3d -i run.in -cutoff-search PENUMBRA_SCAN -cutoff-upper-scan-n 160 -cutoff-rigidity-list-gv 0.424,0.498,0.588\n";
   out << "        " << progName << " -mode 3d -i run.in -cutoff-search RIGIDITY_LIST -cutoff-rigidity-list-gv 0.424,0.498,0.588 -cutoff-access-abs-lat-min 35 -cutoff-access-abs-lat-max 75\n";
   out << "\n";
@@ -791,7 +797,7 @@ std::string HelpMessage(const char* progName) {
   out << "        CUTOFF_RIGIDITY_LIST_GV  0.424,0.498,0.588\n";
   out << "        CUTOFF_ACCESS_ABS_LAT_MIN 35\n";
   out << "        CUTOFF_ACCESS_ABS_LAT_MAX 75\n";
-  out << "        ! Valid algorithms: UPPER_SCAN | PENUMBRA_SCAN | RIGIDITY_LIST | BINARY\n\n";
+  out << "        ! Valid algorithms: UPPER_SCAN | PENUMBRA_SCAN | DIRECT_ACCESS | RIGIDITY_LIST | BINARY\n\n";
 
   out << "  -cutoff-dirmap-coverage <FULL_SPHERE|VECTOR_APERTURES>                       (optional)\n";
   out << "  -cutoff-dirmap-aperture-file <path>                                         (optional)\n";

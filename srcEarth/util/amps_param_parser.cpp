@@ -3427,7 +3427,7 @@ if (ToUpper(p.field.model)=="DIPOLE") {
             cutoffSearch=="LEGACY_BINARY")) {
         exit(__LINE__,__FILE__,
              "CUTOFF_SEARCH_ALGORITHM must be UPPER_SCAN, PENUMBRA_SCAN, "
-             "RIGIDITY_LIST, or BINARY");
+             "DIRECT_ACCESS, RIGIDITY_LIST, or BINARY");
       }
       if (cutoffSearch=="UPPER" || cutoffSearch=="SCAN")
         p.cutoff.searchAlgorithm="UPPER_SCAN";
@@ -3435,28 +3435,33 @@ if (ToUpper(p.field.model)=="DIPOLE") {
                cutoffSearch=="CUTOFF_BAND")
         p.cutoff.searchAlgorithm="PENUMBRA_SCAN";
       else if (cutoffSearch=="FIXED_RIGIDITY" ||
-               cutoffSearch=="FIXED_RIGIDITIES" || cutoffSearch=="ACCESS_LIST" ||
-               cutoffSearch=="DIRECT_ACCESS")
+               cutoffSearch=="FIXED_RIGIDITIES" || cutoffSearch=="ACCESS_LIST")
         p.cutoff.searchAlgorithm="RIGIDITY_LIST";
+      else if (cutoffSearch=="DIRECT_ACCESS")
+        // Preserve DIRECT_ACCESS as a distinct directional point/trajectory product.
+        // RIGIDITY_LIST remains the historical shell-oriented vertical access mode.
+        p.cutoff.searchAlgorithm="DIRECT_ACCESS";
       else if (cutoffSearch=="ENDPOINT_BINARY" || cutoffSearch=="LEGACY_BINARY")
         p.cutoff.searchAlgorithm="BINARY";
       else
         p.cutoff.searchAlgorithm=cutoffSearch;
     }
     if ((p.cutoff.searchAlgorithm=="PENUMBRA_SCAN" ||
-         p.cutoff.searchAlgorithm=="RIGIDITY_LIST") &&
+         p.cutoff.searchAlgorithm=="RIGIDITY_LIST" ||
+         p.cutoff.searchAlgorithm=="DIRECT_ACCESS") &&
         ToUpper(p.cutoff.sampling)!="VERTICAL") {
       exit(__LINE__,__FILE__,
-           "PENUMBRA_SCAN and RIGIDITY_LIST require CUTOFF_SAMPLING VERTICAL");
+           "PENUMBRA_SCAN, RIGIDITY_LIST, and DIRECT_ACCESS require CUTOFF_SAMPLING VERTICAL");
     }
     // A rigidity list is mandatory for RIGIDITY_LIST and optional for
     // PENUMBRA_SCAN.  In the latter case it requests exact fixed-rigidity access
     // states as a companion diagnostic (used by C9/PAMELA_T50) without changing
     // the regular penumbra grid or effective-cutoff integration.
-    if (p.cutoff.searchAlgorithm=="RIGIDITY_LIST" &&
+    if ((p.cutoff.searchAlgorithm=="RIGIDITY_LIST" ||
+         p.cutoff.searchAlgorithm=="DIRECT_ACCESS") &&
         p.cutoff.rigidityList_GV.empty()) {
       exit(__LINE__,__FILE__,
-           "RIGIDITY_LIST requires a non-empty CUTOFF_RIGIDITY_LIST_GV");
+           "RIGIDITY_LIST and DIRECT_ACCESS require a non-empty CUTOFF_RIGIDITY_LIST_GV");
     }
     if (!p.cutoff.rigidityList_GV.empty()) {
       for (std::size_t i=0;i<p.cutoff.rigidityList_GV.size();++i) {

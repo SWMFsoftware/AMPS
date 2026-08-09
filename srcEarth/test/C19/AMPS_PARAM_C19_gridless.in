@@ -23,25 +23,25 @@ CALC_TARGET                    CUTOFF_RIGIDITY
 FIELD_EVAL_METHOD              GRIDLESS
 
 #CUTOFF_RIGIDITY
-! P0 C19 validation uses PENUMBRA_SCAN so configured time/step/distance
-! safety limits remain a third UNRESOLVED state rather than being silently
-! folded into PHYSICAL_FORBIDDEN.  The 0.5-500 MeV bracket contains the
-! nominal P4 (15-40 MeV) and P5 (38-82 MeV) ranges with broad margins.
+! Production C19 uses DIRECT_ACCESS: only the detector-response A(R,Omega)
+! trajectories are traced.  PENUMBRA_SCAN remains available explicitly when full
+! lower/effective/upper cutoff topology is needed.  Both modes preserve configured
+! time/step/distance safety-limit outcomes as the third UNRESOLVED state.
 CUTOFF_EMIN                    0.5
 CUTOFF_EMAX                    500.0
 CUTOFF_MAX_PARTICLES           1
 CUTOFF_NENERGY                 120
 CUTOFF_SAMPLING                VERTICAL
-CUTOFF_SEARCH_ALGORITHM        PENUMBRA_SCAN
+CUTOFF_SEARCH_ALGORITHM        DIRECT_ACCESS
 CUTOFF_UPPER_SCAN_N            120
 CUTOFF_SCAN_SPACING            LINEAR
 CUTOFF_TRACE_POLICY            ACCURATE
 CUTOFF_BACKTRACE_CHARGE        REVERSED
 CUTOFF_TRACE_LIMIT_POLICY      UNRESOLVED
-! P1.4: run_C19.py fills this with the detector-response energy grid for BOTH
-! GRIDDED and GRIDLESS.  With PENUMBRA_SCAN + DIRECTIONAL_MAP this requests the
-! solver-independent direct three-state A(R,Omega) companion cube used by the C19
-! detector-response fold.  The scalar penumbra map remains a separate diagnostic.
+! run_C19.py fills this with the detector-response energy grid for BOTH GRIDDED
+! and GRIDLESS.  DIRECT_ACCESS + DIRECTIONAL_MAP traces exactly these rigidities at
+! the selected instrument-aperture sky cells.  PENUMBRA_SCAN uses the same list as
+! a companion science cube while additionally computing full cutoff-band diagnostics.
 CUTOFF_RIGIDITY_LIST_GV        0.174013525
 CUTOFF_MAX_TRAJ_TIME           300.0
 DIRECTIONAL_MAP                T

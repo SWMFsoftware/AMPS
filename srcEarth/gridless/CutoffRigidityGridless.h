@@ -68,16 +68,20 @@
 //     For each direction independently:
 //
 //   Step 2 -- Rigidity scan.
-//     Use a bisection search in [Rmin, Rmax] (from the #CUTOFF_RIGIDITY section)
-//     to find the cutoff rigidity for this direction. At each trial rigidity R:
-//       (a) Convert R [GV] to SI momentum: p = R*1e9*|q|/c
-//       (b) Launch a reversed particle from x0 in direction -d with momentum p.
-//       (c) Integrate with Boris pusher + adaptive dt until:
-//             i.  Particle escapes the outer domain box -> ALLOWED
-//             ii. Particle hits the inner loss sphere   -> FORBIDDEN
-//             iii.Stable trapped orbit detected          -> FORBIDDEN
-//             iv. Numerical time/step/field limit reached -> UNRESOLVED
-//       (d) Narrow the bisection interval based on allowed/forbidden outcome.
+//     The production PENUMBRA_SCAN evaluates a configured rigidity grid, preserves
+//     ALLOWED / PHYSICAL_FORBIDDEN / UNRESOLVED states, identifies access-band
+//     topology, and refines resolved transitions.  This avoids assuming monotonic
+//     access in a geomagnetic penumbra.  Each trial rigidity R is converted to SI
+//     momentum and backtraced from x0 in direction -d until it escapes, is physically
+//     lost/trapped, or reaches an explicitly unresolved numerical trace limit.
+//
+//   Step 2b -- Optional direct directional access A(R,Omega).
+//     When DIRECTIONAL_MAP=T and CUTOFF_RIGIDITY_LIST_GV is non-empty, GRIDLESS
+//     additionally classifies every explicitly requested (sky direction, rigidity)
+//     pair with the same three-state classifier.  The companion product is intentionally
+//     schema-compatible with Mode3D and is the science observable used by C19.  A scalar
+//     effective cutoff is therefore diagnostic only; the detector fold consumes the
+//     direct access states for both GRIDDED and GRIDLESS.
 //
 //   Step 3 -- Aggregate.
 //     Take Rc = min over all directions of the per-direction cutoff (or the
@@ -102,22 +106,22 @@
 // severely load-imbalance the MPI job when the observation grid spans a range of
 // latitudes.
 //
-// We use dynamic master/worker scheduling instead:
-//   - Rank 0 is the master: it maintains a work queue of observation-point indices.
-//   - Ranks 1..nRanks-1 are workers: each repeatedly requests a task, processes it
-//     (all directions and all rigidities for that point), and returns the result.
-//   - Tasks are dispatched one point at a time, so slow points do not block fast
-//     workers from taking new work.
-//   - No assumptions about the cost distribution are made; the scheduler is purely
-//     reactive.
+// We use a collective MPI task scheduler instead:
+//   - The global work space is flattened into independent trajectory-level tasks.
+//   - DYNAMIC mode uses an MPI one-sided atomic fetch/add counter so every rank,
+//     including rank 0, repeatedly claims chunks of work.
+//   - BLOCK_CYCLIC and STATIC provide deterministic alternatives for regression.
+//   - Directional direct-access work is flattened as
+//       (observation point, selected sky cell, requested rigidity),
+//     exactly matching the Mode3D C19 task decomposition conceptually.
+//   - Each task writes into a global-indexed local buffer; rank 0 reconstructs the
+//     complete deterministic output with MPI reductions after all tasks finish.
+//   - The scheduler itself is MPI-only.  Mode3D can additionally use an intra-rank
+//     thread pool; GRIDLESS direct field evaluation remains on the rank/main thread
+//     because the underlying Geopack/Tsyganenko state is not assumed thread-safe.
 //
-// Message protocol:
-//   TaskMsg:    { int pointIdx }        (master -> worker)
-//   ResultMsg:  { int pointIdx, double Rc, double Emin }  (worker -> master)
-//   Sentinel:   pointIdx = -1 signals no more work (master -> worker termination).
-//
-// Serial path (nRanks == 1 or MPI unavailable): rank 0 processes all points
-// directly without any message passing.
+// This design removes the old rank-0 master bottleneck and preserves load balancing
+// when trajectory lifetimes differ by orders of magnitude.
 //
 //======================================================================================
 // SHARED TRAJECTORY CLASSIFIER: TraceAllowedShared AND TraceAllowedSharedEx
@@ -174,9 +178,16 @@
 //   - Cutoff scan: energy range, sampling strategy (VERTICAL | ISOTROPIC)
 //
 // Output (Tecplot ASCII, written by rank 0):
-//   POINTS mode:
-//     gridless_points_cutoff.dat
-//       Variables: X_km Y_km Z_km R_GSM_km Lon_deg Lat_deg Rc_GV Emin_MeV
+//   POINTS / TRAJECTORY point-like mode:
+//     cutoff_gridless_points.dat
+//     cutoff_gridless_dir_map_point_####.dat            (when DIRECTIONAL_MAP=T)
+//     cutoff_gridless_dir_access_point_####.dat         (when the direct rigidity
+//                                                         list is also non-empty)
+//
+//     The direct-access file has the same science columns as Mode3D:
+//       lon_deg lat_deg rigidity_GV energy_MeV access_state allowed unresolved
+//     with access_state 0=PHYSICAL_FORBIDDEN, 1=ALLOWED, 2=UNRESOLVED.
+//
 //   SHELLS mode:
 //     gridless_shell_Akm_cutoff.dat  (one file per shell altitude A)
 //       ZONE per shell; same variables as POINTS.

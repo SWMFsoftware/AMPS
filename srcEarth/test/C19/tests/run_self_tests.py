@@ -162,13 +162,12 @@ def integration_dry_run() -> None:
                 raise SystemExit("unresolved input placeholder in %s" % path)
             if "DRIVER_FILE" not in text or str(driver.resolve()) not in text:
                 raise SystemExit("generated input does not contain absolute driver path: %s" % path)
-            # P0.1 production contract: a normal C19 run must use the structured
-            # three-state penumbra path and preserve trace-limit outcomes as
-            # UNRESOLVED.  This integration assertion catches a regression in the
-            # Python template renderer even when AMPS itself is not available.
-            if not re.search(r"^CUTOFF_SEARCH_ALGORITHM\s+PENUMBRA_SCAN\s*$",
+            # Production C19 now defaults to the optimized direct science product:
+            # trace only the requested A(E,Omega) samples and preserve trace-limit
+            # outcomes as UNRESOLVED. PENUMBRA_SCAN remains an explicit diagnostic mode.
+            if not re.search(r"^CUTOFF_SEARCH_ALGORITHM\s+DIRECT_ACCESS\s*$",
                              text, re.MULTILINE):
-                raise SystemExit("normal C19 dry-run did not select PENUMBRA_SCAN: %s" % path)
+                raise SystemExit("normal C19 dry-run did not select DIRECT_ACCESS: %s" % path)
             if not re.search(r"^CUTOFF_TRACE_LIMIT_POLICY\s+UNRESOLVED\s*$",
                              text, re.MULTILINE):
                 raise SystemExit("normal C19 dry-run did not select UNRESOLVED policy: %s" % path)
@@ -202,8 +201,13 @@ def integration_dry_run() -> None:
         for record in commands:
             command = record["command"]
             joined = " ".join(str(value) for value in command)
-            if "-cutoff-search PENUMBRA_SCAN" not in joined:
-                raise SystemExit("current workflow did not force PENUMBRA_SCAN")
+            if "-cutoff-search DIRECT_ACCESS" not in joined:
+                raise SystemExit("current workflow did not select optimized DIRECT_ACCESS")
+            if "-cutoff-upper-scan-n" in joined:
+                raise SystemExit(
+                    "DIRECT_ACCESS command unexpectedly requests PENUMBRA upper-scan work")
+            if record.get("cutoff_search_algorithm") != "DIRECT_ACCESS":
+                raise SystemExit("command provenance did not record DIRECT_ACCESS")
             if "-cutoff-dirmap-coverage VECTOR_APERTURES" not in joined:
                 raise SystemExit("current workflow command did not select VECTOR_APERTURES coverage")
             if "-cutoff-dirmap-aperture-file C19_directional_apertures.dat" not in joined:
@@ -238,16 +242,18 @@ def integration_dry_run() -> None:
             if not re.search(r"^DIRMAP_APERTURE_FILE\s+C19_directional_apertures\.dat\s*$", text, re.MULTILINE):
                 raise SystemExit("current workflow did not reference its aperture-vector file: %s" % path)
 
-        # Confirm that the public CLI no longer exposes historical alternate-runner
-        # selectors.  Advanced scientific inputs remain configurable, but there is
-        # only one execution path.
+        # Confirm that the public CLI no longer exposes historical P0/P2/legacy-fold
+        # selectors. --cutoff-search is intentionally public again, but only for the
+        # two current products DIRECT_ACCESS and PENUMBRA_SCAN.
         help_text = subprocess.check_output(
             [sys.executable, str(ROOT / "run_C19.py"), "--help"],
             cwd=str(ROOT), text=True)
         for obsolete in ("--p0-diagnostic", "--p2-diagnostic",
-                         "--cutoff-search", "--trace-limit-policy", "--response-fold"):
+                         "--trace-limit-policy", "--response-fold"):
             if obsolete in help_text:
                 raise SystemExit("obsolete alternate-mode option still exposed: %s" % obsolete)
+        if "--cutoff-search" not in help_text or "DIRECT_ACCESS" not in help_text or "PENUMBRA_SCAN" not in help_text:
+            raise SystemExit("current DIRECT_ACCESS/PENUMBRA_SCAN selector is missing from runner CLI")
         if "--direction-coverage" not in help_text:
             raise SystemExit("directional coverage selector is missing from runner CLI")
         if "--max-discrete-transition-fraction" not in help_text:
@@ -380,13 +386,15 @@ def validate_directional_coverage_source_contract() -> None:
             "-cutoff-dirmap-aperture"),
         src_earth / "3d" / "CutoffRigidityMode3D.cpp": (
             "ApplyDirectionalMapCoverage3D", "VECTOR_APERTURES",
-            "LOCAL_SM", "fullGridCellIds"),
+            "LOCAL_SM", "fullGridCellIds", "directionalDirectAccess",
+            "DIRECT_ACCESS: skipped scalar cutoff"),
         src_earth / "gridless" / "CutoffRigidityGridless.cpp": (
             "VECTOR_APERTURES", "LOCAL_SM", "dirMapFullCellIds",
             "DIRMAP coverage", "TASK_DIRACCESS",
             "saveDirectionalAccessStates",
             "cutoff_gridless_dir_access_point_",
-            "ClassifyCutoffSampleDetailed"),
+            "ClassifyCutoffSampleDetailed", "directAccessOnly",
+            "DIRECT_ACCESS: skipped scalar cutoff"),
     }
     for path, needles in checks.items():
         text = path.read_text(errors="replace")
@@ -446,10 +454,15 @@ def validate_directional_coverage_source_contract() -> None:
     for needle in (
             "cutoff_gridless_dir_access_point_0000.dat",
             "parse_directional_access(direct_path)",
+            "direction_map_from_access_cube(access_cube)",
             "direct A(E,Omega) output is required but missing",
             "n_direct_access_rigidities"):
         if needle not in runner_text:
             raise SystemExit("GRIDLESS direct-access runner contract missing %r" % needle)
+
+    parser_source = (src_earth / "util" / "amps_param_parser.cpp").read_text(errors="replace")
+    if 'p.cutoff.searchAlgorithm="DIRECT_ACCESS"' not in parser_source:
+        raise SystemExit("AMPS parameter parser no longer preserves DIRECT_ACCESS as a distinct algorithm")
 
     # Both C++ producers must advertise the exact same public access-state columns.
     # File stems differ for backward-compatible solver naming, but post-processing is

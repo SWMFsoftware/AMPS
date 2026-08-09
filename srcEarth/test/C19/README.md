@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-C19A is the first observational validation of the **directional** geomagnetic-access capability of the AMPS cutoff calculator. Internal symmetry tests such as C17 can verify charge-sign and velocity-reversal consistency, but they do not establish that the calculated directional access agrees with measurements. C19A compares AMPS directional cutoff maps with simultaneous eastward- and westward-looking proton measurements from the GOES-13 and GOES-15 EPEAD instruments.
+C19A is the first observational validation of the **directional** geomagnetic-access capability of the AMPS cutoff calculator. Internal symmetry tests such as C17 can verify charge-sign and velocity-reversal consistency, but they do not establish that the calculated directional access agrees with measurements. C19A compares the AMPS directional access function with simultaneous eastward- and westward-looking proton measurements from the GOES-13 and GOES-15 EPEAD instruments. The production path uses the explicit three-state `A(E,Ω)` access cube; a full directional cutoff/penumbra map is generated only when `--cutoff-search PENUMBRA_SCAN` is requested.
 
 The implemented public-data event is the 17 May 2012 SEP/GLE71 event. The default analysis interval is the event decay from 2012-05-17 06:00 UTC through 2012-05-18 06:00 UTC. The prompt onset is excluded because interplanetary beam anisotropy can imitate or obscure a geomagnetic East–West effect.
 
@@ -30,7 +30,7 @@ C19A is a **broad-aperture observational validation**. The current science chain
 | Observation | Background-subtracted physical East/West flux ratio |
 | Field models | IGRF + T96 and IGRF + T05/TS05 |
 | Solvers | GRIDDED, GRIDLESS, or BOTH |
-| AMPS product | Both solvers: SM `PENUMBRA_SCAN` map **plus direct three-state `A(E,Ω)` companion cube** at the same detector-response rigidities |
+| AMPS product | Default: `DIRECT_ACCESS` three-state `A(E,Ω)` cube only. Optional diagnostic: `PENUMBRA_SCAN` map plus the same direct `A(E,Ω)` companion cube |
 | Source spectrum | Default: epoch-dependent power law fit to physical-WEST background-subtracted P4/P5 flux; explicit spectrum CSV and fixed-gamma sensitivity modes are supported |
 | Instrument model | File-defined piecewise energy response (`data/epead_response_C19_uncorrected_extended.csv` by default) × nominal elliptical angular aperture; identical direct `A(E,Ω)` fold for GRIDDED and GRIDLESS |
 
@@ -403,9 +403,12 @@ For each selected spacecraft and epoch, the runner writes a one-line GEO traject
 UTC latitude_deg longitude_deg_east altitude_km
 ```
 
-AMPS produces a directional cutoff map on a regular global SM longitude/latitude grid.
-The default map resolution is 10° × 10°. `PENUMBRA_SCAN` now writes a long-form map for
-every directional cell. The first four historical variables are preserved:
+AMPS represents detector directions on a regular global SM longitude/latitude grid.
+The current C19 default angular resolution is 2.5° × 2.5°, with the grid pruned to the
+union of requested instrument apertures unless `FULL_SPHERE` is selected. In the default
+`DIRECT_ACCESS` mode AMPS writes only the explicit three-state access cube on those cells.
+`PENUMBRA_SCAN` additionally writes a long-form directional cutoff map. The first four
+historical variables in that optional map are preserved:
 
 ```text
 lon_deg lat_deg Rc_GV Emin_MeV
@@ -445,19 +448,22 @@ retained explicitly instead of being discarded after the scan.
 For each P4/P5 physical detector direction, `run_C19.py`:
 
 1. rotates the observation position from GSM to SM using the driver dipole tilt;
-2. constructs local physical eastward and westward detector boresights;
+2. constructs the physical detector boresight (or reads the supplied attitude vector);
 3. converts the AMPS incoming arrival/velocity direction to the opposite EPEAD telescope look direction;
-4. selects map cells inside the channel's nominal elliptical aperture;
-5. converts the effective cutoff rigidity to proton kinetic energy;
-6. folds the nominal channel interval with `E^-gamma`; and
-7. calculates East and West transmission and their E/W ratio only when the aperture is sufficiently resolved.
+4. selects regular-grid cells inside the detector's elliptical aperture;
+5. reads the three-state access value at each explicitly requested detector-response rigidity;
+6. folds `A(E,Ω)` with the event spectrum and detector response, propagating unresolved and finite-rigidity-grid uncertainty; and
+7. calculates East and West transmission and their E/W ratio only when the response bounds satisfy the configured validity criteria.
 
-The directional map is independent of the scalar `CUTOFF_SAMPLING` output. The C19
-input files retain a vertical scalar sample while requesting `DIRECTIONAL_MAP T`.
-By default the current runner schedules only the regular-grid cells needed by the
-EPEAD EAST/WEST apertures; `FULL_SPHERE` remains available as an explicit reference
-coverage.  The retained cells have exactly the same SM lon/lat coordinates as the
-corresponding cells in a full-sphere run.
+`DIRECT_ACCESS` is independent of the scalar `CUTOFF_SAMPLING` cutoff result even though
+the common input syntax retains `CUTOFF_SAMPLING VERTICAL`. In production mode no scalar
+cutoff trajectory and no directional cutoff-map/PENUMBRA_SCAN task is scheduled. The
+runner constructs the geometry-only directional map needed for aperture folding directly
+from the `A(E,Ω)` cube. By default only regular-grid cells needed by the requested EPEAD
+apertures are scheduled; `FULL_SPHERE` remains available as an explicit reference coverage.
+The retained cells have exactly the same SM lon/lat coordinates as the corresponding cells
+in a full-sphere run. `PENUMBRA_SCAN` remains an explicit diagnostic mode and writes the
+full lower/effective/upper cutoff topology in addition to the same direct-access cube.
 
 ### 9.1 Three-state cutoff classification
 
@@ -467,13 +473,17 @@ interface intentionally maps every recognized cutoff-forbidden termination, incl
 configured time/step/distance caps, to `false`. It does not use the three-state trace
 policy.
 
-`PENUMBRA_SCAN`, in contrast, evaluates each rigidity with a structured classifier. A
-trajectory that escapes through the outer boundary is `ALLOWED`; a physical inner-boundary
-loss or validated magnetic-trap termination is `PHYSICAL_FORBIDDEN`; and a configured
-`TIME_LIMIT`, `STEP_LIMIT`, or `DISTANCE_LIMIT` is `UNRESOLVED` when the input requests
-`CUTOFF_TRACE_LIMIT_POLICY UNRESOLVED`.
+Both `DIRECT_ACCESS` and `PENUMBRA_SCAN` use the structured three-state classifier for
+the samples that feed C19. A trajectory that escapes through the outer boundary is
+`ALLOWED`; a physical inner-boundary loss or validated magnetic-trap termination is
+`PHYSICAL_FORBIDDEN`; and a configured `TIME_LIMIT`, `STEP_LIMIT`, or `DISTANCE_LIMIT` is
+`UNRESOLVED` when the input requests `CUTOFF_TRACE_LIMIT_POLICY UNRESOLVED`.
 
-C19 therefore does **not** attempt to make `UPPER_SCAN` pass by increasing a timeout or by relabeling its result after the calculation. The runner always uses the existing three-state `PENUMBRA_SCAN` path; the historical Boolean path is no longer selectable from the C19 CLI.
+C19 therefore does **not** attempt to make `UPPER_SCAN` pass by increasing a timeout or by
+relabeling its result after the calculation. The production runner defaults to
+`DIRECT_ACCESS`; `--cutoff-search PENUMBRA_SCAN` requests the more expensive full cutoff-band
+diagnostic while retaining the same direct `A(E,Ω)` companion samples. The historical
+Boolean `UPPER_SCAN` path is not selectable from the C19 runner CLI.
 
 ### 9.2 Unresolved aperture cells are never silently removed
 
@@ -627,8 +637,10 @@ deprecated and now means `execution_complete AND trajectory_resolution_passed`.
 
 ### 9.9 Sensitivity and convergence controls
 
-The production trajectory classification is fixed internally to `PENUMBRA_SCAN +
-UNRESOLVED`; there is no CLI switch back to the historical Boolean behavior. Numerical
+The production trajectory classification defaults to `DIRECT_ACCESS + UNRESOLVED`.
+`--cutoff-search PENUMBRA_SCAN` explicitly enables the more expensive full cutoff-band
+diagnostic while retaining the same direct `A(E,Ω)` companion cube. Historical Boolean
+cutoff modes are not exposed by the C19 runner. Numerical
 inputs that remain intentionally configurable for controlled studies are:
 
 ```text
@@ -678,7 +690,23 @@ with `utc,gamma[,j0,e0_mev]`. `--spectrum-source FIXED --spectral-index ...` is 
 
 ### Direct GRIDDED/GRIDLESS `A(E,Ω)` product
 
-When `PENUMBRA_SCAN`, `DIRECTIONAL_MAP T`, and a non-empty `CUTOFF_RIGIDITY_LIST_GV` are combined, both cutoff solvers create a second product for every observation location. The solver-specific file names are:
+C19 supports two current cutoff products selected with `--cutoff-search`:
+
+```text
+DIRECT_ACCESS   (default)
+    Trace only the requested (direction,rigidity) samples needed by the detector fold.
+    No scalar cutoff and no directional PENUMBRA_SCAN map are computed.
+
+PENUMBRA_SCAN
+    Compute the full lower/effective/upper cutoff topology for every selected direction
+    and, in addition, trace the same requested direct-access rigidity list used by the
+    detector fold.
+```
+
+With `DIRECT_ACCESS`, `DIRECTIONAL_MAP T`, and a non-empty `CUTOFF_RIGIDITY_LIST_GV`,
+both solvers write the direct cube without first calculating a directional cutoff map.
+With `PENUMBRA_SCAN`, the same cube is written as a companion product. The solver-specific
+file names are: The solver-specific file names are:
 
 ```text
 GRIDDED : cutoff_3d_dir_access_loc_000000.dat
@@ -693,11 +721,35 @@ Each row is one `(lon,lat,rigidity)` trajectory and contains `rigidity_GV`, corr
 2 = UNRESOLVED
 ```
 
-The GRIDDED and GRIDLESS direct-access files are required to carry the same sky-cell set and the same ordered energy/rigidity grid for a given C19 case. The runner checks those invariants against the companion directional map and against the requested detector-response grid before any observational ratio is evaluated. Missing, truncated, stale, or solver-mismatched direct-access files therefore fail post-processing rather than silently falling back to a scalar-cutoff proxy.
+The GRIDDED and GRIDLESS direct-access files are required to carry the same sky-cell set and the same ordered energy/rigidity grid for a given C19 case. In `PENUMBRA_SCAN` mode the runner additionally checks the cube against the companion directional map. In `DIRECT_ACCESS` mode no cutoff map exists by design; the runner constructs a geometry-only map directly from the cube's frame, observation position, and `(lon,lat)` cells. Missing or truncated direct-access output fails post-processing rather than falling back to a scalar-cutoff proxy.
 
-The task scheduler flattens `(location, sky-cell, rigidity)` work so those trajectories are distributed across MPI ranks rather than serialized inside one map cell. Mode3D may additionally use its configured intra-rank thread backend. `PENUMBRA_SCAN` remains the primary scalar/topology product; the rigidity list is the companion science cube used by the detector-response fold for **both** solvers. The two files intentionally have the same columns and three-state semantics so `run_C19.py` uses one parser and one folding implementation.
+The task scheduler flattens `(location, sky-cell, rigidity)` work so those trajectories are distributed across MPI ranks rather than serialized inside one map cell. Both Mode3D and GRIDLESS may additionally use their configured intra-rank thread backend. `DIRECT_ACCESS` is the default science product because the detector fold consumes the rigidity-list cube itself; `PENUMBRA_SCAN` is retained when full cutoff topology is explicitly required. The two files intentionally have the same columns and three-state semantics so `run_C19.py` uses one parser and one folding implementation.
 
-A terminology detail is important for GRIDLESS: the standalone primary search token `CUTOFF_SEARCH_ALGORITHM RIGIDITY_LIST` is still rejected because that token belongs to a separate shell-oriented Mode3D output contract. C19 does **not** use that token. C19 uses `PENUMBRA_SCAN` as the primary cutoff/topology calculation and supplies `CUTOFF_RIGIDITY_LIST_GV` as a companion list. In that combination GRIDLESS and GRIDDED both schedule one independent three-state trajectory for every requested `(direction, rigidity)` pair and therefore provide equivalent C19 direct-access observables.
+A terminology detail is important: `RIGIDITY_LIST` remains the historical shell-oriented Mode3D product. C19 uses the distinct `DIRECT_ACCESS` token for point/trajectory directional access. GRIDDED and GRIDLESS implement the same `DIRECT_ACCESS` semantics and schedule one independent three-state trajectory for every requested `(direction,rigidity)` pair.
+
+### Runtime implication and execution commands
+
+For a representative 2.5-degree C19 aperture selection with 1,760 retained directions
+and 55 requested detector-response rigidities, `DIRECT_ACCESS` schedules
+
+```text
+1760 x 55 = 96,800 trajectory tasks
+```
+
+per observation location. The old/full `PENUMBRA_SCAN` path schedules those same 96,800
+direct-access trajectories **plus** 1,760 directional penumbra tasks. Each penumbra task
+internally evaluates roughly `CUTOFF_UPPER_SCAN_N` trajectories (120 by default), so the
+physical trajectory count is approximately 308,000 before any extra refinement. This is
+why `DIRECT_ACCESS` is now the production default.
+
+One-line GRIDDED commands (4 MPI ranks, 16 threads/rank, T05, SMOKE profile) are:
+
+```bash
+python3 srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --cutoff-search DIRECT_ACCESS --amps ./amps -np 4 -nt 16 --keep
+python3 srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --cutoff-search PENUMBRA_SCAN --amps ./amps -np 4 -nt 16 --keep
+```
+
+The same switch works with `--solver GRIDLESS` or `--solver BOTH`.
 
 ### Response fold of direct access
 
@@ -1272,7 +1324,7 @@ Verify that AMPS was built with SPICE, the required kernels are available, and t
 
 ### Directional-map file is missing
 
-Verify that the executable supports `DIRECTIONAL_MAP T`, that `DIRMAP_LON_RES` and `DIRMAP_LAT_RES` are positive, and that the selected cutoff calculation completed. For production C19 the expected algorithm is PENUMBRA_SCAN.
+With the default `DIRECT_ACCESS` mode, a directional cutoff-map file is intentionally **not** written and is not required by the runner; aperture geometry is reconstructed from the direct-access cube. If `--cutoff-search PENUMBRA_SCAN` was explicitly requested, verify that the executable supports `DIRECTIONAL_MAP T`, that `DIRMAP_LON_RES` and `DIRMAP_LAT_RES` are positive, and that the cutoff calculation completed.
 
 ### Modeled E/W has the opposite sign at nearly every epoch
 

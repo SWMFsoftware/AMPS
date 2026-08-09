@@ -4005,11 +4005,14 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                              cutoffAlgorithm=="PENUMBRASCAN" ||
                              cutoffAlgorithm=="FULL_PENUMBRA" ||
                              cutoffAlgorithm=="BAND_SCAN");
-    const bool rigidityListAccess=(cutoffAlgorithm=="RIGIDITY_LIST" ||
-                                   cutoffAlgorithm=="FIXED_RIGIDITY" ||
-                                   cutoffAlgorithm=="FIXED_RIGIDITIES" ||
-                                   cutoffAlgorithm=="ACCESS_LIST" ||
-                                   cutoffAlgorithm=="DIRECT_ACCESS");
+    const bool shellRigidityListAccess=(cutoffAlgorithm=="RIGIDITY_LIST" ||
+                                        cutoffAlgorithm=="FIXED_RIGIDITY" ||
+                                        cutoffAlgorithm=="FIXED_RIGIDITIES" ||
+                                        cutoffAlgorithm=="ACCESS_LIST");
+    // DIRECT_ACCESS is a directional POINTS/TRAJECTORY product used by C19.  It
+    // deliberately skips the scalar cutoff and the expensive per-direction
+    // PENUMBRA_SCAN map and traces only the requested A(R,Omega) samples.
+    const bool directionalDirectAccess=(cutoffAlgorithm=="DIRECT_ACCESS");
     // A FULL_SCAN C9 run still needs the seven exact fixed-rigidity
     // classifications in order to calculate the same PAMELA_T50 observable as
     // DIRECT_ACCESS.  A non-empty CUTOFF_RIGIDITY_LIST_GV therefore requests a
@@ -4019,12 +4022,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     const bool saveReferenceAccessStates=(
         penumbraScan && !prm.cutoff.rigidityList_GV.empty());
     const bool hasAccessStateProduct=(
-        rigidityListAccess || saveReferenceAccessStates);
-    if ((penumbraScan || rigidityListAccess) && !samplingVertical) {
+        shellRigidityListAccess || saveReferenceAccessStates);
+    if ((penumbraScan || shellRigidityListAccess || directionalDirectAccess) &&
+        !samplingVertical) {
         throw std::runtime_error(
-            "Mode3D PENUMBRA_SCAN and RIGIDITY_LIST require CUTOFF_SAMPLING "
-            "VERTICAL. Their structured shell products are defined for one vertical "
-            "arrival direction at each observation point.");
+            "Mode3D PENUMBRA_SCAN, RIGIDITY_LIST, and DIRECT_ACCESS require "
+            "CUTOFF_SAMPLING VERTICAL.");
     }
 
     const int nCutoffDirs = prm.cutoff.maxParticlesPerPoint;
@@ -4050,15 +4053,23 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     // would discard exactly the science product we need.  The *primary* RIGIDITY_LIST
     // shell product remains shell-only because its writer is still geographic-shell
     // specific; the new directional rigidity-list companion below has no such limit.
-    if (rigidityListAccess && !isShells) {
+    if (shellRigidityListAccess && !isShells) {
         throw std::runtime_error(
-            "Mode3D primary RIGIDITY_LIST currently requires OUTPUT_MODE SHELLS. "
-            "For point/trajectory directional access use PENUMBRA_SCAN + "
+            "Mode3D RIGIDITY_LIST currently requires OUTPUT_MODE SHELLS. "
+            "For point/trajectory directional access use DIRECT_ACCESS + "
             "DIRECTIONAL_MAP + CUTOFF_RIGIDITY_LIST_GV.");
     }
-    if (rigidityListAccess && prm.cutoff.rigidityList_GV.empty()) {
+    if (shellRigidityListAccess && prm.cutoff.rigidityList_GV.empty()) {
         throw std::runtime_error(
             "Mode3D RIGIDITY_LIST requires a non-empty CUTOFF_RIGIDITY_LIST_GV.");
+    }
+    if (directionalDirectAccess && !isPoints) {
+        throw std::runtime_error(
+            "Mode3D DIRECT_ACCESS requires OUTPUT_MODE POINTS or TRAJECTORY.");
+    }
+    if (directionalDirectAccess && prm.cutoff.rigidityList_GV.empty()) {
+        throw std::runtime_error(
+            "Mode3D DIRECT_ACCESS requires a non-empty CUTOFF_RIGIDITY_LIST_GV.");
     }
 
     const double shellLonRes_deg = isShells
@@ -4084,7 +4095,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     // hemispheres. The complete grid id is preserved for exact launch coordinates.
     std::vector<int> locationGridIds;
     locationGridIds.reserve((std::size_t)nAllLocations);
-    if (rigidityListAccess) {
+    if (shellRigidityListAccess) {
         const double eps=1.0e-10;
         for (int gridId=0;gridId<nAllLocations;++gridId) {
             const int k=gridId%nPtsShell;
@@ -4137,25 +4148,35 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         }
         ApplyDirectionalMapCoverage3D(prm,dirMapCfg,coverageLocationsGsm);
     }
-    if (rigidityListAccess && dirMapCfg.enabled) {
+    if (shellRigidityListAccess && dirMapCfg.enabled) {
         throw std::runtime_error(
             "Mode3D primary RIGIDITY_LIST does not support DIRECTIONAL_MAP. Use "
-            "PENUMBRA_SCAN with CUTOFF_RIGIDITY_LIST_GV to request the P1.4 "
-            "directional access companion cube.");
+            "DIRECT_ACCESS for directional point/trajectory access, or PENUMBRA_SCAN "
+            "with CUTOFF_RIGIDITY_LIST_GV when full cutoff-band diagnostics are needed.");
+    }
+    if (directionalDirectAccess && !dirMapCfg.enabled) {
+        throw std::runtime_error(
+            "Mode3D DIRECT_ACCESS requires DIRECTIONAL_MAP T so the requested "
+            "A(R,Omega) sky directions are defined.");
     }
 
-    // P1.4 companion direct-access product.  Keeping PENUMBRA_SCAN as the primary
-    // algorithm preserves P0 lower/effective/upper diagnostics while a non-empty
-    // rigidity list adds independent A(R,Omega) tasks for the detector fold.
+    // C19 has two intentional products:
+    //   PENUMBRA_SCAN : scalar/map cutoff-band diagnostics + companion A(R,Omega).
+    //   DIRECT_ACCESS : A(R,Omega) only; no scalar or per-direction cutoff searches.
+    // The latter removes the ~Nscan trajectories per sky cell that do not enter the
+    // detector fold and is therefore the normal high-throughput C19 mode.
     const bool saveDirectionalAccessStates=(
-        penumbraScan && dirMapCfg.enabled && !prm.cutoff.rigidityList_GV.empty());
+        dirMapCfg.enabled && !prm.cutoff.rigidityList_GV.empty() &&
+        (penumbraScan || directionalDirectAccess));
     const long long nDirectionalAccessTasks=saveDirectionalAccessStates
         ? static_cast<long long>(dirMapCfg.nCells)*
           static_cast<long long>(prm.cutoff.rigidityList_GV.size()) : 0LL;
-    const long long tasksPerLocation=rigidityListAccess
+    const long long tasksPerLocation=shellRigidityListAccess
         ? static_cast<long long>(prm.cutoff.rigidityList_GV.size())
-        : 1LL+(dirMapCfg.enabled ? static_cast<long long>(dirMapCfg.nCells) : 0LL)
-             +nDirectionalAccessTasks;
+        : directionalDirectAccess
+          ? nDirectionalAccessTasks
+          : 1LL+(dirMapCfg.enabled ? static_cast<long long>(dirMapCfg.nCells) : 0LL)
+               +nDirectionalAccessTasks;
 
     //==================================================================================
     // 14.7 — Run summary (rank 0 only)
@@ -4171,12 +4192,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             << ", m=" << prm.species.mass_amu << " amu)\n"
             << "Rigidity range : [" << Rmin << ", " << Rmax << "] GV\n"
             << "Cutoff search  : " << prm.cutoff.searchAlgorithm;
-        if (rigidityListAccess) {
+        if (shellRigidityListAccess || directionalDirectAccess) {
             std::cout << " (" << prm.cutoff.rigidityList_GV.size()
                       << " explicit rigidity values)\n"
-                      << "Access |lat|  : [" << prm.cutoff.accessAbsLatMin_deg
-                      << ", " << prm.cutoff.accessAbsLatMax_deg
-                      << "] geodetic deg\n"
                       << "Rigidity list : ";
             for (std::size_t i=0;i<prm.cutoff.rigidityList_GV.size();++i) {
                 if (i) std::cout << ",";
@@ -4211,7 +4229,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 
         std::cout
             << "N_locations    : " << nLoc  << "\n";
-        if (rigidityListAccess)
+        if (shellRigidityListAccess)
             std::cout << "Shell grid total: " << nAllLocations
                       << " (latitude-band selection retained " << nLoc << ")\n";
         std::cout
@@ -4470,7 +4488,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     // Direct-access states use compact [work location][rigidity] indexing. -1 is the
     // uncomputed MPI sentinel; valid values are the CutoffSampleState integers 0, 1, 2.
     std::vector<int> accessStateRank;
-    const int nAccessRigidities=hasAccessStateProduct
+    const int nAccessRigidities=(hasAccessStateProduct || directionalDirectAccess)
         ? static_cast<int>(prm.cutoff.rigidityList_GV.size()) : 0;
     if (hasAccessStateProduct) {
         const long long nState=static_cast<long long>(nLoc)*nAccessRigidities;
@@ -4755,7 +4773,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         const V3 verticalArrivalDir=LocationToVerticalArrivalDir3D_(
             prm,gridId,nLon,nLat,shellLonRes_deg,shellLatRes_deg,nPtsShell,x0_m);
 
-        if (rigidityListAccess) {
+        if (shellRigidityListAccess) {
             // One task == one explicitly requested rigidity.  The reversed-particle
             // backtrace for each rigidity is independent, so a one-location access scan
             // can now use every configured MPI rank/thread just like a directional map.
@@ -4766,6 +4784,27 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 prm,threadField,x0_m,v0,
                 prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
             accessStateRank[base+(std::size_t)iRigidity]=static_cast<int>(state);
+            return;
+        }
+
+        if (directionalDirectAccess) {
+            // Optimized C19 path: every scheduled task is exactly one requested
+            // (direction,rigidity) classification.  No scalar cutoff and no
+            // per-direction PENUMBRA_SCAN are evaluated in this mode.
+            const long long accessTask=localTask;
+            const int iRigidity=static_cast<int>(
+                accessTask%static_cast<long long>(nAccessRigidities));
+            const int cellId=static_cast<int>(
+                accessTask/static_cast<long long>(nAccessRigidities));
+            const V3 dir_gsm=DirectionalMapCellDirectionGSM3D(dirMapCfg,cellId);
+            const V3 v0=mul(-1.0,dir_gsm);
+            const std::size_t k=((std::size_t)globalIdx*(std::size_t)dirMapCfg.nCells+
+                                 (std::size_t)cellId)*(std::size_t)nAccessRigidities+
+                                (std::size_t)iRigidity;
+            const EarthUtil::CutoffSampleState state=ClassifyCutoffSample3D_(
+                prm,threadField,x0_m,v0,
+                prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
+            dirAccessStateRank[k]=static_cast<int>(state);
             return;
         }
 
@@ -5225,7 +5264,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     //==================================================================================
 
     if (mpiRank == 0) {
-        if (rigidityListAccess) {
+        if (shellRigidityListAccess) {
             WriteTecplot3DShells_AccessList(
                 prm,locationGridIds,accessStateAll,
                 nLon,nLat,shellLonRes_deg,shellLatRes_deg,
@@ -5233,6 +5272,10 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 "Mode3D direct fixed-rigidity vertical access on SHELLS");
             std::cout << "Wrote: "
                       << CutoffOutputFileName("cutoff_3d_shells_access") << "\n";
+        }
+        else if (directionalDirectAccess) {
+            std::cout << "DIRECT_ACCESS: skipped scalar cutoff and directional cutoff-map "
+                      << "searches; writing A(R,Omega) only.\n";
         }
         else if (isPoints) {
             // Console summary
@@ -5337,16 +5380,18 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 const V3 x0_m=LocationToX0m(
                     prm,gridId,nLon,nLat,shellLonRes_deg,shellLatRes_deg,nPtsShell);
 
-                std::vector<double> RcCell((size_t)dirMapCfg.nCells, -1.0);
                 const size_t base = (size_t)locId * (size_t)dirMapCfg.nCells;
-                for (int cellId=0; cellId<dirMapCfg.nCells; ++cellId) {
-                    RcCell[(size_t)cellId] = dirMapAll[base + (size_t)cellId];
-                }
+                if (!directionalDirectAccess) {
+                    std::vector<double> RcCell((size_t)dirMapCfg.nCells, -1.0);
+                    for (int cellId=0; cellId<dirMapCfg.nCells; ++cellId) {
+                        RcCell[(size_t)cellId] = dirMapAll[base + (size_t)cellId];
+                    }
 
-                WriteTecplot3DDirectionalMap_Location(
-                    prm, locId, x0_m, dirMapCfg, RcCell,
-                    (penumbraScan ? &dirMapPenumbraAll : nullptr),
-                    base, qabs, m0);
+                    WriteTecplot3DDirectionalMap_Location(
+                        prm, locId, x0_m, dirMapCfg, RcCell,
+                        (penumbraScan ? &dirMapPenumbraAll : nullptr),
+                        base, qabs, m0);
+                }
 
                 if (saveDirectionalAccessStates) {
                     const std::size_t nRig=(std::size_t)nAccessRigidities;
@@ -5361,10 +5406,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 }
             }
 
-            std::cout << "Wrote: " << nLoc
-                      << " directional cutoff map file(s): "
-                      << "cutoff_3d_dir_map_loc_######"
-                      << gCutoffOutputFileSuffix << ".dat\n";
+            if (!directionalDirectAccess) {
+                std::cout << "Wrote: " << nLoc
+                          << " directional cutoff map file(s): "
+                          << "cutoff_3d_dir_map_loc_######"
+                          << gCutoffOutputFileSuffix << ".dat\n";
+            }
             if (saveDirectionalAccessStates) {
                 std::cout << "Wrote: " << nLoc
                           << " directional direct-access cube file(s): "
