@@ -440,7 +440,7 @@ as development history. `srcEarth/test/C19/run_C19.py` now has one execution pat
 always uses the validated production behavior:
 
 - `PENUMBRA_SCAN` with trace-limit outcomes preserved as `UNRESOLVED`;
-- direct three-state directional `A(R,Omega)` output for GRIDDED Mode3D;
+- direct three-state directional `A(R,Omega)` output for both GRIDDED Mode3D and GRIDLESS;
 - detector-response folding with event-derived spectrum/provenance support;
 - default `2.5° × 2.5°` directional sampling;
 - default vector-aperture directional work (`VECTOR_APERTURES`), using the actual
@@ -459,8 +459,17 @@ behavior is not selectable through `--cutoff-search`, `--trace-limit-policy`, or
 `--response-fold`; the runner fixes those internal settings to the current validated
 contract and records them in the generated inputs/results.
 
-The current GRIDDED command therefore includes the fine mesh defaults and the generated
-input contains the direct rigidity list used to produce `A(E,Omega)`. Standard outputs
+The current GRIDDED command includes the fine mesh defaults, while both GRIDDED and
+GRIDLESS generated inputs contain the identical direct rigidity list used to produce
+`A(E,Omega)`.  Standalone GRIDLESS is mesh-free: the early `-mode gridless` dispatch
+returns before `amps_init_mesh()` and evaluates the background field directly along
+trajectories.  GRIDLESS cutoff/direct-access tasks now use the same MPI + intra-rank
+THREADS/OPENMP/SERIAL backend controls as Mode3D (`GRIDLESS_PARALLEL`,
+`GRIDLESS_THREADS`); only the rank/main thread calls MPI.  Multi-epoch TRAJECTORY inputs
+conservatively fall back to serial intra-rank direct-field evaluation because Geopack
+snapshot state is process-global. GRIDLESS writes `cutoff_gridless_dir_access_point_####.dat`; Mode3D
+writes `cutoff_3d_dir_access_loc_######.dat`, and C19 folds either schema through the
+same postprocessor. Standard outputs
 include `C19_comparison_*`, `C19_scatter_*`, `C19_parity_*`, `C19_residual_*`,
 `C19_transmission_*`, and `C19_aperture_diagnostic.png` for every completed normal run.
 

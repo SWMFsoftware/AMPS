@@ -10,10 +10,11 @@
 namespace Earth {
 namespace Mode3D {
 
-// Shared intra-rank backend used by mesh-backed backward products in Mode3D.
-// The same controls intentionally drive cutoff rigidity and density/flux so a
-// single AMPS_PARAM.in deck selects the backend for all expensive backtracking
-// products that operate on the already-assembled compact global field snapshot.
+// Shared intra-rank backend used by backward trajectory products.  The helper was
+// introduced for mesh-backed Mode3D but is now also used by standalone GRIDLESS cutoff
+// and direct-access work.  The historical AmpsParam storage names are retained for
+// compatibility; MODE3D_*, GRIDLESS_*, BACKTRACK_*, and DENSITY_* keyword aliases all
+// resolve to this same backend/thread-count contract.
 enum class ParallelBackend {
   OPENMP,   // OpenMP team inside each MPI rank.
   THREADS,  // Direct std::thread worker pool inside each MPI rank.
@@ -103,8 +104,10 @@ private:
 //
 // Keeping these counters separate prevents the progress bar from racing ahead when
 // a rank fetches a large chunk but has not finished computing it yet.  All ranks
-// can call Add(delta) from the rank/main thread after a chunk of tasks finishes;
-// rank 0 can periodically call Get() to print an accurate global completion count.
+// can call Add(delta) from the rank/main thread whenever one or more tasks are known
+// to have completed (after a whole chunk, or during a running threaded chunk via a
+// rank-local completion counter); rank 0 can periodically call Get() to print an
+// accurate global completion count.
 // No worker thread should call this object, so MPI_THREAD_MULTIPLE is not needed.
 class DynamicMpiProgressCounter {
 public:

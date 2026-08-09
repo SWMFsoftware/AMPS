@@ -88,15 +88,14 @@
 //       mesh cell centers.
 //
 //   -density-parallel <OPENMP|THREADS|SERIAL>
-//       Select the shared-memory backend used by Mode3D density backtracking inside
-//       each MPI process. OPENMP preserves the legacy OpenMP path; THREADS uses a
-//       direct std::thread work queue over observation locations; SERIAL disables
-//       intra-rank shared-memory parallelism.
+//       Select the shared-memory backend for backward trajectory products inside each
+//       MPI process.  Aliases include -mode3d-parallel and -gridless-parallel.
+//       THREADS uses direct std::thread workers; SERIAL disables intra-rank parallelism.
 //
 //   -density-threads <int>
-//       Number of shared-memory workers per MPI process for the selected density
-//       backend. For OPENMP this calls omp_set_num_threads(N); for THREADS it sets
-//       the number of std::thread workers.
+//       Number of shared-memory workers per MPI process.  Aliases include
+//       -mode3d-threads and -gridless-threads.  GRIDLESS cutoff uses this worker count
+//       to size automatic dynamic-MPI chunks as well as the local worker pool.
 //
 //   -mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC>
 //       Select the inter-rank scheduler for standalone Mode3D and gridless cutoff/density runs.
@@ -282,7 +281,7 @@ namespace EarthUtil {
     std::string mode3dFieldEval{""};
 
     // -density-parallel <OPENMP|THREADS|SERIAL>
-    // Optional Mode3D backward-product shared-memory backend override.
+    // Optional shared-memory backend override for Mode3D/GRIDLESS backward products.
     // Empty string means: use default/environment.
     std::string densityParallelBackend{""};
 

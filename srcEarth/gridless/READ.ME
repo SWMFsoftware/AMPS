@@ -39,6 +39,13 @@ In practical terms this means:
   - trajectory cost is concentrated only where the solver actually traces;
   - the code is naturally suited to point, shell, and trajectory-style products.
 
+For the standalone `-mode gridless` branch this is now enforced structurally in
+`srcEarth/main.cpp`: after `PIC::InitMPI()` and SPICE/input setup the gridless solver is
+called directly and returns before the legacy `amps_init_mesh()` call.  `PIC::InitMPI()`
+initializes the MPI runtime only; it does not construct the AMR field mesh.  The
+SWMF-coupled build is intentionally different because its background field exists on the
+coupler mesh; the standalone direct-field path described here is the one used by C19.
+
 The current gridless implementation is a magnetic-access / backtracing solver.
 It is NOT a full self-consistent radiation-belt transport model and it does NOT
 currently include electric-field drifts, diffusion, collisions, or wave-particle
@@ -503,24 +510,78 @@ Optional dipole-comparison files may be written by benchmark paths:
 10. Parallelism
 --------------------------------------------------------------------------------
 
-The gridless branch is designed to exploit both MPI and OpenMP where available.
+GRIDLESS cutoff/direct-access work uses the same two-level scheduling concept as
+Mode3D: MPI distributes coarse chunks between processes and a shared-memory backend
+processes independent trajectory tasks concurrently inside each rank.
 
-MPI
----
+Configuration
+-------------
 
-Both major gridless solvers use dynamic point-level MPI scheduling so that slow
-points (for example near penumbra-like access transitions or long-lived trapped
-orbits) do not idle the rest of the job.
+Input-file controls:
 
-OpenMP
-------
+  GRIDLESS_PARALLEL             THREADS
+  GRIDLESS_THREADS              16
+  GRIDLESS_MPI_SCHEDULER        DYNAMIC
+  GRIDLESS_MPI_DYNAMIC_CHUNK    0
 
-Density/spectrum mode contains OpenMP-aware logic for embarrassingly parallel
-loops over energies and/or directions. Care is taken to avoid pathological nested
-parallelism.
+Equivalent command-line controls:
 
-The exact runtime benefit depends strongly on field model, observation geometry,
-energy range, and near-cutoff trajectory behavior.
+  -gridless-parallel THREADS
+  -gridless-threads 16
+  -gridless-mpi-scheduler DYNAMIC
+  -gridless-mpi-dynamic-chunk N     # optional; omit/0 for automatic
+
+`THREADS` is the recommended backend for the standalone direct-field cutoff path.
+`OPENMP` and `SERIAL` remain supported through the common backend resolver.  The thread
+count is per MPI rank, so `-np 4 -gridless-threads 16` requests up to 64 trajectory
+workers across a node, subject to CPU affinity and available cores.
+
+Dynamic MPI + local threads
+---------------------------
+
+The rank/main thread is the only thread that calls MPI.  In DYNAMIC mode it atomically
+fetches a chunk of flattened trajectory task ids, hands those tasks to the local worker
+team, waits for the team to finish, accumulates the results, and then updates the MPI
+completion counter.  Worker threads never enter MPI, so MPI_THREAD_MULTIPLE is not
+required.
+
+Each worker owns a private `cFieldEvaluator`.  Evaluators are constructed serially on
+the rank/main thread before workers start, avoiding concurrent Geopack/model-library
+initialization.  Worker results are returned through private `ResultMsg` slots and are
+merged by the rank/main thread after join; shared cutoff/output arrays therefore need no
+worker-side locking.
+
+Automatic dynamic chunking
+--------------------------
+
+`GRIDLESS_MPI_DYNAMIC_CHUNK <= 0` means automatic.  The shared scheduler receives the
+actual GRIDLESS worker count and currently chooses a chunk of approximately four work
+items per local worker, limited by the global task count.  This is deliberate: the old
+serial GRIDLESS code effectively used a one-task fetch, which would starve a 16-thread
+rank.  If an explicit chunk is used, it should normally be at least the worker count.
+
+Frozen-field thread-safety guard
+--------------------------------
+
+Standalone Tsyganenko/Geopack field parameters are process-global.  Concurrent direct
+field evaluation is therefore enabled only when all locations in one process use the
+same frozen epoch/driver snapshot.  This includes POINTS, SHELLS, and C19's normal
+one-epoch-per-process runs.  If a TRAJECTORY input contains multiple UTC epochs, GRIDLESS
+prints a warning and falls back to SERIAL intra-rank execution while retaining MPI
+parallelism.  This avoids racing a process-global Geopack state between epochs.
+
+The live SWMF-coupled gridless field sampler is also kept out of this standalone worker
+pool because it uses AMPS coupler-mesh interpolation with a different thread-safety
+contract.
+
+Performance
+-----------
+
+The runtime benefit depends on field model, mover, geometry, and the fraction of long
+near-cutoff trajectories.  For C19, combine GRIDLESS threading with
+`VECTOR_APERTURES`: pruning the full sphere reduces the task count, while the worker
+pool parallelizes the remaining cutoff and direct `A(E,Omega)` trajectories inside each
+MPI rank.
 
 --------------------------------------------------------------------------------
 11. Validation / tests in gridless/test
@@ -632,3 +693,15 @@ For AMPS input-file syntax:
 
   util/amps_param_parser.h
 
+
+
+GRIDLESS threaded progress reporting
+------------------------------------
+For THREADS execution, trajectory completion is reported at sub-MPI-chunk granularity.
+Worker threads increment only a local atomic completion count; the MPI rank/main thread
+polls that count every 200 ms, updates the shared MPI RMA completion counter, and rank 0
+prints at approximately one-second cadence.  Therefore an AUTO dynamic chunk (for
+example ~64 tasks for 16 workers) does not have to finish completely before the progress
+bar moves.  Worker threads never call MPI, preserving the MPI_THREAD_FUNNELED contract.
+Rank 0 also polls the global completion counter through the final slow tail until all
+assigned work is actually complete.

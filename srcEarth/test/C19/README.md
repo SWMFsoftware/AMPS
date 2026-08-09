@@ -15,7 +15,7 @@ log10[(physical EAST background-subtracted flux) /
 
 for EPEAD P4 and P5. A negative value means that the eastward-looking detector measured less flux than the westward-looking detector.
 
-C19A is a **broad-aperture observational validation**. The current science chain is explicit: the reference records the exact NOAA flux variables and ephemeris provenance; a time-dependent event spectrum is estimated from the physical-WEST P4/P5 measurements (or supplied independently); Mode3D evaluates the direct three-state access function `A(E,Ω)` on the directional sky grid; and the postprocessor folds that access through a file-defined detector energy response and the nominal elliptical angular aperture. The current runner also includes fine angular/mesh defaults, external detector-attitude support, a bounded upstream-anisotropy option, explicit finite-rigidity-grid uncertainty, and a high-energy response extension appropriate to the default uncorrected GOES product. The response is still factorized in energy and angle rather than a complete calibrated energy-angle matrix, so the test remains a controlled approximation rather than a full instrument simulator.
+C19A is a **broad-aperture observational validation**. The current science chain is explicit: the reference records the exact NOAA flux variables and ephemeris provenance; a time-dependent event spectrum is estimated from the physical-WEST P4/P5 measurements (or supplied independently); both GRIDDED Mode3D and GRIDLESS evaluate the same direct three-state access function `A(E,Ω)` on the directional sky grid; and the postprocessor folds that access through a file-defined detector energy response and the nominal elliptical angular aperture. The current runner also includes fine angular/mesh defaults, external detector-attitude support, a bounded upstream-anisotropy option, explicit finite-rigidity-grid uncertainty, and a high-energy response extension appropriate to the default uncorrected GOES product. The response is still factorized in energy and angle rather than a complete calibrated energy-angle matrix, so the test remains a controlled approximation rather than a full instrument simulator.
 
 ## 2. Implemented comparison
 
@@ -30,9 +30,9 @@ C19A is a **broad-aperture observational validation**. The current science chain
 | Observation | Background-subtracted physical East/West flux ratio |
 | Field models | IGRF + T96 and IGRF + T05/TS05 |
 | Solvers | GRIDDED, GRIDLESS, or BOTH |
-| AMPS product | GRIDDED: SM `PENUMBRA_SCAN` map **plus direct three-state `A(E,Ω)` companion cube** at detector-response energies; GRIDLESS remains the effective-cutoff proxy cross-check |
+| AMPS product | Both solvers: SM `PENUMBRA_SCAN` map **plus direct three-state `A(E,Ω)` companion cube** at the same detector-response rigidities |
 | Source spectrum | Default: epoch-dependent power law fit to physical-WEST background-subtracted P4/P5 flux; explicit spectrum CSV and fixed-gamma sensitivity modes are supported |
-| Instrument model | File-defined piecewise energy response (`data/epead_response_C19_uncorrected_extended.csv` by default) × nominal elliptical angular aperture; direct `A(E,Ω)` fold on GRIDDED |
+| Instrument model | File-defined piecewise energy response (`data/epead_response_C19_uncorrected_extended.csv` by default) × nominal elliptical angular aperture; identical direct `A(E,Ω)` fold for GRIDDED and GRIDLESS |
 
 ### Event-specific detector orientation
 
@@ -376,7 +376,7 @@ CUTOFF_SEARCH_ALGORITHM   PENUMBRA_SCAN
 CUTOFF_TRACE_LIMIT_POLICY UNRESOLVED
 ```
 
-and GRIDDED Mode3D always requests the direct three-state `A(E,Ω)` companion cube used
+and both GRIDDED Mode3D and GRIDLESS always request the direct three-state `A(E,Ω)` companion cube used
 for the synthetic detector fold. The current production defaults also adopt the finest
 settings from the former P2 convergence implementation:
 
@@ -676,12 +676,13 @@ from the physical-WEST background-subtracted P4/P5 intensities at each epoch, us
 
 with `utc,gamma[,j0,e0_mev]`. `--spectrum-source FIXED --spectral-index ...` is retained only for sensitivity/legacy reproduction.
 
-### Direct Mode3D `A(E,Ω)` product
+### Direct GRIDDED/GRIDLESS `A(E,Ω)` product
 
-When `PENUMBRA_SCAN`, `DIRECTIONAL_MAP T`, and a non-empty `CUTOFF_RIGIDITY_LIST_GV` are combined, Mode3D now creates a second product for every observation location:
+When `PENUMBRA_SCAN`, `DIRECTIONAL_MAP T`, and a non-empty `CUTOFF_RIGIDITY_LIST_GV` are combined, both cutoff solvers create a second product for every observation location. The solver-specific file names are:
 
 ```text
-cutoff_3d_dir_access_loc_000000.dat
+GRIDDED : cutoff_3d_dir_access_loc_000000.dat
+GRIDLESS: cutoff_gridless_dir_access_point_0000.dat
 ```
 
 Each row is one `(lon,lat,rigidity)` trajectory and contains `rigidity_GV`, corresponding proton `energy_MeV`, `access_state`, `allowed`, and `unresolved`. States use the same three-state classifier as the production penumbra path:
@@ -692,11 +693,15 @@ Each row is one `(lon,lat,rigidity)` trajectory and contains `rigidity_GV`, corr
 2 = UNRESOLVED
 ```
 
-The task scheduler flattens `(location, sky-cell, rigidity)` work so those trajectories are distributed across MPI ranks/threads rather than serialized inside one map cell. `PENUMBRA_SCAN` remains the primary scalar/topology product; the rigidity list is the companion science cube used by the GRIDDED detector-response fold.
+The GRIDDED and GRIDLESS direct-access files are required to carry the same sky-cell set and the same ordered energy/rigidity grid for a given C19 case. The runner checks those invariants against the companion directional map and against the requested detector-response grid before any observational ratio is evaluated. Missing, truncated, stale, or solver-mismatched direct-access files therefore fail post-processing rather than silently falling back to a scalar-cutoff proxy.
+
+The task scheduler flattens `(location, sky-cell, rigidity)` work so those trajectories are distributed across MPI ranks rather than serialized inside one map cell. Mode3D may additionally use its configured intra-rank thread backend. `PENUMBRA_SCAN` remains the primary scalar/topology product; the rigidity list is the companion science cube used by the detector-response fold for **both** solvers. The two files intentionally have the same columns and three-state semantics so `run_C19.py` uses one parser and one folding implementation.
+
+A terminology detail is important for GRIDLESS: the standalone primary search token `CUTOFF_SEARCH_ALGORITHM RIGIDITY_LIST` is still rejected because that token belongs to a separate shell-oriented Mode3D output contract. C19 does **not** use that token. C19 uses `PENUMBRA_SCAN` as the primary cutoff/topology calculation and supplies `CUTOFF_RIGIDITY_LIST_GV` as a companion list. In that combination GRIDLESS and GRIDDED both schedule one independent three-state trajectory for every requested `(direction, rigidity)` pair and therefore provide equivalent C19 direct-access observables.
 
 ### Response fold of direct access
 
-For GRIDDED runs, `run_C19.py` builds a response-energy grid over the **complete positive support of the configured response file**, writes the corresponding strictly increasing rigidity list into the input, reads the direct access cube, and evaluates the head transmission schematically as
+For either solver, `run_C19.py` builds a response-energy grid over the **complete positive support of the configured response file**, writes the same strictly increasing rigidity list into the input, reads that solver's direct access cube, and evaluates the head transmission schematically as
 
 ```text
 T_head(t) = ∫dΩ w(Ω) ∫dE J(E,t) G_channel(E) A(E,Ω,t)
@@ -947,11 +952,83 @@ fully compatible with time-varying spacecraft attitude.
 
 ### GRIDDED and GRIDLESS
 
-GRIDDED is the primary science solver and folds direct `A(E,Ω)`. GRIDLESS remains
-available through `--solver GRIDLESS` or `--solver BOTH` as a cross-solver effective-
-cutoff proxy. Selecting a solver does not select a different runner mode; both go
-through the same reference, spectrum, direction-mapping, validity, output, and plotting
-workflow.
+GRIDDED and GRIDLESS are now observationally equivalent C19 science paths. Both emit the same three-state `A(E,Ω)` values on the same requested rigidity list and selected directional cells, and both are folded by the identical spectrum/response/aperture postprocessor. The difference is intentionally confined to **magnetic-field evaluation along the trajectory**: GRIDDED interpolates the precomputed Mode3D mesh while GRIDLESS evaluates the configured background model directly. `--solver BOTH` is therefore a true apples-to-apples solver comparison rather than a direct-access-versus-effective-cutoff comparison. The scalar `PENUMBRA_SCAN` maps remain useful diagnostics but no longer define the GRIDLESS observational observable.
+
+### GRIDLESS mesh-free execution and intra-rank threading
+
+Standalone C19 `GRIDLESS` is intentionally **mesh-free**.  The early `-mode gridless`
+branch in `srcEarth/main.cpp` initializes MPI and SPICE, parses the input, and calls the
+gridless solver directly.  It returns before the historical `amps_init_mesh()` path.
+Therefore a standalone T05/T96/T01/TA15/TA16/IGRF/DIPOLE GRIDLESS run does **not**:
+
+- construct/read the AMR tree for the background field;
+- allocate Mode3D cell-centered magnetic/electric-field arrays;
+- populate a field mesh;
+- gather the compact Mode3D field snapshot; or
+- interpolate a precomputed field during particle tracing.
+
+Instead, each trajectory step evaluates the selected background field directly at the
+particle position.  `PIC::InitMPI()` is still required because it initializes the MPI
+runtime; it is not a mesh initialization call.  The live SWMF-coupled build is a separate
+case: its "gridless" field evaluator samples the SWMF field stored on the coupled AMPS
+mesh and is therefore not the standalone mesh-free path used by C19.
+
+C19 now uses the same two-level parallel design for GRIDLESS cutoff/direct-access work
+that Mode3D uses for GRIDDED work:
+
+```text
+MPI ranks
+  +-- rank/main thread: fetches MPI work chunks; performs MPI/progress/output updates
+  |     +-- worker 0: independent trajectory task, private cFieldEvaluator
+  |     +-- worker 1: independent trajectory task, private cFieldEvaluator
+  |     +-- ...
+  |     +-- worker N-1: independent trajectory task, private cFieldEvaluator
+  +-- next MPI rank ...
+```
+
+The input-file controls are:
+
+```text
+GRIDLESS_PARALLEL             THREADS
+GRIDLESS_THREADS              16
+GRIDLESS_MPI_SCHEDULER        DYNAMIC
+GRIDLESS_MPI_DYNAMIC_CHUNK    0
+```
+
+and the equivalent CLI is:
+
+```bash
+-gridless-parallel THREADS \
+-gridless-threads 16 \
+-gridless-mpi-scheduler DYNAMIC
+```
+
+`GRIDLESS_MPI_DYNAMIC_CHUNK 0` means **automatic**.  The common scheduler receives the
+actual number of local workers and chooses a chunk proportional to that count (currently
+about four trajectory tasks per worker).  An explicit CLI value may still be supplied,
+for example `-gridless-mpi-dynamic-chunk 64`.  A chunk smaller than the worker count can
+under-fill the local thread team and is normally a poor choice.
+
+Only the rank/main thread calls MPI.  Worker threads compute complete flattened cutoff
+or `(direction,rigidity)` direct-access tasks and write their result into private batch
+slots.  After all workers in the batch join, the rank/main thread updates `RcMin`, the
+directional-map arrays, the direct `A(E,Omega)` cube, and the MPI progress counter.
+Consequently this implementation does **not** require `MPI_THREAD_MULTIPLE` and does not
+put locks/atomics around the large result arrays.
+
+The direct-field model interfaces have process-global Geopack/Tsyganenko snapshot state.
+For the normal C19 architecture (one spacecraft/epoch per AMPS process), the epoch and
+driver snapshot are frozen.  Worker evaluators are created serially, refreshed to that
+same snapshot, and the shared model parameters are installed once before the worker team
+starts.  If a general GRIDLESS `TRAJECTORY` input contains multiple distinct epochs in
+one process, the code conservatively falls back to **SERIAL intra-rank field evaluation**
+while keeping the selected MPI scheduler active.  This prevents multiple worker threads
+from trying to represent different process-global Geopack epochs simultaneously.
+
+The normal C19 runner requests `THREADS` explicitly for GRIDLESS.  `-nt N` becomes
+`-gridless-threads N`.  With the runner's default `--dynamic-chunk 0`, GRIDLESS leaves
+chunk sizing to the C++ auto resolver; an explicit positive `--dynamic-chunk` overrides
+that behavior.
 
 ### Mode3D mesh
 
@@ -1036,8 +1113,9 @@ Normal machine-readable products include:
 | `C19_reference_used.csv` | Selected observational rows plus actual detector IDs, exact flux-variable/correction-state, and ephemeris provenance |
 | `C19_spectrum_used.csv` | Epoch-dependent gamma/J0/E0 and measured/interpolated/file source |
 | `C19_detector_response_used.csv` | Exact response intervals/components used by direct-response |
-| `C19_access_energy_grid.csv` | Energy and proton rigidity values requested from Mode3D for direct `A(E,Ω)` |
-| `C19_model.csv` / `C19_comparison.csv` | E/W results, transmission bounds, spectrum source, response model, `DIRECT_A_E_OMEGA` vs cutoff-proxy label, unresolved fractions, maximum trace time, search algorithm/policy, and map provenance |
+| `C19_access_energy_grid.csv` | Energy and proton rigidity values requested identically from GRIDDED and GRIDLESS for direct `A(E,Ω)` |
+| per-run `cutoff_3d_dir_access_loc_000000.dat` / `cutoff_gridless_dir_access_point_0000.dat` | Solver-native direct three-state `A(E,Ω)` cubes consumed by the common detector fold |
+| `C19_model.csv` / `C19_comparison.csv` | E/W results, transmission bounds, spectrum source, response model, `DIRECT_A_E_OMEGA` access-product label, unresolved fractions, maximum trace time, search algorithm/policy, and map provenance |
 | `C19_metrics.csv` | Per-spacecraft and aggregate finite/saturated fractions, sign agreement, bias, MAE, RMSE, correlation, and provisional gate |
 | `C19_direction_sense_diagnostic.csv` | Production arrival→look convention and legacy opposite-convention diagnostic |
 | `C19_aperture_samples.csv` | Representative aperture cells including lower/effective/upper cutoff, topology, raw termination counts, trace maxima, and transmission |
@@ -1093,6 +1171,43 @@ that executes successfully but fails trajectory resolution, detector folding, or
 agreement is a scientific FAIL and becomes shell exit status 1 only when
 `--enforce-acceptance` is requested.
 
+
+
+### GRIDLESS live progress reporting
+
+The threaded GRIDLESS solver uses the same **completed-task** progress semantics as
+Mode3D.  Progress is not based on tasks merely fetched from the dynamic MPI queue.
+Each successful trajectory worker increments a rank-local atomic completion counter;
+the rank/main thread polls that counter every 200 ms and transfers newly completed work
+to the global MPI RMA completion counter.  Worker threads never call MPI.
+
+The 200-ms polling cadence is intentionally **not** the stdout cadence.  Rank 0 suppresses
+identical progress lines and normally prints only after about 0.1% of the global task set
+has newly completed.  For unusually slow trajectories, a line may be printed after 10 s
+provided at least one additional task has completed.  Consequently a stalled count such
+as `Task 0/98897` is printed once, not once per second.  The final 100% line is also
+printed exactly once.
+
+ETA is withheld until at least 0.1% of the work (and at least 32 tasks) has completed and
+at least 10 s have elapsed.  This avoids meaningless startup estimates based on one or a
+few exceptionally expensive trajectories.
+
+A GRIDLESS run therefore prints an initial line immediately and then lines of the form
+
+```text
+[Gridless cutoff TRAJECTORY] [rank 0/global over 4 MPI ranks] [####--------------------------------] 12.3%  (LocEq 0/1, Task 1234/9999)  ETA 00:08:42
+```
+
+The important detail is that updates occur **while a threaded MPI chunk is still
+running**.  With 16 workers and an automatic chunk of roughly 64 tasks, the display no
+longer waits for all ~64 trajectories to finish before advancing.  If rank 0 happens to
+be tracing an unusually long trajectory, its main thread still polls the global RMA
+counter and displays completions reported by the other MPI ranks.  After the assignment
+queue is exhausted, rank 0 continues polling until the global completed-task count
+reaches 100%, matching the slow-tail behavior of the GRIDDED Mode3D progress display.
+
+This progress mechanism changes only reporting granularity; it does not alter task
+scheduling, trajectory physics, result accumulation, or MPI/thread ownership rules.
 
 ## 12. Interpretation and limitations
 

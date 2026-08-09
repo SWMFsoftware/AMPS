@@ -172,12 +172,22 @@ def integration_dry_run() -> None:
             if not re.search(r"^CUTOFF_TRACE_LIMIT_POLICY\s+UNRESOLVED\s*$",
                              text, re.MULTILINE):
                 raise SystemExit("normal C19 dry-run did not select UNRESOLVED policy: %s" % path)
-            if "gridded" in str(path):
-                if not re.search(r"^CUTOFF_RIGIDITY_LIST_GV\s+[0-9]", text, re.MULTILINE):
-                    raise SystemExit("P1 GRIDDED input did not contain direct-access rigidity list: %s" % path)
-            else:
-                if re.search(r"^CUTOFF_RIGIDITY_LIST_GV\s+", text, re.MULTILINE):
-                    raise SystemExit("GRIDLESS proxy input unexpectedly retained P1 rigidity list: %s" % path)
+            # GRIDDED and GRIDLESS must now receive the identical detector-response
+            # rigidity list.  This is the key input-level invariant that makes BOTH an
+            # apples-to-apples direct A(E,Omega) comparison instead of comparing two
+            # different observables.
+            if not re.search(r"^CUTOFF_RIGIDITY_LIST_GV\s+[0-9]", text, re.MULTILINE):
+                raise SystemExit("C19 input did not contain direct-access rigidity list: %s" % path)
+            # GRIDLESS-specific parallel contract.  The normal runner must render a
+            # shared-memory worker backend and leave the MPI dynamic chunk in AUTO
+            # mode so the C++ resolver can size one fetch from the actual worker count.
+            if "/gridless/" in str(path).lower():
+                if not re.search(r"^GRIDLESS_PARALLEL\s+THREADS\s*$", text, re.MULTILINE):
+                    raise SystemExit("GRIDLESS input did not enable THREADS: %s" % path)
+                if not re.search(r"^GRIDLESS_THREADS\s+2\s*$", text, re.MULTILINE):
+                    raise SystemExit("GRIDLESS input did not propagate -nt 2: %s" % path)
+                if not re.search(r"^GRIDLESS_MPI_DYNAMIC_CHUNK\s+0\s*$", text, re.MULTILINE):
+                    raise SystemExit("GRIDLESS input did not preserve AUTO dynamic chunk: %s" % path)
 
         # Single-workflow regression.  P0/P1/P2 are implementation history, not
         # mutually exclusive runner modes.  The ordinary dry run above must therefore
@@ -198,13 +208,23 @@ def integration_dry_run() -> None:
                 raise SystemExit("current workflow command did not select VECTOR_APERTURES coverage")
             if "-cutoff-dirmap-aperture-file C19_directional_apertures.dat" not in joined:
                 raise SystemExit("current workflow command lacks generic aperture-vector file")
+            if int(record.get("n_direct_access_rigidities", 0)) <= 0:
+                raise SystemExit("current %s workflow did not request direct A(E,Omega)" % record["solver"])
             if record["solver"] == "GRIDDED":
                 if "-mode3d-mesh-res-earth-re 0.025" not in joined:
                     raise SystemExit("current GRIDDED workflow did not use 0.025 Re near-Earth mesh")
                 if "-mode3d-mesh-res-boundary-re 1.0" not in joined:
                     raise SystemExit("current GRIDDED workflow did not use 1.0 Re boundary mesh")
-                if int(record.get("n_direct_access_rigidities", 0)) <= 0:
-                    raise SystemExit("current GRIDDED workflow did not request direct A(E,Omega)")
+            elif record["solver"] == "GRIDLESS":
+                if "-gridless-parallel THREADS" not in joined:
+                    raise SystemExit("current GRIDLESS workflow did not request THREADS")
+                if "-gridless-threads 2" not in joined:
+                    raise SystemExit("current GRIDLESS workflow did not propagate -nt 2")
+                # AUTO chunking is represented by GRIDLESS_MPI_DYNAMIC_CHUNK=0 in the
+                # input deck; the runner must not override it with a historical
+                # one-task (or any default positive) CLI chunk.
+                if "-gridless-mpi-dynamic-chunk" in joined:
+                    raise SystemExit("current GRIDLESS workflow unexpectedly overrode AUTO dynamic chunk")
 
         # The generated parameter decks must use the finest P2.1 production sky grid.
         for path in rendered:
@@ -363,7 +383,10 @@ def validate_directional_coverage_source_contract() -> None:
             "LOCAL_SM", "fullGridCellIds"),
         src_earth / "gridless" / "CutoffRigidityGridless.cpp": (
             "VECTOR_APERTURES", "LOCAL_SM", "dirMapFullCellIds",
-            "DIRMAP coverage"),
+            "DIRMAP coverage", "TASK_DIRACCESS",
+            "saveDirectionalAccessStates",
+            "cutoff_gridless_dir_access_point_",
+            "ClassifyCutoffSampleDetailed"),
     }
     for path, needles in checks.items():
         text = path.read_text(errors="replace")
@@ -371,6 +394,75 @@ def validate_directional_coverage_source_contract() -> None:
             if needle not in text:
                 raise SystemExit("directional-coverage source contract missing %r in %s" %
                                  (needle, path))
+
+    # GRIDLESS execution contract: standalone -mode gridless must return before the
+    # historical mesh initialization path, and cutoff/direct-access work must contain
+    # the same local THREADS/OPENMP machinery used by Mode3D.  These are static checks
+    # because package tests intentionally do not link the full AMPS executable.
+    main_text = (src_earth / "main.cpp").read_text(errors="replace")
+    gridless_begin = main_text.find('if (m=="GRIDLESS")')
+    mode3d_begin = main_text.find('if (m=="3D")', gridless_begin)
+    if gridless_begin < 0 or mode3d_begin < 0:
+        raise SystemExit("could not isolate standalone GRIDLESS dispatch in main.cpp")
+    gridless_dispatch = main_text[gridless_begin:mode3d_begin]
+    if re.search(r"^\s*amps_init_mesh\s*\(", gridless_dispatch, re.MULTILINE):
+        raise SystemExit("standalone GRIDLESS dispatch must not call amps_init_mesh()")
+    if "AMR mesh initialization: SKIPPED" not in gridless_dispatch:
+        raise SystemExit("standalone GRIDLESS no-mesh invariant is not documented/logged")
+
+    gridless_source = (src_earth / "gridless" / "CutoffRigidityGridless.cpp").read_text(errors="replace")
+    for needle in (
+            "ResolveGridlessParallelBackend_", "ResolveGridlessThreadCount_",
+            "ApplyWideAffinityForGridlessThreadsOnce_", "std::vector<std::thread>",
+            "ProcessMappedTaskRange", "InstallSharedModelState",
+            "UsePreinstalledSharedModelState", "oneFrozenFieldSnapshot",
+            "ResolveMpiDynamicChunk(prm,gridlessThreadCount,totalTasks)",
+            # Live-progress contract: THREADS workers publish successful task
+            # completion through a local atomic while the rank/main thread polls and
+            # performs the MPI RMA update.  This prevents the bar from waiting for an
+            # entire dynamic scheduler chunk to join.
+            "completedInBatch.fetch_add", "progressPollInterval",
+            "PublishCompletedTasks", "activeWorkers.load",
+            # Quiet-progress contract: polling stays fine-grained, but stdout must not
+            # repeat an unchanged task count every second and startup ETA is gated.
+            "doneTasks <= doneLast", "minTaskDelta", "etaMinTasks",
+            "(LocEq ", "rank 0/global over"):
+        if needle not in gridless_source:
+            raise SystemExit("GRIDLESS threading source contract missing %r" % needle)
+
+    # CLI application must be common to GRIDLESS and Mode3D; otherwise the parser can
+    # accept -gridless-parallel/-gridless-threads but GRIDLESS still runs serially.
+    for needle in ("p.mode3d.densityParallelBackend = backend",
+                   "p.mode3d.densityThreads = cli.densityThreads"):
+        common_begin = main_text.find("bool ApplyCommonBackwardCli")
+        common_end = main_text.find("return true;", common_begin)
+        if needle not in main_text[common_begin:common_end]:
+            raise SystemExit("common backward CLI does not apply GRIDLESS worker setting %r" % needle)
+
+    # GRIDLESS science-equivalence contract.  C19 must require the same direct
+    # A(E,Omega) product from both solvers; a future refactor must not silently
+    # restore the old effective-cutoff-only GRIDLESS observational path.
+    runner_text = (ROOT / "run_C19.py").read_text(errors="replace")
+    for needle in (
+            "cutoff_gridless_dir_access_point_0000.dat",
+            "parse_directional_access(direct_path)",
+            "direct A(E,Omega) output is required but missing",
+            "n_direct_access_rigidities"):
+        if needle not in runner_text:
+            raise SystemExit("GRIDLESS direct-access runner contract missing %r" % needle)
+
+    # Both C++ producers must advertise the exact same public access-state columns.
+    # File stems differ for backward-compatible solver naming, but post-processing is
+    # intentionally schema-agnostic.
+    direct_columns = ("lon_deg", "lat_deg", "rigidity_GV", "energy_MeV",
+                      "access_state", "allowed", "unresolved")
+    for source in (src_earth / "3d" / "CutoffRigidityMode3D.cpp",
+                   src_earth / "gridless" / "CutoffRigidityGridless.cpp"):
+        text = source.read_text(errors="replace")
+        for column in direct_columns:
+            if column not in text:
+                raise SystemExit("direct-access column %r missing from %s" %
+                                 (column, source))
 
     # Geometry sanity check for the documented C19 default.  This mirrors the
     # local SM_PROXY aperture test at a representative equatorial GEO position.

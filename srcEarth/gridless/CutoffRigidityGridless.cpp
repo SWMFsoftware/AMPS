@@ -49,10 +49,14 @@
 //   dependency on T96/T05/T01/TA15/TA16 or Geopack symbols in the SWMF build.
 //
 // The field evaluator is encapsulated in cFieldEvaluator (implements
-// IGridlessFieldEvaluator). It is constructed once per run and shared across all
-// trajectory integrations. In non-SWMF Tsyganenko runs the Geopack RECALC state
-// (dipole tilt, geodipole axis direction) is initialised from the epoch string,
-// cached, and refreshed when trajectory-point epochs require it.
+// IGridlessFieldEvaluator).  SERIAL execution uses one evaluator per MPI rank.  The
+// GRIDLESS THREADS/OPENMP cutoff path constructs one evaluator per local worker and
+// reuses it for that worker's trajectory tasks.  For a frozen epoch/driver snapshot
+// (the normal C19 case), process-global Geopack/Tsyganenko parameters are installed
+// once by the rank/main thread before workers start; worker field calls then read that
+// immutable snapshot.  Multi-epoch TRAJECTORY inputs fall back to serial intra-rank
+// field evaluation because a single process-global Geopack state cannot safely
+// represent different epochs concurrently.
 //
 //======================================================================================
 // PARTICLE TRACING -- INNER LOOP
@@ -239,7 +243,16 @@
 #include <memory>
 #include <sstream>
 #include <limits>
+#include <thread>
+#include <atomic>
+#include <chrono>
+#include <mutex>
+#include <exception>
 #include <mpi.h>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 //--------------------------------------------------------------------------------------
 // OPTIONAL SPICE SUPPORT (FRAME TRANSFORMS)
@@ -304,6 +317,33 @@ using Earth::GridlessMode::StormerVerticalCoeff_GV;
 
 namespace {
 
+// Shared-memory backend aliases.  Gridless cutoff intentionally reuses the exact
+// backend/thread-count/affinity resolver used by Mode3D.  The historical storage
+// names in AmpsParam are mode3d.densityParallelBackend/densityThreads, but the parser
+// accepts GRIDLESS_PARALLEL / GRIDLESS_THREADS and the CLI accepts
+// -gridless-parallel / -gridless-threads.  Keeping one resolver prevents the two
+// solvers from drifting in how THREADS/OPENMP/SERIAL are interpreted.
+using GridlessParallelBackend_ = Earth::Mode3D::ParallelBackend;
+
+static inline const char* GridlessParallelBackendName_(GridlessParallelBackend_ backend) {
+  return Earth::Mode3D::ParallelBackendName(backend);
+}
+
+static inline GridlessParallelBackend_ ResolveGridlessParallelBackend_(
+    const EarthUtil::AmpsParam& prm) {
+  return Earth::Mode3D::ResolveParallelBackend(prm,"Gridless cutoff");
+}
+
+static inline int ResolveGridlessThreadCount_(const EarthUtil::AmpsParam& prm,
+                                               GridlessParallelBackend_ backend) {
+  return Earth::Mode3D::ResolveParallelThreadCount(prm,backend);
+}
+
+static inline void ApplyWideAffinityForGridlessThreadsOnce_(
+    GridlessParallelBackend_ backend,int nThreads) {
+  Earth::Mode3D::ApplyWideAffinityForDirectThreadsOnce(
+      backend,nThreads,"Gridless cutoff");
+}
 
 static const char* MoverTypeNameGridless_(MoverType m) {
   switch (m) {
@@ -567,9 +607,9 @@ public:
   // NO-OP CONDITIONS (fast path)
   //   Model == DIPOLE or NONE  : always no-op.
   //   epoch unchanged AND driverTable == nullptr  : no-op (nothing to update).
-  //   epoch unchanged AND driverTable non-null    : PARMOD still updated because
-  //     the driver parameters may have changed even when the string is identical
-  //     (e.g. sub-minute time steps that don't affect the epoch string).
+  //   epoch unchanged AND same driver snapshot    : no-op.  A fixed driver table is a
+  //     deterministic function of the exact UTC string, so rebuilding PARMOD or calling
+  //     CSPICE again would only add overhead and thread-safety risk.
   void ReinitGeopack(const std::string& epoch,
                      const EarthUtil::TsDriverTable* driverTable = nullptr) {
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
@@ -583,12 +623,19 @@ public:
 
     const bool epochChanged   = (epoch != currentEpoch_);
     const bool hasDriverTable = (driverTable && !driverTable->empty());
+    const bool driverSnapshotChanged = hasDriverTable &&
+        (!driverSnapshotInitialized_ || epoch != currentDriverEpoch_);
 
-    // Fast exit: nothing to update.
-    if (!epochChanged && !hasDriverTable) return;
+    // Fast exit: this evaluator already represents the requested frozen snapshot.
+    // This cache is important for threaded GRIDLESS runs.  Without it, every worker
+    // trajectory would call CSPICE str2et_c() and rebuild PARMOD even though C19 keeps
+    // the exact same epoch/driver record for the entire AMPS process.  CSPICE/global
+    // model initialization is intentionally kept on the rank/main thread; workers then
+    // take this no-op path for every task.
+    if (!epochChanged && !driverSnapshotChanged) return;
 
     // ── Step 2: update driving parameters from the time-varying table ────────
-    if (hasDriverTable) {
+    if (driverSnapshotChanged) {
       // Convert the ISO-8601 epoch string carried by the trajectory sample to
       // SPICE ephemeris time.  The driver table is stored in ET so this puts
       // the spacecraft point and the external driving history on the same time
@@ -625,6 +672,8 @@ public:
       // The field evaluator then consumes the same PARMOD array it always did,
       // but now its contents are refreshed through a uniform model-agnostic API.
       EarthUtil::BuildTsParmod(prm.field, Model(), PARMOD);
+      currentDriverEpoch_ = epoch;
+      driverSnapshotInitialized_ = true;
     }
 
     // ── Step 3: re-initialise Geopack for the new epoch ──────────────────────
@@ -640,6 +689,53 @@ public:
       currentEpoch_ = epoch;  // remember for the guard check on the next call
     }
 #endif
+  }
+
+  // Install the external-model parameter snapshot into the legacy wrapper globals.
+  //
+  // WHY THIS EXISTS
+  // ----------------
+  // The historical T96/T05/T01/TA15/TA16 C++ wrappers expose PS/PARMOD through
+  // namespace-level storage.  The old serial gridless path rewrote those values at
+  // every GetB_T() call.  Doing the same from several std::threads would introduce
+  // unnecessary concurrent writes even when all trajectories use exactly the same
+  // frozen epoch/driver snapshot (the normal C19 case).
+  //
+  // The threaded cutoff scheduler therefore prepares one immutable field snapshot on
+  // the rank/main thread before workers start, installs it exactly once through this
+  // function, and marks every worker evaluator with
+  // UsePreinstalledSharedModelState(true).  Worker GetB_T() calls then only READ the
+  // shared wrapper state.  If different location epochs are present, the scheduler
+  // deliberately falls back to SERIAL intra-rank execution because one process-wide
+  // Geopack/Tsyganenko state cannot safely represent different epochs concurrently.
+  void InstallSharedModelState() const {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+    if (Model()=="T96") {
+      T96::PS = PS;
+      for (int i=0;i<11;i++) T96::PARMOD[i] = PARMOD[i];
+    }
+    else if (Model()=="T05") {
+      T05::PS = PS;
+      for (int i=0;i<11;i++) T05::PARMOD[i] = PARMOD[i];
+    }
+    else if (Model()=="T01") {
+      T01::PS = PS;
+      for (int i=0;i<11;i++) T01::PARMOD[i] = PARMOD[i];
+    }
+    else if (Model()=="TA15N" || Model()=="TA15B") {
+      TA15::PS = PS;
+      TA15::SetVersion((Model()=="TA15N") ? TA15::Version_N : TA15::Version_B);
+      for (int i=0;i<10;i++) TA15::PARMOD[i] = PARMOD[i];
+    }
+    else if (Model()=="TA16") {
+      TA16::PS = PS;
+      for (int i=0;i<10;i++) TA16::PARMOD[i] = PARMOD[i];
+    }
+#endif
+  }
+
+  void UsePreinstalledSharedModelState(bool value) {
+    sharedModelStatePreinstalled_ = value;
   }
 
   void GetB_T(const V3& x_m, V3& B_T) const override {
@@ -733,32 +829,26 @@ public:
     double x_arr[3]={x_m.x,x_m.y,x_m.z};
     double b_total[3]={0.0,0.0,0.0};
 
+    // In serial mode preserve the historical behavior and refresh the wrapper
+    // globals immediately before every evaluation.  In threaded frozen-snapshot mode
+    // the rank/main thread installed these values once before launching workers, so
+    // repeated writes are intentionally skipped and the workers only read the common
+    // immutable model state.
+    if (!sharedModelStatePreinstalled_) InstallSharedModelState();
+
     if (Model()=="T96") {
-      T96::PS = PS;
-      for (int i=0;i<11;i++) T96::PARMOD[i] = PARMOD[i];
       T96::GetMagneticField(b_total,x_arr);
     }
     else if (Model()=="T05") {
-      T05::PS = PS;
-      for (int i=0;i<11;i++) T05::PARMOD[i] = PARMOD[i];
       T05::GetMagneticField(b_total,x_arr);
     }
     else if (Model()=="T01") {
-      T01::PS = PS;
-      for (int i=0;i<11;i++) T01::PARMOD[i] = PARMOD[i];
       T01::GetMagneticField(b_total,x_arr);
     }
     else if (Model()=="TA15N" || Model()=="TA15B") {
-      TA15::PS = PS;
-      TA15::SetVersion((Model()=="TA15N") ? TA15::Version_N : TA15::Version_B);
-      for (int i=0;i<10;i++) TA15::PARMOD[i] = PARMOD[i];
       TA15::GetMagneticField(b_total,x_arr);
     }
     else if (Model()=="TA16") {
-      // PARMOD layout for TA16: [PDYN, SymHc, XIND, BYIMF, W1..W6]
-      // BuildTsParmod already fills PARMOD with this layout via the TA16 branch.
-      TA16::PS = PS;
-      for (int i=0;i<10;i++) TA16::PARMOD[i] = PARMOD[i];
       TA16::GetMagneticField(b_total,x_arr);
     }
     else {
@@ -778,6 +868,9 @@ private:
   double PARMOD[11];
   double PS;
   std::string currentEpoch_; // epoch string last used in Geopack::Init
+  std::string currentDriverEpoch_; // exact UTC of cached driver/PARMOD snapshot
+  bool driverSnapshotInitialized_ = false;
+  bool sharedModelStatePreinstalled_ = false;
 };
 
 
@@ -1705,7 +1798,10 @@ static inline std::string CutoffGridless_PointLikeSampleEpochUTC(const EarthUtil
 }
 
 static inline const char* CutoffGridless_PointLikeProgressLabel(const EarthUtil::AmpsParam& prm) {
-  return CutoffGridless_PointLikeHasPerSampleTime(prm) ? "[TRAJECTORY]" : "[POINTS]";
+  // Keep the prefix parallel to Mode3D so mixed GRIDDED/GRIDLESS logs are easy to scan.
+  return CutoffGridless_PointLikeHasPerSampleTime(prm)
+      ? "[Gridless cutoff TRAJECTORY]"
+      : "[Gridless cutoff POINTS]";
 }
 
 static inline std::string CutoffGridless_PointLikeZoneLabel(const EarthUtil::AmpsParam& prm) {
@@ -2393,6 +2489,95 @@ static void WriteTecplotDirectionalMap_Point(const std::string& fileName,
   std::fclose(f);
 }
 
+//--------------------------------------------------------------------------------------
+// Direct three-state directional access writer (POINTS/TRAJECTORY mode)
+//--------------------------------------------------------------------------------------
+// C19 compares an instrument count/flux ratio, so a single scalar cutoff per direction
+// is not sufficient in a penumbra.  This companion file stores the exact gridless
+// classification at every explicitly requested rigidity and every selected sky cell.
+// Its column schema intentionally matches Mode3D's cutoff_3d_dir_access_loc_######.dat
+// so run_C19.py can parse and fold GRIDDED and GRIDLESS with the same code path.
+//
+// accessState is flattened as:
+//   [selected directional cell][requested rigidity]
+// for ONE observation point.  The selected cell maps back to the original full-sphere
+// grid through fullGridCellIds, preserving identical lon/lat labels between
+// VECTOR_APERTURES and FULL_SPHERE runs.
+static void WriteTecplotDirectionalAccess_Point(
+                                             const std::string& fileName,
+                                             int pointId,
+                                             const EarthUtil::Vec3& point_km,
+                                             double lonRes_deg,
+                                             double latRes_deg,
+                                             int nLon,
+                                             int nLat,
+                                             const std::string& coverage,
+                                             const std::vector<int>& fullGridCellIds,
+                                             const std::vector<double>& rigidityList_GV,
+                                             const std::vector<int>& accessState,
+                                             double qabs,
+                                             double m0_kg) {
+  (void)nLat; // geometry is recovered from the full-grid cell id and nLon
+  const int nRigidity=static_cast<int>(rigidityList_GV.size());
+  const std::size_t nExpected=fullGridCellIds.size()*(std::size_t)nRigidity;
+  if (accessState.size()!=nExpected) {
+    throw std::runtime_error(
+        "Gridless directional access cube has size "+std::to_string(accessState.size())+
+        ", expected "+std::to_string(nExpected)+".");
+  }
+
+  FILE* f=std::fopen(fileName.c_str(),"w");
+  if (!f) throw std::runtime_error("Cannot write Tecplot file: "+fileName);
+
+  std::fprintf(f,
+      "TITLE=\"Gridless direct directional rigidity access (point %d)\"\n",
+      pointId);
+  std::fprintf(f,
+      "VARIABLES=\"lon_deg\",\"lat_deg\",\"rigidity_GV\",\"energy_MeV\","
+      "\"access_state\",\"allowed\",\"unresolved\"\n");
+  std::fprintf(f,
+      "ZONE T=\"point=%d x_km=%g y_km=%g z_km=%g frame=SM coverage=%s\" I=%zu F=POINT\n",
+      pointId,point_km.x,point_km.y,point_km.z,coverage.c_str(),nExpected);
+
+  for (std::size_t selectedCellId=0;selectedCellId<fullGridCellIds.size();++selectedCellId) {
+    const int fullCellId=fullGridCellIds[selectedCellId];
+    const int iLon=fullCellId%nLon;
+    const int jLat=fullCellId/nLon;
+    const double lon_deg=lonRes_deg*iLon;
+    double lat_deg=-90.0+latRes_deg*jLat;
+    if (lat_deg>90.0) lat_deg=90.0;
+
+    for (int iRigidity=0;iRigidity<nRigidity;++iRigidity) {
+      const std::size_t k=selectedCellId*(std::size_t)nRigidity+
+                          (std::size_t)iRigidity;
+      const int state=accessState[k];
+      // Every direct-access task must survive the MPI reduction as one of the three
+      // published CutoffSampleState values.  A remaining -1 here means a scheduler,
+      // reduction, or indexing defect; never write it and let Python interpret an
+      // incomplete cube.  Failing at the producer makes GRIDLESS obey the same
+      // completeness contract as Mode3D.
+      if (state!=(int)EarthUtil::CutoffSampleState::PhysicalForbidden &&
+          state!=(int)EarthUtil::CutoffSampleState::Allowed &&
+          state!=(int)EarthUtil::CutoffSampleState::Unresolved) {
+        std::fclose(f);
+        throw std::runtime_error(
+            "Gridless directional access cube contains an invalid/uncomputed state at "
+            "selectedCellId="+std::to_string(selectedCellId)+
+            ", rigidityIndex="+std::to_string(iRigidity)+
+            ", state="+std::to_string(state)+".");
+      }
+      const int allowed=(state==(int)EarthUtil::CutoffSampleState::Allowed) ? 1 : 0;
+      const int unresolved=(state==(int)EarthUtil::CutoffSampleState::Unresolved) ? 1 : 0;
+      const double rigidity=rigidityList_GV[(std::size_t)iRigidity];
+      const double p=MomentumFromRigidity_GV(rigidity,qabs);
+      const double energy=KineticEnergyFromMomentum_MeV(p,m0_kg);
+      std::fprintf(f,"%.15e %.15e %.15e %.15e %d %d %d\n",
+                   lon_deg,lat_deg,rigidity,energy,state,allowed,unresolved);
+    }
+  }
+  std::fclose(f);
+}
+
 
 } // end anonymous namespace for private writer/helper functions
 
@@ -2400,16 +2585,17 @@ namespace Earth {
 namespace GridlessMode {
 
 int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
-  // RIGIDITY_LIST is intentionally a Mode3D-only output product.  It filters shell
-  // launch locations by absolute geodetic latitude and writes one access-state row per
-  // requested rigidity.  The gridless implementation is organized around complete
-  // scalar or penumbra cutoff searches and has no matching output contract.  Refuse the
-  // request explicitly so it cannot fall through to BINARY/UPPER_SCAN and create a
-  // scientifically mislabeled file.  C9 exposes DIRECT_ACCESS only for GRIDDED.
+  // The *primary* shell-oriented RIGIDITY_LIST algorithm remains a Mode3D-only
+  // product because its output contract is tied to the Mode3D structured-shell path.
+  // This does NOT mean gridless lacks direct access for C19: when PENUMBRA_SCAN is used
+  // with DIRECTIONAL_MAP=T and a non-empty CUTOFF_RIGIDITY_LIST_GV, gridless now emits
+  // the same three-state directional A(R,Omega) companion cube as Mode3D.  Refusing the
+  // primary RIGIDITY_LIST token here prevents a shell request from silently falling
+  // through to another search algorithm while preserving full C19 science equivalence.
   if (EarthUtil::ToUpper(prm.cutoff.searchAlgorithm)=="RIGIDITY_LIST") {
     throw std::runtime_error(
-        "Gridless cutoff does not support RIGIDITY_LIST/DIRECT_ACCESS; "
-        "use standalone Mode3D (-mode 3d) or select PENUMBRA_SCAN.");
+        "Gridless primary RIGIDITY_LIST is not implemented; for directional direct "
+        "access use PENUMBRA_SCAN + DIRECTIONAL_MAP + CUTOFF_RIGIDITY_LIST_GV.");
   }
 
   //====================================================================================
@@ -2427,9 +2613,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   //     (e.g., a few points), we may have fewer tasks than cores and waste compute.
   //
   // Strategy implemented here:
-  //   - Define a "task" as one independent cutoff-direction calculation:
+  //   - Define a "task" as one independent trajectory-level calculation:
   //       * primary sampling: (location_id, sampling_direction_id);
-  //       * optional map:     (point_id, directional_map_cell_id).
+  //       * optional map:     (point_id, directional_map_cell_id);
+  //       * direct access:    (point_id, directional_map_cell_id, rigidity_id).
+  //     The third family is the GRIDLESS counterpart of Mode3D's direct A(R,Omega)
+  //     product and is what makes the C19 detector fold solver-equivalent.
   //   - Total number of tasks is usually much larger than the number of MPI ranks.
   //   - Use the same collective scheduler as standalone Mode3D:
   //       * DYNAMIC: all ranks atomically fetch chunks from an MPI RMA work queue;
@@ -2486,18 +2675,13 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   }
 
   //----------------------------------------------------------------------------
-  // Background field evaluator (T96/T05 + IGRF) is local per rank.
-  //
-  // NOTE:
-  //   This object typically holds model parameters and performs calls into the
-  //   Tsyganenko/Geopack routines. It is safer to have one instance per rank to
-  //   avoid any accidental shared state between ranks (MPI ranks are separate
-  //   processes, but some libraries may still have hidden global state).
-  //
-  // Not declared const: ReinitGeopack() must be called before each observation
-  // point when running in TRAJECTORY mode (each point has its own epoch).
+  // Background-field evaluators are created by the shared-memory execution layer
+  // below, not here as one rank-global object.  This is essential for GRIDLESS
+  // THREADS/OPENMP: each worker owns its own cFieldEvaluator instance and therefore
+  // its own cached parameter snapshot / trajectory-local helper state.  The worker
+  // evaluators are constructed serially by the rank/main thread before parallel work
+  // begins, then reused read/write only by their owning worker.
   //----------------------------------------------------------------------------
-  cFieldEvaluator field(prm);
 
   //----------------------------------------------------------------------------
   // Per-location epoch lookup for point-like outputs.
@@ -2695,7 +2879,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     return grid;
   };
 
-  auto RefineForbiddenAllowedTransition_GV = [&](const V3& x0_m,
+  auto RefineForbiddenAllowedTransition_GV = [&](cFieldEvaluator& taskField,
+                                                 const V3& x0_m,
                                                  const V3& v0,
                                                  double Rforbid_GV,
                                                  double Rallow_GV) -> double {
@@ -2717,7 +2902,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
 
     while ((hi - lo) > tol_GV) {
       const double mid = 0.5*(lo + hi);
-      const bool allowed = TraceAllowedImpl(prm, field, x0_m, v0, mid, -1.0);
+      const bool allowed = TraceAllowedImpl(prm, taskField, x0_m, v0, mid, -1.0);
       if (allowed) hi = mid;
       else         lo = mid;
     }
@@ -2772,11 +2957,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     int steps{0};
   };
 
-  auto ClassifyCutoffSampleDetailed = [&](const V3& x0_m,
+  auto ClassifyCutoffSampleDetailed = [&](cFieldEvaluator& taskField,
+                                          const V3& x0_m,
                                           const V3& v0,
                                           double R_GV) -> CutoffSampleDiagnosticGridless_ {
     const auto tr=TraceTrajectoryWithSingleRetry(
-        prm,field,x0_m,v0,R_GV,-1.0,false);
+        prm,taskField,x0_m,v0,R_GV,-1.0,false);
     CutoffSampleDiagnosticGridless_ out;
     out.termination=tr.termination;
     out.traceTime_s=tr.traceTime_s;
@@ -2802,12 +2988,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     return out;
   };
 
-  auto ClassifyCutoffSample = [&](const V3& x0_m, const V3& v0, double R_GV)
+  auto ClassifyCutoffSample = [&](cFieldEvaluator& taskField, const V3& x0_m, const V3& v0, double R_GV)
       -> EarthUtil::CutoffSampleState {
-    return ClassifyCutoffSampleDetailed(x0_m,v0,R_GV).state;
+    return ClassifyCutoffSampleDetailed(taskField,x0_m,v0,R_GV).state;
   };
 
-  auto CutoffForDirectionPenumbraScan_GV = [&](const V3& x0_m,
+  auto CutoffForDirectionPenumbraScan_GV = [&](cFieldEvaluator& taskField, const V3& x0_m,
                                                 const V3& dir_unit,
                                                 double Rmin_GV,
                                                 double Rmax_GV)
@@ -2825,7 +3011,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     auto detailedAt=[&](double R_GV) -> CutoffSampleDiagnosticGridless_ {
       for (const auto& item:sampleCache) if (item.first==R_GV) return item.second;
       const CutoffSampleDiagnosticGridless_ d=
-          ClassifyCutoffSampleDetailed(x0_m,v0,R_GV);
+          ClassifyCutoffSampleDetailed(taskField,x0_m,v0,R_GV);
       sampleCache.emplace_back(R_GV,d);
       return d;
     };
@@ -2900,7 +3086,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     return out;
   };
 
-  auto CutoffForDirectionEndpointBinary_GV = [&](const V3& x0_m,
+  auto CutoffForDirectionEndpointBinary_GV = [&](cFieldEvaluator& taskField, const V3& x0_m,
                                                   const V3& dir_unit,
                                                   double Rmin_GV,
                                                   double Rmax_GV) -> double {
@@ -2918,8 +3104,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
 
     if ((Rmax_GV - Rmin_GV) <= intervalTol_GV) return Rmax_GV;
 
-    const bool alo = TraceAllowedImpl(prm,field,x0_m,v0,Rmin_GV,-1.0);
-    const bool ahi = TraceAllowedImpl(prm,field,x0_m,v0,Rmax_GV,-1.0);
+    const bool alo = TraceAllowedImpl(prm,taskField,x0_m,v0,Rmin_GV,-1.0);
+    const bool ahi = TraceAllowedImpl(prm,taskField,x0_m,v0,Rmax_GV,-1.0);
 
     if (alo && ahi) return Rmin_GV;
     if (!ahi)       return -1.0;
@@ -2927,14 +3113,14 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     double lo=Rmin_GV, hi=Rmax_GV;
     while ((hi - lo) > intervalTol_GV) {
       const double mid=0.5*(lo+hi);
-      const bool a = TraceAllowedImpl(prm,field,x0_m,v0,mid,-1.0);
+      const bool a = TraceAllowedImpl(prm,taskField,x0_m,v0,mid,-1.0);
       if (a) hi=mid; else lo=mid;
     }
 
     return hi;
   };
 
-  auto CutoffForDirectionUpperScan_GV = [&](const V3& x0_m,
+  auto CutoffForDirectionUpperScan_GV = [&](cFieldEvaluator& taskField, const V3& x0_m,
                                              const V3& dir_unit,
                                              double Rmin_GV,
                                              double Rmax_GV) -> double {
@@ -2951,12 +3137,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     // Evaluate from Rmax downward and stop as soon as the highest forbidden sample is
     // found.  Lower-rigidity samples cannot change the upper-cutoff bracket and are often
     // the most expensive trajectories because they remain trapped until a safety limit.
-    if (!TraceAllowedImpl(prm,field,x0_m,v0,grid.back(),-1.0)) return -1.0;
+    if (!TraceAllowedImpl(prm,taskField,x0_m,v0,grid.back(),-1.0)) return -1.0;
 
     for (int i=(int)grid.size()-2; i>=0; --i) {
-      const bool allowed=TraceAllowedImpl(prm,field,x0_m,v0,grid[(size_t)i],-1.0);
+      const bool allowed=TraceAllowedImpl(prm,taskField,x0_m,v0,grid[(size_t)i],-1.0);
       if (!allowed) {
-        return RefineForbiddenAllowedTransition_GV(x0_m,v0,grid[(size_t)i],grid[(size_t)i+1]);
+        return RefineForbiddenAllowedTransition_GV(taskField,x0_m,v0,grid[(size_t)i],grid[(size_t)i+1]);
       }
     }
 
@@ -2965,22 +3151,22 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     return Rmin_GV;
   };
 
-  auto CutoffForDirection_GV = [&](const V3& x0_m, const V3& dir_unit, double Rmin_GV, double Rmax_GV) -> double {
+  auto CutoffForDirection_GV = [&](cFieldEvaluator& taskField, const V3& x0_m, const V3& dir_unit, double Rmin_GV, double Rmax_GV) -> double {
     // Central dispatcher so primary cutoff tasks, directional-map tasks, and future debug
     // calls use the same selected algorithm.
     const std::string alg = EarthUtil::ToUpper(prm.cutoff.searchAlgorithm);
 
     if (alg=="BINARY" || alg=="ENDPOINT_BINARY" || alg=="LEGACY_BINARY") {
-      return CutoffForDirectionEndpointBinary_GV(x0_m, dir_unit, Rmin_GV, Rmax_GV);
+      return CutoffForDirectionEndpointBinary_GV(taskField,x0_m, dir_unit, Rmin_GV, Rmax_GV);
     }
     if (alg=="PENUMBRA_SCAN" || alg=="PENUMBRASCAN" ||
         alg=="FULL_PENUMBRA" || alg=="BAND_SCAN") {
       return CutoffForDirectionPenumbraScan_GV(
-          x0_m,dir_unit,Rmin_GV,Rmax_GV).effective_GV;
+          taskField,x0_m,dir_unit,Rmin_GV,Rmax_GV).effective_GV;
     }
 
     // Default and parser-accepted aliases: UPPER_SCAN / UPPERSCAN / SCAN.
-    return CutoffForDirectionUpperScan_GV(x0_m, dir_unit, Rmin_GV, Rmax_GV);
+    return CutoffForDirectionUpperScan_GV(taskField,x0_m, dir_unit, Rmin_GV, Rmax_GV);
   };
 
   //====================================================================================
@@ -3117,24 +3303,28 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   // readable and also preserves a clean hook for future diagnostics.
   //====================================================================================
   // Task kinds:
-  //   TASK_SAMPLING: compute Rc for one sampling direction (isotropic grid or vertical)
-  //   TASK_DIRMAP  : compute Rc for one selected directional-map cell.  The task
-  //                  carries a compact selected-cell id; dirMapFullCellIds maps it
-  //                  back to the historical regular lon/lat full-grid id.
+  //   TASK_SAMPLING : compute Rc for one sampling direction (isotropic grid or vertical)
+  //   TASK_DIRMAP   : compute Rc for one selected directional-map cell.  The task
+  //                   carries a compact selected-cell id; dirMapFullCellIds maps it
+  //                   back to the historical regular lon/lat full-grid id.
+  //   TASK_DIRACCESS: classify one requested rigidity at one selected sky cell.
+  //                   This is the science A(R,Omega) product used by the C19 fold.
   enum : int {
-    TASK_SAMPLING = 0,
-    TASK_DIRMAP   = 1
+    TASK_SAMPLING  = 0,
+    TASK_DIRMAP    = 1,
+    TASK_DIRACCESS = 2
   };
 
   // Task message:
-  //   type : TASK_SAMPLING or TASK_DIRMAP
+  //   type : TASK_SAMPLING, TASK_DIRMAP, or TASK_DIRACCESS
   //   loc  : locationId (for both task types)
   //   idx  :
   //          - TASK_SAMPLING: dirId (ignored for VERTICAL)
-  //          - TASK_DIRMAP  : compact selected cell id; use dirMapFullCellIds
+  //          - TASK_DIRMAP   : compact selected cell id; use dirMapFullCellIds
+  //          - TASK_DIRACCESS: cell*nRigidity+iRigidity
   //                           to recover the regular lon/lat full-grid id
   struct TaskMsg {
-    int type;   // TASK_SAMPLING or TASK_DIRMAP
+    int type;   // TASK_SAMPLING, TASK_DIRMAP, or TASK_DIRACCESS
     int loc;    // flattened location index
     int idx;    // direction index or map-cell index, depending on type
 
@@ -3193,15 +3383,18 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     double maxTraceTime_s;
     double maxTraceDistance_Re;
     int maxTraceSteps;
+    // Valid only for TASK_DIRACCESS.  -1 is the local/MPI sentinel for all other
+    // task families; CutoffSampleState values are non-negative.
+    int accessState;
   };
 
   // Historical MPI message tags are no longer needed by the collective scheduler.
   // Keep the task/result structures above, but avoid any rank-0 master/worker traffic.
 
   //====================================================================================
-  // Rank-0 progress reporting helper retained for future live-progress extensions.
-  // The collective scheduler currently prints task-distribution diagnostics after the
-  // MPI reductions rather than updating a master-side progress bar.
+  // Rank-0 progress reporting helper.
+  // The active collective scheduler updates the global completion counter continuously
+  // while trajectory workers run; rank 0 uses the helpers below for a live progress bar.
   //====================================================================================
   auto nowSeconds = []() -> double {
     return MPI_Wtime();
@@ -3331,19 +3524,56 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
                                       long long progressSamplingTasks, bool force=false) {
   if (mpiRank != 0) return;
 
+  // GRIDLESS polls the shared completion counter much more frequently than it should
+  // print to stdout.  In particular, long trajectories can leave the global completed
+  // count unchanged for many seconds.  Printing the same 0.0% (or same small count)
+  // once per second produces a large amount of useless output and makes batch logs hard
+  // to read.  Mode3D normally avoids this naturally because its progress callback is
+  // reached when work has advanced.  GRIDLESS explicitly enforces the same user-facing
+  // behavior here:
+  //
+  //   * never print an unchanged completed-task count (except forced first/final lines);
+  //   * normally print only after about 0.1% of the global task set has advanced;
+  //   * if work is progressing very slowly, print after 10 s once at least one NEW task
+  //     has completed, so the display remains alive without repeating identical lines;
+  //   * suppress ETA until enough completed tasks exist for the estimate to be meaningful.
+  //
+  // The rank/main thread still polls every 200 ms.  This throttling affects only text
+  // output; it does not change MPI progress publication, scheduling, or trajectory work.
   static double tLast = -1.0;
+  static long long doneLast = -1;
   const double t = nowSeconds();
-  if (!force && tLast >= 0.0 && (t - tLast) < 1.0) return;
-  tLast = t;
 
   if (doneTasks < 0) doneTasks = 0;
   if (doneTasks > progressTotalTasks) doneTasks = progressTotalTasks;
+
+  if (!force) {
+    // No new completed trajectory means there is no new information to print.
+    if (doneTasks <= doneLast) return;
+
+    // At most roughly 1000 routine progress lines over a complete run (0.1% steps).
+    // The 10-second slow-progress escape keeps very expensive trajectories visible even
+    // when fewer than minTaskDelta tasks finish between updates.
+    const long long minTaskDelta = std::max(1LL,(progressTotalTasks + 999LL)/1000LL);
+    const bool enoughTasks = (doneLast < 0) || (doneTasks-doneLast >= minTaskDelta);
+    const bool slowHeartbeat = (tLast < 0.0) || ((t-tLast) >= 10.0);
+    if (!enoughTasks && !slowHeartbeat) return;
+  }
+
+  tLast = t;
+  doneLast = doneTasks;
 
   const double frac = (progressTotalTasks>0) ? double(doneTasks)/double(progressTotalTasks) : 1.0;
   const double dt = t - tStart;
   const double rate = (dt>0.0) ? double(doneTasks)/dt : 0.0;
   double eta_s = -1.0;
-  if (rate>0.0 && progressTotalTasks>doneTasks) eta_s = double(progressTotalTasks-doneTasks)/rate;
+
+  // A one-trajectory ETA is essentially meaningless for cutoff tracing because task cost
+  // varies strongly with rigidity and trajectory topology.  Wait until at least 0.1% of
+  // the run (and at least 32 tasks) has completed and 10 s of wall time has elapsed.
+  const long long etaMinTasks = std::max(32LL,(progressTotalTasks + 999LL)/1000LL);
+  if (doneTasks >= etaMinTasks && dt >= 10.0 && rate>0.0 && progressTotalTasks>doneTasks)
+    eta_s = double(progressTotalTasks-doneTasks)/rate;
 
   auto fmt_hms = [](double s)->std::string{
     if (s < 0.0) return std::string("--:--:--");
@@ -3356,13 +3586,14 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     return std::string(buf);
   };
 
-  // Approximate location count from completed primary sampling tasks.  Directional-map
-  // tasks, if enabled, are not part of the primary location cutoff and are therefore
-  // excluded from this estimate.
-  const long long donePrimary = std::min(doneTasks,progressSamplingTasks);
-  const int locApprox = (nDirSampling>0)
-      ? std::min(nLoc,(int)(donePrimary/(long long)nDirSampling))
-      : 0;
+  // Report a Mode3D-style equivalent-location count based on ALL tasks, rather than
+  // declaring a location complete after only its primary cutoff sample has finished.
+  // For the common C19 case nLoc=1 this intentionally remains 0/1 until the complete
+  // directional/access workload is finished, matching Mode3D's LocEq semantics.
+  (void)progressSamplingTasks;
+  const int locApprox = (progressTotalTasks>0)
+      ? std::min(nLoc,(int)((doneTasks*(long long)nLoc)/progressTotalTasks))
+      : nLoc;
 
   if (isPoints) {
     std::cout << CutoffGridless_PointLikeProgressLabel(prm) << " ";
@@ -3378,14 +3609,14 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   const int barW = 36;
   const int filled = (int)std::floor(frac*barW + 0.5);
 
-  std::cout << "[rank 0] [";
+  std::cout << "[rank 0/global over " << mpiSize << " MPI ranks] [";
   for (int i=0;i<barW;i++) std::cout << (i<filled ? "#" : "-");
   std::cout << "] ";
 
   std::cout << std::fixed;
   std::cout.precision(1);
   std::cout << (frac*100.0) << "%  ";
-  std::cout << "(Loc~ " << locApprox << "/" << nLoc << ", "
+  std::cout << "(LocEq " << locApprox << "/" << nLoc << ", "
             << "Task " << doneTasks << "/" << progressTotalTasks << ")  "
             << "ETA " << fmt_hms(eta_s) << "\n";
   std::cout.flush();
@@ -3620,6 +3851,21 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     std::cout << "\n";
   }
 
+  // C19 direct A(R,Omega) companion product.  This mirrors Mode3D exactly:
+  // PENUMBRA_SCAN remains the primary directional-cutoff diagnostic, while a non-empty
+  // CUTOFF_RIGIDITY_LIST_GV requests independent three-state classifications at every
+  // selected directional cell.  The direct trajectories do not use Rc_effective and
+  // therefore preserve allowed/forbidden penumbra structure for detector folding.
+  const bool saveDirectionalAccessStates=(
+      doDirMap && penumbraScanSelected && !prm.cutoff.rigidityList_GV.empty());
+  const int nDirectionalAccessRigidities=saveDirectionalAccessStates
+      ? static_cast<int>(prm.cutoff.rigidityList_GV.size()) : 0;
+  if (saveDirectionalAccessStates && mpiRank==0) {
+    std::cout << "[gridless] Direct directional access: "
+              << nDirectionalAccessRigidities << " rigidity level(s) x "
+              << nDirMapCells << " selected direction(s) per observation point\n";
+  }
+
   //====================================================================================
   // Storage for final results (reduced to rank 0, then written to Tecplot).
   //
@@ -3665,6 +3911,10 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   // is typically modest.
   std::vector<double> RcDirMap;
   DirectionalMapPenumbraDiagnosticsGridless_ RcDirMapPenumbra;
+  // Direct three-state A(R,Omega) states, flattened as
+  // [point][selected directional cell][requested rigidity].  -1 means this MPI
+  // rank did not compute the slot; valid CutoffSampleState integers are >=0.
+  std::vector<int> DirAccessStates;
 
   // Allocate result arrays on every rank.
   //
@@ -3702,24 +3952,42 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     const std::size_t nMap=(size_t)prm.output.points.size() * (size_t)nDirMapCells;
     RcDirMap.assign(nMap, -1.0);
     if (penumbraScanSelected) RcDirMapPenumbra.assign(nMap);
+    if (saveDirectionalAccessStates) {
+      const long long nAccessLL=static_cast<long long>(nMap)*
+                                static_cast<long long>(nDirectionalAccessRigidities);
+      if (nAccessLL>static_cast<long long>(std::numeric_limits<int>::max())) {
+        throw std::runtime_error(
+            "Gridless directional rigidity-access MPI reduction count exceeds INT_MAX; "
+            "coarsen DIRMAP, use VECTOR_APERTURES, or reduce CUTOFF_RIGIDITY_LIST_GV.");
+      }
+      DirAccessStates.assign((std::size_t)nAccessLL,-1);
+    }
   }
 
   //----------------------------------------------------------------------------------
   // Total number of independent tasks
   //----------------------------------------------------------------------------------
-  // We now have up to two task families:
+  // We now have up to three task families:
   //   (A) Primary cutoff sampling tasks (always):
   //       - ISOTROPIC: nDirSampling = size(dirs)
   //       - VERTICAL : nDirSampling = 1
   //       Total = nLoc * nDirSampling
   //
-  //   (B) Optional directional sky-map tasks (POINTS only, if enabled):
+  //   (B) Optional directional sky-map cutoff tasks (POINTS/TRAJECTORY only):
   //       Total = nPoints * nDirMapCells
   //
-  // We schedule both families through the same collective MPI scheduler.
+  //   (C) Optional direct-access tasks used by C19 science folding:
+  //       Total = nPoints * nDirMapCells * nRequestedRigidities
+  //
+  // All three families share the same collective MPI scheduler.  Direct-access tasks
+  // are deliberately independent of the scalar penumbra task so one long cutoff scan
+  // cannot serialize the much larger detector-response trajectory set.
   const long long totalSamplingTasks = (long long)nLoc * (long long)nDirSampling;
   const long long totalDirMapTasks   = (doDirMap ? (long long)prm.output.points.size() * (long long)nDirMapCells : 0LL);
-  const long long totalTasks = totalSamplingTasks + totalDirMapTasks;
+  const long long totalDirAccessTasks = saveDirectionalAccessStates
+      ? (long long)prm.output.points.size() * (long long)nDirMapCells *
+        (long long)nDirectionalAccessRigidities : 0LL;
+  const long long totalTasks = totalSamplingTasks + totalDirMapTasks + totalDirAccessTasks;
 
   // Each rank counts how many trajectory-tasks it actually computed.
   // This is used at the end to verify that no tasks were dropped or duplicated.
@@ -3745,8 +4013,9 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   //
   // Gridless cutoff has a finer natural task space than Mode3D.  A task is not just a
   // spatial location; it is one of:
-  //   TASK_SAMPLING : one primary cutoff-sampling direction for one location;
-  //   TASK_DIRMAP   : one optional directional-map sky cell for one point.
+  //   TASK_SAMPLING  : one primary cutoff-sampling direction for one location;
+  //   TASK_DIRMAP    : one optional directional-map sky cell for one point;
+  //   TASK_DIRACCESS : one requested rigidity at one sky cell for one point.
   //
   // Each task writes into a global-indexed local buffer:
   //   RcMin[loc]        receives the minimum primary cutoff over directions;
@@ -3779,23 +4048,36 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     }
 
     const long long rem = taskId - totalSamplingTasks;
-    const int pointId = (int)(rem / nDirMapCells);
-    const int cellId  = (int)(rem - (long long)pointId*nDirMapCells);
-    return TaskMsg{ TASK_DIRMAP, pointId, cellId, Rmin, Rmax };
+    if (rem < totalDirMapTasks) {
+      const int pointId = (int)(rem / nDirMapCells);
+      const int cellId  = (int)(rem - (long long)pointId*nDirMapCells);
+      return TaskMsg{ TASK_DIRMAP, pointId, cellId, Rmin, Rmax };
+    }
+
+    // Direct-access idx packs [cell][rigidity] so TaskMsg remains compact and the
+    // same scheduler can dispatch all three task families without allocating task
+    // objects.  Decode is deterministic for STATIC/BLOCK_CYCLIC/DYNAMIC alike.
+    const long long accessRem=rem-totalDirMapTasks;
+    const long long perPoint=(long long)nDirMapCells*
+                             (long long)nDirectionalAccessRigidities;
+    const int pointId=(int)(accessRem/perPoint);
+    const long long withinPoint=accessRem-(long long)pointId*perPoint;
+    return TaskMsg{ TASK_DIRACCESS, pointId, (int)withinPoint, Rmin, Rmax };
   };
 
   // Compute one decoded task and return the result.  This is the same trajectory work
   // that used to live in the worker loop, now factored out so both collective dynamic
   // and deterministic fallback schedulers share a single source of physics behavior.
-  auto ProcessTask = [&](const TaskMsg& task) -> ResultMsg {
+  auto ProcessTask = [&](const TaskMsg& task, cFieldEvaluator& taskField) -> ResultMsg {
     // Update Geopack/Tsyganenko state for this location's epoch before tracing.  For
     // POINTS/SHELLS this is a no-op after the first call; for TRAJECTORY mode this is
     // what makes each sample use its own timestamp and driver-table values.
-    field.ReinitGeopack(CutoffGridless_PointLikeSampleEpochUTC(prm, task.loc),
+    taskField.ReinitGeopack(CutoffGridless_PointLikeSampleEpochUTC(prm, task.loc),
                         (prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable));
 
     const V3 x0_m = LocationToX0m(task.loc);
     double rc=-1.0;
+    int directAccessState=-1;
     CutoffBandResultGridless_ band;
 
     if (task.type == TASK_SAMPLING) {
@@ -3809,7 +4091,7 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
               "Gridless PENUMBRA_SCAN requires CUTOFF_SAMPLING VERTICAL");
         }
         band=CutoffForDirectionPenumbraScan_GV(
-            x0_m,dir,task.rLo_GV,task.rHi_GV);
+            taskField,x0_m,dir,task.rLo_GV,task.rHi_GV);
         rc=band.upper_GV;
 
         if (savePamelaAccessStates) {
@@ -3822,13 +4104,13 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
           for (int iRigidity=0;iRigidity<nPamelaAccessRigidities;++iRigidity) {
             PamelaAccessStates[base+static_cast<std::size_t>(iRigidity)]=
                 static_cast<int>(ClassifyCutoffSample(
-                    x0_m,v0,prm.cutoff.rigidityList_GV[
+                    taskField,x0_m,v0,prm.cutoff.rigidityList_GV[
                         static_cast<std::size_t>(iRigidity)]));
           }
         }
       }
       else {
-        rc=CutoffForDirection_GV(x0_m,dir,task.rLo_GV,task.rHi_GV);
+        rc=CutoffForDirection_GV(taskField,x0_m,dir,task.rLo_GV,task.rHi_GV);
         band.lower_GV=rc;
         band.upper_GV=rc;
       }
@@ -3857,14 +4139,38 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
         // TASK_DIRMAP through the Boolean UPPER_SCAN dispatcher even when the input
         // requested PENUMBRA_SCAN, silently defeating CUTOFF_TRACE_LIMIT_POLICY.
         band=CutoffForDirectionPenumbraScan_GV(
-            x0_m,dir_gsm,task.rLo_GV,task.rHi_GV);
+            taskField,x0_m,dir_gsm,task.rLo_GV,task.rHi_GV);
         rc=band.effective_GV;
       }
       else {
-        rc = CutoffForDirection_GV(x0_m, dir_gsm, task.rLo_GV, task.rHi_GV);
+        rc = CutoffForDirection_GV(taskField,x0_m, dir_gsm, task.rLo_GV, task.rHi_GV);
         band.lower_GV=rc;
         band.upper_GV=rc;
       }
+    }
+    else if (task.type == TASK_DIRACCESS) {
+      // P1 science product: classify one exact requested rigidity for one selected
+      // arrival direction.  This is deliberately a distinct task from TASK_DIRMAP:
+      // the detector fold needs A(R,Omega) itself, not a reconstruction from
+      // Rc_effective.  The same ClassifyCutoffSampleDetailed helper used by the
+      // gridless PENUMBRA_SCAN enforces the identical ALLOWED / PHYSICAL_FORBIDDEN /
+      // UNRESOLVED policy, including CUTOFF_TRACE_LIMIT_POLICY.
+      const int cellId=task.idx/nDirectionalAccessRigidities;
+      const int iRigidity=task.idx-cellId*nDirectionalAccessRigidities;
+      const int fullCellId=dirMapFullCellIds[(std::size_t)cellId];
+      const int iLon=fullCellId%nLonMap;
+      const int jLat=fullCellId/nLonMap;
+      const double lon_deg=lonRes_deg*iLon;
+      double lat_deg=-90.0+latRes_deg*jLat;
+      if (lat_deg>90.0) lat_deg=90.0;
+      const double lon=lon_deg*M_PI/180.0;
+      const double lat=lat_deg*M_PI/180.0;
+      const double cl=std::cos(lat);
+      const V3 dir_sm{cl*std::cos(lon),cl*std::sin(lon),std::sin(lat)};
+      const V3 dir_gsm=unit(Apply(R_sm2gsm,dir_sm));
+      const V3 v0=mul(-1.0,dir_gsm);
+      directAccessState=static_cast<int>(ClassifyCutoffSampleDetailed(
+          taskField,x0_m,v0,prm.cutoff.rigidityList_GV[(std::size_t)iRigidity]).state);
     }
 
     return ResultMsg{
@@ -3876,14 +4182,16 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
       band.nTrajectoryEvaluations,band.nOuterBoundaryAllowed,
       band.nInnerBoundaryForbidden,band.nMagneticallyTrappedForbidden,
       band.nTimeLimit,band.nStepLimit,band.nDistanceLimit,
-      band.maxTraceTime_s,band.maxTraceDistance_Re,band.maxTraceSteps
+      band.maxTraceTime_s,band.maxTraceDistance_Re,band.maxTraceSteps,
+      directAccessState
     };
   };
 
   // Apply one completed task to this rank's local output buffers.  The final MPI_Reduce
-  // combines the local buffers on rank 0.  This function must be called only by the rank
-  // main thread; if a future intra-rank thread pool is added around gridless cutoff, make
-  // the per-rank updates thread-local or guard them with atomics/reductions.
+  // combines the local buffers on rank 0.  In the threaded implementation workers write
+  // only to private ResultMsg batch slots; after the worker pool joins, the rank/main
+  // thread calls this function sequentially.  Therefore RcMin and the diagnostic arrays
+  // require no locks/atomics and MPI remains confined to the rank/main thread.
   auto AccumulateResultLocal = [&](const ResultMsg& res) {
     if (res.type == TASK_SAMPLING) {
       if (res.loc>=0 && res.loc<nLoc) {
@@ -3937,6 +4245,15 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
         }
       }
     }
+    else if (res.type == TASK_DIRACCESS) {
+      if (saveDirectionalAccessStates && res.loc>=0 && res.idx>=0 &&
+          res.accessState>=0) {
+        const std::size_t perPoint=(std::size_t)nDirMapCells*
+                                   (std::size_t)nDirectionalAccessRigidities;
+        const std::size_t k=(std::size_t)res.loc*perPoint+(std::size_t)res.idx;
+        DirAccessStates[k]=res.accessState;
+      }
+    }
   };
 
   //================================================================================
@@ -3948,8 +4265,9 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   // MAX_TRACE_TIME, STEP_LIMIT, or DISTANCE_LIMIT for another.
   //
   // To match the Mode3D behavior, the work is represented as a flat global task list:
-  //   task 0 ... totalSamplingTasks-1        : cutoff search samples/directions
-  //   task totalSamplingTasks ... totalTasks : optional directional-map cells
+  //   task 0 ... totalSamplingTasks-1 : cutoff search samples/directions
+  //   next totalDirMapTasks              : optional directional-map cutoff cells
+  //   remaining tasks                    : direct (direction,rigidity) access states
   //
   // The selected scheduler controls how MPI ranks consume this same task list:
   //   DYNAMIC      : ranks atomically fetch chunks from an MPI RMA counter;
@@ -3962,19 +4280,113 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   // are reduced at the end; therefore output order is independent of which rank happens
   // to process a dynamically assigned task.
   //================================================================================
+  // Resolve the same intra-rank backend used by Mode3D.  For GRIDLESS the worker
+  // unit is one complete trajectory task, so every worker owns a private cFieldEvaluator
+  // while the rank/main thread alone performs MPI scheduling and output accumulation.
+  GridlessParallelBackend_ gridlessBackend = ResolveGridlessParallelBackend_(prm);
+  int gridlessThreadCount = ResolveGridlessThreadCount_(prm,gridlessBackend);
+  if (gridlessBackend == GridlessParallelBackend_::SERIAL) gridlessThreadCount = 1;
+
+  // Geopack and the legacy Tsyganenko wrapper parameter blocks are process-global.
+  // Parallel GRIDLESS is therefore valid only when every task in this AMPS process uses
+  // one frozen epoch/driver snapshot.  POINTS, SHELLS, and the C19 one-epoch-per-process
+  // workflow satisfy this condition.  A TRAJECTORY file can contain different epochs;
+  // in that case MPI parallelism remains active, but intra-rank shared-memory execution
+  // is deliberately downgraded to SERIAL rather than racing process-global field state.
+  bool oneFrozenFieldSnapshot = true;
+  std::string frozenEpoch;
+  if (nLoc > 0) frozenEpoch = CutoffGridless_PointLikeSampleEpochUTC(prm,0);
+  for (int loc=1; loc<nLoc; ++loc) {
+    if (CutoffGridless_PointLikeSampleEpochUTC(prm,loc) != frozenEpoch) {
+      oneFrozenFieldSnapshot = false;
+      break;
+    }
+  }
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // The SWMF-coupled "gridless" evaluator samples the live AMPS coupler mesh rather
+  // than the standalone analytic T96/T05/etc. interfaces.  Its interpolation-stencil
+  // machinery has a different thread-safety contract, so keep this standalone cutoff
+  // worker pool disabled in that build.  The C19 standalone GRIDLESS path is not SWMF
+  // coupled and is unaffected.
+  const bool directFieldThreadsSupported = false;
+#else
+  const bool directFieldThreadsSupported = true;
+#endif
+
+  if ((gridlessBackend != GridlessParallelBackend_::SERIAL) &&
+      gridlessThreadCount > 1 &&
+      (!oneFrozenFieldSnapshot || !directFieldThreadsSupported)) {
+    if (mpiRank==0) {
+      std::cerr << "[gridless][threads] requested "
+                << GridlessParallelBackendName_(gridlessBackend) << " with "
+                << gridlessThreadCount << " worker(s)/rank, but direct-field "
+                << "threading requires one frozen field snapshot per process";
+      if (!directFieldThreadsSupported) std::cerr << " and a standalone non-SWMF field evaluator";
+      std::cerr << ". Falling back to SERIAL intra-rank execution; MPI scheduling "
+                << "remains enabled.\n";
+    }
+    gridlessBackend = GridlessParallelBackend_::SERIAL;
+    gridlessThreadCount = 1;
+  }
+
+  ApplyWideAffinityForGridlessThreadsOnce_(gridlessBackend,gridlessThreadCount);
+#ifdef _OPENMP
+  if (gridlessBackend == GridlessParallelBackend_::OPENMP && gridlessThreadCount > 0)
+    omp_set_num_threads(gridlessThreadCount);
+#endif
+
   const Earth::Mode3D::MpiScheduler gridlessScheduler =
       Earth::Mode3D::ResolveMpiScheduler(prm,"Gridless cutoff");
+
+  // A non-positive GRIDLESS_MPI_DYNAMIC_CHUNK means automatic.  Pass the ACTUAL local
+  // worker count to the common resolver so one MPI fetch contains enough independent
+  // trajectories to keep the worker pool busy.  The old gridless implementation passed
+  // workerCount=1, which made the automatic chunk far too small after threading was
+  // enabled and could leave 15 of 16 workers idle.
   const long long gridlessChunk =
-      Earth::Mode3D::ResolveMpiDynamicChunk(prm,1,totalTasks);
+      Earth::Mode3D::ResolveMpiDynamicChunk(prm,gridlessThreadCount,totalTasks);
 
   if (mpiRank==0) {
-    std::cout << "[gridless][MPI] scheduler     : "
+    std::cout << "[gridless] field evaluation : DIRECT (no AMR field mesh)\n";
+    std::cout << "[gridless] shared backend   : "
+              << GridlessParallelBackendName_(gridlessBackend) << "\n";
+    std::cout << "[gridless] workers/rank     : " << gridlessThreadCount << "\n";
+    std::cout << "[gridless][MPI] scheduler   : "
               << Earth::Mode3D::MpiSchedulerName(gridlessScheduler) << "\n";
     if (gridlessScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
       std::cout << "[gridless][MPI] dynamic chunk : " << gridlessChunk
                 << " gridless task(s) per atomic fetch\n";
+      if (gridlessThreadCount > 1 && gridlessChunk < gridlessThreadCount) {
+        std::cout << "[gridless][MPI] WARNING: dynamic chunk is smaller than the "
+                  << "worker count; some local workers may be idle. Use 0/AUTO or a "
+                  << "chunk >= GRIDLESS_THREADS.\n";
+      }
     }
     std::cout.flush();
+  }
+
+  // Build one field evaluator per worker on the RANK/MAIN thread, before any worker
+  // threads are launched.  Constructors may initialize Geopack/model interfaces, so
+  // creating them serially avoids concurrent library initialization.  For a threaded
+  // frozen-snapshot run, refresh every private evaluator to the common epoch/driver
+  // state, install the legacy shared model parameter block once, then make GetB_T()
+  // read-only with respect to that process-global wrapper state.
+  std::vector<std::unique_ptr<cFieldEvaluator>> gridlessWorkerFields;
+  gridlessWorkerFields.reserve((std::size_t)gridlessThreadCount);
+  for (int iw=0; iw<gridlessThreadCount; ++iw)
+    gridlessWorkerFields.emplace_back(new cFieldEvaluator(prm));
+
+  const bool gridlessSharedThreadsActive =
+      (gridlessBackend != GridlessParallelBackend_::SERIAL && gridlessThreadCount > 1);
+  if (gridlessSharedThreadsActive && !gridlessWorkerFields.empty()) {
+    const EarthUtil::TsDriverTable* driverTable =
+        prm.temporal.driverTable.empty() ? nullptr : &prm.temporal.driverTable;
+    for (auto& fieldPtr : gridlessWorkerFields)
+      fieldPtr->ReinitGeopack(frozenEpoch,driverTable);
+    gridlessWorkerFields.front()->InstallSharedModelState();
+    for (auto& fieldPtr : gridlessWorkerFields)
+      fieldPtr->UsePreinstalledSharedModelState(true);
   }
 
   // Missing sentinel for MPI_MIN.  Local arrays use -1 for user-facing output, but
@@ -3984,42 +4396,174 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   std::vector<double> RcMinReduce((size_t)nLoc, missingMin);
   for (int loc=0; loc<nLoc; ++loc) RcMinReduce[(size_t)loc] = missingMin;
 
-  auto ComputeTaskId = [&](long long counterValue, long long localOffset) -> long long {
-    if (gridlessScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
-      return counterValue + localOffset;
-    }
-    if (gridlessScheduler == Earth::Mode3D::MpiScheduler::BLOCK_CYCLIC) {
-      return (counterValue + localOffset) * (long long)mpiSize + (long long)mpiRank;
-    }
-    // STATIC: counterValue is the first task in this rank's contiguous block.
-    return counterValue + localOffset;
-  };
-
-  // Live progress counter for all collective scheduler modes.
+  // Live progress counter for all scheduler modes.
   //
-  // Each rank buffers a small number of completed tasks locally and periodically adds
-  // that count to an MPI RMA counter on rank 0.  Buffering avoids one RMA update per
-  // trajectory task while still keeping the progress bar responsive.  The flush size
-  // follows the dynamic scheduling chunk so the progress cadence tracks the same work
-  // granularity used for load balancing.
+  // GRIDLESS used to update this counter only after an entire MPI scheduler chunk had
+  // completed.  With 16 local workers and AUTO chunking that normally meant waiting for
+  // roughly 64 complete trajectories before rank 0 could print anything.  A single
+  // long-lived trajectory in that batch could therefore make the progress display look
+  // frozen even while the other workers and MPI ranks were making useful progress.
+  //
+  // The implementation below follows the same user-facing contract as Mode3D:
+  //   * progress means COMPLETED trajectory tasks, never merely assigned tasks;
+  //   * only the MPI rank/main thread calls MPI (workers remain MPI-free);
+  //   * rank 0 polls/prints at approximately one-second cadence;
+  //   * the RMA completion counter is updated while a threaded batch is still running,
+  //     so progress is visible at sub-chunk granularity.
+  //
+  // Worker threads report completion only through an std::atomic counter local to the
+  // current batch.  The rank/main thread wakes every 200 ms, transfers the newly
+  // completed count to DynamicMpiProgressCounter, and optionally refreshes the display.
+  // This preserves compatibility with MPI_THREAD_FUNNELED/SERIALIZED deployments: no
+  // worker thread ever enters MPI.
   Earth::Mode3D::DynamicMpiProgressCounter progressCounter(MPI_COMM_WORLD,
                                                            totalTasks,
                                                            "Gridless cutoff progress");
-  const long long progressFlushEvery = std::max(1LL,gridlessChunk);
-  long long progressPending = 0;
+  const auto progressPollInterval = std::chrono::milliseconds(200);
 
-  auto FlushProgress = [&](bool forcePrint=false) {
-    if (progressPending > 0) {
-      progressCounter.Add(progressPending);
-      progressPending = 0;
+  auto PublishCompletedTasks = [&](long long delta, bool forcePrint=false) {
+    if (delta > 0) {
+      progressCounter.Add(delta);
+      myTasksProcessed += delta;
     }
-    if (mpiRank == 0) printCollectiveTaskProgress(progressCounter.Get(),totalTasks,totalSamplingTasks,forcePrint);
+    if (mpiRank == 0)
+      printCollectiveTaskProgress(progressCounter.Get(),totalTasks,totalSamplingTasks,forcePrint);
   };
 
-  auto NoteTaskComplete = [&]() {
-    ++myTasksProcessed;
-    ++progressPending;
-    if (progressPending >= progressFlushEvery) FlushProgress(false);
+  // Match Mode3D by emitting a visible zero-progress line before the first expensive
+  // trajectory starts.  This is particularly useful for GRIDLESS because direct field
+  // evaluation can make the very first trajectories substantially slower than average.
+  if (mpiRank == 0)
+    printCollectiveTaskProgress(0,totalTasks,totalSamplingTasks,true);
+
+  // Compute an arbitrary rank-local index interval in parallel.  taskIdFromIndex maps
+  // that compact interval to the global flattened task id; using one kernel for DYNAMIC,
+  // STATIC, and BLOCK_CYCLIC guarantees identical physics and differs only in assignment.
+  //
+  // Result buffers are private to batch slots.  AccumulateResultLocal() is intentionally
+  // invoked only after workers join, so RcMin and the diagnostic/output arrays need no
+  // atomics or locks.  Progress is different: it is safe to publish a task as soon as
+  // ProcessTask() has returned successfully because progress does not read ResultMsg.
+  // Workers increment completedInBatch; the rank/main thread periodically converts that
+  // local atomic count into an MPI RMA progress update while the batch is still active.
+  auto ProcessMappedTaskRange = [&](long long beginIndex,
+                                    long long endIndex,
+                                    auto&& taskIdFromIndex) {
+    if (endIndex <= beginIndex) return;
+    const long long nWork=endIndex-beginIndex;
+    std::vector<ResultMsg> results((std::size_t)nWork);
+    std::exception_ptr workerError;
+    std::mutex workerErrorMutex;
+    std::atomic<bool> stopWorkers(false);
+    std::atomic<long long> completedInBatch(0);
+
+    auto computeOne = [&](long long index,int workerId) {
+      if (stopWorkers.load(std::memory_order_relaxed)) return;
+      try {
+        const long long taskId=taskIdFromIndex(index);
+        results[(std::size_t)(index-beginIndex)] =
+            ProcessTask(DecodeTask(taskId),*gridlessWorkerFields[(std::size_t)workerId]);
+
+        // Publish only SUCCESSFULLY completed physics work.  This is intentionally an
+        // atomic local increment rather than an MPI call.  The main rank thread below
+        // owns all MPI progress updates.
+        completedInBatch.fetch_add(1,std::memory_order_release);
+      }
+      catch (...) {
+        {
+          std::lock_guard<std::mutex> lock(workerErrorMutex);
+          if (!workerError) workerError=std::current_exception();
+        }
+        stopWorkers.store(true,std::memory_order_relaxed);
+      }
+    };
+
+    long long publishedInBatch=0;
+
+    auto publishNewCompletions = [&](bool forcePrint=false) {
+      const long long observed=completedInBatch.load(std::memory_order_acquire);
+      const long long delta=observed-publishedInBatch;
+      if (delta>0) {
+        PublishCompletedTasks(delta,forcePrint);
+        publishedInBatch=observed;
+      }
+      else if (forcePrint && mpiRank==0) {
+        // Force-refresh can still be useful even when this rank completed no new work,
+        // because other MPI ranks may have advanced the shared completion counter.
+        PublishCompletedTasks(0,true);
+      }
+      else if (mpiRank==0) {
+        // Poll global progress even if this particular rank has not completed a task in
+        // the last interval.  This is what lets rank 0 display progress made by ranks
+        // 1..N while one of rank 0's own trajectories is unusually long.
+        printCollectiveTaskProgress(progressCounter.Get(),totalTasks,totalSamplingTasks,false);
+      }
+    };
+
+    if (gridlessBackend == GridlessParallelBackend_::THREADS && gridlessThreadCount > 1) {
+      const int nWorkers=static_cast<int>(std::max(
+          1LL,std::min((long long)gridlessThreadCount,nWork)));
+      std::atomic<long long> nextIndex(beginIndex);
+      std::atomic<int> activeWorkers(nWorkers);
+      std::vector<std::thread> workers;
+      workers.reserve((std::size_t)nWorkers);
+      for (int iw=0; iw<nWorkers; ++iw) {
+        workers.emplace_back([&,iw]() {
+          for (;;) {
+            if (stopWorkers.load(std::memory_order_relaxed)) break;
+            const long long index=nextIndex.fetch_add(1,std::memory_order_relaxed);
+            if (index>=endIndex) break;
+            computeOne(index,iw);
+          }
+          activeWorkers.fetch_sub(1,std::memory_order_release);
+        });
+      }
+
+      // Do not immediately join the worker pool.  While workers are active, the
+      // rank/main thread becomes a lightweight progress service: every 200 ms it
+      // publishes all newly completed trajectories and rank 0 refreshes the global bar
+      // (the print helper itself throttles stdout to approximately once per second).
+      // This gives GRIDLESS the same continuously moving user feedback expected from
+      // Mode3D without allowing worker threads to enter MPI.
+      while (activeWorkers.load(std::memory_order_acquire)>0) {
+        publishNewCompletions(false);
+        std::this_thread::sleep_for(progressPollInterval);
+      }
+      for (std::thread& worker : workers) worker.join();
+      publishNewCompletions(false);
+    }
+    else if (gridlessBackend == GridlessParallelBackend_::OPENMP && gridlessThreadCount > 1) {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic,1) num_threads(gridlessThreadCount)
+      for (long long index=beginIndex; index<endIndex; ++index) {
+        const int iw=omp_get_thread_num();
+        computeOne(index,iw);
+      }
+#else
+      for (long long index=beginIndex; index<endIndex; ++index) computeOne(index,0);
+#endif
+      // The OpenMP master participates in the parallel region and therefore cannot poll
+      // concurrently as the std::thread main thread does.  Publish the exact completed
+      // count at the end of this OpenMP work range.  THREADS is the C19 GRIDLESS default
+      // and receives the fine-grained live behavior above.
+      publishNewCompletions(false);
+    }
+    else {
+      // SERIAL mode can publish naturally one task at a time.  Printing remains
+      // throttled by printCollectiveTaskProgress(), so this does not flood stdout.
+      for (long long index=beginIndex; index<endIndex; ++index) {
+        computeOne(index,0);
+        publishNewCompletions(false);
+        if (stopWorkers.load(std::memory_order_relaxed)) break;
+      }
+    }
+
+    if (workerError) std::rethrow_exception(workerError);
+
+    // All completed tasks have already been counted in the progress RMA object.  Result
+    // accumulation stays serial and deterministic after the workers finish.
+    for (long long i=0; i<nWork; ++i)
+      AccumulateResultLocal(results[(std::size_t)i]);
   };
 
   if (totalTasks > 0) {
@@ -4029,39 +4573,52 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
                                                        gridlessChunk,
                                                        "Gridless cutoff");
       while (true) {
-        const long long startTask = sched.FetchNextChunkStart();
-        if (startTask >= totalTasks) break;
-        const long long endTask = std::min(startTask + sched.ChunkSize(), totalTasks);
-        for (long long taskId=startTask; taskId<endTask; ++taskId) {
-          const ResultMsg res = ProcessTask(DecodeTask(taskId));
-          AccumulateResultLocal(res);
-          NoteTaskComplete();
-        }
+        const long long startTask=sched.FetchNextChunkStart();
+        if (startTask>=totalTasks) break;
+        const long long endTask=std::min(startTask+sched.ChunkSize(),totalTasks);
+        ProcessMappedTaskRange(startTask,endTask,
+                               [](long long index) { return index; });
       }
     }
     else if (gridlessScheduler == Earth::Mode3D::MpiScheduler::BLOCK_CYCLIC) {
-      for (long long taskId=(long long)mpiRank; taskId<totalTasks; taskId+=(long long)mpiSize) {
-        const ResultMsg res = ProcessTask(DecodeTask(taskId));
-        AccumulateResultLocal(res);
-        NoteTaskComplete();
-      }
+      const long long rankTaskCount =
+          (totalTasks <= mpiRank) ? 0LL
+          : 1LL + (totalTasks-1LL-(long long)mpiRank)/(long long)mpiSize;
+      // One deterministic batch avoids repeatedly creating std::thread pools.  The
+      // ResultMsg vector is rank-local and comparable in size to the output arrays that
+      // already exist for these tasks.
+      ProcessMappedTaskRange(0,rankTaskCount,[&](long long localIndex) {
+        return (long long)mpiRank + localIndex*(long long)mpiSize;
+      });
     }
     else {
-      const long long startTask = (totalTasks * (long long)mpiRank) / (long long)mpiSize;
-      const long long endTask   = (totalTasks * (long long)(mpiRank+1)) / (long long)mpiSize;
-      for (long long taskId=startTask; taskId<endTask; ++taskId) {
-        const ResultMsg res = ProcessTask(DecodeTask(taskId));
-        AccumulateResultLocal(res);
-        NoteTaskComplete();
-      }
+      const long long startTask=(totalTasks*(long long)mpiRank)/(long long)mpiSize;
+      const long long endTask=(totalTasks*(long long)(mpiRank+1))/(long long)mpiSize;
+      ProcessMappedTaskRange(startTask,endTask,
+                             [](long long index) { return index; });
     }
   }
 
-  // Flush each rank's last partial progress update, then synchronize once so rank 0's
-  // forced final line can show a true 100% before the reduction/output phase begins.
-  FlushProgress(false);
+  // A rank can exhaust the dynamic assignment counter before another rank finishes an
+  // already assigned long trajectory.  Match Mode3D's tail behavior: rank 0 keeps polling
+  // the global COMPLETION counter until every task has actually finished.  Other ranks
+  // proceed to the barrier but keep the RMA window alive, so the display no longer stalls
+  // below 100% during the slow tail of a run.
+  if (mpiRank==0 && totalTasks>0) {
+    for (;;) {
+      const long long observed=progressCounter.Get();
+      if (observed>=totalTasks) break;
+      printCollectiveTaskProgress(observed,totalTasks,totalSamplingTasks,false);
+      std::this_thread::sleep_for(progressPollInterval);
+    }
+  }
+
+  // Print exactly one forced final 100% line after every rank has finished.  Keeping the
+  // forced final print on this side of the barrier avoids the duplicate 100% lines that
+  // would otherwise be produced by both the slow-tail polling loop and the final sync.
   MPI_Barrier(MPI_COMM_WORLD);
-  if (mpiRank == 0) printCollectiveTaskProgress(progressCounter.Get(),totalTasks,totalSamplingTasks,true);
+  if (mpiRank==0)
+    printCollectiveTaskProgress(progressCounter.Get(),totalTasks,totalSamplingTasks,true);
 
   // Reduce primary cutoff minima to rank 0.
   for (int loc=0; loc<nLoc; ++loc) {
@@ -4226,6 +4783,20 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     }
   }
 
+  // Reduce the direct directional access cube.  Each [point,cell,rigidity] slot is
+  // computed by exactly one task and valid states are 0/1/2, while -1 is the local
+  // sentinel.  MPI_MAX therefore reconstructs the global cube without any task-order
+  // assumptions, exactly like the Mode3D direct-access reduction.
+  if (saveDirectionalAccessStates) {
+    std::vector<int> root;
+    if (mpiRank==0) root.assign(DirAccessStates.size(),-1);
+    MPI_Reduce(DirAccessStates.data(),
+               (mpiRank==0 ? root.data() : nullptr),
+               static_cast<int>(DirAccessStates.size()),
+               MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+    if (mpiRank==0) DirAccessStates.swap(root);
+  }
+
 
   //====================================================================================
   // POST-RUN DIAGNOSTIC: verify task distribution
@@ -4332,8 +4903,30 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
                                            base,
                                            qabs,
                                            m0);
+
+          if (saveDirectionalAccessStates) {
+            char accessName[256];
+            std::snprintf(accessName,sizeof(accessName),
+                          "cutoff_gridless_dir_access_point_%04zu.dat",ip);
+            const std::size_t perPoint=(std::size_t)nDirMapCells*
+                                       (std::size_t)nDirectionalAccessRigidities;
+            const std::size_t accessBase=ip*perPoint;
+            std::vector<int> pointAccess(perPoint,-1);
+            std::copy(DirAccessStates.begin()+accessBase,
+                      DirAccessStates.begin()+accessBase+perPoint,
+                      pointAccess.begin());
+            WriteTecplotDirectionalAccess_Point(
+                accessName,(int)ip,prm.output.points[ip],
+                lonRes_deg,latRes_deg,nLonMap,nLatMap,
+                EarthUtil::ToUpper(prm.cutoff.dirMapCoverage),
+                dirMapFullCellIds,prm.cutoff.rigidityList_GV,pointAccess,qabs,m0);
+          }
         }
         std::cout << "Wrote Tecplot: cutoff_gridless_dir_map_point_####.dat (" << prm.output.points.size() << " files)\n";
+        if (saveDirectionalAccessStates) {
+          std::cout << "Wrote Tecplot: cutoff_gridless_dir_access_point_####.dat ("
+                    << prm.output.points.size() << " files)\n";
+        }
       }
 
 // If the background model is an analytic dipole, also write an analytic

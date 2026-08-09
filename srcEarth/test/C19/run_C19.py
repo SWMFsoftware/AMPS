@@ -4,17 +4,16 @@
 C19A has one production workflow.  Historical P0/P1/P2 development stages have been
 folded into that workflow rather than exposed as alternate runner modes.  Every normal
 run therefore uses the current three-state PENUMBRA_SCAN/UNRESOLVED trajectory
-classification, the P1 direct A(E,Omega) detector fold for GRIDDED Mode3D, and the P2
-production numerical settings/physics hooks.  The runner always writes the standard
+classification, the P1 direct A(E,Omega) detector fold for both GRIDDED Mode3D and
+GRIDLESS, and the P2 production numerical settings/physics hooks.  The runner always writes the standard
 full-event comparison plots after post-processing; no special diagnostic flag is
 required to obtain them.
 
 The observational reference is created by ``build_goes_reference.py``.  AMPS is run
-once for each selected (UTC, spacecraft, solver, field-model) combination.  For the
-GRIDDED science path, Mode3D emits the direct three-state access cube A(R,Omega), which
-C19 folds through the documented detector response and the selected event spectrum.
-GRIDLESS remains available as a cross-solver cutoff-proxy check, but it is not a
-separate runner mode.  The current May-2012 reference retains the historical
+once for each selected (UTC, spacecraft, solver, field-model) combination.  For both solver paths, AMPS emits the same direct three-state access cube A(R,Omega),
+which C19 folds through the documented detector response and the selected event
+spectrum. GRIDDED and GRIDLESS therefore differ only in how the magnetic field is
+evaluated along the trajectory, not in the observable supplied to the postprocessor.  The current May-2012 reference retains the historical
 log10(EAST/WEST) stream labels for compatibility, but those labels no longer define the
 instrument geometry.
 
@@ -885,9 +884,10 @@ def replace_directives(template_text: str, replacements: Mapping[str, str]) -> s
             key = stripped.split(None, 1)[0].upper()
             if key in replacements:
                 # ``__REMOVE__`` is used for optional companion directives such as
-                # CUTOFF_RIGIDITY_LIST_GV.  P0 and GRIDLESS runs should not acquire
-                # hundreds of P1 direct-access tasks merely because the common template
-                # contains the directive for the science GRIDDED path.
+                # CUTOFF_RIGIDITY_LIST_GV.  The current C19 science workflow keeps this
+                # directive for BOTH GRIDDED and GRIDLESS because both solvers emit the
+                # same direct A(E,Omega) companion product.  ``__REMOVE__`` remains useful
+                # for standalone diagnostics that intentionally omit direct access.
                 if replacements[key] != "__REMOVE__":
                     indent = raw[:len(raw) - len(stripped)]
                     output.append("%s%-32s%s" % (indent, key, replacements[key]))
@@ -976,9 +976,21 @@ def write_directional_aperture_file(
 
 
 def resolved_dynamic_chunk(args: argparse.Namespace, solver: str) -> int:
+    """Return the input-deck dynamic chunk value.
+
+    A value of 0 intentionally means AUTO to the C++ scheduler.  This is especially
+    important for GRIDLESS now that each MPI rank has an intra-rank worker pool: the
+    common scheduler resolves AUTO to a chunk proportional to the number of local
+    workers (currently about four tasks per worker), so one MPI fetch can keep all
+    threads busy.  The historical GRIDLESS default of 1 serialized each fetched chunk
+    inside a single worker and defeated the new shared-memory parallelism.
+
+    Mode3D keeps its prior runner default for compatibility; an explicit
+    --dynamic-chunk always overrides either solver.
+    """
     if args.dynamic_chunk > 0:
         return args.dynamic_chunk
-    return 1 if solver == "GRIDLESS" else max(1, args.nt)
+    return 0 if solver == "GRIDLESS" else max(1, args.nt)
 
 
 def command_for(args: argparse.Namespace, amps: Path, solver: str) -> List[str]:
@@ -1002,10 +1014,17 @@ def command_for(args: argparse.Namespace, amps: Path, solver: str) -> List[str]:
     if solver == "GRIDLESS":
         command += [
             "-gridless-mpi-scheduler", args.scheduler,
-            "-gridless-mpi-dynamic-chunk", str(chunk),
-            "-density-parallel", "THREADS",
-            "-density-threads", str(args.nt),
+            # Use the GRIDLESS-specific aliases for clarity.  These map onto the same
+            # shared backend/thread-count fields as Mode3D, but make the saved command
+            # self-documenting and are applied by ApplyCommonBackwardCli() in both modes.
+            "-gridless-parallel", "THREADS",
+            "-gridless-threads", str(args.nt),
         ]
+        # Do not force a one-task dynamic chunk.  Omitting the CLI override when the
+        # user requested AUTO lets GRIDLESS_MPI_DYNAMIC_CHUNK=0 in the rendered deck
+        # reach ResolveMpiDynamicChunk(), which sizes the fetch using args.nt workers.
+        if chunk > 0:
+            command += ["-gridless-mpi-dynamic-chunk", str(chunk)]
     else:
         command += [
             "-mode3d-field-eval", "MESH",
@@ -1169,15 +1188,27 @@ def locate_directional_map(run_dir: Path, solver: str) -> Path:
 
 
 def locate_directional_access(run_dir: Path, solver: str) -> Optional[Path]:
-    """Locate P1.4 Mode3D A(R,Omega) companion output; GRIDLESS has no cube yet."""
-    if solver.upper() != "GRIDDED":
-        return None
+    """Locate the solver-independent C19 direct A(R,Omega) companion output.
+
+    GRIDDED and GRIDLESS intentionally use different file stems because their legacy
+    directional-map products use different naming conventions, but both files have the
+    same long-form columns and are parsed by :func:`parse_directional_access`.
+    """
+    if solver.upper() == "GRIDLESS":
+        exact = run_dir / "cutoff_gridless_dir_access_point_0000.dat"
+        if exact.exists():
+            return exact
+        matches = sorted(run_dir.glob("cutoff_gridless_dir_access_point_0000*.dat"))
+        return matches[0] if matches else None
     exact = run_dir / "cutoff_3d_dir_access_loc_000000.dat"
-    return exact if exact.exists() else None
+    if exact.exists():
+        return exact
+    matches = sorted(run_dir.glob("cutoff_3d_dir_access_loc_000000*.dat"))
+    return matches[0] if matches else None
 
 
 def parse_directional_access(path: Path) -> DirectionalAccessCube:
-    """Parse the long-form Mode3D direct directional access cube."""
+    """Parse the common GRIDDED/GRIDLESS long-form directional access cube."""
     variables: List[str] = []
     frame = "UNKNOWN"; x_km = y_km = z_km = float("nan")
     samples: Dict[Tuple[float, float], List[AccessSample]] = {}
@@ -2018,7 +2049,7 @@ def evaluate_reference_row(
     """Evaluate one GOES reference row from a completed AMPS directional product.
 
     P0 separates execution, trajectory resolution, and observational agreement.  P1
-    replaces the scalar-cutoff approximation with direct A(E,Omega) for GRIDDED.  P2
+    replaces the scalar-cutoff approximation with direct A(E,Omega) for both solvers.  P2
     extends the same fold with an explicit detector-attitude model (P2.4) and a bounded
     upstream anisotropy sensitivity model (P2.5).
 
@@ -2091,9 +2122,11 @@ def evaluate_reference_row(
             detector_direction="WEST", orientation_record=west_orientation, **common_direct)
         access_product = "DIRECT_A_E_OMEGA"
     else:
-        # P2.2 uses this exact proxy on *both* GRIDDED and GRIDLESS so the cross-solver
-        # comparison is apples-to-apples and is not polluted by direct-vs-effective-
-        # cutoff observable differences.
+        # Legacy/unit-test fallback only.  Production C19 requires a direct A(E,Omega)
+        # cube from BOTH GRIDDED and GRIDLESS and raises before reaching this branch if
+        # that companion product is missing.  Keeping the scalar fold here is useful for
+        # isolated map diagnostics and historical regression tests, but it is no longer
+        # a solver-specific science path.
         common = dict(
             direction_map=direction_map, position_sm=position_map,
             energy_min=reference.energy_min_mev, energy_max=reference.energy_max_mev,
@@ -2840,6 +2873,10 @@ def self_test() -> int:
             direction_aperture_horizontal_half_angle_deg=30.0,
             direction_aperture_vertical_half_angle_deg=60.0,
             spectral_index=3.0,
+            # Exercise the production direct-access rendering contract for BOTH
+            # solvers.  Historically this list was rendered only for Mode3D, so a
+            # small explicit list here protects GRIDLESS equivalence in the unit test.
+            case_rigidity_list_gv="0.2,0.3",
             dt_trace=0.25, max_trace_distance_re=400.0, scheduler="STATIC",
             dynamic_chunk=1, nt=2, mode3d_mesh_res_earth_re=0.1,
             mode3d_mesh_res_boundary_re=2.0, mode3d_mesh_coarsening="LINEAR",
@@ -2863,6 +2900,7 @@ def self_test() -> int:
                 "DIRMAP_LAT_RES": "15",
                 "DIRMAP_COVERAGE": "VECTOR_APERTURES",
                 "DIRMAP_APERTURE_FILE": "C19_directional_apertures.dat",
+                "CUTOFF_RIGIDITY_LIST_GV": "0.2,0.3",
             }
             for key, value in required_values.items():
                 if not re.search(r"^%s\s+%s\s*$" % (re.escape(key), re.escape(value)),
@@ -2943,7 +2981,7 @@ def self_test() -> int:
         access_lines = [
             'TITLE="synthetic direct access"',
             'VARIABLES="lon_deg","lat_deg","rigidity_GV","energy_MeV","access_state","allowed","unresolved"',
-            'ZONE T="loc=0 x_km=42164 y_km=0 z_km=0 frame=SM" I=12 F=POINT',
+            'ZONE T="loc=0 x_km=42157 y_km=0 z_km=0 frame=SM" I=12 F=POINT',
         ]
         # Production arrival->look reversal maps arrival lon 270 to physical EAST
         # in this synthetic geometry.  Block that sector at the low energy only.
@@ -2955,6 +2993,19 @@ def self_test() -> int:
                                      energy, state, 1 if state == 1 else 0))
         access_path.write_text("\n".join(access_lines) + "\n")
         access_cube = parse_directional_access(access_path)
+
+        # The GRIDLESS producer uses a different legacy file stem but the identical
+        # schema/parser.  Verify locator dispatch explicitly so GRIDLESS cannot regress
+        # to the old scalar-cutoff proxy while the parser unit test continues to pass.
+        gridless_access_path = root / "cutoff_gridless_dir_access_point_0000.dat"
+        gridless_access_path.write_text("\n".join(access_lines) + "\n")
+        if locate_directional_access(root, "GRIDLESS") != gridless_access_path:
+            raise AssertionError("GRIDLESS direct-access locator did not select its cube")
+        if locate_directional_access(root, "GRIDDED") != access_path:
+            raise AssertionError("GRIDDED direct-access locator did not select its cube")
+        gridless_access_cube = parse_directional_access(gridless_access_path)
+        if gridless_access_cube.samples != access_cube.samples:
+            raise AssertionError("GRIDLESS and GRIDDED direct-access schemas parsed differently")
         direct_fold = fold_aperture_direct_access(
             direction_map, access_cube,
             (direction_map.x_km, direction_map.y_km, direction_map.z_km),
@@ -2964,6 +3015,30 @@ def self_test() -> int:
             raise AssertionError("P1 direct-access self-test produced no fold")
         if direct_fold.discrete_transition_weight_fraction <= 0.0:
             raise AssertionError("resolved 0/1 access transition was not exposed as grid uncertainty")
+
+        # Solver-equivalence regression at the Python science layer.  Use the exact
+        # same direct cube and directional map with only the solver label changed; the
+        # predicted detector observable must be identical.  This protects against a
+        # future reintroduction of GRIDLESS-specific proxy post-processing.
+        direct_cells = tuple(cell for cell in direction_map.cells
+                             if cell.lat_deg == 0 and cell.lon_deg in (90.0, 270.0))
+        direct_map = DirectionMap(direction_map.path, direction_map.frame,
+                                  direction_map.x_km, direction_map.y_km,
+                                  direction_map.z_km, direct_cells)
+        direct_gridless_model, _ = evaluate_reference_row(
+            reference, direct_map, manifest, "GRIDLESS", "T05", test_spectrum,
+            test_response, gridless_access_cube, 0.0, PRODUCTION_DIRECTION_MAPPING,
+            "PENUMBRA_SCAN", "UNRESOLVED", 1.0, 1.0, 300.0)
+        direct_gridded_model, _ = evaluate_reference_row(
+            reference, direct_map, manifest, "GRIDDED", "T05", test_spectrum,
+            test_response, access_cube, 0.0, PRODUCTION_DIRECTION_MAPPING,
+            "PENUMBRA_SCAN", "UNRESOLVED", 1.0, 1.0, 300.0)
+        if direct_gridless_model.access_product != "DIRECT_A_E_OMEGA":
+            raise AssertionError("GRIDLESS direct cube did not select DIRECT_A_E_OMEGA")
+        if direct_gridded_model.access_product != "DIRECT_A_E_OMEGA":
+            raise AssertionError("GRIDDED direct cube did not select DIRECT_A_E_OMEGA")
+        if direct_gridless_model.modeled_east_west_ratio != direct_gridded_model.modeled_east_west_ratio:
+            raise AssertionError("solver label changed the common direct detector fold")
 
         # PASS/FAIL policy regression: a numerically complete run with failed
         # observational gates must remain a scientific FAIL even when a caller
@@ -3068,7 +3143,7 @@ Examples:
     parser.add_argument("--detector-response", default=str(DEFAULT_RESPONSE),
                         help="piecewise EPEAD response CSV used by the current detector fold")
     parser.add_argument("--access-energy-points", type=int, default=48,
-                        help=("number of log-spaced Mode3D A(E,Omega) energy nodes; exact detector-response edges are added "
+                        help=("number of log-spaced direct A(E,Omega) energy nodes for either solver; exact detector-response edges are added "
                               "without epsilon-bracketing trajectories"))
     parser.add_argument("--require-real-ephemeris", action="store_true",
                         help="reject selected reference rows using nominal-slot positions; recommended for publication science runs")
@@ -3128,7 +3203,9 @@ Examples:
     parser.add_argument("--mover", default="RK4")
     parser.add_argument("--scheduler", choices=("STATIC", "BLOCK_CYCLIC", "DYNAMIC"),
                         default="DYNAMIC")
-    parser.add_argument("--dynamic-chunk", type=int, default=32)
+    parser.add_argument("--dynamic-chunk", type=int, default=0,
+                        help=("MPI DYNAMIC chunk; 0=AUTO. GRIDLESS auto sizing uses the "
+                              "local thread count, while GRIDDED keeps a worker-sized chunk"))
     parser.add_argument("--mode3d-mesh-res-earth-re", type=float, default=0.025)
     parser.add_argument("--mode3d-mesh-res-boundary-re", type=float, default=1.0)
     parser.add_argument("--mode3d-mesh-coarsening", choices=("LINEAR", "LOG", "POWER"),
@@ -3199,6 +3276,8 @@ Examples:
     # input renderer and provenance tables record the exact settings normally.
     args.cutoff_search = "PENUMBRA_SCAN"
     args.trace_limit_policy = "UNRESOLVED"
+    # AUTO is retained as an internal provenance token, but now means the same direct
+    # A(E,Omega) fold for GRIDDED and GRIDLESS.  It no longer selects a GRIDLESS proxy.
     args.response_fold = "AUTO"
     return args
 
@@ -3383,10 +3462,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 run_dir = (output_root / solver.lower() / field_model.lower()
                            / spacecraft.lower() / timestamp_token(epoch))
                 spectrum = spectra[epoch]
-                direct_requested = (args.response_fold == "DIRECT" or
-                                    (args.response_fold == "AUTO" and solver == "GRIDDED"))
+                # Current single-workflow contract: both GRIDDED and GRIDLESS produce
+                # the same direct three-state A(E,Omega) science product.  AUTO therefore
+                # means DIRECT for either solver; there is no solver-specific proxy path.
+                direct_requested = (args.response_fold in ("AUTO", "DIRECT"))
                 rigidity_text = ",".join("%.12g" % value for value in access_rigidities) \
-                    if direct_requested and solver == "GRIDDED" else ""
+                    if direct_requested else ""
                 case_args = clone_namespace(
                     args, case_spectral_index=spectrum.gamma,
                     case_rigidity_list_gv=rigidity_text)
@@ -3432,8 +3513,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "direction_aperture_horizontal_half_angle_deg": args.direction_aperture_horizontal_half_angle_deg,
                     "direction_aperture_vertical_half_angle_deg": args.direction_aperture_vertical_half_angle_deg,
                     "n_direct_access_rigidities": (len(access_rigidities)
-                                                   if direct_requested and solver == "GRIDDED"
-                                                   else 0),
+                                                   if direct_requested else 0),
                     # Detector orientation controls both VECTOR_APERTURES pruning and
                     # the synthetic detector fold; anisotropy affects the fold only.
                     # Record both beside the executable command for reproducibility.
@@ -3463,8 +3543,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     direction_map = parse_directional_map(map_path)
                     access_cube: Optional[DirectionalAccessCube] = None
                     direct_path = locate_directional_access(run_dir, solver)
-                    direct_requested = (args.response_fold == "DIRECT" or
-                                        (args.response_fold == "AUTO" and solver == "GRIDDED"))
+                    direct_requested = (args.response_fold in ("AUTO", "DIRECT"))
                     if direct_requested:
                         if direct_path is None:
                             raise FileNotFoundError(
@@ -3653,7 +3732,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "direction_coverage": args.direction_coverage,
         "direction_aperture_horizontal_half_angle_deg": args.direction_aperture_horizontal_half_angle_deg,
         "direction_aperture_vertical_half_angle_deg": args.direction_aperture_vertical_half_angle_deg,
-        "instrument_response": "piecewise response from %s folded with direct A(E,Omega) on GRIDDED; nominal elliptical angular FOV" % response_path,
+        "instrument_response": "piecewise response from %s folded with direct A(E,Omega) on GRIDDED and GRIDLESS; nominal elliptical angular FOV" % response_path,
         "detector_response_path": str(response_path),
         "detector_response_sha256": sha256(response_path),
         "detector_response_contains_secondary_components": response_has_secondary,
@@ -3727,7 +3806,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "The historical SM_PROXY detector basis remains the default when no authoritative attitude file is supplied. Exact per-epoch SM/GSM boresight vectors are supported through --detector-orientation-source FILE, with optional explicit pointing offsets.",
             "The telemetry-head-to-physical-direction mapping is event-specific and fixed in the manifest.",
             "Use --require-real-ephemeris with a regenerated reference for publication runs.",
-            "GRIDLESS remains an effective-cutoff proxy cross-check; direct A(E,Omega) is implemented in Mode3D/GRIDDED.",
+            "GRIDDED and GRIDLESS both provide the direct three-state A(E,Omega) product and use the identical detector fold; solver differences therefore isolate field-evaluation/trajectory behavior.",
         ],
     }
     (output_root / "C19_result.json").write_text(

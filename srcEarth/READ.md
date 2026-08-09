@@ -211,7 +211,9 @@ Gridless-specific aliases are accepted and write to the same internal settings:
 ```text
 #NUMERICAL
 GRIDLESS_MPI_SCHEDULER      DYNAMIC
-GRIDLESS_MPI_DYNAMIC_CHUNK  64
+GRIDLESS_MPI_DYNAMIC_CHUNK  0              # recommended: auto-size from GRIDLESS_THREADS
+GRIDLESS_PARALLEL           THREADS
+GRIDLESS_THREADS            16
 ```
 
 CLI aliases are also accepted:
@@ -219,12 +221,12 @@ CLI aliases are also accepted:
 ```bash
 mpirun -np 8 ./amps -mode gridless -i AMPS_PARAM.in \
   -gridless-mpi-scheduler DYNAMIC \
-  -gridless-mpi-dynamic-chunk 64
+  -gridless-parallel THREADS -gridless-threads 16
 ```
 
-`DYNAMIC` uses `MPI_Fetch_and_op` on a rank-0-owned counter. MPI calls are made only by the rank/main thread; worker threads do not call MPI, so the implementation does not require `MPI_THREAD_MULTIPLE`. For Mode3D, the chunk unit is a spatial location. For gridless cutoff, the chunk unit is a cutoff-direction or directional-map task. For gridless density/flux, the chunk unit is a direction-block task for one point and one energy. Smaller chunk sizes improve load balance for highly variable trajectories; larger chunks reduce MPI scheduling overhead. Good starting values are 32, 64, or 128.
+`DYNAMIC` uses `MPI_Fetch_and_op` on a rank-0-owned counter. MPI calls are made only by the rank/main thread; worker threads do not call MPI, so the implementation does not require `MPI_THREAD_MULTIPLE`. For Mode3D cutoff and gridless cutoff, the chunk unit is a flattened trajectory task (primary cutoff, directional-map cell, or direct rigidity-access entry as applicable). For density/flux the unit follows that solver's location/direction work decomposition. Smaller chunks improve load balance for highly variable trajectories; larger chunks reduce MPI scheduling overhead. For threaded GRIDLESS cutoff, `GRIDLESS_MPI_DYNAMIC_CHUNK 0` is preferred because the resolver sizes the fetch from `GRIDLESS_THREADS` (currently about four tasks per worker). Explicit values such as 32, 64, or 128 remain useful for performance studies.
 
-Gridless cutoff and gridless density/flux also keep a live rank-0 progress bar in MPI mode. Because the collective scheduler no longer sends every result through rank 0, progress is tracked with a second MPI one-sided counter that records completed tasks, not assigned chunks. Rank 0 periodically reads that counter and prints the usual ASCII progress line. The progress unit is therefore the scheduler task: cutoff direction/directional-map task for gridless cutoff, and direction-block task for gridless density/flux.
+Gridless cutoff and gridless density/flux also keep a live rank-0 progress bar in MPI mode. Because the collective scheduler no longer sends every result through rank 0, progress is tracked with a second MPI one-sided counter that records completed tasks, not assigned chunks. Rank 0 periodically reads that counter. For threaded gridless cutoff the counter is polled frequently, but stdout is deliberately quieter: unchanged counts are suppressed, routine lines are emitted at roughly 0.1% completed-task increments (or after 10 s when at least one new task has finished), startup ETA is withheld until enough completed work exists, and the final 100% line is printed once. The progress unit is therefore the scheduler task: cutoff direction/directional-map task for gridless cutoff, and direction-block task for gridless density/flux.
 
 
 Typical output files for a single snapshot:
@@ -3059,3 +3061,16 @@ near Earth and 1.0 Re at the outer boundary. Detector FILE orientation and expli
 bounded anisotropy remain ordinary physics inputs to the same workflow. The standard
 `C19_comparison_*`, scatter, parity, residual, transmission, and aperture diagnostic
 plots require no special runner flag.
+
+
+### GRIDLESS mesh-free/threaded cutoff execution
+
+Standalone `-mode gridless` returns before `amps_init_mesh()` and evaluates the selected
+background model directly along trajectories.  Cutoff and directional direct-access
+work support intra-rank `THREADS`, `OPENMP`, or `SERIAL` execution through
+`GRIDLESS_PARALLEL`/`GRIDLESS_THREADS`, combined with the existing MPI scheduler.  Only
+the rank/main thread calls MPI.  Automatic `GRIDLESS_MPI_DYNAMIC_CHUNK 0` sizes work
+fetches from the local worker count.  Threaded direct-field execution requires one
+frozen epoch/driver snapshot per process; multi-epoch trajectory inputs fall back to
+serial intra-rank evaluation while preserving MPI parallelism.  See `gridless/READ.ME`
+and `test/C19/README.md` for the detailed execution contract.

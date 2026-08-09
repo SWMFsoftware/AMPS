@@ -47,7 +47,7 @@
 //     -mode3d-field-eval <INTERPOLATION|ANALYTIC>        3D B-field source during tracing.
 //     -density-mode <ISOTROPIC|ANISOTROPIC>
 //                              Override DS_BOUNDARY_MODE from input file.
-//     -density-parallel <OPENMP|THREADS|SERIAL>          Mode3D shared-memory backend.
+//     -density-parallel <OPENMP|THREADS|SERIAL>          shared-memory backend (Mode3D/GRIDLESS).
 //     -density-threads <int>                             threads per MPI process.
 //     -mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC> MPI-rank scheduler.
 //       Gridless aliases: -gridless-mpi-scheduler, -gridless-mpi-dynamic-chunk.
@@ -177,8 +177,8 @@ CliOptions ParseCli(int argc,char** argv) {
              a=="-mode3d-backend" || a=="--mode3d-backend" ||
              a=="-backtrack-parallel" || a=="--backtrack-parallel" ||
              a=="-backtrack-backend" || a=="--backtrack-backend") {
-      // Select shared-memory backend for Mode3D density backtracking within each
-      // MPI process.  Validated in main after parsing.
+      // Select the shared-memory backend for standalone backward trajectory work
+      // (Mode3D and GRIDLESS aliases share one internal setting).  Validated in main.
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density-parallel");
       opt.densityParallelBackend=argv[++i];
     }
@@ -188,9 +188,9 @@ CliOptions ParseCli(int argc,char** argv) {
              a=="-gridless-threads" || a=="--gridless-threads" ||
              a=="-backtrack-threads" || a=="--backtrack-threads" ||
              a=="-n-density-threads" || a=="--n-density-threads") {
-      // Number of shared-memory workers per MPI rank for Mode3D density
-      // backtracking.  For OPENMP this maps to omp_set_num_threads(N); for
-      // THREADS it is the number of std::thread workers.  0 means automatic.
+      // Number of shared-memory workers per MPI rank for Mode3D/GRIDLESS backward
+      // products.  For OPENMP this maps to omp_set_num_threads(N); for THREADS it
+      // is the number of std::thread workers.  0 means automatic.
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -density-threads");
       opt.densityThreads=std::stoi(argv[++i]);
       if (opt.densityThreads < 0)
@@ -202,7 +202,7 @@ CliOptions ParseCli(int argc,char** argv) {
              a=="-gridless-mpi-backend" || a=="--gridless-mpi-backend" ||
              a=="-backtrack-mpi-scheduler" || a=="--backtrack-mpi-scheduler" ||
              a=="-backtrack-mpi-backend" || a=="--backtrack-mpi-backend") {
-      // Inter-rank scheduler for standalone Mode3D backward products.
+      // Inter-rank scheduler for standalone Mode3D/GRIDLESS backward products.
       // DYNAMIC activates the MPI one-sided atomic work queue; BLOCK_CYCLIC and
       // STATIC are deterministic fallback/debug schedulers.
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -mode3d-mpi-scheduler");
@@ -820,18 +820,16 @@ std::string HelpMessage(const char* progName) {
   out << "      Input-file analogue: CUTOFF_TRACE_POLICY LEGACY|ACCURATE.\n\n";
 
   out << "  -density-parallel | --density-parallel <OPENMP|THREADS|SERIAL>   (optional)\n";
-  out << "      Select the Mode3D density-backtracking shared-memory backend inside\n";
-  out << "      each MPI process. OPENMP preserves the existing OpenMP loops; THREADS\n";
-  out << "      uses direct std::thread workers over observation locations and disables\n";
-  out << "      nested OpenMP inside those workers; SERIAL disables intra-rank shared\n";
-  out << "      memory parallelism. Aliases: --mode3d-density-parallel,\n";
-  out << "      --mode3d-density-backend.\n\n";
+  out << "      Select the shared-memory backend for backward trajectory work inside\n";
+  out << "      each MPI process. THREADS uses direct std::thread workers; OPENMP uses\n";
+  out << "      an OpenMP team where implemented; SERIAL disables intra-rank parallelism.\n";
+  out << "      GRIDLESS cutoff and Mode3D both consume this setting. Aliases include\n";
+  out << "      --mode3d-parallel and --gridless-parallel.\n\n";
 
   out << "  -density-threads | --density-threads <N>   (optional; 0=automatic)\n";
-  out << "      Number of shared-memory workers per MPI process for Mode3D density\n";
-  out << "      backtracking. For OPENMP this calls omp_set_num_threads(N). For THREADS\n";
-  out << "      this sets the number of std::thread workers. Aliases:\n";
-  out << "      --mode3d-density-threads, --n-density-threads.\n\n";
+  out << "      Number of shared-memory workers per MPI process. GRIDLESS cutoff uses\n";
+  out << "      this count both for its local worker pool and automatic MPI chunk sizing.\n";
+  out << "      Aliases include --mode3d-threads and --gridless-threads.\n\n";
   out << "  -mode3d-mpi-scheduler | --mode3d-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC>   (optional)\n";
   out << "      What this command does:\n";
   out << "        Selects the MPI-rank work scheduler for standalone Mode3D and\n";

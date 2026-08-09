@@ -315,6 +315,8 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
   //   -cutoff-upper-scan-n <N>
   //   -adaptive-dt <T|F>
   //   -max-trace-distance <Re>
+  //   -mode3d-parallel / -gridless-parallel <OPENMP|THREADS|SERIAL>
+  //   -mode3d-threads / -gridless-threads <N>
   //   -mode3d-mpi-scheduler / -gridless-mpi-scheduler <DYNAMIC|BLOCK_CYCLIC|STATIC>
   //   -mode3d-mpi-dynamic-chunk / -gridless-mpi-dynamic-chunk <N>
   //
@@ -379,6 +381,29 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
               << ") for " << modeLabel << ".\n";
     return false;
   }
+
+  // Shared-memory backend for backward trajectory products.  The storage names in
+  // AmpsParam are historical (mode3d.densityParallelBackend/densityThreads), but the
+  // same settings are intentionally consumed by BOTH standalone Mode3D and GRIDLESS.
+  // The CLI parser accepts generic aliases (-density-parallel/-density-threads),
+  // Mode3D aliases, and the clearer GRIDLESS aliases (-gridless-parallel/
+  // -gridless-threads).  Applying them here rather than inside the Mode3D branch is
+  // essential: otherwise GRIDLESS accepts the CLI flags but silently runs serially.
+  if (!cli.densityParallelBackend.empty()) {
+    const std::string backend = EarthUtil::ToUpper(cli.densityParallelBackend);
+    if (backend=="OPENMP" || backend=="OMP" || backend=="THREADS" ||
+        backend=="THREAD" || backend=="STD_THREAD" || backend=="STD_THREADS" ||
+        backend=="SERIAL" || backend=="NONE") {
+      p.mode3d.densityParallelBackend = backend;
+    }
+    else {
+      std::cerr << "Error: unknown shared-memory backend '"
+                << cli.densityParallelBackend << "' for " << modeLabel
+                << ". Valid values: OPENMP, THREADS, SERIAL.\n";
+      return false;
+    }
+  }
+  if (cli.densityThreads > 0) p.mode3d.densityThreads = cli.densityThreads;
 
   // Inter-rank scheduler for backward trajectory products.  Both Mode3D and gridless
   // call Earth::Mode3D::ResolveMpiScheduler(), which reads p.mode3d.mpiScheduler even
@@ -2042,6 +2067,17 @@ int main(int argc,char **argv) {
 	PIC::InitMPI();
 	Exosphere::Init_SPICE();
 
+        // Standalone GRIDLESS is deliberately mesh-free.  PIC::InitMPI() above only
+        // initializes the MPI runtime; this branch never calls amps_init_mesh(), never
+        // builds/reads the AMR tree, and never allocates/populates the Mode3D magnetic-
+        // field mesh.  Magnetic fields are evaluated directly along each trajectory.
+        // Keep this branch returning before the historical initialization path below.
+        if (PIC::ThisThread==0) {
+          std::cout << "[gridless] AMR mesh initialization: SKIPPED "
+                    << "(direct field evaluation along trajectories)\n";
+          std::cout.flush();
+        }
+
         EarthUtil::AmpsParam p = EarthUtil::ParseAmpsParamFile(cli.inputFile);
 
         // Establish the final global epoch before any field or trajectory runtime is
@@ -2129,25 +2165,6 @@ int main(int argc,char **argv) {
             return 1;
           }
         }
-
-        // Mode3D density-backtracking shared-memory backend.  These settings are
-        // intentionally stored in AmpsParam so the same RunDensityAndFlux() code path
-        // can be used by standalone Mode3D and the SWMF-coupled backward products.
-        if (!cli.densityParallelBackend.empty()) {
-          const std::string backend = EarthUtil::ToUpper(cli.densityParallelBackend);
-          if (backend=="OPENMP" || backend=="OMP" || backend=="THREADS" ||
-              backend=="THREAD" || backend=="STD_THREAD" || backend=="STD_THREADS" ||
-              backend=="SERIAL" || backend=="NONE") {
-            p.mode3d.densityParallelBackend = backend;
-          }
-          else {
-            std::cerr << "Error: unknown -density-parallel backend '"
-                      << cli.densityParallelBackend
-                      << "'. Valid values: OPENMP, THREADS, SERIAL.\n";
-            return 1;
-          }
-        }
-        if (cli.densityThreads > 0) p.mode3d.densityThreads = cli.densityThreads;
 
         // Generic MPI-scheduler CLI overrides are applied by ApplyCommonBackwardCli()
         // immediately after parsing AMPS_PARAM.in.

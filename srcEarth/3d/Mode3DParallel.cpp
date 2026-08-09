@@ -266,9 +266,10 @@ void DynamicMpiProgressCounter::Add(long long delta) {
   if (delta <= 0 || totalWork_ <= 0) return;
 
   // Atomic add to rank 0's exposed counter.  The progress counter is updated only
-  // by MPI rank/main threads after they complete a chunk of local work.  Worker
-  // threads do not call MPI, so this remains compatible with MPI implementations
-  // initialized below MPI_THREAD_MULTIPLE.
+  // by MPI rank/main threads.  Callers may publish a whole completed chunk or
+  // periodically publish newly completed tasks while a threaded chunk is still
+  // running.  Worker threads do not call MPI, so this remains compatible with MPI
+  // implementations initialized below MPI_THREAD_MULTIPLE.
   MPI_Win_lock(MPI_LOCK_EXCLUSIVE,0,0,win_);
   MPI_Accumulate(&delta,
                  1,
