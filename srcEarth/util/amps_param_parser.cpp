@@ -2321,6 +2321,90 @@ static EarthUtil::TsDriverTable LoadTsDriverFile(const std::string& fileName,
   return table;
 }
 
+
+DirectionalAperture ParseDirectionalApertureSpec(const std::string& text) {
+  // Keep this parser deliberately independent of GOES/C19 naming.  A specification
+  // describes one arbitrary finite-FOV instrument look direction in a frame understood
+  // by the cutoff solver.  Commas are accepted as whitespace so the same compact form
+  // is convenient in hand-written input files, generated files, and shell arguments.
+  std::string normalized=text;
+  for (char& c : normalized) if (c==',') c=' ';
+  std::istringstream iss(normalized);
+  DirectionalAperture a;
+  if (!(iss >> a.name >> a.frame
+            >> a.boresight.x >> a.boresight.y >> a.boresight.z
+            >> a.up.x >> a.up.y >> a.up.z
+            >> a.horizontalHalfAngle_deg >> a.verticalHalfAngle_deg)) {
+    throw std::runtime_error(
+        "Invalid DIRMAP_APERTURE specification. Expected: "
+        "<name> <SM|GSM|LOCAL_SM> bx by bz ux uy uz hHalfDeg vHalfDeg; got '"+
+        Trim(text)+"'");
+  }
+  std::string extra;
+  if (iss >> extra) {
+    throw std::runtime_error("Unexpected extra token '"+extra+
+                             "' in DIRMAP_APERTURE specification '"+Trim(text)+"'");
+  }
+
+  a.name=Trim(a.name);
+  a.frame=ToUpper(Trim(a.frame));
+  if (a.name.empty()) throw std::runtime_error("DIRMAP_APERTURE name must not be empty");
+  if (!(a.frame=="SM" || a.frame=="GSM" || a.frame=="LOCAL_SM" || a.frame=="LOCAL"))
+    throw std::runtime_error("DIRMAP_APERTURE frame must be SM, GSM, or LOCAL_SM");
+  if (a.frame=="LOCAL") a.frame="LOCAL_SM";
+
+  auto norm3=[](const Vec3& v) {
+    return std::sqrt(v.x*v.x+v.y*v.y+v.z*v.z);
+  };
+  if (!(norm3(a.boresight)>0.0) || !std::isfinite(norm3(a.boresight)))
+    throw std::runtime_error("DIRMAP_APERTURE boresight must be finite and non-zero");
+  if (!(norm3(a.up)>0.0) || !std::isfinite(norm3(a.up)))
+    throw std::runtime_error("DIRMAP_APERTURE up vector must be finite and non-zero");
+  if (!(a.horizontalHalfAngle_deg>0.0 && a.horizontalHalfAngle_deg<=90.0 &&
+        a.verticalHalfAngle_deg>0.0 && a.verticalHalfAngle_deg<=90.0 &&
+        std::isfinite(a.horizontalHalfAngle_deg) &&
+        std::isfinite(a.verticalHalfAngle_deg)))
+    throw std::runtime_error("DIRMAP_APERTURE half-angles must be finite and in (0,90] degrees");
+
+  // The solvers intentionally perform the final projection/orthogonalization because
+  // GSM and LOCAL_SM vectors must first be transformed into the map-label frame.
+  return a;
+}
+
+std::vector<DirectionalAperture> LoadDirectionalApertureFile(const std::string& fileName) {
+  std::ifstream fin(fileName);
+  if (!fin.is_open())
+    throw std::runtime_error("Cannot open DIRMAP_APERTURE_FILE: "+fileName);
+
+  std::vector<DirectionalAperture> result;
+  std::string line;
+  int lineNo=0;
+  while (std::getline(fin,line)) {
+    ++lineNo;
+    // Both '#' and '!' start comments in the standalone aperture-list format.
+    std::size_t cut=std::string::npos;
+    const std::size_t h=line.find('#');
+    const std::size_t b=line.find('!');
+    if (h!=std::string::npos) cut=h;
+    if (b!=std::string::npos) cut=(cut==std::string::npos ? b : std::min(cut,b));
+    if (cut!=std::string::npos) line=line.substr(0,cut);
+    line=Trim(line);
+    if (line.empty()) continue;
+    try {
+      result.push_back(ParseDirectionalApertureSpec(line));
+    }
+    catch (const std::exception& e) {
+      std::ostringstream out;
+      out << "DIRMAP_APERTURE_FILE " << fileName << " line " << lineNo
+          << ": " << e.what();
+      throw std::runtime_error(out.str());
+    }
+  }
+  if (result.empty())
+    throw std::runtime_error("DIRMAP_APERTURE_FILE contains no aperture definitions: "+fileName);
+  return result;
+}
+
 AmpsParam ParseAmpsParamFile(const std::string& fileName) {
   std::ifstream fin(fileName);
   if (!fin.is_open()) {
@@ -2628,11 +2712,22 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
 
       // Directional Rc sky-map controls.
       // Notes:
-      //   - These are used only in the gridless cutoff solver.
-      //   - A directional map is a diagnostic product; it can be expensive.
+      //   - These controls are shared by the gridless and standalone Mode3D cutoff solvers.
+      //   - A directional map/direct-access cube can be expensive; DIRMAP_COVERAGE
+      //     can retain only cells inside the configured instrument look apertures.
       else if (uKey=="DIRECTIONAL_MAP" || uKey=="CUTOFF_DIRECTIONAL_MAP") p.cutoff.directionalMap=ToBool(val);
       else if (uKey=="DIRMAP_LON_RES") p.cutoff.dirMapLonRes_deg=std::stod(val);
       else if (uKey=="DIRMAP_LAT_RES") p.cutoff.dirMapLatRes_deg=std::stod(val);
+      // Optional angular-work reduction for directional products.  FULL_SPHERE is
+      // backward compatible.  VECTOR_APERTURES retains only cells inside the union
+      // of arbitrary finite-FOV look directions supplied by vector definitions.
+      // The solver never assumes that the apertures are east/west or antipodal.
+      else if (uKey=="DIRMAP_COVERAGE" || uKey=="CUTOFF_DIRMAP_COVERAGE")
+        p.cutoff.dirMapCoverage=ToUpper(Trim(val));
+      else if (uKey=="DIRMAP_APERTURE_FILE" || uKey=="CUTOFF_DIRMAP_APERTURE_FILE")
+        p.cutoff.dirMapApertureFile=Trim(val);
+      else if (uKey=="DIRMAP_APERTURE" || uKey=="CUTOFF_DIRMAP_APERTURE")
+        p.cutoff.dirMapApertures.push_back(ParseDirectionalApertureSpec(val));
       else rejectUnknownKeyword();
     }
     else if (section=="#PARTICLE_SPECIES") {
@@ -3220,6 +3315,31 @@ if (ToUpper(p.field.model)=="DIPOLE") {
       // token that the caller may want to inspect later.
       if (temporalMode.empty() || temporalMode == "PARAMS") p.temporal.tsInputMode = "FILE";
     }
+  }
+
+
+  // Normalize generic directional-aperture coverage after the complete AMPS_PARAM
+  // file has been read.  IMPORTANT: do *not* open DIRMAP_APERTURE_FILE here.
+  //
+  // Aperture-file loading is deliberately deferred until main.cpp has merged command-
+  // line overrides.  Otherwise an input deck that names a stale/nonexistent aperture
+  // file would fail before a valid `-cutoff-dirmap-aperture-file` CLI override had a
+  // chance to replace it.  Inline DIRMAP_APERTURE records are parsed immediately and
+  // retained; the final file + inline list is assembled once, after CLI precedence has
+  // been resolved.
+  {
+    std::string coverage=ToUpper(Trim(p.cutoff.dirMapCoverage));
+    if (coverage=="FULL" || coverage=="SPHERE") coverage="FULL_SPHERE";
+    if (coverage=="APERTURES" || coverage=="INSTRUMENT_APERTURES" ||
+        coverage=="VECTOR" || coverage=="VECTORS") coverage="VECTOR_APERTURES";
+    p.cutoff.dirMapCoverage=coverage;
+
+    if (!(coverage=="FULL_SPHERE" || coverage=="VECTOR_APERTURES"))
+      exit(__LINE__,__FILE__,"DIRMAP_COVERAGE must be FULL_SPHERE or VECTOR_APERTURES");
+    if (coverage=="VECTOR_APERTURES" && p.cutoff.dirMapApertures.empty() &&
+        p.cutoff.dirMapApertureFile.empty())
+      exit(__LINE__,__FILE__,
+           "DIRMAP_COVERAGE VECTOR_APERTURES requires DIRMAP_APERTURE_FILE or at least one DIRMAP_APERTURE");
   }
 
 

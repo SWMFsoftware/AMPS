@@ -475,6 +475,73 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
   if (cli.cutoffAccessAbsLatMax_deg>=0.0)
     p.cutoff.accessAbsLatMax_deg=cli.cutoffAccessAbsLatMax_deg;
 
+  // Directional-map angular coverage.  The optimized path is deliberately generic:
+  // it consumes arbitrary instrument look vectors and never assumes EAST/WEST,
+  // antipodal heads, or any particular mission.  CLI definitions replace the
+  // input-file aperture list only when an explicit aperture-file override is given;
+  // repeatable direct CLI specifications are then appended.
+  if (!cli.cutoffDirMapCoverage.empty()) {
+    const std::string coverage=EarthUtil::ToUpper(cli.cutoffDirMapCoverage);
+    if (coverage=="FULL_SPHERE" || coverage=="FULL" || coverage=="SPHERE")
+      p.cutoff.dirMapCoverage="FULL_SPHERE";
+    else if (coverage=="VECTOR_APERTURES" || coverage=="APERTURES" ||
+             coverage=="INSTRUMENT_APERTURES" || coverage=="VECTOR" || coverage=="VECTORS")
+      p.cutoff.dirMapCoverage="VECTOR_APERTURES";
+    else {
+      std::cerr << "Error: unknown directional-map coverage '"
+                << cli.cutoffDirMapCoverage << "' for " << modeLabel
+                << ". Valid values: FULL_SPHERE or VECTOR_APERTURES.\n";
+      return false;
+    }
+  }
+
+  try {
+    // Resolve CLI precedence before opening any aperture file.  An explicit CLI file
+    // replaces the input-deck file and its inline aperture definitions; this makes it
+    // possible to use a generic committed AMPS_PARAM template while selecting the
+    // epoch-specific instrument attitude file entirely from the command line.
+    if (!cli.cutoffDirMapApertureFile.empty()) {
+      p.cutoff.dirMapApertureFile=cli.cutoffDirMapApertureFile;
+      p.cutoff.dirMapApertures.clear();
+    }
+
+    // Load the final selected file exactly once, after the CLI path override (if any)
+    // has been applied.  Input-file inline DIRMAP_APERTURE records are retained when
+    // no CLI file replacement was requested, and file records are appended to them.
+    if (EarthUtil::ToUpper(p.cutoff.dirMapCoverage)=="VECTOR_APERTURES" &&
+        !p.cutoff.dirMapApertureFile.empty()) {
+      const auto fromFile=EarthUtil::LoadDirectionalApertureFile(
+          p.cutoff.dirMapApertureFile);
+      p.cutoff.dirMapApertures.insert(p.cutoff.dirMapApertures.end(),
+                                      fromFile.begin(),fromFile.end());
+    }
+
+    // Repeatable CLI DIRMAP_APERTURE specifications are always appended last.  This is
+    // useful for adding a calibration/diagnostic look direction without modifying the
+    // mission attitude file.
+    for (const std::string& spec : cli.cutoffDirMapApertureSpecs)
+      p.cutoff.dirMapApertures.push_back(EarthUtil::ParseDirectionalApertureSpec(spec));
+  }
+  catch (const std::exception& e) {
+    std::cerr << "Error: invalid directional aperture configuration for " << modeLabel
+              << ": " << e.what() << "\n";
+    return false;
+  }
+
+  {
+    const std::string coverage=EarthUtil::ToUpper(p.cutoff.dirMapCoverage);
+    if (!(coverage=="FULL_SPHERE" || coverage=="VECTOR_APERTURES")) {
+      std::cerr << "Error: DIRMAP_COVERAGE must be FULL_SPHERE or VECTOR_APERTURES for "
+                << modeLabel << ".\n";
+      return false;
+    }
+    if (coverage=="VECTOR_APERTURES" && p.cutoff.dirMapApertures.empty()) {
+      std::cerr << "Error: VECTOR_APERTURES requires at least one DIRMAP_APERTURE "
+                << "or DIRMAP_APERTURE_FILE record for " << modeLabel << ".\n";
+      return false;
+    }
+  }
+
   if (EarthUtil::ToUpper(p.cutoff.searchAlgorithm)=="RIGIDITY_LIST") {
     if (p.cutoff.rigidityList_GV.empty()) {
       std::cerr << "Error: RIGIDITY_LIST requires -cutoff-rigidity-list-gv or "

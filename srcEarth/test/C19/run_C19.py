@@ -1,43 +1,44 @@
 #!/usr/bin/env python3
-"""C19A — public GOES EPEAD east-west directional-access validation.
+"""C19A — GOES EPEAD two-head directional-access validation.
 
-C19A compares AMPS directional cutoff maps with the background-subtracted
-physical EAST/WEST P4 and P5 proton-flux ratios measured simultaneously by
-GOES-13 and GOES-15 during the 17 May 2012 SEP event decay.
+C19A has one production workflow.  Historical P0/P1/P2 development stages have been
+folded into that workflow rather than exposed as alternate runner modes.  Every normal
+run therefore uses the current three-state PENUMBRA_SCAN/UNRESOLVED trajectory
+classification, the P1 direct A(E,Omega) detector fold for GRIDDED Mode3D, and the P2
+production numerical settings/physics hooks.  The runner always writes the standard
+full-event comparison plots after post-processing; no special diagnostic flag is
+required to obtain them.
 
-The observational reference is created by ``build_goes_reference.py``.  AMPS is
-run once for each selected (UTC, spacecraft, solver, field-model) combination.
-A global SM directional cutoff map is folded through a documented top-hat
-approximation to the EPEAD aperture and an incident power-law proton spectrum.
-The primary comparison quantity is log10(EAST/WEST).  AMPS directional-map
-vectors are incoming particle arrival/velocity directions, whereas EPEAD EAST/WEST
-labels are telescope look directions; C19 therefore reverses each AMPS map vector
-before aperture folding.  The legacy direct mapping is retained as a diagnostic,
-one-sided zero-transmission saturation is reported explicitly, and the process-exit
-policy never changes the scientific PASS/FAIL label.
+The observational reference is created by ``build_goes_reference.py``.  AMPS is run
+once for each selected (UTC, spacecraft, solver, field-model) combination.  For the
+GRIDDED science path, Mode3D emits the direct three-state access cube A(R,Omega), which
+C19 folds through the documented detector response and the selected event spectrum.
+GRIDLESS remains available as a cross-solver cutoff-proxy check, but it is not a
+separate runner mode.  The current May-2012 reference retains the historical
+log10(EAST/WEST) stream labels for compatibility, but those labels no longer define the
+instrument geometry.
+
+AMPS directional-map vectors are incoming particle arrival/velocity directions, whereas
+an instrument attitude record supplies a physical detector LOOK vector for each head and
+epoch. C19 therefore reverses each AMPS map vector before aperture folding. The two
+boresights may point anywhere and need not be antipodal. The legacy direct mapping is
+retained only as a post-processing direction-sense diagnostic and can never replace the
+production result.
 
 Examples
 --------
-Routine public-data comparison with T96 and T05::
+Current routine comparison::
 
     python3 srcEarth/test/C19/run_C19.py --profile ROUTINE \
-      --solver GRIDDED --models T96,T05 \
-      --reference srcEarth/test/C19/data/reference_C19_goes_epead_ew.csv.gz \
-      --driver /path/to/may2012_driver.txt \
-      --amps ./amps -np 4 -nt 16
+      --solver GRIDDED --models T96,T05 --amps ./amps -np 4 -nt 16
 
 Quick command/input preview::
 
-    python3 srcEarth/test/C19/run_C19.py --profile SMOKE --dry-run \
-      --driver /path/to/may2012_driver.txt
+    python3 srcEarth/test/C19/run_C19.py --profile SMOKE --dry-run --amps ./amps
 
 Exercise parsing, response folding, metrics, and plot generation without AMPS::
 
     python3 srcEarth/test/C19/run_C19.py --self-test
-
-C19A is deliberately a broad-aperture observational test.  It does not claim a
-full detector response simulation: the routine model uses nominal P4/P5 energy
-bounds, a uniform elliptical aperture, and a common isotropic power-law source.
 """
 
 from __future__ import annotations
@@ -65,6 +66,15 @@ DEFAULT_MANIFEST = SCRIPT_DIR / "event_C19_may2012.json"
 DEFAULT_REFERENCE = SCRIPT_DIR / "data" / "reference_C19_goes_epead_ew.csv.gz"
 DEFAULT_TEMPLATE_GRIDLESS = SCRIPT_DIR / "AMPS_PARAM_C19_gridless.in"
 DEFAULT_TEMPLATE_MODE3D = SCRIPT_DIR / "AMPS_PARAM_C19_mode3d.in"
+DEFAULT_DRIVER = SCRIPT_DIR / "data" / "ts05_driver_may2012.txt"
+# The production C19 reference currently uses the NOAA *uncorrected* P4/P5
+# directional flux variables.  For that observable it is not sufficient to stop the
+# synthetic detector at the nominal P4/P5 upper edges: GOES 8--15 processing
+# documentation reports sizeable secondary (side/rear penetrating) proton responses
+# above the nominal bands.  The extended response file keeps the primary bands and
+# adds the documented P4/P5 secondary energy support through 150/190 MeV.  A primary-
+# only file is still committed for controlled corrected-flux/legacy studies.
+DEFAULT_RESPONSE = SCRIPT_DIR / "data" / "epead_response_C19_uncorrected_extended.csv"
 
 SOLVERS = ("GRIDLESS", "GRIDDED", "BOTH")
 FIELD_MODELS = ("T96", "T05")
@@ -84,14 +94,141 @@ class ReferenceRow:
     latitude_deg: float
     altitude_km: float
     position_source: str
+    # Actual telemetry/instrument head that supplied each compatibility stream.
+    # The May-2012 reference retains physical EAST/WEST numerator/denominator names
+    # for literature continuity, but detector geometry is keyed by these opaque IDs
+    # (normally telemetry E or W after yaw mapping), never inferred from the name.
+    east_detector_id: str = "EAST"
+    west_detector_id: str = "WEST"
+    # P1.1/P1.3 optional fields.  Legacy committed references did not record the
+    # exact NOAA variable names, so defaults preserve read compatibility while the
+    # regenerated P1 reference is fully self-describing.
+    east_flux_background_subtracted: Optional[float] = None
+    west_flux_background_subtracted: Optional[float] = None
+    flux_product_policy: str = "LEGACY_UNRECORDED"
+    east_flux_variable: str = "LEGACY_UNRECORDED"
+    west_flux_variable: str = "LEGACY_UNRECORDED"
+    east_flux_correction_state: str = "UNKNOWN"
+    west_flux_correction_state: str = "UNKNOWN"
+
+
+@dataclass(frozen=True)
+class SpectrumEstimate:
+    """Power-law event spectrum used by one epoch of the synthetic detector fold."""
+    utc: datetime
+    gamma: float
+    j0: float
+    e0_mev: float
+    source: str
+    n_points: int
+
+
+@dataclass(frozen=True)
+class ResponseInterval:
+    """Piecewise-constant energy response interval for one EPEAD channel."""
+    channel: str
+    energy_min_mev: float
+    energy_max_mev: float
+    relative_response: float
+    response_component: str
+    source: str
+
+
+@dataclass(frozen=True)
+class OrientationRecord:
+    """Physical look-direction basis for one detector head at one spacecraft epoch.
+
+    The record is intentionally detector-neutral. ``detector`` is the actual
+    instrument/telemetry head identifier. When the reference records which telemetry
+    head supplied each compatibility stream (GOES `telemetry_head_east/west`), C19 uses
+    those IDs directly; old references fall back to EAST/WEST identifiers. The two
+    heads are *not* assumed antipodal:
+    each record carries its own boresight and aperture-roll reference in SM or GSM.
+
+    This matters for a real spacecraft because a telemetry head does not have to look
+    along nominal geographic east/west at every epoch.  C19 therefore folds the model
+    through the actual per-epoch look vectors when they are supplied.
+    """
+    utc: datetime
+    spacecraft: str
+    detector: str
+    frame: str
+    boresight: Tuple[float, float, float]
+    aperture_north: Tuple[float, float, float]
+    source: str
+
+
+@dataclass(frozen=True)
+class AnisotropyConfig:
+    """Energy-independent first-order directional modulation used by P2.5.
+
+    ``DIPOLE`` means J(E,Omega)=J0(E)*(1+A*u.Omega), where ``Omega`` is the AMPS
+    particle-arrival direction and ``u`` is the configured unit axis in the map frame.
+    |A|<1 guarantees a non-negative intensity in every direction.  The default model
+    is ISOTROPIC (A=0); the dipole model is a sensitivity tool, not an assertion that
+    the May-2012 upstream distribution actually had this form.
+    """
+    model: str = "ISOTROPIC"
+    amplitude: float = 0.0
+    axis_lon_deg: float = 0.0
+    axis_lat_deg: float = 0.0
+
+
+@dataclass(frozen=True)
+class AccessSample:
+    energy_mev: float
+    rigidity_gv: float
+    state: int              # 0=PhysicalForbidden, 1=Allowed, 2=Unresolved
+
+
+@dataclass(frozen=True)
+class DirectionalAccessCube:
+    path: str
+    frame: str
+    x_km: float
+    y_km: float
+    z_km: float
+    # Dict keys are rounded (lon_deg,lat_deg) pairs; values are sorted in energy.
+    samples: Mapping[Tuple[float, float], Tuple[AccessSample, ...]]
 
 
 @dataclass(frozen=True)
 class DirectionCell:
+    """One AMPS directional-map cell plus optional PENUMBRA_SCAN diagnostics.
+
+    Older directional-map files contain only ``Rc_GV``/``Emin_MeV``.  The P0 C19
+    implementation extends PENUMBRA_SCAN maps with the lower/effective/upper cutoff
+    band, topology, trajectory-termination counts, and trace-budget maxima.  All
+    added fields are optional here so the postprocessor remains able to read legacy
+    UPPER_SCAN files for the explicit A/B diagnostic requested by P0.5.
+    """
     lon_deg: float
     lat_deg: float
     rc_gv: float
     cutoff_energy_mev: float
+    rc_lower_gv: Optional[float] = None
+    rc_effective_gv: Optional[float] = None
+    rc_upper_gv: Optional[float] = None
+    n_transitions: Optional[int] = None
+    n_allowed_intervals: Optional[int] = None
+    n_unresolved_samples: Optional[int] = None
+    lower_bracket_unresolved: Optional[int] = None
+    upper_bracket_unresolved: Optional[int] = None
+    lower_below_range: Optional[int] = None
+    lower_above_range: Optional[int] = None
+    upper_below_range: Optional[int] = None
+    upper_above_range: Optional[int] = None
+    n_trajectory_evaluations: Optional[int] = None
+    n_outer_boundary_allowed: Optional[int] = None
+    n_inner_boundary_forbidden: Optional[int] = None
+    n_magnetically_trapped_forbidden: Optional[int] = None
+    n_time_limit: Optional[int] = None
+    n_step_limit: Optional[int] = None
+    n_distance_limit: Optional[int] = None
+    max_trace_time_s: Optional[float] = None
+    max_trace_distance_re: Optional[float] = None
+    max_trace_steps: Optional[int] = None
+    rc_stormer_gv: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -118,14 +255,75 @@ class ModelRow:
     residual_log10: Optional[float]
     east_transmission: Optional[float]
     west_transmission: Optional[float]
+    east_transmission_min: Optional[float]
+    east_transmission_max: Optional[float]
+    west_transmission_min: Optional[float]
+    west_transmission_max: Optional[float]
     n_east_cells: int
     n_west_cells: int
+    unresolved_east_fraction: float
+    unresolved_west_fraction: float
+    # Fraction of the detector-weighted energy integral whose access transition lies
+    # somewhere between two *resolved but different* sampled rigidity states.  P1's
+    # original trapezoid treated 0->1 as a linear transmission ramp.  The current fold
+    # instead carries this finite-rigidity-resolution contribution explicitly as an
+    # uncertainty interval; these fields expose its size in the final CSV/JSON.
+    discrete_transition_east_fraction: float
+    discrete_transition_west_fraction: float
     unresolved_direction_fraction: float
+    max_direction_trace_time_s: Optional[float]
+    static_field_guardrail_triggered: bool
+    cutoff_search_algorithm: str
+    trace_limit_policy: str
     spectral_index: float
+    spectrum_source: str
+    spectrum_j0: float
+    spectrum_e0_mev: float
+    instrument_response_model: str
+    access_product: str
     map_frame: str
     map_path: str
     direction_mapping: str
+    orientation_model: str
+    orientation_source: str
+    orientation_yaw_deg: float
+    orientation_pitch_deg: float
+    anisotropy_model: str
+    anisotropy_amplitude: float
+    anisotropy_axis_lon_deg: float
+    anisotropy_axis_lat_deg: float
     status: str
+
+
+@dataclass(frozen=True)
+class ApertureFold:
+    """Solid-angle fold result with explicit bounds for unresolved map cells.
+
+    ``value`` is the historical resolved-cell estimate and is emitted only when the
+    unresolved solid-angle fraction is at or below the configured tolerance.  The
+    lower/upper bounds never renormalize away unresolved cells: unresolved transmission
+    is assigned 0 for ``minimum`` and 1 for ``maximum``.  This makes P0.4 auditable and
+    prevents a handful of resolved cells from masquerading as a complete aperture.
+    """
+    value: Optional[float]
+    minimum: Optional[float]
+    maximum: Optional[float]
+    n_cells: int
+    n_unresolved: int
+    unresolved_weight_fraction: float
+    discrete_transition_weight_fraction: float
+    undersampled_penumbra_cells: int
+    max_trace_time_s: Optional[float]
+    static_field_guardrail_triggered: bool
+    diagnostic: Tuple[Dict[str, object], ...]
+    # Current anisotropy fold: direct A(E,Omega) folding also carries the synthetic detector signal.
+    # ``value`` above remains the normalized transmission for continuity with P0/P1,
+    # while signal_* retains directional source weighting.  The E/W observable must
+    # use signal_value whenever a non-isotropic upstream distribution is requested.
+    signal_value: Optional[float] = None
+    signal_min: Optional[float] = None
+    signal_max: Optional[float] = None
+    unshielded_signal: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -226,6 +424,21 @@ def load_reference(path: Path) -> List[ReferenceRow]:
                 latitude_deg=float(record["latitude_deg"]),
                 altitude_km=float(record["altitude_km"]),
                 position_source=record["position_source"].strip(),
+                east_detector_id=(record.get("telemetry_head_east", "EAST").strip().upper()
+                                  or "EAST"),
+                west_detector_id=(record.get("telemetry_head_west", "WEST").strip().upper()
+                                  or "WEST"),
+                east_flux_background_subtracted=(
+                    float(record["east_flux_background_subtracted"])
+                    if record.get("east_flux_background_subtracted", "").strip() else None),
+                west_flux_background_subtracted=(
+                    float(record["west_flux_background_subtracted"])
+                    if record.get("west_flux_background_subtracted", "").strip() else None),
+                flux_product_policy=record.get("flux_product_policy", "LEGACY_UNRECORDED").strip() or "LEGACY_UNRECORDED",
+                east_flux_variable=record.get("east_flux_variable", "LEGACY_UNRECORDED").strip() or "LEGACY_UNRECORDED",
+                west_flux_variable=record.get("west_flux_variable", "LEGACY_UNRECORDED").strip() or "LEGACY_UNRECORDED",
+                east_flux_correction_state=record.get("east_flux_correction_state", "UNKNOWN").strip() or "UNKNOWN",
+                west_flux_correction_state=record.get("west_flux_correction_state", "UNKNOWN").strip() or "UNKNOWN",
             ))
     if not rows:
         raise ValueError("reference contains no valid rows: %s" % path)
@@ -284,6 +497,365 @@ def group_reference(rows: Sequence[ReferenceRow]) -> Dict[Tuple[datetime, str], 
     return dict(sorted(grouped.items()))
 
 
+def load_detector_response(path: Path, channels: Sequence[str]) -> List[ResponseInterval]:
+    """Load the factorized detector energy response used by the synthetic fold.
+
+    The production uncorrected-flux response contains the nominal P4/P5 primary bands
+    plus the documented GOES 8--15 secondary proton energy ranges.  Relative weights
+    are the published geometrical factors normalized by each channel's primary factor,
+    so only their within-channel ratios matter to the E/W calculation.  The separate
+    ``epead_response_C19_nominal.csv`` file remains available for corrected-flux or
+    controlled primary-only studies.
+
+    This is still an energy-only factorization: the published secondary factors are
+    integrated side/rear responses and do not provide a resolved angular response
+    matrix.  C19 therefore records this limitation explicitly in its README/result
+    provenance rather than pretending that the secondary geometry is known exactly.
+    """
+    rows: List[ResponseInterval] = []
+    with path.open(newline="") as stream:
+        reader = csv.DictReader(stream)
+        required = {"channel", "energy_min_mev", "energy_max_mev", "relative_response"}
+        missing = required.difference(reader.fieldnames or ())
+        if missing:
+            raise ValueError("detector response is missing columns: %s" % ", ".join(sorted(missing)))
+        for record in reader:
+            channel = record["channel"].strip().upper()
+            if channel not in channels:
+                continue
+            lo = float(record["energy_min_mev"]); hi = float(record["energy_max_mev"])
+            weight = float(record["relative_response"])
+            if not (0.0 < lo < hi and math.isfinite(weight) and weight >= 0.0):
+                raise ValueError("invalid detector-response row: %s" % record)
+            rows.append(ResponseInterval(
+                channel=channel, energy_min_mev=lo, energy_max_mev=hi,
+                relative_response=weight,
+                response_component=record.get("response_component", "UNSPECIFIED").strip() or "UNSPECIFIED",
+                source=record.get("source", str(path)).strip() or str(path)))
+    for channel in channels:
+        if not any(row.channel == channel for row in rows):
+            raise ValueError("detector response has no rows for %s" % channel)
+    return rows
+
+
+def response_value(intervals: Sequence[ResponseInterval], channel: str, energy_mev: float) -> float:
+    return sum(row.relative_response for row in intervals
+               if row.channel == channel and row.energy_min_mev <= energy_mev <= row.energy_max_mev)
+
+
+def load_orientation_records(path: Path) -> Dict[Tuple[datetime, str, str], OrientationRecord]:
+    """Read arbitrary per-head instrument look vectors.
+
+    Preferred CSV schema::
+
+      utc,spacecraft,detector,frame,
+      boresight_x,boresight_y,boresight_z,
+      aperture_north_x,aperture_north_y,aperture_north_z[,source]
+
+    ``detector`` is an opaque instrument-head identifier. C19 preferentially reads
+    the corresponding IDs from the reference's ``telemetry_head_east`` and
+    ``telemetry_head_west`` fields (for GOES-13/15 normally raw heads ``E``/``W``);
+    legacy references without those fields fall back to ``EAST``/``WEST``. The vectors
+    may point anywhere and need not be antipodal. ``frame`` must be SM or GSM.
+
+    For read compatibility only, the older one-row schema containing
+    ``east_boresight_*`` is accepted and expanded into antipodal EAST/WEST records.
+    New attitude products should use the preferred per-detector schema so yaw/attitude
+    changes are represented explicitly rather than inferred from a head name.
+    """
+    result: Dict[Tuple[datetime, str, str], OrientationRecord] = {}
+    with path.open(newline="") as stream:
+        reader = csv.DictReader(stream)
+        fields = set(reader.fieldnames or ())
+        common = {"utc", "spacecraft", "frame",
+                  "aperture_north_x", "aperture_north_y", "aperture_north_z"}
+        generic = common | {"detector", "boresight_x", "boresight_y", "boresight_z"}
+        legacy = common | {"east_boresight_x", "east_boresight_y", "east_boresight_z"}
+        if generic.issubset(fields):
+            schema = "GENERIC_PER_DETECTOR"
+        elif legacy.issubset(fields):
+            schema = "LEGACY_ANTIPODAL_EAST_WEST"
+        else:
+            raise ValueError(
+                "orientation file must contain the generic per-detector columns: %s" %
+                ", ".join(sorted(generic)))
+
+        for rec in reader:
+            epoch = parse_utc(rec["utc"])
+            spacecraft = rec["spacecraft"].strip().upper()
+            frame = rec["frame"].strip().upper()
+            if frame not in ("SM", "GSM"):
+                raise ValueError("orientation frame must be SM or GSM: %s" % rec)
+            north = tuple(float(rec[name]) for name in
+                          ("aperture_north_x", "aperture_north_y", "aperture_north_z"))
+            if norm(north) <= 0.0:
+                raise ValueError("orientation aperture-north vector must be non-zero: %s" % rec)
+            source = rec.get("source", str(path)).strip() or str(path)
+
+            if schema == "GENERIC_PER_DETECTOR":
+                detector = rec["detector"].strip().upper()
+                if not detector:
+                    raise ValueError("orientation detector name must not be empty: %s" % rec)
+                bore = tuple(float(rec[name]) for name in
+                             ("boresight_x", "boresight_y", "boresight_z"))
+                candidates = [(detector, bore)]
+            else:
+                east = tuple(float(rec[name]) for name in
+                             ("east_boresight_x", "east_boresight_y", "east_boresight_z"))
+                candidates = [("EAST", east), ("WEST", scale(east, -1.0))]
+
+            for detector, bore in candidates:
+                if norm(bore) <= 0.0:
+                    raise ValueError("orientation boresight must be non-zero: %s" % rec)
+                key = (epoch, spacecraft, detector)
+                if key in result:
+                    raise ValueError("duplicate orientation record for %s %s %s" %
+                                     (format_utc(epoch), spacecraft, detector))
+                result[key] = OrientationRecord(
+                    epoch, spacecraft, detector, frame, unit(bore), unit(north), source)
+    if not result:
+        raise ValueError("orientation file contains no records: %s" % path)
+    return result
+
+
+def orientation_for(
+        records: Mapping[Tuple[datetime, str, str], OrientationRecord],
+        epoch: datetime, spacecraft: str, detector: str,
+        ) -> Optional[OrientationRecord]:
+    """Return an exact per-head attitude record; C19 never time-interpolates attitude."""
+    return records.get((epoch, spacecraft.upper(), detector.upper()))
+
+
+def orientation_for_stream(
+        records: Mapping[Tuple[datetime, str, str], OrientationRecord],
+        epoch: datetime, spacecraft: str, detector_id: str, compatibility_label: str,
+        ) -> Optional[OrientationRecord]:
+    """Resolve one observational stream to a time-exact attitude record.
+
+    The actual instrument/telemetry head ID stored in the reference is preferred.
+    ``compatibility_label`` (EAST/WEST for the historical C19 observable) is tried only
+    for old attitude files that predate detector-ID provenance.  No direction is ever
+    inferred from either name; the returned record carries the explicit LOOK vector.
+    """
+    return (orientation_for(records, epoch, spacecraft, detector_id) or
+            orientation_for(records, epoch, spacecraft, compatibility_label))
+
+
+def build_access_energy_grid(intervals: Sequence[ResponseInterval], n_points: int) -> List[float]:
+    """Create the direct-access energy nodes spanning the full detector response.
+
+    Two details are intentional here.
+
+    1. The grid is built from *all positive response components*, not from the nominal
+       channel labels.  If the response file contains a documented high-energy tail,
+       the AMPS rigidity list automatically extends to that tail.  Thus particles above
+       the nominal P4/P5 ranges are not silently assigned zero weight merely because no
+       trajectory was requested there.
+
+    2. Response discontinuities are represented by their exact edge energy only.  The
+       previous P1 implementation launched extra trajectories at E*(1+/-1e-8) around
+       every edge so a trapezoidal rule would not smear the jump.  The current fold
+       integrates the piecewise response *analytically between access nodes*, splitting
+       an interval exactly at every response boundary.  The epsilon-bracketing
+       trajectories are therefore both unnecessary and numerically misleading.
+
+    ``n_points`` controls the logarithmic science grid.  Exact response edges are added
+    to it and de-duplicated.  Access transitions are handled separately by explicit
+    transition uncertainty in :func:`fold_aperture_direct_access`; increasing
+    ``n_points`` tightens that uncertainty instead of changing an implicit linear ramp.
+    """
+    if n_points < 4:
+        raise ValueError("direct-access energy grid needs at least four points")
+    positive = [row for row in intervals if row.relative_response > 0.0]
+    lo = min(row.energy_min_mev for row in positive)
+    hi = max(row.energy_max_mev for row in positive)
+    if not (0.0 < lo < hi):
+        raise ValueError("detector response has no positive energy span")
+    values = [lo * (hi / lo) ** (i / float(n_points - 1)) for i in range(n_points)]
+
+    for row in positive:
+        for edge in (row.energy_min_mev, row.energy_max_mev):
+            values.append(edge)
+
+    unique: List[float] = []
+    for value in sorted(values):
+        if not unique or not math.isclose(value, unique[-1], rel_tol=1.0e-12, abs_tol=1.0e-12):
+            unique.append(value)
+    return unique
+
+
+def integrate_power_law(spectrum: SpectrumEstimate, energy_lo_mev: float,
+                        energy_hi_mev: float) -> float:
+    """Integrate the current power-law SEP spectrum exactly over one energy interval.
+
+    C19's present spectrum representation is
+
+        J(E) = J0 * (E/E0)^(-gamma).
+
+    Exact integration removes another avoidable energy-grid error from the synthetic
+    detector fold.  The access function remains discrete; uncertainty in *where* a
+    binary access transition occurs is handled independently below rather than being
+    hidden inside a trapezoidal interpolation of 0/1 states.
+    """
+    a = float(energy_lo_mev); b = float(energy_hi_mev)
+    if not (0.0 < a < b):
+        return 0.0
+    gamma = float(spectrum.gamma)
+    scale_factor = float(spectrum.j0) * (float(spectrum.e0_mev) ** gamma)
+    if math.isclose(gamma, 1.0, rel_tol=0.0, abs_tol=1.0e-12):
+        return scale_factor * math.log(b / a)
+    exponent = 1.0 - gamma
+    return scale_factor * ((b ** exponent) - (a ** exponent)) / exponent
+
+
+def integrate_spectrum_response(
+        spectrum: SpectrumEstimate, intervals: Sequence[ResponseInterval], channel: str,
+        energy_lo_mev: float, energy_hi_mev: float) -> float:
+    """Integrate ``J(E)*G(E)`` exactly for the piecewise-constant response model.
+
+    Response components are allowed to overlap (for example the P5 primary band and a
+    penetrating-particle secondary response overlap near 80--82 MeV).  Summing each
+    component's clipped integral therefore reproduces ``response_value`` without
+    requiring artificial samples infinitesimally to either side of a response edge.
+    """
+    total = 0.0
+    for row in intervals:
+        if row.channel != channel or row.relative_response <= 0.0:
+            continue
+        a = max(float(energy_lo_mev), row.energy_min_mev)
+        b = min(float(energy_hi_mev), row.energy_max_mev)
+        if b > a:
+            total += row.relative_response * integrate_power_law(spectrum, a, b)
+    return total
+
+
+def _fit_power_law(points: Sequence[Tuple[float, float]], epoch: datetime,
+                   source: str, e0_mev: float = 50.0) -> SpectrumEstimate:
+    valid = [(float(e), float(j)) for e, j in points
+             if e > 0.0 and j > 0.0 and math.isfinite(e) and math.isfinite(j)]
+    if len(valid) < 2:
+        raise ValueError("at least two positive energy/flux points are required for a spectrum fit")
+    xs = [math.log(e) for e, _ in valid]; ys = [math.log(j) for _, j in valid]
+    xbar = statistics.mean(xs); ybar = statistics.mean(ys)
+    denominator = sum((x - xbar) ** 2 for x in xs)
+    if denominator <= 0.0:
+        raise ValueError("spectrum energies are not distinct")
+    slope = sum((x - xbar) * (y - ybar) for x, y in zip(xs, ys)) / denominator
+    gamma = -slope
+    if not math.isfinite(gamma) or gamma <= 0.0:
+        raise ValueError("measured spectrum fit produced non-positive gamma %.6g" % gamma)
+    intercept = ybar - slope * xbar
+    j0 = math.exp(intercept + slope * math.log(e0_mev))
+    return SpectrumEstimate(epoch, gamma, j0, e0_mev, source, len(valid))
+
+
+def build_spectrum_estimates(
+        rows: Sequence[ReferenceRow], manifest: Mapping[str, object],
+        source_mode: str, fixed_gamma: float, spectrum_file: Optional[Path],
+        ) -> Dict[datetime, SpectrumEstimate]:
+    """Build the P1.3 time-dependent event spectrum used by all detector heads.
+
+    OBSERVED_WEST fits the physical WEST background-subtracted P4/P5 flux at each
+    epoch.  WEST is used because it is usually the less shielded directional head,
+    not because C19 assumes it is perfectly unmodulated.  FILE is the preferred
+    option when an independent upstream spectrum is available.  FIXED is retained
+    only as an explicit legacy/sensitivity mode.
+    """
+    mode = source_mode.upper()
+    epochs = sorted({row.utc for row in rows})
+    if mode == "FIXED":
+        return {epoch: SpectrumEstimate(epoch, fixed_gamma, 1.0, 50.0,
+                                        "FIXED_LEGACY", 0) for epoch in epochs}
+    if mode == "FILE":
+        if spectrum_file is None:
+            raise ValueError("--spectrum-source FILE requires --spectrum-file")
+        result: Dict[datetime, SpectrumEstimate] = {}
+        with spectrum_file.open(newline="") as stream:
+            reader = csv.DictReader(stream)
+            for rec in reader:
+                epoch = parse_utc(rec["utc"])
+                gamma = float(rec["gamma"])
+                j0 = float(rec.get("j0", 1.0) or 1.0)
+                e0 = float(rec.get("e0_mev", 50.0) or 50.0)
+                if gamma <= 0.0 or j0 <= 0.0 or e0 <= 0.0:
+                    raise ValueError("invalid spectrum-file row: %s" % rec)
+                result[epoch] = SpectrumEstimate(epoch, gamma, j0, e0,
+                                                 "FILE:%s" % spectrum_file, 0)
+        missing = [epoch for epoch in epochs if epoch not in result]
+        if missing:
+            raise ValueError("spectrum file lacks %d selected epoch(s), first %s" %
+                             (len(missing), format_utc(missing[0])))
+        return result
+    if mode != "OBSERVED_WEST":
+        raise ValueError("unsupported spectrum source: %s" % source_mode)
+
+    # First collect the available physical-WEST channel points at every epoch.
+    points_by_epoch: Dict[datetime, List[Tuple[float, float]]] = {}
+    by_epoch: Dict[datetime, SpectrumEstimate] = {}
+    for epoch in epochs:
+        epoch_rows = [row for row in rows if row.utc == epoch]
+        points: List[Tuple[float, float]] = []
+        for channel in sorted({row.channel for row in epoch_rows}):
+            values = [row.west_flux_background_subtracted for row in epoch_rows
+                      if row.channel == channel and row.west_flux_background_subtracted is not None
+                      and row.west_flux_background_subtracted > 0.0]
+            if not values:
+                continue
+            config = manifest["channels"][channel]
+            e_eff = float(config.get("spectrum_effective_energy_mev",
+                                     math.sqrt(float(config["energy_min_mev"]) *
+                                               float(config["energy_max_mev"]))))
+            flux = math.exp(statistics.median([math.log(float(v)) for v in values]))
+            points.append((e_eff, flux))
+        points_by_epoch[epoch] = points
+        if len(points) >= 2:
+            by_epoch[epoch] = _fit_power_law(points, epoch, "OBSERVED_WEST")
+
+    if not by_epoch:
+        raise ValueError("OBSERVED_WEST found no epoch with two positive channel fluxes")
+
+    # Quality/background filtering can remove one of P4/P5 at an otherwise useful
+    # epoch.  Do not fall back silently to gamma=3.  Instead interpolate the *measured*
+    # gamma from neighboring epochs that have both channels, then normalize that slope
+    # with whatever WEST channel(s) remain at the target epoch.  This preserves P1.3's
+    # event-derived spectral shape while making sparse quality gaps explicit in source.
+    fitted_epochs = sorted(by_epoch)
+    for epoch in epochs:
+        if epoch in by_epoch:
+            continue
+        before = [t for t in fitted_epochs if t < epoch]
+        after = [t for t in fitted_epochs if t > epoch]
+        if before and after:
+            t0, t1 = before[-1], after[0]
+            f = (epoch - t0).total_seconds() / (t1 - t0).total_seconds()
+            gamma = by_epoch[t0].gamma + f * (by_epoch[t1].gamma - by_epoch[t0].gamma)
+            source = "OBSERVED_WEST_INTERPOLATED_GAMMA"
+        elif before:
+            gamma = by_epoch[before[-1]].gamma
+            source = "OBSERVED_WEST_NEAREST_GAMMA"
+        elif after:
+            gamma = by_epoch[after[0]].gamma
+            source = "OBSERVED_WEST_NEAREST_GAMMA"
+        else:  # unreachable because by_epoch is non-empty
+            raise ValueError("no measured spectral slope available")
+        points = points_by_epoch.get(epoch, [])
+        if points:
+            j0_values = [j * (e / 50.0) ** gamma for e, j in points]
+            j0 = math.exp(statistics.median([math.log(value) for value in j0_values]))
+        else:
+            nearest = min(fitted_epochs, key=lambda t: abs((t - epoch).total_seconds()))
+            j0 = by_epoch[nearest].j0
+            source += "_AND_NEAREST_NORMALIZATION"
+        by_epoch[epoch] = SpectrumEstimate(epoch, gamma, j0, 50.0, source, len(points))
+    return by_epoch
+
+
+def spectrum_intensity(spectrum: SpectrumEstimate, energy_mev: float) -> float:
+    if energy_mev <= 0.0:
+        return 0.0
+    return spectrum.j0 * (energy_mev / spectrum.e0_mev) ** (-spectrum.gamma)
+
+
 def kinetic_energy_mev_from_rigidity_gv(rigidity_gv: float) -> float:
     rest_mev = 938.27208816
     momentum = 1000.0 * rigidity_gv
@@ -312,8 +884,13 @@ def replace_directives(template_text: str, replacements: Mapping[str, str]) -> s
         if stripped and not stripped.startswith(("!", "#")):
             key = stripped.split(None, 1)[0].upper()
             if key in replacements:
-                indent = raw[:len(raw) - len(stripped)]
-                output.append("%s%-32s%s" % (indent, key, replacements[key]))
+                # ``__REMOVE__`` is used for optional companion directives such as
+                # CUTOFF_RIGIDITY_LIST_GV.  P0 and GRIDLESS runs should not acquire
+                # hundreds of P1 direct-access tasks merely because the common template
+                # contains the directive for the science GRIDDED path.
+                if replacements[key] != "__REMOVE__":
+                    indent = raw[:len(raw) - len(stripped)]
+                    output.append("%s%-32s%s" % (indent, key, replacements[key]))
                 remaining.remove(key)
                 continue
         output.append(raw)
@@ -337,6 +914,67 @@ def write_trajectory(path: Path, row: ReferenceRow) -> None:
         row.longitude_deg_east, row.altitude_km))
 
 
+def write_directional_aperture_file(
+        path: Path, orientation_model: str,
+        orientation_by_head: Mapping[str, OrientationRecord],
+        horizontal_half_angle_deg: float, vertical_half_angle_deg: float,
+        tilt_rad: float = 0.0, yaw_deg: float = 0.0, pitch_deg: float = 0.0,
+        ) -> None:
+    """Write the generic AMPS VECTOR_APERTURES selector for one spacecraft epoch.
+
+    The file carries physical detector LOOK vectors; AMPS independently converts its
+    particle-arrival direction to look direction before testing membership.  The
+    selection therefore has no EAST/WEST geometry hard-coded in the solver.
+
+    FILE attitude records are transformed into the SM directional-map frame at the
+    actual epoch before they are written.  This makes the generated file a complete,
+    auditable snapshot of the geometry AMPS used for pruning.  The same optional
+    yaw/pitch perturbation as the detector fold is applied here so pruning can never
+    discard a cell that the subsequent synthetic-observation fold needs.
+
+    SM_PROXY is represented through LOCAL_SM vector components solely as a backwards-
+    compatible approximation: x=radial, y=local east, z=local north.  Even in that
+    case AMPS sees ordinary vector apertures rather than a special east/west mode.
+    """
+    model = orientation_model.upper()
+    rows = []
+    if model == "FILE":
+        if not orientation_by_head:
+            raise ValueError("FILE orientation supplied no detector records while writing %s" % path)
+        # Write every actual head needed by this observation group. Mapping keys are
+        # opaque detector IDs (for example raw telemetry E/W); no physical direction
+        # is inferred from a name and no second head is generated by negation.
+        for detector in sorted(orientation_by_head):
+            rec = orientation_by_head[detector]
+            # FILE detector_basis does not use the supplied position except to form an
+            # unused radial vector, so a harmless unit dummy position is sufficient.
+            b, _h, v = detector_basis(
+                (1.0, 0.0, 0.0), detector, "FILE", rec, "SM", tilt_rad,
+                yaw_deg, pitch_deg)
+            rows.append((detector, "SM", b, v))
+    elif model == "SM_PROXY":
+        for detector, b0 in (("EAST", (0.0, 1.0, 0.0)),
+                             ("WEST", (0.0, -1.0, 0.0))):
+            # Historical proxy basis expressed in LOCAL_SM components.  The offset
+            # routine returns an orthonormal (b,h,v) triad; writing b and v lets the
+            # C++ selector reconstruct exactly the same horizontal axis via v x b.
+            b, _h, v = _apply_boresight_offsets(
+                b0, (1.0, 0.0, 0.0), (0.0, 0.0, 1.0), yaw_deg, pitch_deg)
+            rows.append((detector, "LOCAL_SM", b, v))
+    else:
+        raise ValueError("unsupported detector orientation model %s" % orientation_model)
+
+    lines = [
+        "# name frame bx by bz upx upy upz horizontal_half_angle_deg vertical_half_angle_deg",
+        "# boresight is detector LOOK direction; apertures may point anywhere and need not be antipodal",
+    ]
+    for name, frame, b, up in rows:
+        lines.append("%s %s %.17g %.17g %.17g %.17g %.17g %.17g %.12g %.12g" % (
+            name, frame, b[0], b[1], b[2], up[0], up[1], up[2],
+            horizontal_half_angle_deg, vertical_half_angle_deg))
+    path.write_text("\n".join(lines) + "\n")
+
+
 def resolved_dynamic_chunk(args: argparse.Namespace, solver: str) -> int:
     if args.dynamic_chunk > 0:
         return args.dynamic_chunk
@@ -349,9 +987,17 @@ def command_for(args: argparse.Namespace, amps: Path, solver: str) -> List[str]:
         "-mode", "gridless" if solver == "GRIDLESS" else "3d",
         "-i", "AMPS_PARAM_C19.in",
         "-mover", args.mover,
-        "-cutoff-search", "UPPER_SCAN",
+        # P0.1: production C19 now defaults to the existing three-state
+        # PENUMBRA_SCAN path.  The option remains configurable so P0.5 can run
+        # the explicit UPPER_SCAN/FORBIDDEN legacy baseline without editing code.
+        "-cutoff-search", args.cutoff_search,
         "-cutoff-upper-scan-n", str(args.cutoff_scan_n),
+        "-cutoff-dirmap-coverage",
+        ("VECTOR_APERTURES" if args.direction_coverage == "INSTRUMENT_APERTURES"
+         else "FULL_SPHERE"),
     ]
+    if args.direction_coverage == "INSTRUMENT_APERTURES":
+        command += ["-cutoff-dirmap-aperture-file", "C19_directional_apertures.dat"]
     chunk = resolved_dynamic_chunk(args, solver)
     if solver == "GRIDLESS":
         command += [
@@ -397,10 +1043,34 @@ def run_process(command: Sequence[str], cwd: Path, log_path: Path) -> int:
 
 
 def parse_directional_map(path: Path) -> DirectionMap:
+    """Parse legacy or P0-extended AMPS directional-map output.
+
+    P0.2 adds a long-form PENUMBRA_SCAN schema to the C19 directional map.  The
+    first four columns remain backward compatible with the historical map, while
+    the optional columns preserve cutoff-band topology, trace termination counts,
+    trace-budget maxima, and (for centered-dipole anchor runs) an analytic Störmer
+    directional cutoff.  Keeping all of those values in the map file means the
+    C19 postprocessor can diagnose *why* a direction is unresolved without reading
+    rank-specific logs or rerunning a trajectory.
+    """
     variables: List[str] = []
     x_km = y_km = z_km = float("nan")
     frame = "SM"
     cells: List[DirectionCell] = []
+
+    def optional_float(values: Sequence[float], index: Mapping[str, int], *names: str
+                       ) -> Optional[float]:
+        for name in names:
+            if name in index:
+                value = float(values[index[name]])
+                return value if math.isfinite(value) else None
+        return None
+
+    def optional_int(values: Sequence[float], index: Mapping[str, int], *names: str
+                     ) -> Optional[int]:
+        value = optional_float(values, index, *names)
+        return None if value is None else int(round(value))
+
     with path.open(errors="replace") as stream:
         for line_number, raw in enumerate(stream, start=1):
             text = raw.strip()
@@ -433,19 +1103,48 @@ def parse_directional_map(path: Path) -> DirectionMap:
                 if len(values) < 4:
                     continue
                 lon, lat, rc, energy = values[:4]
-            else:
-                index = {name: variables.index(name) for name in variables}
-                required = ("lon_deg", "lat_deg", "rc_gv", "emin_mev")
-                if not all(name in index for name in required):
-                    raise ValueError("%s lacks required directional-map variables" % path)
-                if len(values) != len(variables):
-                    raise ValueError("%s line %d has %d values for %d variables" %
-                                     (path, line_number, len(values), len(variables)))
-                lon = values[index["lon_deg"]]
-                lat = values[index["lat_deg"]]
-                rc = values[index["rc_gv"]]
-                energy = values[index["emin_mev"]]
-            cells.append(DirectionCell(lon, lat, rc, energy))
+                cells.append(DirectionCell(lon, lat, rc, energy))
+                continue
+
+            index = {name: variables.index(name) for name in variables}
+            required = ("lon_deg", "lat_deg", "rc_gv", "emin_mev")
+            if not all(name in index for name in required):
+                raise ValueError("%s lacks required directional-map variables" % path)
+            if len(values) != len(variables):
+                raise ValueError("%s line %d has %d values for %d variables" %
+                                 (path, line_number, len(values), len(variables)))
+
+            lon = values[index["lon_deg"]]
+            lat = values[index["lat_deg"]]
+            rc = values[index["rc_gv"]]
+            energy = values[index["emin_mev"]]
+            cells.append(DirectionCell(
+                lon, lat, rc, energy,
+                rc_lower_gv=optional_float(values,index,"rc_lower_gv"),
+                rc_effective_gv=optional_float(values,index,"rc_effective_gv"),
+                rc_upper_gv=optional_float(values,index,"rc_upper_gv"),
+                n_transitions=optional_int(values,index,"n_transitions"),
+                n_allowed_intervals=optional_int(values,index,"n_allowed_intervals"),
+                n_unresolved_samples=optional_int(values,index,"n_unresolved_samples","n_unresolved"),
+                lower_bracket_unresolved=optional_int(values,index,"lower_bracket_unresolved"),
+                upper_bracket_unresolved=optional_int(values,index,"upper_bracket_unresolved"),
+                lower_below_range=optional_int(values,index,"lower_below_range"),
+                lower_above_range=optional_int(values,index,"lower_above_range"),
+                upper_below_range=optional_int(values,index,"upper_below_range"),
+                upper_above_range=optional_int(values,index,"upper_above_range"),
+                n_trajectory_evaluations=optional_int(values,index,"n_trajectory_evaluations"),
+                n_outer_boundary_allowed=optional_int(values,index,"n_outer_boundary_allowed"),
+                n_inner_boundary_forbidden=optional_int(values,index,"n_inner_boundary_forbidden"),
+                n_magnetically_trapped_forbidden=optional_int(
+                    values,index,"n_magnetically_trapped_forbidden"),
+                n_time_limit=optional_int(values,index,"n_time_limit"),
+                n_step_limit=optional_int(values,index,"n_step_limit"),
+                n_distance_limit=optional_int(values,index,"n_distance_limit"),
+                max_trace_time_s=optional_float(values,index,"max_trace_time_s"),
+                max_trace_distance_re=optional_float(values,index,"max_trace_distance_re"),
+                max_trace_steps=optional_int(values,index,"max_trace_steps"),
+                rc_stormer_gv=optional_float(values,index,"rc_stormer_gv"),
+            ))
     if not cells:
         raise ValueError("no directional-map cells parsed from %s" % path)
     if not all(math.isfinite(value) for value in (x_km, y_km, z_km)):
@@ -467,6 +1166,77 @@ def locate_directional_map(run_dir: Path, solver: str) -> Path:
     if not matches:
         raise FileNotFoundError("directional-map output is missing: %s" % exact)
     return sorted(matches)[0]
+
+
+def locate_directional_access(run_dir: Path, solver: str) -> Optional[Path]:
+    """Locate P1.4 Mode3D A(R,Omega) companion output; GRIDLESS has no cube yet."""
+    if solver.upper() != "GRIDDED":
+        return None
+    exact = run_dir / "cutoff_3d_dir_access_loc_000000.dat"
+    return exact if exact.exists() else None
+
+
+def parse_directional_access(path: Path) -> DirectionalAccessCube:
+    """Parse the long-form Mode3D direct directional access cube."""
+    variables: List[str] = []
+    frame = "UNKNOWN"; x_km = y_km = z_km = float("nan")
+    samples: Dict[Tuple[float, float], List[AccessSample]] = {}
+    for raw in path.read_text(errors="replace").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.upper().startswith("VARIABLES"):
+            variables = re.findall(r'"([^"]+)"', line)
+            continue
+        if line.upper().startswith("ZONE"):
+            match = re.search(r'x_km=([-+0-9.eE]+)\s+y_km=([-+0-9.eE]+)\s+z_km=([-+0-9.eE]+)\s+frame=([^"\s]+)', line)
+            if match:
+                x_km, y_km, z_km = map(float, match.group(1, 2, 3)); frame = match.group(4)
+            continue
+        if line.startswith(("TITLE", "#", "!")):
+            continue
+        parts = line.replace(",", " ").split()
+        if not variables or len(parts) < len(variables):
+            continue
+        rec = dict(zip(variables, parts))
+        try:
+            lon = float(rec["lon_deg"]); lat = float(rec["lat_deg"])
+            rigidity = float(rec["rigidity_GV"]); energy = float(rec["energy_MeV"])
+            state = int(float(rec["access_state"]))
+        except (KeyError, ValueError):
+            continue
+        if state not in (0, 1, 2):
+            raise ValueError("invalid CutoffSampleState %s in %s" % (state, path))
+        key = (round(lon, 9), round(lat, 9))
+        samples.setdefault(key, []).append(AccessSample(energy, rigidity, state))
+    if not samples:
+        raise ValueError("no direct access samples parsed from %s" % path)
+    frozen = {key: tuple(sorted(value, key=lambda sample: sample.energy_mev))
+              for key, value in samples.items()}
+
+    # P1.4 completeness contract: every sky cell must carry the identical rigidity
+    # grid.  A missing MPI-reduced row or truncated output must not silently change
+    # the energy quadrature for only one aperture direction.  Compare both kinetic
+    # energy and rigidity because the C++ writer emits both and C19 later integrates
+    # in energy while provenance is expressed as the requested rigidity list.
+    first_key = next(iter(frozen))
+    reference_grid = frozen[first_key]
+    if len(reference_grid) < 2:
+        raise ValueError("direct access cube needs at least two energy samples per cell: %s" % path)
+    for key, grid in frozen.items():
+        if len(grid) != len(reference_grid):
+            raise ValueError(
+                "direct access cube has inconsistent energy-grid length at %s in %s" %
+                (key, path))
+        for expected, actual in zip(reference_grid, grid):
+            if not math.isclose(expected.energy_mev, actual.energy_mev,
+                                rel_tol=5.0e-11, abs_tol=1.0e-9) or not math.isclose(
+                                    expected.rigidity_gv, actual.rigidity_gv,
+                                    rel_tol=5.0e-11, abs_tol=1.0e-12):
+                raise ValueError(
+                    "direct access cube energy/rigidity grid differs between sky cells "
+                    "%s and %s in %s" % (first_key, key, path))
+    return DirectionalAccessCube(str(path), frame, x_km, y_km, z_km, frozen)
 
 
 def load_driver_tilts(
@@ -604,14 +1374,16 @@ def map_direction_to_detector_look(
     toward Earth.  Thus the map vector is the incoming particle-velocity
     direction.
 
-    GOES EPEAD EAST/WEST labels, by contrast, describe telescope *look*
-    directions.  A telescope looking toward +d receives an incoming particle
+    Instrument attitude vectors, by contrast, describe telescope *look*
+    directions.  (The current GOES reference still calls its two compatibility
+    streams EAST/WEST, but those names are not used to construct the vector.)
+    A telescope looking toward +d receives an incoming particle
     whose velocity is approximately -d.  Therefore the production conversion is
 
         detector_look = - AMPS_arrival_direction.
 
-    ``LEGACY_DIRECT_DIAGNOSTIC`` reproduces the old C19 behavior only so that an
-    east/west reversal can be diagnosed from the same AMPS map.  It is never used
+    ``LEGACY_DIRECT_DIAGNOSTIC`` reproduces the old C19 behavior only so that the
+    arrival/look reversal can be diagnosed from the same AMPS map.  It is never used
     for acceptance.
     """
     value = str(mapping).upper()
@@ -662,22 +1434,130 @@ def gsm_to_sm(vector: Tuple[float, float, float], tilt_rad: float) -> Tuple[floa
     return (cosine * x - sine * z, y, sine * x + cosine * z)
 
 
-def detector_basis(position_sm: Tuple[float, float, float], direction: str
-                   ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float], Tuple[float, float, float]]:
-    radial = unit(position_sm)
-    sm_north = (0.0, 0.0, 1.0)
-    east = cross(sm_north, radial)
-    if norm(east) < 1.0e-12:
-        east = (0.0, 1.0, 0.0)
-    east = unit(east)
-    boresight = east if direction == "EAST" else scale(east, -1.0)
-    # Aperture horizontal axis follows the local equatorial/radial direction;
-    # vertical axis follows SM north projected perpendicular to the boresight.
-    horizontal = radial
-    vertical = unit(cross(boresight, horizontal))
-    if dot(vertical, sm_north) < 0.0:
-        vertical = scale(vertical, -1.0)
-    return boresight, horizontal, vertical
+def sm_to_gsm(vector: Tuple[float, float, float], tilt_rad: float) -> Tuple[float, float, float]:
+    """Inverse of ``gsm_to_sm`` for P2.4 externally supplied attitude vectors."""
+    cosine = math.cos(tilt_rad)
+    sine = math.sin(tilt_rad)
+    x, y, z = vector
+    return (cosine * x + sine * z, y, -sine * x + cosine * z)
+
+
+def _transform_orientation_vector(
+        vector: Tuple[float, float, float], source_frame: str, target_frame: str,
+        tilt_rad: float,
+        ) -> Tuple[float, float, float]:
+    source = source_frame.upper(); target = target_frame.upper()
+    if source == target:
+        return unit(vector)
+    if source == "GSM" and target == "SM":
+        return unit(gsm_to_sm(vector, tilt_rad))
+    if source == "SM" and target == "GSM":
+        return unit(sm_to_gsm(vector, tilt_rad))
+    raise ValueError("unsupported orientation transform %s -> %s" % (source_frame, target_frame))
+
+
+def _apply_boresight_offsets(
+        boresight: Tuple[float, float, float],
+        horizontal: Tuple[float, float, float],
+        vertical: Tuple[float, float, float],
+        yaw_deg: float, pitch_deg: float,
+        ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float], Tuple[float, float, float]]:
+    """Apply small P2.4 pointing perturbations while keeping an orthonormal FOV basis.
+
+    ``yaw`` moves the boresight toward the aperture-horizontal axis and ``pitch``
+    moves it toward aperture north.  This is intentionally a local tangent-plane
+    perturbation, suitable for sensitivity studies of a few degrees.  It is not a
+    replacement for an authoritative attitude product, which is supplied through
+    ``--detector-orientation-source FILE``.
+    """
+    if abs(yaw_deg) < 1.0e-15 and abs(pitch_deg) < 1.0e-15:
+        return unit(boresight), unit(horizontal), unit(vertical)
+    b = unit(add_scaled(add_scaled(boresight, horizontal, math.tan(math.radians(yaw_deg))),
+                        vertical, math.tan(math.radians(pitch_deg))))
+    # Re-project the original horizontal direction into the new boresight plane.
+    h_proj = add_scaled(horizontal, b, -dot(horizontal, b))
+    if norm(h_proj) < 1.0e-12:
+        h_proj = cross(vertical, b)
+    h = unit(h_proj)
+    v = unit(cross(b, h))
+    if dot(v, vertical) < 0.0:
+        v = scale(v, -1.0)
+        h = scale(h, -1.0)
+    return b, h, v
+
+
+def detector_basis(
+        position_map: Tuple[float, float, float], direction: str,
+        orientation_model: str = "SM_PROXY",
+        orientation_record: Optional[OrientationRecord] = None,
+        map_frame: str = "SM", tilt_rad: float = 0.0,
+        yaw_deg: float = 0.0, pitch_deg: float = 0.0,
+        ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float], Tuple[float, float, float]]:
+    """Return the physical EPEAD boresight/aperture basis used by C19.
+
+    P2.4 keeps the historical ``SM_PROXY`` model for reproducibility but adds a
+    publication-grade ``FILE`` path.  FILE records carry one physical boresight and
+    aperture-north vector *per detector head and epoch*, derived externally from
+    spacecraft attitude/ephemeris.  EAST/WEST labels therefore do not imply geometric
+    east/west or antipodal vectors.
+
+    The proxy remains useful for regression because the May-2012 direction-sense test
+    already strongly constrains the 180-degree arrival/look convention.  P2.4 therefore
+    treats exact attitude as a geometry refinement and explicitly records which model
+    was used rather than silently changing the long-standing basis.
+    """
+    model = orientation_model.upper()
+    radial = unit(position_map)
+    if model == "FILE":
+        if orientation_record is None:
+            raise ValueError("FILE detector orientation requested without an attitude record")
+        # The compatibility stream name (for example physical "EAST") can be
+        # supplied by a differently named telemetry head (for example head "W").
+        # The caller has already selected the correct OrientationRecord using the
+        # reference's detector-ID mapping, so geometry comes from the record itself.
+        boresight = _transform_orientation_vector(
+            orientation_record.boresight, orientation_record.frame, map_frame, tilt_rad)
+        north = _transform_orientation_vector(
+            orientation_record.aperture_north, orientation_record.frame, map_frame, tilt_rad)
+        # Project physical aperture north perpendicular to the boresight; derive the
+        # equatorial axis from it.  Axis signs do not alter an elliptical aperture.
+        v_proj = add_scaled(north, boresight, -dot(north, boresight))
+        if norm(v_proj) < 1.0e-12:
+            raise ValueError("orientation aperture-north vector is parallel to boresight")
+        vertical = unit(v_proj)
+        horizontal = unit(cross(vertical, boresight))
+    elif model == "SM_PROXY":
+        # Historical C19 equatorial-east approximation.  It is deliberately preserved
+        # as a named model so P2.4 can quantify the effect of replacing it with an
+        # externally derived attitude basis.
+        proxy_north = (0.0, 0.0, 1.0)
+        east = cross(proxy_north, radial)
+        if norm(east) < 1.0e-12:
+            east = (0.0, 1.0, 0.0)
+        east = unit(east)
+        boresight = east if direction == "EAST" else scale(east, -1.0)
+        horizontal = radial
+        vertical = unit(cross(boresight, horizontal))
+        if dot(vertical, proxy_north) < 0.0:
+            vertical = scale(vertical, -1.0)
+    else:
+        raise ValueError("unsupported detector orientation model %s" % orientation_model)
+    return _apply_boresight_offsets(boresight, horizontal, vertical, yaw_deg, pitch_deg)
+
+
+def anisotropy_factor(
+        arrival_direction: Tuple[float, float, float], config: AnisotropyConfig,
+        ) -> float:
+    """Return the P2.5 angular source multiplier for one AMPS arrival direction."""
+    model = config.model.upper()
+    if model == "ISOTROPIC" or abs(config.amplitude) < 1.0e-15:
+        return 1.0
+    if model != "DIPOLE":
+        raise ValueError("unsupported anisotropy model %s" % config.model)
+    axis = spherical_direction(config.axis_lon_deg, config.axis_lat_deg)
+    value = 1.0 + config.amplitude * dot(unit(arrival_direction), axis)
+    # parse_args constrains |A|<1; the max protects against roundoff at the limit.
+    return max(0.0, value)
 
 
 def aperture_coordinates(
@@ -727,28 +1607,49 @@ def fold_aperture(
         north_south_half_angle: float,
         gamma: float,
         direction_mapping: str,
-        ) -> Tuple[Optional[float], int, int, List[Dict[str, object]]]:
-    """Fold one physical detector aperture through a directional cutoff map.
+        max_unresolved_fraction: float,
+        frozen_field_warning_seconds: float,
+        orientation_model: str = "SM_PROXY",
+        orientation_record: Optional[OrientationRecord] = None,
+        tilt_rad: float = 0.0,
+        orientation_yaw_deg: float = 0.0,
+        orientation_pitch_deg: float = 0.0,
+        anisotropy: AnisotropyConfig = AnisotropyConfig(),
+        ) -> ApertureFold:
+    """Fold the scalar effective-cutoff proxy over one physical detector aperture.
 
-    ``detector_basis`` constructs a physical telescope *look direction*.  AMPS
-    directional-map vectors are incoming particle arrival/velocity directions,
-    so production C19 reverses each map vector before testing aperture membership.
-    The old direct comparison is retained only as a diagnostic mapping.
+    P0.4 keeps unresolved cells in the physical solid-angle denominator and provides
+    lower/upper bounds.  P2.4 selects the instrument basis explicitly, while P2.5
+    adds the same bounded directional-source modulation used by the direct-access
+    fold.  The proxy still assumes a hard energy step at one effective cutoff, so it
+    remains a cross-solver/convergence diagnostic rather than the preferred P1 science
+    observable.
     """
     mapping = str(direction_mapping).upper()
     if mapping not in DIRECTION_MAPPINGS:
         raise ValueError("unsupported C19 direction mapping: %s" % direction_mapping)
 
-    boresight, horizontal, vertical = detector_basis(position_sm, detector_direction)
-    weighted_sum = 0.0
-    weight_sum = 0.0
+    boresight, horizontal, vertical = detector_basis(
+        position_sm, detector_direction, orientation_model, orientation_record,
+        direction_map.frame, tilt_rad, orientation_yaw_deg, orientation_pitch_deg)
+    denominator_energy = integrated_power_law(energy_min, energy_max, gamma)
+    if denominator_energy <= 0.0:
+        raise ValueError("invalid proxy channel energy integral")
+
+    resolved_transmission_sum = 0.0
+    resolved_weight = 0.0
+    unresolved_weight = 0.0
+    total_weight = 0.0
+    signal_lower_sum = signal_upper_sum = unshielded_signal_sum = 0.0
     n_cells = 0
     n_unresolved = 0
+    max_trace_time_s: Optional[float] = None
     diagnostic: List[Dict[str, object]] = []
+
     for cell in direction_map.cells:
-        direction = spherical_direction(cell.lon_deg, cell.lat_deg)
-        direction = map_direction_to_detector_look(direction, mapping)
-        coordinates = aperture_coordinates(direction, boresight, horizontal, vertical)
+        arrival_direction = spherical_direction(cell.lon_deg, cell.lat_deg)
+        look_direction = map_direction_to_detector_look(arrival_direction, mapping)
+        coordinates = aperture_coordinates(look_direction, boresight, horizontal, vertical)
         if coordinates is None:
             continue
         alpha_h, alpha_v = coordinates
@@ -756,33 +1657,341 @@ def fold_aperture(
                    + (alpha_v / north_south_half_angle) ** 2)
         if ellipse > 1.0 + 1.0e-12:
             continue
+
         n_cells += 1
+        weight = max(0.0, math.cos(math.radians(cell.lat_deg)))
+        angular_factor = anisotropy_factor(arrival_direction, anisotropy)
+        total_weight += weight
+        unshielded_signal_sum += weight * angular_factor * denominator_energy
+
         transmission = channel_transmission(
             cell.cutoff_energy_mev, energy_min, energy_max, gamma)
-        if transmission is None:
+        unresolved = transmission is None
+        if unresolved:
             n_unresolved += 1
-            diagnostic.append({
-                "lon_deg": cell.lon_deg, "lat_deg": cell.lat_deg,
-                "detector_direction": detector_direction,
-                "direction_mapping": mapping,
-                "inside_aperture": True, "transmission": None,
-                "cutoff_energy_mev": cell.cutoff_energy_mev,
-            })
-            continue
-        # Spherical cell area is proportional to cos(latitude).  A top-hat
-        # detector response then reduces to a solid-angle-weighted average.
-        weight = max(0.0, math.cos(math.radians(cell.lat_deg)))
-        weighted_sum += weight * transmission
-        weight_sum += weight
+            unresolved_weight += weight
+            # Unknown access spans the complete channel response for this cell.
+            signal_upper_sum += weight * angular_factor * denominator_energy
+        else:
+            t = float(transmission)
+            resolved_transmission_sum += weight * t
+            resolved_weight += weight
+            resolved_signal = weight * angular_factor * denominator_energy * t
+            signal_lower_sum += resolved_signal
+            signal_upper_sum += resolved_signal
+
+        if cell.max_trace_time_s is not None and math.isfinite(cell.max_trace_time_s):
+            max_trace_time_s = (cell.max_trace_time_s if max_trace_time_s is None
+                                else max(max_trace_time_s, cell.max_trace_time_s))
+
         diagnostic.append({
-            "lon_deg": cell.lon_deg, "lat_deg": cell.lat_deg,
+            "lon_deg": cell.lon_deg,
+            "lat_deg": cell.lat_deg,
             "detector_direction": detector_direction,
             "direction_mapping": mapping,
-            "inside_aperture": True, "transmission": transmission,
+            "inside_aperture": True,
+            "cell_solid_angle_weight": weight,
+            "unresolved_cell": unresolved,
+            "transmission": transmission,
             "cutoff_energy_mev": cell.cutoff_energy_mev,
+            "rc_gv": cell.rc_gv,
+            "rc_lower_gv": cell.rc_lower_gv,
+            "rc_effective_gv": cell.rc_effective_gv,
+            "rc_upper_gv": cell.rc_upper_gv,
+            "n_transitions": cell.n_transitions,
+            "n_allowed_intervals": cell.n_allowed_intervals,
+            "n_unresolved_samples": cell.n_unresolved_samples,
+            "lower_bracket_unresolved": cell.lower_bracket_unresolved,
+            "upper_bracket_unresolved": cell.upper_bracket_unresolved,
+            "lower_below_range": cell.lower_below_range,
+            "lower_above_range": cell.lower_above_range,
+            "upper_below_range": cell.upper_below_range,
+            "upper_above_range": cell.upper_above_range,
+            "n_trajectory_evaluations": cell.n_trajectory_evaluations,
+            "n_outer_boundary_allowed": cell.n_outer_boundary_allowed,
+            "n_inner_boundary_forbidden": cell.n_inner_boundary_forbidden,
+            "n_magnetically_trapped_forbidden": cell.n_magnetically_trapped_forbidden,
+            "n_time_limit": cell.n_time_limit,
+            "n_step_limit": cell.n_step_limit,
+            "n_distance_limit": cell.n_distance_limit,
+            "max_trace_time_s": cell.max_trace_time_s,
+            "max_trace_distance_re": cell.max_trace_distance_re,
+            "max_trace_steps": cell.max_trace_steps,
+            "rc_stormer_gv": cell.rc_stormer_gv,
+            "orientation_model": orientation_model.upper(),
+            "orientation_source": (orientation_record.source if orientation_record else "INTERNAL_SM_PROXY"),
+            "orientation_yaw_deg": orientation_yaw_deg,
+            "orientation_pitch_deg": orientation_pitch_deg,
+            "anisotropy_model": anisotropy.model.upper(),
+            "anisotropy_amplitude": anisotropy.amplitude,
+            "anisotropy_axis_lon_deg": anisotropy.axis_lon_deg,
+            "anisotropy_axis_lat_deg": anisotropy.axis_lat_deg,
+            "anisotropy_factor": angular_factor,
         })
-    value = weighted_sum / weight_sum if weight_sum > 0.0 else None
-    return value, n_cells, n_unresolved, diagnostic
+
+    if total_weight > 0.0:
+        unresolved_fraction = unresolved_weight / total_weight
+        minimum = resolved_transmission_sum / total_weight
+        maximum = (resolved_transmission_sum + unresolved_weight) / total_weight
+        signal_min = signal_lower_sum / total_weight
+        signal_max = signal_upper_sum / total_weight
+        unshielded_signal = unshielded_signal_sum / total_weight
+    else:
+        unresolved_fraction = 1.0
+        minimum = maximum = None
+        signal_min = signal_max = unshielded_signal = None
+
+    value: Optional[float] = None
+    signal_value: Optional[float] = None
+    if (total_weight > 0.0 and unresolved_fraction <= max_unresolved_fraction + 1.0e-14
+            and signal_min is not None and signal_max is not None):
+        signal_value = 0.5 * (signal_min + signal_max)
+        if unshielded_signal is not None and unshielded_signal > 0.0:
+            value = max(0.0, min(1.0, signal_value / unshielded_signal))
+
+    guard_triggered = bool(
+        max_trace_time_s is not None and frozen_field_warning_seconds > 0.0
+        and max_trace_time_s > frozen_field_warning_seconds + 1.0e-12)
+
+    return ApertureFold(
+        value=value, minimum=minimum, maximum=maximum,
+        n_cells=n_cells, n_unresolved=n_unresolved,
+        unresolved_weight_fraction=unresolved_fraction,
+        discrete_transition_weight_fraction=0.0,
+        undersampled_penumbra_cells=0,
+        max_trace_time_s=max_trace_time_s,
+        static_field_guardrail_triggered=guard_triggered,
+        diagnostic=tuple(diagnostic),
+        signal_value=signal_value, signal_min=signal_min, signal_max=signal_max,
+        unshielded_signal=unshielded_signal,
+    )
+
+
+def fold_aperture_direct_access(
+        direction_map: DirectionMap,
+        access_cube: DirectionalAccessCube,
+        position_sm: Tuple[float, float, float],
+        detector_direction: str,
+        channel: str,
+        response: Sequence[ResponseInterval],
+        spectrum: SpectrumEstimate,
+        equatorial_half_angle: float,
+        north_south_half_angle: float,
+        direction_mapping: str,
+        max_unresolved_fraction: float,
+        max_discrete_transition_fraction: float,
+        frozen_field_warning_seconds: float,
+        orientation_model: str = "SM_PROXY",
+        orientation_record: Optional[OrientationRecord] = None,
+        tilt_rad: float = 0.0,
+        orientation_yaw_deg: float = 0.0,
+        orientation_pitch_deg: float = 0.0,
+        anisotropy: AnisotropyConfig = AnisotropyConfig(),
+        ) -> ApertureFold:
+    """Fold discrete three-state ``A(E,Omega)`` without inventing a linear access ramp.
+
+    The original P1 direct-access implementation evaluated ``J(E)G(E)A(E)`` only at
+    the sampled energies and applied a trapezoidal rule.  For a binary access function
+    this implicitly turns a resolved transition such as ``FORBIDDEN -> ALLOWED`` into
+    a *linear* transmission ramp between the two checked rigidities.  The trajectory
+    solver never established such a ramp; it established only that the physical
+    transition lies somewhere inside that interval.
+
+    The current implementation treats every energy interval explicitly:
+
+    * ALLOWED/ALLOWED: the complete response-weighted interval is transmitted;
+    * FORBIDDEN/FORBIDDEN: none is transmitted;
+    * ALLOWED/FORBIDDEN or FORBIDDEN/ALLOWED: the transition location is unknown
+      inside the interval, so the interval contributes [0, full] to the rigorous
+      lower/upper signal bounds;
+    * any interval touching UNRESOLVED: likewise contributes [0, full], but is tracked
+      separately as trajectory-resolution uncertainty rather than rigidity-grid
+      discretization uncertainty.
+
+    ``J(E)G(E)`` itself is integrated exactly for the current power-law spectrum and
+    piecewise-constant detector response.  Therefore response edges need no epsilon
+    bracket trajectories and the remaining finite-grid uncertainty is visible in the
+    output instead of being hidden by numerical interpolation.
+
+    The central signal remains the midpoint of the lower/upper bounds, but it is used
+    quantitatively only when *both* unresolved-access and discrete-transition fractions
+    are within their configured tolerances.  Increasing ``--access-energy-points``
+    narrows the transition intervals and therefore provides a direct convergence test.
+    """
+    mapping = direction_mapping.upper()
+    boresight, horizontal, vertical = detector_basis(
+        position_sm, detector_direction, orientation_model, orientation_record,
+        direction_map.frame, tilt_rad, orientation_yaw_deg, orientation_pitch_deg)
+
+    total_weight = 0.0
+    unresolved_weight = 0.0
+    transition_weight = 0.0
+    lower_transmission_sum = upper_transmission_sum = 0.0
+    signal_lower_sum = signal_upper_sum = unshielded_signal_sum = 0.0
+    n_cells = n_unresolved = 0
+    undersampled_penumbra_cells = 0
+    max_trace_time_s: Optional[float] = None
+    diagnostics: List[Dict[str, object]] = []
+
+    map_lookup = {(round(cell.lon_deg, 9), round(cell.lat_deg, 9)): cell
+                  for cell in direction_map.cells}
+    for key, samples in access_cube.samples.items():
+        lon, lat = key
+        arrival = spherical_direction(lon, lat)
+        look = map_direction_to_detector_look(arrival, mapping)
+        coords = aperture_coordinates(look, boresight, horizontal, vertical)
+        if coords is None:
+            continue
+        alpha_h, alpha_v = coords
+        if ((alpha_h / equatorial_half_angle) ** 2 +
+                (alpha_v / north_south_half_angle) ** 2) > 1.0 + 1.0e-12:
+            continue
+
+        angular_factor = anisotropy_factor(arrival, anisotropy)
+        if len(samples) < 2:
+            continue
+
+        # Exact unshielded channel response over the sampled support.  The access grid
+        # is constructed from the union of all positive response components, so this is
+        # also an explicit check that the first/last requested rigidities cover the full
+        # configured detector-response support.
+        denom = integrate_spectrum_response(
+            spectrum, response, channel, samples[0].energy_mev, samples[-1].energy_mev)
+        if denom <= 0.0:
+            continue
+
+        allowed_min_int = 0.0
+        allowed_max_int = 0.0
+        unresolved_int = 0.0
+        transition_int = 0.0
+        direct_resolved_transitions = 0
+
+        for left, right in zip(samples[:-1], samples[1:]):
+            e0 = left.energy_mev
+            e1 = right.energy_mev
+            interval_int = integrate_spectrum_response(spectrum, response, channel, e0, e1)
+            if interval_int <= 0.0:
+                continue
+
+            if left.state == 2 or right.state == 2:
+                # A numerical safety-limit termination at either endpoint means C19
+                # cannot assign the interval to physical access or shielding.  Preserve
+                # the entire detector-weighted interval as unresolved uncertainty.
+                allowed_max_int += interval_int
+                unresolved_int += interval_int
+                continue
+
+            if left.state == right.state:
+                if left.state == 1:
+                    allowed_min_int += interval_int
+                    allowed_max_int += interval_int
+                # state==0 contributes zero to both bounds.
+                continue
+
+            # Resolved endpoints straddle a physical access transition.  We know only
+            # that its energy lies inside [e0,e1]; unlike the former trapezoid, do not
+            # manufacture fractional access.  The width of this contribution shrinks
+            # automatically as the explicit rigidity grid is refined.
+            direct_resolved_transitions += 1
+            allowed_max_int += interval_int
+            transition_int += interval_int
+
+        t_min = max(0.0, min(1.0, allowed_min_int / denom))
+        t_max = max(t_min, min(1.0, allowed_max_int / denom))
+        unresolved_energy_fraction = max(0.0, min(1.0, unresolved_int / denom))
+        transition_energy_fraction = max(0.0, min(1.0, transition_int / denom))
+
+        map_cell = map_lookup.get(key)
+        # The independently computed PENUMBRA_SCAN topology is a useful guard against a
+        # direct rigidity grid that is so coarse it does not even expose as many
+        # resolved state changes as the full cutoff scan.  We do not guess the missing
+        # transition locations here; instead we flag the cell so convergence diagnostics
+        # can require a finer direct-access grid.
+        undersampled_penumbra = False
+        if (map_cell is not None and map_cell.n_transitions is not None and
+                map_cell.n_transitions > direct_resolved_transitions):
+            # Only call it relevant when the penumbra overlaps the detector-response
+            # rigidity support.  This avoids flagging low/high-rigidity transitions that
+            # cannot contribute to the current channel.
+            r_lo = samples[0].rigidity_gv
+            r_hi = samples[-1].rigidity_gv
+            band_lo = (map_cell.rc_lower_gv if map_cell.rc_lower_gv is not None else r_lo)
+            band_hi = (map_cell.rc_upper_gv if map_cell.rc_upper_gv is not None else r_hi)
+            undersampled_penumbra = (band_hi >= r_lo and band_lo <= r_hi)
+        if undersampled_penumbra:
+            undersampled_penumbra_cells += 1
+
+        weight = max(0.0, math.cos(math.radians(lat)))
+        n_cells += 1
+        total_weight += weight
+        lower_transmission_sum += weight * t_min
+        upper_transmission_sum += weight * t_max
+        unresolved_weight += weight * unresolved_energy_fraction
+        transition_weight += weight * transition_energy_fraction
+
+        signal_lower_sum += weight * angular_factor * allowed_min_int
+        signal_upper_sum += weight * angular_factor * allowed_max_int
+        unshielded_signal_sum += weight * angular_factor * denom
+        if unresolved_energy_fraction > 0.0:
+            n_unresolved += 1
+
+        if map_cell and map_cell.max_trace_time_s is not None and math.isfinite(map_cell.max_trace_time_s):
+            max_trace_time_s = (map_cell.max_trace_time_s if max_trace_time_s is None
+                                else max(max_trace_time_s, map_cell.max_trace_time_s))
+        diagnostics.append({
+            "lon_deg": lon, "lat_deg": lat, "detector_direction": detector_direction,
+            "direction_mapping": mapping, "inside_aperture": True,
+            "cell_solid_angle_weight": weight, "access_product": "DIRECT_A_E_OMEGA",
+            "transmission_min": t_min, "transmission_max": t_max,
+            "unresolved_energy_response_fraction": unresolved_energy_fraction,
+            "discrete_transition_response_fraction": transition_energy_fraction,
+            "direct_resolved_transition_count": direct_resolved_transitions,
+            "penumbra_scan_transition_count": (map_cell.n_transitions if map_cell else None),
+            "undersampled_penumbra": undersampled_penumbra,
+            "spectrum_gamma": spectrum.gamma, "spectrum_source": spectrum.source,
+            "response_channel": channel,
+            "response_energy_min_mev": samples[0].energy_mev,
+            "response_energy_max_mev": samples[-1].energy_mev,
+            "orientation_model": orientation_model.upper(),
+            "orientation_source": (orientation_record.source if orientation_record else "INTERNAL_SM_PROXY"),
+            "orientation_yaw_deg": orientation_yaw_deg,
+            "orientation_pitch_deg": orientation_pitch_deg,
+            "anisotropy_model": anisotropy.model.upper(),
+            "anisotropy_amplitude": anisotropy.amplitude,
+            "anisotropy_axis_lon_deg": anisotropy.axis_lon_deg,
+            "anisotropy_axis_lat_deg": anisotropy.axis_lat_deg,
+            "anisotropy_factor": angular_factor,
+        })
+
+    if total_weight <= 0.0:
+        return ApertureFold(
+            None, None, None, 0, 0, 1.0, 1.0, 0, max_trace_time_s, False,
+            tuple(diagnostics), None, None, None, None)
+
+    unresolved_fraction = unresolved_weight / total_weight
+    transition_fraction = transition_weight / total_weight
+    minimum = lower_transmission_sum / total_weight
+    maximum = upper_transmission_sum / total_weight
+    signal_min = signal_lower_sum / total_weight
+    signal_max = signal_upper_sum / total_weight
+    unshielded_signal = unshielded_signal_sum / total_weight
+
+    signal_value: Optional[float] = None
+    value: Optional[float] = None
+    if (unresolved_fraction <= max_unresolved_fraction + 1.0e-14 and
+            transition_fraction <= max_discrete_transition_fraction + 1.0e-14):
+        signal_value = 0.5 * (signal_min + signal_max)
+        if unshielded_signal > 0.0:
+            value = max(0.0, min(1.0, signal_value / unshielded_signal))
+
+    guard = bool(max_trace_time_s is not None and frozen_field_warning_seconds > 0.0 and
+                 max_trace_time_s > frozen_field_warning_seconds + 1.0e-12)
+    return ApertureFold(
+        value, minimum, maximum, n_cells, n_unresolved,
+        unresolved_fraction, transition_fraction, undersampled_penumbra_cells,
+        max_trace_time_s, guard, tuple(diagnostics),
+        signal_value, signal_min, signal_max, unshielded_signal)
+
 
 def evaluate_reference_row(
         reference: ReferenceRow,
@@ -790,86 +1999,190 @@ def evaluate_reference_row(
         manifest: Mapping[str, object],
         solver: str,
         field_model: str,
-        spectral_index: float,
+        spectrum: SpectrumEstimate,
+        detector_response: Sequence[ResponseInterval],
+        access_cube: Optional[DirectionalAccessCube],
         tilt_rad: float,
         direction_mapping: str = PRODUCTION_DIRECTION_MAPPING,
+        cutoff_search_algorithm: str = "PENUMBRA_SCAN",
+        trace_limit_policy: str = "UNRESOLVED",
+        max_unresolved_aperture_fraction: float = 0.05,
+        max_discrete_transition_fraction: float = 0.05,
+        frozen_field_warning_seconds: float = 300.0,
+        orientation_model: str = "SM_PROXY",
+        orientation_records: Optional[Mapping[str, OrientationRecord]] = None,
+        orientation_yaw_deg: float = 0.0,
+        orientation_pitch_deg: float = 0.0,
+        anisotropy: AnisotropyConfig = AnisotropyConfig(),
         ) -> Tuple[ModelRow, List[Dict[str, object]]]:
-    """Evaluate one GOES reference row from a completed AMPS direction map.
+    """Evaluate one GOES reference row from a completed AMPS directional product.
 
-    Directional-map vectors are converted from AMPS incoming arrival/velocity
-    direction to EPEAD telescope look direction before the aperture fold.
+    P0 separates execution, trajectory resolution, and observational agreement.  P1
+    replaces the scalar-cutoff approximation with direct A(E,Omega) for GRIDDED.  P2
+    extends the same fold with an explicit detector-attitude model (P2.4) and a bounded
+    upstream anisotropy sensitivity model (P2.5).
 
-    Status classification intentionally separates *geometrical/aperture* failure
-    from a physically meaningful zero transmission.  Earlier C19 revisions put
-    ``west == 0`` in ``INSUFFICIENT_APERTURE_COVERAGE`` even when tens of valid
-    directional cells were present.  That hid the strongest model prediction
-    (complete blocking of one look direction) and removed it from sign metrics.
+    For direct access, the modeled E/W observable is the ratio of synthetic detector
+    *signals*, not merely the ratio of normalized transmissions.  Those two quantities
+    coincide for an isotropic source and symmetric unshielded apertures, but differ when
+    a directional source modulation is intentionally applied.  The transmission fields
+    remain in ModelRow because they are useful shielding diagnostics.
     """
     channel = manifest["channels"][reference.channel]
     position_gsm = (direction_map.x_km, direction_map.y_km, direction_map.z_km)
     if direction_map.frame.upper().startswith("SM"):
-        position_sm = gsm_to_sm(position_gsm, tilt_rad)
+        position_map = gsm_to_sm(position_gsm, tilt_rad)
     else:
-        # With a GSM fallback map, use the GSM position and axes consistently.
-        position_sm = position_gsm
+        position_map = position_gsm
+
+    # Resolve each observational stream through the actual instrument-head IDs stored
+    # in the reference. The historical EAST/WEST words identify numerator/denominator
+    # streams only; their geometry comes from the mapped telemetry-head attitude record.
+    orientation_by_head = {k.upper(): v for k, v in (orientation_records or {}).items()}
+    east_orientation = orientation_by_head.get(reference.east_detector_id.upper())
+    west_orientation = orientation_by_head.get(reference.west_detector_id.upper())
+    if orientation_model.upper() == "FILE" and (east_orientation is None or west_orientation is None):
+        raise ValueError(
+            "FILE detector orientation requires exact records for reference heads %s and %s "
+            "at %s %s" % (reference.east_detector_id, reference.west_detector_id,
+                            reference.spacecraft, format_utc(reference.utc)))
 
     mapping = str(direction_mapping).upper()
-    common = dict(
-        direction_map=direction_map,
-        position_sm=position_sm,
-        energy_min=reference.energy_min_mev,
-        energy_max=reference.energy_max_mev,
-        equatorial_half_angle=float(channel["equatorial_half_angle_deg"]),
-        north_south_half_angle=float(channel["north_south_half_angle_deg"]),
-        gamma=spectral_index,
-        direction_mapping=mapping,
-    )
-    east, n_east, unresolved_east, east_diag = fold_aperture(
-        detector_direction="EAST", **common)
-    west, n_west, unresolved_west, west_diag = fold_aperture(
-        detector_direction="WEST", **common)
+    if access_cube is not None:
+        # P1.4/P1.5 pairing guard: both companion files must come from the exact same
+        # location/frame/grid.  P2 convergence studies reuse this invariant heavily.
+        map_frame = direction_map.frame.upper()
+        access_frame = access_cube.frame.upper()
+        if map_frame != access_frame:
+            raise ValueError(
+                "directional map/access cube frame mismatch: %s vs %s" %
+                (direction_map.frame, access_cube.frame))
+        position_delta_km = math.sqrt(
+            (direction_map.x_km - access_cube.x_km) ** 2 +
+            (direction_map.y_km - access_cube.y_km) ** 2 +
+            (direction_map.z_km - access_cube.z_km) ** 2)
+        if position_delta_km > 1.0e-3:
+            raise ValueError(
+                "directional map/access cube position mismatch %.6g km" %
+                position_delta_km)
+        map_keys = {(round(cell.lon_deg, 9), round(cell.lat_deg, 9))
+                    for cell in direction_map.cells}
+        access_keys = set(access_cube.samples)
+        if map_keys != access_keys:
+            raise ValueError(
+                "directional map/access cube sky-grid mismatch: map=%d access=%d" %
+                (len(map_keys), len(access_keys)))
+
+        common_direct = dict(
+            direction_map=direction_map, access_cube=access_cube, position_sm=position_map,
+            channel=reference.channel, response=detector_response, spectrum=spectrum,
+            equatorial_half_angle=float(channel["equatorial_half_angle_deg"]),
+            north_south_half_angle=float(channel["north_south_half_angle_deg"]),
+            direction_mapping=mapping,
+            max_unresolved_fraction=max_unresolved_aperture_fraction,
+            max_discrete_transition_fraction=max_discrete_transition_fraction,
+            frozen_field_warning_seconds=frozen_field_warning_seconds,
+            orientation_model=orientation_model,
+            tilt_rad=tilt_rad, orientation_yaw_deg=orientation_yaw_deg,
+            orientation_pitch_deg=orientation_pitch_deg, anisotropy=anisotropy)
+        east_fold = fold_aperture_direct_access(
+            detector_direction="EAST", orientation_record=east_orientation, **common_direct)
+        west_fold = fold_aperture_direct_access(
+            detector_direction="WEST", orientation_record=west_orientation, **common_direct)
+        access_product = "DIRECT_A_E_OMEGA"
+    else:
+        # P2.2 uses this exact proxy on *both* GRIDDED and GRIDLESS so the cross-solver
+        # comparison is apples-to-apples and is not polluted by direct-vs-effective-
+        # cutoff observable differences.
+        common = dict(
+            direction_map=direction_map, position_sm=position_map,
+            energy_min=reference.energy_min_mev, energy_max=reference.energy_max_mev,
+            equatorial_half_angle=float(channel["equatorial_half_angle_deg"]),
+            north_south_half_angle=float(channel["north_south_half_angle_deg"]),
+            gamma=spectrum.gamma, direction_mapping=mapping,
+            max_unresolved_fraction=max_unresolved_aperture_fraction,
+            frozen_field_warning_seconds=frozen_field_warning_seconds,
+            orientation_model=orientation_model,
+            tilt_rad=tilt_rad, orientation_yaw_deg=orientation_yaw_deg,
+            orientation_pitch_deg=orientation_pitch_deg, anisotropy=anisotropy)
+        east_fold = fold_aperture(
+            detector_direction="EAST", orientation_record=east_orientation, **common)
+        west_fold = fold_aperture(
+            detector_direction="WEST", orientation_record=west_orientation, **common)
+        access_product = "EFFECTIVE_CUTOFF_PROXY"
+
+    east = east_fold.value
+    west = west_fold.value
+    # Signal fields include P2.5 directional source weighting.  Every P2-enabled fold
+    # now supplies them, but the fallback preserves compatibility with older synthetic
+    # unit objects and makes the intended hierarchy explicit.
+    east_observable = east_fold.signal_value if east_fold.signal_value is not None else east
+    west_observable = west_fold.signal_value if west_fold.signal_value is not None else west
+
+    n_east = east_fold.n_cells
+    n_west = west_fold.n_cells
+    unresolved_east = east_fold.n_unresolved
+    unresolved_west = west_fold.n_unresolved
     total_cells = n_east + n_west
     unresolved_fraction = ((unresolved_east + unresolved_west) / float(total_cells)
                            if total_cells else 1.0)
+
+    trace_times = [value for value in (east_fold.max_trace_time_s,
+                                       west_fold.max_trace_time_s)
+                   if value is not None and math.isfinite(value)]
+    max_direction_trace_time_s = max(trace_times) if trace_times else None
+    static_guard = (east_fold.static_field_guardrail_triggered
+                    or west_fold.static_field_guardrail_triggered)
 
     ratio: Optional[float]
     log_ratio: Optional[float]
     residual: Optional[float]
 
-    # Keep each failure/saturation mode distinct.  The order matters: no-cell and
-    # unresolved cases are numerical/coverage problems, while exact zero
-    # transmission with valid aperture cells is a legitimate model outcome.
+    # The order matters.  Coverage/resolution failures are diagnosed before exact
+    # zero-signal saturation, and the frozen-field guard remains independent of the
+    # physical access state.
     if n_east == 0:
         ratio = log_ratio = residual = None
         status = "NO_EAST_APERTURE_CELLS"
     elif n_west == 0:
         ratio = log_ratio = residual = None
         status = "NO_WEST_APERTURE_CELLS"
-    elif east is None:
+    elif east_fold.unresolved_weight_fraction > max_unresolved_aperture_fraction + 1.0e-14:
         ratio = log_ratio = residual = None
-        status = "UNRESOLVED_EAST_APERTURE"
-    elif west is None:
+        status = "EXCESSIVE_UNRESOLVED_EAST_APERTURE"
+    elif west_fold.unresolved_weight_fraction > max_unresolved_aperture_fraction + 1.0e-14:
         ratio = log_ratio = residual = None
-        status = "UNRESOLVED_WEST_APERTURE"
-    elif east < 0.0 or west < 0.0:
+        status = "EXCESSIVE_UNRESOLVED_WEST_APERTURE"
+    elif east_fold.discrete_transition_weight_fraction > max_discrete_transition_fraction + 1.0e-14:
+        ratio = log_ratio = residual = None
+        status = "EXCESSIVE_EAST_RIGIDITY_GRID_UNCERTAINTY"
+    elif west_fold.discrete_transition_weight_fraction > max_discrete_transition_fraction + 1.0e-14:
+        ratio = log_ratio = residual = None
+        status = "EXCESSIVE_WEST_RIGIDITY_GRID_UNCERTAINTY"
+    elif east_observable is None:
+        ratio = log_ratio = residual = None
+        status = "UNRESOLVED_EAST_SIGNAL"
+    elif west_observable is None:
+        ratio = log_ratio = residual = None
+        status = "UNRESOLVED_WEST_SIGNAL"
+    elif static_guard:
+        ratio = log_ratio = residual = None
+        status = "STATIC_FIELD_TRACE_GUARDRAIL"
+    elif east_observable < 0.0 or west_observable < 0.0:
         ratio = log_ratio = residual = None
         status = "NEGATIVE_TRANSMISSION"
-    elif east == 0.0 and west == 0.0:
+    elif east_observable == 0.0 and west_observable == 0.0:
         ratio = log_ratio = residual = None
         status = "ZERO_BOTH_TRANSMISSION"
-    elif east == 0.0:
-        # E/W = 0 and log10(E/W) -> -infinity.  Do not manufacture a finite
-        # epsilon for MAE/RMSE; retain the exact saturation state instead.
+    elif east_observable == 0.0:
         ratio = 0.0
         log_ratio = residual = None
         status = "ZERO_EAST_TRANSMISSION"
-    elif west == 0.0:
-        # E/W -> +infinity.  ``None`` keeps JSON standards-compliant while the
-        # status carries the physically meaningful positive-infinite sign.
+    elif west_observable == 0.0:
         ratio = log_ratio = residual = None
         status = "ZERO_WEST_TRANSMISSION"
     else:
-        ratio = east / west
+        ratio = east_observable / west_observable
         if ratio <= 0.0 or not math.isfinite(ratio):
             log_ratio = residual = None
             status = "NONFINITE_MODELED_RATIO"
@@ -877,6 +2190,11 @@ def evaluate_reference_row(
             log_ratio = math.log10(ratio)
             residual = log_ratio - reference.log10_east_west_ratio
             status = "VALID"
+
+    orientation_sources = sorted({
+        rec.source for rec in (east_orientation, west_orientation) if rec is not None})
+    orientation_source = (";".join(orientation_sources) if orientation_sources
+                          else "INTERNAL_SM_PROXY")
 
     row = ModelRow(
         utc=format_utc(reference.utc), spacecraft=reference.spacecraft,
@@ -887,18 +2205,60 @@ def evaluate_reference_row(
         modeled_log10_east_west_ratio=log_ratio,
         residual_log10=residual,
         east_transmission=east, west_transmission=west,
+        east_transmission_min=east_fold.minimum,
+        east_transmission_max=east_fold.maximum,
+        west_transmission_min=west_fold.minimum,
+        west_transmission_max=west_fold.maximum,
         n_east_cells=n_east, n_west_cells=n_west,
+        unresolved_east_fraction=east_fold.unresolved_weight_fraction,
+        unresolved_west_fraction=west_fold.unresolved_weight_fraction,
+        discrete_transition_east_fraction=east_fold.discrete_transition_weight_fraction,
+        discrete_transition_west_fraction=west_fold.discrete_transition_weight_fraction,
         unresolved_direction_fraction=unresolved_fraction,
-        spectral_index=spectral_index,
-        map_frame=direction_map.frame, map_path=direction_map.path,
+        max_direction_trace_time_s=max_direction_trace_time_s,
+        static_field_guardrail_triggered=static_guard,
+        cutoff_search_algorithm=str(cutoff_search_algorithm).upper(),
+        trace_limit_policy=str(trace_limit_policy).upper(),
+        spectral_index=spectrum.gamma,
+        spectrum_source=spectrum.source,
+        spectrum_j0=spectrum.j0,
+        spectrum_e0_mev=spectrum.e0_mev,
+        instrument_response_model=("%s:%s" % (
+            "DIRECT_PIECEWISE_RESPONSE" if access_cube is not None else "CUTOFF_PROXY",
+            ";".join(sorted({item.source for item in detector_response
+                             if item.channel == reference.channel})))),
+        access_product=access_product,
+        map_frame=direction_map.frame,
+        map_path=(access_cube.path if access_cube is not None else direction_map.path),
         direction_mapping=mapping,
+        orientation_model=orientation_model.upper(),
+        orientation_source=orientation_source,
+        orientation_yaw_deg=orientation_yaw_deg,
+        orientation_pitch_deg=orientation_pitch_deg,
+        anisotropy_model=anisotropy.model.upper(),
+        anisotropy_amplitude=anisotropy.amplitude,
+        anisotropy_axis_lon_deg=anisotropy.axis_lon_deg,
+        anisotropy_axis_lat_deg=anisotropy.axis_lat_deg,
         status=status,
     )
-    diagnostics = east_diag + west_diag
+    diagnostics = list(east_fold.diagnostic) + list(west_fold.diagnostic)
     for item in diagnostics:
         item.update({
             "utc": format_utc(reference.utc), "spacecraft": reference.spacecraft,
             "channel": reference.channel, "solver": solver, "field_model": field_model,
+            "cutoff_search_algorithm": str(cutoff_search_algorithm).upper(),
+            "trace_limit_policy": str(trace_limit_policy).upper(),
+            "spectrum_gamma": spectrum.gamma,
+            "spectrum_source": spectrum.source,
+            "access_product": access_product,
+            "orientation_model": orientation_model.upper(),
+            "orientation_source": orientation_source,
+            "orientation_yaw_deg": orientation_yaw_deg,
+            "orientation_pitch_deg": orientation_pitch_deg,
+            "anisotropy_model": anisotropy.model.upper(),
+            "anisotropy_amplitude": anisotropy.amplitude,
+            "anisotropy_axis_lon_deg": anisotropy.axis_lon_deg,
+            "anisotropy_axis_lat_deg": anisotropy.axis_lat_deg,
         })
     return row, diagnostics
 
@@ -1024,15 +2384,67 @@ def direction_sense_summary(rows: Sequence[Mapping[str, object]]) -> List[Dict[s
     return result
 
 
-def scientific_overall_passed(numerical_complete: bool,
-                              observational_passed: bool) -> bool:
-    """Return the scientific C19 PASS/FAIL state.
+def pipeline_validity(
+        rows: Sequence[ModelRow], run_failures: Sequence[Mapping[str, object]],
+        max_unresolved_fraction: float,
+        max_discrete_transition_fraction: float,
+        ) -> Dict[str, bool]:
+    """Return the P0.8 staged validity state for one C19 run.
 
-    This function is intentionally independent of ``--enforce-acceptance``.  The
-    command-line switch controls only the shell exit status; it must never turn a
-    failed observational validation into a scientifically labeled PASS.
+    Older C19 output used ``numerical_complete`` to mean only that AMPS returned
+    successfully and a model table existed.  That wording was misleading when a
+    directional map was dominated by trace-limit or otherwise unresolved cells.
+    P0.8 keeps *execution* separate from the physical/numerical resolvability of the
+    trajectory product and from the detector-aperture fold.
+
+    ``trajectory_resolution_passed`` is deliberately independent of observational
+    agreement.  Exact zero transmission is not a trajectory failure; unresolved
+    solid angle and the frozen-field long-trace guardrail are.
     """
-    return bool(numerical_complete and observational_passed)
+    execution_complete = (not run_failures and bool(rows))
+    trajectory_resolution_passed = bool(execution_complete and all(
+        row.unresolved_east_fraction <= max_unresolved_fraction + 1.0e-14
+        and row.unresolved_west_fraction <= max_unresolved_fraction + 1.0e-14
+        and not row.static_field_guardrail_triggered
+        for row in rows))
+
+    invalid_fold_prefixes = (
+        "NO_EAST_APERTURE_CELLS", "NO_WEST_APERTURE_CELLS",
+        "EXCESSIVE_UNRESOLVED_", "UNRESOLVED_",
+        "EXCESSIVE_EAST_RIGIDITY_GRID_UNCERTAINTY",
+        "EXCESSIVE_WEST_RIGIDITY_GRID_UNCERTAINTY",
+        "STATIC_FIELD_TRACE_GUARDRAIL", "NEGATIVE_TRANSMISSION",
+        "NONFINITE_MODELED_RATIO",
+    )
+    instrument_fold_valid = bool(trajectory_resolution_passed and all(
+        row.n_east_cells > 0 and row.n_west_cells > 0
+        and row.discrete_transition_east_fraction <= max_discrete_transition_fraction + 1.0e-14
+        and row.discrete_transition_west_fraction <= max_discrete_transition_fraction + 1.0e-14
+        and row.east_transmission_min is not None
+        and row.east_transmission_max is not None
+        and row.west_transmission_min is not None
+        and row.west_transmission_max is not None
+        and not any(row.status.startswith(prefix) for prefix in invalid_fold_prefixes)
+        for row in rows))
+
+    return {
+        "execution_complete": execution_complete,
+        "trajectory_resolution_passed": trajectory_resolution_passed,
+        "instrument_fold_valid": instrument_fold_valid,
+        # Deprecated compatibility alias.  Unlike the historical value this now
+        # requires trajectory resolution, so callers cannot confuse successful
+        # process launch with a numerically resolved cutoff product.
+        "numerical_complete": bool(execution_complete and trajectory_resolution_passed),
+    }
+
+
+def scientific_overall_passed(execution_complete: bool,
+                              trajectory_resolution_passed: bool,
+                              instrument_fold_valid: bool,
+                              observational_passed: bool) -> bool:
+    """Return the scientific C19 PASS/FAIL state using the P0.8 validity gates."""
+    return bool(execution_complete and trajectory_resolution_passed
+                and instrument_fold_valid and observational_passed)
 
 
 def write_dict_rows(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
@@ -1306,15 +2718,29 @@ def render_case_input(
         "CUTOFF_EMIN": "%.12g" % args.cutoff_emin_mev,
         "CUTOFF_EMAX": "%.12g" % args.cutoff_emax_mev,
         "CUTOFF_NENERGY": str(args.cutoff_scan_n),
+        "CUTOFF_SEARCH_ALGORITHM": args.cutoff_search,
         "CUTOFF_UPPER_SCAN_N": str(args.cutoff_scan_n),
+        "CUTOFF_TRACE_LIMIT_POLICY": args.trace_limit_policy,
         "CUTOFF_MAX_TRAJ_TIME": "%.12g" % args.max_trace_time,
         "DIRMAP_LON_RES": "%.12g" % args.dir_lon_res_deg,
         "DIRMAP_LAT_RES": "%.12g" % args.dir_lat_res_deg,
+        # Directional work coverage is written into every rendered AMPS deck so a
+        # saved run directory remains self-contained.  VECTOR_APERTURES reads the
+        # actual per-epoch detector look vectors generated beside the deck; FULL_SPHERE
+        # preserves the complete sky as a validation alternative.
+        "DIRMAP_COVERAGE": ("VECTOR_APERTURES"
+                            if args.direction_coverage == "INSTRUMENT_APERTURES"
+                            else "FULL_SPHERE"),
+        "DIRMAP_APERTURE_FILE": ("C19_directional_apertures.dat"
+                                 if args.direction_coverage == "INSTRUMENT_APERTURES"
+                                 else "__REMOVE__"),
         "FIELD_MODEL": field_model,
         "EPOCH": format_utc(reference.utc, suffix_z=False),
         "DRIVER_FILE": str(driver.resolve()),
-        "SPEC_GAMMA": "%.12g" % args.spectral_index,
+        "SPEC_GAMMA": "%.12g" % float(getattr(args, "case_spectral_index", args.spectral_index)),
+        "CUTOFF_RIGIDITY_LIST_GV": (getattr(args, "case_rigidity_list_gv", "") or "__REMOVE__"),
         "DT_TRACE": "%.12g" % args.dt_trace,
+        "MAX_STEPS": str(args.max_steps),
         "MAX_TRACE_TIME": "%.12g" % args.max_trace_time,
         "MAX_TRACE_DISTANCE": "%.12g" % args.max_trace_distance_re,
     }
@@ -1334,8 +2760,28 @@ def render_case_input(
             "MODE3D_MPI_DYNAMIC_CHUNK": str(resolved_dynamic_chunk(args, solver)),
             "MODE3D_THREADS": str(args.nt),
         })
-    render_template(template, run_dir / "AMPS_PARAM_C19.in", replacements)
+    rendered_path = run_dir / "AMPS_PARAM_C19.in"
+    render_template(template, rendered_path, replacements)
+    if str(field_model).upper() == "DIPOLE":
+        # P0.9 is an independent analytic-field anchor.  Do not load the May-2012
+        # Tsyganenko driver merely because the general C19 template contains a
+        # DRIVER_FILE line; DIPOLE_MOMENT/DIPOLE_TILT define the complete field.
+        # Removing the directive also prevents an irrelevant "unknown model" driver
+        # validation warning from obscuring the anchor output.
+        text = rendered_path.read_text()
+        text = re.sub(r"^\s*DRIVER_FILE\s+.*(?:\n|$)", "", text, flags=re.MULTILINE)
+        rendered_path.write_text(text)
     write_trajectory(run_dir / "C19_trajectory.txt", reference)
+
+
+
+def clone_namespace(args: argparse.Namespace, **updates: object) -> argparse.Namespace:
+    """Return a shallow argparse.Namespace copy with selected fields replaced."""
+    values = dict(vars(args))
+    values.update(updates)
+    return argparse.Namespace(**values)
+
+
 
 
 def self_test() -> int:
@@ -1387,7 +2833,12 @@ def self_test() -> int:
 
         template_args = argparse.Namespace(
             cutoff_emin_mev=0.5, cutoff_emax_mev=500.0, cutoff_scan_n=20,
-            max_trace_time=300.0, dir_lon_res_deg=15.0, dir_lat_res_deg=15.0,
+            cutoff_search="PENUMBRA_SCAN", trace_limit_policy="UNRESOLVED",
+            max_trace_time=300.0, max_steps=500000,
+            dir_lon_res_deg=15.0, dir_lat_res_deg=15.0,
+            direction_coverage="INSTRUMENT_APERTURES",
+            direction_aperture_horizontal_half_angle_deg=30.0,
+            direction_aperture_vertical_half_angle_deg=60.0,
             spectral_index=3.0,
             dt_trace=0.25, max_trace_distance_re=400.0, scheduler="STATIC",
             dynamic_chunk=1, nt=2, mode3d_mesh_res_earth_re=0.1,
@@ -1402,28 +2853,52 @@ def self_test() -> int:
             rendered = (run_dir / "AMPS_PARAM_C19.in").read_text()
             if re.search(r"__[A-Z0-9_]+__", rendered):
                 raise AssertionError("%s input retained a macro placeholder" % solver)
-            required_values = (
-                "FIELD_MODEL                     T05",
-                "EPOCH                           2012-05-17T06:00:00",
-                "CUTOFF_UPPER_SCAN_N             20",
-                "DIRMAP_LON_RES                  15",
-                "DIRMAP_LAT_RES                  15",
-            )
-            for expected in required_values:
-                if expected not in rendered:
+            required_values = {
+                "FIELD_MODEL": "T05",
+                "EPOCH": "2012-05-17T06:00:00",
+                "CUTOFF_SEARCH_ALGORITHM": "PENUMBRA_SCAN",
+                "CUTOFF_TRACE_LIMIT_POLICY": "UNRESOLVED",
+                "CUTOFF_UPPER_SCAN_N": "20",
+                "DIRMAP_LON_RES": "15",
+                "DIRMAP_LAT_RES": "15",
+                "DIRMAP_COVERAGE": "VECTOR_APERTURES",
+                "DIRMAP_APERTURE_FILE": "C19_directional_apertures.dat",
+            }
+            for key, value in required_values.items():
+                if not re.search(r"^%s\s+%s\s*$" % (re.escape(key), re.escape(value)),
+                                 rendered, re.MULTILINE):
                     raise AssertionError(
-                        "%s named-directive rendering missed %r" % (solver, expected))
+                        "%s named-directive rendering missed %s=%s" %
+                        (solver, key, value))
+
+        test_spectrum = SpectrumEstimate(reference.utc, 3.0, 1.0, 50.0,
+                                         "SELF_TEST_FIXED", 0)
+        test_response = load_detector_response(DEFAULT_RESPONSE, ["P4", "P5"])
+
+        # Response-grid regression.  The production uncorrected-flux response extends
+        # through the documented P5 secondary response at 190 MeV.  Exact response
+        # edges must be present, but epsilon-bracketing trajectories are intentionally
+        # absent because J(E)G(E) is now integrated piecewise-exactly between nodes.
+        response_grid = build_access_energy_grid(test_response, 16)
+        for edge in (15.0, 38.0, 40.0, 80.0, 82.0, 110.0, 115.0, 150.0, 190.0):
+            if not any(math.isclose(value, edge, rel_tol=0.0, abs_tol=1.0e-10)
+                       for value in response_grid):
+                raise AssertionError("detector-response edge %.1f is absent" % edge)
+        if not math.isclose(response_grid[-1], 190.0, rel_tol=0.0, abs_tol=1.0e-10):
+            raise AssertionError("extended detector response did not extend access grid to 190 MeV")
 
         # Direction-mapping regression.  The synthetic map follows the AMPS
         # production definition: map vectors are incoming particle arrival
         # directions.  The production conversion to telescope look direction must
         # yield E/W < 1; reproducing the legacy direct comparison must flip it.
         model, diagnostics = evaluate_reference_row(
-            reference, direction_map, manifest, "GRIDLESS", "T05", 3.0, 0.0,
-            PRODUCTION_DIRECTION_MAPPING)
+            reference, direction_map, manifest, "GRIDLESS", "T05",
+            test_spectrum, test_response, None, 0.0,
+            PRODUCTION_DIRECTION_MAPPING, "PENUMBRA_SCAN", "UNRESOLVED", 0.05, 0.05, 300.0)
         reversed_model, _ = evaluate_reference_row(
-            reference, direction_map, manifest, "GRIDLESS", "T05", 3.0, 0.0,
-            LEGACY_DIRECTION_MAPPING)
+            reference, direction_map, manifest, "GRIDLESS", "T05",
+            test_spectrum, test_response, None, 0.0,
+            LEGACY_DIRECTION_MAPPING, "PENUMBRA_SCAN", "UNRESOLVED", 0.05, 0.05, 300.0)
         if model.status != "VALID" or model.modeled_east_west_ratio is None:
             raise AssertionError("synthetic map did not produce a valid model row")
         if not (model.modeled_east_west_ratio < 1.0):
@@ -1445,7 +2920,8 @@ def self_test() -> int:
                                      direction_map.x_km, direction_map.y_km,
                                      direction_map.z_km, saturated_cells)
         saturated_model, _ = evaluate_reference_row(
-            reference, saturated_map, manifest, "GRIDLESS", "T05", 3.0, 0.0,
+            reference, saturated_map, manifest, "GRIDLESS", "T05",
+            test_spectrum, test_response, None, 0.0,
             PRODUCTION_DIRECTION_MAPPING)
         if saturated_model.status != "ZERO_WEST_TRANSMISSION":
             raise AssertionError("zero west transmission was misclassified: %s" %
@@ -1459,13 +2935,77 @@ def self_test() -> int:
         if saturation_metrics[0].n_sign_evaluable != 1:
             raise AssertionError("saturated result was omitted from sign metric")
 
+        # P1.4/P1.5 direct-access regression.  Build a tiny synthetic cube whose
+        # EAST-look aperture is mostly forbidden and WEST-look aperture is allowed.
+        # This validates the parser, three-state energy fold, and explicit response
+        # without requiring an AMPS executable.
+        access_path = root / "cutoff_3d_dir_access_loc_000000.dat"
+        access_lines = [
+            'TITLE="synthetic direct access"',
+            'VARIABLES="lon_deg","lat_deg","rigidity_GV","energy_MeV","access_state","allowed","unresolved"',
+            'ZONE T="loc=0 x_km=42164 y_km=0 z_km=0 frame=SM" I=12 F=POINT',
+        ]
+        # Production arrival->look reversal maps arrival lon 270 to physical EAST
+        # in this synthetic geometry.  Block that sector at the low energy only.
+        for lon in (90.0, 270.0):
+            for energy in (15.0, 25.0, 40.0, 82.0, 100.0, 150.0):
+                state = 0 if lon == 270.0 and energy <= 40.0 else 1
+                access_lines.append("%g 0 %g %g %d %d 0" %
+                                    (lon, rigidity_gv_from_kinetic_energy_mev(energy),
+                                     energy, state, 1 if state == 1 else 0))
+        access_path.write_text("\n".join(access_lines) + "\n")
+        access_cube = parse_directional_access(access_path)
+        direct_fold = fold_aperture_direct_access(
+            direction_map, access_cube,
+            (direction_map.x_km, direction_map.y_km, direction_map.z_km),
+            "EAST", "P4", test_response, test_spectrum,
+            25.0, 45.0, PRODUCTION_DIRECTION_MAPPING, 0.10, 1.0, 300.0)
+        if direct_fold.minimum is None or direct_fold.maximum is None:
+            raise AssertionError("P1 direct-access self-test produced no fold")
+        if direct_fold.discrete_transition_weight_fraction <= 0.0:
+            raise AssertionError("resolved 0/1 access transition was not exposed as grid uncertainty")
+
         # PASS/FAIL policy regression: a numerically complete run with failed
         # observational gates must remain a scientific FAIL even when a caller
         # later chooses not to enforce that failure as a nonzero shell exit code.
-        if scientific_overall_passed(True, False):
+        if scientific_overall_passed(True, True, True, False):
             raise AssertionError("observational FAIL was incorrectly promoted to overall PASS")
-        if not scientific_overall_passed(True, True):
+        if scientific_overall_passed(True, False, True, True):
+            raise AssertionError("trajectory-resolution FAIL was incorrectly promoted to overall PASS")
+        if not scientific_overall_passed(True, True, True, True):
             raise AssertionError("complete passing validation did not produce overall PASS")
+
+        # P0.2/P0.4 regression: parse an extended map and prove that unresolved
+        # solid angle remains in the aperture denominator instead of being silently
+        # renormalized away.
+        extended_path = root / "extended_penumbra.dat"
+        extended_path.write_text(
+            'TITLE="P0 extended map"\n'
+            'VARIABLES="lon_deg","lat_deg","Rc_GV","Emin_MeV",'
+            '"Rc_lower_GV","Rc_effective_GV","Rc_upper_GV",'
+            '"n_transitions","n_allowed_intervals","n_unresolved_samples",'
+            '"lower_bracket_unresolved","upper_bracket_unresolved",'
+            '"lower_below_range","lower_above_range","upper_below_range","upper_above_range",'
+            '"n_trajectory_evaluations","n_outer_boundary_allowed",'
+            '"n_inner_boundary_forbidden","n_magnetically_trapped_forbidden",'
+            '"n_time_limit","n_step_limit","n_distance_limit",'
+            '"max_trace_time_s","max_trace_distance_Re","max_trace_steps","Rc_stormer_GV"\n'
+            'ZONE T="loc=0 x_km=42157 y_km=0 z_km=0 frame=SM" I=2 J=1 F=POINT\n'
+            '270 0 -1 -1 -1 -1 -1 0 0 4 1 1 0 0 0 0 20 5 2 1 3 4 5 120 400 500000 0.30\n'
+            '90 0 0.1 5 0.05 0.1 0.15 1 1 0 0 0 0 0 0 0 20 18 1 0 0 0 0 10 20 20000 0.10\n')
+        extended = parse_directional_map(extended_path)
+        if (extended.cells[0].n_distance_limit != 5
+                or extended.cells[0].rc_effective_gv != -1.0
+                or extended.cells[0].n_unresolved_samples != 4):
+            raise AssertionError("extended PENUMBRA_SCAN diagnostics were not parsed")
+        # The unresolved cell must make a strict (zero-tolerance) aperture invalid.
+        test_fold = fold_aperture(
+            extended, (42157.0, 0.0, 0.0), "EAST", 15.0, 40.0,
+            90.0, 90.0, 3.0, PRODUCTION_DIRECTION_MAPPING, 0.0, 300.0)
+        if test_fold.unresolved_weight_fraction <= 0.0 or test_fold.value is not None:
+            raise AssertionError("unresolved aperture cells were silently renormalized")
+        if test_fold.minimum is None or test_fold.maximum is None or test_fold.maximum < test_fold.minimum:
+            raise AssertionError("unresolved aperture transmission bounds are invalid")
 
         rows = [model, reversed_model]
         plots = make_comparison_plots(rows, root)
@@ -1482,6 +3022,7 @@ def self_test() -> int:
             raise AssertionError(
                 "self-test did not generate new C19 comparison diagnostics: %s" %
                 sorted(expected_plot_names.difference(generated_plot_names)))
+
         csv_path = root / "C19_model.csv"
         write_dict_rows(csv_path, [asdict(model)])
         if not csv_path.exists():
@@ -1515,23 +3056,81 @@ Examples:
     parser.add_argument("--models", default="T96,T05")
     parser.add_argument("--event-manifest", default=str(DEFAULT_MANIFEST))
     parser.add_argument("--reference", default=str(DEFAULT_REFERENCE))
-    parser.add_argument("--driver", help="AMPS-format five-minute T96/T05/TS05 event driver")
+    parser.add_argument("--driver", default=str(DEFAULT_DRIVER),
+                        help="AMPS-format five-minute T96/T05/TS05 event driver; default is the committed C19 May-2012 driver")
     parser.add_argument("--spectral-index", type=float, default=3.0,
-                        help="incident J(E) proportional to E^-gamma; default gamma=3")
-    parser.add_argument("--dir-lon-res-deg", type=float, default=10.0)
-    parser.add_argument("--dir-lat-res-deg", type=float, default=10.0)
+                        help="legacy/fallback fixed gamma; default spectrum source is OBSERVED_WEST")
+    parser.add_argument("--spectrum-source", choices=("OBSERVED_WEST", "FILE", "FIXED"),
+                        default="OBSERVED_WEST",
+                        help="incident spectrum: measured physical-WEST P4/P5 fit (default), explicit CSV, or fixed gamma")
+    parser.add_argument("--spectrum-file",
+                        help="CSV for --spectrum-source FILE with utc,gamma[,j0,e0_mev]")
+    parser.add_argument("--detector-response", default=str(DEFAULT_RESPONSE),
+                        help="piecewise EPEAD response CSV used by the current detector fold")
+    parser.add_argument("--access-energy-points", type=int, default=48,
+                        help=("number of log-spaced Mode3D A(E,Omega) energy nodes; exact detector-response edges are added "
+                              "without epsilon-bracketing trajectories"))
+    parser.add_argument("--require-real-ephemeris", action="store_true",
+                        help="reject selected reference rows using nominal-slot positions; recommended for publication science runs")
+    # P2.1 is now part of the production configuration.  The runner uses the
+    # finest grid from the former convergence ladder by default; users may
+    # still change resolution explicitly for a new numerical study.
+    parser.add_argument("--dir-lon-res-deg", type=float, default=2.5)
+    parser.add_argument("--dir-lat-res-deg", type=float, default=2.5)
+    parser.add_argument(
+        "--direction-coverage", choices=("INSTRUMENT_APERTURES", "FULL_SPHERE"),
+        default="INSTRUMENT_APERTURES",
+        help=("angular trajectories to calculate: only the union of the actual "
+              "instrument look-direction apertures for each epoch (default) or the "
+              "historical complete directional sphere"))
+    parser.add_argument(
+        "--direction-aperture-horizontal-half-angle-deg", type=float, default=30.0,
+        help=("horizontal half-angle used only to prune work; 30 deg covers the "
+              "largest P5 EPEAD FOV and therefore also P4"))
+    parser.add_argument(
+        "--direction-aperture-vertical-half-angle-deg", type=float, default=60.0,
+        help=("vertical half-angle used only to prune work; 60 deg covers the "
+              "largest P5 EPEAD FOV and therefore also P4"))
     parser.add_argument("--cutoff-emin-mev", type=float, default=0.5)
     parser.add_argument("--cutoff-emax-mev", type=float, default=500.0)
     parser.add_argument("--cutoff-scan-n", type=int, default=120)
     parser.add_argument("--dt-trace", type=float, default=0.25)
+    parser.add_argument("--max-steps", type=int, default=500000)
     parser.add_argument("--max-trace-time", type=float, default=300.0)
     parser.add_argument("--max-trace-distance-re", type=float, default=400.0)
+    parser.add_argument("--max-unresolved-aperture-fraction", type=float, default=0.05,
+                        help="maximum unresolved solid-angle fraction allowed separately in each detector-head aperture fold")
+    parser.add_argument(
+        "--max-discrete-transition-fraction", type=float, default=0.05,
+        help=("maximum detector-response-weighted fraction lying in sampled rigidity intervals whose resolved endpoint "
+              "access states differ; exceeding this means the direct rigidity grid is too coarse for a quantitative fold"))
+    parser.add_argument("--frozen-field-warning-seconds", type=float, default=300.0,
+                        help="static-field guardrail; a directional scan reporting a longer individual trace is excluded from quantitative E/W")
+    # Current detector-orientation controls.  These were introduced during P2.4
+    # but are now ordinary production inputs rather than a separate P2 mode.
+    parser.add_argument("--detector-orientation-source", choices=("SM_PROXY", "FILE"), default="SM_PROXY",
+                        help="detector basis: historical SM proxy or exact per-epoch vectors from CSV")
+    parser.add_argument("--detector-orientation-file",
+                        help=("CSV with one physical boresight/aperture-north vector per actual detector head and epoch in SM/GSM; "
+                              "head IDs are matched to telemetry_head_east/west provenance when available"))
+    parser.add_argument("--orientation-yaw-deg", type=float, default=0.0,
+                        help="optional detector yaw perturbation for sensitivity studies")
+    parser.add_argument("--orientation-pitch-deg", type=float, default=0.0,
+                        help="optional detector pitch perturbation for sensitivity studies")
+    parser.add_argument("--anisotropy-model", choices=("ISOTROPIC", "DIPOLE"), default="ISOTROPIC",
+                        help="upstream directional model; DIPOLE uses 1+A*u.Omega in the AMPS arrival frame")
+    parser.add_argument("--anisotropy-amplitude", type=float, default=0.0,
+                        help="dipole anisotropy amplitude; must satisfy |A|<1")
+    parser.add_argument("--anisotropy-axis-lon-deg", type=float, default=0.0,
+                        help="dipole axis longitude in the directional-map frame")
+    parser.add_argument("--anisotropy-axis-lat-deg", type=float, default=0.0,
+                        help="dipole axis latitude in the directional-map frame")
     parser.add_argument("--mover", default="RK4")
     parser.add_argument("--scheduler", choices=("STATIC", "BLOCK_CYCLIC", "DYNAMIC"),
                         default="DYNAMIC")
     parser.add_argument("--dynamic-chunk", type=int, default=32)
-    parser.add_argument("--mode3d-mesh-res-earth-re", type=float, default=0.05)
-    parser.add_argument("--mode3d-mesh-res-boundary-re", type=float, default=2.0)
+    parser.add_argument("--mode3d-mesh-res-earth-re", type=float, default=0.025)
+    parser.add_argument("--mode3d-mesh-res-boundary-re", type=float, default=1.0)
     parser.add_argument("--mode3d-mesh-coarsening", choices=("LINEAR", "LOG", "POWER"),
                         default="LINEAR")
     parser.add_argument("--mode3d-mesh-exponent", type=float, default=1.0)
@@ -1567,10 +3166,40 @@ Examples:
         parser.error("--time-step-minutes must be >= 0")
     if args.dir_lon_res_deg <= 0.0 or args.dir_lat_res_deg <= 0.0:
         parser.error("directional-map resolutions must be positive")
+    if not (0.0 < args.direction_aperture_horizontal_half_angle_deg <= 90.0):
+        parser.error("--direction-aperture-horizontal-half-angle-deg must be in (0,90]")
+    if not (0.0 < args.direction_aperture_vertical_half_angle_deg <= 90.0):
+        parser.error("--direction-aperture-vertical-half-angle-deg must be in (0,90]")
     if args.cutoff_scan_n < 2:
         parser.error("--cutoff-scan-n must be >= 2")
+    if args.max_steps < 1:
+        parser.error("--max-steps must be >= 1")
+    if args.max_trace_time <= 0.0 or args.max_trace_distance_re <= 0.0:
+        parser.error("trace time and distance limits must be positive")
+    if not (0.0 <= args.max_unresolved_aperture_fraction <= 1.0):
+        parser.error("--max-unresolved-aperture-fraction must be in [0,1]")
+    if not (0.0 <= args.max_discrete_transition_fraction <= 1.0):
+        parser.error("--max-discrete-transition-fraction must be in [0,1]")
+    if args.frozen_field_warning_seconds < 0.0:
+        parser.error("--frozen-field-warning-seconds must be >= 0")
+    if not (-1.0 < args.anisotropy_amplitude < 1.0):
+        parser.error("--anisotropy-amplitude must satisfy |A| < 1")
+    if not (-90.0 <= args.anisotropy_axis_lat_deg <= 90.0):
+        parser.error("--anisotropy-axis-lat-deg must be in [-90,90]")
+    if args.detector_orientation_source == "FILE" and not args.detector_orientation_file:
+        parser.error("--detector-orientation-source FILE requires --detector-orientation-file")
     if args.spectral_index <= 0.0:
         parser.error("--spectral-index must be positive")
+    if args.access_energy_points < 4:
+        parser.error("--access-energy-points must be >= 4")
+
+    # Single-mode production contract.  These values encode the trajectory/folding
+    # fixes that were validated during P0/P1 and are no longer exposed as switches
+    # back to historical behavior.  Keeping them on the Namespace lets the existing
+    # input renderer and provenance tables record the exact settings normally.
+    args.cutoff_search = "PENUMBRA_SCAN"
+    args.trace_limit_policy = "UNRESOLVED"
+    args.response_fold = "AUTO"
     return args
 
 
@@ -1614,6 +3243,108 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("C19A input validation failed: %s" % exc, file=sys.stderr)
         return 2
     manifest = json.loads(manifest_path.read_text())
+    try:
+        response_path = Path(args.detector_response).expanduser().resolve()
+        detector_response = load_detector_response(response_path, args.channel_list)
+        response_has_secondary = any(
+            "SECONDARY" in row.response_component.upper() for row in detector_response)
+        # Match the response model to the observational product as explicitly as the
+        # available provenance permits.  The committed May-2012 reference policy is
+        # UNCORRECTED, for which omitting the documented high-energy P4/P5 secondary
+        # response would bias the synthetic signal low.  Conversely, a corrected NOAA
+        # product has already attempted to remove those counts; using the extended
+        # uncorrected response with such a product would double-count the correction.
+        correction_states = {
+            state.upper() for row in reference
+            for state in (row.east_flux_correction_state, row.west_flux_correction_state)
+            if state and state.upper() not in ("UNKNOWN", "LEGACY_UNRECORDED")
+        }
+        if correction_states and correction_states == {"CORRECTED"} and response_has_secondary:
+            print(
+                "C19A WARNING: corrected GOES flux is being compared with a detector "
+                "response containing SECONDARY components; use the primary-only response "
+                "unless this is a deliberate sensitivity run.", file=sys.stderr)
+        if correction_states and "UNCORRECTED" in correction_states and not response_has_secondary:
+            print(
+                "C19A WARNING: uncorrected GOES flux is being compared with a primary-only "
+                "detector response; high-energy side/rear proton response is omitted.",
+                file=sys.stderr)
+        spectrum_file = (Path(args.spectrum_file).expanduser().resolve()
+                         if args.spectrum_file else None)
+        spectra = build_spectrum_estimates(
+            reference_all, manifest, args.spectrum_source, args.spectral_index, spectrum_file)
+        access_energies = build_access_energy_grid(detector_response, args.access_energy_points)
+        access_rigidities = [rigidity_gv_from_kinetic_energy_mev(value) for value in access_energies]
+        # Detector orientation controls both optimized AMPS angular coverage and the
+        # later detector fold; upstream anisotropy affects the fold only. Load/validate
+        # these inputs before any AMPS launch so a missing attitude row cannot waste an
+        # expensive direct-access calculation or prune the wrong sky cells.
+        orientation_records: Dict[Tuple[datetime, str, str], OrientationRecord] = {}
+        orientation_path: Optional[Path] = None
+        if args.detector_orientation_file:
+            orientation_path = Path(args.detector_orientation_file).expanduser().resolve()
+            orientation_records = load_orientation_records(orientation_path)
+        if args.detector_orientation_source == "FILE":
+            missing_orientation = sorted({
+                (row.utc, row.spacecraft, detector_id.upper())
+                for row in reference
+                for detector_id, compatibility_label in (
+                    (row.east_detector_id, "EAST"),
+                    (row.west_detector_id, "WEST"),
+                )
+                if orientation_for_stream(
+                    orientation_records, row.utc, row.spacecraft,
+                    detector_id, compatibility_label) is None
+            })
+            if missing_orientation:
+                epoch0, sc0, detector0 = missing_orientation[0]
+                raise ValueError(
+                    "FILE detector orientation lacks %d selected per-head records; first %s %s %s" %
+                    (len(missing_orientation), format_utc(epoch0), sc0, detector0))
+        production_anisotropy = AnisotropyConfig(
+            args.anisotropy_model, args.anisotropy_amplitude,
+            args.anisotropy_axis_lon_deg, args.anisotropy_axis_lat_deg)
+        real_ephemeris_rows = [
+            row for row in reference
+            if row.position_source.startswith("NOAA_ONE_MINUTE_EPHEMERIS")
+        ]
+        real_ephemeris_fraction = len(real_ephemeris_rows) / float(len(reference))
+        exact_flux_provenance_rows = [
+            row for row in reference
+            if row.flux_product_policy != "LEGACY_UNRECORDED"
+            and row.east_flux_variable != "LEGACY_UNRECORDED"
+            and row.west_flux_variable != "LEGACY_UNRECORDED"
+        ]
+        exact_flux_provenance_fraction = (
+            len(exact_flux_provenance_rows) / float(len(reference))
+        )
+        if args.require_real_ephemeris and len(real_ephemeris_rows) != len(reference):
+            bad = [row for row in reference
+                   if not row.position_source.startswith("NOAA_ONE_MINUTE_EPHEMERIS")]
+            raise ValueError(
+                "--require-real-ephemeris selected but %d row(s) use %s; "
+                "rebuild the reference with NOAA ephemeris" %
+                (len(bad), bad[0].position_source))
+        # P1.1/P1.2 deliberately keep legacy committed references readable for
+        # regression/P0 work, but a normal science run must not make that legacy
+        # provenance invisible.  Emit an explicit warning and carry the fractions
+        # into C19_result.json; --require-real-ephemeris promotes the ephemeris
+        # warning to a hard input error.
+        if exact_flux_provenance_fraction < 1.0 - 1.0e-14:
+            print(
+                "C19A WARNING: %.1f%% of selected reference rows lack exact "
+                "NOAA flux-variable provenance; regenerate the reference for science use." %
+                (100.0 * (1.0 - exact_flux_provenance_fraction)),
+                file=sys.stderr)
+        if real_ephemeris_fraction < 1.0 - 1.0e-14:
+            print(
+                "C19A WARNING: %.1f%% of selected reference rows do not use "
+                "NOAA one-minute ephemeris; use --require-real-ephemeris for science runs." %
+                (100.0 * (1.0 - real_ephemeris_fraction)),
+                file=sys.stderr)
+    except Exception as exc:
+        print("C19A science-input validation failed: %s" % exc, file=sys.stderr)
+        return 2
     grouped = group_reference(reference)
     solvers = ("GRIDLESS", "GRIDDED") if args.solver == "BOTH" else (args.solver,)
 
@@ -1625,6 +3356,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("--skip-run requested but output root does not exist: %s" % output_root,
               file=sys.stderr)
         return 2
+
+    # There is intentionally no P0/P1/P2 alternate execution branch here.
+    # All validated fixes feed the single production loop below, which always
+    # reaches the standard comparison-plot generation block after analysis.
 
     commands: List[Dict[str, object]] = []
     model_rows: List[ModelRow] = []
@@ -1647,15 +3382,70 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 representative = reference_group[0]
                 run_dir = (output_root / solver.lower() / field_model.lower()
                            / spacecraft.lower() / timestamp_token(epoch))
+                spectrum = spectra[epoch]
+                direct_requested = (args.response_fold == "DIRECT" or
+                                    (args.response_fold == "AUTO" and solver == "GRIDDED"))
+                rigidity_text = ",".join("%.12g" % value for value in access_rigidities) \
+                    if direct_requested and solver == "GRIDDED" else ""
+                case_args = clone_namespace(
+                    args, case_spectral_index=spectrum.gamma,
+                    case_rigidity_list_gv=rigidity_text)
+                # Resolve the actual instrument heads that supplied the selected
+                # observational streams. Compatibility labels are used only when an
+                # old attitude file lacks telemetry-head IDs.
+                required_detector_streams = {}
+                for ref in reference_group:
+                    required_detector_streams[ref.east_detector_id.upper()] = "EAST"
+                    required_detector_streams[ref.west_detector_id.upper()] = "WEST"
+                required_detector_ids = sorted(required_detector_streams)
+                orientation_by_head = {
+                    detector: orientation_for_stream(
+                        orientation_records, epoch, spacecraft, detector,
+                        required_detector_streams[detector])
+                    for detector in required_detector_ids
+                }
                 if not args.skip_run:
                     run_dir.mkdir(parents=True, exist_ok=True)
-                    render_case_input(args, template, run_dir, representative,
+                    if args.direction_coverage == "INSTRUMENT_APERTURES":
+                        write_directional_aperture_file(
+                            run_dir / "C19_directional_apertures.dat",
+                            args.detector_orientation_source,
+                            {k: v for k, v in orientation_by_head.items() if v is not None},
+                            args.direction_aperture_horizontal_half_angle_deg,
+                            args.direction_aperture_vertical_half_angle_deg,
+                            interpolate_tilt(driver_tilts, epoch),
+                            args.orientation_yaw_deg, args.orientation_pitch_deg)
+                    render_case_input(case_args, template, run_dir, representative,
                                       solver, field_model, driver_path)
-                command = command_for(args, amps, solver)
+                command = command_for(case_args, amps, solver)
                 command_record = {
                     "solver": solver, "field_model": field_model,
                     "spacecraft": spacecraft, "utc": format_utc(epoch),
                     "cwd": str(run_dir), "command": command,
+                    # P1 provenance belongs next to the exact executable command so
+                    # a run can be reconstructed without inferring spectral/response
+                    # choices from a later aggregate table.
+                    "spectrum_source": spectrum.source,
+                    "spectrum_gamma": spectrum.gamma,
+                    "response_fold_mode": args.response_fold,
+                    "direction_coverage": args.direction_coverage,
+                    "direction_aperture_horizontal_half_angle_deg": args.direction_aperture_horizontal_half_angle_deg,
+                    "direction_aperture_vertical_half_angle_deg": args.direction_aperture_vertical_half_angle_deg,
+                    "n_direct_access_rigidities": (len(access_rigidities)
+                                                   if direct_requested and solver == "GRIDDED"
+                                                   else 0),
+                    # Detector orientation controls both VECTOR_APERTURES pruning and
+                    # the synthetic detector fold; anisotropy affects the fold only.
+                    # Record both beside the executable command for reproducibility.
+                    "detector_orientation_source": args.detector_orientation_source,
+                    "detector_ids": required_detector_ids,
+                    "detector_orientation_file": (str(orientation_path) if orientation_path else None),
+                    "orientation_yaw_deg": args.orientation_yaw_deg,
+                    "orientation_pitch_deg": args.orientation_pitch_deg,
+                    "anisotropy_model": production_anisotropy.model,
+                    "anisotropy_amplitude": production_anisotropy.amplitude,
+                    "anisotropy_axis_lon_deg": production_anisotropy.axis_lon_deg,
+                    "anisotropy_axis_lat_deg": production_anisotropy.axis_lat_deg,
                 }
                 commands.append(command_record)
                 if args.dry_run:
@@ -1671,17 +3461,70 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 try:
                     map_path = locate_directional_map(run_dir, solver)
                     direction_map = parse_directional_map(map_path)
+                    access_cube: Optional[DirectionalAccessCube] = None
+                    direct_path = locate_directional_access(run_dir, solver)
+                    direct_requested = (args.response_fold == "DIRECT" or
+                                        (args.response_fold == "AUTO" and solver == "GRIDDED"))
+                    if direct_requested:
+                        if direct_path is None:
+                            raise FileNotFoundError(
+                                "direct A(E,Omega) output is required but missing in %s" % run_dir)
+                        access_cube = parse_directional_access(direct_path)
+                        # The C++ output is self-consistent by parser contract; also
+                        # prove that it is the *requested* P1.5 quadrature rather than
+                        # a stale direct-access file left by a different response grid.
+                        cube_grid = next(iter(access_cube.samples.values()))
+                        if len(cube_grid) != len(access_energies) or any(
+                                not math.isclose(sample.energy_mev, expected,
+                                                 rel_tol=2.0e-10, abs_tol=2.0e-8)
+                                for sample, expected in zip(cube_grid, access_energies)):
+                            raise ValueError(
+                                "direct access cube energy grid does not match "
+                                "the requested detector-response grid in %s" % direct_path)
                     tilt = interpolate_tilt(driver_tilts, epoch)
+                    spectrum = spectra[epoch]
+                    # Re-resolve the same actual head IDs for post-processing. This
+                    # intentionally uses the same fallback rule as the pre-run aperture
+                    # file so pruning and detector folding cannot disagree on geometry.
+                    required_detector_streams = {}
+                    for ref in reference_group:
+                        required_detector_streams[ref.east_detector_id.upper()] = "EAST"
+                        required_detector_streams[ref.west_detector_id.upper()] = "WEST"
+                    required_detector_ids = sorted(required_detector_streams)
+                    orientation_by_head = {
+                        detector: orientation_for_stream(
+                            orientation_records, epoch, spacecraft, detector,
+                            required_detector_streams[detector])
+                        for detector in required_detector_ids
+                    }
                     # Official TS05 files and AMPS use radians for the Tilt column.
+                    # Detector orientation has already controlled VECTOR_APERTURES
+                    # pruning and is reused here for the fold. The production and legacy
+                    # arrival/look diagnostics use the same completed map/cube so a
+                    # convention change is never confused with an attitude change.
                     for reference_row in reference_group:
                         model, diagnostics = evaluate_reference_row(
                             reference_row, direction_map, manifest, solver,
-                            field_model, args.spectral_index, tilt,
-                            PRODUCTION_DIRECTION_MAPPING)
+                            field_model, spectrum, detector_response, access_cube, tilt,
+                            PRODUCTION_DIRECTION_MAPPING,
+                            args.cutoff_search, args.trace_limit_policy,
+                            args.max_unresolved_aperture_fraction,
+                            args.max_discrete_transition_fraction,
+                            args.frozen_field_warning_seconds,
+                            args.detector_orientation_source, orientation_by_head,
+                            args.orientation_yaw_deg, args.orientation_pitch_deg,
+                            production_anisotropy)
                         alternate_model, _ = evaluate_reference_row(
                             reference_row, direction_map, manifest, solver,
-                            field_model, args.spectral_index, tilt,
-                            LEGACY_DIRECTION_MAPPING)
+                            field_model, spectrum, detector_response, access_cube, tilt,
+                            LEGACY_DIRECTION_MAPPING,
+                            args.cutoff_search, args.trace_limit_policy,
+                            args.max_unresolved_aperture_fraction,
+                            args.max_discrete_transition_fraction,
+                            args.frozen_field_warning_seconds,
+                            args.detector_orientation_source, orientation_by_head,
+                            args.orientation_yaw_deg, args.orientation_pitch_deg,
+                            production_anisotropy)
                         model_rows.append(model)
 
                         # Store one row per convention so the diagnostic can be
@@ -1732,7 +3575,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "longitude_deg_east": row.longitude_deg_east,
             "latitude_deg": row.latitude_deg, "altitude_km": row.altitude_km,
             "position_source": row.position_source,
+            "east_detector_id": row.east_detector_id,
+            "west_detector_id": row.west_detector_id,
+            "east_flux_background_subtracted": row.east_flux_background_subtracted,
+            "west_flux_background_subtracted": row.west_flux_background_subtracted,
+            "flux_product_policy": row.flux_product_policy,
+            "east_flux_variable": row.east_flux_variable,
+            "west_flux_variable": row.west_flux_variable,
+            "east_flux_correction_state": row.east_flux_correction_state,
+            "west_flux_correction_state": row.west_flux_correction_state,
         } for row in reference])
+    write_dict_rows(output_root / "C19_spectrum_used.csv", [
+        {"utc": format_utc(epoch), "gamma": item.gamma, "j0": item.j0,
+         "e0_mev": item.e0_mev, "source": item.source, "n_points": item.n_points}
+        for epoch, item in sorted(spectra.items()) if epoch in {row.utc for row in reference}])
+    write_dict_rows(output_root / "C19_detector_response_used.csv", [asdict(row) for row in detector_response])
+    write_dict_rows(output_root / "C19_access_energy_grid.csv", [
+        {"energy_mev": energy, "rigidity_gv": rigidity_gv_from_kinetic_energy_mev(energy)}
+        for energy in access_energies])
     write_dict_rows(output_root / "C19_model.csv", [asdict(row) for row in model_rows])
     write_dict_rows(output_root / "C19_comparison.csv", [asdict(row) for row in model_rows])
     write_dict_rows(output_root / "C19_aperture_samples.csv", aperture_diagnostics)
@@ -1746,13 +3606,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if aperture_plot:
         plot_paths.append(aperture_plot)
 
-    numerical_complete = not run_failures and bool(model_rows)
+    validity = pipeline_validity(
+        model_rows, run_failures, args.max_unresolved_aperture_fraction,
+        args.max_discrete_transition_fraction)
+    execution_complete = validity["execution_complete"]
+    trajectory_resolution_passed = validity["trajectory_resolution_passed"]
+    instrument_fold_valid = validity["instrument_fold_valid"]
+    numerical_complete = validity["numerical_complete"]  # deprecated compatibility alias
     observational_passed = bool(metrics) and all(row.passed for row in metrics)
-    overall_passed = scientific_overall_passed(numerical_complete, observational_passed)
+    overall_passed = scientific_overall_passed(
+        execution_complete, trajectory_resolution_passed,
+        instrument_fold_valid, observational_passed)
     sense_summary = direction_sense_summary(direction_sense_diagnostics)
     result = {
         "test_id": "C19A",
         "test_name": "GOES EPEAD east-west directional-access validation",
+        "runner_mode": "CURRENT_SINGLE_WORKFLOW",
+        "development_stages_integrated": ["P0", "P1", "P2"],
         "profile": args.profile,
         "solver": args.solver,
         "field_models": args.model_list,
@@ -1765,10 +3635,64 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "driver_path": str(driver_path),
         "driver_sha256": sha256(driver_path),
         "driver_validation": driver_info,
-        "spectral_index": args.spectral_index,
+        "spectrum_source": args.spectrum_source,
+        "spectrum_file": str(Path(args.spectrum_file).expanduser().resolve()) if args.spectrum_file else None,
+        "spectrum_fits": [
+            {"utc": format_utc(epoch), "gamma": item.gamma, "j0": item.j0,
+             "e0_mev": item.e0_mev, "source": item.source, "n_points": item.n_points}
+            for epoch, item in sorted(spectra.items()) if epoch in {row.utc for row in reference}],
+        "legacy_spectral_index": args.spectral_index,
         "direction_mapping": PRODUCTION_DIRECTION_MAPPING,
         "direction_sense_diagnostic": sense_summary,
-        "instrument_response": "uniform elliptical top-hat inside nominal P4/P5 FOV",
+        # Directional-coverage provenance. INSTRUMENT_APERTURES retains the same
+        # regular SM lon/lat cells used by FULL_SPHERE, but asks AMPS to schedule
+        # only cells in the union of the per-epoch detector LOOK apertures. The
+        # boresights come from the selected attitude model and are not assumed to be
+        # east/west or antipodal. Recording the pruning envelope makes optimized and
+        # full-sphere results distinguishable without inspecting C19_commands.json.
+        "direction_coverage": args.direction_coverage,
+        "direction_aperture_horizontal_half_angle_deg": args.direction_aperture_horizontal_half_angle_deg,
+        "direction_aperture_vertical_half_angle_deg": args.direction_aperture_vertical_half_angle_deg,
+        "instrument_response": "piecewise response from %s folded with direct A(E,Omega) on GRIDDED; nominal elliptical angular FOV" % response_path,
+        "detector_response_path": str(response_path),
+        "detector_response_sha256": sha256(response_path),
+        "detector_response_contains_secondary_components": response_has_secondary,
+        "response_fold_mode": args.response_fold,
+        "access_energy_base_points": args.access_energy_points,
+        "access_energy_points": len(access_energies),
+        "access_energy_min_mev": access_energies[0],
+        "access_energy_max_mev": access_energies[-1],
+        "access_rigidity_min_gv": access_rigidities[0],
+        "access_rigidity_max_gv": access_rigidities[-1],
+        "max_discrete_transition_fraction": args.max_discrete_transition_fraction,
+        # Detector-orientation/anisotropy provenance. Detector orientation now affects
+        # both the VECTOR_APERTURES work selection and the synthetic detector fold;
+        # upstream anisotropy affects only the fold. Keeping both in the aggregate
+        # result prevents geometrically different runs from looking identical.
+        "detector_orientation_source": args.detector_orientation_source,
+        "detector_orientation_file": (str(orientation_path) if orientation_path else None),
+        "detector_orientation_file_sha256": (sha256(orientation_path) if orientation_path else None),
+        "orientation_yaw_deg": args.orientation_yaw_deg,
+        "orientation_pitch_deg": args.orientation_pitch_deg,
+        "anisotropy_model": production_anisotropy.model,
+        "anisotropy_amplitude": production_anisotropy.amplitude,
+        "anisotropy_axis_lon_deg": production_anisotropy.axis_lon_deg,
+        "anisotropy_axis_lat_deg": production_anisotropy.axis_lat_deg,
+        "spectrum_file_sha256": (sha256(Path(args.spectrum_file).expanduser().resolve())
+                                 if args.spectrum_file else None),
+        "reference_flux_product_policies": sorted({row.flux_product_policy for row in reference}),
+        "reference_detector_ids": sorted({
+            detector_id for row in reference
+            for detector_id in (row.east_detector_id, row.west_detector_id)
+        }),
+        "reference_flux_variables": sorted({
+            value for row in reference
+            for value in (row.east_flux_variable, row.west_flux_variable)
+        }),
+        "exact_flux_variable_provenance_fraction": exact_flux_provenance_fraction,
+        "reference_position_sources": sorted({row.position_source for row in reference}),
+        "real_ephemeris_fraction": real_ephemeris_fraction,
+        "real_ephemeris_required": args.require_real_ephemeris,
         "observable": "log10(background-subtracted physical EAST/WEST flux ratio)",
         "n_reference_rows": len(reference),
         "n_model_rows": len(model_rows),
@@ -1782,7 +3706,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "max_mae_log10": args.max_mae_log10,
             "max_rmse_log10": args.max_rmse_log10,
         },
+        # P0.8 staged validity.  ``numerical_complete`` is kept only as a
+        # compatibility alias and now means execution + trajectory resolution.
+        "execution_complete": execution_complete,
+        "trajectory_resolution_passed": trajectory_resolution_passed,
+        "instrument_fold_valid": instrument_fold_valid,
         "numerical_complete": numerical_complete,
+        "numerical_complete_deprecated": True,
         "observational_passed": observational_passed,
         "acceptance_enforced": args.enforce_acceptance,
         # Scientific PASS/FAIL is independent of process-exit policy.  The
@@ -1791,10 +3721,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "passed": overall_passed,
         "plot_files": plot_paths,
         "limitations": [
-            "C19A uses nominal broad top-hat P4/P5 apertures, not a complete energy-angle response matrix.",
-            "The incident spectrum is a common isotropic power law; prompt-onset interplanetary anisotropy is not modeled.",
+            "The committed response CSV is a factorized nominal P4/P5 energy response plus elliptical angular FOV; replace it with a calibrated piecewise response for publication-grade instrument modeling.",
+            "OBSERVED_WEST derives the common incident spectral shape from the less-shielded physical-WEST measurements; an independent upstream FILE spectrum is preferred when available.",
+            "The production default is isotropic upstream. A bounded DIPOLE source model can be selected explicitly; any non-isotropic run is recorded in C19_result.json rather than silently absorbed into the cutoff fit.",
+            "The historical SM_PROXY detector basis remains the default when no authoritative attitude file is supplied. Exact per-epoch SM/GSM boresight vectors are supported through --detector-orientation-source FILE, with optional explicit pointing offsets.",
             "The telemetry-head-to-physical-direction mapping is event-specific and fixed in the manifest.",
-            "Publication runs should supply NOAA one-minute ephemeris rather than nominal GEO-slot positions.",
+            "Use --require-real-ephemeris with a regenerated reference for publication runs.",
+            "GRIDLESS remains an effective-cutoff proxy cross-check; direct A(E,Omega) is implemented in Mode3D/GRIDDED.",
         ],
     }
     (output_root / "C19_result.json").write_text(
@@ -1823,7 +3756,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 item["sense"], item["n_sign_agree"], item["n_sign_evaluable"],
                 item["sign_agreement_fraction"]))
     summary_lines.extend([
-        "numerical calculation: %s" % ("PASS" if numerical_complete else "FAIL"),
+        "execution complete: %s" % ("PASS" if execution_complete else "FAIL"),
+        "trajectory resolution: %s" % ("PASS" if trajectory_resolution_passed else "FAIL"),
+        "instrument fold: %s" % ("PASS" if instrument_fold_valid else "FAIL"),
         "observational validation: %s" % ("PASS" if observational_passed else "FAIL"),
         "overall: %s" % ("PASS" if overall_passed else "FAIL"),
         "acceptance enforcement: %s" % ("ON" if args.enforce_acceptance else "OFF"),
@@ -1831,9 +3766,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     (output_root / "C19_summary.txt").write_text("\n".join(summary_lines) + "\n")
     print("\n".join(summary_lines))
 
-    if not numerical_complete:
+    # Exit status 2 is reserved for execution/input/postprocessing failure.
+    # A physically unresolved trajectory product is a scientific validation FAIL,
+    # not a crashed process; it becomes exit status 1 only when acceptance is enforced.
+    if not execution_complete:
         return 2
-    if args.enforce_acceptance and not observational_passed:
+    if args.enforce_acceptance and not overall_passed:
         return 1
     return 0
 

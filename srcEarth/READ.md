@@ -363,7 +363,10 @@ If the trajectory hits the inner absorbing sphere first:
     direction is FORBIDDEN.
 
 If the trajectory exceeds max time, max steps, or max trace distance:
-    direction is treated as FORBIDDEN conservatively.
+    structured cutoff/access paths classify it according to CUTOFF_TRACE_LIMIT_POLICY;
+    the current/default UNRESOLVED policy preserves it as numerically UNRESOLVED rather
+    than turning a safety cap into physical shielding. Legacy Boolean UPPER_SCAN paths
+    may use the explicit FORBIDDEN convention when requested.
 ```
 
 The outer domain is defined by `#DOMAIN_BOUNDARY`. The inner loss sphere is defined by `R_INNER`.
@@ -382,9 +385,44 @@ Optional directional sky maps are controlled independently by:
 DIRECTIONAL_MAP T
 DIRMAP_LON_RES  <deg>
 DIRMAP_LAT_RES  <deg>
+DIRMAP_COVERAGE FULL_SPHERE | VECTOR_APERTURES
+DIRMAP_APERTURE_FILE <file>
+DIRMAP_APERTURE <name> <SM|GSM|LOCAL_SM> bx by bz ux uy uz hHalfDeg vHalfDeg
 ```
 
-Directional maps write one Tecplot file per observation location. Direction labels follow the gridless convention: SM lon/lat when SPICE is available for SM-to-GSM rotation; GSM fallback when SPICE is unavailable.
+`FULL_SPHERE` is the backward-compatible default. `VECTOR_APERTURES` keeps the same
+regular SM lon/lat lattice but schedules only cells whose detector **LOOK** direction is
+inside the union of one or more configured elliptical apertures. There is no
+mission-specific EAST/WEST assumption: boresights may point anywhere and need not be
+antipodal. The AMPS directional vector is the incoming particle **arrival** direction,
+so aperture membership is evaluated with `look = -arrival`.
+
+Apertures can be supplied inline with repeatable `DIRMAP_APERTURE` records or in a file
+named by `DIRMAP_APERTURE_FILE`. File rows have the same fields but omit the keyword:
+
+```text
+name frame bx by bz ux uy uz hHalfDeg vHalfDeg
+```
+
+`SM` and `GSM` are global vector frames. `LOCAL_SM` means vector components in the local
+`(radial,east,north)` basis at the observation point. The user-supplied up/roll vector
+is projected perpendicular to the boresight before constructing the horizontal axis.
+Retained cells keep their original full-sphere cell IDs and lon/lat coordinates, so the
+optimization changes only the amount of work, not the sampled directions.
+
+The same controls are available on the AMPS command line:
+
+```text
+-cutoff-dirmap-coverage FULL_SPHERE|VECTOR_APERTURES
+-cutoff-dirmap-aperture-file <file>
+-cutoff-dirmap-aperture "<name> <frame> bx by bz ux uy uz hHalfDeg vHalfDeg"
+```
+
+The last option is repeatable. A CLI aperture-file path overrides the input-file path
+before either file is opened, allowing one generic parameter deck to be reused with
+per-epoch attitude files.
+
+Directional maps write one Tecplot file per observation location. Direction labels follow the gridless convention: SM lon/lat when SPICE is available for SM-to-GSM rotation; GSM fallback when SPICE is unavailable. Aperture-limited maps are written as compact POINT zones with explicit lon/lat columns rather than as rectangular I/J zones.
 
 ### 4.3 Density, local spectrum, and integral flux
 
@@ -1025,7 +1063,10 @@ CUTOFF_BACKTRACE_CHARGE       SAME (default) or REVERSED
 CUTOFF_TRACE_LIMIT_POLICY     UNRESOLVED (default) or FORBIDDEN
 CUTOFF_SAMPLING               VERTICAL or ISOTROPIC
 DIRECTIONAL_MAP               write directional sky-map products
-DIRMAP_LON_RES/LAT_RES        sky-map angular resolution [deg]
+DIRMAP_LON_RES/LAT_RES        underlying regular sky-map angular resolution [deg]
+DIRMAP_COVERAGE               FULL_SPHERE (default) or VECTOR_APERTURES
+DIRMAP_APERTURE_FILE          optional file of arbitrary detector-look apertures
+DIRMAP_APERTURE               repeatable inline aperture: name frame b[3] up[3] hHalf vHalf
 CUTOFF_DEBUG_RIGIDITY_SCAN    enable one-point TraceAllowed3D(R) diagnostic
 CUTOFF_DEBUG_SCAN_LON/LAT/ALT selected spherical-shell point for the diagnostic
 CUTOFF_DEBUG_SCAN_N           number of log-spaced R samples; landmarks are added
@@ -1038,14 +1079,29 @@ CUTOFF_DEBUG_EXIT_LIST_FILE   optional many-trajectory input list: lon_deg lat_d
 CUTOFF_DEBUG_EXIT_FILE        single combined trajectory-exit diagnostic output file name
 ```
 
-`RIGIDITY_LIST` is a Mode3D-only direct-access product for `OUTPUT_MODE SHELLS`
+`RIGIDITY_LIST` is a Mode3D-only primary direct-access product for `OUTPUT_MODE SHELLS`
 and `CUTOFF_SAMPLING VERTICAL`. It traces one trajectory for every requested
 `(selected shell node, rigidity)` pair and writes
 `cutoff_3d_shells_access.dat`. Access states are `0=PHYSICAL_FORBIDDEN`,
 `1=ALLOWED`, and `2=UNRESOLVED`. The absolute-latitude limits select geodetic
 shell nodes while retaining all configured longitudes and both hemispheres.
-`PENUMBRA_SCAN` remains available unchanged for full lower/effective/upper
-cutoff diagnostics.
+
+P1 adds a separate **directional companion** without changing that primary shell mode.
+For `PENUMBRA_SCAN + DIRECTIONAL_MAP=T`, a non-empty `CUTOFF_RIGIDITY_LIST_GV`
+requests exact three-state classifications for every `(sky cell, rigidity)` pair and writes
+`cutoff_3d_dir_access_loc_######.dat` for each observation location.  Each long-form
+row contains `lon_deg`, `lat_deg`, `rigidity_GV`, corresponding proton `energy_MeV`,
+`access_state`, `allowed`, and `unresolved`.  The standard directional map remains present
+and continues to carry lower/effective/upper penumbra diagnostics.  The companion file
+adds the energy-dependent access function needed for synthetic detector folding.
+Trace-limit states honor `CUTOFF_TRACE_LIMIT_POLICY`, so
+`UNRESOLVED` is preserved rather than converted into physical shielding.  This combination
+is supported for POINTS, TRAJECTORY, and SHELLS because the companion is indexed by the
+directional sky grid rather than by a geographic shell writer.
+
+The primary `RIGIDITY_LIST` algorithm itself still cannot be combined with
+`DIRECTIONAL_MAP`; use the PENUMBRA companion form above when directional fixed-rigidity
+access is required.
 
 
 The default `UPPER_SCAN` cutoff search is penumbra-safe and is used by both standalone `mode 3d` and gridless cutoff. It builds a rigidity grid from `CUTOFF_EMIN`/`CUTOFF_EMAX`, evaluates the trajectory classifier at each grid vertex, scans downward from the highest rigidity to find the highest forbidden sample, and then bisects the final forbidden/allowed transition. `PENUMBRA_SCAN` retains the complete allowed/forbidden sequence and additionally reports lower, effective, and upper cutoff rigidities. Use `CUTOFF_SEARCH_ALGORITHM BINARY` only to reproduce the legacy endpoint-only behavior.
@@ -2950,15 +3006,56 @@ boundary-distance limiter can already be smaller.  In that case, the useful
 convergence check is the mover/cap sensitivity, not the nominal `DT_TRACE`
 sequence alone.
 
-## C9 PAMELA storm-time cutoff validation
+### C19 validation wrapper
 
-`srcEarth/test/C9/run_C9.py` supports `FULL_SCAN` and GRIDDED `DIRECT_ACCESS`.
-Both products use the same primary `PAMELA_T50` observable and the same
-configured absolute-geodetic-latitude fitting band: fixed-rigidity access states
-are averaged over longitudes in each AACGM hemisphere, fitted by weighted
-nondecreasing isotonic regression, explicitly bracketed, and interpolated at
-transmission 0.5. `FULL_SCAN` additionally retains `Rc_lower`, `Rc_effective`,
-and `Rc_upper` as diagnostics. An optional `--access-consistency-root` gate
-compares exact FULL_SCAN and DIRECT_ACCESS classifications at matching nodes and
-epochs and verifies their common input/command configuration. See
-`srcEarth/test/C9/README.md` for commands and outputs.
+C19 directional-work optimization (current implementation)
+-----------------------------------------------------------
+
+The production runner defaults to `--direction-coverage INSTRUMENT_APERTURES`, which
+maps to the mission-neutral AMPS mode `DIRMAP_COVERAGE VECTOR_APERTURES`. For each
+spacecraft/epoch, the runner writes `C19_directional_apertures.dat` containing the
+physical detector LOOK boresight and roll/up vector for every active head. The
+observational reference's telemetry-head provenance (`telemetry_head_east/west`) maps the
+legacy physical EAST/WEST flux streams back to their actual instrument head IDs before
+attitude lookup. With `--detector-orientation-source FILE` those vectors come from the
+supplied time-dependent attitude product; the heads may point anywhere and need not be
+antipodal. With the legacy `SM_PROXY` fallback the runner merely writes corresponding
+`LOCAL_SM` vector records--the C++ solver itself has no EAST/WEST special case.
+
+For the present GOES P4/P5 comparison, the widest P5 30° horizontal and 60° vertical
+half-angles are used as a conservative pruning envelope. The actual channel fold still
+uses channel-specific response/FOV information. `--direction-coverage FULL_SPHERE`
+remains available for complete-sky diagnostics and bit-for-bit retained-cell regression
+comparisons.
+
+The former P0/P1/P2 stages are now integrated into a single current C19 workflow. The
+runner no longer exposes `--p0-diagnostic` or `--p2-diagnostic`, and historical
+trajectory/folding choices are no longer selectable with `--cutoff-search`,
+`--trace-limit-policy`, or `--response-fold`. Every normal run uses
+`PENUMBRA_SCAN + UNRESOLVED`, requests direct `A(E,Omega)` for GRIDDED Mode3D, applies
+the current detector/spectrum fold, and reaches the standard full comparison-plot block.
+
+The current uncorrected-flux detector response also includes the documented EPEAD
+high-energy secondary proton response (P4 through 150 MeV and P5 through 190 MeV), so
+the direct rigidity list is derived from the full positive response support rather than
+being truncated at the nominal 82 MeV P5 edge. With the default 48 logarithmic science
+nodes plus exact response boundaries, the committed response produces 55 trajectory
+energies from 15 to 190 MeV (about 0.168--0.627 GV for protons). The primary-only
+response file remains available for corrected-flux/sensitivity work.
+
+Finite rigidity sampling is now treated explicitly. The runner analytically integrates
+the power-law SEP spectrum times the piecewise-constant detector response between
+sampled energies. If two resolved access endpoints disagree, it does **not** create a
+linear 0-to-1 transmission ramp; the whole interval is carried as an access-transition
+uncertainty bracket. Intervals touching `UNRESOLVED` are tracked separately as
+trajectory-resolution uncertainty. The default
+`--max-discrete-transition-fraction 0.05` invalidates a quantitative detector fold when
+more than five percent of its response-weighted support lies in unresolved transition
+brackets. This makes `--access-energy-points` a measurable convergence control.
+
+The production defaults now use the finest settings from the previous P2 convergence
+implementation: a 2.5-degree directional grid and Mode3D mesh resolutions of 0.025 Re
+near Earth and 1.0 Re at the outer boundary. Detector FILE orientation and explicit
+bounded anisotropy remain ordinary physics inputs to the same workflow. The standard
+`C19_comparison_*`, scatter, parity, residual, transmission, and aperture diagnostic
+plots require no special runner flag.

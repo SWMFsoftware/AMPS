@@ -33,18 +33,25 @@
       "energy_min_mev": 15.0,
       "energy_max_mev": 40.0,
       "north_south_half_angle_deg": 45.0,
-      "equatorial_half_angle_deg": 25.0
+      "equatorial_half_angle_deg": 25.0,
+      "spectrum_effective_energy_mev": 24.494897427832
     },
     "P5": {
       "energy_min_mev": 38.0,
       "energy_max_mev": 82.0,
       "north_south_half_angle_deg": 60.0,
-      "equatorial_half_angle_deg": 30.0
+      "equatorial_half_angle_deg": 30.0,
+      "spectrum_effective_energy_mev": 55.821142947811
     }
   },
   "notes": [
     "The A/B physical look directions for the May 2012 event follow Rodriguez et al. (2014), Table 2.",
-    "NOAA p17ew telemetry uses invariant E/W head labels; these are not guaranteed to be physical east/west during yaw flips.",
-    "C19A uses a uniform top-hat response inside the nominal field of view and compares the east/west ratio, not absolute count rates."
-  ]
+    "P1.1 fixes the GOES flux-product policy explicitly; regenerated rows record the exact east/west NOAA source variable names.",
+    "P1.2 science references use NOAA/NCEI one-minute GOES ephemeris. Nominal GEO slots are a legacy override only.",
+    "P1.3 derives a common time-dependent spectral shape from physical-WEST P4/P5 flux by default; an independent spectrum file is preferred when available.",
+    "The default uncorrected-flux synthetic response includes the documented P4/P5 secondary proton energy ranges through 150/190 MeV using GOES 8-15 Z89/Panametrics geometrical factors normalized to each primary channel; the current C19 angular model remains an energy-only approximation to those side/rear responses."
+  ],
+  "goes_flux_product_policy": "UNCORRECTED",
+  "detector_response_file": "data/epead_response_C19_uncorrected_extended.csv",
+  "ephemeris_policy": "NOAA_ONE_MINUTE_REQUIRED_FOR_P1_SCIENCE"
 }

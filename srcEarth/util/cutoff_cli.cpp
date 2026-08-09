@@ -357,6 +357,30 @@ CliOptions ParseCli(int argc,char** argv) {
       if (opt.cutoffAccessAbsLatMax_deg<0.0 || opt.cutoffAccessAbsLatMax_deg>90.0)
         exit(__LINE__,__FILE__,"-cutoff-access-abs-lat-max must be in [0,90] degrees");
     }
+    else if (a=="-cutoff-dirmap-coverage" || a=="--cutoff-dirmap-coverage" ||
+             a=="-mode3d-dirmap-coverage" || a=="--mode3d-dirmap-coverage" ||
+             a=="-gridless-dirmap-coverage" || a=="--gridless-dirmap-coverage") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-dirmap-coverage");
+      opt.cutoffDirMapCoverage=argv[++i];
+      if (opt.cutoffDirMapCoverage.empty())
+        exit(__LINE__,__FILE__,"-cutoff-dirmap-coverage must not be empty");
+    }
+    else if (a=="-cutoff-dirmap-aperture-file" || a=="--cutoff-dirmap-aperture-file" ||
+             a=="-mode3d-dirmap-aperture-file" || a=="--mode3d-dirmap-aperture-file" ||
+             a=="-gridless-dirmap-aperture-file" || a=="--gridless-dirmap-aperture-file") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-dirmap-aperture-file");
+      opt.cutoffDirMapApertureFile=argv[++i];
+      if (opt.cutoffDirMapApertureFile.empty())
+        exit(__LINE__,__FILE__,"-cutoff-dirmap-aperture-file must not be empty");
+    }
+    else if (a=="-cutoff-dirmap-aperture" || a=="--cutoff-dirmap-aperture" ||
+             a=="-mode3d-dirmap-aperture" || a=="--mode3d-dirmap-aperture" ||
+             a=="-gridless-dirmap-aperture" || a=="--gridless-dirmap-aperture") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-dirmap-aperture");
+      const std::string spec=argv[++i];
+      if (spec.empty()) exit(__LINE__,__FILE__,"-cutoff-dirmap-aperture must not be empty");
+      opt.cutoffDirMapApertureSpecs.push_back(spec);
+    }
     else if (a=="-cutoff-upper-scan-n" || a=="--cutoff-upper-scan-n" ||
              a=="-cutoff-search-n" || a=="--cutoff-search-n" ||
              a=="-mode3d-cutoff-search-n" || a=="--mode3d-cutoff-search-n" ||
@@ -768,6 +792,21 @@ std::string HelpMessage(const char* progName) {
   out << "        CUTOFF_ACCESS_ABS_LAT_MIN 35\n";
   out << "        CUTOFF_ACCESS_ABS_LAT_MAX 75\n";
   out << "        ! Valid algorithms: UPPER_SCAN | PENUMBRA_SCAN | RIGIDITY_LIST | BINARY\n\n";
+
+  out << "  -cutoff-dirmap-coverage <FULL_SPHERE|VECTOR_APERTURES>                       (optional)\n";
+  out << "  -cutoff-dirmap-aperture-file <path>                                         (optional)\n";
+  out << "  -cutoff-dirmap-aperture \"<name> <SM|GSM|LOCAL_SM> bx by bz ux uy uz hHalf vHalf\" (repeatable)\n";
+  out << "      VECTOR_APERTURES is a work-selection optimization for directional maps.\n";
+  out << "      Each aperture gives an arbitrary detector LOOK boresight b, roll/up\n";
+  out << "      reference u, and horizontal/vertical elliptical half-angles. Apertures\n";
+  out << "      need not be east/west or antipodal. SM and GSM are global frames;\n";
+  out << "      LOCAL_SM components use the local (radial,east,north) basis. The solver\n";
+  out << "      retains a subset of the same regular sky cells as FULL_SPHERE and tests\n";
+  out << "      detector_look=-particle_arrival for aperture membership.\n";
+  out << "      Input-file equivalents: DIRMAP_COVERAGE, DIRMAP_APERTURE_FILE, and\n";
+  out << "      repeatable DIRMAP_APERTURE records. File rows omit DIRMAP_APERTURE.\n";
+  out << "      Example:\n";
+  out << "        " << progName << " -mode 3d -i run.in -cutoff-dirmap-coverage VECTOR_APERTURES -cutoff-dirmap-aperture-file instrument_apertures.dat\n\n";
 
   out << "  -cutoff-trace-policy | --cutoff-trace-policy <LEGACY|ACCURATE>   (optional)\n";
   out << "      Selects the numerical integration policy used by Boolean cutoff\n";

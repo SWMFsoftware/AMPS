@@ -123,6 +123,18 @@
 //       Restrict the Mode3D RIGIDITY_LIST launch grid to a geodetic absolute-latitude
 //       band while retaining both hemispheres and all configured longitudes.
 //
+//   -cutoff-dirmap-coverage <FULL_SPHERE|VECTOR_APERTURES>
+//       Select angular coverage of DIRECTIONAL_MAP/direct A(E,Omega) tasks. FULL_SPHERE
+//       retains the historical complete sky. VECTOR_APERTURES keeps only regular-grid
+//       cells inside the union of arbitrary finite-FOV look-direction apertures.
+//
+//   -cutoff-dirmap-aperture-file <path>
+//       Replace the input-file aperture list with the definitions in <path>.
+//
+//   -cutoff-dirmap-aperture "<name> <frame> bx by bz ux uy uz hHalf vHalf"
+//       Add one arbitrary aperture from the CLI. May be repeated. Frames: SM, GSM,
+//       LOCAL_SM. The boresight is the physical detector LOOK direction.
+//
 //   -adaptive-dt <T|F>
 //       Override #NUMERICAL ADAPTIVE_DT.  T/default means DT_TRACE is a maximum
 //       adaptive-step bound; F means fixed-step tracing with DT_TRACE.
@@ -182,6 +194,7 @@
 #define _SRC_EARTH_UTIL_CUTOFF_CLI_H_
 
 #include <string>
+#include <vector>  // CliOptions::cutoffDirMapApertureSpecs is a repeatable list of CLI aperture specifications.
 
 namespace EarthUtil {
 
@@ -341,6 +354,13 @@ namespace EarthUtil {
     // Negative sentinels mean no CLI override; zero is a valid lower bound.
     double cutoffAccessAbsLatMin_deg{-1.0};
     double cutoffAccessAbsLatMax_deg{-1.0};
+
+    // Optional directional-map coverage override.  Empty means use the input deck.
+    // VECTOR_APERTURES is a pure work-selection optimization over the existing regular
+    // lon/lat grid; it does not alter the angular resolution of retained cells.
+    std::string cutoffDirMapCoverage{""};
+    std::string cutoffDirMapApertureFile{""};
+    std::vector<std::string> cutoffDirMapApertureSpecs; // repeatable direct CLI specs
 
     // -cutoff-trace-policy <LEGACY|ACCURATE>
     // Optional override for #CUTOFF_RIGIDITY / CUTOFF_TRACE_POLICY.

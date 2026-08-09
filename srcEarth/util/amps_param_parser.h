@@ -50,6 +50,9 @@
 //     DIRECTIONAL_MAP         T|F        ! enable directional cutoff sky-map output
 //     DIRMAP_LON_RES          <double>   ! longitude resolution [deg] for sky-map
 //     DIRMAP_LAT_RES          <double>   ! latitude resolution [deg] for sky-map
+//     DIRMAP_COVERAGE         <string>   ! FULL_SPHERE or VECTOR_APERTURES
+//     DIRMAP_APERTURE_FILE    <path>     ! optional arbitrary instrument-aperture vector list
+//     DIRMAP_APERTURE         <spec>     ! repeatable inline aperture definition (see below)
 //     CUTOFF_SEARCH_ALGORITHM <string>   ! UPPER_SCAN, PENUMBRA_SCAN, RIGIDITY_LIST, or BINARY
 //     CUTOFF_UPPER_SCAN_N     <int>      ! samples for UPPER/PENUMBRA scan; 0 => CUTOFF_NENERGY
 //     CUTOFF_RIGIDITY_LIST_GV <list>     ! comma/space-separated positive GV values for RIGIDITY_LIST
@@ -329,6 +332,43 @@ namespace EarthUtil {
     std::map<std::string,std::string> raw;
   };
 
+  //====================================================================================
+  // DirectionalAperture
+  //====================================================================================
+  // Generic finite-field-of-view definition used to prune expensive directional
+  // cutoff/access work.  Nothing in this structure assumes EAST/WEST, GOES, or even
+  // antipodal telescopes: every aperture carries its own physical LOOK boresight and
+  // roll-reference vector.
+  //
+  // Supported frames:
+  //   SM       - vectors are Cartesian components in the global SM frame used to
+  //              label the directional map.
+  //   GSM      - vectors are Cartesian components in the GSM tracing frame; the
+  //              solver rotates them into the map-label frame at the run epoch.
+  //   LOCAL_SM - vectors are components in a location-dependent orthonormal basis
+  //              (radial, local-east, local-north) constructed from the observation
+  //              position and SM +Z.  This is useful for simple proxy/engineering
+  //              configurations while keeping the selector itself instrument-neutral.
+  //
+  // The aperture is elliptical in angular tangent-plane coordinates.  ``up`` defines
+  // the vertical/roll direction and need not be exactly perpendicular to boresight;
+  // the solver projects and normalizes it before use.  The horizontal axis is derived
+  // from the orthonormalized (up,boresight) pair.  Half-angles are in degrees.
+  //
+  // Input-file inline syntax (repeatable):
+  //   DIRMAP_APERTURE  <name> <SM|GSM|LOCAL_SM> bx by bz ux uy uz hHalfDeg vHalfDeg
+  //
+  // File syntax used by DIRMAP_APERTURE_FILE is identical but omits the keyword:
+  //   <name> <frame> bx by bz ux uy uz hHalfDeg vHalfDeg
+  struct DirectionalAperture {
+    std::string name;
+    std::string frame{"SM"};
+    Vec3 boresight{1.0,0.0,0.0};
+    Vec3 up{0.0,0.0,1.0};
+    double horizontalHalfAngle_deg{30.0};
+    double verticalHalfAngle_deg{60.0};
+  };
+
   struct CutoffScan {
     double eMin_MeV{1.0};
     double eMax_MeV{1000.0};
@@ -474,9 +514,10 @@ namespace EarthUtil {
     // Optional: compute a directional cutoff rigidity "sky-map" for each
     // injection point.
     //
-    // When enabled, the solver evaluates Rc as a function of arrival
-    // direction on a lon/lat grid in a *local, point-centered coordinate
-    // system* (see detailed documentation in CutoffRigidityGridless.cpp).
+    // When enabled, the solver evaluates Rc as a function of arrival direction
+    // on a regular global SM lon/lat grid (GSM fallback when the SM->GSM transform
+    // is unavailable). DIRMAP_COVERAGE may retain the complete grid or only cells
+    // inside an arbitrary configured union of instrument look apertures.
     //
     // The intent is to provide a diagnostic product to visualize the
     // directional dependence (penumbra-like structure) and to support
@@ -484,6 +525,19 @@ namespace EarthUtil {
     bool directionalMap{false};          // DIRECTIONAL_MAP
     double dirMapLonRes_deg{10.0};       // DIRMAP_LON_RES
     double dirMapLatRes_deg{10.0};       // DIRMAP_LAT_RES
+
+    // Directional-map angular coverage.
+    //
+    // FULL_SPHERE preserves the historical complete regular lon/lat sky grid.
+    // VECTOR_APERTURES keeps the same underlying grid and exact trajectory directions
+    // but schedules only cells whose detector LOOK vector lies inside at least one
+    // user-defined DirectionalAperture.  Apertures may point anywhere, need not be
+    // antipodal, and may be supplied in SM, GSM, or the location-dependent LOCAL_SM
+    // basis.  This is strictly a work-selection optimization: retained cells are
+    // bit-for-bit the same cells as a FULL_SPHERE calculation.
+    std::string dirMapCoverage{"FULL_SPHERE"}; // DIRMAP_COVERAGE
+    std::string dirMapApertureFile;             // DIRMAP_APERTURE_FILE
+    std::vector<DirectionalAperture> dirMapApertures; // repeated DIRMAP_APERTURE
 
     // Optional diagnostic: run a rigidity classification scan at one user-selected
     // spherical-shell location before the full cutoff map is computed.  This is a
@@ -1502,6 +1556,12 @@ namespace EarthUtil {
   //   TRAJECTORY -> load the trajectory file and flatten it into output.points
   //   SHELLS     -> leave the point/trajectory containers untouched
   void InitializePointLikeOutput(AmpsParam& p);
+
+  // Parse one generic directional-aperture specification and load an optional
+  // aperture-list file.  These helpers are public so command-line overrides can use
+  // exactly the same validation/normalization rules as AMPS_PARAM input.
+  DirectionalAperture ParseDirectionalApertureSpec(const std::string& text);
+  std::vector<DirectionalAperture> LoadDirectionalApertureFile(const std::string& fileName);
 
   // Parse an AMPS_PARAM file. Throws std::runtime_error on hard errors.
   AmpsParam ParseAmpsParamFile(const std::string& fileName);

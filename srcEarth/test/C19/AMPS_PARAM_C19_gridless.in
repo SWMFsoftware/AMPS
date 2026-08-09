@@ -23,23 +23,38 @@ CALC_TARGET                    CUTOFF_RIGIDITY
 FIELD_EVAL_METHOD              GRIDLESS
 
 #CUTOFF_RIGIDITY
-! The 0.5-500 MeV bracket contains the nominal P4 (15-40 MeV) and P5
-! (38-82 MeV) response ranges with substantial margin on both sides.
+! P0 C19 validation uses PENUMBRA_SCAN so configured time/step/distance
+! safety limits remain a third UNRESOLVED state rather than being silently
+! folded into PHYSICAL_FORBIDDEN.  The 0.5-500 MeV bracket contains the
+! nominal P4 (15-40 MeV) and P5 (38-82 MeV) ranges with broad margins.
 CUTOFF_EMIN                    0.5
 CUTOFF_EMAX                    500.0
 CUTOFF_MAX_PARTICLES           1
 CUTOFF_NENERGY                 120
 CUTOFF_SAMPLING                VERTICAL
-CUTOFF_SEARCH_ALGORITHM        UPPER_SCAN
+CUTOFF_SEARCH_ALGORITHM        PENUMBRA_SCAN
 CUTOFF_UPPER_SCAN_N            120
 CUTOFF_SCAN_SPACING            LINEAR
 CUTOFF_TRACE_POLICY            ACCURATE
 CUTOFF_BACKTRACE_CHARGE        REVERSED
-CUTOFF_TRACE_LIMIT_POLICY      FORBIDDEN
+CUTOFF_TRACE_LIMIT_POLICY      UNRESOLVED
+! P1.4: run_C19.py fills this with the detector-response energy grid for the
+! GRIDDED science path.  The runner removes the directive from P0 and GRIDLESS
+! proxy runs so they do not acquire unnecessary direct-access tasks.
+CUTOFF_RIGIDITY_LIST_GV        0.174013525
 CUTOFF_MAX_TRAJ_TIME           300.0
 DIRECTIONAL_MAP                T
-DIRMAP_LON_RES                 10.0
-DIRMAP_LAT_RES                 10.0
+DIRMAP_LON_RES                 2.5
+DIRMAP_LAT_RES                 2.5
+! C19 production can restrict trajectory work to the union of the physical EAST
+! and WEST detector apertures while retaining the exact same regular sky-grid cells
+! and 2.5-degree angular resolution as FULL_SPHERE.  FULL_SPHERE remains available
+! through the same input keyword or the corresponding CLI override.
+! VECTOR_APERTURES is instrument-neutral: the runner writes the actual physical
+! detector LOOK vectors for this spacecraft/epoch into the file below.  Use
+! DIRMAP_COVERAGE FULL_SPHERE to recover the complete historical sky.
+DIRMAP_COVERAGE                VECTOR_APERTURES
+DIRMAP_APERTURE_FILE           C19_directional_apertures.dat
 
 #PARTICLE_SPECIES
 SPECIES                        PROTON
@@ -49,6 +64,9 @@ MASS_AMU                       1.007276466621
 #BACKGROUND_FIELD
 ! The driver record at EPOCH overrides the parser-safe static values below.
 FIELD_MODEL                    T05
+! Explicit defaults are also used by the P0.9 centered-dipole Störmer anchor.
+DIPOLE_MOMENT                  1.0
+DIPOLE_TILT                    0.0
 EPOCH                          2012-05-17T06:00:00
 DRIVER_FILE                    data/ts05_driver_may2012.txt
 DST                            -50.0
@@ -79,8 +97,11 @@ DOMAIN_Z_MAX                   254848.0
 R_INNER                        6371.2
 
 #SPECTRUM
-! Required by the common parser.  Directional response folding is performed by
-! run_C19.py, which uses the same default gamma=3 unless overridden.
+! Required by the common parser.  P1.3 replaces SPEC_GAMMA for every observational
+! case with the epoch-dependent spectrum selected by run_C19.py (OBSERVED_WEST by
+! default, or an explicit FILE/FIXED sensitivity spectrum).  The postprocessor is
+! authoritative for detector folding; these directives preserve complete input/provenance
+! and keep the AMPS-side spectrum definition consistent with the case metadata.
 SPECTRUM_TYPE                  POWER_LAW
 SPEC_J0                        1.0
 SPEC_GAMMA                     3.0

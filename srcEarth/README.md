@@ -245,6 +245,12 @@ ordinary cutoff with DIRECTIONAL_MAP:
     task 2 = directional cell 1
     ...
 
+P1 direct directional access companion
+(PENUMBRA_SCAN + DIRECTIONAL_MAP + CUTOFF_RIGIDITY_LIST_GV):
+    task 0                         = primary scalar cutoff
+    task 1 .. Ndir                 = directional PENUMBRA_SCAN cells
+    remaining Ndir x Nrig tasks   = exact three-state A(R,Omega) samples
+
 RIGIDITY_LIST:
     task 0 = requested rigidity 0
     task 1 = requested rigidity 1
@@ -257,6 +263,17 @@ For a normal directional run,
 tasks_per_location = 1 + number_of_directional_cells
 total_tasks         = number_of_locations * tasks_per_location
 ```
+
+When the P1 direct-access companion is requested, the exact fixed-rigidity
+classifications are independent trajectory tasks as well:
+
+```text
+tasks_per_location = 1 + Ndir + Ndir*Nrig
+```
+
+This intentionally increases the trajectory count: C19B needs the energy/direction
+access function itself rather than inferring detector transmission from one scalar
+cutoff per sky cell.
 
 and the global task identifier is decoded without allocating a task list:
 
@@ -289,6 +306,7 @@ unique result element:
 ```text
 primary task                 -> rcRank[location], eminRank[location], band diagnostics
 directional task             -> dirMapRank[location, cell]
+P1 direct directional task   -> dirAccessStateRank[location, cell, rigidity]
 RIGIDITY_LIST task           -> accessStateRank[location, rigidity]
 ```
 
@@ -319,38 +337,132 @@ configured worker, capped by the total job size.
 
 ### C19 example
 
-At the C19 default directional resolution:
+At the current C19 directional resolution the underlying regular sky grid is:
 
 ```text
-longitude cells = 360 / 10 = 36
-latitude cells  = 180 / 10 + 1 = 19
-directional cells = 36 * 19 = 684
-primary scalar cutoff = 1
---------------------------------
-total tasks/location = 685
+longitude cells = 360 / 2.5 = 144
+latitude cells  = 180 / 2.5 + 1 = 73
+full-sphere directional cells = 144 * 73 = 10,512
 ```
 
-A run with four MPI ranks and 16 threads per rank therefore exposes up to 64 concurrent
-trajectory workers instead of the old effective one-worker execution.  The actual speedup
-will depend on trajectory-length imbalance, CPU affinity, memory/cache behavior, and the
-selected particle mover.
+C19 does **not** trace all 10,512 cells by default. It uses the generic
+`DIRMAP_COVERAGE VECTOR_APERTURES` selector. One or more instrument LOOK boresights,
+roll/up vectors, and elliptical half-angles are supplied in SM, GSM, or the local SM
+basis. The heads can point anywhere and are not assumed to be east/west or antipodal.
+The selector retains a subset of the same regular SM lon/lat cells, so retained
+trajectories are exactly the ones a `FULL_SPHERE` run would have calculated.
 
-The startup banner now reports the real task decomposition, for example:
+The C19 runner creates an epoch-specific `C19_directional_apertures.dat`. When the
+observational reference records telemetry-head provenance, the runner maps each
+numerator/denominator stream to that actual head ID and uses its epoch-specific attitude
+vector; no direction is inferred from a head name. For the current P4/P5 case, the
+pruning envelope uses the widest P5 half-angles (30° horizontal, 60° vertical) for each
+active detector head. Two roughly opposite GEO heads typically retain
+about 1,700--1,900 directions (~17% of the full sphere), but the count follows the
+actual attitude vectors.
+
+The current uncorrected-flux response is not limited to the nominal P4/P5 channel
+boundaries.  It includes the documented high-energy secondary proton response through
+150 MeV for P4 and 190 MeV for P5.  `--access-energy-points 48` therefore builds a
+logarithmic 15--190 MeV science grid and inserts the *exact* response boundaries; with
+the committed response this gives 55 actual energy nodes (about 0.168--0.627 GV for
+protons).  The former infinitesimal `E*(1+/-1e-8)` response-edge trajectories are no
+longer needed because the runner integrates the piecewise detector response exactly.
+
+For about 1,750 selected directions the scheduled work is approximately:
 
 ```text
-Cutoff backend : THREADS
-Cutoff workers : 16 per rank
-Work unit      : flattened cutoff trajectory task
-Tasks/location : 685
-Global tasks   : 685
-MPI scheduler  : DYNAMIC
-MPI dyn chunk  : 32 global cutoff task(s) per atomic fetch
+primary scalar cutoff             =       1
+directional PENUMBRA cells        =   1,750
+direct A(R,Omega) samples         = 1,750 * 55 = 96,250
+-----------------------------------------------------
+total tasks/location              ~ 98,001
 ```
 
-For task-level products the progress line uses `LocEq` (location-equivalent progress)
-and `Task` as the authoritative counter.  `LocEq` is simply
-`completed_tasks/tasks_per_location`; tasks belonging to one physical location may finish
-out of order on different ranks.
+The historical full-sphere setting would schedule:
+
+```text
+1 + 10,512 + 10,512 * 55 = 588,673 tasks/location
+```
+
+so vector-aperture pruning still reduces scheduled directional work by roughly a factor
+of six for this geometry while preserving angular resolution inside the viewed
+apertures.
+
+The direct-access states remain discrete.  C19 does **not** linearly interpolate an
+ALLOWED/FORBIDDEN state change between two sampled rigidities.  Instead, the complete
+response-weighted interval is carried as an explicit lower/upper uncertainty bracket.
+`--max-discrete-transition-fraction` (default 0.05) prevents a quantitative E/W result
+from being accepted when too much detector response falls inside such transition
+brackets.  Increasing `--access-energy-points` is therefore an explicit rigidity-grid
+convergence test rather than a hidden change in the interpolation model.
+
+Both AMPS interfaces are supported:
+
+```text
+# input file
+DIRMAP_COVERAGE VECTOR_APERTURES
+DIRMAP_APERTURE_FILE instrument_apertures.dat
+```
+
+with file rows
+
+```text
+name frame bx by bz upx upy upz horizontalHalfDeg verticalHalfDeg
+```
+
+or repeatable inline definitions such as
+
+```text
+DIRMAP_APERTURE HEAD_A SM 0.10 0.97 0.22 0.00 0.22 0.98 30 60
+```
+
+The equivalent command line is:
+
+```bash
+-cutoff-dirmap-coverage VECTOR_APERTURES \
+-cutoff-dirmap-aperture-file instrument_apertures.dat
+```
+
+with repeatable `-cutoff-dirmap-aperture "..."` available for inline definitions.
+Set `DIRMAP_COVERAGE FULL_SPHERE` (or the corresponding CLI value) to recover the
+complete sky.
+
+A run with four MPI ranks and 16 threads per rank can expose up to 64 concurrent
+trajectory workers even for one GOES location. Actual speedup depends on trajectory-
+length imbalance, CPU affinity, memory/cache behavior, and the selected particle mover.
+
+
+### C19 current single-workflow implementation
+
+C19 no longer exposes P0/P1/P2 as alternate runner modes. Those labels are retained only
+as development history. `srcEarth/test/C19/run_C19.py` now has one execution path and
+always uses the validated production behavior:
+
+- `PENUMBRA_SCAN` with trace-limit outcomes preserved as `UNRESOLVED`;
+- direct three-state directional `A(R,Omega)` output for GRIDDED Mode3D;
+- detector-response folding with event-derived spectrum/provenance support;
+- default `2.5° × 2.5°` directional sampling;
+- default vector-aperture directional work (`VECTOR_APERTURES`), using the actual
+  per-epoch detector look vectors and a conservative P5-sized pruning envelope, with
+  `FULL_SPHERE` retained as an explicit diagnostic alternative;
+- default Mode3D mesh resolution `0.025 Re` near Earth and `1.0 Re` at the boundary;
+- explicit detector attitude (`SM_PROXY` or per-epoch FILE) and optional bounded upstream
+  anisotropy in the synthetic-observation fold;
+- staged execution/trajectory/fold/observational validity; and
+- unconditional standard comparison-plot generation after normal post-processing.
+
+There is no `--p0-diagnostic` or `--p2-diagnostic` flag. GRIDLESS/GRIDDED selection,
+SMOKE/ROUTINE/FULL cadence, detector attitude, anisotropy, and numerical resolutions are
+inputs to the same current workflow rather than separate implementations. Historical
+behavior is not selectable through `--cutoff-search`, `--trace-limit-policy`, or
+`--response-fold`; the runner fixes those internal settings to the current validated
+contract and records them in the generated inputs/results.
+
+The current GRIDDED command therefore includes the fine mesh defaults and the generated
+input contains the direct rigidity list used to produce `A(E,Omega)`. Standard outputs
+include `C19_comparison_*`, `C19_scatter_*`, `C19_parity_*`, `C19_residual_*`,
+`C19_transmission_*`, and `C19_aperture_diagnostic.png` for every completed normal run.
 
 ## Error handling
 

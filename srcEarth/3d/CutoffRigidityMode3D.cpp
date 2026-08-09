@@ -30,15 +30,18 @@
 //        * Escape through the outer Mode3D box means the rigidity/direction is
 //          ALLOWED.
 //        * Contact with the inner Earth-loss sphere means FORBIDDEN.
-//        * Reaching the time, step, or path-length limit is interpreted according to
-//          CUTOFF_TRACE_LIMIT_POLICY.  FORBIDDEN reproduces the finite-trajectory
-//          convention used by published world grids; UNRESOLVED preserves a strict
-//          third state for numerical diagnostics.
+//        * IMPORTANT: the legacy Boolean UPPER_SCAN/BINARY wrappers map time, step,
+//          and path-length safety limits to FORBIDDEN.  The structured PENUMBRA_SCAN
+//          path instead honors CUTOFF_TRACE_LIMIT_POLICY and can preserve those
+//          outcomes as a strict third UNRESOLVED state.  C19 P0 therefore uses
+//          PENUMBRA_SCAN+UNRESOLVED for production diagnostics and keeps UPPER_SCAN
+//          only as an explicit legacy control.
 //
 //   4. Determine the cutoff rigidity for that direction.
 //        * UPPER_SCAN returns the final forbidden-to-allowed transition.
-//        * PENUMBRA_SCAN evaluates the complete access sequence and returns lower,
-//          effective, and upper cutoff diagnostics.  C6 uses the effective value.
+//        * PENUMBRA_SCAN evaluates the complete three-state access sequence and returns
+//          lower, effective, and upper cutoff diagnostics.  Directional maps additionally
+//          export topology and raw termination counts for C19 P0.
 //        * RIGIDITY_LIST traces only an explicit set of vertical rigidities and writes
 //          their access states.  It may restrict shell nodes to an absolute geodetic
 //          latitude band and is intended for efficient validation products such as C9.
@@ -239,6 +242,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <utility>
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -412,6 +416,12 @@ static inline V3 Apply(const Mat3& R, const V3& v) {
         R.a[1][0]*v.x + R.a[1][1]*v.y + R.a[1][2]*v.z,
         R.a[2][0]*v.x + R.a[2][1]*v.y + R.a[2][2]*v.z
     };
+}
+
+static inline Mat3 Transpose3(const Mat3& R) {
+    Mat3 T{};
+    for (int i=0;i<3;++i) for (int j=0;j<3;++j) T.a[i][j]=R.a[j][i];
+    return T;
 }
 
 static inline Mat3 GetSpiceRotationOrIdentity3D(const char* fromFrame,
@@ -1907,9 +1917,35 @@ struct CutoffBandResult3D_ {
     int lowerAboveRange{0};
     int upperBelowRange{0};
     int upperAboveRange{0};
+
+    // P0/C19 trajectory-forensics fields.  These counts refer to the UNIQUE
+    // rigidity samples evaluated by this penumbra scan, including transition
+    // refinement/integration samples.  They deliberately preserve the raw terminal
+    // reason rather than only the three-state Allowed/Forbidden/Unresolved label.
+    // This is what lets C19 distinguish a physical east-side loss/trapping cutoff
+    // from an apparent cutoff created by MAX_TRACE_DISTANCE/TIME/STEPS.
+    int nTrajectoryEvaluations{0};
+    int nOuterBoundaryAllowed{0};
+    int nInnerBoundaryForbidden{0};
+    int nMagneticallyTrappedForbidden{0};
+    int nTimeLimit{0};
+    int nStepLimit{0};
+    int nDistanceLimit{0};
+    double maxTraceTime_s{0.0};
+    double maxTraceDistance_Re{0.0};
+    int maxTraceSteps{0};
 };
 
-static EarthUtil::CutoffSampleState ClassifyCutoffSample3D_(
+struct CutoffSampleDiagnostic3D_ {
+    EarthUtil::CutoffSampleState state{EarthUtil::CutoffSampleState::Unresolved};
+    Earth::GridlessMode::TrajectoryTermination termination{
+        Earth::GridlessMode::TrajectoryTermination::NumericalFailure};
+    double traceTime_s{0.0};
+    double traceDistance_m{0.0};
+    int steps{0};
+};
+
+static CutoffSampleDiagnostic3D_ ClassifyCutoffSample3DDetailed_(
                               const EarthUtil::AmpsParam& prm,
                               cMode3DMeshFieldEval& field,
                               const V3& x0_m,
@@ -1921,18 +1957,30 @@ static EarthUtil::CutoffSampleState ClassifyCutoffSample3D_(
     const auto tr=TraceTrajectory3DWithSingleRetry(
         prm,field,x0_m,v0,R_GV,q_C,m0_kg,box,-1.0,false);
 
-    if (tr.allowed()) return EarthUtil::CutoffSampleState::Allowed;
-    if (Earth::GridlessMode::IsPhysicalForbiddenTermination(tr.termination))
-        return EarthUtil::CutoffSampleState::PhysicalForbidden;
+    CutoffSampleDiagnostic3D_ out;
+    out.termination=tr.termination;
+    out.traceTime_s=tr.traceTime_s;
+    out.traceDistance_m=tr.traceDistance_m;
+    out.steps=tr.steps;
+
+    if (tr.allowed()) {
+        out.state=EarthUtil::CutoffSampleState::Allowed;
+        return out;
+    }
+    if (Earth::GridlessMode::IsPhysicalForbiddenTermination(tr.termination)) {
+        out.state=EarthUtil::CutoffSampleState::PhysicalForbidden;
+        return out;
+    }
 
     if (Earth::GridlessMode::IsTraceLimitTermination(tr.termination)) {
-        // C6 follows the finite-trajectory convention of the published world
-        // grids: a trajectory that does not escape before the configured physical
-        // stopping criterion is counted as forbidden.  Strict numerical tests may
-        // select UNRESOLVED to preserve a third state and invalidate the integral.
-        if (EarthUtil::ToUpper(prm.cutoff.traceLimitPolicy)=="FORBIDDEN")
-            return EarthUtil::CutoffSampleState::PhysicalForbidden;
-        return EarthUtil::CutoffSampleState::Unresolved;
+        // The structured PENUMBRA_SCAN honors CUTOFF_TRACE_LIMIT_POLICY.  C19 P0
+        // uses UNRESOLVED so a finite safety budget is never silently promoted to
+        // a physical geomagnetic barrier.  FORBIDDEN remains available for explicit
+        // reproduction of historical finite-trajectory products.
+        out.state=(EarthUtil::ToUpper(prm.cutoff.traceLimitPolicy)=="FORBIDDEN")
+            ? EarthUtil::CutoffSampleState::PhysicalForbidden
+            : EarthUtil::CutoffSampleState::Unresolved;
+        return out;
     }
 
     std::ostringstream msg;
@@ -1941,6 +1989,22 @@ static EarthUtil::CutoffSampleState ClassifyCutoffSample3D_(
         << ", R_GV=" << R_GV << ", steps=" << tr.steps
         << ", trace_time_s=" << tr.traceTime_s;
     throw std::runtime_error(msg.str());
+}
+
+static EarthUtil::CutoffSampleState ClassifyCutoffSample3D_(
+                              const EarthUtil::AmpsParam& prm,
+                              cMode3DMeshFieldEval& field,
+                              const V3& x0_m,
+                              const V3& v0,
+                              double R_GV,
+                              double q_C,
+                              double m0_kg,
+                              const DomainBox3D& box) {
+    // Compatibility wrapper for existing fixed-rigidity products.  New C19
+    // directional diagnostics use the detailed helper above so the terminal reason
+    // and trace budget are not discarded.
+    return ClassifyCutoffSample3DDetailed_(
+        prm,field,x0_m,v0,R_GV,q_C,m0_kg,box).state;
 }
 
 static CutoffBandResult3D_ CutoffForDirPenumbraScan_GV(
@@ -1962,11 +2026,25 @@ static CutoffBandResult3D_ CutoffForDirPenumbraScan_GV(
         BuildCutoffSearchGrid_GV_(prm,Rmin_GV,Rmax_GV,nScan);
     if (grid.size()<2) return out;
 
+    // Cache every unique rigidity evaluation.  Transition refinement and effective-
+    // cutoff integration can revisit the same R; without a cache those repeats would
+    // cost another full trajectory and would also make the termination counters depend
+    // on implementation details rather than on unique sampled rigidities.
+    std::vector<std::pair<double,CutoffSampleDiagnostic3D_>> sampleCache;
+    sampleCache.reserve(grid.size()+64);
+
+    auto detailedAt=[&](double R_GV) -> CutoffSampleDiagnostic3D_ {
+        for (const auto& item:sampleCache) {
+            if (item.first==R_GV) return item.second;
+        }
+        const CutoffSampleDiagnostic3D_ d=ClassifyCutoffSample3DDetailed_(
+            prm,field,x0_m,v0,R_GV,q_C,m0_kg,box);
+        sampleCache.emplace_back(R_GV,d);
+        return d;
+    };
+
     std::vector<EarthUtil::CutoffSampleState> states(grid.size());
-    for (std::size_t i=0;i<grid.size();++i) {
-        states[i]=ClassifyCutoffSample3D_(
-            prm,field,x0_m,v0,grid[i],q_C,m0_kg,box);
-    }
+    for (std::size_t i=0;i<grid.size();++i) states[i]=detailedAt(grid[i]).state;
 
     const EarthUtil::CutoffBandTopology topology=
         EarthUtil::AnalyzeCutoffBandSamples(states);
@@ -1980,10 +2058,7 @@ static CutoffBandResult3D_ CutoffForDirPenumbraScan_GV(
     out.upperBelowRange=topology.upperBelowRange ? 1 : 0;
     out.upperAboveRange=topology.upperAboveRange ? 1 : 0;
 
-    auto classify=[&](double R_GV) {
-        return ClassifyCutoffSample3D_(
-            prm,field,x0_m,v0,R_GV,q_C,m0_kg,box);
-    };
+    auto classify=[&](double R_GV) { return detailedAt(R_GV).state; };
 
     if (topology.lowerBelowRange) out.lower_GV=grid.front();
     else if (topology.lowerForbiddenIndex>=0 && topology.lowerAllowedIndex>=0) {
@@ -2010,6 +2085,29 @@ static CutoffBandResult3D_ CutoffForDirPenumbraScan_GV(
             EarthUtil::IntegrateEffectiveCutoff(
                 grid,states,out.lower_GV,out.upper_GV,classify);
         if (!effective.unresolved) out.effective_GV=effective.cutoff_GV;
+    }
+
+    // P0.3/P0.7 diagnostics are accumulated after all refinements so they describe
+    // the complete unique trajectory set actually used to obtain this directional
+    // cutoff.  Numerical retry failures still throw above; the counts here therefore
+    // distinguish resolved physical exits from configured safety-limit exhaustion.
+    out.nTrajectoryEvaluations=static_cast<int>(sampleCache.size());
+    for (const auto& item:sampleCache) {
+        const CutoffSampleDiagnostic3D_& d=item.second;
+        using TT=Earth::GridlessMode::TrajectoryTermination;
+        switch (d.termination) {
+            case TT::OuterBoundaryAllowed:          out.nOuterBoundaryAllowed++; break;
+            case TT::InnerBoundaryForbidden:        out.nInnerBoundaryForbidden++; break;
+            case TT::MagneticallyTrappedForbidden:  out.nMagneticallyTrappedForbidden++; break;
+            case TT::TimeLimit:                     out.nTimeLimit++; break;
+            case TT::StepLimit:                     out.nStepLimit++; break;
+            case TT::DistanceLimit:                 out.nDistanceLimit++; break;
+            default: break;
+        }
+        out.maxTraceTime_s=std::max(out.maxTraceTime_s,d.traceTime_s);
+        out.maxTraceDistance_Re=std::max(
+            out.maxTraceDistance_Re,d.traceDistance_m/_EARTH__RADIUS_);
+        out.maxTraceSteps=std::max(out.maxTraceSteps,d.steps);
     }
 
     return out;
@@ -2299,11 +2397,51 @@ struct DirectionalMapConfig3D {
     bool enabled{false};
     double lonRes_deg{0.0};
     double latRes_deg{0.0};
+
+    // nLon/nLat describe the *underlying* regular full-sphere grid.  nCells is
+    // the number of cells actually scheduled.  In FULL_SPHERE these are identical
+    // to nLon*nLat.  VECTOR_APERTURES keeps a compact list of full-grid cell ids so
+    // the retained directions are bit-for-bit the same angular samples as the full
+    // map; only unnecessary trajectory work is removed.
     int nLon{0};
     int nLat{0};
+    int nFullCells{0};
     int nCells{0};
+    std::string coverage{"FULL_SPHERE"};
+    std::vector<int> fullGridCellIds;
+
     bool spiceOk{false};
     Mat3 R_label2gsm{Identity3()};
+};
+
+// Long-form per-cell PENUMBRA_SCAN diagnostics used by C19 P0.  These arrays are
+// allocated only when both DIRECTIONAL_MAP and PENUMBRA_SCAN are active, so the
+// normal compact UPPER_SCAN map retains its historical memory footprint/schema.
+// Every flattened map cell has one unique task owner; -1 is therefore a safe MPI_MAX
+// sentinel for all fields, including counts whose valid values are >=0.
+struct DirectionalMapPenumbraArrays3D {
+    std::vector<double> lower, effective, upper;
+    std::vector<int> nTransitions, nAllowedIntervals, nUnresolvedSamples;
+    std::vector<int> lowerBracketUnresolved, upperBracketUnresolved;
+    std::vector<int> lowerBelowRange, lowerAboveRange, upperBelowRange, upperAboveRange;
+    std::vector<int> nTrajectoryEvaluations, nOuterBoundaryAllowed;
+    std::vector<int> nInnerBoundaryForbidden, nMagneticallyTrappedForbidden;
+    std::vector<int> nTimeLimit, nStepLimit, nDistanceLimit;
+    std::vector<double> maxTraceTime_s, maxTraceDistance_Re;
+    std::vector<int> maxTraceSteps;
+
+    void assign(std::size_t n) {
+        lower.assign(n,-1.0); effective.assign(n,-1.0); upper.assign(n,-1.0);
+        nTransitions.assign(n,-1); nAllowedIntervals.assign(n,-1); nUnresolvedSamples.assign(n,-1);
+        lowerBracketUnresolved.assign(n,-1); upperBracketUnresolved.assign(n,-1);
+        lowerBelowRange.assign(n,-1); lowerAboveRange.assign(n,-1);
+        upperBelowRange.assign(n,-1); upperAboveRange.assign(n,-1);
+        nTrajectoryEvaluations.assign(n,-1); nOuterBoundaryAllowed.assign(n,-1);
+        nInnerBoundaryForbidden.assign(n,-1); nMagneticallyTrappedForbidden.assign(n,-1);
+        nTimeLimit.assign(n,-1); nStepLimit.assign(n,-1); nDistanceLimit.assign(n,-1);
+        maxTraceTime_s.assign(n,-1.0); maxTraceDistance_Re.assign(n,-1.0);
+        maxTraceSteps.assign(n,-1);
+    }
 };
 
 static DirectionalMapConfig3D ConfigureDirectionalMap3D(const EarthUtil::AmpsParam& prm) {
@@ -2314,11 +2452,16 @@ static DirectionalMapConfig3D ConfigureDirectionalMap3D(const EarthUtil::AmpsPar
 
     cfg.lonRes_deg = prm.cutoff.dirMapLonRes_deg;
     cfg.latRes_deg = prm.cutoff.dirMapLatRes_deg;
+    cfg.coverage = EarthUtil::ToUpper(prm.cutoff.dirMapCoverage);
 
     if (!(cfg.lonRes_deg > 0.0) || !(cfg.latRes_deg > 0.0)) {
         throw std::runtime_error(
             "Mode3D cutoff: DIRMAP_LON_RES and DIRMAP_LAT_RES must be > 0 "
             "when DIRECTIONAL_MAP=T.");
+    }
+    if (!(cfg.coverage=="FULL_SPHERE" || cfg.coverage=="VECTOR_APERTURES")) {
+        throw std::runtime_error(
+            "Mode3D cutoff: DIRMAP_COVERAGE must be FULL_SPHERE or VECTOR_APERTURES.");
     }
 
     // Reuse the gridless convention exactly.  Rounding allows common values such
@@ -2326,13 +2469,20 @@ static DirectionalMapConfig3D ConfigureDirectionalMap3D(const EarthUtil::AmpsPar
     // if the decimal representation is not exact.
     cfg.nLon = static_cast<int>(std::floor(360.0/cfg.lonRes_deg + 0.5));
     cfg.nLat = static_cast<int>(std::floor(180.0/cfg.latRes_deg + 0.5)) + 1;
-    cfg.nCells = cfg.nLon * cfg.nLat;
+    cfg.nFullCells = cfg.nLon * cfg.nLat;
 
-    if (cfg.nLon <= 0 || cfg.nLat <= 0 || cfg.nCells <= 0) {
+    if (cfg.nLon <= 0 || cfg.nLat <= 0 || cfg.nFullCells <= 0) {
         throw std::runtime_error(
             "Mode3D cutoff: invalid directional-map grid size derived from "
             "DIRMAP_LON_RES/DIRMAP_LAT_RES.");
     }
+
+    // Start from the complete historical grid.  VECTOR_APERTURES is applied later,
+    // after the observation locations are available, by replacing this identity list
+    // with a compact list of retained full-grid ids.
+    cfg.fullGridCellIds.resize((std::size_t)cfg.nFullCells);
+    for (int k=0;k<cfg.nFullCells;++k) cfg.fullGridCellIds[(std::size_t)k]=k;
+    cfg.nCells=cfg.nFullCells;
 
     // Direction labels are in SM; tracing directions must be in GSM.  When SPICE
     // is unavailable, GetSpiceRotationOrIdentity3D returns identity and sets
@@ -2343,29 +2493,162 @@ static DirectionalMapConfig3D ConfigureDirectionalMap3D(const EarthUtil::AmpsPar
     return cfg;
 }
 
-static V3 DirectionalMapCellDirectionGSM3D(const DirectionalMapConfig3D& cfg,
-                                           int cellId) {
-    // Cell indexing convention is shared with gridless:
-    //   cellId = iLon + nLon*jLat
-    // where lon increases fastest in the Tecplot POINT zone.
-    const int iLon = cellId % cfg.nLon;
-    const int jLat = cellId / cfg.nLon;
-
-    double lon_deg = cfg.lonRes_deg * iLon;
-    double lat_deg = -90.0 + cfg.latRes_deg * jLat;
+static void DirectionalMapCellLonLat3D(const DirectionalMapConfig3D& cfg,
+                                       int selectedCellId,
+                                       double& lon_deg,double& lat_deg) {
+    if (selectedCellId<0 || selectedCellId>=cfg.nCells)
+        throw std::runtime_error("Mode3D directional-map selected cell id is out of range.");
+    const int fullCellId=cfg.fullGridCellIds[(std::size_t)selectedCellId];
+    const int iLon = fullCellId % cfg.nLon;
+    const int jLat = fullCellId / cfg.nLon;
+    lon_deg = cfg.lonRes_deg * iLon;
+    lat_deg = -90.0 + cfg.latRes_deg * jLat;
     if (lat_deg > 90.0) lat_deg = 90.0;
+}
 
-    // Build the unit arrival direction in the labeling frame (SM).  This is a
-    // global spherical direction, not a geographic position and not a local ENU
-    // direction at the observation point.
+static V3 DirectionalMapCellDirectionLabel3D(const DirectionalMapConfig3D& cfg,
+                                             int selectedCellId) {
+    double lon_deg=0.0,lat_deg=0.0;
+    DirectionalMapCellLonLat3D(cfg,selectedCellId,lon_deg,lat_deg);
     const double lon = lon_deg * M_PI/180.0;
     const double lat = lat_deg * M_PI/180.0;
     const double cl  = std::cos(lat);
-    const V3 dirLabel{cl*std::cos(lon), cl*std::sin(lon), std::sin(lat)};
+    return V3{cl*std::cos(lon), cl*std::sin(lon), std::sin(lat)};
+}
+
+static V3 DirectionalMapCellDirectionGSM3D(const DirectionalMapConfig3D& cfg,
+                                           int selectedCellId) {
+    // Build the unit arrival direction in the labeling frame (SM).  This is a
+    // global spherical direction, not a geographic position and not a local ENU
+    // direction at the observation point.  In aperture-limited mode the selected
+    // index is first mapped back to its original full-grid id, preserving the exact
+    // direction that a FULL_SPHERE run would have evaluated.
+    const V3 dirLabel=DirectionalMapCellDirectionLabel3D(cfg,selectedCellId);
 
     // Rotate to GSM for tracing.  v3unit protects against a malformed transform
     // or roundoff at the poles; the input vector is already unit length.
     return v3unit(Apply(cfg.R_label2gsm, dirLabel));
+}
+
+// Apply the optional VECTOR_APERTURES work-selection mask.
+//
+// This routine is mission/instrument neutral.  The solver knows only a list of
+// physical detector LOOK apertures; it does not synthesize "east"/"west" directions
+// from the spacecraft position and it does not require the apertures to be antipodal.
+// Each aperture can be given in global SM/GSM coordinates or in a local SM basis.
+// The regular directional grid itself is unchanged, so every retained cell is exactly
+// the same trajectory that FULL_SPHERE would have traced.
+//
+// LOCAL_SM basis convention (components of boresight/up are expressed in this basis):
+//   x = radial unit vector at the observation location
+//   y = local east = unit(SM +Z x radial)
+//   z = local north, chosen to complete a right-handed orthonormal triad
+// This local frame is a coordinate convenience only; arbitrary real instrument attitude
+// should preferably be supplied in SM or GSM at the actual observation epoch.
+static void ApplyDirectionalMapCoverage3D(
+        const EarthUtil::AmpsParam& prm,
+        DirectionalMapConfig3D& cfg,
+        const std::vector<V3>& locationsGsm) {
+    if (!cfg.enabled || cfg.coverage=="FULL_SPHERE") return;
+    if (cfg.coverage!="VECTOR_APERTURES")
+        throw std::runtime_error("Unsupported Mode3D directional-map coverage: "+cfg.coverage);
+    if (prm.cutoff.dirMapApertures.empty())
+        throw std::runtime_error("VECTOR_APERTURES directional coverage has no aperture definitions.");
+    if (locationsGsm.empty())
+        throw std::runtime_error("VECTOR_APERTURES directional coverage has no locations.");
+
+    const Mat3 R_gsm2label=Transpose3(cfg.R_label2gsm);
+    std::vector<unsigned char> keep((std::size_t)cfg.nFullCells,0);
+
+    auto toV3=[](const EarthUtil::Vec3& q) -> V3 { return V3{q.x,q.y,q.z}; };
+
+    for (const V3& xGsm : locationsGsm) {
+        const V3 radial=v3unit(Apply(R_gsm2label,xGsm));
+        if (!(v3norm(radial)>0.0)) continue;
+
+        // The local basis is constructed once per observation point and is used only
+        // for aperture definitions explicitly tagged LOCAL_SM.  No instrument name or
+        // nominal east/west orientation is embedded in the selector.
+        const V3 smNorth{0.0,0.0,1.0};
+        V3 localEast=cross(smNorth,radial);
+        if (v3norm(localEast)<1.0e-12) localEast=V3{0.0,1.0,0.0};
+        localEast=v3unit(localEast);
+        V3 localNorth=v3unit(cross(radial,localEast));
+        if (dot(localNorth,smNorth)<0.0) localNorth=mul(-1.0,localNorth);
+
+        struct ResolvedAperture { V3 b,h,v; double hh,vh; std::string name; };
+        std::vector<ResolvedAperture> apertures;
+        apertures.reserve(prm.cutoff.dirMapApertures.size());
+
+        for (const auto& spec : prm.cutoff.dirMapApertures) {
+            V3 b=toV3(spec.boresight);
+            V3 u=toV3(spec.up);
+            const std::string frame=EarthUtil::ToUpper(spec.frame);
+            if (frame=="GSM") {
+                b=Apply(R_gsm2label,b);
+                u=Apply(R_gsm2label,u);
+            }
+            else if (frame=="LOCAL_SM") {
+                // Convert vector components in (radial,east,north) into global SM.
+                b=add(add(mul(b.x,radial),mul(b.y,localEast)),mul(b.z,localNorth));
+                u=add(add(mul(u.x,radial),mul(u.y,localEast)),mul(u.z,localNorth));
+            }
+            else if (frame!="SM") {
+                throw std::runtime_error("Unsupported DIRMAP_APERTURE frame: "+frame);
+            }
+
+            b=v3unit(b);
+            if (!(v3norm(b)>0.0))
+                throw std::runtime_error("DIRMAP_APERTURE '"+spec.name+"' has a zero boresight after frame conversion.");
+
+            // Project the user-supplied roll/up reference into the tangent plane.  This
+            // permits attitude files with small floating-point non-orthogonality while
+            // rejecting a truly degenerate roll vector parallel to the boresight.
+            V3 v=add(u,mul(-dot(u,b),b));
+            if (v3norm(v)<1.0e-12)
+                throw std::runtime_error("DIRMAP_APERTURE '"+spec.name+"' up vector is parallel to its boresight.");
+            v=v3unit(v);
+            const V3 h=v3unit(cross(v,b));
+            apertures.push_back(ResolvedAperture{
+                b,h,v,spec.horizontalHalfAngle_deg,spec.verticalHalfAngle_deg,spec.name});
+        }
+
+        for (int fullCellId=0;fullCellId<cfg.nFullCells;++fullCellId) {
+            const int iLon=fullCellId%cfg.nLon;
+            const int jLat=fullCellId/cfg.nLon;
+            const double lon_deg=cfg.lonRes_deg*iLon;
+            double lat_deg=-90.0+cfg.latRes_deg*jLat;
+            if (lat_deg>90.0) lat_deg=90.0;
+            const double lon=lon_deg*M_PI/180.0;
+            const double lat=lat_deg*M_PI/180.0;
+            const double cl=std::cos(lat);
+            const V3 arrival{cl*std::cos(lon),cl*std::sin(lon),std::sin(lat)};
+
+            // Directional-map vectors denote incoming particle ARRIVAL direction;
+            // telescope boresights denote LOOK direction.  Their relationship is
+            // always antiparallel regardless of the instrument orientation.
+            const V3 look=mul(-1.0,arrival);
+            bool inside=false;
+            for (const auto& a : apertures) {
+                const double forward=dot(look,a.b);
+                if (!(forward>0.0)) continue;
+                const double ah=std::atan2(dot(look,a.h),forward)*180.0/M_PI;
+                const double av=std::atan2(dot(look,a.v),forward)*180.0/M_PI;
+                const double ellipse=(ah/a.hh)*(ah/a.hh)+(av/a.vh)*(av/a.vh);
+                if (ellipse<=1.0+1.0e-12) { inside=true; break; }
+            }
+            if (inside) keep[(std::size_t)fullCellId]=1;
+        }
+    }
+
+    cfg.fullGridCellIds.clear();
+    for (int fullCellId=0;fullCellId<cfg.nFullCells;++fullCellId)
+        if (keep[(std::size_t)fullCellId]) cfg.fullGridCellIds.push_back(fullCellId);
+    cfg.nCells=static_cast<int>(cfg.fullGridCellIds.size());
+    if (cfg.nCells<=0)
+        throw std::runtime_error(
+            "VECTOR_APERTURES directional coverage retained zero sky cells; check "
+            "aperture vectors, frames, half-angles, and directional resolution.");
 }
 
 static std::string DirectionalMapOutputFileName3D(int locId) {
@@ -2429,6 +2712,43 @@ static void EnsureDipoleAnalyticState3D(const EarthUtil::AmpsParam& prm) {
     // any analytic Störmer comparison or dipole invariant diagnostic is written.
     Earth::GridlessMode::Dipole::SetMomentScale(prm.field.dipoleMoment_Me);
     Earth::GridlessMode::Dipole::SetTiltDeg(prm.field.dipoleTilt_deg);
+}
+
+// Directional Störmer cutoff used only as the independent P0.9 centered-dipole
+// anchor.  For a dipole, the vertical cutoff Rv is recovered when the arrival
+// direction has zero magnetic-east component.  With our AMPS convention
+// ``dir_unit`` is the *incoming velocity direction*.  Thus particles seen by an
+// east-looking telescope have dir_unit approximately -e_east and receive the
+// larger directional cutoff, while west-looking particles receive the smaller one.
+//
+//   Rc(dir) = 4 Rv / [1 + sqrt(1 + cos^3(lambda) d_east)]^2
+//
+// At the magnetic equator this gives the classical horizontal east/west ratio
+// (1+sqrt(2))^2.  The function is deliberately confined to FIELD_MODEL=DIPOLE
+// diagnostics; it is not used by the production T96/T05 calculation.
+static double StormerDirectionalCutoff_GV(const EarthUtil::AmpsParam& prm,
+                                          const V3& x_m,
+                                          const V3& arrivalDir_gsm) {
+    const double r_m=v3norm(x_m);
+    if (!(r_m>0.0)) return -1.0;
+
+    const V3 rhat=mul(1.0/r_m,x_m);
+    const V3 mhat{Earth::GridlessMode::Dipole::gParams.m_hat[0],
+                  Earth::GridlessMode::Dipole::gParams.m_hat[1],
+                  Earth::GridlessMode::Dipole::gParams.m_hat[2]};
+    const double sinLam=dot(rhat,mhat);
+    const double cosLam=std::sqrt(std::max(0.0,1.0-sinLam*sinLam));
+    const double Rv=StormerVerticalCutoff_GV(prm,x_m);
+
+    V3 east=cross(mhat,rhat);
+    const double eastNorm=v3norm(east);
+    if (!(eastNorm>1.0e-14)) return Rv;
+    east=mul(1.0/eastNorm,east);
+
+    const double dEast=std::max(-1.0,std::min(1.0,dot(v3unit(arrivalDir_gsm),east)));
+    const double radicand=std::max(0.0,1.0+std::pow(cosLam,3)*dEast);
+    const double denom=std::pow(1.0+std::sqrt(radicand),2);
+    return (denom>0.0) ? 4.0*Rv/denom : -1.0;
 }
 
 
@@ -3184,19 +3504,80 @@ static void WriteTecplot3DShells_AccessList(
     std::fclose(f);
 }
 
+// P1.4 -- write the direct three-state access cube A(R,Omega) for one observation
+// location.  PENUMBRA_SCAN already evaluates a three-state classifier internally, but
+// a scalar Rc_effective discards the energy dependence needed by an instrument fold.
+// This companion product evaluates every explicitly requested rigidity at every
+// DIRECTIONAL_MAP cell and retains Allowed / PhysicalForbidden / Unresolved exactly.
+// The long-form POINT layout is intentionally simple for Python and other postprocessors:
+// one row == one (sky cell, rigidity) trajectory.
+static void WriteTecplot3DDirectionalAccess_Location(
+                                 const EarthUtil::AmpsParam& prm,
+                                 int locId,
+                                 const V3& x0_m,
+                                 const DirectionalMapConfig3D& cfg,
+                                 const std::vector<int>& accessState,
+                                 double qabs,
+                                 double m0_kg) {
+    const int nRigidity=static_cast<int>(prm.cutoff.rigidityList_GV.size());
+    const std::size_t nExpected=(std::size_t)cfg.nCells*(std::size_t)nRigidity;
+    if (accessState.size()!=nExpected) {
+        throw std::runtime_error(
+            "Mode3D directional access cube has size "+std::to_string(accessState.size())+
+            ", expected "+std::to_string(nExpected)+".");
+    }
+
+    char stem[256];
+    std::snprintf(stem,sizeof(stem),"cutoff_3d_dir_access_loc_%06d",locId);
+    const std::string fname=CutoffOutputFileName(stem);
+    FILE* f=std::fopen(fname.c_str(),"w");
+    if (!f) throw std::runtime_error("Cannot write "+fname);
+
+    std::fprintf(f,"TITLE=\"Mode3D direct directional rigidity access (location %d)\"\n",locId);
+    std::fprintf(f,
+        "VARIABLES=\"lon_deg\",\"lat_deg\",\"rigidity_GV\",\"energy_MeV\","
+        "\"access_state\",\"allowed\",\"unresolved\"\n");
+    std::fprintf(f,
+        "ZONE T=\"loc=%d x_km=%g y_km=%g z_km=%g frame=%s coverage=%s\" I=%zu F=POINT\n",
+        locId,x0_m.x/1000.0,x0_m.y/1000.0,x0_m.z/1000.0,
+        cfg.spiceOk ? "SM" : "GSM_fallback",cfg.coverage.c_str(),nExpected);
+
+    // The compact selected-cell index is the scheduler/storage index. Convert it
+    // back to the original regular-grid lon/lat so the file remains directly
+    // comparable with a FULL_SPHERE run.
+    for (int cellId=0;cellId<cfg.nCells;++cellId) {
+        double lon_deg=0.0,lat_deg=0.0;
+        DirectionalMapCellLonLat3D(cfg,cellId,lon_deg,lat_deg);
+        for (int ir=0;ir<nRigidity;++ir) {
+            const std::size_t k=(std::size_t)cellId*(std::size_t)nRigidity+(std::size_t)ir;
+            const int state=accessState[k];
+            const int allowed=(state==(int)EarthUtil::CutoffSampleState::Allowed) ? 1 : 0;
+            const int unresolved=(state==(int)EarthUtil::CutoffSampleState::Unresolved) ? 1 : 0;
+            const double rigidity=prm.cutoff.rigidityList_GV[(std::size_t)ir];
+            const double p=MomentumFromRigidity_GV(rigidity,qabs);
+            const double energy=KineticEnergyFromMomentum_MeV(p,m0_kg);
+            std::fprintf(f,"%.15e %.15e %.15e %.15e %d %d %d\n",
+                         lon_deg,lat_deg,rigidity,energy,state,allowed,unresolved);
+        }
+    }
+    std::fclose(f);
+}
+
 static void WriteTecplot3DDirectionalMap_Location(
                                  const EarthUtil::AmpsParam& prm,
                                  int locId,
                                  const V3& x0_m,
                                  const DirectionalMapConfig3D& cfg,
                                  const std::vector<double>& RcCell,
+                                 const DirectionalMapPenumbraArrays3D* penumbra,
+                                 std::size_t penumbraBase,
                                  double qabs,
                                  double m0_kg) {
-    (void)prm; // Reserved for future metadata fields; keep writer signature symmetric with other writers.
-
-    // One Tecplot file is written per observation location.  This mirrors the
-    // existing gridless naming/output strategy but uses a Mode3D-specific stem so
-    // the mesh-based standalone products do not overwrite gridless products.
+    // One Tecplot file is written per observation location.  The first four
+    // variables are intentionally unchanged for backward compatibility.  When
+    // PENUMBRA_SCAN is active, P0 C19 appends the complete band topology and
+    // trajectory-forensics columns required to distinguish PHYSICAL_FORBIDDEN
+    // from TIME/STEP/DISTANCE-limit exhaustion.
     const std::string fname = DirectionalMapOutputFileName3D(locId);
     FILE* f = std::fopen(fname.c_str(), "w");
     if (!f) throw std::runtime_error("Cannot write Tecplot directional map: " + fname);
@@ -3206,42 +3587,83 @@ static void WriteTecplot3DDirectionalMap_Location(
     const double z_km = x0_m.z / 1000.0;
 
     std::fprintf(f, "TITLE=\"Mode3D directional cutoff rigidity sky-map (location %d)\"\n", locId);
-    std::fprintf(f, "VARIABLES=\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"\n");
-
-    // The zone title records the observation point in km.  The direction labels
-    // are SM lon/lat when SPICE SM->GSM was available; otherwise the code used
-    // identity and the labels are effectively GSM.  The fallback status is printed
-    // in the run banner rather than repeated in every data row.
-    std::fprintf(f,
-        "ZONE T=\"loc=%d x_km=%g y_km=%g z_km=%g frame=%s\" I=%d J=%d F=POINT\n",
-        locId, x_km, y_km, z_km,
-        cfg.spiceOk ? "SM" : "GSM_fallback",
-        cfg.nLon, cfg.nLat);
-
-    // Row ordering matches DirectionalMapCellDirectionGSM3D():
-    //   cellId = iLon + nLon*jLat
-    // Tecplot reads this as an I=nLon, J=nLat POINT zone.
-    for (int j=0; j<cfg.nLat; ++j) {
-        double lat_deg = -90.0 + cfg.latRes_deg * j;
-        if (lat_deg > 90.0) lat_deg = 90.0;
-
-        for (int i=0; i<cfg.nLon; ++i) {
-            const int cellId = i + cfg.nLon*j;
-            const double lon_deg = cfg.lonRes_deg * i;
-            const double rc = RcCell[(size_t)cellId];
-
-            double Emin = -1.0;
-            if (rc > 0.0) {
-                const double pCut = MomentumFromRigidity_GV(rc, qabs);
-                Emin = KineticEnergyFromMomentum_MeV(pCut, m0_kg);
-            }
-
-            std::fprintf(f, "%e %e %e %e\n", lon_deg, lat_deg, rc, Emin);
-        }
+    if (penumbra) {
+        std::fprintf(f,
+            "VARIABLES=\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"," 
+            "\"Rc_lower_GV\",\"Rc_effective_GV\",\"Rc_upper_GV\"," 
+            "\"n_transitions\",\"n_allowed_intervals\",\"n_unresolved_samples\"," 
+            "\"lower_bracket_unresolved\",\"upper_bracket_unresolved\"," 
+            "\"lower_below_range\",\"lower_above_range\",\"upper_below_range\",\"upper_above_range\"," 
+            "\"n_trajectory_evaluations\",\"n_outer_boundary_allowed\"," 
+            "\"n_inner_boundary_forbidden\",\"n_magnetically_trapped_forbidden\"," 
+            "\"n_time_limit\",\"n_step_limit\",\"n_distance_limit\"," 
+            "\"max_trace_time_s\",\"max_trace_distance_Re\",\"max_trace_steps\",\"Rc_stormer_GV\"\n");
+    }
+    else {
+        std::fprintf(f, "VARIABLES=\"lon_deg\",\"lat_deg\",\"Rc_GV\",\"Emin_MeV\"\n");
     }
 
+    if (cfg.coverage=="FULL_SPHERE") {
+        std::fprintf(f,
+            "ZONE T=\"loc=%d x_km=%g y_km=%g z_km=%g frame=%s coverage=%s\" I=%d J=%d F=POINT\n",
+            locId, x_km, y_km, z_km,
+            cfg.spiceOk ? "SM" : "GSM_fallback",cfg.coverage.c_str(),
+            cfg.nLon, cfg.nLat);
+    }
+    else {
+        // A compact aperture subset is not a rectangular Tecplot I/J lattice.
+        // Explicit lon/lat columns preserve its geometry exactly.
+        std::fprintf(f,
+            "ZONE T=\"loc=%d x_km=%g y_km=%g z_km=%g frame=%s coverage=%s\" I=%d F=POINT\n",
+            locId, x_km, y_km, z_km,
+            cfg.spiceOk ? "SM" : "GSM_fallback",cfg.coverage.c_str(),cfg.nCells);
+    }
+
+    const bool dipole=(EarthUtil::ToUpper(prm.field.model)=="DIPOLE");
+    if (dipole) EnsureDipoleAnalyticState3D(prm);
+
+    for (int cellId=0; cellId<cfg.nCells; ++cellId) {
+        double lon_deg=0.0,lat_deg=0.0;
+        DirectionalMapCellLonLat3D(cfg,cellId,lon_deg,lat_deg);
+        const double rc = RcCell[(size_t)cellId];
+
+        double Emin = -1.0;
+        if (rc > 0.0) {
+            const double pCut = MomentumFromRigidity_GV(rc, qabs);
+            Emin = KineticEnergyFromMomentum_MeV(pCut, m0_kg);
+        }
+
+        if (!penumbra) {
+            std::fprintf(f, "%e %e %e %e\n", lon_deg, lat_deg, rc, Emin);
+            continue;
+        }
+
+        const std::size_t k=penumbraBase+(std::size_t)cellId;
+        const V3 dir_gsm=DirectionalMapCellDirectionGSM3D(cfg,cellId);
+        const double rcStormer=dipole
+            ? StormerDirectionalCutoff_GV(prm,x0_m,dir_gsm) : -1.0;
+
+        std::fprintf(f,
+            "%e %e %e %e %e %e %e "
+            "%d %d %d %d %d %d %d %d %d "
+            "%d %d %d %d %d %d %d "
+            "%e %e %d %e\n",
+            lon_deg,lat_deg,rc,Emin,
+            penumbra->lower[k],penumbra->effective[k],penumbra->upper[k],
+            penumbra->nTransitions[k],penumbra->nAllowedIntervals[k],
+            penumbra->nUnresolvedSamples[k],
+            penumbra->lowerBracketUnresolved[k],penumbra->upperBracketUnresolved[k],
+            penumbra->lowerBelowRange[k],penumbra->lowerAboveRange[k],
+            penumbra->upperBelowRange[k],penumbra->upperAboveRange[k],
+            penumbra->nTrajectoryEvaluations[k],penumbra->nOuterBoundaryAllowed[k],
+            penumbra->nInnerBoundaryForbidden[k],penumbra->nMagneticallyTrappedForbidden[k],
+            penumbra->nTimeLimit[k],penumbra->nStepLimit[k],penumbra->nDistanceLimit[k],
+            penumbra->maxTraceTime_s[k],penumbra->maxTraceDistance_Re[k],
+            penumbra->maxTraceSteps[k],rcStormer);
+    }
     std::fclose(f);
 }
+
 
 static void WriteTecplot3DShells_DipoleAnalyticCompare(
                                  const EarthUtil::AmpsParam& prm,
@@ -3622,17 +4044,17 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         throw std::runtime_error("Mode3D cutoff: unsupported OUTPUT_MODE '" +
                                  prm.output.mode + "'. Use POINTS, TRAJECTORY, or SHELLS.");
 
-    // The complete Mode3D penumbra product is currently defined as a structured
-    // shell file because its primary use is global reference-map validation
-    // (C6).  Refuse POINTS/TRAJECTORY here instead of silently writing only the
-    // scalar effective cutoff and losing the lower/upper/topology diagnostics.
-    // A future point-specific writer can remove this restriction without
-    // changing the band-search algorithm itself.
-    if ((penumbraScan || rigidityListAccess) && !isShells) {
+    // P1.4: PENUMBRA_SCAN is valid for POINTS/TRAJECTORY when a directional map is
+    // requested.  Its complete per-direction topology is written by the extended
+    // directional-map writer, so refusing the C19 one-location TRAJECTORY geometry
+    // would discard exactly the science product we need.  The *primary* RIGIDITY_LIST
+    // shell product remains shell-only because its writer is still geographic-shell
+    // specific; the new directional rigidity-list companion below has no such limit.
+    if (rigidityListAccess && !isShells) {
         throw std::runtime_error(
-            "Mode3D PENUMBRA_SCAN and RIGIDITY_LIST currently require OUTPUT_MODE "
-            "SHELLS so their structured validation diagnostics retain geographic "
-            "longitude/latitude metadata.");
+            "Mode3D primary RIGIDITY_LIST currently requires OUTPUT_MODE SHELLS. "
+            "For point/trajectory directional access use PENUMBRA_SCAN + "
+            "DIRECTIONAL_MAP + CUTOFF_RIGIDITY_LIST_GV.");
     }
     if (rigidityListAccess && prm.cutoff.rigidityList_GV.empty()) {
         throw std::runtime_error(
@@ -3694,22 +4116,46 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     //   - CUTOFF_SAMPLING controls the primary scalar cutoff written to
     //     cutoff_3d_points.dat or cutoff_3d_shells.dat.
     //   - DIRECTIONAL_MAP=T requests an additional diagnostic product: Rc for
-    //     every lon/lat arrival-direction cell at every observation location.
+    //     every *selected* lon/lat arrival-direction cell at every observation
+    //     location. FULL_SPHERE selects the historical complete grid;
+    //     VECTOR_APERTURES selects the exact subset requested by the configured
+    //     instrument apertures while preserving the original cell vectors.
     //
     // This is intentionally enabled for POINTS, TRAJECTORY, and SHELLS.  For
     // SHELLS this can create many files, but the keyword is explicit and the old
     // particle-based cutoff code also wrote one directional map per location.
     //==================================================================================
 
-    const DirectionalMapConfig3D dirMapCfg = ConfigureDirectionalMap3D(prm);
+    DirectionalMapConfig3D dirMapCfg = ConfigureDirectionalMap3D(prm);
+    if (dirMapCfg.enabled && dirMapCfg.coverage=="VECTOR_APERTURES") {
+        std::vector<V3> coverageLocationsGsm;
+        coverageLocationsGsm.reserve((std::size_t)nLoc);
+        for (int globalIdx=0;globalIdx<nLoc;++globalIdx) {
+            const int gridId=locationGridIds[(std::size_t)globalIdx];
+            coverageLocationsGsm.push_back(LocationToX0m(
+                prm,gridId,nLon,nLat,shellLonRes_deg,shellLatRes_deg,nPtsShell));
+        }
+        ApplyDirectionalMapCoverage3D(prm,dirMapCfg,coverageLocationsGsm);
+    }
     if (rigidityListAccess && dirMapCfg.enabled) {
         throw std::runtime_error(
-            "Mode3D RIGIDITY_LIST does not support DIRECTIONAL_MAP. The direct-access "
-            "product is already defined as one vertical trajectory per listed rigidity.");
+            "Mode3D primary RIGIDITY_LIST does not support DIRECTIONAL_MAP. Use "
+            "PENUMBRA_SCAN with CUTOFF_RIGIDITY_LIST_GV to request the P1.4 "
+            "directional access companion cube.");
     }
+
+    // P1.4 companion direct-access product.  Keeping PENUMBRA_SCAN as the primary
+    // algorithm preserves P0 lower/effective/upper diagnostics while a non-empty
+    // rigidity list adds independent A(R,Omega) tasks for the detector fold.
+    const bool saveDirectionalAccessStates=(
+        penumbraScan && dirMapCfg.enabled && !prm.cutoff.rigidityList_GV.empty());
+    const long long nDirectionalAccessTasks=saveDirectionalAccessStates
+        ? static_cast<long long>(dirMapCfg.nCells)*
+          static_cast<long long>(prm.cutoff.rigidityList_GV.size()) : 0LL;
     const long long tasksPerLocation=rigidityListAccess
         ? static_cast<long long>(prm.cutoff.rigidityList_GV.size())
-        : 1LL+(dirMapCfg.enabled ? static_cast<long long>(dirMapCfg.nCells) : 0LL);
+        : 1LL+(dirMapCfg.enabled ? static_cast<long long>(dirMapCfg.nCells) : 0LL)
+             +nDirectionalAccessTasks;
 
     //==================================================================================
     // 14.7 — Run summary (rank 0 only)
@@ -3774,13 +4220,30 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         if (dirMapCfg.enabled) {
             std::cout
                 << "  DIRMAP grid  : " << dirMapCfg.nLon << " x " << dirMapCfg.nLat
-                << " (" << dirMapCfg.nCells << " directions/location)\n"
+                << " (" << dirMapCfg.nFullCells << " full-sphere cells)\n"
+                << "  DIRMAP coverage: " << dirMapCfg.coverage << "\n"
+                << "  DIRMAP selected: " << dirMapCfg.nCells
+                << " directions/location ("
+                << (100.0*double(dirMapCfg.nCells)/double(dirMapCfg.nFullCells))
+                << "% of full sphere)\n"
                 << "  DIRMAP res   : lon " << dirMapCfg.lonRes_deg
-                << " deg, lat " << dirMapCfg.latRes_deg << " deg\n"
+                << " deg, lat " << dirMapCfg.latRes_deg << " deg\n";
+            if (dirMapCfg.coverage=="VECTOR_APERTURES") {
+                std::cout << "  DIRMAP apertures: "
+                          << prm.cutoff.dirMapApertures.size()
+                          << " configured arbitrary look direction(s)\n";
+            }
+            std::cout
                 << "  DIRMAP frame : "
                 << (dirMapCfg.spiceOk ? "SM labels -> GSM tracing"
                                       : "GSM fallback (SM->GSM SPICE unavailable)")
                 << "\n";
+        }
+
+        if (saveDirectionalAccessStates) {
+            std::cout << "Directional A(R,Omega): " << prm.cutoff.rigidityList_GV.size()
+                      << " rigidities x " << dirMapCfg.nCells
+                      << " sky cells per location (P1.4 companion product)\n";
         }
 
         std::cout
@@ -3998,6 +4461,11 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     std::vector<double> rcRank((size_t)nLoc,-1.0);
     std::vector<double> eminRank((size_t)nLoc,-1.0);
     std::vector<double> dirMapRank;
+    DirectionalMapPenumbraArrays3D dirMapPenumbraRank;
+    // P1.4 direct directional access states are flattened as
+    // [location][directional cell][requested rigidity].  -1 is the MPI sentinel;
+    // CutoffSampleState values are non-negative and can therefore use MPI_MAX.
+    std::vector<int> dirAccessStateRank;
 
     // Direct-access states use compact [work location][rigidity] indexing. -1 is the
     // uncomputed MPI sentinel; valid values are the CutoffSampleState integers 0, 1, 2.
@@ -4044,6 +4512,16 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 "Use a coarser DIRMAP grid or split the run into fewer locations.");
         }
         dirMapRank.assign((size_t)nMapLL,-1.0);
+        if (penumbraScan) dirMapPenumbraRank.assign((std::size_t)nMapLL);
+        if (saveDirectionalAccessStates) {
+            const long long nAccessLL=nMapLL*static_cast<long long>(prm.cutoff.rigidityList_GV.size());
+            if (nAccessLL>static_cast<long long>(std::numeric_limits<int>::max())) {
+                throw std::runtime_error(
+                    "Mode3D directional rigidity-access MPI reduction count exceeds INT_MAX; "
+                    "coarsen DIRMAP or reduce CUTOFF_RIGIDITY_LIST_GV.");
+            }
+            dirAccessStateRank.assign((std::size_t)nAccessLL,-1);
+        }
     }
 
     // Deterministic schedulers are represented analytically instead of materializing a
@@ -4344,14 +4822,73 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             return;
         }
 
-        // Directional-map task. localTask==1 corresponds to cellId==0.  Exactly one
-        // worker writes each [globalIdx,cellId] slot, making the array lock-free.
+        const long long directionalMapTaskCount=dirMapCfg.enabled
+            ? static_cast<long long>(dirMapCfg.nCells) : 0LL;
+        if (saveDirectionalAccessStates && localTask>directionalMapTaskCount) {
+            // P1.4 direct A(R,Omega) task.  These trajectories deliberately bypass the
+            // scalar effective-cutoff approximation.  Every requested energy/direction
+            // pair is classified with the same three-state helper as PENUMBRA_SCAN, so
+            // a TIME/STEP/DISTANCE cap remains Unresolved under the C19 production policy.
+            const long long accessTask=localTask-1LL-directionalMapTaskCount;
+            const int iRigidity=static_cast<int>(
+                accessTask%static_cast<long long>(nAccessRigidities));
+            const int cellId=static_cast<int>(
+                accessTask/static_cast<long long>(nAccessRigidities));
+            const V3 dir_gsm=DirectionalMapCellDirectionGSM3D(dirMapCfg,cellId);
+            const V3 v0=mul(-1.0,dir_gsm);
+            const std::size_t k=((std::size_t)globalIdx*(std::size_t)dirMapCfg.nCells+
+                                 (std::size_t)cellId)*(std::size_t)nAccessRigidities+
+                                (std::size_t)iRigidity;
+            const EarthUtil::CutoffSampleState state=ClassifyCutoffSample3D_(
+                prm,threadField,x0_m,v0,
+                prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
+            dirAccessStateRank[k]=static_cast<int>(state);
+            return;
+        }
+
+        // Directional-map PENUMBRA/UPPER task. localTask==1 corresponds to cellId==0.
+        // Exactly one worker writes each [globalIdx,cellId] slot, making the array lock-free.
         const int cellId=static_cast<int>(localTask-1LL);
         const V3 dir_gsm = DirectionalMapCellDirectionGSM3D(dirMapCfg, cellId);
         const size_t base = (size_t)globalIdx * (size_t)dirMapCfg.nCells;
-        dirMapRank[base + (size_t)cellId] = CutoffForDir_GV(
-            prm, threadField, x0_m, dir_gsm,
-            q_C, m0, box, Rmin, Rmax);
+        const std::size_t k=base+(size_t)cellId;
+
+        if (penumbraScan) {
+            // P0.1/P0.2: unlike the historical scalar-only directional map, keep
+            // the complete three-state PENUMBRA_SCAN result for every sky cell.
+            // The effective cutoff remains Rc_GV for backward compatibility; all
+            // additional topology/termination fields are exported alongside it.
+            const CutoffBandResult3D_ band=CutoffForDirPenumbraScan_GV(
+                prm,threadField,x0_m,dir_gsm,q_C,m0,box,Rmin,Rmax);
+            dirMapRank[k]=band.effective_GV;
+            dirMapPenumbraRank.lower[k]=band.lower_GV;
+            dirMapPenumbraRank.effective[k]=band.effective_GV;
+            dirMapPenumbraRank.upper[k]=band.upper_GV;
+            dirMapPenumbraRank.nTransitions[k]=band.nTransitions;
+            dirMapPenumbraRank.nAllowedIntervals[k]=band.nAllowedIntervals;
+            dirMapPenumbraRank.nUnresolvedSamples[k]=band.nUnresolved;
+            dirMapPenumbraRank.lowerBracketUnresolved[k]=band.lowerBracketUnresolved;
+            dirMapPenumbraRank.upperBracketUnresolved[k]=band.upperBracketUnresolved;
+            dirMapPenumbraRank.lowerBelowRange[k]=band.lowerBelowRange;
+            dirMapPenumbraRank.lowerAboveRange[k]=band.lowerAboveRange;
+            dirMapPenumbraRank.upperBelowRange[k]=band.upperBelowRange;
+            dirMapPenumbraRank.upperAboveRange[k]=band.upperAboveRange;
+            dirMapPenumbraRank.nTrajectoryEvaluations[k]=band.nTrajectoryEvaluations;
+            dirMapPenumbraRank.nOuterBoundaryAllowed[k]=band.nOuterBoundaryAllowed;
+            dirMapPenumbraRank.nInnerBoundaryForbidden[k]=band.nInnerBoundaryForbidden;
+            dirMapPenumbraRank.nMagneticallyTrappedForbidden[k]=band.nMagneticallyTrappedForbidden;
+            dirMapPenumbraRank.nTimeLimit[k]=band.nTimeLimit;
+            dirMapPenumbraRank.nStepLimit[k]=band.nStepLimit;
+            dirMapPenumbraRank.nDistanceLimit[k]=band.nDistanceLimit;
+            dirMapPenumbraRank.maxTraceTime_s[k]=band.maxTraceTime_s;
+            dirMapPenumbraRank.maxTraceDistance_Re[k]=band.maxTraceDistance_Re;
+            dirMapPenumbraRank.maxTraceSteps[k]=band.maxTraceSteps;
+        }
+        else {
+            dirMapRank[k] = CutoffForDir_GV(
+                prm, threadField, x0_m, dir_gsm,
+                q_C, m0, box, Rmin, Rmax);
+        }
     };
 
     // Compute a contiguous range of GLOBAL task ids.  DYNAMIC scheduling uses this
@@ -4557,7 +5094,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     //==================================================================================
 
     std::vector<double> rcAll, eminAll, dirMapAll;
-    std::vector<int> accessStateAll;
+    DirectionalMapPenumbraArrays3D dirMapPenumbraAll;
+    std::vector<int> accessStateAll, dirAccessStateAll;
     std::vector<double> rcLowerAll,rcEffectiveAll,rcUpperAll;
     std::vector<int> nTransitionsAll,nAllowedIntervalsAll,nUnresolvedAll;
     std::vector<int> lowerBracketUnresolvedAll,upperBracketUnresolvedAll;
@@ -4627,10 +5165,57 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 
     if (dirMapCfg.enabled) {
         const int nMap = static_cast<int>(dirMapRank.size());
-        if (mpiRank == 0) dirMapAll.assign((size_t)nMap,-1.0);
+        if (mpiRank == 0) {
+            dirMapAll.assign((size_t)nMap,-1.0);
+            if (penumbraScan) dirMapPenumbraAll.assign((std::size_t)nMap);
+        }
         MPI_Reduce(dirMapRank.data(),
                    (mpiRank==0 ? dirMapAll.data() : nullptr),
                    nMap,MPI_DOUBLE,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
+
+        if (penumbraScan) {
+            auto reduceMapDouble=[&](const std::vector<double>& local,
+                                     std::vector<double>& global) {
+                MPI_Reduce(local.data(),
+                           (mpiRank==0 ? global.data() : nullptr),
+                           nMap,MPI_DOUBLE,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
+            };
+            auto reduceMapInt=[&](const std::vector<int>& local,
+                                  std::vector<int>& global) {
+                MPI_Reduce(local.data(),
+                           (mpiRank==0 ? global.data() : nullptr),
+                           nMap,MPI_INT,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
+            };
+            reduceMapDouble(dirMapPenumbraRank.lower,dirMapPenumbraAll.lower);
+            reduceMapDouble(dirMapPenumbraRank.effective,dirMapPenumbraAll.effective);
+            reduceMapDouble(dirMapPenumbraRank.upper,dirMapPenumbraAll.upper);
+            reduceMapInt(dirMapPenumbraRank.nTransitions,dirMapPenumbraAll.nTransitions);
+            reduceMapInt(dirMapPenumbraRank.nAllowedIntervals,dirMapPenumbraAll.nAllowedIntervals);
+            reduceMapInt(dirMapPenumbraRank.nUnresolvedSamples,dirMapPenumbraAll.nUnresolvedSamples);
+            reduceMapInt(dirMapPenumbraRank.lowerBracketUnresolved,dirMapPenumbraAll.lowerBracketUnresolved);
+            reduceMapInt(dirMapPenumbraRank.upperBracketUnresolved,dirMapPenumbraAll.upperBracketUnresolved);
+            reduceMapInt(dirMapPenumbraRank.lowerBelowRange,dirMapPenumbraAll.lowerBelowRange);
+            reduceMapInt(dirMapPenumbraRank.lowerAboveRange,dirMapPenumbraAll.lowerAboveRange);
+            reduceMapInt(dirMapPenumbraRank.upperBelowRange,dirMapPenumbraAll.upperBelowRange);
+            reduceMapInt(dirMapPenumbraRank.upperAboveRange,dirMapPenumbraAll.upperAboveRange);
+            reduceMapInt(dirMapPenumbraRank.nTrajectoryEvaluations,dirMapPenumbraAll.nTrajectoryEvaluations);
+            reduceMapInt(dirMapPenumbraRank.nOuterBoundaryAllowed,dirMapPenumbraAll.nOuterBoundaryAllowed);
+            reduceMapInt(dirMapPenumbraRank.nInnerBoundaryForbidden,dirMapPenumbraAll.nInnerBoundaryForbidden);
+            reduceMapInt(dirMapPenumbraRank.nMagneticallyTrappedForbidden,dirMapPenumbraAll.nMagneticallyTrappedForbidden);
+            reduceMapInt(dirMapPenumbraRank.nTimeLimit,dirMapPenumbraAll.nTimeLimit);
+            reduceMapInt(dirMapPenumbraRank.nStepLimit,dirMapPenumbraAll.nStepLimit);
+            reduceMapInt(dirMapPenumbraRank.nDistanceLimit,dirMapPenumbraAll.nDistanceLimit);
+            reduceMapDouble(dirMapPenumbraRank.maxTraceTime_s,dirMapPenumbraAll.maxTraceTime_s);
+            reduceMapDouble(dirMapPenumbraRank.maxTraceDistance_Re,dirMapPenumbraAll.maxTraceDistance_Re);
+            reduceMapInt(dirMapPenumbraRank.maxTraceSteps,dirMapPenumbraAll.maxTraceSteps);
+        }
+        if (saveDirectionalAccessStates) {
+            const int nAccess=static_cast<int>(dirAccessStateRank.size());
+            if (mpiRank==0) dirAccessStateAll.assign((std::size_t)nAccess,-1);
+            MPI_Reduce(dirAccessStateRank.data(),
+                       (mpiRank==0 ? dirAccessStateAll.data() : nullptr),
+                       nAccess,MPI_INT,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
+        }
     }
 
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
@@ -4759,13 +5344,33 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 }
 
                 WriteTecplot3DDirectionalMap_Location(
-                    prm, locId, x0_m, dirMapCfg, RcCell, qabs, m0);
+                    prm, locId, x0_m, dirMapCfg, RcCell,
+                    (penumbraScan ? &dirMapPenumbraAll : nullptr),
+                    base, qabs, m0);
+
+                if (saveDirectionalAccessStates) {
+                    const std::size_t nRig=(std::size_t)nAccessRigidities;
+                    const std::size_t accessBase=base*nRig;
+                    std::vector<int> accessCell(
+                        (std::size_t)dirMapCfg.nCells*nRig,-1);
+                    std::copy(dirAccessStateAll.begin()+accessBase,
+                              dirAccessStateAll.begin()+accessBase+accessCell.size(),
+                              accessCell.begin());
+                    WriteTecplot3DDirectionalAccess_Location(
+                        prm,locId,x0_m,dirMapCfg,accessCell,qabs,m0);
+                }
             }
 
             std::cout << "Wrote: " << nLoc
                       << " directional cutoff map file(s): "
                       << "cutoff_3d_dir_map_loc_######"
                       << gCutoffOutputFileSuffix << ".dat\n";
+            if (saveDirectionalAccessStates) {
+                std::cout << "Wrote: " << nLoc
+                          << " directional direct-access cube file(s): "
+                          << "cutoff_3d_dir_access_loc_######"
+                          << gCutoffOutputFileSuffix << ".dat\n";
+            }
         }
 
         std::cout.flush();
