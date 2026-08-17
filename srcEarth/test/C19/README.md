@@ -706,7 +706,7 @@ PENUMBRA_SCAN
 With `DIRECT_ACCESS`, `DIRECTIONAL_MAP T`, and a non-empty `CUTOFF_RIGIDITY_LIST_GV`,
 both solvers write the direct cube without first calculating a directional cutoff map.
 With `PENUMBRA_SCAN`, the same cube is written as a companion product. The solver-specific
-file names are: The solver-specific file names are:
+file names are:
 
 ```text
 GRIDDED : cutoff_3d_dir_access_loc_000000.dat
@@ -721,39 +721,96 @@ Each row is one `(lon,lat,rigidity)` trajectory and contains `rigidity_GV`, corr
 2 = UNRESOLVED
 ```
 
-The GRIDDED and GRIDLESS direct-access files are required to carry the same sky-cell set and the same ordered energy/rigidity grid for a given C19 case. In `PENUMBRA_SCAN` mode the runner additionally checks the cube against the companion directional map. In `DIRECT_ACCESS` mode no cutoff map exists by design; the runner constructs a geometry-only map directly from the cube's frame, observation position, and `(lon,lat)` cells. Missing or truncated direct-access output fails post-processing rather than falling back to a scalar-cutoff proxy.
+The GRIDDED and GRIDLESS direct-access files are required to carry the same selected sky-cell set and the same response-support endpoints. In dense mode every direction has the same ordered energy/rigidity grid. In adaptive `DIRECT_ACCESS` every direction contains the same mandatory seed rigidities but may contain a different set of refinement nodes; this is intentional and is validated explicitly by the runner. Rigidity is the authoritative grid identifier because it is the value passed to the trajectory solver; the output energy is reconstructed by AMPS from rigidity and the configured particle mass and is retained for detector-response integration. This avoids rejecting a valid cube because Python and C++ physical constants do not round-trip an energy value identically. In `PENUMBRA_SCAN` mode the runner additionally checks the cube against the companion directional map. In `DIRECT_ACCESS` mode no cutoff map exists by design; the runner constructs a geometry-only map directly from the cube's frame, observation position, and `(lon,lat)` cells. Missing endpoints, missing adaptive seed nodes, duplicate/non-increasing nodes, or truncated direct-access output fail post-processing rather than falling back to a scalar-cutoff proxy.
 
-The task scheduler flattens `(location, sky-cell, rigidity)` work so those trajectories are distributed across MPI ranks rather than serialized inside one map cell. Both Mode3D and GRIDLESS may additionally use their configured intra-rank thread backend. `DIRECT_ACCESS` is the default science product because the detector fold consumes the rigidity-list cube itself; `PENUMBRA_SCAN` is retained when full cutoff topology is explicitly required. The two files intentionally have the same columns and three-state semantics so `run_C19.py` uses one parser and one folding implementation.
+Dense direct access flattens `(location, sky-cell, rigidity)` work so independent trajectories are distributed across MPI ranks and intra-rank workers. Adaptive direct access deliberately changes the top-level scheduling unit to **one sky direction**: that worker first evaluates the mandatory seeds and then makes local midpoint-refinement decisions for that direction. Different directions remain independent and are distributed across MPI ranks/threads. This dependency-aware task unit avoids global synchronization after every refinement level while retaining thousands of parallel direction tasks in a normal C19 aperture. `DIRECT_ACCESS` is the default science product because the detector fold consumes the access samples themselves; `PENUMBRA_SCAN` is retained when full cutoff topology is explicitly required. The two solver files intentionally retain the same public columns and three-state semantics so `run_C19.py` uses one parser and one folding implementation.
 
-A terminology detail is important: `RIGIDITY_LIST` remains the historical shell-oriented Mode3D product. C19 uses the distinct `DIRECT_ACCESS` token for point/trajectory directional access. GRIDDED and GRIDLESS implement the same `DIRECT_ACCESS` semantics and schedule one independent three-state trajectory for every requested `(direction,rigidity)` pair.
+A terminology detail is important: `RIGIDITY_LIST` remains the historical shell-oriented Mode3D product. C19 uses the distinct `DIRECT_ACCESS` token for point/trajectory directional access. The common CLI layer preserves these as separate tokens; in particular, `-cutoff-search DIRECT_ACCESS` must **not** be normalized to `RIGIDITY_LIST`. GRIDDED and GRIDLESS implement the same `DIRECT_ACCESS` semantics and the same adaptive-refinement helper.
 
-### Runtime implication and execution commands
+### Adaptive `DIRECT_ACCESS` algorithm and runtime optimization
 
-For a representative 2.5-degree C19 aperture selection with 1,760 retained directions
-and 55 requested detector-response rigidities, `DIRECT_ACCESS` schedules
+The production `DIRECT_ACCESS` calculation now uses **per-direction adaptive rigidity sampling** by default. The optimization changes only *where* the access function is sampled; it does not replace the three-state trajectory classifier, assume a monotonic cutoff, interpolate access as a fractional ramp, or relax any C19 observational validity gate. A dense common-grid implementation remains available as the reference/convergence calculation.
+
+The runner first constructs a small logarithmic seed grid across the complete positive energy support of the selected detector-response file and converts those energies to proton rigidities. The current defaults are:
 
 ```text
-1760 x 55 = 96,800 trajectory tasks
+--adaptive-access-seed-points 12
+--adaptive-access-guard-depth 1
+--adaptive-access-max-depth 6
 ```
 
-per observation location. The old/full `PENUMBRA_SCAN` path schedules those same 96,800
-direct-access trajectories **plus** 1,760 directional penumbra tasks. Each penumbra task
-internally evaluates roughly `CUTOFF_UPPER_SCAN_N` trajectories (120 by default), so the
-physical trajectory count is approximately 308,000 before any extra refinement. This is
-why `DIRECT_ACCESS` is now the production default.
+The corresponding input directives are identical for GRIDDED and GRIDLESS:
 
-One-line GRIDDED commands (4 MPI ranks, 16 threads/rank, T05, SMOKE profile) are:
+```text
+CUTOFF_DIRECT_ACCESS_ADAPTIVE              T
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_DEPTH    6
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH  1
+```
+
+For each selected sky direction the shared C++ implementation (`util/AdaptiveDirectAccess.h`) performs the following steps:
+
+1. **Evaluate every seed rigidity.** This guarantees common lower/upper response support and coarse global coverage in every direction. Seed states use exactly the normal `PHYSICAL_FORBIDDEN / ALLOWED / UNRESOLVED` trajectory classifier.
+2. **Perform mandatory guard probes.** At guard depth 1, the geometric-rigidity midpoint of every adjacent seed interval is evaluated even when both endpoints have the same state. This is a protection against missing a finite access/forbidden pocket whose two coarse endpoints happen to agree. Higher guard depths recursively force additional midpoint levels.
+3. **Refine visible state boundaries.** After the mandatory guard probes, an interval is recursively bisected when its two sampled endpoint states differ. This includes `ALLOWED<->PHYSICAL_FORBIDDEN` transitions and resolved `<-> UNRESOLVED` boundaries. The midpoint in rigidity is geometric, `Rmid=sqrt(R1 R2)`, which gives approximately uniform fractional resolution over the positive rigidity range.
+4. **Do not explode a purely unresolved interval.** If both endpoints remain `UNRESOLVED`, refinement stops after the configured guard probes. Repeated rigidity subdivision cannot by itself cure a trajectory time/step/path limit; the Python fold already carries that interval as unresolved uncertainty.
+5. **Stop at the maximum depth.** The default depth 6 bounds both trajectory work and memory. No monotonic-cutoff assumption is used: if guard/refinement probes reveal multiple state changes, each visible transition is retained and refined independently.
+6. **Write only evaluated nodes.** Internally, every MPI rank builds the same deterministic candidate tree. Unvisited candidate slots retain sentinel `-1`, allowing the existing fixed-size `MPI_MAX` reduction. The Tecplot writer omits those `-1` slots, so each direction can contain a different number of actual rigidity samples while the public output schema remains unchanged. Dense mode continues to treat any `-1` state as a fatal producer error.
+7. **Fold the sparse samples with explicit uncertainty bounds.** `run_C19.py` sorts the realized samples independently for each direction. Equal `ALLOWED` endpoints transmit the complete interval, equal `PHYSICAL_FORBIDDEN` endpoints block it, and a sampled state change contributes a `[0, full interval]` finite-grid uncertainty bracket. Any interval touching `UNRESOLVED` is carried separately as trace-resolution uncertainty. Thus adaptation does not invent the unknown transition location.
+
+The deterministic candidate tree has
+
+```text
+Ncandidate = Nseed + (Nseed - 1) * (2^D - 1)
+```
+
+possible nodes for maximum depth `D`. With 12 seeds and depth 6 this is 705 candidate slots per direction, but **only evaluated nodes generate trajectories or output rows**. The fixed candidate array is used only to make MPI reduction deterministic; for roughly 1,760 directions it is only a few megabytes of integer state storage.
+
+With the default guard depth 1, a smooth direction has approximately `12 + 11 = 23` mandatory classifications before any transition-driven refinement. For the representative 1,760-direction case, the mandatory baseline is therefore about 40,480 trajectories, compared with roughly 96,800 trajectories for the former 55-point dense access grid. Directions containing penumbra structure require additional local samples, so the realized speedup is event-dependent and should be measured rather than assumed. `C19_commands.json` records the realized row count and the minimum/mean/maximum number of samples per direction after each completed case.
+
+Because one adaptive top-level task now contains many trajectory integrations, the C19 runner also changes the default dynamic-MPI chunk for adaptive `DIRECT_ACCESS` to approximately **one direction per local worker**. For example, `-nt 16` gives a default adaptive chunk of 16, not the generic GRIDLESS AUTO value of roughly 64 cheap tasks. This keeps all 16 local workers occupied but returns to the global RMA work queue after one wave, reducing the chance that a rank hoards many expensive near-cutoff directions and becomes the end-of-run straggler. An explicit positive `--dynamic-chunk` still overrides this heuristic. Dense GRIDLESS calculations retain the generic AUTO behavior.
+
+#### Why detector-response edges are not forced trajectory nodes
+
+The detector response is piecewise constant in the current C19 response files, and the runner integrates `J(E)G(E)` analytically while splitting an integration interval at every response discontinuity. Therefore an internal response edge does **not** need a separate AMPS trajectory merely to integrate the detector response correctly. The adaptive seed grid spans the entire positive response support; access refinement is driven by magnetic-access state changes. The support endpoints themselves remain mandatory in every direction.
+
+#### Validation and convergence controls
+
+Adaptive sampling is an optimization of a validation test, so it is paired with explicit checks rather than treated as an uncontrolled shortcut:
+
+- `--max-discrete-transition-fraction` limits the detector-response-weighted fraction left inside sampled resolved state-change brackets. If the adaptive tree remains too coarse, the quantitative fold is invalidated rather than silently accepted.
+- `--max-unresolved-aperture-fraction` independently limits uncertainty caused by trace time/step/distance limits.
+- The runner verifies that every adaptive direction contains every requested seed energy and the common response-support endpoints; missing/truncated sparse output is fatal.
+- `--no-adaptive-access --access-energy-points 48` restores the dense reference grid for direct adaptive-versus-dense convergence tests.
+- `--adaptive-access-max-depth` controls the finest local transition bracket, while `--adaptive-access-guard-depth` controls how aggressively apparently uniform intervals are probed for hidden non-monotonic structure.
+- `PENUMBRA_SCAN` intentionally disables adaptive direct access and remains the expensive full cutoff-topology diagnostic/reference path.
+
+A finite guard depth cannot mathematically prove the absence of an arbitrarily narrow even-numbered pair of transitions between all sampled points. For publication-quality validation, representative difficult epochs should therefore be compared against the dense `--no-adaptive-access` calculation (and, when needed, `PENUMBRA_SCAN`). The adaptive path is accepted only when the final detector observable and uncertainty diagnostics are converged to the required tolerance.
+
+#### Execution commands
+
+Adaptive `DIRECT_ACCESS` is the default, so the normal one-line GRIDDED command is:
 
 ```bash
 python3 srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --cutoff-search DIRECT_ACCESS --amps ./amps -np 4 -nt 16 --keep
+```
+
+The explicit dense direct-access reference is:
+
+```bash
+python3 srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --cutoff-search DIRECT_ACCESS --no-adaptive-access --access-energy-points 48 --amps ./amps -np 4 -nt 16 --keep
+```
+
+The full cutoff/penumbra diagnostic is:
+
+```bash
 python3 srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --cutoff-search PENUMBRA_SCAN --amps ./amps -np 4 -nt 16 --keep
 ```
 
-The same switch works with `--solver GRIDLESS` or `--solver BOTH`.
+The same adaptive/dense controls work with `--solver GRIDLESS` or `--solver BOTH` for `DIRECT_ACCESS`.
 
 ### Response fold of direct access
 
-For either solver, `run_C19.py` builds a response-energy grid over the **complete positive support of the configured response file**, writes the same strictly increasing rigidity list into the input, reads that solver's direct access cube, and evaluates the head transmission schematically as
+For either solver, `run_C19.py` builds a rigidity sampling request over the **complete positive support of the configured response file**. In adaptive `DIRECT_ACCESS` that request is the common seed list and the C++ solver adds direction-specific midpoint/refinement samples; in dense mode it is the complete common grid. The runner then reads the realized direct access cube and evaluates the head transmission schematically as
 
 ```text
 T_head(t) = ∫dΩ w(Ω) ∫dE J(E,t) G_channel(E) A(E,Ω,t)
@@ -773,11 +830,11 @@ FORBIDDEN -> ALLOWED      transition lies somewhere in the interval
 anything  -> UNRESOLVED   physical state of the interval is unresolved
 ```
 
-For a resolved state change the whole response-weighted interval is carried as a finite-grid uncertainty `[0, full interval]`; it is **not** replaced by the artificial 0.5 contribution produced by trapezoidal interpolation of the 0/1 endpoints. `C19_model.csv` records `discrete_transition_east_fraction` and `discrete_transition_west_fraction`. The default `--max-discrete-transition-fraction 0.05` invalidates a quantitative E/W value when too much detector response lies inside such unresolved transition brackets. Increasing `--access-energy-points` narrows those brackets and is therefore a direct rigidity-grid convergence test.
+For a resolved state change the whole response-weighted interval is carried as a finite-grid uncertainty `[0, full interval]`; it is **not** replaced by the artificial 0.5 contribution produced by trapezoidal interpolation of the 0/1 endpoints. `C19_model.csv` records `discrete_transition_east_fraction` and `discrete_transition_west_fraction`. The default `--max-discrete-transition-fraction 0.05` invalidates a quantitative E/W value when too much detector response lies inside such transition brackets. In adaptive mode, increasing `--adaptive-access-max-depth` and/or `--adaptive-access-guard-depth` is the direct local-grid convergence control; the dense `--no-adaptive-access --access-energy-points ...` path remains the independent reference.
 
 `UNRESOLVED` trajectory states remain a separate uncertainty source and continue to use `--max-unresolved-aperture-fraction`. The lower/upper signal and transmission bounds include both effects, while their diagnostic fractions remain separate so a coarse rigidity grid cannot be confused with a trace-limit problem.
 
-`J(E)G(E)` is integrated analytically over every energy interval for the current power-law spectrum and piecewise-constant response. Consequently exact detector-response edges are inserted as grid nodes but the old `E*(1±10^-8)` edge-bracketing trajectories have been removed.
+`J(E)G(E)` is integrated analytically over every energy interval for the current power-law spectrum and piecewise-constant response, with integration intervals split internally at exact detector-response edges. Dense reference grids still include response edges explicitly; adaptive sampling does not require those internal edges to be separate trajectory nodes. The old `E*(1±10^-8)` edge-bracketing trajectories remain removed.
 
 The default `epead_response_C19_uncorrected_extended.csv` matches the default **uncorrected** GOES reference more closely than the old primary-only response. It contains the nominal primary bands plus the documented GOES 8–15 secondary proton energy ranges from Rodriguez et al. (2017), Table A2 / the GOES-N EPS calibration handbook:
 
@@ -1004,7 +1061,7 @@ fully compatible with time-varying spacecraft attitude.
 
 ### GRIDDED and GRIDLESS
 
-GRIDDED and GRIDLESS are now observationally equivalent C19 science paths. Both emit the same three-state `A(E,Ω)` values on the same requested rigidity list and selected directional cells, and both are folded by the identical spectrum/response/aperture postprocessor. The difference is intentionally confined to **magnetic-field evaluation along the trajectory**: GRIDDED interpolates the precomputed Mode3D mesh while GRIDLESS evaluates the configured background model directly. `--solver BOTH` is therefore a true apples-to-apples solver comparison rather than a direct-access-versus-effective-cutoff comparison. The scalar `PENUMBRA_SCAN` maps remain useful diagnostics but no longer define the GRIDLESS observational observable.
+GRIDDED and GRIDLESS are now observationally equivalent C19 science paths. Both use the same seed grid, the same shared adaptive-refinement algorithm, the same three-state `A(E,Ω)` semantics, and the same selected directional cells; both are folded by the identical spectrum/response/aperture postprocessor. In adaptive mode the realized refinement nodes may differ between directions because they follow the local access topology, but the algorithm and controls are identical in both solvers. The difference is intentionally confined to **magnetic-field evaluation along the trajectory**: GRIDDED interpolates the precomputed Mode3D mesh while GRIDLESS evaluates the configured background model directly. `--solver BOTH` is therefore a true apples-to-apples solver comparison rather than a direct-access-versus-effective-cutoff comparison. The scalar `PENUMBRA_SCAN` maps remain useful diagnostics but no longer define the GRIDLESS observational observable.
 
 ### GRIDLESS mesh-free execution and intra-rank threading
 
@@ -1040,26 +1097,31 @@ MPI ranks
 
 The input-file controls are:
 
+For dense GRIDLESS work, `GRIDLESS_MPI_DYNAMIC_CHUNK 0` still means **automatic** and the
+common scheduler chooses roughly four inexpensive trajectory tasks per worker. Adaptive
+`DIRECT_ACCESS` has a much heavier top-level work unit (one complete sky direction), so
+the C19 runner instead resolves its default chunk to the worker count. With 16 threads
+the rendered adaptive case therefore contains:
+
 ```text
 GRIDLESS_PARALLEL             THREADS
 GRIDLESS_THREADS              16
 GRIDLESS_MPI_SCHEDULER        DYNAMIC
-GRIDLESS_MPI_DYNAMIC_CHUNK    0
+GRIDLESS_MPI_DYNAMIC_CHUNK    16
 ```
 
-and the equivalent CLI is:
+and the command includes:
 
 ```bash
 -gridless-parallel THREADS \
 -gridless-threads 16 \
--gridless-mpi-scheduler DYNAMIC
+-gridless-mpi-scheduler DYNAMIC \
+-gridless-mpi-dynamic-chunk 16
 ```
 
-`GRIDLESS_MPI_DYNAMIC_CHUNK 0` means **automatic**.  The common scheduler receives the
-actual number of local workers and chooses a chunk proportional to that count (currently
-about four trajectory tasks per worker).  An explicit CLI value may still be supplied,
-for example `-gridless-mpi-dynamic-chunk 64`.  A chunk smaller than the worker count can
-under-fill the local thread team and is normally a poor choice.
+An explicit positive `--dynamic-chunk` overrides this value. A chunk smaller than the
+worker count can under-fill the local team; a much larger adaptive chunk can hoard many
+expensive directions on one MPI rank and worsen the slow tail.
 
 Only the rank/main thread calls MPI.  Worker threads compute complete flattened cutoff
 or `(direction,rigidity)` direct-access tasks and write their result into private batch
@@ -1165,7 +1227,7 @@ Normal machine-readable products include:
 | `C19_reference_used.csv` | Selected observational rows plus actual detector IDs, exact flux-variable/correction-state, and ephemeris provenance |
 | `C19_spectrum_used.csv` | Epoch-dependent gamma/J0/E0 and measured/interpolated/file source |
 | `C19_detector_response_used.csv` | Exact response intervals/components used by direct-response |
-| `C19_access_energy_grid.csv` | Energy and proton rigidity values requested identically from GRIDDED and GRIDLESS for direct `A(E,Ω)` |
+| `C19_access_energy_grid.csv` | Common direct-access seed grid (`ADAPTIVE_SEED`) or dense requested grid (`DENSE_REQUESTED`) supplied identically to GRIDDED and GRIDLESS |
 | per-run `cutoff_3d_dir_access_loc_000000.dat` / `cutoff_gridless_dir_access_point_0000.dat` | Solver-native direct three-state `A(E,Ω)` cubes consumed by the common detector fold |
 | `C19_model.csv` / `C19_comparison.csv` | E/W results, transmission bounds, spectrum source, response model, `DIRECT_A_E_OMEGA` access-product label, unresolved fractions, maximum trace time, search algorithm/policy, and map provenance |
 | `C19_metrics.csv` | Per-spacecraft and aggregate finite/saturated fractions, sign agreement, bias, MAE, RMSE, correlation, and provisional gate |
@@ -1251,10 +1313,11 @@ A GRIDLESS run therefore prints an initial line immediately and then lines of th
 ```
 
 The important detail is that updates occur **while a threaded MPI chunk is still
-running**.  With 16 workers and an automatic chunk of roughly 64 tasks, the display no
-longer waits for all ~64 trajectories to finish before advancing.  If rank 0 happens to
-be tracing an unusually long trajectory, its main thread still polls the global RMA
-counter and displays completions reported by the other MPI ranks.  After the assignment
+running**. Dense GRIDLESS may still use an automatic chunk near 64 trajectory tasks for
+16 workers; adaptive C19 normally uses a worker-sized chunk of 16 heavy direction tasks.
+In either case the display does not wait for the complete batch to finish before showing
+completed work. If rank 0 owns an unusually long task, its main thread still polls the
+global RMA counter and displays completions reported by the other MPI ranks.  After the assignment
 queue is exhausted, rank 0 continues polling until the global completed-task count
 reaches 100%, matching the slow-tail behavior of the GRIDDED Mode3D progress display.
 

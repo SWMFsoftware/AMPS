@@ -2586,6 +2586,18 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
                uKey=="CUTOFF_ACCESS_RIGIDITIES_GV") {
         p.cutoff.rigidityList_GV=ParseStrictDoubleList_(val,uKey);
       }
+      else if (uKey=="CUTOFF_DIRECT_ACCESS_ADAPTIVE" ||
+               uKey=="DIRECT_ACCESS_ADAPTIVE") {
+        p.cutoff.directAccessAdaptive=ToBool(val);
+      }
+      else if (uKey=="CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_DEPTH" ||
+               uKey=="DIRECT_ACCESS_ADAPTIVE_MAX_DEPTH") {
+        p.cutoff.directAccessAdaptiveMaxDepth=std::stoi(val);
+      }
+      else if (uKey=="CUTOFF_DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH" ||
+               uKey=="DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH") {
+        p.cutoff.directAccessAdaptiveGuardDepth=std::stoi(val);
+      }
       else if (uKey=="CUTOFF_ACCESS_ABS_LAT_MIN" ||
                uKey=="CUTOFF_ACCESS_LAT_ABS_MIN") {
         p.cutoff.accessAbsLatMin_deg=std::stod(val);
@@ -3462,6 +3474,21 @@ if (ToUpper(p.field.model)=="DIPOLE") {
         p.cutoff.rigidityList_GV.empty()) {
       exit(__LINE__,__FILE__,
            "RIGIDITY_LIST and DIRECT_ACCESS require a non-empty CUTOFF_RIGIDITY_LIST_GV");
+    }
+    if (p.cutoff.directAccessAdaptiveMaxDepth < 0 ||
+        p.cutoff.directAccessAdaptiveMaxDepth > 20) {
+      exit(__LINE__,__FILE__,
+           "CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_DEPTH must be in [0,20]");
+    }
+    if (p.cutoff.directAccessAdaptiveGuardDepth < 0 ||
+        p.cutoff.directAccessAdaptiveGuardDepth > p.cutoff.directAccessAdaptiveMaxDepth) {
+      exit(__LINE__,__FILE__,
+           "CUTOFF_DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH must be in [0,max depth]");
+    }
+    if (p.cutoff.directAccessAdaptive &&
+        p.cutoff.searchAlgorithm != "DIRECT_ACCESS") {
+      exit(__LINE__,__FILE__,
+           "CUTOFF_DIRECT_ACCESS_ADAPTIVE=T is valid only with CUTOFF_SEARCH_ALGORITHM DIRECT_ACCESS");
     }
     if (!p.cutoff.rigidityList_GV.empty()) {
       for (std::size_t i=0;i<p.cutoff.rigidityList_GV.size();++i) {

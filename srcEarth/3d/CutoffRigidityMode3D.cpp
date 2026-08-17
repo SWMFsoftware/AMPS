@@ -235,6 +235,7 @@
 // Parameter parser
 #include "../util/amps_param_parser.h"
 #include "../util/CutoffBandSearch.h"
+#include "../util/AdaptiveDirectAccess.h"
 
 // Standard library
 #include <cstdio>
@@ -3516,15 +3517,29 @@ static void WriteTecplot3DDirectionalAccess_Location(
                                  int locId,
                                  const V3& x0_m,
                                  const DirectionalMapConfig3D& cfg,
+                                 const std::vector<double>& rigidityGrid_GV,
                                  const std::vector<int>& accessState,
+                                 bool adaptiveSparse,
                                  double qabs,
                                  double m0_kg) {
-    const int nRigidity=static_cast<int>(prm.cutoff.rigidityList_GV.size());
+    const int nRigidity=static_cast<int>(rigidityGrid_GV.size());
     const std::size_t nExpected=(std::size_t)cfg.nCells*(std::size_t)nRigidity;
     if (accessState.size()!=nExpected) {
         throw std::runtime_error(
             "Mode3D directional access cube has size "+std::to_string(accessState.size())+
             ", expected "+std::to_string(nExpected)+".");
+    }
+
+    // Adaptive mode deliberately leaves unused candidate nodes at the -1 sentinel.
+    // Count only actual trajectory classifications so the Tecplot POINT-zone size
+    // remains truthful. Dense mode, in contrast, requires every slot to be present.
+    std::size_t nRows=0;
+    for (int state:accessState) {
+        if (state>=0) ++nRows;
+        else if (!adaptiveSparse) {
+            throw std::runtime_error(
+                "Mode3D dense directional access cube contains an uncomputed state.");
+        }
     }
 
     char stem[256];
@@ -3538,22 +3553,35 @@ static void WriteTecplot3DDirectionalAccess_Location(
         "VARIABLES=\"lon_deg\",\"lat_deg\",\"rigidity_GV\",\"energy_MeV\","
         "\"access_state\",\"allowed\",\"unresolved\"\n");
     std::fprintf(f,
-        "ZONE T=\"loc=%d x_km=%g y_km=%g z_km=%g frame=%s coverage=%s\" I=%zu F=POINT\n",
+        "ZONE T=\"loc=%d x_km=%g y_km=%g z_km=%g frame=%s coverage=%s adaptive=%c seed_n=%zu max_depth=%d guard_depth=%d\" I=%zu F=POINT\n",
         locId,x0_m.x/1000.0,x0_m.y/1000.0,x0_m.z/1000.0,
-        cfg.spiceOk ? "SM" : "GSM_fallback",cfg.coverage.c_str(),nExpected);
+        cfg.spiceOk ? "SM" : "GSM_fallback",cfg.coverage.c_str(),
+        adaptiveSparse ? 'T' : 'F',prm.cutoff.rigidityList_GV.size(),
+        prm.cutoff.directAccessAdaptiveMaxDepth,
+        prm.cutoff.directAccessAdaptiveGuardDepth,nRows);
 
     // The compact selected-cell index is the scheduler/storage index. Convert it
     // back to the original regular-grid lon/lat so the file remains directly
-    // comparable with a FULL_SPHERE run.
+    // comparable with a FULL_SPHERE run.  In adaptive mode only evaluated candidate
+    // nodes are emitted; each direction can therefore have a different energy grid.
     for (int cellId=0;cellId<cfg.nCells;++cellId) {
         double lon_deg=0.0,lat_deg=0.0;
         DirectionalMapCellLonLat3D(cfg,cellId,lon_deg,lat_deg);
         for (int ir=0;ir<nRigidity;++ir) {
             const std::size_t k=(std::size_t)cellId*(std::size_t)nRigidity+(std::size_t)ir;
             const int state=accessState[k];
+            if (state<0 && adaptiveSparse) continue;
+            if (state!=(int)EarthUtil::CutoffSampleState::PhysicalForbidden &&
+                state!=(int)EarthUtil::CutoffSampleState::Allowed &&
+                state!=(int)EarthUtil::CutoffSampleState::Unresolved) {
+                std::fclose(f);
+                throw std::runtime_error(
+                    "Mode3D directional access cube contains an invalid state "+
+                    std::to_string(state)+".");
+            }
             const int allowed=(state==(int)EarthUtil::CutoffSampleState::Allowed) ? 1 : 0;
             const int unresolved=(state==(int)EarthUtil::CutoffSampleState::Unresolved) ? 1 : 0;
-            const double rigidity=prm.cutoff.rigidityList_GV[(std::size_t)ir];
+            const double rigidity=rigidityGrid_GV[(std::size_t)ir];
             const double p=MomentumFromRigidity_GV(rigidity,qabs);
             const double energy=KineticEnergyFromMomentum_MeV(p,m0_kg);
             std::fprintf(f,"%.15e %.15e %.15e %.15e %d %d %d\n",
@@ -4013,6 +4041,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     // deliberately skips the scalar cutoff and the expensive per-direction
     // PENUMBRA_SCAN map and traces only the requested A(R,Omega) samples.
     const bool directionalDirectAccess=(cutoffAlgorithm=="DIRECT_ACCESS");
+    const bool adaptiveDirectionalDirectAccess=(
+        directionalDirectAccess && prm.cutoff.directAccessAdaptive);
     // A FULL_SCAN C9 run still needs the seven exact fixed-rigidity
     // classifications in order to calculate the same PAMELA_T50 observable as
     // DIRECT_ACCESS.  A non-empty CUTOFF_RIGIDITY_LIST_GV therefore requests a
@@ -4168,9 +4198,34 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     const bool saveDirectionalAccessStates=(
         dirMapCfg.enabled && !prm.cutoff.rigidityList_GV.empty() &&
         (penumbraScan || directionalDirectAccess));
+
+    // DIRECT_ACCESS can use a per-direction adaptive rigidity tree.  The user-supplied
+    // CUTOFF_RIGIDITY_LIST_GV remains the coarse seed grid.  Build the complete
+    // deterministic candidate tree once on every rank; individual direction tasks fill
+    // only the nodes they actually need.  A fixed candidate index space lets us retain
+    // the simple sentinel + MPI_MAX reduction used by dense direct access.
+    EarthUtil::AdaptiveDirectAccessGrid adaptiveAccessGrid;
+    std::vector<double> directionalAccessRigidityGrid_GV=prm.cutoff.rigidityList_GV;
+    if (adaptiveDirectionalDirectAccess) {
+        adaptiveAccessGrid=EarthUtil::BuildAdaptiveDirectAccessGrid(
+            prm.cutoff.rigidityList_GV,prm.cutoff.directAccessAdaptiveMaxDepth);
+        directionalAccessRigidityGrid_GV=adaptiveAccessGrid.candidate_GV;
+    }
+    const int nDirectionalAccessStorageRigidities=saveDirectionalAccessStates
+        ? static_cast<int>(directionalAccessRigidityGrid_GV.size()) : 0;
+
+    // Dense mode: one scheduler task == one (direction,rigidity) trajectory.
+    // Adaptive mode: one scheduler task == one sky direction.  That task evaluates all
+    // seed nodes and only the transition/unresolved refinement nodes for that direction.
+    // The coarser task granularity is still ample for C19 (O(10^3) directions) and is
+    // essential because refinement decisions depend on states found earlier in the same
+    // direction.
     const long long nDirectionalAccessTasks=saveDirectionalAccessStates
-        ? static_cast<long long>(dirMapCfg.nCells)*
-          static_cast<long long>(prm.cutoff.rigidityList_GV.size()) : 0LL;
+        ? (adaptiveDirectionalDirectAccess
+            ? static_cast<long long>(dirMapCfg.nCells)
+            : static_cast<long long>(dirMapCfg.nCells)*
+              static_cast<long long>(prm.cutoff.rigidityList_GV.size()))
+        : 0LL;
     const long long tasksPerLocation=shellRigidityListAccess
         ? static_cast<long long>(prm.cutoff.rigidityList_GV.size())
         : directionalDirectAccess
@@ -4259,9 +4314,20 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         }
 
         if (saveDirectionalAccessStates) {
-            std::cout << "Directional A(R,Omega): " << prm.cutoff.rigidityList_GV.size()
-                      << " rigidities x " << dirMapCfg.nCells
-                      << " sky cells per location (P1.4 companion product)\n";
+            if (adaptiveDirectionalDirectAccess) {
+                std::cout << "Directional A(R,Omega): ADAPTIVE, "
+                          << prm.cutoff.rigidityList_GV.size() << " seed rigidities, "
+                          << directionalAccessRigidityGrid_GV.size()
+                          << " maximum candidate nodes/direction, guard depth "
+                          << prm.cutoff.directAccessAdaptiveGuardDepth << ", max depth "
+                          << prm.cutoff.directAccessAdaptiveMaxDepth << ", "
+                          << dirMapCfg.nCells << " sky cells/location\n";
+            }
+            else {
+                std::cout << "Directional A(R,Omega): " << prm.cutoff.rigidityList_GV.size()
+                          << " fixed rigidities x " << dirMapCfg.nCells
+                          << " sky cells per location (P1.4 companion product)\n";
+            }
         }
 
         std::cout
@@ -4443,7 +4509,10 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             << "Cutoff backend : " << CutoffParallelBackendName_(cutoffBackend) << "\n"
             << "Cutoff workers : " << cutoffThreadCount
             << " per rank (from DENSITY_THREADS/AMPS_MODE3D_DENSITY_THREADS)\n"
-            << "Work unit      : flattened cutoff trajectory task\n"
+            << "Work unit      : "
+            << (adaptiveDirectionalDirectAccess
+                ? "adaptive sky-direction task (contains multiple trajectories)"
+                : "flattened cutoff trajectory task") << "\n"
             << "Tasks/location : " << tasksPerLocation << "\n"
             << "Global tasks   : " << totalTasksGlobal << "\n"
             << "MPI scheduler  : " << Earth::Mode3D::MpiSchedulerName(mpiScheduler) << "\n";
@@ -4532,11 +4601,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         dirMapRank.assign((size_t)nMapLL,-1.0);
         if (penumbraScan) dirMapPenumbraRank.assign((std::size_t)nMapLL);
         if (saveDirectionalAccessStates) {
-            const long long nAccessLL=nMapLL*static_cast<long long>(prm.cutoff.rigidityList_GV.size());
+            const long long nAccessLL=nMapLL*
+                static_cast<long long>(nDirectionalAccessStorageRigidities);
             if (nAccessLL>static_cast<long long>(std::numeric_limits<int>::max())) {
                 throw std::runtime_error(
                     "Mode3D directional rigidity-access MPI reduction count exceeds INT_MAX; "
-                    "coarsen DIRMAP or reduce CUTOFF_RIGIDITY_LIST_GV.");
+                    "coarsen DIRMAP, lower adaptive max depth, or reduce the seed grid.");
             }
             dirAccessStateRank.assign((std::size_t)nAccessLL,-1);
         }
@@ -4788,23 +4858,45 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         }
 
         if (directionalDirectAccess) {
-            // Optimized C19 path: every scheduled task is exactly one requested
-            // (direction,rigidity) classification.  No scalar cutoff and no
-            // per-direction PENUMBRA_SCAN are evaluated in this mode.
-            const long long accessTask=localTask;
-            const int iRigidity=static_cast<int>(
-                accessTask%static_cast<long long>(nAccessRigidities));
-            const int cellId=static_cast<int>(
-                accessTask/static_cast<long long>(nAccessRigidities));
+            const int cellId=adaptiveDirectionalDirectAccess
+                ? static_cast<int>(localTask)
+                : static_cast<int>(localTask/static_cast<long long>(nAccessRigidities));
             const V3 dir_gsm=DirectionalMapCellDirectionGSM3D(dirMapCfg,cellId);
             const V3 v0=mul(-1.0,dir_gsm);
-            const std::size_t k=((std::size_t)globalIdx*(std::size_t)dirMapCfg.nCells+
-                                 (std::size_t)cellId)*(std::size_t)nAccessRigidities+
-                                (std::size_t)iRigidity;
-            const EarthUtil::CutoffSampleState state=ClassifyCutoffSample3D_(
-                prm,threadField,x0_m,v0,
-                prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
-            dirAccessStateRank[k]=static_cast<int>(state);
+
+            if (adaptiveDirectionalDirectAccess) {
+                // One worker owns the complete [candidate rigidity] slice for this sky
+                // direction.  The adaptive helper first evaluates every coarse seed,
+                // then probes guard midpoints and recursively bisects intervals whose
+                // endpoint states differ (including resolved/UNRESOLVED boundaries).
+                // UNRESOLVED/UNRESOLVED intervals stop after the guard probes. Different
+                // direction tasks write disjoint slices, so this remains lock-free.
+                const std::size_t base=((std::size_t)globalIdx*(std::size_t)dirMapCfg.nCells+
+                                        (std::size_t)cellId)*
+                                       (std::size_t)nDirectionalAccessStorageRigidities;
+                EarthUtil::EvaluateAdaptiveDirectAccessDirection(
+                    adaptiveAccessGrid,prm.cutoff.directAccessAdaptiveGuardDepth,
+                    dirAccessStateRank,base,
+                    [&](double rigidity_GV) -> int {
+                        return static_cast<int>(ClassifyCutoffSample3D_(
+                            prm,threadField,x0_m,v0,rigidity_GV,q_C,m0,box));
+                    },
+                    static_cast<int>(EarthUtil::CutoffSampleState::Unresolved));
+            }
+            else {
+                // Dense reference path: every scheduler task is exactly one requested
+                // (direction,rigidity) classification.  Retaining this mode makes a
+                // one-switch convergence/reference run possible for C19.
+                const int iRigidity=static_cast<int>(
+                    localTask%static_cast<long long>(nAccessRigidities));
+                const std::size_t k=((std::size_t)globalIdx*(std::size_t)dirMapCfg.nCells+
+                                     (std::size_t)cellId)*(std::size_t)nAccessRigidities+
+                                    (std::size_t)iRigidity;
+                const EarthUtil::CutoffSampleState state=ClassifyCutoffSample3D_(
+                    prm,threadField,x0_m,v0,
+                    prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
+                dirAccessStateRank[k]=static_cast<int>(state);
+            }
             return;
         }
 
@@ -5394,7 +5486,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 }
 
                 if (saveDirectionalAccessStates) {
-                    const std::size_t nRig=(std::size_t)nAccessRigidities;
+                    const std::size_t nRig=(std::size_t)nDirectionalAccessStorageRigidities;
                     const std::size_t accessBase=base*nRig;
                     std::vector<int> accessCell(
                         (std::size_t)dirMapCfg.nCells*nRig,-1);
@@ -5402,7 +5494,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                               dirAccessStateAll.begin()+accessBase+accessCell.size(),
                               accessCell.begin());
                     WriteTecplot3DDirectionalAccess_Location(
-                        prm,locId,x0_m,dirMapCfg,accessCell,qabs,m0);
+                        prm,locId,x0_m,dirMapCfg,directionalAccessRigidityGrid_GV,
+                        accessCell,adaptiveDirectionalDirectAccess,qabs,m0);
                 }
             }
 

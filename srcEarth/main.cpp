@@ -463,9 +463,14 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
       p.cutoff.searchAlgorithm = "PENUMBRA_SCAN";
     }
     else if (alg=="RIGIDITY_LIST" || alg=="FIXED_RIGIDITY" ||
-             alg=="FIXED_RIGIDITIES" || alg=="ACCESS_LIST" ||
-             alg=="DIRECT_ACCESS") {
+             alg=="FIXED_RIGIDITIES" || alg=="ACCESS_LIST") {
       p.cutoff.searchAlgorithm = "RIGIDITY_LIST";
+    }
+    else if (alg=="DIRECT_ACCESS") {
+      // DIRECT_ACCESS is a distinct POINTS/TRAJECTORY directional product.  Do not
+      // normalize it to the shell-only RIGIDITY_LIST mode: C19 relies on this token
+      // to skip scalar/PENUMBRA cutoff searches and calculate A(R,Omega) directly.
+      p.cutoff.searchAlgorithm = "DIRECT_ACCESS";
     }
     else if (alg=="BINARY" || alg=="ENDPOINT_BINARY" ||
             alg=="LEGACY_BINARY" || alg=="LEGACY") {
@@ -475,7 +480,7 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
       std::cerr << "Error: unknown cutoff-search algorithm '"
                 << cli.cutoffSearchAlgorithm
                 << "' for " << modeLabel
-                << ". Valid values: UPPER_SCAN, PENUMBRA_SCAN, RIGIDITY_LIST, or BINARY.\n";
+                << ". Valid values: UPPER_SCAN, PENUMBRA_SCAN, DIRECT_ACCESS, RIGIDITY_LIST, or BINARY.\n";
       return false;
     }
   }
@@ -495,6 +500,23 @@ bool ApplyCommonBackwardCli(const EarthUtil::CliOptions& cli,
     }
     p.cutoff.rigidityList_GV=values;
   }
+  if (cli.cutoffDirectAccessAdaptive>=0)
+    p.cutoff.directAccessAdaptive=(cli.cutoffDirectAccessAdaptive!=0);
+  if (cli.cutoffDirectAccessAdaptiveMaxDepth>=0)
+    p.cutoff.directAccessAdaptiveMaxDepth=cli.cutoffDirectAccessAdaptiveMaxDepth;
+  if (cli.cutoffDirectAccessAdaptiveGuardDepth>=0)
+    p.cutoff.directAccessAdaptiveGuardDepth=cli.cutoffDirectAccessAdaptiveGuardDepth;
+  if (p.cutoff.directAccessAdaptiveGuardDepth>p.cutoff.directAccessAdaptiveMaxDepth) {
+    std::cerr << "Error: DIRECT_ACCESS adaptive guard depth exceeds max depth for "
+              << modeLabel << ".\n";
+    return false;
+  }
+  if (p.cutoff.directAccessAdaptive && p.cutoff.searchAlgorithm!="DIRECT_ACCESS") {
+    std::cerr << "Error: adaptive direct access was requested for " << modeLabel
+              << " but cutoff search is " << p.cutoff.searchAlgorithm << ".\n";
+    return false;
+  }
+
   if (cli.cutoffAccessAbsLatMin_deg>=0.0)
     p.cutoff.accessAbsLatMin_deg=cli.cutoffAccessAbsLatMin_deg;
   if (cli.cutoffAccessAbsLatMax_deg>=0.0)

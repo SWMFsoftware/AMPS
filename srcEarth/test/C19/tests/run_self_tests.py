@@ -177,6 +177,16 @@ def integration_dry_run() -> None:
             # different observables.
             if not re.search(r"^CUTOFF_RIGIDITY_LIST_GV\s+[0-9]", text, re.MULTILINE):
                 raise SystemExit("C19 input did not contain direct-access rigidity list: %s" % path)
+            # Adaptive DIRECT_ACCESS is the production default.  The explicit seed
+            # list stays common to both solvers; C++ refines each sky direction
+            # independently from those seeds.  Keeping these directives in both
+            # rendered decks protects GRIDDED/GRIDLESS science equivalence.
+            if not re.search(r"^CUTOFF_DIRECT_ACCESS_ADAPTIVE\s+T\s*$", text, re.MULTILINE):
+                raise SystemExit("C19 input did not enable adaptive DIRECT_ACCESS: %s" % path)
+            if not re.search(r"^CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_DEPTH\s+6\s*$", text, re.MULTILINE):
+                raise SystemExit("C19 input did not render adaptive max depth 6: %s" % path)
+            if not re.search(r"^CUTOFF_DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH\s+1\s*$", text, re.MULTILINE):
+                raise SystemExit("C19 input did not render adaptive guard depth 1: %s" % path)
             # GRIDLESS-specific parallel contract.  The normal runner must render a
             # shared-memory worker backend and leave the MPI dynamic chunk in AUTO
             # mode so the C++ resolver can size one fetch from the actual worker count.
@@ -185,8 +195,8 @@ def integration_dry_run() -> None:
                     raise SystemExit("GRIDLESS input did not enable THREADS: %s" % path)
                 if not re.search(r"^GRIDLESS_THREADS\s+2\s*$", text, re.MULTILINE):
                     raise SystemExit("GRIDLESS input did not propagate -nt 2: %s" % path)
-                if not re.search(r"^GRIDLESS_MPI_DYNAMIC_CHUNK\s+0\s*$", text, re.MULTILINE):
-                    raise SystemExit("GRIDLESS input did not preserve AUTO dynamic chunk: %s" % path)
+                if not re.search(r"^GRIDLESS_MPI_DYNAMIC_CHUNK\s+2\s*$", text, re.MULTILINE):
+                    raise SystemExit("adaptive GRIDLESS input did not use worker-sized dynamic chunk: %s" % path)
 
         # Single-workflow regression.  P0/P1/P2 are implementation history, not
         # mutually exclusive runner modes.  The ordinary dry run above must therefore
@@ -208,6 +218,16 @@ def integration_dry_run() -> None:
                     "DIRECT_ACCESS command unexpectedly requests PENUMBRA upper-scan work")
             if record.get("cutoff_search_algorithm") != "DIRECT_ACCESS":
                 raise SystemExit("command provenance did not record DIRECT_ACCESS")
+            if record.get("adaptive_access") is not True:
+                raise SystemExit("production command provenance did not enable adaptive access")
+            if int(record.get("adaptive_access_seed_points", 0)) != 12:
+                raise SystemExit("production command did not use the 12-point adaptive seed grid")
+            for token in (
+                    "-cutoff-direct-access-adaptive T",
+                    "-cutoff-direct-access-adaptive-max-depth 6",
+                    "-cutoff-direct-access-adaptive-guard-depth 1"):
+                if token not in joined:
+                    raise SystemExit("adaptive DIRECT_ACCESS command is missing %s" % token)
             if "-cutoff-dirmap-coverage VECTOR_APERTURES" not in joined:
                 raise SystemExit("current workflow command did not select VECTOR_APERTURES coverage")
             if "-cutoff-dirmap-aperture-file C19_directional_apertures.dat" not in joined:
@@ -224,11 +244,12 @@ def integration_dry_run() -> None:
                     raise SystemExit("current GRIDLESS workflow did not request THREADS")
                 if "-gridless-threads 2" not in joined:
                     raise SystemExit("current GRIDLESS workflow did not propagate -nt 2")
-                # AUTO chunking is represented by GRIDLESS_MPI_DYNAMIC_CHUNK=0 in the
-                # input deck; the runner must not override it with a historical
-                # one-task (or any default positive) CLI chunk.
-                if "-gridless-mpi-dynamic-chunk" in joined:
-                    raise SystemExit("current GRIDLESS workflow unexpectedly overrode AUTO dynamic chunk")
+                # Adaptive DIRECT_ACCESS uses one heavy direction task per local
+                # worker.  With -nt 2 the runner therefore requests chunk=2 rather
+                # than the generic dense AUTO heuristic (~4 tasks/worker), which would
+                # hoard expensive adaptive directions on a rank and worsen the tail.
+                if "-gridless-mpi-dynamic-chunk 2" not in joined:
+                    raise SystemExit("adaptive GRIDLESS workflow did not use worker-sized MPI chunk")
 
         # The generated parameter decks must use the finest P2.1 production sky grid.
         for path in rendered:
@@ -463,6 +484,48 @@ def validate_directional_coverage_source_contract() -> None:
     parser_source = (src_earth / "util" / "amps_param_parser.cpp").read_text(errors="replace")
     if 'p.cutoff.searchAlgorithm="DIRECT_ACCESS"' not in parser_source:
         raise SystemExit("AMPS parameter parser no longer preserves DIRECT_ACCESS as a distinct algorithm")
+
+    # Adaptive DIRECT_ACCESS cross-layer contract. The implementation is intentionally
+    # shared between Mode3D and GRIDLESS: both build the same deterministic candidate
+    # tree and call the same state-driven refinement helper. Sparse -1 candidate slots
+    # are omitted only by adaptive writers; dense mode still treats them as errors.
+    adaptive_header = (src_earth / "util" / "AdaptiveDirectAccess.h").read_text(errors="replace")
+    for needle in ("BuildAdaptiveDirectAccessGrid",
+                   "EvaluateAdaptiveDirectAccessDirection",
+                   "guardProbe", "visibleAmbiguity",
+                   "AdaptiveDirectAccessMidpointGV"):
+        if needle not in adaptive_header:
+            raise SystemExit("adaptive direct-access helper contract missing %r" % needle)
+    for source in (src_earth / "3d" / "CutoffRigidityMode3D.cpp",
+                   src_earth / "gridless" / "CutoffRigidityGridless.cpp"):
+        text = source.read_text(errors="replace")
+        for needle in ("AdaptiveDirectAccess.h",
+                       "BuildAdaptiveDirectAccessGrid",
+                       "EvaluateAdaptiveDirectAccessDirection",
+                       "directAccessAdaptiveGuardDepth",
+                       "if (state<0 && adaptiveSparse) continue"):
+            if needle not in text:
+                raise SystemExit("adaptive direct-access producer contract missing %r in %s" %
+                                 (needle, source))
+    adaptive_wiring = {
+        src_earth / "util" / "amps_param_parser.cpp": "directAccessAdaptive",
+        src_earth / "util" / "cutoff_cli.cpp": "cutoffDirectAccessAdaptive",
+        src_earth / "main.cpp": "directAccessAdaptive",
+    }
+    for source, needle in adaptive_wiring.items():
+        text = source.read_text(errors="replace")
+        if needle not in text:
+            raise SystemExit("adaptive direct-access configuration is not wired through %s" % source)
+
+    # Regression for a subtle but critical distinction: DIRECT_ACCESS is a C19
+    # point/trajectory product, whereas RIGIDITY_LIST is the historical shell product.
+    # CLI normalization must never map DIRECT_ACCESS back to RIGIDITY_LIST.
+    common_begin = main_text.find("bool ApplyCommonBackwardCli")
+    common_end = main_text.find("return true;", common_begin)
+    common_cli = main_text[common_begin:common_end]
+    if ('alg=="DIRECT_ACCESS"' not in common_cli or
+            not re.search(r'p\.cutoff\.searchAlgorithm\s*=\s*"DIRECT_ACCESS"', common_cli)):
+        raise SystemExit("common cutoff CLI no longer preserves DIRECT_ACCESS token")
 
     # Both C++ producers must advertise the exact same public access-state columns.
     # File stems differ for backward-compatible solver naming, but post-processing is

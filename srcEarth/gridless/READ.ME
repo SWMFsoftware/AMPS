@@ -560,6 +560,13 @@ items per local worker, limited by the global task count.  This is deliberate: t
 serial GRIDLESS code effectively used a one-task fetch, which would starve a 16-thread
 rank.  If an explicit chunk is used, it should normally be at least the worker count.
 
+C19 adaptive `DIRECT_ACCESS` is a special case because one top-level work item is an
+entire sky direction containing many sequential seed/refinement trajectories.  The C19
+runner therefore writes a worker-sized chunk by default (for example 16 tasks for 16
+workers) instead of leaving the generic four-items-per-worker AUTO heuristic in effect.
+This reduces MPI-rank straggler tails while still giving every local worker one adaptive
+direction.  Explicit user chunk settings continue to override the runner heuristic.
+
 Frozen-field thread-safety guard
 --------------------------------
 
@@ -582,6 +589,37 @@ near-cutoff trajectories.  For C19, combine GRIDLESS threading with
 `VECTOR_APERTURES`: pruning the full sphere reduces the task count, while the worker
 pool parallelizes the remaining cutoff and direct `A(E,Omega)` trajectories inside each
 MPI rank.
+
+Adaptive C19 DIRECT_ACCESS
+--------------------------
+GRIDLESS implements the same adaptive direct-access sampler as Mode3D through the shared
+`util/AdaptiveDirectAccess.h` helper.  When
+`CUTOFF_DIRECT_ACCESS_ADAPTIVE T` is used with `CUTOFF_SEARCH_ALGORITHM DIRECT_ACCESS`,
+`CUTOFF_RIGIDITY_LIST_GV` is interpreted as a mandatory coarse seed list rather than as
+a dense final grid.  One top-level GRIDLESS scheduler task owns one selected sky
+direction.  It evaluates every seed, performs the configured forced geometric-midpoint
+guard probes, and then recursively bisects intervals whose endpoint states differ.  The
+default C19 settings are max depth 6 and guard depth 1.  The three trajectory states are
+unchanged: PHYSICAL_FORBIDDEN, ALLOWED, and UNRESOLVED.  No monotonic cutoff is assumed.
+
+The full dyadic/geometric candidate tree is deterministic on every MPI rank.  Evaluated
+nodes are written into a direction-private slice of the fixed state array; unused nodes
+remain at the -1 sentinel.  This preserves the existing sentinel + MPI_MAX reduction
+without requiring every direction to evaluate the same rigidity nodes.  The output
+writer omits unused -1 nodes, so the resulting
+`cutoff_gridless_dir_access_point_####.dat` can have a different internal energy grid
+for each direction while retaining common seed/support nodes and the same public schema
+as Mode3D.  Dense behavior is available by setting
+`CUTOFF_DIRECT_ACCESS_ADAPTIVE F`; in dense mode an uncomputed -1 state remains a fatal
+consistency error.
+
+Guard probes are important because equal coarse endpoint states do not prove that no
+narrow access pocket exists between them.  After the guard depth, only visibly changing
+endpoint states are refined.  An UNRESOLVED/UNRESOLVED interval is not expanded through
+the full tree after its guard probes, since rigidity subdivision cannot repair a trace
+time/step/path limit.  C19 post-processing retains such intervals as explicit uncertainty.
+See `test/C19/README.md` for the complete algorithm, detector-response fold, convergence
+controls, and dense-reference procedure.
 
 --------------------------------------------------------------------------------
 11. Validation / tests in gridless/test

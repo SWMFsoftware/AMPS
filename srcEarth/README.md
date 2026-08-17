@@ -436,10 +436,14 @@ length imbalance, CPU affinity, memory/cache behavior, and the selected particle
 ### C19 current single-workflow implementation
 
 C19 no longer exposes P0/P1/P2 as alternate runner modes. Those labels are retained only
-as development history. `srcEarth/test/C19/run_C19.py` now has one execution path and
-always uses the validated production behavior:
+as development history. `srcEarth/test/C19/run_C19.py` now has one science-processing
+path with two explicit trajectory products.  The production default is the optimized
+`DIRECT_ACCESS` product; `PENUMBRA_SCAN` remains the full cutoff-topology diagnostic.
+The validated production behavior includes:
 
-- `PENUMBRA_SCAN` with trace-limit outcomes preserved as `UNRESOLVED`;
+- `DIRECT_ACCESS` with trace-limit outcomes preserved as `UNRESOLVED`;
+- adaptive per-direction rigidity refinement by default, with the dense fixed grid
+  retained through `--no-adaptive-access` as a convergence/reference calculation;
 - direct three-state directional `A(R,Omega)` output for both GRIDDED Mode3D and GRIDLESS;
 - detector-response folding with event-derived spectrum/provenance support;
 - default `2.5° × 2.5°` directional sampling;
@@ -454,14 +458,19 @@ always uses the validated production behavior:
 
 There is no `--p0-diagnostic` or `--p2-diagnostic` flag. GRIDLESS/GRIDDED selection,
 SMOKE/ROUTINE/FULL cadence, detector attitude, anisotropy, and numerical resolutions are
-inputs to the same current workflow rather than separate implementations. Historical
-behavior is not selectable through `--cutoff-search`, `--trace-limit-policy`, or
-`--response-fold`; the runner fixes those internal settings to the current validated
-contract and records them in the generated inputs/results.
+inputs to the same current workflow rather than separate implementations.
+`--cutoff-search` intentionally selects only the two current products (`DIRECT_ACCESS`
+or `PENUMBRA_SCAN`); historical trace-limit/fold behavior is not re-exposed.  The runner
+fixes those internal semantics to the current validated contract and records them in the
+generated inputs/results.
 
 The current GRIDDED command includes the fine mesh defaults, while both GRIDDED and
-GRIDLESS generated inputs contain the identical direct rigidity list used to produce
-`A(E,Omega)`.  Standalone GRIDLESS is mesh-free: the early `-mode gridless` dispatch
+GRIDLESS generated inputs contain the identical adaptive seed rigidity list used to
+produce `A(E,Omega)`.  Both solvers call the shared `util/AdaptiveDirectAccess.h`
+algorithm: all seeds are evaluated, guard midpoints probe hidden structure, and only
+visible state-changing intervals are recursively refined to the configured maximum
+depth.  Realized internal nodes may therefore differ by direction, but the algorithm,
+seed/support contract, and post-processing are identical.  Standalone GRIDLESS is mesh-free: the early `-mode gridless` dispatch
 returns before `amps_init_mesh()` and evaluates the background field directly along
 trajectories.  GRIDLESS cutoff/direct-access tasks now use the same MPI + intra-rank
 THREADS/OPENMP/SERIAL backend controls as Mode3D (`GRIDLESS_PARALLEL`,

@@ -349,6 +349,12 @@ namespace EarthUtil {
     // scientific validation rules (positive, strictly increasing rigidity values).
     std::string cutoffRigidityListGV{""};
 
+    // Optional DIRECT_ACCESS adaptive-refinement overrides.  Sentinels preserve the
+    // input-deck values when the corresponding CLI option is absent.
+    int cutoffDirectAccessAdaptive{-1};       // -1=no override, 0=off, 1=on
+    int cutoffDirectAccessAdaptiveMaxDepth{-1};
+    int cutoffDirectAccessAdaptiveGuardDepth{-1};
+
     // Optional Mode3D RIGIDITY_LIST geodetic absolute-latitude band overrides.
     // Negative sentinels mean no CLI override; zero is a valid lower bound.
     double cutoffAccessAbsLatMin_deg{-1.0};

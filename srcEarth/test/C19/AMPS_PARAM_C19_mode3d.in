@@ -38,11 +38,27 @@ CUTOFF_SCAN_SPACING            LINEAR
 CUTOFF_TRACE_POLICY            ACCURATE
 CUTOFF_BACKTRACE_CHARGE        REVERSED
 CUTOFF_TRACE_LIMIT_POLICY      UNRESOLVED
-! run_C19.py fills this with the detector-response energy grid for BOTH GRIDDED
-! and GRIDLESS.  DIRECT_ACCESS + DIRECTIONAL_MAP traces exactly these rigidities at
-! the selected instrument-aperture sky cells.  PENUMBRA_SCAN uses the same list as
-! a companion science cube while additionally computing full cutoff-band diagnostics.
+! run_C19.py fills this with the magnetic-access seed rigidity grid for BOTH
+! GRIDDED and GRIDLESS.  In adaptive DIRECT_ACCESS this is deliberately a coarse
+! grid spanning the complete positive detector-response support.  Every seed is
+! evaluated in every selected sky direction; the solver then inserts geometric
+! midpoint probes and recursively refines intervals whose endpoint states differ
+! (including resolved<->UNRESOLVED boundaries).  An UNRESOLVED/UNRESOLVED interval
+! stops after the guard probes because rigidity refinement cannot cure a trace budget.
+! The detector response itself
+! is integrated analytically in the Python fold, so internal response discontinuities
+! do not need to be duplicated as mandatory trajectory nodes.
+!
+! PENUMBRA_SCAN ignores the adaptive switch below and uses this list only as its
+! fixed-grid companion A(R,Omega) product, preserving the full diagnostic behavior.
 CUTOFF_RIGIDITY_LIST_GV        0.174013525
+! Adaptive DIRECT_ACCESS is the optimized C19 production path.  MAX_DEPTH limits
+! recursive bisection of ambiguous intervals.  GUARD_DEPTH forces midpoint probes
+! even when coarse endpoints agree; depth=1 probes every seed interval midpoint and
+! helps expose narrow penumbral pockets before ambiguity-driven refinement begins.
+CUTOFF_DIRECT_ACCESS_ADAPTIVE              T
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_DEPTH    6
+CUTOFF_DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH  1
 CUTOFF_MAX_TRAJ_TIME           300.0
 DIRECTIONAL_MAP                T
 DIRMAP_LON_RES                 2.5

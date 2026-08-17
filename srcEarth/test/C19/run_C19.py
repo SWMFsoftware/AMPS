@@ -683,6 +683,38 @@ def build_access_energy_grid(intervals: Sequence[ResponseInterval], n_points: in
     return unique
 
 
+def build_adaptive_access_seed_energy_grid(
+        intervals: Sequence[ResponseInterval], n_points: int) -> List[float]:
+    """Build the coarse energy seed grid used by adaptive DIRECT_ACCESS.
+
+    Unlike :func:`build_access_energy_grid`, this function intentionally does *not*
+    insert every internal detector-response edge into the trajectory grid.  The C19
+    detector fold integrates the piecewise-constant response analytically and already
+    splits integration intervals at those response edges, so tracing a particle exactly
+    at each response discontinuity adds no information about magnetic access.
+
+    The adaptive solver needs only a well distributed set of magnetic-access probes
+    spanning the complete positive detector-response support.  The global response
+    endpoints are always included by the logarithmic grid.  Every seed is traced in
+    every sky direction; the C++ solver then probes midpoint guards and recursively
+    refines intervals whose endpoint states differ, including resolved/UNRESOLVED
+    boundaries. Pure UNRESOLVED/UNRESOLVED intervals stop after the guard probes.
+
+    Keeping response integration and magnetic-access refinement separate is the central
+    optimization: response edges remain exact in the synthetic observation without
+    forcing every direction to carry a dense common trajectory grid.
+    """
+    if n_points < 4:
+        raise ValueError("adaptive direct-access seed grid needs at least four points")
+    positive = [row for row in intervals if row.relative_response > 0.0]
+    lo = min(row.energy_min_mev for row in positive)
+    hi = max(row.energy_max_mev for row in positive)
+    if not (0.0 < lo < hi):
+        raise ValueError("detector response has no positive energy span")
+    return [lo * (hi / lo) ** (i / float(n_points - 1))
+            for i in range(n_points)]
+
+
 def integrate_power_law(spectrum: SpectrumEstimate, energy_lo_mev: float,
                         energy_hi_mev: float) -> float:
     """Integrate the current power-law SEP spectrum exactly over one energy interval.
@@ -890,7 +922,15 @@ def replace_directives(template_text: str, replacements: Mapping[str, str]) -> s
                 # for standalone diagnostics that intentionally omit direct access.
                 if replacements[key] != "__REMOVE__":
                     indent = raw[:len(raw) - len(stripped)]
-                    output.append("%s%-32s%s" % (indent, key, replacements[key]))
+                    # Keep at least one delimiter after the directive name.  The
+                    # original formatter used a fixed ``%-32s`` field and therefore
+                    # concatenated values onto newly added names longer than 32
+                    # characters (for example
+                    # CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_DEPTH6), producing an invalid
+                    # AMPS keyword.  Use a dynamic pad so both historical short names
+                    # and long adaptive-control names remain valid input syntax.
+                    pad = " " * max(1, 32 - len(key))
+                    output.append("%s%s%s%s" % (indent, key, pad, replacements[key]))
                 remaining.remove(key)
                 continue
         output.append(raw)
@@ -976,20 +1016,26 @@ def write_directional_aperture_file(
 
 
 def resolved_dynamic_chunk(args: argparse.Namespace, solver: str) -> int:
-    """Return the input-deck dynamic chunk value.
+    """Return the input-deck dynamic chunk value for the current work-unit cost.
 
-    A value of 0 intentionally means AUTO to the C++ scheduler.  This is especially
-    important for GRIDLESS now that each MPI rank has an intra-rank worker pool: the
-    common scheduler resolves AUTO to a chunk proportional to the number of local
-    workers (currently about four tasks per worker), so one MPI fetch can keep all
-    threads busy.  The historical GRIDLESS default of 1 serialized each fetched chunk
-    inside a single worker and defeated the new shared-memory parallelism.
+    ``--dynamic-chunk`` always wins when the user supplies a positive value.  Otherwise
+    dense GRIDLESS work keeps the generic C++ AUTO heuristic (roughly four cheap
+    trajectory tasks per worker), while adaptive DIRECT_ACCESS uses **one heavy sky-
+    direction task per worker**.  An adaptive task commonly performs ~23 or more
+    trajectory classifications internally, so fetching four such tasks per worker would
+    hold a large amount of expensive work on one MPI rank and worsen the straggler tail.
+    A worker-sized chunk keeps every local thread busy while returning to the global RMA
+    queue frequently enough to balance difficult penumbra directions across ranks.
 
-    Mode3D keeps its prior runner default for compatibility; an explicit
-    --dynamic-chunk always overrides either solver.
+    Mode3D historically used a worker-sized chunk already; applying the same rule to
+    adaptive GRIDLESS also makes the two current C19 solvers easier to compare.
     """
     if args.dynamic_chunk > 0:
         return args.dynamic_chunk
+    adaptive_direction_tasks = (
+        args.cutoff_search == "DIRECT_ACCESS" and args.adaptive_access)
+    if adaptive_direction_tasks:
+        return max(1, args.nt)
     return 0 if solver == "GRIDLESS" else max(1, args.nt)
 
 
@@ -1011,6 +1057,12 @@ def command_for(args: argparse.Namespace, amps: Path, solver: str) -> List[str]:
     # saved commands make it obvious that no hidden 120-point scan is being requested.
     if args.cutoff_search == "PENUMBRA_SCAN":
         command += ["-cutoff-upper-scan-n", str(args.cutoff_scan_n)]
+    else:
+        command += [
+            "-cutoff-direct-access-adaptive", "T" if args.adaptive_access else "F",
+            "-cutoff-direct-access-adaptive-max-depth", str(args.adaptive_access_max_depth),
+            "-cutoff-direct-access-adaptive-guard-depth", str(args.adaptive_access_guard_depth),
+        ]
     if args.direction_coverage == "INSTRUMENT_APERTURES":
         command += ["-cutoff-dirmap-aperture-file", "C19_directional_apertures.dat"]
     chunk = resolved_dynamic_chunk(args, solver)
@@ -1023,9 +1075,9 @@ def command_for(args: argparse.Namespace, amps: Path, solver: str) -> List[str]:
             "-gridless-parallel", "THREADS",
             "-gridless-threads", str(args.nt),
         ]
-        # Do not force a one-task dynamic chunk.  Omitting the CLI override when the
-        # user requested AUTO lets GRIDLESS_MPI_DYNAMIC_CHUNK=0 in the rendered deck
-        # reach ResolveMpiDynamicChunk(), which sizes the fetch using args.nt workers.
+        # Dense GRIDLESS retains the generic AUTO heuristic when chunk==0. Adaptive
+        # DIRECT_ACCESS returns a worker-sized positive chunk above because each
+        # top-level item now contains many sequential trajectory classifications.
         if chunk > 0:
             command += ["-gridless-mpi-dynamic-chunk", str(chunk)]
     else:
@@ -1248,29 +1300,122 @@ def parse_directional_access(path: Path) -> DirectionalAccessCube:
     frozen = {key: tuple(sorted(value, key=lambda sample: sample.energy_mev))
               for key, value in samples.items()}
 
-    # P1.4 completeness contract: every sky cell must carry the identical rigidity
-    # grid.  A missing MPI-reduced row or truncated output must not silently change
-    # the energy quadrature for only one aperture direction.  Compare both kinetic
-    # energy and rigidity because the C++ writer emits both and C19 later integrates
-    # in energy while provenance is expressed as the requested rigidity list.
+    # Completeness contract for both dense and adaptive DIRECT_ACCESS.
+    #
+    # Dense output has one common grid in every direction.  Adaptive output is
+    # intentionally sparse: each direction contains the common coarse seeds plus only
+    # the midpoint/refinement nodes demanded by its own access topology.  Requiring
+    # identical row counts would therefore defeat the optimization.  What *must* remain
+    # common is the response support: every direction needs the same first and last
+    # energies, and every individual grid must be strictly increasing with no duplicate
+    # rigidity nodes.  Missing endpoints still indicate a truncated/corrupt producer
+    # output and are treated as fatal.
     first_key = next(iter(frozen))
     reference_grid = frozen[first_key]
     if len(reference_grid) < 2:
         raise ValueError("direct access cube needs at least two energy samples per cell: %s" % path)
+    support_lo_e = reference_grid[0].energy_mev
+    support_hi_e = reference_grid[-1].energy_mev
+    support_lo_r = reference_grid[0].rigidity_gv
+    support_hi_r = reference_grid[-1].rigidity_gv
     for key, grid in frozen.items():
-        if len(grid) != len(reference_grid):
+        if len(grid) < 2:
+            raise ValueError("direct access cube has fewer than two samples at %s in %s" %
+                             (key, path))
+        if not (math.isclose(grid[0].energy_mev, support_lo_e, rel_tol=5.0e-11, abs_tol=1.0e-9) and
+                math.isclose(grid[-1].energy_mev, support_hi_e, rel_tol=5.0e-11, abs_tol=1.0e-9) and
+                math.isclose(grid[0].rigidity_gv, support_lo_r, rel_tol=5.0e-11, abs_tol=1.0e-12) and
+                math.isclose(grid[-1].rigidity_gv, support_hi_r, rel_tol=5.0e-11, abs_tol=1.0e-12)):
             raise ValueError(
-                "direct access cube has inconsistent energy-grid length at %s in %s" %
+                "direct access cube has inconsistent response-support endpoints at %s in %s" %
                 (key, path))
-        for expected, actual in zip(reference_grid, grid):
-            if not math.isclose(expected.energy_mev, actual.energy_mev,
-                                rel_tol=5.0e-11, abs_tol=1.0e-9) or not math.isclose(
-                                    expected.rigidity_gv, actual.rigidity_gv,
-                                    rel_tol=5.0e-11, abs_tol=1.0e-12):
+        for left, right in zip(grid[:-1], grid[1:]):
+            if not (right.energy_mev > left.energy_mev and
+                    right.rigidity_gv > left.rigidity_gv):
                 raise ValueError(
-                    "direct access cube energy/rigidity grid differs between sky cells "
-                    "%s and %s in %s" % (first_key, key, path))
+                    "direct access cube has duplicate/non-increasing adaptive nodes at %s in %s" %
+                    (key, path))
     return DirectionalAccessCube(str(path), frame, x_km, y_km, z_km, frozen)
+
+
+def directional_access_sampling_stats(cube: DirectionalAccessCube) -> Dict[str, float]:
+    """Return realized sampling statistics for a dense or adaptive access cube.
+
+    Adaptive DIRECT_ACCESS deliberately uses a different internal rigidity grid in each
+    sky direction, so the number of rows in the output file is itself a useful runtime
+    and convergence diagnostic.  These statistics are written into ``C19_commands.json``
+    after each completed solver case.  They make it possible to verify that adaptation
+    actually reduced trajectory work without parsing the potentially large Tecplot file.
+    """
+    counts = [len(grid) for grid in cube.samples.values()]
+    if not counts:
+        return {
+            "direct_access_direction_count": 0,
+            "direct_access_sample_rows": 0,
+            "direct_access_samples_per_direction_min": 0,
+            "direct_access_samples_per_direction_mean": 0.0,
+            "direct_access_samples_per_direction_max": 0,
+        }
+    return {
+        "direct_access_direction_count": len(counts),
+        "direct_access_sample_rows": sum(counts),
+        "direct_access_samples_per_direction_min": min(counts),
+        "direct_access_samples_per_direction_mean": sum(counts) / float(len(counts)),
+        "direct_access_samples_per_direction_max": max(counts),
+    }
+
+
+def validate_directional_access_requested_grid(
+        cube: DirectionalAccessCube, requested_rigidities: Sequence[float],
+        adaptive: bool, path: Path) -> None:
+    """Verify that an access cube belongs to the current C19 request.
+
+    Dense DIRECT_ACCESS must contain the exact requested grid in every direction.
+    Adaptive DIRECT_ACCESS must contain every requested *seed* rigidity in every
+    direction, while allowing additional direction-dependent midpoint/refinement nodes.
+    This distinction is essential: requiring an identical row count in adaptive mode
+    would silently turn the optimization back into a dense scan, while checking only the
+    endpoints would allow a stale/corrupt file to omit mandatory coarse seeds.
+
+    Rigidity, rather than the redundant energy column, is the authoritative identifier
+    for a requested trajectory.  The runner converts detector-response energies to
+    rigidities and sends those values to AMPS; the C++ writer later reconstructs the
+    energy column from the configured particle mass.  Comparing that reconstructed
+    energy with the original Python value can reject a valid cube because the Python
+    and AMPS physical constants need not round-trip bit-for-bit.  The rigidity column is
+    written directly from the requested/adaptive grid and therefore validates the
+    actual calculation without introducing a second unit conversion.
+    """
+    if not requested_rigidities:
+        raise ValueError("requested direct-access rigidity grid is empty")
+
+    def same_rigidity(a: float, b: float) -> bool:
+        return math.isclose(a, b, rel_tol=2.0e-10, abs_tol=2.0e-12)
+
+    for direction, grid in cube.samples.items():
+        actual = [sample.rigidity_gv for sample in grid]
+        if adaptive:
+            # All coarse seeds are mandatory.  Additional nodes are generated by the
+            # C++ geometric-midpoint refinement tree and are intentionally allowed.
+            i = 0
+            for expected in requested_rigidities:
+                while (i < len(actual) and actual[i] < expected and
+                       not same_rigidity(actual[i], expected)):
+                    i += 1
+                if i >= len(actual) or not same_rigidity(actual[i], expected):
+                    raise ValueError(
+                        "adaptive direct access cube is missing requested seed rigidity "
+                        "%.12g GV at direction %s in %s" %
+                        (expected, direction, path))
+                i += 1
+        else:
+            if len(actual) != len(requested_rigidities) or any(
+                    not same_rigidity(value, expected)
+                    for value, expected in zip(actual, requested_rigidities)):
+                raise ValueError(
+                    "dense direct access cube rigidity grid does not match the requested "
+                    "detector-response grid at direction %s in %s" %
+                    (direction, path))
 
 
 def direction_map_from_access_cube(access_cube: DirectionalAccessCube) -> DirectionMap:
@@ -1870,8 +2015,10 @@ def fold_aperture_direct_access(
 
     The central signal remains the midpoint of the lower/upper bounds, but it is used
     quantitatively only when *both* unresolved-access and discrete-transition fractions
-    are within their configured tolerances.  Increasing ``--access-energy-points``
-    narrows the transition intervals and therefore provides a direct convergence test.
+    are within their configured tolerances.  In adaptive mode the C++ solver narrows
+    visible transition/unresolved brackets recursively; ``--adaptive-access-max-depth``
+    controls that local resolution, while ``--no-adaptive-access`` plus
+    ``--access-energy-points`` remains the dense reference/convergence calculation.
     """
     mapping = direction_mapping.upper()
     boresight, horizontal, vertical = detector_basis(
@@ -2007,6 +2154,7 @@ def fold_aperture_direct_access(
             "response_channel": channel,
             "response_energy_min_mev": samples[0].energy_mev,
             "response_energy_max_mev": samples[-1].energy_mev,
+            "direct_access_sample_count": len(samples),
             "orientation_model": orientation_model.upper(),
             "orientation_source": (orientation_record.source if orientation_record else "INTERNAL_SM_PROXY"),
             "orientation_yaw_deg": orientation_yaw_deg,
@@ -2527,6 +2675,12 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
         return []
     outputs: List[str] = []
     if not rows:
+        print(
+            "C19 comparison plots were not generated because no model rows "
+            "survived execution/post-processing; inspect run_failures in "
+            "%s" % (output_root / "C19_result.json"),
+            file=sys.stderr,
+        )
         return outputs
 
     marker_by_spacecraft = {"GOES13": "o", "GOES15": "s"}
@@ -2796,6 +2950,10 @@ def render_case_input(
         "DRIVER_FILE": str(driver.resolve()),
         "SPEC_GAMMA": "%.12g" % float(getattr(args, "case_spectral_index", args.spectral_index)),
         "CUTOFF_RIGIDITY_LIST_GV": (getattr(args, "case_rigidity_list_gv", "") or "__REMOVE__"),
+        "CUTOFF_DIRECT_ACCESS_ADAPTIVE": (
+            "T" if args.cutoff_search == "DIRECT_ACCESS" and args.adaptive_access else "F"),
+        "CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_DEPTH": str(args.adaptive_access_max_depth),
+        "CUTOFF_DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH": str(args.adaptive_access_guard_depth),
         "DT_TRACE": "%.12g" % args.dt_trace,
         "MAX_STEPS": str(args.max_steps),
         "MAX_TRACE_TIME": "%.12g" % args.max_trace_time,
@@ -2897,6 +3055,9 @@ def self_test() -> int:
             direction_aperture_horizontal_half_angle_deg=30.0,
             direction_aperture_vertical_half_angle_deg=60.0,
             spectral_index=3.0,
+            adaptive_access=True, adaptive_access_seed_points=12,
+            adaptive_access_max_depth=6, adaptive_access_guard_depth=1,
+            access_energy_points=48,
             # Exercise the production direct-access rendering contract for BOTH
             # solvers.  Historically this list was rendered only for Mode3D, so a
             # small explicit list here protects GRIDLESS equivalence in the unit test.
@@ -3030,6 +3191,57 @@ def self_test() -> int:
         gridless_access_cube = parse_directional_access(gridless_access_path)
         if gridless_access_cube.samples != access_cube.samples:
             raise AssertionError("GRIDLESS and GRIDDED direct-access schemas parsed differently")
+
+        # Adaptive DIRECT_ACCESS regression. Different sky directions are allowed to
+        # carry different refinement grids, but every direction must retain all common
+        # seed rigidities. This protects the sparse-output contract without accidentally
+        # restoring the old dense-grid requirement in post-processing.
+        adaptive_path = root / "cutoff_adaptive_test.dat"
+        adaptive_lines = [
+            'TITLE="synthetic adaptive direct access"',
+            'VARIABLES="lon_deg","lat_deg","rigidity_GV","energy_MeV","access_state","allowed","unresolved"',
+            'ZONE T="loc=0 x_km=42157 y_km=0 z_km=0 frame=SM adaptive=T" I=8 F=POINT',
+        ]
+        adaptive_energy_by_lon = {
+            90.0: (15.0, 40.0, 150.0),
+            270.0: (15.0, 25.0, 40.0, 82.0, 150.0),
+        }
+        for lon, energies in adaptive_energy_by_lon.items():
+            for energy in energies:
+                state = 0 if lon == 270.0 and energy <= 40.0 else 1
+                # Deliberately perturb the redundant energy column while retaining the
+                # exact requested rigidity.  Real AMPS output reconstructs energy from
+                # rigidity and the configured particle mass, so grid ownership must be
+                # validated from rigidity rather than requiring an exact energy
+                # round-trip across independently defined physical constants.
+                reconstructed_energy = energy * (1.0 + 5.0e-8)
+                adaptive_lines.append("%g 0 %.15e %.15e %d %d 0" %
+                                      (lon, rigidity_gv_from_kinetic_energy_mev(energy),
+                                       reconstructed_energy,
+                                       state, 1 if state == 1 else 0))
+        adaptive_path.write_text("\n".join(adaptive_lines) + "\n")
+        adaptive_cube = parse_directional_access(adaptive_path)
+        adaptive_seed_rigidities = tuple(
+            rigidity_gv_from_kinetic_energy_mev(energy)
+            for energy in (15.0, 40.0, 150.0))
+        validate_directional_access_requested_grid(
+            adaptive_cube, adaptive_seed_rigidities, True, adaptive_path)
+        adaptive_stats = directional_access_sampling_stats(adaptive_cube)
+        if adaptive_stats["direct_access_samples_per_direction_min"] != 3:
+            raise AssertionError("adaptive parser lost the sparse three-node direction")
+        if adaptive_stats["direct_access_samples_per_direction_max"] != 5:
+            raise AssertionError("adaptive parser lost the refined five-node direction")
+        try:
+            validate_directional_access_requested_grid(
+                adaptive_cube,
+                tuple(rigidity_gv_from_kinetic_energy_mev(energy)
+                      for energy in (15.0, 30.0, 40.0, 150.0)),
+                True, adaptive_path)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("adaptive access validation failed to detect a missing seed")
+
         direct_fold = fold_aperture_direct_access(
             direction_map, access_cube,
             (direction_map.x_km, direction_map.y_km, direction_map.z_km),
@@ -3173,8 +3385,18 @@ Examples:
     parser.add_argument("--detector-response", default=str(DEFAULT_RESPONSE),
                         help="piecewise EPEAD response CSV used by the current detector fold")
     parser.add_argument("--access-energy-points", type=int, default=48,
-                        help=("number of log-spaced direct A(E,Omega) energy nodes for either solver; exact detector-response edges are added "
-                              "without epsilon-bracketing trajectories"))
+                        help=("dense DIRECT_ACCESS reference grid size before exact response edges are added; used when --no-adaptive-access or by PENUMBRA_SCAN companion access"))
+    parser.add_argument("--adaptive-access", dest="adaptive_access", action="store_true",
+                        default=True,
+                        help=("use per-direction adaptive rigidity refinement for DIRECT_ACCESS (default); every coarse seed is traced, midpoint guards probe hidden structure, and intervals whose endpoint states differ are recursively refined"))
+    parser.add_argument("--no-adaptive-access", dest="adaptive_access", action="store_false",
+                        help="disable adaptive refinement and use the historical dense common rigidity grid")
+    parser.add_argument("--adaptive-access-seed-points", type=int, default=12,
+                        help=("number of logarithmic magnetic-access seed energies spanning the full positive detector response; internal response edges are integrated analytically and do not require trajectory samples"))
+    parser.add_argument("--adaptive-access-max-depth", type=int, default=6,
+                        help="maximum recursive midpoint-refinement depth for an ambiguous seed interval")
+    parser.add_argument("--adaptive-access-guard-depth", type=int, default=1,
+                        help=("number of forced midpoint-probe levels even when interval endpoint states agree; 1 probes every seed-interval midpoint before ambiguity-driven refinement"))
     parser.add_argument("--require-real-ephemeris", action="store_true",
                         help="reject selected reference rows using nominal-slot positions; recommended for publication science runs")
     # P2.1 is now part of the production configuration.  The runner uses the
@@ -3299,6 +3521,12 @@ Examples:
         parser.error("--spectral-index must be positive")
     if args.access_energy_points < 4:
         parser.error("--access-energy-points must be >= 4")
+    if args.adaptive_access_seed_points < 4:
+        parser.error("--adaptive-access-seed-points must be >= 4")
+    if not (0 <= args.adaptive_access_max_depth <= 20):
+        parser.error("--adaptive-access-max-depth must be in [0,20]")
+    if not (0 <= args.adaptive_access_guard_depth <= args.adaptive_access_max_depth):
+        parser.error("--adaptive-access-guard-depth must be in [0,max depth]")
 
     # Single-mode production contract.  These values encode the trajectory/folding
     # fixes that were validated during P0/P1 and are no longer exposed as switches
@@ -3384,8 +3612,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                          if args.spectrum_file else None)
         spectra = build_spectrum_estimates(
             reference_all, manifest, args.spectrum_source, args.spectral_index, spectrum_file)
-        access_energies = build_access_energy_grid(detector_response, args.access_energy_points)
-        access_rigidities = [rigidity_gv_from_kinetic_energy_mev(value) for value in access_energies]
+        # DIRECT_ACCESS adaptive mode sends only a coarse magnetic-access seed grid to
+        # AMPS.  Mode3D/GRIDLESS refine each direction independently and write the
+        # variable sampled nodes.  Dense mode and PENUMBRA_SCAN keep the established
+        # common grid for reference/convergence runs.
+        adaptive_access_active = (args.cutoff_search == "DIRECT_ACCESS" and
+                                  args.adaptive_access)
+        if adaptive_access_active:
+            access_energies = build_adaptive_access_seed_energy_grid(
+                detector_response, args.adaptive_access_seed_points)
+        else:
+            access_energies = build_access_energy_grid(
+                detector_response, args.access_energy_points)
+        # Keep the size of the historical dense reference grid as provenance even
+        # during an adaptive run.  build_access_energy_grid() also inserts exact
+        # response boundaries, so this is a more truthful comparison than simply using
+        # --access-energy-points (48 can become ~55 actual dense rigidity nodes).
+        dense_reference_energy_count = len(build_access_energy_grid(
+            detector_response, args.access_energy_points))
+        access_rigidities = [rigidity_gv_from_kinetic_energy_mev(value)
+                             for value in access_energies]
         # Detector orientation controls both optimized AMPS angular coverage and the
         # later detector fold; upstream anisotropy affects the fold only. Load/validate
         # these inputs before any AMPS launch so a missing attitude row cannot waste an
@@ -3542,6 +3788,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "spectrum_gamma": spectrum.gamma,
                     "response_fold_mode": args.response_fold,
                     "cutoff_search_algorithm": args.cutoff_search,
+                    "adaptive_access": adaptive_access_active,
+                    "adaptive_access_seed_points": len(access_energies),
+                    "adaptive_access_max_depth": args.adaptive_access_max_depth,
+                    "adaptive_access_guard_depth": args.adaptive_access_guard_depth,
                     "direction_coverage": args.direction_coverage,
                     "direction_aperture_horizontal_half_angle_deg": args.direction_aperture_horizontal_half_angle_deg,
                     "direction_aperture_vertical_half_angle_deg": args.direction_aperture_vertical_half_angle_deg,
@@ -3580,17 +3830,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             raise FileNotFoundError(
                                 "direct A(E,Omega) output is required but missing in %s" % run_dir)
                         access_cube = parse_directional_access(direct_path)
-                        # The C++ output is self-consistent by parser contract; also
-                        # prove that it is the requested detector-response quadrature
-                        # rather than a stale direct-access file from another run.
-                        cube_grid = next(iter(access_cube.samples.values()))
-                        if len(cube_grid) != len(access_energies) or any(
-                                not math.isclose(sample.energy_mev, expected,
-                                                 rel_tol=2.0e-10, abs_tol=2.0e-8)
-                                for sample, expected in zip(cube_grid, access_energies)):
-                            raise ValueError(
-                                "direct access cube energy grid does not match "
-                                "the requested detector-response grid in %s" % direct_path)
+                        # Prove that this is the product requested by the current
+                        # run rather than a stale cube. Dense mode requires the exact
+                        # common grid. Adaptive mode requires all common seed rigidities
+                        # while permitting additional per-direction refinement nodes.
+                        validate_directional_access_requested_grid(
+                            access_cube, access_rigidities,
+                            adaptive_access_active, direct_path)
+                        command_record.update(directional_access_sampling_stats(access_cube))
+                        if adaptive_access_active:
+                            dense_rows = len(access_cube.samples) * dense_reference_energy_count
+                            actual_rows = int(command_record["direct_access_sample_rows"])
+                            command_record["direct_access_dense_reference_rows_estimate"] = dense_rows
+                            command_record["direct_access_realized_row_fraction_vs_dense_reference"] = (
+                                actual_rows / float(dense_rows) if dense_rows else 0.0)
+                            print(
+                                "C19A adaptive access [%s %s %s %s]: %d samples over %d "
+                                "directions (%.1f/direction; dense reference %d, %.1f%%)" %
+                                (solver, field_model, spacecraft, format_utc(epoch),
+                                 actual_rows,
+                                 int(command_record["direct_access_direction_count"]),
+                                 float(command_record["direct_access_samples_per_direction_mean"]),
+                                 dense_rows,
+                                 100.0 * float(command_record[
+                                     "direct_access_realized_row_fraction_vs_dense_reference"])))
 
                     if args.cutoff_search == "DIRECT_ACCESS":
                         if access_cube is None:
@@ -3676,8 +3939,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         if not aperture_diagnostics:
                             aperture_diagnostics.extend(diagnostics)
                 except Exception as exc:
-                    run_failures.append(dict(command_record, return_code=None,
-                                             analysis_error=str(exc)))
+                    # Do not hide a post-processing failure until the final JSON is
+                    # inspected manually.  AMPS may have returned success and written a
+                    # large access cube, so an immediate case-labelled diagnostic is
+                    # essential for distinguishing producer failures from parser/grid/
+                    # detector-fold validation failures.  The complete structured record
+                    # is still retained in C19_result.json for reproducibility.
+                    failure = dict(command_record, return_code=None,
+                                   analysis_error=str(exc))
+                    run_failures.append(failure)
+                    print(
+                        "C19A post-processing failed [%s %s %s %s]: %s" %
+                        (solver, field_model, spacecraft, format_utc(epoch), exc),
+                        file=sys.stderr, flush=True)
 
     output_root.mkdir(parents=True, exist_ok=True)
     (output_root / "C19_commands.json").write_text(
@@ -3712,8 +3986,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for epoch, item in sorted(spectra.items()) if epoch in {row.utc for row in reference}])
     write_dict_rows(output_root / "C19_detector_response_used.csv", [asdict(row) for row in detector_response])
     write_dict_rows(output_root / "C19_access_energy_grid.csv", [
-        {"energy_mev": energy, "rigidity_gv": rigidity_gv_from_kinetic_energy_mev(energy)}
-        for energy in access_energies])
+        {
+            "grid_role": ("ADAPTIVE_SEED" if adaptive_access_active else "DENSE_REQUESTED"),
+            "adaptive_access": adaptive_access_active,
+            "index": index,
+            "energy_mev": energy,
+            "rigidity_gv": rigidity_gv_from_kinetic_energy_mev(energy),
+        }
+        for index, energy in enumerate(access_energies)])
     write_dict_rows(output_root / "C19_model.csv", [asdict(row) for row in model_rows])
     write_dict_rows(output_root / "C19_comparison.csv", [asdict(row) for row in model_rows])
     write_dict_rows(output_root / "C19_aperture_samples.csv", aperture_diagnostics)
@@ -3779,8 +4059,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "detector_response_sha256": sha256(response_path),
         "detector_response_contains_secondary_components": response_has_secondary,
         "response_fold_mode": args.response_fold,
-        "access_energy_base_points": args.access_energy_points,
-        "access_energy_points": len(access_energies),
+        "access_energy_base_points": (args.adaptive_access_seed_points
+                                      if adaptive_access_active else args.access_energy_points),
+        "access_energy_points_requested": len(access_energies),
+        "dense_reference_energy_points_actual": dense_reference_energy_count,
+        "adaptive_access": adaptive_access_active,
+        "adaptive_access_max_depth": args.adaptive_access_max_depth,
+        "adaptive_access_guard_depth": args.adaptive_access_guard_depth,
         "access_energy_min_mev": access_energies[0],
         "access_energy_max_mev": access_energies[-1],
         "access_rigidity_min_gv": access_rigidities[0],

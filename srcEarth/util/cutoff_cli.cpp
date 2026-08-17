@@ -345,6 +345,31 @@ CliOptions ParseCli(int argc,char** argv) {
       if (opt.cutoffRigidityListGV.empty())
         exit(__LINE__,__FILE__,"-cutoff-rigidity-list-gv must not be empty");
     }
+    else if (a=="-cutoff-direct-access-adaptive" ||
+             a=="--cutoff-direct-access-adaptive") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing T/F after -cutoff-direct-access-adaptive");
+      // Keep CLI token normalization local to this translation unit.  cutoff_cli.cpp
+      // deliberately does not depend on amps_param_parser.h, where EarthUtil::ToUpper()
+      // is declared.  Reuse the parser-local boolean helper instead of reaching across
+      // that module boundary; this also keeps the accepted T/F spellings consistent
+      // with the other boolean CLI options.
+      opt.cutoffDirectAccessAdaptive =
+          ParseCliBoolToken(argv[++i],"-cutoff-direct-access-adaptive") ? 1 : 0;
+    }
+    else if (a=="-cutoff-direct-access-adaptive-max-depth" ||
+             a=="--cutoff-direct-access-adaptive-max-depth") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing integer after -cutoff-direct-access-adaptive-max-depth");
+      opt.cutoffDirectAccessAdaptiveMaxDepth=std::stoi(argv[++i]);
+      if (opt.cutoffDirectAccessAdaptiveMaxDepth<0 || opt.cutoffDirectAccessAdaptiveMaxDepth>20)
+        exit(__LINE__,__FILE__,"-cutoff-direct-access-adaptive-max-depth must be in [0,20]");
+    }
+    else if (a=="-cutoff-direct-access-adaptive-guard-depth" ||
+             a=="--cutoff-direct-access-adaptive-guard-depth") {
+      if (i+1>=argc) exit(__LINE__,__FILE__,"Missing integer after -cutoff-direct-access-adaptive-guard-depth");
+      opt.cutoffDirectAccessAdaptiveGuardDepth=std::stoi(argv[++i]);
+      if (opt.cutoffDirectAccessAdaptiveGuardDepth<0 || opt.cutoffDirectAccessAdaptiveGuardDepth>20)
+        exit(__LINE__,__FILE__,"-cutoff-direct-access-adaptive-guard-depth must be in [0,20]");
+    }
     else if (a=="-cutoff-access-abs-lat-min" || a=="--cutoff-access-abs-lat-min") {
       if (i+1>=argc) exit(__LINE__,__FILE__,"Missing value after -cutoff-access-abs-lat-min");
       opt.cutoffAccessAbsLatMin_deg=std::stod(argv[++i]);
@@ -775,6 +800,9 @@ std::string HelpMessage(const char* progName) {
   out << "      Optional controls and aliases:\n";
   out << "        --cutoff-upper-scan-n <N>       scan samples for UPPER/PENUMBRA\n";
   out << "        --cutoff-rigidity-list-gv <R1,R2,...>  explicit access-state nodes [GV]\n";
+  out << "        --cutoff-direct-access-adaptive <T|F>  adapt DIRECT_ACCESS per direction\n";
+  out << "        --cutoff-direct-access-adaptive-max-depth <N>  recursive refinement cap\n";
+  out << "        --cutoff-direct-access-adaptive-guard-depth <N>  forced midpoint-probe levels\n";
   out << "        --cutoff-access-abs-lat-min <deg>      selected geodetic |latitude| minimum\n";
   out << "        --cutoff-access-abs-lat-max <deg>      selected geodetic |latitude| maximum\n";
   out << "        --gridless-cutoff-search <...>  gridless-specific alias\n";

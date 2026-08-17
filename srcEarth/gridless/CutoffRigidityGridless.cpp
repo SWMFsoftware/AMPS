@@ -210,6 +210,7 @@
 #include "util/TrajectoryTimeStep.h"
 #include "util/TrajectoryTrapDetector.h"
 #include "util/CutoffBandSearch.h"
+#include "util/AdaptiveDirectAccess.h"
 #include "DipoleInterface.h"
 #include "../3d/Mode3DParallel.h" // shared MPI dynamic work-queue scheduler
 
@@ -2515,6 +2516,8 @@ static void WriteTecplotDirectionalAccess_Point(
                                              const std::vector<int>& fullGridCellIds,
                                              const std::vector<double>& rigidityList_GV,
                                              const std::vector<int>& accessState,
+                                             bool adaptiveSparse,
+                                             const EarthUtil::AmpsParam& prm,
                                              double qabs,
                                              double m0_kg) {
   (void)nLat; // geometry is recovered from the full-grid cell id and nLon
@@ -2524,6 +2527,15 @@ static void WriteTecplotDirectionalAccess_Point(
     throw std::runtime_error(
         "Gridless directional access cube has size "+std::to_string(accessState.size())+
         ", expected "+std::to_string(nExpected)+".");
+  }
+
+  std::size_t nRows=0;
+  for (int state:accessState) {
+    if (state>=0) ++nRows;
+    else if (!adaptiveSparse) {
+      throw std::runtime_error(
+          "Gridless dense directional access cube contains an uncomputed state.");
+    }
   }
 
   FILE* f=std::fopen(fileName.c_str(),"w");
@@ -2536,8 +2548,11 @@ static void WriteTecplotDirectionalAccess_Point(
       "VARIABLES=\"lon_deg\",\"lat_deg\",\"rigidity_GV\",\"energy_MeV\","
       "\"access_state\",\"allowed\",\"unresolved\"\n");
   std::fprintf(f,
-      "ZONE T=\"point=%d x_km=%g y_km=%g z_km=%g frame=SM coverage=%s\" I=%zu F=POINT\n",
-      pointId,point_km.x,point_km.y,point_km.z,coverage.c_str(),nExpected);
+      "ZONE T=\"point=%d x_km=%g y_km=%g z_km=%g frame=SM coverage=%s adaptive=%c seed_n=%zu max_depth=%d guard_depth=%d\" I=%zu F=POINT\n",
+      pointId,point_km.x,point_km.y,point_km.z,coverage.c_str(),
+      adaptiveSparse ? 'T' : 'F',prm.cutoff.rigidityList_GV.size(),
+      prm.cutoff.directAccessAdaptiveMaxDepth,
+      prm.cutoff.directAccessAdaptiveGuardDepth,nRows);
 
   for (std::size_t selectedCellId=0;selectedCellId<fullGridCellIds.size();++selectedCellId) {
     const int fullCellId=fullGridCellIds[selectedCellId];
@@ -2551,11 +2566,9 @@ static void WriteTecplotDirectionalAccess_Point(
       const std::size_t k=selectedCellId*(std::size_t)nRigidity+
                           (std::size_t)iRigidity;
       const int state=accessState[k];
-      // Every direct-access task must survive the MPI reduction as one of the three
-      // published CutoffSampleState values.  A remaining -1 here means a scheduler,
-      // reduction, or indexing defect; never write it and let Python interpret an
-      // incomplete cube.  Failing at the producer makes GRIDLESS obey the same
-      // completeness contract as Mode3D.
+      // Adaptive candidate nodes that were not needed retain the -1 sentinel and are
+      // intentionally omitted.  Dense mode still treats -1 as a hard producer error.
+      if (state<0 && adaptiveSparse) continue;
       if (state!=(int)EarthUtil::CutoffSampleState::PhysicalForbidden &&
           state!=(int)EarthUtil::CutoffSampleState::Allowed &&
           state!=(int)EarthUtil::CutoffSampleState::Unresolved) {
@@ -3231,6 +3244,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
   const std::string cutoffSearchSelected=EarthUtil::ToUpper(prm.cutoff.searchAlgorithm);
   const bool penumbraScanSelected=(cutoffSearchSelected=="PENUMBRA_SCAN");
   const bool directAccessOnly=(cutoffSearchSelected=="DIRECT_ACCESS");
+  const bool adaptiveDirectAccess=(directAccessOnly && prm.cutoff.directAccessAdaptive);
 
   // Directional map grid dimensions. We interpret resolutions in degrees.
   // - lon: [0,360) in steps of lonRes
@@ -3872,12 +3886,37 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   const bool saveDirectionalAccessStates=(
       doDirMap && !prm.cutoff.rigidityList_GV.empty() &&
       (penumbraScanSelected || directAccessOnly));
-  const int nDirectionalAccessRigidities=saveDirectionalAccessStates
+
+  // In adaptive DIRECT_ACCESS the explicit rigidity list is the seed grid rather than
+  // the complete per-direction sample set.  Build the deterministic full candidate tree
+  // on every rank so variable adaptive samples can still be represented in one fixed
+  // sentinel-filled array and reduced with MPI_MAX.
+  EarthUtil::AdaptiveDirectAccessGrid adaptiveAccessGrid;
+  std::vector<double> directionalAccessRigidityGrid_GV=prm.cutoff.rigidityList_GV;
+  if (adaptiveDirectAccess) {
+    adaptiveAccessGrid=EarthUtil::BuildAdaptiveDirectAccessGrid(
+        prm.cutoff.rigidityList_GV,prm.cutoff.directAccessAdaptiveMaxDepth);
+    directionalAccessRigidityGrid_GV=adaptiveAccessGrid.candidate_GV;
+  }
+  const int nDirectionalAccessSeedRigidities=saveDirectionalAccessStates
       ? static_cast<int>(prm.cutoff.rigidityList_GV.size()) : 0;
+  const int nDirectionalAccessStorageRigidities=saveDirectionalAccessStates
+      ? static_cast<int>(directionalAccessRigidityGrid_GV.size()) : 0;
   if (saveDirectionalAccessStates && mpiRank==0) {
-    std::cout << "[gridless] Direct directional access: "
-              << nDirectionalAccessRigidities << " rigidity level(s) x "
-              << nDirMapCells << " selected direction(s) per observation point\n";
+    if (adaptiveDirectAccess) {
+      std::cout << "[gridless] Direct directional access: ADAPTIVE, "
+                << nDirectionalAccessSeedRigidities << " seed rigidity level(s), "
+                << nDirectionalAccessStorageRigidities
+                << " maximum candidate node(s)/direction, guard depth "
+                << prm.cutoff.directAccessAdaptiveGuardDepth << ", max depth "
+                << prm.cutoff.directAccessAdaptiveMaxDepth << ", "
+                << nDirMapCells << " selected direction(s)/point\n";
+    }
+    else {
+      std::cout << "[gridless] Direct directional access: "
+                << nDirectionalAccessSeedRigidities << " fixed rigidity level(s) x "
+                << nDirMapCells << " selected direction(s) per observation point\n";
+    }
   }
 
   //====================================================================================
@@ -3968,11 +4007,11 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     if (penumbraScanSelected) RcDirMapPenumbra.assign(nMap);
     if (saveDirectionalAccessStates) {
       const long long nAccessLL=static_cast<long long>(nMap)*
-                                static_cast<long long>(nDirectionalAccessRigidities);
+                                static_cast<long long>(nDirectionalAccessStorageRigidities);
       if (nAccessLL>static_cast<long long>(std::numeric_limits<int>::max())) {
         throw std::runtime_error(
             "Gridless directional rigidity-access MPI reduction count exceeds INT_MAX; "
-            "coarsen DIRMAP, use VECTOR_APERTURES, or reduce CUTOFF_RIGIDITY_LIST_GV.");
+            "coarsen DIRMAP, lower adaptive max depth, or reduce the seed grid.");
       }
       DirAccessStates.assign((std::size_t)nAccessLL,-1);
     }
@@ -3991,18 +4030,23 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   //       Total = nPoints * nDirMapCells
   //
   //   (C) Optional direct-access tasks used by C19 science folding:
-  //       Total = nPoints * nDirMapCells * nRequestedRigidities
+  //       dense    : nPoints * nDirMapCells * nRequestedRigidities
+  //       adaptive : nPoints * nDirMapCells
   //
-  // All three families share the same collective MPI scheduler.  Direct-access tasks
-  // are deliberately independent of the scalar penumbra task so one long cutoff scan
-  // cannot serialize the much larger detector-response trajectory set.
+  // In adaptive DIRECT_ACCESS a top-level TASK_DIRACCESS is intentionally heavier than
+  // the historical dense task: it owns one direction and evaluates all mandatory seeds
+  // plus any guard/refinement nodes required by that direction.  Refinement decisions
+  // depend on earlier classifications, so splitting those nodes into independent MPI
+  // tasks would require repeated synchronization and would lose most of the benefit.
+  // Different directions remain completely independent and share the same collective
+  // MPI scheduler and local worker pool.
   const long long totalSamplingTasks = directAccessOnly
       ? 0LL : (long long)nLoc * (long long)nDirSampling;
   const long long totalDirMapTasks   = (doDirMap && !directAccessOnly)
       ? (long long)prm.output.points.size() * (long long)nDirMapCells : 0LL;
   const long long totalDirAccessTasks = saveDirectionalAccessStates
       ? (long long)prm.output.points.size() * (long long)nDirMapCells *
-        (long long)nDirectionalAccessRigidities : 0LL;
+        (adaptiveDirectAccess ? 1LL : (long long)nDirectionalAccessSeedRigidities) : 0LL;
   const long long totalTasks = totalSamplingTasks + totalDirMapTasks + totalDirAccessTasks;
 
   // Each rank counts how many trajectory-tasks it actually computed.
@@ -4070,12 +4114,13 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
       return TaskMsg{ TASK_DIRMAP, pointId, cellId, Rmin, Rmax };
     }
 
-    // Direct-access idx packs [cell][rigidity] so TaskMsg remains compact and the
-    // same scheduler can dispatch all three task families without allocating task
-    // objects.  Decode is deterministic for STATIC/BLOCK_CYCLIC/DYNAMIC alike.
+    // Dense access packs [cell][rigidity] in idx.  Adaptive access instead schedules
+    // one complete sky-direction task, so idx is simply the selected cell id.  Keeping
+    // refinement within one task lets the result of a coarse classification decide
+    // whether child rigidities need to be traced without any MPI synchronization.
     const long long accessRem=rem-totalDirMapTasks;
     const long long perPoint=(long long)nDirMapCells*
-                             (long long)nDirectionalAccessRigidities;
+        (adaptiveDirectAccess ? 1LL : (long long)nDirectionalAccessSeedRigidities);
     const int pointId=(int)(accessRem/perPoint);
     const long long withinPoint=accessRem-(long long)pointId*perPoint;
     return TaskMsg{ TASK_DIRACCESS, pointId, (int)withinPoint, Rmin, Rmax };
@@ -4165,14 +4210,14 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
       }
     }
     else if (task.type == TASK_DIRACCESS) {
-      // P1 science product: classify one exact requested rigidity for one selected
-      // arrival direction.  This is deliberately a distinct task from TASK_DIRMAP:
-      // the detector fold needs A(R,Omega) itself, not a reconstruction from
-      // Rc_effective.  The same ClassifyCutoffSampleDetailed helper used by the
-      // gridless PENUMBRA_SCAN enforces the identical ALLOWED / PHYSICAL_FORBIDDEN /
-      // UNRESOLVED policy, including CUTOFF_TRACE_LIMIT_POLICY.
-      const int cellId=task.idx/nDirectionalAccessRigidities;
-      const int iRigidity=task.idx-cellId*nDirectionalAccessRigidities;
+      // P1 science product: classify the requested A(R,Omega) access states directly.
+      // In adaptive mode one worker owns a complete candidate-rigidity slice for this
+      // direction and may safely write it without a lock because no other task can own
+      // the same [point,cell] pair.  MPI remains rank/main-thread-only; these are merely
+      // rank-local array writes from disjoint worker slices.
+      const int cellId=adaptiveDirectAccess
+          ? task.idx
+          : task.idx/nDirectionalAccessSeedRigidities;
       const int fullCellId=dirMapFullCellIds[(std::size_t)cellId];
       const int iLon=fullCellId%nLonMap;
       const int jLat=fullCellId/nLonMap;
@@ -4185,8 +4230,31 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
       const V3 dir_sm{cl*std::cos(lon),cl*std::sin(lon),std::sin(lat)};
       const V3 dir_gsm=unit(Apply(R_sm2gsm,dir_sm));
       const V3 v0=mul(-1.0,dir_gsm);
-      directAccessState=static_cast<int>(ClassifyCutoffSampleDetailed(
-          taskField,x0_m,v0,prm.cutoff.rigidityList_GV[(std::size_t)iRigidity]).state);
+
+      if (adaptiveDirectAccess) {
+        const std::size_t perPoint=(std::size_t)nDirMapCells*
+                                   (std::size_t)nDirectionalAccessStorageRigidities;
+        const std::size_t base=(std::size_t)task.loc*perPoint+
+                               (std::size_t)cellId*
+                               (std::size_t)nDirectionalAccessStorageRigidities;
+        EarthUtil::EvaluateAdaptiveDirectAccessDirection(
+            adaptiveAccessGrid,prm.cutoff.directAccessAdaptiveGuardDepth,
+            DirAccessStates,base,
+            [&](double rigidity_GV) -> int {
+              return static_cast<int>(ClassifyCutoffSampleDetailed(
+                  taskField,x0_m,v0,rigidity_GV).state);
+            },
+            static_cast<int>(EarthUtil::CutoffSampleState::Unresolved));
+        // -2 tells AccumulateResultLocal that the adaptive worker already filled the
+        // complete disjoint state slice.  No single-state accumulation is required.
+        directAccessState=-2;
+      }
+      else {
+        const int iRigidity=task.idx-cellId*nDirectionalAccessSeedRigidities;
+        directAccessState=static_cast<int>(ClassifyCutoffSampleDetailed(
+            taskField,x0_m,v0,
+            prm.cutoff.rigidityList_GV[(std::size_t)iRigidity]).state);
+      }
     }
 
     return ResultMsg{
@@ -4262,13 +4330,14 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
       }
     }
     else if (res.type == TASK_DIRACCESS) {
-      if (saveDirectionalAccessStates && res.loc>=0 && res.idx>=0 &&
-          res.accessState>=0) {
+      if (!adaptiveDirectAccess && saveDirectionalAccessStates &&
+          res.loc>=0 && res.idx>=0 && res.accessState>=0) {
         const std::size_t perPoint=(std::size_t)nDirMapCells*
-                                   (std::size_t)nDirectionalAccessRigidities;
+                                   (std::size_t)nDirectionalAccessSeedRigidities;
         const std::size_t k=(std::size_t)res.loc*perPoint+(std::size_t)res.idx;
         DirAccessStates[k]=res.accessState;
       }
+      // Adaptive workers wrote their own disjoint candidate slices directly.
     }
   };
 
@@ -4283,7 +4352,9 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   // To match the Mode3D behavior, the work is represented as a flat global task list:
   //   task 0 ... totalSamplingTasks-1 : cutoff search samples/directions
   //   next totalDirMapTasks              : optional directional-map cutoff cells
-  //   remaining tasks                    : direct (direction,rigidity) access states
+  //   remaining tasks                    : direct access work; one (direction,rigidity)
+  //                                        task in dense mode or one whole direction
+  //                                        task in adaptive mode
   //
   // The selected scheduler controls how MPI ranks consume this same task list:
   //   DYNAMIC      : ranks atomically fetch chunks from an MPI RMA counter;
@@ -4368,6 +4439,10 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     std::cout << "[gridless] shared backend   : "
               << GridlessParallelBackendName_(gridlessBackend) << "\n";
     std::cout << "[gridless] workers/rank     : " << gridlessThreadCount << "\n";
+    std::cout << "[gridless] work unit        : "
+              << (adaptiveDirectAccess
+                  ? "adaptive sky-direction task (contains multiple trajectories)"
+                  : "flattened cutoff trajectory task") << "\n";
     std::cout << "[gridless][MPI] scheduler   : "
               << Earth::Mode3D::MpiSchedulerName(gridlessScheduler) << "\n";
     if (gridlessScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
@@ -4934,7 +5009,7 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
             std::snprintf(accessName,sizeof(accessName),
                           "cutoff_gridless_dir_access_point_%04zu.dat",ip);
             const std::size_t perPoint=(std::size_t)nDirMapCells*
-                                       (std::size_t)nDirectionalAccessRigidities;
+                                       (std::size_t)nDirectionalAccessStorageRigidities;
             const std::size_t accessBase=ip*perPoint;
             std::vector<int> pointAccess(perPoint,-1);
             std::copy(DirAccessStates.begin()+accessBase,
@@ -4944,7 +5019,8 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
                 accessName,(int)ip,prm.output.points[ip],
                 lonRes_deg,latRes_deg,nLonMap,nLatMap,
                 EarthUtil::ToUpper(prm.cutoff.dirMapCoverage),
-                dirMapFullCellIds,prm.cutoff.rigidityList_GV,pointAccess,qabs,m0);
+                dirMapFullCellIds,directionalAccessRigidityGrid_GV,pointAccess,
+                adaptiveDirectAccess,prm,qabs,m0);
           }
         }
         if (!directAccessOnly) {

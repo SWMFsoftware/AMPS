@@ -427,6 +427,24 @@ namespace EarthUtil {
     // output order is deterministic and accidental duplicate trajectories are caught.
     std::vector<double> rigidityList_GV; // CUTOFF_RIGIDITY_LIST_GV
 
+    // Optional adaptive refinement of the DIRECT_ACCESS rigidity list.
+    //
+    // The explicit CUTOFF_RIGIDITY_LIST_GV values become the coarse seed grid.  Every
+    // seed is traced in every selected sky direction.  The solver then probes geometric
+    // midpoints and recursively refines intervals whose endpoint classifications
+    // differ (including resolved<->UNRESOLVED boundaries).  UNRESOLVED/UNRESOLVED
+    // intervals stop after the guard probes because rigidity subdivision cannot repair
+    // a trace time/step/path limit.  A small guard depth forces midpoint
+    // probes even when coarse endpoints agree, reducing the chance of missing a narrow
+    // penumbral pocket.  This changes only DIRECT_ACCESS; PENUMBRA_SCAN and the shell
+    // RIGIDITY_LIST product retain their established fixed-grid behavior.
+    //
+    // Defaults are deliberately conservative for general AMPS use: adaptive sampling is
+    // OFF unless requested.  C19 enables it explicitly in its committed input templates.
+    bool directAccessAdaptive{false}; // CUTOFF_DIRECT_ACCESS_ADAPTIVE
+    int directAccessAdaptiveMaxDepth{6}; // CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_DEPTH
+    int directAccessAdaptiveGuardDepth{1}; // CUTOFF_DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH
+
     // Optional geodetic absolute-latitude band used only by RIGIDITY_LIST.
     //
     // A full shell remains the backward-compatible default (0--90 degrees).  A test
