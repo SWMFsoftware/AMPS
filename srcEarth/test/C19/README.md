@@ -1246,7 +1246,7 @@ flag:
 | `C19_parity_<solver>_<field>.png` | Common-range parity view with the 1:1 line |
 | `C19_residual_<solver>_<field>.png` | Model-minus-observation residual versus time |
 | `C19_transmission_<solver>_<field>.png` | EAST/WEST aperture transmission diagnostics |
-| `C19_aperture_diagnostic.png` | Representative aperture-cell cutoff/access diagnostic |
+| `C19_aperture_diagnostic.png` | Representative aperture-cell cutoff/access diagnostic; direct-access cells are colored by the midpoint of their explicit transmission bounds, while the CSV retains both bounds |
 
 Exact zero transmission remains a dedicated saturation state rather than an arbitrary
 finite substitute. Unresolved cells are carried through lower/upper bounds and the

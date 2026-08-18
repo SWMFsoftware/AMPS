@@ -2881,6 +2881,33 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
         outputs.append(str(path))
     return outputs
 
+def aperture_diagnostic_transmission(row: Mapping[str, object]) -> Optional[float]:
+    """Return the best diagnostic color value for one aperture cell.
+
+    Legacy cutoff-proxy diagnostics contain a scalar ``transmission`` value.
+    DIRECT_ACCESS deliberately stores only rigorous ``transmission_min`` and
+    ``transmission_max`` bounds because a sampled access transition has no uniquely
+    established location between its endpoint rigidities.  The old plot filtered on
+    the legacy scalar field and therefore discarded every DIRECT_ACCESS cell.  Use the
+    midpoint of the explicit bounds strictly as a visualization color while the CSV
+    retains both bounds and the scientific acceptance logic remains unchanged.
+    """
+    value = row.get("transmission")
+    if value is not None:
+        result = float(value)
+        return result if math.isfinite(result) else None
+
+    lower = row.get("transmission_min")
+    upper = row.get("transmission_max")
+    if lower is None or upper is None:
+        return None
+    lower_value = float(lower)
+    upper_value = float(upper)
+    if not (math.isfinite(lower_value) and math.isfinite(upper_value)):
+        return None
+    return 0.5 * (lower_value + upper_value)
+
+
 def make_aperture_plot(diagnostics: Sequence[Mapping[str, object]], output_path: Path) -> Optional[str]:
     try:
         import matplotlib.pyplot as plt
@@ -2894,15 +2921,21 @@ def make_aperture_plot(diagnostics: Sequence[Mapping[str, object]], output_path:
             ("utc", "spacecraft", "channel", "solver", "field_model")) == first_key]
     if not rows:
         return None
+
     fig, ax = plt.subplots(figsize=(9.0, 4.8))
+    scatter = None
     for direction, marker in (("EAST", "o"), ("WEST", "s")):
-        group = [row for row in rows if row["detector_direction"] == direction
-                 and row.get("transmission") is not None]
+        group = [(row, aperture_diagnostic_transmission(row)) for row in rows
+                 if row["detector_direction"] == direction]
+        group = [(row, value) for row, value in group if value is not None]
         if group:
-            scatter = ax.scatter([float(row["lon_deg"]) for row in group],
-                                 [float(row["lat_deg"]) for row in group],
-                                 c=[float(row["transmission"]) for row in group],
+            scatter = ax.scatter([float(row["lon_deg"]) for row, _ in group],
+                                 [float(row["lat_deg"]) for row, _ in group],
+                                 c=[float(value) for _, value in group],
                                  marker=marker, label=direction, vmin=0.0, vmax=1.0)
+    if scatter is None:
+        plt.close(fig)
+        return None
     ax.set_xlim(0.0, 360.0)
     ax.set_ylim(-90.0, 90.0)
     ax.set_xlabel("SM direction longitude (deg)")
@@ -2910,8 +2943,7 @@ def make_aperture_plot(diagnostics: Sequence[Mapping[str, object]], output_path:
     ax.set_title("C19A aperture sampling: %s %s %s %s %s" % first_key)
     ax.grid(True, alpha=0.3)
     ax.legend()
-    if 'scatter' in locals():
-        fig.colorbar(scatter, ax=ax, label="Channel transmission")
+    fig.colorbar(scatter, ax=ax, label="Channel transmission (bounds midpoint)")
     fig.tight_layout()
     fig.savefig(output_path, dpi=160)
     plt.close(fig)
@@ -3321,7 +3353,20 @@ def self_test() -> int:
         rows = [model, reversed_model]
         plots = make_comparison_plots(rows, root)
         aperture = make_aperture_plot(diagnostics, root / "C19_aperture_diagnostic.png")
-        if not plots or aperture is None:
+        # DIRECT_ACCESS diagnostics intentionally have transmission bounds rather than
+        # the legacy scalar ``transmission`` key.  Confirm the plot path uses those
+        # bounds and no longer produces a formally successful but empty figure.
+        direct_diagnostics = [dict(item, utc="2012-05-17T06:00:00Z",
+                                   spacecraft="GOES13", channel="P4",
+                                   solver="GRIDDED", field_model="T05")
+                              for item in direct_fold.diagnostic]
+        direct_midpoints = [aperture_diagnostic_transmission(item)
+                            for item in direct_diagnostics]
+        if not direct_midpoints or not any(value is not None for value in direct_midpoints):
+            raise AssertionError("DIRECT_ACCESS aperture bounds produced no plot colors")
+        direct_aperture = make_aperture_plot(
+            direct_diagnostics, root / "C19_direct_aperture_diagnostic.png")
+        if not plots or aperture is None or direct_aperture is None:
             raise AssertionError("self-test did not generate plots")
         expected_plot_names = {
             "C19_scatter_gridless_t05.png",
