@@ -328,9 +328,74 @@ python3 srcEarth/test/C19/run_C19.py \
   -np 4 -nt 16
 ```
 
-This can require many AMPS launches: one launch per selected `(epoch, spacecraft, solver, field model)` group. P4 and P5 share the same directional map for a given group and are folded in postprocessing.
+GRIDDED mesh reuse is enabled by default. The runner makes one AMPS launch per field
+model and cutoff-search configuration, allocates the Mode3D mesh once, and processes
+all selected spacecraft/epochs through the multi-snapshot loop documented below.
+P4 and P5 already share the same access cube for a spacecraft case and continue to be
+folded independently in postprocessing. GRIDLESS remains one launch per selected
+`(epoch, spacecraft, field model)` because it does not allocate a persistent field
+mesh.
 
-### 8.6 Custom cadence or time interval
+### 8.6 GRIDDED mesh-reuse batching
+
+The historical runner launched Mode3D separately for every spacecraft epoch. Each
+process repeated `PIC::InitMPI()`, `amps_init_mesh()`, `amps_init()`, sphere setup, and
+distributed block allocation even though the domain and AMR resolution were unchanged.
+The default `--gridded-batch AUTO` path now groups all compatible GRIDDED cases by:
+
+```text
+(field model, cutoff-search algorithm, mesh/domain settings, numerical controls)
+```
+
+For each group the runner writes:
+
+```text
+C19_trajectory.txt          all spacecraft locations in stable case order
+C19_snapshot_epochs.txt     sorted unique, possibly irregular observation epochs
+C19_directional_apertures.dat
+C19_batch_manifest.csv      case -> snapshot suffix/local location mapping
+AMPS_PARAM_C19.in           TEMPORAL_MODE SNAPSHOT_LIST
+```
+
+Mode3D performs the following lifecycle:
+
+```text
+initialize MPI/SPICE
+allocate AMR tree and distributed blocks once
+initialize static sphere/data layout once
+for each unique snapshot epoch:
+    interpolate the field driver at that epoch
+    select only trajectory rows timestamped at that epoch
+    remap their LOCATION-qualified apertures to snapshot-local location IDs
+    refill mesh B/E and rebuild the compact global tracing arrays
+    run cutoff/direct-access work for the active locations
+```
+
+The per-epoch location selection is essential. Ordinary `TIME_SERIES` semantics run
+the complete output domain at every snapshot; using that mode directly would produce
+an incorrect `N_snapshots × N_locations` cross-product. `SNAPSHOT_LIST` instead means
+independent timestamped cases and requires at least one matching trajectory row for
+every listed epoch.
+
+The mesh topology and allocation are reused, but the magnetic field is intentionally
+refilled for every unique epoch because T05/T96 drivers and SM/GSM rotations change
+with time. If GOES-13 and GOES-15 have observations at the same epoch, they share both
+the mesh allocation and that epoch's field initialization. The compact replicated
+B/E/presence vectors are also resized only when their dimensions change and otherwise
+cleared in place. Leaf `Temp_ID` values are still reset for every snapshot because that
+field is shared AMPS scratch storage and cannot safely be cached across products.
+
+For compatibility/regression comparison, restore the old process layout with:
+
+```bash
+python3 srcEarth/test/C19/run_C19.py ... --gridded-batch OFF
+```
+
+`SNAPSHOT`, `TIME_SERIES`, GRIDLESS, and all non-C19 input decks retain their existing
+behavior; batching is activated only by the explicit C19-generated `SNAPSHOT_LIST`
+deck.
+
+### 8.7 Custom cadence or time interval
 
 ```bash
 python3 srcEarth/test/C19/run_C19.py \
@@ -343,7 +408,7 @@ python3 srcEarth/test/C19/run_C19.py \
   --amps ./amps
 ```
 
-### 8.7 Direction-mapping diagnostic
+### 8.8 Direction-mapping diagnostic
 
 The AMPS cutoff implementation and the GOES detector geometry use two different
 vector meanings that must not be conflated:
@@ -365,7 +430,7 @@ acceptance. Its purpose is to make an east/west reversal obvious and to preserve
 direct comparison with older C19 output without rerunning AMPS.
 
 
-### 8.8 Single current workflow
+### 8.9 Single current workflow
 
 C19 no longer exposes P0/P1/P2 as alternate execution modes. Those names describe the
 development history only. The validated changes are integrated into every ordinary run.
@@ -504,13 +569,19 @@ The model row contains:
 ```text
 east_transmission_min / east_transmission_max
 west_transmission_min / west_transmission_max
+east_signal_min / east_signal_max
+west_signal_min / west_signal_max
+modeled_east_west_ratio_min / modeled_east_west_ratio_max
 unresolved_east_fraction
 unresolved_west_fraction
+east_aperture_status / west_aperture_status
+status_reasons
 ```
 
-A central transmission is reported only when the unresolved solid-angle fraction is at
-or below `--max-unresolved-aperture-fraction` (default 0.05). Above that threshold the
-row is explicitly invalidated as:
+A central transmission is reported only when both the unresolved fraction and the
+finite-rigidity transition fraction satisfy their configured tolerances. Regardless of
+whether that scalar is accepted, lower/upper transmission and synthetic-signal bounds
+remain available. Above the unresolved threshold the row is explicitly invalidated as:
 
 ```text
 EXCESSIVE_UNRESOLVED_EAST_APERTURE
@@ -519,6 +590,24 @@ EXCESSIVE_UNRESOLVED_WEST_APERTURE
 
 This tolerance is explicit and auditable; unresolved sky cells can no longer disappear
 from the detector normalization.
+
+Availability is evaluated independently for EAST and WEST before an overall row status
+is derived. `C19_model.csv` and `C19_aperture_availability.csv` retain the complete
+per-head pipeline: selected cells, forward-facing cells, geometric aperture cells,
+cells with access samples, cells overlapping the channel response, contributing cells,
+geometric/contributing solid angle, coverage fraction, bounds, scalar, and status.
+`status_reasons` retains every simultaneous failure rather than losing the WEST reason
+when an EAST check fails first.
+
+The geometry gates are configurable:
+
+```text
+--min-aperture-cell-count 1
+--min-aperture-solid-angle-coverage 0.95
+```
+
+A resolved physical zero is `PHYSICAL_ZERO` at the per-head level and is never treated
+as absent data.
 
 ### 9.3 Termination-reason forensics
 
@@ -596,6 +685,12 @@ Additional non-saturation statuses now include:
 ```text
 NO_EAST_APERTURE_CELLS
 NO_WEST_APERTURE_CELLS
+INSUFFICIENT_EAST_ENERGY_SAMPLES
+INSUFFICIENT_WEST_ENERGY_SAMPLES
+NO_EAST_RESPONSE_OVERLAP
+NO_WEST_RESPONSE_OVERLAP
+INCOMPLETE_EAST_SOLID_ANGLE_COVERAGE
+INCOMPLETE_WEST_SOLID_ANGLE_COVERAGE
 EXCESSIVE_UNRESOLVED_EAST_APERTURE
 EXCESSIVE_UNRESOLVED_WEST_APERTURE
 UNRESOLVED_EAST_APERTURE
@@ -709,7 +804,8 @@ With `PENUMBRA_SCAN`, the same cube is written as a companion product. The solve
 file names are:
 
 ```text
-GRIDDED : cutoff_3d_dir_access_loc_000000.dat
+GRIDDED independent: cutoff_3d_dir_access_loc_000000.dat
+GRIDDED batch      : cutoff_3d_dir_access_loc_<snapshot-local-id>_snapshot_<index>_<UTC>.dat
 GRIDLESS: cutoff_gridless_dir_access_point_0000.dat
 ```
 
@@ -779,6 +875,7 @@ Adaptive sampling is an optimization of a validation test, so it is paired with 
 
 - `--max-discrete-transition-fraction` limits the detector-response-weighted fraction left inside sampled resolved state-change brackets. If the adaptive tree remains too coarse, the quantitative fold is invalidated rather than silently accepted.
 - `--max-unresolved-aperture-fraction` independently limits uncertainty caused by trace time/step/distance limits.
+- `--min-aperture-cell-count` and `--min-aperture-solid-angle-coverage` independently reject missing or incomplete EAST/WEST geometry before a ratio is accepted.
 - The runner verifies that every adaptive direction contains every requested seed energy and the common response-support endpoints; missing/truncated sparse output is fatal.
 - `--no-adaptive-access --access-energy-points 48` restores the dense reference grid for direct adaptive-versus-dense convergence tests.
 - `--adaptive-access-max-depth` controls the finest local transition bracket, while `--adaptive-access-guard-depth` controls how aggressively apparently uniform intervals are probed for hidden non-monotonic structure.
@@ -1052,6 +1149,18 @@ all cells required by all configured apertures at all locations. This preserves 
 constant-size flattened MPI task layout while remaining conservative: no direction that
 can contribute at any requested location is pruned.
 
+A batched aperture row has one optional final association token:
+
+```text
+name frame bx by bz ux uy uz hHalfDeg vHalfDeg LOCATION=<global-trajectory-row>
+```
+
+Unqualified rows preserve the legacy behavior and apply at every location. During a
+`SNAPSHOT_LIST` run, Mode3D removes aperture rows belonging to inactive epochs and
+remaps the retained global trajectory row to the snapshot-local location ID. The sky
+mask remains the conservative union for the simultaneously active locations, but an
+aperture from another epoch or spacecraft can no longer expand it.
+
 The legacy `SM_PROXY` orientation remains available in C19 only as a fallback data
 source. The runner converts that approximation into ordinary `LOCAL_SM` vector-aperture
 records before launching AMPS; there is no EAST/WEST special case in the C++ selector.
@@ -1213,23 +1322,35 @@ The normal top-level output directory defaults to:
 test_output/C19_goes_epead_ew/
 ```
 
-Per-run directories remain:
+Independent GRIDLESS and `--gridded-batch OFF` directories remain:
 
 ```text
 <solver>/<field-model>/<spacecraft>/<UTC-token>/
 ```
+
+Default GRIDDED batches use:
+
+```text
+gridded/<field-model>/batch_<cutoff-search>/
+```
+
+Mode3D appends `_snapshot_<index>_<UTC-token>` to each output stem. Location IDs are
+local to that snapshot, not global trajectory rows. `C19_batch_manifest.csv` is the
+authoritative mapping used by the postprocessor.
 
 Normal machine-readable products include:
 
 | Product | Contents |
 |---|---|
 | `C19_commands.json` | Exact launch commands and working directories |
+| per-batch `C19_batch_manifest.csv` | Global trajectory row, snapshot index, snapshot-local output location, suffix, spacecraft, epoch, field model, and search mode |
 | `C19_reference_used.csv` | Selected observational rows plus actual detector IDs, exact flux-variable/correction-state, and ephemeris provenance |
 | `C19_spectrum_used.csv` | Epoch-dependent gamma/J0/E0 and measured/interpolated/file source |
 | `C19_detector_response_used.csv` | Exact response intervals/components used by direct-response |
 | `C19_access_energy_grid.csv` | Common direct-access seed grid (`ADAPTIVE_SEED`) or dense requested grid (`DENSE_REQUESTED`) supplied identically to GRIDDED and GRIDLESS |
-| per-run `cutoff_3d_dir_access_loc_000000.dat` / `cutoff_gridless_dir_access_point_0000.dat` | Solver-native direct three-state `A(E,Ω)` cubes consumed by the common detector fold |
+| `cutoff_3d_dir_access_loc_<local><snapshot-suffix>.dat` / per-run `cutoff_gridless_dir_access_point_0000.dat` | Solver-native direct three-state `A(E,Ω)` cubes consumed by the common detector fold |
 | `C19_model.csv` / `C19_comparison.csv` | E/W results, transmission bounds, spectrum source, response model, `DIRECT_A_E_OMEGA` access-product label, unresolved fractions, maximum trace time, search algorithm/policy, and map provenance |
+| `C19_aperture_availability.csv` | One row per epoch/head with independent status, every availability-stage count, solid-angle coverage, bounds, scalar, and all aggregate reasons |
 | `C19_metrics.csv` | Per-spacecraft and aggregate finite/saturated fractions, sign agreement, bias, MAE, RMSE, correlation, and provisional gate |
 | `C19_direction_sense_diagnostic.csv` | Production arrival→look convention and legacy opposite-convention diagnostic |
 | `C19_aperture_samples.csv` | Representative aperture cells including lower/effective/upper cutoff, topology, raw termination counts, trace maxima, and transmission |
@@ -1241,11 +1362,11 @@ flag:
 
 | Plot | Contents |
 |---|---|
-| `C19_comparison_<solver>_<field>.png` | Observed and modeled log10(E/W) versus time |
+| `C19_comparison_<solver>_<field>.png` | Observed and accepted modeled log10(E/W), rigorous finite model intervals, censored bounds, and a categorical invalid-status strip that is not positioned on the numerical y-axis |
 | `C19_scatter_<solver>_<field>.png` | Data-ranged observed-versus-modeled scatter |
 | `C19_parity_<solver>_<field>.png` | Common-range parity view with the 1:1 line |
 | `C19_residual_<solver>_<field>.png` | Model-minus-observation residual versus time |
-| `C19_transmission_<solver>_<field>.png` | EAST/WEST aperture transmission diagnostics |
+| `C19_transmission_<solver>_<field>.png` | EAST/WEST accepted scalars plus unconditional Tmin–Tmax bands and independent per-head status markers; an empty panel is labeled explicitly |
 | `C19_aperture_diagnostic.png` | Representative aperture-cell cutoff/access diagnostic; direct-access cells are colored by the midpoint of their explicit transmission bounds, while the CSV retains both bounds |
 
 Exact zero transmission remains a dedicated saturation state rather than an arbitrary
@@ -1421,9 +1542,44 @@ At least one directional penumbra scan required a trajectory longer than
 trace-budget experiment and the physical validity of a frozen T05 epoch before increasing
 the guardrail.
 
+### EAST or WEST is absent from the transmission plot
+
+An absent accepted-scalar line is not automatically zero transmission. Inspect
+`C19_aperture_availability.csv` in this order:
+
+1. `selected_sky_cells`, `forward_facing_cells`, and `geometric_aperture_cells`
+   diagnose work pruning, arrival-to-look mapping, longitude wrapping, attitude, and
+   angular resolution.
+2. `cells_with_access_samples` and `cells_with_response_overlap` diagnose missing,
+   truncated, duplicate/nonmonotonic, or wrong-energy direct-access products. The
+   parser makes malformed support and seed grids fatal before folding.
+3. `contributing_cells` and `solid_angle_coverage_fraction` diagnose partial aperture
+   coverage.
+4. `transmission_min/max`, unresolved fraction, and discrete-transition fraction
+   distinguish rigorous uncertainty from a physical zero.
+5. `east_aperture_status`, `west_aperture_status`, and `status_reasons` retain both
+   head diagnoses even when the aggregate status reports only the first failing gate.
+
+The transmission plot always draws available Tmin–Tmax bounds. `PHYSICAL_ZERO` appears
+as a real scalar at zero; missing geometry/access/response is shown as a categorical
+status marker. The comparison plot does not place invalid rows at an invented log-ratio
+value.
+
+The runner self-test includes independent fully allowed and fully forbidden EAST/WEST
+cubes, a deliberately asymmetric direction-mapping case, FILE-boresight cases on both
+sides of the 0/360 longitude seam, malformed adaptive-grid detection, per-head report
+generation, and geometry-only solid-angle convergence at 2.5, 1.25, and 0.625 degrees.
+For a science run, repeat the actual AMPS calculation at those angular resolutions and
+compare the recorded solid angle and E/W bounds; the self-test validates the machinery,
+not event-specific convergence.
+
 ### Too many launches
 
-Use `--profile SMOKE`, a larger `--time-step-minutes`, one spacecraft, one model, or one solver during debugging.
+GRIDDED should report one launch per selected field model when
+`--gridded-batch AUTO` is active. If it reports one launch per spacecraft epoch, check
+for `--gridded-batch OFF`. GRIDLESS intentionally remains case-per-process. For either
+solver, use `--profile SMOKE`, a larger `--time-step-minutes`, one spacecraft, or one
+model during debugging.
 
 ## 14. References and public sources
 

@@ -2563,7 +2563,8 @@ static void ApplyDirectionalMapCoverage3D(
 
     auto toV3=[](const EarthUtil::Vec3& q) -> V3 { return V3{q.x,q.y,q.z}; };
 
-    for (const V3& xGsm : locationsGsm) {
+    for (std::size_t locationIndex=0;locationIndex<locationsGsm.size();++locationIndex) {
+        const V3& xGsm=locationsGsm[locationIndex];
         const V3 radial=v3unit(Apply(R_gsm2label,xGsm));
         if (!(v3norm(radial)>0.0)) continue;
 
@@ -2582,6 +2583,14 @@ static void ApplyDirectionalMapCoverage3D(
         apertures.reserve(prm.cutoff.dirMapApertures.size());
 
         for (const auto& spec : prm.cutoff.dirMapApertures) {
+            // Legacy apertures have locationIndex<0 and apply everywhere. Batched
+            // trajectory inputs may qualify an aperture with LOCATION=<index>; in
+            // that case resolve it only in the local basis of its associated
+            // observation. The final retained sky mask remains the union across
+            // active locations, preserving the existing regular-grid output schema
+            // while preventing unrelated epochs/spacecraft from expanding the mask.
+            if (spec.locationIndex>=0 &&
+                spec.locationIndex!=static_cast<int>(locationIndex)) continue;
             V3 b=toV3(spec.boresight);
             V3 u=toV3(spec.up);
             const std::string frame=EarthUtil::ToUpper(spec.frame);
@@ -2612,6 +2621,13 @@ static void ApplyDirectionalMapCoverage3D(
             const V3 h=v3unit(cross(v,b));
             apertures.push_back(ResolvedAperture{
                 b,h,v,spec.horizontalHalfAngle_deg,spec.verticalHalfAngle_deg,spec.name});
+        }
+
+        if (apertures.empty()) {
+            throw std::runtime_error(
+                "VECTOR_APERTURES has no aperture associated with active location "+
+                std::to_string(locationIndex)+". Supply an unqualified aperture or "
+                "a LOCATION=<index> record for every batched trajectory location.");
         }
 
         for (int fullCellId=0;fullCellId<cfg.nFullCells;++fullCellId) {

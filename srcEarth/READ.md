@@ -389,7 +389,7 @@ DIRMAP_LON_RES  <deg>
 DIRMAP_LAT_RES  <deg>
 DIRMAP_COVERAGE FULL_SPHERE | VECTOR_APERTURES
 DIRMAP_APERTURE_FILE <file>
-DIRMAP_APERTURE <name> <SM|GSM|LOCAL_SM> bx by bz ux uy uz hHalfDeg vHalfDeg
+DIRMAP_APERTURE <name> <SM|GSM|LOCAL_SM> bx by bz ux uy uz hHalfDeg vHalfDeg [LOCATION=<index>]
 ```
 
 `FULL_SPHERE` is the backward-compatible default. `VECTOR_APERTURES` keeps the same
@@ -403,7 +403,7 @@ Apertures can be supplied inline with repeatable `DIRMAP_APERTURE` records or in
 named by `DIRMAP_APERTURE_FILE`. File rows have the same fields but omit the keyword:
 
 ```text
-name frame bx by bz ux uy uz hHalfDeg vHalfDeg
+name frame bx by bz ux uy uz hHalfDeg vHalfDeg [LOCATION=<index>]
 ```
 
 `SM` and `GSM` are global vector frames. `LOCAL_SM` means vector components in the local
@@ -411,6 +411,13 @@ name frame bx by bz ux uy uz hHalfDeg vHalfDeg
 is projected perpendicular to the boresight before constructing the horizontal axis.
 Retained cells keep their original full-sphere cell IDs and lon/lat coordinates, so the
 optimization changes only the amount of work, not the sampled directions.
+
+The optional zero-based `LOCATION=<index>` token associates an aperture with one row
+of a multi-location trajectory. It is used by `SNAPSHOT_LIST` batches so an aperture
+is resolved only in the local basis of its own observation. Omitting the token keeps
+the historical behavior and applies that aperture at every location. The retained
+direction grid is still the conservative union across all locations active in the
+current snapshot.
 
 The same controls are available on the AMPS command line:
 
@@ -719,7 +726,38 @@ For each snapshot, the code interpolates the driver table to the requested epoch
 
 SPICE must be available for time-series operation because UTC strings and driver-table timestamps are converted to ephemeris time.
 
-### 7.3 SWMF-coupled time dependence
+### 7.3 Explicit irregular snapshot list and mesh reuse
+
+Standalone Mode3D can also process independent timestamped trajectory cases while
+retaining one allocated AMR mesh:
+
+```text
+#TEMPORAL
+TEMPORAL_MODE       SNAPSHOT_LIST
+SNAPSHOT_LIST_FILE  snapshot_epochs.txt
+
+#OUTPUT_DOMAIN
+OUTPUT_MODE         TRAJECTORY
+TRAJ_FILE           observation_locations.txt
+```
+
+`snapshot_epochs.txt` contains one ISO-8601 UTC epoch per non-comment line. Epochs are
+validated, sorted, and deduplicated. For each epoch Mode3D interpolates the driver,
+selects only trajectory samples with that timestamp, remaps any LOCATION-qualified
+apertures, refills B/E on the existing distributed blocks, and runs the requested
+products. `amps_init_mesh()`, `amps_init()`, and sphere/static-data setup occur only
+once for the complete list.
+
+This mode deliberately differs from `TIME_SERIES`: the latter evaluates the complete
+output domain at every regular field snapshot, while `SNAPSHOT_LIST` represents
+independent observations and prevents an `N_snapshot x N_location` cross-product.
+Every listed epoch must have at least one matching trajectory sample. The mesh is
+reused, but the field values are rebuilt at every distinct epoch.
+
+Existing `SNAPSHOT`, `TIME_SERIES`, POINTS/SHELLS, GRIDLESS, and coupled execution are
+unchanged unless `TEMPORAL_MODE SNAPSHOT_LIST` is explicitly requested.
+
+### 7.4 SWMF-coupled time dependence
 
 In coupled mode, the magnetic-field snapshots come from SWMF itself. `FIELD_UPDATE_DT` is used as the calculation cadence, not as a request to load a Tsyganenko file.
 
@@ -1310,6 +1348,14 @@ EVENT_END        2024-05-10T12:00:00
 FIELD_UPDATE_DT  15
 TS_INPUT_MODE    FILE
 TS_INPUT_FILE    ts05_driving_2024_05_10.txt
+```
+
+Standalone Mode3D irregular independent-case batch:
+
+```text
+#TEMPORAL
+TEMPORAL_MODE       SNAPSHOT_LIST
+SNAPSHOT_LIST_FILE  snapshot_epochs.txt
 ```
 
 Coupled SWMF usage:

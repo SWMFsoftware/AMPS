@@ -380,9 +380,28 @@ MaterializationStats AssembleCellCenteredFieldsForCutoff(
 
   GlobalUsedLeafBlocks_=nUsedLeafBlocks;
   GlobalInteriorCellCount_=nInteriorCells;
-  GlobalMagneticField_.assign(static_cast<size_t>(3*nInteriorCells),0.0);
-  GlobalElectricField_.assign(static_cast<size_t>(3*nInteriorCells),0.0);
-  GlobalCellPresence_.assign(static_cast<size_t>(nInteriorCells),0);
+
+  // The AMR topology is invariant during a standalone multi-snapshot run, so these
+  // compact arrays have the same dimensions at every epoch.  Resize only when the
+  // required size actually changes and otherwise clear the existing storage in
+  // place.  This makes snapshot batching reuse both the distributed AMR blocks and
+  // the compact replicated field buffers instead of asking the allocator to rebuild
+  // three large vectors for every field update.
+  //
+  // Temp_ID is still reset/reassigned above because it is shared AMPS scratch state;
+  // caching it across products would be unsafe.  Buffer reuse is independent of that
+  // correctness guard and preserves the deterministic leaf-to-cell mapping.
+  const std::size_t nVectorValues=static_cast<std::size_t>(3*nInteriorCells);
+  const std::size_t nPresenceValues=static_cast<std::size_t>(nInteriorCells);
+  if (GlobalMagneticField_.size()!=nVectorValues)
+    GlobalMagneticField_.resize(nVectorValues);
+  if (GlobalElectricField_.size()!=nVectorValues)
+    GlobalElectricField_.resize(nVectorValues);
+  if (GlobalCellPresence_.size()!=nPresenceValues)
+    GlobalCellPresence_.resize(nPresenceValues);
+  std::fill(GlobalMagneticField_.begin(),GlobalMagneticField_.end(),0.0);
+  std::fill(GlobalElectricField_.begin(),GlobalElectricField_.end(),0.0);
+  std::fill(GlobalCellPresence_.begin(),GlobalCellPresence_.end(),0);
 
   const long int nPackedLocal=PackOwnedInteriorFields_(
       nodes,magneticFieldDataOffset,electricFieldDataOffset,

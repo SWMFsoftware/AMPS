@@ -9,10 +9,11 @@
 !   srcEarth/test/C19/data/ts05_driver_may2012.txt
 !
 ! and launch from srcEarth/test/C19 so the relative DRIVER_FILE and TRAJ_FILE
-! paths below resolve.  run_C19.py copies this file into each run directory and
-! changes named directives such as EPOCH, FIELD_MODEL, DRIVER_FILE, mesh
-! controls, directional resolution, scheduler, and thread count.  No macro or
-! placeholder substitution is required.
+! paths below resolve. run_C19.py renders either one legacy case directory or one
+! multi-snapshot batch directory per field model/search mode and changes named
+! directives such as EPOCH, TEMPORAL_MODE, FIELD_MODEL, DRIVER_FILE, mesh controls,
+! directional resolution, scheduler, and thread count. No macro or placeholder
+! substitution is required.
 ! =============================================================================
 
 #RUN_INFO
@@ -68,7 +69,8 @@ DIRMAP_LAT_RES                 2.5
 ! and 2.5-degree angular resolution as FULL_SPHERE.  FULL_SPHERE remains available
 ! through the same input keyword or the corresponding CLI override.
 ! VECTOR_APERTURES is instrument-neutral: the runner writes the actual physical
-! detector LOOK vectors for this spacecraft/epoch into the file below.  Use
+! detector LOOK vectors into the file below. Batched rows carry LOCATION=<index>
+! so Mode3D uses only the apertures belonging to each observation. Use
 ! DIRMAP_COVERAGE FULL_SPHERE to recover the complete historical sky.
 DIRMAP_COVERAGE                VECTOR_APERTURES
 DIRMAP_APERTURE_FILE           C19_directional_apertures.dat
@@ -132,10 +134,18 @@ SPEC_E0                        100.0
 SPEC_EMIN                      0.5
 SPEC_EMAX                      500.0
 
+#TEMPORAL
+! SNAPSHOT is the legacy one-case behavior. run_C19.py changes this to
+! SNAPSHOT_LIST for a GRIDDED batch and writes the explicit irregular observation
+! epochs beside the deck. Unlike TIME_SERIES, SNAPSHOT_LIST filters the trajectory
+! so only locations timestamped at the active field snapshot are evaluated.
+TEMPORAL_MODE                  SNAPSHOT
+SNAPSHOT_LIST_FILE             C19_snapshot_epochs.txt
+
 #OUTPUT_DOMAIN
-! The committed trajectory file contains the default GOES-13 sample.  The
-! runner creates a one-line file with the selected spacecraft position/epoch in
-! each run directory and retains this same filename.
+! The committed trajectory file contains the default GOES-13 sample. The runner
+! creates either a one-line independent case or a stable multi-row batch trajectory
+! and retains this same filename.
 OUTPUT_MODE                    TRAJECTORY
 TRAJ_FRAME                     GEO
 TRAJ_FILE                      C19_trajectory.txt

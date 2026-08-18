@@ -356,10 +356,10 @@ namespace EarthUtil {
   // from the orthonormalized (up,boresight) pair.  Half-angles are in degrees.
   //
   // Input-file inline syntax (repeatable):
-  //   DIRMAP_APERTURE  <name> <SM|GSM|LOCAL_SM> bx by bz ux uy uz hHalfDeg vHalfDeg
+  //   DIRMAP_APERTURE  <name> <SM|GSM|LOCAL_SM> bx by bz ux uy uz hHalfDeg vHalfDeg [LOCATION=<index>]
   //
   // File syntax used by DIRMAP_APERTURE_FILE is identical but omits the keyword:
-  //   <name> <frame> bx by bz ux uy uz hHalfDeg vHalfDeg
+  //   <name> <frame> bx by bz ux uy uz hHalfDeg vHalfDeg [LOCATION=<index>]
   struct DirectionalAperture {
     std::string name;
     std::string frame{"SM"};
@@ -367,6 +367,16 @@ namespace EarthUtil {
     Vec3 up{0.0,0.0,1.0};
     double horizontalHalfAngle_deg{30.0};
     double verticalHalfAngle_deg{60.0};
+
+    // Optional zero-based location selector used by batched point/trajectory runs.
+    // A negative value preserves the historical meaning: this aperture is available
+    // at every output location.  LOCATION=<index> is deliberately an optional final
+    // token in the input syntax, so all existing aperture files remain valid.
+    //
+    // The selector affects work pruning only; it never changes the physical detector
+    // fold.  Mode3D remaps a global trajectory index to the snapshot-local index when
+    // an explicit snapshot list filters a multi-location trajectory by epoch.
+    int locationIndex{-1};
   };
 
   struct CutoffScan {
@@ -1499,7 +1509,13 @@ namespace EarthUtil {
   // Controls the time-series (trajectory) execution mode: event window, update
   // cadences, and the optional time-varying Tsyganenko driver file.
   struct TemporalParam {
-    // TEMPORAL_MODE: TIME_SERIES or SNAPSHOT (default SNAPSHOT = legacy behaviour).
+    // TEMPORAL_MODE:
+    //   SNAPSHOT      - one field realization at #BACKGROUND_FIELD/EPOCH (legacy).
+    //   TIME_SERIES   - regular EVENT_START..EVENT_END cadence.
+    //   SNAPSHOT_LIST - explicit, possibly irregular epochs read from
+    //                   SNAPSHOT_LIST_FILE.  Standalone Mode3D uses this mode to
+    //                   retain one allocated mesh while processing a batch of
+    //                   independently timestamped trajectory locations.
     std::string mode{"SNAPSHOT"};
 
     // Event window [ISO-8601 UTC strings].
@@ -1518,6 +1534,11 @@ namespace EarthUtil {
 
     // TS_INPUT_FILE: path to a Qin-Denton / ViRBO formatted driver file.
     std::string tsInputFile;
+
+    // Explicit Mode3D snapshot epochs, one ISO-8601 UTC token per non-comment line.
+    // This is ignored unless TEMPORAL_MODE=SNAPSHOT_LIST, preserving every existing
+    // input deck that does not opt into batched snapshot execution.
+    std::string snapshotListFile;
 
     // Populated by ParseAmpsParamFile when tsInputMode == "FILE".
     TsDriverTable driverTable;
@@ -1584,7 +1605,11 @@ namespace EarthUtil {
   // Parse an AMPS_PARAM file. Throws std::runtime_error on hard errors.
   AmpsParam ParseAmpsParamFile(const std::string& fileName);
 
-  // Helper conversions (public because both CLI and solver use them).
+  // Helper conversions (public because both CLI and solver use them).  Trim is
+  // intentionally exported with ToUpper/ToBool: Mode3D's SNAPSHOT_LIST reader must
+  // normalize a filename, input rows, and parsed mode tokens with exactly the same
+  // whitespace rules as the AMPS_PARAM parser that populated those strings.
+  std::string Trim(const std::string& s);
   bool ToBool(const std::string& s);
   std::string ToUpper(std::string s);
 

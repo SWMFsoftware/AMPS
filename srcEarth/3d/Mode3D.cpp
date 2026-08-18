@@ -16,6 +16,8 @@
 #include <cctype>
 #include <stdexcept>
 #include <algorithm>
+#include <fstream>
+#include <map>
 #include <pthread.h>
 #include <cstring>
 
@@ -655,6 +657,10 @@ bool Mode3DTimeSeriesRequested(const EarthUtil::AmpsParam& prm) {
   return EarthUtil::ToUpper(prm.temporal.mode) == "TIME_SERIES";
 }
 
+bool Mode3DSnapshotListRequested(const EarthUtil::AmpsParam& prm) {
+  return EarthUtil::ToUpper(prm.temporal.mode) == "SNAPSHOT_LIST";
+}
+
 std::string Mode3DSanitizeSuffixToken(const std::string& in) {
   // Output suffixes become part of filenames such as
   //   cutoff_3d_shells_snapshot_000003_2024_05_10T12_15_00.dat
@@ -708,6 +714,78 @@ std::string Mode3DEtToUtc(double et) {
 std::vector<std::string> Mode3DBuildSnapshotEpochs(const EarthUtil::AmpsParam& prm) {
   std::vector<std::string> epochs;
 
+  // Explicit snapshot lists are the batching primitive used by C19. Unlike the
+  // regular TIME_SERIES cadence, the list can contain irregular mission observation
+  // times (for example 17:30 and 05:55). The list is sorted chronologically and
+  // duplicate epochs are collapsed so one expensive mesh-field fill is shared by all
+  // trajectory locations observed at that time.
+  if (Mode3DSnapshotListRequested(prm)) {
+    const std::string fileName=EarthUtil::Trim(prm.temporal.snapshotListFile);
+    if (fileName.empty()) {
+      exit(__LINE__,__FILE__,
+           "[Mode3D] TEMPORAL_MODE=SNAPSHOT_LIST requires SNAPSHOT_LIST_FILE in #TEMPORAL.");
+    }
+
+    std::ifstream in(fileName.c_str());
+    if (!in.is_open()) {
+      const std::string msg="[Mode3D] Cannot open SNAPSHOT_LIST_FILE: "+fileName;
+      exit(__LINE__,__FILE__,msg.c_str());
+    }
+
+#ifdef _NO_SPICE_CALLS_
+    exit(__LINE__,__FILE__,
+         "[Mode3D] TEMPORAL_MODE=SNAPSHOT_LIST requires SPICE to validate and order UTC epochs.");
+#else
+    std::vector<std::pair<double,std::string> > records;
+    std::string line;
+    int lineNo=0;
+    while (std::getline(in,line)) {
+      ++lineNo;
+      const std::size_t h=line.find('#');
+      const std::size_t b=line.find('!');
+      std::size_t cut=std::string::npos;
+      if (h!=std::string::npos) cut=h;
+      if (b!=std::string::npos) cut=(cut==std::string::npos ? b : std::min(cut,b));
+      if (cut!=std::string::npos) line=line.substr(0,cut);
+      line=EarthUtil::Trim(line);
+      if (line.empty()) continue;
+
+      std::istringstream row(line);
+      std::string epoch,extra;
+      row >> epoch;
+      if (epoch.empty()) continue;
+      if (row >> extra) {
+        std::ostringstream msg;
+        msg << "[Mode3D] SNAPSHOT_LIST_FILE " << fileName << " line " << lineNo
+            << " has an unexpected extra token '" << extra
+            << "'. Expected one ISO-8601 UTC epoch per line.";
+        exit(__LINE__,__FILE__,msg.str().c_str());
+      }
+      records.push_back(std::make_pair(
+          Mode3DEpochToEtOrExit(epoch,"reading SNAPSHOT_LIST_FILE"),epoch));
+    }
+    if (records.empty()) {
+      const std::string msg="[Mode3D] SNAPSHOT_LIST_FILE contains no UTC epochs: "+fileName;
+      exit(__LINE__,__FILE__,msg.c_str());
+    }
+
+    std::sort(records.begin(),records.end(),
+              [](const std::pair<double,std::string>& a,
+                 const std::pair<double,std::string>& b) { return a.first<b.first; });
+    const double duplicateTolerance_s=1.0e-6;
+    double previousEt=0.0;
+    bool havePrevious=false;
+    for (const auto& record : records) {
+      if (!havePrevious || std::fabs(record.first-previousEt)>duplicateTolerance_s) {
+        epochs.push_back(record.second);
+        previousEt=record.first;
+        havePrevious=true;
+      }
+    }
+    return epochs;
+#endif
+  }
+
   // Legacy/snapshot behavior: one field realization at #BACKGROUND_FIELD/EPOCH.
   // A driver table may still be present in this mode; it is sampled once at this
   // epoch by Mode3DBuildSnapshotParam() below.
@@ -759,6 +837,150 @@ std::vector<std::string> Mode3DBuildSnapshotEpochs(const EarthUtil::AmpsParam& p
 
   if (epochs.empty()) epochs.push_back(Mode3DEtToUtc(etStart));
   return epochs;
+#endif
+}
+
+// Validate and construct the output-location subset for one explicit snapshot.
+//
+// Why this helper is required
+// ---------------------------
+// A normal trajectory stores many timestamped samples. The historical Mode3D
+// TIME_SERIES loop evaluates the complete output domain at every field snapshot,
+// which is useful for regular field-evolution studies. C19 instead describes a
+// collection of independent observations: each location must be evaluated only with
+// the field snapshot at its own timestamp. Reusing TIME_SERIES without filtering
+// would create an incorrect N_snapshot x N_location Cartesian product.
+//
+// The returned AmpsParam contains one trajectory with only the samples matching the
+// current epoch. Its flattened point list is rebuilt, and any LOCATION-qualified
+// aperture is remapped from the original global trajectory index to the new local
+// location index used in output filenames. Unqualified legacy apertures remain
+// available at every active location.
+EarthUtil::AmpsParam Mode3DBuildSnapshotWorkParam(
+    const EarthUtil::AmpsParam& snap,const std::string& epochUTC) {
+  if (!Mode3DSnapshotListRequested(snap)) return snap;
+
+  if (EarthUtil::ToUpper(EarthUtil::Trim(snap.output.mode))!="TRAJECTORY" ||
+      snap.output.trajectories.size()!=1) {
+    exit(__LINE__,__FILE__,
+         "[Mode3D] SNAPSHOT_LIST currently requires OUTPUT_MODE=TRAJECTORY with one trajectory file.");
+  }
+
+#ifdef _NO_SPICE_CALLS_
+  exit(__LINE__,__FILE__,
+       "[Mode3D] SNAPSHOT_LIST trajectory filtering requires SPICE UTC conversion.");
+  return snap;
+#else
+  const double epochEt=Mode3DEpochToEtOrExit(epochUTC,"selecting snapshot trajectory locations");
+  const double matchTolerance_s=1.0e-3;
+  const EarthUtil::SpacecraftTrajectory& source=snap.output.trajectories[0];
+
+  EarthUtil::SpacecraftTrajectory selected;
+  selected.name=source.name;
+  selected.sourceFrame=source.sourceFrame;
+  std::map<int,int> globalToLocal;
+
+  for (std::size_t global=0;global<source.samples.size();++global) {
+    const double sampleEt=Mode3DEpochToEtOrExit(
+        source.samples[global].timeUTC,"matching a trajectory sample to SNAPSHOT_LIST");
+    if (std::fabs(sampleEt-epochEt)<=matchTolerance_s) {
+      const int local=static_cast<int>(selected.samples.size());
+      selected.samples.push_back(source.samples[global]);
+      globalToLocal[static_cast<int>(global)]=local;
+    }
+  }
+
+  if (selected.samples.empty()) {
+    const std::string msg="[Mode3D] SNAPSHOT_LIST epoch "+epochUTC+
+        " has no matching trajectory location. Every listed snapshot must own at least one case.";
+    exit(__LINE__,__FILE__,msg.c_str());
+  }
+
+  EarthUtil::AmpsParam work=snap;
+  work.output.trajectories.clear();
+  work.output.trajectories.push_back(selected);
+  work.output.RebuildFlattenedPointsFromTrajectories();
+
+  std::vector<EarthUtil::DirectionalAperture> selectedApertures;
+  selectedApertures.reserve(snap.cutoff.dirMapApertures.size());
+  for (const auto& aperture : snap.cutoff.dirMapApertures) {
+    if (aperture.locationIndex<0) {
+      selectedApertures.push_back(aperture);
+      continue;
+    }
+    if (aperture.locationIndex>=static_cast<int>(source.samples.size())) {
+      std::ostringstream msg;
+      msg << "[Mode3D] aperture '" << aperture.name << "' selects LOCATION="
+          << aperture.locationIndex << " but the trajectory has only "
+          << source.samples.size() << " samples.";
+      exit(__LINE__,__FILE__,msg.str().c_str());
+    }
+    const auto found=globalToLocal.find(aperture.locationIndex);
+    if (found!=globalToLocal.end()) {
+      EarthUtil::DirectionalAperture remapped=aperture;
+      remapped.locationIndex=found->second;
+      selectedApertures.push_back(remapped);
+    }
+  }
+  work.cutoff.dirMapApertures.swap(selectedApertures);
+
+  if (EarthUtil::ToUpper(work.cutoff.dirMapCoverage)=="VECTOR_APERTURES" &&
+      work.cutoff.dirMapApertures.empty()) {
+    const std::string msg="[Mode3D] snapshot "+epochUTC+
+        " has no active directional apertures after LOCATION filtering.";
+    exit(__LINE__,__FILE__,msg.c_str());
+  }
+  return work;
+#endif
+}
+
+void Mode3DValidateSnapshotListCoverage(
+    const EarthUtil::AmpsParam& prm,const std::vector<std::string>& epochs) {
+  if (!Mode3DSnapshotListRequested(prm)) return;
+  if (EarthUtil::ToUpper(EarthUtil::Trim(prm.output.mode))!="TRAJECTORY" ||
+      prm.output.trajectories.size()!=1) {
+    exit(__LINE__,__FILE__,
+         "[Mode3D] SNAPSHOT_LIST validation requires one parsed TRAJECTORY.");
+  }
+#ifdef _NO_SPICE_CALLS_
+  exit(__LINE__,__FILE__,
+       "[Mode3D] SNAPSHOT_LIST coverage validation requires SPICE UTC conversion.");
+#else
+  const double tolerance_s=1.0e-3;
+  std::vector<double> epochEt;
+  epochEt.reserve(epochs.size());
+  for (const std::string& epoch : epochs)
+    epochEt.push_back(Mode3DEpochToEtOrExit(epoch,"validating SNAPSHOT_LIST coverage"));
+
+  std::vector<int> locationsPerEpoch(epochs.size(),0);
+  const auto& samples=prm.output.trajectories[0].samples;
+  for (std::size_t location=0;location<samples.size();++location) {
+    const double sampleEt=Mode3DEpochToEtOrExit(
+        samples[location].timeUTC,"validating a batched trajectory timestamp");
+    int nMatches=0;
+    int matchedEpoch=-1;
+    for (std::size_t i=0;i<epochEt.size();++i) {
+      if (std::fabs(sampleEt-epochEt[i])<=tolerance_s) {
+        ++nMatches;
+        matchedEpoch=static_cast<int>(i);
+      }
+    }
+    if (nMatches!=1) {
+      std::ostringstream msg;
+      msg << "[Mode3D] trajectory location " << location << " at "
+          << samples[location].timeUTC << " matches " << nMatches
+          << " SNAPSHOT_LIST epochs; every location must match exactly one epoch.";
+      exit(__LINE__,__FILE__,msg.str().c_str());
+    }
+    locationsPerEpoch[static_cast<std::size_t>(matchedEpoch)]++;
+  }
+  for (std::size_t i=0;i<epochs.size();++i) {
+    if (locationsPerEpoch[i]==0) {
+      const std::string msg="[Mode3D] SNAPSHOT_LIST epoch "+epochs[i]+
+          " has no matching trajectory location.";
+      exit(__LINE__,__FILE__,msg.c_str());
+    }
+  }
 #endif
 }
 
@@ -995,12 +1217,14 @@ int Run(const EarthUtil::AmpsParam& prm) {
   //
   //   SNAPSHOT mode (default): one entry, prm.field.epoch.
   //   TIME_SERIES mode       : EVENT_START..EVENT_END in steps of FIELD_UPDATE_DT.
+  //   SNAPSHOT_LIST mode     : explicit irregular epochs from SNAPSHOT_LIST_FILE.
   //
   // The parser has already loaded the Tsyganenko driver file, if requested, into
   // prm.temporal.driverTable.  For every epoch below we interpolate that table into
   // a temporary AmpsParam copy and then reuse the normal single-snapshot field
   // initialization + compact global-field assembly + cutoff solver.
   const std::vector<std::string> snapshotEpochs = Mode3DBuildSnapshotEpochs(prm);
+  Mode3DValidateSnapshotListCoverage(prm,snapshotEpochs);
 
   if (PIC::ThisThread == 0) {
     std::cout << "[Mode3D] Magnetic-field snapshot count: "
@@ -1008,6 +1232,9 @@ int Run(const EarthUtil::AmpsParam& prm) {
     if (Mode3DTimeSeriesRequested(prm)) {
       std::cout << " (TIME_SERIES, FIELD_UPDATE_DT="
                 << prm.temporal.fieldUpdateDt_min << " min)";
+    }
+    else if (Mode3DSnapshotListRequested(prm)) {
+      std::cout << " (SNAPSHOT_LIST='" << prm.temporal.snapshotListFile << "')";
     }
     std::cout << "\n";
     std::cout.flush();
@@ -1021,7 +1248,15 @@ int Run(const EarthUtil::AmpsParam& prm) {
     // are interpolated at snapshotEpochs[iSnapshot].
     EarthUtil::AmpsParam snap = Mode3DBuildSnapshotParam(prm,snapshotEpochs[iSnapshot]);
 
-    const std::string suffix = (snapshotEpochs.size()>1 || Mode3DTimeSeriesRequested(prm))
+    // SNAPSHOT_LIST is an independent-case batching mode rather than a Cartesian
+    // field-evolution experiment. Select only observations timestamped at this
+    // snapshot and remap their location-qualified apertures before field setup and
+    // solver scheduling. Other temporal modes return an unchanged copy, preserving
+    // their historical all-locations-per-snapshot behavior.
+    snap = Mode3DBuildSnapshotWorkParam(snap,snapshotEpochs[iSnapshot]);
+
+    const std::string suffix = (snapshotEpochs.size()>1 || Mode3DTimeSeriesRequested(prm) ||
+                                Mode3DSnapshotListRequested(prm))
         ? Mode3DSnapshotSuffix(static_cast<int>(iSnapshot),snap.field.epoch)
         : std::string("");
 

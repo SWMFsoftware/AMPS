@@ -140,7 +140,7 @@ namespace EarthUtil {
 // These must be defined before any function that calls them.
 //======================================================================================
 
-static inline std::string Trim(const std::string& s) {
+std::string Trim(const std::string& s) {
   size_t a=0;
   while (a<s.size() && std::isspace(static_cast<unsigned char>(s[a]))) ++a;
   size_t b=s.size();
@@ -2340,10 +2340,31 @@ DirectionalAperture ParseDirectionalApertureSpec(const std::string& text) {
         "<name> <SM|GSM|LOCAL_SM> bx by bz ux uy uz hHalfDeg vHalfDeg; got '"+
         Trim(text)+"'");
   }
+  // Optional location association for batched trajectory runs.  Requiring the
+  // self-describing LOCATION=<index> spelling prevents an accidental extra numeric
+  // column in a legacy file from silently changing pruning semantics.
   std::string extra;
   if (iss >> extra) {
-    throw std::runtime_error("Unexpected extra token '"+extra+
-                             "' in DIRMAP_APERTURE specification '"+Trim(text)+"'");
+    const std::string prefix="LOCATION=";
+    const std::string upper=ToUpper(extra);
+    if (upper.find(prefix)!=0 || extra.size()<=prefix.size()) {
+      throw std::runtime_error("Unexpected extra token '"+extra+
+                               "' in DIRMAP_APERTURE specification '"+Trim(text)+
+                               "'. The only optional token is LOCATION=<zero-based-index>");
+    }
+    const std::string indexText=extra.substr(prefix.size());
+    std::size_t used=0;
+    try {
+      a.locationIndex=std::stoi(indexText,&used);
+    }
+    catch (...) {
+      throw std::runtime_error("Invalid DIRMAP_APERTURE location selector '"+extra+"'");
+    }
+    if (used!=indexText.size() || a.locationIndex<0)
+      throw std::runtime_error("DIRMAP_APERTURE LOCATION must be a non-negative integer: '"+extra+"'");
+    if (iss >> extra)
+      throw std::runtime_error("Unexpected extra token '"+extra+
+                               "' in DIRMAP_APERTURE specification '"+Trim(text)+"'");
   }
 
   a.name=Trim(a.name);
@@ -3220,6 +3241,7 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="INJECT_DT")        p.temporal.injectDt_min=std::stod(val);
       else if (uKey=="TS_INPUT_MODE")    p.temporal.tsInputMode=ToUpper(val);
       else if (uKey=="TS_INPUT_FILE")    p.temporal.tsInputFile=Trim(val);
+      else if (uKey=="SNAPSHOT_LIST_FILE") p.temporal.snapshotListFile=Trim(val);
       else rejectUnknownKeyword();
     }
     else {
@@ -3826,4 +3848,3 @@ if (ToUpper(p.field.model)=="DIPOLE") {
 }
 
 }
-

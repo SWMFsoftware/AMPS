@@ -143,19 +143,50 @@ def integration_dry_run() -> None:
         ])
         rendered = list(output.glob("**/AMPS_PARAM_C19.in"))
         trajectories = list(output.glob("**/C19_trajectory.txt"))
-        if len(rendered) != 8 or len(trajectories) != 8:
+        # Four GRIDLESS cases remain independent, while all four GRIDDED cases share
+        # one Mode3D process/mesh. The resulting five decks are the central batching
+        # invariant protected by this integration test.
+        if len(rendered) != 5 or len(trajectories) != 5:
             raise SystemExit(
-                "C19A integration dry-run wrote %d inputs and %d trajectories; expected 8" %
+                "C19A integration dry-run wrote %d inputs and %d trajectories; expected 5" %
                 (len(rendered), len(trajectories)))
         aperture_files = list(output.glob("**/C19_directional_apertures.dat"))
-        if len(aperture_files) != 8:
-            raise SystemExit("C19A integration dry-run wrote %d aperture files; expected 8" %
+        if len(aperture_files) != 5:
+            raise SystemExit("C19A integration dry-run wrote %d aperture files; expected 5" %
                              len(aperture_files))
         for aperture_file in aperture_files:
             text = aperture_file.read_text()
-            if "EAST LOCAL_SM" not in text or "WEST LOCAL_SM" not in text:
+            if not re.search(r"(?:^|_)EAST LOCAL_SM", text, re.MULTILINE) or not re.search(
+                    r"(?:^|_)WEST LOCAL_SM", text, re.MULTILINE):
                 raise SystemExit("SM_PROXY did not render generic LOCAL_SM aperture vectors: %s" %
                                  aperture_file)
+
+        batch_inputs = [path for path in rendered if "/gridded/" in str(path).lower()]
+        if len(batch_inputs) != 1:
+            raise SystemExit("C19A dry-run did not create exactly one GRIDDED batch deck")
+        batch_dir = batch_inputs[0].parent
+        batch_trajectory = (batch_dir / "C19_trajectory.txt").read_text().splitlines()
+        batch_snapshots = [line for line in
+                           (batch_dir / "C19_snapshot_epochs.txt").read_text().splitlines()
+                           if line and not line.startswith("#")]
+        if len(batch_trajectory) != 4 or len(batch_snapshots) != 2:
+            raise SystemExit(
+                "GRIDDED batch did not retain four cases at two unique snapshots")
+        batch_manifest = list(csv.DictReader(
+            (batch_dir / "C19_batch_manifest.csv").open(newline="")))
+        if len(batch_manifest) != 4:
+            raise SystemExit("GRIDDED batch manifest does not contain four logical cases")
+        expected_local_ids = {
+            (row["epoch"], row["spacecraft"]): int(row["snapshot_local_location_id"])
+            for row in batch_manifest
+        }
+        if set(expected_local_ids.values()) != {0, 1}:
+            raise SystemExit("snapshot-local location IDs were not reset per epoch")
+        batch_apertures = (batch_dir / "C19_directional_apertures.dat").read_text()
+        for global_location_id in range(4):
+            if "LOCATION=%d" % global_location_id not in batch_apertures:
+                raise SystemExit(
+                    "GRIDDED batch aperture file lacks LOCATION=%d" % global_location_id)
         for path in rendered:
             text = path.read_text()
             if re.search(r"__[A-Z0-9_]+__", text):
@@ -197,6 +228,12 @@ def integration_dry_run() -> None:
                     raise SystemExit("GRIDLESS input did not propagate -nt 2: %s" % path)
                 if not re.search(r"^GRIDLESS_MPI_DYNAMIC_CHUNK\s+2\s*$", text, re.MULTILINE):
                     raise SystemExit("adaptive GRIDLESS input did not use worker-sized dynamic chunk: %s" % path)
+            else:
+                if not re.search(r"^TEMPORAL_MODE\s+SNAPSHOT_LIST\s*$", text, re.MULTILINE):
+                    raise SystemExit("GRIDDED batch input did not enable SNAPSHOT_LIST: %s" % path)
+                if not re.search(r"^SNAPSHOT_LIST_FILE\s+C19_snapshot_epochs\.txt\s*$",
+                                 text, re.MULTILINE):
+                    raise SystemExit("GRIDDED batch input does not reference its snapshot list: %s" % path)
 
         # Single-workflow regression.  P0/P1/P2 are implementation history, not
         # mutually exclusive runner modes.  The ordinary dry run above must therefore
@@ -235,6 +272,12 @@ def integration_dry_run() -> None:
             if int(record.get("n_direct_access_rigidities", 0)) <= 0:
                 raise SystemExit("current %s workflow did not request direct A(E,Omega)" % record["solver"])
             if record["solver"] == "GRIDDED":
+                if record.get("execution_mode") != "MODE3D_SNAPSHOT_LIST_BATCH":
+                    raise SystemExit("GRIDDED command was not recorded as one snapshot-list batch")
+                if int(record.get("mesh_initializations_expected", 0)) != 1:
+                    raise SystemExit("GRIDDED batch does not record one expected mesh allocation")
+                if int(record.get("case_count", 0)) != 4 or int(record.get("snapshot_count", 0)) != 2:
+                    raise SystemExit("GRIDDED batch command has incorrect case/snapshot counts")
                 if "-mode3d-mesh-res-earth-re 0.025" not in joined:
                     raise SystemExit("current GRIDDED workflow did not use 0.025 Re near-Earth mesh")
                 if "-mode3d-mesh-res-boundary-re 1.0" not in joined:
@@ -277,6 +320,8 @@ def integration_dry_run() -> None:
             raise SystemExit("current DIRECT_ACCESS/PENUMBRA_SCAN selector is missing from runner CLI")
         if "--direction-coverage" not in help_text:
             raise SystemExit("directional coverage selector is missing from runner CLI")
+        if "--gridded-batch" not in help_text:
+            raise SystemExit("GRIDDED mesh-reuse/compatibility selector is missing from runner CLI")
         if "--max-discrete-transition-fraction" not in help_text:
             raise SystemExit("finite-rigidity-grid uncertainty control is missing from runner CLI")
         if "epead_response_C19_uncorrected_extended.csv" not in help_text:
@@ -304,16 +349,18 @@ def integration_dry_run() -> None:
         if not vector_files:
             raise SystemExit("FILE attitude dry-run did not write a generic aperture file")
         vector_text = vector_files[0].read_text()
-        if "E SM 0 1 0" not in vector_text:
+        if "_E SM 0 1 0" not in vector_text:
             raise SystemExit("FILE attitude telemetry-head E vector was not propagated")
-        west_lines = [line for line in vector_text.splitlines() if line.startswith("W SM ")]
-        if len(west_lines) != 1:
+        west_lines = [line for line in vector_text.splitlines()
+                      if re.match(r"^L\d+_W SM ", line)]
+        if not west_lines:
             raise SystemExit("FILE attitude telemetry-head W vector was not propagated")
-        parts = west_lines[0].split()
-        west_bore = tuple(float(value) for value in parts[2:5])
-        # Head E is exactly (0,1,0); a derived antipode would be (0,-1,0).
-        if all(abs(a-b) < 1.0e-12 for a, b in zip(west_bore, (0.0, -1.0, 0.0))):
-            raise SystemExit("FILE attitude head W vector was incorrectly derived as -head E")
+        for west_line in west_lines:
+            parts = west_line.split()
+            west_bore = tuple(float(value) for value in parts[2:5])
+            # Head E is exactly (0,1,0); a derived antipode would be (0,-1,0).
+            if all(abs(a-b) < 1.0e-12 for a, b in zip(west_bore, (0.0, -1.0, 0.0))):
+                raise SystemExit("FILE attitude head W vector was incorrectly derived as -head E")
 
         # FULL_SPHERE remains an explicit alternative to the optimized default.
         full_output = root / "integration_full_sphere"
@@ -331,6 +378,25 @@ def integration_dry_run() -> None:
         if not all(re.search(r"^DIRMAP_COVERAGE\s+FULL_SPHERE\s*$",
                              path.read_text(), re.MULTILINE) for path in full_inputs):
             raise SystemExit("FULL_SPHERE runner option was not propagated into input decks")
+
+        # Backward-compatibility regression. The optimization is additive: OFF must
+        # retain the historical one-process-per-spacecraft-epoch layout and ordinary
+        # TEMPORAL_MODE=SNAPSHOT behavior without requiring a snapshot-list file.
+        legacy_output = root / "integration_gridded_batch_off"
+        run([
+            sys.executable, str(ROOT / "run_C19.py"),
+            "--profile", "FULL", "--solver", "GRIDDED", "--models", "T05",
+            "--reference", str(reference), "--driver", str(driver),
+            "--output-root", str(legacy_output),
+            "--amps", "./amps-not-required-for-dry-run", "-np", "1", "-nt", "1",
+            "--gridded-batch", "OFF", "--dry-run",
+        ])
+        legacy_inputs = list(legacy_output.glob("**/AMPS_PARAM_C19.in"))
+        if len(legacy_inputs) != 4:
+            raise SystemExit("--gridded-batch OFF did not render four independent cases")
+        if not all(re.search(r"^TEMPORAL_MODE\s+SNAPSHOT\s*$",
+                             path.read_text(), re.MULTILINE) for path in legacy_inputs):
+            raise SystemExit("--gridded-batch OFF changed legacy SNAPSHOT semantics")
 
 
 def validate_committed_inputs() -> None:
@@ -363,6 +429,11 @@ def validate_committed_inputs() -> None:
         if missing:
             raise SystemExit("%s lacks explicit directive(s): %s" %
                              (path, ", ".join(missing)))
+        if name == "AMPS_PARAM_C19_mode3d.in":
+            for temporal_directive in ("TEMPORAL_MODE", "SNAPSHOT_LIST_FILE"):
+                if temporal_directive not in directives:
+                    raise SystemExit(
+                        "%s lacks batching directive %s" % (path, temporal_directive))
     trajectory = ROOT / "C19_trajectory.txt"
     if not trajectory.exists() or not trajectory.read_text().strip():
         raise SystemExit("committed default C19_trajectory.txt is missing or empty")

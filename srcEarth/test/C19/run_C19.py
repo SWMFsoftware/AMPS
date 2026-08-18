@@ -9,8 +9,12 @@ GRIDLESS, and the P2 production numerical settings/physics hooks.  The runner al
 full-event comparison plots after post-processing; no special diagnostic flag is
 required to obtain them.
 
-The observational reference is created by ``build_goes_reference.py``.  AMPS is run
-once for each selected (UTC, spacecraft, solver, field-model) combination.  For both solver paths, AMPS emits the same direct three-state access cube A(R,Omega),
+The observational reference is created by ``build_goes_reference.py``. GRIDLESS keeps
+one AMPS launch per selected (UTC, spacecraft, field-model) combination. GRIDDED uses
+one multi-snapshot AMPS launch per field model/search configuration by default: the
+AMR mesh is allocated once, B/E is refilled once per unique epoch, and every spacecraft
+location is evaluated only at its matching snapshot. ``--gridded-batch OFF`` retains
+the historical independent-launch path for regression comparisons. For both solver paths, AMPS emits the same direct three-state access cube A(R,Omega),
 which C19 folds through the documented detector response and the selected event
 spectrum. GRIDDED and GRIDLESS therefore differ only in how the magnetic field is
 evaluated along the trajectory, not in the observable supplied to the postprocessor.  The current May-2012 reference retains the historical
@@ -192,6 +196,22 @@ class DirectionalAccessCube:
 
 
 @dataclass(frozen=True)
+class GriddedBatchOutput:
+    """Address of one logical C19 case inside a multi-snapshot Mode3D run.
+
+    ``global_location_id`` is the row number in the complete batch trajectory and is
+    used by LOCATION-qualified aperture records. ``local_location_id`` is the row
+    number after Mode3D filters that trajectory to one epoch; it is therefore the
+    number embedded in the actual cutoff filename for that snapshot.
+    """
+    run_dir: Path
+    global_location_id: int
+    local_location_id: int
+    snapshot_index: int
+    snapshot_suffix: str
+
+
+@dataclass(frozen=True)
 class DirectionCell:
     """One AMPS directional-map cell plus optional PENUMBRA_SCAN diagnostics.
 
@@ -251,6 +271,12 @@ class ModelRow:
     observed_log10_east_west_ratio: float
     modeled_east_west_ratio: Optional[float]
     modeled_log10_east_west_ratio: Optional[float]
+    modeled_east_west_ratio_min: Optional[float]
+    modeled_east_west_ratio_max: Optional[float]
+    modeled_log10_east_west_ratio_min: Optional[float]
+    modeled_log10_east_west_ratio_max: Optional[float]
+    modeled_ratio_lower_censored: bool
+    modeled_ratio_upper_censored: bool
     residual_log10: Optional[float]
     east_transmission: Optional[float]
     west_transmission: Optional[float]
@@ -258,8 +284,31 @@ class ModelRow:
     east_transmission_max: Optional[float]
     west_transmission_min: Optional[float]
     west_transmission_max: Optional[float]
+    east_signal_min: Optional[float]
+    east_signal_max: Optional[float]
+    west_signal_min: Optional[float]
+    west_signal_max: Optional[float]
+    east_aperture_status: str
+    west_aperture_status: str
+    status_reasons: str
+    east_selected_sky_cells: int
+    west_selected_sky_cells: int
+    east_forward_facing_cells: int
+    west_forward_facing_cells: int
+    east_geometric_aperture_cells: int
+    west_geometric_aperture_cells: int
+    east_cells_with_access_samples: int
+    west_cells_with_access_samples: int
+    east_cells_with_response_overlap: int
+    west_cells_with_response_overlap: int
     n_east_cells: int
     n_west_cells: int
+    east_geometric_solid_angle_sr: float
+    west_geometric_solid_angle_sr: float
+    east_contributing_solid_angle_sr: float
+    west_contributing_solid_angle_sr: float
+    east_solid_angle_coverage_fraction: float
+    west_solid_angle_coverage_fraction: float
     unresolved_east_fraction: float
     unresolved_west_fraction: float
     # Fraction of the detector-weighted energy integral whose access transition lies
@@ -323,6 +372,16 @@ class ApertureFold:
     signal_min: Optional[float] = None
     signal_max: Optional[float] = None
     unshielded_signal: Optional[float] = None
+    # Availability pipeline.  These counters intentionally distinguish missing
+    # geometry/access/response data from a physically resolved zero transmission.
+    selected_sky_cells: int = 0
+    forward_facing_cells: int = 0
+    geometric_aperture_cells: int = 0
+    cells_with_access_samples: int = 0
+    cells_with_response_overlap: int = 0
+    geometric_solid_angle_sr: float = 0.0
+    contributing_solid_angle_sr: float = 0.0
+    solid_angle_coverage_fraction: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -948,10 +1007,39 @@ def render_template(template: Path, destination: Path, replacements: Mapping[str
     destination.write_text(replace_directives(template.read_text(), replacements))
 
 
-def write_trajectory(path: Path, row: ReferenceRow) -> None:
-    path.write_text("%s %.12g %.12g %.12g\n" % (
+def write_trajectory(path: Path, rows: Sequence[ReferenceRow]) -> None:
+    """Write one or more timestamped GEO trajectory locations.
+
+    A single-case C19 run passes a one-element sequence and retains the historical
+    file format.  A batched GRIDDED run writes every selected spacecraft location in
+    stable ``(epoch, spacecraft)`` order.  Mode3D's SNAPSHOT_LIST workset then selects
+    only the rows belonging to the currently initialized field epoch, avoiding the
+    incorrect snapshot/location Cartesian product produced by an unfiltered time
+    series.
+    """
+    lines = ["%s %.12g %.12g %.12g" % (
         format_utc(row.utc, suffix_z=False), row.latitude_deg,
-        row.longitude_deg_east, row.altitude_km))
+        row.longitude_deg_east, row.altitude_km) for row in rows]
+    if not lines:
+        raise ValueError("cannot write an empty C19 trajectory")
+    path.write_text("\n".join(lines) + "\n")
+
+
+def mode3d_snapshot_suffix(snapshot_index: int, epoch: datetime) -> str:
+    """Reproduce ``Mode3DSnapshotSuffix`` for exact batched-output lookup."""
+    token = "".join(character if character.isalnum() else "_"
+                    for character in format_utc(epoch, suffix_z=False))[:48]
+    return "_snapshot_%06d_%s" % (snapshot_index, token)
+
+
+def write_snapshot_list(path: Path, epochs: Sequence[datetime]) -> None:
+    """Write sorted unique irregular epochs for TEMPORAL_MODE=SNAPSHOT_LIST."""
+    ordered = sorted(set(epochs))
+    if not ordered:
+        raise ValueError("cannot write an empty C19 snapshot list")
+    path.write_text(
+        "# One field snapshot per unique C19 observation epoch.\n" +
+        "\n".join(format_utc(epoch, suffix_z=False) for epoch in ordered) + "\n")
 
 
 def write_directional_aperture_file(
@@ -959,6 +1047,8 @@ def write_directional_aperture_file(
         orientation_by_head: Mapping[str, OrientationRecord],
         horizontal_half_angle_deg: float, vertical_half_angle_deg: float,
         tilt_rad: float = 0.0, yaw_deg: float = 0.0, pitch_deg: float = 0.0,
+        location_index: Optional[int] = None, name_prefix: str = "",
+        append: bool = False,
         ) -> None:
     """Write the generic AMPS VECTOR_APERTURES selector for one spacecraft epoch.
 
@@ -1004,15 +1094,26 @@ def write_directional_aperture_file(
     else:
         raise ValueError("unsupported detector orientation model %s" % orientation_model)
 
-    lines = [
-        "# name frame bx by bz upx upy upz horizontal_half_angle_deg vertical_half_angle_deg",
-        "# boresight is detector LOOK direction; apertures may point anywhere and need not be antipodal",
-    ]
+    lines = []
+    if not append:
+        lines.extend([
+            "# name frame bx by bz upx upy upz horizontal_half_angle_deg vertical_half_angle_deg [LOCATION=index]",
+            "# boresight is detector LOOK direction; apertures may point anywhere and need not be antipodal",
+            "# LOCATION associates an aperture with one global row of a batched trajectory; omitted means all rows",
+        ])
     for name, frame, b, up in rows:
-        lines.append("%s %s %.17g %.17g %.17g %.17g %.17g %.17g %.12g %.12g" % (
-            name, frame, b[0], b[1], b[2], up[0], up[1], up[2],
-            horizontal_half_angle_deg, vertical_half_angle_deg))
-    path.write_text("\n".join(lines) + "\n")
+        qualified_name = "%s%s" % (name_prefix, name)
+        line = "%s %s %.17g %.17g %.17g %.17g %.17g %.17g %.12g %.12g" % (
+            qualified_name, frame, b[0], b[1], b[2], up[0], up[1], up[2],
+            horizontal_half_angle_deg, vertical_half_angle_deg)
+        if location_index is not None:
+            if location_index < 0:
+                raise ValueError("directional-aperture location index must be non-negative")
+            line += " LOCATION=%d" % location_index
+        lines.append(line)
+    mode = "a" if append else "w"
+    with path.open(mode) as stream:
+        stream.write("\n".join(lines) + "\n")
 
 
 def resolved_dynamic_chunk(args: argparse.Namespace, solver: str) -> int:
@@ -1226,14 +1327,21 @@ def parse_directional_map(path: Path) -> DirectionMap:
     return DirectionMap(str(path.resolve()), frame, x_km, y_km, z_km, tuple(cells))
 
 
-def locate_directional_map(run_dir: Path, solver: str) -> Path:
-    exact = (run_dir / "cutoff_gridless_dir_map_point_0000.dat"
+def locate_directional_map(
+        run_dir: Path, solver: str, location_id: int = 0,
+        suffix: str = "",
+        ) -> Path:
+    exact = (run_dir / ("cutoff_gridless_dir_map_point_%04d%s.dat" %
+                        (location_id, suffix))
              if solver == "GRIDLESS"
-             else run_dir / "cutoff_3d_dir_map_loc_000000.dat")
+             else run_dir / ("cutoff_3d_dir_map_loc_%06d%s.dat" %
+                             (location_id, suffix)))
     if exact.exists():
         return exact
-    patterns = (["cutoff_gridless_dir_map_point_0000*.dat"] if solver == "GRIDLESS"
-                else ["cutoff_3d_dir_map_loc_000000*.dat"])
+    patterns = (["cutoff_gridless_dir_map_point_%04d%s*.dat" %
+                 (location_id, suffix)] if solver == "GRIDLESS"
+                else ["cutoff_3d_dir_map_loc_%06d%s*.dat" %
+                      (location_id, suffix)])
     matches: List[Path] = []
     for pattern in patterns:
         matches.extend(run_dir.glob(pattern))
@@ -1242,7 +1350,10 @@ def locate_directional_map(run_dir: Path, solver: str) -> Path:
     return sorted(matches)[0]
 
 
-def locate_directional_access(run_dir: Path, solver: str) -> Optional[Path]:
+def locate_directional_access(
+        run_dir: Path, solver: str, location_id: int = 0,
+        suffix: str = "",
+        ) -> Optional[Path]:
     """Locate the solver-independent C19 direct A(R,Omega) companion output.
 
     GRIDDED and GRIDLESS intentionally use different file stems because their legacy
@@ -1250,15 +1361,21 @@ def locate_directional_access(run_dir: Path, solver: str) -> Optional[Path]:
     same long-form columns and are parsed by :func:`parse_directional_access`.
     """
     if solver.upper() == "GRIDLESS":
-        exact = run_dir / "cutoff_gridless_dir_access_point_0000.dat"
+        exact = run_dir / ("cutoff_gridless_dir_access_point_%04d%s.dat" %
+                           (location_id, suffix))
         if exact.exists():
             return exact
-        matches = sorted(run_dir.glob("cutoff_gridless_dir_access_point_0000*.dat"))
+        matches = sorted(run_dir.glob(
+            "cutoff_gridless_dir_access_point_%04d%s*.dat" %
+            (location_id, suffix)))
         return matches[0] if matches else None
-    exact = run_dir / "cutoff_3d_dir_access_loc_000000.dat"
+    exact = run_dir / ("cutoff_3d_dir_access_loc_%06d%s.dat" %
+                       (location_id, suffix))
     if exact.exists():
         return exact
-    matches = sorted(run_dir.glob("cutoff_3d_dir_access_loc_000000*.dat"))
+    matches = sorted(run_dir.glob(
+        "cutoff_3d_dir_access_loc_%06d%s*.dat" %
+        (location_id, suffix)))
     return matches[0] if matches else None
 
 
@@ -1775,6 +1892,66 @@ def aperture_coordinates(
     return alpha_h, alpha_v
 
 
+def _median_positive(values: Sequence[float], fallback: float) -> float:
+    positive = sorted(value for value in values if value > 1.0e-12)
+    return statistics.median(positive) if positive else fallback
+
+
+def direction_grid_cell_scale_sr(direction_map: DirectionMap) -> float:
+    """Estimate the common lon/lat cell scale in steradians.
+
+    C19 directional products lie on a regular lon/lat grid, although aperture-pruned
+    products omit most cells.  The median adjacent spacing is therefore robust to the
+    large gaps introduced by pruning and to the 0/360 longitude seam.  The latitude
+    cosine is applied separately for each cell.
+    """
+    lons = sorted({cell.lon_deg % 360.0 for cell in direction_map.cells})
+    lats = sorted({cell.lat_deg for cell in direction_map.cells})
+    lon_deltas = [right - left for left, right in zip(lons[:-1], lons[1:])]
+    if len(lons) > 1:
+        lon_deltas.append((lons[0] + 360.0) - lons[-1])
+    lat_deltas = [right - left for left, right in zip(lats[:-1], lats[1:])]
+    dlon = _median_positive(lon_deltas, 1.0)
+    dlat = _median_positive(lat_deltas, 1.0)
+    return math.radians(dlon) * math.radians(dlat)
+
+
+def aperture_geometry_summary(
+        direction_map: DirectionMap,
+        position_map: Tuple[float, float, float],
+        detector_direction: str,
+        equatorial_half_angle: float,
+        north_south_half_angle: float,
+        direction_mapping: str,
+        orientation_model: str,
+        orientation_record: Optional[OrientationRecord],
+        tilt_rad: float,
+        orientation_yaw_deg: float,
+        orientation_pitch_deg: float,
+        ) -> Tuple[int, int, int, float]:
+    """Count selected, forward-facing, and in-aperture map cells for one head."""
+    boresight, horizontal, vertical = detector_basis(
+        position_map, detector_direction, orientation_model, orientation_record,
+        direction_map.frame, tilt_rad, orientation_yaw_deg, orientation_pitch_deg)
+    scale_sr = direction_grid_cell_scale_sr(direction_map)
+    forward = geometric = 0
+    solid_angle_sr = 0.0
+    for cell in direction_map.cells:
+        arrival = spherical_direction(cell.lon_deg, cell.lat_deg)
+        look = map_direction_to_detector_look(arrival, direction_mapping)
+        coords = aperture_coordinates(look, boresight, horizontal, vertical)
+        if coords is None:
+            continue
+        forward += 1
+        alpha_h, alpha_v = coords
+        if ((alpha_h / equatorial_half_angle) ** 2 +
+                (alpha_v / north_south_half_angle) ** 2) > 1.0 + 1.0e-12:
+            continue
+        geometric += 1
+        solid_angle_sr += max(0.0, math.cos(math.radians(cell.lat_deg))) * scale_sr
+    return len(direction_map.cells), forward, geometric, solid_angle_sr
+
+
 def integrated_power_law(lower: float, upper: float, gamma: float) -> float:
     if upper <= lower or lower <= 0.0:
         return 0.0
@@ -1832,6 +2009,13 @@ def fold_aperture(
     boresight, horizontal, vertical = detector_basis(
         position_sm, detector_direction, orientation_model, orientation_record,
         direction_map.frame, tilt_rad, orientation_yaw_deg, orientation_pitch_deg)
+    selected_sky_cells, forward_facing_cells, geometric_aperture_cells, \
+        geometric_solid_angle_sr = aperture_geometry_summary(
+            direction_map, position_sm, detector_direction, equatorial_half_angle,
+            north_south_half_angle, mapping, orientation_model, orientation_record,
+            tilt_rad, orientation_yaw_deg, orientation_pitch_deg)
+    cell_scale_sr = direction_grid_cell_scale_sr(direction_map)
+    contributing_solid_angle_sr = 0.0
     denominator_energy = integrated_power_law(energy_min, energy_max, gamma)
     if denominator_energy <= 0.0:
         raise ValueError("invalid proxy channel energy integral")
@@ -1860,6 +2044,7 @@ def fold_aperture(
 
         n_cells += 1
         weight = max(0.0, math.cos(math.radians(cell.lat_deg)))
+        contributing_solid_angle_sr += weight * cell_scale_sr
         angular_factor = anisotropy_factor(arrival_direction, anisotropy)
         total_weight += weight
         unshielded_signal_sum += weight * angular_factor * denominator_energy
@@ -1964,6 +2149,16 @@ def fold_aperture(
         diagnostic=tuple(diagnostic),
         signal_value=signal_value, signal_min=signal_min, signal_max=signal_max,
         unshielded_signal=unshielded_signal,
+        selected_sky_cells=selected_sky_cells,
+        forward_facing_cells=forward_facing_cells,
+        geometric_aperture_cells=geometric_aperture_cells,
+        cells_with_access_samples=n_cells,
+        cells_with_response_overlap=n_cells,
+        geometric_solid_angle_sr=geometric_solid_angle_sr,
+        contributing_solid_angle_sr=contributing_solid_angle_sr,
+        solid_angle_coverage_fraction=(
+            min(1.0, contributing_solid_angle_sr / geometric_solid_angle_sr)
+            if geometric_solid_angle_sr > 0.0 else 0.0),
     )
 
 
@@ -2024,6 +2219,12 @@ def fold_aperture_direct_access(
     boresight, horizontal, vertical = detector_basis(
         position_sm, detector_direction, orientation_model, orientation_record,
         direction_map.frame, tilt_rad, orientation_yaw_deg, orientation_pitch_deg)
+    selected_sky_cells, forward_facing_cells, geometric_aperture_cells, \
+        geometric_solid_angle_sr = aperture_geometry_summary(
+            direction_map, position_sm, detector_direction, equatorial_half_angle,
+            north_south_half_angle, mapping, orientation_model, orientation_record,
+            tilt_rad, orientation_yaw_deg, orientation_pitch_deg)
+    cell_scale_sr = direction_grid_cell_scale_sr(direction_map)
 
     total_weight = 0.0
     unresolved_weight = 0.0
@@ -2031,6 +2232,9 @@ def fold_aperture_direct_access(
     lower_transmission_sum = upper_transmission_sum = 0.0
     signal_lower_sum = signal_upper_sum = unshielded_signal_sum = 0.0
     n_cells = n_unresolved = 0
+    cells_with_access_samples = 0
+    cells_with_response_overlap = 0
+    contributing_solid_angle_sr = 0.0
     undersampled_penumbra_cells = 0
     max_trace_time_s: Optional[float] = None
     diagnostics: List[Dict[str, object]] = []
@@ -2052,6 +2256,7 @@ def fold_aperture_direct_access(
         angular_factor = anisotropy_factor(arrival, anisotropy)
         if len(samples) < 2:
             continue
+        cells_with_access_samples += 1
 
         # Exact unshielded channel response over the sampled support.  The access grid
         # is constructed from the union of all positive response components, so this is
@@ -2061,6 +2266,7 @@ def fold_aperture_direct_access(
             spectrum, response, channel, samples[0].energy_mev, samples[-1].energy_mev)
         if denom <= 0.0:
             continue
+        cells_with_response_overlap += 1
 
         allowed_min_int = 0.0
         allowed_max_int = 0.0
@@ -2126,6 +2332,7 @@ def fold_aperture_direct_access(
         weight = max(0.0, math.cos(math.radians(lat)))
         n_cells += 1
         total_weight += weight
+        contributing_solid_angle_sr += weight * cell_scale_sr
         lower_transmission_sum += weight * t_min
         upper_transmission_sum += weight * t_max
         unresolved_weight += weight * unresolved_energy_fraction
@@ -2169,7 +2376,10 @@ def fold_aperture_direct_access(
     if total_weight <= 0.0:
         return ApertureFold(
             None, None, None, 0, 0, 1.0, 1.0, 0, max_trace_time_s, False,
-            tuple(diagnostics), None, None, None, None)
+            tuple(diagnostics), None, None, None, None,
+            selected_sky_cells, forward_facing_cells, geometric_aperture_cells,
+            cells_with_access_samples, cells_with_response_overlap,
+            geometric_solid_angle_sr, contributing_solid_angle_sr, 0.0)
 
     unresolved_fraction = unresolved_weight / total_weight
     transition_fraction = transition_weight / total_weight
@@ -2193,7 +2403,75 @@ def fold_aperture_direct_access(
         value, minimum, maximum, n_cells, n_unresolved,
         unresolved_fraction, transition_fraction, undersampled_penumbra_cells,
         max_trace_time_s, guard, tuple(diagnostics),
-        signal_value, signal_min, signal_max, unshielded_signal)
+        signal_value, signal_min, signal_max, unshielded_signal,
+        selected_sky_cells, forward_facing_cells, geometric_aperture_cells,
+        cells_with_access_samples, cells_with_response_overlap,
+        geometric_solid_angle_sr, contributing_solid_angle_sr,
+        min(1.0, contributing_solid_angle_sr / geometric_solid_angle_sr)
+        if geometric_solid_angle_sr > 0.0 else 0.0)
+
+
+def classify_aperture_fold(
+        fold: ApertureFold,
+        max_unresolved_fraction: float,
+        max_discrete_transition_fraction: float,
+        min_aperture_cell_count: int,
+        min_solid_angle_coverage_fraction: float,
+        ) -> Tuple[str, Tuple[str, ...]]:
+    """Return an independent availability state and all reasons for one head."""
+    reasons: List[str] = []
+    if fold.selected_sky_cells <= 0:
+        reasons.append("NO_SELECTED_SKY_CELLS")
+    if fold.geometric_aperture_cells <= 0:
+        reasons.append("NO_GEOMETRIC_CELLS")
+    elif fold.geometric_aperture_cells < min_aperture_cell_count:
+        reasons.append("INSUFFICIENT_GEOMETRIC_CELL_COUNT")
+    if (fold.geometric_aperture_cells > 0 and
+            fold.cells_with_access_samples < fold.geometric_aperture_cells):
+        reasons.append("INSUFFICIENT_ENERGY_SAMPLES")
+    if (fold.cells_with_access_samples > 0 and
+            fold.cells_with_response_overlap < fold.cells_with_access_samples):
+        reasons.append("NO_RESPONSE_OVERLAP")
+    if (fold.geometric_aperture_cells > 0 and
+            fold.solid_angle_coverage_fraction + 1.0e-14 <
+            min_solid_angle_coverage_fraction):
+        reasons.append("INCOMPLETE_SOLID_ANGLE_COVERAGE")
+    if fold.unresolved_weight_fraction > max_unresolved_fraction + 1.0e-14:
+        reasons.append("EXCESSIVE_UNRESOLVED_TRAJECTORIES")
+    if (fold.discrete_transition_weight_fraction >
+            max_discrete_transition_fraction + 1.0e-14):
+        reasons.append("EXCESSIVE_RIGIDITY_GRID_UNCERTAINTY")
+    if fold.static_field_guardrail_triggered:
+        reasons.append("FROZEN_FIELD_GUARDRAIL")
+
+    if reasons:
+        return reasons[0], tuple(reasons)
+    if fold.signal_value is None or fold.value is None:
+        return "UNRESOLVED_SIGNAL", ("UNRESOLVED_SIGNAL",)
+    if fold.signal_value == 0.0 or fold.value == 0.0:
+        return "PHYSICAL_ZERO", tuple()
+    return "VALID", tuple()
+
+
+def detector_ratio_bounds(
+        east_min: Optional[float], east_max: Optional[float],
+        west_min: Optional[float], west_max: Optional[float],
+        ) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float], bool, bool]:
+    """Return rigorous E/W and log10(E/W) bounds plus censoring flags."""
+    values = (east_min, east_max, west_min, west_max)
+    if any(value is None or not math.isfinite(float(value)) for value in values):
+        return None, None, None, None, False, False
+    e_min, e_max, w_min, w_max = (max(0.0, float(value)) for value in values)
+    if w_max <= 0.0:
+        return None, None, None, None, False, True
+    ratio_min = e_min / w_max
+    lower_censored = ratio_min <= 0.0
+    ratio_max = (e_max / w_min) if w_min > 0.0 else None
+    upper_censored = ratio_max is None
+    log_min = math.log10(ratio_min) if ratio_min > 0.0 else None
+    log_max = (math.log10(ratio_max)
+               if ratio_max is not None and ratio_max > 0.0 else None)
+    return ratio_min, ratio_max, log_min, log_max, lower_censored, upper_censored
 
 
 def evaluate_reference_row(
@@ -2217,6 +2495,8 @@ def evaluate_reference_row(
         orientation_yaw_deg: float = 0.0,
         orientation_pitch_deg: float = 0.0,
         anisotropy: AnisotropyConfig = AnisotropyConfig(),
+        min_aperture_cell_count: int = 1,
+        min_solid_angle_coverage_fraction: float = 0.95,
         ) -> Tuple[ModelRow, List[Dict[str, object]]]:
     """Evaluate one GOES reference row from a completed AMPS directional product.
 
@@ -2338,6 +2618,21 @@ def evaluate_reference_row(
     max_direction_trace_time_s = max(trace_times) if trace_times else None
     static_guard = (east_fold.static_field_guardrail_triggered
                     or west_fold.static_field_guardrail_triggered)
+    east_aperture_status, east_reasons = classify_aperture_fold(
+        east_fold, max_unresolved_aperture_fraction,
+        max_discrete_transition_fraction, min_aperture_cell_count,
+        min_solid_angle_coverage_fraction)
+    west_aperture_status, west_reasons = classify_aperture_fold(
+        west_fold, max_unresolved_aperture_fraction,
+        max_discrete_transition_fraction, min_aperture_cell_count,
+        min_solid_angle_coverage_fraction)
+    status_reasons = ";".join(
+        ["EAST:%s" % reason for reason in east_reasons] +
+        ["WEST:%s" % reason for reason in west_reasons])
+    (ratio_min, ratio_max, log_ratio_min, log_ratio_max,
+     ratio_lower_censored, ratio_upper_censored) = detector_ratio_bounds(
+        east_fold.signal_min, east_fold.signal_max,
+        west_fold.signal_min, west_fold.signal_max)
 
     ratio: Optional[float]
     log_ratio: Optional[float]
@@ -2346,24 +2641,48 @@ def evaluate_reference_row(
     # The order matters.  Coverage/resolution failures are diagnosed before exact
     # zero-signal saturation, and the frozen-field guard remains independent of the
     # physical access state.
-    if n_east == 0:
+    if east_aperture_status in ("NO_SELECTED_SKY_CELLS", "NO_GEOMETRIC_CELLS",
+                                "INSUFFICIENT_GEOMETRIC_CELL_COUNT"):
         ratio = log_ratio = residual = None
         status = "NO_EAST_APERTURE_CELLS"
-    elif n_west == 0:
+    elif west_aperture_status in ("NO_SELECTED_SKY_CELLS", "NO_GEOMETRIC_CELLS",
+                                  "INSUFFICIENT_GEOMETRIC_CELL_COUNT"):
         ratio = log_ratio = residual = None
         status = "NO_WEST_APERTURE_CELLS"
-    elif east_fold.unresolved_weight_fraction > max_unresolved_aperture_fraction + 1.0e-14:
+    elif east_aperture_status == "INSUFFICIENT_ENERGY_SAMPLES":
+        ratio = log_ratio = residual = None
+        status = "INSUFFICIENT_EAST_ENERGY_SAMPLES"
+    elif west_aperture_status == "INSUFFICIENT_ENERGY_SAMPLES":
+        ratio = log_ratio = residual = None
+        status = "INSUFFICIENT_WEST_ENERGY_SAMPLES"
+    elif east_aperture_status == "NO_RESPONSE_OVERLAP":
+        ratio = log_ratio = residual = None
+        status = "NO_EAST_RESPONSE_OVERLAP"
+    elif west_aperture_status == "NO_RESPONSE_OVERLAP":
+        ratio = log_ratio = residual = None
+        status = "NO_WEST_RESPONSE_OVERLAP"
+    elif east_aperture_status == "INCOMPLETE_SOLID_ANGLE_COVERAGE":
+        ratio = log_ratio = residual = None
+        status = "INCOMPLETE_EAST_SOLID_ANGLE_COVERAGE"
+    elif west_aperture_status == "INCOMPLETE_SOLID_ANGLE_COVERAGE":
+        ratio = log_ratio = residual = None
+        status = "INCOMPLETE_WEST_SOLID_ANGLE_COVERAGE"
+    elif east_aperture_status == "EXCESSIVE_UNRESOLVED_TRAJECTORIES":
         ratio = log_ratio = residual = None
         status = "EXCESSIVE_UNRESOLVED_EAST_APERTURE"
-    elif west_fold.unresolved_weight_fraction > max_unresolved_aperture_fraction + 1.0e-14:
+    elif west_aperture_status == "EXCESSIVE_UNRESOLVED_TRAJECTORIES":
         ratio = log_ratio = residual = None
         status = "EXCESSIVE_UNRESOLVED_WEST_APERTURE"
-    elif east_fold.discrete_transition_weight_fraction > max_discrete_transition_fraction + 1.0e-14:
+    elif east_aperture_status == "EXCESSIVE_RIGIDITY_GRID_UNCERTAINTY":
         ratio = log_ratio = residual = None
         status = "EXCESSIVE_EAST_RIGIDITY_GRID_UNCERTAINTY"
-    elif west_fold.discrete_transition_weight_fraction > max_discrete_transition_fraction + 1.0e-14:
+    elif west_aperture_status == "EXCESSIVE_RIGIDITY_GRID_UNCERTAINTY":
         ratio = log_ratio = residual = None
         status = "EXCESSIVE_WEST_RIGIDITY_GRID_UNCERTAINTY"
+    elif east_aperture_status == "FROZEN_FIELD_GUARDRAIL" or \
+            west_aperture_status == "FROZEN_FIELD_GUARDRAIL":
+        ratio = log_ratio = residual = None
+        status = "STATIC_FIELD_TRACE_GUARDRAIL"
     elif east_observable is None:
         ratio = log_ratio = residual = None
         status = "UNRESOLVED_EAST_SIGNAL"
@@ -2408,13 +2727,42 @@ def evaluate_reference_row(
         observed_log10_east_west_ratio=reference.log10_east_west_ratio,
         modeled_east_west_ratio=ratio,
         modeled_log10_east_west_ratio=log_ratio,
+        modeled_east_west_ratio_min=ratio_min,
+        modeled_east_west_ratio_max=ratio_max,
+        modeled_log10_east_west_ratio_min=log_ratio_min,
+        modeled_log10_east_west_ratio_max=log_ratio_max,
+        modeled_ratio_lower_censored=ratio_lower_censored,
+        modeled_ratio_upper_censored=ratio_upper_censored,
         residual_log10=residual,
         east_transmission=east, west_transmission=west,
         east_transmission_min=east_fold.minimum,
         east_transmission_max=east_fold.maximum,
         west_transmission_min=west_fold.minimum,
         west_transmission_max=west_fold.maximum,
+        east_signal_min=east_fold.signal_min,
+        east_signal_max=east_fold.signal_max,
+        west_signal_min=west_fold.signal_min,
+        west_signal_max=west_fold.signal_max,
+        east_aperture_status=east_aperture_status,
+        west_aperture_status=west_aperture_status,
+        status_reasons=status_reasons,
+        east_selected_sky_cells=east_fold.selected_sky_cells,
+        west_selected_sky_cells=west_fold.selected_sky_cells,
+        east_forward_facing_cells=east_fold.forward_facing_cells,
+        west_forward_facing_cells=west_fold.forward_facing_cells,
+        east_geometric_aperture_cells=east_fold.geometric_aperture_cells,
+        west_geometric_aperture_cells=west_fold.geometric_aperture_cells,
+        east_cells_with_access_samples=east_fold.cells_with_access_samples,
+        west_cells_with_access_samples=west_fold.cells_with_access_samples,
+        east_cells_with_response_overlap=east_fold.cells_with_response_overlap,
+        west_cells_with_response_overlap=west_fold.cells_with_response_overlap,
         n_east_cells=n_east, n_west_cells=n_west,
+        east_geometric_solid_angle_sr=east_fold.geometric_solid_angle_sr,
+        west_geometric_solid_angle_sr=west_fold.geometric_solid_angle_sr,
+        east_contributing_solid_angle_sr=east_fold.contributing_solid_angle_sr,
+        west_contributing_solid_angle_sr=west_fold.contributing_solid_angle_sr,
+        east_solid_angle_coverage_fraction=east_fold.solid_angle_coverage_fraction,
+        west_solid_angle_coverage_fraction=west_fold.solid_angle_coverage_fraction,
         unresolved_east_fraction=east_fold.unresolved_weight_fraction,
         unresolved_west_fraction=west_fold.unresolved_weight_fraction,
         discrete_transition_east_fraction=east_fold.discrete_transition_weight_fraction,
@@ -2615,6 +2963,10 @@ def pipeline_validity(
 
     invalid_fold_prefixes = (
         "NO_EAST_APERTURE_CELLS", "NO_WEST_APERTURE_CELLS",
+        "INSUFFICIENT_EAST_ENERGY_SAMPLES", "INSUFFICIENT_WEST_ENERGY_SAMPLES",
+        "NO_EAST_RESPONSE_OVERLAP", "NO_WEST_RESPONSE_OVERLAP",
+        "INCOMPLETE_EAST_SOLID_ANGLE_COVERAGE",
+        "INCOMPLETE_WEST_SOLID_ANGLE_COVERAGE",
         "EXCESSIVE_UNRESOLVED_", "UNRESOLVED_",
         "EXCESSIVE_EAST_RIGIDITY_GRID_UNCERTAINTY",
         "EXCESSIVE_WEST_RIGIDITY_GRID_UNCERTAINTY",
@@ -2667,6 +3019,66 @@ def write_dict_rows(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
         writer.writerows(rows)
 
 
+def model_status_category(row: ModelRow) -> Tuple[str, str, str]:
+    """Return stable diagnostic category, label, and color for a non-valid row."""
+    reasons = row.status_reasons
+    if "UNRESOLVED" in reasons or "UNRESOLVED" in row.status:
+        return "trajectory", "trajectory uncertainty", "tab:red"
+    if "RIGIDITY_GRID" in reasons or "RIGIDITY_GRID" in row.status:
+        return "rigidity", "rigidity-grid uncertainty", "tab:orange"
+    if any(token in reasons or token in row.status for token in
+           ("NO_GEOMETRIC", "NO_SELECTED", "INSUFFICIENT_GEOMETRIC",
+            "INSUFFICIENT_", "NO_", "INCOMPLETE_SOLID_ANGLE")):
+        return "availability", "missing/incomplete aperture data", "tab:purple"
+    if "GUARDRAIL" in reasons or "GUARDRAIL" in row.status:
+        return "guardrail", "frozen-field guardrail", "tab:brown"
+    return "other", "other nonfinite status", "tab:gray"
+
+
+def aperture_availability_rows(rows: Sequence[ModelRow]) -> List[Dict[str, object]]:
+    """Create one auditable availability row per epoch and physical aperture."""
+    result: List[Dict[str, object]] = []
+    for row in rows:
+        for head in ("east", "west"):
+            result.append({
+                "utc": row.utc,
+                "spacecraft": row.spacecraft,
+                "channel": row.channel,
+                "solver": row.solver,
+                "field_model": row.field_model,
+                "aperture": head.upper(),
+                "aperture_status": getattr(row, "%s_aperture_status" % head),
+                "overall_status": row.status,
+                "all_status_reasons": row.status_reasons,
+                "selected_sky_cells": getattr(row, "%s_selected_sky_cells" % head),
+                "forward_facing_cells": getattr(row, "%s_forward_facing_cells" % head),
+                "geometric_aperture_cells": getattr(
+                    row, "%s_geometric_aperture_cells" % head),
+                "cells_with_access_samples": getattr(
+                    row, "%s_cells_with_access_samples" % head),
+                "cells_with_response_overlap": getattr(
+                    row, "%s_cells_with_response_overlap" % head),
+                "contributing_cells": getattr(
+                    row, "n_%s_cells" % head),
+                "geometric_solid_angle_sr": getattr(
+                    row, "%s_geometric_solid_angle_sr" % head),
+                "contributing_solid_angle_sr": getattr(
+                    row, "%s_contributing_solid_angle_sr" % head),
+                "solid_angle_coverage_fraction": getattr(
+                    row, "%s_solid_angle_coverage_fraction" % head),
+                "transmission_min": getattr(row, "%s_transmission_min" % head),
+                "transmission_max": getattr(row, "%s_transmission_max" % head),
+                "transmission": getattr(row, "%s_transmission" % head),
+                "signal_min": getattr(row, "%s_signal_min" % head),
+                "signal_max": getattr(row, "%s_signal_max" % head),
+                "unresolved_fraction": getattr(
+                    row, "unresolved_%s_fraction" % head),
+                "discrete_transition_fraction": getattr(
+                    row, "discrete_transition_%s_fraction" % head),
+            })
+    return result
+
+
 def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[str]:
     try:
         import matplotlib.pyplot as plt
@@ -2712,14 +3124,56 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
                       label="AMPS modeled (finite)")
             axis.axhline(0.0, linewidth=0.8)
 
-            finite_for_limits = list(observed) + [value for value in modeled
-                                                   if math.isfinite(value)]
+            interval_values = [
+                float(value)
+                for row in panel
+                for value in (row.modeled_log10_east_west_ratio_min,
+                              row.modeled_log10_east_west_ratio_max)
+                if value is not None and math.isfinite(float(value))
+            ]
+            finite_for_limits = (list(observed) +
+                                 [value for value in modeled if math.isfinite(value)] +
+                                 interval_values)
             y_min, y_max = padded_limits(finite_for_limits, fraction=0.10, min_pad=0.05)
             axis.set_ylim(y_min, y_max)
-            span = y_max - y_min
-            high_marker_y = y_max - 0.03 * span
-            low_marker_y = y_min + 0.03 * span
-            neutral_marker_y = y_min + 0.10 * span
+
+            interval_rows = [
+                row for row in panel
+                if row.status != "VALID"
+                and row.modeled_log10_east_west_ratio_min is not None
+                and row.modeled_log10_east_west_ratio_max is not None
+                and math.isfinite(float(row.modeled_log10_east_west_ratio_min))
+                and math.isfinite(float(row.modeled_log10_east_west_ratio_max))
+            ]
+            if interval_rows:
+                axis.vlines(
+                    [parse_utc(row.utc) for row in interval_rows],
+                    [float(row.modeled_log10_east_west_ratio_min)
+                     for row in interval_rows],
+                    [float(row.modeled_log10_east_west_ratio_max)
+                     for row in interval_rows],
+                    color="tab:orange", alpha=0.55, linewidth=3.0,
+                    label="AMPS rigorous E/W interval")
+            lower_censored_rows = [
+                row for row in panel
+                if row.status != "VALID" and row.modeled_ratio_lower_censored
+                and row.modeled_log10_east_west_ratio_max is not None]
+            upper_censored_rows = [
+                row for row in panel
+                if row.status != "VALID" and row.modeled_ratio_upper_censored
+                and row.modeled_log10_east_west_ratio_min is not None]
+            if lower_censored_rows:
+                axis.scatter(
+                    [parse_utc(row.utc) for row in lower_censored_rows],
+                    [y_min + 0.02 * (y_max - y_min)] * len(lower_censored_rows),
+                    marker="v", color="tab:orange",
+                    label="AMPS interval extends to E/W=0")
+            if upper_censored_rows:
+                axis.scatter(
+                    [parse_utc(row.utc) for row in upper_censored_rows],
+                    [y_max - 0.02 * (y_max - y_min)] * len(upper_censored_rows),
+                    marker="^", color="tab:orange",
+                    label="AMPS interval extends to E/W=+inf")
 
             zero_west = [parse_utc(row.utc) for row in panel
                          if row.status == "ZERO_WEST_TRANSMISSION"]
@@ -2729,19 +3183,30 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
                                if row.status != "VALID"
                                and row.status not in SATURATED_MODEL_STATUSES]
             if zero_west:
-                axis.scatter(zero_west, [high_marker_y] * len(zero_west), marker="^",
+                axis.scatter(zero_west, [0.96] * len(zero_west), marker="^",
+                             transform=axis.get_xaxis_transform(), clip_on=False,
                              label="AMPS W=0 (log E/W -> +inf)")
             if zero_east:
-                axis.scatter(zero_east, [low_marker_y] * len(zero_east), marker="v",
+                axis.scatter(zero_east, [0.04] * len(zero_east), marker="v",
+                             transform=axis.get_xaxis_transform(), clip_on=False,
                              label="AMPS E=0 (log E/W -> -inf)")
             if other_nonfinite:
-                axis.scatter(other_nonfinite, [neutral_marker_y] * len(other_nonfinite),
-                             marker="x", label="AMPS unresolved/nonfinite")
+                categories: Dict[str, Tuple[str, str, List[datetime]]] = {}
+                for row in panel:
+                    if row.status == "VALID" or row.status in SATURATED_MODEL_STATUSES:
+                        continue
+                    key, label, color = model_status_category(row)
+                    categories.setdefault(key, (label, color, []))[2].append(parse_utc(row.utc))
+                for label, color, category_times in categories.values():
+                    axis.scatter(
+                        category_times, [-0.10] * len(category_times), marker="x",
+                        color=color, transform=axis.get_xaxis_transform(), clip_on=False,
+                        label="AMPS no accepted scalar: %s" % label)
 
             axis.set_ylabel("log10(E/W)")
             axis.set_title("%s %s" % (spacecraft, channel))
             axis.grid(True, alpha=0.3)
-            axis.legend(loc="best")
+            axis.legend(loc="best", fontsize="small")
         axes[-1, 0].set_xlabel("UTC")
         fig.suptitle("C19A %s %s: GOES vs AMPS east/west ratio" % (solver, model))
         fig.tight_layout()
@@ -2864,13 +3329,59 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
                     for row in panel]
             west = [float("nan") if row.west_transmission is None else row.west_transmission
                     for row in panel]
-            axis.plot(times, east, linewidth=1.2, label="East aperture")
-            axis.plot(times, west, linewidth=1.2, label="West aperture")
+            east_min = [float("nan") if row.east_transmission_min is None
+                        else row.east_transmission_min for row in panel]
+            east_max = [float("nan") if row.east_transmission_max is None
+                        else row.east_transmission_max for row in panel]
+            west_min = [float("nan") if row.west_transmission_min is None
+                        else row.west_transmission_min for row in panel]
+            west_max = [float("nan") if row.west_transmission_max is None
+                        else row.west_transmission_max for row in panel]
+
+            if any(math.isfinite(value) for value in east_min + east_max):
+                axis.fill_between(times, east_min, east_max, color="tab:blue", alpha=0.18,
+                                  label="East Tmin-Tmax")
+                axis.vlines(times, east_min, east_max, color="tab:blue", alpha=0.25,
+                            linewidth=0.8)
+            if any(math.isfinite(value) for value in west_min + west_max):
+                axis.fill_between(times, west_min, west_max, color="tab:orange", alpha=0.18,
+                                  label="West Tmin-Tmax")
+                axis.vlines(times, west_min, west_max, color="tab:orange", alpha=0.25,
+                            linewidth=0.8)
+            if any(math.isfinite(value) for value in east):
+                axis.plot(times, east, color="tab:blue", marker="o", markersize=3,
+                          linewidth=1.2, label="East accepted scalar")
+            if any(math.isfinite(value) for value in west):
+                axis.plot(times, west, color="tab:orange", marker="o", markersize=3,
+                          linewidth=1.2, label="West accepted scalar")
+
+            for head, y_status, marker, color in (
+                    ("east", -0.10, "v", "tab:blue"),
+                    ("west", -0.18, "^", "tab:orange")):
+                grouped: Dict[str, List[datetime]] = {}
+                for row in panel:
+                    status = getattr(row, "%s_aperture_status" % head)
+                    if status in ("VALID", "PHYSICAL_ZERO"):
+                        continue
+                    grouped.setdefault(status, []).append(parse_utc(row.utc))
+                for status, status_times in grouped.items():
+                    axis.scatter(
+                        status_times, [y_status] * len(status_times), marker=marker,
+                        color=color, transform=axis.get_xaxis_transform(), clip_on=False,
+                        label="%s: %s" % (head.capitalize(), status))
+
+            if not any(math.isfinite(value) for value in
+                       east_min + east_max + west_min + west_max):
+                axis.text(0.5, 0.5, "No usable aperture bounds",
+                          transform=axis.transAxes, ha="center", va="center",
+                          color="tab:red")
             axis.set_ylabel("Transmission")
             axis.set_ylim(-0.03, 1.03)
             axis.set_title("%s %s" % (spacecraft, channel))
             axis.grid(True, alpha=0.3)
-            axis.legend(loc="best")
+            handles, labels = axis.get_legend_handles_labels()
+            if handles:
+                axis.legend(loc="best", fontsize="x-small", ncol=2)
         axes[-1, 0].set_xlabel("UTC")
         fig.suptitle("C19A %s %s modeled broad-aperture transmission" % (solver, model))
         fig.tight_layout()
@@ -2955,9 +3466,9 @@ def render_case_input(
         reference: ReferenceRow, solver: str, field_model: str, driver: Path,
         ) -> None:
     replacements = {
-        "RUN_ID": "C19_%s_%s_%s_%s" % (
+        "RUN_ID": getattr(args, "case_run_id", "C19_%s_%s_%s_%s" % (
             solver.lower(), field_model.lower(), reference.spacecraft.lower(),
-            timestamp_token(reference.utc)),
+            timestamp_token(reference.utc))),
         "CUTOFF_EMIN": "%.12g" % args.cutoff_emin_mev,
         "CUTOFF_EMAX": "%.12g" % args.cutoff_emax_mev,
         "CUTOFF_NENERGY": str(args.cutoff_scan_n),
@@ -2999,6 +3510,9 @@ def render_case_input(
         })
     else:
         replacements.update({
+            "TEMPORAL_MODE": getattr(args, "case_temporal_mode", "SNAPSHOT"),
+            "SNAPSHOT_LIST_FILE": getattr(
+                args, "case_snapshot_list_file", "C19_snapshot_epochs.txt"),
             "MODE3D_MESH_RES_EARTH_RE": "%.12g" % args.mode3d_mesh_res_earth_re,
             "MODE3D_MESH_RES_BOUNDARY_RE": "%.12g" % args.mode3d_mesh_res_boundary_re,
             "MODE3D_MESH_COARSENING": args.mode3d_mesh_coarsening,
@@ -3018,7 +3532,7 @@ def render_case_input(
         text = rendered_path.read_text()
         text = re.sub(r"^\s*DRIVER_FILE\s+.*(?:\n|$)", "", text, flags=re.MULTILINE)
         rendered_path.write_text(text)
-    write_trajectory(run_dir / "C19_trajectory.txt", reference)
+    write_trajectory(run_dir / "C19_trajectory.txt", [reference])
 
 
 
@@ -3027,6 +3541,201 @@ def clone_namespace(args: argparse.Namespace, **updates: object) -> argparse.Nam
     values = dict(vars(args))
     values.update(updates)
     return argparse.Namespace(**values)
+
+
+def required_case_orientations(
+        reference_group: Sequence[ReferenceRow], epoch: datetime, spacecraft: str,
+        orientation_records: Sequence[OrientationRecord],
+        ) -> Tuple[List[str], Dict[str, OrientationRecord]]:
+    """Resolve the physical detector records used by pruning and postprocessing."""
+    required_detector_streams: Dict[str, str] = {}
+    for reference in reference_group:
+        required_detector_streams[reference.east_detector_id.upper()] = "EAST"
+        required_detector_streams[reference.west_detector_id.upper()] = "WEST"
+    required_detector_ids = sorted(required_detector_streams)
+    orientation_by_head = {
+        detector: orientation_for_stream(
+            orientation_records, epoch, spacecraft, detector,
+            required_detector_streams[detector])
+        for detector in required_detector_ids
+    }
+    return required_detector_ids, orientation_by_head
+
+
+def gridded_batch_layout(
+        output_root: Path, field_model: str,
+        grouped: Mapping[Tuple[datetime, str], Sequence[ReferenceRow]],
+        cutoff_search: str,
+        ) -> Tuple[Path, Dict[Tuple[datetime, str], GriddedBatchOutput], List[Mapping[str, object]]]:
+    """Build the deterministic mapping between C19 cases and Mode3D output files.
+
+    The C++ snapshot loader sorts and deduplicates epochs.  This function mirrors that
+    order and assigns snapshot-local location IDs in the same stable global trajectory
+    order.  Persisting the resulting manifest makes postprocessing independent of
+    directory-name inference and documents exactly which spacecraft case owns each
+    ``loc_XXXXXX`` file.
+    """
+    run_dir = (output_root / "gridded" / field_model.lower() /
+               ("batch_%s" % cutoff_search.lower()))
+    ordered_keys = list(sorted(grouped))
+    epochs = sorted({epoch for epoch, _spacecraft in ordered_keys})
+    snapshot_by_epoch = {epoch: index for index, epoch in enumerate(epochs)}
+    next_local_by_epoch: Dict[datetime, int] = {epoch: 0 for epoch in epochs}
+    lookup: Dict[Tuple[datetime, str], GriddedBatchOutput] = {}
+    manifest_rows: List[Mapping[str, object]] = []
+
+    for global_location_id, key in enumerate(ordered_keys):
+        epoch, spacecraft = key
+        snapshot_index = snapshot_by_epoch[epoch]
+        local_location_id = next_local_by_epoch[epoch]
+        next_local_by_epoch[epoch] += 1
+        suffix = mode3d_snapshot_suffix(snapshot_index, epoch)
+        address = GriddedBatchOutput(
+            run_dir, global_location_id, local_location_id,
+            snapshot_index, suffix)
+        lookup[key] = address
+        manifest_rows.append({
+            "case_id": "%s_%s" % (spacecraft.lower(), timestamp_token(epoch)),
+            "epoch": format_utc(epoch),
+            "spacecraft": spacecraft,
+            "global_location_id": global_location_id,
+            "snapshot_index": snapshot_index,
+            "snapshot_local_location_id": local_location_id,
+            "snapshot_suffix": suffix,
+            "field_model": field_model,
+            "cutoff_search": cutoff_search,
+        })
+    return run_dir, lookup, manifest_rows
+
+
+def load_gridded_batch_manifest(
+        path: Path, run_dir: Path,
+        ) -> Dict[Tuple[datetime, str], GriddedBatchOutput]:
+    """Load and strictly validate the manifest used to address batched outputs.
+
+    Postprocessing intentionally consumes this persisted mapping instead of
+    reconstructing filenames from directory names. This is especially important for
+    ``--skip-run`` and for epochs containing two spacecraft, where location IDs are
+    local to a snapshot and reset at the next epoch.
+    """
+    if not path.exists():
+        raise FileNotFoundError("GRIDDED batch manifest is missing: %s" % path)
+    with path.open(newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    if not rows:
+        raise ValueError("GRIDDED batch manifest is empty: %s" % path)
+    lookup: Dict[Tuple[datetime, str], GriddedBatchOutput] = {}
+    seen_global = set()
+    seen_output = set()
+    for row_number, row in enumerate(rows, 2):
+        try:
+            epoch = parse_utc(row["epoch"])
+            spacecraft = row["spacecraft"].strip().upper()
+            global_location_id = int(row["global_location_id"])
+            snapshot_index = int(row["snapshot_index"])
+            local_location_id = int(row["snapshot_local_location_id"])
+            suffix = row["snapshot_suffix"].strip()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("invalid GRIDDED batch manifest row %d in %s: %s" %
+                             (row_number, path, exc))
+        if min(global_location_id, snapshot_index, local_location_id) < 0:
+            raise ValueError("negative ID in GRIDDED batch manifest row %d" % row_number)
+        expected_suffix = mode3d_snapshot_suffix(snapshot_index, epoch)
+        if suffix != expected_suffix:
+            raise ValueError(
+                "GRIDDED batch manifest row %d suffix mismatch: %s != %s" %
+                (row_number, suffix, expected_suffix))
+        key = (epoch, spacecraft)
+        output_key = (snapshot_index, local_location_id)
+        if key in lookup or global_location_id in seen_global or output_key in seen_output:
+            raise ValueError("duplicate case/location mapping in %s row %d" %
+                             (path, row_number))
+        seen_global.add(global_location_id)
+        seen_output.add(output_key)
+        lookup[key] = GriddedBatchOutput(
+            run_dir, global_location_id, local_location_id,
+            snapshot_index, suffix)
+    if seen_global != set(range(len(rows))):
+        raise ValueError("GRIDDED batch manifest global location IDs are not contiguous")
+    snapshots = sorted({address.snapshot_index for address in lookup.values()})
+    if snapshots != list(range(len(snapshots))):
+        raise ValueError("GRIDDED batch manifest snapshot IDs are not contiguous")
+    for snapshot_index in snapshots:
+        local_ids = sorted(
+            address.local_location_id for address in lookup.values()
+            if address.snapshot_index == snapshot_index)
+        if local_ids != list(range(len(local_ids))):
+            raise ValueError(
+                "GRIDDED batch manifest local IDs are not contiguous for snapshot %d" %
+                snapshot_index)
+    return lookup
+
+
+def write_gridded_batch_inputs(
+        args: argparse.Namespace, output_root: Path, field_model: str,
+        grouped: Mapping[Tuple[datetime, str], Sequence[ReferenceRow]],
+        spectra: Mapping[datetime, SpectrumEstimate], access_rigidities: Sequence[float],
+        orientation_records: Sequence[OrientationRecord],
+        driver_tilts: Sequence[Tuple[datetime, float]], driver_path: Path,
+        ) -> Tuple[Path, Dict[Tuple[datetime, str], GriddedBatchOutput], List[Mapping[str, object]], argparse.Namespace]:
+    """Render one self-contained GRIDDED deck for all selected C19 cases.
+
+    The batch is intentionally limited to one field model and one cutoff-search
+    configuration.  These cases have an identical mesh signature, rigidity grid and
+    numerical controls, allowing one ``amps_init_mesh()`` allocation to serve every
+    snapshot.  Magnetic-field values are still rebuilt once per unique epoch, as
+    required by the time-dependent Tsyganenko drivers.
+    """
+    run_dir, lookup, manifest_rows = gridded_batch_layout(
+        output_root, field_model, grouped, args.cutoff_search)
+    ordered_items = list(sorted(grouped.items()))
+    if not ordered_items:
+        raise ValueError("cannot create an empty GRIDDED C19 batch")
+    first_key, first_group = ordered_items[0]
+    first_reference = first_group[0]
+    rigidity_text = ",".join("%.12g" % value for value in access_rigidities)
+    batch_args = clone_namespace(
+        args,
+        case_spectral_index=spectra[first_key[0]].gamma,
+        case_rigidity_list_gv=rigidity_text,
+        case_temporal_mode="SNAPSHOT_LIST",
+        case_snapshot_list_file="C19_snapshot_epochs.txt",
+        case_run_id="C19_gridded_%s_batch_%s" % (
+            field_model.lower(), args.cutoff_search.lower()))
+
+    if not args.skip_run:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        render_case_input(batch_args, DEFAULT_TEMPLATE_MODE3D, run_dir,
+                          first_reference, "GRIDDED", field_model, driver_path)
+
+        # render_case_input writes the historical one-row trajectory first. Replace
+        # it with the stable global case order used by global_location_id.
+        representatives = [reference_group[0]
+                           for _key, reference_group in ordered_items]
+        write_trajectory(run_dir / "C19_trajectory.txt", representatives)
+        write_snapshot_list(run_dir / "C19_snapshot_epochs.txt",
+                            [key[0] for key, _group in ordered_items])
+        write_dict_rows(run_dir / "C19_batch_manifest.csv", manifest_rows)
+
+        if args.direction_coverage == "INSTRUMENT_APERTURES":
+            aperture_path = run_dir / "C19_directional_apertures.dat"
+            for index, ((epoch, spacecraft), reference_group) in enumerate(ordered_items):
+                _ids, orientation_by_head = required_case_orientations(
+                    reference_group, epoch, spacecraft, orientation_records)
+                address = lookup[(epoch, spacecraft)]
+                write_directional_aperture_file(
+                    aperture_path, args.detector_orientation_source,
+                    {key: value for key, value in orientation_by_head.items()
+                     if value is not None},
+                    args.direction_aperture_horizontal_half_angle_deg,
+                    args.direction_aperture_vertical_half_angle_deg,
+                    interpolate_tilt(driver_tilts, epoch),
+                    args.orientation_yaw_deg, args.orientation_pitch_deg,
+                    location_index=address.global_location_id,
+                    name_prefix="L%06d_" % address.global_location_id,
+                    append=(index != 0))
+
+    return run_dir, lookup, manifest_rows, batch_args
 
 
 
@@ -3220,6 +3929,14 @@ def self_test() -> int:
             raise AssertionError("GRIDLESS direct-access locator did not select its cube")
         if locate_directional_access(root, "GRIDDED") != access_path:
             raise AssertionError("GRIDDED direct-access locator did not select its cube")
+        synthetic_suffix = mode3d_snapshot_suffix(2, reference.utc)
+        batched_access_path = root / (
+            "cutoff_3d_dir_access_loc_000001%s.dat" % synthetic_suffix)
+        batched_access_path.write_text("\n".join(access_lines) + "\n")
+        if locate_directional_access(
+                root, "GRIDDED", 1, synthetic_suffix) != batched_access_path:
+            raise AssertionError(
+                "GRIDDED batched locator did not honor snapshot-local ID and suffix")
         gridless_access_cube = parse_directional_access(gridless_access_path)
         if gridless_access_cube.samples != access_cube.samples:
             raise AssertionError("GRIDLESS and GRIDDED direct-access schemas parsed differently")
@@ -3293,6 +4010,96 @@ def self_test() -> int:
         direct_map = DirectionMap(direction_map.path, direction_map.frame,
                                   direction_map.x_km, direction_map.y_km,
                                   direction_map.z_km, direct_cells)
+
+        # Aperture-availability regressions.  Fully allowed/forbidden synthetic
+        # cubes must remain physical states, not missing-data states, and both heads
+        # must be evaluated independently.
+        def uniform_access_cube(state: int) -> DirectionalAccessCube:
+            return DirectionalAccessCube(
+                access_cube.path, access_cube.frame, access_cube.x_km,
+                access_cube.y_km, access_cube.z_km,
+                {key: tuple(AccessSample(sample.energy_mev, sample.rigidity_gv, state)
+                            for sample in samples)
+                 for key, samples in access_cube.samples.items()})
+
+        for expected_value, state in ((1.0, 1), (0.0, 0)):
+            uniform_cube = uniform_access_cube(state)
+            uniform_folds = [
+                fold_aperture_direct_access(
+                    direct_map, uniform_cube,
+                    (direct_map.x_km, direct_map.y_km, direct_map.z_km),
+                    head, "P4", test_response, test_spectrum,
+                    25.0, 45.0, PRODUCTION_DIRECTION_MAPPING, 0.05, 0.05, 300.0)
+                for head in ("EAST", "WEST")
+            ]
+            for head, fold in zip(("EAST", "WEST"), uniform_folds):
+                if fold.value is None or not math.isclose(
+                        fold.value, expected_value, rel_tol=0.0, abs_tol=1.0e-12):
+                    raise AssertionError(
+                        "%s uniform access state %d was treated as missing data" %
+                        (head, state))
+                expected_status = "VALID" if state == 1 else "PHYSICAL_ZERO"
+                status, reasons = classify_aperture_fold(
+                    fold, 0.05, 0.05, 1, 0.95)
+                if status != expected_status or reasons:
+                    raise AssertionError(
+                        "%s uniform access classification is %s %s" %
+                        (head, status, reasons))
+
+        rigid_status, rigid_reasons = classify_aperture_fold(
+            direct_fold, 0.10, 0.0, 1, 0.95)
+        if "EXCESSIVE_RIGIDITY_GRID_UNCERTAINTY" not in rigid_reasons:
+            raise AssertionError("rigidity uncertainty was not exposed per aperture")
+
+        # Longitude-seam regression.  Arrival directions 179 and 181 degrees map to
+        # physical LOOK directions 359 and 1 degrees; both must remain inside a FILE
+        # aperture centered immediately on either side of the 0/360 seam.
+        wrap_map = DirectionMap(
+            "synthetic-wrap", "SM", 42157.0, 0.0, 0.0,
+            tuple(DirectionCell(lon, 0.0, 0.1, 5.0) for lon in (179.0, 181.0)))
+        for boresight_lon in (359.0, 1.0):
+            wrap_orientation = OrientationRecord(
+                reference.utc, reference.spacecraft, "WRAP", "SM",
+                spherical_direction(boresight_lon, 0.0), (0.0, 0.0, 1.0),
+                "SELF_TEST_WRAP")
+            _, _, wrap_cells, _ = aperture_geometry_summary(
+                wrap_map, (42157.0, 0.0, 0.0), "EAST", 3.0, 3.0,
+                PRODUCTION_DIRECTION_MAPPING, "FILE", wrap_orientation,
+                0.0, 0.0, 0.0)
+            if wrap_cells != 2:
+                raise AssertionError(
+                    "0/360 aperture wrap lost a direction at boresight %.1f" %
+                    boresight_lon)
+
+        # Angular-coverage convergence regression at the documented production and
+        # refinement resolutions.  This is geometry-only and therefore inexpensive:
+        # it verifies monotonic cell growth and convergence of the covered solid angle
+        # without launching trajectories.
+        resolution_coverage: List[Tuple[float, int, float]] = []
+        for resolution in (2.5, 1.25, 0.625):
+            n_lon = int(round(80.0 / resolution))
+            n_lat = int(round(120.0 / resolution))
+            coverage_cells = tuple(
+                DirectionCell(230.0 + i * resolution, -60.0 + j * resolution,
+                              0.1, 5.0)
+                for j in range(n_lat + 1) for i in range(n_lon + 1))
+            coverage_map = DirectionMap(
+                "synthetic-resolution-%g" % resolution, "SM",
+                42157.0, 0.0, 0.0, coverage_cells)
+            _, _, cell_count, solid_angle = aperture_geometry_summary(
+                coverage_map, (42157.0, 0.0, 0.0), "EAST", 25.0, 45.0,
+                PRODUCTION_DIRECTION_MAPPING, "SM_PROXY", None,
+                0.0, 0.0, 0.0)
+            resolution_coverage.append((resolution, cell_count, solid_angle))
+        if not (resolution_coverage[0][1] < resolution_coverage[1][1] <
+                resolution_coverage[2][1]):
+            raise AssertionError("aperture cells did not grow under angular refinement")
+        finest_solid_angle = resolution_coverage[-1][2]
+        if (finest_solid_angle <= 0.0 or
+                abs(resolution_coverage[-2][2] - finest_solid_angle) /
+                finest_solid_angle > 0.05):
+            raise AssertionError("aperture solid angle did not converge under refinement")
+
         direct_gridless_model, _ = evaluate_reference_row(
             reference, direct_map, manifest, "GRIDLESS", "T05", test_spectrum,
             test_response, gridless_access_cube, 0.0, PRODUCTION_DIRECTION_MAPPING,
@@ -3307,6 +4114,16 @@ def self_test() -> int:
             raise AssertionError("GRIDDED direct cube did not select DIRECT_A_E_OMEGA")
         if direct_gridless_model.modeled_east_west_ratio != direct_gridded_model.modeled_east_west_ratio:
             raise AssertionError("solver label changed the common direct detector fold")
+        invalid_direct_model, _ = evaluate_reference_row(
+            reference, direct_map, manifest, "GRIDDED", "T05", test_spectrum,
+            test_response, access_cube, 0.0, PRODUCTION_DIRECTION_MAPPING,
+            "DIRECT_ACCESS", "UNRESOLVED", 1.0, 0.0, 300.0)
+        if (invalid_direct_model.status == "VALID" or
+                invalid_direct_model.east_transmission is not None or
+                invalid_direct_model.east_transmission_min is None or
+                invalid_direct_model.east_transmission_max is None):
+            raise AssertionError(
+                "uncertain direct fold did not retain bounds while withholding scalar")
 
         # PASS/FAIL policy regression: a numerically complete run with failed
         # observational gates must remain a scientific FAIL even when a caller
@@ -3350,7 +4167,7 @@ def self_test() -> int:
         if test_fold.minimum is None or test_fold.maximum is None or test_fold.maximum < test_fold.minimum:
             raise AssertionError("unresolved aperture transmission bounds are invalid")
 
-        rows = [model, reversed_model]
+        rows = [model, reversed_model, invalid_direct_model]
         plots = make_comparison_plots(rows, root)
         aperture = make_aperture_plot(diagnostics, root / "C19_aperture_diagnostic.png")
         # DIRECT_ACCESS diagnostics intentionally have transmission bounds rather than
@@ -3383,6 +4200,12 @@ def self_test() -> int:
         write_dict_rows(csv_path, [asdict(model)])
         if not csv_path.exists():
             raise AssertionError("self-test did not write model CSV")
+        availability_path = root / "C19_aperture_availability.csv"
+        availability_rows = aperture_availability_rows([model])
+        write_dict_rows(availability_path, availability_rows)
+        if (len(availability_rows) != 2 or not availability_path.exists() or
+                {row["aperture"] for row in availability_rows} != {"EAST", "WEST"}):
+            raise AssertionError("per-head aperture availability report is incomplete")
     print("C19A runner self-test: PASS")
     return 0
 
@@ -3472,6 +4295,12 @@ Examples:
     parser.add_argument("--max-trace-distance-re", type=float, default=400.0)
     parser.add_argument("--max-unresolved-aperture-fraction", type=float, default=0.05,
                         help="maximum unresolved solid-angle fraction allowed separately in each detector-head aperture fold")
+    parser.add_argument("--min-aperture-cell-count", type=int, default=1,
+                        help=("minimum number of geometric sky cells required independently "
+                              "in each detector aperture"))
+    parser.add_argument("--min-aperture-solid-angle-coverage", type=float, default=0.95,
+                        help=("minimum contributing/geometric solid-angle coverage required "
+                              "independently in each detector aperture"))
     parser.add_argument(
         "--max-discrete-transition-fraction", type=float, default=0.05,
         help=("maximum detector-response-weighted fraction lying in sampled rigidity intervals whose resolved endpoint "
@@ -3509,6 +4338,12 @@ Examples:
                         default="LINEAR")
     parser.add_argument("--mode3d-mesh-exponent", type=float, default=1.0)
     parser.add_argument("--mode3d-parallel-field-init", action="store_true")
+    parser.add_argument(
+        "--gridded-batch", choices=("AUTO", "OFF"), default="AUTO",
+        help=("GRIDDED execution strategy: AUTO (default) runs one Mode3D process "
+              "per field model/search configuration and reuses its allocated mesh "
+              "for all selected snapshot/location cases; OFF retains one AMPS "
+              "process per spacecraft epoch for regression comparison"))
     parser.add_argument("-np", type=int, default=4)
     parser.add_argument("-nt", type=int, default=16)
     parser.add_argument("--mpirun", default="mpirun")
@@ -3552,6 +4387,10 @@ Examples:
         parser.error("trace time and distance limits must be positive")
     if not (0.0 <= args.max_unresolved_aperture_fraction <= 1.0):
         parser.error("--max-unresolved-aperture-fraction must be in [0,1]")
+    if args.min_aperture_cell_count < 1:
+        parser.error("--min-aperture-cell-count must be >= 1")
+    if not (0.0 <= args.min_aperture_solid_angle_coverage <= 1.0):
+        parser.error("--min-aperture-solid-angle-coverage must be in [0,1]")
     if not (0.0 <= args.max_discrete_transition_fraction <= 1.0):
         parser.error("--max-discrete-transition-fraction must be in [0,1]")
     if args.frozen_field_warning_seconds < 0.0:
@@ -3775,15 +4614,135 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     print("C19A selected %d reference rows at %d spacecraft epochs" %
           (len(reference), len(grouped)))
-    print("C19A launches: %d" % (len(grouped) * len(solvers) * len(args.model_list)))
+    launch_count = 0
+    for selected_solver in solvers:
+        if selected_solver == "GRIDDED" and args.gridded_batch == "AUTO":
+            launch_count += len(args.model_list)
+        else:
+            launch_count += len(grouped) * len(args.model_list)
+    print("C19A launches: %d%s" % (
+        launch_count,
+        " (GRIDDED mesh-reuse batching enabled)"
+        if "GRIDDED" in solvers and args.gridded_batch == "AUTO" else ""))
 
     for solver in solvers:
         template = DEFAULT_TEMPLATE_GRIDLESS if solver == "GRIDLESS" else DEFAULT_TEMPLATE_MODE3D
         for field_model in args.model_list:
+            # GRIDDED batching is intentionally scoped to one field model and one
+            # cutoff-search configuration. Every case in this group has the same
+            # domain, AMR resolution, registered data layout, rigidity grid and
+            # numerical controls. One AMPS process can therefore allocate the mesh
+            # once, refill B/E for each unique epoch, and evaluate all spacecraft at
+            # that epoch. GRIDLESS remains case-per-process because it allocates no
+            # persistent field mesh and already evaluates the analytic field directly.
+            batch_enabled = (solver == "GRIDDED" and args.gridded_batch == "AUTO")
+            batch_lookup: Dict[Tuple[datetime, str], GriddedBatchOutput] = {}
+            batch_run_failed = False
+            batch_manifest_error: Optional[str] = None
+            batch_command_record: Optional[Dict[str, object]] = None
+            batch_case_stats: List[Mapping[str, object]] = []
+
+            if batch_enabled:
+                batch_dir, batch_lookup, batch_manifest_rows, batch_args = \
+                    write_gridded_batch_inputs(
+                        args, output_root, field_model, grouped, spectra,
+                        access_rigidities, orientation_records, driver_tilts,
+                        driver_path)
+                try:
+                    persisted_lookup = load_gridded_batch_manifest(
+                        batch_dir / "C19_batch_manifest.csv", batch_dir)
+                    if set(persisted_lookup) != set(grouped):
+                        missing = sorted(set(grouped).difference(persisted_lookup))
+                        extra = sorted(set(persisted_lookup).difference(grouped))
+                        raise ValueError(
+                            "GRIDDED batch manifest/reference mismatch; missing=%s extra=%s" %
+                            (missing, extra))
+                    # The persisted manifest, not an inferred directory convention,
+                    # is authoritative for all output lookup below.
+                    batch_lookup = persisted_lookup
+                except Exception as exc:
+                    if not args.skip_run:
+                        raise
+                    batch_manifest_error = str(exc)
+                batch_command = command_for(batch_args, amps, solver)
+                batch_detector_ids = sorted({
+                    detector
+                    for reference_group in grouped.values()
+                    for reference_row in reference_group
+                    for detector in (reference_row.east_detector_id.upper(),
+                                     reference_row.west_detector_id.upper())
+                })
+                batch_command_record = {
+                    "solver": solver,
+                    "field_model": field_model,
+                    "spacecraft": "MULTIPLE",
+                    "utc": "MULTIPLE",
+                    "cwd": str(batch_dir),
+                    "command": batch_command,
+                    "execution_mode": "MODE3D_SNAPSHOT_LIST_BATCH",
+                    "mesh_initializations_expected": 1,
+                    "snapshot_count": len({key[0] for key in grouped}),
+                    "case_count": len(grouped),
+                    "batch_manifest": str(batch_dir / "C19_batch_manifest.csv"),
+                    "batch_cases": batch_manifest_rows,
+                    "spectrum_source": args.spectrum_source,
+                    "spectrum_gamma": "PER_CASE_POSTPROCESSOR",
+                    "response_fold_mode": args.response_fold,
+                    "cutoff_search_algorithm": args.cutoff_search,
+                    "adaptive_access": adaptive_access_active,
+                    "adaptive_access_seed_points": len(access_energies),
+                    "adaptive_access_max_depth": args.adaptive_access_max_depth,
+                    "adaptive_access_guard_depth": args.adaptive_access_guard_depth,
+                    "direction_coverage": args.direction_coverage,
+                    "direction_aperture_horizontal_half_angle_deg":
+                        args.direction_aperture_horizontal_half_angle_deg,
+                    "direction_aperture_vertical_half_angle_deg":
+                        args.direction_aperture_vertical_half_angle_deg,
+                    "n_direct_access_rigidities": len(access_rigidities),
+                    "detector_orientation_source": args.detector_orientation_source,
+                    "detector_ids": batch_detector_ids,
+                    "detector_orientation_file":
+                        (str(orientation_path) if orientation_path else None),
+                    "orientation_yaw_deg": args.orientation_yaw_deg,
+                    "orientation_pitch_deg": args.orientation_pitch_deg,
+                    "anisotropy_model": production_anisotropy.model,
+                    "anisotropy_amplitude": production_anisotropy.amplitude,
+                    "anisotropy_axis_lon_deg": production_anisotropy.axis_lon_deg,
+                    "anisotropy_axis_lat_deg": production_anisotropy.axis_lat_deg,
+                    "case_output_stats": batch_case_stats,
+                }
+                commands.append(batch_command_record)
+                if args.dry_run:
+                    print("[GRIDDED %s BATCH: %d cases, %d snapshots, one mesh]\n  %s" %
+                          (field_model, len(grouped),
+                           int(batch_command_record["snapshot_count"]),
+                           " ".join(shlex.quote(value) for value in batch_command)))
+                elif not args.skip_run:
+                    return_code = run_process(
+                        batch_command, batch_dir, batch_dir / "C19_amps.log")
+                    if return_code != 0:
+                        batch_run_failed = True
+                        run_failures.append(dict(
+                            batch_command_record, return_code=return_code))
+                elif batch_manifest_error is not None:
+                    batch_run_failed = True
+                    run_failures.append(dict(
+                        batch_command_record, return_code=None,
+                        analysis_error=("--skip-run batch manifest validation failed: %s" %
+                                        batch_manifest_error)))
+
             for (epoch, spacecraft), reference_group in grouped.items():
                 representative = reference_group[0]
-                run_dir = (output_root / solver.lower() / field_model.lower()
-                           / spacecraft.lower() / timestamp_token(epoch))
+                if batch_enabled:
+                    batch_address = batch_lookup[(epoch, spacecraft)]
+                    run_dir = batch_address.run_dir
+                    output_location_id = batch_address.local_location_id
+                    output_suffix = batch_address.snapshot_suffix
+                else:
+                    run_dir = (output_root / solver.lower() / field_model.lower()
+                               / spacecraft.lower() / timestamp_token(epoch))
+                    output_location_id = 0
+                    output_suffix = ""
                 spectrum = spectra[epoch]
                 # Current single-workflow contract: both GRIDDED and GRIDLESS produce
                 # the same direct three-state A(E,Omega) science product.  AUTO therefore
@@ -3794,21 +4753,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 case_args = clone_namespace(
                     args, case_spectral_index=spectrum.gamma,
                     case_rigidity_list_gv=rigidity_text)
-                # Resolve the actual instrument heads that supplied the selected
-                # observational streams. Compatibility labels are used only when an
-                # old attitude file lacks telemetry-head IDs.
-                required_detector_streams = {}
-                for ref in reference_group:
-                    required_detector_streams[ref.east_detector_id.upper()] = "EAST"
-                    required_detector_streams[ref.west_detector_id.upper()] = "WEST"
-                required_detector_ids = sorted(required_detector_streams)
-                orientation_by_head = {
-                    detector: orientation_for_stream(
-                        orientation_records, epoch, spacecraft, detector,
-                        required_detector_streams[detector])
-                    for detector in required_detector_ids
-                }
-                if not args.skip_run:
+                required_detector_ids, orientation_by_head = required_case_orientations(
+                    reference_group, epoch, spacecraft, orientation_records)
+                if not batch_enabled and not args.skip_run:
                     run_dir.mkdir(parents=True, exist_ok=True)
                     if args.direction_coverage == "INSTRUMENT_APERTURES":
                         write_directional_aperture_file(
@@ -3821,7 +4768,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             args.orientation_yaw_deg, args.orientation_pitch_deg)
                     render_case_input(case_args, template, run_dir, representative,
                                       solver, field_model, driver_path)
-                command = command_for(case_args, amps, solver)
+                command = (batch_command if batch_enabled
+                           else command_for(case_args, amps, solver))
                 command_record = {
                     "solver": solver, "field_model": field_model,
                     "spacecraft": spacecraft, "utc": format_utc(epoch),
@@ -3854,21 +4802,35 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "anisotropy_amplitude": production_anisotropy.amplitude,
                     "anisotropy_axis_lon_deg": production_anisotropy.axis_lon_deg,
                     "anisotropy_axis_lat_deg": production_anisotropy.axis_lat_deg,
+                    "execution_mode": ("MODE3D_SNAPSHOT_LIST_BATCH_CASE"
+                                       if batch_enabled else "INDEPENDENT_CASE"),
+                    "output_location_id": output_location_id,
+                    "output_suffix": output_suffix,
                 }
-                commands.append(command_record)
+                if batch_enabled:
+                    command_record["global_location_id"] = \
+                        batch_lookup[(epoch, spacecraft)].global_location_id
+                    command_record["batch_manifest"] = str(
+                        run_dir / "C19_batch_manifest.csv")
+                else:
+                    commands.append(command_record)
                 if args.dry_run:
-                    print("[%s %s %s %s]\n  %s" %
-                          (solver, field_model, spacecraft, format_utc(epoch),
-                           " ".join(shlex.quote(value) for value in command)))
+                    if not batch_enabled:
+                        print("[%s %s %s %s]\n  %s" %
+                              (solver, field_model, spacecraft, format_utc(epoch),
+                               " ".join(shlex.quote(value) for value in command)))
                     continue
-                if not args.skip_run:
+                if batch_run_failed:
+                    continue
+                if not batch_enabled and not args.skip_run:
                     return_code = run_process(command, run_dir, run_dir / "C19_amps.log")
                     if return_code != 0:
                         run_failures.append(dict(command_record, return_code=return_code))
                         continue
                 try:
                     access_cube: Optional[DirectionalAccessCube] = None
-                    direct_path = locate_directional_access(run_dir, solver)
+                    direct_path = locate_directional_access(
+                        run_dir, solver, output_location_id, output_suffix)
                     direct_requested = (args.response_fold in ("AUTO", "DIRECT"))
                     if direct_requested:
                         if direct_path is None:
@@ -3883,6 +4845,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             access_cube, access_rigidities,
                             adaptive_access_active, direct_path)
                         command_record.update(directional_access_sampling_stats(access_cube))
+                        if batch_enabled:
+                            batch_case_stats.append({
+                                "utc": format_utc(epoch),
+                                "spacecraft": spacecraft,
+                                "output_location_id": output_location_id,
+                                "output_suffix": output_suffix,
+                                **directional_access_sampling_stats(access_cube),
+                            })
                         if adaptive_access_active:
                             dense_rows = len(access_cube.samples) * dense_reference_energy_count
                             actual_rows = int(command_record["direct_access_sample_rows"])
@@ -3908,7 +4878,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         # detector fold.
                         direction_map = direction_map_from_access_cube(access_cube)
                     else:
-                        map_path = locate_directional_map(run_dir, solver)
+                        map_path = locate_directional_map(
+                            run_dir, solver, output_location_id, output_suffix)
                         direction_map = parse_directional_map(map_path)
                     tilt = interpolate_tilt(driver_tilts, epoch)
                     spectrum = spectra[epoch]
@@ -3942,7 +4913,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             args.frozen_field_warning_seconds,
                             args.detector_orientation_source, orientation_by_head,
                             args.orientation_yaw_deg, args.orientation_pitch_deg,
-                            production_anisotropy)
+                            production_anisotropy, args.min_aperture_cell_count,
+                            args.min_aperture_solid_angle_coverage)
                         alternate_model, _ = evaluate_reference_row(
                             reference_row, direction_map, manifest, solver,
                             field_model, spectrum, detector_response, access_cube, tilt,
@@ -3953,7 +4925,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             args.frozen_field_warning_seconds,
                             args.detector_orientation_source, orientation_by_head,
                             args.orientation_yaw_deg, args.orientation_pitch_deg,
-                            production_anisotropy)
+                            production_anisotropy, args.min_aperture_cell_count,
+                            args.min_aperture_solid_angle_coverage)
                         model_rows.append(model)
 
                         # Store one row per convention so the diagnostic can be
@@ -4041,6 +5014,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for index, energy in enumerate(access_energies)])
     write_dict_rows(output_root / "C19_model.csv", [asdict(row) for row in model_rows])
     write_dict_rows(output_root / "C19_comparison.csv", [asdict(row) for row in model_rows])
+    availability = aperture_availability_rows(model_rows)
+    write_dict_rows(output_root / "C19_aperture_availability.csv", availability)
+    availability_counts: Dict[Tuple[str, str], int] = {}
+    for item in availability:
+        key = (str(item["aperture"]), str(item["aperture_status"]))
+        availability_counts[key] = availability_counts.get(key, 0) + 1
     write_dict_rows(output_root / "C19_aperture_samples.csv", aperture_diagnostics)
     write_dict_rows(output_root / "C19_direction_sense_diagnostic.csv",
                     direction_sense_diagnostics)
@@ -4116,6 +5095,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "access_rigidity_min_gv": access_rigidities[0],
         "access_rigidity_max_gv": access_rigidities[-1],
         "max_discrete_transition_fraction": args.max_discrete_transition_fraction,
+        "min_aperture_cell_count": args.min_aperture_cell_count,
+        "min_aperture_solid_angle_coverage": args.min_aperture_solid_angle_coverage,
         # Detector-orientation/anisotropy provenance. Detector orientation now affects
         # both the VECTOR_APERTURES work selection and the synthetic detector fold;
         # upstream anisotropy affects only the fold. Keeping both in the aggregate
@@ -4147,6 +5128,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "observable": "log10(background-subtracted physical EAST/WEST flux ratio)",
         "n_reference_rows": len(reference),
         "n_model_rows": len(model_rows),
+        "n_aperture_availability_rows": len(availability),
+        "aperture_availability_status_counts": {
+            "%s:%s" % key: count for key, count in sorted(availability_counts.items())
+        },
+        "aperture_availability_file": str(
+            output_root / "C19_aperture_availability.csv"),
         "n_run_failures": len(run_failures),
         "run_failures": run_failures,
         "metrics": [asdict(row) for row in metrics],
@@ -4190,6 +5177,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "model rows: %d" % len(model_rows),
         "run failures: %d" % len(run_failures),
     ]
+    for (head, aperture_status), count in sorted(availability_counts.items()):
+        summary_lines.append(
+            "aperture availability %s %s: %d" %
+            (head, aperture_status, count))
     for metric in metrics:
         summary_lines.append(
             "%s %s %s %s: finite=%.3f saturated=%.3f sign-evaluable=%.3f "

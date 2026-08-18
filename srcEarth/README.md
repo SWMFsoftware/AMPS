@@ -352,7 +352,9 @@ basis. The heads can point anywhere and are not assumed to be east/west or antip
 The selector retains a subset of the same regular SM lon/lat cells, so retained
 trajectories are exactly the ones a `FULL_SPHERE` run would have calculated.
 
-The C19 runner creates an epoch-specific `C19_directional_apertures.dat`. When the
+For independent GRIDLESS cases the C19 runner creates an epoch-specific
+`C19_directional_apertures.dat`. The default GRIDDED batch creates one combined file
+whose records are qualified with `LOCATION=<global-trajectory-row>`. When the
 observational reference records telemetry-head provenance, the runner maps each
 numerator/denominator stream to that actual head ID and uses its epoch-specific attitude
 vector; no direction is inferred from a head name. For the current P4/P5 case, the
@@ -408,7 +410,7 @@ DIRMAP_APERTURE_FILE instrument_apertures.dat
 with file rows
 
 ```text
-name frame bx by bz upx upy upz horizontalHalfDeg verticalHalfDeg
+name frame bx by bz upx upy upz horizontalHalfDeg verticalHalfDeg [LOCATION=<index>]
 ```
 
 or repeatable inline definitions such as
@@ -427,6 +429,11 @@ The equivalent command line is:
 with repeatable `-cutoff-dirmap-aperture "..."` available for inline definitions.
 Set `DIRMAP_COVERAGE FULL_SPHERE` (or the corresponding CLI value) to recover the
 complete sky.
+
+The optional location qualifier is backward compatible: an unqualified aperture
+applies to every output location. In a Mode3D `SNAPSHOT_LIST` batch, qualified rows
+belonging to inactive epochs are removed and active global row numbers are remapped to
+the snapshot-local location IDs used by the output files.
 
 A run with four MPI ranks and 16 threads per rank can expose up to 64 concurrent
 trajectory workers even for one GOES location. Actual speedup depends on trajectory-
@@ -451,6 +458,8 @@ The validated production behavior includes:
   per-epoch detector look vectors and a conservative P5-sized pruning envelope, with
   `FULL_SPHERE` retained as an explicit diagnostic alternative;
 - default Mode3D mesh resolution `0.025 Re` near Earth and `1.0 Re` at the boundary;
+- default GRIDDED `SNAPSHOT_LIST` batching: one Mode3D process and mesh allocation per
+  field model/search configuration, with B/E rebuilt only for each unique epoch;
 - explicit detector attitude (`SM_PROXY` or per-epoch FILE) and optional bounded upstream
   anisotropy in the synthetic-observation fold;
 - staged execution/trajectory/fold/observational validity; and
@@ -470,14 +479,30 @@ produce `A(E,Omega)`.  Both solvers call the shared `util/AdaptiveDirectAccess.h
 algorithm: all seeds are evaluated, guard midpoints probe hidden structure, and only
 visible state-changing intervals are recursively refined to the configured maximum
 depth.  Realized internal nodes may therefore differ by direction, but the algorithm,
-seed/support contract, and post-processing are identical.  Standalone GRIDLESS is mesh-free: the early `-mode gridless` dispatch
+seed/support contract, and post-processing are identical.
+
+GRIDDED batching uses the existing Mode3D multi-snapshot lifecycle but adds explicit
+irregular epochs and epoch-scoped locations. `amps_init_mesh()`, `amps_init()`, and
+static sphere setup remain outside the snapshot loop. For each sorted unique epoch,
+Mode3D interpolates the driver, filters the multi-row trajectory to matching samples,
+remaps location-qualified apertures, refills owner-block B/E, assembles the compact
+global arrays, and runs the cutoff product. Compact B/E/presence vector storage is
+resized only if the invariant mesh dimensions change and is otherwise cleared/reused
+in place; shared scratch `Temp_ID` values are deliberately reassigned each snapshot.
+This filtering prevents the ordinary
+TIME_SERIES `N_snapshot x N_location` Cartesian product. `--gridded-batch OFF` retains
+the historical one-process-per-case layout for regression comparison, and other tests
+are unaffected unless they explicitly request `TEMPORAL_MODE SNAPSHOT_LIST`.
+
+Standalone GRIDLESS is mesh-free: the early `-mode gridless` dispatch
 returns before `amps_init_mesh()` and evaluates the background field directly along
 trajectories.  GRIDLESS cutoff/direct-access tasks now use the same MPI + intra-rank
 THREADS/OPENMP/SERIAL backend controls as Mode3D (`GRIDLESS_PARALLEL`,
 `GRIDLESS_THREADS`); only the rank/main thread calls MPI.  Multi-epoch TRAJECTORY inputs
 conservatively fall back to serial intra-rank direct-field evaluation because Geopack
-snapshot state is process-global. GRIDLESS writes `cutoff_gridless_dir_access_point_####.dat`; Mode3D
-writes `cutoff_3d_dir_access_loc_######.dat`, and C19 folds either schema through the
+snapshot state is process-global. GRIDLESS writes `cutoff_gridless_dir_access_point_####.dat`; batched Mode3D
+writes `cutoff_3d_dir_access_loc_######<snapshot-suffix>.dat`, and C19 resolves the
+suffix/local-ID mapping through `C19_batch_manifest.csv` before folding either schema through the
 same postprocessor. Standard outputs
 include `C19_comparison_*`, `C19_scatter_*`, `C19_parity_*`, `C19_residual_*`,
 `C19_transmission_*`, and `C19_aperture_diagnostic.png` for every completed normal run.
@@ -531,7 +556,10 @@ The following comparisons should be run before removing any legacy reference bra
 5. **Standalone DIPOLE:** compare interpolated B and cutoff maps with the former replicated-block implementation.
 6. **SWMF snapshot:** compare compact B and derived E against direct owner-cell values.
 7. **Time series:** verify that `Temp_ID` is reset and arrays are rebuilt for every field snapshot.
-8. **Memory scaling:** confirm that increasing MPI rank count does not allocate additional global AMPS blocks and that per-rank growth is limited to compact B/E/presence arrays.
+8. **Snapshot-list batching:** prove mesh initialization occurs once, each trajectory
+   row matches exactly one snapshot, shared-epoch spacecraft use one field fill, and
+   batched products equal independent-case products.
+9. **Memory scaling:** confirm that increasing MPI rank count does not allocate additional global AMPS blocks and that per-rank growth is limited to compact B/E/presence arrays.
 
 ## Mode3D DIPOLE magnetic-field interpolation error statistics
 
