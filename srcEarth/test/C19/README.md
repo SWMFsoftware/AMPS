@@ -429,6 +429,16 @@ as `LEGACY_DIRECT_DIAGNOSTIC` and writes both results to
 acceptance. Its purpose is to make an east/west reversal obvious and to preserve a
 direct comparison with older C19 output without rerunning AMPS.
 
+In `C19_aperture_diagnostic.png`, **EAST** and **WEST** are the two physical EPEAD
+detector streams used as the numerator and denominator of the observed ratio. They are
+not the eastern and western halves of the plotted SM sky, and the colors do not classify
+a direction as eastward or westward. Each marker is an AMPS particle-arrival direction
+that falls inside the corresponding detector head after the arrival-to-look reversal
+above. Circles denote cells selected by the physical EAST head and squares denote cells
+selected by the physical WEST head. With the default `SM_PROXY` geometry the two
+clusters commonly appear near opposite longitudes; a FILE attitude can place them
+elsewhere and they need not be exactly antipodal.
+
 
 ### 8.9 Single current workflow
 
@@ -517,14 +527,19 @@ For each P4/P5 physical detector direction, `run_C19.py`:
 3. converts the AMPS incoming arrival/velocity direction to the opposite EPEAD telescope look direction;
 4. selects regular-grid cells inside the detector's elliptical aperture;
 5. reads the three-state access value at each explicitly requested detector-response rigidity;
-6. folds `A(E,Ω)` with the event spectrum and detector response, propagating unresolved and finite-rigidity-grid uncertainty; and
-7. calculates East and West transmission and their E/W ratio only when the response bounds satisfy the configured validity criteria.
+6. folds `A(E,Ω)` with the event spectrum and detector response, propagating unresolved and finite-rigidity-grid uncertainty;
+7. calculates East and West transmission and their E/W ratio only when the response bounds satisfy the configured validity criteria; and
+8. independently reduces each access curve to an effective directional cutoff and
+   calculates a clearly labelled hard-cutoff E/W diagnostic using the same spectrum,
+   response, aperture, attitude, and anisotropy assumptions.
 
 `DIRECT_ACCESS` is independent of the scalar `CUTOFF_SAMPLING` cutoff result even though
 the common input syntax retains `CUTOFF_SAMPLING VERTICAL`. In production mode no scalar
 cutoff trajectory and no directional cutoff-map/PENUMBRA_SCAN task is scheduled. The
-runner constructs the geometry-only directional map needed for aperture folding directly
-from the `A(E,Ω)` cube. By default only regular-grid cells needed by the requested EPEAD
+runner constructs the directional geometry needed for aperture folding directly from
+the `A(E,Ω)` cube. It also derives a diagnostic finite-support equivalent cutoff from
+the already calculated access samples; this does not launch a PENUMBRA_SCAN or alter
+the direct observable. By default only regular-grid cells needed by the requested EPEAD
 apertures are scheduled; `FULL_SPHERE` remains available as an explicit reference coverage.
 The retained cells have exactly the same SM lon/lat coordinates as the corresponding cells
 in a full-sphere run. `PENUMBRA_SCAN` remains an explicit diagnostic mode and writes the
@@ -817,7 +832,34 @@ Each row is one `(lon,lat,rigidity)` trajectory and contains `rigidity_GV`, corr
 2 = UNRESOLVED
 ```
 
-The GRIDDED and GRIDLESS direct-access files are required to carry the same selected sky-cell set and the same response-support endpoints. In dense mode every direction has the same ordered energy/rigidity grid. In adaptive `DIRECT_ACCESS` every direction contains the same mandatory seed rigidities but may contain a different set of refinement nodes; this is intentional and is validated explicitly by the runner. Rigidity is the authoritative grid identifier because it is the value passed to the trajectory solver; the output energy is reconstructed by AMPS from rigidity and the configured particle mass and is retained for detector-response integration. This avoids rejecting a valid cube because Python and C++ physical constants do not round-trip an energy value identically. In `PENUMBRA_SCAN` mode the runner additionally checks the cube against the companion directional map. In `DIRECT_ACCESS` mode no cutoff map exists by design; the runner constructs a geometry-only map directly from the cube's frame, observation position, and `(lon,lat)` cells. Missing endpoints, missing adaptive seed nodes, duplicate/non-increasing nodes, or truncated direct-access output fail post-processing rather than falling back to a scalar-cutoff proxy.
+The GRIDDED and GRIDLESS direct-access files are required to carry the same selected sky-cell set and the same response-support endpoints. In dense mode every direction has the same ordered energy/rigidity grid. In adaptive `DIRECT_ACCESS` every direction contains the same mandatory seed rigidities but may contain a different set of refinement nodes; this is intentional and is validated explicitly by the runner. Rigidity is the authoritative grid identifier because it is the value passed to the trajectory solver; the output energy is reconstructed by AMPS from rigidity and the configured particle mass and is retained for detector-response integration. This avoids rejecting a valid cube because Python and C++ physical constants do not round-trip an energy value identically. In `PENUMBRA_SCAN` mode the runner additionally checks the cube against the companion directional map.
+
+In `DIRECT_ACCESS` mode no solver-produced cutoff map exists by design. The runner
+constructs a post-processing diagnostic map from the cube's frame, observation position,
+and `(lon,lat)` cells. For each direction it evaluates the blocked-area equivalent over
+the finite detector-response rigidity support,
+
+```text
+Rc_eff = R_min + integral[R_min,R_max] (1 - A(R)) dR .
+```
+
+Resolved constant intervals contribute their full forbidden width or zero allowed
+width. A resolved transition bracket or an interval touching `UNRESOLVED` contributes
+`[0,dR]` to `Rc_lower/Rc_upper` and half of that width to the displayed midpoint. An
+allowed lowest sample is marked lower-censored and a forbidden highest sample is marked
+upper-censored. This reduction is written as
+`DIRECT_ACCESS_EQUIVALENT_BLOCKED_AREA`; it is valid for the configured response support
+and must not be interpreted as an unconstrained full-rigidity cutoff scan. Missing
+endpoints, missing adaptive seed nodes, duplicate/non-increasing nodes, or truncated
+direct-access output still fail post-processing.
+
+The cutoff-based E/W diagnostic replaces each directional access curve by a hard step
+at `Rc_eff`, then folds that step through the same piecewise detector response and the
+same epoch spectrum as the direct calculation. `Rc_upper` produces its minimum signal
+and `Rc_lower` its maximum signal. In `PENUMBRA_SCAN` mode the reduction uses the AMPS
+`Rc_lower/Rc_effective/Rc_upper` map directly. This diagnostic is useful when a broad
+direct interval has finite nonzero bounds but no accepted midpoint; it never contributes
+to C19 validity or observational acceptance.
 
 Dense direct access flattens `(location, sky-cell, rigidity)` work so independent trajectories are distributed across MPI ranks and intra-rank workers. Adaptive direct access deliberately changes the top-level scheduling unit to **one sky direction**: that worker first evaluates the mandatory seeds and then makes local midpoint-refinement decisions for that direction. Different directions remain independent and are distributed across MPI ranks/threads. This dependency-aware task unit avoids global synchronization after every refinement level while retaining thousands of parallel direction tasks in a normal C19 aperture. `DIRECT_ACCESS` is the default science product because the detector fold consumes the access samples themselves; `PENUMBRA_SCAN` is retained when full cutoff topology is explicitly required. The two solver files intentionally retain the same public columns and three-state semantics so `run_C19.py` uses one parser and one folding implementation.
 
@@ -1346,10 +1388,11 @@ Normal machine-readable products include:
 | per-batch `C19_batch_manifest.csv` | Global trajectory row, snapshot index, snapshot-local output location, suffix, spacecraft, epoch, field model, and search mode |
 | `C19_reference_used.csv` | Selected observational rows plus actual detector IDs, exact flux-variable/correction-state, and ephemeris provenance |
 | `C19_spectrum_used.csv` | Epoch-dependent gamma/J0/E0 and measured/interpolated/file source |
+| `C19_directional_cutoff.csv` | Per simulated spacecraft epoch and sky cell: cutoff source, lower/effective/upper Rc, bound width, support censoring, and access-topology counts |
 | `C19_detector_response_used.csv` | Exact response intervals/components used by direct-response |
 | `C19_access_energy_grid.csv` | Common direct-access seed grid (`ADAPTIVE_SEED`) or dense requested grid (`DENSE_REQUESTED`) supplied identically to GRIDDED and GRIDLESS |
 | `cutoff_3d_dir_access_loc_<local><snapshot-suffix>.dat` / per-run `cutoff_gridless_dir_access_point_0000.dat` | Solver-native direct three-state `A(E,Ω)` cubes consumed by the common detector fold |
-| `C19_model.csv` / `C19_comparison.csv` | E/W results, transmission bounds, spectrum source, response model, `DIRECT_A_E_OMEGA` access-product label, unresolved fractions, maximum trace time, search algorithm/policy, and map provenance |
+| `C19_model.csv` / `C19_comparison.csv` | Production direct E/W results and bounds plus the independently labelled cutoff-rigidity proxy ratio/transmissions, spectrum source, response model, unresolved fractions, maximum trace time, search algorithm/policy, and map provenance |
 | `C19_aperture_availability.csv` | One row per epoch/head with independent status, every availability-stage count, solid-angle coverage, bounds, scalar, and all aggregate reasons |
 | `C19_metrics.csv` | Per-spacecraft and aggregate finite/saturated fractions, sign agreement, bias, MAE, RMSE, correlation, and provisional gate |
 | `C19_direction_sense_diagnostic.csv` | Production arrival→look convention and legacy opposite-convention diagnostic |
@@ -1362,12 +1405,14 @@ flag:
 
 | Plot | Contents |
 |---|---|
-| `C19_comparison_<solver>_<field>.png` | Observed and accepted modeled log10(E/W), rigorous finite model intervals, censored bounds, and a categorical invalid-status strip that is not positioned on the numerical y-axis |
+| `C19_comparison_<solver>_<field>.png` | Observed and accepted direct log10(E/W), rigorous direct intervals/censoring, categorical invalid status, and the separate cutoff-rigidity diagnostic with its Rc-bound interval |
 | `C19_scatter_<solver>_<field>.png` | Data-ranged observed-versus-modeled scatter |
 | `C19_parity_<solver>_<field>.png` | Common-range parity view with the 1:1 line |
 | `C19_residual_<solver>_<field>.png` | Model-minus-observation residual versus time |
-| `C19_transmission_<solver>_<field>.png` | EAST/WEST accepted scalars plus unconditional Tmin–Tmax bands and independent per-head status markers; an empty panel is labeled explicitly |
+| `C19_transmission_<solver>_<field>.png` | EAST/WEST accepted direct scalars, unconditional direct Tmin–Tmax bands, per-head status markers, and separately styled hard-cutoff proxy transmissions |
 | `C19_aperture_diagnostic.png` | Representative aperture-cell cutoff/access diagnostic; direct-access cells are colored by the midpoint of their explicit transmission bounds, while the CSV retains both bounds |
+| `C19_directional_cutoff_<solver>_<field>_<spacecraft>_<UTC>.png` | Effective directional cutoff and retained Rc bound width for every simulated spacecraft epoch; outlined cells are censored at the sampled support |
+| `C19_boundary_spectrum.png` | Assumed incident boundary proton spectrum for every selected epoch over the P4/P5 response support |
 
 Exact zero transmission remains a dedicated saturation state rather than an arbitrary
 finite substitute. Unresolved cells are carried through lower/upper bounds and the
@@ -1543,6 +1588,21 @@ trace-budget experiment and the physical validity of a frozen T05 epoch before i
 the guardrail.
 
 ### EAST or WEST is absent from the transmission plot
+
+`C19_aperture_diagnostic.png` can contain nonzero colors even when the comparison has
+no accepted direct E/W scalar. For DIRECT_ACCESS, each color is only
+`0.5*(transmission_min + transmission_max)` for that sky cell. It visualizes the center
+of a rigorously retained interval; it is not an accepted transmission measurement. The
+broad-aperture direct scalar is emitted only when both the detector-weighted unresolved
+fraction and the detector-weighted resolved-transition-bracket fraction are below their
+configured tolerances for **both** heads. Because a ratio of two unaccepted midpoints
+would hide potentially large and asymmetric uncertainty, the comparison correctly
+leaves the production direct curve absent and plots its ratio bounds/censoring instead.
+
+The dashed `AMPS cutoff-rigidity proxy (diagnostic)` curve answers a different question:
+what E/W would result after deliberately collapsing every directional access curve to a
+hard cutoff? It can remain finite in the same panel, but it does not convert the direct
+row to `VALID` and is not included in the acceptance metrics.
 
 An absent accepted-scalar line is not automatically zero transmission. Inspect
 `C19_aperture_availability.csv` in this order:

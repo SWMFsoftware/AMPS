@@ -277,6 +277,28 @@ class ModelRow:
     modeled_log10_east_west_ratio_max: Optional[float]
     modeled_ratio_lower_censored: bool
     modeled_ratio_upper_censored: bool
+    # Independent diagnostic obtained by replacing each directional access curve by
+    # a hard step at its effective cutoff rigidity.  This is deliberately kept beside,
+    # rather than substituted for, the production direct-A(E,Omega) observable.  The
+    # comparison makes the information loss in a scalar-cutoff approximation visible
+    # and gives DIRECT_ACCESS runs a finite, clearly labelled diagnostic when the
+    # rigorous direct fold withholds its midpoint because the rigidity grid is coarse.
+    cutoff_proxy_east_west_ratio: Optional[float]
+    cutoff_proxy_log10_east_west_ratio: Optional[float]
+    cutoff_proxy_east_west_ratio_min: Optional[float]
+    cutoff_proxy_east_west_ratio_max: Optional[float]
+    cutoff_proxy_log10_east_west_ratio_min: Optional[float]
+    cutoff_proxy_log10_east_west_ratio_max: Optional[float]
+    cutoff_proxy_ratio_lower_censored: bool
+    cutoff_proxy_ratio_upper_censored: bool
+    cutoff_proxy_east_transmission: Optional[float]
+    cutoff_proxy_east_transmission_min: Optional[float]
+    cutoff_proxy_east_transmission_max: Optional[float]
+    cutoff_proxy_west_transmission: Optional[float]
+    cutoff_proxy_west_transmission_min: Optional[float]
+    cutoff_proxy_west_transmission_max: Optional[float]
+    cutoff_proxy_source: str
+    cutoff_proxy_status: str
     residual_log10: Optional[float]
     east_transmission: Optional[float]
     west_transmission: Optional[float]
@@ -382,6 +404,26 @@ class ApertureFold:
     geometric_solid_angle_sr: float = 0.0
     contributing_solid_angle_sr: float = 0.0
     solid_angle_coverage_fraction: float = 0.0
+
+
+@dataclass(frozen=True)
+class CutoffProxyFold:
+    """One detector-head fold through a directional scalar-cutoff approximation.
+
+    ``signal`` uses the effective cutoff.  ``signal_min`` uses the upper cutoff bound
+    and ``signal_max`` uses the lower cutoff bound, because a larger cutoff transmits
+    less flux.  Unlike :class:`ApertureFold`, this object has no acceptance semantics:
+    it is an explicitly diagnostic reduction of A(R,Omega), not a replacement for the
+    three-state production observable.
+    """
+    transmission: Optional[float]
+    transmission_min: Optional[float]
+    transmission_max: Optional[float]
+    signal: Optional[float]
+    signal_min: Optional[float]
+    signal_max: Optional[float]
+    n_cells: int
+    n_unresolved: int
 
 
 @dataclass(frozen=True)
@@ -1536,24 +1578,75 @@ def validate_directional_access_requested_grid(
 
 
 def direction_map_from_access_cube(access_cube: DirectionalAccessCube) -> DirectionMap:
-    """Build the geometry-only directional map required by the common detector fold.
+    """Reduce a DIRECT_ACCESS cube to a finite-support effective-cutoff map.
 
-    DIRECT_ACCESS intentionally does not calculate Rc_lower/effective/upper for every
-    sky cell.  The detector fold still needs the selected sky directions, frame, and
-    observation position.  All of that geometry is already carried by the direct-access
-    cube, so construct a lightweight DirectionMap with NaN scalar-cutoff values and no
-    penumbra diagnostics.  This avoids requiring or accidentally consuming a stale
-    cutoff_3d_dir_map/cutoff_gridless_dir_map file from an earlier PENUMBRA_SCAN run.
+    ``DIRECT_ACCESS`` intentionally skips the expensive scalar PENUMBRA_SCAN.  For
+    diagnostics we can nevertheless reduce each already calculated A(R,Omega) curve to
+    an *equivalent blocked-area cutoff* over the detector-response rigidity support::
+
+        Rc_eff = R_min + integral[R_min,R_max] (1 - A(R)) dR.
+
+    A resolved constant interval contributes either its full width (forbidden) or zero
+    (allowed).  A resolved transition or an interval touching UNRESOLVED contributes
+    ``[0,dR]`` to the lower/upper cutoff bounds and half its width to the displayed
+    effective cutoff.  Thus the midpoint is explicit and the original uncertainty is
+    not erased.  If the first point is allowed the cutoff is lower-censored at R_min;
+    if the last point is forbidden it is upper-censored at R_max.  Those finite-support
+    values are sufficient for folding the configured detector response, but they must
+    not be interpreted as a full rigidity scan outside that support.
+
+    The direct detector observable still consumes the original cube.  This map exists
+    only for the requested cutoff plots and the separately labelled cutoff-rigidity E/W
+    proxy; it never changes C19 acceptance.
     """
-    cells = tuple(
-        DirectionCell(lon_deg=key[0], lat_deg=key[1],
-                      rc_gv=float("nan"), cutoff_energy_mev=float("nan"))
-        for key in sorted(access_cube.samples, key=lambda item: (item[1], item[0]))
-    )
+    cells: List[DirectionCell] = []
+    for key in sorted(access_cube.samples, key=lambda item: (item[1], item[0])):
+        samples = access_cube.samples[key]
+        r_min = samples[0].rigidity_gv
+        r_max = samples[-1].rigidity_gv
+        blocked_min = blocked_mid = blocked_max = 0.0
+        n_transitions = 0
+        for left, right in zip(samples[:-1], samples[1:]):
+            width = right.rigidity_gv - left.rigidity_gv
+            if left.state == right.state == 0:
+                blocked_min += width
+                blocked_mid += width
+                blocked_max += width
+            elif left.state == right.state == 1:
+                continue
+            else:
+                # Different resolved states locate a transition only to this bracket;
+                # UNRESOLVED at either endpoint makes the same [0,dR] statement.  Use a
+                # midpoint only for the diagnostic scalar and retain the full bounds.
+                blocked_mid += 0.5 * width
+                blocked_max += width
+                if left.state in (0, 1) and right.state in (0, 1):
+                    n_transitions += 1
+
+        rc_lower = min(r_max, r_min + blocked_min)
+        rc_effective = min(r_max, r_min + blocked_mid)
+        rc_upper = min(r_max, r_min + blocked_max)
+        allowed_groups = 0
+        previously_allowed = False
+        for sample in samples:
+            now_allowed = sample.state == 1
+            if now_allowed and not previously_allowed:
+                allowed_groups += 1
+            previously_allowed = now_allowed
+        cells.append(DirectionCell(
+            lon_deg=key[0], lat_deg=key[1], rc_gv=rc_effective,
+            cutoff_energy_mev=kinetic_energy_mev_from_rigidity_gv(rc_effective),
+            rc_lower_gv=rc_lower, rc_effective_gv=rc_effective,
+            rc_upper_gv=rc_upper, n_transitions=n_transitions,
+            n_allowed_intervals=allowed_groups,
+            n_unresolved_samples=sum(sample.state == 2 for sample in samples),
+            lower_below_range=int(samples[0].state == 1),
+            upper_above_range=int(samples[-1].state == 0),
+        ))
     return DirectionMap(
-        path=access_cube.path + "#geometry", frame=access_cube.frame,
+        path=access_cube.path + "#direct-access-equivalent-cutoff", frame=access_cube.frame,
         x_km=access_cube.x_km, y_km=access_cube.y_km, z_km=access_cube.z_km,
-        cells=cells)
+        cells=tuple(cells))
 
 
 def load_driver_tilts(
@@ -2162,6 +2255,128 @@ def fold_aperture(
     )
 
 
+def directional_cutoff_source(direction_map: DirectionMap) -> str:
+    """Identify whether the scalar cutoff was scanned or reduced from direct access."""
+    if direction_map.path.endswith("#direct-access-equivalent-cutoff"):
+        return "DIRECT_ACCESS_EQUIVALENT_BLOCKED_AREA"
+    if any(cell.rc_effective_gv is not None for cell in direction_map.cells):
+        return "PENUMBRA_SCAN_RC_EFFECTIVE"
+    return "DIRECTIONAL_MAP_RC_GV"
+
+
+def cutoff_triplet_gv(
+        cell: DirectionCell,
+        ) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    """Return lower/effective/upper non-negative cutoff values for one sky cell."""
+    effective = (cell.rc_effective_gv
+                 if cell.rc_effective_gv is not None else cell.rc_gv)
+    if effective is None or not math.isfinite(effective) or effective < 0.0:
+        return None, None, None
+    lower = cell.rc_lower_gv if cell.rc_lower_gv is not None else effective
+    upper = cell.rc_upper_gv if cell.rc_upper_gv is not None else effective
+    if not math.isfinite(lower) or lower < 0.0:
+        lower = effective
+    if not math.isfinite(upper) or upper < 0.0:
+        upper = effective
+    return min(lower, effective, upper), effective, max(lower, effective, upper)
+
+
+def fold_aperture_cutoff_proxy(
+        direction_map: DirectionMap,
+        position_map: Tuple[float, float, float],
+        detector_direction: str,
+        channel: str,
+        response: Sequence[ResponseInterval],
+        spectrum: SpectrumEstimate,
+        equatorial_half_angle: float,
+        north_south_half_angle: float,
+        direction_mapping: str,
+        orientation_model: str = "SM_PROXY",
+        orientation_record: Optional[OrientationRecord] = None,
+        tilt_rad: float = 0.0,
+        orientation_yaw_deg: float = 0.0,
+        orientation_pitch_deg: float = 0.0,
+        anisotropy: AnisotropyConfig = AnisotropyConfig(),
+        ) -> CutoffProxyFold:
+    """Fold a hard step at directional cutoff through the same spectrum/response.
+
+    This calculation intentionally differs from the production direct-access fold in
+    exactly one place: each A(R,Omega) curve is collapsed to a scalar cutoff.  The
+    detector energy response, event spectrum, angular aperture, direction convention,
+    attitude, and optional anisotropy are otherwise identical.  The controlled pairing
+    makes a discrepancy between the two modeled curves interpretable as information
+    lost by the scalar-cutoff reduction rather than as a second instrument model.
+    """
+    positive = [item for item in response
+                if item.channel == channel and item.relative_response > 0.0]
+    if not positive:
+        return CutoffProxyFold(None, None, None, None, None, None, 0, 0)
+    energy_lo = min(item.energy_min_mev for item in positive)
+    energy_hi = max(item.energy_max_mev for item in positive)
+    denominator = integrate_spectrum_response(
+        spectrum, response, channel, energy_lo, energy_hi)
+    if denominator <= 0.0:
+        return CutoffProxyFold(None, None, None, None, None, None, 0, 0)
+
+    boresight, horizontal, vertical = detector_basis(
+        position_map, detector_direction, orientation_model, orientation_record,
+        direction_map.frame, tilt_rad, orientation_yaw_deg, orientation_pitch_deg)
+    total_weight = 0.0
+    central_sum = lower_sum = upper_sum = unshielded_sum = 0.0
+    n_cells = n_unresolved = 0
+    for cell in direction_map.cells:
+        arrival = spherical_direction(cell.lon_deg, cell.lat_deg)
+        look = map_direction_to_detector_look(arrival, direction_mapping)
+        coordinates = aperture_coordinates(look, boresight, horizontal, vertical)
+        if coordinates is None:
+            continue
+        alpha_h, alpha_v = coordinates
+        if ((alpha_h / equatorial_half_angle) ** 2 +
+                (alpha_v / north_south_half_angle) ** 2) > 1.0 + 1.0e-12:
+            continue
+
+        weight = max(0.0, math.cos(math.radians(cell.lat_deg)))
+        angular_weight = weight * anisotropy_factor(arrival, anisotropy)
+        total_weight += weight
+        unshielded_sum += angular_weight * denominator
+        n_cells += 1
+        rc_lower, rc_effective, rc_upper = cutoff_triplet_gv(cell)
+        if rc_effective is None:
+            # An unresolved cutoff can transmit anywhere from none to the complete
+            # response.  Keep it in both the angular denominator and signal bounds.
+            n_unresolved += 1
+            upper_sum += angular_weight * denominator
+            continue
+
+        def transmitted(rc_gv: float) -> float:
+            cutoff_energy = kinetic_energy_mev_from_rigidity_gv(rc_gv)
+            return integrate_spectrum_response(
+                spectrum, response, channel,
+                max(energy_lo, cutoff_energy), energy_hi)
+
+        central_sum += angular_weight * transmitted(rc_effective)
+        # Larger Rc means smaller transmitted signal.
+        lower_sum += angular_weight * transmitted(float(rc_upper))
+        upper_sum += angular_weight * transmitted(float(rc_lower))
+
+    if total_weight <= 0.0 or unshielded_sum <= 0.0:
+        return CutoffProxyFold(None, None, None, None, None, None,
+                               n_cells, n_unresolved)
+    signal_min = lower_sum / total_weight
+    signal_max = upper_sum / total_weight
+    transmission_min = max(0.0, min(1.0, lower_sum / unshielded_sum))
+    transmission_max = max(transmission_min, min(1.0, upper_sum / unshielded_sum))
+    if n_unresolved:
+        return CutoffProxyFold(
+            None, transmission_min, transmission_max, None,
+            signal_min, signal_max, n_cells, n_unresolved)
+    signal = central_sum / total_weight
+    transmission = max(0.0, min(1.0, central_sum / unshielded_sum))
+    return CutoffProxyFold(
+        transmission, transmission_min, transmission_max,
+        signal, signal_min, signal_max, n_cells, n_unresolved)
+
+
 def fold_aperture_direct_access(
         direction_map: DirectionMap,
         access_cube: DirectionalAccessCube,
@@ -2238,6 +2453,9 @@ def fold_aperture_direct_access(
     undersampled_penumbra_cells = 0
     max_trace_time_s: Optional[float] = None
     diagnostics: List[Dict[str, object]] = []
+    independent_penumbra_map = (
+        directional_cutoff_source(direction_map) !=
+        "DIRECT_ACCESS_EQUIVALENT_BLOCKED_AREA")
 
     map_lookup = {(round(cell.lon_deg, 9), round(cell.lat_deg, 9)): cell
                   for cell in direction_map.cells}
@@ -2316,7 +2534,8 @@ def fold_aperture_direct_access(
         # transition locations here; instead we flag the cell so convergence diagnostics
         # can require a finer direct-access grid.
         undersampled_penumbra = False
-        if (map_cell is not None and map_cell.n_transitions is not None and
+        if (independent_penumbra_map and map_cell is not None
+                and map_cell.n_transitions is not None and
                 map_cell.n_transitions > direct_resolved_transitions):
             # Only call it relevant when the penumbra overlaps the detector-response
             # rigidity support.  This avoids flagging low/high-rigidity transitions that
@@ -2355,7 +2574,9 @@ def fold_aperture_direct_access(
             "unresolved_energy_response_fraction": unresolved_energy_fraction,
             "discrete_transition_response_fraction": transition_energy_fraction,
             "direct_resolved_transition_count": direct_resolved_transitions,
-            "penumbra_scan_transition_count": (map_cell.n_transitions if map_cell else None),
+            "penumbra_scan_transition_count": (
+                map_cell.n_transitions
+                if independent_penumbra_map and map_cell else None),
             "undersampled_penumbra": undersampled_penumbra,
             "spectrum_gamma": spectrum.gamma, "spectrum_source": spectrum.source,
             "response_channel": channel,
@@ -2596,6 +2817,58 @@ def evaluate_reference_row(
             detector_direction="WEST", orientation_record=west_orientation, **common)
         access_product = "EFFECTIVE_CUTOFF_PROXY"
 
+    # Independently collapse each directional access curve to one effective cutoff and
+    # fold a hard step at that cutoff through the *same* response and spectrum.  In a
+    # PENUMBRA_SCAN run the lower/effective/upper Rc values come from AMPS.  In a
+    # DIRECT_ACCESS run direction_map_from_access_cube() supplies a finite-support
+    # blocked-area equivalent plus explicit bounds.  This diagnostic never participates
+    # in acceptance; the direct A(E,Omega) fold above remains the production observable.
+    common_cutoff_proxy = dict(
+        direction_map=direction_map, position_map=position_map,
+        channel=reference.channel, response=detector_response, spectrum=spectrum,
+        equatorial_half_angle=float(channel["equatorial_half_angle_deg"]),
+        north_south_half_angle=float(channel["north_south_half_angle_deg"]),
+        direction_mapping=mapping, orientation_model=orientation_model,
+        tilt_rad=tilt_rad, orientation_yaw_deg=orientation_yaw_deg,
+        orientation_pitch_deg=orientation_pitch_deg, anisotropy=anisotropy)
+    cutoff_east_fold = fold_aperture_cutoff_proxy(
+        detector_direction="EAST", orientation_record=east_orientation,
+        **common_cutoff_proxy)
+    cutoff_west_fold = fold_aperture_cutoff_proxy(
+        detector_direction="WEST", orientation_record=west_orientation,
+        **common_cutoff_proxy)
+    cutoff_source = directional_cutoff_source(direction_map)
+    (cutoff_ratio_min, cutoff_ratio_max, cutoff_log_ratio_min,
+     cutoff_log_ratio_max, cutoff_lower_censored,
+     cutoff_upper_censored) = detector_ratio_bounds(
+        cutoff_east_fold.signal_min, cutoff_east_fold.signal_max,
+        cutoff_west_fold.signal_min, cutoff_west_fold.signal_max)
+    cutoff_ratio: Optional[float] = None
+    cutoff_log_ratio: Optional[float] = None
+    if cutoff_east_fold.n_cells <= 0:
+        cutoff_status = "NO_EAST_APERTURE_CELLS"
+    elif cutoff_west_fold.n_cells <= 0:
+        cutoff_status = "NO_WEST_APERTURE_CELLS"
+    elif cutoff_east_fold.signal is None:
+        cutoff_status = "UNRESOLVED_EAST_CUTOFF"
+    elif cutoff_west_fold.signal is None:
+        cutoff_status = "UNRESOLVED_WEST_CUTOFF"
+    elif cutoff_east_fold.signal == 0.0 and cutoff_west_fold.signal == 0.0:
+        cutoff_status = "ZERO_BOTH_TRANSMISSION"
+    elif cutoff_east_fold.signal == 0.0:
+        cutoff_ratio = 0.0
+        cutoff_status = "ZERO_EAST_TRANSMISSION"
+    elif cutoff_west_fold.signal == 0.0:
+        cutoff_status = "ZERO_WEST_TRANSMISSION"
+    else:
+        cutoff_ratio = cutoff_east_fold.signal / cutoff_west_fold.signal
+        if cutoff_ratio > 0.0 and math.isfinite(cutoff_ratio):
+            cutoff_log_ratio = math.log10(cutoff_ratio)
+            cutoff_status = "VALID_DIAGNOSTIC"
+        else:
+            cutoff_ratio = None
+            cutoff_status = "NONFINITE_CUTOFF_PROXY"
+
     east = east_fold.value
     west = west_fold.value
     # Signal fields include P2.5 directional source weighting.  Every P2-enabled fold
@@ -2733,6 +3006,22 @@ def evaluate_reference_row(
         modeled_log10_east_west_ratio_max=log_ratio_max,
         modeled_ratio_lower_censored=ratio_lower_censored,
         modeled_ratio_upper_censored=ratio_upper_censored,
+        cutoff_proxy_east_west_ratio=cutoff_ratio,
+        cutoff_proxy_log10_east_west_ratio=cutoff_log_ratio,
+        cutoff_proxy_east_west_ratio_min=cutoff_ratio_min,
+        cutoff_proxy_east_west_ratio_max=cutoff_ratio_max,
+        cutoff_proxy_log10_east_west_ratio_min=cutoff_log_ratio_min,
+        cutoff_proxy_log10_east_west_ratio_max=cutoff_log_ratio_max,
+        cutoff_proxy_ratio_lower_censored=cutoff_lower_censored,
+        cutoff_proxy_ratio_upper_censored=cutoff_upper_censored,
+        cutoff_proxy_east_transmission=cutoff_east_fold.transmission,
+        cutoff_proxy_east_transmission_min=cutoff_east_fold.transmission_min,
+        cutoff_proxy_east_transmission_max=cutoff_east_fold.transmission_max,
+        cutoff_proxy_west_transmission=cutoff_west_fold.transmission,
+        cutoff_proxy_west_transmission_min=cutoff_west_fold.transmission_min,
+        cutoff_proxy_west_transmission_max=cutoff_west_fold.transmission_max,
+        cutoff_proxy_source=cutoff_source,
+        cutoff_proxy_status=cutoff_status,
         residual_log10=residual,
         east_transmission=east, west_transmission=west,
         east_transmission_min=east_fold.minimum,
@@ -3118,21 +3407,30 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
             observed = [row.observed_log10_east_west_ratio for row in panel]
             modeled = [float("nan") if row.modeled_log10_east_west_ratio is None
                        else row.modeled_log10_east_west_ratio for row in panel]
+            cutoff_proxy = [
+                float("nan") if row.cutoff_proxy_log10_east_west_ratio is None
+                else row.cutoff_proxy_log10_east_west_ratio for row in panel]
             axis.plot(times, observed, marker="o", markersize=3, linewidth=1.2,
                       label="GOES observed")
             axis.plot(times, modeled, marker="x", markersize=3, linewidth=1.2,
-                      label="AMPS modeled (finite)")
+                      label="AMPS direct A(E,Omega) (accepted)")
+            axis.plot(times, cutoff_proxy, marker="s", markersize=3, linewidth=1.0,
+                      color="tab:green", linestyle="--",
+                      label="AMPS cutoff-rigidity proxy (diagnostic)")
             axis.axhline(0.0, linewidth=0.8)
 
             interval_values = [
                 float(value)
                 for row in panel
                 for value in (row.modeled_log10_east_west_ratio_min,
-                              row.modeled_log10_east_west_ratio_max)
+                              row.modeled_log10_east_west_ratio_max,
+                              row.cutoff_proxy_log10_east_west_ratio_min,
+                              row.cutoff_proxy_log10_east_west_ratio_max)
                 if value is not None and math.isfinite(float(value))
             ]
             finite_for_limits = (list(observed) +
                                  [value for value in modeled if math.isfinite(value)] +
+                                 [value for value in cutoff_proxy if math.isfinite(value)] +
                                  interval_values)
             y_min, y_max = padded_limits(finite_for_limits, fraction=0.10, min_pad=0.05)
             axis.set_ylim(y_min, y_max)
@@ -3154,6 +3452,25 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
                      for row in interval_rows],
                     color="tab:orange", alpha=0.55, linewidth=3.0,
                     label="AMPS rigorous E/W interval")
+            cutoff_interval_rows = [
+                row for row in panel
+                if row.cutoff_proxy_log10_east_west_ratio_min is not None
+                and row.cutoff_proxy_log10_east_west_ratio_max is not None
+                and math.isfinite(float(row.cutoff_proxy_log10_east_west_ratio_min))
+                and math.isfinite(float(row.cutoff_proxy_log10_east_west_ratio_max))
+                and not math.isclose(
+                    float(row.cutoff_proxy_log10_east_west_ratio_min),
+                    float(row.cutoff_proxy_log10_east_west_ratio_max),
+                    rel_tol=0.0, abs_tol=1.0e-14)]
+            if cutoff_interval_rows:
+                axis.vlines(
+                    [parse_utc(row.utc) for row in cutoff_interval_rows],
+                    [float(row.cutoff_proxy_log10_east_west_ratio_min)
+                     for row in cutoff_interval_rows],
+                    [float(row.cutoff_proxy_log10_east_west_ratio_max)
+                     for row in cutoff_interval_rows],
+                    color="tab:green", alpha=0.35, linewidth=2.0,
+                    label="Cutoff-proxy Rc-bound interval")
             lower_censored_rows = [
                 row for row in panel
                 if row.status != "VALID" and row.modeled_ratio_lower_censored
@@ -3329,6 +3646,12 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
                     for row in panel]
             west = [float("nan") if row.west_transmission is None else row.west_transmission
                     for row in panel]
+            cutoff_east = [
+                float("nan") if row.cutoff_proxy_east_transmission is None
+                else row.cutoff_proxy_east_transmission for row in panel]
+            cutoff_west = [
+                float("nan") if row.cutoff_proxy_west_transmission is None
+                else row.cutoff_proxy_west_transmission for row in panel]
             east_min = [float("nan") if row.east_transmission_min is None
                         else row.east_transmission_min for row in panel]
             east_max = [float("nan") if row.east_transmission_max is None
@@ -3354,6 +3677,12 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
             if any(math.isfinite(value) for value in west):
                 axis.plot(times, west, color="tab:orange", marker="o", markersize=3,
                           linewidth=1.2, label="West accepted scalar")
+            if any(math.isfinite(value) for value in cutoff_east):
+                axis.plot(times, cutoff_east, color="tab:green", linestyle="--",
+                          linewidth=1.0, label="East cutoff proxy")
+            if any(math.isfinite(value) for value in cutoff_west):
+                axis.plot(times, cutoff_west, color="tab:red", linestyle="--",
+                          linewidth=1.0, label="West cutoff proxy")
 
             for head, y_status, marker, color in (
                     ("east", -0.10, "v", "tab:blue"),
@@ -3455,6 +3784,160 @@ def make_aperture_plot(diagnostics: Sequence[Mapping[str, object]], output_path:
     ax.grid(True, alpha=0.3)
     ax.legend()
     fig.colorbar(scatter, ax=ax, label="Channel transmission (bounds midpoint)")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=160)
+    plt.close(fig)
+    return str(output_path)
+
+
+def directional_cutoff_rows(
+        direction_map: DirectionMap, utc: datetime, spacecraft: str,
+        solver: str, field_model: str,
+        ) -> List[Dict[str, object]]:
+    """Flatten one epoch's cutoff map for CSV output and per-epoch plotting."""
+    source = directional_cutoff_source(direction_map)
+    rows: List[Dict[str, object]] = []
+    for cell in direction_map.cells:
+        rc_lower, rc_effective, rc_upper = cutoff_triplet_gv(cell)
+        rows.append({
+            "utc": format_utc(utc), "spacecraft": spacecraft,
+            "solver": solver, "field_model": field_model,
+            "frame": direction_map.frame, "map_path": direction_map.path,
+            "cutoff_source": source,
+            "lon_deg": cell.lon_deg, "lat_deg": cell.lat_deg,
+            "rc_lower_gv": rc_lower, "rc_effective_gv": rc_effective,
+            "rc_upper_gv": rc_upper,
+            "cutoff_energy_effective_mev": (
+                kinetic_energy_mev_from_rigidity_gv(rc_effective)
+                if rc_effective is not None else None),
+            "rc_uncertainty_width_gv": (
+                rc_upper - rc_lower
+                if rc_lower is not None and rc_upper is not None else None),
+            "lower_censored_at_sample_support": bool(cell.lower_below_range),
+            "upper_censored_at_sample_support": bool(cell.upper_above_range),
+            "n_transitions": cell.n_transitions,
+            "n_allowed_intervals": cell.n_allowed_intervals,
+            "n_unresolved_samples": cell.n_unresolved_samples,
+        })
+    return rows
+
+
+def make_directional_cutoff_plots(
+        rows: Sequence[Mapping[str, object]], output_root: Path,
+        ) -> List[str]:
+    """Plot effective directional cutoff and its retained bound width per case."""
+    try:
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        print("C19 directional-cutoff plots skipped: %s" % exc, file=sys.stderr)
+        return []
+    outputs: List[str] = []
+    group_names = ("utc", "spacecraft", "solver", "field_model")
+    keys = sorted({tuple(str(row.get(name)) for name in group_names) for row in rows})
+    for utc_text, spacecraft, solver, field_model in keys:
+        group = [row for row in rows if tuple(str(row.get(name)) for name in group_names)
+                 == (utc_text, spacecraft, solver, field_model)]
+        finite = [row for row in group
+                  if row.get("rc_effective_gv") is not None
+                  and math.isfinite(float(row["rc_effective_gv"]))]
+        if not finite:
+            continue
+        fig, axes = plt.subplots(1, 2, figsize=(12.0, 4.8), sharex=True, sharey=True)
+        central = axes[0].scatter(
+            [float(row["lon_deg"]) for row in finite],
+            [float(row["lat_deg"]) for row in finite],
+            c=[float(row["rc_effective_gv"]) for row in finite],
+            cmap="viridis", s=18)
+        axes[0].set_title("Effective directional cutoff")
+        fig.colorbar(central, ax=axes[0], label="Rc effective (GV)")
+
+        widths = [max(0.0, float(row.get("rc_uncertainty_width_gv") or 0.0))
+                  for row in finite]
+        uncertainty = axes[1].scatter(
+            [float(row["lon_deg"]) for row in finite],
+            [float(row["lat_deg"]) for row in finite],
+            c=widths, cmap="magma", s=18)
+        axes[1].set_title("Retained cutoff bound width")
+        fig.colorbar(uncertainty, ax=axes[1], label="Rc upper - lower (GV)")
+        censored = [row for row in finite
+                    if row.get("lower_censored_at_sample_support")
+                    or row.get("upper_censored_at_sample_support")]
+        if censored:
+            for axis in axes:
+                axis.scatter(
+                    [float(row["lon_deg"]) for row in censored],
+                    [float(row["lat_deg"]) for row in censored],
+                    facecolors="none", edgecolors="black", marker="o", s=34,
+                    linewidths=0.7, label="support-censored")
+                axis.legend(loc="best", fontsize="x-small")
+        for axis in axes:
+            axis.set_xlim(0.0, 360.0)
+            axis.set_ylim(-90.0, 90.0)
+            axis.set_xlabel("%s direction longitude (deg)" % group[0].get("frame", "SM"))
+            axis.grid(True, alpha=0.3)
+        axes[0].set_ylabel("%s direction latitude (deg)" % group[0].get("frame", "SM"))
+        source = str(group[0].get("cutoff_source", "UNKNOWN"))
+        fig.suptitle("C19A directional cutoff: %s %s %s %s\n%s" %
+                     (utc_text, spacecraft, solver, field_model, source))
+        fig.tight_layout()
+        path = output_root / (
+            "C19_directional_cutoff_%s_%s_%s_%s.png" %
+            (solver.lower(), field_model.lower(), spacecraft.lower(),
+             timestamp_token(parse_utc(utc_text))))
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        outputs.append(str(path))
+    return outputs
+
+
+def make_boundary_spectrum_plot(
+        spectra: Mapping[datetime, SpectrumEstimate],
+        response: Sequence[ResponseInterval], selected_epochs: Sequence[datetime],
+        output_path: Path,
+        ) -> Optional[str]:
+    """Plot every selected epoch's assumed incident boundary proton spectrum."""
+    try:
+        import matplotlib.pyplot as plt
+        from matplotlib.cm import ScalarMappable
+        from matplotlib.colors import Normalize
+    except Exception as exc:
+        print("C19 boundary-spectrum plot skipped: %s" % exc, file=sys.stderr)
+        return None
+    epochs = sorted({epoch for epoch in selected_epochs if epoch in spectra})
+    positive = [item for item in response if item.relative_response > 0.0]
+    if not epochs or not positive:
+        return None
+    energy_lo = min(item.energy_min_mev for item in positive)
+    energy_hi = max(item.energy_max_mev for item in positive)
+    n_energy = 240
+    energies = [energy_lo * (energy_hi / energy_lo) ** (i / float(n_energy - 1))
+                for i in range(n_energy)]
+    fig, ax = plt.subplots(figsize=(8.6, 5.4))
+    norm = Normalize(vmin=0, vmax=max(1, len(epochs) - 1))
+    cmap = plt.get_cmap("viridis")
+    for index, epoch in enumerate(epochs):
+        item = spectra[epoch]
+        label = format_utc(epoch) if len(epochs) <= 12 else None
+        ax.loglog(energies, [spectrum_intensity(item, energy) for energy in energies],
+                  color=cmap(norm(index)), linewidth=1.1, alpha=0.85, label=label)
+    # Show the energy domains for which this boundary assumption is actually consumed.
+    channel_colors = {"P4": "tab:blue", "P5": "tab:orange"}
+    for channel in sorted({item.channel for item in positive}):
+        channel_rows = [item for item in positive if item.channel == channel]
+        ax.axvspan(min(item.energy_min_mev for item in channel_rows),
+                   max(item.energy_max_mev for item in channel_rows),
+                   color=channel_colors.get(channel, "grey"), alpha=0.06,
+                   label="%s response support" % channel)
+    if len(epochs) > 12:
+        colorbar = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax)
+        colorbar.set_label("Selected epoch order (0 = %s; %d = %s)" %
+                           (format_utc(epochs[0]), len(epochs) - 1,
+                            format_utc(epochs[-1])))
+    ax.set_xlabel("Proton kinetic energy at model boundary (MeV)")
+    ax.set_ylabel("Assumed differential intensity J(E) (input units MeV$^{-1}$)")
+    ax.set_title("C19A assumed incident boundary proton spectra")
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend(loc="best", fontsize="x-small", ncol=2)
     fig.tight_layout()
     fig.savefig(output_path, dpi=160)
     plt.close(fig)
@@ -4114,8 +4597,24 @@ def self_test() -> int:
             raise AssertionError("GRIDDED direct cube did not select DIRECT_A_E_OMEGA")
         if direct_gridless_model.modeled_east_west_ratio != direct_gridded_model.modeled_east_west_ratio:
             raise AssertionError("solver label changed the common direct detector fold")
+
+        # The optimized DIRECT_ACCESS mode has no separate AMPS scalar map.  Verify the
+        # postprocessor's finite-support blocked-area reduction and, critically, prove
+        # that its diagnostic ratio remains available when the rigorous direct fold
+        # correctly withholds a scalar because a transition bracket is too wide.
+        derived_cutoff_map = direction_map_from_access_cube(access_cube)
+        if directional_cutoff_source(derived_cutoff_map) != \
+                "DIRECT_ACCESS_EQUIVALENT_BLOCKED_AREA":
+            raise AssertionError("direct-access cutoff reduction lost its provenance")
+        derived_east_cell = next(
+            cell for cell in derived_cutoff_map.cells if cell.lon_deg == 270.0)
+        rc_triplet = cutoff_triplet_gv(derived_east_cell)
+        if (any(value is None for value in rc_triplet)
+                or not (float(rc_triplet[0]) < float(rc_triplet[1]) <
+                        float(rc_triplet[2]))):
+            raise AssertionError("direct-access transition did not produce ordered Rc bounds")
         invalid_direct_model, _ = evaluate_reference_row(
-            reference, direct_map, manifest, "GRIDDED", "T05", test_spectrum,
+            reference, derived_cutoff_map, manifest, "GRIDDED", "T05", test_spectrum,
             test_response, access_cube, 0.0, PRODUCTION_DIRECTION_MAPPING,
             "DIRECT_ACCESS", "UNRESOLVED", 1.0, 0.0, 300.0)
         if (invalid_direct_model.status == "VALID" or
@@ -4124,6 +4623,10 @@ def self_test() -> int:
                 invalid_direct_model.east_transmission_max is None):
             raise AssertionError(
                 "uncertain direct fold did not retain bounds while withholding scalar")
+        if (invalid_direct_model.cutoff_proxy_status != "VALID_DIAGNOSTIC" or
+                invalid_direct_model.cutoff_proxy_log10_east_west_ratio is None):
+            raise AssertionError(
+                "cutoff-rigidity diagnostic was not retained beside an invalid direct scalar")
 
         # PASS/FAIL policy regression: a numerically complete run with failed
         # observational gates must remain a scientific FAIL even when a caller
@@ -4183,7 +4686,14 @@ def self_test() -> int:
             raise AssertionError("DIRECT_ACCESS aperture bounds produced no plot colors")
         direct_aperture = make_aperture_plot(
             direct_diagnostics, root / "C19_direct_aperture_diagnostic.png")
-        if not plots or aperture is None or direct_aperture is None:
+        cutoff_rows = directional_cutoff_rows(
+            derived_cutoff_map, reference.utc, reference.spacecraft, "GRIDDED", "T05")
+        cutoff_plots = make_directional_cutoff_plots(cutoff_rows, root)
+        spectrum_plot = make_boundary_spectrum_plot(
+            {reference.utc: test_spectrum}, test_response, [reference.utc],
+            root / "C19_boundary_spectrum.png")
+        if (not plots or aperture is None or direct_aperture is None
+                or not cutoff_plots or spectrum_plot is None):
             raise AssertionError("self-test did not generate plots")
         expected_plot_names = {
             "C19_scatter_gridless_t05.png",
@@ -4605,6 +5115,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     commands: List[Dict[str, object]] = []
     model_rows: List[ModelRow] = []
     aperture_diagnostics: List[Dict[str, object]] = []
+    directional_cutoff_diagnostics: List[Dict[str, object]] = []
     # Diagnostic-only comparison of the production AMPS-arrival -> detector-look
     # conversion with the legacy direct-vector comparison.  Acceptance always
     # uses ``model_rows`` (the production conversion), never whichever mapping
@@ -4881,6 +5392,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         map_path = locate_directional_map(
                             run_dir, solver, output_location_id, output_suffix)
                         direction_map = parse_directional_map(map_path)
+                    # Record the cutoff diagnostic once per simulated spacecraft epoch,
+                    # before iterating over P4/P5 reference channels.  DIRECT_ACCESS
+                    # supplies a finite-support blocked-area equivalent; PENUMBRA_SCAN
+                    # supplies the AMPS lower/effective/upper cutoff map.  Keeping this
+                    # case-level product out of the channel loop prevents duplicated sky
+                    # rows while still allowing both channels to fold the same Rc map.
+                    directional_cutoff_diagnostics.extend(directional_cutoff_rows(
+                        direction_map, epoch, spacecraft, solver, field_model))
                     tilt = interpolate_tilt(driver_tilts, epoch)
                     spectrum = spectra[epoch]
                     # Re-resolve the same actual head IDs for post-processing. This
@@ -5021,11 +5540,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         key = (str(item["aperture"]), str(item["aperture_status"]))
         availability_counts[key] = availability_counts.get(key, 0) + 1
     write_dict_rows(output_root / "C19_aperture_samples.csv", aperture_diagnostics)
+    write_dict_rows(output_root / "C19_directional_cutoff.csv",
+                    directional_cutoff_diagnostics)
     write_dict_rows(output_root / "C19_direction_sense_diagnostic.csv",
                     direction_sense_diagnostics)
     metrics = calculate_metrics(model_rows, args)
     write_dict_rows(output_root / "C19_metrics.csv", [asdict(row) for row in metrics])
     plot_paths = make_comparison_plots(model_rows, output_root)
+    plot_paths.extend(make_directional_cutoff_plots(
+        directional_cutoff_diagnostics, output_root))
+    spectrum_plot = make_boundary_spectrum_plot(
+        spectra, detector_response, [row.utc for row in reference],
+        output_root / "C19_boundary_spectrum.png")
+    if spectrum_plot:
+        plot_paths.append(spectrum_plot)
     aperture_plot = make_aperture_plot(
         aperture_diagnostics, output_root / "C19_aperture_diagnostic.png")
     if aperture_plot:
@@ -5128,6 +5656,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "observable": "log10(background-subtracted physical EAST/WEST flux ratio)",
         "n_reference_rows": len(reference),
         "n_model_rows": len(model_rows),
+        "n_directional_cutoff_rows": len(directional_cutoff_diagnostics),
+        "directional_cutoff_file": str(output_root / "C19_directional_cutoff.csv"),
+        "cutoff_proxy_is_acceptance_observable": False,
         "n_aperture_availability_rows": len(availability),
         "aperture_availability_status_counts": {
             "%s:%s" % key: count for key, count in sorted(availability_counts.items())
@@ -5166,6 +5697,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "The telemetry-head-to-physical-direction mapping is event-specific and fixed in the manifest.",
             "Use --require-real-ephemeris with a regenerated reference for publication runs.",
             "GRIDDED and GRIDLESS both provide the direct three-state A(E,Omega) product and use the identical detector fold; solver differences therefore isolate field-evaluation/trajectory behavior.",
+            "The cutoff-rigidity E/W curve is a diagnostic hard-step reduction. DIRECT_ACCESS derives its finite-support Rc from blocked area over the detector-response grid; it is not a substitute for the direct A(E,Omega) acceptance observable.",
         ],
     }
     (output_root / "C19_result.json").write_text(
