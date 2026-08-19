@@ -91,6 +91,15 @@ int main() {
       TrajectoryTermination::InnerBoundaryForbidden));
   assert(Earth::GridlessMode::IsResolvedTermination(
       TrajectoryTermination::MagneticallyTrappedForbidden));
+  // C19 adds a distinct positive full-orbit drift-trapped termination code.
+  // It must participate in the common resolved/physical-forbidden semantics while
+  // leaving the historical numeric termination codes unchanged.
+  assert(Earth::GridlessMode::IsResolvedTermination(
+      TrajectoryTermination::DriftTrappedForbidden));
+  assert(Earth::GridlessMode::IsPhysicalForbiddenTermination(
+      TrajectoryTermination::DriftTrappedForbidden));
+  assert(std::string(Earth::GridlessMode::TrajectoryTerminationName(
+      TrajectoryTermination::DriftTrappedForbidden)) == "DRIFT_TRAPPED_FORBIDDEN");
   assert(!Earth::GridlessMode::IsResolvedTermination(
       TrajectoryTermination::TimeLimit));
   assert(!Earth::GridlessMode::IsAllowedTermination(

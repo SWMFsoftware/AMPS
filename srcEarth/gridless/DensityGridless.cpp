@@ -1658,6 +1658,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       out << "TITLE=\"Gridless trajectory termination summary\"\n";
       out << "VARIABLES=\"point_index\" \"E_MeV\" \"N_sampled\" \"N_retried\" \"N_resolved\" "
           << "\"N_allowed\" \"N_forbidden\" \"N_inner_forbidden\" \"N_trapped\" "
+          << "\"N_bounce_trapped\" \"N_drift_trapped\" "
           << "\"N_time_limit\" \"N_step_limit\" \"N_distance_limit\" "
           << "\"N_invalid_dt\" \"N_invalid_field\" \"N_numerical_failure\" "
           << "\"T_resolved\" \"T_all\" \"unresolved_fraction\"\n";
@@ -1670,7 +1671,15 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
           const int resolved=resolvedByPointEnergy[flat];
           const int allowed=c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::OuterBoundaryAllowed)];
           const int innerForbidden=c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::InnerBoundaryForbidden)];
-          const int trapped=c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::MagneticallyTrappedForbidden)];
+          // Keep the historical N_trapped aggregate while exposing the two
+          // physically distinct positive trapping classifiers.  The new
+          // DRIFT_TRAPPED_FORBIDDEN termination code is a resolved physical
+          // forbidden state, not an unresolved timeout, so omitting it here
+          // would make N_resolved/N_forbidden inconsistent with the common
+          // TrajectoryTermination helpers used elsewhere in the solver.
+          const int bounceTrapped=c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::MagneticallyTrappedForbidden)];
+          const int driftTrapped=c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::DriftTrappedForbidden)];
+          const int trapped=bounceTrapped+driftTrapped;
           const int forbidden=innerForbidden+trapped;
           const double unresolvedFraction=sampled>0 ? double(sampled-resolved)/double(sampled) : 1.0;
           maxUnresolvedFraction=std::max(maxUnresolvedFraction,unresolvedFraction);
@@ -1679,6 +1688,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
           out << ip << " " << E_MeV[(size_t)ie] << " " << sampled << " "
               << retriedByPointEnergy[flat] << " " << resolved << " " << allowed << " " << forbidden << " "
               << innerForbidden << " " << trapped << " "
+              << bounceTrapped << " " << driftTrapped << " "
               << c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::TimeLimit)] << " "
               << c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::StepLimit)] << " "
               << c[(size_t)static_cast<int>(Earth::GridlessMode::TrajectoryTermination::DistanceLimit)] << " "

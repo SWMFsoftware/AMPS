@@ -3076,12 +3076,14 @@ uses channel-specific response/FOV information. `--direction-coverage FULL_SPHER
 remains available for complete-sky diagnostics and bit-for-bit retained-cell regression
 comparisons.
 
-The former P0/P1/P2 stages are now integrated into a single current C19 workflow. The
-runner no longer exposes `--p0-diagnostic` or `--p2-diagnostic`, and historical
-trajectory/folding choices are no longer selectable with `--cutoff-search`,
-`--trace-limit-policy`, or `--response-fold`. Every normal run uses
-`PENUMBRA_SCAN + UNRESOLVED`, requests direct `A(E,Omega)` for GRIDDED Mode3D, applies
-the current detector/spectrum fold, and reaches the standard full comparison-plot block.
+The current C19 science observable is `DIRECT_ACCESS` (the runner default).  It traces the
+three-state detector-response access function `A(E,Omega)` directly and folds those
+samples through the common spectrum/response/aperture postprocessor.  `PENUMBRA_SCAN`
+remains an explicitly selectable, more expensive diagnostic that additionally produces
+full lower/effective/upper cutoff topology; it is not the default acceptance observable.
+The trace-limit policy for C19 remains conservative: a numerical time/step/path limit is
+`UNRESOLVED` unless a positive physical escape, loss, bounce-trap, or drift-recurrence
+criterion has already fired.
 
 The current uncorrected-flux detector response also includes the documented EPEAD
 high-energy secondary proton response (P4 through 150 MeV and P5 through 190 MeV), so
@@ -3120,3 +3122,85 @@ fetches from the local worker count.  Threaded direct-field execution requires o
 frozen epoch/driver snapshot per process; multi-epoch trajectory inputs fall back to
 serial intra-rank evaluation while preserving MPI parallelism.  See `gridless/READ.ME`
 and `test/C19/README.md` for the detailed execution contract.
+
+### C19 direct-access trace-budget, recurrence, and convergence controls (2026-08-19)
+
+C19 uses the common three-state trajectory result (`PHYSICAL_FORBIDDEN`, `ALLOWED`,
+`UNRESOLVED`) but the direct-access products now serialize the termination evidence
+behind every evaluated trajectory.  GRIDDED and GRIDLESS output
+`termination_code`, trace time, cumulative path, step/retry counts, mirror/bounce
+counts, drift-revolution diagnostics, trapping mechanism, and relative momentum spread.
+The DIRECT_ACCESS Tecplot headers carry the stable integer-to-name map as `AUXDATA`.
+Historical codes 0--8 are unchanged; code 9 is appended as
+`DRIFT_TRAPPED_FORBIDDEN`.
+
+C19 production templates use
+
+```text
+MAX_TRACE_TIME       300.0
+MAX_TRACE_DISTANCE   0.0
+```
+
+A nonpositive `MAX_TRACE_DISTANCE` disables the cumulative path-length ceiling so every
+energy receives the same physical trace-time budget.  A fixed path cap is still supported
+for machine safety and convergence experiments; because it is traveled path rather than
+geocentric radius, its implied physical time depends on particle speed.  The runner
+records that implied time in `C19_access_energy_grid.csv`.
+
+The shared `TrajectoryTrapDetector` retains the legacy bounce-recurrence path and adds a
+C19 full-orbit drift-recurrence path.  It does **not** classify a timeout as forbidden.
+The drift branch unwraps signed geocentric azimuth, divides each completed drift turn into
+azimuth-phase bins, and compares turn-to-turn averages of `r`, `z/r`, and
+`cos^2(pitch)`.  A positive drift-trapped verdict requires enough complete revolutions,
+sufficient profile coverage, consecutive recurrence in a configured fraction of common
+bins, an outer-boundary margin, and acceptable momentum-magnitude spread.
+
+Relevant controls are:
+
+```text
+TRAP_DRIFT_DETECTION                         T|F
+TRAP_MIN_DRIFT_REVOLUTIONS                   integer >= 2   # C19 default 3
+TRAP_DRIFT_RADIAL_GROWTH_TOL_RE              nonnegative    # absolute r tolerance
+TRAP_DRIFT_RADIAL_REL_TOL                    nonnegative    # relative r tolerance
+TRAP_DRIFT_LATITUDE_TOL                      nonnegative    # |Delta(z/r)|
+TRAP_DRIFT_PITCH_COS2_TOL                    nonnegative
+TRAP_DRIFT_PROFILE_BINS                      integer 8..360
+TRAP_DRIFT_MIN_PROFILE_COVERAGE              0 < value <= 1
+TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION          0 < value <= 1
+TRAP_ENERGY_REL_TOL                           nonnegative
+```
+
+The drift branch intentionally continues the full Lorentz trajectory instead of switching
+to a guiding-centre approximation.  This is important for C19's 15--190 MeV protons near
+GEO, where gyroradii can be non-negligible compared with magnetospheric gradients.  The
+azimuth-bin averages reduce gyrophase sensitivity without changing the authoritative
+orbit.
+
+`test/C19/run_C19_convergence.py` implements the evidence sequence used to validate the
+fix.  Its baseline distance and time sweeps turn drift recurrence **off** first, then add
+a matched drift-recurrence case.  This makes it possible to demonstrate directly whether
+the former EAST response weight was `DISTANCE_LIMIT`, `TIME_LIMIT`, or a genuinely
+recurring bounded orbit.  Optional timestep/mover sweeps support further numerical
+cross-checks.  The compact response-weighted result is written as
+`C19_aperture_termination_budget.csv`; `C19_aperture_samples.csv` remains the per-cell
+audit product.
+
+The direct detector fold also applies a rigorous `log10(E/W)` bound-width convergence
+gate.  Excessive unresolved trajectory weight is
+`INCONCLUSIVE_TRAJECTORY_RESOLUTION`; a resolved but too-wide direct interval is
+`INCONCLUSIVE_DIRECT_BOUND_WIDTH`; only a resolved/narrow interval that excludes the
+observation is `MODEL_MISMATCH`.  The direct-derived equivalent-cutoff diagnostic keeps
+that conservative acceptance semantics but now also stores a *separate* plotting-only
+blocked-area midpoint.  An unresolved interval still contributes its full uncertainty to
+the rigorous lower/upper bounds and still suppresses resolved `Rc_effective`; the
+diagnostic midpoint uses `0.5*dR` only so the historical cutoff-proxy comparison remains
+visible and is never used to classify a trajectory or pass C19.
+
+For publication-oriented runs the runner can enforce real detector attitude, an
+independent incident spectrum, and calibrated detector-response provenance through
+`--require-real-orientation`, `--require-independent-spectrum`, and
+`--require-calibrated-response`.  The committed response CSVs identify themselves as
+`NOMINAL_FACTORIZED` and intentionally do not satisfy the calibration gate.
+
+See `test/C19/README.md` for the detailed phased algorithm, acceptance logic, output
+schema, and required full AMPS regression sequence.

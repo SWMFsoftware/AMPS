@@ -463,7 +463,9 @@ The validated production behavior includes:
 - explicit detector attitude (`SM_PROXY` or per-epoch FILE) and optional bounded upstream
   anisotropy in the synthetic-observation fold;
 - staged execution/trajectory/fold/observational validity; and
-- unconditional standard comparison-plot generation after normal post-processing.
+- standard comparison/diagnostic plot generation after normal post-processing, with
+  each plot family failure-isolated so one Matplotlib exception cannot suppress later
+  transmission, cutoff, spectrum, or aperture diagnostics.
 
 There is no `--p0-diagnostic` or `--p2-diagnostic` flag. GRIDLESS/GRIDDED selection,
 SMOKE/ROUTINE/FULL cadence, detector attitude, anisotropy, and numerical resolutions are
@@ -472,6 +474,19 @@ inputs to the same current workflow rather than separate implementations.
 or `PENUMBRA_SCAN`); historical trace-limit/fold behavior is not re-exposed.  The runner
 fixes those internal semantics to the current validated contract and records them in the
 generated inputs/results.
+
+The C19 `ROUTINE` profile intentionally samples the five-minute observational reference
+at 60-minute spacing.  Use `--profile FULL` or `--time-step-minutes 0` when a modeled
+point is required for every valid selected reference epoch; GRIDDED snapshot batching
+still reuses one Mode3D mesh per field model.  `C19_model_coverage.csv` records whether
+each requested reference row produced an accepted direct scalar, direct bounds only, a
+cutoff-midpoint diagnostic, or no model row.
+
+For DIRECT_ACCESS the cutoff comparison now distinguishes `Rc_effective` from
+`Rc_midpoint_diagnostic`.  The former is withheld when unresolved trajectory samples are
+present.  The latter is an explicitly labelled blocked-area midpoint used only in plots
+and the diagnostic hard-cutoff fold; rigorous `Rc_lower/Rc_upper` bounds remain visible
+and the midpoint never enters direct acceptance metrics.
 
 The current GRIDDED command includes the fine mesh defaults, while both GRIDDED and
 GRIDLESS generated inputs contain the identical adaptive seed rigidity list used to
@@ -719,3 +734,44 @@ srcEarth/test/C3/README.md
 srcEarth/test/C11/README.md
 srcEarth/gridless/READ.ME
 ```
+
+### C19 DIRECT_ACCESS trajectory-resolution and recurrence diagnostics (2026-08-19)
+
+C19 keeps direct detector-folded `A(E,Omega)` as its primary observable and now treats
+trajectory resolution as an explicit part of the science result.  The committed C19
+input uses `MAX_TRACE_DISTANCE 0.0`; cumulative path length is therefore not the default
+classifier and `MAX_TRACE_TIME` supplies the common physical trace-time budget at every
+energy.  `run_C19.py` records the physical time implied by any requested finite path cap
+in `C19_access_energy_grid.csv`.
+
+Mode3D and GRIDLESS DIRECT_ACCESS files serialize per-trajectory termination evidence:
+stable termination code, trace time/distance/steps, retries, mirror/bounce counters,
+drift turns/angle, trap mechanism, and momentum spread.  The raw Tecplot headers publish
+the code-to-name mapping.  Codes 0--8 retain their archived meaning and code 9 is
+appended as `DRIFT_TRAPPED_FORBIDDEN`.
+
+The new drift resolver is a **positive full-orbit recurrence test**, not
+`timeout -> forbidden`.  It unwraps signed azimuth, forms azimuth-resolved profiles for
+successive complete drift turns, and compares averaged `r`, `z/r`, and
+`cos^2(pitch_angle)` with absolute+relative tolerances.  C19 defaults to three complete
+turns, requires sufficient profile coverage and consecutive turn-to-turn recurrence,
+checks outer-boundary margin and momentum spread, and only then returns the explicit
+drift-trapped termination.  Full Lorentz trajectories remain authoritative; no
+guiding-centre approximation is substituted in the penumbra.
+
+`test/C19/run_C19_convergence.py` implements the required evidence sequence.  It first
+runs distance and time sweeps with drift recurrence disabled, then adds a matched
+recurrence-enabled case.  Optional timestep/mover sweeps provide numerical cross-checks.
+The direct fold emits `C19_aperture_termination_budget.csv`, a compact response-weighted
+per-head accounting of outer escape, inner loss, bounce trap, drift trap, and numerical
+termination causes.
+
+The direct-derived equivalent-cutoff diagnostic is conservative: intervals touching
+`UNRESOLVED` retain only blocked-area lower/upper bounds; no hidden `0.5*dR` midpoint is
+created.  C19 distinguishes `INCONCLUSIVE_TRAJECTORY_RESOLUTION`,
+`INCONCLUSIVE_DIRECT_BOUND_WIDTH`, and a genuinely resolved `MODEL_MISMATCH`.  Publication
+runs can additionally require real detector attitude, an independent incident spectrum,
+and calibrated response provenance.
+
+See `test/C19/README.md` for the complete phased algorithm, parameter defaults, output
+schema, convergence acceptance logic, and full AMPS regression requirements.

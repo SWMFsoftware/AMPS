@@ -1396,6 +1396,23 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
       prm.numerics.trapRadialGrowthTolerance_Re*_EARTH__RADIUS_;
   trapConfig.energyRelativeTolerance=prm.numerics.trapEnergyRelativeTolerance;
   trapConfig.parallelDeadband=prm.numerics.trapParallelDeadband;
+  // Optional drift-shell recurrence supplements mirror/bounce trapping for
+  // near-90-degree pitch angles.  It remains valid only for the frozen field
+  // snapshot used by this trajectory and is therefore subordinate to TRAP_DETECTION.
+  trapConfig.driftEnabled=prm.numerics.trapDriftDetection;
+  trapConfig.minDriftRevolutions=prm.numerics.trapMinDriftRevolutions;
+  // Full-orbit C19 recurrence uses an azimuth-resolved phase-space profile.
+  // The absolute radius tolerance preserves the historical input keyword, while
+  // the relative/latitude/pitch gates distinguish a recurring T05 shell from a
+  // merely long-lived trajectory.
+  trapConfig.driftRadialAbsoluteTolerance_m=
+      prm.numerics.trapDriftRadialGrowthTolerance_Re*_EARTH__RADIUS_;
+  trapConfig.driftRadialRelativeTolerance=prm.numerics.trapDriftRadialRelativeTolerance;
+  trapConfig.driftLatitudeTolerance=prm.numerics.trapDriftLatitudeTolerance;
+  trapConfig.driftPitchCos2Tolerance=prm.numerics.trapDriftPitchCos2Tolerance;
+  trapConfig.driftProfileBins=prm.numerics.trapDriftProfileBins;
+  trapConfig.driftMinProfileCoverage=prm.numerics.trapDriftMinProfileCoverage;
+  trapConfig.driftMinMatchedBinFraction=prm.numerics.trapDriftMinMatchedBinFraction;
   Earth::TrajectoryTrap::Detector trapDetector(trapConfig,boundaryBox);
 
   ResetHybridTrajectoryContext(x0_m, boundaryBox.innerRadius);
@@ -1421,6 +1438,9 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
     result.steps=nSteps;
     result.mirrorPoints=trapDetector.mirrorPoints();
     result.bounceCycles=trapDetector.bounceCycles();
+    result.driftRevolutions=trapDetector.driftRevolutions();
+    result.driftAngle_rad=trapDetector.driftAngleRadians();
+    result.trapMechanism=static_cast<int>(trapDetector.mechanism());
     result.momentumRelativeSpread=trapDetector.momentumRelativeSpread();
     return result;
   };
@@ -1543,8 +1563,15 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
       const double xTrap[3]={x.x,x.y,x.z};
       const double pTrap[3]={p.x,p.y,p.z};
       const double bTrap[3]={Btrap.x,Btrap.y,Btrap.z};
-      if (trapDetector.Update(xTrap,pTrap,bTrap))
-        return Finalize(TrajectoryTermination::MagneticallyTrappedForbidden);
+      if (trapDetector.Update(xTrap,pTrap,bTrap)) {
+          // Preserve the physical mechanism in the termination code.  This is
+          // deliberately NOT a timeout remap: DRIFT_TRAPPED_FORBIDDEN is emitted
+          // only after the positive full-orbit recurrence test has fired.
+          return Finalize(
+              trapDetector.mechanism()==Earth::TrajectoryTrap::Mechanism::Drift
+              ? TrajectoryTermination::DriftTrappedForbidden
+              : TrajectoryTermination::MagneticallyTrappedForbidden);
+      }
     }
   }
 
@@ -2516,6 +2543,8 @@ static void WriteTecplotDirectionalAccess_Point(
                                              const std::vector<int>& fullGridCellIds,
                                              const std::vector<double>& rigidityList_GV,
                                              const std::vector<int>& accessState,
+                                             const std::vector<EarthUtil::DirectAccessSampleDiagnostic>& diagnostics,
+                                             std::uint64_t diagnosticBaseSlot,
                                              bool adaptiveSparse,
                                              const EarthUtil::AmpsParam& prm,
                                              double qabs,
@@ -2544,15 +2573,31 @@ static void WriteTecplotDirectionalAccess_Point(
   std::fprintf(f,
       "TITLE=\"Gridless direct directional rigidity access (point %d)\"\n",
       pointId);
+  // Numeric Tecplot rows carry a stable termination code; this AUXDATA makes
+  // the corresponding physical reason explicit for users reading the raw file.
+  std::fprintf(f,
+      "AUXDATA TERMINATION_REASON_CODES=\"0:OUTER_BOUNDARY_ALLOWED;1:INNER_BOUNDARY_FORBIDDEN;2:MAGNETICALLY_TRAPPED_FORBIDDEN;3:TIME_LIMIT;4:STEP_LIMIT;5:DISTANCE_LIMIT;6:INVALID_TIME_STEP;7:INVALID_FIELD;8:NUMERICAL_FAILURE;9:DRIFT_TRAPPED_FORBIDDEN\"\n");
   std::fprintf(f,
       "VARIABLES=\"lon_deg\",\"lat_deg\",\"rigidity_GV\",\"energy_MeV\","
-      "\"access_state\",\"allowed\",\"unresolved\"\n");
+      "\"access_state\",\"allowed\",\"unresolved\",\"termination_code\","
+      "\"trace_time_s\",\"trace_distance_Re\",\"trace_steps\",\"retry_count\","
+      "\"mirror_points\",\"bounce_cycles\",\"drift_revolutions\",\"drift_angle_deg\","
+      "\"trap_mechanism\",\"momentum_relative_spread\"\n");
   std::fprintf(f,
       "ZONE T=\"point=%d x_km=%g y_km=%g z_km=%g frame=SM coverage=%s adaptive=%c seed_n=%zu max_depth=%d guard_depth=%d\" I=%zu F=POINT\n",
       pointId,point_km.x,point_km.y,point_km.z,coverage.c_str(),
       adaptiveSparse ? 'T' : 'F',prm.cutoff.rigidityList_GV.size(),
       prm.cutoff.directAccessAdaptiveMaxDepth,
       prm.cutoff.directAccessAdaptiveGuardDepth,nRows);
+
+  // The MPI gather sorts sparse diagnostics by their global flattened slot.  Walk that
+  // sequence monotonically while rows are emitted, avoiding dense metadata arrays for
+  // the large adaptive candidate tree.
+  auto diagnosticIt=std::lower_bound(
+      diagnostics.begin(),diagnostics.end(),diagnosticBaseSlot,
+      [](const EarthUtil::DirectAccessSampleDiagnostic& item,std::uint64_t slot) {
+        return item.slot<slot;
+      });
 
   for (std::size_t selectedCellId=0;selectedCellId<fullGridCellIds.size();++selectedCellId) {
     const int fullCellId=fullGridCellIds[selectedCellId];
@@ -2584,8 +2629,23 @@ static void WriteTecplotDirectionalAccess_Point(
       const double rigidity=rigidityList_GV[(std::size_t)iRigidity];
       const double p=MomentumFromRigidity_GV(rigidity,qabs);
       const double energy=KineticEnergyFromMomentum_MeV(p,m0_kg);
-      std::fprintf(f,"%.15e %.15e %.15e %.15e %d %d %d\n",
-                   lon_deg,lat_deg,rigidity,energy,state,allowed,unresolved);
+      const std::uint64_t globalSlot=diagnosticBaseSlot+static_cast<std::uint64_t>(k);
+      while (diagnosticIt!=diagnostics.end() && diagnosticIt->slot<globalSlot)
+        ++diagnosticIt;
+      if (diagnosticIt==diagnostics.end() || diagnosticIt->slot!=globalSlot) {
+        std::fclose(f);
+        throw std::runtime_error(
+            "Gridless directional access state lacks its trajectory diagnostic record.");
+      }
+      const auto& d=*diagnosticIt;
+      std::fprintf(f,
+          "%.15e %.15e %.15e %.15e %d %d %d %d "
+          "%.15e %.15e %d %d %d %d %d %.15e %d %.15e\n",
+          lon_deg,lat_deg,rigidity,energy,state,allowed,unresolved,
+          d.terminationCode,d.traceTime_s,d.traceDistance_Re,d.steps,d.retryCount,
+          d.mirrorPoints,d.bounceCycles,d.driftRevolutions,d.driftAngle_deg,
+          d.trapMechanism,d.momentumRelativeSpread);
+      ++diagnosticIt;
     }
   }
   std::fclose(f);
@@ -2967,6 +3027,31 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     double traceTime_s{0.0};
     double traceDistance_m{0.0};
     int steps{0};
+    int retryCount{0};
+    int mirrorPoints{0};
+    int bounceCycles{0};
+    int driftRevolutions{0};
+    double driftAngle_rad{0.0};
+    int trapMechanism{0};
+    double momentumRelativeSpread{0.0};
+  };
+
+  auto MakeDirectAccessDiagnostic = [&](std::uint64_t slot,
+                                         const CutoffSampleDiagnosticGridless_& sample) {
+    EarthUtil::DirectAccessSampleDiagnostic out;
+    out.slot=slot;
+    out.terminationCode=static_cast<int>(sample.termination);
+    out.traceTime_s=sample.traceTime_s;
+    out.traceDistance_Re=sample.traceDistance_m/_EARTH__RADIUS_;
+    out.steps=sample.steps;
+    out.retryCount=sample.retryCount;
+    out.mirrorPoints=sample.mirrorPoints;
+    out.bounceCycles=sample.bounceCycles;
+    out.driftRevolutions=sample.driftRevolutions;
+    out.driftAngle_deg=sample.driftAngle_rad*180.0/M_PI;
+    out.trapMechanism=sample.trapMechanism;
+    out.momentumRelativeSpread=sample.momentumRelativeSpread;
+    return out;
   };
 
   auto ClassifyCutoffSampleDetailed = [&](cFieldEvaluator& taskField,
@@ -2980,6 +3065,13 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     out.traceTime_s=tr.traceTime_s;
     out.traceDistance_m=tr.traceDistance_m;
     out.steps=tr.steps;
+    out.retryCount=tr.retryCount;
+    out.mirrorPoints=tr.mirrorPoints;
+    out.bounceCycles=tr.bounceCycles;
+    out.driftRevolutions=tr.driftRevolutions;
+    out.driftAngle_rad=tr.driftAngle_rad;
+    out.trapMechanism=tr.trapMechanism;
+    out.momentumRelativeSpread=tr.momentumRelativeSpread;
 
     if (tr.allowed()) out.state=EarthUtil::CutoffSampleState::Allowed;
     else if (Earth::GridlessMode::IsPhysicalForbiddenTermination(tr.termination))
@@ -3084,6 +3176,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
         case TT::OuterBoundaryAllowed:         out.nOuterBoundaryAllowed++; break;
         case TT::InnerBoundaryForbidden:       out.nInnerBoundaryForbidden++; break;
         case TT::MagneticallyTrappedForbidden: out.nMagneticallyTrappedForbidden++; break;
+        case TT::DriftTrappedForbidden:         out.nMagneticallyTrappedForbidden++; break;
         case TT::TimeLimit:                    out.nTimeLimit++; break;
         case TT::StepLimit:                    out.nStepLimit++; break;
         case TT::DistanceLimit:                out.nDistanceLimit++; break;
@@ -3968,6 +4061,12 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   // [point][selected directional cell][requested rigidity].  -1 means this MPI
   // rank did not compute the slot; valid CutoffSampleState integers are >=0.
   std::vector<int> DirAccessStates;
+  // Sparse per-evaluated-trajectory metadata.  Keeping these records separate from
+  // the fixed candidate-state tree avoids allocating many dense diagnostic arrays for
+  // adaptive nodes that are never visited.  Worker-private vectors are merged only
+  // after a batch joins and MPI_Gatherv is called only by the rank/main thread.
+  std::vector<EarthUtil::DirectAccessSampleDiagnostic> DirAccessDiagnosticsRank;
+  std::vector<EarthUtil::DirectAccessSampleDiagnostic> DirAccessDiagnosticsAll;
 
   // Allocate result arrays on every rank.
   //
@@ -4129,7 +4228,8 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   // Compute one decoded task and return the result.  This is the same trajectory work
   // that used to live in the worker loop, now factored out so both collective dynamic
   // and deterministic fallback schedulers share a single source of physics behavior.
-  auto ProcessTask = [&](const TaskMsg& task, cFieldEvaluator& taskField) -> ResultMsg {
+  auto ProcessTask = [&](const TaskMsg& task, cFieldEvaluator& taskField,
+                         std::vector<EarthUtil::DirectAccessSampleDiagnostic>& directDiagnostics) -> ResultMsg {
     // Update Geopack/Tsyganenko state for this location's epoch before tracing.  For
     // POINTS/SHELLS this is a no-op after the first call; for TRAJECTORY mode this is
     // what makes each sample use its own timestamp and driver-table values.
@@ -4240,9 +4340,12 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
         EarthUtil::EvaluateAdaptiveDirectAccessDirection(
             adaptiveAccessGrid,prm.cutoff.directAccessAdaptiveGuardDepth,
             DirAccessStates,base,
-            [&](double rigidity_GV) -> int {
-              return static_cast<int>(ClassifyCutoffSampleDetailed(
-                  taskField,x0_m,v0,rigidity_GV).state);
+            [&](double rigidity_GV,std::size_t candidateIndex) -> int {
+              const CutoffSampleDiagnosticGridless_ sample=
+                  ClassifyCutoffSampleDetailed(taskField,x0_m,v0,rigidity_GV);
+              directDiagnostics.push_back(MakeDirectAccessDiagnostic(
+                  static_cast<std::uint64_t>(base+candidateIndex),sample));
+              return static_cast<int>(sample.state);
             },
             static_cast<int>(EarthUtil::CutoffSampleState::Unresolved));
         // -2 tells AccumulateResultLocal that the adaptive worker already filled the
@@ -4251,9 +4354,18 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
       }
       else {
         const int iRigidity=task.idx-cellId*nDirectionalAccessSeedRigidities;
-        directAccessState=static_cast<int>(ClassifyCutoffSampleDetailed(
+        const CutoffSampleDiagnosticGridless_ sample=ClassifyCutoffSampleDetailed(
             taskField,x0_m,v0,
-            prm.cutoff.rigidityList_GV[(std::size_t)iRigidity]).state);
+            prm.cutoff.rigidityList_GV[(std::size_t)iRigidity]);
+        directAccessState=static_cast<int>(sample.state);
+        const std::size_t perPoint=(std::size_t)nDirMapCells*
+                                   (std::size_t)nDirectionalAccessStorageRigidities;
+        const std::size_t slot=(std::size_t)task.loc*perPoint+
+                               (std::size_t)cellId*
+                               (std::size_t)nDirectionalAccessStorageRigidities+
+                               (std::size_t)iRigidity;
+        directDiagnostics.push_back(MakeDirectAccessDiagnostic(
+            static_cast<std::uint64_t>(slot),sample));
       }
     }
 
@@ -4543,6 +4655,12 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     if (endIndex <= beginIndex) return;
     const long long nWork=endIndex-beginIndex;
     std::vector<ResultMsg> results((std::size_t)nWork);
+    // One private diagnostic vector per field evaluator/worker.  A single adaptive
+    // direction may generate many trajectory records, so returning them inside
+    // ResultMsg would require dynamic ownership/copying.  Worker-local append-only
+    // vectors remain lock-free and are merged after all physics calls have completed.
+    std::vector<std::vector<EarthUtil::DirectAccessSampleDiagnostic>> workerDiagnostics(
+        (std::size_t)std::max(1,gridlessThreadCount));
     std::exception_ptr workerError;
     std::mutex workerErrorMutex;
     std::atomic<bool> stopWorkers(false);
@@ -4553,7 +4671,8 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
       try {
         const long long taskId=taskIdFromIndex(index);
         results[(std::size_t)(index-beginIndex)] =
-            ProcessTask(DecodeTask(taskId),*gridlessWorkerFields[(std::size_t)workerId]);
+            ProcessTask(DecodeTask(taskId),*gridlessWorkerFields[(std::size_t)workerId],
+                        workerDiagnostics[(std::size_t)workerId]);
 
         // Publish only SUCCESSFULLY completed physics work.  This is intentionally an
         // atomic local increment rather than an MPI call.  The main rank thread below
@@ -4650,6 +4769,11 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
     }
 
     if (workerError) std::rethrow_exception(workerError);
+
+    for (auto& records:workerDiagnostics) {
+      DirAccessDiagnosticsRank.insert(DirAccessDiagnosticsRank.end(),
+                                      records.begin(),records.end());
+    }
 
     // All completed tasks have already been counted in the progress RMA object.  Result
     // accumulation stays serial and deterministic after the workers finish.
@@ -4886,6 +5010,60 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
                static_cast<int>(DirAccessStates.size()),
                MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
     if (mpiRank==0) DirAccessStates.swap(root);
+
+    // Gather sparse trajectory metadata separately from the fixed state tree.  The
+    // state reduction above needs one slot for every possible adaptive node, whereas
+    // the diagnostic payload should scale only with trajectories actually integrated.
+    const std::size_t localBytesSz=
+        DirAccessDiagnosticsRank.size()*sizeof(EarthUtil::DirectAccessSampleDiagnostic);
+    if (localBytesSz>static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+      throw std::runtime_error(
+          "Gridless direct-access diagnostic payload exceeds MPI int byte count; "
+          "split the run into fewer points.");
+    }
+    const int localBytes=static_cast<int>(localBytesSz);
+    std::vector<int> byteCounts,byteDisplacements;
+    if (mpiRank==0) byteCounts.assign((std::size_t)mpiSize,0);
+    MPI_Gather(&localBytes,1,MPI_INT,
+               (mpiRank==0 ? byteCounts.data() : nullptr),1,MPI_INT,0,MPI_COMM_WORLD);
+
+    int totalBytes=0;
+    if (mpiRank==0) {
+      byteDisplacements.assign((std::size_t)mpiSize,0);
+      for (int r=0;r<mpiSize;++r) {
+        byteDisplacements[(std::size_t)r]=totalBytes;
+        if (byteCounts[(std::size_t)r] > std::numeric_limits<int>::max()-totalBytes)
+          throw std::runtime_error(
+              "Gridless gathered direct-access diagnostics exceed MPI_Gatherv INT_MAX bytes.");
+        totalBytes+=byteCounts[(std::size_t)r];
+      }
+      if ((totalBytes % static_cast<int>(sizeof(EarthUtil::DirectAccessSampleDiagnostic)))!=0)
+        throw std::runtime_error("Gridless direct-access diagnostic byte count is misaligned.");
+      DirAccessDiagnosticsAll.resize(
+          static_cast<std::size_t>(totalBytes)/
+          sizeof(EarthUtil::DirectAccessSampleDiagnostic));
+    }
+    MPI_Gatherv(
+        DirAccessDiagnosticsRank.empty() ? nullptr : DirAccessDiagnosticsRank.data(),
+        localBytes,MPI_BYTE,
+        (mpiRank==0 && !DirAccessDiagnosticsAll.empty())
+            ? DirAccessDiagnosticsAll.data() : nullptr,
+        (mpiRank==0 ? byteCounts.data() : nullptr),
+        (mpiRank==0 ? byteDisplacements.data() : nullptr),
+        MPI_BYTE,0,MPI_COMM_WORLD);
+
+    if (mpiRank==0) {
+      std::sort(DirAccessDiagnosticsAll.begin(),DirAccessDiagnosticsAll.end(),
+          [](const EarthUtil::DirectAccessSampleDiagnostic& a,
+             const EarthUtil::DirectAccessSampleDiagnostic& b) {
+            return a.slot<b.slot;
+          });
+      for (std::size_t i=1;i<DirAccessDiagnosticsAll.size();++i) {
+        if (DirAccessDiagnosticsAll[i-1].slot==DirAccessDiagnosticsAll[i].slot)
+          throw std::runtime_error(
+              "Gridless direct-access diagnostic gather contains duplicate slot ownership.");
+      }
+    }
   }
 
 
@@ -5020,6 +5198,7 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
                 lonRes_deg,latRes_deg,nLonMap,nLatMap,
                 EarthUtil::ToUpper(prm.cutoff.dirMapCoverage),
                 dirMapFullCellIds,directionalAccessRigidityGrid_GV,pointAccess,
+                DirAccessDiagnosticsAll,static_cast<std::uint64_t>(accessBase),
                 adaptiveDirectAccess,prm,qabs,m0);
           }
         }

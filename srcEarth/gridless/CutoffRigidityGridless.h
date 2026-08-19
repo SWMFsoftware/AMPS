@@ -289,6 +289,13 @@ namespace Earth {
       int retryCount{0};
       int mirrorPoints{0};
       int bounceCycles{0};
+      // Diagnostics from the optional azimuthal drift-shell recurrence detector.
+      // trapMechanism uses Earth::TrajectoryTrap::Mechanism numeric values
+      // (0=None, 1=Bounce, 2=Drift) but is kept as an int here to avoid coupling the
+      // public Gridless header to the private trap-detector implementation header.
+      int driftRevolutions{0};
+      double driftAngle_rad{0.0};
+      int trapMechanism{0};
       double momentumRelativeSpread{0.0};
 
       bool allowed() const { return IsAllowedTermination(termination); }

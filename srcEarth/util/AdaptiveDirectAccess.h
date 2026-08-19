@@ -47,6 +47,8 @@
 //======================================================================================
 
 #include <algorithm>
+#include <cstdint>
+#include <type_traits>
 #include <cmath>
 #include <cstddef>
 #include <functional>
@@ -135,6 +137,34 @@ inline AdaptiveDirectAccessGrid BuildAdaptiveDirectAccessGrid(
   return result;
 }
 
+// Per-trajectory diagnostics for the sparse DIRECT_ACCESS product.
+//
+// ``slot`` is the global flattened [location][sky-cell][candidate-rigidity] index.
+// Only actually evaluated adaptive nodes create records, so the memory footprint scales
+// with the number of trajectories rather than with the full depth-6 candidate tree.
+// The struct intentionally contains only POD fields: Mode3D and GRIDLESS gather it as
+// raw MPI_BYTE records after all worker threads have joined.
+struct DirectAccessSampleDiagnostic {
+  std::uint64_t slot{0};
+  int terminationCode{-1};
+  double traceTime_s{0.0};
+  double traceDistance_Re{0.0};
+  int steps{0};
+  int retryCount{0};
+  int mirrorPoints{0};
+  int bounceCycles{0};
+  int driftRevolutions{0};
+  double driftAngle_deg{0.0};
+  int trapMechanism{0};       // 0=None, 1=Bounce, 2=Drift
+  double momentumRelativeSpread{0.0};
+};
+
+// Diagnostics are gathered with MPI_BYTE rather than a custom MPI datatype.  Keep
+// this compile-time guard next to the record definition so adding a non-POD member
+// cannot silently make the byte-wise gather invalid.
+static_assert(std::is_trivially_copyable<DirectAccessSampleDiagnostic>::value,
+              "DirectAccessSampleDiagnostic must remain trivially copyable");
+
 template<class Classifier>
 inline int EvaluateAdaptiveDirectAccessDirection(
     const AdaptiveDirectAccessGrid& grid,
@@ -153,10 +183,13 @@ inline int EvaluateAdaptiveDirectAccessDirection(
     throw std::runtime_error("adaptive direct-access state slice exceeds output array");
 
   int nEvaluations=0;
+  // The classifier receives both rigidity and the deterministic candidate index.
+  // The second argument lets callers attach termination/trace diagnostics to the same
+  // global sparse slot without searching the candidate grid again.
   auto stateAt=[&](std::size_t idx) -> int {
     int& slot=states[base+idx];
     if (slot<0) {
-      slot=classify(grid.candidate_GV[idx]);
+      slot=classify(grid.candidate_GV[idx],idx);
       ++nEvaluations;
     }
     return slot;

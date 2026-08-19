@@ -92,6 +92,15 @@
 //     TRAP_RADIAL_GROWTH_TOL_RE <double>
 //     TRAP_ENERGY_REL_TOL <double>
 //     TRAP_PARALLEL_DEADBAND <double>
+//     TRAP_DRIFT_DETECTION        <T/F>      ! enable frozen-field full-orbit drift recurrence
+//     TRAP_MIN_DRIFT_REVOLUTIONS  <int>      ! completed turns required (>=2; C19 uses 3)
+//     TRAP_DRIFT_RADIAL_GROWTH_TOL_RE <double> ! absolute profile-bin radius tolerance [Re]
+//     TRAP_DRIFT_RADIAL_REL_TOL   <double>   ! relative profile-bin radius tolerance
+//     TRAP_DRIFT_LATITUDE_TOL     <double>   ! recurrence tolerance in z/r
+//     TRAP_DRIFT_PITCH_COS2_TOL   <double>   ! recurrence tolerance in cos^2(pitch)
+//     TRAP_DRIFT_PROFILE_BINS     <int>      ! azimuth bins per full drift revolution
+//     TRAP_DRIFT_MIN_PROFILE_COVERAGE <double> ! populated-bin fraction in (0,1]
+//     TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION <double> ! recurring common-bin fraction in (0,1]
 //
 //   #PARTICLE_TRAJECTORY    (optional; used by -mode 3d_forward)
 //     INITIALIZE_TRAJECTORIES T|F        ! runtime gate for AMPS trajectory records
@@ -1095,6 +1104,26 @@ namespace EarthUtil {
     double trapRadialGrowthTolerance_Re{0.05};
     double trapEnergyRelativeTolerance{1.0e-4};
     double trapParallelDeadband{1.0e-6};
+
+    // Optional drift-shell recurrence branch of the frozen-field trap detector.
+    // The historical mirror/bounce detector can miss particles with pitch angles
+    // close to 90 degrees because v_parallel may not produce clean sign reversals.
+    // C19 enables this branch so repeated azimuthal circulation with a recurring
+    // azimuth-resolved full-orbit profile can terminate as a physical trapped state
+    // before a safety limit.
+    bool trapDriftDetection{false};
+    int trapMinDriftRevolutions{3};
+    // Full-orbit drift recurrence tolerances.  The historical
+    // TRAP_DRIFT_RADIAL_GROWTH_TOL_RE name is retained as the absolute radius
+    // tolerance for backward-compatible input decks; the additional relative and
+    // phase-space tolerances make the criterion shell-splitting aware in T05.
+    double trapDriftRadialGrowthTolerance_Re{1.0};
+    double trapDriftRadialRelativeTolerance{0.20};
+    double trapDriftLatitudeTolerance{0.20};
+    double trapDriftPitchCos2Tolerance{0.25};
+    int trapDriftProfileBins{24};
+    double trapDriftMinProfileCoverage{0.70};
+    double trapDriftMinMatchedBinFraction{0.75};
 
     // Compatibility fields for CCMC/Runs-on-Request particle-control keywords.
     // They are parsed so strict validation accepts the input file.  At present

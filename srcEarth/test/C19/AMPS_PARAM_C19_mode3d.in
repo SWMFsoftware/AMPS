@@ -159,8 +159,28 @@ DT_TRACE                       0.25
 ADAPTIVE_DT                    T
 MAX_STEPS                      500000
 MAX_TRACE_TIME                 300.0
-MAX_TRACE_DISTANCE             400.0
+! 0 disables the cumulative path-length cap.  C19 intentionally lets the
+! physical 300-s trace-time limit control all proton energies; a fixed path cap
+! otherwise gives high-energy particles much less physical time to establish escape
+! or trapping than low-energy particles.
+MAX_TRACE_DISTANCE             0.0
 TRAP_DETECTION                 T
+! Supplement mirror/bounce trapping with a frozen-field drift-shell recurrence test.
+! This is important for near-90-degree-pitch GEO trajectories that can circulate on
+! a closed shell without producing enough clean v_parallel sign reversals.
+TRAP_DRIFT_DETECTION           T
+TRAP_MIN_DRIFT_REVOLUTIONS     3
+TRAP_DRIFT_RADIAL_GROWTH_TOL_RE 1.0
+TRAP_DRIFT_RADIAL_REL_TOL       0.20
+TRAP_DRIFT_LATITUDE_TOL         0.20
+TRAP_DRIFT_PITCH_COS2_TOL       0.25
+TRAP_DRIFT_PROFILE_BINS         24
+TRAP_DRIFT_MIN_PROFILE_COVERAGE 0.70
+TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION 0.75
+! Keep the momentum gate deliberately strict until Phase-0 diagnostics demonstrate
+! the actual long-trace RK4 |p| spread.  Relaxing this value must be a documented
+! convergence choice, not a hidden way to make the trap classifier fire.
+TRAP_ENERGY_REL_TOL             1.0e-4
 MODE3D_MPI_SCHEDULER           DYNAMIC
 MODE3D_MPI_DYNAMIC_CHUNK       16
 MODE3D_PARALLEL                THREADS

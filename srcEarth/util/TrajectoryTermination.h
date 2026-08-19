@@ -4,9 +4,11 @@
 namespace Earth {
 namespace GridlessMode {
 
-// Explicit result of one backward trajectory.  The first three values are
-// resolved physical classifications; all remaining values are numerical/unresolved
-// outcomes that must be reported, retried, or excluded from physical denominators.
+// Explicit result of one backward trajectory.  Resolved physical classifications
+// are identified by IsResolvedTermination(); numerical/unresolved outcomes must be
+// reported, retried, or excluded from physical denominators.  DriftTrappedForbidden
+// is appended after the legacy numeric codes so archived DIRECT_ACCESS files remain
+// readable without renumbering their termination_code column.
 enum class TrajectoryTermination {
   OuterBoundaryAllowed = 0,
   InnerBoundaryForbidden,
@@ -17,6 +19,11 @@ enum class TrajectoryTermination {
   InvalidTimeStep,
   InvalidField,
   NumericalFailure,
+  // Added after the legacy codes so archived DIRECT_ACCESS files keep their
+  // historical termination-code meaning.  The value is a resolved physical
+  // FORBIDDEN state established by the drift-recurrence branch, not by a
+  // trace-budget timeout.
+  DriftTrappedForbidden,
   Count
 };
 
@@ -31,6 +38,7 @@ inline const char* TrajectoryTerminationName(TrajectoryTermination t) {
     case TrajectoryTermination::InvalidTimeStep: return "INVALID_TIME_STEP";
     case TrajectoryTermination::InvalidField: return "INVALID_FIELD";
     case TrajectoryTermination::NumericalFailure: return "NUMERICAL_FAILURE";
+    case TrajectoryTermination::DriftTrappedForbidden: return "DRIFT_TRAPPED_FORBIDDEN";
     default: return "UNKNOWN";
   }
 }
@@ -38,7 +46,8 @@ inline const char* TrajectoryTerminationName(TrajectoryTermination t) {
 inline bool IsResolvedTermination(TrajectoryTermination t) {
   return t==TrajectoryTermination::OuterBoundaryAllowed ||
          t==TrajectoryTermination::InnerBoundaryForbidden ||
-         t==TrajectoryTermination::MagneticallyTrappedForbidden;
+         t==TrajectoryTermination::MagneticallyTrappedForbidden ||
+         t==TrajectoryTermination::DriftTrappedForbidden;
 }
 
 inline bool IsAllowedTermination(TrajectoryTermination t) {
@@ -59,7 +68,8 @@ inline bool IsTraceLimitTermination(TrajectoryTermination t) {
 
 inline bool IsPhysicalForbiddenTermination(TrajectoryTermination t) {
   return t==TrajectoryTermination::InnerBoundaryForbidden ||
-         t==TrajectoryTermination::MagneticallyTrappedForbidden;
+         t==TrajectoryTermination::MagneticallyTrappedForbidden ||
+         t==TrajectoryTermination::DriftTrappedForbidden;
 }
 
 inline bool IsCutoffForbiddenTermination(TrajectoryTermination t) {

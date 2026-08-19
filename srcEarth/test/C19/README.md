@@ -261,7 +261,36 @@ python3 srcEarth/test/C19/run_C19.py \
 
 ### 8.1 Quick smoke run
 
-The SMOKE profile selects the first, middle, and last retained observation epoch for each spacecraft:
+The SMOKE profile is a **synchronized three-snapshot regression**.  It first finds the
+observation epochs for which every requested channel is present for every requested
+spacecraft, intersects those epoch sets, and then retains the first, index-middle, and
+last epoch from that common set.  If a deliberately shortened reference contains only
+one or two common epochs, all of those common epochs are retained.
+
+This differs intentionally from the older C19 behavior, which selected first/middle/last
+independently for each spacecraft.  Because GOES-13 and GOES-15 do not have exactly the
+same retained time range, independent selection could create five unique magnetic-field
+snapshots while each spacecraft comparison panel contained only three model points.  In
+the current SMOKE profile, a normal two-spacecraft/two-channel run has the simple
+relationship
+
+```text
+3 common observation epochs
+        =
+3 Mode3D field snapshots
+        =
+3 model epochs for GOES-13 and 3 model epochs for GOES-15
+```
+
+The common-epoch requirement also includes **complete requested-channel coverage**.  For
+example, with the default `--channels P4,P5`, an epoch is eligible for SMOKE only if both
+P4 and P5 exist for every requested spacecraft.  This prevents a missing channel row
+from silently shortening one comparison panel.  If no such common epoch exists, SMOKE
+stops with an explicit error; use ROUTINE or FULL when independently valid spacecraft
+coverage is desired instead.
+
+`--time-step-minutes` does not alter SMOKE selection.  It remains a cadence override for
+ROUTINE/FULL only.
 
 ```bash
 python3 srcEarth/test/C19/run_C19.py \
@@ -271,6 +300,11 @@ python3 srcEarth/test/C19/run_C19.py \
   --amps ./amps \
   -np 4 -nt 16
 ```
+
+For a GRIDDED batch, verify the synchronized selection directly in
+`C19_snapshot_epochs.txt` and `C19_batch_manifest.csv`: the former should contain the
+three common field epochs, and the latter should contain every requested spacecraft at
+each of those epochs.
 
 ### 8.2 Routine regression
 
@@ -284,6 +318,27 @@ python3 srcEarth/test/C19/run_C19.py \
   --amps ./amps \
   -np 4 -nt 16
 ```
+
+This down-sampling is intentional and is the main reason a default ROUTINE comparison
+contains far fewer model points than the committed reference file.  The reference is
+five-minute cadence; ROUTINE keeps at most one spacecraft epoch per 60 minutes.  Every
+run now prints and records the number of eligible rows before the profile filter and the
+fraction actually selected.  Use either
+
+```bash
+--profile FULL
+```
+
+or equivalently
+
+```bash
+--time-step-minutes 0
+```
+
+when the purpose is to calculate a model result at every valid reference epoch.  For
+GRIDDED mode this no longer implies one process launch per epoch: the default batch path
+still reuses one Mode3D mesh per field model and processes all selected snapshots inside
+that launch.
 
 The default reference and driver paths are used automatically. Explicit equivalents are:
 
@@ -824,7 +879,7 @@ GRIDDED batch      : cutoff_3d_dir_access_loc_<snapshot-local-id>_snapshot_<inde
 GRIDLESS: cutoff_gridless_dir_access_point_0000.dat
 ```
 
-Each row is one `(lon,lat,rigidity)` trajectory and contains `rigidity_GV`, corresponding proton `energy_MeV`, `access_state`, `allowed`, and `unresolved`. States use the same three-state classifier as the production penumbra path:
+Each row is one `(lon,lat,rigidity)` trajectory and contains `rigidity_GV`, corresponding proton `energy_MeV`, `access_state`, `allowed`, and `unresolved`. The current diagnostic schema also records `termination_code`, `trace_time_s`, `trace_distance_Re`, `trace_steps`, retry count, mirror/bounce counts, drift-revolution diagnostics, trapping mechanism, and momentum-magnitude spread. These columns are deliberately emitted by both GRIDDED and GRIDLESS so an `UNRESOLVED` state can be attributed to a concrete numerical termination instead of being treated as an opaque failure. States use the same three-state classifier as the production penumbra path:
 
 ```text
 0 = PHYSICAL_FORBIDDEN
@@ -844,22 +899,35 @@ Rc_eff = R_min + integral[R_min,R_max] (1 - A(R)) dR .
 ```
 
 Resolved constant intervals contribute their full forbidden width or zero allowed
-width. A resolved transition bracket or an interval touching `UNRESOLVED` contributes
-`[0,dR]` to `Rc_lower/Rc_upper` and half of that width to the displayed midpoint. An
+width. Any bracket whose physical blocked fraction is not known exactly contributes the
+rigorous `[0,dR]` interval to `Rc_lower/Rc_upper`.  Two different central quantities are
+now deliberately kept separate:
+
+* `Rc_effective` is a **resolved scalar** and is withheld whenever the source direction
+  contains an `UNRESOLVED` trajectory sample;
+* `Rc_midpoint_diagnostic` is a **plotting/diagnostic-only** equivalent cutoff.  It uses
+  the midpoint contribution `0.5*dR` for a resolved transition bracket and also for an
+  unresolved bracket, while the full `[0,dR]` uncertainty remains in the rigorous bounds.
+
+This restores the historical cutoff-rigidity comparison curve without undoing the
+Phase-4 direct-access correction.  The midpoint cannot change trajectory state, cannot
+make an aperture `VALID`, and is never used by DIRECT_ACCESS acceptance metrics.  An
 allowed lowest sample is marked lower-censored and a forbidden highest sample is marked
-upper-censored. This reduction is written as
-`DIRECT_ACCESS_EQUIVALENT_BLOCKED_AREA`; it is valid for the configured response support
-and must not be interpreted as an unconstrained full-rigidity cutoff scan. Missing
-endpoints, missing adaptive seed nodes, duplicate/non-increasing nodes, or truncated
-direct-access output still fail post-processing.
+upper-censored.  The reduction is labelled
+`DIRECT_ACCESS_EQUIVALENT_BLOCKED_AREA_MIDPOINT_DIAGNOSTIC_WITH_BOUNDS`; it is valid only
+over the configured response support and must not be interpreted as an independently
+resolved or unconstrained full-rigidity cutoff scan. Missing endpoints, missing adaptive
+seed nodes, duplicate/non-increasing nodes, or truncated direct-access output still fail
+post-processing.
 
 The cutoff-based E/W diagnostic replaces each directional access curve by a hard step
-at `Rc_eff`, then folds that step through the same piecewise detector response and the
-same epoch spectrum as the direct calculation. `Rc_upper` produces its minimum signal
-and `Rc_lower` its maximum signal. In `PENUMBRA_SCAN` mode the reduction uses the AMPS
-`Rc_lower/Rc_effective/Rc_upper` map directly. This diagnostic is useful when a broad
-direct interval has finite nonzero bounds but no accepted midpoint; it never contributes
-to C19 validity or observational acceptance.
+at the explicitly labelled midpoint diagnostic, then folds that step through the same
+piecewise detector response and the same epoch spectrum as the direct calculation.
+`Rc_upper` produces its minimum signal and `Rc_lower` its maximum signal, so the central
+curve is always accompanied by rigorous proxy bounds. In `PENUMBRA_SCAN` mode the
+reduction uses the AMPS `Rc_lower/Rc_effective/Rc_upper` map directly. This diagnostic is
+useful when a broad direct interval has finite nonzero bounds but no accepted scalar; it
+never contributes to C19 validity or observational acceptance.
 
 Dense direct access flattens `(location, sky-cell, rigidity)` work so independent trajectories are distributed across MPI ranks and intra-rank workers. Adaptive direct access deliberately changes the top-level scheduling unit to **one sky direction**: that worker first evaluates the mandatory seeds and then makes local midpoint-refinement decisions for that direction. Different directions remain independent and are distributed across MPI ranks/threads. This dependency-aware task unit avoids global synchronization after every refinement level while retaining thousands of parallel direction tasks in a normal C19 aperture. `DIRECT_ACCESS` is the default science product because the detector fold consumes the access samples themselves; `PENUMBRA_SCAN` is retained when full cutoff topology is explicitly required. The two solver files intentionally retain the same public columns and three-state semantics so `run_C19.py` uses one parser and one folding implementation.
 
@@ -1388,16 +1456,19 @@ Normal machine-readable products include:
 | per-batch `C19_batch_manifest.csv` | Global trajectory row, snapshot index, snapshot-local output location, suffix, spacecraft, epoch, field model, and search mode |
 | `C19_reference_used.csv` | Selected observational rows plus actual detector IDs, exact flux-variable/correction-state, and ephemeris provenance |
 | `C19_spectrum_used.csv` | Epoch-dependent gamma/J0/E0 and measured/interpolated/file source |
-| `C19_directional_cutoff.csv` | Per simulated spacecraft epoch and sky cell: cutoff source, lower/effective/upper Rc, bound width, support censoring, and access-topology counts |
-| `C19_detector_response_used.csv` | Exact response intervals/components used by direct-response |
+| `C19_directional_cutoff.csv` | Per simulated spacecraft epoch and sky cell: cutoff source, rigorous lower/effective/upper Rc, separate equivalent-cutoff midpoint diagnostic, bound width, support censoring, and access-topology counts |
+| `C19_detector_response_used.csv` | Exact response intervals/components plus `calibration_state`; publication calibration gate consumes this provenance |
 | `C19_access_energy_grid.csv` | Common direct-access seed grid (`ADAPTIVE_SEED`) or dense requested grid (`DENSE_REQUESTED`) supplied identically to GRIDDED and GRIDLESS |
 | `cutoff_3d_dir_access_loc_<local><snapshot-suffix>.dat` / per-run `cutoff_gridless_dir_access_point_0000.dat` | Solver-native direct three-state `A(E,Ω)` cubes consumed by the common detector fold |
 | `C19_model.csv` / `C19_comparison.csv` | Production direct E/W results and bounds plus the independently labelled cutoff-rigidity proxy ratio/transmissions, spectrum source, response model, unresolved fractions, maximum trace time, search algorithm/policy, and map provenance |
-| `C19_aperture_availability.csv` | One row per epoch/head with independent status, every availability-stage count, solid-angle coverage, bounds, scalar, and all aggregate reasons |
+| `C19_model_coverage.csv` | One row for every selected reference row × solver × field model, explicitly identifying accepted direct scalar, direct-bounds-only, cutoff-midpoint-diagnostic-only, or missing run/post-processing result |
+| `C19_aperture_availability.csv` | One row per epoch/head with availability status, coverage, direct bounds/scalar, response-weighted physical and unresolved termination fractions, direct bound width, unresolved asymmetry, and spectrum provenance |
+| `C19_aperture_termination_budget.csv` | Compact Phase-0 one-row-per-head response-weighted termination budget: outer escape, inner loss, bounce trap, drift trap, time/step/distance limits, and other unresolved states |
+| `C19_trace_budget_sweep.csv` (from `run_C19_convergence.py`) | Phase-1/2/3 distance/time/timestep/mover/drift-recurrence convergence summary for the representative epoch |
 | `C19_metrics.csv` | Per-spacecraft and aggregate finite/saturated fractions, sign agreement, bias, MAE, RMSE, correlation, and provisional gate |
 | `C19_direction_sense_diagnostic.csv` | Production arrival→look convention and legacy opposite-convention diagnostic |
 | `C19_aperture_samples.csv` | Representative aperture cells including lower/effective/upper cutoff, topology, raw termination counts, trace maxima, and transmission |
-| `C19_result.json` | Staged validity gates, thresholds, hashes, failures, limitations, and overall result |
+| `C19_result.json` | Staged validity gates, rigorous-bound compatibility counts, unresolved-asymmetry diagnostics, spectrum/calibration/orientation provenance, thresholds, hashes, failures, limitations, and overall result |
 | `C19_summary.txt` | Human-readable execution/trajectory/fold/observation/overall status |
 
 Every completed C19 run also writes the standard visual products without any special
@@ -1405,18 +1476,24 @@ flag:
 
 | Plot | Contents |
 |---|---|
-| `C19_comparison_<solver>_<field>.png` | Observed and accepted direct log10(E/W), rigorous direct intervals/censoring, categorical invalid status, and the separate cutoff-rigidity diagnostic with its Rc-bound interval |
-| `C19_scatter_<solver>_<field>.png` | Data-ranged observed-versus-modeled scatter |
-| `C19_parity_<solver>_<field>.png` | Common-range parity view with the 1:1 line |
-| `C19_residual_<solver>_<field>.png` | Model-minus-observation residual versus time |
+| `C19_comparison_<solver>_<field>.png` | All selected GOES reference points, accepted direct log10(E/W), rigorous direct intervals/censoring, open direct-bound midpoint markers for inconclusive rows, explicitly labelled equivalent-cutoff midpoint diagnostic with Rc bounds, and markers for missing AMPS rows |
+| `C19_scatter_<solver>_<field>.png` | Data-ranged observed-versus-model comparison containing accepted direct points plus open equivalent-cutoff midpoint diagnostic points; generated when either population exists |
+| `C19_parity_<solver>_<field>.png` | Common-range parity view with accepted direct and equivalent-cutoff midpoint diagnostic points plus the 1:1 line |
+| `C19_residual_<solver>_<field>.png` | Direct accepted residuals and separately styled cutoff-midpoint diagnostic residuals versus time |
 | `C19_transmission_<solver>_<field>.png` | EAST/WEST accepted direct scalars, unconditional direct Tmin–Tmax bands, per-head status markers, and separately styled hard-cutoff proxy transmissions |
 | `C19_aperture_diagnostic.png` | Representative aperture-cell cutoff/access diagnostic; direct-access cells are colored by the midpoint of their explicit transmission bounds, while the CSV retains both bounds |
-| `C19_directional_cutoff_<solver>_<field>_<spacecraft>_<UTC>.png` | Effective directional cutoff and retained Rc bound width for every simulated spacecraft epoch; outlined cells are censored at the sampled support |
+| `C19_directional_cutoff_<solver>_<field>_<spacecraft>_<UTC>.png` | Four panels for every simulated spacecraft epoch: rigorous Rc lower bound, equivalent-cutoff midpoint diagnostic, rigorous Rc upper bound, and retained bound width. Diagnostic-only midpoint cells and support-censored cells are outlined |
 | `C19_boundary_spectrum.png` | Assumed incident boundary proton spectrum for every selected epoch over the P4/P5 response support |
 
 Exact zero transmission remains a dedicated saturation state rather than an arbitrary
 finite substitute. Unresolved cells are carried through lower/upper bounds and the
 configured unresolved-aperture validity gate.
+
+Plot families are failure-isolated.  An exception in scatter/parity/residual generation
+is recorded in `C19_result.json:plot_generation_errors` and does not prevent the
+transmission, directional-cutoff, boundary-spectrum, or aperture-diagnostic figures from
+being attempted.  This is intentionally a reporting-only safeguard; a plot failure does
+not change any C19 scientific result.
 
 ## 11. Acceptance behavior
 
@@ -1599,10 +1676,18 @@ configured tolerances for **both** heads. Because a ratio of two unaccepted midp
 would hide potentially large and asymmetric uncertainty, the comparison correctly
 leaves the production direct curve absent and plots its ratio bounds/censoring instead.
 
-The dashed `AMPS cutoff-rigidity proxy (diagnostic)` curve answers a different question:
-what E/W would result after deliberately collapsing every directional access curve to a
-hard cutoff? It can remain finite in the same panel, but it does not convert the direct
-row to `VALID` and is not included in the acceptance metrics.
+The dashed `AMPS equivalent-cutoff midpoint (diagnostic only)` curve answers a different
+question: what E/W results after deliberately collapsing every directional access curve
+to one blocked-area midpoint cutoff?  For an unresolved rigidity bracket the midpoint
+uses the explicit `0.5*dR` diagnostic convention while the full `[0,dR]` contribution is
+retained in `Rc_lower/Rc_upper`.  Consequently the dashed diagnostic can remain visible
+even when the direct scalar is withheld.  This is intentional and is now encoded in a
+separate `rc_midpoint_diagnostic_gv` field; it is not `Rc_effective`, never converts a
+direct row to `VALID`, and is excluded from direct acceptance metrics.
+
+The comparison also draws an open marker at the midpoint of a finite rigorous direct
+log-ratio interval when no direct scalar is accepted.  That marker is visualization only;
+the vertical interval remains the scientific statement.
 
 An absent accepted-scalar line is not automatically zero transmission. Inspect
 `C19_aperture_availability.csv` in this order:
@@ -1613,6 +1698,15 @@ An absent accepted-scalar line is not automatically zero transmission. Inspect
 2. `cells_with_access_samples` and `cells_with_response_overlap` diagnose missing,
    truncated, duplicate/nonmonotonic, or wrong-energy direct-access products. The
    parser makes malformed support and seed grids fatal before folding.
+
+If the *number of timestamps* itself is smaller than expected, inspect
+`C19_model_coverage.csv` and the profile summary first.  `SMOKE` intentionally keeps at
+most three **common synchronized epochs** across all requested spacecraft/channels;
+`--time-step-minutes` does not override that behavior.  `ROUTINE` intentionally samples
+each spacecraft's five-minute reference at 60-minute cadence.  Use `--profile FULL` (or
+use `--profile ROUTINE --time-step-minutes 0`) to request every valid selected reference
+epoch.  A timestamp that was selected but has no ModelRow is shown explicitly in the
+comparison plot as a missing run/post-processing marker rather than silently disappearing.
 3. `contributing_cells` and `solid_angle_coverage_fraction` diagnose partial aperture
    coverage.
 4. `transmission_min/max`, unresolved fraction, and discrete-transition fraction
@@ -1651,3 +1745,395 @@ model during debugging.
 6. Tsyganenko, N. A., and M. I. Sitnov (2005), “Modeling the dynamics of the inner magnetosphere during strong geomagnetic storms,” *Journal of Geophysical Research*, 110, A03208, doi:10.1029/2004JA010798.
 
 Machine-readable BibTeX entries are provided in `references.bib`.
+
+
+## 2026-08-19 phased DIRECT_ACCESS trajectory-resolution and validation update
+
+This stable-version update implements the staged C19 recovery plan.  The organizing
+principle is unchanged: **DIRECT_ACCESS remains the primary C19 observable**.  The test
+must first establish the physical fate of the full-orbit trajectories that contribute to
+the EAST and WEST detector responses; a cutoff proxy is not allowed to manufacture a
+finite observational scalar when those trajectories are unresolved.
+
+The implementation deliberately separates evidence gathering, numerical convergence,
+positive trapped-orbit classification, scientific status, and publication-grade
+observational inputs.  This ordering prevents a new classifier from hiding the original
+failure mechanism and makes every change auditable.
+
+### Phase 0 -- termination instrumentation and response-weighted accounting
+
+Both GRIDDED and GRIDLESS DIRECT_ACCESS writers serialize a diagnostic record for every
+trajectory that was actually evaluated, including adaptive refinement nodes.  The
+Tecplot rows contain
+
+```text
+termination_code
+trace_time_s
+trace_distance_Re
+trace_steps
+retry_count
+mirror_points
+bounce_cycles
+drift_revolutions
+drift_angle_deg
+trap_mechanism
+momentum_relative_spread
+```
+
+Tecplot POINT rows are numeric, so `termination_code` is the serialized termination
+reason.  Each DIRECT_ACCESS file now carries an `AUXDATA TERMINATION_REASON_CODES=...`
+map so the raw product is self-describing.  Codes 0--8 retain their historical numeric
+values; code 9 is appended rather than inserted so archived products are not silently
+reinterpreted:
+
+```text
+0 OUTER_BOUNDARY_ALLOWED
+1 INNER_BOUNDARY_FORBIDDEN
+2 MAGNETICALLY_TRAPPED_FORBIDDEN       # legacy bounce recurrence
+3 TIME_LIMIT
+4 STEP_LIMIT
+5 DISTANCE_LIMIT
+6 INVALID_TIME_STEP
+7 INVALID_FIELD
+8 NUMERICAL_FAILURE
+9 DRIFT_TRAPPED_FORBIDDEN              # positive full-orbit drift recurrence
+```
+
+`trap_mechanism` remains a compact auxiliary diagnostic (`0=NONE`, `1=BOUNCE`,
+`2=DRIFT`).  The explicit termination code 9 is the authoritative distinction between
+legacy bounce trapping and the C19 drift-recurrence resolver.
+
+The trajectory records are sparse by design.  Adaptive DIRECT_ACCESS does not evaluate
+every node in its deterministic candidate tree; worker threads therefore accumulate
+records only for evaluated slots, MPI ranks gather those sparse records, and rank 0 sorts
+them by the global flattened `(location, sky-cell, candidate-rigidity)` slot before
+writing.  This preserves a one-to-one audit trail without allocating metadata for unused
+adaptive candidates.
+
+The Python fold now emits two complementary levels of termination accounting:
+
+* `C19_aperture_samples.csv` remains the detailed per-sky-cell audit product.
+* `C19_aperture_termination_budget.csv` is a compact one-row-per-head Phase-0 product.
+  It reports response-weighted fractions attributed to
+  `OUTER_BOUNDARY_ALLOWED`, `INNER_BOUNDARY_FORBIDDEN`, legacy magnetic/bounce trapping,
+  `DRIFT_TRAPPED_FORBIDDEN`, `TIME_LIMIT`, `STEP_LIMIT`, `DISTANCE_LIMIT`, and other
+  unresolved/numerical states.
+* `C19_aperture_availability.csv` carries the same head-level physical/unresolved
+  decomposition together with transmission bounds, aperture coverage, direct E/W bound
+  width, and spectrum provenance.
+
+The response-weighted termination budget is a **diagnostic**, not a second access fold.
+For an energy interval, half of the exact response-weighted `J(E)G(E)` integral is
+attributed to each endpoint termination reason.  This makes the termination budget sum
+meaningfully without inventing an unknown transition energy inside an unresolved
+interval.  The rigorous DIRECT_ACCESS lower/upper transmission bounds continue to use
+the conservative three-state access logic and remain authoritative.
+
+### Phase 1A -- reproduce and partition the original failure before enabling drift recurrence
+
+The new helper
+
+```text
+srcEarth/test/C19/run_C19_convergence.py
+```
+
+runs the decisive single-epoch convergence experiment.  Its default target is
+GOES-13 P4 at `2012-05-17T06:00:00Z`, GRIDDED/T05.  The distance-budget baseline **turns
+DRIFT recurrence off** so the new physics resolver cannot consume the trajectories whose
+old failure mechanism is being measured.  By default it evaluates
+
+```text
+MAX_TRACE_TIME = 300 s
+MAX_TRACE_DISTANCE = 400, 1000, 2500, 8000, 0 Re
+TRAP_DRIFT_DETECTION = F
+```
+
+where distance `0` means no cumulative-path ceiling.  The extra zero-distance case is
+important: it verifies whether a very large finite path ceiling is already equivalent to
+a purely time-controlled trace.
+
+Example:
+
+```bash
+python3 srcEarth/test/C19/run_C19_convergence.py \
+  --amps ./amps --mpirun mpirun -np 4 -nt 16 \
+  --output-root test_output/C19_convergence
+```
+
+The child C19 products are preserved in separate case directories.  The aggregate
+`C19_trace_budget_sweep.csv` and convergence plots track, for EAST and WEST,
+
+* total response-weighted unresolved fraction;
+* `DISTANCE_LIMIT`, `TIME_LIMIT`, and `STEP_LIMIT` fractions;
+* response weight ending as inner loss, bounce trapping, or drift trapping;
+* direct E/W rigorous-bound width;
+* overall C19 status.
+
+A falling unresolved fraction as the path budget increases directly demonstrates a
+path-budget artifact.  A plateau after the path cap ceases to control means only that a
+**long-lived unresolved** population remains at the selected time budget; it does not by
+itself prove drift trapping.  Positive trapped classification is reserved for Phase 3.
+
+### Phase 1B / Phase 2 -- use physical trace time as the production budget and test convergence
+
+Historical C19 input used `MAX_TRACE_DISTANCE 400` together with a 300-s time ceiling.
+`MAX_TRACE_DISTANCE` is cumulative particle path length, not geocentric radius.  A fixed
+path ceiling therefore corresponds to a shorter physical integration time at higher
+proton energy and can imprint an artificial energy dependence on `A(E,Omega)`.
+
+The committed production templates now use
+
+```text
+MAX_TRACE_TIME       300.0
+MAX_TRACE_DISTANCE   0.0
+```
+
+so all energies receive the same physical trace-time budget.  The distance ceiling is
+retained only as an optional machine-safety/convergence control.  For every requested
+energy, `C19_access_energy_grid.csv` records proton beta, speed in Re/s, the time implied
+by a finite path ceiling, and the nominal controlling trace limit.
+
+The convergence helper also runs a time-only baseline with drift recurrence disabled:
+
+```text
+MAX_TRACE_DISTANCE = 0
+MAX_TRACE_TIME     = 60, 120, 300, 600 s
+TRAP_DRIFT_DETECTION = F
+```
+
+This distinguishes a path-cap artifact from a result that is still sensitive to the
+physical trace duration.  Production acceptance should be based on convergence of the
+**observable and its rigorous bounds**, not merely on crossing the 5% unresolved gate.
+
+Optional `--dt-values` and `--mover-values` sweeps are provided for timestep and mover
+cross-checks.  The normal C19 reference mover remains RK4; a BORIS value may be requested
+when the linked AMPS build provides that mover.  The purpose is numerical cross-checking,
+not a silent production-mover change.
+
+### Phase 3 -- positive full-orbit drift recurrence for GEO/T05
+
+The original trapped-orbit detector is retained.  Its bounce branch requires repeated
+parallel-velocity reversals, several bounce cycles, a stable bounce radial envelope, an
+outer-boundary margin, and acceptable momentum-magnitude spread.  That is useful for F3
+and ordinary mirroring trajectories, but it can miss near-90-degree-pitch particles at
+GEO and can be too restrictive for a strongly non-axisymmetric T05 shell.
+
+C19 therefore adds a second **positive** trapped-orbit resolver.  It deliberately uses
+the authoritative full Lorentz trajectory rather than a guiding-centre approximation or
+adiabatic invariants: 15--190 MeV proton gyroradii at GEO can be a substantial fraction
+of the relevant magnetospheric scale, particularly in the penumbra where the test is
+most sensitive.
+
+The drift recurrence algorithm is:
+
+1. Unwrap the particle's signed geocentric azimuth and accumulate the net drift angle.
+   Rapid gyromotion that moves azimuth back and forth largely cancels; systematic drift
+   accumulates.
+2. Divide every complete `2*pi` drift revolution into configurable azimuth-phase bins.
+   The default is 24 bins.
+3. Within each bin accumulate gyro-insensitive averages of three full-orbit observables:
+   geocentric radius `r`, normalized vertical coordinate `z/r`, and
+   `cos^2(pitch_angle)`.  The squared pitch cosine removes the sign reversal at mirror
+   points while retaining pitch structure.
+4. Require each revolution to populate a configured fraction of its phase bins, then
+   compare consecutive complete revolutions bin by bin.
+5. A radius bin matches when
+
+   ```text
+   |r_n-r_(n-1)| <= max(abs_tol, rel_tol * max(|r_n|,|r_(n-1)|))
+   ```
+
+   and the same bin must also satisfy the `z/r` and `cos^2(pitch)` tolerances.
+6. Require a configured fraction of the common bins to match.  Failed recurrence resets
+   the count of consecutive stable revolution comparisons; isolated fortuitous returns
+   therefore cannot accumulate over a chaotic trace.
+7. Require at least the configured number of complete revolutions, all required
+   consecutive turn-to-turn recurrence comparisons, a safe margin from the outer
+   boundary, and acceptable momentum-magnitude spread.
+8. Only then return `DRIFT_TRAPPED_FORBIDDEN`.
+
+The committed C19 defaults are
+
+```text
+TRAP_DETECTION                         T
+TRAP_DRIFT_DETECTION                   T
+TRAP_MIN_DRIFT_REVOLUTIONS             3
+TRAP_DRIFT_RADIAL_GROWTH_TOL_RE        1.0
+TRAP_DRIFT_RADIAL_REL_TOL              0.20
+TRAP_DRIFT_LATITUDE_TOL                0.20
+TRAP_DRIFT_PITCH_COS2_TOL              0.25
+TRAP_DRIFT_PROFILE_BINS                24
+TRAP_DRIFT_MIN_PROFILE_COVERAGE        0.70
+TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION    0.75
+TRAP_ENERGY_REL_TOL                     1.0e-4
+```
+
+`TRAP_DRIFT_RADIAL_GROWTH_TOL_RE` is retained for input compatibility but is now the
+**absolute** radial recurrence tolerance.  The relative tolerance is applied alongside
+it, so a T05 shell may have a large day/night excursion and still be recognized if its
+azimuth-resolved profile repeats from turn to turn.  This is more meaningful than merely
+loosening one global `r_min/r_max` envelope tolerance.
+
+The momentum gate remains intentionally strict in the committed default.  Phase-0
+`momentum_relative_spread` diagnostics must be used to measure the actual RK4 error on
+resolved escape, impact, known trapped-dipole, and candidate T05 trajectories before the
+tolerance is relaxed.  A BORIS/full-orbit cross-check is preferred when available.
+
+**Critical rule:** neither bounce nor drift recurrence maps a timeout to forbidden.
+`TIME_LIMIT`, `STEP_LIMIT`, and `DISTANCE_LIMIT` remain `UNRESOLVED` unless a positive
+physical recurrence criterion fired earlier.  This rule is what keeps DIRECT_ACCESS
+scientifically distinct from the old equivalent-cutoff midpoint heuristic.
+
+#### Regression protection
+
+Two source-level regressions are included and are compiled/executed by the C19 package
+self-test when a C++17 compiler is available:
+
+* `test/C19/tests/test_trap_recurrence.cpp` feeds controlled recurring and secularly
+  expanding multi-turn profiles directly to the detector.  It protects the recurrence
+  logic from accidental false positives/false negatives.
+* `test/C19/tests/test_trap_dipole_full_orbit.cpp` integrates physical relativistic full
+  Lorentz orbits in an analytic centered dipole with a self-contained Boris/Cayley step.
+  A 15-MeV near-90-degree-pitch GEO proton must establish three-turn drift recurrence; a
+  100-MeV radially outward GEO proton must escape without a false trapped verdict.  This
+  exercises the detector with an actual orbit rather than hand-made recurrence points.
+
+The analytic-dipole test deliberately carries a tiny local Boris implementation because
+the standalone stable `srcEarth` archive does not include the parent AMPS build
+configuration needed to link the application mover directly.  These source-level tests
+do **not** replace full linked AMPS mover regressions.  Before a production/publication
+run, execute the existing DIPOLE/Størmer and F3 tests with the complete AMPS build and
+retain full-mover cases for (1) a known escaping orbit, (2) an inner-boundary-loss orbit,
+(3) a high-pitch trapped dipole orbit, and (4) a long-lived but ultimately escaping
+orbit.  Historical termination codes remain unchanged; the new drift code was appended
+specifically to protect archived semantics.
+
+### Phase 3C -- demonstrate where the formerly unresolved response weight went
+
+After the baseline distance/time sweeps, `run_C19_convergence.py` adds a matched case with
+`MAX_TRACE_DISTANCE=0`, the selected time budget, and drift recurrence enabled.  The
+scientifically convincing diagnostic is not simply that the red X disappears.  It is a
+measured transfer such as
+
+```text
+before: EAST response dominated by DISTANCE_LIMIT/TIME_LIMIT
+ after: EAST response dominated by DRIFT_TRAPPED_FORBIDDEN, residual unresolved < gate
+```
+
+while WEST remains physically consistent and the direct E/W bounds converge.  If the
+remaining unresolved fraction does not decrease or the result is timestep/mover
+sensitive, the case remains inconclusive.
+
+### Phase 4 -- proxy semantics, direct-bound convergence, and scientific status
+
+The cutoff-rigidity proxy remains a **diagnostic reduction**.  For a direct access curve:
+
+1. Fully resolved constant intervals contribute their known blocked area.
+2. A finite transition or unresolved bracket contributes the rigorous full `[0,dR]`
+   uncertainty to `Rc_lower/Rc_upper`.
+3. A **separate plotting-only midpoint** contributes `0.5*dR` for such an uncertain
+   bracket so the historical cutoff-proxy diagnostic remains available at every modeled
+   epoch.  This midpoint is never stored as `Rc_effective` when unresolved trajectories
+   are present and never enters DIRECT_ACCESS acceptance.
+
+The corresponding provenance is
+`DIRECT_ACCESS_EQUIVALENT_BLOCKED_AREA_MIDPOINT_DIAGNOSTIC_WITH_BOUNDS`.  A true
+`PENUMBRA_SCAN` may still provide its own independently calculated
+lower/effective/upper cutoff quantities.
+
+C19 now distinguishes numerical inconclusiveness from an observational disagreement:
+
+```text
+INCONCLUSIVE_TRAJECTORY_RESOLUTION   unresolved trajectory weight exceeds the gate
+INCONCLUSIVE_DIRECT_BOUND_WIDTH      rigorous direct E/W interval is too wide
+MODEL_MISMATCH                       resolved/narrow direct interval excludes observation
+VALID                                resolved/narrow direct result is observationally usable
+```
+
+The direct ratio is not accepted merely because unresolved weight happens to fall below
+5%.  The optional `--max-direct-ratio-bound-width-log10` gate is implemented but defaults
+to `-1` (disabled) until a defensible threshold is calibrated from the convergence
+sweeps.  When enabled, it is applied to the width of the rigorous `log10(E/W)` interval.
+This guards against a small amount of unresolved or finite-grid weight lying exactly
+where the detector/spectrum makes the observable highly sensitive.
+
+`C19_result.json` explicitly records
+
+* the number/fraction of observations lying inside available rigorous direct bounds;
+* per-case EAST and WEST unresolved fractions;
+* their ratio when finite;
+* the bounded unresolved asymmetry index
+
+  ```text
+  (f_unresolved,E - f_unresolved,W) /
+  (f_unresolved,E + f_unresolved,W)
+  ```
+
+* response-weighted EAST/WEST distance/time/drift-trapped fractions;
+* spectrum-provenance counts.
+
+The unresolved asymmetry is diagnostic only.  EAST >> WEST unresolved weight is
+physically suggestive in this event but can never, by itself, make C19 pass.
+
+### Phase 5 -- publication-grade observational hardening
+
+The existing nominal C19 setup remains useful for development and regression, but it is
+not silently promoted to publication-grade instrument fidelity.  Three explicit gates
+are now available:
+
+```text
+--require-real-orientation
+--require-independent-spectrum
+--require-calibrated-response
+```
+
+`--require-real-orientation` rejects the `SM_PROXY` detector attitude and requires
+`--detector-orientation-source FILE`.  `--require-independent-spectrum` requires
+`--spectrum-source FILE`; it prevents a model-dependent WEST-derived normalization from
+entering a publication run.  `--require-calibrated-response` requires every selected
+positive response row to declare `calibration_state=CALIBRATED`.
+
+The committed nominal and uncorrected-extended response CSVs now explicitly declare
+`calibration_state=NOMINAL_FACTORIZED`.  They therefore continue to work for normal C19
+development, but intentionally fail the publication calibration gate.  A calibrated
+energy-angle response can be supplied later without weakening the test's provenance
+rules.
+
+When publication gates are not requested, the runner still records spectrum provenance
+per case:
+
+```text
+INDEPENDENT_SPECTRUM
+WEST_DERIVED_MODEL_CLEAN
+WEST_DERIVED_PARTIALLY_SHIELDED
+WEST_DERIVED_UNRESOLVED
+FIXED_DIAGNOSTIC
+```
+
+A WEST-derived spectrum can therefore be identified as compromised at epochs where the
+model says the normalizing WEST head is itself shielded or unresolved.  This flag is
+informational in ordinary development mode; an independent spectrum is the preferred
+publication path.
+
+### Recommended evidence sequence
+
+Do not enable or tune the new drift classifier first.  The recommended sequence is:
+
+1. Run the Phase-1A distance sweep with drift recurrence off.
+2. Run the Phase-1B time sweep with the path cap disabled and drift recurrence off.
+3. Confirm that the production choice is insensitive to the numerical path ceiling and
+   reasonably converged in trace time.
+4. Enable the full-orbit drift recurrence and rerun the matched case.
+5. Inspect `C19_aperture_termination_budget.csv`: demonstrate explicitly that the former
+   `DISTANCE_LIMIT/TIME_LIMIT` weight becomes a positive physical termination rather than
+   simply disappearing.
+6. Check direct E/W bound width, timestep sensitivity, and (when supported) RK4/BORIS
+   agreement.
+7. Run the full DIPOLE/F3 AMPS regressions.
+8. Only then interpret `VALID`/`MODEL_MISMATCH` against GOES and, for publication, enable
+   the real-attitude/independent-spectrum/calibrated-response gates.
+
+This sequence preserves the central scientific claim of C19: **the measured GOES
+East/West asymmetry is compared with a detector-folded, trajectory-resolved AMPS access
+calculation.  The cutoff proxy is useful for diagnosis, but it cannot resolve an unknown
+trajectory by assumption.**

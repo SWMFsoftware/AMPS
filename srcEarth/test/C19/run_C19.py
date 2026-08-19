@@ -128,13 +128,19 @@ class SpectrumEstimate:
 
 @dataclass(frozen=True)
 class ResponseInterval:
-    """Piecewise-constant energy response interval for one EPEAD channel."""
+    """Piecewise-constant energy response interval for one EPEAD channel.
+
+    ``calibration_state`` is explicit because the committed C19 response is still a
+    factorized engineering approximation. Publication mode can therefore reject it
+    rather than silently describing a nominal response as calibrated.
+    """
     channel: str
     energy_min_mev: float
     energy_max_mev: float
     relative_response: float
     response_component: str
     source: str
+    calibration_state: str = "NOMINAL_FACTORIZED"
 
 
 @dataclass(frozen=True)
@@ -177,11 +183,40 @@ class AnisotropyConfig:
     axis_lat_deg: float = 0.0
 
 
+TRAJECTORY_TERMINATION_NAMES = {
+    0: "OUTER_BOUNDARY_ALLOWED",
+    1: "INNER_BOUNDARY_FORBIDDEN",
+    2: "MAGNETICALLY_TRAPPED_FORBIDDEN",
+    3: "TIME_LIMIT",
+    4: "STEP_LIMIT",
+    5: "DISTANCE_LIMIT",
+    6: "INVALID_TIME_STEP",
+    7: "INVALID_FIELD",
+    8: "NUMERICAL_FAILURE",
+    9: "DRIFT_TRAPPED_FORBIDDEN",
+}
+TRAP_MECHANISM_NAMES = {0: "NONE", 1: "BOUNCE", 2: "DRIFT"}
+
+
 @dataclass(frozen=True)
 class AccessSample:
     energy_mev: float
     rigidity_gv: float
     state: int              # 0=PhysicalForbidden, 1=Allowed, 2=Unresolved
+    # New DIRECT_ACCESS producer columns.  They are optional so archived C19 cubes
+    # with the historical seven-column schema remain readable for regression work.
+    termination_code: Optional[int] = None
+    termination: str = "UNKNOWN"
+    trace_time_s: Optional[float] = None
+    trace_distance_re: Optional[float] = None
+    trace_steps: Optional[int] = None
+    retry_count: Optional[int] = None
+    mirror_points: Optional[int] = None
+    bounce_cycles: Optional[int] = None
+    drift_revolutions: Optional[int] = None
+    drift_angle_deg: Optional[float] = None
+    trap_mechanism: Optional[int] = None
+    momentum_relative_spread: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -227,6 +262,12 @@ class DirectionCell:
     cutoff_energy_mev: float
     rc_lower_gv: Optional[float] = None
     rc_effective_gv: Optional[float] = None
+    # Diagnostic midpoint used only by the explicitly labelled cutoff-rigidity
+    # reduction/plots.  For DIRECT_ACCESS this quantity is allowed to use the old
+    # 0.5*dR convention inside an UNRESOLVED rigidity bracket, but it is deliberately
+    # stored separately from rc_effective_gv so it can never be mistaken for a
+    # physically resolved cutoff or leak into the DIRECT_ACCESS acceptance path.
+    rc_midpoint_diagnostic_gv: Optional[float] = None
     rc_upper_gv: Optional[float] = None
     n_transitions: Optional[int] = None
     n_allowed_intervals: Optional[int] = None
@@ -280,9 +321,11 @@ class ModelRow:
     # Independent diagnostic obtained by replacing each directional access curve by
     # a hard step at its effective cutoff rigidity.  This is deliberately kept beside,
     # rather than substituted for, the production direct-A(E,Omega) observable.  The
-    # comparison makes the information loss in a scalar-cutoff approximation visible
-    # and gives DIRECT_ACCESS runs a finite, clearly labelled diagnostic when the
-    # rigorous direct fold withholds its midpoint because the rigidity grid is coarse.
+    # comparison makes the information loss in a scalar-cutoff approximation visible.
+    # The central cutoff quantity is explicitly diagnostic.  Unresolved intervals retain
+    # rigorous lower/upper bounds and may contribute a separately labelled 0.5*dR
+    # midpoint for visualization/comparison, but that midpoint is never a resolved
+    # Rc_effective and never affects DIRECT_ACCESS acceptance.
     cutoff_proxy_east_west_ratio: Optional[float]
     cutoff_proxy_log10_east_west_ratio: Optional[float]
     cutoff_proxy_east_west_ratio_min: Optional[float]
@@ -363,6 +406,42 @@ class ModelRow:
     anisotropy_axis_lon_deg: float
     anisotropy_axis_lat_deg: float
     status: str
+    unresolved_east_time_limit_fraction: float = 0.0
+    unresolved_east_step_limit_fraction: float = 0.0
+    unresolved_east_distance_limit_fraction: float = 0.0
+    unresolved_east_other_fraction: float = 0.0
+    unresolved_west_time_limit_fraction: float = 0.0
+    unresolved_west_step_limit_fraction: float = 0.0
+    unresolved_west_distance_limit_fraction: float = 0.0
+    unresolved_west_other_fraction: float = 0.0
+    # Full response-weighted termination attribution.  Unlike the four fields above,
+    # these include resolved physical outcomes as well as unresolved limits.  Each
+    # energy interval is attributed 50/50 to its two endpoint termination reasons;
+    # therefore the per-head fractions form a complete diagnostic budget without
+    # pretending to know a transition location inside the interval.
+    response_east_outer_allowed_fraction: float = 0.0
+    response_east_inner_forbidden_fraction: float = 0.0
+    response_east_magnetic_trapped_fraction: float = 0.0
+    response_east_drift_trapped_fraction: float = 0.0
+    response_east_time_limit_fraction: float = 0.0
+    response_east_step_limit_fraction: float = 0.0
+    response_east_distance_limit_fraction: float = 0.0
+    response_east_other_fraction: float = 0.0
+    response_west_outer_allowed_fraction: float = 0.0
+    response_west_inner_forbidden_fraction: float = 0.0
+    response_west_magnetic_trapped_fraction: float = 0.0
+    response_west_drift_trapped_fraction: float = 0.0
+    response_west_time_limit_fraction: float = 0.0
+    response_west_step_limit_fraction: float = 0.0
+    response_west_distance_limit_fraction: float = 0.0
+    response_west_other_fraction: float = 0.0
+    unresolved_east_west_ratio: Optional[float] = None
+    unresolved_asymmetry_index: Optional[float] = None
+    modeled_log10_east_west_bound_width: Optional[float] = None
+    observed_inside_rigorous_bounds: Optional[bool] = None
+    spectrum_provenance_status: str = "UNASSESSED"
+    max_direct_trace_distance_re: Optional[float] = None
+    max_direct_trace_steps: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -404,17 +483,39 @@ class ApertureFold:
     geometric_solid_angle_sr: float = 0.0
     contributing_solid_angle_sr: float = 0.0
     solid_angle_coverage_fraction: float = 0.0
+    # Response-weighted decomposition of the UNRESOLVED contribution.  The four
+    # fractions sum (within roundoff) to unresolved_weight_fraction when the producer
+    # supplied per-trajectory termination codes; old seven-column cubes fall into
+    # unresolved_other_weight_fraction.
+    unresolved_time_limit_weight_fraction: float = 0.0
+    unresolved_step_limit_weight_fraction: float = 0.0
+    unresolved_distance_limit_weight_fraction: float = 0.0
+    unresolved_other_weight_fraction: float = 0.0
+    # Complete endpoint-attributed response budget.  These are diagnostic fractions,
+    # not transmission probabilities: a resolved transition interval is split equally
+    # between its endpoint terminal reasons instead of inventing a transition energy.
+    response_outer_allowed_weight_fraction: float = 0.0
+    response_inner_forbidden_weight_fraction: float = 0.0
+    response_magnetic_trapped_weight_fraction: float = 0.0
+    response_drift_trapped_weight_fraction: float = 0.0
+    response_time_limit_weight_fraction: float = 0.0
+    response_step_limit_weight_fraction: float = 0.0
+    response_distance_limit_weight_fraction: float = 0.0
+    response_other_weight_fraction: float = 0.0
+    max_trace_distance_re: Optional[float] = None
+    max_trace_steps: Optional[int] = None
 
 
 @dataclass(frozen=True)
 class CutoffProxyFold:
     """One detector-head fold through a directional scalar-cutoff approximation.
 
-    ``signal`` uses the effective cutoff.  ``signal_min`` uses the upper cutoff bound
-    and ``signal_max`` uses the lower cutoff bound, because a larger cutoff transmits
-    less flux.  Unlike :class:`ApertureFold`, this object has no acceptance semantics:
-    it is an explicitly diagnostic reduction of A(R,Omega), not a replacement for the
-    three-state production observable.
+    ``signal`` uses the resolved effective cutoff when available and otherwise the
+    explicitly labelled equivalent-cutoff midpoint diagnostic. ``signal_min`` uses the
+    upper cutoff bound and ``signal_max`` uses the lower cutoff bound, because a larger
+    cutoff transmits less flux. Unlike :class:`ApertureFold`, this object has no
+    acceptance semantics: it is an explicitly diagnostic reduction of A(R,Omega), not a
+    replacement for the three-state production observable.
     """
     transmission: Optional[float]
     transmission_min: Optional[float]
@@ -560,15 +661,61 @@ def select_reference_rows(rows: Sequence[ReferenceRow], args: argparse.Namespace
 
     key_times = sorted({(row.utc, row.spacecraft) for row in selected})
     if args.profile == "SMOKE":
-        keep = set()
+        # SMOKE is intended to be a *synchronized* end-to-end regression, not a
+        # sparse per-spacecraft sampler.  The former implementation selected the
+        # first/middle/last epoch independently for each spacecraft.  When GOES-13
+        # and GOES-15 had slightly different valid time ranges, that produced as
+        # many as five unique Mode3D field snapshots while each spacecraft panel
+        # contained only three model points.  Besides being confusing, that made a
+        # quick smoke run less useful for comparing the spacecraft at identical
+        # magnetic-field states.
+        #
+        # Build the set of epochs at which *every requested channel* is present for
+        # each requested spacecraft, then take the intersection across spacecraft.
+        # Requiring complete channel coverage is deliberate: a SMOKE epoch should
+        # exercise the same spacecraft/channel matrix in every selected snapshot,
+        # so a missing P4/P5 row cannot silently make one comparison panel shorter
+        # than the others.  ROUTINE and FULL retain their historical behavior and
+        # continue to preserve every spacecraft's independently valid observations.
+        requested_channels = set(args.channel_list)
+        complete_times_by_spacecraft: Dict[str, set] = {}
         for spacecraft in args.spacecraft_list:
-            times = sorted({epoch for epoch, sc in key_times if sc == spacecraft})
-            if not times:
-                continue
-            keep.update((times[0], spacecraft) for _ in (0,))
-            keep.update((times[len(times) // 2], spacecraft) for _ in (0,))
-            keep.update((times[-1], spacecraft) for _ in (0,))
-        selected = [row for row in selected if (row.utc, row.spacecraft) in keep]
+            channels_by_epoch: Dict[datetime, set] = {}
+            for row in selected:
+                if row.spacecraft == spacecraft:
+                    channels_by_epoch.setdefault(row.utc, set()).add(row.channel)
+
+            complete_times = {
+                epoch for epoch, channels in channels_by_epoch.items()
+                if requested_channels.issubset(channels)
+            }
+            if not complete_times:
+                raise ValueError(
+                    "SMOKE requires at least one common epoch with all requested "
+                    "channels for spacecraft %s" % spacecraft)
+            complete_times_by_spacecraft[spacecraft] = complete_times
+
+        common_times = set.intersection(
+            *(complete_times_by_spacecraft[spacecraft]
+              for spacecraft in args.spacecraft_list))
+        if not common_times:
+            raise ValueError(
+                "SMOKE found no epoch common to all requested spacecraft/channels; "
+                "use ROUTINE/FULL for independently sampled spacecraft coverage")
+
+        # Select at most three global epochs from the common set.  With >=3 common
+        # epochs this is first / index-middle / last, matching the previous SMOKE
+        # notion of event coverage while guaranteeing that the same three field
+        # snapshots are used for every spacecraft and channel.  For a deliberately
+        # tiny custom reference with only one or two common epochs, keep all of them
+        # rather than duplicating a timestamp.
+        common_times_sorted = sorted(common_times)
+        keep_times = {
+            common_times_sorted[0],
+            common_times_sorted[len(common_times_sorted) // 2],
+            common_times_sorted[-1],
+        }
+        selected = [row for row in selected if row.utc in keep_times]
     else:
         step_minutes = PROFILE_STEP_MINUTES[args.profile]
         if args.time_step_minutes is not None:
@@ -631,7 +778,9 @@ def load_detector_response(path: Path, channels: Sequence[str]) -> List[Response
                 channel=channel, energy_min_mev=lo, energy_max_mev=hi,
                 relative_response=weight,
                 response_component=record.get("response_component", "UNSPECIFIED").strip() or "UNSPECIFIED",
-                source=record.get("source", str(path)).strip() or str(path)))
+                source=record.get("source", str(path)).strip() or str(path),
+                calibration_state=(record.get("calibration_state", "NOMINAL_FACTORIZED").strip().upper()
+                                   or "NOMINAL_FACTORIZED")))
     for channel in channels:
         if not any(row.channel == channel for row in rows):
             raise ValueError("detector response has no rows for %s" % channel)
@@ -998,6 +1147,45 @@ def rigidity_gv_from_kinetic_energy_mev(energy_mev: float) -> float:
     rest_mev = 938.27208816
     momentum = math.sqrt(max(0.0, energy_mev * (energy_mev + 2.0 * rest_mev)))
     return momentum / 1000.0
+
+
+def proton_trace_budget_diagnostic(energy_mev: float, max_trace_time_s: float,
+                                   max_trace_distance_re: float) -> Dict[str, object]:
+    """Describe the effective physical trace budget at one proton energy.
+
+    A fixed path-length ceiling is not equivalent to a fixed physical integration
+    time: faster protons consume the same number of Earth radii sooner.  C19 therefore
+    defaults ``MAX_TRACE_DISTANCE`` to zero (disabled) and lets the explicit trace-time
+    limit control the run.  This helper writes the implied path-cap time into
+    ``C19_access_energy_grid.csv`` whenever a non-zero path ceiling is requested so a
+    convergence experiment cannot accidentally hide an energy-dependent termination
+    criterion.
+
+    The calculation is purely diagnostic.  It uses the relativistic proton speed and
+    does not alter the AMPS trajectory integration.
+    """
+    rest_mev = 938.27208816
+    c_km_s = 299792.458
+    earth_radius_km = 6371.2
+    gamma = 1.0 + max(0.0, energy_mev) / rest_mev
+    beta2 = max(0.0, 1.0 - 1.0 / (gamma * gamma)) if gamma > 1.0 else 0.0
+    beta = math.sqrt(beta2)
+    speed_re_per_s = beta * c_km_s / earth_radius_km
+    path_cap_time_s: Optional[float] = None
+    if max_trace_distance_re > 0.0 and speed_re_per_s > 0.0:
+        path_cap_time_s = max_trace_distance_re / speed_re_per_s
+
+    controlling = "TIME_LIMIT"
+    if path_cap_time_s is not None and path_cap_time_s < max_trace_time_s:
+        controlling = "DISTANCE_LIMIT"
+    return {
+        "proton_beta": beta,
+        "speed_re_per_s": speed_re_per_s,
+        "max_trace_time_s": max_trace_time_s,
+        "max_trace_distance_re": max_trace_distance_re,
+        "distance_cap_equivalent_time_s": path_cap_time_s,
+        "nominal_controlling_trace_limit": controlling,
+    }
 
 
 def replace_directives(template_text: str, replacements: Mapping[str, str]) -> str:
@@ -1452,8 +1640,37 @@ def parse_directional_access(path: Path) -> DirectionalAccessCube:
             continue
         if state not in (0, 1, 2):
             raise ValueError("invalid CutoffSampleState %s in %s" % (state, path))
+        def rec_optional_float(name: str) -> Optional[float]:
+            value = rec.get(name)
+            if value is None:
+                return None
+            try:
+                parsed = float(value)
+            except ValueError:
+                return None
+            return parsed if math.isfinite(parsed) else None
+
+        def rec_optional_int(name: str) -> Optional[int]:
+            value = rec_optional_float(name)
+            return None if value is None else int(round(value))
+
+        termination_code = rec_optional_int("termination_code")
+        termination = TRAJECTORY_TERMINATION_NAMES.get(termination_code, "UNKNOWN")
         key = (round(lon, 9), round(lat, 9))
-        samples.setdefault(key, []).append(AccessSample(energy, rigidity, state))
+        samples.setdefault(key, []).append(AccessSample(
+            energy, rigidity, state,
+            termination_code=termination_code, termination=termination,
+            trace_time_s=rec_optional_float("trace_time_s"),
+            trace_distance_re=rec_optional_float("trace_distance_Re"),
+            trace_steps=rec_optional_int("trace_steps"),
+            retry_count=rec_optional_int("retry_count"),
+            mirror_points=rec_optional_int("mirror_points"),
+            bounce_cycles=rec_optional_int("bounce_cycles"),
+            drift_revolutions=rec_optional_int("drift_revolutions"),
+            drift_angle_deg=rec_optional_float("drift_angle_deg"),
+            trap_mechanism=rec_optional_int("trap_mechanism"),
+            momentum_relative_spread=rec_optional_float("momentum_relative_spread"),
+        ))
     if not samples:
         raise ValueError("no direct access samples parsed from %s" % path)
     frozen = {key: tuple(sorted(value, key=lambda sample: sample.energy_mev))
@@ -1578,26 +1795,35 @@ def validate_directional_access_requested_grid(
 
 
 def direction_map_from_access_cube(access_cube: DirectionalAccessCube) -> DirectionMap:
-    """Reduce a DIRECT_ACCESS cube to a finite-support effective-cutoff map.
+    """Reduce DIRECT_ACCESS to an uncertainty-bounded equivalent-cutoff map.
 
-    ``DIRECT_ACCESS`` intentionally skips the expensive scalar PENUMBRA_SCAN.  For
-    diagnostics we can nevertheless reduce each already calculated A(R,Omega) curve to
-    an *equivalent blocked-area cutoff* over the detector-response rigidity support::
+    The previous C19 implementation assigned half of every unresolved rigidity interval
+    to the blocked area.  That produced a visually plausible scalar ``Rc_effective`` even
+    when the underlying direct trajectories had not established whether those intervals
+    were physically allowed or forbidden.  In other words, the secondary cutoff proxy
+    silently made the assumption that the primary method correctly refused to make.
 
-        Rc_eff = R_min + integral[R_min,R_max] (1 - A(R)) dR.
+    The revised reduction keeps rigorous finite-support bounds::
 
-    A resolved constant interval contributes either its full width (forbidden) or zero
-    (allowed).  A resolved transition or an interval touching UNRESOLVED contributes
-    ``[0,dR]`` to the lower/upper cutoff bounds and half its width to the displayed
-    effective cutoff.  Thus the midpoint is explicit and the original uncertainty is
-    not erased.  If the first point is allowed the cutoff is lower-censored at R_min;
-    if the last point is forbidden it is upper-censored at R_max.  Those finite-support
-    values are sufficient for folding the configured detector response, but they must
-    not be interpreted as a full rigidity scan outside that support.
+        Rc_lower = R_min + integral lower[1-A(R)] dR
+        Rc_upper = R_min + integral upper[1-A(R)] dR
 
-    The direct detector observable still consumes the original cube.  This map exists
-    only for the requested cutoff plots and the separately labelled cutoff-rigidity E/W
-    proxy; it never changes C19 acceptance.
+    A resolved constant interval contributes its known blocked width.  Any bracket whose
+    blocked fraction is not established exactly contributes the rigorous [0,dR] interval
+    to ``Rc_lower/Rc_upper``.  In addition, C19 now retains a *separate* plotting-only
+    midpoint, ``rc_midpoint_diagnostic_gv``.  That diagnostic uses 0.5*dR for both a
+    resolved state transition and an UNRESOLVED bracket.  This intentionally restores
+    the historical equivalent-cutoff comparison curve without undoing the Phase-4
+    scientific fix: a direction containing any unresolved access sample still has
+    ``rc_effective_gv=None`` and therefore no resolved scalar cutoff.
+
+    The separation is important.  ``rc_effective_gv`` means that the direct access curve
+    was physically resolved over the sampled response support.  The diagnostic midpoint
+    means only "the center of the retained blocked-area uncertainty interval" and is
+    never consumed by DIRECT_ACCESS pass/fail logic.
+
+    The direct detector observable always consumes the original A(E,Omega) cube.  This
+    map exists only for plots and the separately labelled cutoff-rigidity proxy.
     """
     cells: List[DirectionCell] = []
     for key in sorted(access_cube.samples, key=lambda item: (item[1], item[0])):
@@ -1606,6 +1832,7 @@ def direction_map_from_access_cube(access_cube: DirectionalAccessCube) -> Direct
         r_max = samples[-1].rigidity_gv
         blocked_min = blocked_mid = blocked_max = 0.0
         n_transitions = 0
+        has_unresolved = any(sample.state == 2 for sample in samples)
         for left, right in zip(samples[:-1], samples[1:]):
             width = right.rigidity_gv - left.rigidity_gv
             if left.state == right.state == 0:
@@ -1614,18 +1841,28 @@ def direction_map_from_access_cube(access_cube: DirectionalAccessCube) -> Direct
                 blocked_max += width
             elif left.state == right.state == 1:
                 continue
-            else:
-                # Different resolved states locate a transition only to this bracket;
-                # UNRESOLVED at either endpoint makes the same [0,dR] statement.  Use a
-                # midpoint only for the diagnostic scalar and retain the full bounds.
+            elif left.state == 2 or right.state == 2:
+                # An unresolved endpoint means the physical blocked fraction can be
+                # anywhere in [0,1], so the *rigorous* contribution remains [0,dR].
+                # Restore 0.5*dR only in the separately named diagnostic midpoint.  It
+                # is useful for plotting/continuity and for comparing with the historical
+                # cutoff proxy, but it is not a physical classification of this bracket.
                 blocked_mid += 0.5 * width
                 blocked_max += width
-                if left.state in (0, 1) and right.state in (0, 1):
-                    n_transitions += 1
+            else:
+                # Both endpoints are resolved but differ, so a physical transition lies
+                # inside this finite rigidity bracket.  The midpoint is a conventional
+                # discretization estimate and the full [0,dR] bracket remains visible.
+                blocked_mid += 0.5 * width
+                blocked_max += width
+                n_transitions += 1
 
         rc_lower = min(r_max, r_min + blocked_min)
-        rc_effective = min(r_max, r_min + blocked_mid)
         rc_upper = min(r_max, r_min + blocked_max)
+        rc_midpoint_diagnostic = min(r_max, r_min + blocked_mid)
+        rc_effective: Optional[float] = None
+        if not has_unresolved:
+            rc_effective = rc_midpoint_diagnostic
         allowed_groups = 0
         previously_allowed = False
         for sample in samples:
@@ -1634,19 +1871,31 @@ def direction_map_from_access_cube(access_cube: DirectionalAccessCube) -> Direct
                 allowed_groups += 1
             previously_allowed = now_allowed
         cells.append(DirectionCell(
-            lon_deg=key[0], lat_deg=key[1], rc_gv=rc_effective,
-            cutoff_energy_mev=kinetic_energy_mev_from_rigidity_gv(rc_effective),
+            lon_deg=key[0], lat_deg=key[1],
+            rc_gv=(rc_effective if rc_effective is not None else float("nan")),
+            cutoff_energy_mev=(kinetic_energy_mev_from_rigidity_gv(rc_effective)
+                               if rc_effective is not None else float("nan")),
             rc_lower_gv=rc_lower, rc_effective_gv=rc_effective,
+            rc_midpoint_diagnostic_gv=rc_midpoint_diagnostic,
             rc_upper_gv=rc_upper, n_transitions=n_transitions,
             n_allowed_intervals=allowed_groups,
             n_unresolved_samples=sum(sample.state == 2 for sample in samples),
             lower_below_range=int(samples[0].state == 1),
             upper_above_range=int(samples[-1].state == 0),
+            # DIRECT_ACCESS now carries per-trajectory forensics.  The maximum values
+            # are propagated into the derived map so common plotting/fold diagnostics
+            # can still use DirectionCell without a second lookup.
+            max_trace_time_s=max((sample.trace_time_s for sample in samples
+                                  if sample.trace_time_s is not None), default=None),
+            max_trace_distance_re=max((sample.trace_distance_re for sample in samples
+                                       if sample.trace_distance_re is not None), default=None),
+            max_trace_steps=max((sample.trace_steps for sample in samples
+                                 if sample.trace_steps is not None), default=None),
         ))
     return DirectionMap(
-        path=access_cube.path + "#direct-access-equivalent-cutoff", frame=access_cube.frame,
-        x_km=access_cube.x_km, y_km=access_cube.y_km, z_km=access_cube.z_km,
-        cells=tuple(cells))
+        path=access_cube.path + "#direct-access-equivalent-cutoff-bounds",
+        frame=access_cube.frame, x_km=access_cube.x_km, y_km=access_cube.y_km,
+        z_km=access_cube.z_km, cells=tuple(cells))
 
 
 def load_driver_tilts(
@@ -1770,6 +2019,11 @@ SATURATED_MODEL_STATUSES = frozenset((
     "ZERO_EAST_TRANSMISSION",
     "ZERO_WEST_TRANSMISSION",
 ))
+# Both statuses below carry a numerically resolved finite direct scalar.
+# MODEL_MISMATCH is kept in the quantitative population so an observational
+# disagreement cannot disappear from MAE/RMSE/correlation merely because the
+# rigorous model interval excludes the observation.
+QUANTITATIVE_MODEL_STATUSES = frozenset(("VALID", "MODEL_MISMATCH"))
 
 
 def map_direction_to_detector_look(
@@ -2257,8 +2511,8 @@ def fold_aperture(
 
 def directional_cutoff_source(direction_map: DirectionMap) -> str:
     """Identify whether the scalar cutoff was scanned or reduced from direct access."""
-    if direction_map.path.endswith("#direct-access-equivalent-cutoff"):
-        return "DIRECT_ACCESS_EQUIVALENT_BLOCKED_AREA"
+    if direction_map.path.endswith("#direct-access-equivalent-cutoff-bounds"):
+        return "DIRECT_ACCESS_EQUIVALENT_BLOCKED_AREA_MIDPOINT_DIAGNOSTIC_WITH_BOUNDS"
     if any(cell.rc_effective_gv is not None for cell in direction_map.cells):
         return "PENUMBRA_SCAN_RC_EFFECTIVE"
     return "DIRECTIONAL_MAP_RC_GV"
@@ -2267,18 +2521,57 @@ def directional_cutoff_source(direction_map: DirectionMap) -> str:
 def cutoff_triplet_gv(
         cell: DirectionCell,
         ) -> Tuple[Optional[float], Optional[float], Optional[float]]:
-    """Return lower/effective/upper non-negative cutoff values for one sky cell."""
-    effective = (cell.rc_effective_gv
-                 if cell.rc_effective_gv is not None else cell.rc_gv)
-    if effective is None or not math.isfinite(effective) or effective < 0.0:
-        return None, None, None
-    lower = cell.rc_lower_gv if cell.rc_lower_gv is not None else effective
-    upper = cell.rc_upper_gv if cell.rc_upper_gv is not None else effective
-    if not math.isfinite(lower) or lower < 0.0:
-        lower = effective
-    if not math.isfinite(upper) or upper < 0.0:
-        upper = effective
-    return min(lower, effective, upper), effective, max(lower, effective, upper)
+    """Return lower/effective/upper non-negative cutoff values for one sky cell.
+
+    DIRECT_ACCESS-derived maps may intentionally withhold the effective cutoff while
+    retaining finite lower/upper bounds.  The historical helper discarded those bounds
+    whenever the central value was missing, which erased exactly the uncertainty the
+    revised C19 proxy is meant to expose.
+    """
+    raw_effective = (cell.rc_effective_gv
+                     if cell.rc_effective_gv is not None else cell.rc_gv)
+    effective = (float(raw_effective) if raw_effective is not None and
+                 math.isfinite(float(raw_effective)) and float(raw_effective) >= 0.0
+                 else None)
+
+    def valid(value: Optional[float]) -> Optional[float]:
+        if value is None:
+            return None
+        value = float(value)
+        return value if math.isfinite(value) and value >= 0.0 else None
+
+    lower = valid(cell.rc_lower_gv)
+    upper = valid(cell.rc_upper_gv)
+    if effective is not None:
+        if lower is None:
+            lower = effective
+        if upper is None:
+            upper = effective
+        return min(lower, effective, upper), effective, max(lower, effective, upper)
+
+    # No central cutoff: preserve any producer bounds without inventing a midpoint.
+    if lower is not None and upper is not None and lower > upper:
+        lower, upper = upper, lower
+    return lower, None, upper
+
+
+def cutoff_midpoint_diagnostic_gv(cell: DirectionCell) -> Optional[float]:
+    """Return the explicitly non-physical central cutoff used only for diagnostics.
+
+    ``PENUMBRA_SCAN`` and fully resolved DIRECT_ACCESS directions already have a real
+    ``Rc_effective`` and that value is returned.  An unresolved DIRECT_ACCESS direction
+    instead returns ``rc_midpoint_diagnostic_gv``, which is the blocked-area midpoint of
+    the rigorous Rc interval.  Keeping this helper separate from :func:`cutoff_triplet_gv`
+    prevents diagnostic midpoint values from being accidentally interpreted as resolved
+    trajectory results elsewhere in the code.
+    """
+    value = cell.rc_effective_gv
+    if value is None or not math.isfinite(float(value)):
+        value = cell.rc_midpoint_diagnostic_gv
+    if value is None:
+        return None
+    value = float(value)
+    return value if math.isfinite(value) and value >= 0.0 else None
 
 
 def fold_aperture_cutoff_proxy(
@@ -2306,6 +2599,13 @@ def fold_aperture_cutoff_proxy(
     attitude, and optional anisotropy are otherwise identical.  The controlled pairing
     makes a discrepancy between the two modeled curves interpretable as information
     lost by the scalar-cutoff reduction rather than as a second instrument model.
+
+    For an unresolved DIRECT_ACCESS direction the scalar used here is explicitly the
+    *equivalent-cutoff midpoint diagnostic*, not ``Rc_effective``.  The rigorous
+    ``Rc_lower/Rc_upper`` values are folded in parallel and remain the uncertainty
+    bounds.  This restores a continuous historical cutoff-proxy curve for every modeled
+    epoch while keeping the production direct result conservative: the midpoint never
+    changes trajectory state, aperture acceptance, or C19 pass/fail status.
     """
     positive = [item for item in response
                 if item.channel == channel and item.relative_response > 0.0]
@@ -2324,6 +2624,7 @@ def fold_aperture_cutoff_proxy(
     total_weight = 0.0
     central_sum = lower_sum = upper_sum = unshielded_sum = 0.0
     n_cells = n_unresolved = 0
+    central_complete = True
     for cell in direction_map.cells:
         arrival = spherical_direction(cell.lon_deg, cell.lat_deg)
         look = map_direction_to_detector_look(arrival, direction_mapping)
@@ -2341,23 +2642,44 @@ def fold_aperture_cutoff_proxy(
         unshielded_sum += angular_weight * denominator
         n_cells += 1
         rc_lower, rc_effective, rc_upper = cutoff_triplet_gv(cell)
-        if rc_effective is None:
-            # An unresolved cutoff can transmit anywhere from none to the complete
-            # response.  Keep it in both the angular denominator and signal bounds.
-            n_unresolved += 1
-            upper_sum += angular_weight * denominator
-            continue
-
+        rc_midpoint = cutoff_midpoint_diagnostic_gv(cell)
         def transmitted(rc_gv: float) -> float:
             cutoff_energy = kinetic_energy_mev_from_rigidity_gv(rc_gv)
             return integrate_spectrum_response(
                 spectrum, response, channel,
                 max(energy_lo, cutoff_energy), energy_hi)
 
-        central_sum += angular_weight * transmitted(rc_effective)
-        # Larger Rc means smaller transmitted signal.
-        lower_sum += angular_weight * transmitted(float(rc_upper))
-        upper_sum += angular_weight * transmitted(float(rc_lower))
+        if (cell.n_unresolved_samples is not None and
+                int(cell.n_unresolved_samples) > 0):
+            n_unresolved += 1
+
+        # The central cutoff-proxy curve is deliberately diagnostic.  If the source
+        # direction is unresolved, rc_midpoint is the separately stored 0.5*dR
+        # blocked-area midpoint; rc_effective remains None.  If even the diagnostic
+        # midpoint is absent (e.g. a malformed legacy producer), preserve bounds but
+        # withhold the aperture-level central diagnostic rather than inventing data.
+        if rc_midpoint is None:
+            central_complete = False
+        else:
+            central_sum += angular_weight * transmitted(rc_midpoint)
+
+        # Rigorous bounds are independent of the plotting midpoint.  Larger Rc means
+        # smaller transmitted signal, hence upper Rc -> lower signal and vice versa.
+        if rc_upper is not None:
+            lower_sum += angular_weight * transmitted(float(rc_upper))
+        # else lower bound remains zero
+        if rc_lower is not None:
+            upper_sum += angular_weight * transmitted(float(rc_lower))
+        else:
+            upper_sum += angular_weight * denominator
+
+        if rc_effective is None:
+            # Do not fall through to the resolved-only bound update below; the bounds
+            # above have already been accumulated conservatively.
+            continue
+
+        # For resolved directions the generic bound accumulation above is identical
+        # to the historical effective-cutoff path; no additional work is required.
 
     if total_weight <= 0.0 or unshielded_sum <= 0.0:
         return CutoffProxyFold(None, None, None, None, None, None,
@@ -2366,7 +2688,7 @@ def fold_aperture_cutoff_proxy(
     signal_max = upper_sum / total_weight
     transmission_min = max(0.0, min(1.0, lower_sum / unshielded_sum))
     transmission_max = max(transmission_min, min(1.0, upper_sum / unshielded_sum))
-    if n_unresolved:
+    if not central_complete:
         return CutoffProxyFold(
             None, transmission_min, transmission_max, None,
             signal_min, signal_max, n_cells, n_unresolved)
@@ -2444,6 +2766,25 @@ def fold_aperture_direct_access(
     total_weight = 0.0
     unresolved_weight = 0.0
     transition_weight = 0.0
+    # Response-weighted attribution of unresolved intervals to the actual C++
+    # trajectory safety limit.  This is the key diagnostic for distinguishing a
+    # physical east/west cutoff from a numerical trace-budget artifact.
+    unresolved_reason_weight = {
+        "TIME_LIMIT": 0.0, "STEP_LIMIT": 0.0, "DISTANCE_LIMIT": 0.0, "OTHER": 0.0
+    }
+    # Complete response-weighted termination budget.  It is accumulated separately
+    # from the rigorous access bounds.  For each finite-energy interval, half of the
+    # detector-weighted integral is assigned to each endpoint terminal reason.  This
+    # gives Phase-0 forensics a normalized partition while preserving the direct fold's
+    # refusal to guess the actual transition location inside that interval.
+    termination_reason_weight = {
+        "OUTER_BOUNDARY_ALLOWED": 0.0,
+        "INNER_BOUNDARY_FORBIDDEN": 0.0,
+        "MAGNETICALLY_TRAPPED_FORBIDDEN": 0.0,
+        "DRIFT_TRAPPED_FORBIDDEN": 0.0,
+        "TIME_LIMIT": 0.0, "STEP_LIMIT": 0.0, "DISTANCE_LIMIT": 0.0,
+        "OTHER": 0.0,
+    }
     lower_transmission_sum = upper_transmission_sum = 0.0
     signal_lower_sum = signal_upper_sum = unshielded_signal_sum = 0.0
     n_cells = n_unresolved = 0
@@ -2452,10 +2793,11 @@ def fold_aperture_direct_access(
     contributing_solid_angle_sr = 0.0
     undersampled_penumbra_cells = 0
     max_trace_time_s: Optional[float] = None
+    max_trace_distance_re: Optional[float] = None
+    max_trace_steps: Optional[int] = None
     diagnostics: List[Dict[str, object]] = []
     independent_penumbra_map = (
-        directional_cutoff_source(direction_map) !=
-        "DIRECT_ACCESS_EQUIVALENT_BLOCKED_AREA")
+        not directional_cutoff_source(direction_map).startswith("DIRECT_ACCESS_"))
 
     map_lookup = {(round(cell.lon_deg, 9), round(cell.lat_deg, 9)): cell
                   for cell in direction_map.cells}
@@ -2491,6 +2833,25 @@ def fold_aperture_direct_access(
         unresolved_int = 0.0
         transition_int = 0.0
         direct_resolved_transitions = 0
+        unresolved_reason_int = {
+            "TIME_LIMIT": 0.0, "STEP_LIMIT": 0.0, "DISTANCE_LIMIT": 0.0, "OTHER": 0.0
+        }
+        termination_reason_int = {name: 0.0 for name in termination_reason_weight}
+        termination_counts: Dict[str, int] = {}
+        trap_mechanism_counts: Dict[str, int] = {}
+        for sample in samples:
+            termination_counts[sample.termination] = termination_counts.get(sample.termination, 0) + 1
+            mechanism = TRAP_MECHANISM_NAMES.get(sample.trap_mechanism, "UNKNOWN")
+            trap_mechanism_counts[mechanism] = trap_mechanism_counts.get(mechanism, 0) + 1
+            if sample.trace_time_s is not None:
+                max_trace_time_s = (sample.trace_time_s if max_trace_time_s is None
+                                    else max(max_trace_time_s, sample.trace_time_s))
+            if sample.trace_distance_re is not None:
+                max_trace_distance_re = (sample.trace_distance_re if max_trace_distance_re is None
+                                         else max(max_trace_distance_re, sample.trace_distance_re))
+            if sample.trace_steps is not None:
+                max_trace_steps = (sample.trace_steps if max_trace_steps is None
+                                   else max(max_trace_steps, sample.trace_steps))
 
         for left, right in zip(samples[:-1], samples[1:]):
             e0 = left.energy_mev
@@ -2499,12 +2860,39 @@ def fold_aperture_direct_access(
             if interval_int <= 0.0:
                 continue
 
+            # Phase-0 termination attribution.  This diagnostic budget is deliberately
+            # independent of the access interpolation policy: half of the interval is
+            # assigned to each endpoint terminal reason.  Thus ALLOWED/FORBIDDEN and
+            # FORBIDDEN/FORBIDDEN-with-different-mechanism intervals remain auditable
+            # without manufacturing a cutoff location between sampled rigidities.
+            for endpoint in (left, right):
+                reason = endpoint.termination
+                if reason not in termination_reason_int:
+                    reason = "OTHER"
+                termination_reason_int[reason] += 0.5 * interval_int
+
             if left.state == 2 or right.state == 2:
                 # A numerical safety-limit termination at either endpoint means C19
                 # cannot assign the interval to physical access or shielding.  Preserve
-                # the entire detector-weighted interval as unresolved uncertainty.
+                # the entire detector-weighted interval as unresolved uncertainty AND
+                # attribute it to the producer's terminal reason.  If both unresolved
+                # endpoints have different causes, split the interval equally because
+                # the trace data do not locate the change of cause inside the bracket.
                 allowed_max_int += interval_int
                 unresolved_int += interval_int
+                causes: List[str] = []
+                for endpoint in (left, right):
+                    if endpoint.state != 2:
+                        continue
+                    cause = endpoint.termination
+                    if cause not in ("TIME_LIMIT", "STEP_LIMIT", "DISTANCE_LIMIT"):
+                        cause = "OTHER"
+                    causes.append(cause)
+                if not causes:
+                    causes = ["OTHER"]
+                share = interval_int / float(len(causes))
+                for cause in causes:
+                    unresolved_reason_int[cause] += share
                 continue
 
             if left.state == right.state:
@@ -2526,6 +2914,14 @@ def fold_aperture_direct_access(
         t_max = max(t_min, min(1.0, allowed_max_int / denom))
         unresolved_energy_fraction = max(0.0, min(1.0, unresolved_int / denom))
         transition_energy_fraction = max(0.0, min(1.0, transition_int / denom))
+        unresolved_reason_fraction = {
+            name: max(0.0, min(1.0, value / denom))
+            for name, value in unresolved_reason_int.items()
+        }
+        termination_reason_fraction = {
+            name: max(0.0, min(1.0, value / denom))
+            for name, value in termination_reason_int.items()
+        }
 
         map_cell = map_lookup.get(key)
         # The independently computed PENUMBRA_SCAN topology is a useful guard against a
@@ -2556,6 +2952,10 @@ def fold_aperture_direct_access(
         upper_transmission_sum += weight * t_max
         unresolved_weight += weight * unresolved_energy_fraction
         transition_weight += weight * transition_energy_fraction
+        for name, fraction in unresolved_reason_fraction.items():
+            unresolved_reason_weight[name] += weight * fraction
+        for name, fraction in termination_reason_fraction.items():
+            termination_reason_weight[name] += weight * fraction
 
         signal_lower_sum += weight * angular_factor * allowed_min_int
         signal_upper_sum += weight * angular_factor * allowed_max_int
@@ -2563,6 +2963,9 @@ def fold_aperture_direct_access(
         if unresolved_energy_fraction > 0.0:
             n_unresolved += 1
 
+        # Legacy PENUMBRA_SCAN maps may carry a trace maximum even when the companion
+        # direct-access file predates the new diagnostic columns.  Use it only as a
+        # fallback/additional maximum; new DIRECT_ACCESS cubes are self-contained.
         if map_cell and map_cell.max_trace_time_s is not None and math.isfinite(map_cell.max_trace_time_s):
             max_trace_time_s = (map_cell.max_trace_time_s if max_trace_time_s is None
                                 else max(max_trace_time_s, map_cell.max_trace_time_s))
@@ -2572,7 +2975,34 @@ def fold_aperture_direct_access(
             "cell_solid_angle_weight": weight, "access_product": "DIRECT_A_E_OMEGA",
             "transmission_min": t_min, "transmission_max": t_max,
             "unresolved_energy_response_fraction": unresolved_energy_fraction,
+            "unresolved_time_limit_response_fraction": unresolved_reason_fraction["TIME_LIMIT"],
+            "unresolved_step_limit_response_fraction": unresolved_reason_fraction["STEP_LIMIT"],
+            "unresolved_distance_limit_response_fraction": unresolved_reason_fraction["DISTANCE_LIMIT"],
+            "unresolved_other_response_fraction": unresolved_reason_fraction["OTHER"],
             "discrete_transition_response_fraction": transition_energy_fraction,
+            "termination_outer_allowed_count": termination_counts.get("OUTER_BOUNDARY_ALLOWED", 0),
+            "termination_inner_forbidden_count": termination_counts.get("INNER_BOUNDARY_FORBIDDEN", 0),
+            "termination_trapped_forbidden_count": termination_counts.get("MAGNETICALLY_TRAPPED_FORBIDDEN", 0),
+            "termination_drift_trapped_forbidden_count": termination_counts.get("DRIFT_TRAPPED_FORBIDDEN", 0),
+            "response_outer_allowed_fraction": termination_reason_fraction["OUTER_BOUNDARY_ALLOWED"],
+            "response_inner_forbidden_fraction": termination_reason_fraction["INNER_BOUNDARY_FORBIDDEN"],
+            "response_magnetic_trapped_fraction": termination_reason_fraction["MAGNETICALLY_TRAPPED_FORBIDDEN"],
+            "response_drift_trapped_fraction": termination_reason_fraction["DRIFT_TRAPPED_FORBIDDEN"],
+            "response_time_limit_fraction": termination_reason_fraction["TIME_LIMIT"],
+            "response_step_limit_fraction": termination_reason_fraction["STEP_LIMIT"],
+            "response_distance_limit_fraction": termination_reason_fraction["DISTANCE_LIMIT"],
+            "response_other_termination_fraction": termination_reason_fraction["OTHER"],
+            "termination_time_limit_count": termination_counts.get("TIME_LIMIT", 0),
+            "termination_step_limit_count": termination_counts.get("STEP_LIMIT", 0),
+            "termination_distance_limit_count": termination_counts.get("DISTANCE_LIMIT", 0),
+            "trap_mechanism_bounce_count": trap_mechanism_counts.get("BOUNCE", 0),
+            "trap_mechanism_drift_count": trap_mechanism_counts.get("DRIFT", 0),
+            "max_direct_trace_time_s": max((sample.trace_time_s for sample in samples
+                                             if sample.trace_time_s is not None), default=None),
+            "max_direct_trace_distance_re": max((sample.trace_distance_re for sample in samples
+                                                  if sample.trace_distance_re is not None), default=None),
+            "max_direct_trace_steps": max((sample.trace_steps for sample in samples
+                                            if sample.trace_steps is not None), default=None),
             "direct_resolved_transition_count": direct_resolved_transitions,
             "penumbra_scan_transition_count": (
                 map_cell.n_transitions
@@ -2604,6 +3034,12 @@ def fold_aperture_direct_access(
 
     unresolved_fraction = unresolved_weight / total_weight
     transition_fraction = transition_weight / total_weight
+    unresolved_reason_fraction_total = {
+        name: value / total_weight for name, value in unresolved_reason_weight.items()
+    }
+    termination_reason_fraction_total = {
+        name: value / total_weight for name, value in termination_reason_weight.items()
+    }
     minimum = lower_transmission_sum / total_weight
     maximum = upper_transmission_sum / total_weight
     signal_min = signal_lower_sum / total_weight
@@ -2629,7 +3065,21 @@ def fold_aperture_direct_access(
         cells_with_access_samples, cells_with_response_overlap,
         geometric_solid_angle_sr, contributing_solid_angle_sr,
         min(1.0, contributing_solid_angle_sr / geometric_solid_angle_sr)
-        if geometric_solid_angle_sr > 0.0 else 0.0)
+        if geometric_solid_angle_sr > 0.0 else 0.0,
+        unresolved_time_limit_weight_fraction=unresolved_reason_fraction_total["TIME_LIMIT"],
+        unresolved_step_limit_weight_fraction=unresolved_reason_fraction_total["STEP_LIMIT"],
+        unresolved_distance_limit_weight_fraction=unresolved_reason_fraction_total["DISTANCE_LIMIT"],
+        unresolved_other_weight_fraction=unresolved_reason_fraction_total["OTHER"],
+        response_outer_allowed_weight_fraction=termination_reason_fraction_total["OUTER_BOUNDARY_ALLOWED"],
+        response_inner_forbidden_weight_fraction=termination_reason_fraction_total["INNER_BOUNDARY_FORBIDDEN"],
+        response_magnetic_trapped_weight_fraction=termination_reason_fraction_total["MAGNETICALLY_TRAPPED_FORBIDDEN"],
+        response_drift_trapped_weight_fraction=termination_reason_fraction_total["DRIFT_TRAPPED_FORBIDDEN"],
+        response_time_limit_weight_fraction=termination_reason_fraction_total["TIME_LIMIT"],
+        response_step_limit_weight_fraction=termination_reason_fraction_total["STEP_LIMIT"],
+        response_distance_limit_weight_fraction=termination_reason_fraction_total["DISTANCE_LIMIT"],
+        response_other_weight_fraction=termination_reason_fraction_total["OTHER"],
+        max_trace_distance_re=max_trace_distance_re,
+        max_trace_steps=max_trace_steps)
 
 
 def classify_aperture_fold(
@@ -2695,6 +3145,53 @@ def detector_ratio_bounds(
     return ratio_min, ratio_max, log_min, log_max, lower_censored, upper_censored
 
 
+def observation_inside_ratio_bounds(
+        observed_ratio: float, ratio_min: Optional[float], ratio_max: Optional[float],
+        lower_censored: bool, upper_censored: bool) -> Optional[bool]:
+    """Return whether the observed E/W ratio is inside the rigorous direct bounds.
+
+    A censored lower bound means the mathematical interval extends to zero; a censored
+    upper bound means it extends to +infinity.  ``None`` is returned only when no
+    meaningful bound is available at all.  This statistic is intentionally separate
+    from the accepted scalar: an unresolved case can be scientifically *inconclusive*
+    while still demonstrating that all observations lie within conservative bounds.
+    """
+    if ratio_min is None and ratio_max is None and not lower_censored and not upper_censored:
+        return None
+    lower_ok = True if lower_censored else (ratio_min is not None and observed_ratio >= ratio_min)
+    upper_ok = True if upper_censored else (ratio_max is not None and observed_ratio <= ratio_max)
+    return bool(lower_ok and upper_ok)
+
+
+def spectrum_provenance_status_for_fold(
+        spectrum: SpectrumEstimate, west_fold: ApertureFold,
+        max_unresolved_fraction: float) -> str:
+    """Classify incident-spectrum provenance after the model fold is available.
+
+    OBSERVED_WEST is useful for development but is not independent of the quantity
+    being validated.  This post-hoc label does not retroactively change the spectrum;
+    it records whether the WEST head that supplied the empirical spectrum was itself
+    model-clean, partially shielded, or unresolved.  Publication-grade runs should use
+    ``--spectrum-source FILE --require-independent-spectrum`` so no circular gate is
+    needed at all.
+    """
+    source=spectrum.source.upper()
+    if source.startswith("FILE:"):
+        return "INDEPENDENT_SPECTRUM"
+    if source.startswith("FIXED"):
+        return "FIXED_DIAGNOSTIC"
+    if source.startswith("OBSERVED_WEST"):
+        if (west_fold.unresolved_weight_fraction > max_unresolved_fraction + 1.0e-14
+                or west_fold.signal_value is None):
+            return "WEST_DERIVED_UNRESOLVED"
+        # Requiring the rigorous lower transmission bound to exceed 0.95 is a
+        # deliberately conservative definition of a model-clean normalizing head.
+        if west_fold.minimum is not None and west_fold.minimum >= 0.95 - 1.0e-14:
+            return "WEST_DERIVED_MODEL_CLEAN"
+        return "WEST_DERIVED_PARTIALLY_SHIELDED"
+    return "UNKNOWN_SPECTRUM_PROVENANCE"
+
+
 def evaluate_reference_row(
         reference: ReferenceRow,
         direction_map: DirectionMap,
@@ -2718,6 +3215,7 @@ def evaluate_reference_row(
         anisotropy: AnisotropyConfig = AnisotropyConfig(),
         min_aperture_cell_count: int = 1,
         min_solid_angle_coverage_fraction: float = 0.95,
+        max_ratio_bound_width_log10: float = -1.0,
         ) -> Tuple[ModelRow, List[Dict[str, object]]]:
     """Evaluate one GOES reference row from a completed AMPS directional product.
 
@@ -2820,8 +3318,10 @@ def evaluate_reference_row(
     # Independently collapse each directional access curve to one effective cutoff and
     # fold a hard step at that cutoff through the *same* response and spectrum.  In a
     # PENUMBRA_SCAN run the lower/effective/upper Rc values come from AMPS.  In a
-    # DIRECT_ACCESS run direction_map_from_access_cube() supplies a finite-support
-    # blocked-area equivalent plus explicit bounds.  This diagnostic never participates
+    # DIRECT_ACCESS run direction_map_from_access_cube() supplies a blocked-area
+    # equivalent only when every contributing sample is resolved; any unresolved
+    # interval suppresses the central Rc while preserving rigorous lower/upper bounds.
+    # This diagnostic never participates
     # in acceptance; the direct A(E,Omega) fold above remains the production observable.
     common_cutoff_proxy = dict(
         direction_map=direction_map, position_map=position_map,
@@ -2864,7 +3364,11 @@ def evaluate_reference_row(
         cutoff_ratio = cutoff_east_fold.signal / cutoff_west_fold.signal
         if cutoff_ratio > 0.0 and math.isfinite(cutoff_ratio):
             cutoff_log_ratio = math.log10(cutoff_ratio)
-            cutoff_status = "VALID_DIAGNOSTIC"
+            cutoff_status = (
+                "VALID_MIDPOINT_DIAGNOSTIC_WITH_UNRESOLVED"
+                if (cutoff_east_fold.n_unresolved > 0 or
+                    cutoff_west_fold.n_unresolved > 0)
+                else "VALID_DIAGNOSTIC")
         else:
             cutoff_ratio = None
             cutoff_status = "NONFINITE_CUTOFF_PROXY"
@@ -2906,6 +3410,24 @@ def evaluate_reference_row(
      ratio_lower_censored, ratio_upper_censored) = detector_ratio_bounds(
         east_fold.signal_min, east_fold.signal_max,
         west_fold.signal_min, west_fold.signal_max)
+    observed_inside_bounds = observation_inside_ratio_bounds(
+        reference.east_west_ratio, ratio_min, ratio_max,
+        ratio_lower_censored, ratio_upper_censored)
+    ratio_bound_width_log10 = (
+        log_ratio_max - log_ratio_min
+        if log_ratio_min is not None and log_ratio_max is not None
+        and math.isfinite(log_ratio_min) and math.isfinite(log_ratio_max)
+        else None)
+    unresolved_east_west_ratio = (
+        east_fold.unresolved_weight_fraction / west_fold.unresolved_weight_fraction
+        if west_fold.unresolved_weight_fraction > 0.0 else None)
+    unresolved_sum = (east_fold.unresolved_weight_fraction +
+                      west_fold.unresolved_weight_fraction)
+    unresolved_asymmetry_index = (
+        (east_fold.unresolved_weight_fraction - west_fold.unresolved_weight_fraction) / unresolved_sum
+        if unresolved_sum > 0.0 else 0.0)
+    spectrum_provenance_status = spectrum_provenance_status_for_fold(
+        spectrum, west_fold, max_unresolved_aperture_fraction)
 
     ratio: Optional[float]
     log_ratio: Optional[float]
@@ -2941,11 +3463,16 @@ def evaluate_reference_row(
         ratio = log_ratio = residual = None
         status = "INCOMPLETE_WEST_SOLID_ANGLE_COVERAGE"
     elif east_aperture_status == "EXCESSIVE_UNRESOLVED_TRAJECTORIES":
+        # A large unresolved fraction is a numerical/trajectory-resolution state,
+        # not evidence that the physical model disagrees with GOES.  Preserve the
+        # aperture-specific cause in status_reasons, but use one explicit top-level
+        # status so downstream pass/fail logic cannot misinterpret an indeterminate
+        # direct fold as an observational model failure.
         ratio = log_ratio = residual = None
-        status = "EXCESSIVE_UNRESOLVED_EAST_APERTURE"
+        status = "INCONCLUSIVE_TRAJECTORY_RESOLUTION"
     elif west_aperture_status == "EXCESSIVE_UNRESOLVED_TRAJECTORIES":
         ratio = log_ratio = residual = None
-        status = "EXCESSIVE_UNRESOLVED_WEST_APERTURE"
+        status = "INCONCLUSIVE_TRAJECTORY_RESOLUTION"
     elif east_aperture_status == "EXCESSIVE_RIGIDITY_GRID_UNCERTAINTY":
         ratio = log_ratio = residual = None
         status = "EXCESSIVE_EAST_RIGIDITY_GRID_UNCERTAINTY"
@@ -2958,10 +3485,10 @@ def evaluate_reference_row(
         status = "STATIC_FIELD_TRACE_GUARDRAIL"
     elif east_observable is None:
         ratio = log_ratio = residual = None
-        status = "UNRESOLVED_EAST_SIGNAL"
+        status = "INCONCLUSIVE_TRAJECTORY_RESOLUTION"
     elif west_observable is None:
         ratio = log_ratio = residual = None
-        status = "UNRESOLVED_WEST_SIGNAL"
+        status = "INCONCLUSIVE_TRAJECTORY_RESOLUTION"
     elif static_guard:
         ratio = log_ratio = residual = None
         status = "STATIC_FIELD_TRACE_GUARDRAIL"
@@ -2986,7 +3513,28 @@ def evaluate_reference_row(
         else:
             log_ratio = math.log10(ratio)
             residual = log_ratio - reference.log10_east_west_ratio
-            status = "VALID"
+            # A small unresolved fraction can still sit in the detector-response region
+            # that dominates E/W, leaving a very broad rigorous ratio interval.  C19
+            # therefore requires convergence of the *observable* in addition to the
+            # per-head unresolved-fraction gate.  Censored/infinite quantitative bounds
+            # are treated as unconverged unless the result is an exact physical-zero
+            # saturation handled above.
+            bound_width_bad = (
+                max_ratio_bound_width_log10 >= 0.0 and
+                (ratio_bound_width_log10 is None or
+                 ratio_bound_width_log10 > max_ratio_bound_width_log10 + 1.0e-14))
+            if bound_width_bad:
+                ratio = log_ratio = residual = None
+                status = "INCONCLUSIVE_DIRECT_BOUND_WIDTH"
+                status_reasons = (status_reasons + ";" if status_reasons else "") + \
+                    "DIRECT:EXCESSIVE_RATIO_BOUND_WIDTH"
+            elif observed_inside_bounds is False:
+                # This is the only state called MODEL_MISMATCH: the direct scalar is
+                # resolved, its rigorous uncertainty band is acceptably narrow, and
+                # the GOES observation lies outside that band.
+                status = "MODEL_MISMATCH"
+            else:
+                status = "VALID"
 
     orientation_sources = sorted({
         rec.source for rec in (east_orientation, west_orientation) if rec is not None})
@@ -3082,6 +3630,55 @@ def evaluate_reference_row(
         anisotropy_axis_lon_deg=anisotropy.axis_lon_deg,
         anisotropy_axis_lat_deg=anisotropy.axis_lat_deg,
         status=status,
+        # Preserve the response-weighted reason decomposition in the primary
+        # comparison table.  These fields make a failed direct scalar immediately
+        # actionable: DISTANCE_LIMIT means the path budget is controlling, whereas
+        # TIME_LIMIT/STEP_LIMIT indicate a different convergence problem.
+        unresolved_east_time_limit_fraction=(
+            east_fold.unresolved_time_limit_weight_fraction),
+        unresolved_east_step_limit_fraction=(
+            east_fold.unresolved_step_limit_weight_fraction),
+        unresolved_east_distance_limit_fraction=(
+            east_fold.unresolved_distance_limit_weight_fraction),
+        unresolved_east_other_fraction=(
+            east_fold.unresolved_other_weight_fraction),
+        unresolved_west_time_limit_fraction=(
+            west_fold.unresolved_time_limit_weight_fraction),
+        unresolved_west_step_limit_fraction=(
+            west_fold.unresolved_step_limit_weight_fraction),
+        unresolved_west_distance_limit_fraction=(
+            west_fold.unresolved_distance_limit_weight_fraction),
+        unresolved_west_other_fraction=(
+            west_fold.unresolved_other_weight_fraction),
+        response_east_outer_allowed_fraction=east_fold.response_outer_allowed_weight_fraction,
+        response_east_inner_forbidden_fraction=east_fold.response_inner_forbidden_weight_fraction,
+        response_east_magnetic_trapped_fraction=east_fold.response_magnetic_trapped_weight_fraction,
+        response_east_drift_trapped_fraction=east_fold.response_drift_trapped_weight_fraction,
+        response_east_time_limit_fraction=east_fold.response_time_limit_weight_fraction,
+        response_east_step_limit_fraction=east_fold.response_step_limit_weight_fraction,
+        response_east_distance_limit_fraction=east_fold.response_distance_limit_weight_fraction,
+        response_east_other_fraction=east_fold.response_other_weight_fraction,
+        response_west_outer_allowed_fraction=west_fold.response_outer_allowed_weight_fraction,
+        response_west_inner_forbidden_fraction=west_fold.response_inner_forbidden_weight_fraction,
+        response_west_magnetic_trapped_fraction=west_fold.response_magnetic_trapped_weight_fraction,
+        response_west_drift_trapped_fraction=west_fold.response_drift_trapped_weight_fraction,
+        response_west_time_limit_fraction=west_fold.response_time_limit_weight_fraction,
+        response_west_step_limit_fraction=west_fold.response_step_limit_weight_fraction,
+        response_west_distance_limit_fraction=west_fold.response_distance_limit_weight_fraction,
+        response_west_other_fraction=west_fold.response_other_weight_fraction,
+        unresolved_east_west_ratio=unresolved_east_west_ratio,
+        unresolved_asymmetry_index=unresolved_asymmetry_index,
+        modeled_log10_east_west_bound_width=ratio_bound_width_log10,
+        observed_inside_rigorous_bounds=observed_inside_bounds,
+        spectrum_provenance_status=spectrum_provenance_status,
+        max_direct_trace_distance_re=max(
+            [value for value in (east_fold.max_trace_distance_re,
+                                 west_fold.max_trace_distance_re)
+             if value is not None], default=None),
+        max_direct_trace_steps=max(
+            [value for value in (east_fold.max_trace_steps,
+                                 west_fold.max_trace_steps)
+             if value is not None], default=None),
     )
     diagnostics = list(east_fold.diagnostic) + list(west_fold.diagnostic)
     for item in diagnostics:
@@ -3123,7 +3720,8 @@ def calculate_metrics(rows: Sequence[ModelRow], args: argparse.Namespace) -> Lis
     """Calculate spacecraft-resolved and aggregate C19 validation metrics.
 
     Quantitative errors (bias/MAE/RMSE/correlation) require a finite modeled
-    log-ratio and therefore use only ``status == VALID`` rows.  Sign agreement is
+    log-ratio and therefore use resolved quantitative rows (``VALID`` or
+    ``MODEL_MISMATCH``).  Sign agreement is
     intentionally broader: exact one-sided zero transmission is a saturated
     prediction with a definite +/- sign and is included rather than discarded.
 
@@ -3153,7 +3751,7 @@ def calculate_metrics(rows: Sequence[ModelRow], args: argparse.Namespace) -> Lis
                  if row.solver == solver and row.field_model == model
                  and row.channel == channel
                  and (spacecraft == "ALL" or row.spacecraft == spacecraft)]
-        finite = [row for row in group if row.status == "VALID"
+        finite = [row for row in group if row.status in QUANTITATIVE_MODEL_STATUSES
                   and row.modeled_log10_east_west_ratio is not None
                   and math.isfinite(float(row.modeled_log10_east_west_ratio))]
         saturated = [row for row in group if row.status in SATURATED_MODEL_STATUSES]
@@ -3257,6 +3855,8 @@ def pipeline_validity(
         "INCOMPLETE_EAST_SOLID_ANGLE_COVERAGE",
         "INCOMPLETE_WEST_SOLID_ANGLE_COVERAGE",
         "EXCESSIVE_UNRESOLVED_", "UNRESOLVED_",
+        "INCONCLUSIVE_TRAJECTORY_RESOLUTION",
+        "INCONCLUSIVE_DIRECT_BOUND_WIDTH",
         "EXCESSIVE_EAST_RIGIDITY_GRID_UNCERTAINTY",
         "EXCESSIVE_WEST_RIGIDITY_GRID_UNCERTAINTY",
         "STATIC_FIELD_TRACE_GUARDRAIL", "NEGATIVE_TRANSMISSION",
@@ -3308,13 +3908,86 @@ def write_dict_rows(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
         writer.writerows(rows)
 
 
+def model_coverage_rows(
+        reference_rows: Sequence[ReferenceRow], model_rows: Sequence[ModelRow],
+        solvers: Sequence[str], field_models: Sequence[str],
+        ) -> List[Dict[str, object]]:
+    """Describe model availability for every requested observational comparison row.
+
+    The comparison plot historically contained only timestamps that reached ModelRow
+    construction.  A failed AMPS launch or a post-processing exception therefore looked
+    like a shorter observation interval rather than a missing model result.  This table
+    makes the requested-vs-produced coverage explicit and distinguishes four useful
+    levels: accepted direct scalar, direct bounds only, cutoff-midpoint diagnostic only,
+    and no model row at all.
+    """
+    lookup = {
+        (row.utc, row.spacecraft, row.channel, row.solver, row.field_model): row
+        for row in model_rows
+    }
+    result: List[Dict[str, object]] = []
+    for reference in reference_rows:
+        utc_text = format_utc(reference.utc)
+        for solver in solvers:
+            for field_model in field_models:
+                row = lookup.get((utc_text, reference.spacecraft, reference.channel,
+                                  solver, field_model))
+                if row is None:
+                    level = "NO_MODEL_ROW"
+                    status = "MISSING_RUN_OR_POSTPROCESS_RESULT"
+                    accepted = bounds = proxy = proxy_bounds = False
+                    east_unresolved = west_unresolved = None
+                else:
+                    accepted = (
+                        row.modeled_log10_east_west_ratio is not None and
+                        math.isfinite(float(row.modeled_log10_east_west_ratio)))
+                    bounds = (
+                        row.modeled_log10_east_west_ratio_min is not None and
+                        row.modeled_log10_east_west_ratio_max is not None)
+                    proxy = (
+                        row.cutoff_proxy_log10_east_west_ratio is not None and
+                        math.isfinite(float(row.cutoff_proxy_log10_east_west_ratio)))
+                    proxy_bounds = (
+                        row.cutoff_proxy_log10_east_west_ratio_min is not None and
+                        row.cutoff_proxy_log10_east_west_ratio_max is not None)
+                    if accepted:
+                        level = "ACCEPTED_DIRECT_SCALAR"
+                    elif bounds:
+                        level = "DIRECT_BOUNDS_ONLY"
+                    elif proxy:
+                        level = "CUTOFF_MIDPOINT_DIAGNOSTIC_ONLY"
+                    else:
+                        level = "MODEL_ROW_WITHOUT_RATIO_RESULT"
+                    status = row.status
+                    east_unresolved = row.unresolved_east_fraction
+                    west_unresolved = row.unresolved_west_fraction
+                result.append({
+                    "utc": utc_text,
+                    "spacecraft": reference.spacecraft,
+                    "channel": reference.channel,
+                    "solver": solver,
+                    "field_model": field_model,
+                    "model_row_available": row is not None,
+                    "result_level": level,
+                    "status": status,
+                    "accepted_direct_scalar": accepted,
+                    "direct_bounds_available": bounds,
+                    "cutoff_midpoint_diagnostic_available": proxy,
+                    "cutoff_bounds_available": proxy_bounds,
+                    "east_unresolved_fraction": east_unresolved,
+                    "west_unresolved_fraction": west_unresolved,
+                })
+    return result
+
+
 def model_status_category(row: ModelRow) -> Tuple[str, str, str]:
     """Return stable diagnostic category, label, and color for a non-valid row."""
     reasons = row.status_reasons
     if "UNRESOLVED" in reasons or "UNRESOLVED" in row.status:
         return "trajectory", "trajectory uncertainty", "tab:red"
-    if "RIGIDITY_GRID" in reasons or "RIGIDITY_GRID" in row.status:
-        return "rigidity", "rigidity-grid uncertainty", "tab:orange"
+    if ("RIGIDITY_GRID" in reasons or "RIGIDITY_GRID" in row.status or
+            "BOUND_WIDTH" in reasons or "BOUND_WIDTH" in row.status):
+        return "rigidity", "direct-bound/convergence uncertainty", "tab:orange"
     if any(token in reasons or token in row.status for token in
            ("NO_GEOMETRIC", "NO_SELECTED", "INSUFFICIENT_GEOMETRIC",
             "INSUFFICIENT_", "NO_", "INCOMPLETE_SOLID_ANGLE")):
@@ -3362,13 +4035,110 @@ def aperture_availability_rows(rows: Sequence[ModelRow]) -> List[Dict[str, objec
                 "signal_max": getattr(row, "%s_signal_max" % head),
                 "unresolved_fraction": getattr(
                     row, "unresolved_%s_fraction" % head),
+                "unresolved_time_limit_fraction": getattr(
+                    row, "unresolved_%s_time_limit_fraction" % head),
+                "unresolved_step_limit_fraction": getattr(
+                    row, "unresolved_%s_step_limit_fraction" % head),
+                "unresolved_distance_limit_fraction": getattr(
+                    row, "unresolved_%s_distance_limit_fraction" % head),
+                "unresolved_other_fraction": getattr(
+                    row, "unresolved_%s_other_fraction" % head),
+                "response_outer_allowed_fraction": getattr(
+                    row, "response_%s_outer_allowed_fraction" % head),
+                "response_inner_forbidden_fraction": getattr(
+                    row, "response_%s_inner_forbidden_fraction" % head),
+                "response_magnetic_trapped_fraction": getattr(
+                    row, "response_%s_magnetic_trapped_fraction" % head),
+                "response_drift_trapped_fraction": getattr(
+                    row, "response_%s_drift_trapped_fraction" % head),
+                "response_time_limit_fraction": getattr(
+                    row, "response_%s_time_limit_fraction" % head),
+                "response_step_limit_fraction": getattr(
+                    row, "response_%s_step_limit_fraction" % head),
+                "response_distance_limit_fraction": getattr(
+                    row, "response_%s_distance_limit_fraction" % head),
+                "response_other_termination_fraction": getattr(
+                    row, "response_%s_other_fraction" % head),
+                "unresolved_east_west_ratio": row.unresolved_east_west_ratio,
+                "unresolved_asymmetry_index": row.unresolved_asymmetry_index,
+                "modeled_log10_east_west_bound_width": row.modeled_log10_east_west_bound_width,
+                "observed_inside_rigorous_bounds": row.observed_inside_rigorous_bounds,
+                "spectrum_provenance_status": row.spectrum_provenance_status,
+                "max_direct_trace_distance_re": row.max_direct_trace_distance_re,
+                "max_direct_trace_steps": row.max_direct_trace_steps,
                 "discrete_transition_fraction": getattr(
                     row, "discrete_transition_%s_fraction" % head),
             })
     return result
 
 
-def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[str]:
+def aperture_termination_budget_rows(rows: Sequence[ModelRow]) -> List[Dict[str, object]]:
+    """Return the compact Phase-0 response-weighted termination budget per head.
+
+    ``C19_aperture_samples.csv`` intentionally remains the detailed per-sky-cell
+    audit product used by the aperture plots and historical post-processing.
+    Phase 0 additionally needs a small, directly readable table that answers the
+    operational question "where did the EAST response weight terminate?".
+
+    The fractions below are endpoint-attributed response weights from the direct
+    energy intervals.  They are diagnostics of trajectory termination, *not*
+    transmission probabilities and *not* a replacement for the rigorous lower/
+    upper direct-access bounds.  An interval contributes half of its exact
+    response-weighted J(E)G(E) integral to each endpoint reason; this avoids
+    inventing a hidden transition energy inside an unresolved interval.
+    """
+    out: List[Dict[str, object]] = []
+    for row in rows:
+        for head in ("east", "west"):
+            out.append({
+                "utc": row.utc,
+                "spacecraft": row.spacecraft,
+                "channel": row.channel,
+                "solver": row.solver,
+                "field_model": row.field_model,
+                "aperture": head.upper(),
+                "overall_status": row.status,
+                "aperture_status": getattr(row, f"{head}_aperture_status"),
+                "response_outer_boundary_allowed_fraction": getattr(
+                    row, f"response_{head}_outer_allowed_fraction"),
+                "response_inner_boundary_forbidden_fraction": getattr(
+                    row, f"response_{head}_inner_forbidden_fraction"),
+                "response_magnetically_trapped_forbidden_fraction": getattr(
+                    row, f"response_{head}_magnetic_trapped_fraction"),
+                "response_drift_trapped_forbidden_fraction": getattr(
+                    row, f"response_{head}_drift_trapped_fraction"),
+                "response_time_limit_fraction": getattr(
+                    row, f"response_{head}_time_limit_fraction"),
+                "response_step_limit_fraction": getattr(
+                    row, f"response_{head}_step_limit_fraction"),
+                "response_distance_limit_fraction": getattr(
+                    row, f"response_{head}_distance_limit_fraction"),
+                "response_other_termination_fraction": getattr(
+                    row, f"response_{head}_other_fraction"),
+                "response_total_unresolved_fraction": getattr(
+                    row, f"unresolved_{head}_fraction"),
+                "unresolved_east_west_ratio": row.unresolved_east_west_ratio,
+                "unresolved_asymmetry_index": row.unresolved_asymmetry_index,
+                "direct_log10_east_west_bound_width": (
+                    row.modeled_log10_east_west_bound_width),
+                "observed_inside_rigorous_bounds": row.observed_inside_rigorous_bounds,
+            })
+    return out
+
+
+def make_comparison_plots(
+        rows: Sequence[ModelRow], output_root: Path,
+        reference_rows: Optional[Sequence[ReferenceRow]] = None,
+        ) -> List[str]:
+    """Generate time-series and scalar comparison figures.
+
+    ``reference_rows`` is intentionally independent of ``rows``.  A failed AMPS case
+    used to disappear from the plot completely because the observed point was recovered
+    from the ModelRow that was never created.  Passing the selected reference here keeps
+    every requested GOES point visible and marks missing AMPS/post-processing rows
+    explicitly.  This makes sparse model coverage a diagnostic rather than a plotting
+    artifact.
+    """
     try:
         import matplotlib.pyplot as plt
     except Exception as exc:
@@ -3388,7 +4158,10 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
 
     for solver, model in sorted({(row.solver, row.field_model) for row in rows}):
         subset = [row for row in rows if row.solver == solver and row.field_model == model]
-        panels = sorted({(row.spacecraft, row.channel) for row in subset})
+        if reference_rows is not None:
+            panels = sorted({(row.spacecraft, row.channel) for row in reference_rows})
+        else:
+            panels = sorted({(row.spacecraft, row.channel) for row in subset})
 
         # ------------------------------------------------------------------
         # Time series.  Finite modeled values are plotted normally.  Exact
@@ -3404,19 +4177,50 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
                             if row.spacecraft == spacecraft and row.channel == channel],
                            key=lambda row: row.utc)
             times = [parse_utc(row.utc) for row in panel]
-            observed = [row.observed_log10_east_west_ratio for row in panel]
+            if reference_rows is not None:
+                reference_panel = sorted([
+                    row for row in reference_rows
+                    if row.spacecraft == spacecraft and row.channel == channel],
+                    key=lambda row: row.utc)
+                observed_times = [row.utc for row in reference_panel]
+                observed = [row.log10_east_west_ratio for row in reference_panel]
+            else:
+                observed_times = times
+                observed = [row.observed_log10_east_west_ratio for row in panel]
             modeled = [float("nan") if row.modeled_log10_east_west_ratio is None
                        else row.modeled_log10_east_west_ratio for row in panel]
             cutoff_proxy = [
                 float("nan") if row.cutoff_proxy_log10_east_west_ratio is None
                 else row.cutoff_proxy_log10_east_west_ratio for row in panel]
-            axis.plot(times, observed, marker="o", markersize=3, linewidth=1.2,
+            axis.plot(observed_times, observed, marker="o", markersize=3, linewidth=1.2,
                       label="GOES observed")
             axis.plot(times, modeled, marker="x", markersize=3, linewidth=1.2,
                       label="AMPS direct A(E,Omega) (accepted)")
             axis.plot(times, cutoff_proxy, marker="s", markersize=3, linewidth=1.0,
                       color="tab:green", linestyle="--",
-                      label="AMPS cutoff-rigidity proxy (diagnostic)")
+                      label="AMPS equivalent-cutoff midpoint (diagnostic only)")
+
+            # A direct calculation can be scientifically inconclusive yet still have
+            # a finite rigorous E/W interval.  Plot the center of that interval as an
+            # *open* marker only for rows without an accepted scalar.  It supplies a
+            # visual location for the modeled bounds at every resolvable epoch without
+            # changing ModelRow.status or the acceptance metrics.
+            direct_midpoint_times: List[datetime] = []
+            direct_midpoint_values: List[float] = []
+            for row in panel:
+                if row.modeled_log10_east_west_ratio is not None:
+                    continue
+                lo = row.modeled_log10_east_west_ratio_min
+                hi = row.modeled_log10_east_west_ratio_max
+                if (lo is not None and hi is not None and
+                        math.isfinite(float(lo)) and math.isfinite(float(hi))):
+                    direct_midpoint_times.append(parse_utc(row.utc))
+                    direct_midpoint_values.append(0.5 * (float(lo) + float(hi)))
+            if direct_midpoint_times:
+                axis.scatter(
+                    direct_midpoint_times, direct_midpoint_values,
+                    marker="o", facecolors="none", edgecolors="tab:orange", s=28,
+                    label="AMPS direct-bound midpoint (diagnostic only)")
             axis.axhline(0.0, linewidth=0.8)
 
             interval_values = [
@@ -3497,7 +4301,7 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
             zero_east = [parse_utc(row.utc) for row in panel
                          if row.status == "ZERO_EAST_TRANSMISSION"]
             other_nonfinite = [parse_utc(row.utc) for row in panel
-                               if row.status != "VALID"
+                               if row.status not in QUANTITATIVE_MODEL_STATUSES
                                and row.status not in SATURATED_MODEL_STATUSES]
             if zero_west:
                 axis.scatter(zero_west, [0.96] * len(zero_west), marker="^",
@@ -3510,7 +4314,7 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
             if other_nonfinite:
                 categories: Dict[str, Tuple[str, str, List[datetime]]] = {}
                 for row in panel:
-                    if row.status == "VALID" or row.status in SATURATED_MODEL_STATUSES:
+                    if row.status in QUANTITATIVE_MODEL_STATUSES or row.status in SATURATED_MODEL_STATUSES:
                         continue
                     key, label, color = model_status_category(row)
                     categories.setdefault(key, (label, color, []))[2].append(parse_utc(row.utc))
@@ -3519,6 +4323,20 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
                         category_times, [-0.10] * len(category_times), marker="x",
                         color=color, transform=axis.get_xaxis_transform(), clip_on=False,
                         label="AMPS no accepted scalar: %s" % label)
+
+            # A reference timestamp for which no ModelRow exists means execution or
+            # post-processing failed before the scientific fold could be constructed.
+            # Keep that point visible rather than silently shortening the comparison.
+            if reference_rows is not None:
+                modeled_epochs = {parse_utc(row.utc) for row in panel}
+                missing_model_times = [time for time in observed_times
+                                       if time not in modeled_epochs]
+                if missing_model_times:
+                    axis.scatter(
+                        missing_model_times, [-0.18] * len(missing_model_times),
+                        marker="|", color="tab:red", s=70,
+                        transform=axis.get_xaxis_transform(), clip_on=False,
+                        label="AMPS row missing (run/post-process failure)")
 
             axis.set_ylabel("log10(E/W)")
             axis.set_title("%s %s" % (spacecraft, channel))
@@ -3533,15 +4351,20 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
         plt.close(fig)
         outputs.append(str(path))
 
-        finite = [row for row in subset if row.status == "VALID"
+        finite = [row for row in subset if row.status in QUANTITATIVE_MODEL_STATUSES
                   and row.modeled_log10_east_west_ratio is not None
                   and math.isfinite(float(row.modeled_log10_east_west_ratio))]
-        if finite:
+        finite_proxy = [row for row in subset
+                        if row.cutoff_proxy_log10_east_west_ratio is not None
+                        and math.isfinite(float(row.cutoff_proxy_log10_east_west_ratio))]
+        if finite or finite_proxy:
             # --------------------------------------------------------------
-            # Zoomed scatter: x and y limits are intentionally independent.
-            # This makes the finite points use the available plotting area even
-            # when the model is orders of magnitude away from the observations.
-            # A separate parity figure below retains equal axes + the 1:1 line.
+            # Zoomed scatter: retain the accepted DIRECT_ACCESS scalar when it exists,
+            # but also show the explicitly diagnostic equivalent-cutoff midpoint.
+            # The latter is particularly useful when the direct result is available
+            # only as rigorous bounds, and it prevents this comparison family from
+            # disappearing merely because the conservative direct acceptance gate did
+            # its job.  Proxy points are never included in direct acceptance metrics.
             # --------------------------------------------------------------
             fig, ax = plt.subplots(figsize=(6.4, 6.0))
             for spacecraft, channel in sorted({(row.spacecraft, row.channel)
@@ -3551,9 +4374,23 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
                 ax.scatter([row.observed_log10_east_west_ratio for row in group],
                            [float(row.modeled_log10_east_west_ratio) for row in group],
                            marker=marker_by_spacecraft.get(spacecraft, "o"),
-                           label="%s %s" % (spacecraft, channel), alpha=0.8)
-            x_values = [row.observed_log10_east_west_ratio for row in finite]
-            y_values = [float(row.modeled_log10_east_west_ratio) for row in finite]
+                           label="%s %s direct" % (spacecraft, channel), alpha=0.8)
+            for spacecraft, channel in sorted({(row.spacecraft, row.channel)
+                                               for row in finite_proxy}):
+                group = [row for row in finite_proxy
+                         if row.spacecraft == spacecraft and row.channel == channel]
+                ax.scatter(
+                    [row.observed_log10_east_west_ratio for row in group],
+                    [float(row.cutoff_proxy_log10_east_west_ratio) for row in group],
+                    marker=marker_by_spacecraft.get(spacecraft, "o"),
+                    facecolors="none", edgecolors="tab:green",
+                    label="%s %s cutoff midpoint diagnostic" % (spacecraft, channel),
+                    alpha=0.75)
+            x_values = ([row.observed_log10_east_west_ratio for row in finite] +
+                        [row.observed_log10_east_west_ratio for row in finite_proxy])
+            y_values = ([float(row.modeled_log10_east_west_ratio) for row in finite] +
+                        [float(row.cutoff_proxy_log10_east_west_ratio)
+                         for row in finite_proxy])
             x_min, x_max = padded_limits(x_values)
             y_min, y_max = padded_limits(y_values)
             ax.set_xlim(x_min, x_max)
@@ -3567,8 +4404,8 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
                 ax.text(0.02, 0.98, "1:1 line is outside the zoomed view",
                         transform=ax.transAxes, va="top")
             ax.set_xlabel("Observed log10(E/W)")
-            ax.set_ylabel("Modeled log10(E/W)")
-            ax.set_title("C19A %s %s comparison (zoomed data ranges)" %
+            ax.set_ylabel("Modeled/diagnostic log10(E/W)")
+            ax.set_title("C19A %s %s comparison (direct + cutoff diagnostic)" %
                          (solver, model))
             ax.grid(True, alpha=0.3)
             ax.legend()
@@ -3589,7 +4426,18 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
                 ax.scatter([row.observed_log10_east_west_ratio for row in group],
                            [float(row.modeled_log10_east_west_ratio) for row in group],
                            marker=marker_by_spacecraft.get(spacecraft, "o"),
-                           label="%s %s" % (spacecraft, channel), alpha=0.8)
+                           label="%s %s direct" % (spacecraft, channel), alpha=0.8)
+            for spacecraft, channel in sorted({(row.spacecraft, row.channel)
+                                               for row in finite_proxy}):
+                group = [row for row in finite_proxy
+                         if row.spacecraft == spacecraft and row.channel == channel]
+                ax.scatter(
+                    [row.observed_log10_east_west_ratio for row in group],
+                    [float(row.cutoff_proxy_log10_east_west_ratio) for row in group],
+                    marker=marker_by_spacecraft.get(spacecraft, "o"),
+                    facecolors="none", edgecolors="tab:green",
+                    label="%s %s cutoff midpoint diagnostic" % (spacecraft, channel),
+                    alpha=0.75)
             all_values = x_values + y_values
             common_min, common_max = padded_limits(all_values, fraction=0.05, min_pad=0.05)
             ax.set_xlim(common_min, common_max)
@@ -3597,8 +4445,9 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
             ax.plot([common_min, common_max], [common_min, common_max],
                     linestyle="--", linewidth=1.0)
             ax.set_xlabel("Observed log10(E/W)")
-            ax.set_ylabel("Modeled log10(E/W)")
-            ax.set_title("C19A %s %s parity view" % (solver, model))
+            ax.set_ylabel("Modeled/diagnostic log10(E/W)")
+            ax.set_title("C19A %s %s parity view (direct + cutoff diagnostic)" %
+                         (solver, model))
             ax.grid(True, alpha=0.3)
             ax.legend()
             fig.tight_layout()
@@ -3610,6 +4459,8 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
 
             # Residuals expose temporal structure that can be hard to see when
             # observed and modeled curves live on very different vertical scales.
+            # Accepted direct residuals and cutoff-midpoint diagnostic residuals are
+            # deliberately styled separately.
             fig, axes = plt.subplots(len(panels), 1,
                                      figsize=(10.5, max(3.0, 2.3 * len(panels))),
                                      sharex=True, squeeze=False)
@@ -3620,13 +4471,28 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
                 if group:
                     axis.plot([parse_utc(row.utc) for row in group],
                               [float(row.residual_log10) for row in group],
-                              marker="o", markersize=3, linewidth=1.2)
+                              marker="o", markersize=3, linewidth=1.2,
+                              label="direct accepted")
+                proxy_group = sorted([row for row in finite_proxy
+                                      if row.spacecraft == spacecraft
+                                      and row.channel == channel],
+                                     key=lambda row: row.utc)
+                if proxy_group:
+                    axis.plot(
+                        [parse_utc(row.utc) for row in proxy_group],
+                        [float(row.cutoff_proxy_log10_east_west_ratio) -
+                         row.observed_log10_east_west_ratio for row in proxy_group],
+                        linestyle="--", linewidth=1.0, color="tab:green",
+                        label="cutoff midpoint diagnostic")
                 axis.axhline(0.0, linewidth=0.8)
                 axis.set_ylabel("model-observed")
                 axis.set_title("%s %s" % (spacecraft, channel))
                 axis.grid(True, alpha=0.3)
+                handles, labels = axis.get_legend_handles_labels()
+                if handles:
+                    axis.legend(loc="best", fontsize="x-small")
             axes[-1, 0].set_xlabel("UTC")
-            fig.suptitle("C19A %s %s finite log10(E/W) residuals" % (solver, model))
+            fig.suptitle("C19A %s %s log10(E/W) residuals" % (solver, model))
             fig.tight_layout()
             path = output_root / ("C19_residual_%s_%s.png" %
                                   (solver.lower(), model.lower()))
@@ -3634,6 +4500,29 @@ def make_comparison_plots(rows: Sequence[ModelRow], output_root: Path) -> List[s
             plt.close(fig)
             outputs.append(str(path))
 
+    return outputs
+
+
+def make_transmission_plots(rows: Sequence[ModelRow], output_root: Path) -> List[str]:
+    """Generate the broad-aperture transmission figure independently.
+
+    This plot used to live at the end of :func:`make_comparison_plots`.  Consequently
+    any exception in the optional scatter/parity/residual diagnostics prevented the
+    transmission plot -- and then every later plot family -- from being written.  It is
+    deliberately independent now so a failure in one visualization cannot hide the
+    underlying C19 transmission bounds or cutoff-proxy diagnostic.
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        print("C19 transmission plot skipped: %s" % exc, file=sys.stderr)
+        return []
+    outputs: List[str] = []
+    if not rows:
+        return outputs
+    for solver, model in sorted({(row.solver, row.field_model) for row in rows}):
+        subset = [row for row in rows if row.solver == solver and row.field_model == model]
+        panels = sorted({(row.spacecraft, row.channel) for row in subset})
         fig, axes = plt.subplots(len(panels), 1,
                                  figsize=(10.5, max(3.0, 2.5 * len(panels))),
                                  sharex=True, squeeze=False)
@@ -3799,6 +4688,7 @@ def directional_cutoff_rows(
     rows: List[Dict[str, object]] = []
     for cell in direction_map.cells:
         rc_lower, rc_effective, rc_upper = cutoff_triplet_gv(cell)
+        rc_midpoint_diagnostic = cutoff_midpoint_diagnostic_gv(cell)
         rows.append({
             "utc": format_utc(utc), "spacecraft": spacecraft,
             "solver": solver, "field_model": field_model,
@@ -3806,10 +4696,14 @@ def directional_cutoff_rows(
             "cutoff_source": source,
             "lon_deg": cell.lon_deg, "lat_deg": cell.lat_deg,
             "rc_lower_gv": rc_lower, "rc_effective_gv": rc_effective,
+            "rc_midpoint_diagnostic_gv": rc_midpoint_diagnostic,
             "rc_upper_gv": rc_upper,
             "cutoff_energy_effective_mev": (
                 kinetic_energy_mev_from_rigidity_gv(rc_effective)
                 if rc_effective is not None else None),
+            "cutoff_energy_midpoint_diagnostic_mev": (
+                kinetic_energy_mev_from_rigidity_gv(rc_midpoint_diagnostic)
+                if rc_midpoint_diagnostic is not None else None),
             "rc_uncertainty_width_gv": (
                 rc_upper - rc_lower
                 if rc_lower is not None and rc_upper is not None else None),
@@ -3825,7 +4719,17 @@ def directional_cutoff_rows(
 def make_directional_cutoff_plots(
         rows: Sequence[Mapping[str, object]], output_root: Path,
         ) -> List[str]:
-    """Plot effective directional cutoff and its retained bound width per case."""
+    """Plot rigorous cutoff bounds plus the always-labelled diagnostic midpoint.
+
+    Earlier Phase-4 hardening accidentally made this plot disappear whenever every
+    direction contained at least one unresolved trajectory, because the plotting code
+    required a finite ``rc_effective_gv``.  That is exactly the regime in which the
+    diagnostic is most useful.  The figure therefore uses *all* cells with finite
+    Rc bounds and shows four panels: lower bound, blocked-area midpoint diagnostic,
+    upper bound, and bound width.  A cell whose midpoint is diagnostic-only (no resolved
+    ``Rc_effective``) is outlined so the central color cannot be mistaken for a resolved
+    cutoff result.
+    """
     try:
         import matplotlib.pyplot as plt
     except Exception as exc:
@@ -3838,44 +4742,75 @@ def make_directional_cutoff_plots(
         group = [row for row in rows if tuple(str(row.get(name)) for name in group_names)
                  == (utc_text, spacecraft, solver, field_model)]
         finite = [row for row in group
-                  if row.get("rc_effective_gv") is not None
-                  and math.isfinite(float(row["rc_effective_gv"]))]
+                  if row.get("rc_lower_gv") is not None
+                  and row.get("rc_upper_gv") is not None
+                  and math.isfinite(float(row["rc_lower_gv"]))
+                  and math.isfinite(float(row["rc_upper_gv"]))]
         if not finite:
             continue
-        fig, axes = plt.subplots(1, 2, figsize=(12.0, 4.8), sharex=True, sharey=True)
-        central = axes[0].scatter(
-            [float(row["lon_deg"]) for row in finite],
-            [float(row["lat_deg"]) for row in finite],
-            c=[float(row["rc_effective_gv"]) for row in finite],
-            cmap="viridis", s=18)
-        axes[0].set_title("Effective directional cutoff")
-        fig.colorbar(central, ax=axes[0], label="Rc effective (GV)")
+        fig, axes = plt.subplots(2, 2, figsize=(12.5, 9.0), sharex=True, sharey=True)
+        axes_flat = list(axes.flat)
+        lon = [float(row["lon_deg"]) for row in finite]
+        lat = [float(row["lat_deg"]) for row in finite]
+        lower_values = [float(row["rc_lower_gv"]) for row in finite]
+        upper_values = [float(row["rc_upper_gv"]) for row in finite]
+        midpoint_values = [
+            float(row["rc_midpoint_diagnostic_gv"])
+            if row.get("rc_midpoint_diagnostic_gv") is not None
+            and math.isfinite(float(row["rc_midpoint_diagnostic_gv"]))
+            else 0.5 * (lo + hi)
+            for row, lo, hi in zip(finite, lower_values, upper_values)]
+        widths = [max(0.0, hi - lo) for lo, hi in zip(lower_values, upper_values)]
 
-        widths = [max(0.0, float(row.get("rc_uncertainty_width_gv") or 0.0))
-                  for row in finite]
-        uncertainty = axes[1].scatter(
-            [float(row["lon_deg"]) for row in finite],
-            [float(row["lat_deg"]) for row in finite],
-            c=widths, cmap="magma", s=18)
-        axes[1].set_title("Retained cutoff bound width")
-        fig.colorbar(uncertainty, ax=axes[1], label="Rc upper - lower (GV)")
+        common_min = min(lower_values + midpoint_values + upper_values)
+        common_max = max(lower_values + midpoint_values + upper_values)
+        lower_plot = axes_flat[0].scatter(lon, lat, c=lower_values, cmap="viridis",
+                                          s=18, vmin=common_min, vmax=common_max)
+        axes_flat[0].set_title("Rigorous Rc lower bound")
+        fig.colorbar(lower_plot, ax=axes_flat[0], label="Rc lower (GV)")
+
+        midpoint_plot = axes_flat[1].scatter(
+            lon, lat, c=midpoint_values, cmap="viridis", s=18,
+            vmin=common_min, vmax=common_max)
+        axes_flat[1].set_title("Equivalent-cutoff midpoint (diagnostic only)")
+        fig.colorbar(midpoint_plot, ax=axes_flat[1], label="Rc midpoint diagnostic (GV)")
+
+        upper_plot = axes_flat[2].scatter(lon, lat, c=upper_values, cmap="viridis",
+                                         s=18, vmin=common_min, vmax=common_max)
+        axes_flat[2].set_title("Rigorous Rc upper bound")
+        fig.colorbar(upper_plot, ax=axes_flat[2], label="Rc upper (GV)")
+
+        uncertainty = axes_flat[3].scatter(lon, lat, c=widths, cmap="magma", s=18)
+        axes_flat[3].set_title("Retained cutoff bound width")
+        fig.colorbar(uncertainty, ax=axes_flat[3], label="Rc upper - lower (GV)")
+
+        diagnostic_only = [row for row in finite
+                           if row.get("rc_effective_gv") is None]
+        if diagnostic_only:
+            axes_flat[1].scatter(
+                [float(row["lon_deg"]) for row in diagnostic_only],
+                [float(row["lat_deg"]) for row in diagnostic_only],
+                facecolors="none", edgecolors="black", marker="o", s=34,
+                linewidths=0.7, label="midpoint uses unresolved bracket(s)")
+            axes_flat[1].legend(loc="best", fontsize="x-small")
         censored = [row for row in finite
                     if row.get("lower_censored_at_sample_support")
                     or row.get("upper_censored_at_sample_support")]
         if censored:
-            for axis in axes:
+            for axis in axes_flat:
                 axis.scatter(
                     [float(row["lon_deg"]) for row in censored],
                     [float(row["lat_deg"]) for row in censored],
                     facecolors="none", edgecolors="black", marker="o", s=34,
                     linewidths=0.7, label="support-censored")
                 axis.legend(loc="best", fontsize="x-small")
-        for axis in axes:
+        for axis in axes_flat:
             axis.set_xlim(0.0, 360.0)
             axis.set_ylim(-90.0, 90.0)
             axis.set_xlabel("%s direction longitude (deg)" % group[0].get("frame", "SM"))
             axis.grid(True, alpha=0.3)
-        axes[0].set_ylabel("%s direction latitude (deg)" % group[0].get("frame", "SM"))
+        axes_flat[0].set_ylabel("%s direction latitude (deg)" % group[0].get("frame", "SM"))
+        axes_flat[2].set_ylabel("%s direction latitude (deg)" % group[0].get("frame", "SM"))
         source = str(group[0].get("cutoff_source", "UNKNOWN"))
         fig.suptitle("C19A directional cutoff: %s %s %s %s\n%s" %
                      (utc_text, spacecraft, solver, field_model, source))
@@ -3984,6 +4919,16 @@ def render_case_input(
         "MAX_STEPS": str(args.max_steps),
         "MAX_TRACE_TIME": "%.12g" % args.max_trace_time,
         "MAX_TRACE_DISTANCE": "%.12g" % args.max_trace_distance_re,
+        "TRAP_DRIFT_DETECTION": "T" if args.trap_drift_detection else "F",
+        "TRAP_MIN_DRIFT_REVOLUTIONS": str(args.trap_min_drift_revolutions),
+        "TRAP_DRIFT_RADIAL_GROWTH_TOL_RE": "%.12g" % args.trap_drift_radial_growth_tol_re,
+        "TRAP_DRIFT_RADIAL_REL_TOL": "%.12g" % args.trap_drift_radial_rel_tol,
+        "TRAP_DRIFT_LATITUDE_TOL": "%.12g" % args.trap_drift_latitude_tol,
+        "TRAP_DRIFT_PITCH_COS2_TOL": "%.12g" % args.trap_drift_pitch_cos2_tol,
+        "TRAP_DRIFT_PROFILE_BINS": str(args.trap_drift_profile_bins),
+        "TRAP_DRIFT_MIN_PROFILE_COVERAGE": "%.12g" % args.trap_drift_min_profile_coverage,
+        "TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION": "%.12g" % args.trap_drift_min_matched_bin_fraction,
+        "TRAP_ENERGY_REL_TOL": "%.12g" % args.trap_energy_rel_tol,
     }
     if solver == "GRIDLESS":
         replacements.update({
@@ -4286,7 +5231,13 @@ def self_test() -> int:
             # solvers.  Historically this list was rendered only for Mode3D, so a
             # small explicit list here protects GRIDLESS equivalence in the unit test.
             case_rigidity_list_gv="0.2,0.3",
-            dt_trace=0.25, max_trace_distance_re=400.0, scheduler="STATIC",
+            dt_trace=0.25, max_trace_distance_re=0.0, trap_drift_detection=True,
+            trap_min_drift_revolutions=3, trap_drift_radial_growth_tol_re=1.0,
+            trap_drift_radial_rel_tol=0.20, trap_drift_latitude_tol=0.20,
+            trap_drift_pitch_cos2_tol=0.25, trap_drift_profile_bins=24,
+            trap_drift_min_profile_coverage=0.70,
+            trap_drift_min_matched_bin_fraction=0.75, trap_energy_rel_tol=1.0e-4,
+            scheduler="STATIC",
             dynamic_chunk=1, nt=2, mode3d_mesh_res_earth_re=0.1,
             mode3d_mesh_res_boundary_re=2.0, mode3d_mesh_coarsening="LINEAR",
             mode3d_mesh_exponent=1.0)
@@ -4346,12 +5297,12 @@ def self_test() -> int:
             reference, direction_map, manifest, "GRIDLESS", "T05",
             test_spectrum, test_response, None, 0.0,
             LEGACY_DIRECTION_MAPPING, "PENUMBRA_SCAN", "UNRESOLVED", 0.05, 0.05, 300.0)
-        if model.status != "VALID" or model.modeled_east_west_ratio is None:
-            raise AssertionError("synthetic map did not produce a valid model row")
+        if model.status not in QUANTITATIVE_MODEL_STATUSES or model.modeled_east_west_ratio is None:
+            raise AssertionError("synthetic map did not produce a resolved quantitative model row")
         if not (model.modeled_east_west_ratio < 1.0):
             raise AssertionError("production arrival-to-look conversion did not produce E/W < 1")
-        if reversed_model.status != "VALID" or reversed_model.modeled_east_west_ratio is None:
-            raise AssertionError("legacy direct diagnostic did not produce a valid row")
+        if reversed_model.status not in QUANTITATIVE_MODEL_STATUSES or reversed_model.modeled_east_west_ratio is None:
+            raise AssertionError("legacy direct diagnostic did not produce a resolved quantitative row")
         if not (reversed_model.modeled_east_west_ratio > 1.0):
             raise AssertionError("legacy direct mapping did not reverse E/W sign")
 
@@ -4483,6 +5434,20 @@ def self_test() -> int:
             raise AssertionError("P1 direct-access self-test produced no fold")
         if direct_fold.discrete_transition_weight_fraction <= 0.0:
             raise AssertionError("resolved 0/1 access transition was not exposed as grid uncertainty")
+        termination_budget_sum = sum((
+            direct_fold.response_outer_allowed_weight_fraction,
+            direct_fold.response_inner_forbidden_weight_fraction,
+            direct_fold.response_magnetic_trapped_weight_fraction,
+            direct_fold.response_drift_trapped_weight_fraction,
+            direct_fold.response_time_limit_weight_fraction,
+            direct_fold.response_step_limit_weight_fraction,
+            direct_fold.response_distance_limit_weight_fraction,
+            direct_fold.response_other_weight_fraction,
+        ))
+        if not math.isclose(termination_budget_sum, 1.0, rel_tol=0.0, abs_tol=1.0e-12):
+            raise AssertionError(
+                "Phase-0 endpoint termination budget does not close: %.16g" %
+                termination_budget_sum)
 
         # Solver-equivalence regression at the Python science layer.  Use the exact
         # same direct cube and directional map with only the solver label changed; the
@@ -4599,12 +5564,12 @@ def self_test() -> int:
             raise AssertionError("solver label changed the common direct detector fold")
 
         # The optimized DIRECT_ACCESS mode has no separate AMPS scalar map.  Verify the
-        # postprocessor's finite-support blocked-area reduction and, critically, prove
+        # postprocessor's resolved blocked-area reduction and, critically, prove
         # that its diagnostic ratio remains available when the rigorous direct fold
         # correctly withholds a scalar because a transition bracket is too wide.
         derived_cutoff_map = direction_map_from_access_cube(access_cube)
         if directional_cutoff_source(derived_cutoff_map) != \
-                "DIRECT_ACCESS_EQUIVALENT_BLOCKED_AREA":
+                "DIRECT_ACCESS_EQUIVALENT_BLOCKED_AREA_MIDPOINT_DIAGNOSTIC_WITH_BOUNDS":
             raise AssertionError("direct-access cutoff reduction lost its provenance")
         derived_east_cell = next(
             cell for cell in derived_cutoff_map.cells if cell.lon_deg == 270.0)
@@ -4613,11 +5578,49 @@ def self_test() -> int:
                 or not (float(rc_triplet[0]) < float(rc_triplet[1]) <
                         float(rc_triplet[2]))):
             raise AssertionError("direct-access transition did not produce ordered Rc bounds")
+
+        # Regression for the failure diagnosed in the May-2012 C19 run.  An unresolved
+        # direct interval must retain blocked-area bounds and must NOT become a resolved
+        # Rc_effective.  At the same time the plotting-only equivalent-cutoff midpoint
+        # is intentionally restored as a separate quantity.  Use the legacy seven-column
+        # schema here on purpose; old cubes have no termination reason but must still
+        # obtain the same conservative direct semantics and diagnostic proxy semantics.
+        unresolved_lines = list(access_lines[:3])
+        for line in access_lines[3:]:
+            fields = line.split()
+            if float(fields[0]) == 270.0 and math.isclose(float(fields[3]), 25.0):
+                fields[4], fields[5], fields[6] = "2", "0", "1"
+                line = " ".join(fields)
+            unresolved_lines.append(line)
+        unresolved_path = root / "cutoff_unresolved_proxy_test.dat"
+        unresolved_path.write_text("\n".join(unresolved_lines) + "\n")
+        unresolved_cube = parse_directional_access(unresolved_path)
+        unresolved_map = direction_map_from_access_cube(unresolved_cube)
+        unresolved_east_cell = next(
+            cell for cell in unresolved_map.cells if cell.lon_deg == 270.0)
+        unresolved_triplet = cutoff_triplet_gv(unresolved_east_cell)
+        if (unresolved_triplet[0] is None or unresolved_triplet[2] is None or
+                unresolved_triplet[1] is not None):
+            raise AssertionError(
+                "unresolved direct interval did not preserve bounds while suppressing Rc midpoint")
+        if cutoff_midpoint_diagnostic_gv(unresolved_east_cell) is None:
+            raise AssertionError(
+                "unresolved direct interval lost its explicitly diagnostic cutoff midpoint")
+
+        unresolved_proxy_model, _ = evaluate_reference_row(
+            reference, unresolved_map, manifest, "GRIDDED", "T05", test_spectrum,
+            test_response, unresolved_cube, 0.0, PRODUCTION_DIRECTION_MAPPING,
+            "DIRECT_ACCESS", "UNRESOLVED", 1.0, 1.0, 300.0)
+        if (unresolved_proxy_model.cutoff_proxy_log10_east_west_ratio is None or
+                unresolved_proxy_model.cutoff_proxy_status !=
+                "VALID_MIDPOINT_DIAGNOSTIC_WITH_UNRESOLVED"):
+            raise AssertionError(
+                "unresolved DIRECT_ACCESS did not retain the labelled cutoff midpoint diagnostic")
         invalid_direct_model, _ = evaluate_reference_row(
             reference, derived_cutoff_map, manifest, "GRIDDED", "T05", test_spectrum,
             test_response, access_cube, 0.0, PRODUCTION_DIRECTION_MAPPING,
             "DIRECT_ACCESS", "UNRESOLVED", 1.0, 0.0, 300.0)
-        if (invalid_direct_model.status == "VALID" or
+        if (invalid_direct_model.status in QUANTITATIVE_MODEL_STATUSES or
                 invalid_direct_model.east_transmission is not None or
                 invalid_direct_model.east_transmission_min is None or
                 invalid_direct_model.east_transmission_max is None):
@@ -4627,6 +5630,35 @@ def self_test() -> int:
                 invalid_direct_model.cutoff_proxy_log10_east_west_ratio is None):
             raise AssertionError(
                 "cutoff-rigidity diagnostic was not retained beside an invalid direct scalar")
+
+        # Plotting regression.  Matplotlib is optional for C19 execution, so run this
+        # only when it is installed.  The test is intentionally broad: comparison,
+        # transmission, directional-cutoff, boundary-spectrum, and aperture figures are
+        # generated independently.  This catches exactly the regression where the first
+        # comparison PNG was written but a later plotting exception suppressed every
+        # remaining diagnostic family.
+        try:
+            import matplotlib  # noqa: F401
+        except Exception:
+            pass
+        else:
+            plot_root = root / "plot_regression"
+            plot_root.mkdir(parents=True, exist_ok=True)
+            comparison_paths = make_comparison_plots(
+                [model, invalid_direct_model], plot_root, [reference])
+            transmission_paths = make_transmission_plots(
+                [model, invalid_direct_model], plot_root)
+            cutoff_plot_rows = directional_cutoff_rows(
+                unresolved_map, reference.utc, reference.spacecraft, "GRIDDED", "T05")
+            cutoff_paths = make_directional_cutoff_plots(cutoff_plot_rows, plot_root)
+            spectrum_path = make_boundary_spectrum_plot(
+                {reference.utc: test_spectrum}, test_response, [reference.utc],
+                plot_root / "C19_boundary_spectrum.png")
+            aperture_path = make_aperture_plot(
+                diagnostics, plot_root / "C19_aperture_diagnostic.png")
+            if (not comparison_paths or not transmission_paths or not cutoff_paths or
+                    spectrum_path is None or aperture_path is None):
+                raise AssertionError("C19 independent plot-family regression is incomplete")
 
         # PASS/FAIL policy regression: a numerically complete run with failed
         # observational gates must remain a scientific FAIL even when a caller
@@ -4716,6 +5748,13 @@ def self_test() -> int:
         if (len(availability_rows) != 2 or not availability_path.exists() or
                 {row["aperture"] for row in availability_rows} != {"EAST", "WEST"}):
             raise AssertionError("per-head aperture availability report is incomplete")
+        termination_budget_path = root / "C19_aperture_termination_budget.csv"
+        termination_budget_rows = aperture_termination_budget_rows([model])
+        write_dict_rows(termination_budget_path, termination_budget_rows)
+        if (len(termination_budget_rows) != 2 or
+                not termination_budget_path.exists() or
+                {row["aperture"] for row in termination_budget_rows} != {"EAST", "WEST"}):
+            raise AssertionError("per-head termination-budget report is incomplete")
     print("C19A runner self-test: PASS")
     return 0
 
@@ -4734,9 +5773,16 @@ Examples:
     --mode3d-parallel-field-init --driver /path/to/may2012_driver.txt --amps ./amps
 """,
     )
-    parser.add_argument("--profile", choices=sorted(PROFILE_STEP_MINUTES), default="ROUTINE")
-    parser.add_argument("--time-step-minutes", type=int,
-                        help="override profile cadence; 0 keeps every reference epoch")
+    parser.add_argument(
+        "--profile", choices=sorted(PROFILE_STEP_MINUTES), default="ROUTINE",
+        help=("execution profile: SMOKE uses up to three first/middle/last epochs "
+              "common to every requested spacecraft/channel; ROUTINE samples each "
+              "spacecraft independently at 60-minute cadence; FULL keeps every "
+              "eligible reference epoch"))
+    parser.add_argument(
+        "--time-step-minutes", type=int,
+        help=("override ROUTINE/FULL profile cadence; 0 keeps every reference epoch. "
+              "SMOKE always uses its synchronized common-epoch selection."))
     parser.add_argument("--start", help="optional inclusive UTC start")
     parser.add_argument("--end", help="optional inclusive UTC end")
     parser.add_argument("--spacecraft", default="GOES13,GOES15")
@@ -4760,8 +5806,13 @@ Examples:
                         help="incident spectrum: measured physical-WEST P4/P5 fit (default), explicit CSV, or fixed gamma")
     parser.add_argument("--spectrum-file",
                         help="CSV for --spectrum-source FILE with utc,gamma[,j0,e0_mev]")
+    parser.add_argument("--require-independent-spectrum", action="store_true",
+                        help="publication gate: require --spectrum-source FILE rather than WEST-derived/fixed spectra")
     parser.add_argument("--detector-response", default=str(DEFAULT_RESPONSE),
                         help="piecewise EPEAD response CSV used by the current detector fold")
+    parser.add_argument("--require-calibrated-response", action="store_true",
+                        help=("publication gate: every positive selected response row must carry "
+                              "calibration_state=CALIBRATED in the response CSV"))
     parser.add_argument("--access-energy-points", type=int, default=48,
                         help=("dense DIRECT_ACCESS reference grid size before exact response edges are added; used when --no-adaptive-access or by PENUMBRA_SCAN companion access"))
     parser.add_argument("--adaptive-access", dest="adaptive_access", action="store_true",
@@ -4802,7 +5853,38 @@ Examples:
     parser.add_argument("--dt-trace", type=float, default=0.25)
     parser.add_argument("--max-steps", type=int, default=500000)
     parser.add_argument("--max-trace-time", type=float, default=300.0)
-    parser.add_argument("--max-trace-distance-re", type=float, default=400.0)
+    parser.add_argument(
+        "--max-trace-distance-re", type=float, default=0.0,
+        help=("cumulative path-length safety cap in Earth radii; 0 disables it "
+              "(C19 default) so MAX_TRACE_TIME provides an energy-independent physical-time budget"))
+    parser.add_argument(
+        "--trap-drift-detection", dest="trap_drift_detection", action="store_true",
+        default=True, help=("enable frozen-field full-orbit drift recurrence (C19 default; "
+                           "use --no-trap-drift-detection for the Phase-1 baseline budget sweep)"))
+    parser.add_argument(
+        "--no-trap-drift-detection", dest="trap_drift_detection", action="store_false",
+        help="disable drift recurrence and retain mirror/bounce trapping only")
+    parser.add_argument(
+        "--trap-min-drift-revolutions", type=int, default=3,
+        help="completed drift revolutions required; N turns imply N-1 consecutive recurrence comparisons")
+    parser.add_argument(
+        "--trap-drift-radial-growth-tol-re", type=float, default=1.0,
+        help="absolute per-profile-bin radius recurrence tolerance [Re]")
+    parser.add_argument("--trap-drift-radial-rel-tol", type=float, default=0.20,
+                        help="relative per-profile-bin radius recurrence tolerance")
+    parser.add_argument("--trap-drift-latitude-tol", type=float, default=0.20,
+                        help="maximum recurrence difference in the dimensionless z/r profile")
+    parser.add_argument("--trap-drift-pitch-cos2-tol", type=float, default=0.25,
+                        help="maximum recurrence difference in gyro-averaged cos^2(pitch) profile")
+    parser.add_argument("--trap-drift-profile-bins", type=int, default=24,
+                        help="number of drift-phase bins used by the full-orbit recurrence profile")
+    parser.add_argument("--trap-drift-min-profile-coverage", type=float, default=0.70,
+                        help="minimum populated azimuth-profile fraction per completed revolution")
+    parser.add_argument("--trap-drift-min-matched-bin-fraction", type=float, default=0.75,
+                        help="minimum common profile-bin fraction satisfying all recurrence tolerances")
+    parser.add_argument("--trap-energy-rel-tol", type=float, default=1.0e-4,
+                        help=("maximum |p| spread admitted by either trap classifier; keep strict by default "
+                              "and determine any relaxation from Phase-0 momentum diagnostics"))
     parser.add_argument("--max-unresolved-aperture-fraction", type=float, default=0.05,
                         help="maximum unresolved solid-angle fraction allowed separately in each detector-head aperture fold")
     parser.add_argument("--min-aperture-cell-count", type=int, default=1,
@@ -4815,6 +5897,10 @@ Examples:
         "--max-discrete-transition-fraction", type=float, default=0.05,
         help=("maximum detector-response-weighted fraction lying in sampled rigidity intervals whose resolved endpoint "
               "access states differ; exceeding this means the direct rigidity grid is too coarse for a quantitative fold"))
+    parser.add_argument(
+        "--max-direct-ratio-bound-width-log10", type=float, default=-1.0,
+        help=("maximum finite rigorous log10(E/W) interval width for accepting a quantitative direct scalar; "
+              "negative disables this observable-convergence gate"))
     parser.add_argument("--frozen-field-warning-seconds", type=float, default=300.0,
                         help="static-field guardrail; a directional scan reporting a longer individual trace is excluded from quantitative E/W")
     # Current detector-orientation controls.  These were introduced during P2.4
@@ -4824,6 +5910,8 @@ Examples:
     parser.add_argument("--detector-orientation-file",
                         help=("CSV with one physical boresight/aperture-north vector per actual detector head and epoch in SM/GSM; "
                               "head IDs are matched to telemetry_head_east/west provenance when available"))
+    parser.add_argument("--require-real-orientation", action="store_true",
+                        help="publication gate: require --detector-orientation-source FILE for every selected head/epoch")
     parser.add_argument("--orientation-yaw-deg", type=float, default=0.0,
                         help="optional detector yaw perturbation for sensitivity studies")
     parser.add_argument("--orientation-pitch-deg", type=float, default=0.0,
@@ -4893,8 +5981,24 @@ Examples:
         parser.error("--cutoff-scan-n must be >= 2")
     if args.max_steps < 1:
         parser.error("--max-steps must be >= 1")
-    if args.max_trace_time <= 0.0 or args.max_trace_distance_re <= 0.0:
-        parser.error("trace time and distance limits must be positive")
+    if args.max_trace_time <= 0.0:
+        parser.error("--max-trace-time must be positive")
+    if args.max_trace_distance_re < 0.0:
+        parser.error("--max-trace-distance-re must be >= 0 (0 disables the path cap)")
+    if args.trap_min_drift_revolutions < 2:
+        parser.error("--trap-min-drift-revolutions must be >= 2")
+    if args.trap_drift_radial_growth_tol_re < 0.0 or args.trap_drift_radial_rel_tol < 0.0:
+        parser.error("drift radial recurrence tolerances must be >= 0")
+    if args.trap_drift_latitude_tol < 0.0 or args.trap_drift_pitch_cos2_tol < 0.0:
+        parser.error("drift phase-space recurrence tolerances must be >= 0")
+    if not (8 <= args.trap_drift_profile_bins <= 360):
+        parser.error("--trap-drift-profile-bins must be in [8,360]")
+    if not (0.0 < args.trap_drift_min_profile_coverage <= 1.0):
+        parser.error("--trap-drift-min-profile-coverage must be in (0,1]")
+    if not (0.0 < args.trap_drift_min_matched_bin_fraction <= 1.0):
+        parser.error("--trap-drift-min-matched-bin-fraction must be in (0,1]")
+    if args.trap_energy_rel_tol < 0.0:
+        parser.error("--trap-energy-rel-tol must be >= 0")
     if not (0.0 <= args.max_unresolved_aperture_fraction <= 1.0):
         parser.error("--max-unresolved-aperture-fraction must be in [0,1]")
     if args.min_aperture_cell_count < 1:
@@ -4911,6 +6015,10 @@ Examples:
         parser.error("--anisotropy-axis-lat-deg must be in [-90,90]")
     if args.detector_orientation_source == "FILE" and not args.detector_orientation_file:
         parser.error("--detector-orientation-source FILE requires --detector-orientation-file")
+    if args.require_real_orientation and args.detector_orientation_source != "FILE":
+        parser.error("--require-real-orientation requires --detector-orientation-source FILE")
+    if args.require_independent_spectrum and args.spectrum_source != "FILE":
+        parser.error("--require-independent-spectrum requires --spectrum-source FILE")
     if args.spectral_index <= 0.0:
         parser.error("--spectral-index must be positive")
     if args.access_energy_points < 4:
@@ -4969,6 +6077,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     try:
         reference_all = load_reference(reference_path)
+        # Keep the pre-profile population so the output can explain an apparently
+        # sparse comparison.  ROUTINE intentionally keeps one spacecraft epoch every
+        # 60 minutes, whereas the committed reference is five-minute.  Previously the
+        # runner reported only the post-profile count, making normal down-sampling look
+        # like missing model results.
+        reference_eligible = [
+            row for row in reference_all
+            if row.spacecraft in args.spacecraft_list and row.channel in args.channel_list
+        ]
+        if args.start:
+            start = parse_utc(args.start)
+            reference_eligible = [row for row in reference_eligible if row.utc >= start]
+        if args.end:
+            end = parse_utc(args.end)
+            reference_eligible = [row for row in reference_eligible if row.utc <= end]
         reference = select_reference_rows(reference_all, args)
         driver_tilts, driver_info = load_driver_tilts(
             driver_path, [row.utc for row in reference])
@@ -4979,6 +6102,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         response_path = Path(args.detector_response).expanduser().resolve()
         detector_response = load_detector_response(response_path, args.channel_list)
+        response_calibration_states = sorted({
+            row.calibration_state for row in detector_response if row.relative_response > 0.0
+        })
+        if args.require_calibrated_response and (
+                not response_calibration_states or
+                any(state != "CALIBRATED" for state in response_calibration_states)):
+            raise ValueError(
+                "--require-calibrated-response requires calibration_state=CALIBRATED "
+                "on every positive selected detector-response row; found %s" %
+                (",".join(response_calibration_states) or "NONE"))
         response_has_secondary = any(
             "SECONDARY" in row.response_component.upper() for row in detector_response)
         # Match the response model to the observational product as explicitly as the
@@ -5125,6 +6258,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     print("C19A selected %d reference rows at %d spacecraft epochs" %
           (len(reference), len(grouped)))
+    if len(reference) < len(reference_eligible):
+        if args.profile == "SMOKE":
+            profile_hint = (
+                "SMOKE intentionally keeps up to three synchronized epochs common "
+                "to every requested spacecraft/channel; use --profile FULL to "
+                "model every eligible reference epoch.")
+        elif args.time_step_minutes is not None and args.time_step_minutes > 0:
+            profile_hint = (
+                "Use --time-step-minutes 0 to model every eligible reference epoch.")
+        else:
+            profile_hint = (
+                "Use --profile FULL or --time-step-minutes 0 to model every eligible "
+                "reference epoch.")
+        print(
+            "C19A profile selection retained %d/%d eligible reference rows (%.1f%%). %s" %
+            (len(reference), len(reference_eligible),
+             100.0 * len(reference) / float(len(reference_eligible)), profile_hint),
+            flush=True)
     launch_count = 0
     for selected_solver in solvers:
         if selected_solver == "GRIDDED" and args.gridded_batch == "AUTO":
@@ -5433,7 +6584,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             args.detector_orientation_source, orientation_by_head,
                             args.orientation_yaw_deg, args.orientation_pitch_deg,
                             production_anisotropy, args.min_aperture_cell_count,
-                            args.min_aperture_solid_angle_coverage)
+                            args.min_aperture_solid_angle_coverage,
+                            args.max_direct_ratio_bound_width_log10)
                         alternate_model, _ = evaluate_reference_row(
                             reference_row, direction_map, manifest, solver,
                             field_model, spectrum, detector_response, access_cube, tilt,
@@ -5445,7 +6597,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             args.detector_orientation_source, orientation_by_head,
                             args.orientation_yaw_deg, args.orientation_pitch_deg,
                             production_anisotropy, args.min_aperture_cell_count,
-                            args.min_aperture_solid_angle_coverage)
+                            args.min_aperture_solid_angle_coverage,
+                            args.max_direct_ratio_bound_width_log10)
                         model_rows.append(model)
 
                         # Store one row per convention so the diagnostic can be
@@ -5522,19 +6675,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
          "e0_mev": item.e0_mev, "source": item.source, "n_points": item.n_points}
         for epoch, item in sorted(spectra.items()) if epoch in {row.utc for row in reference}])
     write_dict_rows(output_root / "C19_detector_response_used.csv", [asdict(row) for row in detector_response])
-    write_dict_rows(output_root / "C19_access_energy_grid.csv", [
-        {
+    # Include the *physical* trace budget represented by the numerical controls.
+    # This table made the historical 400-Re problem immediately visible: the same
+    # path cap implied a much shorter allowed trajectory time at the high-energy end
+    # of the detector response.  Keeping these columns in every run makes future
+    # trace-budget convergence tests self-documenting.
+    access_grid_rows: List[Dict[str, object]] = []
+    for index, energy in enumerate(access_energies):
+        item: Dict[str, object] = {
             "grid_role": ("ADAPTIVE_SEED" if adaptive_access_active else "DENSE_REQUESTED"),
             "adaptive_access": adaptive_access_active,
             "index": index,
             "energy_mev": energy,
             "rigidity_gv": rigidity_gv_from_kinetic_energy_mev(energy),
         }
-        for index, energy in enumerate(access_energies)])
+        item.update(proton_trace_budget_diagnostic(
+            energy, args.max_trace_time, args.max_trace_distance_re))
+        access_grid_rows.append(item)
+    write_dict_rows(output_root / "C19_access_energy_grid.csv", access_grid_rows)
     write_dict_rows(output_root / "C19_model.csv", [asdict(row) for row in model_rows])
     write_dict_rows(output_root / "C19_comparison.csv", [asdict(row) for row in model_rows])
     availability = aperture_availability_rows(model_rows)
     write_dict_rows(output_root / "C19_aperture_availability.csv", availability)
+    termination_budget = aperture_termination_budget_rows(model_rows)
+    write_dict_rows(
+        output_root / "C19_aperture_termination_budget.csv", termination_budget)
     availability_counts: Dict[Tuple[str, str], int] = {}
     for item in availability:
         key = (str(item["aperture"]), str(item["aperture_status"]))
@@ -5544,20 +6709,51 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     directional_cutoff_diagnostics)
     write_dict_rows(output_root / "C19_direction_sense_diagnostic.csv",
                     direction_sense_diagnostics)
+    coverage = model_coverage_rows(
+        reference, model_rows, solvers, args.model_list)
+    write_dict_rows(output_root / "C19_model_coverage.csv", coverage)
     metrics = calculate_metrics(model_rows, args)
     write_dict_rows(output_root / "C19_metrics.csv", [asdict(row) for row in metrics])
-    plot_paths = make_comparison_plots(model_rows, output_root)
-    plot_paths.extend(make_directional_cutoff_plots(
-        directional_cutoff_diagnostics, output_root))
-    spectrum_plot = make_boundary_spectrum_plot(
-        spectra, detector_response, [row.utc for row in reference],
-        output_root / "C19_boundary_spectrum.png")
-    if spectrum_plot:
-        plot_paths.append(spectrum_plot)
-    aperture_plot = make_aperture_plot(
-        aperture_diagnostics, output_root / "C19_aperture_diagnostic.png")
-    if aperture_plot:
-        plot_paths.append(aperture_plot)
+    # Plot families are intentionally isolated.  Diagnostic plotting must never abort
+    # scientific post-processing or suppress later figures.  This specifically fixes
+    # the observed failure mode where C19_comparison_*.png was written, an exception in
+    # the optional scalar plots occurred, and transmission/directional/spectrum/aperture
+    # figures were therefore never attempted.
+    plot_paths: List[str] = []
+    plot_errors: List[Dict[str, str]] = []
+
+    def run_plot_family(name: str, producer) -> None:
+        try:
+            produced = producer()
+            if produced is None:
+                return
+            if isinstance(produced, str):
+                plot_paths.append(produced)
+            else:
+                plot_paths.extend(str(path) for path in produced if path)
+        except Exception as exc:
+            plot_errors.append({"family": name, "error": str(exc)})
+            print("C19 %s plot generation failed: %s" % (name, exc), file=sys.stderr)
+
+    run_plot_family(
+        "comparison",
+        lambda: make_comparison_plots(model_rows, output_root, reference))
+    run_plot_family(
+        "transmission",
+        lambda: make_transmission_plots(model_rows, output_root))
+    run_plot_family(
+        "directional_cutoff",
+        lambda: make_directional_cutoff_plots(
+            directional_cutoff_diagnostics, output_root))
+    run_plot_family(
+        "boundary_spectrum",
+        lambda: make_boundary_spectrum_plot(
+            spectra, detector_response, [row.utc for row in reference],
+            output_root / "C19_boundary_spectrum.png"))
+    run_plot_family(
+        "aperture_diagnostic",
+        lambda: make_aperture_plot(
+            aperture_diagnostics, output_root / "C19_aperture_diagnostic.png"))
 
     validity = pipeline_validity(
         model_rows, run_failures, args.max_unresolved_aperture_fraction,
@@ -5571,6 +6767,40 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         execution_complete, trajectory_resolution_passed,
         instrument_fold_valid, observational_passed)
     sense_summary = direction_sense_summary(direction_sense_diagnostics)
+
+    # Reporting hardening: keep the conservative-bounds result separate from the
+    # scalar acceptance state.  An inconclusive row can still demonstrate that the
+    # observation is compatible with the rigorous direct interval.
+    bounds_evaluable = [row for row in model_rows
+                        if row.observed_inside_rigorous_bounds is not None]
+    bounds_inside = [row for row in bounds_evaluable
+                     if row.observed_inside_rigorous_bounds]
+    unresolved_asymmetry_cases = [{
+        "utc": row.utc, "spacecraft": row.spacecraft, "channel": row.channel,
+        "solver": row.solver, "field_model": row.field_model,
+        "east_unresolved_fraction": row.unresolved_east_fraction,
+        "west_unresolved_fraction": row.unresolved_west_fraction,
+        "east_west_ratio": row.unresolved_east_west_ratio,
+        "asymmetry_index": row.unresolved_asymmetry_index,
+        # The first two fields partition the complete unresolved interval weight by
+        # its limiting cause; the response_* fields below are the endpoint-attributed
+        # complete Phase-0 termination budget and therefore sum with the physical
+        # termination fractions rather than double-counting mixed intervals.
+        "east_unresolved_distance_limit_fraction": row.unresolved_east_distance_limit_fraction,
+        "east_unresolved_time_limit_fraction": row.unresolved_east_time_limit_fraction,
+        "east_response_distance_limit_fraction": row.response_east_distance_limit_fraction,
+        "east_response_time_limit_fraction": row.response_east_time_limit_fraction,
+        "east_drift_trapped_fraction": row.response_east_drift_trapped_fraction,
+        "west_response_distance_limit_fraction": row.response_west_distance_limit_fraction,
+        "west_response_time_limit_fraction": row.response_west_time_limit_fraction,
+        "west_drift_trapped_fraction": row.response_west_drift_trapped_fraction,
+        "status": row.status,
+    } for row in model_rows]
+    spectrum_provenance_counts = {}
+    for row in model_rows:
+        spectrum_provenance_counts[row.spectrum_provenance_status] = \
+            spectrum_provenance_counts.get(row.spectrum_provenance_status, 0) + 1
+
     result = {
         "test_id": "C19A",
         "test_name": "GOES EPEAD east-west directional-access validation",
@@ -5589,6 +6819,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "driver_sha256": sha256(driver_path),
         "driver_validation": driver_info,
         "spectrum_source": args.spectrum_source,
+        "independent_spectrum_required": args.require_independent_spectrum,
         "spectrum_file": str(Path(args.spectrum_file).expanduser().resolve()) if args.spectrum_file else None,
         "spectrum_fits": [
             {"utc": format_utc(epoch), "gamma": item.gamma, "j0": item.j0,
@@ -5610,6 +6841,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "detector_response_path": str(response_path),
         "detector_response_sha256": sha256(response_path),
         "detector_response_contains_secondary_components": response_has_secondary,
+        "detector_response_calibration_states": response_calibration_states,
+        "calibrated_response_required": args.require_calibrated_response,
         "response_fold_mode": args.response_fold,
         "access_energy_base_points": (args.adaptive_access_seed_points
                                       if adaptive_access_active else args.access_energy_points),
@@ -5623,6 +6856,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "access_rigidity_min_gv": access_rigidities[0],
         "access_rigidity_max_gv": access_rigidities[-1],
         "max_discrete_transition_fraction": args.max_discrete_transition_fraction,
+        "max_direct_ratio_bound_width_log10": args.max_direct_ratio_bound_width_log10,
         "min_aperture_cell_count": args.min_aperture_cell_count,
         "min_aperture_solid_angle_coverage": args.min_aperture_solid_angle_coverage,
         # Detector-orientation/anisotropy provenance. Detector orientation now affects
@@ -5630,6 +6864,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         # upstream anisotropy affects only the fold. Keeping both in the aggregate
         # result prevents geometrically different runs from looking identical.
         "detector_orientation_source": args.detector_orientation_source,
+        "real_orientation_required": args.require_real_orientation,
         "detector_orientation_file": (str(orientation_path) if orientation_path else None),
         "detector_orientation_file_sha256": (sha256(orientation_path) if orientation_path else None),
         "orientation_yaw_deg": args.orientation_yaw_deg,
@@ -5654,8 +6889,33 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "real_ephemeris_fraction": real_ephemeris_fraction,
         "real_ephemeris_required": args.require_real_ephemeris,
         "observable": "log10(background-subtracted physical EAST/WEST flux ratio)",
+        "observed_inside_rigorous_bounds_count": len(bounds_inside),
+        "observed_with_rigorous_bounds_count": len(bounds_evaluable),
+        "observed_inside_rigorous_bounds_fraction": (
+            len(bounds_inside) / float(len(bounds_evaluable)) if bounds_evaluable else None),
+        "unresolved_asymmetry_cases": unresolved_asymmetry_cases,
+        "spectrum_provenance_status_counts": spectrum_provenance_counts,
+        "n_reference_rows_eligible_before_profile": len(reference_eligible),
         "n_reference_rows": len(reference),
+        # For SMOKE this should normally be three and, by construction, every one
+        # of these epochs contains the full requested spacecraft/channel matrix.
+        # Recording the count makes it obvious in C19_result.json whether a quick
+        # run used synchronized field snapshots or a cadence-driven ROUTINE/FULL set.
+        "n_reference_unique_field_epochs": len({row.utc for row in reference}),
+        "smoke_common_epoch_selection": (args.profile == "SMOKE"),
+        "reference_profile_selection_fraction": (
+            len(reference) / float(len(reference_eligible))
+            if reference_eligible else None),
+        "reference_profile_step_minutes": (
+            args.time_step_minutes if args.time_step_minutes is not None
+            else PROFILE_STEP_MINUTES[args.profile]),
         "n_model_rows": len(model_rows),
+        "n_model_coverage_rows": len(coverage),
+        "model_coverage_file": str(output_root / "C19_model_coverage.csv"),
+        "model_coverage_counts": {
+            level: sum(str(item["result_level"]) == level for item in coverage)
+            for level in sorted({str(item["result_level"]) for item in coverage})
+        },
         "n_directional_cutoff_rows": len(directional_cutoff_diagnostics),
         "directional_cutoff_file": str(output_root / "C19_directional_cutoff.csv"),
         "cutoff_proxy_is_acceptance_observable": False,
@@ -5665,6 +6925,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         },
         "aperture_availability_file": str(
             output_root / "C19_aperture_availability.csv"),
+        "n_aperture_termination_budget_rows": len(termination_budget),
+        "aperture_termination_budget_file": str(
+            output_root / "C19_aperture_termination_budget.csv"),
         "n_run_failures": len(run_failures),
         "run_failures": run_failures,
         "metrics": [asdict(row) for row in metrics],
@@ -5689,6 +6952,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         # failure becomes exit status 1.
         "passed": overall_passed,
         "plot_files": plot_paths,
+        "plot_generation_errors": plot_errors,
         "limitations": [
             "The committed response CSV is a factorized nominal P4/P5 energy response plus elliptical angular FOV; replace it with a calibrated piecewise response for publication-grade instrument modeling.",
             "OBSERVED_WEST derives the common incident spectral shape from the less-shielded physical-WEST measurements; an independent upstream FILE spectrum is preferred when available.",
@@ -5705,9 +6969,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     summary_lines = [
         "C19A GOES EPEAD east-west directional-access validation",
-        "reference rows: %d" % len(reference),
+        "reference rows selected: %d / %d eligible before profile (%.1f%%)" % (
+            len(reference), len(reference_eligible),
+            100.0 * len(reference) / float(len(reference_eligible))
+            if reference_eligible else 0.0),
+        "unique selected field epochs: %d%s" % (
+            len({row.utc for row in reference}),
+            " (synchronized SMOKE common epochs)" if args.profile == "SMOKE" else ""),
         "model rows: %d" % len(model_rows),
         "run failures: %d" % len(run_failures),
+        "plot generation errors: %d" % len(plot_errors),
     ]
     for (head, aperture_status), count in sorted(availability_counts.items()):
         summary_lines.append(

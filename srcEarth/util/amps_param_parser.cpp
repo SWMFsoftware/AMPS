@@ -2988,6 +2988,26 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         p.numerics.trapEnergyRelativeTolerance=std::stod(val);
       else if (uKey=="TRAP_PARALLEL_DEADBAND")
         p.numerics.trapParallelDeadband=std::stod(val);
+      else if (uKey=="TRAP_DRIFT_DETECTION" || uKey=="TRAP_DRIFT_SHELL_DETECTION")
+        p.numerics.trapDriftDetection=ToBool(val);
+      else if (uKey=="TRAP_MIN_DRIFT_REVOLUTIONS")
+        p.numerics.trapMinDriftRevolutions=std::stoi(val);
+      else if (uKey=="TRAP_DRIFT_RADIAL_GROWTH_TOL_RE" ||
+               uKey=="TRAP_DRIFT_RADIAL_ENVELOPE_TOL_RE")
+        p.numerics.trapDriftRadialGrowthTolerance_Re=std::stod(val);
+      else if (uKey=="TRAP_DRIFT_RADIAL_REL_TOL" ||
+               uKey=="TRAP_DRIFT_RADIAL_RELATIVE_TOL")
+        p.numerics.trapDriftRadialRelativeTolerance=std::stod(val);
+      else if (uKey=="TRAP_DRIFT_LATITUDE_TOL")
+        p.numerics.trapDriftLatitudeTolerance=std::stod(val);
+      else if (uKey=="TRAP_DRIFT_PITCH_COS2_TOL")
+        p.numerics.trapDriftPitchCos2Tolerance=std::stod(val);
+      else if (uKey=="TRAP_DRIFT_PROFILE_BINS")
+        p.numerics.trapDriftProfileBins=std::stoi(val);
+      else if (uKey=="TRAP_DRIFT_MIN_PROFILE_COVERAGE")
+        p.numerics.trapDriftMinProfileCoverage=std::stod(val);
+      else if (uKey=="TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION")
+        p.numerics.trapDriftMinMatchedBinFraction=std::stod(val);
       else if (uKey=="MAX_TRACE_DISTANCE") p.numerics.maxTraceDistance_Re=std::stod(val);
       else if (uKey=="N_PARTICLES") {
         // RoR-style generic particle count. For the forward-mode injector this
@@ -3422,6 +3442,33 @@ if (ToUpper(p.field.model)=="DIPOLE") {
       !std::isfinite(p.numerics.trapParallelDeadband)) {
     exit(__LINE__,__FILE__,"TRAP_PARALLEL_DEADBAND must be finite and in [0,1)");
   }
+  if (p.numerics.trapMinDriftRevolutions < 2) {
+    exit(__LINE__,__FILE__,"TRAP_MIN_DRIFT_REVOLUTIONS must be >= 2 so full-orbit recurrence can be compared between complete drift turns");
+  }
+  if (!(p.numerics.trapDriftRadialGrowthTolerance_Re >= 0.0) ||
+      !std::isfinite(p.numerics.trapDriftRadialGrowthTolerance_Re)) {
+    exit(__LINE__,__FILE__,
+         "TRAP_DRIFT_RADIAL_GROWTH_TOL_RE must be finite and >= 0");
+  }
+  if (!(p.numerics.trapDriftRadialRelativeTolerance >= 0.0) ||
+      !std::isfinite(p.numerics.trapDriftRadialRelativeTolerance))
+    exit(__LINE__,__FILE__,"TRAP_DRIFT_RADIAL_REL_TOL must be finite and >= 0");
+  if (!(p.numerics.trapDriftLatitudeTolerance >= 0.0) ||
+      !std::isfinite(p.numerics.trapDriftLatitudeTolerance))
+    exit(__LINE__,__FILE__,"TRAP_DRIFT_LATITUDE_TOL must be finite and >= 0");
+  if (!(p.numerics.trapDriftPitchCos2Tolerance >= 0.0) ||
+      !std::isfinite(p.numerics.trapDriftPitchCos2Tolerance))
+    exit(__LINE__,__FILE__,"TRAP_DRIFT_PITCH_COS2_TOL must be finite and >= 0");
+  if (p.numerics.trapDriftProfileBins < 8 || p.numerics.trapDriftProfileBins > 360)
+    exit(__LINE__,__FILE__,"TRAP_DRIFT_PROFILE_BINS must be in [8,360]");
+  if (!(p.numerics.trapDriftMinProfileCoverage > 0.0 &&
+        p.numerics.trapDriftMinProfileCoverage <= 1.0) ||
+      !std::isfinite(p.numerics.trapDriftMinProfileCoverage))
+    exit(__LINE__,__FILE__,"TRAP_DRIFT_MIN_PROFILE_COVERAGE must be finite and in (0,1]");
+  if (!(p.numerics.trapDriftMinMatchedBinFraction > 0.0 &&
+        p.numerics.trapDriftMinMatchedBinFraction <= 1.0) ||
+      !std::isfinite(p.numerics.trapDriftMinMatchedBinFraction))
+    exit(__LINE__,__FILE__,"TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION must be finite and in (0,1]");
 
   // Resolve product-selection requests from CALC_TARGET.
   //

@@ -1105,6 +1105,23 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
         prm.numerics.trapRadialGrowthTolerance_Re*_EARTH__RADIUS_;
     trapConfig.energyRelativeTolerance=prm.numerics.trapEnergyRelativeTolerance;
     trapConfig.parallelDeadband=prm.numerics.trapParallelDeadband;
+    // C19 can optionally supplement mirror/bounce trapping with a drift-shell
+    // recurrence test.  This is still gated by TRAP_DETECTION and is valid only for
+    // the frozen magnetic-field snapshot used by one backtrace.
+    trapConfig.driftEnabled=prm.numerics.trapDriftDetection;
+    trapConfig.minDriftRevolutions=prm.numerics.trapMinDriftRevolutions;
+    // Full-orbit C19 recurrence uses an azimuth-resolved phase-space profile.
+    // The absolute radius tolerance preserves the historical input keyword, while
+    // the relative/latitude/pitch gates distinguish a recurring T05 shell from a
+    // merely long-lived trajectory.
+    trapConfig.driftRadialAbsoluteTolerance_m=
+        prm.numerics.trapDriftRadialGrowthTolerance_Re*_EARTH__RADIUS_;
+    trapConfig.driftRadialRelativeTolerance=prm.numerics.trapDriftRadialRelativeTolerance;
+    trapConfig.driftLatitudeTolerance=prm.numerics.trapDriftLatitudeTolerance;
+    trapConfig.driftPitchCos2Tolerance=prm.numerics.trapDriftPitchCos2Tolerance;
+    trapConfig.driftProfileBins=prm.numerics.trapDriftProfileBins;
+    trapConfig.driftMinProfileCoverage=prm.numerics.trapDriftMinProfileCoverage;
+    trapConfig.driftMinMatchedBinFraction=prm.numerics.trapDriftMinMatchedBinFraction;
     Earth::TrajectoryTrap::Detector trapDetector(trapConfig,boundaryBox);
 
     const double maxTraceTime_s=(maxTime_s>0.0)
@@ -1126,6 +1143,9 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
         result.steps=nSteps;
         result.mirrorPoints=trapDetector.mirrorPoints();
         result.bounceCycles=trapDetector.bounceCycles();
+        result.driftRevolutions=trapDetector.driftRevolutions();
+        result.driftAngle_rad=trapDetector.driftAngleRadians();
+        result.trapMechanism=static_cast<int>(trapDetector.mechanism());
         result.momentumRelativeSpread=trapDetector.momentumRelativeSpread();
         return result;
     };
@@ -1238,8 +1258,15 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
             const double xTrap[3]={x.x,x.y,x.z};
             const double pTrap[3]={p.x,p.y,p.z};
             const double bTrap[3]={Btrap.x,Btrap.y,Btrap.z};
-            if (trapDetector.Update(xTrap,pTrap,bTrap))
-                return Finalize(TrajectoryTermination::MagneticallyTrappedForbidden);
+            if (trapDetector.Update(xTrap,pTrap,bTrap)) {
+                // Preserve the physical mechanism in the termination code.  This is
+                // deliberately NOT a timeout remap: DRIFT_TRAPPED_FORBIDDEN is emitted
+                // only after the positive full-orbit recurrence test has fired.
+                return Finalize(
+                    trapDetector.mechanism()==Earth::TrajectoryTrap::Mechanism::Drift
+                    ? TrajectoryTermination::DriftTrappedForbidden
+                    : TrajectoryTermination::MagneticallyTrappedForbidden);
+            }
         }
     }
 
@@ -1944,7 +1971,32 @@ struct CutoffSampleDiagnostic3D_ {
     double traceTime_s{0.0};
     double traceDistance_m{0.0};
     int steps{0};
+    int retryCount{0};
+    int mirrorPoints{0};
+    int bounceCycles{0};
+    int driftRevolutions{0};
+    double driftAngle_rad{0.0};
+    int trapMechanism{0};
+    double momentumRelativeSpread{0.0};
 };
+
+static EarthUtil::DirectAccessSampleDiagnostic MakeDirectAccessDiagnostic3D_(
+        std::uint64_t slot,const CutoffSampleDiagnostic3D_& sample) {
+    EarthUtil::DirectAccessSampleDiagnostic out;
+    out.slot=slot;
+    out.terminationCode=static_cast<int>(sample.termination);
+    out.traceTime_s=sample.traceTime_s;
+    out.traceDistance_Re=sample.traceDistance_m/_EARTH__RADIUS_;
+    out.steps=sample.steps;
+    out.retryCount=sample.retryCount;
+    out.mirrorPoints=sample.mirrorPoints;
+    out.bounceCycles=sample.bounceCycles;
+    out.driftRevolutions=sample.driftRevolutions;
+    out.driftAngle_deg=sample.driftAngle_rad*180.0/M_PI;
+    out.trapMechanism=sample.trapMechanism;
+    out.momentumRelativeSpread=sample.momentumRelativeSpread;
+    return out;
+}
 
 static CutoffSampleDiagnostic3D_ ClassifyCutoffSample3DDetailed_(
                               const EarthUtil::AmpsParam& prm,
@@ -1963,6 +2015,13 @@ static CutoffSampleDiagnostic3D_ ClassifyCutoffSample3DDetailed_(
     out.traceTime_s=tr.traceTime_s;
     out.traceDistance_m=tr.traceDistance_m;
     out.steps=tr.steps;
+    out.retryCount=tr.retryCount;
+    out.mirrorPoints=tr.mirrorPoints;
+    out.bounceCycles=tr.bounceCycles;
+    out.driftRevolutions=tr.driftRevolutions;
+    out.driftAngle_rad=tr.driftAngle_rad;
+    out.trapMechanism=tr.trapMechanism;
+    out.momentumRelativeSpread=tr.momentumRelativeSpread;
 
     if (tr.allowed()) {
         out.state=EarthUtil::CutoffSampleState::Allowed;
@@ -2100,6 +2159,7 @@ static CutoffBandResult3D_ CutoffForDirPenumbraScan_GV(
             case TT::OuterBoundaryAllowed:          out.nOuterBoundaryAllowed++; break;
             case TT::InnerBoundaryForbidden:        out.nInnerBoundaryForbidden++; break;
             case TT::MagneticallyTrappedForbidden:  out.nMagneticallyTrappedForbidden++; break;
+            case TT::DriftTrappedForbidden:         out.nMagneticallyTrappedForbidden++; break;
             case TT::TimeLimit:                     out.nTimeLimit++; break;
             case TT::StepLimit:                     out.nStepLimit++; break;
             case TT::DistanceLimit:                 out.nDistanceLimit++; break;
@@ -3535,6 +3595,8 @@ static void WriteTecplot3DDirectionalAccess_Location(
                                  const DirectionalMapConfig3D& cfg,
                                  const std::vector<double>& rigidityGrid_GV,
                                  const std::vector<int>& accessState,
+                                 const std::vector<EarthUtil::DirectAccessSampleDiagnostic>& diagnostics,
+                                 std::uint64_t diagnosticBaseSlot,
                                  bool adaptiveSparse,
                                  double qabs,
                                  double m0_kg) {
@@ -3565,9 +3627,16 @@ static void WriteTecplot3DDirectionalAccess_Location(
     if (!f) throw std::runtime_error("Cannot write "+fname);
 
     std::fprintf(f,"TITLE=\"Mode3D direct directional rigidity access (location %d)\"\n",locId);
+    // Numeric Tecplot rows carry a stable termination code; this AUXDATA makes
+    // the corresponding physical reason explicit for users reading the raw file.
+    std::fprintf(f,
+        "AUXDATA TERMINATION_REASON_CODES=\"0:OUTER_BOUNDARY_ALLOWED;1:INNER_BOUNDARY_FORBIDDEN;2:MAGNETICALLY_TRAPPED_FORBIDDEN;3:TIME_LIMIT;4:STEP_LIMIT;5:DISTANCE_LIMIT;6:INVALID_TIME_STEP;7:INVALID_FIELD;8:NUMERICAL_FAILURE;9:DRIFT_TRAPPED_FORBIDDEN\"\n");
     std::fprintf(f,
         "VARIABLES=\"lon_deg\",\"lat_deg\",\"rigidity_GV\",\"energy_MeV\","
-        "\"access_state\",\"allowed\",\"unresolved\"\n");
+        "\"access_state\",\"allowed\",\"unresolved\",\"termination_code\","
+        "\"trace_time_s\",\"trace_distance_Re\",\"trace_steps\",\"retry_count\","
+        "\"mirror_points\",\"bounce_cycles\",\"drift_revolutions\",\"drift_angle_deg\","
+        "\"trap_mechanism\",\"momentum_relative_spread\"\n");
     std::fprintf(f,
         "ZONE T=\"loc=%d x_km=%g y_km=%g z_km=%g frame=%s coverage=%s adaptive=%c seed_n=%zu max_depth=%d guard_depth=%d\" I=%zu F=POINT\n",
         locId,x0_m.x/1000.0,x0_m.y/1000.0,x0_m.z/1000.0,
@@ -3580,6 +3649,14 @@ static void WriteTecplot3DDirectionalAccess_Location(
     // back to the original regular-grid lon/lat so the file remains directly
     // comparable with a FULL_SPHERE run.  In adaptive mode only evaluated candidate
     // nodes are emitted; each direction can therefore have a different energy grid.
+    // Diagnostics are globally sorted by flattened slot after the MPI gather.  Walk
+    // that sparse vector monotonically while rows are emitted so no dense diagnostic
+    // tree has to be allocated for the many adaptive candidate nodes never evaluated.
+    auto diagnosticIt=std::lower_bound(
+        diagnostics.begin(),diagnostics.end(),diagnosticBaseSlot,
+        [](const EarthUtil::DirectAccessSampleDiagnostic& item,std::uint64_t slot) {
+            return item.slot<slot;
+        });
     for (int cellId=0;cellId<cfg.nCells;++cellId) {
         double lon_deg=0.0,lat_deg=0.0;
         DirectionalMapCellLonLat3D(cfg,cellId,lon_deg,lat_deg);
@@ -3600,8 +3677,23 @@ static void WriteTecplot3DDirectionalAccess_Location(
             const double rigidity=rigidityGrid_GV[(std::size_t)ir];
             const double p=MomentumFromRigidity_GV(rigidity,qabs);
             const double energy=KineticEnergyFromMomentum_MeV(p,m0_kg);
-            std::fprintf(f,"%.15e %.15e %.15e %.15e %d %d %d\n",
-                         lon_deg,lat_deg,rigidity,energy,state,allowed,unresolved);
+            const std::uint64_t globalSlot=diagnosticBaseSlot+static_cast<std::uint64_t>(k);
+            while (diagnosticIt!=diagnostics.end() && diagnosticIt->slot<globalSlot)
+                ++diagnosticIt;
+            if (diagnosticIt==diagnostics.end() || diagnosticIt->slot!=globalSlot) {
+                std::fclose(f);
+                throw std::runtime_error(
+                    "Mode3D directional access state lacks its trajectory diagnostic record.");
+            }
+            const auto& d=*diagnosticIt;
+            std::fprintf(f,
+                "%.15e %.15e %.15e %.15e %d %d %d %d "
+                "%.15e %.15e %d %d %d %d %d %.15e %d %.15e\n",
+                lon_deg,lat_deg,rigidity,energy,state,allowed,unresolved,
+                d.terminationCode,d.traceTime_s,d.traceDistance_Re,d.steps,d.retryCount,
+                d.mirrorPoints,d.bounceCycles,d.driftRevolutions,d.driftAngle_deg,
+                d.trapMechanism,d.momentumRelativeSpread);
+            ++diagnosticIt;
         }
     }
     std::fclose(f);
@@ -4569,6 +4661,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     // [location][directional cell][requested rigidity].  -1 is the MPI sentinel;
     // CutoffSampleState values are non-negative and can therefore use MPI_MAX.
     std::vector<int> dirAccessStateRank;
+    // DIRECT_ACCESS trajectory diagnostics are stored sparsely: adaptive candidate
+    // trees can contain hundreds of potential rigidity nodes per direction, but only
+    // evaluated nodes need termination/time/path metadata.  Each worker accumulates
+    // POD records privately and the rank vectors are gathered to rank 0 after tracing.
+    std::vector<EarthUtil::DirectAccessSampleDiagnostic> dirAccessDiagnosticsRank;
+    std::vector<EarthUtil::DirectAccessSampleDiagnostic> dirAccessDiagnosticsAll;
 
     // Direct-access states use compact [work location][rigidity] indexing. -1 is the
     // uncomputed MPI sentinel; valid values are the CutoffSampleState integers 0, 1, 2.
@@ -4847,7 +4945,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     // 14.9 — Flattened cutoff task kernels
     //==================================================================================
 
-    auto computeGlobalTask = [&](long long taskId, cMode3DMeshFieldEval& threadField) {
+    auto computeGlobalTask = [&](long long taskId, cMode3DMeshFieldEval& threadField,
+                                 std::vector<EarthUtil::DirectAccessSampleDiagnostic>* directDiagnostics) {
         const int globalIdx = static_cast<int>(taskId/tasksPerLocation);
         const long long localTask = taskId%tasksPerLocation;
 
@@ -4893,9 +4992,15 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 EarthUtil::EvaluateAdaptiveDirectAccessDirection(
                     adaptiveAccessGrid,prm.cutoff.directAccessAdaptiveGuardDepth,
                     dirAccessStateRank,base,
-                    [&](double rigidity_GV) -> int {
-                        return static_cast<int>(ClassifyCutoffSample3D_(
-                            prm,threadField,x0_m,v0,rigidity_GV,q_C,m0,box));
+                    [&](double rigidity_GV,std::size_t candidateIndex) -> int {
+                        const CutoffSampleDiagnostic3D_ sample=
+                            ClassifyCutoffSample3DDetailed_(
+                                prm,threadField,x0_m,v0,rigidity_GV,q_C,m0,box);
+                        if (directDiagnostics) {
+                            directDiagnostics->push_back(MakeDirectAccessDiagnostic3D_(
+                                static_cast<std::uint64_t>(base+candidateIndex),sample));
+                        }
+                        return static_cast<int>(sample.state);
                     },
                     static_cast<int>(EarthUtil::CutoffSampleState::Unresolved));
             }
@@ -4908,10 +5013,14 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 const std::size_t k=((std::size_t)globalIdx*(std::size_t)dirMapCfg.nCells+
                                      (std::size_t)cellId)*(std::size_t)nAccessRigidities+
                                     (std::size_t)iRigidity;
-                const EarthUtil::CutoffSampleState state=ClassifyCutoffSample3D_(
+                const CutoffSampleDiagnostic3D_ sample=ClassifyCutoffSample3DDetailed_(
                     prm,threadField,x0_m,v0,
                     prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
-                dirAccessStateRank[k]=static_cast<int>(state);
+                dirAccessStateRank[k]=static_cast<int>(sample.state);
+                if (directDiagnostics) {
+                    directDiagnostics->push_back(MakeDirectAccessDiagnostic3D_(
+                        static_cast<std::uint64_t>(k),sample));
+                }
             }
             return;
         }
@@ -4986,10 +5095,19 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             const std::size_t k=((std::size_t)globalIdx*(std::size_t)dirMapCfg.nCells+
                                  (std::size_t)cellId)*(std::size_t)nAccessRigidities+
                                 (std::size_t)iRigidity;
-            const EarthUtil::CutoffSampleState state=ClassifyCutoffSample3D_(
+            // The companion direct cube is written with the same per-trajectory
+            // diagnostics as production DIRECT_ACCESS.  Keeping the PENUMBRA_SCAN
+            // companion path instrumented is important for cross-checks: otherwise
+            // its state cube would have no way to distinguish TIME_LIMIT from the
+            // historical fixed-distance exhaustion that motivated the C19 fix.
+            const CutoffSampleDiagnostic3D_ sample=ClassifyCutoffSample3DDetailed_(
                 prm,threadField,x0_m,v0,
                 prm.cutoff.rigidityList_GV[(std::size_t)iRigidity],q_C,m0,box);
-            dirAccessStateRank[k]=static_cast<int>(state);
+            dirAccessStateRank[k]=static_cast<int>(sample.state);
+            if (directDiagnostics) {
+                directDiagnostics->push_back(MakeDirectAccessDiagnostic3D_(
+                    static_cast<std::uint64_t>(k),sample));
+            }
             return;
         }
 
@@ -5051,26 +5169,33 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             std::vector<std::thread> workers;
             workers.reserve((size_t)nWorkers);
 
+            std::vector<std::vector<EarthUtil::DirectAccessSampleDiagnostic>>
+                workerDiagnostics((std::size_t)nWorkers);
             for (int iw=0; iw<nWorkers; ++iw) {
-                workers.emplace_back([&]() {
-                    // PRIVATE evaluator per worker; compact field arrays are shared read-only.
+                workers.emplace_back([&,iw]() {
+                    // PRIVATE evaluator and diagnostic vector per worker; compact field
+                    // arrays and the adaptive candidate grid remain shared read-only.
                     cMode3DMeshFieldEval threadField(prm);
                     for (;;) {
                         const long long taskId = nextTask.fetch_add(1,std::memory_order_relaxed);
                         if (taskId >= endTask) break;
-                        computeGlobalTask(taskId,threadField);
+                        computeGlobalTask(taskId,threadField,&workerDiagnostics[(std::size_t)iw]);
                     }
                 });
             }
 
             for (std::thread& worker : workers) worker.join();
+            for (auto& records:workerDiagnostics) {
+                dirAccessDiagnosticsRank.insert(dirAccessDiagnosticsRank.end(),
+                                                records.begin(),records.end());
+            }
             return;
         }
 
         if (cutoffBackend == CutoffParallelBackend_::SERIAL) {
             cMode3DMeshFieldEval threadField(prm);
             for (long long taskId=beginTask; taskId<endTask; ++taskId) {
-                computeGlobalTask(taskId,threadField);
+                computeGlobalTask(taskId,threadField,&dirAccessDiagnosticsRank);
             }
             return;
         }
@@ -5080,11 +5205,19 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 #endif
         {
             cMode3DMeshFieldEval threadField(prm);
+            std::vector<EarthUtil::DirectAccessSampleDiagnostic> localDiagnostics;
 #ifdef _OPENMP
 #pragma omp for schedule(dynamic, 1)
 #endif
             for (long long taskId=beginTask; taskId<endTask; ++taskId) {
-                computeGlobalTask(taskId,threadField);
+                computeGlobalTask(taskId,threadField,&localDiagnostics);
+            }
+#ifdef _OPENMP
+#pragma omp critical(mode3d_direct_access_diagnostic_merge)
+#endif
+            {
+                dirAccessDiagnosticsRank.insert(dirAccessDiagnosticsRank.end(),
+                                                localDiagnostics.begin(),localDiagnostics.end());
             }
         }
     };
@@ -5102,25 +5235,33 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             std::vector<std::thread> workers;
             workers.reserve((size_t)nWorkers);
 
+            std::vector<std::vector<EarthUtil::DirectAccessSampleDiagnostic>>
+                workerDiagnostics((std::size_t)nWorkers);
             for (int iw=0; iw<nWorkers; ++iw) {
-                workers.emplace_back([&]() {
+                workers.emplace_back([&,iw]() {
                     cMode3DMeshFieldEval threadField(prm);
                     for (;;) {
                         const long long localTask = nextLocal.fetch_add(1,std::memory_order_relaxed);
                         if (localTask >= endLocal) break;
-                        computeGlobalTask(globalTaskFromLocalStatic(localTask),threadField);
+                        computeGlobalTask(globalTaskFromLocalStatic(localTask),threadField,
+                                          &workerDiagnostics[(std::size_t)iw]);
                     }
                 });
             }
 
             for (std::thread& worker : workers) worker.join();
+            for (auto& records:workerDiagnostics) {
+                dirAccessDiagnosticsRank.insert(dirAccessDiagnosticsRank.end(),
+                                                records.begin(),records.end());
+            }
             return;
         }
 
         if (cutoffBackend == CutoffParallelBackend_::SERIAL) {
             cMode3DMeshFieldEval threadField(prm);
             for (long long localTask=beginLocal; localTask<endLocal; ++localTask) {
-                computeGlobalTask(globalTaskFromLocalStatic(localTask),threadField);
+                computeGlobalTask(globalTaskFromLocalStatic(localTask),threadField,
+                                  &dirAccessDiagnosticsRank);
             }
             return;
         }
@@ -5130,11 +5271,20 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 #endif
         {
             cMode3DMeshFieldEval threadField(prm);
+            std::vector<EarthUtil::DirectAccessSampleDiagnostic> localDiagnostics;
 #ifdef _OPENMP
 #pragma omp for schedule(dynamic, 1)
 #endif
             for (long long localTask=beginLocal; localTask<endLocal; ++localTask) {
-                computeGlobalTask(globalTaskFromLocalStatic(localTask),threadField);
+                computeGlobalTask(globalTaskFromLocalStatic(localTask),threadField,
+                                  &localDiagnostics);
+            }
+#ifdef _OPENMP
+#pragma omp critical(mode3d_direct_access_diagnostic_merge)
+#endif
+            {
+                dirAccessDiagnosticsRank.insert(dirAccessDiagnosticsRank.end(),
+                                                localDiagnostics.begin(),localDiagnostics.end());
             }
         }
     };
@@ -5362,6 +5512,65 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             MPI_Reduce(dirAccessStateRank.data(),
                        (mpiRank==0 ? dirAccessStateAll.data() : nullptr),
                        nAccess,MPI_INT,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
+
+            // Gather only diagnostics for trajectories that were actually evaluated.
+            // The adaptive depth-6 candidate tree is intentionally sparse, so using
+            // one dense metadata array per candidate would multiply memory use on every
+            // MPI rank.  DirectAccessSampleDiagnostic is POD and all ranks run the same
+            // executable, therefore MPI_BYTE is a safe compact transport here.
+            const std::size_t localBytesSz=
+                dirAccessDiagnosticsRank.size()*sizeof(EarthUtil::DirectAccessSampleDiagnostic);
+            if (localBytesSz>static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+                throw std::runtime_error(
+                    "Mode3D direct-access diagnostic payload exceeds MPI int byte count; "
+                    "split the run into fewer locations.");
+            }
+            const int localBytes=static_cast<int>(localBytesSz);
+            std::vector<int> byteCounts,byteDisplacements;
+            if (mpiRank==0) byteCounts.assign((std::size_t)mpiSize,0);
+            MPI_Gather(&localBytes,1,MPI_INT,
+                       (mpiRank==0 ? byteCounts.data() : nullptr),1,MPI_INT,0,
+                       MPI_GLOBAL_COMMUNICATOR);
+
+            int totalBytes=0;
+            if (mpiRank==0) {
+                byteDisplacements.assign((std::size_t)mpiSize,0);
+                for (int r=0;r<mpiSize;++r) {
+                    byteDisplacements[(std::size_t)r]=totalBytes;
+                    if (byteCounts[(std::size_t)r] >
+                        std::numeric_limits<int>::max()-totalBytes) {
+                        throw std::runtime_error(
+                            "Mode3D gathered direct-access diagnostics exceed MPI_Gatherv INT_MAX bytes.");
+                    }
+                    totalBytes+=byteCounts[(std::size_t)r];
+                }
+                if ((totalBytes % static_cast<int>(sizeof(EarthUtil::DirectAccessSampleDiagnostic)))!=0)
+                    throw std::runtime_error("Mode3D direct-access diagnostic byte count is misaligned.");
+                dirAccessDiagnosticsAll.resize(
+                    static_cast<std::size_t>(totalBytes)/
+                    sizeof(EarthUtil::DirectAccessSampleDiagnostic));
+            }
+            MPI_Gatherv(
+                dirAccessDiagnosticsRank.empty() ? nullptr : dirAccessDiagnosticsRank.data(),
+                localBytes,MPI_BYTE,
+                (mpiRank==0 && !dirAccessDiagnosticsAll.empty())
+                    ? dirAccessDiagnosticsAll.data() : nullptr,
+                (mpiRank==0 ? byteCounts.data() : nullptr),
+                (mpiRank==0 ? byteDisplacements.data() : nullptr),
+                MPI_BYTE,0,MPI_GLOBAL_COMMUNICATOR);
+
+            if (mpiRank==0) {
+                std::sort(dirAccessDiagnosticsAll.begin(),dirAccessDiagnosticsAll.end(),
+                    [](const EarthUtil::DirectAccessSampleDiagnostic& a,
+                       const EarthUtil::DirectAccessSampleDiagnostic& b) {
+                        return a.slot<b.slot;
+                    });
+                for (std::size_t i=1;i<dirAccessDiagnosticsAll.size();++i) {
+                    if (dirAccessDiagnosticsAll[i-1].slot==dirAccessDiagnosticsAll[i].slot)
+                        throw std::runtime_error(
+                            "Mode3D direct-access diagnostic gather contains duplicate slot ownership.");
+                }
+            }
         }
     }
 
@@ -5511,7 +5720,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                               accessCell.begin());
                     WriteTecplot3DDirectionalAccess_Location(
                         prm,locId,x0_m,dirMapCfg,directionalAccessRigidityGrid_GV,
-                        accessCell,adaptiveDirectionalDirectAccess,qabs,m0);
+                        accessCell,dirAccessDiagnosticsAll,
+                        static_cast<std::uint64_t>(accessBase),
+                        adaptiveDirectionalDirectAccess,qabs,m0);
                 }
             }
 

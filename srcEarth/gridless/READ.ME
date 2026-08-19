@@ -743,3 +743,72 @@ example ~64 tasks for 16 workers) does not have to finish completely before the 
 bar moves.  Worker threads never call MPI, preserving the MPI_THREAD_FUNNELED contract.
 Rank 0 also polls the global completion counter through the final slow tail until all
 assigned work is actually complete.
+
+C19 trajectory termination, drift recurrence, and convergence update (2026-08-19)
+-------------------------------------------------------------------------------
+
+GRIDLESS `DIRECT_ACCESS` writes trajectory forensics for every evaluated
+`(point, sky direction, rigidity)` sample.  The original access columns are retained and
+are followed by stable `termination_code`, trace time, cumulative path, steps, retry
+count, mirror/bounce counters, drift-revolution diagnostics, trapping mechanism, and
+relative momentum spread.  The Tecplot header publishes the code-to-name map through
+`AUXDATA TERMINATION_REASON_CODES`.  Historical codes 0--8 remain unchanged and code 9
+is appended as `DRIFT_TRAPPED_FORBIDDEN`.
+
+Adaptive sampling does not allocate diagnostics for unused candidate nodes.  Each worker
+records only the trajectories it evaluates in a private sparse vector; after the worker
+pool joins, rank-local vectors are merged and rank 0 gathers/sorts the records by global
+candidate slot.  The writer checks that every emitted direct-access state has exactly one
+diagnostic record.
+
+The common `TrajectoryTrapDetector` supplements the historical mirror/bounce test with a
+positive frozen-field full-orbit drift-recurrence test.  It **never** interprets a
+TIME/STEP/DISTANCE limit as physical trapping.  The drift branch:
+
+1. unwraps the signed geocentric azimuth and counts complete net 2*pi drift turns;
+2. bins each completed turn in azimuth phase;
+3. averages full-orbit `r`, `z/r`, and `cos^2(pitch)` in every populated bin;
+4. compares consecutive complete-turn profiles with absolute+relative radial,
+   latitude-proxy, and pitch-cos2 tolerances;
+5. requires adequate bin coverage and a configured fraction of matching common bins;
+6. requires consecutive recurrence, a safe outer-box margin, and acceptable
+   momentum-magnitude spread before returning `DRIFT_TRAPPED_FORBIDDEN`.
+
+The full Lorentz trajectory remains authoritative; this classifier does not switch to a
+guiding-centre approximation.  The profile averages reduce gyrophase sensitivity without
+assuming adiabatic motion in the C19 penumbra.
+
+C19 disables `MAX_TRACE_DISTANCE` by default (`0.0`) and normally controls the safety
+budget with `MAX_TRACE_TIME`.  `MAX_TRACE_DISTANCE` is cumulative traveled path, not
+radial distance.  A fixed nonzero path cap therefore corresponds to a shorter physical
+trace for a faster proton and can bias an energy-dependent detector fold.  Nonzero values
+remain available for explicit convergence or machine-safety runs.
+
+New/extended parser controls are:
+
+  TRAP_DRIFT_DETECTION                         T|F
+  TRAP_MIN_DRIFT_REVOLUTIONS                   integer >= 2   (C19 default 3)
+  TRAP_DRIFT_RADIAL_GROWTH_TOL_RE              nonnegative Re (absolute tolerance)
+  TRAP_DRIFT_RADIAL_REL_TOL                    nonnegative
+  TRAP_DRIFT_LATITUDE_TOL                      nonnegative
+  TRAP_DRIFT_PITCH_COS2_TOL                    nonnegative
+  TRAP_DRIFT_PROFILE_BINS                      integer 8..360
+  TRAP_DRIFT_MIN_PROFILE_COVERAGE              0 < value <= 1
+  TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION          0 < value <= 1
+  TRAP_ENERGY_REL_TOL                           nonnegative
+
+The recurrence criterion is meaningful only when the magnetic field is frozen for the
+complete backtrace.  C19's `run_C19_convergence.py` first performs distance/time sweeps
+with drift recurrence disabled, then adds a matched recurrence-enabled case.  This
+sequencing is intentional: it measures whether the old failure was a path/time budget
+artifact before allowing the new physical classifier to consume the long-lived
+population.  Optional timestep and mover sweeps are available for numerical cross-checks.
+
+The GRIDLESS termination summary now counts both bounce-trapped and drift-trapped
+trajectories separately while preserving the historical aggregate `N_trapped`.  This
+keeps `N_forbidden` consistent with the common resolved/physical-forbidden termination
+helpers after addition of code 9.
+
+See `test/C19/README.md` for the complete C19 phased evidence sequence, response-weighted
+termination budget, direct-bound-width gate, proxy semantics, observational provenance
+gates, and full AMPS regression requirements.

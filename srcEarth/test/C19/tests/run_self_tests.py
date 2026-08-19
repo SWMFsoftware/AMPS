@@ -8,6 +8,7 @@ import gzip
 import math
 import re
 import py_compile
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -75,6 +76,54 @@ def write_reference(path: Path) -> None:
         writer.writerows(rows)
 
 
+def write_smoke_sync_reference(path: Path) -> None:
+    """Write a reference that exposes the historical asynchronous-SMOKE bug.
+
+    GOES13 has exactly three epochs. GOES15 has the same three common epochs plus
+    extra late-time samples. The former per-spacecraft SMOKE selector would choose
+    a different GOES15 middle/last epoch and therefore create five unique field
+    snapshots. The synchronized selector must instead keep only the three common
+    epochs for both spacecraft.
+    """
+    write_reference(path)
+    with gzip.open(path, "rt", newline="") as stream:
+        reader = csv.DictReader(stream)
+        fieldnames = list(reader.fieldnames or [])
+        source_rows = list(reader)
+
+    templates = {}
+    for row in source_rows:
+        templates.setdefault((row["spacecraft"], row["channel"]), row)
+
+    epoch_map = {
+        "GOES13": (
+            "2012-05-17T06:00:00Z",
+            "2012-05-17T06:30:00Z",
+            "2012-05-17T07:00:00Z",
+        ),
+        "GOES15": (
+            "2012-05-17T06:00:00Z",
+            "2012-05-17T06:30:00Z",
+            "2012-05-17T06:50:00Z",
+            "2012-05-17T07:00:00Z",
+            "2012-05-17T07:05:00Z",
+        ),
+    }
+
+    rows = []
+    for spacecraft, epochs in epoch_map.items():
+        for epoch in epochs:
+            for channel in ("P4", "P5"):
+                row = dict(templates[(spacecraft, channel)])
+                row["utc"] = epoch
+                rows.append(row)
+
+    with gzip.open(path, "wt", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def write_driver(path: Path) -> None:
     start = datetime(2012, 5, 17, 5, 55, tzinfo=timezone.utc)
     lines = [
@@ -129,6 +178,49 @@ def integration_dry_run() -> None:
         write_reference(reference)
         write_driver(driver)
         write_orientation(orientation)
+
+        # Synchronized-SMOKE regression.  This synthetic reference deliberately has
+        # extra GOES15 epochs that would have made the former per-spacecraft selector
+        # create five unique field snapshots.  SMOKE must now choose only the three
+        # epochs common to both spacecraft (with both P4 and P5 present), and the
+        # batch manifest must contain both spacecraft at every retained snapshot.
+        smoke_reference = root / "reference_smoke_sync.csv.gz"
+        smoke_output = root / "integration_smoke_sync"
+        write_smoke_sync_reference(smoke_reference)
+        run([
+            sys.executable, str(ROOT / "run_C19.py"),
+            "--profile", "SMOKE", "--solver", "GRIDDED", "--models", "T05",
+            "--reference", str(smoke_reference), "--driver", str(driver),
+            "--output-root", str(smoke_output),
+            "--amps", "./amps-not-required-for-dry-run", "-np", "1", "-nt", "1",
+            "--dry-run",
+        ])
+        smoke_snapshot_files = list(smoke_output.glob("**/C19_snapshot_epochs.txt"))
+        smoke_manifest_files = list(smoke_output.glob("**/C19_batch_manifest.csv"))
+        if len(smoke_snapshot_files) != 1 or len(smoke_manifest_files) != 1:
+            raise SystemExit("synchronized SMOKE dry-run did not produce one GRIDDED batch")
+        smoke_snapshots = [
+            line.strip() for line in smoke_snapshot_files[0].read_text().splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
+        expected_smoke_snapshots = [
+            "2012-05-17T06:00:00",
+            "2012-05-17T06:30:00",
+            "2012-05-17T07:00:00",
+        ]
+        if smoke_snapshots != expected_smoke_snapshots:
+            raise SystemExit(
+                "SMOKE did not select first/middle/last common epochs: %s" %
+                smoke_snapshots)
+        smoke_manifest = list(csv.DictReader(smoke_manifest_files[0].open(newline="")))
+        by_epoch = {}
+        for row in smoke_manifest:
+            by_epoch.setdefault(row["epoch"], set()).add(row["spacecraft"])
+        if len(smoke_manifest) != 6 or any(
+                spacecraft != {"GOES13", "GOES15"} for spacecraft in by_epoch.values()):
+            raise SystemExit(
+                "SMOKE batch manifest does not contain both spacecraft at all three common epochs")
+
         run([
             sys.executable, str(ROOT / "run_C19.py"),
             "--profile", "FULL",
@@ -414,6 +506,11 @@ def validate_committed_inputs() -> None:
         "SPEC_GAMMA", "OUTPUT_MODE", "TRAJ_FRAME", "TRAJ_FILE",
         "OUTPUT_COORDS", "DT_TRACE", "MAX_STEPS", "MAX_TRACE_TIME",
         "MAX_TRACE_DISTANCE", "TRAP_DETECTION",
+        "TRAP_DRIFT_DETECTION", "TRAP_MIN_DRIFT_REVOLUTIONS",
+        "TRAP_DRIFT_RADIAL_GROWTH_TOL_RE", "TRAP_DRIFT_RADIAL_REL_TOL",
+        "TRAP_DRIFT_LATITUDE_TOL", "TRAP_DRIFT_PITCH_COS2_TOL",
+        "TRAP_DRIFT_PROFILE_BINS", "TRAP_DRIFT_MIN_PROFILE_COVERAGE",
+        "TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION", "TRAP_ENERGY_REL_TOL",
     }
     for name in ("AMPS_PARAM_C19_gridless.in", "AMPS_PARAM_C19_mode3d.in"):
         path = ROOT / name
@@ -429,6 +526,23 @@ def validate_committed_inputs() -> None:
         if missing:
             raise SystemExit("%s lacks explicit directive(s): %s" %
                              (path, ", ".join(missing)))
+
+        # C19 deliberately disables the historical fixed path-length cap.  A non-zero
+        # constant MAX_TRACE_DISTANCE gives high-energy protons a shorter physical trace
+        # time than low-energy protons and was a major source of unresolved EAST access.
+        values = {}
+        for raw in text.splitlines():
+            stripped = raw.strip()
+            if stripped and not stripped.startswith(("!", "#")):
+                parts = stripped.split(None, 1)
+                if len(parts) == 2:
+                    values[parts[0].upper()] = parts[1].split("!", 1)[0].strip()
+        if float(values["MAX_TRACE_DISTANCE"]) != 0.0:
+            raise SystemExit("%s must keep C19 MAX_TRACE_DISTANCE disabled by default" % path)
+        if values["TRAP_DRIFT_DETECTION"].upper() not in ("T", "TRUE", "1", "YES", "ON"):
+            raise SystemExit("%s must enable C19 drift trapping by default" % path)
+        if int(values["TRAP_MIN_DRIFT_REVOLUTIONS"]) < 3:
+            raise SystemExit("%s must require at least three drift revolutions for two consecutive recurrence comparisons" % path)
         if name == "AMPS_PARAM_C19_mode3d.in":
             for temporal_directive in ("TEMPORAL_MODE", "SNAPSHOT_LIST_FILE"):
                 if temporal_directive not in directives:
@@ -657,7 +771,8 @@ def validate_directional_coverage_source_contract() -> None:
 def main() -> int:
     validate_committed_inputs()
     validate_directional_coverage_source_contract()
-    scripts = (ROOT / "run_C19.py", ROOT / "build_goes_reference.py")
+    scripts = (ROOT / "run_C19.py", ROOT / "run_C19_convergence.py",
+               ROOT / "build_goes_reference.py")
     for script in scripts:
         print("Compiling", script.name, flush=True)
         py_compile.compile(str(script), doraise=True)
@@ -667,6 +782,30 @@ def main() -> int:
     integration_dry_run()
     run([sys.executable, str(ROOT / "build_goes_reference.py"), "--help"])
     run([sys.executable, str(ROOT / "run_C19.py"), "--help"])
+    run([sys.executable, str(ROOT / "run_C19_convergence.py"), "--help"])
+
+    # Compile the recurrence regressions when a C++17 compiler is available.
+    #
+    # test_trap_recurrence.cpp exercises the detector with controlled synthetic
+    # recurring/non-recurring profiles.  test_trap_dipole_full_orbit.cpp then advances
+    # physical Lorentz orbits in an analytic centered dipole with a self-contained
+    # relativistic Boris step: a 15-MeV GEO orbit must establish drift recurrence while
+    # a 100-MeV outward orbit must escape without a false trapped verdict.  The latter is
+    # deliberately stronger than feeding hand-made samples, but neither test replaces
+    # the full linked AMPS DIPOLE/F3 executable regression required for production.
+    compiler = shutil.which("g++") or shutil.which("c++")
+    if compiler:
+        with tempfile.TemporaryDirectory(prefix="c19_trap_test_") as tmp:
+            src_earth = ROOT.parents[1]
+            for source_name in (
+                    "test_trap_recurrence.cpp",
+                    "test_trap_dipole_full_orbit.cpp"):
+                exe = Path(tmp) / Path(source_name).stem
+                run([compiler, "-std=c++17", "-O2", "-I", str(src_earth),
+                     str(ROOT / "tests" / source_name), "-o", str(exe)])
+                run([str(exe)])
+    else:
+        print("C19 trap recurrence compile regressions: SKIP (no C++ compiler)")
 
     print("C19A package self-tests: PASS")
     return 0
