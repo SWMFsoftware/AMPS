@@ -2752,8 +2752,10 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="DIRMAP_LON_RES") p.cutoff.dirMapLonRes_deg=std::stod(val);
       else if (uKey=="DIRMAP_LAT_RES") p.cutoff.dirMapLatRes_deg=std::stod(val);
       // Optional angular-work reduction for directional products.  FULL_SPHERE is
-      // backward compatible.  VECTOR_APERTURES retains only cells inside the union
-      // of arbitrary finite-FOV look directions supplied by vector definitions.
+      // backward compatible.  VECTOR_APERTURES retains only cells inside arbitrary
+      // finite-FOV look directions supplied by vector definitions.  LOCATION-qualified
+      // apertures are evaluated only at their associated observation location; Mode3D
+      // may use a compact union for storage, but does not trace another location's cells.
       // The solver never assumes that the apertures are east/west or antipodal.
       else if (uKey=="DIRMAP_COVERAGE" || uKey=="CUTOFF_DIRMAP_COVERAGE")
         p.cutoff.dirMapCoverage=ToUpper(Trim(val));

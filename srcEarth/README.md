@@ -354,14 +354,20 @@ trajectories are exactly the ones a `FULL_SPHERE` run would have calculated.
 
 For independent GRIDLESS cases the C19 runner creates an epoch-specific
 `C19_directional_apertures.dat`. The default GRIDDED batch creates one combined file
-whose records are qualified with `LOCATION=<global-trajectory-row>`. When the
-observational reference records telemetry-head provenance, the runner maps each
-numerator/denominator stream to that actual head ID and uses its epoch-specific attitude
-vector; no direction is inferred from a head name. For the current P4/P5 case, the
-pruning envelope uses the widest P5 half-angles (30° horizontal, 60° vertical) for each
-active detector head. Two roughly opposite GEO heads typically retain
-about 1,700--1,900 directions (~17% of the full sphere), but the count follows the
-actual attitude vectors.
+whose records are qualified with `LOCATION=<global-trajectory-row>`. Mode3D resolves
+those records into a **separate directional-cell list for each active location**. A
+compact union is retained only for rectangular storage/MPI reductions; the scheduler
+traces, and the Tecplot writer emits, only the cells belonging to the current location.
+Consequently a GOES-13 map in a simultaneous GOES-13/GOES-15 snapshot contains only the
+GOES-13 detector apertures rather than the four-lobe union of both spacecraft.
+
+When the observational reference records telemetry-head provenance, the runner maps
+each numerator/denominator stream to that actual head ID and uses its epoch-specific
+attitude vector; no direction is inferred from a head name. For the current P4/P5 case,
+the pruning envelope uses the widest P5 half-angles (30° horizontal, 60° vertical) for
+each active detector head. Two roughly opposite GEO heads typically retain about
+1,700--1,900 directions (~17% of the full sphere) **per spacecraft/location**, but the
+count follows the actual attitude vectors.
 
 The current uncorrected-flux response is not limited to the nominal P4/P5 channel
 boundaries.  It includes the documented high-energy secondary proton response through
@@ -389,7 +395,11 @@ The historical full-sphere setting would schedule:
 
 so vector-aperture pruning still reduces scheduled directional work by roughly a factor
 of six for this geometry while preserving angular resolution inside the viewed
-apertures.
+apertures. In a multi-spacecraft GRIDDED snapshot, these task counts are now computed
+per location rather than multiplying every location by the union of all spacecraft
+apertures. If two spacecraft each require about 1,750 cells but their apertures are
+disjoint, the expensive trajectory count is therefore approximately `2 x 1,750`, not
+`2 x 3,500`.
 
 The direct-access states remain discrete.  C19 does **not** linearly interpolate an
 ALLOWED/FORBIDDEN state change between two sampled rigidities.  Instead, the complete

@@ -394,10 +394,10 @@ DIRMAP_APERTURE <name> <SM|GSM|LOCAL_SM> bx by bz ux uy uz hHalfDeg vHalfDeg [LO
 
 `FULL_SPHERE` is the backward-compatible default. `VECTOR_APERTURES` keeps the same
 regular SM lon/lat lattice but schedules only cells whose detector **LOOK** direction is
-inside the union of one or more configured elliptical apertures. There is no
-mission-specific EAST/WEST assumption: boresights may point anywhere and need not be
-antipodal. The AMPS directional vector is the incoming particle **arrival** direction,
-so aperture membership is evaluated with `look = -arrival`.
+inside one or more configured elliptical apertures. There is no mission-specific
+EAST/WEST assumption: boresights may point anywhere and need not be antipodal. The AMPS
+directional vector is the incoming particle **arrival** direction, so aperture membership
+is evaluated with `look = -arrival`.
 
 Apertures can be supplied inline with repeatable `DIRMAP_APERTURE` records or in a file
 named by `DIRMAP_APERTURE_FILE`. File rows have the same fields but omit the keyword:
@@ -415,9 +415,16 @@ optimization changes only the amount of work, not the sampled directions.
 The optional zero-based `LOCATION=<index>` token associates an aperture with one row
 of a multi-location trajectory. It is used by `SNAPSHOT_LIST` batches so an aperture
 is resolved only in the local basis of its own observation. Omitting the token keeps
-the historical behavior and applies that aperture at every location. The retained
-direction grid is still the conservative union across all locations active in the
-current snapshot.
+the historical behavior and applies that aperture at every location.
+
+For standalone Mode3D, location-qualified aperture coverage is now **truly
+location-aware**. Internally the solver forms a compact union of all retained sky cells
+only as a common storage/MPI-reduction coordinate, but it also retains a per-location
+index list into that union. The flattened scheduler visits only the cells owned by the
+current location, and each directional Tecplot file writes only those cells. Thus a
+GOES-13 location no longer traces or displays GOES-15-only aperture directions in the
+same batched snapshot. The change removes the old Cartesian-product overhead while
+preserving the exact full-sphere cell IDs and lon/lat values of every retained sample.
 
 The same controls are available on the AMPS command line:
 

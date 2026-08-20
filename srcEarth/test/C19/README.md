@@ -534,9 +534,11 @@ UTC latitude_deg longitude_deg_east altitude_km
 ```
 
 AMPS represents detector directions on a regular global SM longitude/latitude grid.
-The current C19 default angular resolution is 2.5° × 2.5°, with the grid pruned to the
-union of requested instrument apertures unless `FULL_SPHERE` is selected. In the default
-`DIRECT_ACCESS` mode AMPS writes only the explicit three-state access cube on those cells.
+The current C19 default angular resolution is 2.5° × 2.5°. Unless `FULL_SPHERE` is
+selected, each observation location is pruned to its own requested instrument apertures;
+Mode3D keeps a compact multi-location union only as an internal storage coordinate. In
+the default `DIRECT_ACCESS` mode AMPS writes only the explicit three-state access cube on
+that location's retained cells.
 `PENUMBRA_SCAN` additionally writes a long-form directional cutoff map. The first four
 historical variables in that optional map are preserved:
 
@@ -1077,7 +1079,9 @@ The regular 2.5° sky grid contains 144 longitude values and 73 latitude values,
 though the synthetic observable subsequently uses only directions viewed by the
 instrument heads at that epoch. The optimized implementation is now **instrument-
 neutral**: AMPS is given one or more physical detector-look vectors and schedules only
-the regular-grid cells inside the union of those apertures.
+the regular-grid cells inside those apertures. In a batched GRIDDED run, `LOCATION=`
+ownership is preserved all the way through the Mode3D scheduler, so each spacecraft is
+traced only over its own detector apertures.
 
 The current C19 default is:
 
@@ -1207,6 +1211,14 @@ roughly opposite GEO heads this typically retains about 1,700--1,900 of the 10,5
 2.5° sky cells, but the exact number now follows the actual attitude vectors and need
 not be symmetric.
 
+This also explains a remaining, intentional difference between two C19 figures after
+the location-aware fix. `C19_directional_cutoff_*_<spacecraft>_<UTC>.png` visualizes the
+**spacecraft pruning envelope**, which uses the widest required P4/P5 aperture so one
+AMPS map can support both channels. `C19_aperture_diagnostic.png` visualizes one
+representative **channel-specific detector fold**. Both should now show only the two
+heads belonging to that spacecraft, but their exact lobe widths can differ because the
+channel response/FOV is narrower than the conservative pruning envelope.
+
 The runner exposes the choice directly:
 
 ```bash
@@ -1254,10 +1266,20 @@ CLI aperture-file selection is resolved before the file is opened, so it can saf
 override a path present in a generic input template. `FULL_SPHERE` in either interface
 recovers the complete historical sky-map calculation.
 
-For multiple observation locations in one AMPS launch, the solver retains the union of
-all cells required by all configured apertures at all locations. This preserves the
-constant-size flattened MPI task layout while remaining conservative: no direction that
-can contribute at any requested location is pruned.
+For multiple observation locations in one AMPS launch, Mode3D maintains two related
+coordinates:
+
+1. a compact **union cell list** used only as the common storage/MPI-reduction index; and
+2. a **per-location list of indices into that union** used by the trajectory scheduler
+   and output writers.
+
+This distinction is important for C19. A snapshot containing GOES-13 and GOES-15 may
+need four aperture lobes in the union, but the GOES-13 scheduler tasks reference only
+its EAST/WEST lobes and the GOES-15 tasks reference only theirs. Expensive particle
+traces are therefore proportional to the sum of the per-location aperture sizes, not
+the Cartesian product of `N_locations x N_union_directions`. The directional cutoff and
+direct-access files for one spacecraft likewise contain only that spacecraft's retained
+cells.
 
 A batched aperture row has one optional final association token:
 
@@ -1267,9 +1289,28 @@ name frame bx by bz ux uy uz hHalfDeg vHalfDeg LOCATION=<global-trajectory-row>
 
 Unqualified rows preserve the legacy behavior and apply at every location. During a
 `SNAPSHOT_LIST` run, Mode3D removes aperture rows belonging to inactive epochs and
-remaps the retained global trajectory row to the snapshot-local location ID. The sky
-mask remains the conservative union for the simultaneously active locations, but an
-aperture from another epoch or spacecraft can no longer expand it.
+remaps the retained global trajectory row to the snapshot-local location ID. The union
+of simultaneously active cells is retained only as an internal storage coordinate;
+location-qualified rows do **not** expand another spacecraft's scheduled or written sky
+map.
+
+### Location-aware GRIDDED aperture scheduling
+
+The Mode3D implementation intentionally keeps a rectangular union-map storage array so
+MPI reductions and diagnostic slot identifiers remain simple and backward compatible.
+That does **not** mean every location evaluates every union cell. `ApplyDirectionalMapCoverage3D()`
+first constructs a full-grid mask for each location, then forms the compact union and
+converts each location mask to compact union indices. A prefix-sum task table gives each
+location its own variable task count. The global scheduler decodes a task through that
+prefix table and maps the location-local directional ordinal to the correct union cell.
+
+For DIRECT_ACCESS this means an adaptive task is exactly one
+`(location, location-owned-direction)` pair. Dense access adds the rigidity index. For
+PENUMBRA_SCAN the primary scalar task is followed by that location's directional cells
+and, when requested, fixed-rigidity companion samples over those same cells. Unrelated
+union slots stay at the MPI sentinel and are ignored by the per-location Tecplot
+writers. This design fixes the former four-lobe GOES-13/GOES-15 plot artifact without
+changing any retained trajectory direction or angular resolution.
 
 The legacy `SM_PROXY` orientation remains available in C19 only as a fallback data
 source. The runner converts that approximation into ordinary `LOCAL_SM` vector-aperture
@@ -1482,7 +1523,7 @@ flag:
 | `C19_residual_<solver>_<field>.png` | Direct accepted residuals and separately styled cutoff-midpoint diagnostic residuals versus time |
 | `C19_transmission_<solver>_<field>.png` | EAST/WEST accepted direct scalars, unconditional direct Tmin–Tmax bands, per-head status markers, and separately styled hard-cutoff proxy transmissions |
 | `C19_aperture_diagnostic.png` | Representative aperture-cell cutoff/access diagnostic; direct-access cells are colored by the midpoint of their explicit transmission bounds, while the CSV retains both bounds |
-| `C19_directional_cutoff_<solver>_<field>_<spacecraft>_<UTC>.png` | Four panels for every simulated spacecraft epoch: rigorous Rc lower bound, equivalent-cutoff midpoint diagnostic, rigorous Rc upper bound, and retained bound width. Diagnostic-only midpoint cells and support-censored cells are outlined |
+| `C19_directional_cutoff_<solver>_<field>_<spacecraft>_<UTC>.png` | Four panels for every simulated spacecraft epoch: rigorous Rc lower bound, equivalent-cutoff midpoint diagnostic, rigorous Rc upper bound, and retained bound width. GRIDDED files now contain only the directional cells retained for that spacecraft/location (not the union of all spacecraft apertures in the snapshot). Diagnostic-only midpoint cells and support-censored cells are outlined |
 | `C19_boundary_spectrum.png` | Assumed incident boundary proton spectrum for every selected epoch over the P4/P5 response support |
 
 Exact zero transmission remains a dedicated saturation state rather than an arbitrary

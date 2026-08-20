@@ -254,6 +254,7 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+#include <iterator>
 #include <limits>
 #include <thread>
 #include <chrono>
@@ -2469,7 +2470,21 @@ struct DirectionalMapConfig3D {
     int nFullCells{0};
     int nCells{0};
     std::string coverage{"FULL_SPHERE"};
+
+    // ``fullGridCellIds`` is the compact UNION of every full-sphere cell required by
+    // at least one active observation location.  Keeping this union as the storage
+    // coordinate preserves the existing dense MPI reduction layout and the exact
+    // FULL_SPHERE lon/lat labels.
+    //
+    // VECTOR_APERTURES is location-aware, however: a detector aperture defined for
+    // GOES-13 must not be traced at the GOES-15 position merely because both locations
+    // share one batched Mode3D snapshot.  ``selectedCellIdsByLocation`` therefore stores
+    // compact indices *into* ``fullGridCellIds`` for each active location.  The scheduler
+    // traces only those location/cell pairs, and the writers emit only those cells.
+    // FULL_SPHERE leaves this vector empty; helper functions below then use the identity
+    // list [0,nCells) without materializing nLocation copies of a potentially large map.
     std::vector<int> fullGridCellIds;
+    std::vector<std::vector<int>> selectedCellIdsByLocation;
 
     bool spiceOk{false};
     Mat3 R_label2gsm{Identity3()};
@@ -2591,6 +2606,38 @@ static V3 DirectionalMapCellDirectionGSM3D(const DirectionalMapConfig3D& cfg,
     return v3unit(Apply(cfg.R_label2gsm, dirLabel));
 }
 
+// Return the number of compact union-map cells that actually belong to one observation
+// location.  FULL_SPHERE has the same complete grid at every location and intentionally
+// does not allocate selectedCellIdsByLocation, so the historical nCells value remains
+// the answer in that mode.
+static int DirectionalMapLocationCellCount3D(const DirectionalMapConfig3D& cfg,
+                                             int locationIndex) {
+    if (cfg.coverage=="FULL_SPHERE") return cfg.nCells;
+    if (cfg.selectedCellIdsByLocation.empty())
+        throw std::runtime_error(
+            "Mode3D VECTOR_APERTURES is missing its per-location cell index.");
+    if (locationIndex<0 ||
+        locationIndex>=static_cast<int>(cfg.selectedCellIdsByLocation.size()))
+        throw std::runtime_error("Mode3D directional-map location index is out of range.");
+    return static_cast<int>(cfg.selectedCellIdsByLocation[(std::size_t)locationIndex].size());
+}
+
+// Map a location-local directional-cell ordinal to the compact UNION-map cell id used by
+// storage/reduction arrays.  This indirection is the key to true per-location aperture
+// work: the data arrays remain rectangular [location][union-cell], while the expensive
+// trajectory scheduler visits only the cells that belong to that location's instrument
+// aperture.  In FULL_SPHERE the mapping is the identity.
+static int DirectionalMapLocationCellId3D(const DirectionalMapConfig3D& cfg,
+                                          int locationIndex,
+                                          int localCellOrdinal) {
+    const int count=DirectionalMapLocationCellCount3D(cfg,locationIndex);
+    if (localCellOrdinal<0 || localCellOrdinal>=count)
+        throw std::runtime_error("Mode3D location-local directional cell is out of range.");
+    if (cfg.coverage=="FULL_SPHERE") return localCellOrdinal;
+    return cfg.selectedCellIdsByLocation[(std::size_t)locationIndex]
+                                        [(std::size_t)localCellOrdinal];
+}
+
 // Apply the optional VECTOR_APERTURES work-selection mask.
 //
 // This routine is mission/instrument neutral.  The solver knows only a list of
@@ -2619,14 +2666,29 @@ static void ApplyDirectionalMapCoverage3D(
         throw std::runtime_error("VECTOR_APERTURES directional coverage has no locations.");
 
     const Mat3 R_gsm2label=Transpose3(cfg.R_label2gsm);
-    std::vector<unsigned char> keep((std::size_t)cfg.nFullCells,0);
+
+    // IMPORTANT: keep one mask PER LOCATION rather than OR-ing every spacecraft into
+    // one mask and then tracing that union at every position.  C19 batches several
+    // spacecraft in a single Mode3D snapshot.  The old union-only implementation made
+    // GOES-13 trace GOES-15 aperture directions (and vice versa), producing four-lobed
+    // directional-cutoff plots and roughly doubling the expensive trajectory work.
+    //
+    // We still construct a compact union afterwards because it is a convenient common
+    // storage coordinate for MPI reductions.  selectedFullCellIdsByLocation contains
+    // full-sphere ids here; after the union is known it is converted to compact union
+    // indices and stored in cfg.selectedCellIdsByLocation.
+    std::vector<std::vector<int>> selectedFullCellIdsByLocation(locationsGsm.size());
+    std::vector<unsigned char> keepUnion((std::size_t)cfg.nFullCells,0);
 
     auto toV3=[](const EarthUtil::Vec3& q) -> V3 { return V3{q.x,q.y,q.z}; };
 
     for (std::size_t locationIndex=0;locationIndex<locationsGsm.size();++locationIndex) {
         const V3& xGsm=locationsGsm[locationIndex];
         const V3 radial=v3unit(Apply(R_gsm2label,xGsm));
-        if (!(v3norm(radial)>0.0)) continue;
+        if (!(v3norm(radial)>0.0))
+            throw std::runtime_error(
+                "VECTOR_APERTURES cannot construct a local basis for active location "+
+                std::to_string(locationIndex)+".");
 
         // The local basis is constructed once per observation point and is used only
         // for aperture definitions explicitly tagged LOCAL_SM.  No instrument name or
@@ -2643,12 +2705,10 @@ static void ApplyDirectionalMapCoverage3D(
         apertures.reserve(prm.cutoff.dirMapApertures.size());
 
         for (const auto& spec : prm.cutoff.dirMapApertures) {
-            // Legacy apertures have locationIndex<0 and apply everywhere. Batched
-            // trajectory inputs may qualify an aperture with LOCATION=<index>; in
-            // that case resolve it only in the local basis of its associated
-            // observation. The final retained sky mask remains the union across
-            // active locations, preserving the existing regular-grid output schema
-            // while preventing unrelated epochs/spacecraft from expanding the mask.
+            // LOCATION=<index> is the location ownership contract for batched C19.
+            // Unqualified records remain backward compatible and apply to every active
+            // location.  Crucially, a record owned by another location is NOT allowed
+            // to enlarge this location's selected directional set.
             if (spec.locationIndex>=0 &&
                 spec.locationIndex!=static_cast<int>(locationIndex)) continue;
             V3 b=toV3(spec.boresight);
@@ -2690,6 +2750,8 @@ static void ApplyDirectionalMapCoverage3D(
                 "a LOCATION=<index> record for every batched trajectory location.");
         }
 
+        std::vector<int>& selected=selectedFullCellIdsByLocation[locationIndex];
+        selected.reserve((std::size_t)cfg.nFullCells/8U+1U);
         for (int fullCellId=0;fullCellId<cfg.nFullCells;++fullCellId) {
             const int iLon=fullCellId%cfg.nLon;
             const int jLat=fullCellId/cfg.nLon;
@@ -2714,18 +2776,48 @@ static void ApplyDirectionalMapCoverage3D(
                 const double ellipse=(ah/a.hh)*(ah/a.hh)+(av/a.vh)*(av/a.vh);
                 if (ellipse<=1.0+1.0e-12) { inside=true; break; }
             }
-            if (inside) keep[(std::size_t)fullCellId]=1;
+            if (inside) {
+                selected.push_back(fullCellId);
+                keepUnion[(std::size_t)fullCellId]=1;
+            }
+        }
+
+        if (selected.empty()) {
+            throw std::runtime_error(
+                "VECTOR_APERTURES retained zero sky cells for active location "+
+                std::to_string(locationIndex)+"; check aperture vectors, frames, "
+                "half-angles, and directional resolution.");
         }
     }
 
+    // Build the compact union coordinate used by all rank-local result arrays.
+    // A full-sphere-id -> compact-id lookup then converts every location's own list.
     cfg.fullGridCellIds.clear();
-    for (int fullCellId=0;fullCellId<cfg.nFullCells;++fullCellId)
-        if (keep[(std::size_t)fullCellId]) cfg.fullGridCellIds.push_back(fullCellId);
+    std::vector<int> fullToCompact((std::size_t)cfg.nFullCells,-1);
+    for (int fullCellId=0;fullCellId<cfg.nFullCells;++fullCellId) {
+        if (!keepUnion[(std::size_t)fullCellId]) continue;
+        fullToCompact[(std::size_t)fullCellId]=static_cast<int>(cfg.fullGridCellIds.size());
+        cfg.fullGridCellIds.push_back(fullCellId);
+    }
     cfg.nCells=static_cast<int>(cfg.fullGridCellIds.size());
     if (cfg.nCells<=0)
         throw std::runtime_error(
             "VECTOR_APERTURES directional coverage retained zero sky cells; check "
             "aperture vectors, frames, half-angles, and directional resolution.");
+
+    cfg.selectedCellIdsByLocation.assign(locationsGsm.size(),{});
+    for (std::size_t locationIndex=0;
+         locationIndex<selectedFullCellIdsByLocation.size();++locationIndex) {
+        auto& compact=cfg.selectedCellIdsByLocation[locationIndex];
+        compact.reserve(selectedFullCellIdsByLocation[locationIndex].size());
+        for (int fullCellId:selectedFullCellIdsByLocation[locationIndex]) {
+            const int compactId=fullToCompact[(std::size_t)fullCellId];
+            if (compactId<0)
+                throw std::runtime_error(
+                    "Mode3D internal VECTOR_APERTURES union-map conversion failed.");
+            compact.push_back(compactId);
+        }
+    }
 }
 
 static std::string DirectionalMapOutputFileName3D(int locId) {
@@ -3609,14 +3701,23 @@ static void WriteTecplot3DDirectionalAccess_Location(
     }
 
     // Adaptive mode deliberately leaves unused candidate nodes at the -1 sentinel.
-    // Count only actual trajectory classifications so the Tecplot POINT-zone size
-    // remains truthful. Dense mode, in contrast, requires every slot to be present.
+    // VECTOR_APERTURES additionally leaves UNION-map cells belonging only to other
+    // batched locations at -1.  Count/validate only the cells owned by this location;
+    // those unrelated union slots are storage padding, not missing trajectories.
     std::size_t nRows=0;
-    for (int state:accessState) {
-        if (state>=0) ++nRows;
-        else if (!adaptiveSparse) {
-            throw std::runtime_error(
-                "Mode3D dense directional access cube contains an uncomputed state.");
+    const int nLocationCells=DirectionalMapLocationCellCount3D(cfg,locId);
+    for (int localCellOrdinal=0;localCellOrdinal<nLocationCells;++localCellOrdinal) {
+        const int cellId=DirectionalMapLocationCellId3D(cfg,locId,localCellOrdinal);
+        for (int ir=0;ir<nRigidity;++ir) {
+            const std::size_t k=(std::size_t)cellId*(std::size_t)nRigidity+
+                                (std::size_t)ir;
+            const int state=accessState[k];
+            if (state>=0) ++nRows;
+            else if (!adaptiveSparse) {
+                throw std::runtime_error(
+                    "Mode3D dense directional access cube contains an uncomputed "
+                    "state in the active location aperture.");
+            }
         }
     }
 
@@ -3657,7 +3758,8 @@ static void WriteTecplot3DDirectionalAccess_Location(
         [](const EarthUtil::DirectAccessSampleDiagnostic& item,std::uint64_t slot) {
             return item.slot<slot;
         });
-    for (int cellId=0;cellId<cfg.nCells;++cellId) {
+    for (int localCellOrdinal=0;localCellOrdinal<nLocationCells;++localCellOrdinal) {
+        const int cellId=DirectionalMapLocationCellId3D(cfg,locId,localCellOrdinal);
         double lon_deg=0.0,lat_deg=0.0;
         DirectionalMapCellLonLat3D(cfg,cellId,lon_deg,lat_deg);
         for (int ir=0;ir<nRigidity;++ir) {
@@ -3752,13 +3854,16 @@ static void WriteTecplot3DDirectionalMap_Location(
         std::fprintf(f,
             "ZONE T=\"loc=%d x_km=%g y_km=%g z_km=%g frame=%s coverage=%s\" I=%d F=POINT\n",
             locId, x_km, y_km, z_km,
-            cfg.spiceOk ? "SM" : "GSM_fallback",cfg.coverage.c_str(),cfg.nCells);
+            cfg.spiceOk ? "SM" : "GSM_fallback",cfg.coverage.c_str(),
+            DirectionalMapLocationCellCount3D(cfg,locId));
     }
 
     const bool dipole=(EarthUtil::ToUpper(prm.field.model)=="DIPOLE");
     if (dipole) EnsureDipoleAnalyticState3D(prm);
 
-    for (int cellId=0; cellId<cfg.nCells; ++cellId) {
+    const int nLocationMapCells=DirectionalMapLocationCellCount3D(cfg,locId);
+    for (int localCellOrdinal=0; localCellOrdinal<nLocationMapCells; ++localCellOrdinal) {
+        const int cellId=DirectionalMapLocationCellId3D(cfg,locId,localCellOrdinal);
         double lon_deg=0.0,lat_deg=0.0;
         DirectionalMapCellLonLat3D(cfg,cellId,lon_deg,lat_deg);
         const double rc = RcCell[(size_t)cellId];
@@ -4322,24 +4427,58 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     const int nDirectionalAccessStorageRigidities=saveDirectionalAccessStates
         ? static_cast<int>(directionalAccessRigidityGrid_GV.size()) : 0;
 
-    // Dense mode: one scheduler task == one (direction,rigidity) trajectory.
-    // Adaptive mode: one scheduler task == one sky direction.  That task evaluates all
-    // seed nodes and only the transition/unresolved refinement nodes for that direction.
-    // The coarser task granularity is still ample for C19 (O(10^3) directions) and is
-    // essential because refinement decisions depend on states found earlier in the same
-    // direction.
-    const long long nDirectionalAccessTasks=saveDirectionalAccessStates
-        ? (adaptiveDirectionalDirectAccess
-            ? static_cast<long long>(dirMapCfg.nCells)
-            : static_cast<long long>(dirMapCfg.nCells)*
-              static_cast<long long>(prm.cutoff.rigidityList_GV.size()))
-        : 0LL;
-    const long long tasksPerLocation=shellRigidityListAccess
-        ? static_cast<long long>(prm.cutoff.rigidityList_GV.size())
-        : directionalDirectAccess
-          ? nDirectionalAccessTasks
-          : 1LL+(dirMapCfg.enabled ? static_cast<long long>(dirMapCfg.nCells) : 0LL)
-               +nDirectionalAccessTasks;
+    // Build the *actual* per-location task counts.  VECTOR_APERTURES can retain a
+    // different number of directions at each batched spacecraft location, so a single
+    // tasksPerLocation value would recreate the old Cartesian-product bug.  The prefix
+    // array below gives a compact global task id space containing only real
+    // (location,direction[,rigidity]) work.  Storage arrays still use the union-map
+    // coordinate; scheduling does not.
+    std::vector<long long> locationDirectionalCellCounts((std::size_t)nLoc,0LL);
+    std::vector<long long> locationTaskCounts((std::size_t)nLoc,0LL);
+    std::vector<long long> locationTaskOffsets((std::size_t)nLoc+1U,0LL);
+    for (int locationIndex=0;locationIndex<nLoc;++locationIndex) {
+        const long long nDirectionalCells=dirMapCfg.enabled
+            ? static_cast<long long>(
+                  DirectionalMapLocationCellCount3D(dirMapCfg,locationIndex))
+            : 0LL;
+        locationDirectionalCellCounts[(std::size_t)locationIndex]=nDirectionalCells;
+
+        const long long nDirectionalAccessTasks=saveDirectionalAccessStates
+            ? (adaptiveDirectionalDirectAccess
+                ? nDirectionalCells
+                : nDirectionalCells*
+                  static_cast<long long>(prm.cutoff.rigidityList_GV.size()))
+            : 0LL;
+
+        long long nTasks=0LL;
+        if (shellRigidityListAccess) {
+            nTasks=static_cast<long long>(prm.cutoff.rigidityList_GV.size());
+        }
+        else if (directionalDirectAccess) {
+            nTasks=nDirectionalAccessTasks;
+        }
+        else {
+            // Ordinary/PENUMBRA mode keeps one primary scalar task, then only the
+            // directional-map cells belonging to this location, followed by the
+            // optional fixed-rigidity companion classifications for the same cells.
+            nTasks=1LL+nDirectionalCells+nDirectionalAccessTasks;
+        }
+        if (nTasks<=0)
+            throw std::runtime_error(
+                "Mode3D cutoff: a location has no scheduled cutoff tasks.");
+        locationTaskCounts[(std::size_t)locationIndex]=nTasks;
+        locationTaskOffsets[(std::size_t)locationIndex+1U]=
+            locationTaskOffsets[(std::size_t)locationIndex]+nTasks;
+    }
+
+    const long long minTasksPerLocation=*std::min_element(
+        locationTaskCounts.begin(),locationTaskCounts.end());
+    const long long maxTasksPerLocation=*std::max_element(
+        locationTaskCounts.begin(),locationTaskCounts.end());
+    const long long minDirectionalCellsPerLocation=*std::min_element(
+        locationDirectionalCellCounts.begin(),locationDirectionalCellCounts.end());
+    const long long maxDirectionalCellsPerLocation=*std::max_element(
+        locationDirectionalCellCounts.begin(),locationDirectionalCellCounts.end());
 
     //==================================================================================
     // 14.7 — Run summary (rank 0 only)
@@ -4403,10 +4542,16 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 << "  DIRMAP grid  : " << dirMapCfg.nLon << " x " << dirMapCfg.nLat
                 << " (" << dirMapCfg.nFullCells << " full-sphere cells)\n"
                 << "  DIRMAP coverage: " << dirMapCfg.coverage << "\n"
-                << "  DIRMAP selected: " << dirMapCfg.nCells
-                << " directions/location ("
+                << "  DIRMAP union selected: " << dirMapCfg.nCells
+                << " direction(s) across all locations ("
                 << (100.0*double(dirMapCfg.nCells)/double(dirMapCfg.nFullCells))
                 << "% of full sphere)\n"
+                << "  DIRMAP per location: "
+                << (minDirectionalCellsPerLocation==maxDirectionalCellsPerLocation
+                      ? std::to_string(minDirectionalCellsPerLocation)
+                      : (std::to_string(minDirectionalCellsPerLocation)+".."+
+                         std::to_string(maxDirectionalCellsPerLocation)))
+                << " direction(s); unrelated union cells are not traced\n"
                 << "  DIRMAP res   : lon " << dirMapCfg.lonRes_deg
                 << " deg, lat " << dirMapCfg.latRes_deg << " deg\n";
             if (dirMapCfg.coverage=="VECTOR_APERTURES") {
@@ -4429,11 +4574,16 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                           << " maximum candidate nodes/direction, guard depth "
                           << prm.cutoff.directAccessAdaptiveGuardDepth << ", max depth "
                           << prm.cutoff.directAccessAdaptiveMaxDepth << ", "
-                          << dirMapCfg.nCells << " sky cells/location\n";
+                          << minDirectionalCellsPerLocation
+                          << (minDirectionalCellsPerLocation==maxDirectionalCellsPerLocation
+                                ? "" : (".."+std::to_string(maxDirectionalCellsPerLocation)))
+                          << " sky cells/location\n";
             }
             else {
                 std::cout << "Directional A(R,Omega): " << prm.cutoff.rigidityList_GV.size()
-                          << " fixed rigidities x " << dirMapCfg.nCells
+                          << " fixed rigidities x " << minDirectionalCellsPerLocation
+                          << (minDirectionalCellsPerLocation==maxDirectionalCellsPerLocation
+                                ? "" : (".."+std::to_string(maxDirectionalCellsPerLocation)))
                           << " sky cells per location (P1.4 companion product)\n";
             }
         }
@@ -4549,10 +4699,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     //   RIGIDITY_LIST access product:
     //       task(local=i) = classify requested rigidity i at the location
     //
-    // A global task id therefore decodes as
+    // VECTOR_APERTURES may retain a different number of directional cells at each
+    // batched location.  Global task ids therefore use the prefix offsets built in
+    // Section 14.6b instead of a fixed tasks-per-location quotient:
     //
-    //       globalLocation = taskId / tasksPerLocation
-    //       localTask      = taskId % tasksPerLocation
+    //       locationTaskOffsets[i] <= taskId < locationTaskOffsets[i+1]
+    //       localTask = taskId - locationTaskOffsets[i]
     //
     // This decomposition is safe because every task writes a disjoint result slot.
     // The primary task owns rcRank/eminRank and any penumbra-band diagnostics for its
@@ -4584,10 +4736,25 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     //==================================================================================
 
     const long long totalLocationsGlobal = static_cast<long long>(nLoc);
-    const long long totalTasksGlobal = totalLocationsGlobal * tasksPerLocation;
-    if (tasksPerLocation <= 0 || totalTasksGlobal <= 0) {
+    const long long totalTasksGlobal = locationTaskOffsets.back();
+    if (totalTasksGlobal <= 0) {
         throw std::runtime_error("Mode3D cutoff: invalid flattened cutoff task count.");
     }
+
+    // Decode a flattened global task id through the monotone prefix table.  The lookup
+    // is O(log N_location), negligible compared with a particle trajectory and far less
+    // expensive than materializing one task descriptor per direction/rigidity sample.
+    auto globalTaskLocation = [&](long long taskId) -> int {
+        if (taskId<0 || taskId>=totalTasksGlobal)
+            throw std::runtime_error("Mode3D cutoff global task id is out of range.");
+        const auto it=std::upper_bound(
+            locationTaskOffsets.begin(),locationTaskOffsets.end(),taskId);
+        const int locationIndex=static_cast<int>(
+            std::distance(locationTaskOffsets.begin(),it)-1);
+        if (locationIndex<0 || locationIndex>=nLoc)
+            throw std::runtime_error("Mode3D cutoff failed to decode global task location.");
+        return locationIndex;
+    };
 
     //==================================================================================
     // 14.8a — Intra-rank and inter-rank backend selection
@@ -4621,7 +4788,12 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             << (adaptiveDirectionalDirectAccess
                 ? "adaptive sky-direction task (contains multiple trajectories)"
                 : "flattened cutoff trajectory task") << "\n"
-            << "Tasks/location : " << tasksPerLocation << "\n"
+            << "Tasks/location : "
+            << (minTasksPerLocation==maxTasksPerLocation
+                  ? std::to_string(minTasksPerLocation)
+                  : (std::to_string(minTasksPerLocation)+".."+
+                     std::to_string(maxTasksPerLocation)+" (location-aware)"))
+            << "\n"
             << "Global tasks   : " << totalTasksGlobal << "\n"
             << "MPI scheduler  : " << Earth::Mode3D::MpiSchedulerName(mpiScheduler) << "\n";
         if (mpiScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC) {
@@ -4756,11 +4928,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
     // 14.8c — Global progress bookkeeping
     //==================================================================================
     // Task count, rather than location count, is now the authoritative progress metric.
-    // When tasksPerLocation>1 the displayed LocEq value is a *location-equivalent*
-    // (completedTasks/tasksPerLocation), not a claim that every trajectory belonging to
-    // that many specific locations has already completed.  This avoids expensive
-    // per-location global synchronization while keeping progress meaningful for the
-    // one-location/many-direction C19 workload.
+    // VECTOR_APERTURES can have different task counts at different locations, so the
+    // progress display reports only the exact global TASK count.  An old LocEq estimate
+    // based on one tasksPerLocation value would be misleading for a location-aware mask.
     //==================================================================================
 
     long long doneTasksLocal  = 0;
@@ -4776,7 +4946,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         for (int workId=0;workId<nLoc;++workId) {
             const int shellIdx=locationGridIds[(std::size_t)workId]/nPtsShell;
             if (shellIdx>=0 && shellIdx<nShells)
-                taskTotalPerShellGlobal[(std::size_t)shellIdx] += tasksPerLocation;
+                taskTotalPerShellGlobal[(std::size_t)shellIdx] +=
+                    locationTaskCounts[(std::size_t)workId];
         }
     }
 
@@ -4819,10 +4990,6 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         if (rate > 0.0 && totalTasksGlobal > doneTasks)
             eta_s = double(totalTasksGlobal-doneTasks)/rate;
 
-        const long long locEquivalent = std::min(
-            totalLocationsGlobal,
-            (tasksPerLocation > 0) ? doneTasks/tasksPerLocation : totalLocationsGlobal);
-
         const int barW = 36;
         int filled = (int)std::floor(frac*barW + 0.5);
         if (filled < 0) filled = 0;
@@ -4861,9 +5028,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         line.setf(std::ios::fixed);
         line.precision(1);
         line << (frac*100.0) << "%  ";
-        line << "(" << (tasksPerLocation>1 ? "LocEq " : "Loc ")
-             << locEquivalent << "/" << totalLocationsGlobal
-             << ", Task " << doneTasks << "/" << totalTasksGlobal;
+        line << "(Task " << doneTasks << "/" << totalTasksGlobal;
 
         if (isShells) {
             if (shellProgressValid) {
@@ -4919,7 +5084,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         doneTasksLocal += nDone;
         if (isShells) {
             for (long long taskId=beginTask; taskId<endTask; ++taskId) {
-                const int globalIdx = static_cast<int>(taskId/tasksPerLocation);
+                const int globalIdx = globalTaskLocation(taskId);
                 const int shellIdx=locationGridIds[(std::size_t)globalIdx]/nPtsShell;
                 if (shellIdx>=0 && shellIdx<nShells)
                     taskDonePerShellLocal[(size_t)shellIdx]++;
@@ -4933,7 +5098,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         if (isShells) {
             for (long long localTask=beginLocal; localTask<endLocal; ++localTask) {
                 const long long taskId=globalTaskFromLocalStatic(localTask);
-                const int globalIdx = static_cast<int>(taskId/tasksPerLocation);
+                const int globalIdx = globalTaskLocation(taskId);
                 const int shellIdx=locationGridIds[(std::size_t)globalIdx]/nPtsShell;
                 if (shellIdx>=0 && shellIdx<nShells)
                     taskDonePerShellLocal[(size_t)shellIdx]++;
@@ -4947,8 +5112,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 
     auto computeGlobalTask = [&](long long taskId, cMode3DMeshFieldEval& threadField,
                                  std::vector<EarthUtil::DirectAccessSampleDiagnostic>* directDiagnostics) {
-        const int globalIdx = static_cast<int>(taskId/tasksPerLocation);
-        const long long localTask = taskId%tasksPerLocation;
+        const int globalIdx = globalTaskLocation(taskId);
+        const long long localTask =
+            taskId-locationTaskOffsets[(std::size_t)globalIdx];
 
         // globalIdx is the compact scheduler location. gridId is its location in the
         // complete shell geometry; they differ only for latitude-banded RIGIDITY_LIST.
@@ -4973,9 +5139,15 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         }
 
         if (directionalDirectAccess) {
-            const int cellId=adaptiveDirectionalDirectAccess
+            // localTask is an ordinal in THIS location's aperture set, not in the
+            // union map.  Convert it to the compact union cell id only when indexing
+            // shared storage.  This prevents a batched spacecraft from tracing another
+            // spacecraft's aperture directions.
+            const int localCellOrdinal=adaptiveDirectionalDirectAccess
                 ? static_cast<int>(localTask)
                 : static_cast<int>(localTask/static_cast<long long>(nAccessRigidities));
+            const int cellId=DirectionalMapLocationCellId3D(
+                dirMapCfg,globalIdx,localCellOrdinal);
             const V3 dir_gsm=DirectionalMapCellDirectionGSM3D(dirMapCfg,cellId);
             const V3 v0=mul(-1.0,dir_gsm);
 
@@ -5079,7 +5251,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         }
 
         const long long directionalMapTaskCount=dirMapCfg.enabled
-            ? static_cast<long long>(dirMapCfg.nCells) : 0LL;
+            ? locationDirectionalCellCounts[(std::size_t)globalIdx] : 0LL;
         if (saveDirectionalAccessStates && localTask>directionalMapTaskCount) {
             // P1.4 direct A(R,Omega) task.  These trajectories deliberately bypass the
             // scalar effective-cutoff approximation.  Every requested energy/direction
@@ -5088,8 +5260,10 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             const long long accessTask=localTask-1LL-directionalMapTaskCount;
             const int iRigidity=static_cast<int>(
                 accessTask%static_cast<long long>(nAccessRigidities));
-            const int cellId=static_cast<int>(
+            const int localCellOrdinal=static_cast<int>(
                 accessTask/static_cast<long long>(nAccessRigidities));
+            const int cellId=DirectionalMapLocationCellId3D(
+                dirMapCfg,globalIdx,localCellOrdinal);
             const V3 dir_gsm=DirectionalMapCellDirectionGSM3D(dirMapCfg,cellId);
             const V3 v0=mul(-1.0,dir_gsm);
             const std::size_t k=((std::size_t)globalIdx*(std::size_t)dirMapCfg.nCells+
@@ -5111,9 +5285,13 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             return;
         }
 
-        // Directional-map PENUMBRA/UPPER task. localTask==1 corresponds to cellId==0.
-        // Exactly one worker writes each [globalIdx,cellId] slot, making the array lock-free.
-        const int cellId=static_cast<int>(localTask-1LL);
+        // Directional-map PENUMBRA/UPPER task. localTask==1 corresponds to the
+        // first directional cell retained for THIS location.  The compact union cell id
+        // can differ between locations, but every [globalIdx,cellId] slot still has one
+        // unique task owner and remains lock-free.
+        const int localCellOrdinal=static_cast<int>(localTask-1LL);
+        const int cellId=DirectionalMapLocationCellId3D(
+            dirMapCfg,globalIdx,localCellOrdinal);
         const V3 dir_gsm = DirectionalMapCellDirectionGSM3D(dirMapCfg, cellId);
         const size_t base = (size_t)globalIdx * (size_t)dirMapCfg.nCells;
         const std::size_t k=base+(size_t)cellId;
@@ -5677,10 +5855,13 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         // Optional directional sky-map output.
         //
         // The computation and MPI reduction above filled dirMapAll in global location
-        // order.  We now write one Tecplot file per location, reusing the same
-        // LocationToX0m() mapping used for the primary cutoff calculation so that
-        // POINTS, TRAJECTORY, and SHELLS all get maps anchored at exactly the same
-        // physical coordinates as the scalar Rc outputs.
+        // order using the compact UNION-map stride.  In VECTOR_APERTURES mode some union
+        // slots are intentionally -1 for a location because they belong only to another
+        // batched observation.  The per-location writers below consult
+        // selectedCellIdsByLocation and emit only the cells actually scheduled there.
+        // We reuse the same LocationToX0m() mapping used for the primary cutoff
+        // calculation so POINTS, TRAJECTORY, and SHELLS remain anchored at exactly the
+        // same physical coordinates as the scalar Rc outputs.
         //
         // File naming:
         //   cutoff_3d_dir_map_loc_000000.dat

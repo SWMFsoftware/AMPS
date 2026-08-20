@@ -592,7 +592,9 @@ def validate_directional_coverage_source_contract() -> None:
             "-cutoff-dirmap-aperture"),
         src_earth / "3d" / "CutoffRigidityMode3D.cpp": (
             "ApplyDirectionalMapCoverage3D", "VECTOR_APERTURES",
-            "LOCAL_SM", "fullGridCellIds", "directionalDirectAccess",
+            "LOCAL_SM", "fullGridCellIds", "selectedCellIdsByLocation",
+            "DirectionalMapLocationCellId3D", "locationTaskOffsets",
+            "locationDirectionalCellCounts", "directionalDirectAccess",
             "DIRECT_ACCESS: skipped scalar cutoff"),
         src_earth / "gridless" / "CutoffRigidityGridless.cpp": (
             "VECTOR_APERTURES", "LOCAL_SM", "dirMapFullCellIds",
@@ -608,6 +610,27 @@ def validate_directional_coverage_source_contract() -> None:
             if needle not in text:
                 raise SystemExit("directional-coverage source contract missing %r in %s" %
                                  (needle, path))
+
+    # Location-aware Mode3D regression.  A combined C19 aperture file may contain
+    # LOCATION-qualified records for several spacecraft.  The solver must preserve a
+    # per-location cell list and decode variable task counts through a prefix table;
+    # reverting to taskId/tasksPerLocation would silently recreate the four-lobe union
+    # at every spacecraft and the associated Cartesian-product trajectory overhead.
+    mode3d_text = (src_earth / "3d" / "CutoffRigidityMode3D.cpp").read_text(
+        errors="replace")
+    forbidden_legacy_decode = "taskId/tasksPerLocation"
+    if forbidden_legacy_decode in mode3d_text:
+        raise SystemExit(
+            "Mode3D directional scheduler regressed to fixed tasksPerLocation decoding")
+    for required in (
+            "cfg.selectedCellIdsByLocation.assign",
+            "DirectionalMapLocationCellCount3D(dirMapCfg,locationIndex)",
+            "taskId-locationTaskOffsets",
+            "DirectionalMapLocationCellId3D(",
+            "dirMapCfg,globalIdx,localCellOrdinal"):
+        if required not in mode3d_text:
+            raise SystemExit(
+                "Mode3D location-aware directional scheduling is missing %r" % required)
 
     # GRIDLESS execution contract: standalone -mode gridless must return before the
     # historical mesh initialization path, and cutoff/direct-access work must contain

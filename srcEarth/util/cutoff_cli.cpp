@@ -836,7 +836,9 @@ std::string HelpMessage(const char* progName) {
   out << "      need not be east/west or antipodal. SM and GSM are global frames;\n";
   out << "      LOCAL_SM components use the local (radial,east,north) basis. The solver\n";
   out << "      retains a subset of the same regular sky cells as FULL_SPHERE and tests\n";
-  out << "      detector_look=-particle_arrival for aperture membership.\n";
+  out << "      detector_look=-particle_arrival for aperture membership. In a multi-location\n";
+  out << "      Mode3D aperture file, LOCATION=<index> keeps that aperture local to the\n";
+  out << "      associated observation rather than tracing the union at every location.\n";
   out << "      Input-file equivalents: DIRMAP_COVERAGE, DIRMAP_APERTURE_FILE, and\n";
   out << "      repeatable DIRMAP_APERTURE records. File rows omit DIRMAP_APERTURE.\n";
   out << "      Example:\n";

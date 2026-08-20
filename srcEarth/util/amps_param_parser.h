@@ -554,7 +554,8 @@ namespace EarthUtil {
     // When enabled, the solver evaluates Rc as a function of arrival direction
     // on a regular global SM lon/lat grid (GSM fallback when the SM->GSM transform
     // is unavailable). DIRMAP_COVERAGE may retain the complete grid or only cells
-    // inside an arbitrary configured union of instrument look apertures.
+    // inside configured instrument look apertures.  In multi-location Mode3D batches,
+    // LOCATION-qualified apertures remain local to their associated observation.
     //
     // The intent is to provide a diagnostic product to visualize the
     // directional dependence (penumbra-like structure) and to support
@@ -570,8 +571,9 @@ namespace EarthUtil {
     // but schedules only cells whose detector LOOK vector lies inside at least one
     // user-defined DirectionalAperture.  Apertures may point anywhere, need not be
     // antipodal, and may be supplied in SM, GSM, or the location-dependent LOCAL_SM
-    // basis.  This is strictly a work-selection optimization: retained cells are
-    // bit-for-bit the same cells as a FULL_SPHERE calculation.
+    // basis.  A LOCATION-qualified aperture is scheduled only at that location; an
+    // unqualified aperture applies everywhere.  This is strictly a work-selection
+    // optimization: retained cells are bit-for-bit the same cells as FULL_SPHERE.
     std::string dirMapCoverage{"FULL_SPHERE"}; // DIRMAP_COVERAGE
     std::string dirMapApertureFile;             // DIRMAP_APERTURE_FILE
     std::vector<DirectionalAperture> dirMapApertures; // repeated DIRMAP_APERTURE

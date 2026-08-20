@@ -125,7 +125,8 @@
 //   -cutoff-dirmap-coverage <FULL_SPHERE|VECTOR_APERTURES>
 //       Select angular coverage of DIRECTIONAL_MAP/direct A(E,Omega) tasks. FULL_SPHERE
 //       retains the historical complete sky. VECTOR_APERTURES keeps only regular-grid
-//       cells inside the union of arbitrary finite-FOV look-direction apertures.
+//       cells inside arbitrary finite-FOV look-direction apertures. LOCATION-qualified
+//       records in an aperture file remain local to their associated Mode3D location.
 //
 //   -cutoff-dirmap-aperture-file <path>
 //       Replace the input-file aperture list with the definitions in <path>.
