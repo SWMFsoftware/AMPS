@@ -1501,10 +1501,11 @@ Normal machine-readable products include:
 | `C19_detector_response_used.csv` | Exact response intervals/components plus `calibration_state`; publication calibration gate consumes this provenance |
 | `C19_access_energy_grid.csv` | Common direct-access seed grid (`ADAPTIVE_SEED`) or dense requested grid (`DENSE_REQUESTED`) supplied identically to GRIDDED and GRIDLESS |
 | `cutoff_3d_dir_access_loc_<local><snapshot-suffix>.dat` / per-run `cutoff_gridless_dir_access_point_0000.dat` | Solver-native direct three-state `A(E,Ω)` cubes consumed by the common detector fold |
-| `C19_model.csv` / `C19_comparison.csv` | Production direct E/W results and bounds plus the independently labelled cutoff-rigidity proxy ratio/transmissions, spectrum source, response model, unresolved fractions, maximum trace time, search algorithm/policy, and map provenance |
-| `C19_model_coverage.csv` | One row for every selected reference row × solver × field model, explicitly identifying accepted direct scalar, direct-bounds-only, cutoff-midpoint-diagnostic-only, or missing run/post-processing result |
+| `C19_model.csv` / `C19_comparison.csv` | Production direct E/W results and bounds plus the independently labelled cutoff-rigidity proxy ratio/transmissions, spectrum source, response model, unresolved fractions, maximum trace time, search algorithm/policy, and map provenance.  The direct result is serialized at three levels: `direct_calculated_*` (finite direct fold before final acceptance), `direct_bound_midpoint_*` (diagnostic-only midpoint when only finite rigorous bounds exist), and legacy `modeled_*` (accepted scientific scalar only).  Explicit booleans record scalar availability/acceptance, trajectory-resolution and bound-width gates, and the tri-state convergence status (`NOT_TESTED` for a normal run). |
+| `C19_model_coverage.csv` | One row for every selected reference row × solver × field model, explicitly identifying `DIRECT_ACCEPTED`, `DIRECT_CALCULATED_NOT_ACCEPTED`, `DIRECT_BOUNDS_ONLY`, cutoff-diagnostic-only, or missing run/post-processing result |
 | `C19_aperture_availability.csv` | One row per epoch/head with availability status, coverage, direct bounds/scalar, response-weighted physical and unresolved termination fractions, direct bound width, unresolved asymmetry, and spectrum provenance |
 | `C19_aperture_termination_budget.csv` | Compact Phase-0 one-row-per-head response-weighted termination budget: outer escape, inner loss, bounce trap, drift trap, time/step/distance limits, and other unresolved states |
+| `C19_access_classification_by_rigidity.csv` | Stage-A per-case/per-head classification on the mandatory common DIRECT_ACCESS seed rigidities: allowed, physical-forbidden, unresolved, detailed termination fractions, seed coverage, and normalized detector/spectrum weight |
 | `C19_trace_budget_sweep.csv` (from `run_C19_convergence.py`) | Phase-1/2/3 distance/time/timestep/mover/drift-recurrence convergence summary for the representative epoch |
 | `C19_metrics.csv` | Per-spacecraft and aggregate finite/saturated fractions, sign agreement, bias, MAE, RMSE, correlation, and provisional gate |
 | `C19_direction_sense_diagnostic.csv` | Production arrival→look convention and legacy opposite-convention diagnostic |
@@ -1517,12 +1518,13 @@ flag:
 
 | Plot | Contents |
 |---|---|
-| `C19_comparison_<solver>_<field>.png` | All selected GOES reference points, accepted direct log10(E/W), rigorous direct intervals/censoring, open direct-bound midpoint markers for inconclusive rows, explicitly labelled equivalent-cutoff midpoint diagnostic with Rc bounds, and markers for missing AMPS rows |
-| `C19_scatter_<solver>_<field>.png` | Data-ranged observed-versus-model comparison containing accepted direct points plus open equivalent-cutoff midpoint diagnostic points; generated when either population exists |
-| `C19_parity_<solver>_<field>.png` | Common-range parity view with accepted direct and equivalent-cutoff midpoint diagnostic points plus the 1:1 line |
-| `C19_residual_<solver>_<field>.png` | Direct accepted residuals and separately styled cutoff-midpoint diagnostic residuals versus time |
+| `C19_comparison_<solver>_<field>.png` | All selected GOES reference points and the complete direct-information hierarchy: accepted direct scalar, open calculated-but-not-accepted direct scalar, open-diamond direct-bound midpoint when no scalar exists, rigorous direct intervals/censoring, equivalent-cutoff midpoint diagnostic with Rc bounds, and markers for missing AMPS rows |
+| `C19_scatter_<solver>_<field>.png` | Data-ranged observed-versus-model comparison using the same canonical row selector as parity/residual: filled accepted direct points, open calculated-but-not-accepted direct points, open-diamond direct-bounds-only midpoints, and open green cutoff-midpoint diagnostics |
+| `C19_parity_<solver>_<field>.png` | Common-range parity view of exactly the same four populations as the scatter plot plus the 1:1 line; the shared selector prevents one plot from silently dropping a direct value shown by another |
+| `C19_residual_<solver>_<field>.png` | Accepted direct residuals, open calculated-but-not-accepted residuals, rigorous residual intervals for bounds-only rows, and separately styled cutoff-midpoint diagnostic residuals versus time |
 | `C19_transmission_<solver>_<field>.png` | EAST/WEST accepted direct scalars, unconditional direct Tmin–Tmax bands, per-head status markers, and separately styled hard-cutoff proxy transmissions |
 | `C19_aperture_diagnostic.png` | Representative aperture-cell cutoff/access diagnostic; direct-access cells are colored by the midpoint of their explicit transmission bounds, while the CSV retains both bounds |
+| `C19_access_classification_<spacecraft>_<channel>_<UTC>[ _<solver>_<field>].png` | Restored Stage-A rigidity-resolved EAST/WEST diagnostic. The left axis shows geometric solid-angle fractions classified Allowed / Physical forbidden / Unresolved at every common seed rigidity; the dotted right axis shows the normalized detector/spectrum weight. Solver/model suffixes are added only when more than one calculation would otherwise overwrite the same observational case. |
 | `C19_directional_cutoff_<solver>_<field>_<spacecraft>_<UTC>.png` | Four panels for every simulated spacecraft epoch: rigorous Rc lower bound, equivalent-cutoff midpoint diagnostic, rigorous Rc upper bound, and retained bound width. GRIDDED files now contain only the directional cells retained for that spacecraft/location (not the union of all spacecraft apertures in the snapshot). Diagnostic-only midpoint cells and support-censored cells are outlined |
 | `C19_boundary_spectrum.png` | Assumed incident boundary proton spectrum for every selected epoch over the P4/P5 response support |
 
@@ -1535,6 +1537,45 @@ is recorded in `C19_result.json:plot_generation_errors` and does not prevent the
 transmission, directional-cutoff, boundary-spectrum, or aperture-diagnostic figures from
 being attempted.  This is intentionally a reporting-only safeguard; a plot failure does
 not change any C19 scientific result.
+
+### Direct scalar availability, acceptance, and plotting contract
+
+C19 deliberately distinguishes **calculated**, **accepted**, and **convergence-validated**
+DIRECT_ACCESS information.  These states answer different questions and must never be
+collapsed into one nullable number:
+
+```text
+direct_calculated_log10_east_west_ratio
+    finite central value produced by the direct detector fold before final gates
+
+direct_bound_midpoint_log10_east_west_ratio
+    plotting-only midpoint of a finite rigorous direct interval when no scalar exists
+
+modeled_log10_east_west_ratio
+    accepted scientific direct scalar; this is the legacy metric/acceptance field
+
+direct_convergence_status
+    PASS | FAIL | NOT_TESTED (ordinary runs currently report NOT_TESTED)
+```
+
+A value may therefore be numerically calculated yet not accepted, for example when
+`--max-direct-ratio-bound-width-log10` rejects a broad rigorous interval.  That scalar
+remains in the CSV and is drawn with an **open DIRECT_ACCESS marker**.  If the direct
+fold cannot construct a scalar because trajectory uncertainty is too large, but finite
+rigorous bounds exist, C19 draws an **open diamond at the direct-bound midpoint** and the
+full interval.  Neither diagnostic value enters MAE/RMSE/correlation or PASS/FAIL.
+
+`direct_plot_groups()` is the single row classifier used by the time-series/scatter/
+parity/residual family.  Individual plot functions must not reimplement status filtering.
+`C19_result.json:plot_consistency` records the number of calculated, accepted,
+bounds-only, and cutoff-diagnostic rows and verifies that the canonical plotting
+populations match the serialized ModelRow fields.  This specifically prevents the
+regression where the parity plot showed a direct value while the scatter plot omitted it.
+
+A normal SMOKE/ROUTINE/FULL run does **not** fail or hide a direct scalar merely because
+the separate convergence campaign was not executed.  `NOT_TESTED` means exactly that;
+convergence studies may later promote a result to a stronger validation state, but they
+do not control whether the ordinary calculated value is retained for diagnosis.
 
 ## 11. Acceptance behavior
 
@@ -1869,6 +1910,54 @@ attributed to each endpoint termination reason.  This makes the termination budg
 meaningfully without inventing an unknown transition energy inside an unresolved
 interval.  The rigorous DIRECT_ACCESS lower/upper transmission bounds continue to use
 the conservative three-state access logic and remain authoritative.
+
+#### Restored rigidity-resolved access-classification diagnostic
+
+Every modeled reference row also writes a rigidity-resolved Stage-A diagnostic to
+`C19_access_classification_by_rigidity.csv` and a corresponding
+`C19_access_classification_*.png` figure.  This product was intentionally restored after
+a packaging regression dropped the plot family even though the direct access cubes still
+contained the required trajectory states.  The runner self-test now requires this family
+so the regression cannot recur silently.
+
+For each physical EAST/WEST head and each **mandatory common DIRECT_ACCESS seed
+rigidity**, the postprocessor reapplies the exact channel aperture geometry and partitions
+the retained sky solid angle into
+
+```text
+Allowed
+Physical forbidden
+Unresolved
+```
+
+The CSV also preserves the detailed termination fractions at that rigidity:
+outer-boundary escape, inner-boundary loss, legacy bounce trapping, drift trapping,
+time/step/distance limits, and other termination.  The simple three-curve PNG is kept
+intentionally readable; detailed cause attribution remains machine-readable in the CSV.
+
+The classification fractions use **geometric solid-angle weighting** (`cos(latitude)`)
+rather than source anisotropy weighting.  This keeps the figure a trajectory/access
+diagnostic instead of making its classification depend on an assumed SEP angular
+distribution.  Source-weighted classification fractions are nevertheless written as
+separate CSV columns for sensitivity studies.
+
+The dotted secondary-axis curve is not an arbitrary response value sampled at isolated
+energies.  For every adjacent common seed pair the runner integrates the same exact
+`J(E) G(E)` function used by the production fold, assigns half of that interval integral
+to each endpoint, and normalizes the endpoint weights to unity.  This makes the curve a
+true indication of which rigidity nodes dominate the synthetic detector signal and avoids
+grid-spacing artifacts.
+
+Adaptive DIRECT_ACCESS may add different midpoint/refinement nodes in different sky
+directions.  Those direction-specific nodes are deliberately **not** mixed into the
+classification plot.  Only the mandatory common seeds are shown, because every selected
+direction is guaranteed to contain them.  Consequently a change in adaptive refinement
+depth cannot change the apparent detector weight simply by creating more samples.
+
+The figure is generated for **every selected epoch × spacecraft × channel × solver ×
+field model**, including cases with no accepted direct E/W scalar.  This is essential:
+the diagnostic is most useful precisely when the direct fold is inconclusive.  It never
+participates in C19 acceptance or changes any trajectory classification.
 
 ### Phase 1A -- reproduce and partition the original failure before enabling drift recurrence
 

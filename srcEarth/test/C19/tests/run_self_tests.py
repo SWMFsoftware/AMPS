@@ -791,9 +791,33 @@ def validate_directional_coverage_source_contract() -> None:
                          (selected, full))
 
 
+def validate_direct_plot_contract() -> None:
+    """Protect the calculated/accepted DIRECT_ACCESS plotting separation.
+
+    This is a cheap source-contract regression in addition to run_C19.py's executable
+    synthetic self-test.  It catches accidental removal of the shared selector or a
+    return to the old status-only scatter/parity filtering before an expensive C19 run
+    is attempted.
+    """
+    text = (ROOT / "run_C19.py").read_text()
+    required = (
+        "direct_calculated_log10_east_west_ratio",
+        "direct_bound_midpoint_log10_east_west_ratio",
+        "def direct_plot_groups",
+        "DIRECT_CALCULATED_NOT_ACCEPTED",
+        '"plot_consistency": plot_consistency',
+        "direct_convergence_status",
+    )
+    for needle in required:
+        if needle not in text:
+            raise SystemExit(
+                "C19 calculated/accepted plotting contract missing %r" % needle)
+
+
 def main() -> int:
     validate_committed_inputs()
     validate_directional_coverage_source_contract()
+    validate_direct_plot_contract()
     scripts = (ROOT / "run_C19.py", ROOT / "run_C19_convergence.py",
                ROOT / "build_goes_reference.py")
     for script in scripts:

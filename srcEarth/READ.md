@@ -3192,6 +3192,18 @@ cross-checks.  The compact response-weighted result is written as
 `C19_aperture_termination_budget.csv`; `C19_aperture_samples.csv` remains the per-cell
 audit product.
 
+C19 also restores the Stage-A rigidity-resolved access-classification product.  The
+postprocessor writes `C19_access_classification_by_rigidity.csv` and one
+`C19_access_classification_*.png` per selected observational case.  At every mandatory
+common DIRECT_ACCESS seed rigidity it reapplies the physical EAST/WEST aperture and
+reports geometric solid-angle fractions that are allowed, physically forbidden, or
+unresolved, with detailed termination fractions retained in the CSV.  A dotted
+secondary-axis curve is the normalized endpoint share of the exact `J(E)G(E)` interval
+integrals, so the plot shows whether a problematic rigidity interval actually matters to
+the detector signal.  Adaptive-only refinement nodes are intentionally excluded from
+this diagnostic to keep all sky directions on the same rigidity grid.  The plot is
+diagnostic only and is generated even when no direct scalar is accepted.
+
 The direct detector fold also applies a rigorous `log10(E/W)` bound-width convergence
 gate.  Excessive unresolved trajectory weight is
 `INCONCLUSIVE_TRAJECTORY_RESOLUTION`; a resolved but too-wide direct interval is
@@ -3202,6 +3214,28 @@ blocked-area midpoint.  An unresolved interval still contributes its full uncert
 the rigorous lower/upper bounds and still suppresses resolved `Rc_effective`; the
 diagnostic midpoint uses `0.5*dR` only so the historical cutoff-proxy comparison remains
 visible and is never used to classify a trajectory or pass C19.
+
+The C19 postprocessor preserves three DIRECT_ACCESS reporting levels rather than using
+one nullable scalar for all purposes.  `direct_calculated_*` is the finite central value
+produced by the direct detector fold **before** final scientific acceptance.  A later
+bound-width or guardrail rejection does not erase this diagnostic value.  The legacy
+`modeled_*` fields remain acceptance-only and therefore continue to define formal
+metrics.  If the direct fold cannot construct a scalar but finite rigorous E/W bounds
+exist, `direct_bound_midpoint_*` stores the midpoint only for visualization; it never
+enters acceptance or residual metrics as an accepted value.
+
+All comparison-family plots use the shared `direct_plot_groups()` classifier.  Accepted
+direct scalars are filled markers, calculated-but-not-accepted scalars are open direct
+markers, bounds-only rows are open diamonds with their rigorous interval, and the
+equivalent-cutoff midpoint remains a separate green diagnostic.  This common selection
+contract fixes the earlier inconsistency in which parity could display a direct P5 point
+that scatter omitted because each plot had independently filtered `status`.
+`C19_model_coverage.csv` now reports `DIRECT_ACCEPTED`,
+`DIRECT_CALCULATED_NOT_ACCEPTED`, `DIRECT_BOUNDS_ONLY`, or diagnostic/missing states, and
+`C19_result.json:plot_consistency` records matching serialized-versus-plotted counts.
+Ordinary runs use `direct_convergence_status=NOT_TESTED`; a convergence campaign may
+subsequently validate the result, but absence of such a campaign is not treated as a
+failed calculation and cannot hide the direct scalar.
 
 For publication-oriented runs the runner can enforce real detector attitude, an
 independent incident spectrum, and calibrated detector-response provenance through

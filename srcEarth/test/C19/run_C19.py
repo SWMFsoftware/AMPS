@@ -312,6 +312,39 @@ class ModelRow:
     observed_log10_east_west_ratio: float
     modeled_east_west_ratio: Optional[float]
     modeled_log10_east_west_ratio: Optional[float]
+    # DIRECT_ACCESS has three distinct information levels and they must not be
+    # conflated:
+    #
+    #   direct_calculated_*
+    #       A finite scalar produced by the direct detector fold before the final
+    #       scientific acceptance gates are applied.  For example, a scalar can be
+    #       numerically available yet be rejected because the rigorous E/W interval
+    #       is too wide.  Keeping it makes diagnostics and convergence studies
+    #       reproducible without pretending that it is an accepted result.
+    #
+    #   direct_bound_midpoint_*
+    #       A plotting-only midpoint of the finite rigorous direct E/W interval.
+    #       It is available even when the direct fold cannot produce a scalar because
+    #       trajectory uncertainty is too large.  It is NEVER used by metrics or
+    #       acceptance.
+    #
+    #   modeled_*
+    #       The accepted scientific scalar.  Existing downstream consumers retain
+    #       their historical meaning: a non-None modeled_* value has passed the
+    #       normal C19 direct-result gates.
+    direct_calculated_east_west_ratio: Optional[float]
+    direct_calculated_log10_east_west_ratio: Optional[float]
+    direct_bound_midpoint_east_west_ratio: Optional[float]
+    direct_bound_midpoint_log10_east_west_ratio: Optional[float]
+    direct_scalar_available: bool
+    direct_scalar_accepted: bool
+    direct_trajectory_resolution_passed: bool
+    direct_observable_width_passed: bool
+    # Convergence campaigns are separate from an ordinary C19 execution.  The
+    # tri-state string prevents an unexecuted convergence study from being confused
+    # with a failed one and, critically, from hiding a calculated direct scalar.
+    direct_convergence_status: str
+    direct_acceptance_reason: str
     modeled_east_west_ratio_min: Optional[float]
     modeled_east_west_ratio_max: Optional[float]
     modeled_log10_east_west_ratio_min: Optional[float]
@@ -2026,6 +2059,95 @@ SATURATED_MODEL_STATUSES = frozenset((
 QUANTITATIVE_MODEL_STATUSES = frozenset(("VALID", "MODEL_MISMATCH"))
 
 
+def finite_optional(value: Optional[float]) -> bool:
+    """Return True only for a present finite floating-point diagnostic value."""
+    return value is not None and math.isfinite(float(value))
+
+
+def direct_plot_groups(rows: Sequence[ModelRow]) -> Dict[str, List[ModelRow]]:
+    """Classify ModelRows once for every comparison-family plot.
+
+    C19 used to let each plot independently decide what constituted a "direct"
+    result.  Once the direct fold acquired separate numerical-resolution and
+    scientific-acceptance gates, that duplicated filtering became inconsistent: a
+    parity figure could show a direct point while the scatter figure silently removed
+    the same ModelRow because its top-level status was not in
+    ``QUANTITATIVE_MODEL_STATUSES``.
+
+    The plotting contract is now data driven rather than status driven:
+
+      * ``direct_accepted`` -- a finite calculated DIRECT_ACCESS scalar that also
+        passed the normal C19 acceptance gates;
+      * ``direct_unaccepted`` -- a finite calculated scalar retained for diagnosis
+        but not accepted scientifically;
+      * ``direct_bounds_only`` -- no finite direct scalar, but a finite rigorous
+        direct interval whose midpoint can be shown explicitly as diagnostic only;
+      * ``cutoff_diagnostic`` -- the separately labelled equivalent-cutoff midpoint.
+
+    Metrics continue to use only the accepted ``modeled_*`` fields.  This helper only
+    controls visualization and reporting, so exposing an unaccepted scalar cannot
+    weaken C19's scientific PASS/FAIL criteria.
+    """
+    groups: Dict[str, List[ModelRow]] = {
+        "direct_accepted": [],
+        "direct_unaccepted": [],
+        "direct_bounds_only": [],
+        "cutoff_diagnostic": [],
+    }
+    for row in rows:
+        if finite_optional(row.direct_calculated_log10_east_west_ratio):
+            if row.direct_scalar_accepted:
+                groups["direct_accepted"].append(row)
+            else:
+                groups["direct_unaccepted"].append(row)
+        elif finite_optional(row.direct_bound_midpoint_log10_east_west_ratio):
+            groups["direct_bounds_only"].append(row)
+
+        if finite_optional(row.cutoff_proxy_log10_east_west_ratio):
+            groups["cutoff_diagnostic"].append(row)
+    return groups
+
+
+def plot_consistency_summary(rows: Sequence[ModelRow]) -> Dict[str, object]:
+    """Return machine-readable CSV/plot population consistency counts.
+
+    This does not inspect PNG pixels.  Instead it compares the canonical plotting
+    selector with the fields serialized to ``C19_comparison.csv``.  Because all
+    comparison-family plots consume :func:`direct_plot_groups`, equality of these
+    counts guarantees that a row classified as displayable cannot disappear merely
+    because one plotting function reimplemented an obsolete status filter.
+    """
+    groups = direct_plot_groups(rows)
+    n_calculated = sum(finite_optional(r.direct_calculated_log10_east_west_ratio)
+                       for r in rows)
+    n_accepted = sum(bool(r.direct_scalar_accepted) and
+                     finite_optional(r.direct_calculated_log10_east_west_ratio)
+                     for r in rows)
+    n_bounds_only = sum((not finite_optional(r.direct_calculated_log10_east_west_ratio))
+                        and finite_optional(r.direct_bound_midpoint_log10_east_west_ratio)
+                        for r in rows)
+    n_cutoff = sum(finite_optional(r.cutoff_proxy_log10_east_west_ratio) for r in rows)
+    plotted_calculated = (len(groups["direct_accepted"]) +
+                          len(groups["direct_unaccepted"]))
+    result = {
+        "direct_calculated_rows": n_calculated,
+        "direct_plotted_rows": plotted_calculated,
+        "direct_accepted_rows": n_accepted,
+        "direct_accepted_plotted_rows": len(groups["direct_accepted"]),
+        "direct_unaccepted_plotted_rows": len(groups["direct_unaccepted"]),
+        "direct_bounds_only_rows": n_bounds_only,
+        "direct_bounds_only_plotted_rows": len(groups["direct_bounds_only"]),
+        "cutoff_diagnostic_rows": n_cutoff,
+        "cutoff_diagnostic_plotted_rows": len(groups["cutoff_diagnostic"]),
+    }
+    result["consistent"] = bool(
+        n_calculated == plotted_calculated and
+        n_accepted == len(groups["direct_accepted"]) and
+        n_bounds_only == len(groups["direct_bounds_only"]) and
+        n_cutoff == len(groups["cutoff_diagnostic"]))
+    return result
+
+
 def map_direction_to_detector_look(
         direction: Tuple[float, float, float], mapping: str
         ) -> Tuple[float, float, float]:
@@ -3429,6 +3551,53 @@ def evaluate_reference_row(
     spectrum_provenance_status = spectrum_provenance_status_for_fold(
         spectrum, west_fold, max_unresolved_aperture_fraction)
 
+    # ------------------------------------------------------------------
+    # Preserve the DIRECT_ACCESS information hierarchy BEFORE scientific
+    # acceptance is applied.  This is intentionally independent of ``status``.
+    #
+    # ``direct_calculated_*`` exists only when the direct detector fold itself
+    # produced finite EAST and WEST central observables.  A later bound-width or
+    # guardrail gate may still reject that scalar.  Conversely, when trajectory
+    # uncertainty prevents a central fold, finite rigorous bounds can still yield
+    # ``direct_bound_midpoint_*`` for plotting-only diagnostics.
+    # ------------------------------------------------------------------
+    direct_calculated_ratio: Optional[float] = None
+    direct_calculated_log_ratio: Optional[float] = None
+    if (east_observable is not None and west_observable is not None and
+            math.isfinite(float(east_observable)) and
+            math.isfinite(float(west_observable)) and
+            float(east_observable) >= 0.0 and float(west_observable) > 0.0):
+        direct_calculated_ratio = float(east_observable) / float(west_observable)
+        if (direct_calculated_ratio > 0.0 and
+                math.isfinite(direct_calculated_ratio)):
+            direct_calculated_log_ratio = math.log10(direct_calculated_ratio)
+
+    direct_bound_midpoint_log_ratio: Optional[float] = None
+    direct_bound_midpoint_ratio: Optional[float] = None
+    if (log_ratio_min is not None and log_ratio_max is not None and
+            math.isfinite(float(log_ratio_min)) and
+            math.isfinite(float(log_ratio_max))):
+        direct_bound_midpoint_log_ratio = 0.5 * (
+            float(log_ratio_min) + float(log_ratio_max))
+        direct_bound_midpoint_ratio = 10.0 ** direct_bound_midpoint_log_ratio
+
+    # Numerical trajectory resolution is evaluated separately from the observable
+    # width.  Keeping these booleans explicit prevents a broad E/W uncertainty band
+    # from being confused with a high unresolved-trajectory fraction.
+    direct_trajectory_resolution_passed = bool(
+        east_fold.unresolved_weight_fraction <=
+            max_unresolved_aperture_fraction + 1.0e-14 and
+        west_fold.unresolved_weight_fraction <=
+            max_unresolved_aperture_fraction + 1.0e-14 and
+        east_fold.discrete_transition_weight_fraction <=
+            max_discrete_transition_fraction + 1.0e-14 and
+        west_fold.discrete_transition_weight_fraction <=
+            max_discrete_transition_fraction + 1.0e-14)
+    direct_observable_width_passed = bool(
+        max_ratio_bound_width_log10 < 0.0 or
+        (ratio_bound_width_log10 is not None and
+         ratio_bound_width_log10 <= max_ratio_bound_width_log10 + 1.0e-14))
+
     ratio: Optional[float]
     log_ratio: Optional[float]
     residual: Optional[float]
@@ -3536,6 +3705,21 @@ def evaluate_reference_row(
             else:
                 status = "VALID"
 
+    # ``modeled_*`` below remains the accepted scientific value for backward
+    # compatibility.  The direct-calculated value above is retained even when this
+    # final acceptance is false.  A normal C19 run does not execute the separate
+    # trace/dt/energy/angular convergence campaign, so its convergence state is
+    # explicitly NOT_TESTED rather than FAIL.  This prevents an unexecuted Stage-D
+    # study from erasing otherwise useful direct calculations from diagnostics.
+    direct_scalar_available = bool(
+        direct_calculated_log_ratio is not None and
+        math.isfinite(float(direct_calculated_log_ratio)))
+    direct_scalar_accepted = bool(
+        status in QUANTITATIVE_MODEL_STATUSES and
+        log_ratio is not None and math.isfinite(float(log_ratio)))
+    direct_convergence_status = "NOT_TESTED"
+    direct_acceptance_reason = ("ACCEPTED" if direct_scalar_accepted else status)
+
     orientation_sources = sorted({
         rec.source for rec in (east_orientation, west_orientation) if rec is not None})
     orientation_source = (";".join(orientation_sources) if orientation_sources
@@ -3548,6 +3732,16 @@ def evaluate_reference_row(
         observed_log10_east_west_ratio=reference.log10_east_west_ratio,
         modeled_east_west_ratio=ratio,
         modeled_log10_east_west_ratio=log_ratio,
+        direct_calculated_east_west_ratio=direct_calculated_ratio,
+        direct_calculated_log10_east_west_ratio=direct_calculated_log_ratio,
+        direct_bound_midpoint_east_west_ratio=direct_bound_midpoint_ratio,
+        direct_bound_midpoint_log10_east_west_ratio=direct_bound_midpoint_log_ratio,
+        direct_scalar_available=direct_scalar_available,
+        direct_scalar_accepted=direct_scalar_accepted,
+        direct_trajectory_resolution_passed=direct_trajectory_resolution_passed,
+        direct_observable_width_passed=direct_observable_width_passed,
+        direct_convergence_status=direct_convergence_status,
+        direct_acceptance_reason=direct_acceptance_reason,
         modeled_east_west_ratio_min=ratio_min,
         modeled_east_west_ratio_max=ratio_max,
         modeled_log10_east_west_ratio_min=log_ratio_min,
@@ -3917,9 +4111,9 @@ def model_coverage_rows(
     The comparison plot historically contained only timestamps that reached ModelRow
     construction.  A failed AMPS launch or a post-processing exception therefore looked
     like a shorter observation interval rather than a missing model result.  This table
-    makes the requested-vs-produced coverage explicit and distinguishes four useful
-    levels: accepted direct scalar, direct bounds only, cutoff-midpoint diagnostic only,
-    and no model row at all.
+    makes the requested-vs-produced coverage explicit and distinguishes the useful
+    levels: accepted direct scalar, calculated-but-not-accepted direct scalar, direct
+    bounds only, cutoff-midpoint diagnostic only, and no model row at all.
     """
     lookup = {
         (row.utc, row.spacecraft, row.channel, row.solver, row.field_model): row
@@ -3935,27 +4129,27 @@ def model_coverage_rows(
                 if row is None:
                     level = "NO_MODEL_ROW"
                     status = "MISSING_RUN_OR_POSTPROCESS_RESULT"
-                    accepted = bounds = proxy = proxy_bounds = False
+                    accepted = calculated = bounds = midpoint = proxy = proxy_bounds = False
                     east_unresolved = west_unresolved = None
                 else:
-                    accepted = (
-                        row.modeled_log10_east_west_ratio is not None and
-                        math.isfinite(float(row.modeled_log10_east_west_ratio)))
+                    accepted = bool(row.direct_scalar_accepted)
+                    calculated = finite_optional(row.direct_calculated_log10_east_west_ratio)
                     bounds = (
                         row.modeled_log10_east_west_ratio_min is not None and
                         row.modeled_log10_east_west_ratio_max is not None)
-                    proxy = (
-                        row.cutoff_proxy_log10_east_west_ratio is not None and
-                        math.isfinite(float(row.cutoff_proxy_log10_east_west_ratio)))
+                    midpoint = finite_optional(row.direct_bound_midpoint_log10_east_west_ratio)
+                    proxy = finite_optional(row.cutoff_proxy_log10_east_west_ratio)
                     proxy_bounds = (
                         row.cutoff_proxy_log10_east_west_ratio_min is not None and
                         row.cutoff_proxy_log10_east_west_ratio_max is not None)
                     if accepted:
-                        level = "ACCEPTED_DIRECT_SCALAR"
+                        level = "DIRECT_ACCEPTED"
+                    elif calculated:
+                        level = "DIRECT_CALCULATED_NOT_ACCEPTED"
                     elif bounds:
                         level = "DIRECT_BOUNDS_ONLY"
                     elif proxy:
-                        level = "CUTOFF_MIDPOINT_DIAGNOSTIC_ONLY"
+                        level = "CUTOFF_DIAGNOSTIC_ONLY"
                     else:
                         level = "MODEL_ROW_WITHOUT_RATIO_RESULT"
                     status = row.status
@@ -3971,7 +4165,9 @@ def model_coverage_rows(
                     "result_level": level,
                     "status": status,
                     "accepted_direct_scalar": accepted,
+                    "direct_calculated_scalar_available": calculated,
                     "direct_bounds_available": bounds,
+                    "direct_bound_midpoint_diagnostic_available": midpoint,
                     "cutoff_midpoint_diagnostic_available": proxy,
                     "cutoff_bounds_available": proxy_bounds,
                     "east_unresolved_fraction": east_unresolved,
@@ -4071,6 +4267,306 @@ def aperture_availability_rows(rows: Sequence[ModelRow]) -> List[Dict[str, objec
             })
     return result
 
+
+
+def _seed_detector_weight_fractions(
+        seed_energies_mev: Sequence[float], spectrum: SpectrumEstimate,
+        response: Sequence[ResponseInterval], channel: str,
+        ) -> Dict[float, float]:
+    """Return normalized detector/spectrum weights on the common DIRECT_ACCESS seeds.
+
+    The rigidity-classification plot needs a compact indication of *where* the detector
+    gets its signal in energy.  Plotting ``G(E)`` alone is misleading because the SEP
+    spectrum can vary by orders of magnitude across P4/P5, while evaluating ``J(E)G(E)``
+    at isolated nodes would depend on arbitrary grid spacing.  Instead we use the same
+    exact interval integral as the production fold and attribute half of every interval
+    to each endpoint.  The resulting node weights sum to one and are therefore directly
+    comparable between dense and adaptive DIRECT_ACCESS runs.
+
+    Only the mandatory common seed grid is used.  Direction-specific adaptive midpoint
+    samples are intentionally excluded from this axis diagnostic: they are chosen by the
+    access topology and would otherwise make a heavily refined direction appear to carry
+    more detector response merely because it was sampled more often.
+    """
+    energies = sorted({float(value) for value in seed_energies_mev if value > 0.0})
+    if len(energies) < 2:
+        return {energy: 0.0 for energy in energies}
+    weights = {energy: 0.0 for energy in energies}
+    for left, right in zip(energies[:-1], energies[1:]):
+        interval = integrate_spectrum_response(spectrum, response, channel, left, right)
+        if interval <= 0.0:
+            continue
+        weights[left] += 0.5 * interval
+        weights[right] += 0.5 * interval
+    total = sum(weights.values())
+    if total <= 0.0:
+        return {energy: 0.0 for energy in energies}
+    return {energy: value / total for energy, value in weights.items()}
+
+
+def access_classification_by_rigidity_rows(
+        reference: ReferenceRow, direction_map: DirectionMap,
+        access_cube: DirectionalAccessCube, manifest: Mapping[str, object],
+        spectrum: SpectrumEstimate, detector_response: Sequence[ResponseInterval],
+        seed_energies_mev: Sequence[float], tilt_rad: float,
+        orientation_model: str, orientation_by_head: Mapping[str, OrientationRecord],
+        orientation_yaw_deg: float, orientation_pitch_deg: float,
+        anisotropy: AnisotropyConfig, solver: str, field_model: str,
+        direction_mapping: str = PRODUCTION_DIRECTION_MAPPING,
+        ) -> List[Dict[str, object]]:
+    """Build the Stage-A rigidity-resolved access-classification diagnostic.
+
+    Each output row answers a deliberately local question: at one *mandatory seed
+    rigidity* and within one physical EAST/WEST detector aperture, what fraction of the
+    sampled solid angle is ALLOWED, physically FORBIDDEN, or UNRESOLVED?  This differs
+    from ``C19_aperture_termination_budget.csv``, which integrates over energy using the
+    detector response.  The two products are complementary:
+
+    * this table locates the problematic rigidity interval;
+    * the termination budget says how much that interval matters to the final detector
+      signal after the response/spectrum fold.
+
+    The angular classification fractions are geometric solid-angle fractions.  They do
+    not multiply by the optional source anisotropy because doing so would turn a
+    trajectory-classification diagnostic into a source-model diagnostic.  A separate
+    ``source_weighted_*`` set is nevertheless provided for advanced anisotropy studies.
+
+    Adaptive DIRECT_ACCESS can contain different refinement nodes in different sky
+    directions.  The diagnostic therefore samples only ``seed_energies_mev``, which are
+    guaranteed by the cube-completeness contract to exist in every selected direction.
+    This produces an apples-to-apples rigidity axis and makes the plot stable when the
+    adaptive refinement depth changes.
+    """
+    channel_cfg = manifest["channels"][reference.channel]
+    equatorial_half_angle = float(channel_cfg["equatorial_half_angle_deg"])
+    north_south_half_angle = float(channel_cfg["north_south_half_angle_deg"])
+    if direction_map.frame.upper().startswith("SM"):
+        position_map = gsm_to_sm(
+            (direction_map.x_km, direction_map.y_km, direction_map.z_km), tilt_rad)
+    else:
+        position_map = (direction_map.x_km, direction_map.y_km, direction_map.z_km)
+
+    detector_weights = _seed_detector_weight_fractions(
+        seed_energies_mev, spectrum, detector_response, reference.channel)
+    seed_pairs = [
+        (float(energy), rigidity_gv_from_kinetic_energy_mev(float(energy)))
+        for energy in sorted(detector_weights)
+    ]
+
+    # The parser rounds sky coordinates to nine decimal places, exactly as the
+    # direction-map/access pairing guard does elsewhere in this runner.  Reuse that
+    # convention so classification diagnostics cannot silently mix neighbouring cells.
+    rows: List[Dict[str, object]] = []
+    orientation_lookup = {key.upper(): value for key, value in orientation_by_head.items()}
+    head_detector_ids = {
+        "EAST": reference.east_detector_id.upper(),
+        "WEST": reference.west_detector_id.upper(),
+    }
+
+    for head in ("EAST", "WEST"):
+        orientation_record = orientation_lookup.get(head_detector_ids[head])
+        if orientation_model.upper() == "FILE" and orientation_record is None:
+            raise ValueError(
+                "FILE detector orientation lacks %s record for %s %s" %
+                (head_detector_ids[head], reference.spacecraft, format_utc(reference.utc)))
+        boresight, horizontal, vertical = detector_basis(
+            position_map, head, orientation_model, orientation_record,
+            direction_map.frame, tilt_rad, orientation_yaw_deg, orientation_pitch_deg)
+
+        # Cache every sky direction that really belongs to this physical head.  The
+        # location-aware Mode3D pruning may retain a conservative union for P4/P5, so
+        # the postprocessor must always apply the channel-specific aperture again.
+        selected: List[Tuple[float, float, Tuple[AccessSample, ...], float, float]] = []
+        for key, samples in access_cube.samples.items():
+            lon, lat = key
+            arrival = spherical_direction(lon, lat)
+            look = map_direction_to_detector_look(arrival, direction_mapping)
+            coords = aperture_coordinates(look, boresight, horizontal, vertical)
+            if coords is None:
+                continue
+            alpha_h, alpha_v = coords
+            if ((alpha_h / equatorial_half_angle) ** 2 +
+                    (alpha_v / north_south_half_angle) ** 2) > 1.0 + 1.0e-12:
+                continue
+            geometric_weight = max(0.0, math.cos(math.radians(lat)))
+            source_weight = geometric_weight * anisotropy_factor(arrival, anisotropy)
+            selected.append((lon, lat, samples, geometric_weight, source_weight))
+
+        for energy, rigidity in seed_pairs:
+            geometric_totals = {"allowed": 0.0, "forbidden": 0.0, "unresolved": 0.0}
+            source_totals = {"allowed": 0.0, "forbidden": 0.0, "unresolved": 0.0}
+            termination_totals: Dict[str, float] = {
+                "OUTER_BOUNDARY_ALLOWED": 0.0,
+                "INNER_BOUNDARY_FORBIDDEN": 0.0,
+                "MAGNETICALLY_TRAPPED_FORBIDDEN": 0.0,
+                "DRIFT_TRAPPED_FORBIDDEN": 0.0,
+                "TIME_LIMIT": 0.0,
+                "STEP_LIMIT": 0.0,
+                "DISTANCE_LIMIT": 0.0,
+                "OTHER": 0.0,
+            }
+            total_geometric = total_source = 0.0
+            matched_cells = 0
+
+            for _lon, _lat, samples, geometric_weight, source_weight in selected:
+                # Mandatory seed rigidities are represented in every adaptive curve,
+                # but compare in rigidity rather than reconstructed energy because
+                # rigidity is the value that AMPS actually receives and floating-point
+                # energy round trips differ slightly between Python and C++ constants.
+                match = min(samples, key=lambda sample: abs(sample.rigidity_gv - rigidity))
+                # Production cubes have already passed the much stricter requested-
+                # grid validation above.  Use a slightly looser matcher here so this
+                # diagnostic also works on historical/hand-written Tecplot files whose
+                # rigidity columns were printed with ``%g`` precision.  The tolerance
+                # is still orders of magnitude smaller than the spacing of C19 seed
+                # rigidities, so it cannot alias adjacent energy nodes.
+                tol = 1.0e-5 * max(1.0, abs(rigidity))
+                if abs(match.rigidity_gv - rigidity) > tol:
+                    continue
+                matched_cells += 1
+                total_geometric += geometric_weight
+                total_source += source_weight
+                category = ("allowed" if match.state == 1 else
+                            "forbidden" if match.state == 0 else "unresolved")
+                geometric_totals[category] += geometric_weight
+                source_totals[category] += source_weight
+                reason = match.termination
+                if reason not in termination_totals:
+                    reason = "OTHER"
+                termination_totals[reason] += geometric_weight
+
+            if total_geometric <= 0.0:
+                continue
+            def frac(values: Mapping[str, float], key: str, total: float) -> float:
+                return values[key] / total if total > 0.0 else 0.0
+            term_frac = {
+                key: value / total_geometric for key, value in termination_totals.items()
+            }
+            rows.append({
+                "utc": format_utc(reference.utc),
+                "spacecraft": reference.spacecraft,
+                "channel": reference.channel,
+                "solver": solver,
+                "field_model": field_model,
+                "aperture": head,
+                "energy_mev": energy,
+                "rigidity_gv": rigidity,
+                "allowed_fraction": frac(geometric_totals, "allowed", total_geometric),
+                "physical_forbidden_fraction": frac(
+                    geometric_totals, "forbidden", total_geometric),
+                "unresolved_fraction": frac(
+                    geometric_totals, "unresolved", total_geometric),
+                "source_weighted_allowed_fraction": frac(
+                    source_totals, "allowed", total_source),
+                "source_weighted_physical_forbidden_fraction": frac(
+                    source_totals, "forbidden", total_source),
+                "source_weighted_unresolved_fraction": frac(
+                    source_totals, "unresolved", total_source),
+                "detector_weight_fraction": detector_weights.get(energy, 0.0),
+                "outer_boundary_allowed_fraction": term_frac["OUTER_BOUNDARY_ALLOWED"],
+                "inner_boundary_forbidden_fraction": term_frac["INNER_BOUNDARY_FORBIDDEN"],
+                "magnetically_trapped_forbidden_fraction": term_frac[
+                    "MAGNETICALLY_TRAPPED_FORBIDDEN"],
+                "drift_trapped_forbidden_fraction": term_frac["DRIFT_TRAPPED_FORBIDDEN"],
+                "time_limit_fraction": term_frac["TIME_LIMIT"],
+                "step_limit_fraction": term_frac["STEP_LIMIT"],
+                "distance_limit_fraction": term_frac["DISTANCE_LIMIT"],
+                "other_termination_fraction": term_frac["OTHER"],
+                "selected_aperture_cells": len(selected),
+                "matched_seed_cells": matched_cells,
+                "seed_cell_coverage_fraction": (
+                    matched_cells / float(len(selected)) if selected else 0.0),
+                "classification_weighting": "GEOMETRIC_SOLID_ANGLE",
+                "detector_weight_definition": (
+                    "NORMALIZED_ENDPOINT_SHARE_OF_EXACT_J_TIMES_G_INTERVAL_INTEGRALS"),
+            })
+    return rows
+
+
+def make_access_classification_plots(
+        rows: Sequence[Mapping[str, object]], output_root: Path,
+        ) -> List[str]:
+    """Plot Stage-A allowed/forbidden/unresolved fractions versus proton rigidity.
+
+    This intentionally restores the diagnostic family that exposed the original C19
+    failure mechanism.  The left axis shows the trajectory classification over the
+    actual physical aperture.  The dotted right-axis curve shows the normalized
+    detector/spectrum weight on the common seed grid, making it obvious whether an
+    unresolved rigidity interval is important to the final P4/P5 synthetic signal.
+
+    The plot never participates in acceptance; it is diagnostic evidence only.  Every
+    selected epoch/spacecraft/channel/solver/model case receives its own file so a later
+    plotting or packaging change cannot silently reduce coverage to the first case.
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        print("C19 access-classification plotting skipped: %s" % exc, file=sys.stderr)
+        return []
+    if not rows:
+        return []
+
+    grouped: Dict[Tuple[str, str, str, str, str], List[Mapping[str, object]]] = {}
+    for row in rows:
+        key = (str(row["utc"]), str(row["spacecraft"]), str(row["channel"]),
+               str(row["solver"]), str(row["field_model"]))
+        grouped.setdefault(key, []).append(row)
+
+    # Detect the rare case in which more than one solver/model is being plotted for
+    # the same observational case.  Preserve the historical concise filename when it
+    # is unique; append solver/model only when needed to prevent overwriting.
+    observational_counts: Dict[Tuple[str, str, str], int] = {}
+    for utc, spacecraft, channel, _solver, _model in grouped:
+        observational_counts[(utc, spacecraft, channel)] = (
+            observational_counts.get((utc, spacecraft, channel), 0) + 1)
+
+    outputs: List[str] = []
+    for (utc, spacecraft, channel, solver, field_model), case_rows in sorted(grouped.items()):
+        fig, axes = plt.subplots(2, 1, figsize=(10.0, 8.0), sharex=True)
+        fig.suptitle("C19 access classification: %s %s %s" %
+                     (spacecraft, channel, utc))
+        for axis, head in zip(axes, ("EAST", "WEST")):
+            subset = sorted(
+                (row for row in case_rows if str(row["aperture"]).upper() == head),
+                key=lambda row: float(row["rigidity_gv"]))
+            if not subset:
+                axis.set_title(head + " (no classification rows)")
+                continue
+            x = [float(row["rigidity_gv"]) for row in subset]
+            allowed = [float(row["allowed_fraction"]) for row in subset]
+            forbidden = [float(row["physical_forbidden_fraction"]) for row in subset]
+            unresolved = [float(row["unresolved_fraction"]) for row in subset]
+            detector_weight = [float(row["detector_weight_fraction"]) for row in subset]
+            axis.plot(x, allowed, marker="o", label="Allowed")
+            axis.plot(x, forbidden, marker="s", label="Physical forbidden")
+            axis.plot(x, unresolved, marker="^", label="Unresolved")
+            axis.set_xscale("log")
+            axis.set_ylim(-0.03, 1.03)
+            axis.set_ylabel("classification fraction")
+            axis.set_title(head)
+            axis.grid(True, alpha=0.3)
+            axis.legend(loc="best")
+
+            weight_axis = axis.twinx()
+            weight_axis.plot(x, detector_weight, linestyle=":", linewidth=1.5,
+                             label="Detector/spectrum weight")
+            weight_axis.set_ylabel("detector-weight fraction")
+            # Weight is a normalized fraction, but leave a little headroom so the
+            # curve is readable even when one seed carries most of the channel signal.
+            max_weight = max(detector_weight) if detector_weight else 0.0
+            weight_axis.set_ylim(0.0, max(0.05, 1.08 * max_weight))
+        axes[-1].set_xlabel("Proton rigidity (GV)")
+        fig.tight_layout()
+
+        base = "C19_access_classification_%s_%s_%s" % (
+            spacecraft.lower(), channel.lower(), timestamp_token(parse_utc(utc)))
+        if observational_counts[(utc, spacecraft, channel)] > 1:
+            base += "_%s_%s" % (solver.lower(), field_model.lower())
+        path = output_root / (base + ".png")
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        outputs.append(str(path))
+    return outputs
 
 def aperture_termination_budget_rows(rows: Sequence[ModelRow]) -> List[Dict[str, object]]:
     """Return the compact Phase-0 response-weighted termination budget per head.
@@ -4196,6 +4692,25 @@ def make_comparison_plots(
                       label="GOES observed")
             axis.plot(times, modeled, marker="x", markersize=3, linewidth=1.2,
                       label="AMPS direct A(E,Omega) (accepted)")
+
+            # A numerically calculated direct scalar must remain visible even when a
+            # later scientific gate rejects it (for example because the rigorous
+            # direct E/W interval is too wide).  Open orange circles encode that
+            # middle information level: calculated, but not accepted.  They are not
+            # connected by a line because gaps often carry meaningful rejection
+            # reasons and connecting across them would imply an accepted time series.
+            unaccepted_direct_rows = [
+                row for row in panel
+                if (not row.direct_scalar_accepted and
+                    finite_optional(row.direct_calculated_log10_east_west_ratio))]
+            if unaccepted_direct_rows:
+                axis.scatter(
+                    [parse_utc(row.utc) for row in unaccepted_direct_rows],
+                    [float(row.direct_calculated_log10_east_west_ratio)
+                     for row in unaccepted_direct_rows],
+                    marker="o", facecolors="none", edgecolors="tab:orange", s=32,
+                    label="AMPS direct A(E,Omega) (calculated, not accepted)")
+
             axis.plot(times, cutoff_proxy, marker="s", markersize=3, linewidth=1.0,
                       color="tab:green", linestyle="--",
                       label="AMPS equivalent-cutoff midpoint (diagnostic only)")
@@ -4205,21 +4720,16 @@ def make_comparison_plots(
             # *open* marker only for rows without an accepted scalar.  It supplies a
             # visual location for the modeled bounds at every resolvable epoch without
             # changing ModelRow.status or the acceptance metrics.
-            direct_midpoint_times: List[datetime] = []
-            direct_midpoint_values: List[float] = []
-            for row in panel:
-                if row.modeled_log10_east_west_ratio is not None:
-                    continue
-                lo = row.modeled_log10_east_west_ratio_min
-                hi = row.modeled_log10_east_west_ratio_max
-                if (lo is not None and hi is not None and
-                        math.isfinite(float(lo)) and math.isfinite(float(hi))):
-                    direct_midpoint_times.append(parse_utc(row.utc))
-                    direct_midpoint_values.append(0.5 * (float(lo) + float(hi)))
-            if direct_midpoint_times:
+            direct_midpoint_rows = [
+                row for row in panel
+                if (not finite_optional(row.direct_calculated_log10_east_west_ratio) and
+                    finite_optional(row.direct_bound_midpoint_log10_east_west_ratio))]
+            if direct_midpoint_rows:
                 axis.scatter(
-                    direct_midpoint_times, direct_midpoint_values,
-                    marker="o", facecolors="none", edgecolors="tab:orange", s=28,
+                    [parse_utc(row.utc) for row in direct_midpoint_rows],
+                    [float(row.direct_bound_midpoint_log10_east_west_ratio)
+                     for row in direct_midpoint_rows],
+                    marker="D", facecolors="none", edgecolors="tab:orange", s=30,
                     label="AMPS direct-bound midpoint (diagnostic only)")
             axis.axhline(0.0, linewidth=0.8)
 
@@ -4234,6 +4744,10 @@ def make_comparison_plots(
             ]
             finite_for_limits = (list(observed) +
                                  [value for value in modeled if math.isfinite(value)] +
+                                 [float(row.direct_calculated_log10_east_west_ratio)
+                                  for row in unaccepted_direct_rows] +
+                                 [float(row.direct_bound_midpoint_log10_east_west_ratio)
+                                  for row in direct_midpoint_rows] +
                                  [value for value in cutoff_proxy if math.isfinite(value)] +
                                  interval_values)
             y_min, y_max = padded_limits(finite_for_limits, fraction=0.10, min_pad=0.05)
@@ -4351,46 +4865,88 @@ def make_comparison_plots(
         plt.close(fig)
         outputs.append(str(path))
 
-        finite = [row for row in subset if row.status in QUANTITATIVE_MODEL_STATUSES
-                  and row.modeled_log10_east_west_ratio is not None
-                  and math.isfinite(float(row.modeled_log10_east_west_ratio))]
-        finite_proxy = [row for row in subset
-                        if row.cutoff_proxy_log10_east_west_ratio is not None
-                        and math.isfinite(float(row.cutoff_proxy_log10_east_west_ratio))]
-        if finite or finite_proxy:
-            # --------------------------------------------------------------
-            # Zoomed scatter: retain the accepted DIRECT_ACCESS scalar when it exists,
-            # but also show the explicitly diagnostic equivalent-cutoff midpoint.
-            # The latter is particularly useful when the direct result is available
-            # only as rigorous bounds, and it prevents this comparison family from
-            # disappearing merely because the conservative direct acceptance gate did
-            # its job.  Proxy points are never included in direct acceptance metrics.
-            # --------------------------------------------------------------
+        # ------------------------------------------------------------------
+        # Scalar comparison family.  Every figure below consumes the SAME canonical
+        # selector so a direct result cannot appear in parity but disappear from
+        # scatter (the regression that motivated this refactor).  Scientific metrics
+        # still use only accepted ``modeled_*`` values; open markers are diagnostics.
+        # ------------------------------------------------------------------
+        plot_groups = direct_plot_groups(subset)
+        accepted_direct = plot_groups["direct_accepted"]
+        unaccepted_direct = plot_groups["direct_unaccepted"]
+        bounds_only_direct = plot_groups["direct_bounds_only"]
+        finite_proxy = plot_groups["cutoff_diagnostic"]
+        scalar_plot_rows = (accepted_direct + unaccepted_direct +
+                            bounds_only_direct + finite_proxy)
+        if scalar_plot_rows:
+            color_by_spacecraft = {"GOES13": "tab:blue", "GOES15": "tab:orange"}
+
+            def draw_scalar_points(ax) -> None:
+                """Draw the four canonical comparison populations on one axis."""
+                for category, rows_for_category in (
+                        ("accepted", accepted_direct),
+                        ("unaccepted", unaccepted_direct),
+                        ("bounds", bounds_only_direct)):
+                    for spacecraft, channel in sorted({
+                            (row.spacecraft, row.channel) for row in rows_for_category}):
+                        group = [row for row in rows_for_category
+                                 if row.spacecraft == spacecraft and
+                                 row.channel == channel]
+                        marker = marker_by_spacecraft.get(spacecraft, "o")
+                        color = color_by_spacecraft.get(spacecraft, "tab:blue")
+                        if category == "accepted":
+                            y = [float(row.direct_calculated_log10_east_west_ratio)
+                                 for row in group]
+                            ax.scatter(
+                                [row.observed_log10_east_west_ratio for row in group], y,
+                                marker=marker, color=color, alpha=0.85,
+                                label="%s %s direct accepted" % (spacecraft, channel))
+                        elif category == "unaccepted":
+                            y = [float(row.direct_calculated_log10_east_west_ratio)
+                                 for row in group]
+                            ax.scatter(
+                                [row.observed_log10_east_west_ratio for row in group], y,
+                                marker=marker, facecolors="none", edgecolors=color,
+                                linewidths=1.4, alpha=0.9,
+                                label="%s %s direct calculated/not accepted" %
+                                      (spacecraft, channel))
+                        else:
+                            y = [float(row.direct_bound_midpoint_log10_east_west_ratio)
+                                 for row in group]
+                            ax.scatter(
+                                [row.observed_log10_east_west_ratio for row in group], y,
+                                marker="D", facecolors="none", edgecolors=color,
+                                linewidths=1.2, alpha=0.75,
+                                label="%s %s direct bounds midpoint" %
+                                      (spacecraft, channel))
+
+                for spacecraft, channel in sorted({
+                        (row.spacecraft, row.channel) for row in finite_proxy}):
+                    group = [row for row in finite_proxy
+                             if row.spacecraft == spacecraft and row.channel == channel]
+                    ax.scatter(
+                        [row.observed_log10_east_west_ratio for row in group],
+                        [float(row.cutoff_proxy_log10_east_west_ratio) for row in group],
+                        marker=marker_by_spacecraft.get(spacecraft, "o"),
+                        facecolors="none", edgecolors="tab:green",
+                        label="%s %s cutoff midpoint diagnostic" %
+                              (spacecraft, channel), alpha=0.75)
+
+            direct_scalar_rows = accepted_direct + unaccepted_direct
+            x_values = [row.observed_log10_east_west_ratio for row in scalar_plot_rows]
+            y_values = (
+                [float(row.direct_calculated_log10_east_west_ratio)
+                 for row in direct_scalar_rows] +
+                [float(row.direct_bound_midpoint_log10_east_west_ratio)
+                 for row in bounds_only_direct] +
+                [float(row.cutoff_proxy_log10_east_west_ratio)
+                 for row in finite_proxy])
+
+            # Zoomed scatter.  Open DIRECT_ACCESS markers are deliberately retained:
+            # they mean "calculated but not accepted" or "bounds only", not an
+            # accepted model value.
             fig, ax = plt.subplots(figsize=(6.4, 6.0))
-            for spacecraft, channel in sorted({(row.spacecraft, row.channel)
-                                               for row in finite}):
-                group = [row for row in finite
-                         if row.spacecraft == spacecraft and row.channel == channel]
-                ax.scatter([row.observed_log10_east_west_ratio for row in group],
-                           [float(row.modeled_log10_east_west_ratio) for row in group],
-                           marker=marker_by_spacecraft.get(spacecraft, "o"),
-                           label="%s %s direct" % (spacecraft, channel), alpha=0.8)
-            for spacecraft, channel in sorted({(row.spacecraft, row.channel)
-                                               for row in finite_proxy}):
-                group = [row for row in finite_proxy
-                         if row.spacecraft == spacecraft and row.channel == channel]
-                ax.scatter(
-                    [row.observed_log10_east_west_ratio for row in group],
-                    [float(row.cutoff_proxy_log10_east_west_ratio) for row in group],
-                    marker=marker_by_spacecraft.get(spacecraft, "o"),
-                    facecolors="none", edgecolors="tab:green",
-                    label="%s %s cutoff midpoint diagnostic" % (spacecraft, channel),
-                    alpha=0.75)
-            x_values = ([row.observed_log10_east_west_ratio for row in finite] +
-                        [row.observed_log10_east_west_ratio for row in finite_proxy])
-            y_values = ([float(row.modeled_log10_east_west_ratio) for row in finite] +
-                        [float(row.cutoff_proxy_log10_east_west_ratio)
-                         for row in finite_proxy])
+            draw_scalar_points(ax)
             x_min, x_max = padded_limits(x_values)
             y_min, y_max = padded_limits(y_values)
             ax.set_xlim(x_min, x_max)
@@ -4405,10 +4961,10 @@ def make_comparison_plots(
                         transform=ax.transAxes, va="top")
             ax.set_xlabel("Observed log10(E/W)")
             ax.set_ylabel("Modeled/diagnostic log10(E/W)")
-            ax.set_title("C19A %s %s comparison (direct + cutoff diagnostic)" %
+            ax.set_title("C19A %s %s comparison (direct availability + cutoff diagnostic)" %
                          (solver, model))
             ax.grid(True, alpha=0.3)
-            ax.legend()
+            ax.legend(fontsize="small")
             fig.tight_layout()
             path = output_root / ("C19_scatter_%s_%s.png" %
                                   (solver.lower(), model.lower()))
@@ -4416,40 +4972,23 @@ def make_comparison_plots(
             plt.close(fig)
             outputs.append(str(path))
 
-            # Parity plot: common range is deliberately retained here so the
-            # geometric distance from the 1:1 line is visually meaningful.
+            # Parity plot uses the exact same selected row populations but a common
+            # x/y range so geometric distance from the 1:1 line is meaningful.
             fig, ax = plt.subplots(figsize=(6.4, 6.0))
-            for spacecraft, channel in sorted({(row.spacecraft, row.channel)
-                                               for row in finite}):
-                group = [row for row in finite
-                         if row.spacecraft == spacecraft and row.channel == channel]
-                ax.scatter([row.observed_log10_east_west_ratio for row in group],
-                           [float(row.modeled_log10_east_west_ratio) for row in group],
-                           marker=marker_by_spacecraft.get(spacecraft, "o"),
-                           label="%s %s direct" % (spacecraft, channel), alpha=0.8)
-            for spacecraft, channel in sorted({(row.spacecraft, row.channel)
-                                               for row in finite_proxy}):
-                group = [row for row in finite_proxy
-                         if row.spacecraft == spacecraft and row.channel == channel]
-                ax.scatter(
-                    [row.observed_log10_east_west_ratio for row in group],
-                    [float(row.cutoff_proxy_log10_east_west_ratio) for row in group],
-                    marker=marker_by_spacecraft.get(spacecraft, "o"),
-                    facecolors="none", edgecolors="tab:green",
-                    label="%s %s cutoff midpoint diagnostic" % (spacecraft, channel),
-                    alpha=0.75)
+            draw_scalar_points(ax)
             all_values = x_values + y_values
-            common_min, common_max = padded_limits(all_values, fraction=0.05, min_pad=0.05)
+            common_min, common_max = padded_limits(
+                all_values, fraction=0.05, min_pad=0.05)
             ax.set_xlim(common_min, common_max)
             ax.set_ylim(common_min, common_max)
             ax.plot([common_min, common_max], [common_min, common_max],
                     linestyle="--", linewidth=1.0)
             ax.set_xlabel("Observed log10(E/W)")
             ax.set_ylabel("Modeled/diagnostic log10(E/W)")
-            ax.set_title("C19A %s %s parity view (direct + cutoff diagnostic)" %
+            ax.set_title("C19A %s %s parity view (direct availability + cutoff diagnostic)" %
                          (solver, model))
             ax.grid(True, alpha=0.3)
-            ax.legend()
+            ax.legend(fontsize="small")
             fig.tight_layout()
             path = output_root / ("C19_parity_%s_%s.png" %
                                   (solver.lower(), model.lower()))
@@ -4457,26 +4996,70 @@ def make_comparison_plots(
             plt.close(fig)
             outputs.append(str(path))
 
-            # Residuals expose temporal structure that can be hard to see when
-            # observed and modeled curves live on very different vertical scales.
-            # Accepted direct residuals and cutoff-midpoint diagnostic residuals are
-            # deliberately styled separately.
+            # Residuals retain the same hierarchy.  A bounds-only row is represented
+            # by its diagnostic midpoint plus the rigorous residual interval instead
+            # of inventing an accepted scalar.
             fig, axes = plt.subplots(len(panels), 1,
                                      figsize=(10.5, max(3.0, 2.3 * len(panels))),
                                      sharex=True, squeeze=False)
             for axis, (spacecraft, channel) in zip(axes[:, 0], panels):
-                group = sorted([row for row in finite
-                                if row.spacecraft == spacecraft and row.channel == channel],
-                               key=lambda row: row.utc)
-                if group:
-                    axis.plot([parse_utc(row.utc) for row in group],
-                              [float(row.residual_log10) for row in group],
-                              marker="o", markersize=3, linewidth=1.2,
-                              label="direct accepted")
-                proxy_group = sorted([row for row in finite_proxy
-                                      if row.spacecraft == spacecraft
-                                      and row.channel == channel],
-                                     key=lambda row: row.utc)
+                accepted_group = sorted([
+                    row for row in accepted_direct
+                    if row.spacecraft == spacecraft and row.channel == channel],
+                    key=lambda row: row.utc)
+                if accepted_group:
+                    axis.plot(
+                        [parse_utc(row.utc) for row in accepted_group],
+                        [float(row.direct_calculated_log10_east_west_ratio) -
+                         row.observed_log10_east_west_ratio
+                         for row in accepted_group],
+                        marker="o", markersize=3, linewidth=1.2,
+                        label="direct accepted")
+
+                unaccepted_group = sorted([
+                    row for row in unaccepted_direct
+                    if row.spacecraft == spacecraft and row.channel == channel],
+                    key=lambda row: row.utc)
+                if unaccepted_group:
+                    axis.scatter(
+                        [parse_utc(row.utc) for row in unaccepted_group],
+                        [float(row.direct_calculated_log10_east_west_ratio) -
+                         row.observed_log10_east_west_ratio
+                         for row in unaccepted_group],
+                        marker="o", facecolors="none", edgecolors="tab:orange",
+                        label="direct calculated/not accepted")
+
+                bounds_group = sorted([
+                    row for row in bounds_only_direct
+                    if row.spacecraft == spacecraft and row.channel == channel],
+                    key=lambda row: row.utc)
+                if bounds_group:
+                    times_b = [parse_utc(row.utc) for row in bounds_group]
+                    mid_b = [float(row.direct_bound_midpoint_log10_east_west_ratio) -
+                             row.observed_log10_east_west_ratio
+                             for row in bounds_group]
+                    axis.scatter(times_b, mid_b, marker="D", facecolors="none",
+                                 edgecolors="tab:orange",
+                                 label="direct bounds midpoint")
+                    finite_interval = [row for row in bounds_group
+                                       if finite_optional(row.modeled_log10_east_west_ratio_min)
+                                       and finite_optional(row.modeled_log10_east_west_ratio_max)]
+                    if finite_interval:
+                        axis.vlines(
+                            [parse_utc(row.utc) for row in finite_interval],
+                            [float(row.modeled_log10_east_west_ratio_min) -
+                             row.observed_log10_east_west_ratio
+                             for row in finite_interval],
+                            [float(row.modeled_log10_east_west_ratio_max) -
+                             row.observed_log10_east_west_ratio
+                             for row in finite_interval],
+                            color="tab:orange", alpha=0.45, linewidth=2.0,
+                            label="direct rigorous residual interval")
+
+                proxy_group = sorted([
+                    row for row in finite_proxy
+                    if row.spacecraft == spacecraft and row.channel == channel],
+                    key=lambda row: row.utc)
                 if proxy_group:
                     axis.plot(
                         [parse_utc(row.utc) for row in proxy_group],
@@ -5459,6 +6042,47 @@ def self_test() -> int:
                                   direction_map.x_km, direction_map.y_km,
                                   direction_map.z_km, direct_cells)
 
+        # Stage-A rigidity-classification regression.  The synthetic cube is designed
+        # so production arrival->look mapping makes EAST forbidden at the low-energy
+        # seeds while WEST is allowed everywhere.  Verify both the machine-readable
+        # classification table and the restored per-case PNG path.  This protects
+        # against the packaging regression in which the Stage-A plot family vanished
+        # even though the direct access cube still contained all required information.
+        classification_rows = access_classification_by_rigidity_rows(
+            reference, direct_map, access_cube, manifest, test_spectrum, test_response,
+            (15.0, 25.0, 40.0, 82.0, 100.0, 150.0), 0.0,
+            "SM_PROXY", {}, 0.0, 0.0, AnisotropyConfig(), "GRIDDED", "T05")
+        if len(classification_rows) != 12:
+            raise AssertionError(
+                "rigidity-resolved access classification did not retain both heads/seeds: "
+                "n=%d heads=%s energies=%s" % (
+                    len(classification_rows),
+                    sorted({str(row["aperture"]) for row in classification_rows}),
+                    sorted({float(row["energy_mev"]) for row in classification_rows})) +
+                " map=(%s,%g,%g,%g) cube_keys=%s ref_heads=%s/%s" % (
+                    direct_map.frame, direct_map.x_km, direct_map.y_km, direct_map.z_km,
+                    sorted(access_cube.samples), reference.east_detector_id,
+                    reference.west_detector_id) +
+                " aperture=%s" % manifest["channels"][reference.channel])
+        east_low = next(row for row in classification_rows
+                        if row["aperture"] == "EAST" and
+                        math.isclose(float(row["energy_mev"]), 15.0))
+        west_low = next(row for row in classification_rows
+                        if row["aperture"] == "WEST" and
+                        math.isclose(float(row["energy_mev"]), 15.0))
+        if not (math.isclose(float(east_low["physical_forbidden_fraction"]), 1.0,
+                             abs_tol=1.0e-12) and
+                math.isclose(float(west_low["allowed_fraction"]), 1.0,
+                             abs_tol=1.0e-12)):
+            raise AssertionError(
+                "rigidity-resolved classification did not preserve direct access states")
+        detector_weight_sum = sum(
+            float(row["detector_weight_fraction"]) for row in classification_rows
+            if row["aperture"] == "EAST")
+        if not math.isclose(detector_weight_sum, 1.0, rel_tol=0.0, abs_tol=1.0e-12):
+            raise AssertionError(
+                "classification detector/spectrum weights are not normalized")
+
         # Aperture-availability regressions.  Fully allowed/forbidden synthetic
         # cubes must remain physical states, not missing-data states, and both heads
         # must be evaluated independently.
@@ -5631,6 +6255,41 @@ def self_test() -> int:
             raise AssertionError(
                 "cutoff-rigidity diagnostic was not retained beside an invalid direct scalar")
 
+        # Calculated-vs-accepted regression.  Permit the direct fold to construct a
+        # central scalar, then deliberately make the final rigorous E/W bound-width
+        # gate impossible to satisfy.  The accepted modeled_* value must disappear,
+        # but the calculated direct scalar must remain serialized and plot-visible.
+        calculated_not_accepted, _ = evaluate_reference_row(
+            reference, direct_map, manifest, "GRIDDED", "T05", test_spectrum,
+            test_response, access_cube, 0.0, PRODUCTION_DIRECTION_MAPPING,
+            "DIRECT_ACCESS", "UNRESOLVED", 1.0, 1.0, 300.0,
+            max_ratio_bound_width_log10=0.0)
+        if calculated_not_accepted.status != "INCONCLUSIVE_DIRECT_BOUND_WIDTH":
+            raise AssertionError(
+                "synthetic calculated/not-accepted direct row did not trip bound-width gate")
+        if (not calculated_not_accepted.direct_scalar_available or
+                calculated_not_accepted.direct_scalar_accepted or
+                calculated_not_accepted.direct_calculated_log10_east_west_ratio is None or
+                calculated_not_accepted.modeled_log10_east_west_ratio is not None):
+            raise AssertionError(
+                "calculated direct scalar was not preserved independently of acceptance")
+
+        plotting_groups = direct_plot_groups([
+            model, calculated_not_accepted, invalid_direct_model,
+            unresolved_proxy_model])
+        if model not in plotting_groups["direct_accepted"]:
+            raise AssertionError("accepted direct row disappeared from canonical plot selector")
+        if calculated_not_accepted not in plotting_groups["direct_unaccepted"]:
+            raise AssertionError(
+                "calculated/not-accepted direct row disappeared from canonical plot selector")
+        if invalid_direct_model not in plotting_groups["direct_bounds_only"]:
+            raise AssertionError("bounds-only direct row disappeared from canonical plot selector")
+        plot_counts = plot_consistency_summary([
+            model, calculated_not_accepted, invalid_direct_model,
+            unresolved_proxy_model])
+        if not plot_counts["consistent"]:
+            raise AssertionError("canonical CSV/plot population consistency check failed")
+
         # Plotting regression.  Matplotlib is optional for C19 execution, so run this
         # only when it is installed.  The test is intentionally broad: comparison,
         # transmission, directional-cutoff, boundary-spectrum, and aperture figures are
@@ -5645,9 +6304,10 @@ def self_test() -> int:
             plot_root = root / "plot_regression"
             plot_root.mkdir(parents=True, exist_ok=True)
             comparison_paths = make_comparison_plots(
-                [model, invalid_direct_model], plot_root, [reference])
+                [model, calculated_not_accepted, invalid_direct_model],
+                plot_root, [reference])
             transmission_paths = make_transmission_plots(
-                [model, invalid_direct_model], plot_root)
+                [model, calculated_not_accepted, invalid_direct_model], plot_root)
             cutoff_plot_rows = directional_cutoff_rows(
                 unresolved_map, reference.utc, reference.spacecraft, "GRIDDED", "T05")
             cutoff_paths = make_directional_cutoff_plots(cutoff_plot_rows, plot_root)
@@ -5718,6 +6378,8 @@ def self_test() -> int:
             raise AssertionError("DIRECT_ACCESS aperture bounds produced no plot colors")
         direct_aperture = make_aperture_plot(
             direct_diagnostics, root / "C19_direct_aperture_diagnostic.png")
+        classification_plots = make_access_classification_plots(
+            classification_rows, root)
         cutoff_rows = directional_cutoff_rows(
             derived_cutoff_map, reference.utc, reference.spacecraft, "GRIDDED", "T05")
         cutoff_plots = make_directional_cutoff_plots(cutoff_rows, root)
@@ -5725,8 +6387,11 @@ def self_test() -> int:
             {reference.utc: test_spectrum}, test_response, [reference.utc],
             root / "C19_boundary_spectrum.png")
         if (not plots or aperture is None or direct_aperture is None
-                or not cutoff_plots or spectrum_plot is None):
+                or not classification_plots or not cutoff_plots or spectrum_plot is None):
             raise AssertionError("self-test did not generate plots")
+        if not any(Path(path).name.startswith("C19_access_classification_goes13_p4_")
+                   for path in classification_plots):
+            raise AssertionError("Stage-A access-classification plot family was not restored")
         expected_plot_names = {
             "C19_scatter_gridless_t05.png",
             "C19_parity_gridless_t05.png",
@@ -6248,6 +6913,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     commands: List[Dict[str, object]] = []
     model_rows: List[ModelRow] = []
     aperture_diagnostics: List[Dict[str, object]] = []
+    # Stage-A rigidity-resolved classification is intentionally retained for every
+    # modeled reference row. Unlike the legacy aperture_diagnostic list below, this
+    # must never stop after the first case: its primary purpose is to explain why one
+    # spacecraft/channel/epoch is resolved while another is not.
+    access_classification_diagnostics: List[Dict[str, object]] = []
     directional_cutoff_diagnostics: List[Dict[str, object]] = []
     # Diagnostic-only comparison of the production AMPS-arrival -> detector-look
     # conversion with the legacy direct-vector comparison.  Acceptance always
@@ -6601,6 +7271,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             args.max_direct_ratio_bound_width_log10)
                         model_rows.append(model)
 
+                        # Restore the Stage-A rigidity-resolved access diagnostic on
+                        # the *production* direction convention only. This is generated
+                        # from the same direct cube, detector attitude, channel FOV,
+                        # spectrum and response support used by the science fold, but it
+                        # remains a diagnostic and cannot alter ModelRow acceptance.
+                        # Every reference row is retained; do not use the historical
+                        # ``if not aperture_diagnostics`` first-case shortcut here.
+                        if access_cube is not None:
+                            access_classification_diagnostics.extend(
+                                access_classification_by_rigidity_rows(
+                                    reference_row, direction_map, access_cube, manifest,
+                                    spectrum, detector_response, access_energies, tilt,
+                                    args.detector_orientation_source, orientation_by_head,
+                                    args.orientation_yaw_deg, args.orientation_pitch_deg,
+                                    production_anisotropy, solver, field_model,
+                                    PRODUCTION_DIRECTION_MAPPING))
+
                         # Store one row per convention so the diagnostic can be
                         # filtered and summarized without rerunning AMPS.  The
                         # alternate result is never inserted into model_rows and
@@ -6705,6 +7392,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         key = (str(item["aperture"]), str(item["aperture_status"]))
         availability_counts[key] = availability_counts.get(key, 0) + 1
     write_dict_rows(output_root / "C19_aperture_samples.csv", aperture_diagnostics)
+    # One row per common rigidity seed, physical head and observational case. This is
+    # the machine-readable source for C19_access_classification_*.png and is written
+    # even when the direct scalar is scientifically inconclusive.
+    write_dict_rows(
+        output_root / "C19_access_classification_by_rigidity.csv",
+        access_classification_diagnostics)
     write_dict_rows(output_root / "C19_directional_cutoff.csv",
                     directional_cutoff_diagnostics)
     write_dict_rows(output_root / "C19_direction_sense_diagnostic.csv",
@@ -6754,6 +7447,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "aperture_diagnostic",
         lambda: make_aperture_plot(
             aperture_diagnostics, output_root / "C19_aperture_diagnostic.png"))
+    run_plot_family(
+        "access_classification_by_rigidity",
+        lambda: make_access_classification_plots(
+            access_classification_diagnostics, output_root))
+
+    # All scalar comparison figures consume direct_plot_groups().  Record the
+    # serialized-data/population counts beside the plot list so a future regression
+    # cannot silently hide calculated DIRECT_ACCESS values.  This check is intentionally
+    # independent of whether matplotlib is installed: it validates the canonical row
+    # selection contract itself, not PNG pixel output.
+    plot_consistency = plot_consistency_summary(model_rows)
+    if not bool(plot_consistency.get("consistent", False)):
+        plot_errors.append({
+            "family": "comparison_population_consistency",
+            "error": "canonical direct/cutoff plotting populations disagree with ModelRow fields",
+        })
 
     validity = pipeline_validity(
         model_rows, run_failures, args.max_unresolved_aperture_fraction,
@@ -6928,6 +7637,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "n_aperture_termination_budget_rows": len(termination_budget),
         "aperture_termination_budget_file": str(
             output_root / "C19_aperture_termination_budget.csv"),
+        "n_access_classification_by_rigidity_rows": len(
+            access_classification_diagnostics),
+        "access_classification_by_rigidity_file": str(
+            output_root / "C19_access_classification_by_rigidity.csv"),
         "n_run_failures": len(run_failures),
         "run_failures": run_failures,
         "metrics": [asdict(row) for row in metrics],
@@ -6953,6 +7666,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "passed": overall_passed,
         "plot_files": plot_paths,
         "plot_generation_errors": plot_errors,
+        "plot_consistency": plot_consistency,
         "limitations": [
             "The committed response CSV is a factorized nominal P4/P5 energy response plus elliptical angular FOV; replace it with a calibrated piecewise response for publication-grade instrument modeling.",
             "OBSERVED_WEST derives the common incident spectral shape from the less-shielded physical-WEST measurements; an independent upstream FILE spectrum is preferred when available.",
@@ -6977,6 +7691,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             len({row.utc for row in reference}),
             " (synchronized SMOKE common epochs)" if args.profile == "SMOKE" else ""),
         "model rows: %d" % len(model_rows),
+        "direct finite scalars calculated: %d" %
+            int(plot_consistency["direct_calculated_rows"]),
+        "direct scalars accepted: %d" %
+            int(plot_consistency["direct_accepted_rows"]),
+        "direct bounds-only rows: %d" %
+            int(plot_consistency["direct_bounds_only_rows"]),
+        "cutoff midpoint diagnostic rows: %d" %
+            int(plot_consistency["cutoff_diagnostic_rows"]),
+        "comparison plot population consistency: %s" %
+            ("PASS" if plot_consistency["consistent"] else "FAIL"),
         "run failures: %d" % len(run_failures),
         "plot generation errors: %d" % len(plot_errors),
     ]

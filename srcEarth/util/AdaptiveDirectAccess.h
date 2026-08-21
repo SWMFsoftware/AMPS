@@ -151,10 +151,16 @@ struct DirectAccessSampleDiagnostic {
   double traceDistance_Re{0.0};
   int steps{0};
   int retryCount{0};
+  int firstTerminationCode{-1};
   int mirrorPoints{0};
   int bounceCycles{0};
   int driftRevolutions{0};
+  int stableDriftComparisons{0};
   double driftAngle_deg{0.0};
+  double driftMatchedBinFraction{0.0};
+  double driftRmsRadiusError_Re{0.0};
+  double driftSecularRadialGrowth_Re{0.0};
+  double minimumOuterMargin_Re{0.0};
   int trapMechanism{0};       // 0=None, 1=Bounce, 2=Drift
   double momentumRelativeSpread{0.0};
 };

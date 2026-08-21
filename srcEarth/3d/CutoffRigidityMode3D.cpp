@@ -1120,6 +1120,10 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
     trapConfig.driftRadialRelativeTolerance=prm.numerics.trapDriftRadialRelativeTolerance;
     trapConfig.driftLatitudeTolerance=prm.numerics.trapDriftLatitudeTolerance;
     trapConfig.driftPitchCos2Tolerance=prm.numerics.trapDriftPitchCos2Tolerance;
+    trapConfig.driftMaxSecularGrowthAbsolute_m=
+        prm.numerics.trapDriftMaxSecularGrowth_Re*_EARTH__RADIUS_;
+    trapConfig.driftMaxSecularGrowthRelative=
+        prm.numerics.trapDriftMaxSecularGrowthRelative;
     trapConfig.driftProfileBins=prm.numerics.trapDriftProfileBins;
     trapConfig.driftMinProfileCoverage=prm.numerics.trapDriftMinProfileCoverage;
     trapConfig.driftMinMatchedBinFraction=prm.numerics.trapDriftMinMatchedBinFraction;
@@ -1139,13 +1143,19 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3D(
 
     auto Finalize=[&](TrajectoryTermination termination) {
         result.termination=termination;
+        result.firstTermination=termination;
         result.traceTime_s=tTrace;
         result.traceDistance_m=sDist;
         result.steps=nSteps;
         result.mirrorPoints=trapDetector.mirrorPoints();
         result.bounceCycles=trapDetector.bounceCycles();
         result.driftRevolutions=trapDetector.driftRevolutions();
+        result.stableDriftComparisons=trapDetector.stableDriftComparisons();
         result.driftAngle_rad=trapDetector.driftAngleRadians();
+        result.driftMatchedBinFraction=trapDetector.lastDriftMatchedBinFraction();
+        result.driftRmsRadiusError_Re=trapDetector.lastDriftRmsRadiusError_m()/_EARTH__RADIUS_;
+        result.driftSecularRadialGrowth_Re=trapDetector.lastDriftSecularGrowth_m()/_EARTH__RADIUS_;
+        result.minimumOuterMargin_Re=trapDetector.minimumOuterMargin_m()/_EARTH__RADIUS_;
         result.trapMechanism=static_cast<int>(trapDetector.mechanism());
         result.momentumRelativeSpread=trapDetector.momentumRelativeSpread();
         return result;
@@ -1291,34 +1301,72 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectory3DWithSingleRetry(
                             const DomainBox3D& box,
                             double maxTime_s,
                             bool captureExitState) {
+    // TrajectoryTermination lives in Earth::GridlessMode.  The alias used inside
+    // TraceTrajectory3D above has block scope and is not visible in this distinct
+    // retry wrapper.  Declare it here explicitly because Stage-B retry bookkeeping
+    // stores and compares the first-pass termination reason in this function.
+    using Earth::GridlessMode::TrajectoryTermination;
+
     const TraceIntegrationPolicy3D integrationPolicy=
         CutoffTraceIntegrationPolicy3D(prm);
     auto result=TraceTrajectory3D(prm,field,x0_m,v0_unit,R_GV,q_C,m0_kg,box,
                                   maxTime_s,captureExitState,
                                   integrationPolicy);
-    if (result.resolved() ||
-        Earth::GridlessMode::IsTraceLimitTermination(result.termination))
-        return result;
-    if (!Earth::GridlessMode::IsRetryableNumericalTermination(result.termination))
-        return result;
+    const TrajectoryTermination firstTermination=result.termination;
+    result.firstTermination=firstTermination;
+    if (result.resolved()) return result;
 
-    // Retry only genuine numerical failures.  Configured time/step/distance caps are
-    // valid cutoff stopping rules and are mapped to FORBIDDEN by the Boolean wrapper.
+    const bool numericalRetry=
+        Earth::GridlessMode::IsRetryableNumericalTermination(firstTermination);
+    const bool unresolvedBudgetRetry=
+        prm.numerics.cutoffRetryUnresolved &&
+        Earth::GridlessMode::IsTraceLimitTermination(firstTermination);
+    if (!numericalRetry && !unresolvedBudgetRetry) return result;
+
+    // C19 Stage-B unresolved-only second pass.
+    //
+    // A trace-budget termination is *not* re-labelled as FORBIDDEN.  Instead, only the
+    // trajectories that failed to obtain a physical verdict are recomputed with a
+    // smaller time step and larger time/step budget.  If the retry still reaches a
+    // safety limit, the final state remains UNRESOLVED.  This provides more physics
+    // information without paying the high-accuracy cost for clean ALLOWED/FORBIDDEN
+    // trajectories and without converting a numerical budget into geomagnetic access.
     EarthUtil::AmpsParam retryPrm=prm;
-    retryPrm.numerics.dtTrace_s=std::max(1.0e-12,0.5*prm.numerics.dtTrace_s);
-    retryPrm.numerics.maxSteps=(prm.numerics.maxSteps<=std::numeric_limits<int>::max()/2)
-        ? 2*prm.numerics.maxSteps : std::numeric_limits<int>::max();
+    const double dtFactor=numericalRetry
+        ? std::min(0.5,prm.numerics.cutoffRetryDtFactor)
+        : prm.numerics.cutoffRetryDtFactor;
+    retryPrm.numerics.dtTrace_s=
+        std::max(1.0e-12,dtFactor*prm.numerics.dtTrace_s);
+    const int stepFactor=numericalRetry
+        ? std::max(2,prm.numerics.cutoffRetryMaxStepsFactor)
+        : prm.numerics.cutoffRetryMaxStepsFactor;
+    retryPrm.numerics.maxSteps=
+        (prm.numerics.maxSteps<=std::numeric_limits<int>::max()/stepFactor)
+        ? stepFactor*prm.numerics.maxSteps : std::numeric_limits<int>::max();
+
+    // A DISTANCE_LIMIT first pass is a computational ceiling, not physics.  Disable
+    // that path ceiling on the retry so physical time becomes the common budget across
+    // rigidities.  TIME_LIMIT/STEP_LIMIT retries retain MAX_TRACE_DISTANCE if one was
+    // explicitly requested, because it was not the limiting mechanism in that pass.
+    if (unresolvedBudgetRetry &&
+        firstTermination==TrajectoryTermination::DistanceLimit)
+        retryPrm.numerics.maxTraceDistance_Re=0.0;
+
+    const double timeFactor=numericalRetry
+        ? std::max(2.0,prm.numerics.cutoffRetryTimeFactor)
+        : prm.numerics.cutoffRetryTimeFactor;
     double retryTime=maxTime_s;
-    if (retryTime>0.0) retryTime*=2.0;
+    if (retryTime>0.0) retryTime*=timeFactor;
     else {
         const double base=(prm.cutoff.maxTrajTime_s>0.0)
             ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s;
-        retryTime=2.0*base;
+        retryTime=timeFactor*base;
     }
+
     result=TraceTrajectory3D(retryPrm,field,x0_m,v0_unit,R_GV,q_C,m0_kg,box,
-                             retryTime,captureExitState,
-                             integrationPolicy);
+                             retryTime,captureExitState,integrationPolicy);
     result.retryCount=1;
+    result.firstTermination=firstTermination;
     return result;
 }
 
@@ -1973,10 +2021,17 @@ struct CutoffSampleDiagnostic3D_ {
     double traceDistance_m{0.0};
     int steps{0};
     int retryCount{0};
+    Earth::GridlessMode::TrajectoryTermination firstTermination{
+        Earth::GridlessMode::TrajectoryTermination::NumericalFailure};
     int mirrorPoints{0};
     int bounceCycles{0};
     int driftRevolutions{0};
+    int stableDriftComparisons{0};
     double driftAngle_rad{0.0};
+    double driftMatchedBinFraction{0.0};
+    double driftRmsRadiusError_Re{0.0};
+    double driftSecularRadialGrowth_Re{0.0};
+    double minimumOuterMargin_Re{0.0};
     int trapMechanism{0};
     double momentumRelativeSpread{0.0};
 };
@@ -1990,10 +2045,16 @@ static EarthUtil::DirectAccessSampleDiagnostic MakeDirectAccessDiagnostic3D_(
     out.traceDistance_Re=sample.traceDistance_m/_EARTH__RADIUS_;
     out.steps=sample.steps;
     out.retryCount=sample.retryCount;
+    out.firstTerminationCode=static_cast<int>(sample.firstTermination);
     out.mirrorPoints=sample.mirrorPoints;
     out.bounceCycles=sample.bounceCycles;
     out.driftRevolutions=sample.driftRevolutions;
+    out.stableDriftComparisons=sample.stableDriftComparisons;
     out.driftAngle_deg=sample.driftAngle_rad*180.0/M_PI;
+    out.driftMatchedBinFraction=sample.driftMatchedBinFraction;
+    out.driftRmsRadiusError_Re=sample.driftRmsRadiusError_Re;
+    out.driftSecularRadialGrowth_Re=sample.driftSecularRadialGrowth_Re;
+    out.minimumOuterMargin_Re=sample.minimumOuterMargin_Re;
     out.trapMechanism=sample.trapMechanism;
     out.momentumRelativeSpread=sample.momentumRelativeSpread;
     return out;
@@ -2017,10 +2078,16 @@ static CutoffSampleDiagnostic3D_ ClassifyCutoffSample3DDetailed_(
     out.traceDistance_m=tr.traceDistance_m;
     out.steps=tr.steps;
     out.retryCount=tr.retryCount;
+    out.firstTermination=tr.firstTermination;
     out.mirrorPoints=tr.mirrorPoints;
     out.bounceCycles=tr.bounceCycles;
     out.driftRevolutions=tr.driftRevolutions;
+    out.stableDriftComparisons=tr.stableDriftComparisons;
     out.driftAngle_rad=tr.driftAngle_rad;
+    out.driftMatchedBinFraction=tr.driftMatchedBinFraction;
+    out.driftRmsRadiusError_Re=tr.driftRmsRadiusError_Re;
+    out.driftSecularRadialGrowth_Re=tr.driftSecularRadialGrowth_Re;
+    out.minimumOuterMargin_Re=tr.minimumOuterMargin_Re;
     out.trapMechanism=tr.trapMechanism;
     out.momentumRelativeSpread=tr.momentumRelativeSpread;
 
@@ -3736,8 +3803,10 @@ static void WriteTecplot3DDirectionalAccess_Location(
         "VARIABLES=\"lon_deg\",\"lat_deg\",\"rigidity_GV\",\"energy_MeV\","
         "\"access_state\",\"allowed\",\"unresolved\",\"termination_code\","
         "\"trace_time_s\",\"trace_distance_Re\",\"trace_steps\",\"retry_count\","
-        "\"mirror_points\",\"bounce_cycles\",\"drift_revolutions\",\"drift_angle_deg\","
-        "\"trap_mechanism\",\"momentum_relative_spread\"\n");
+        "\"first_termination_code\",\"mirror_points\",\"bounce_cycles\",\"drift_revolutions\","
+        "\"stable_drift_comparisons\",\"drift_angle_deg\",\"drift_matched_bin_fraction\","
+        "\"drift_rms_radius_error_Re\",\"drift_secular_radial_growth_Re\","
+        "\"minimum_outer_margin_Re\",\"trap_mechanism\",\"momentum_relative_spread\"\n");
     std::fprintf(f,
         "ZONE T=\"loc=%d x_km=%g y_km=%g z_km=%g frame=%s coverage=%s adaptive=%c seed_n=%zu max_depth=%d guard_depth=%d\" I=%zu F=POINT\n",
         locId,x0_m.x/1000.0,x0_m.y/1000.0,x0_m.z/1000.0,
@@ -3790,11 +3859,13 @@ static void WriteTecplot3DDirectionalAccess_Location(
             const auto& d=*diagnosticIt;
             std::fprintf(f,
                 "%.15e %.15e %.15e %.15e %d %d %d %d "
-                "%.15e %.15e %d %d %d %d %d %.15e %d %.15e\n",
+                "%.15e %.15e %d %d %d %d %d %d %d %.15e %.15e %.15e %.15e %.15e %d %.15e\n",
                 lon_deg,lat_deg,rigidity,energy,state,allowed,unresolved,
                 d.terminationCode,d.traceTime_s,d.traceDistance_Re,d.steps,d.retryCount,
-                d.mirrorPoints,d.bounceCycles,d.driftRevolutions,d.driftAngle_deg,
-                d.trapMechanism,d.momentumRelativeSpread);
+                d.firstTerminationCode,d.mirrorPoints,d.bounceCycles,d.driftRevolutions,
+                d.stableDriftComparisons,d.driftAngle_deg,d.driftMatchedBinFraction,
+                d.driftRmsRadiusError_Re,d.driftSecularRadialGrowth_Re,
+                d.minimumOuterMargin_Re,d.trapMechanism,d.momentumRelativeSpread);
             ++diagnosticIt;
         }
     }

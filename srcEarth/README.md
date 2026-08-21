@@ -498,6 +498,19 @@ present.  The latter is an explicitly labelled blocked-area midpoint used only i
 and the diagnostic hard-cutoff fold; rigorous `Rc_lower/Rc_upper` bounds remain visible
 and the midpoint never enters direct acceptance metrics.
 
+DIRECT_ACCESS comparison reporting also distinguishes the **calculated direct scalar**
+from the **accepted direct scalar**.  `direct_calculated_*` is retained whenever the
+detector fold produces a finite central E/W value, even if a later scientific gate
+rejects it.  The historical `modeled_*` fields remain acceptance-only so existing metrics
+do not change.  When no scalar can be formed but finite rigorous ratio bounds exist,
+`direct_bound_midpoint_*` supplies an explicitly diagnostic plotting location.  Scatter,
+parity, residual, and time-series plots consume one shared `direct_plot_groups()`
+classifier, which prevents status-filter drift between plot families.  The corresponding
+serialized coverage levels are `DIRECT_ACCEPTED`, `DIRECT_CALCULATED_NOT_ACCEPTED`, and
+`DIRECT_BOUNDS_ONLY`; `C19_result.json:plot_consistency` audits the population counts.
+A normal run records convergence as `NOT_TESTED` rather than treating an unexecuted
+convergence campaign as a failed direct result.
+
 The current GRIDDED command includes the fine mesh defaults, while both GRIDDED and
 GRIDLESS generated inputs contain the identical adaptive seed rigidity list used to
 produce `A(E,Omega)`.  Both solvers call the shared `util/AdaptiveDirectAccess.h`
@@ -775,6 +788,15 @@ recurrence-enabled case.  Optional timestep/mover sweeps provide numerical cross
 The direct fold emits `C19_aperture_termination_budget.csv`, a compact response-weighted
 per-head accounting of outer escape, inner loss, bounce trap, drift trap, and numerical
 termination causes.
+
+The Stage-A rigidity diagnostic is also restored.  `run_C19.py` now writes
+`C19_access_classification_by_rigidity.csv` and per-case
+`C19_access_classification_*.png` figures for every selected spacecraft/channel/epoch.
+The figure uses the common DIRECT_ACCESS seed rigidities and shows EAST/WEST fractions
+classified as allowed, physically forbidden, or unresolved; the secondary curve is the
+normalized exact detector/spectrum interval weight.  Detailed termination causes remain
+in the CSV.  This product is diagnostic only and is explicitly regression-tested so it
+cannot disappear again during later packaging/refactoring.
 
 The direct-derived equivalent-cutoff diagnostic is conservative: intervals touching
 `UNRESOLVED` retain only blocked-area lower/upper bounds; no hidden `0.5*dR` midpoint is

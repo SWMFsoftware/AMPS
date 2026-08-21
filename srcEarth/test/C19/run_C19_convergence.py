@@ -12,6 +12,9 @@ Phase 3C  -- optionally repeat the converged case with the full-orbit drift recu
              enabled, showing where TIME/DISTANCE_LIMIT response weight moved after the
              physical resolver was introduced.
 Numerical cross-checks -- optional dt and RK4/BORIS sweeps use the same one-epoch case.
+Stage 4/D -- dense energy-grid and angular-aperture sweeps test convergence of the
+             actual detector-folded rigorous E/W interval, not merely the raw
+             unresolved-trajectory fraction.
 
 The driver never changes multiple numerical controls in one sweep row.  That matters:
 if a row changes both the path budget and the trap classifier, the source of an
@@ -128,12 +131,16 @@ def summarize_child(output: Path, label: str, control: str, value: object,
         "east_response_step_limit_fraction": f(east, "response_step_limit_fraction"),
         "east_response_distance_limit_fraction": f(east, "response_distance_limit_fraction"),
         "east_response_other_fraction": f(east, "response_other_termination_fraction"),
+        "east_response_resolved_on_retry_fraction": f(east, "response_resolved_on_retry_fraction"),
+        "east_response_retry_still_unresolved_fraction": f(east, "response_retry_still_unresolved_fraction"),
         "west_outer_allowed_fraction": f(west, "response_outer_allowed_fraction"),
         "west_drift_trapped_fraction": f(west, "response_drift_trapped_fraction"),
         "west_response_time_limit_fraction": f(west, "response_time_limit_fraction"),
         "west_response_step_limit_fraction": f(west, "response_step_limit_fraction"),
         "west_response_distance_limit_fraction": f(west, "response_distance_limit_fraction"),
         "west_response_other_fraction": f(west, "response_other_termination_fraction"),
+        "west_response_resolved_on_retry_fraction": f(west, "response_resolved_on_retry_fraction"),
+        "west_response_retry_still_unresolved_fraction": f(west, "response_retry_still_unresolved_fraction"),
         "unresolved_east_west_ratio": f(comp, "unresolved_east_west_ratio"),
         "unresolved_asymmetry_index": f(comp, "unresolved_asymmetry_index"),
         "direct_ratio": f(comp, "modeled_east_west_ratio"),
@@ -141,6 +148,14 @@ def summarize_child(output: Path, label: str, control: str, value: object,
         "direct_ratio_min": f(comp, "modeled_east_west_ratio_min"),
         "direct_ratio_max": f(comp, "modeled_east_west_ratio_max"),
         "direct_log10_bound_width": f(comp, "modeled_log10_east_west_bound_width"),
+        "direct_bound_midpoint_log10": (
+            0.5*(math.log10(f(comp, "modeled_east_west_ratio_min"))
+                 +math.log10(f(comp, "modeled_east_west_ratio_max")))
+            if (f(comp, "modeled_east_west_ratio_min") is not None
+                and f(comp, "modeled_east_west_ratio_min") > 0.0
+                and f(comp, "modeled_east_west_ratio_max") is not None
+                and f(comp, "modeled_east_west_ratio_max") > 0.0)
+            else None),
         "observed_ratio": f(comp, "observed_east_west_ratio"),
         "observed_inside_rigorous_bounds": comp.get("observed_inside_rigorous_bounds"),
         "status": comp.get("status"),
@@ -174,7 +189,7 @@ def make_plots(rows: Sequence[Mapping[str, object]], outdir: Path) -> List[str]:
         return []
 
     outputs: List[str] = []
-    for control in ("MAX_TRACE_DISTANCE_RE", "MAX_TRACE_TIME_S", "DT_TRACE_S"):
+    for control in ("MAX_TRACE_DISTANCE_RE", "MAX_TRACE_TIME_S", "DT_TRACE_S", "ACCESS_ENERGY_POINTS", "ANGULAR_RES_DEG"):
         subset = [row for row in rows if row["control"] == control]
         if not subset:
             continue
@@ -217,7 +232,7 @@ def make_plots(rows: Sequence[Mapping[str, object]], outdir: Path) -> List[str]:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="C19 Phase-1/2/3 trajectory convergence sweeps")
+    parser = argparse.ArgumentParser(description="C19 Stages B--D trajectory and detector-fold convergence sweeps")
     parser.add_argument("--epoch", default="2012-05-17T06:00:00Z")
     parser.add_argument("--spacecraft", default="GOES13")
     parser.add_argument("--channel", default="P4")
@@ -229,6 +244,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         default=parse_float_list("60,120,300,600"))
     parser.add_argument("--dt-values", type=parse_float_list, default=[])
     parser.add_argument("--mover-values", type=parse_text_list, default=[])
+    # Stage-D detector-fold convergence controls.  These sweeps deliberately use a
+    # dense, non-adaptive access grid so the requested number of rigidity nodes is
+    # a transparent convergence variable.  Guard rigidities remain present but carry
+    # zero detector weight, exactly as in production C19.
+    parser.add_argument("--energy-points-values", type=parse_float_list,
+                        default=parse_float_list("24,48,96"))
+    parser.add_argument("--angular-res-values", type=parse_float_list,
+                        default=parse_float_list("5,2.5,1.25"))
+    parser.add_argument("--run-energy-sweep", action="store_true", default=True)
+    parser.add_argument("--no-energy-sweep", dest="run_energy_sweep", action="store_false")
+    parser.add_argument("--run-angular-sweep", action="store_true", default=True)
+    parser.add_argument("--no-angular-sweep", dest="run_angular_sweep", action="store_false")
+    parser.add_argument("--observable-convergence-tolerance-log10", type=float, default=0.03,
+                        help="Maximum change [dex] in the rigorous E/W midpoint between adjacent detector-fold resolutions")
     parser.add_argument("--run-distance-sweep", action="store_true", default=True)
     parser.add_argument("--no-distance-sweep", dest="run_distance_sweep", action="store_false")
     parser.add_argument("--run-time-sweep", action="store_true", default=True)
@@ -246,6 +275,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--output-root", default="test_output/C19_convergence")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
+    if any(int(round(v)) < 4 for v in args.energy_points_values):
+        parser.error("--energy-points-values entries must be >= 4")
+    if any(v <= 0.0 for v in args.angular_res_values):
+        parser.error("--angular-res-values entries must be > 0")
+    if args.observable_convergence_tolerance_log10 <= 0.0:
+        parser.error("--observable-convergence-tolerance-log10 must be > 0")
 
     outdir = Path(args.output_root).expanduser().resolve()
     outdir.mkdir(parents=True, exist_ok=True)
@@ -325,11 +360,67 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                "--trap-drift-detection", "--mover", mover], True,
               mover=mover, max_time=300.0, max_distance=0.0)
 
+    # Stage D1: detector-energy integration convergence.  Adaptive DIRECT_ACCESS is
+    # disabled for this sweep so ACCESS_ENERGY_POINTS is the sole detector-grid control.
+    # The physics configuration (time budget, retry resolver, trap recurrence, mover,
+    # and angular grid) is otherwise held fixed.
+    if args.run_energy_sweep:
+        for raw in args.energy_points_values:
+            value = int(round(raw))
+            label = "energy_%dpoints" % value
+            child(label, "ACCESS_ENERGY_POINTS", value,
+                  ["--max-trace-time", "300", "--max-trace-distance-re", "0",
+                   "--trap-drift-detection", "--no-adaptive-access",
+                   "--access-energy-points", str(value)], True,
+                  max_time=300.0, max_distance=0.0)
+
+    # Stage D2: aperture/angular convergence.  Longitude and latitude resolutions are
+    # changed together because C19 uses an approximately isotropic sky-cell grid.  No
+    # other numerical or physical control changes between rows.
+    if args.run_angular_sweep:
+        for value in args.angular_res_values:
+            label = "angular_%sdeg" % (("%g" % value).replace(".", "p"))
+            child(label, "ANGULAR_RES_DEG", value,
+                  ["--max-trace-time", "300", "--max-trace-distance-re", "0",
+                   "--trap-drift-detection",
+                   "--dir-lon-res-deg", str(value),
+                   "--dir-lat-res-deg", str(value)], True,
+                  max_time=300.0, max_distance=0.0)
+
     if args.dry_run:
         return 0
 
+    # Stage-D observable convergence is judged from the detector-folded rigorous E/W
+    # interval.  The finest available row in each sweep is used as the numerical
+    # reference.  We record both midpoint change and bound-width change; this prevents
+    # a deceptively stable midpoint from hiding a still-broad rigorous interval.
+    detector_rows = [row for row in rows if row.get("control") in ("ACCESS_ENERGY_POINTS", "ANGULAR_RES_DEG")]
+    for control in ("ACCESS_ENERGY_POINTS", "ANGULAR_RES_DEG"):
+        subset = [row for row in detector_rows if row.get("control") == control]
+        if not subset:
+            continue
+        # More energy points means finer.  Smaller angular cell size means finer.
+        finest = (max(subset, key=lambda r: float(r["control_value"]))
+                  if control == "ACCESS_ENERGY_POINTS"
+                  else min(subset, key=lambda r: float(r["control_value"])))
+        ref_mid = finest.get("direct_bound_midpoint_log10")
+        ref_width = finest.get("direct_log10_bound_width")
+        for row in subset:
+            mid = row.get("direct_bound_midpoint_log10")
+            width = row.get("direct_log10_bound_width")
+            row["reference_control_value"] = finest.get("control_value")
+            row["midpoint_delta_from_finest_log10"] = (
+                abs(float(mid)-float(ref_mid)) if mid is not None and ref_mid is not None else None)
+            row["bound_width_delta_from_finest_log10"] = (
+                abs(float(width)-float(ref_width)) if width is not None and ref_width is not None else None)
+            row["observable_converged_to_finest"] = (
+                row["midpoint_delta_from_finest_log10"] is not None
+                and row["midpoint_delta_from_finest_log10"] <= args.observable_convergence_tolerance_log10)
+
     table = outdir / "C19_trace_budget_sweep.csv"
     write_csv(table, rows)
+    detector_table = outdir / "C19_detector_fold_convergence.csv"
+    write_csv(detector_table, detector_rows)
     plot_files = make_plots(rows, outdir)
     summary = {
         "test_id": "C19A_CONVERGENCE",
@@ -340,12 +431,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "field_model": args.model,
         "n_runs": len(rows),
         "table": str(table),
+        "detector_fold_table": str(detector_table),
+        "observable_convergence_tolerance_log10": args.observable_convergence_tolerance_log10,
         "plot_files": plot_files,
         "interpretation": (
             "Distance-sweep rows use drift recurrence OFF and therefore diagnose the "
             "historical trace-budget failure without contaminating it with the new "
             "classifier. Time-sweep rows use MAX_TRACE_DISTANCE=0. The Phase-3 row "
-            "changes only the positive full-orbit drift recurrence."),
+            "changes only the positive full-orbit drift recurrence. Stage-D rows vary "
+            "only detector energy-grid density or angular-cell resolution and evaluate "
+            "convergence of the rigorous detector-folded log10(E/W) interval."),
     }
     (outdir / "C19_convergence_result.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n")

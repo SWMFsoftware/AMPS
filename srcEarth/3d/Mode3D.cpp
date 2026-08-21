@@ -20,6 +20,10 @@
 #include <map>
 #include <pthread.h>
 #include <cstring>
+#include <atomic>
+#include <chrono>
+#include <thread>
+#include <memory>
 
 #ifndef _NO_SPICE_CALLS_
 #include "SpiceUsr.h"
@@ -227,6 +231,98 @@ void ConfigureBackgroundFieldModel(const EarthUtil::AmpsParam& prm) {
 // background-field evaluation has approximately the same cost.
 using FieldInitNode = cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>;
 
+// Live progress reporter for the mesh background-field initialization.
+//
+// Field initialization has the same visibility problem as a long cutoff run: a
+// large T05/TA16 mesh can spend minutes evaluating B/E before the first trajectory
+// is launched.  The cutoff scheduler already uses DynamicMpiProgressCounter, so we
+// reuse that MPI-RMA primitive here instead of inventing a second synchronization
+// scheme.
+//
+// IMPORTANT MPI/threading rule:
+//   * temporary pthread workers ONLY increment completedLocal (std::atomic);
+//   * only the original MPI-rank/main thread calls Publish()/Finalize() and hence MPI;
+//   * rank 0 alone renders the text progress bar.
+// Therefore this feature does not require MPI_THREAD_MULTIPLE and remains compatible
+// with the existing temporary-pthread background-field initializer.
+class FieldInitProgressReporter {
+public:
+  explicit FieldInitProgressReporter(long long localTotal)
+      : start_(std::chrono::steady_clock::now()), lastPrint_(start_) {
+    MPI_Allreduce(&localTotal,&globalTotal_,1,MPI_LONG_LONG,MPI_SUM,MPI_COMM_WORLD);
+    MPI_Comm_rank(MPI_COMM_WORLD,&rank_);
+    counter_.reset(new DynamicMpiProgressCounter(
+        MPI_COMM_WORLD,globalTotal_,"Mode3D background-field initialization"));
+
+    if (rank_==0) {
+      std::cout << "[Mode3D] Background field initialization: "
+                << globalTotal_ << " global owner-cell slots\n";
+      Print(0,true);
+    }
+  }
+
+  ~FieldInitProgressReporter() = default;
+
+  // Publish only the newly completed local cells.  completedLocal may include work
+  // done by temporary pthreads; reading an atomic here gives the MPI/main thread a
+  // race-free snapshot without permitting worker threads to call MPI.
+  void Publish(long long completedLocal,bool force=false) {
+    if (completedLocal<localPublished_) completedLocal=localPublished_;
+    const long long delta=completedLocal-localPublished_;
+    if (delta>0) {
+      counter_->Add(delta);
+      localPublished_=completedLocal;
+    }
+
+    const auto now=std::chrono::steady_clock::now();
+    const double sincePrint=std::chrono::duration<double>(now-lastPrint_).count();
+    if (rank_==0 && (force || sincePrint>=1.0)) {
+      Print(counter_->Get(),force);
+      lastPrint_=now;
+    }
+  }
+
+  // All ranks call Finalize after their local worker team has stopped.  Publishing
+  // before and after the barrier guarantees the final root read sees every rank's
+  // completed cells and leaves the terminal on a clean newline.
+  void Finalize(long long completedLocal) {
+    Publish(completedLocal,true);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank_==0) Print(counter_->Get(),true,true);
+  }
+
+private:
+  void Print(long long completed,bool force,bool finalLine=false) const {
+    if (rank_!=0) return;
+    if (completed<0) completed=0;
+    if (globalTotal_>0 && completed>globalTotal_) completed=globalTotal_;
+    const double fraction=(globalTotal_>0)
+        ? static_cast<double>(completed)/static_cast<double>(globalTotal_) : 1.0;
+    const int width=40;
+    int filled=static_cast<int>(std::floor(fraction*width+0.5));
+    filled=std::max(0,std::min(width,filled));
+    const double elapsed=std::chrono::duration<double>(
+        std::chrono::steady_clock::now()-start_).count();
+
+    std::ostringstream bar;
+    bar << "\r[Mode3D] Background field [";
+    for (int i=0;i<width;++i) bar << (i<filled ? '=' : ' ');
+    bar << "] " << std::fixed << std::setprecision(1) << 100.0*fraction
+        << "% (" << completed << "/" << globalTotal_ << ") elapsed "
+        << std::setprecision(1) << elapsed << " s";
+    if (finalLine) bar << "\n";
+    std::cout << bar.str() << std::flush;
+    (void)force;
+  }
+
+  int rank_{0};
+  long long globalTotal_{0};
+  long long localPublished_{0};
+  std::unique_ptr<DynamicMpiProgressCounter> counter_;
+  std::chrono::steady_clock::time_point start_;
+  std::chrono::steady_clock::time_point lastPrint_;
+};
+
 struct FieldInitSharedWork {
   const EarthUtil::AmpsParam* prm{nullptr};
   const std::vector<FieldInitNode*>* ownerBlocks{nullptr};
@@ -236,6 +332,14 @@ struct FieldInitSharedWork {
   int kMin{0},kCount{0};
   int cellsPerBlock{0};
   int participantCount{1};
+
+  // All participants increment this rank-local counter after a cell slot has been
+  // visited.  It is deliberately an atomic rather than an MPI counter: temporary
+  // pthread workers are not allowed to make MPI calls.  The original rank thread
+  // periodically publishes the accumulated delta through FieldInitProgressReporter.
+  std::atomic<long long>* completedLocal{nullptr};
+  FieldInitProgressReporter* progress{nullptr};
+  std::atomic<int>* finishedTemporaryWorkers{nullptr};
 
   // Creation gate: workers are not allowed to start until every requested
   // pthread has been created successfully.  On a partial creation failure the
@@ -324,6 +428,22 @@ void ProcessFieldInitParticipant(FieldInitSharedWork& shared,
     const int k=shared.kMin+local%shared.kCount;
 
     InitializeOneMeshFieldCell(*shared.prm,(*shared.ownerBlocks)[iBlock],i,j,k);
+
+    // Count visited work slots rather than non-null CenterNode objects.  totalWork is
+    // defined using the same slot count, so progress is monotonic and reaches 100%
+    // even if a ghost/center slot is absent in an unusual mesh block.
+    long long completed=0;
+    if (shared.completedLocal!=nullptr) {
+      completed=shared.completedLocal->fetch_add(1,std::memory_order_relaxed)+1;
+    }
+
+    // Only participant 0 is the original MPI-rank thread.  It may publish progress
+    // safely; pthread participants merely update the atomic counter above.  A stride
+    // avoids an MPI RMA operation for every mesh cell.
+    if (participantId==0 && shared.progress!=nullptr &&
+        (completed%2048LL)==0) {
+      shared.progress->Publish(completed,false);
+    }
   }
 }
 
@@ -337,42 +457,40 @@ void* FieldInitPthreadEntry(void* rawArg) {
   pthread_mutex_unlock(&shared.gateMutex);
 
   if (!abort) ProcessFieldInitParticipant(shared,arg->participantId);
+  if (!abort && shared.finishedTemporaryWorkers!=nullptr) {
+    shared.finishedTemporaryWorkers->fetch_add(1,std::memory_order_release);
+  }
   return nullptr;
 }
 
 void InitMeshFieldsSerial(const EarthUtil::AmpsParam& prm,FieldInitNode* startNode) {
-  const int iMin=-_GHOST_CELLS_X_, iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
-  const int jMin=-_GHOST_CELLS_Y_, jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
-  const int kMin=-_GHOST_CELLS_Z_, kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
+  // Use the same flat owner-block representation as the pthread implementation.  This
+  // makes the progress denominator identical in serial and threaded runs and avoids a
+  // second tree traversal solely for progress accounting.
+  std::vector<FieldInitNode*> ownerBlocks;
+  CollectOwnerFieldInitBlocks(startNode,ownerBlocks);
 
-  if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
-    if (startNode->block!=NULL) {
-      // Mode3D uses the normal distributed AMPS domain decomposition.  Only the
-      // owner rank initializes a leaf's cell-centered B/E buffers.  Immediately
-      // before backtracing, the compact global-field helper gathers owner interior
-      // cells into dense B/E arrays indexed by node->Temp_ID.  It does not allocate
-      // nonlocal blocks or reconstruct ghost-cell buffers, so nonowner block data
-      // must never be treated as authoritative here.
-      if (startNode->Thread!=PIC::ThisThread) return;
+  FieldInitSharedWork shared;
+  shared.prm=&prm;
+  shared.ownerBlocks=&ownerBlocks;
+  shared.iMin=-_GHOST_CELLS_X_;
+  shared.jMin=-_GHOST_CELLS_Y_;
+  shared.kMin=-_GHOST_CELLS_Z_;
+  shared.iCount=_BLOCK_CELLS_X_+2*_GHOST_CELLS_X_;
+  shared.jCount=_BLOCK_CELLS_Y_+2*_GHOST_CELLS_Y_;
+  shared.kCount=_BLOCK_CELLS_Z_+2*_GHOST_CELLS_Z_;
+  shared.cellsPerBlock=shared.iCount*shared.jCount*shared.kCount;
+  shared.participantCount=1;
 
-      const int S=(kMax-kMin+1)*(jMax-jMin+1)*(iMax-iMin+1);
-      for (int ii=0;ii<S;ii++) {
-        int local=ii;
-        const int i=iMin+local/((kMax-kMin+1)*(jMax-jMin+1));
-        local%=((kMax-kMin+1)*(jMax-jMin+1));
-        const int j=jMin+local/(kMax-kMin+1);
-        const int k=kMin+local%(kMax-kMin+1);
-        InitializeOneMeshFieldCell(prm,startNode,i,j,k);
-      }
-    }
-  }
-  else {
-    for (int i=0;i<(1<<DIM);i++) {
-      if (startNode->downNode[i]!=NULL) {
-        InitMeshFieldsSerial(prm,startNode->downNode[i]);
-      }
-    }
-  }
+  const long long localTotal=static_cast<long long>(ownerBlocks.size())
+      *static_cast<long long>(shared.cellsPerBlock);
+  std::atomic<long long> completedLocal{0};
+  FieldInitProgressReporter progress(localTotal);
+  shared.completedLocal=&completedLocal;
+  shared.progress=&progress;
+
+  ProcessFieldInitParticipant(shared,0);
+  progress.Finalize(completedLocal.load(std::memory_order_relaxed));
 }
 
 void InitMeshFieldsPthreads(const EarthUtil::AmpsParam& prm,FieldInitNode* startNode) {
@@ -381,7 +499,10 @@ void InitMeshFieldsPthreads(const EarthUtil::AmpsParam& prm,FieldInitNode* start
 
   const int temporaryWorkerCount=
       ResolveParallelThreadCount(prm,ParallelBackend::THREADS);
-  if (temporaryWorkerCount<=0 || ownerBlocks.empty()) {
+  // All MPI ranks must participate in the progress counter collectives even when a
+  // particular rank owns zero mesh blocks.  Only the no-worker case falls back to the
+  // serial implementation; an empty owner list remains in this collective path.
+  if (temporaryWorkerCount<=0) {
     InitMeshFieldsSerial(prm,startNode);
     return;
   }
@@ -403,6 +524,15 @@ void InitMeshFieldsPthreads(const EarthUtil::AmpsParam& prm,FieldInitNode* start
   shared.kCount=_BLOCK_CELLS_Z_+2*_GHOST_CELLS_Z_;
   shared.cellsPerBlock=shared.iCount*shared.jCount*shared.kCount;
   shared.participantCount=participantCount;
+
+  const long long localTotal=static_cast<long long>(ownerBlocks.size())
+      *static_cast<long long>(shared.cellsPerBlock);
+  std::atomic<long long> completedLocal{0};
+  std::atomic<int> finishedTemporaryWorkers{0};
+  FieldInitProgressReporter progress(localTotal);
+  shared.completedLocal=&completedLocal;
+  shared.progress=&progress;
+  shared.finishedTemporaryWorkers=&finishedTemporaryWorkers;
 
   int rc=pthread_mutex_init(&shared.gateMutex,nullptr);
   if (rc!=0) {
@@ -455,12 +585,10 @@ void InitMeshFieldsPthreads(const EarthUtil::AmpsParam& prm,FieldInitNode* start
   }
 
   if (PIC::ThisThread==0) {
-    const std::size_t totalWork=
-        ownerBlocks.size()*static_cast<std::size_t>(shared.cellsPerBlock);
     std::cout << "[Mode3D] Parallel background-field initialization: POSIX threads; "
               << temporaryWorkerCount << " temporary workers + caller ("
               << participantCount << " equal shares per MPI rank); "
-              << totalWork << " owner-cell slots on rank 0.\n";
+              << localTotal << " owner-cell slots on rank 0.\n";
   }
 
   // Release all temporary workers together, then let the original MPI-rank
@@ -472,6 +600,15 @@ void InitMeshFieldsPthreads(const EarthUtil::AmpsParam& prm,FieldInitNode* start
   pthread_mutex_unlock(&shared.gateMutex);
 
   ProcessFieldInitParticipant(shared,0);
+
+  // Participant 0 often finishes close to the temporary workers, but not always.
+  // Continue publishing the shared atomic counter while workers finish so the progress
+  // display does not freeze near the end of a large initialization.  This polling loop
+  // is on the original rank thread and is therefore MPI-safe.
+  while (finishedTemporaryWorkers.load(std::memory_order_acquire)<temporaryWorkerCount) {
+    progress.Publish(completedLocal.load(std::memory_order_relaxed),false);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
 
   int firstJoinError=0;
   for (int iWorker=0;iWorker<temporaryWorkerCount;++iWorker) {
@@ -488,6 +625,8 @@ void InitMeshFieldsPthreads(const EarthUtil::AmpsParam& prm,FieldInitNode* start
         << std::strerror(firstJoinError) << " (rc=" << firstJoinError << ")";
     exit(__LINE__,__FILE__,msg.str().c_str());
   }
+
+  progress.Finalize(completedLocal.load(std::memory_order_relaxed));
 }
 
 void InitMeshFields(const EarthUtil::AmpsParam& prm,FieldInitNode* startNode) {
