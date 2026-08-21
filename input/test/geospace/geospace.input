@@ -22,6 +22,10 @@
 
 #endGeneral
 
+#Mesh
+  define _AMR_READ_SAVE_CENTER_NODE_MEASURE__MODE_ _OFF_AMR_MESH_
+#endMesh
+
 #Sampling
 
  PitchAngleDistributionSampling=off  !on, off
