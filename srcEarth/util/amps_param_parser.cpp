@@ -3004,11 +3004,6 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         p.numerics.trapDriftLatitudeTolerance=std::stod(val);
       else if (uKey=="TRAP_DRIFT_PITCH_COS2_TOL")
         p.numerics.trapDriftPitchCos2Tolerance=std::stod(val);
-      else if (uKey=="TRAP_DRIFT_MAX_SECULAR_GROWTH_RE")
-        p.numerics.trapDriftMaxSecularGrowth_Re=std::stod(val);
-      else if (uKey=="TRAP_DRIFT_MAX_SECULAR_GROWTH_REL" ||
-               uKey=="TRAP_DRIFT_MAX_SECULAR_GROWTH_RELATIVE")
-        p.numerics.trapDriftMaxSecularGrowthRelative=std::stod(val);
       else if (uKey=="TRAP_DRIFT_PROFILE_BINS")
         p.numerics.trapDriftProfileBins=std::stoi(val);
       else if (uKey=="TRAP_DRIFT_MIN_PROFILE_COVERAGE")
@@ -3016,14 +3011,6 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       else if (uKey=="TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION")
         p.numerics.trapDriftMinMatchedBinFraction=std::stod(val);
       else if (uKey=="MAX_TRACE_DISTANCE") p.numerics.maxTraceDistance_Re=std::stod(val);
-      else if (uKey=="CUTOFF_RETRY_UNRESOLVED" || uKey=="DIRECT_ACCESS_RETRY_UNRESOLVED")
-        p.numerics.cutoffRetryUnresolved=ToBool(val);
-      else if (uKey=="CUTOFF_RETRY_TIME_FACTOR")
-        p.numerics.cutoffRetryTimeFactor=std::stod(val);
-      else if (uKey=="CUTOFF_RETRY_DT_FACTOR")
-        p.numerics.cutoffRetryDtFactor=std::stod(val);
-      else if (uKey=="CUTOFF_RETRY_MAX_STEPS_FACTOR")
-        p.numerics.cutoffRetryMaxStepsFactor=std::stoi(val);
       else if (uKey=="N_PARTICLES") {
         // RoR-style generic particle count. For the forward-mode injector this
         // is equivalent to FORWARD_N_PARTICLES; cutoff/density backtracking use
@@ -3484,20 +3471,6 @@ if (ToUpper(p.field.model)=="DIPOLE") {
         p.numerics.trapDriftMinMatchedBinFraction <= 1.0) ||
       !std::isfinite(p.numerics.trapDriftMinMatchedBinFraction))
     exit(__LINE__,__FILE__,"TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION must be finite and in (0,1]");
-  if (!(p.numerics.trapDriftMaxSecularGrowth_Re >= 0.0) ||
-      !std::isfinite(p.numerics.trapDriftMaxSecularGrowth_Re) ||
-      !(p.numerics.trapDriftMaxSecularGrowthRelative >= 0.0) ||
-      !std::isfinite(p.numerics.trapDriftMaxSecularGrowthRelative))
-    exit(__LINE__,__FILE__,"TRAP_DRIFT_MAX_SECULAR_GROWTH tolerances must be finite and >= 0");
-  if (!(p.numerics.cutoffRetryTimeFactor >= 1.0) ||
-      !std::isfinite(p.numerics.cutoffRetryTimeFactor))
-    exit(__LINE__,__FILE__,"CUTOFF_RETRY_TIME_FACTOR must be finite and >= 1");
-  if (!(p.numerics.cutoffRetryDtFactor > 0.0 &&
-        p.numerics.cutoffRetryDtFactor <= 1.0) ||
-      !std::isfinite(p.numerics.cutoffRetryDtFactor))
-    exit(__LINE__,__FILE__,"CUTOFF_RETRY_DT_FACTOR must be finite and in (0,1]");
-  if (p.numerics.cutoffRetryMaxStepsFactor < 1)
-    exit(__LINE__,__FILE__,"CUTOFF_RETRY_MAX_STEPS_FACTOR must be >= 1");
 
   // Resolve product-selection requests from CALC_TARGET.
   //

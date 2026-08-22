@@ -418,7 +418,44 @@ class ModelRow:
     discrete_transition_west_fraction: float
     unresolved_direction_fraction: float
     max_direction_trace_time_s: Optional[float]
+
+    # Frozen-field guardrail state.  ``static_field_warning_triggered`` means that
+    # at least some detector-weighted trajectory contribution exceeded the warning
+    # time.  It is provenance/warning information and does NOT by itself invalidate
+    # a calculated direct scalar.  ``static_field_guardrail_triggered`` is the much
+    # stronger condition that the long-duration population or its conservative E/W
+    # sensitivity exceeds the configured quantitative thresholds.
+    static_field_warning_triggered: bool
+    static_field_response_dominance_warning: bool
     static_field_guardrail_triggered: bool
+    static_field_acceptance_passed: bool
+    frozen_field_warning_seconds: float
+    frozen_field_time_tolerance_seconds: float
+    east_long_trace_response_fraction: float
+    west_long_trace_response_fraction: float
+    east_very_long_trace_response_fraction: float
+    west_very_long_trace_response_fraction: float
+    east_long_trace_allowed_fraction: float
+    west_long_trace_allowed_fraction: float
+    east_long_trace_forbidden_fraction: float
+    west_long_trace_forbidden_fraction: float
+    east_long_trace_unresolved_fraction: float
+    west_long_trace_unresolved_fraction: float
+    east_trace_time_p50_s: Optional[float]
+    west_trace_time_p50_s: Optional[float]
+    east_trace_time_p90_s: Optional[float]
+    west_trace_time_p90_s: Optional[float]
+    east_trace_time_p99_s: Optional[float]
+    west_trace_time_p99_s: Optional[float]
+    static_field_east_signal_min: Optional[float]
+    static_field_east_signal_max: Optional[float]
+    static_field_west_signal_min: Optional[float]
+    static_field_west_signal_max: Optional[float]
+    static_field_east_west_ratio_min: Optional[float]
+    static_field_east_west_ratio_max: Optional[float]
+    static_field_log10_east_west_ratio_min: Optional[float]
+    static_field_log10_east_west_ratio_max: Optional[float]
+    static_field_log10_east_west_bound_width: Optional[float]
     cutoff_search_algorithm: str
     trace_limit_policy: str
     spectral_index: float
@@ -535,6 +572,34 @@ class ApertureFold:
     response_step_limit_weight_fraction: float = 0.0
     response_distance_limit_weight_fraction: float = 0.0
     response_other_weight_fraction: float = 0.0
+
+    # Frozen-field validity diagnostics.  These fields replace the historical
+    # "one long trajectory rejects the entire aperture" rule with quantities that
+    # measure how much of the *detector-weighted signal* actually depends on long
+    # trajectories.  A trajectory is considered long only when its trace duration
+    # exceeds the configured frozen-field warning time plus a small integration-step
+    # tolerance.  The category fractions are normalized by the complete unshielded
+    # detector/spectrum signal for this aperture, so a negligible-weight trajectory
+    # can no longer veto a quantitatively stable E/W result.
+    long_trace_response_weight_fraction: float = 0.0
+    very_long_trace_response_weight_fraction: float = 0.0
+    long_trace_allowed_weight_fraction: float = 0.0
+    long_trace_forbidden_weight_fraction: float = 0.0
+    long_trace_unresolved_weight_fraction: float = 0.0
+    trace_time_p50_s: Optional[float] = None
+    trace_time_p90_s: Optional[float] = None
+    trace_time_p99_s: Optional[float] = None
+
+    # Conservative signal bounds obtained by treating every interval touching a
+    # long-duration trajectory as unknown [0, full transmission].  These bounds
+    # isolate sensitivity to the frozen-field approximation from the ordinary
+    # DIRECT_ACCESS bounds, which already account for unresolved trajectories and
+    # finite rigidity-grid transitions.
+    static_field_signal_min: Optional[float] = None
+    static_field_signal_max: Optional[float] = None
+    static_field_warning_triggered: bool = False
+    long_trace_response_dominance_warning: bool = False
+
     max_trace_distance_re: Optional[float] = None
     max_trace_steps: Optional[int] = None
 
@@ -2443,6 +2508,32 @@ def channel_transmission(cutoff_energy_mev: float, energy_min: float, energy_max
     return max(0.0, min(1.0, integrated_power_law(lower, energy_max, gamma) / denominator))
 
 
+def weighted_quantile_from_pairs(
+        samples: Sequence[Tuple[float, float]], quantile: float) -> Optional[float]:
+    """Return a deterministic weighted quantile for ``(value, weight)`` samples.
+
+    The frozen-field guardrail uses detector/spectrum response weights rather than
+    raw trajectory counts.  Computing percentiles with the same weights makes the
+    reported p50/p90/p99 trace durations answer the physically relevant question:
+    "what trace duration contains this fraction of the synthetic detector signal?"
+    Non-finite values and non-positive weights are ignored.
+    """
+    q = max(0.0, min(1.0, float(quantile)))
+    clean = sorted(
+        (float(value), float(weight)) for value, weight in samples
+        if math.isfinite(float(value)) and math.isfinite(float(weight)) and float(weight) > 0.0)
+    if not clean:
+        return None
+    total = sum(weight for _value, weight in clean)
+    target = q * total
+    cumulative = 0.0
+    for value, weight in clean:
+        cumulative += weight
+        if cumulative + 1.0e-15 >= target:
+            return value
+    return clean[-1][0]
+
+
 def fold_aperture(
         direction_map: DirectionMap,
         position_sm: Tuple[float, float, float],
@@ -2455,6 +2546,9 @@ def fold_aperture(
         direction_mapping: str,
         max_unresolved_fraction: float,
         frozen_field_warning_seconds: float,
+        frozen_field_time_tolerance_seconds: float = 0.0,
+        max_long_trace_response_fraction: float = 0.05,
+        max_long_unresolved_response_fraction: float = 0.05,
         orientation_model: str = "SM_PROXY",
         orientation_record: Optional[OrientationRecord] = None,
         tilt_rad: float = 0.0,
@@ -2603,9 +2697,16 @@ def fold_aperture(
         if unshielded_signal is not None and unshielded_signal > 0.0:
             value = max(0.0, min(1.0, signal_value / unshielded_signal))
 
-    guard_triggered = bool(
+    # Legacy scalar-cutoff maps expose only one maximum trace time per sky cell and
+    # therefore cannot reconstruct response-weighted long-duration fractions.  Keep
+    # the old maximum as warning provenance, but do not use it as a hard veto.
+    # Production C19 DIRECT_ACCESS below has the per-energy trajectory diagnostics
+    # required for the quantitative response-weighted guardrail.
+    warning_threshold_s = (frozen_field_warning_seconds +
+                           max(0.0, frozen_field_time_tolerance_seconds))
+    static_warning = bool(
         max_trace_time_s is not None and frozen_field_warning_seconds > 0.0
-        and max_trace_time_s > frozen_field_warning_seconds + 1.0e-12)
+        and max_trace_time_s > warning_threshold_s)
 
     return ApertureFold(
         value=value, minimum=minimum, maximum=maximum,
@@ -2614,7 +2715,7 @@ def fold_aperture(
         discrete_transition_weight_fraction=0.0,
         undersampled_penumbra_cells=0,
         max_trace_time_s=max_trace_time_s,
-        static_field_guardrail_triggered=guard_triggered,
+        static_field_guardrail_triggered=False,
         diagnostic=tuple(diagnostic),
         signal_value=signal_value, signal_min=signal_min, signal_max=signal_max,
         unshielded_signal=unshielded_signal,
@@ -2628,6 +2729,9 @@ def fold_aperture(
         solid_angle_coverage_fraction=(
             min(1.0, contributing_solid_angle_sr / geometric_solid_angle_sr)
             if geometric_solid_angle_sr > 0.0 else 0.0),
+        static_field_signal_min=signal_min,
+        static_field_signal_max=signal_max,
+        static_field_warning_triggered=static_warning,
     )
 
 
@@ -2835,6 +2939,9 @@ def fold_aperture_direct_access(
         max_unresolved_fraction: float,
         max_discrete_transition_fraction: float,
         frozen_field_warning_seconds: float,
+        frozen_field_time_tolerance_seconds: float = 0.0,
+        max_long_trace_response_fraction: float = 0.05,
+        max_long_unresolved_response_fraction: float = 0.05,
         orientation_model: str = "SM_PROXY",
         orientation_record: Optional[OrientationRecord] = None,
         tilt_rad: float = 0.0,
@@ -2917,6 +3024,29 @@ def fold_aperture_direct_access(
     max_trace_time_s: Optional[float] = None
     max_trace_distance_re: Optional[float] = None
     max_trace_steps: Optional[int] = None
+
+    # Frozen-field guardrail accumulators.  The historical implementation compared
+    # only ``max_trace_time_s`` with one threshold, which let a single negligible-
+    # response trajectory veto an otherwise well-resolved detector fold.  The new
+    # implementation accumulates the exact J(E)G(E) interval weight carried by
+    # long-duration endpoints and constructs a separate conservative signal interval
+    # in which any bracket touching such an endpoint is treated as unknown.
+    static_signal_lower_sum = 0.0
+    static_signal_upper_sum = 0.0
+    long_trace_signal_weight = 0.0
+    very_long_trace_signal_weight = 0.0
+    long_trace_allowed_signal_weight = 0.0
+    long_trace_forbidden_signal_weight = 0.0
+    long_trace_unresolved_signal_weight = 0.0
+    trace_time_weight_samples: List[Tuple[float, float]] = []
+    warning_enabled = frozen_field_warning_seconds > 0.0
+    warning_threshold_s = (
+        frozen_field_warning_seconds + max(0.0, frozen_field_time_tolerance_seconds)
+        if warning_enabled else float("inf"))
+    very_long_threshold_s = (
+        2.0 * frozen_field_warning_seconds + max(0.0, frozen_field_time_tolerance_seconds)
+        if warning_enabled else float("inf"))
+
     diagnostics: List[Dict[str, object]] = []
     independent_penumbra_map = (
         not directional_cutoff_source(direction_map).startswith("DIRECT_ACCESS_"))
@@ -2975,6 +3105,20 @@ def fold_aperture_direct_access(
                 max_trace_steps = (sample.trace_steps if max_trace_steps is None
                                    else max(max_trace_steps, sample.trace_steps))
 
+        # Directional solid-angle and optional source-anisotropy factors are known
+        # before the energy loop.  Using them here lets the long-trace statistics
+        # carry the same detector/spectrum/source weighting as the final synthetic
+        # signal rather than raw trajectory counts.
+        direction_weight = max(0.0, math.cos(math.radians(lat)))
+
+        static_allowed_min_int = 0.0
+        static_allowed_max_int = 0.0
+        cell_long_trace_int = 0.0
+        cell_very_long_trace_int = 0.0
+        cell_long_allowed_int = 0.0
+        cell_long_forbidden_int = 0.0
+        cell_long_unresolved_int = 0.0
+
         for left, right in zip(samples[:-1], samples[1:]):
             e0 = left.energy_mev
             e1 = right.energy_mev
@@ -2993,6 +3137,40 @@ def fold_aperture_direct_access(
                     reason = "OTHER"
                 termination_reason_int[reason] += 0.5 * interval_int
 
+            # Response-weighted trace-time diagnostics.  Interior samples naturally
+            # receive half of each neighboring exact interval integral; this is the
+            # same endpoint-sharing convention used by the termination budget and is
+            # stable under nonuniform/adaptive energy grids.  The global quantiles use
+            # full detector/spectrum/source weight, while the per-cell fractions below
+            # are normalized later by the unshielded synthetic signal.
+            long_sensitive = False
+            for endpoint in (left, right):
+                if endpoint.trace_time_s is None or not math.isfinite(endpoint.trace_time_s):
+                    continue
+                endpoint_interval_weight = 0.5 * interval_int
+                detector_signal_weight = (
+                    direction_weight * angular_factor * endpoint_interval_weight)
+                if detector_signal_weight > 0.0:
+                    trace_time_weight_samples.append(
+                        (float(endpoint.trace_time_s), detector_signal_weight))
+                if endpoint.trace_time_s > warning_threshold_s:
+                    long_sensitive = True
+                    cell_long_trace_int += endpoint_interval_weight
+                    if endpoint.state == 1:
+                        cell_long_allowed_int += endpoint_interval_weight
+                    elif endpoint.state == 0:
+                        cell_long_forbidden_int += endpoint_interval_weight
+                    else:
+                        cell_long_unresolved_int += endpoint_interval_weight
+                if endpoint.trace_time_s > very_long_threshold_s:
+                    cell_very_long_trace_int += endpoint_interval_weight
+
+            # First construct the ordinary rigorous direct-access contribution for this
+            # interval.  Keeping explicit interval-local lower/upper values allows the
+            # frozen-field sensitivity calculation below to widen only those brackets
+            # that actually touch long-duration trajectories.
+            interval_allowed_min = 0.0
+            interval_allowed_max = 0.0
             if left.state == 2 or right.state == 2:
                 # A numerical safety-limit termination at either endpoint means C19
                 # cannot assign the interval to physical access or shielding.  Preserve
@@ -3000,7 +3178,7 @@ def fold_aperture_direct_access(
                 # attribute it to the producer's terminal reason.  If both unresolved
                 # endpoints have different causes, split the interval equally because
                 # the trace data do not locate the change of cause inside the bracket.
-                allowed_max_int += interval_int
+                interval_allowed_max = interval_int
                 unresolved_int += interval_int
                 causes: List[str] = []
                 for endpoint in (left, right):
@@ -3015,22 +3193,33 @@ def fold_aperture_direct_access(
                 share = interval_int / float(len(causes))
                 for cause in causes:
                     unresolved_reason_int[cause] += share
-                continue
-
-            if left.state == right.state:
+            elif left.state == right.state:
                 if left.state == 1:
-                    allowed_min_int += interval_int
-                    allowed_max_int += interval_int
+                    interval_allowed_min = interval_int
+                    interval_allowed_max = interval_int
                 # state==0 contributes zero to both bounds.
-                continue
+            else:
+                # Resolved endpoints straddle a physical access transition.  We know
+                # only that its energy lies inside [e0,e1]; unlike the former trapezoid,
+                # do not manufacture fractional access.
+                direct_resolved_transitions += 1
+                interval_allowed_max = interval_int
+                transition_int += interval_int
 
-            # Resolved endpoints straddle a physical access transition.  We know only
-            # that its energy lies inside [e0,e1]; unlike the former trapezoid, do not
-            # manufacture fractional access.  The width of this contribution shrinks
-            # automatically as the explicit rigidity grid is refined.
-            direct_resolved_transitions += 1
-            allowed_max_int += interval_int
-            transition_int += interval_int
+            allowed_min_int += interval_allowed_min
+            allowed_max_int += interval_allowed_max
+
+            # Frozen-field sensitivity interval.  If neither endpoint exceeds the
+            # warning duration, use the ordinary physical DIRECT_ACCESS bounds.  If a
+            # long-duration endpoint participates, conservatively allow the complete
+            # interval to range from blocked to transmitted.  This does NOT reclassify
+            # the trajectory; it only asks how much the final detector observable could
+            # change if the frozen-field assumption is unreliable for that bracket.
+            if warning_enabled and long_sensitive:
+                static_allowed_max_int += interval_int
+            else:
+                static_allowed_min_int += interval_allowed_min
+                static_allowed_max_int += interval_allowed_max
 
         t_min = max(0.0, min(1.0, allowed_min_int / denom))
         t_max = max(t_min, min(1.0, allowed_max_int / denom))
@@ -3066,7 +3255,7 @@ def fold_aperture_direct_access(
         if undersampled_penumbra:
             undersampled_penumbra_cells += 1
 
-        weight = max(0.0, math.cos(math.radians(lat)))
+        weight = direction_weight
         n_cells += 1
         total_weight += weight
         contributing_solid_angle_sr += weight * cell_scale_sr
@@ -3081,6 +3270,13 @@ def fold_aperture_direct_access(
 
         signal_lower_sum += weight * angular_factor * allowed_min_int
         signal_upper_sum += weight * angular_factor * allowed_max_int
+        static_signal_lower_sum += weight * angular_factor * static_allowed_min_int
+        static_signal_upper_sum += weight * angular_factor * static_allowed_max_int
+        long_trace_signal_weight += weight * angular_factor * cell_long_trace_int
+        very_long_trace_signal_weight += weight * angular_factor * cell_very_long_trace_int
+        long_trace_allowed_signal_weight += weight * angular_factor * cell_long_allowed_int
+        long_trace_forbidden_signal_weight += weight * angular_factor * cell_long_forbidden_int
+        long_trace_unresolved_signal_weight += weight * angular_factor * cell_long_unresolved_int
         unshielded_signal_sum += weight * angular_factor * denom
         if unresolved_energy_fraction > 0.0:
             n_unresolved += 1
@@ -3114,6 +3310,26 @@ def fold_aperture_direct_access(
             "response_step_limit_fraction": termination_reason_fraction["STEP_LIMIT"],
             "response_distance_limit_fraction": termination_reason_fraction["DISTANCE_LIMIT"],
             "response_other_termination_fraction": termination_reason_fraction["OTHER"],
+            # Per-direction frozen-field diagnostics use the exact detector-response
+            # energy integral for this sky cell.  These columns make it possible to
+            # identify whether a warning is concentrated in a tiny angular region
+            # without recomputing the aperture fold.
+            "long_trace_energy_response_fraction": (
+                max(0.0, min(1.0, cell_long_trace_int / denom))),
+            "very_long_trace_energy_response_fraction": (
+                max(0.0, min(1.0, cell_very_long_trace_int / denom))),
+            "long_trace_allowed_response_fraction": (
+                max(0.0, min(1.0, cell_long_allowed_int / denom))),
+            "long_trace_forbidden_response_fraction": (
+                max(0.0, min(1.0, cell_long_forbidden_int / denom))),
+            "long_trace_unresolved_response_fraction": (
+                max(0.0, min(1.0, cell_long_unresolved_int / denom))),
+            "static_field_transmission_min": (
+                max(0.0, min(1.0, static_allowed_min_int / denom))),
+            "static_field_transmission_max": (
+                max(0.0, min(1.0, static_allowed_max_int / denom))),
+            "frozen_field_warning_seconds": frozen_field_warning_seconds,
+            "frozen_field_time_tolerance_seconds": frozen_field_time_tolerance_seconds,
             "termination_time_limit_count": termination_counts.get("TIME_LIMIT", 0),
             "termination_step_limit_count": termination_counts.get("STEP_LIMIT", 0),
             "termination_distance_limit_count": termination_counts.get("DISTANCE_LIMIT", 0),
@@ -3167,6 +3383,46 @@ def fold_aperture_direct_access(
     signal_min = signal_lower_sum / total_weight
     signal_max = signal_upper_sum / total_weight
     unshielded_signal = unshielded_signal_sum / total_weight
+    static_field_signal_min = static_signal_lower_sum / total_weight
+    static_field_signal_max = static_signal_upper_sum / total_weight
+
+    # Long-trace fractions are normalized by the complete unshielded synthetic signal
+    # (including source anisotropy, if requested), not by trajectory count or sky-cell
+    # count.  Consequently a rare trajectory outside the important detector-response
+    # region produces only a small warning fraction instead of vetoing the whole case.
+    if unshielded_signal_sum > 0.0:
+        long_trace_fraction = max(0.0, min(1.0,
+            long_trace_signal_weight / unshielded_signal_sum))
+        very_long_trace_fraction = max(0.0, min(1.0,
+            very_long_trace_signal_weight / unshielded_signal_sum))
+        long_allowed_fraction = max(0.0, min(1.0,
+            long_trace_allowed_signal_weight / unshielded_signal_sum))
+        long_forbidden_fraction = max(0.0, min(1.0,
+            long_trace_forbidden_signal_weight / unshielded_signal_sum))
+        long_unresolved_fraction = max(0.0, min(1.0,
+            long_trace_unresolved_signal_weight / unshielded_signal_sum))
+    else:
+        long_trace_fraction = very_long_trace_fraction = 0.0
+        long_allowed_fraction = long_forbidden_fraction = long_unresolved_fraction = 0.0
+
+    trace_p50 = weighted_quantile_from_pairs(trace_time_weight_samples, 0.50)
+    trace_p90 = weighted_quantile_from_pairs(trace_time_weight_samples, 0.90)
+    trace_p99 = weighted_quantile_from_pairs(trace_time_weight_samples, 0.99)
+    static_warning = bool(warning_enabled and long_trace_fraction > 1.0e-14)
+    # Per-head dominance is a backstop only.  The final E/W guardrail also checks the
+    # conservative ratio interval formed from BOTH heads, which is the more direct
+    # measure of impact on the actual validation observable.
+    dominance_warning = bool(
+        static_warning and max_long_trace_response_fraction >= 0.0 and
+        long_trace_fraction > max_long_trace_response_fraction + 1.0e-14)
+    # A long trajectory that is positively resolved is not treated like an unresolved
+    # numerical timeout.  Large total long-trace weight is therefore an explicit
+    # *warning* (``dominance_warning``), while the per-head hard gate is reserved for
+    # detector weight that is both long-duration and still UNRESOLVED.  The final
+    # row-level hard gate additionally checks the conservative E/W sensitivity width.
+    head_guard = bool(
+        static_warning and max_long_unresolved_response_fraction >= 0.0 and
+        long_unresolved_fraction > max_long_unresolved_response_fraction + 1.0e-14)
 
     signal_value: Optional[float] = None
     value: Optional[float] = None
@@ -3176,12 +3432,10 @@ def fold_aperture_direct_access(
         if unshielded_signal > 0.0:
             value = max(0.0, min(1.0, signal_value / unshielded_signal))
 
-    guard = bool(max_trace_time_s is not None and frozen_field_warning_seconds > 0.0 and
-                 max_trace_time_s > frozen_field_warning_seconds + 1.0e-12)
     return ApertureFold(
         value, minimum, maximum, n_cells, n_unresolved,
         unresolved_fraction, transition_fraction, undersampled_penumbra_cells,
-        max_trace_time_s, guard, tuple(diagnostics),
+        max_trace_time_s, head_guard, tuple(diagnostics),
         signal_value, signal_min, signal_max, unshielded_signal,
         selected_sky_cells, forward_facing_cells, geometric_aperture_cells,
         cells_with_access_samples, cells_with_response_overlap,
@@ -3200,6 +3454,16 @@ def fold_aperture_direct_access(
         response_step_limit_weight_fraction=termination_reason_fraction_total["STEP_LIMIT"],
         response_distance_limit_weight_fraction=termination_reason_fraction_total["DISTANCE_LIMIT"],
         response_other_weight_fraction=termination_reason_fraction_total["OTHER"],
+        long_trace_response_weight_fraction=long_trace_fraction,
+        very_long_trace_response_weight_fraction=very_long_trace_fraction,
+        long_trace_allowed_weight_fraction=long_allowed_fraction,
+        long_trace_forbidden_weight_fraction=long_forbidden_fraction,
+        long_trace_unresolved_weight_fraction=long_unresolved_fraction,
+        trace_time_p50_s=trace_p50, trace_time_p90_s=trace_p90, trace_time_p99_s=trace_p99,
+        static_field_signal_min=static_field_signal_min,
+        static_field_signal_max=static_field_signal_max,
+        static_field_warning_triggered=static_warning,
+        long_trace_response_dominance_warning=dominance_warning,
         max_trace_distance_re=max_trace_distance_re,
         max_trace_steps=max_trace_steps)
 
@@ -3235,7 +3499,11 @@ def classify_aperture_fold(
             max_discrete_transition_fraction + 1.0e-14):
         reasons.append("EXCESSIVE_RIGIDITY_GRID_UNCERTAINTY")
     if fold.static_field_guardrail_triggered:
-        reasons.append("FROZEN_FIELD_GUARDRAIL")
+        # This is no longer a maximum-trace-time veto.  It means a configurable
+        # fraction of the detector-weighted response is carried by long-duration
+        # trajectories (or long unresolved trajectories) and therefore the frozen
+        # static-field approximation materially dominates this aperture.
+        reasons.append("FROZEN_FIELD_RESPONSE_DOMINATED")
 
     if reasons:
         return reasons[0], tuple(reasons)
@@ -3338,6 +3606,10 @@ def evaluate_reference_row(
         min_aperture_cell_count: int = 1,
         min_solid_angle_coverage_fraction: float = 0.95,
         max_ratio_bound_width_log10: float = -1.0,
+        frozen_field_time_tolerance_seconds: float = 0.0,
+        max_long_trace_response_fraction: float = 0.05,
+        max_long_unresolved_response_fraction: float = 0.05,
+        max_static_field_ratio_bound_width_log10: float = -1.0,
         ) -> Tuple[ModelRow, List[Dict[str, object]]]:
     """Evaluate one GOES reference row from a completed AMPS directional product.
 
@@ -3406,6 +3678,9 @@ def evaluate_reference_row(
             max_unresolved_fraction=max_unresolved_aperture_fraction,
             max_discrete_transition_fraction=max_discrete_transition_fraction,
             frozen_field_warning_seconds=frozen_field_warning_seconds,
+            frozen_field_time_tolerance_seconds=frozen_field_time_tolerance_seconds,
+            max_long_trace_response_fraction=max_long_trace_response_fraction,
+            max_long_unresolved_response_fraction=max_long_unresolved_response_fraction,
             orientation_model=orientation_model,
             tilt_rad=tilt_rad, orientation_yaw_deg=orientation_yaw_deg,
             orientation_pitch_deg=orientation_pitch_deg, anisotropy=anisotropy)
@@ -3428,6 +3703,9 @@ def evaluate_reference_row(
             gamma=spectrum.gamma, direction_mapping=mapping,
             max_unresolved_fraction=max_unresolved_aperture_fraction,
             frozen_field_warning_seconds=frozen_field_warning_seconds,
+            frozen_field_time_tolerance_seconds=frozen_field_time_tolerance_seconds,
+            max_long_trace_response_fraction=max_long_trace_response_fraction,
+            max_long_unresolved_response_fraction=max_long_unresolved_response_fraction,
             orientation_model=orientation_model,
             tilt_rad=tilt_rad, orientation_yaw_deg=orientation_yaw_deg,
             orientation_pitch_deg=orientation_pitch_deg, anisotropy=anisotropy)
@@ -3515,8 +3793,36 @@ def evaluate_reference_row(
                                        west_fold.max_trace_time_s)
                    if value is not None and math.isfinite(value)]
     max_direction_trace_time_s = max(trace_times) if trace_times else None
-    static_guard = (east_fold.static_field_guardrail_triggered
-                    or west_fold.static_field_guardrail_triggered)
+    static_field_warning = (east_fold.static_field_warning_triggered
+                            or west_fold.static_field_warning_triggered)
+    static_field_response_dominance_warning = (
+        east_fold.long_trace_response_dominance_warning or
+        west_fold.long_trace_response_dominance_warning)
+    static_head_guard = (east_fold.static_field_guardrail_triggered
+                         or west_fold.static_field_guardrail_triggered)
+
+    # Quantify the actual E/W sensitivity to the frozen-field approximation.  The
+    # per-head folds widen only detector-response intervals that touch trajectories
+    # longer than the warning time.  Combining those head bounds here answers the
+    # physically relevant question: how much could the compared log10(E/W) observable
+    # move if the long-duration part of the trace cannot be trusted as a frozen T05
+    # snapshot?  This replaces the historical max(trace_time) hard veto.
+    (static_ratio_min, static_ratio_max, static_log_ratio_min, static_log_ratio_max,
+     static_ratio_lower_censored, static_ratio_upper_censored) = detector_ratio_bounds(
+        east_fold.static_field_signal_min, east_fold.static_field_signal_max,
+        west_fold.static_field_signal_min, west_fold.static_field_signal_max)
+    static_ratio_width_log10 = (
+        static_log_ratio_max - static_log_ratio_min
+        if static_log_ratio_min is not None and static_log_ratio_max is not None
+        and math.isfinite(static_log_ratio_min) and math.isfinite(static_log_ratio_max)
+        else None)
+    static_width_bad = bool(
+        static_field_warning and max_static_field_ratio_bound_width_log10 >= 0.0 and
+        (static_ratio_width_log10 is None or
+         static_ratio_width_log10 > max_static_field_ratio_bound_width_log10 + 1.0e-14))
+    static_guard = bool(static_head_guard or static_width_bad)
+    static_field_acceptance_passed = not static_guard
+
     east_aperture_status, east_reasons = classify_aperture_fold(
         east_fold, max_unresolved_aperture_fraction,
         max_discrete_transition_fraction, min_aperture_cell_count,
@@ -3648,10 +3954,10 @@ def evaluate_reference_row(
     elif west_aperture_status == "EXCESSIVE_RIGIDITY_GRID_UNCERTAINTY":
         ratio = log_ratio = residual = None
         status = "EXCESSIVE_WEST_RIGIDITY_GRID_UNCERTAINTY"
-    elif east_aperture_status == "FROZEN_FIELD_GUARDRAIL" or \
-            west_aperture_status == "FROZEN_FIELD_GUARDRAIL":
+    elif east_aperture_status == "FROZEN_FIELD_RESPONSE_DOMINATED" or \
+            west_aperture_status == "FROZEN_FIELD_RESPONSE_DOMINATED":
         ratio = log_ratio = residual = None
-        status = "STATIC_FIELD_TRACE_GUARDRAIL"
+        status = "STATIC_FIELD_DOMINATED"
     elif east_observable is None:
         ratio = log_ratio = residual = None
         status = "INCONCLUSIVE_TRAJECTORY_RESOLUTION"
@@ -3660,7 +3966,7 @@ def evaluate_reference_row(
         status = "INCONCLUSIVE_TRAJECTORY_RESOLUTION"
     elif static_guard:
         ratio = log_ratio = residual = None
-        status = "STATIC_FIELD_TRACE_GUARDRAIL"
+        status = "STATIC_FIELD_DOMINATED"
     elif east_observable < 0.0 or west_observable < 0.0:
         ratio = log_ratio = residual = None
         status = "NEGATIVE_TRANSMISSION"
@@ -3718,7 +4024,15 @@ def evaluate_reference_row(
         status in QUANTITATIVE_MODEL_STATUSES and
         log_ratio is not None and math.isfinite(float(log_ratio)))
     direct_convergence_status = "NOT_TESTED"
-    direct_acceptance_reason = ("ACCEPTED" if direct_scalar_accepted else status)
+    if direct_scalar_accepted:
+        if static_field_response_dominance_warning:
+            direct_acceptance_reason = "ACCEPTED_WITH_STATIC_FIELD_DOMINANCE_WARNING"
+        elif static_field_warning:
+            direct_acceptance_reason = "ACCEPTED_WITH_STATIC_FIELD_WARNING"
+        else:
+            direct_acceptance_reason = "ACCEPTED"
+    else:
+        direct_acceptance_reason = status
 
     orientation_sources = sorted({
         rec.source for rec in (east_orientation, west_orientation) if rec is not None})
@@ -3800,7 +4114,38 @@ def evaluate_reference_row(
         discrete_transition_west_fraction=west_fold.discrete_transition_weight_fraction,
         unresolved_direction_fraction=unresolved_fraction,
         max_direction_trace_time_s=max_direction_trace_time_s,
+        static_field_warning_triggered=static_field_warning,
+        static_field_response_dominance_warning=(
+            static_field_response_dominance_warning),
         static_field_guardrail_triggered=static_guard,
+        static_field_acceptance_passed=static_field_acceptance_passed,
+        frozen_field_warning_seconds=frozen_field_warning_seconds,
+        frozen_field_time_tolerance_seconds=frozen_field_time_tolerance_seconds,
+        east_long_trace_response_fraction=east_fold.long_trace_response_weight_fraction,
+        west_long_trace_response_fraction=west_fold.long_trace_response_weight_fraction,
+        east_very_long_trace_response_fraction=east_fold.very_long_trace_response_weight_fraction,
+        west_very_long_trace_response_fraction=west_fold.very_long_trace_response_weight_fraction,
+        east_long_trace_allowed_fraction=east_fold.long_trace_allowed_weight_fraction,
+        west_long_trace_allowed_fraction=west_fold.long_trace_allowed_weight_fraction,
+        east_long_trace_forbidden_fraction=east_fold.long_trace_forbidden_weight_fraction,
+        west_long_trace_forbidden_fraction=west_fold.long_trace_forbidden_weight_fraction,
+        east_long_trace_unresolved_fraction=east_fold.long_trace_unresolved_weight_fraction,
+        west_long_trace_unresolved_fraction=west_fold.long_trace_unresolved_weight_fraction,
+        east_trace_time_p50_s=east_fold.trace_time_p50_s,
+        west_trace_time_p50_s=west_fold.trace_time_p50_s,
+        east_trace_time_p90_s=east_fold.trace_time_p90_s,
+        west_trace_time_p90_s=west_fold.trace_time_p90_s,
+        east_trace_time_p99_s=east_fold.trace_time_p99_s,
+        west_trace_time_p99_s=west_fold.trace_time_p99_s,
+        static_field_east_signal_min=east_fold.static_field_signal_min,
+        static_field_east_signal_max=east_fold.static_field_signal_max,
+        static_field_west_signal_min=west_fold.static_field_signal_min,
+        static_field_west_signal_max=west_fold.static_field_signal_max,
+        static_field_east_west_ratio_min=static_ratio_min,
+        static_field_east_west_ratio_max=static_ratio_max,
+        static_field_log10_east_west_ratio_min=static_log_ratio_min,
+        static_field_log10_east_west_ratio_max=static_log_ratio_max,
+        static_field_log10_east_west_bound_width=static_ratio_width_log10,
         cutoff_search_algorithm=str(cutoff_search_algorithm).upper(),
         trace_limit_policy=str(trace_limit_policy).upper(),
         spectral_index=spectrum.gamma,
@@ -4053,7 +4398,8 @@ def pipeline_validity(
         "INCONCLUSIVE_DIRECT_BOUND_WIDTH",
         "EXCESSIVE_EAST_RIGIDITY_GRID_UNCERTAINTY",
         "EXCESSIVE_WEST_RIGIDITY_GRID_UNCERTAINTY",
-        "STATIC_FIELD_TRACE_GUARDRAIL", "NEGATIVE_TRANSMISSION",
+        "STATIC_FIELD_DOMINATED", "STATIC_FIELD_TRACE_GUARDRAIL",
+        "NEGATIVE_TRANSMISSION",
         "NONFINITE_MODELED_RATIO",
     )
     instrument_fold_valid = bool(trajectory_resolution_passed and all(
@@ -4188,8 +4534,14 @@ def model_status_category(row: ModelRow) -> Tuple[str, str, str]:
            ("NO_GEOMETRIC", "NO_SELECTED", "INSUFFICIENT_GEOMETRIC",
             "INSUFFICIENT_", "NO_", "INCOMPLETE_SOLID_ANGLE")):
         return "availability", "missing/incomplete aperture data", "tab:purple"
-    if "GUARDRAIL" in reasons or "GUARDRAIL" in row.status:
-        return "guardrail", "frozen-field guardrail", "tab:brown"
+    # The response-weighted implementation renamed the hard failure from the old
+    # STATIC_FIELD_TRACE_GUARDRAIL (single longest trajectory) to
+    # STATIC_FIELD_DOMINATED.  Keep the historical token for backward-compatible
+    # reading of older CSVs, but classify both as the same plotting category.
+    if ("GUARDRAIL" in reasons or "GUARDRAIL" in row.status or
+            "STATIC_FIELD_DOMINATED" in reasons or
+            "STATIC_FIELD_DOMINATED" in row.status):
+        return "guardrail", "frozen-field response sensitivity", "tab:brown"
     return "other", "other nonfinite status", "tab:gray"
 
 
@@ -4262,6 +4614,33 @@ def aperture_availability_rows(rows: Sequence[ModelRow]) -> List[Dict[str, objec
                 "spectrum_provenance_status": row.spectrum_provenance_status,
                 "max_direct_trace_distance_re": row.max_direct_trace_distance_re,
                 "max_direct_trace_steps": row.max_direct_trace_steps,
+                "frozen_field_warning_seconds": row.frozen_field_warning_seconds,
+                "frozen_field_time_tolerance_seconds": (
+                    row.frozen_field_time_tolerance_seconds),
+                "trace_time_p50_s": getattr(row, "%s_trace_time_p50_s" % head),
+                "trace_time_p90_s": getattr(row, "%s_trace_time_p90_s" % head),
+                "trace_time_p99_s": getattr(row, "%s_trace_time_p99_s" % head),
+                "long_trace_response_fraction": getattr(
+                    row, "%s_long_trace_response_fraction" % head),
+                "very_long_trace_response_fraction": getattr(
+                    row, "%s_very_long_trace_response_fraction" % head),
+                "long_trace_allowed_fraction": getattr(
+                    row, "%s_long_trace_allowed_fraction" % head),
+                "long_trace_forbidden_fraction": getattr(
+                    row, "%s_long_trace_forbidden_fraction" % head),
+                "long_trace_unresolved_fraction": getattr(
+                    row, "%s_long_trace_unresolved_fraction" % head),
+                "static_field_signal_min": getattr(
+                    row, "static_field_%s_signal_min" % head),
+                "static_field_signal_max": getattr(
+                    row, "static_field_%s_signal_max" % head),
+                "static_field_warning_triggered": row.static_field_warning_triggered,
+                "static_field_response_dominance_warning": (
+                    row.static_field_response_dominance_warning),
+                "static_field_guardrail_triggered": row.static_field_guardrail_triggered,
+                "static_field_acceptance_passed": row.static_field_acceptance_passed,
+                "static_field_log10_east_west_bound_width": (
+                    row.static_field_log10_east_west_bound_width),
                 "discrete_transition_fraction": getattr(
                     row, "discrete_transition_%s_fraction" % head),
             })
@@ -4568,6 +4947,108 @@ def make_access_classification_plots(
         outputs.append(str(path))
     return outputs
 
+def make_static_field_guardrail_plots(
+        rows: Sequence[ModelRow], output_root: Path) -> List[str]:
+    """Plot response-weighted frozen-field sensitivity for each solver/model pair.
+
+    The former C19 guardrail exposed only the maximum trajectory duration and could
+    therefore reject a detector fold because of one almost weightless long trace.
+    This diagnostic visualizes the quantities that now drive the quantitative guard:
+
+    * EAST/WEST detector-response fraction carried by trajectories longer than the
+      frozen-field warning time;
+    * the subset of that response that is still physically UNRESOLVED; and
+    * the conservative log10(E/W) interval width obtained when every long-trace
+      rigidity bracket is treated as unknown.
+
+    The plot is diagnostic only.  Acceptance is computed in ``evaluate_reference_row``
+    from the serialized row fields and configurable thresholds; plotting never changes
+    scientific status.
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        print("C19 static-field guardrail plotting skipped: %s" % exc,
+              file=sys.stderr)
+        return []
+    if not rows:
+        return []
+
+    outputs: List[str] = []
+    grouped: Dict[Tuple[str, str], List[ModelRow]] = {}
+    for row in rows:
+        grouped.setdefault((row.solver, row.field_model), []).append(row)
+
+    panel_order = (("GOES13", "P4"), ("GOES13", "P5"),
+                   ("GOES15", "P4"), ("GOES15", "P5"))
+    for (solver, field_model), group in sorted(grouped.items()):
+        fig, axes = plt.subplots(4, 1, figsize=(11.0, 12.0), sharex=True)
+        fig.suptitle(
+            "C19 frozen-field validity: %s %s (response-weighted)" %
+            (solver, field_model))
+        for axis, (spacecraft, channel) in zip(axes, panel_order):
+            subset = sorted(
+                (row for row in group
+                 if row.spacecraft == spacecraft and row.channel == channel),
+                key=lambda row: parse_utc(row.utc))
+            axis.set_title("%s %s" % (spacecraft, channel))
+            axis.set_ylabel("response fraction")
+            axis.set_ylim(-0.02, 1.02)
+            axis.grid(True, alpha=0.3)
+            if not subset:
+                axis.text(0.5, 0.5, "no rows", transform=axis.transAxes,
+                          ha="center", va="center")
+                continue
+            times = [parse_utc(row.utc) for row in subset]
+            axis.plot(times, [row.east_long_trace_response_fraction for row in subset],
+                      marker="o", label="EAST long")
+            axis.plot(times, [row.west_long_trace_response_fraction for row in subset],
+                      marker="s", label="WEST long")
+            axis.plot(times, [row.east_long_trace_unresolved_fraction for row in subset],
+                      marker="o", linestyle="--", label="EAST long+unresolved")
+            axis.plot(times, [row.west_long_trace_unresolved_fraction for row in subset],
+                      marker="s", linestyle="--", label="WEST long+unresolved")
+
+            # Mark rows for which the quantitative static-field guard actually vetoed
+            # acceptance.  A warning-only row remains fully plot-visible and accepted.
+            guarded = [row for row in subset if row.static_field_guardrail_triggered]
+            if guarded:
+                axis.scatter([parse_utc(row.utc) for row in guarded],
+                             [max(row.east_long_trace_response_fraction,
+                                  row.west_long_trace_response_fraction)
+                              for row in guarded],
+                             marker="x", s=65, label="hard guard")
+
+            width_axis = axis.twinx()
+            width_axis.plot(
+                times,
+                [float("nan") if row.static_field_log10_east_west_bound_width is None
+                 else row.static_field_log10_east_west_bound_width for row in subset],
+                linestyle=":", linewidth=1.5,
+                label="static-field log10(E/W) width")
+            width_axis.set_ylabel("static-field width (dex)")
+            finite_widths = [row.static_field_log10_east_west_bound_width
+                             for row in subset
+                             if row.static_field_log10_east_west_bound_width is not None
+                             and math.isfinite(row.static_field_log10_east_west_bound_width)]
+            if finite_widths:
+                width_axis.set_ylim(0.0, max(0.05, 1.10 * max(finite_widths)))
+
+            lines, labels = axis.get_legend_handles_labels()
+            lines2, labels2 = width_axis.get_legend_handles_labels()
+            axis.legend(lines + lines2, labels + labels2, loc="best", fontsize=8)
+
+        axes[-1].set_xlabel("UTC")
+        fig.autofmt_xdate()
+        fig.tight_layout()
+        path = output_root / ("C19_static_field_guardrail_%s_%s.png" %
+                              (solver.lower(), field_model.lower()))
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        outputs.append(str(path))
+    return outputs
+
+
 def aperture_termination_budget_rows(rows: Sequence[ModelRow]) -> List[Dict[str, object]]:
     """Return the compact Phase-0 response-weighted termination budget per head.
 
@@ -4618,6 +5099,20 @@ def aperture_termination_budget_rows(rows: Sequence[ModelRow]) -> List[Dict[str,
                 "direct_log10_east_west_bound_width": (
                     row.modeled_log10_east_west_bound_width),
                 "observed_inside_rigorous_bounds": row.observed_inside_rigorous_bounds,
+                "frozen_field_warning_seconds": row.frozen_field_warning_seconds,
+                "trace_time_p50_s": getattr(row, f"{head}_trace_time_p50_s"),
+                "trace_time_p90_s": getattr(row, f"{head}_trace_time_p90_s"),
+                "trace_time_p99_s": getattr(row, f"{head}_trace_time_p99_s"),
+                "long_trace_response_fraction": getattr(
+                    row, f"{head}_long_trace_response_fraction"),
+                "long_trace_unresolved_fraction": getattr(
+                    row, f"{head}_long_trace_unresolved_fraction"),
+                "static_field_warning_triggered": row.static_field_warning_triggered,
+                "static_field_response_dominance_warning": (
+                    row.static_field_response_dominance_warning),
+                "static_field_guardrail_triggered": row.static_field_guardrail_triggered,
+                "static_field_log10_east_west_bound_width": (
+                    row.static_field_log10_east_west_bound_width),
             })
     return out
 
@@ -4678,7 +5173,15 @@ def make_comparison_plots(
                     row for row in reference_rows
                     if row.spacecraft == spacecraft and row.channel == channel],
                     key=lambda row: row.utc)
-                observed_times = [row.utc for row in reference_panel]
+                # Keep the x-axis unit type homogeneous.  Model timestamps are parsed
+                # to ``datetime`` objects below, so reference timestamps must be parsed
+                # the same way.  Mixing ISO strings with datetime objects can make
+                # matplotlib switch the axis to categorical units (or raise a unit
+                # conversion exception).  When that happened, the time-series figure
+                # failed before the scalar scatter/parity plots were attempted, making
+                # both C19_comparison_* and C19_scatter_* appear to "disappear" during
+                # a --skip-run post-processing pass even though ModelRows were present.
+                observed_times = [parse_utc(row.utc) for row in reference_panel]
                 observed = [row.log10_east_west_ratio for row in reference_panel]
             else:
                 observed_times = times
@@ -5085,6 +5588,239 @@ def make_comparison_plots(
 
     return outputs
 
+
+
+def make_core_comparison_fallback_plots(
+        rows: Sequence[ModelRow], output_root: Path,
+        reference_rows: Optional[Sequence[ReferenceRow]] = None,
+        ) -> List[str]:
+    """Regenerate the two indispensable comparison figures if the primary family failed.
+
+    C19 intentionally has many optional diagnostic layers.  A plotting exception in one
+    layer must never remove the two figures most users use to judge a run:
+
+      * ``C19_comparison_<solver>_<model>.png`` -- time evolution of GOES, direct
+        DIRECT_ACCESS information, rigorous direct bounds, and the cutoff diagnostic;
+      * ``C19_scatter_<solver>_<model>.png`` -- observed-versus-modeled scalar view.
+
+    The normal :func:`make_comparison_plots` routine remains the authoritative renderer
+    and produces the richer comparison/parity/residual family.  This helper is a
+    *last-resort recovery path*: it only writes a core figure when that exact file does
+    not already exist.  Consequently it cannot overwrite a successfully generated
+    primary plot.
+
+    The fallback deliberately depends only on serialized ``ModelRow`` information and
+    the canonical :func:`direct_plot_groups` selector.  It therefore works during
+    ``--skip-run`` post-processing and does not require re-running AMPS.  It also keeps
+    calculated-but-unaccepted direct values visible as open markers rather than
+    confusing scientific acceptance with data availability.
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        print("C19 core comparison fallback skipped: %s" % exc, file=sys.stderr)
+        return []
+
+    outputs: List[str] = []
+    if not rows:
+        return outputs
+
+    marker_by_spacecraft = {"GOES13": "o", "GOES15": "s"}
+    color_by_spacecraft = {"GOES13": "tab:blue", "GOES15": "tab:orange"}
+
+    for solver, model in sorted({(row.solver, row.field_model) for row in rows}):
+        subset = [row for row in rows if row.solver == solver and row.field_model == model]
+        panels = sorted({(row.spacecraft, row.channel) for row in
+                         (reference_rows if reference_rows is not None else subset)})
+
+        comparison_path = output_root / ("C19_comparison_%s_%s.png" %
+                                         (solver.lower(), model.lower()))
+        if not comparison_path.exists() and panels:
+            # Keep this renderer intentionally simple and defensive.  Every finite
+            # information level is shown; no status string is used to decide whether a
+            # calculated DIRECT_ACCESS value exists.
+            fig, axes = plt.subplots(
+                len(panels), 1, figsize=(10.5, max(3.0, 2.5 * len(panels))),
+                sharex=True, squeeze=False)
+            for axis, (spacecraft, channel) in zip(axes[:, 0], panels):
+                panel = sorted([
+                    row for row in subset
+                    if row.spacecraft == spacecraft and row.channel == channel],
+                    key=lambda row: row.utc)
+
+                if reference_rows is not None:
+                    refs = sorted([
+                        row for row in reference_rows
+                        if row.spacecraft == spacecraft and row.channel == channel],
+                        key=lambda row: row.utc)
+                    obs_x = [parse_utc(row.utc) for row in refs]
+                    obs_y = [row.log10_east_west_ratio for row in refs]
+                else:
+                    obs_x = [parse_utc(row.utc) for row in panel]
+                    obs_y = [row.observed_log10_east_west_ratio for row in panel]
+
+                if obs_x:
+                    axis.plot(obs_x, obs_y, marker="o", markersize=3, linewidth=1.2,
+                              label="GOES observed")
+
+                accepted = [row for row in panel if row.direct_scalar_accepted and
+                            finite_optional(row.direct_calculated_log10_east_west_ratio)]
+                if accepted:
+                    axis.plot(
+                        [parse_utc(row.utc) for row in accepted],
+                        [float(row.direct_calculated_log10_east_west_ratio) for row in accepted],
+                        marker="x", markersize=4, linewidth=1.0, color="tab:orange",
+                        label="AMPS direct A(E,Omega) (accepted)")
+
+                unaccepted = [row for row in panel if not row.direct_scalar_accepted and
+                              finite_optional(row.direct_calculated_log10_east_west_ratio)]
+                if unaccepted:
+                    axis.scatter(
+                        [parse_utc(row.utc) for row in unaccepted],
+                        [float(row.direct_calculated_log10_east_west_ratio)
+                         for row in unaccepted],
+                        marker="o", facecolors="none", edgecolors="tab:orange", s=32,
+                        label="AMPS direct A(E,Omega) (calculated, not accepted)")
+
+                bounds_only = [
+                    row for row in panel
+                    if (not finite_optional(row.direct_calculated_log10_east_west_ratio)
+                        and finite_optional(
+                            row.direct_bound_midpoint_log10_east_west_ratio))]
+                if bounds_only:
+                    axis.scatter(
+                        [parse_utc(row.utc) for row in bounds_only],
+                        [float(row.direct_bound_midpoint_log10_east_west_ratio)
+                         for row in bounds_only],
+                        marker="D", facecolors="none", edgecolors="tab:orange", s=30,
+                        label="AMPS direct-bound midpoint (diagnostic only)")
+
+                interval = [
+                    row for row in panel
+                    if finite_optional(row.modeled_log10_east_west_ratio_min)
+                    and finite_optional(row.modeled_log10_east_west_ratio_max)]
+                if interval:
+                    axis.vlines(
+                        [parse_utc(row.utc) for row in interval],
+                        [float(row.modeled_log10_east_west_ratio_min) for row in interval],
+                        [float(row.modeled_log10_east_west_ratio_max) for row in interval],
+                        color="tab:orange", alpha=0.50, linewidth=2.5,
+                        label="AMPS rigorous E/W interval")
+
+                proxy = [row for row in panel
+                         if finite_optional(row.cutoff_proxy_log10_east_west_ratio)]
+                if proxy:
+                    axis.plot(
+                        [parse_utc(row.utc) for row in proxy],
+                        [float(row.cutoff_proxy_log10_east_west_ratio) for row in proxy],
+                        marker="s", markersize=3, linewidth=1.0, linestyle="--",
+                        color="tab:green",
+                        label="AMPS equivalent-cutoff midpoint (diagnostic only)")
+
+                axis.axhline(0.0, linewidth=0.8)
+                axis.set_ylabel("log10(E/W)")
+                axis.set_title("%s %s" % (spacecraft, channel))
+                axis.grid(True, alpha=0.3)
+                axis.legend(loc="best", fontsize="small")
+            axes[-1, 0].set_xlabel("UTC")
+            fig.suptitle("C19A %s %s: GOES vs AMPS east/west ratio" % (solver, model))
+            fig.tight_layout()
+            fig.savefig(comparison_path, dpi=160)
+            plt.close(fig)
+            outputs.append(str(comparison_path))
+
+        scatter_path = output_root / ("C19_scatter_%s_%s.png" %
+                                      (solver.lower(), model.lower()))
+        if not scatter_path.exists():
+            groups = direct_plot_groups(subset)
+            fig, ax = plt.subplots(figsize=(6.4, 6.0))
+            x_values: List[float] = []
+            y_values: List[float] = []
+
+            def scatter_group(group: Sequence[ModelRow], y_attr: str, *,
+                              accepted: bool = False, bounds: bool = False) -> None:
+                for spacecraft, channel in sorted({
+                        (row.spacecraft, row.channel) for row in group}):
+                    selected = [row for row in group
+                                if row.spacecraft == spacecraft and row.channel == channel
+                                and finite_optional(row.observed_log10_east_west_ratio)]
+                    if not selected:
+                        continue
+                    x = [float(row.observed_log10_east_west_ratio) for row in selected]
+                    y = [float(getattr(row, y_attr)) for row in selected]
+                    x_values.extend(x)
+                    y_values.extend(y)
+                    marker = "D" if bounds else marker_by_spacecraft.get(spacecraft, "o")
+                    color = color_by_spacecraft.get(spacecraft, "tab:blue")
+                    label_tail = ("direct accepted" if accepted else
+                                  "direct bounds midpoint" if bounds else
+                                  "direct calculated/not accepted")
+                    if accepted:
+                        ax.scatter(x, y, marker=marker, color=color, alpha=0.85,
+                                   label="%s %s %s" %
+                                         (spacecraft, channel, label_tail))
+                    else:
+                        ax.scatter(x, y, marker=marker, facecolors="none",
+                                   edgecolors=color, linewidths=1.3, alpha=0.9,
+                                   label="%s %s %s" %
+                                         (spacecraft, channel, label_tail))
+
+            scatter_group(groups["direct_accepted"],
+                          "direct_calculated_log10_east_west_ratio", accepted=True)
+            scatter_group(groups["direct_unaccepted"],
+                          "direct_calculated_log10_east_west_ratio")
+            scatter_group(groups["direct_bounds_only"],
+                          "direct_bound_midpoint_log10_east_west_ratio", bounds=True)
+
+            for spacecraft, channel in sorted({
+                    (row.spacecraft, row.channel) for row in groups["cutoff_diagnostic"]}):
+                selected = [row for row in groups["cutoff_diagnostic"]
+                            if row.spacecraft == spacecraft and row.channel == channel
+                            and finite_optional(row.observed_log10_east_west_ratio)]
+                if not selected:
+                    continue
+                x = [float(row.observed_log10_east_west_ratio) for row in selected]
+                y = [float(row.cutoff_proxy_log10_east_west_ratio) for row in selected]
+                x_values.extend(x)
+                y_values.extend(y)
+                ax.scatter(
+                    x, y, marker=marker_by_spacecraft.get(spacecraft, "o"),
+                    facecolors="none", edgecolors="tab:green", alpha=0.75,
+                    label="%s %s cutoff midpoint diagnostic" % (spacecraft, channel))
+
+            # Even when no finite model scalar survived, create the expected file and
+            # explain why it is empty.  Missing files are ambiguous; an annotated plot
+            # is an auditable scientific output.
+            if x_values and y_values:
+                x_min, x_max = padded_limits(x_values)
+                y_min, y_max = padded_limits(y_values)
+                ax.set_xlim(x_min, x_max)
+                ax.set_ylim(y_min, y_max)
+                lower = max(x_min, y_min)
+                upper = min(x_max, y_max)
+                if lower < upper:
+                    ax.plot([lower, upper], [lower, upper], linestyle="--", linewidth=1.0)
+                ax.legend(fontsize="small")
+            else:
+                ax.text(
+                    0.5, 0.5,
+                    "No finite direct or cutoff scalar is available.\n"
+                    "Inspect C19_comparison.csv and C19_model_coverage.csv.",
+                    transform=ax.transAxes, ha="center", va="center")
+                ax.set_xlim(-1.0, 1.0)
+                ax.set_ylim(-1.0, 1.0)
+
+            ax.set_xlabel("Observed log10(E/W)")
+            ax.set_ylabel("Modeled/diagnostic log10(E/W)")
+            ax.set_title("C19A %s %s comparison (direct availability + cutoff diagnostic)" %
+                         (solver, model))
+            ax.grid(True, alpha=0.3)
+            fig.tight_layout()
+            fig.savefig(scatter_path, dpi=160)
+            plt.close(fig)
+            outputs.append(str(scatter_path))
+
+    return outputs
 
 def make_transmission_plots(rows: Sequence[ModelRow], output_root: Path) -> List[str]:
     """Generate the broad-aperture transmission figure independently.
@@ -6032,6 +6768,115 @@ def self_test() -> int:
                 "Phase-0 endpoint termination budget does not close: %.16g" %
                 termination_budget_sum)
 
+        # Frozen-field guardrail regression.  The historical rule rejected a complete
+        # detector fold whenever *any* trajectory exceeded 300 s.  Build three variants
+        # of the same physically resolved access cube to prove the new semantics:
+        #
+        #   (a) one small-response long trajectory -> warning only, scalar retained;
+        #   (b) one-step numerical overshoot inside the configured tolerance -> no warning;
+        #   (c) large response weight that is both long and UNRESOLVED -> hard guard.
+        #
+        # This test is intentionally based on response-weighted P4 physics rather than
+        # raw counts, so a future refactor cannot silently restore max(trace_time) vetoes.
+        def access_cube_with_guard_times(
+                long_energies: Sequence[float], long_time_s: float = 310.0,
+                unresolved_long: bool = False) -> DirectionalAccessCube:
+            changed: Dict[Tuple[float, float], Tuple[AccessSample, ...]] = {}
+            for key, cube_samples in access_cube.samples.items():
+                rebuilt: List[AccessSample] = []
+                for sample in cube_samples:
+                    is_east_arrival = math.isclose(key[0], 270.0, abs_tol=1.0e-12)
+                    is_long = is_east_arrival and any(
+                        math.isclose(sample.energy_mev, energy, abs_tol=1.0e-12)
+                        for energy in long_energies)
+                    state = 2 if (is_long and unresolved_long) else sample.state
+                    if state == 2:
+                        termination_code = 3
+                        termination = "TIME_LIMIT"
+                    elif state == 1:
+                        termination_code = 0
+                        termination = "OUTER_BOUNDARY_ALLOWED"
+                    else:
+                        termination_code = 1
+                        termination = "INNER_BOUNDARY_FORBIDDEN"
+                    rebuilt.append(AccessSample(
+                        sample.energy_mev, sample.rigidity_gv, state,
+                        termination_code=termination_code, termination=termination,
+                        trace_time_s=(long_time_s if is_long else 10.0),
+                        trace_distance_re=sample.trace_distance_re,
+                        trace_steps=sample.trace_steps))
+                changed[key] = tuple(rebuilt)
+            return DirectionalAccessCube(
+                access_cube.path + "#guardrail", access_cube.frame,
+                access_cube.x_km, access_cube.y_km, access_cube.z_km, changed)
+
+        warning_cube = access_cube_with_guard_times((150.0,))
+        warning_map = direction_map_from_access_cube(warning_cube)
+        warning_model, _ = evaluate_reference_row(
+            reference, warning_map, manifest, "GRIDDED", "T05", test_spectrum,
+            test_response, warning_cube, 0.0, PRODUCTION_DIRECTION_MAPPING,
+            "DIRECT_ACCESS", "UNRESOLVED", 1.0, 1.0, 300.0,
+            max_ratio_bound_width_log10=-1.0,
+            frozen_field_time_tolerance_seconds=0.125,
+            max_long_trace_response_fraction=0.05,
+            max_long_unresolved_response_fraction=0.05,
+            max_static_field_ratio_bound_width_log10=-1.0)
+        if (not warning_model.static_field_warning_triggered or
+                warning_model.static_field_guardrail_triggered or
+                not warning_model.direct_scalar_accepted):
+            raise AssertionError(
+                "small detector-weight long trace did not remain warning-only")
+        if warning_model.east_long_trace_response_fraction >= 0.05:
+            raise AssertionError(
+                "guardrail test no longer represents a small response-weight long trace")
+
+        overshoot_cube = access_cube_with_guard_times((150.0,), long_time_s=300.10)
+        overshoot_model, _ = evaluate_reference_row(
+            reference, direction_map_from_access_cube(overshoot_cube), manifest,
+            "GRIDDED", "T05", test_spectrum, test_response, overshoot_cube, 0.0,
+            PRODUCTION_DIRECTION_MAPPING, "DIRECT_ACCESS", "UNRESOLVED",
+            1.0, 1.0, 300.0, max_ratio_bound_width_log10=-1.0,
+            frozen_field_time_tolerance_seconds=0.125,
+            max_long_trace_response_fraction=0.05,
+            max_long_unresolved_response_fraction=0.05,
+            max_static_field_ratio_bound_width_log10=-1.0)
+        if overshoot_model.static_field_warning_triggered:
+            raise AssertionError(
+                "half-step frozen-field tolerance did not suppress numerical overshoot")
+
+        dominated_cube = access_cube_with_guard_times((15.0, 25.0), unresolved_long=True)
+        dominated_model, _ = evaluate_reference_row(
+            reference, direction_map_from_access_cube(dominated_cube), manifest,
+            "GRIDDED", "T05", test_spectrum, test_response, dominated_cube, 0.0,
+            PRODUCTION_DIRECTION_MAPPING, "DIRECT_ACCESS", "UNRESOLVED",
+            1.0, 1.0, 300.0, max_ratio_bound_width_log10=-1.0,
+            frozen_field_time_tolerance_seconds=0.125,
+            max_long_trace_response_fraction=0.05,
+            max_long_unresolved_response_fraction=0.05,
+            max_static_field_ratio_bound_width_log10=-1.0)
+        if (dominated_model.status != "STATIC_FIELD_DOMINATED" or
+                not dominated_model.static_field_guardrail_triggered or
+                dominated_model.direct_scalar_accepted or
+                dominated_model.east_long_trace_unresolved_fraction <= 0.05):
+            raise AssertionError(
+                "long unresolved detector response did not trigger the hard guard")
+
+        # The observable-impact gate is configurable because no event-independent
+        # publication tolerance has been calibrated.  Setting it to zero here proves
+        # that the conservative static-field E/W bounds can independently veto a row.
+        width_guard_model, _ = evaluate_reference_row(
+            reference, warning_map, manifest, "GRIDDED", "T05", test_spectrum,
+            test_response, warning_cube, 0.0, PRODUCTION_DIRECTION_MAPPING,
+            "DIRECT_ACCESS", "UNRESOLVED", 1.0, 1.0, 300.0,
+            max_ratio_bound_width_log10=-1.0,
+            frozen_field_time_tolerance_seconds=0.125,
+            max_long_trace_response_fraction=0.05,
+            max_long_unresolved_response_fraction=0.05,
+            max_static_field_ratio_bound_width_log10=0.0)
+        if width_guard_model.status != "STATIC_FIELD_DOMINATED":
+            raise AssertionError(
+                "configured static-field observable-width gate did not activate")
+
         # Solver-equivalence regression at the Python science layer.  Use the exact
         # same direct cube and directional map with only the solver label changed; the
         # predicted detector observable must be identical.  This protects against a
@@ -6303,9 +7148,47 @@ def self_test() -> int:
         else:
             plot_root = root / "plot_regression"
             plot_root.mkdir(parents=True, exist_ok=True)
+            # Include one observed epoch with no ModelRow.  This protects the x-axis
+            # unit contract: both reference and model timestamps must be datetime
+            # objects before plotting.  The earlier string/datetime mixture could
+            # abort the time-series comparison and, because scatter followed it in
+            # the same family, suppress C19_scatter_* as collateral damage.
+            missing_reference = ReferenceRow(
+                utc=parse_utc("2012-05-17T07:00:00Z"),
+                spacecraft=reference.spacecraft,
+                channel=reference.channel,
+                energy_min_mev=reference.energy_min_mev,
+                energy_max_mev=reference.energy_max_mev,
+                east_west_ratio=reference.east_west_ratio,
+                log10_east_west_ratio=reference.log10_east_west_ratio,
+                longitude_deg_east=reference.longitude_deg_east,
+                latitude_deg=reference.latitude_deg,
+                altitude_km=reference.altitude_km,
+                position_source=reference.position_source,
+                east_detector_id=reference.east_detector_id,
+                west_detector_id=reference.west_detector_id)
             comparison_paths = make_comparison_plots(
                 [model, calculated_not_accepted, invalid_direct_model],
-                plot_root, [reference])
+                plot_root, [reference, missing_reference])
+
+            # Core-plot recovery regression.  Simulate an unexpected failure/removal
+            # of the primary time-series/scatter products, then prove that the
+            # fallback reconstructs exactly those indispensable files from ModelRows
+            # without touching AMPS outputs.
+            core_comparison = plot_root / "C19_comparison_gridless_t05.png"
+            core_scatter = plot_root / "C19_scatter_gridless_t05.png"
+            for core_path in (core_comparison, core_scatter):
+                if core_path.exists():
+                    core_path.unlink()
+            fallback_paths = make_core_comparison_fallback_plots(
+                [model, calculated_not_accepted, invalid_direct_model],
+                plot_root, [reference, missing_reference])
+            if (not core_comparison.exists() or not core_scatter.exists() or
+                    str(core_comparison) not in fallback_paths or
+                    str(core_scatter) not in fallback_paths):
+                raise AssertionError(
+                    "core comparison fallback did not restore comparison/scatter plots")
+
             transmission_paths = make_transmission_plots(
                 [model, calculated_not_accepted, invalid_direct_model], plot_root)
             cutoff_plot_rows = directional_cutoff_rows(
@@ -6380,6 +7263,8 @@ def self_test() -> int:
             direct_diagnostics, root / "C19_direct_aperture_diagnostic.png")
         classification_plots = make_access_classification_plots(
             classification_rows, root)
+        guardrail_plots = make_static_field_guardrail_plots(
+            [warning_model, dominated_model], root)
         cutoff_rows = directional_cutoff_rows(
             derived_cutoff_map, reference.utc, reference.spacecraft, "GRIDDED", "T05")
         cutoff_plots = make_directional_cutoff_plots(cutoff_rows, root)
@@ -6387,7 +7272,8 @@ def self_test() -> int:
             {reference.utc: test_spectrum}, test_response, [reference.utc],
             root / "C19_boundary_spectrum.png")
         if (not plots or aperture is None or direct_aperture is None
-                or not classification_plots or not cutoff_plots or spectrum_plot is None):
+                or not classification_plots or not guardrail_plots
+                or not cutoff_plots or spectrum_plot is None):
             raise AssertionError("self-test did not generate plots")
         if not any(Path(path).name.startswith("C19_access_classification_goes13_p4_")
                    for path in classification_plots):
@@ -6566,8 +7452,31 @@ Examples:
         "--max-direct-ratio-bound-width-log10", type=float, default=-1.0,
         help=("maximum finite rigorous log10(E/W) interval width for accepting a quantitative direct scalar; "
               "negative disables this observable-convergence gate"))
-    parser.add_argument("--frozen-field-warning-seconds", type=float, default=300.0,
-                        help="static-field guardrail; a directional scan reporting a longer individual trace is excluded from quantitative E/W")
+    parser.add_argument(
+        "--frozen-field-warning-seconds", type=float, default=300.0,
+        help=("trace duration above which frozen-field sensitivity is measured; "
+              "this is now a warning/provenance threshold, not a one-trajectory hard veto"))
+    parser.add_argument(
+        "--frozen-field-time-tolerance-seconds", type=float, default=-1.0,
+        help=("nonnegative tolerance added to the warning time before a trajectory is "
+              "called long; negative uses 0.5*--dt-trace to avoid one-step overshoot "
+              "at the numerical trace limit"))
+    parser.add_argument(
+        "--max-long-trace-response-fraction", type=float, default=0.05,
+        help=("detector/spectrum response-fraction threshold for flagging a "
+              "long-trace dominance WARNING; this threshold is advisory and does "
+              "not by itself reject a positively resolved direct scalar; negative "
+              "disables only the dominance warning while retaining diagnostics"))
+    parser.add_argument(
+        "--max-long-unresolved-response-fraction", type=float, default=0.05,
+        help=("maximum detector/spectrum response fraction that is both long-duration "
+              "and still UNRESOLVED; negative disables this per-head guard"))
+    parser.add_argument(
+        "--max-static-field-ratio-bound-width-log10", type=float, default=-1.0,
+        help=("maximum conservative log10(E/W) width obtained when long-duration "
+              "trajectory brackets are treated as unknown; negative (default) keeps "
+              "this as a reported sensitivity diagnostic because no event-independent "
+              "publication tolerance has yet been calibrated"))
     # Current detector-orientation controls.  These were introduced during P2.4
     # but are now ordinary production inputs rather than a separate P2 mode.
     parser.add_argument("--detector-orientation-source", choices=("SM_PROXY", "FILE"), default="SM_PROXY",
@@ -6674,6 +7583,17 @@ Examples:
         parser.error("--max-discrete-transition-fraction must be in [0,1]")
     if args.frozen_field_warning_seconds < 0.0:
         parser.error("--frozen-field-warning-seconds must be >= 0")
+    if args.frozen_field_time_tolerance_seconds < 0.0:
+        # A negative CLI value is a documented AUTO sentinel, not an invalid input.
+        # Resolve it here, after --dt-trace has been parsed, so the warning boundary
+        # is separated from the numerical trace limit by half one integration step.
+        args.frozen_field_time_tolerance_seconds = 0.5 * abs(args.dt_trace)
+    for option_name in ("max_long_trace_response_fraction",
+                        "max_long_unresolved_response_fraction"):
+        value = float(getattr(args, option_name))
+        if value > 1.0:
+            parser.error("--%s must be <= 1 or negative to disable" %
+                         option_name.replace("_", "-"))
     if not (-1.0 < args.anisotropy_amplitude < 1.0):
         parser.error("--anisotropy-amplitude must satisfy |A| < 1")
     if not (-90.0 <= args.anisotropy_axis_lat_deg <= 90.0):
@@ -7255,7 +8175,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             args.orientation_yaw_deg, args.orientation_pitch_deg,
                             production_anisotropy, args.min_aperture_cell_count,
                             args.min_aperture_solid_angle_coverage,
-                            args.max_direct_ratio_bound_width_log10)
+                            args.max_direct_ratio_bound_width_log10,
+                            frozen_field_time_tolerance_seconds=(
+                                args.frozen_field_time_tolerance_seconds),
+                            max_long_trace_response_fraction=(
+                                args.max_long_trace_response_fraction),
+                            max_long_unresolved_response_fraction=(
+                                args.max_long_unresolved_response_fraction),
+                            max_static_field_ratio_bound_width_log10=(
+                                args.max_static_field_ratio_bound_width_log10))
                         alternate_model, _ = evaluate_reference_row(
                             reference_row, direction_map, manifest, solver,
                             field_model, spectrum, detector_response, access_cube, tilt,
@@ -7268,7 +8196,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             args.orientation_yaw_deg, args.orientation_pitch_deg,
                             production_anisotropy, args.min_aperture_cell_count,
                             args.min_aperture_solid_angle_coverage,
-                            args.max_direct_ratio_bound_width_log10)
+                            args.max_direct_ratio_bound_width_log10,
+                            frozen_field_time_tolerance_seconds=(
+                                args.frozen_field_time_tolerance_seconds),
+                            max_long_trace_response_fraction=(
+                                args.max_long_trace_response_fraction),
+                            max_long_unresolved_response_fraction=(
+                                args.max_long_unresolved_response_fraction),
+                            max_static_field_ratio_bound_width_log10=(
+                                args.max_static_field_ratio_bound_width_log10))
                         model_rows.append(model)
 
                         # Restore the Stage-A rigidity-resolved access diagnostic on
@@ -7431,6 +8367,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     run_plot_family(
         "comparison",
         lambda: make_comparison_plots(model_rows, output_root, reference))
+    # The comparison renderer is intentionally feature-rich and therefore more
+    # exposed to matplotlib/data-shape edge cases than the other plot families.
+    # Immediately repair only missing core files with a minimal renderer.  Existing
+    # primary figures are never overwritten.
+    run_plot_family(
+        "core_comparison_fallback",
+        lambda: make_core_comparison_fallback_plots(
+            model_rows, output_root, reference))
     run_plot_family(
         "transmission",
         lambda: make_transmission_plots(model_rows, output_root))
@@ -7451,6 +8395,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "access_classification_by_rigidity",
         lambda: make_access_classification_plots(
             access_classification_diagnostics, output_root))
+    run_plot_family(
+        "static_field_guardrail",
+        lambda: make_static_field_guardrail_plots(model_rows, output_root))
 
     # All scalar comparison figures consume direct_plot_groups().  Record the
     # serialized-data/population counts beside the plot list so a future regression
@@ -7510,6 +8457,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         spectrum_provenance_counts[row.spectrum_provenance_status] = \
             spectrum_provenance_counts.get(row.spectrum_provenance_status, 0) + 1
 
+    static_warning_rows = [row for row in model_rows
+                           if row.static_field_warning_triggered]
+    static_guard_rows = [row for row in model_rows
+                         if row.static_field_guardrail_triggered]
+    max_long_trace_response_fraction_observed = max(
+        [max(row.east_long_trace_response_fraction,
+             row.west_long_trace_response_fraction) for row in model_rows],
+        default=0.0)
+    max_long_unresolved_fraction_observed = max(
+        [max(row.east_long_trace_unresolved_fraction,
+             row.west_long_trace_unresolved_fraction) for row in model_rows],
+        default=0.0)
+
     result = {
         "test_id": "C19A",
         "test_name": "GOES EPEAD east-west directional-access validation",
@@ -7566,6 +8526,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "access_rigidity_max_gv": access_rigidities[-1],
         "max_discrete_transition_fraction": args.max_discrete_transition_fraction,
         "max_direct_ratio_bound_width_log10": args.max_direct_ratio_bound_width_log10,
+        # Frozen-field validity configuration and aggregate diagnostics.  The warning
+        # threshold is intentionally separate from both MAX_TRACE_TIME and the hard
+        # acceptance thresholds: long trajectories may be resolved and quantitatively
+        # harmless, in which case the direct scalar remains accepted with provenance.
+        "frozen_field_warning_seconds": args.frozen_field_warning_seconds,
+        "frozen_field_time_tolerance_seconds": args.frozen_field_time_tolerance_seconds,
+        "max_long_trace_response_fraction": args.max_long_trace_response_fraction,
+        "max_long_unresolved_response_fraction": (
+            args.max_long_unresolved_response_fraction),
+        "max_static_field_ratio_bound_width_log10": (
+            args.max_static_field_ratio_bound_width_log10),
+        "n_static_field_warning_rows": len(static_warning_rows),
+        "n_static_field_guarded_rows": len(static_guard_rows),
+        "max_long_trace_response_fraction_observed": (
+            max_long_trace_response_fraction_observed),
+        "max_long_unresolved_response_fraction_observed": (
+            max_long_unresolved_fraction_observed),
         "min_aperture_cell_count": args.min_aperture_cell_count,
         "min_aperture_solid_angle_coverage": args.min_aperture_solid_angle_coverage,
         # Detector-orientation/anisotropy provenance. Detector orientation now affects
@@ -7676,6 +8653,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "Use --require-real-ephemeris with a regenerated reference for publication runs.",
             "GRIDDED and GRIDLESS both provide the direct three-state A(E,Omega) product and use the identical detector fold; solver differences therefore isolate field-evaluation/trajectory behavior.",
             "The cutoff-rigidity E/W curve is a diagnostic hard-step reduction. DIRECT_ACCESS derives its finite-support Rc from blocked area over the detector-response grid; it is not a substitute for the direct A(E,Omega) acceptance observable.",
+            "Frozen-field validity is assessed with detector/spectrum response weighting. Long but positively resolved trajectories produce provenance warnings; only long+unresolved response above the configured threshold, or an explicitly enabled conservative static-field E/W-width gate, hard-rejects the scalar. If important detector weight remains long-duration, a time-dependent magnetic background should be evaluated rather than extending a frozen T05 snapshot indefinitely.",
         ],
     }
     (output_root / "C19_result.json").write_text(
@@ -7703,6 +8681,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             ("PASS" if plot_consistency["consistent"] else "FAIL"),
         "run failures: %d" % len(run_failures),
         "plot generation errors: %d" % len(plot_errors),
+        "static-field warning rows: %d" % len(static_warning_rows),
+        "static-field hard-guard rows: %d" % len(static_guard_rows),
+        "max detector-weighted long-trace fraction: %.6f" %
+            max_long_trace_response_fraction_observed,
+        "max detector-weighted long+unresolved fraction: %.6f" %
+            max_long_unresolved_fraction_observed,
     ]
     for (head, aperture_status), count in sorted(availability_counts.items()):
         summary_lines.append(

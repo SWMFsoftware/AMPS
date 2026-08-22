@@ -812,22 +812,3 @@ helpers after addition of code 9.
 See `test/C19/README.md` for the complete C19 phased evidence sequence, response-weighted
 termination budget, direct-bound-width gate, proxy semantics, observational provenance
 gates, and full AMPS regression requirements.
-
-C19 unresolved-only retry and recurrence-quality diagnostics (2026-08-20)
----------------------------------------------------------------------------
-GRIDLESS now records `first_termination_code` separately from the final termination and
-exports stable drift comparisons, matched-bin fraction, RMS radial recurrence error,
-secular radial growth, and minimum outer-boundary margin for every evaluated
-DIRECT_ACCESS trajectory.  With `CUTOFF_RETRY_UNRESOLVED T`, only first-pass
-TIME/STEP/DISTANCE-limit trajectories receive the high-accuracy second pass.  Its time,
-dt, and step multipliers are controlled by `CUTOFF_RETRY_TIME_FACTOR`,
-`CUTOFF_RETRY_DT_FACTOR`, and `CUTOFF_RETRY_MAX_STEPS_FACTOR`; if the retry still cannot
-obtain physical evidence, the state remains `UNRESOLVED`.
-
-The drift recurrence additionally rejects outward shell growth larger than
-`max(TRAP_DRIFT_MAX_SECULAR_GROWTH_RE*Re,
-TRAP_DRIFT_MAX_SECULAR_GROWTH_REL*r_characteristic)`.  This is independent of the local
-per-bin recurrence tolerance: a slowly escaping multi-turn orbit cannot be classified as
-trapped merely because consecutive phase profiles look locally similar.  See
-`test/C19/README.md` for the response-weighted rigidity diagnostics and detector-fold
-energy/angular convergence sweeps.

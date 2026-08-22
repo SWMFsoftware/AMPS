@@ -287,10 +287,6 @@ namespace Earth {
       double traceDistance_m{0.0};
       int steps{0};
       int retryCount{0};
-      // First-pass terminal reason is preserved when CUTOFF_RETRY_UNRESOLVED is used.
-      // This lets C19 quantify which trajectories were genuinely rescued by the
-      // high-accuracy second pass rather than merely seeing the final verdict.
-      TrajectoryTermination firstTermination{TrajectoryTermination::NumericalFailure};
       int mirrorPoints{0};
       int bounceCycles{0};
       // Diagnostics from the optional azimuthal drift-shell recurrence detector.
@@ -298,12 +294,7 @@ namespace Earth {
       // (0=None, 1=Bounce, 2=Drift) but is kept as an int here to avoid coupling the
       // public Gridless header to the private trap-detector implementation header.
       int driftRevolutions{0};
-      int stableDriftComparisons{0};
       double driftAngle_rad{0.0};
-      double driftMatchedBinFraction{0.0};
-      double driftRmsRadiusError_Re{0.0};
-      double driftSecularRadialGrowth_Re{0.0};
-      double minimumOuterMargin_Re{0.0};
       int trapMechanism{0};
       double momentumRelativeSpread{0.0};
 

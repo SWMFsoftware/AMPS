@@ -154,6 +154,30 @@ MPI-rank thread evaluates one additional equal share.  The owner-cell range is
 divided into equal static shares because background-field evaluation cost is
 approximately uniform.
 
+Background-field initialization now reports **global completed owner-cell slots** with
+the same visual convention used by the cutoff solver, for example:
+
+```text
+[Mode3D field INITIALIZATION] [rank 0/global over 6 MPI ranks] [############------------------------] 33.3%  (Cell 1176/3528)  ETA 00:05:21
+```
+
+The field and cutoff bars intentionally use the same 36-character body (`#` =
+completed, `-` = remaining), percentage formatting, rank-0/global wording, and ETA
+format.  Only MPI rank 0 prints.  Normal field-initialization updates are throttled to
+one line every **2 s**, half the output frequency of the one-second cutoff progress
+bar, because field initialization can visit a very large number of cell slots.  The
+0% and 100% lines are always emitted.  Every line is followed by an explicit
+`std::cout.flush()` so progress remains live when stdout passes through `mpirun`, a
+batch scheduler, `tee`, or a redirected log.
+
+For pthread field initialization, worker threads update only a rank-local atomic
+completion counter.  The original MPI-rank thread periodically publishes the newly
+completed delta through the existing MPI-RMA `DynamicMpiProgressCounter`; worker
+threads never call MPI.  This preserves compatibility with MPI installations that do
+not provide `MPI_THREAD_MULTIPLE`.  If rank 0 finishes its own static share before its
+workers or another MPI rank, it continues polling and printing global completion until
+the exact 100% count is reached.
+
 Because every rank can access the full replicated mesh field, the standalone backward products use a selectable MPI scheduler over global observation locations. The default `DYNAMIC` scheduler uses an MPI one-sided atomic work queue; ranks fetch chunks of locations as soon as they become idle. `BLOCK_CYCLIC` and `STATIC` remain available for deterministic regression/debug runs.
 
 This mode now supports three product selections from the same prepared mesh-field snapshot:
@@ -1454,8 +1478,9 @@ Birdsall & Langdon (1991) for the Boris magnetic rotation.
     Parallelize standalone Mode3D owner-rank B/E mesh initialization with POSIX
     threads.  The temporary-worker count is taken from -mode3d-threads; the
     calling MPI-rank thread also evaluates an equal share, so N creates N
-    pthread workers plus the caller.  Aliases: -bgfield-init-parallel and
-    -mode3d-parallel-bgfield-init.
+    pthread workers plus the caller.  Rank 0 prints a flushed global progress bar
+    every 2 s using the same 36-character `#`/`-` convention as cutoff tracing.
+    Aliases: -bgfield-init-parallel and -mode3d-parallel-bgfield-init.
 
 -mode3d-field-eval <INTERPOLATION|ANALYTIC>
     For standalone Mode3D, choose whether tracing uses mesh interpolation or direct analytic/background evaluation.
@@ -3230,6 +3255,16 @@ markers, bounds-only rows are open diamonds with their rigorous interval, and th
 equivalent-cutoff midpoint remains a separate green diagnostic.  This common selection
 contract fixes the earlier inconsistency in which parity could display a direct P5 point
 that scatter omitted because each plot had independently filtered `status`.
+
+Core comparison plotting is additionally fail-safe. Reference and model UTCs are both
+converted to Python `datetime` values before plotting; mixing ISO strings with datetime
+objects had allowed Matplotlib to fail unit conversion/categorical-axis setup in some
+multi-epoch post-processing runs. Since the scatter figure followed the time-series
+figure inside the same routine, that single exception could remove both
+`C19_comparison_*` and `C19_scatter_*`. After the normal renderer, C19 now calls a
+minimal fallback that reconstructs only either missing core file from `ModelRow` data.
+The fallback does not overwrite successful primary plots, does not alter metrics or
+status, and is fully compatible with `--skip-run` because no solver output is recomputed.
 `C19_model_coverage.csv` now reports `DIRECT_ACCEPTED`,
 `DIRECT_CALCULATED_NOT_ACCEPTED`, `DIRECT_BOUNDS_ONLY`, or diagnostic/missing states, and
 `C19_result.json:plot_consistency` records matching serialized-versus-plotted counts.
@@ -3242,6 +3277,90 @@ independent incident spectrum, and calibrated detector-response provenance throu
 `--require-real-orientation`, `--require-independent-spectrum`, and
 `--require-calibrated-response`.  The committed response CSVs identify themselves as
 `NOMINAL_FACTORIZED` and intentionally do not satisfy the calibration gate.
+
+
+### C19 response-weighted frozen-field validity guardrail (2026-08-21)
+
+C19 traces particles through a magnetic-field snapshot that is frozen at the selected
+observation epoch.  Long trajectories therefore carry an additional modelling
+uncertainty: even when the Lorentz integration itself is numerically valid, a particle
+that requires several minutes to escape or to establish a bounded orbit samples a real
+magnetosphere that would have evolved during that interval.
+
+The historical guardrail tested only the longest contributing trajectory,
+
+```text
+max(trace_time) > FROZEN_FIELD_WARNING_TIME  -> reject the complete direct scalar
+```
+
+which was too conservative for an aperture-integrated detector observable.  It ignored
+the `J(E) G(E,Omega) dE dOmega` weight of the long trajectory, so one negligible
+sky/energy sample could veto an otherwise well-resolved E/W ratio.  It also used a
+warning time numerically equal to the common 300-s trace cap; an RK4 trajectory that
+crossed the cap on its final finite step (for example 300.25 s for `DT_TRACE=0.25 s`)
+could therefore trigger the physical guard solely because of integration-step
+overshoot.
+
+The current implementation replaces that single-trajectory veto with a
+**response-weighted sensitivity assessment**.  For every DIRECT_ACCESS aperture fold,
+`run_C19.py` apportions the exact interval integral of the assumed incident spectrum and
+detector response between the two rigidity endpoints, multiplies it by the same
+solid-angle/source-anisotropy factor used by the detector fold, and accumulates the
+fraction of detector signal represented by trajectories longer than
+
+```text
+T_long = --frozen-field-warning-seconds
+         + --frozen-field-time-tolerance-seconds .
+```
+
+The default tolerance is the AUTO sentinel `-1`, resolved to `0.5*DT_TRACE`; this keeps a
+normal one-step trace-limit overshoot from being interpreted as new physical evidence.
+The fold reports total long-trace and >2*T_warning fractions, response-weighted p50/p90/
+p99 trace times, and partitions the long response into allowed, physically forbidden,
+and still-unresolved populations.
+
+The guardrail deliberately distinguishes three levels:
+
+1. **static-field warning** -- any nonzero detector response comes from a trajectory
+   beyond `T_long`.  This is provenance only and does not erase a resolved scalar.
+2. **long-trace dominance warning** -- the long-duration response exceeds
+   `--max-long-trace-response-fraction` (default 0.05).  This remains advisory because a
+   positively resolved long trajectory is not equivalent to trajectory uncertainty.
+3. **hard static-field guard** -- the response fraction that is both long-duration and
+   still `UNRESOLVED` exceeds `--max-long-unresolved-response-fraction` (default 0.05),
+   or an explicitly enabled conservative observable-sensitivity width exceeds
+   `--max-static-field-ratio-bound-width-log10`.  The resulting status is
+   `STATIC_FIELD_DOMINATED`.
+
+The hard observable-sensitivity diagnostic is constructed without relabelling any
+trajectory.  C19 recomputes conservative EAST/WEST signal bounds in which every energy
+interval touching a long-duration trajectory is allowed to span `[0, full interval
+signal]`.  These bounds are propagated to `static_field_log10_east_west_ratio_min/max`
+and their width.  The width gate is disabled by default (`-1`) because an
+experiment-independent publication tolerance has not yet been calibrated; it can be
+enabled explicitly in convergence/publication studies.
+
+This design preserves the core DIRECT_ACCESS rule: **timeout or long duration is never
+converted to physical shielding**.  A long trajectory that is positively classified as
+outer-boundary allowed, inner-boundary forbidden, or bounce/drift trapped contributes to
+the warning provenance but does not by itself invalidate the scalar.  A long trajectory
+that remains unresolved contributes to the hard uncertainty budget.
+
+The implementation is auditable through `C19_aperture_availability.csv`,
+`C19_aperture_termination_budget.csv`, and the ModelRow fields written to
+`C19_comparison.csv`.  These products include long/very-long response fractions,
+allowed/forbidden/unresolved long fractions, response-weighted trace-time percentiles,
+static-field signal bounds, warning flags, and hard-guard status.  The dedicated
+`C19_static_field_guardrail_<solver>_<field>.png` plot shows EAST/WEST long-response and
+long+unresolved fractions together with the conservative static-field E/W bound width.
+`C19_result.json` records aggregate counts and maximum observed fractions.
+
+If a scientifically important fraction of the detector signal remains dependent on
+long-duration trajectories, the preferred next physics step is not to keep extending a
+frozen T05 snapshot indefinitely.  The guardrail is intended to identify precisely when
+a time-dependent/interpolated magnetospheric background along the backward trajectory
+becomes necessary.
+
 
 See `test/C19/README.md` for the detailed phased algorithm, acceptance logic, output
 schema, and required full AMPS regression sequence.

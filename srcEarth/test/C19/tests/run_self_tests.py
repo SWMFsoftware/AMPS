@@ -807,6 +807,12 @@ def validate_direct_plot_contract() -> None:
         "DIRECT_CALCULATED_NOT_ACCEPTED",
         '"plot_consistency": plot_consistency',
         "direct_convergence_status",
+        # Core comparison plots must remain recoverable even if the richer primary
+        # plot family encounters a matplotlib/data-shape exception.
+        "def make_core_comparison_fallback_plots",
+        "core_comparison_fallback",
+        # Reference/model timestamps must share datetime axis units.
+        "observed_times = [parse_utc(row.utc) for row in reference_panel]",
     )
     for needle in required:
         if needle not in text:
@@ -814,10 +820,76 @@ def validate_direct_plot_contract() -> None:
                 "C19 calculated/accepted plotting contract missing %r" % needle)
 
 
+
+
+def validate_field_initialization_progress_contract() -> None:
+    """Protect the Mode3D background-field progress-display contract.
+
+    The full AMPS executable is intentionally not linked by the package self-test,
+    therefore this inexpensive source check guards the user-visible invariants that
+    motivated the progress revision: field initialization must use the same #/ - bar
+    grammar as cutoff tracing, must be globally completion-counted, must print at the
+    quieter two-second cadence, and must flush every emitted progress line.
+    """
+    src_earth = ROOT.parents[1]
+    text = (src_earth / "3d" / "Mode3D.cpp").read_text(errors="replace")
+    required = (
+        "kFieldInitProgressPrintIntervalSeconds = 2.0",
+        "kFieldInitProgressBarWidth = 36",
+        "i<filled ? \"#\" : \"-\"",
+        "[Mode3D field INITIALIZATION]",
+        "rank 0/global over",
+        "std::cout.flush()",
+        "DynamicMpiProgressCounter",
+        "MPI_GLOBAL_COMMUNICATOR",
+        "completedLocal.fetch_add",
+        "workersFinished.load",
+        "MPI_THREAD_MULTIPLE",
+    )
+    for needle in required:
+        if needle not in text:
+            raise SystemExit(
+                "Mode3D field-initialization progress contract missing %r" % needle)
+
+
+def validate_response_weighted_guardrail_contract() -> None:
+    """Protect the C19 response-weighted frozen-field validity guardrail.
+
+    The historical implementation rejected a complete aperture whenever *any*
+    contributing trajectory exceeded a wall-clock threshold.  That behavior is
+    intentionally obsolete: the current guard must preserve detector/spectrum
+    weighting, distinguish warning from hard rejection, and expose an observable
+    sensitivity interval.  This source-contract test is deliberately cheap and
+    complements the executable synthetic guardrail cases in run_C19.py --self-test.
+    """
+    text = (ROOT / "run_C19.py").read_text()
+    required = (
+        "def weighted_quantile_from_pairs",
+        "long_trace_response_weight_fraction",
+        "long_trace_unresolved_weight_fraction",
+        "static_field_log10_east_west_bound_width",
+        "STATIC_FIELD_DOMINATED",
+        "ACCEPTED_WITH_STATIC_FIELD_WARNING",
+        "ACCEPTED_WITH_STATIC_FIELD_DOMINANCE_WARNING",
+        "--frozen-field-time-tolerance-seconds",
+        "--max-long-trace-response-fraction",
+        "--max-long-unresolved-response-fraction",
+        "--max-static-field-ratio-bound-width-log10",
+        "def make_static_field_guardrail_plots",
+        "C19_static_field_guardrail_",
+    )
+    for needle in required:
+        if needle not in text:
+            raise SystemExit(
+                "C19 response-weighted frozen-field guardrail contract missing %r" % needle)
+
+
 def main() -> int:
     validate_committed_inputs()
     validate_directional_coverage_source_contract()
     validate_direct_plot_contract()
+    validate_field_initialization_progress_contract()
+    validate_response_weighted_guardrail_contract()
     scripts = (ROOT / "run_C19.py", ROOT / "run_C19_convergence.py",
                ROOT / "build_goes_reference.py")
     for script in scripts:

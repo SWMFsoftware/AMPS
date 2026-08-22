@@ -361,6 +361,29 @@ python3 srcEarth/test/C19/run_C19.py \
 
 The same `-nt` value controls the Mode3D cutoff thread backend and the number of temporary POSIX workers requested for background-field initialization. The caller also participates in the field initialization, following the implementation documented by C18.
 
+During each T96/T05/TA16/IGRF/DIPOLE snapshot initialization, MPI rank 0 now prints a
+**flushed global field-initialization progress bar**.  Its syntax intentionally mirrors
+the later cutoff bar used by C19:
+
+```text
+[Mode3D field INITIALIZATION] [rank 0/global over 6 MPI ranks] [##############----------------------] 38.9%  (Cell 1373/3530)  ETA 00:04:52
+[Mode3D cutoff TRAJECTORY] [rank 0/global over 6 MPI ranks] [##############----------------------] 38.9%  (Task 1373/3530)  ETA 00:05:01
+```
+
+Both bars use 36 characters, `#` for completed work, `-` for remaining work, one
+decimal place for percent, and the same `HH:MM:SS` ETA.  Field initialization is
+intentionally quieter: normal updates are printed every **2 s**, a factor of two less
+frequently than the one-second cutoff bar.  The initial and final lines are always
+printed, and every line calls `std::cout.flush()` so users following an MPI/batch log
+see the update immediately.
+
+The reported field count is a completion count over all MPI ranks.  Temporary pthread
+workers never call MPI; they increment only a rank-local atomic counter, while the
+original rank thread publishes aggregate deltas with the same MPI-RMA progress-counter
+infrastructure used by the cutoff scheduler.  Thus live background-field progress does
+not change AMPS' MPI thread-level requirement and does not alter field values or the C19
+trajectory calculation.
+
 ### 8.4 GRIDLESS/GRIDDED cross-solver run
 
 ```bash
@@ -704,20 +727,145 @@ cutoff-band grid; the termination counters cover all unique trajectory evaluatio
 including refinement/integration evaluations. Use the latter when diagnosing why a
 particular direction exhausted the trace budget.
 
-### 9.4 Trace-budget and frozen-field guardrail
+### 9.4 Trace-budget and response-weighted frozen-field guardrail
 
-Trace-budget studies, when needed, are performed by rerunning the same current workflow with explicitly changed `--max-trace-distance-re`, `--max-trace-time`, and `--max-steps`. The purpose is **not** to keep increasing the path length until every trajectory escapes.
-Each C19 epoch uses a frozen background field. A trajectory requiring a very long
-integration can enter a regime where the static-field approximation itself deserves
-scrutiny. The runner therefore carries a separate guardrail:
+Trace-budget studies, when needed, are performed by rerunning the same current workflow
+with explicitly changed `--max-trace-distance-re`, `--max-trace-time`, and `--max-steps`.
+The purpose is **not** to keep increasing the budget until every trajectory escapes.
+Each C19 epoch is a frozen magnetic-field snapshot, so sufficiently long trajectories
+must also be assessed for sensitivity to the static-field approximation.
+
+#### Why the original guardrail was replaced
+
+The earlier implementation used one condition:
+
+```text
+max(trace_time over every contributing trajectory) > --frozen-field-warning-seconds
+```
+
+and then rejected the complete EAST/WEST scalar as `STATIC_FIELD_TRACE_GUARDRAIL`.
+That rule was intentionally conservative, but it had two important defects for C19:
+
+1. **It ignored detector weight.** One long trajectory with negligible `J(E)G(E)` and
+   aperture weight could veto an otherwise well-resolved detector signal.
+2. **It coupled a physics warning to the numerical endpoint.** With
+   `MAX_TRACE_TIME=300 s` and `DT_TRACE=0.25 s`, a final accepted step can report a
+   trace slightly above 300 s even though the requested physical budget was 300 s.
+   Using 300 s for both the numerical cap and the hard validity threshold could turn
+   that one-step overshoot into an automatic rejection.
+
+The current guardrail therefore measures **how much of the synthetic detector response
+depends on long trajectories**, and it keeps warning provenance separate from hard
+scientific rejection.
+
+#### Response-weighted long-trace definition
+
+For every adjacent DIRECT_ACCESS energy interval, the exact piecewise
+`J(E)G(E)` integral is split equally between the two trajectory endpoints, using the
+same endpoint-sharing convention as the termination budget.  The contribution is then
+multiplied by the sky-cell solid-angle weight and by the configured source anisotropy
+factor.  The resulting long-trace fractions are normalized by the complete unshielded
+synthetic signal for that detector head.
+
+A trajectory is called long when
+
+```text
+trace_time > frozen_field_warning_seconds + frozen_field_time_tolerance_seconds
+```
+
+The default tolerance is `0.5*DT_TRACE`; this prevents a single final integration-step
+overshoot from being mistaken for physically significant long-duration propagation.
+The runner also records the fraction above `2*warning_seconds`.
+
+Per head, C19 reports:
+
+```text
+long_trace_response_fraction
+very_long_trace_response_fraction
+long_trace_allowed_fraction
+long_trace_forbidden_fraction
+long_trace_unresolved_fraction
+trace_time_p50_s
+trace_time_p90_s
+trace_time_p99_s
+```
+
+The trace-time percentiles are detector/spectrum-weighted percentiles, not trajectory-
+count percentiles.  For example, `trace_time_p99_s=80` means 99% of the synthetic
+detector response is carried by trajectory endpoints with trace duration no larger than
+80 s.
+
+#### Warning versus hard rejection
+
+The default controls are:
 
 ```text
 --frozen-field-warning-seconds 300
+--frozen-field-time-tolerance-seconds -1   # AUTO = 0.5*--dt-trace
+--max-long-trace-response-fraction 0.05
+--max-long-unresolved-response-fraction 0.05
+--max-static-field-ratio-bound-width-log10 -1
 ```
 
-If any contributing directional scan reports a longer individual trajectory, the row is
-flagged `STATIC_FIELD_TRACE_GUARDRAIL` and is excluded from quantitative E/W validation.
-The trajectory is not reclassified as physically forbidden.
+Their roles are intentionally different:
+
+* **Any** nonzero detector-weighted long-trace fraction sets
+  `static_field_warning_triggered=true`.  This is provenance only and does not erase an
+  otherwise accepted direct scalar.
+* If the total long-trace response exceeds
+  `--max-long-trace-response-fraction`, C19 sets
+  `static_field_response_dominance_warning=true`.  This is still a warning, because a
+  long trajectory that is positively resolved as allowed or physically forbidden is not
+  equivalent to a numerical timeout.
+* A head is hard-guarded when the response fraction that is **both long and unresolved**
+  exceeds `--max-long-unresolved-response-fraction`.  This directly targets detector
+  signal whose physical access remains unknown after a long frozen-field integration.
+
+The previous `STATIC_FIELD_TRACE_GUARDRAIL` status is therefore replaced by
+`STATIC_FIELD_DOMINATED` for a true hard guard.  A quantitatively accepted row can remain
+`VALID` or `MODEL_MISMATCH` while carrying
+`direct_acceptance_reason=ACCEPTED_WITH_STATIC_FIELD_WARNING` or
+`ACCEPTED_WITH_STATIC_FIELD_DOMINANCE_WARNING`.
+
+#### Observable-sensitivity bounds
+
+C19 also computes a conservative frozen-field sensitivity interval.  For every energy
+bracket touching a long-duration trajectory, the bracket is temporarily treated as
+unknown `[blocked, transmitted]` while all short-duration brackets retain their ordinary
+DIRECT_ACCESS bounds.  EAST and WEST are then combined into:
+
+```text
+static_field_east_west_ratio_min/max
+static_field_log10_east_west_ratio_min/max
+static_field_log10_east_west_bound_width
+```
+
+This asks the right observable-level question: **how much could the compared E/W ratio
+move if the long-duration part of a frozen T05 snapshot were not trustworthy?**  The
+optional `--max-static-field-ratio-bound-width-log10` can turn this diagnostic into a
+hard acceptance gate.  Its default is negative (disabled) because no event-independent
+publication tolerance has yet been calibrated; the bounds are nevertheless always
+reported.  A convergence/publication study may enable a justified threshold explicitly.
+
+#### Outputs
+
+The new guardrail quantities are serialized in `C19_comparison.csv`, `C19_model.csv`,
+`C19_aperture_availability.csv`, `C19_aperture_termination_budget.csv`, and
+`C19_result.json`.  Per-sky-cell long-trace fractions and static-field transmission
+bounds are also retained in `C19_aperture_samples.csv`.  The diagnostic figure
+
+```text
+C19_static_field_guardrail_<solver>_<field>.png
+```
+
+plots EAST/WEST long-trace response fractions, long+unresolved fractions, and the
+conservative static-field `log10(E/W)` width versus epoch.
+
+The guardrail does **not** classify a timeout as forbidden and does not replace the
+ordinary trajectory-resolution or direct-bound-width gates.  If a substantial fraction
+of the detector signal genuinely requires trajectories far longer than the frozen-field
+validity interval, the physically stronger next step is a time-dependent background
+field along the trajectory rather than an arbitrarily larger static-field timeout.
 
 ### 9.5 Independent centered-dipole Størmer regression
 
@@ -767,7 +915,7 @@ EXCESSIVE_UNRESOLVED_EAST_APERTURE
 EXCESSIVE_UNRESOLVED_WEST_APERTURE
 UNRESOLVED_EAST_APERTURE
 UNRESOLVED_WEST_APERTURE
-STATIC_FIELD_TRACE_GUARDRAIL
+STATIC_FIELD_DOMINATED
 NEGATIVE_TRANSMISSION
 NONFINITE_MODELED_RATIO
 ```
@@ -786,7 +934,8 @@ observational_passed
 
 `execution_complete` means the requested AMPS runs and postprocessing completed.
 `trajectory_resolution_passed` additionally requires each EAST/WEST aperture to satisfy
-the unresolved-solid-angle threshold and the frozen-field duration guardrail.
+the unresolved-solid-angle threshold and to avoid a **hard** response-weighted frozen-
+field guard.  Warning-only long trajectories do not invalidate trajectory resolution.
 `instrument_fold_valid` requires usable aperture geometry and transmission bounds.
 `observational_passed` is the provisional GOES agreement gate.
 
@@ -813,6 +962,10 @@ inputs that remain intentionally configurable for controlled studies are:
 ```text
 --max-unresolved-aperture-fraction
 --frozen-field-warning-seconds
+--frozen-field-time-tolerance-seconds
+--max-long-trace-response-fraction
+--max-long-unresolved-response-fraction
+--max-static-field-ratio-bound-width-log10
 --spectral-index
 --dir-lon-res-deg
 --dir-lat-res-deg
@@ -1538,6 +1691,27 @@ transmission, directional-cutoff, boundary-spectrum, or aperture-diagnostic figu
 being attempted.  This is intentionally a reporting-only safeguard; a plot failure does
 not change any C19 scientific result.
 
+The two core comparison products have an additional recovery guarantee.  The primary
+`make_comparison_plots()` renderer remains authoritative, but after it runs C19 invokes a
+minimal `make_core_comparison_fallback_plots()` recovery pass.  The fallback writes only
+`C19_comparison_<solver>_<field>.png` and `C19_scatter_<solver>_<field>.png`, and only
+when the corresponding primary file is missing.  It never overwrites a successfully
+rendered figure.  The recovery path consumes only the already constructed `ModelRow`
+objects and the shared `direct_plot_groups()` selector, so it works during `--skip-run`
+and cannot trigger another AMPS calculation.  Calculated-but-not-accepted DIRECT_ACCESS
+values remain open markers, bounds-only rows remain diagnostic midpoints/intervals, and
+the cutoff midpoint remains separately labelled.
+
+A related plotting bug was fixed at the same time: selected GOES reference timestamps
+and model timestamps are now converted to `datetime` objects before they share an axis.
+The previous implementation could put ISO timestamp strings and Python `datetime`
+objects on the same Matplotlib x-axis.  Depending on the selected cadence and installed
+Matplotlib version, that could cause unit conversion/categorical-axis failure while
+building the time-series comparison.  Because the scalar scatter plot was generated
+later in the same comparison family, both `C19_comparison_*` and `C19_scatter_*` could
+then be absent even though `C19_comparison.csv` contained valid rows.  The homogeneous
+axis-unit rule plus the core fallback makes this failure mode auditable and recoverable.
+
 ### Direct scalar availability, acceptance, and plotting contract
 
 C19 deliberately distinguishes **calculated**, **accepted**, and **convergence-validated**
@@ -1739,12 +1913,20 @@ counts. A large `n_distance_limit`, `n_time_limit`, or `n_step_limit` means the 
 finite trace budget did not establish physical access for those rigidity samples. Rerun the same workflow with a controlled larger trace budget to determine whether the unresolved fraction decreases robustly.
 Do not convert the unresolved cells to forbidden merely to obtain a finite E/W ratio.
 
-### Rows report `STATIC_FIELD_TRACE_GUARDRAIL`
+### Rows report `STATIC_FIELD_DOMINATED`
 
-At least one directional penumbra scan required a trajectory longer than
-`--frozen-field-warning-seconds`. This is separate from geomagnetic access. Review the
-trace-budget experiment and the physical validity of a frozen T05 epoch before increasing
-the guardrail.
+This no longer means merely that one trajectory exceeded 300 s.  Inspect
+`C19_aperture_availability.csv` and `C19_static_field_guardrail_*.png`.  A hard guard now
+means either (1) the detector-weighted response fraction that is both long-duration and
+UNRESOLVED exceeds `--max-long-unresolved-response-fraction`, or (2) an explicitly
+enabled `--max-static-field-ratio-bound-width-log10` threshold is exceeded by the
+conservative frozen-field E/W sensitivity interval.
+
+Rows with `static_field_warning_triggered=true` but
+`static_field_guardrail_triggered=false` retain their accepted direct scalar.  A large
+`static_field_response_dominance_warning` should still be reviewed physically, but it is
+not treated as equivalent to unresolved trajectory weight.  Do not raise the numerical
+trace limit or relabel long trajectories as forbidden merely to remove the warning.
 
 ### EAST or WEST is absent from the transmission plot
 

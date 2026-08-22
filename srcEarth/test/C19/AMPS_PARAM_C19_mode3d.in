@@ -164,13 +164,6 @@ MAX_TRACE_TIME                 300.0
 ! otherwise gives high-energy particles much less physical time to establish escape
 ! or trapping than low-energy particles.
 MAX_TRACE_DISTANCE             0.0
-! Stage-B unresolved-only high-accuracy second pass.  Only trajectories that end
-! on TIME/STEP/DISTANCE_LIMIT are retraced; clean resolved trajectories are untouched.
-! The retry must still obtain a physical verdict and never maps a timeout to FORBIDDEN.
-CUTOFF_RETRY_UNRESOLVED        T
-CUTOFF_RETRY_TIME_FACTOR       3.0
-CUTOFF_RETRY_DT_FACTOR         0.5
-CUTOFF_RETRY_MAX_STEPS_FACTOR  4
 TRAP_DETECTION                 T
 ! Supplement mirror/bounce trapping with a frozen-field drift-shell recurrence test.
 ! This is important for near-90-degree-pitch GEO trajectories that can circulate on
@@ -181,10 +174,6 @@ TRAP_DRIFT_RADIAL_GROWTH_TOL_RE 1.0
 TRAP_DRIFT_RADIAL_REL_TOL       0.20
 TRAP_DRIFT_LATITUDE_TOL         0.20
 TRAP_DRIFT_PITCH_COS2_TOL       0.25
-! Separate secular-growth guard: a T05 shell may breathe strongly with local time,
-! but its turn-averaged radius must not systematically march outward each revolution.
-TRAP_DRIFT_MAX_SECULAR_GROWTH_RE  0.25
-TRAP_DRIFT_MAX_SECULAR_GROWTH_REL 0.03
 TRAP_DRIFT_PROFILE_BINS         24
 TRAP_DRIFT_MIN_PROFILE_COVERAGE 0.70
 TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION 0.75

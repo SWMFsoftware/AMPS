@@ -68,15 +68,6 @@ struct Config {
   double driftLatitudeTolerance{0.20};
   double driftPitchCos2Tolerance{0.25};
 
-  // Secular-growth guard.  A genuinely closed or quasi-closed drift shell may breathe
-  // strongly with magnetic local time, especially in T05, but its *turn-averaged* radius
-  // should not march systematically outward from one complete revolution to the next.
-  // This guard is deliberately much tighter than the per-bin recurrence tolerance: the
-  // latter admits day/night shell splitting, whereas this term rejects a slowly escaping
-  // orbit that could otherwise satisfy a loose relative per-bin match for several turns.
-  double driftMaxSecularGrowthAbsolute_m{0.25*6371200.0};
-  double driftMaxSecularGrowthRelative{0.03};
-
   // A revolution must sample enough azimuth bins to be meaningful, and a configurable
   // fraction of the bins present in both turns must satisfy all recurrence tolerances.
   // These gates prevent a sparse or accidental single-point return from being called a
@@ -195,12 +186,6 @@ class Detector {
   int driftRevolutions() const { return driftRevolutions_; }
   int stableDriftComparisons() const { return stableDriftComparisons_; }
   double driftAngleRadians() const { return std::fabs(driftAccumulatedAngle_); }
-  double lastDriftMatchedBinFraction() const { return lastDriftMatchedBinFraction_; }
-  double lastDriftRmsRadiusError_m() const { return lastDriftRmsRadiusError_m_; }
-  double lastDriftSecularGrowth_m() const { return lastDriftSecularGrowth_m_; }
-  double minimumOuterMargin_m() const {
-    return std::isfinite(minimumOuterMargin_) ? minimumOuterMargin_ : 0.0;
-  }
   double momentumRelativeSpread() const {
     return (pReference_>0.0) ? (pMax_-pMin_)/pReference_ : 0.0;
   }
@@ -285,18 +270,11 @@ class Detector {
            >= cfg_.driftMinProfileCoverage;
   }
 
-  bool ProfilesRecur(const Profile& previous,const Profile& current) {
-    lastDriftMatchedBinFraction_=0.0;
-    lastDriftRmsRadiusError_m_=std::numeric_limits<double>::infinity();
-    lastDriftSecularGrowth_m_=std::numeric_limits<double>::infinity();
-
+  bool ProfilesRecur(const Profile& previous,const Profile& current) const {
     if (!ProfileHasCoverage(previous) || !ProfileHasCoverage(current)) return false;
     const int n=std::min(previous.bins(),current.bins());
     int common=0;
     int matched=0;
-    double sumRadiusError2=0.0;
-    double sumPreviousRadius=0.0;
-    double sumCurrentRadius=0.0;
     for (int i=0;i<n;++i) {
       const int n0=previous.count[(std::size_t)i];
       const int n1=current.count[(std::size_t)i];
@@ -310,15 +288,10 @@ class Detector {
       const double a0=previous.pitchCos2Sum[(std::size_t)i]/n0;
       const double a1=current.pitchCos2Sum[(std::size_t)i]/n1;
 
-      const double dr=r1-r0;
-      sumRadiusError2+=dr*dr;
-      sumPreviousRadius+=r0;
-      sumCurrentRadius+=r1;
-
       const double rTol=std::max(cfg_.driftRadialAbsoluteTolerance_m,
                                  cfg_.driftRadialRelativeTolerance*
                                  std::max(std::fabs(r0),std::fabs(r1)));
-      const bool radialOk=std::fabs(dr)<=rTol;
+      const bool radialOk=std::fabs(r1-r0)<=rTol;
       const bool latitudeOk=std::fabs(z1-z0)<=cfg_.driftLatitudeTolerance;
       const bool pitchOk=std::fabs(a1-a0)<=cfg_.driftPitchCos2Tolerance;
       if (radialOk && latitudeOk && pitchOk) ++matched;
@@ -329,27 +302,8 @@ class Detector {
     const int requiredCommon=static_cast<int>(std::ceil(
         cfg_.driftMinProfileCoverage*static_cast<double>(n)));
     if (common<requiredCommon) return false;
-
-    lastDriftMatchedBinFraction_=static_cast<double>(matched)/static_cast<double>(common);
-    lastDriftRmsRadiusError_m_=std::sqrt(sumRadiusError2/static_cast<double>(common));
-
-    // A turn-averaged radius is intentionally used only as a *secular* guard.  The
-    // detailed per-azimuth recurrence above remains the actual shell-shape test.  This
-    // distinction allows a strongly asymmetric T05 shell to breathe by several Re over
-    // one orbit while rejecting a trajectory whose entire shell drifts outward each
-    // turn.  Inward secular motion is not rejected here because it will ultimately
-    // encounter the physical inner boundary; only outward motion can masquerade as a
-    // stable trapped shell while actually escaping toward the outer box.
-    const double meanPrevious=sumPreviousRadius/static_cast<double>(common);
-    const double meanCurrent=sumCurrentRadius/static_cast<double>(common);
-    lastDriftSecularGrowth_m_=meanCurrent-meanPrevious;
-    const double secularTol=std::max(cfg_.driftMaxSecularGrowthAbsolute_m,
-                                     cfg_.driftMaxSecularGrowthRelative*
-                                     std::max(std::fabs(meanPrevious),std::fabs(meanCurrent)));
-    const bool secularGrowthOk=(lastDriftSecularGrowth_m_<=secularTol);
-
-    return lastDriftMatchedBinFraction_>=cfg_.driftMinMatchedBinFraction &&
-           secularGrowthOk;
+    return static_cast<double>(matched)/static_cast<double>(common)
+           >= cfg_.driftMinMatchedBinFraction;
   }
 
   void CompleteDriftRevolution() {
@@ -443,12 +397,6 @@ class Detector {
   int driftRevolutions_{0};
   int stableDriftComparisons_{0};
   bool havePreviousDriftProfile_{false};
-  // Metrics from the most recent complete turn-to-turn profile comparison.  They are
-  // serialized by DIRECT_ACCESS so C19 can distinguish "nearly recurring but not yet
-  // proven trapped" from a completely non-recurring long-lived penumbral trajectory.
-  double lastDriftMatchedBinFraction_{0.0};
-  double lastDriftRmsRadiusError_m_{std::numeric_limits<double>::infinity()};
-  double lastDriftSecularGrowth_m_{std::numeric_limits<double>::infinity()};
   Profile currentProfile_;
   Profile previousProfile_;
 };

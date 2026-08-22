@@ -63,10 +63,6 @@
 //     CUTOFF_DEBUG_SCAN_*               ! lon/lat/alt/N/file controls for that scan
 //     CUTOFF_DEBUG_EXIT_TRACE T|F        ! write trajectory-exit diagnostic
 //     CUTOFF_DEBUG_EXIT_*               ! lon/lat/alt/R/N/list/file controls for exit test
-//     CUTOFF_RETRY_UNRESOLVED T|F       ! second high-accuracy pass for TIME/STEP/DISTANCE-limit trajectories
-//     CUTOFF_RETRY_TIME_FACTOR <double> ! multiply trace-time budget on the unresolved-only retry (>=1)
-//     CUTOFF_RETRY_DT_FACTOR   <double> ! multiply dt on retry; 0<factor<=1
-//     CUTOFF_RETRY_MAX_STEPS_FACTOR <int> ! multiply step budget on retry (>=1)
 //
 //   #DENSITY_SPECTRUM
 //     DS_EMIN                 <double>   ! MeV/n; lower energy bound
@@ -105,8 +101,6 @@
 //     TRAP_DRIFT_PROFILE_BINS     <int>      ! azimuth bins per full drift revolution
 //     TRAP_DRIFT_MIN_PROFILE_COVERAGE <double> ! populated-bin fraction in (0,1]
 //     TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION <double> ! recurring common-bin fraction in (0,1]
-//     TRAP_DRIFT_MAX_SECULAR_GROWTH_RE <double> ! max outward mean-radius growth/revolution [Re]
-//     TRAP_DRIFT_MAX_SECULAR_GROWTH_REL <double> ! relative outward-growth allowance; combined with absolute gate
 //
 //   #PARTICLE_TRAJECTORY    (optional; used by -mode 3d_forward)
 //     INITIALIZE_TRAJECTORIES T|F        ! runtime gate for AMPS trajectory records
@@ -1129,11 +1123,6 @@ namespace EarthUtil {
     double trapDriftRadialRelativeTolerance{0.20};
     double trapDriftLatitudeTolerance{0.20};
     double trapDriftPitchCos2Tolerance{0.25};
-    // Maximum outward change of the turn-averaged drift-shell radius between
-    // consecutive complete revolutions.  This is a separate secular-growth gate from
-    // the much looser per-bin shell-splitting tolerance above.
-    double trapDriftMaxSecularGrowth_Re{0.25};
-    double trapDriftMaxSecularGrowthRelative{0.03};
     int trapDriftProfileBins{24};
     double trapDriftMinProfileCoverage{0.70};
     double trapDriftMinMatchedBinFraction{0.75};
@@ -1169,18 +1158,6 @@ namespace EarthUtil {
     //   Earth radii (Re), not km and not meters. The solver converts Re -> m
     //   internally at runtime using _EARTH__RADIUS_.
     double maxTraceDistance_Re{0.0};
-
-    // Optional second pass for cutoff/direct-access trajectories that exhaust a
-    // configured trace budget without a physical verdict.  This is deliberately
-    // disabled in the generic model and enabled explicitly by C19.  The retry uses the
-    // same physical field and mover but a smaller DT_TRACE, a larger time/step budget,
-    // and (when the first pass ended on DISTANCE_LIMIT) disables the path cap.  It never
-    // maps a timeout to FORBIDDEN: the second pass must still reach a physical boundary
-    // or satisfy a positive trapping criterion.
-    bool cutoffRetryUnresolved{false};
-    double cutoffRetryTimeFactor{3.0};
-    double cutoffRetryDtFactor{0.5};
-    int cutoffRetryMaxStepsFactor{4};
   };
 
   struct CalcMode {

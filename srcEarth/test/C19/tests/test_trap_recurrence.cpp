@@ -29,11 +29,6 @@ Earth::TrajectoryTrap::Config Config() {
   cfg.driftProfileBins=24;
   cfg.driftMinProfileCoverage=0.70;
   cfg.driftMinMatchedBinFraction=0.80;
-  // Keep the per-bin recurrence tolerance deliberately a little looser than the
-  // secular-growth gate.  The slow-spiral regression below is constructed to pass
-  // local bin matching but fail the new outward-growth test.
-  cfg.driftMaxSecularGrowthAbsolute_m=0.25*Re;
-  cfg.driftMaxSecularGrowthRelative=0.03;
   return cfg;
 }
 
@@ -72,12 +67,11 @@ bool RunSecularlyEscapingOrbit() {
   for (int i=0;i<n;++i) {
     const double f=static_cast<double>(i)/static_cast<double>(n-1);
     const double phi=2.0*Pi*3.6*f;
-    // A deliberately *slow* outward spiral executes several azimuthal turns and grows
-    // only about 0.28 Re per turn.  That is small enough to fit the configured local
-    // per-bin radius recurrence tolerance near GEO, but larger than the independent
-    // 0.25-Re secular-growth gate.  This specifically protects the new Stage-C rule:
-    // local phase-profile similarity must not hide systematic outward shell growth.
-    const double r=(6.6 + 1.0*f)*Re;
+    // A long-lived spiral executes several azimuthal turns but expands by ~6 Re per
+    // turn.  It must NEVER be called trapped merely because a trace lives long enough
+    // to circle Earth.  This is the regression that protects the timeout->forbidden
+    // shortcut from reappearing under another name.
+    const double r=(6.6 + 22.0*f)*Re;
     double x[3]={r*std::cos(phi),r*std::sin(phi),0.0};
     double p[3]={-std::sin(phi),std::cos(phi),0.0};
     double B[3]={0.0,0.0,1.0};
