@@ -408,6 +408,33 @@ namespace EarthUtil {
     //     MAX_TRACE_TIME.
     double maxTrajTime_s{0.0}; // CUTOFF_MAX_TRAJ_TIME
 
+    // Optional unresolved-only trace-budget extension used by strict three-state
+    // cutoff products such as C19 DIRECT_ACCESS.  The primary trace always uses
+    // CUTOFF_MAX_TRAJ_TIME (or the global MAX_TRACE_TIME fallback).  Only a
+    // trajectory that still terminates at TIME_LIMIT or STEP_LIMIT is retraced with
+    // a larger total-time budget.  Physical ALLOWED/FORBIDDEN trajectories are never
+    // repeated, so the extension cannot change already resolved samples and its CPU
+    // cost is proportional to the unresolved population rather than the whole test.
+    //
+    // The present implementation intentionally RESTARTS the unresolved trajectory
+    // from its original phase-space seed for each larger budget.  Restarting is more
+    // expensive than serializing the private mover/trap-detector state at the end of
+    // the first pass, but it guarantees that every extended result is numerically
+    // identical to an ordinary single trace run directly with the larger time limit.
+    // This makes the convergence experiment auditable and avoids a hidden continuation
+    // state that could differ between GRIDLESS and Mode3D.
+    //
+    // Example used by C19:
+    //   CUTOFF_MAX_TRAJ_TIME                 300
+    //   CUTOFF_UNRESOLVED_EXTENSION_PASSES   2
+    //   CUTOFF_UNRESOLVED_EXTENSION_FACTOR   2
+    // gives 300 s -> 600 s -> 1200 s, but only for samples unresolved at the
+    // preceding budget.  DISTANCE_LIMIT is deliberately not extended: a path cap is
+    // a separately configured safety policy and should be fixed explicitly rather
+    // than silently relaxed by this time-convergence mechanism.
+    int unresolvedExtensionPasses{0};       // CUTOFF_UNRESOLVED_EXTENSION_PASSES
+    double unresolvedExtensionFactor{2.0};  // CUTOFF_UNRESOLVED_EXTENSION_FACTOR
+
     // Rigidity-search algorithm for each point/direction.
     //
     // UPPER_SCAN (default): penumbra-safe search.  Sample TraceAllowed(R) on a
@@ -1123,6 +1150,9 @@ namespace EarthUtil {
     double trapDriftRadialRelativeTolerance{0.20};
     double trapDriftLatitudeTolerance{0.20};
     double trapDriftPitchCos2Tolerance{0.25};
+    // Additional secular-drift veto for the full-orbit recurrence classifier.
+    // <=0 disables the gate globally; C19 enables a finite value explicitly.
+    double trapDriftMaxMeanRadiusChange_Re{0.0};
     int trapDriftProfileBins{24};
     double trapDriftMinProfileCoverage{0.70};
     double trapDriftMinMatchedBinFraction{0.75};

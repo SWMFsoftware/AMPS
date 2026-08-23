@@ -83,20 +83,11 @@ SOLVERS = ("GRIDLESS", "GRIDDED", "BOTH")
 FIELD_MODELS = ("T96", "T05")
 PROFILE_STEP_MINUTES = {"SMOKE": None, "ROUTINE": 60, "FULL": 0}
 
-# C19's production sky grid is isotropic in longitude/latitude spacing.  The
-# historical interface exposed the spacing directly as two degree-valued controls
-# (``--dir-lon-res-deg`` and ``--dir-lat-res-deg``).  For convergence studies this
-# is less convenient than the energy-grid interface, where the user asks for a
-# number of samples.  ``--access-angular-points`` therefore uses the number of
-# longitude samples around the complete 360-degree sky as the single angular-grid
-# resolution parameter.  An even value N gives an equal angular step
-#
-#     dOmega_grid = 360 / N degrees,
-#
-# in *both* longitude and latitude, with N longitude cells and N/2+1 latitude
-# samples including the two poles.  N=144 reproduces the production 2.5-degree
-# grid exactly.  Keeping the old degree controls as an advanced alternative
-# preserves asymmetric-grid experiments and backwards compatibility.
+# C19 production uses an isotropic 2.5-degree directional grid.  The
+# point-count interface below is intentionally parallel to --access-energy-points:
+# N denotes the number of longitude cells around 360 degrees, and the same
+# spacing (360/N) is used in latitude.  N=144 therefore reproduces 2.5 deg.
+# The older degree-valued controls remain available for asymmetric-grid studies.
 DEFAULT_DIRMAP_RES_DEG = 2.5
 
 
@@ -227,10 +218,20 @@ class AccessSample:
     trace_distance_re: Optional[float] = None
     trace_steps: Optional[int] = None
     retry_count: Optional[int] = None
+    # Primary-budget and unresolved-only extension provenance.  These remain optional
+    # so archived DIRECT_ACCESS cubes produced before the extension implementation
+    # continue to parse without special migration code.
+    primary_termination_code: Optional[int] = None
+    primary_termination: str = "UNKNOWN"
+    primary_trace_time_s: Optional[float] = None
+    trace_extension_count: Optional[int] = None
+    initial_trace_limit_s: Optional[float] = None
+    final_trace_limit_s: Optional[float] = None
     mirror_points: Optional[int] = None
     bounce_cycles: Optional[int] = None
     drift_revolutions: Optional[int] = None
     drift_angle_deg: Optional[float] = None
+    drift_mean_radius_change_re: Optional[float] = None
     trap_mechanism: Optional[int] = None
     momentum_relative_spread: Optional[float] = None
 
@@ -529,6 +530,23 @@ class ModelRow:
     max_direct_trace_distance_re: Optional[float] = None
     max_direct_trace_steps: Optional[int] = None
 
+    # Unresolved-only trace-extension convergence diagnostics.  Fractions use the same
+    # endpoint-attributed J(E)G(E) response budget as the termination table.  They make
+    # the improvement from the primary trace budget directly visible without changing
+    # any scientific acceptance criterion.
+    response_east_primary_trace_limit_fraction: float = 0.0
+    response_west_primary_trace_limit_fraction: float = 0.0
+    response_east_extension_resolved_fraction: float = 0.0
+    response_west_extension_resolved_fraction: float = 0.0
+    response_east_extension_unresolved_fraction: float = 0.0
+    response_west_extension_unresolved_fraction: float = 0.0
+    east_max_trace_extension_count: int = 0
+    west_max_trace_extension_count: int = 0
+    east_max_final_trace_limit_s: Optional[float] = None
+    west_max_final_trace_limit_s: Optional[float] = None
+    east_max_drift_mean_radius_change_re: Optional[float] = None
+    west_max_drift_mean_radius_change_re: Optional[float] = None
+
 
 @dataclass(frozen=True)
 class ApertureFold:
@@ -618,6 +636,18 @@ class ApertureFold:
 
     max_trace_distance_re: Optional[float] = None
     max_trace_steps: Optional[int] = None
+
+    # Response-weighted audit of the unresolved-only time-extension mechanism.
+    # ``primary_trace_limit_response_weight_fraction`` is what the endpoint-attributed
+    # trace-limit budget looked like before any extension.  The two following fractions
+    # partition the extended population into trajectories that became physically
+    # resolved and trajectories that remain unresolved after the final configured pass.
+    primary_trace_limit_response_weight_fraction: float = 0.0
+    extension_resolved_response_weight_fraction: float = 0.0
+    extension_unresolved_response_weight_fraction: float = 0.0
+    max_trace_extension_count: int = 0
+    max_final_trace_limit_s: Optional[float] = None
+    max_drift_mean_radius_change_re: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -1264,26 +1294,11 @@ def rigidity_gv_from_kinetic_energy_mev(energy_mev: float) -> float:
 
 
 def equal_angle_grid_from_longitude_points(n_longitude: int) -> Tuple[float, int, int]:
-    """Return ``(step_deg, n_lon, n_lat)`` for the C19 one-parameter sky grid.
+    """Return (step_deg, n_lon, n_lat) for --access-angular-points.
 
-    Energy resolution is naturally one-dimensional, so ``--access-energy-points``
-    maps directly onto a number of samples.  The directional grid is two-dimensional;
-    a single point count therefore needs an explicit convention.  C19 defines
-    ``--access-angular-points N`` as **N longitude cells over 360 degrees** and uses
-    the same angular step in latitude.  Consequently an even N produces ``N/2+1``
-    latitude samples over [-90,+90], including both poles.
-
-    Requiring an even value is important.  The AMPS directional-map implementation
-    derives dimensions by rounding ``360/dlon`` and ``180/dlat`` independently.  If
-    N were odd, ``dlat=360/N`` would not divide 180 degrees exactly and the final
-    latitude sample could be displaced from +90 degrees.  The even-N contract makes
-    the requested grid exact and identical in GRIDDED and GRIDLESS.
-
-    Examples
-    --------
-    ``N=72``  -> 5.0 deg, 72 x 37 full-sphere grid
-    ``N=144`` -> 2.5 deg, 144 x 73 (the production default)
-    ``N=288`` -> 1.25 deg, 288 x 145
+    ``--access-angular-points N`` means N longitude cells over 360 degrees and
+    equal angular spacing in latitude.  Requiring even N makes 180/(360/N) an
+    integer, so both poles are represented exactly in both GRIDDED and GRIDLESS.
     """
     n = int(n_longitude)
     if n < 4:
@@ -1295,15 +1310,7 @@ def equal_angle_grid_from_longitude_points(n_longitude: int) -> Tuple[float, int
 
 
 def directional_grid_shape(lon_res_deg: float, lat_res_deg: float) -> Tuple[int, int, int]:
-    """Mirror AMPS' directional-map dimension calculation for provenance.
-
-    Keeping this formula identical to ``ConfigureDirectionalMap3D`` and the
-    GRIDLESS directional-map setup lets ``C19_result.json`` report the actual
-    nominal full-sphere grid implied by either the new point-count interface or the
-    legacy degree-valued controls.  ``VECTOR_APERTURES`` normally schedules only a
-    subset of these cells, but the underlying angular resolution is still defined by
-    this full regular grid.
-    """
+    """Mirror the AMPS regular directional-map dimension calculation."""
     if lon_res_deg <= 0.0 or lat_res_deg <= 0.0:
         raise ValueError("directional-map resolutions must be positive")
     n_lon = int(math.floor(360.0 / lon_res_deg + 0.5))
@@ -1818,6 +1825,9 @@ def parse_directional_access(path: Path) -> DirectionalAccessCube:
 
         termination_code = rec_optional_int("termination_code")
         termination = TRAJECTORY_TERMINATION_NAMES.get(termination_code, "UNKNOWN")
+        primary_termination_code = rec_optional_int("primary_termination_code")
+        primary_termination = TRAJECTORY_TERMINATION_NAMES.get(
+            primary_termination_code, "UNKNOWN")
         key = (round(lon, 9), round(lat, 9))
         samples.setdefault(key, []).append(AccessSample(
             energy, rigidity, state,
@@ -1826,10 +1836,17 @@ def parse_directional_access(path: Path) -> DirectionalAccessCube:
             trace_distance_re=rec_optional_float("trace_distance_Re"),
             trace_steps=rec_optional_int("trace_steps"),
             retry_count=rec_optional_int("retry_count"),
+            primary_termination_code=primary_termination_code,
+            primary_termination=primary_termination,
+            primary_trace_time_s=rec_optional_float("primary_trace_time_s"),
+            trace_extension_count=rec_optional_int("trace_extension_count"),
+            initial_trace_limit_s=rec_optional_float("initial_trace_limit_s"),
+            final_trace_limit_s=rec_optional_float("final_trace_limit_s"),
             mirror_points=rec_optional_int("mirror_points"),
             bounce_cycles=rec_optional_int("bounce_cycles"),
             drift_revolutions=rec_optional_int("drift_revolutions"),
             drift_angle_deg=rec_optional_float("drift_angle_deg"),
+            drift_mean_radius_change_re=rec_optional_float("drift_mean_radius_change_Re"),
             trap_mechanism=rec_optional_int("trap_mechanism"),
             momentum_relative_spread=rec_optional_float("momentum_relative_spread"),
         ))
@@ -3089,6 +3106,21 @@ def fold_aperture_direct_access(
     max_trace_distance_re: Optional[float] = None
     max_trace_steps: Optional[int] = None
 
+    # Unresolved-only extension audit.  These quantities deliberately use the same
+    # endpoint-attributed J(E)G(E) interval convention as the termination budget.
+    # That makes the before/after comparison meaningful on nonuniform/adaptive energy
+    # grids and, unlike raw trajectory counts, emphasizes the trajectories that can
+    # actually affect the synthetic detector signal.  Only primary TIME_LIMIT and
+    # STEP_LIMIT outcomes are counted here because those are the two states eligible
+    # for the staged extension in the C++ tracer; DISTANCE_LIMIT remains a separate
+    # physical/numerical safety boundary and is never silently relaxed.
+    primary_trace_limit_signal_weight = 0.0
+    extension_resolved_signal_weight = 0.0
+    extension_unresolved_signal_weight = 0.0
+    max_trace_extension_count = 0
+    max_final_trace_limit_s: Optional[float] = None
+    max_drift_mean_radius_change_re: Optional[float] = None
+
     # Frozen-field guardrail accumulators.  The historical implementation compared
     # only ``max_trace_time_s`` with one threshold, which let a single negligible-
     # response trajectory veto an otherwise well-resolved detector fold.  The new
@@ -3169,6 +3201,24 @@ def fold_aperture_direct_access(
                 max_trace_steps = (sample.trace_steps if max_trace_steps is None
                                    else max(max_trace_steps, sample.trace_steps))
 
+            # Extension provenance is optional for archived DIRECT_ACCESS products.
+            # Missing values therefore mean "extension diagnostics unavailable", not
+            # an inferred extension.  New products write all three quantities.
+            extension_count = max(0, int(sample.trace_extension_count or 0))
+            max_trace_extension_count = max(max_trace_extension_count, extension_count)
+            if (sample.final_trace_limit_s is not None and
+                    math.isfinite(sample.final_trace_limit_s)):
+                max_final_trace_limit_s = (
+                    float(sample.final_trace_limit_s) if max_final_trace_limit_s is None
+                    else max(max_final_trace_limit_s, float(sample.final_trace_limit_s)))
+            if (sample.drift_mean_radius_change_re is not None and
+                    math.isfinite(sample.drift_mean_radius_change_re)):
+                max_drift_mean_radius_change_re = (
+                    float(sample.drift_mean_radius_change_re)
+                    if max_drift_mean_radius_change_re is None
+                    else max(max_drift_mean_radius_change_re,
+                             float(sample.drift_mean_radius_change_re)))
+
         # Directional solid-angle and optional source-anisotropy factors are known
         # before the energy loop.  Using them here lets the long-trace statistics
         # carry the same detector/spectrum/source weighting as the final synthetic
@@ -3182,6 +3232,15 @@ def fold_aperture_direct_access(
         cell_long_allowed_int = 0.0
         cell_long_forbidden_int = 0.0
         cell_long_unresolved_int = 0.0
+
+        # Per-direction before/after extension budget.  These are energy-response
+        # integrals before the sky-cell solid-angle and source-anisotropy factors are
+        # applied.  They are normalized by ``denom`` for the detailed aperture-sample
+        # CSV and accumulated with full detector weighting below for the aperture-level
+        # convergence diagnostics.
+        cell_primary_trace_limit_int = 0.0
+        cell_extension_resolved_int = 0.0
+        cell_extension_unresolved_int = 0.0
 
         for left, right in zip(samples[:-1], samples[1:]):
             e0 = left.energy_mev
@@ -3201,17 +3260,31 @@ def fold_aperture_direct_access(
                     reason = "OTHER"
                 termination_reason_int[reason] += 0.5 * interval_int
 
-            # Response-weighted trace-time diagnostics.  Interior samples naturally
-            # receive half of each neighboring exact interval integral; this is the
-            # same endpoint-sharing convention used by the termination budget and is
-            # stable under nonuniform/adaptive energy grids.  The global quantiles use
-            # full detector/spectrum/source weight, while the per-cell fractions below
-            # are normalized later by the unshielded synthetic signal.
+            # Response-weighted trace-time AND staged-extension diagnostics.  Interior
+            # samples naturally receive half of each neighboring exact interval
+            # integral; this is the same endpoint-sharing convention used by the
+            # termination budget and is stable under nonuniform/adaptive energy grids.
+            #
+            # Extension classification is based on explicit C++ provenance, never on
+            # an inferred duration.  Thus a trajectory that was TIME_LIMIT at the
+            # primary budget and became ALLOWED/FORBIDDEN/TRAPPED in a later pass is
+            # recorded as "resolved by extension" without changing its final physical
+            # state.  A trajectory that is still state==UNRESOLVED after one or more
+            # extension passes remains explicitly unresolved.
             long_sensitive = False
             for endpoint in (left, right):
+                endpoint_interval_weight = 0.5 * interval_int
+                extension_count = max(0, int(endpoint.trace_extension_count or 0))
+                if endpoint.primary_termination_code in (3, 4):
+                    cell_primary_trace_limit_int += endpoint_interval_weight
+                if extension_count > 0:
+                    if endpoint.state in (0, 1):
+                        cell_extension_resolved_int += endpoint_interval_weight
+                    else:
+                        cell_extension_unresolved_int += endpoint_interval_weight
+
                 if endpoint.trace_time_s is None or not math.isfinite(endpoint.trace_time_s):
                     continue
-                endpoint_interval_weight = 0.5 * interval_int
                 detector_signal_weight = (
                     direction_weight * angular_factor * endpoint_interval_weight)
                 if detector_signal_weight > 0.0:
@@ -3341,6 +3414,12 @@ def fold_aperture_direct_access(
         long_trace_allowed_signal_weight += weight * angular_factor * cell_long_allowed_int
         long_trace_forbidden_signal_weight += weight * angular_factor * cell_long_forbidden_int
         long_trace_unresolved_signal_weight += weight * angular_factor * cell_long_unresolved_int
+        primary_trace_limit_signal_weight += (
+            weight * angular_factor * cell_primary_trace_limit_int)
+        extension_resolved_signal_weight += (
+            weight * angular_factor * cell_extension_resolved_int)
+        extension_unresolved_signal_weight += (
+            weight * angular_factor * cell_extension_unresolved_int)
         unshielded_signal_sum += weight * angular_factor * denom
         if unresolved_energy_fraction > 0.0:
             n_unresolved += 1
@@ -3388,6 +3467,35 @@ def fold_aperture_direct_access(
                 max(0.0, min(1.0, cell_long_forbidden_int / denom))),
             "long_trace_unresolved_response_fraction": (
                 max(0.0, min(1.0, cell_long_unresolved_int / denom))),
+            # Staged trace-extension convergence at this look direction.  These
+            # response fractions answer three distinct questions: how much of the
+            # channel initially hit an extendable TIME/STEP limit, how much of that
+            # population subsequently reached a physical terminal state, and how much
+            # remains unresolved after the configured final pass.
+            "primary_trace_limit_response_fraction": (
+                max(0.0, min(1.0, cell_primary_trace_limit_int / denom))),
+            "extension_resolved_response_fraction": (
+                max(0.0, min(1.0, cell_extension_resolved_int / denom))),
+            "extension_unresolved_response_fraction": (
+                max(0.0, min(1.0, cell_extension_unresolved_int / denom))),
+            "trace_extension_sample_count": sum(
+                1 for sample in samples if (sample.trace_extension_count or 0) > 0),
+            "trace_extension_resolved_sample_count": sum(
+                1 for sample in samples
+                if (sample.trace_extension_count or 0) > 0 and sample.state in (0, 1)),
+            "trace_extension_unresolved_sample_count": sum(
+                1 for sample in samples
+                if (sample.trace_extension_count or 0) > 0 and sample.state == 2),
+            "max_trace_extension_count": max(
+                (int(sample.trace_extension_count or 0) for sample in samples), default=0),
+            "max_final_trace_limit_s": max(
+                (float(sample.final_trace_limit_s) for sample in samples
+                 if sample.final_trace_limit_s is not None and
+                 math.isfinite(sample.final_trace_limit_s)), default=None),
+            "max_drift_mean_radius_change_re": max(
+                (float(sample.drift_mean_radius_change_re) for sample in samples
+                 if sample.drift_mean_radius_change_re is not None and
+                 math.isfinite(sample.drift_mean_radius_change_re)), default=None),
             "static_field_transmission_min": (
                 max(0.0, min(1.0, static_allowed_min_int / denom))),
             "static_field_transmission_max": (
@@ -3469,6 +3577,24 @@ def fold_aperture_direct_access(
         long_trace_fraction = very_long_trace_fraction = 0.0
         long_allowed_fraction = long_forbidden_fraction = long_unresolved_fraction = 0.0
 
+    # The extension fractions use exactly the same unshielded synthetic-signal
+    # denominator as the frozen-field diagnostics.  This lets the user distinguish a
+    # high raw unresolved trajectory count from a scientifically important unresolved
+    # detector-response fraction.  In new files the extended population should be a
+    # subset of the primary trace-limit population, modulo endpoint sharing and
+    # floating-point roundoff.
+    if unshielded_signal_sum > 0.0:
+        primary_trace_limit_fraction = max(0.0, min(1.0,
+            primary_trace_limit_signal_weight / unshielded_signal_sum))
+        extension_resolved_fraction = max(0.0, min(1.0,
+            extension_resolved_signal_weight / unshielded_signal_sum))
+        extension_unresolved_fraction = max(0.0, min(1.0,
+            extension_unresolved_signal_weight / unshielded_signal_sum))
+    else:
+        primary_trace_limit_fraction = 0.0
+        extension_resolved_fraction = 0.0
+        extension_unresolved_fraction = 0.0
+
     trace_p50 = weighted_quantile_from_pairs(trace_time_weight_samples, 0.50)
     trace_p90 = weighted_quantile_from_pairs(trace_time_weight_samples, 0.90)
     trace_p99 = weighted_quantile_from_pairs(trace_time_weight_samples, 0.99)
@@ -3529,7 +3655,13 @@ def fold_aperture_direct_access(
         static_field_warning_triggered=static_warning,
         long_trace_response_dominance_warning=dominance_warning,
         max_trace_distance_re=max_trace_distance_re,
-        max_trace_steps=max_trace_steps)
+        max_trace_steps=max_trace_steps,
+        primary_trace_limit_response_weight_fraction=primary_trace_limit_fraction,
+        extension_resolved_response_weight_fraction=extension_resolved_fraction,
+        extension_unresolved_response_weight_fraction=extension_unresolved_fraction,
+        max_trace_extension_count=max_trace_extension_count,
+        max_final_trace_limit_s=max_final_trace_limit_s,
+        max_drift_mean_radius_change_re=max_drift_mean_radius_change_re)
 
 
 def classify_aperture_fold(
@@ -4282,6 +4414,29 @@ def evaluate_reference_row(
             [value for value in (east_fold.max_trace_steps,
                                  west_fold.max_trace_steps)
              if value is not None], default=None),
+        # Before/after staged-extension diagnostics are copied verbatim from each
+        # aperture fold.  They are intentionally diagnostic only: scientific
+        # acceptance still uses the final three-state access result and its rigorous
+        # E/W bounds, so enabling extension cannot make C19 pass by redefining a
+        # timeout as shielding.
+        response_east_primary_trace_limit_fraction=(
+            east_fold.primary_trace_limit_response_weight_fraction),
+        response_west_primary_trace_limit_fraction=(
+            west_fold.primary_trace_limit_response_weight_fraction),
+        response_east_extension_resolved_fraction=(
+            east_fold.extension_resolved_response_weight_fraction),
+        response_west_extension_resolved_fraction=(
+            west_fold.extension_resolved_response_weight_fraction),
+        response_east_extension_unresolved_fraction=(
+            east_fold.extension_unresolved_response_weight_fraction),
+        response_west_extension_unresolved_fraction=(
+            west_fold.extension_unresolved_response_weight_fraction),
+        east_max_trace_extension_count=east_fold.max_trace_extension_count,
+        west_max_trace_extension_count=west_fold.max_trace_extension_count,
+        east_max_final_trace_limit_s=east_fold.max_final_trace_limit_s,
+        west_max_final_trace_limit_s=west_fold.max_final_trace_limit_s,
+        east_max_drift_mean_radius_change_re=east_fold.max_drift_mean_radius_change_re,
+        west_max_drift_mean_radius_change_re=west_fold.max_drift_mean_radius_change_re,
     )
     diagnostics = list(east_fold.diagnostic) + list(west_fold.diagnostic)
     for item in diagnostics:
@@ -4671,6 +4826,18 @@ def aperture_availability_rows(rows: Sequence[ModelRow]) -> List[Dict[str, objec
                     row, "response_%s_distance_limit_fraction" % head),
                 "response_other_termination_fraction": getattr(
                     row, "response_%s_other_fraction" % head),
+                "response_primary_trace_limit_fraction": getattr(
+                    row, "response_%s_primary_trace_limit_fraction" % head),
+                "response_resolved_by_trace_extension_fraction": getattr(
+                    row, "response_%s_extension_resolved_fraction" % head),
+                "response_unresolved_after_trace_extension_fraction": getattr(
+                    row, "response_%s_extension_unresolved_fraction" % head),
+                "max_trace_extension_count": getattr(
+                    row, "%s_max_trace_extension_count" % head),
+                "max_final_trace_limit_s": getattr(
+                    row, "%s_max_final_trace_limit_s" % head),
+                "max_drift_mean_radius_change_re": getattr(
+                    row, "%s_max_drift_mean_radius_change_re" % head),
                 "unresolved_east_west_ratio": row.unresolved_east_west_ratio,
                 "unresolved_asymmetry_index": row.unresolved_asymmetry_index,
                 "modeled_log10_east_west_bound_width": row.modeled_log10_east_west_bound_width,
@@ -5158,6 +5325,23 @@ def aperture_termination_budget_rows(rows: Sequence[ModelRow]) -> List[Dict[str,
                     row, f"response_{head}_other_fraction"),
                 "response_total_unresolved_fraction": getattr(
                     row, f"unresolved_{head}_fraction"),
+                # Explicit before/after staged-extension budget.  This does not
+                # replace the final termination fractions above; it tells us how much
+                # detector response originally encountered an extendable TIME/STEP
+                # limit, how much was physically resolved by later passes, and how
+                # much remains unresolved at the final configured trace budget.
+                "response_primary_trace_limit_fraction": getattr(
+                    row, f"response_{head}_primary_trace_limit_fraction"),
+                "response_resolved_by_trace_extension_fraction": getattr(
+                    row, f"response_{head}_extension_resolved_fraction"),
+                "response_unresolved_after_trace_extension_fraction": getattr(
+                    row, f"response_{head}_extension_unresolved_fraction"),
+                "max_trace_extension_count": getattr(
+                    row, f"{head}_max_trace_extension_count"),
+                "max_final_trace_limit_s": getattr(
+                    row, f"{head}_max_final_trace_limit_s"),
+                "max_drift_mean_radius_change_re": getattr(
+                    row, f"{head}_max_drift_mean_radius_change_re"),
                 "unresolved_east_west_ratio": row.unresolved_east_west_ratio,
                 "unresolved_asymmetry_index": row.unresolved_asymmetry_index,
                 "direct_log10_east_west_bound_width": (
@@ -5179,6 +5363,109 @@ def aperture_termination_budget_rows(rows: Sequence[ModelRow]) -> List[Dict[str,
                     row.static_field_log10_east_west_bound_width),
             })
     return out
+
+
+def make_trace_extension_plots(
+        rows: Sequence[ModelRow], output_root: Path) -> List[str]:
+    """Visualize whether unresolved-only re-tracing actually improves C19.
+
+    This is deliberately a *new* isolated plot family; none of the historical
+    comparison/scatter/transmission/directional/aperture plots are modified or
+    replaced.  Each panel shows the response-weighted population that hit an
+    extendable primary TIME/STEP limit, the subset physically resolved by staged
+    extension, and the subset still unresolved after the final pass.  A dashed
+    secondary-axis curve shows the final rigorous log10(E/W) bound width, so a user
+    can immediately see whether reducing unresolved response is also stabilizing the
+    scientific observable rather than merely improving a raw trajectory count.
+
+    Archived DIRECT_ACCESS products do not contain extension provenance.  Their new
+    fractions remain zero by construction and the figure remains valid rather than
+    failing or guessing a historical primary state.
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        print("C19 trace-extension plotting skipped: %s" % exc, file=sys.stderr)
+        return []
+    if not rows:
+        return []
+
+    outputs: List[str] = []
+    grouped: Dict[Tuple[str, str], List[ModelRow]] = {}
+    for row in rows:
+        grouped.setdefault((row.solver, row.field_model), []).append(row)
+
+    panel_order = (("GOES13", "P4"), ("GOES13", "P5"),
+                   ("GOES15", "P4"), ("GOES15", "P5"))
+    for (solver, field_model), group in sorted(grouped.items()):
+        fig, axes = plt.subplots(4, 1, figsize=(11.0, 12.0), sharex=True)
+        fig.suptitle(
+            "C19 unresolved-only trace extension: %s %s (response-weighted)" %
+            (solver, field_model))
+        for axis, (spacecraft, channel) in zip(axes, panel_order):
+            subset = sorted(
+                (row for row in group
+                 if row.spacecraft == spacecraft and row.channel == channel),
+                key=lambda row: parse_utc(row.utc))
+            axis.set_title("%s %s" % (spacecraft, channel))
+            axis.set_ylabel("response fraction")
+            axis.set_ylim(-0.02, 1.02)
+            axis.grid(True, alpha=0.3)
+            if not subset:
+                axis.text(0.5, 0.5, "no rows", transform=axis.transAxes,
+                          ha="center", va="center")
+                continue
+
+            times = [parse_utc(row.utc) for row in subset]
+            # Keep EAST/WEST visually paired while using distinct markers/line styles
+            # rather than hard-coded colors.  Matplotlib therefore remains compatible
+            # with user styles and the rest of the C19 plot suite.
+            axis.plot(times,
+                      [row.response_east_primary_trace_limit_fraction for row in subset],
+                      marker="o", label="EAST primary TIME/STEP limit")
+            axis.plot(times,
+                      [row.response_west_primary_trace_limit_fraction for row in subset],
+                      marker="s", label="WEST primary TIME/STEP limit")
+            axis.plot(times,
+                      [row.response_east_extension_resolved_fraction for row in subset],
+                      marker="o", linestyle="--", label="EAST resolved by extension")
+            axis.plot(times,
+                      [row.response_west_extension_resolved_fraction for row in subset],
+                      marker="s", linestyle="--", label="WEST resolved by extension")
+            axis.plot(times,
+                      [row.response_east_extension_unresolved_fraction for row in subset],
+                      marker="^", linestyle=":", label="EAST still unresolved")
+            axis.plot(times,
+                      [row.response_west_extension_unresolved_fraction for row in subset],
+                      marker="v", linestyle=":", label="WEST still unresolved")
+
+            width_axis = axis.twinx()
+            widths = [row.modeled_log10_east_west_bound_width for row in subset]
+            finite_widths = [float(value) for value in widths
+                             if value is not None and math.isfinite(float(value))]
+            width_axis.plot(
+                times, [float(value) if value is not None and
+                        math.isfinite(float(value)) else math.nan for value in widths],
+                linestyle="-.", linewidth=1.3, label="rigorous log10(E/W) width")
+            width_axis.set_ylabel("log10(E/W) bound width")
+            if finite_widths:
+                width_axis.set_ylim(0.0, max(0.05, 1.10 * max(finite_widths)))
+
+            # Combine legends from both axes so the bound-width diagnostic is not
+            # visually detached from the extension fractions it is meant to explain.
+            handles, labels = axis.get_legend_handles_labels()
+            handles2, labels2 = width_axis.get_legend_handles_labels()
+            axis.legend(handles + handles2, labels + labels2, loc="best", fontsize=8)
+
+        axes[-1].set_xlabel("UTC")
+        fig.autofmt_xdate()
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))
+        path = output_root / ("C19_trace_extension_%s_%s.png" %
+                              (solver.lower(), field_model.lower()))
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        outputs.append(str(path))
+    return outputs
 
 
 def make_comparison_plots(
@@ -6277,6 +6564,8 @@ def render_case_input(
         "CUTOFF_UPPER_SCAN_N": str(args.cutoff_scan_n),
         "CUTOFF_TRACE_LIMIT_POLICY": args.trace_limit_policy,
         "CUTOFF_MAX_TRAJ_TIME": "%.12g" % args.max_trace_time,
+        "CUTOFF_UNRESOLVED_EXTENSION_PASSES": str(args.unresolved_extension_passes),
+        "CUTOFF_UNRESOLVED_EXTENSION_FACTOR": "%.12g" % args.unresolved_extension_factor,
         "DIRMAP_LON_RES": "%.12g" % args.dir_lon_res_deg,
         "DIRMAP_LAT_RES": "%.12g" % args.dir_lat_res_deg,
         # Directional work coverage is written into every rendered AMPS deck so a
@@ -6308,6 +6597,8 @@ def render_case_input(
         "TRAP_DRIFT_RADIAL_REL_TOL": "%.12g" % args.trap_drift_radial_rel_tol,
         "TRAP_DRIFT_LATITUDE_TOL": "%.12g" % args.trap_drift_latitude_tol,
         "TRAP_DRIFT_PITCH_COS2_TOL": "%.12g" % args.trap_drift_pitch_cos2_tol,
+        "TRAP_DRIFT_MAX_MEAN_RADIUS_CHANGE_RE": (
+            "%.12g" % args.trap_drift_max_mean_radius_change_re),
         "TRAP_DRIFT_PROFILE_BINS": str(args.trap_drift_profile_bins),
         "TRAP_DRIFT_MIN_PROFILE_COVERAGE": "%.12g" % args.trap_drift_min_profile_coverage,
         "TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION": "%.12g" % args.trap_drift_min_matched_bin_fraction,
@@ -6554,32 +6845,22 @@ def write_gridded_batch_inputs(
 def self_test() -> int:
     manifest = json.loads(DEFAULT_MANIFEST.read_text())
 
-    # Angular-resolution CLI regression.  The new one-parameter interface is
-    # intentionally analogous to --access-energy-points: doubling N doubles the
-    # one-dimensional angular sampling density while preserving equal longitude and
-    # latitude spacing.  The resolved degree values are what ultimately enter the
-    # AMPS input deck, so test both the pure conversion and the argparse path.
-    angular_step, angular_nlon, angular_nlat = \
-        equal_angle_grid_from_longitude_points(288)
-    if not math.isclose(angular_step, 1.25, rel_tol=0.0, abs_tol=1.0e-12):
+    # Protect both resolution-count interfaces against future runner refactors.
+    # Angular N=288 must resolve to an isotropic 1.25-degree grid; the independent
+    # energy option must remain accepted and preserve its requested value.
+    angular_step, angular_nlon, angular_nlat = equal_angle_grid_from_longitude_points(288)
+    if (not math.isclose(angular_step, 1.25, rel_tol=0.0, abs_tol=1.0e-12) or
+            (angular_nlon, angular_nlat) != (288, 145)):
         raise AssertionError("--access-angular-points conversion is incorrect")
-    if (angular_nlon, angular_nlat) != (288, 145):
-        raise AssertionError("--access-angular-points grid dimensions are incorrect")
-    try:
-        equal_angle_grid_from_longitude_points(145)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("odd --access-angular-points must be rejected")
-
-    angular_cli = parse_args(["--access-angular-points", "288"])
+    angular_cli = parse_args(["--access-angular-points", "288",
+                              "--access-energy-points", "64"])
     if (not math.isclose(angular_cli.dir_lon_res_deg, 1.25) or
             not math.isclose(angular_cli.dir_lat_res_deg, 1.25) or
             angular_cli.angular_grid_lon_points != 288 or
             angular_cli.angular_grid_lat_points != 145 or
-            angular_cli.angular_resolution_source != "ACCESS_ANGULAR_POINTS"):
-        raise AssertionError("angular point-count CLI did not resolve consistently")
-
+            angular_cli.angular_resolution_source != "ACCESS_ANGULAR_POINTS" or
+            angular_cli.access_energy_points != 64):
+        raise AssertionError("angular/energy point-count CLI resolution is inconsistent")
     with tempfile.TemporaryDirectory(prefix="C19_runner_selftest_") as temporary:
         root = Path(temporary)
         map_path = root / "cutoff_gridless_dir_map_point_0000.dat"
@@ -6629,6 +6910,7 @@ def self_test() -> int:
             cutoff_emin_mev=0.5, cutoff_emax_mev=500.0, cutoff_scan_n=20,
             cutoff_search="PENUMBRA_SCAN", trace_limit_policy="UNRESOLVED",
             max_trace_time=300.0, max_steps=500000,
+            unresolved_extension_passes=2, unresolved_extension_factor=2.0,
             dir_lon_res_deg=15.0, dir_lat_res_deg=15.0,
             direction_coverage="INSTRUMENT_APERTURES",
             direction_aperture_horizontal_half_angle_deg=30.0,
@@ -6644,7 +6926,8 @@ def self_test() -> int:
             dt_trace=0.25, max_trace_distance_re=0.0, trap_drift_detection=True,
             trap_min_drift_revolutions=3, trap_drift_radial_growth_tol_re=1.0,
             trap_drift_radial_rel_tol=0.20, trap_drift_latitude_tol=0.20,
-            trap_drift_pitch_cos2_tol=0.25, trap_drift_profile_bins=24,
+            trap_drift_pitch_cos2_tol=0.25,
+            trap_drift_max_mean_radius_change_re=1.0, trap_drift_profile_bins=24,
             trap_drift_min_profile_coverage=0.70,
             trap_drift_min_matched_bin_fraction=0.75, trap_energy_rel_tol=1.0e-4,
             scheduler="STATIC",
@@ -6858,6 +7141,66 @@ def self_test() -> int:
             raise AssertionError(
                 "Phase-0 endpoint termination budget does not close: %.16g" %
                 termination_budget_sum)
+
+        # Unresolved-only extension accounting regression.  The C++ solver writes the
+        # primary terminal state beside the final state, so Python can quantify how
+        # much detector-response weight was rescued by the 300->600->1200 s staged
+        # trace without performing a second baseline run.  Build a synthetic cube in
+        # which one EAST endpoint was TIME_LIMIT at the primary budget but became
+        # physically ALLOWED on the first extension.  A second endpoint remains
+        # unresolved after two extensions.  The fold must report both populations
+        # separately and must retain the final three-state classification.
+        extension_samples: Dict[Tuple[float, float], Tuple[AccessSample, ...]] = {}
+        for key, cube_samples in access_cube.samples.items():
+            rebuilt: List[AccessSample] = []
+            for sample in cube_samples:
+                values = asdict(sample)
+                is_east = math.isclose(key[0], 270.0, abs_tol=1.0e-12)
+                if is_east and math.isclose(sample.energy_mev, 150.0, abs_tol=1.0e-12):
+                    values.update({
+                        "primary_termination_code": 3,
+                        "primary_termination": "TIME_LIMIT",
+                        "primary_trace_time_s": 300.0,
+                        "trace_extension_count": 1,
+                        "initial_trace_limit_s": 300.0,
+                        "final_trace_limit_s": 600.0,
+                        "trace_time_s": 410.0,
+                    })
+                elif is_east and math.isclose(sample.energy_mev, 15.0, abs_tol=1.0e-12):
+                    values.update({
+                        "state": 2,
+                        "termination_code": 3,
+                        "termination": "TIME_LIMIT",
+                        "primary_termination_code": 3,
+                        "primary_termination": "TIME_LIMIT",
+                        "primary_trace_time_s": 300.0,
+                        "trace_extension_count": 2,
+                        "initial_trace_limit_s": 300.0,
+                        "final_trace_limit_s": 1200.0,
+                        "trace_time_s": 1200.0,
+                    })
+                rebuilt.append(AccessSample(**values))
+            extension_samples[key] = tuple(rebuilt)
+        extension_cube = DirectionalAccessCube(
+            access_cube.path + "#extension", access_cube.frame,
+            access_cube.x_km, access_cube.y_km, access_cube.z_km, extension_samples)
+        extension_fold = fold_aperture_direct_access(
+            direction_map_from_access_cube(extension_cube), extension_cube,
+            (extension_cube.x_km, extension_cube.y_km, extension_cube.z_km),
+            "EAST", "P4", test_response, test_spectrum,
+            25.0, 45.0, PRODUCTION_DIRECTION_MAPPING, 1.0, 1.0, 300.0,
+            frozen_field_time_tolerance_seconds=0.125,
+            max_long_trace_response_fraction=-1.0,
+            max_long_unresolved_response_fraction=-1.0)
+        if extension_fold.primary_trace_limit_response_weight_fraction <= 0.0:
+            raise AssertionError("primary TIME/STEP response was not attributed")
+        if extension_fold.extension_resolved_response_weight_fraction <= 0.0:
+            raise AssertionError("physically resolved extension response was not attributed")
+        if extension_fold.extension_unresolved_response_weight_fraction <= 0.0:
+            raise AssertionError("final unresolved extension response was not attributed")
+        if (extension_fold.max_trace_extension_count != 2 or
+                extension_fold.max_final_trace_limit_s != 1200.0):
+            raise AssertionError("trace-extension pass/budget provenance was not retained")
 
         # Frozen-field guardrail regression.  The historical rule rejected a complete
         # detector fold whenever *any* trajectory exceeded 300 s.  Build three variants
@@ -7356,6 +7699,8 @@ def self_test() -> int:
             classification_rows, root)
         guardrail_plots = make_static_field_guardrail_plots(
             [warning_model, dominated_model], root)
+        trace_extension_plots = make_trace_extension_plots(
+            [warning_model, dominated_model], root)
         cutoff_rows = directional_cutoff_rows(
             derived_cutoff_map, reference.utc, reference.spacecraft, "GRIDDED", "T05")
         cutoff_plots = make_directional_cutoff_plots(cutoff_rows, root)
@@ -7364,6 +7709,7 @@ def self_test() -> int:
             root / "C19_boundary_spectrum.png")
         if (not plots or aperture is None or direct_aperture is None
                 or not classification_plots or not guardrail_plots
+                or not trace_extension_plots
                 or not cutoff_plots or spectrum_plot is None):
             raise AssertionError("self-test did not generate plots")
         if not any(Path(path).name.startswith("C19_access_classification_goes13_p4_")
@@ -7470,29 +7816,21 @@ Examples:
                         help=("number of forced midpoint-probe levels even when interval endpoint states agree; 1 probes every seed-interval midpoint before ambiguity-driven refinement"))
     parser.add_argument("--require-real-ephemeris", action="store_true",
                         help="reject selected reference rows using nominal-slot positions; recommended for publication science runs")
-    # P2.1 is now part of the production configuration.  The production grid is
-    # 2.5 deg x 2.5 deg (144 longitude cells).  ``--access-angular-points`` is the
-    # preferred convergence-study interface because it mirrors
-    # ``--access-energy-points``: increasing one integer increases the angular
-    # sampling density while preserving equal lon/lat spacing.  The older degree
-    # controls remain available for deliberately anisotropic sky grids, but mixing
-    # the two interfaces in one run is rejected to avoid ambiguous precedence.
+    # P2.1 production resolution is 2.5 deg x 2.5 deg.  Restore the historical
+    # point-count interface used by C19 convergence commands: --access-angular-points
+    # is the preferred one-knob isotropic control, analogous to --access-energy-points.
+    # The degree-valued controls are retained for deliberately asymmetric grids; they
+    # are mutually exclusive with the point-count form to avoid hidden precedence.
     parser.add_argument(
         "--access-angular-points", type=int, default=None,
-        help=("isotropic directional-grid resolution expressed as the number of "
-              "longitude cells around 360 deg; must be even. The same angular "
-              "step 360/N is used in latitude, giving N/2+1 latitude samples. "
-              "Examples: 72=5 deg, 144=2.5 deg (default-equivalent), "
-              "288=1.25 deg. Cannot be combined with --dir-lon-res-deg or "
-              "--dir-lat-res-deg"))
-    parser.add_argument(
-        "--dir-lon-res-deg", type=float, default=None,
-        help=("advanced directional-map longitude spacing in degrees; default 2.5. "
-              "Use instead of --access-angular-points for asymmetric grids"))
-    parser.add_argument(
-        "--dir-lat-res-deg", type=float, default=None,
-        help=("advanced directional-map latitude spacing in degrees; default 2.5. "
-              "Use instead of --access-angular-points for asymmetric grids"))
+        help=("isotropic directional-grid resolution as longitude cells around 360 deg; "
+              "must be even. Uses the same 360/N spacing in latitude; "
+              "72=5 deg, 144=2.5 deg, 288=1.25 deg. Cannot be combined with "
+              "--dir-lon-res-deg/--dir-lat-res-deg"))
+    parser.add_argument("--dir-lon-res-deg", type=float, default=None,
+                        help="advanced longitude spacing in degrees; default 2.5")
+    parser.add_argument("--dir-lat-res-deg", type=float, default=None,
+                        help="advanced latitude spacing in degrees; default 2.5")
     parser.add_argument(
         "--direction-coverage", choices=("INSTRUMENT_APERTURES", "FULL_SPHERE"),
         default="INSTRUMENT_APERTURES",
@@ -7513,6 +7851,15 @@ Examples:
     parser.add_argument("--dt-trace", type=float, default=0.25)
     parser.add_argument("--max-steps", type=int, default=500000)
     parser.add_argument("--max-trace-time", type=float, default=300.0)
+    parser.add_argument(
+        "--unresolved-extension-passes", type=int, default=2,
+        help=("number of unresolved-only trace-budget extensions after the primary "
+              "--max-trace-time pass; C19 default 2 gives 300->600->1200 s with "
+              "the default factor; 0 disables the extension"))
+    parser.add_argument(
+        "--unresolved-extension-factor", type=float, default=2.0,
+        help=("multiplicative total-time increase per unresolved-only pass; must be >1; "
+              "only TIME_LIMIT/STEP_LIMIT samples are recomputed"))
     parser.add_argument(
         "--max-trace-distance-re", type=float, default=0.0,
         help=("cumulative path-length safety cap in Earth radii; 0 disables it "
@@ -7536,6 +7883,10 @@ Examples:
                         help="maximum recurrence difference in the dimensionless z/r profile")
     parser.add_argument("--trap-drift-pitch-cos2-tol", type=float, default=0.25,
                         help="maximum recurrence difference in gyro-averaged cos^2(pitch) profile")
+    parser.add_argument(
+        "--trap-drift-max-mean-radius-change-re", type=float, default=1.0,
+        help=("maximum change in the mean radial drift-shell profile between consecutive "
+              "completed revolutions [Re]; 0 disables this additional secular-drift veto"))
     parser.add_argument("--trap-drift-profile-bins", type=int, default=24,
                         help="number of drift-phase bins used by the full-orbit recurrence profile")
     parser.add_argument("--trap-drift-min-profile-coverage", type=float, default=0.70,
@@ -7649,18 +8000,15 @@ Examples:
     except ValueError as exc:
         parser.error(str(exc))
 
-    # Resolve the high-level angular point-count interface before any code consumes
-    # DIRMAP_LON_RES/DIRMAP_LAT_RES.  ``None`` on the two legacy arguments is
-    # intentional: it tells us whether the user explicitly requested a degree-valued
-    # override.  This preserves old commands such as ``--dir-lon-res-deg 5`` while
-    # making ``--access-angular-points 288`` a clean single-knob resolution change.
+    # Resolve the restored point-count interface before rendering AMPS input.  None on
+    # the legacy degree controls records whether the user explicitly supplied either
+    # axis, preserving backwards compatibility without ambiguous mixed commands.
     degree_override_requested = (
         args.dir_lon_res_deg is not None or args.dir_lat_res_deg is not None)
     if args.access_angular_points is not None:
         if degree_override_requested:
-            parser.error(
-                "--access-angular-points cannot be combined with "
-                "--dir-lon-res-deg/--dir-lat-res-deg")
+            parser.error("--access-angular-points cannot be combined with "
+                         "--dir-lon-res-deg/--dir-lat-res-deg")
         try:
             step_deg, _n_lon, _n_lat = equal_angle_grid_from_longitude_points(
                 args.access_angular_points)
@@ -7670,18 +8018,14 @@ Examples:
         args.dir_lat_res_deg = step_deg
         args.angular_resolution_source = "ACCESS_ANGULAR_POINTS"
     else:
-        # Backwards-compatible degree interface.  Each omitted axis retains the
-        # historical 2.5-degree production default independently.
         if args.dir_lon_res_deg is None:
             args.dir_lon_res_deg = DEFAULT_DIRMAP_RES_DEG
         if args.dir_lat_res_deg is None:
             args.dir_lat_res_deg = DEFAULT_DIRMAP_RES_DEG
         args.angular_resolution_source = (
             "DEGREE_OVERRIDE" if degree_override_requested else "PRODUCTION_DEFAULT")
-
     try:
-        (args.angular_grid_lon_points,
-         args.angular_grid_lat_points,
+        (args.angular_grid_lon_points, args.angular_grid_lat_points,
          args.angular_grid_full_sphere_points) = directional_grid_shape(
              args.dir_lon_res_deg, args.dir_lat_res_deg)
     except ValueError as exc:
@@ -7705,6 +8049,10 @@ Examples:
         parser.error("--max-steps must be >= 1")
     if args.max_trace_time <= 0.0:
         parser.error("--max-trace-time must be positive")
+    if not (0 <= args.unresolved_extension_passes <= 8):
+        parser.error("--unresolved-extension-passes must be in [0,8]")
+    if args.unresolved_extension_factor <= 1.0 or not math.isfinite(args.unresolved_extension_factor):
+        parser.error("--unresolved-extension-factor must be finite and > 1")
     if args.max_trace_distance_re < 0.0:
         parser.error("--max-trace-distance-re must be >= 0 (0 disables the path cap)")
     if args.trap_min_drift_revolutions < 2:
@@ -7713,6 +8061,8 @@ Examples:
         parser.error("drift radial recurrence tolerances must be >= 0")
     if args.trap_drift_latitude_tol < 0.0 or args.trap_drift_pitch_cos2_tol < 0.0:
         parser.error("drift phase-space recurrence tolerances must be >= 0")
+    if args.trap_drift_max_mean_radius_change_re < 0.0:
+        parser.error("--trap-drift-max-mean-radius-change-re must be >= 0")
     if not (8 <= args.trap_drift_profile_bins <= 360):
         parser.error("--trap-drift-profile-bins must be in [8,360]")
     if not (0.0 < args.trap_drift_min_profile_coverage <= 1.0):
@@ -8094,6 +8444,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "adaptive_access_max_depth": args.adaptive_access_max_depth,
                     "adaptive_access_guard_depth": args.adaptive_access_guard_depth,
                     "direction_coverage": args.direction_coverage,
+        "angular_resolution_source": args.angular_resolution_source,
+        "access_angular_points": args.access_angular_points,
+        "direction_lon_resolution_deg": args.dir_lon_res_deg,
+        "direction_lat_resolution_deg": args.dir_lat_res_deg,
+        "direction_grid_lon_points": args.angular_grid_lon_points,
+        "direction_grid_lat_points": args.angular_grid_lat_points,
+        "direction_grid_full_sphere_points": args.angular_grid_full_sphere_points,
                     "angular_resolution_source": args.angular_resolution_source,
                     "access_angular_points": args.access_angular_points,
                     "direction_lon_resolution_deg": args.dir_lon_res_deg,
@@ -8560,6 +8917,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     run_plot_family(
         "static_field_guardrail",
         lambda: make_static_field_guardrail_plots(model_rows, output_root))
+    run_plot_family(
+        "trace_extension",
+        lambda: make_trace_extension_plots(model_rows, output_root))
 
     # All scalar comparison figures consume direct_plot_groups().  Record the
     # serialized-data/population counts beside the plot list so a future regression
@@ -8632,6 +8992,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
              row.west_long_trace_unresolved_fraction) for row in model_rows],
         default=0.0)
 
+    # Aggregate staged-extension diagnostics.  These are maxima across heads/epochs,
+    # useful for a compact result summary while the full per-head values remain in
+    # C19_model.csv and C19_aperture_termination_budget.csv.  A large primary fraction
+    # paired with a much smaller final unresolved fraction demonstrates that the extra
+    # trace budget resolved scientifically important trajectories; it does not by
+    # itself alter any acceptance gate.
+    max_primary_trace_limit_response_fraction_observed = max(
+        [max(row.response_east_primary_trace_limit_fraction,
+             row.response_west_primary_trace_limit_fraction) for row in model_rows],
+        default=0.0)
+    max_extension_resolved_response_fraction_observed = max(
+        [max(row.response_east_extension_resolved_fraction,
+             row.response_west_extension_resolved_fraction) for row in model_rows],
+        default=0.0)
+    max_extension_unresolved_response_fraction_observed = max(
+        [max(row.response_east_extension_unresolved_fraction,
+             row.response_west_extension_unresolved_fraction) for row in model_rows],
+        default=0.0)
+    max_trace_extension_count_observed = max(
+        [max(row.east_max_trace_extension_count, row.west_max_trace_extension_count)
+         for row in model_rows], default=0)
+
     result = {
         "test_id": "C19A",
         "test_name": "GOES EPEAD east-west directional-access validation",
@@ -8666,19 +9048,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         # east/west or antipodal. Recording the pruning envelope makes optimized and
         # full-sphere results distinguishable without inspecting C19_commands.json.
         "direction_coverage": args.direction_coverage,
-        # Angular-resolution provenance.  ``access_angular_points`` is intentionally
-        # kept separate from the derived grid dimensions because the user may instead
-        # choose the legacy anisotropic degree controls.  The three grid-count fields
-        # mirror AMPS' own dimension calculation and therefore make convergence runs
-        # self-describing even when VECTOR_APERTURES retains only a small subset of
-        # the nominal full-sphere cells.
-        "angular_resolution_source": args.angular_resolution_source,
-        "access_angular_points": args.access_angular_points,
-        "direction_lon_resolution_deg": args.dir_lon_res_deg,
-        "direction_lat_resolution_deg": args.dir_lat_res_deg,
-        "direction_grid_lon_points": args.angular_grid_lon_points,
-        "direction_grid_lat_points": args.angular_grid_lat_points,
-        "direction_grid_full_sphere_points": args.angular_grid_full_sphere_points,
         "direction_aperture_horizontal_half_angle_deg": args.direction_aperture_horizontal_half_angle_deg,
         "direction_aperture_vertical_half_angle_deg": args.direction_aperture_vertical_half_angle_deg,
         "instrument_response": "piecewise response from %s folded with direct A(E,Omega) on GRIDDED and GRIDLESS; nominal elliptical angular FOV" % response_path,
@@ -8701,6 +9070,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "access_rigidity_max_gv": access_rigidities[-1],
         "max_discrete_transition_fraction": args.max_discrete_transition_fraction,
         "max_direct_ratio_bound_width_log10": args.max_direct_ratio_bound_width_log10,
+        # Unresolved-only trace convergence.  The primary C19 budget is unchanged;
+        # only TIME_LIMIT/STEP_LIMIT samples are retraced at successively larger total
+        # time budgets.  DISTANCE_LIMIT is intentionally excluded and a sample that
+        # still hits a limit after the last pass remains UNRESOLVED.
+        "unresolved_extension_passes": args.unresolved_extension_passes,
+        "unresolved_extension_factor": args.unresolved_extension_factor,
+        "trap_drift_max_mean_radius_change_re": (
+            args.trap_drift_max_mean_radius_change_re),
+        "max_primary_trace_limit_response_fraction_observed": (
+            max_primary_trace_limit_response_fraction_observed),
+        "max_extension_resolved_response_fraction_observed": (
+            max_extension_resolved_response_fraction_observed),
+        "max_extension_unresolved_response_fraction_observed": (
+            max_extension_unresolved_response_fraction_observed),
+        "max_trace_extension_count_observed": max_trace_extension_count_observed,
         # Frozen-field validity configuration and aggregate diagnostics.  The warning
         # threshold is intentionally separate from both MAX_TRACE_TIME and the hard
         # acceptance thresholds: long trajectories may be resolved and quantitatively
@@ -8828,7 +9212,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "Use --require-real-ephemeris with a regenerated reference for publication runs.",
             "GRIDDED and GRIDLESS both provide the direct three-state A(E,Omega) product and use the identical detector fold; solver differences therefore isolate field-evaluation/trajectory behavior.",
             "The cutoff-rigidity E/W curve is a diagnostic hard-step reduction. DIRECT_ACCESS derives its finite-support Rc from blocked area over the detector-response grid; it is not a substitute for the direct A(E,Omega) acceptance observable.",
-            "Frozen-field validity is assessed with detector/spectrum response weighting. Long but positively resolved trajectories produce provenance warnings; only long+unresolved response above the configured threshold, or an explicitly enabled conservative static-field E/W-width gate, hard-rejects the scalar. If important detector weight remains long-duration, a time-dependent magnetic background should be evaluated rather than extending a frozen T05 snapshot indefinitely.",
+            "Unresolved-only trace extension restarts only primary TIME_LIMIT/STEP_LIMIT samples with larger total-time budgets (C19 default 300->600->1200 s) and enlarges the numerical step allowance accordingly. It never maps timeout to shielding and never relaxes DISTANCE_LIMIT. Response-weighted before/after diagnostics quantify whether the extension actually improves the detector observable.",
+            "Frozen-field validity is assessed with detector/spectrum response weighting. Long but positively resolved trajectories produce provenance warnings; only long+unresolved response above the configured threshold, or an explicitly enabled conservative static-field E/W-width gate, hard-rejects the scalar. If important detector weight remains long-duration after the staged extension, a time-dependent magnetic background should be evaluated rather than extending a frozen T05 snapshot indefinitely.",
         ],
     }
     (output_root / "C19_result.json").write_text(
@@ -8862,6 +9247,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             max_long_trace_response_fraction_observed,
         "max detector-weighted long+unresolved fraction: %.6f" %
             max_long_unresolved_fraction_observed,
+        "max primary TIME/STEP-limit response fraction: %.6f" %
+            max_primary_trace_limit_response_fraction_observed,
+        "max response fraction resolved by staged extension: %.6f" %
+            max_extension_resolved_response_fraction_observed,
+        "max response fraction still unresolved after staged extension: %.6f" %
+            max_extension_unresolved_response_fraction_observed,
+        "max staged trace-extension pass observed: %d" %
+            max_trace_extension_count_observed,
     ]
     for (head, aperture_status), count in sorted(availability_counts.items()):
         summary_lines.append(

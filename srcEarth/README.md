@@ -491,11 +491,7 @@ The validated production behavior includes:
   retained through `--no-adaptive-access` as a convergence/reference calculation;
 - direct three-state directional `A(R,Omega)` output for both GRIDDED Mode3D and GRIDLESS;
 - detector-response folding with event-derived spectrum/provenance support;
-- default `2.5° × 2.5°` directional sampling, with the convergence-study convenience
-  option `--access-angular-points N`: N is the even number of longitude cells over
-  360°, and the runner uses the same `360/N` spacing in latitude (`N=144` is the
-  production 2.5° grid; 72/288 give 5°/1.25°).  The older degree-valued lon/lat
-  controls remain available for deliberately asymmetric grids;
+- default `2.5° × 2.5°` directional sampling;
 - default vector-aperture directional work (`VECTOR_APERTURES`), using the actual
   per-epoch detector look vectors and a conservative P5-sized pruning envelope, with
   `FULL_SPHERE` retained as an explicit diagnostic alternative;
@@ -930,3 +926,38 @@ becomes necessary.
 
 See `test/C19/README.md` for the complete phased algorithm, parameter defaults, output
 schema, convergence acceptance logic, and full AMPS regression requirements.
+
+### C19 unresolved-only staged trajectory extension (2026-08-23)
+
+C19 now has an optional unresolved-only convergence mechanism designed to reduce
+`TIME_LIMIT`/`STEP_LIMIT` response without changing the scientific meaning of the test.
+The primary trace still uses `CUTOFF_MAX_TRAJ_TIME`.  Only a sample unresolved at that
+primary TIME/STEP budget is retraced, from the same initial phase-space state, using
+successively larger total-time budgets controlled by
+`CUTOFF_UNRESOLVED_EXTENSION_PASSES` and `CUTOFF_UNRESOLVED_EXTENSION_FACTOR`.
+The C19 templates use 300 -> 600 -> 1200 s.  Resolved samples are not recomputed,
+`DISTANCE_LIMIT` is not relaxed, and a sample still unresolved after the final pass
+remains `UNRESOLVED` rather than being converted to shielding.
+
+The solver scales the extended `MAX_STEPS` allowance with the larger time budget and the
+observed mean integration step, preventing the numerical step ceiling from silently
+replacing the requested time-convergence study.  New DIRECT_ACCESS provenance records
+the primary termination/time, extension pass count, initial/final trace budgets, and the
+mean radial change between the last compared drift-shell profiles.  Python
+post-processing converts these into detector-response-weighted before/after fractions
+and adds `C19_trace_extension_<solver>_<field>.png`.  Existing comparison, scatter,
+parity, residual, transmission, directional-cutoff, boundary-spectrum, aperture,
+access-classification, and static-field-guardrail plots remain separate and unchanged in
+purpose.
+
+The drift recurrence logic also accepts `TRAP_DRIFT_MAX_MEAN_RADIUS_CHANGE_RE` as an
+additional secular-drift veto.  It can only prevent a slowly migrating orbit from being
+called drift trapped; it cannot generate a trapped/forbidden state by itself.  C19 uses
+a finite value explicitly, while zero disables the extra gate globally.
+
+This extension does not waive the frozen-field validity guardrail.  A trajectory that
+needs 600--1200 s may be better classified numerically but still samples a real
+magnetosphere over a duration for which a static T05 snapshot is increasingly
+questionable.  Response-weighted long-trace diagnostics therefore remain active, and a
+time-dependent field should be studied if scientifically important signal continues to
+depend on very long trajectories.

@@ -414,6 +414,8 @@ def integration_dry_run() -> None:
             raise SystemExit("directional coverage selector is missing from runner CLI")
         if "--access-angular-points" not in help_text:
             raise SystemExit("angular point-count resolution selector is missing from runner CLI")
+        if "--access-energy-points" not in help_text:
+            raise SystemExit("energy point-count resolution selector is missing from runner CLI")
         if "--gridded-batch" not in help_text:
             raise SystemExit("GRIDDED mesh-reuse/compatibility selector is missing from runner CLI")
         if "--max-discrete-transition-fraction" not in help_text:
@@ -425,11 +427,8 @@ def integration_dry_run() -> None:
             if 'DEFAULT_RESPONSE = SCRIPT_DIR / "data" / "epead_response_C19_uncorrected_extended.csv"' not in runner_text:
                 raise SystemExit("runner no longer defaults to the extended uncorrected response")
 
-        # Angular-resolution point-count regression.  This is the directional-grid
-        # analogue of --access-energy-points: 288 longitude cells must render an
-        # isotropic 1.25-degree lon/lat grid.  Verify the generated input deck rather
-        # than only the parser so the test protects the complete runner -> AMPS
-        # configuration path used by real convergence studies.
+        # End-to-end resolution CLI regression.  Verify the generated input rather
+        # than only argparse so --access-angular-points cannot become a no-op again.
         angular_output = root / "integration_angular_points"
         run([
             sys.executable, str(ROOT / "run_C19.py"),
@@ -437,7 +436,8 @@ def integration_dry_run() -> None:
             "--reference", str(reference), "--driver", str(driver),
             "--output-root", str(angular_output),
             "--amps", "./amps-not-required-for-dry-run", "-np", "1", "-nt", "1",
-            "--access-angular-points", "288", "--dry-run",
+            "--access-angular-points", "288", "--access-energy-points", "64",
+            "--dry-run",
         ])
         angular_decks = list(angular_output.glob("**/AMPS_PARAM_C19.in"))
         if not angular_decks:
@@ -910,12 +910,67 @@ def validate_response_weighted_guardrail_contract() -> None:
                 "C19 response-weighted frozen-field guardrail contract missing %r" % needle)
 
 
+
+def validate_unresolved_extension_contract() -> None:
+    """Protect staged unresolved-only convergence and its audit trail.
+
+    The full AMPS application is not linked by this Python package test, so this
+    inexpensive cross-layer source check complements run_C19.py's executable synthetic
+    fold regression.  It prevents future refactors from silently removing the C++
+    extension controls/provenance, the conservative secular-drift veto, or the new
+    diagnostic plot while leaving the CLI superficially intact.
+    """
+    src_earth = ROOT.parents[1]
+    runner = (ROOT / "run_C19.py").read_text(errors="replace")
+    parser_h = (src_earth / "util" / "amps_param_parser.h").read_text(errors="replace")
+    direct_h = (src_earth / "util" / "AdaptiveDirectAccess.h").read_text(errors="replace")
+    mode3d = (src_earth / "3d" / "CutoffRigidityMode3D.cpp").read_text(errors="replace")
+    gridless = (src_earth / "gridless" / "CutoffRigidityGridless.cpp").read_text(errors="replace")
+    trap = (src_earth / "util" / "TrajectoryTrapDetector.h").read_text(errors="replace")
+
+    required_runner = (
+        "--unresolved-extension-passes",
+        "--unresolved-extension-factor",
+        "primary_termination_code",
+        "trace_extension_count",
+        "response_east_extension_resolved_fraction",
+        "response_east_extension_unresolved_fraction",
+        "def make_trace_extension_plots",
+        "C19_trace_extension_",
+    )
+    for needle in required_runner:
+        if needle not in runner:
+            raise SystemExit("C19 unresolved-extension runner contract missing %r" % needle)
+
+    for needle in ("unresolvedExtensionPasses", "unresolvedExtensionFactor",
+                   "trapDriftMaxMeanRadiusChange_Re"):
+        if needle not in parser_h:
+            raise SystemExit("C19 unresolved-extension parser contract missing %r" % needle)
+    for needle in ("primaryTerminationCode", "primaryTraceTime_s",
+                   "traceExtensionCount", "finalTraceLimit_s",
+                   "driftMeanRadiusChange_Re"):
+        if needle not in direct_h:
+            raise SystemExit("DIRECT_ACCESS extension provenance missing %r" % needle)
+    for source_name, text in (("Mode3D", mode3d), ("GRIDLESS", gridless)):
+        for needle in ("unresolvedExtensionPasses", "ExtendableLimit",
+                       "TrajectoryTermination::TimeLimit",
+                       "TrajectoryTermination::StepLimit",
+                       "desiredSteps", "traceExtensionCount"):
+            if needle not in text:
+                raise SystemExit("%s unresolved-extension contract missing %r" %
+                                 (source_name, needle))
+    for needle in ("driftMaxMeanRadiusChange_m", "secularDriftOk",
+                   "ProfileMeanRadius"):
+        if needle not in trap:
+            raise SystemExit("trap secular-drift contract missing %r" % needle)
+
 def main() -> int:
     validate_committed_inputs()
     validate_directional_coverage_source_contract()
     validate_direct_plot_contract()
     validate_field_initialization_progress_contract()
     validate_response_weighted_guardrail_contract()
+    validate_unresolved_extension_contract()
     scripts = (ROOT / "run_C19.py", ROOT / "run_C19_convergence.py",
                ROOT / "build_goes_reference.py")
     for script in scripts:

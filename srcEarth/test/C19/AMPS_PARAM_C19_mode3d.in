@@ -61,6 +61,13 @@ CUTOFF_DIRECT_ACCESS_ADAPTIVE              T
 CUTOFF_DIRECT_ACCESS_ADAPTIVE_MAX_DEPTH    6
 CUTOFF_DIRECT_ACCESS_ADAPTIVE_GUARD_DEPTH  1
 CUTOFF_MAX_TRAJ_TIME           300.0
+! C19 resolves long-lived trajectories in stages instead of making every trajectory
+! pay for a larger frozen-field trace.  Only TIME_LIMIT/STEP_LIMIT samples are retraced
+! from the identical initial condition.  Two factor-of-two passes give 300 -> 600 ->
+! 1200 s.  Samples still unresolved at the last pass remain UNRESOLVED; no timeout is
+! ever relabelled as geomagnetic shielding.
+CUTOFF_UNRESOLVED_EXTENSION_PASSES 2
+CUTOFF_UNRESOLVED_EXTENSION_FACTOR 2.0
 DIRECTIONAL_MAP                T
 DIRMAP_LON_RES                 2.5
 DIRMAP_LAT_RES                 2.5
@@ -174,6 +181,11 @@ TRAP_DRIFT_RADIAL_GROWTH_TOL_RE 1.0
 TRAP_DRIFT_RADIAL_REL_TOL       0.20
 TRAP_DRIFT_LATITUDE_TOL         0.20
 TRAP_DRIFT_PITCH_COS2_TOL       0.25
+! Additional secular-drift veto: even when the azimuth-resolved profiles match, a
+! candidate trapped shell must not move its mean radial profile by more than 1 Re from
+! one completed drift revolution to the next.  This gate can only reject a trap
+! classification; it can never create a physical FORBIDDEN state.
+TRAP_DRIFT_MAX_MEAN_RADIUS_CHANGE_RE 1.0
 TRAP_DRIFT_PROFILE_BINS         24
 TRAP_DRIFT_MIN_PROFILE_COVERAGE 0.70
 TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION 0.75

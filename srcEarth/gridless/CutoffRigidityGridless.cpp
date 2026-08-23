@@ -1410,6 +1410,8 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
   trapConfig.driftRadialRelativeTolerance=prm.numerics.trapDriftRadialRelativeTolerance;
   trapConfig.driftLatitudeTolerance=prm.numerics.trapDriftLatitudeTolerance;
   trapConfig.driftPitchCos2Tolerance=prm.numerics.trapDriftPitchCos2Tolerance;
+  trapConfig.driftMaxMeanRadiusChange_m=
+      prm.numerics.trapDriftMaxMeanRadiusChange_Re*_EARTH__RADIUS_;
   trapConfig.driftProfileBins=prm.numerics.trapDriftProfileBins;
   trapConfig.driftMinProfileCoverage=prm.numerics.trapDriftMinProfileCoverage;
   trapConfig.driftMinMatchedBinFraction=prm.numerics.trapDriftMinMatchedBinFraction;
@@ -1440,6 +1442,7 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
     result.bounceCycles=trapDetector.bounceCycles();
     result.driftRevolutions=trapDetector.driftRevolutions();
     result.driftAngle_rad=trapDetector.driftAngleRadians();
+    result.driftMeanRadiusChange_m=trapDetector.driftMeanRadiusChangeMeters();
     result.trapMechanism=static_cast<int>(trapDetector.mechanism());
     result.momentumRelativeSpread=trapDetector.momentumRelativeSpread();
     return result;
@@ -1592,34 +1595,110 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryWithSingleRetry(
                              double R_GV,
                              double maxTraceTimeOverride_s,
                              bool captureExitState) {
+  using Earth::GridlessMode::TrajectoryResult;
+  using Earth::GridlessMode::TrajectoryTermination;
+
   const TraceIntegrationPolicy integrationPolicy=CutoffTraceIntegrationPolicy(prm);
-  auto result=TraceTrajectoryImpl(prm,field,x0_m,v0_unit,R_GV,
-                                  maxTraceTimeOverride_s,captureExitState,
-                                  integrationPolicy);
-  if (result.resolved() ||
-      Earth::GridlessMode::IsTraceLimitTermination(result.termination))
-    return result;
-  if (!Earth::GridlessMode::IsRetryableNumericalTermination(result.termination))
+  const double primaryTime_s=(maxTraceTimeOverride_s>0.0)
+      ? maxTraceTimeOverride_s
+      : ((prm.cutoff.maxTrajTime_s>0.0)
+          ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s);
+
+  // Run one requested budget and retain the historical one-time recovery attempt for
+  // genuine numerical failures.  Trace-limit outcomes are intentionally returned as-is
+  // so the unresolved-only extension below remains a separate, auditable mechanism.
+  auto RunOneBudget=[&](const EarthUtil::AmpsParam& attemptPrm,
+                        double requestedTime_s,
+                        double& actualTimeBudget_s) -> TrajectoryResult {
+    actualTimeBudget_s=requestedTime_s;
+    auto out=TraceTrajectoryImpl(
+        attemptPrm,field,x0_m,v0_unit,R_GV,requestedTime_s,captureExitState,
+        integrationPolicy);
+    if (out.resolved() ||
+        Earth::GridlessMode::IsTraceLimitTermination(out.termination) ||
+        !Earth::GridlessMode::IsRetryableNumericalTermination(out.termination))
+      return out;
+
+    // Numerical retry semantics are unchanged from the pre-extension implementation:
+    // halve DT_TRACE, double MAX_STEPS, and allow twice the requested time.  This does
+    // not count as a trace extension because the first trajectory was numerically
+    // invalid rather than a valid UNRESOLVED cutoff sample.
+    EarthUtil::AmpsParam retryPrm=attemptPrm;
+    retryPrm.numerics.dtTrace_s=
+        std::max(1.0e-12,0.5*attemptPrm.numerics.dtTrace_s);
+    retryPrm.numerics.maxSteps=
+        (attemptPrm.numerics.maxSteps<=std::numeric_limits<int>::max()/2)
+        ? 2*attemptPrm.numerics.maxSteps : std::numeric_limits<int>::max();
+    actualTimeBudget_s=2.0*requestedTime_s;
+    out=TraceTrajectoryImpl(
+        retryPrm,field,x0_m,v0_unit,R_GV,actualTimeBudget_s,captureExitState,
+        integrationPolicy);
+    out.retryCount=1;
+    return out;
+  };
+
+  double usedBudget_s=primaryTime_s;
+  TrajectoryResult result=RunOneBudget(prm,primaryTime_s,usedBudget_s);
+  const int primaryTerminationCode=static_cast<int>(result.termination);
+  const double primaryTraceTime_s=result.traceTime_s;
+  result.primaryTerminationCode=primaryTerminationCode;
+  result.primaryTraceTime_s=primaryTraceTime_s;
+  result.traceExtensionCount=0;
+  result.initialTraceLimit_s=primaryTime_s;
+  result.finalTraceLimit_s=usedBudget_s;
+
+  auto ExtendableLimit=[](TrajectoryTermination termination) {
+    // Do not silently relax MAX_TRACE_DISTANCE.  C19 disables that path-length cap;
+    // if another cutoff product enables it, DISTANCE_LIMIT remains a visible unresolved
+    // outcome that the user must address explicitly.
+    return termination==TrajectoryTermination::TimeLimit ||
+           termination==TrajectoryTermination::StepLimit;
+  };
+  if (prm.cutoff.unresolvedExtensionPasses<=0 ||
+      !ExtendableLimit(result.termination))
     return result;
 
-  // Retry only genuine numerical failures.  A configured time/step/distance cap is
-  // a valid cutoff stopping rule and is mapped to FORBIDDEN by the Boolean wrapper;
-  // repeating such a trajectory merely doubles the cost without adding information.
-  EarthUtil::AmpsParam retryPrm=prm;
-  retryPrm.numerics.dtTrace_s=std::max(1.0e-12,0.5*prm.numerics.dtTrace_s);
-  retryPrm.numerics.maxSteps=(prm.numerics.maxSteps<=std::numeric_limits<int>::max()/2)
-      ? 2*prm.numerics.maxSteps : std::numeric_limits<int>::max();
-  double retryTime=maxTraceTimeOverride_s;
-  if (retryTime>0.0) retryTime*=2.0;
-  else {
-    const double base=(prm.cutoff.maxTrajTime_s>0.0)
-        ? prm.cutoff.maxTrajTime_s : prm.numerics.maxTraceTime_s;
-    retryTime=2.0*base;
+  // Recompute only unresolved samples with larger total-time budgets.  Restarting from
+  // the original seed is deliberate: it avoids exposing/serializing private HYBRID and
+  // trap-detector state and makes each extended result directly reproducible by a
+  // stand-alone run configured with the same larger T_max.
+  for (int pass=1;pass<=prm.cutoff.unresolvedExtensionPasses;++pass) {
+    if (!ExtendableLimit(result.termination)) break;
+
+    const double factor=std::pow(prm.cutoff.unresolvedExtensionFactor,
+                                 static_cast<double>(pass));
+    const double targetTime_s=primaryTime_s*factor;
+    if (!(targetTime_s>primaryTime_s) || !std::isfinite(targetTime_s)) break;
+
+    EarthUtil::AmpsParam extensionPrm=prm;
+    long double desiredSteps=static_cast<long double>(prm.numerics.maxSteps);
+    desiredSteps=std::max(
+        desiredSteps,
+        std::ceil(static_cast<long double>(prm.numerics.maxSteps)*factor*1.25L));
+    if (result.steps>0 && result.traceTime_s>0.0) {
+      const long double meanDt=
+          static_cast<long double>(result.traceTime_s)/result.steps;
+      if (meanDt>0.0L && std::isfinite(static_cast<double>(meanDt))) {
+        desiredSteps=std::max(
+            desiredSteps,
+            std::ceil(static_cast<long double>(targetTime_s)/meanDt*1.25L));
+      }
+    }
+    const long double maxInt=static_cast<long double>(std::numeric_limits<int>::max());
+    extensionPrm.numerics.maxSteps=static_cast<int>(
+        std::max(1.0L,std::min(maxInt,desiredSteps)));
+
+    double extensionBudget_s=targetTime_s;
+    TrajectoryResult extended=RunOneBudget(
+        extensionPrm,targetTime_s,extensionBudget_s);
+    extended.primaryTerminationCode=primaryTerminationCode;
+    extended.primaryTraceTime_s=primaryTraceTime_s;
+    extended.traceExtensionCount=pass;
+    extended.initialTraceLimit_s=primaryTime_s;
+    extended.finalTraceLimit_s=extensionBudget_s;
+    result=extended;
   }
-  result=TraceTrajectoryImpl(retryPrm,field,x0_m,v0_unit,R_GV,
-                             retryTime,captureExitState,
-                             integrationPolicy);
-  result.retryCount=1;
+
   return result;
 }
 
@@ -2581,8 +2660,10 @@ static void WriteTecplotDirectionalAccess_Point(
       "VARIABLES=\"lon_deg\",\"lat_deg\",\"rigidity_GV\",\"energy_MeV\","
       "\"access_state\",\"allowed\",\"unresolved\",\"termination_code\","
       "\"trace_time_s\",\"trace_distance_Re\",\"trace_steps\",\"retry_count\","
+      "\"primary_termination_code\",\"primary_trace_time_s\",\"trace_extension_count\","
+      "\"initial_trace_limit_s\",\"final_trace_limit_s\","
       "\"mirror_points\",\"bounce_cycles\",\"drift_revolutions\",\"drift_angle_deg\","
-      "\"trap_mechanism\",\"momentum_relative_spread\"\n");
+      "\"drift_mean_radius_change_Re\",\"trap_mechanism\",\"momentum_relative_spread\"\n");
   std::fprintf(f,
       "ZONE T=\"point=%d x_km=%g y_km=%g z_km=%g frame=SM coverage=%s adaptive=%c seed_n=%zu max_depth=%d guard_depth=%d\" I=%zu F=POINT\n",
       pointId,point_km.x,point_km.y,point_km.z,coverage.c_str(),
@@ -2640,11 +2721,14 @@ static void WriteTecplotDirectionalAccess_Point(
       const auto& d=*diagnosticIt;
       std::fprintf(f,
           "%.15e %.15e %.15e %.15e %d %d %d %d "
-          "%.15e %.15e %d %d %d %d %d %.15e %d %.15e\n",
+          "%.15e %.15e %d %d %d %.15e %d %.15e %.15e "
+          "%d %d %d %.15e %.15e %d %.15e\n",
           lon_deg,lat_deg,rigidity,energy,state,allowed,unresolved,
           d.terminationCode,d.traceTime_s,d.traceDistance_Re,d.steps,d.retryCount,
+          d.primaryTerminationCode,d.primaryTraceTime_s,d.traceExtensionCount,
+          d.initialTraceLimit_s,d.finalTraceLimit_s,
           d.mirrorPoints,d.bounceCycles,d.driftRevolutions,d.driftAngle_deg,
-          d.trapMechanism,d.momentumRelativeSpread);
+          d.driftMeanRadiusChange_Re,d.trapMechanism,d.momentumRelativeSpread);
       ++diagnosticIt;
     }
   }
@@ -3028,10 +3112,16 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     double traceDistance_m{0.0};
     int steps{0};
     int retryCount{0};
+    int primaryTerminationCode{-1};
+    double primaryTraceTime_s{0.0};
+    int traceExtensionCount{0};
+    double initialTraceLimit_s{0.0};
+    double finalTraceLimit_s{0.0};
     int mirrorPoints{0};
     int bounceCycles{0};
     int driftRevolutions{0};
     double driftAngle_rad{0.0};
+    double driftMeanRadiusChange_m{0.0};
     int trapMechanism{0};
     double momentumRelativeSpread{0.0};
   };
@@ -3045,10 +3135,16 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     out.traceDistance_Re=sample.traceDistance_m/_EARTH__RADIUS_;
     out.steps=sample.steps;
     out.retryCount=sample.retryCount;
+    out.primaryTerminationCode=sample.primaryTerminationCode;
+    out.primaryTraceTime_s=sample.primaryTraceTime_s;
+    out.traceExtensionCount=sample.traceExtensionCount;
+    out.initialTraceLimit_s=sample.initialTraceLimit_s;
+    out.finalTraceLimit_s=sample.finalTraceLimit_s;
     out.mirrorPoints=sample.mirrorPoints;
     out.bounceCycles=sample.bounceCycles;
     out.driftRevolutions=sample.driftRevolutions;
     out.driftAngle_deg=sample.driftAngle_rad*180.0/M_PI;
+    out.driftMeanRadiusChange_Re=sample.driftMeanRadiusChange_m/_EARTH__RADIUS_;
     out.trapMechanism=sample.trapMechanism;
     out.momentumRelativeSpread=sample.momentumRelativeSpread;
     return out;
@@ -3066,10 +3162,16 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm) {
     out.traceDistance_m=tr.traceDistance_m;
     out.steps=tr.steps;
     out.retryCount=tr.retryCount;
+    out.primaryTerminationCode=tr.primaryTerminationCode;
+    out.primaryTraceTime_s=tr.primaryTraceTime_s;
+    out.traceExtensionCount=tr.traceExtensionCount;
+    out.initialTraceLimit_s=tr.initialTraceLimit_s;
+    out.finalTraceLimit_s=tr.finalTraceLimit_s;
     out.mirrorPoints=tr.mirrorPoints;
     out.bounceCycles=tr.bounceCycles;
     out.driftRevolutions=tr.driftRevolutions;
     out.driftAngle_rad=tr.driftAngle_rad;
+    out.driftMeanRadiusChange_m=tr.driftMeanRadiusChange_m;
     out.trapMechanism=tr.trapMechanism;
     out.momentumRelativeSpread=tr.momentumRelativeSpread;
 

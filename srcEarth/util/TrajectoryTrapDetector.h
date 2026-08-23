@@ -68,6 +68,13 @@ struct Config {
   double driftLatitudeTolerance{0.20};
   double driftPitchCos2Tolerance{0.25};
 
+  // Optional secular-drift veto.  A recurrent shell should not only look similar in
+  // each azimuth bin; its mean radial profile should also stop migrating systematically
+  // from one completed revolution to the next.  A value <=0 disables this extra gate
+  // for backward compatibility.  C19 enables a finite value as an additional safety
+  // check against classifying a slowly leaking/quasi-trapped orbit as permanently trapped.
+  double driftMaxMeanRadiusChange_m{0.0};
+
   // A revolution must sample enough azimuth bins to be meaningful, and a configurable
   // fraction of the bins present in both turns must satisfy all recurrence tolerances.
   // These gates prevent a sparse or accidental single-point return from being called a
@@ -186,6 +193,7 @@ class Detector {
   int driftRevolutions() const { return driftRevolutions_; }
   int stableDriftComparisons() const { return stableDriftComparisons_; }
   double driftAngleRadians() const { return std::fabs(driftAccumulatedAngle_); }
+  double driftMeanRadiusChangeMeters() const { return lastDriftMeanRadiusChange_m_; }
   double momentumRelativeSpread() const {
     return (pReference_>0.0) ? (pMax_-pMin_)/pReference_ : 0.0;
   }
@@ -270,6 +278,23 @@ class Detector {
            >= cfg_.driftMinProfileCoverage;
   }
 
+  double ProfileMeanRadius(const Profile& profile) const {
+    // Average the per-bin mean radii rather than all raw samples.  Each azimuth bin
+    // therefore contributes equally even when adaptive timesteps place more full-orbit
+    // samples in one sector.  This is a diagnostic/gating observable only; the mover
+    // itself still integrates the complete Lorentz orbit without guiding-centre averaging.
+    double sum=0.0;
+    int used=0;
+    for (int i=0;i<profile.bins();++i) {
+      const int n=profile.count[(std::size_t)i];
+      if (n<=0) continue;
+      sum += profile.rSum[(std::size_t)i]/static_cast<double>(n);
+      ++used;
+    }
+    return used>0 ? sum/static_cast<double>(used) :
+                    std::numeric_limits<double>::quiet_NaN();
+  }
+
   bool ProfilesRecur(const Profile& previous,const Profile& current) const {
     if (!ProfileHasCoverage(previous) || !ProfileHasCoverage(current)) return false;
     const int n=std::min(previous.bins(),current.bins());
@@ -309,7 +334,20 @@ class Detector {
   void CompleteDriftRevolution() {
     ++driftRevolutions_;
     if (havePreviousDriftProfile_) {
-      if (ProfilesRecur(previousProfile_,currentProfile_))
+      const double previousMean=ProfileMeanRadius(previousProfile_);
+      const double currentMean=ProfileMeanRadius(currentProfile_);
+      if (std::isfinite(previousMean) && std::isfinite(currentMean))
+        lastDriftMeanRadiusChange_m_=std::fabs(currentMean-previousMean);
+      else
+        lastDriftMeanRadiusChange_m_=std::numeric_limits<double>::infinity();
+
+      // Profile recurrence is the primary full-orbit trapped-shell test.  The optional
+      // mean-radius gate is deliberately an additional veto, never an independent way
+      // to declare trapping.  Therefore tightening the secular-drift tolerance can only
+      // make the classifier more conservative; it cannot manufacture a FORBIDDEN state.
+      const bool secularDriftOk=(cfg_.driftMaxMeanRadiusChange_m<=0.0) ||
+          (lastDriftMeanRadiusChange_m_<=cfg_.driftMaxMeanRadiusChange_m);
+      if (ProfilesRecur(previousProfile_,currentProfile_) && secularDriftOk)
         ++stableDriftComparisons_;
       else
         stableDriftComparisons_=0;
@@ -396,6 +434,7 @@ class Detector {
   double driftAccumulatedAngle_{0.0};
   int driftRevolutions_{0};
   int stableDriftComparisons_{0};
+  double lastDriftMeanRadiusChange_m_{0.0};
   bool havePreviousDriftProfile_{false};
   Profile currentProfile_;
   Profile previousProfile_;

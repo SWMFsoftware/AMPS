@@ -3137,16 +3137,8 @@ brackets. This makes `--access-energy-points` a measurable convergence control.
 
 The production defaults now use the finest settings from the previous P2 convergence
 implementation: a 2.5-degree directional grid and Mode3D mesh resolutions of 0.025 Re
-near Earth and 1.0 Re at the outer boundary.  C19 exposes that angular grid through the
-same point-count style used for the dense rigidity grid: `--access-angular-points N`
-means N longitude cells over 360 degrees and the same `360/N` spacing in latitude.
-N must be even, giving `N/2+1` latitude samples including both poles; 144 therefore
-reproduces the 2.5-degree production grid, while 72/288 give 5/1.25 degrees.  The
-legacy `--dir-lon-res-deg`/`--dir-lat-res-deg` controls remain available for asymmetric
-grids and are mutually exclusive with the point-count interface.  With
-`VECTOR_APERTURES`, the point count defines the underlying regular grid but only cells
-inside the location-owned detector apertures are scheduled. Detector FILE orientation
-and explicit bounded anisotropy remain ordinary physics inputs to the same workflow. The standard
+near Earth and 1.0 Re at the outer boundary. Detector FILE orientation and explicit
+bounded anisotropy remain ordinary physics inputs to the same workflow. The standard
 `C19_comparison_*`, scatter, parity, residual, transmission, and aperture diagnostic
 plots require no special runner flag.
 
@@ -3372,3 +3364,66 @@ becomes necessary.
 
 See `test/C19/README.md` for the detailed phased algorithm, acceptance logic, output
 schema, and required full AMPS regression sequence.
+
+### C19 unresolved-only staged trajectory extension (2026-08-23)
+
+C19 now reduces the response-weighted unresolved population without weakening the
+three-state DIRECT_ACCESS test.  The normal primary trace budget remains unchanged.
+Only samples whose **primary** classifier terminated at `TIME_LIMIT` or `STEP_LIMIT`
+are retraced at larger total-time budgets.  The controls are
+
+```text
+CUTOFF_UNRESOLVED_EXTENSION_PASSES
+CUTOFF_UNRESOLVED_EXTENSION_FACTOR
+```
+
+and default to zero outside tests that explicitly enable them.  The committed C19
+inputs use two factor-of-two passes with `CUTOFF_MAX_TRAJ_TIME=300 s`, giving
+300 -> 600 -> 1200 s.  Resolved escape, inner-boundary loss, and positively detected
+bounce/drift trapping are never repeated.  `DISTANCE_LIMIT` is intentionally excluded
+because a cumulative path cap is an independent safety/convergence assumption and must
+not be silently relaxed by a time-convergence feature.
+
+Each extension restarts the full Lorentz trajectory from the original phase-space seed.
+A true continuation would be cheaper, but would require serializing private mover and
+trap-detector state and could give GRIDDED and GRIDLESS subtly different continuation
+semantics.  Restarting makes each extended result directly equivalent to an independent
+run with the larger total-time limit.  If the final pass still reaches a trace safety
+limit, the state remains `UNRESOLVED`; elapsed time is never reinterpreted as magnetic
+shielding.
+
+The extended pass also increases `MAX_STEPS` using both the requested time scaling and
+the preceding trace's observed mean timestep, with a 25% safety margin and integer
+clamping.  This prevents a larger `T_max` from being defeated by an unchanged step cap.
+The pre-existing one-time retry for genuine numerical failures remains separate and is
+still represented by `retry_count`.
+
+`TrajectoryResult` and the DIRECT_ACCESS Tecplot product now preserve
+`primary_termination_code`, `primary_trace_time_s`, `trace_extension_count`,
+`initial_trace_limit_s`, `final_trace_limit_s`, and `drift_mean_radius_change_Re`.
+The C19 postprocessor uses the same exact endpoint-attributed `J(E)G(E)` response budget
+as the existing termination accounting to report the response fraction that hit a
+primary TIME/STEP limit, the fraction physically resolved by staged extension, and the
+fraction still unresolved after the final pass.  These diagnostics are serialized in
+the model/aperture tables and visualized by
+`C19_trace_extension_<solver>_<field>.png`; no existing C19 plot family is replaced.
+
+The drift-shell recurrence classifier also has an optional conservative secular-drift
+veto:
+
+```text
+TRAP_DRIFT_MAX_MEAN_RADIUS_CHANGE_RE
+```
+
+A value of zero disables the veto.  When enabled, detailed azimuth-profile recurrence
+must also have sufficiently small change in the mean radial profile between consecutive
+completed drift revolutions.  The mean is formed from per-bin means, so adaptive
+full-orbit timesteps do not overweight one azimuth sector.  This test can only reject a
+candidate `DRIFT_TRAPPED_FORBIDDEN` classification; it cannot create one.
+
+Longer successful traces are still subject to the response-weighted frozen-field
+validity diagnostics.  The staged extension improves classification convergence but does
+not make a 600--1200 s frozen T05 snapshot physically time dependent.  If important
+detector response remains long-duration or unresolved after the final pass, evaluate a
+time-dependent/interpolated magnetic background rather than extending the static trace
+budget indefinitely.

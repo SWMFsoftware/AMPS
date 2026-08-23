@@ -263,6 +263,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "--amps", args.amps, "--mpirun", args.mpirun,
         "-np", str(args.np), "-nt", str(args.nt),
         "--mover", "RK4", "--dt-trace", "0.25",
+        # This helper measures explicit 60/120/300/600-s (or user-selected) trace
+        # budgets.  Disable the production unresolved-only extension here so, e.g., a
+        # nominal 60-s convergence point cannot silently retrace unresolved samples to
+        # 120/240 s and invalidate the x-axis.  The ordinary run_C19.py production
+        # workflow still defaults to the staged extension.
+        "--unresolved-extension-passes", "0",
     ]
     if args.detector_response:
         common += ["--detector-response", str(Path(args.detector_response).resolve())]

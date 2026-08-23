@@ -151,10 +151,22 @@ struct DirectAccessSampleDiagnostic {
   double traceDistance_Re{0.0};
   int steps{0};
   int retryCount{0};
+
+  // Trace-budget convergence provenance.  These fields let the C19 postprocessor
+  // distinguish the normal 300-s classification from an unresolved-only extended
+  // result without rerunning or guessing from the final trace time.  A value of
+  // traceExtensionCount==0 means the normal primary budget was sufficient.
+  int primaryTerminationCode{-1};
+  double primaryTraceTime_s{0.0};
+  int traceExtensionCount{0};
+  double initialTraceLimit_s{0.0};
+  double finalTraceLimit_s{0.0};
+
   int mirrorPoints{0};
   int bounceCycles{0};
   int driftRevolutions{0};
   double driftAngle_deg{0.0};
+  double driftMeanRadiusChange_Re{0.0};
   int trapMechanism{0};       // 0=None, 1=Bounce, 2=Drift
   double momentumRelativeSpread{0.0};
 };

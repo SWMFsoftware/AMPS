@@ -287,6 +287,19 @@ namespace Earth {
       double traceDistance_m{0.0};
       int steps{0};
       int retryCount{0};
+
+      // Unresolved-only cutoff trace extension diagnostics.  ``primary*`` records
+      // what happened at the normal CUTOFF_MAX_TRAJ_TIME budget before any C19-style
+      // extension was attempted.  ``traceExtensionCount`` is zero for the overwhelming
+      // majority of trajectories and positive only when a TIME_LIMIT/STEP_LIMIT sample
+      // was recomputed with a larger total-time budget.  These fields are diagnostics:
+      // the final ``termination`` remains the sole authoritative physical classifier.
+      int primaryTerminationCode{-1};
+      double primaryTraceTime_s{0.0};
+      int traceExtensionCount{0};
+      double initialTraceLimit_s{0.0};
+      double finalTraceLimit_s{0.0};
+
       int mirrorPoints{0};
       int bounceCycles{0};
       // Diagnostics from the optional azimuthal drift-shell recurrence detector.
@@ -295,6 +308,10 @@ namespace Earth {
       // public Gridless header to the private trap-detector implementation header.
       int driftRevolutions{0};
       double driftAngle_rad{0.0};
+      // Absolute change in the mean radial drift-shell profile between the last two
+      // completed revolutions [m].  This supports the secular-drift veto used by the
+      // conservative full-orbit trap classifier.
+      double driftMeanRadiusChange_m{0.0};
       int trapMechanism{0};
       double momentumRelativeSpread{0.0};
 

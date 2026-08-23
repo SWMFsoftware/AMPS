@@ -967,7 +967,6 @@ inputs that remain intentionally configurable for controlled studies are:
 --max-long-unresolved-response-fraction
 --max-static-field-ratio-bound-width-log10
 --spectral-index
---access-angular-points
 --dir-lon-res-deg
 --dir-lat-res-deg
 --cutoff-scan-n
@@ -1035,7 +1034,7 @@ GRIDDED batch      : cutoff_3d_dir_access_loc_<snapshot-local-id>_snapshot_<inde
 GRIDLESS: cutoff_gridless_dir_access_point_0000.dat
 ```
 
-Each row is one `(lon,lat,rigidity)` trajectory and contains `rigidity_GV`, corresponding proton `energy_MeV`, `access_state`, `allowed`, and `unresolved`. The current diagnostic schema also records `termination_code`, `trace_time_s`, `trace_distance_Re`, `trace_steps`, retry count, mirror/bounce counts, drift-revolution diagnostics, trapping mechanism, and momentum-magnitude spread. These columns are deliberately emitted by both GRIDDED and GRIDLESS so an `UNRESOLVED` state can be attributed to a concrete numerical termination instead of being treated as an opaque failure. States use the same three-state classifier as the production penumbra path:
+Each row is one `(lon,lat,rigidity)` trajectory and contains `rigidity_GV`, corresponding proton `energy_MeV`, `access_state`, `allowed`, and `unresolved`. The current diagnostic schema also records `termination_code`, `trace_time_s`, `trace_distance_Re`, `trace_steps`, retry count, `primary_termination_code`, `primary_trace_time_s`, `trace_extension_count`, `initial_trace_limit_s`, `final_trace_limit_s`, mirror/bounce counts, drift-revolution diagnostics, `drift_mean_radius_change_Re`, trapping mechanism, and momentum-magnitude spread. These columns are deliberately emitted by both GRIDDED and GRIDLESS so an `UNRESOLVED` state can be attributed to a concrete numerical termination and the effect of staged unresolved-only re-tracing can be audited without a second baseline run. States use the same three-state classifier as the production penumbra path:
 
 ```text
 0 = PHYSICAL_FORBIDDEN
@@ -1222,59 +1221,31 @@ one-epoch diagnostic suite. The runner uses a single production path.
 
 ### Angular resolution
 
-The default directional map is `2.5° × 2.5°`, the finest level from the previous
-10°/5°/2.5° convergence ladder.  C19 now provides a one-parameter angular-resolution
-control that is deliberately analogous to `--access-energy-points`:
+The default directional map remains `2.5° × 2.5°`, the finest level from the previous
+10°/5°/2.5° convergence ladder.  The runner supports the point-count interface
+`--access-angular-points N`, restored after it was accidentally dropped during the later
+unresolved-trajectory update.  It is intentionally analogous to the independent
+`--access-energy-points` control.
+
+`--access-angular-points N` defines **N longitude cells over 360°** and uses the same
+spacing in latitude, so `dtheta = 360/N`.  `N` must be even so the latitude grid reaches
+both poles exactly.  Useful convergence values are `72` (5°), `144` (2.5°, production
+default-equivalent), and `288` (1.25°).  For example:
 
 ```bash
---access-angular-points N
+python3 srcEarth/test/C19/run_C19.py ... --access-angular-points 144 --access-energy-points 48
 ```
 
-`N` is the number of longitude cells around the complete 360° directional grid and
-must be even.  The runner uses the same angular spacing in latitude,
+The two controls are independent: `--access-angular-points` changes the directional sky
+grid, while `--access-energy-points` changes the dense DIRECT_ACCESS rigidity/energy
+reference grid (and remains available for `--no-adaptive-access` convergence studies).
+The legacy `--dir-lon-res-deg` and `--dir-lat-res-deg` controls are retained for advanced
+asymmetric angular grids, but they cannot be combined with `--access-angular-points` in
+the same invocation.  If no angular option is supplied, the historical 2.5° × 2.5°
+production grid is used.
 
-```text
-DIRMAP_LON_RES = DIRMAP_LAT_RES = 360 / N  [deg],
-```
-
-so the full regular sky grid contains `N` longitude cells and `N/2 + 1` latitude
-samples including both poles.  Examples are:
-
-| `--access-angular-points` | angular spacing | nominal full-sphere grid |
-|---:|---:|---:|
-| 36 | 10° | 36 × 19 |
-| 72 | 5° | 72 × 37 |
-| 144 | 2.5° | 144 × 73 (production default) |
-| 288 | 1.25° | 288 × 145 |
-| 576 | 0.625° | 576 × 289 |
-
-For example, a simple angular convergence study can be run with otherwise identical
-commands:
-
-```bash
-python3 run_C19.py ... --access-angular-points 72
-python3 run_C19.py ... --access-angular-points 144
-python3 run_C19.py ... --access-angular-points 288
-```
-
-With the default `--direction-coverage INSTRUMENT_APERTURES`, AMPS does **not** trace
-all cells in the nominal full sphere.  The point count defines the underlying regular
-grid, after which the location-aware `VECTOR_APERTURES` selector retains only cells
-inside the actual EAST/WEST detector apertures.  Therefore the computational cost
-still grows approximately with the two-dimensional angular density inside the viewed
-regions, while unnecessary sky directions remain pruned.  In practical terms,
-doubling `N` halves the angular spacing but can increase the number of retained
-aperture directions by roughly four, before multiplying by the number of rigidity
-trajectories evaluated per direction.
-
-The original `--dir-lon-res-deg` and `--dir-lat-res-deg` controls are retained for
-advanced asymmetric-grid studies.  They cannot be combined with
-`--access-angular-points` in the same run; this avoids ambiguous precedence.  If no
-angular option is supplied, the historical 2.5° × 2.5° production grid is unchanged.
-
-The resolved angular-grid source, degree spacing, and nominal longitude/latitude point
-counts are written to both `C19_commands.json` and `C19_result.json`.  This makes
-12/24/48-type energy studies and 72/144/288-type angular studies equally reproducible.
+For reproducibility, the resolved angular source, lon/lat degree spacing, and nominal
+full-sphere grid dimensions are recorded in `C19_commands.json` and `C19_result.json`.
 
 ### Directional coverage: arbitrary instrument apertures versus full sphere
 
@@ -1707,14 +1678,15 @@ Normal machine-readable products include:
 | `cutoff_3d_dir_access_loc_<local><snapshot-suffix>.dat` / per-run `cutoff_gridless_dir_access_point_0000.dat` | Solver-native direct three-state `A(E,Ω)` cubes consumed by the common detector fold |
 | `C19_model.csv` / `C19_comparison.csv` | Production direct E/W results and bounds plus the independently labelled cutoff-rigidity proxy ratio/transmissions, spectrum source, response model, unresolved fractions, maximum trace time, search algorithm/policy, and map provenance.  The direct result is serialized at three levels: `direct_calculated_*` (finite direct fold before final acceptance), `direct_bound_midpoint_*` (diagnostic-only midpoint when only finite rigorous bounds exist), and legacy `modeled_*` (accepted scientific scalar only).  Explicit booleans record scalar availability/acceptance, trajectory-resolution and bound-width gates, and the tri-state convergence status (`NOT_TESTED` for a normal run). |
 | `C19_model_coverage.csv` | One row for every selected reference row × solver × field model, explicitly identifying `DIRECT_ACCEPTED`, `DIRECT_CALCULATED_NOT_ACCEPTED`, `DIRECT_BOUNDS_ONLY`, cutoff-diagnostic-only, or missing run/post-processing result |
-| `C19_aperture_availability.csv` | One row per epoch/head with availability status, coverage, direct bounds/scalar, response-weighted physical and unresolved termination fractions, direct bound width, unresolved asymmetry, and spectrum provenance |
-| `C19_aperture_termination_budget.csv` | Compact Phase-0 one-row-per-head response-weighted termination budget: outer escape, inner loss, bounce trap, drift trap, time/step/distance limits, and other unresolved states |
+| `C19_aperture_availability.csv` | One row per epoch/head with availability status, coverage, direct bounds/scalar, response-weighted physical/unresolved termination fractions, primary TIME/STEP-limit response, response resolved by staged extension, response still unresolved after extension, final extension budget, direct bound width, unresolved asymmetry, and spectrum provenance |
+| `C19_aperture_termination_budget.csv` | Compact one-row-per-head response-weighted termination budget: outer escape, inner loss, bounce/drift trap, time/step/distance limits, plus primary TIME/STEP-limit, resolved-by-extension, still-unresolved-after-extension, extension count/budget, and secular-drift diagnostics |
 | `C19_access_classification_by_rigidity.csv` | Stage-A per-case/per-head classification on the mandatory common DIRECT_ACCESS seed rigidities: allowed, physical-forbidden, unresolved, detailed termination fractions, seed coverage, and normalized detector/spectrum weight |
 | `C19_trace_budget_sweep.csv` (from `run_C19_convergence.py`) | Phase-1/2/3 distance/time/timestep/mover/drift-recurrence convergence summary for the representative epoch |
 | `C19_metrics.csv` | Per-spacecraft and aggregate finite/saturated fractions, sign agreement, bias, MAE, RMSE, correlation, and provisional gate |
 | `C19_direction_sense_diagnostic.csv` | Production arrival→look convention and legacy opposite-convention diagnostic |
 | `C19_aperture_samples.csv` | Representative aperture cells including lower/effective/upper cutoff, topology, raw termination counts, trace maxima, and transmission |
-| `C19_result.json` | Staged validity gates, rigorous-bound compatibility counts, unresolved-asymmetry diagnostics, spectrum/calibration/orientation provenance, thresholds, hashes, failures, limitations, and overall result |
+| `C19_result.json` | Staged validity gates, rigorous-bound compatibility counts, unresolved-asymmetry and staged trace-extension diagnostics, spectrum/calibration/orientation provenance, thresholds, hashes, failures, limitations, plot list, and overall result |
+| `C19_trace_extension_<solver>_<field>.png` | Response-weighted before/after staged-extension diagnostic for EAST/WEST, including primary TIME/STEP-limit response, response resolved by extension, response still unresolved, and rigorous `log10(E/W)` bound width |
 | `C19_summary.txt` | Human-readable execution/trajectory/fold/observation/overall status |
 
 Every completed C19 run also writes the standard visual products without any special
@@ -2256,11 +2228,14 @@ retained only as an optional machine-safety/convergence control.  For every requ
 energy, `C19_access_energy_grid.csv` records proton beta, speed in Re/s, the time implied
 by a finite path ceiling, and the nominal controlling trace limit.
 
-The convergence helper also runs a time-only baseline with drift recurrence disabled:
+The convergence helper also runs a time-only baseline with drift recurrence disabled.
+It explicitly sets `--unresolved-extension-passes 0` for every child case so the x-axis
+really is the requested 60/120/300/600-s budget rather than a hidden extended budget:
 
 ```text
 MAX_TRACE_DISTANCE = 0
 MAX_TRACE_TIME     = 60, 120, 300, 600 s
+CUTOFF_UNRESOLVED_EXTENSION_PASSES = 0
 TRAP_DRIFT_DETECTION = F
 ```
 
@@ -2272,6 +2247,85 @@ Optional `--dt-values` and `--mover-values` sweeps are provided for timestep and
 cross-checks.  The normal C19 reference mover remains RK4; a BORIS value may be requested
 when the linked AMPS build provides that mover.  The purpose is numerical cross-checking,
 not a silent production-mover change.
+
+### Phase 2B -- unresolved-only staged trace extension (production default)
+
+A global increase of `CUTOFF_MAX_TRAJ_TIME` is a poor first response to a large unresolved
+population: every easy escape/impact trajectory pays the extra cost, and increasingly long
+traces make the frozen-field T05 approximation less defensible.  C19 therefore keeps the
+normal 300-s primary calculation unchanged and extends **only** trajectories whose primary
+physical classifier ended at `TIME_LIMIT` or `STEP_LIMIT`.  The committed templates use
+
+```text
+CUTOFF_MAX_TRAJ_TIME                 300
+CUTOFF_UNRESOLVED_EXTENSION_PASSES   2
+CUTOFF_UNRESOLVED_EXTENSION_FACTOR   2.0
+```
+
+which yields candidate total-time budgets of 300, 600, and 1200 s.  A trajectory already
+classified as outer-boundary allowed, inner-boundary forbidden, bounce trapped, or drift
+trapped is never repeated.  `DISTANCE_LIMIT` is deliberately not extended: changing a
+cumulative path cap is a different numerical assumption and must remain explicit.
+
+Each extension pass **restarts from the original phase-space seed** with the larger total
+time budget.  A true continuation would save CPU time, but would require serializing the
+private full-orbit mover and trap-detector state.  Restarting guarantees that an extended
+result is the same experiment as an independent run started with the larger `T_max`, and
+keeps GRIDDED and GRIDLESS semantics identical.  The final state remains three-state: if
+the last pass still reaches a configured safety limit it is still `UNRESOLVED`; no
+`timeout -> forbidden` shortcut is introduced.
+
+The extension also enlarges `MAX_STEPS` for the extended pass.  It uses both the requested
+time-factor scaling and the observed mean step duration from the preceding trace, with a
+25% margin and integer-overflow protection.  This prevents a nominal 600/1200-s time study
+from being silently converted into a progressively tighter `STEP_LIMIT` study.  The
+normal one-time smaller-step retry for genuine numerical failures remains separate and
+continues to be recorded by `retry_count`.
+
+Every new DIRECT_ACCESS row records enough provenance to audit the before/after result:
+
+```text
+primary_termination_code
+primary_trace_time_s
+trace_extension_count
+initial_trace_limit_s
+final_trace_limit_s
+drift_mean_radius_change_Re
+```
+
+The first two describe the primary-budget outcome.  `trace_extension_count=0` means no
+staged extension was needed; values 1 and 2 identify the 600- and 1200-s C19 passes.
+`final_trace_limit_s` records the actual requested budget of the final classifier.  Old
+DIRECT_ACCESS files remain readable; absent extension columns are treated as unavailable
+provenance rather than guessed historical states.
+
+Post-processing reports detector/spectrum/source weighted convergence rather than only raw
+trajectory counts.  The exact `J(E)G(E)` interval integral is split equally between its
+two sampled endpoints, exactly as in the existing termination budget.  Per aperture C19
+therefore reports
+
+```text
+response_primary_trace_limit_fraction
+response_resolved_by_trace_extension_fraction
+response_unresolved_after_trace_extension_fraction
+```
+
+plus the maximum extension pass and final time budget.  These fields appear in
+`C19_model.csv`/`C19_comparison.csv`, `C19_aperture_availability.csv`,
+`C19_aperture_termination_budget.csv`, and the detailed `C19_aperture_samples.csv`.  The
+new `C19_trace_extension_<solver>_<field>.png` plot shows EAST/WEST primary-limit,
+resolved-by-extension, and still-unresolved response fractions together with the rigorous
+`log10(E/W)` bound width.  It is an isolated plot family, so a failure in this diagnostic
+cannot suppress any pre-existing comparison, scatter, transmission, directional-cutoff,
+boundary-spectrum, aperture, access-classification, or static-field plot.
+
+The extension is a **classification-convergence tool, not a frozen-field exemption**.
+Trajectories lasting longer than `--frozen-field-warning-seconds` still enter the existing
+response-weighted frozen-field warning/sensitivity calculation even when the longer pass
+physically resolves them.  If a material fraction of detector response still requires
+600--1200 s, or remains unresolved at 1200 s, the next physics study should use a
+time-dependent/interpolated magnetic background rather than simply increasing the frozen
+snapshot duration again.
 
 ### Phase 3 -- positive full-orbit drift recurrence for GEO/T05
 
@@ -2325,6 +2379,7 @@ TRAP_DRIFT_RADIAL_GROWTH_TOL_RE        1.0
 TRAP_DRIFT_RADIAL_REL_TOL              0.20
 TRAP_DRIFT_LATITUDE_TOL                0.20
 TRAP_DRIFT_PITCH_COS2_TOL              0.25
+TRAP_DRIFT_MAX_MEAN_RADIUS_CHANGE_RE    1.0
 TRAP_DRIFT_PROFILE_BINS                24
 TRAP_DRIFT_MIN_PROFILE_COVERAGE        0.70
 TRAP_DRIFT_MIN_MATCHED_BIN_FRACTION    0.75
@@ -2336,6 +2391,15 @@ TRAP_ENERGY_REL_TOL                     1.0e-4
 it, so a T05 shell may have a large day/night excursion and still be recognized if its
 azimuth-resolved profile repeats from turn to turn.  This is more meaningful than merely
 loosening one global `r_min/r_max` envelope tolerance.
+
+`TRAP_DRIFT_MAX_MEAN_RADIUS_CHANGE_RE` is an additional **secular-drift veto**.  The
+mean radius of each completed azimuth profile is computed with equal weight per populated
+phase bin, so adaptive full-orbit timesteps cannot overweight one sector.  Consecutive
+profiles must satisfy the ordinary detailed recurrence test *and* remain within this mean
+radial-change limit.  The gate can only reject a candidate trap classification; it can
+never create `DRIFT_TRAPPED_FORBIDDEN`.  Thus it protects against a slowly migrating
+quasi-trapped orbit being labelled trapped merely because two detailed profiles happen to
+look locally similar.
 
 The momentum gate remains intentionally strict in the committed default.  Phase-0
 `momentum_relative_spread` diagnostics must be used to measure the actual RK4 error on

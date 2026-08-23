@@ -2589,6 +2589,18 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
       // If omitted, the solver will fall back to #NUMERICAL MAX_TRACE_TIME.
       else if (uKey=="CUTOFF_MAX_TRAJ_TIME") p.cutoff.maxTrajTime_s=std::stod(val);
 
+      // Unresolved-only time-convergence extension.  These controls never remap a
+      // trace-limit outcome to a physical state.  Instead, TIME_LIMIT/STEP_LIMIT
+      // samples are retraced from the same initial condition with successively larger
+      // total-time budgets.  A sample that still hits a configured limit after the
+      // last pass remains UNRESOLVED under the normal trace-limit policy.
+      else if (uKey=="CUTOFF_UNRESOLVED_EXTENSION_PASSES" ||
+               uKey=="CUTOFF_TRACE_EXTENSION_PASSES")
+        p.cutoff.unresolvedExtensionPasses=std::stoi(val);
+      else if (uKey=="CUTOFF_UNRESOLVED_EXTENSION_FACTOR" ||
+               uKey=="CUTOFF_TRACE_EXTENSION_FACTOR")
+        p.cutoff.unresolvedExtensionFactor=std::stod(val);
+
       // Rigidity-search strategy.  UPPER_SCAN is the penumbra-safe scalar
       // default; PENUMBRA_SCAN evaluates one full grid and reports both lower
       // and upper cutoff; BINARY is the legacy endpoint-only method.
@@ -3004,6 +3016,9 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         p.numerics.trapDriftLatitudeTolerance=std::stod(val);
       else if (uKey=="TRAP_DRIFT_PITCH_COS2_TOL")
         p.numerics.trapDriftPitchCos2Tolerance=std::stod(val);
+      else if (uKey=="TRAP_DRIFT_MAX_MEAN_RADIUS_CHANGE_RE" ||
+               uKey=="TRAP_DRIFT_SECULAR_RADIAL_TOL_RE")
+        p.numerics.trapDriftMaxMeanRadiusChange_Re=std::stod(val);
       else if (uKey=="TRAP_DRIFT_PROFILE_BINS")
         p.numerics.trapDriftProfileBins=std::stoi(val);
       else if (uKey=="TRAP_DRIFT_MIN_PROFILE_COVERAGE")
@@ -3461,6 +3476,10 @@ if (ToUpper(p.field.model)=="DIPOLE") {
   if (!(p.numerics.trapDriftPitchCos2Tolerance >= 0.0) ||
       !std::isfinite(p.numerics.trapDriftPitchCos2Tolerance))
     exit(__LINE__,__FILE__,"TRAP_DRIFT_PITCH_COS2_TOL must be finite and >= 0");
+  if (!(p.numerics.trapDriftMaxMeanRadiusChange_Re >= 0.0) ||
+      !std::isfinite(p.numerics.trapDriftMaxMeanRadiusChange_Re))
+    exit(__LINE__,__FILE__,
+         "TRAP_DRIFT_MAX_MEAN_RADIUS_CHANGE_RE must be finite and >= 0 (0 disables the veto)");
   if (p.numerics.trapDriftProfileBins < 8 || p.numerics.trapDriftProfileBins > 360)
     exit(__LINE__,__FILE__,"TRAP_DRIFT_PROFILE_BINS must be in [8,360]");
   if (!(p.numerics.trapDriftMinProfileCoverage > 0.0 &&
@@ -3496,6 +3515,20 @@ if (ToUpper(p.field.model)=="DIPOLE") {
     }
     if (!(p.cutoff.nEnergy>=1)) {
       exit(__LINE__,__FILE__,"CUTOFF_NENERGY must be >= 1");
+    }
+    if (p.cutoff.maxTrajTime_s < 0.0 || !std::isfinite(p.cutoff.maxTrajTime_s)) {
+      exit(__LINE__,__FILE__,
+           "CUTOFF_MAX_TRAJ_TIME must be finite and >= 0 (0 means: use MAX_TRACE_TIME)");
+    }
+    if (p.cutoff.unresolvedExtensionPasses < 0 ||
+        p.cutoff.unresolvedExtensionPasses > 8) {
+      exit(__LINE__,__FILE__,
+           "CUTOFF_UNRESOLVED_EXTENSION_PASSES must be in [0,8]");
+    }
+    if (!(p.cutoff.unresolvedExtensionFactor > 1.0) ||
+        !std::isfinite(p.cutoff.unresolvedExtensionFactor)) {
+      exit(__LINE__,__FILE__,
+           "CUTOFF_UNRESOLVED_EXTENSION_FACTOR must be finite and > 1");
     }
     {
       const std::string cutoffSearch = ToUpper(p.cutoff.searchAlgorithm);
@@ -3633,6 +3666,11 @@ if (ToUpper(p.field.model)=="DIPOLE") {
         exit(__LINE__,__FILE__,
              "CUTOFF_TRACE_LIMIT_POLICY must be UNRESOLVED or FORBIDDEN");
       }
+    }
+    if (p.cutoff.unresolvedExtensionPasses>0 &&
+        p.cutoff.traceLimitPolicy!="UNRESOLVED") {
+      exit(__LINE__,__FILE__,
+           "CUTOFF_UNRESOLVED_EXTENSION_PASSES requires CUTOFF_TRACE_LIMIT_POLICY UNRESOLVED");
     }
     if (p.cutoff.maxParticlesPerPoint < 1) {
       exit(__LINE__,__FILE__,"CUTOFF_MAX_PARTICLES must be >= 1");

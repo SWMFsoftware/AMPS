@@ -812,3 +812,37 @@ helpers after addition of code 9.
 See `test/C19/README.md` for the complete C19 phased evidence sequence, response-weighted
 termination budget, direct-bound-width gate, proxy semantics, observational provenance
 gates, and full AMPS regression requirements.
+
+CUTOFF unresolved-only staged trace extension
+---------------------------------------------
+
+The cutoff tracer supports an optional convergence extension for strict three-state
+workflows:
+
+  CUTOFF_UNRESOLVED_EXTENSION_PASSES   integer 0..8 (default 0)
+  CUTOFF_UNRESOLVED_EXTENSION_FACTOR   finite value > 1 (default 2)
+
+The feature requires `CUTOFF_TRACE_LIMIT_POLICY UNRESOLVED`.  The ordinary primary
+trajectory is computed first.  Only a primary `TIME_LIMIT` or `STEP_LIMIT` result is
+retraced from its original phase-space seed with successively larger total-time limits.
+Already resolved trajectories are not repeated, and `DISTANCE_LIMIT` is not extended.
+After the final pass, a trajectory that still reaches a safety limit remains
+`UNRESOLVED`; no trace duration is interpreted as physical shielding.
+
+For every extended pass, the implementation also raises the numerical `MAX_STEPS`
+allowance according to the requested time scaling and the previous trace's observed
+mean step duration, with a 25% margin.  This avoids an unchanged step budget becoming a
+hidden limiter when the time budget is increased.  The existing one-time retry for
+invalid-field/invalid-step/numerical-failure terminations is independent of this feature.
+
+DIRECT_ACCESS diagnostics append the primary termination code/time, extension count,
+initial and final time budgets, and the drift-shell mean-radius-change diagnostic.  The
+same fields are produced by Mode3D so GRIDLESS and GRIDDED post-processing semantics are
+identical.
+
+The full-orbit drift recurrence detector also supports
+`TRAP_DRIFT_MAX_MEAN_RADIUS_CHANGE_RE` (nonnegative; 0 disables).  When enabled, a
+candidate recurring drift shell must satisfy both the existing azimuth-resolved profile
+recurrence and this additional limit on the change of mean radial profile between
+consecutive completed drift revolutions.  It is a conservative veto only and cannot
+create a trapped classification.
