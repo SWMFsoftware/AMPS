@@ -967,6 +967,7 @@ inputs that remain intentionally configurable for controlled studies are:
 --max-long-unresolved-response-fraction
 --max-static-field-ratio-bound-width-log10
 --spectral-index
+--access-angular-points
 --dir-lon-res-deg
 --dir-lat-res-deg
 --cutoff-scan-n
@@ -1222,8 +1223,58 @@ one-epoch diagnostic suite. The runner uses a single production path.
 ### Angular resolution
 
 The default directional map is `2.5° × 2.5°`, the finest level from the previous
-10°/5°/2.5° convergence ladder. `--dir-lon-res-deg` and `--dir-lat-res-deg` remain
-available only when intentionally performing a new resolution study.
+10°/5°/2.5° convergence ladder.  C19 now provides a one-parameter angular-resolution
+control that is deliberately analogous to `--access-energy-points`:
+
+```bash
+--access-angular-points N
+```
+
+`N` is the number of longitude cells around the complete 360° directional grid and
+must be even.  The runner uses the same angular spacing in latitude,
+
+```text
+DIRMAP_LON_RES = DIRMAP_LAT_RES = 360 / N  [deg],
+```
+
+so the full regular sky grid contains `N` longitude cells and `N/2 + 1` latitude
+samples including both poles.  Examples are:
+
+| `--access-angular-points` | angular spacing | nominal full-sphere grid |
+|---:|---:|---:|
+| 36 | 10° | 36 × 19 |
+| 72 | 5° | 72 × 37 |
+| 144 | 2.5° | 144 × 73 (production default) |
+| 288 | 1.25° | 288 × 145 |
+| 576 | 0.625° | 576 × 289 |
+
+For example, a simple angular convergence study can be run with otherwise identical
+commands:
+
+```bash
+python3 run_C19.py ... --access-angular-points 72
+python3 run_C19.py ... --access-angular-points 144
+python3 run_C19.py ... --access-angular-points 288
+```
+
+With the default `--direction-coverage INSTRUMENT_APERTURES`, AMPS does **not** trace
+all cells in the nominal full sphere.  The point count defines the underlying regular
+grid, after which the location-aware `VECTOR_APERTURES` selector retains only cells
+inside the actual EAST/WEST detector apertures.  Therefore the computational cost
+still grows approximately with the two-dimensional angular density inside the viewed
+regions, while unnecessary sky directions remain pruned.  In practical terms,
+doubling `N` halves the angular spacing but can increase the number of retained
+aperture directions by roughly four, before multiplying by the number of rigidity
+trajectories evaluated per direction.
+
+The original `--dir-lon-res-deg` and `--dir-lat-res-deg` controls are retained for
+advanced asymmetric-grid studies.  They cannot be combined with
+`--access-angular-points` in the same run; this avoids ambiguous precedence.  If no
+angular option is supplied, the historical 2.5° × 2.5° production grid is unchanged.
+
+The resolved angular-grid source, degree spacing, and nominal longitude/latitude point
+counts are written to both `C19_commands.json` and `C19_result.json`.  This makes
+12/24/48-type energy studies and 72/144/288-type angular studies equally reproducible.
 
 ### Directional coverage: arbitrary instrument apertures versus full sphere
 

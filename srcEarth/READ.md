@@ -3137,8 +3137,16 @@ brackets. This makes `--access-energy-points` a measurable convergence control.
 
 The production defaults now use the finest settings from the previous P2 convergence
 implementation: a 2.5-degree directional grid and Mode3D mesh resolutions of 0.025 Re
-near Earth and 1.0 Re at the outer boundary. Detector FILE orientation and explicit
-bounded anisotropy remain ordinary physics inputs to the same workflow. The standard
+near Earth and 1.0 Re at the outer boundary.  C19 exposes that angular grid through the
+same point-count style used for the dense rigidity grid: `--access-angular-points N`
+means N longitude cells over 360 degrees and the same `360/N` spacing in latitude.
+N must be even, giving `N/2+1` latitude samples including both poles; 144 therefore
+reproduces the 2.5-degree production grid, while 72/288 give 5/1.25 degrees.  The
+legacy `--dir-lon-res-deg`/`--dir-lat-res-deg` controls remain available for asymmetric
+grids and are mutually exclusive with the point-count interface.  With
+`VECTOR_APERTURES`, the point count defines the underlying regular grid but only cells
+inside the location-owned detector apertures are scheduled. Detector FILE orientation
+and explicit bounded anisotropy remain ordinary physics inputs to the same workflow. The standard
 `C19_comparison_*`, scatter, parity, residual, transmission, and aperture diagnostic
 plots require no special runner flag.
 

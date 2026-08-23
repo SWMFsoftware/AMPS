@@ -156,7 +156,7 @@ last pass:
 !P srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --driver ./srcEarth/test/C19/data/ts05_driver_may2012.txt --mode3d-parallel-field-init --cutoff-search PENUMBRA_SCAN --amps ./amps -np 4 -nt 16 --keep
 !last pass:
 
-P srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --cutoff-search DIRECT_ACCESS --gridded-batch AUTO --mode3d-parallel-field-init --driver srcEarth/test/C19/data/ts05_driver_may2012.txt --amps ./amps -np 4 -nt 32
+P srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --cutoff-search DIRECT_ACCESS --gridded-batch AUTO --mode3d-parallel-field-init --driver srcEarth/test/C19/data/ts05_driver_may2012.txt --amps ./amps -np 4 -nt 33 --access-energy-points 24 --access-angular-points 144 
 last pass: 5d81788dfcab1bc2da07b82b7ec17909b4fc2ba0
 
 

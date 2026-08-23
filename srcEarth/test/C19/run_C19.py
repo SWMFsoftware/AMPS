@@ -83,6 +83,22 @@ SOLVERS = ("GRIDLESS", "GRIDDED", "BOTH")
 FIELD_MODELS = ("T96", "T05")
 PROFILE_STEP_MINUTES = {"SMOKE": None, "ROUTINE": 60, "FULL": 0}
 
+# C19's production sky grid is isotropic in longitude/latitude spacing.  The
+# historical interface exposed the spacing directly as two degree-valued controls
+# (``--dir-lon-res-deg`` and ``--dir-lat-res-deg``).  For convergence studies this
+# is less convenient than the energy-grid interface, where the user asks for a
+# number of samples.  ``--access-angular-points`` therefore uses the number of
+# longitude samples around the complete 360-degree sky as the single angular-grid
+# resolution parameter.  An even value N gives an equal angular step
+#
+#     dOmega_grid = 360 / N degrees,
+#
+# in *both* longitude and latitude, with N longitude cells and N/2+1 latitude
+# samples including the two poles.  N=144 reproduces the production 2.5-degree
+# grid exactly.  Keeping the old degree controls as an advanced alternative
+# preserves asymmetric-grid experiments and backwards compatibility.
+DEFAULT_DIRMAP_RES_DEG = 2.5
+
 
 @dataclass(frozen=True)
 class ReferenceRow:
@@ -1245,6 +1261,54 @@ def rigidity_gv_from_kinetic_energy_mev(energy_mev: float) -> float:
     rest_mev = 938.27208816
     momentum = math.sqrt(max(0.0, energy_mev * (energy_mev + 2.0 * rest_mev)))
     return momentum / 1000.0
+
+
+def equal_angle_grid_from_longitude_points(n_longitude: int) -> Tuple[float, int, int]:
+    """Return ``(step_deg, n_lon, n_lat)`` for the C19 one-parameter sky grid.
+
+    Energy resolution is naturally one-dimensional, so ``--access-energy-points``
+    maps directly onto a number of samples.  The directional grid is two-dimensional;
+    a single point count therefore needs an explicit convention.  C19 defines
+    ``--access-angular-points N`` as **N longitude cells over 360 degrees** and uses
+    the same angular step in latitude.  Consequently an even N produces ``N/2+1``
+    latitude samples over [-90,+90], including both poles.
+
+    Requiring an even value is important.  The AMPS directional-map implementation
+    derives dimensions by rounding ``360/dlon`` and ``180/dlat`` independently.  If
+    N were odd, ``dlat=360/N`` would not divide 180 degrees exactly and the final
+    latitude sample could be displaced from +90 degrees.  The even-N contract makes
+    the requested grid exact and identical in GRIDDED and GRIDLESS.
+
+    Examples
+    --------
+    ``N=72``  -> 5.0 deg, 72 x 37 full-sphere grid
+    ``N=144`` -> 2.5 deg, 144 x 73 (the production default)
+    ``N=288`` -> 1.25 deg, 288 x 145
+    """
+    n = int(n_longitude)
+    if n < 4:
+        raise ValueError("angular point count must be >= 4")
+    if n % 2 != 0:
+        raise ValueError("angular point count must be even so latitude reaches both poles exactly")
+    step_deg = 360.0 / float(n)
+    return step_deg, n, n // 2 + 1
+
+
+def directional_grid_shape(lon_res_deg: float, lat_res_deg: float) -> Tuple[int, int, int]:
+    """Mirror AMPS' directional-map dimension calculation for provenance.
+
+    Keeping this formula identical to ``ConfigureDirectionalMap3D`` and the
+    GRIDLESS directional-map setup lets ``C19_result.json`` report the actual
+    nominal full-sphere grid implied by either the new point-count interface or the
+    legacy degree-valued controls.  ``VECTOR_APERTURES`` normally schedules only a
+    subset of these cells, but the underlying angular resolution is still defined by
+    this full regular grid.
+    """
+    if lon_res_deg <= 0.0 or lat_res_deg <= 0.0:
+        raise ValueError("directional-map resolutions must be positive")
+    n_lon = int(math.floor(360.0 / lon_res_deg + 0.5))
+    n_lat = int(math.floor(180.0 / lat_res_deg + 0.5)) + 1
+    return n_lon, n_lat, n_lon * n_lat
 
 
 def proton_trace_budget_diagnostic(energy_mev: float, max_trace_time_s: float,
@@ -6489,6 +6553,33 @@ def write_gridded_batch_inputs(
 
 def self_test() -> int:
     manifest = json.loads(DEFAULT_MANIFEST.read_text())
+
+    # Angular-resolution CLI regression.  The new one-parameter interface is
+    # intentionally analogous to --access-energy-points: doubling N doubles the
+    # one-dimensional angular sampling density while preserving equal longitude and
+    # latitude spacing.  The resolved degree values are what ultimately enter the
+    # AMPS input deck, so test both the pure conversion and the argparse path.
+    angular_step, angular_nlon, angular_nlat = \
+        equal_angle_grid_from_longitude_points(288)
+    if not math.isclose(angular_step, 1.25, rel_tol=0.0, abs_tol=1.0e-12):
+        raise AssertionError("--access-angular-points conversion is incorrect")
+    if (angular_nlon, angular_nlat) != (288, 145):
+        raise AssertionError("--access-angular-points grid dimensions are incorrect")
+    try:
+        equal_angle_grid_from_longitude_points(145)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("odd --access-angular-points must be rejected")
+
+    angular_cli = parse_args(["--access-angular-points", "288"])
+    if (not math.isclose(angular_cli.dir_lon_res_deg, 1.25) or
+            not math.isclose(angular_cli.dir_lat_res_deg, 1.25) or
+            angular_cli.angular_grid_lon_points != 288 or
+            angular_cli.angular_grid_lat_points != 145 or
+            angular_cli.angular_resolution_source != "ACCESS_ANGULAR_POINTS"):
+        raise AssertionError("angular point-count CLI did not resolve consistently")
+
     with tempfile.TemporaryDirectory(prefix="C19_runner_selftest_") as temporary:
         root = Path(temporary)
         map_path = root / "cutoff_gridless_dir_map_point_0000.dat"
@@ -7379,11 +7470,29 @@ Examples:
                         help=("number of forced midpoint-probe levels even when interval endpoint states agree; 1 probes every seed-interval midpoint before ambiguity-driven refinement"))
     parser.add_argument("--require-real-ephemeris", action="store_true",
                         help="reject selected reference rows using nominal-slot positions; recommended for publication science runs")
-    # P2.1 is now part of the production configuration.  The runner uses the
-    # finest grid from the former convergence ladder by default; users may
-    # still change resolution explicitly for a new numerical study.
-    parser.add_argument("--dir-lon-res-deg", type=float, default=2.5)
-    parser.add_argument("--dir-lat-res-deg", type=float, default=2.5)
+    # P2.1 is now part of the production configuration.  The production grid is
+    # 2.5 deg x 2.5 deg (144 longitude cells).  ``--access-angular-points`` is the
+    # preferred convergence-study interface because it mirrors
+    # ``--access-energy-points``: increasing one integer increases the angular
+    # sampling density while preserving equal lon/lat spacing.  The older degree
+    # controls remain available for deliberately anisotropic sky grids, but mixing
+    # the two interfaces in one run is rejected to avoid ambiguous precedence.
+    parser.add_argument(
+        "--access-angular-points", type=int, default=None,
+        help=("isotropic directional-grid resolution expressed as the number of "
+              "longitude cells around 360 deg; must be even. The same angular "
+              "step 360/N is used in latitude, giving N/2+1 latitude samples. "
+              "Examples: 72=5 deg, 144=2.5 deg (default-equivalent), "
+              "288=1.25 deg. Cannot be combined with --dir-lon-res-deg or "
+              "--dir-lat-res-deg"))
+    parser.add_argument(
+        "--dir-lon-res-deg", type=float, default=None,
+        help=("advanced directional-map longitude spacing in degrees; default 2.5. "
+              "Use instead of --access-angular-points for asymmetric grids"))
+    parser.add_argument(
+        "--dir-lat-res-deg", type=float, default=None,
+        help=("advanced directional-map latitude spacing in degrees; default 2.5. "
+              "Use instead of --access-angular-points for asymmetric grids"))
     parser.add_argument(
         "--direction-coverage", choices=("INSTRUMENT_APERTURES", "FULL_SPHERE"),
         default="INSTRUMENT_APERTURES",
@@ -7539,6 +7648,45 @@ Examples:
         args.model_list = parse_csv_list(args.models, FIELD_MODELS)
     except ValueError as exc:
         parser.error(str(exc))
+
+    # Resolve the high-level angular point-count interface before any code consumes
+    # DIRMAP_LON_RES/DIRMAP_LAT_RES.  ``None`` on the two legacy arguments is
+    # intentional: it tells us whether the user explicitly requested a degree-valued
+    # override.  This preserves old commands such as ``--dir-lon-res-deg 5`` while
+    # making ``--access-angular-points 288`` a clean single-knob resolution change.
+    degree_override_requested = (
+        args.dir_lon_res_deg is not None or args.dir_lat_res_deg is not None)
+    if args.access_angular_points is not None:
+        if degree_override_requested:
+            parser.error(
+                "--access-angular-points cannot be combined with "
+                "--dir-lon-res-deg/--dir-lat-res-deg")
+        try:
+            step_deg, _n_lon, _n_lat = equal_angle_grid_from_longitude_points(
+                args.access_angular_points)
+        except ValueError as exc:
+            parser.error("--access-angular-points: %s" % exc)
+        args.dir_lon_res_deg = step_deg
+        args.dir_lat_res_deg = step_deg
+        args.angular_resolution_source = "ACCESS_ANGULAR_POINTS"
+    else:
+        # Backwards-compatible degree interface.  Each omitted axis retains the
+        # historical 2.5-degree production default independently.
+        if args.dir_lon_res_deg is None:
+            args.dir_lon_res_deg = DEFAULT_DIRMAP_RES_DEG
+        if args.dir_lat_res_deg is None:
+            args.dir_lat_res_deg = DEFAULT_DIRMAP_RES_DEG
+        args.angular_resolution_source = (
+            "DEGREE_OVERRIDE" if degree_override_requested else "PRODUCTION_DEFAULT")
+
+    try:
+        (args.angular_grid_lon_points,
+         args.angular_grid_lat_points,
+         args.angular_grid_full_sphere_points) = directional_grid_shape(
+             args.dir_lon_res_deg, args.dir_lat_res_deg)
+    except ValueError as exc:
+        parser.error(str(exc))
+
     if args.np < 1 or args.nt < 1:
         parser.error("-np and -nt must be >= 1")
     if args.dynamic_chunk < 0:
@@ -7946,6 +8094,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "adaptive_access_max_depth": args.adaptive_access_max_depth,
                     "adaptive_access_guard_depth": args.adaptive_access_guard_depth,
                     "direction_coverage": args.direction_coverage,
+                    "angular_resolution_source": args.angular_resolution_source,
+                    "access_angular_points": args.access_angular_points,
+                    "direction_lon_resolution_deg": args.dir_lon_res_deg,
+                    "direction_lat_resolution_deg": args.dir_lat_res_deg,
+                    "direction_grid_lon_points": args.angular_grid_lon_points,
+                    "direction_grid_lat_points": args.angular_grid_lat_points,
+                    "direction_grid_full_sphere_points": args.angular_grid_full_sphere_points,
                     "direction_aperture_horizontal_half_angle_deg":
                         args.direction_aperture_horizontal_half_angle_deg,
                     "direction_aperture_vertical_half_angle_deg":
@@ -8038,6 +8193,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "adaptive_access_max_depth": args.adaptive_access_max_depth,
                     "adaptive_access_guard_depth": args.adaptive_access_guard_depth,
                     "direction_coverage": args.direction_coverage,
+                    "angular_resolution_source": args.angular_resolution_source,
+                    "access_angular_points": args.access_angular_points,
+                    "direction_lon_resolution_deg": args.dir_lon_res_deg,
+                    "direction_lat_resolution_deg": args.dir_lat_res_deg,
+                    "direction_grid_lon_points": args.angular_grid_lon_points,
+                    "direction_grid_lat_points": args.angular_grid_lat_points,
+                    "direction_grid_full_sphere_points": args.angular_grid_full_sphere_points,
                     "direction_aperture_horizontal_half_angle_deg": args.direction_aperture_horizontal_half_angle_deg,
                     "direction_aperture_vertical_half_angle_deg": args.direction_aperture_vertical_half_angle_deg,
                     "n_direct_access_rigidities": (len(access_rigidities)
@@ -8504,6 +8666,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         # east/west or antipodal. Recording the pruning envelope makes optimized and
         # full-sphere results distinguishable without inspecting C19_commands.json.
         "direction_coverage": args.direction_coverage,
+        # Angular-resolution provenance.  ``access_angular_points`` is intentionally
+        # kept separate from the derived grid dimensions because the user may instead
+        # choose the legacy anisotropic degree controls.  The three grid-count fields
+        # mirror AMPS' own dimension calculation and therefore make convergence runs
+        # self-describing even when VECTOR_APERTURES retains only a small subset of
+        # the nominal full-sphere cells.
+        "angular_resolution_source": args.angular_resolution_source,
+        "access_angular_points": args.access_angular_points,
+        "direction_lon_resolution_deg": args.dir_lon_res_deg,
+        "direction_lat_resolution_deg": args.dir_lat_res_deg,
+        "direction_grid_lon_points": args.angular_grid_lon_points,
+        "direction_grid_lat_points": args.angular_grid_lat_points,
+        "direction_grid_full_sphere_points": args.angular_grid_full_sphere_points,
         "direction_aperture_horizontal_half_angle_deg": args.direction_aperture_horizontal_half_angle_deg,
         "direction_aperture_vertical_half_angle_deg": args.direction_aperture_vertical_half_angle_deg,
         "instrument_response": "piecewise response from %s folded with direct A(E,Omega) on GRIDDED and GRIDLESS; nominal elliptical angular FOV" % response_path,

@@ -412,6 +412,8 @@ def integration_dry_run() -> None:
             raise SystemExit("current DIRECT_ACCESS/PENUMBRA_SCAN selector is missing from runner CLI")
         if "--direction-coverage" not in help_text:
             raise SystemExit("directional coverage selector is missing from runner CLI")
+        if "--access-angular-points" not in help_text:
+            raise SystemExit("angular point-count resolution selector is missing from runner CLI")
         if "--gridded-batch" not in help_text:
             raise SystemExit("GRIDDED mesh-reuse/compatibility selector is missing from runner CLI")
         if "--max-discrete-transition-fraction" not in help_text:
@@ -422,6 +424,30 @@ def integration_dry_run() -> None:
             runner_text = (ROOT / "run_C19.py").read_text()
             if 'DEFAULT_RESPONSE = SCRIPT_DIR / "data" / "epead_response_C19_uncorrected_extended.csv"' not in runner_text:
                 raise SystemExit("runner no longer defaults to the extended uncorrected response")
+
+        # Angular-resolution point-count regression.  This is the directional-grid
+        # analogue of --access-energy-points: 288 longitude cells must render an
+        # isotropic 1.25-degree lon/lat grid.  Verify the generated input deck rather
+        # than only the parser so the test protects the complete runner -> AMPS
+        # configuration path used by real convergence studies.
+        angular_output = root / "integration_angular_points"
+        run([
+            sys.executable, str(ROOT / "run_C19.py"),
+            "--profile", "SMOKE", "--solver", "GRIDDED", "--models", "T05",
+            "--reference", str(reference), "--driver", str(driver),
+            "--output-root", str(angular_output),
+            "--amps", "./amps-not-required-for-dry-run", "-np", "1", "-nt", "1",
+            "--access-angular-points", "288", "--dry-run",
+        ])
+        angular_decks = list(angular_output.glob("**/AMPS_PARAM_C19.in"))
+        if not angular_decks:
+            raise SystemExit("angular point-count dry-run produced no input deck")
+        for deck in angular_decks:
+            deck_text = deck.read_text()
+            if not re.search(r"^DIRMAP_LON_RES\s+1\.25\s*$", deck_text, re.MULTILINE):
+                raise SystemExit("--access-angular-points 288 did not render 1.25-deg longitude grid")
+            if not re.search(r"^DIRMAP_LAT_RES\s+1\.25\s*$", deck_text, re.MULTILINE):
+                raise SystemExit("--access-angular-points 288 did not render 1.25-deg latitude grid")
 
         # Exact attitude regression: the preferred orientation schema supplies one
         # arbitrary vector per *actual telemetry head*. Head W is deliberately non-

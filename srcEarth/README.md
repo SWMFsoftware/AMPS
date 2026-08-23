@@ -491,7 +491,11 @@ The validated production behavior includes:
   retained through `--no-adaptive-access` as a convergence/reference calculation;
 - direct three-state directional `A(R,Omega)` output for both GRIDDED Mode3D and GRIDLESS;
 - detector-response folding with event-derived spectrum/provenance support;
-- default `2.5° × 2.5°` directional sampling;
+- default `2.5° × 2.5°` directional sampling, with the convergence-study convenience
+  option `--access-angular-points N`: N is the even number of longitude cells over
+  360°, and the runner uses the same `360/N` spacing in latitude (`N=144` is the
+  production 2.5° grid; 72/288 give 5°/1.25°).  The older degree-valued lon/lat
+  controls remain available for deliberately asymmetric grids;
 - default vector-aperture directional work (`VECTOR_APERTURES`), using the actual
   per-epoch detector look vectors and a conservative P5-sized pruning envelope, with
   `FULL_SPHERE` retained as an explicit diagnostic alternative;
