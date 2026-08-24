@@ -4707,6 +4707,17 @@ def observation_id_for(mapping: Mapping[str, str], utc: object) -> str:
     return mapping.get(key, "?")
 
 
+def parity_point_label(mapping: Mapping[str, str], utc: object, channel: str) -> str:
+    """Return the compact point annotation, e.g. ``T03 P5``.
+
+    Observation IDs remain pure epoch identifiers in ``C19_observation_ids.csv``.
+    Scalar observed-vs-model point plots (scatter and parity) append the particle
+    channel so P4 and P5 points at the same epoch can be distinguished directly on
+    the figure.  Time-series comparison plots retain the shorter ``Txx`` label.
+    """
+    return "%s %s" % (observation_id_for(mapping, utc), str(channel).upper())
+
+
 def annotate_observation_point(ax, x: object, y: float, label: str,
                                *, fontsize: float = 6.5) -> None:
     """Place a compact observation ID beside one plotted science point.
@@ -4715,7 +4726,10 @@ def annotate_observation_point(ax, x: object, y: float, label: str,
     label-on-label collisions for nearby points without introducing a dependency on an
     external label-placement package.  The text remains vector text in EPS output.
     """
-    match = re.search(r"(\d+)$", label)
+    # Use the observation index from Txx even when a channel suffix (P4/P5) is
+    # present.  Looking for the final digits would incorrectly key the placement
+    # offset to the channel number instead of the observation epoch.
+    match = re.search(r"\bT(\d+)\b", label, flags=re.IGNORECASE)
     index = int(match.group(1)) if match else 1
     offsets = ((4, 4), (4, -10), (-18, 4), (-18, -10), (8, 0), (-24, 0))
     dx, dy = offsets[(index - 1) % len(offsets)]
@@ -4738,6 +4752,237 @@ def save_figure_png_eps(fig, png_path: Path, *, dpi: int = 160,
     fig.savefig(png_path, dpi=dpi, **kwargs)
     fig.savefig(eps_path, format="eps", **kwargs)
     return str(png_path), str(eps_path)
+
+
+def publication_spacecraft_tag(spacecraft: Sequence[str]) -> str:
+    """Stable filename tag for an opt-in publication spacecraft selection."""
+    return "_".join(str(value).lower() for value in spacecraft)
+
+
+def make_publication_comparison_plots(
+        rows: Sequence[ModelRow], output_root: Path,
+        spacecraft: Sequence[str],
+        reference_rows: Optional[Sequence[ReferenceRow]] = None,
+        ) -> List[str]:
+    """Generate diagnostic-free C19 comparison figures for publication use.
+
+    The normal C19 figures intentionally expose numerical/scientific diagnostics:
+    calculated-but-unaccepted direct scalars, direct-bound midpoints, uncertainty
+    intervals, censoring markers, and missing-model indicators.  Those are indispensable
+    for validation but make a manuscript figure unnecessarily busy.  This opt-in
+    renderer is deliberately stricter: it plots selected GOES observations, accepted
+    DIRECT_ACCESS scalars, and one explicitly labelled equivalent-cutoff-rigidity E/W
+    estimate.  The rigidity curve is kept as an estimate (not an accepted DIRECT_ACCESS
+    result) so a publication figure can show how much information is lost when the full
+    directional access A(E,Omega) is reduced to a scalar cutoff.
+
+    ``spacecraft`` controls which observational/model points are admitted (for example
+    GOES13 only or GOES13+GOES15).  The default runner path never calls this function,
+    so existing output is unchanged unless --publication/-publication is requested.
+    PNG and vector EPS companions are emitted with a ``C19_publication_*`` basename.
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        print("C19 publication plot generation skipped: %s" % exc, file=sys.stderr)
+        return []
+
+    selected = tuple(str(value).upper() for value in spacecraft)
+    selected_set = set(selected)
+    publication_rows = [row for row in rows if row.spacecraft in selected_set]
+    publication_references = (
+        [row for row in reference_rows if row.spacecraft in selected_set]
+        if reference_rows is not None else None)
+    if not publication_rows:
+        print(
+            "C19 publication plots were requested for %s but no matching model rows "
+            "were available." % ",".join(selected),
+            file=sys.stderr)
+        return []
+
+    accepted_rows = [
+        row for row in publication_rows
+        if row.direct_scalar_accepted and
+        finite_optional(row.modeled_log10_east_west_ratio)]
+    observation_ids = observation_id_map(
+        [row.utc for row in publication_rows] +
+        ([row.utc for row in publication_references]
+         if publication_references is not None else []))
+    marker_by_spacecraft = {"GOES13": "o", "GOES15": "s"}
+    color_by_spacecraft = {"GOES13": "tab:blue", "GOES15": "tab:orange"}
+    tag = publication_spacecraft_tag(selected)
+    outputs: List[str] = []
+
+    for solver, model in sorted({(row.solver, row.field_model)
+                                 for row in publication_rows}):
+        subset = [row for row in publication_rows
+                  if row.solver == solver and row.field_model == model]
+        accepted_subset = [row for row in accepted_rows
+                           if row.solver == solver and row.field_model == model]
+        if publication_references is not None:
+            panels = sorted({(row.spacecraft, row.channel)
+                             for row in publication_references})
+        else:
+            panels = sorted({(row.spacecraft, row.channel) for row in subset})
+        if not panels:
+            continue
+
+        # Clean time-series comparison: observations plus accepted direct model only.
+        fig, axes = plt.subplots(
+            len(panels), 1, figsize=(10.5, max(3.0, 2.5 * len(panels))),
+            sharex=True, squeeze=False)
+        for axis, (spacecraft_name, channel) in zip(axes[:, 0], panels):
+            panel = sorted([row for row in accepted_subset
+                            if row.spacecraft == spacecraft_name and
+                            row.channel == channel], key=lambda row: row.utc)
+            if publication_references is not None:
+                reference_panel = sorted([
+                    row for row in publication_references
+                    if row.spacecraft == spacecraft_name and row.channel == channel],
+                    key=lambda row: row.utc)
+                observed_times = [parse_utc(row.utc) for row in reference_panel]
+                observed_values = [row.log10_east_west_ratio for row in reference_panel]
+                observed_id_rows = reference_panel
+            else:
+                # When a separate reference table is unavailable, use the observed
+                # values serialized alongside accepted model rows.
+                observed_times = [parse_utc(row.utc) for row in panel]
+                observed_values = [row.observed_log10_east_west_ratio for row in panel]
+                observed_id_rows = panel
+
+            if observed_times:
+                axis.plot(observed_times, observed_values, marker="o", markersize=3.5,
+                          linewidth=1.2, label="GOES observed")
+                for obs_row, obs_time, obs_value in zip(
+                        observed_id_rows, observed_times, observed_values):
+                    annotate_observation_point(
+                        axis, obs_time, float(obs_value),
+                        observation_id_for(observation_ids, obs_row.utc))
+            if panel:
+                model_times = [parse_utc(row.utc) for row in panel]
+                model_values = [float(row.modeled_log10_east_west_ratio) for row in panel]
+                axis.plot(model_times, model_values, marker="x", markersize=4.0,
+                          linewidth=1.2, label="AMPS direct A(E,Omega)")
+
+            # Publication comparison also shows the scalar-cutoff reduction of the
+            # same directional access calculation.  Unlike the validation plot, we do
+            # not add midpoint/bound/censoring marker populations: only the finite
+            # equivalent-cutoff E/W estimate is drawn as a clean third time series.
+            # This quantity is diagnostic/approximate by construction and is therefore
+            # labelled as an estimate rather than as an accepted model result.
+            rigidity_panel = sorted([
+                row for row in subset
+                if row.spacecraft == spacecraft_name and row.channel == channel and
+                finite_optional(row.cutoff_proxy_log10_east_west_ratio)],
+                key=lambda row: row.utc)
+            if rigidity_panel:
+                rigidity_times = [parse_utc(row.utc) for row in rigidity_panel]
+                rigidity_values = [
+                    float(row.cutoff_proxy_log10_east_west_ratio)
+                    for row in rigidity_panel]
+                axis.plot(
+                    rigidity_times, rigidity_values, marker="s", markersize=3.5,
+                    linewidth=1.1, linestyle="--",
+                    label="AMPS cutoff-rigidity estimate")
+            else:
+                rigidity_values = []
+
+            finite_values = [float(value) for value in observed_values]
+            finite_values += [float(row.modeled_log10_east_west_ratio) for row in panel]
+            finite_values += rigidity_values
+            if finite_values:
+                axis.set_ylim(*padded_limits(
+                    finite_values, fraction=0.10, min_pad=0.05))
+            axis.axhline(0.0, linewidth=0.8)
+            axis.set_ylabel("log10(E/W)")
+            axis.set_title("%s %s" % (spacecraft_name, channel))
+            axis.grid(True, alpha=0.3)
+            if observed_times or panel or rigidity_panel:
+                axis.legend(loc="best", fontsize="small")
+        axes[-1, 0].set_xlabel("UTC")
+        fig.suptitle("C19A %s %s: GOES vs AMPS east/west ratio" %
+                     (solver, model))
+        fig.tight_layout()
+        path = output_root / ("C19_publication_comparison_%s_%s_%s.png" %
+                              (solver.lower(), model.lower(), tag))
+        png_path, eps_path = save_figure_png_eps(fig, path, dpi=160)
+        plt.close(fig)
+        outputs.extend((png_path, eps_path))
+
+        # Scatter/parity publication figures contain only accepted direct scalars.
+        if not accepted_subset:
+            continue
+
+        def draw_accepted(ax, *, include_channel_in_annotation: bool = False) -> None:
+            """Draw accepted direct scalars; parity can label points as ``Txx P4/P5``."""
+            for spacecraft_name, channel in sorted({
+                    (row.spacecraft, row.channel) for row in accepted_subset}):
+                group = [row for row in accepted_subset
+                         if row.spacecraft == spacecraft_name and row.channel == channel]
+                x_values = [row.observed_log10_east_west_ratio for row in group]
+                y_values = [float(row.modeled_log10_east_west_ratio) for row in group]
+                ax.scatter(
+                    x_values, y_values,
+                    marker=marker_by_spacecraft.get(spacecraft_name, "o"),
+                    color=color_by_spacecraft.get(spacecraft_name, "tab:blue"),
+                    alpha=0.9, label="%s %s" % (spacecraft_name, channel))
+                for row, x_value, y_value in zip(group, x_values, y_values):
+                    point_label = (
+                        parity_point_label(observation_ids, row.utc, row.channel)
+                        if include_channel_in_annotation
+                        else observation_id_for(observation_ids, row.utc))
+                    annotate_observation_point(ax, x_value, y_value, point_label)
+
+        x_values = [row.observed_log10_east_west_ratio for row in accepted_subset]
+        y_values = [float(row.modeled_log10_east_west_ratio)
+                    for row in accepted_subset]
+
+        fig, ax = plt.subplots(figsize=(6.4, 6.0))
+        # Scatter is also a point-identification figure: include the particle channel
+        # in every compact annotation (Txx P4/P5), matching the parity plot.
+        draw_accepted(ax, include_channel_in_annotation=True)
+        x_min, x_max = padded_limits(x_values)
+        y_min, y_max = padded_limits(y_values)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        overlap_lower = max(x_min, y_min)
+        overlap_upper = min(x_max, y_max)
+        if overlap_lower < overlap_upper:
+            ax.plot([overlap_lower, overlap_upper],
+                    [overlap_lower, overlap_upper], linestyle="--", linewidth=1.0)
+        ax.set_xlabel("Observed log10(E/W)")
+        ax.set_ylabel("AMPS direct log10(E/W)")
+        ax.set_title("C19A %s %s: observed vs AMPS direct" % (solver, model))
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize="small")
+        fig.tight_layout()
+        path = output_root / ("C19_publication_scatter_%s_%s_%s.png" %
+                              (solver.lower(), model.lower(), tag))
+        png_path, eps_path = save_figure_png_eps(fig, path, dpi=160)
+        plt.close(fig)
+        outputs.extend((png_path, eps_path))
+
+        fig, ax = plt.subplots(figsize=(6.4, 6.0))
+        draw_accepted(ax, include_channel_in_annotation=True)
+        common_min, common_max = padded_limits(
+            x_values + y_values, fraction=0.05, min_pad=0.05)
+        ax.set_xlim(common_min, common_max)
+        ax.set_ylim(common_min, common_max)
+        ax.plot([common_min, common_max], [common_min, common_max],
+                linestyle="--", linewidth=1.0)
+        ax.set_xlabel("Observed log10(E/W)")
+        ax.set_ylabel("AMPS direct log10(E/W)")
+        ax.set_title("C19A %s %s: parity view" % (solver, model))
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize="small")
+        fig.tight_layout()
+        path = output_root / ("C19_publication_parity_%s_%s_%s.png" %
+                              (solver.lower(), model.lower(), tag))
+        png_path, eps_path = save_figure_png_eps(fig, path, dpi=160)
+        plt.close(fig)
+        outputs.extend((png_path, eps_path))
+
+    return outputs
 
 
 def model_coverage_rows(
@@ -5820,8 +6065,9 @@ def make_comparison_plots(
         if scalar_plot_rows:
             color_by_spacecraft = {"GOES13": "tab:blue", "GOES15": "tab:orange"}
 
-            def draw_scalar_points(ax) -> None:
-                """Draw the four canonical comparison populations on one axis."""
+            def draw_scalar_points(
+                    ax, *, include_channel_in_annotation: bool = False) -> None:
+                """Draw canonical populations; parity can label points as ``Txx P4/P5``."""
                 for category, rows_for_category in (
                         ("accepted", accepted_direct),
                         ("unaccepted", unaccepted_direct),
@@ -5859,9 +6105,13 @@ def make_comparison_plots(
                                 label="%s %s direct bounds midpoint" %
                                       (spacecraft, channel))
                         for row, y_value in zip(group, y):
+                            point_label = (
+                                parity_point_label(observation_ids, row.utc, row.channel)
+                                if include_channel_in_annotation
+                                else observation_id_for(observation_ids, row.utc))
                             annotate_observation_point(
                                 ax, row.observed_log10_east_west_ratio, float(y_value),
-                                observation_id_for(observation_ids, row.utc))
+                                point_label)
 
                 for spacecraft, channel in sorted({
                         (row.spacecraft, row.channel) for row in finite_proxy}):
@@ -5876,9 +6126,13 @@ def make_comparison_plots(
                         label="%s %s cutoff midpoint diagnostic" %
                               (spacecraft, channel), alpha=0.75)
                     for row, y_value in zip(group, proxy_y):
+                        point_label = (
+                            parity_point_label(observation_ids, row.utc, row.channel)
+                            if include_channel_in_annotation
+                            else observation_id_for(observation_ids, row.utc))
                         annotate_observation_point(
                             ax, row.observed_log10_east_west_ratio, float(y_value),
-                            observation_id_for(observation_ids, row.utc))
+                            point_label)
 
             direct_scalar_rows = accepted_direct + unaccepted_direct
             x_values = [row.observed_log10_east_west_ratio for row in scalar_plot_rows]
@@ -5894,7 +6148,9 @@ def make_comparison_plots(
             # they mean "calculated but not accepted" or "bounds only", not an
             # accepted model value.
             fig, ax = plt.subplots(figsize=(6.4, 6.0))
-            draw_scalar_points(ax)
+            # Include channel in scalar point annotations so overlapping P4/P5 epochs
+            # remain identifiable in the observed-vs-model scatter view.
+            draw_scalar_points(ax, include_channel_in_annotation=True)
             x_min, x_max = padded_limits(x_values)
             y_min, y_max = padded_limits(y_values)
             ax.set_xlim(x_min, x_max)
@@ -5923,7 +6179,7 @@ def make_comparison_plots(
             # Parity plot uses the exact same selected row populations but a common
             # x/y range so geometric distance from the 1:1 line is meaningful.
             fig, ax = plt.subplots(figsize=(6.4, 6.0))
-            draw_scalar_points(ax)
+            draw_scalar_points(ax, include_channel_in_annotation=True)
             all_values = x_values + y_values
             common_min, common_max = padded_limits(
                 all_values, fraction=0.05, min_pad=0.05)
@@ -6220,7 +6476,8 @@ def make_core_comparison_fallback_plots(
                     for row, x_value, y_value in zip(selected, x, y):
                         annotate_observation_point(
                             ax, x_value, y_value,
-                            observation_id_for(observation_ids, row.utc))
+                            parity_point_label(
+                                observation_ids, row.utc, row.channel))
 
             scatter_group(groups["direct_accepted"],
                           "direct_calculated_log10_east_west_ratio", accepted=True)
@@ -6247,7 +6504,8 @@ def make_core_comparison_fallback_plots(
                 for row, x_value, y_value in zip(selected, x, y):
                     annotate_observation_point(
                         ax, x_value, y_value,
-                        observation_id_for(observation_ids, row.utc))
+                        parity_point_label(
+                            observation_ids, row.utc, row.channel))
 
             # Even when no finite model scalar survived, create the expected file and
             # explain why it is empty.  Missing files are ambiguous; an annotated plot
@@ -6506,9 +6764,10 @@ def make_directional_cutoff_plots(
     required a finite ``rc_effective_gv``.  That is exactly the regime in which the
     diagnostic is most useful.  The figure therefore uses *all* cells with finite
     Rc bounds and shows four panels: lower bound, blocked-area midpoint diagnostic,
-    upper bound, and bound width.  A cell whose midpoint is diagnostic-only (no resolved
-    ``Rc_effective``) is outlined so the central color cannot be mistaken for a resolved
-    cutoff result.
+    upper bound, and bound width.  Numerical status (diagnostic-only midpoint and
+    support-censoring flags) remains available in the CSV diagnostics, but is not drawn
+    as an additional symbol layer: on dense aperture grids those open-circle overlays
+    obscure the color field that this figure is intended to show.
     """
     try:
         import matplotlib.pyplot as plt
@@ -6544,46 +6803,36 @@ def make_directional_cutoff_plots(
 
         common_min = min(lower_values + midpoint_values + upper_values)
         common_max = max(lower_values + midpoint_values + upper_values)
-        lower_plot = axes_flat[0].scatter(lon, lat, c=lower_values, cmap="viridis",
-                                          s=18, vmin=common_min, vmax=common_max)
+        lower_plot = axes_flat[0].scatter(
+            lon, lat, c=lower_values, cmap="viridis", s=18,
+            vmin=common_min, vmax=common_max, edgecolors="none", linewidths=0.0)
         axes_flat[0].set_title("Rigorous Rc lower bound")
         fig.colorbar(lower_plot, ax=axes_flat[0], label="Rc lower (GV)")
 
         midpoint_plot = axes_flat[1].scatter(
             lon, lat, c=midpoint_values, cmap="viridis", s=18,
-            vmin=common_min, vmax=common_max)
+            vmin=common_min, vmax=common_max, edgecolors="none", linewidths=0.0)
         axes_flat[1].set_title("Equivalent-cutoff midpoint (diagnostic only)")
         fig.colorbar(midpoint_plot, ax=axes_flat[1], label="Rc midpoint diagnostic (GV)")
 
-        upper_plot = axes_flat[2].scatter(lon, lat, c=upper_values, cmap="viridis",
-                                         s=18, vmin=common_min, vmax=common_max)
+        upper_plot = axes_flat[2].scatter(
+            lon, lat, c=upper_values, cmap="viridis", s=18,
+            vmin=common_min, vmax=common_max, edgecolors="none", linewidths=0.0)
         axes_flat[2].set_title("Rigorous Rc upper bound")
         fig.colorbar(upper_plot, ax=axes_flat[2], label="Rc upper (GV)")
 
-        uncertainty = axes_flat[3].scatter(lon, lat, c=widths, cmap="magma", s=18)
+        uncertainty = axes_flat[3].scatter(
+            lon, lat, c=widths, cmap="magma", s=18,
+            edgecolors="none", linewidths=0.0)
         axes_flat[3].set_title("Retained cutoff bound width")
         fig.colorbar(uncertainty, ax=axes_flat[3], label="Rc upper - lower (GV)")
 
-        diagnostic_only = [row for row in finite
-                           if row.get("rc_effective_gv") is None]
-        if diagnostic_only:
-            axes_flat[1].scatter(
-                [float(row["lon_deg"]) for row in diagnostic_only],
-                [float(row["lat_deg"]) for row in diagnostic_only],
-                facecolors="none", edgecolors="black", marker="o", s=34,
-                linewidths=0.7, label="midpoint uses unresolved bracket(s)")
-            axes_flat[1].legend(loc="best", fontsize="x-small")
-        censored = [row for row in finite
-                    if row.get("lower_censored_at_sample_support")
-                    or row.get("upper_censored_at_sample_support")]
-        if censored:
-            for axis in axes_flat:
-                axis.scatter(
-                    [float(row["lon_deg"]) for row in censored],
-                    [float(row["lat_deg"]) for row in censored],
-                    facecolors="none", edgecolors="black", marker="o", s=34,
-                    linewidths=0.7, label="support-censored")
-                axis.legend(loc="best", fontsize="x-small")
+        # Do not overlay per-cell status symbols here.  On production angular grids
+        # diagnostic-only and/or support-censored cells can comprise most of an
+        # aperture; drawing a black open circle on every such cell hides the colored
+        # cutoff data almost completely.  The exact per-cell flags remain preserved
+        # in C19_directional_cutoff.csv (and related diagnostic tables), so removing
+        # this visual layer loses no auditable information.
         for axis in axes_flat:
             axis.set_xlim(0.0, 360.0)
             axis.set_ylim(-90.0, 90.0)
@@ -6971,6 +7220,13 @@ def self_test() -> int:
             angular_cli.angular_resolution_source != "ACCESS_ANGULAR_POINTS" or
             angular_cli.access_energy_points != 64):
         raise AssertionError("angular/energy point-count CLI resolution is inconsistent")
+    publication_cli = parse_args([
+        "--publication", "goes13,goes15", "--spacecraft", "GOES13,GOES15"])
+    publication_alias_cli = parse_args([
+        "-publication", "=goes13", "--spacecraft", "GOES13,GOES15"])
+    if (publication_cli.publication_spacecraft_list != ["GOES13", "GOES15"] or
+            publication_alias_cli.publication_spacecraft_list != ["GOES13"]):
+        raise AssertionError("publication spacecraft CLI selection is inconsistent")
     with tempfile.TemporaryDirectory(prefix="C19_runner_selftest_") as temporary:
         root = Path(temporary)
         map_path = root / "cutoff_gridless_dir_map_point_0000.dat"
@@ -7716,12 +7972,30 @@ def self_test() -> int:
                     [row["utc"] for row in id_rows] !=
                     [format_utc(reference.utc), format_utc(missing_reference.utc)]):
                 raise AssertionError("observation-ID mapping is not stable/chronological")
+            id_mapping = observation_id_map([reference.utc, missing_reference.utc])
+            if parity_point_label(id_mapping, reference.utc, "p5") != "T01 P5":
+                raise AssertionError("parity annotation must include observation ID and channel")
             id_lookup_path = plot_root / "C19_observation_ids.csv"
             write_dict_rows(id_lookup_path, id_rows)
 
             comparison_paths = make_comparison_plots(
                 [model, calculated_not_accepted, invalid_direct_model],
                 plot_root, [reference, missing_reference])
+
+            publication_paths = make_publication_comparison_plots(
+                [model, calculated_not_accepted, invalid_direct_model],
+                plot_root, ["GOES13"], [reference, missing_reference])
+            expected_publication = {
+                "C19_publication_comparison_gridless_t05_goes13.png",
+                "C19_publication_comparison_gridless_t05_goes13.eps",
+                "C19_publication_scatter_gridless_t05_goes13.png",
+                "C19_publication_scatter_gridless_t05_goes13.eps",
+                "C19_publication_parity_gridless_t05_goes13.png",
+                "C19_publication_parity_gridless_t05_goes13.eps",
+            }
+            if not expected_publication.issubset(
+                    {Path(path).name for path in publication_paths}):
+                raise AssertionError("diagnostic-free publication plots were not generated")
 
             # Core-plot recovery regression.  Simulate an unexpected failure/removal
             # of the primary time-series/scatter products, then prove that the
@@ -7900,6 +8174,13 @@ Examples:
     parser.add_argument("--end", help="optional inclusive UTC end")
     parser.add_argument("--spacecraft", default="GOES13,GOES15")
     parser.add_argument("--channels", default="P4,P5")
+    parser.add_argument(
+        "--publication", "-publication", default=None, metavar="SPACECRAFT",
+        help=("opt-in diagnostic-free publication comparison plots for a comma-separated "
+              "spacecraft selection, e.g. --publication GOES13,GOES15. Only accepted "
+              "DIRECT_ACCESS science scalars and the selected GOES observations are "
+              "shown; the ordinary diagnostic-rich plots remain unchanged. The legacy "
+              "single-dash spelling -publication is accepted as an alias."))
     parser.add_argument("--solver", choices=SOLVERS, default="GRIDDED")
     parser.add_argument(
         "--cutoff-search", choices=("DIRECT_ACCESS", "PENUMBRA_SCAN"),
@@ -8122,6 +8403,22 @@ Examples:
         args.spacecraft_list = parse_csv_list(args.spacecraft, ("GOES13", "GOES15"))
         args.channel_list = parse_csv_list(args.channels, ("P4", "P5"))
         args.model_list = parse_csv_list(args.models, FIELD_MODELS)
+        args.publication_spacecraft_list = []
+        if args.publication is not None:
+            # Accept the user's historical shell spelling ``-publication =goes13,goes15``
+            # in addition to the conventional ``--publication GOES13,GOES15`` and
+            # ``--publication=GOES13,GOES15`` forms.
+            publication_text = str(args.publication).strip()
+            if publication_text.startswith("="):
+                publication_text = publication_text[1:].strip()
+            args.publication_spacecraft_list = parse_csv_list(
+                publication_text, ("GOES13", "GOES15"))
+            not_selected = [value for value in args.publication_spacecraft_list
+                            if value not in args.spacecraft_list]
+            if not_selected:
+                raise ValueError(
+                    "--publication spacecraft %s are not included in --spacecraft %s" %
+                    (",".join(not_selected), ",".join(args.spacecraft_list)))
     except ValueError as exc:
         parser.error(str(exc))
 
@@ -9025,6 +9322,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "core_comparison_fallback",
         lambda: make_core_comparison_fallback_plots(
             model_rows, output_root, reference))
+    if args.publication_spacecraft_list:
+        run_plot_family(
+            "publication_comparison",
+            lambda: make_publication_comparison_plots(
+                model_rows, output_root, args.publication_spacecraft_list, reference))
     run_plot_family(
         "transmission",
         lambda: make_transmission_plots(model_rows, output_root))
@@ -9159,6 +9461,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "reference_sha256": sha256(reference_path),
         "observation_id_lookup": "C19_observation_ids.csv",
         "observation_id_count": len(selected_observation_id_rows),
+        "publication_plots_enabled": bool(args.publication_spacecraft_list),
+        "publication_spacecraft": args.publication_spacecraft_list,
+        "publication_plot_policy": (
+            "GOES observations + accepted DIRECT_ACCESS scalars only; diagnostics omitted"
+            if args.publication_spacecraft_list else None),
         "event_manifest_path": str(manifest_path),
         "event_manifest_sha256": sha256(manifest_path),
         "driver_path": str(driver_path),
@@ -9362,6 +9669,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             len({row.utc for row in reference}),
             " (synchronized SMOKE common epochs)" if args.profile == "SMOKE" else ""),
         "model rows: %d" % len(model_rows),
+        "publication plots: %s" % (
+            ",".join(args.publication_spacecraft_list)
+            if args.publication_spacecraft_list else "disabled (default diagnostic-rich output only)"),
         "direct finite scalars calculated: %d" %
             int(plot_consistency["direct_calculated_rows"]),
         "direct scalars accepted: %d" %

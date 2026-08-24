@@ -1720,6 +1720,42 @@ scatter, and parity views.
 Every `.png` entry in the table above has an automatically generated `.eps` companion
 with the same basename.
 
+### Optional diagnostic-free publication comparison plots
+
+The standard plots above remain the default because C19 validation must expose rejected
+scalars, bounds, cutoff-proxy diagnostics, censoring, and missing-run information.  For a
+manuscript/presentation figure, the runner can additionally create a deliberately clean
+comparison family without changing or replacing those standard plots:
+
+```bash
+python3 srcEarth/test/C19/run_C19.py \
+  ...existing run options... \
+  --publication GOES13,GOES15
+```
+
+`-publication` is accepted as a compatibility alias, including the historical shell form
+`-publication =goes13,goes15`.  Values are case-insensitive and may select `GOES13`,
+`GOES15`, or both.  The requested publication spacecraft must also be present in the
+normal `--spacecraft` selection.  If `--publication` is omitted, **nothing changes** in
+the historical/default plot set.
+
+Publication figures use only two scientific populations: the selected GOES observations
+and AMPS DIRECT_ACCESS scalars that passed the ordinary C19 acceptance gates.  They
+exclude calculated-but-unaccepted direct points, direct-bound midpoints and intervals,
+cutoff-rigidity proxy points/bounds, censoring markers, and missing-model/run diagnostics.
+No diagnostic quantity is promoted into an accepted science point.  The existing `Txx`
+observation annotations are retained and map to exact UTC through
+`C19_observation_ids.csv`.  The selected spacecraft are encoded in the basename, e.g.
+
+```text
+C19_publication_comparison_gridded_t05_goes13_goes15.png/.eps
+C19_publication_scatter_gridded_t05_goes13_goes15.png/.eps
+C19_publication_parity_gridded_t05_goes13_goes15.png/.eps
+```
+
+This mode is post-processing only, so it can be added to an existing compatible run with
+`--skip-run`; the AMPS trajectories do not need to be recomputed.
+
 Exact zero transmission remains a dedicated saturation state rather than an arbitrary
 finite substitute. Unresolved cells are carried through lower/upper bounds and the
 configured unresolved-aperture validity gate.

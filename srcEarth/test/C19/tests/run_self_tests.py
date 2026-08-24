@@ -416,6 +416,8 @@ def integration_dry_run() -> None:
             raise SystemExit("angular point-count resolution selector is missing from runner CLI")
         if "--access-energy-points" not in help_text:
             raise SystemExit("energy point-count resolution selector is missing from runner CLI")
+        if "--publication" not in help_text:
+            raise SystemExit("diagnostic-free publication plot selector is missing from runner CLI")
         if "--gridded-batch" not in help_text:
             raise SystemExit("GRIDDED mesh-reuse/compatibility selector is missing from runner CLI")
         if "--max-discrete-transition-fraction" not in help_text:
@@ -852,6 +854,14 @@ def validate_direct_plot_contract() -> None:
         "C19_observation_ids.csv",
         "def save_figure_png_eps",
         'with_suffix(".eps")',
+        # Opt-in manuscript figures must be a separate diagnostic-free family so
+        # validation plots keep their full information content by default.
+        "def make_publication_comparison_plots",
+        '"--publication", "-publication"',
+        "C19_publication_comparison_",
+        "C19_publication_scatter_",
+        "C19_publication_parity_",
+        "row.direct_scalar_accepted",
     )
     for needle in required:
         if needle not in text:
