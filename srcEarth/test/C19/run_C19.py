@@ -4708,12 +4708,14 @@ def observation_id_for(mapping: Mapping[str, str], utc: object) -> str:
 
 
 def parity_point_label(mapping: Mapping[str, str], utc: object, channel: str) -> str:
-    """Return the compact point annotation, e.g. ``T03 P5``.
+    """Return the compact observation annotation, e.g. ``T03 P5``.
 
-    Observation IDs remain pure epoch identifiers in ``C19_observation_ids.csv``.
-    Scalar observed-vs-model point plots (scatter and parity) append the particle
-    channel so P4 and P5 points at the same epoch can be distinguished directly on
-    the figure.  Time-series comparison plots retain the shorter ``Txx`` label.
+    Observation IDs remain pure epoch identifiers in ``C19_observation_ids.csv`` so
+    that Txx continues to identify one physical epoch.  Every comparison-plot point
+    annotation appends the particle channel, however, because P4 and P5 can occupy
+    nearby or overlapping positions at the same epoch.  Keeping the channel in the
+    rendered label makes the point identity self-contained instead of requiring the
+    reader to infer the channel from color/marker/legend context.
     """
     return "%s %s" % (observation_id_for(mapping, utc), str(channel).upper())
 
@@ -4857,7 +4859,8 @@ def make_publication_comparison_plots(
                         observed_id_rows, observed_times, observed_values):
                     annotate_observation_point(
                         axis, obs_time, float(obs_value),
-                        observation_id_for(observation_ids, obs_row.utc))
+                        parity_point_label(
+                            observation_ids, obs_row.utc, obs_row.channel))
             if panel:
                 model_times = [parse_utc(row.utc) for row in panel]
                 model_values = [float(row.modeled_log10_east_west_ratio) for row in panel]
@@ -4913,8 +4916,8 @@ def make_publication_comparison_plots(
         if not accepted_subset:
             continue
 
-        def draw_accepted(ax, *, include_channel_in_annotation: bool = False) -> None:
-            """Draw accepted direct scalars; parity can label points as ``Txx P4/P5``."""
+        def draw_accepted(ax) -> None:
+            """Draw accepted direct scalars with mandatory ``Txx P4/P5`` labels."""
             for spacecraft_name, channel in sorted({
                     (row.spacecraft, row.channel) for row in accepted_subset}):
                 group = [row for row in accepted_subset
@@ -4927,10 +4930,10 @@ def make_publication_comparison_plots(
                     color=color_by_spacecraft.get(spacecraft_name, "tab:blue"),
                     alpha=0.9, label="%s %s" % (spacecraft_name, channel))
                 for row, x_value, y_value in zip(group, x_values, y_values):
-                    point_label = (
-                        parity_point_label(observation_ids, row.utc, row.channel)
-                        if include_channel_in_annotation
-                        else observation_id_for(observation_ids, row.utc))
+                    # The channel suffix is deliberately mandatory here.  A Txx-only
+                    # label is ambiguous whenever P4 and P5 share the same epoch.
+                    point_label = parity_point_label(
+                        observation_ids, row.utc, row.channel)
                     annotate_observation_point(ax, x_value, y_value, point_label)
 
         x_values = [row.observed_log10_east_west_ratio for row in accepted_subset]
@@ -4940,7 +4943,7 @@ def make_publication_comparison_plots(
         fig, ax = plt.subplots(figsize=(6.4, 6.0))
         # Scatter is also a point-identification figure: include the particle channel
         # in every compact annotation (Txx P4/P5), matching the parity plot.
-        draw_accepted(ax, include_channel_in_annotation=True)
+        draw_accepted(ax)
         x_min, x_max = padded_limits(x_values)
         y_min, y_max = padded_limits(y_values)
         ax.set_xlim(x_min, x_max)
@@ -4963,7 +4966,7 @@ def make_publication_comparison_plots(
         outputs.extend((png_path, eps_path))
 
         fig, ax = plt.subplots(figsize=(6.4, 6.0))
-        draw_accepted(ax, include_channel_in_annotation=True)
+        draw_accepted(ax)
         common_min, common_max = padded_limits(
             x_values + y_values, fraction=0.05, min_pad=0.05)
         ax.set_xlim(common_min, common_max)
@@ -5873,7 +5876,8 @@ def make_comparison_plots(
                     observed_rows_for_ids, observed_times, observed):
                 annotate_observation_point(
                     axis, obs_time, float(obs_value),
-                    observation_id_for(observation_ids, obs_row.utc))
+                    parity_point_label(
+                        observation_ids, obs_row.utc, obs_row.channel))
             axis.plot(times, modeled, marker="x", markersize=3, linewidth=1.2,
                       label="AMPS direct A(E,Omega) (accepted)")
 
@@ -6065,9 +6069,8 @@ def make_comparison_plots(
         if scalar_plot_rows:
             color_by_spacecraft = {"GOES13": "tab:blue", "GOES15": "tab:orange"}
 
-            def draw_scalar_points(
-                    ax, *, include_channel_in_annotation: bool = False) -> None:
-                """Draw canonical populations; parity can label points as ``Txx P4/P5``."""
+            def draw_scalar_points(ax) -> None:
+                """Draw canonical scalar populations with mandatory ``Txx P4/P5`` labels."""
                 for category, rows_for_category in (
                         ("accepted", accepted_direct),
                         ("unaccepted", unaccepted_direct),
@@ -6105,10 +6108,8 @@ def make_comparison_plots(
                                 label="%s %s direct bounds midpoint" %
                                       (spacecraft, channel))
                         for row, y_value in zip(group, y):
-                            point_label = (
-                                parity_point_label(observation_ids, row.utc, row.channel)
-                                if include_channel_in_annotation
-                                else observation_id_for(observation_ids, row.utc))
+                            point_label = parity_point_label(
+                                observation_ids, row.utc, row.channel)
                             annotate_observation_point(
                                 ax, row.observed_log10_east_west_ratio, float(y_value),
                                 point_label)
@@ -6126,10 +6127,8 @@ def make_comparison_plots(
                         label="%s %s cutoff midpoint diagnostic" %
                               (spacecraft, channel), alpha=0.75)
                     for row, y_value in zip(group, proxy_y):
-                        point_label = (
-                            parity_point_label(observation_ids, row.utc, row.channel)
-                            if include_channel_in_annotation
-                            else observation_id_for(observation_ids, row.utc))
+                        point_label = parity_point_label(
+                            observation_ids, row.utc, row.channel)
                         annotate_observation_point(
                             ax, row.observed_log10_east_west_ratio, float(y_value),
                             point_label)
@@ -6150,7 +6149,7 @@ def make_comparison_plots(
             fig, ax = plt.subplots(figsize=(6.4, 6.0))
             # Include channel in scalar point annotations so overlapping P4/P5 epochs
             # remain identifiable in the observed-vs-model scatter view.
-            draw_scalar_points(ax, include_channel_in_annotation=True)
+            draw_scalar_points(ax)
             x_min, x_max = padded_limits(x_values)
             y_min, y_max = padded_limits(y_values)
             ax.set_xlim(x_min, x_max)
@@ -6179,7 +6178,7 @@ def make_comparison_plots(
             # Parity plot uses the exact same selected row populations but a common
             # x/y range so geometric distance from the 1:1 line is meaningful.
             fig, ax = plt.subplots(figsize=(6.4, 6.0))
-            draw_scalar_points(ax, include_channel_in_annotation=True)
+            draw_scalar_points(ax)
             all_values = x_values + y_values
             common_min, common_max = padded_limits(
                 all_values, fraction=0.05, min_pad=0.05)
@@ -6370,7 +6369,8 @@ def make_core_comparison_fallback_plots(
                     for obs_row, obs_time, obs_value in zip(obs_rows, obs_x, obs_y):
                         annotate_observation_point(
                             axis, obs_time, float(obs_value),
-                            observation_id_for(observation_ids, obs_row.utc))
+                            parity_point_label(
+                                observation_ids, obs_row.utc, obs_row.channel))
 
                 accepted = [row for row in panel if row.direct_scalar_accepted and
                             finite_optional(row.direct_calculated_log10_east_west_ratio)]
