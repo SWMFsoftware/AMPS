@@ -4667,6 +4667,79 @@ def write_dict_rows(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
         writer.writerows(rows)
 
 
+def observation_id_map(utcs: Iterable[object]) -> Dict[str, str]:
+    """Return stable compact IDs (T01, T02, ...) for unique observation epochs.
+
+    Plot labels intentionally use a short identifier instead of a full ISO timestamp so
+    publication figures remain readable.  The mapping is chronological and therefore
+    deterministic for a given selected reference set.  ``C19_observation_ids.csv`` is
+    written beside the plots so every label can be mapped back to exact UTC.
+    """
+    normalized: List[Tuple[datetime, str]] = []
+    seen = set()
+    for value in utcs:
+        if isinstance(value, datetime):
+            dt = value
+        else:
+            dt = parse_utc(str(value))
+        key = format_utc(dt)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append((dt, key))
+    normalized.sort(key=lambda item: item[0])
+    width = max(2, len(str(max(1, len(normalized)))))
+    return {key: ("T%0*d" % (width, index + 1))
+            for index, (_dt, key) in enumerate(normalized)}
+
+
+def observation_id_rows(utcs: Iterable[object]) -> List[Dict[str, object]]:
+    """Machine-readable lookup used by annotated C19 figures."""
+    mapping = observation_id_map(utcs)
+    return [
+        {"observation_id": label, "utc": utc}
+        for utc, label in sorted(mapping.items(), key=lambda item: item[1])
+    ]
+
+
+def observation_id_for(mapping: Mapping[str, str], utc: object) -> str:
+    key = format_utc(utc) if isinstance(utc, datetime) else format_utc(parse_utc(str(utc)))
+    return mapping.get(key, "?")
+
+
+def annotate_observation_point(ax, x: object, y: float, label: str,
+                               *, fontsize: float = 6.5) -> None:
+    """Place a compact observation ID beside one plotted science point.
+
+    Offsets cycle deterministically with the numeric part of the ID.  This reduces
+    label-on-label collisions for nearby points without introducing a dependency on an
+    external label-placement package.  The text remains vector text in EPS output.
+    """
+    match = re.search(r"(\d+)$", label)
+    index = int(match.group(1)) if match else 1
+    offsets = ((4, 4), (4, -10), (-18, 4), (-18, -10), (8, 0), (-24, 0))
+    dx, dy = offsets[(index - 1) % len(offsets)]
+    ax.annotate(label, (x, y), xytext=(dx, dy), textcoords="offset points",
+                fontsize=fontsize, annotation_clip=True)
+
+
+def save_figure_png_eps(fig, png_path: Path, *, dpi: int = 160,
+                        bbox_inches: Optional[str] = None) -> Tuple[str, str]:
+    """Save the same Matplotlib figure as screen PNG and publication EPS.
+
+    EPS is intentionally generated from the live figure rather than converted from the
+    PNG so line art, markers, axes and observation-ID text remain vector objects.
+    """
+    png_path = Path(png_path)
+    if png_path.suffix.lower() != ".png":
+        raise ValueError("save_figure_png_eps expects a .png destination")
+    eps_path = png_path.with_suffix(".eps")
+    kwargs = {} if bbox_inches is None else {"bbox_inches": bbox_inches}
+    fig.savefig(png_path, dpi=dpi, **kwargs)
+    fig.savefig(eps_path, format="eps", **kwargs)
+    return str(png_path), str(eps_path)
+
+
 def model_coverage_rows(
         reference_rows: Sequence[ReferenceRow], model_rows: Sequence[ModelRow],
         solvers: Sequence[str], field_models: Sequence[str],
@@ -5173,9 +5246,10 @@ def make_access_classification_plots(
         if observational_counts[(utc, spacecraft, channel)] > 1:
             base += "_%s_%s" % (solver.lower(), field_model.lower())
         path = output_root / (base + ".png")
-        fig.savefig(path, dpi=150, bbox_inches="tight")
+        png_path, eps_path = save_figure_png_eps(
+            fig, path, dpi=150, bbox_inches="tight")
         plt.close(fig)
-        outputs.append(str(path))
+        outputs.extend((png_path, eps_path))
     return outputs
 
 def make_static_field_guardrail_plots(
@@ -5274,9 +5348,10 @@ def make_static_field_guardrail_plots(
         fig.tight_layout()
         path = output_root / ("C19_static_field_guardrail_%s_%s.png" %
                               (solver.lower(), field_model.lower()))
-        fig.savefig(path, dpi=150, bbox_inches="tight")
+        png_path, eps_path = save_figure_png_eps(
+            fig, path, dpi=150, bbox_inches="tight")
         plt.close(fig)
-        outputs.append(str(path))
+        outputs.extend((png_path, eps_path))
     return outputs
 
 
@@ -5462,9 +5537,10 @@ def make_trace_extension_plots(
         fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))
         path = output_root / ("C19_trace_extension_%s_%s.png" %
                               (solver.lower(), field_model.lower()))
-        fig.savefig(path, dpi=150, bbox_inches="tight")
+        png_path, eps_path = save_figure_png_eps(
+            fig, path, dpi=150, bbox_inches="tight")
         plt.close(fig)
-        outputs.append(str(path))
+        outputs.extend((png_path, eps_path))
     return outputs
 
 
@@ -5497,6 +5573,9 @@ def make_comparison_plots(
         return outputs
 
     marker_by_spacecraft = {"GOES13": "o", "GOES15": "s"}
+    observation_ids = observation_id_map(
+        [row.utc for row in rows] +
+        ([row.utc for row in reference_rows] if reference_rows is not None else []))
 
     for solver, model in sorted({(row.solver, row.field_model) for row in rows}):
         subset = [row for row in rows if row.solver == solver and row.field_model == model]
@@ -5544,6 +5623,12 @@ def make_comparison_plots(
                 else row.cutoff_proxy_log10_east_west_ratio for row in panel]
             axis.plot(observed_times, observed, marker="o", markersize=3, linewidth=1.2,
                       label="GOES observed")
+            observed_rows_for_ids = reference_panel if reference_rows is not None else panel
+            for obs_row, obs_time, obs_value in zip(
+                    observed_rows_for_ids, observed_times, observed):
+                annotate_observation_point(
+                    axis, obs_time, float(obs_value),
+                    observation_id_for(observation_ids, obs_row.utc))
             axis.plot(times, modeled, marker="x", markersize=3, linewidth=1.2,
                       label="AMPS direct A(E,Omega) (accepted)")
 
@@ -5715,9 +5800,9 @@ def make_comparison_plots(
         fig.tight_layout()
         path = output_root / ("C19_comparison_%s_%s.png" %
                               (solver.lower(), model.lower()))
-        fig.savefig(path, dpi=160)
+        png_path, eps_path = save_figure_png_eps(fig, path, dpi=160)
         plt.close(fig)
-        outputs.append(str(path))
+        outputs.extend((png_path, eps_path))
 
         # ------------------------------------------------------------------
         # Scalar comparison family.  Every figure below consumes the SAME canonical
@@ -5773,18 +5858,27 @@ def make_comparison_plots(
                                 linewidths=1.2, alpha=0.75,
                                 label="%s %s direct bounds midpoint" %
                                       (spacecraft, channel))
+                        for row, y_value in zip(group, y):
+                            annotate_observation_point(
+                                ax, row.observed_log10_east_west_ratio, float(y_value),
+                                observation_id_for(observation_ids, row.utc))
 
                 for spacecraft, channel in sorted({
                         (row.spacecraft, row.channel) for row in finite_proxy}):
                     group = [row for row in finite_proxy
                              if row.spacecraft == spacecraft and row.channel == channel]
+                    proxy_y = [float(row.cutoff_proxy_log10_east_west_ratio) for row in group]
                     ax.scatter(
                         [row.observed_log10_east_west_ratio for row in group],
-                        [float(row.cutoff_proxy_log10_east_west_ratio) for row in group],
+                        proxy_y,
                         marker=marker_by_spacecraft.get(spacecraft, "o"),
                         facecolors="none", edgecolors="tab:green",
                         label="%s %s cutoff midpoint diagnostic" %
                               (spacecraft, channel), alpha=0.75)
+                    for row, y_value in zip(group, proxy_y):
+                        annotate_observation_point(
+                            ax, row.observed_log10_east_west_ratio, float(y_value),
+                            observation_id_for(observation_ids, row.utc))
 
             direct_scalar_rows = accepted_direct + unaccepted_direct
             x_values = [row.observed_log10_east_west_ratio for row in scalar_plot_rows]
@@ -5822,9 +5916,9 @@ def make_comparison_plots(
             fig.tight_layout()
             path = output_root / ("C19_scatter_%s_%s.png" %
                                   (solver.lower(), model.lower()))
-            fig.savefig(path, dpi=160)
+            png_path, eps_path = save_figure_png_eps(fig, path, dpi=160)
             plt.close(fig)
-            outputs.append(str(path))
+            outputs.extend((png_path, eps_path))
 
             # Parity plot uses the exact same selected row populations but a common
             # x/y range so geometric distance from the 1:1 line is meaningful.
@@ -5846,9 +5940,9 @@ def make_comparison_plots(
             fig.tight_layout()
             path = output_root / ("C19_parity_%s_%s.png" %
                                   (solver.lower(), model.lower()))
-            fig.savefig(path, dpi=160)
+            png_path, eps_path = save_figure_png_eps(fig, path, dpi=160)
             plt.close(fig)
-            outputs.append(str(path))
+            outputs.extend((png_path, eps_path))
 
             # Residuals retain the same hierarchy.  A bounds-only row is represented
             # by its diagnostic midpoint plus the rigorous residual interval instead
@@ -5933,9 +6027,9 @@ def make_comparison_plots(
             fig.tight_layout()
             path = output_root / ("C19_residual_%s_%s.png" %
                                   (solver.lower(), model.lower()))
-            fig.savefig(path, dpi=160)
+            png_path, eps_path = save_figure_png_eps(fig, path, dpi=160)
             plt.close(fig)
-            outputs.append(str(path))
+            outputs.extend((png_path, eps_path))
 
     return outputs
 
@@ -5978,6 +6072,9 @@ def make_core_comparison_fallback_plots(
 
     marker_by_spacecraft = {"GOES13": "o", "GOES15": "s"}
     color_by_spacecraft = {"GOES13": "tab:blue", "GOES15": "tab:orange"}
+    observation_ids = observation_id_map(
+        [row.utc for row in rows] +
+        ([row.utc for row in reference_rows] if reference_rows is not None else []))
 
     for solver, model in sorted({(row.solver, row.field_model) for row in rows}):
         subset = [row for row in rows if row.solver == solver and row.field_model == model]
@@ -6013,6 +6110,11 @@ def make_core_comparison_fallback_plots(
                 if obs_x:
                     axis.plot(obs_x, obs_y, marker="o", markersize=3, linewidth=1.2,
                               label="GOES observed")
+                    obs_rows = refs if reference_rows is not None else panel
+                    for obs_row, obs_time, obs_value in zip(obs_rows, obs_x, obs_y):
+                        annotate_observation_point(
+                            axis, obs_time, float(obs_value),
+                            observation_id_for(observation_ids, obs_row.utc))
 
                 accepted = [row for row in panel if row.direct_scalar_accepted and
                             finite_optional(row.direct_calculated_log10_east_west_ratio)]
@@ -6076,9 +6178,9 @@ def make_core_comparison_fallback_plots(
             axes[-1, 0].set_xlabel("UTC")
             fig.suptitle("C19A %s %s: GOES vs AMPS east/west ratio" % (solver, model))
             fig.tight_layout()
-            fig.savefig(comparison_path, dpi=160)
+            png_path, eps_path = save_figure_png_eps(fig, comparison_path, dpi=160)
             plt.close(fig)
-            outputs.append(str(comparison_path))
+            outputs.extend((png_path, eps_path))
 
         scatter_path = output_root / ("C19_scatter_%s_%s.png" %
                                       (solver.lower(), model.lower()))
@@ -6115,6 +6217,10 @@ def make_core_comparison_fallback_plots(
                                    edgecolors=color, linewidths=1.3, alpha=0.9,
                                    label="%s %s %s" %
                                          (spacecraft, channel, label_tail))
+                    for row, x_value, y_value in zip(selected, x, y):
+                        annotate_observation_point(
+                            ax, x_value, y_value,
+                            observation_id_for(observation_ids, row.utc))
 
             scatter_group(groups["direct_accepted"],
                           "direct_calculated_log10_east_west_ratio", accepted=True)
@@ -6138,6 +6244,10 @@ def make_core_comparison_fallback_plots(
                     x, y, marker=marker_by_spacecraft.get(spacecraft, "o"),
                     facecolors="none", edgecolors="tab:green", alpha=0.75,
                     label="%s %s cutoff midpoint diagnostic" % (spacecraft, channel))
+                for row, x_value, y_value in zip(selected, x, y):
+                    annotate_observation_point(
+                        ax, x_value, y_value,
+                        observation_id_for(observation_ids, row.utc))
 
             # Even when no finite model scalar survived, create the expected file and
             # explain why it is empty.  Missing files are ambiguous; an annotated plot
@@ -6167,9 +6277,9 @@ def make_core_comparison_fallback_plots(
                          (solver, model))
             ax.grid(True, alpha=0.3)
             fig.tight_layout()
-            fig.savefig(scatter_path, dpi=160)
+            png_path, eps_path = save_figure_png_eps(fig, scatter_path, dpi=160)
             plt.close(fig)
-            outputs.append(str(scatter_path))
+            outputs.extend((png_path, eps_path))
 
     return outputs
 
@@ -6275,9 +6385,9 @@ def make_transmission_plots(rows: Sequence[ModelRow], output_root: Path) -> List
         fig.tight_layout()
         path = output_root / ("C19_transmission_%s_%s.png" %
                               (solver.lower(), model.lower()))
-        fig.savefig(path, dpi=160)
+        png_path, eps_path = save_figure_png_eps(fig, path, dpi=160)
         plt.close(fig)
-        outputs.append(str(path))
+        outputs.extend((png_path, eps_path))
     return outputs
 
 def aperture_diagnostic_transmission(row: Mapping[str, object]) -> Optional[float]:
@@ -6344,7 +6454,7 @@ def make_aperture_plot(diagnostics: Sequence[Mapping[str, object]], output_path:
     ax.legend()
     fig.colorbar(scatter, ax=ax, label="Channel transmission (bounds midpoint)")
     fig.tight_layout()
-    fig.savefig(output_path, dpi=160)
+    save_figure_png_eps(fig, output_path, dpi=160)
     plt.close(fig)
     return str(output_path)
 
@@ -6489,9 +6599,9 @@ def make_directional_cutoff_plots(
             "C19_directional_cutoff_%s_%s_%s_%s.png" %
             (solver.lower(), field_model.lower(), spacecraft.lower(),
              timestamp_token(parse_utc(utc_text))))
-        fig.savefig(path, dpi=160)
+        png_path, eps_path = save_figure_png_eps(fig, path, dpi=160)
         plt.close(fig)
-        outputs.append(str(path))
+        outputs.extend((png_path, eps_path))
     return outputs
 
 
@@ -6544,7 +6654,7 @@ def make_boundary_spectrum_plot(
     ax.grid(True, which="both", alpha=0.3)
     ax.legend(loc="best", fontsize="x-small", ncol=2)
     fig.tight_layout()
-    fig.savefig(output_path, dpi=160)
+    save_figure_png_eps(fig, output_path, dpi=160)
     plt.close(fig)
     return str(output_path)
 
@@ -7601,6 +7711,14 @@ def self_test() -> int:
                 position_source=reference.position_source,
                 east_detector_id=reference.east_detector_id,
                 west_detector_id=reference.west_detector_id)
+            id_rows = observation_id_rows([reference.utc, missing_reference.utc, reference.utc])
+            if ([row["observation_id"] for row in id_rows] != ["T01", "T02"] or
+                    [row["utc"] for row in id_rows] !=
+                    [format_utc(reference.utc), format_utc(missing_reference.utc)]):
+                raise AssertionError("observation-ID mapping is not stable/chronological")
+            id_lookup_path = plot_root / "C19_observation_ids.csv"
+            write_dict_rows(id_lookup_path, id_rows)
+
             comparison_paths = make_comparison_plots(
                 [model, calculated_not_accepted, invalid_direct_model],
                 plot_root, [reference, missing_reference])
@@ -7717,14 +7835,21 @@ def self_test() -> int:
             raise AssertionError("Stage-A access-classification plot family was not restored")
         expected_plot_names = {
             "C19_scatter_gridless_t05.png",
+            "C19_scatter_gridless_t05.eps",
             "C19_parity_gridless_t05.png",
+            "C19_parity_gridless_t05.eps",
             "C19_residual_gridless_t05.png",
+            "C19_residual_gridless_t05.eps",
         }
         generated_plot_names = {Path(name).name for name in plots}
         if not expected_plot_names.issubset(generated_plot_names):
             raise AssertionError(
                 "self-test did not generate new C19 comparison diagnostics: %s" %
                 sorted(expected_plot_names.difference(generated_plot_names)))
+        for png in (root / "C19_aperture_diagnostic.png",
+                    root / "C19_boundary_spectrum.png"):
+            if not png.exists() or not png.with_suffix(".eps").exists():
+                raise AssertionError("PNG/EPS companion output missing for %s" % png.name)
 
         csv_path = root / "C19_model.csv"
         write_dict_rows(csv_path, [asdict(model)])
@@ -8788,6 +8913,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     output_root.mkdir(parents=True, exist_ok=True)
     (output_root / "C19_commands.json").write_text(
         json.dumps(commands, indent=2, sort_keys=True) + "\n")
+    # Stable compact plot labels: T01, T02, ... map chronologically to the exact
+    # selected observation epochs.  Write this even for --dry-run so a command
+    # preview already documents the labels that a later science run will use.
+    selected_observation_id_rows = observation_id_rows([row.utc for row in reference])
+    write_dict_rows(output_root / "C19_observation_ids.csv",
+                    selected_observation_id_rows)
     if args.dry_run:
         print("C19A dry run complete; inputs and commands were generated in %s" % output_root)
         return 0
@@ -9026,6 +9157,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "channels": args.channel_list,
         "reference_path": str(reference_path),
         "reference_sha256": sha256(reference_path),
+        "observation_id_lookup": "C19_observation_ids.csv",
+        "observation_id_count": len(selected_observation_id_rows),
         "event_manifest_path": str(manifest_path),
         "event_manifest_sha256": sha256(manifest_path),
         "driver_path": str(driver_path),

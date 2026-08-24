@@ -1671,6 +1671,7 @@ Normal machine-readable products include:
 | `C19_commands.json` | Exact launch commands and working directories |
 | per-batch `C19_batch_manifest.csv` | Global trajectory row, snapshot index, snapshot-local output location, suffix, spacecraft, epoch, field model, and search mode |
 | `C19_reference_used.csv` | Selected observational rows plus actual detector IDs, exact flux-variable/correction-state, and ephemeris provenance |
+| `C19_observation_ids.csv` | Chronological compact plot-label lookup (`T01`, `T02`, ...) to exact UTC. The same ID is reused across spacecraft/channel/model markers that belong to the same observation epoch. |
 | `C19_spectrum_used.csv` | Epoch-dependent gamma/J0/E0 and measured/interpolated/file source |
 | `C19_directional_cutoff.csv` | Per simulated spacecraft epoch and sky cell: cutoff source, rigorous lower/effective/upper Rc, separate equivalent-cutoff midpoint diagnostic, bound width, support censoring, and access-topology counts |
 | `C19_detector_response_used.csv` | Exact response intervals/components plus `calibration_state`; publication calibration gate consumes this provenance |
@@ -1690,7 +1691,19 @@ Normal machine-readable products include:
 | `C19_summary.txt` | Human-readable execution/trajectory/fold/observation/overall status |
 
 Every completed C19 run also writes the standard visual products without any special
-flag:
+flag.  Each figure is written twice from the same live Matplotlib figure: a PNG for
+quick inspection and an EPS companion with the same basename for publication/vector
+work.  EPS is generated directly from Matplotlib (not converted from PNG), so axes,
+lines, markers, and observation-ID text remain vector objects.  Because EPS/PostScript
+does not support alpha transparency, partially transparent diagnostic artists are
+rendered opaque in the EPS copy.
+
+The comparison/scatter/parity family uses compact chronological observation IDs
+(`T01`, `T02`, ...) next to plotted observational/model points.  Exact UTC values are
+kept out of the figure to avoid crowding and are recovered from
+`C19_observation_ids.csv`.  Time-series comparison plots label each GOES observation
+point with the same ID, so a point can be traced consistently between the time-series,
+scatter, and parity views.
 
 | Plot | Contents |
 |---|---|
@@ -1703,6 +1716,9 @@ flag:
 | `C19_access_classification_<spacecraft>_<channel>_<UTC>[ _<solver>_<field>].png` | Restored Stage-A rigidity-resolved EAST/WEST diagnostic. The left axis shows geometric solid-angle fractions classified Allowed / Physical forbidden / Unresolved at every common seed rigidity; the dotted right axis shows the normalized detector/spectrum weight. Solver/model suffixes are added only when more than one calculation would otherwise overwrite the same observational case. |
 | `C19_directional_cutoff_<solver>_<field>_<spacecraft>_<UTC>.png` | Four panels for every simulated spacecraft epoch: rigorous Rc lower bound, equivalent-cutoff midpoint diagnostic, rigorous Rc upper bound, and retained bound width. GRIDDED files now contain only the directional cells retained for that spacecraft/location (not the union of all spacecraft apertures in the snapshot). Diagnostic-only midpoint cells and support-censored cells are outlined |
 | `C19_boundary_spectrum.png` | Assumed incident boundary proton spectrum for every selected epoch over the P4/P5 response support |
+
+Every `.png` entry in the table above has an automatically generated `.eps` companion
+with the same basename.
 
 Exact zero transmission remains a dedicated saturation state rather than an arbitrary
 finite substitute. Unresolved cells are carried through lower/upper bounds and the

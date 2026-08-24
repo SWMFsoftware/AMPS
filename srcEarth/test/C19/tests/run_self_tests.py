@@ -448,6 +448,12 @@ def integration_dry_run() -> None:
                 raise SystemExit("--access-angular-points 288 did not render 1.25-deg longitude grid")
             if not re.search(r"^DIRMAP_LAT_RES\s+1\.25\s*$", deck_text, re.MULTILINE):
                 raise SystemExit("--access-angular-points 288 did not render 1.25-deg latitude grid")
+        observation_lookup = angular_output / "C19_observation_ids.csv"
+        if not observation_lookup.exists():
+            raise SystemExit("dry-run did not write C19_observation_ids.csv")
+        lookup_text = observation_lookup.read_text()
+        if "observation_id,utc" not in lookup_text or "T01," not in lookup_text:
+            raise SystemExit("observation-ID lookup is missing compact Txx labels")
 
         # Exact attitude regression: the preferred orientation schema supplies one
         # arbitrary vector per *actual telemetry head*. Head W is deliberately non-
@@ -839,6 +845,13 @@ def validate_direct_plot_contract() -> None:
         "core_comparison_fallback",
         # Reference/model timestamps must share datetime axis units.
         "observed_times = [parse_utc(row.utc) for row in reference_panel]",
+        # Publication/traceability contract: point labels must map to exact UTC and
+        # every PNG figure must have a vector EPS companion.
+        "def observation_id_map",
+        "def annotate_observation_point",
+        "C19_observation_ids.csv",
+        "def save_figure_png_eps",
+        'with_suffix(".eps")',
     )
     for needle in required:
         if needle not in text:
