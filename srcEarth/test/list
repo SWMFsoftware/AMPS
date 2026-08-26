@@ -149,6 +149,8 @@ last pass:
 !P srcEarth/test/C19/run_C19.py --profile ROUTINE --solver GRIDDED --models T05 --driver ./srcEarth/test/C19/data/ts05_driver_may2012.txt --amps ./amps -np 4 -nt 16 --mode3d-parallel-field-init
 !last pass:
 
+P srcEarth/test/C18/run_C18.py --profile ROUTINE --amps ./amps -np 4
+last pass:
 
 !P srcEarth/test/C19/run_C19.py --profile SMOKE --solver GRIDDED --models T05 --driver ./srcEarth/test/C19/data/ts05_driver_may2012.txt --mode3d-parallel-field-init --cutoff-search DIRECT_ACCESS --amps ./amps -np 4 -nt 16 --keep
 !last pass:
