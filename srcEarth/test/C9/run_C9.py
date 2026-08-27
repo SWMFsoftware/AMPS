@@ -52,6 +52,11 @@ The checked-in ``data/ts05_driving.txt`` file is the default event driver.
 Its SHA-256 digest is fixed in the runner so accidental replacement is detected.
 An alternate driver is accepted only when it carries official Tsyganenko
 provenance, unless ``--allow-unverified-driver`` is supplied explicitly.
+
+Matplotlib is used only when available to create a per-branch PAMELA-vs-AMPS
+diagnostic plot, written in every format named by ``--plot-formats`` (PNG and
+EPS by default -- a raster copy for quick viewing and a vector copy suitable
+for publication); a missing Matplotlib installation never changes pass/fail.
 """
 
 from __future__ import annotations
@@ -60,6 +65,7 @@ import argparse
 import csv
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -1741,8 +1747,8 @@ def write_dict_rows(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
         writer.writeheader(); writer.writerows(rows)
 
 
-def make_plot(comparison: Sequence[Mapping[str, object]], output: Path, solver: str,
-              observable: str) -> None:
+def make_plot(comparison: Sequence[Mapping[str, object]], output_base: Path, solver: str,
+              observable: str, formats: Sequence[str] = ("png", "eps")) -> List[Path]:
     """Plot PAMELA and AMPS cutoff latitudes plus their residuals.
 
     Plotting convention is intentionally rigidity-centric: PAMELA and AMPS use
@@ -1755,16 +1761,24 @@ def make_plot(comparison: Sequence[Mapping[str, object]], output: Path, solver: 
     present in the comparison table.  The legend is split into a compact
     rigidity-color legend and a two-entry source-style legend so that seven
     rigidity bins do not produce fourteen visually redundant entries.
+
+    ``output_base`` carries no suffix; one sibling file is written per entry in
+    ``formats`` (``output_base.with_suffix(".png")``, ``".eps"``, ...) from the
+    same figure, so the raster and vector copies never drift apart. The return
+    value lists only the files actually written, which is ``[]`` when
+    Matplotlib is unavailable, there is no valid data to plot, or every
+    requested format failed to save -- callers must not treat an empty result
+    as an error.
     """
     try:
         import matplotlib.pyplot as plt  # type: ignore
         from matplotlib.lines import Line2D  # type: ignore
     except ImportError:
-        return
+        return []
 
     valid = [row for row in comparison if row.get("amps_cutoff_aacgm_deg") not in (None, "")]
-    if not valid:
-        return
+    if not valid or not formats:
+        return []
 
     bins = sorted({float(row["rigidity_center_gv"]) for row in valid})
     figure, axes = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
@@ -1832,8 +1846,30 @@ def make_plot(comparison: Sequence[Mapping[str, object]], output: Path, solver: 
     axes[1].legend(title="Rigidity", ncol=4, fontsize=8, title_fontsize=8)
     figure.autofmt_xdate()
     figure.tight_layout()
-    figure.savefig(output, dpi=160)
+
+    # EPS/PS have no alpha channel, so Matplotlib's translucent error bars
+    # (alpha=0.95 above) fall back to opaque on that one format. Matplotlib
+    # reports this through its logger rather than warnings.warn, so it is
+    # muted here rather than with a warnings filter; it is expected on every
+    # EPS write and not a sign anything went wrong.
+    ps_logger = logging.getLogger("matplotlib.backends.backend_ps")
+    previous_level = ps_logger.level
+    written: List[Path] = []
+    try:
+        ps_logger.setLevel(logging.ERROR)
+        for fmt in formats:
+            destination = output_base.with_suffix("." + fmt.lower().lstrip("."))
+            try:
+                figure.savefig(destination, dpi=160)
+            except Exception as exc:
+                print("C9 plot: failed to write %s: %s" % (destination, exc), file=sys.stderr)
+                continue
+            written.append(destination)
+    finally:
+        ps_logger.setLevel(previous_level)
+
     plt.close(figure)
+    return written
 
 
 def compare(reference_rows: Sequence[ReferenceRow], interval_models: Mapping[datetime, Mapping[float, Mapping[str, object]]],
@@ -2079,6 +2115,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                         help="Analyze already existing per-snapshot outputs")
     parser.add_argument("--keep", action="store_true", help="Preserve existing selected solver output trees")
     parser.add_argument("--output-root", default="test_output/C9")
+    parser.add_argument(
+        "--plot-formats", default="png,eps", metavar="FMT[,FMT...]",
+        help=("Comma-separated Matplotlib output formats for each branch's "
+              "C9_comparison plot, e.g. 'png,eps', 'png', or 'png,eps,pdf,svg'; "
+              "ignored entirely if Matplotlib is not installed"),
+    )
     parser.add_argument("--amps", default="./amps")
     parser.add_argument("--mpirun", default="mpirun")
     parser.add_argument("-np", type=int, default=4)
@@ -2181,6 +2223,17 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error("Mode3D mesh resolutions must be positive")
     if args.mode3d_mesh_exponent <= 0.0:
         parser.error("--mode3d-mesh-exponent must be positive")
+    supported_plot_formats = {"png", "eps", "pdf", "svg"}
+    requested_plot_formats = tuple(dict.fromkeys(
+        fmt.strip().lower().lstrip(".") for fmt in args.plot_formats.split(",") if fmt.strip()
+    ))
+    unsupported_plot_formats = sorted(set(requested_plot_formats) - supported_plot_formats)
+    if unsupported_plot_formats:
+        parser.error(
+            "--plot-formats has unsupported entries: %s (expected any of %s)"
+            % (", ".join(unsupported_plot_formats), ", ".join(sorted(supported_plot_formats)))
+        )
+    args.plot_formats = requested_plot_formats
     return args
 
 
@@ -2674,11 +2727,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for row in detailed:
             row["solver"] = solver
         write_dict_rows(solver_root / "C9_comparison.csv", detailed)
-        make_plot(
-            detailed, solver_root / "C9_comparison.png", solver,
+        plot_paths = make_plot(
+            detailed, solver_root / "C9_comparison", solver,
             "PAMELA_T50" if args.comparison_observable == "ALL"
             else args.comparison_observable,
+            args.plot_formats,
         )
+        if plot_paths:
+            print("C9 %s comparison plot(s): %s" % (
+                solver, ", ".join(p.name for p in plot_paths)
+            ))
         branch_result = {
             "test_id": TEST_ID,
             "test_name": TEST_NAME,
