@@ -374,12 +374,22 @@ def write_summary_csv(summary: List[Dict[str, float]], path: Path) -> None:
             w.writerow(row)
 
 
-def make_plot(summary: List[Dict[str, float]], path: Path) -> None:
-    """Generate a compact comparison plot when matplotlib is available."""
+def make_plot(summary: List[Dict[str, float]], path: Path) -> List[Path]:
+    """Generate a compact comparison plot when matplotlib is available.
+
+    Writes two renderings of the same figure:
+
+      * a PNG (raster) at ``path``, for quick viewing and HTML/CI reports;
+      * an EPS (vector) sibling, obtained by swapping ``path``'s suffix to
+        ``.eps``, suitable for inclusion in LaTeX papers/reports.
+
+    Returns the list of files that were actually written (empty if
+    matplotlib is unavailable, or a partial list if one format failed).
+    """
     try:
         import matplotlib.pyplot as plt
     except Exception:
-        return
+        return []
 
     by_alt = {}
     for row in summary:
@@ -399,8 +409,17 @@ def make_plot(summary: List[Dict[str, float]], path: Path) -> None:
     plt.grid(True, alpha=0.3)
     plt.legend(fontsize=8)
     plt.tight_layout()
-    plt.savefig(path, dpi=160)
+
+    eps_path = path.with_suffix(".eps")
+    written = []
+    for out_path, save_kwargs in ((path, {"dpi": 160}), (eps_path, {"format": "eps"})):
+        try:
+            plt.savefig(out_path, **save_kwargs)
+            written.append(out_path)
+        except Exception as exc:
+            print("Warning: failed to write plot %s: %s" % (out_path, exc), file=sys.stderr)
     plt.close()
+    return written
 
 
 def run_command(cmd: List[str], cwd: Path, log_path: Path) -> int:
@@ -676,6 +695,7 @@ def main() -> int:
             case_result_json = case_workdir / "C1_result.json"
             case_summary_csv = case_workdir / "C1_summary.csv"
             case_plot_png = case_workdir / "C1_stormer_comparison.png"
+            case_plot_eps = case_plot_png.with_suffix(".eps")
 
             if not args.skip_run:
                 cmd = build_amps_command(args, amps_path, mesh_case=case)
@@ -725,6 +745,7 @@ def main() -> int:
                 "output_file": str(output_file),
                 "summary_csv": str(case_summary_csv),
                 "plot_png": str(case_plot_png) if case_plot_png.exists() else None,
+                "plot_eps": str(case_plot_eps) if case_plot_eps.exists() else None,
                 "stormer_R0_GV": STORMER_R0_GV,
                 "mesh_case": case.to_dict(),
                 "command": " ".join(cmd),
@@ -813,6 +834,7 @@ def main() -> int:
     result_json = workdir / "C1_result.json"
     summary_csv = workdir / "C1_summary.csv"
     plot_png = workdir / "C1_stormer_comparison.png"
+    plot_eps = plot_png.with_suffix(".eps")
 
     if not args.skip_run:
         cmd = build_amps_command(args, amps_path, mesh_case=None)
@@ -852,6 +874,7 @@ def main() -> int:
         "output_file": str(output_file),
         "summary_csv": str(summary_csv),
         "plot_png": str(plot_png) if plot_png.exists() else None,
+        "plot_eps": str(plot_eps) if plot_eps.exists() else None,
         "stormer_R0_GV": STORMER_R0_GV,
         "command": " ".join(cmd),
         "summary": summary,
@@ -878,6 +901,8 @@ def main() -> int:
     print("Wrote: %s" % result_json)
     if plot_png.exists():
         print("Wrote: %s" % plot_png)
+    if plot_eps.exists():
+        print("Wrote: %s" % plot_eps)
     print("\nRESULT: %s" % ("PASS" if passed else "FAIL"))
     return 0 if passed else 1
 
