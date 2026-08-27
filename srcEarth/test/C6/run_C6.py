@@ -39,8 +39,10 @@ The same reference cases can be executed with two independent AMPS field paths:
       can also be compared directly to isolate mesh/interpolation error.
 
 The runner is intentionally self-contained and has no mandatory non-standard
-Python dependency.  Matplotlib is used only when available to create diagnostic
-plots; missing Matplotlib never changes pass/fail status.
+Python dependency. Matplotlib is used only when available to create diagnostic
+plots, written in every format named by ``--plot-formats`` (PNG and EPS by
+default -- a raster copy for quick viewing and a vector copy suitable for
+publication); missing Matplotlib never changes pass/fail status.
 """
 
 from __future__ import annotations
@@ -49,6 +51,7 @@ import argparse
 import csv
 import gzip
 import json
+import logging
 import math
 import re
 import shutil
@@ -907,17 +910,31 @@ def write_dict_rows(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
         writer.writerows(rows)
 
 
-def make_case_plot(rows: Sequence[Mapping[str, object]], output: Path, title: str) -> None:
-    """Create a compact reference-vs-model diagnostic when Matplotlib is available."""
+def make_case_plot(
+    rows: Sequence[Mapping[str, object]],
+    output_base: Path,
+    title: str,
+    formats: Sequence[str] = ("png", "eps"),
+) -> List[Path]:
+    """Create a compact reference-vs-model diagnostic when Matplotlib is available.
+
+    ``output_base`` carries no suffix; one sibling file is written per entry in
+    ``formats`` (``output_base.with_suffix(".png")``, ``".eps"``, ...) from the
+    same figure, so the raster and vector copies never drift apart. The return
+    value lists only the files actually written, which is ``[]`` when
+    Matplotlib is unavailable, there is no valid data to plot, or every
+    requested format failed to save -- callers must not treat an empty result
+    as an error.
+    """
     valid = [row for row in rows if row.get("valid") is True]
-    if not valid:
-        return
+    if not valid or not formats:
+        return []
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except Exception:
-        return
+        return []
     reference = [float(row["rc_effective_gv"]) for row in valid]
     model = [float(row["rc_effective_model_gv"]) for row in valid]
     residual = [m - r for r, m in zip(reference, model)]
@@ -937,8 +954,30 @@ def make_case_plot(rows: Sequence[Mapping[str, object]], output: Path, title: st
     axes[1].grid(True, alpha=0.25)
     figure.suptitle(title)
     figure.tight_layout()
-    figure.savefig(output, dpi=160)
+
+    # EPS/PS have no alpha channel, so Matplotlib's translucent markers
+    # (alpha=0.65 above) fall back to opaque fills on that one format.
+    # Matplotlib reports this through its logger rather than warnings.warn,
+    # so it is muted here rather than with a warnings filter; it is expected
+    # on every EPS write and not a sign anything went wrong.
+    ps_logger = logging.getLogger("matplotlib.backends.backend_ps")
+    previous_level = ps_logger.level
+    written: List[Path] = []
+    try:
+        ps_logger.setLevel(logging.ERROR)
+        for fmt in formats:
+            destination = output_base.with_suffix("." + fmt.lower().lstrip("."))
+            try:
+                figure.savefig(destination, dpi=160)
+            except Exception as exc:
+                print("C6 plot: failed to write %s: %s" % (destination, exc), file=sys.stderr)
+                continue
+            written.append(destination)
+    finally:
+        ps_logger.setLevel(previous_level)
+
     plt.close(figure)
+    return written
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -1046,6 +1085,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
     parser.add_argument("--output-file", default=None,
                         help="analyze one explicit PENUMBRA_SCAN output; valid only for one expanded case")
+    parser.add_argument(
+        "--plot-formats", default="png,eps", metavar="FMT[,FMT...]",
+        help=("Comma-separated Matplotlib output formats for each case's "
+              "C6_comparison plot, e.g. 'png,eps', 'png', or 'png,eps,pdf,svg'; "
+              "ignored entirely if Matplotlib is not installed"),
+    )
     parser.add_argument("--skip-run", action="store_true", help="analyze outputs in existing case directories")
     parser.add_argument("--keep", action="store_true", help="do not delete the existing work directory")
     parser.add_argument("--dry-run", action="store_true", help="render inputs and commands without launching AMPS")
@@ -1092,6 +1137,17 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit(
             "--output-file requires one --subtest, one expanded epoch, and one solver"
         )
+    supported_plot_formats = {"png", "eps", "pdf", "svg"}
+    requested_plot_formats = tuple(dict.fromkeys(
+        fmt.strip().lower().lstrip(".") for fmt in args.plot_formats.split(",") if fmt.strip()
+    ))
+    unsupported_plot_formats = sorted(set(requested_plot_formats) - supported_plot_formats)
+    if unsupported_plot_formats:
+        raise SystemExit(
+            "--plot-formats has unsupported entries: %s (expected any of %s)"
+            % (", ".join(unsupported_plot_formats), ", ".join(sorted(supported_plot_formats)))
+        )
+    args.plot_formats = requested_plot_formats
 
 
 def selected_solvers(args: argparse.Namespace) -> Tuple[str, ...]:
@@ -1252,11 +1308,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             (case_dir / "C6_result.json").write_text(
                 json.dumps(asdict(metrics), indent=2) + "\n"
             )
-            make_case_plot(
-                detailed, case_dir / "C6_comparison.png",
+            plot_paths = make_case_plot(
+                detailed, case_dir / "C6_comparison",
                 "%s %s %s epoch %d" %
                 (TEST_ID, solver, plan.subtest, plan.epoch_year),
+                args.plot_formats,
             )
+            if plot_paths:
+                print("%s %s comparison plot(s): %s" % (
+                    TEST_ID, case_label, ", ".join(p.name for p in plot_paths)
+                ))
             all_metrics.append(metrics)
             overall_pass = overall_pass and metrics.passed
             print(
