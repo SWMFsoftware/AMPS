@@ -71,6 +71,12 @@ Reference
 Level-2 16-second SEM-2 archive by ``build_poes_reference.py``. The papers define
 the extraction method but do not contain the complete numerical pass-level
 boundary list; a scientific C10 run therefore requires archive-derived rows.
+
+Matplotlib is used only when available to create the per-branch time-series,
+scatter, and MLT diagnostic plots, each written in every format named by
+``--plot-formats`` (PNG and EPS by default -- a raster copy for quick viewing
+and a vector copy suitable for publication); a missing Matplotlib installation
+never changes pass/fail.
 """
 from __future__ import annotations
 
@@ -79,6 +85,7 @@ import csv
 import gzip
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -1596,8 +1603,45 @@ def _plot_scope_label(include_diagnostics: bool) -> str:
     return "including diagnostic channels" if include_diagnostics else "primary channels only"
 
 
-def make_plot(detailed: Sequence[Mapping[str, object]], output: Path, solver: str,
-              include_diagnostics: bool = False) -> None:
+def _save_plot_formats(figure, output_base: Path, formats: Sequence[str],
+                        log_prefix: str, dpi: int = 150) -> List[Path]:
+    """Save one Matplotlib figure to every requested format.
+
+    ``output_base`` carries no suffix; one sibling file is written per entry in
+    ``formats`` (``output_base.with_suffix(".png")``, ``".eps"``, ...) from the
+    same figure, so the raster and vector copies never drift apart. The return
+    value lists only the files actually written; callers must not treat an
+    empty result as an error since a single failed format does not stop the
+    others.
+
+    EPS/PS have no alpha channel, so the translucent markers and error bars
+    used across the C10 plots fall back to opaque fills on that one format.
+    Matplotlib reports this through its logger rather than warnings.warn, so
+    it is muted here rather than with a warnings filter; it is expected on
+    every EPS write and not a sign anything went wrong.
+    """
+    ps_logger = logging.getLogger("matplotlib.backends.backend_ps")
+    previous_level = ps_logger.level
+    written: List[Path] = []
+    try:
+        ps_logger.setLevel(logging.ERROR)
+        for fmt in formats:
+            destination = output_base.with_suffix("." + fmt.lower().lstrip("."))
+            try:
+                figure.savefig(destination, dpi=dpi)
+            except Exception as exc:
+                print("%s: failed to write %s: %s" % (log_prefix, destination, exc),
+                      file=sys.stderr)
+                continue
+            written.append(destination)
+    finally:
+        ps_logger.setLevel(previous_level)
+    return written
+
+
+def make_plot(detailed: Sequence[Mapping[str, object]], output_base: Path, solver: str,
+              include_diagnostics: bool = False,
+              formats: Sequence[str] = ("png", "eps")) -> List[Path]:
     """Plot connected paired POES/AMPS time series for the selected channel scope.
 
     Every available paired mean participates in a line.  In particular, diagnostic
@@ -1605,6 +1649,8 @@ def make_plot(detailed: Sequence[Mapping[str, object]], output: Path, solver: st
     skipped, so matplotlib connects the complete sequence of available values.
     """
 
+    if not formats:
+        return []
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -1612,13 +1658,13 @@ def make_plot(detailed: Sequence[Mapping[str, object]], output: Path, solver: st
         import matplotlib.pyplot as plt
     except Exception as exc:  # pragma: no cover
         print("C10 plot skipped (matplotlib unavailable): %s" % exc, file=sys.stderr)
-        return
+        return []
 
     plot_rows = _plot_rows_by_scope(detailed, include_diagnostics)
     if not plot_rows:
         print("C10 plot skipped (no rows for %s)" % _plot_scope_label(include_diagnostics),
               file=sys.stderr)
-        return
+        return []
 
     rigidities = sorted({float(row["rigidity_gv"]) for row in plot_rows})
     times = sorted({_plot_time_value(str(row["interval_midpoint_utc"])) for row in plot_rows})
@@ -1691,27 +1737,31 @@ def make_plot(detailed: Sequence[Mapping[str, object]], output: Path, solver: st
         ax_bottom.legend(fontsize=8, ncol=4, loc="best")
     ax_bottom.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d\n%H:%M"))
     fig.tight_layout()
-    fig.savefig(output, dpi=150)
+    written = _save_plot_formats(fig, output_base, formats, "C10 plot")
     plt.close(fig)
+    return written
 
 
-def make_scatter_plot(detailed: Sequence[Mapping[str, object]], output: Path, solver: str,
-                      include_diagnostics: bool = False) -> None:
+def make_scatter_plot(detailed: Sequence[Mapping[str, object]], output_base: Path, solver: str,
+                      include_diagnostics: bool = False,
+                      formats: Sequence[str] = ("png", "eps")) -> List[Path]:
     """Plot paired observed/model cells for the selected channel scope."""
 
+    if not formats:
+        return []
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except Exception as exc:  # pragma: no cover
         print("C10 scatter plot skipped: %s" % exc, file=sys.stderr)
-        return
+        return []
 
     plot_rows = _plot_rows_by_scope(detailed, include_diagnostics)
     if not plot_rows:
         print("C10 scatter plot skipped (no rows for %s)"
               % _plot_scope_label(include_diagnostics), file=sys.stderr)
-        return
+        return []
 
     rigidities = sorted({float(row["rigidity_gv"]) for row in plot_rows})
     cmap = plt.get_cmap("tab10")
@@ -1746,27 +1796,31 @@ def make_scatter_plot(detailed: Sequence[Mapping[str, object]], output: Path, so
     if ax.get_legend_handles_labels()[0]:
         ax.legend(fontsize=8)
     fig.tight_layout()
-    fig.savefig(output, dpi=150)
+    written = _save_plot_formats(fig, output_base, formats, "C10 scatter plot")
     plt.close(fig)
+    return written
 
 
-def make_mlt_plot(detailed: Sequence[Mapping[str, object]], output: Path, solver: str,
-                  include_diagnostics: bool = False) -> None:
+def make_mlt_plot(detailed: Sequence[Mapping[str, object]], output_base: Path, solver: str,
+                  include_diagnostics: bool = False,
+                  formats: Sequence[str] = ("png", "eps")) -> List[Path]:
     """Plot connected paired means by MLT for the selected channel scope."""
 
+    if not formats:
+        return []
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except Exception as exc:  # pragma: no cover
         print("C10 MLT plot skipped: %s" % exc, file=sys.stderr)
-        return
+        return []
 
     plot_rows = _plot_rows_by_scope(detailed, include_diagnostics)
     if not plot_rows:
         print("C10 MLT plot skipped (no rows for %s)" % _plot_scope_label(include_diagnostics),
               file=sys.stderr)
-        return
+        return []
 
     rigidities = sorted({float(row["rigidity_gv"]) for row in plot_rows})
     mlt_values = sorted({float(row["mlt_hour"]) for row in plot_rows})
@@ -1812,8 +1866,9 @@ def make_mlt_plot(detailed: Sequence[Mapping[str, object]], output: Path, solver
     fig.suptitle("C10 %s: paired T50 MLT dependence (%s)"
                  % (solver, _plot_scope_label(include_diagnostics)))
     fig.tight_layout()
-    fig.savefig(output, dpi=150)
+    written = _save_plot_formats(fig, output_base, formats, "C10 MLT plot")
     plt.close(fig)
+    return written
 
 
 def diagnostic_flag_rows(detailed: Sequence[Mapping[str, object]],
@@ -1933,6 +1988,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--skip-run", action="store_true", help="Reprocess existing raw outputs")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--output-root", default="test_output/C10")
+    parser.add_argument(
+        "--plot-formats", default="png,eps", metavar="FMT[,FMT...]",
+        help=("Comma-separated Matplotlib output formats for each branch's "
+              "time-series/scatter/MLT comparison plots, e.g. 'png,eps', "
+              "'png', or 'png,eps,pdf,svg'; ignored entirely if Matplotlib "
+              "is not installed"),
+    )
     parser.add_argument("--amps", default="./amps")
     parser.add_argument("--mpirun", default="mpirun")
     parser.add_argument("-np", dest="np", type=int, default=4)
@@ -2008,6 +2070,17 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error("--t50-min-resolved-profile-fraction must be in (0,1]")
     if args.minimum_diagnostic_paired_cells_for_mean < 1:
         parser.error("--minimum-diagnostic-paired-cells-for-mean must be >= 1")
+    supported_plot_formats = {"png", "eps", "pdf", "svg"}
+    requested_plot_formats = tuple(dict.fromkeys(
+        fmt.strip().lower().lstrip(".") for fmt in args.plot_formats.split(",") if fmt.strip()
+    ))
+    unsupported_plot_formats = sorted(set(requested_plot_formats) - supported_plot_formats)
+    if unsupported_plot_formats:
+        parser.error(
+            "--plot-formats has unsupported entries: %s (expected any of %s)"
+            % (", ".join(unsupported_plot_formats), ", ".join(sorted(supported_plot_formats)))
+        )
+    args.plot_formats = requested_plot_formats
     return args
 
 
@@ -2397,18 +2470,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         write_dict_rows(solver_root / "C10_diagnostic_flags.csv", diagnostic_flag_rows(detailed))
         # Keep the traditional filenames for the uncluttered primary-channel view,
         # and write a second complete set that includes P8/P9 diagnostics.
-        make_plot(detailed, solver_root / "C10_comparison.png", solver,
-                  include_diagnostics=False)
-        make_plot(detailed, solver_root / "C10_comparison_with_diagnostics.png", solver,
-                  include_diagnostics=True)
-        make_scatter_plot(detailed, solver_root / "C10_scatter.png", solver,
-                          include_diagnostics=False)
-        make_scatter_plot(detailed, solver_root / "C10_scatter_with_diagnostics.png", solver,
-                          include_diagnostics=True)
-        make_mlt_plot(detailed, solver_root / "C10_mlt_comparison.png", solver,
-                      include_diagnostics=False)
-        make_mlt_plot(detailed, solver_root / "C10_mlt_comparison_with_diagnostics.png", solver,
-                      include_diagnostics=True)
+        plot_paths: List[Path] = []
+        plot_paths += make_plot(detailed, solver_root / "C10_comparison", solver,
+                                 include_diagnostics=False, formats=args.plot_formats)
+        plot_paths += make_plot(detailed, solver_root / "C10_comparison_with_diagnostics", solver,
+                                 include_diagnostics=True, formats=args.plot_formats)
+        plot_paths += make_scatter_plot(detailed, solver_root / "C10_scatter", solver,
+                                         include_diagnostics=False, formats=args.plot_formats)
+        plot_paths += make_scatter_plot(detailed, solver_root / "C10_scatter_with_diagnostics", solver,
+                                         include_diagnostics=True, formats=args.plot_formats)
+        plot_paths += make_mlt_plot(detailed, solver_root / "C10_mlt_comparison", solver,
+                                     include_diagnostics=False, formats=args.plot_formats)
+        plot_paths += make_mlt_plot(detailed, solver_root / "C10_mlt_comparison_with_diagnostics", solver,
+                                     include_diagnostics=True, formats=args.plot_formats)
+        if plot_paths:
+            print("C10 %s comparison plot(s): %s" % (
+                solver, ", ".join(p.name for p in plot_paths)
+            ))
         (solver_root / "C10_result.json").write_text(json.dumps({
             "solver": solver, "profile": args.profile,
             "cutoff_evaluation": args.cutoff_evaluation,
