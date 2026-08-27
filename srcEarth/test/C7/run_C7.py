@@ -27,7 +27,9 @@ therefore separates reference acquisition from model execution:
 A complete 28-point IZMIRAN T96 reference is bundled with this test, so the
 normal validation and run commands do not require ``--reference``. Matplotlib
 is optional: when available, the runner writes a compact reference-versus-AMPS
-comparison plot; a missing Matplotlib installation never changes pass/fail.
+comparison plot in every format named by ``--plot-formats`` (PNG and EPS by
+default -- a raster copy for quick viewing and a vector copy suitable for
+publication); a missing Matplotlib installation never changes pass/fail.
 
 The default fixed locations follow validation.docx: 500-km geodetic altitude,
 latitudes -60,-45,-30,0,30,45,60 degrees and east longitudes 0,90,180,270
@@ -42,6 +44,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import logging
 import math
 import re
 import shutil
@@ -603,19 +606,30 @@ def write_rows(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
 
 
 def make_case_plot(
-    rows: Sequence[Mapping[str, object]], output: Path, title: str
-) -> None:
+    rows: Sequence[Mapping[str, object]],
+    output_base: Path,
+    title: str,
+    formats: Sequence[str] = ("png", "eps"),
+) -> List[Path]:
     """Create the C6-style reference-vs-AMPS and residual diagnostic plot.
 
     C7 judges lower, upper, and (when defined) effective cutoffs, so all three
     quantities are overlaid in the same two-panel layout used by C6. Plotting
     is deliberately optional and has no effect on the numerical pass/fail
     result.
+
+    ``output_base`` carries no suffix; one sibling file is written per entry
+    in ``formats`` (``output_base.with_suffix(".png")``, ``".eps"``, ...) from
+    the same figure, so the raster and vector copies never drift apart. The
+    return value lists only the files actually written, which is ``[]`` when
+    Matplotlib is unavailable, there is no valid data to plot, or every
+    requested format failed to save -- callers must not treat an empty result
+    as an error.
     """
 
     valid = [row for row in rows if row.get("valid") is True]
-    if not valid:
-        return
+    if not valid or not formats:
+        return []
 
     try:
         import matplotlib
@@ -623,7 +637,7 @@ def make_case_plot(
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except Exception:
-        return
+        return []
 
     definitions = (
         ("Lower", "rc_lower_gv", "rc_lower_amps_gv", "lower_error_gv", "o"),
@@ -666,7 +680,7 @@ def make_case_plot(
             all_model.extend(model)
 
     if not plotted:
-        return
+        return []
 
     figure, axes = plt.subplots(1, 2, figsize=(11, 4.5))
     for label, marker, reference, model, residual in plotted:
@@ -694,8 +708,30 @@ def make_case_plot(
 
     figure.suptitle(title)
     figure.tight_layout()
-    figure.savefig(output, dpi=160)
+
+    # EPS/PS have no alpha channel, so Matplotlib's translucent markers
+    # (alpha=0.7 above) fall back to opaque fills on that one format.
+    # Matplotlib reports this through its logger rather than warnings.warn,
+    # so it is muted here rather than with a warnings filter; it is expected
+    # on every EPS write and not a sign anything went wrong.
+    ps_logger = logging.getLogger("matplotlib.backends.backend_ps")
+    previous_level = ps_logger.level
+    written: List[Path] = []
+    try:
+        ps_logger.setLevel(logging.ERROR)
+        for fmt in formats:
+            destination = output_base.with_suffix("." + fmt.lower().lstrip("."))
+            try:
+                figure.savefig(destination, dpi=160)
+            except Exception as exc:
+                print("C7 plot: failed to write %s: %s" % (destination, exc), file=sys.stderr)
+                continue
+            written.append(destination)
+    finally:
+        ps_logger.setLevel(previous_level)
+
     plt.close(figure)
+    return written
 
 
 def run_process(command: Sequence[str], cwd: Path, log: Path) -> int:
@@ -907,6 +943,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--required-valid-fraction", type=float, default=0.95)
     parser.add_argument("--required-pass-fraction", type=float, default=0.85)
     parser.add_argument("--rmse-max-gv", type=float, default=0.50)
+    parser.add_argument(
+        "--plot-formats", default="png,eps", metavar="FMT[,FMT...]",
+        help=("Comma-separated Matplotlib output formats for each case's "
+              "C7_comparison plot, e.g. 'png,eps', 'png', or 'png,eps,pdf,svg'; "
+              "ignored entirely if Matplotlib is not installed"),
+    )
     parser.add_argument("--skip-run", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--keep", action="store_true")
@@ -925,6 +967,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         raise SystemExit("require 0 <= rigidity-min-gv < rigidity-max-gv")
     if args.domain_half_size_re <= 1.1:
         raise SystemExit("--domain-half-size-re must exceed the 500-km shell radius")
+    supported_plot_formats = {"png", "eps", "pdf", "svg"}
+    requested_plot_formats = tuple(dict.fromkeys(
+        fmt.strip().lower().lstrip(".") for fmt in args.plot_formats.split(",") if fmt.strip()
+    ))
+    unsupported_plot_formats = sorted(set(requested_plot_formats) - supported_plot_formats)
+    if unsupported_plot_formats:
+        raise SystemExit(
+            "--plot-formats has unsupported entries: %s (expected any of %s)"
+            % (", ".join(unsupported_plot_formats), ", ".join(sorted(supported_plot_formats)))
+        )
+    args.plot_formats = requested_plot_formats
     script_dir = Path(__file__).resolve().parent
     launch_dir = Path.cwd().resolve()
     if args.prepare_reference_requests:
@@ -1001,9 +1054,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 return 2
             write_rows(case_dir / "C7_comparison.csv", details)
             (case_dir / "C7_result.json").write_text(json.dumps(asdict(metrics), indent=2) + "\n")
-            make_case_plot(
+            plot_paths = make_case_plot(
                 details,
-                case_dir / "C7_comparison.png",
+                case_dir / "C7_comparison",
                 "%s %s %s %s %s" % (
                     TEST_ID,
                     solver,
@@ -1011,7 +1064,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     first.model,
                     first.epoch_utc,
                 ),
+                args.plot_formats,
             )
+            if plot_paths:
+                print("C7 %s/%s comparison plot(s): %s" % (
+                    label, solver.lower(), ", ".join(p.name for p in plot_paths)
+                ))
             all_metrics.append(metrics); all_pass = all_pass and metrics.passed
             print("C7 %s/%s: valid=%d/%d pass_fraction=%.3f lower_RMSE=%.3f upper_RMSE=%.3f max_RMSE=%.3f -> %s" % (label, solver.lower(), metrics.n_valid, metrics.n_reference, metrics.point_pass_fraction, metrics.lower_rmse_gv, metrics.upper_rmse_gv, metrics.maximum_primary_rmse_gv, "PASS" if metrics.passed else "FAIL"))
     (work_root / "C7_summary.json").write_text(json.dumps([asdict(m) for m in all_metrics], indent=2) + "\n")
