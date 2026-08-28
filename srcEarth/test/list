@@ -167,3 +167,6 @@ last pass: 332e541d1ad2390c85f35af19e6073583b95fa01
 P srcEarth/test/C17/run_C17.py --amps ./amps --movers BORIS -np 4 -nt 16
 last pass:
 
+P srcEarth/test/C16/run_C16.py --profile ROUTINE --amps ./amps -np 4 -nt 16
+last pass:
+
