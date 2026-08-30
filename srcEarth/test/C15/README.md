@@ -66,19 +66,49 @@ It then performs two otherwise identical T05 runs:
    coverage and cadence.
 
 At an exact driver timestamp, this validates row selection. At an intermediate
-timestamp, it validates linear interpolation. The two initialized Mode3D fields
-must agree within:
+timestamp, it validates linear interpolation. The acceptance predicate depends
+on which operation is being tested:
+
+**Exact driver nodes.** The complete initialized-field products are compared
+value by value using:
 
 ```text
 relative tolerance = 5×10⁻¹²
-absolute tolerance = 1×10⁻¹⁵
+absolute tolerance = 1×10⁻¹⁵ (native field-output units)
 ```
 
-The access products use `10⁻⁸` relative and `10⁻¹⁰` absolute numeric
-tolerances. This still rejects any access-state or termination-code difference
-(an integer change is far outside the tolerance) while permitting tiny
-accumulated differences in trajectory-time/distance diagnostics caused by the
-last binary digits of independently interpolated driver values.
+The corresponding complete access products use `10⁻⁸` relative and `10⁻¹⁰`
+absolute numeric tolerances. Exact nodes have no interpolation-order ambiguity,
+so this intentionally remains a strict whole-product contract.
+
+**Intermediate epochs.** Python and AMPS can form the same linear driver value
+through algebraically different floating-point expressions. Last-bit residuals
+are physically negligible but make component-relative errors singular wherever
+`Bx`, `By`, or `Bz` crosses zero. C15 therefore compares the complete magnetic
+vector field using:
+
+```text
+whole-field relative L2 residual             <= 1×10⁻⁷
+maximum local |delta B| / RMS(|B|)           <= 1×10⁻⁵
+mesh-coordinate mismatches                   = 0
+```
+
+For the midpoint access product, C15 parses `access_state`, `allowed`, and
+`unresolved` by name and deliberately excludes trace-time, trace-distance, and
+other trajectory diagnostics. The default scientific gates are:
+
+```text
+resolved state agreement                     >= 95%
+one-sided unresolved fraction                <= 5%
+absolute allowed-fraction difference         <= 5 percentage points
+grid/key mismatches                           = 0
+```
+
+This finite midpoint allowance applies only to the independently materialized
+interpolation comparison. Trajectories close to a cutoff separatrix can change
+classification after a last-bit field perturbation. Exact-node comparisons,
+same-epoch repeats, and scheduler comparisons remain strict; C15 therefore does
+not use this allowance to hide nondeterminism or a wrong stored-row selection.
 
 The committed `reference_C15_driver_interpolation.csv` documents the five
 ROUTINE states independently of AMPS. The runner recomputes and verifies the
@@ -119,11 +149,27 @@ Every case must exit successfully and produce:
 
 Every numeric value must be finite. Missing or empty products fail C15.
 
+Mode3D initialized-field output is a finite-element Tecplot product. For a zone
+such as:
+
+```text
+ZONE N=172587, E=158976, DATAPACKING=POINT, ZONETYPE=FEBRICK
+```
+
+C15 reads exactly the `N` point-data rows and then skips the `E` eight-node
+FEBRICK connectivity records. Connectivity contains mesh node indices rather
+than VARIABLES-width field samples and is never included in field norms. A
+declared finite-element zone using non-`POINT` packing, a truncated `N` block,
+or a malformed point row fails with a specific parser error.
+
 ### 2. Full-driver/reference equivalence
 
-For every epoch, the complete initialized field and complete access product are
-compared value by value. Row-count or value-count differences fail, as does any
-residual outside the configured absolute-plus-relative tolerance.
+At exact driver nodes, complete field and access products are compared
+numerically. At intermediate epochs, Bx/By/Bz are compared using the vector-norm
+gates above, while exact grid coverage and the scientific access classifications
+are compared with unresolved-aware aggregate limits. This separation tests the
+intended driver state without turning non-authoritative trajectory diagnostics
+or near-zero component division into the acceptance predicate.
 
 ### 3. Exact epoch repeat
 
@@ -256,9 +302,15 @@ srcEarth/test/C15/
 
 - **Full/reference mismatch at exact epoch:** driver row selection, parsing, or
   field initialization disagrees with the source row.
-- **Mismatch only at intermediate epoch:** the likely cause is held/nearest-row
-  selection, an incorrect interpolation weight, or a field update at the wrong
-  time.
+- **Midpoint field-vector failure:** the discrepancy is field-scale significant;
+  investigate held/nearest-row selection, the interpolation weight, or a field
+  update at the wrong time.
+- **Field row width does not match VARIABLES:** verify that the runner is schema
+  4 or newer. Earlier C15 revisions incorrectly treated FEBRICK connectivity
+  records as field rows after the declared `N` point records.
+- **Midpoint access-classification failure with a passing field gate:** inspect
+  unresolved trajectories and separatrix sensitivity. Do not loosen the exact
+  repeat or scheduler gates.
 - **Field matches but cutoff differs:** investigate trajectory determinism,
   unresolved states, task ordering, and mover controls.
 - **Repeat or scheduler mismatch:** the same frozen field/access calculation is

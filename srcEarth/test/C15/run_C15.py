@@ -34,7 +34,7 @@ from typing import Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, 
 
 TEST_ID = "C15"
 TEST_NAME = "T05 driver interpolation and epoch reproducibility"
-RUNNER_SCHEMA_VERSION = 2
+RUNNER_SCHEMA_VERSION = 4
 RUNNER_RELEASE = "2026-08-30"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -184,6 +184,47 @@ class NumericComparison:
     max_relative_difference: float
     rms_difference: float
     changed_value_relative_rms: float
+    passed: bool
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class FieldVectorComparison:
+    """Magnetic-vector comparison that is well behaved near B_i = 0.
+
+    Elementwise relative errors become arbitrarily large when one component
+    crosses zero.  C15 therefore compares the complete B-vector field with an
+    L2 norm and also limits the largest local vector residual relative to the
+    RMS field magnitude.  Mesh coordinates are checked separately and exactly.
+    """
+
+    vector_samples: int
+    component_values_compared: int
+    relative_l2_difference: float
+    max_vector_difference: float
+    rms_field_magnitude: float
+    max_vector_difference_over_rms_field: float
+    coordinate_mismatches: int
+    passed: bool
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class AccessStateComparison:
+    """Unresolved-aware comparison of the scientific access classifications."""
+
+    rows_compared: int
+    key_mismatches: int
+    all_state_mismatches: int
+    resolved_common: int
+    resolved_mismatches: int
+    resolved_agreement_fraction: float
+    one_sided_unresolved: int
+    both_unresolved: int
+    one_sided_unresolved_fraction: float
+    allowed_fraction_first: float
+    allowed_fraction_second: float
+    allowed_fraction_difference: float
     passed: bool
     error: str = ""
 
@@ -657,6 +698,297 @@ def compare_numeric_files(first_paths: Sequence[Path], second_paths: Sequence[Pa
         mismatches == 0)
 
 
+def normalize_tecplot_variable_name(name: str) -> str:
+    """Normalize the small set of Mode3D variable names used by C15.
+
+    AMPS output has used both compact names (``Bx``) and names carrying units
+    (for example ``B_x [T]``).  The scientific meaning is stable even when the
+    display spelling changes, so the parser removes punctuation and recognizes
+    explicit aliases rather than depending on fixed column positions.
+    """
+    compact = re.sub(r"[^a-z0-9]+", "", name.lower())
+    aliases = {
+        "bx": "bx", "bxt": "bx", "bxnt": "bx",
+        "by": "by", "byt": "by", "bynt": "by",
+        "bz": "bz", "bzt": "bz", "bznt": "bz",
+        "x": "x", "xre": "x", "xkm": "x",
+        "y": "y", "yre": "y", "ykm": "y",
+        "z": "z", "zre": "z", "zkm": "z",
+        "lon": "lon", "londeg": "lon", "longitude": "lon",
+        "longitudedeg": "lon",
+        "lat": "lat", "latdeg": "lat", "latitude": "lat",
+        "latitudedeg": "lat",
+        "r": "rigidity", "rgv": "rigidity", "rigidity": "rigidity",
+        "rigiditygv": "rigidity",
+        "state": "access_state", "accessstate": "access_state",
+        "allowed": "allowed", "isallowed": "allowed",
+        "unresolved": "unresolved", "isunresolved": "unresolved",
+    }
+    if compact in aliases:
+        return aliases[compact]
+    if "altitude" in compact or compact.startswith("shellalt"):
+        return "altitude"
+    if compact.startswith("radius") or compact in ("rre", "rkm"):
+        return "radius"
+    if compact.startswith("shell") and "count" not in compact:
+        return "shell"
+    return compact
+
+
+def read_tecplot_table(paths: Sequence[Path]) -> Tuple[Tuple[str, ...], List[Tuple[float, ...]]]:
+    """Read compatible Tecplot point data and skip FE connectivity records.
+
+    Mode3D initialized-field files use ``ZONETYPE=FEBRICK``.  Their zone first
+    contains ``N`` point-data rows having one value per VARIABLES entry, then
+    ``E`` eight-integer element-connectivity rows.  Connectivity is topology,
+    not another field sample.  Honoring the declared node count avoids both a
+    false row-width error and accidental inclusion of node indices in field
+    norms.  Access products normally omit ``N`` and are read to the next zone or
+    end of file as ordinary POINT tables.
+    """
+    if not paths:
+        raise FileNotFoundError("no Tecplot product files found")
+    expected_variables: Optional[Tuple[str, ...]] = None
+    rows: List[Tuple[float, ...]] = []
+    for path in sorted(paths, key=lambda item: item.name):
+        variables: Optional[Tuple[str, ...]] = None
+        file_rows: List[Tuple[float, ...]] = []
+        # None means an open-ended point table.  A nonnegative value is the
+        # number of point rows still expected in the current finite-element
+        # zone; after it reaches zero, numeric connectivity records are skipped.
+        remaining_point_rows: Optional[int] = None
+        with path.open(errors="replace") as stream:
+            for line_number, raw in enumerate(stream, start=1):
+                text = raw.strip()
+                if not text or text.startswith(("#", "!")):
+                    continue
+                upper = text.upper()
+                if upper.startswith("VARIABLES"):
+                    names = re.findall(r'"([^"]+)"', text)
+                    if not names:
+                        raise ValueError("%s has an unreadable VARIABLES record" % path)
+                    variables = tuple(normalize_tecplot_variable_name(name)
+                                      for name in names)
+                    continue
+                if upper.startswith("ZONE"):
+                    if remaining_point_rows is not None and remaining_point_rows > 0:
+                        raise ValueError(
+                            "%s starts a new zone before all declared point rows "
+                            "were read" % path)
+                    node_match = re.search(
+                        r"(?:^|[,\s])(?:N|NODES)\s*=\s*(\d+)",
+                        text, re.IGNORECASE)
+                    remaining_point_rows = (
+                        int(node_match.group(1)) if node_match else None)
+                    packing_match = re.search(
+                        r"DATAPACKING\s*=\s*([A-Z]+)", text, re.IGNORECASE)
+                    if (node_match and packing_match and
+                            packing_match.group(1).upper() != "POINT"):
+                        raise ValueError(
+                            "%s uses DATAPACKING=%s; C15 requires POINT packing" %
+                            (path, packing_match.group(1).upper()))
+                    continue
+                if upper.startswith(("TITLE", "DATASETAUXDATA", "AUXDATA")):
+                    continue
+                if remaining_point_rows == 0:
+                    # FEBRICK connectivity follows the N declared point rows.
+                    # It may legitimately contain eight integers per element,
+                    # which must never be checked against the VARIABLES width.
+                    continue
+                try:
+                    values = tuple(float(token) for token in
+                                   text.replace(",", " ").split())
+                except ValueError as exc:
+                    raise ValueError("%s line %d is not numeric" %
+                                     (path, line_number)) from exc
+                if not values or not all(math.isfinite(value) for value in values):
+                    raise ValueError("%s line %d contains non-finite data" %
+                                     (path, line_number))
+                file_rows.append(values)
+                if remaining_point_rows is not None:
+                    remaining_point_rows -= 1
+        if remaining_point_rows is not None and remaining_point_rows > 0:
+            raise ValueError(
+                "%s ended with %d declared point rows missing" %
+                (path, remaining_point_rows))
+        if variables is None:
+            raise ValueError("Tecplot VARIABLES record not found in %s" % path)
+        if len(set(variables)) != len(variables):
+            raise ValueError("%s has ambiguous normalized variable names" % path)
+        for row in file_rows:
+            if len(row) != len(variables):
+                raise ValueError("%s row width does not match VARIABLES" % path)
+        if not file_rows:
+            raise ValueError("%s contains no numeric rows" % path)
+        if expected_variables is None:
+            expected_variables = variables
+        elif variables != expected_variables:
+            raise ValueError("Tecplot parts use different VARIABLES records")
+        rows.extend(file_rows)
+    assert expected_variables is not None
+    return expected_variables, rows
+
+
+def compare_field_vectors(first_paths: Sequence[Path], second_paths: Sequence[Path],
+                          relative_l2_tolerance: float,
+                          max_vector_over_rms_tolerance: float
+                          ) -> FieldVectorComparison:
+    """Compare Bx/By/Bz while avoiding singular component-relative errors."""
+    try:
+        first_variables, first_rows = read_tecplot_table(first_paths)
+        second_variables, second_rows = read_tecplot_table(second_paths)
+        if first_variables != second_variables:
+            raise ValueError("initialized-field variable lists differ")
+        if len(first_rows) != len(second_rows):
+            raise ValueError("initialized-field row counts differ: %d versus %d" %
+                             (len(first_rows), len(second_rows)))
+        missing = [name for name in ("bx", "by", "bz")
+                   if name not in first_variables]
+        if missing:
+            raise ValueError("initialized field lacks %s" % ", ".join(missing))
+        field_indices = tuple(first_variables.index(name)
+                              for name in ("bx", "by", "bz"))
+        coordinate_indices = tuple(
+            index for index, name in enumerate(first_variables)
+            if name in ("x", "y", "z"))
+
+        coordinate_mismatches = 0
+        difference_square = 0.0
+        scale_square = 0.0
+        max_vector_difference = 0.0
+        for first_row, second_row in zip(first_rows, second_rows):
+            if any(first_row[index] != second_row[index]
+                   for index in coordinate_indices):
+                coordinate_mismatches += 1
+            vector_difference_square = sum(
+                (first_row[index] - second_row[index]) ** 2
+                for index in field_indices)
+            first_magnitude_square = sum(first_row[index] ** 2
+                                         for index in field_indices)
+            second_magnitude_square = sum(second_row[index] ** 2
+                                          for index in field_indices)
+            difference_square += vector_difference_square
+            scale_square += max(first_magnitude_square, second_magnitude_square)
+            max_vector_difference = max(
+                max_vector_difference, math.sqrt(vector_difference_square))
+        if scale_square <= 0.0:
+            raise ValueError("initialized magnetic field has zero norm")
+        relative_l2 = math.sqrt(difference_square / scale_square)
+        rms_field = math.sqrt(scale_square / len(first_rows))
+        max_over_rms = max_vector_difference / rms_field
+        row_passed = (
+            coordinate_mismatches == 0
+            and relative_l2 <= relative_l2_tolerance
+            and max_over_rms <= max_vector_over_rms_tolerance)
+        return FieldVectorComparison(
+            len(first_rows), 3 * len(first_rows), relative_l2,
+            max_vector_difference, rms_field, max_over_rms,
+            coordinate_mismatches, row_passed)
+    except Exception as exc:
+        return FieldVectorComparison(
+            0, 0, float("inf"), float("inf"), float("nan"),
+            float("inf"), 1, False, str(exc))
+
+
+def compare_access_states(first_paths: Sequence[Path], second_paths: Sequence[Path],
+                          minimum_resolved_agreement: float,
+                          maximum_one_sided_unresolved_fraction: float,
+                          maximum_allowed_fraction_difference: float
+                          ) -> AccessStateComparison:
+    """Compare discrete access states, excluding trajectory diagnostics.
+
+    At an interpolated epoch, two algebraically equivalent driver paths can
+    differ in their last binary digits.  Chaotic trajectories close to a cutoff
+    separatrix may then change a discrete state or a trace diagnostic.  C15
+    compares the classification columns explicitly, tracks one-sided unresolved
+    rows separately, and limits the gross allowed-fraction change.
+    """
+    try:
+        first_variables, first_rows = read_tecplot_table(first_paths)
+        second_variables, second_rows = read_tecplot_table(second_paths)
+        if first_variables != second_variables:
+            raise ValueError("access variable lists differ")
+        if len(first_rows) != len(second_rows):
+            raise ValueError("access row counts differ: %d versus %d" %
+                             (len(first_rows), len(second_rows)))
+        missing = [name for name in
+                   ("lon", "lat", "rigidity", "access_state", "allowed", "unresolved")
+                   if name not in first_variables]
+        if missing:
+            raise ValueError("access product lacks %s" % ", ".join(missing))
+        state_index = first_variables.index("access_state")
+        allowed_index = first_variables.index("allowed")
+        unresolved_index = first_variables.index("unresolved")
+        key_indices = tuple(
+            index for index, name in enumerate(first_variables)
+            if name in ("lon", "lat", "rigidity", "altitude", "radius", "shell"))
+
+        key_mismatches = 0
+        state_mismatches = 0
+        resolved_common = 0
+        resolved_mismatches = 0
+        one_sided_unresolved = 0
+        both_unresolved = 0
+        allowed_first = 0
+        allowed_second = 0
+        for first_row, second_row in zip(first_rows, second_rows):
+            if any(first_row[index] != second_row[index] for index in key_indices):
+                key_mismatches += 1
+            first_state = int(round(first_row[state_index]))
+            second_state = int(round(second_row[state_index]))
+            first_allowed = int(round(first_row[allowed_index]))
+            second_allowed = int(round(second_row[allowed_index]))
+            first_unresolved = int(round(first_row[unresolved_index]))
+            second_unresolved = int(round(second_row[unresolved_index]))
+            for state, allowed, unresolved in (
+                    (first_state, first_allowed, first_unresolved),
+                    (second_state, second_allowed, second_unresolved)):
+                if state not in (0, 1, 2):
+                    raise ValueError("invalid access_state=%d" % state)
+                if allowed != (1 if state == 1 else 0):
+                    raise ValueError("allowed flag contradicts access_state")
+                if unresolved != (1 if state == 2 else 0):
+                    raise ValueError("unresolved flag contradicts access_state")
+            allowed_first += first_allowed
+            allowed_second += second_allowed
+            if first_state != second_state:
+                state_mismatches += 1
+            if first_state == 2 and second_state == 2:
+                both_unresolved += 1
+            elif first_state == 2 or second_state == 2:
+                one_sided_unresolved += 1
+            else:
+                resolved_common += 1
+                if first_state != second_state:
+                    resolved_mismatches += 1
+        total = len(first_rows)
+        resolved_agreement = (
+            1.0 - resolved_mismatches / float(resolved_common)
+            if resolved_common else 0.0)
+        one_sided_fraction = one_sided_unresolved / float(total)
+        allowed_fraction_first = allowed_first / float(total)
+        allowed_fraction_second = allowed_second / float(total)
+        allowed_fraction_difference = abs(
+            allowed_fraction_first - allowed_fraction_second)
+        row_passed = (
+            key_mismatches == 0
+            and resolved_common > 0
+            and resolved_agreement + 1.0e-14 >= minimum_resolved_agreement
+            and one_sided_fraction <=
+                maximum_one_sided_unresolved_fraction + 1.0e-14
+            and allowed_fraction_difference <=
+                maximum_allowed_fraction_difference + 1.0e-14)
+        return AccessStateComparison(
+            total, key_mismatches, state_mismatches, resolved_common,
+            resolved_mismatches, resolved_agreement, one_sided_unresolved,
+            both_unresolved, one_sided_fraction, allowed_fraction_first,
+            allowed_fraction_second, allowed_fraction_difference, row_passed)
+    except Exception as exc:
+        return AccessStateComparison(
+            0, 1, 1, 0, 1, 0.0, 0, 0, 1.0,
+            float("nan"), float("nan"), float("inf"), False, str(exc))
+
+
 def continuity_metrics(left_paths: Sequence[Path], middle_paths: Sequence[Path],
                        right_paths: Sequence[Path], weight: float) -> Dict[str, float]:
     """Measure field smoothness relative to linear interpolation in time.
@@ -869,29 +1201,107 @@ def analyze_matrix(cases: Sequence[RunCase], records: Sequence[RunRecord],
     for epoch in sorted(full_by_epoch):
         first = full_by_epoch[epoch]
         second = reference_by_epoch[epoch]
+        interpolated = interpolate_driver(driver_rows, epoch)
+        is_exact_node = interpolated.left_epoch == interpolated.right_epoch
         first_record = record_by_id[first.case_id]
         second_record = record_by_id[second.case_id]
         if not first_record.passed or not second_record.passed:
             passed = False
             messages.append("cannot compare driver equivalence at %s" % format_utc(epoch))
             continue
-        for product, discover, rel_tol, abs_tol in (
-                ("initialized_field", discover_field_files,
-                 args.reference_rel_tol, args.reference_abs_tol),
-                ("cutoff_access", discover_cutoff_files,
-                 args.cutoff_reference_rel_tol, args.cutoff_reference_abs_tol)):
-            comparison = compare_numeric_files(
-                discover(first.run_directory), discover(second.run_directory),
-                rel_tol, abs_tol)
-            equivalence_rows.append(
-                comparison_row("full_vs_materialized_driver", first, second,
-                               product, comparison))
-            if not comparison.passed:
-                passed = False
-                messages.append(
-                    "%s driver equivalence failed for %s: %d mismatches, max_rel=%.3e" %
-                    (format_utc(epoch), product, comparison.mismatches,
-                     comparison.max_relative_difference))
+        if is_exact_node:
+            # Exact timestamps select the same stored row in both files.  There
+            # is no interpolation-order ambiguity, so retain the strongest
+            # complete-product numerical contract for field and access output.
+            for product, discover, rel_tol, abs_tol in (
+                    ("initialized_field", discover_field_files,
+                     args.reference_rel_tol, args.reference_abs_tol),
+                    ("cutoff_access", discover_cutoff_files,
+                     args.cutoff_reference_rel_tol,
+                     args.cutoff_reference_abs_tol)):
+                comparison = compare_numeric_files(
+                    discover(first.run_directory), discover(second.run_directory),
+                    rel_tol, abs_tol)
+                row = comparison_row(
+                    "full_vs_materialized_driver", first, second,
+                    product, comparison)
+                row["gate_mode"] = "EXACT_NODE_COMPLETE_PRODUCT"
+                equivalence_rows.append(row)
+                if not comparison.passed:
+                    passed = False
+                    messages.append(
+                        "%s exact-node equivalence failed for %s: %d "
+                        "mismatches, max_rel=%.3e" %
+                        (format_utc(epoch), product, comparison.mismatches,
+                         comparison.max_relative_difference))
+            continue
+
+        # Midpoint comparison deliberately uses observables rather than every
+        # diagnostic column.  AMPS and Python can form the same linear driver
+        # state through algebraically different floating-point operations.
+        # Near B_i=0 an elementwise relative residual is singular, and near a
+        # cutoff separatrix a last-bit field change can alter trace diagnostics.
+        field_comparison = compare_field_vectors(
+            discover_field_files(first.run_directory),
+            discover_field_files(second.run_directory),
+            args.midpoint_field_relative_l2_tol,
+            args.midpoint_field_max_vector_over_rms_tol)
+        field_row: Dict[str, object] = {
+            "comparison": "full_vs_materialized_driver",
+            "first_case": first.case_id,
+            "second_case": second.case_id,
+            "epoch_utc": format_utc(epoch),
+            "product": "initialized_field",
+            "gate_mode": "INTERPOLATED_FIELD_VECTOR_NORM",
+            "maximum_relative_l2": args.midpoint_field_relative_l2_tol,
+            "maximum_vector_difference_over_rms_field":
+                args.midpoint_field_max_vector_over_rms_tol,
+        }
+        field_row.update(asdict(field_comparison))
+        equivalence_rows.append(field_row)
+        if not field_comparison.passed:
+            passed = False
+            messages.append(
+                "%s midpoint field equivalence failed: relative_L2=%.3e, "
+                "max_vector/RMS(B)=%.3e%s" %
+                (format_utc(epoch), field_comparison.relative_l2_difference,
+                 field_comparison.max_vector_difference_over_rms_field,
+                 ("; " + field_comparison.error)
+                 if field_comparison.error else ""))
+
+        access_comparison = compare_access_states(
+            discover_cutoff_files(first.run_directory),
+            discover_cutoff_files(second.run_directory),
+            args.midpoint_min_access_agreement,
+            args.midpoint_max_one_sided_unresolved_fraction,
+            args.midpoint_max_allowed_fraction_difference)
+        access_row: Dict[str, object] = {
+            "comparison": "full_vs_materialized_driver",
+            "first_case": first.case_id,
+            "second_case": second.case_id,
+            "epoch_utc": format_utc(epoch),
+            "product": "cutoff_access",
+            "gate_mode": "INTERPOLATED_ACCESS_CLASSIFICATION",
+            "minimum_resolved_agreement":
+                args.midpoint_min_access_agreement,
+            "maximum_one_sided_unresolved_fraction":
+                args.midpoint_max_one_sided_unresolved_fraction,
+            "maximum_allowed_fraction_difference":
+                args.midpoint_max_allowed_fraction_difference,
+        }
+        access_row.update(asdict(access_comparison))
+        equivalence_rows.append(access_row)
+        if not access_comparison.passed:
+            passed = False
+            messages.append(
+                "%s midpoint access equivalence failed: resolved_agreement=%.3f, "
+                "one_sided_unresolved=%.3f, allowed_fraction_delta=%.3f%s" %
+                (format_utc(epoch),
+                 access_comparison.resolved_agreement_fraction,
+                 access_comparison.one_sided_unresolved_fraction,
+                 access_comparison.allowed_fraction_difference,
+                 ("; " + access_comparison.error)
+                 if access_comparison.error else ""))
 
     reproducibility_rows: List[Dict[str, object]] = []
     anchor = min(full_by_epoch, key=lambda value: abs(
@@ -1125,10 +1535,15 @@ def validate_skip_configuration(existing: Mapping[str, object],
             "\n  ".join(differences))
 
 
-def _write_synthetic_numeric(path: Path, values: Sequence[Sequence[float]]) -> None:
+def _write_synthetic_numeric(
+        path: Path, values: Sequence[Sequence[float]],
+        variables: Sequence[str] = ("x", "y", "z", "Bx")) -> None:
     """Write a small Tecplot-shaped product for runner/package self-tests."""
-    lines = ['TITLE="C15 synthetic"', 'VARIABLES="x" "y" "z" "Bx"',
-             'ZONE T="synthetic"']
+    lines = [
+        'TITLE="C15 synthetic"',
+        "VARIABLES=" + " ".join('"%s"' % name for name in variables),
+        'ZONE T="synthetic"',
+    ]
     lines.extend(" ".join("%.17g" % value for value in row) for row in values)
     path.write_text("\n".join(lines) + "\n")
 
@@ -1192,6 +1607,64 @@ def self_test() -> int:
                 raise RuntimeError("tolerant numeric comparator rejected valid residual")
             if compare_numeric_files([a], [c], 1.0e-6, 0.0).passed:
                 raise RuntimeError("tolerant numeric comparator accepted corruption")
+
+            # A tiny difference confined to a component that is zero in the
+            # counterpart has an elementwise relative error of one.  The C15
+            # midpoint vector-norm gate must nevertheless recognize that its
+            # field-scale residual is negligible.
+            field_a = root / "field_a.dat"
+            field_b = root / "field_b.dat"
+            field_variables = ("x", "y", "z", "Bx", "By", "Bz")
+            _write_synthetic_numeric(
+                field_a, [(0, 0, 0, 1.0, -0.5, 0.0),
+                          (1, 0, 0, 2.0, -1.0, 0.0)], field_variables)
+            _write_synthetic_numeric(
+                field_b, [(0, 0, 0, 1.0, -0.5, 1.0e-12),
+                          (1, 0, 0, 2.0, -1.0, 0.0)], field_variables)
+            vector_comparison = compare_field_vectors(
+                [field_a], [field_b], 1.0e-7, 1.0e-5)
+            if not vector_comparison.passed:
+                raise RuntimeError("near-zero midpoint field residual was rejected")
+
+            # Match the production Mode3D finite-element layout: two POINT rows
+            # are followed by one eight-node FEBRICK connectivity record.  The
+            # connectivity width intentionally differs from VARIABLES and must
+            # be ignored rather than reported as malformed field data.
+            febrick = root / "field_febrick.dat"
+            febrick.write_text(
+                'VARIABLES="X", "Y", "Z", "Bx", "By", "Bz"\n'
+                'ZONE N=2, E=1, DATAPACKING=POINT, ZONETYPE=FEBRICK\n'
+                '0 0 0 1 -0.5 0\n'
+                '1 0 0 2 -1 0\n'
+                '1 2 2 1 1 2 2 1\n')
+            febrick_variables, febrick_rows = read_tecplot_table([febrick])
+            if len(febrick_rows) != 2 or febrick_variables[-3:] != (
+                    "bx", "by", "bz"):
+                raise RuntimeError("FEBRICK connectivity was parsed as point data")
+            if not compare_field_vectors(
+                    [febrick], [febrick], 0.0, 0.0).passed:
+                raise RuntimeError("production-shaped FEBRICK field did not self-match")
+
+            access_a = root / "access_a.dat"
+            access_b = root / "access_b.dat"
+            access_variables = (
+                "lon_deg", "lat_deg", "rigidity_GV", "access_state",
+                "allowed", "unresolved")
+            access_rows_a = []
+            access_rows_b = []
+            for index in range(100):
+                state_a = 0 if index < 50 else 1
+                state_b = 1 if index == 49 else state_a
+                access_rows_a.append(
+                    (index, 0, 1, state_a, state_a, 0))
+                access_rows_b.append(
+                    (index, 0, 1, state_b, state_b, 0))
+            _write_synthetic_numeric(access_a, access_rows_a, access_variables)
+            _write_synthetic_numeric(access_b, access_rows_b, access_variables)
+            access_comparison = compare_access_states(
+                [access_a], [access_b], 0.95, 0.05, 0.05)
+            if not access_comparison.passed:
+                raise RuntimeError("one-percent midpoint boundary change was rejected")
 
             left = root / "left.dat"
             middle = root / "middle.dat"
@@ -1270,6 +1743,21 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                         help="numeric tolerance for full/reference access products")
     parser.add_argument("--cutoff-reference-abs-tol", type=float, default=1.0e-10,
                         help="absolute tolerance for full/reference access products")
+    parser.add_argument(
+        "--midpoint-field-relative-l2-tol", type=float, default=1.0e-7,
+        help="maximum whole-field relative L2 residual at interpolated epochs")
+    parser.add_argument(
+        "--midpoint-field-max-vector-over-rms-tol", type=float, default=1.0e-5,
+        help="maximum local |delta B| divided by the RMS field magnitude")
+    parser.add_argument(
+        "--midpoint-min-access-agreement", type=float, default=0.95,
+        help="minimum resolved access-state agreement at interpolated epochs")
+    parser.add_argument(
+        "--midpoint-max-one-sided-unresolved-fraction", type=float, default=0.05,
+        help="maximum fraction unresolved in only one midpoint product")
+    parser.add_argument(
+        "--midpoint-max-allowed-fraction-difference", type=float, default=0.05,
+        help="maximum absolute difference between midpoint allowed fractions")
     parser.add_argument("--min-driver-sensitivity", type=float, default=1.0e-4)
     parser.add_argument("--max-normalized-curvature", type=float, default=0.25)
     parser.add_argument("--max-step-ratio", type=float, default=3.0)
@@ -1316,12 +1804,25 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error("--max-steps must be >= 1")
     for name in ("reference_rel_tol", "reference_abs_tol",
                  "cutoff_reference_rel_tol", "cutoff_reference_abs_tol",
+                 "midpoint_field_relative_l2_tol",
+                 "midpoint_field_max_vector_over_rms_tol",
+                 "midpoint_min_access_agreement",
+                 "midpoint_max_one_sided_unresolved_fraction",
+                 "midpoint_max_allowed_fraction_difference",
                  "min_driver_sensitivity", "max_normalized_curvature",
                  "max_step_ratio"):
         value = getattr(args, name)
         if not math.isfinite(value) or value < 0.0:
             parser.error("--%s must be finite and nonnegative" %
                          name.replace("_", "-"))
+    if args.midpoint_min_access_agreement > 1.0:
+        parser.error("--midpoint-min-access-agreement must not exceed 1")
+    if args.midpoint_max_one_sided_unresolved_fraction > 1.0:
+        parser.error(
+            "--midpoint-max-one-sided-unresolved-fraction must not exceed 1")
+    if args.midpoint_max_allowed_fraction_difference > 1.0:
+        parser.error(
+            "--midpoint-max-allowed-fraction-difference must not exceed 1")
     return args
 
 
@@ -1388,6 +1889,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "reference_abs_tol": args.reference_abs_tol,
         "cutoff_reference_rel_tol": args.cutoff_reference_rel_tol,
         "cutoff_reference_abs_tol": args.cutoff_reference_abs_tol,
+        "midpoint_field_relative_l2_tol":
+            args.midpoint_field_relative_l2_tol,
+        "midpoint_field_max_vector_over_rms_tol":
+            args.midpoint_field_max_vector_over_rms_tol,
+        "midpoint_min_access_agreement":
+            args.midpoint_min_access_agreement,
+        "midpoint_max_one_sided_unresolved_fraction":
+            args.midpoint_max_one_sided_unresolved_fraction,
+        "midpoint_max_allowed_fraction_difference":
+            args.midpoint_max_allowed_fraction_difference,
         "min_driver_sensitivity": args.min_driver_sensitivity,
         "max_normalized_curvature": args.max_normalized_curvature,
         "max_step_ratio": args.max_step_ratio,

@@ -45,16 +45,39 @@ def run(command, cwd: Path, expected: int = 0) -> str:
 
 
 def write_synthetic_product(module, run_directory: Path, field_value: float,
-                            cutoff_value: float) -> None:
-    """Create the two production-shaped numerical products expected by C15."""
+                            cutoff_value: float, field_epsilon: float = 0.0,
+                            access_flip_count: int = 0) -> None:
+    """Create production-shaped field and access products expected by C15.
+
+    ``field_epsilon`` places a tiny residual in a component whose counterpart is
+    zero, reproducing the near-zero relative-error singularity seen in a real
+    midpoint run. ``access_flip_count`` changes a controlled number of boundary
+    classifications while keeping the state/allowed/unresolved contract valid.
+    """
     module._write_synthetic_numeric(
         run_directory / "amps_3d_initialized_000000.data.dat",
-        [(0.0, 0.0, 0.0, field_value),
-         (1.0, 0.0, 0.0, 2.0 * field_value)])
+        [(0.0, 0.0, 0.0, field_value, -0.5 * field_value, field_epsilon),
+         (1.0, 0.0, 2.0, 2.0 * field_value, -field_value, 0.0)],
+        ("x", "y", "z", "Bx", "By", "Bz"))
+    transition_index = max(1, min(99, int(round(35.0 + 10.0 * cutoff_value))))
+    access_rows = []
+    for index in range(100):
+        state = 0 if index < transition_index else 1
+        if transition_index - access_flip_count <= index < transition_index:
+            state = 1
+        access_rows.append((
+            float(index % 20) * 18.0,
+            -60.0 + float(index // 20) * 30.0,
+            1.0,
+            state,
+            state,
+            0,
+        ))
     module._write_synthetic_numeric(
         run_directory / "cutoff_3d_shells_access.dat",
-        [(0.0, 0.0, 1.0, cutoff_value),
-         (30.0, 0.0, 2.0, 2.0 * cutoff_value)])
+        access_rows,
+        ("lon_deg", "lat_deg", "rigidity_GV", "access_state",
+         "allowed", "unresolved"))
 
 
 def populate_synthetic_matrix(module, records) -> None:
@@ -73,10 +96,18 @@ def populate_synthetic_matrix(module, records) -> None:
             field_value, cutoff_value = 1.5, 1.5
         else:
             # Full/reference cases at a common epoch are identical.  Across
-            # epochs the field changes linearly, giving exact continuity.
+            # epochs the field changes linearly, giving exact continuity.  A
+            # reference midpoint carries a tiny zero-component residual and one
+            # boundary-state flip: the revised scientific midpoint gates accept
+            # these, while the obsolete all-number comparison would not.
             field_value = 1.0 + 0.1 * minutes
             cutoff_value = 1.0 + 0.1 * minutes
-        write_synthetic_product(module, run_directory, field_value, cutoff_value)
+        is_reference_midpoint = (
+            category == "driver_reference" and epoch.second == 30)
+        write_synthetic_product(
+            module, run_directory, field_value, cutoff_value,
+            field_epsilon=1.0e-12 if is_reference_midpoint else 0.0,
+            access_flip_count=1 if is_reference_midpoint else 0)
 
 
 def main() -> int:
@@ -197,7 +228,20 @@ def main() -> int:
         write_synthetic_product(module, reference_dir, 9.0, 1.25)
         output = run(reanalyze, root, expected=1)
         if "driver equivalence failed" not in output:
-            raise RuntimeError("driver-equivalence corruption was not identified")
+            if "midpoint field equivalence failed" not in output:
+                raise RuntimeError("driver-equivalence corruption was not identified")
+        populate_synthetic_matrix(module, records)
+
+        # Change twenty percent of the midpoint access classifications while
+        # leaving its field identical.  Boundary tolerance is deliberately
+        # finite, but it must not turn a materially different access map into a
+        # pass.
+        write_synthetic_product(
+            module, reference_dir, 1.25, 1.25,
+            field_epsilon=1.0e-12, access_flip_count=20)
+        output = run(reanalyze, root, expected=1)
+        if "midpoint access equivalence failed" not in output:
+            raise RuntimeError("gross midpoint access corruption was not identified")
         populate_synthetic_matrix(module, records)
 
         # Make the perturbed case identical to the anchor.  This simulates an
