@@ -1,0 +1,8 @@
+gate,comparison,default_tolerance_or_rule,scientific_role
+driver_equivalence_field,full driver versus independently materialized exact row initialized field,rel=5e-12 abs=1e-15,Validates exact-node selection and linear interpolation
+driver_equivalence_access,full driver versus independently materialized exact row access product,rel=1e-8 abs=1e-10,Requires identical states/reasons while tolerating accumulated trace roundoff
+epoch_repeat,same epoch and driver repeated,exact binary64 fingerprint,Validates reproducible field and access calculation
+scheduler_equivalence,DYNAMIC versus STATIC or BLOCK_CYCLIC,exact binary64 fingerprint,Validates parallel scheduling independence
+dipole_time_invariance,centered aligned DIPOLE at first and last epoch,exact binary64 fingerprint,Separates epoch bookkeeping from real T05 response
+driver_sensitivity,same epoch with deliberately perturbed driver,changed-value relative RMS >=1e-4,Detects an ignored DRIVER_FILE
+midpoint_continuity,midpoint field versus adjacent exact-node fields,curvature <=0.25 and step ratio <=3,Detects discontinuous or wrong-time field updates
