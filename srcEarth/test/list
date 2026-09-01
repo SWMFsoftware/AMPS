@@ -176,6 +176,8 @@ last pass:
 P srcEarth/test/C13/run_C13.py --profile ROUTINE --models DIPOLE --amps ./amps -nt 4 --workdir test_output/C13_dipole_nt4
 last pass:
 
+P srcEarth/test/C12/run_C12.py --profile ROUTINE --amps ./amps -np 4 -nt 16
+last pass:
 
 
 
