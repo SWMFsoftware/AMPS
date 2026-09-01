@@ -179,5 +179,8 @@ last pass:
 P srcEarth/test/C12/run_C12.py --profile ROUTINE --amps ./amps -np 4 -nt 16
 last pass:
 
+P srcEarth/test/C8/run_C8.py --profile ROUTINE --amps ./amps -np 4 -nt 16
+last pass:
+
 
 
