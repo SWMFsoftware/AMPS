@@ -1597,6 +1597,87 @@ def command_for(args: argparse.Namespace, amps: Path, solver: str) -> List[str]:
     return command
 
 
+# --------------------------------------------------------------------------------
+# Stale-binary diagnostic
+# --------------------------------------------------------------------------------
+# AMPS' C++ parser (srcEarth/util/amps_param_parser.cpp) refuses any AMPS_PARAM.in
+# directive it does not recognize, rather than silently ignoring it -- see
+# FailUnknownKeyword() in that file.  That is the right behavior for AMPS itself:
+# a silently-ignored typo would leave a default value active without telling
+# anyone.  But it produces a confusing *runner-side* experience whenever the
+# checked-in AMPS_PARAM_C19_*.in templates (and this script's render_case_input())
+# reference a directive that a *particular compiled ./amps binary* predates --
+# for example, right after a new #CUTOFF_RIGIDITY control such as
+# CUTOFF_UNRESOLVED_EXTENSION_PASSES is added to the parser source but before the
+# binary pointed to by --amps has been rebuilt from that source. In that situation:
+#   * every one of the N MPI ranks parses the same file independently and calls
+#     exit() on the same bad keyword, so the terminal shows the identical ~15-line
+#     C++ diagnostic N times in a row;
+#   * nothing in that diagnostic tells the person their binary -- not the source --
+#     is the thing out of date, because the parser has no way to know what source
+#     revision produced the binary running it.
+# The keyword-vs-section pair in that message is stable, load-bearing text (see the
+# exact wording in FailUnknownKeyword()), so it is safe to match narrowly on it.
+# This regex intentionally does NOT try to match the rest of that message's prose,
+# since that wording is free to change independently of this diagnostic.
+_AMPS_UNRECOGNIZED_KEYWORD_RE = re.compile(
+    r"Unrecognized AMPS_PARAM\.in keyword '([^']+)' in section '([^']+)'"
+)
+
+
+def summarize_amps_parser_failure(log_text: str) -> Optional[str]:
+    """Turn a raw AMPS "unrecognized keyword" crash log into one clear hint.
+
+    Returns ``None`` when the log does not contain the signature at all (the normal
+    case for every other kind of AMPS failure), so callers can add this hint only
+    when it is actually relevant and otherwise leave their existing error handling
+    completely unchanged.
+
+    When the signature *is* present, every MPI rank that independently parsed the
+    same bad file reports the identical (keyword, section) pair, so rather than
+    reprinting that duplicated block, this collapses it to the distinct
+    (keyword, section) pairs actually seen -- normally exactly one -- in the order
+    they first appeared, and points at the two concrete, checkable causes: either
+    this is a genuine typo/placement mistake in the Python side that generated the
+    input deck (render_case_input()), or the keyword is real and already implemented
+    in srcEarth/util/amps_param_parser.cpp but the ./amps binary being run has not
+    been rebuilt since that support was added.  It deliberately does not guess which
+    of the two applies -- that depends on facts (grepping the parser source, checking
+    build timestamps) this runner cannot see from inside a failed subprocess.
+    """
+    # dict.fromkeys(...) both deduplicates and preserves first-seen order, which is
+    # exactly what we want: one line per distinct offending directive, in the order
+    # the parser (and therefore the first MPI rank to hit it) reported them.
+    distinct_failures = list(dict.fromkeys(
+        _AMPS_UNRECOGNIZED_KEYWORD_RE.findall(log_text)))
+    if not distinct_failures:
+        return None
+
+    offending = "; ".join(
+        "'%s' in section '%s'" % (keyword, section)
+        for keyword, section in distinct_failures)
+    return (
+        "C19 note: AMPS rejected the following AMPS_PARAM_C19.in directive(s) as "
+        "unrecognized: %s. Every MPI rank hit the same failure independently, which "
+        "is why the raw AMPS message above repeats several times.\n"
+        "This is almost always one of two things:\n"
+        "  1. A genuine mismatch between the directive name this runner wrote "
+        "(render_case_input() in run_C19.py) and what the parser actually expects "
+        "-- check for a typo or a directive placed under the wrong '#SECTION'.\n"
+        "  2. The directive is real and already implemented in "
+        "srcEarth/util/amps_param_parser.cpp, but the AMPS executable at --amps "
+        "was compiled before that support was added and needs to be rebuilt. This "
+        "is common right after a new cutoff/parser control is added to AMPS_PARAM.in "
+        "handling: the source and the checked-in .in templates move first, and the "
+        "compiled binary only catches up on the next rebuild.\n"
+        "If the directive already appears in the checked-in "
+        "AMPS_PARAM_C19_gridless.in / AMPS_PARAM_C19_mode3d.in templates, that rules "
+        "out (1) -- rebuild ./amps (recompiling at least "
+        "srcEarth/util/amps_param_parser.o and relinking) and rerun the same "
+        "command before assuming there is a real code bug." % offending
+    )
+
+
 def run_process(command: Sequence[str], cwd: Path, log_path: Path) -> int:
     command_text = " ".join(shlex.quote(value) for value in command)
     print("Running:", command_text, flush=True)
@@ -1613,7 +1694,19 @@ def run_process(command: Sequence[str], cwd: Path, log_path: Path) -> int:
             sys.stdout.flush()
             log.write(line)
             log.flush()
-        return process.wait()
+        returncode = process.wait()
+
+    # Only ever *adds* a trailing diagnostic after a failed run; a successful run
+    # (returncode == 0) is completely untouched, and a failed run whose log does not
+    # contain this specific signature is also completely untouched -- see the
+    # docstring of summarize_amps_parser_failure() for why that check is narrow.
+    if returncode != 0:
+        hint = summarize_amps_parser_failure(log_path.read_text(errors="replace"))
+        if hint is not None:
+            print(hint, flush=True)
+            with log_path.open("a") as log:
+                log.write("\n" + hint + "\n")
+    return returncode
 
 
 def parse_directional_map(path: Path) -> DirectionMap:
