@@ -1,0 +1,409 @@
+# AMPS December 2006 cutoff-erosion study package
+
+This package implements the modeling plan described in the paper section
+**“December 2006 Research Experiment: Storm-Time Cutoff Erosion and Memory.”**
+It combines three related but distinct calculations:
+
+1. the C9 PAMELA absolute cutoff-latitude validation;
+2. the C10 NOAA POES/MetOp MLT-resolved boundary validation; and
+3. a two-altitude, common-rigidity AMPS production survey for cutoff erosion,
+   MLT morphology, accessible area, lag, and hysteresis.
+
+### Why C9 and C10 are part of the research run
+
+C9 and C10 are the two observation-facing validation anchors for the production
+survey, not unrelated repetitions of the entire C1--C19 software suite. C9 asks
+whether the event configuration reproduces PAMELA's absolute, orbit-scale
+cutoff latitude as a function of rigidity at approximately 475 km. C10 asks
+whether it reproduces the independently observed POES/MetOp cutoff-boundary
+morphology by rigidity, magnetic local time, hemisphere, and time at
+approximately 850 km. Passing both constrains complementary aspects of the
+same storm-time field and trajectory calculation before the morphology stage
+is used to infer erosion, lag, accessible area, and hysteresis where no single
+spacecraft supplies complete global coverage.
+
+Keeping these stages in the default workflow also ensures that a changed AMPS
+revision, TS05 driver, numerical configuration, or observation operator cannot
+silently alter the scientific survey without rechecking its two observational
+anchors. They may be executed individually with `--stage pamela` or
+`--stage poes`; omitting them is appropriate only when reusing already archived
+C9/C10 results from the identical executable, inputs, driver, and configuration.
+
+The package does not contain calculated scientific results.  Those must be
+generated with the same AMPS revision that passed C1--C19.  The included
+observation tables, driver, input templates, commands, analysis methods, and
+quality controls are complete enough to generate the planned results without
+changing the scientific definitions after inspecting them.
+
+## Package contents
+
+| Path | Purpose |
+|---|---|
+| `config/study.json` | Frozen event, model, execution, observation-operator, and statistical controls |
+| `inputs/AMPS_PARAM_DEC2006_475km.in` | Parser-compatible Mode3D/direct-access input for the PAMELA-altitude morphology shell |
+| `inputs/AMPS_PARAM_DEC2006_850km.in` | Parser-compatible Mode3D/direct-access input for the POES/MetOp-altitude morphology shell |
+| `data/observations/pamela_table_s1.csv` | Complete 259-cell PAMELA Table S1 transcription |
+| `data/observations/poes_metop_meped_boundaries.csv.gz` | Complete 3,904-cell NOAA-derived C10 boundary reference |
+| `data/drivers/ts05_dec2006_5min.txt` | Checksum-frozen 865-record five-minute TS05 driver |
+| `data/provenance.json` | Source descriptions, expected row counts, and SHA-256 digests |
+| `vendor/C9` | Validated PAMELA runner, reference extractor, templates, and documentation |
+| `vendor/C10` | Validated NOAA downloader, boundary builder, runner, tests, and documentation |
+| `scripts/run_study.py` | Top-level staged execution |
+| `scripts/run_morphology.py` | 475/850-km common-grid AMPS execution and ACCESS_T50 extraction |
+| `scripts/compare_observations.py` | Normalized PAMELA plus POES/MetOp paired comparison tables |
+| `scripts/analyze_dynamics.py` | MLT harmonics, accessible area, lag correlations, and matched-phase hysteresis |
+| `scripts/compare_ts05_sensitivity.py` | Cell-matched differences among the full and two perturbed TS05 runs |
+| `scripts/make_figures.py` | Driver, validation, dynamics, lag, and hysteresis figures in PNG and PDF |
+| `scripts/validate_package.py` | Data, schema, driver, input-deck, and postprocessor integrity checks |
+| `docs/DATA_DICTIONARY.md` | Definitions and sign conventions for generated products |
+| `docs/STUDY_METHOD_SECTION.tex` | Exact manuscript study section that defines this package's scientific contract |
+| `docs/REFERENCES.bib` | Bibliography used by the manuscript study section |
+| `PACKAGE_MANIFEST.md` | Git location, shared output convention, and packaged-file inventory |
+| `CHANGELOG.md` | Versioned implementation changes |
+| `tests` | Dependency-light unit and integration tests that do not require AMPS |
+
+## Scientific configuration
+
+The production field is IGRF+TS05.  Each trajectory sees a frozen magnetic
+snapshot and zero electric field.  Relativistic protons are backtraced using
+the Boris mover.  The primary calculations use Mode3D mesh interpolation and
+the `DIRECT_ACCESS`/`RIGIDITY_LIST` path with `CUTOFF_SAMPLING VERTICAL`.
+This pairing is required by the current AMPS input parser.
+
+Every trajectory has a three-state result:
+
+```text
+0 = physically forbidden
+1 = allowed
+2 = unresolved
+```
+
+Unresolved states are excluded from the transmission numerator and denominator
+and are reported separately.  They are never recoded as forbidden.  The
+production trace limit is 300 s; trace-limit convergence remains required at
+representative quiet, main-phase, and recovery snapshots.
+
+The common morphology grid contains all exact PAMELA and POES/MetOp rigidities
+plus intermediate points from 0.15 to 1.25 GV.  It is evaluated on 475- and
+850-km geodetic shells, every 15 degrees in longitude and 2 degrees in latitude
+over 35--85 degrees absolute geodetic latitude.  The primary boundary is the
+weighted-isotonic resolved-access crossing at transmission 0.5 in eight MLT
+sectors and both hemispheres.
+
+## Observation data
+
+### PAMELA
+
+The reference is Supporting Information Table S1 from Adriani et al. (2016),
+DOI `10.1002/2016SW001364`.  It provides seven rigidity bins at 37 midpoints of
+approximately 94-minute intervals, with asymmetric uncertainties.  C9 compares
+these published orbit-scale cutoff magnitudes with a longitude-averaged,
+hemisphere-resolved 475-km shell T50.  It does not claim to reconstruct
+unpublished event-level particle directions or spacecraft attitude.
+
+### NOAA POES/MetOp
+
+The compressed C10 table is derived from the NOAA/NCEI historical SEM-2 Level-2
+16-second archive for NOAA-15, -16, -17, -18, and MetOp-A.  Each retained pass
+leg is normalized as
+
+```text
+Tobs = (F - Fbackground) / (Fpolar - Fbackground)
+```
+
+and a weighted isotonic fit supplies T25, T50, and T75.  P6 and P7 control the
+primary comparison; P8 and P9 are diagnostics.  The raw NOAA files are public
+but are not duplicated in this compact package.  The included downloader and
+builder reproduce the reference while retaining URLs, checksums, quality
+flags, rejected counts, and spacecraft provenance.  See `data/README.md` and
+`vendor/C10/README.md`.
+
+## Data authenticity, provenance, and interpretation
+
+The three frozen inputs are connected to real measurements, but they are not
+three interchangeable forms of raw observational data. Their scientific roles
+and the transformations already applied to them must be stated explicitly:
+
+| Frozen file | Audit conclusion | Correct interpretation |
+|---|---|---|
+| `vendor/C9/reference_C9_pamela_table_s1.csv` | Correct transcription of the published PAMELA table | Orbit-averaged, measurement-derived cutoff latitudes |
+| `vendor/C10/reference_C10_poes_meped_boundary.csv.gz` | Numerically reproduced from the official NOAA archive | Pipeline-derived cutoff-boundary cells, not raw detector samples |
+| `vendor/C9/data/ts05_driving.txt` | Numerically consistent with OMNI where OMNI is valid; 39 gap-treated rows still require source provenance | Observed, gap-treated, and calculated inputs to TS05; not an observed global magnetic field |
+
+### PAMELA Table S1
+
+The C9 reference has SHA-256
+`ecf9cae62b424576a91ebbf1b89992e5a084a836d280ec748903112af1593339`.
+It contains all `37 x 7 = 259` cells from Adriani et al. (2016): 258 measured
+AACGM cutoff latitudes and the one published missing cell. The cutoff values
+and asymmetric statistical uncertainties are the published values. PAMELA
+obtained each value by reducing proton-flux measurements over one approximately
+94-minute spacecraft orbit containing two polar passes.
+
+The CSV adds three transparent conveniences which are not separate published
+measurements: start/end times are midpoint plus or minus 47 minutes, the
+rigidity representative is the geometric centre of each published bin, and a
+Boolean identifies the published missing cell. The file does not contain raw
+PAMELA events, definitive event ephemeris, attitude, mounting geometry, or
+individual look directions. It therefore supports the documented orbit/shell
+comparison, not a claim of direction-resolved spacecraft reproduction.
+
+Source: Adriani et al. (2016), DOI `10.1002/2016SW001364`, and its Supporting
+Information Table S1.
+
+### NOAA POES/MetOp boundary product
+
+The C10 reference has SHA-256
+`02116643990ee1f2a134805da313410df4f9d3fa8cec8db84fce22cdb721e122`.
+An independent rebuild with the delivered code used 14 nonempty official
+NOAA/NCEI Level-2 16-second daily files for MetOp-02 and NOAA-15 through
+NOAA-18, read 64,599 event observations, extracted 1,869 pass-leg crossings,
+and produced the same 3,904 reference-cell keys. Every field agreed with the
+bundled reference except two AACGM boundary values which differed by only
+`0.00001 deg`, consistent with numerical rounding/library-version effects.
+
+These cells remain processed observations. The builder quality-filters P6-P9,
+estimates equatorward background and polar plateau, applies a weighted isotonic
+normalization, extracts the `T=0.5` pass boundary, and aggregates crossings into
+two-hour windows and three-hour MLT sectors. The rigidity label uses each
+integral channel's nominal lower-energy threshold; it is not a full convolution
+of the detector response with the event spectrum. Consequently P6/P7 form the
+primary gate, while P8/P9 remain diagnostic.
+
+The compressed file records a provenance-manifest digest, but the compact
+package does not include the corresponding source and reference manifests.
+A publication archive must add `download_manifest.json`,
+`C10_reference_manifest.json`, `C10_reference_summary.json`, and
+`C10_poes_boundary_crossings.csv`, together with the source-file hashes and the
+`aacgmv2` version used to build them. A checksum of the compressed reference
+alone proves immutability, not the complete external provenance chain.
+
+Source: NOAA/NCEI POES/MetOp SEM-2 Level-2 16-second archive; extraction method
+in `vendor/C10/README.md`; event context in Dmitriev et al. (2010), DOI
+`10.1029/2010JA015380`.
+
+### TS05 event driver and the meaning of “field state”
+
+The C9 driver has SHA-256
+`cb3f3f1959763660beb1e26e5a49489b132708944fb91c4e1ee37cfc3a6c4317`
+and contains 865 records at uninterrupted five-minute cadence from
+`2006-12-14T00:00:00Z` through `2006-12-17T00:00:00Z`. Comparison with the
+NASA five-minute OMNI product retrieved for the 2026-09-08 audit found 826
+epochs with valid concurrent
+IMF/plasma measurements. At all 826, the stored IMF components, velocity
+components, proton density, temperature, and SYM-H match OMNI exactly at the
+file precision. The other 39 epochs coincide with current OMNI IMF/plasma gaps
+and carry the alternative `(IMFflag, SWflag)=(2,2)` status in this driver. They
+occur at `2006-12-16T08:20--08:50Z` and `19:05--21:40Z` and must not be described
+as direct measurements without qualification.
+
+`Pdyn` is calculated using the pressure convention supplied for TS05; dipole
+tilt is calculated from time and geometry; and `W1`--`W6` are history-dependent
+response variables derived from earlier solar-wind driving. SYM-H is a ground
+magnetometer index. Thus AMPS constructs an empirical snapshot schematically as
+
+```text
+B(x,t) = B_IGRF(x,t)
+       + B_TS05(x; Pdyn, SYM-H, By, Bz, W1,...,W6, dipole_tilt).
+```
+
+This is an observation-constrained empirical reconstruction of a storm-time
+magnetic configuration. It is not a direct measurement of the three-
+dimensional geomagnetic field and it does not make TS05 error-free. The bundled
+checksum verifies the exact file used by AMPS, but the short legacy header does
+not preserve the official archive URL, archive checksum, source member, or
+preparation time. For a publication freeze, regenerate the same interval with
+`vendor/C9/tools/prepare_official_ts05_driver.py` and retain those provenance
+fields alongside the unchanged numerical comparison.
+
+## Installation
+
+Python 3.10 or later is recommended.  The package validator and unit tests use
+only the standard library.  Scientific AACGM conversion and figures require:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install -r requirements.txt
+```
+
+AMPS must be compiled with Earth Mode3D, T05/TS05, cutoff direct access, the
+Boris mover, MPI, and POSIX thread support.  Before the production study, run
+the complete C1--C19 validation suite using the same executable and build
+options.
+
+## Validate the package without AMPS
+
+```bash
+python3 scripts/validate_package.py
+python3 -m unittest discover -s tests -v
+```
+
+The validator checks the observation and driver digests and row counts, the
+five-minute driver cadence and coverage, required AMPS input directives, the
+C9/C10 reference validators, and the C10 synthetic postprocessing self-test.
+
+## Inspect every generated AMPS command before execution
+
+Install the study at
+`srcEarth/studies/dec2006_ts05_cutoff_erosion/` and launch it from the AMPS
+repository root. The default output is then
+`test_output/dec2006_ts05_cutoff_erosion/`:
+
+```bash
+python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py \
+  --profile SMOKE --prepare-only --amps ./amps -np 4 -nt 16
+```
+
+This writes all generated input decks and command inventories but launches no
+MPI task. Inspect
+`test_output/dec2006_ts05_cutoff_erosion/morphology/command_inventory.json`
+and the generated per-case `AMPS_PARAM_C10.in` files.
+
+When the archive is used standalone, run the same script as
+`python3 scripts/run_study.py`; the fallback output is still
+`test_output/dec2006_ts05_cutoff_erosion/` beneath the launch directory. An
+explicit `--output-root PATH` always overrides the default.
+
+## One-line smoke run
+
+```bash
+python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py \
+  --profile SMOKE --amps ./amps -np 4 -nt 16
+```
+
+The smoke profile evaluates four physical epochs: initial/quiet context,
+compression, SYM-H minimum, and recovery.  It is an installation and pipeline
+test, not the paper production calculation.
+
+## Production run
+
+```bash
+python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py \
+  --profile FULL --amps ./amps -np 4 -nt 16
+```
+
+`FULL` uses a 15-minute event cadence and inserts five-minute samples within
+one hour of the objective compression and main-phase landmarks.  The exact
+landmarks are recomputed from the driver and recorded.  This run is expensive:
+it evaluates 34 rigidities, two hemispheres, two altitudes, and a global
+longitude/latitude grid.  Use `--prepare-only` to obtain the exact task count
+and commands before submitting it to a batch queue.
+
+## Live run diagnostics and logs
+
+`run_study.py` reports the resolved profile, stage list, AMPS executable, MPI
+ranks, threads per rank, and output root before execution. Every stage then
+prints `START`, its working directory, exact command, live child output, elapsed
+time, exit code, and `PASS` or `FAIL`. C9, C10, and the morphology runner tee the
+complete AMPS/MPI stream to the terminal while preserving each per-case log.
+The study finishes with a stage-by-stage status table; elapsed times and return
+codes are also written to `study_run_manifest.json`.
+
+This visibility does not weaken reproducibility: terminal output is a live copy
+of the saved log, not a replacement for it. A missing or non-executable AMPS
+path and an unavailable MPI launcher now fail during preflight before any
+expensive stage begins.
+
+Individual stages can be run or repeated:
+
+```bash
+python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stage pamela --profile FULL --amps ./amps
+python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stage poes --profile FULL --amps ./amps
+python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stage morphology --profile FULL --amps ./amps
+python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stage compare --stage dynamics --stage figures
+```
+
+The C9 or C10 comparison can fail its scientific gate while still producing
+diagnostics.  The top-level runner stops by default after a failure.  The
+debugging-only option `--continue-on-validation-failure` permits later stages;
+its use is written to the run manifest and must not be hidden in a publication
+archive.
+
+## Analysis products
+
+The observation comparison writes:
+
+```text
+test_output/dec2006_ts05_cutoff_erosion/comparison/paired_model_observation.csv
+test_output/dec2006_ts05_cutoff_erosion/comparison/comparison_metrics.csv
+test_output/dec2006_ts05_cutoff_erosion/comparison/comparison_result.json
+```
+
+The storm analysis writes:
+
+```text
+test_output/dec2006_ts05_cutoff_erosion/dynamics/morphology_harmonics.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/cutoff_dynamics_timeseries.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/lag_correlations.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/hysteresis_pairs.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/hysteresis_summary.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/dynamics_result.json
+```
+
+The first harmonic is fitted as
+
+```text
+Lambda(MLT) = Lambda0 + C cos(2*pi*MLT/24) + S sin(2*pi*MLT/24).
+A1 = sqrt(C^2 + S^2); phi1 = atan2(S,C)*24/(2*pi).
+```
+
+Accessible area is integrated only over the configured analyzed latitude band.
+Lag correlations use positive lag for a cutoff response following the driver
+and moving-block bootstrap intervals.  Hysteresis pairs main- and recovery-
+phase boundary cells at equal rigidity, altitude, hemisphere, and MLT, first
+within 10 nT SYM-H and then under the stricter pressure and IMF Bz tolerances in
+`study.json`.
+
+## Required sensitivity calculations
+
+The primary result should not be published without the following labeled
+repeats at quiet, compression, main-phase, and recovery epochs:
+
+- near-Earth mesh resolution 0.02 versus 0.01 Earth radii;
+- Boris versus RK4;
+- trajectory timestep refinement;
+- 300-s trace limit versus a longer limit wherever unresolved weight is
+  material;
+- 15-degree versus finer longitude spacing;
+- Mode3D versus GRIDLESS at a selected feasible subset; and
+- instantaneous PAMELA midpoint versus five-minute model averaging across the
+  approximately 94-minute observation interval.
+
+The full, quiet-history-frozen, and instantaneous-input-frozen TS05 experiments
+are generated and executed with one command:
+
+```bash
+python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_sensitivity_suite.py \
+  --profile FULL --amps ./amps -np 4 -nt 16
+```
+
+Use `--prepare-only` first to render all inputs and commands.  The generator
+freezes `W1`--`W6` at the objective quiet epoch for one branch; the other holds
+instantaneous IMF, plasma, SYM-H, tilt, and dynamic pressure at that epoch while
+allowing `W1`--`W6` to evolve.  Separate driver and run manifests record every
+changed field and digest.  These remain sensitivity experiments within TS05,
+not self-consistent alternative magnetospheres.
+
+## Reproducibility rules
+
+- Do not edit a frozen observation or driver in place.  Create a new file and
+  update `data/provenance.json` with its source and digest.
+- Preserve every generated input deck, AMPS log, raw Tecplot file, command
+  inventory, executable revision, and build configuration.
+- Never compare an observed cell with an average over model cells that the
+  instrument did not sample.
+- Report eligible, rejected, missing, and unresolved counts alongside metrics.
+- Keep P8/P9 and any directional/aperture-folded analysis visibly diagnostic.
+- Replace manuscript placeholders only from the frozen output archive.
+
+## Data sources and references
+
+- Adriani et al. (2016), *Space Weather*, DOI `10.1002/2016SW001364`.
+- NASA SPDF OMNIWeb: <https://omniweb.gsfc.nasa.gov/>.
+- TS05 driver archive: <https://geo.phys.spbu.ru/~tsyganenko/TS05_data_and_stuff/>.
+- NOAA POES/MetOp SEM archive:
+  <https://www.ncei.noaa.gov/products/poes-metop-space-environment-monitor>.
+- Tsyganenko and Sitnov (2005), DOI `10.1029/2004JA010798`.
+- Dmitriev et al. (2010), DOI `10.1029/2010JA015380`.

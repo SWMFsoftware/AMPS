@@ -1,0 +1,2 @@
+
+python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --profile FULL --amps ./amps -np 4 -nt 16
