@@ -2214,6 +2214,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print("AMPS executable is not executable: %s" % amps_path, file=sys.stderr)
             return 2
     solvers = ("GRIDLESS", "GRIDDED") if args.solver == "BOTH" else (args.solver,)
+    n_launches = len(solvers) * len(midpoints) * args.interval_samples
+    launch_index = 0
+    print(
+        "C10 execution plan: %d interval(s) x %d sample(s)/interval x %d "
+        "solver branch(es) = %d AMPS launch(es)" %
+        (len(midpoints), args.interval_samples, len(solvers), n_launches),
+        flush=True,
+    )
 
     templates = {"GRIDLESS": DEFAULT_TEMPLATE_GRIDLESS, "GRIDDED": DEFAULT_TEMPLATE_MODE3D}
     branch_metrics: Dict[str, Metrics] = {}
@@ -2257,6 +2265,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 if args.dry_run:
                     continue
                 if not args.skip_run:
+                    launch_index += 1
+                    # Print the counter before MPI starts, when it is most
+                    # useful for monitoring a batch job.  Remaining includes
+                    # the current launch; after it returns, completed advances
+                    # by one before the next progress line is printed.
+                    print(
+                        "C10 AMPS progress: completed=%d/%d; remaining=%d; "
+                        "starting=%d/%d" %
+                        (launch_index - 1, n_launches,
+                         n_launches - launch_index + 1,
+                         launch_index, n_launches),
+                        flush=True,
+                    )
                     rc = run_process(command, sample_dir, sample_dir / "C10_amps.log")
                     if rc != 0:
                         print("AMPS failed (%d) in %s" % (rc, sample_dir), file=sys.stderr)

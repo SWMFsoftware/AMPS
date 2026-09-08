@@ -298,6 +298,10 @@ ranks, threads per rank, and output root before execution. Every stage then
 prints `START`, its working directory, exact command, live child output, elapsed
 time, exit code, and `PASS` or `FAIL`. C9, C10, and the morphology runner tee the
 complete AMPS/MPI stream to the terminal while preserving each per-case log.
+Immediately before every AMPS launch they also report the number of launches
+already completed, the number remaining, the launch about to start, and the
+total planned for that stage. Morphology additionally prints the current
+epoch/altitude case.
 The study finishes with a stage-by-stage status table; elapsed times and return
 codes are also written to `study_run_manifest.json`.
 
@@ -316,12 +320,49 @@ python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stag
 ```
 
 The C9 or C10 comparison can fail its scientific gate while still producing
-diagnostics.  The top-level runner stops by default after a failure.  The
-debugging-only option `--continue-on-validation-failure` permits later stages;
-its use is written to the run manifest and must not be hidden in a publication
-archive.
+diagnostics. Because PAMELA/C9 and POES/C10 are independent observational
+anchors, the top-level runner executes both even when the first one fails. If
+either fails, it then stops before the production morphology and inference
+stages. The debugging-only option `--continue-on-validation-failure` permits
+those later stages; its use is written to the run manifest and must not be
+hidden in a publication archive.
 
 ## Analysis products
+
+The output tree preserves a three-level evidence chain. C9 and C10 first test
+whether the selected field, trajectory, and observation operators reproduce
+independent measurements. The morphology stage then evaluates a common grid of
+epoch, altitude, rigidity, hemisphere, and MLT cells. Finally, the comparison
+and dynamics scripts reduce those auditable cells into residual, erosion,
+accessible-area, lag, and hysteresis statistics. The reduced tables never
+replace the per-case AMPS products or their logs.
+
+The principal directories have distinct roles:
+
+| Directory | Scientific role |
+|---|---|
+| `C9/` | Absolute PAMELA cutoff-latitude validation at approximately 475 km |
+| `C10/` | POES/MetOp MLT- and hemisphere-resolved boundary validation at approximately 850 km |
+| `morphology/` | Common-grid modeled boundaries used for storm-dynamics inference |
+| `comparison/` | Observation/model pairs and aggregate validation metrics |
+| `dynamics/` | Quiet-relative erosion, MLT harmonics, accessible area, lag, and hysteresis |
+| `figures/` | Figures generated only from the archived comparison and dynamics tables |
+
+For each altitude, rigidity, and hemisphere, the quiet reference is the median
+modeled mean boundary before the configured compression-search interval. The
+signed erosion diagnostic is
+
+```text
+cutoff_erosion_deg(t) = mean_boundary_deg(t) - quiet_reference_deg.
+```
+
+Negative values mean equatorward boundary motion and therefore reduced
+geomagnetic shielding; their magnitude is the cutoff-latitude erosion. A
+credible conclusion requires: valid C9/C10 observational context, resolved and
+bracketed morphology cells, mesh/trace convergence, coherent erosion across
+neighboring rigidities and epochs, and sensitivity analysis against the TS05
+history and instantaneous inputs. A single minimum-latitude cell is not treated
+as sufficient evidence of storm-time erosion.
 
 The observation comparison writes:
 

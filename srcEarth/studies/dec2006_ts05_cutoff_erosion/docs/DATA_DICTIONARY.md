@@ -43,7 +43,10 @@ of the T50 boundary, averaged over valid MLT sectors.
 ## `cutoff_dynamics_timeseries.csv`
 
 Adds a quiet reference, `cutoff_erosion_deg`, and centered finite-difference
-boundary speed.  Negative erosion is equatorward motion.
+boundary speed. The erosion is `mean_latitude_deg -
+quiet_reference_mean_latitude_deg`; negative erosion is equatorward motion and
+reduced shielding. Grouping is preserved by altitude, rigidity, and hemisphere
+so values from unlike observation operators or physical shells are never mixed.
 
 ## `lag_correlations.csv`
 

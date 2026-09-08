@@ -231,6 +231,30 @@ def main() -> int:
     failures: List[str] = []
     model = config["model"]  # type: ignore[index]
     mlt_bins = [3.0 * index for index in range(8)]
+    n_case_slots = len(epochs) * len(model["shell_altitudes_km"])
+    # With --keep, existing access products are reused and therefore are not
+    # counted as launches remaining in this invocation.  This makes the counter
+    # truthful when resuming a partially completed production calculation.
+    if args.keep and not (args.prepare_only or args.skip_run):
+        n_launches = sum(
+            not (
+                output_root
+                / f"alt_{float(altitude):g}km/{epoch.strftime('%Y%m%dT%H%M%S')}"
+                / "cutoff_3d_shells_access.dat"
+            ).exists()
+            for epoch in epochs
+            for altitude in model["shell_altitudes_km"]
+        )
+    else:
+        n_launches = n_case_slots
+    launch_index = 0
+    print(
+        "Morphology execution plan: "
+        f"{len(epochs)} epoch(s) x {len(model['shell_altitudes_km'])} "
+        f"altitude(s) = {n_case_slots} case(s); "
+        f"{n_launches} AMPS launch(es) required by this invocation",
+        flush=True,
+    )
 
     amps = args.amps.expanduser()
     if not amps.is_absolute():
@@ -269,6 +293,18 @@ def main() -> int:
                 if args.keep and access_path.exists():
                     print(f"[{tag}] keeping existing AMPS output")
                 else:
+                    launch_index += 1
+                    # Each epoch/altitude pair is currently a separate AMPS
+                    # launch.  Show completed and remaining work before MPI
+                    # starts so users can estimate progress from the terminal
+                    # or scheduler log without opening command_inventory.json.
+                    print(
+                        "Morphology AMPS progress: "
+                        f"completed={launch_index - 1}/{n_launches}; "
+                        f"remaining={n_launches - launch_index + 1}; "
+                        f"starting={launch_index}/{n_launches}; case={tag}",
+                        flush=True,
+                    )
                     # Reuse C10's live tee because morphology intentionally uses
                     # the same AMPS execution and observation-operator code.  It
                     # writes the full per-case log while showing MPI, field-init,

@@ -11,17 +11,59 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from compare_observations import normalize_pamela, normalize_poes
-from run_study import execute
+from run_study import execute, independent_validation_remains
+import run_study
 from study_common import read_driver
 
 
 class PipelineTests(unittest.TestCase):
+    def test_independent_observation_validation_is_not_suppressed(self):
+        """A PAMELA failure must not prevent the independent POES check."""
+
+        self.assertTrue(independent_validation_remains(
+            "pamela", ["poes", "morphology", "compare"]
+        ))
+        self.assertFalse(independent_validation_remains(
+            "poes", ["morphology", "compare"]
+        ))
+        self.assertFalse(independent_validation_remains(
+            "validate", ["pamela", "poes"]
+        ))
+
+    def test_pamela_failure_allows_poes_then_blocks_morphology(self):
+        """Default policy collects both observation checks before stopping."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "study"
+
+            def fake_execute(command, cwd, log_path, dry_run, **keywords):
+                return 1 if keywords["stage"] == "pamela" else 0
+
+            arguments = [
+                "run_study.py", "--prepare-only", "--output-root", str(output),
+                "--stage", "validate", "--stage", "pamela",
+                "--stage", "poes", "--stage", "morphology",
+            ]
+            with mock.patch.object(sys, "argv", arguments), \
+                    mock.patch.object(run_study, "execute", side_effect=fake_execute), \
+                    contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                return_code = run_study.main()
+
+            self.assertEqual(return_code, 1)
+            manifest = json.loads((output / "study_run_manifest.json").read_text())
+            self.assertEqual(manifest["return_codes"]["validate"], 0)
+            self.assertEqual(manifest["return_codes"]["pamela"], 1)
+            self.assertEqual(manifest["return_codes"]["poes"], 0)
+            self.assertNotIn("morphology", manifest["return_codes"])
+
     def test_stage_execution_tees_live_output_and_records_status(self):
         """The orchestrator must show child output without sacrificing logs."""
 

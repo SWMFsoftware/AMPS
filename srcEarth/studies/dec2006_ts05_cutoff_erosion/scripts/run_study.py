@@ -25,6 +25,22 @@ from study_common import default_output_root, load_config, resolve_output_path
 
 
 STAGE_ORDER = ("validate", "pamela", "poes", "morphology", "compare", "dynamics", "figures")
+OBSERVATIONAL_VALIDATION_STAGES = ("pamela", "poes")
+
+
+def independent_validation_remains(stage: str, remaining_stages: Sequence[str]) -> bool:
+    """Return whether another independent observation validation is pending.
+
+    PAMELA/C9 and POES/C10 use different measurements and observation
+    operators.  Failure of one is scientifically important, but it does not
+    invalidate executing the other.  This helper supports collecting both
+    outcomes before deciding whether the production morphology may proceed.
+    """
+
+    return (
+        stage in OBSERVATIONAL_VALIDATION_STAGES
+        and any(item in OBSERVATIONAL_VALIDATION_STAGES for item in remaining_stages)
+    )
 
 
 def execute(
@@ -227,7 +243,23 @@ def main() -> int:
     print(f"prepare only: {args.prepare_only}", flush=True)
 
     final_rc = 0
+    deferred_validation_failures: List[str] = []
     for stage_index, stage in enumerate(stages, start=1):
+        # C9 and C10 are independent observational anchors, so collect both
+        # results even when the first one fails.  A pending validation failure
+        # still blocks the expensive production and inference stages unless the
+        # user explicitly requests diagnostic continuation.
+        if (deferred_validation_failures
+                and stage not in OBSERVATIONAL_VALIDATION_STAGES
+                and not args.continue_on_validation_failure):
+            print(
+                "Stopping before %s because observational validation failed: %s. "
+                "Use --continue-on-validation-failure only for diagnostic runs." %
+                (stage.upper(), ", ".join(name.upper()
+                                           for name in deferred_validation_failures)),
+                file=sys.stderr, flush=True,
+            )
+            break
         # Comparison and inference cannot exist in preparation-only mode because
         # no model output was generated.  Their commands remain in the record if
         # explicitly requested, but are skipped rather than failing on absence.
@@ -248,6 +280,20 @@ def main() -> int:
         )
         final_rc = final_rc or rc
         if rc and not args.continue_on_validation_failure:
+            remaining_stages = stages[stage_index:]
+            if independent_validation_remains(stage, remaining_stages):
+                deferred_validation_failures.append(stage)
+                next_validation = next(
+                    item for item in remaining_stages
+                    if item in OBSERVATIONAL_VALIDATION_STAGES
+                )
+                print(
+                    f"{stage.upper()} failed, but {next_validation.upper()} is an "
+                    "independent observational validation and will still run. "
+                    "Production/inference stages remain blocked unless both pass.",
+                    file=sys.stderr, flush=True,
+                )
+                continue
             print(
                 f"Stopping after {stage.upper()} failure. "
                 "Use --continue-on-validation-failure only for diagnostic runs.",

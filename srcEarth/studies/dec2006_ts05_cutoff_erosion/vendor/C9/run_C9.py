@@ -2317,6 +2317,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     branch_metrics: Dict[str, Metrics] = {}
     branch_results: Dict[str, Dict[str, object]] = {}
     combined_commands: List[Dict[str, object]] = []
+    launch_index = 0
 
     for solver in selected_solvers(args.solver):
         solver_root = output_root / solver.lower()
@@ -2367,6 +2368,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                       (solver.lower(), format_utc(midpoint), sample_index + 1,
                        len(sample_times), " ".join(command)))
                 if not args.skip_run and not args.dry_run:
+                    launch_index += 1
+                    # Report progress immediately before entering MPI.  The
+                    # completed count refers to AMPS launches that returned in
+                    # this invocation; "remaining" includes the launch about to
+                    # start, so the arithmetic is unambiguous at long runtimes.
+                    print(
+                        "C9 AMPS progress: completed=%d/%d; remaining=%d; "
+                        "starting=%d/%d" %
+                        (launch_index - 1, n_launches,
+                         n_launches - launch_index + 1,
+                         launch_index, n_launches),
+                        flush=True,
+                    )
                     return_code = run_process(
                         command, sample_dir, sample_dir / "C9_amps.log"
                     )
