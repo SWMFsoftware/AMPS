@@ -1063,7 +1063,7 @@ std::vector<std::string> Mode3DBuildSnapshotEpochs(const EarthUtil::AmpsParam& p
 #endif
 }
 
-// Validate and construct the output-location subset for one explicit snapshot.
+// Validate and construct the output-domain view for one explicit snapshot.
 //
 // Why this helper is required
 // ---------------------------
@@ -1074,19 +1074,31 @@ std::vector<std::string> Mode3DBuildSnapshotEpochs(const EarthUtil::AmpsParam& p
 // the field snapshot at its own timestamp. Reusing TIME_SERIES without filtering
 // would create an incorrect N_snapshot x N_location Cartesian product.
 //
-// The returned AmpsParam contains one trajectory with only the samples matching the
-// current epoch. Its flattened point list is rebuilt, and any LOCATION-qualified
-// aperture is remapped from the original global trajectory index to the new local
-// location index used in output filenames. Unqualified legacy apertures remain
-// available at every active location.
+// For TRAJECTORY, the returned AmpsParam contains only samples matching the
+// current epoch. Its flattened point list is rebuilt, and LOCATION-qualified
+// apertures are remapped to local indices. For SHELLS, the spatial domain is
+// deliberately unchanged because every shell is sampled at every listed epoch.
 EarthUtil::AmpsParam Mode3DBuildSnapshotWorkParam(
     const EarthUtil::AmpsParam& snap,const std::string& epochUTC) {
   if (!Mode3DSnapshotListRequested(snap)) return snap;
 
-  if (EarthUtil::ToUpper(EarthUtil::Trim(snap.output.mode))!="TRAJECTORY" ||
+  const std::string outputMode=
+      EarthUtil::ToUpper(EarthUtil::Trim(snap.output.mode));
+
+  // SHELLS describes a static spatial sampling domain.  Unlike a timestamped
+  // trajectory, there is no per-epoch subset to select and no LOCATION-qualified
+  // aperture index to remap: every shell is intentionally evaluated at every
+  // epoch in SNAPSHOT_LIST_FILE.  Returning the snapshot unchanged enables true
+  // temporal batching while preserving the existing lifecycle below: the AMR
+  // topology is allocated once outside the snapshot loop, whereas B/E values and
+  // Tsyganenko/Geopack state are rebuilt for every epoch.
+  if (outputMode=="SHELLS") return snap;
+
+  if (outputMode!="TRAJECTORY" ||
       snap.output.trajectories.size()!=1) {
     exit(__LINE__,__FILE__,
-         "[Mode3D] SNAPSHOT_LIST currently requires OUTPUT_MODE=TRAJECTORY with one trajectory file.");
+         "[Mode3D] SNAPSHOT_LIST requires OUTPUT_MODE=SHELLS or "
+         "OUTPUT_MODE=TRAJECTORY with one trajectory file.");
   }
 
 #ifdef _NO_SPICE_CALLS_
@@ -1160,10 +1172,20 @@ EarthUtil::AmpsParam Mode3DBuildSnapshotWorkParam(
 void Mode3DValidateSnapshotListCoverage(
     const EarthUtil::AmpsParam& prm,const std::vector<std::string>& epochs) {
   if (!Mode3DSnapshotListRequested(prm)) return;
-  if (EarthUtil::ToUpper(EarthUtil::Trim(prm.output.mode))!="TRAJECTORY" ||
+
+  const std::string outputMode=
+      EarthUtil::ToUpper(EarthUtil::Trim(prm.output.mode));
+
+  // Coverage validation below proves that each timestamped trajectory sample
+  // belongs to exactly one explicit epoch.  SHELLS has no timestamped samples:
+  // its complete fixed geometry is evaluated at every epoch, so this trajectory-
+  // specific validation is both inapplicable and unnecessary.
+  if (outputMode=="SHELLS") return;
+
+  if (outputMode!="TRAJECTORY" ||
       prm.output.trajectories.size()!=1) {
     exit(__LINE__,__FILE__,
-         "[Mode3D] SNAPSHOT_LIST validation requires one parsed TRAJECTORY.");
+         "[Mode3D] SNAPSHOT_LIST validation requires SHELLS or one parsed TRAJECTORY.");
   }
 #ifdef _NO_SPICE_CALLS_
   exit(__LINE__,__FILE__,
@@ -1460,6 +1482,15 @@ int Run(const EarthUtil::AmpsParam& prm) {
       std::cout << " (SNAPSHOT_LIST='" << prm.temporal.snapshotListFile << "')";
     }
     std::cout << "\n";
+    if (Mode3DSnapshotListRequested(prm) &&
+        EarthUtil::ToUpper(EarthUtil::Trim(prm.output.mode))=="SHELLS") {
+      // Make the optimization visible in batch logs.  Users should expect one
+      // mesh allocation followed by one field refill and cutoff solve per
+      // epoch; the latter messages are not evidence that the mesh was rebuilt.
+      std::cout << "[Mode3D] SNAPSHOT_LIST SHELLS mesh reuse: one AMR topology; "
+                << snapshotEpochs.size()
+                << " epoch-specific field initialization(s) and suffixed product(s).\n";
+    }
     std::cout.flush();
   }
 
@@ -1471,11 +1502,10 @@ int Run(const EarthUtil::AmpsParam& prm) {
     // are interpolated at snapshotEpochs[iSnapshot].
     EarthUtil::AmpsParam snap = Mode3DBuildSnapshotParam(prm,snapshotEpochs[iSnapshot]);
 
-    // SNAPSHOT_LIST is an independent-case batching mode rather than a Cartesian
-    // field-evolution experiment. Select only observations timestamped at this
-    // snapshot and remap their location-qualified apertures before field setup and
-    // solver scheduling. Other temporal modes return an unchanged copy, preserving
-    // their historical all-locations-per-snapshot behavior.
+    // SNAPSHOT_LIST is an explicit batching mode. Timestamped TRAJECTORY domains
+    // select and remap only observations owned by this epoch; static SHELLS domains
+    // are returned unchanged so every requested shell is sampled at every epoch.
+    // Other temporal modes preserve their historical all-locations behavior.
     snap = Mode3DBuildSnapshotWorkParam(snap,snapshotEpochs[iSnapshot]);
 
     const std::string suffix = (snapshotEpochs.size()>1 || Mode3DTimeSeriesRequested(prm) ||

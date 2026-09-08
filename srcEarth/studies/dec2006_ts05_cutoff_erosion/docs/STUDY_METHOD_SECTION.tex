@@ -220,7 +220,7 @@ are labeled structural-sensitivity experiments. The field is frozen during
 each backtrace, and the electric field is set to zero, so the result is a
 quasi-static rigidity access boundary rather than a time-dependent
 electromagnetic transport solution. Relativistic full-orbit protons are
-backtraced with the Boris mover. RK4 is used at selected quiet, compression,
+backtraced with the RK4 mover. Boris is used at selected quiet, compression,
 main-phase, and recovery epochs to test mover sensitivity. Mode3D mesh field
 evaluation supplies the production time series, while GRIDLESS field
 evaluation and mesh refinement provide parity and interpolation checks.
@@ -250,11 +250,12 @@ A reported boundary must satisfy the C9 or C10 resolved-coverage and bracketing
 requirements; sensitivity runs lengthen the trace limit to distinguish a
 physical penumbra from insufficient integration.
 
-Two spatial products are calculated. Observation-equivalent products reproduce
-the exact C9 and C10 shells, vertical incidence, rigidity samples, time
-aggregation, and $T_{50}$ operators described above. The research morphology
+One common spatial product supplies two observation-equivalent reductions and
+the research analysis. It contains the C9 and C10 shell altitudes, vertical
+incidence, exact rigidity samples, exact observation midpoints, and all inputs
+needed by their separate time-aggregation and $T_{50}$ operators. The research
 product uses both 475- and 850-km shells, a $15^{\circ}$ longitude by
-$2^{\circ}$ latitude grid from $45^{\circ}$ to $85^{\circ}$ in both
+$2^{\circ}$ latitude grid from $35^{\circ}$ to $85^{\circ}$ in both
 hemispheres, and a common rigidity grid from 0.15 to 1.25 GV. Exact PAMELA and
 POES/MetOp rigidities are inserted into that grid. Direct access is evaluated
 at each rigidity; cutoff boundaries are not inferred by interpolating between
@@ -262,6 +263,16 @@ widely separated energy channels. The primary maps use vertical incidence so
 that they remain commensurate with the cutoff-latitude validation. Directional
 and aperture-folded access are reserved for a labeled secondary analysis and
 are not mixed with vertical cutoffs.
+
+The two shells are evaluated in one Mode3D process. Restartable groups of up to
+16 irregular epochs use \texttt{TEMPORAL\_MODE SNAPSHOT\_LIST}: AMR topology,
+distributed block allocation, and static data layout are retained, but the
+five-minute TS05 driver is interpolated and the complete IGRF+TS05 field is
+refilled at every epoch. The optimized result is required to reproduce a
+standalone one-epoch/one-shell calculation with complete access-grid closure,
+identical resolved access states and unresolved fractions, and derived
+$T_{50}$ boundaries equal to numerical reporting precision. Thus mesh reuse
+changes process lifecycle but not the physical snapshot definition.
 
 \subsection{Observation Operators and Model--Data Comparisons}
 

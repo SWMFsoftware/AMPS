@@ -612,6 +612,13 @@ def replace_directives(template_text: str, replacements: Mapping[str, str]) -> s
 
 def render_input(template: Path, destination: Path, epoch: datetime,
                  driver: Path, args: argparse.Namespace, solver: str) -> None:
+    # C10 itself supplies one altitude, while the December-2006 research runner
+    # may supply several shells that share the same Mode3D mesh.  Keeping the
+    # optional list here avoids a second input renderer and guarantees that both
+    # paths use the same rigidity, trace, and mesh directives.
+    shell_altitudes = list(getattr(args, "shell_altitudes_km", [args.altitude_km]))
+    if not shell_altitudes:
+        raise ValueError("at least one shell altitude is required")
     replacements = {
         "CUTOFF_EMIN": "%.15g" % kinetic_energy_mev_from_rigidity_gv(args.rigidity_min_gv),
         "CUTOFF_EMAX": "%.15g" % kinetic_energy_mev_from_rigidity_gv(args.rigidity_max_gv),
@@ -626,7 +633,8 @@ def render_input(template: Path, destination: Path, epoch: datetime,
         "CUTOFF_MAX_TRAJ_TIME": "%.8g" % args.max_trace_time,
         "EPOCH": format_utc(epoch, suffix_z=False),
         "DRIVER_FILE": "ts05_driver.txt",
-        "SHELL_ALTS_KM": "%.8g" % args.altitude_km,
+        "SHELL_COUNT": str(len(shell_altitudes)),
+        "SHELL_ALTS_KM": " ".join("%.8g" % value for value in shell_altitudes),
         "SHELL_LON_RES_DEG": "%.8g" % args.shell_lon_res_deg,
         "SHELL_LAT_RES_DEG": "%.8g" % args.shell_lat_res_deg,
         "MAX_TRACE_TIME": "%.8g" % args.max_trace_time,
@@ -648,18 +656,22 @@ def resolved_dynamic_chunk(args: argparse.Namespace, solver: str) -> int:
     return max(1, 4 * workers)
 
 
-def command_for(args: argparse.Namespace, amps: Path, solver: str, epoch: datetime) -> List[str]:
-    """Build one auditable AMPS command for FULL_SCAN or DIRECT_ACCESS."""
+def command_for(args: argparse.Namespace, amps: Path, solver: str,
+                epoch: datetime) -> List[str]:
+    """Build one auditable AMPS command for exactly one frozen field epoch."""
     chunk = resolved_dynamic_chunk(args, solver)
     command = [
         args.mpirun, "-np", str(args.np), str(amps),
         "-mode", "gridless" if solver == "GRIDLESS" else "3d",
-        "-i", "AMPS_PARAM_C10.in", "--epoch", format_utc(epoch, suffix_z=False),
+        "-i", "AMPS_PARAM_C10.in",
         "-cutoff-search", (
             "RIGIDITY_LIST" if args.cutoff_evaluation == "DIRECT_ACCESS"
             else "PENUMBRA_SCAN"
         ),
         "-cutoff-trace-policy", args.cutoff_trace_policy,
+    ]
+    command[command.index("-cutoff-search"):command.index("-cutoff-search")] = [
+        "--epoch", format_utc(epoch, suffix_z=False)
     ]
     rigidity_list = ",".join("%.12g" % value for value in args.rigidities_gv)
     if args.cutoff_evaluation == "FULL_SCAN":

@@ -11,6 +11,31 @@
 - Positive lag means that the cutoff diagnostic follows the driver.
 - Unresolved access state is `2` and is never treated as forbidden.
 
+## Mesh-reuse execution records
+
+`morphology/command_inventory.json` contains one row per actual MPI launch,
+including its ordered epoch list, shell-altitude list, execution layout, exact
+command, and the explicit statement that the magnetic field is reinitialized at
+every epoch. `morphology_result.json` distinguishes `n_cases` (logical
+epoch-altitude products) from `n_amps_launches` (processes in the complete
+plan) and `n_amps_launches_required_this_invocation` (processes not reused by
+`--keep`). `epochs_per_batch` is the requested maximum number of snapshots in
+one native BATCHED process; `epochs_per_batch_group` is retained as an equal
+compatibility alias. `mesh_reused_across_epochs=true` never means field values
+are frozen: `magnetic_field_reinitialized_each_epoch` must also be true.
+
+`staged_observation_products.json` maps each shared single-shell file to the
+historical C9 or C10 path at which it was analyzed. This is the provenance link
+between the production command and the observation-specific `--skip-run`
+result; the latter is not evidence of an additional AMPS execution.
+Every staged sample also has `SHARED_MODEL_PRODUCT.json`, containing its source
+path, SHA-256 digest, epoch, altitude, layout, and explicit execution status.
+
+`mesh_reuse_access_comparison.csv` and `mesh_reuse_equivalence.json` are written
+by `verify_mesh_reuse.py`. They record access-grid closure, resolved-state
+agreement, unresolved fractions, and derived-boundary equality between a
+shared-mesh run and the `STANDALONE` baseline.
+
 ## `paired_model_observation.csv`
 
 | Column | Meaning |

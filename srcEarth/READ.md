@@ -759,8 +759,8 @@ SPICE must be available for time-series operation because UTC strings and driver
 
 ### 7.3 Explicit irregular snapshot list and mesh reuse
 
-Standalone Mode3D can also process independent timestamped trajectory cases while
-retaining one allocated AMR mesh:
+Standalone Mode3D can process either independent timestamped trajectory cases or a
+fixed shell domain at irregular epochs while retaining one allocated AMR mesh:
 
 ```text
 #TEMPORAL
@@ -772,18 +772,32 @@ OUTPUT_MODE         TRAJECTORY
 TRAJ_FILE           observation_locations.txt
 ```
 
+For a static shell campaign, replace the output block with, for example:
+
+```text
+#OUTPUT_DOMAIN
+OUTPUT_MODE         SHELLS
+SHELL_COUNT         2
+SHELL_ALTS_KM       475 850
+SHELL_LON_RES_DEG   15
+SHELL_LAT_RES_DEG   2
+```
+
 `snapshot_epochs.txt` contains one ISO-8601 UTC epoch per non-comment line. Epochs are
 validated, sorted, and deduplicated. For each epoch Mode3D interpolates the driver,
-selects only trajectory samples with that timestamp, remaps any LOCATION-qualified
-apertures, refills B/E on the existing distributed blocks, and runs the requested
-products. `amps_init_mesh()`, `amps_init()`, and sphere/static-data setup occur only
-once for the complete list.
+refills B/E on the existing distributed blocks, and runs the requested products.
+For TRAJECTORY it also selects only samples with that timestamp and remaps any
+LOCATION-qualified apertures. For SHELLS the complete fixed shell geometry is
+evaluated at every epoch and each output receives an index/UTC filename suffix.
+`amps_init_mesh()`, `amps_init()`, and sphere/static-data setup occur only once for
+the complete list.
 
 This mode deliberately differs from `TIME_SERIES`: the latter evaluates the complete
 output domain at every regular field snapshot, while `SNAPSHOT_LIST` represents
-independent observations and prevents an `N_snapshot x N_location` cross-product.
-Every listed epoch must have at least one matching trajectory sample. The mesh is
-reused, but the field values are rebuilt at every distinct epoch.
+independent observations and prevents an `N_snapshot x N_location` cross-product for
+TRAJECTORY. Every listed trajectory epoch must have at least one matching sample.
+SHELLS intentionally forms an `N_snapshot x N_shell` product. In both cases the mesh
+topology is reused, but the field values are rebuilt at every distinct epoch.
 
 Existing `SNAPSHOT`, `TIME_SERIES`, POINTS/SHELLS, GRIDLESS, and coupled execution are
 unchanged unless `TEMPORAL_MODE SNAPSHOT_LIST` is explicitly requested.

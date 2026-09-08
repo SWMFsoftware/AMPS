@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Top-level orchestration for the December 2006 cutoff study.
 
-Stages are intentionally explicit.  A failed validation command returns a
-nonzero status and normally stops later scientific interpretation.  Use
-``--continue-on-validation-failure`` only for debugging or to inspect partial
-products; the final archive records that choice.
+The default path first creates shared 475/850-km Mode3D products, then lets C9
+and C10 apply their separate observation operators to those same raw states.
+A failed observation comparison returns a nonzero final status but does not
+suppress the comparison, dynamics, or figure diagnostics needed to understand
+that failure. Use ``--continue-on-validation-failure`` only to proceed past a
+non-observational pipeline failure; the manifest records that choice.
 """
 
 from __future__ import annotations
@@ -24,7 +26,11 @@ from typing import Dict, List, Sequence
 from study_common import default_output_root, load_config, resolve_output_path
 
 
-STAGE_ORDER = ("validate", "pamela", "poes", "morphology", "compare", "dynamics", "figures")
+# The shared morphology calculation now precedes observation reduction because
+# its two-altitude products are staged for C9 and C10.  Those stages still run
+# their own independent observation operators and acceptance gates; only their
+# redundant AMPS launches are removed.
+STAGE_ORDER = ("validate", "morphology", "pamela", "poes", "compare", "dynamics", "figures")
 OBSERVATIONAL_VALIDATION_STAGES = ("pamela", "poes")
 
 
@@ -41,6 +47,53 @@ def independent_validation_remains(stage: str, remaining_stages: Sequence[str]) 
         stage in OBSERVATIONAL_VALIDATION_STAGES
         and any(item in OBSERVATIONAL_VALIDATION_STAGES for item in remaining_stages)
     )
+
+
+def stage_output_problem(stage: str, output: Path,
+                         shared_observations: bool) -> str | None:
+    """Return a precise error when a successful stage omitted its contract.
+
+    Process exit status alone is insufficient for a publication workflow: a
+    solver can return zero but an output filename/parser mismatch can leave no
+    scientific table.  These checks run immediately after the relevant child
+    exits, while its command and log are still visible on screen.
+    """
+
+    if stage == "morphology":
+        result_path = output / "morphology" / "morphology_result.json"
+        boundary_path = output / "morphology" / "morphology_boundaries.csv"
+        if not result_path.is_file():
+            return f"missing morphology status: {result_path}"
+        try:
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return f"invalid morphology status {result_path}: {exc}"
+        if not result.get("passed", False):
+            return f"morphology_result.json reports failure: {result.get('failures', [])}"
+        if not boundary_path.is_file() or boundary_path.stat().st_size == 0:
+            return f"missing or empty morphology boundary table: {boundary_path}"
+        if shared_observations:
+            staged_path = output / "morphology" / "staged_observation_products.json"
+            try:
+                staged = json.loads(staged_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                return f"invalid staged observation product list {staged_path}: {exc}"
+            if not staged:
+                return f"no C9/C10 raw products were staged: {staged_path}"
+    elif stage == "dynamics":
+        path = output / "dynamics" / "cutoff_dynamics_timeseries.csv"
+        if not path.is_file() or path.stat().st_size == 0:
+            return f"missing or empty cutoff dynamics table: {path}"
+    elif stage == "figures":
+        missing = [
+            output / "figures" / f"{stem}{suffix}"
+            for stem in ("figure_cutoff_degradation", "figure_peak_cutoff_degradation")
+            for suffix in (".png", ".eps")
+            if not (output / "figures" / f"{stem}{suffix}").is_file()
+        ]
+        if missing:
+            return "missing publication figures: " + ", ".join(map(str, missing))
+    return None
 
 
 def execute(
@@ -122,7 +175,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-nt", type=int)
     parser.add_argument("--prepare-only", action="store_true",
                         help="Validate data and generate commands/inputs without running AMPS")
-    parser.add_argument("--continue-on-validation-failure", action="store_true")
+    parser.add_argument(
+        "--continue-on-validation-failure", action="store_true",
+        help=("Continue after a non-observational pipeline failure. C9/C10 "
+              "acceptance failures always retain FAIL status but do not suppress "
+              "downstream diagnostic products."),
+    )
+    parser.add_argument(
+        "--mesh-layout", choices=("BATCHED", "PER_EPOCH", "STANDALONE"),
+        type=str.upper, default="BATCHED",
+        help=("BATCHED reuses one native Mode3D mesh across up to N epochs and "
+              "both shells; PER_EPOCH uses one epoch/two shells per process; "
+              "STANDALONE is the one-epoch/one-altitude baseline"),
+    )
+    parser.add_argument(
+        "--epochs-per-batch", type=int,
+        help="Override execution.epochs_per_batch for each BATCHED AMPS process",
+    )
+    parser.add_argument(
+        "--independent-observation-runs", action="store_true",
+        help=("Run separate C9 and C10 AMPS calculations instead of reducing the "
+              "shared 475/850-km morphology products"),
+    )
     parser.add_argument(
         "--output-root", type=Path, default=default_output_root(),
         help=("Study output root (default: repository-level "
@@ -152,7 +226,9 @@ def main() -> int:
     # stage cannot possibly launch.  This catches common relative-path errors
     # (for example ``--amps ../amps`` from the repository root) without first
     # creating dozens of case directories or relying on an opaque MPI status.
-    amps_stages = {"pamela", "poes", "morphology"}
+    amps_stages = {"morphology"}
+    if args.independent_observation_runs:
+        amps_stages.update(("pamela", "poes"))
     needs_amps = bool(amps_stages.intersection(stages)) and not args.prepare_only
     if needs_amps:
         if not amps_path.is_file():
@@ -176,7 +252,9 @@ def main() -> int:
             "--comparison-observable", "PAMELA_T50", "--max-trace-time", "300",
             "--output-root", str(output / "C9"), "--amps", str(amps_path),
             "--mpirun", args.mpirun, "-np", str(np_value), "-nt", str(nt_value),
+            "--dynamic-chunk", str(execution["dynamic_chunk"]),
             "--mode3d-parallel-field-init",
+            "--mover", str(config["model"]["mover"]),
         ],
         "poes": [
             python, "run_C10.py", "--profile", args.profile,
@@ -184,13 +262,16 @@ def main() -> int:
             "--comparison-observable", "ACCESS_T50", "--max-trace-time", "300",
             "--output-root", str(output / "C10"), "--amps", str(amps_path),
             "--mpirun", args.mpirun, "-np", str(np_value), "-nt", str(nt_value),
+            "--dynamic-chunk", str(execution["dynamic_chunk"]),
             "--mode3d-parallel-field-init",
+            "--mover", str(config["model"]["mover"]),
         ],
         "morphology": [
             python, str(root / "scripts" / "run_morphology.py"),
             "--profile", args.profile, "--amps", str(amps_path),
             "--mpirun", args.mpirun, "-np", str(np_value), "-nt", str(nt_value),
             "--output-root", str(output / "morphology"),
+            "--mesh-layout", args.mesh_layout,
         ],
         "compare": [
             python, str(root / "scripts" / "compare_observations.py"),
@@ -208,8 +289,36 @@ def main() -> int:
             "--comparison-root", str(output / "comparison"),
             "--dynamics-root", str(output / "dynamics"),
             "--output-root", str(output / "figures"),
+            "--require-publication-products",
         ],
     }
+    if args.epochs_per_batch is not None:
+        commands["morphology"] += ["--epochs-per-batch", str(args.epochs_per_batch)]
+    if not args.independent_observation_runs:
+        # The morphology runner adds the exact observation midpoints, splits
+        # each two-shell Tecplot product strictly by altitude, and stages normal
+        # single-shell files under these historical C9/C10 output trees.
+        commands["morphology"] += [
+            "--include-observation-epochs",
+            "--c9-output-root", str(output / "C9"),
+            "--c10-output-root", str(output / "C10"),
+        ]
+        # The shared morphology grid is 15 x 2 degrees.  Passing those values
+        # to C9/C10 keeps their saved command/provenance records aligned with
+        # the staged raw file even though --skip-run suppresses execution.
+        shell_lon = str(config["model"]["shell_longitude_step_deg"])
+        shell_lat = str(config["model"]["shell_latitude_step_deg"])
+        commands["pamela"] += [
+            "--shell-lon-res-deg", shell_lon,
+            "--shell-lat-res-deg", shell_lat,
+        ]
+        commands["poes"] += [
+            "--shell-lon-res-deg", shell_lon,
+            "--shell-lat-res-deg", shell_lat,
+        ]
+        if not args.prepare_only:
+            commands["pamela"].append("--skip-run")
+            commands["poes"].append("--skip-run")
     if args.prepare_only:
         commands["pamela"].append("--dry-run")
         commands["poes"].append("--dry-run")
@@ -224,11 +333,23 @@ def main() -> int:
         "dynamics": root,
         "figures": root,
     }
+    epochs_per_batch = (
+        args.epochs_per_batch if args.epochs_per_batch is not None
+        else int(execution.get(
+            "epochs_per_batch", execution.get("epochs_per_batch_group", 16)
+        ))
+    )
     record = {
         "study_id": config["study_id"], "profile": args.profile,
         "created_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "prepare_only": args.prepare_only, "stages": stages,
         "mpi_ranks": np_value, "threads_per_rank": nt_value,
+        "mesh_layout": args.mesh_layout,
+        "epochs_per_batch": epochs_per_batch,
+        # Compatibility alias for manifests produced by the earlier
+        # directory-grouping implementation.
+        "epochs_per_batch_group": epochs_per_batch,
+        "observation_products_reused": not args.independent_observation_runs,
         "commands": {stage: commands[stage] for stage in stages},
         "return_codes": {},
         "stage_elapsed_seconds": {},
@@ -241,25 +362,25 @@ def main() -> int:
     print(f"AMPS executable: {amps_path}", flush=True)
     print(f"output root: {output}", flush=True)
     print(f"prepare only: {args.prepare_only}", flush=True)
+    print(
+        f"mesh layout: {args.mesh_layout}; epochs per AMPS batch: "
+        f"{record['epochs_per_batch']}", flush=True,
+    )
+    print(
+        "observation AMPS products: "
+        + ("independent C9/C10 launches" if args.independent_observation_runs
+           else "shared 475/850-km morphology products"),
+        flush=True,
+    )
 
     final_rc = 0
     deferred_validation_failures: List[str] = []
     for stage_index, stage in enumerate(stages, start=1):
-        # C9 and C10 are independent observational anchors, so collect both
-        # results even when the first one fails.  A pending validation failure
-        # still blocks the expensive production and inference stages unless the
-        # user explicitly requests diagnostic continuation.
-        if (deferred_validation_failures
-                and stage not in OBSERVATIONAL_VALIDATION_STAGES
-                and not args.continue_on_validation_failure):
-            print(
-                "Stopping before %s because observational validation failed: %s. "
-                "Use --continue-on-validation-failure only for diagnostic runs." %
-                (stage.upper(), ", ".join(name.upper()
-                                           for name in deferred_validation_failures)),
-                file=sys.stderr, flush=True,
-            )
-            break
+        # C9 and C10 are independent observational anchors. Their nonzero
+        # acceptance status remains a failure of the overall study, but it does
+        # not prevent creation of comparison, dynamics, and figure diagnostics.
+        # This distinction is important in development: a model-data bias must
+        # be visible in the final plots rather than suppressing those plots.
         # Comparison and inference cannot exist in preparation-only mode because
         # no model output was generated.  Their commands remain in the record if
         # explicitly requested, but are skipped rather than failing on absence.
@@ -274,29 +395,36 @@ def main() -> int:
             commands[stage], cwd[stage], output / "logs" / f"{stage}.log", False,
             stage=stage, stage_index=stage_index, stage_count=len(stages),
         )
+        if rc == 0 and not args.prepare_only:
+            contract_problem = stage_output_problem(
+                stage, output, not args.independent_observation_runs
+            )
+            if contract_problem:
+                rc = 3
+                print(
+                    f"ERROR: {stage.upper()} exited successfully but violated its "
+                    f"output contract: {contract_problem}",
+                    file=sys.stderr, flush=True,
+                )
         record["return_codes"][stage] = rc
         record["stage_elapsed_seconds"][stage] = round(
             time.monotonic() - stage_started, 3
         )
         final_rc = final_rc or rc
+        if rc and stage in OBSERVATIONAL_VALIDATION_STAGES:
+            deferred_validation_failures.append(stage)
+            print(
+                f"{stage.upper()} failed its observational acceptance gate. "
+                "The remaining stages will still run and the final study status "
+                "will remain FAIL so the result cannot be mistaken for a validated run.",
+                file=sys.stderr, flush=True,
+            )
+            continue
         if rc and not args.continue_on_validation_failure:
-            remaining_stages = stages[stage_index:]
-            if independent_validation_remains(stage, remaining_stages):
-                deferred_validation_failures.append(stage)
-                next_validation = next(
-                    item for item in remaining_stages
-                    if item in OBSERVATIONAL_VALIDATION_STAGES
-                )
-                print(
-                    f"{stage.upper()} failed, but {next_validation.upper()} is an "
-                    "independent observational validation and will still run. "
-                    "Production/inference stages remain blocked unless both pass.",
-                    file=sys.stderr, flush=True,
-                )
-                continue
             print(
                 f"Stopping after {stage.upper()} failure. "
-                "Use --continue-on-validation-failure only for diagnostic runs.",
+                "Use --continue-on-validation-failure only to continue after a "
+                "non-observational pipeline failure.",
                 file=sys.stderr, flush=True,
             )
             break

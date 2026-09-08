@@ -545,6 +545,17 @@ python3 run_C10.py --validate-driver
 
 ### 9.2 Fast routine test: `DIRECT_ACCESS`
 
+The standalone C10 runner continues to execute one altitude and one field
+snapshot per AMPS process. The December-2006 research package imports C10's
+input renderer and supplies an internal `shell_altitudes_km` list containing
+475 and 850 km. Each shared process still has one explicit field epoch; no
+temporal `SNAPSHOT_LIST` is used. That path stages the strictly split 850-km
+access file under the ordinary C10 directory structure and invokes this runner
+with `--skip-run`. Consequently C10 retains its own observation operator and
+pass/fail decision while avoiding redundant within-epoch mesh construction.
+See the study-level README and
+`scripts/verify_mesh_reuse.py` for the required standalone equivalence test.
+
 This is the recommended first production run.  It evaluates the same four
 rigidities used by the reference and avoids the complete penumbra scan:
 

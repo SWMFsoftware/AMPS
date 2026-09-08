@@ -20,7 +20,7 @@
     "field_model": "IGRF+TS05",
     "electric_field": "OFF",
     "field_state": "FROZEN_SNAPSHOT",
-    "mover": "BORIS",
+    "mover": "RK4",
     "cutoff_search": "DIRECT_ACCESS",
     "cutoff_sampling": "VERTICAL",
     "trace_limit_policy": "FORBIDDEN",
@@ -67,7 +67,8 @@
     "threads_per_rank": 16,
     "scheduler": "DYNAMIC",
     "dynamic_chunk": 32,
-    "parallel_field_initialization": true
+    "parallel_field_initialization": true,
+    "epochs_per_batch": 16
   },
   "observation_operators": {
     "pamela": {

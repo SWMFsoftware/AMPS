@@ -567,6 +567,12 @@ TIME_SERIES `N_snapshot x N_location` Cartesian product. `--gridded-batch OFF` r
 the historical one-process-per-case layout for regression comparison, and other tests
 are unaffected unless they explicitly request `TEMPORAL_MODE SNAPSHOT_LIST`.
 
+`SNAPSHOT_LIST` also supports `OUTPUT_MODE SHELLS`. A shell domain has no timestamped
+locations to filter: every configured shell is evaluated at every listed epoch, while
+the AMR topology is allocated once and the B/E state is rebuilt inside the snapshot
+loop. Each shell product receives the same deterministic snapshot-index/UTC suffix used
+by other multi-snapshot Mode3D outputs, preventing cross-epoch overwrites.
+
 Standalone GRIDLESS is mesh-free: the early `-mode gridless` dispatch
 returns before `amps_init_mesh()` and evaluates the background field directly along
 trajectories.  GRIDLESS cutoff/direct-access tasks now use the same MPI + intra-rank

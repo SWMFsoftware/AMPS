@@ -29,6 +29,7 @@ configuration.
 | `data/observations/poes_metop_meped_boundaries.csv.gz` | 3,904 | POES/MetOp MLT-resolved boundary cells |
 | `inputs/AMPS_PARAM_DEC2006_475km.in` | 1 | Common-rigidity morphology at PAMELA altitude |
 | `inputs/AMPS_PARAM_DEC2006_850km.in` | 1 | Common-rigidity morphology at POES/MetOp altitude |
+| `inputs/AMPS_PARAM_DEC2006_multishell.in` | 2 shells | Shared-mesh 475/850-km production template |
 
 Expected hashes, row counts, temporal coverage, and source descriptions are in
 `data/provenance.json`. The `vendor/C9` and `vendor/C10` directories contain
@@ -40,6 +41,7 @@ the observation-equivalent runners and source-preserving reconstruction tools.
 |---|---|
 | `scripts/run_study.py` | Entire shared run tree |
 | `scripts/run_morphology.py` | `morphology/` |
+| `scripts/verify_mesh_reuse.py` | User-selected equivalence-check directory |
 | `scripts/compare_observations.py` | `comparison/` |
 | `scripts/analyze_dynamics.py` | `dynamics/` |
 | `scripts/make_figures.py` | `figures/` |
@@ -56,4 +58,9 @@ python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py \
 
 This creates generated inputs and command inventories beneath
 `test_output/dec2006_ts05_cutoff_erosion/` without launching AMPS. The same
-command without `--prepare-only` executes the SMOKE calculation.
+command without `--prepare-only` executes the SMOKE calculation. The default
+`BATCHED` uses native `SNAPSHOT_LIST` to run up to 16 explicit epochs and both
+shell altitudes in one AMPS process. Mode3D allocates the AMR topology once,
+then rebuilds the IGRF+TS05 field and writes a uniquely suffixed access product
+for every epoch. `PER_EPOCH` and `STANDALONE` remain available as compatibility
+and equivalence baselines.

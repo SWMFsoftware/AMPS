@@ -69,6 +69,38 @@ def run_check(command: List[str], cwd: Path) -> None:
     print(completed.stdout.strip())
 
 
+def validate_native_batched_shell_support(root: Path) -> None:
+    """Verify that the installed Mode3D source matches the runner contract.
+
+    BATCHED is a cross-component feature: Python emits ``SNAPSHOT_LIST`` with
+    ``OUTPUT_MODE SHELLS``, while C++ must accept that combination and allocate
+    the mesh before entering the epoch loop.  Checking both markers here turns
+    an accidentally mixed old/new installation into an immediate validation
+    error instead of a long run that produces no addressable products.
+    """
+
+    source_path = root.parents[1] / "3d" / "Mode3D.cpp"
+    if not source_path.is_file():
+        raise ValueError(f"native Mode3D source is missing: {source_path}")
+    source = source_path.read_text(encoding="utf-8")
+    required = (
+        'if (outputMode=="SHELLS") return snap;',
+        'if (outputMode=="SHELLS") return;',
+    )
+    missing = [marker for marker in required if marker not in source]
+    if missing:
+        raise ValueError(
+            "Mode3D does not enable SNAPSHOT_LIST for SHELLS; missing marker(s): "
+            + ", ".join(missing)
+        )
+    mesh_position = source.find("  amps_init_mesh();   // build")
+    loop_position = source.find(
+        "for (std::size_t iSnapshot=0; iSnapshot<snapshotEpochs.size();"
+    )
+    if mesh_position < 0 or loop_position < 0 or mesh_position >= loop_position:
+        raise ValueError("Mode3D mesh allocation is not outside the snapshot loop")
+
+
 def main() -> int:
     root, config = load_config()
     provenance = json.loads((root / "data" / "provenance.json").read_text())
@@ -113,6 +145,35 @@ def main() -> int:
             print(f"PASS AMPS_PARAM_DEC2006_{altitude}km.in")
         except Exception as exc:
             problems.append(str(exc))
+    try:
+        multishell = root / "inputs" / "AMPS_PARAM_DEC2006_multishell.in"
+        validate_input(multishell)
+        active = {}
+        for raw in multishell.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if line and not line.startswith(("!", "#")):
+                parts = line.split(None, 1)
+                if len(parts) == 2:
+                    active[parts[0]] = parts[1].strip()
+        if active.get("SHELL_COUNT") != "2":
+            raise ValueError("multi-shell template must declare SHELL_COUNT 2")
+        if [float(value) for value in active.get("SHELL_ALTS_KM", "").split()] \
+                != [475.0, 850.0]:
+            raise ValueError("multi-shell template must declare 475 and 850 km")
+        if "TEMPORAL_MODE" in active or "SNAPSHOT_LIST_FILE" in active:
+            raise ValueError(
+                "checked-in multi-shell template must remain single-snapshot; "
+                "the runner inserts temporal batching only in generated decks"
+            )
+        print("PASS AMPS_PARAM_DEC2006_multishell.in")
+    except Exception as exc:
+        problems.append(str(exc))
+
+    try:
+        validate_native_batched_shell_support(root)
+        print("PASS native Mode3D SNAPSHOT_LIST+SHELLS mesh-reuse contract")
+    except Exception as exc:
+        problems.append(str(exc))
 
     # Exercise the original validators as a defense against a study-level check
     # accidentally becoming less strict than C9 or C10.

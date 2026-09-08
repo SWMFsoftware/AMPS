@@ -3,30 +3,48 @@
 
 Every panel is derived from a machine-readable table produced elsewhere in the
 package.  The plotting layer performs no boundary extraction or scientific
-filtering.  Missing products cause the corresponding figure to be skipped with
-an explicit message, which makes partial validation runs usable without
-inventing placeholder values.
+filtering.  Every completed figure is written as a high-resolution PNG, an EPS
+vector graphic requested by common journal workflows, and a PDF vector copy.
+Missing optional validation products are reported explicitly.  The dedicated
+cutoff-degradation products are required when the top-level publication runner
+uses ``--require-publication-products``.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
+from matplotlib.colors import TwoSlopeNorm
 import numpy as np
 import pandas as pd
 
 from study_common import default_output_root, load_config, read_driver, resolve_output_path
 
 
-def save_figure(figure, base: Path) -> None:
-    """Save both review-friendly PNG and vector PDF versions."""
+def save_figure(figure, base: Path) -> list[Path]:
+    """Save one figure in review, journal-vector, and archival formats.
+
+    EPS is intentionally generated directly from Matplotlib rather than by
+    converting a raster.  The resulting lines and text remain vector objects
+    for publication.  PDF is retained because it is convenient for internal
+    review and usually preserves transparency better than PostScript.
+    """
+
     base.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(base.with_suffix(".png"), dpi=220, bbox_inches="tight")
-    figure.savefig(base.with_suffix(".pdf"), bbox_inches="tight")
+    products = [base.with_suffix(suffix) for suffix in (".png", ".eps", ".pdf")]
+    figure.savefig(products[0], dpi=300, bbox_inches="tight")
+    figure.savefig(products[1], format="eps", bbox_inches="tight")
+    figure.savefig(products[2], format="pdf", bbox_inches="tight")
     plt.close(figure)
+    for product in products:
+        print(f"Wrote figure: {product}", flush=True)
+    return products
 
 
 def driver_figure(root: Path, config, output: Path) -> None:
@@ -138,6 +156,125 @@ def dynamics_figure(path: Path, output: Path) -> None:
     save_figure(figure, output / "figure_cutoff_dynamics")
 
 
+def _cell_edges(centers: np.ndarray, fallback_half_width: float) -> np.ndarray:
+    """Convert ordered cell centers to edges for an undistorted pcolormesh."""
+
+    centers = np.asarray(centers, dtype=float)
+    if centers.size == 1:
+        return np.array([centers[0] - fallback_half_width,
+                         centers[0] + fallback_half_width])
+    midpoints = 0.5 * (centers[1:] + centers[:-1])
+    return np.concatenate((
+        [centers[0] - (midpoints[0] - centers[0])],
+        midpoints,
+        [centers[-1] + (centers[-1] - midpoints[-1])],
+    ))
+
+
+def cutoff_degradation_figures(path: Path, output: Path) -> list[Path]:
+    """Plot the central science result: storm-time loss of cutoff shielding.
+
+    ``cutoff_erosion_deg`` is the fitted mean cutoff latitude minus its quiet
+    reference.  Negative values therefore denote an equatorward displacement
+    and reduced geomagnetic shielding.  The heat maps average north and south
+    only after each hemisphere has been reduced independently; the companion
+    line plot retains the hemispheres and reports the largest equatorward
+    displacement at each rigidity.  Both products are calculated exclusively
+    from the archived dynamics table and introduce no new filtering.
+    """
+
+    if not path.exists():
+        print(f"Skipping cutoff-degradation figures; missing {path}", flush=True)
+        return []
+    data = pd.read_csv(path)
+    required = {
+        "epoch_utc", "altitude_km", "rigidity_gv", "hemisphere",
+        "cutoff_erosion_deg",
+    }
+    missing = sorted(required.difference(data.columns))
+    if missing:
+        print(f"Skipping cutoff-degradation figures; missing columns: {missing}",
+              flush=True)
+        return []
+    data["epoch_utc"] = pd.to_datetime(data["epoch_utc"], utc=True)
+    data["cutoff_erosion_deg"] = pd.to_numeric(
+        data["cutoff_erosion_deg"], errors="coerce"
+    )
+    data = data.dropna(subset=["epoch_utc", "altitude_km", "rigidity_gv",
+                               "cutoff_erosion_deg"])
+    if data.empty:
+        print("Skipping cutoff-degradation figures; no finite erosion rows",
+              flush=True)
+        return []
+
+    # Use one symmetric color scale for both altitudes so visual differences
+    # cannot be caused by separate automatic normalization.
+    limit = float(np.nanmax(np.abs(data["cutoff_erosion_deg"].to_numpy())))
+    limit = max(limit, 0.1)
+    altitudes = sorted(data["altitude_km"].unique())
+    figure, axes = plt.subplots(len(altitudes), 1,
+                               figsize=(10.5, 3.5 * len(altitudes)),
+                               sharex=True, squeeze=False)
+    mesh = None
+    for axis, altitude in zip(axes[:, 0], altitudes):
+        subset = data[np.isclose(data.altitude_km, altitude)]
+        # A hemispheric mean is suitable for the global erosion overview.  The
+        # maximum-degradation figure below keeps N/S behavior separate.
+        reduced = subset.groupby(
+            ["rigidity_gv", "epoch_utc"], as_index=False
+        )["cutoff_erosion_deg"].mean()
+        pivot = reduced.pivot(index="rigidity_gv", columns="epoch_utc",
+                              values="cutoff_erosion_deg").sort_index()
+        pivot = pivot.reindex(sorted(pivot.columns), axis=1)
+        x_centers = mdates.date2num(pivot.columns.to_pydatetime())
+        y_centers = pivot.index.to_numpy(dtype=float)
+        x_edges = _cell_edges(x_centers, 1.0 / 48.0)
+        y_edges = _cell_edges(y_centers, 0.025)
+        mesh = axis.pcolormesh(
+            x_edges, y_edges, pivot.to_numpy(dtype=float), shading="flat",
+            cmap="RdBu", norm=TwoSlopeNorm(vmin=-limit, vcenter=0.0, vmax=limit),
+        )
+        axis.set_ylabel("Rigidity [GV]")
+        axis.set_title(f"{altitude:g} km; mean of independently fitted N/S boundaries")
+        axis.grid(False)
+    axes[-1, 0].set_xlabel("UTC")
+    axes[-1, 0].xaxis_date()
+    axes[-1, 0].xaxis.set_major_formatter(mdates.DateFormatter("%m-%d\n%H:%M"))
+    assert mesh is not None
+    colorbar = figure.colorbar(mesh, ax=axes[:, 0].tolist(), pad=0.02)
+    colorbar.set_label(r"$\Delta\Lambda_c$ [deg]; negative = cutoff erosion")
+    figure.suptitle("December 2006 storm-time cutoff degradation", y=0.995)
+    figure.subplots_adjust(right=0.88, hspace=0.28)
+    products = save_figure(figure, output / "figure_cutoff_degradation")
+
+    # Publication summary of the peak quiet-relative equatorward motion.  Zero
+    # is used when a series never moved equatorward, so the ordinate is a
+    # non-negative degradation magnitude rather than a signed displacement.
+    peak = data.assign(
+        degradation_magnitude_deg=np.maximum(
+            0.0, -data["cutoff_erosion_deg"].to_numpy(dtype=float)
+        )
+    ).groupby(
+        ["altitude_km", "hemisphere", "rigidity_gv"], as_index=False
+    )["degradation_magnitude_deg"].max()
+    figure, axis = plt.subplots(figsize=(8.2, 5.0))
+    for (altitude, hemisphere), group in peak.groupby(
+            ["altitude_km", "hemisphere"]):
+        group = group.sort_values("rigidity_gv")
+        linestyle = "-" if str(hemisphere).upper() == "N" else "--"
+        axis.plot(group.rigidity_gv, group.degradation_magnitude_deg,
+                  marker="o", markersize=3, linewidth=1.3,
+                  linestyle=linestyle,
+                  label=f"{altitude:g} km, {hemisphere}")
+    axis.set_xlabel("Rigidity [GV]")
+    axis.set_ylabel(r"Maximum equatorward $-\Delta\Lambda_c$ [deg]")
+    axis.set_title("Peak storm-time cutoff degradation relative to quiet reference")
+    axis.grid(alpha=0.25)
+    axis.legend(ncol=2)
+    products += save_figure(figure, output / "figure_peak_cutoff_degradation")
+    return products
+
+
 def lag_hysteresis_figure(lag_path: Path, hysteresis_path: Path, output: Path) -> None:
     if not lag_path.exists() or not hysteresis_path.exists():
         print("Skipping lag/hysteresis figure; analysis products are incomplete")
@@ -186,6 +323,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-root", type=Path, default=default_output_root() / "figures"
     )
+    parser.add_argument(
+        "--require-publication-products", action="store_true",
+        help="Fail unless both dedicated cutoff-degradation figures are written",
+    )
     return parser.parse_args()
 
 
@@ -198,9 +339,33 @@ def main() -> int:
     driver_figure(root, config, output)
     comparison_figure(comparison / "paired_model_observation.csv", output)
     dynamics_figure(dynamics / "cutoff_dynamics_timeseries.csv", output)
+    publication_products = cutoff_degradation_figures(
+        dynamics / "cutoff_dynamics_timeseries.csv", output
+    )
     lag_hysteresis_figure(dynamics / "lag_correlations.csv",
                           dynamics / "hysteresis_summary.csv", output)
-    print(f"Figure products: {output}")
+    expected = {
+        output / f"{stem}{suffix}"
+        for stem in ("figure_cutoff_degradation", "figure_peak_cutoff_degradation")
+        for suffix in (".png", ".eps")
+    }
+    missing = sorted(str(path) for path in expected if not path.is_file())
+    manifest = {
+        "output_root": str(output),
+        "publication_products": [str(path) for path in publication_products],
+        "required_png_eps": sorted(str(path) for path in expected),
+        "missing_required_products": missing,
+        "passed": not missing,
+    }
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "figure_manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
+    print(f"Figure products: {output}", flush=True)
+    if args.require_publication_products and missing:
+        for path in missing:
+            print(f"ERROR: required publication figure is missing: {path}", flush=True)
+        return 1
     return 0
 
 
