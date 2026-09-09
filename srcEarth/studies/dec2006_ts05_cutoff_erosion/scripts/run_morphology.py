@@ -249,11 +249,11 @@ ZONE_ALTITUDE_PATTERNS = (
     re.compile(r"altitude[_\s-]*km\s*[:=]\s*([0-9eE+\-.]+)", re.IGNORECASE),
 )
 
-# Some AMPS versions label Tecplot zones as ``Shell_0``/``Shell_1`` instead of
-# repeating the physical altitude in the title.  That identity is still
-# explicit and safe: the shell index is defined by SHELL_ALTS_KM input order.
-# We accept only a zero-based index inside the expected-shell list and never
-# split an unlabeled multi-zone file merely by row count or encounter order.
+# Some AMPS products identify the shell in a zone title (``Shell_0``), while
+# the current Mode3D DIRECT_ACCESS writer uses one generic zone and puts the
+# zero-based identity in a ``shell_index`` column on every numerical record.
+# Both contracts are explicit and safe because SHELL_ALTS_KM defines the index
+# ordering.  We never infer a shell merely from row count or encounter order.
 ZONE_SHELL_INDEX_PATTERN = re.compile(
     r"\bshell(?:[_\s-]*(?:index)?[_\s-]*)?(\d+)\b", re.IGNORECASE
 )
@@ -285,10 +285,12 @@ def split_multishell_access(source: Path, expected_altitudes: Sequence[float],
 
     AMPS represents multiple shell altitudes as Tecplot zones in one file.  C9
     and C10 historically consume single-shell files, so the shared runner must
-    split the product without guessing from row order.  An altitude must be
-    present either in a normalized altitude column or in every ZONE header.
-    Missing, unexpected, or ambiguous shells are hard errors; silently assigning
-    half the rows to each altitude could create a plausible but invalid cutoff.
+    split the product without guessing from row order.  Each row must identify
+    its shell through an altitude column, a zero-based ``shell_index`` column,
+    or an altitude/index-bearing ZONE header.  Missing, unexpected, ambiguous,
+    non-integral, or internally contradictory shell identifiers are hard
+    errors; silently assigning half the rows to each altitude could create a
+    plausible but invalid cutoff.
 
     The numerical records are kept verbatim.  This avoids changing binary64
     decimal renderings before the observation runners parse the staged files.
@@ -372,11 +374,45 @@ def split_multishell_access(source: Path, expected_altitudes: Sequence[float],
                 for name in ("alt_km", "altitude_km", "altitude")
                 if name in normalized_variables
             ), None)
+            shell_column_index = (
+                normalized_variables.index("shell_index")
+                if "shell_index" in normalized_variables else None
+            )
+            column_shell_altitude: Optional[float] = None
+            if shell_column_index is not None:
+                # C++ emits an integer, but parse the decimal representation
+                # defensively and reject values such as 0.5 rather than letting
+                # int() silently truncate them to a valid-looking shell.
+                shell_value = values[shell_column_index]
+                if not math.isfinite(shell_value):
+                    raise ValueError(
+                        f"{source}:{line_number} shell_index is not finite"
+                    )
+                shell_index = int(round(shell_value))
+                if (abs(shell_value - shell_index) > 1.0e-9
+                        or not 0 <= shell_index < len(expected)):
+                    raise ValueError(
+                        f"{source}:{line_number} shell_index={shell_value:g} is "
+                        f"not a valid zero-based index for {len(expected)} shell(s)"
+                    )
+                column_shell_altitude = expected[shell_index]
             if altitude_index is not None:
                 row_altitude = canonical_altitude(values[altitude_index], line_number)
                 if current_altitude is not None and row_altitude != current_altitude:
                     raise ValueError(
                         f"{source}:{line_number} altitude column disagrees with ZONE"
+                    )
+                if (column_shell_altitude is not None
+                        and row_altitude != column_shell_altitude):
+                    raise ValueError(
+                        f"{source}:{line_number} altitude column disagrees with "
+                        "shell_index column"
+                    )
+            elif column_shell_altitude is not None:
+                row_altitude = column_shell_altitude
+                if current_altitude is not None and row_altitude != current_altitude:
+                    raise ValueError(
+                        f"{source}:{line_number} shell_index column disagrees with ZONE"
                     )
             elif current_altitude is not None:
                 row_altitude = current_altitude
@@ -386,8 +422,8 @@ def split_multishell_access(source: Path, expected_altitudes: Sequence[float],
                 row_altitude = expected[0]
             else:
                 raise ValueError(
-                    f"{source}:{line_number} has neither altitude column nor an "
-                    "altitude-bearing ZONE declaration"
+                    f"{source}:{line_number} has no altitude column, shell_index "
+                    "column, or altitude/index-bearing ZONE declaration"
                 )
             grouped[row_altitude].append(raw.rstrip("\n"))
 
@@ -645,8 +681,14 @@ def main() -> int:
 
     def spec_is_complete(spec: Tuple[str, List[datetime], List[float], Path]) -> bool:
         _tag, spec_epochs, _spec_altitudes, case_dir = spec
-        return all(raw_access_path(case_dir, spec_epochs, epoch).exists()
-                   for epoch in spec_epochs)
+        # Existence alone is insufficient after an interrupted MPI write: an
+        # empty placeholder must trigger a fresh batch rather than be accepted
+        # by --keep and fail later in the splitter. Full schema validation is
+        # intentionally deferred to postprocessing so a parser-only fix can be
+        # applied to preserved nonempty products without repeating AMPS.
+        products = [raw_access_path(case_dir, spec_epochs, epoch)
+                    for epoch in spec_epochs]
+        return all(path.is_file() and path.stat().st_size > 0 for path in products)
 
     if args.keep and not (args.prepare_only or args.skip_run):
         n_launches = sum(not spec_is_complete(spec) for spec in run_specs)

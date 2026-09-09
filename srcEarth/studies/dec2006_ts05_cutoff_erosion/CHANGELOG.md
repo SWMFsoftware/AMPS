@@ -2,6 +2,24 @@
 
 ## 2026-09-08
 
+- Replaced the unnecessary `TwoSlopeNorm` dependency with an exactly
+  equivalent symmetric `Normalize` scale so publication figures run on older
+  system Matplotlib installations.
+- Converted pandas Series to NumPy/native-datetime plot inputs, fixing the
+  old-Matplotlib/new-pandas `value[:, None]` incompatibility, and suppressed the
+  repeated harmless PostScript transparency messages during EPS export.
+- Fixed BATCHED morphology postprocessing for the current Mode3D
+  `fixed_rigidity_access` format, whose generic Tecplot zone identifies each
+  shell through the row-level zero-based `shell_index` column.
+- Added strict validation and cross-checking of column-, altitude-, and
+  zone-based shell identities; malformed or contradictory indices remain hard
+  failures.
+- Added top-level `--keep` recovery so complete deterministic AMPS snapshot
+  batches can be reused after a postprocessing-only failure while all derived
+  tables, validation decisions, and figures are regenerated.
+- Made an empty optional SMOKE hysteresis table a documented figure skip rather
+  than a pipeline exception; required cutoff-degradation PNG/EPS products remain
+  enforced by the figure manifest.
 - Enabled native Mode3D `SNAPSHOT_LIST` for static `SHELLS` domains and restored
   true cross-epoch mesh-topology reuse. `BATCHED` now runs up to 16 epochs and
   both shells per AMPS process, with deterministic epoch-suffixed products.

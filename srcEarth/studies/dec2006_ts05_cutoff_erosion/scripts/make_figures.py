@@ -14,17 +14,44 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
-from matplotlib.colors import TwoSlopeNorm
+from matplotlib.colors import Normalize
 import numpy as np
 import pandas as pd
 
 from study_common import default_output_root, load_config, read_driver, resolve_output_path
+
+
+def _numeric_plot_values(values) -> np.ndarray:
+    """Return a one-dimensional numeric array safe for every Matplotlib used here.
+
+    Older Matplotlib releases normalize plot inputs with ``value[:, None]``.
+    Newer pandas deliberately rejects that multidimensional indexing operation
+    on a Series, producing a failure only when old Matplotlib and new pandas are
+    installed together.  Converting at this single plotting boundary keeps the
+    archived DataFrames unchanged while presenting Matplotlib with its native
+    NumPy input type.
+    """
+
+    return np.asarray(values, dtype=float)
+
+
+def _datetime_plot_values(values) -> list[object]:
+    """Return ordinary Python datetimes instead of a pandas datetime Series."""
+
+    result: list[object] = []
+    for value in values:
+        # pandas.Timestamp provides to_pydatetime(); accepting an already-native
+        # datetime keeps the helper useful if a caller changes CSV parsing later.
+        result.append(value.to_pydatetime() if hasattr(value, "to_pydatetime")
+                      else value)
+    return result
 
 
 def save_figure(figure, base: Path) -> list[Path]:
@@ -39,7 +66,17 @@ def save_figure(figure, base: Path) -> list[Path]:
     base.parent.mkdir(parents=True, exist_ok=True)
     products = [base.with_suffix(suffix) for suffix in (".png", ".eps", ".pdf")]
     figure.savefig(products[0], dpi=300, bbox_inches="tight")
-    figure.savefig(products[1], format="eps", bbox_inches="tight")
+    # Matplotlib's PostScript backend logs once for every transparent artist,
+    # which can flood a batch log with hundreds of identical messages. EPS is
+    # intentionally opaque and the PNG/PDF versions preserve transparency, so
+    # suppress only this known backend warning while the EPS file is written.
+    postscript_log = logging.getLogger("matplotlib.backends.backend_ps")
+    previous_level = postscript_log.level
+    postscript_log.setLevel(logging.ERROR)
+    try:
+        figure.savefig(products[1], format="eps", bbox_inches="tight")
+    finally:
+        postscript_log.setLevel(previous_level)
     figure.savefig(products[2], format="pdf", bbox_inches="tight")
     plt.close(figure)
     for product in products:
@@ -81,15 +118,21 @@ def comparison_figure(path: Path, output: Path) -> None:
     pamela = data[(data.dataset == "PAMELA_TABLE_S1") &
                   data.modeled_boundary_aacgm_deg.notna()].copy()
     for rigidity, group in pamela.groupby("rigidity_gv"):
-        axes[0, 0].plot(group.epoch_utc, group.observed_boundary_aacgm_deg,
+        plot_time = _datetime_plot_values(group.epoch_utc)
+        axes[0, 0].plot(plot_time,
+                        _numeric_plot_values(group.observed_boundary_aacgm_deg),
                         marker="o", linewidth=1, label=f"{rigidity:.3f} GV obs")
-        axes[0, 0].plot(group.epoch_utc, group.modeled_boundary_aacgm_deg,
+        axes[0, 0].plot(plot_time,
+                        _numeric_plot_values(group.modeled_boundary_aacgm_deg),
                         linestyle="--", linewidth=1)
     axes[0, 0].set_title("PAMELA: solid/markers observed, dashed AMPS")
     axes[0, 0].set_ylabel("Cutoff AACGM latitude [deg]")
     axes[0, 0].legend(fontsize=6, ncol=2)
-    axes[1, 0].scatter(pamela.rigidity_gv,
-                       pamela.model_minus_observation_deg, s=12, alpha=0.65)
+    axes[1, 0].scatter(
+        _numeric_plot_values(pamela.rigidity_gv),
+        _numeric_plot_values(pamela.model_minus_observation_deg),
+        s=12, alpha=0.65,
+    )
     axes[1, 0].axhline(0.0, color="black", linewidth=0.8)
     axes[1, 0].set_xlabel("Rigidity [GV]")
     axes[1, 0].set_ylabel("AMPS - observation [deg]")
@@ -98,9 +141,11 @@ def comparison_figure(path: Path, output: Path) -> None:
                 data.modeled_boundary_aacgm_deg.notna()].copy()
     primary = poes[poes.used_for_primary_metrics.astype(str).str.lower().isin(("true", "1"))]
     for channel, group in primary.groupby("channel"):
-        axes[0, 1].scatter(group.observed_boundary_aacgm_deg,
-                           group.modeled_boundary_aacgm_deg, s=12, alpha=0.55,
-                           label=channel)
+        axes[0, 1].scatter(
+            _numeric_plot_values(group.observed_boundary_aacgm_deg),
+            _numeric_plot_values(group.modeled_boundary_aacgm_deg),
+            s=12, alpha=0.55, label=channel,
+        )
     values = pd.concat([primary.observed_boundary_aacgm_deg,
                         primary.modeled_boundary_aacgm_deg]).dropna()
     if not values.empty:
@@ -113,8 +158,11 @@ def comparison_figure(path: Path, output: Path) -> None:
     axes[0, 1].set_ylabel("AMPS AACGM latitude [deg]")
     axes[0, 1].legend()
     for channel, group in poes.groupby("channel"):
-        axes[1, 1].scatter(group.mlt_hour, group.model_minus_observation_deg,
-                           s=10, alpha=0.5, label=channel)
+        axes[1, 1].scatter(
+            _numeric_plot_values(group.mlt_hour),
+            _numeric_plot_values(group.model_minus_observation_deg),
+            s=10, alpha=0.5, label=channel,
+        )
     axes[1, 1].axhline(0.0, color="black", linewidth=0.8)
     axes[1, 1].set_xlabel("MLT [h]")
     axes[1, 1].set_ylabel("AMPS - observation [deg]")
@@ -140,10 +188,16 @@ def dynamics_figure(path: Path, output: Path) -> None:
         if group.empty:
             continue
         label = f"{target:.3f} GV"
-        axes[0].plot(group.epoch_utc, group.mean_latitude_deg, label=label)
-        axes[1].plot(group.epoch_utc, group.amplitude_deg, label=label)
-        axes[2].plot(group.epoch_utc,
-                     group.accessible_area_fraction_in_analyzed_band, label=label)
+        plot_time = _datetime_plot_values(group.epoch_utc)
+        axes[0].plot(plot_time, _numeric_plot_values(group.mean_latitude_deg),
+                     label=label)
+        axes[1].plot(plot_time, _numeric_plot_values(group.amplitude_deg),
+                     label=label)
+        axes[2].plot(
+            plot_time,
+            _numeric_plot_values(group.accessible_area_fraction_in_analyzed_band),
+            label=label,
+        )
     axes[0].set_ylabel(r"$\Lambda_0$ [deg]")
     axes[1].set_ylabel(r"$A_1$ [deg]")
     axes[2].set_ylabel("Accessible fraction")
@@ -230,9 +284,15 @@ def cutoff_degradation_figures(path: Path, output: Path) -> list[Path]:
         y_centers = pivot.index.to_numpy(dtype=float)
         x_edges = _cell_edges(x_centers, 1.0 / 48.0)
         y_edges = _cell_edges(y_centers, 0.025)
+        # The limits are deliberately symmetric about zero, so the standard
+        # Normalize maps zero to the midpoint (0.5) of the diverging colormap
+        # exactly as TwoSlopeNorm(vcenter=0) would.  Normalize is available in
+        # older system Matplotlib releases shipped by long-lived HPC/Linux
+        # distributions, whereas TwoSlopeNorm is not.  This compatibility
+        # change therefore does not alter the scientific color scale.
         mesh = axis.pcolormesh(
             x_edges, y_edges, pivot.to_numpy(dtype=float), shading="flat",
-            cmap="RdBu", norm=TwoSlopeNorm(vmin=-limit, vcenter=0.0, vmax=limit),
+            cmap="RdBu", norm=Normalize(vmin=-limit, vmax=limit),
         )
         axis.set_ylabel("Rigidity [GV]")
         axis.set_title(f"{altitude:g} km; mean of independently fitted N/S boundaries")
@@ -262,7 +322,8 @@ def cutoff_degradation_figures(path: Path, output: Path) -> list[Path]:
             ["altitude_km", "hemisphere"]):
         group = group.sort_values("rigidity_gv")
         linestyle = "-" if str(hemisphere).upper() == "N" else "--"
-        axis.plot(group.rigidity_gv, group.degradation_magnitude_deg,
+        axis.plot(_numeric_plot_values(group.rigidity_gv),
+                  _numeric_plot_values(group.degradation_magnitude_deg),
                   marker="o", markersize=3, linewidth=1.3,
                   linestyle=linestyle,
                   label=f"{altitude:g} km, {hemisphere}")
@@ -276,11 +337,30 @@ def cutoff_degradation_figures(path: Path, output: Path) -> list[Path]:
 
 
 def lag_hysteresis_figure(lag_path: Path, hysteresis_path: Path, output: Path) -> None:
+    """Create the optional response/hysteresis panel when both tables have data.
+
+    A short SMOKE workset can legitimately contain no main/recovery pair that
+    satisfies the configured matched-driver tolerances.  ``analyze_dynamics``
+    records that scientific outcome as an empty CSV.  Treating the empty file
+    as a plotting exception used to abort the entire figure stage *after* the
+    required cutoff-degradation figures had been written.  Empty optional
+    inputs are now an explicit skip; malformed nonempty inputs still raise and
+    therefore cannot be mistaken for a valid scientific product.
+    """
+
     if not lag_path.exists() or not hysteresis_path.exists():
-        print("Skipping lag/hysteresis figure; analysis products are incomplete")
+        print("Skipping lag/hysteresis figure; analysis products are incomplete",
+              flush=True)
+        return
+    if lag_path.stat().st_size == 0 or hysteresis_path.stat().st_size == 0:
+        print("Skipping lag/hysteresis figure; an optional analysis table is empty",
+              flush=True)
         return
     lag = pd.read_csv(lag_path)
     hys = pd.read_csv(hysteresis_path)
+    if lag.empty or hys.empty:
+        print("Skipping lag/hysteresis figure; no matched analysis rows", flush=True)
+        return
     figure, axes = plt.subplots(1, 2, figsize=(11, 4.5))
     target_r = 0.423556372
     selected = lag[(np.isclose(lag.altitude_km, 850.0)) &
@@ -288,7 +368,8 @@ def lag_hysteresis_figure(lag_path: Path, hysteresis_path: Path, output: Path) -
                    (lag.hemisphere == "N") &
                    (lag.driver_variable.isin(["pdyn_npa", "bz_nt", "symh_nt", "w1"]))]
     for variable, group in selected.groupby("driver_variable"):
-        axes[0].plot(group.lag_minutes / 60.0, group.correlation, label=variable)
+        axes[0].plot(_numeric_plot_values(group.lag_minutes) / 60.0,
+                     _numeric_plot_values(group.correlation), label=variable)
     axes[0].axhline(0.0, color="black", linewidth=0.8)
     axes[0].set_xlabel("Lag [h]; positive means cutoff follows driver")
     axes[0].set_ylabel("Correlation")
@@ -297,7 +378,8 @@ def lag_hysteresis_figure(lag_path: Path, hysteresis_path: Path, output: Path) -
 
     strict = hys[hys.match_definition == "STRICT"]
     for hemisphere, group in strict.groupby("hemisphere"):
-        axes[1].plot(group.rigidity_gv, group.median_recovery_minus_main_deg,
+        axes[1].plot(_numeric_plot_values(group.rigidity_gv),
+                     _numeric_plot_values(group.median_recovery_minus_main_deg),
                      marker="o", label=hemisphere)
     axes[1].axhline(0.0, color="black", linewidth=0.8)
     axes[1].set_xlabel("Rigidity [GV]")

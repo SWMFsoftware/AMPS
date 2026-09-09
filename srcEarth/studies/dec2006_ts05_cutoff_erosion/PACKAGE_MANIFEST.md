@@ -63,4 +63,6 @@ command without `--prepare-only` executes the SMOKE calculation. The default
 shell altitudes in one AMPS process. Mode3D allocates the AMR topology once,
 then rebuilds the IGRF+TS05 field and writes a uniquely suffixed access product
 for every epoch. `PER_EPOCH` and `STANDALONE` remain available as compatibility
-and equivalence baselines.
+and equivalence baselines. If every raw product in an interrupted batch already
+exists, add `--keep` to rerun shell splitting, observation reduction, dynamics,
+and figures without repeating that AMPS launch.

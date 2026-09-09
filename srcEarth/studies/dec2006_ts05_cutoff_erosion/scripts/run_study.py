@@ -193,6 +193,12 @@ def parse_args() -> argparse.Namespace:
         help="Override execution.epochs_per_batch for each BATCHED AMPS process",
     )
     parser.add_argument(
+        "--keep", action="store_true",
+        help=("Reuse a morphology AMPS launch only when every precisely named "
+              "raw epoch product for that launch already exists. Postprocessing, "
+              "observation reductions, dynamics, and figures are still rerun."),
+    )
+    parser.add_argument(
         "--independent-observation-runs", action="store_true",
         help=("Run separate C9 and C10 AMPS calculations instead of reducing the "
               "shared 475/850-km morphology products"),
@@ -294,6 +300,11 @@ def main() -> int:
     }
     if args.epochs_per_batch is not None:
         commands["morphology"] += ["--epochs-per-batch", str(args.epochs_per_batch)]
+    if args.keep:
+        # This flag is deliberately limited to the expensive morphology solver.
+        # All lightweight reducers are rerun so a parser or figure fix can be
+        # applied to preserved AMPS output without retaining stale conclusions.
+        commands["morphology"].append("--keep")
     if not args.independent_observation_runs:
         # The morphology runner adds the exact observation midpoints, splits
         # each two-shell Tecplot product strictly by altitude, and stages normal
@@ -350,6 +361,7 @@ def main() -> int:
         # directory-grouping implementation.
         "epochs_per_batch_group": epochs_per_batch,
         "observation_products_reused": not args.independent_observation_runs,
+        "keep_complete_morphology_batches": args.keep,
         "commands": {stage: commands[stage] for stage in stages},
         "return_codes": {},
         "stage_elapsed_seconds": {},

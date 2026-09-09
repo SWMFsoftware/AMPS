@@ -13,12 +13,18 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
+import pandas as pd
+
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from compare_observations import normalize_pamela, normalize_poes
-from make_figures import cutoff_degradation_figures
+from make_figures import (
+    _datetime_plot_values, _numeric_plot_values, cutoff_degradation_figures,
+    lag_hysteresis_figure,
+)
 from run_morphology import load_c10_module, snapshot_suffix, split_multishell_access
 from run_study import execute, independent_validation_remains
 import run_study
@@ -245,6 +251,59 @@ class PipelineTests(unittest.TestCase):
             )
             self.assertEqual(counts, {475.0: 1, 850.0: 1})
 
+    def test_multishell_split_accepts_mode3d_shell_index_column(self):
+        """Current DIRECT_ACCESS uses one generic zone plus shell_index rows.
+
+        This fixture reproduces the schema that exposed the production failure:
+        line four is the first row of ``ZONE T=\"fixed_rigidity_access\"`` and
+        the zone itself contains no altitude.  The row-level shell index is the
+        authoritative, scheduler-independent identity written by Mode3D.
+        """
+
+        c10 = load_c10_module(ROOT)
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            source = work / "combined.dat"
+            source.write_text(
+                'TITLE="fixture"\n'
+                'VARIABLES="shell_index" "lon_deg" "lat_deg" '
+                '"rigidity_gv" "access_state" "allowed" "unresolved"\n'
+                'ZONE T="fixed_rigidity_access" I=4 F=POINT\n'
+                '0 0 40 0.5 1 1 0\n'
+                '1 0 50 0.5 0 0 0\n'
+                '0 15 40 0.5 0 0 0\n'
+                '1 15 50 0.5 1 1 0\n'
+            )
+            destinations = {475.0: work / "475.dat", 850.0: work / "850.dat"}
+            counts = split_multishell_access(
+                source, (475.0, 850.0), destinations, c10
+            )
+            self.assertEqual(counts, {475.0: 2, 850.0: 2})
+            self.assertEqual(
+                [row.access_state for row in
+                 c10.parse_tecplot_shell_access(destinations[850.0])],
+                [0, 1],
+            )
+
+    def test_multishell_split_rejects_invalid_shell_index_column(self):
+        """A malformed row must fail instead of being assigned by position."""
+
+        c10 = load_c10_module(ROOT)
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            source = work / "combined.dat"
+            source.write_text(
+                'VARIABLES="shell_index" "lon_deg" "lat_deg" '
+                '"rigidity_gv" "access_state" "allowed" "unresolved"\n'
+                'ZONE T="fixed_rigidity_access" I=1 F=POINT\n'
+                '0.5 0 40 0.5 1 1 0\n'
+            )
+            destinations = {475.0: work / "475.dat", 850.0: work / "850.dat"}
+            with self.assertRaisesRegex(ValueError, "not a valid zero-based index"):
+                split_multishell_access(
+                    source, (475.0, 850.0), destinations, c10
+                )
+
     def test_publication_degradation_figures_include_png_and_eps(self):
         """The required science visualization must include raster and vector files."""
 
@@ -276,6 +335,48 @@ class PipelineTests(unittest.TestCase):
                          "figure_peak_cutoff_degradation"):
                 self.assertTrue((work / "figures" / f"{stem}.png").is_file())
                 self.assertTrue((work / "figures" / f"{stem}.eps").is_file())
+
+    def test_figure_module_avoids_twoslope_norm_version_dependency(self):
+        """System Matplotlib on production hosts may predate TwoSlopeNorm."""
+
+        source = (ROOT / "scripts" / "make_figures.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("from matplotlib.colors import TwoSlopeNorm", source)
+        self.assertNotIn("norm=TwoSlopeNorm(", source)
+        self.assertIn("Normalize(vmin=-limit, vmax=limit)", source)
+
+    def test_figure_inputs_are_detached_from_pandas_series(self):
+        """Old Matplotlib must receive arrays, never pandas Series objects."""
+
+        numeric = pd.Series([1.0, 2.0])
+        epochs = pd.to_datetime(pd.Series([
+            "2006-12-14T00:00:00Z", "2006-12-15T00:00:00Z",
+        ]), utc=True)
+        self.assertIsInstance(_numeric_plot_values(numeric), np.ndarray)
+        self.assertEqual(_numeric_plot_values(numeric).ndim, 1)
+        converted_epochs = _datetime_plot_values(epochs)
+        self.assertIsInstance(converted_epochs, list)
+        self.assertFalse(any(isinstance(value, pd.Timestamp)
+                             for value in converted_epochs))
+
+    def test_optional_hysteresis_figure_accepts_empty_smoke_product(self):
+        """No matched SMOKE pairs is a valid result, not a plotting failure."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            lag = work / "lag.csv"
+            hysteresis = work / "hysteresis.csv"
+            lag.write_text(
+                "altitude_km,rigidity_gv,hemisphere,driver_variable,"
+                "lag_minutes,correlation\n",
+                encoding="utf-8",
+            )
+            hysteresis.write_text("", encoding="utf-8")
+            lag_hysteresis_figure(lag, hysteresis, work / "figures")
+            self.assertFalse(
+                (work / "figures" / "figure_lag_hysteresis.png").exists()
+            )
 
     def test_sensitivity_driver_generation_preserves_cadence(self):
         with tempfile.TemporaryDirectory() as temporary:
