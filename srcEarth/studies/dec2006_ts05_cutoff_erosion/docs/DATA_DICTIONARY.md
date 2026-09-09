@@ -58,6 +58,23 @@ Each row is one epoch, altitude, rigidity, hemisphere, and MLT sector.  The
 boundary is valid only when the resolved transmission brackets 0.5 and is at
 least one degree inside the retained AACGM latitude range.
 
+## Per-epoch `cutoff_rigidity_map.csv` and map manifest
+
+Each map row is one GEO longitude/latitude cell on one altitude shell and
+epoch. `cutoff_rigidity_r50_gv` is the 0.5 crossing of an equal-weight isotonic
+fit to the resolved exact-rigidity access states. It is populated only for
+`cutoff_status=BRACKETED`. `BELOW_RANGE` and `ABOVE_RANGE` are one-sided
+censoring classifications; `UNBRACKETED` identifies a mixed access sequence
+whose fitted endpoints do not bracket 0.5; `INCOMPLETE` identifies missing,
+duplicate, unexpected, or insufficient resolved samples. The lower/upper
+bracket, bracket span, resolved fraction, transition count, and forbidden-
+after-allowed nonmonotonic count quantify map reliability. Unresolved state 2
+is excluded, never recoded.
+
+`morphology/cutoff_rigidity_map_manifest.csv` has one row per shell and epoch,
+gives the relative source path and sampled rigidity limits, and closes the
+counts of all five map statuses.
+
 ## `morphology_harmonics.csv`
 
 `mean_latitude_deg`, `amplitude_deg`, and `phase_mlt_hour` describe the first
@@ -104,6 +121,27 @@ linearly interpolated first crossings of one-half and `1/e` of the post-main-
 phase peak degradation. `status` is `AVAILABLE` only with at least six recovery
 epochs and both crossings; otherwise it is `DIAGNOSTIC_ONLY`.
 
+## `cutoff_map_event_change.csv`
+
+One row per shell/GEO cell with a usable precompression quiet reference and at
+least one event decrease estimate. The quiet value is the median of BRACKETED
+R50 values before the configured compression-search start. The table reports
+the minimum event cutoff (or upper bound), maximum quiet-relative decrease,
+the epoch and AACGM/MLT coordinates of that maximum, and the exact/censored
+event counts. `maximum_decrease_is_lower_bound=true` means the event R50 fell
+below the sampled floor, so the reported positive decrease is conservative.
+
+## `cutoff_map_change_timeseries.csv`
+
+One row per shell and epoch. `area_weighted_mean_cutoff_change_gv` uses only
+exact BRACKETED pairs with spherical `cos(latitude)` weights. Median, 90th-
+percentile, maximum, and threshold-area decrease statistics additionally
+retain conservative lower bounds from event `BELOW_RANGE` cells. Exact and
+censored cell counts and the map-coverage fraction prevent a large decrease
+from being interpreted without its spatial support. The companion
+`cutoff_map_change_summary.json` records the largest decrease location for each
+shell and the precise sign/censoring convention.
+
 ## `lag_correlations.csv`
 
 Contains every predeclared driver, lag, altitude, rigidity, and hemisphere.
@@ -132,3 +170,30 @@ The only allowed states are `AVAILABLE`, `DIAGNOSTIC_ONLY`, and
 `NOT_AVAILABLE`. A SMOKE archive is expected to contain a mixture of these
 states; sparse temporal diagnostics are never silently promoted to scientific
 inference.
+
+## Dedicated global-shell products
+
+`global_maps/postprocessing/canonical_maps/cutoff_rigidity_map_manifest.csv`
+indexes one complete physical spherical map for every epoch and altitude. Pole
+longitudes emitted by the rectangular sampling grid are collapsed to one cell
+at each pole. Every canonical map retains the original R50 value and status,
+the number of collapsed coordinate records, a pole-status consistency flag,
+and the cutoff spread among coincident pole records.
+
+`global_map_quality_summary.csv` records expected and actual cell counts, grid
+closure, fractions in every cutoff status, and pole diagnostics. A missing or
+unexpected coordinate makes the postprocessing stage fail.
+
+`global_cutoff_event_change.csv` and
+`global_cutoff_change_timeseries.csv` use the same sign and censoring
+conventions as `cutoff_map_event_change.csv` and
+`cutoff_map_change_timeseries.csv`, but their source is the complete physical
+shell rather than the high-latitude observation-facing grid.
+
+The associated global-map figures use a cyclic filled longitude/latitude
+field. Plotting converts 0--360-degree GEO longitude to 180 W--180 E and
+duplicates only the date-line display column. Canonical pole records remain
+single physical cells in every CSV; their value is expanded across longitude
+only while drawing. Gray regions identify masked non-numerical cutoff states,
+not zero rigidity. Continental outlines are read from the AMPS source-tree
+`earth-continental-map.dat` file and do not enter any numerical reduction.

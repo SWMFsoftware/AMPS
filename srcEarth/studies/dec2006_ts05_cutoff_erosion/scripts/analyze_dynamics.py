@@ -399,6 +399,225 @@ def recovery_products(time_series: Sequence[Mapping[str, object]],
     return output
 
 
+def cutoff_map_change_products(
+    morphology_root: Path,
+    quiet_limit: datetime,
+    event_start: datetime,
+    decrease_threshold_gv: float = 0.05,
+) -> Tuple[List[Dict[str, object]], List[Dict[str, object]], Dict[str, object]]:
+    """Reduce per-epoch R50 maps into event-change maps and time series.
+
+    Two passes keep memory bounded for FULL. The first pass constructs an exact
+    geographic-cell quiet median from precompression BRACKETED values. The
+    second pass calculates quiet-relative changes and retains only one spatial
+    maximum per cell plus one area-weighted summary per shell and epoch. Censored
+    and unresolved map cells remain in the individual map files and never enter
+    numerical change estimates.
+    """
+
+    manifest_path = morphology_root / "cutoff_rigidity_map_manifest.csv"
+    if not manifest_path.is_file() or manifest_path.stat().st_size == 0:
+        return [], [], {
+            "status": "NOT_AVAILABLE", "reason": f"missing {manifest_path}",
+            "n_maps": 0,
+        }
+    manifest = read_csv(manifest_path)
+    quiet_values: Dict[Tuple[float, float, float], List[float]] = defaultdict(list)
+
+    def map_rows(item: Mapping[str, str]) -> List[Dict[str, str]]:
+        path = morphology_root / item["map_path"]
+        if not path.is_file():
+            raise ValueError(f"cutoff-map manifest references missing file: {path}")
+        return read_csv(path)
+
+    for item in manifest:
+        epoch = parse_utc(item["epoch_utc"])
+        if epoch >= quiet_limit:
+            continue
+        altitude = float(item["altitude_km"])
+        for row in map_rows(item):
+            cutoff = finite_float(row.get("cutoff_rigidity_r50_gv"))
+            if row.get("cutoff_status") != "BRACKETED" or cutoff is None:
+                continue
+            key = (altitude, float(row["longitude_geo_deg"]),
+                   float(row["latitude_geo_deg"]))
+            quiet_values[key].append(cutoff)
+    quiet_reference = {
+        key: statistics.median(values) for key, values in quiet_values.items()
+        if values
+    }
+
+    extrema: Dict[Tuple[float, float, float], Dict[str, object]] = {}
+    evolution: List[Dict[str, object]] = []
+    for item in sorted(manifest, key=lambda row: (
+            parse_utc(row["epoch_utc"]), float(row["altitude_km"]))):
+        epoch = parse_utc(item["epoch_utc"])
+        altitude = float(item["altitude_km"])
+        exact_changes: List[float] = []
+        conservative_decreases: List[float] = []
+        exact_weights: List[float] = []
+        conservative_weights: List[float] = []
+        locations: List[Tuple[float, bool, Mapping[str, str]]] = []
+        n_censored_lower_bounds = 0
+        for row in map_rows(item):
+            cutoff = finite_float(row.get("cutoff_rigidity_r50_gv"))
+            key = (altitude, float(row["longitude_geo_deg"]),
+                   float(row["latitude_geo_deg"]))
+            reference = quiet_reference.get(key)
+            if reference is None:
+                continue
+            status = row.get("cutoff_status")
+            is_lower_bound = False
+            if status == "BRACKETED" and cutoff is not None:
+                current_for_decrease = cutoff
+            elif status == "BELOW_RANGE":
+                # R50 is below the sampled floor. Replacing it by the floor
+                # yields a conservative *lower bound* on the true decrease; it
+                # must not enter exact means or recovery fits.
+                current_for_decrease = float(item["sampled_rigidity_min_gv"])
+                is_lower_bound = True
+                n_censored_lower_bounds += 1
+            else:
+                continue
+            change = current_for_decrease - reference
+            decrease = max(0.0, -change)
+            weight = max(0.0, math.cos(math.radians(float(row["latitude_geo_deg"]))))
+            if not is_lower_bound:
+                exact_changes.append(change)
+                exact_weights.append(weight)
+            conservative_decreases.append(decrease)
+            conservative_weights.append(weight)
+            locations.append((decrease, is_lower_bound, row))
+            if epoch >= event_start:
+                record = extrema.setdefault(key, {
+                    "altitude_km": altitude,
+                    "longitude_geo_deg": key[1],
+                    "latitude_geo_deg": key[2],
+                    "quiet_reference_cutoff_gv": reference,
+                    "n_event_resolved_epochs": 0,
+                    "n_event_censored_lower_bounds": 0,
+                    "sum_event_change_gv": 0.0,
+                    "minimum_event_cutoff_gv_or_upper_bound": current_for_decrease,
+                    "maximum_cutoff_decrease_gv": decrease,
+                    "maximum_decrease_is_lower_bound": is_lower_bound,
+                    "epoch_of_maximum_decrease_utc": format_utc(epoch),
+                    "aacgm_latitude_at_maximum_deg": finite_float(
+                        row.get("aacgm_latitude_deg")
+                    ),
+                    "mlt_at_maximum_hour": finite_float(row.get("mlt_hour")),
+                })
+                if is_lower_bound:
+                    record["n_event_censored_lower_bounds"] = int(
+                        record["n_event_censored_lower_bounds"]
+                    ) + 1
+                else:
+                    record["n_event_resolved_epochs"] = int(
+                        record["n_event_resolved_epochs"]
+                    ) + 1
+                    record["sum_event_change_gv"] = float(
+                        record["sum_event_change_gv"]
+                    ) + change
+                record["minimum_event_cutoff_gv_or_upper_bound"] = min(
+                    float(record["minimum_event_cutoff_gv_or_upper_bound"]),
+                    current_for_decrease,
+                )
+                if decrease > float(record["maximum_cutoff_decrease_gv"]):
+                    record.update({
+                        "maximum_cutoff_decrease_gv": decrease,
+                        "maximum_decrease_is_lower_bound": is_lower_bound,
+                        "epoch_of_maximum_decrease_utc": format_utc(epoch),
+                        "aacgm_latitude_at_maximum_deg": finite_float(
+                            row.get("aacgm_latitude_deg")
+                        ),
+                        "mlt_at_maximum_hour": finite_float(row.get("mlt_hour")),
+                    })
+        if conservative_decreases:
+            order = sorted(conservative_decreases)
+            peak, peak_is_lower_bound, peak_row = max(
+                locations, key=lambda pair: pair[0]
+            )
+            exact_weight_sum = sum(exact_weights)
+            conservative_weight_sum = sum(conservative_weights)
+            threshold_fraction = (
+                sum(weight for decrease, weight in
+                    zip(conservative_decreases, conservative_weights)
+                    if decrease >= decrease_threshold_gv) / conservative_weight_sum
+                if conservative_weight_sum > 0 else None
+            )
+            # Retain the historical 0.05-GV field for the validation-study
+            # figures while adding a generic, explicitly labeled threshold for
+            # broader global maps. This is backward compatible with archived
+            # tables and prevents a caller-specific threshold from being hidden
+            # in a column name.
+            historical_fraction = (
+                sum(weight for decrease, weight in
+                    zip(conservative_decreases, conservative_weights)
+                    if decrease >= 0.05) / conservative_weight_sum
+                if conservative_weight_sum > 0 else None
+            )
+            evolution.append({
+                "epoch_utc": format_utc(epoch), "altitude_km": altitude,
+                "n_cells_with_exact_change": len(exact_changes),
+                "n_cells_with_censored_decrease_lower_bound": n_censored_lower_bounds,
+                "n_cells_with_quiet_reference": len(conservative_decreases),
+                "fraction_of_map_with_quiet_reference": (
+                    len(conservative_decreases) /
+                    max(1, int(float(item["n_spatial_cells"])))
+                ),
+                "area_weighted_mean_cutoff_change_gv": (
+                    sum(value * weight for value, weight in
+                        zip(exact_changes, exact_weights)) /
+                    exact_weight_sum if exact_weight_sum > 0 else None
+                ),
+                "median_cutoff_decrease_gv": statistics.median(
+                    conservative_decreases
+                ),
+                "p90_cutoff_decrease_gv": quantile(order, 0.90),
+                "maximum_cutoff_decrease_gv": peak,
+                "maximum_decrease_is_lower_bound": peak_is_lower_bound,
+                "decrease_statistics_include_censored_lower_bounds": True,
+                "maximum_decrease_longitude_geo_deg": float(
+                    peak_row["longitude_geo_deg"]
+                ),
+                "maximum_decrease_latitude_geo_deg": float(
+                    peak_row["latitude_geo_deg"]
+                ),
+                "decrease_threshold_gv": decrease_threshold_gv,
+                "area_fraction_decrease_ge_threshold": threshold_fraction,
+                "area_fraction_decrease_ge_0p05_gv": historical_fraction,
+            })
+
+    spatial: List[Dict[str, object]] = []
+    for key, record in sorted(extrema.items()):
+        count = int(record.pop("n_event_resolved_epochs"))
+        total = float(record.pop("sum_event_change_gv"))
+        record["n_event_resolved_epochs"] = count
+        record["mean_event_cutoff_change_gv"] = total / count if count else None
+        spatial.append(record)
+    largest_by_shell = []
+    for altitude in sorted({float(row["altitude_km"]) for row in spatial}):
+        shell = [row for row in spatial if float(row["altitude_km"]) == altitude]
+        if shell:
+            largest_by_shell.append(max(
+                shell, key=lambda row: float(row["maximum_cutoff_decrease_gv"])
+            ))
+    summary = {
+        "status": "AVAILABLE" if spatial else "NOT_AVAILABLE",
+        "n_maps": len(manifest), "n_quiet_reference_cells": len(quiet_reference),
+        "n_event_change_cells": len(spatial),
+        "quiet_reference_end_utc": format_utc(quiet_limit),
+        "event_change_start_utc": format_utc(event_start),
+        "spatial_extent_threshold_gv": decrease_threshold_gv,
+        "largest_decrease_by_shell": largest_by_shell,
+        "interpretation": (
+            "Positive maximum_cutoff_decrease_gv means reduced shielding. "
+            "Quiet references are BRACKETED medians; event BELOW_RANGE values "
+            "contribute conservative lower bounds and are explicitly flagged."
+        ),
+    }
+    return spatial, evolution, summary
+
+
 def lag_products(harmonics: Sequence[Mapping[str, object]], driver: Sequence[DriverRow],
                  config: Mapping[str, object]) -> List[Dict[str, object]]:
     """Compute driver/mean-cutoff correlations on the configured lag grid."""
@@ -506,6 +725,7 @@ def analysis_availability_products(
     altitude_response: Sequence[Mapping[str, object]],
     hysteresis: Sequence[Mapping[str, object]],
     recovery: Sequence[Mapping[str, object]],
+    cutoff_map_changes: Sequence[Mapping[str, object]],
     study_output_root: Path,
 ) -> List[Dict[str, object]]:
     """Describe exactly which physical interpretations the products support.
@@ -538,6 +758,12 @@ def analysis_availability_products(
         }
 
     return [
+        row(
+            "spatial_cutoff_rigidity_maps",
+            "AVAILABLE" if cutoff_map_changes else "NOT_AVAILABLE",
+            f"{len(cutoff_map_changes)} event-change cells with bracketed quiet references",
+            "Per-epoch R50 maps and the location/magnitude of maximum storm-time decrease.",
+        ),
         row(
             "rigidity_dependence", "AVAILABLE" if len(rigidities) >= 2 else "NOT_AVAILABLE",
             f"{len(rigidities)} rigidities",
@@ -720,6 +946,13 @@ def main() -> int:
     altitude_response = altitude_response_products(time_series)
     extrema = storm_extrema_products(time_series)
     recovery = recovery_products(time_series, main_phase)
+    cutoff_map_changes, cutoff_map_evolution, cutoff_map_summary = (
+        cutoff_map_change_products(
+            morphology_root,
+            parse_utc(config["event"]["compression_search_start_utc"]),  # type: ignore[index]
+            compression,
+        )
+    )
     lags = lag_products(harmonics, driver, config)
     best_lags = best_lag_products(lags)
     pairs, hysteresis = hysteresis_products(
@@ -728,7 +961,8 @@ def main() -> int:
     output = resolve_output_path(args.output_root)
     output.mkdir(parents=True, exist_ok=True)
     availability = analysis_availability_products(
-        rows, time_series, altitude_response, hysteresis, recovery, output.parent
+        rows, time_series, altitude_response, hysteresis, recovery,
+        cutoff_map_changes, output.parent
     )
     write_csv(output / "morphology_harmonics.csv", harmonics)
     write_csv(output / "cutoff_dynamics_timeseries.csv", time_series)
@@ -736,6 +970,11 @@ def main() -> int:
     write_csv(output / "altitude_response.csv", altitude_response)
     write_csv(output / "storm_extrema_summary.csv", extrema)
     write_csv(output / "recovery_timescales.csv", recovery)
+    write_csv(output / "cutoff_map_event_change.csv", cutoff_map_changes)
+    write_csv(output / "cutoff_map_change_timeseries.csv", cutoff_map_evolution)
+    (output / "cutoff_map_change_summary.json").write_text(
+        json.dumps(cutoff_map_summary, indent=2) + "\n", encoding="utf-8"
+    )
     write_csv(output / "lag_correlations.csv", lags)
     write_csv(output / "best_lag_summary.csv", best_lags)
     write_csv(output / "hysteresis_pairs.csv", pairs)
@@ -764,6 +1003,8 @@ def main() -> int:
         "n_altitude_response_rows": len(altitude_response),
         "n_storm_extrema_rows": len(extrema),
         "n_recovery_rows": len(recovery),
+        "n_cutoff_map_event_change_cells": len(cutoff_map_changes),
+        "n_cutoff_map_change_timeseries_rows": len(cutoff_map_evolution),
         "n_lag_rows": len(lags), "n_hysteresis_pairs": len(pairs),
         "n_best_lag_rows": len(best_lags),
         "n_hysteresis_summary_rows": len(hysteresis),

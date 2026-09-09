@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Dict, List
 
 from study_common import load_config, read_driver, sha256
+from run_global_cutoff_maps import (
+    apply_profile_override, deep_merge, validate_effective_config,
+    workload_estimate,
+)
 
 
 def count_csv(path: Path) -> int:
@@ -174,6 +178,38 @@ def main() -> int:
         print("PASS native Mode3D SNAPSHOT_LIST+SHELLS mesh-reuse contract")
     except Exception as exc:
         problems.append(str(exc))
+
+    # The global map file is intentionally a small overlay, not a second copy
+    # of the event configuration. Validate the merged configuration here so a
+    # narrowed latitude band or inadequate rigidity bracket cannot reach a
+    # multi-hour production launch.
+    try:
+        overlay = json.loads(
+            (root / "config" / "global_cutoff_maps.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        merged = deep_merge(json.loads(json.dumps(config)), overlay)
+        for profile in ("SMOKE", "ROUTINE", "FULL"):
+            effective = apply_profile_override(
+                json.loads(json.dumps(merged)), profile
+            )
+            validate_effective_config(effective)
+            if int(effective["execution"]["epochs_per_batch"]) < 2:
+                raise ValueError(
+                    f"global-map {profile} epochs_per_batch must be at least two"
+                )
+        smoke_work = workload_estimate(
+            apply_profile_override(json.loads(json.dumps(merged)), "SMOKE"),
+            "SMOKE",
+        )
+        if smoke_work["tasks_total"] != 15504:
+            raise ValueError(
+                f"global-map SMOKE workload drifted to {smoke_work['tasks_total']} tasks"
+            )
+        print("PASS global cutoff-map profile grids and mesh-reuse configuration")
+    except Exception as exc:
+        problems.append(f"global cutoff-map configuration: {exc}")
 
     # Exercise the original validators as a defense against a study-level check
     # accidentally becoming less strict than C9 or C10.

@@ -62,6 +62,9 @@ def stage_output_problem(stage: str, output: Path,
     if stage == "morphology":
         result_path = output / "morphology" / "morphology_result.json"
         boundary_path = output / "morphology" / "morphology_boundaries.csv"
+        map_manifest_path = (
+            output / "morphology" / "cutoff_rigidity_map_manifest.csv"
+        )
         if not result_path.is_file():
             return f"missing morphology status: {result_path}"
         try:
@@ -72,6 +75,8 @@ def stage_output_problem(stage: str, output: Path,
             return f"morphology_result.json reports failure: {result.get('failures', [])}"
         if not boundary_path.is_file() or boundary_path.stat().st_size == 0:
             return f"missing or empty morphology boundary table: {boundary_path}"
+        if not map_manifest_path.is_file() or map_manifest_path.stat().st_size == 0:
+            return f"missing or empty cutoff-rigidity map manifest: {map_manifest_path}"
         if shared_observations:
             staged_path = output / "morphology" / "staged_observation_products.json"
             try:
@@ -84,6 +89,7 @@ def stage_output_problem(stage: str, output: Path,
         required = (
             "cutoff_dynamics_timeseries.csv", "boundary_cell_dynamics.csv",
             "altitude_response.csv", "storm_extrema_summary.csv",
+            "cutoff_map_change_summary.json",
             "analysis_availability.json", "dynamics_result.json",
         )
         missing = [
@@ -95,6 +101,18 @@ def stage_output_problem(stage: str, output: Path,
             return "missing or empty enhanced dynamics products: " + ", ".join(
                 map(str, missing)
             )
+        # Empty change CSVs are a valid censored outcome when no cell has both
+        # a bracketed quiet reference and a usable event estimate. The summary
+        # JSON above remains nonempty and records NOT_AVAILABLE; the CSV files
+        # must still exist so the outcome is explicit rather than accidental.
+        absent = [
+            output / "dynamics" / name for name in (
+                "cutoff_map_event_change.csv",
+                "cutoff_map_change_timeseries.csv",
+            ) if not (output / "dynamics" / name).is_file()
+        ]
+        if absent:
+            return "missing cutoff-map change tables: " + ", ".join(map(str, absent))
     elif stage == "figures":
         missing = [
             output / "figures" / f"{stem}{suffix}"
@@ -102,12 +120,21 @@ def stage_output_problem(stage: str, output: Path,
                 "figure_cutoff_degradation", "figure_peak_cutoff_degradation",
                 "figure_mlt_cutoff_evolution", "figure_altitude_response",
                 "figure_accessible_area",
+                "figure_maximum_cutoff_decrease_map",
+                "figure_cutoff_decrease_evolution",
             )
             for suffix in (".png", ".eps")
             if not (output / "figures" / f"{stem}{suffix}").is_file()
         ]
         if missing:
             return "missing publication figures: " + ", ".join(map(str, missing))
+        manifest_path = output / "figures" / "figure_manifest.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return f"invalid figure manifest {manifest_path}: {exc}"
+        if not manifest.get("epoch_map_contract_passed", False):
+            return "per-shell/per-epoch cutoff-map figure coverage is incomplete"
     return None
 
 
@@ -309,6 +336,7 @@ def main() -> int:
             python, str(root / "scripts" / "make_figures.py"),
             "--comparison-root", str(output / "comparison"),
             "--dynamics-root", str(output / "dynamics"),
+            "--morphology-root", str(output / "morphology"),
             "--output-root", str(output / "figures"),
             "--require-publication-products",
         ],

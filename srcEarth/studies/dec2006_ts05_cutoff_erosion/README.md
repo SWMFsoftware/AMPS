@@ -45,6 +45,7 @@ changing the scientific definitions after inspecting them.
 | Path | Purpose |
 |---|---|
 | `config/study.json` | Frozen event, model, execution, observation-operator, and statistical controls |
+| `config/global_cutoff_maps.json` | Full-sphere grid, broad rigidity bracket, and global-map controls applied as an overlay |
 | `inputs/AMPS_PARAM_DEC2006_475km.in` | Parser-compatible Mode3D/direct-access input for the PAMELA-altitude morphology shell |
 | `inputs/AMPS_PARAM_DEC2006_850km.in` | Parser-compatible Mode3D/direct-access input for the POES/MetOp-altitude morphology shell |
 | `inputs/AMPS_PARAM_DEC2006_multishell.in` | Shared 475/850-km, single-epoch production input |
@@ -55,6 +56,9 @@ changing the scientific definitions after inspecting them.
 | `vendor/C9` | Validated PAMELA runner, reference extractor, templates, and documentation |
 | `vendor/C10` | Validated NOAA downloader, boundary builder, runner, tests, and documentation |
 | `scripts/run_study.py` | Top-level staged execution |
+| `scripts/run_global_cutoff_maps.py` | Dedicated spacecraft-independent global-shell calculation, reduction, and figure workflow |
+| `scripts/postprocess_global_cutoff_maps.py` | Full-grid validation, pole canonicalization, and quiet-relative cutoff change |
+| `scripts/make_global_cutoff_map_figures.py` | Per-epoch global maps and publication erosion figures |
 | `scripts/run_morphology.py` | 475/850-km common-grid AMPS execution and ACCESS_T50 extraction |
 | `scripts/verify_mesh_reuse.py` | Exact-state and derived-boundary equivalence test against standalone execution |
 | `scripts/compare_observations.py` | Normalized PAMELA plus POES/MetOp paired comparison tables |
@@ -67,6 +71,7 @@ changing the scientific definitions after inspecting them.
 | `docs/REFERENCES.bib` | Bibliography used by the manuscript study section |
 | `PACKAGE_MANIFEST.md` | Git location, shared output convention, and packaged-file inventory |
 | `CHANGELOG.md` | Versioned implementation changes |
+| `GLOBAL_CUTOFF_MAPS.md` | Global-map physics, execution, restart, quality-control, and output contract |
 | `tests` | Dependency-light unit and integration tests that do not require AMPS |
 
 ## Scientific configuration
@@ -96,6 +101,27 @@ plus intermediate points from 0.15 to 1.25 GV.  It is evaluated on 475- and
 over 35--85 degrees absolute geodetic latitude.  The primary boundary is the
 weighted-isotonic resolved-access crossing at transmission 0.5 in eight MLT
 sectors and both hemispheres.
+
+### Independent global-shell product
+
+The observation-facing morphology grid is not used as a substitute for a
+complete spherical cutoff map. `scripts/run_global_cutoff_maps.py` provides a
+separate scientific workflow covering -90--90 degrees GEO latitude, all
+longitudes, both 475/850-km shells, and 0.025--20 GV. It never adds spacecraft
+observation epochs or applies C9/C10 operators. Native BATCHED mesh reuse is
+mandatory and verified, while the magnetic field is still refreshed at every
+epoch. SMOKE uses a complete but deliberately coarse 30-degree-by-10-degree
+grid, 17 rigidities, and two epochs (15,504 trajectories total); ROUTINE/FULL
+retain the 10-degree-by-2-degree, 53-rigidity scientific grid. The runner
+reports the estimated task volume before AMPS begins. See
+`GLOBAL_CUTOFF_MAPS.md` for commands and the full data contract.
+
+Global cutoff figures are rendered as continuous cyclic longitude/latitude
+fields with the AMPS continental outline and geographic graticule. They are not
+point-marker plots. Invalid numerical cells remain masked gray, while
+below-/above-range censored cells are shown at the corresponding color-scale
+edge. This visualization is entirely postprocessing and can be regenerated
+without launching AMPS.
 
 ## Mesh-reuse execution architecture
 
@@ -423,8 +449,9 @@ python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stag
 python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stage compare --stage dynamics --stage figures
 ```
 
-To apply a postprocessing update to a completed morphology calculation without
-launching AMPS again, run only the last two stages:
+After the new cutoff-map products have been generated once, apply later
+postprocessing updates without launching AMPS by running only the last two
+stages:
 
 ```bash
 python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py \
@@ -437,6 +464,19 @@ figure manifest. Inspect `dynamics/analysis_availability.csv` before using a
 plot or statistic in a manuscript; for SMOKE, spatial panels are meaningful
 pipeline diagnostics but temporal lag, hysteresis, and recovery conclusions
 remain explicitly non-inferential.
+
+To add cutoff-rigidity maps to an older completed run, reprocess the preserved
+raw access files once with `--keep`:
+
+```bash
+python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py \
+  --profile SMOKE --stage morphology --stage dynamics --stage figures \
+  --mesh-layout BATCHED --keep --amps ./amps -np 4 -nt 16
+```
+
+For a complete raw batch, this executes no new AMPS trajectories. Morphology
+reopens the deterministic epoch files, derives the R50 maps, and feeds them to
+the enhanced dynamics and visualization stages.
 
 With the default reuse policy, a standalone `--stage pamela` or `--stage poes`
 expects the matching raw files to have been staged by an earlier morphology
@@ -507,6 +547,9 @@ test_output/dec2006_ts05_cutoff_erosion/dynamics/boundary_cell_dynamics.csv
 test_output/dec2006_ts05_cutoff_erosion/dynamics/altitude_response.csv
 test_output/dec2006_ts05_cutoff_erosion/dynamics/storm_extrema_summary.csv
 test_output/dec2006_ts05_cutoff_erosion/dynamics/recovery_timescales.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/cutoff_map_event_change.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/cutoff_map_change_timeseries.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/cutoff_map_change_summary.json
 test_output/dec2006_ts05_cutoff_erosion/dynamics/lag_correlations.csv
 test_output/dec2006_ts05_cutoff_erosion/dynamics/best_lag_summary.csv
 test_output/dec2006_ts05_cutoff_erosion/dynamics/hysteresis_pairs.csv
@@ -530,6 +573,10 @@ test_output/dec2006_ts05_cutoff_erosion/figures/figure_altitude_response.png
 test_output/dec2006_ts05_cutoff_erosion/figures/figure_altitude_response.eps
 test_output/dec2006_ts05_cutoff_erosion/figures/figure_accessible_area.png
 test_output/dec2006_ts05_cutoff_erosion/figures/figure_accessible_area.eps
+test_output/dec2006_ts05_cutoff_erosion/figures/figure_maximum_cutoff_decrease_map.png
+test_output/dec2006_ts05_cutoff_erosion/figures/figure_maximum_cutoff_decrease_map.eps
+test_output/dec2006_ts05_cutoff_erosion/figures/figure_cutoff_decrease_evolution.png
+test_output/dec2006_ts05_cutoff_erosion/figures/figure_cutoff_decrease_evolution.eps
 ```
 
 The first is a common-scale time-versus-rigidity map of the signed quiet-
@@ -542,6 +589,46 @@ hemisphere pairing. The accessible-area panel shows the fraction of the
 configured latitude band poleward of the boundary. `figure_manifest.json`
 lists the complete products and embeds the availability status. The top-level
 runner treats any missing required PNG or EPS file as a stage failure.
+
+### Spatial cutoff-rigidity maps and event change
+
+Every shell/epoch product directory now contains `cutoff_rigidity_map.csv`.
+For each geographic longitude/latitude cell, the routine sorts the exact
+DIRECT_ACCESS states by rigidity, excludes state 2 (unresolved), and fits an
+equal-weight nondecreasing access curve. A numerical `cutoff_rigidity_r50_gv`
+is reported only when that curve brackets transmission 0.5. The map status is:
+
+- `BRACKETED`: R50 is inside the sampled rigidity interval;
+- `BELOW_RANGE`: every resolved sample is allowed, so R50 is below the minimum;
+- `ABOVE_RANGE`: every resolved sample is forbidden, so R50 exceeds the maximum;
+- `UNBRACKETED`: a mixed penumbra does not provide a valid 50% bracket;
+- `INCOMPLETE`: expected samples are missing/duplicated/unexpected, or fewer
+  than two rigidities resolve.
+
+Bracket endpoints, span, resolved fraction, access-transition count, and
+nonmonotonic-transition count are archived with every cell. The cross-run
+`morphology/cutoff_rigidity_map_manifest.csv` records the location and status
+counts of every shell/epoch map.
+
+`figures/cutoff_rigidity_maps/` contains one PNG per modeled epoch, with one
+panel for each shell and a common rigidity scale. Edge colors identify
+below-range and above-range censored cells; gray crosses are unbracketed or
+incomplete. The panel manifest traces each panel to its source CSV. PNG-only is
+intentional for this potentially hundreds-of-epochs sequence; the numerical
+maps are authoritative, while summary publication panels are also saved as EPS
+and PDF.
+
+Event change uses the median of precompression, exactly bracketed R50 values as
+the quiet reference for each geographic cell. It reports the maximum positive
+`quiet_R50 - event_R50`, its UTC, GEO location, AACGM latitude, and MLT for each
+shell. If an event cell falls below the sampled rigidity floor, the decrease is
+retained as a conservative lower bound and `maximum_decrease_is_lower_bound`
+is set; it is not inserted into exact mean-change statistics. The evolution
+table additionally reports area-weighted exact mean change, median and 90th-
+percentile conservative decrease, maximum decrease and location, resolved-map
+coverage, and the area fraction whose decrease is at least 0.05 GV. Thus the
+analysis shows both where erosion is strongest and whether it is localized or
+spatially extensive.
 The degradation maps use a symmetric standard Matplotlib `Normalize` range,
 which places zero at the midpoint of the diverging color scale without relying
 on the newer `TwoSlopeNorm` class. This keeps the figure script usable with the

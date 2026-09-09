@@ -372,6 +372,43 @@ equal-area coordinate system. Reporting both latitude and accessible fraction
 distinguishes a nearly uniform equatorward shift from a strongly asymmetric
 opening confined to a limited range of MLT.
 
+The same exact-rigidity classifications are inverted independently at every
+geographic shell cell to form spatial cutoff-rigidity maps. Unresolved states
+are omitted, and the remaining binary access sequence $A(R_i)\in\{0,1\}$ is
+projected onto a nondecreasing sequence $\widehat{A}(R_i)$ using the
+equal-weight pool-adjacent-violators algorithm. A numerical map value is
+reported only when
+\begin{linenomath*}
+\begin{equation}
+ \widehat{A}(R_{\min})<0.5<\widehat{A}(R_{\max}), \qquad
+ R_{50}:\ \widehat{A}(R_{50})=0.5,
+ \label{eq:exp-spatial-r50}
+\end{equation}
+\end{linenomath*}
+with linear interpolation between adjacent fitted samples; an exact 0.5
+plateau is represented by the midpoint of its rigidity interval. All-allowed
+and all-forbidden profiles are retained as $R_{50}<R_{\min}$ and
+$R_{50}>R_{\max}$ censoring states rather than assigned endpoint values.
+Mixed profiles without an endpoint bracket and incomplete profiles remain
+non-numerical. Bracket width, resolved fraction, and raw nonmonotonic transition
+counts accompany every map cell.
+
+For a cell $j$ with a bracketed precompression quiet median $R_{50,q,j}$, the
+storm-time decrease is
+\begin{linenomath*}
+\begin{equation}
+ D_j(t)=\max[0,R_{50,q,j}-R_{50,j}(t)].
+ \label{eq:exp-spatial-cutoff-decrease}
+\end{equation}
+\end{linenomath*}
+The maximum of $D_j(t)$ over the event identifies where and when shielding loss
+is greatest. If the event profile becomes all-allowed, the recorded value
+$R_{50,q,j}-R_{\min}$ is a conservative lower bound and is flagged as censored;
+it is excluded from exact mean-change statistics. Shell-level evolution uses
+$\cos(\lambda_{\mathrm{GEO}})$ area weights and reports exact mean change,
+conservative median/90th-percentile/maximum decrease, and the weighted area
+fraction for which $D_j\geq0.05$~GV.
+
 \subsection{Lag, Driver Attribution, and Hysteresis}
 
 The candidate drivers are $P_{\mathrm{dyn}}$, IMF $B_z$, the time integral of

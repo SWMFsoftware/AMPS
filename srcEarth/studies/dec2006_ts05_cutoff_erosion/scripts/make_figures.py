@@ -5,7 +5,7 @@ Every panel is derived from a machine-readable table produced elsewhere in the
 package.  The plotting layer performs no boundary extraction or scientific
 filtering.  Every completed figure is written as a high-resolution PNG, an EPS
 vector graphic requested by common journal workflows, and a PDF vector copy.
-Missing optional validation products are reported explicitly. The five
+Missing optional validation products are reported explicitly. The seven
 cutoff-physics figure families are required when the top-level publication
 runner uses ``--require-publication-products``.
 """
@@ -13,6 +13,7 @@ runner uses ``--require-publication-products``.
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
 import json
 import logging
 from pathlib import Path
@@ -223,6 +224,191 @@ def _cell_edges(centers: np.ndarray, fallback_half_width: float) -> np.ndarray:
         midpoints,
         [centers[-1] + (centers[-1] - midpoints[-1])],
     ))
+
+
+def _global_field_grid(data: pd.DataFrame, value_column: str
+                       ) -> tuple[np.ndarray, np.ndarray, np.ma.MaskedArray]:
+    """Build a cyclic, masked longitude/latitude field from canonical map rows.
+
+    AMPS writes longitude in the interval [0, 360), whereas a conventional
+    world map is easiest to read from 180 W to 180 E.  This helper changes only
+    the plotted coordinate, never the archived source table.  It also appends a
+    duplicate cyclic column at +180 degrees so filled contours meet cleanly at
+    the date line instead of leaving a blank strip.
+
+    Canonical global maps contain only one physical record at each pole because
+    all longitudes represent the same point there.  For rasterization only, the
+    single pole value is expanded across the longitude row.  Non-polar missing
+    cells remain masked: the visualizer must not interpolate across unresolved,
+    unbracketed, or incomplete model results.
+    """
+
+    required = {"longitude_geo_deg", "latitude_geo_deg", value_column}
+    missing = sorted(required.difference(data.columns))
+    if missing:
+        raise ValueError(f"global map is missing columns: {missing}")
+    frame = pd.DataFrame({
+        "longitude": ((pd.to_numeric(data.longitude_geo_deg, errors="coerce")
+                       + 180.0) % 360.0) - 180.0,
+        "latitude": pd.to_numeric(data.latitude_geo_deg, errors="coerce"),
+        "value": pd.to_numeric(data[value_column], errors="coerce"),
+    }).dropna(subset=["longitude", "latitude"])
+    if frame.empty:
+        raise ValueError("global map contains no finite geographic coordinates")
+
+    # Infer the complete longitude lattice from non-polar rows. A correctly
+    # canonicalized pole has one record and therefore cannot define that grid.
+    non_polar = frame[np.abs(frame.latitude.to_numpy(dtype=float)) < 90.0 - 1.0e-8]
+    longitude_source = non_polar if not non_polar.empty else frame
+    longitudes = np.sort(longitude_source.longitude.unique().astype(float))
+    latitudes = np.sort(frame.latitude.unique().astype(float))
+    if longitudes.size < 2 or latitudes.size < 2:
+        raise ValueError("global map requires at least two longitudes and latitudes")
+
+    duplicates = frame.duplicated(["latitude", "longitude"], keep=False)
+    if bool(duplicates.any()):
+        sample = frame.loc[duplicates, ["longitude", "latitude"]].iloc[0]
+        raise ValueError(
+            "global map contains duplicate coordinate rows at "
+            f"lon={sample.longitude:g}, lat={sample.latitude:g}"
+        )
+    pivot = frame.pivot(index="latitude", columns="longitude", values="value")
+    pivot = pivot.reindex(index=latitudes, columns=longitudes)
+    values = pivot.to_numpy(dtype=float)
+
+    # Duplicate the one physical pole value across the plotting lattice. This
+    # is a coordinate representation step only and cannot alter any statistic.
+    for row_index, latitude in enumerate(latitudes):
+        if np.isclose(abs(latitude), 90.0):
+            finite = values[row_index, np.isfinite(values[row_index])]
+            if finite.size == 1:
+                values[row_index, :] = finite[0]
+
+    cyclic_longitudes = np.concatenate((longitudes, [longitudes[0] + 360.0]))
+    cyclic_values = np.concatenate((values, values[:, :1]), axis=1)
+    return cyclic_longitudes, latitudes, np.ma.masked_invalid(cyclic_values)
+
+
+@lru_cache(maxsize=1)
+def _continental_outline_segments() -> tuple[tuple[tuple[float, float], ...], ...]:
+    """Load the lightweight continental outline already distributed by AMPS.
+
+    The Tecplot file is part of ``srcEarth`` and avoids adding Cartopy, GEOS,
+    PROJ, or a runtime data download merely to provide geographic context.  A
+    missing file is tolerated so standalone copies of the study can still
+    render the numerical map; the figure then states that coastlines are not
+    available through the returned empty segment list.
+    """
+
+    coastline_path = Path(__file__).resolve().parents[3] / "earth-continental-map.dat"
+    if not coastline_path.is_file():
+        return ()
+    segments: list[tuple[tuple[float, float], ...]] = []
+    current: list[tuple[float, float]] = []
+    for raw in coastline_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.upper().startswith("VARIABLES"):
+            continue
+        if line.upper().startswith("ZONE"):
+            if current:
+                segments.append(tuple(current))
+                current = []
+            continue
+        fields = line.replace(",", " ").split()
+        if len(fields) < 2:
+            continue
+        try:
+            current.append((float(fields[0]), float(fields[1])))
+        except ValueError:
+            continue
+    if current:
+        segments.append(tuple(current))
+    return tuple(segments)
+
+
+def _draw_continental_outlines(axis) -> bool:
+    """Overlay AMPS continental outlines without drawing across the date line."""
+
+    segments = _continental_outline_segments()
+    for segment in segments:
+        previous = None
+        chunk_lon: list[float] = []
+        chunk_lat: list[float] = []
+        for longitude, latitude in segment:
+            plotted = ((longitude + 180.0) % 360.0) - 180.0
+            if previous is not None and abs(plotted - previous) > 180.0:
+                if len(chunk_lon) > 1:
+                    axis.plot(chunk_lon, chunk_lat, color="black", linewidth=0.45,
+                              alpha=0.72, zorder=4)
+                chunk_lon, chunk_lat = [], []
+            chunk_lon.append(plotted)
+            chunk_lat.append(latitude)
+            previous = plotted
+        if len(chunk_lon) > 1:
+            axis.plot(chunk_lon, chunk_lat, color="black", linewidth=0.45,
+                      alpha=0.72, zorder=4)
+    return bool(segments)
+
+
+def _draw_global_filled_field(axis, data: pd.DataFrame, value_column: str,
+                              norm: Normalize, cmap_name: str = "turbo"):
+    """Draw a continuous global field with masked invalid cells and coastlines.
+
+    ``contourf`` performs piecewise-linear interpolation between neighboring
+    resolved grid nodes. It does not fill masked cells. The fallback to ``jet``
+    is intentional compatibility support for older HPC Matplotlib releases
+    that predate the perceptually improved ``turbo`` map used by default.
+    """
+
+    try:
+        cmap = plt.get_cmap(cmap_name)
+    except ValueError:
+        cmap = plt.get_cmap("jet")
+    try:
+        longitudes, latitudes, values = _global_field_grid(data, value_column)
+    except ValueError as exc:
+        if "at least two longitudes and latitudes" not in str(exc):
+            raise
+        # A one-row/one-column diagnostic is not a global field and cannot be
+        # contoured. Preserve the historical ability to inspect such tiny unit
+        # products without weakening the global-map coverage checks, which run
+        # before this plotting layer. Complete AMPS shell maps never use this
+        # marker fallback.
+        longitude = ((pd.to_numeric(data.longitude_geo_deg, errors="coerce")
+                      + 180.0) % 360.0) - 180.0
+        latitude = pd.to_numeric(data.latitude_geo_deg, errors="coerce")
+        value = pd.to_numeric(data[value_column], errors="coerce")
+        valid = longitude.notna() & latitude.notna() & value.notna()
+        colored = axis.scatter(
+            longitude[valid].to_numpy(dtype=float),
+            latitude[valid].to_numpy(dtype=float),
+            c=value[valid].to_numpy(dtype=float), marker="s", s=40,
+            linewidths=0, cmap=cmap, norm=norm, zorder=2,
+        ) if bool(valid.any()) else None
+    else:
+        levels = np.linspace(float(norm.vmin), float(norm.vmax), 65)
+        if np.ma.count(values) > 0:
+            colored = axis.contourf(
+                longitudes, latitudes, values, levels=levels, cmap=cmap, norm=norm,
+                extend="neither", antialiased=False, zorder=1,
+            )
+        else:
+            colored = None
+            axis.text(0.5, 0.5, "NO RESOLVED MAP CELLS", ha="center", va="center",
+                      transform=axis.transAxes, weight="bold")
+    axis.set_facecolor("0.82")
+    coastlines = _draw_continental_outlines(axis)
+    if not coastlines:
+        axis.text(0.995, 0.015, "continental outline unavailable",
+                  transform=axis.transAxes, ha="right", va="bottom", fontsize=6,
+                  color="0.25")
+    axis.set_xlim(-180.0, 180.0)
+    axis.set_ylim(-90.0, 90.0)
+    axis.set_xticks(np.arange(-180.0, 181.0, 60.0))
+    axis.set_yticks(np.arange(-90.0, 91.0, 30.0))
+    axis.grid(color="black", linewidth=0.35, alpha=0.22, zorder=3)
+    axis.set_axisbelow(False)
+    return colored
 
 
 def cutoff_degradation_figures(path: Path, output: Path) -> list[Path]:
@@ -503,6 +689,213 @@ def accessible_area_figure(path: Path, output: Path) -> list[Path]:
     return save_figure(figure, output / "figure_accessible_area")
 
 
+def epoch_cutoff_rigidity_maps(morphology: Path, output: Path) -> tuple[list[Path], list[dict]]:
+    """Render one multi-shell geographic R50 map for every modeled epoch.
+
+    Per-epoch products are PNG-only because a FULL run contains hundreds of
+    epochs; producing thousands of large EPS/PDF map files would add little
+    scientific value. The numerical CSV for every shell/epoch remains the
+    publication-grade source, while the event-summary maps below are saved in
+    all three formats. Each panel is a cyclic filled geographic field with the
+    continental outline distributed by AMPS. Censored cells are shown at the
+    sampled color-scale edge and are never used in event-change calculations;
+    unresolved/unbracketed cells remain masked gray regions.
+    """
+
+    manifest_path = morphology / "cutoff_rigidity_map_manifest.csv"
+    if not manifest_path.is_file() or manifest_path.stat().st_size == 0:
+        print(f"Skipping epoch cutoff maps; missing or empty {manifest_path}", flush=True)
+        return [], []
+    manifest = pd.read_csv(manifest_path)
+    paths: list[Path] = []
+    records: list[dict] = []
+    map_root = output / "cutoff_rigidity_maps"
+    map_root.mkdir(parents=True, exist_ok=True)
+    minimum = float(manifest.sampled_rigidity_min_gv.min())
+    maximum = float(manifest.sampled_rigidity_max_gv.max())
+    norm = Normalize(vmin=minimum, vmax=maximum)
+    for epoch, epoch_rows in manifest.groupby("epoch_utc", sort=True):
+        epoch_rows = epoch_rows.sort_values("altitude_km")
+        figure, axes = plt.subplots(
+            len(epoch_rows), 1, figsize=(10.2, 3.5 * len(epoch_rows)),
+            sharex=True, sharey=True, squeeze=False,
+        )
+        colored = None
+        for axis, (_, item) in zip(axes[:, 0], epoch_rows.iterrows()):
+            source = morphology / str(item.map_path)
+            data = pd.read_csv(source)
+            cutoff = pd.to_numeric(data.cutoff_rigidity_r50_gv, errors="coerce")
+            status = data.cutoff_status.astype(str)
+            display = cutoff.to_numpy(dtype=float)
+            display[status.to_numpy() == "BELOW_RANGE"] = minimum
+            display[status.to_numpy() == "ABOVE_RANGE"] = maximum
+            data = data.assign(_display_cutoff_gv=display)
+            panel = _draw_global_filled_field(
+                axis, data, "_display_cutoff_gv", norm,
+            )
+            if panel is not None:
+                colored = panel
+            counts = status.value_counts().to_dict()
+            axis.text(
+                0.01, 0.02,
+                (f"bracketed={counts.get('BRACKETED', 0)}  "
+                 f"below range={counts.get('BELOW_RANGE', 0)}  "
+                 f"above range={counts.get('ABOVE_RANGE', 0)}\n"
+                 f"unbracketed={counts.get('UNBRACKETED', 0)}  "
+                 f"incomplete={counts.get('INCOMPLETE', 0)}"),
+                transform=axis.transAxes, fontsize=6.5,
+                bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none"},
+            )
+            axis.set_ylabel("GEO latitude [deg]")
+            axis.set_title(f"{float(item.altitude_km):g} km")
+        axes[-1, 0].set_xlabel("GEO longitude [deg; west negative]")
+        stamp = pd.to_datetime(epoch, utc=True).strftime("%Y-%m-%d %H:%M UTC")
+        figure.suptitle(f"AMPS spatial cutoff-rigidity map — {stamp}", y=0.985)
+        # A shared horizontal scale follows conventional global cutoff maps and
+        # preserves the wide geographic aspect of both shell panels.  A manual
+        # colorbar axis is used instead of the newer ``location='top'`` API so
+        # this remains compatible with long-lived HPC Matplotlib releases.
+        figure.subplots_adjust(top=0.77, bottom=0.08, hspace=0.30)
+        if colored is not None:
+            colorbar_axis = figure.add_axes([0.19, 0.855, 0.62, 0.022])
+            colorbar = figure.colorbar(
+                colored, cax=colorbar_axis, orientation="horizontal"
+            )
+            colorbar.set_label(
+                "R50 cutoff rigidity [GV]; edge colors include censored cells",
+                fontsize=8,
+            )
+            colorbar.ax.xaxis.set_label_position("top")
+        token = pd.to_datetime(epoch, utc=True).strftime("%Y%m%dT%H%M%S")
+        destination = map_root / f"cutoff_rigidity_map_{token}.png"
+        figure.savefig(destination, dpi=180, bbox_inches="tight")
+        plt.close(figure)
+        print(f"Wrote epoch cutoff map: {destination}", flush=True)
+        paths.append(destination)
+        for panel_index, (_, item) in enumerate(epoch_rows.iterrows()):
+            records.append({
+                "epoch_utc": epoch, "altitude_km": float(item.altitude_km),
+                "panel_index": panel_index, "figure_path": str(destination),
+                "source_map_path": str(morphology / str(item.map_path)),
+            })
+    return paths, records
+
+
+def cutoff_change_figures(spatial_path: Path, evolution_path: Path,
+                          output: Path) -> list[Path]:
+    """Visualize where and when storm-time cutoff reduction is largest."""
+
+    if not spatial_path.is_file() or not evolution_path.is_file():
+        print("Skipping cutoff-change figures; enhanced map products are absent", flush=True)
+        return []
+    if spatial_path.stat().st_size == 0 or evolution_path.stat().st_size == 0:
+        # An empty table is a valid, machine-readable result when no spatial
+        # cell has a bracketed quiet R50 within the sampled rigidity interval.
+        # Write conspicuous placeholders so an automated publication pipeline
+        # completes without silently substituting fabricated numerical values.
+        products: list[Path] = []
+        for stem, title in (
+            ("figure_maximum_cutoff_decrease_map",
+             "Maximum cutoff decrease map"),
+            ("figure_cutoff_decrease_evolution",
+             "Cutoff decrease evolution"),
+        ):
+            figure, axis = plt.subplots(figsize=(8.5, 4.5))
+            axis.axis("off")
+            axis.text(
+                0.5, 0.55, "NOT AVAILABLE", ha="center", va="center",
+                fontsize=20, weight="bold", transform=axis.transAxes,
+            )
+            axis.text(
+                0.5, 0.40,
+                "No cell has a bracketed quiet R50 and a usable event value\n"
+                "within the sampled rigidity range.",
+                ha="center", va="center", fontsize=10, transform=axis.transAxes,
+            )
+            figure.suptitle(title)
+            products += save_figure(figure, output / stem)
+        return products
+    spatial = pd.read_csv(spatial_path)
+    evolution = pd.read_csv(evolution_path)
+    if spatial.empty or evolution.empty:
+        print("Skipping cutoff-change figures; no bracketed quiet/event map pairs", flush=True)
+        return []
+    altitudes = sorted(spatial.altitude_km.unique())
+    limit = max(0.01, float(spatial.maximum_cutoff_decrease_gv.max()))
+    figure, axes = plt.subplots(
+        len(altitudes), 1, figsize=(10.2, 3.6 * len(altitudes)),
+        sharex=True, sharey=True, squeeze=False,
+    )
+    colored = None
+    for axis, altitude in zip(axes[:, 0], altitudes):
+        shell = spatial[np.isclose(spatial.altitude_km, altitude)]
+        panel = _draw_global_filled_field(
+            axis, shell, "maximum_cutoff_decrease_gv",
+            Normalize(vmin=0.0, vmax=limit), cmap_name="magma",
+        )
+        if panel is not None:
+            colored = panel
+        maximum_row = shell.loc[shell.maximum_cutoff_decrease_gv.idxmax()]
+        maximum_longitude = ((float(maximum_row.longitude_geo_deg) + 180.0)
+                             % 360.0) - 180.0
+        axis.scatter([maximum_longitude], [maximum_row.latitude_geo_deg],
+                     marker="*", s=90, facecolors="none", edgecolors="cyan",
+                     linewidths=1.2, label=(
+                         f"max={maximum_row.maximum_cutoff_decrease_gv:.3f} GV; "
+                         f"{maximum_row.epoch_of_maximum_decrease_utc}"
+                     ))
+        axis.set_ylabel("GEO latitude [deg]")
+        axis.set_title(f"{altitude:g} km")
+        axis.legend(fontsize=7, loc="lower center")
+    axes[-1, 0].set_xlabel("GEO longitude [deg; west negative]")
+    figure.suptitle("Where geomagnetic cutoff erosion was most pronounced", y=0.985)
+    figure.subplots_adjust(top=0.77, bottom=0.08, hspace=0.30)
+    if colored is not None:
+        colorbar_axis = figure.add_axes([0.19, 0.855, 0.62, 0.022])
+        colorbar = figure.colorbar(
+            colored, cax=colorbar_axis, orientation="horizontal"
+        )
+        colorbar.set_label("Maximum quiet-relative cutoff decrease [GV]", fontsize=8)
+        colorbar.ax.xaxis.set_label_position("top")
+    products = save_figure(figure, output / "figure_maximum_cutoff_decrease_map")
+
+    evolution["epoch_utc"] = pd.to_datetime(evolution.epoch_utc, utc=True)
+    figure, axes = plt.subplots(3, 1, figsize=(10.2, 8.0), sharex=True)
+    for altitude, shell in evolution.groupby("altitude_km"):
+        shell = shell.sort_values("epoch_utc")
+        time = _datetime_plot_values(shell.epoch_utc)
+        label = f"{altitude:g} km"
+        axes[0].plot(time, _numeric_plot_values(
+            shell.area_weighted_mean_cutoff_change_gv), label=label)
+        axes[1].plot(time, _numeric_plot_values(shell.p90_cutoff_decrease_gv),
+                     label=label)
+        fraction_column = (
+            "area_fraction_decrease_ge_threshold"
+            if "area_fraction_decrease_ge_threshold" in shell.columns
+            else "area_fraction_decrease_ge_0p05_gv"
+        )
+        axes[2].plot(time, _numeric_plot_values(shell[fraction_column]), label=label)
+    axes[0].axhline(0.0, color="black", linewidth=0.7)
+    axes[0].set_ylabel("Mean change [GV]")
+    axes[1].set_ylabel("90th-percentile\ndecrease [GV]")
+    threshold = (
+        float(evolution.decrease_threshold_gv.iloc[0])
+        if "decrease_threshold_gv" in evolution.columns else 0.05
+    )
+    axes[2].set_ylabel(
+        f"Area fraction with\ndecrease $\\geq${threshold:g} GV"
+    )
+    axes[2].set_xlabel("UTC")
+    axes[2].xaxis.set_major_formatter(mdates.DateFormatter("%m-%d\n%H:%M"))
+    for axis in axes:
+        axis.grid(alpha=0.25)
+        axis.legend()
+    figure.suptitle("Evolution and spatial extent of cutoff-rigidity erosion")
+    figure.tight_layout()
+    products += save_figure(figure, output / "figure_cutoff_decrease_evolution")
+    return products
+
+
 def lag_hysteresis_figure(lag_path: Path, hysteresis_path: Path, output: Path) -> None:
     """Create the optional response/hysteresis panel when both tables have data.
 
@@ -570,6 +963,11 @@ def parse_args() -> argparse.Namespace:
         default=default_output_root() / "dynamics",
     )
     parser.add_argument(
+        "--morphology-root", type=Path,
+        default=default_output_root() / "morphology",
+        help="Source of per-shell/per-epoch cutoff-rigidity map tables",
+    )
+    parser.add_argument(
         "--output-root", type=Path, default=default_output_root() / "figures"
     )
     parser.add_argument(
@@ -582,8 +980,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     root, config = load_config(args.config)
-    comparison, dynamics, output = map(resolve_output_path, (
-        args.comparison_root, args.dynamics_root, args.output_root
+    comparison, dynamics, morphology, output = map(resolve_output_path, (
+        args.comparison_root, args.dynamics_root, args.morphology_root,
+        args.output_root,
     ))
     driver_figure(root, config, output)
     comparison_figure(comparison / "paired_model_observation.csv", output)
@@ -600,6 +999,14 @@ def main() -> int:
     publication_products += accessible_area_figure(
         dynamics / "cutoff_dynamics_timeseries.csv", output
     )
+    epoch_map_products, epoch_map_records = epoch_cutoff_rigidity_maps(
+        morphology, output
+    )
+    publication_products += cutoff_change_figures(
+        dynamics / "cutoff_map_event_change.csv",
+        dynamics / "cutoff_map_change_timeseries.csv",
+        output,
+    )
     lag_hysteresis_figure(dynamics / "lag_correlations.csv",
                           dynamics / "hysteresis_summary.csv", output)
     expected = {
@@ -608,13 +1015,34 @@ def main() -> int:
             "figure_cutoff_degradation", "figure_peak_cutoff_degradation",
             "figure_mlt_cutoff_evolution", "figure_altitude_response",
             "figure_accessible_area",
+            "figure_maximum_cutoff_decrease_map",
+            "figure_cutoff_decrease_evolution",
         )
         for suffix in (".png", ".eps")
     }
     missing = sorted(str(path) for path in expected if not path.is_file())
+    map_manifest_path = output / "cutoff_rigidity_map_figure_manifest.csv"
+    if epoch_map_records:
+        pd.DataFrame(epoch_map_records).to_csv(map_manifest_path, index=False)
+    source_map_count = 0
+    source_manifest = morphology / "cutoff_rigidity_map_manifest.csv"
+    if source_manifest.is_file() and source_manifest.stat().st_size > 0:
+        source_map_count = len(pd.read_csv(source_manifest))
+    map_contract_passed = (
+        source_map_count > 0 and len(epoch_map_records) == source_map_count and
+        all(path.is_file() and path.stat().st_size > 0 for path in epoch_map_products)
+    )
+    if not map_contract_passed:
+        missing.append(
+            "per-shell/per-epoch cutoff-map figure coverage does not match morphology manifest"
+        )
     manifest = {
         "output_root": str(output),
         "publication_products": [str(path) for path in publication_products],
+        "epoch_cutoff_map_png": [str(path) for path in epoch_map_products],
+        "n_source_shell_epoch_maps": source_map_count,
+        "n_rendered_shell_epoch_panels": len(epoch_map_records),
+        "epoch_map_contract_passed": map_contract_passed,
         "required_png_eps": sorted(str(path) for path in expected),
         "missing_required_products": missing,
         "analysis_availability": (

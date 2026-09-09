@@ -1,7 +1,56 @@
 # Change log
 
+## 2026-09-09 — continuous geographic cutoff maps
+
+- Replaced point-marker global cutoff panels with cyclic filled contours on a
+  conventional 180 W--180 E longitude axis.
+- Added continental outlines from the existing AMPS
+  `earth-continental-map.dat` asset, avoiding new GIS dependencies and runtime
+  downloads.
+- Preserved masked invalid cells, explicit rigidity-range censoring, canonical
+  single-cell poles, and date-line continuity in the visualization contract.
+- Applied the same filled-map treatment to the maximum cutoff-decrease figure
+  and added regression coverage for the cyclic seam and pole expansion.
+
+## 2026-09-09 — bounded global-map SMOKE workload
+
+- Added an isolated global-map SMOKE override: two quiet/main-phase epochs,
+  both shells, a complete 30-degree-by-10-degree geographic grid, and a
+  17-point 0.025--20-GV bracket.
+- Reduced SMOKE from 1,389,024 to 15,504 fixed-rigidity trajectories while
+  retaining native cross-epoch/cross-shell mesh reuse and all downstream
+  postprocessing and figure contracts.
+- Added pre-launch grid and trajectory-count reporting plus regression guards
+  proving that ROUTINE/FULL retain the publication-resolution grid.
+
+## 2026-09-09 — dedicated global cutoff maps
+
+- Added a spacecraft-independent global cutoff-map runner with mandatory native
+  Mode3D `SNAPSHOT_LIST` batching and explicit cross-shell/cross-epoch mesh-reuse
+  verification.
+- Added a small configuration overlay covering the complete GEO sphere at two
+  altitudes with a 0.025--20-GV rigidity bracket suitable for polar through
+  equatorial LEO cutoffs.
+- Added restartable postprocessing that validates grid closure, canonicalizes
+  duplicate pole longitudes, preserves censored and unresolved states, and
+  derives quiet-relative spatial and temporal erosion diagnostics.
+- Added per-epoch two-shell cutoff maps plus maximum-decrease and erosion-
+  evolution figures in publication formats.
+- Added synthetic full-sphere regression tests, package validation, a data
+  dictionary extension, and a dedicated workflow README.
+
 ## 2026-09-09
 
+- Added quality-controlled spatial R50 inversion for every shell/epoch
+  DIRECT_ACCESS product, including explicit below-range, above-range,
+  unbracketed, incomplete, and unresolved-sample diagnostics.
+- Added one multi-shell cutoff-rigidity PNG per modeled epoch and a panel/source
+  manifest suitable for assembling an event animation.
+- Added quiet-referenced spatial cutoff-change and time-evolution products that
+  locate the largest erosion, report its epoch/AACGM/MLT context, and preserve
+  below-range event values as clearly flagged conservative lower bounds.
+- Added publication PNG/EPS/PDF figures for the maximum cutoff-decrease map and
+  the time evolution/spatial extent of erosion.
 - Expanded dynamics postprocessing with cell-resolved quiet-reference erosion,
   second MLT harmonics, spherical-shell-equivalent accessible area, exact-key
   altitude response, storm extrema, recovery times, and compact best-lag tables.

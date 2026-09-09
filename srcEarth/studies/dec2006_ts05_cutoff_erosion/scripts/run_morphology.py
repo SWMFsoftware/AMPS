@@ -243,6 +243,143 @@ def command_text(command: Sequence[str]) -> str:
     return " ".join(shlex.quote(token) for token in command)
 
 
+def _isotonic_non_decreasing(values: Sequence[float]) -> List[float]:
+    """Return an equal-weight pool-adjacent-violators fit.
+
+    Individual trajectory classifications can alternate across a penumbra even
+    though the large-scale access probability must increase with rigidity. A
+    monotone fit defines a reproducible 50% cutoff without deleting those
+    alternations; their number is archived separately as a map-quality field.
+    """
+
+    blocks: List[List[float]] = []
+    for value in values:
+        blocks.append([float(value), 1.0])  # weighted sum, weight
+        while len(blocks) >= 2:
+            left = blocks[-2][0] / blocks[-2][1]
+            right = blocks[-1][0] / blocks[-1][1]
+            if left <= right + 1.0e-15:
+                break
+            newest = blocks.pop()
+            blocks[-1][0] += newest[0]
+            blocks[-1][1] += newest[1]
+    fitted: List[float] = []
+    for total, weight in blocks:
+        fitted.extend([total / weight] * int(round(weight)))
+    return fitted
+
+
+def derive_cutoff_rigidity_map(access: Sequence[object],
+                               expected_rigidities: Sequence[float]
+                               ) -> List[Dict[str, object]]:
+    """Invert exact-rigidity access states into a quality-controlled R50 map.
+
+    The result intentionally distinguishes five outcomes. ``BRACKETED`` is the
+    only state with a reported numerical cutoff. ``BELOW_RANGE`` and
+    ``ABOVE_RANGE`` are scientifically useful one-sided limits. ``UNBRACKETED``
+    denotes a mixed penumbra whose isotonic curve never brackets 0.5, and
+    ``INCOMPLETE`` denotes missing/duplicate grid coverage or fewer than two
+    resolved rigidity samples. Unresolved trajectories are never converted to
+    allowed or forbidden states.
+    """
+
+    expected = sorted(float(value) for value in expected_rigidities)
+    grouped: Dict[Tuple[float, float], List[object]] = {}
+    for row in access:
+        key = (round(float(row.longitude_deg) % 360.0, 8),
+               round(float(row.latitude_deg), 8))
+        grouped.setdefault(key, []).append(row)
+    output: List[Dict[str, object]] = []
+    for (longitude, latitude), rows in sorted(grouped.items()):
+        by_rigidity: Dict[float, object] = {}
+        duplicate = False
+        for row in rows:
+            # Seven decimal places are far tighter than the minimum spacing in
+            # the configured list while absorbing harmless Tecplot formatting
+            # roundoff. This also avoids an O(N^2) nearest-neighbor search for
+            # every spatial cell in the FULL event.
+            rigidity = round(float(row.rigidity_gv), 7)
+            if rigidity in by_rigidity:
+                duplicate = True
+            by_rigidity[rigidity] = row
+        ordered = []
+        missing = 0
+        expected_keys = {round(value, 7) for value in expected}
+        unexpected = len(set(by_rigidity).difference(expected_keys))
+        for rigidity in expected:
+            match = by_rigidity.get(round(rigidity, 7))
+            if match is None:
+                missing += 1
+            else:
+                ordered.append(match)
+        resolved = [row for row in ordered if int(row.access_state) != 2]
+        unresolved = len(ordered) - len(resolved)
+        status = "INCOMPLETE"
+        cutoff = lower = upper = span = None
+        transition_count = 0
+        nonmonotonic_count = 0
+        if not duplicate and missing == 0 and unexpected == 0 and len(resolved) >= 2:
+            resolved.sort(key=lambda row: float(row.rigidity_gv))
+            states = [int(row.access_state) for row in resolved]
+            transition_count = sum(left != right for left, right in zip(states, states[1:]))
+            nonmonotonic_count = sum(
+                left == 1 and right == 0 for left, right in zip(states, states[1:])
+            )
+            if all(state == 1 for state in states):
+                status = "BELOW_RANGE"
+            elif all(state == 0 for state in states):
+                status = "ABOVE_RANGE"
+            else:
+                rigidities = [float(row.rigidity_gv) for row in resolved]
+                fitted = _isotonic_non_decreasing(states)
+                if fitted[0] < 0.5 - 1.0e-12 and fitted[-1] > 0.5 + 1.0e-12:
+                    equal = [index for index, value in enumerate(fitted)
+                             if abs(value - 0.5) <= 1.0e-12]
+                    if equal:
+                        lower = rigidities[equal[0]]
+                        upper = rigidities[equal[-1]]
+                        cutoff = 0.5 * (lower + upper)
+                    else:
+                        crossing = next(
+                            index for index in range(len(fitted) - 1)
+                            if fitted[index] < 0.5 < fitted[index + 1]
+                        )
+                        lower, upper = rigidities[crossing:crossing + 2]
+                        fraction = ((0.5 - fitted[crossing]) /
+                                    (fitted[crossing + 1] - fitted[crossing]))
+                        cutoff = lower + fraction * (upper - lower)
+                    span = upper - lower
+                    status = "BRACKETED"
+                else:
+                    status = "UNBRACKETED"
+        representative = rows[0]
+        output.append({
+            "longitude_geo_deg": longitude,
+            "latitude_geo_deg": latitude,
+            "aacgm_latitude_deg": representative.aacgm_latitude_deg,
+            "mlt_hour": representative.mlt_hour,
+            "cutoff_rigidity_r50_gv": cutoff,
+            "cutoff_status": status,
+            "cutoff_lower_bracket_gv": lower,
+            "cutoff_upper_bracket_gv": upper,
+            "cutoff_bracket_span_gv": span,
+            "n_expected_rigidities": len(expected),
+            "n_present_rigidities": len(ordered),
+            "n_unexpected_rigidities": unexpected,
+            "n_resolved_rigidities": len(resolved),
+            "n_unresolved_rigidities": unresolved,
+            "resolved_rigidity_fraction": (
+                len(resolved) / len(expected) if expected else 0.0
+            ),
+            "access_transition_count": transition_count,
+            "nonmonotonic_transition_count": nonmonotonic_count,
+            "duplicate_rigidity": duplicate,
+            "sampled_rigidity_min_gv": expected[0] if expected else None,
+            "sampled_rigidity_max_gv": expected[-1] if expected else None,
+        })
+    return output
+
+
 ZONE_ALTITUDE_PATTERNS = (
     re.compile(r"alt[_\s-]*km\s*=\s*([0-9eE+\-.]+)", re.IGNORECASE),
     re.compile(r"alt(?:itude)?\s*=\s*([0-9eE+\-.]+)\s*km", re.IGNORECASE),
@@ -625,6 +762,7 @@ def main() -> int:
 
     commands: List[Dict[str, object]] = []
     boundaries: List[Dict[str, object]] = []
+    cutoff_map_manifest: List[Dict[str, object]] = []
     driver_samples: List[Dict[str, object]] = []
     staged_products: List[Dict[str, object]] = []
     failures: List[str] = []
@@ -844,6 +982,42 @@ def main() -> int:
                     )
                     unresolved = sum(row.access_state == 2 for row in access)
                     unresolved_fraction = unresolved / len(access) if access else 1.0
+                    product_dir = (
+                        output_root / f"alt_{altitude:g}km" /
+                        epoch.strftime("%Y%m%dT%H%M%S")
+                    )
+                    product_dir.mkdir(parents=True, exist_ok=True)
+
+                    # Invert the exact-rigidity access sequence independently at
+                    # every geographic grid cell. The map is saved beside the
+                    # boundary products so later visualization never has to
+                    # reopen or reinterpret the large Tecplot trajectory table.
+                    cutoff_map = derive_cutoff_rigidity_map(
+                        access, controls.rigidities_gv
+                    )
+                    for row in cutoff_map:
+                        row["epoch_utc"] = format_utc(epoch)
+                        row["altitude_km"] = altitude
+                    cutoff_map_path = product_dir / "cutoff_rigidity_map.csv"
+                    write_csv(cutoff_map_path, cutoff_map)
+                    status_counts = {
+                        status: sum(row["cutoff_status"] == status
+                                    for row in cutoff_map)
+                        for status in (
+                            "BRACKETED", "BELOW_RANGE", "ABOVE_RANGE",
+                            "UNBRACKETED", "INCOMPLETE",
+                        )
+                    }
+                    cutoff_map_manifest.append({
+                        "epoch_utc": format_utc(epoch),
+                        "altitude_km": altitude,
+                        "map_path": cutoff_map_path.relative_to(output_root).as_posix(),
+                        "n_spatial_cells": len(cutoff_map),
+                        **{f"n_{name.lower()}": count
+                           for name, count in status_counts.items()},
+                        "sampled_rigidity_min_gv": min(controls.rigidities_gv),
+                        "sampled_rigidity_max_gv": max(controls.rigidities_gv),
+                    })
                     for estimate in estimates:
                         for mlt, boundary in sorted(estimate.boundary_by_mlt.items()):
                             boundaries.append({
@@ -859,11 +1033,6 @@ def main() -> int:
                                 "field_model": "IGRF+TS05",
                                 "observation_operator": "VERTICAL_ACCESS_T50",
                             })
-                    product_dir = (
-                        output_root / f"alt_{altitude:g}km" /
-                        epoch.strftime("%Y%m%dT%H%M%S")
-                    )
-                    product_dir.mkdir(parents=True, exist_ok=True)
                     c10.write_dict_rows(product_dir / "snapshot_boundaries.csv", [
                         c10._estimate_row(estimate) for estimate in estimates
                     ])
@@ -923,6 +1092,11 @@ def main() -> int:
     )
     if boundaries:
         write_csv(output_root / "morphology_boundaries.csv", boundaries)
+    if cutoff_map_manifest:
+        write_csv(
+            output_root / "cutoff_rigidity_map_manifest.csv",
+            cutoff_map_manifest,
+        )
     result = {
         "study_id": config["study_id"], "profile": args.profile,
         "n_epochs": len(epochs), "n_altitudes": len(altitudes),
@@ -940,6 +1114,7 @@ def main() -> int:
         ),
         "magnetic_field_reinitialized_each_epoch": True,
         "n_boundary_rows": len(boundaries),
+        "n_cutoff_rigidity_maps": len(cutoff_map_manifest),
         "n_staged_observation_products": len(staged_products),
         "prepare_only": args.prepare_only, "skip_run": args.skip_run,
         "failures": failures, "passed": not failures,
