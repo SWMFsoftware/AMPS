@@ -47,6 +47,15 @@ the observation-equivalent runners and source-preserving reconstruction tools.
 | `scripts/make_figures.py` | `figures/` |
 | `scripts/run_sensitivity_suite.py` | `ts05_sensitivity/` |
 
+The enhanced `dynamics/` contract contains the original erosion, lag, and
+hysteresis tables plus cell-resolved erosion/drivers, two-shell altitude
+response, storm extrema, recovery times, best-lag summaries, and machine-
+readable analysis availability. The required publication figure set contains
+five panels (cutoff degradation, peak degradation, MLT evolution, altitude
+response, and accessible area), each in PNG, EPS, and PDF. SMOKE exercises all
+spatial products and figures; temporal inference is explicitly labeled
+`DIAGNOSTIC_ONLY` until the configured 24-epoch minimum is met.
+
 ## Verified invocation
 
 From the AMPS repository root:

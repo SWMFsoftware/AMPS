@@ -20,11 +20,59 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+import numpy as np
+
 from study_common import (
     DriverRow, default_output_root, finite_float, fit_first_harmonic,
     format_utc, interpolate_driver, load_config, parse_utc, pearson, quantile,
     read_csv, read_driver, resolve_output_path, write_csv,
 )
+
+
+# A lag or recovery curve can be drawn from a sparse workset, but eight SMOKE
+# epochs do not provide enough temporal degrees of freedom for a defensible
+# storm-response inference. Keeping this threshold in one named constant makes
+# the distinction machine-readable and prevents a visually polished SMOKE plot
+# from being mistaken for the FULL analysis.
+MIN_TEMPORAL_EPOCHS_FOR_INFERENCE = 24
+EARTH_RADIUS_KM = 6371.2
+
+
+def fit_two_mlt_harmonics(mlt_hours: Sequence[float], latitudes_deg: Sequence[float]
+                          ) -> Dict[str, float]:
+    """Fit the mean plus diurnal and semidiurnal MLT harmonics.
+
+    The first harmonic represents the dominant displaced cutoff oval. The
+    second harmonic captures day-night versus dawn-dusk deformation that a
+    single displaced oval cannot represent. Eight three-hour MLT sectors give
+    enough independent samples for the five coefficients; rank-deficient input
+    is rejected rather than silently regularized.
+    """
+
+    if len(mlt_hours) != len(latitudes_deg) or len(mlt_hours) < 5:
+        raise ValueError("two-harmonic fit requires at least five paired cells")
+    angle = 2.0 * math.pi * np.asarray(mlt_hours, dtype=float) / 24.0
+    design = np.column_stack((
+        np.ones(len(angle)), np.cos(angle), np.sin(angle),
+        np.cos(2.0 * angle), np.sin(2.0 * angle),
+    ))
+    values = np.asarray(latitudes_deg, dtype=float)
+    coefficients, _residuals, rank, _singular = np.linalg.lstsq(
+        design, values, rcond=None
+    )
+    if rank < design.shape[1]:
+        raise ValueError("singular two-harmonic MLT fit")
+    mean, _c1, _s1, c2, s2 = [float(value) for value in coefficients]
+    fitted = design @ coefficients
+    return {
+        "two_harmonic_mean_latitude_deg": mean,
+        "second_harmonic_amplitude_deg": math.hypot(c2, s2),
+        # The semidiurnal maximum repeats after 12 h; report its first MLT.
+        "second_harmonic_phase_mlt_hour": (
+            math.atan2(s2, c2) * 24.0 / (4.0 * math.pi)
+        ) % 12.0,
+        "two_harmonic_fit_rms_deg": float(np.sqrt(np.mean((values - fitted) ** 2))),
+    }
 
 
 def group_rows(rows: Sequence[Mapping[str, str]], keys: Sequence[str]):
@@ -58,7 +106,7 @@ def bootstrap_correlation(x: Sequence[float], y: Sequence[float], block_length: 
 
 
 def morphology_products(rows: Sequence[Mapping[str, str]], config: Mapping[str, object]) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
-    """Fit the first MLT harmonic and compute analyzed-shell access fraction."""
+    """Fit MLT harmonics and compute analyzed-shell access fraction and area."""
     keys = ("epoch_utc", "altitude_km", "rigidity_gv", "hemisphere")
     harmonic_rows: List[Dict[str, object]] = []
     long_rows: List[Dict[str, object]] = []
@@ -90,12 +138,37 @@ def morphology_products(rows: Sequence[Mapping[str, str]], config: Mapping[str, 
                     / denominator
                 )
             fit["accessible_area_fraction_in_analyzed_band"] = statistics.fmean(access_terms)
+            # This is a spherical-shell-equivalent area, not a claim that AACGM
+            # coordinates preserve geographic area exactly. It remains a useful
+            # common metric for comparing the two modeled altitudes and is always
+            # accompanied by the dimensionless fraction above.
+            shell_radius_km = EARTH_RADIUS_KM + float(key[1])
+            band_area_km2 = 2.0 * math.pi * shell_radius_km ** 2 * denominator
+            fit["accessible_area_equivalent_km2"] = (
+                fit["accessible_area_fraction_in_analyzed_band"] * band_area_km2
+            )
+            if len(valid) >= 5:
+                fit.update(fit_two_mlt_harmonics(
+                    [item[0] for item in valid], [item[1] for item in valid]
+                ))
+            else:
+                fit.update({
+                    "two_harmonic_mean_latitude_deg": None,
+                    "second_harmonic_amplitude_deg": None,
+                    "second_harmonic_phase_mlt_hour": None,
+                    "two_harmonic_fit_rms_deg": None,
+                })
             base.update(fit)
         else:
             base.update({
                 "mean_latitude_deg": None, "amplitude_deg": None,
                 "phase_mlt_hour": None, "fit_rms_deg": None,
                 "accessible_area_fraction_in_analyzed_band": None,
+                "accessible_area_equivalent_km2": None,
+                "two_harmonic_mean_latitude_deg": None,
+                "second_harmonic_amplitude_deg": None,
+                "second_harmonic_phase_mlt_hour": None,
+                "two_harmonic_fit_rms_deg": None,
             })
         harmonic_rows.append(base)
 
@@ -130,9 +203,200 @@ def morphology_products(rows: Sequence[Mapping[str, str]], config: Mapping[str, 
                 None if mean_lat is None or quiet_reference is None
                 else mean_lat - quiet_reference
             )
+            row["cutoff_degradation_deg"] = (
+                None if row["cutoff_erosion_deg"] is None
+                else max(0.0, -float(row["cutoff_erosion_deg"]))
+            )
             row["boundary_speed_deg_per_hour"] = speed
             long_rows.append(dict(row))
     return harmonic_rows, long_rows
+
+
+def boundary_cell_products(rows: Sequence[Mapping[str, str]], driver: Sequence[DriverRow],
+                           compression: datetime, main_phase: datetime,
+                           config: Mapping[str, object]) -> List[Dict[str, object]]:
+    """Add quiet-relative erosion and contemporaneous drivers to every MLT cell.
+
+    Harmonic fits are useful summaries, but the physically important local-time
+    deformation remains in the individual boundary cells. This long-form table
+    is therefore the authoritative input for MLT maps and permits every plotted
+    erosion value to be traced back to one modeled boundary.
+    """
+
+    keys = ("altitude_km", "rigidity_gv", "hemisphere", "mlt_hour")
+    quiet_limit = parse_utc(
+        config["event"]["compression_search_start_utc"]  # type: ignore[index]
+    )
+    result: List[Dict[str, object]] = []
+    for _key, series in sorted(group_rows(rows, keys).items()):
+        series = sorted(series, key=lambda row: parse_utc(row["epoch_utc"]))
+        quiet = [
+            abs(value) for row in series
+            if parse_utc(row["epoch_utc"]) < quiet_limit
+            for value in [finite_float(row.get("boundary_aacgm_lat_deg"))]
+            if value is not None
+        ]
+        quiet_reference = statistics.median(quiet) if quiet else None
+        for row in series:
+            epoch = parse_utc(row["epoch_utc"])
+            boundary = finite_float(row.get("boundary_aacgm_lat_deg"))
+            boundary = abs(boundary) if boundary is not None else None
+            erosion = (
+                None if boundary is None or quiet_reference is None
+                else boundary - quiet_reference
+            )
+            sampled = interpolate_driver(driver, epoch)
+            phase = (
+                "PRECOMPRESSION" if epoch < compression else
+                "MAIN_PHASE" if epoch <= main_phase else "RECOVERY"
+            )
+            item: Dict[str, object] = dict(row)
+            item.update({
+                "boundary_aacgm_abs_lat_deg": boundary,
+                "quiet_reference_boundary_deg": quiet_reference,
+                "cutoff_erosion_deg": erosion,
+                "cutoff_degradation_deg": (
+                    None if erosion is None else max(0.0, -erosion)
+                ),
+                "event_phase": phase,
+                "pdyn_npa": sampled.pdyn_npa,
+                "bz_nt": sampled.bz_nt,
+                "symh_nt": sampled.symh_nt,
+                "w1": sampled.w1, "w2": sampled.w2, "w3": sampled.w3,
+                "w4": sampled.w4, "w5": sampled.w5, "w6": sampled.w6,
+            })
+            result.append(item)
+    return result
+
+
+def altitude_response_products(time_series: Sequence[Mapping[str, object]]) -> List[Dict[str, object]]:
+    """Pair the lowest and highest modeled shells without mixing other keys."""
+
+    grouped = defaultdict(list)
+    for row in time_series:
+        grouped[(row["epoch_utc"], row["rigidity_gv"], row["hemisphere"])].append(row)
+    output: List[Dict[str, object]] = []
+    for key, rows in sorted(grouped.items()):
+        valid = sorted(rows, key=lambda row: float(row["altitude_km"]))
+        if len(valid) < 2:
+            continue
+        low, high = valid[0], valid[-1]
+        item: Dict[str, object] = {
+            "epoch_utc": key[0], "rigidity_gv": float(key[1]),
+            "hemisphere": key[2],
+            "low_altitude_km": float(low["altitude_km"]),
+            "high_altitude_km": float(high["altitude_km"]),
+        }
+        for source, target in (
+            ("mean_latitude_deg", "boundary"),
+            ("cutoff_erosion_deg", "erosion"),
+            ("accessible_area_fraction_in_analyzed_band", "accessible_fraction"),
+        ):
+            low_value = finite_float(low.get(source))
+            high_value = finite_float(high.get(source))
+            item[f"low_{target}"] = low_value
+            item[f"high_{target}"] = high_value
+            item[f"high_minus_low_{target}"] = (
+                None if low_value is None or high_value is None
+                else high_value - low_value
+            )
+        output.append(item)
+    return output
+
+
+def storm_extrema_products(time_series: Sequence[Mapping[str, object]]) -> List[Dict[str, object]]:
+    """Summarize peak erosion and morphology for every physical series."""
+
+    grouped = defaultdict(list)
+    for row in time_series:
+        grouped[(row["altitude_km"], row["rigidity_gv"], row["hemisphere"])].append(row)
+    output: List[Dict[str, object]] = []
+    for key, rows in sorted(grouped.items()):
+        valid = [row for row in rows if finite_float(row.get("mean_latitude_deg")) is not None]
+        if not valid:
+            continue
+        minimum = min(valid, key=lambda row: float(row["mean_latitude_deg"]))
+        maximum = max(valid, key=lambda row: float(row["mean_latitude_deg"]))
+        degradation = [
+            (float(row["cutoff_degradation_deg"]), row)
+            for row in valid if finite_float(row.get("cutoff_degradation_deg")) is not None
+        ]
+        peak_degradation, peak_row = max(
+            degradation, default=(0.0, minimum), key=lambda item: item[0]
+        )
+        output.append({
+            "altitude_km": float(key[0]), "rigidity_gv": float(key[1]),
+            "hemisphere": key[2], "n_valid_epochs": len(valid),
+            "minimum_boundary_deg": float(minimum["mean_latitude_deg"]),
+            "minimum_boundary_epoch_utc": minimum["epoch_utc"],
+            "maximum_boundary_deg": float(maximum["mean_latitude_deg"]),
+            "maximum_boundary_epoch_utc": maximum["epoch_utc"],
+            "maximum_cutoff_degradation_deg": peak_degradation,
+            "maximum_degradation_epoch_utc": peak_row["epoch_utc"],
+            "maximum_first_harmonic_amplitude_deg": max(
+                (finite_float(row.get("amplitude_deg")) or 0.0) for row in valid
+            ),
+            "maximum_second_harmonic_amplitude_deg": max(
+                (finite_float(row.get("second_harmonic_amplitude_deg")) or 0.0)
+                for row in valid
+            ),
+        })
+    return output
+
+
+def recovery_products(time_series: Sequence[Mapping[str, object]],
+                      main_phase: datetime) -> List[Dict[str, object]]:
+    """Estimate nonparametric half and e-fold recovery times after peak erosion."""
+
+    grouped = defaultdict(list)
+    for row in time_series:
+        grouped[(row["altitude_km"], row["rigidity_gv"], row["hemisphere"])].append(row)
+
+    def crossing_hours(rows, peak_index: int, threshold: float) -> Optional[float]:
+        peak_epoch = parse_utc(str(rows[peak_index]["epoch_utc"]))
+        previous = rows[peak_index]
+        previous_value = float(previous["cutoff_degradation_deg"])
+        for current in rows[peak_index + 1:]:
+            value = float(current["cutoff_degradation_deg"])
+            if value <= threshold < previous_value:
+                t0 = (parse_utc(str(previous["epoch_utc"])) - peak_epoch).total_seconds() / 3600.0
+                t1 = (parse_utc(str(current["epoch_utc"])) - peak_epoch).total_seconds() / 3600.0
+                fraction = (previous_value - threshold) / max(
+                    1.0e-15, previous_value - value
+                )
+                return t0 + fraction * (t1 - t0)
+            previous, previous_value = current, value
+        return None
+
+    output: List[Dict[str, object]] = []
+    for key, rows in sorted(grouped.items()):
+        valid = [
+            row for row in sorted(rows, key=lambda row: parse_utc(str(row["epoch_utc"])))
+            if parse_utc(str(row["epoch_utc"])) >= main_phase
+            and finite_float(row.get("cutoff_degradation_deg")) is not None
+        ]
+        if not valid:
+            continue
+        peak_index = max(
+            range(len(valid)), key=lambda i: float(valid[i]["cutoff_degradation_deg"])
+        )
+        peak = float(valid[peak_index]["cutoff_degradation_deg"])
+        half = crossing_hours(valid, peak_index, 0.5 * peak) if peak > 0 else None
+        efold = crossing_hours(valid, peak_index, peak / math.e) if peak > 0 else None
+        status = (
+            "AVAILABLE" if len(valid) >= 6 and half is not None and efold is not None
+            else "DIAGNOSTIC_ONLY"
+        )
+        output.append({
+            "altitude_km": float(key[0]), "rigidity_gv": float(key[1]),
+            "hemisphere": key[2], "n_recovery_epochs": len(valid),
+            "peak_degradation_deg": peak,
+            "peak_epoch_utc": valid[peak_index]["epoch_utc"],
+            "half_recovery_hours": half, "efold_recovery_hours": efold,
+            "last_degradation_deg": float(valid[-1]["cutoff_degradation_deg"]),
+            "status": status,
+        })
+    return output
 
 
 def lag_products(harmonics: Sequence[Mapping[str, object]], driver: Sequence[DriverRow],
@@ -177,9 +441,17 @@ def lag_products(harmonics: Sequence[Mapping[str, object]], driver: Sequence[Dri
                     x.append(float(getattr(sampled, variable)))
                     y.append(float(row["mean_latitude_deg"]))
                 correlation = pearson(x, y)
-                ci_low, ci_high = bootstrap_correlation(
-                    x, y, block_length, replicates, rng
-                )
+                # A moving-block confidence interval is meaningful only after
+                # the time series has enough temporal structure. SMOKE still
+                # records the correlation for pipeline testing, but deliberately
+                # omits inferential bounds instead of manufacturing precision
+                # from only a handful of event landmarks.
+                if len(x) >= MIN_TEMPORAL_EPOCHS_FOR_INFERENCE:
+                    ci_low, ci_high = bootstrap_correlation(
+                        x, y, block_length, replicates, rng
+                    )
+                else:
+                    ci_low, ci_high = None, None
                 output.append({
                     "altitude_km": key[0], "rigidity_gv": key[1],
                     "hemisphere": key[2], "driver_variable": variable,
@@ -188,8 +460,136 @@ def lag_products(harmonics: Sequence[Mapping[str, object]], driver: Sequence[Dri
                     "n_paired_epochs": len(x), "correlation": correlation,
                     "bootstrap_ci_low": ci_low, "bootstrap_ci_high": ci_high,
                     "bootstrap_block_hours": block_hours,
+                    "inference_status": (
+                        "AVAILABLE"
+                        if len(x) >= MIN_TEMPORAL_EPOCHS_FOR_INFERENCE
+                        else "DIAGNOSTIC_ONLY"
+                    ),
                 })
     return output
+
+
+def best_lag_products(lags: Sequence[Mapping[str, object]]) -> List[Dict[str, object]]:
+    """Select the strongest absolute response for each series and driver.
+
+    The complete lag curve remains authoritative. This compact table is a
+    publication aid and explicitly retains sample size and confidence limits,
+    avoiding the common mistake of reporting only a visually selected lag.
+    """
+
+    grouped = defaultdict(list)
+    for row in lags:
+        correlation = finite_float(row.get("correlation"))
+        if correlation is not None:
+            grouped[(row["altitude_km"], row["rigidity_gv"], row["hemisphere"],
+                     row["driver_variable"])].append(row)
+    output: List[Dict[str, object]] = []
+    for key, rows in sorted(grouped.items()):
+        selected = max(rows, key=lambda row: abs(float(row["correlation"])))
+        output.append({
+            "altitude_km": float(key[0]), "rigidity_gv": float(key[1]),
+            "hemisphere": key[2], "driver_variable": key[3],
+            "best_lag_minutes": int(selected["lag_minutes"]),
+            "positive_lag_means_cutoff_follows_driver": True,
+            "correlation": float(selected["correlation"]),
+            "n_paired_epochs": int(selected["n_paired_epochs"]),
+            "bootstrap_ci_low": finite_float(selected.get("bootstrap_ci_low")),
+            "bootstrap_ci_high": finite_float(selected.get("bootstrap_ci_high")),
+            "status": selected.get("inference_status", "DIAGNOSTIC_ONLY"),
+        })
+    return output
+
+
+def analysis_availability_products(
+    boundary_rows: Sequence[Mapping[str, str]],
+    time_series: Sequence[Mapping[str, object]],
+    altitude_response: Sequence[Mapping[str, object]],
+    hysteresis: Sequence[Mapping[str, object]],
+    recovery: Sequence[Mapping[str, object]],
+    study_output_root: Path,
+) -> List[Dict[str, object]]:
+    """Describe exactly which physical interpretations the products support.
+
+    A SMOKE run is useful for testing spatial reductions and figure generation,
+    but it must not be presented as a statistically resolved time-response
+    experiment. These rows give downstream scripts a stable three-state
+    AVAILABLE/DIAGNOSTIC_ONLY/NOT_AVAILABLE contract.
+    """
+
+    epochs = sorted({str(row["epoch_utc"]) for row in boundary_rows})
+    altitudes = sorted({float(row["altitude_km"]) for row in boundary_rows})
+    rigidities = sorted({float(row["rigidity_gv"]) for row in boundary_rows})
+    mlt_sectors = sorted({float(row["mlt_hour"]) for row in boundary_rows})
+    temporal_status = (
+        "AVAILABLE" if len(epochs) >= MIN_TEMPORAL_EPOCHS_FOR_INFERENCE
+        else "DIAGNOSTIC_ONLY"
+    )
+    sensitivity_result = (
+        study_output_root / "ts05_sensitivity" / "comparison" /
+        "ts05_sensitivity_result.json"
+    )
+    directional_files = list(study_output_root.rglob("*direction*access*.csv"))
+
+    def row(name: str, status: str, evidence: str, interpretation: str
+            ) -> Dict[str, object]:
+        return {
+            "analysis": name, "status": status, "n_epochs": len(epochs),
+            "evidence": evidence, "interpretation": interpretation,
+        }
+
+    return [
+        row(
+            "rigidity_dependence", "AVAILABLE" if len(rigidities) >= 2 else "NOT_AVAILABLE",
+            f"{len(rigidities)} rigidities",
+            "Boundary and degradation dependence on particle rigidity.",
+        ),
+        row(
+            "altitude_dependence", "AVAILABLE" if altitude_response else "NOT_AVAILABLE",
+            f"{len(altitudes)} shells; {len(altitude_response)} paired rows",
+            "Difference between identical epoch/rigidity/hemisphere keys at the two shells.",
+        ),
+        row(
+            "mlt_morphology", "AVAILABLE" if len(mlt_sectors) >= 5 else "NOT_AVAILABLE",
+            f"{len(mlt_sectors)} MLT sectors",
+            "Local-time boundary cells plus first and second harmonic shape metrics.",
+        ),
+        row(
+            "accessible_area", "AVAILABLE" if time_series else "NOT_AVAILABLE",
+            f"{len(time_series)} reduced series rows",
+            "Fraction and spherical-shell-equivalent area accessible in the latitude band.",
+        ),
+        row(
+            "driver_lag", temporal_status,
+            f"{len(epochs)} unique epochs; minimum {MIN_TEMPORAL_EPOCHS_FOR_INFERENCE}",
+            "Lag maxima are inferential only for FULL-like temporal coverage.",
+        ),
+        row(
+            "matched_driver_hysteresis",
+            temporal_status if hysteresis else "DIAGNOSTIC_ONLY",
+            f"{len(hysteresis)} matched summary rows",
+            "Main/recovery contrast at similar instantaneous forcing.",
+        ),
+        row(
+            "recovery_timescale",
+            ("AVAILABLE" if temporal_status == "AVAILABLE" and
+             any(item.get("status") == "AVAILABLE" for item in recovery)
+             else "DIAGNOSTIC_ONLY"),
+            f"{len(recovery)} candidate series",
+            "Half and e-fold recovery after maximum degradation.",
+        ),
+        row(
+            "ts05_driver_attribution",
+            "AVAILABLE" if sensitivity_result.is_file() else "NOT_AVAILABLE",
+            str(sensitivity_result),
+            "Requires full/history-frozen/instantaneous-frozen TS05 sensitivity runs.",
+        ),
+        row(
+            "directional_topology",
+            "AVAILABLE" if directional_files else "NOT_AVAILABLE",
+            f"{len(directional_files)} directional-access tables",
+            "Requires directional or asymptotic access output beyond vertical boundaries.",
+        ),
+    ]
 
 
 def hysteresis_products(boundary_rows: Sequence[Mapping[str, str]], driver: Sequence[DriverRow],
@@ -263,16 +663,26 @@ def hysteresis_products(boundary_rows: Sequence[Mapping[str, str]], driver: Sequ
         ):
             values = [float(row["recovery_minus_main_deg"]) for row in selected]
             boot = []
-            if values:
+            n_unique_main_epochs = len({row["main_epoch_utc"] for row in selected})
+            # Mirror the lag-analysis policy: preserve sparse matched pairs as
+            # diagnostics, but do not attach a bootstrap confidence interval
+            # until the event is sampled densely enough for temporal inference.
+            if values and n_unique_main_epochs >= MIN_TEMPORAL_EPOCHS_FOR_INFERENCE:
                 for _ in range(replicates):
                     boot.append(statistics.median(rng.choices(values, k=len(values))))
             summaries.append({
                 "altitude_km": float(key[0]), "rigidity_gv": float(key[1]),
                 "hemisphere": key[2], "match_definition": label,
                 "n_pairs": len(values),
+                "n_unique_main_epochs": n_unique_main_epochs,
                 "median_recovery_minus_main_deg": statistics.median(values) if values else None,
                 "bootstrap_ci_low": quantile(boot, 0.025) if boot else None,
                 "bootstrap_ci_high": quantile(boot, 0.975) if boot else None,
+                "inference_status": (
+                    "AVAILABLE"
+                    if n_unique_main_epochs >= MIN_TEMPORAL_EPOCHS_FOR_INFERENCE
+                    else "DIAGNOSTIC_ONLY"
+                ),
             })
     return pairs, summaries
 
@@ -304,21 +714,61 @@ def main() -> int:
     main_phase = parse_utc(landmarks["main_phase"])
 
     harmonics, time_series = morphology_products(rows, config)
+    boundary_cells = boundary_cell_products(
+        rows, driver, compression, main_phase, config
+    )
+    altitude_response = altitude_response_products(time_series)
+    extrema = storm_extrema_products(time_series)
+    recovery = recovery_products(time_series, main_phase)
     lags = lag_products(harmonics, driver, config)
+    best_lags = best_lag_products(lags)
     pairs, hysteresis = hysteresis_products(
         rows, driver, compression, main_phase, config
     )
     output = resolve_output_path(args.output_root)
     output.mkdir(parents=True, exist_ok=True)
+    availability = analysis_availability_products(
+        rows, time_series, altitude_response, hysteresis, recovery, output.parent
+    )
     write_csv(output / "morphology_harmonics.csv", harmonics)
     write_csv(output / "cutoff_dynamics_timeseries.csv", time_series)
+    write_csv(output / "boundary_cell_dynamics.csv", boundary_cells)
+    write_csv(output / "altitude_response.csv", altitude_response)
+    write_csv(output / "storm_extrema_summary.csv", extrema)
+    write_csv(output / "recovery_timescales.csv", recovery)
     write_csv(output / "lag_correlations.csv", lags)
+    write_csv(output / "best_lag_summary.csv", best_lags)
     write_csv(output / "hysteresis_pairs.csv", pairs)
     write_csv(output / "hysteresis_summary.csv", hysteresis)
+    write_csv(output / "analysis_availability.csv", availability)
+    availability_json = {
+        row["analysis"]: {
+            "status": row["status"], "n_epochs": row["n_epochs"],
+            "evidence": row["evidence"],
+            "interpretation": row["interpretation"],
+        }
+        for row in availability
+    }
+    (output / "analysis_availability.json").write_text(
+        json.dumps(availability_json, indent=2) + "\n", encoding="utf-8"
+    )
+    status_counts = {
+        status: sum(row["status"] == status for row in availability)
+        for status in ("AVAILABLE", "DIAGNOSTIC_ONLY", "NOT_AVAILABLE")
+    }
     result = {
         "n_input_boundary_rows": len(rows), "n_harmonic_rows": len(harmonics),
+        "n_unique_epochs": len({row["epoch_utc"] for row in rows}),
+        "minimum_temporal_epochs_for_inference": MIN_TEMPORAL_EPOCHS_FOR_INFERENCE,
+        "n_boundary_cell_rows": len(boundary_cells),
+        "n_altitude_response_rows": len(altitude_response),
+        "n_storm_extrema_rows": len(extrema),
+        "n_recovery_rows": len(recovery),
         "n_lag_rows": len(lags), "n_hysteresis_pairs": len(pairs),
-        "n_hysteresis_summary_rows": len(hysteresis), "event_landmarks": landmarks,
+        "n_best_lag_rows": len(best_lags),
+        "n_hysteresis_summary_rows": len(hysteresis),
+        "analysis_status_counts": status_counts,
+        "event_landmarks": landmarks,
     }
     (output / "dynamics_result.json").write_text(
         json.dumps(result, indent=2) + "\n", encoding="utf-8"

@@ -81,13 +81,28 @@ def stage_output_problem(stage: str, output: Path,
             if not staged:
                 return f"no C9/C10 raw products were staged: {staged_path}"
     elif stage == "dynamics":
-        path = output / "dynamics" / "cutoff_dynamics_timeseries.csv"
-        if not path.is_file() or path.stat().st_size == 0:
-            return f"missing or empty cutoff dynamics table: {path}"
+        required = (
+            "cutoff_dynamics_timeseries.csv", "boundary_cell_dynamics.csv",
+            "altitude_response.csv", "storm_extrema_summary.csv",
+            "analysis_availability.json", "dynamics_result.json",
+        )
+        missing = [
+            output / "dynamics" / name for name in required
+            if not (output / "dynamics" / name).is_file()
+            or (output / "dynamics" / name).stat().st_size == 0
+        ]
+        if missing:
+            return "missing or empty enhanced dynamics products: " + ", ".join(
+                map(str, missing)
+            )
     elif stage == "figures":
         missing = [
             output / "figures" / f"{stem}{suffix}"
-            for stem in ("figure_cutoff_degradation", "figure_peak_cutoff_degradation")
+            for stem in (
+                "figure_cutoff_degradation", "figure_peak_cutoff_degradation",
+                "figure_mlt_cutoff_evolution", "figure_altitude_response",
+                "figure_accessible_area",
+            )
             for suffix in (".png", ".eps")
             if not (output / "figures" / f"{stem}{suffix}").is_file()
         ]

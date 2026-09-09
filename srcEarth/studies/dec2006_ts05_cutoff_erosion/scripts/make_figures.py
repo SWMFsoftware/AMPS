@@ -5,9 +5,9 @@ Every panel is derived from a machine-readable table produced elsewhere in the
 package.  The plotting layer performs no boundary extraction or scientific
 filtering.  Every completed figure is written as a high-resolution PNG, an EPS
 vector graphic requested by common journal workflows, and a PDF vector copy.
-Missing optional validation products are reported explicitly.  The dedicated
-cutoff-degradation products are required when the top-level publication runner
-uses ``--require-publication-products``.
+Missing optional validation products are reported explicitly. The five
+cutoff-physics figure families are required when the top-level publication
+runner uses ``--require-publication-products``.
 """
 
 from __future__ import annotations
@@ -336,6 +336,173 @@ def cutoff_degradation_figures(path: Path, output: Path) -> list[Path]:
     return products
 
 
+def mlt_evolution_figure(path: Path, output: Path) -> list[Path]:
+    """Show how the local-time cutoff shape changes through the event.
+
+    The postprocessor selects one well-resolved representative rigidity near
+    0.424 GV at the upper shell and up to four chronological landmarks. The
+    quiet reference is drawn for every MLT cell, so both an overall equatorward
+    displacement and non-axisymmetric deformation remain visible. No temporal
+    interpolation is performed; sparse SMOKE epochs therefore test this exact
+    plotting/reduction path without pretending to recover fast storm timing.
+    """
+
+    if not path.exists() or path.stat().st_size == 0:
+        print(f"Skipping MLT-evolution figure; missing or empty {path}", flush=True)
+        return []
+    data = pd.read_csv(path)
+    required = {
+        "epoch_utc", "altitude_km", "rigidity_gv", "hemisphere", "mlt_hour",
+        "boundary_aacgm_abs_lat_deg", "quiet_reference_boundary_deg",
+    }
+    if required.difference(data.columns):
+        print("Skipping MLT-evolution figure; required columns are absent", flush=True)
+        return []
+    data["epoch_utc"] = pd.to_datetime(data["epoch_utc"], utc=True)
+    data = data.dropna(subset=list(required))
+    if data.empty:
+        print("Skipping MLT-evolution figure; no finite boundary cells", flush=True)
+        return []
+    altitude = float(data["altitude_km"].max())
+    available_rigidity = np.sort(data.loc[
+        np.isclose(data.altitude_km, altitude), "rigidity_gv"
+    ].unique())
+    rigidity = float(available_rigidity[np.argmin(np.abs(available_rigidity - 0.423556372))])
+    selected = data[
+        np.isclose(data.altitude_km, altitude) &
+        np.isclose(data.rigidity_gv, rigidity)
+    ].copy()
+    epochs = list(sorted(selected["epoch_utc"].unique()))
+    if len(epochs) > 4:
+        # Evenly spaced indices preserve chronology and remain deterministic.
+        indices = np.unique(np.rint(np.linspace(0, len(epochs) - 1, 4)).astype(int))
+        epochs = [epochs[index] for index in indices]
+    figure, axes = plt.subplots(2, 2, figsize=(10.5, 7.2), sharex=True,
+                               sharey=True, squeeze=False)
+    flat = list(axes.flat)
+    for axis, epoch in zip(flat, epochs):
+        group = selected[selected.epoch_utc == epoch]
+        for hemisphere, cells in group.groupby("hemisphere"):
+            cells = cells.sort_values("mlt_hour")
+            x = _numeric_plot_values(cells.mlt_hour)
+            y = _numeric_plot_values(cells.boundary_aacgm_abs_lat_deg)
+            quiet = _numeric_plot_values(cells.quiet_reference_boundary_deg)
+            # Close the 24-hour curve only when at least two sectors exist.
+            if len(x) > 1:
+                x = np.append(x, x[0] + 24.0)
+                y = np.append(y, y[0])
+                quiet = np.append(quiet, quiet[0])
+            axis.plot(x, y, marker="o", linewidth=1.3, label=f"{hemisphere} modeled")
+            axis.plot(x, quiet, linestyle="--", linewidth=0.9,
+                      label=f"{hemisphere} quiet")
+        phase = str(group.event_phase.iloc[0]) if "event_phase" in group else ""
+        stamp = pd.Timestamp(epoch).strftime("%m-%d %H:%M UTC")
+        axis.set_title(f"{stamp}  {phase}", fontsize=9)
+        axis.set_xlim(0.0, 24.0)
+        axis.grid(alpha=0.25)
+    for axis in flat[len(epochs):]:
+        axis.set_visible(False)
+    for axis in axes[-1, :]:
+        axis.set_xlabel("MLT [h]")
+    for axis in axes[:, 0]:
+        axis.set_ylabel("|AACGM cutoff latitude| [deg]")
+    flat[0].legend(fontsize=7, ncol=2)
+    figure.suptitle(
+        f"Storm-time MLT cutoff morphology: {rigidity:.3f} GV, {altitude:g} km"
+    )
+    figure.tight_layout()
+    return save_figure(figure, output / "figure_mlt_cutoff_evolution")
+
+
+def altitude_response_figure(path: Path, output: Path) -> list[Path]:
+    """Plot the modeled shell-to-shell difference without conflating keys."""
+
+    if not path.exists() or path.stat().st_size == 0:
+        print(f"Skipping altitude-response figure; missing or empty {path}", flush=True)
+        return []
+    data = pd.read_csv(path)
+    required = {"epoch_utc", "rigidity_gv", "high_minus_low_erosion"}
+    if required.difference(data.columns):
+        print("Skipping altitude-response figure; required columns are absent", flush=True)
+        return []
+    data["epoch_utc"] = pd.to_datetime(data["epoch_utc"], utc=True)
+    data["high_minus_low_erosion"] = pd.to_numeric(
+        data["high_minus_low_erosion"], errors="coerce"
+    )
+    reduced = data.dropna(subset=list(required)).groupby(
+        ["rigidity_gv", "epoch_utc"], as_index=False
+    )["high_minus_low_erosion"].mean()
+    if reduced.empty:
+        print("Skipping altitude-response figure; no paired finite rows", flush=True)
+        return []
+    pivot = reduced.pivot(index="rigidity_gv", columns="epoch_utc",
+                          values="high_minus_low_erosion").sort_index()
+    pivot = pivot.reindex(sorted(pivot.columns), axis=1)
+    values = pivot.to_numpy(dtype=float)
+    limit = max(0.05, float(np.nanmax(np.abs(values))))
+    x = mdates.date2num(pivot.columns.to_pydatetime())
+    y = pivot.index.to_numpy(dtype=float)
+    figure, axis = plt.subplots(figsize=(10.2, 4.3))
+    mesh = axis.pcolormesh(
+        _cell_edges(x, 1.0 / 48.0), _cell_edges(y, 0.025), values,
+        shading="flat", cmap="PuOr", norm=Normalize(vmin=-limit, vmax=limit),
+    )
+    axis.xaxis_date()
+    axis.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d\n%H:%M"))
+    axis.set_xlabel("UTC")
+    axis.set_ylabel("Rigidity [GV]")
+    axis.set_title("Altitude dependence of cutoff erosion (upper minus lower shell)")
+    colorbar = figure.colorbar(mesh, ax=axis)
+    colorbar.set_label(r"$\Delta\Lambda_c^{high}-\Delta\Lambda_c^{low}$ [deg]")
+    figure.tight_layout()
+    return save_figure(figure, output / "figure_altitude_response")
+
+
+def accessible_area_figure(path: Path, output: Path) -> list[Path]:
+    """Plot the event evolution of the physically transparent access fraction."""
+
+    if not path.exists() or path.stat().st_size == 0:
+        print(f"Skipping accessible-area figure; missing or empty {path}", flush=True)
+        return []
+    data = pd.read_csv(path)
+    column = "accessible_area_fraction_in_analyzed_band"
+    required = {"epoch_utc", "altitude_km", "rigidity_gv", column}
+    if required.difference(data.columns):
+        print("Skipping accessible-area figure; required columns are absent", flush=True)
+        return []
+    data["epoch_utc"] = pd.to_datetime(data["epoch_utc"], utc=True)
+    data[column] = pd.to_numeric(data[column], errors="coerce")
+    data = data.dropna(subset=list(required))
+    if data.empty:
+        print("Skipping accessible-area figure; no finite rows", flush=True)
+        return []
+    targets = (0.174013525, 0.423556372, 0.692820323, 1.131017241)
+    figure, axes = plt.subplots(len(sorted(data.altitude_km.unique())), 1,
+                               figsize=(10.2, 6.3), sharex=True, squeeze=False)
+    for axis, altitude in zip(axes[:, 0], sorted(data.altitude_km.unique())):
+        shell = data[np.isclose(data.altitude_km, altitude)]
+        available = np.sort(shell.rigidity_gv.unique())
+        selected = sorted(set(float(available[np.argmin(np.abs(available - target))])
+                              for target in targets))
+        for rigidity in selected:
+            group = shell[np.isclose(shell.rigidity_gv, rigidity)].groupby(
+                "epoch_utc", as_index=False
+            )[column].mean().sort_values("epoch_utc")
+            axis.plot(_datetime_plot_values(group.epoch_utc),
+                      _numeric_plot_values(group[column]),
+                      marker="o", markersize=2.5, label=f"{rigidity:.3f} GV")
+        axis.set_ylabel("Accessible fraction")
+        axis.set_title(f"{altitude:g} km; hemispheric mean")
+        axis.set_ylim(bottom=0.0)
+        axis.grid(alpha=0.25)
+        axis.legend(ncol=4, fontsize=7)
+    axes[-1, 0].set_xlabel("UTC")
+    axes[-1, 0].xaxis.set_major_formatter(mdates.DateFormatter("%m-%d\n%H:%M"))
+    figure.suptitle("Storm-time expansion of the geomagnetically accessible area")
+    figure.tight_layout()
+    return save_figure(figure, output / "figure_accessible_area")
+
+
 def lag_hysteresis_figure(lag_path: Path, hysteresis_path: Path, output: Path) -> None:
     """Create the optional response/hysteresis panel when both tables have data.
 
@@ -407,7 +574,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--require-publication-products", action="store_true",
-        help="Fail unless both dedicated cutoff-degradation figures are written",
+        help="Fail unless every declared cutoff-physics PNG/EPS product is written",
     )
     return parser.parse_args()
 
@@ -424,11 +591,24 @@ def main() -> int:
     publication_products = cutoff_degradation_figures(
         dynamics / "cutoff_dynamics_timeseries.csv", output
     )
+    publication_products += mlt_evolution_figure(
+        dynamics / "boundary_cell_dynamics.csv", output
+    )
+    publication_products += altitude_response_figure(
+        dynamics / "altitude_response.csv", output
+    )
+    publication_products += accessible_area_figure(
+        dynamics / "cutoff_dynamics_timeseries.csv", output
+    )
     lag_hysteresis_figure(dynamics / "lag_correlations.csv",
                           dynamics / "hysteresis_summary.csv", output)
     expected = {
         output / f"{stem}{suffix}"
-        for stem in ("figure_cutoff_degradation", "figure_peak_cutoff_degradation")
+        for stem in (
+            "figure_cutoff_degradation", "figure_peak_cutoff_degradation",
+            "figure_mlt_cutoff_evolution", "figure_altitude_response",
+            "figure_accessible_area",
+        )
         for suffix in (".png", ".eps")
     }
     missing = sorted(str(path) for path in expected if not path.is_file())
@@ -437,6 +617,11 @@ def main() -> int:
         "publication_products": [str(path) for path in publication_products],
         "required_png_eps": sorted(str(path) for path in expected),
         "missing_required_products": missing,
+        "analysis_availability": (
+            json.loads((dynamics / "analysis_availability.json").read_text(
+                encoding="utf-8"
+            )) if (dynamics / "analysis_availability.json").is_file() else {}
+        ),
         "passed": not missing,
     }
     output.mkdir(parents=True, exist_ok=True)

@@ -1,5 +1,19 @@
 # Change log
 
+## 2026-09-09
+
+- Expanded dynamics postprocessing with cell-resolved quiet-reference erosion,
+  second MLT harmonics, spherical-shell-equivalent accessible area, exact-key
+  altitude response, storm extrema, recovery times, and compact best-lag tables.
+- Added a machine-readable three-state analysis-availability contract so SMOKE
+  spatial diagnostics cannot be mistaken for FULL temporal inference.
+- Suppressed bootstrap confidence intervals below 24 paired epochs while
+  retaining sparse correlations and matched pairs for deterministic QA.
+- Added required publication figures for MLT evolution, altitude dependence,
+  and accessible-area expansion in PNG, EPS, and PDF.
+- Extended top-level dynamics and figure output checks, unit tests, the data
+  dictionary, package manifest, and README for the new scientific products.
+
 ## 2026-09-08
 
 - Replaced the unnecessary `TwoSlopeNorm` dependency with an exactly

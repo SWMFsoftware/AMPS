@@ -21,9 +21,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from compare_observations import normalize_pamela, normalize_poes
+from analyze_dynamics import (
+    analysis_availability_products, fit_two_mlt_harmonics,
+)
 from make_figures import (
-    _datetime_plot_values, _numeric_plot_values, cutoff_degradation_figures,
-    lag_hysteresis_figure,
+    _datetime_plot_values, _numeric_plot_values, accessible_area_figure,
+    altitude_response_figure, cutoff_degradation_figures,
+    lag_hysteresis_figure, mlt_evolution_figure,
 )
 from run_morphology import load_c10_module, snapshot_suffix, split_multishell_access
 from run_study import execute, independent_validation_remains
@@ -32,6 +36,44 @@ from study_common import read_driver
 
 
 class PipelineTests(unittest.TestCase):
+    def test_second_mlt_harmonic_recovers_known_shape(self):
+        """The semidiurnal coefficient must retain amplitude and phase."""
+
+        mlt = np.arange(0.0, 24.0, 3.0)
+        phase = 2.25
+        angle = 4.0 * np.pi * (mlt - phase) / 24.0
+        latitude = 61.0 + 1.75 * np.cos(angle)
+        fit = fit_two_mlt_harmonics(mlt, latitude)
+        self.assertAlmostEqual(fit["two_harmonic_mean_latitude_deg"], 61.0, 12)
+        self.assertAlmostEqual(fit["second_harmonic_amplitude_deg"], 1.75, 12)
+        self.assertAlmostEqual(fit["second_harmonic_phase_mlt_hour"], phase, 12)
+        self.assertLess(fit["two_harmonic_fit_rms_deg"], 1.0e-12)
+
+    def test_smoke_availability_prevents_temporal_overinterpretation(self):
+        """Four epochs support spatial QA but not lag/recovery inference."""
+
+        boundary = []
+        for epoch in range(4):
+            for altitude in (475.0, 850.0):
+                for rigidity in (0.4, 0.7):
+                    for mlt in range(0, 24, 3):
+                        boundary.append({
+                            "epoch_utc": f"2006-12-{14 + epoch:02d}T00:00:00Z",
+                            "altitude_km": str(altitude),
+                            "rigidity_gv": str(rigidity), "hemisphere": "N",
+                            "mlt_hour": str(mlt),
+                        })
+        status = analysis_availability_products(
+            boundary, [{"epoch_utc": "x"}], [{"epoch_utc": "x"}], [], [],
+            Path("/nonexistent/study/output"),
+        )
+        mapping = {row["analysis"]: row["status"] for row in status}
+        self.assertEqual(mapping["mlt_morphology"], "AVAILABLE")
+        self.assertEqual(mapping["altitude_dependence"], "AVAILABLE")
+        self.assertEqual(mapping["driver_lag"], "DIAGNOSTIC_ONLY")
+        self.assertEqual(mapping["recovery_timescale"], "DIAGNOSTIC_ONLY")
+        self.assertEqual(mapping["ts05_driver_attribution"], "NOT_AVAILABLE")
+
     def test_snapshot_suffix_matches_native_mode3d_filename_contract(self):
         """The postprocessor must address one exact file per batch epoch."""
 
@@ -333,6 +375,85 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(len(products), 6)
             for stem in ("figure_cutoff_degradation",
                          "figure_peak_cutoff_degradation"):
+                self.assertTrue((work / "figures" / f"{stem}.png").is_file())
+                self.assertTrue((work / "figures" / f"{stem}.eps").is_file())
+
+    def test_enhanced_spatial_figures_run_on_smoke_sized_products(self):
+        """Four epochs are sufficient to verify all spatial publication panels."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            cells = work / "boundary_cell_dynamics.csv"
+            with cells.open("w", newline="", encoding="utf-8") as stream:
+                fields = (
+                    "epoch_utc", "altitude_km", "rigidity_gv", "hemisphere",
+                    "mlt_hour", "boundary_aacgm_abs_lat_deg",
+                    "quiet_reference_boundary_deg", "event_phase",
+                )
+                writer = csv.DictWriter(stream, fieldnames=fields)
+                writer.writeheader()
+                for index, epoch in enumerate((
+                    "2006-12-14T00:00:00Z", "2006-12-14T14:10:00Z",
+                    "2006-12-15T00:50:00Z", "2006-12-16T00:00:00Z",
+                )):
+                    for hemisphere, sign in (("N", 1.0), ("S", -1.0)):
+                        for mlt in range(0, 24, 3):
+                            writer.writerow({
+                                "epoch_utc": epoch, "altitude_km": 850.0,
+                                "rigidity_gv": 0.423556372,
+                                "hemisphere": hemisphere, "mlt_hour": mlt,
+                                "boundary_aacgm_abs_lat_deg": (
+                                    60.0 - index + sign * np.cos(2*np.pi*mlt/24)
+                                ),
+                                "quiet_reference_boundary_deg": 60.0,
+                                "event_phase": ("PRECOMPRESSION" if index == 0
+                                                else "MAIN_PHASE" if index < 3
+                                                else "RECOVERY"),
+                            })
+            altitude = work / "altitude_response.csv"
+            with altitude.open("w", newline="", encoding="utf-8") as stream:
+                writer = csv.DictWriter(stream, fieldnames=(
+                    "epoch_utc", "rigidity_gv", "hemisphere",
+                    "high_minus_low_erosion",
+                ))
+                writer.writeheader()
+                for index, epoch in enumerate((
+                    "2006-12-14T00:00:00Z", "2006-12-15T00:00:00Z",
+                )):
+                    for rigidity in (0.4, 0.7):
+                        for hemisphere in ("N", "S"):
+                            writer.writerow({
+                                "epoch_utc": epoch, "rigidity_gv": rigidity,
+                                "hemisphere": hemisphere,
+                                "high_minus_low_erosion": (index + 1) * rigidity,
+                            })
+            dynamics = work / "cutoff_dynamics_timeseries.csv"
+            with dynamics.open("w", newline="", encoding="utf-8") as stream:
+                writer = csv.DictWriter(stream, fieldnames=(
+                    "epoch_utc", "altitude_km", "rigidity_gv", "hemisphere",
+                    "accessible_area_fraction_in_analyzed_band",
+                ))
+                writer.writeheader()
+                for altitude_km in (475.0, 850.0):
+                    for rigidity in (0.174013525, 0.423556372, 0.692820323,
+                                     1.131017241):
+                        for hemisphere in ("N", "S"):
+                            for index, epoch in enumerate((
+                                "2006-12-14T00:00:00Z", "2006-12-15T00:00:00Z",
+                            )):
+                                writer.writerow({
+                                    "epoch_utc": epoch, "altitude_km": altitude_km,
+                                    "rigidity_gv": rigidity, "hemisphere": hemisphere,
+                                    "accessible_area_fraction_in_analyzed_band":
+                                        0.2 + 0.1 * index,
+                                })
+            products = []
+            products += mlt_evolution_figure(cells, work / "figures")
+            products += altitude_response_figure(altitude, work / "figures")
+            products += accessible_area_figure(dynamics, work / "figures")
+            self.assertEqual(len(products), 9)
+            for stem in ("figure_mlt_cutoff_evolution",
+                         "figure_altitude_response", "figure_accessible_area"):
                 self.assertTrue((work / "figures" / f"{stem}.png").is_file())
                 self.assertTrue((work / "figures" / f"{stem}.eps").is_file())
 

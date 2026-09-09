@@ -332,9 +332,14 @@ fit first with a mean and first harmonic,
  \label{eq:exp-harmonic}
 \end{equation}
 \end{linenomath*}
-The fit uses the cell uncertainties and resolved fractions. A second harmonic
-is retained only if it improves blocked cross-validation and its amplitude is
-stable under grid refinement. The storm perturbation is referenced to the
+The implemented reduction uses ordinary least squares on finite resolved MLT
+cells and archives the valid/requested cell counts and RMS residual. A second
+fit adds $C_2\cos(2\theta)+S_2\sin(2\theta)$, where
+$\theta=2\pi\,\mathrm{MLT}/24$, and reports
+$A_2=(C_2^2+S_2^2)^{1/2}$ and its 12-h phase. This semidiurnal term is a
+descriptive day--night versus dawn--dusk deformation metric; the original cell
+table and both fit residuals remain authoritative. The storm perturbation is
+referenced to the
 quiet median,
 \begin{linenomath*}
 \begin{equation}
@@ -347,22 +352,25 @@ quiet median,
 so negative values are equatorward erosion. Boundary speed is evaluated with
 centered finite differences except at gaps and interval endpoints.
 
-The surface area on a shell that is accessible to rigidity $R$ at a selected
-transmission threshold $T_*$ is
+The implemented boundary-derived accessible fraction within the analyzed
+absolute-latitude band $[\Lambda_{\min},\Lambda_{\max}]$ is
 \begin{linenomath*}
 \begin{equation}
- S_{\mathrm{acc}}(R,t;T_*)=
- \int_{S_h} H[T_{\mathrm{mod}}(R,\mathbf{x},t)-T_*] \, \mathrm{d}S,
- \qquad
- f_{\mathrm{acc}}=S_{\mathrm{acc}}/S_h,
+ f_{\mathrm{acc}}(R,t)=\left\langle
+ \frac{\sin\Lambda_{\max}-\sin\Lambda_c(\mathrm{MLT},t,R)}
+ {\sin\Lambda_{\max}-\sin\Lambda_{\min}}
+ \right\rangle_{\mathrm{MLT}},\qquad
+ S_{\mathrm{eq}}=2\pi(R_E+h)^2
+ (\sin\Lambda_{\max}-\sin\Lambda_{\min})f_{\mathrm{acc}},
  \label{eq:exp-accessible-area}
 \end{equation}
 \end{linenomath*}
-where $S_h$ is the analyzed area of the altitude shell and $H$ is the Heaviside
-function. Results are reported for $T_*=0.5$, with 0.25 and 0.75 as sensitivity
-thresholds. Reporting both latitude and accessible area distinguishes a nearly
-uniform equatorward shift from a strongly asymmetric opening confined to a
-limited range of MLT.
+where boundaries are clamped to the analyzed band before integration and the
+average is over valid MLT sectors. $S_{\mathrm{eq}}$ is explicitly a
+spherical-shell-equivalent comparison metric; AACGM is not assumed to be an
+equal-area coordinate system. Reporting both latitude and accessible fraction
+distinguishes a nearly uniform equatorward shift from a strongly asymmetric
+opening confined to a limited range of MLT.
 
 \subsection{Lag, Driver Attribution, and Hysteresis}
 
@@ -384,6 +392,11 @@ searched over the preregistered interval $-3$ to $+6$ h, with positive $\tau$
 meaning that cutoff response follows the driver. Confidence intervals use
 phase-preserving block bootstrap resamples; the effective number of
 independent samples, not the raw five-minute count, controls significance.
+Runs with fewer than 24 paired model epochs retain lag curves for software and
+exploratory diagnostics but omit bootstrap intervals and are labeled
+\texttt{DIAGNOSTIC\_ONLY}. The same minimum is applied to matched-driver
+hysteresis inference. Recovery half-times and e-folding times additionally
+require at least six post-peak samples and observed crossings of both levels.
 
 Predictive attribution uses a regularized distributed-lag model,
 \begin{linenomath*}

@@ -58,9 +58,9 @@ changing the scientific definitions after inspecting them.
 | `scripts/run_morphology.py` | 475/850-km common-grid AMPS execution and ACCESS_T50 extraction |
 | `scripts/verify_mesh_reuse.py` | Exact-state and derived-boundary equivalence test against standalone execution |
 | `scripts/compare_observations.py` | Normalized PAMELA plus POES/MetOp paired comparison tables |
-| `scripts/analyze_dynamics.py` | MLT harmonics, accessible area, lag correlations, and matched-phase hysteresis |
+| `scripts/analyze_dynamics.py` | Cell erosion, two MLT harmonics, accessible area, altitude response, extrema, recovery, lag, hysteresis, and availability status |
 | `scripts/compare_ts05_sensitivity.py` | Cell-matched differences among the full and two perturbed TS05 runs |
-| `scripts/make_figures.py` | Driver, validation, cutoff-degradation, dynamics, lag, and hysteresis figures in PNG, EPS, and PDF |
+| `scripts/make_figures.py` | Driver, validation, cutoff degradation, MLT evolution, altitude response, accessible area, lag, and hysteresis figures in PNG, EPS, and PDF |
 | `scripts/validate_package.py` | Data, schema, driver, input-deck, and postprocessor integrity checks |
 | `docs/DATA_DICTIONARY.md` | Definitions and sign conventions for generated products |
 | `docs/STUDY_METHOD_SECTION.tex` | Exact manuscript study section that defines this package's scientific contract |
@@ -423,6 +423,21 @@ python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stag
 python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stage compare --stage dynamics --stage figures
 ```
 
+To apply a postprocessing update to a completed morphology calculation without
+launching AMPS again, run only the last two stages:
+
+```bash
+python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py \
+  --stage dynamics --stage figures
+```
+
+This reads the existing `morphology/morphology_boundaries.csv`, replaces the
+derived dynamics tables, regenerates every PNG/EPS/PDF panel, and rewrites the
+figure manifest. Inspect `dynamics/analysis_availability.csv` before using a
+plot or statistic in a manuscript; for SMOKE, spatial panels are meaningful
+pipeline diagnostics but temporal lag, hysteresis, and recovery conclusions
+remain explicitly non-inferential.
+
 With the default reuse policy, a standalone `--stage pamela` or `--stage poes`
 expects the matching raw files to have been staged by an earlier morphology
 run. Add `--independent-observation-runs` to execute that observation runner's
@@ -456,8 +471,8 @@ The principal directories have distinct roles:
 | `C10/` | POES/MetOp MLT- and hemisphere-resolved boundary validation at approximately 850 km |
 | `morphology/` | Common-grid modeled boundaries used for storm-dynamics inference |
 | `comparison/` | Observation/model pairs and aggregate validation metrics |
-| `dynamics/` | Quiet-relative erosion, MLT harmonics, accessible area, lag, and hysteresis |
-| `figures/` | PNG/EPS/PDF figures generated from archived tables, including cutoff-erosion maps and peak-degradation curves |
+| `dynamics/` | Traceable cell-level erosion, two-harmonic MLT shape, altitude response, accessible area, extrema, recovery, lag, hysteresis, and availability records |
+| `figures/` | PNG/EPS/PDF figures generated from archived tables, including cutoff-erosion, MLT-shape, altitude-response, and accessible-area panels |
 
 For each altitude, rigidity, and hemisphere, the quiet reference is the median
 modeled mean boundary before the configured compression-search interval. The
@@ -488,9 +503,16 @@ The storm analysis writes:
 ```text
 test_output/dec2006_ts05_cutoff_erosion/dynamics/morphology_harmonics.csv
 test_output/dec2006_ts05_cutoff_erosion/dynamics/cutoff_dynamics_timeseries.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/boundary_cell_dynamics.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/altitude_response.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/storm_extrema_summary.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/recovery_timescales.csv
 test_output/dec2006_ts05_cutoff_erosion/dynamics/lag_correlations.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/best_lag_summary.csv
 test_output/dec2006_ts05_cutoff_erosion/dynamics/hysteresis_pairs.csv
 test_output/dec2006_ts05_cutoff_erosion/dynamics/hysteresis_summary.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/analysis_availability.csv
+test_output/dec2006_ts05_cutoff_erosion/dynamics/analysis_availability.json
 test_output/dec2006_ts05_cutoff_erosion/dynamics/dynamics_result.json
 ```
 
@@ -502,13 +524,24 @@ test_output/dec2006_ts05_cutoff_erosion/figures/figure_cutoff_degradation.png
 test_output/dec2006_ts05_cutoff_erosion/figures/figure_cutoff_degradation.eps
 test_output/dec2006_ts05_cutoff_erosion/figures/figure_peak_cutoff_degradation.png
 test_output/dec2006_ts05_cutoff_erosion/figures/figure_peak_cutoff_degradation.eps
+test_output/dec2006_ts05_cutoff_erosion/figures/figure_mlt_cutoff_evolution.png
+test_output/dec2006_ts05_cutoff_erosion/figures/figure_mlt_cutoff_evolution.eps
+test_output/dec2006_ts05_cutoff_erosion/figures/figure_altitude_response.png
+test_output/dec2006_ts05_cutoff_erosion/figures/figure_altitude_response.eps
+test_output/dec2006_ts05_cutoff_erosion/figures/figure_accessible_area.png
+test_output/dec2006_ts05_cutoff_erosion/figures/figure_accessible_area.eps
 ```
 
 The first is a common-scale time-versus-rigidity map of the signed quiet-
 relative boundary displacement at 475 and 850 km. The second preserves north
 and south separately and plots the maximum equatorward degradation magnitude
-for every rigidity. `figure_manifest.json` lists the complete products. The
-top-level runner treats a missing required PNG or EPS file as a stage failure.
+for every rigidity. The MLT panel compares modeled and cell-matched quiet
+boundaries at up to four chronological landmarks. The altitude panel evaluates
+the 850-minus-475-km erosion difference only after exact epoch, rigidity, and
+hemisphere pairing. The accessible-area panel shows the fraction of the
+configured latitude band poleward of the boundary. `figure_manifest.json`
+lists the complete products and embeds the availability status. The top-level
+runner treats any missing required PNG or EPS file as a stage failure.
 The degradation maps use a symmetric standard Matplotlib `Normalize` range,
 which places zero at the midpoint of the diverging color scale without relying
 on the newer `TwoSlopeNorm` class. This keeps the figure script usable with the
@@ -530,12 +563,51 @@ Lambda(MLT) = Lambda0 + C cos(2*pi*MLT/24) + S sin(2*pi*MLT/24).
 A1 = sqrt(C^2 + S^2); phi1 = atan2(S,C)*24/(2*pi).
 ```
 
+The enhanced shape reduction also fits the semidiurnal component
+
+```text
+Lambda(MLT) = Lambda0 + C1 cos(theta) + S1 sin(theta)
+              + C2 cos(2 theta) + S2 sin(2 theta),
+theta = 2*pi*MLT/24,
+A2 = sqrt(C2^2 + S2^2).
+```
+
+`A2` quantifies day-night versus dawn-dusk deformation that cannot be
+represented by a single displaced oval. Both the one- and two-harmonic fit RMS
+values are archived; the long-form cell table remains authoritative when the
+oval is not well approximated by either fit. The equivalent accessible area is
+the spherical-shell area implied by the fraction and is explicitly not an
+assertion that AACGM coordinates preserve geographic area exactly.
+
 Accessible area is integrated only over the configured analyzed latitude band.
 Lag correlations use positive lag for a cutoff response following the driver
 and moving-block bootstrap intervals.  Hysteresis pairs main- and recovery-
 phase boundary cells at equal rigidity, altitude, hemisphere, and MLT, first
 within 10 nT SYM-H and then under the stricter pressure and IMF Bz tolerances in
 `study.json`.
+
+### SMOKE versus FULL interpretation
+
+SMOKE is a valid end-to-end test of boundary parsing, quiet-reference
+subtraction, rigidity and altitude pairing, MLT harmonics, accessible area,
+extrema, and every required publication figure. It is **not** a time-response
+experiment. `analysis_availability.csv` and `.json` assign one of three states
+to each analysis:
+
+- `AVAILABLE`: the required spatial coverage exists, or at least 24 epochs and
+  the analysis-specific recovery/matching conditions exist for temporal work;
+- `DIAGNOSTIC_ONLY`: the calculation is useful for software QA and exploration
+  but must not be quoted as a resolved storm-timescale result;
+- `NOT_AVAILABLE`: the necessary model product was not generated, such as the
+  separate TS05 attribution suite or directional-access topology.
+
+For fewer than 24 paired epochs, lag correlations are retained for diagnostics
+but receive no bootstrap interval, and matched-driver hysteresis receives no
+inferential interval. Recovery times are reported per physical series and are
+`AVAILABLE` only when the post-peak sequence has at least six samples and
+crosses both the half-amplitude and e-fold thresholds. Publication claims about
+lag, hysteresis, or recovery must use the FULL profile and retain the recorded
+status in the analysis archive.
 
 ## Required sensitivity calculations
 

@@ -61,9 +61,14 @@ least one degree inside the retained AACGM latitude range.
 ## `morphology_harmonics.csv`
 
 `mean_latitude_deg`, `amplitude_deg`, and `phase_mlt_hour` describe the first
-MLT harmonic.  `fit_rms_deg` is the RMS cell residual.  The accessible-area
-fraction is the fraction of the configured 35--85 degree analysis band poleward
-of the T50 boundary, averaged over valid MLT sectors.
+MLT harmonic. `second_harmonic_amplitude_deg` and
+`second_harmonic_phase_mlt_hour` describe the semidiurnal deformation;
+`fit_rms_deg` and `two_harmonic_fit_rms_deg` retain both fit qualities. The
+accessible-area fraction is the fraction of the configured 35--85 degree
+analysis band poleward of the T50 boundary, averaged over valid MLT sectors.
+`accessible_area_equivalent_km2` converts that fraction to a spherical-shell
+area at the modeled altitude; it is a comparison metric, not an assertion that
+AACGM is an equal-area coordinate system.
 
 ## `cutoff_dynamics_timeseries.csv`
 
@@ -72,12 +77,43 @@ boundary speed. The erosion is `mean_latitude_deg -
 quiet_reference_mean_latitude_deg`; negative erosion is equatorward motion and
 reduced shielding. Grouping is preserved by altitude, rigidity, and hemisphere
 so values from unlike observation operators or physical shells are never mixed.
+`cutoff_degradation_deg=max(0,-cutoff_erosion_deg)` is the corresponding
+non-negative loss-of-shielding magnitude.
+
+## `boundary_cell_dynamics.csv`
+
+Preserves every epoch/altitude/rigidity/hemisphere/MLT boundary cell. Each row
+adds its exact precompression quiet-cell median, signed erosion, non-negative
+degradation, event phase, and linearly sampled `Pdyn`, IMF `Bz`, `SYM-H`, and
+TS05 `W1`--`W6`. This is the traceable source for local-time evolution figures;
+harmonic averages are not substituted for missing cells.
+
+## `altitude_response.csv`
+
+Pairs the lowest and highest modeled shells at identical epoch, rigidity, and
+hemisphere. `high_minus_low_boundary`, `high_minus_low_erosion`, and
+`high_minus_low_accessible_fraction` quantify altitude dependence without
+mixing physical keys.
+
+## `storm_extrema_summary.csv` and `recovery_timescales.csv`
+
+The extrema table gives minimum/maximum mean boundary, peak non-negative
+degradation, the associated epochs, and maximum first/second harmonic
+amplitudes for every altitude/rigidity/hemisphere series. Recovery times are
+linearly interpolated first crossings of one-half and `1/e` of the post-main-
+phase peak degradation. `status` is `AVAILABLE` only with at least six recovery
+epochs and both crossings; otherwise it is `DIAGNOSTIC_ONLY`.
 
 ## `lag_correlations.csv`
 
 Contains every predeclared driver, lag, altitude, rigidity, and hemisphere.
 Intervals use a moving-block bootstrap with the configured three-hour block.
 The raw five-minute count is not treated as independent sample size.
+`inference_status` is `DIAGNOSTIC_ONLY` below 24 paired model epochs, in which
+case bootstrap limits are intentionally blank. `best_lag_summary.csv` selects
+the maximum absolute finite correlation per driver and physical series while
+retaining the paired count, confidence limits, and status; the complete lag
+curve remains authoritative.
 
 ## `hysteresis_pairs.csv` and `hysteresis_summary.csv`
 
@@ -86,3 +122,13 @@ requires the configured 10-nT match.  `STRICT` additionally requires dynamic
 pressure within 20% and IMF Bz within 2 nT.  The reported contrast is recovery
 minus main phase; its physical sign must be interpreted together with the event
 driver and confidence interval.
+
+## `analysis_availability.csv` and `.json`
+
+Machine-readable interpretation contract for rigidity dependence, altitude
+dependence, MLT morphology, accessible area, driver lag, matched-driver
+hysteresis, recovery time, TS05 driver attribution, and directional topology.
+The only allowed states are `AVAILABLE`, `DIAGNOSTIC_ONLY`, and
+`NOT_AVAILABLE`. A SMOKE archive is expected to contain a mixture of these
+states; sparse temporal diagnostics are never silently promoted to scientific
+inference.
