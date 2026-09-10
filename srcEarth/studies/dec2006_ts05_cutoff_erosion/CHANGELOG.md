@@ -1,5 +1,16 @@
 # Change log
 
+## 2026-09-10 — live DYNAMIC multi-shell progress
+
+- Enabled once-per-second completed-task progress for Mode3D `DYNAMIC + SHELLS`
+  calculations instead of suppressing all intermediate shell updates.
+- Kept remote-counter polling outside the hot scheduler-fetch path and deferred
+  per-shell details until their final global reduction.
+- Prevented nonterminal rounding from displaying a full bar or 100.0%, made the
+  terminal ETA exactly zero, and removed duplicate terminal progress lines.
+- Added a source-contract regression test covering the dynamic shell path and
+  invariants shared with POINTS, TRAJECTORY, STATIC, and BLOCK_CYCLIC runs.
+
 ## 2026-09-09 — continuous geographic cutoff maps
 
 - Replaced point-marker global cutoff panels with cyclic filled contours on a

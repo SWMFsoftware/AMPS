@@ -5103,18 +5103,33 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         if (doneTasks < 0) doneTasks = 0;
         if (doneTasks > totalTasksGlobal) doneTasks = totalTasksGlobal;
 
+        const bool terminal = (totalTasksGlobal <= 0 || doneTasks >= totalTasksGlobal);
         const double frac = (totalTasksGlobal > 0)
             ? (double(doneTasks)/double(totalTasksGlobal)) : 1.0;
         const double dt = t - progressStartTime;
         const double rate = (dt > 0.0) ? (double(doneTasks)/dt) : 0.0;
-        double eta_s = -1.0;
-        if (rate > 0.0 && totalTasksGlobal > doneTasks)
+        // A completed calculation has a known zero remaining time.  Reserving
+        // the unknown marker for the initial zero-rate state prevents the old
+        // and confusing final transition from ETA 00:00:00 back to --:--:--.
+        double eta_s = terminal ? 0.0 : -1.0;
+        if (!terminal && rate > 0.0)
             eta_s = double(totalTasksGlobal-doneTasks)/rate;
 
         const int barW = 36;
-        int filled = (int)std::floor(frac*barW + 0.5);
+        // Never draw a completely filled bar before the exact completion
+        // counter reaches the total.  Rounding to the nearest character made
+        // the old display look finished with as much as half a bar cell still
+        // running, which is especially misleading for expensive tail tasks.
+        int filled = terminal
+            ? barW : (int)std::floor(frac*barW);
         if (filled < 0) filled = 0;
+        if (!terminal && filled >= barW) filled = barW-1;
         if (filled > barW) filled = barW;
+
+        // The line is printed with one decimal place.  Cap a nonterminal value
+        // at 99.9 so ordinary stream rounding cannot turn 99.98% into 100.0%.
+        const double displayedPercent = terminal
+            ? 100.0 : std::min(99.9,frac*100.0);
 
         std::ostringstream line;
         if (isPoints) {
@@ -5148,7 +5163,7 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
 
         line.setf(std::ios::fixed);
         line.precision(1);
-        line << (frac*100.0) << "%  ";
+        line << displayedPercent << "%  ";
         line << "(Task " << doneTasks << "/" << totalTasksGlobal;
 
         if (isShells) {
@@ -5617,8 +5632,23 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             // MPI is called only by this rank/main thread after all std::thread/OpenMP
             // workers for the chunk have completed.
             progressCounter.Add(chunkEnd-chunkStart);
-            if (mpiRank == 0 && !isShells) {
-                maybePrintProgress(progressCounter.Get(),taskDonePerShellGlobal,false,false);
+            if (mpiRank == 0) {
+                // DYNAMIC shell calculations previously skipped this branch,
+                // leaving their progress display frozen at 0% until rank 0
+                // exhausted the assignment queue.  The global completion
+                // counter is valid for every output geometry, including
+                // SHELLS; only the per-shell breakdown must wait for the final
+                // collective reduction.
+                //
+                // Check the wall-clock throttle before issuing the RMA Get().
+                // For a small dynamic chunk this avoids thousands of needless
+                // atomic reads while retaining one useful update per second.
+                const double now = mode3d_now_seconds();
+                if (progressLastPrintTime < 0.0 ||
+                    now-progressLastPrintTime >= 1.0) {
+                    maybePrintProgress(progressCounter.Get(),
+                                       taskDonePerShellGlobal,false,false);
+                }
             }
         }
 
@@ -5631,9 +5661,8 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
         if (mpiRank == 0) {
             for (;;) {
                 const long long observed = progressCounter.Get();
-                maybePrintProgress(observed,taskDonePerShellGlobal,false,
-                                   observed >= totalTasksGlobal);
                 if (observed >= totalTasksGlobal) break;
+                maybePrintProgress(observed,taskDonePerShellGlobal,false,false);
                 std::this_thread::sleep_for(std::chrono::milliseconds(200));
             }
         }
@@ -5644,6 +5673,9 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
             MPI_Allreduce(taskDonePerShellLocal.data(),taskDonePerShellGlobal.data(),
                           nShells,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
         }
+        // This is the single authoritative 100% line for DYNAMIC scheduling.
+        // It follows the collective reductions and can therefore include exact
+        // per-shell closure as well as an unambiguous zero ETA.
         maybePrintProgress(doneTasksGlobal,taskDonePerShellGlobal,true,true);
     }
     else {

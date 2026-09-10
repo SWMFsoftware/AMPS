@@ -473,6 +473,51 @@ class PipelineTests(unittest.TestCase):
         )
         self.assertLess(mesh_position, snapshot_loop_position)
 
+    def test_mode3d_dynamic_shell_progress_is_live_and_terminal_once(self):
+        """DYNAMIC SHELLS must report completed tasks before one exact final line."""
+
+        source = (ROOT.parents[1] / "3d" / "CutoffRigidityMode3D.cpp").read_text(
+            encoding="utf-8"
+        )
+        dynamic_start = source.index(
+            "if (mpiScheduler == Earth::Mode3D::MpiScheduler::DYNAMIC)"
+        )
+        dynamic_end = source.index(
+            "// 14.10 — MPI reduction", dynamic_start
+        )
+        dynamic = source[dynamic_start:dynamic_end]
+
+        # Shells use the same exact global completion counter as points. Only
+        # their detailed per-shell counts wait for the final collective.
+        self.assertNotIn("mpiRank == 0 && !isShells", dynamic)
+        self.assertIn("now-progressLastPrintTime >= 1.0", dynamic)
+        self.assertIn("progressCounter.Get()", dynamic)
+        self.assertIn("taskDonePerShellGlobal,false,false", dynamic)
+
+        # The drain poll detects completion but deliberately leaves the sole
+        # terminal print to the post-Allreduce call with valid shell totals.
+        drain = dynamic[dynamic.index("if (mpiRank == 0) {"):]
+        self.assertLess(
+            drain.index("if (observed >= totalTasksGlobal) break;"),
+            drain.index("maybePrintProgress(observed"),
+        )
+        self.assertEqual(
+            dynamic.count(
+                "maybePrintProgress(doneTasksGlobal,taskDonePerShellGlobal,true,true);"
+            ),
+            1,
+        )
+
+        # A nonterminal task count may never round to a full bar or 100.0%, and
+        # the completed state must have an explicit zero ETA.
+        formatter_start = source.index("const bool terminal =")
+        formatter_end = source.index("std::ostringstream line;", formatter_start)
+        formatter = source[formatter_start:formatter_end]
+        self.assertIn("eta_s = terminal ? 0.0 : -1.0", formatter)
+        self.assertIn("filled = terminal", formatter)
+        self.assertIn("filled = barW-1", formatter)
+        self.assertIn("std::min(99.9,frac*100.0)", formatter)
+
     def test_multishell_split_requires_altitude_labeled_zones(self):
         """The optimizer must never infer shell identity from row order."""
 

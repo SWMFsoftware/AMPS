@@ -69,6 +69,12 @@ effective configuration, commands, return codes, mesh-reuse assertions,
 canonical maps, event-change tables, and figures are preserved beneath
 `test_output/dec2006_ts05_cutoff_erosion/global_maps/`.
 
+The supporting Mode3D source change in `srcEarth/3d/CutoffRigidityMode3D.cpp`
+makes `DYNAMIC + SHELLS` progress live and globally meaningful. It polls the
+completed-work RMA counter no more than once per second, defers exact per-shell
+counts until the final reduction, and emits one exact terminal line. Other Mode3D
+geometries and schedulers retain their existing numerical and scheduling paths.
+
 Global shell figures are cyclic filled longitude/latitude maps with graticules
 and continental outlines read from `srcEarth/earth-continental-map.dat`.
 Invalid cutoff states remain masked rather than being converted to numerical

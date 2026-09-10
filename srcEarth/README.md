@@ -143,6 +143,27 @@ that calls MPI.  This design gives live threaded progress without requiring
 polling until its temporary workers and all remote ranks have published their final
 counts, then emits the exact 100% line.
 
+#### Cutoff-trajectory progress
+
+Mode3D cutoff calculations use the same rank-0, global-progress convention for
+`POINTS`, `SHELLS`, and `TRAJECTORY`. With the `DYNAMIC` MPI scheduler, a separate
+one-sided counter records **completed flattened trajectory tasks**; it is not the
+work-queue counter that records tasks merely assigned to ranks. Rank 0 polls this
+counter at most once per second, so long `SHELLS` calculations now provide useful
+live progress without adding an MPI operation at every scheduler fetch.
+
+During a `DYNAMIC + SHELLS` run, intermediate lines show the completed global task
+count and state that per-shell detail is deferred. A correct per-shell breakdown is
+available only after the final `MPI_Allreduce`, so it is printed on the single
+authoritative terminal line. Nonterminal output is capped below 100% and cannot fill
+the complete bar; the terminal line reports exactly 100%, the exact task closure for
+every shell, and `ETA 00:00:00`.
+
+`STATIC` and `BLOCK_CYCLIC` retain their synchronized-batch reporting and exact final
+reduction. `POINTS` and `TRAJECTORY` retain the same dynamic completed-task counter,
+now with the inexpensive one-second poll guard applied before the remote counter
+read. Density/flux reporting is implemented separately and is unchanged.
+
 `Mode3DPrepareMagneticFieldSnapshot()` then calls
 
 ```cpp

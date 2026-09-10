@@ -252,6 +252,15 @@ mpirun -np 8 ./amps -mode gridless -i AMPS_PARAM.in \
 
 Gridless cutoff and gridless density/flux also keep a live rank-0 progress bar in MPI mode. Because the collective scheduler no longer sends every result through rank 0, progress is tracked with a second MPI one-sided counter that records completed tasks, not assigned chunks. Rank 0 periodically reads that counter. For threaded gridless cutoff the counter is polled frequently, but stdout is deliberately quieter: unchanged counts are suppressed, routine lines are emitted at roughly 0.1% completed-task increments (or after 10 s when at least one new task has finished), startup ETA is withheld until enough completed work exists, and the final 100% line is printed once. The progress unit is therefore the scheduler task: cutoff direction/directional-map task for gridless cutoff, and direction-block task for gridless density/flux.
 
+Standalone Mode3D cutoff uses the same completed-work principle for `POINTS`,
+`SHELLS`, and `TRAJECTORY`. In `DYNAMIC` mode rank 0 polls the completed-task counter
+at most once per second. For `SHELLS`, intermediate output reports the global task
+total while per-shell detail is explicitly deferred until the final collective
+reduction. Consequently a nonterminal line never displays a full bar or 100.0%, and
+exactly one terminal line reports 100.0%, `ETA 00:00:00`, and the final task closure
+for each shell. `STATIC` and `BLOCK_CYCLIC` continue to report their synchronized
+batches; the density/flux progress implementation is unchanged.
+
 
 Typical output files for a single snapshot:
 
