@@ -197,3 +197,6 @@ single physical cells in every CSV; their value is expanded across longitude
 only while drawing. Gray regions identify masked non-numerical cutoff states,
 not zero rigidity. Continental outlines are read from the AMPS source-tree
 `earth-continental-map.dat` file and do not enter any numerical reduction.
+Each epoch is rendered with a common basename in PNG and true vector EPS. The
+figure manifest retains the backward-compatible `figure_path` (PNG) and adds
+explicit `figure_png_path` and `figure_eps_path` columns for publication tools.

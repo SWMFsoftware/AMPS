@@ -2,6 +2,13 @@
 !make test_Earth-cutoff-rigidity-3d-analytic_compile -j
 !./srcEarth/test/test_runner.py -j 6 ./srcEarth/test/list
 
+!Install aacgmv2 in a virtual environment so the runner uses the same Python environment:
+!cd ~/T11/AMPS
+!python3 -m venv --system-site-packages .venv
+!source .venv/bin/activate
+!python -m pip install --upgrade pip
+!python -m pip install 'aacgmv2>=2.6,<3'
+!python -c 'import aacgmv2; print(aacgmv2.__version__)'
 
 P srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval ANALYTIC -np 4 -nt 16
 last pass: 78f23f24b38c848c8134ccd93b3cba3ecbf83163

@@ -430,7 +430,17 @@ class PipelineTests(unittest.TestCase):
             )
             self.assertTrue(figure_result["passed"])
             self.assertEqual(figure_result["n_epoch_map_png"], 2)
+            self.assertEqual(figure_result["n_epoch_map_eps"], 2)
             self.assertEqual(figure_result["n_rendered_shell_epoch_panels"], 4)
+            for path in figure_result["epoch_map_eps"]:
+                product = Path(path)
+                self.assertTrue(product.is_file())
+                self.assertGreater(product.stat().st_size, 0)
+            panel_manifest = pd.read_csv(
+                figure_root / "global_cutoff_map_figure_manifest.csv"
+            )
+            self.assertIn("figure_png_path", panel_manifest.columns)
+            self.assertIn("figure_eps_path", panel_manifest.columns)
 
     def test_native_mode3d_supports_snapshot_list_shells_with_one_mesh(self):
         """Guard new SHELLS support and the pre-existing dispatch boundaries."""
@@ -801,6 +811,11 @@ class PipelineTests(unittest.TestCase):
             )
             self.assertEqual(len(epoch_paths), 2)
             self.assertEqual(len(epoch_records), 4)
+            for png_path in epoch_paths:
+                eps_path = png_path.with_suffix(".eps")
+                self.assertTrue(eps_path.is_file())
+                self.assertGreater(eps_path.stat().st_size, 0)
+            self.assertTrue(all("figure_eps_path" in row for row in epoch_records))
             self.assertEqual(len(change_paths), 6)
 
     def test_figure_module_avoids_twoslope_norm_version_dependency(self):

@@ -1,5 +1,16 @@
 # Change log
 
+## 2026-09-10 — vector global cutoff maps
+
+- Added a matching vector EPS file for every per-epoch multi-shell global
+  cutoff-rigidity PNG.
+- Extended the figure manifest and result contract with explicit PNG/EPS paths
+  and made a missing epoch EPS a hard figure-stage failure.
+- Reused the quiet PostScript backend wrapper so long FULL sequences do not
+  flood batch logs with transparency warnings.
+- Added regression coverage for EPS creation, nonempty files, and manifest
+  traceability while retaining the established PNG-returning Python API.
+
 ## 2026-09-10 — live DYNAMIC multi-shell progress
 
 - Enabled once-per-second completed-task progress for Mode3D `DYNAMIC + SHELLS`

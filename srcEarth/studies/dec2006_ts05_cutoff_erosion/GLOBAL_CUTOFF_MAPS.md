@@ -205,7 +205,7 @@ test_output/dec2006_ts05_cutoff_erosion/global_maps/
 | `postprocessing/global_cutoff_event_change.csv` | Maximum event erosion per shell/GEO cell |
 | `postprocessing/global_cutoff_change_timeseries.csv` | Spatial erosion metrics per shell/epoch |
 | `postprocessing/global_cutoff_change_summary.json` | Largest-decrease locations and conventions |
-| `figures/cutoff_rigidity_maps/` | One filled, coastlined two-shell PNG per epoch |
+| `figures/cutoff_rigidity_maps/` | Matching filled, coastlined two-shell PNG and vector EPS per epoch |
 | `figures/figure_maximum_cutoff_decrease_map.*` | Publication spatial summary |
 | `figures/figure_cutoff_decrease_evolution.*` | Publication temporal/spatial-extent summary |
 

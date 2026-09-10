@@ -55,6 +55,25 @@ def _datetime_plot_values(values) -> list[object]:
     return result
 
 
+def _save_eps(figure, destination: Path) -> None:
+    """Write a true vector EPS while silencing one known backend warning.
+
+    Matplotlib's PostScript backend cannot represent transparency and otherwise
+    logs one warning for every translucent map artist.  The EPS is deliberately
+    opaque, while the PNG (and PDF where requested) retains normal rendering.
+    Centralizing the suppression here gives summary figures and the potentially
+    long per-epoch map sequence exactly the same behavior on HPC installations.
+    """
+
+    postscript_log = logging.getLogger("matplotlib.backends.backend_ps")
+    previous_level = postscript_log.level
+    postscript_log.setLevel(logging.ERROR)
+    try:
+        figure.savefig(destination, format="eps", bbox_inches="tight")
+    finally:
+        postscript_log.setLevel(previous_level)
+
+
 def save_figure(figure, base: Path) -> list[Path]:
     """Save one figure in review, journal-vector, and archival formats.
 
@@ -67,17 +86,7 @@ def save_figure(figure, base: Path) -> list[Path]:
     base.parent.mkdir(parents=True, exist_ok=True)
     products = [base.with_suffix(suffix) for suffix in (".png", ".eps", ".pdf")]
     figure.savefig(products[0], dpi=300, bbox_inches="tight")
-    # Matplotlib's PostScript backend logs once for every transparent artist,
-    # which can flood a batch log with hundreds of identical messages. EPS is
-    # intentionally opaque and the PNG/PDF versions preserve transparency, so
-    # suppress only this known backend warning while the EPS file is written.
-    postscript_log = logging.getLogger("matplotlib.backends.backend_ps")
-    previous_level = postscript_log.level
-    postscript_log.setLevel(logging.ERROR)
-    try:
-        figure.savefig(products[1], format="eps", bbox_inches="tight")
-    finally:
-        postscript_log.setLevel(previous_level)
+    _save_eps(figure, products[1])
     figure.savefig(products[2], format="pdf", bbox_inches="tight")
     plt.close(figure)
     for product in products:
@@ -692,14 +701,17 @@ def accessible_area_figure(path: Path, output: Path) -> list[Path]:
 def epoch_cutoff_rigidity_maps(morphology: Path, output: Path) -> tuple[list[Path], list[dict]]:
     """Render one multi-shell geographic R50 map for every modeled epoch.
 
-    Per-epoch products are PNG-only because a FULL run contains hundreds of
-    epochs; producing thousands of large EPS/PDF map files would add little
-    scientific value. The numerical CSV for every shell/epoch remains the
-    publication-grade source, while the event-summary maps below are saved in
-    all three formats. Each panel is a cyclic filled geographic field with the
-    continental outline distributed by AMPS. Censored cells are shown at the
-    sampled color-scale edge and are never used in event-change calculations;
-    unresolved/unbracketed cells remain masked gray regions.
+    Every epoch is written as both a review-friendly PNG and a true vector EPS
+    with the same basename.  The return value intentionally remains the list of
+    PNG paths used by existing callers; each EPS path is recorded explicitly in
+    the panel manifest.  This preserves the established Python API while making
+    every global map directly usable in a journal workflow.  PDF is omitted for
+    this potentially long epoch sequence to avoid a third large duplicate.
+
+    Each panel is a cyclic filled geographic field with the continental outline
+    distributed by AMPS. Censored cells are shown at the sampled color-scale
+    edge and are never used in event-change calculations; unresolved or
+    unbracketed cells remain masked gray regions.
     """
 
     manifest_path = morphology / "cutoff_rigidity_map_manifest.csv"
@@ -767,15 +779,21 @@ def epoch_cutoff_rigidity_maps(morphology: Path, output: Path) -> tuple[list[Pat
             )
             colorbar.ax.xaxis.set_label_position("top")
         token = pd.to_datetime(epoch, utc=True).strftime("%Y%m%dT%H%M%S")
-        destination = map_root / f"cutoff_rigidity_map_{token}.png"
+        base = map_root / f"cutoff_rigidity_map_{token}"
+        destination = base.with_suffix(".png")
+        eps_destination = base.with_suffix(".eps")
         figure.savefig(destination, dpi=180, bbox_inches="tight")
+        _save_eps(figure, eps_destination)
         plt.close(figure)
         print(f"Wrote epoch cutoff map: {destination}", flush=True)
+        print(f"Wrote epoch cutoff map: {eps_destination}", flush=True)
         paths.append(destination)
         for panel_index, (_, item) in enumerate(epoch_rows.iterrows()):
             records.append({
                 "epoch_utc": epoch, "altitude_km": float(item.altitude_km),
                 "panel_index": panel_index, "figure_path": str(destination),
+                "figure_png_path": str(destination),
+                "figure_eps_path": str(eps_destination),
                 "source_map_path": str(morphology / str(item.map_path)),
             })
     return paths, records

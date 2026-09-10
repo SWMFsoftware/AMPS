@@ -39,11 +39,12 @@ def main() -> int:
     canonical = postprocessing / "canonical_maps"
     output.mkdir(parents=True, exist_ok=True)
 
-    # One multi-panel PNG per epoch is intentionally kept separate from the
-    # compact publication summaries.  A FULL run can contain hundreds of
-    # epochs, for which EPS copies of every individual map would be needlessly
-    # large.  The event summaries remain available in all three formats.
-    epoch_products, panel_records = epoch_cutoff_rigidity_maps(canonical, output)
+    # Each epoch map is available as PNG for quick review and as vector EPS for
+    # direct journal use.  epoch_cutoff_rigidity_maps retains its historical
+    # return value (PNG paths), so derive the guaranteed same-basename EPS paths
+    # here when validating and reporting the publication-product contract.
+    epoch_png_products, panel_records = epoch_cutoff_rigidity_maps(canonical, output)
+    epoch_eps_products = [path.with_suffix(".eps") for path in epoch_png_products]
     summary_products = cutoff_change_figures(
         postprocessing / "global_cutoff_event_change.csv",
         postprocessing / "global_cutoff_change_timeseries.csv",
@@ -71,16 +72,20 @@ def main() -> int:
         missing.append(
             "rendered shell/epoch panel count does not match the canonical map manifest"
         )
-    if not epoch_products or any(not path.is_file() for path in epoch_products):
+    if not epoch_png_products or any(not path.is_file() for path in epoch_png_products):
         missing.append("one or more per-epoch global cutoff-map PNG files are absent")
+    if not epoch_eps_products or any(not path.is_file() for path in epoch_eps_products):
+        missing.append("one or more per-epoch global cutoff-map EPS files are absent")
 
     result = {
         "postprocessing_root": str(postprocessing),
         "output_root": str(output),
         "n_source_shell_epoch_maps": source_count,
         "n_rendered_shell_epoch_panels": len(panel_records),
-        "n_epoch_map_png": len(epoch_products),
-        "epoch_map_png": [str(path) for path in epoch_products],
+        "n_epoch_map_png": len(epoch_png_products),
+        "epoch_map_png": [str(path) for path in epoch_png_products],
+        "n_epoch_map_eps": len(epoch_eps_products),
+        "epoch_map_eps": [str(path) for path in epoch_eps_products],
         "summary_products": [str(path) for path in summary_products],
         "missing_required_products": missing,
         "passed": not missing,

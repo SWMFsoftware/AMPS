@@ -58,8 +58,9 @@ readable analysis availability. The required publication figure set contains
 seven panels (cutoff degradation, peak degradation, MLT evolution, altitude
 response, accessible area, maximum spatial R50 decrease, and R50-decrease
 evolution), each in PNG, EPS, and PDF. In addition, every modeled epoch has a
-PNG containing one cutoff-rigidity-map panel per shell, traced through
-`cutoff_rigidity_map_figure_manifest.csv` to the per-shell numerical map. SMOKE
+matching PNG and vector EPS containing one cutoff-rigidity-map panel per shell,
+traced through `cutoff_rigidity_map_figure_manifest.csv` to the per-shell
+numerical map. SMOKE
 exercises all spatial products and figures; temporal inference is explicitly labeled
 `DIAGNOSTIC_ONLY` until the configured 24-epoch minimum is met.
 

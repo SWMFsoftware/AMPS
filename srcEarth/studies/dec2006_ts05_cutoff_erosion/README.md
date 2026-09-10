@@ -610,13 +610,12 @@ nonmonotonic-transition count are archived with every cell. The cross-run
 `morphology/cutoff_rigidity_map_manifest.csv` records the location and status
 counts of every shell/epoch map.
 
-`figures/cutoff_rigidity_maps/` contains one PNG per modeled epoch, with one
-panel for each shell and a common rigidity scale. Edge colors identify
-below-range and above-range censored cells; gray crosses are unbracketed or
-incomplete. The panel manifest traces each panel to its source CSV. PNG-only is
-intentional for this potentially hundreds-of-epochs sequence; the numerical
-maps are authoritative, while summary publication panels are also saved as EPS
-and PDF.
+`figures/cutoff_rigidity_maps/` contains matching PNG and vector EPS files for
+every modeled epoch, with one panel for each shell and a common rigidity scale.
+Edge colors identify below-range and above-range censored cells; gray regions
+are unbracketed or incomplete. The panel manifest traces each panel to its
+source CSV and records both figure paths. The numerical maps remain
+authoritative; summary publication panels are additionally saved as PDF.
 
 Event change uses the median of precompression, exactly bracketed R50 values as
 the quiet reference for each geographic cell. It reports the maximum positive
