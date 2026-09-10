@@ -91,11 +91,11 @@ that a custom overlay has replaced or disabled the SMOKE-only reduction.
 
 During each native Mode3D batch, `DYNAMIC + SHELLS` progress is based on
 trajectories completed over all MPI ranks, not chunks assigned by the scheduler.
-Rank 0 emits an update at most once per second. Intermediate lines intentionally
-defer shell-by-shell counts because those counts are not globally exact until the
-final collective reduction. The single terminal line must report 100%, exact closure
-for both shells, and `ETA 00:00:00`. This progress display does not change the task
-decomposition, magnetic-field reuse, or numerical result.
+Rank 0 emits an update at most once per second. Intermediate lines use the compact
+note `per-shell totals at finish` because exact shell counts are available only after
+the final collective reduction. The single terminal line must report 100%, exact
+closure for both shells, and `ETA 00:00:00`. This progress display does not change
+the task decomposition, magnetic-field reuse, or numerical result.
 
 Publication calculation:
 

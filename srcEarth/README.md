@@ -153,11 +153,11 @@ counter at most once per second, so long `SHELLS` calculations now provide usefu
 live progress without adding an MPI operation at every scheduler fetch.
 
 During a `DYNAMIC + SHELLS` run, intermediate lines show the completed global task
-count and state that per-shell detail is deferred. A correct per-shell breakdown is
-available only after the final `MPI_Allreduce`, so it is printed on the single
-authoritative terminal line. Nonterminal output is capped below 100% and cannot fill
-the complete bar; the terminal line reports exactly 100%, the exact task closure for
-every shell, and `ETA 00:00:00`.
+count followed by the compact note `per-shell totals at finish`. A correct per-shell
+breakdown is available only after the final `MPI_Allreduce`, so it is printed on the
+single authoritative terminal line. Nonterminal output is capped below 100% and
+cannot fill the complete bar; the terminal line reports exactly 100%, the exact task
+closure for every shell, and `ETA 00:00:00`.
 
 `STATIC` and `BLOCK_CYCLIC` retain their synchronized-batch reporting and exact final
 reduction. `POINTS` and `TRAJECTORY` retain the same dynamic completed-task counter,

@@ -255,11 +255,12 @@ Gridless cutoff and gridless density/flux also keep a live rank-0 progress bar i
 Standalone Mode3D cutoff uses the same completed-work principle for `POINTS`,
 `SHELLS`, and `TRAJECTORY`. In `DYNAMIC` mode rank 0 polls the completed-task counter
 at most once per second. For `SHELLS`, intermediate output reports the global task
-total while per-shell detail is explicitly deferred until the final collective
-reduction. Consequently a nonterminal line never displays a full bar or 100.0%, and
-exactly one terminal line reports 100.0%, `ETA 00:00:00`, and the final task closure
-for each shell. `STATIC` and `BLOCK_CYCLIC` continue to report their synchronized
-batches; the density/flux progress implementation is unchanged.
+total with the compact note `per-shell totals at finish`; exact shell counts are
+available after the final collective reduction. Consequently a nonterminal line
+never displays a full bar or 100.0%, and exactly one terminal line reports 100.0%,
+`ETA 00:00:00`, and the final task closure for each shell. `STATIC` and
+`BLOCK_CYCLIC` continue to report their synchronized batches; the density/flux
+progress implementation is unchanged.
 
 
 Typical output files for a single snapshot:

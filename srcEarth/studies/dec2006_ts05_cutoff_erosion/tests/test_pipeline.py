@@ -493,6 +493,8 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("now-progressLastPrintTime >= 1.0", dynamic)
         self.assertIn("progressCounter.Get()", dynamic)
         self.assertIn("taskDonePerShellGlobal,false,false", dynamic)
+        self.assertIn('line << "; per-shell totals at finish";', dynamic)
+        self.assertNotIn("Shell task detail deferred in DYNAMIC mode", dynamic)
 
         # The drain poll detects completion but deliberately leaves the sole
         # terminal print to the post-Allreduce call with valid shell totals.

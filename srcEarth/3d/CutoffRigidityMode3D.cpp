@@ -5206,7 +5206,10 @@ int RunCutoffRigidity(const EarthUtil::AmpsParam& prm, bool requestedProgressBar
                 }
             }
             else {
-                line << "; Shell task detail deferred in DYNAMIC mode";
+                // The preceding rank/global label already establishes that Task is
+                // the global completed-work count. Keep this suffix short while
+                // explaining why the live line has no shell-by-shell breakdown.
+                line << "; per-shell totals at finish";
             }
         }
 
