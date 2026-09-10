@@ -159,6 +159,12 @@ def stage_problem(stage: str, output: Path) -> str | None:
             return "multiple epochs were requested but mesh reuse was not recorded"
         if not result.get("magnetic_field_reinitialized_each_epoch", False):
             return "field refresh at every epoch was not recorded"
+        if not result.get("geo_only_postprocessing", False):
+            return "global model did not use GEO-only map postprocessing"
+        if result.get("aacgm_conversion_performed", True):
+            return "global model unexpectedly performed AACGM conversion"
+        if result.get("observation_boundary_reduction_performed", True):
+            return "global model unexpectedly ran the observation-boundary reducer"
         expected = int(result.get("n_epochs", 0)) * int(result.get("n_altitudes", 0))
         if int(result.get("n_cutoff_rigidity_maps", 0)) != expected:
             return "model did not write one first-pass map per shell and epoch"
@@ -264,6 +270,11 @@ def main() -> int:
         "-np", str(np_value), "-nt", str(nt_value),
         "--output-root", str(output / "morphology"),
         "--mesh-layout", "BATCHED", "--epochs-per-batch", str(batch_size),
+        # Complete global R50 maps are defined on the requested GEO lattice.
+        # They do not use the C9/C10 AACGM boundary operator. Keeping this
+        # explicit prevents thousands of expected near-equator AACGM failures
+        # from dominating ROUTINE/FULL postprocessing after AMPS has finished.
+        "--geo-only",
     ]
     if args.driver:
         model += ["--driver", str(args.driver.expanduser().resolve())]
@@ -293,6 +304,7 @@ def main() -> int:
         "output_root": str(output), "stages": stages,
         "mesh_layout": "BATCHED", "epochs_per_batch": batch_size,
         "mpi_ranks": np_value, "threads_per_rank": nt_value,
+        "coordinate_postprocessing": "GEO_ONLY",
         "estimated_workload": workload,
         "reuse_raw": args.reuse_raw, "prepare_only": args.prepare_only,
         "commands": {stage: commands[stage] for stage in stages},
@@ -328,6 +340,7 @@ def main() -> int:
             flush=True,
         )
     print("Observation epochs and observation operators: DISABLED", flush=True)
+    print("Coordinates: GEO_ONLY (AACGM conversion not requested)", flush=True)
     print("=" * 78, flush=True)
 
     overall = 0

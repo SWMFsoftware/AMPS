@@ -70,6 +70,12 @@ effective configuration, commands, return codes, mesh-reuse assertions,
 canonical maps, event-change tables, and figures are preserved beneath
 `test_output/dec2006_ts05_cutoff_erosion/global_maps/`.
 
+Its model command always includes `--geo-only`. This prevents the shared
+morphology engine from importing AACGM or running observation-boundary fitting
+over the complete GEO grid. GEO R50 maps and erosion products are unchanged;
+optional AACGM/MLT fields remain blank. Observation-facing runners continue to
+require their normal epoch-dependent AACGM conversion.
+
 The supporting Mode3D source change in `srcEarth/3d/CutoffRigidityMode3D.cpp`
 makes `DYNAMIC + SHELLS` progress live and globally meaningful. It polls the
 completed-work RMA counter no more than once per second, defers exact per-shell

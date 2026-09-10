@@ -2,10 +2,11 @@
 """Run the 15-min December 2006 AMPS cutoff-morphology experiment.
 
 This runner extends the observation-specific C9/C10 calculations to a common
-rigidity grid and two fixed altitude shells.  It deliberately imports the C10
-Tecplot parser, GEO-to-AACGM conversion, and ACCESS_T50 reducer; therefore the
-research product and the POES/MetOp validation cannot drift into different
-definitions of access state or half transmission.
+rigidity grid and two fixed altitude shells. It always reuses the audited C10
+Tecplot parser and, for observation-facing runs, its GEO-to-AACGM conversion
+and ACCESS_T50 reducer. The dedicated global-map caller selects ``--geo-only``
+because complete-shell R50 products require GEO coordinates but not the
+observation boundary operator.
 
 The default BATCHED layout evaluates up to ``--epochs-per-batch`` epochs and
 both shells in one AMPS process.  It uses Mode3D ``SNAPSHOT_LIST`` so the AMR
@@ -380,6 +381,40 @@ def derive_cutoff_rigidity_map(access: Sequence[object],
     return output
 
 
+def prepare_access_coordinate_products(
+        c10, access: Sequence[object], epoch: datetime, altitude_km: float,
+        rigidities_gv: Sequence[float], mlt_bins: Sequence[float],
+        geo_only: bool) -> Tuple[List[object], List[Dict[str, object]]]:
+    """Optionally add AACGM/MLT and construct observation-boundary products.
+
+    The shared morphology engine serves two scientifically different workflows:
+
+    * the observation-facing study compares boundaries in AACGM latitude/MLT;
+    * the dedicated global-map study archives R50 on a complete GEO shell.
+
+    AACGM is undefined near the magnetic equator. Applying the C10 conversion
+    to a full GEO grid therefore produced one backend warning for every rigidity
+    row at affected cells (53 warnings per cell in ROUTINE/FULL) even though the
+    global map never consumes those coordinates or boundary estimates. GEO-only
+    mode stops before importing/calling ``aacgmv2`` and explicitly clears the
+    optional magnetic-coordinate fields. The ordinary observation path remains
+    unchanged and continues to require the audited C10 AACGM conversion.
+    """
+
+    if geo_only:
+        for row in access:
+            row.aacgm_latitude_deg = None
+            row.mlt_hour = None
+        return [], []
+
+    c10.add_aacgm_lat_mlt(access, epoch, altitude_km)
+    estimates, profile_rows = c10.estimate_access_t50_boundaries(
+        access, rigidities_gv, mlt_bins, ("N", "S"), 8,
+        0.25, 0.66, 1.0,
+    )
+    return list(estimates), list(profile_rows)
+
+
 ZONE_ALTITUDE_PATTERNS = (
     re.compile(r"alt[_\s-]*km\s*=\s*([0-9eE+\-.]+)", re.IGNORECASE),
     re.compile(r"alt(?:itude)?\s*=\s*([0-9eE+\-.]+)\s*km", re.IGNORECASE),
@@ -732,11 +767,24 @@ def parse_args() -> argparse.Namespace:
         "--c10-output-root", type=Path,
         help="Stage the shared 850-km raw products for a subsequent C10 --skip-run",
     )
+    parser.add_argument(
+        "--geo-only", action="store_true",
+        help=("Build geographic R50 maps without importing AACGM or running the "
+              "observation-boundary reducer; intended for the dedicated complete-"
+              "shell global-map workflow"),
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    if args.geo_only and (
+            args.include_observation_epochs or args.c9_output_root is not None
+            or args.c10_output_root is not None):
+        raise SystemExit(
+            "--geo-only cannot be combined with observation epochs or C9/C10 "
+            "staging because those products require AACGM latitude and MLT"
+        )
     root, config = load_config(args.config)
     c10 = load_c10_module(root)
     driver_path = args.driver or (root / config["data"]["driver"])  # type: ignore[index]
@@ -840,6 +888,12 @@ def main() -> int:
         f"{n_case_slots} logical snapshot-shell product(s); layout={args.mesh_layout}; "
         f"epochs_per_launch={batch_size if args.mesh_layout == 'BATCHED' else 1}; "
         f"{n_launches} AMPS launch(es) required by this invocation",
+        flush=True,
+    )
+    print(
+        "Coordinate postprocessing: "
+        + ("GEO_ONLY (AACGM/MLT and observation boundaries disabled)"
+           if args.geo_only else "AACGM_MLT (observation boundaries enabled)"),
         flush=True,
     )
     if args.include_observation_epochs:
@@ -975,10 +1029,9 @@ def main() -> int:
                         access, controls.access_abs_lat_min_deg,
                         controls.access_abs_lat_max_deg,
                     )
-                    c10.add_aacgm_lat_mlt(access, epoch, altitude)
-                    estimates, profile_rows = c10.estimate_access_t50_boundaries(
-                        access, controls.rigidities_gv, mlt_bins, ("N", "S"), 8,
-                        0.25, 0.66, 1.0,
+                    estimates, profile_rows = prepare_access_coordinate_products(
+                        c10, access, epoch, altitude, controls.rigidities_gv,
+                        mlt_bins, args.geo_only,
                     )
                     unresolved = sum(row.access_state == 2 for row in access)
                     unresolved_fraction = unresolved / len(access) if access else 1.0
@@ -1012,6 +1065,9 @@ def main() -> int:
                         "epoch_utc": format_utc(epoch),
                         "altitude_km": altitude,
                         "map_path": cutoff_map_path.relative_to(output_root).as_posix(),
+                        "coordinate_postprocessing": (
+                            "GEO_ONLY" if args.geo_only else "AACGM_MLT"
+                        ),
                         "n_spatial_cells": len(cutoff_map),
                         **{f"n_{name.lower()}": count
                            for name, count in status_counts.items()},
@@ -1033,12 +1089,13 @@ def main() -> int:
                                 "field_model": "IGRF+TS05",
                                 "observation_operator": "VERTICAL_ACCESS_T50",
                             })
-                    c10.write_dict_rows(product_dir / "snapshot_boundaries.csv", [
-                        c10._estimate_row(estimate) for estimate in estimates
-                    ])
-                    c10.write_dict_rows(
-                        product_dir / "snapshot_t50_profiles.csv", profile_rows
-                    )
+                    if not args.geo_only:
+                        c10.write_dict_rows(product_dir / "snapshot_boundaries.csv", [
+                            c10._estimate_row(estimate) for estimate in estimates
+                        ])
+                        c10.write_dict_rows(
+                            product_dir / "snapshot_t50_profiles.csv", profile_rows
+                        )
 
                     # Stage the exact same raw bytes at the legacy observation
                     # paths.  C9/C10 then run with --skip-run and apply their own
@@ -1113,6 +1170,10 @@ def main() -> int:
             args.mesh_layout == "BATCHED" and any(len(item[1]) > 1 for item in run_specs)
         ),
         "magnetic_field_reinitialized_each_epoch": True,
+        "coordinate_postprocessing": "GEO_ONLY" if args.geo_only else "AACGM_MLT",
+        "geo_only_postprocessing": args.geo_only,
+        "aacgm_conversion_performed": not args.geo_only,
+        "observation_boundary_reduction_performed": not args.geo_only,
         "n_boundary_rows": len(boundaries),
         "n_cutoff_rigidity_maps": len(cutoff_map_manifest),
         "n_staged_observation_products": len(staged_products),

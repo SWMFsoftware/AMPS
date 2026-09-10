@@ -1,5 +1,17 @@
 # Change log
 
+## 2026-09-10 — GEO-only global-map postprocessing
+
+- Added an explicit `--geo-only` mode to the shared morphology engine and made
+  the dedicated global runner select it for SMOKE, ROUTINE, and FULL.
+- Removed unnecessary AACGM conversion and ACCESS_T50 boundary fitting from
+  complete-shell global-map production, eliminating repeated expected errors
+  where AACGM is undefined near the magnetic equator.
+- Preserved the observation-facing path unchanged and rejected combinations of
+  GEO-only mode with C9/C10 observation staging.
+- Added result-contract fields and regression checks proving every global
+  profile bypasses AACGM while retaining native batched mesh reuse.
+
 ## 2026-09-10 — vector global cutoff maps
 
 - Added a matching vector EPS file for every per-epoch multi-shell global

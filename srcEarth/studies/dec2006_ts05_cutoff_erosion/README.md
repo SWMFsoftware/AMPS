@@ -300,8 +300,9 @@ fields alongside the unchanged numerical comparison.
 
 ## Installation
 
-Python 3.10 or later is recommended.  The package validator and unit tests use
-only the standard library.  Scientific AACGM conversion and figures require:
+Python 3.10 or later is recommended. The package validator uses only the
+standard library. Observation-facing C9/C10 and morphology-boundary products
+require `aacgmv2`; figures require Matplotlib, NumPy, and pandas:
 
 ```bash
 python3 -m venv .venv
@@ -314,6 +315,13 @@ AMPS must be compiled with Earth Mode3D, T05/TS05, cutoff direct access, the
 RK4 mover, MPI, and POSIX thread support.  Before the production study, run
 the complete C1--C19 validation suite using the same executable and build
 options.
+
+The dedicated global cutoff-map runner is different: it always selects
+`--geo-only`, because its complete-shell R50 maps and erosion reductions use GEO
+coordinates. It neither imports AACGM nor runs the C9/C10 boundary operator, so
+expected low-latitude AACGM conversion failures cannot delay ROUTINE/FULL map
+postprocessing. The optional AACGM latitude and MLT columns are blank in global
+map tables by design.
 
 ## Validate the package without AMPS
 

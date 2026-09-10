@@ -180,6 +180,12 @@ at each pole. Every canonical map retains the original R50 value and status,
 the number of collapsed coordinate records, a pole-status consistency flag,
 and the cutoff spread among coincident pole records.
 
+The dedicated global workflow uses GEO-only postprocessing. Therefore
+`aacgm_latitude_deg` and `mlt_hour` are intentionally empty in its map tables;
+they are not failed conversions and are not used in global coverage, R50,
+erosion, or figure calculations. AACGM/MLT remain populated in the separate
+observation-facing morphology products.
+
 `global_map_quality_summary.csv` records expected and actual cell counts, grid
 closure, fractions in every cutoff status, and pole diagnostics. A missing or
 unexpected coordinate makes the postprocessing stage fail.

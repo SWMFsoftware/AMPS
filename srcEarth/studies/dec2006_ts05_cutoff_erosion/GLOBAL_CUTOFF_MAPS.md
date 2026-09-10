@@ -15,6 +15,16 @@ included. An allowed trajectory reaches the configured outer boundary, a
 forbidden trajectory returns to the atmosphere, and an unresolved trajectory
 remains state 2 and is excluded from numerical cutoff inversion.
 
+The dedicated runner invokes the shared execution engine with `--geo-only`.
+Global R50 maps, coverage checks, erosion statistics, and geographic figures
+use the requested GEO longitude/latitude grid and do not require AACGM. This is
+important because AACGM is undefined near the magnetic equator: converting all
+53 rigidity rows at every low-latitude cell produced repeated expected warnings
+and made ROUTINE/FULL appear stalled after trajectory completion. GEO-only mode
+does not import `aacgmv2`, does not run the observation-boundary reducer, and
+records blank optional AACGM/MLT columns. C9/C10 and the observation-facing
+study retain their mandatory epoch-specific AACGM processing.
+
 ## Scientific and execution-test grids
 
 The checked-in overlay `config/global_cutoff_maps.json` changes only controls
@@ -88,6 +98,10 @@ Before AMPS starts, the runner prints the effective grid dimensions and its
 estimated trajectory count. For the checked-in SMOKE profile this must report
 `7,752/epoch x 2 epoch(s) = 15,504`. A substantially larger number indicates
 that a custom overlay has replaced or disabled the SMOKE-only reduction.
+
+For every profile the execution plan must also report
+`Coordinates: GEO_ONLY (AACGM conversion not requested)`. Its absence indicates
+that an older mixed global/observation runner is being used.
 
 During each native Mode3D batch, `DYNAMIC + SHELLS` progress is based on
 trajectories completed over all MPI ranks, not chunks assigned by the scheduler.

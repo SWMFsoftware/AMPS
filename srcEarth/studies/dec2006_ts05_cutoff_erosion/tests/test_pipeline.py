@@ -35,7 +35,8 @@ from make_figures import (
     lag_hysteresis_figure, mlt_evolution_figure,
 )
 from run_morphology import (
-    derive_cutoff_rigidity_map, load_c10_module, snapshot_suffix,
+    derive_cutoff_rigidity_map, load_c10_module,
+    prepare_access_coordinate_products, snapshot_suffix,
     split_multishell_access,
 )
 from run_study import execute, independent_validation_remains
@@ -304,11 +305,68 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(manifest["return_codes"]["model"], 0)
             self.assertEqual(manifest["estimated_workload"]["tasks_per_epoch"], 7752)
             self.assertEqual(manifest["estimated_workload"]["tasks_total"], 15504)
+            self.assertEqual(manifest["coordinate_postprocessing"], "GEO_ONLY")
+            self.assertIn("--geo-only", manifest["commands"]["model"])
+            morphology_result = json.loads(
+                (output / "morphology" / "morphology_result.json").read_text()
+            )
+            self.assertTrue(morphology_result["geo_only_postprocessing"])
+            self.assertFalse(morphology_result["aacgm_conversion_performed"])
+            self.assertFalse(
+                morphology_result["observation_boundary_reduction_performed"]
+            )
             epochs = (inputs[0].parent / "snapshot_epochs.txt").read_text()
             self.assertEqual(len([
                 line for line in epochs.splitlines()
                 if line and not line.startswith("#")
             ]), 2)
+
+    def test_global_runner_requests_geo_only_for_every_profile(self):
+        """SMOKE, ROUTINE, and FULL must all bypass the C9/C10 AACGM operator."""
+
+        for profile in ("SMOKE", "ROUTINE", "FULL"):
+            with self.subTest(profile=profile), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary) / "global"
+                completed = subprocess.run([
+                    sys.executable,
+                    str(ROOT / "scripts" / "run_global_cutoff_maps.py"),
+                    "--profile", profile, "--stage", "model", "--prepare-only",
+                    "--output-root", str(output),
+                ], cwd=ROOT, text=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT)
+                self.assertEqual(completed.returncode, 0, completed.stdout)
+                manifest = json.loads(
+                    (output / "global_cutoff_map_run_manifest.json").read_text()
+                )
+                self.assertIn("--geo-only", manifest["commands"]["model"])
+                morphology_result = json.loads(
+                    (output / "morphology" / "morphology_result.json").read_text()
+                )
+                self.assertEqual(
+                    morphology_result["coordinate_postprocessing"], "GEO_ONLY"
+                )
+                self.assertFalse(morphology_result["aacgm_conversion_performed"])
+
+    def test_geo_only_coordinate_products_never_call_aacgm(self):
+        """The global map path must not import/call AACGM after an expensive run."""
+
+        class RejectMagneticCoordinates:
+            def add_aacgm_lat_mlt(self, *_args):
+                raise AssertionError("GEO-only processing called AACGM")
+
+            def estimate_access_t50_boundaries(self, *_args):
+                raise AssertionError("GEO-only processing ran boundary reduction")
+
+        rows = [SimpleNamespace(aacgm_latitude_deg=1.0, mlt_hour=2.0)]
+        estimates, profiles = prepare_access_coordinate_products(
+            RejectMagneticCoordinates(), rows,
+            datetime(2006, 12, 14, tzinfo=timezone.utc), 475.0,
+            [0.5, 1.0], [0.0, 3.0], True,
+        )
+        self.assertEqual(estimates, [])
+        self.assertEqual(profiles, [])
+        self.assertIsNone(rows[0].aacgm_latitude_deg)
+        self.assertIsNone(rows[0].mlt_hour)
 
     def test_global_smoke_override_does_not_change_full_grid(self):
         """Profile reduction must be isolated to SMOKE and leave FULL publishable."""

@@ -105,6 +105,44 @@ def validate_native_batched_shell_support(root: Path) -> None:
         raise ValueError("Mode3D mesh allocation is not outside the snapshot loop")
 
 
+def validate_global_geo_only_support(root: Path) -> None:
+    """Reject a mixed installation that would run AACGM over the full GEO grid.
+
+    This lightweight source contract executes before any costly trajectory run.
+    It complements the unit tests by protecting an installed package assembled
+    from files of different revisions, a failure mode that previously became
+    visible only after AMPS had completed ROUTINE/FULL.
+    """
+
+    global_runner = (root / "scripts" / "run_global_cutoff_maps.py").read_text(
+        encoding="utf-8"
+    )
+    morphology_runner = (root / "scripts" / "run_morphology.py").read_text(
+        encoding="utf-8"
+    )
+    required_global = (
+        '"--geo-only",',
+        '"coordinate_postprocessing": "GEO_ONLY"',
+    )
+    required_morphology = (
+        '"--geo-only", action="store_true"',
+        "if geo_only:",
+        '"aacgm_conversion_performed": not args.geo_only',
+    )
+    missing = [
+        f"run_global_cutoff_maps.py:{marker}"
+        for marker in required_global if marker not in global_runner
+    ] + [
+        f"run_morphology.py:{marker}"
+        for marker in required_morphology if marker not in morphology_runner
+    ]
+    if missing:
+        raise ValueError(
+            "global GEO-only postprocessing support is incomplete; missing "
+            + ", ".join(missing)
+        )
+
+
 def main() -> int:
     root, config = load_config()
     provenance = json.loads((root / "data" / "provenance.json").read_text())
@@ -176,6 +214,12 @@ def main() -> int:
     try:
         validate_native_batched_shell_support(root)
         print("PASS native Mode3D SNAPSHOT_LIST+SHELLS mesh-reuse contract")
+    except Exception as exc:
+        problems.append(str(exc))
+
+    try:
+        validate_global_geo_only_support(root)
+        print("PASS global cutoff-map GEO-only postprocessing contract")
     except Exception as exc:
         problems.append(str(exc))
 
