@@ -78,6 +78,13 @@ boundary is built from those states in exactly the same way for both products:
 5. apply weighted nondecreasing isotonic regression; and
 6. interpolate the explicitly bracketed transmission crossing at `T=0.5`.
 
+For performance, a shell snapshot converts each unique GEO location to
+AACGM/MLT once and copies those coordinates to all rigidity rows. The boundary
+reducer then builds a one-pass rigidity/hemisphere/longitude/MLT index instead
+of rescanning the complete table for every requested sector. These are
+evaluation optimizations only: regression tests compare the indexed result to
+the original full-table selection and preserve the same ACCESS_T50 values.
+
 This observable is selected with:
 
 ```text

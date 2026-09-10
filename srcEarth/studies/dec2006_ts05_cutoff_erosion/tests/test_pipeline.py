@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -36,8 +37,8 @@ from make_figures import (
 )
 from run_morphology import (
     derive_cutoff_rigidity_map, load_c10_module,
-    prepare_access_coordinate_products, snapshot_suffix,
-    split_multishell_access,
+    postprocess_epoch_product, prepare_access_coordinate_products,
+    resolve_postprocess_workers, snapshot_suffix, split_multishell_access,
 )
 from run_study import execute, independent_validation_remains
 import run_study
@@ -250,6 +251,7 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(result["mesh_layout"], "BATCHED")
             self.assertTrue(result["mesh_reused_across_shells"])
             self.assertTrue(result["mesh_reused_across_epochs"])
+            self.assertEqual(result["postprocess_workers_requested"], "AUTO")
             inputs = list(output.rglob("AMPS_PARAM_C10.in"))
             self.assertEqual(len(inputs), 1)
             for path in inputs:
@@ -306,7 +308,9 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(manifest["estimated_workload"]["tasks_per_epoch"], 7752)
             self.assertEqual(manifest["estimated_workload"]["tasks_total"], 15504)
             self.assertEqual(manifest["coordinate_postprocessing"], "GEO_ONLY")
+            self.assertEqual(manifest["postprocess_workers_requested"], "AUTO")
             self.assertIn("--geo-only", manifest["commands"]["model"])
+            self.assertIn("--postprocess-workers", manifest["commands"]["model"])
             morphology_result = json.loads(
                 (output / "morphology" / "morphology_result.json").read_text()
             )
@@ -473,6 +477,12 @@ class PipelineTests(unittest.TestCase):
             change = pd.read_csv(output / "global_cutoff_event_change.csv")
             self.assertEqual(len(change), 12)
             self.assertTrue(np.allclose(change.maximum_cutoff_decrease_gv, 1.0))
+            self.assertTrue(np.allclose(
+                change.maximum_relative_cutoff_decrease_fraction, 0.2
+            ))
+            self.assertTrue(np.allclose(
+                change.maximum_relative_cutoff_decrease_percent, 20.0
+            ))
 
             figure_root = work / "figures"
             completed = subprocess.run([
@@ -611,6 +621,81 @@ class PipelineTests(unittest.TestCase):
                 c10.parse_tecplot_shell_access(destinations[475.0])[0].access_state,
                 1,
             )
+
+    def test_splitter_returns_its_validated_rows_without_a_second_parse(self):
+        """The accelerated reducer must reuse the splitter's strict parse."""
+
+        c10 = load_c10_module(ROOT)
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            source = work / "combined.dat"
+            source.write_text(
+                'VARIABLES="shell_index" "lon_deg" "lat_deg" '
+                '"rigidity_gv" "access_state" "allowed" "unresolved"\n'
+                'ZONE T="fixed_rigidity_access" I=2 F=POINT\n'
+                '0 0 40 0.5 1 1 0\n'
+                '1 0 50 0.5 0 0 0\n'
+            )
+            destinations = {475.0: work / "475.dat", 850.0: work / "850.dat"}
+            parsed = {}
+            counts = split_multishell_access(
+                source, (475.0, 850.0), destinations, c10,
+                parsed_rows=parsed,
+            )
+            self.assertEqual(counts, {475.0: 1, 850.0: 1})
+            self.assertEqual([row.access_state for row in parsed[475.0]], [1])
+            self.assertEqual([row.access_state for row in parsed[850.0]], [0])
+
+    def test_epoch_postprocessing_jobs_run_in_separate_processes(self):
+        """Two epoch workers must write complete, collision-free GEO products."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            case_dir = work / "batch_0000"
+            case_dir.mkdir()
+            output = work / "morphology"
+            jobs = []
+            for index, epoch in enumerate((
+                    "2006-12-14T00:00:00Z", "2006-12-14T00:15:00Z")):
+                source = case_dir / f"access_{index}.dat"
+                source.write_text(
+                    'VARIABLES="shell_index" "lon_deg" "lat_deg" '
+                    '"rigidity_gv" "access_state" "allowed" "unresolved"\n'
+                    'ZONE T="fixed_rigidity_access" I=4 F=POINT\n'
+                    '0 0 40 0.2 0 0 0\n0 0 40 0.4 1 1 0\n'
+                    '1 0 50 0.2 0 0 0\n1 0 50 0.4 1 1 0\n'
+                )
+                jobs.append({
+                    "root": str(ROOT), "tag": "batch_0000",
+                    "epoch_utc": epoch, "access_path": str(source),
+                    "case_dir": str(case_dir), "output_root": str(output),
+                    "altitudes": [475.0, 850.0],
+                    "rigidities_gv": [0.2, 0.4],
+                    "access_abs_lat_min_deg": 0.0,
+                    "access_abs_lat_max_deg": 90.0,
+                    "mlt_bins": [0.0, 3.0], "geo_only": True,
+                    "mesh_layout": "BATCHED", "stage_c9": False,
+                    "stage_c10": False, "c9_output_root": "",
+                    "c10_output_root": "",
+                })
+            with ProcessPoolExecutor(max_workers=2) as executor:
+                results = list(executor.map(postprocess_epoch_product, jobs))
+            self.assertTrue(all(not result["failures"] for result in results))
+            self.assertEqual(sum(len(result["cutoff_map_manifest"])
+                                 for result in results), 4)
+            for result in results:
+                for row in result["cutoff_map_manifest"]:
+                    self.assertTrue((output / row["map_path"]).is_file())
+
+    def test_postprocess_worker_auto_policy_is_bounded(self):
+        """AUTO must remain local and an explicit one must preserve serial mode."""
+
+        self.assertEqual(resolve_postprocess_workers("1", 16), 1)
+        self.assertGreaterEqual(resolve_postprocess_workers("AUTO", 16), 1)
+        self.assertLessEqual(resolve_postprocess_workers("AUTO", 16), 8)
+        self.assertEqual(resolve_postprocess_workers("64", 3), 3)
+        with self.assertRaises(ValueError):
+            resolve_postprocess_workers("0", 16)
 
     def test_multishell_split_accepts_explicit_zero_based_shell_indices(self):
         """AMPS Shell_0/Shell_1 zone labels follow configured altitude order."""
@@ -850,6 +935,13 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(summary["status"], "AVAILABLE")
             self.assertTrue(all(abs(row["maximum_cutoff_decrease_gv"] - 0.3) < 1e-12
                                 for row in spatial))
+            expected_percent = {475.0: 30.0, 850.0: 25.0}
+            self.assertTrue(all(
+                abs(float(row["maximum_relative_cutoff_decrease_percent"])
+                    - expected_percent[float(row["altitude_km"])]) < 1e-12
+                for row in spatial
+            ))
+            self.assertEqual(len(summary["largest_relative_decrease_by_shell"]), 2)
 
             spatial_path = work / "spatial.csv"
             evolution_path = work / "evolution.csv"
@@ -874,7 +966,14 @@ class PipelineTests(unittest.TestCase):
                 self.assertTrue(eps_path.is_file())
                 self.assertGreater(eps_path.stat().st_size, 0)
             self.assertTrue(all("figure_eps_path" in row for row in epoch_records))
-            self.assertEqual(len(change_paths), 6)
+            # Three publication summaries (absolute map, relative map, and
+            # temporal evolution), each written as PNG, EPS, and PDF.
+            self.assertEqual(len(change_paths), 9)
+            for suffix in (".png", ".eps", ".pdf"):
+                self.assertTrue((
+                    work / "figures" /
+                    f"figure_maximum_relative_cutoff_decrease_map{suffix}"
+                ).is_file())
 
     def test_figure_module_avoids_twoslope_norm_version_dependency(self):
         """System Matplotlib on production hosts may predate TwoSlopeNorm."""

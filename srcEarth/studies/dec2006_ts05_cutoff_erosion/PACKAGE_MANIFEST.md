@@ -55,14 +55,22 @@ The enhanced `dynamics/` contract contains the original erosion, lag, and
 hysteresis tables plus cell-resolved erosion/drivers, two-shell altitude
 response, storm extrema, recovery times, best-lag summaries, and machine-
 readable analysis availability. The required publication figure set contains
-seven panels (cutoff degradation, peak degradation, MLT evolution, altitude
-response, accessible area, maximum spatial R50 decrease, and R50-decrease
-evolution), each in PNG, EPS, and PDF. In addition, every modeled epoch has a
+eight panels (cutoff degradation, peak degradation, MLT evolution, altitude
+response, accessible area, maximum absolute spatial R50 decrease, maximum
+relative spatial R50 decrease, and R50-decrease evolution), each in PNG, EPS,
+and PDF. In addition, every modeled epoch has a
 matching PNG and vector EPS containing one cutoff-rigidity-map panel per shell,
 traced through `cutoff_rigidity_map_figure_manifest.csv` to the per-shell
 numerical map. SMOKE
 exercises all spatial products and figures; temporal inference is explicitly labeled
 `DIAGNOSTIC_ONLY` until the configured 24-epoch minimum is met.
+
+The shared morphology runner performs post-AMPS work with epoch-level local
+process workers (`--postprocess-workers AUTO`, maximum eight by default),
+caches AACGM/MLT by unique geographic location, indexes ACCESS_T50 inputs once,
+and reuses the splitter's strict parse. Deterministic parent-side sorting keeps
+aggregate CSV ordering identical to the serial `--postprocess-workers 1` path.
+`morphology/postprocessing_timings.csv` records the measured reduction cost.
 
 The independent global-map workflow uses the same multi-shell template and
 native Mode3D batching but does not consume observation tables. Its merged
@@ -85,7 +93,9 @@ geometries and schedulers retain their existing numerical and scheduling paths.
 Global shell figures are cyclic filled longitude/latitude maps with graticules
 and continental outlines read from `srcEarth/earth-continental-map.dat`.
 Invalid cutoff states remain masked rather than being converted to numerical
-colors; no external GIS package or runtime map download is required.
+colors; no external GIS package or runtime map download is required. The
+relative-erosion figure normalizes each cell's maximum decrease by its own
+positive BRACKETED quiet R50 and independently locates the shell maximum.
 
 ## Verified invocation
 

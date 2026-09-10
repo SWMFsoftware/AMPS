@@ -143,6 +143,57 @@ def validate_global_geo_only_support(root: Path) -> None:
         )
 
 
+def validate_parallel_postprocessing_support(root: Path) -> None:
+    """Reject partial installations of the parallel reduction feature.
+
+    The parallelization spans three entry points and the C10 observation
+    operator.  These source markers deliberately check the cross-file contract
+    before an expensive FULL run: a mixed overlay must not silently accept the
+    command-line option while retaining the old serial or repeatedly scanned
+    implementation.
+    """
+
+    morphology = (root / "scripts" / "run_morphology.py").read_text(
+        encoding="utf-8"
+    )
+    study = (root / "scripts" / "run_study.py").read_text(encoding="utf-8")
+    global_runner = (root / "scripts" / "run_global_cutoff_maps.py").read_text(
+        encoding="utf-8"
+    )
+    c10 = (root / "vendor" / "C10" / "run_C10.py").read_text(encoding="utf-8")
+    required = {
+        "run_morphology.py": (
+            "ProcessPoolExecutor",
+            '"--postprocess-workers"',
+            "postprocess_epoch_product",
+            'output_root / "postprocessing_timings.csv"',
+        ),
+        "run_study.py": ('"--postprocess-workers"',),
+        "run_global_cutoff_maps.py": ('"--postprocess-workers"',),
+        "vendor/C10/run_C10.py": (
+            "converted: Dict",
+            "_prepared",
+        ),
+    }
+    sources = {
+        "run_morphology.py": morphology,
+        "run_study.py": study,
+        "run_global_cutoff_maps.py": global_runner,
+        "vendor/C10/run_C10.py": c10,
+    }
+    missing = [
+        f"{name}:{marker}"
+        for name, markers in required.items()
+        for marker in markers
+        if marker not in sources[name]
+    ]
+    if missing:
+        raise ValueError(
+            "parallel postprocessing support is incomplete; missing "
+            + ", ".join(missing)
+        )
+
+
 def main() -> int:
     root, config = load_config()
     provenance = json.loads((root / "data" / "provenance.json").read_text())
@@ -220,6 +271,12 @@ def main() -> int:
     try:
         validate_global_geo_only_support(root)
         print("PASS global cutoff-map GEO-only postprocessing contract")
+    except Exception as exc:
+        problems.append(str(exc))
+
+    try:
+        validate_parallel_postprocessing_support(root)
+        print("PASS bounded parallel epoch-postprocessing contract")
     except Exception as exc:
         problems.append(str(exc))
 

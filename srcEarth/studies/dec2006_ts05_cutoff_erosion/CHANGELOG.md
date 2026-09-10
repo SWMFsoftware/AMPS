@@ -1,5 +1,33 @@
 # Change log
 
+## 2026-09-10 — parallel epoch postprocessing
+
+- Parallelized the formerly silent serial interval after each batched AMPS
+  launch by assigning complete epoch products, including both shells, to a
+  bounded local process pool.
+- Added `--postprocess-workers AUTO|N`; AUTO respects CPU affinity, epoch count,
+  and an eight-worker memory guard, while `1` preserves a serial reference path.
+- Added per-epoch progress messages and `postprocessing_timings.csv` so long
+  FULL reductions are observable and worker throughput can be diagnosed.
+- Cached AACGM transforms by unique geographic location within each epoch and
+  altitude, indexed access rows once for all MLT/rigidity boundary fits, and
+  reused the strict multi-shell parse for R50 calculation.
+- Preserved deterministic product ordering, process-isolated output paths, the
+  existing scientific predicates, and GEO-only global-map behavior.
+- Added process-pool, cache-call-count, indexed-versus-legacy parity, worker
+  policy, and source-contract regression coverage.
+
+## 2026-09-10 — relative cutoff-erosion maps
+
+- Added cell-resolved maximum relative cutoff decrease, expressed as a
+  fraction and percent of the positive BRACKETED quiet-cell R50.
+- Added independent per-shell relative extrema to the JSON summary and a
+  filled, coastlined publication map in PNG, vector EPS, and PDF formats.
+- Kept below-range event estimates explicitly marked as conservative lower
+  bounds and masked invalid denominators instead of emitting unstable ratios.
+- Extended figure-stage contracts, documentation, and regression tests for the
+  new product without requiring another AMPS trajectory calculation.
+
 ## 2026-09-10 — GEO-only global-map postprocessing
 
 - Added an explicit `--geo-only` mode to the shared morphology engine and made

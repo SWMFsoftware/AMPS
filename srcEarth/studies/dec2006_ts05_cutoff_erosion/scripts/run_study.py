@@ -121,6 +121,7 @@ def stage_output_problem(stage: str, output: Path,
                 "figure_mlt_cutoff_evolution", "figure_altitude_response",
                 "figure_accessible_area",
                 "figure_maximum_cutoff_decrease_map",
+                "figure_maximum_relative_cutoff_decrease_map",
                 "figure_cutoff_decrease_evolution",
             )
             for suffix in (".png", ".eps")
@@ -235,6 +236,12 @@ def parse_args() -> argparse.Namespace:
         help="Override execution.epochs_per_batch for each BATCHED AMPS process",
     )
     parser.add_argument(
+        "--postprocess-workers", default="AUTO",
+        help=("Epoch-level morphology postprocessing workers: AUTO or a positive "
+              "integer. AUTO uses up to eight CPUs on the runner's local node; "
+              "use 1 for the serial reference path."),
+    )
+    parser.add_argument(
         "--keep", action="store_true",
         help=("Reuse a morphology AMPS launch only when every precisely named "
               "raw epoch product for that launch already exists. Postprocessing, "
@@ -320,6 +327,7 @@ def main() -> int:
             "--mpirun", args.mpirun, "-np", str(np_value), "-nt", str(nt_value),
             "--output-root", str(output / "morphology"),
             "--mesh-layout", args.mesh_layout,
+            "--postprocess-workers", args.postprocess_workers,
         ],
         "compare": [
             python, str(root / "scripts" / "compare_observations.py"),

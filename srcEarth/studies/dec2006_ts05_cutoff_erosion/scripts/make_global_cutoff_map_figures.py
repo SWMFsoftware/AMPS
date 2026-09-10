@@ -63,6 +63,7 @@ def main() -> int:
         output / f"{stem}{suffix}"
         for stem in (
             "figure_maximum_cutoff_decrease_map",
+            "figure_maximum_relative_cutoff_decrease_map",
             "figure_cutoff_decrease_evolution",
         )
         for suffix in (".png", ".eps", ".pdf")

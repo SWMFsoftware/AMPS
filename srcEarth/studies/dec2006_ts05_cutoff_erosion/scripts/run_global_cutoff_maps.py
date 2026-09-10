@@ -203,6 +203,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-nt", type=int)
     parser.add_argument("--epochs-per-batch", type=int,
                         help="Native SNAPSHOT_LIST epochs per Mode3D process (minimum 2)")
+    parser.add_argument(
+        "--postprocess-workers", default="AUTO",
+        help=("Epoch-level postprocessing workers: AUTO or a positive integer. "
+              "AUTO uses up to eight CPUs on the runner's local node; use 1 "
+              "for serial regression."),
+    )
     parser.add_argument("--keep", action="store_true",
                         help="Reuse only complete raw AMPS batches; regenerate all reductions")
     parser.add_argument("--reuse-raw", action="store_true",
@@ -270,6 +276,7 @@ def main() -> int:
         "-np", str(np_value), "-nt", str(nt_value),
         "--output-root", str(output / "morphology"),
         "--mesh-layout", "BATCHED", "--epochs-per-batch", str(batch_size),
+        "--postprocess-workers", args.postprocess_workers,
         # Complete global R50 maps are defined on the requested GEO lattice.
         # They do not use the C9/C10 AACGM boundary operator. Keeping this
         # explicit prevents thousands of expected near-equator AACGM failures
@@ -305,6 +312,7 @@ def main() -> int:
         "mesh_layout": "BATCHED", "epochs_per_batch": batch_size,
         "mpi_ranks": np_value, "threads_per_rank": nt_value,
         "coordinate_postprocessing": "GEO_ONLY",
+        "postprocess_workers_requested": args.postprocess_workers,
         "estimated_workload": workload,
         "reuse_raw": args.reuse_raw, "prepare_only": args.prepare_only,
         "commands": {stage: commands[stage] for stage in stages},

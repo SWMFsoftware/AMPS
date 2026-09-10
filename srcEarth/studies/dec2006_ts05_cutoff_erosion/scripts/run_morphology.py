@@ -24,6 +24,7 @@ MPI. This is useful on login nodes and for advance review of computational cost.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import importlib.util
 import json
 import math
@@ -31,6 +32,7 @@ import os
 import re
 import shutil
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -452,7 +454,9 @@ def _zone_shell_index(line: str, shell_count: int) -> Optional[int]:
 
 
 def split_multishell_access(source: Path, expected_altitudes: Sequence[float],
-                            destinations: Mapping[float, Path], c10) -> Dict[float, int]:
+                            destinations: Mapping[float, Path], c10,
+                            parsed_rows: Optional[Dict[float, List[object]]] = None
+                            ) -> Dict[float, int]:
     """Split one multi-shell access product into strict single-shell products.
 
     AMPS represents multiple shell altitudes as Tecplot zones in one file.  C9
@@ -466,6 +470,11 @@ def split_multishell_access(source: Path, expected_altitudes: Sequence[float],
 
     The numerical records are kept verbatim.  This avoids changing binary64
     decimal renderings before the observation runners parse the staged files.
+
+    When ``parsed_rows`` is supplied, the strict parser result is returned to
+    the caller through that mapping.  The historical return value remains the
+    per-shell row count, so existing callers are unchanged.  The morphology
+    reducer uses the optional mapping to avoid parsing every split file twice.
     """
 
     expected = [float(value) for value in expected_altitudes]
@@ -620,7 +629,10 @@ def split_multishell_access(source: Path, expected_altitudes: Sequence[float],
         )
         # Reuse the C10 strict state parser as a second schema/consistency gate.
         # This verifies access_state, allowed, unresolved, and all row widths.
-        counts[altitude] = len(c10.parse_tecplot_shell_access(destination))
+        parsed = c10.parse_tecplot_shell_access(destination)
+        counts[altitude] = len(parsed)
+        if parsed_rows is not None:
+            parsed_rows[altitude] = list(parsed)
     return counts
 
 
@@ -665,6 +677,235 @@ def observation_destination(output_root: Path, epoch: datetime) -> Path:
 
     token = epoch.strftime("%Y%m%dT%H%M%S")
     return output_root / "gridded" / token / f"sample_00_{token}"
+
+
+# ProcessPoolExecutor workers persist for all epochs in one AMPS batch.  Cache
+# the dynamically imported C10 scientific-method module inside each process so
+# it is loaded once per worker rather than once per epoch.  The cache is
+# process-local; no mutable C10 state is shared across workers.
+_WORKER_C10_MODULES: Dict[str, object] = {}
+
+
+def _worker_c10_module(root: Path):
+    """Return the process-local C10 module used by morphology postprocessing."""
+
+    key = str(root.resolve())
+    module = _WORKER_C10_MODULES.get(key)
+    if module is None:
+        module = load_c10_module(root)
+        _WORKER_C10_MODULES[key] = module
+    return module
+
+
+def postprocess_epoch_product(job: Mapping[str, object]) -> Dict[str, object]:
+    """Reduce one epoch's two-shell AMPS product in an isolated process.
+
+    Epochs are the natural parallel work unit: every input and output path is
+    unique to one epoch, while both altitude shells remain together so the raw
+    multi-shell file is read only once.  Workers write only epoch-specific
+    products and return small manifest/boundary records.  The parent process
+    performs the final ordered merge; consequently worker completion order
+    cannot change scientific tables or checksums.
+
+    ``job`` contains only JSON/pickle-friendly primitives and paths represented
+    as strings.  This is intentional: the C10 module is loaded dynamically, and
+    passing its dataclass instances between processes would depend on the Unix
+    ``fork`` start method and fail on platforms that use ``spawn``.
+    """
+
+    started = time.perf_counter()
+    root = Path(str(job["root"]))
+    case_dir = Path(str(job["case_dir"]))
+    output_root = Path(str(job["output_root"]))
+    access_path = Path(str(job["access_path"]))
+    epoch = parse_utc(str(job["epoch_utc"]))
+    epoch_text = format_utc(epoch)
+    tag = str(job["tag"])
+    altitudes = [float(value) for value in job["altitudes"]]  # type: ignore[index]
+    rigidities = [float(value) for value in job["rigidities_gv"]]  # type: ignore[index]
+    mlt_bins = [float(value) for value in job["mlt_bins"]]  # type: ignore[index]
+    geo_only = bool(job["geo_only"])
+    minimum_latitude = float(job["access_abs_lat_min_deg"])
+    maximum_latitude = float(job["access_abs_lat_max_deg"])
+    layout = str(job["mesh_layout"])
+    c9_output_root = (
+        Path(str(job["c9_output_root"])) if job.get("c9_output_root") else None
+    )
+    c10_output_root = (
+        Path(str(job["c10_output_root"])) if job.get("c10_output_root") else None
+    )
+    result: Dict[str, object] = {
+        "tag": tag,
+        "epoch_utc": epoch_text,
+        "boundaries": [],
+        "cutoff_map_manifest": [],
+        "staged_products": [],
+        "failures": [],
+        "shell_timings_s": {},
+    }
+
+    if not access_path.is_file():
+        result["failures"] = [
+            f"{tag}/{epoch_text}: missing {access_path.name}"
+        ]
+        result["elapsed_s"] = time.perf_counter() - started
+        return result
+
+    c10 = _worker_c10_module(root)
+    split_paths = {
+        altitude: case_dir / "split" / epoch.strftime("%Y%m%dT%H%M%S") /
+            f"cutoff_3d_shells_access_{altitude:g}km.dat"
+        for altitude in altitudes
+    }
+    parsed_by_altitude: Dict[float, List[object]] = {}
+    try:
+        split_multishell_access(
+            access_path, altitudes, split_paths, c10,
+            parsed_rows=parsed_by_altitude,
+        )
+    except Exception as exc:
+        result["failures"] = [
+            f"{tag}/{epoch_text}: multi-shell split failed: {exc}"
+        ]
+        result["elapsed_s"] = time.perf_counter() - started
+        return result
+
+    for altitude in altitudes:
+        shell_started = time.perf_counter()
+        shell_path = split_paths[altitude]
+        try:
+            # The splitter has already run C10's strict state parser.  Reusing
+            # those objects removes the former second parse of every shell.
+            access = c10.select_common_access_band(
+                parsed_by_altitude[altitude], minimum_latitude, maximum_latitude
+            )
+            estimates, profile_rows = prepare_access_coordinate_products(
+                c10, access, epoch, altitude, rigidities, mlt_bins, geo_only
+            )
+            unresolved = sum(row.access_state == 2 for row in access)
+            unresolved_fraction = unresolved / len(access) if access else 1.0
+            product_dir = (
+                output_root / f"alt_{altitude:g}km" /
+                epoch.strftime("%Y%m%dT%H%M%S")
+            )
+            product_dir.mkdir(parents=True, exist_ok=True)
+
+            cutoff_map = derive_cutoff_rigidity_map(access, rigidities)
+            for row in cutoff_map:
+                row["epoch_utc"] = epoch_text
+                row["altitude_km"] = altitude
+            cutoff_map_path = product_dir / "cutoff_rigidity_map.csv"
+            write_csv(cutoff_map_path, cutoff_map)
+            status_counts = {
+                status: sum(row["cutoff_status"] == status for row in cutoff_map)
+                for status in (
+                    "BRACKETED", "BELOW_RANGE", "ABOVE_RANGE",
+                    "UNBRACKETED", "INCOMPLETE",
+                )
+            }
+            result["cutoff_map_manifest"].append({  # type: ignore[union-attr]
+                "epoch_utc": epoch_text,
+                "altitude_km": altitude,
+                "map_path": cutoff_map_path.relative_to(output_root).as_posix(),
+                "coordinate_postprocessing": "GEO_ONLY" if geo_only else "AACGM_MLT",
+                "n_spatial_cells": len(cutoff_map),
+                **{f"n_{name.lower()}": count
+                   for name, count in status_counts.items()},
+                "sampled_rigidity_min_gv": min(rigidities),
+                "sampled_rigidity_max_gv": max(rigidities),
+            })
+            for estimate in estimates:
+                for mlt, boundary in sorted(estimate.boundary_by_mlt.items()):
+                    result["boundaries"].append({  # type: ignore[union-attr]
+                        "epoch_utc": epoch_text,
+                        "altitude_km": altitude,
+                        "rigidity_gv": estimate.rigidity_gv,
+                        "hemisphere": estimate.hemisphere,
+                        "mlt_hour": mlt,
+                        "boundary_aacgm_lat_deg": boundary,
+                        "n_valid_mlt": estimate.n_valid_mlt,
+                        "n_requested_mlt": estimate.n_requested_mlt,
+                        "unresolved_access_fraction": unresolved_fraction,
+                        "field_model": "IGRF+TS05",
+                        "observation_operator": "VERTICAL_ACCESS_T50",
+                    })
+            if not geo_only:
+                c10.write_dict_rows(product_dir / "snapshot_boundaries.csv", [
+                    c10._estimate_row(estimate) for estimate in estimates
+                ])
+                c10.write_dict_rows(
+                    product_dir / "snapshot_t50_profiles.csv", profile_rows
+                )
+
+            # Observation staging uses unique epoch directories, so workers do
+            # not contend for the same destination.  The parent later sorts the
+            # returned receipts before writing the aggregate provenance list.
+            if altitude == 475.0 and bool(job["stage_c9"]) and c9_output_root:
+                destination = (
+                    observation_destination(c9_output_root, epoch)
+                    / "cutoff_3d_shells_access.dat"
+                )
+                stage_single_shell_product(shell_path, destination)
+                receipt = write_shared_product_receipt(
+                    destination, shell_path, "C9", epoch, altitude, layout
+                )
+                result["staged_products"].append({  # type: ignore[union-attr]
+                    "consumer": "C9", "epoch_utc": epoch_text,
+                    "altitude_km": altitude, "source": str(shell_path),
+                    "destination": str(destination), "receipt": str(receipt),
+                })
+            if altitude == 850.0 and bool(job["stage_c10"]) and c10_output_root:
+                destination = (
+                    observation_destination(c10_output_root, epoch)
+                    / "cutoff_3d_shells_access.dat"
+                )
+                stage_single_shell_product(shell_path, destination)
+                receipt = write_shared_product_receipt(
+                    destination, shell_path, "C10", epoch, altitude, layout
+                )
+                result["staged_products"].append({  # type: ignore[union-attr]
+                    "consumer": "C10", "epoch_utc": epoch_text,
+                    "altitude_km": altitude, "source": str(shell_path),
+                    "destination": str(destination), "receipt": str(receipt),
+                })
+        except Exception as exc:
+            result["failures"].append(  # type: ignore[union-attr]
+                f"{tag}/{epoch_text}/{altitude:g}km: postprocessing failed: {exc}"
+            )
+        result["shell_timings_s"][f"{altitude:g}"] = (  # type: ignore[index]
+            time.perf_counter() - shell_started
+        )
+    result["elapsed_s"] = time.perf_counter() - started
+    return result
+
+
+def available_local_cpus() -> int:
+    """Return CPUs available to the runner process under scheduler affinity.
+
+    ``os.cpu_count()`` often reports the entire HPC node even when a batch job
+    owns only a subset.  Linux scheduler affinity is the stronger bound.  The
+    portable fallback keeps the runner usable on systems without
+    ``sched_getaffinity``.
+    """
+
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except AttributeError:
+        return max(1, os.cpu_count() or 1)
+
+
+def resolve_postprocess_workers(requested: str, n_epochs: int) -> int:
+    """Resolve ``AUTO`` or a positive explicit worker count for one batch."""
+
+    if requested.upper() == "AUTO":
+        return max(1, min(8, n_epochs, available_local_cpus()))
+    try:
+        value = int(requested)
+    except ValueError as exc:
+        raise ValueError("--postprocess-workers must be AUTO or a positive integer") from exc
+    if value < 1:
+        raise ValueError("--postprocess-workers must be AUTO or a positive integer")
+    return min(value, max(1, n_epochs))
 
 
 def chunks(values: Sequence[datetime], size: int) -> List[List[datetime]]:
@@ -756,6 +997,12 @@ def parse_args() -> argparse.Namespace:
               "execution.epochs_per_batch"),
     )
     parser.add_argument(
+        "--postprocess-workers", default="AUTO",
+        help=("Parallel epoch reducers used after each AMPS batch: AUTO or a "
+              "positive integer. AUTO uses at most eight CPUs allowed by the "
+              "runner's local scheduler affinity; use 1 for serial regression."),
+    )
+    parser.add_argument(
         "--include-observation-epochs", action="store_true",
         help="Add the exact C9 and C10 profile midpoints to the morphology workset",
     )
@@ -813,6 +1060,8 @@ def main() -> int:
     cutoff_map_manifest: List[Dict[str, object]] = []
     driver_samples: List[Dict[str, object]] = []
     staged_products: List[Dict[str, object]] = []
+    postprocessing_timings: List[Dict[str, object]] = []
+    postprocess_worker_counts: List[int] = []
     failures: List[str] = []
     model = config["model"]  # type: ignore[index]
     execution = config["execution"]  # type: ignore[index]
@@ -827,6 +1076,14 @@ def main() -> int:
     )
     if batch_size < 1:
         raise SystemExit("--epochs-per-batch must be positive")
+    try:
+        # Validate the worker option before any expensive AMPS launch.  The
+        # final batch may contain fewer epochs and will be capped separately.
+        resolve_postprocess_workers(
+            args.postprocess_workers, max(1, min(batch_size, len(epochs)))
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     mlt_bins = [3.0 * index for index in range(8)]
     n_case_slots = len(epochs) * len(altitudes)
 
@@ -996,149 +1253,120 @@ def main() -> int:
                     print(f"ERROR: {message}", file=sys.stderr, flush=True)
                     continue
 
+        # AMPS has exited before this block.  Each epoch now becomes one
+        # independent process-pool job; both shells remain in the same job so
+        # their shared raw file is opened and split only once.
+        model_controls = runner_namespace(config, args, spec_altitudes[0])
+        epoch_jobs: List[Dict[str, object]] = []
         for epoch in spec_epochs:
-            access_path = raw_access_path(case_dir, spec_epochs, epoch)
-            if not access_path.exists():
-                message = f"{tag}/{format_utc(epoch)}: missing {access_path.name}"
-                failures.append(message)
-                print(f"ERROR: {message}", file=sys.stderr, flush=True)
-                continue
-            split_paths = {
-                altitude: case_dir / "split" / epoch.strftime("%Y%m%dT%H%M%S") /
-                    f"cutoff_3d_shells_access_{altitude:g}km.dat"
-                for altitude in spec_altitudes
-            }
-            try:
-                split_multishell_access(
-                    access_path, spec_altitudes, split_paths, c10
+            epoch_jobs.append({
+                "root": str(root), "tag": tag,
+                "epoch_utc": format_utc(epoch),
+                "access_path": str(raw_access_path(
+                    case_dir, spec_epochs, epoch
+                )),
+                "case_dir": str(case_dir),
+                "output_root": str(output_root),
+                "altitudes": list(spec_altitudes),
+                "rigidities_gv": list(model_controls.rigidities_gv),
+                "access_abs_lat_min_deg": model_controls.access_abs_lat_min_deg,
+                "access_abs_lat_max_deg": model_controls.access_abs_lat_max_deg,
+                "mlt_bins": mlt_bins, "geo_only": args.geo_only,
+                "mesh_layout": args.mesh_layout,
+                "stage_c9": epoch in pamela_epoch_set,
+                "stage_c10": epoch in poes_epoch_set,
+                "c9_output_root": str(c9_output_root) if c9_output_root else "",
+                "c10_output_root": str(c10_output_root) if c10_output_root else "",
+            })
+
+        worker_count = resolve_postprocess_workers(
+            args.postprocess_workers, len(epoch_jobs)
+        )
+        postprocess_worker_counts.append(worker_count)
+        post_started = time.perf_counter()
+        print(
+            f"[{tag}] postprocessing {len(epoch_jobs)} epoch(s) with "
+            f"{worker_count} local process worker(s); "
+            "AACGM cached by unique GEO location",
+            flush=True,
+        )
+        epoch_results: List[Dict[str, object]] = []
+        if worker_count == 1:
+            for completed_index, job in enumerate(epoch_jobs, start=1):
+                epoch_result = postprocess_epoch_product(job)
+                epoch_results.append(epoch_result)
+                print(
+                    f"[{tag}] postprocessing {completed_index}/{len(epoch_jobs)} "
+                    f"complete: {epoch_result['epoch_utc']} "
+                    f"({float(epoch_result['elapsed_s']):.2f} s)",
+                    flush=True,
                 )
-            except Exception as exc:
-                message = (
-                    f"{tag}/{format_utc(epoch)}: multi-shell split failed: {exc}"
-                )
-                failures.append(message)
+        else:
+            # A process pool is used instead of threads because AACGM's native
+            # extension and the dynamically loaded C10 module are not assumed
+            # to be thread-safe.  This pool is local to the runner's node; its
+            # size is bounded by scheduler affinity and never consumes remote
+            # MPI ranks after the AMPS executable has exited.
+            with ProcessPoolExecutor(max_workers=worker_count) as executor:
+                pending = {
+                    executor.submit(postprocess_epoch_product, job): job
+                    for job in epoch_jobs
+                }
+                for completed_index, future in enumerate(
+                        as_completed(pending), start=1):
+                    job = pending[future]
+                    try:
+                        epoch_result = future.result()
+                    except Exception as exc:
+                        # Preserve other completed epochs and turn an unexpected
+                        # worker failure into the same explicit result contract
+                        # used for ordinary parsing/conversion failures.
+                        epoch_result = {
+                            "tag": tag, "epoch_utc": job["epoch_utc"],
+                            "boundaries": [], "cutoff_map_manifest": [],
+                            "staged_products": [], "shell_timings_s": {},
+                            "elapsed_s": 0.0,
+                            "failures": [
+                                f"{tag}/{job['epoch_utc']}: postprocess worker "
+                                f"failed: {exc}"
+                            ],
+                        }
+                    epoch_results.append(epoch_result)
+                    print(
+                        f"[{tag}] postprocessing {completed_index}/{len(epoch_jobs)} "
+                        f"complete: {epoch_result['epoch_utc']} "
+                        f"({float(epoch_result['elapsed_s']):.2f} s)",
+                        flush=True,
+                    )
+
+        # Completion order is nondeterministic in parallel mode.  Sorting
+        # before aggregation preserves the byte-level ordering of serial output
+        # and makes serial/parallel regression comparisons meaningful.
+        epoch_results.sort(key=lambda item: parse_utc(str(item["epoch_utc"])))
+        for epoch_result in epoch_results:
+            boundaries.extend(epoch_result["boundaries"])  # type: ignore[arg-type]
+            cutoff_map_manifest.extend(  # type: ignore[arg-type]
+                epoch_result["cutoff_map_manifest"]
+            )
+            staged_products.extend(  # type: ignore[arg-type]
+                epoch_result["staged_products"]
+            )
+            result_failures = list(epoch_result["failures"])  # type: ignore[arg-type]
+            failures.extend(result_failures)
+            for message in result_failures:
                 print(f"ERROR: {message}", file=sys.stderr, flush=True)
-                continue
-
-            for altitude in spec_altitudes:
-                controls = runner_namespace(config, args, altitude)
-                shell_path = split_paths[altitude]
-                try:
-                    access = c10.parse_tecplot_shell_access(shell_path)
-                    access = c10.select_common_access_band(
-                        access, controls.access_abs_lat_min_deg,
-                        controls.access_abs_lat_max_deg,
-                    )
-                    estimates, profile_rows = prepare_access_coordinate_products(
-                        c10, access, epoch, altitude, controls.rigidities_gv,
-                        mlt_bins, args.geo_only,
-                    )
-                    unresolved = sum(row.access_state == 2 for row in access)
-                    unresolved_fraction = unresolved / len(access) if access else 1.0
-                    product_dir = (
-                        output_root / f"alt_{altitude:g}km" /
-                        epoch.strftime("%Y%m%dT%H%M%S")
-                    )
-                    product_dir.mkdir(parents=True, exist_ok=True)
-
-                    # Invert the exact-rigidity access sequence independently at
-                    # every geographic grid cell. The map is saved beside the
-                    # boundary products so later visualization never has to
-                    # reopen or reinterpret the large Tecplot trajectory table.
-                    cutoff_map = derive_cutoff_rigidity_map(
-                        access, controls.rigidities_gv
-                    )
-                    for row in cutoff_map:
-                        row["epoch_utc"] = format_utc(epoch)
-                        row["altitude_km"] = altitude
-                    cutoff_map_path = product_dir / "cutoff_rigidity_map.csv"
-                    write_csv(cutoff_map_path, cutoff_map)
-                    status_counts = {
-                        status: sum(row["cutoff_status"] == status
-                                    for row in cutoff_map)
-                        for status in (
-                            "BRACKETED", "BELOW_RANGE", "ABOVE_RANGE",
-                            "UNBRACKETED", "INCOMPLETE",
-                        )
-                    }
-                    cutoff_map_manifest.append({
-                        "epoch_utc": format_utc(epoch),
-                        "altitude_km": altitude,
-                        "map_path": cutoff_map_path.relative_to(output_root).as_posix(),
-                        "coordinate_postprocessing": (
-                            "GEO_ONLY" if args.geo_only else "AACGM_MLT"
-                        ),
-                        "n_spatial_cells": len(cutoff_map),
-                        **{f"n_{name.lower()}": count
-                           for name, count in status_counts.items()},
-                        "sampled_rigidity_min_gv": min(controls.rigidities_gv),
-                        "sampled_rigidity_max_gv": max(controls.rigidities_gv),
-                    })
-                    for estimate in estimates:
-                        for mlt, boundary in sorted(estimate.boundary_by_mlt.items()):
-                            boundaries.append({
-                                "epoch_utc": format_utc(epoch),
-                                "altitude_km": altitude,
-                                "rigidity_gv": estimate.rigidity_gv,
-                                "hemisphere": estimate.hemisphere,
-                                "mlt_hour": mlt,
-                                "boundary_aacgm_lat_deg": boundary,
-                                "n_valid_mlt": estimate.n_valid_mlt,
-                                "n_requested_mlt": estimate.n_requested_mlt,
-                                "unresolved_access_fraction": unresolved_fraction,
-                                "field_model": "IGRF+TS05",
-                                "observation_operator": "VERTICAL_ACCESS_T50",
-                            })
-                    if not args.geo_only:
-                        c10.write_dict_rows(product_dir / "snapshot_boundaries.csv", [
-                            c10._estimate_row(estimate) for estimate in estimates
-                        ])
-                        c10.write_dict_rows(
-                            product_dir / "snapshot_t50_profiles.csv", profile_rows
-                        )
-
-                    # Stage the exact same raw bytes at the legacy observation
-                    # paths.  C9/C10 then run with --skip-run and apply their own
-                    # reference-specific reducers and acceptance criteria.
-                    if altitude == 475.0 and epoch in pamela_epoch_set and c9_output_root:
-                        destination = (
-                            observation_destination(c9_output_root, epoch)
-                            / "cutoff_3d_shells_access.dat"
-                        )
-                        stage_single_shell_product(shell_path, destination)
-                        receipt = write_shared_product_receipt(
-                            destination, shell_path, "C9", epoch, altitude,
-                            args.mesh_layout,
-                        )
-                        staged_products.append({
-                            "consumer": "C9", "epoch_utc": format_utc(epoch),
-                            "altitude_km": altitude, "source": str(shell_path),
-                            "destination": str(destination),
-                            "receipt": str(receipt),
-                        })
-                    if altitude == 850.0 and epoch in poes_epoch_set and c10_output_root:
-                        destination = (
-                            observation_destination(c10_output_root, epoch)
-                            / "cutoff_3d_shells_access.dat"
-                        )
-                        stage_single_shell_product(shell_path, destination)
-                        receipt = write_shared_product_receipt(
-                            destination, shell_path, "C10", epoch, altitude,
-                            args.mesh_layout,
-                        )
-                        staged_products.append({
-                            "consumer": "C10", "epoch_utc": format_utc(epoch),
-                            "altitude_km": altitude, "source": str(shell_path),
-                            "destination": str(destination),
-                            "receipt": str(receipt),
-                        })
-                except Exception as exc:  # keep other expensive cases usable
-                    message = (
-                        f"{tag}/{format_utc(epoch)}/{altitude:g}km: "
-                        f"postprocessing failed: {exc}"
-                    )
-                    failures.append(message)
-                    print(f"ERROR: {message}", file=sys.stderr, flush=True)
+            postprocessing_timings.append({
+                "batch": tag, "epoch_utc": epoch_result["epoch_utc"],
+                "worker_elapsed_s": epoch_result["elapsed_s"],
+                "shell_timings_s": json.dumps(
+                    epoch_result["shell_timings_s"], sort_keys=True
+                ),
+            })
+        print(
+            f"[{tag}] postprocessing complete: {len(epoch_results)} epoch(s), "
+            f"wall={time.perf_counter() - post_started:.2f} s",
+            flush=True,
+        )
 
     (output_root / "command_inventory.json").write_text(
         json.dumps(commands, indent=2) + "\n", encoding="utf-8"
@@ -1147,6 +1375,11 @@ def main() -> int:
     (output_root / "staged_observation_products.json").write_text(
         json.dumps(staged_products, indent=2) + "\n", encoding="utf-8"
     )
+    if postprocessing_timings:
+        write_csv(
+            output_root / "postprocessing_timings.csv",
+            postprocessing_timings,
+        )
     if boundaries:
         write_csv(output_root / "morphology_boundaries.csv", boundaries)
     if cutoff_map_manifest:
@@ -1165,6 +1398,11 @@ def main() -> int:
         # Preserve the original manifest key as a compatibility alias.  It now
         # describes a real AMPS batch rather than directory-only grouping.
         "epochs_per_batch_group": batch_size if args.mesh_layout == "BATCHED" else 1,
+        "postprocess_workers_requested": args.postprocess_workers,
+        "postprocess_workers_by_batch": postprocess_worker_counts,
+        "postprocessing_parallel": any(
+            count > 1 for count in postprocess_worker_counts
+        ),
         "mesh_reused_across_shells": args.mesh_layout in ("BATCHED", "PER_EPOCH"),
         "mesh_reused_across_epochs": (
             args.mesh_layout == "BATCHED" and any(len(item[1]) > 1 for item in run_specs)

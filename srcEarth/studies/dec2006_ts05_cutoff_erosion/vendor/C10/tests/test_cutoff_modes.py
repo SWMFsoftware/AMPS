@@ -3,13 +3,18 @@ from __future__ import annotations
 
 import contextlib
 import io
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from run_C10 import (
     AccessRow,
+    _access_t50_for_mlt,
+    add_aacgm_lat_mlt,
     command_for,
     compare_access_states,
     estimate_access_t50_boundaries,
@@ -19,6 +24,40 @@ from run_C10 import (
 
 
 class AccessProductTests(unittest.TestCase):
+    def test_aacgm_conversion_is_cached_by_unique_geographic_location(self) -> None:
+        """Rigidity repetitions must not repeat an identical AACGM call."""
+
+        class FakeAACGM:
+            def __init__(self) -> None:
+                self.geo_calls = 0
+                self.mlt_calls = 0
+
+            def convert_latlon(self, latitude, longitude, altitude, epoch,
+                               method_code):
+                self.geo_calls += 1
+                return latitude + 1.0, longitude + 2.0, altitude
+
+            def convert_mlt(self, longitudes, epoch, m2a=False):
+                self.mlt_calls += 1
+                return [float(longitudes[0]) / 15.0]
+
+        rows = [
+            SimpleNamespace(latitude_deg=latitude, longitude_deg=longitude,
+                            rigidity_gv=rigidity,
+                            aacgm_latitude_deg=None, mlt_hour=None)
+            for latitude, longitude in ((50.0, 0.0), (60.0, 15.0))
+            for rigidity in (0.2, 0.4, 0.8)
+        ]
+        fake = FakeAACGM()
+        with mock.patch.dict(sys.modules, {"aacgmv2": fake}):
+            add_aacgm_lat_mlt(
+                rows, datetime(2006, 12, 14, tzinfo=timezone.utc), 850.0
+            )
+        self.assertEqual(fake.geo_calls, 2)
+        self.assertEqual(fake.mlt_calls, 2)
+        self.assertEqual(len({(row.aacgm_latitude_deg, row.mlt_hour)
+                              for row in rows}), 2)
+
     def test_access_parser_and_state_contract(self) -> None:
         text = (
             'TITLE="access"\n'
@@ -56,6 +95,45 @@ class AccessProductTests(unittest.TestCase):
         self.assertEqual(len(estimates), 1)
         self.assertAlmostEqual(estimates[0].boundary_by_mlt[0.0], 65.0, places=8)
         self.assertTrue(profiles)
+
+    def test_indexed_t50_matches_legacy_full_table_selection(self) -> None:
+        """The one-pass index must reproduce the historical scan exactly."""
+
+        rows = []
+        for rigidity in (0.2, 0.4):
+            for hemisphere_sign in (-1.0, 1.0):
+                for longitude, mlt in ((0.0, 0.0), (90.0, 6.0)):
+                    for latitude, state in ((50.0, 0), (60.0, 0),
+                                            (70.0, 1), (80.0, 1)):
+                        rows.append(AccessRow(
+                            longitude_deg=longitude,
+                            latitude_deg=hemisphere_sign * latitude,
+                            rigidity_gv=rigidity,
+                            access_state=state, allowed=state, unresolved=0,
+                            aacgm_latitude_deg=hemisphere_sign * latitude,
+                            mlt_hour=mlt,
+                        ))
+        rigidities = [0.2, 0.4]
+        mlt_bins = [0.0, 6.0]
+        hemispheres = ["N", "S"]
+        indexed, _profiles = estimate_access_t50_boundaries(
+            rows, rigidities, mlt_bins, hemispheres, 8,
+            latitude_step_deg=1.0, min_resolved_fraction=0.66,
+            minimum_edge_margin_deg=1.0,
+        )
+        indexed_by_key = {
+            (item.rigidity_gv, item.hemisphere): item.boundary_by_mlt
+            for item in indexed
+        }
+        for rigidity in rigidities:
+            for hemisphere in hemispheres:
+                legacy = {}
+                for mlt in mlt_bins:
+                    boundary, _diagnostics, _rows = _access_t50_for_mlt(
+                        rows, rigidity, hemisphere, mlt, 8, 1.0, 0.66, 1.0
+                    )
+                    legacy[mlt] = boundary
+                self.assertEqual(indexed_by_key[(rigidity, hemisphere)], legacy)
 
     def test_identical_products_pass_consistency_gate(self) -> None:
         rows = [AccessRow(0.0, 50.0, 0.2, 0, 0, 0),

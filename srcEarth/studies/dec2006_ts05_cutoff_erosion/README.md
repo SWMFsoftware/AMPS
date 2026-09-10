@@ -149,6 +149,22 @@ The batch size is controlled by `execution.epochs_per_batch` in
 preserves a batch only when every expected epoch-suffixed raw product exists;
 a partial batch is rerun as a unit so stale files cannot mask missing output.
 
+After AMPS exits, epoch products are reduced by local Python worker processes.
+`--postprocess-workers AUTO` is the default and selects at most eight workers,
+bounded by the number of epochs in the batch and the CPUs in the runner's
+scheduler affinity mask. Use `--postprocess-workers 1` for the serial reference
+path or an explicit positive integer to tune a node with unusual memory or
+filesystem limits. These workers run only on the node hosting `run_study.py`;
+they do not occupy remote MPI ranks. Every completion is reported with its
+epoch and elapsed time, and `morphology/postprocessing_timings.csv` archives
+per-epoch and per-shell timings.
+
+The observation reducer converts each unique `(epoch, altitude, GEO location)`
+to AACGM/MLT once and reuses the result for all rigidities. It also indexes the
+access table once before evaluating rigidity/hemisphere/MLT boundaries and
+reuses the splitter's strict parsed rows. These changes remove redundant work
+without changing the R50 or ACCESS_T50 definitions.
+
 | Layout | AMPS process contents | Purpose |
 |---|---|---|
 | `BATCHED` | Up to N epochs × both altitudes in one `SNAPSHOT_LIST` process | Default; one AMR topology allocation per batch |
@@ -386,7 +402,7 @@ calculation.
 
 ```bash
 python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py \
-  --profile FULL --amps ./amps -np 4 -nt 16
+  --profile FULL --postprocess-workers AUTO --amps ./amps -np 4 -nt 16
 ```
 
 `FULL` uses a 15-minute event cadence and inserts five-minute samples within
@@ -583,6 +599,8 @@ test_output/dec2006_ts05_cutoff_erosion/figures/figure_accessible_area.png
 test_output/dec2006_ts05_cutoff_erosion/figures/figure_accessible_area.eps
 test_output/dec2006_ts05_cutoff_erosion/figures/figure_maximum_cutoff_decrease_map.png
 test_output/dec2006_ts05_cutoff_erosion/figures/figure_maximum_cutoff_decrease_map.eps
+test_output/dec2006_ts05_cutoff_erosion/figures/figure_maximum_relative_cutoff_decrease_map.png
+test_output/dec2006_ts05_cutoff_erosion/figures/figure_maximum_relative_cutoff_decrease_map.eps
 test_output/dec2006_ts05_cutoff_erosion/figures/figure_cutoff_decrease_evolution.png
 test_output/dec2006_ts05_cutoff_erosion/figures/figure_cutoff_decrease_evolution.eps
 ```
@@ -628,7 +646,11 @@ authoritative; summary publication panels are additionally saved as PDF.
 Event change uses the median of precompression, exactly bracketed R50 values as
 the quiet reference for each geographic cell. It reports the maximum positive
 `quiet_R50 - event_R50`, its UTC, GEO location, AACGM latitude, and MLT for each
-shell. If an event cell falls below the sampled rigidity floor, the decrease is
+shell. A companion map reports the maximum relative decrease,
+`100 * (quiet_R50 - event_R50) / quiet_R50`, at every cell with a positive,
+exactly bracketed quiet reference. Absolute and relative maxima are located
+independently because they need not occur at the same geographic cell. If an
+event cell falls below the sampled rigidity floor, either decrease is
 retained as a conservative lower bound and `maximum_decrease_is_lower_bound`
 is set; it is not inserted into exact mean-change statistics. The evolution
 table additionally reports area-weighted exact mean change, median and 90th-

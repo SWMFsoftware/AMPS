@@ -115,8 +115,16 @@ Publication calculation:
 
 ```bash
 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_global_cutoff_maps.py \
-  --profile FULL --keep --amps ./amps -np 4 -nt 16
+  --profile FULL --keep --postprocess-workers AUTO --amps ./amps -np 4 -nt 16
 ```
+
+After each AMPS batch, `AUTO` reduces independent epochs with up to eight
+local process workers, bounded by scheduler affinity. Use
+`--postprocess-workers 1` for the serial regression path. Global-map workers do
+not perform AACGM conversion, but parallel splitting, R50 reconstruction, and
+file generation shorten the otherwise silent interval between AMPS batches.
+The per-epoch timing record is written to
+`morphology/postprocessing_timings.csv`.
 
 Inspect all generated AMPS commands without running the solver:
 
@@ -199,8 +207,11 @@ Cartopy, Basemap, network access, or external GIS installation is required.
 Unresolved, unbracketed, and incomplete cells stay masked and appear gray.
 `BELOW_RANGE` and `ABOVE_RANGE` cells use the lower and upper color-scale edge,
 respectively, and this censoring convention is stated on the color bar. The
-maximum-decrease publication map uses the same filled-map machinery and adds a
-star only at the objectively identified global maximum.
+absolute- and relative-maximum-decrease publication maps use the same filled-map
+machinery. Each adds a star only at its independently identified global
+maximum. The relative map shows
+`100 * (quiet_R50 - event_R50) / quiet_R50`; cells without a positive,
+BRACKETED quiet reference remain masked instead of producing unstable ratios.
 
 ## Output organization
 
@@ -221,6 +232,7 @@ test_output/dec2006_ts05_cutoff_erosion/global_maps/
 | `postprocessing/global_cutoff_change_summary.json` | Largest-decrease locations and conventions |
 | `figures/cutoff_rigidity_maps/` | Matching filled, coastlined two-shell PNG and vector EPS per epoch |
 | `figures/figure_maximum_cutoff_decrease_map.*` | Publication spatial summary |
+| `figures/figure_maximum_relative_cutoff_decrease_map.*` | Maximum fractional loss of quiet-time shielding [%] |
 | `figures/figure_cutoff_decrease_evolution.*` | Publication temporal/spatial-extent summary |
 
 SMOKE is appropriate for execution, mesh-reuse, and reduction/figure contract

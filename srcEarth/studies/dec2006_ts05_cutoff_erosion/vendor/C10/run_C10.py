@@ -805,23 +805,45 @@ def parse_tecplot_shell_penumbra(path: Path) -> List[ShellRow]:
 
 
 def add_aacgm_lat_mlt(rows: Sequence[object], epoch: datetime, altitude_km: float) -> None:
+    """Attach magnetic coordinates once per unique geographic location.
+
+    DIRECT_ACCESS tables repeat the same longitude/latitude once for every
+    sampled rigidity.  AACGM and MLT depend on location, epoch, and altitude,
+    but not on particle rigidity.  The former implementation therefore made
+    one identical library call per rigidity (34 times per location in this
+    study).  A local cache preserves the exact row-level result while reducing
+    the expensive conversion count to the number of physical shell locations.
+
+    The cache intentionally lives only for this call: epoch and altitude are
+    arguments of the coordinate transform, so sharing it between snapshots or
+    shells without including those quantities in the key would be incorrect.
+    """
     import aacgmv2  # imported lazily; required for the scientific postprocessing
     naive = epoch.astimezone(timezone.utc).replace(tzinfo=None)
+    converted: Dict[Tuple[float, float], Tuple[Optional[float], Optional[float]]] = {}
     for row in rows:
-        try:
-            # One geographic->AACGM conversion yields both the invariant latitude
-            # and the AACGM longitude; MLT is then derived from the AACGM longitude.
-            alat, alon, _ = aacgmv2.convert_latlon(row.latitude_deg, row.longitude_deg,
-                                                   altitude_km, naive, method_code="G2A")
-            if not (math.isfinite(alat) and math.isfinite(alon)):
-                row.aacgm_latitude_deg = None
-                row.mlt_hour = None
-                continue
-            row.aacgm_latitude_deg = float(alat)
-            row.mlt_hour = float(aacgmv2.convert_mlt([alon], naive, m2a=False)[0]) % 24.0
-        except Exception:
-            row.aacgm_latitude_deg = None
-            row.mlt_hour = None
+        key = (
+            round(float(row.latitude_deg), 10),
+            round(float(row.longitude_deg) % 360.0, 10),
+        )
+        if key not in converted:
+            try:
+                # One geographic->AACGM conversion yields both invariant
+                # latitude and AACGM longitude.  MLT is derived from the latter.
+                alat, alon, _ = aacgmv2.convert_latlon(
+                    row.latitude_deg, row.longitude_deg, altitude_km, naive,
+                    method_code="G2A",
+                )
+                if not (math.isfinite(alat) and math.isfinite(alon)):
+                    converted[key] = (None, None)
+                else:
+                    mlt = float(
+                        aacgmv2.convert_mlt([alon], naive, m2a=False)[0]
+                    ) % 24.0
+                    converted[key] = (float(alat), mlt)
+            except Exception:
+                converted[key] = (None, None)
+        row.aacgm_latitude_deg, row.mlt_hour = converted[key]
 
 
 
@@ -1004,23 +1026,45 @@ def _circular_mean_mlt(values: Sequence[float]) -> Optional[float]:
 def _access_t50_for_mlt(rows: Sequence[AccessRow], rigidity_gv: float,
                         hemisphere: str, mlt_center: float, n_mlt_bins: int,
                         latitude_step_deg: float, min_resolved_fraction: float,
-                        minimum_edge_margin_deg: float
+                        minimum_edge_margin_deg: float,
+                        _prepared: Optional[Tuple[
+                            Sequence[AccessRow],
+                            Mapping[float, Sequence[AccessRow]],
+                        ]] = None,
                         ) -> Tuple[Optional[float], Dict[str, object], List[Dict[str, object]]]:
-    """Calculate one hemisphere/MLT-sector ACCESS_T50 boundary."""
-    sign = 1 if hemisphere == "N" else -1
-    selected = [row for row in rows
-                if math.isclose(row.rigidity_gv, rigidity_gv, rel_tol=0.0, abs_tol=5.0e-9)
-                and row.aacgm_latitude_deg is not None and row.mlt_hour is not None
-                and (1 if float(row.aacgm_latitude_deg) >= 0.0 else -1) == sign]
-    by_longitude: Dict[float, List[AccessRow]] = {}
-    for row in selected:
-        by_longitude.setdefault(round(row.longitude_deg, 8), []).append(row)
-    profiles: Dict[float, List[AccessRow]] = {}
-    for longitude, profile in by_longitude.items():
-        representative_mlt = _circular_mean_mlt(
-            [float(row.mlt_hour) for row in profile if row.mlt_hour is not None])
-        if representative_mlt is not None and mlt_bin_center(representative_mlt, n_mlt_bins) == round(mlt_center, 3):
-            profiles[longitude] = profile
+    """Calculate one hemisphere/MLT-sector ACCESS_T50 boundary.
+
+    ``_prepared`` is an internal acceleration hook populated by
+    :func:`estimate_access_t50_boundaries`.  It contains the same selected rows
+    and longitude profiles that the historical list scans construct below.
+    Keeping the fallback path makes this low-level helper backward compatible
+    for tests and external callers while the public bulk reducer avoids
+    repeating the full-table scan for every MLT bin.
+    """
+    if _prepared is None:
+        sign = 1 if hemisphere == "N" else -1
+        selected = [row for row in rows
+                    if math.isclose(row.rigidity_gv, rigidity_gv,
+                                    rel_tol=0.0, abs_tol=5.0e-9)
+                    and row.aacgm_latitude_deg is not None
+                    and row.mlt_hour is not None
+                    and (1 if float(row.aacgm_latitude_deg) >= 0.0 else -1) == sign]
+        by_longitude: Dict[float, List[AccessRow]] = {}
+        for row in selected:
+            by_longitude.setdefault(round(row.longitude_deg, 8), []).append(row)
+        profiles: Mapping[float, Sequence[AccessRow]] = {}
+        selected_profiles: Dict[float, List[AccessRow]] = {}
+        for longitude, profile in by_longitude.items():
+            representative_mlt = _circular_mean_mlt(
+                [float(row.mlt_hour) for row in profile
+                 if row.mlt_hour is not None])
+            if (representative_mlt is not None
+                    and mlt_bin_center(representative_mlt, n_mlt_bins)
+                    == round(mlt_center, 3)):
+                selected_profiles[longitude] = profile
+        profiles = selected_profiles
+    else:
+        selected, profiles = _prepared
     if not profiles:
         return None, {"n_longitude_profiles": 0, "t50_bracketed": False}, []
 
@@ -1088,17 +1132,69 @@ def estimate_access_t50_boundaries(rows: Sequence[AccessRow],
                                    min_resolved_fraction: float,
                                    minimum_edge_margin_deg: float
                                    ) -> Tuple[List[BoundaryEstimate], List[Dict[str, object]]]:
-    """Build the common C10 ACCESS_T50 product for either trajectory method."""
+    """Build the common C10 ACCESS_T50 product for either trajectory method.
+
+    The original implementation filtered the entire shell table separately for
+    every rigidity, hemisphere, and MLT sector.  For a 34-rigidity production
+    shell that meant 544 full scans.  This implementation performs one linear
+    indexing pass, preserving the historical longitude-profile definition and
+    circular-mean MLT assignment, then supplies the prepared selections to the
+    unchanged boundary calculation.
+
+    Rigidity keys are rounded only for dictionary lookup and are accepted only
+    when they also satisfy the original 5e-9-GV absolute matching tolerance.
+    This prevents the optimization from silently assigning an unexpected
+    rigidity to a nearby requested channel.
+    """
     estimates: List[BoundaryEstimate] = []
     all_profiles: List[Dict[str, object]] = []
+    rigidity_lookup = {round(float(value), 9): float(value) for value in rigidities}
+    selected_by_series: Dict[Tuple[float, str], List[AccessRow]] = {}
+    longitude_profiles: Dict[Tuple[float, str, float], List[AccessRow]] = {}
+    for row in rows:
+        requested = rigidity_lookup.get(round(float(row.rigidity_gv), 9))
+        if (requested is None
+                or not math.isclose(row.rigidity_gv, requested,
+                                    rel_tol=0.0, abs_tol=5.0e-9)
+                or row.aacgm_latitude_deg is None
+                or row.mlt_hour is None):
+            continue
+        hemisphere = "N" if float(row.aacgm_latitude_deg) >= 0.0 else "S"
+        series_key = (requested, hemisphere)
+        selected_by_series.setdefault(series_key, []).append(row)
+        longitude_profiles.setdefault(
+            (requested, hemisphere, round(row.longitude_deg, 8)), []
+        ).append(row)
+
+    profiles_by_sector: Dict[
+        Tuple[float, str, float], Dict[float, Sequence[AccessRow]]
+    ] = {}
+    for (rigidity, hemisphere, longitude), profile in longitude_profiles.items():
+        representative_mlt = _circular_mean_mlt(
+            [float(row.mlt_hour) for row in profile if row.mlt_hour is not None]
+        )
+        if representative_mlt is None:
+            continue
+        sector = mlt_bin_center(representative_mlt, n_mlt_bins)
+        profiles_by_sector.setdefault(
+            (rigidity, hemisphere, round(sector, 3)), {}
+        )[longitude] = profile
+
     for rigidity in rigidities:
         for hemisphere in hemispheres:
             boundary_by_mlt: Dict[float, Optional[float]] = {}
             for mlt in mlt_bins:
+                series_key = (float(rigidity), hemisphere)
+                sector_key = (float(rigidity), hemisphere, round(mlt, 3))
                 boundary, diagnostics, profiles = _access_t50_for_mlt(
                     rows, rigidity, hemisphere, mlt, n_mlt_bins,
                     latitude_step_deg, min_resolved_fraction,
-                    minimum_edge_margin_deg)
+                    minimum_edge_margin_deg,
+                    _prepared=(
+                        selected_by_series.get(series_key, []),
+                        profiles_by_sector.get(sector_key, {}),
+                    ),
+                )
                 boundary_by_mlt[round(mlt, 3)] = boundary
                 for row in profiles:
                     row.update(diagnostics)

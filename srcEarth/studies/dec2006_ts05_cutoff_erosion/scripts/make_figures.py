@@ -815,6 +815,8 @@ def cutoff_change_figures(spatial_path: Path, evolution_path: Path,
         for stem, title in (
             ("figure_maximum_cutoff_decrease_map",
              "Maximum cutoff decrease map"),
+            ("figure_maximum_relative_cutoff_decrease_map",
+             "Maximum relative cutoff decrease map"),
             ("figure_cutoff_decrease_evolution",
              "Cutoff decrease evolution"),
         ):
@@ -876,6 +878,78 @@ def cutoff_change_figures(spatial_path: Path, evolution_path: Path,
         colorbar.set_label("Maximum quiet-relative cutoff decrease [GV]", fontsize=8)
         colorbar.ax.xaxis.set_label_position("top")
     products = save_figure(figure, output / "figure_maximum_cutoff_decrease_map")
+
+    # The absolute map identifies the largest change in GV.  This companion
+    # map answers a distinct physical question: where did the storm remove the
+    # largest *fraction* of the quiet-time local shielding?  The reduction
+    # stage leaves zero/invalid denominators empty, and the map renderer masks
+    # those cells rather than inventing a relative value.
+    relative_column = "maximum_relative_cutoff_decrease_percent"
+    if relative_column not in spatial.columns:
+        raise ValueError(
+            f"{spatial_path} is missing required column {relative_column}; "
+            "rerun global-map postprocessing before plotting"
+        )
+    finite_relative = pd.to_numeric(
+        spatial[relative_column], errors="coerce"
+    ).to_numpy(dtype=float)
+    finite_relative = finite_relative[np.isfinite(finite_relative)]
+    relative_limit = (
+        max(1.0, float(np.max(finite_relative)))
+        if finite_relative.size else 1.0
+    )
+    figure, axes = plt.subplots(
+        len(altitudes), 1, figsize=(10.2, 3.6 * len(altitudes)),
+        sharex=True, sharey=True, squeeze=False,
+    )
+    colored = None
+    for axis, altitude in zip(axes[:, 0], altitudes):
+        shell = spatial[np.isclose(spatial.altitude_km, altitude)].copy()
+        shell[relative_column] = pd.to_numeric(
+            shell[relative_column], errors="coerce"
+        )
+        panel = _draw_global_filled_field(
+            axis, shell, relative_column,
+            Normalize(vmin=0.0, vmax=relative_limit), cmap_name="magma",
+        )
+        if panel is not None:
+            colored = panel
+        valid = shell[np.isfinite(shell[relative_column])]
+        if not valid.empty:
+            maximum_row = valid.loc[valid[relative_column].idxmax()]
+            maximum_longitude = ((float(maximum_row.longitude_geo_deg) + 180.0)
+                                 % 360.0) - 180.0
+            axis.scatter(
+                [maximum_longitude], [maximum_row.latitude_geo_deg],
+                marker="*", s=90, facecolors="none", edgecolors="cyan",
+                linewidths=1.2, label=(
+                    f"max={maximum_row[relative_column]:.1f}%; "
+                    f"{maximum_row.epoch_of_maximum_decrease_utc}"
+                ),
+            )
+            axis.legend(fontsize=7, loc="lower center")
+        axis.set_ylabel("GEO latitude [deg]")
+        axis.set_title(f"{altitude:g} km")
+    axes[-1, 0].set_xlabel("GEO longitude [deg; west negative]")
+    figure.suptitle(
+        "Where the largest fraction of quiet-time cutoff shielding was lost",
+        y=0.985,
+    )
+    figure.subplots_adjust(top=0.77, bottom=0.08, hspace=0.30)
+    if colored is not None:
+        colorbar_axis = figure.add_axes([0.19, 0.855, 0.62, 0.022])
+        colorbar = figure.colorbar(
+            colored, cax=colorbar_axis, orientation="horizontal"
+        )
+        colorbar.set_label(
+            r"Maximum relative cutoff decrease "
+            r"$100(R_{c,q}-R_c)/R_{c,q}$ [%]",
+            fontsize=8,
+        )
+        colorbar.ax.xaxis.set_label_position("top")
+    products += save_figure(
+        figure, output / "figure_maximum_relative_cutoff_decrease_map"
+    )
 
     evolution["epoch_utc"] = pd.to_datetime(evolution.epoch_utc, utc=True)
     figure, axes = plt.subplots(3, 1, figsize=(10.2, 8.0), sharex=True)

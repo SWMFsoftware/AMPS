@@ -36,6 +36,24 @@ by `verify_mesh_reuse.py`. They record access-grid closure, resolved-state
 agreement, unresolved fractions, and derived-boundary equality between a
 shared-mesh run and the `STANDALONE` baseline.
 
+## `morphology/postprocessing_timings.csv`
+
+Each row records one completed epoch-level reduction after AMPS has written a
+batched multi-shell file. `batch_id`, `epoch_index`, and `epoch_utc` identify
+the source snapshot; `elapsed_seconds` measures splitting, coordinate
+conversion, boundary/map reduction, and product staging for both altitude
+shells together. `worker_pid` identifies the local Python process that did the
+work, while `n_shells`, `n_boundary_rows`, and `n_map_rows` close its output
+counts. `passed` and `failure_count` expose worker-level failures without
+depending on interleaved terminal output. Rows are sorted by epoch before the
+CSV is written, so the product is deterministic even when worker completion
+order differs.
+
+`postprocess_workers_requested` and `postprocess_workers_by_batch` in
+`morphology_result.json` record the requested policy and effective worker count.
+These are local postprocessing processes on the runner host; they are separate
+from AMPS MPI ranks and OpenMP/POSIX trajectory workers.
+
 ## `paired_model_observation.csv`
 
 | Column | Meaning |
@@ -127,9 +145,16 @@ One row per shell/GEO cell with a usable precompression quiet reference and at
 least one event decrease estimate. The quiet value is the median of BRACKETED
 R50 values before the configured compression-search start. The table reports
 the minimum event cutoff (or upper bound), maximum quiet-relative decrease,
-the epoch and AACGM/MLT coordinates of that maximum, and the exact/censored
+its fractional and percentage forms
+(`maximum_relative_cutoff_decrease_fraction` and
+`maximum_relative_cutoff_decrease_percent`), the epoch and AACGM/MLT
+coordinates of that maximum, and the exact/censored
 event counts. `maximum_decrease_is_lower_bound=true` means the event R50 fell
 below the sampled floor, so the reported positive decrease is conservative.
+The relative values are defined only for a positive BRACKETED quiet reference.
+Because the denominator is fixed for a given cell, the epoch of maximum
+relative decrease is the same as its maximum absolute decrease; the largest
+absolute and relative cells across an entire shell can nevertheless differ.
 
 ## `cutoff_map_change_timeseries.csv`
 

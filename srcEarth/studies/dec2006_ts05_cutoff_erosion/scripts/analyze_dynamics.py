@@ -499,6 +499,17 @@ def cutoff_map_change_products(
                     "sum_event_change_gv": 0.0,
                     "minimum_event_cutoff_gv_or_upper_bound": current_for_decrease,
                     "maximum_cutoff_decrease_gv": decrease,
+                    # Normalize by the fixed quiet reference at this GEO cell.
+                    # Quiet references currently come only from finite,
+                    # BRACKETED R50 values, but the positive check keeps a
+                    # future zero-rigidity configuration from yielding an
+                    # infinite or scientifically misleading percentage.
+                    "maximum_relative_cutoff_decrease_fraction": (
+                        decrease / reference if reference > 0.0 else None
+                    ),
+                    "maximum_relative_cutoff_decrease_percent": (
+                        100.0 * decrease / reference if reference > 0.0 else None
+                    ),
                     "maximum_decrease_is_lower_bound": is_lower_bound,
                     "epoch_of_maximum_decrease_utc": format_utc(epoch),
                     "aacgm_latitude_at_maximum_deg": finite_float(
@@ -524,6 +535,13 @@ def cutoff_map_change_products(
                 if decrease > float(record["maximum_cutoff_decrease_gv"]):
                     record.update({
                         "maximum_cutoff_decrease_gv": decrease,
+                        "maximum_relative_cutoff_decrease_fraction": (
+                            decrease / reference if reference > 0.0 else None
+                        ),
+                        "maximum_relative_cutoff_decrease_percent": (
+                            100.0 * decrease / reference
+                            if reference > 0.0 else None
+                        ),
                         "maximum_decrease_is_lower_bound": is_lower_bound,
                         "epoch_of_maximum_decrease_utc": format_utc(epoch),
                         "aacgm_latitude_at_maximum_deg": finite_float(
@@ -595,12 +613,27 @@ def cutoff_map_change_products(
         record["mean_event_cutoff_change_gv"] = total / count if count else None
         spatial.append(record)
     largest_by_shell = []
+    largest_relative_by_shell = []
     for altitude in sorted({float(row["altitude_km"]) for row in spatial}):
         shell = [row for row in spatial if float(row["altitude_km"]) == altitude]
         if shell:
             largest_by_shell.append(max(
                 shell, key=lambda row: float(row["maximum_cutoff_decrease_gv"])
             ))
+            # A smaller absolute change can be the larger fractional loss at a
+            # cell whose quiet cutoff is lower.  Locate the relative extremum
+            # independently instead of assuming that both maps peak together.
+            relative_shell = [
+                row for row in shell
+                if row.get("maximum_relative_cutoff_decrease_percent") is not None
+            ]
+            if relative_shell:
+                largest_relative_by_shell.append(max(
+                    relative_shell,
+                    key=lambda row: float(
+                        row["maximum_relative_cutoff_decrease_percent"]
+                    ),
+                ))
     summary = {
         "status": "AVAILABLE" if spatial else "NOT_AVAILABLE",
         "n_maps": len(manifest), "n_quiet_reference_cells": len(quiet_reference),
@@ -609,8 +642,11 @@ def cutoff_map_change_products(
         "event_change_start_utc": format_utc(event_start),
         "spatial_extent_threshold_gv": decrease_threshold_gv,
         "largest_decrease_by_shell": largest_by_shell,
+        "largest_relative_decrease_by_shell": largest_relative_by_shell,
         "interpretation": (
             "Positive maximum_cutoff_decrease_gv means reduced shielding. "
+            "maximum_relative_cutoff_decrease_percent is 100 times that "
+            "decrease divided by the positive BRACKETED quiet-cell R50. "
             "Quiet references are BRACKETED medians; event BELOW_RANGE values "
             "contribute conservative lower bounds and are explicitly flagged."
         ),
