@@ -56,80 +56,56 @@ and test lookup, so displayed and executed tests cannot silently diverge.
 - `3D`: behavior specific to `swcme3d`.
 - `1D<->3D`: direct equivalence or consistency between the two implementations.
 
-The current registry uses `COMMON` and `1D`; future comparison tests may use
-`1D<->3D` when their primary purpose is cross-model equivalence.
+The current registry uses `COMMON`, `1D`, and `3D`; future direct comparison
+tests may use `1D<->3D` when their primary purpose is limiting-case equivalence.
 
-## CFG01 status
+## CFG01: centralized configuration rejection and physical-range validation
 
-The intended CFG01 definition is **Configuration rejection and physical-range
-validation**, classified `COMMON`. Production SWCME currently has no unified
-configuration-validation API and does not return rejection diagnostics. The
-1-D model silently clamps some inputs, while the 3-D model follows different
-policies. Inventing a new rejection API is outside the present validation task.
+`CFG01` is a `COMMON` test of the production configuration boundary.  Both
+model classes expose a side-effect-free `validate()` method returning
+`swcme::config::ValidationResult`.  Every issue contains the public field name,
+a stable error code, and the violated rule.  `prepare_step()` invokes the same
+validator and throws `std::invalid_argument` before any physics if the result is
+invalid, so callers cannot bypass validation accidentally.
 
-CFG01 therefore temporarily retains the pre-existing physical-constants
-baseline and exact 1-D/3-D constant-consistency checks. It explicitly reports
-the unavailable configuration-rejection path as SKIP. The unit conversions
-formerly mixed into CFG01 moved to CFG02, so no existing coverage was removed.
-A future production configuration contract should allow CFG01 to be completed
-and its temporary constants checks to move to a dedicated constants test.
+The deterministic fixtures cover zero solar-wind speed, negative density,
+negative DBM Gamma, invalid Parker normalization latitude, NaN temperature,
+negative smoothing widths, malformed DATA_DRIVEN tables, zero CME direction,
+zero solar-rotation axis, invalid finite-SSE half widths, non-positive
+ellipsoid axis ratios, and negative solar-rotation rate.  A multiple-error
+fixture confirms that one validation call reports all independent bad fields
+instead of stopping after the first.  For representative invalid cases CFG01
+also calls `prepare_step()` and requires rejection.
 
-## CFG02: unit and dimensional consistency
+Validation is intentionally separate from unit conversion.  The common unit
+layer converts `0 km/s -> 0 m/s` exactly; CFG01 separately rejects `V_sw<=0`
+because the Parker/DBM baseline requires a positive ambient wind.  This is a
+permanent regression guard against the former 1-D `max(1,V_sw*1000)` behavior.
+The compact shared-constant baseline remains in CFG01 to guard the immutable
+AU, nominal solar radius, proton mass, vacuum permeability, and Boltzmann
+constant used by both interfaces.
 
-CFG02 is a `COMMON` test of the complete unit contract currently reachable
-through production SWCME. Its purpose is to detect scale errors that can look
-numerically plausible but substantially change CME kinematics, density,
-magnetic field, Alfvén speed, and shock Mach number.
+## CFG02: centralized unit-conversion and dimensional-consistency test
 
-CFG02 covers:
+`CFG02` validates `swcme_units.hpp`, the single production source for unit
+conversion.  Forward and round-trip checks cover km/s, nT, cm^-3, km^-1, AU,
+nominal solar radii, hours, and degrees.  Exact decimal/defined conversions are
+checked exactly where possible; short floating-point chains use
+`64 * std::numeric_limits<double>::epsilon()`.  No physics tolerance is used.
 
-- forward velocity conversion for 0, 1, 321, 400, 1500, and 3000 km/s;
-- forward magnetic-field conversion for 0.1 through 1000 nT;
-- forward number-density conversion for 0.01 through 10000 cm^-3;
-- AU and nominal-solar-radius distance conversion, including AU/Rs derived from
-  the adopted constants rather than an independently rounded ratio;
-- the DBM inverse-length conversion from km^-1 to m^-1;
-- the 3-D degree-derived cone default at 40, 90, and 180 degrees;
-- finite extreme values intended to detect overflow, underflow, integer
-  conversion, or hidden scale assumptions rather than event realism;
-- explicit 1-D-versus-3-D comparisons for independently implemented paths;
-- the closest available equivalent external/SI configuration checks; and
-- an Alfvén-speed smoke test using production-converted `B` and `n`, the shared
-  production SI Alfvén helper, and a separate scalar reference calculation.
+The test then constructs valid 1-D and 3-D models and confirms that their
+prepared ambient speed, one-AU density, and one-AU magnetic-field magnitude
+agree to roundoff.  An independent SI calculation of
+`V_A=B/sqrt(mu0*rho)` is compared with the shared production Alfvén-speed
+helper for both model paths.  Zero wind speed is deliberately *not* passed to
+`prepare_step()` in CFG02: it is a valid conversion input but an invalid model
+configuration and is therefore covered by CFG01.
 
-The equivalent configuration uses 400 km/s, 5 nT, 5 cm^-3, 1 AU, 24 hours,
-and 40 degrees. SWCME has no unified direct-SI `Params` alternative: radius and
-time already enter evaluators in SI, while velocity, field, and density are
-heliophysics-unit fields. CFG02 tests the closest real paths and marks the
-missing direct-SI configuration comparison as SKIP rather than constructing a
-fictitious API.
-
-Likewise, production accepts time in seconds and does not expose an hours input
-conversion. The 1-D API accepts angles in radians, and only the 3-D default
-contains a degree-to-radian conversion. The 1-D Tecplot writers provide inverse
-velocity, AU, and solar-radius output paths; CFG02 parses temporary writer output
-to test those round trips at the writer's documented decimal precision. Other
-inverse paths are not exposed and are printed as SKIP; test-side arithmetic is
-never presented as a production round trip.
-
-CFG02 prints every executed value, units, production result, independent
-reference, factor, absolute and relative error, tolerance, and status. It also
-prints structured counters and maxima for conversion error, round-trip error,
-cross-model difference, and Alfvén-speed error.
-
-### Tolerances
-
-Exact SI decimal-prefix conversions use exact comparison when the selected
-binary values permit it. Short floating-point calculation chains use
-`64 * std::numeric_limits<double>::epsilon()`. AU and solar radius checks test
-the documented adopted SWCME constants, not a competing astronomical
-convention. Physical-constant tolerances remain documented in CFG01.
-
-Analytical reference expressions must remain independent of the production
-routine under test. A tolerance or reference value must never be relaxed merely
-to turn a production mismatch into PASS. A CFG02 failure should be investigated
-as a unit-contract or production-policy issue and reported before physics is
-changed.
+The model wrappers now use the same conversion helpers when building their SI
+state, so CFG02 no longer audits duplicated `1e3`, `1e6`, `1e-9`, or `1e-3`
+conversion literals in 1-D versus 3-D.  A failure should be investigated as a
+unit-contract or wrapper-integration defect; reference values or tolerances
+must never be changed merely to obtain PASS.
 
 ## DEN01: Leblanc density normalization at the reference distance
 
@@ -208,6 +184,46 @@ accidentally modified nominal coefficients. The independent analytical helper
 must remain separate from the production routines under test; references and
 tolerances must never be changed solely to make a production failure pass.
 
+## CFG01: centralized configuration rejection and physical-range validation
+
+`CFG01` now exercises the production validation API rather than reporting the
+configuration layer as a skip.  Both model classes expose a side-effect-free
+`validate()` method returning `swcme::config::ValidationResult`.  Every issue
+contains the public field name, an error code, and the violated rule.
+`prepare_step()` calls this same validator and throws `std::invalid_argument`
+before any physics if the result is invalid.
+
+The deterministic fixtures cover zero solar-wind speed, negative density,
+negative DBM Gamma, invalid Parker normalization latitude, NaN values, negative
+smoothing widths, malformed DATA_DRIVEN tables, zero CME direction, zero solar
+rotation axis, invalid finite-SSE half widths, non-positive ellipsoid axis
+ratios, and negative solar rotation rate.  A multiple-error fixture confirms
+that one validation call reports all independent bad fields rather than only
+the first.  For representative invalid cases CFG01 also calls `prepare_step()`
+and requires rejection, proving that no caller can bypass the validation layer
+by ignoring `validate()`.
+
+Validation is intentionally distinct from conversion.  For example, the unit
+layer maps `0 km/s -> 0 m/s` exactly; CFG01 separately rejects `V_sw<=0` because
+the baseline Parker/DBM model requires positive ambient wind speed.  This is a
+permanent regression guard against the former 1-D `max(1,V_sw*1000)` behavior.
+
+## CFG02: centralized unit-conversion and dimensional-consistency test
+
+`CFG02` validates the production helpers in `swcme_units.hpp` for forward and
+round-trip conversions of velocity, magnetic field, number density, inverse
+length, AU, solar radii, hours, and angles.  Exact decimal/defined conversions
+are checked at exact or roundoff precision; no physics tolerance is used.
+
+The test then constructs valid 1-D and 3-D models and confirms that their
+prepared solar-wind speed, 1-AU density, and 1-AU magnetic-field magnitude agree
+to roundoff.  Finally, an independent SI calculation of
+`V_A=B/sqrt(mu0*rho)` is compared with the shared production Alfven-speed helper
+for both model paths.  The previous CFG02 failure at zero wind speed is removed
+by design: zero is a valid unit-conversion input and an invalid model
+configuration, so it is tested in the correct layer rather than by forcing a
+model setup with inadmissible parameters.
+
 ## Current SWCME unit contract
 
 External `Params` values use:
@@ -228,11 +244,13 @@ and radians. SWCME adopts `1 AU = 149597870700 m`, nominal solar radius
 permeability `1.25663706127e-6 N/A^2`, exact Boltzmann constant
 `1.380649e-23 J/K`, and the model solar-rotation convention `2.86533e-6 rad/s`.
 
-The 1-D and 3-D modules still contain separate hard-coded decimal conversion
-factors for km/s, cm^-3, nT, and km^-1 even though physical constants are now
-centralized. CFG02 exercises and compares both paths. Consolidating these
-factors is recommended technical debt, but this test does not automatically
-change them because doing so could conceal the behavior it is meant to audit.
+Unit conversion is now centralized in production `swcme_units.hpp`; the 1-D
+and 3-D `prepare_step()` paths no longer maintain independent km/s, cm^-3, nT,
+or km^-1 conversion factors.  Conversion and physical validation are separate:
+zero values remain zero under conversion, while `swcme_config.hpp` decides
+whether a model parameter is admissible.  CFG02 verifies the common conversion
+helpers directly and then checks that both dimensional wrappers produce the
+same prepared SI state for valid physical inputs.
 
 ## PAR01-PAR03: corrected 3-D Parker magnetic field
 

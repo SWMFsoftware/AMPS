@@ -349,6 +349,8 @@ USAGE SKETCH (more complete examples at bottom)
 #include <vector>
 
 #include "swcme_constants.hpp"
+#include "swcme_units.hpp"
+#include "swcme_config.hpp"
 #include "swcme_kinematics.hpp"
 #include "swcme_shock.hpp"
 
@@ -428,6 +430,29 @@ struct Params {
   double f_ME                = 0.50; // ME density factor vs upstream (<1 typical)
   double V_ME_factor         = 0.80; // ME speed factor vs V_sw (<1 typical)
 };
+
+// Validate the complete 1-D public parameter bundle before any unit conversion
+// or physics evaluation.  The common rules live in swcme_config.hpp so the
+// equivalent 1-D and 3-D fields are judged by exactly the same contract.
+inline swcme::config::ValidationResult validate_params(const Params& p) {
+  swcme::config::CommonConfigView view;
+  view.V_sw_kms=p.V_sw_kms; view.n1AU_cm3=p.n1AU_cm3;
+  view.B1AU_nT=p.B1AU_nT; view.T_K=p.T_K; view.gamma_ad=p.gamma_ad;
+  view.sin_theta=p.sin_theta; view.kinematics_mode=p.kinematics_mode;
+  view.r0_Rs=p.r0_Rs; view.V0_sh_kms=p.V0_sh_kms;
+  view.Gamma_kmInv=p.Gamma_kmInv; view.data_time_s=&p.data_time_s;
+  view.data_radius_Rs=&p.data_radius_Rs;
+  view.sheath_thick_AU_at1AU=p.sheath_thick_AU_at1AU;
+  view.ejecta_thick_AU_at1AU=p.ejecta_thick_AU_at1AU;
+  view.edge_smooth_shock_AU_at1AU=p.edge_smooth_shock_AU_at1AU;
+  view.edge_smooth_le_AU_at1AU=p.edge_smooth_le_AU_at1AU;
+  view.edge_smooth_te_AU_at1AU=p.edge_smooth_te_AU_at1AU;
+  view.sheath_comp_floor=p.sheath_comp_floor;
+  view.sheath_ramp_power=p.sheath_ramp_power;
+  view.V_sheath_LE_factor=p.V_sheath_LE_factor;
+  view.f_ME=p.f_ME; view.V_ME_factor=p.V_ME_factor;
+  return swcme::config::validate_common(view);
+}
 
 // ------------------------------ Per‑time cache -------------------------------
 /**
@@ -521,6 +546,11 @@ public:
   const Params& GetParams() const { return P; }
         Params& MutableParams()   { return P; }
 
+  // Public validation entry point used by CFG01 and by prepare_step().  It is
+  // intentionally side-effect free so callers can inspect a configuration
+  // before launching a time-dependent calculation.
+  swcme::config::ValidationResult validate() const { return validate_params(P); }
+
   // ---------------------------- Build per‑time cache -------------------------
   /**
    * @brief Build a per-time cache (StepState) at time t since CME launch.
@@ -535,29 +565,43 @@ public:
    *     V2 (RH proxy), and V_LE ≥ V_sw.
    */
   StepState prepare_step(double t_s) const {
-    StepState S; S.time_s=t_s; S.r0_m = P.r0_Rs*Rs;
+    // Configuration errors are rejected before any normalization, clipping,
+    // or unit conversion can hide the supplied value.  This is the key CFG01
+    // contract: invalid input fails once at setup instead of becoming a
+    // plausible-looking state in a later particle calculation.
+    const swcme::config::ValidationResult validation=validate();
+    if (!validation.ok()) {
+      throw std::invalid_argument(validation.summary("swcme1d"));
+    }
+    if (!std::isfinite(t_s) || t_s<0.0) {
+      throw std::invalid_argument("swcme1d: time must be finite and >= 0");
+    }
+
+    StepState S; S.time_s=t_s;
+    S.r0_m = swcme::units::solar_radii_to_m(P.r0_Rs);
     S.kinematics_mode=P.kinematics_mode;
 
-    // Upstream wind
-    const double Vsw = std::max(1.0, P.V_sw_kms*1.0e3); // [m/s]
+    // Unit conversion is deliberately pure: zero or negative values are not
+    // repaired here.  Physical admissibility was established by validate().
+    const double Vsw = swcme::units::km_per_s_to_m_per_s(P.V_sw_kms);
     S.V_up_ms = Vsw;
 
-    // Parker spiral constants from |B|(1 AU)
-    const double B1AU_T = std::max(0.0, P.B1AU_nT)*1e-9;
+    // Parker spiral constants from |B|(1 AU).
+    const double B1AU_T = swcme::units::nT_to_T(P.B1AU_nT);
     S.k_AU = (Vsw>0.0) ? (OMEGA_SUN*AU*P.sin_theta / Vsw) : 0.0;
     S.Br1AU_T = (B1AU_T>0.0) ? (B1AU_T / std::sqrt(1.0 + S.k_AU*S.k_AU)) : 0.0;
 
     // Leblanc coefficients scaled to match n(1 AU)
     const double A = 3.3e5, B = 4.1e6, C = 8.0e7; // [cm⁻³]
-    const double n1AU_target = std::max(0.0, P.n1AU_cm3)*1e6; // to m⁻³
+    const double n1AU_target = swcme::units::cm3_to_m3(P.n1AU_cm3); // to m⁻³
     // Evaluate the nominal Leblanc profile at one AU explicitly in solar-radius
     // units; keeping one expression avoids a redundant intermediate that used
     // to obscure the normalization algebra.
-    const double n1AU_base = (A*std::pow(Rs/AU,2) + B*std::pow(Rs/AU,4) + C*std::pow(Rs/AU,6)) * 1e6;
+    const double n1AU_base = (A*std::pow(Rs/AU,2) + B*std::pow(Rs/AU,4) + C*std::pow(Rs/AU,6)) * swcme::units::cm3_to_m3(1.0);
     const double scale = (n1AU_base>0.0) ? (n1AU_target / n1AU_base) : 0.0;
-    S.C2 = scale * (A*1e6 * (Rs*Rs));
-    S.C4 = scale * (B*1e6 * (Rs*Rs*Rs*Rs));
-    S.C6 = scale * (C*1e6 * (Rs*Rs*Rs*Rs*Rs*Rs));
+    S.C2 = scale * (swcme::units::cm3_to_m3(A) * (Rs*Rs));
+    S.C4 = scale * (swcme::units::cm3_to_m3(B) * (Rs*Rs*Rs*Rs));
+    S.C6 = scale * (swcme::units::cm3_to_m3(C) * (Rs*Rs*Rs*Rs*Rs*Rs));
 
     // Shared CME/shock-apex kinematics.  The previous 1-D code clipped
     // V0-Vsw to zero, which made a slow CME jump instantaneously to Vsw.
@@ -567,14 +611,14 @@ public:
     swcme::kinematics::Config kin;
     kin.mode=P.kinematics_mode;
     kin.r0_m=S.r0_m;
-    kin.V0_m_s=P.V0_sh_kms*1e3;
+    kin.V0_m_s=swcme::units::km_per_s_to_m_per_s(P.V0_sh_kms);
     kin.Vsw_m_s=Vsw;
-    kin.Gamma_m_inv=P.Gamma_kmInv/1e3;
+    kin.Gamma_m_inv=swcme::units::km_inverse_to_m_inverse(P.Gamma_kmInv);
     kin.extrapolation=P.data_extrapolation;
     kin.data_time_s=P.data_time_s;
     kin.data_radius_m.reserve(P.data_radius_Rs.size());
     for (double radius_Rs : P.data_radius_Rs) {
-      kin.data_radius_m.push_back(radius_Rs*Rs);
+      kin.data_radius_m.push_back(swcme::units::solar_radii_to_m(radius_Rs));
     }
 
     const swcme::kinematics::State apex=swcme::kinematics::evaluate(kin,t_s);
@@ -592,12 +636,12 @@ public:
 
     // Geometry (self‑similar thickness & blending widths)
     const double scale_R = S.r_sh_m / AU; // dimensionless
-    const double d_sheath = std::max(0.0, P.sheath_thick_AU_at1AU) * scale_R * AU;
-    const double d_me     = std::max(0.0, P.ejecta_thick_AU_at1AU) * scale_R * AU;
+    const double d_sheath = swcme::units::au_to_m(P.sheath_thick_AU_at1AU * scale_R);
+    const double d_me     = swcme::units::au_to_m(P.ejecta_thick_AU_at1AU * scale_R);
     S.r_le_m = std::max(1.05*Rs, S.r_sh_m - d_sheath);
     S.r_te_m = std::max(1.05*Rs, S.r_le_m - d_me);
 
-    S.w_sh_m = std::max(0.0, P.edge_smooth_shock_AU_at1AU) * scale_R * AU;
+    S.w_sh_m = swcme::units::au_to_m(P.edge_smooth_shock_AU_at1AU * scale_R);
 
 
     // Do not let the shock smoothing exceed ~45% of the sheath thickness
@@ -605,8 +649,8 @@ public:
     S.w_sh_m = std::min(S.w_sh_m, 0.45 * Ls);
 
 
-    S.w_le_m = std::max(0.0, P.edge_smooth_le_AU_at1AU)    * scale_R * AU;
-    S.w_te_m = std::max(0.0, P.edge_smooth_te_AU_at1AU)    * scale_R * AU;
+    S.w_le_m = swcme::units::au_to_m(P.edge_smooth_le_AU_at1AU * scale_R);
+    S.w_te_m = swcme::units::au_to_m(P.edge_smooth_te_AU_at1AU * scale_R);
 
     // Upstream Parker field at the shock.  The 1-D ray is treated as the
     // local shock normal, while B_phi remains a tangential component.  This
@@ -850,8 +894,8 @@ public:
 
     for (std::size_t i=0;i<N;++i){
       const double r = r_m[i];
-      const double R_AU = r/AU;
-      const double Rsun = r/Rs;
+      const double R_AU = swcme::units::m_to_au(r);
+      const double Rsun = swcme::units::m_to_solar_radii(r);
       const double dv = divV?divV[i]:0.0;
       std::fprintf(f, "% .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e\n",
                    r, R_AU, Rsun,
@@ -924,7 +968,7 @@ bool write_tecplot_shock_vs_time(double t_end_s, std::size_t N, const char* path
     StepState S = prepare_step(t);
 
     const double Rsh_Rs   = S.r_sh_m / Rs;       // [R_sun]
-    const double Vsh_kms  = S.V_sh_ms / 1.0e3;   // [km/s]
+    const double Vsh_kms  = swcme::units::m_per_s_to_km_per_s(S.V_sh_ms); // [km/s]
     const double rc       = S.rc;                // compression ratio proxy
 
     std::fprintf(f, "% .9e % .9e % .9e % .9e\n",

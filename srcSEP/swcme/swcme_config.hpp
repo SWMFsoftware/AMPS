@@ -1,0 +1,273 @@
+#ifndef SWCME_CONFIG_HPP
+#define SWCME_CONFIG_HPP
+
+// ============================================================================
+// swcme_config.hpp
+// ----------------------------------------------------------------------------
+// Shared SWCME configuration-validation infrastructure.
+//
+// This layer intentionally contains no 1-D or 3-D geometry implementation.
+// Instead, dimensional wrappers populate a CommonConfigView and then append
+// only the checks that are genuinely specific to their geometry.  This keeps
+// the physical-range rules for ambient plasma, kinematics, region thicknesses,
+// and smoothing identical in both interfaces while still allowing the 3-D
+// model to validate vector axes and finite-SSE parameters.
+//
+// Validation philosophy
+// ---------------------
+// * Invalid configuration is rejected once, before any physics calculation.
+// * Unit conversion never repairs a value; validation decides admissibility.
+// * Every failure identifies the offending field and the violated rule.
+// * No NaN/Inf or silent normalization fallback is considered a valid input.
+// ============================================================================
+
+#include "swcme_kinematics.hpp"
+
+#include <cmath>
+#include <sstream>
+#include <string>
+#include <vector>
+
+namespace swcme {
+namespace config {
+
+enum class Code {
+  NonFinite,
+  NonPositive,
+  Negative,
+  OutOfRange,
+  ZeroVector,
+  InvalidKinematicsTable
+};
+
+inline const char* code_name(Code code) {
+  switch (code) {
+    case Code::NonFinite: return "NON_FINITE";
+    case Code::NonPositive: return "NON_POSITIVE";
+    case Code::Negative: return "NEGATIVE";
+    case Code::OutOfRange: return "OUT_OF_RANGE";
+    case Code::ZeroVector: return "ZERO_VECTOR";
+    case Code::InvalidKinematicsTable: return "INVALID_KINEMATICS_TABLE";
+  }
+  return "UNKNOWN";
+}
+
+struct Issue {
+  std::string field;
+  Code code = Code::NonFinite;
+  double value = 0.0;
+  std::string requirement;
+};
+
+struct ValidationResult {
+  std::vector<Issue> issues;
+
+  bool ok() const { return issues.empty(); }
+
+  void add(const std::string& field, Code code, double value,
+           const std::string& requirement) {
+    issues.push_back(Issue{field, code, value, requirement});
+  }
+
+  // Human-readable summary used by prepare_step() exceptions and by CFG01.
+  // The complete list is preserved so callers can diagnose more than the
+  // first invalid field in one validation pass.
+  std::string summary(const std::string& prefix = "SWCME invalid configuration") const {
+    if (issues.empty()) return prefix + ": none";
+    std::ostringstream out;
+    out << prefix << ':';
+    for (const Issue& issue : issues) {
+      out << " " << issue.field << " [" << code_name(issue.code) << "] "
+          << issue.requirement << ";";
+    }
+    return out.str();
+  }
+};
+
+inline bool finite(double value) { return std::isfinite(value); }
+
+inline void require_finite(ValidationResult& result, const char* field,
+                           double value) {
+  if (!finite(value)) {
+    result.add(field, Code::NonFinite, value, "must be finite");
+  }
+}
+
+inline void require_positive(ValidationResult& result, const char* field,
+                             double value) {
+  if (!finite(value)) {
+    result.add(field, Code::NonFinite, value, "must be finite and > 0");
+  } else if (!(value > 0.0)) {
+    result.add(field, Code::NonPositive, value, "must be > 0");
+  }
+}
+
+inline void require_nonnegative(ValidationResult& result, const char* field,
+                                double value) {
+  if (!finite(value)) {
+    result.add(field, Code::NonFinite, value, "must be finite and >= 0");
+  } else if (value < 0.0) {
+    result.add(field, Code::Negative, value, "must be >= 0");
+  }
+}
+
+inline void require_range(ValidationResult& result, const char* field,
+                          double value, double minimum, double maximum,
+                          bool minimum_inclusive = true,
+                          bool maximum_inclusive = true) {
+  if (!finite(value)) {
+    result.add(field, Code::NonFinite, value, "must be finite and within range");
+    return;
+  }
+  const bool low_ok = minimum_inclusive ? value >= minimum : value > minimum;
+  const bool high_ok = maximum_inclusive ? value <= maximum : value < maximum;
+  if (!low_ok || !high_ok) {
+    std::ostringstream rule;
+    rule << "must be " << (minimum_inclusive ? "[" : "(") << minimum
+         << ',' << maximum << (maximum_inclusive ? "]" : ")");
+    result.add(field, Code::OutOfRange, value, rule.str());
+  }
+}
+
+inline void require_nonzero_vector(ValidationResult& result, const char* field,
+                                   const double vector[3]) {
+  if (!finite(vector[0]) || !finite(vector[1]) || !finite(vector[2])) {
+    result.add(field, Code::NonFinite, 0.0,
+               "all vector components must be finite");
+    return;
+  }
+  const double norm2 = vector[0]*vector[0] + vector[1]*vector[1] +
+                       vector[2]*vector[2];
+  if (!(norm2 > 0.0) || !finite(norm2)) {
+    result.add(field, Code::ZeroVector, 0.0,
+               "vector magnitude must be finite and non-zero");
+  }
+}
+
+// Common physical/model values expressed in the units of the public parameter
+// interface.  This is intentionally a non-owning view: dimensional models can
+// validate their existing Params without introducing a second configuration
+// object or changing user-facing source compatibility.
+struct CommonConfigView {
+  double V_sw_kms = 0.0;
+  double n1AU_cm3 = 0.0;
+  double B1AU_nT = 0.0;
+  double T_K = 0.0;
+  double gamma_ad = 0.0;
+  double sin_theta = 0.0;
+
+  swcme::kinematics::Mode kinematics_mode = swcme::kinematics::Mode::DBM;
+  double r0_Rs = 0.0;
+  double V0_sh_kms = 0.0;
+  double Gamma_kmInv = 0.0;
+  const std::vector<double>* data_time_s = nullptr;
+  const std::vector<double>* data_radius_Rs = nullptr;
+
+  double sheath_thick_AU_at1AU = 0.0;
+  double ejecta_thick_AU_at1AU = 0.0;
+  double edge_smooth_shock_AU_at1AU = 0.0;
+  double edge_smooth_le_AU_at1AU = 0.0;
+  double edge_smooth_te_AU_at1AU = 0.0;
+  double sheath_comp_floor = 1.0;
+  double sheath_ramp_power = 0.0;
+  double V_sheath_LE_factor = 0.0;
+  double f_ME = 0.0;
+  double V_ME_factor = 0.0;
+};
+
+inline ValidationResult validate_common(const CommonConfigView& c) {
+  ValidationResult out;
+
+  // A strictly positive ambient speed is required by the Parker spiral and by
+  // the DBM reference frame.  Importantly, this check happens after pure unit
+  // conversion; zero is not silently replaced by an arbitrary 1 m/s value.
+  require_positive(out, "V_sw_kms", c.V_sw_kms);
+  require_positive(out, "n1AU_cm3", c.n1AU_cm3);
+  require_nonnegative(out, "B1AU_nT", c.B1AU_nT);
+  require_positive(out, "T_K", c.T_K);
+  if (!finite(c.gamma_ad)) {
+    out.add("gamma_ad", Code::NonFinite, c.gamma_ad, "must be finite and > 1");
+  } else if (!(c.gamma_ad > 1.0)) {
+    out.add("gamma_ad", Code::OutOfRange, c.gamma_ad, "must be > 1");
+  }
+  require_range(out, "sin_theta", c.sin_theta, 0.0, 1.0, true, true);
+
+  require_positive(out, "r0_Rs", c.r0_Rs);
+  require_nonnegative(out, "V0_sh_kms", c.V0_sh_kms);
+  require_nonnegative(out, "Gamma_kmInv", c.Gamma_kmInv);
+
+  require_nonnegative(out, "sheath_thick_AU_at1AU", c.sheath_thick_AU_at1AU);
+  require_nonnegative(out, "ejecta_thick_AU_at1AU", c.ejecta_thick_AU_at1AU);
+  require_nonnegative(out, "edge_smooth_shock_AU_at1AU",
+                      c.edge_smooth_shock_AU_at1AU);
+  require_nonnegative(out, "edge_smooth_le_AU_at1AU", c.edge_smooth_le_AU_at1AU);
+  require_nonnegative(out, "edge_smooth_te_AU_at1AU", c.edge_smooth_te_AU_at1AU);
+
+  if (!finite(c.sheath_comp_floor)) {
+    out.add("sheath_comp_floor", Code::NonFinite, c.sheath_comp_floor,
+            "must be finite and >= 1");
+  } else if (c.sheath_comp_floor < 1.0) {
+    out.add("sheath_comp_floor", Code::OutOfRange, c.sheath_comp_floor,
+            "must be >= 1");
+  }
+
+  if (!finite(c.sheath_ramp_power)) {
+    out.add("sheath_ramp_power", Code::NonFinite, c.sheath_ramp_power,
+            "must be finite and >= 1");
+  } else if (c.sheath_ramp_power < 1.0) {
+    out.add("sheath_ramp_power", Code::OutOfRange, c.sheath_ramp_power,
+            "must be >= 1");
+  }
+  // The 3-D phenomenological sheath can intentionally relax slightly below
+  // the ambient speed (legacy examples use 0.9), while the 1-D profile later
+  // applies its own monotonic sheath constraint.  Validation therefore checks
+  // only that the configured factor is finite and positive; changing the
+  // regional sheath physics belongs to the separate region-model remediation.
+  require_positive(out, "V_sheath_LE_factor", c.V_sheath_LE_factor);
+  require_nonnegative(out, "f_ME", c.f_ME);
+  require_nonnegative(out, "V_ME_factor", c.V_ME_factor);
+
+  // Validate the DATA_DRIVEN table at the public-unit boundary as well as in
+  // the SI kinematics layer.  This lets CFG01 identify the offending public
+  // field directly instead of reporting only a generic kinematics failure.
+  if (c.kinematics_mode == swcme::kinematics::Mode::DataDriven) {
+    if (c.data_time_s == nullptr || c.data_radius_Rs == nullptr ||
+        c.data_time_s->size() < 2 ||
+        c.data_time_s->size() != c.data_radius_Rs->size()) {
+      out.add("data_time_s/data_radius_Rs", Code::InvalidKinematicsTable, 0.0,
+              "DATA_DRIVEN mode requires matching arrays with at least two knots");
+    } else {
+      for (std::size_t i=0; i<c.data_time_s->size(); ++i) {
+        const double t = (*c.data_time_s)[i];
+        const double r = (*c.data_radius_Rs)[i];
+        if (!finite(t) || !finite(r) || !(r > 0.0)) {
+          out.add("data_time_s/data_radius_Rs", Code::InvalidKinematicsTable, r,
+                  "all data knots must be finite and radius must be > 0");
+          break;
+        }
+        if (i > 0 && !(t > (*c.data_time_s)[i-1])) {
+          out.add("data_time_s", Code::InvalidKinematicsTable, t,
+                  "DATA_DRIVEN times must be strictly increasing");
+          break;
+        }
+        if (i > 0 && r < (*c.data_radius_Rs)[i-1]) {
+          out.add("data_radius_Rs", Code::InvalidKinematicsTable, r,
+                  "DATA_DRIVEN radius must be nondecreasing");
+          break;
+        }
+      }
+    }
+  }
+
+  return out;
+}
+
+inline void append(ValidationResult& destination, const ValidationResult& source) {
+  destination.issues.insert(destination.issues.end(), source.issues.begin(),
+                            source.issues.end());
+}
+
+}  // namespace config
+}  // namespace swcme
+
+#endif

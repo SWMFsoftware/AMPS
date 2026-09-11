@@ -1,6 +1,8 @@
 #pragma once
 
 #include "swcme_constants.hpp"
+#include "swcme_units.hpp"
+#include "swcme_config.hpp"
 #include "swcme_kinematics.hpp"
 #include "swcme_shock.hpp"
 // ============================================================================
@@ -241,6 +243,51 @@ struct Params {
   // Ejecta density factor (relative to upstream)
   double f_ME = 0.5;                      // n_ejecta = f_ME * n_up
 };
+
+// Validate the complete 3-D public parameter pack before any basis
+// normalization or field/shock calculation.  Common plasma, kinematic, and
+// region rules are delegated to swcme_config.hpp; this wrapper adds only the
+// geometry/vector rules that have no 1-D analogue.
+inline swcme::config::ValidationResult validate_params(const Params& p) {
+  swcme::config::CommonConfigView view;
+  view.V_sw_kms=p.V_sw_kms; view.n1AU_cm3=p.n1AU_cm3;
+  view.B1AU_nT=p.B1AU_nT; view.T_K=p.T_K; view.gamma_ad=p.gamma_ad;
+  view.sin_theta=p.sin_theta; view.kinematics_mode=p.kinematics_mode;
+  view.r0_Rs=p.r0_Rs; view.V0_sh_kms=p.V0_sh_kms;
+  view.Gamma_kmInv=p.Gamma_kmInv; view.data_time_s=&p.data_time_s;
+  view.data_radius_Rs=&p.data_radius_Rs;
+  view.sheath_thick_AU_at1AU=p.sheath_thick_AU_at1AU;
+  view.ejecta_thick_AU_at1AU=p.ejecta_thick_AU_at1AU;
+  view.edge_smooth_shock_AU_at1AU=p.edge_smooth_shock_AU_at1AU;
+  view.edge_smooth_le_AU_at1AU=p.edge_smooth_le_AU_at1AU;
+  view.edge_smooth_te_AU_at1AU=p.edge_smooth_te_AU_at1AU;
+  view.sheath_comp_floor=p.sheath_comp_floor;
+  view.sheath_ramp_power=p.sheath_ramp_power;
+  view.V_sheath_LE_factor=p.V_sheath_LE_factor;
+  view.f_ME=p.f_ME; view.V_ME_factor=p.V_ME_factor;
+
+  swcme::config::ValidationResult out=swcme::config::validate_common(view);
+  swcme::config::require_nonzero_vector(out,"cme_dir",p.cme_dir);
+  swcme::config::require_nonzero_vector(out,"solar_rotation_axis",
+                                        p.solar_rotation_axis);
+  swcme::config::require_nonnegative(out,"solar_rotation_rate_rad_s",
+                                     p.solar_rotation_rate_rad_s);
+
+  if (!swcme::config::finite(p.flank_slowdown_m)) {
+    out.add("flank_slowdown_m",swcme::config::Code::NonFinite,
+            p.flank_slowdown_m,"deprecated compatibility value must be finite");
+  }
+
+  if (p.shape==ShockShape::Ellipsoid) {
+    swcme::config::require_positive(out,"axis_ratio_y",p.axis_ratio_y);
+    swcme::config::require_positive(out,"axis_ratio_z",p.axis_ratio_z);
+  }
+  if (p.shape==ShockShape::SSE) {
+    swcme::config::require_range(out,"half_width_rad",p.half_width_rad,
+                                 0.0,0.5*PI,false,true);
+  }
+  return out;
+}
 
 // ----------------------------------------------------------------------------
 // Time-dependent state for a given time t (returned by prepare_step).
@@ -484,6 +531,10 @@ struct BoxSpec {
 class Model {
 public:
   explicit Model(const Params&);
+
+  // Side-effect-free validation entry point used by CFG01 and prepare_step().
+  // Callers can inspect all invalid fields before starting a simulation.
+  swcme::config::ValidationResult validate() const { return validate_params(P_); }
 
   // Build time-dependent state (and caches) for time t_s [s].
   StepState prepare_step(double t_s) const;

@@ -395,9 +395,23 @@ namespace swcme3d {
 Model::Model(const Params& P): P_(P) {}
 
 StepState Model::prepare_step(double t_s) const {
+  // Reject invalid configuration once, before any vector normalization, unit
+  // conversion, or finite-value fallback can transform the caller's input.
+  // This replaces the former collection of local guards/clamps with one
+  // auditable contract shared with the 1-D model.
+  const swcme::config::ValidationResult validation=validate();
+  if (!validation.ok()) {
+    throw std::invalid_argument(validation.summary("swcme3d"));
+  }
+  if (!std::isfinite(t_s) || t_s<0.0) {
+    throw std::invalid_argument("swcme3d: time must be finite and >= 0");
+  }
+
   StepState S{};
 
-  // 1) Apex-aligned orthonormal basis (e1 along CME apex direction)
+  // 1) Apex-aligned orthonormal basis (e1 along CME apex direction).  The CME
+  // vector is guaranteed non-zero by centralized validation, so normalization
+  // cannot silently substitute the legacy +X fallback here.
   double e1[3]={P_.cme_dir[0],P_.cme_dir[1],P_.cme_dir[2]}; ::safe_normalize(e1);
   double tmp[3]={0,0,1}; if (std::fabs(e1[2])>0.9){ tmp[0]=1; tmp[1]=0; tmp[2]=0; }
   double e2[3]={ e1[1]*tmp[2]-e1[2]*tmp[1],
@@ -411,29 +425,17 @@ StepState Model::prepare_step(double t_s) const {
   S.e3[0]=e3[0]; S.e3[1]=e3[1]; S.e3[2]=e3[2];
 
   // Normalize and cache the solar-rotation axis independently of the CME
-  // propagation frame.  Parker geometry is tied to solar rotation, not to the
-  // CME direction, so these two axes must never be conflated.  A zero or
-  // non-finite rotation axis makes the 3-D Parker basis undefined; unlike the
-  // legacy safe_normalize() helper, we fail explicitly here instead of silently
-  // substituting an arbitrary direction.  Full centralized configuration
-  // validation is planned separately, but this local guard is required for a
-  // physically meaningful Parker field now.
+  // propagation frame.  Centralized configuration validation already proved
+  // the vector finite/non-zero and the rotation rate finite/non-negative, so
+  // this block performs geometry only and contains no hidden repair policy.
   {
     const double ax=P_.solar_rotation_axis[0];
     const double ay=P_.solar_rotation_axis[1];
     const double az=P_.solar_rotation_axis[2];
     const double axis_norm=std::sqrt(ax*ax+ay*ay+az*az);
-    if (!std::isfinite(axis_norm) || axis_norm<=0.0) {
-      throw std::invalid_argument("swcme3d: solar_rotation_axis must be finite and non-zero");
-    }
     S.solar_axis_hat[0]=ax/axis_norm;
     S.solar_axis_hat[1]=ay/axis_norm;
     S.solar_axis_hat[2]=az/axis_norm;
-    if (!std::isfinite(P_.solar_rotation_rate_rad_s) ||
-        P_.solar_rotation_rate_rad_s<0.0) {
-      throw std::invalid_argument(
-          "swcme3d: solar_rotation_rate_rad_s must be finite and non-negative");
-    }
     S.solar_rotation_rate_rad_s=P_.solar_rotation_rate_rad_s;
   }
 
@@ -447,21 +449,21 @@ StepState Model::prepare_step(double t_s) const {
   //   DeltaV(t)=DeltaV0/(1+Gamma*|DeltaV0|*t)
   // and an exact Gamma=0 ballistic limit.  DATA_DRIVEN mode is evaluated by
   // the same common component using monotone PCHIP interpolation.
-  const double r0_m=P_.r0_Rs*Rs;
-  S.V_sw_ms=P_.V_sw_kms*1e3;
+  const double r0_m=swcme::units::solar_radii_to_m(P_.r0_Rs);
+  S.V_sw_ms=swcme::units::km_per_s_to_m_per_s(P_.V_sw_kms);
   S.kinematics_mode=P_.kinematics_mode;
 
   swcme::kinematics::Config kin;
   kin.mode=P_.kinematics_mode;
   kin.r0_m=r0_m;
-  kin.V0_m_s=P_.V0_sh_kms*1e3;
+  kin.V0_m_s=swcme::units::km_per_s_to_m_per_s(P_.V0_sh_kms);
   kin.Vsw_m_s=S.V_sw_ms;
-  kin.Gamma_m_inv=P_.Gamma_kmInv/1e3;
+  kin.Gamma_m_inv=swcme::units::km_inverse_to_m_inverse(P_.Gamma_kmInv);
   kin.extrapolation=P_.data_extrapolation;
   kin.data_time_s=P_.data_time_s;
   kin.data_radius_m.reserve(P_.data_radius_Rs.size());
   for (double radius_Rs : P_.data_radius_Rs) {
-    kin.data_radius_m.push_back(radius_Rs*Rs);
+    kin.data_radius_m.push_back(swcme::units::solar_radii_to_m(radius_Rs));
   }
 
   const swcme::kinematics::State apex=swcme::kinematics::evaluate(kin,t_s);
@@ -479,11 +481,11 @@ StepState Model::prepare_step(double t_s) const {
 
   // 3) Self-similar region widths & derived radii
   const double scaleR = S.r_sh_m / AU;
-  S.dr_sheath_m = finite_or(P_.sheath_thick_AU_at1AU * scaleR * AU);
-  S.dr_me_m     = finite_or(P_.ejecta_thick_AU_at1AU * scaleR * AU);
-  S.w_shock_m   = finite_or(P_.edge_smooth_shock_AU_at1AU * scaleR * AU);
-  S.w_le_m      = finite_or(P_.edge_smooth_le_AU_at1AU    * scaleR * AU);
-  S.w_te_m      = finite_or(P_.edge_smooth_te_AU_at1AU    * scaleR * AU);
+  S.dr_sheath_m = swcme::units::au_to_m(P_.sheath_thick_AU_at1AU * scaleR);
+  S.dr_me_m     = swcme::units::au_to_m(P_.ejecta_thick_AU_at1AU * scaleR);
+  S.w_shock_m   = swcme::units::au_to_m(P_.edge_smooth_shock_AU_at1AU * scaleR);
+  S.w_le_m      = swcme::units::au_to_m(P_.edge_smooth_le_AU_at1AU * scaleR);
+  S.w_te_m      = swcme::units::au_to_m(P_.edge_smooth_te_AU_at1AU * scaleR);
   S.r_le_m = S.r_sh_m - S.dr_sheath_m;
   S.r_te_m = S.r_le_m - S.dr_me_m;
 
@@ -493,8 +495,8 @@ StepState Model::prepare_step(double t_s) const {
   S.inv2w_te = (S.w_te_m   >0.0)? 0.5/S.w_te_m    : 0.0;
 
   // 4) Region target speeds
-  S.V_sheath_LE_ms = finite_or(P_.V_sheath_LE_factor * S.V_sw_ms, S.V_sw_ms);
-  S.V_ME_ms        = finite_or(P_.V_ME_factor        * S.V_sw_ms, S.V_sw_ms);
+  S.V_sheath_LE_ms = P_.V_sheath_LE_factor * S.V_sw_ms;
+  S.V_ME_ms        = P_.V_ME_factor * S.V_sw_ms;
   S.V_dn_ms        = S.V_sw_ms;
 
   // 5) Convenience
@@ -508,7 +510,7 @@ StepState Model::prepare_step(double t_s) const {
     const double sAU=Rs/AU;
     const double n1_base=A*sAU*sAU + B*std::pow(sAU,4) + C*std::pow(sAU,6);
     const double leb_scale=(n1_base>0.0)? (P_.n1AU_cm3/n1_base):1.0;
-    const double K = leb_scale*1e6; // cm^-3 → m^-3
+    const double K = leb_scale*swcme::units::cm3_to_m3(1.0); // cm^-3 -> m^-3
     S.C2 = K*A*Rs2;
     S.C4 = K*B*Rs4;
     S.C6 = K*C*Rs6;
@@ -523,19 +525,12 @@ StepState Model::prepare_step(double t_s) const {
   // existing inputs while removing the physically incorrect global-latitude
   // assumption from the 3-D field itself.
   {
-    const double B1AU_T = P_.B1AU_nT*1e-9;
+    const double B1AU_T = swcme::units::nT_to_T(P_.B1AU_nT);
     const double reference_sin_theta = P_.sin_theta;
-    if (!std::isfinite(reference_sin_theta) ||
-        reference_sin_theta<0.0 || reference_sin_theta>1.0) {
-      throw std::invalid_argument(
-          "swcme3d: sin_theta reference normalization must lie in [0,1]");
-    }
 
-    // A zero solar-wind speed is not a valid Parker-spiral configuration.  The
-    // broader configuration layer will eventually reject it explicitly.  For
-    // now we keep prepare_step() finite so existing unit-conversion tests can
-    // still inspect zero-valued inputs without producing Inf/NaN state.
-    S.k_AU = (S.V_sw_ms!=0.0) ? (S.solar_rotation_rate_rad_s*AU/S.V_sw_ms) : 0.0;
+    // V_sw is strictly positive by the common configuration contract, so the
+    // Parker pitch needs no zero-speed fallback.
+    S.k_AU = S.solar_rotation_rate_rad_s*AU/S.V_sw_ms;
 
     const double reference_pitch = S.k_AU*reference_sin_theta;
     S.Br1AU_T = B1AU_T /
@@ -545,8 +540,8 @@ StepState Model::prepare_step(double t_s) const {
   // 8) Geometry caches
   if (P_.shape==ShockShape::Ellipsoid){
     S.a_e    = S.r_sh_m;
-    S.b_e    = S.a_e * std::max(1e-3, P_.axis_ratio_y);
-    S.c_e    = S.a_e * std::max(1e-3, P_.axis_ratio_z);
+    S.b_e    = S.a_e * P_.axis_ratio_y;
+    S.c_e    = S.a_e * P_.axis_ratio_z;
     const double a2=S.a_e*S.a_e, b2=S.b_e*S.b_e, c2=S.c_e*S.c_e;
     S.inv_a2=(a2>0)?1.0/a2:0.0; S.inv_b2=(b2>0)?1.0/b2:0.0; S.inv_c2=(c2>0)?1.0/c2:0.0;
   } else if (P_.shape==ShockShape::SSE){
@@ -557,11 +552,7 @@ StepState Model::prepare_step(double t_s) const {
     //   c = R_a/(1+sin(lambda)),  a = c*sin(lambda).
     // The ray at alpha=lambda is tangent to this sphere; therefore the model
     // has a mathematically finite angular extent without artificial clamping.
-    if (!std::isfinite(P_.half_width_rad) || P_.half_width_rad<=0.0 ||
-        P_.half_width_rad>0.5*PI) {
-      throw std::invalid_argument(
-          "swcme3d: SSE half_width_rad must satisfy 0 < half_width_rad <= pi/2");
-    }
+    // half_width_rad was already checked against (0,pi/2] by validate().
     S.sin_half_width = std::sin(P_.half_width_rad);
     S.cos_half_width = std::cos(P_.half_width_rad);
     const double denom = 1.0 + S.sin_half_width;

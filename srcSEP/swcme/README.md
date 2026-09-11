@@ -200,6 +200,38 @@ by the tracker.
 The deterministic connectivity validation block is `CON01`-`CON08`; see
 `test/README.md` for the individual fixtures and acceptance checks.
 
+## Centralized configuration validation and unit handling
+
+SWCME now separates **unit conversion** from **physical admissibility**.
+`swcme_units.hpp` is the single production source for conversions between the
+public heliophysics units and SI, including km/s, nT, cm^-3, km^-1, AU, solar
+radii, hours, and degrees.  Conversion functions are deliberately pure: for
+example, `0 km/s` converts to `0 m/s`; it is not silently replaced by a
+positive speed.
+
+`swcme_config.hpp` provides the common validation contract used by both the
+1-D and 3-D models.  `Model::validate()` is side-effect free and returns every
+invalid field with a structured code and requirement.  `prepare_step()` calls
+the same validator before any basis normalization, unit conversion, kinematic
+evaluation, or field/shock calculation.  Invalid input therefore fails once at
+setup rather than being clipped into a plausible-looking state.
+
+Common checks include positive solar-wind speed, reference density and
+temperature; non-negative magnetic field and DBM drag coefficient; `gamma>1`;
+`sin(theta)` in `[0,1]`; valid region/smoothing parameters; and well-formed
+DATA_DRIVEN tables.  The 3-D interface additionally validates non-zero finite
+CME and solar-rotation axes, positive ellipsoid axis ratios, non-negative solar
+rotation rate, and SSE half width in `(0,pi/2]`.
+
+The production models now use the centralized conversion helpers when preparing
+their SI state.  This fixes the prior 1-D `V_sw` path that used
+`max(1,V_sw*1000)` and therefore changed `0 km/s` into `1 m/s`.  Zero wind speed
+is now converted exactly and rejected by the configuration validator because a
+positive wind speed is required by the Parker/DBM baseline.
+
+See `CONFIGURATION_UNITS_FIX_NOTES.md` and the `CFG01`/`CFG02` sections in
+`test/README.md` for the full contract and validation coverage.
+
 ## Validation
 
 Build the validation executable from `test/`:
