@@ -41,6 +41,14 @@ void test_shk09(swcme_test::Context& context);
 void test_shk10(swcme_test::Context& context);
 void test_shk11(swcme_test::Context& context);
 void test_shk12(swcme_test::Context& context);
+void test_con01(swcme_test::Context& context);
+void test_con02(swcme_test::Context& context);
+void test_con03(swcme_test::Context& context);
+void test_con04(swcme_test::Context& context);
+void test_con05(swcme_test::Context& context);
+void test_con06(swcme_test::Context& context);
+void test_con07(swcme_test::Context& context);
+void test_con08(swcme_test::Context& context);
 void test_1d_ambient_at_one_au(swcme_test::Context& context);
 
 namespace {
@@ -94,6 +102,14 @@ const swcme_test::TestCase kTests[] = {
     {"SHK10", "COMMON", "Rankine-Hugoniot total-energy-flux conservation", test_shk10},
     {"SHK11", "COMMON", "Physical admissibility and entropy increase", test_shk11},
     {"SHK12", "COMMON", "Near-Mach-one weak-shock conditioning", test_shk12},
+    {"CON01", "3D", "Zero-solar-rotation radial connectivity limit", test_con01},
+    {"CON02", "3D", "Parker-spiral field line intersecting a spherical shock", test_con02},
+    {"CON03", "3D", "No connection to a finite-width shock", test_con03},
+    {"CON04", "3D", "Tangent and near-tangent magnetic connection", test_con04},
+    {"CON05", "3D", "Multiple intersections and deterministic root selection", test_con05},
+    {"CON06", "3D", "Time-continuous cobpoint history", test_con06},
+    {"CON07", "3D", "Cobpoint-to-ShockState consistency", test_con07},
+    {"CON08", "3D", "Connectivity Parker path-length accuracy", test_con08},
     {"1D_AMBIENT_01", "1D", "Ambient values at 1 AU",
      test_1d_ambient_at_one_au},
 };

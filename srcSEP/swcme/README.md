@@ -125,6 +125,81 @@ there is a documented physical justification; observationally constrained
 The deterministic kinematics validation block is `KIN01`-`KIN08`; see
 `test/README.md` for individual purposes and acceptance criteria.
 
+## Observer-to-shock magnetic connectivity and cobpoint tracking
+
+The 3-D model now provides an analytical Parker-field-line connectivity solver
+through `Model::observer_connectivity()`.  The solver is designed for the
+controlled upstream-Parker experiment used by the SEP study: it traces the
+observer's nominal Parker line inward and intersects that line with the same
+production shock geometry used by `shape_radius_normal()` and the same local
+shock physics used by `shock_state_direction()`.
+
+For the production Parker field
+
+```text
+B_phi/B_r = -Omega r sin(theta) / V_sw,
+```
+
+a field-line tangent satisfies
+
+```text
+r sin(theta) dphi/dr = B_phi/B_r,
+```
+
+so `dphi/dr=-Omega/V_sw`.  The exact observer-anchored field line is therefore
+constructed by rotating the observer radial direction about the configured
+solar-rotation axis by
+
+```text
+Delta phi = -Omega (r-r_obs) / V_sw.
+```
+
+`Params::solar_rotation_rate_rad_s` now explicitly carries the rotation rate
+used by both the Parker magnetic field and connectivity mapping.  Its default
+is the existing SWCME solar-rotation convention.  Setting it to zero provides
+the exact radial-field limit used by `CON01`; the normal production default is
+unchanged.
+
+`ConnectivityState` retains every geometrical field-line/shock intersection in
+increasing radial order.  Each `ConnectivityRoot` contains the Cartesian
+cobpoint, shock radius residual, analytical Parker path length to the observer,
+and the complete `LocalShockState`.  The default selected cobpoint is the
+outermost root, i.e. the first shock surface encountered when tracing inward
+from the observer.  Retaining all roots makes this choice explicit and keeps
+the infrastructure usable for future non-convex geometries.
+
+The root search is deliberately robust to connection boundaries.  It combines
+radial scanning, bisection of sign-changing roots, local minimization of the
+surface residual to detect tangent roots that do not change sign, and explicit
+refinement of finite-SSE surface-validity transitions.  No artificial SSE
+flank is introduced when the Parker line remains outside the configured cap.
+
+The Parker path length returned with a cobpoint is analytical.  With
+
+```text
+k = Omega sin(theta) / V_sw,
+```
+
+SWCME integrates
+
+```text
+ds/dr = sqrt(1 + (k r)^2)
+```
+
+in closed form.  The exact zero-rotation/polar limit is the radial distance.
+This length, rather than radial separation, is the quantity intended for
+field-aligned SEP transport timing.
+
+`Model::observer_connectivity_history()` evaluates a stationary observer at a
+requested set of times.  Every time step is solved independently from the
+production kinematics, Parker line, geometry, and shock state; the history
+contains no hidden hysteresis.  Consequently connection onset/loss and
+cobpoint motion can be interpreted as model physics rather than state retained
+by the tracker.
+
+The deterministic connectivity validation block is `CON01`-`CON08`; see
+`test/README.md` for the individual fixtures and acceptance checks.
+
 ## Validation
 
 Build the validation executable from `test/`:
@@ -186,6 +261,7 @@ momentum and energy fluxes, entropy/admissibility, and the weak-shock limit.
 
 The current model still requires separate remediation of the 1-D ejecta
 density/velocity-factor bugs, shock-mesh apex/seam topology, centralized
-configuration/unit validation, and magnetic connectivity/cobpoint tracking.
-Those remain independent validation gates.  CME/shock-apex kinematics are now
+configuration/unit validation.  Magnetic connectivity/cobpoint tracking is now
+implemented and validated by CON01-CON08; the remaining items retain independent
+validation gates.  CME/shock-apex kinematics are now
 shared and validated by KIN01-KIN08.

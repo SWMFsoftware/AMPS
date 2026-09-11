@@ -520,3 +520,99 @@ normal direction, upstream state, root bracket, and downstream reconstruction
 first.  A super-fast state for which the nonlinear solver cannot identify an
 admissible root is reported with `solver_converged=false` and must not be used
 for SEP source physics.
+
+
+## CON01-CON08: observer-shock magnetic connectivity and cobpoint tracking
+
+`CON01`-`CON08` validate the production 3-D connectivity API implemented by
+`swcme3d::Model::observer_connectivity()`.  The connectivity solver does not
+maintain a second copy of the shock model: candidate points are tested against
+`shape_radius_normal()` and final cobpoints obtain their local plasma/shock
+state from `shock_state_direction()`.
+
+The observer Parker line is analytical.  For the same Parker field used by the
+production field evaluator,
+
+```text
+Delta phi(r) = -Omega (r-r_obs) / V_sw.
+```
+
+The observer radial direction is rotated around the configured solar axis by
+this amount; colatitude remains constant.  The production parameter
+`solar_rotation_rate_rad_s` is shared by field evaluation and connectivity, so
+there cannot be a hidden Omega mismatch between the two modules.  The default
+value remains the SWCME solar-rotation convention; zero rotation is allowed to
+exercise the exact radial reference case.
+
+The intersection residual is
+
+```text
+h(r) = r - R_shock[u_Parker(r)].
+```
+
+The solver scans from a configurable inner radius to the observer.  It refines
+sign-changing roots with bisection, searches local minima of `abs(h)` so tangent
+roots that merely touch zero are not missed, and explicitly refines transitions
+of the finite-SSE surface-existence flag.  All accepted roots must satisfy the
+configured surface-residual tolerance.  Roots are retained in increasing
+radius; the default selected cobpoint is the outermost root, corresponding to
+the first surface encountered while tracing inward from the observer.
+
+Each `ConnectivityRoot` stores:
+
+- cobpoint radius and Cartesian position;
+- signed surface residual;
+- analytical Parker arc length from cobpoint to observer; and
+- the complete production `LocalShockState`, including `has_shock`, normal,
+  normal speed, `theta_Bn`, fast Mach number, compression, and full upstream /
+  downstream MHD states.
+
+A geometrical connection and a physical fast shock remain separate concepts.
+The connectivity state can therefore be geometrically connected while the
+embedded `LocalShockState::has_shock` is false; an SEP source must check the
+latter before injection.
+
+The tests are:
+
+- `CON01` — zero-solar-rotation radial limit.  A radial observer line is
+  intersected with sphere and SSE geometries and compared with exact analytic
+  radius/position/path-length references.
+- `CON02` — nonzero-rotation Parker line intersecting a Sun-centered sphere.
+  The sphere fixes the root radius exactly while an independent Rodrigues
+  rotation verifies the longitude/sign of the production Parker mapping.
+- `CON03` — no connection to a finite-width SSE shock.  A field line wholly
+  outside the configured cap must return `connected=false` and no fabricated
+  flank root.
+- `CON04` — exact and near-tangent SSE connection.  The exact half-width ray is
+  retained as a valid tangent root, a slightly interior ray connects, and a
+  slightly exterior ray remains disconnected.
+- `CON05` — multiple intersections and deterministic root selection.  A tightly
+  wound Parker line through a strongly non-spherical ellipsoid generates
+  multiple physical roots; all are returned in radial order and the outermost
+  selection is stable under scan refinement.
+- `CON06` — time-continuous cobpoint history.  A ballistic finite SSE front
+  evolves from disconnected to connected; the history must show one physical
+  onset and continuous/monotone cobpoint motion thereafter without one-step
+  classification flicker.
+- `CON07` — cobpoint-to-`ShockState` consistency.  Shock quantities stored in a
+  connectivity root must be identical to a direct production
+  `shock_state_direction()` query at that cobpoint direction.
+- `CON08` — analytical Parker path length.  The path length carried by a
+  cobpoint is compared with an independent closed-form arc-length reference
+  and, away from the pole, must exceed simple radial separation.
+
+The default connectivity search tolerance is much tighter than the validation
+campaign's `1e-8 AU` root-position target.  Tests deliberately repeat selected
+cases with different radial scan densities so correctness cannot depend on a
+particular subdivision.  Tolerances must not be relaxed merely to mask missed
+roots or unstable tangent classification.
+
+Typical direct use is:
+
+```sh
+./output/test_swcme --test CON01
+./output/test_swcme --test CON04
+./output/test_swcme --test CON06
+./output/test_swcme --test CON08
+./output/test_swcme --all
+```

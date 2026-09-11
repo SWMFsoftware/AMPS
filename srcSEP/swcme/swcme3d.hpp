@@ -19,6 +19,9 @@
 //   - Oblique ideal-MHD fast-shock classification and Rankine-Hugoniot downstream state.
 //   - Field evaluators returning density (n), bulk velocity (V), magnetic
 //     field (B) and divergence ∇·V at arbitrary Cartesian points.
+//   - Observer-to-shock magnetic connectivity on the analytical Parker line,
+//     including all cobpoint roots, selected root, path length, and local
+//     production ShockState.
 //   - Shock surface meshing + per-triangle metrics (area, centroid, normal,
 //     rc_mean, Vsh_n_mean).
 //   - Tecplot writers (surface, volume box, an optional box face).
@@ -178,6 +181,13 @@ struct Params {
   // assumed +Z and used one global latitude factor for every point.
   double solar_rotation_axis[3] = {0,0,1};
 
+  // Solar angular rotation rate used by BOTH the Parker field and analytical
+  // connectivity mapping.  The default is the SWCME Carrington/sidereal model
+  // convention.  Keeping it explicit allows the Omega->0 radial-field limit to
+  // be verified without altering global constants or introducing a separate
+  // test-only field-line equation.
+  double solar_rotation_rate_rad_s = swcme::constants::SOLAR_ROTATION_RAD_S;
+
   // Legacy/reference normalization latitude for B1AU_nT ONLY.  This value no
   // longer controls the local 3-D Parker pitch.  It specifies the sine of the
   // colatitude at which B1AU_nT is interpreted as the total |B| at 1 AU.
@@ -291,6 +301,7 @@ struct StepState {
   // removes the old incorrect assumption of one fixed latitude throughout
   // the 3-D domain.
   double solar_axis_hat[3] = {0.0,0.0,1.0};
+  double solar_rotation_rate_rad_s = swcme::constants::SOLAR_ROTATION_RAD_S;
   double k_AU = 0.0;
   double Br1AU_T = 0.0;   // Br at 1 AU [T], normalized using Params::sin_theta as reference latitude
 
@@ -345,6 +356,89 @@ struct LocalShockState {
   double momentum_residual = 0.0;
   double energy_residual = 0.0;
   double entropy_ratio = 1.0;
+};
+
+// ----------------------------------------------------------------------------
+// Observer-to-shock magnetic connectivity state.
+//
+// The baseline upstream magnetic field is the analytical Parker spiral used by
+// the production field evaluator.  A magnetic connection is therefore found
+// by tracing the observer's Parker field line inward and intersecting it with
+// the same production shock geometry used by shape_radius_normal().  Keeping
+// the cobpoint calculation on the production geometry/shock APIs prevents the
+// connectivity code from drifting to a second, inconsistent copy of the shock
+// equations.
+// ----------------------------------------------------------------------------
+enum class ConnectivityStatus {
+  Connected,
+  Disconnected,
+  InvalidObserver,
+  InvalidConfiguration
+};
+
+struct ConnectivityOptions {
+  // Inner radius of the field-line search.  The default is the lower radial
+  // limit historically used by the analytical solar-wind model.  Science
+  // applications may raise this (for example to a data-driven/DBM handoff
+  // radius) without changing the connectivity algorithm.
+  double inner_radius_m = 1.05 * swcme::constants::SOLAR_RADIUS_M;
+
+  // Minimum number of radial scan intervals.  The implementation can increase
+  // this automatically when a tightly wound Parker line requires finer phase
+  // sampling.  The scan finds every sign-changing intersection and seeds
+  // tangent-root searches; final roots are then refined independently.
+  std::size_t scan_intervals = 1024;
+
+  // Radial convergence tolerance for an intersection.  1e-9 AU is well below
+  // the 1e-8 AU acceptance target in the validation plan while remaining many
+  // orders above floating-point spacing at heliospheric radii.
+  double radius_tolerance_m = 1.0e-9 * swcme::constants::AU_M;
+
+  // Maximum |r - R_shock(direction)| accepted as a geometrical root.  A
+  // slightly looser value than the bisection tolerance is used so tangent
+  // roots (which need not change sign) can be identified robustly.
+  double surface_residual_tolerance_m = 5.0e-9 * swcme::constants::AU_M;
+};
+
+struct ConnectivityRoot {
+  // Radial coordinate and Cartesian cobpoint on the observer Parker line.
+  double radius_m = 0.0;
+  double position_m[3] = {0.0,0.0,0.0};
+
+  // Arc length from this cobpoint outward to the observer along the analytical
+  // Parker field line.  This is the length required by field-aligned SEP
+  // transport; it is intentionally not the shorter radial separation.
+  double path_length_m = 0.0;
+
+  // Signed geometric residual r-R_shock at the final root.
+  double surface_residual_m = 0.0;
+
+  // Complete local shock state evaluated by the production shock solver at the
+  // cobpoint direction.  has_shock may be false even though the geometrical CME
+  // front is intersected; this preserves the distinction between a front and a
+  // physical fast shock introduced by the shock-physics correction.
+  LocalShockState shock;
+};
+
+struct ConnectivityState {
+  ConnectivityStatus status = ConnectivityStatus::Disconnected;
+  bool connected = false;
+
+  double observer_position_m[3] = {0.0,0.0,0.0};
+  double observer_radius_m = 0.0;
+
+  // All intersections are retained in increasing radial order.  The default
+  // physical cobpoint is the outermost root (largest radius), i.e. the first
+  // shock surface encountered when tracing inward from the observer.  Retaining
+  // all roots makes the selection rule auditable and supports future non-convex
+  // geometries without silently discarding intersections.
+  std::vector<ConnectivityRoot> roots;
+  std::size_t selected_root = 0;
+};
+
+struct ConnectivityHistorySample {
+  double time_s = 0.0;
+  ConnectivityState connectivity;
 };
 
 // ----------------------------------------------------------------------------
@@ -409,6 +503,42 @@ public:
   // is false only when the selected finite geometry has no surface along u.
   bool shock_state_direction(const StepState& S, const double u[3],
                              LocalShockState& state) const;
+
+  // Return the point on the observer-anchored analytical Parker field line at
+  // a requested heliocentric radius.  The line is generated by rotating the
+  // observer radial direction about the configured solar-rotation axis by
+  //   Delta phi = -Omega_sun (r-r_obs) / V_sw,
+  // exactly matching the Parker field implemented by parker_vec_T_fast().
+  // This helper is public so validation and transport adapters can verify the
+  // same field-line geometry without maintaining a duplicate tracer.
+  bool parker_field_line_point(const StepState& S,
+                               const double observer_m[3],
+                               double radius_m,
+                               double point_m[3]) const;
+
+  // Analytical Parker arc length between two radii on the field line anchored
+  // at observer_m.  The colatitude is constant along the Parker line, so the
+  // integral is closed-form.  The result is always non-negative.
+  double parker_field_line_length(const StepState& S,
+                                  const double observer_m[3],
+                                  double radius_a_m,
+                                  double radius_b_m) const;
+
+  // Intersect an observer's Parker field line with the current shock surface.
+  // All geometrical roots between options.inner_radius_m and the observer are
+  // returned.  The selected cobpoint is the outermost root, while each root
+  // carries the complete production LocalShockState and Parker path length.
+  ConnectivityState observer_connectivity(
+      const StepState& S, const double observer_m[3],
+      const ConnectivityOptions& options = ConnectivityOptions{}) const;
+
+  // Convenience history builder for a stationary observer.  Each requested
+  // time is evaluated independently through prepare_step() and the connectivity
+  // solver; no hidden temporal hysteresis is introduced.  This makes connection
+  // onset/loss and cobpoint migration reproducible and easy to validate.
+  std::vector<ConnectivityHistorySample> observer_connectivity_history(
+      const std::vector<double>& times_s, const double observer_m[3],
+      const ConnectivityOptions& options = ConnectivityOptions{}) const;
 
   // Backward-compatible scalar diagnostic.  r_eval_m is retained only so older
   // callers still compile; shock physics is now evaluated at Rdir_m regardless

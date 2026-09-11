@@ -11,8 +11,8 @@ TARGET := output/test_swcme
 # Every validation remains in one deterministic executable. The common tests
 # use separate translation units so each physical contract has an auditable
 # implementation without introducing another executable or build system.
-SOURCES := core/test_swcme.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 1d/test_ambient.cpp
-OBJECTS := output/test_swcme.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_parker.o output/test_geometry.o output/test_ambient.o
+SOURCES := core/test_swcme.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_connectivity.cpp 1d/test_ambient.cpp
+OBJECTS := output/test_swcme.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_parker.o output/test_geometry.o output/test_connectivity.o output/test_ambient.o
 
 .PHONY: all test clean
 
@@ -67,6 +67,14 @@ output/test_parker.o: 3d/test_parker.cpp core/test_framework.hpp ../swcme_consta
 # existing test_config.o arrangement; this file contains only independent
 # geometric references and public-API calls.
 output/test_geometry.o: 3d/test_geometry.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme3d.hpp | output
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+
+# CON01-CON08 validate analytical Parker-line mapping, finite-cap connection
+# classification, tangent/multiple-root handling, cobpoint history, direct
+# ShockState consistency, and Parker arc length. Production 3-D symbols are
+# linked through the existing test_config.o arrangement.
+output/test_connectivity.o: 3d/test_connectivity.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme3d.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 output/test_ambient.o: 1d/test_ambient.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme1d.hpp | output

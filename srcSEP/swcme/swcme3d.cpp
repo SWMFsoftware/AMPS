@@ -292,12 +292,34 @@ static inline void safe_normalize(double v[3]){
 static constexpr double MU0 = swcme::constants::VACUUM_PERMEABILITY_N_A2; // [H/m]
 static constexpr double MP  = swcme::constants::PROTON_MASS_KG;           // [kg]
 static constexpr double KB  = swcme::constants::BOLTZMANN_J_K;            // [J/K]
-static constexpr double OMEGA_SUN = swcme::constants::SOLAR_ROTATION_RAD_S; // [rad/s]
+static constexpr double OMEGA_SUN = swcme::constants::SOLAR_ROTATION_RAD_S; // legacy/test-visible model default [rad/s]
 
 static inline double smoothstep01(double x){
   if (x<=0) return 0;
   if (x>=1) return 1;
   return x*x*(3-2*x);
+}
+
+// Rotate a vector about a UNIT axis using Rodrigues' formula.  Connectivity
+// uses this operation to construct the analytical Parker field line in a form
+// that works for an arbitrary solar-rotation axis; no global +Z assumption is
+// hidden in the field-line tracer.
+static inline void rotate_about_unit_axis(const double v[3], const double axis[3],
+                                          double angle, double out[3]) {
+  const double c=std::cos(angle), s=std::sin(angle);
+  const double axv[3]={
+      axis[1]*v[2]-axis[2]*v[1],
+      axis[2]*v[0]-axis[0]*v[2],
+      axis[0]*v[1]-axis[1]*v[0]};
+  const double adv=axis[0]*v[0]+axis[1]*v[1]+axis[2]*v[2];
+  const double one_minus_c=1.0-c;
+  out[0]=c*v[0]+s*axv[0]+one_minus_c*adv*axis[0];
+  out[1]=c*v[1]+s*axv[1]+one_minus_c*adv*axis[1];
+  out[2]=c*v[2]+s*axv[2]+one_minus_c*adv*axis[2];
+}
+
+static inline double norm3(const double v[3]) {
+  return std::sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
 }
 
 // Evaluate the upstream Parker field using the local 3-D spherical basis.
@@ -407,6 +429,12 @@ StepState Model::prepare_step(double t_s) const {
     S.solar_axis_hat[0]=ax/axis_norm;
     S.solar_axis_hat[1]=ay/axis_norm;
     S.solar_axis_hat[2]=az/axis_norm;
+    if (!std::isfinite(P_.solar_rotation_rate_rad_s) ||
+        P_.solar_rotation_rate_rad_s<0.0) {
+      throw std::invalid_argument(
+          "swcme3d: solar_rotation_rate_rad_s must be finite and non-negative");
+    }
+    S.solar_rotation_rate_rad_s=P_.solar_rotation_rate_rad_s;
   }
 
   // 2) Shared CME/shock-apex kinematics.
@@ -507,7 +535,7 @@ StepState Model::prepare_step(double t_s) const {
     // broader configuration layer will eventually reject it explicitly.  For
     // now we keep prepare_step() finite so existing unit-conversion tests can
     // still inspect zero-valued inputs without producing Inf/NaN state.
-    S.k_AU = (S.V_sw_ms!=0.0) ? (OMEGA_SUN*AU/S.V_sw_ms) : 0.0;
+    S.k_AU = (S.V_sw_ms!=0.0) ? (S.solar_rotation_rate_rad_s*AU/S.V_sw_ms) : 0.0;
 
     const double reference_pitch = S.k_AU*reference_sin_theta;
     S.Br1AU_T = B1AU_T /
@@ -740,6 +768,351 @@ bool Model::shock_state_direction(const StepState& S, const double u_in[3],
   state.energy_residual=jump.energy_residual;
   state.entropy_ratio=jump.entropy_ratio;
   return true;
+}
+
+
+// Return a Cartesian point on the analytical Parker field line anchored at an
+// observer.  The production Parker field satisfies
+//
+//   B_phi/B_r = -Omega r sin(theta)/V_sw,
+//
+// while a field-line tangent satisfies
+//
+//   r sin(theta) dphi/dr = B_phi/B_r.
+//
+// Therefore dphi/dr=-Omega/V_sw and the colatitude is constant.  Integrating
+// from the observer radius r_obs to a requested radius r gives
+//
+//   Delta phi = -Omega (r-r_obs)/V_sw.
+//
+// Rotating the observer radial unit vector by this angle around the configured
+// solar axis gives the exact field line corresponding to parker_vec_T_fast().
+// This analytical construction is both faster and more accurate than stepping
+// a numerical field-line integrator through a field that already has a closed
+// form.
+bool Model::parker_field_line_point(const StepState& S,
+                                    const double observer_m[3],
+                                    double radius_m,
+                                    double point_m[3]) const {
+  if (!observer_m || !point_m || !std::isfinite(radius_m) || radius_m<=0.0 ||
+      !std::isfinite(S.V_sw_ms) || S.V_sw_ms<=0.0) {
+    if (point_m) point_m[0]=point_m[1]=point_m[2]=0.0;
+    return false;
+  }
+
+  const double r_obs=norm3(observer_m);
+  if (!std::isfinite(r_obs) || r_obs<=0.0) {
+    point_m[0]=point_m[1]=point_m[2]=0.0;
+    return false;
+  }
+
+  const double u_obs[3]={observer_m[0]/r_obs,observer_m[1]/r_obs,
+                         observer_m[2]/r_obs};
+  const double delta_phi=-S.solar_rotation_rate_rad_s*(radius_m-r_obs)/S.V_sw_ms;
+  double u[3]={0.0,0.0,0.0};
+  rotate_about_unit_axis(u_obs,S.solar_axis_hat,delta_phi,u);
+  ::safe_normalize(u);  // removes only roundoff from the orthogonal rotation
+
+  point_m[0]=radius_m*u[0];
+  point_m[1]=radius_m*u[1];
+  point_m[2]=radius_m*u[2];
+  return std::isfinite(point_m[0]) && std::isfinite(point_m[1]) &&
+         std::isfinite(point_m[2]);
+}
+
+// Closed-form arc length on the same Parker line used above.  With constant
+// colatitude theta,
+//
+//   ds/dr = sqrt(1 + (k r)^2),  k=Omega sin(theta)/V_sw.
+//
+// An antiderivative is
+//
+//   F(r)=0.5 [ r sqrt(1+(kr)^2) + asinh(kr)/k ].
+//
+// The exact k=0 (zero rotation or polar field line) limit is |r_b-r_a|.  This
+// quantity is carried with every cobpoint because SEP timing depends on path
+// length along the field, not merely on radial separation.
+double Model::parker_field_line_length(const StepState& S,
+                                       const double observer_m[3],
+                                       double radius_a_m,
+                                       double radius_b_m) const {
+  if (!observer_m || !std::isfinite(radius_a_m) || !std::isfinite(radius_b_m) ||
+      radius_a_m<=0.0 || radius_b_m<=0.0 || !std::isfinite(S.V_sw_ms) ||
+      S.V_sw_ms<=0.0) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  const double r_obs=norm3(observer_m);
+  if (!std::isfinite(r_obs) || r_obs<=0.0)
+    return std::numeric_limits<double>::quiet_NaN();
+
+  const double u[3]={observer_m[0]/r_obs,observer_m[1]/r_obs,observer_m[2]/r_obs};
+  const double cross[3]={
+      S.solar_axis_hat[1]*u[2]-S.solar_axis_hat[2]*u[1],
+      S.solar_axis_hat[2]*u[0]-S.solar_axis_hat[0]*u[2],
+      S.solar_axis_hat[0]*u[1]-S.solar_axis_hat[1]*u[0]};
+  const double sin_theta=norm3(cross);
+  const double k=S.solar_rotation_rate_rad_s*sin_theta/S.V_sw_ms;
+
+  if (std::abs(k)<=64.0*std::numeric_limits<double>::epsilon()/
+                         std::max(radius_a_m,radius_b_m)) {
+    return std::abs(radius_b_m-radius_a_m);
+  }
+
+  const auto primitive=[k](double r) {
+    const double kr=k*r;
+    return 0.5*(r*std::sqrt(1.0+kr*kr)+std::asinh(kr)/k);
+  };
+  return std::abs(primitive(radius_b_m)-primitive(radius_a_m));
+}
+
+// Intersect one observer-anchored Parker line with the current production
+// shock surface.  The algorithm deliberately separates DISCOVERY from ROOT
+// REFINEMENT:
+//
+//   1. scan the inward field line and evaluate h(r)=r-R_shock[u(r)] wherever
+//      the selected finite geometry exists;
+//   2. refine every sign-changing bracket by bisection;
+//   3. independently minimize |h| around local minima so tangent roots, which
+//      need not change sign, are not missed;
+//   4. inspect finite-SSE validity transitions because first/last connection
+//      can occur exactly at the angular boundary;
+//   5. deduplicate roots and retain ALL physical intersections in radial order.
+//
+// The selected cobpoint is the OUTERMOST root.  It is the first shock surface
+// encountered when tracing inward from the observer and is therefore a stable,
+// documented default if a future non-convex geometry creates multiple roots.
+swcme3d::ConnectivityState Model::observer_connectivity(
+    const StepState& S, const double observer_m[3],
+    const ConnectivityOptions& options) const {
+  ConnectivityState result;
+  if (observer_m) {
+    result.observer_position_m[0]=observer_m[0];
+    result.observer_position_m[1]=observer_m[1];
+    result.observer_position_m[2]=observer_m[2];
+  }
+
+  if (!observer_m || !std::isfinite(observer_m[0]) ||
+      !std::isfinite(observer_m[1]) || !std::isfinite(observer_m[2])) {
+    result.status=ConnectivityStatus::InvalidObserver;
+    return result;
+  }
+
+  const double r_obs=norm3(observer_m);
+  result.observer_radius_m=r_obs;
+  if (!std::isfinite(r_obs) || r_obs<=0.0) {
+    result.status=ConnectivityStatus::InvalidObserver;
+    return result;
+  }
+  if (!std::isfinite(S.V_sw_ms) || S.V_sw_ms<=0.0 ||
+      !std::isfinite(options.inner_radius_m) || options.inner_radius_m<=0.0 ||
+      !std::isfinite(options.radius_tolerance_m) || options.radius_tolerance_m<=0.0 ||
+      !std::isfinite(options.surface_residual_tolerance_m) ||
+      options.surface_residual_tolerance_m<=0.0) {
+    result.status=ConnectivityStatus::InvalidConfiguration;
+    return result;
+  }
+
+  const double r_min=options.inner_radius_m;
+  if (r_min>=r_obs) {
+    result.status=ConnectivityStatus::Disconnected;
+    return result;
+  }
+
+  struct Sample {
+    double r=0.0;
+    double h=0.0;
+    bool surface=false;
+  };
+
+  // Evaluate the intersection residual using ONLY public production geometry.
+  // A false surface flag is a geometrical no-surface state (e.g. outside an
+  // SSE cap), not a numerical failure and must not be converted to a radius.
+  const auto evaluate_residual=[&](double r)->Sample {
+    Sample sample;
+    sample.r=r;
+    double x[3]={0.0,0.0,0.0};
+    if (!parker_field_line_point(S,observer_m,r,x)) return sample;
+    const double invr=1.0/r;
+    const double u[3]={x[0]*invr,x[1]*invr,x[2]*invr};
+    double R=0.0,n[3]={0.0,0.0,0.0};
+    sample.surface=shape_radius_normal(S,u[0],u[1],u[2],R,n);
+    if (sample.surface) sample.h=r-R;
+    return sample;
+  };
+
+  // A minimum angular sampling of 0.5 degree per Parker rotation step prevents
+  // tightly wound field lines from crossing a finite cap between sparse radial
+  // samples.  The user value remains a lower bound, and an upper cap prevents
+  // accidental pathological allocations for an invalid/extreme wind speed.
+  const double total_phase=S.solar_rotation_rate_rad_s*(r_obs-r_min)/S.V_sw_ms;
+  const double phase_step=0.5*PI/180.0;
+  std::size_t intervals=std::max<std::size_t>(32,options.scan_intervals);
+  if (std::isfinite(total_phase) && total_phase>0.0) {
+    const std::size_t phase_intervals=static_cast<std::size_t>(
+        std::ceil(total_phase/phase_step));
+    intervals=std::max(intervals,phase_intervals);
+  }
+  intervals=std::min<std::size_t>(intervals,200000);
+
+  std::vector<Sample> samples(intervals+1);
+  for (std::size_t i=0;i<=intervals;++i) {
+    const double f=static_cast<double>(i)/static_cast<double>(intervals);
+    samples[i]=evaluate_residual(r_min+(r_obs-r_min)*f);
+  }
+
+  std::vector<double> candidate_roots;
+  const double rtol=options.radius_tolerance_m;
+  const double htol=options.surface_residual_tolerance_m;
+
+  const auto add_candidate=[&](double r) {
+    if (!std::isfinite(r) || r<r_min-rtol || r>r_obs+rtol) return;
+    for (double old : candidate_roots) {
+      if (std::abs(old-r)<=std::max(10.0*rtol,2.0*htol)) return;
+    }
+    candidate_roots.push_back(r);
+  };
+
+  // Refine an ordinary sign-changing root.  Bisection is chosen deliberately:
+  // the residual is inexpensive, the interval is already small after scanning,
+  // and bisection cannot jump to a different shock branch near a cap boundary.
+  const auto refine_bracket=[&](double a,double b,Sample fa,Sample fb) {
+    if (!fa.surface || !fb.surface) return;
+    if (std::abs(fa.h)<=htol) { add_candidate(a); return; }
+    if (std::abs(fb.h)<=htol) { add_candidate(b); return; }
+    if (fa.h*fb.h>0.0) return;
+    for (int it=0; it<100 && b-a>rtol; ++it) {
+      const double m=0.5*(a+b);
+      const Sample fm=evaluate_residual(m);
+      if (!fm.surface) break;  // should not occur inside a normal valid bracket
+      if (std::abs(fm.h)<=htol) { a=b=m; fa=fb=fm; break; }
+      if (fa.h*fm.h<=0.0) { b=m; fb=fm; }
+      else { a=m; fa=fm; }
+    }
+    const Sample sa=evaluate_residual(a), sb=evaluate_residual(b);
+    if (sa.surface && sb.surface) add_candidate(
+        std::abs(sa.h)<=std::abs(sb.h) ? a : b);
+  };
+
+  for (std::size_t i=1;i<samples.size();++i) {
+    const Sample& a=samples[i-1];
+    const Sample& b=samples[i];
+    if (a.surface && std::abs(a.h)<=htol) add_candidate(a.r);
+    if (b.surface && std::abs(b.h)<=htol) add_candidate(b.r);
+    if (a.surface && b.surface && a.h*b.h<0.0)
+      refine_bracket(a.r,b.r,a,b);
+  }
+
+  // Golden-section minimization of |h| catches a tangent intersection for
+  // which h touches zero and returns to the same sign.  The objective assigns
+  // an infinite cost where a finite geometry does not exist, so a minimizer
+  // cannot fabricate an SSE flank outside its supported angular width.
+  const auto refine_tangent=[&](double a,double b) {
+    constexpr double GR=0.6180339887498948482;
+    double c=b-GR*(b-a), d=a+GR*(b-a);
+    auto cost=[&](double r) {
+      const Sample q=evaluate_residual(r);
+      return q.surface ? std::abs(q.h) : std::numeric_limits<double>::infinity();
+    };
+    double fc=cost(c), fd=cost(d);
+    for (int it=0; it<120 && b-a>rtol; ++it) {
+      if (fc<fd) {
+        b=d; d=c; fd=fc; c=b-GR*(b-a); fc=cost(c);
+      } else {
+        a=c; c=d; fc=fd; d=a+GR*(b-a); fd=cost(d);
+      }
+    }
+    const double r=(fc<fd)?c:d;
+    const Sample q=evaluate_residual(r);
+    if (q.surface && std::abs(q.h)<=htol) add_candidate(r);
+  };
+
+  for (std::size_t i=1;i+1<samples.size();++i) {
+    if (!samples[i].surface) continue;
+    const double ai=std::abs(samples[i].h);
+    const double al=samples[i-1].surface ? std::abs(samples[i-1].h)
+                                         : std::numeric_limits<double>::infinity();
+    const double ar=samples[i+1].surface ? std::abs(samples[i+1].h)
+                                         : std::numeric_limits<double>::infinity();
+    if (ai<=al && ai<=ar) refine_tangent(samples[i-1].r,samples[i+1].r);
+  }
+
+  // A finite SSE connection may be born exactly where the Parker direction
+  // crosses the cap boundary.  At such a point the surface-existence flag can
+  // switch between adjacent scan samples.  Refine that boolean transition and
+  // test the valid-side limiting residual explicitly; this avoids classifying
+  // a true first/last connection as an iteration failure.
+  for (std::size_t i=1;i<samples.size();++i) {
+    if (samples[i-1].surface==samples[i].surface) continue;
+    double a=samples[i-1].r, b=samples[i].r;
+    bool va=samples[i-1].surface;
+    for (int it=0; it<100 && b-a>rtol; ++it) {
+      const double m=0.5*(a+b);
+      const bool vm=evaluate_residual(m).surface;
+      if (vm==va) a=m; else b=m;
+    }
+    // Evaluate just inside the valid side of the transition.  Using the final
+    // bisection endpoint rather than an arbitrary epsilon keeps the tolerance
+    // tied to the same radial convergence criterion as ordinary roots.
+    const double r_valid=va?a:b;
+    const Sample q=evaluate_residual(r_valid);
+    if (q.surface && std::abs(q.h)<=htol) add_candidate(r_valid);
+  }
+
+  std::sort(candidate_roots.begin(),candidate_roots.end());
+
+  // Convert geometric roots into complete, auditable cobpoint records.  A
+  // candidate is retained only if a fresh production geometry/shock query at
+  // the refined radius satisfies the surface residual tolerance.
+  for (double r : candidate_roots) {
+    double x[3]={0.0,0.0,0.0};
+    if (!parker_field_line_point(S,observer_m,r,x)) continue;
+    const double u[3]={x[0]/r,x[1]/r,x[2]/r};
+    LocalShockState shock;
+    if (!shock_state_direction(S,u,shock)) continue;
+    const double residual=r-shock.Rdir_m;
+    if (std::abs(residual)>htol) continue;
+
+    ConnectivityRoot root;
+    root.radius_m=r;
+    root.position_m[0]=x[0]; root.position_m[1]=x[1]; root.position_m[2]=x[2];
+    root.surface_residual_m=residual;
+    root.path_length_m=parker_field_line_length(S,observer_m,r,r_obs);
+    root.shock=shock;
+    result.roots.push_back(root);
+  }
+
+  if (result.roots.empty()) {
+    result.status=ConnectivityStatus::Disconnected;
+    result.connected=false;
+    result.selected_root=0;
+    return result;
+  }
+
+  result.connected=true;
+  result.status=ConnectivityStatus::Connected;
+  result.selected_root=result.roots.size()-1;  // outermost/observer-nearest root
+  return result;
+}
+
+// Build a deterministic time history for a stationary observer.  Each sample
+// is solved from scratch from the same analytical Parker line and production
+// shock geometry; this intentionally avoids hidden state that could create or
+// suppress connection hysteresis.  Any temporal continuity seen in the result
+// must therefore come from the physical evolution of the shock itself.
+std::vector<swcme3d::ConnectivityHistorySample>
+Model::observer_connectivity_history(const std::vector<double>& times_s,
+                                     const double observer_m[3],
+                                     const ConnectivityOptions& options) const {
+  std::vector<ConnectivityHistorySample> history;
+  history.reserve(times_s.size());
+  for (double t : times_s) {
+    ConnectivityHistorySample sample;
+    sample.time_s=t;
+    const StepState S=prepare_step(t);
+    sample.connectivity=observer_connectivity(S,observer_m,options);
+    history.push_back(std::move(sample));
+  }
+  return history;
 }
 
 // Backward-compatible scalar shock diagnostic.  The legacy r_eval_m argument
