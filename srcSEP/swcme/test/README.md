@@ -283,3 +283,104 @@ absolute tolerances scaled to the expected Tesla magnitude.  These tests do not
 cover numerical solenoidality or field-line tangent/path-length validation;
 those remain separate planned tests (`PAR04` and later) so the individual
 validation requirements remain diagnostically focused.
+
+## GEO01-GEO08: corrected finite shock geometry, normals, and flank speed
+
+The 3-D shock geometry has been reworked so that the production model no longer
+uses the former `ConeSSE` approximation
+
+```text
+R(theta) = R_apex cos(theta)^m
+```
+
+with a radial normal and an artificial clamped radius beyond the configured
+half width.  `ShockShape::SSE` now denotes a true finite self-similar-expansion
+spherical cap.  `ShockShape::ConeSSE` is retained only as a source-compatible
+enum alias and has the same corrected SSE semantics; `flank_slowdown_m` remains
+in `Params` only for source/input compatibility and is ignored by the SSE
+geometry.
+
+For an apex distance `R_apex` and angular half width `lambda`, the generating
+sphere has center distance and radius
+
+```text
+c = R_apex / (1 + sin(lambda))
+a = c sin(lambda).
+```
+
+A heliocentric ray separated from the CME axis by `alpha` intersects the
+outward front at
+
+```text
+R(alpha) = c cos(alpha) + sqrt(a^2 - c^2 sin(alpha)^2),
+```
+
+provided `alpha <= lambda`.  At `alpha=lambda` the ray is tangent to the
+generating sphere.  Directions beyond the half width return `exists=false`;
+the public geometry API also returns zero radius/normal sentinels so a caller
+cannot mistake an absent surface for a physical flank.
+
+The exact outward normal is the normalized level-set gradient
+
+```text
+n_hat = (R e_r - c e_CME) / a.
+```
+
+All supported shapes are treated as self-similar.  For a fixed surface
+direction,
+
+```text
+dR/dt = V_apex R/R_apex,
+V_sh,n = V_apex (R/R_apex) (e_r dot n_hat).
+```
+
+This replaces the former independent `cos(theta)^m` flank-speed factor and
+also corrects the ellipsoid, whose flanks previously inherited the full apex
+speed.  For a sphere the formula reduces exactly to `V_sh,n=V_apex`; at the
+mathematical SSE tangent boundary the normal projection tends to zero.
+
+`Model::shape_radius_normal()` and `Model::diagnose_direction()` now return a
+boolean surface-existence flag.  Existing callers that ignore the return value
+remain source-compatible, but finite-width-aware code should always test it.
+The Cartesian plasma/field evaluators do so internally: outside the SSE angular
+support they return the undisturbed ambient solar wind/Parker field and do not
+construct a sheath, ejecta, shock normal, or magnetic amplification from a
+fabricated flank.
+
+The following deterministic tests validate the corrected geometry:
+
+- `GEO01` — Sun-centered spherical reference: radius is direction independent
+  and the outward normal equals the radial unit vector.
+- `GEO02` — true SSE apex: the directional radius equals the configured apex
+  distance and the normal equals the CME propagation direction.
+- `GEO03` — SSE tangent flank: the boundary point at `alpha=lambda` remains a
+  finite valid surface point; the ray is tangent and the normal radial
+  projection tends to zero.
+- `GEO04` — finite-width enforcement: any direction beyond the half width
+  returns `exists=false`, zero geometry sentinels, `rc=1`, and `V_sh,n=0` from
+  the diagnostic API.
+- `GEO05` — SSE level-set residual: returned surface points satisfy
+  `|x-c e_CME|=a` to near machine precision over multiple angles/azimuths.
+- `GEO06` — analytical normal validation: SSE normals are compared with an
+  independent finite-difference gradient of the dimensionless spherical level
+  set; the ellipsoid normal is independently checked against its level-set
+  gradient.
+- `GEO07` — normal-speed validation: the reported `V_sh,n` for sphere, SSE, and
+  ellipsoid is compared with the normal projection of centered finite-
+  difference surface motion at neighboring times.
+- `GEO08` — rotational covariance: rotating the CME axis, solar axis, and query
+  direction together must rotate the normal while leaving radius, normal
+  speed, and scalar compression proxy unchanged.
+
+The analytical/reference calculations in `3d/test_geometry.cpp` intentionally
+do not call the production geometry helper.  They are independent checks of
+surface radius, level-set membership, normal orientation, and motion.  Test
+tolerances are roundoff- or finite-difference-level tolerances appropriate to
+each calculation and must not be loosened simply to make a production result
+pass.
+
+This change corrects geometry and kinematics only.  It does **not** yet replace
+the current hydrodynamic compression proxy with a full oblique-MHD
+Rankine-Hugoniot solution, correct the immediate downstream sheath velocity, or
+repair the shock-surface mesh apex/seam topology; those remain separate planned
+work packages so failures stay diagnostically attributable.

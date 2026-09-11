@@ -33,7 +33,10 @@
 //    • Ellipsoid: implicit x^2/a^2 + y^2/b^2 + z^2/c^2 = 1 with a=r_sh;
 //      for a ray x=λ u1, y=λ u2, z=λ u3 (in apex frame) => λ = 1 / sqrt(u1^2/a^2+…).
 //      The outward normal ∝ (x/a^2, y/b^2, z/c^2); rotate to global.
-//    • ConeSSE: inside half-width, Rdir = r_sh cos^m(θ); otherwise clamped thin flank.
+//    • SSE: finite self-similar-expansion spherical cap.  The cap is generated
+//      by a sphere centered on the CME axis and tangent to rays at the configured
+//      half width.  Radius and outward normal are analytic, and no surface is
+//      returned outside the finite angular extent.
 //
 // 5) Region structure and smoothing (radial blends):
 //    Regions: upstream → shock → sheath → leading edge → magnetic ejecta → trailing edge.
@@ -111,11 +114,14 @@
 //    Inputs: r0 = r0_Rs·Rs, V0 (km/s), Vsw (km/s), Γ (km^-1).
 
 // D) Shock shape & direction-dependent speed:
-//    Shape options: Sphere, Ellipsoid (axis ratios), Cone (SSE-like).
-//    For cones we allow flank slowdown via exponent on cos(θ) to mimic slower
-//    expansion off apex. The apex kinematics set an overall scale; the signed
-//    normal component of shock speed Vsh_n is projected along the local
-//    outward normal.
+//    Shape options: Sphere, self-similar Ellipsoid, and a finite true-SSE
+//    spherical cap.  Every shape scales linearly with the apex distance, so a
+//    surface point on a fixed heliocentric ray has radial speed
+//       dR/dt = V_apex * R/R_apex.
+//    The physically relevant shock-normal speed is the normal projection
+//       V_sh,n = dR/dt * (e_r · n_hat).
+//    This replaces the old ad hoc cosine flank-speed factor and also fixes the
+//    ellipsoid, whose flanks previously moved at the full apex speed.
 //
 // E) Local compression proxy rc(u, n̂):
 //    We estimate oblique fast-mode Mach number M_f,n from upstream cs and vA
@@ -494,9 +500,24 @@ StepState Model::prepare_step(double t_s) const {
     S.c_e    = S.a_e * std::max(1e-3, P_.axis_ratio_z);
     const double a2=S.a_e*S.a_e, b2=S.b_e*S.b_e, c2=S.c_e*S.c_e;
     S.inv_a2=(a2>0)?1.0/a2:0.0; S.inv_b2=(b2>0)?1.0/b2:0.0; S.inv_c2=(c2>0)?1.0/c2:0.0;
-  } else if (P_.shape==ShockShape::ConeSSE){
+  } else if (P_.shape==ShockShape::SSE){
+    // A true SSE front is the outward arc of a sphere that expands
+    // self-similarly while preserving its angular half width lambda.  If R_a
+    // is the apex distance, the generating sphere center is c along the CME
+    // axis and its radius is a:
+    //   c = R_a/(1+sin(lambda)),  a = c*sin(lambda).
+    // The ray at alpha=lambda is tangent to this sphere; therefore the model
+    // has a mathematically finite angular extent without artificial clamping.
+    if (!std::isfinite(P_.half_width_rad) || P_.half_width_rad<=0.0 ||
+        P_.half_width_rad>0.5*PI) {
+      throw std::invalid_argument(
+          "swcme3d: SSE half_width_rad must satisfy 0 < half_width_rad <= pi/2");
+    }
+    S.sin_half_width = std::sin(P_.half_width_rad);
     S.cos_half_width = std::cos(P_.half_width_rad);
-    S.flank_m        = std::max(0.0, P_.flank_slowdown_m);
+    const double denom = 1.0 + S.sin_half_width;
+    S.sse_center_m = S.r_sh_m/denom;
+    S.sse_radius_m = S.sse_center_m*S.sin_half_width;
   }
 
   // 9) Apex diagnostic rc
@@ -510,22 +531,41 @@ StepState Model::prepare_step(double t_s) const {
   return S;
 }
 
-// Radius and normal along direction (ux,uy,uz)
-void Model::shape_radius_normal(const StepState& S,
+// Radius and normal along direction (ux,uy,uz).
+//
+// The return value is part of the physical geometry contract.  Infinite
+// Sun-centered verification geometries (Sphere/Ellipsoid) intersect every
+// outward ray, but the SSE shock is a finite cap: directions beyond the
+// configured half width have no shock surface and must not be assigned a
+// clamped/fabricated flank radius.
+bool Model::shape_radius_normal(const StepState& S,
                                 double ux,double uy,double uz,
                                 double& Rdir_m,double n_hat[3]) const {
   double u[3]={ux,uy,uz}; ::safe_normalize(u);
 
-  // Decompose in apex frame
+  // Always initialize the outputs to an explicitly nonphysical state.  This
+  // ensures a caller that correctly checks the boolean cannot accidentally
+  // reuse a previous finite radius/normal when the finite SSE cap is absent.
+  Rdir_m=0.0;
+  n_hat[0]=0.0; n_hat[1]=0.0; n_hat[2]=0.0;
+
+  // Decompose the ray in the apex-aligned orthonormal frame.  u1=cos(alpha),
+  // where alpha is angular separation from the CME propagation axis.
   const double u1=u[0]*S.e1[0]+u[1]*S.e1[1]+u[2]*S.e1[2];
   const double u2=u[0]*S.e2[0]+u[1]*S.e2[1]+u[2]*S.e2[2];
   const double u3=u[0]*S.e3[0]+u[1]*S.e3[1]+u[2]*S.e3[2];
 
   switch(P_.shape){
     case ShockShape::Sphere:{
-      Rdir_m=S.r_sh_m; n_hat[0]=u[0]; n_hat[1]=u[1]; n_hat[2]=u[2];
-    } break;
+      Rdir_m=S.r_sh_m;
+      n_hat[0]=u[0]; n_hat[1]=u[1]; n_hat[2]=u[2];
+      return true;
+    }
+
     case ShockShape::Ellipsoid:{
+      // All three axes scale with the same apex scale, so this remains a
+      // self-similar surface.  The ray/ellipsoid intersection lambda follows
+      // directly from the implicit quadratic level set.
       const double denom=(u1*u1)*S.inv_a2+(u2*u2)*S.inv_b2+(u3*u3)*S.inv_c2;
       const double lam=(denom>0)? 1.0/std::sqrt(denom):0.0;
       Rdir_m=lam;
@@ -536,24 +576,68 @@ void Model::shape_radius_normal(const StepState& S,
                      nloc[0]*S.e1[2]+nloc[1]*S.e2[2]+nloc[2]*S.e3[2] };
       ::safe_normalize(ng);
       n_hat[0]=ng[0]; n_hat[1]=ng[1]; n_hat[2]=ng[2];
-    } break;
-    case ShockShape::ConeSSE:{
-      const double theta=std::acos(std::max(-1.0,std::min(1.0,u1)));
-      double R=0.0;
-      if (theta>P_.half_width_rad){
-        R=S.r_sh_m*std::pow(std::max(0.0,S.cos_half_width), S.flank_m);
-      } else {
-        const double c=std::max(0.0, std::cos(theta));
-        R=S.r_sh_m*std::pow(c, S.flank_m);
+      return true;
+    }
+
+    case ShockShape::SSE:{
+      // True self-similar-expansion (SSE) spherical-cap geometry.
+      //
+      // Let c be the center distance of the generating sphere from the Sun,
+      // a its radius, and alpha the angle between the query ray and CME axis.
+      // Intersecting |R*u-c*e1|^2=a^2 gives the outward root
+      //
+      //   R = c*cos(alpha) + sqrt(a^2-c^2*sin^2(alpha)).
+      //
+      // The discriminant is zero at alpha=lambda, exactly the tangent flank.
+      // For alpha>lambda there is no physical intersection and we return false
+      // instead of extending the shock with the legacy clamped radius.
+      const double cos_alpha=std::max(-1.0,std::min(1.0,u1));
+      const double alpha=std::acos(cos_alpha);
+      const double eps=std::numeric_limits<double>::epsilon();
+      const double angle_tol=128.0*eps*std::max(1.0,std::fabs(P_.half_width_rad));
+      if (alpha>P_.half_width_rad+angle_tol) return false;
+
+      const double c=S.sse_center_m;
+      const double a=S.sse_radius_m;
+      const double sin2_alpha=std::max(0.0,1.0-cos_alpha*cos_alpha);
+      double discriminant=a*a-c*c*sin2_alpha;
+
+      // At the tangent flank the exact discriminant is zero.  Roundoff in the
+      // trigonometric projection can make it slightly negative, so only a
+      // scale-aware, machine-level negative residual is clamped to zero.  A
+      // materially negative value is treated as no intersection rather than
+      // silently manufacturing a point.
+      const double disc_scale=std::max({a*a,c*c,1.0});
+      const double disc_tol=256.0*eps*disc_scale;
+      if (discriminant<0.0) {
+        if (discriminant>=-disc_tol) discriminant=0.0;
+        else return false;
       }
-      Rdir_m=R; n_hat[0]=u[0]; n_hat[1]=u[1]; n_hat[2]=u[2];
-    } break;
+
+      Rdir_m=c*cos_alpha+std::sqrt(discriminant);
+
+      // The exact outward normal is the normalized gradient of the spherical
+      // level set F(x)=|x-c*e1|^2-a^2.  Since x lies on the sphere, division by
+      // a already produces a unit vector up to roundoff; safe_normalize removes
+      // the remaining floating-point drift without changing its direction.
+      double ng[3]={
+          Rdir_m*u[0]-c*S.e1[0],
+          Rdir_m*u[1]-c*S.e1[1],
+          Rdir_m*u[2]-c*S.e1[2]};
+      if (a<=0.0) return false;  // guarded in prepare_step(); defensive only
+      ng[0]/=a; ng[1]/=a; ng[2]/=a;
+      ::safe_normalize(ng);
+      n_hat[0]=ng[0]; n_hat[1]=ng[1]; n_hat[2]=ng[2];
+      return true;
+    }
   }
+
+  return false;  // defensive for future enum extensions
 }
 
 // Local oblique MHD proxy: returns rc, Vsh_n, thetaBn
 void Model::local_oblique_rc(const StepState& S, const double u[3], const double n_hat[3],
-                             double /*Rdir_m*/, double r_eval_m,
+                             double Rdir_m, double r_eval_m,
                              double& rc_out, double& Vsh_n_out, double& thetaBn_out) const {
   const double Vsw=S.V_sw_ms;
 
@@ -580,13 +664,25 @@ void Model::local_oblique_rc(const StepState& S, const double u[3], const double
   const double disc=std::max(0.0, a*a - 4.0*cs*cs*vA*vA*cosBn*cosBn);
   const double cf=std::sqrt(0.5*(a+std::sqrt(disc)));
 
-  // Local shock normal speed (shape-dependent)
-  double Vsh_dir=S.V_sh_ms;
-  if (P_.shape==ShockShape::ConeSSE){
-    const double u1=u[0]*S.e1[0]+u[1]*S.e1[1]+u[2]*S.e1[2];
-    Vsh_dir=S.V_sh_ms*std::pow(std::max(0.0,u1), std::max(0.0,P_.flank_slowdown_m));
-  }
-  Vsh_n_out=finite_or(Vsh_dir*(n_hat[0]*u[0]+n_hat[1]*u[1]+n_hat[2]*u[2]),0.0);
+  // Local normal shock speed from self-similar geometry.
+  //
+  // Every supported shock shape scales linearly with the apex radius.  At a
+  // fixed direction u, R(u,t)=f(u)*R_apex(t), hence the surface point moves
+  // radially at dR/dt=f*V_apex=(R/R_apex)*V_apex.  The shock speed relevant to
+  // the jump conditions is the projection of that motion onto the local
+  // outward normal.  This one expression handles Sphere, Ellipsoid, and SSE
+  // consistently and fixes two legacy errors: an ad hoc cos(theta)^m speed for
+  // ConeSSE and full apex speed at ellipsoid flanks.
+  const double radial_scale=(S.r_sh_m>0.0)? Rdir_m/S.r_sh_m : 0.0;
+  double normal_projection=n_hat[0]*u[0]+n_hat[1]*u[1]+n_hat[2]*u[2];
+  // Convex outward-facing supported surfaces have a non-negative projection.
+  // Clamp only tiny negative roundoff at the SSE tangent; a substantial sign
+  // error remains visible through geometry validation rather than being folded
+  // into a positive speed.
+  const double projection_tol=128.0*std::numeric_limits<double>::epsilon();
+  if (normal_projection<0.0 && normal_projection>=-projection_tol)
+    normal_projection=0.0;
+  Vsh_n_out=finite_or(S.V_sh_ms*radial_scale*normal_projection,0.0);
 
   // Upstream normal flow relative to the shock
   const double Vsw_n=Vsw*(u[0]*n_hat[0]+u[1]*n_hat[1]+u[2]*n_hat[2]);
@@ -618,11 +714,25 @@ void Model::evaluate_cartesian_fast(const StepState& S,
     const double invr=1.0/r;
     double u[3]={x*invr,y*invr,z*invr};
 
-    double Rdir=0.0,n_hat[3]={0,0,1}; shape_radius_normal(S,u[0],u[1],u[2],Rdir,n_hat);
+    double Rdir=0.0,n_hat[3]={0,0,0};
+    const bool has_surface=shape_radius_normal(S,u[0],u[1],u[2],Rdir,n_hat);
 
     // Upstream density
     const double inv2=1.0/r2, inv4=inv2*inv2, inv6=inv4*inv2;
     const double n_up=finite_or(S.C2*inv2 + S.C4*inv4 + S.C6*inv6,1e6);
+
+    // A finite SSE shock has no sheath/ejecta extension outside its angular
+    // support.  Returning the unperturbed ambient state here is the physically
+    // important consequence of shape_radius_normal()==false; the legacy code
+    // fabricated a clamped flank and could therefore disturb/connect observers
+    // outside the configured CME width.
+    if (!has_surface) {
+      n_m3[i]=n_up;
+      Vx_ms[i]=finite_or(Vup*u[0],0.0);
+      Vy_ms[i]=finite_or(Vup*u[1],0.0);
+      Vz_ms[i]=finite_or(Vup*u[2],0.0);
+      continue;
+    }
 
     // Local shock proxies
     double rc_loc=1.0,Vsh_n=0.0,dum=0.0;
@@ -687,12 +797,27 @@ void Model::evaluate_cartesian_with_B(const StepState& S,
     const double invr=1.0/r;
     double u[3]={x*invr,y*invr,z*invr};
 
-    double Rdir=0.0,n_hat[3]={0,0,1}; shape_radius_normal(S,u[0],u[1],u[2],Rdir,n_hat);
+    double Rdir=0.0,n_hat[3]={0,0,0};
+    const bool has_surface=shape_radius_normal(S,u[0],u[1],u[2],Rdir,n_hat);
 
     const double inv2=1.0/r2, inv4=inv2*inv2, inv6=inv4*inv2;
     const double n_up=finite_or(S.C2*inv2 + S.C4*inv4 + S.C6*inv6,1e6);
 
     double B_up[3]; ::parker_vec_T_fast(S,u,r,B_up);
+
+    // Outside a finite SSE cap the model must remain pure ambient solar wind
+    // and Parker field.  In particular, no artificial shock normal is created
+    // for magnetic-field amplification when the geometry has no surface.
+    if (!has_surface) {
+      n_m3[i]=n_up;
+      Vx_ms[i]=finite_or(Vup*u[0],0.0);
+      Vy_ms[i]=finite_or(Vup*u[1],0.0);
+      Vz_ms[i]=finite_or(Vup*u[2],0.0);
+      Bx_T[i]=finite_or(B_up[0],0.0);
+      By_T[i]=finite_or(B_up[1],0.0);
+      Bz_T[i]=finite_or(B_up[2],0.0);
+      continue;
+    }
 
     double rc_loc=1.0,Vsh_n=0.0,dum=0.0;
     local_oblique_rc(S,u,n_hat,Rdir,(r>Rdir?r:Rdir),rc_loc,Vsh_n,dum);
@@ -783,17 +908,26 @@ void Model::compute_divV_radial(const StepState& S,
   }
 }
 
-void Model::diagnose_direction(const StepState& S,const double u[3],
+bool Model::diagnose_direction(const StepState& S,const double u[3],
   double& Rdir_m,double n_hat[3],double& rc_loc,double& Vsh_n) const {
-  shape_radius_normal(S,u[0],u[1],u[2],Rdir_m,n_hat);
-  double th=0.0; local_oblique_rc(S,u,n_hat,Rdir_m,Rdir_m,rc_loc,Vsh_n,th);
+  const bool has_surface=shape_radius_normal(S,u[0],u[1],u[2],Rdir_m,n_hat);
+  if (!has_surface) {
+    // Explicit no-surface diagnostics make finite-width behavior visible to
+    // callers instead of reporting a plausible but fabricated flank radius.
+    rc_loc=1.0;
+    Vsh_n=0.0;
+    return false;
+  }
+  double th=0.0;
+  local_oblique_rc(S,u,n_hat,Rdir_m,Rdir_m,rc_loc,Vsh_n,th);
+  return true;
 }
 
 // Build lat–lon mesh on [0,thetaMax]×[0,2π]
 ShockMesh Model::build_shock_mesh(const StepState& S,std::size_t nTheta,std::size_t nPhi) const {
   ShockMesh M; if (nTheta<3) nTheta=3; if (nPhi<3) nPhi=3;
   const double PI=swcme3d::PI;
-  const double thetaMax=(P_.shape==ShockShape::ConeSSE)? P_.half_width_rad : PI;
+  const double thetaMax=(P_.shape==ShockShape::SSE)? P_.half_width_rad : PI;
 
   for (std::size_t it=0; it<=nTheta; ++it){
     const double t=thetaMax*(double(it)/double(nTheta));
@@ -806,7 +940,15 @@ ShockMesh Model::build_shock_mesh(const StepState& S,std::size_t nTheta,std::siz
                     u_loc[0]*S.e1[2]+u_loc[1]*S.e2[2]+u_loc[2]*S.e3[2] };
       ::safe_normalize(u);
 
-      double Rdir=0.0,n_hat[3]={0,0,1}; shape_radius_normal(S,u[0],u[1],u[2],Rdir,n_hat);
+      double Rdir=0.0,n_hat[3]={0,0,0};
+      const bool has_surface=shape_radius_normal(S,u[0],u[1],u[2],Rdir,n_hat);
+      // build_shock_mesh samples only the mathematically supported angular
+      // interval.  Failure here therefore signals an internal geometry error,
+      // not an expected outside-cap query, and should never be silently filled
+      // with a zero-radius vertex.
+      if (!has_surface) {
+        throw std::runtime_error("swcme3d: shock mesh requested a direction outside the supported surface");
+      }
 
       M.x.push_back(finite_or(Rdir*u[0],0.0));
       M.y.push_back(finite_or(Rdir*u[1],0.0));

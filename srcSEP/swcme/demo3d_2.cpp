@@ -10,7 +10,7 @@
 //      • Field rotation at the shock Δθ = atan(rc*tanψ) − ψ  (ψ: Parker pitch)
 // 2) **Time series at 1 AU** (n, V) + apex shock kinematics.
 // 3) **Snapshot at t = 36 h**:
-//      • Triangulated shock surface (Cone/SSE) + per-triangle metrics
+//      • Triangulated shock surface (SSE) + per-triangle metrics
 //      • A structured volume box (0.2 AU per side) whose minus-Z face is z=0
 //      • Point sampling of plasma + B (with sheath tangential amplification)
 //      • 10 random points from the **first triangle** are printed to stdout
@@ -192,20 +192,18 @@ static void write_strength_summary_csv(const Params& P, Model& model,
 int main(){
   try{
     // =========================================================================
-    // 1) Define CME/shock parameters (Cone/SSE) — with explanatory comments
+    // 1) Define CME/shock parameters (SSE) — with explanatory comments
     // =========================================================================
     Params P;
 
     // --- Shock front geometry ------------------------------------------------
-    P.shape = ShockShape::ConeSSE;           // choices: Sphere, Ellipsoid, ConeSSE
+    P.shape = ShockShape::SSE;           // choices: Sphere, Ellipsoid, SSE
     P.cme_dir[0] = 0.0;                      // apex direction (unit vector)
     P.cme_dir[1] = 0.0;                      // here: +Z (0,0,1)
     P.cme_dir[2] = 1.0;
 
-    // Cone half-angle (radians). Only directions with θ ≤ half_width exist on the cap.
+    // SSE angular half-width (radians). Only directions with theta <= half_width intersect the finite cap.
     P.half_width_rad   = 40.0 * (3.14159265358979323846/180.0); // 40°
-    // Flanks expand more slowly than the apex: R(θ) = R_apex * cos(θ)^m
-    P.flank_slowdown_m = 2.0;
 
     // --- Apex kinematics (DBM) ----------------------------------------------
     // r0_Rs    : initial shock apex distance in solar radii (you asked for 1.05 R_sun)
@@ -328,7 +326,7 @@ int main(){
     const double t_mesh = hours(36.0);
     StepState Smesh = model.prepare_step(t_mesh);
 
-    // Build the surface (lat-lon triangulation on the cone cap) and per-triangle metrics
+    // Build the surface (lat-lon triangulation on the finite SSE cap) and per-triangle metrics
     ShockMesh  surf = model.build_shock_mesh(Smesh, /*nTheta=*/120, /*nPhi=*/240);
     TriMetrics tri;  model.compute_triangle_metrics(surf, tri);
 

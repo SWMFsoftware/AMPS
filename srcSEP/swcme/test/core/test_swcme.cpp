@@ -13,6 +13,14 @@ void test_den01(swcme_test::Context& context);
 void test_par01(swcme_test::Context& context);
 void test_par02(swcme_test::Context& context);
 void test_par03(swcme_test::Context& context);
+void test_geo01(swcme_test::Context& context);
+void test_geo02(swcme_test::Context& context);
+void test_geo03(swcme_test::Context& context);
+void test_geo04(swcme_test::Context& context);
+void test_geo05(swcme_test::Context& context);
+void test_geo06(swcme_test::Context& context);
+void test_geo07(swcme_test::Context& context);
+void test_geo08(swcme_test::Context& context);
 void test_1d_ambient_at_one_au(swcme_test::Context& context);
 
 namespace {
@@ -38,6 +46,14 @@ const swcme_test::TestCase kTests[] = {
     {"PAR01", "3D", "Parker-spiral equatorial vector orientation", test_par01},
     {"PAR02", "3D", "Parker field at arbitrary latitude and rotation axis", test_par02},
     {"PAR03", "3D", "Parker-field polar-limit regularity", test_par03},
+    {"GEO01", "3D", "Spherical shock geometry reference", test_geo01},
+    {"GEO02", "3D", "True SSE front at the CME apex", test_geo02},
+    {"GEO03", "3D", "SSE tangent-flank boundary behavior", test_geo03},
+    {"GEO04", "3D", "Strict enforcement of finite SSE angular width", test_geo04},
+    {"GEO05", "3D", "SSE surface level-set residual", test_geo05},
+    {"GEO06", "3D", "Analytical shock normal versus level-set gradient", test_geo06},
+    {"GEO07", "3D", "Shock normal speed versus finite-difference surface motion", test_geo07},
+    {"GEO08", "3D", "Rotational covariance of geometry and local scalar physics", test_geo08},
     {"1D_AMBIENT_01", "1D", "Ambient values at 1 AU",
      test_1d_ambient_at_one_au},
 };

@@ -1,4 +1,4 @@
-// demo.cpp — usage of swcme3d (Cone/SSE case) with a box whose face contains (0,0,0)
+// demo.cpp — usage of swcme3d (SSE case) with a box whose face contains (0,0,0)
 //
 // Build:
 //   g++ -std=c++17 -O3 -march=native demo.cpp swcme3d.cpp -o demo
@@ -36,12 +36,12 @@ static inline double hours(double h){ return h * 3600.0; }
 int main(){
   try {
     // -----------------------------
-    // Configure a Cone/SSE shock
+    // Configure a finite SSE shock
     // -----------------------------
     Params P;
-    P.shape = ShockShape::ConeSSE;
+    P.shape = ShockShape::SSE;
 
-    // Apex direction along +Z (so the cone points "up" the Z axis)
+    // Apex direction along +Z (the symmetry axis of the finite SSE cap)
     P.cme_dir[0] = 0.0;
     P.cme_dir[1] = 0.0;
     P.cme_dir[2] = 1.0;
@@ -54,9 +54,8 @@ int main(){
     P.solar_rotation_axis[2] = 0.0;
     P.sin_theta = 1.0;  // B1AU_nT reference normalization at the equator
 
-    // Cone opening: half-width ≈ 40 degrees; simple flank slowdown exponent
+    // Finite SSE opening: the ray at this half width is tangent to the spherical cap.
     P.half_width_rad   = 40.0 * (3.14159265358979323846/180.0);
-    P.flank_slowdown_m = 2.0;
 
     // (Other Params defaults in swcme3d.hpp control DBM, smoothing, etc.)
 

@@ -37,7 +37,7 @@
 //   total field magnitude at a documented reference colatitude; the local
 //   winding everywhere else is computed from the point's actual latitude.
 // • CME apex kinematics via Drag-Based Model (DBM): Vršnak et al. (2013).
-// • Shock shape: sphere, ellipsoid, or cone-like SSE (with flank slowdown).
+// • Shock shape: sphere, self-similar ellipsoid, or finite true-SSE spherical cap.
 // • Local rc proxy from oblique fast Mach number (Edmiston & Kennel 1984;
 //   Priest 2014), limited to ≤ 4.
 // • Sheath / ejecta blends using C^1 smoothsteps and independent edge widths.
@@ -74,7 +74,7 @@
 //  • Upstream solar wind: Parker-spiral magnetic field (Parker 1958) and
 //    Leblanc et al. (1998) empirical density profile, both scaled to 1 AU.
 //  • CME shock apex kinematics: Drag-Based Model (DBM; Vršnak et al. 2013).
-//  • Shock geometry: Sphere / Ellipsoid / Cone-like (SSE-style) parametrizations.
+//  • Shock geometry: Sphere / self-similar Ellipsoid / finite true-SSE spherical cap.
 //  • Region structure along field lines (radial sampling from the Sun):
 //      upstream → (shock) → sheath → (leading edge) → magnetic ejecta →
 //      (trailing edge) → downstream ambient,
@@ -127,14 +127,21 @@ extern const double PI;  // π
 
 // ----------------------------------------------------------------------------
 // Shock geometry selector
-//  Sphere: radius r_sh(t).
-//  Ellipsoid: axes (a, b, c) aligned with (e1,e2,e3), with b/a=axis_ratio_y,
-//             c/a=axis_ratio_z, where e1 is the apex direction.
-//  ConeSSE: cone-/shell-like front. Inside half_width, radius scales as
-//           r_sh * cos(theta)^m (flank_slowdown_m) with theta from apex axis;
-//           outside half_width it is clamped (thin flanks).
+//  Sphere: Sun-centered sphere with radius r_sh(t).  This is retained as an
+//          exact verification geometry and as a deliberately simple model.
+//  Ellipsoid: Sun-centered, self-similarly expanding ellipsoid with axes
+//             (a,b,c) aligned with (e1,e2,e3), b/a=axis_ratio_y and
+//             c/a=axis_ratio_z.  All axes scale with the apex distance.
+//  SSE: finite self-similar-expansion spherical cap.  The cap is the outward
+//       arc of a sphere whose center lies on the CME axis; the observer ray is
+//       tangent to the cap at the configured half width.  No shock surface is
+//       returned outside that angular width.
+//
+//  ConeSSE is kept as a source-compatible alias for older callers.  Its
+//  semantics are now the physically defined SSE spherical cap, NOT the old
+//  R=R_apex*cos(theta)^m cosine-cap approximation.
 // ----------------------------------------------------------------------------
-enum class ShockShape { Sphere, Ellipsoid, ConeSSE };
+enum class ShockShape { Sphere = 0, Ellipsoid = 1, SSE = 2, ConeSSE = SSE };
 
 // ----------------------------------------------------------------------------
 // Parameter pack (set at construction). All are read-only thereafter.
@@ -145,8 +152,18 @@ struct Params {
   ShockShape shape = ShockShape::Sphere;
   double axis_ratio_y = 1.0;               // Ellipsoid b/a (e2-axis)
   double axis_ratio_z = 1.0;               // Ellipsoid c/a (e3-axis)
-  double half_width_rad = 40.0*PI/180.0;   // Cone half-angle [rad]
-  double flank_slowdown_m = 1.0;           // Cone exponent m ≥ 0
+  // Angular half width of the finite SSE cap [rad].  For the science
+  // geometry the supported range is 0 < lambda <= pi/2.  The surface exists
+  // only for directions whose angular separation from cme_dir is <= lambda.
+  double half_width_rad = 40.0*PI/180.0;
+
+  // DEPRECATED compatibility field.  Older ConeSSE code used this exponent in
+  // R(theta)=R_apex*cos(theta)^m and also applied it a second time to the flank
+  // speed.  The corrected SSE geometry derives both radius and normal speed
+  // from self-similar spherical-cap geometry, so this parameter is ignored
+  // whenever shape==SSE/ConeSSE.  It remains in Params only to avoid breaking
+  // existing input/source code while callers migrate to ShockShape::SSE.
+  double flank_slowdown_m = 1.0;
 
   double cme_dir[3] = {1,0,0};             // Global unit vector for apex direction (e1)
 
@@ -259,8 +276,16 @@ struct StepState {
   double a_e=0.0, b_e=0.0, c_e=0.0;
   double inv_a2=0.0, inv_b2=0.0, inv_c2=0.0;
 
-  // Cone helpers
-  double cos_half_width=1.0, flank_m=1.0;
+  // Finite SSE spherical-cap helpers.  For apex distance R_a and half width
+  // lambda, the generating sphere has center distance
+  //   c = R_a/(1+sin(lambda))
+  // and radius
+  //   a = R_a*sin(lambda)/(1+sin(lambda)).
+  // These are cached because every directional geometry query reuses them.
+  double sin_half_width=0.0;
+  double cos_half_width=1.0;
+  double sse_center_m=0.0;
+  double sse_radius_m=0.0;
 };
 
 // ----------------------------------------------------------------------------
@@ -311,7 +336,11 @@ public:
   StepState prepare_step(double t_s) const;
 
   // Shock radius along unit direction u=(ux,uy,uz) and outward normal.
-  void shape_radius_normal(const StepState& S,
+  // Returns true only when the selected geometry intersects the outward ray.
+  // Sphere and ellipsoid always return true; the finite SSE cap returns false
+  // outside its configured half width.  When false, Rdir_m and n_hat are set
+  // to zero and must not be interpreted as a physical shock surface.
+  bool shape_radius_normal(const StepState& S,
                            double ux,double uy,double uz,
                            double& Rdir_m,double n_hat[3]) const;
 
@@ -346,8 +375,10 @@ public:
                            const double* x_m,const double* y_m,const double* z_m,
                            double* divV,std::size_t N,double dr_frac=1e-3) const;
 
-  // Quick diagnostic at a direction u (unit). Returns Rdir, normal, rc, Vsh_n.
-  void diagnose_direction(const StepState& S, const double u[3],
+  // Quick diagnostic at a direction u (unit). Returns false when a finite
+  // geometry (currently SSE) has no shock surface in that direction.  On a
+  // false return Rdir=0, n_hat=(0,0,0), rc=1, and Vsh_n=0.
+  bool diagnose_direction(const StepState& S, const double u[3],
                           double& Rdir_m,double n_hat[3],
                           double& rc_loc,double& Vsh_n) const;
 
