@@ -54,6 +54,7 @@ INVALID_MESH
 FILE_OPEN_FAILURE
 FILE_WRITE_FAILURE   (reserved for writers that distinguish write failures)
 STATE_MODEL_MISMATCH (prepared state belongs to another model instance)
+STATE_CONFIGURATION_MISMATCH (prepared state uses an obsolete configuration)
 ```
 
 `OK` is success.  `NO_SURFACE`, `NO_CONNECTION`, and `SOURCE_INACTIVE` are
@@ -72,6 +73,14 @@ existing source continues to compile while failures stop being ignored.
 mutation when a `StepState` is consumed by a model other than the exact
 instance that prepared it.  The status was appended to the enum so numeric
 values of the earlier status codes remain unchanged.
+
+PST03 extends the status diagnostics with
+`expected_configuration_digest`, `supplied_configuration_digest`, and
+`has_configuration_digests`.  Foreign states retain `STATE_MODEL_MISMATCH` as
+the primary error and carry both digests for diagnosis.  A state whose owner
+matches but whose saved configuration differs from the model's current
+configuration returns `STATE_CONFIGURATION_MISMATCH`.  Both status values were
+appended to preserve the numeric values of pre-existing codes.
 
 ## Checked evaluator APIs
 

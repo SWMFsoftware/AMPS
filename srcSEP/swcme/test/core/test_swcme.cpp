@@ -10,6 +10,7 @@
 void test_cfg01(swcme_test::Context& context);
 void test_cfg02(swcme_test::Context& context);
 void test_pst02(swcme_test::Context& context);
+void test_pst03(swcme_test::Context& context);
 void test_den01(swcme_test::Context& context);
 void test_par01(swcme_test::Context& context);
 void test_par02(swcme_test::Context& context);
@@ -105,6 +106,7 @@ struct CommandLine {
 // declaration order is therefore also the deterministic --all execution order.
 const swcme_test::TestCase kTests[] = {
     {"PST02", "COMMON", "Cross-model prepared-state rejection", test_pst02},
+    {"PST03", "COMMON", "Cross-configuration prepared-state rejection", test_pst03},
     {"CFG01", "COMMON", "Configuration rejection and physical-range validation",
      test_cfg01},
     {"CFG02", "COMMON", "Unit-conversion and dimensional-consistency test",

@@ -24,8 +24,11 @@
 // ============================================================================
 
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <iomanip>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -34,6 +37,60 @@
 namespace swcme {
 
 using ModelIdentity = std::uint64_t;
+using ConfigurationDigest = std::uint64_t;
+
+// Allocation-free FNV-1a builder used to fingerprint every field that can
+// influence a prepared state.  Values are serialized explicitly in little-
+// endian order instead of hashing object memory, so padding, host endianness,
+// and enum storage width cannot make diagnostics vary between builds.
+class ConfigurationDigestBuilder {
+ public:
+  void add_byte(std::uint8_t value) noexcept {
+    digest_ ^= value;
+    digest_ *= 1099511628211ULL;
+  }
+
+  void add_uint64(std::uint64_t value) noexcept {
+    for (unsigned shift=0; shift<64; shift+=8)
+      add_byte(static_cast<std::uint8_t>((value >> shift) & 0xffU));
+  }
+
+  void add_bool(bool value) noexcept { add_byte(value ? 1U : 0U); }
+
+  void add_double(double value) noexcept {
+    // Equal numerical configurations must hash equally: normalize signed
+    // zero and collapse every NaN payload to one diagnostic representation.
+    // Validation still rejects NaNs; canonicalization only keeps an error
+    // digest reproducible when malformed input reaches the ownership guard.
+    if (value==0.0) value=0.0;
+    std::uint64_t bits=0;
+    if (std::isnan(value)) {
+      bits=0x7ff8000000000000ULL;
+    } else {
+      static_assert(sizeof(bits)==sizeof(value),
+                    "configuration digest requires 64-bit double");
+      std::memcpy(&bits,&value,sizeof(bits));
+    }
+    add_uint64(bits);
+  }
+
+  void add_string(const char* value) noexcept {
+    // Prefixing the length prevents ambiguous concatenations such as
+    // ("ab","c") and ("a","bc") from producing the same byte stream.
+    const std::size_t length=value ? std::strlen(value) : 0;
+    add_uint64(static_cast<std::uint64_t>(length));
+    for (std::size_t i=0; i<length; ++i)
+      add_byte(static_cast<std::uint8_t>(value[i]));
+  }
+
+  ConfigurationDigest value() const noexcept { return digest_; }
+
+ private:
+  // Standard 64-bit FNV-1a offset basis.  This is a stable diagnostic digest,
+  // not a cryptographic authenticator; model ownership remains independently
+  // enforced by ModelIdentity.
+  ConfigurationDigest digest_=14695981039346656037ULL;
+};
 
 // Return a process-unique, nonzero identity for one logical Model instance.
 // The identity is deliberately independent of parameter values: PST02 must
@@ -71,7 +128,11 @@ enum class StatusCode {
   FileWriteFailure,
   // Appended rather than inserted among earlier failures so the numeric values
   // of the pre-existing StatusCode entries remain source/binary-log compatible.
-  StateModelMismatch
+  StateModelMismatch,
+  // Appended for the same compatibility reason as StateModelMismatch.  This
+  // code identifies a state prepared by the same model before its mutable
+  // configuration changed.
+  StateConfigurationMismatch
 };
 
 inline const char* status_code_name(StatusCode code) {
@@ -82,6 +143,8 @@ inline const char* status_code_name(StatusCode code) {
     case StatusCode::SourceInactive: return "SOURCE_INACTIVE";
     case StatusCode::InvalidConfiguration: return "INVALID_CONFIGURATION";
     case StatusCode::StateModelMismatch: return "STATE_MODEL_MISMATCH";
+    case StatusCode::StateConfigurationMismatch:
+      return "STATE_CONFIGURATION_MISMATCH";
     case StatusCode::NullPointer: return "NULL_POINTER";
     case StatusCode::NonFiniteInput: return "NONFINITE_INPUT";
     case StatusCode::OutsideModelDomain: return "OUTSIDE_MODEL_DOMAIN";
@@ -108,6 +171,9 @@ struct ModelStatus {
   ModelIdentity expected_model_identity = 0;
   ModelIdentity supplied_model_identity = 0;
   bool has_model_identities = false;
+  ConfigurationDigest expected_configuration_digest = 0;
+  ConfigurationDigest supplied_configuration_digest = 0;
+  bool has_configuration_digests = false;
 
   constexpr bool ok() const noexcept { return code == StatusCode::Ok; }
   constexpr bool no_surface() const noexcept {
@@ -149,11 +215,29 @@ struct ModelStatus {
   // diagnosable without inspecting addresses or reproducing the calculation.
   static constexpr ModelStatus state_model_mismatch(
       const char* where, ModelIdentity expected,
-      ModelIdentity supplied) noexcept {
+      ModelIdentity supplied, ConfigurationDigest expected_configuration=0,
+      ConfigurationDigest supplied_configuration=0,
+      bool include_configuration=false) noexcept {
     ModelStatus s=make(StatusCode::StateModelMismatch,where);
     s.expected_model_identity=expected;
     s.supplied_model_identity=supplied;
     s.has_model_identities=true;
+    s.expected_configuration_digest=expected_configuration;
+    s.supplied_configuration_digest=supplied_configuration;
+    s.has_configuration_digests=include_configuration;
+    return s;
+  }
+
+  // Build the PST03 failure returned when the owner identity is correct but
+  // the receiving model's current Params no longer match the configuration
+  // from which the state was prepared.
+  static constexpr ModelStatus state_configuration_mismatch(
+      const char* where, ConfigurationDigest expected,
+      ConfigurationDigest supplied) noexcept {
+    ModelStatus s=make(StatusCode::StateConfigurationMismatch,where);
+    s.expected_configuration_digest=expected;
+    s.supplied_configuration_digest=supplied;
+    s.has_configuration_digests=true;
     return s;
   }
 
@@ -166,6 +250,13 @@ struct ModelStatus {
     if (has_model_identities) {
       out << " (expected_model_identity=" << expected_model_identity
           << ", supplied_model_identity=" << supplied_model_identity << ')';
+    }
+    if (has_configuration_digests) {
+      out << " (expected_configuration_digest=0x" << std::hex
+          << std::setw(16) << std::setfill('0')
+          << expected_configuration_digest
+          << ", supplied_configuration_digest=0x" << std::setw(16)
+          << supplied_configuration_digest << std::dec << ')';
     }
     return out.str();
   }

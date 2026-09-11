@@ -514,6 +514,54 @@ inline std::string resolved_configuration_manifest(const Params& p) {
   return out.str();
 }
 
+// Return the PST03 fingerprint of the complete resolved 1-D configuration.
+// The schema tag intentionally makes field order part of a versioned contract:
+// adding or reinterpreting a parameter must update the tag, preventing an old
+// prepared state from being accepted under new physics.  Compile-time Parker
+// polarity/normalization and the proton-only pressure closure are included
+// because they influence results even though they are not runtime Params.
+inline swcme::ConfigurationDigest configuration_digest(
+    const Params& p) noexcept {
+  swcme::ConfigurationDigestBuilder digest;
+  digest.add_string("SWCME_CONFIGURATION_DIGEST_V1");
+  digest.add_string("1D");
+  digest.add_uint64(static_cast<std::uint64_t>(swcme::defaults::CONFIG_VERSION));
+  digest.add_string(swcme::defaults::FRAME_NAME);
+  digest.add_string(swcme::defaults::PARKER_NORMALIZATION_CONVENTION);
+  digest.add_uint64(static_cast<std::uint64_t>(
+      static_cast<std::int64_t>(swcme::defaults::PARKER_RADIAL_POLARITY)));
+  digest.add_string("PROTON_ONLY_THERMAL_PRESSURE_CLOSURE");
+  digest.add_double(swcme::defaults::SOLAR_ROTATION_RATE_RAD_S);
+
+  // Hash every public Params field in declaration order.  Vector lengths are
+  // included before their values so tables with identical prefixes remain
+  // distinguishable and default-empty equals explicitly-empty configuration.
+  digest.add_double(p.V_sw_kms); digest.add_double(p.n1AU_cm3);
+  digest.add_double(p.B1AU_nT); digest.add_double(p.T_K);
+  digest.add_double(p.gamma_ad); digest.add_double(p.sin_theta);
+  digest.add_uint64(static_cast<std::uint64_t>(p.kinematics_mode));
+  digest.add_double(p.r0_Rs); digest.add_double(p.V0_sh_kms);
+  digest.add_double(p.Gamma_kmInv);
+  digest.add_uint64(static_cast<std::uint64_t>(p.data_time_s.size()));
+  for (double value : p.data_time_s) digest.add_double(value);
+  digest.add_uint64(static_cast<std::uint64_t>(p.data_radius_Rs.size()));
+  for (double value : p.data_radius_Rs) digest.add_double(value);
+  digest.add_uint64(static_cast<std::uint64_t>(p.data_extrapolation));
+  digest.add_uint64(static_cast<std::uint64_t>(p.region_mode));
+  digest.add_uint64(static_cast<std::uint64_t>(p.shock_acceleration_mode));
+  digest.add_double(p.relative_source_weight_per_area);
+  digest.add_double(p.sheath_thick_AU_at1AU);
+  digest.add_double(p.ejecta_thick_AU_at1AU);
+  digest.add_double(p.edge_smooth_shock_AU_at1AU);
+  digest.add_double(p.edge_smooth_le_AU_at1AU);
+  digest.add_double(p.edge_smooth_te_AU_at1AU);
+  digest.add_double(p.sheath_comp_floor);
+  digest.add_double(p.sheath_ramp_power);
+  digest.add_double(p.V_sheath_LE_factor);
+  digest.add_double(p.f_ME); digest.add_double(p.V_ME_factor);
+  return digest.value();
+}
+
 // Validate the complete 1-D public parameter bundle before any unit conversion
 // or physics evaluation.  The common rules live in swcme_config.hpp so the
 // equivalent 1-D and 3-D fields are judged by exactly the same contract.
@@ -556,6 +604,11 @@ struct StepState {
   // identity is metadata only; it is checked before physics and is never used
   // to select a numerical branch or alter a physical result.
   swcme::ModelIdentity owner_model_identity = 0;
+
+  // Snapshot of the complete resolved configuration used by prepare_step().
+  // It is diagnostic metadata and is checked before any cached physics or
+  // caller-owned output is touched.
+  swcme::ConfigurationDigest configuration_digest = 0;
 
   // Canonical dimensionality-independent prepared state.  The fields below
   // mirror selected values for backward/source compatibility with existing
@@ -689,10 +742,17 @@ public:
   // caller sentinels and makes a rejected mixed-model call transactional.
   swcme::ModelStatus validate_prepared_state(
       const StepState& S, const char* context) const noexcept {
-    if (S.owner_model_identity==model_identity_)
-      return swcme::ModelStatus::success();
-    return swcme::ModelStatus::state_model_mismatch(
-        context,model_identity_,S.owner_model_identity);
+    const swcme::ConfigurationDigest current=configuration_digest(P);
+    // Preserve PST02 precedence: a foreign instance is always an ownership
+    // error, while its digests explain whether the configurations also differ.
+    if (S.owner_model_identity!=model_identity_)
+      return swcme::ModelStatus::state_model_mismatch(
+          context,model_identity_,S.owner_model_identity,current,
+          S.configuration_digest,true);
+    if (S.configuration_digest!=current)
+      return swcme::ModelStatus::state_configuration_mismatch(
+          context,current,S.configuration_digest);
+    return swcme::ModelStatus::success();
   }
 
   // Public validation entry point used by CFG01 and by prepare_step().  It is
@@ -754,6 +814,10 @@ public:
     // either throws and returns no state, or returns a fully initialized state
     // that can be consumed only by this exact Model instance.
     S.owner_model_identity=model_identity_;
+    // Capture the exact configuration only after validation succeeds.  Every
+    // state consumer recomputes the receiver digest before modifying outputs,
+    // so later MutableParams()/setter changes cannot reuse this stale cache.
+    S.configuration_digest=configuration_digest(P);
     S.time_s=t_s;
 
     // Build the dimensionality-independent core configuration in public units

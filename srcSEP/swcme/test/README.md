@@ -38,6 +38,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --all           # run all tests in registry order
 ./output/test_swcme --list          # list tests without executing them
 ./output/test_swcme --test PST02    # prepared-state ownership rejection
+./output/test_swcme --test PST03    # configuration-state ownership rejection
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -90,6 +91,54 @@ Run the gate directly with:
 `PST02` is included in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it through
 their `@ALL` expansion.  A default-constructed state has owner identity zero
 and is rejected by the same contract.
+
+## PST03: cross-configuration state rejection
+
+`PST03` verifies that prepared-state provenance protects the complete resolved
+configuration, not only the `gamma_ad` value that originally exposed the
+defect.  `prepare_step()` records an allocation-free deterministic digest in
+the state.  Every state-consuming API compares the receiver's current digest
+before it evaluates physics or modifies caller-owned output.
+
+The test prepares one reviewed 3-D baseline, then constructs receivers that
+differ by exactly one field representing each validation-plan family:
+
+- adiabatic index (`gamma_ad`);
+- geometry (`axis_ratio_y`, including inactive-field coverage);
+- Parker orientation (`solar_rotation_axis`);
+- kinematics mode;
+- thermal-closure input (`T_K`);
+- Parker field/polarity normalization input (`B1AU_nT`); and
+- region mode.
+
+Parker radial polarity and the proton-only pressure closure are compile-time
+resolved conventions rather than independently mutable `Params` fields.  They
+are therefore included as explicit versioned digest tags; `B1AU_nT` and `T_K`
+exercise their runtime normalization/closure inputs.  A multi-field receiver
+checks that no parameter-specific rejection branch exists.
+
+For every foreign receiver, the checked evaluator must return
+`STATE_MODEL_MISMATCH` before writing its sentinel outputs.  PST02 ownership has
+intentional precedence, while `has_configuration_digests=true` and the
+receiver/prepared digest pair prove the additional configuration mismatch.
+An explicitly populated default-equivalent receiver must have the same digest
+as the baseline yet remain rejected as a foreign model.
+
+The test also mutates `gamma_ad` on the exact 1-D model that prepared a state.
+Because the owner still matches, this case must return
+`STATE_CONFIGURATION_MISMATCH`, carry the current and prepared digests, and
+leave density/velocity sentinels unchanged.  A reviewed golden digest plus an
+independently constructed equal configuration guards reproducibility across
+runs and compiler rebuilds.
+
+Run the gate directly with:
+
+```sh
+./output/test_swcme --test PST03
+```
+
+`PST03` follows `PST02` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
+through their `@ALL` expansion.
 
 ## Python campaign manager and reproducible run artifacts
 

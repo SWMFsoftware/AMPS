@@ -449,6 +449,10 @@ StepState Model::prepare_step(double t_s) const {
   // successful return therefore always carries the identity of this exact
   // model; an exception exposes no partially prepared state to the caller.
   S.owner_model_identity=model_identity_;
+  // Record the complete, stable configuration snapshot after validation.
+  // State-consuming APIs recompute this digest before touching their outputs,
+  // which makes cross-configuration rejection transactional.
+  S.configuration_digest=configuration_digest(P_);
   S.time_s=t_s;
 
   // 1) Apex-aligned orthonormal basis (e1 along CME apex direction).  The CME

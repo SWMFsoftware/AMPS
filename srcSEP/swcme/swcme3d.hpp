@@ -341,6 +341,57 @@ inline std::string resolved_configuration_manifest(const Params& p) {
   return out.str();
 }
 
+// Deterministically fingerprint the complete resolved 3-D configuration for
+// PST03.  The versioned schema tag and fixed serialization order make values
+// reproducible across processes; no addresses, struct padding, or locale-
+// dependent text formatting enter the digest.
+inline swcme::ConfigurationDigest configuration_digest(
+    const Params& p) noexcept {
+  swcme::ConfigurationDigestBuilder digest;
+  digest.add_string("SWCME_CONFIGURATION_DIGEST_V1");
+  digest.add_string("3D");
+  digest.add_uint64(static_cast<std::uint64_t>(swcme::defaults::CONFIG_VERSION));
+  digest.add_string(swcme::defaults::FRAME_NAME);
+  digest.add_string(swcme::defaults::PARKER_NORMALIZATION_CONVENTION);
+  digest.add_uint64(static_cast<std::uint64_t>(
+      static_cast<std::int64_t>(swcme::defaults::PARKER_RADIAL_POLARITY)));
+  digest.add_string("PROTON_ONLY_THERMAL_PRESSURE_CLOSURE");
+
+  // Hash every public Params field in declaration order, including currently
+  // inactive/deprecated compatibility values.  This matches the completeness
+  // promise of resolved_configuration_manifest() and prevents a mode change
+  // from reviving a parameter that was omitted from state ownership checks.
+  digest.add_uint64(static_cast<std::uint64_t>(p.shape));
+  digest.add_double(p.axis_ratio_y); digest.add_double(p.axis_ratio_z);
+  digest.add_double(p.half_width_rad); digest.add_double(p.flank_slowdown_m);
+  for (double value : p.cme_dir) digest.add_double(value);
+  for (double value : p.solar_rotation_axis) digest.add_double(value);
+  digest.add_double(p.solar_rotation_rate_rad_s);
+  digest.add_double(p.sin_theta);
+  digest.add_uint64(static_cast<std::uint64_t>(p.kinematics_mode));
+  digest.add_double(p.r0_Rs); digest.add_double(p.V0_sh_kms);
+  digest.add_double(p.V_sw_kms); digest.add_double(p.Gamma_kmInv);
+  digest.add_uint64(static_cast<std::uint64_t>(p.data_time_s.size()));
+  for (double value : p.data_time_s) digest.add_double(value);
+  digest.add_uint64(static_cast<std::uint64_t>(p.data_radius_Rs.size()));
+  for (double value : p.data_radius_Rs) digest.add_double(value);
+  digest.add_uint64(static_cast<std::uint64_t>(p.data_extrapolation));
+  digest.add_double(p.n1AU_cm3); digest.add_double(p.B1AU_nT);
+  digest.add_double(p.T_K); digest.add_double(p.gamma_ad);
+  digest.add_uint64(static_cast<std::uint64_t>(p.region_mode));
+  digest.add_uint64(static_cast<std::uint64_t>(p.shock_acceleration_mode));
+  digest.add_double(p.relative_source_weight_per_area);
+  digest.add_double(p.sheath_thick_AU_at1AU);
+  digest.add_double(p.ejecta_thick_AU_at1AU);
+  digest.add_double(p.edge_smooth_shock_AU_at1AU);
+  digest.add_double(p.edge_smooth_le_AU_at1AU);
+  digest.add_double(p.edge_smooth_te_AU_at1AU);
+  digest.add_double(p.V_sheath_LE_factor); digest.add_double(p.V_ME_factor);
+  digest.add_double(p.sheath_ramp_power); digest.add_double(p.sheath_comp_floor);
+  digest.add_double(p.f_ME);
+  return digest.value();
+}
+
 // Validate the complete 3-D public parameter pack before any basis
 // normalization or field/shock calculation.  Common plasma, kinematic, and
 // region rules are delegated to swcme_config.hpp; this wrapper adds only the
@@ -399,6 +450,10 @@ struct StepState {
   // before geometry or physics uses any cached value, preventing a foreign
   // cache from being combined with this model's Params.
   swcme::ModelIdentity owner_model_identity = 0;
+
+  // Immutable snapshot of the resolved Params and global conventions that
+  // produced this cache.  The model validates it before using any state data.
+  swcme::ConfigurationDigest configuration_digest = 0;
 
   // Canonical dimensionality-independent prepared state.  3-D keeps several
   // legacy mirror fields below because they are part of the current public
@@ -699,10 +754,18 @@ public:
   // transactional and diagnostics retain both the expected and supplied IDs.
   swcme::ModelStatus validate_prepared_state(
       const StepState& S, const char* context) const noexcept {
-    if (S.owner_model_identity==model_identity_)
-      return swcme::ModelStatus::success();
-    return swcme::ModelStatus::state_model_mismatch(
-        context,model_identity_,S.owner_model_identity);
+    const swcme::ConfigurationDigest current=configuration_digest(P_);
+    // Instance provenance remains the primary error.  Configuration digests
+    // are still attached so a foreign-state diagnostic distinguishes equal
+    // models from gamma/geometry/Parker/kinematic/region mismatches.
+    if (S.owner_model_identity!=model_identity_)
+      return swcme::ModelStatus::state_model_mismatch(
+          context,model_identity_,S.owner_model_identity,current,
+          S.configuration_digest,true);
+    if (S.configuration_digest!=current)
+      return swcme::ModelStatus::state_configuration_mismatch(
+          context,current,S.configuration_digest);
+    return swcme::ModelStatus::success();
   }
 
   // Side-effect-free validation entry point used by CFG01 and prepare_step().

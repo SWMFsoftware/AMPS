@@ -128,9 +128,8 @@ outputs remain unchanged on rejection.
 
 Copy construction creates a new model identity.  Copy assignment copies the
 configuration and rotates the receiving identity, invalidating states prepared
-by that object before assignment.  Parameter mutation on the same model is a
-separate configuration-revision contract covered by planned PST03; PST02
-specifically establishes the cross-instance boundary.
+by that object before assignment.  PST03, described below, adds the independent
+configuration-snapshot check needed when the same 1-D model is mutated.
 
 Correct and incorrect usage therefore look like:
 
@@ -143,6 +142,55 @@ auto ok = model_a.evaluate_cartesian_fast_checked(
     step, x, y, z, n, vx, vy, vz, count);       // OK
 auto rejected = model_b.evaluate_cartesian_fast_checked(
     step, x, y, z, n, vx, vy, vz, count);       // STATE_MODEL_MISMATCH
+```
+
+### Prepared-state configuration ownership (PST03)
+
+Every 1-D and 3-D `StepState` also records a deterministic 64-bit
+`configuration_digest`.  The digest covers every public `Params` field in
+declaration order, including inactive and deprecated compatibility fields,
+data-driven table lengths and values, plus resolved conventions that are not
+runtime parameters: configuration-schema version, frame, Parker normalization,
+Parker radial polarity, and the proton-only thermal-pressure closure.  Explicit
+default values therefore hash identically to implicit defaults, while any
+physics-relevant configuration difference changes the snapshot.
+
+The digest uses fixed-width byte serialization and a versioned schema tag; it
+does not hash C++ object memory, addresses, padding, locale-formatted text, or a
+model identity.  Signed zero and NaN payloads are canonicalized for stable
+diagnostics.  It is an allocation-free consistency fingerprint, not a
+cryptographic authenticator.
+
+State consumers validate provenance before arguments, allocations, output
+mutation, or file opening, using this precedence:
+
+1. A different `owner_model_identity` returns `STATE_MODEL_MISMATCH`.  The
+   status includes both model identities and both configuration digests, so
+   logs distinguish equal-model misuse from cross-configuration misuse.
+2. A matching owner with a different current digest returns
+   `STATE_CONFIGURATION_MISMATCH`.  This catches a state retained across
+   `swcme1d::Model::MutableParams()` or setter changes.
+3. Only matching owner and configuration snapshots proceed to physics.
+
+For digest diagnostics, `expected_configuration_digest` is the receiving
+model's current configuration and `supplied_configuration_digest` is the
+snapshot carried by the state; `has_configuration_digests` indicates their
+presence.  `ModelStatus::summary()` prints both as fixed-width hexadecimal.
+The 3-D model remains construction-time immutable, but it participates in the
+same complete digest contract and reports configuration differences on foreign
+states.
+
+After changing 1-D parameters, prepare a fresh state:
+
+```cpp
+auto old_step = model.prepare_step(t);
+model.MutableParams().gamma_ad = 1.55;
+
+auto stale = model.evaluate_radii_fast_checked(
+    old_step, radius, density, velocity, count);
+// stale.code == StateConfigurationMismatch; outputs are unchanged.
+
+auto new_step = model.prepare_step(t);
 ```
 
 ### `SEPSourceState`
