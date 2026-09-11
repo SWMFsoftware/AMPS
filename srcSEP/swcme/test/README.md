@@ -37,6 +37,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme                 # run all tests; same as --all
 ./output/test_swcme --all           # run all tests in registry order
 ./output/test_swcme --list          # list tests without executing them
+./output/test_swcme --test PST01    # prepared-state immutability
 ./output/test_swcme --test PST02    # prepared-state ownership rejection
 ./output/test_swcme --test PST03    # configuration-state ownership rejection
 ./output/test_swcme --test CFG01    # run exactly CFG01
@@ -53,6 +54,51 @@ fail an otherwise successful test.
 
 The registry in `core/test_swcme.cpp` is the only source for `--list`, `--all`,
 and test lookup, so displayed and executed tests cannot silently diverge.
+
+## PST01: prepared-state immutability
+
+`PST01` verifies that a successfully prepared 1-D or 3-D state is independent
+of every later attempt to modify its model configuration.  The model remains
+configurable during setup, but its first successful `prepare_step()` freezes
+the configuration.  Failed preparation leaves the setup phase unlocked so an
+invalid model can be corrected and retried.
+
+The 1-D fixture evaluates density, velocity, Parker-field components, field
+magnitude, and divergence at three fixed radii and serializes all 18 values.
+It then attempts every retained legacy mutation path:
+
+- `SetParams`, `SetCME`, and both kinematics setters;
+- `SetAmbient`, including the historically defective `sin_theta` case;
+- region and shock-acceleration mode setters;
+- geometry, smoothing, and sheath/ejecta setters;
+- copy assignment.
+
+Each attempt must throw `std::logic_error` with the immutable-lifecycle
+diagnostic before changing the configuration digest or model identity.  The
+same state is reevaluated after every attempt, and its serialized result must
+be bitwise identical to the baseline.
+
+Compile-time API inspection separately requires the legacy 1-D
+`MutableParams()` raw-reference escape hatch to be unavailable.  Merely checking
+that accessor at call time would be insufficient because a reference obtained
+before preparation could be retained and used after the model freezes.
+
+The 3-D fixture uses compile-time inspection to confirm that no mutable Params
+accessor exists, then verifies that copy assignment is rejected after
+preparation.  Density, all velocity and magnetic-field components, and
+divergence at three Cartesian points remain bitwise identical.  Both fixtures
+exercise `reconfigured(params)`: it must create a new owner and configuration
+snapshot, permit independent preparation and different physics, and leave the
+original state unchanged.
+
+Run the gate directly with:
+
+```sh
+./output/test_swcme --test PST01
+```
+
+`PST01` is the first test in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
+through their `@ALL` expansion.
 
 ## PST02: cross-model prepared-state rejection
 
@@ -124,12 +170,12 @@ receiver/prepared digest pair prove the additional configuration mismatch.
 An explicitly populated default-equivalent receiver must have the same digest
 as the baseline yet remain rejected as a foreign model.
 
-The test also mutates `gamma_ad` on the exact 1-D model that prepared a state.
-Because the owner still matches, this case must return
-`STATE_CONFIGURATION_MISMATCH`, carry the current and prepared digests, and
-leave density/velocity sentinels unchanged.  A reviewed golden digest plus an
-independently constructed equal configuration guards reproducibility across
-runs and compiler rebuilds.
+Because PST01 rejects supported post-prepare model mutation, PST03 deliberately
+alters the digest tag only on a copied negative-test state.  The same-owner
+consumer must return `STATE_CONFIGURATION_MISMATCH`, carry current and supplied
+digests, and leave density/velocity sentinels unchanged.  A reviewed golden
+digest plus an independently constructed equal configuration guards
+reproducibility across runs and compiler rebuilds.
 
 Run the gate directly with:
 

@@ -82,6 +82,13 @@ matches but whose saved configuration differs from the model's current
 configuration returns `STATE_CONFIGURATION_MISMATCH`.  Both status values were
 appended to preserve the numeric values of pre-existing codes.
 
+PST01 subsequently made supported post-prepare mutation impossible: the first
+successful `prepare_step()` freezes each model, and legacy mutation methods
+throw before changing configuration.  `STATE_CONFIGURATION_MISMATCH` remains a
+defense-in-depth diagnostic for a corrupted or incompatible prepared-state
+record rather than the normal way to manage reconfiguration.  Callers create a
+new owner through `reconfigured(params)` instead.
+
 ## Checked evaluator APIs
 
 The following status-returning paths are now available:

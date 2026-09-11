@@ -150,9 +150,10 @@ void test_pst03(swcme_test::Context& context) {
   context.expect_true(density==721.0 && vx==722.0 && vy==723.0 && vz==724.0,
                       "multi-field rejection preserves outputs");
 
-  // The 1-D compatibility API allows parameter mutation.  The owner identity
-  // therefore matches, so only the saved configuration snapshot can reject
-  // this stale cache with STATE_CONFIGURATION_MISMATCH.
+  // PST01 now freezes the public model configuration after preparation, so no
+  // supported API can create a same-owner stale state.  Corrupt only a copied
+  // digest tag to keep the defensive STATE_CONFIGURATION_MISMATCH path under
+  // direct test without weakening the public immutability contract.
   swcme1d::Params one_params;
   one_params.kinematics_mode=swcme::kinematics::Mode::Ballistic;
   one_params.r0_Rs=40.0;
@@ -161,22 +162,23 @@ void test_pst03(swcme_test::Context& context) {
   one_params.region_mode=swcme::regions::Mode::ShockOnly;
   one_params.shock_acceleration_mode=swcme::acceleration::Mode::Source;
   swcme1d::Model one_model(one_params);
-  const swcme1d::StepState one_state=one_model.prepare_step(0.0);
+  swcme1d::StepState one_state=one_model.prepare_step(0.0);
   const swcme::ConfigurationDigest prepared_one_digest=
       one_state.configuration_digest;
-  one_model.MutableParams().gamma_ad=1.55;
   const swcme::ConfigurationDigest current_one_digest=
       swcme1d::configuration_digest(one_model.GetParams());
+  one_state.configuration_digest^=1ULL;
   double radius=swcme::constants::AU_M;
   double one_density=731.0,one_velocity=732.0;
   status=one_model.evaluate_radii_fast_checked(
       one_state,&radius,&one_density,&one_velocity,1);
   context.expect_true(
       status.code==swcme::StatusCode::StateConfigurationMismatch,
-      "same model rejects state prepared before configuration mutation");
+      "same model rejects a mismatched state configuration tag");
   context.expect_true(status.has_configuration_digests &&
                           status.expected_configuration_digest==current_one_digest &&
-                          status.supplied_configuration_digest==prepared_one_digest,
+                          status.supplied_configuration_digest==
+                              (prepared_one_digest^1ULL),
                       "same-model mismatch carries current and prepared digests");
   context.expect_true(one_density==731.0 && one_velocity==732.0,
                       "same-model stale-state rejection preserves outputs");

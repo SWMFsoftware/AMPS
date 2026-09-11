@@ -9,6 +9,7 @@
 
 void test_cfg01(swcme_test::Context& context);
 void test_cfg02(swcme_test::Context& context);
+void test_pst01(swcme_test::Context& context);
 void test_pst02(swcme_test::Context& context);
 void test_pst03(swcme_test::Context& context);
 void test_den01(swcme_test::Context& context);
@@ -105,6 +106,7 @@ struct CommandLine {
 // The registry is the single source used by --list, --all, and --test. Its
 // declaration order is therefore also the deterministic --all execution order.
 const swcme_test::TestCase kTests[] = {
+    {"PST01", "COMMON", "Prepared-state immutability", test_pst01},
     {"PST02", "COMMON", "Cross-model prepared-state rejection", test_pst02},
     {"PST03", "COMMON", "Cross-configuration prepared-state rejection", test_pst03},
     {"CFG01", "COMMON", "Configuration rejection and physical-range validation",

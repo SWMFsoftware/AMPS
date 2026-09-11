@@ -342,6 +342,7 @@ USAGE SKETCH (more complete examples at bottom)
 ===============================================================================
 */
 
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
@@ -676,62 +677,95 @@ struct StepState {
  */
 class Model {
 public:
-  Model() : P{}, model_identity_(swcme::next_model_identity()) {}
+  Model() : P{}, model_identity_(swcme::next_model_identity()),
+            configuration_locked_(false) {}
   explicit Model(const Params& p)
-      : P(p), model_identity_(swcme::next_model_identity()) {}
+      : P(p), model_identity_(swcme::next_model_identity()),
+        configuration_locked_(false) {}
 
   // A copied Model is a new owner even when its Params are identical.  Giving
   // the copy a fresh identity prevents a StepState produced by the source
   // object from being accepted by the copy merely because the compiler copied
   // a hidden token together with the public configuration.
   Model(const Model& other)
-      : P(other.P), model_identity_(swcme::next_model_identity()) {}
+      : P(other.P), model_identity_(swcme::next_model_identity()),
+        configuration_locked_(false) {}
   Model& operator=(const Model& other) {
     if (this!=&other) {
+      require_configuration_mutable("operator=");
       P=other.P;
-      // Assignment changes the logical model represented by this object, so
-      // previously prepared states must not remain valid for the new value.
+      // Assignment is allowed only before this object has issued a state, but
+      // it still changes the logical model and therefore receives a fresh
+      // identity consistent with PST02's instance-provenance contract.
       model_identity_=swcme::next_model_identity();
+      configuration_locked_.store(false,std::memory_order_release);
     }
     return *this;
   }
 
   // Parameter setters (fluent)
-  Model& SetParams(const Params& p){ P=p; return *this; }
+  Model& SetParams(const Params& p){
+    require_configuration_mutable("SetParams"); P=p; return *this; }
   Model& SetCME(double r0_Rs,double V0_sh_kms,double Gamma_kmInv){
+    require_configuration_mutable("SetCME");
     P.r0_Rs=r0_Rs; P.V0_sh_kms=V0_sh_kms; P.Gamma_kmInv=Gamma_kmInv; return *this; }
   Model& SetKinematicsMode(swcme::kinematics::Mode mode){
+    require_configuration_mutable("SetKinematicsMode");
     P.kinematics_mode=mode; return *this; }
   Model& SetDataDrivenKinematics(const std::vector<double>& time_s,
                                  const std::vector<double>& radius_Rs,
                                  swcme::kinematics::ExtrapolationPolicy policy=
                                      swcme::defaults::DATA_EXTRAPOLATION){
+    require_configuration_mutable("SetDataDrivenKinematics");
     P.kinematics_mode=swcme::kinematics::Mode::DataDriven;
     P.data_time_s=time_s; P.data_radius_Rs=radius_Rs; P.data_extrapolation=policy;
     return *this; }
   Model& SetAmbient(double V_sw_kms,double n1AU_cm3,double B1AU_nT,double T_K,
                     double gamma_ad=swcme::defaults::GAMMA_AD,
                     double sin_theta=swcme::defaults::PARKER_REFERENCE_SIN_THETA){
+    require_configuration_mutable("SetAmbient");
     P.V_sw_kms=V_sw_kms; P.n1AU_cm3=n1AU_cm3; P.B1AU_nT=B1AU_nT; P.T_K=T_K;
     P.gamma_ad=gamma_ad; P.sin_theta=sin_theta; return *this; }
-  Model& SetRegionMode(swcme::regions::Mode mode){ P.region_mode=mode; return *this; }
+  Model& SetRegionMode(swcme::regions::Mode mode){
+    require_configuration_mutable("SetRegionMode");
+    P.region_mode=mode; return *this; }
   Model& SetShockAccelerationMode(swcme::acceleration::Mode mode){
+    require_configuration_mutable("SetShockAccelerationMode");
     P.shock_acceleration_mode=mode; return *this; }
   Model& SetGeometry(double sheath_thick_AU_at1AU,double ejecta_thick_AU_at1AU){
+    require_configuration_mutable("SetGeometry");
     P.sheath_thick_AU_at1AU=sheath_thick_AU_at1AU;
     P.ejecta_thick_AU_at1AU=ejecta_thick_AU_at1AU; return *this; }
   Model& SetSmoothing(double w_sh,double w_le,double w_te){
+    require_configuration_mutable("SetSmoothing");
     P.edge_smooth_shock_AU_at1AU=w_sh;
     P.edge_smooth_le_AU_at1AU   =w_le;
     P.edge_smooth_te_AU_at1AU   =w_te; return *this; }
   Model& SetSheathEjecta(double sheath_comp_floor,double sheath_ramp_power,
                          double V_sheath_LE_factor,double f_ME,double V_ME_factor){
+    require_configuration_mutable("SetSheathEjecta");
     P.sheath_comp_floor=sheath_comp_floor; P.sheath_ramp_power=sheath_ramp_power;
     P.V_sheath_LE_factor=V_sheath_LE_factor; P.f_ME=f_ME; P.V_ME_factor=V_ME_factor;
     return *this; }
 
   const Params& GetParams() const { return P; }
-        Params& MutableParams()   { return P; }
+  // A raw Params& could be retained before prepare_step() and used afterward,
+  // bypassing every runtime lifecycle check.  PST01 therefore makes the
+  // legacy escape hatch explicitly unavailable.  Use the guarded setters in
+  // the setup phase, or copy GetParams() and call reconfigured(params).
+  Params& MutableParams() = delete;
+
+  // Construct a replacement model instead of reopening a frozen instance.
+  // The returned object has a fresh PST02 owner identity and remains mutable
+  // until its own first successful prepare_step().  This is the supported
+  // builder path for parameter sweeps and event-to-event reconfiguration.
+  Model reconfigured(const Params& p) const { return Model(p); }
+
+  // Expose the lifecycle state without exposing the mutable flag itself.
+  // Acquire ordering pairs with the successful prepare_step() release store.
+  bool configuration_locked() const noexcept {
+    return configuration_locked_.load(std::memory_order_acquire);
+  }
 
   swcme::ModelIdentity model_identity() const noexcept {
     return model_identity_;
@@ -814,9 +848,9 @@ public:
     // either throws and returns no state, or returns a fully initialized state
     // that can be consumed only by this exact Model instance.
     S.owner_model_identity=model_identity_;
-    // Capture the exact configuration only after validation succeeds.  Every
-    // state consumer recomputes the receiver digest before modifying outputs,
-    // so later MutableParams()/setter changes cannot reuse this stale cache.
+    // Capture the exact configuration only after validation succeeds.  PST01
+    // freezes supported mutation when this preparation returns; the digest
+    // remains a defense-in-depth check before any consumer modifies outputs.
     S.configuration_digest=configuration_digest(P);
     S.time_s=t_s;
 
@@ -964,6 +998,10 @@ public:
           Vsw,S.V2_shock_ms,P.V_sheath_LE_factor);
     }
 
+    // A successfully returned state freezes this model's configuration.
+    // Locking only here leaves a model reusable after validation or numerical
+    // preparation throws; no partial/failed state changes its lifecycle.
+    configuration_locked_.store(true,std::memory_order_release);
     return S;
   }
 
@@ -1413,11 +1451,26 @@ bool write_tecplot_shock_vs_time(double t_end_s, std::size_t N, const char* path
 
 
 private:
+  // Legacy fluent setters have no status return, so post-prepare mutation is
+  // rejected with one consistent exception before any Params field changes.
+  // Configuration and preparation are an exclusive setup phase; once frozen,
+  // the atomic flag supports concurrent read-only state evaluation safely.
+  void require_configuration_mutable(const char* operation) const {
+    if (configuration_locked_.load(std::memory_order_acquire)) {
+      throw std::logic_error(std::string("swcme1d::")+operation+
+          ": model configuration is immutable after successful prepare_step(); "
+          "construct model.reconfigured(params) instead");
+    }
+  }
+
   Params P;
   // Runtime owner token stamped into every StepState returned by this model.
   // It is intentionally not derived from Params; identical Model instances
   // must remain distinct owners for PST02.
   swcme::ModelIdentity model_identity_;
+  // False during the legacy setup phase and permanently true after the first
+  // successful prepare_step().  It is never reset on a live model.
+  mutable std::atomic<bool> configuration_locked_;
 };
 
 // -----------------------------------------------------------------------------

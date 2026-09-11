@@ -381,18 +381,22 @@ static inline void parker_vec_T_fast(const swcme3d::StepState& S,
 namespace swcme3d {
 
 Model::Model(const Params& P)
-    : P_(P), model_identity_(swcme::next_model_identity()) {}
+    : P_(P), model_identity_(swcme::next_model_identity()),
+      configuration_locked_(false) {}
 
 Model::Model(const Model& other)
-    : P_(other.P_), model_identity_(swcme::next_model_identity()) {}
+    : P_(other.P_), model_identity_(swcme::next_model_identity()),
+      configuration_locked_(false) {}
 
 Model& Model::operator=(const Model& other) {
   if (this!=&other) {
+    require_configuration_mutable("operator=");
     P_=other.P_;
-    // Assignment replaces the logical model configuration.  Rotating the
-    // owner identity ensures states prepared before assignment cannot be
-    // silently consumed by the newly assigned model value.
+    // Only an unprepared receiver can reach this branch.  Rotate its identity
+    // anyway because assignment replaces the logical model represented by the
+    // object and PST02 ownership must not depend on configuration equality.
     model_identity_=swcme::next_model_identity();
+    configuration_locked_.store(false,std::memory_order_release);
   }
   return *this;
 }
@@ -636,6 +640,9 @@ StepState Model::prepare_step(double t_s) const {
           S.V_sw_ms,V2_rad,P_.V_sheath_LE_factor);
     }
   }
+  // Freeze only after every geometry and shock calculation succeeds.  Failed
+  // preparation therefore does not strand a model in a locked setup state.
+  configuration_locked_.store(true,std::memory_order_release);
   return S;
 }
 

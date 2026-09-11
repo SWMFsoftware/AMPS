@@ -97,6 +97,53 @@ second status convention.  A prepared step is read-only and may be shared by
 callers whose surrounding transport implementation provides the appropriate
 thread/MPI ownership.
 
+### Prepared-state immutability (PST01)
+
+A model now has two explicit lifecycle phases.  During initial configuration,
+the legacy 1-D fluent setters remain available so existing setup code continues
+to compile.  The first **successful**
+`prepare_step()` atomically freezes the model configuration.  From that point,
+every 1-D setter and 1-D/3-D copy assignment throws
+`std::logic_error` before changing any field or model identity.  Failed
+validation or numerical preparation does not freeze the model because no valid
+state was issued.
+
+The former 1-D `MutableParams()` raw-reference escape hatch is explicitly
+deleted.  A reference obtained during setup could otherwise be retained and
+used after preparation, bypassing any runtime lock.  Existing code should copy
+the read-only `GetParams()` result, edit that standalone value, and pass it to
+`SetParams()` before preparation or to `reconfigured()` afterward.
+
+This prevents an old state from changing meaning after construction.  In
+particular, changing `sin_theta` can no longer alter the Parker `Bphi` returned
+for an already prepared 1-D state.  The same state and fixed query points remain
+bitwise identical after every rejected mutation attempt.  The lifecycle flag
+is atomic so read-only evaluators may safely inspect a frozen model from the
+same threading/MPI contexts already supported by `StepState`; configuration and
+preparation remain an exclusive setup phase.
+
+To change a frozen configuration, construct a new owner with
+`model.reconfigured(params)`.  The replacement has a fresh `ModelIdentity`, is
+independent of all existing states, and remains configurable until its own
+first successful preparation:
+
+```cpp
+swcme1d::Model model(params);
+auto original_step = model.prepare_step(t);  // freezes model
+
+swcme1d::Params changed = model.GetParams();
+changed.sin_theta = 0.0;
+auto replacement = model.reconfigured(changed);
+auto replacement_step = replacement.prepare_step(t);
+
+// model + original_step remain valid and unchanged;
+// replacement + replacement_step represent the new configuration.
+```
+
+`configuration_locked()` reports the lifecycle state without exposing a way to
+reset it.  Copy construction also creates a fresh, initially configurable
+owner; it never transfers permission to consume the source model's states.
+
 ### Prepared-state model ownership (PST02)
 
 Every `swcme1d::Model` and `swcme3d::Model` now receives a process-unique,
@@ -126,10 +173,10 @@ available.  The SEP adapters validate ownership at their outer boundary so
 `BackgroundState`, `SEPSourceState`, `SourceSurface`, and optional connectivity
 outputs remain unchanged on rejection.
 
-Copy construction creates a new model identity.  Copy assignment copies the
-configuration and rotates the receiving identity, invalidating states prepared
-by that object before assignment.  PST03, described below, adds the independent
-configuration-snapshot check needed when the same 1-D model is mutated.
+Copy construction creates a new model identity.  Copy assignment can replace
+an unprepared model and rotates its identity, but PST01 rejects assignment once
+the receiver has successfully prepared a state.  PST03, described below, adds
+an independent configuration-snapshot check for foreign or corrupted records.
 
 Correct and incorrect usage therefore look like:
 
@@ -167,9 +214,10 @@ mutation, or file opening, using this precedence:
 1. A different `owner_model_identity` returns `STATE_MODEL_MISMATCH`.  The
    status includes both model identities and both configuration digests, so
    logs distinguish equal-model misuse from cross-configuration misuse.
-2. A matching owner with a different current digest returns
-   `STATE_CONFIGURATION_MISMATCH`.  This catches a state retained across
-   `swcme1d::Model::MutableParams()` or setter changes.
+2. A matching owner with a different digest returns
+   `STATE_CONFIGURATION_MISMATCH`.  PST01 prevents supported model APIs from
+   creating this condition; the check remains defense-in-depth for corrupted,
+   incompatible, or externally deserialized state records.
 3. Only matching owner and configuration snapshots proceed to physics.
 
 For digest diagnostics, `expected_configuration_digest` is the receiving
@@ -178,20 +226,8 @@ snapshot carried by the state; `has_configuration_digests` indicates their
 presence.  `ModelStatus::summary()` prints both as fixed-width hexadecimal.
 The 3-D model remains construction-time immutable, but it participates in the
 same complete digest contract and reports configuration differences on foreign
-states.
-
-After changing 1-D parameters, prepare a fresh state:
-
-```cpp
-auto old_step = model.prepare_step(t);
-model.MutableParams().gamma_ad = 1.55;
-
-auto stale = model.evaluate_radii_fast_checked(
-    old_step, radius, density, velocity, count);
-// stale.code == StateConfigurationMismatch; outputs are unchanged.
-
-auto new_step = model.prepare_step(t);
-```
+states.  Use the PST01 replacement path when either dimensional model needs a
+different configuration.
 
 ### `SEPSourceState`
 

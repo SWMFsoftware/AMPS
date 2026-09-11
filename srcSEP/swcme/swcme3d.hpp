@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "swcme_constants.hpp"
 #include "swcme_units.hpp"
 #include "swcme_defaults.hpp"
@@ -749,6 +751,15 @@ public:
     return model_identity_;
   }
 
+  // Return a separately owned replacement rather than mutating an instance
+  // that may already have issued prepared states.  The new model starts in
+  // the configuration phase and freezes after its own first successful step.
+  Model reconfigured(const Params& p) const { return Model(p); }
+
+  bool configuration_locked() const noexcept {
+    return configuration_locked_.load(std::memory_order_acquire);
+  }
+
   // Side-effect-free ownership guard used by direct callers and the SEP
   // adapters.  Call it before modifying outputs so mismatch handling remains
   // transactional and diagnostics retain both the expected and supplied IDs.
@@ -1028,11 +1039,25 @@ public:
                                                   const char* path) const;
 
 private:
+  // Copy assignment is the only legacy operation capable of replacing a 3-D
+  // model's private Params.  Reject it after preparation with the same PST01
+  // lifecycle rule used by the 1-D fluent setters.
+  void require_configuration_mutable(const char* operation) const {
+    if (configuration_locked_.load(std::memory_order_acquire)) {
+      throw std::logic_error(std::string("swcme3d::")+operation+
+          ": model configuration is immutable after successful prepare_step(); "
+          "construct model.reconfigured(params) instead");
+    }
+  }
+
   Params P_;
   // Runtime owner token stamped into each StepState prepared by this object.
   // It is deliberately unrelated to configuration values so independently
   // constructed but numerically identical models remain distinct owners.
   swcme::ModelIdentity model_identity_;
+  // The atomic lifecycle flag permits concurrent read-only queries after a
+  // successful prepare without exposing any path back to mutable Params.
+  mutable std::atomic<bool> configuration_locked_;
 };
 
 } // namespace swcme3d
