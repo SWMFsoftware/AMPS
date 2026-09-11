@@ -15,6 +15,7 @@
 #include "swcme_core.hpp"
 #include "swcme_shock.hpp"
 #include "swcme_prepared_integrity.hpp"
+#include "swcme_output.hpp"
 // ============================================================================
 // swcme3d.hpp
 // ----------------------------------------------------------------------------
@@ -1086,11 +1087,17 @@ public:
   //    specific quantities (rc, Vsh_n, normals, area, centroids) are zeros.
   //  • Non-finite physics data are rejected. Checked writer APIs return the
   //    failure status; writers never replace a bad value by zero.
+  //  • Checked writers distinguish FILE_OPEN_FAILURE from FILE_WRITE_FAILURE
+  //    and inspect write, flush, stream-error, and close results.  Their final
+  //    optional FileOperations pointer is a deterministic validation seam;
+  //    normal callers omit it to select the production stdio backend.
   // --------------------------------------------------------------------------
   swcme::ModelStatus write_tecplot_dataset_bundle_checked(
                                     const ShockMesh& M,const TriMetrics& T,
                                     const StepState& S,const BoxSpec& B,
-                                    const char* path) const;
+                                    const char* path,
+                                    const swcme::output::FileOperations*
+                                        file_operations=nullptr) const;
   bool write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T,
                                     const StepState& S,const BoxSpec& B,
                                     const char* path) const;
@@ -1099,7 +1106,9 @@ public:
   swcme::ModelStatus write_box_face_minX_tecplot_structured_checked(
                                               const StepState& S,
                                               const BoxSpec& B,
-                                              const char* path) const;
+                                              const char* path,
+                                              const swcme::output::FileOperations*
+                                                  file_operations=nullptr) const;
   bool write_box_face_minX_tecplot_structured(const StepState& S,
                                               const BoxSpec& B,
                                               const char* path) const;
@@ -1108,7 +1117,9 @@ public:
   swcme::ModelStatus write_shock_surface_center_metrics_tecplot_checked(
                                                   const ShockMesh& M,
                                                   const TriMetrics& T,
-                                                  const char* path) const;
+                                                  const char* path,
+                                                  const swcme::output::FileOperations*
+                                                      file_operations=nullptr) const;
   bool write_shock_surface_center_metrics_tecplot(const ShockMesh& M,
                                                   const TriMetrics& T,
                                                   const char* path) const;

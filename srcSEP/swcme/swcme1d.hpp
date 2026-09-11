@@ -367,6 +367,7 @@ USAGE SKETCH (more complete examples at bottom)
 #include "swcme_core.hpp"
 #include "swcme_shock.hpp"
 #include "swcme_prepared_integrity.hpp"
+#include "swcme_output.hpp"
 
 namespace swcme1d {
 
@@ -1383,34 +1384,13 @@ public:
                                     const double* divV,std::size_t N,
                                     const char* path,double time_simulation=-1.0) const {
     // The legacy boolean writer cannot return ModelStatus.  Throw before
-    // fopen() so a foreign state cannot truncate or partially replace an
+    // opening so a foreign state cannot truncate or partially replace an
     // existing file; checked callers should use the method below instead.
     swcme::throw_if_error(validate_prepared_state(
         S,"swcme1d::write_tecplot_radial_profile"));
-    if (!r_m || !n_m3 || !V_ms || !Br_T || !Bphi_T || !Bmag_T || !path) return false;
-    std::FILE* f = std::fopen(path, "w"); if (!f) return false;
-
-    std::fprintf(f,"TITLE=\"1D SW+CME radial profile\"\n"); 
-    std::fprintf(f,"VARIABLES=\"r[m]\",\"R[AU]\",\"rSun[R_s]\",\"n[m^-3]\",\"V[m/s]\",\"Br[T]\",\"Bphi[T]\",\"Bmag[T]\",\"divV[s^-1]\",\"rc\",\"R_sh[m]\",\"R_LE[m]\",\"R_TE[m]\"\n");  
-    std::fprintf(f, "ZONE T=\"radial\", I=%zu, F=POINT\n", N);
-
-    for (std::size_t i=0;i<N;++i){
-      const double r = r_m[i];
-      const double R_AU = swcme::units::m_to_au(r);
-      const double Rsun = swcme::units::m_to_solar_radii(r);
-      const double dv = divV?divV[i]:0.0;
-      std::fprintf(f, "% .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e\n",
-                   r, R_AU, Rsun,
-                   n_m3[i], V_ms[i], Br_T[i], Bphi_T[i], Bmag_T[i], dv,
-                   S.rc, S.r_sh_m, S.r_le_m, S.r_te_m);
-    }
-
-    if (time_simulation>=0.0){
-      std::fprintf(f, "# t = %.3f s\n", time_simulation);
-    }
-
-    std::fclose(f);
-    return true;
+    return write_tecplot_radial_profile_checked(
+        S,r_m,n_m3,V_ms,Br_T,Bphi_T,Bmag_T,divV,N,path,
+        time_simulation).ok();
   }
 
   // Status-returning output entry point used by AMPS and validation code.  The
@@ -1421,23 +1401,58 @@ public:
       const StepState& S, const double* r_m, const double* n_m3,
       const double* V_ms, const double* Br_T, const double* Bphi_T,
       const double* Bmag_T, const double* divV, std::size_t N,
-      const char* path, double time_simulation=-1.0) const {
+      const char* path, double time_simulation=-1.0,
+      const swcme::output::FileOperations* file_operations=nullptr) const {
     const swcme::ModelStatus ownership=validate_prepared_state(
         S,"swcme1d::write_tecplot_radial_profile");
     if (!ownership.ok()) return ownership;
-    try {
-      return write_tecplot_radial_profile(
-                 S,r_m,n_m3,V_ms,Br_T,Bphi_T,Bmag_T,divV,N,path,
-                 time_simulation)
-          ? swcme::ModelStatus::success()
-          : swcme::ModelStatus::make(
-                swcme::StatusCode::FileOpenFailure,
-                "swcme1d::write_tecplot_radial_profile");
-    } catch (const std::exception&) {
+    if (!r_m || !n_m3 || !V_ms || !Br_T || !Bphi_T || !Bmag_T || !path)
       return swcme::ModelStatus::make(
-          swcme::StatusCode::FileWriteFailure,
-          "swcme1d::write_tecplot_radial_profile");
+          swcme::StatusCode::NullPointer,
+          "swcme1d::write_tecplot_radial_profile arguments");
+
+    const swcme::output::FileOperations& operations=file_operations
+        ? *file_operations : swcme::output::stdio_file_operations();
+    swcme::output::CheckedTextFile output(operations);
+    if (!output.open(path))
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::FileOpenFailure,
+          "swcme1d::write_tecplot_radial_profile open");
+
+    // Every call carries a stable phase/row context.  CheckedTextFile stops
+    // issuing writes after the first failure but finish() still closes the
+    // stream and preserves that original diagnostic.
+    output.print("swcme1d radial profile title",swcme::ModelStatus::npos,
+                 "TITLE=\"1D SW+CME radial profile\"\n");
+    output.print("swcme1d radial profile variables",swcme::ModelStatus::npos,
+                 "VARIABLES=\"r[m]\",\"R[AU]\",\"rSun[R_s]\","
+                 "\"n[m^-3]\",\"V[m/s]\",\"Br[T]\",\"Bphi[T]\","
+                 "\"Bmag[T]\",\"divV[s^-1]\",\"rc\","
+                 "\"R_sh[m]\",\"R_LE[m]\",\"R_TE[m]\"\n");
+    output.print("swcme1d radial profile zone",swcme::ModelStatus::npos,
+                 "ZONE T=\"radial\", I=%zu, F=POINT\n",N);
+
+    for (std::size_t i=0; i<N && output.good(); ++i) {
+      const double r=r_m[i];
+      const double R_AU=swcme::units::m_to_au(r);
+      const double Rsun=swcme::units::m_to_solar_radii(r);
+      const double dv=divV ? divV[i] : 0.0;
+      output.print(
+          "swcme1d radial profile row",i,
+          "% .9e % .9e % .9e % .9e % .9e % .9e % .9e % .9e "
+          "% .9e % .9e % .9e % .9e % .9e\n",
+          r,R_AU,Rsun,n_m3[i],V_ms[i],Br_T[i],Bphi_T[i],Bmag_T[i],dv,
+          S.rc,S.r_sh_m,S.r_le_m,S.r_te_m);
     }
+
+    if (time_simulation>=0.0 && output.good())
+      output.print("swcme1d radial profile time",swcme::ModelStatus::npos,
+                   "# t = %.3f s\n",time_simulation);
+
+    return output.finish(
+        "swcme1d radial profile flush",
+        "swcme1d radial profile stream error",
+        "swcme1d radial profile close");
   }
 
   // Convenience wrapper from radii only
@@ -1478,39 +1493,75 @@ public:
  * @param t_end_s  End time [s] (must be ≥ 0).
  * @param N        Number of samples (rows). If N==1, the single row is at t=t_end_s.
  * @param path     Output path for the Tecplot .dat file.
- * @return true on success, false on error (bad args or failed fopen).
+ * @return true on success; false for invalid arguments, open failure, or any
+ *         write/flush/stream/close failure.
  */
-bool write_tecplot_shock_vs_time(double t_end_s, std::size_t N, const char* path) const {
-  if (!path || N == 0 || !(t_end_s >= 0.0)) return false;
+bool write_tecplot_shock_vs_time(double t_end_s, std::size_t N,
+                                 const char* path) const {
+  return write_tecplot_shock_vs_time_checked(t_end_s,N,path).ok();
+}
 
-  std::FILE* f = std::fopen(path, "w");
-  if (!f) return false;
+// Status-returning companion to the legacy bool API.  OUT02 requires output
+// failures to remain distinguishable from malformed input and from kinematic
+// preparation failures, so callers that archive science products should use
+// this form.
+swcme::ModelStatus write_tecplot_shock_vs_time_checked(
+    double t_end_s, std::size_t N, const char* path,
+    const swcme::output::FileOperations* file_operations=nullptr) const {
+  if (!path)
+    return swcme::ModelStatus::make(
+        swcme::StatusCode::NullPointer,"swcme1d shock history path");
+  if (N==0 || !std::isfinite(t_end_s) || t_end_s<0.0)
+    return swcme::ModelStatus::make_value(
+        swcme::StatusCode::InvalidConfiguration,
+        "swcme1d shock history range",t_end_s);
 
-  // Header
-  std::fprintf(f,
-    "TITLE=\"Shock kinematics vs time\"\n"
-    "VARIABLES=\"t[s]\",\"R_sh[R_s]\",\"V_sh[km/s]\",\"rc\"\n");
-  std::fprintf(f, "ZONE T=\"shock_vs_time\", N=%zu, F=POINT\n", N);
+  const swcme::output::FileOperations& operations=file_operations
+      ? *file_operations : swcme::output::stdio_file_operations();
+  swcme::output::CheckedTextFile output(operations);
+  if (!output.open(path))
+    return swcme::ModelStatus::make(
+        swcme::StatusCode::FileOpenFailure,"swcme1d shock history open");
 
-  // Time step (include both endpoints if N>1)
-  const double dt = (N > 1) ? (t_end_s / static_cast<double>(N - 1)) : 0.0;
+  output.print("swcme1d shock history header",swcme::ModelStatus::npos,
+      "TITLE=\"Shock kinematics vs time\"\n"
+      "VARIABLES=\"t[s]\",\"R_sh[R_s]\",\"V_sh[km/s]\",\"rc\"\n");
+  output.print("swcme1d shock history zone",swcme::ModelStatus::npos,
+               "ZONE T=\"shock_vs_time\", N=%zu, F=POINT\n",N);
 
-  for (std::size_t i = 0; i < N; ++i) {
-    const double t = (N > 1) ? (i * dt) : t_end_s;
-
-    // Build per-time cache and read shock metrics
-    StepState S = prepare_step(t);
-
-    const double Rsh_Rs   = S.r_sh_m / Rs;       // [R_sun]
-    const double Vsh_kms  = swcme::units::m_per_s_to_km_per_s(S.V_sh_ms); // [km/s]
-    const double rc       = S.rc;                // compression ratio proxy
-
-    std::fprintf(f, "% .9e % .9e % .9e % .9e\n",
-                 t, Rsh_Rs, Vsh_kms, rc);
+  const double dt=(N>1) ? t_end_s/static_cast<double>(N-1) : 0.0;
+  try {
+    for (std::size_t i=0; i<N && output.good(); ++i) {
+      const double t=(N>1) ? i*dt : t_end_s;
+      const StepState S=prepare_step(t);
+      const double Rsh_Rs=S.r_sh_m/Rs;
+      const double Vsh_kms=
+          swcme::units::m_per_s_to_km_per_s(S.V_sh_ms);
+      output.print("swcme1d shock history row",i,
+                   "% .9e % .9e % .9e % .9e\n",
+                   t,Rsh_Rs,Vsh_kms,S.rc);
+    }
+  } catch (...) {
+    // Physics preparation failed before the next row could be formatted.  We
+    // still close the stream, but a close-only cleanup error is later in time
+    // and must not mask the earlier physics failure.  Conversely, a write
+    // failure recorded before preparation remains the first failure and keeps
+    // its exact byte/row context.
+    const bool write_failed_before_cleanup=!output.good();
+    const swcme::ModelStatus io_status=output.finish(
+        "swcme1d shock history flush",
+        "swcme1d shock history stream error",
+        "swcme1d shock history close");
+    if (write_failed_before_cleanup) return io_status;
+    return swcme::ModelStatus::make(
+        swcme::StatusCode::NonFiniteResult,
+        "swcme1d shock history preparation");
   }
 
-  std::fclose(f);
-  return true;
+  return output.finish(
+      "swcme1d shock history flush",
+      "swcme1d shock history stream error",
+      "swcme1d shock history close");
 }
 
 

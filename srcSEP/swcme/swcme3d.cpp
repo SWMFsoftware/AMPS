@@ -2212,11 +2212,92 @@ static inline bool metrics_finite_and_sized(const swcme3d::TriMetrics& T,
          all_finite(T.cz) && all_finite(T.rc_mean) && all_finite(T.Vsh_n_mean);
 }
 
-static inline void dump_array_block(std::FILE* fp, const std::vector<double>& a){
-  int cnt=0; for(double v:a){ std::fprintf(fp,"%.9e ",v); if(++cnt==8){std::fprintf(fp,"\n"); cnt=0;} } if(cnt) std::fprintf(fp,"\n");
+// Write one Tecplot BLOCK variable while retaining the element index on every
+// formatted write.  Returning immediately on failure prevents later values or
+// line breaks from obscuring the exact block element that was truncated.
+static inline bool dump_array_block(
+    swcme::output::CheckedTextFile& output,
+    const std::vector<double>& values,const char* context) {
+  int columns=0;
+  for (std::size_t i=0; i<values.size(); ++i) {
+    if (!output.print(context,i,"%.9e ",values[i])) return false;
+    if (++columns==8) {
+      if (!output.print(context,i,"\n")) return false;
+      columns=0;
+    }
+  }
+  return columns==0 || output.print(
+      context,values.empty() ? swcme::ModelStatus::npos : values.size()-1,"\n");
 }
-static inline void dump_zeros_block(std::FILE* fp, std::size_t count){
-  int cnt=0; for(std::size_t e=0;e<count;++e){ std::fprintf(fp,"0 "); if(++cnt==8){std::fprintf(fp,"\n"); cnt=0;} } if(cnt) std::fprintf(fp,"\n");
+
+// Reserved cell fields are emitted through the same checked path as physical
+// values.  Even though their content is constant, each zero is real output and
+// must carry an item index if the destination stops accepting bytes.
+static inline bool dump_zeros_block(
+    swcme::output::CheckedTextFile& output,
+    std::size_t count,const char* context) {
+  int columns=0;
+  for (std::size_t i=0; i<count; ++i) {
+    if (!output.print(context,i,"0 ")) return false;
+    if (++columns==8) {
+      if (!output.print(context,i,"\n")) return false;
+      columns=0;
+    }
+  }
+  return columns==0 || output.print(
+      context,count==0 ? swcme::ModelStatus::npos : count-1,"\n");
+}
+
+// Emit the already validated surface dataset through the shared OUT02 stream
+// lifecycle.  Keeping this helper independent of validation lets both the
+// legacy bool wrapper and checked status API use exactly the same bytes.
+static swcme::ModelStatus write_surface_output(
+    const swcme3d::ShockMesh& M,const swcme3d::TriMetrics& T,
+    const char* path,const swcme::output::FileOperations& operations) {
+  const std::size_t Nv=M.x.size(),Ne=M.tri_i.size();
+  swcme::output::CheckedTextFile output(operations);
+  if (!output.open(path)) return swcme::ModelStatus::make(
+      swcme::StatusCode::FileOpenFailure,"3D surface output open");
+
+  output.print("3D surface title",swcme::ModelStatus::npos,
+               "TITLE=\"Shock surface (cell metrics + nodal rc)\"\n");
+  output.print("3D surface variables",swcme::ModelStatus::npos,
+      "VARIABLES=\"X\",\"Y\",\"Z\",\"n\",\"Vx\",\"Vy\",\"Vz\","
+      "\"Bx\",\"By\",\"Bz\",\"divVsw\",\"rc\",\"Vsh_n\",\"nx\","
+      "\"ny\",\"nz\",\"area\",\"rc_mean\",\"Vsh_n_mean\",\"tnx\","
+      "\"tny\",\"tnz\",\"cx\",\"cy\",\"cz\"\n");
+  output.print("3D surface zone",swcme::ModelStatus::npos,
+      "ZONE T=\"surface_cells\", N=%zu, E=%zu, ZONETYPE=FETRIANGLE, "
+      "DATAPACKING=BLOCK,\n",Nv,Ne);
+  output.print("3D surface variable locations",swcme::ModelStatus::npos,
+      "VARLOCATION=([1-3,12-13]=NODAL, [4-11,14-25]=CELLCENTERED)\n");
+
+  dump_array_block(output,M.x,"3D surface X block");
+  dump_array_block(output,M.y,"3D surface Y block");
+  dump_array_block(output,M.z,"3D surface Z block");
+  for (int field=0; field<8 && output.good(); ++field)
+    dump_zeros_block(output,Ne,"3D surface zero field block");
+  dump_array_block(output,M.rc,"3D surface compression block");
+  dump_array_block(output,M.Vsh_n,"3D surface speed block");
+  dump_array_block(output,T.nx,"3D surface normal-X block");
+  dump_array_block(output,T.ny,"3D surface normal-Y block");
+  dump_array_block(output,T.nz,"3D surface normal-Z block");
+  dump_array_block(output,T.area,"3D surface area block");
+  dump_array_block(output,T.rc_mean,"3D surface mean-compression block");
+  dump_array_block(output,T.Vsh_n_mean,"3D surface mean-speed block");
+  for (int field=0; field<3 && output.good(); ++field)
+    dump_zeros_block(output,Ne,"3D surface reserved field block");
+  dump_array_block(output,T.cx,"3D surface centroid-X block");
+  dump_array_block(output,T.cy,"3D surface centroid-Y block");
+  dump_array_block(output,T.cz,"3D surface centroid-Z block");
+
+  for (std::size_t e=0; e<Ne && output.good(); ++e)
+    output.print("3D surface connectivity row",e,"%d %d %d\n",
+                 M.tri_i[e],M.tri_j[e],M.tri_k[e]);
+
+  return output.finish("3D surface output flush",
+                       "3D surface output stream error",
+                       "3D surface output close");
 }
 
 // Surface-only: cell metrics + nodal rc/Vsh_n
@@ -2224,39 +2305,18 @@ bool Model::write_shock_surface_center_metrics_tecplot(
   const ShockMesh& M, const TriMetrics& T_in, const char* path) const {
 
   TriMetrics T=T_in;
-  const std::size_t Nv=M.x.size(), Ne=M.tri_i.size();
+  const std::size_t Ne=M.tri_i.size();
   if (!path || !mesh_finite_and_sized(M)) return false;
   if (T.area.size()!=Ne){ compute_triangle_metrics(M,T); }
   if (!metrics_finite_and_sized(T,Ne)) return false;
 
-  std::FILE* fp=std::fopen(path,"w"); if(!fp) return false;
-
-  std::fprintf(fp,"TITLE=\"Shock surface (cell metrics + nodal rc)\"\n");
-  std::fprintf(fp,"VARIABLES=\"X\",\"Y\",\"Z\",\"n\",\"Vx\",\"Vy\",\"Vz\",\"Bx\",\"By\",\"Bz\",\"divVsw\","
-                  "\"rc\",\"Vsh_n\",\"nx\",\"ny\",\"nz\",\"area\",\"rc_mean\",\"Vsh_n_mean\",\"tnx\",\"tny\",\"tnz\",\"cx\",\"cy\",\"cz\"\n");
-  std::fprintf(fp,"ZONE T=\"surface_cells\", N=%zu, E=%zu, ZONETYPE=FETRIANGLE, DATAPACKING=BLOCK,\n", Nv, Ne);
-  std::fprintf(fp,"VARLOCATION=([1-3,12-13]=NODAL, [4-11,14-25]=CELLCENTERED)\n");
-
-  dump_array_block(fp,M.x); dump_array_block(fp,M.y); dump_array_block(fp,M.z);
-  dump_zeros_block(fp,Ne); dump_zeros_block(fp,Ne); dump_zeros_block(fp,Ne);
-  dump_zeros_block(fp,Ne);
-  dump_zeros_block(fp,Ne); dump_zeros_block(fp,Ne); dump_zeros_block(fp,Ne);
-  dump_zeros_block(fp,Ne);
-  dump_array_block(fp,M.rc); dump_array_block(fp,M.Vsh_n);
-  dump_array_block(fp,T.nx); dump_array_block(fp,T.ny); dump_array_block(fp,T.nz);
-  dump_array_block(fp,T.area); dump_array_block(fp,T.rc_mean); dump_array_block(fp,T.Vsh_n_mean);
-  dump_zeros_block(fp,Ne); dump_zeros_block(fp,Ne); dump_zeros_block(fp,Ne);
-  dump_array_block(fp,T.cx); dump_array_block(fp,T.cy); dump_array_block(fp,T.cz);
-
-  for (std::size_t e=0;e<Ne;++e)
-    std::fprintf(fp,"%d %d %d\n", M.tri_i[e], M.tri_j[e], M.tri_k[e]);
-
-  std::fclose(fp);
-  return true;
+  return write_surface_output(
+      M,T,path,swcme::output::stdio_file_operations()).ok();
 }
 
 swcme::ModelStatus Model::write_shock_surface_center_metrics_tecplot_checked(
-    const ShockMesh& M,const TriMetrics& T,const char* path) const {
+    const ShockMesh& M,const TriMetrics& T,const char* path,
+    const swcme::output::FileOperations* file_operations) const {
   if (!path) return swcme::ModelStatus::make(
       swcme::StatusCode::NullPointer,"write_shock_surface_center_metrics_tecplot path");
   if (!mesh_finite_and_sized(M)) return swcme::ModelStatus::make(
@@ -2266,10 +2326,9 @@ swcme::ModelStatus Model::write_shock_surface_center_metrics_tecplot_checked(
     if (checked.area.size()!=M.tri_i.size()) compute_triangle_metrics(M,checked);
     if (!metrics_finite_and_sized(checked,M.tri_i.size())) return swcme::ModelStatus::make(
         swcme::StatusCode::NonFiniteResult,"write_shock_surface_center_metrics_tecplot metrics");
-    return write_shock_surface_center_metrics_tecplot(M,checked,path)
-        ? swcme::ModelStatus::success()
-        : swcme::ModelStatus::make(swcme::StatusCode::FileOpenFailure,
-                                   "write_shock_surface_center_metrics_tecplot");
+    const swcme::output::FileOperations& operations=file_operations
+        ? *file_operations : swcme::output::stdio_file_operations();
+    return write_surface_output(M,checked,path,operations);
   } catch (...) {
     return swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,
                                     "write_shock_surface_center_metrics_tecplot");
@@ -2291,26 +2350,23 @@ BoxSpec Model::default_apex_box(const StepState& S,double half_AU,int N) const {
   B.Ni=N; B.Nj=N; B.Nk=N; return B;
 }
 
-// Bundle writer: surface_cells + surface_nodal + volume_box + minX face
-bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_in,
-                                         const StepState& S,const BoxSpec& B,
-                                         const char* path) const {
-  // The source-compatible boolean writer throws on ownership misuse before it
-  // can open/truncate `path`.  Checked production callers use the status API
-  // below, which performs the same guard without exceptions.
-  swcme::throw_if_error(validate_prepared_state(
-      S,"swcme3d::write_tecplot_dataset_bundle"));
-  TriMetrics T=T_in;
-  const std::size_t Nv=M.x.size(), Ne=M.tri_i.size();
-  if (!path || !mesh_finite_and_sized(M)) return false;
-  if (T.area.size()!=Ne){ compute_triangle_metrics(M,T); }
-  if (!metrics_finite_and_sized(T,Ne)) return false;
+// Write a complete four-zone dataset after the caller has validated its model
+// state, mesh, metrics, and box.  All output passes through CheckedTextFile so
+// a partial raw write and a delayed buffered-stream failure have the same
+// explicit FILE_WRITE_FAILURE contract.
+static swcme::ModelStatus write_bundle_output(
+    const swcme3d::Model& model,const swcme3d::ShockMesh& M,
+    const swcme3d::TriMetrics& T,const swcme3d::StepState& S,
+    const swcme3d::BoxSpec& B,const char* path,
+    const swcme::output::FileOperations& operations) {
+  const std::size_t Nv=M.x.size(),Ne=M.tri_i.size();
+  swcme::output::CheckedTextFile output(operations);
+  if (!output.open(path)) return swcme::ModelStatus::make(
+      swcme::StatusCode::FileOpenFailure,"3D dataset bundle open");
 
-  std::FILE* fp=std::fopen(path,"w"); if(!fp) return false;
-  auto p=[&](const char* fmt, auto... args){ std::fprintf(fp,fmt,args...); };
-
-  p("TITLE = \"SW+CME dataset\"\n");
-  p("VARIABLES = "
+  output.print("3D dataset title",swcme::ModelStatus::npos,
+               "TITLE = \"SW+CME dataset\"\n");
+  output.print("3D dataset variables",swcme::ModelStatus::npos,"VARIABLES = "
     "\"X\",\"Y\",\"Z\","
     "\"n\",\"Vx\",\"Vy\",\"Vz\","
     "\"Bx\",\"By\",\"Bz\",\"divVsw\","
@@ -2319,27 +2375,41 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_
     "\"tnx\",\"tny\",\"tnz\",\"cx\",\"cy\",\"cz\"\n");
 
   // Zone 1: surface_cells (FETRIANGLE, BLOCK)
-  p("ZONE T=\"surface_cells\", N=%zu, E=%zu, ZONETYPE=FETRIANGLE, DATAPACKING=BLOCK,\n", Nv, Ne);
-  p("VARLOCATION=([1-3,12-13]=NODAL, [4-11,14-25]=CELLCENTERED)\n");
+  output.print("3D dataset surface-cell zone",swcme::ModelStatus::npos,
+      "ZONE T=\"surface_cells\", N=%zu, E=%zu, ZONETYPE=FETRIANGLE, "
+      "DATAPACKING=BLOCK,\n",Nv,Ne);
+  output.print("3D dataset surface-cell locations",swcme::ModelStatus::npos,
+      "VARLOCATION=([1-3,12-13]=NODAL, [4-11,14-25]=CELLCENTERED)\n");
 
-  dump_array_block(fp,M.x); dump_array_block(fp,M.y); dump_array_block(fp,M.z);
-  dump_zeros_block(fp,Ne); dump_zeros_block(fp,Ne); dump_zeros_block(fp,Ne);
-  dump_zeros_block(fp,Ne);
-  dump_zeros_block(fp,Ne); dump_zeros_block(fp,Ne); dump_zeros_block(fp,Ne);
-  dump_zeros_block(fp,Ne);
-  dump_array_block(fp,M.rc); dump_array_block(fp,M.Vsh_n);
-  dump_array_block(fp,T.nx); dump_array_block(fp,T.ny); dump_array_block(fp,T.nz);
-  dump_array_block(fp,T.area); dump_array_block(fp,T.rc_mean); dump_array_block(fp,T.Vsh_n_mean);
-  dump_zeros_block(fp,Ne); dump_zeros_block(fp,Ne); dump_zeros_block(fp,Ne);
-  dump_array_block(fp,T.cx); dump_array_block(fp,T.cy); dump_array_block(fp,T.cz);
+  dump_array_block(output,M.x,"3D dataset surface X block");
+  dump_array_block(output,M.y,"3D dataset surface Y block");
+  dump_array_block(output,M.z,"3D dataset surface Z block");
+  for (int field=0; field<8 && output.good(); ++field)
+    dump_zeros_block(output,Ne,"3D dataset surface zero field block");
+  dump_array_block(output,M.rc,"3D dataset surface compression block");
+  dump_array_block(output,M.Vsh_n,"3D dataset surface speed block");
+  dump_array_block(output,T.nx,"3D dataset surface normal-X block");
+  dump_array_block(output,T.ny,"3D dataset surface normal-Y block");
+  dump_array_block(output,T.nz,"3D dataset surface normal-Z block");
+  dump_array_block(output,T.area,"3D dataset surface area block");
+  dump_array_block(output,T.rc_mean,"3D dataset surface mean-compression block");
+  dump_array_block(output,T.Vsh_n_mean,"3D dataset surface mean-speed block");
+  for (int field=0; field<3 && output.good(); ++field)
+    dump_zeros_block(output,Ne,"3D dataset surface reserved field block");
+  dump_array_block(output,T.cx,"3D dataset surface centroid-X block");
+  dump_array_block(output,T.cy,"3D dataset surface centroid-Y block");
+  dump_array_block(output,T.cz,"3D dataset surface centroid-Z block");
 
-  for (std::size_t e=0;e<Ne;++e)
-    p("%d %d %d\n", M.tri_i[e], M.tri_j[e], M.tri_k[e]);
+  for (std::size_t e=0; e<Ne && output.good(); ++e)
+    output.print("3D dataset surface connectivity row",e,"%d %d %d\n",
+                 M.tri_i[e],M.tri_j[e],M.tri_k[e]);
 
   // Zone 2: surface_nodal (FEPOINT)
-  p("ZONE T=\"surface_nodal\", N=%zu, E=%zu, F=FEPOINT, ET=TRIANGLE\n", Nv, Ne);
-  for (std::size_t i=0;i<Nv;++i){
-    p("%.9e %.9e %.9e "
+  output.print("3D dataset surface-nodal zone",swcme::ModelStatus::npos,
+      "ZONE T=\"surface_nodal\", N=%zu, E=%zu, F=FEPOINT, ET=TRIANGLE\n",
+      Nv,Ne);
+  for (std::size_t i=0; i<Nv && output.good(); ++i) {
+    output.print("3D dataset surface-nodal row",i,"%.9e %.9e %.9e "
       "%.9e %.9e %.9e %.9e "
       "%.9e %.9e %.9e %.9e "
       "%.9e %.9e "
@@ -2357,21 +2427,26 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_
       0.0,0.0,0.0
     );
   }
-  for (std::size_t e=0;e<Ne;++e)
-    p("%d %d %d\n", M.tri_i[e], M.tri_j[e], M.tri_k[e]);
+  for (std::size_t e=0; e<Ne && output.good(); ++e)
+    output.print("3D dataset nodal connectivity row",e,"%d %d %d\n",
+                 M.tri_i[e],M.tri_j[e],M.tri_k[e]);
 
   // Zone 3: volume_box (structured POINT)
-  p("ZONE T=\"volume_box\", I=%d, J=%d, K=%d, DATAPACKING=POINT\n", B.Ni,B.Nj,B.Nk);
-  for (int kk=0; kk<B.Nk; ++kk){
+  output.print("3D dataset volume zone",swcme::ModelStatus::npos,
+      "ZONE T=\"volume_box\", I=%d, J=%d, K=%d, DATAPACKING=POINT\n",
+      B.Ni,B.Nj,B.Nk);
+  std::size_t volume_row=0;
+  for (int kk=0; kk<B.Nk && output.good(); ++kk){
     const double zk = B.cz + (-B.hz + (2.0*B.hz) * (kk / double(std::max(1,B.Nk-1))));
-    for (int jj=0; jj<B.Nj; ++jj){
+    for (int jj=0; jj<B.Nj && output.good(); ++jj){
       const double yj = B.cy + (-B.hy + (2.0*B.hy) * (jj / double(std::max(1,B.Nj-1))));
-      for (int ii=0; ii<B.Ni; ++ii){
+      for (int ii=0; ii<B.Ni && output.good(); ++ii,++volume_row){
         const double xi = B.cx + (-B.hx + (2.0*B.hx) * (ii / double(std::max(1,B.Ni-1))));
         double n,Vx,Vy,Vz,Bx,By,Bz,div;
-        evaluate_cartesian_with_B(S,&xi,&yj,&zk,&n,&Vx,&Vy,&Vz,&Bx,&By,&Bz,1);
-        compute_divV_radial(S,&xi,&yj,&zk,&div,1,1e-3);
-        p("%.9e %.9e %.9e "
+        model.evaluate_cartesian_with_B(
+            S,&xi,&yj,&zk,&n,&Vx,&Vy,&Vz,&Bx,&By,&Bz,1);
+        model.compute_divV_radial(S,&xi,&yj,&zk,&div,1,1e-3);
+        output.print("3D dataset volume row",volume_row,"%.9e %.9e %.9e "
           "%.9e %.9e %.9e %.9e "
           "%.9e %.9e %.9e %.9e "
           "%.9e %.9e "
@@ -2393,18 +2468,21 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_
   const double x0=B.cx-B.hx;
   const double y0=B.cy-B.hy, y1=B.cy+B.hy;
   const double z0=B.cz-B.hz, z1=B.cz+B.hz;
-  p("ZONE T=\"box_face_minX\", I=%d, J=%d, DATAPACKING=POINT\n", I, J);
-  for (int j=0;j<J;++j){
+  output.print("3D dataset face zone",swcme::ModelStatus::npos,
+      "ZONE T=\"box_face_minX\", I=%d, J=%d, DATAPACKING=POINT\n",I,J);
+  std::size_t face_row=0;
+  for (int j=0; j<J && output.good(); ++j){
     const double tz=(J==1)?0.0: double(j)/double(J-1);
     const double z=z0+(z1-z0)*tz;
-    for (int i=0;i<I;++i){
+    for (int i=0; i<I && output.good(); ++i,++face_row){
       const double ty=(I==1)?0.0: double(i)/double(I-1);
       const double y=y0+(y1-y0)*ty;
       const double x=x0;
       double n,Vx,Vy,Vz,Bx,By,Bz,div;
-      evaluate_cartesian_with_B(S,&x,&y,&z,&n,&Vx,&Vy,&Vz,&Bx,&By,&Bz,1);
-      compute_divV_radial(S,&x,&y,&z,&div,1,1e-3);
-      p("%.9e %.9e %.9e "
+      model.evaluate_cartesian_with_B(
+          S,&x,&y,&z,&n,&Vx,&Vy,&Vz,&Bx,&By,&Bz,1);
+      model.compute_divV_radial(S,&x,&y,&z,&div,1,1e-3);
+      output.print("3D dataset face row",face_row,"%.9e %.9e %.9e "
         "%.9e %.9e %.9e %.9e "
         "%.9e %.9e %.9e %.9e "
         "%.9e %.9e "
@@ -2420,48 +2498,68 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_
     }
   }
 
-  std::fclose(fp);
-  return true;
+  return output.finish("3D dataset bundle flush",
+                       "3D dataset bundle stream error",
+                       "3D dataset bundle close");
 }
 
-// Standalone 2-D face writer (min-X plane)
-bool Model::write_box_face_minX_tecplot_structured(const StepState& S,
-                                                   const BoxSpec& B,
-                                                   const char* path) const {
-  // Ownership precedes fopen() so rejection preserves an existing output file
-  // exactly and cannot leave a partial Tecplot header behind.
+// Bundle writer: surface_cells + surface_nodal + volume_box + minX face
+bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_in,
+                                         const StepState& S,const BoxSpec& B,
+                                         const char* path) const {
+  // The source-compatible boolean writer throws on ownership misuse before it
+  // can open/truncate `path`.  I/O failures remain the historical false return.
   swcme::throw_if_error(validate_prepared_state(
-      S,"swcme3d::write_box_face_minX_tecplot_structured"));
-  if (!path) return false;
+      S,"swcme3d::write_tecplot_dataset_bundle"));
+  TriMetrics T=T_in;
+  const std::size_t Ne=M.tri_i.size();
+  if (!path || !mesh_finite_and_sized(M)) return false;
+  if (T.area.size()!=Ne) compute_triangle_metrics(M,T);
+  if (!metrics_finite_and_sized(T,Ne)) return false;
+  return write_bundle_output(
+      *this,M,T,S,B,path,swcme::output::stdio_file_operations()).ok();
+}
+
+// Emit the standalone face using the same bytes and field order as zone four
+// of the bundle.  The helper is separate so injected failures exercise the
+// compiled 3-D writer rather than only the generic stream utility.
+static swcme::ModelStatus write_face_output(
+    const swcme3d::Model& model,const swcme3d::StepState& S,
+    const swcme3d::BoxSpec& B,const char* path,
+    const swcme::output::FileOperations& operations) {
   const int I=std::max(2,B.Nj), J=std::max(2,B.Nk);
   const double x0=B.cx-B.hx;
   const double y0=B.cy-B.hy, y1=B.cy+B.hy;
   const double z0=B.cz-B.hz, z1=B.cz+B.hz;
 
-  std::FILE* fp=std::fopen(path,"w"); if(!fp) return false;
-  auto p=[&](const char* fmt, auto... args){ std::fprintf(fp,fmt,args...); };
-
-  p("TITLE = \"Box face (minX)\"\n");
-  p("VARIABLES = "
+  swcme::output::CheckedTextFile output(operations);
+  if (!output.open(path)) return swcme::ModelStatus::make(
+      swcme::StatusCode::FileOpenFailure,"3D box face open");
+  output.print("3D box face title",swcme::ModelStatus::npos,
+               "TITLE = \"Box face (minX)\"\n");
+  output.print("3D box face variables",swcme::ModelStatus::npos,"VARIABLES = "
     "\"X\",\"Y\",\"Z\","
     "\"n\",\"Vx\",\"Vy\",\"Vz\","
     "\"Bx\",\"By\",\"Bz\",\"divVsw\","
     "\"rc\",\"Vsh_n\","
     "\"nx\",\"ny\",\"nz\",\"area\",\"rc_mean\",\"Vsh_n_mean\","
     "\"tnx\",\"tny\",\"tnz\",\"cx\",\"cy\",\"cz\"\n");
-  p("ZONE T=\"box_face_minX\", I=%d, J=%d, DATAPACKING=POINT\n", I, J);
+  output.print("3D box face zone",swcme::ModelStatus::npos,
+      "ZONE T=\"box_face_minX\", I=%d, J=%d, DATAPACKING=POINT\n",I,J);
 
-  for (int j=0;j<J;++j){
+  std::size_t row=0;
+  for (int j=0; j<J && output.good(); ++j){
     const double tz=(J==1)?0.0: double(j)/double(J-1);
     const double z=z0+(z1-z0)*tz;
-    for (int i=0;i<I;++i){
+    for (int i=0; i<I && output.good(); ++i,++row){
       const double ty=(I==1)?0.0: double(i)/double(I-1);
       const double y=y0+(y1-y0)*ty;
       const double x=x0;
       double n,Vx,Vy,Vz,Bx,By,Bz,div;
-      evaluate_cartesian_with_B(S,&x,&y,&z,&n,&Vx,&Vy,&Vz,&Bx,&By,&Bz,1);
-      compute_divV_radial(S,&x,&y,&z,&div,1,1e-3);
-      p("%.9e %.9e %.9e "
+      model.evaluate_cartesian_with_B(
+          S,&x,&y,&z,&n,&Vx,&Vy,&Vz,&Bx,&By,&Bz,1);
+      model.compute_divV_radial(S,&x,&y,&z,&div,1,1e-3);
+      output.print("3D box face row",row,"%.9e %.9e %.9e "
         "%.9e %.9e %.9e %.9e "
         "%.9e %.9e %.9e %.9e "
         "%.9e %.9e "
@@ -2476,14 +2574,28 @@ bool Model::write_box_face_minX_tecplot_structured(const StepState& S,
       );
     }
   }
-  std::fclose(fp);
-  return true;
+  return output.finish("3D box face flush","3D box face stream error",
+                       "3D box face close");
+}
+
+// Standalone 2-D face writer (min-X plane)
+bool Model::write_box_face_minX_tecplot_structured(const StepState& S,
+                                                   const BoxSpec& B,
+                                                   const char* path) const {
+  // Ownership precedes open so rejection preserves an existing output file
+  // exactly and cannot leave a partial Tecplot header behind.
+  swcme::throw_if_error(validate_prepared_state(
+      S,"swcme3d::write_box_face_minX_tecplot_structured"));
+  if (!path) return false;
+  return write_face_output(
+      *this,S,B,path,swcme::output::stdio_file_operations()).ok();
 }
 
 
 swcme::ModelStatus Model::write_tecplot_dataset_bundle_checked(
     const ShockMesh& M,const TriMetrics& T,const StepState& S,const BoxSpec& B,
-    const char* path) const {
+    const char* path,
+    const swcme::output::FileOperations* file_operations) const {
   // Reject before inspecting unrelated mesh/box arguments and, critically,
   // before any destination file is opened.  This makes ownership the root
   // diagnostic and guarantees byte-preserving failure semantics.
@@ -2501,10 +2613,16 @@ swcme::ModelStatus Model::write_tecplot_dataset_bundle_checked(
                                     "write_tecplot_dataset_bundle box");
   }
   try {
-    return write_tecplot_dataset_bundle(M,T,S,B,path)
-        ? swcme::ModelStatus::success()
-        : swcme::ModelStatus::make(swcme::StatusCode::FileOpenFailure,
-                                   "write_tecplot_dataset_bundle");
+    TriMetrics checked=T;
+    if (checked.area.size()!=M.tri_i.size())
+      compute_triangle_metrics(M,checked);
+    if (!metrics_finite_and_sized(checked,M.tri_i.size()))
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::NonFiniteResult,
+          "write_tecplot_dataset_bundle metrics");
+    const swcme::output::FileOperations& operations=file_operations
+        ? *file_operations : swcme::output::stdio_file_operations();
+    return write_bundle_output(*this,M,checked,S,B,path,operations);
   } catch (...) {
     return swcme::ModelStatus::make(swcme::StatusCode::NonFiniteResult,
                                     "write_tecplot_dataset_bundle evaluation");
@@ -2512,7 +2630,8 @@ swcme::ModelStatus Model::write_tecplot_dataset_bundle_checked(
 }
 
 swcme::ModelStatus Model::write_box_face_minX_tecplot_structured_checked(
-    const StepState& S,const BoxSpec& B,const char* path) const {
+    const StepState& S,const BoxSpec& B,const char* path,
+    const swcme::output::FileOperations* file_operations) const {
   // Validate the state before box checks or file-system access so a foreign
   // cache cannot be masked by a secondary argument error.
   const swcme::ModelStatus ownership=validate_prepared_state(
@@ -2527,10 +2646,9 @@ swcme::ModelStatus Model::write_box_face_minX_tecplot_structured_checked(
                                     "write_box_face_minX_tecplot_structured box");
   }
   try {
-    return write_box_face_minX_tecplot_structured(S,B,path)
-        ? swcme::ModelStatus::success()
-        : swcme::ModelStatus::make(swcme::StatusCode::FileOpenFailure,
-                                   "write_box_face_minX_tecplot_structured");
+    const swcme::output::FileOperations& operations=file_operations
+        ? *file_operations : swcme::output::stdio_file_operations();
+    return write_face_output(*this,S,B,path,operations);
   } catch (...) {
     return swcme::ModelStatus::make(swcme::StatusCode::NonFiniteResult,
                                     "write_box_face_minX_tecplot_structured evaluation");

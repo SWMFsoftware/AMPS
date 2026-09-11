@@ -315,6 +315,63 @@ TSAN_OPTIONS=halt_on_error=1 ./output/test_swcme --test PST04
 ThreadSanitizer startup failures caused by unsupported container/kernel address
 layouts must be recorded as unavailable, not interpreted as a race-free pass.
 
+### Checked output failure propagation (OUT02)
+
+All production 1-D and 3-D Tecplot writers now check the complete buffered
+output lifecycle: open, every formatted write, flush, the persistent stream
+error indicator, and close.  They share `swcme_output.hpp`, whose
+`CheckedTextFile` formats each record into owned memory and then performs an
+exact byte-counted write.  This is necessary because a buffered `stdio` write
+can appear successful even when the destination rejects the data later during
+flush or close, as `/dev/full` does on POSIX systems.
+
+Checked writer APIs distinguish the two output failure classes:
+
+- `StatusCode::FileOpenFailure` means that no output handle was acquired;
+- `StatusCode::FileWriteFailure` means that a handle was opened but a write,
+  flush, stream-error check, or close failed.
+
+A write failure records `has_io_byte_offset=true` and `io_byte_offset`, the
+number of bytes accepted before the first failed operation.  Its stable
+`context` identifies the title, variables, zone, data-block/row, flush,
+stream-error, or close phase.  Data rows also use `sample_index` for their row
+or item number.  Cleanup always attempts close, but the diagnostic is
+first-error-wins: a later close failure cannot replace the more useful partial
+write location.
+
+The affected status-returning entry points are:
+
+- `swcme1d::Model::write_tecplot_radial_profile_checked()`;
+- `swcme1d::Model::write_tecplot_shock_vs_time_checked()`;
+- `swcme3d::Model::write_shock_surface_center_metrics_tecplot_checked()`;
+- `swcme3d::Model::write_tecplot_dataset_bundle_checked()`; and
+- `swcme3d::Model::write_box_face_minX_tecplot_structured_checked()`.
+
+Their source-compatible boolean wrappers now delegate to the same checked
+implementation and return `false` for either open or post-open output failure.
+New integrations should prefer the checked forms so logs retain the precise
+failure phase and byte offset.
+
+The final optional `FileOperations*` parameter on checked writers is intended
+for deterministic validation.  Omitting it selects the immutable production
+`stdio` backend.  A test backend can fail at an exact accepted-byte count or at
+flush/error/close without changing production physics or relying on a specific
+filesystem.  OUT02 combines that injected fault matrix with real `/dev/full`
+checks for radial profiles, shock histories, surface output, the four-zone
+bundle, and the standalone face.
+
+OUT02 detects and propagates an incomplete write; it does not promise that the
+destination remains unchanged after a post-open failure.  Temporary-file plus
+atomic-replacement semantics belong to the separate OUT03 recommendation.
+
+Run the gate with:
+
+```sh
+cd test
+make -j
+./output/test_swcme --test OUT02
+```
+
 ### `SEPSourceState`
 
 `SEPSourceState` is the stable transport-facing source record.  It contains:
@@ -418,8 +475,9 @@ python3 run_tests.py --profile EVENT --event-config event_config.example.json
 
 Profiles are stored in `test/profiles/`:
 
-- `SMOKE` is a short development gate covering configuration, core shock,
-  connectivity, divergence, and SEP-interface integration;
+- `SMOKE` is a short development gate covering prepared-state safety, checked
+  output failure propagation, configuration, core shock, connectivity,
+  divergence, and SEP-interface integration;
 - `ROUTINE` runs the broad deterministic suite while excluding the slowest
   stochastic/multi-root stress cases;
 - `FULL` runs the complete registered C++ suite and exports the default SEP

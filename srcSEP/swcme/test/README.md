@@ -42,6 +42,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test PST03    # configuration-state ownership rejection
 ./output/test_swcme --test PST06    # prepared-record integrity rejection
 ./output/test_swcme --test PST04    # concurrent prepared-state evaluation
+./output/test_swcme --test OUT02    # checked output-failure propagation
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -276,6 +277,73 @@ not a passing sanitizer result and should be recorded as unavailable.  `PST04`
 follows `PST06` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it through
 their `@ALL` expansion.
 
+## OUT02: write failure detection and propagation
+
+### What is tested
+
+`OUT02` verifies the complete lifecycle of every production Tecplot product:
+the 1-D radial profile and shock-versus-time history, plus the 3-D surface,
+four-zone surface/volume/face bundle, and standalone min-X face.  It
+distinguishes failure to open a destination from failure after opening, checks
+exact partial-write byte offsets, exercises flush, persistent stream-error,
+and close failures, and verifies that cleanup does not overwrite the first
+diagnostic.  Both the inline/header 1-D implementation and the separately
+compiled 3-D implementation are exercised.
+
+### Why it is tested
+
+Buffered output can accept formatted data into memory and report the actual
+device failure only at `fflush()` or `fclose()`.  The former writers ignored
+formatted-write and close results, so a full device or interrupted write could
+produce a truncated science file while returning success.  That makes a
+partially written zone indistinguishable from a complete model product to an
+automated observational campaign.
+
+### How it is tested
+
+The deterministic portion supplies a C-compatible `FileOperations` table to
+the checked writer APIs.  An isolated in-memory `FaultSink` first verifies a
+successful open/write/flush/error/close sequence, then injects:
+
+- failure to open;
+- rejection of the first formatted write;
+- a partial write after exactly 57 bytes, combined with a later close failure;
+- a separately compiled 3-D partial write after exactly 41 bytes;
+- failure at flush;
+- a persistent stream error after a successful flush; and
+- failure at close.
+
+Each post-open case must return `FILE_WRITE_FAILURE`, set
+`has_io_byte_offset`, report the exact first unaccepted byte, identify the
+failed record or lifecycle phase in `context`, and close the acquired handle.
+The combined partial-write/close case proves that cleanup cannot mask the
+earlier failure.
+
+When `/dev/full` is available, a second integration matrix invokes all five
+production checked products through the default `stdio` backend.  Every call
+must report `FILE_WRITE_FAILURE`; a missing `/dev/full` is recorded as one
+explicit platform skip rather than silently weakening the deterministic fault
+matrix.  The five source-compatible boolean wrappers are then run against the
+same device and must all return `false`.
+
+### Expected result
+
+The test passes only when open rejection is `FILE_OPEN_FAILURE`, every
+post-open failure is `FILE_WRITE_FAILURE` and never `OK`, byte/row/zone context
+identifies the first failure, and all acquired handles are closed.  Normal
+injected 1-D and 3-D writes must remain successful.  OUT02 detects partial
+output but does not claim atomic destination replacement; that is reserved for
+the planned OUT03 validation.
+
+Run the gate directly with:
+
+```sh
+./output/test_swcme --test OUT02
+```
+
+`OUT02` follows `PST04` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
+through their `@ALL` expansion.
+
 ## Python campaign manager and reproducible run artifacts
 
 `run_tests.py` is the manager for multi-test development gates and validation
@@ -298,7 +366,8 @@ python3 python/test_run_tests.py
 
 The named profiles are version-controlled text files in `profiles/`:
 
-- `SMOKE` is the short development gate;
+- `SMOKE` is the short development gate, including prepared-state and checked
+  output-failure safety;
 - `ROUTINE` is the broad deterministic gate and excludes `MSH05` and `CON05`;
 - `FULL` expands to every test in the C++ registry;
 - `EVENT` first runs FULL and then executes the supplied event-analysis JSON.

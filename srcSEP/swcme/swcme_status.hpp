@@ -189,6 +189,11 @@ struct ModelStatus {
   ConfigurationDigest expected_state_integrity = 0;
   ConfigurationDigest computed_state_integrity = 0;
   bool has_state_integrity = false;
+  // OUT02 reports where an output stream first stopped accepting data.  This
+  // offset counts bytes successfully accepted by the writer backend before
+  // the failed formatted write, flush, stream check, or close operation.
+  std::size_t io_byte_offset = 0;
+  bool has_io_byte_offset = false;
 
   constexpr bool ok() const noexcept { return code == StatusCode::Ok; }
   constexpr bool no_surface() const noexcept {
@@ -270,6 +275,18 @@ struct ModelStatus {
     return s;
   }
 
+  // Construct the explicit OUT02 status without overloading offending_value,
+  // which represents invalid physics input.  sample_index remains available
+  // for a row/cell identifier while io_byte_offset locates the stream failure.
+  static constexpr ModelStatus file_write_failure(
+      const char* where, std::size_t byte_offset,
+      std::size_t item_index=npos) noexcept {
+    ModelStatus s=make(StatusCode::FileWriteFailure,where,item_index);
+    s.io_byte_offset=byte_offset;
+    s.has_io_byte_offset=true;
+    return s;
+  }
+
   std::string summary() const {
     std::ostringstream out;
     out << status_code_name(code);
@@ -293,6 +310,8 @@ struct ModelStatus {
           << ", computed_state_integrity=0x" << std::setw(16)
           << computed_state_integrity << std::dec << ')';
     }
+    if (has_io_byte_offset)
+      out << " (io_byte_offset=" << io_byte_offset << ')';
     return out.str();
   }
 };

@@ -63,6 +63,8 @@ void append_status(Snapshot& out, const swcme::ModelStatus& status) {
   out.add_uint64(status.expected_state_integrity);
   out.add_uint64(status.computed_state_integrity);
   out.add_bool(status.has_state_integrity);
+  out.add_uint64(static_cast<std::uint64_t>(status.io_byte_offset));
+  out.add_bool(status.has_io_byte_offset);
 }
 
 template <std::size_t N>
