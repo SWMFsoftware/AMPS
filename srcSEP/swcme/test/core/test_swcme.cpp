@@ -41,6 +41,8 @@ void test_shk09(swcme_test::Context& context);
 void test_shk10(swcme_test::Context& context);
 void test_shk11(swcme_test::Context& context);
 void test_shk12(swcme_test::Context& context);
+void test_shk13(swcme_test::Context& context);
+void test_shk14(swcme_test::Context& context);
 void test_con01(swcme_test::Context& context);
 void test_con02(swcme_test::Context& context);
 void test_con03(swcme_test::Context& context);
@@ -104,6 +106,8 @@ const swcme_test::TestCase kTests[] = {
     {"SHK10", "COMMON", "Rankine-Hugoniot total-energy-flux conservation", test_shk10},
     {"SHK11", "COMMON", "Physical admissibility and entropy increase", test_shk11},
     {"SHK12", "COMMON", "Near-Mach-one weak-shock conditioning", test_shk12},
+    {"SHK13", "3D", "Shock-state independence from arbitrary query radius", test_shk13},
+    {"SHK14", "3D", "Canonical shock-state consistency across diagnostics and mesh", test_shk14},
     {"CON01", "3D", "Zero-solar-rotation radial connectivity limit", test_con01},
     {"CON02", "3D", "Parker-spiral field line intersecting a spherical shock", test_con02},
     {"CON03", "3D", "No connection to a finite-width shock", test_con03},

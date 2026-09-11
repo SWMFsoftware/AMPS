@@ -465,12 +465,13 @@ to throw a clear runtime error unless a continuation policy was selected.  This
 is intentional: silent cubic extrapolation is a modeling assumption and is
 not allowed to masquerade as measured/constrained kinematics.
 
-## SHK01-SHK12: fast-shock existence and ideal-MHD Rankine-Hugoniot validation
+## SHK01-SHK14: fast-shock existence, Rankine-Hugoniot validation, and shock-surface ownership
 
 The `SHK` group validates the shared production shock solver in
-`swcme_shock.hpp` and its integration into both the 1-D and 3-D models.  The
-classification is `COMMON`: the physical jump calculation is shared even when
-geometry-specific inputs such as the 3-D surface normal are different.
+`swcme_shock.hpp` and its integration into both the 1-D and 3-D models.  SHK01-
+SHK12 exercise the shared jump physics and are classified `COMMON`; SHK13-
+SHK14 are 3-D integration guards for the rule that local shock physics belongs
+to the shock surface rather than to an arbitrary Cartesian query point.
 
 The solver first evaluates the upstream fast-mode speed along the shock normal.
 A geometric front is not automatically a shock.  The physical condition is
@@ -515,6 +516,16 @@ The individual tests are:
   compressive branch, strong-shock bound for gamma=5/3, and entropy increase.
 - `SHK12` — near-Mach-one conditioning and smooth approach of compression to
   unity without an empirical floor.
+- `SHK13` — shock-state independence from arbitrary query radius.  The test
+  calls the legacy scalar wrapper with query radii ranging from well inside to
+  far outside the front and requires identical compression, normal speed, and
+  `theta_Bn`.  It also proves the fixture is sensitive by confirming that the
+  ambient density at those radii differs materially from the density at the
+  physical shock surface.
+- `SHK14` — canonical-state consistency across `diagnose_direction()` and shock
+  mesh nodes.  Every reported radius, normal, compression, and normal speed is
+  compared with a fresh `shock_state_direction()` query.  This prevents future
+  diagnostic/mesh code from reintroducing a separate shock-strength calculation.
 
 The independent parallel/perpendicular references do not call the production
 nonlinear shock solver.  Conservation tests recompute the conserved fluxes from
@@ -527,6 +538,8 @@ Typical direct use is:
 ./output/test_swcme --test SHK01
 ./output/test_swcme --test SHK04
 ./output/test_swcme --test SHK10
+./output/test_swcme --test SHK13
+./output/test_swcme --test SHK14
 ./output/test_swcme --all
 ```
 
@@ -670,3 +683,20 @@ Typical use:
 `1D3D03` is intentionally deferred until the common SWCME-to-SEP source record
 is implemented; that test will verify identical source inputs before 1-D/3-D
 transport diverges.
+
+### Shock-state query-location policy
+
+A local shock state is defined by `(time, shock-surface direction)` and not by
+the radius of a background-field sample.  The production sequence is:
+
+1. intersect the selected geometry along the requested direction;
+2. evaluate upstream Leblanc/Parker plasma at that surface point;
+3. compute the self-similar normal shock speed at that surface;
+4. solve the shared ideal-MHD jump;
+5. let field/mesh/connectivity consumers use that immutable result.
+
+This ordering is physically important because density and magnetic field vary
+with heliocentric radius.  Sampling them at an arbitrary query point would make
+Mach number and compression depend on the observer's diagnostic location rather
+than on the shock.  `SHK13` and `SHK14` are permanent regression tests for this
+contract.

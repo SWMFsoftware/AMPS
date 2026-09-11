@@ -599,10 +599,14 @@ public:
       const std::vector<double>& times_s, const double observer_m[3],
       const ConnectivityOptions& options = ConnectivityOptions{}) const;
 
-  // Backward-compatible scalar diagnostic.  r_eval_m is retained only so older
-  // callers still compile; shock physics is now evaluated at Rdir_m regardless
-  // of r_eval_m.  New code should use shock_state_direction() to obtain the
-  // complete upstream/downstream state and explicit has_shock flag.
+  // Backward-compatible scalar diagnostic.  This wrapper is intentionally NOT
+  // used by new production internals.  r_eval_m, Rdir_m, and n_hat are retained
+  // only so older callers still compile; shock physics is recomputed from the
+  // direction through shock_state_direction(), which owns the physical surface
+  // location and always samples the upstream plasma there.  Therefore changing
+  // an arbitrary field-query radius cannot change rc, Vsh_n, or theta_Bn.
+  // New code should use shock_state_direction() directly to obtain the complete
+  // upstream/downstream state and explicit surface/shock-existence flags.
   void local_oblique_rc(const StepState& S, const double u[3], const double n_hat[3],
                         double Rdir_m, double r_eval_m,
                         double& rc_out, double& Vsh_n_out, double& thetaBn_out) const;

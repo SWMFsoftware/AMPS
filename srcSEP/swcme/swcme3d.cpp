@@ -1292,16 +1292,28 @@ void Model::compute_divV_radial(const StepState& S,
 
 bool Model::diagnose_direction(const StepState& S,const double u[3],
   double& Rdir_m,double n_hat[3],double& rc_loc,double& Vsh_n) const {
-  const bool has_surface=shape_radius_normal(S,u[0],u[1],u[2],Rdir_m,n_hat);
-  if (!has_surface) {
-    // Explicit no-surface diagnostics make finite-width behavior visible to
-    // callers instead of reporting a plausible but fabricated flank radius.
+  // All diagnostics are now obtained from the same canonical surface-owned
+  // shock state used by the Cartesian field evaluators and connectivity code.
+  // This is intentionally stronger than calling shape_radius_normal() followed
+  // by a second, scalar shock calculation: one production query establishes the
+  // surface point, samples the upstream plasma at that point, and solves the MHD
+  // jump.  Consequently a diagnostic cannot accidentally acquire a different
+  // Mach number merely because some caller also supplied a field-sampling radius.
+  LocalShockState state;
+  if (!shock_state_direction(S,u,state)) {
+    Rdir_m=0.0;
+    n_hat[0]=n_hat[1]=n_hat[2]=0.0;
     rc_loc=1.0;
     Vsh_n=0.0;
     return false;
   }
-  double th=0.0;
-  local_oblique_rc(S,u,n_hat,Rdir_m,Rdir_m,rc_loc,Vsh_n,th);
+
+  Rdir_m=state.Rdir_m;
+  n_hat[0]=state.normal[0];
+  n_hat[1]=state.normal[1];
+  n_hat[2]=state.normal[2];
+  rc_loc=(state.has_shock && state.solver_converged)? state.compression : 1.0;
+  Vsh_n=state.Vsh_n_m_s;
   return true;
 }
 
@@ -1322,27 +1334,32 @@ ShockMesh Model::build_shock_mesh(const StepState& S,std::size_t nTheta,std::siz
                     u_loc[0]*S.e1[2]+u_loc[1]*S.e2[2]+u_loc[2]*S.e3[2] };
       ::safe_normalize(u);
 
-      double Rdir=0.0,n_hat[3]={0,0,0};
-      const bool has_surface=shape_radius_normal(S,u[0],u[1],u[2],Rdir,n_hat);
-      // build_shock_mesh samples only the mathematically supported angular
-      // interval.  Failure here therefore signals an internal geometry error,
-      // not an expected outside-cap query, and should never be silently filled
-      // with a zero-radius vertex.
-      if (!has_surface) {
+      // Build each nodal shock record from the canonical shock-surface query.
+      // Earlier versions obtained the geometric point first and then called a
+      // scalar helper that historically accepted an arbitrary evaluation radius.
+      // Even after that radius was ignored, retaining two code paths made it too
+      // easy for mesh diagnostics to drift from the field/connectivity physics.
+      // One LocalShockState now owns geometry, upstream sampling, normal speed,
+      // shock existence, and compression for every mesh node.
+      LocalShockState shock;
+      if (!shock_state_direction(S,u,shock)) {
+        // build_shock_mesh samples only the mathematically supported angular
+        // interval.  Failure here therefore signals an internal geometry error,
+        // not an expected outside-cap query, and should never be silently filled
+        // with a zero-radius vertex.
         throw std::runtime_error("swcme3d: shock mesh requested a direction outside the supported surface");
       }
 
+      const double Rdir=shock.Rdir_m;
       M.x.push_back(finite_or(Rdir*u[0],0.0));
       M.y.push_back(finite_or(Rdir*u[1],0.0));
       M.z.push_back(finite_or(Rdir*u[2],0.0));
-      M.n_hat_x.push_back(finite_or(n_hat[0],0.0));
-      M.n_hat_y.push_back(finite_or(n_hat[1],0.0));
-      M.n_hat_z.push_back(finite_or(n_hat[2],1.0));
-
-      double rc_loc=1.0,Vsh_n=0.0,th=0.0;
-      local_oblique_rc(S,u,n_hat,Rdir,Rdir,rc_loc,Vsh_n,th);
-      M.rc.push_back(finite_or(rc_loc,1.0));
-      M.Vsh_n.push_back(finite_or(Vsh_n,0.0));
+      M.n_hat_x.push_back(finite_or(shock.normal[0],0.0));
+      M.n_hat_y.push_back(finite_or(shock.normal[1],0.0));
+      M.n_hat_z.push_back(finite_or(shock.normal[2],1.0));
+      M.rc.push_back(finite_or(
+          shock.has_shock && shock.solver_converged ? shock.compression : 1.0,1.0));
+      M.Vsh_n.push_back(finite_or(shock.Vsh_n_m_s,0.0));
     }
   }
   const std::size_t NvPhi=nPhi+1;

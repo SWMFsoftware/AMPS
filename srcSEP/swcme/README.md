@@ -313,6 +313,28 @@ downstream primitive states, and conservation residuals.  Upstream quantities
 are always evaluated at the actual shock surface rather than at an arbitrary
 query radius.
 
+### Surface-owned shock state and query-point invariance
+
+The shock state is now explicitly **owned by the physical shock surface**.  The
+Cartesian field evaluators, connectivity solver, directional diagnostics, and
+shock-mesh builder all obtain local shock properties through the same
+`shock_state_direction()` path.  In particular, ambient density and magnetic
+field used to form the Mach number are sampled at `R_shock * u`, not at the
+radius of a point where a caller happens to request `n`, `V`, or `B`.  This
+prevents the same physical shock from acquiring different compression ratios
+when queried from different upstream/downstream locations.
+
+`local_oblique_rc()` remains only as a source-compatible scalar wrapper for
+older callers.  Its historical `r_eval_m`, `Rdir_m`, and `n_hat` inputs no
+longer control shock physics; the wrapper recomputes the canonical surface state
+from the direction and returns scalar projections of that state.  New production
+code should call `shock_state_direction()` directly.
+
+The mesh builder and `diagnose_direction()` were also converted to consume the
+canonical `LocalShockState` directly, eliminating the last internal secondary
+shock-strength path.  Validation tests `SHK13` and `SHK14` permanently guard
+query-radius invariance and mesh/diagnostic consistency.
+
 The 3-D Cartesian field evaluators now use the exact MHD downstream state in
 the limit immediately behind the shock.  The shock itself is treated as a
 physical discontinuity: points at or ahead of the surface return the upstream
@@ -325,10 +347,10 @@ is the shock normal and the Parker azimuthal field is tangential to that normal.
 This removes the former 1-D compression-floor shock and makes the downstream
 normal speed satisfy the same physical jump conditions as 3-D.
 
-The shock validation suite `SHK01`-`SHK12` covers shock/no-shock classification,
+The shock validation suite `SHK01`-`SHK14` covers shock/no-shock classification,
 obliquity, independent parallel and perpendicular limiting solutions, oblique
 branch continuity, mass flux, normal magnetic field, tangential electric field,
-momentum and energy fluxes, entropy/admissibility, and the weak-shock limit.
+momentum and energy fluxes, entropy/admissibility, the weak-shock limit, query-radius invariance, and canonical-state consistency across diagnostics/mesh outputs.
 
 ## Remaining remediation items
 
