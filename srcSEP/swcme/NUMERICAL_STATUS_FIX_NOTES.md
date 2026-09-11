@@ -53,6 +53,7 @@ NONFINITE_RESULT
 INVALID_MESH
 FILE_OPEN_FAILURE
 FILE_WRITE_FAILURE   (reserved for writers that distinguish write failures)
+STATE_MODEL_MISMATCH (prepared state belongs to another model instance)
 ```
 
 `OK` is success.  `NO_SURFACE`, `NO_CONNECTION`, and `SOURCE_INACTIVE` are
@@ -65,6 +66,12 @@ structured model-parameter validator used during model construction.
 `ModelStatus::summary()` produces a deterministic diagnostic suitable for log
 messages.  `swcme::throw_if_error()` is used by the old void-returning APIs so
 existing source continues to compile while failures stop being ignored.
+
+`STATE_MODEL_MISMATCH` additionally records `expected_model_identity` and
+`supplied_model_identity`.  It is returned before physics evaluation or output
+mutation when a `StepState` is consumed by a model other than the exact
+instance that prepared it.  The status was appended to the enum so numeric
+values of the earlier status codes remain unchanged.
 
 ## Checked evaluator APIs
 

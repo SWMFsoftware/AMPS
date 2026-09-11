@@ -1,4 +1,5 @@
 # Fast gate used during development.
+PST02
 CFG01
 CFG02
 DEF01

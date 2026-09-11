@@ -101,6 +101,12 @@ public:
   ModelStatus evaluate_background(const PreparedStep& step,
                                   double radius_m,
                                   BackgroundState& out) const {
+    // Reject a foreign prepared state before clearing the caller's output.
+    // This ordering is part of PST02: an ownership failure is transactional
+    // and cannot erase a previously valid AMPS background record.
+    const ModelStatus ownership=model_.validate_prepared_state(
+        step,"SEP Interface1D background");
+    if (!ownership.ok()) return ownership;
     out=BackgroundState{};
     out.position_m={{radius_m,0.0,0.0}};
     double n=0.0,V=0.0,Br=0.0,Bphi=0.0,Bmag=0.0,divV=0.0;
@@ -121,8 +127,12 @@ public:
 
   ModelStatus source_at_shock(const PreparedStep& step,
                               SEPSourceState& out) const {
-    const acceleration::ShockAccelerationState a=
-        model_.shock_acceleration_state(step);
+    // The checked 1-D source path preserves `out` on ownership failure; only a
+    // state prepared by this adapter's Model can reach spectrum conversion.
+    acceleration::ShockAccelerationState a;
+    const ModelStatus ownership=
+        model_.shock_acceleration_state_checked(step,a);
+    if (!ownership.ok()) return ownership;
     return make_source_state(a,spectrum_,false,false,0,0.0,out);
   }
 
@@ -160,6 +170,11 @@ public:
   ModelStatus evaluate_background(const PreparedStep& step,
                                   const std::array<double,3>& position_m,
                                   BackgroundState& out) const {
+    // Perform ownership validation before resetting `out`, preserving the
+    // previous record exactly when an AMPS caller accidentally mixes adapters.
+    const ModelStatus ownership=model_.validate_prepared_state(
+        step,"SEP Interface3D background");
+    if (!ownership.ok()) return ownership;
     out=BackgroundState{};
     out.position_m=position_m;
     const double x=position_m[0],y=position_m[1],z=position_m[2];
@@ -186,6 +201,12 @@ public:
                                   SEPSourceState& out,
                                   std::size_t source_id=0,
                                   double patch_area_m2=0.0) const {
+    // Guard the outer interface so the caller's source record remains
+    // byte-for-byte unchanged on mismatch.  The model repeats the check at its
+    // checked physics boundary as defense in depth for direct users.
+    const ModelStatus ownership=model_.validate_prepared_state(
+        step,"SEP Interface3D directional source");
+    if (!ownership.ok()) return ownership;
     acceleration::ShockAccelerationState acceleration_state;
     const double u[3]={direction[0],direction[1],direction[2]};
     const ModelStatus acceleration_status=
@@ -209,6 +230,11 @@ public:
                                          std::size_t n_theta,
                                          std::size_t n_phi,
                                          SourceSurface& out) const {
+    // Mesh construction is an unchecked value-returning API, so validate at
+    // the adapter boundary before clearing `out` or allocating mesh storage.
+    const ModelStatus ownership=model_.validate_prepared_state(
+        step,"SEP Interface3D surface source");
+    if (!ownership.ok()) return ownership;
     out=SourceSurface{};
     out.time_s=step.time_s;
     try {
@@ -281,6 +307,12 @@ public:
       SEPSourceState& out,
       swcme3d::ConnectivityState* connectivity_out=nullptr,
       const swcme3d::ConnectivityOptions& options=swcme3d::ConnectivityOptions{}) const {
+    // Connectivity is evaluated only after ownership succeeds.  This leaves
+    // both optional connectivity output and the SEP source output untouched
+    // when the prepared state belongs to another model.
+    const ModelStatus ownership=model_.validate_prepared_state(
+        step,"SEP Interface3D observer source");
+    if (!ownership.ok()) return ownership;
     const double observer[3]={observer_m[0],observer_m[1],observer_m[2]};
     const swcme3d::ConnectivityState connectivity=
         model_.observer_connectivity(step,observer,options);

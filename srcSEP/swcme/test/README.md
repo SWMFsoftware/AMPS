@@ -37,6 +37,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme                 # run all tests; same as --all
 ./output/test_swcme --all           # run all tests in registry order
 ./output/test_swcme --list          # list tests without executing them
+./output/test_swcme --test PST02    # prepared-state ownership rejection
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -51,6 +52,44 @@ fail an otherwise successful test.
 
 The registry in `core/test_swcme.cpp` is the only source for `--list`, `--all`,
 and test lookup, so displayed and executed tests cannot silently diverge.
+
+## PST02: cross-model prepared-state rejection
+
+`PST02` verifies that each prepared state belongs to the exact model instance
+that created it.  This is intentionally stronger than configuration equality:
+two separately constructed models with identical parameters receive different
+process-local identities, and neither accepts the other's `StepState`.
+
+The fixture prepares a state with Model A and attempts to consume it with Model
+B using equal configurations and with Model C using a different solar-wind
+configuration.  It covers:
+
+- checked 1-D background, full-field, shock-source, and Tecplot-writer paths;
+- checked 3-D background, magnetic-field, divergence, shock, acceleration, and
+  Tecplot bundle paths;
+- legacy 3-D geometry, mesh, and connectivity wrappers; and
+- 1-D/3-D AMPS-facing background, point source, surface source, and cobpoint
+  source adapters.
+
+Every checked call must return `STATE_MODEL_MISMATCH` with
+`has_model_identities=true`, the receiver's identity in
+`expected_model_identity`, and Model A's identity in
+`supplied_model_identity`.  Numerical arrays and source/background objects are
+initialized with sentinels and must remain unchanged.  Pre-existing 1-D and
+3-D output files contain fixed byte strings and must remain byte-for-byte
+identical, proving rejection occurs before `fopen("w")`.  Legacy wrappers must
+throw an exception whose diagnostic retains `STATE_MODEL_MISMATCH`; they may
+not turn ownership misuse into a valid radius, mesh, or disconnected result.
+
+Run the gate directly with:
+
+```sh
+./output/test_swcme --test PST02
+```
+
+`PST02` is included in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it through
+their `@ALL` expansion.  A default-constructed state has owner identity zero
+and is rejected by the same contract.
 
 ## Python campaign manager and reproducible run artifacts
 

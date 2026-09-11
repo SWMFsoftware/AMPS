@@ -551,6 +551,12 @@ inline swcme::config::ValidationResult validate_params(const Params& p) {
  * sheath (n_up at shock & LE; V2 at shock; V at LE).
  */
 struct StepState {
+  // Identity of the exact Model instance that prepared this cache.  Zero means
+  // that the object was default-constructed and was never prepared.  The
+  // identity is metadata only; it is checked before physics and is never used
+  // to select a numerical branch or alter a physical result.
+  swcme::ModelIdentity owner_model_identity = 0;
+
   // Canonical dimensionality-independent prepared state.  The fields below
   // mirror selected values for backward/source compatibility with existing
   // callers, but ambient normalization and apex kinematics are computed only
@@ -617,8 +623,25 @@ struct StepState {
  */
 class Model {
 public:
-  Model() : P{} {}
-  explicit Model(const Params& p) : P(p) {}
+  Model() : P{}, model_identity_(swcme::next_model_identity()) {}
+  explicit Model(const Params& p)
+      : P(p), model_identity_(swcme::next_model_identity()) {}
+
+  // A copied Model is a new owner even when its Params are identical.  Giving
+  // the copy a fresh identity prevents a StepState produced by the source
+  // object from being accepted by the copy merely because the compiler copied
+  // a hidden token together with the public configuration.
+  Model(const Model& other)
+      : P(other.P), model_identity_(swcme::next_model_identity()) {}
+  Model& operator=(const Model& other) {
+    if (this!=&other) {
+      P=other.P;
+      // Assignment changes the logical model represented by this object, so
+      // previously prepared states must not remain valid for the new value.
+      model_identity_=swcme::next_model_identity();
+    }
+    return *this;
+  }
 
   // Parameter setters (fluent)
   Model& SetParams(const Params& p){ P=p; return *this; }
@@ -657,6 +680,21 @@ public:
   const Params& GetParams() const { return P; }
         Params& MutableParams()   { return P; }
 
+  swcme::ModelIdentity model_identity() const noexcept {
+    return model_identity_;
+  }
+
+  // Validate ownership without touching any physics output.  Public adapters
+  // call this guard before clearing their destination objects, which preserves
+  // caller sentinels and makes a rejected mixed-model call transactional.
+  swcme::ModelStatus validate_prepared_state(
+      const StepState& S, const char* context) const noexcept {
+    if (S.owner_model_identity==model_identity_)
+      return swcme::ModelStatus::success();
+    return swcme::ModelStatus::state_model_mismatch(
+        context,model_identity_,S.owner_model_identity);
+  }
+
   // Public validation entry point used by CFG01 and by prepare_step().  It is
   // intentionally side-effect free so callers can inspect a configuration
   // before launching a time-dependent calculation.
@@ -675,6 +713,11 @@ public:
   // modeled regions but is not promoted to a validated global ICME model.
   swcme::defaults::ObserverScopeStatus observer_scope_status(
       const StepState& S, double observer_radius_m) const {
+    // This value-returning compatibility API has no ModelStatus channel, so a
+    // foreign state is surfaced as an exception before cached radius data are
+    // combined with this model's region/acceleration parameters.
+    swcme::throw_if_error(validate_prepared_state(
+        S,"swcme1d::observer_scope_status"));
     return swcme::defaults::observer_scope_status(
         P.region_mode, P.shock_acceleration_mode, true,
         S.r_sh_m, observer_radius_m);
@@ -706,7 +749,12 @@ public:
       throw std::invalid_argument("swcme1d: time must be finite and >= 0");
     }
 
-    StepState S; S.time_s=t_s;
+    StepState S;
+    // Stamp ownership before filling the expensive cache.  prepare_step()
+    // either throws and returns no state, or returns a fully initialized state
+    // that can be consumed only by this exact Model instance.
+    S.owner_model_identity=model_identity_;
+    S.time_s=t_s;
 
     // Build the dimensionality-independent core configuration in public units
     // and prepare it once.  This single call now owns unit conversion, Leblanc
@@ -858,15 +906,31 @@ public:
   // Return the canonical 1-D shock-acceleration record.  The radial +X basis
   // used by the 1-D jump solver is embedded as a 3-vector so the serialized
   // record can be compared field-by-field with the equivalent 3-D +X case.
-  swcme::acceleration::ShockAccelerationState shock_acceleration_state(
-      const StepState& S) const {
+  swcme::ModelStatus shock_acceleration_state_checked(
+      const StepState& S,
+      swcme::acceleration::ShockAccelerationState& state) const {
+    const swcme::ModelStatus ownership=validate_prepared_state(
+        S,"swcme1d::shock_acceleration_state");
+    if (!ownership.ok()) return ownership;
+
     const bool physical=S.has_shock && S.shock_solver_converged;
     const std::array<double,3> position{{S.r_sh_m,0.0,0.0}};
     const std::array<double,3> normal{{1.0,0.0,0.0}};
-    return swcme::acceleration::make_state(
+    state=swcme::acceleration::make_state(
         S.acceleration_config,true,physical,S.time_s,position,normal,S.V_sh_ms,
         S.shock_jump.compression,S.shock_jump.theta_Bn_rad,
         S.shock_jump.fast_mach,S.n_up_shock,S.B_up_T);
+    return swcme::ModelStatus::success();
+  }
+
+  // Source-compatible value-returning wrapper.  It preserves the historical
+  // signature while ensuring that a foreign state is never converted into a
+  // plausible source record; ownership failure is surfaced as an exception.
+  swcme::acceleration::ShockAccelerationState shock_acceleration_state(
+      const StepState& S) const {
+    swcme::acceleration::ShockAccelerationState state;
+    swcme::throw_if_error(shock_acceleration_state_checked(S,state));
+    return state;
   }
 
   // Upstream Leblanc density (fast; SI). r is clipped ≥1.05 R☉ for stability
@@ -906,6 +970,11 @@ public:
   swcme::ModelStatus evaluate_radii_fast_checked(
       const StepState& S, const double* r_m, double* n_m3, double* V_ms,
       std::size_t N) const {
+    // Ownership is checked before N, pointers, or samples so a foreign state
+    // is always diagnosed consistently and no destination element can change.
+    const swcme::ModelStatus ownership=validate_prepared_state(
+        S,"swcme1d::evaluate_radii_fast");
+    if (!ownership.ok()) return ownership;
     if (N==0) return swcme::ModelStatus::success();
     if (!r_m || !n_m3 || !V_ms) {
       return swcme::ModelStatus::make(
@@ -1019,6 +1088,12 @@ public:
       double* n_m3, double* V_ms,
       double* Br_T, double* Bphi_T, double* Bmag_T,
       double* divV, std::size_t N, double dr_frac=1e-3) const {
+    // Check ownership at this public boundary before even the N==0 shortcut.
+    // This gives direct full-field callers the same deterministic PST02 status
+    // and untouched-output guarantee as the fast evaluator.
+    const swcme::ModelStatus ownership=validate_prepared_state(
+        S,"swcme1d::evaluate_radii_with_B_div");
+    if (!ownership.ok()) return ownership;
     if (N==0) return swcme::ModelStatus::success();
     if (!r_m || !n_m3 || !V_ms) {
       return swcme::ModelStatus::make(
@@ -1141,6 +1216,11 @@ public:
                                     const double* Br_T,const double* Bphi_T,const double* Bmag_T,
                                     const double* divV,std::size_t N,
                                     const char* path,double time_simulation=-1.0) const {
+    // The legacy boolean writer cannot return ModelStatus.  Throw before
+    // fopen() so a foreign state cannot truncate or partially replace an
+    // existing file; checked callers should use the method below instead.
+    swcme::throw_if_error(validate_prepared_state(
+        S,"swcme1d::write_tecplot_radial_profile"));
     if (!r_m || !n_m3 || !V_ms || !Br_T || !Bphi_T || !Bmag_T || !path) return false;
     std::FILE* f = std::fopen(path, "w"); if (!f) return false;
 
@@ -1167,6 +1247,33 @@ public:
     return true;
   }
 
+  // Status-returning output entry point used by AMPS and validation code.  The
+  // ownership gate precedes all argument inspection and file-system access,
+  // which guarantees that PST02 rejection leaves a pre-existing destination
+  // byte-for-byte unchanged.
+  swcme::ModelStatus write_tecplot_radial_profile_checked(
+      const StepState& S, const double* r_m, const double* n_m3,
+      const double* V_ms, const double* Br_T, const double* Bphi_T,
+      const double* Bmag_T, const double* divV, std::size_t N,
+      const char* path, double time_simulation=-1.0) const {
+    const swcme::ModelStatus ownership=validate_prepared_state(
+        S,"swcme1d::write_tecplot_radial_profile");
+    if (!ownership.ok()) return ownership;
+    try {
+      return write_tecplot_radial_profile(
+                 S,r_m,n_m3,V_ms,Br_T,Bphi_T,Bmag_T,divV,N,path,
+                 time_simulation)
+          ? swcme::ModelStatus::success()
+          : swcme::ModelStatus::make(
+                swcme::StatusCode::FileOpenFailure,
+                "swcme1d::write_tecplot_radial_profile");
+    } catch (const std::exception&) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::FileWriteFailure,
+          "swcme1d::write_tecplot_radial_profile");
+    }
+  }
+
   // Convenience wrapper from radii only
   /**
    * @brief Convenience wrapper: given radii only, compute fields and write
@@ -1175,6 +1282,11 @@ public:
   bool write_tecplot_radial_profile_from_r(const StepState& S,
                                            const double* r_m,std::size_t N,
                                            const char* path,double time_simulation=-1.0) const {
+    // Validate before allocating temporary arrays.  Besides preserving the
+    // output file, this prevents a foreign-state exception from bypassing the
+    // legacy manual cleanup path below.
+    swcme::throw_if_error(validate_prepared_state(
+        S,"swcme1d::write_tecplot_radial_profile_from_r"));
     if (!r_m || N==0) return false;
     double *n=new double[N], *V=new double[N], *Br=new double[N], *Bph=new double[N], *Bm=new double[N], *dv=new double[N];
     evaluate_radii_with_B_div(S, r_m, n, V, Br, Bph, Bm, dv, N);
@@ -1238,6 +1350,10 @@ bool write_tecplot_shock_vs_time(double t_end_s, std::size_t N, const char* path
 
 private:
   Params P;
+  // Runtime owner token stamped into every StepState returned by this model.
+  // It is intentionally not derived from Params; identical Model instances
+  // must remain distinct owners for PST02.
+  swcme::ModelIdentity model_identity_;
 };
 
 // -----------------------------------------------------------------------------

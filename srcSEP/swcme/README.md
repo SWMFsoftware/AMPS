@@ -97,6 +97,54 @@ second status convention.  A prepared step is read-only and may be shared by
 callers whose surrounding transport implementation provides the appropriate
 thread/MPI ownership.
 
+### Prepared-state model ownership (PST02)
+
+Every `swcme1d::Model` and `swcme3d::Model` now receives a process-unique,
+nonzero `ModelIdentity`.  `prepare_step()` stamps that identity into
+`StepState::owner_model_identity`.  A state may be shared freely among threads
+that evaluate the **same** model instance, but it may not be passed to another
+model instance—even if the two instances were constructed with numerically
+identical parameters.  This prevents cached geometry, kinematics, Parker, and
+shock quantities from one model from being combined with runtime parameters
+owned by another model.
+
+Checked APIs reject a foreign or default-constructed state with
+`StatusCode::StateModelMismatch` (`STATE_MODEL_MISMATCH`) before validating
+other arguments, evaluating physics, clearing destination objects, allocating
+mesh/source storage, or opening an output file.  `ModelStatus` then contains:
+
+- `expected_model_identity`: identity of the receiving model;
+- `supplied_model_identity`: identity recorded by the supplied state; and
+- `has_model_identities=true`, which makes both values part of `summary()`.
+
+The source-compatible value/bool/void geometry and evaluator wrappers cannot
+return `ModelStatus`; they call the same ownership guard and throw
+`std::runtime_error` on mismatch.  New integrations should use checked paths,
+including `shock_acceleration_state_checked()` and the 1-D
+`write_tecplot_radial_profile_checked()`, whenever status propagation is
+available.  The SEP adapters validate ownership at their outer boundary so
+`BackgroundState`, `SEPSourceState`, `SourceSurface`, and optional connectivity
+outputs remain unchanged on rejection.
+
+Copy construction creates a new model identity.  Copy assignment copies the
+configuration and rotates the receiving identity, invalidating states prepared
+by that object before assignment.  Parameter mutation on the same model is a
+separate configuration-revision contract covered by planned PST03; PST02
+specifically establishes the cross-instance boundary.
+
+Correct and incorrect usage therefore look like:
+
+```cpp
+swcme3d::Model model_a(params);
+swcme3d::Model model_b(params);       // equal Params, different owner
+auto step = model_a.prepare_step(t);
+
+auto ok = model_a.evaluate_cartesian_fast_checked(
+    step, x, y, z, n, vx, vy, vz, count);       // OK
+auto rejected = model_b.evaluate_cartesian_fast_checked(
+    step, x, y, z, n, vx, vy, vz, count);       // STATE_MODEL_MISMATCH
+```
+
 ### `SEPSourceState`
 
 `SEPSourceState` is the stable transport-facing source record.  It contains:

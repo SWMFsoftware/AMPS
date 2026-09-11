@@ -380,10 +380,30 @@ static inline void parker_vec_T_fast(const swcme3d::StepState& S,
 // ----------------------------------------------------------------------------
 namespace swcme3d {
 
-Model::Model(const Params& P): P_(P) {}
+Model::Model(const Params& P)
+    : P_(P), model_identity_(swcme::next_model_identity()) {}
+
+Model::Model(const Model& other)
+    : P_(other.P_), model_identity_(swcme::next_model_identity()) {}
+
+Model& Model::operator=(const Model& other) {
+  if (this!=&other) {
+    P_=other.P_;
+    // Assignment replaces the logical model configuration.  Rotating the
+    // owner identity ensures states prepared before assignment cannot be
+    // silently consumed by the newly assigned model value.
+    model_identity_=swcme::next_model_identity();
+  }
+  return *this;
+}
 
 swcme::defaults::ObserverScopeStatus Model::observer_scope_status(
     const StepState& S, const double observer_m[3]) const {
+  // This legacy value-returning API has no status channel.  Reject a foreign
+  // state by exception before reading geometry or modifying caller-visible
+  // state, matching the behavior of other source-compatible wrappers.
+  swcme::throw_if_error(validate_prepared_state(
+      S,"swcme3d::observer_scope_status"));
   // Keep scope bookkeeping side-effect free and geometry-consistent: the
   // observer direction is tested against the same production surface routine
   // used by connectivity and shock diagnostics.  No angular-width shortcut or
@@ -425,6 +445,10 @@ StepState Model::prepare_step(double t_s) const {
   }
 
   StepState S{};
+  // Stamp the owner before constructing cached geometry and physics.  A
+  // successful return therefore always carries the identity of this exact
+  // model; an exception exposes no partially prepared state to the caller.
+  S.owner_model_identity=model_identity_;
   S.time_s=t_s;
 
   // 1) Apex-aligned orthonormal basis (e1 along CME apex direction).  The CME
@@ -621,6 +645,10 @@ StepState Model::prepare_step(double t_s) const {
 bool Model::shape_radius_normal(const StepState& S,
                                 double ux,double uy,double uz,
                                 double& Rdir_m,double n_hat[3]) const {
+  // Ownership precedes output initialization: a rejected foreign-state call
+  // must leave Rdir_m and n_hat exactly as supplied by the caller.
+  swcme::throw_if_error(validate_prepared_state(
+      S,"swcme3d::shape_radius_normal"));
   double u[3]={ux,uy,uz};
   if (!::normalize_checked(u)) {
     throw std::invalid_argument(
@@ -743,6 +771,11 @@ bool Model::shape_radius_normal(const StepState& S,
 //     query ahead of the shock.
 swcme::ModelStatus Model::shock_state_direction_checked(
     const StepState& S, const double u_in[3], LocalShockState& state) const {
+  // Check ownership before resetting `state`; PST02 requires a rejected call
+  // to preserve every caller-owned output byte and perform no geometry work.
+  const swcme::ModelStatus ownership=validate_prepared_state(
+      S,"swcme3d::shock_state_direction");
+  if (!ownership.ok()) return ownership;
   state=LocalShockState{};
   if (!u_in || !std::isfinite(u_in[0]) || !std::isfinite(u_in[1]) ||
       !std::isfinite(u_in[2])) {
@@ -872,6 +905,11 @@ bool Model::shock_state_direction(const StepState& S, const double u[3],
 swcme::ModelStatus Model::shock_acceleration_state_checked(
     const StepState& S, const double u_in[3],
     swcme::acceleration::ShockAccelerationState& state) const {
+  // Guard before clearing the acceleration record.  Direct callers therefore
+  // receive the same transactional mismatch behavior as the SEP adapter.
+  const swcme::ModelStatus ownership=validate_prepared_state(
+      S,"swcme3d::shock_acceleration_state");
+  if (!ownership.ok()) return ownership;
   state=swcme::acceleration::ShockAccelerationState{};
   LocalShockState shock;
   const swcme::ModelStatus shock_status=shock_state_direction_checked(S,u_in,shock);
@@ -936,6 +974,11 @@ bool Model::parker_field_line_point(const StepState& S,
                                     const double observer_m[3],
                                     double radius_m,
                                     double point_m[3]) const {
+  // Validate before writing point_m.  The boolean compatibility API cannot
+  // carry a status, so ownership misuse is reported through the same exception
+  // policy used by the other legacy wrappers.
+  swcme::throw_if_error(validate_prepared_state(
+      S,"swcme3d::parker_field_line_point"));
   if (!observer_m || !point_m || !std::isfinite(radius_m) ||
       radius_m<swcme::solarwind::MIN_RADIUS_M ||
       !std::isfinite(S.V_sw_ms) || S.V_sw_ms<=0.0) {
@@ -977,6 +1020,11 @@ double Model::parker_field_line_length(const StepState& S,
                                        const double observer_m[3],
                                        double radius_a_m,
                                        double radius_b_m) const {
+  // A NaN return is reserved for invalid numerical arguments.  A foreign
+  // state is a programming/ownership error and is rejected explicitly before
+  // any cached Parker coefficient is read.
+  swcme::throw_if_error(validate_prepared_state(
+      S,"swcme3d::parker_field_line_length"));
   if (!observer_m || !std::isfinite(radius_a_m) || !std::isfinite(radius_b_m) ||
       radius_a_m<=0.0 || radius_b_m<=0.0 || !std::isfinite(S.V_sw_ms) ||
       S.V_sw_ms<=0.0) {
@@ -1025,6 +1073,11 @@ double Model::parker_field_line_length(const StepState& S,
 swcme3d::ConnectivityState Model::observer_connectivity(
     const StepState& S, const double observer_m[3],
     const ConnectivityOptions& options) const {
+  // Connectivity currently returns a value object rather than ModelStatus.
+  // Reject a foreign state before initializing that object or tracing a single
+  // field-line point so mixed-model geometry cannot resemble disconnection.
+  swcme::throw_if_error(validate_prepared_state(
+      S,"swcme3d::observer_connectivity"));
   ConnectivityState result;
   if (observer_m) {
     result.observer_position_m[0]=observer_m[0];
@@ -1435,6 +1488,12 @@ swcme::ModelStatus Model::evaluate_cartesian_fast_checked(
     const double* x_m,const double* y_m,const double* z_m,
     double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
     std::size_t N) const {
+  // Ownership has highest precedence and is checked before N or pointers.
+  // Consequently a foreign state cannot produce a vacuous OK result or alter
+  // any element of a caller-provided output array.
+  const swcme::ModelStatus ownership=validate_prepared_state(
+      S,"swcme3d::evaluate_cartesian_fast");
+  if (!ownership.ok()) return ownership;
   if (N==0) return swcme::ModelStatus::success();
   if (!x_m || !y_m || !z_m || !n_m3 || !Vx_ms || !Vy_ms || !Vz_ms) {
     return swcme::ModelStatus::make(
@@ -1502,6 +1561,11 @@ swcme::ModelStatus Model::evaluate_cartesian_with_B_checked(
     const double* x_m,const double* y_m,const double* z_m,
     double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
     double* Bx_T,double* By_T,double* Bz_T,std::size_t N) const {
+  // Repeat the outer ownership guard here because callers may invoke this API
+  // directly; rejection must occur before any background-field output changes.
+  const swcme::ModelStatus ownership=validate_prepared_state(
+      S,"swcme3d::evaluate_cartesian_with_B");
+  if (!ownership.ok()) return ownership;
   if (N==0) return swcme::ModelStatus::success();
   if (!x_m || !y_m || !z_m || !n_m3 || !Vx_ms || !Vy_ms || !Vz_ms ||
       !Bx_T || !By_T || !Bz_T) {
@@ -1575,6 +1639,11 @@ swcme::ModelStatus Model::compute_divV_cartesian_checked(
     const StepState& S,
     const double* x_m,const double* y_m,const double* z_m,
     double* divV,std::size_t N,double dr_frac) const {
+  // Reject mixed ownership before validating the stencil or touching divV;
+  // otherwise an invalid numerical-step status could hide the root API error.
+  const swcme::ModelStatus ownership=validate_prepared_state(
+      S,"swcme3d::compute_divV_cartesian");
+  if (!ownership.ok()) return ownership;
   if (N==0) return swcme::ModelStatus::success();
   if (!x_m || !y_m || !z_m || !divV) {
     return swcme::ModelStatus::make(
@@ -1643,6 +1712,11 @@ swcme::ModelStatus Model::compute_divV_checked(
     const StepState& S,
     const double* x_m,const double* y_m,const double* z_m,
     double* divV,std::size_t N,double dr_frac) const {
+  // This API has an analytical branch that would otherwise read the foreign
+  // region mode and solar-wind speed without entering another checked method.
+  const swcme::ModelStatus ownership=validate_prepared_state(
+      S,"swcme3d::compute_divV");
+  if (!ownership.ok()) return ownership;
   if (N==0) return swcme::ModelStatus::success();
   if (!x_m || !y_m || !z_m || !divV) {
     return swcme::ModelStatus::make(
@@ -1778,6 +1852,11 @@ bool Model::diagnose_direction(const StepState& S,const double u[3],
 // Each periodic ring contains exactly nPhi vertices at phi=2*pi*k/nPhi,
 // k=0..nPhi-1.  The seam is closed only through the wrapped index (k+1)%nPhi.
 ShockMesh Model::build_shock_mesh(const StepState& S,std::size_t nTheta,std::size_t nPhi) const {
+  // No mesh allocation or node mutation occurs until ownership is proven.
+  // This prevents a foreign state from creating a geometrically plausible
+  // surface using the receiving model's shape parameters.
+  swcme::throw_if_error(validate_prepared_state(
+      S,"swcme3d::build_shock_mesh"));
   ShockMesh M;
   if (nTheta<3) nTheta=3;
   if (nPhi<3) nPhi=3;
@@ -2179,6 +2258,10 @@ swcme::ModelStatus Model::write_shock_surface_center_metrics_tecplot_checked(
 
 // Default apex-aligned volume box
 BoxSpec Model::default_apex_box(const StepState& S,double half_AU,int N) const {
+  // The box center depends on prepared orientation and apex distance; reject
+  // foreign caches before combining either value with this model's conventions.
+  swcme::throw_if_error(validate_prepared_state(
+      S,"swcme3d::default_apex_box"));
   BoxSpec B; const double h=half_AU*AU;
   B.hx=h; B.hy=h; B.hz=h;
   const double shift=0.4*h; // move box outward along e1 so shock cuts through
@@ -2192,6 +2275,11 @@ BoxSpec Model::default_apex_box(const StepState& S,double half_AU,int N) const {
 bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_in,
                                          const StepState& S,const BoxSpec& B,
                                          const char* path) const {
+  // The source-compatible boolean writer throws on ownership misuse before it
+  // can open/truncate `path`.  Checked production callers use the status API
+  // below, which performs the same guard without exceptions.
+  swcme::throw_if_error(validate_prepared_state(
+      S,"swcme3d::write_tecplot_dataset_bundle"));
   TriMetrics T=T_in;
   const std::size_t Nv=M.x.size(), Ne=M.tri_i.size();
   if (!path || !mesh_finite_and_sized(M)) return false;
@@ -2320,6 +2408,10 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_
 bool Model::write_box_face_minX_tecplot_structured(const StepState& S,
                                                    const BoxSpec& B,
                                                    const char* path) const {
+  // Ownership precedes fopen() so rejection preserves an existing output file
+  // exactly and cannot leave a partial Tecplot header behind.
+  swcme::throw_if_error(validate_prepared_state(
+      S,"swcme3d::write_box_face_minX_tecplot_structured"));
   if (!path) return false;
   const int I=std::max(2,B.Nj), J=std::max(2,B.Nk);
   const double x0=B.cx-B.hx;
@@ -2372,6 +2464,12 @@ bool Model::write_box_face_minX_tecplot_structured(const StepState& S,
 swcme::ModelStatus Model::write_tecplot_dataset_bundle_checked(
     const ShockMesh& M,const TriMetrics& T,const StepState& S,const BoxSpec& B,
     const char* path) const {
+  // Reject before inspecting unrelated mesh/box arguments and, critically,
+  // before any destination file is opened.  This makes ownership the root
+  // diagnostic and guarantees byte-preserving failure semantics.
+  const swcme::ModelStatus ownership=validate_prepared_state(
+      S,"swcme3d::write_tecplot_dataset_bundle");
+  if (!ownership.ok()) return ownership;
   if (!path) return swcme::ModelStatus::make(
       swcme::StatusCode::NullPointer,"write_tecplot_dataset_bundle path");
   if (!mesh_finite_and_sized(M)) return swcme::ModelStatus::make(
@@ -2395,6 +2493,11 @@ swcme::ModelStatus Model::write_tecplot_dataset_bundle_checked(
 
 swcme::ModelStatus Model::write_box_face_minX_tecplot_structured_checked(
     const StepState& S,const BoxSpec& B,const char* path) const {
+  // Validate the state before box checks or file-system access so a foreign
+  // cache cannot be masked by a secondary argument error.
+  const swcme::ModelStatus ownership=validate_prepared_state(
+      S,"swcme3d::write_box_face_minX_tecplot_structured");
+  if (!ownership.ok()) return ownership;
   if (!path) return swcme::ModelStatus::make(
       swcme::StatusCode::NullPointer,"write_box_face_minX_tecplot_structured path");
   if (!std::isfinite(B.cx)||!std::isfinite(B.cy)||!std::isfinite(B.cz)||

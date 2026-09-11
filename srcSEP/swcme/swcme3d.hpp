@@ -394,6 +394,12 @@ inline swcme::config::ValidationResult validate_params(const Params& p) {
 // CACHES everything required by hot loops (n,V,B,divV evaluators).
 // ----------------------------------------------------------------------------
 struct StepState {
+  // Process-local identity of the exact Model instance that prepared this
+  // cache.  Zero denotes an unprepared/default state.  The token is verified
+  // before geometry or physics uses any cached value, preventing a foreign
+  // cache from being combined with this model's Params.
+  swcme::ModelIdentity owner_model_identity = 0;
+
   // Canonical dimensionality-independent prepared state.  3-D keeps several
   // legacy mirror fields below because they are part of the current public
   // StepState API, but their values are copied from this common state instead
@@ -678,6 +684,27 @@ class Model {
 public:
   explicit Model(const Params&);
 
+  // Copies are independent model owners even when their Params compare equal.
+  // The implementation assigns a fresh identity instead of copying the source
+  // token, which makes PST02's instance boundary explicit.
+  Model(const Model&);
+  Model& operator=(const Model&);
+
+  swcme::ModelIdentity model_identity() const noexcept {
+    return model_identity_;
+  }
+
+  // Side-effect-free ownership guard used by direct callers and the SEP
+  // adapters.  Call it before modifying outputs so mismatch handling remains
+  // transactional and diagnostics retain both the expected and supplied IDs.
+  swcme::ModelStatus validate_prepared_state(
+      const StepState& S, const char* context) const noexcept {
+    if (S.owner_model_identity==model_identity_)
+      return swcme::ModelStatus::success();
+    return swcme::ModelStatus::state_model_mismatch(
+        context,model_identity_,S.owner_model_identity);
+  }
+
   // Side-effect-free validation entry point used by CFG01 and prepare_step().
   // Callers can inspect all invalid fields before starting a simulation.
   swcme::config::ValidationResult validate() const { return validate_params(P_); }
@@ -939,6 +966,10 @@ public:
 
 private:
   Params P_;
+  // Runtime owner token stamped into each StepState prepared by this object.
+  // It is deliberately unrelated to configuration values so independently
+  // constructed but numerically identical models remain distinct owners.
+  swcme::ModelIdentity model_identity_;
 };
 
 } // namespace swcme3d

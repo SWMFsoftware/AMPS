@@ -23,13 +23,34 @@
 // numbers or exceptions.
 // ============================================================================
 
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 
 namespace swcme {
+
+using ModelIdentity = std::uint64_t;
+
+// Return a process-unique, nonzero identity for one logical Model instance.
+// The identity is deliberately independent of parameter values: PST02 must
+// reject a state prepared by a different instance even when both instances
+// were constructed from byte-for-byte equivalent configurations.  A relaxed
+// atomic is sufficient because uniqueness, rather than synchronization of any
+// model data, is the only cross-thread property required here.
+inline ModelIdentity next_model_identity() noexcept {
+  static std::atomic<ModelIdentity> next{1};
+  ModelIdentity identity=next.fetch_add(1,std::memory_order_relaxed);
+
+  // Identity zero is reserved for an unprepared/default-constructed state.
+  // Wrapping a 64-bit counter is practically unreachable, but skipping zero
+  // makes the invariant explicit and keeps diagnostics unambiguous.
+  if (identity==0) identity=next.fetch_add(1,std::memory_order_relaxed);
+  return identity;
+}
 
 enum class StatusCode {
   Ok = 0,
@@ -47,7 +68,10 @@ enum class StatusCode {
   NonFiniteResult,
   InvalidMesh,
   FileOpenFailure,
-  FileWriteFailure
+  FileWriteFailure,
+  // Appended rather than inserted among earlier failures so the numeric values
+  // of the pre-existing StatusCode entries remain source/binary-log compatible.
+  StateModelMismatch
 };
 
 inline const char* status_code_name(StatusCode code) {
@@ -57,6 +81,7 @@ inline const char* status_code_name(StatusCode code) {
     case StatusCode::NoConnection: return "NO_CONNECTION";
     case StatusCode::SourceInactive: return "SOURCE_INACTIVE";
     case StatusCode::InvalidConfiguration: return "INVALID_CONFIGURATION";
+    case StatusCode::StateModelMismatch: return "STATE_MODEL_MISMATCH";
     case StatusCode::NullPointer: return "NULL_POINTER";
     case StatusCode::NonFiniteInput: return "NONFINITE_INPUT";
     case StatusCode::OutsideModelDomain: return "OUTSIDE_MODEL_DOMAIN";
@@ -80,6 +105,9 @@ struct ModelStatus {
   const char* context = "";
   double offending_value = 0.0;
   bool has_offending_value = false;
+  ModelIdentity expected_model_identity = 0;
+  ModelIdentity supplied_model_identity = 0;
+  bool has_model_identities = false;
 
   constexpr bool ok() const noexcept { return code == StatusCode::Ok; }
   constexpr bool no_surface() const noexcept {
@@ -116,12 +144,29 @@ struct ModelStatus {
     return s;
   }
 
+  // Build the dedicated ownership failure used by every state-consuming
+  // model API.  Recording both identities makes a mixed-state failure
+  // diagnosable without inspecting addresses or reproducing the calculation.
+  static constexpr ModelStatus state_model_mismatch(
+      const char* where, ModelIdentity expected,
+      ModelIdentity supplied) noexcept {
+    ModelStatus s=make(StatusCode::StateModelMismatch,where);
+    s.expected_model_identity=expected;
+    s.supplied_model_identity=supplied;
+    s.has_model_identities=true;
+    return s;
+  }
+
   std::string summary() const {
     std::ostringstream out;
     out << status_code_name(code);
     if (context && context[0] != '\0') out << " in " << context;
     if (sample_index != npos) out << " at sample " << sample_index;
     if (has_offending_value) out << " (value=" << offending_value << ')';
+    if (has_model_identities) {
+      out << " (expected_model_identity=" << expected_model_identity
+          << ", supplied_model_identity=" << supplied_model_identity << ')';
+    }
     return out.str();
   }
 };
