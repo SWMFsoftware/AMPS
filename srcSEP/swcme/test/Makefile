@@ -11,8 +11,8 @@ TARGET := output/test_swcme
 # Every validation remains in one deterministic executable. The common tests
 # use separate translation units so each physical contract has an auditable
 # implementation without introducing another executable or build system.
-SOURCES := core/test_swcme.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp core/test_regions.cpp core/test_acceleration.cpp core/test_status.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_connectivity.cpp 3d/test_shock_surface.cpp 1d/test_ambient.cpp test_1d3d.cpp
-OBJECTS := output/swcme3d.o output/test_swcme.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_regions.o output/test_acceleration.o output/test_status.o output/test_parker.o output/test_geometry.o output/test_connectivity.o output/test_shock_surface.o output/test_ambient.o output/test_1d3d.o
+SOURCES := core/test_swcme.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp core/test_regions.cpp core/test_acceleration.cpp core/test_status.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_mesh.cpp 3d/test_connectivity.cpp 3d/test_shock_surface.cpp 1d/test_ambient.cpp test_1d3d.cpp
+OBJECTS := output/swcme3d.o output/test_swcme.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_regions.o output/test_acceleration.o output/test_status.o output/test_parker.o output/test_geometry.o output/test_mesh.o output/test_connectivity.o output/test_shock_surface.o output/test_ambient.o output/test_1d3d.o
 
 .PHONY: all test clean
 
@@ -91,6 +91,11 @@ output/test_parker.o: 3d/test_parker.cpp core/test_framework.hpp ../swcme_consta
 output/test_geometry.o: 3d/test_geometry.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme3d.hpp ../swcme_status.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
+
+# MSH01-MSH05 validate the explicit triangular-manifold topology, cell
+# orientation/area convergence, and canonical area-weighted source sampler.
+output/test_mesh.o: 3d/test_mesh.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme3d.hpp ../swcme_status.hpp | output
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # CON01-CON08 validate analytical Parker-line mapping and cobpoint behavior
 # against the production swcme3d.o implementation.

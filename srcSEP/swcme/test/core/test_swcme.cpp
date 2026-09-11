@@ -21,6 +21,11 @@ void test_geo05(swcme_test::Context& context);
 void test_geo06(swcme_test::Context& context);
 void test_geo07(swcme_test::Context& context);
 void test_geo08(swcme_test::Context& context);
+void test_msh01(swcme_test::Context& context);
+void test_msh02(swcme_test::Context& context);
+void test_msh03(swcme_test::Context& context);
+void test_msh04(swcme_test::Context& context);
+void test_msh05(swcme_test::Context& context);
 void test_kin01(swcme_test::Context& context);
 void test_kin02(swcme_test::Context& context);
 void test_kin03(swcme_test::Context& context);
@@ -102,6 +107,11 @@ const swcme_test::TestCase kTests[] = {
     {"GEO06", "3D", "Analytical shock normal versus level-set gradient", test_geo06},
     {"GEO07", "3D", "Shock normal speed versus finite-difference surface motion", test_geo07},
     {"GEO08", "3D", "Rotational covariance of geometry and local scalar physics", test_geo08},
+    {"MSH01", "3D", "Shock-mesh nondegeneracy", test_msh01},
+    {"MSH02", "3D", "Mesh-cell orientation relative to analytical shock normal", test_msh02},
+    {"MSH03", "3D", "Shock-surface area convergence under angular refinement", test_msh03},
+    {"MSH04", "3D", "Unique apex and periodic-seam topology", test_msh04},
+    {"MSH05", "3D", "Area-weighted stochastic source-patch sampling", test_msh05},
     {"KIN01", "COMMON", "Fast-CME drag-based-model closed-form solution", test_kin01},
     {"KIN02", "COMMON", "Slow-CME sign-aware DBM branch", test_kin02},
     {"KIN03", "COMMON", "Zero-drag ballistic limit", test_kin03},

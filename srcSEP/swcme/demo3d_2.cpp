@@ -329,7 +329,7 @@ int main(){
     const double t_mesh = hours(36.0);
     StepState Smesh = model.prepare_step(t_mesh);
 
-    // Build the surface (lat-lon triangulation on the finite SSE cap) and per-triangle metrics
+    // Build the surface (unique-apex, periodic-ring triangulation of the finite SSE cap) and per-triangle metrics
     ShockMesh  surf = model.build_shock_mesh(Smesh, /*nTheta=*/120, /*nPhi=*/240);
     TriMetrics tri;  model.compute_triangle_metrics(surf, tri);
 

@@ -78,9 +78,9 @@
 //       field immediately behind the shock is the conservative RH downstream
 //       state and relaxes phenomenologically through the sheath.
 //     - ∇·V (divergence of bulk speed) [1/s] via a robust radial finite-diff.
-//     - a triangulated shock surface mesh with nodal normals, nodal rc, nodal
-//       normal shock speed, and per-cell metrics (area, rc_mean, Vsh_n_mean,
-//       centroid, geometric normals).
+//     - a topologically unique triangular shock-surface mesh with nodal normals,
+//       nodal rc, nodal normal shock speed, per-cell metrics, and a canonical
+//       physical-area CDF for stochastic source-patch selection.
 // • Tecplot dataset writers for the shock surface and for a structured volume
 //   box near the apex (plus a 2-D face zone). Non-finite physics values are
 //   rejected explicitly; output code does not sanitize them into finite data.
@@ -1649,69 +1649,152 @@ bool Model::diagnose_direction(const StepState& S,const double u[3],
   return true;
 }
 
-// Build lat–lon mesh on [0,thetaMax]×[0,2π]
+// Build a topologically unique triangular shock surface.
+//
+// The legacy implementation allocated a rectangular (theta,phi) array with
+// both endpoints of the periodic phi interval and with an entire nPhi+1 ring at
+// theta=0.  All apex-ring entries were the same physical point and phi=0/2pi
+// were duplicate seam points.  Triangulating that array necessarily produced
+// zero-area apex cells and a duplicated seam.  Filtering those cells after the
+// fact is not acceptable because it leaves ambiguous adjacency and double
+// counts nodes in source integration.
+//
+// The construction below encodes the topology directly:
+//   * finite SSE cap: one apex + nTheta periodic rings, the last ring being the
+//     physical half-width boundary;
+//   * Sphere/Ellipsoid: one north/apex pole + (nTheta-1) periodic rings + one
+//     south/rear pole.
+// Each periodic ring contains exactly nPhi vertices at phi=2*pi*k/nPhi,
+// k=0..nPhi-1.  The seam is closed only through the wrapped index (k+1)%nPhi.
 ShockMesh Model::build_shock_mesh(const StepState& S,std::size_t nTheta,std::size_t nPhi) const {
-  ShockMesh M; if (nTheta<3) nTheta=3; if (nPhi<3) nPhi=3;
-  const double PI=swcme3d::PI;
-  const double thetaMax=(P_.shape==ShockShape::SSE)? P_.half_width_rad : PI;
+  ShockMesh M;
+  if (nTheta<3) nTheta=3;
+  if (nPhi<3) nPhi=3;
+  M.n_theta_intervals=nTheta;
+  M.n_phi=nPhi;
+  M.closed_surface=(P_.shape!=ShockShape::SSE);
 
-  for (std::size_t it=0; it<=nTheta; ++it){
-    const double t=thetaMax*(double(it)/double(nTheta));
-    const double ct=std::cos(t), st=std::sin(t);
-    for (std::size_t ip=0; ip<=nPhi; ++ip){
-      const double p=2.0*PI*(double(ip)/double(nPhi)), cp=std::cos(p), sp=std::sin(p);
-      double u_loc[3]={ct, st*cp, st*sp};
-      double u[3]={ u_loc[0]*S.e1[0]+u_loc[1]*S.e2[0]+u_loc[2]*S.e3[0],
-                    u_loc[0]*S.e1[1]+u_loc[1]*S.e2[1]+u_loc[2]*S.e3[1],
-                    u_loc[0]*S.e1[2]+u_loc[1]*S.e2[2]+u_loc[2]*S.e3[2] };
-      if (!::normalize_checked(u)) {
-        throw std::runtime_error(
-            swcme::ModelStatus::make(swcme::StatusCode::GeometryFailure,
-                                     "swcme3d::build_shock_mesh direction").summary());
-      }
+  const double thetaMax=M.closed_surface ? swcme3d::PI : P_.half_width_rad;
+  if (!std::isfinite(thetaMax) || !(thetaMax>0.0)) {
+    throw std::runtime_error(
+        swcme::ModelStatus::make(swcme::StatusCode::GeometryFailure,
+                                 "swcme3d::build_shock_mesh angular extent").summary());
+  }
 
-      // Build each nodal shock record from the canonical shock-surface query.
-      // Earlier versions obtained the geometric point first and then called a
-      // scalar helper that historically accepted an arbitrary evaluation radius.
-      // Even after that radius was ignored, retaining two code paths made it too
-      // easy for mesh diagnostics to drift from the field/connectivity physics.
-      // One LocalShockState now owns geometry, upstream sampling, normal speed,
-      // shock existence, and compression for every mesh node.
-      LocalShockState shock;
-      if (!shock_state_direction(S,u,shock)) {
-        // build_shock_mesh samples only the mathematically supported angular
-        // interval.  Failure here therefore signals an internal geometry error,
-        // not an expected outside-cap query, and should never be silently filled
-        // with a zero-radius vertex.
-        throw std::runtime_error("swcme3d: shock mesh requested a direction outside the supported surface");
-      }
+  // Convert one local polar direction into a canonical production shock-state
+  // node.  Keeping all node fields in this helper guarantees that geometry,
+  // normal, compression, and normal speed come from the same surface-owned
+  // LocalShockState used by diagnostics/connectivity.
+  auto add_node = [&](double theta,double phi)->int {
+    const double ct=std::cos(theta), st=std::sin(theta);
+    const double cp=std::cos(phi), sp=std::sin(phi);
+    const double u_loc[3]={ct,st*cp,st*sp};
+    double u[3]={ u_loc[0]*S.e1[0]+u_loc[1]*S.e2[0]+u_loc[2]*S.e3[0],
+                  u_loc[0]*S.e1[1]+u_loc[1]*S.e2[1]+u_loc[2]*S.e3[1],
+                  u_loc[0]*S.e1[2]+u_loc[1]*S.e2[2]+u_loc[2]*S.e3[2] };
+    if (!::normalize_checked(u)) {
+      throw std::runtime_error(
+          swcme::ModelStatus::make(swcme::StatusCode::GeometryFailure,
+                                   "swcme3d::build_shock_mesh direction").summary());
+    }
 
-      const double Rdir=shock.Rdir_m;
-      const double xyz[3]={Rdir*u[0],Rdir*u[1],Rdir*u[2]};
-      const double rc=shock.has_shock ? shock.compression : 1.0;
-      if (!::finite3(xyz) || !::finite3(shock.normal) || !std::isfinite(rc) ||
-          !std::isfinite(shock.Vsh_n_m_s)) {
-        throw std::runtime_error(
-            swcme::ModelStatus::make(swcme::StatusCode::NonFiniteResult,
-                                     "swcme3d::build_shock_mesh node").summary());
-      }
-      M.x.push_back(xyz[0]); M.y.push_back(xyz[1]); M.z.push_back(xyz[2]);
-      M.n_hat_x.push_back(shock.normal[0]);
-      M.n_hat_y.push_back(shock.normal[1]);
-      M.n_hat_z.push_back(shock.normal[2]);
-      M.rc.push_back(rc);
-      M.Vsh_n.push_back(shock.Vsh_n_m_s);
+    LocalShockState shock;
+    const swcme::ModelStatus status=shock_state_direction_checked(S,u,shock);
+    if (!status.ok()) {
+      // Every requested mesh node is expected to lie on the configured surface.
+      // NO_SURFACE or OUTSIDE_MODEL_DOMAIN is therefore a real construction
+      // failure, not a reason to insert a zero-radius placeholder node.
+      throw std::runtime_error(status.summary());
+    }
+
+    const double Rdir=shock.Rdir_m;
+    const double xyz[3]={Rdir*u[0],Rdir*u[1],Rdir*u[2]};
+    const double rc=shock.has_shock ? shock.compression : 1.0;
+    if (!::finite3(xyz) || !::finite3(shock.normal) || !std::isfinite(rc) ||
+        !std::isfinite(shock.Vsh_n_m_s)) {
+      throw std::runtime_error(
+          swcme::ModelStatus::make(swcme::StatusCode::NonFiniteResult,
+                                   "swcme3d::build_shock_mesh node").summary());
+    }
+
+    const int index=static_cast<int>(M.x.size());
+    M.x.push_back(xyz[0]); M.y.push_back(xyz[1]); M.z.push_back(xyz[2]);
+    M.n_hat_x.push_back(shock.normal[0]);
+    M.n_hat_y.push_back(shock.normal[1]);
+    M.n_hat_z.push_back(shock.normal[2]);
+    M.rc.push_back(rc);
+    M.Vsh_n.push_back(shock.Vsh_n_m_s);
+    return index;
+  };
+
+  auto add_triangle = [&](int a,int b,int c) {
+    // Connectivity is stored as 1-based Tecplot indices.  Repeated indices are
+    // forbidden here and independently rejected by compute_triangle_metrics().
+    if (a==b || b==c || c==a) {
+      throw std::runtime_error(
+          swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,
+                                   "swcme3d::build_shock_mesh repeated index").summary());
+    }
+    M.tri_i.push_back(a+1);
+    M.tri_j.push_back(b+1);
+    M.tri_k.push_back(c+1);
+  };
+
+  // The apex is a single physical vertex, independent of phi.
+  const int apex=add_node(0.0,0.0);
+  (void)apex; // documented as index zero, but keep construction explicit.
+
+  // Ring offsets contain the 0-based index of phi=0 on each non-polar ring.
+  // No phi=2pi vertex is ever generated.
+  std::vector<int> ring_offset;
+  const std::size_t last_ring_interval=M.closed_surface ? nTheta-1 : nTheta;
+  ring_offset.reserve(last_ring_interval);
+  for (std::size_t it=1; it<=last_ring_interval; ++it) {
+    const double theta=thetaMax*(static_cast<double>(it)/static_cast<double>(nTheta));
+    ring_offset.push_back(static_cast<int>(M.x.size()));
+    for (std::size_t ip=0; ip<nPhi; ++ip) {
+      const double phi=2.0*swcme3d::PI*(static_cast<double>(ip)/static_cast<double>(nPhi));
+      add_node(theta,phi);
     }
   }
-  const std::size_t NvPhi=nPhi+1;
-  auto idx=[&](std::size_t it,std::size_t ip){ return int(it*NvPhi+ip); };
-  for (std::size_t it=0; it<nTheta; ++it){
-    for (std::size_t ip=0; ip<nPhi; ++ip){
-      int i00=idx(it,ip), i01=idx(it,ip+1), i10=idx(it+1,ip), i11=idx(it+1,ip+1);
-      M.tri_i.push_back(i00+1); M.tri_j.push_back(i10+1); M.tri_k.push_back(i11+1);
-      M.tri_i.push_back(i00+1); M.tri_j.push_back(i11+1); M.tri_k.push_back(i01+1);
+
+  auto ring_index = [&](std::size_t ring,std::size_t ip)->int {
+    return ring_offset[ring]+static_cast<int>(ip%nPhi);
+  };
+
+  // Apex fan.  The local parameterization has dX/dtheta x dX/dphi pointing
+  // outward, so [apex,phi,phi+1] has the desired orientation.
+  for (std::size_t ip=0; ip<nPhi; ++ip) {
+    const std::size_t jp=(ip+1)%nPhi;
+    add_triangle(apex,ring_index(0,ip),ring_index(0,jp));
+  }
+
+  // Connect adjacent unique rings.  Two triangles per angular quadrilateral;
+  // wrapping jp closes the seam without duplicating either endpoint.
+  for (std::size_t ring=0; ring+1<ring_offset.size(); ++ring) {
+    for (std::size_t ip=0; ip<nPhi; ++ip) {
+      const std::size_t jp=(ip+1)%nPhi;
+      const int i00=ring_index(ring,ip);
+      const int i01=ring_index(ring,jp);
+      const int i10=ring_index(ring+1,ip);
+      const int i11=ring_index(ring+1,jp);
+      add_triangle(i00,i10,i11);
+      add_triangle(i00,i11,i01);
     }
   }
+
+  if (M.closed_surface) {
+    // Sphere and origin-centered ellipsoid have one unique rear pole at theta=pi.
+    // The last fan uses [ring_i,south,ring_{i+1}], which preserves the same
+    // outward winding as the rest of the parameterized surface.
+    const int rear=add_node(thetaMax,0.0);
+    const std::size_t last=ring_offset.size()-1;
+    for (std::size_t ip=0; ip<nPhi; ++ip) {
+      const std::size_t jp=(ip+1)%nPhi;
+      add_triangle(ring_index(last,ip),rear,ring_index(last,jp));
+    }
+  }
+
   return M;
 }
 
@@ -1722,53 +1805,171 @@ void Model::compute_triangle_metrics(const ShockMesh& M, TriMetrics& T) const {
                          M.n_hat_x.size()==Nv && M.n_hat_y.size()==Nv &&
                          M.n_hat_z.size()==Nv && M.rc.size()==Nv &&
                          M.Vsh_n.size()==Nv);
-  if (!node_sizes || M.tri_j.size()!=Ne || M.tri_k.size()!=Ne) {
+  if (Nv<3 || Ne==0 || !node_sizes || M.tri_j.size()!=Ne || M.tri_k.size()!=Ne) {
     throw std::runtime_error(
         swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,
                                  "swcme3d::compute_triangle_metrics sizes").summary());
   }
-  T.area.assign(Ne,0.0); T.nx.assign(Ne,0.0); T.ny.assign(Ne,0.0); T.nz.assign(Ne,1.0);
+
+  T.area.assign(Ne,0.0); T.nx.assign(Ne,0.0); T.ny.assign(Ne,0.0); T.nz.assign(Ne,0.0);
   T.cx.assign(Ne,0.0); T.cy.assign(Ne,0.0); T.cz.assign(Ne,0.0);
-  T.rc_mean.assign(Ne,1.0); T.Vsh_n_mean.assign(Ne,0.0);
+  T.rc_mean.assign(Ne,0.0); T.Vsh_n_mean.assign(Ne,0.0);
 
   for (std::size_t e=0;e<Ne;++e){
-    int ia=M.tri_i[e]-1, ib=M.tri_j[e]-1, ic=M.tri_k[e]-1;
-    if (ia<0 || ib<0 || ic<0 || static_cast<std::size_t>(ia)>=Nv ||
-        static_cast<std::size_t>(ib)>=Nv || static_cast<std::size_t>(ic)>=Nv) {
+    const int ia=M.tri_i[e]-1, ib=M.tri_j[e]-1, ic=M.tri_k[e]-1;
+    if (ia<0 || ib<0 || ic<0 || ia==ib || ib==ic || ic==ia ||
+        static_cast<std::size_t>(ia)>=Nv || static_cast<std::size_t>(ib)>=Nv ||
+        static_cast<std::size_t>(ic)>=Nv) {
       throw std::runtime_error(
           swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,
                                    "swcme3d::compute_triangle_metrics connectivity",e).summary());
     }
-    double Ax=M.x[ia], Ay=M.y[ia], Az=M.z[ia];
-    double Bx=M.x[ib], By=M.y[ib], Bz=M.z[ib];
-    double Cx=M.x[ic], Cy=M.y[ic], Cz=M.z[ic];
 
-    double ABx=Bx-Ax, ABy=By-Ay, ABz=Bz-Az;
-    double ACx=Cx-Ax, ACy=Cy-Ay, ACz=Cz-Az;
+    const double A[3]={M.x[ia],M.y[ia],M.z[ia]};
+    const double B[3]={M.x[ib],M.y[ib],M.z[ib]};
+    const double C[3]={M.x[ic],M.y[ic],M.z[ic]};
+    if (!::finite3(A) || !::finite3(B) || !::finite3(C)) {
+      throw std::runtime_error(
+          swcme::ModelStatus::make(swcme::StatusCode::NonFiniteResult,
+                                   "swcme3d::compute_triangle_metrics vertex",e).summary());
+    }
 
-    double nx=ABy*ACz - ABz*ACy;
-    double ny=ABz*ACx - ABx*ACz;
-    double nz=ABx*ACy - ABy*ACx;
-    double twiceA=std::sqrt(std::max(0.0, nx*nx+ny*ny+nz*nz));
-    double area=0.5*twiceA;
-    if (twiceA>0){ nx/=twiceA; ny/=twiceA; nz/=twiceA; }
+    const double AB[3]={B[0]-A[0],B[1]-A[1],B[2]-A[2]};
+    const double AC[3]={C[0]-A[0],C[1]-A[1],C[2]-A[2]};
+    const double BC[3]={C[0]-B[0],C[1]-B[1],C[2]-B[2]};
+    double n[3]={AB[1]*AC[2]-AB[2]*AC[1],
+                 AB[2]*AC[0]-AB[0]*AC[2],
+                 AB[0]*AC[1]-AB[1]*AC[0]};
+    const double twiceA=std::hypot(n[0],std::hypot(n[1],n[2]));
+    const double lab=std::hypot(AB[0],std::hypot(AB[1],AB[2]));
+    const double lac=std::hypot(AC[0],std::hypot(AC[1],AC[2]));
+    const double lbc=std::hypot(BC[0],std::hypot(BC[1],BC[2]));
+    const double edge_scale=std::max(lab,std::max(lac,lbc));
 
-    const double cx=(Ax+Bx+Cx)/3.0, cy=(Ay+By+Cy)/3.0, cz=(Az+Bz+Cz)/3.0;
+    // A valid triangle needs area that is resolvable relative to its own edge
+    // scale.  This rejects exact duplicate/polar cells and grossly ill-
+    // conditioned connectivity without imposing a physics-dependent absolute
+    // area cutoff.  The factor is deliberately far above one ulp yet far below
+    // the angular aspect ratios used by supported meshes.
+    const double area_tol=128.0*std::numeric_limits<double>::epsilon()*
+                          edge_scale*edge_scale;
+    if (!std::isfinite(twiceA) || !std::isfinite(edge_scale) ||
+        !(edge_scale>0.0) || !(0.5*twiceA>area_tol)) {
+      throw std::runtime_error(
+          swcme::ModelStatus::make_value(swcme::StatusCode::InvalidMesh,
+                                         "swcme3d::compute_triangle_metrics degenerate area",
+                                         0.5*twiceA,e).summary());
+    }
+
+    n[0]/=twiceA; n[1]/=twiceA; n[2]/=twiceA;
+    const double area=0.5*twiceA;
+    const double cx=(A[0]+B[0]+C[0])/3.0;
+    const double cy=(A[1]+B[1]+C[1])/3.0;
+    const double cz=(A[2]+B[2]+C[2])/3.0;
     const double rc_mean=(M.rc[ia]+M.rc[ib]+M.rc[ic])/3.0;
     const double v_mean=(M.Vsh_n[ia]+M.Vsh_n[ib]+M.Vsh_n[ic])/3.0;
-    if (!std::isfinite(area) || !std::isfinite(nx) || !std::isfinite(ny) ||
-        !std::isfinite(nz) || !std::isfinite(cx) || !std::isfinite(cy) ||
+
+    // Compare the triangle winding with the average analytical nodal normal.
+    // A negative/zero dot is an orientation error; silently flipping it here
+    // would hide a broken topology from downstream source integration.
+    double navg[3]={M.n_hat_x[ia]+M.n_hat_x[ib]+M.n_hat_x[ic],
+                    M.n_hat_y[ia]+M.n_hat_y[ib]+M.n_hat_y[ic],
+                    M.n_hat_z[ia]+M.n_hat_z[ib]+M.n_hat_z[ic]};
+    if (!::normalize_checked(navg)) {
+      throw std::runtime_error(
+          swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,
+                                   "swcme3d::compute_triangle_metrics analytic normal",e).summary());
+    }
+    const double orientation=n[0]*navg[0]+n[1]*navg[1]+n[2]*navg[2];
+    if (!std::isfinite(orientation) || !(orientation>0.0)) {
+      throw std::runtime_error(
+          swcme::ModelStatus::make_value(swcme::StatusCode::InvalidMesh,
+                                         "swcme3d::compute_triangle_metrics orientation",
+                                         orientation,e).summary());
+    }
+
+    if (!std::isfinite(area) || !std::isfinite(cx) || !std::isfinite(cy) ||
         !std::isfinite(cz) || !std::isfinite(rc_mean) || !std::isfinite(v_mean)) {
       throw std::runtime_error(
           swcme::ModelStatus::make(swcme::StatusCode::NonFiniteResult,
                                    "swcme3d::compute_triangle_metrics",e).summary());
     }
     T.area[e]=area;
-    T.nx[e]=nx; T.ny[e]=ny; T.nz[e]=nz;
+    T.nx[e]=n[0]; T.ny[e]=n[1]; T.nz[e]=n[2];
     T.cx[e]=cx; T.cy[e]=cy; T.cz[e]=cz;
     T.rc_mean[e]=rc_mean;
     T.Vsh_n_mean[e]=v_mean;
   }
+}
+
+AreaSamplingTable Model::build_area_sampling_table(const TriMetrics& T) const {
+  AreaSamplingTable table;
+  if (T.area.empty()) {
+    throw std::runtime_error(
+        swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,
+                                 "swcme3d::build_area_sampling_table empty").summary());
+  }
+
+  // Long-double accumulation prevents the CDF from losing small positive cells
+  // when the mesh has a broad area distribution.  Every cell must have finite,
+  // strictly positive physical area; zero-area entries are topology defects and
+  // are never silently skipped.
+  long double total=0.0L;
+  for (std::size_t i=0;i<T.area.size();++i) {
+    const double a=T.area[i];
+    if (!std::isfinite(a) || !(a>0.0)) {
+      throw std::runtime_error(
+          swcme::ModelStatus::make_value(swcme::StatusCode::InvalidMesh,
+                                         "swcme3d::build_area_sampling_table area",
+                                         a,i).summary());
+    }
+    total+=static_cast<long double>(a);
+  }
+  if (!(total>0.0L) || !std::isfinite(static_cast<double>(total))) {
+    throw std::runtime_error(
+        swcme::ModelStatus::make(swcme::StatusCode::NonFiniteResult,
+                                 "swcme3d::build_area_sampling_table total area").summary());
+  }
+
+  table.total_area_m2=static_cast<double>(total);
+  table.cumulative_probability.resize(T.area.size());
+  long double cumulative=0.0L;
+  for (std::size_t i=0;i<T.area.size();++i) {
+    cumulative+=static_cast<long double>(T.area[i]);
+    table.cumulative_probability[i]=static_cast<double>(cumulative/total);
+    if (i>0 && !(table.cumulative_probability[i]>
+                 table.cumulative_probability[i-1])) {
+      throw std::runtime_error(
+          swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,
+                                   "swcme3d::build_area_sampling_table nonmonotone CDF",i).summary());
+    }
+  }
+  // The exact mathematical endpoint is one.  Force only the final roundoff bit
+  // so callers can audit `cdf.back()==1` exactly; no cell probability is changed
+  // by more than floating-point normalization error.
+  table.cumulative_probability.back()=1.0;
+  return table;
+}
+
+std::size_t Model::sample_triangle_by_area(const AreaSamplingTable& table,
+                                           double unit_uniform) const {
+  if (!std::isfinite(unit_uniform) || unit_uniform<0.0 || !(unit_uniform<1.0) ||
+      table.cumulative_probability.empty() ||
+      table.cumulative_probability.back()!=1.0) {
+    throw std::invalid_argument(
+        "swcme3d::sample_triangle_by_area requires a valid area CDF and 0<=u<1");
+  }
+  const auto it=std::upper_bound(table.cumulative_probability.begin(),
+                                 table.cumulative_probability.end(),unit_uniform);
+  if (it==table.cumulative_probability.end()) {
+    // With cdf.back()==1 and u<1 this branch is unreachable unless the table was
+    // externally corrupted after construction; surface that corruption rather
+    // than biasing the sample toward the last cell.
+    throw std::runtime_error(
+        swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,
+                                 "swcme3d::sample_triangle_by_area corrupted CDF").summary());
+  }
+  return static_cast<std::size_t>(it-table.cumulative_probability.begin());
 }
 
 // --- Tecplot helpers ---------------------------------------------------------

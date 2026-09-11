@@ -29,8 +29,8 @@
 //   - Observer-to-shock magnetic connectivity on the analytical Parker line,
 //     including all cobpoint roots, selected root, path length, and local
 //     production ShockState.
-//   - Shock surface meshing + per-triangle metrics (area, centroid, normal,
-//     rc_mean, Vsh_n_mean).
+//   - Topologically unique shock-surface meshing + per-triangle metrics and
+//     deterministic area-weighted source-cell sampling.
 //   - Tecplot writers (surface, volume box, an optional box face).
 //
 // Units & conventions
@@ -532,28 +532,58 @@ struct ConnectivityHistorySample {
 };
 
 // ----------------------------------------------------------------------------
-// Shock surface mesh and per-triangle metrics
-//  - tri_i/j/k are 1-based (Tecplot-friendly).
-//  - Nodal arrays are the same length (Nv); tri arrays length is 3*Ne.
+// Shock surface mesh and per-triangle metrics.
+//
+// Topology contract (Fix 12)
+// --------------------------
+// The mesh no longer stores a rectangular theta-phi array with duplicated
+// phi=0/2pi seam vertices or a complete ring of coincident apex vertices.
+// Instead it is an explicitly triangular manifold:
+//   * one unique apex vertex;
+//   * nPhi unique vertices on every non-polar ring;
+//   * periodic ring connectivity implemented by index wrap, not duplicate nodes;
+//   * one unique rear pole for closed Sphere/Ellipsoid surfaces; and
+//   * one physical outer boundary ring for a finite SSE cap.
+//
+// `n_theta_intervals` and `n_phi` describe the requested angular resolution and
+// are recorded so consumers can audit the construction without reverse
+// engineering node counts.  `closed_surface` distinguishes a closed sphere/
+// ellipsoid from an open finite-width SSE cap.  Connectivity remains 1-based
+// for Tecplot compatibility.
 // ----------------------------------------------------------------------------
 struct ShockMesh {
   // Nodal fields (size Nv)
-  std::vector<double> x, y, z;                 // vertex positions [m]
-  std::vector<double> n_hat_x, n_hat_y, n_hat_z; // outward unit normals at nodes
-  std::vector<double> rc;                      // nodal physical density compression
-  std::vector<double> Vsh_n;                   // nodal normal shock speed [m/s]
+  std::vector<double> x, y, z;                   // vertex positions [m]
+  std::vector<double> n_hat_x, n_hat_y, n_hat_z; // outward analytic normals
+  std::vector<double> rc;                        // physical density compression
+  std::vector<double> Vsh_n;                     // normal shock speed [m/s]
 
-  // Connectivity (1-based triangle indices)
-  std::vector<int> tri_i, tri_j, tri_k;        // size Ne
+  // Connectivity (1-based triangle indices; all three arrays have size Ne).
+  std::vector<int> tri_i, tri_j, tri_k;
+
+  // Construction metadata. These fields do not participate in Tecplot output.
+  std::size_t n_theta_intervals = 0;
+  std::size_t n_phi = 0;
+  bool closed_surface = false;
 };
 
 struct TriMetrics {
   // Per-triangle (cell-centered) metrics (size Ne)
   std::vector<double> area;       // [m^2]
-  std::vector<double> nx, ny, nz; // unit normal (geometry-based)
+  std::vector<double> nx, ny, nz; // outward unit normal from triangle winding
   std::vector<double> cx, cy, cz; // centroid [m]
   std::vector<double> rc_mean;    // mean of nodal rc
   std::vector<double> Vsh_n_mean; // mean of nodal Vsh_n [m/s]
+};
+
+// Deterministic area CDF used by shock-source samplers.  The library does not
+// own a random-number generator: callers supply a U[0,1) variate to
+// sample_triangle_by_area().  This keeps reproducibility under the caller's
+// control while ensuring every source adapter uses the same physical area
+// weighting.
+struct AreaSamplingTable {
+  std::vector<double> cumulative_probability; // strictly increasing; last=1
+  double total_area_m2 = 0.0;
 };
 
 // ----------------------------------------------------------------------------
@@ -720,11 +750,23 @@ public:
                           double& Rdir_m,double n_hat[3],
                           double& rc_loc,double& Vsh_n) const;
 
-  // Build a lat–lon shock surface with nodal rc and Vsh_n. (nTheta×nPhi grid)
+  // Build a topologically unique triangular shock surface. `nTheta` is the
+  // number of polar intervals and `nPhi` the number of unique vertices per
+  // non-polar ring.  Periodicity is implemented by wrapped connectivity; no
+  // duplicate phi=2pi seam nodes are stored.
   ShockMesh build_shock_mesh(const StepState& S, std::size_t nTheta, std::size_t nPhi) const;
 
-  // Compute per-triangle metrics (area, normals, centroid, mean rc and Vsh_n).
+  // Compute per-triangle metrics and reject repeated-index or numerically
+  // degenerate cells instead of returning a zero-area/zero-normal fallback.
   void compute_triangle_metrics(const ShockMesh& M, TriMetrics& T) const;
+
+  // Build/select from the canonical area-weighted cell distribution.  This is
+  // the production primitive for spatially uniform per-unit-area shock source
+  // sampling; choosing triangles uniformly by index is intentionally not
+  // provided because it biases a nonuniform angular mesh.
+  AreaSamplingTable build_area_sampling_table(const TriMetrics& T) const;
+  std::size_t sample_triangle_by_area(const AreaSamplingTable& table,
+                                      double unit_uniform) const;
 
   // Useful default volume box (apex-aligned, shifted outward).
   BoxSpec default_apex_box(const StepState& S,double half_AU,int N) const;

@@ -354,15 +354,57 @@ obliquity, independent parallel and perpendicular limiting solutions, oblique
 branch continuity, mass flux, normal magnetic field, tangential electric field,
 momentum and energy fluxes, entropy/admissibility, the weak-shock limit, query-radius invariance, and canonical-state consistency across diagnostics/mesh outputs.
 
+## Correct shock-surface mesh topology and area-weighted sampling
+
+`Model::build_shock_mesh()` now constructs an explicit triangular manifold
+instead of triangulating a rectangular theta-phi array.  The old layout stored
+`phi=0` and `phi=2*pi` as separate vertices and stored an entire azimuthal ring
+at `theta=0`, even though every point in that ring is the same physical apex.
+Those duplicate nodes necessarily generated zero-area apex triangles and a
+duplicated periodic seam.  Removing zero-area cells after construction would
+not repair the topology because adjacency and surface integration would still
+contain duplicate physical vertices.
+
+The corrected topology is shape aware:
+
+- a finite SSE cap contains one unique apex plus `nTheta` rings of exactly
+  `nPhi` unique vertices; the final ring is the physical half-width boundary;
+- a Sphere or Ellipsoid contains one unique apex/north pole, `nTheta-1`
+  periodic interior rings, and one unique rear/south pole;
+- no ring contains a duplicate `phi=2*pi` point.  Periodicity is represented
+  only by triangle connectivity using `(iphi+1)%nPhi`;
+- every triangle is wound outward.  `compute_triangle_metrics()` rejects
+  repeated-index, non-finite, numerically degenerate, or inward-oriented cells
+  rather than returning zero area or a fabricated normal.
+
+`ShockMesh` records `n_theta_intervals`, `n_phi`, and `closed_surface` so a
+consumer can audit the topology directly.  Existing 1-based triangle indices
+remain unchanged for Tecplot compatibility.
+
+Area weighting is now a production API rather than a demo-side convention.
+`build_area_sampling_table()` forms a strictly monotone cumulative distribution
+from physical triangle areas using long-double accumulation, and
+`sample_triangle_by_area(table,u)` maps a caller-supplied `u` in `[0,1)` to a
+triangle.  SWCME intentionally does not own the random-number generator: AMPS
+or another caller controls the RNG/seed, while SWCME guarantees that a spatially
+uniform source is sampled in proportion to physical surface area rather than
+angular-grid index.  Zero/non-finite cell areas are rejected and never skipped.
+
+The deterministic validation gates `MSH01`-`MSH05` cover nondegeneracy, outward
+orientation, second-order surface-area convergence, unique apex/periodic-seam
+topology, and fixed-seed chi-square tests of area-weighted stochastic patch
+selection.  See `MESH_TOPOLOGY_FIX_NOTES.md` for construction formulas, node/
+cell counts, and the validation rationale.
+
 ## Remaining remediation items
 
 The dimensionality-independent constants, units, configuration validation,
-Leblanc/Parker ambient state, apex kinematics, and ideal-MHD shock solver are now
-shared between 1-D and 3-D.  Remaining work is intentionally focused on infrastructure or physics outside
-the now-shared region and acceleration models: shock-mesh apex/seam topology,
-explicit numerical-status propagation in the remaining 3-D field evaluators,
-the full AMPS-facing SEP source adapter/units contract, velocity-divergence
-cleanup, and the higher-level Python validation campaign runner.
+Leblanc/Parker ambient state, apex kinematics, ideal-MHD shock solver, downstream
+region handling, acceleration representation, numerical-status contract, and
+shock-surface topology are now explicit and validated.  Remaining work is
+focused on physics/infrastructure beyond this mesh repair: the full AMPS-facing
+SEP source adapter/units contract, velocity-divergence cleanup, and the
+higher-level Python validation campaign runner.
 
 ## Repaired sheath/ejecta region model and SHOCK_ONLY/FULL_ICME modes
 

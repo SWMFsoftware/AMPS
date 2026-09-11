@@ -397,8 +397,60 @@ pass.
 
 The geometry tests remain diagnostically focused on shape, normals, finite
 angular support, and normal speed.  Shock existence/compression/downstream
-physics is now covered independently by `SHK01`-`SHK12` below.  Shock-surface
-mesh apex/seam topology remains a separate planned work package.
+physics is covered independently by `SHK01`-`SHK12` below, while the now-
+corrected triangulation/topology is qualified independently by `MSH01`-`MSH05`.
+
+## MSH01-MSH05: shock-surface mesh topology, quality, and area sampling
+
+The production mesh is no longer a rectangular theta-phi array.  It stores one
+apex, unique periodic rings, and either one finite-SSE boundary ring or one rear
+pole for a closed Sphere/Ellipsoid.  The seam is represented by wrapped
+connectivity, so there is no second copy of the `phi=0` vertex at `phi=2*pi`.
+Triangle metrics reject repeated indices, scale-aware degenerate area, and
+inward winding as `INVALID_MESH`; validation must never make a bad mesh pass by
+filtering cells after construction.
+
+- `MSH01` — **nondegeneracy**.  Builds minimum, typical, and fine Sphere/SSE
+  meshes, including narrow and broad SSE caps.  Every triangle must have finite
+  positive area and `compute_triangle_metrics()` must accept the complete mesh.
+  The test prints minimum/median/maximum area for each fixture.
+- `MSH02` — **outward cell orientation**.  For Sphere, rotated Ellipsoid, and
+  rotated SSE meshes, each triangle cross-product normal is compared with the
+  analytical surface normal evaluated in the centroid direction.  Every dot
+  product must be positive; the worst alignment is reported.
+- `MSH03` — **surface-area convergence**.  Refines `nTheta` and `nPhi` by factors
+  of two and sums physical triangle area.  The Sphere reference is `4*pi*R^2`.
+  For true SSE with apex radius `R` and half width `lambda`, the independent
+  translated-sphere reference is `2*pi*R^2*sin(lambda)^2/(1+sin(lambda))`.
+  Error must decrease monotonically, the final observed order must exceed 1.5,
+  and the fine-grid error must be below 0.5%.
+- `MSH04` — **unique apex / periodic seam**.  Inspects connectivity rather than
+  only coordinates.  A finite SSE cap must have `1+nTheta*nPhi` vertices,
+  `nPhi*(2*nTheta-1)` triangles, no duplicate coordinate pairs, exactly
+  `nPhi` boundary edges, manifold edge incidence, apex valence `nPhi`, disk
+  Euler characteristic one, and explicit last-to-first ring adjacency.
+- `MSH05` — **area-weighted source-patch sampling**.  Verifies the production
+  cumulative-area table is strictly increasing and ends exactly at one.  Three
+  fixed RNG seeds each draw 200,000 cells through `sample_triangle_by_area()`.
+  Aggregated counts are compared with exact physical area probabilities using a
+  chi-square statistic and independent incomplete-gamma p-value calculation;
+  every deterministic fixture requires `p > 1e-3`.
+
+Run this mesh gate directly with:
+
+```sh
+./output/test_swcme --test MSH01
+./output/test_swcme --test MSH02
+./output/test_swcme --test MSH03
+./output/test_swcme --test MSH04
+./output/test_swcme --test MSH05
+```
+
+The random-number generator intentionally remains outside the production mesh
+class.  Production code provides only the area CDF and deterministic mapping
+from a caller-supplied uniform variate to a triangle, so AMPS controls seeds and
+parallel RNG policy without being able to accidentally revert to uniform-by-cell
+sampling.
 
 
 

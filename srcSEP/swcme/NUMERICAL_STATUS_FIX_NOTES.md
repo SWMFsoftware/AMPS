@@ -192,9 +192,11 @@ physics-data failure.  The `FILE_WRITE_FAILURE` status is reserved for a later
 writer-I/O refactor that checks every `fprintf`/`fclose` result; this update does
 not claim transactional output or detailed mid-file I/O diagnostics.
 
-The surface-mesh **topology** itself is intentionally not redesigned here.
-Eliminating apex/seam degeneracies and zero-area cells is the next mesh-specific
-remediation, not a numerical-status fallback issue.
+At the time of Fix 11, the surface-mesh **topology** was intentionally left for
+a separate remediation.  Fix 12 now removes the apex/seam duplicate vertices
+and zero-area cells at construction time.  The status rule established here
+remains unchanged: malformed or degenerate connectivity is reported as
+`INVALID_MESH` rather than filtered or repaired after the fact.
 
 ## Validation tests
 
