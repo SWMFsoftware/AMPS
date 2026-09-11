@@ -42,9 +42,11 @@ PHYSICAL MODEL (succinct but complete)
       shock-frame inflow is super-fast; otherwise compression is exactly one.
 
   • Downstream structure is controlled by swcme_regions.hpp. SHOCK_ONLY leaves
-      the Parker/Leblanc background untouched. FULL_ICME uses
+      the Parker/Leblanc transport background untouched. FULL_ICME uses
       upstream → [R_sh] → sheath → [R_LE] → magnetic ejecta → [R_TE] → ambient,
-      with self-similar local thickness fractions and C1 LE/TE transitions.
+      with self-similar local thickness fractions.  In RESOLVED_COMPRESSION mode
+      the mathematical RH jump is represented in the transport field by one
+      finite C1 shock layer; LE/TE transitions are C1 as well.
 
   • *Crucial sheath construction (artifact-free):*
       Let s∈[0,1] map R_sh→R_LE with s=0 at the shock. We **pin the boundary
@@ -53,9 +55,9 @@ PHYSICAL MODEL (succinct but complete)
       – velocity:   V(s) = smoothstep(s^p; V₂→V_LE),  p≥1,
         where V₂ = V_sh − (V_sh−V_sw)/r_c is the downstream speed from mass-flux
         continuity (RH proxy) and V_LE ≥ V_sw (user-set factor).
-      The immediate downstream boundary is the exact RH state. The sheath then
-      relaxes toward the ambient leading-edge target without an empirical
-      compression floor.
+      In RESOLVED_COMPRESSION mode the inner edge of the numerical shock layer
+      is the exact RH state. The sheath starts there and relaxes toward the
+      ambient leading-edge target without an empirical compression floor.
 
   • Magnetic field in FULL_ICME starts from the exact RH downstream vector and
       relaxes to the Parker field at R_LE. The ejecta field remains Parker in
@@ -67,9 +69,10 @@ NUMERICAL / IMPLEMENTATION CHOICES
     r_c, sheath/ME geometric radii & widths) are cached in StepState.
   • ∇·V = (1/r²) d/dr (r² V) evaluated by a centered finite difference with
     h = max(10⁻³ r, 1 km).
-  • Blending windows (shock, LE, TE) are C¹ smooth and scale ∝ R_sh; we keep
-    the shock window small and do *not* blend downstream with upstream at the
-    immediate post-shock point.
+  • In RESOLVED_COMPRESSION, shock/LE/TE blending windows are C¹ and scale
+    ∝ R_sh.  The shock layer blends upstream to the exact RH state, reaching
+    that state at its inner edge; the subsequent sheath starts from the same
+    endpoint with zero derivative.  SOURCE mode has no shock blend at all.
 
 API & UNITS
   • All inputs/outputs documented per method below; defaults live in Params.
@@ -182,8 +185,10 @@ USAGE SKETCH (more complete examples at bottom)
 // Regions and smoothing (self-similar):
 //   SHOCK_ONLY returns the analytical upstream background everywhere. FULL_ICME
 //   uses upstream → [shock] → sheath → [R_LE] → magnetic ejecta → [R_TE] →
-//   post-ICME ambient. R_LE/R_sh and R_TE/R_sh are fixed fractions, and only the
-//   artificial LE/TE interfaces are C1-smoothed. The physical shock is explicit.
+//   post-ICME ambient. R_LE/R_sh and R_TE/R_sh are fixed fractions.  With
+//   RESOLVED_COMPRESSION the transport-facing RH jump is represented by one C1
+//   shock layer; SOURCE mode uses SHOCK_ONLY and leaves the flow uncompressed.
+//   The artificial LE/TE interfaces are C1-smoothed in FULL_ICME as well.
 //
 // Shock physics is provided by the shared ideal-MHD Rankine-Hugoniot solver in
 // swcme_shock.hpp; the region model consumes that validated downstream state and
@@ -217,8 +222,10 @@ USAGE SKETCH (more complete examples at bottom)
 // Regions and smoothing (self-similar):
 //   SHOCK_ONLY returns the analytical upstream background everywhere. FULL_ICME
 //   uses upstream → [shock] → sheath → [R_LE] → magnetic ejecta → [R_TE] →
-//   post-ICME ambient. R_LE/R_sh and R_TE/R_sh are fixed fractions, and only the
-//   artificial LE/TE interfaces are C1-smoothed. The physical shock is explicit.
+//   post-ICME ambient. R_LE/R_sh and R_TE/R_sh are fixed fractions.  With
+//   RESOLVED_COMPRESSION the transport-facing RH jump is represented by one C1
+//   shock layer; SOURCE mode uses SHOCK_ONLY and leaves the flow uncompressed.
+//   The artificial LE/TE interfaces are C1-smoothed in FULL_ICME as well.
 //
 // Shock physics is provided by the shared ideal-MHD Rankine-Hugoniot solver in
 // swcme_shock.hpp; the region model consumes that validated downstream state and
@@ -245,14 +252,14 @@ USAGE SKETCH (more complete examples at bottom)
 // • Inside the **magnetic ejecta (ME)**: density is commonly **below ambient** and
 //   speed can be **lower than upstream wind**—a well-known depletion region.
 //
-// • The physical shock is now an explicit discontinuity.  Immediately downstream,
-//   density, velocity, pressure, and magnetic field are taken from the common
-//   Rankine-Hugoniot solution; no empirical compression floor or shock-edge blend
-//   is allowed to replace that boundary state.
+// • The canonical shock diagnostic remains the exact mathematical RH jump.
+//   Transport fields use exactly one acceleration representation: SOURCE keeps
+//   SHOCK_ONLY background fields uncompressed, whereas RESOLVED_COMPRESSION maps
+//   upstream to the exact RH downstream state across a finite C1 shock layer.
 //
 // • Artificial leading/trailing ICME boundaries use symmetric C1 smoothstep
-//   transitions.  The legacy shock smoothing width and sheath_comp_floor inputs are
-//   retained only for source compatibility and do not alter the physical shock.
+//   transitions.  sheath_comp_floor is retained only for source compatibility;
+//   it never alters either the exact RH state or the resolved transport profile.
 
 
  NUMERICAL NOTES
@@ -308,7 +315,7 @@ USAGE SKETCH (more complete examples at bottom)
      ejecta_thick_AU_at1AU   0.10–0.40
 
    Edge widths (at 1 AU; scales ∝ R_sh):
-     edge_smooth_shock_AU_at1AU  legacy compatibility input; physical shock is unsmoothed
+     edge_smooth_shock_AU_at1AU  0.005–0.02; resolved-compression layer width
      edge_smooth_le_AU_at1AU     0.01–0.05
      edge_smooth_te_AU_at1AU     0.02–0.06
 
@@ -338,6 +345,7 @@ USAGE SKETCH (more complete examples at bottom)
 #include "swcme_units.hpp"
 #include "swcme_config.hpp"
 #include "swcme_regions.hpp"
+#include "swcme_acceleration.hpp"
 #include "swcme_kinematics.hpp"
 #include "swcme_solarwind.hpp"
 #include "swcme_core.hpp"
@@ -367,8 +375,9 @@ inline double lerp(double a,double b,double t){ return a + (b-a)*t; }
  * Ambient inputs (V_sw, n1AU, |B|1AU, T) set the Parker spiral and upstream
  * thermodynamics. CME inputs feed the shared ballistic/DBM/data-driven apex kinematics.
  * Geometry and smoothing control sheath/ME sizes and edge widths (all scale
- * self-similarly with R_sh). Sheath/ME shaping sets compression floor, speed
- * ramping inside sheath, and ME density/speed relative to upstream.
+ * self-similarly with R_sh).  The selected acceleration mode determines whether
+ * the shock is an explicit SOURCE surface or a resolved C1 compression layer.
+ * Sheath/ME shaping controls post-shock relaxation and ejecta density/speed.
  *
  * Units noted per field; high-level units: [km/s], [cm^-3], [nT], [K], [AU].
  */
@@ -404,13 +413,24 @@ struct Params {
   // untouched and exposes the shock only through the shock/source APIs.
   swcme::regions::Mode region_mode = swcme::regions::Mode::FullICME;
 
+  // Shock acceleration representation.  Exactly one mechanism is selected:
+  // RESOLVED_COMPRESSION (default, paired with FULL_ICME for backward-compatible
+  // flow fields) or SOURCE (paired with SHOCK_ONLY for the controlled SEP
+  // source/connectivity experiment).  The relative source weight is dimensionless
+  // until the later AMPS source adapter assigns a physical injection unit.
+  swcme::acceleration::Mode shock_acceleration_mode =
+      swcme::acceleration::Mode::ResolvedCompression;
+  double relative_source_weight_per_area = 1.0;
+
   // Geometry: thicknesses at 1 AU. These values are interpreted as
   // self-similar fractions of the local shock radius by swcme_regions.hpp.
   double sheath_thick_AU_at1AU  = 0.10; // AU at 1 AU
   double ejecta_thick_AU_at1AU  = 0.25; // AU at 1 AU
 
-  // Interface smoothing widths at 1 AU (C¹), scale ∝ R_sh
-  double edge_smooth_shock_AU_at1AU = 0.01; // legacy compatibility; physical shock is unsmoothed
+  // Interface smoothing widths at 1 AU (C¹), scale ∝ R_sh.  The shock width
+  // is active only for RESOLVED_COMPRESSION; SOURCE mode validates with
+  // SHOCK_ONLY and therefore never places this compression in the flow field.
+  double edge_smooth_shock_AU_at1AU = 0.01;
   double edge_smooth_le_AU_at1AU    = 0.02; // sheath → ME
   double edge_smooth_te_AU_at1AU    = 0.03; // ME → ambient
 
@@ -437,6 +457,8 @@ inline swcme::config::ValidationResult validate_params(const Params& p) {
   view.Gamma_kmInv=p.Gamma_kmInv; view.data_time_s=&p.data_time_s;
   view.data_radius_Rs=&p.data_radius_Rs;
   view.region_mode=p.region_mode;
+  view.acceleration_mode=p.shock_acceleration_mode;
+  view.relative_source_weight_per_area=p.relative_source_weight_per_area;
   view.sheath_thick_AU_at1AU=p.sheath_thick_AU_at1AU;
   view.ejecta_thick_AU_at1AU=p.ejecta_thick_AU_at1AU;
   view.edge_smooth_shock_AU_at1AU=p.edge_smooth_shock_AU_at1AU;
@@ -472,6 +494,10 @@ struct StepState {
   // or LE/TE smoothing widths.
   swcme::regions::Config region_config;
   swcme::regions::Boundaries region_boundaries;
+
+  // Shared shock-acceleration choice cached with the step so field/source
+  // queries cannot observe a mode different from the one that was validated.
+  swcme::acceleration::Config acceleration_config;
 
   // Apex kinematics / geometry.  kinematics_mode records which shared common
   // solver produced r_sh_m and V_sh_ms for traceable diagnostics.
@@ -543,6 +569,8 @@ public:
     P.V_sw_kms=V_sw_kms; P.n1AU_cm3=n1AU_cm3; P.B1AU_nT=B1AU_nT; P.T_K=T_K;
     P.gamma_ad=gamma_ad; P.sin_theta=sin_theta; return *this; }
   Model& SetRegionMode(swcme::regions::Mode mode){ P.region_mode=mode; return *this; }
+  Model& SetShockAccelerationMode(swcme::acceleration::Mode mode){
+    P.shock_acceleration_mode=mode; return *this; }
   Model& SetGeometry(double sheath_thick_AU_at1AU,double ejecta_thick_AU_at1AU){
     P.sheath_thick_AU_at1AU=sheath_thick_AU_at1AU;
     P.ejecta_thick_AU_at1AU=ejecta_thick_AU_at1AU; return *this; }
@@ -638,7 +666,17 @@ public:
     // and smoothing inputs are AU at a 1-AU shock, i.e. dimensionless fractions
     // of the local shock radius.  The same routine is used by 3-D at every
     // flank direction, eliminating the former apex-width subtraction.
+    S.acceleration_config.mode=P.shock_acceleration_mode;
+    S.acceleration_config.relative_source_weight_per_area=
+        P.relative_source_weight_per_area;
     S.region_config.mode=P.region_mode;
+    // The physical shock smoothing width belongs to the selected acceleration
+    // representation. SOURCE has no resolved compression layer; the shock is
+    // an injection surface only. RESOLVED_COMPRESSION uses the same common C1
+    // width in both dimensional models.
+    S.region_config.shock_smooth_fraction=
+        (P.shock_acceleration_mode==swcme::acceleration::Mode::ResolvedCompression)
+            ? P.edge_smooth_shock_AU_at1AU : 0.0;
     S.region_config.sheath_fraction=P.sheath_thick_AU_at1AU;
     S.region_config.ejecta_fraction=P.ejecta_thick_AU_at1AU;
     S.region_config.leading_smooth_fraction=P.edge_smooth_le_AU_at1AU;
@@ -650,12 +688,12 @@ public:
     S.region_boundaries=swcme::regions::make_boundaries(S.r_sh_m,S.region_config);
 
     // Legacy StepState mirrors remain populated for source compatibility and
-    // Tecplot output.  The physical shock itself is deliberately discontinuous
-    // in SOURCE-style usage, so w_sh_m is retained only as a deprecated input
-    // mirror and does not smooth the RH jump in the repaired region evaluator.
+    // Tecplot output. In RESOLVED_COMPRESSION w_sh_m is the common total C1
+    // transition width; SOURCE sets it exactly to zero and carries acceleration
+    // only through the explicit source record.
     S.r_le_m=S.region_boundaries.R_le_m;
     S.r_te_m=S.region_boundaries.R_te_m;
-    S.w_sh_m=0.0;
+    S.w_sh_m=S.region_boundaries.smooth_shock_width_m;
     S.w_le_m=S.region_boundaries.smooth_le_width_m;
     S.w_te_m=S.region_boundaries.smooth_te_width_m;
 
@@ -710,6 +748,20 @@ public:
     }
 
     return S;
+  }
+
+  // Return the canonical 1-D shock-acceleration record.  The radial +X basis
+  // used by the 1-D jump solver is embedded as a 3-vector so the serialized
+  // record can be compared field-by-field with the equivalent 3-D +X case.
+  swcme::acceleration::ShockAccelerationState shock_acceleration_state(
+      const StepState& S) const {
+    const bool physical=S.has_shock && S.shock_solver_converged;
+    const std::array<double,3> position{{S.r_sh_m,0.0,0.0}};
+    const std::array<double,3> normal{{1.0,0.0,0.0}};
+    return swcme::acceleration::make_state(
+        S.acceleration_config,true,physical,S.time_s,position,normal,S.V_sh_ms,
+        S.shock_jump.compression,S.shock_jump.theta_Bn_rad,
+        S.shock_jump.fast_mach,S.n_up_shock,S.B_up_T);
   }
 
   // Upstream Leblanc density (fast; SI). r is clipped ≥1.05 R☉ for stability
@@ -797,7 +849,17 @@ public:
 
       double n=n_up;
       double V=Vsw;
-      if (loc.region==swcme::regions::Region::Sheath) {
+      if (loc.region==swcme::regions::Region::ShockTransition) {
+        // RESOLVED_COMPRESSION only: one symmetric C1 profile converts the
+        // exact upstream state into the exact RH downstream state.  SOURCE
+        // mode never reaches this branch because its validated SHOCK_ONLY
+        // configuration sets smooth_shock_width_m=0 and returns ambient above.
+        if (S.has_shock && S.shock_solver_converged) {
+          const double n2=S.shock_jump.downstream.rho_kg_m3/MP;
+          n=swcme::regions::lerp(n_up,n2,loc.blend);
+          V=swcme::regions::lerp(Vsw,S.V2_shock_ms,loc.blend);
+        }
+      } else if (loc.region==swcme::regions::Region::Sheath) {
         sheath_state(r,n,V);
       } else if (loc.region==swcme::regions::Region::LeadingTransition) {
         double ns=0.0,Vs=0.0,ne=0.0,Ve=0.0;
@@ -860,7 +922,16 @@ public:
       if (S.region_config.mode==swcme::regions::Mode::FullICME) {
         const swcme::regions::Location loc=
             swcme::regions::locate(r,S.region_boundaries);
-        if (loc.region==swcme::regions::Region::Sheath ||
+        if (loc.region==swcme::regions::Region::ShockTransition &&
+            S.has_shock && S.shock_solver_converged) {
+          // Match the n/V resolved-compression profile: the magnetic field
+          // reaches the exact RH downstream vector at the inner edge of the
+          // same C1 shock layer.  This keeps all primitive variables on one
+          // geometrically identical transition and avoids 1-D/3-D smoothing
+          // differences.
+          Br=swcme::regions::lerp(Br,S.shock_jump.downstream.magnetic_T[0],loc.blend);
+          Bph=swcme::regions::lerp(Bph,S.shock_jump.downstream.magnetic_T[1],loc.blend);
+        } else if (loc.region==swcme::regions::Region::Sheath ||
             loc.region==swcme::regions::Region::LeadingTransition) {
           const double w=swcme::regions::sheath_profile_weight(
               r,S.region_boundaries,S.region_config.sheath_ramp_power);

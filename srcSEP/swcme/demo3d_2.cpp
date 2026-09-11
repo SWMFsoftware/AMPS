@@ -239,13 +239,16 @@ int main(){
     P.sheath_thick_AU_at1AU = 0.10;   // thicker sheath → longer relaxation
     P.ejecta_thick_AU_at1AU = 0.20;   // ME (flux-rope) radial thickness
 
-    // Edge smoothing half-widths (AU at 1 AU). Keep the shock edge relatively sharp.
+    // C1 transition widths (AU at a 1-AU shock).  The shock width is active
+    // only in RESOLVED_COMPRESSION; SOURCE mode uses SHOCK_ONLY and no velocity
+    // compression layer.  Keep the resolved shock layer relatively narrow.
     P.edge_smooth_shock_AU_at1AU = 0.01;
     P.edge_smooth_le_AU_at1AU    = 0.03;
     P.edge_smooth_te_AU_at1AU    = 0.03;
 
-    // Sheath compression floor at its inner edge and ramp sharpness across the sheath.
-    P.sheath_comp_floor = 1.5;  // keeps sheath > ambient near its LE
+    // sheath_comp_floor is deprecated and ignored; the MHD RH solution alone
+    // sets the physical compression.  sheath_ramp_power shapes post-shock relaxation.
+    P.sheath_comp_floor = 1.5;  // compatibility-only; has no physical effect
     P.sheath_ramp_power = 1.5;  // >1 → faster drop from rc at the shock
 
     // Target speeds inside sheath/ejecta relative to ambient.

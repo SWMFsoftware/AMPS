@@ -41,12 +41,14 @@ enum class Mode {
   FullICME
 };
 
-// Nominal region labels.  The two transition labels represent finite C1 blend
-// zones around the sheath/ejecta leading edge and ejecta/post-ICME trailing
-// edge.  The physical shock itself is deliberately NOT smoothed here; r>=R_sh
-// is upstream and r<R_sh approaches the exact RH downstream state.
+// Nominal region labels.  Leading/TrailingTransition represent the artificial
+// sheath/ejecta and ejecta/post-ICME blends.  ShockTransition is different: it
+// exists only for RESOLVED_COMPRESSION and is the numerical representation of
+// the physical RH discontinuity.  SOURCE mode sets its width to zero so the
+// transport background contains no resolved shock accelerator.
 enum class Region {
   Upstream,
+  ShockTransition,
   Sheath,
   LeadingTransition,
   Ejecta,
@@ -61,6 +63,7 @@ inline const char* mode_name(Mode mode) {
 inline const char* region_name(Region region) {
   switch (region) {
     case Region::Upstream: return "UPSTREAM";
+    case Region::ShockTransition: return "SHOCK_TRANSITION";
     case Region::Sheath: return "SHEATH";
     case Region::LeadingTransition: return "LEADING_TRANSITION";
     case Region::Ejecta: return "EJECTA";
@@ -80,6 +83,9 @@ struct Config {
   Mode mode = Mode::FullICME;
   double sheath_fraction = 0.10;
   double ejecta_fraction = 0.20;
+  // Numerical shock width used ONLY by RESOLVED_COMPRESSION.  SOURCE mode
+  // passes zero here, leaving the physical source surface out of the flow.
+  double shock_smooth_fraction = 0.01;
   double leading_smooth_fraction = 0.02;
   double trailing_smooth_fraction = 0.03;
   double sheath_ramp_power = 2.0;
@@ -102,6 +108,9 @@ struct Boundaries {
   double R_te_m = 0.0;
   double sheath_thickness_m = 0.0;
   double ejecta_thickness_m = 0.0;
+  // Total C1 width centered on the mathematical shock surface.  It is capped
+  // so the inner edge remains inside the sheath and cannot overlap the LE.
+  double smooth_shock_width_m = 0.0;
   double smooth_le_width_m = 0.0;
   double smooth_te_width_m = 0.0;
 };
@@ -109,7 +118,8 @@ struct Boundaries {
 struct Location {
   Region region = Region::Upstream;
   // Blend weight has a region-dependent interpretation:
-  //  LeadingTransition: 0 -> pure sheath, 1 -> pure ejecta.
+  //  ShockTransition:    0 -> upstream, 1 -> exact RH downstream.
+  //  LeadingTransition:  0 -> pure sheath, 1 -> pure ejecta.
   //  TrailingTransition: 0 -> pure ejecta, 1 -> pure post-ICME ambient.
   //  Other regions:      0.
   double blend = 0.0;
@@ -151,12 +161,21 @@ inline Boundaries make_boundaries(double local_shock_radius_m,
   out.sheath_thickness_m = out.R_sh_m - out.R_le_m;
   out.ejecta_thickness_m = out.R_le_m - out.R_te_m;
 
-  // The requested smoothing parameters are specified as AU at a 1-AU shock,
-  // so numerically they are the corresponding fractions of local R_sh.  Use a
-  // symmetric transition about each nominal interface.  Limiting the TOTAL
-  // width to 90% of the adjacent finite layer leaves at least 55% of each layer
-  // on either side of its center and prevents leading/trailing blends from
-  // crossing each other.
+  // The shock smoothing width is used only when the caller has selected the
+  // RESOLVED_COMPRESSION acceleration representation.  It is a TOTAL width
+  // centered on R_sh.  Capping it at 90% of the sheath thickness guarantees a
+  // finite post-transition sheath interval before R_LE.  SOURCE mode supplies
+  // shock_smooth_fraction=0, so this numerical compression profile disappears
+  // entirely and the source surface is handled only by source bookkeeping.
+  const double requested_shock = std::max(0.0, config.shock_smooth_fraction) *
+                                 local_shock_radius_m;
+  const double shock_limit = 0.90 * std::max(0.0, out.sheath_thickness_m);
+  out.smooth_shock_width_m = std::min(requested_shock, shock_limit);
+
+  // The requested LE/TE smoothing parameters are likewise specified as AU at
+  // a 1-AU shock, so numerically they are self-similar fractions of local R_sh.
+  // Limiting the TOTAL width to 90% of adjacent layers prevents the artificial
+  // transition zones from crossing or inverting the nominal region ordering.
   const double requested_le = std::max(0.0, config.leading_smooth_fraction) *
                               local_shock_radius_m;
   const double le_limit = 0.90 * std::max(0.0,
@@ -172,13 +191,29 @@ inline Boundaries make_boundaries(double local_shock_radius_m,
 
 inline Location locate(double r_m, const Boundaries& b) {
   Location out;
-  if (r_m >= b.R_sh_m) {
+  const double h_sh = 0.5 * b.smooth_shock_width_m;
+  const double h_le = 0.5 * b.smooth_le_width_m;
+  const double h_te = 0.5 * b.smooth_te_width_m;
+
+  // RESOLVED_COMPRESSION represents the physical discontinuity by one finite
+  // C1 layer centered on R_sh.  blend=0 is the outer/upstream endpoint and
+  // blend=1 is the inner/exact-RH endpoint.  With zero width (SOURCE or legacy
+  // unsmoothed diagnostics) the old mathematical discontinuity is recovered.
+  if (b.smooth_shock_width_m > 0.0) {
+    if (r_m >= b.R_sh_m + h_sh) {
+      out.region = Region::Upstream;
+      return out;
+    }
+    if (r_m >= b.R_sh_m - h_sh) {
+      const double q=(b.R_sh_m + h_sh - r_m)/b.smooth_shock_width_m;
+      out.region=Region::ShockTransition;
+      out.blend=smoothstep01(q);
+      return out;
+    }
+  } else if (r_m >= b.R_sh_m) {
     out.region = Region::Upstream;
     return out;
   }
-
-  const double h_le = 0.5 * b.smooth_le_width_m;
-  const double h_te = 0.5 * b.smooth_te_width_m;
 
   if (b.smooth_le_width_m > 0.0 &&
       r_m <= b.R_le_m + h_le && r_m >= b.R_le_m - h_le) {
@@ -221,9 +256,14 @@ inline Location locate(double r_m, const Boundaries& b) {
 // can be evaluated inside the symmetric leading-edge transition without a
 // second extrapolation convention.
 inline double sheath_progress(double r_m, const Boundaries& b) {
-  const double width = b.R_sh_m - b.R_le_m;
+  // In resolved-compression mode the exact RH state is reached at the INNER
+  // edge of the numerical shock layer.  Starting the phenomenological sheath
+  // relaxation there gives C0/C1 matching: the shock smoothstep has zero slope
+  // at its inner endpoint and the sheath smoothstep has zero slope at s=0.
+  const double sheath_start=b.R_sh_m-0.5*b.smooth_shock_width_m;
+  const double width = sheath_start - b.R_le_m;
   if (!(width > 0.0)) return 1.0;
-  return clamp01((b.R_sh_m - r_m) / width);
+  return clamp01((sheath_start - r_m) / width);
 }
 
 inline double sheath_profile_weight(double r_m, const Boundaries& b,

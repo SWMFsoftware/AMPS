@@ -11,8 +11,8 @@ TARGET := output/test_swcme
 # Every validation remains in one deterministic executable. The common tests
 # use separate translation units so each physical contract has an auditable
 # implementation without introducing another executable or build system.
-SOURCES := core/test_swcme.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp core/test_regions.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_connectivity.cpp 3d/test_shock_surface.cpp 1d/test_ambient.cpp test_1d3d.cpp
-OBJECTS := output/swcme3d.o output/test_swcme.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_regions.o output/test_parker.o output/test_geometry.o output/test_connectivity.o output/test_shock_surface.o output/test_ambient.o output/test_1d3d.o
+SOURCES := core/test_swcme.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp core/test_regions.cpp core/test_acceleration.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_connectivity.cpp 3d/test_shock_surface.cpp 1d/test_ambient.cpp test_1d3d.cpp
+OBJECTS := output/swcme3d.o output/test_swcme.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_regions.o output/test_acceleration.o output/test_parker.o output/test_geometry.o output/test_connectivity.o output/test_shock_surface.o output/test_ambient.o output/test_1d3d.o
 
 .PHONY: all test clean
 
@@ -26,7 +26,7 @@ $(TARGET): $(OBJECTS)
 # to obtain its symbols, which coupled the entire production implementation to
 # one unrelated test translation unit.  A normal object-library style link is
 # clearer, scales to additional tests, and prevents accidental duplicate code.
-output/swcme3d.o: ../swcme3d.cpp ../swcme3d.hpp ../swcme_constants.hpp ../swcme_units.hpp ../swcme_config.hpp ../swcme_kinematics.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_shock.hpp ../swcme_regions.hpp | output
+output/swcme3d.o: ../swcme3d.cpp ../swcme3d.hpp ../swcme_constants.hpp ../swcme_units.hpp ../swcme_config.hpp ../swcme_kinematics.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_shock.hpp ../swcme_regions.hpp ../swcme_acceleration.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # Explicit rules keep source ownership obvious and let `make -j` build the
@@ -67,6 +67,12 @@ output/test_shock.o: core/test_shock.cpp core/test_framework.hpp ../swcme_shock.
 output/test_regions.o: core/test_regions.cpp core/test_framework.hpp ../swcme_regions.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_shock.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
+# ACC01-ACC05 enforce the single shock-acceleration representation, verify the
+# SOURCE no-double-counting gate, and compare the shared resolved-compression
+# shock smoothing used by the 1-D and 3-D transport-facing fields.
+output/test_acceleration.o: core/test_acceleration.cpp core/test_framework.hpp ../swcme_acceleration.hpp ../swcme_regions.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_shock.hpp | output
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
 # PAR01-PAR03 exercise the public production 3-D field evaluator linked through
 # swcme3d.o; the test translation unit contains only independent references.
 output/test_parker.o: 3d/test_parker.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme3d.hpp | output
@@ -97,7 +103,7 @@ output/test_ambient.o: 1d/test_ambient.cpp core/test_framework.hpp ../swcme_cons
 # 1D3D01-02 validate that the two public dimensional wrappers reduce to the
 # same common solar-wind, apex-kinematics, and shock state in an exactly
 # equivalent spherical/equatorial geometry.
-output/test_1d3d.o: test_1d3d.cpp core/test_framework.hpp ../swcme_core.hpp ../swcme_solarwind.hpp ../swcme_shock.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_regions.hpp | output
+output/test_1d3d.o: test_1d3d.cpp core/test_framework.hpp ../swcme_core.hpp ../swcme_solarwind.hpp ../swcme_shock.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_regions.hpp ../swcme_acceleration.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 output:

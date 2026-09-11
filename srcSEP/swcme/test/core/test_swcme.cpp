@@ -56,9 +56,15 @@ void test_reg02(swcme_test::Context& context);
 void test_reg03(swcme_test::Context& context);
 void test_reg04(swcme_test::Context& context);
 void test_reg05(swcme_test::Context& context);
+void test_acc01(swcme_test::Context& context);
+void test_acc02(swcme_test::Context& context);
+void test_acc03(swcme_test::Context& context);
+void test_acc04(swcme_test::Context& context);
+void test_acc05(swcme_test::Context& context);
 void test_1d_ambient_at_one_au(swcme_test::Context& context);
 void test_1d3d01(swcme_test::Context& context);
 void test_1d3d02(swcme_test::Context& context);
+void test_1d3d03(swcme_test::Context& context);
 
 namespace {
 
@@ -122,14 +128,20 @@ const swcme_test::TestCase kTests[] = {
     {"CON07", "3D", "Cobpoint-to-ShockState consistency", test_con07},
     {"CON08", "3D", "Connectivity Parker path-length accuracy", test_con08},
     {"REG01", "COMMON", "SHOCK_ONLY upstream-field identity", test_reg01},
-    {"REG02", "COMMON", "FULL_ICME immediate-downstream Rankine-Hugoniot boundary", test_reg02},
+    {"REG02", "COMMON", "FULL_ICME resolved-shock inner Rankine-Hugoniot boundary", test_reg02},
     {"REG03", "1D", "Magnetic-ejecta density and velocity factors", test_reg03},
     {"REG04", "3D", "Self-similar nested shock/leading/trailing surfaces", test_reg04},
     {"REG05", "COMMON", "Continuity and smoothness across region transitions", test_reg05},
+    {"ACC01", "COMMON", "SOURCE mode explicit source and SHOCK_ONLY transport flow", test_acc01},
+    {"ACC02", "COMMON", "Acceleration-mode mutual-exclusion validation", test_acc02},
+    {"ACC03", "COMMON", "Resolved-compression C1 shock smoothing and RH endpoints", test_acc03},
+    {"ACC04", "1D<->3D", "Resolved shock-profile identity in spherical radial limit", test_acc04},
+    {"ACC05", "COMMON", "Resolved mode disables prescribed DSA source", test_acc05},
     {"1D_AMBIENT_01", "1D", "Ambient values at 1 AU",
      test_1d_ambient_at_one_au},
     {"1D3D01", "1D<->3D", "Common-core upstream solar-wind state identity", test_1d3d01},
     {"1D3D02", "1D<->3D", "Common-core 1-D versus 3-D shock-state identity", test_1d3d02},
+    {"1D3D03", "1D<->3D", "SOURCE acceleration-record identity", test_1d3d03},
 };
 
 constexpr std::size_t kTestCount = sizeof(kTests) / sizeof(kTests[0]);

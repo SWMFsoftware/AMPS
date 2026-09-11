@@ -99,9 +99,16 @@ model is introduced by this remediation.
 
 The old `sheath_comp_floor` parameter remains in public parameter structures for
 source compatibility but is ignored by physical shock and region calculations.
-The corresponding `StepState::rc_floor` mirror is always 1.  Likewise, the old
-shock smoothing-width mirror is retained but the physical shock is not smoothed
-by this module.
+The corresponding `StepState::rc_floor` mirror is always 1.
+
+**Fix 10 supersedes the original transport-side shock-smoothing statement in
+this note.**  The canonical shock diagnostic is still an exact mathematical RH
+discontinuity.  When `RESOLVED_COMPRESSION` is selected, however, the transport
+fields now represent that jump with one finite C1 layer whose inner endpoint is
+the exact RH downstream state.  In `SOURCE` mode the validated `SHOCK_ONLY`
+background contains no resolved shock layer.  This distinction prevents DSA
+source acceleration and `div(V)` compression acceleration from being applied to
+the same particle population.
 
 ## Validation
 

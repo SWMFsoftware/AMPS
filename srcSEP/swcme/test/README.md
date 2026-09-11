@@ -647,7 +647,7 @@ Typical direct use is:
 ```
 
 
-## 1D3D01-1D3D02: common-core dimensional-equivalence tests
+## 1D3D01-1D3D03: common-core dimensional-equivalence tests
 
 These tests qualify the common-core refactor rather than a new physical model.
 They deliberately configure the 3-D model as a Sun-centered sphere propagating
@@ -680,9 +680,11 @@ Typical use:
 ./output/test_swcme --all
 ```
 
-`1D3D03` is intentionally deferred until the common SWCME-to-SEP source record
-is implemented; that test will verify identical source inputs before 1-D/3-D
-transport diverges.
+`1D3D03` now validates the shared SOURCE acceleration record.  In the exact
+spherical/+X reduction it requires 1-D and 3-D source position, normal, shock
+speed, compression, `theta_Bn`, Mach number, upstream density/|B|, DSA
+phase-space slope, relative area weight, and deterministic serialized record to
+be identical before transport is allowed to diverge.
 
 ### Shock-state query-location policy
 
@@ -704,9 +706,10 @@ contract.
 ## REG01-REG05: sheath/ejecta region model and mode validation
 
 `REG01`-`REG05` qualify the shared `swcme_regions.hpp` contract used by the 1-D
-and 3-D field evaluators.  The physical shock remains an explicit RH
-discontinuity; these tests address only the optional phenomenological regions
-behind it and the controlled SHOCK_ONLY baseline.
+and 3-D field evaluators.  The exact RH discontinuity remains available in the
+shock diagnostic API, while transport-facing FULL_ICME fields use the common C1
+shock layer selected by RESOLVED_COMPRESSION.  SHOCK_ONLY/SOURCE keeps the
+transport background analytical on both sides of the mathematical source.
 
 - `REG01` — **SHOCK_ONLY upstream-field identity**.  Samples points ahead of
   and geometrically behind the expanding front in both 1-D and 3-D.  Density,
@@ -714,11 +717,11 @@ behind it and the controlled SHOCK_ONLY baseline.
   upstream state.  The test deliberately changes FULL_ICME sheath/ejecta
   parameters to extreme valid values and proves they have no effect in
   SHOCK_ONLY mode.
-- `REG02` — **FULL_ICME immediate-downstream RH boundary**.  Approaches a
-  well-conditioned physical shock from the downstream side and verifies that
-  density, velocity, and magnetic field converge to the complete production
-  Rankine-Hugoniot downstream state.  This permanently guards the historical
-  3-D error in which the sheath velocity returned `V_sw` at the shock.
+- `REG02` — **FULL_ICME resolved-shock inner RH boundary**.  Evaluates the
+  inner endpoint `R_sh-w_sh/2` of the RESOLVED_COMPRESSION C1 shock layer and
+  verifies that density, velocity, and magnetic field equal the complete
+  production Rankine-Hugoniot downstream state.  This preserves the exact RH
+  boundary while allowing the transport field to resolve the jump numerically.
 - `REG03` — **magnetic-ejecta density and velocity factors**.  Evaluates the
   middle of the ejecta, away from LE/TE blends, for factors below, equal to,
   and above unity.  `f_ME=0.5` must give `0.5*n_up` and
@@ -734,9 +737,10 @@ behind it and the controlled SHOCK_ONLY baseline.
   the common symmetric LE/TE smoothstep weights and samples both public model
   interfaces around every transition endpoint.  Equivalent spherical +X
   1-D/3-D fixtures must agree to roundoff.  One-sided finite-difference
-  derivatives converge across the C1 artificial interfaces.  The physical
-  shock is intentionally excluded from this requirement because it is modeled
-  as an explicit discontinuity.
+  derivatives converge across the C1 artificial interfaces.  The resolved
+  shock itself is covered separately by `ACC03`/`ACC04` because its smoothing
+  is controlled by the acceleration representation rather than by LE/TE region
+  phenomenology.
 
 Run them directly with:
 
@@ -753,3 +757,53 @@ The region tests must not be made green by reintroducing a compression floor,
 clipping sub-unity ejecta factors, or sorting invalid boundary radii at runtime.
 Such behavior defeats the physical/configuration contracts the tests are meant
 to protect.
+
+
+## ACC01-ACC05: single shock-acceleration representation
+
+These tests qualify `swcme_acceleration.hpp` and the shock-smoothing portion of
+`swcme_regions.hpp`.  Their purpose is to prevent one SEP population from seeing
+a pre-imposed DSA source and a second resolved compression accelerator at the
+same shock.
+
+- `ACC01` — **SOURCE explicit source / SHOCK_ONLY flow**.  Requires a physical
+  fast shock to produce `source_enabled=true` and
+  `resolved_compression_enabled=false`, checks the phase-space DSA slope
+  `q=3r/(r-1)`, and samples both sides of the mathematical front to prove the
+  transport background remains the exact Parker/Leblanc solar wind.
+- `ACC02` — **mutual-exclusion validation**.  Rejects `SOURCE+FULL_ICME`,
+  `RESOLVED_COMPRESSION+SHOCK_ONLY`, zero shock width in resolved mode, and a
+  negative relative source weight.  These are configuration errors rather than
+  runtime conventions.
+- `ACC03` — **resolved-compression shock profile**.  Verifies a finite total
+  width, exact upstream outer endpoint, exact RH downstream inner endpoint,
+  an intermediate midpoint, and zero-slope/C1 matching at both ends of the
+  common numerical shock layer.
+- `ACC04` — **1-D/3-D resolved-profile identity**.  Samples five normalized
+  positions across an equivalent spherical/+X shock and requires density,
+  radial velocity, Br/Bx, and Bphi/By to agree to roundoff.  This prevents
+  dimension-dependent shock smoothing from masquerading as a transport effect.
+- `ACC05` — **resolved mode disables prescribed DSA source**.  Requires
+  `source_enabled=false`, `resolved_compression_enabled=true`, no active DSA
+  slope, zero source weight, and an explicit `NA` slope in deterministic audit
+  serialization.
+
+`1D3D03` complements these tests by comparing the complete SOURCE acceleration
+record from equivalent 1-D and 3-D configurations and requiring byte-identical
+serialization.
+
+Run the acceleration gates directly with:
+
+```sh
+./output/test_swcme --test ACC01
+./output/test_swcme --test ACC02
+./output/test_swcme --test ACC03
+./output/test_swcme --test ACC04
+./output/test_swcme --test ACC05
+./output/test_swcme --test 1D3D03
+```
+
+A passing test must not be obtained by merely masking `div(V)` after constructing
+an RH velocity jump in SOURCE mode.  SOURCE removes the resolved shock from the
+transport background by using SHOCK_ONLY; RESOLVED_COMPRESSION owns the single
+finite-width compression profile.

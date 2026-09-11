@@ -34,6 +34,10 @@ void equivalent_params(swcme1d::Params& p1, swcme3d::Params& p3,
   p1.V0_sh_kms=1400.0;
   p1.Gamma_kmInv=5.0e-8;
   p1.region_mode=mode;
+  p1.shock_acceleration_mode =
+      (mode==swcme::regions::Mode::ShockOnly)
+          ? swcme::acceleration::Mode::Source
+          : swcme::acceleration::Mode::ResolvedCompression;
   p1.sheath_thick_AU_at1AU=0.10;
   p1.ejecta_thick_AU_at1AU=0.20;
   p1.edge_smooth_le_AU_at1AU=0.02;
@@ -54,6 +58,7 @@ void equivalent_params(swcme1d::Params& p1, swcme3d::Params& p3,
   p3.V0_sh_kms=p1.V0_sh_kms;
   p3.Gamma_kmInv=p1.Gamma_kmInv;
   p3.region_mode=mode;
+  p3.shock_acceleration_mode=p1.shock_acceleration_mode;
   p3.sheath_thick_AU_at1AU=p1.sheath_thick_AU_at1AU;
   p3.ejecta_thick_AU_at1AU=p1.ejecta_thick_AU_at1AU;
   p3.edge_smooth_le_AU_at1AU=p1.edge_smooth_le_AU_at1AU;
@@ -144,7 +149,7 @@ void test_reg01(swcme_test::Context& context) {
 }
 
 void test_reg02(swcme_test::Context& context) {
-  std::cout << "REG02 FULL_ICME immediate-downstream RH boundary\n";
+  std::cout << "REG02 FULL_ICME resolved-shock inner RH boundary\n";
 
   swcme1d::Params p1;
   swcme3d::Params p3;
@@ -163,31 +168,31 @@ void test_reg02(swcme_test::Context& context) {
   context.expect_true(sh3.has_shock && sh3.solver_converged,
                       "3D fixture has a physical fast shock");
 
-  // Approach the mathematical discontinuity from the downstream side.  The
-  // repaired region model deliberately does not smooth the shock itself, so
-  // the limiting primitive state must be the exact shared RH solution.
-  const double eps=1.0e-8*s1.region_boundaries.sheath_thickness_m;
-  const double r=s1.r_sh_m-eps;
+  // RESOLVED_COMPRESSION uses a symmetric C1 shock layer.  Its INNER edge is
+  // pinned to the exact RH downstream state; the physical discontinuous state
+  // remains available independently through shock diagnostics.  This protects
+  // the RH boundary while giving the transport solver a finite div(V).
+  const double r=s1.r_sh_m-0.5*s1.region_boundaries.smooth_shock_width_m;
   const OneDState a=eval1d(m1,s1,r);
   const double n2=s1.shock_jump.downstream.rho_kg_m3/
                   swcme::constants::PROTON_MASS_KG;
-  expect_rel(context,"1D downstream density tends to RH",a.n,n2,2.0e-10,1.0);
-  expect_rel(context,"1D downstream radial speed tends to RH",a.V,
+  expect_rel(context,"1D shock-layer inner density equals RH",a.n,n2,2.0e-10,1.0);
+  expect_rel(context,"1D shock-layer inner speed equals RH",a.V,
              s1.shock_jump.downstream.velocity_m_s[0],2.0e-10,1.0);
-  expect_rel(context,"1D downstream Br tends to RH",a.Br,
+  expect_rel(context,"1D shock-layer inner Br equals RH",a.Br,
              s1.shock_jump.downstream.magnetic_T[0],2.0e-10,1.0e-15);
-  expect_rel(context,"1D downstream Bphi tends to RH",a.Bphi,
+  expect_rel(context,"1D shock-layer inner Bphi equals RH",a.Bphi,
              s1.shock_jump.downstream.magnetic_T[1],2.0e-10,1.0e-15);
 
   const ThreeDState b=eval3d_x(m3,s3,r);
-  expect_rel(context,"3D downstream density tends to RH",b.n,sh3.downstream_n_m3,
+  expect_rel(context,"3D shock-layer inner density equals RH",b.n,sh3.downstream_n_m3,
              2.0e-10,1.0);
   const double vv[3]={b.vx,b.vy,b.vz};
   const double bb[3]={b.bx,b.by,b.bz};
   for (int k=0;k<3;++k) {
-    expect_rel(context,"3D downstream velocity component",vv[k],
+    expect_rel(context,"3D shock-layer inner velocity component",vv[k],
                sh3.downstream.velocity_m_s[k],2.0e-10,1.0);
-    expect_rel(context,"3D downstream B component",bb[k],
+    expect_rel(context,"3D shock-layer inner B component",bb[k],
                sh3.downstream.magnetic_T[k],2.0e-10,1.0e-15);
   }
 }

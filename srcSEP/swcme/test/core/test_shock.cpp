@@ -219,8 +219,9 @@ void test_shk06(swcme_test::Context& context){
   context.expect_true(r.has_shock&&r.solver_converged,"reference oblique shock converged");
   expect_abs(context,"mass residual",r.mass_residual,0.0,1e-10);
 
-  // Integration check: the 3-D field evaluator must approach the exact RH
-  // downstream velocity/density just inside the shock rather than V_sw.
+  // Integration check: RESOLVED_COMPRESSION reaches the exact RH state at
+  // the inner edge of its finite C1 shock layer.  The mathematical shock state
+  // itself remains exact through shock_state_direction().
   swcme3d::Params p;
   p.shape=swcme3d::ShockShape::Sphere; p.r0_Rs=20.0; p.V0_sh_kms=1200.0;
   p.V_sw_kms=400.0; p.Gamma_kmInv=1e-8; p.sin_theta=1.0;
@@ -228,14 +229,16 @@ void test_shk06(swcme_test::Context& context){
   const double u[3]={1,0,0}; swcme3d::LocalShockState js;
   context.expect_true(m.shock_state_direction(s,u,js)&&js.has_shock&&js.solver_converged,
                       "3-D apex shock state exists");
-  const double rq=js.Rdir_m*(1.0-1e-10), x=rq, y=0.0,z=0.0;
+  const auto boundaries=swcme::regions::make_boundaries(js.Rdir_m,s.region_config);
+  const double rq=js.Rdir_m-0.5*boundaries.smooth_shock_width_m;
+  const double x=rq, y=0.0,z=0.0;
   double nq=0,vx=0,vy=0,vz=0,bx=0,by=0,bz=0;
   m.evaluate_cartesian_with_B(s,&x,&y,&z,&nq,&vx,&vy,&vz,&bx,&by,&bz,1);
-  expect_rel(context,"3-D immediate downstream density",nq,js.downstream_n_m3,2e-7);
-  expect_rel(context,"3-D immediate downstream Vx",vx,js.downstream.velocity_m_s[0],2e-7,1.0);
-  expect_rel(context,"3-D immediate downstream Vy",vy,js.downstream.velocity_m_s[1],2e-7,1.0);
-  expect_rel(context,"3-D immediate downstream Bx",bx,js.downstream.magnetic_T[0],2e-7,1e-30);
-  expect_rel(context,"3-D immediate downstream By",by,js.downstream.magnetic_T[1],2e-7,1e-30);
+  expect_rel(context,"3-D resolved-shock inner density",nq,js.downstream_n_m3,2e-7);
+  expect_rel(context,"3-D resolved-shock inner Vx",vx,js.downstream.velocity_m_s[0],2e-7,1.0);
+  expect_rel(context,"3-D resolved-shock inner Vy",vy,js.downstream.velocity_m_s[1],2e-7,1.0);
+  expect_rel(context,"3-D resolved-shock inner Bx",bx,js.downstream.magnetic_T[0],2e-7,1e-30);
+  expect_rel(context,"3-D resolved-shock inner By",by,js.downstream.magnetic_T[1],2e-7,1e-30);
 }
 
 void test_shk07(swcme_test::Context& context){

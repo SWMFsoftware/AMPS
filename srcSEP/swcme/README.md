@@ -335,12 +335,14 @@ canonical `LocalShockState` directly, eliminating the last internal secondary
 shock-strength path.  Validation tests `SHK13` and `SHK14` permanently guard
 query-radius invariance and mesh/diagnostic consistency.
 
-The 3-D Cartesian field evaluators now use the exact MHD downstream state in
-the limit immediately behind the shock.  The shock itself is treated as a
-physical discontinuity: points at or ahead of the surface return the upstream
-state, while the limit just behind the surface returns the RH downstream state.
-The interior sheath relaxation remains phenomenological and is a separate model
-component.
+The canonical 3-D shock API retains the exact MHD upstream/downstream state at
+the mathematical shock surface.  Transport-facing FULL_ICME fields may represent
+that discontinuity with the finite C1 shock layer selected by
+`RESOLVED_COMPRESSION`; the inner edge of that numerical layer is pinned to the
+exact RH downstream state.  SOURCE mode instead uses SHOCK_ONLY and therefore
+contains no resolved RH compression in the transport background.  The interior
+sheath relaxation remains phenomenological and separate from the exact shock
+diagnostic state.
 
 The 1-D model uses the same shared ideal-MHD jump solver.  Its radial direction
 is the shock normal and the Parker azimuthal field is tangential to that normal.
@@ -357,10 +359,10 @@ momentum and energy fluxes, entropy/admissibility, the weak-shock limit, query-r
 The dimensionality-independent constants, units, configuration validation,
 Leblanc/Parker ambient state, apex kinematics, and ideal-MHD shock solver are now
 shared between 1-D and 3-D.  Remaining work is intentionally focused on infrastructure or physics outside
-the now-shared region model: shock-mesh apex/seam topology, explicit numerical-
-status propagation in the remaining 3-D field evaluators, the shock-acceleration/
-source contract, velocity-divergence cleanup, and the higher-level Python
-validation campaign runner.
+the now-shared region and acceleration models: shock-mesh apex/seam topology,
+explicit numerical-status propagation in the remaining 3-D field evaluators,
+the full AMPS-facing SEP source adapter/units contract, velocity-divergence
+cleanup, and the higher-level Python validation campaign runner.
 
 ## Repaired sheath/ejecta region model and SHOCK_ONLY/FULL_ICME modes
 
@@ -379,11 +381,14 @@ Two explicit modes are available through `Params::region_mode`:
 - `swcme::regions::Mode::FullICME` adds the optional phenomenological sheath and
   magnetic-ejecta profile behind the geometric CME/shock surface.
 
-The physical shock is an explicit discontinuity in FULL_ICME mode.  The limit
-immediately downstream is the exact ideal-MHD Rankine-Hugoniot state returned
-by the common shock solver.  The sheath then relaxes smoothly toward a
-leading-edge target.  The empirical `sheath_comp_floor` no longer participates
-in shock or region physics and is retained only for source compatibility.
+The exact physical shock remains an explicit surface in the diagnostic API and
+its downstream state is the ideal-MHD Rankine-Hugoniot solution.  For transport,
+FULL_ICME is paired with `RESOLVED_COMPRESSION`: a symmetric finite-width C1
+layer is centered on the mathematical shock, reaches the analytical upstream
+state at its outer edge, and reaches the exact RH downstream state at its inner
+edge.  The sheath then relaxes smoothly toward a leading-edge target.  The
+empirical `sheath_comp_floor` no longer participates in shock or region physics
+and is retained only for source compatibility.
 
 ### Self-similar local layer geometry
 
@@ -427,13 +432,100 @@ validation rather than clipped in the evaluator.  The baseline ejecta magnetic
 field remains Parker; a flux-rope/ejecta-field model is intentionally outside
 the controlled one-year scope.
 
-Artificial LE and TE interfaces are C1 smooth.  The physical shock itself is
-not smoothed by this region module; shock-acceleration/source treatment is kept
-separate so a later transport adapter can avoid double-counting acceleration.
+Artificial LE and TE interfaces are C1 smooth.  The numerical shock layer is
+also C1, but only when `RESOLVED_COMPRESSION` is selected.  Its total width is
+`edge_smooth_shock_AU_at1AU * R_sh(local)` and is capped so it cannot consume the
+entire sheath.  In SOURCE mode that shock-layer width is forced to zero and the
+SHOCK_ONLY background remains analytical on both sides of the mathematical
+source surface.
 
-Validation tests `REG01`-`REG05` cover SHOCK_ONLY identity, the exact RH
-post-shock boundary, sub-unity ejecta factors, local self-similar surface
-nesting, and continuity/smoothness of the modeled non-shock transitions.
+Validation tests `REG01`-`REG05` cover SHOCK_ONLY identity, the exact RH state at
+the inner edge of the resolved shock layer, sub-unity ejecta factors, local
+self-similar surface nesting, and continuity/smoothness of the modeled region
+transitions.
 
 See `REGION_MODEL_FIX_NOTES.md` and `test/README.md` for detailed equations,
 configuration conventions, and validation procedures.
+
+
+## Single shock-acceleration representation
+
+`swcme_acceleration.hpp` defines one authoritative acceleration switch shared by
+1-D and 3-D:
+
+```cpp
+swcme::acceleration::Mode::Source
+swcme::acceleration::Mode::ResolvedCompression
+```
+
+The model deliberately does **not** expose independent `use_dsa_source` and
+`use_compression_acceleration` booleans.  A single enum prevents a run from
+enabling both representations of first-order shock acceleration for the same
+particle population.
+
+### SOURCE mode
+
+`SOURCE` is the recommended baseline for the connectivity/perpendicular-
+diffusion experiment.  Centralized validation currently requires
+
+```text
+acceleration = SOURCE
+regions      = SHOCK_ONLY
+```
+
+so the transport-facing velocity remains the analytical solar wind through the
+mathematical shock surface.  A physical fast shock instead produces a
+`ShockAccelerationState` with `source_enabled=true`, local shock position and
+normal, normal shock speed, compression, `theta_Bn`, fast Mach number, upstream
+density and magnetic-field magnitude, and the diagnostic DSA phase-space slope
+
+```text
+q = 3 r_c / (r_c - 1).
+```
+
+The baseline `relative_source_weight_per_area` is dimensionless and is intended
+only for controlled relative weighting.  Absolute particle/spectral units are
+reserved for the later AMPS-facing source adapter so this layer does not invent
+an injection-rate convention prematurely.
+
+### RESOLVED_COMPRESSION mode
+
+Centralized validation currently requires
+
+```text
+acceleration = RESOLVED_COMPRESSION
+regions      = FULL_ICME
+edge_smooth_shock_AU_at1AU > 0
+```
+
+and no prescribed DSA source is exposed.  The exact RH discontinuity remains in
+`shock_state_direction()` / the 1-D cached jump for diagnostics, while the
+transport-facing primitive fields use one common symmetric C1 shock profile.
+For a total local width `w_sh`, the profile spans
+
+```text
+R_sh + w_sh/2   upstream endpoint
+R_sh            midpoint
+R_sh - w_sh/2   exact RH downstream endpoint.
+```
+
+The smoothstep derivative vanishes at both endpoints.  The phenomenological
+sheath begins at the inner endpoint, and its own profile also has zero slope
+there, so there is no second numerical kink at the resolved-shock/sheath join.
+The same `swcme_regions.hpp` formulas are called by 1-D and 3-D, including at
+finite-SSE/ellipsoidal flanks where `w_sh` scales with the **local** shock radius.
+
+In `RESOLVED_COMPRESSION`, `ShockAccelerationState::source_enabled` is false,
+`resolved_compression_enabled` is true, the active DSA slope is intentionally
+reported as unavailable, and the source weight is zero.  This prevents a
+consumer from silently applying a pre-imposed DSA source on top of the resolved
+`div(V)` accelerator.
+
+The deterministic helper `swcme::acceleration::serialize_csv()` exists for
+regression/audit comparisons.  It is not the final science-data format.  Tests
+`ACC01`-`ACC05` and `1D3D03` verify the no-double-counting gate, C1 resolved shock
+profile, RH endpoints, 1-D/3-D smoothing identity, disabled source in resolved
+mode, and byte-identical SOURCE records in the spherical radial limit.
+
+See `SHOCK_ACCELERATION_FIX_NOTES.md` and `test/README.md` for the validation
+fixtures and implementation details.

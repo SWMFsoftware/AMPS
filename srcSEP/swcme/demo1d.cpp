@@ -56,7 +56,9 @@
 //
 // EDGE SMOOTHING (C¹ BLENDS; EACH EDGE HAS ITS OWN WIDTH)
 // -------------------------------------------------------
-//  P.edge_smooth_shock_AU_at1AU  [AU] Blend width at the shock (smallest).
+//  P.edge_smooth_shock_AU_at1AU  [AU] Total numerical shock-layer width used
+//                                      by RESOLVED_COMPRESSION. SOURCE mode uses
+//                                      SHOCK_ONLY and does not resolve this jump.
 //  P.edge_smooth_le_AU_at1AU     [AU] Blend width at the leading edge (sheath→ME).
 //  P.edge_smooth_te_AU_at1AU     [AU] Blend width at the trailing edge (ME→ambient).
 //  All three scale ∝ R_sh. Guidelines:
@@ -66,18 +68,18 @@
 //
 // SHEATH / EJECTA TARGET STATES (POST-SHOCK PROFILES)
 // ---------------------------------------------------
-//  P.sheath_comp_floor     [-]  Minimum compression at the shock (≥1). Do not set <1.
-//                              Typical 1.1–1.5. Actual rc is computed from fast-mode
-//                              Mach and capped ≤4; the floor prevents over-blending.
+//  P.sheath_comp_floor     [-]  Deprecated compatibility field; ignored. Physical
+//                              compression comes only from the MHD RH solver.
+//                              Actual rc is computed by the shared ideal-MHD RH
+//                              solver and is physically bounded for gamma=5/3.
 //
-//  P.sheath_ramp_power     [-]  Exponent controlling how compression decays from
-//                              the shock toward the sheath’s leading edge.
-//                              1 → linear, 2 → steeper near the shock (often realistic).
+//  P.sheath_ramp_power     [-]  Exponent controlling the smoothstep argument for
+//                              relaxation from the RH state toward the leading edge.
+//                              Values >=1 are supported; larger values delay relaxation.
 //
-//  P.V_sheath_LE_factor    [-]  Sheath speed (at its LE) relative to ambient V_sw.
-//                              Typical 1.05–1.2. Keeps sheath faster than ambient.
-//                              If you set this ≤1, the sheath may unrealistically
-//                              fall below the wind before the ejecta.
+//  P.V_sheath_LE_factor    [-]  Requested sheath speed at LE relative to V_sw.
+//                              The common region model constrains this target between
+//                              ambient V_sw and the RH downstream radial speed.
 //
 //  P.f_ME                  [-]  ME density fraction relative to upstream (often depleted).
 //                              Typical 0.3–0.8. 0.5 is a reasonable default.

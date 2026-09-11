@@ -23,6 +23,7 @@
 
 #include "swcme_kinematics.hpp"
 #include "swcme_regions.hpp"
+#include "swcme_acceleration.hpp"
 
 #include <cmath>
 #include <sstream>
@@ -38,7 +39,8 @@ enum class Code {
   Negative,
   OutOfRange,
   ZeroVector,
-  InvalidKinematicsTable
+  InvalidKinematicsTable,
+  IncompatibleOptions
 };
 
 inline const char* code_name(Code code) {
@@ -49,6 +51,7 @@ inline const char* code_name(Code code) {
     case Code::OutOfRange: return "OUT_OF_RANGE";
     case Code::ZeroVector: return "ZERO_VECTOR";
     case Code::InvalidKinematicsTable: return "INVALID_KINEMATICS_TABLE";
+    case Code::IncompatibleOptions: return "INCOMPATIBLE_OPTIONS";
   }
   return "UNKNOWN";
 }
@@ -165,6 +168,9 @@ struct CommonConfigView {
   const std::vector<double>* data_radius_Rs = nullptr;
 
   swcme::regions::Mode region_mode = swcme::regions::Mode::FullICME;
+  swcme::acceleration::Mode acceleration_mode =
+      swcme::acceleration::Mode::ResolvedCompression;
+  double relative_source_weight_per_area = 1.0;
   double sheath_thick_AU_at1AU = 0.0;
   double ejecta_thick_AU_at1AU = 0.0;
   double edge_smooth_shock_AU_at1AU = 0.0;
@@ -215,6 +221,33 @@ inline ValidationResult validate_common(const CommonConfigView& c) {
                       c.edge_smooth_shock_AU_at1AU);
   require_nonnegative(out, "edge_smooth_le_AU_at1AU", c.edge_smooth_le_AU_at1AU);
   require_nonnegative(out, "edge_smooth_te_AU_at1AU", c.edge_smooth_te_AU_at1AU);
+  require_nonnegative(out, "relative_source_weight_per_area",
+                      c.relative_source_weight_per_area);
+
+  // Shock acceleration has one and only one representation.  The currently
+  // supported combinations are intentionally strict because they make double
+  // counting impossible by construction:
+  //   SOURCE               <-> SHOCK_ONLY
+  //   RESOLVED_COMPRESSION <-> FULL_ICME with a finite shock width.
+  // A future region model may relax these pairings only if it can prove that a
+  // SOURCE transport field contains no second RH compression accelerator.
+  if (c.acceleration_mode==swcme::acceleration::Mode::Source &&
+      c.region_mode!=swcme::regions::Mode::ShockOnly) {
+    out.add("acceleration_mode/region_mode", Code::IncompatibleOptions, 0.0,
+            "SOURCE requires SHOCK_ONLY to prevent resolved-shock double counting");
+  }
+  if (c.acceleration_mode==swcme::acceleration::Mode::ResolvedCompression &&
+      c.region_mode!=swcme::regions::Mode::FullICME) {
+    out.add("acceleration_mode/region_mode", Code::IncompatibleOptions, 0.0,
+            "RESOLVED_COMPRESSION requires FULL_ICME transport flow");
+  }
+  if (c.acceleration_mode==swcme::acceleration::Mode::ResolvedCompression &&
+      finite(c.edge_smooth_shock_AU_at1AU) &&
+      !(c.edge_smooth_shock_AU_at1AU > 0.0)) {
+    out.add("edge_smooth_shock_AU_at1AU", Code::OutOfRange,
+            c.edge_smooth_shock_AU_at1AU,
+            "must be > 0 in RESOLVED_COMPRESSION mode");
+  }
 
   if (!finite(c.sheath_comp_floor)) {
     out.add("sheath_comp_floor", Code::NonFinite, c.sheath_comp_floor,
