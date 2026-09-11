@@ -11,9 +11,12 @@ test/
   core/       Common registry, runner, reporting, CFG/DEN/KIN/SHK tests
   1d/         Tests specific to the production 1-D model
   3d/         Tests specific to the production 3-D model
-  reference/  Reviewed reference data for future comparison tests
-  profiles/   Inputs describing future validation sampling profiles
-  output/     Generated executable and results (ignored by Git)
+  reference/  Reviewed reference/event data used by comparison tests
+  profiles/   SMOKE/ROUTINE/FULL/EVENT test selections
+  python/     Regression tests for the campaign manager
+  output/     Generated executables and campaign artifacts (ignored by Git)
+  run_tests.py  Python campaign manager
+  event_config.example.json  executable EVENT/sweep example
 ```
 
 Every validation is linked into the single `output/test_swcme` executable.
@@ -49,6 +52,94 @@ fail an otherwise successful test.
 The registry in `core/test_swcme.cpp` is the only source for `--list`, `--all`,
 and test lookup, so displayed and executed tests cannot silently diverge.
 
+## Python campaign manager and reproducible run artifacts
+
+`run_tests.py` is the manager for multi-test development gates and validation
+campaigns.  It does not contain independent SWCME physics: each C++ validation
+is still executed through the single `output/test_swcme` registry executable.
+Builds also produce `output/sep_reference`, a public-interface consumer used for
+reference histories and sweep probes.
+
+Typical commands from `swcme/test` are:
+
+```sh
+python3 run_tests.py --list
+python3 run_tests.py --profile SMOKE
+python3 run_tests.py --profile ROUTINE
+python3 run_tests.py --all
+python3 run_tests.py --test SEP03
+python3 run_tests.py --profile EVENT --event-config event_config.example.json
+python3 python/test_run_tests.py
+```
+
+The named profiles are version-controlled text files in `profiles/`:
+
+- `SMOKE` is the short development gate;
+- `ROUTINE` is the broad deterministic gate and excludes `MSH05` and `CON05`;
+- `FULL` expands to every test in the C++ registry;
+- `EVENT` first runs FULL and then executes the supplied event-analysis JSON.
+
+`--no-build` is available when the executables are already current;
+`--build-only` compiles the test and reference tools without running a campaign.
+`--reference-export` forces the default SEP history export and
+`--no-reference-export` disables it. FULL and EVENT export it by default.
+
+Each campaign creates an isolated output directory containing:
+
+```text
+manifest.json
+summary.json
+summary.csv
+logs/<TEST_ID>.log
+sep_reference.csv              # when reference export is enabled
+sweeps/*.csv + per-case logs   # when configured
+convergence/*.json             # when configured
+comparisons/*.json             # when configured
+plots/*                        # optional
+```
+
+The manifest records the random seed, selected tests, git metadata, compiler
+path/version/flags, host and Python details, visible MPI/OpenMP environment,
+source-tree SHA-256, complete resolved SWCME+SEP model configuration and hash,
+and the event JSON/hash.  Use `--resolved-config FILE` when a driver has already
+written the exact resolved parameter block; otherwise the manager obtains the
+default block from `sep_reference --print-manifest`.
+
+Campaign exit codes are part of the automation contract:
+
+```text
+0  all required tests/analyses passed
+1  validation, reference export, or EVENT analysis failed
+2  command-line/configuration error
+3  build failure
+```
+
+### EVENT JSON
+
+`event_config.example.json` is executable and demonstrates a parameter sweep.
+The event object may contain `sweeps`, `convergence`, `comparisons`, and `plots`.
+A sweep defines a Cartesian product of parameter arrays and a command template.
+Any command token can use a sweep field plus `{seed}`, `{root}`, `{test_dir}` or
+`{output_dir}`.  `metric_regex` captures a scalar from stdout; optional
+`metric_min`/`metric_max` turn the captured quantity into an acceptance gate.
+
+A convergence entry either supplies explicit positive `x` and `error` arrays or
+references a previous sweep through `sweep`, `x_parameter`, and `error_metric`.
+The manager fits the slope of `log(error)` versus `log(x)` and checks optional
+`min_order`/`max_order` limits.
+
+A comparison entry names model/reference CSV files, optional key/key tolerance,
+and one or more columns with absolute and/or relative tolerances.  A plot entry
+selects a CSV, one x column and one or more y columns.  Plotting is optional;
+when Matplotlib is unavailable a non-required plot is reported as SKIP rather
+than invalidating the physics campaign.
+
+The Python manager itself is regression-tested in `python/test_run_tests.py`.
+Those tests cover profile expansion against the live C++ registry, exact
+second-order convergence fitting, Cartesian sweeps/metric capture, CSV
+comparison and EVENT aggregation, manifest/report creation, and deterministic
+CLI configuration-error handling.
+
 ## Validation classifications
 
 - `COMMON`: contracts shared by both models, with both public paths exercised.
@@ -56,8 +147,9 @@ and test lookup, so displayed and executed tests cannot silently diverge.
 - `3D`: behavior specific to `swcme3d`.
 - `1D<->3D`: direct equivalence or consistency between the two implementations.
 
-The current registry uses `COMMON`, `1D`, and `3D`; future direct comparison
-tests may use `1D<->3D` when their primary purpose is limiting-case equivalence.
+The current registry uses all four classifications.  In particular, the
+`1D3D01`-`1D3D03` and `SEP03` gates use direct dimensional-equivalence fixtures
+where appropriate.
 
 ## CFG01: centralized configuration rejection and physical-range validation
 
@@ -931,6 +1023,53 @@ an RH velocity jump in SOURCE mode.  SOURCE removes the resolved shock from the
 transport background by using SHOCK_ONLY; RESOLVED_COMPRESSION owns the single
 finite-width compression profile.
 
+## SEP01-SEP06: SWCME-to-SEP/AMPS integration contract
+
+These tests qualify `swcme_sep_source.hpp` and `swcme_sep_interface.hpp`.  The
+integration layer is a consumer of the production SWCME model, not a second
+shock/connectivity implementation.
+
+- `SEP01` — **background adapter identity**.  A 3-D AMPS-facing single-point
+  query must reproduce the direct checked production density, velocity,
+  magnetic field, `|B|`, and `div(V)` result in SI.
+- `SEP02` — **spectrum/unit convention**.  Checks differential-intensity unit
+  conversion round trips, relativistic proton rigidity, DSA slope-to-intensity
+  indices, unity at `E_ref`, and physical `J(E_ref)` when explicit reference
+  normalization is selected.
+- `SEP03` — **1-D/3-D complete source-record identity**.  Equivalent spherical
+  +X configurations must emit byte-identical deterministic `SEPSourceState`
+  records and matching adapter background values.  This is the final interface
+  guard beyond lower-level `1D3D03`.
+- `SEP04` — **finite-SSE source-surface weighting**.  Builds source records from
+  the corrected triangular mesh, requires physical patch areas, normalizes
+  active area fractions to unity, and verifies that total relative patch
+  weight equals the configured uniform source weight.
+- `SEP05` — **cobpoint source reuse**.  Obtains an observer source through the
+  production Parker connectivity solver and verifies that source position and
+  shock quantities correspond to the selected production cobpoint rather than
+  a separately solved surface.
+- `SEP06` — **resolved-compression/source exclusion and manifest stability**.
+  `RESOLVED_COMPRESSION` must expose no prescribed source spectrum,
+  `relative_intensity_shape()` must return `SOURCE_INACTIVE`, and the resolved
+  SWCME+SEP manifest must be deterministic.
+
+`SEPSourceState` makes source and connectivity state explicit through
+`active`, `connection_evaluated`, and `connected`.  Its geometry and shock
+fields use SI units.  Default `RELATIVE_ONLY` normalization remains
+dimensionless; a dimensional spectrum exists only when
+`REFERENCE_DIFFERENTIAL_INTENSITY` supplies a positive SI `J(E_ref)`.
+
+Run the integration gates directly with:
+
+```sh
+./output/test_swcme --test SEP01
+./output/test_swcme --test SEP02
+./output/test_swcme --test SEP03
+./output/test_swcme --test SEP04
+./output/test_swcme --test SEP05
+./output/test_swcme --test SEP06
+```
+
 ## ERR01-ERR05: explicit numerical-status propagation
 
 These tests enforce the rule that the physics layer may not convert a failed
@@ -971,8 +1110,10 @@ Run the status gates directly with:
 ./output/test_swcme --all
 ```
 
-`NO_SURFACE` and `NO_SHOCK` are deliberately not treated as numerical failures:
-they represent valid physical/geometrical outcomes.  Conversely, a solver,
-normalization, domain, or non-finite-value failure must remain visible to the
-caller and must never be made green by restoring `finite_or`, radius clipping,
-or ambient/zero substitution.
+`NO_SURFACE` and RH `NO_SHOCK` are deliberately not treated as numerical
+failures: they represent valid physical/geometrical outcomes.  The SEP layer
+similarly treats `NO_CONNECTION` and `SOURCE_INACTIVE` as explicit expected
+absence states.  Conversely, a solver, normalization, domain, or
+non-finite-value failure must remain visible to the caller and must never be
+made green by restoring `finite_or`, radius clipping, or ambient/zero
+substitution.

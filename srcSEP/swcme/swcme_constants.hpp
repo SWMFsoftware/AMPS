@@ -15,6 +15,9 @@ constexpr double SOLAR_RADIUS_M = 6.957e8;    // IAU 2015 nominal radius [m]
 constexpr double PROTON_MASS_KG = 1.67262192595e-27;
 constexpr double VACUUM_PERMEABILITY_N_A2 = 1.25663706127e-6;
 constexpr double BOLTZMANN_J_K = 1.380649e-23;
+constexpr double SPEED_OF_LIGHT_M_S = 299792458.0;
+constexpr double ELEMENTARY_CHARGE_C = 1.602176634e-19;
+constexpr double MEV_TO_J = 1.0e6 * ELEMENTARY_CHARGE_C;
 
 // Model convention: Carrington sidereal solar rotation rate [rad/s].
 constexpr double SOLAR_ROTATION_RAD_S = 2.86533e-6;

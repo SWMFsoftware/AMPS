@@ -869,32 +869,47 @@ bool Model::shock_state_direction(const StepState& S, const double u[3],
   return true;
 }
 
-bool Model::shock_acceleration_state(
+swcme::ModelStatus Model::shock_acceleration_state_checked(
     const StepState& S, const double u_in[3],
     swcme::acceleration::ShockAccelerationState& state) const {
   state=swcme::acceleration::ShockAccelerationState{};
   LocalShockState shock;
-  if (!shock_state_direction(S,u_in,shock)) return false;
+  const swcme::ModelStatus shock_status=shock_state_direction_checked(S,u_in,shock);
+  if (!shock_status.ok()) return shock_status;
 
   double u[3]={u_in[0],u_in[1],u_in[2]};
   if (!::normalize_checked(u)) {
-    throw std::runtime_error(
-        swcme::ModelStatus::make(swcme::StatusCode::DegenerateVector,
-                                 "swcme3d::shock_acceleration_state direction").summary());
+    return swcme::ModelStatus::make(
+        swcme::StatusCode::DegenerateVector,
+        "swcme3d::shock_acceleration_state direction");
   }
   const std::array<double,3> position{{
       shock.Rdir_m*u[0],shock.Rdir_m*u[1],shock.Rdir_m*u[2]}};
   const std::array<double,3> normal{{
       shock.normal[0],shock.normal[1],shock.normal[2]}};
-  const double Bmag=std::sqrt(
-      shock.upstream.magnetic_T[0]*shock.upstream.magnetic_T[0] +
-      shock.upstream.magnetic_T[1]*shock.upstream.magnetic_T[1] +
-      shock.upstream.magnetic_T[2]*shock.upstream.magnetic_T[2]);
+  const double Bmag=std::hypot(
+      shock.upstream.magnetic_T[0],
+      std::hypot(shock.upstream.magnetic_T[1],shock.upstream.magnetic_T[2]));
+  if (!std::isfinite(Bmag)) {
+    return swcme::ModelStatus::make(
+        swcme::StatusCode::NonFiniteResult,
+        "swcme3d::shock_acceleration_state upstream |B|");
+  }
   state=swcme::acceleration::make_state(
       S.acceleration_config,true,shock.has_shock && shock.solver_converged,
       S.time_s,position,normal,shock.Vsh_n_m_s,shock.compression,
       shock.theta_Bn_rad,shock.fast_mach,shock.upstream_n_m3,Bmag);
-  return true;
+  return swcme::ModelStatus::success();
+}
+
+bool Model::shock_acceleration_state(
+    const StepState& S, const double u_in[3],
+    swcme::acceleration::ShockAccelerationState& state) const {
+  const swcme::ModelStatus status=
+      shock_acceleration_state_checked(S,u_in,state);
+  if (status.no_surface()) return false;
+  swcme::throw_if_error(status);
+  return status.ok();
 }
 
 

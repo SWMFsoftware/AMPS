@@ -16,9 +16,11 @@
 // the output.  New AMPS-facing code can use the *_checked APIs directly and
 // propagate ModelStatus without exceptions.
 //
-// NoSurface is an expected geometric outcome, not a numerical failure.  It is
-// therefore represented explicitly and can be distinguished from GeometryError
-// or ShockSolverFailure by callers that query finite shock surfaces.
+// NoSurface, NoConnection, and SourceInactive are expected physical/geometric
+// outcomes, not numerical failures.  They remain explicit status codes so an
+// AMPS/SEP caller can distinguish "nothing to inject here" from an actual
+// geometry, configuration, or shock-solver failure without relying on sentinel
+// numbers or exceptions.
 // ============================================================================
 
 #include <cstddef>
@@ -32,6 +34,9 @@ namespace swcme {
 enum class StatusCode {
   Ok = 0,
   NoSurface,
+  NoConnection,
+  SourceInactive,
+  InvalidConfiguration,
   NullPointer,
   NonFiniteInput,
   OutsideModelDomain,
@@ -49,6 +54,9 @@ inline const char* status_code_name(StatusCode code) {
   switch (code) {
     case StatusCode::Ok: return "OK";
     case StatusCode::NoSurface: return "NO_SURFACE";
+    case StatusCode::NoConnection: return "NO_CONNECTION";
+    case StatusCode::SourceInactive: return "SOURCE_INACTIVE";
+    case StatusCode::InvalidConfiguration: return "INVALID_CONFIGURATION";
     case StatusCode::NullPointer: return "NULL_POINTER";
     case StatusCode::NonFiniteInput: return "NONFINITE_INPUT";
     case StatusCode::OutsideModelDomain: return "OUTSIDE_MODEL_DOMAIN";
@@ -77,8 +85,15 @@ struct ModelStatus {
   constexpr bool no_surface() const noexcept {
     return code == StatusCode::NoSurface;
   }
+  constexpr bool no_connection() const noexcept {
+    return code == StatusCode::NoConnection;
+  }
+  constexpr bool source_inactive() const noexcept {
+    return code == StatusCode::SourceInactive;
+  }
   constexpr bool failure() const noexcept {
-    return code != StatusCode::Ok && code != StatusCode::NoSurface;
+    return code != StatusCode::Ok && code != StatusCode::NoSurface &&
+           code != StatusCode::NoConnection && code != StatusCode::SourceInactive;
   }
 
   static constexpr ModelStatus success() noexcept { return {}; }

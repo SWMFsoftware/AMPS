@@ -174,9 +174,9 @@ an event override even if the selected mode means that field does not affect the
 current calculation.  This makes configuration reviews and later regression
 hashes reproducible.
 
-The Fix 15 campaign/AMPS layer can embed this block directly into its larger
+The Fix 15 campaign/AMPS layer now embeds this block directly into its larger
 run manifest together with git hash, compiler flags, MPI/OpenMP information,
-and random seeds.
+random seeds, and the SEP spectrum/normalization configuration.
 
 ## 6. Validation
 

@@ -725,8 +725,12 @@ public:
                              LocalShockState& state) const;
 
   // Convert one directional physical shock state into the single selected
-  // acceleration representation.  The returned record is directly comparable
-  // with swcme1d::Model::shock_acceleration_state() in the spherical +X limit.
+  // acceleration representation.  The checked form preserves numerical/status
+  // failures for the AMPS-facing SEP adapter; the bool wrapper is retained for
+  // source compatibility and returns false only for NO_SURFACE.
+  swcme::ModelStatus shock_acceleration_state_checked(
+      const StepState& S, const double u[3],
+      swcme::acceleration::ShockAccelerationState& state) const;
   bool shock_acceleration_state(
       const StepState& S, const double u[3],
       swcme::acceleration::ShockAccelerationState& state) const;

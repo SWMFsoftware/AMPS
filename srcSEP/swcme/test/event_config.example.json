@@ -1,0 +1,24 @@
+{
+  "event_id": "example_cme_campaign",
+  "sweeps": [
+    {
+      "name": "apex_radius_vs_launch_speed",
+      "parameters": {
+        "v0_kms": [1200.0, 1500.0, 1800.0]
+      },
+      "command": [
+        "{test_dir}/output/sep_reference",
+        "--probe-time-hours", "24",
+        "--v0-kms", "{v0_kms}"
+      ],
+      "metric_regex": "SHOCK_RADIUS_AU=([0-9eE+.-]+)",
+      "metric_name": "shock_radius_AU",
+      "metric_min": 0.1,
+      "metric_max": 1.5,
+      "timeout_s": 60
+    }
+  ],
+  "convergence": [],
+  "comparisons": [],
+  "plots": []
+}

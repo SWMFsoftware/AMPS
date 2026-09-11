@@ -64,9 +64,172 @@ apex has passed its heliocentric radius.
 a deterministic complete key/value snapshot of the resolved configuration,
 including inactive compatibility parameters, data-driven tables, geometry and
 the derived model scope.  This function is intended as the configuration block
-for the campaign/run manifests added by the integration layer; event-specific
+for the campaign/run manifests emitted by `test/run_tests.py`; event-specific
 overrides should never exist only in ad-hoc driver code.  The schema/convention
 version is `SWCME_CONFIG_VERSION = 2`.
+
+## SWCME-to-SEP / AMPS source interface
+
+`swcme_sep_source.hpp` and `swcme_sep_interface.hpp` are the production-facing
+integration layer between the validated SWCME background/shock model and an SEP
+transport code such as AMPS.  The adapters do not duplicate CME, Parker,
+connectivity, or Rankine-Hugoniot physics: they consume the same prepared
+`StepState`, checked background evaluators, local shock state, corrected shock
+mesh, and cobpoint solver exercised by the validation suite.
+
+### Prepared-step usage
+
+Both dimensional adapters expose the same high-level pattern:
+
+```cpp
+swcme::sep::Interface3D sep(params, spectrum);
+auto step = sep.prepare(time_s);       // once per background update
+
+swcme::sep::BackgroundState bg;
+auto status = sep.evaluate_background(step, position_m, bg);
+```
+
+`BackgroundState` is entirely SI: density `[m^-3]`, velocity `[m/s]`, magnetic
+field `[T]`, magnetic-field magnitude `[T]`, and `div(V)` `[s^-1]`.  The 3-D
+single-point path delegates to the existing checked batch evaluator with `N=1`
+and stack scalars, so an AMPS hot loop does not require a temporary vector or a
+second status convention.  A prepared step is read-only and may be shared by
+callers whose surrounding transport implementation provides the appropriate
+thread/MPI ownership.
+
+### `SEPSourceState`
+
+`SEPSourceState` is the stable transport-facing source record.  It contains:
+
+- explicit `active`, `connection_evaluated`, and `connected` flags;
+- launch-relative time and deterministic source ID;
+- source position `[m]`, outward normal, patch area `[m^2]`, active surface
+  area, area fraction, and relative patch weight;
+- compression ratio, `theta_Bn`, fast Mach number and normal shock speed;
+- upstream density and magnetic-field magnitude;
+- the DSA phase-space slope `q` and derived intensity indices;
+- the complete source-spectrum configuration and normalization convention.
+
+Surface sources are generated with
+`Interface3D::build_shock_surface_source()`.  One record is returned per
+validated triangular shock-mesh cell.  Only cells containing a physical fast
+shock in `SOURCE` mode receive nonzero source weight.  Their area fractions are
+normalized over the physical active area, so a spatially uniform relative
+source is sampled according to actual surface area rather than mesh index.
+
+An observer-connected source is obtained with
+`Interface3D::source_at_observer_cobpoint()`.  It uses the production Parker
+field-line/shock intersection and routes the selected cobpoint direction
+through the same canonical source-state path used by shock-surface patches.
+`NO_CONNECTION` is an expected status, distinct from a numerical or shock-solver
+failure.
+
+For the exact spherical/+X reduction, `Interface1D::source_at_shock()` and the
+3-D direction adapter emit byte-identical deterministic source records.  This is
+protected by `SEP03` in addition to the lower-level `1D3D03` acceleration test.
+
+### Spectrum and normalization convention
+
+In `SOURCE` mode the shock module supplies
+
+```text
+f(p) proportional to p^(-q),      q = 3 r_c/(r_c-1).
+```
+
+For an isotropic distribution the SEP adapter uses the exact relativistic
+intensity shape
+
+```text
+J(E) / J(E_ref) = [p(E) / p(E_ref)]^(2-q),
+p c = sqrt[K (K + 2 m c^2)].
+```
+
+The public energy inputs are MeV; momentum is calculated in SI.  Helpers are
+provided for rigidity in GV and for converting differential intensity between
+`(cm^2 s sr MeV)^-1` and `(m^2 s sr J)^-1`.
+
+Two normalization modes are explicit:
+
+- `RELATIVE_ONLY` (default) supplies a dimensionless source shape/patch weight
+  and deliberately does not claim an absolute injection flux;
+- `REFERENCE_DIFFERENTIAL_INTENSITY` requires a positive physical
+  `J(E_ref)` in SI and produces a dimensional differential intensity.
+
+Thus a relative validation source can never be silently exported with physical
+flux units.  In `RESOLVED_COMPRESSION` mode the prescribed source is inactive;
+requesting its spectrum returns `SOURCE_INACTIVE` rather than a fabricated DSA
+spectrum.
+
+`swcme::sep::source_csv_header()` and `serialize_source_csv()` provide a stable,
+audit-oriented CSV representation.  They are intended for regression and
+AMPS/SWCME handoff checks, not as a mission archive standard.
+
+### Reference consumer
+
+`tools/sep_reference.cpp` is a small executable that consumes only the public
+SEP interface.  It can produce a 1-AU cobpoint/source time history, print the
+resolved configuration manifest, or emit machine-readable `KEY=value` probe
+records for campaign sweeps:
+
+```sh
+make -C test tools
+./test/output/sep_reference --print-manifest
+./test/output/sep_reference --start-hours 0 --end-hours 72 --step-hours 1 \
+    --output reference.csv
+./test/output/sep_reference --probe-time-hours 24 --v0-kms 1500
+```
+
+It is intentionally a reference consumer rather than an alternative physics
+implementation.
+
+## Automated validation campaigns
+
+`test/run_tests.py` is the higher-level validation/campaign manager.  It always
+controls the single C++ `test/output/test_swcme` executable; Python does not
+reimplement the deterministic physics tests.
+
+```sh
+cd test
+python3 run_tests.py --list
+python3 run_tests.py --profile SMOKE
+python3 run_tests.py --profile ROUTINE
+python3 run_tests.py --all                  # FULL
+python3 run_tests.py --test SEP03
+python3 run_tests.py --profile EVENT --event-config event_config.example.json
+```
+
+Profiles are stored in `test/profiles/`:
+
+- `SMOKE` is a short development gate covering configuration, core shock,
+  connectivity, divergence, and SEP-interface integration;
+- `ROUTINE` runs the broad deterministic suite while excluding the slowest
+  stochastic/multi-root stress cases;
+- `FULL` runs the complete registered C++ suite and exports the default SEP
+  reference history unless disabled;
+- `EVENT` begins with the FULL verification gate and then executes the
+  event-specific JSON analysis specification.
+
+Every campaign writes `manifest.json`, `summary.json`, `summary.csv`, and one
+log per C++ test.  The manifest records the selected tests and seed, git
+commit/branch/dirty state, compiler path/version/flags, host/Python information,
+visible MPI and OpenMP environment, a source-tree SHA-256, the complete resolved
+SWCME+SEP configuration and its SHA-256, and the event JSON/hash when present.
+This prevents an event comparison from being detached from the exact model
+configuration that produced it.
+
+EVENT JSON supports Cartesian parameter sweeps with placeholder substitution,
+regex metric extraction and bounds; log-log convergence-order fits; keyed or
+row-aligned CSV comparisons with absolute/relative tolerances; and optional
+Matplotlib plots.  Commands may use `{seed}`, `{root}`, `{test_dir}`, and
+`{output_dir}` in addition to sweep parameter names.  See
+`test/event_config.example.json` for an executable example and `test/README.md`
+for the full schema.
+
+Campaign exit codes are deterministic: `0` = all required work passed, `1` = a
+validation/reference/event analysis failed, `2` = command/configuration error,
+and `3` = build failure.  `test/python/test_run_tests.py` regression-tests the
+profile expansion, convergence fitting, sweep engine, CSV comparison/event
+aggregation, manifest/report production, and command-error exit code.
 
 ## Current 3-D shock geometries
 
@@ -331,10 +494,10 @@ spherical +X limit, including shock existence, Mach number, compression,
 upstream/downstream vectors, density, and pressure.  Both must agree to
 roundoff-level tolerances.
 
-This refactor intentionally does **not** unify the phenomenological sheath/ejecta
-region shaping; that behavior is still dimension-specific and is covered by the
-separate region-model remediation item.  Likewise, `1D3D03` remains reserved for
-the future SEP-source contract, which has not yet been implemented.
+The common-core refactor has since been extended by the shared region,
+acceleration, and SEP-interface layers.  `1D3D03` now validates the shared
+SOURCE acceleration record, while `SEP03` validates the complete AMPS-facing
+1-D/3-D `SEPSourceState` serialization in the same spherical/+X limit.
 
 ## Validation
 
@@ -526,15 +689,17 @@ second-order convergence of the general Cartesian operator.  See
 `VELOCITY_DIVERGENCE_FIX_NOTES.md` and `test/README.md` for the fixtures and
 acceptance criteria.
 
-## Remaining remediation items
+## Completed remediation baseline
 
-The dimensionality-independent constants, units, configuration validation,
-Leblanc/Parker ambient state, apex kinematics, ideal-MHD shock solver, downstream
-region handling, acceleration representation, numerical-status contract, and
-shock-surface topology are now explicit and validated.  Remaining work is
-focused on physics/infrastructure beyond this mesh repair: the full AMPS-facing
-SEP source adapter/units contract and the higher-level Python validation
-campaign runner.
+The planned SWCME remediation baseline now includes common constants/units and
+configuration validation, Parker/Leblanc ambient physics, shared kinematics,
+finite shock geometry, the ideal-MHD jump, cobpoint connectivity, common
+sheath/ejecta handling, a mutually exclusive acceleration representation,
+explicit numerical status propagation, corrected shock-mesh topology,
+validated velocity divergence, standardized defaults/scope, and the
+SWCME-to-SEP integration/campaign layer described above.  Further development
+can therefore be treated as new physics or mission/application integration
+rather than completion of the original numerical-remediation list.
 
 ## Repaired sheath/ejecta region model and SHOCK_ONLY/FULL_ICME modes
 
@@ -655,10 +820,12 @@ density and magnetic-field magnitude, and the diagnostic DSA phase-space slope
 q = 3 r_c / (r_c - 1).
 ```
 
-The baseline `relative_source_weight_per_area` is dimensionless and is intended
-only for controlled relative weighting.  Absolute particle/spectral units are
-reserved for the later AMPS-facing source adapter so this layer does not invent
-an injection-rate convention prematurely.
+The baseline `relative_source_weight_per_area` remains dimensionless and is
+intended only for controlled relative weighting.  The AMPS-facing
+`swcme_sep_source.hpp` layer now makes normalization explicit: its default
+`RELATIVE_ONLY` mode preserves this dimensionless convention, while optional
+`REFERENCE_DIFFERENTIAL_INTENSITY` requires a physical `J(E_ref)` with declared
+SI units.
 
 ### RESOLVED_COMPRESSION mode
 

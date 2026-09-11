@@ -73,11 +73,13 @@ q = 3 r_c / (r_c - 1);
 
 `source_enabled=true` and `resolved_compression_enabled=false`.
 
-The relative weight is deliberately not assigned physical injection-rate units
-in this remediation.  Absolute spectral normalization and unit conversion belong
-to the later AMPS-facing SEP source interface.  The present constant weight is
-sufficient for the controlled experiment in which transport/connectivity effects
-must not be confused with a changing source efficiency.
+At the Fix-10 layer the relative weight is deliberately not assigned physical
+injection-rate units.  Fix 15 now supplies the AMPS-facing
+`swcme_sep_source.hpp` contract: its default `RELATIVE_ONLY` mode preserves this
+dimensionless controlled source, while optional
+`REFERENCE_DIFFERENTIAL_INTENSITY` requires an explicitly declared physical
+`J(E_ref)` and performs the documented unit conversion.  No empirical injection
+efficiency is inferred implicitly.
 
 In SOURCE mode the validated region mode is SHOCK_ONLY, so the field evaluator
 returns the analytical Parker/Leblanc wind on both sides of the mathematical

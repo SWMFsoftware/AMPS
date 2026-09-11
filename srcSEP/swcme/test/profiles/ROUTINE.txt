@@ -1,0 +1,5 @@
+# Deterministic routine gate.  Keep the slow stochastic source sampler and the
+# multi-root connectivity stress case for FULL.
+@ALL
+!MSH05
+!CON05

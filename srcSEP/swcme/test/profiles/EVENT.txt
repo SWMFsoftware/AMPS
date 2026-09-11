@@ -1,0 +1,3 @@
+# EVENT begins with the complete code-verification gate, then run_tests.py
+# executes the event-specific sweep/comparison/convergence sections from JSON.
+@ALL

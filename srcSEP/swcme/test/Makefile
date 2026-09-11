@@ -8,13 +8,14 @@ CPPFLAGS += -isystem .. -Icore
 CXXFLAGS += -std=c++17 -Wall -Wextra -Wpedantic
 
 TARGET := output/test_swcme
+SEP_REFERENCE_TARGET := output/sep_reference
 # Every validation remains in one deterministic executable. The common tests
 # use separate translation units so each physical contract has an auditable
 # implementation without introducing another executable or build system.
-SOURCES := core/test_swcme.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp core/test_regions.cpp core/test_acceleration.cpp core/test_status.cpp core/test_divergence.cpp core/test_defaults.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_mesh.cpp 3d/test_connectivity.cpp 3d/test_shock_surface.cpp 1d/test_ambient.cpp test_1d3d.cpp
-OBJECTS := output/swcme3d.o output/test_swcme.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_regions.o output/test_acceleration.o output/test_status.o output/test_divergence.o output/test_defaults.o output/test_parker.o output/test_geometry.o output/test_mesh.o output/test_connectivity.o output/test_shock_surface.o output/test_ambient.o output/test_1d3d.o
+SOURCES := core/test_swcme.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp core/test_regions.cpp core/test_acceleration.cpp core/test_status.cpp core/test_divergence.cpp core/test_defaults.cpp core/test_sep_interface.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_mesh.cpp 3d/test_connectivity.cpp 3d/test_shock_surface.cpp 1d/test_ambient.cpp test_1d3d.cpp
+OBJECTS := output/swcme3d.o output/test_swcme.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_regions.o output/test_acceleration.o output/test_status.o output/test_divergence.o output/test_defaults.o output/test_sep_interface.o output/test_parker.o output/test_geometry.o output/test_mesh.o output/test_connectivity.o output/test_shock_surface.o output/test_ambient.o output/test_1d3d.o
 
-.PHONY: all test clean
+.PHONY: all test tools campaign-test clean
 
 all: $(TARGET)
 
@@ -26,7 +27,7 @@ $(TARGET): $(OBJECTS)
 # to obtain its symbols, which coupled the entire production implementation to
 # one unrelated test translation unit.  A normal object-library style link is
 # clearer, scales to additional tests, and prevents accidental duplicate code.
-output/swcme3d.o: ../swcme3d.cpp ../swcme3d.hpp ../swcme_constants.hpp ../swcme_units.hpp ../swcme_defaults.hpp ../swcme_status.hpp ../swcme_divergence.hpp ../swcme_config.hpp ../swcme_kinematics.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_shock.hpp ../swcme_regions.hpp ../swcme_acceleration.hpp | output
+output/swcme3d.o: ../swcme3d.cpp ../swcme3d.hpp ../swcme_constants.hpp ../swcme_units.hpp ../swcme_defaults.hpp ../swcme_status.hpp ../swcme_divergence.hpp ../swcme_config.hpp ../swcme_kinematics.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_shock.hpp ../swcme_regions.hpp ../swcme_acceleration.hpp ../swcme_sep_source.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # Explicit rules keep source ownership obvious and let `make -j` build the
@@ -87,8 +88,15 @@ output/test_divergence.o: core/test_divergence.cpp core/test_framework.hpp ../sw
 
 # DEF01-DEF04 guard the canonical shared baseline, explicit model-scope
 # convention, observer-local pre-shock validity gate, and deterministic
-# resolved-configuration metadata needed by later campaign automation.
+# resolved-configuration metadata consumed by the campaign/SEP integration layer.
 output/test_defaults.o: core/test_defaults.cpp core/test_framework.hpp ../swcme_defaults.hpp ../swcme1d.hpp ../swcme3d.hpp | output
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+
+# SEP01-SEP06 validate the stable SWCME-to-AMPS contract: direct background
+# identity, unit/spectrum conversion, 1-D/3-D source identity, area-weighted
+# surface patches, cobpoint source reuse, and SOURCE disablement in resolved mode.
+output/test_sep_interface.o: core/test_sep_interface.cpp core/test_framework.hpp ../swcme_sep_source.hpp ../swcme_sep_interface.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_status.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # PAR01-PAR03 exercise the public production 3-D field evaluator linked through
@@ -129,6 +137,18 @@ output/test_ambient.o: 1d/test_ambient.cpp core/test_framework.hpp ../swcme_cons
 output/test_1d3d.o: test_1d3d.cpp core/test_framework.hpp ../swcme_core.hpp ../swcme_solarwind.hpp ../swcme_shock.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_regions.hpp ../swcme_acceleration.hpp ../swcme_status.hpp ../swcme_divergence.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
+
+tools: $(SEP_REFERENCE_TARGET)
+
+$(SEP_REFERENCE_TARGET): output/swcme3d.o ../tools/sep_reference.cpp ../swcme_sep_interface.hpp ../swcme_sep_source.hpp | output
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) ../tools/sep_reference.cpp output/swcme3d.o -o $@
+
+# Campaign-manager unit tests exercise profile expansion, convergence fitting,
+# sweep/comparison execution, exit codes, manifest generation, and machine-
+# readable reporting without duplicating production physics.
+campaign-test: all tools
+	python3 python/test_run_tests.py
+
 output:
 	mkdir -p $@
 
@@ -136,4 +156,4 @@ test: $(TARGET)
 	./$(TARGET)
 
 clean:
-	rm -f $(TARGET) $(OBJECTS)
+	rm -f $(TARGET) $(SEP_REFERENCE_TARGET) $(OBJECTS)

@@ -78,6 +78,12 @@ void test_def01(swcme_test::Context& context);
 void test_def02(swcme_test::Context& context);
 void test_def03(swcme_test::Context& context);
 void test_def04(swcme_test::Context& context);
+void test_sep01(swcme_test::Context& context);
+void test_sep02(swcme_test::Context& context);
+void test_sep03(swcme_test::Context& context);
+void test_sep04(swcme_test::Context& context);
+void test_sep05(swcme_test::Context& context);
+void test_sep06(swcme_test::Context& context);
 void test_1d_ambient_at_one_au(swcme_test::Context& context);
 void test_1d3d01(swcme_test::Context& context);
 void test_1d3d02(swcme_test::Context& context);
@@ -105,6 +111,12 @@ const swcme_test::TestCase kTests[] = {
     {"DEF02", "COMMON", "Science-scope, geometry, and Parker conventions", test_def02},
     {"DEF03", "COMMON", "Observer-local pre-shock model-scope validity", test_def03},
     {"DEF04", "COMMON", "Deterministic complete resolved-configuration manifest", test_def04},
+    {"SEP01", "INTEGRATION", "AMPS background adapter matches direct production query", test_sep01},
+    {"SEP02", "COMMON", "SEP source spectrum units and DSA slope conversion", test_sep02},
+    {"SEP03", "1D<->3D", "AMPS-facing 1-D/3-D source-record identity", test_sep03},
+    {"SEP04", "3D", "Shock-surface source patch area normalization", test_sep04},
+    {"SEP05", "3D", "Observer cobpoint-to-SEP-source consistency", test_sep05},
+    {"SEP06", "COMMON", "Resolved-compression source-disable contract", test_sep06},
     {"DEN01", "COMMON",
      "Leblanc density normalization at the reference distance", test_den01},
     {"PAR01", "3D", "Parker-spiral equatorial vector orientation", test_par01},

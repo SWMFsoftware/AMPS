@@ -1,0 +1,2 @@
+# Every registered deterministic/statistical C++ validation test.
+@ALL

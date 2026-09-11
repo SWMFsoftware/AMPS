@@ -18,8 +18,10 @@ The governing rule is now:
 > not be converted into a different physical state.
 
 Expected physical/geometrical outcomes remain distinct from failures.  In
-particular, `NO_SURFACE` for a direction outside a finite SSE cap and
-`NO_SHOCK` for a sub-fast front are not numerical errors.
+particular, `NO_SURFACE` for a direction outside a finite SSE cap,
+`NO_CONNECTION` / `SOURCE_INACTIVE` in the SEP integration layer, and
+`NO_SHOCK` in the Rankine-Hugoniot `SolveStatus` for a sub-fast front are not
+numerical errors.
 
 ## Shared `ModelStatus`
 
@@ -37,6 +39,9 @@ The current codes are:
 ```text
 OK
 NO_SURFACE
+NO_CONNECTION
+SOURCE_INACTIVE
+INVALID_CONFIGURATION
 NULL_POINTER
 NONFINITE_INPUT
 OUTSIDE_MODEL_DOMAIN
@@ -50,8 +55,12 @@ FILE_OPEN_FAILURE
 FILE_WRITE_FAILURE   (reserved for writers that distinguish write failures)
 ```
 
-`OK` is success.  `NO_SURFACE` is an expected finite-geometry result and can be
-handled without treating it as an error.  All other non-OK codes are failures.
+`OK` is success.  `NO_SURFACE`, `NO_CONNECTION`, and `SOURCE_INACTIVE` are
+expected absence states and have `ModelStatus::failure()==false`; they remain
+non-OK so callers can distinguish them from a positive result.  The remaining
+non-OK codes represent failures.  `INVALID_CONFIGURATION` is used by the SEP
+source contract for invalid spectrum/normalization inputs in addition to the
+structured model-parameter validator used during model construction.
 
 `ModelStatus::summary()` produces a deterministic diagnostic suitable for log
 messages.  `swcme::throw_if_error()` is used by the old void-returning APIs so
