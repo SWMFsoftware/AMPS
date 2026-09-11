@@ -51,6 +51,11 @@ void test_con05(swcme_test::Context& context);
 void test_con06(swcme_test::Context& context);
 void test_con07(swcme_test::Context& context);
 void test_con08(swcme_test::Context& context);
+void test_reg01(swcme_test::Context& context);
+void test_reg02(swcme_test::Context& context);
+void test_reg03(swcme_test::Context& context);
+void test_reg04(swcme_test::Context& context);
+void test_reg05(swcme_test::Context& context);
 void test_1d_ambient_at_one_au(swcme_test::Context& context);
 void test_1d3d01(swcme_test::Context& context);
 void test_1d3d02(swcme_test::Context& context);
@@ -116,6 +121,11 @@ const swcme_test::TestCase kTests[] = {
     {"CON06", "3D", "Time-continuous cobpoint history", test_con06},
     {"CON07", "3D", "Cobpoint-to-ShockState consistency", test_con07},
     {"CON08", "3D", "Connectivity Parker path-length accuracy", test_con08},
+    {"REG01", "COMMON", "SHOCK_ONLY upstream-field identity", test_reg01},
+    {"REG02", "COMMON", "FULL_ICME immediate-downstream Rankine-Hugoniot boundary", test_reg02},
+    {"REG03", "1D", "Magnetic-ejecta density and velocity factors", test_reg03},
+    {"REG04", "3D", "Self-similar nested shock/leading/trailing surfaces", test_reg04},
+    {"REG05", "COMMON", "Continuity and smoothness across region transitions", test_reg05},
     {"1D_AMBIENT_01", "1D", "Ambient values at 1 AU",
      test_1d_ambient_at_one_au},
     {"1D3D01", "1D<->3D", "Common-core upstream solar-wind state identity", test_1d3d01},

@@ -22,6 +22,7 @@
 // ============================================================================
 
 #include "swcme_kinematics.hpp"
+#include "swcme_regions.hpp"
 
 #include <cmath>
 #include <sstream>
@@ -163,6 +164,7 @@ struct CommonConfigView {
   const std::vector<double>* data_time_s = nullptr;
   const std::vector<double>* data_radius_Rs = nullptr;
 
+  swcme::regions::Mode region_mode = swcme::regions::Mode::FullICME;
   double sheath_thick_AU_at1AU = 0.0;
   double ejecta_thick_AU_at1AU = 0.0;
   double edge_smooth_shock_AU_at1AU = 0.0;
@@ -198,6 +200,17 @@ inline ValidationResult validate_common(const CommonConfigView& c) {
 
   require_nonnegative(out, "sheath_thick_AU_at1AU", c.sheath_thick_AU_at1AU);
   require_nonnegative(out, "ejecta_thick_AU_at1AU", c.ejecta_thick_AU_at1AU);
+  // Region thicknesses are specified as AU at a 1-AU shock and therefore are
+  // also the self-similar radial fractions used by swcme_regions.hpp.  Their
+  // sum must remain below unity so the trailing edge stays at positive radius
+  // and no runtime sorting/clipping is needed to repair inverted layers.
+  if (finite(c.sheath_thick_AU_at1AU) && finite(c.ejecta_thick_AU_at1AU) &&
+      c.sheath_thick_AU_at1AU + c.ejecta_thick_AU_at1AU >= 1.0) {
+    out.add("sheath_thick_AU_at1AU+ejecta_thick_AU_at1AU",
+            Code::OutOfRange,
+            c.sheath_thick_AU_at1AU + c.ejecta_thick_AU_at1AU,
+            "self-similar sheath+ejecta fractions must sum to < 1");
+  }
   require_nonnegative(out, "edge_smooth_shock_AU_at1AU",
                       c.edge_smooth_shock_AU_at1AU);
   require_nonnegative(out, "edge_smooth_le_AU_at1AU", c.edge_smooth_le_AU_at1AU);
@@ -218,12 +231,17 @@ inline ValidationResult validate_common(const CommonConfigView& c) {
     out.add("sheath_ramp_power", Code::OutOfRange, c.sheath_ramp_power,
             "must be >= 1");
   }
-  // The 3-D phenomenological sheath can intentionally relax slightly below
-  // the ambient speed (legacy examples use 0.9), while the 1-D profile later
-  // applies its own monotonic sheath constraint.  Validation therefore checks
-  // only that the configured factor is finite and positive; changing the
-  // regional sheath physics belongs to the separate region-model remediation.
-  require_positive(out, "V_sheath_LE_factor", c.V_sheath_LE_factor);
+  // The repaired region model uses the same physical convention in 1-D and
+  // 3-D: a forward-shock sheath relaxes toward, but not below, the ambient
+  // radial speed before entering the ejecta.  Values below one are therefore
+  // rejected instead of being silently clamped by one dimensional wrapper.
+  if (!finite(c.V_sheath_LE_factor)) {
+    out.add("V_sheath_LE_factor", Code::NonFinite, c.V_sheath_LE_factor,
+            "must be finite and >= 1");
+  } else if (c.V_sheath_LE_factor < 1.0) {
+    out.add("V_sheath_LE_factor", Code::OutOfRange, c.V_sheath_LE_factor,
+            "must be >= 1 for the forward-shock sheath model");
+  }
   require_nonnegative(out, "f_ME", c.f_ME);
   require_nonnegative(out, "V_ME_factor", c.V_ME_factor);
 

@@ -38,13 +38,14 @@
 //      half width.  Radius and outward normal are analytic, and no surface is
 //      returned outside the finite angular extent.
 //
-// 5) Region structure and smoothing (radial blends):
-//    Regions: upstream → shock → sheath → leading edge → magnetic ejecta → trailing edge.
-//    We blend with a C^1 smoothstep s(x)=x^2(3-2x) applied to signed distances,
-//    with independent widths (w_shock, w_le, w_te), each self-similar ∝ r_sh.
-//    Sheath compression at the shock uses a shape:
-//      rc_loc = rc_floor + (rc_oblique - rc_floor) * (1 - ξ)^p,  ξ = (Rdir - r)/dr_sheath,
-//    where p = sheath_ramp_power ≥ 1; rc_oblique from an oblique-MHD proxy.
+// 5) Region structure and smoothing:
+//    SHOCK_ONLY leaves the analytical Parker/Leblanc background unchanged.
+//    FULL_ICME uses the exact RH downstream state at the physical shock, then a
+//    phenomenological sheath, magnetic ejecta, and post-ICME ambient. Leading
+//    and trailing surfaces are local self-similar fractions of R_sh(direction),
+//    so finite-SSE/ellipsoid flanks never subtract an apex-sized absolute width.
+//    Only the artificial LE/TE interfaces are C1-smoothed; the physical shock
+//    remains an explicit discontinuity and no empirical compression floor is used.
 //
 // 6) Oblique ideal-MHD shock state (local):
 //    Compute θBn, the oblique fast-mode speed, and the normal relative inflow.
@@ -455,29 +456,48 @@ StepState Model::prepare_step(double t_s) const {
   S.k_AU=S.common.solar_wind.k_AU_equatorial;
   S.Br1AU_T=S.common.solar_wind.Br1AU_T;
 
-  // 3) Self-similar region widths & derived radii
-  const double scaleR = S.r_sh_m / AU;
-  S.dr_sheath_m = swcme::units::au_to_m(P_.sheath_thick_AU_at1AU * scaleR);
-  S.dr_me_m     = swcme::units::au_to_m(P_.ejecta_thick_AU_at1AU * scaleR);
-  S.w_shock_m   = swcme::units::au_to_m(P_.edge_smooth_shock_AU_at1AU * scaleR);
-  S.w_le_m      = swcme::units::au_to_m(P_.edge_smooth_le_AU_at1AU * scaleR);
-  S.w_te_m      = swcme::units::au_to_m(P_.edge_smooth_te_AU_at1AU * scaleR);
-  S.r_le_m = S.r_sh_m - S.dr_sheath_m;
-  S.r_te_m = S.r_le_m - S.dr_me_m;
+  // 3) Common self-similar FULL_ICME region geometry.  Public thickness and
+  // smoothing parameters are AU at a 1-AU shock and therefore dimensionless
+  // fractions when applied to a local shock radius.  apex_regions is retained
+  // for output/backward StepState fields; the field evaluators call the same
+  // make_boundaries() routine with each *local* Rdir so finite-SSE/ellipsoid
+  // flanks never subtract an apex-sized absolute thickness.
+  S.region_config.mode=P_.region_mode;
+  S.region_config.sheath_fraction=P_.sheath_thick_AU_at1AU;
+  S.region_config.ejecta_fraction=P_.ejecta_thick_AU_at1AU;
+  S.region_config.leading_smooth_fraction=P_.edge_smooth_le_AU_at1AU;
+  S.region_config.trailing_smooth_fraction=P_.edge_smooth_te_AU_at1AU;
+  S.region_config.sheath_ramp_power=P_.sheath_ramp_power;
+  S.region_config.V_sheath_LE_factor=P_.V_sheath_LE_factor;
+  S.region_config.f_ME=P_.f_ME;
+  S.region_config.V_ME_factor=P_.V_ME_factor;
+  S.apex_regions=swcme::regions::make_boundaries(S.r_sh_m,S.region_config);
 
-  // Smoothstep helpers
-  S.inv2w_sh = (S.w_shock_m>0.0)? 0.5/S.w_shock_m : 0.0;
-  S.inv2w_le = (S.w_le_m   >0.0)? 0.5/S.w_le_m    : 0.0;
-  S.inv2w_te = (S.w_te_m   >0.0)? 0.5/S.w_te_m    : 0.0;
+  // Legacy mirrors remain populated for existing output/API users.  The
+  // physical shock is deliberately discontinuous, so w_shock_m is now a
+  // deprecated compatibility mirror and not used by the region evaluator.
+  S.dr_sheath_m=S.apex_regions.sheath_thickness_m;
+  S.dr_me_m=S.apex_regions.ejecta_thickness_m;
+  S.w_shock_m=0.0;
+  S.w_le_m=S.apex_regions.smooth_le_width_m;
+  S.w_te_m=S.apex_regions.smooth_te_width_m;
+  S.r_le_m=S.apex_regions.R_le_m;
+  S.r_te_m=S.apex_regions.R_te_m;
+  S.inv2w_sh=0.0;
+  S.inv2w_le=(S.w_le_m>0.0)?0.5/S.w_le_m:0.0;
+  S.inv2w_te=(S.w_te_m>0.0)?0.5/S.w_te_m:0.0;
 
-  // 4) Region target speeds
-  S.V_sheath_LE_ms = P_.V_sheath_LE_factor * S.V_sw_ms;
-  S.V_ME_ms        = P_.V_ME_factor * S.V_sw_ms;
-  S.V_dn_ms        = S.V_sw_ms;
+  // 4) Region target speeds.  V_sheath_LE_ms is finalized after the apex RH
+  // state is known below; V_ME is an exact configured factor and is allowed to
+  // be below V_sw.
+  S.V_sheath_LE_ms=S.V_sw_ms;
+  S.V_ME_ms=P_.V_ME_factor*S.V_sw_ms;
+  S.V_dn_ms=S.V_sw_ms;
 
-  // 5) Convenience
-  S.inv_dr_sheath  = (S.dr_sheath_m>0.0)? 1.0/S.dr_sheath_m : 0.0;
-  S.rc_floor       = (P_.sheath_comp_floor>1.0)? P_.sheath_comp_floor : 1.0;
+  // 5) Convenience mirrors.  sheath_comp_floor is no longer part of any
+  // physical shock/region calculation; keep rc_floor=1 for source compatibility.
+  S.inv_dr_sheath=(S.dr_sheath_m>0.0)?1.0/S.dr_sheath_m:0.0;
+  S.rc_floor=1.0;
 
   // 6-7) Leblanc and Parker caches were prepared by swcme::core above.
   // The numbered placeholder is retained in comments because geometry remains
@@ -515,6 +535,13 @@ StepState Model::prepare_step(double t_s) const {
     const bool surface_exists=shock_state_direction(S,u_apex,apex);
     S.has_shock=surface_exists && apex.has_shock && apex.solver_converged;
     S.rc=S.has_shock ? apex.compression : 1.0;
+    if (S.has_shock) {
+      const double V2_rad=apex.downstream.velocity_m_s[0]*S.e1[0]
+                         +apex.downstream.velocity_m_s[1]*S.e1[1]
+                         +apex.downstream.velocity_m_s[2]*S.e1[2];
+      S.V_sheath_LE_ms=swcme::regions::leading_edge_speed(
+          S.V_sw_ms,V2_rad,P_.V_sheath_LE_factor);
+    }
   }
   return S;
 }
@@ -1072,6 +1099,131 @@ void Model::local_oblique_rc(const StepState& S, const double u[3], const double
   thetaBn_out=state.theta_Bn_rad;
 }
 
+// Common FULL_ICME field construction for one Cartesian ray sample.
+//
+// Both public 3-D evaluators call this helper, so n/V and n/V/B can no longer
+// drift into different region definitions.  Geometry comes from
+// swcme_regions::make_boundaries(local R_sh), which is crucial for finite SSE
+// and ellipsoid flanks: the layer thickness is a fraction of the LOCAL front
+// radius rather than an apex-sized absolute distance.
+struct RegionalSample3D {
+  double n_m3 = 0.0;
+  double velocity_m_s[3] = {0.0,0.0,0.0};
+  double magnetic_T[3] = {0.0,0.0,0.0};
+};
+
+static inline void ambient_sample_3d(const swcme3d::StepState& S,
+                                     const double u[3], double r_m,
+                                     bool need_B, RegionalSample3D& out) {
+  out.n_m3=swcme::solarwind::density_m3(S.common.solar_wind,r_m);
+  out.velocity_m_s[0]=S.V_sw_ms*u[0];
+  out.velocity_m_s[1]=S.V_sw_ms*u[1];
+  out.velocity_m_s[2]=S.V_sw_ms*u[2];
+  if (need_B) {
+    ::parker_vec_T_fast(S,u,r_m,out.magnetic_T);
+  }
+}
+
+static inline void evaluate_region_sample_3d(
+    const swcme3d::Params& P, const swcme3d::StepState& S,
+    const swcme3d::LocalShockState& shock, bool surface_exists,
+    const double u[3], double r_m, bool need_B, RegionalSample3D& out) {
+  ambient_sample_3d(S,u,r_m,need_B,out);
+
+  // SHOCK_ONLY intentionally leaves the transport-facing background untouched
+  // everywhere.  Shock geometry/connectivity/source diagnostics are still
+  // available independently through shock_state_direction()/connectivity APIs.
+  if (S.region_config.mode==swcme::regions::Mode::ShockOnly ||
+      !surface_exists || r_m>=shock.Rdir_m) {
+    return;
+  }
+
+  const swcme::regions::Boundaries b=
+      swcme::regions::make_boundaries(shock.Rdir_m,S.region_config);
+  const swcme::regions::Location loc=swcme::regions::locate(r_m,b);
+
+  auto sheath_state = [&](double rr, RegionalSample3D& state) {
+    ambient_sample_3d(S,u,rr,need_B,state);
+    // A geometric CME front can persist after the fast shock disappears.  In
+    // that case no artificial sheath compression/jump is introduced; the
+    // sheath portion remains ambient while the optional ejecta can still exist.
+    if (!shock.has_shock || !shock.solver_converged) return;
+
+    const double w=swcme::regions::sheath_profile_weight(
+        rr,b,S.region_config.sheath_ramp_power);
+    const double n_le=swcme::solarwind::density_m3(
+        S.common.solar_wind,b.R_le_m);
+    state.n_m3=swcme::regions::log_lerp_positive(
+        shock.downstream_n_m3,n_le,w);
+
+    const double V2_rad=shock.downstream.velocity_m_s[0]*u[0]
+                       +shock.downstream.velocity_m_s[1]*u[1]
+                       +shock.downstream.velocity_m_s[2]*u[2];
+    const double Vle_mag=swcme::regions::leading_edge_speed(
+        S.V_sw_ms,V2_rad,P.V_sheath_LE_factor);
+    const double Vle[3]={Vle_mag*u[0],Vle_mag*u[1],Vle_mag*u[2]};
+    for (int k=0;k<3;++k) {
+      state.velocity_m_s[k]=swcme::regions::lerp(
+          shock.downstream.velocity_m_s[k],Vle[k],w);
+    }
+
+    if (need_B) {
+      double B_le[3];
+      ::parker_vec_T_fast(S,u,b.R_le_m,B_le);
+      for (int k=0;k<3;++k) {
+        state.magnetic_T[k]=swcme::regions::lerp(
+            shock.downstream.magnetic_T[k],B_le[k],w);
+      }
+    }
+  };
+
+  auto ejecta_state = [&](double rr, RegionalSample3D& state) {
+    ambient_sample_3d(S,u,rr,need_B,state);
+    state.n_m3=S.region_config.f_ME*state.n_m3;
+    state.velocity_m_s[0]=S.region_config.V_ME_factor*S.V_sw_ms*u[0];
+    state.velocity_m_s[1]=S.region_config.V_ME_factor*S.V_sw_ms*u[1];
+    state.velocity_m_s[2]=S.region_config.V_ME_factor*S.V_sw_ms*u[2];
+    // The baseline ejecta magnetic field remains Parker in this deliberately
+    // simple phenomenology.  A flux-rope/ejecta field is outside the present
+    // controlled SEP-study scope and can be added later behind this same API.
+  };
+
+  if (loc.region==swcme::regions::Region::Sheath) {
+    sheath_state(r_m,out);
+    return;
+  }
+  if (loc.region==swcme::regions::Region::LeadingTransition) {
+    RegionalSample3D sheath,ejecta;
+    sheath_state(r_m,sheath);
+    ejecta_state(r_m,ejecta);
+    out.n_m3=swcme::regions::lerp(sheath.n_m3,ejecta.n_m3,loc.blend);
+    for (int k=0;k<3;++k) {
+      out.velocity_m_s[k]=swcme::regions::lerp(
+          sheath.velocity_m_s[k],ejecta.velocity_m_s[k],loc.blend);
+      if (need_B) out.magnetic_T[k]=swcme::regions::lerp(
+          sheath.magnetic_T[k],ejecta.magnetic_T[k],loc.blend);
+    }
+    return;
+  }
+  if (loc.region==swcme::regions::Region::Ejecta) {
+    ejecta_state(r_m,out);
+    return;
+  }
+  if (loc.region==swcme::regions::Region::TrailingTransition) {
+    RegionalSample3D ejecta,ambient;
+    ejecta_state(r_m,ejecta);
+    ambient_sample_3d(S,u,r_m,need_B,ambient);
+    out.n_m3=swcme::regions::lerp(ejecta.n_m3,ambient.n_m3,loc.blend);
+    for (int k=0;k<3;++k) {
+      out.velocity_m_s[k]=swcme::regions::lerp(
+          ejecta.velocity_m_s[k],ambient.velocity_m_s[k],loc.blend);
+      if (need_B) out.magnetic_T[k]=swcme::regions::lerp(
+          ejecta.magnetic_T[k],ambient.magnetic_T[k],loc.blend);
+    }
+  }
+  // PostICME and Upstream retain the ambient state initialized above.
+}
+
 // n, V evaluator (allocation-free; vectorization-friendly)
 //
 // The shock itself is treated as a physical discontinuity: r>=R_sh is the
@@ -1084,72 +1236,22 @@ void Model::evaluate_cartesian_fast(const StepState& S,
                                     const double* x_m,const double* y_m,const double* z_m,
                                     double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
                                     std::size_t N) const {
-  const double Vup=S.V_sw_ms;
-  const double dr_sheath=S.dr_sheath_m, dr_me=S.dr_me_m;
-
   SWCME_IVDEP
   for (std::size_t i=0;i<N;++i){
     const double x=x_m[i], y=y_m[i], z=z_m[i];
     const double r2=std::max(1e-12,x*x+y*y+z*z);
     const double r=std::sqrt(r2), invr=1.0/r;
     const double u[3]={x*invr,y*invr,z*invr};
-    const double n_up=swcme::solarwind::density_m3(S.common.solar_wind,r);
 
     LocalShockState shock;
     const bool surface_exists=shock_state_direction(S,u,shock);
-    if (!surface_exists || !shock.has_shock || !shock.solver_converged || r>=shock.Rdir_m) {
-      n_m3[i]=n_up;
-      Vx_ms[i]=finite_or(Vup*u[0],0.0);
-      Vy_ms[i]=finite_or(Vup*u[1],0.0);
-      Vz_ms[i]=finite_or(Vup*u[2],0.0);
-      continue;
-    }
+    RegionalSample3D sample;
+    evaluate_region_sample_3d(P_,S,shock,surface_exists,u,r,false,sample);
 
-    const double r_le=shock.Rdir_m-dr_sheath;
-    const double r_te=r_le-dr_me;
-    if (r>=r_le && dr_sheath>0.0) {
-      const double xi=swcme3d::clamp01((shock.Rdir_m-r)/dr_sheath);
-      const double power=std::max(1.0,P_.sheath_ramp_power);
-      const double blend=smoothstep01(std::pow(xi,power));
-
-      // Use the exact RH downstream state as the sheath's outer boundary.
-      // The inner/leading-edge target remains phenomenological and is kept
-      // radial; interpolation of the full velocity vector preserves possible
-      // tangential velocity generated by an oblique MHD jump near the shock.
-      const double r_le_safe=std::max(r_le,swcme::solarwind::MIN_RADIUS_M);
-      const double n_up_le=swcme::solarwind::density_m3(
-          S.common.solar_wind,r_le_safe);
-      const double n2=std::max(shock.downstream_n_m3,1.0e-300);
-      const double nle=std::max(n_up_le,1.0e-300);
-      const double n_sheath=std::exp((1.0-blend)*std::log(n2)+blend*std::log(nle));
-
-      const double Vle_mag=std::max(Vup,P_.V_sheath_LE_factor*Vup);
-      const double Vle[3]={Vle_mag*u[0],Vle_mag*u[1],Vle_mag*u[2]};
-      const double Vx=(1.0-blend)*shock.downstream.velocity_m_s[0]+blend*Vle[0];
-      const double Vy=(1.0-blend)*shock.downstream.velocity_m_s[1]+blend*Vle[1];
-      const double Vz=(1.0-blend)*shock.downstream.velocity_m_s[2]+blend*Vle[2];
-
-      n_m3[i]=finite_or(n_sheath,n_up);
-      Vx_ms[i]=finite_or(Vx,Vup*u[0]);
-      Vy_ms[i]=finite_or(Vy,Vup*u[1]);
-      Vz_ms[i]=finite_or(Vz,Vup*u[2]);
-      continue;
-    }
-
-    if (r>=r_te) {
-      const double n_ejecta=std::max(0.0,P_.f_ME)*n_up;
-      const double V_ejecta=S.V_ME_ms;
-      n_m3[i]=finite_or(n_ejecta,n_up);
-      Vx_ms[i]=finite_or(V_ejecta*u[0],0.0);
-      Vy_ms[i]=finite_or(V_ejecta*u[1],0.0);
-      Vz_ms[i]=finite_or(V_ejecta*u[2],0.0);
-      continue;
-    }
-
-    n_m3[i]=n_up;
-    Vx_ms[i]=finite_or(Vup*u[0],0.0);
-    Vy_ms[i]=finite_or(Vup*u[1],0.0);
-    Vz_ms[i]=finite_or(Vup*u[2],0.0);
+    n_m3[i]=finite_or(sample.n_m3,0.0);
+    Vx_ms[i]=finite_or(sample.velocity_m_s[0],0.0);
+    Vy_ms[i]=finite_or(sample.velocity_m_s[1],0.0);
+    Vz_ms[i]=finite_or(sample.velocity_m_s[2],0.0);
   }
 }
 
@@ -1163,89 +1265,25 @@ void Model::evaluate_cartesian_with_B(const StepState& S,
   double* Bx_T,double* By_T,double* Bz_T,
   std::size_t N) const {
 
-  const double Vup=S.V_sw_ms;
-  const double dr_sheath=S.dr_sheath_m, dr_me=S.dr_me_m;
-
   SWCME_IVDEP
   for (std::size_t i=0;i<N;++i){
     const double x=x_m[i], y=y_m[i], z=z_m[i];
     const double r2=std::max(1e-12,x*x+y*y+z*z);
     const double r=std::sqrt(r2), invr=1.0/r;
     const double u[3]={x*invr,y*invr,z*invr};
-    const double n_up=swcme::solarwind::density_m3(S.common.solar_wind,r);
-    double B_up[3]; ::parker_vec_T_fast(S,u,r,B_up);
 
     LocalShockState shock;
     const bool surface_exists=shock_state_direction(S,u,shock);
-    if (!surface_exists || !shock.has_shock || !shock.solver_converged || r>=shock.Rdir_m) {
-      n_m3[i]=n_up;
-      Vx_ms[i]=finite_or(Vup*u[0],0.0);
-      Vy_ms[i]=finite_or(Vup*u[1],0.0);
-      Vz_ms[i]=finite_or(Vup*u[2],0.0);
-      Bx_T[i]=finite_or(B_up[0],0.0);
-      By_T[i]=finite_or(B_up[1],0.0);
-      Bz_T[i]=finite_or(B_up[2],0.0);
-      continue;
-    }
+    RegionalSample3D sample;
+    evaluate_region_sample_3d(P_,S,shock,surface_exists,u,r,true,sample);
 
-    const double r_le=shock.Rdir_m-dr_sheath;
-    const double r_te=r_le-dr_me;
-    if (r>=r_le && dr_sheath>0.0) {
-      const double xi=swcme3d::clamp01((shock.Rdir_m-r)/dr_sheath);
-      const double power=std::max(1.0,P_.sheath_ramp_power);
-      const double blend=smoothstep01(std::pow(xi,power));
-
-      const double r_le_safe=std::max(r_le,swcme::solarwind::MIN_RADIUS_M);
-      const double n_up_le=swcme::solarwind::density_m3(
-          S.common.solar_wind,r_le_safe);
-      const double n2=std::max(shock.downstream_n_m3,1.0e-300);
-      const double nle=std::max(n_up_le,1.0e-300);
-      const double n_sheath=std::exp((1.0-blend)*std::log(n2)+blend*std::log(nle));
-
-      const double Vle_mag=std::max(Vup,P_.V_sheath_LE_factor*Vup);
-      const double Vle[3]={Vle_mag*u[0],Vle_mag*u[1],Vle_mag*u[2]};
-      const double Vx=(1.0-blend)*shock.downstream.velocity_m_s[0]+blend*Vle[0];
-      const double Vy=(1.0-blend)*shock.downstream.velocity_m_s[1]+blend*Vle[1];
-      const double Vz=(1.0-blend)*shock.downstream.velocity_m_s[2]+blend*Vle[2];
-
-      // At the inner sheath edge return to the local Parker field.  This is a
-      // phenomenological relaxation, but the outer boundary is now the exact
-      // MHD B2 state rather than the old ad hoc B_t*=r_c amplification.
-      double B_le[3]; ::parker_vec_T_fast(S,u,r_le_safe,B_le);
-      const double Bx=(1.0-blend)*shock.downstream.magnetic_T[0]+blend*B_le[0];
-      const double By=(1.0-blend)*shock.downstream.magnetic_T[1]+blend*B_le[1];
-      const double Bz=(1.0-blend)*shock.downstream.magnetic_T[2]+blend*B_le[2];
-
-      n_m3[i]=finite_or(n_sheath,n_up);
-      Vx_ms[i]=finite_or(Vx,Vup*u[0]);
-      Vy_ms[i]=finite_or(Vy,Vup*u[1]);
-      Vz_ms[i]=finite_or(Vz,Vup*u[2]);
-      Bx_T[i]=finite_or(Bx,B_up[0]);
-      By_T[i]=finite_or(By,B_up[1]);
-      Bz_T[i]=finite_or(Bz,B_up[2]);
-      continue;
-    }
-
-    if (r>=r_te) {
-      const double n_ejecta=std::max(0.0,P_.f_ME)*n_up;
-      const double V_ejecta=S.V_ME_ms;
-      n_m3[i]=finite_or(n_ejecta,n_up);
-      Vx_ms[i]=finite_or(V_ejecta*u[0],0.0);
-      Vy_ms[i]=finite_or(V_ejecta*u[1],0.0);
-      Vz_ms[i]=finite_or(V_ejecta*u[2],0.0);
-      Bx_T[i]=finite_or(B_up[0],0.0);
-      By_T[i]=finite_or(B_up[1],0.0);
-      Bz_T[i]=finite_or(B_up[2],0.0);
-      continue;
-    }
-
-    n_m3[i]=n_up;
-    Vx_ms[i]=finite_or(Vup*u[0],0.0);
-    Vy_ms[i]=finite_or(Vup*u[1],0.0);
-    Vz_ms[i]=finite_or(Vup*u[2],0.0);
-    Bx_T[i]=finite_or(B_up[0],0.0);
-    By_T[i]=finite_or(B_up[1],0.0);
-    Bz_T[i]=finite_or(B_up[2],0.0);
+    n_m3[i]=finite_or(sample.n_m3,0.0);
+    Vx_ms[i]=finite_or(sample.velocity_m_s[0],0.0);
+    Vy_ms[i]=finite_or(sample.velocity_m_s[1],0.0);
+    Vz_ms[i]=finite_or(sample.velocity_m_s[2],0.0);
+    Bx_T[i]=finite_or(sample.magnetic_T[0],0.0);
+    By_T[i]=finite_or(sample.magnetic_T[1],0.0);
+    Bz_T[i]=finite_or(sample.magnetic_T[2],0.0);
   }
 }
 

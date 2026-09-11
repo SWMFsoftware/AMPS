@@ -3,6 +3,7 @@
 #include "swcme_constants.hpp"
 #include "swcme_units.hpp"
 #include "swcme_config.hpp"
+#include "swcme_regions.hpp"
 #include "swcme_kinematics.hpp"
 #include "swcme_solarwind.hpp"
 #include "swcme_core.hpp"
@@ -225,12 +226,18 @@ struct Params {
   double T_K      = 1.2e5;                 // proton temperature [K]
   double gamma_ad = 5.0/3.0;               // adiabatic index
 
-  // Self-similar radial thicknesses (scale ∝ r_sh)
+  // Region mode. FULL_ICME evaluates the phenomenological sheath/ejecta;
+  // SHOCK_ONLY leaves the Parker/Leblanc background unchanged everywhere and
+  // uses the shock only for geometry/source bookkeeping.
+  swcme::regions::Mode region_mode = swcme::regions::Mode::FullICME;
+
+  // Self-similar radial thicknesses. Values are AU at a 1-AU shock and thus
+  // dimensionless fractions when scaled to each local shock-surface radius.
   double sheath_thick_AU_at1AU = 0.1;      // sheath thickness at 1 AU [AU]
   double ejecta_thick_AU_at1AU = 0.2;      // ejecta thickness at 1 AU [AU]
 
   // Edge smoothing (C^1 smoothstep) widths, scale ∝ r_sh
-  double edge_smooth_shock_AU_at1AU = 0.01; // around the shock front
+  double edge_smooth_shock_AU_at1AU = 0.01; // legacy compatibility; physical shock is unsmoothed
   double edge_smooth_le_AU_at1AU    = 0.02; // sheath→ejecta leading edge
   double edge_smooth_te_AU_at1AU    = 0.03; // ejecta→downstream trailing edge
 
@@ -240,7 +247,9 @@ struct Params {
 
   // Sheath shaping
   double sheath_ramp_power  = 2.0;        // ≥1, steeper density jump near shock
-  double sheath_comp_floor  = 1.2;        // min compression at shock (≥1)
+  // Deprecated compatibility parameter: no longer used by shock or region
+  // physics.  The MHD RH solver alone determines physical compression.
+  double sheath_comp_floor  = 1.2;
 
   // Ejecta density factor (relative to upstream)
   double f_ME = 0.5;                      // n_ejecta = f_ME * n_up
@@ -258,6 +267,7 @@ inline swcme::config::ValidationResult validate_params(const Params& p) {
   view.r0_Rs=p.r0_Rs; view.V0_sh_kms=p.V0_sh_kms;
   view.Gamma_kmInv=p.Gamma_kmInv; view.data_time_s=&p.data_time_s;
   view.data_radius_Rs=&p.data_radius_Rs;
+  view.region_mode=p.region_mode;
   view.sheath_thick_AU_at1AU=p.sheath_thick_AU_at1AU;
   view.ejecta_thick_AU_at1AU=p.ejecta_thick_AU_at1AU;
   view.edge_smooth_shock_AU_at1AU=p.edge_smooth_shock_AU_at1AU;
@@ -302,6 +312,13 @@ struct StepState {
   // of being recomputed independently.
   swcme::core::PreparedState common;
 
+  // Common region contract. apex_regions mirrors the nominal boundary radii
+  // for diagnostics/output; field evaluators recompute the same self-similar
+  // boundaries from each local shock radius so finite-SSE/ellipsoid flanks do
+  // not inherit an apex-sized absolute layer thickness.
+  swcme::regions::Config region_config;
+  swcme::regions::Boundaries apex_regions;
+
   // Apex-aligned orthonormal frame (e1 ≡ apex dir; e2,e3 transverse)
   double e1[3], e2[3], e3[3];
 
@@ -334,7 +351,7 @@ struct StepState {
   bool has_shock = false;
   double rc = 1.0;             // diagnostic: apex density compression
   double inv_dr_sheath = 0.0;  // 1 / dr_sheath
-  double rc_floor = 1.0;       // min compression (from Params)
+  double rc_floor = 1.0;       // deprecated compatibility mirror; always 1
 
   // ===== CACHES FOR EFFICIENCY (constant during this step) =====
   // Ambient wind speed

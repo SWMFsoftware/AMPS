@@ -249,7 +249,7 @@ int main(){
     P.sheath_ramp_power = 1.5;  // >1 → faster drop from rc at the shock
 
     // Target speeds inside sheath/ejecta relative to ambient.
-    P.V_sheath_LE_factor = 0.9; // sheath relaxes toward ambient
+    P.V_sheath_LE_factor = 1.05; // sheath relaxes toward, but not below, ambient
     P.V_ME_factor        = 0.8; // ejecta typically slower
 
     // Ejecta density factor (depleted compared to upstream).

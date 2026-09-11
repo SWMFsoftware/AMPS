@@ -356,9 +356,84 @@ momentum and energy fluxes, entropy/admissibility, the weak-shock limit, query-r
 
 The dimensionality-independent constants, units, configuration validation,
 Leblanc/Parker ambient state, apex kinematics, and ideal-MHD shock solver are now
-shared between 1-D and 3-D.  Remaining work is intentionally focused on the
-parts that are still model-specific or infrastructural: the phenomenological
-sheath/ejecta region model (including the known 1-D ejecta-factor bugs), shock
-mesh apex/seam topology, explicit numerical-status propagation in the remaining
-3-D field/region evaluators, the shock-acceleration/source contract, and the
-higher-level Python validation campaign runner.
+shared between 1-D and 3-D.  Remaining work is intentionally focused on infrastructure or physics outside
+the now-shared region model: shock-mesh apex/seam topology, explicit numerical-
+status propagation in the remaining 3-D field evaluators, the shock-acceleration/
+source contract, velocity-divergence cleanup, and the higher-level Python
+validation campaign runner.
+
+## Repaired sheath/ejecta region model and SHOCK_ONLY/FULL_ICME modes
+
+The phenomenological downstream-region model is now shared through
+`swcme_regions.hpp`.  This closes the former 1-D/3-D divergence in layer
+geometry, ejecta factors, and artificial leading/trailing-edge smoothing.
+
+Two explicit modes are available through `Params::region_mode`:
+
+- `swcme::regions::Mode::ShockOnly` returns the undisturbed analytical
+  Parker/Leblanc solar-wind state everywhere.  Shock geometry, connectivity,
+  and local MHD shock/source diagnostics remain available through their
+  dedicated APIs, but no sheath/ejecta plasma modification is applied to the
+  transport-facing background.  This is the recommended controlled baseline
+  for the SEP connectivity/perpendicular-diffusion study.
+- `swcme::regions::Mode::FullICME` adds the optional phenomenological sheath and
+  magnetic-ejecta profile behind the geometric CME/shock surface.
+
+The physical shock is an explicit discontinuity in FULL_ICME mode.  The limit
+immediately downstream is the exact ideal-MHD Rankine-Hugoniot state returned
+by the common shock solver.  The sheath then relaxes smoothly toward a
+leading-edge target.  The empirical `sheath_comp_floor` no longer participates
+in shock or region physics and is retained only for source compatibility.
+
+### Self-similar local layer geometry
+
+The public sheath/ejecta thickness inputs are specified as AU at a 1-AU shock.
+They are now interpreted as dimensionless self-similar fractions.  For a local
+shock-surface radius `R_sh(u)`,
+
+```text
+R_LE = (1 - f_sheath) R_sh
+R_TE = (1 - f_sheath - f_ejecta) R_sh.
+```
+
+This is applied to the **local** SSE/ellipsoid radius, not the apex radius.
+Consequently the shock, leading-edge, and trailing-edge surfaces remain nested
+and geometrically similar from apex to flank.  Configurations with
+`f_sheath + f_ejecta >= 1` are rejected instead of repaired by runtime clipping.
+
+The LE and TE smoothing inputs are likewise local self-similar fractions.  Each
+configured width is the total width of a symmetric C1 smoothstep transition
+centered on the nominal boundary and is capped so neighboring finite layers
+cannot overlap.
+
+### Sheath and magnetic-ejecta targets
+
+For a physical fast shock, the sheath starts at the complete MHD downstream
+state and relaxes toward the local Parker/upstream state at the leading edge.
+If a geometric CME front exists but the fast shock has decayed, the model does
+not fabricate a sheath compression; that portion of the profile remains
+ambient while the optional ejecta may still be represented.
+
+Magnetic-ejecta factors are now honored exactly:
+
+```text
+n_ME = f_ME * n_up
+V_ME = V_ME_factor * V_sw.
+```
+
+Values below unity therefore correctly produce density depletion and slower
+bulk ejecta.  Negative factors are rejected by centralized configuration
+validation rather than clipped in the evaluator.  The baseline ejecta magnetic
+field remains Parker; a flux-rope/ejecta-field model is intentionally outside
+the controlled one-year scope.
+
+Artificial LE and TE interfaces are C1 smooth.  The physical shock itself is
+not smoothed by this region module; shock-acceleration/source treatment is kept
+separate so a later transport adapter can avoid double-counting acceleration.
+
+Validation tests `REG01`-`REG05` cover SHOCK_ONLY identity, the exact RH
+post-shock boundary, sub-unity ejecta factors, local self-similar surface
+nesting, and continuity/smoothness of the modeled non-shock transitions.
+
+See `REGION_MODEL_FIX_NOTES.md` and `test/README.md` for detailed equations,
+configuration conventions, and validation procedures.

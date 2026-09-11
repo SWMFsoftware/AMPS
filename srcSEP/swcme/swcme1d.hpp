@@ -37,14 +37,14 @@ PHYSICAL MODEL (succinct but complete)
       This sign-aware form decelerates fast CMEs and accelerates slow CMEs
       toward Vsw.  Γ=0 is handled by the exact ballistic limit.
 
-  • Compression and downstream state from the shared ideal-MHD fast-shock solver
-      c_s = √(γ k_B T / m_p),   v_A = B/√(μ₀ ρ),  c_f = √(c_s² + v_A²),
-      M_f = max(1, (V_sh−V_sw)/c_f),
-      r_c = ((γ+1) M_f²)/((γ−1) M_f² + 2), clamped to [1,4] and to a user floor.
+  • Compression and downstream state come from the shared ideal-MHD fast-shock
+      solver. A geometric front is a physical shock only when the normal
+      shock-frame inflow is super-fast; otherwise compression is exactly one.
 
-  • Downstream structure (regions): upstream → [R_sh] → SHEATH → [R_LE] →
-      ME → [R_TE] → ambient. Thicknesses at 1 AU are user inputs and scale
-      self-similarly ∝ R_sh.
+  • Downstream structure is controlled by swcme_regions.hpp. SHOCK_ONLY leaves
+      the Parker/Leblanc background untouched. FULL_ICME uses
+      upstream → [R_sh] → sheath → [R_LE] → magnetic ejecta → [R_TE] → ambient,
+      with self-similar local thickness fractions and C1 LE/TE transitions.
 
   • *Crucial sheath construction (artifact-free):*
       Let s∈[0,1] map R_sh→R_LE with s=0 at the shock. We **pin the boundary
@@ -53,12 +53,13 @@ PHYSICAL MODEL (succinct but complete)
       – velocity:   V(s) = smoothstep(s^p; V₂→V_LE),  p≥1,
         where V₂ = V_sh − (V_sh−V_sw)/r_c is the downstream speed from mass-flux
         continuity (RH proxy) and V_LE ≥ V_sw (user-set factor).
-      We also enforce n(r) ≥ n_up(r) and V(r) ≥ V_sw *pointwise* in the sheath.
-      This removes the notorious dip/undershoot “right behind the shock”.
+      The immediate downstream boundary is the exact RH state. The sheath then
+      relaxes toward the ambient leading-edge target without an empirical
+      compression floor.
 
-  • Tangential B amplification: applied **only inside the sheath** and tapered
-      smoothly from ≈r_c at the shock to 1 at R_LE. No other Bφ multiplications
-      are performed elsewhere.
+  • Magnetic field in FULL_ICME starts from the exact RH downstream vector and
+      relaxes to the Parker field at R_LE. The ejecta field remains Parker in
+      this intentionally simple baseline model.
 
 NUMERICAL / IMPLEMENTATION CHOICES
   • Radii are clipped to r ≥ 1.05 R☉ for safety (no singularities of 1/r^k).
@@ -179,19 +180,14 @@ USAGE SKETCH (more complete examples at bottom)
 //   We guard logs/denominators and convert Γ from km^-1 to m^-1.
 //
 // Regions and smoothing (self-similar):
-//   upstream → [shock at R_sh] → sheath → [leading edge at R_LE] → magnetic ejecta
-//   → [trailing edge at R_TE] → downstream ambient.
-//   Each interface uses a C¹ smoothstep s(x)=x^2(3−2x) over width w; widths scale
-//   ∝ R_sh (so they grow with distance). Sheath density uses a ramp that is steeper
-//   near the shock (power p≥1) and bounded below by a floor (rc_floor≥1).
+//   SHOCK_ONLY returns the analytical upstream background everywhere. FULL_ICME
+//   uses upstream → [shock] → sheath → [R_LE] → magnetic ejecta → [R_TE] →
+//   post-ICME ambient. R_LE/R_sh and R_TE/R_sh are fixed fractions, and only the
+//   artificial LE/TE interfaces are C1-smoothed. The physical shock is explicit.
 //
-// Oblique-MHD shock proxy (1-D quasi-radial reduction): Edmiston & Kennel (1984);
-// Priest (2014, CUP): We approximate the normal Mach number using the fast speed
-//   c_f = sqrt(c_s^2 + v_A^2) with upstream sound speed c_s and Alfven speed v_A,
-//   then take a hydrodynamic-like compression
-//     rc = ((γ+1) M_n^2) / ((γ−1) M_n^2 + 2),   1 ≤ rc ≤ 4.
-//   Downstream speed at the shock follows a continuity proxy.
-//   This rc is used as: sheath density jump and a proxy for Bt amplification.
+// Shock physics is provided by the shared ideal-MHD Rankine-Hugoniot solver in
+// swcme_shock.hpp; the region model consumes that validated downstream state and
+// does not maintain its own compression formula or floor.
 //
 // Divergence of bulk flow:
 //   ∇·V = (1/r^2) d/dr ( r^2 V_r ). We compute it with a centered FD using
@@ -219,19 +215,14 @@ USAGE SKETCH (more complete examples at bottom)
 //   We guard logs/denominators and convert Γ from km^-1 to m^-1.
 //
 // Regions and smoothing (self-similar):
-//   upstream → [shock at R_sh] → sheath → [leading edge at R_LE] → magnetic ejecta
-//   → [trailing edge at R_TE] → downstream ambient.
-//   Each interface uses a C¹ smoothstep s(x)=x^2(3−2x) over width w; widths scale
-//   ∝ R_sh (so they grow with distance). Sheath density uses a ramp that is steeper
-//   near the shock (power p≥1) and bounded below by a floor (rc_floor≥1).
+//   SHOCK_ONLY returns the analytical upstream background everywhere. FULL_ICME
+//   uses upstream → [shock] → sheath → [R_LE] → magnetic ejecta → [R_TE] →
+//   post-ICME ambient. R_LE/R_sh and R_TE/R_sh are fixed fractions, and only the
+//   artificial LE/TE interfaces are C1-smoothed. The physical shock is explicit.
 //
-// Oblique-MHD shock proxy (1-D quasi-radial reduction): Edmiston & Kennel (1984);
-// Priest (2014, CUP): We approximate the normal Mach number using the fast speed
-//   c_f = sqrt(c_s^2 + v_A^2) with upstream sound speed c_s and Alfven speed v_A,
-//   then take a hydrodynamic-like compression
-//     rc = ((γ+1) M_n^2) / ((γ−1) M_n^2 + 2),   1 ≤ rc ≤ 4.
-//   Downstream speed at the shock follows a continuity proxy.
-//   This rc is used as: sheath density jump and a proxy for Bt amplification.
+// Shock physics is provided by the shared ideal-MHD Rankine-Hugoniot solver in
+// swcme_shock.hpp; the region model consumes that validated downstream state and
+// does not maintain its own compression formula or floor.
 //
 // Divergence of bulk flow:
 //   ∇·V = (1/r^2) d/dr ( r^2 V_r ). We compute it with a centered FD using
@@ -254,19 +245,14 @@ USAGE SKETCH (more complete examples at bottom)
 // • Inside the **magnetic ejecta (ME)**: density is commonly **below ambient** and
 //   speed can be **lower than upstream wind**—a well-known depletion region.
 //
-// • **Unphysical pattern to avoid**: an *immediate* (next-sample) **drop of density
-//   below upstream** right behind the shock. That violates jump conditions for a
-//   compressive fast shock. If you see this:
-//     – Keep `sheath_comp_floor ≥ 1.0` (our default enforces ≥1).
-//     – Use a small shock blend width vs. sheath thickness:
-//         `edge_smooth_shock_AU_at1AU  <<  sheath_thick_AU_at1AU`.
-//     – Avoid over-lapping large smooth widths at shock/LE/TE.
-//     – Choose `V_sheath_LE_factor ≳ 1.05–1.2` so the sheath remains faster than ambient.
+// • The physical shock is now an explicit discontinuity.  Immediately downstream,
+//   density, velocity, pressure, and magnetic field are taken from the common
+//   Rankine-Hugoniot solution; no empirical compression floor or shock-edge blend
+//   is allowed to replace that boundary state.
 //
-// • Optional (not enforced in this file): a **monotonicity clamp** within the sheath
-//   to guarantee `n ≥ n_up` and `V_sw ≤ V ≤ V_sh`. If desired, we can provide a
-//   compile-time or runtime switch; for now we document the physics and parameter
-//   guidance above (no behavioral change).
+// • Artificial leading/trailing ICME boundaries use symmetric C1 smoothstep
+//   transitions.  The legacy shock smoothing width and sheath_comp_floor inputs are
+//   retained only for source compatibility and do not alter the physical shock.
 
 
  NUMERICAL NOTES
@@ -322,12 +308,12 @@ USAGE SKETCH (more complete examples at bottom)
      ejecta_thick_AU_at1AU   0.10–0.40
 
    Edge widths (at 1 AU; scales ∝ R_sh):
-     edge_smooth_shock_AU_at1AU  0.005–0.02   (keep smallest)
+     edge_smooth_shock_AU_at1AU  legacy compatibility input; physical shock is unsmoothed
      edge_smooth_le_AU_at1AU     0.01–0.05
      edge_smooth_te_AU_at1AU     0.02–0.06
 
    Sheath/ME targets:
-     sheath_comp_floor    ≥1.0 (1.1–1.5 typical)
+     sheath_comp_floor    legacy compatibility input; ignored by physical shock/region state
      sheath_ramp_power    1–3  (2 steeper near shock)
      V_sheath_LE_factor   1.05–1.2
      f_ME                 0.3–0.8
@@ -351,6 +337,7 @@ USAGE SKETCH (more complete examples at bottom)
 #include "swcme_constants.hpp"
 #include "swcme_units.hpp"
 #include "swcme_config.hpp"
+#include "swcme_regions.hpp"
 #include "swcme_kinematics.hpp"
 #include "swcme_solarwind.hpp"
 #include "swcme_core.hpp"
@@ -412,20 +399,25 @@ struct Params {
   swcme::kinematics::ExtrapolationPolicy data_extrapolation =
       swcme::kinematics::ExtrapolationPolicy::OutsideTime;
 
-  // Geometry: thicknesses at 1 AU, scale ∝ R_sh
+  // Region mode. FULL_ICME preserves the phenomenological sheath/ejecta
+  // profile; SHOCK_ONLY deliberately leaves the analytical upstream background
+  // untouched and exposes the shock only through the shock/source APIs.
+  swcme::regions::Mode region_mode = swcme::regions::Mode::FullICME;
+
+  // Geometry: thicknesses at 1 AU. These values are interpreted as
+  // self-similar fractions of the local shock radius by swcme_regions.hpp.
   double sheath_thick_AU_at1AU  = 0.10; // AU at 1 AU
   double ejecta_thick_AU_at1AU  = 0.25; // AU at 1 AU
 
   // Interface smoothing widths at 1 AU (C¹), scale ∝ R_sh
-  double edge_smooth_shock_AU_at1AU = 0.01; // shock skirt
+  double edge_smooth_shock_AU_at1AU = 0.01; // legacy compatibility; physical shock is unsmoothed
   double edge_smooth_le_AU_at1AU    = 0.02; // sheath → ME
   double edge_smooth_te_AU_at1AU    = 0.03; // ME → ambient
 
   // Sheath / ME shaping
-  // Legacy/profile-only parameter retained for source compatibility.  It is
-  // no longer allowed to alter the physical shock compression or create a
-  // shock; the RH solver alone determines rc.  A later region-model cleanup
-  // may remove this parameter entirely.
+  // Deprecated compatibility parameter retained for source compatibility.
+  // It is ignored by both shock and region physics; the MHD RH solver alone
+  // determines physical compression.
   double sheath_comp_floor   = 1.10;
   double sheath_ramp_power   = 2.0;  // controls steepness near shock (≥1)
   double V_sheath_LE_factor  = 1.10; // V at LE relative to V_sw (≥1)
@@ -444,6 +436,7 @@ inline swcme::config::ValidationResult validate_params(const Params& p) {
   view.r0_Rs=p.r0_Rs; view.V0_sh_kms=p.V0_sh_kms;
   view.Gamma_kmInv=p.Gamma_kmInv; view.data_time_s=&p.data_time_s;
   view.data_radius_Rs=&p.data_radius_Rs;
+  view.region_mode=p.region_mode;
   view.sheath_thick_AU_at1AU=p.sheath_thick_AU_at1AU;
   view.ejecta_thick_AU_at1AU=p.ejecta_thick_AU_at1AU;
   view.edge_smooth_shock_AU_at1AU=p.edge_smooth_shock_AU_at1AU;
@@ -472,6 +465,13 @@ struct StepState {
   // callers, but ambient normalization and apex kinematics are computed only
   // once by swcme::core::prepare().
   swcme::core::PreparedState common;
+
+  // Shared phenomenological region configuration and the apex/radial boundary
+  // set.  The same swcme::regions contract is used by 3-D, so 1-D and 3-D no
+  // longer maintain independent interpretations of sheath/ejecta thicknesses
+  // or LE/TE smoothing widths.
+  swcme::regions::Config region_config;
+  swcme::regions::Boundaries region_boundaries;
 
   // Apex kinematics / geometry.  kinematics_mode records which shared common
   // solver produced r_sh_m and V_sh_ms for traceable diagnostics.
@@ -542,6 +542,7 @@ public:
                     double gamma_ad=5.0/3.0,double sin_theta=1.0){
     P.V_sw_kms=V_sw_kms; P.n1AU_cm3=n1AU_cm3; P.B1AU_nT=B1AU_nT; P.T_K=T_K;
     P.gamma_ad=gamma_ad; P.sin_theta=sin_theta; return *this; }
+  Model& SetRegionMode(swcme::regions::Mode mode){ P.region_mode=mode; return *this; }
   Model& SetGeometry(double sheath_thick_AU_at1AU,double ejecta_thick_AU_at1AU){
     P.sheath_thick_AU_at1AU=sheath_thick_AU_at1AU;
     P.ejecta_thick_AU_at1AU=ejecta_thick_AU_at1AU; return *this; }
@@ -633,23 +634,30 @@ public:
     S.V_sh_ms=S.common.apex.speed_m_s;
     const double Vsw=S.V_up_ms;
 
-    // Geometry (self‑similar thickness & blending widths)
-    const double scale_R = S.r_sh_m / AU; // dimensionless
-    const double d_sheath = swcme::units::au_to_m(P.sheath_thick_AU_at1AU * scale_R);
-    const double d_me     = swcme::units::au_to_m(P.ejecta_thick_AU_at1AU * scale_R);
-    S.r_le_m = std::max(1.05*Rs, S.r_sh_m - d_sheath);
-    S.r_te_m = std::max(1.05*Rs, S.r_le_m - d_me);
+    // Build the common self-similar sheath/ejecta geometry.  Public thickness
+    // and smoothing inputs are AU at a 1-AU shock, i.e. dimensionless fractions
+    // of the local shock radius.  The same routine is used by 3-D at every
+    // flank direction, eliminating the former apex-width subtraction.
+    S.region_config.mode=P.region_mode;
+    S.region_config.sheath_fraction=P.sheath_thick_AU_at1AU;
+    S.region_config.ejecta_fraction=P.ejecta_thick_AU_at1AU;
+    S.region_config.leading_smooth_fraction=P.edge_smooth_le_AU_at1AU;
+    S.region_config.trailing_smooth_fraction=P.edge_smooth_te_AU_at1AU;
+    S.region_config.sheath_ramp_power=P.sheath_ramp_power;
+    S.region_config.V_sheath_LE_factor=P.V_sheath_LE_factor;
+    S.region_config.f_ME=P.f_ME;
+    S.region_config.V_ME_factor=P.V_ME_factor;
+    S.region_boundaries=swcme::regions::make_boundaries(S.r_sh_m,S.region_config);
 
-    S.w_sh_m = swcme::units::au_to_m(P.edge_smooth_shock_AU_at1AU * scale_R);
-
-
-    // Do not let the shock smoothing exceed ~45% of the sheath thickness
-    const double Ls = std::max(1e-6, S.r_sh_m - S.r_le_m);
-    S.w_sh_m = std::min(S.w_sh_m, 0.45 * Ls);
-
-
-    S.w_le_m = swcme::units::au_to_m(P.edge_smooth_le_AU_at1AU * scale_R);
-    S.w_te_m = swcme::units::au_to_m(P.edge_smooth_te_AU_at1AU * scale_R);
+    // Legacy StepState mirrors remain populated for source compatibility and
+    // Tecplot output.  The physical shock itself is deliberately discontinuous
+    // in SOURCE-style usage, so w_sh_m is retained only as a deprecated input
+    // mirror and does not smooth the RH jump in the repaired region evaluator.
+    S.r_le_m=S.region_boundaries.R_le_m;
+    S.r_te_m=S.region_boundaries.R_te_m;
+    S.w_sh_m=0.0;
+    S.w_le_m=S.region_boundaries.smooth_le_width_m;
+    S.w_te_m=S.region_boundaries.smooth_te_width_m;
 
     // Upstream Parker field at the shock.  The 1-D ray is treated as the
     // local shock normal, while B_phi remains a tangential component.  This
@@ -691,15 +699,14 @@ public:
     S.V2_shock_ms = (S.has_shock && S.shock_solver_converged)
                         ? jump.downstream.velocity_m_s[0] : Vsw;
 
-    const double V_LE_nom = std::max(Vsw,P.V_sheath_LE_factor*Vsw);
     if (!S.has_shock || !S.shock_solver_converged) {
       S.V_LE_ms = Vsw;
     } else {
-      // Preserve the existing monotone-sheath convention without altering the
-      // physical RH jump.  The leading-edge phenomenology is a separate region
-      // model; it may not accelerate the flow above the exact post-shock speed.
-      S.V_LE_ms = std::min(V_LE_nom,S.V2_shock_ms);
-      S.V_LE_ms = std::max(S.V_LE_ms,Vsw);
+      // The shared region helper constrains the phenomenological LE target to
+      // lie between ambient flow and the exact RH downstream radial velocity.
+      // Configuration validation already requires the requested factor >=1.
+      S.V_LE_ms=swcme::regions::leading_edge_speed(
+          Vsw,S.V2_shock_ms,P.V_sheath_LE_factor);
     }
 
     return S;
@@ -740,73 +747,78 @@ public:
     if (!r_m || !n_m3 || !V_ms || N==0) return;
 
     const double Vsw = S.V_up_ms;
-    const double rc  = S.rc;
-
-    // The cached RH downstream and leading-edge speeds are used directly in
-    // the sheath branch below; no independent local proxy is constructed here.
 
     for (std::size_t i=0;i<N;++i){
-      const double r = std::max(r_m[i], 1.05*Rs);
+      const double r = std::max(r_m[i], swcme::solarwind::MIN_RADIUS_M);
       const double n_up = density_upstream(S, r);
-      double n = n_up;
-      double V = Vsw;
 
-      if (r >= S.r_sh_m){
-        // upstream ambient
-        n = n_up; V = Vsw;
-      } else if (r >= S.r_le_m){
-        // ------------------------------ SHEATH ------------------------------
-        const double Ls = std::max(1e-6, S.r_sh_m - S.r_le_m);
-        const double s = clamp01( (S.r_sh_m - r)/Ls ); // 0 at shock → 1 at LE
-
-        // Density: exact boundary match from n2(shock)=rc*n_up(shock) to n_up(LE)
-        const double n2_sh = rc * S.n_up_shock;
-        const double ln_n  = (1.0 - s)*std::log(std::max(1e-30, n2_sh))
-                           + s*std::log(std::max(1e-30, S.n_up_le));
-        const double n_target = std::exp(ln_n);
-
-        // Speed: C¹ blend from V2(shock) to V(LE) with ramp power
-        const double t   = std::pow(s, std::max(1.0, P.sheath_ramp_power));
-        const double sC1 = smoothstep01(t);
-        double V_target = lerp(S.V2_shock_ms, S.V_LE_ms, sC1);
-
-	// Hard guarantees: never above V2(shock), never below Vsw
-        V_target = std::min(V_target, S.V2_shock_ms);
-        n        = std::max(n_target, n_up);
-        V        = std::max(V_target, Vsw);
-      } else if (r >= S.r_te_m){
-        // ------------------------------- ME ---------------------------------
-        const double n_me = std::max(1.0, P.f_ME) * n_up;
-        const double V_me = std::max(1.0, P.V_ME_factor) * Vsw;
-
-        // Blend with sheath on the ME side of the LE
-        if (S.w_le_m>0.0 && r >= S.r_le_m - S.w_le_m){
-          const double y  = clamp01( (S.r_le_m - r)/S.w_le_m ); // 0 at LE → 1 inward
-          const double sC1 = smoothstep01(y);
-          const double V_sheath_at_LE = S.V_LE_ms; // sheath boundary value
-          const double n_sheath_at_LE = S.n_up_le; // matches sheath profile at LE
-          n = lerp(n_me, n_sheath_at_LE, sC1);
-          V = lerp(V_me, V_sheath_at_LE, sC1);
-        } else {
-          n = n_me; V = V_me;
-        }
-      } else {
-        // ------------------------------ AMBIENT (after TE) ------------------
-        n = n_up; V = Vsw;
-        // Blend to ME on the ambient side of the TE to make TE C¹
-        if (S.w_te_m>0.0 && r >= S.r_te_m - S.w_te_m){
-          const double z  = clamp01( (r - (S.r_te_m - S.w_te_m))/S.w_te_m ); // 0 far → 1 at TE
-          const double sC1 = smoothstep01(z);
-          const double n_me = std::max(1.0, P.f_ME) * n_up;
-          const double V_me = std::max(1.0, P.V_ME_factor) * Vsw;
-          n = lerp(n, n_me, sC1);
-          V = lerp(V, V_me, sC1);
-        }
+      // SHOCK_ONLY is intentionally a *background* mode.  The shock geometry,
+      // connectivity and source state remain available through their dedicated
+      // APIs, but the transport-facing plasma state is exactly the analytical
+      // Parker/Leblanc wind everywhere.  This is the controlled baseline used
+      // to separate connectivity/perpendicular-diffusion effects from uncertain
+      // ICME sheath/ejecta phenomenology.
+      if (S.region_config.mode==swcme::regions::Mode::ShockOnly) {
+        n_m3[i]=n_up;
+        V_ms[i]=Vsw;
+        continue;
       }
 
-      if (!std::isfinite(n) || n<0.0) n = 0.0;
-      if (!std::isfinite(V))          V = 0.0;
-      n_m3[i] = n; V_ms[i] = V;
+      const swcme::regions::Boundaries& b=S.region_boundaries;
+      const swcme::regions::Location loc=swcme::regions::locate(r,b);
+
+      // Base sheath state.  A real fast shock starts from the exact MHD RH
+      // downstream state and relaxes toward the ambient state at R_LE.  A
+      // geometric CME front without a fast shock has no artificial sheath
+      // compression: its sheath base is simply the local upstream wind.
+      const auto sheath_state = [&](double rr, double& n, double& V) {
+        const double n_local_up=density_upstream(S,rr);
+        if (!S.has_shock || !S.shock_solver_converged) {
+          n=n_local_up;
+          V=Vsw;
+          return;
+        }
+        const double w=swcme::regions::sheath_profile_weight(
+            rr,b,S.region_config.sheath_ramp_power);
+        const double n2=S.shock_jump.downstream.rho_kg_m3/MP;
+        const double n_le=density_upstream(S,b.R_le_m);
+        n=swcme::regions::log_lerp_positive(n2,n_le,w);
+        V=swcme::regions::lerp(S.V2_shock_ms,S.V_LE_ms,w);
+      };
+
+      // Magnetic-ejecta target.  Factors below unity are intentional physical
+      // inputs (density depletion and slower ejecta) and are now honored
+      // exactly; configuration validation rejects negative values instead of
+      // allowing an evaluator to clip them silently.
+      const auto ejecta_state = [&](double rr, double& n, double& V) {
+        n=S.region_config.f_ME*density_upstream(S,rr);
+        V=S.region_config.V_ME_factor*Vsw;
+      };
+
+      double n=n_up;
+      double V=Vsw;
+      if (loc.region==swcme::regions::Region::Sheath) {
+        sheath_state(r,n,V);
+      } else if (loc.region==swcme::regions::Region::LeadingTransition) {
+        double ns=0.0,Vs=0.0,ne=0.0,Ve=0.0;
+        sheath_state(r,ns,Vs);
+        ejecta_state(r,ne,Ve);
+        n=swcme::regions::lerp(ns,ne,loc.blend);
+        V=swcme::regions::lerp(Vs,Ve,loc.blend);
+      } else if (loc.region==swcme::regions::Region::Ejecta) {
+        ejecta_state(r,n,V);
+      } else if (loc.region==swcme::regions::Region::TrailingTransition) {
+        double ne=0.0,Ve=0.0;
+        ejecta_state(r,ne,Ve);
+        n=swcme::regions::lerp(ne,n_up,loc.blend);
+        V=swcme::regions::lerp(Ve,Vsw,loc.blend);
+      }
+      // Upstream and PostICME intentionally use the undisturbed ambient state.
+
+      if (!std::isfinite(n) || n<0.0) n=0.0;
+      if (!std::isfinite(V))          V=0.0;
+      n_m3[i] = n;
+      V_ms[i] = V;
     }
   }
 
@@ -839,19 +851,38 @@ public:
       double Br=parker.Br_T;
       double Bph=parker.Bphi_T;
 
-      // Single, well‑defined sheath‑only amplification of tangential component
-      if (r < S.r_sh_m && r >= S.r_le_m){
-        const double Ls = std::max(1e-6, S.r_sh_m - S.r_le_m);
-        double s = clamp01( (S.r_sh_m - r)/Ls ); // 0 at shock → 1 at LE
-        const double fB_shock = std::max(1.0, S.rc); // proxy
-        const double fB = lerp(fB_shock, 1.0, smoothstep01(s));
-
-        // Shock skirt smoothing couples to the same mask used for n,V
-        const double ws = std::max(1e-6, S.w_sh_m);
-        const double x  = clamp01( (S.r_sh_m - r)/ws );
-        const double w  = smoothstep01(x);
-        const double f  = 1.0 + w*(fB - 1.0);
-        Bph *= f; // *** Only amplification site ***
+      // FULL_ICME uses the same common region classification as n/V.  The
+      // sheath magnetic field starts at the exact MHD RH downstream vector and
+      // relaxes to the Parker field at the nominal leading edge.  This replaces
+      // the old scalar Bphi*=compression proxy and keeps B, n and V on one
+      // geometrically identical region contract.  Ejecta/PostICME retain the
+      // baseline Parker field in this deliberately simple phenomenology.
+      if (S.region_config.mode==swcme::regions::Mode::FullICME) {
+        const swcme::regions::Location loc=
+            swcme::regions::locate(r,S.region_boundaries);
+        if (loc.region==swcme::regions::Region::Sheath ||
+            loc.region==swcme::regions::Region::LeadingTransition) {
+          const double w=swcme::regions::sheath_profile_weight(
+              r,S.region_boundaries,S.region_config.sheath_ramp_power);
+          const swcme::solarwind::ParkerComponents parker_le=
+              swcme::solarwind::parker_components(
+                  S.common.solar_wind,S.region_boundaries.R_le_m,P.sin_theta);
+          double Br_sheath=Br;
+          double Bph_sheath=Bph;
+          if (S.has_shock && S.shock_solver_converged) {
+            Br_sheath=swcme::regions::lerp(
+                S.shock_jump.downstream.magnetic_T[0],parker_le.Br_T,w);
+            Bph_sheath=swcme::regions::lerp(
+                S.shock_jump.downstream.magnetic_T[1],parker_le.Bphi_T,w);
+          }
+          if (loc.region==swcme::regions::Region::LeadingTransition) {
+            Br=swcme::regions::lerp(Br_sheath,Br,loc.blend);
+            Bph=swcme::regions::lerp(Bph_sheath,Bph,loc.blend);
+          } else {
+            Br=Br_sheath;
+            Bph=Bph_sheath;
+          }
+        }
       }
 
       const double Bmag = std::sqrt(Br*Br + Bph*Bph);

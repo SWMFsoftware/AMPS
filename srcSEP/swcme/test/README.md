@@ -700,3 +700,56 @@ with heliocentric radius.  Sampling them at an arbitrary query point would make
 Mach number and compression depend on the observer's diagnostic location rather
 than on the shock.  `SHK13` and `SHK14` are permanent regression tests for this
 contract.
+
+## REG01-REG05: sheath/ejecta region model and mode validation
+
+`REG01`-`REG05` qualify the shared `swcme_regions.hpp` contract used by the 1-D
+and 3-D field evaluators.  The physical shock remains an explicit RH
+discontinuity; these tests address only the optional phenomenological regions
+behind it and the controlled SHOCK_ONLY baseline.
+
+- `REG01` — **SHOCK_ONLY upstream-field identity**.  Samples points ahead of
+  and geometrically behind the expanding front in both 1-D and 3-D.  Density,
+  velocity, and Parker magnetic field must be identical to the analytical
+  upstream state.  The test deliberately changes FULL_ICME sheath/ejecta
+  parameters to extreme valid values and proves they have no effect in
+  SHOCK_ONLY mode.
+- `REG02` — **FULL_ICME immediate-downstream RH boundary**.  Approaches a
+  well-conditioned physical shock from the downstream side and verifies that
+  density, velocity, and magnetic field converge to the complete production
+  Rankine-Hugoniot downstream state.  This permanently guards the historical
+  3-D error in which the sheath velocity returned `V_sw` at the shock.
+- `REG03` — **magnetic-ejecta density and velocity factors**.  Evaluates the
+  middle of the ejecta, away from LE/TE blends, for factors below, equal to,
+  and above unity.  `f_ME=0.5` must give `0.5*n_up` and
+  `V_ME_factor=0.8` must give `0.8*V_sw`.  Negative factors must fail
+  centralized configuration validation rather than be clipped.
+- `REG04` — **self-similar local layer nesting**.  Samples a finite SSE cap from
+  apex to near-flank and verifies
+  `R_LE/R_sh = 1-f_sheath` and
+  `R_TE/R_sh = 1-f_sheath-f_ejecta` at every direction.  Layer ordering must
+  never invert.  A public configuration whose thickness fractions sum to one
+  or more is rejected.
+- `REG05` — **continuity/smoothness at artificial region transitions**.  Checks
+  the common symmetric LE/TE smoothstep weights and samples both public model
+  interfaces around every transition endpoint.  Equivalent spherical +X
+  1-D/3-D fixtures must agree to roundoff.  One-sided finite-difference
+  derivatives converge across the C1 artificial interfaces.  The physical
+  shock is intentionally excluded from this requirement because it is modeled
+  as an explicit discontinuity.
+
+Run them directly with:
+
+```sh
+./output/test_swcme --test REG01
+./output/test_swcme --test REG02
+./output/test_swcme --test REG03
+./output/test_swcme --test REG04
+./output/test_swcme --test REG05
+./output/test_swcme --all
+```
+
+The region tests must not be made green by reintroducing a compression floor,
+clipping sub-unity ejecta factors, or sorting invalid boundary radii at runtime.
+Such behavior defeats the physical/configuration contracts the tests are meant
+to protect.
