@@ -65,6 +65,66 @@ This replaces the legacy independent cosine flank-speed factor and corrects the
 ellipsoid flank speed, which previously used the full apex speed away from the
 apex.
 
+
+## Shared CME/shock-apex kinematics
+
+The 1-D and 3-D models now obtain the shock-apex radius and speed from the same
+`swcme_kinematics.hpp` implementation.  This removes the former divergence in
+which the 1-D slow-CME branch clipped `V0-Vsw` to zero while the 3-D branch used
+the fast-CME formula for negative speed differences and divided by `Gamma` at
+`Gamma=0`.
+
+Three kinematic modes are supported:
+
+- `swcme::kinematics::Mode::Ballistic` uses
+  `R=R0+V0*t`, `V=V0` exactly;
+- `Mode::DBM` uses the sign-aware constant-background drag-based solution; and
+- `Mode::DataDriven` uses monotone PCHIP interpolation of a supplied
+  height-time table and returns the derivative of that same interpolant as the
+  apex speed.
+
+For DBM, define `DeltaV0=V0-Vsw` and `a=abs(DeltaV0)`.  The common solution is
+
+```text
+DeltaV(t) = DeltaV0 / (1 + Gamma a t)
+R(t)      = R0 + Vsw t
+            + sign(DeltaV0) log(1 + Gamma a t) / Gamma.
+```
+
+The absolute value in the drag denominator is essential: fast CMEs decelerate
+toward the ambient wind and slow CMEs accelerate toward it.  `Gamma=0` is an
+explicit ballistic branch, so there is no division by zero and no physics-level
+`finite_or()` fallback.  A short series for `log1p(x)/x` is used at very small
+`x=Gamma*a*t` so the nonzero-drag solution remains continuous with the exact
+ballistic limit.
+
+### Data-driven kinematics
+
+`Params::data_time_s` contains strictly increasing times in seconds and
+`Params::data_radius_Rs` contains nondecreasing apex radii in nominal solar
+radii.  PCHIP was selected because it passes exactly through the supplied
+height-time knots while preserving monotonicity and avoiding cubic overshoot.
+The local derivative is used as `V_sh`, so the reported speed is kinematically
+consistent with the radius curve.
+
+The default extrapolation policy is
+`swcme::kinematics::ExtrapolationPolicy::OutsideTime`: a query before the first
+or after the last knot is rejected explicitly.  `Ballistic` continuation may be
+selected when an explicit endpoint continuation assumption is desired; it uses
+the endpoint PCHIP derivative and does not silently extrapolate the cubic.
+
+Both dimensional wrappers convert their public parameters to the same SI
+`swcme::kinematics::Config`.  Therefore identical kinematic inputs are required
+to produce identical apex radius and speed to roundoff.  The recommended
+default DBM reference radius is now `20 R_s`, reflecting the intended use of
+this simple drag model in the drag-dominated heliosphere rather than at
+`~1.05 R_s`.  Event-specific calculations may still set another radius when
+there is a documented physical justification; observationally constrained
+`DataDriven` mode is preferred when height-time measurements are available.
+
+The deterministic kinematics validation block is `KIN01`-`KIN08`; see
+`test/README.md` for individual purposes and acceptance criteria.
+
 ## Validation
 
 Build the validation executable from `test/`:
@@ -124,8 +184,8 @@ momentum and energy fluxes, entropy/admissibility, and the weak-shock limit.
 
 ## Remaining remediation items
 
-The current shock correction deliberately does **not** repair the independent
-DBM slow-CME/zero-drag issues, the 1-D ejecta density/velocity-factor bugs, the
-shock-mesh apex/seam topology, centralized configuration/unit validation, or
-magnetic connectivity/cobpoint tracking.  Those remain separate remediation
-items with their own validation gates.
+The current model still requires separate remediation of the 1-D ejecta
+density/velocity-factor bugs, shock-mesh apex/seam topology, centralized
+configuration/unit validation, and magnetic connectivity/cobpoint tracking.
+Those remain independent validation gates.  CME/shock-apex kinematics are now
+shared and validated by KIN01-KIN08.

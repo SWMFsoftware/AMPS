@@ -206,11 +206,11 @@ int main(){
     P.half_width_rad   = 40.0 * (3.14159265358979323846/180.0); // 40°
 
     // --- Apex kinematics (DBM) ----------------------------------------------
-    // r0_Rs    : initial shock apex distance in solar radii (you asked for 1.05 R_sun)
+    // r0_Rs    : DBM reference distance in solar radii; ~15-20 Rs is the recommended science range
     // V0_sh_kms: initial shock apex speed (km/s)
     // V_sw_kms : ambient solar-wind speed (km/s)
     // Gamma_kmInv: drag parameter Γ (1/km). Larger Γ → stronger deceleration/acceleration to V_sw.
-    P.r0_Rs       = 1.05;
+    P.r0_Rs       = 20.0;
     P.V0_sh_kms   = 1500.0;
     P.V_sw_kms    = 400.0;
     P.Gamma_kmInv = 0.2e-7;

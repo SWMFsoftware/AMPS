@@ -25,7 +25,7 @@
 //
 // 3) CME apex kinematics: Drag-Based Model (DBM)
 //    Let u = V_sh - V_sw be the excess speed. DBM gives
-//      u(t) = u0 / (1 + Γ u0 t),   r(t) = r0 + V_sw t + (ln[1 + Γ u0 t])/Γ,
+//      ΔV(t)=ΔV0/(1+Γ|ΔV0|t), r(t)=r0+V_sw t+sgn(ΔV0)ln(1+Γ|ΔV0|t)/Γ,
 //    where Γ is the drag parameter (converted to SI).
 //
 // 4) Shock geometry (radius and normal along direction u):
@@ -105,14 +105,15 @@
 //    field physically consistent away from the reference latitude.
 //
 // C) CME apex kinematics:
-//    Drag-Based Model (DBM), Vršnak et al. (2013), Sol. Phys. 285:295.
-//       d(V - Vsw)/dt = - Γ (V - Vsw) |V - Vsw|
-//    For constant Γ, the closed form solution yields the apex distance and
-//    speed as functions of time t:
-//       u0 = V0 - Vsw
-//       u(t) = u0 / (1 + Γ u0 t)
-//       r(t) = r0 + Vsw t + (1/Γ) ln(1 + Γ u0 t)
-//    Inputs: r0 = r0_Rs·Rs, V0 (km/s), Vsw (km/s), Γ (km^-1).
+//    Shared swcme::kinematics supports BALLISTIC, DBM and DATA_DRIVEN modes.
+//    The sign-aware DBM solves
+//       d(DeltaV)/dt = -Gamma DeltaV |DeltaV|
+//    with a=|DeltaV0|:
+//       DeltaV(t)=DeltaV0/(1+Gamma a t)
+//       r(t)=r0+Vsw t+sgn(DeltaV0) log(1+Gamma a t)/Gamma.
+//    Gamma=0 uses the exact ballistic limit; very small Gamma uses a stable
+//    series for the logarithmic distance.  DATA_DRIVEN mode uses monotone
+//    PCHIP height-time interpolation and its derivative as the apex speed.
 
 // D) Shock shape & direction-dependent speed:
 //    Shape options: Sphere, self-similar Ellipsoid, and a finite true-SSE
@@ -408,22 +409,45 @@ StepState Model::prepare_step(double t_s) const {
     S.solar_axis_hat[2]=az/axis_norm;
   }
 
-  // 2) DBM apex kinematics
-  const double r0_m   = P_.r0_Rs * Rs;
-  S.V_sw_ms           = P_.V_sw_kms*1e3;
-  const double V0_ms  = P_.V0_sh_kms*1e3;
-  const double Ginv_m = P_.Gamma_kmInv/1e3; // [1/m]
-  double r_sh=0.0, V_sh=0.0;
-  {
-    const double u0 = V0_ms - S.V_sw_ms;
-    const double den= 1.0 + Ginv_m*u0*t_s;
-    const double u  = (den!=0.0)? (u0/den) : 0.0;
-    r_sh = r0_m + S.V_sw_ms*t_s + std::log(std::max(den,1e-30))/Ginv_m;
-    V_sh = S.V_sw_ms + u;
+  // 2) Shared CME/shock-apex kinematics.
+  //
+  // The legacy 3-D DBM used (1+Gamma*u0*t) with signed u0 directly in the
+  // denominator/logarithm.  That is valid only for the fast-CME branch and
+  // makes a slow CME move away from Vsw.  It also divided by Gamma when
+  // Gamma=0 and then used finite_or() to hide the invalid radius.  Both 1-D
+  // and 3-D now call the same sign-aware common solver, which implements
+  //   DeltaV(t)=DeltaV0/(1+Gamma*|DeltaV0|*t)
+  // and an exact Gamma=0 ballistic limit.  DATA_DRIVEN mode is evaluated by
+  // the same common component using monotone PCHIP interpolation.
+  const double r0_m=P_.r0_Rs*Rs;
+  S.V_sw_ms=P_.V_sw_kms*1e3;
+  S.kinematics_mode=P_.kinematics_mode;
+
+  swcme::kinematics::Config kin;
+  kin.mode=P_.kinematics_mode;
+  kin.r0_m=r0_m;
+  kin.V0_m_s=P_.V0_sh_kms*1e3;
+  kin.Vsw_m_s=S.V_sw_ms;
+  kin.Gamma_m_inv=P_.Gamma_kmInv/1e3;
+  kin.extrapolation=P_.data_extrapolation;
+  kin.data_time_s=P_.data_time_s;
+  kin.data_radius_m.reserve(P_.data_radius_Rs.size());
+  for (double radius_Rs : P_.data_radius_Rs) {
+    kin.data_radius_m.push_back(radius_Rs*Rs);
   }
-  S.r_sh_m = finite_or(r_sh, r0_m);
-  S.V_sh_ms= finite_or(V_sh, V0_ms);
-  S.a_m    = S.r_sh_m;
+
+  const swcme::kinematics::State apex=swcme::kinematics::evaluate(kin,t_s);
+  if (apex.status!=swcme::kinematics::Status::Ok) {
+    // prepare_step() predates an explicit model-status return channel.  Until
+    // that broader API refactor is completed, report an invalid or out-of-time
+    // trajectory as an exception rather than converting it to a plausible
+    // radius/speed with finite_or().
+    throw std::runtime_error(std::string("swcme3d kinematics: ")+
+                             swcme::kinematics::status_name(apex.status));
+  }
+  S.r_sh_m=apex.radius_m;
+  S.V_sh_ms=apex.speed_m_s;
+  S.a_m=S.r_sh_m;
 
   // 3) Self-similar region widths & derived radii
   const double scaleR = S.r_sh_m / AU;

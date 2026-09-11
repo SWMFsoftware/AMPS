@@ -2,7 +2,7 @@
 //
 // WHAT THIS EXAMPLE DOES (PHYSICS):
 //  • Sets a “typical fast CME”: r0=1.05 Rs, V0≈1800 km/s, ambient Vsw=400 km/s.
-//  • Computes a snapshot at t = 36 h after launch using DBM apex kinematics.
+//  • Computes a snapshot at t = 36 h using the shared sign-aware DBM apex kinematics.
 //  • Builds a radial grid 0.2–1.5 AU and evaluates:
 //       n(r), V(r), Br(r), Bphi(r), |B|(r), divV(r).
 //  • Writes a Tecplot POINT file "profile_1d.dat" with columns:
@@ -37,7 +37,7 @@
 //
 // CME LAUNCH & DRAG (DBM, APEX KINEMATICS)
 // ----------------------------------------
-//  P.r0_Rs          [R_sun] Shock start radius (from Sun center). Use ≥1.03.
+//  P.r0_Rs          [R_sun] DBM reference radius. ~15-20 Rs is recommended for drag-dominated propagation.
 //                           This 1-D model usually launches at 1.05.
 //
 //  P.V0_sh_kms      [km/s]  Initial shock apex speed at t=0. Typical 800–2500.
@@ -146,7 +146,7 @@ int main(){
   // 1) Configure a typical CME
   // ------------------------------
   Params P;
-  P.r0_Rs       = 1.05;     // start just above the photosphere
+  P.r0_Rs       = 20.0;     // recommended DBM start in the drag-dominated heliosphere
   P.V0_sh_kms   = 1800.0;   // fast CME launch
   P.V_sw_kms    = 400.0;    // nominal solar wind
   P.Gamma_kmInv = 8e-8;     // DBM drag (tunes deceleration)

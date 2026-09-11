@@ -8,7 +8,7 @@ no second build system or external test dependency is required.
 
 ```text
 test/
-  core/       Common registry, runner, reporting, CFG01, CFG02, and DEN01
+  core/       Common registry, runner, reporting, CFG/DEN/KIN/SHK tests
   1d/         Tests specific to the production 1-D model
   3d/         Tests specific to the production 3-D model
   reference/  Reviewed reference data for future comparison tests
@@ -384,6 +384,70 @@ angular support, and normal speed.  Shock existence/compression/downstream
 physics is now covered independently by `SHK01`-`SHK12` below.  Shock-surface
 mesh apex/seam topology remains a separate planned work package.
 
+
+
+## KIN01-KIN08: shared CME/shock-apex kinematics
+
+`swcme_kinematics.hpp` is the production source of apex radius and speed for
+both `swcme1d` and `swcme3d`.  The kinematics tests are classified `COMMON` and
+exercise both the common SI solver and the two public dimensional wrappers.
+The independent DBM reference in `core/test_kinematics.cpp` evaluates the
+closed-form equations directly and does not call the production DBM helper.
+
+The production DBM solves
+
+```text
+DeltaV0 = V0 - Vsw
+DeltaV(t) = DeltaV0 / (1 + Gamma |DeltaV0| t)
+R(t) = R0 + Vsw t
+       + sign(DeltaV0) log(1 + Gamma |DeltaV0| t) / Gamma.
+```
+
+This sign-aware form is required for both fast and slow CMEs.  `Gamma=0` uses
+the exact ballistic solution.  For very small `x=Gamma*|DeltaV0|*t`, the
+production code evaluates the logarithmic distance through a short
+`log1p(x)/x` series; `KIN04` explicitly straddles that numerical branch
+boundary to guard against a discontinuity.
+
+The data-driven mode uses monotone PCHIP radius interpolation.  The input time
+table must be strictly increasing and radius must be nondecreasing.  The
+interpolant passes through each knot exactly and its derivative is returned as
+the apex speed.  Out-of-range queries return `OUTSIDE_TIME` by default;
+ballistic endpoint continuation is available only when requested explicitly.
+
+The tests are:
+
+- `KIN01` — fast-CME DBM versus the independent closed form at multiple times,
+  including exact 1-D/3-D wrapper equivalence;
+- `KIN02` — slow-CME sign-aware branch; verifies acceleration toward `Vsw`
+  without clipping or overshoot and checks both wrappers;
+- `KIN03` — exact `Gamma=0` ballistic radius/speed in the common, 1-D, and 3-D
+  paths;
+- `KIN04` — small-`Gamma` analytical accuracy and continuity across the
+  series/direct-log numerical branch;
+- `KIN05` — long-time stability, monotonic radius, finite state, and monotonic
+  approach of speed toward the ambient wind for fast and slow CMEs;
+- `KIN06` — data-driven PCHIP exactness at every height-time knot, derivative
+  consistency, and 1-D/3-D use of the same trajectory;
+- `KIN07` — dense-grid monotonicity, nonnegative propagation speed, and absence
+  of cubic overshoot between data knots; and
+- `KIN08` — explicit out-of-time status, optional ballistic continuation, and
+  rejection of duplicate-time or decreasing-radius tables.
+
+The DBM analytical comparisons use `1e-12` relative accuracy where specified
+by the validation plan.  PCHIP knot radii are required to be exact to
+`1e-13` relative.  Tolerances must not be relaxed merely to obtain PASS.
+
+The 1-D and 3-D public `Params` structures expose the same kinematic mode plus
+`data_time_s`, `data_radius_Rs`, and `data_extrapolation`.  The 1-D convenience
+method `SetDataDrivenKinematics()` sets these fields and switches the mode to
+`DataDriven`.  The wrappers convert radii from solar radii to SI only when
+constructing the common configuration.
+
+A data-driven query outside the measurement interval causes `prepare_step()`
+to throw a clear runtime error unless a continuation policy was selected.  This
+is intentional: silent cubic extrapolation is a modeling assumption and is
+not allowed to masquerade as measured/constrained kinematics.
 
 ## SHK01-SHK12: fast-shock existence and ideal-MHD Rankine-Hugoniot validation
 

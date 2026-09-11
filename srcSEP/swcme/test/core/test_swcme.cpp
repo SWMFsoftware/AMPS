@@ -21,6 +21,14 @@ void test_geo05(swcme_test::Context& context);
 void test_geo06(swcme_test::Context& context);
 void test_geo07(swcme_test::Context& context);
 void test_geo08(swcme_test::Context& context);
+void test_kin01(swcme_test::Context& context);
+void test_kin02(swcme_test::Context& context);
+void test_kin03(swcme_test::Context& context);
+void test_kin04(swcme_test::Context& context);
+void test_kin05(swcme_test::Context& context);
+void test_kin06(swcme_test::Context& context);
+void test_kin07(swcme_test::Context& context);
+void test_kin08(swcme_test::Context& context);
 void test_shk01(swcme_test::Context& context);
 void test_shk02(swcme_test::Context& context);
 void test_shk03(swcme_test::Context& context);
@@ -66,6 +74,14 @@ const swcme_test::TestCase kTests[] = {
     {"GEO06", "3D", "Analytical shock normal versus level-set gradient", test_geo06},
     {"GEO07", "3D", "Shock normal speed versus finite-difference surface motion", test_geo07},
     {"GEO08", "3D", "Rotational covariance of geometry and local scalar physics", test_geo08},
+    {"KIN01", "COMMON", "Fast-CME drag-based-model closed-form solution", test_kin01},
+    {"KIN02", "COMMON", "Slow-CME sign-aware DBM branch", test_kin02},
+    {"KIN03", "COMMON", "Zero-drag ballistic limit", test_kin03},
+    {"KIN04", "COMMON", "Small-Gamma continuity across DBM/ballistic limit", test_kin04},
+    {"KIN05", "COMMON", "Long-time DBM asymptotic stability", test_kin05},
+    {"KIN06", "COMMON", "Data-driven PCHIP knot exactness", test_kin06},
+    {"KIN07", "COMMON", "Data-driven monotonicity and no overshoot", test_kin07},
+    {"KIN08", "COMMON", "Explicit data-driven time-domain policy", test_kin08},
     {"SHK01", "COMMON", "Fast-shock existence and no-shock threshold", test_shk01},
     {"SHK02", "COMMON", "Shock obliquity angle and polarity invariance", test_shk02},
     {"SHK03", "COMMON", "Parallel fast-shock limiting solution", test_shk03},

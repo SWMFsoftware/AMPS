@@ -1,6 +1,7 @@
 #pragma once
 
 #include "swcme_constants.hpp"
+#include "swcme_kinematics.hpp"
 #include "swcme_shock.hpp"
 // ============================================================================
 // swcme3d.hpp
@@ -37,7 +38,7 @@
 //   basis defined by an explicit solar-rotation axis. B1AU_nT specifies the
 //   total field magnitude at a documented reference colatitude; the local
 //   winding everywhere else is computed from the point's actual latitude.
-// • CME apex kinematics via Drag-Based Model (DBM): Vršnak et al. (2013).
+// • CME apex kinematics via shared BALLISTIC / sign-aware DBM / DATA_DRIVEN modes.
 // • Shock shape: sphere, self-similar ellipsoid, or finite true-SSE spherical cap.
 // • Local fast-shock state from the ideal-MHD Rankine-Hugoniot conditions,
 //   including complete downstream rho, p, V, and B.
@@ -186,11 +187,23 @@ struct Params {
   // this field once backward compatibility is no longer required.
   double sin_theta  = 1.0;
 
-  // DBM apex kinematics (Vršnak et al. 2013)
-  double r0_Rs       = 1.05;               // initial apex radius [Rs]
-  double V0_sh_kms   = 1500;               // initial shock speed [km/s]
+  // CME/shock-apex kinematics.  The same shared common implementation is
+  // consumed by swcme1d, so identical inputs produce identical apex radius
+  // and speed in both dimensional interfaces.  DBM remains the default mode.
+  swcme::kinematics::Mode kinematics_mode = swcme::kinematics::Mode::DBM;
+  double r0_Rs       = 20.0;               // DBM/ballistic reference radius [Rs]
+  double V0_sh_kms   = 1500;               // initial/reference shock speed [km/s]
   double V_sw_kms    = 400;                // ambient SW speed [km/s]
-  double Gamma_kmInv = 1e-7;               // drag parameter Γ [km^-1]
+  double Gamma_kmInv = 1e-7;               // DBM drag parameter Γ [km^-1], >=0
+
+  // DATA_DRIVEN mode: strictly increasing times [s] and nondecreasing apex
+  // radii [Rs].  A monotone PCHIP passes exactly through every knot and its
+  // derivative is used as V_apex.  The default policy rejects out-of-range
+  // queries; ballistic endpoint continuation must be requested explicitly.
+  std::vector<double> data_time_s;
+  std::vector<double> data_radius_Rs;
+  swcme::kinematics::ExtrapolationPolicy data_extrapolation =
+      swcme::kinematics::ExtrapolationPolicy::OutsideTime;
 
   // Ambient SW scalings at 1 AU
   double n1AU_cm3 = 5.0;                   // upstream density at 1 AU [cm^-3]
@@ -227,7 +240,9 @@ struct StepState {
   // Apex-aligned orthonormal frame (e1 ≡ apex dir; e2,e3 transverse)
   double e1[3], e2[3], e3[3];
 
-  // Apex kinematics & scale
+  // Apex kinematics & scale.  kinematics_mode records the common solver that
+  // generated the step state and is useful when archiving validation metadata.
+  swcme::kinematics::Mode kinematics_mode = swcme::kinematics::Mode::DBM;
   double r_sh_m = 0.0;    // shock apex radius [m]
   double V_sh_ms= 0.0;    // shock apex speed [m/s]
   double a_m    = 0.0;    // reference size (== r_sh_m)

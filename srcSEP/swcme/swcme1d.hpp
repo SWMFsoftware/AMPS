@@ -30,10 +30,12 @@ PHYSICAL MODEL (succinct but complete)
       |B|(1 AU) is provided by the user; we infer Br(1 AU)=B1AU/sqrt(1+k²),
       where k≡Ω AU sinθ / V_sw.
 
-  • CME apex kinematics: Drag-Based Model (DBM; Vršnak & Žic 2007; Vršnak 2013)
-      u ≡ V_sh − V_sw,  u(t)   = u₀ / (1 + Γ u₀ t),
-      R_sh(t) = r₀ + V_sw t + ln(1 + Γ u₀ t)/Γ,
-      V_sh(t) = V_sw + u(t),   Γ is the drag parameter [m⁻¹].
+  • CME apex kinematics: shared BALLISTIC / DBM / DATA_DRIVEN engine.
+      For DBM, ΔV0=V0−Vsw and a=|ΔV0|:
+      ΔV(t)=ΔV0/(1+Γ a t),
+      R_sh(t)=r0+Vsw t+sgn(ΔV0) log(1+Γ a t)/Γ.
+      This sign-aware form decelerates fast CMEs and accelerates slow CMEs
+      toward Vsw.  Γ=0 is handled by the exact ballistic limit.
 
   • Compression and downstream state from the shared ideal-MHD fast-shock solver
       c_s = √(γ k_B T / m_p),   v_A = B/√(μ₀ ρ),  c_f = √(c_s² + v_A²),
@@ -104,7 +106,7 @@ USAGE SKETCH (more complete examples at bottom)
   using namespace swcme1d;
   Model m;
   m.SetAmbient(400, 6, 5, 1.2e5)            // km/s, cm^-3, nT, K
-   .SetCME(1.05, 1500, 8e-8)                // R☉, km/s, 1/km
+   .SetCME(20.0, 1500, 8e-8)                // R☉, km/s, 1/km
    .SetGeometry(0.10, 0.25)                 // Δsheath@1AU, ΔME@1AU (AU)
    .SetSmoothing(0.01, 0.02, 0.03)          // shock/LE/TE widths @1AU (AU)
    .SetSheathEjecta(1.15, 2.0, 1.10, 0.5, 1.0);  // keep ME speed ≥ V_sw
@@ -137,11 +139,11 @@ USAGE SKETCH (more complete examples at bottom)
         Bphi(r) = -Br(r) (Ω r sinθ / V_sw)
         |B|(r)  = |Br(r)| sqrt(1 + (k r_AU)^2),  k = Ω AU sinθ / V_sw
      with |B|(1 AU) set to B1AU; we solve Br(1 AU) = B1AU / sqrt(1+k^2).
-   • CME apex kinematics (DBM): with drag Γ and u(t)=V_sh−V_sw,
-        u(t)   = u0 / (1 + Γ u0 t),                     u0=V0_sh−V_sw
-        R_sh(t)= r0 + V_sw t + [ ln(1 + Γ u0 t) ] / Γ
-        V_sh(t)= V_sw + u(t)
-     (Here Γ is in SI 1/m; user supplies in 1/km and it is converted.)
+   • CME apex kinematics use the shared swcme::kinematics engine.  DBM uses
+        ΔV(t)=ΔV0/(1+Γ|ΔV0|t)
+        R_sh=r0+Vsw t+sgn(ΔV0) log(1+Γ|ΔV0|t)/Γ,
+     with an exact Γ=0 ballistic branch.  DATA_DRIVEN mode uses monotone PCHIP
+     height-time interpolation and returns its derivative as the apex speed.
    • Shock compression ratio rc from a fast-mode Mach proxy:
         c_s = sqrt(γ k_B T / m_p), v_A = B/√(μ0 ρ),
         c_f = sqrt(c_s^2 + v_A^2),  M_f ≈ max( (V_sh−V_sw)/c_f , 1 )
@@ -173,7 +175,7 @@ USAGE SKETCH (more complete examples at bottom)
 //
 // CME apex kinematics: Drag-Based Model (DBM): Vršnak & Žic (2007); Vršnak et al. (2013)
 //   u(t) = Vsh − Vsw.  With drag Γ,
-//     u(t) = u0 / (1 + Γ u0 t),   r(t) = r0 + Vsw t + (ln(1+Γ u0 t))/Γ.
+//     ΔV(t)=ΔV0/(1+Γ|ΔV0|t), r(t)=r0+Vsw t+sgn(ΔV0)ln(1+Γ|ΔV0|t)/Γ.
 //   We guard logs/denominators and convert Γ from km^-1 to m^-1.
 //
 // Regions and smoothing (self-similar):
@@ -213,7 +215,7 @@ USAGE SKETCH (more complete examples at bottom)
 //
 // CME apex kinematics: Drag-Based Model (DBM): Vršnak & Žic (2007); Vršnak et al. (2013)
 //   u(t) = Vsh − Vsw.  With drag Γ,
-//     u(t) = u0 / (1 + Γ u0 t),   r(t) = r0 + Vsw t + (ln(1+Γ u0 t))/Γ.
+//     ΔV(t)=ΔV0/(1+Γ|ΔV0|t), r(t)=r0+Vsw t+sgn(ΔV0)ln(1+Γ|ΔV0|t)/Γ.
 //   We guard logs/denominators and convert Γ from km^-1 to m^-1.
 //
 // Regions and smoothing (self-similar):
@@ -286,7 +288,7 @@ USAGE SKETCH (more complete examples at bottom)
    Model sw;  // default construct with sensible defaults
 
    sw.SetAmbient(400, 6, 5, 1.2e5)                  // V_sw[km/s], n1AU[cm^-3], B1AU[nT], T[K]
-     .SetCME(1.05, 1800, 8e-8)                      // r0[R_sun], V0_sh[km/s], Γ[1/km]
+     .SetCME(20.0, 1800, 8e-8)                      // r0[R_sun], V0_sh[km/s], Γ[1/km]
      .SetGeometry(0.10, 0.20)                       // sheath & ME thickness at 1 AU [AU]
      .SetSmoothing(0.01, 0.02, 0.03)                // edge widths at 1 AU [AU] (shock/LE/TE)
      .SetSheathEjecta(1.2, 2.0, 1.10, 0.5, 0.8);    // rc_floor, ramp_p, Vshe_LE, fME, VME
@@ -311,7 +313,7 @@ USAGE SKETCH (more complete examples at bottom)
      sin_theta  0.6–1.0      sin(colat); ≈1 in ecliptic
 
    CME apex (DBM):
-     r0_Rs      1.03–1.07    Launch radius
+     r0_Rs      ~15–20       Recommended DBM start radius in drag-dominated heliosphere
      V0_sh_kms  800–2500     Initial shock speed
      Gamma_kmInv 1e-8–2e-7   Drag Γ (↑ ⇒ stronger decel)
 
@@ -343,8 +345,11 @@ USAGE SKETCH (more complete examples at bottom)
 #include <cstddef>
 #include <cstdio>
 #include <algorithm>
+#include <stdexcept>
+#include <vector>
 
 #include "swcme_constants.hpp"
+#include "swcme_kinematics.hpp"
 #include "swcme_shock.hpp"
 
 namespace swcme1d {
@@ -369,7 +374,7 @@ inline double lerp(double a,double b,double t){ return a + (b-a)*t; }
  * @brief Tunable physical and geometric parameters of the model.
  *
  * Ambient inputs (V_sw, n1AU, |B|1AU, T) set the Parker spiral and upstream
- * thermodynamics. CME inputs (r0, V0_sh, Γ) feed the DBM apex kinematics.
+ * thermodynamics. CME inputs feed the shared ballistic/DBM/data-driven apex kinematics.
  * Geometry and smoothing control sheath/ME sizes and edge widths (all scale
  * self-similarly with R_sh). Sheath/ME shaping sets compression floor, speed
  * ramping inside sheath, and ME density/speed relative to upstream.
@@ -385,10 +390,23 @@ struct Params {
   double gamma_ad    = 5.0/3.0;
   double sin_theta   = 1.0;    // sin(colatitude) for Parker Bφ
 
-  // CME launch & drag (DBM)
-  double r0_Rs       = 1.05;   // launch radius [R☉]
-  double V0_sh_kms   = 1500.0; // initial shock speed [km/s]
-  double Gamma_kmInv = 8e-8;   // drag [1/km]
+  // CME/shock-apex kinematics.  Both 1-D and 3-D now use the shared
+  // swcme::kinematics implementation, so selecting the same mode and inputs
+  // produces exactly the same apex radius/speed in both models.
+  swcme::kinematics::Mode kinematics_mode = swcme::kinematics::Mode::DBM;
+  double r0_Rs       = 20.0;   // DBM/ballistic reference radius [R☉]
+  double V0_sh_kms   = 1500.0; // initial/reference apex speed [km/s]
+  double Gamma_kmInv = 1e-7;   // DBM drag coefficient [1/km], must be >=0; shared default with 3-D
+
+  // DATA_DRIVEN mode: monotonically increasing height-time knots.  Times are
+  // seconds in the same launch-relative clock used by prepare_step(); radii
+  // are solar radii.  The default OUTSIDE_TIME policy deliberately refuses to
+  // extrapolate beyond the observed interval unless the caller explicitly
+  // requests ballistic endpoint continuation.
+  std::vector<double> data_time_s;
+  std::vector<double> data_radius_Rs;
+  swcme::kinematics::ExtrapolationPolicy data_extrapolation =
+      swcme::kinematics::ExtrapolationPolicy::OutsideTime;
 
   // Geometry: thicknesses at 1 AU, scale ∝ R_sh
   double sheath_thick_AU_at1AU  = 0.10; // AU at 1 AU
@@ -422,9 +440,11 @@ struct Params {
  * sheath (n_up at shock & LE; V2 at shock; V at LE).
  */
 struct StepState {
-  // DBM / geometry
+  // Apex kinematics / geometry.  kinematics_mode records which shared common
+  // solver produced r_sh_m and V_sh_ms for traceable diagnostics.
+  swcme::kinematics::Mode kinematics_mode = swcme::kinematics::Mode::DBM;
   double time_s    = 0.0;     // time since launch [s]
-  double r0_m      = 1.05*Rs; // launch radius [m]
+  double r0_m      = 20.0*Rs; // default DBM reference radius [m]
   double r_sh_m    = 30*AU;   // shock apex radius [m]
   double V_sh_ms   = 1.0e6;   // shock speed [m/s]
   double r_le_m    = 29*AU;   // leading edge [m]
@@ -472,6 +492,15 @@ public:
   Model& SetParams(const Params& p){ P=p; return *this; }
   Model& SetCME(double r0_Rs,double V0_sh_kms,double Gamma_kmInv){
     P.r0_Rs=r0_Rs; P.V0_sh_kms=V0_sh_kms; P.Gamma_kmInv=Gamma_kmInv; return *this; }
+  Model& SetKinematicsMode(swcme::kinematics::Mode mode){
+    P.kinematics_mode=mode; return *this; }
+  Model& SetDataDrivenKinematics(const std::vector<double>& time_s,
+                                 const std::vector<double>& radius_Rs,
+                                 swcme::kinematics::ExtrapolationPolicy policy=
+                                     swcme::kinematics::ExtrapolationPolicy::OutsideTime){
+    P.kinematics_mode=swcme::kinematics::Mode::DataDriven;
+    P.data_time_s=time_s; P.data_radius_Rs=radius_Rs; P.data_extrapolation=policy;
+    return *this; }
   Model& SetAmbient(double V_sw_kms,double n1AU_cm3,double B1AU_nT,double T_K,
                     double gamma_ad=5.0/3.0,double sin_theta=1.0){
     P.V_sw_kms=V_sw_kms; P.n1AU_cm3=n1AU_cm3; P.B1AU_nT=B1AU_nT; P.T_K=T_K;
@@ -499,14 +528,15 @@ public:
    * Steps:
    *  1) Parse ambient inputs; compute Parker constants k and Br(1 AU) from |B|1AU.
    *  2) Scale Leblanc coefficients to match n(1 AU) in SI form n=C2/r^2+C4/r^4+C6/r^6.
-   *  3) Integrate DBM apex: u(t), V_sh(t), R_sh(t) with safeguards.
+   *  3) Evaluate the shared apex kinematics mode (BALLISTIC/DBM/DATA_DRIVEN).
    *  4) Build self-similar geometry (R_LE, R_TE) and widths; clip away from Sun.
    *  5) Evaluate upstream n and |B| at R_sh; compute c_s, v_A, c_f; estimate r_c.
    *  6) Cache *boundary values* for monotone sheath: n_up(R_sh), n_up(R_LE),
    *     V2 (RH proxy), and V_LE ≥ V_sw.
    */
   StepState prepare_step(double t_s) const {
-    StepState S; S.time_s=t_s; S.r0_m = std::max(1.05*Rs, P.r0_Rs*Rs);
+    StepState S; S.time_s=t_s; S.r0_m = P.r0_Rs*Rs;
+    S.kinematics_mode=P.kinematics_mode;
 
     // Upstream wind
     const double Vsw = std::max(1.0, P.V_sw_kms*1.0e3); // [m/s]
@@ -529,16 +559,36 @@ public:
     S.C4 = scale * (B*1e6 * (Rs*Rs*Rs*Rs));
     S.C6 = scale * (C*1e6 * (Rs*Rs*Rs*Rs*Rs*Rs));
 
-    // DBM apex kinematics
-    const double r0 = S.r0_m;
-    const double u0 = std::max(0.0, P.V0_sh_kms*1e3 - Vsw); // [m/s]
-    const double Gamma = std::max(0.0, P.Gamma_kmInv/1e3);  // [m⁻¹]
-    const double gtu = Gamma * u0 * t_s;
-    const double denom = 1.0 + gtu;
-    const double u    = (denom>0.0) ? (u0/denom) : 0.0;
-    S.V_sh_ms = Vsw + u;
-    S.r_sh_m  = r0 + Vsw*t_s + ((denom>0.0 && Gamma>0.0) ? std::log(denom)/Gamma : u0*t_s);
-    S.r_sh_m  = std::max(S.r_sh_m, 1.1*Rs);
+    // Shared CME/shock-apex kinematics.  The previous 1-D code clipped
+    // V0-Vsw to zero, which made a slow CME jump instantaneously to Vsw.
+    // Building a common SI configuration here ensures that 1-D and 3-D use
+    // exactly the same sign-aware DBM, exact Gamma=0 ballistic limit, or
+    // monotone data-driven PCHIP trajectory.
+    swcme::kinematics::Config kin;
+    kin.mode=P.kinematics_mode;
+    kin.r0_m=S.r0_m;
+    kin.V0_m_s=P.V0_sh_kms*1e3;
+    kin.Vsw_m_s=Vsw;
+    kin.Gamma_m_inv=P.Gamma_kmInv/1e3;
+    kin.extrapolation=P.data_extrapolation;
+    kin.data_time_s=P.data_time_s;
+    kin.data_radius_m.reserve(P.data_radius_Rs.size());
+    for (double radius_Rs : P.data_radius_Rs) {
+      kin.data_radius_m.push_back(radius_Rs*Rs);
+    }
+
+    const swcme::kinematics::State apex=swcme::kinematics::evaluate(kin,t_s);
+    if (apex.status!=swcme::kinematics::Status::Ok) {
+      // prepare_step() historically returned a fully usable state and had no
+      // status channel.  Until the broader configuration/status refactor is
+      // completed, fail explicitly instead of silently clipping or replacing
+      // an invalid trajectory.  DATA_DRIVEN OUTSIDE_TIME is therefore a clear
+      // caller-visible error unless an extrapolation policy was requested.
+      throw std::runtime_error(std::string("swcme1d kinematics: ")+
+                               swcme::kinematics::status_name(apex.status));
+    }
+    S.r_sh_m=apex.radius_m;
+    S.V_sh_ms=apex.speed_m_s;
 
     // Geometry (self‑similar thickness & blending widths)
     const double scale_R = S.r_sh_m / AU; // dimensionless
@@ -899,7 +949,7 @@ Example 1 — basic profile at a single time
   using namespace swcme1d;
   Model sw;
   sw.SetAmbient(450, 5.5, 4.0, 1.5e5)
-    .SetCME(1.05, 1800, 7.5e-8)
+    .SetCME(20.0, 1800, 7.5e-8)
     .SetGeometry(0.12, 0.25)
     .SetSmoothing(0.008, 0.02, 0.03)
     .SetSheathEjecta(1.2, 2.0, 1.10, 0.5, 0.8);
