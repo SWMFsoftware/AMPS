@@ -153,16 +153,14 @@ floating-point operation chain; it is not a relaxed density-physics tolerance.
 The model APIs do not expose a separately named scale factor, so inference from
 `C2` is the closest production diagnostic.
 
-The 1-D and 3-D modules currently duplicate the Leblanc coefficient literals
-and normalization arithmetic in their respective `prepare_step()` functions.
-Both use the shared adopted AU (`149597870700 m`) and nominal solar radius
-(`6.957e8 m`), and both cache scaled coefficients in a value-type `StepState`.
-No coefficient or normalization factor is static, global, or mutable shared
-state. DEN01 nevertheless executes an A=5, B=20, C=1 `cm^-3` construction and
-re-evaluation sequence independently for both models. Existing model A and B
-must retain their original results after later instances are constructed, and
-their cached coefficients must remain unchanged. This guards against future
-cross-instance contamination that would be blocking in parallel AMPS use.
+The Leblanc coefficient literals and normalization arithmetic now live only in
+production `swcme_solarwind.hpp`.  Both dimensional wrappers store the same
+`StepState::common.solar_wind` cache and merely mirror `C2/C4/C6` for backward
+source compatibility.  DEN01 still independently reconstructs the published
+coefficients from those mirrors and executes an A=5, B=20, C=1 `cm^-3`
+construction/re-evaluation sequence. Existing model A and B must retain their
+original results after later instances are constructed, guarding against any
+future cross-instance contamination in parallel AMPS use.
 
 The production APIs currently fix density normalization at one AU, so tests of
 a configurable 0.5- or 2-AU normalization radius are reported as `SKIP` rather
@@ -634,3 +632,41 @@ Typical direct use is:
 ./output/test_swcme --test CON08
 ./output/test_swcme --all
 ```
+
+
+## 1D3D01-1D3D02: common-core dimensional-equivalence tests
+
+These tests qualify the common-core refactor rather than a new physical model.
+They deliberately configure the 3-D model as a Sun-centered sphere propagating
+along +X with the solar rotation axis along +Z and compare it with an equatorial
+1-D ray.  In this limit the geometry is exactly equivalent, so any difference is
+a software duplication/regression rather than a legitimate dimensional effect.
+
+- `1D3D01` compares the canonical `StepState::common` solar-wind cache and apex
+  kinematics field-by-field, then evaluates both public model interfaces at
+  1 AU.  Density, radial velocity, `Br`, and `Bphi`/Cartesian azimuthal field
+  must agree to roundoff; transverse 3-D velocity and meridional field must
+  vanish in the chosen symmetry plane.
+- `1D3D02` compares the complete shock state at the spherical apex.  The 1-D
+  `StepState::shock_jump` is compared against the 3-D
+  `shock_state_direction()` result for shock existence, solver status, radius,
+  normal speed, `theta_Bn`, fast-mode speed/Mach number, compression, upstream
+  density, full upstream/downstream velocity and magnetic-field vectors,
+  downstream density, and downstream pressure.
+
+The tolerances are roundoff-level because both interfaces are now expected to
+call the same production core.  A failure must be diagnosed as a wrapper input
+mismatch, a reintroduced duplicate equation, or a geometry reduction error; the
+tolerance must not be relaxed to hide the difference.
+
+Typical use:
+
+```sh
+./output/test_swcme --test 1D3D01
+./output/test_swcme --test 1D3D02
+./output/test_swcme --all
+```
+
+`1D3D03` is intentionally deferred until the common SWCME-to-SEP source record
+is implemented; that test will verify identical source inputs before 1-D/3-D
+transport diverges.

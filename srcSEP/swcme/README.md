@@ -232,6 +232,47 @@ positive wind speed is required by the Parker/DBM baseline.
 See `CONFIGURATION_UNITS_FIX_NOTES.md` and the `CFG01`/`CFG02` sections in
 `test/README.md` for the full contract and validation coverage.
 
+
+## Shared common physics core for 1-D and 3-D
+
+SWCME now prepares dimensionality-independent solar-wind and apex-kinematic
+physics through two shared production components:
+
+- `swcme_solarwind.hpp` owns the Leblanc density coefficients and normalization,
+  Parker radial-field normalization, Parker scalar components, the Cartesian
+  Parker vector for an arbitrary solar axis, and the current proton thermal
+  pressure closure; and
+- `swcme_core.hpp` converts one common public-unit configuration to SI, prepares
+  the shared solar-wind cache, and evaluates the shared ballistic/DBM/data-driven
+  apex kinematics.
+
+Both `swcme1d::StepState` and `swcme3d::StepState` retain legacy mirror fields
+(`C2/C4/C6`, `Br1AU_T`, `k_AU`, `V_sw`, apex radius/speed) so existing source
+continues to compile.  Those fields are no longer independently calculated; they
+are copied from `StepState::common`.  This makes the common prepared state the
+authoritative source while preserving the current public interfaces.
+
+The dimensional wrappers now differ only where geometry genuinely differs.  The
+1-D model supplies a fixed ray `sin(theta)` to the common Parker-component
+function.  The 3-D model derives local latitude from the solar rotation axis and
+radial direction and asks the same common Parker implementation to construct the
+Cartesian field.  Both models call the same common Leblanc density evaluator and
+the same proton-pressure closure before entering the already shared ideal-MHD
+shock solver.
+
+The new `1D3D01` and `1D3D02` validation tests are permanent guards against a
+return of duplicated physics.  `1D3D01` compares the canonical common cache and
+the public upstream density/velocity/Parker field for an exactly equivalent
+equatorial geometry.  `1D3D02` compares the complete MHD shock state in the
+spherical +X limit, including shock existence, Mach number, compression,
+upstream/downstream vectors, density, and pressure.  Both must agree to
+roundoff-level tolerances.
+
+This refactor intentionally does **not** unify the phenomenological sheath/ejecta
+region shaping; that behavior is still dimension-specific and is covered by the
+separate region-model remediation item.  Likewise, `1D3D03` remains reserved for
+the future SEP-source contract, which has not yet been implemented.
+
 ## Validation
 
 Build the validation executable from `test/`:
@@ -291,9 +332,11 @@ momentum and energy fluxes, entropy/admissibility, and the weak-shock limit.
 
 ## Remaining remediation items
 
-The current model still requires separate remediation of the 1-D ejecta
-density/velocity-factor bugs, shock-mesh apex/seam topology, centralized
-configuration/unit validation.  Magnetic connectivity/cobpoint tracking is now
-implemented and validated by CON01-CON08; the remaining items retain independent
-validation gates.  CME/shock-apex kinematics are now
-shared and validated by KIN01-KIN08.
+The dimensionality-independent constants, units, configuration validation,
+Leblanc/Parker ambient state, apex kinematics, and ideal-MHD shock solver are now
+shared between 1-D and 3-D.  Remaining work is intentionally focused on the
+parts that are still model-specific or infrastructural: the phenomenological
+sheath/ejecta region model (including the known 1-D ejecta-factor bugs), shock
+mesh apex/seam topology, explicit numerical-status propagation in the remaining
+3-D field/region evaluators, the shock-acceleration/source contract, and the
+higher-level Python validation campaign runner.

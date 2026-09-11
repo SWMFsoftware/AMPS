@@ -50,6 +50,8 @@ void test_con06(swcme_test::Context& context);
 void test_con07(swcme_test::Context& context);
 void test_con08(swcme_test::Context& context);
 void test_1d_ambient_at_one_au(swcme_test::Context& context);
+void test_1d3d01(swcme_test::Context& context);
+void test_1d3d02(swcme_test::Context& context);
 
 namespace {
 
@@ -112,6 +114,8 @@ const swcme_test::TestCase kTests[] = {
     {"CON08", "3D", "Connectivity Parker path-length accuracy", test_con08},
     {"1D_AMBIENT_01", "1D", "Ambient values at 1 AU",
      test_1d_ambient_at_one_au},
+    {"1D3D01", "1D<->3D", "Common-core upstream solar-wind state identity", test_1d3d01},
+    {"1D3D02", "1D<->3D", "Common-core 1-D versus 3-D shock-state identity", test_1d3d02},
 };
 
 constexpr std::size_t kTestCount = sizeof(kTests) / sizeof(kTests[0]);

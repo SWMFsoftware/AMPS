@@ -4,6 +4,8 @@
 #include "swcme_units.hpp"
 #include "swcme_config.hpp"
 #include "swcme_kinematics.hpp"
+#include "swcme_solarwind.hpp"
+#include "swcme_core.hpp"
 #include "swcme_shock.hpp"
 // ============================================================================
 // swcme3d.hpp
@@ -294,6 +296,12 @@ inline swcme::config::ValidationResult validate_params(const Params& p) {
 // CACHES everything required by hot loops (n,V,B,divV evaluators).
 // ----------------------------------------------------------------------------
 struct StepState {
+  // Canonical dimensionality-independent prepared state.  3-D keeps several
+  // legacy mirror fields below because they are part of the current public
+  // StepState API, but their values are copied from this common state instead
+  // of being recomputed independently.
+  swcme::core::PreparedState common;
+
   // Apex-aligned orthonormal frame (e1 ≡ apex dir; e2,e3 transverse)
   double e1[3], e2[3], e3[3];
 

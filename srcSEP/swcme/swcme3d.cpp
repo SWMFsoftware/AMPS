@@ -343,48 +343,20 @@ static inline double norm3(const double v[3]) {
 static inline void parker_vec_T_fast(const swcme3d::StepState& S,
                                      const double u[3], double r_m,
                                      double B_out[3]){
-  using namespace swcme3d;
-
-  const double r_AU = r_m / AU;
-  const double Br = S.Br1AU_T / (r_AU*r_AU);
-
-  // Cross product Omega_hat × e_r gives both the azimuthal direction and,
-  // through its magnitude, the local sin(colatitude).  S.solar_axis_hat is
-  // normalized in prepare_step(), while u is a unit radial direction supplied
-  // by the point evaluator.
-  const double cross[3] = {
-      S.solar_axis_hat[1]*u[2] - S.solar_axis_hat[2]*u[1],
-      S.solar_axis_hat[2]*u[0] - S.solar_axis_hat[0]*u[2],
-      S.solar_axis_hat[0]*u[1] - S.solar_axis_hat[1]*u[0]};
-  const double sin_theta_local =
-      std::sqrt(cross[0]*cross[0] + cross[1]*cross[1] + cross[2]*cross[2]);
-
-  // The cross product can vanish exactly at the rotation poles.  In that
-  // physical limit the Parker winding is zero, so the transverse field is
-  // exactly zero and no arbitrary e_phi direction should be manufactured.
-  constexpr double AXIS_TOL = 64.0*std::numeric_limits<double>::epsilon();
-  if (sin_theta_local <= AXIS_TOL) {
-    B_out[0] = Br*u[0];
-    B_out[1] = Br*u[1];
-    B_out[2] = Br*u[2];
-    return;
-  }
-
-  const double inv_sin_theta = 1.0/sin_theta_local;
-  const double ephi[3] = {
-      cross[0]*inv_sin_theta,
-      cross[1]*inv_sin_theta,
-      cross[2]*inv_sin_theta};
-
-  // S.k_AU is the equatorial coefficient Omega*AU/V_sw.  Multiplication by
-  // the local sin(theta) below supplies the latitude dependence required by
-  // the Parker solution instead of reusing one global latitude everywhere.
-  const double Bphi =
-      -Br * S.k_AU * r_AU * sin_theta_local;
-
-  B_out[0] = Br*u[0] + Bphi*ephi[0];
-  B_out[1] = Br*u[1] + Bphi*ephi[1];
-  B_out[2] = Br*u[2] + Bphi*ephi[2];
+  // The complete Parker scalar/vector physics now lives in the common solar-
+  // wind core.  This file-local wrapper preserves the existing hot-path call
+  // sites while making it impossible for the 3-D formula to drift away from
+  // the 1-D Parker components.  Geometry supplies only the normalized solar
+  // axis and local radial direction.
+  const std::array<double,3> axis={{S.solar_axis_hat[0],
+                                    S.solar_axis_hat[1],
+                                    S.solar_axis_hat[2]}};
+  const std::array<double,3> radial={{u[0],u[1],u[2]}};
+  const std::array<double,3> B=swcme::solarwind::parker_field_cartesian(
+      S.common.solar_wind,axis,radial,r_m);
+  B_out[0]=B[0];
+  B_out[1]=B[1];
+  B_out[2]=B[2];
 }
 
 // ----------------------------------------------------------------------------
@@ -439,45 +411,49 @@ StepState Model::prepare_step(double t_s) const {
     S.solar_rotation_rate_rad_s=P_.solar_rotation_rate_rad_s;
   }
 
-  // 2) Shared CME/shock-apex kinematics.
+  // 2) Dimensionality-independent ambient state and apex kinematics.
   //
-  // The legacy 3-D DBM used (1+Gamma*u0*t) with signed u0 directly in the
-  // denominator/logarithm.  That is valid only for the fast-CME branch and
-  // makes a slow CME move away from Vsw.  It also divided by Gamma when
-  // Gamma=0 and then used finite_or() to hide the invalid radius.  Both 1-D
-  // and 3-D now call the same sign-aware common solver, which implements
-  //   DeltaV(t)=DeltaV0/(1+Gamma*|DeltaV0|*t)
-  // and an exact Gamma=0 ballistic limit.  DATA_DRIVEN mode is evaluated by
-  // the same common component using monotone PCHIP interpolation.
-  const double r0_m=swcme::units::solar_radii_to_m(P_.r0_Rs);
-  S.V_sw_ms=swcme::units::km_per_s_to_m_per_s(P_.V_sw_kms);
-  S.kinematics_mode=P_.kinematics_mode;
+  // swcme::core::prepare() is now the single production path that converts
+  // public heliophysics units, normalizes the Leblanc/Parker background, and
+  // evaluates BALLISTIC/DBM/DATA_DRIVEN apex kinematics.  The 3-D wrapper adds
+  // only its genuinely geometric information (rotation axis, CME frame, shock
+  // surface).  This removes the last independent 3-D copies of the density
+  // normalization and kinematic setup.
+  swcme::core::CommonConfig common_cfg;
+  common_cfg.V_sw_kms=P_.V_sw_kms;
+  common_cfg.n1AU_cm3=P_.n1AU_cm3;
+  common_cfg.B1AU_nT=P_.B1AU_nT;
+  common_cfg.T_K=P_.T_K;
+  common_cfg.gamma_ad=P_.gamma_ad;
+  common_cfg.parker_reference_sin_theta=P_.sin_theta;
+  common_cfg.solar_rotation_rate_rad_s=P_.solar_rotation_rate_rad_s;
+  common_cfg.kinematics_mode=P_.kinematics_mode;
+  common_cfg.r0_Rs=P_.r0_Rs;
+  common_cfg.V0_sh_kms=P_.V0_sh_kms;
+  common_cfg.Gamma_kmInv=P_.Gamma_kmInv;
+  common_cfg.data_time_s=P_.data_time_s;
+  common_cfg.data_radius_Rs=P_.data_radius_Rs;
+  common_cfg.data_extrapolation=P_.data_extrapolation;
 
-  swcme::kinematics::Config kin;
-  kin.mode=P_.kinematics_mode;
-  kin.r0_m=r0_m;
-  kin.V0_m_s=swcme::units::km_per_s_to_m_per_s(P_.V0_sh_kms);
-  kin.Vsw_m_s=S.V_sw_ms;
-  kin.Gamma_m_inv=swcme::units::km_inverse_to_m_inverse(P_.Gamma_kmInv);
-  kin.extrapolation=P_.data_extrapolation;
-  kin.data_time_s=P_.data_time_s;
-  kin.data_radius_m.reserve(P_.data_radius_Rs.size());
-  for (double radius_Rs : P_.data_radius_Rs) {
-    kin.data_radius_m.push_back(swcme::units::solar_radii_to_m(radius_Rs));
-  }
-
-  const swcme::kinematics::State apex=swcme::kinematics::evaluate(kin,t_s);
-  if (apex.status!=swcme::kinematics::Status::Ok) {
-    // prepare_step() predates an explicit model-status return channel.  Until
-    // that broader API refactor is completed, report an invalid or out-of-time
-    // trajectory as an exception rather than converting it to a plausible
-    // radius/speed with finite_or().
+  S.common=swcme::core::prepare(common_cfg,t_s);
+  if (S.common.apex.status!=swcme::kinematics::Status::Ok) {
     throw std::runtime_error(std::string("swcme3d kinematics: ")+
-                             swcme::kinematics::status_name(apex.status));
+                             swcme::kinematics::status_name(S.common.apex.status));
   }
-  S.r_sh_m=apex.radius_m;
-  S.V_sh_ms=apex.speed_m_s;
+
+  // Populate the legacy/public StepState mirrors from the common state.  No
+  // equations are repeated here; these assignments exist only to preserve the
+  // current public ABI/source expectations of callers and validation tools.
+  S.V_sw_ms=S.common.solar_wind.V_sw_m_s;
+  S.kinematics_mode=P_.kinematics_mode;
+  S.r_sh_m=S.common.apex.radius_m;
+  S.V_sh_ms=S.common.apex.speed_m_s;
   S.a_m=S.r_sh_m;
+  S.C2=S.common.solar_wind.C2;
+  S.C4=S.common.solar_wind.C4;
+  S.C6=S.common.solar_wind.C6;
+  S.k_AU=S.common.solar_wind.k_AU_equatorial;
+  S.Br1AU_T=S.common.solar_wind.Br1AU_T;
 
   // 3) Self-similar region widths & derived radii
   const double scaleR = S.r_sh_m / AU;
@@ -503,39 +479,9 @@ StepState Model::prepare_step(double t_s) const {
   S.inv_dr_sheath  = (S.dr_sheath_m>0.0)? 1.0/S.dr_sheath_m : 0.0;
   S.rc_floor       = (P_.sheath_comp_floor>1.0)? P_.sheath_comp_floor : 1.0;
 
-  // 6) Leblanc coefficients in SI (cached)
-  {
-    const double A=3.3e5, B=4.1e6, C=8.0e7; // cm^-3 coefficients
-    const double Rs2=Rs*Rs, Rs4=Rs2*Rs2, Rs6=Rs4*Rs2;
-    const double sAU=Rs/AU;
-    const double n1_base=A*sAU*sAU + B*std::pow(sAU,4) + C*std::pow(sAU,6);
-    const double leb_scale=(n1_base>0.0)? (P_.n1AU_cm3/n1_base):1.0;
-    const double K = leb_scale*swcme::units::cm3_to_m3(1.0); // cm^-3 -> m^-3
-    S.C2 = K*A*Rs2;
-    S.C4 = K*B*Rs4;
-    S.C6 = K*C*Rs6;
-  }
-
-  // 7) Parker constants for this step.
-  //
-  // k_AU is intentionally latitude-independent: it stores Omega*AU/V_sw.
-  // The local sin(theta) is evaluated from geometry in parker_vec_T_fast().
-  // Params::sin_theta is retained only as the reference colatitude used to
-  // interpret the legacy B1AU_nT total-field normalization.  This preserves
-  // existing inputs while removing the physically incorrect global-latitude
-  // assumption from the 3-D field itself.
-  {
-    const double B1AU_T = swcme::units::nT_to_T(P_.B1AU_nT);
-    const double reference_sin_theta = P_.sin_theta;
-
-    // V_sw is strictly positive by the common configuration contract, so the
-    // Parker pitch needs no zero-speed fallback.
-    S.k_AU = S.solar_rotation_rate_rad_s*AU/S.V_sw_ms;
-
-    const double reference_pitch = S.k_AU*reference_sin_theta;
-    S.Br1AU_T = B1AU_T /
-        std::sqrt(1.0 + reference_pitch*reference_pitch);
-  }
+  // 6-7) Leblanc and Parker caches were prepared by swcme::core above.
+  // The numbered placeholder is retained in comments because geometry remains
+  // step 8 in older documentation/output traces.
 
   // 8) Geometry caches
   if (P_.shape==ShockShape::Ellipsoid){
@@ -710,9 +656,8 @@ bool Model::shock_state_direction(const StepState& S, const double u_in[3],
   // Upstream density is evaluated at the shock surface, never at the caller's
   // sample radius.  Using the query point here made the same physical shock
   // acquire different Mach numbers depending on where the model was sampled.
-  const double r=std::max(Rdir,1.05*Rs);
-  const double r2=r*r, inv2=1.0/r2, inv4=inv2*inv2, inv6=inv4*inv2;
-  const double n_up_m3=finite_or(S.C2*inv2 + S.C4*inv4 + S.C6*inv6,0.0);
+  const double r=std::max(Rdir,swcme::solarwind::MIN_RADIUS_M);
+  const double n_up_m3=swcme::solarwind::density_m3(S.common.solar_wind,r);
   state.upstream_n_m3=n_up_m3;
 
   double B_up[3]={0.0,0.0,0.0};
@@ -735,7 +680,8 @@ bool Model::shock_state_direction(const StepState& S, const double u_in[3],
   // correction focused on shock existence and MHD conservation.
   swcme::shock::PrimitiveState upstream;
   upstream.rho_kg_m3=std::max(0.0,n_up_m3)*MP;
-  upstream.pressure_Pa=std::max(0.0,n_up_m3)*KB*std::max(0.0,P_.T_K);
+  upstream.pressure_Pa=swcme::solarwind::proton_pressure_Pa(
+      S.common.solar_wind,std::max(0.0,n_up_m3));
   upstream.velocity_m_s={{S.V_sw_ms*u[0],S.V_sw_ms*u[1],S.V_sw_ms*u[2]}};
   upstream.magnetic_T={{B_up[0],B_up[1],B_up[2]}};
   state.upstream=upstream;
@@ -1147,8 +1093,7 @@ void Model::evaluate_cartesian_fast(const StepState& S,
     const double r2=std::max(1e-12,x*x+y*y+z*z);
     const double r=std::sqrt(r2), invr=1.0/r;
     const double u[3]={x*invr,y*invr,z*invr};
-    const double inv2=1.0/r2, inv4=inv2*inv2, inv6=inv4*inv2;
-    const double n_up=finite_or(S.C2*inv2+S.C4*inv4+S.C6*inv6,1e6);
+    const double n_up=swcme::solarwind::density_m3(S.common.solar_wind,r);
 
     LocalShockState shock;
     const bool surface_exists=shock_state_direction(S,u,shock);
@@ -1171,10 +1116,9 @@ void Model::evaluate_cartesian_fast(const StepState& S,
       // The inner/leading-edge target remains phenomenological and is kept
       // radial; interpolation of the full velocity vector preserves possible
       // tangential velocity generated by an oblique MHD jump near the shock.
-      const double r_le_safe=std::max(r_le,1.05*Rs);
-      const double inv2le=1.0/(r_le_safe*r_le_safe);
-      const double n_up_le=finite_or(S.C2*inv2le+S.C4*inv2le*inv2le+
-                                     S.C6*inv2le*inv2le*inv2le,n_up);
+      const double r_le_safe=std::max(r_le,swcme::solarwind::MIN_RADIUS_M);
+      const double n_up_le=swcme::solarwind::density_m3(
+          S.common.solar_wind,r_le_safe);
       const double n2=std::max(shock.downstream_n_m3,1.0e-300);
       const double nle=std::max(n_up_le,1.0e-300);
       const double n_sheath=std::exp((1.0-blend)*std::log(n2)+blend*std::log(nle));
@@ -1228,8 +1172,7 @@ void Model::evaluate_cartesian_with_B(const StepState& S,
     const double r2=std::max(1e-12,x*x+y*y+z*z);
     const double r=std::sqrt(r2), invr=1.0/r;
     const double u[3]={x*invr,y*invr,z*invr};
-    const double inv2=1.0/r2, inv4=inv2*inv2, inv6=inv4*inv2;
-    const double n_up=finite_or(S.C2*inv2+S.C4*inv4+S.C6*inv6,1e6);
+    const double n_up=swcme::solarwind::density_m3(S.common.solar_wind,r);
     double B_up[3]; ::parker_vec_T_fast(S,u,r,B_up);
 
     LocalShockState shock;
@@ -1252,10 +1195,9 @@ void Model::evaluate_cartesian_with_B(const StepState& S,
       const double power=std::max(1.0,P_.sheath_ramp_power);
       const double blend=smoothstep01(std::pow(xi,power));
 
-      const double r_le_safe=std::max(r_le,1.05*Rs);
-      const double inv2le=1.0/(r_le_safe*r_le_safe);
-      const double n_up_le=finite_or(S.C2*inv2le+S.C4*inv2le*inv2le+
-                                     S.C6*inv2le*inv2le*inv2le,n_up);
+      const double r_le_safe=std::max(r_le,swcme::solarwind::MIN_RADIUS_M);
+      const double n_up_le=swcme::solarwind::density_m3(
+          S.common.solar_wind,r_le_safe);
       const double n2=std::max(shock.downstream_n_m3,1.0e-300);
       const double nle=std::max(n_up_le,1.0e-300);
       const double n_sheath=std::exp((1.0-blend)*std::log(n2)+blend*std::log(nle));

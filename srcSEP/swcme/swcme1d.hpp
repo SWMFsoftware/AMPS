@@ -352,6 +352,8 @@ USAGE SKETCH (more complete examples at bottom)
 #include "swcme_units.hpp"
 #include "swcme_config.hpp"
 #include "swcme_kinematics.hpp"
+#include "swcme_solarwind.hpp"
+#include "swcme_core.hpp"
 #include "swcme_shock.hpp"
 
 namespace swcme1d {
@@ -465,6 +467,12 @@ inline swcme::config::ValidationResult validate_params(const Params& p) {
  * sheath (n_up at shock & LE; V2 at shock; V at LE).
  */
 struct StepState {
+  // Canonical dimensionality-independent prepared state.  The fields below
+  // mirror selected values for backward/source compatibility with existing
+  // callers, but ambient normalization and apex kinematics are computed only
+  // once by swcme::core::prepare().
+  swcme::core::PreparedState common;
+
   // Apex kinematics / geometry.  kinematics_mode records which shared common
   // solver produced r_sh_m and V_sh_ms for traceable diagnostics.
   swcme::kinematics::Mode kinematics_mode = swcme::kinematics::Mode::DBM;
@@ -492,6 +500,10 @@ struct StepState {
   // is applied; sheath_comp_floor can no longer manufacture a shock.
   bool has_shock   = false;
   bool shock_solver_converged = true;
+  // Preserve the complete shared solver result so cross-dimensional tests and
+  // future source coupling can compare the exact same MHD state instead of
+  // reconstructing it from a few scalar mirrors.
+  swcme::shock::JumpResult shock_jump;
   double rc        = 1.0;     // physical density compression; exactly 1 if no shock
   double n_up_shock = 0.0;    // upstream density at shock radius [m⁻3]
   double n_up_le    = 0.0;    // upstream density at leading edge [m⁻3]
@@ -578,61 +590,48 @@ public:
     }
 
     StepState S; S.time_s=t_s;
-    S.r0_m = swcme::units::solar_radii_to_m(P.r0_Rs);
-    S.kinematics_mode=P.kinematics_mode;
 
-    // Unit conversion is deliberately pure: zero or negative values are not
-    // repaired here.  Physical admissibility was established by validate().
-    const double Vsw = swcme::units::km_per_s_to_m_per_s(P.V_sw_kms);
-    S.V_up_ms = Vsw;
+    // Build the dimensionality-independent core configuration in public units
+    // and prepare it once.  This single call now owns unit conversion, Leblanc
+    // normalization, Parker radial-field normalization, and apex kinematics.
+    // The 1-D wrapper only supplies its fixed reference latitude and later
+    // applies 1-D region geometry.
+    swcme::core::CommonConfig common_cfg;
+    common_cfg.V_sw_kms=P.V_sw_kms;
+    common_cfg.n1AU_cm3=P.n1AU_cm3;
+    common_cfg.B1AU_nT=P.B1AU_nT;
+    common_cfg.T_K=P.T_K;
+    common_cfg.gamma_ad=P.gamma_ad;
+    common_cfg.parker_reference_sin_theta=P.sin_theta;
+    common_cfg.solar_rotation_rate_rad_s=OMEGA_SUN;
+    common_cfg.kinematics_mode=P.kinematics_mode;
+    common_cfg.r0_Rs=P.r0_Rs;
+    common_cfg.V0_sh_kms=P.V0_sh_kms;
+    common_cfg.Gamma_kmInv=P.Gamma_kmInv;
+    common_cfg.data_time_s=P.data_time_s;
+    common_cfg.data_radius_Rs=P.data_radius_Rs;
+    common_cfg.data_extrapolation=P.data_extrapolation;
 
-    // Parker spiral constants from |B|(1 AU).
-    const double B1AU_T = swcme::units::nT_to_T(P.B1AU_nT);
-    S.k_AU = (Vsw>0.0) ? (OMEGA_SUN*AU*P.sin_theta / Vsw) : 0.0;
-    S.Br1AU_T = (B1AU_T>0.0) ? (B1AU_T / std::sqrt(1.0 + S.k_AU*S.k_AU)) : 0.0;
-
-    // Leblanc coefficients scaled to match n(1 AU)
-    const double A = 3.3e5, B = 4.1e6, C = 8.0e7; // [cm⁻³]
-    const double n1AU_target = swcme::units::cm3_to_m3(P.n1AU_cm3); // to m⁻³
-    // Evaluate the nominal Leblanc profile at one AU explicitly in solar-radius
-    // units; keeping one expression avoids a redundant intermediate that used
-    // to obscure the normalization algebra.
-    const double n1AU_base = (A*std::pow(Rs/AU,2) + B*std::pow(Rs/AU,4) + C*std::pow(Rs/AU,6)) * swcme::units::cm3_to_m3(1.0);
-    const double scale = (n1AU_base>0.0) ? (n1AU_target / n1AU_base) : 0.0;
-    S.C2 = scale * (swcme::units::cm3_to_m3(A) * (Rs*Rs));
-    S.C4 = scale * (swcme::units::cm3_to_m3(B) * (Rs*Rs*Rs*Rs));
-    S.C6 = scale * (swcme::units::cm3_to_m3(C) * (Rs*Rs*Rs*Rs*Rs*Rs));
-
-    // Shared CME/shock-apex kinematics.  The previous 1-D code clipped
-    // V0-Vsw to zero, which made a slow CME jump instantaneously to Vsw.
-    // Building a common SI configuration here ensures that 1-D and 3-D use
-    // exactly the same sign-aware DBM, exact Gamma=0 ballistic limit, or
-    // monotone data-driven PCHIP trajectory.
-    swcme::kinematics::Config kin;
-    kin.mode=P.kinematics_mode;
-    kin.r0_m=S.r0_m;
-    kin.V0_m_s=swcme::units::km_per_s_to_m_per_s(P.V0_sh_kms);
-    kin.Vsw_m_s=Vsw;
-    kin.Gamma_m_inv=swcme::units::km_inverse_to_m_inverse(P.Gamma_kmInv);
-    kin.extrapolation=P.data_extrapolation;
-    kin.data_time_s=P.data_time_s;
-    kin.data_radius_m.reserve(P.data_radius_Rs.size());
-    for (double radius_Rs : P.data_radius_Rs) {
-      kin.data_radius_m.push_back(swcme::units::solar_radii_to_m(radius_Rs));
-    }
-
-    const swcme::kinematics::State apex=swcme::kinematics::evaluate(kin,t_s);
-    if (apex.status!=swcme::kinematics::Status::Ok) {
-      // prepare_step() historically returned a fully usable state and had no
-      // status channel.  Until the broader configuration/status refactor is
-      // completed, fail explicitly instead of silently clipping or replacing
-      // an invalid trajectory.  DATA_DRIVEN OUTSIDE_TIME is therefore a clear
-      // caller-visible error unless an extrapolation policy was requested.
+    S.common=swcme::core::prepare(common_cfg,t_s);
+    if (S.common.apex.status!=swcme::kinematics::Status::Ok) {
       throw std::runtime_error(std::string("swcme1d kinematics: ")+
-                               swcme::kinematics::status_name(apex.status));
+                               swcme::kinematics::status_name(S.common.apex.status));
     }
-    S.r_sh_m=apex.radius_m;
-    S.V_sh_ms=apex.speed_m_s;
+
+    // Legacy StepState fields are mirrors only.  Keeping them populated avoids
+    // breaking existing callers while guaranteeing that both dimensional
+    // models receive identical common-core values.
+    S.r0_m=S.common.r0_m;
+    S.kinematics_mode=P.kinematics_mode;
+    S.V_up_ms=S.common.solar_wind.V_sw_m_s;
+    S.Br1AU_T=S.common.solar_wind.Br1AU_T;
+    S.k_AU=S.common.solar_wind.k_AU_equatorial*P.sin_theta;
+    S.C2=S.common.solar_wind.C2;
+    S.C4=S.common.solar_wind.C4;
+    S.C6=S.common.solar_wind.C6;
+    S.r_sh_m=S.common.apex.radius_m;
+    S.V_sh_ms=S.common.apex.speed_m_s;
+    const double Vsw=S.V_up_ms;
 
     // Geometry (self‑similar thickness & blending widths)
     const double scale_R = S.r_sh_m / AU; // dimensionless
@@ -656,14 +655,18 @@ public:
     // local shock normal, while B_phi remains a tangential component.  This
     // vector decomposition lets the same ideal-MHD jump solver used by 3-D
     // determine both shock existence and the downstream state.
-    const double Br_sh  = (S.Br1AU_T>0.0) ? (S.Br1AU_T * (AU/S.r_sh_m)*(AU/S.r_sh_m)) : 0.0;
-    const double Bphi_sh= -Br_sh * (OMEGA_SUN * S.r_sh_m * P.sin_theta / Vsw);
-    S.B_up_T = std::sqrt(Br_sh*Br_sh + Bphi_sh*Bphi_sh);
+    const swcme::solarwind::ParkerComponents parker_sh =
+        swcme::solarwind::parker_components(
+            S.common.solar_wind,S.r_sh_m,P.sin_theta);
+    const double Br_sh=parker_sh.Br_T;
+    const double Bphi_sh=parker_sh.Bphi_T;
+    S.B_up_T=parker_sh.Bmag_T;
 
     const double n_up_sh = density_upstream(S, S.r_sh_m);
     swcme::shock::PrimitiveState upstream;
     upstream.rho_kg_m3 = std::max(0.0,n_up_sh)*MP;
-    upstream.pressure_Pa = std::max(0.0,n_up_sh)*KB*std::max(0.0,P.T_K);
+    upstream.pressure_Pa = swcme::solarwind::proton_pressure_Pa(
+        S.common.solar_wind,std::max(0.0,n_up_sh));
     upstream.velocity_m_s = {{Vsw,0.0,0.0}};
     upstream.magnetic_T = {{Br_sh,Bphi_sh,0.0}};
 
@@ -675,6 +678,7 @@ public:
     const swcme::shock::JumpResult jump =
         swcme::shock::solve_ideal_mhd_fast_shock(
             upstream,{{1.0,0.0,0.0}},S.V_sh_ms,P.gamma_ad);
+    S.shock_jump=jump;
     S.has_shock = jump.has_shock;
     S.shock_solver_converged = jump.solver_converged;
     S.rc = (S.has_shock && S.shock_solver_converged) ? jump.compression : 1.0;
@@ -703,12 +707,10 @@ public:
 
   // Upstream Leblanc density (fast; SI). r is clipped ≥1.05 R☉ for stability
   static inline double density_upstream(const StepState& S, double r_m){
-    const double r = std::max(r_m, 1.05*Rs);
-    const double inv2 = 1.0/(r*r);
-    const double inv4 = inv2*inv2;
-    const double inv6 = inv4*inv2;
-    double n = S.C2*inv2 + S.C4*inv4 + S.C6*inv6;
-    return (std::isfinite(n) && n>0.0) ? n : 0.0;
+    // The Leblanc profile is evaluated by the common production core.  This
+    // wrapper is retained only for source compatibility with existing 1-D
+    // code/tests; it no longer carries an independent density equation.
+    return swcme::solarwind::density_m3(S.common.solar_wind,r_m);
   }
 
   // ----------------------------- Fast evaluator ------------------------------
@@ -826,14 +828,16 @@ public:
     // First get n & V
     evaluate_radii_fast(S, r_m, n_m3, V_ms, N);
 
-    const double Vsw = S.V_up_ms;
-    const double Br1 = S.Br1AU_T;
-
     for (std::size_t i=0;i<N;++i){
       const double r = std::max(r_m[i], 1.05*Rs);
-      // Parker field upstream baseline
-      double Br  = (Br1) * (AU/r)*(AU/r);
-      double Bph = -Br * (OMEGA_SUN * r * P.sin_theta / Vsw);
+      // Parker field upstream baseline from the same common scalar Parker
+      // implementation used by the 3-D model.  Only the 1-D fixed latitude
+      // supplied by Params::sin_theta is dimensionality-specific here.
+      const swcme::solarwind::ParkerComponents parker =
+          swcme::solarwind::parker_components(
+              S.common.solar_wind,r,P.sin_theta);
+      double Br=parker.Br_T;
+      double Bph=parker.Bphi_T;
 
       // Single, well‑defined sheath‑only amplification of tangential component
       if (r < S.r_sh_m && r >= S.r_le_m){
