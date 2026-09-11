@@ -543,6 +543,48 @@ make -j
 ./output/test_swcme --test OUT06
 ```
 
+### Independent output parsing (OUT01)
+
+The three production 3-D Tecplot products now use one explicit 25-variable
+schema whose names include their physical units.  The exact ordered tokens are
+`X[m]`, `Y[m]`, `Z[m]`, `n[m^-3]`, the three velocity components in `[m/s]`,
+the three magnetic-field components in `[T]`, `divVsw[s^-1]`, the
+dimensionless compression and normal fields marked `[-]`, shock speeds in
+`[m/s]`, triangle area in `[m^2]`, and centroids in `[m]`.  This replaces the
+former unitless 3-D header names; downstream scripts should select the new
+unit-qualified names.
+
+OUT01 writes a small deterministic surface-only file, four-zone dataset
+bundle, and standalone min-X face through the normal transactional filesystem
+backend.  A validation-only parser then reads the committed bytes using its own
+Tecplot grammar and a separately declared expected schema.  It does not import
+the writer's variable literal or output helpers, so a production-side format
+change cannot silently change the reference side of the test.
+
+The parser verifies quoted titles, variable names, units and order; exact zone
+kinds and declarations; BLOCK variable locations and per-block counts; POINT
+row widths; structured dimensions; node and element counts; one-based,
+in-range, distinct triangle indices; numerical finiteness; and exact
+end-of-file consumption.  Parsed connectivity is compared with the requested
+mesh, and representative surface, volume, and face values are compared with
+direct model evaluations within the ten-significant-digit `%.9e` formatting
+precision.  The standalone face must also reproduce the face zone embedded in
+the bundle.
+
+Sensitivity probes corrupt one contract at a time—an added trailing record, a
+changed variable unit, an out-of-range triangle index, and an extra POINT
+column—and require the independent parser to reject each mutation.  OUT01 is a
+post-commit consumer validation; the earlier OUT06, OUT04, OUT05, OUT02, and
+OUT03 gates continue to own preflight, write detection, and publication safety.
+
+Run the gate with:
+
+```sh
+cd test
+make -j
+./output/test_swcme --test OUT01
+```
+
 ### `SEPSourceState`
 
 `SEPSourceState` is the stable transport-facing source record.  It contains:

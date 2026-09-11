@@ -1079,15 +1079,15 @@ public:
 
   // --- Tecplot writers (VARIABLES defined exactly below) --------------------
   //
-  // VARIABLES (same order in all zones written by these functions):
-  //   1: X [m],  2: Y [m],  3: Z [m],
-  //   4: n [m^-3],  5: Vx [m/s], 6: Vy [m/s], 7: Vz [m/s],
-  //   8: Bx [T], 9: By [T], 10: Bz [T], 11: divVsw [1/s],
-  //   12: rc [-], 13: Vsh_n [m/s],
-  //   14: nx [-], 15: ny [-], 16: nz [-],           // cell geometric normal
-  //   17: area [m^2], 18: rc_mean [-], 19: Vsh_n_mean [m/s],
-  //   20: tnx [-], 21: tny [-], 22: tnz [-],        // reserved (e.g., tension dir)
-  //   23: cx [m], 24: cy [m], 25: cz [m]            // cell centroid
+  // VARIABLES (same unit-qualified tokens and order in every 3-D product):
+  //   1: X[m],  2: Y[m],  3: Z[m],
+  //   4: n[m^-3],  5: Vx[m/s], 6: Vy[m/s], 7: Vz[m/s],
+  //   8: Bx[T], 9: By[T], 10: Bz[T], 11: divVsw[s^-1],
+  //   12: rc[-], 13: Vsh_n[m/s],
+  //   14: nx[-], 15: ny[-], 16: nz[-],              // cell geometric normal
+  //   17: area[m^2], 18: rc_mean[-], 19: Vsh_n_mean[m/s],
+  //   20: tnx[-], 21: tny[-], 22: tnz[-],           // reserved (e.g., tension dir)
+  //   23: cx[m], 24: cy[m], 25: cz[m]               // cell centroid
   //
   // Notes:
   //  • In "surface_cells" (FETRIANGLE, BLOCK), [1–3,12–13] are NODAL, all others
@@ -1117,6 +1117,9 @@ public:
   //    connectivity, cell quality, and TriMetrics consistency before OUT05 or
   //    any output access.  A completely empty TriMetrics requests canonical
   //    computation; partial or stale records return INVALID_MESH.
+  //  • OUT01 independently parses all three product shapes and freezes titles,
+  //    unit-qualified variable tokens/order, zone declarations, row widths,
+  //    counts, connectivity, finite data, and exact end-of-file consumption.
   // --------------------------------------------------------------------------
   swcme::ModelStatus write_tecplot_dataset_bundle_checked(
                                     const ShockMesh& M,const TriMetrics& T,

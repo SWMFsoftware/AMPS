@@ -47,6 +47,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test OUT05    # model-domain output preflight
 ./output/test_swcme --test OUT04    # BoxSpec structural validation
 ./output/test_swcme --test OUT06    # mesh and metric output validation
+./output/test_swcme --test OUT01    # independent Tecplot parsing
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -599,6 +600,77 @@ Run the gate directly with:
 ```
 
 `OUT06` follows `OUT04` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
+through their `@ALL` expansion.
+
+## OUT01: independent output parsing
+
+### What is tested
+
+`OUT01` validates the complete serialized form of every public 3-D Tecplot
+product: the surface-only FETRIANGLE/BLOCK file, the four-zone bundle containing
+surface-cell, surface-nodal, structured-volume, and min-X-face data, and the
+standalone structured min-X face.  It checks titles, all 25 variable names,
+their embedded units and order, zone declarations, variable locations,
+structured dimensions, node and element counts, BLOCK lengths, POINT row
+widths, numerical finiteness, triangle connectivity, and end-of-file position.
+
+The unit-qualified schema is part of the validated external contract.  Its
+coordinate and centroid fields are `[m]`, density is `[m^-3]`, velocity and
+shock-speed fields are `[m/s]`, magnetic fields are `[T]`, divergence is
+`[s^-1]`, area is `[m^2]`, and compression/normals/reserved directions are
+dimensionless `[-]`.
+
+### Why it is tested
+
+A successful writer status proves that bytes were committed, but not that an
+independent consumer can interpret those bytes correctly.  A missing zone,
+incorrect declared dimension, shifted variable order, omitted unit, wrong row
+width, invalid triangle index, nonfinite token, or extra trailing record can
+all leave a complete filesystem transaction that is nevertheless unusable or
+scientifically misinterpreted.  This test closes that semantic gap before the
+demonstration and observational campaigns consume the files.
+
+### How it is tested
+
+The test constructs a deterministic spherical shock mesh and a minimal valid
+`2x2x2` apex box, writes all three products through the production stdio and
+transactional-commit path, and reads them with a parser implemented solely in
+`test/core/test_output_parsing.cpp`.  The parser uses standard line and numeric
+conversion primitives and owns its expected title, variable, unit, zone, and
+layout declarations.  It does not reuse `CheckedTextFile`, writer formatting
+constants, BLOCK emitters, or any production parsing helper.
+
+For surface zones, every declared node/element count and both copies of the
+triangle connectivity are compared with the input mesh.  Representative nodal
+coordinates/compression, cell area, and nodal-normal values are compared with
+the source records.  For the volume and face, the first Cartesian point is
+evaluated directly through the public model API and all eleven meaningful
+background fields are compared with the parsed row at `%.9e` precision.  The
+standalone face's complete parsed row matrix must equal the face zone embedded
+in the bundle.
+
+Four parser-sensitivity mutations are also required to fail: a record appended
+after the final zone, a variable unit changed from metres to kilometres, a
+zero triangle index, and a 26th value appended to a 25-column POINT row.  These
+probes demonstrate that success is not the result of a permissive parser that
+ignores precisely the defects OUT01 is meant to find.
+
+### Expected result
+
+All production writes return `OK`.  Each unmodified file parses through its
+exact final record with no missing or extra data; the bundle has exactly four
+zones; declared sizes match the requested mesh and box; all values are finite;
+connectivity is one-based, in range, distinct, and identical to the mesh; and
+selected values agree with direct API results within serialization precision.
+All four deliberately corrupted byte streams are rejected.
+
+Run the gate directly with:
+
+```sh
+./output/test_swcme --test OUT01
+```
+
+`OUT01` follows `OUT06` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
 through their `@ALL` expansion.
 
 ## Python campaign manager and reproducible run artifacts

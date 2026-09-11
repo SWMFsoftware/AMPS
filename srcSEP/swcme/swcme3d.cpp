@@ -2517,6 +2517,21 @@ static inline bool dump_zeros_block(
       context,count==0 ? swcme::ModelStatus::npos : count-1,"\n");
 }
 
+// OUT01 makes this unit-qualified variable list part of the externally parsed
+// Tecplot contract.  Keeping one production literal for all three 3-D products
+// prevents the surface, bundle, and standalone-face headers from drifting,
+// while the validation-only parser deliberately owns a separate expected list
+// so an accidental production edit still fails the independent gate.
+static constexpr const char* TEC3D_VARIABLES=
+    "\"X[m]\",\"Y[m]\",\"Z[m]\","
+    "\"n[m^-3]\",\"Vx[m/s]\",\"Vy[m/s]\",\"Vz[m/s]\","
+    "\"Bx[T]\",\"By[T]\",\"Bz[T]\",\"divVsw[s^-1]\","
+    "\"rc[-]\",\"Vsh_n[m/s]\","
+    "\"nx[-]\",\"ny[-]\",\"nz[-]\",\"area[m^2]\","
+    "\"rc_mean[-]\",\"Vsh_n_mean[m/s]\","
+    "\"tnx[-]\",\"tny[-]\",\"tnz[-]\","
+    "\"cx[m]\",\"cy[m]\",\"cz[m]\"";
+
 // Emit the already validated surface dataset through the shared OUT02 stream
 // lifecycle and OUT03 transaction.  Keeping this helper independent of
 // validation lets both the legacy bool wrapper and checked status API use
@@ -2532,10 +2547,7 @@ static swcme::ModelStatus write_surface_output(
   output.print("3D surface title",swcme::ModelStatus::npos,
                "TITLE=\"Shock surface (cell metrics + nodal rc)\"\n");
   output.print("3D surface variables",swcme::ModelStatus::npos,
-      "VARIABLES=\"X\",\"Y\",\"Z\",\"n\",\"Vx\",\"Vy\",\"Vz\","
-      "\"Bx\",\"By\",\"Bz\",\"divVsw\",\"rc\",\"Vsh_n\",\"nx\","
-      "\"ny\",\"nz\",\"area\",\"rc_mean\",\"Vsh_n_mean\",\"tnx\","
-      "\"tny\",\"tnz\",\"cx\",\"cy\",\"cz\"\n");
+      "VARIABLES=%s\n",TEC3D_VARIABLES);
   output.print("3D surface zone",swcme::ModelStatus::npos,
       "ZONE T=\"surface_cells\", N=%zu, E=%zu, ZONETYPE=FETRIANGLE, "
       "DATAPACKING=BLOCK,\n",Nv,Ne);
@@ -2651,13 +2663,8 @@ static swcme::ModelStatus write_bundle_output(
 
   output.print("3D dataset title",swcme::ModelStatus::npos,
                "TITLE = \"SW+CME dataset\"\n");
-  output.print("3D dataset variables",swcme::ModelStatus::npos,"VARIABLES = "
-    "\"X\",\"Y\",\"Z\","
-    "\"n\",\"Vx\",\"Vy\",\"Vz\","
-    "\"Bx\",\"By\",\"Bz\",\"divVsw\","
-    "\"rc\",\"Vsh_n\","
-    "\"nx\",\"ny\",\"nz\",\"area\",\"rc_mean\",\"Vsh_n_mean\","
-    "\"tnx\",\"tny\",\"tnz\",\"cx\",\"cy\",\"cz\"\n");
+  output.print("3D dataset variables",swcme::ModelStatus::npos,
+               "VARIABLES = %s\n",TEC3D_VARIABLES);
 
   // Zone 1: surface_cells (FETRIANGLE, BLOCK)
   output.print("3D dataset surface-cell zone",swcme::ModelStatus::npos,
@@ -2811,13 +2818,8 @@ static swcme::ModelStatus write_face_output(
       swcme::StatusCode::FileOpenFailure,"3D box face open");
   output.print("3D box face title",swcme::ModelStatus::npos,
                "TITLE = \"Box face (minX)\"\n");
-  output.print("3D box face variables",swcme::ModelStatus::npos,"VARIABLES = "
-    "\"X\",\"Y\",\"Z\","
-    "\"n\",\"Vx\",\"Vy\",\"Vz\","
-    "\"Bx\",\"By\",\"Bz\",\"divVsw\","
-    "\"rc\",\"Vsh_n\","
-    "\"nx\",\"ny\",\"nz\",\"area\",\"rc_mean\",\"Vsh_n_mean\","
-    "\"tnx\",\"tny\",\"tnz\",\"cx\",\"cy\",\"cz\"\n");
+  output.print("3D box face variables",swcme::ModelStatus::npos,
+               "VARIABLES = %s\n",TEC3D_VARIABLES);
   output.print("3D box face zone",swcme::ModelStatus::npos,
       "ZONE T=\"box_face_minX\", I=%d, J=%d, DATAPACKING=POINT\n",I,J);
 
