@@ -9,6 +9,7 @@
 
 void test_cfg01(swcme_test::Context& context);
 void test_cfg02(swcme_test::Context& context);
+void test_den01(swcme_test::Context& context);
 void test_1d_ambient_at_one_au(swcme_test::Context& context);
 
 namespace {
@@ -29,6 +30,8 @@ const swcme_test::TestCase kTests[] = {
      test_cfg01},
     {"CFG02", "COMMON", "Unit-conversion and dimensional-consistency test",
      test_cfg02},
+    {"DEN01", "COMMON",
+     "Leblanc density normalization at the reference distance", test_den01},
     {"1D_AMBIENT_01", "1D", "Ambient values at 1 AU",
      test_1d_ambient_at_one_au},
 };

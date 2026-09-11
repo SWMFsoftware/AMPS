@@ -261,9 +261,9 @@
 
 namespace swcme3d {
   // Physical constants (exported)
-  const double AU = 1.495978707e11;
-  const double Rs = 6.957e8;
-  const double PI = 3.141592653589793;
+  const double AU = swcme::constants::AU_M;
+  const double Rs = swcme::constants::SOLAR_RADIUS_M;
+  const double PI = swcme::constants::PI;
 
   // Small helper (in namespace to avoid header pollution)
   inline double clamp01(double v){ return (v<0.0)?0.0:(v>1.0?1.0:v); }
@@ -277,10 +277,10 @@ static inline void safe_normalize(double v[3]){
   const double m=std::sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
   if (m>0){ v[0]/=m; v[1]/=m; v[2]/=m; } else { v[0]=1; v[1]=0; v[2]=0; }
 }
-static const double MU0 = 4.0e-7*swcme3d::PI;   // μ0 [H/m]
-static constexpr double MP  = 1.67262192369e-27; // proton mass [kg]
-static constexpr double KB  = 1.380649e-23;      // Boltzmann const [J/K]
-static constexpr double OMEGA_SUN = 2.86533e-6;  // solar sidereal rotation [rad/s]
+static constexpr double MU0 = swcme::constants::VACUUM_PERMEABILITY_N_A2; // [H/m]
+static constexpr double MP  = swcme::constants::PROTON_MASS_KG;           // [kg]
+static constexpr double KB  = swcme::constants::BOLTZMANN_J_K;            // [J/K]
+static constexpr double OMEGA_SUN = swcme::constants::SOLAR_ROTATION_RAD_S; // [rad/s]
 
 static inline double smoothstep01(double x){
   if (x<=0) return 0;
@@ -478,7 +478,9 @@ void Model::local_oblique_rc(const StepState& S, const double u[3], const double
   const double cs=std::sqrt(std::max(0.0,P_.gamma_ad)*KB*std::max(0.0,P_.T_K)/MP);
   double B_up[3]; ::parker_vec_T_fast(S,u,r,B_up);
   const double Bmag=std::sqrt(std::max(0.0,B_up[0]*B_up[0]+B_up[1]*B_up[1]+B_up[2]*B_up[2]));
-  const double vA=(rho>0.0)? (Bmag/std::sqrt(MU0*rho)):0.0;
+  // The shared SI helper preserves the existing formula while making the
+  // dimensional calculation identical and directly testable across models.
+  const double vA=swcme::physics::alfven_speed_m_s(Bmag,rho);
 
   double b_hat[3]={0,0,0}; if (Bmag>0){ b_hat[0]=B_up[0]/Bmag; b_hat[1]=B_up[1]/Bmag; b_hat[2]=B_up[2]/Bmag; }
   const double cosBn=std::fabs(b_hat[0]*n_hat[0]+b_hat[1]*n_hat[1]+b_hat[2]*n_hat[2]);
@@ -1005,4 +1007,3 @@ bool Model::write_box_face_minX_tecplot_structured(const StepState& S,
 }
 
 } // namespace swcme3d
-

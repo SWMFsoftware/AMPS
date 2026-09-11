@@ -344,16 +344,18 @@ USAGE SKETCH (more complete examples at bottom)
 #include <cstdio>
 #include <algorithm>
 
+#include "swcme_constants.hpp"
+
 namespace swcme1d {
 
 // --------------------------- Physical constants (SI) ---------------------------
-constexpr double PI        = 3.1415926535897932384626433832795;
-constexpr double AU        = 1.495978707e11;      // Astronomical Unit [m]
-constexpr double Rs        = 6.957e8;             // Solar radius [m]
-constexpr double OMEGA_SUN = 2.86533e-6;          // Solar rotation [rad/s]
-constexpr double MU0       = 4.0e-7 * PI;         // Vacuum permeability [N/A²]
-constexpr double MP        = 1.67262192369e-27;   // Proton mass [kg]
-constexpr double KB        = 1.380649e-23;        // Boltzmann [J/K]
+constexpr double PI        = swcme::constants::PI;
+constexpr double AU        = swcme::constants::AU_M;                    // [m]
+constexpr double Rs        = swcme::constants::SOLAR_RADIUS_M;          // [m]
+constexpr double OMEGA_SUN = swcme::constants::SOLAR_ROTATION_RAD_S;    // [rad/s]
+constexpr double MU0       = swcme::constants::VACUUM_PERMEABILITY_N_A2; // [N/A²]
+constexpr double MP        = swcme::constants::PROTON_MASS_KG;          // [kg]
+constexpr double KB        = swcme::constants::BOLTZMANN_J_K;           // [J/K]
 
 // --------------------------------- Helpers -----------------------------------
 inline double clamp01(double x){ return x<0.0?0.0:(x>1.0?1.0:x); }
@@ -555,7 +557,9 @@ public:
     // Upstream density and fast‑mode speed at shock
     const double n_up_sh = density_upstream(S, S.r_sh_m);
     const double rho     = std::max(1e-30, MP * n_up_sh);
-    const double vA      = (S.B_up_T>0.0) ? (S.B_up_T/std::sqrt(MU0*rho)) : 0.0;
+    // Use the shared production SI helper so 1-D and 3-D cannot drift in the
+    // dimensional implementation of the same Alfvén-speed formula.
+    const double vA      = swcme::physics::alfven_speed_m_s(S.B_up_T, rho);
     const double cs      = std::sqrt(std::max(0.0, P.gamma_ad*KB*P.T_K/MP));
     const double cf      = std::sqrt(cs*cs + vA*vA);
 
@@ -909,4 +913,3 @@ Example 2 — per‑particle usage (fast evaluator)
 } // namespace swcme1d
 
 #endif // SWCME1D_HPP
-

@@ -8,7 +8,7 @@ no second build system or external test dependency is required.
 
 ```text
 test/
-  core/       Common registry, runner, reporting, CFG01, and CFG02
+  core/       Common registry, runner, reporting, CFG01, CFG02, and DEN01
   1d/         Tests specific to the production 1-D model
   3d/         Tests specific to the production 3-D model
   reference/  Reviewed reference data for future comparison tests
@@ -36,6 +36,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --list          # list tests without executing them
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
+./output/test_swcme --test DEN01    # run exactly DEN01
 ./output/test_swcme --help          # usage, options, and examples
 ```
 
@@ -129,6 +130,83 @@ routine under test. A tolerance or reference value must never be relaxed merely
 to turn a production mismatch into PASS. A CFG02 failure should be investigated
 as a unit-contract or production-policy issue and reported before physics is
 changed.
+
+## DEN01: Leblanc density normalization at the reference distance
+
+DEN01 is a `COMMON` physics/implementation test of the defining normalization
+property of the production Leblanc, Dulk & Bougeret (1998) density profile. It
+does not merely compare the two models with each other: an independent scalar
+reference evaluates
+
+```text
+n_L(r) = A r^-2 + B r^-4 + C r^-6,
+A = 3.3e5, B = 4.1e6, C = 8.0e7,
+```
+
+where `r` is heliocentric radius in nominal solar radii and the result is in
+`cm^-3`. The test calculates `r_ref_Rs = AU_m / Rs_m` from the adopted constants
+rather than maintaining a rounded AU-to-solar-radius constant. For each model,
+the intended normalization is `n(r) = S n_L(r)`, with
+`S = n_ref / n_L(1 AU)` and a fixed production reference radius of one AU.
+
+The positive reference-density fixtures are 1, 5, 8, 20, and 100 `cm^-3`.
+Each fixture constructs a fresh production model and step cache, evaluates the
+public 1-D radial or 3-D Cartesian field interface at one AU, and checks
+
+```text
+abs(n_model(1 AU) / n_ref - 1) < 1e-12.
+```
+
+The acceptance criterion is strict and must not be weakened to turn a mismatch
+into PASS. Production evaluators return density in `m^-3`; the test reports in
+`cm^-3` for direct comparison with the configured normalization while retaining
+the actual SI evaluation path.
+
+The 3-D coverage evaluates `(+AU,0,0)`, `(0,+AU,0)`, `(0,0,+AU)`, and a
+normalized non-axis-aligned `(1,2,3)` direction to verify that the ambient
+profile is radial. For every reference density, DEN01 also compares 1-D against
+3-D density and inferred scale factors at roundoff level. The same reference
+location is supplied both as the production AU and as `(AU_m/Rs_m)*Rs_m` to
+check AU/solar-radius coordinate equivalence without repeating CFG02.
+
+Both production implementations expose their prepared SI coefficients `C2`,
+`C4`, and `C6`. DEN01 independently recovers the nominal `A`, `B`, and `C` from
+those caches and verifies the coefficients and inferred normalization factor at
+`64 * double epsilon`. That roundoff tolerance covers only the short
+floating-point operation chain; it is not a relaxed density-physics tolerance.
+The model APIs do not expose a separately named scale factor, so inference from
+`C2` is the closest production diagnostic.
+
+The 1-D and 3-D modules currently duplicate the Leblanc coefficient literals
+and normalization arithmetic in their respective `prepare_step()` functions.
+Both use the shared adopted AU (`149597870700 m`) and nominal solar radius
+(`6.957e8 m`), and both cache scaled coefficients in a value-type `StepState`.
+No coefficient or normalization factor is static, global, or mutable shared
+state. DEN01 nevertheless executes an A=5, B=20, C=1 `cm^-3` construction and
+re-evaluation sequence independently for both models. Existing model A and B
+must retain their original results after later instances are constructed, and
+their cached coefficients must remain unchanged. This guards against future
+cross-instance contamination that would be blocking in parallel AMPS use.
+
+The production APIs currently fix density normalization at one AU, so tests of
+a configurable 0.5- or 2-AU normalization radius are reported as `SKIP` rather
+than supported by a fictitious test-only API. Values at 0.5 and 2 AU are checked
+only for finite positivity as optional diagnostics. Detailed verification of
+the radial `r^-2 + r^-4 + r^-6` behavior belongs to DEN02, not DEN01.
+
+DEN01 prints the reference radius, each nominal analytical term, unscaled
+density, expected and inferred scale, production density, absolute error,
+normalization residual, tolerance, direction coordinates, and every individual
+PASS/FAIL. Its structured text metrics include fixture/pass/fail/skip counts,
+maximum normalization residual, maximum 1-D/3-D difference, coefficient
+mutation status, and cross-instance contamination status.
+
+A DEN01 failure may indicate incorrect radial units or coefficient powers, an
+incorrect normalization factor, a `cm^-3`/`m^-3` conversion error, inconsistent
+1-D and 3-D implementations, mutable global/static normalization state, or
+accidentally modified nominal coefficients. The independent analytical helper
+must remain separate from the production routines under test; references and
+tolerances must never be changed solely to make a production failure pass.
 
 ## Current SWCME unit contract
 
