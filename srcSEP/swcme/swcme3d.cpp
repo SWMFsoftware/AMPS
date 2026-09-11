@@ -2212,6 +2212,74 @@ static inline bool metrics_finite_and_sized(const swcme3d::TriMetrics& T,
          all_finite(T.cz) && all_finite(T.rc_mean) && all_finite(T.Vsh_n_mean);
 }
 
+// Multiply output-grid dimensions without allowing size_t wraparound.  The
+// writers stream rows and therefore do not allocate Ni*Nj*Nk elements, but the
+// flattened row counter and any downstream consumer still require that total
+// to be representable.  Keeping the check here also makes an enormous invalid
+// request fail immediately instead of entering a practically unbounded loop.
+static inline bool checked_size_product(std::size_t left,std::size_t right,
+                                        std::size_t& product) {
+  if (right!=0 && left>std::numeric_limits<std::size_t>::max()/right)
+    return false;
+  product=left*right;
+  return true;
+}
+
+// OUT04 defines one structural contract for every use of BoxSpec.  Center and
+// half-extent fields must be finite, half extents cannot be negative, every
+// documented grid dimension must contain at least two samples, all lower/upper
+// bounds and doubled spans must be representable, and the complete point count
+// must fit size_t.  This helper intentionally performs no model-domain scan;
+// OUT05 owns the later per-point radius check.  Returning a precise status here
+// before FileOperations is selected guarantees that malformed boxes are as
+// side-effect free as out-of-domain points.
+static swcme::ModelStatus validate_box_spec(
+    const swcme3d::BoxSpec& B,const char* context) {
+  const double centers[]={B.cx,B.cy,B.cz};
+  const double extents[]={B.hx,B.hy,B.hz};
+  const int dimensions[]={B.Ni,B.Nj,B.Nk};
+
+  for (int axis=0; axis<3; ++axis) {
+    if (!std::isfinite(centers[axis]))
+      return swcme::ModelStatus::make_value(
+          swcme::StatusCode::NonFiniteInput,context,centers[axis]);
+    if (!std::isfinite(extents[axis]))
+      return swcme::ModelStatus::make_value(
+          swcme::StatusCode::NonFiniteInput,context,extents[axis]);
+    if (extents[axis]<0.0)
+      return swcme::ModelStatus::make_value(
+          swcme::StatusCode::InvalidConfiguration,context,extents[axis]);
+    if (dimensions[axis]<2)
+      return swcme::ModelStatus::make_value(
+          swcme::StatusCode::InvalidConfiguration,context,
+          static_cast<double>(dimensions[axis]));
+
+    // Checking both bounds is not sufficient: a symmetric interval may have
+    // finite endpoints while 2*h overflows in the canonical grid expression.
+    // Validate the exact intermediate required by structured_coordinate().
+    const double lower=centers[axis]-extents[axis];
+    const double upper=centers[axis]+extents[axis];
+    const double span=2.0*extents[axis];
+    if (!std::isfinite(lower) || !std::isfinite(upper) ||
+        !std::isfinite(span)) {
+      const double bad=!std::isfinite(lower)
+          ? lower : (!std::isfinite(upper) ? upper : span);
+      return swcme::ModelStatus::make_value(
+          swcme::StatusCode::NonFiniteInput,context,bad);
+    }
+  }
+
+  std::size_t plane_points=0,total_points=0;
+  if (!checked_size_product(static_cast<std::size_t>(B.Ni),
+                            static_cast<std::size_t>(B.Nj),plane_points) ||
+      !checked_size_product(plane_points,static_cast<std::size_t>(B.Nk),
+                            total_points)) {
+    return swcme::ModelStatus::make(
+        swcme::StatusCode::InvalidConfiguration,context);
+  }
+  return swcme::ModelStatus::success();
+}
+
 // Generate a structured-grid coordinate in one canonical place.  OUT05 uses
 // this exact expression during preflight and the writers use it again during
 // emission, preventing validation and output from silently sampling different
@@ -2431,13 +2499,34 @@ BoxSpec Model::default_apex_box(const StepState& S,double half_AU,int N) const {
   // foreign caches before combining either value with this model's conventions.
   swcme::throw_if_error(validate_prepared_state(
       S,"swcme3d::default_apex_box"));
+  // A factory should never manufacture a BoxSpec that its consumers reject.
+  // Validate source units before conversion so negative/NaN requests and an
+  // under-resolved grid fail at their origin with no partially valid result.
+  if (!std::isfinite(half_AU))
+    swcme::throw_if_error(swcme::ModelStatus::make_value(
+        swcme::StatusCode::NonFiniteInput,
+        "swcme3d::default_apex_box half_AU",half_AU));
+  if (half_AU<0.0)
+    swcme::throw_if_error(swcme::ModelStatus::make_value(
+        swcme::StatusCode::InvalidConfiguration,
+        "swcme3d::default_apex_box half_AU",half_AU));
+  if (N<2)
+    swcme::throw_if_error(swcme::ModelStatus::make_value(
+        swcme::StatusCode::InvalidConfiguration,
+        "swcme3d::default_apex_box resolution",static_cast<double>(N)));
   BoxSpec B; const double h=half_AU*AU;
   B.hx=h; B.hy=h; B.hz=h;
   const double shift=0.4*h; // move box outward along e1 so shock cuts through
   B.cx=S.a_m*S.e1[0]+shift*S.e1[0];
   B.cy=S.a_m*S.e1[1]+shift*S.e1[1];
   B.cz=S.a_m*S.e1[2]+shift*S.e1[2];
-  B.Ni=N; B.Nj=N; B.Nk=N; return B;
+  B.Ni=N; B.Nj=N; B.Nk=N;
+  // Conversion and outward shifting can overflow even when half_AU itself is
+  // finite.  Reuse the public-writer contract so the factory and consumers
+  // cannot drift apart as BoxSpec evolves.
+  swcme::throw_if_error(validate_box_spec(
+      B,"swcme3d::default_apex_box generated box"));
+  return B;
 }
 
 // Write a complete four-zone dataset after the caller has validated its model
@@ -2682,12 +2771,9 @@ swcme::ModelStatus Model::write_tecplot_dataset_bundle_checked(
       swcme::StatusCode::NullPointer,"write_tecplot_dataset_bundle path");
   if (!mesh_finite_and_sized(M)) return swcme::ModelStatus::make(
       swcme::StatusCode::NonFiniteResult,"write_tecplot_dataset_bundle mesh");
-  if (!std::isfinite(B.cx)||!std::isfinite(B.cy)||!std::isfinite(B.cz)||
-      !std::isfinite(B.hx)||!std::isfinite(B.hy)||!std::isfinite(B.hz) ||
-      B.Ni<1 || B.Nj<1 || B.Nk<1) {
-    return swcme::ModelStatus::make(swcme::StatusCode::NonFiniteInput,
-                                    "write_tecplot_dataset_bundle box");
-  }
+  const swcme::ModelStatus box_status=validate_box_spec(
+      B,"write_tecplot_dataset_bundle box");
+  if (!box_status.ok()) return box_status;
   const swcme::ModelStatus surface_domain=preflight_surface_domain(
       M,"write_tecplot_dataset_bundle surface vertex");
   if (!surface_domain.ok()) return surface_domain;
@@ -2724,12 +2810,9 @@ swcme::ModelStatus Model::write_box_face_minX_tecplot_structured_checked(
   if (!ownership.ok()) return ownership;
   if (!path) return swcme::ModelStatus::make(
       swcme::StatusCode::NullPointer,"write_box_face_minX_tecplot_structured path");
-  if (!std::isfinite(B.cx)||!std::isfinite(B.cy)||!std::isfinite(B.cz)||
-      !std::isfinite(B.hx)||!std::isfinite(B.hy)||!std::isfinite(B.hz) ||
-      B.Nj<1 || B.Nk<1) {
-    return swcme::ModelStatus::make(swcme::StatusCode::NonFiniteInput,
-                                    "write_box_face_minX_tecplot_structured box");
-  }
+  const swcme::ModelStatus box_status=validate_box_spec(
+      B,"write_box_face_minX_tecplot_structured box");
+  if (!box_status.ok()) return box_status;
   const swcme::ModelStatus face_domain=preflight_min_x_face_domain(
       B,"write_box_face_minX_tecplot_structured point");
   if (!face_domain.ok()) return face_domain;

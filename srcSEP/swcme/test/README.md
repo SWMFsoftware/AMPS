@@ -45,6 +45,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test OUT02    # checked output-failure propagation
 ./output/test_swcme --test OUT03    # transactional output commit
 ./output/test_swcme --test OUT05    # model-domain output preflight
+./output/test_swcme --test OUT04    # BoxSpec structural validation
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -419,9 +420,9 @@ requested model domain before any output backend callback or filesystem action.
 Coverage includes a non-first invalid 1-D radius, a non-finite 1-D coordinate,
 a non-finite precomputed 1-D field, a late out-of-range data-driven history
 time, a non-first invalid shock-surface vertex, an interior invalid structured
-volume point, an invalid min-X face, and finite box values whose coordinate
-arithmetic overflows.  It also checks the inclusive lower-radius boundary and
-the legacy boolean face wrapper.
+volume point, and an invalid min-X face.  It also checks the inclusive
+lower-radius boundary and the legacy boolean face wrapper.  OUT04 separately
+owns malformed `BoxSpec` structure and arithmetic-range validation.
 
 ### Why it is tested
 
@@ -450,8 +451,6 @@ commit, and no cleanup callback.  Assertions verify the status class,
   entire K/J/I grid—not only endpoints—is scanned;
 - the face reports its first invalid effective-grid row, and its legacy wrapper
   returns `false` under the same preflight;
-- coordinate-generation overflow is caught even though every `BoxSpec` member
-  is individually finite; and
 - a face exactly at `MIN_RADIUS_M` reaches open and commits successfully.
 
 A production-backend case starts with an existing regular sentinel file,
@@ -473,6 +472,66 @@ Run the gate directly with:
 ```
 
 `OUT05` follows `OUT03` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
+through their `@ALL` expansion.
+
+## OUT04: box specification validation
+
+### What is tested
+
+`OUT04` verifies the shared structural contract for every `BoxSpec` consumer.
+The matrix covers non-finite centers and half extents, a negative half extent,
+each grid dimension below two, overflowed center-plus/minus-extent bounds, a
+doubled span that overflows despite finite bounds, and an `Ni*Nj*Nk` product
+that cannot fit `size_t`.  It exercises both the four-zone bundle and
+standalone min-X face, the legacy boolean face wrapper, and the
+`default_apex_box()` factory.  A collapsed box with zero half extents is the
+positive boundary case.
+
+### Why it is tested
+
+Before OUT04, the documented `Ni,Nj,Nk >= 2` rule was not enforced: the bundle
+accepted one sample per axis, and the face did not validate `Ni` at all.
+Negative half extents silently reversed grid orientation, while huge finite
+values could overflow bounds, the `2*h` coordinate span, or flattened point
+cardinality.  Such malformed inputs should be rejected as configuration errors
+before OUT05 traverses points or the output layer creates a staging file.
+
+### How it is tested
+
+Invalid boxes are submitted through production checked writer APIs backed by
+the deterministic `FaultSink`.  Every case must produce zero open attempts, no
+commit or cleanup callback, and leave the simulated destination sentinel
+unchanged.  The expected diagnostics are:
+
+- `NONFINITE_INPUT` with an offending value for non-finite members and derived
+  bound/span overflow;
+- `INVALID_CONFIGURATION` with the offending value for negative extents and
+  dimensions below two; and
+- `INVALID_CONFIGURATION` for checked point-count multiplication overflow.
+
+The face test sets only `Ni=1` to prove validation is consumer-independent.
+The point-count case uses `INT_MAX` on all axes and must return immediately
+rather than entering grid traversal.  The legacy writer must return `false`
+without creating its requested path.  Factory calls with negative or NaN
+half-size and resolution one must throw, while a normal request must return a
+three-by-three-by-three box.  A production-backend check verifies an existing
+sentinel file remains byte-for-byte unchanged with no `.swcme-tmp-*` sibling.
+
+### Expected result
+
+Every malformed box fails before filesystem or injected-backend access with
+the status class described above.  Both checked writers enforce the identical
+contract, the legacy wrapper returns `false`, invalid factory inputs throw, and
+no destination or staging artifact is created.  Finite nonnegative zero
+extents with dimensions of at least two remain valid and commit successfully.
+
+Run the gate directly with:
+
+```sh
+./output/test_swcme --test OUT04
+```
+
+`OUT04` follows `OUT05` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
 through their `@ALL` expansion.
 
 ## Python campaign manager and reproducible run artifacts
@@ -498,7 +557,8 @@ python3 python/test_run_tests.py
 The named profiles are version-controlled text files in `profiles/`:
 
 - `SMOKE` is the short development gate, including prepared-state safety,
-  checked output failures, transactional commit, and model-domain preflight;
+  checked output failures, transactional commit, model-domain preflight, and
+  BoxSpec validation;
 - `ROUTINE` is the broad deterministic gate and excludes `MSH05` and `CON05`;
 - `FULL` expands to every test in the C++ registry;
 - `EVENT` first runs FULL and then executes the supplied event-analysis JSON.

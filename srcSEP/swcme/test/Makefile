@@ -79,9 +79,9 @@ output/test_state_integrity.o: core/test_state_integrity.cpp core/test_framework
 output/test_concurrent_state.o: core/test_concurrent_state.cpp core/test_framework.hpp ../swcme_status.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_sep_source.hpp ../swcme_sep_interface.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(THREAD_FLAGS) -c $< -o $@
 
-# OUT02 injects deterministic open/write/flush/error/close faults, OUT03 checks
-# staging/commit, and OUT05 proves complete domain validation precedes opening.
-# Keeping all three output contracts in one unit lets
+# OUT02 injects deterministic stream faults, OUT03 checks staging/commit, OUT05
+# proves complete domain validation precedes opening, and OUT04 validates the
+# BoxSpec structure.  Keeping all four output contracts in one unit lets
 # them cover header-only 1-D and compiled 3-D paths without adding test-only
 # state to either physics model.
 output/test_output.o: core/test_output.cpp core/test_framework.hpp ../swcme_status.hpp ../swcme_output.hpp ../swcme1d.hpp ../swcme3d.hpp | output

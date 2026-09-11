@@ -796,9 +796,11 @@ struct AreaSamplingTable {
 
 // ----------------------------------------------------------------------------
 // Structured volume box specification for sampling fields in a region.
-// The box is centered at (cx,cy,cz), with half-sizes (hx,hy,hz), and samples
-// a regular grid Ni×Nj×Nk. You may build an apex-aligned default via
-// Model::default_apex_box(...).
+// The box is centered at (cx,cy,cz), with finite nonnegative half-sizes
+// (hx,hy,hz), and samples a regular grid Ni×Nj×Nk with at least two points on
+// every axis.  OUT04 additionally requires representable bounds/spans and a
+// point-count product that fits size_t.  You may build a validated apex-aligned
+// default via Model::default_apex_box(...).
 // ----------------------------------------------------------------------------
 struct BoxSpec {
   double cx=0, cy=0, cz=0;   // box center [m]
@@ -1063,7 +1065,9 @@ public:
   std::size_t sample_triangle_by_area(const AreaSamplingTable& table,
                                       double unit_uniform) const;
 
-  // Useful default volume box (apex-aligned, shifted outward).
+  // Useful default volume box (apex-aligned, shifted outward).  OUT04 rejects
+  // non-finite/negative half_AU, N<2, or a generated box whose SI bounds or
+  // spans overflow, so the factory never returns a structurally invalid box.
   BoxSpec default_apex_box(const StepState& S,double half_AU,int N) const;
 
   // --- Tecplot writers (VARIABLES defined exactly below) --------------------
@@ -1098,6 +1102,10 @@ public:
   //    before FileOperations is selected.  A non-finite coordinate or radius
   //    below solarwind::MIN_RADIUS_M therefore returns its model-domain status
   //    and flattened row index without creating a staging file.
+  //  • OUT04 first validates the BoxSpec itself: finite centers/extents,
+  //    nonnegative half sizes, Ni/Nj/Nk >= 2, representable bounds/spans, and
+  //    overflow-safe total cardinality.  Structural rejection precedes OUT05
+  //    and has the same no-open/no-staging guarantee.
   // --------------------------------------------------------------------------
   swcme::ModelStatus write_tecplot_dataset_bundle_checked(
                                     const ShockMesh& M,const TriMetrics& T,

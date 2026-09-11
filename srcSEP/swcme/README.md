@@ -440,21 +440,21 @@ complete immutable time series in memory before opening output, so an invalid
 late data-driven time also identifies its requested time and row without an
 output side effect.
 
-The 3-D writers use one shared coordinate generator for preflight and emission.
+For every structurally valid box (see OUT04 below), the 3-D writers use one
+shared coordinate generator for preflight and emission.
 Surface nodes are checked explicitly, the bundle scans all structured volume
-points plus its min-X face, and the standalone face scans the effective grid it
-will actually write (including its minimum two-by-two dimensions).  Finite box
-parameters that overflow while generating a coordinate are rejected as
-`NONFINITE_INPUT`; finite points below the radius floor are rejected as
+points plus its min-X face, and the standalone face scans the exact grid it will
+write.  Finite points below the radius floor are rejected as
 `OUTSIDE_MODEL_DOMAIN`.  The boundary itself is inclusive.
 
 OUT05 preserves the established ordering of safeguards:
 
 1. reject a foreign, reconfigured, or corrupted prepared state;
-2. reject null/structurally invalid caller arguments;
-3. preflight every requested output sample and generated coordinate;
-4. create a private staging file and run the OUT02 checked-write lifecycle;
-5. publish the complete product through the OUT03 atomic commit.
+2. reject null and malformed non-box arguments;
+3. validate the complete BoxSpec through OUT04;
+4. preflight every requested output sample and generated coordinate;
+5. create a private staging file and run the OUT02 checked-write lifecycle;
+6. publish the complete product through the OUT03 atomic commit.
 
 Legacy boolean writers delegate to their checked companions, so they return
 `false` under the same no-open domain preflight.  Checked callers additionally
@@ -466,6 +466,38 @@ Run the gate with:
 cd test
 make -j
 ./output/test_swcme --test OUT05
+```
+
+### Box specification validation (OUT04)
+
+`BoxSpec` now has one enforced structural contract shared by the bundle,
+standalone min-X face, and `default_apex_box()` factory:
+
+- `cx`, `cy`, `cz`, `hx`, `hy`, and `hz` must be finite;
+- half extents must be nonnegative (zero remains valid for collapsed diagnostic
+  grids);
+- `Ni`, `Nj`, and `Nk` must each be at least two, including `Ni` for the
+  standalone face so a `BoxSpec` is valid independent of its consumer;
+- each center-minus-extent bound, center-plus-extent bound, and doubled span
+  must be representable as a finite `double`; and
+- the complete `Ni*Nj*Nk` cardinality must be representable as `size_t`, using
+  checked multiplication rather than a potentially wrapped product.
+
+Non-finite members or derived bounds/spans return `NONFINITE_INPUT` with the
+offending value.  Negative extents, undersized dimensions, and cardinality
+overflow return `INVALID_CONFIGURATION`.  Validation is performed after the
+prepared-state ownership/integrity gate but before OUT05 point traversal,
+physics evaluation, output-backend selection, or staging-file creation.
+Legacy boolean writers delegate to the checked implementations and return
+`false` for the same invalid specifications.  The default-box factory throws
+the corresponding status exception rather than returning an unusable box.
+
+Run the gate with:
+
+```sh
+cd test
+make -j
+./output/test_swcme --test OUT04
 ```
 
 ### `SEPSourceState`
@@ -572,7 +604,8 @@ python3 run_tests.py --profile EVENT --event-config event_config.example.json
 Profiles are stored in `test/profiles/`:
 
 - `SMOKE` is a short development gate covering prepared-state safety, checked
-  output failure propagation, transactional commit, model-domain preflight, configuration,
+  output failure propagation, transactional commit, model-domain preflight,
+  BoxSpec validation, configuration,
   core shock, connectivity, divergence, and SEP-interface integration;
 - `ROUTINE` runs the broad deterministic suite while excluding the slowest
   stochastic/multi-root stress cases;

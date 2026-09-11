@@ -696,8 +696,8 @@ void test_out05(swcme_test::Context& context) {
   crossing_box.hy=0.0;
   crossing_box.hz=0.0;
   crossing_box.Ni=3;
-  crossing_box.Nj=1;
-  crossing_box.Nk=1;
+  crossing_box.Nj=2;
+  crossing_box.Nk=2;
   FaultSink bundle_domain;
   swcme::output::FileOperations bundle_domain_ops=operations_for(bundle_domain);
   status=three.model.write_tecplot_dataset_bundle_checked(
@@ -730,23 +730,6 @@ void test_out05(swcme_test::Context& context) {
           three.step,face_box,"unused-out05-legacy-face.dat"),
       "legacy face writer delegates to the same domain preflight");
 
-  // Finite BoxSpec fields can still overflow while generating a coordinate.
-  // Detecting that arithmetic result is part of preflight, not a write-time
-  // formatting concern.
-  swcme3d::BoxSpec overflow_box=face_box;
-  overflow_box.cx=minimum;
-  overflow_box.hx=0.0;
-  overflow_box.cy=std::numeric_limits<double>::max();
-  overflow_box.hy=std::numeric_limits<double>::max();
-  FaultSink overflow_domain;
-  swcme::output::FileOperations overflow_domain_ops=operations_for(overflow_domain);
-  status=three.model.write_box_face_minX_tecplot_structured_checked(
-      three.step,overflow_box,"unused-out05-overflow.dat",&overflow_domain_ops);
-  context.expect_true(status.code==swcme::StatusCode::NonFiniteInput &&
-                          status.sample_index==0 &&
-                          overflow_domain.open_attempts==0,
-                      "generated coordinate overflow is rejected before open");
-
   // The lower boundary is inclusive in the public evaluator contract.  A
   // successful exact-boundary write guards against accidentally tightening
   // OUT05 to radius > MIN_RADIUS_M.
@@ -775,5 +758,201 @@ void test_out05(swcme_test::Context& context) {
                           read_file(preserved_path)==sentinel &&
                           count_staging_files(preserved_path)==0,
                       "production preflight preserves destination and creates no staging");
+  std::filesystem::remove(preserved_path,cleanup_error);
+}
+
+// OUT04: BoxSpec is a structural input contract, distinct from OUT05's scan of
+// otherwise valid generated points.  Every malformed-box case uses FaultSink
+// to prove validation completes before opening, and the matrix deliberately
+// covers both bundle and standalone-face entry points plus the box factory.
+void test_out04(swcme_test::Context& context) {
+  std::cout << "OUT04 box specification validation\n";
+  ThreeDimensionalFixture three;
+  const double minimum=swcme::solarwind::MIN_RADIUS_M;
+  const std::string sentinel="PREVIOUS-COMPLETE-OUTPUT\n";
+
+  // Run a standalone-face rejection while retaining its complete observable
+  // backend state.  Returning the status lets each caller verify the precise
+  // classification without duplicating the no-open/no-commit assertions.
+  const auto reject_face=[&](const swcme3d::BoxSpec& box,
+                             FaultSink& sink) {
+    sink.destination_bytes=sentinel;
+    swcme::output::FileOperations operations=operations_for(sink);
+    const swcme::ModelStatus status=
+        three.model.write_box_face_minX_tecplot_structured_checked(
+            three.step,box,"unused-out04-face.dat",&operations);
+    context.expect_true(sink.open_attempts==0 && !sink.commit_called &&
+                            !sink.remove_called &&
+                            sink.destination_bytes==sentinel,
+                        "invalid BoxSpec causes no output callback");
+    return status;
+  };
+
+  swcme3d::BoxSpec invalid=three.box;
+  invalid.cx=std::numeric_limits<double>::quiet_NaN();
+  FaultSink nonfinite_center;
+  swcme::ModelStatus status=reject_face(invalid,nonfinite_center);
+  context.expect_true(status.code==swcme::StatusCode::NonFiniteInput &&
+                          status.has_offending_value &&
+                          std::isnan(status.offending_value),
+                      "non-finite box center is rejected as input");
+
+  invalid=three.box;
+  invalid.hy=std::numeric_limits<double>::infinity();
+  FaultSink nonfinite_extent;
+  status=reject_face(invalid,nonfinite_extent);
+  context.expect_true(status.code==swcme::StatusCode::NonFiniteInput &&
+                          status.has_offending_value &&
+                          std::isinf(status.offending_value),
+                      "non-finite box half extent is rejected as input");
+
+  // Negative half sizes invert grid orientation and do not describe the
+  // documented center-plus-half-size box.  Check the bundle specifically so
+  // both BoxSpec-consuming checked APIs are held to the shared validator.
+  invalid=three.box;
+  invalid.hx=-1.0;
+  FaultSink negative_extent;
+  negative_extent.destination_bytes=sentinel;
+  swcme::output::FileOperations negative_extent_ops=
+      operations_for(negative_extent);
+  status=three.model.write_tecplot_dataset_bundle_checked(
+      three.mesh,three.metrics,three.step,invalid,"unused-out04-bundle.dat",
+      &negative_extent_ops);
+  context.expect_true(status.code==swcme::StatusCode::InvalidConfiguration &&
+                          status.has_offending_value &&
+                          status.offending_value==-1.0 &&
+                          negative_extent.open_attempts==0 &&
+                          !negative_extent.commit_called,
+                      "bundle rejects a negative half extent before open");
+
+  // Although a face does not use Ni to choose its Y/Z resolution, Ni remains
+  // part of the BoxSpec invariant.  This case guards against the former API
+  // discrepancy where the face accepted a box that the bundle could reject.
+  invalid=three.box;
+  invalid.Ni=1;
+  FaultSink small_ni;
+  status=reject_face(invalid,small_ni);
+  context.expect_true(status.code==swcme::StatusCode::InvalidConfiguration &&
+                          status.has_offending_value &&
+                          status.offending_value==1.0,
+                      "standalone face enforces Ni >= 2");
+
+  invalid=three.box;
+  invalid.Nj=0;
+  FaultSink small_nj;
+  status=reject_face(invalid,small_nj);
+  context.expect_true(status.code==swcme::StatusCode::InvalidConfiguration &&
+                          status.offending_value==0.0,
+                      "standalone face enforces Nj >= 2");
+
+  invalid=three.box;
+  invalid.Nk=-4;
+  FaultSink small_nk;
+  status=reject_face(invalid,small_nk);
+  context.expect_true(status.code==swcme::StatusCode::InvalidConfiguration &&
+                          status.offending_value==-4.0,
+                      "standalone face enforces Nk >= 2");
+
+  // These two cases exercise different floating-point hazards: overflowing a
+  // center +/- extent bound, and overflowing 2*h even though both symmetric
+  // bounds remain finite.  Both are malformed specifications, not point-domain
+  // failures, and must be caught before OUT05 begins its grid traversal.
+  invalid=three.box;
+  invalid.cx=std::numeric_limits<double>::max();
+  invalid.hx=std::numeric_limits<double>::max();
+  FaultSink bound_overflow;
+  status=reject_face(invalid,bound_overflow);
+  context.expect_true(status.code==swcme::StatusCode::NonFiniteInput &&
+                          status.has_offending_value,
+                      "overflowed box bound is rejected before sampling");
+
+  invalid=three.box;
+  invalid.cx=0.0;
+  invalid.hx=0.75*std::numeric_limits<double>::max();
+  FaultSink span_overflow;
+  status=reject_face(invalid,span_overflow);
+  context.expect_true(status.code==swcme::StatusCode::NonFiniteInput &&
+                          status.has_offending_value,
+                      "overflowed doubled span is rejected before sampling");
+
+  // INT_MAX cubed exceeds size_t on the supported 64-bit platform.  The test
+  // would be infeasible if validation entered the grid loops, so a prompt
+  // INVALID_CONFIGURATION result also proves multiplication is overflow-safe.
+  invalid=three.box;
+  invalid.Ni=std::numeric_limits<int>::max();
+  invalid.Nj=std::numeric_limits<int>::max();
+  invalid.Nk=std::numeric_limits<int>::max();
+  FaultSink count_overflow;
+  status=reject_face(invalid,count_overflow);
+  context.expect_true(status.code==swcme::StatusCode::InvalidConfiguration &&
+                          !status.has_offending_value,
+                      "unrepresentable grid point count is rejected");
+
+  // Zero half extents remain intentional and useful for repeated-point
+  // diagnostics; the structural rule is nonnegative, while OUT05 still checks
+  // the resulting location.  Place the collapsed box safely above the floor.
+  swcme3d::BoxSpec collapsed=three.box;
+  collapsed.cx=2.0*minimum;
+  collapsed.cy=0.0;
+  collapsed.cz=0.0;
+  collapsed.hx=collapsed.hy=collapsed.hz=0.0;
+  FaultSink collapsed_success;
+  swcme::output::FileOperations collapsed_success_ops=
+      operations_for(collapsed_success);
+  status=three.model.write_box_face_minX_tecplot_structured_checked(
+      three.step,collapsed,"unused-out04-collapsed.dat",
+      &collapsed_success_ops);
+  context.expect_true(status.ok() && collapsed_success.open_attempts==1 &&
+                          collapsed_success.commit_called,
+                      "nonnegative zero extents remain valid");
+
+  // Legacy wrappers cannot expose ModelStatus, but must delegate to the same
+  // validator and report false without creating the requested destination.
+  invalid=three.box;
+  invalid.hz=-0.5;
+  const std::filesystem::path legacy_path="output/OUT04_legacy_invalid.dat";
+  std::error_code cleanup_error;
+  std::filesystem::remove(legacy_path,cleanup_error);
+  context.expect_true(
+      !three.model.write_box_face_minX_tecplot_structured(
+          three.step,invalid,legacy_path.string().c_str()) &&
+          !std::filesystem::exists(legacy_path),
+      "legacy face writer rejects malformed BoxSpec without a file");
+
+  // The convenience factory is part of the same contract: it must reject bad
+  // source units or resolution rather than returning a box that fails later.
+  const auto factory_rejects=[&](double half_au,int resolution) {
+    try {
+      (void)three.model.default_apex_box(three.step,half_au,resolution);
+    } catch (const std::exception&) {
+      return true;
+    }
+    return false;
+  };
+  context.expect_true(factory_rejects(-0.01,4),
+                      "default box factory rejects negative half size");
+  context.expect_true(
+      factory_rejects(std::numeric_limits<double>::quiet_NaN(),4),
+      "default box factory rejects non-finite half size");
+  context.expect_true(factory_rejects(0.01,1),
+                      "default box factory rejects resolution below two");
+  const swcme3d::BoxSpec factory_box=
+      three.model.default_apex_box(three.step,0.01,3);
+  context.expect_true(factory_box.Ni==3 && factory_box.Nj==3 &&
+                          factory_box.Nk==3 && factory_box.hx>0.0,
+                      "default box factory still returns a valid specification");
+
+  // A real pre-existing product must remain untouched by structural rejection,
+  // complementing FaultSink's callback proof with production namespace checks.
+  const std::filesystem::path preserved_path="output/OUT04_preserved.dat";
+  write_file(preserved_path,sentinel);
+  invalid=three.box;
+  invalid.Nk=1;
+  status=three.model.write_box_face_minX_tecplot_structured_checked(
+      three.step,invalid,preserved_path.string().c_str());
+  context.expect_true(status.code==swcme::StatusCode::InvalidConfiguration &&
+                          read_file(preserved_path)==sentinel &&
+                          count_staging_files(preserved_path)==0,
+                      "production BoxSpec rejection preserves destination and staging namespace");
   std::filesystem::remove(preserved_path,cleanup_error);
 }
