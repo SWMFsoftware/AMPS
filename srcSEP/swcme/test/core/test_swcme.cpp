@@ -1,18 +1,38 @@
 #include "test_framework.hpp"
 
+#include <cstring>
 #include <exception>
 #include <iostream>
 
+void test_cfg01(swcme_test::Context& context);
 void test_1d_ambient_at_one_au(swcme_test::Context& context);
 
-int main() {
+int main(int argc, char** argv) {
   const swcme_test::TestCase tests[] = {
-      {"1d.ambient_at_one_au", test_1d_ambient_at_one_au},
+      {"CFG01", "COMMON", "Physical constants and unit-conversion consistency",
+       test_cfg01},
+      {"1D_AMBIENT_01", "1D", "Ambient values at 1 AU",
+       test_1d_ambient_at_one_au},
   };
 
+  const char* requested_id = nullptr;
+  if (argc == 3 && std::strcmp(argv[1], "--test") == 0) {
+    requested_id = argv[2];
+  } else if (argc != 1) {
+    std::cerr << "usage: " << argv[0] << " [--test TEST_ID]\n";
+    return 2;
+  }
+
   int failed_tests = 0;
+  int selected_tests = 0;
   for (const auto& test : tests) {
-    std::cout << "[ RUN      ] " << test.name << '\n';
+    if (requested_id != nullptr && std::strcmp(requested_id, test.id) != 0) {
+      continue;
+    }
+
+    ++selected_tests;
+    std::cout << "[ RUN      ] " << test.id << " [" << test.classification
+              << "] " << test.name << '\n';
     swcme_test::Context context;
 
     try {
@@ -24,15 +44,19 @@ int main() {
     }
 
     if (context.failures() == 0) {
-      std::cout << "[       OK ] " << test.name << '\n';
+      std::cout << "[       OK ] " << test.id << '\n';
     } else {
       ++failed_tests;
-      std::cout << "[  FAILED  ] " << test.name << '\n';
+      std::cout << "[  FAILED  ] " << test.id << '\n';
     }
   }
 
-  const int test_count = static_cast<int>(sizeof(tests) / sizeof(tests[0]));
-  std::cout << "[==========] " << test_count << " test(s) ran; "
+  if (selected_tests == 0) {
+    std::cerr << "unknown test id: " << requested_id << '\n';
+    return 2;
+  }
+
+  std::cout << "[==========] " << selected_tests << " test(s) ran; "
             << failed_tests << " failed.\n";
   return failed_tests == 0 ? 0 : 1;
 }

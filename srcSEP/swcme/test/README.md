@@ -10,6 +10,12 @@ Run the validation suite from this directory with:
 make test
 ```
 
+Run one registered validation by ID with:
+
+```sh
+./output/test_swcme --test CFG01
+```
+
 Directory roles:
 
 - `core/`: the test runner and shared validation helpers.

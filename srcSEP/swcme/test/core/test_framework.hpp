@@ -9,6 +9,12 @@ namespace swcme_test {
 
 class Context {
 public:
+  void record_result(bool passed) {
+    if (!passed) {
+      ++failures_;
+    }
+  }
+
   void expect_true(bool condition, const std::string& message) {
     if (!condition) {
       ++failures_;
@@ -35,6 +41,8 @@ private:
 using TestFunction = void (*)(Context&);
 
 struct TestCase {
+  const char* id;
+  const char* classification;
   const char* name;
   TestFunction function;
 };
