@@ -61,8 +61,10 @@
 //    interior sheath then relaxes phenomenologically toward the Parker field.
 //
 // 8) Divergence of V:
-//    ∇·V = (1/r^2) d/dr ( r^2 V_r ). We compute it with a robust centered
-//    finite difference at r±dr along the same ray, using evaluate_cartesian_fast.
+//    SHOCK_ONLY has the exact constant-speed radial result ∇·V=2 V_sw/r.
+//    FULL_ICME is generally non-radial after an oblique RH jump and also varies
+//    angularly with the finite shock surface, so it uses the full Cartesian
+//    Jacobian trace dVx/dx+dVy/dy+dVz/dz with a verified second-order stencil.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // SOLAR WIND + CME FORWARD-SHOCK SEMI-ANALYTICAL MODEL
@@ -77,7 +79,8 @@
 //     - magnetic field B = (Bx,By,Bz) [Tesla], upstream is Parker; tangential
 //       field immediately behind the shock is the conservative RH downstream
 //       state and relaxes phenomenologically through the sheath.
-//     - ∇·V (divergence of bulk speed) [1/s] via a robust radial finite-diff.
+//     - ∇·V [1/s]: analytical in SHOCK_ONLY; full Cartesian second-order
+//       divergence in FULL_ICME.
 //     - a topologically unique triangular shock-surface mesh with nodal normals,
 //       nodal rc, nodal normal shock speed, per-cell metrics, and a canonical
 //       physical-area CDF for stochastic source-patch selection.
@@ -146,10 +149,11 @@
 //    Ejecta density is a fraction f_ME of n_up (simple cavity or enhancement).
 //
 // G) Divergence of V:
-//    For each point, we compute ∇·V with a robust radial finite difference
-//       ∇·V = (1/r^2) ∂(r^2 V_r)/∂r
-//    using ±dr around r with dr = max(dr_min, dr_frac · r). We evaluate V at
-//    r±dr along the same unit radial direction.
+//    In SHOCK_ONLY the production value is exact: ∇·V=2 V_sw/r.  In FULL_ICME
+//    the velocity may have tangential RH components and angular gradients, so
+//    the production operator evaluates ∂Vx/∂x+∂Vy/∂y+∂Vz/∂z with centered
+//    second-order Cartesian differences (and an explicit second-order one-sided
+//    stencil only when the inner model boundary prevents centering).
 //
 // H) Triangulated shock surface & per-cell metrics:
 //    The surface is parameterized by (θ,φ) in the apex-aligned frame. We
@@ -180,7 +184,7 @@
 //  8  "Bx"      [T]   : magnetic field (Parker upstream; Bt amplified in sheath)
 //  9  "By"      [T]
 // 10  "Bz"      [T]
-// 11  "divVsw" [1/s]  : divergence of V (radial FD)
+// 11  "divVsw" [1/s]  : divergence of V (analytic or Cartesian)
 // 12  "rc"      [-]   : compression ratio (nodal on surface zones)
 // 13  "Vsh_n"  [m/s]  : normal shock speed (nodal on surface zones)
 // 14  "nx"      [-]   : triangle/geometric normal (cell-centered in surface_cells)
@@ -1523,75 +1527,138 @@ void Model::evaluate_cartesian_with_B(const StepState& S,
       S,x_m,y_m,z_m,n_m3,Vx_ms,Vy_ms,Vz_ms,Bx_T,By_T,Bz_T,N));
 }
 
-swcme::ModelStatus Model::compute_divV_radial_checked(
+swcme::ModelStatus Model::compute_divV_cartesian_checked(
     const StepState& S,
     const double* x_m,const double* y_m,const double* z_m,
     double* divV,std::size_t N,double dr_frac) const {
   if (N==0) return swcme::ModelStatus::success();
   if (!x_m || !y_m || !z_m || !divV) {
     return swcme::ModelStatus::make(
-        swcme::StatusCode::NullPointer,"swcme3d::compute_divV_radial");
+        swcme::StatusCode::NullPointer,"swcme3d::compute_divV_cartesian");
   }
   if (!std::isfinite(dr_frac) || dr_frac<=0.0) {
     return swcme::ModelStatus::make_value(
         swcme::StatusCode::InvalidNumericalStep,
-        "swcme3d::compute_divV_radial dr_frac",dr_frac);
+        "swcme3d::compute_divV_cartesian dr_frac",dr_frac);
   }
 
-  const double rmin=swcme::solarwind::MIN_RADIUS_M;
-  const double dr_min=1.0e-4*AU;
+  // The absolute floor prevents a vanishing stencil near the inner boundary;
+  // elsewhere the relative step controls spatial resolution.  No radial-flow
+  // assumption is made: all three diagonal Jacobian entries are differentiated
+  // in Cartesian coordinates from the actual production velocity evaluator.
+  constexpr double MIN_CARTESIAN_STEP_M=1.0e3;
   for (std::size_t i=0;i<N;++i) {
     const double x=x_m[i],y=y_m[i],z=z_m[i];
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
       return swcme::ModelStatus::make(
           swcme::StatusCode::NonFiniteInput,
-          "swcme3d::compute_divV_radial coordinate",i);
+          "swcme3d::compute_divV_cartesian coordinate",i);
     }
     const double r=std::hypot(x,std::hypot(y,z));
-    if (!std::isfinite(r) || r<rmin) {
+    if (!std::isfinite(r) || r<swcme::solarwind::MIN_RADIUS_M) {
       return swcme::ModelStatus::make_value(
           std::isfinite(r) ? swcme::StatusCode::OutsideModelDomain
                            : swcme::StatusCode::NonFiniteInput,
-          "swcme3d::compute_divV_radial radius",r,i);
+          "swcme3d::compute_divV_cartesian radius",r,i);
     }
-    const double invr=1.0/r;
-    const double u[3]={x*invr,y*invr,z*invr};
-    const double dr=std::max(dr_min,dr_frac*r);
-    const double rp=r+dr;
-    const double rm=std::max(rmin,r-dr); // explicit one-sided boundary policy
-    if (!std::isfinite(rp) || !(rp>rm)) {
+    const double h=std::max(MIN_CARTESIAN_STEP_M,dr_frac*r);
+    if (!std::isfinite(h) || !(h>0.0)) {
       return swcme::ModelStatus::make(
           swcme::StatusCode::InvalidNumericalStep,
-          "swcme3d::compute_divV_radial stencil",i);
+          "swcme3d::compute_divV_cartesian stencil",i);
     }
 
-    double xp=rp*u[0],yp=rp*u[1],zp=rp*u[2];
-    double xm=rm*u[0],ym=rm*u[1],zm=rm*u[2];
-    double n=0.0,Vxp=0.0,Vyp=0.0,Vzp=0.0,Vxm=0.0,Vym=0.0,Vzm=0.0;
-    swcme::ModelStatus status=evaluate_cartesian_fast_checked(
-        S,&xp,&yp,&zp,&n,&Vxp,&Vyp,&Vzp,1);
-    if (!status.ok()) { status.sample_index=i; return status; }
-    status=evaluate_cartesian_fast_checked(
-        S,&xm,&ym,&zm,&n,&Vxm,&Vym,&Vzm,1);
-    if (!status.ok()) { status.sample_index=i; return status; }
+    const std::array<double,3> point{{x,y,z}};
+    auto velocity_evaluator=[&](const std::array<double,3>& q,
+                                std::array<double,3>& v) -> swcme::ModelStatus {
+      double n=0.0;
+      return evaluate_cartesian_fast_checked(
+          S,&q[0],&q[1],&q[2],&n,&v[0],&v[1],&v[2],1);
+    };
 
-    const double Vrp=Vxp*u[0]+Vyp*u[1]+Vzp*u[2];
-    const double Vrm=Vxm*u[0]+Vym*u[1]+Vzm*u[2];
-    const double denom_r=rp-rm;
-    if (!(denom_r>0.0) || !std::isfinite(denom_r)) {
-      return swcme::ModelStatus::make(
-          swcme::StatusCode::InvalidNumericalStep,
-          "swcme3d::compute_divV_radial denominator",i);
+    double value=0.0;
+    swcme::ModelStatus status=swcme::divergence::cartesian_second_order(
+        point,h,velocity_evaluator,value);
+    if (!status.ok()) {
+      status.sample_index=i;
+      return status;
     }
-    const double div_val=(((rp*rp)*Vrp-(rm*rm)*Vrm)/denom_r)/(r*r);
-    if (!std::isfinite(div_val)) {
-      return swcme::ModelStatus::make(
-          swcme::StatusCode::NonFiniteResult,
-          "swcme3d::compute_divV_radial divergence",i);
-    }
-    divV[i]=div_val;
+    divV[i]=value;
   }
   return swcme::ModelStatus::success();
+}
+
+void Model::compute_divV_cartesian(const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* divV,std::size_t N,double dr_frac) const {
+  swcme::throw_if_error(compute_divV_cartesian_checked(
+      S,x_m,y_m,z_m,divV,N,dr_frac));
+}
+
+swcme::ModelStatus Model::compute_divV_checked(
+    const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* divV,std::size_t N,double dr_frac) const {
+  if (N==0) return swcme::ModelStatus::success();
+  if (!x_m || !y_m || !z_m || !divV) {
+    return swcme::ModelStatus::make(
+        swcme::StatusCode::NullPointer,"swcme3d::compute_divV");
+  }
+
+  // In the controlled SHOCK_ONLY baseline the velocity is exactly
+  // V_sw e_r with constant magnitude, so the spherical divergence 2 V_sw/r is
+  // analytical.  Using it directly removes finite-difference noise from the
+  // adiabatic-energy-change term and makes the result rotationally invariant
+  // to roundoff.  dr_frac is intentionally irrelevant in this branch.
+  if (S.region_config.mode==swcme::regions::Mode::ShockOnly) {
+    for (std::size_t i=0;i<N;++i) {
+      const double x=x_m[i],y=y_m[i],z=z_m[i];
+      if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+        return swcme::ModelStatus::make(
+            swcme::StatusCode::NonFiniteInput,
+            "swcme3d::compute_divV coordinate",i);
+      }
+      const double r=std::hypot(x,std::hypot(y,z));
+      if (!std::isfinite(r) || r<swcme::solarwind::MIN_RADIUS_M) {
+        return swcme::ModelStatus::make_value(
+            std::isfinite(r) ? swcme::StatusCode::OutsideModelDomain
+                             : swcme::StatusCode::NonFiniteInput,
+            "swcme3d::compute_divV radius",r,i);
+      }
+      const swcme::divergence::RadialTerms terms=
+          swcme::divergence::radial_terms(r,S.V_sw_ms,0.0);
+      if (!std::isfinite(terms.total_s_inv)) {
+        return swcme::ModelStatus::make(
+            swcme::StatusCode::NonFiniteResult,
+            "swcme3d::compute_divV analytical divergence",i);
+      }
+      divV[i]=terms.total_s_inv;
+    }
+    return swcme::ModelStatus::success();
+  }
+
+  // FULL_ICME is not generally radial: oblique RH jumps contain tangential
+  // velocity and a finite SSE/ellipsoid introduces angular gradients in region
+  // location.  The old ray derivative omitted both effects, so the canonical
+  // path must use the full Cartesian Jacobian trace.
+  return compute_divV_cartesian_checked(S,x_m,y_m,z_m,divV,N,dr_frac);
+}
+
+void Model::compute_divV(const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* divV,std::size_t N,double dr_frac) const {
+  swcme::throw_if_error(compute_divV_checked(
+      S,x_m,y_m,z_m,divV,N,dr_frac));
+}
+
+swcme::ModelStatus Model::compute_divV_radial_checked(
+    const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* divV,std::size_t N,double dr_frac) const {
+  // Compatibility alias: preserve the existing symbol while fixing its
+  // historical semantics.  Callers that truly need the numerical Cartesian
+  // operator for a convergence study should use compute_divV_cartesian_checked.
+  return compute_divV_checked(S,x_m,y_m,z_m,divV,N,dr_frac);
 }
 
 void Model::compute_divV_radial(const StepState& S,
@@ -1610,7 +1677,7 @@ swcme::ModelStatus Model::evaluate_cartesian_with_B_div_checked(
   swcme::ModelStatus status=evaluate_cartesian_with_B_checked(
       S,x_m,y_m,z_m,n_m3,Vx_ms,Vy_ms,Vz_ms,Bx_T,By_T,Bz_T,N);
   if (!status.ok()) return status;
-  return compute_divV_radial_checked(S,x_m,y_m,z_m,divVsw,N,dr_frac);
+  return compute_divV_checked(S,x_m,y_m,z_m,divVsw,N,dr_frac);
 }
 
 void Model::evaluate_cartesian_with_B_div(const StepState& S,

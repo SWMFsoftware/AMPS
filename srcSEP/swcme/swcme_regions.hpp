@@ -272,6 +272,127 @@ inline double sheath_profile_weight(double r_m, const Boundaries& b,
   return smoothstep01(std::pow(s, std::max(1.0, ramp_power)));
 }
 
+// Value and radial derivative of one scalar blend.  Derivatives are expressed
+// with respect to increasing heliocentric radius r [m], so a transition that
+// progresses inward naturally has a negative d(weight)/dr.  These helpers are
+// used by the analytical 1-D velocity divergence and intentionally reproduce
+// exactly the same smoothstep weights used by locate()/field evaluation.
+struct WeightDerivative {
+  double value = 0.0;
+  double d_dr = 0.0; // derivative per meter
+};
+
+inline WeightDerivative inward_transition_weight(double r_m,
+                                                  double center_m,
+                                                  double total_width_m) {
+  WeightDerivative out;
+  if (!(total_width_m > 0.0)) {
+    out.value = r_m < center_m ? 1.0 : 0.0;
+    return out;
+  }
+  const double q=(center_m+0.5*total_width_m-r_m)/total_width_m;
+  if (q<=0.0) return out;
+  if (q>=1.0) { out.value=1.0; return out; }
+  out.value=smoothstep01(q);
+  // d/dq [q^2(3-2q)] = 6 q (1-q), dq/dr = -1/width.
+  out.d_dr=-6.0*q*(1.0-q)/total_width_m;
+  return out;
+}
+
+inline WeightDerivative sheath_profile_weight_with_derivative(
+    double r_m, const Boundaries& b, double ramp_power) {
+  WeightDerivative out;
+  const double sheath_start=b.R_sh_m-0.5*b.smooth_shock_width_m;
+  const double width=sheath_start-b.R_le_m;
+  if (!(width>0.0)) { out.value=1.0; return out; }
+
+  const double raw_s=(sheath_start-r_m)/width;
+  if (raw_s<=0.0) return out;
+  if (raw_s>=1.0) { out.value=1.0; return out; }
+
+  const double p=std::max(1.0,ramp_power);
+  const double sp=std::pow(raw_s,p);
+  out.value=smoothstep01(sp);
+  const double dsp_ds = (p==1.0) ? 1.0 : p*std::pow(raw_s,p-1.0);
+  const double ds_dr=-1.0/width;
+  out.d_dr=6.0*sp*(1.0-sp)*dsp_ds*ds_dr;
+  return out;
+}
+
+// Exact radial velocity profile and derivative used by the 1-D transport
+// background.  This function owns the velocity-side interpretation of the
+// common region boundaries, ensuring that V(r) and dV/dr cannot drift apart.
+// Density and magnetic-field profiles remain separate because their physical
+// closures differ, but the region label is returned for audit/debug output.
+struct RadialVelocityState {
+  Region region = Region::Upstream;
+  double velocity_m_s = 0.0;
+  double d_velocity_dr_s_inv = 0.0; // (m/s)/m = 1/s
+};
+
+inline RadialVelocityState radial_velocity_state(
+    double r_m, const Boundaries& b, bool has_shock,
+    double upstream_velocity_m_s, double downstream_velocity_m_s,
+    double leading_edge_velocity_m_s, double ejecta_velocity_m_s,
+    double sheath_ramp_power) {
+  RadialVelocityState out;
+  const Location loc=locate(r_m,b);
+  out.region=loc.region;
+  out.velocity_m_s=upstream_velocity_m_s;
+
+  if (loc.region==Region::Upstream || loc.region==Region::PostICME) return out;
+
+  if (loc.region==Region::ShockTransition) {
+    if (!has_shock) return out;
+    const WeightDerivative w=inward_transition_weight(
+        r_m,b.R_sh_m,b.smooth_shock_width_m);
+    out.velocity_m_s=lerp(upstream_velocity_m_s,downstream_velocity_m_s,w.value);
+    out.d_velocity_dr_s_inv=(downstream_velocity_m_s-upstream_velocity_m_s)*w.d_dr;
+    return out;
+  }
+
+  auto sheath=[&](double rr) {
+    RadialVelocityState sh;
+    sh.region=Region::Sheath;
+    if (!has_shock) {
+      sh.velocity_m_s=upstream_velocity_m_s;
+      return sh;
+    }
+    const WeightDerivative w=sheath_profile_weight_with_derivative(
+        rr,b,sheath_ramp_power);
+    sh.velocity_m_s=lerp(downstream_velocity_m_s,leading_edge_velocity_m_s,w.value);
+    sh.d_velocity_dr_s_inv=(leading_edge_velocity_m_s-downstream_velocity_m_s)*w.d_dr;
+    return sh;
+  };
+
+  if (loc.region==Region::Sheath) return sheath(r_m);
+
+  if (loc.region==Region::LeadingTransition) {
+    const RadialVelocityState sh=sheath(r_m);
+    const WeightDerivative w=inward_transition_weight(
+        r_m,b.R_le_m,b.smooth_le_width_m);
+    out.velocity_m_s=lerp(sh.velocity_m_s,ejecta_velocity_m_s,w.value);
+    out.d_velocity_dr_s_inv=(1.0-w.value)*sh.d_velocity_dr_s_inv
+        +(ejecta_velocity_m_s-sh.velocity_m_s)*w.d_dr;
+    return out;
+  }
+
+  if (loc.region==Region::Ejecta) {
+    out.velocity_m_s=ejecta_velocity_m_s;
+    return out;
+  }
+
+  if (loc.region==Region::TrailingTransition) {
+    const WeightDerivative w=inward_transition_weight(
+        r_m,b.R_te_m,b.smooth_te_width_m);
+    out.velocity_m_s=lerp(ejecta_velocity_m_s,upstream_velocity_m_s,w.value);
+    out.d_velocity_dr_s_inv=(upstream_velocity_m_s-ejecta_velocity_m_s)*w.d_dr;
+    return out;
+  }
+
+  return out;
+}
+
 // For a forward shock, the phenomenological sheath target at the leading edge
 // should remain between ambient V_sw and the outward radial component of the
 // exact RH downstream velocity.  The configurable factor therefore shapes the

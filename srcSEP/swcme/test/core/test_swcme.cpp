@@ -71,6 +71,9 @@ void test_err02(swcme_test::Context& context);
 void test_err03(swcme_test::Context& context);
 void test_err04(swcme_test::Context& context);
 void test_err05(swcme_test::Context& context);
+void test_div01(swcme_test::Context& context);
+void test_div02(swcme_test::Context& context);
+void test_div03(swcme_test::Context& context);
 void test_1d_ambient_at_one_au(swcme_test::Context& context);
 void test_1d3d01(swcme_test::Context& context);
 void test_1d3d02(swcme_test::Context& context);
@@ -157,6 +160,9 @@ const swcme_test::TestCase kTests[] = {
     {"ERR03", "COMMON", "Explicit Rankine-Hugoniot solver outcome status", test_err03},
     {"ERR04", "3D", "Degenerate direction rejection without +X fallback", test_err04},
     {"ERR05", "3D", "Tecplot writer rejects non-finite physics data", test_err05},
+    {"DIV01", "COMMON", "Analytical divergence of constant radial solar wind", test_div01},
+    {"DIV02", "COMMON", "Manufactured radial-flow divergence", test_div02},
+    {"DIV03", "3D", "General Cartesian divergence convergence", test_div03},
     {"1D_AMBIENT_01", "1D", "Ambient values at 1 AU",
      test_1d_ambient_at_one_au},
     {"1D3D01", "1D<->3D", "Common-core upstream solar-wind state identity", test_1d3d01},

@@ -168,17 +168,19 @@ Expected absence of a finite shock surface is still handled as `NO_SURFACE`, so
 a point outside an SSE angular cap correctly receives ambient background rather
 than being classified as a numerical error.
 
-## Divergence boundary policy
+## Divergence boundary policy (superseded by Fix 13)
 
-The current `div(V)` implementation still uses the established radial finite-difference formulation; replacing it with the analytical upstream expression
-is a separate planned remediation.
+Fix 13 subsequently replaced the radial finite-difference approximation.
+`SHOCK_ONLY` now uses the exact analytical `2 V_sw/r` result, 1-D FULL_ICME
+uses the analytical derivative of its radial region profile, and 3-D FULL_ICME
+uses a verified second-order Cartesian divergence.  The explicit-status rule
+introduced here remains in force: an invalid step, failed nested field query,
+or non-finite derivative is propagated rather than replaced by zero.
 
-What changes here is failure handling.  A centered stencil that would cross the
-lower Parker/Leblanc domain uses an explicit one-sided lower-domain stencil with
-its inner sample exactly at `r_min`.  This is a documented numerical boundary
-condition, not a physical-value fallback.  Invalid `dr_frac`, non-finite
-coordinates, degenerate denominators, or failed nested field evaluations return
-an explicit status.
+When a Cartesian stencil crosses the lower Parker/Leblanc domain, Fix 13 uses a
+documented second-order one-sided derivative.  It does not clip the physical
+query radius or synthesize an in-domain state.  See
+`VELOCITY_DIVERGENCE_FIX_NOTES.md` for the current implementation.
 
 ## Mesh and Tecplot behavior
 

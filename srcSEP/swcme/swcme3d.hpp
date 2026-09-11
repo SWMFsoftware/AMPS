@@ -3,6 +3,7 @@
 #include "swcme_constants.hpp"
 #include "swcme_units.hpp"
 #include "swcme_status.hpp"
+#include "swcme_divergence.hpp"
 #include "swcme_config.hpp"
 #include "swcme_regions.hpp"
 #include "swcme_acceleration.hpp"
@@ -54,7 +55,9 @@
 //   including complete downstream rho, p, V, and B.
 // • Sheath / ejecta blends using C^1 smoothsteps and independent edge widths.
 // • Tangential B amplified smoothly in the sheath (Bn continuous).
-// • ∇·V by robust radial finite-difference: (1/r^2) ∂(r^2 V_r)/∂r.
+// • ∇·V uses the exact 2 V_sw/r result for SHOCK_ONLY.  FULL_ICME, whose
+//   RH/sheath velocity can be non-radial and angle-dependent, uses the full
+//   second-order Cartesian Jacobian trace dVx/dx+dVy/dy+dVz/dz.
 //
 // Output (Tecplot)
 // ----------------
@@ -726,19 +729,43 @@ public:
                                      double* Bx_T,double* By_T,double* Bz_T,double* divVsw,
                                      std::size_t N, double dr_frac=1e-3) const;
 
-  // Evaluate n, V, B, and div(V) using a robust radial finite-difference.
+  // Evaluate n, V, B, and div(V) using the canonical mode-aware divergence:
+  // exact 2Vsw/r in SHOCK_ONLY, full Cartesian Jacobian trace in FULL_ICME.
   void evaluate_cartesian_with_B_div(const StepState& S,
                                      const double* x_m,const double* y_m,const double* z_m,
                                      double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
                                      double* Bx_T,double* By_T,double* Bz_T,double* divVsw,
                                      std::size_t N, double dr_frac=1e-3) const;
 
+  // Canonical divergence evaluator.  SHOCK_ONLY is analytical (2 V_sw/r).
+  // FULL_ICME uses the full Cartesian divergence because its local RH/sheath
+  // velocity can contain tangential components and angular gradients.
+  swcme::ModelStatus compute_divV_checked(
+                           const StepState& S,
+                           const double* x_m,const double* y_m,const double* z_m,
+                           double* divV,std::size_t N,double dr_frac=1e-3) const;
+  void compute_divV(const StepState& S,
+                    const double* x_m,const double* y_m,const double* z_m,
+                    double* divV,std::size_t N,double dr_frac=1e-3) const;
+
+  // Explicit full-vector second-order Cartesian operator.  This entry point is
+  // useful for validation/convergence studies even in SHOCK_ONLY, where the
+  // canonical compute_divV() intentionally uses the exact analytical result.
+  swcme::ModelStatus compute_divV_cartesian_checked(
+                           const StepState& S,
+                           const double* x_m,const double* y_m,const double* z_m,
+                           double* divV,std::size_t N,double dr_frac=1e-3) const;
+  void compute_divV_cartesian(const StepState& S,
+                              const double* x_m,const double* y_m,const double* z_m,
+                              double* divV,std::size_t N,double dr_frac=1e-3) const;
+
+  // Legacy source-compatible name.  Before Fix 13 this routine always applied
+  // the radial formula even to non-radial FULL_ICME flow.  It now delegates to
+  // the canonical dimensionality-aware compute_divV_checked() implementation.
   swcme::ModelStatus compute_divV_radial_checked(
                            const StepState& S,
                            const double* x_m,const double* y_m,const double* z_m,
                            double* divV,std::size_t N,double dr_frac=1e-3) const;
-
-  // Compute ∇·V via (1/r^2) d(r^2 V_r)/dr with r±dr sampling along the ray.
   void compute_divV_radial(const StepState& S,
                            const double* x_m,const double* y_m,const double* z_m,
                            double* divV,std::size_t N,double dr_frac=1e-3) const;

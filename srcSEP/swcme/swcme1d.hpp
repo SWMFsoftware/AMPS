@@ -68,8 +68,10 @@ NUMERICAL / IMPLEMENTATION CHOICES
     explicitly; radii are never silently clipped into the supported domain.
   • Per-time quantities (DBM kinematics, Parker parameters, Leblanc scale,
     r_c, sheath/ME geometric radii & widths) are cached in StepState.
-  • ∇·V = (1/r²) d/dr (r² V) evaluated by a centered finite difference with
-    h = max(10⁻³ r, 1 km).
+  • Because the 1-D velocity is purely radial, ∇·V is evaluated analytically
+    as 2 V_r/r + dV_r/dr.  The derivative comes from the same common C1 region
+    profile that returns V(r), so no finite-difference noise enters SEP adiabatic
+    energy change.
   • In RESOLVED_COMPRESSION, shock/LE/TE blending windows are C¹ and scale
     ∝ R_sh.  The shock layer blends upstream to the exact RH state, reaching
     that state at its inner edge; the subsequent sheath starts from the same
@@ -196,8 +198,10 @@ USAGE SKETCH (more complete examples at bottom)
 // does not maintain its own compression formula or floor.
 //
 // Divergence of bulk flow:
-//   ∇·V = (1/r^2) d/dr ( r^2 V_r ). We compute it with a centered FD using
-//   r±dr along the same ray; dr = max(1e-4 AU, 1e-3 r).  Numerically robust.
+//   ∇·V = 2 V_r/r + dV_r/dr.  The common region profile supplies an
+//   analytical dV_r/dr, so the 1-D result contains no finite-difference noise.
+//   (Legacy text below describing a centered FD has been superseded.)
+////   r±dr along the same ray; dr = max(1e-4 AU, 1e-3 r).  Numerically robust.
 //
 
 // PHYSICS OVERVIEW (1-D ALONG A HELIOCENTRIC RAY; ORIGIN = SUN CENTER)
@@ -233,8 +237,9 @@ USAGE SKETCH (more complete examples at bottom)
 // does not maintain its own compression formula or floor.
 //
 // Divergence of bulk flow:
-//   ∇·V = (1/r^2) d/dr ( r^2 V_r ). We compute it with a centered FD using
-//   r±dr along the same ray; dr = max(1e-4 AU, 1e-3 r).  Numerically robust.
+//   ∇·V = 2 V_r/r + dV_r/dr with an analytical derivative of the exact
+//   production V(r) blend; no radial finite-difference stencil is used.
+////   r±dr along the same ray; dr = max(1e-4 AU, 1e-3 r).  Numerically robust.
 //
 
 // *** POST-SHOCK BEHAVIOR (PHYSICAL SANITY) ***
@@ -267,7 +272,8 @@ USAGE SKETCH (more complete examples at bottom)
    • Explicit numerical status: invalid/out-of-domain/non-finite samples are
     reported and are never replaced by plausible fallback values.
    • No heap allocs in evaluators; no pow() in hot paths.
-   • ∇·V uses 1/r^2 · d/dr(r^2 V) with a small centered difference (dr_frac).
+   • ∇·V uses the exact radial identity 2V/r+dV/dr; dV/dr is analytical.
+     `dr_frac` remains in the legacy public signature but is ignored in 1-D.
    • Tunable widths per edge; keep shock width ≪ sheath thickness.
 
  UNITS
@@ -340,12 +346,14 @@ USAGE SKETCH (more complete examples at bottom)
 #include <cstddef>
 #include <cstdio>
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
 #include "swcme_constants.hpp"
 #include "swcme_units.hpp"
 #include "swcme_status.hpp"
+#include "swcme_divergence.hpp"
 #include "swcme_config.hpp"
 #include "swcme_regions.hpp"
 #include "swcme_acceleration.hpp"
@@ -861,48 +869,47 @@ public:
 
       const swcme::regions::Boundaries& b=S.region_boundaries;
       const swcme::regions::Location loc=swcme::regions::locate(r,b);
-      const auto sheath_state=[&](double rr,double& n,double& V) {
+      // Density keeps its own physically appropriate interpolation, while the
+      // radial velocity is obtained from one shared value+derivative profile in
+      // swcme_regions.hpp.  The same profile is used below for analytical
+      // div(V), so the divergence cannot differentiate a different V(r) than
+      // the transport evaluator actually returns.
+      const auto sheath_density=[&](double rr) {
         const double n_local_up=density_upstream(S,rr);
-        if (!S.has_shock) {
-          n=n_local_up;
-          V=Vsw;
-          return;
-        }
+        if (!S.has_shock) return n_local_up;
         const double w=swcme::regions::sheath_profile_weight(
             rr,b,S.region_config.sheath_ramp_power);
         const double n2=S.shock_jump.downstream.rho_kg_m3/MP;
         const double n_le=density_upstream(S,b.R_le_m);
-        n=swcme::regions::log_lerp_positive(n2,n_le,w);
-        V=swcme::regions::lerp(S.V2_shock_ms,S.V_LE_ms,w);
+        return swcme::regions::log_lerp_positive(n2,n_le,w);
       };
-      const auto ejecta_state=[&](double rr,double& n,double& V) {
-        n=S.region_config.f_ME*density_upstream(S,rr);
-        V=S.region_config.V_ME_factor*Vsw;
+      const auto ejecta_density=[&](double rr) {
+        return S.region_config.f_ME*density_upstream(S,rr);
       };
 
-      double n=n_up,V=Vsw;
+      double n=n_up;
       if (loc.region==swcme::regions::Region::ShockTransition) {
         if (S.has_shock) {
           const double n2=S.shock_jump.downstream.rho_kg_m3/MP;
           n=swcme::regions::lerp(n_up,n2,loc.blend);
-          V=swcme::regions::lerp(Vsw,S.V2_shock_ms,loc.blend);
         }
       } else if (loc.region==swcme::regions::Region::Sheath) {
-        sheath_state(r,n,V);
+        n=sheath_density(r);
       } else if (loc.region==swcme::regions::Region::LeadingTransition) {
-        double ns=0.0,Vs=0.0,ne=0.0,Ve=0.0;
-        sheath_state(r,ns,Vs);
-        ejecta_state(r,ne,Ve);
-        n=swcme::regions::lerp(ns,ne,loc.blend);
-        V=swcme::regions::lerp(Vs,Ve,loc.blend);
+        n=swcme::regions::lerp(
+            sheath_density(r),ejecta_density(r),loc.blend);
       } else if (loc.region==swcme::regions::Region::Ejecta) {
-        ejecta_state(r,n,V);
+        n=ejecta_density(r);
       } else if (loc.region==swcme::regions::Region::TrailingTransition) {
-        double ne=0.0,Ve=0.0;
-        ejecta_state(r,ne,Ve);
-        n=swcme::regions::lerp(ne,n_up,loc.blend);
-        V=swcme::regions::lerp(Ve,Vsw,loc.blend);
+        n=swcme::regions::lerp(ejecta_density(r),n_up,loc.blend);
       }
+
+      const swcme::regions::RadialVelocityState velocity=
+          swcme::regions::radial_velocity_state(
+              r,b,S.has_shock,Vsw,S.V2_shock_ms,S.V_LE_ms,
+              S.region_config.V_ME_factor*Vsw,
+              S.region_config.sheath_ramp_power);
+      const double V=velocity.velocity_m_s;
 
       if (!std::isfinite(n) || n<0.0 || !std::isfinite(V)) {
         return swcme::ModelStatus::make(
@@ -924,9 +931,11 @@ public:
   // -------------------------- Full evaluator (with B, ∇·V) -------------------
   /**
    * @brief Full evaluator: n,V plus Parker B components and ∇·V.
-   * @param dr_frac Relative step for centered finite difference (divergence).
-   * @details The Parker field is computed from Br(1 AU) and k. The only Bφ
-   * amplification occurs in the sheath and tapers r_c→1 toward the LE.
+   * @param dr_frac Retained for source compatibility; 1-D divergence is now
+   *        analytical and does not use a finite-difference step.
+   * @details The Parker field is computed from Br(1 AU) and k.  For the purely
+   * radial 1-D velocity field, div(V)=2Vr/r+dVr/dr is evaluated analytically
+   * from the exact same region blend that produces V(r).
    */
   swcme::ModelStatus evaluate_radii_with_B_div_checked(
       const StepState& S, const double* r_m,
@@ -938,11 +947,7 @@ public:
       return swcme::ModelStatus::make(
           swcme::StatusCode::NullPointer,"swcme1d::evaluate_radii_with_B_div");
     }
-    if (divV && (!std::isfinite(dr_frac) || dr_frac<=0.0)) {
-      return swcme::ModelStatus::make_value(
-          swcme::StatusCode::InvalidNumericalStep,
-          "swcme1d::evaluate_radii_with_B_div dr_frac",dr_frac);
-    }
+    (void)dr_frac; // analytical 1-D divergence; kept in the API for compatibility
 
     swcme::ModelStatus status=evaluate_radii_fast_checked(S,r_m,n_m3,V_ms,N);
     if (!status.ok()) return status;
@@ -998,35 +1003,38 @@ public:
       if (Bmag_T) Bmag_T[i]=Bmag;
 
       if (divV) {
-        // A one-sided lower-domain sample is used when the centered stencil
-        // would leave the analytical model domain.  This is an explicit
-        // numerical boundary policy, not a physical-value fallback.
-        const double h=std::max(1.0e3,dr_frac*r);
-        const double rm=std::max(swcme::solarwind::MIN_RADIUS_M,r-h);
-        const double rp=r+h;
-        if (!(rp>rm) || !std::isfinite(rp)) {
-          return swcme::ModelStatus::make(
-              swcme::StatusCode::InvalidNumericalStep,
-              "swcme1d::evaluate_radii_with_B_div stencil",i);
+        // The 1-D field is exactly radial, so the spherical identity is exact:
+        //     div(V) = 2 Vr/r + dVr/dr.
+        // SHOCK_ONLY has dVr/dr=0.  FULL_ICME obtains dVr/dr analytically from
+        // the same common smoothstep profile used by evaluate_radii_fast().
+        double dV_dr=0.0;
+        if (S.region_config.mode==swcme::regions::Mode::FullICME) {
+          const swcme::regions::RadialVelocityState velocity=
+              swcme::regions::radial_velocity_state(
+                  r,S.region_boundaries,S.has_shock,S.V_up_ms,S.V2_shock_ms,
+                  S.V_LE_ms,S.region_config.V_ME_factor*S.V_up_ms,
+                  S.region_config.sheath_ramp_power);
+          dV_dr=velocity.d_velocity_dr_s_inv;
+          // The fast evaluator was already called above; this equality check is
+          // intentionally numerical rather than an assertion so a future drift
+          // is surfaced through the public status contract.
+          if (!std::isfinite(velocity.velocity_m_s) ||
+              std::abs(velocity.velocity_m_s-V_ms[i]) >
+                  64.0*std::numeric_limits<double>::epsilon()*
+                  std::max({1.0,std::abs(velocity.velocity_m_s),std::abs(V_ms[i])})) {
+            return swcme::ModelStatus::make(
+                swcme::StatusCode::NonFiniteResult,
+                "swcme1d::evaluate_radii_with_B_div velocity/profile mismatch",i);
+          }
         }
-        double n_m=0.0,V_m=0.0,n_p=0.0,V_p=0.0;
-        status=evaluate_radii_fast_checked(S,&rm,&n_m,&V_m,1);
-        if (!status.ok()) { status.sample_index=i; return status; }
-        status=evaluate_radii_fast_checked(S,&rp,&n_p,&V_p,1);
-        if (!status.ok()) { status.sample_index=i; return status; }
-        const double den=(rp-rm)*r*r;
-        if (!(den>0.0) || !std::isfinite(den)) {
-          return swcme::ModelStatus::make(
-              swcme::StatusCode::InvalidNumericalStep,
-              "swcme1d::evaluate_radii_with_B_div denominator",i);
-        }
-        const double d=(rp*rp*V_p-rm*rm*V_m)/den;
-        if (!std::isfinite(d)) {
+        const swcme::divergence::RadialTerms terms=
+            swcme::divergence::radial_terms(r,V_ms[i],dV_dr);
+        if (!std::isfinite(terms.total_s_inv)) {
           return swcme::ModelStatus::make(
               swcme::StatusCode::NonFiniteResult,
               "swcme1d::evaluate_radii_with_B_div divergence",i);
         }
-        divV[i]=d;
+        divV[i]=terms.total_s_inv;
       }
     }
     return swcme::ModelStatus::success();

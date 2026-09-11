@@ -453,6 +453,47 @@ parallel RNG policy without being able to accidentally revert to uniform-by-cell
 sampling.
 
 
+## DIV01-DIV03: velocity-divergence treatment
+
+These tests qualify the production divergence operators used by SEP adiabatic
+energy change.  They enforce the rule that a radial identity may only be used
+for a radial velocity field and that the general 3-D operator must demonstrate
+its numerical order on an independent manufactured solution.
+
+- `DIV01` — **analytical constant radial wind**.  Configures `SHOCK_ONLY` in
+  both 1-D and 3-D, samples several radii and several unrelated Cartesian
+  directions, and requires the production result to equal `2*Vsw/r` to
+  roundoff.  Directional dependence is a failure.  This test also guarantees
+  that the baseline calculation does not reintroduce finite-difference noise.
+- `DIV02` — **manufactured nonconstant radial flow**.  Uses
+  `Vr=V0(1+a x+b x^2)`, `x=r/r0`, for which the symbolic spherical divergence is
+  known exactly.  `swcme::divergence::radial_terms()` must agree at better than
+  `1e-10` relative error.  The same test then differentiates representative
+  production shock/sheath/LE/TE velocity samples independently and confirms the
+  analytical `RadialVelocityState::d_velocity_dr_s_inv` follows the actual
+  transport profile.
+- `DIV03` — **general 3-D Cartesian divergence**.  A cubic manufactured vector
+  field is evaluated at four successively halved steps.  Because centered
+  differences are not exact for the cubic terms, the observed error must show
+  second-order convergence.  The test additionally forces the production 3-D
+  Cartesian operator on an off-axis constant radial wind and verifies
+  convergence toward the exact `2*Vsw/r` result.
+
+Run the divergence gates directly with:
+
+```sh
+./output/test_swcme --test DIV01
+./output/test_swcme --test DIV02
+./output/test_swcme --test DIV03
+```
+
+A passing implementation must not obtain `FULL_ICME` divergence by projecting
+`V` onto `e_r` and differentiating only along the ray.  That formula drops
+non-radial Rankine-Hugoniot velocity and angular gradients of a finite shock
+surface.  Conversely, `SHOCK_ONLY` should not be made noisier by forcing the
+Cartesian finite-difference operator when the exact analytical result is known.
+
+
 
 ## KIN01-KIN08: shared CME/shock-apex kinematics
 

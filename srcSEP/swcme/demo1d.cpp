@@ -195,7 +195,8 @@ int main(){
 
   // ------------------------------
   // 3) Radial grid (0.2–1.5 AU)
-  //    Midpoint sampling helps suppress FD noise in divV
+  //    div(V) is now analytical in 1-D, so midpoint sampling is chosen only
+  //    for uniform plotting coverage, not to suppress derivative noise.
   // ------------------------------
   const std::size_t N = 1200;
   std::vector<double> r(N), n(N), V(N), Br(N), Bphi(N), Bmag(N), divV(N);
