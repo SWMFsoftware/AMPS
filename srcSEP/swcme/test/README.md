@@ -233,3 +233,53 @@ factors for km/s, cm^-3, nT, and km^-1 even though physical constants are now
 centralized. CFG02 exercises and compares both paths. Consolidating these
 factors is recommended technical debt, but this test does not automatically
 change them because doing so could conceal the behavior it is meant to audit.
+
+## PAR01-PAR03: corrected 3-D Parker magnetic field
+
+The production 3-D Parker field now uses an explicit solar-rotation axis and a
+local spherical basis at every evaluation point.  The azimuthal direction is
+
+```text
+e_phi = (Omega_hat x e_r) / |Omega_hat x e_r|
+```
+
+and the local pitch is proportional to
+`|Omega_hat x e_r| = sin(theta_local)`.  This corrects the previous
+implementation, which used `(Omega_hat x e_r) x e_r` (a meridional direction)
+and one global `sin_theta` for the entire 3-D domain.
+
+`Params::solar_rotation_axis` specifies the global solar-rotation axis and is
+normalized when a `StepState` is prepared.  A zero or non-finite axis is
+rejected because it cannot define a Parker azimuthal direction.  The existing
+`Params::sin_theta` field is retained only for backward-compatible
+normalization of `B1AU_nT`: it specifies the reference `sin(colatitude)` at
+which `B1AU_nT` is interpreted as total field magnitude at 1 AU.  It no longer
+sets the local 3-D Parker winding.  The step cache stores `k_AU = Omega*AU/Vsw`;
+each point multiplies this by its own `r_AU*sin(theta_local)`.
+
+The pole is handled analytically.  When the radial direction is parallel to
+the rotation axis, `sin(theta_local)=0`, so `B_phi=0` and the field is purely
+radial.  The implementation does not manufacture an arbitrary azimuthal unit
+vector at the coordinate singularity.
+
+The following deterministic 3-D tests were added:
+
+- `PAR01` — equatorial Parker-vector orientation.  With the rotation axis along
+  +Z and the point at +X, it requires the outward radial component to lie along
+  +X, the Parker azimuthal component to lie along -Y for the current polarity
+  convention, and the meridional Z component to vanish.  It also verifies the
+  requested total-field normalization at the reference latitude.
+- `PAR02` — arbitrary latitude and arbitrary rotation axis.  It compares the
+  production vector with an independent analytical Parker reference away from
+  the equator and repeats the check after rotating the solar axis, preventing a
+  hard-coded +Z implementation from passing accidentally.
+- `PAR03` — polar-limit regularity.  It verifies the exact north and south
+  rotation poles and a near-pole point, requiring the transverse field to tend
+  continuously to zero without NaN, Inf, or an arbitrary transverse direction.
+
+The analytical reference in `3d/test_parker.cpp` is intentionally independent
+of the production Parker helper.  Component comparisons use roundoff-level
+absolute tolerances scaled to the expected Tesla magnitude.  These tests do not
+cover numerical solenoidality or field-line tangent/path-length validation;
+those remain separate planned tests (`PAR04` and later) so the individual
+validation requirements remain diagnostically focused.

@@ -13,10 +13,15 @@
 //    where constants C2,C4,C6 (SI) are cached in StepState.
 //
 // 2) Upstream Parker spiral B_up(r,θ):
-//    Br ∝ r^-2, Bφ = -Br (Ω r sinθ / Vsw). For fixed latitude (sinθ = Param),
-//    we define k_AU = Ω AU sinθ / Vsw, and choose Br(1AU) so that
-//    |B|(1AU) = B1AU_nT. Implementation caches Br1AU_T and k_AU in StepState.
-//    The vector φ-direction is built from (z × u) × u, normalized.
+//    Br ∝ r^-2 and Bφ = -Br (Ω r sinθ / Vsw).  In 3-D, θ must be the
+//    LOCAL colatitude measured from the solar-rotation axis, not one global
+//    parameter.  The local azimuthal direction is
+//       e_phi = (Omega_hat × e_r)/|Omega_hat × e_r|,
+//    with Bphi -> 0 smoothly on the rotation axis.  StepState therefore caches
+//    the normalized solar axis and the equatorial pitch coefficient Ω AU/Vsw.
+//    B1AU_nT remains a total-field normalization at the legacy/reference
+//    colatitude Params::sin_theta; that parameter no longer controls local
+//    winding anywhere in the 3-D domain.
 //
 // 3) CME apex kinematics: Drag-Based Model (DBM)
 //    Let u = V_sh - V_sw be the excess speed. DBM gives
@@ -82,16 +87,18 @@
 //
 // B) Magnetic field B_up(r,θ):
 //    Parker spiral (Parker 1958, ApJ 128:664).
-//    In spherical coordinates (r,θ,φ) with θ measured from rotation axis
-//    (ẑ), and assuming azimuthal symmetry of the solar rotation, we use a
-//    purely radial Br and toroidal Bφ component:
-//       k_AU = Ω⊙ r sinθ / V_sw,  (dimensionless pitch parameter at r)
-//       Br(r) = Br(1 AU) (1 AU / r)^2
-//       Bφ(r) = -Br(r) * k_AU
-//    A desired |B|(1 AU) = B1AU_nT is enforced by setting Br(1 AU) so that
-//    sqrt(Br^2 + Bφ^2) = B1AU_nT (converted to Tesla). We construct Cartesian
-//    vectors using local spherical radial and azimuthal directions and the
-//    given CME propagation latitude via the parameter sin_theta.
+//    In spherical coordinates (r,θ,φ) with θ measured from the configured
+//    solar-rotation axis, and assuming azimuthal symmetry of the solar
+//    rotation, we use a radial Br and toroidal Bφ component:
+//       q(r,θ) = Ω⊙ r sinθ / V_sw,  (dimensionless local pitch)
+//       Br(r)   = Br(1 AU) (1 AU / r)^2
+//       Bφ(r)   = -Br(r) * q(r,θ)
+//    A desired |B|(1 AU) = B1AU_nT is enforced at a documented reference
+//    colatitude (Params::sin_theta) by choosing Br(1 AU) accordingly.  At every
+//    evaluated point, however, the local sin(theta) and e_phi are computed
+//    geometrically from the explicit solar-rotation axis.  This distinction
+//    preserves the existing normalization input while making the 3-D vector
+//    field physically consistent away from the reference latitude.
 //
 // C) CME apex kinematics:
 //    Drag-Based Model (DBM), Vršnak et al. (2013), Sol. Phys. 285:295.
@@ -251,6 +258,7 @@
 #include <string>
 #include <algorithm>
 #include <limits>
+#include <stdexcept>
 
 // Vectorization hint (safe: no loop-carried deps)
 #if defined(__GNUC__)
@@ -288,30 +296,69 @@ static inline double smoothstep01(double x){
   return x*x*(3-2*x);
 }
 
-// Efficient Parker spiral using cached Br1AU_T and k_AU
+// Evaluate the upstream Parker field using the local 3-D spherical basis.
+//
+// IMPORTANT PHYSICS NOTE:
+// The Parker azimuthal unit vector is parallel to Omega_hat × e_r.  The old
+// implementation formed (Omega_hat × e_r) × e_r, which points in the local
+// meridional direction and therefore rotated the spiral field into the wrong
+// plane.  In addition, the old code multiplied the field everywhere by one
+// globally supplied sin(theta).  A true 3-D Parker field instead uses the
+// local colatitude at each point:
+//
+//   sin(theta_local) = |Omega_hat × e_r|,
+//   B_r               = B_r(1 AU) / r_AU^2,
+//   B_phi             = -B_r * (Omega*AU/V_sw) * r_AU * sin(theta_local).
+//
+// At the rotation poles sin(theta_local)=0, so B_phi must vanish.  We avoid
+// normalizing the undefined azimuthal basis there and return the purely radial
+// limit analytically.  This keeps the field finite and direction-independent
+// as the pole is approached.
 static inline void parker_vec_T_fast(const swcme3d::StepState& S,
                                      const double u[3], double r_m,
                                      double B_out[3]){
   using namespace swcme3d;
+
   const double r_AU = r_m / AU;
+  const double Br = S.Br1AU_T / (r_AU*r_AU);
 
-  // Br = Br1AU / r_AU^2; Bphi = -Br * k_AU * r_AU
-  const double Br   = S.Br1AU_T / (r_AU*r_AU);
-  const double Bphi = - Br * S.k_AU * r_AU;
+  // Cross product Omega_hat × e_r gives both the azimuthal direction and,
+  // through its magnitude, the local sin(colatitude).  S.solar_axis_hat is
+  // normalized in prepare_step(), while u is a unit radial direction supplied
+  // by the point evaluator.
+  const double cross[3] = {
+      S.solar_axis_hat[1]*u[2] - S.solar_axis_hat[2]*u[1],
+      S.solar_axis_hat[2]*u[0] - S.solar_axis_hat[0]*u[2],
+      S.solar_axis_hat[0]*u[1] - S.solar_axis_hat[1]*u[0]};
+  const double sin_theta_local =
+      std::sqrt(cross[0]*cross[0] + cross[1]*cross[1] + cross[2]*cross[2]);
 
-  // φ-direction from (z × u) × u
-  const double zhat[3]={0,0,1};
-  double zxu[3] = { zhat[1]*u[2]-zhat[2]*u[1],
-                    zhat[2]*u[0]-zhat[0]*u[2],
-                    zhat[0]*u[1]-zhat[1]*u[0] };
-  double ph[3] = { zxu[1]*u[2]-zxu[2]*u[1],
-                   zxu[2]*u[0]-zxu[0]*u[2],
-                   zxu[0]*u[1]-zxu[1]*u[0] };
-  safe_normalize(ph);
+  // The cross product can vanish exactly at the rotation poles.  In that
+  // physical limit the Parker winding is zero, so the transverse field is
+  // exactly zero and no arbitrary e_phi direction should be manufactured.
+  constexpr double AXIS_TOL = 64.0*std::numeric_limits<double>::epsilon();
+  if (sin_theta_local <= AXIS_TOL) {
+    B_out[0] = Br*u[0];
+    B_out[1] = Br*u[1];
+    B_out[2] = Br*u[2];
+    return;
+  }
 
-  B_out[0]=Br*u[0]+Bphi*ph[0];
-  B_out[1]=Br*u[1]+Bphi*ph[1];
-  B_out[2]=Br*u[2]+Bphi*ph[2];
+  const double inv_sin_theta = 1.0/sin_theta_local;
+  const double ephi[3] = {
+      cross[0]*inv_sin_theta,
+      cross[1]*inv_sin_theta,
+      cross[2]*inv_sin_theta};
+
+  // S.k_AU is the equatorial coefficient Omega*AU/V_sw.  Multiplication by
+  // the local sin(theta) below supplies the latitude dependence required by
+  // the Parker solution instead of reusing one global latitude everywhere.
+  const double Bphi =
+      -Br * S.k_AU * r_AU * sin_theta_local;
+
+  B_out[0] = Br*u[0] + Bphi*ephi[0];
+  B_out[1] = Br*u[1] + Bphi*ephi[1];
+  B_out[2] = Br*u[2] + Bphi*ephi[2];
 }
 
 // ----------------------------------------------------------------------------
@@ -336,6 +383,27 @@ StepState Model::prepare_step(double t_s) const {
   S.e1[0]=e1[0]; S.e1[1]=e1[1]; S.e1[2]=e1[2];
   S.e2[0]=e2[0]; S.e2[1]=e2[1]; S.e2[2]=e2[2];
   S.e3[0]=e3[0]; S.e3[1]=e3[1]; S.e3[2]=e3[2];
+
+  // Normalize and cache the solar-rotation axis independently of the CME
+  // propagation frame.  Parker geometry is tied to solar rotation, not to the
+  // CME direction, so these two axes must never be conflated.  A zero or
+  // non-finite rotation axis makes the 3-D Parker basis undefined; unlike the
+  // legacy safe_normalize() helper, we fail explicitly here instead of silently
+  // substituting an arbitrary direction.  Full centralized configuration
+  // validation is planned separately, but this local guard is required for a
+  // physically meaningful Parker field now.
+  {
+    const double ax=P_.solar_rotation_axis[0];
+    const double ay=P_.solar_rotation_axis[1];
+    const double az=P_.solar_rotation_axis[2];
+    const double axis_norm=std::sqrt(ax*ax+ay*ay+az*az);
+    if (!std::isfinite(axis_norm) || axis_norm<=0.0) {
+      throw std::invalid_argument("swcme3d: solar_rotation_axis must be finite and non-zero");
+    }
+    S.solar_axis_hat[0]=ax/axis_norm;
+    S.solar_axis_hat[1]=ay/axis_norm;
+    S.solar_axis_hat[2]=az/axis_norm;
+  }
 
   // 2) DBM apex kinematics
   const double r0_m   = P_.r0_Rs * Rs;
@@ -391,11 +459,32 @@ StepState Model::prepare_step(double t_s) const {
     S.C6 = K*C*Rs6;
   }
 
-  // 7) Parker constants for this step
+  // 7) Parker constants for this step.
+  //
+  // k_AU is intentionally latitude-independent: it stores Omega*AU/V_sw.
+  // The local sin(theta) is evaluated from geometry in parker_vec_T_fast().
+  // Params::sin_theta is retained only as the reference colatitude used to
+  // interpret the legacy B1AU_nT total-field normalization.  This preserves
+  // existing inputs while removing the physically incorrect global-latitude
+  // assumption from the 3-D field itself.
   {
     const double B1AU_T = P_.B1AU_nT*1e-9;
-    S.k_AU   = (OMEGA_SUN * AU * P_.sin_theta) / S.V_sw_ms;
-    S.Br1AU_T= B1AU_T / std::sqrt(1.0 + S.k_AU*S.k_AU);
+    const double reference_sin_theta = P_.sin_theta;
+    if (!std::isfinite(reference_sin_theta) ||
+        reference_sin_theta<0.0 || reference_sin_theta>1.0) {
+      throw std::invalid_argument(
+          "swcme3d: sin_theta reference normalization must lie in [0,1]");
+    }
+
+    // A zero solar-wind speed is not a valid Parker-spiral configuration.  The
+    // broader configuration layer will eventually reject it explicitly.  For
+    // now we keep prepare_step() finite so existing unit-conversion tests can
+    // still inspect zero-valued inputs without producing Inf/NaN state.
+    S.k_AU = (S.V_sw_ms!=0.0) ? (OMEGA_SUN*AU/S.V_sw_ms) : 0.0;
+
+    const double reference_pitch = S.k_AU*reference_sin_theta;
+    S.Br1AU_T = B1AU_T /
+        std::sqrt(1.0 + reference_pitch*reference_pitch);
   }
 
   // 8) Geometry caches

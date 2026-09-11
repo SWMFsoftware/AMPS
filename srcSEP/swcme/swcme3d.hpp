@@ -32,7 +32,10 @@
 // Physics model (brief)
 // ---------------------
 // • Ambient density n_up(r): Leblanc et al. (1998), scaled to n(1 AU).
-// • Parker spiral upstream B (Parker 1958), with |B|(1 AU) set by B1AU_nT.
+// • Parker spiral upstream B (Parker 1958), evaluated in a local spherical
+//   basis defined by an explicit solar-rotation axis. B1AU_nT specifies the
+//   total field magnitude at a documented reference colatitude; the local
+//   winding everywhere else is computed from the point's actual latitude.
 // • CME apex kinematics via Drag-Based Model (DBM): Vršnak et al. (2013).
 // • Shock shape: sphere, ellipsoid, or cone-like SSE (with flank slowdown).
 // • Local rc proxy from oblique fast Mach number (Edmiston & Kennel 1984;
@@ -146,7 +149,23 @@ struct Params {
   double flank_slowdown_m = 1.0;           // Cone exponent m ≥ 0
 
   double cme_dir[3] = {1,0,0};             // Global unit vector for apex direction (e1)
-  double sin_theta  = 0.5;                 // sin(colatitude) for Parker pitch (≈ ecliptic: ~1)
+
+  // Solar-rotation axis used to construct the local Parker spherical basis.
+  // The vector is normalized once in prepare_step().  Keeping this axis
+  // explicit is essential in 3-D: the Parker azimuthal direction is
+  // e_phi ∝ Omega_hat × e_r and the local winding scales with
+  // sin(theta)=|Omega_hat × e_r|.  The previous implementation implicitly
+  // assumed +Z and used one global latitude factor for every point.
+  double solar_rotation_axis[3] = {0,0,1};
+
+  // Legacy/reference normalization latitude for B1AU_nT ONLY.  This value no
+  // longer controls the local 3-D Parker pitch.  It specifies the sine of the
+  // colatitude at which B1AU_nT is interpreted as the total |B| at 1 AU.
+  // Thus existing inputs that used sin_theta=1 for an ecliptic reference keep
+  // their 1-AU normalization, while every evaluated point now uses its own
+  // geometrically correct local sin(theta).  A future API cleanup may rename
+  // this field once backward compatibility is no longer required.
+  double sin_theta  = 1.0;
 
   // DBM apex kinematics (Vršnak et al. 2013)
   double r0_Rs       = 1.05;               // initial apex radius [Rs]
@@ -156,7 +175,7 @@ struct Params {
 
   // Ambient SW scalings at 1 AU
   double n1AU_cm3 = 5.0;                   // upstream density at 1 AU [cm^-3]
-  double B1AU_nT  = 5.0;                   // |B|(1 AU) [nT]
+  double B1AU_nT  = 5.0;                   // |B|(1 AU) [nT] at reference sin_theta above
   double T_K      = 1.2e5;                 // proton temperature [K]
   double gamma_ad = 5.0/3.0;               // adiabatic index
 
@@ -224,10 +243,17 @@ struct StepState {
   // Precompute 1/(2w) to reduce divides in smoothstep arguments
   double inv2w_sh = 0.0, inv2w_le = 0.0, inv2w_te = 0.0;
 
-  // Parker spiral constants for current step (fixed V_sw, latitude)
-  // k_AU = Ω AU sinθ / V_sw; Br(1 AU) chosen s.t. |B|(1 AU) = B1AU_nT
+  // Parker spiral cache for the current step.
+  //
+  // solar_axis_hat is the normalized solar-rotation axis.  k_AU is now the
+  // EQUATORIAL pitch coefficient Ω*AU/V_sw; the local Parker pitch is
+  // k_AU * r_AU * sin(theta_local), where sin(theta_local) is computed from
+  // solar_axis_hat and the point's radial direction.  This deliberately
+  // removes the old incorrect assumption of one fixed latitude throughout
+  // the 3-D domain.
+  double solar_axis_hat[3] = {0.0,0.0,1.0};
   double k_AU = 0.0;
-  double Br1AU_T = 0.0;   // Br at 1 AU in Tesla
+  double Br1AU_T = 0.0;   // Br at 1 AU [T], normalized using Params::sin_theta as reference latitude
 
   // Ellipsoid helpers: a,b,c and 1/a^2,1/b^2,1/c^2
   double a_e=0.0, b_e=0.0, c_e=0.0;

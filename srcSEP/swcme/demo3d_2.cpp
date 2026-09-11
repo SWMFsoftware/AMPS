@@ -73,6 +73,17 @@ using namespace swcme3d;
 
 static inline double hours(double h){ return h * 3600.0; }
 
+// Return sin(colatitude) of a direction relative to the solar-rotation axis
+// cached in StepState.  The production 3-D Parker field now uses this local
+// geometry rather than a single global latitude parameter, so diagnostics in
+// this example must use the same physical definition.
+static inline double local_sin_colatitude(const StepState& S, const double u[3]){
+  const double cx=S.solar_axis_hat[1]*u[2]-S.solar_axis_hat[2]*u[1];
+  const double cy=S.solar_axis_hat[2]*u[0]-S.solar_axis_hat[0]*u[2];
+  const double cz=S.solar_axis_hat[0]*u[1]-S.solar_axis_hat[1]*u[0];
+  return std::sqrt(cx*cx+cy*cy+cz*cz);
+}
+
 // Local copy of the solar rotation rate used by the Parker pitch formula.
 // (Matches the value used inside the model implementation.)
 static constexpr double OMEGA_SUN = 2.86533e-6; // rad/s
@@ -161,7 +172,8 @@ static void write_strength_summary_csv(const Params& P, Model& model,
     const double Vexcess = S.V_sh_ms - Vsw;
 
     // Parker pitch ψ at apex: tanψ = Ω r sinθ / Vsw
-    const double psi = std::atan( OMEGA_SUN * S.r_sh_m * P.sin_theta / Vsw );
+    const double sin_theta_local = local_sin_colatitude(S, u_apex);
+    const double psi = std::atan( OMEGA_SUN * S.r_sh_m * sin_theta_local / Vsw );
 
     // Immediate post-shock B rotation and amplification at the apex
     const double B2_over_B1 = std::sqrt( std::cos(psi)*std::cos(psi)
@@ -213,9 +225,16 @@ int main(){
     P.gamma_ad = 5.0/3.0;
 
     // --- Magnetic field (Parker) --------------------------------------------
-    // B1AU_nT fixes |B|(1 AU). sin_theta ≈ sin(colatitude) controls winding; 1.0 near equator.
+    // B1AU_nT fixes |B|(1 AU) at the reference colatitude given by
+    // sin_theta.  The actual 3-D winding is computed from the local position
+    // and the explicit solar-rotation axis.  Choose +Y here so this example's
+    // +Z CME/observer direction lies in the solar equatorial plane while the
+    // existing visualization geometry remains unchanged.
     P.B1AU_nT   = 5.0;
-    P.sin_theta = 1.0;
+    P.sin_theta = 1.0;  // reference normalization is equatorial
+    P.solar_rotation_axis[0] = 0.0;
+    P.solar_rotation_axis[1] = 1.0;
+    P.solar_rotation_axis[2] = 0.0;
 
     // --- Sheath / magnetic ejecta parameterization --------------------------
     // Thickness values are defined at 1 AU and scale self-similarly with the current apex radius.
@@ -260,7 +279,8 @@ int main(){
         : 0.0;
       double Mfn_apex = (M2>0.0) ? std::sqrt(M2) : 0.0;
       const double Vsw = P.V_sw_kms*1e3;
-      const double psi = std::atan( OMEGA_SUN * S.r_sh_m * P.sin_theta / Vsw );
+      const double sin_theta_local = local_sin_colatitude(S, u_apex);
+      const double psi = std::atan( OMEGA_SUN * S.r_sh_m * sin_theta_local / Vsw );
       const double B2_over_B1 = std::sqrt( std::cos(psi)*std::cos(psi)
                                         + rc_apex*rc_apex*std::sin(psi)*std::sin(psi) );
       const double dTheta = std::atan( rc_apex * std::tan(psi) ) - psi;

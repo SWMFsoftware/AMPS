@@ -46,6 +46,14 @@ int main(){
     P.cme_dir[1] = 0.0;
     P.cme_dir[2] = 1.0;
 
+    // The production Parker field uses the actual angle to the solar-rotation
+    // axis.  Choose +Y so the existing +Z CME/observer direction is explicitly
+    // equatorial rather than accidentally lying on the rotation pole.
+    P.solar_rotation_axis[0] = 0.0;
+    P.solar_rotation_axis[1] = 1.0;
+    P.solar_rotation_axis[2] = 0.0;
+    P.sin_theta = 1.0;  // B1AU_nT reference normalization at the equator
+
     // Cone opening: half-width ≈ 40 degrees; simple flank slowdown exponent
     P.half_width_rad   = 40.0 * (3.14159265358979323846/180.0);
     P.flank_slowdown_m = 2.0;

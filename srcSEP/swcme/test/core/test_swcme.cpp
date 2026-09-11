@@ -10,6 +10,9 @@
 void test_cfg01(swcme_test::Context& context);
 void test_cfg02(swcme_test::Context& context);
 void test_den01(swcme_test::Context& context);
+void test_par01(swcme_test::Context& context);
+void test_par02(swcme_test::Context& context);
+void test_par03(swcme_test::Context& context);
 void test_1d_ambient_at_one_au(swcme_test::Context& context);
 
 namespace {
@@ -32,6 +35,9 @@ const swcme_test::TestCase kTests[] = {
      test_cfg02},
     {"DEN01", "COMMON",
      "Leblanc density normalization at the reference distance", test_den01},
+    {"PAR01", "3D", "Parker-spiral equatorial vector orientation", test_par01},
+    {"PAR02", "3D", "Parker field at arbitrary latitude and rotation axis", test_par02},
+    {"PAR03", "3D", "Parker-field polar-limit regularity", test_par03},
     {"1D_AMBIENT_01", "1D", "Ambient values at 1 AU",
      test_1d_ambient_at_one_au},
 };
