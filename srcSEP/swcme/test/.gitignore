@@ -1,0 +1,14 @@
+# Keep validation sources visible despite repository-wide test_* and output rules.
+!core/
+!core/test_*.cpp
+!core/test_*.hpp
+!1d/
+!1d/test_*.cpp
+!3d/
+!reference/
+!profiles/
+!output/
+
+# Ignore generated validation artifacts, but retain the output directory.
+output/*
+!output/.gitignore
