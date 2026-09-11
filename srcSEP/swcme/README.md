@@ -229,6 +229,43 @@ same complete digest contract and reports configuration differences on foreign
 states.  Use the PST01 replacement path when either dimensional model needs a
 different configuration.
 
+### Prepared-state record integrity (PST06)
+
+PST01 prevents model-parameter changes and PST02/PST03 validate provenance,
+but those checks alone cannot detect a caller overwriting a public cached value
+inside `StepState`.  PST06 therefore gives every successfully prepared 1-D and
+3-D record a private 64-bit integrity seal.  The seal covers the owner and
+configuration digests, canonical common cache, region/acceleration records,
+geometry and Parker caches, Rankine-Hugoniot state, and every retained public
+compatibility mirror.
+
+Serialization is explicit and field-by-field.  It never hashes struct memory,
+padding, addresses, locale-formatted text, or the seal itself.  Consequently,
+normal copy/move construction and assignment preserve an exact valid record
+independently of compiler ABI padding.  `integrity_digest()` returns the seal by
+value for diagnostics; callers cannot obtain a reference or rewrite it.
+
+Some `StepState` cache members remain publicly visible for source compatibility
+with existing diagnostics and demos.  They must be treated as read-only.  If
+compatibility code modifies any canonical field or mirror, the next consuming
+API recomputes the record digest and returns
+`StatusCode::StalePreparedState` (`STALE_PREPARED_STATE`) before evaluating
+physics, modifying an output object, allocating result storage, or opening an
+output file.  Legacy APIs without a `ModelStatus` return throw
+`std::runtime_error` carrying the same status name.
+
+The stale-state diagnostic contains:
+
+- `expected_state_integrity`: the private seal created by `prepare_step()`;
+- `computed_state_integrity`: the digest recomputed from the supplied record;
+- `has_state_integrity=true`.
+
+Ownership and configuration checks retain precedence.  Corrupting an owner ID
+reports `STATE_MODEL_MISMATCH`, while corrupting the configuration tag reports
+`STATE_CONFIGURATION_MISMATCH`; all other record corruption reports
+`STALE_PREPARED_STATE`.  Do not repair or reseal a rejected state—discard it and
+obtain a new state from its owning model.
+
 ### `SEPSourceState`
 
 `SEPSourceState` is the stable transport-facing source record.  It contains:

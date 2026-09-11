@@ -40,6 +40,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test PST01    # prepared-state immutability
 ./output/test_swcme --test PST02    # prepared-state ownership rejection
 ./output/test_swcme --test PST03    # configuration-state ownership rejection
+./output/test_swcme --test PST06    # prepared-record integrity rejection
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -184,6 +185,39 @@ Run the gate directly with:
 ```
 
 `PST03` follows `PST02` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
+through their `@ALL` expansion.
+
+## PST06: prepared-state record integrity
+
+`PST06` verifies that model ownership and configuration equality cannot be
+bypassed by modifying a cached `StepState` value.  Each successful preparation
+stores a private seal produced by explicit field serialization.  The seal
+covers canonical common solar-wind/kinematic state, region boundaries,
+acceleration configuration, 1-D shock/RH data, 3-D frame and geometry caches,
+and every top-level legacy compatibility mirror.
+
+Compile-time assertions require `integrity_digest()` to return by value rather
+than expose a mutable reference.  They also require both state types to remain
+copy- and move-constructible.  Runtime fixtures exercise copy construction,
+move construction, copy assignment, and move assignment; valid copies retain
+the original owner, seal, and evaluability.
+
+The negative matrix copies a valid state and changes exactly one record field
+at a time.  It includes every top-level 1-D and 3-D mirror plus representative
+members of every nested canonical record.  Each checked evaluator must return
+`STALE_PREPARED_STATE`, set `has_state_integrity`, report the prepared and
+recomputed seals, and leave all numerical output sentinels unchanged.  A legacy
+1-D wrapper must throw with the same status name.  Separate owner/configuration
+tag tests remain in PST02/PST03 because those higher-precedence diagnostics are
+intentional.
+
+Run the gate directly with:
+
+```sh
+./output/test_swcme --test PST06
+```
+
+`PST06` follows PST03 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
 through their `@ALL` expansion.
 
 ## Python campaign manager and reproducible run artifacts

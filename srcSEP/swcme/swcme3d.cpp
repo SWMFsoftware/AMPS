@@ -623,6 +623,12 @@ StepState Model::prepare_step(double t_s) const {
     S.sse_radius_m = S.sse_center_m*S.sin_half_width;
   }
 
+  // The apex diagnostic below intentionally reuses guarded public geometry and
+  // shock routines.  Install a provisional seal now that all fields those
+  // routines read are complete; the few diagnostic mirrors they produce are
+  // included when the final seal is written afterward.
+  S.integrity_digest_=prepared_state_integrity(S);
+
   // 9) Apex shock diagnostic.  A geometric CME front and a physical fast
   // shock are not synonymous; cache both the explicit existence flag and the
   // physical compression for quick time-series diagnostics.
@@ -640,6 +646,9 @@ StepState Model::prepare_step(double t_s) const {
           S.V_sw_ms,V2_rad,P_.V_sheath_LE_factor);
     }
   }
+  // Replace the provisional seal with the final record digest after the apex
+  // shock mirrors have been populated.  No StepState field changes afterward.
+  S.integrity_digest_=prepared_state_integrity(S);
   // Freeze only after every geometry and shock calculation succeeds.  Failed
   // preparation therefore does not strand a model in a locked setup state.
   configuration_locked_.store(true,std::memory_order_release);

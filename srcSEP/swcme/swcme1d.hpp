@@ -366,6 +366,7 @@ USAGE SKETCH (more complete examples at bottom)
 #include "swcme_solarwind.hpp"
 #include "swcme_core.hpp"
 #include "swcme_shock.hpp"
+#include "swcme_prepared_integrity.hpp"
 
 namespace swcme1d {
 
@@ -664,7 +665,61 @@ struct StepState {
   double n_up_le    = 0.0;    // upstream density at leading edge [m⁻3]
   double V2_shock_ms = 0.0;   // immediate downstream speed at the shock [m/s]
   double V_LE_ms     = 0.0;   // sheath speed at the leading edge [m/s]
+
+  // The seal is intentionally the only private StepState datum.  Public fields
+  // above remain transitional compatibility mirrors, but callers cannot
+  // recompute/reseal a modified record.  PST06 validation therefore converts
+  // any mirror corruption into an explicit failure before physics is used.
+  swcme::ConfigurationDigest integrity_digest() const noexcept {
+    return integrity_digest_;
+  }
+
+ private:
+  swcme::ConfigurationDigest integrity_digest_ = 0;
+  friend class Model;
 };
+
+// Serialize every canonical and compatibility field in a fixed order.  This
+// function deliberately excludes the private seal itself; prepare_step() stores
+// the returned value and consumers independently recompute it.
+inline swcme::ConfigurationDigest prepared_state_integrity(
+    const StepState& state) noexcept {
+  swcme::ConfigurationDigestBuilder digest(false);
+  digest.add_string("SWCME_1D_PREPARED_STATE_INTEGRITY_V1");
+  digest.add_uint64(state.owner_model_identity);
+  digest.add_uint64(state.configuration_digest);
+  swcme::prepared_integrity::add_common(digest,state.common);
+  swcme::prepared_integrity::add_region_config(digest,state.region_config);
+  swcme::prepared_integrity::add_boundaries(digest,state.region_boundaries);
+  swcme::prepared_integrity::add_acceleration_config(
+      digest,state.acceleration_config);
+  digest.add_uint64(static_cast<std::uint64_t>(state.kinematics_mode));
+  digest.add_double(state.time_s);
+  digest.add_double(state.r0_m);
+  digest.add_double(state.r_sh_m);
+  digest.add_double(state.V_sh_ms);
+  digest.add_double(state.r_le_m);
+  digest.add_double(state.r_te_m);
+  digest.add_double(state.w_sh_m);
+  digest.add_double(state.w_le_m);
+  digest.add_double(state.w_te_m);
+  digest.add_double(state.V_up_ms);
+  digest.add_double(state.Br1AU_T);
+  digest.add_double(state.k_AU);
+  digest.add_double(state.B_up_T);
+  digest.add_double(state.C2);
+  digest.add_double(state.C4);
+  digest.add_double(state.C6);
+  digest.add_bool(state.has_shock);
+  digest.add_bool(state.shock_solver_converged);
+  swcme::prepared_integrity::add_jump(digest,state.shock_jump);
+  digest.add_double(state.rc);
+  digest.add_double(state.n_up_shock);
+  digest.add_double(state.n_up_le);
+  digest.add_double(state.V2_shock_ms);
+  digest.add_double(state.V_LE_ms);
+  return digest.value();
+}
 
 // --------------------------------- Model -------------------------------------
 /**
@@ -786,6 +841,10 @@ public:
     if (S.configuration_digest!=current)
       return swcme::ModelStatus::state_configuration_mismatch(
           context,current,S.configuration_digest);
+    const swcme::ConfigurationDigest computed=prepared_state_integrity(S);
+    if (computed!=S.integrity_digest())
+      return swcme::ModelStatus::stale_prepared_state(
+          context,S.integrity_digest(),computed);
     return swcme::ModelStatus::success();
   }
 
@@ -997,6 +1056,11 @@ public:
       S.V_LE_ms=swcme::regions::leading_edge_speed(
           Vsw,S.V2_shock_ms,P.V_sheath_LE_factor);
     }
+
+    // Seal the complete record only after every cached value and compatibility
+    // mirror has reached its final value.  Copies/moves preserve this private
+    // tag automatically; callers cannot update it after modifying a mirror.
+    S.integrity_digest_=prepared_state_integrity(S);
 
     // A successfully returned state freezes this model's configuration.
     // Locking only here leaves a model reusable after validation or numerical

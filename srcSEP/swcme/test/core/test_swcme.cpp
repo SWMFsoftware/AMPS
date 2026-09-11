@@ -12,6 +12,7 @@ void test_cfg02(swcme_test::Context& context);
 void test_pst01(swcme_test::Context& context);
 void test_pst02(swcme_test::Context& context);
 void test_pst03(swcme_test::Context& context);
+void test_pst06(swcme_test::Context& context);
 void test_den01(swcme_test::Context& context);
 void test_par01(swcme_test::Context& context);
 void test_par02(swcme_test::Context& context);
@@ -109,6 +110,7 @@ const swcme_test::TestCase kTests[] = {
     {"PST01", "COMMON", "Prepared-state immutability", test_pst01},
     {"PST02", "COMMON", "Cross-model prepared-state rejection", test_pst02},
     {"PST03", "COMMON", "Cross-configuration prepared-state rejection", test_pst03},
+    {"PST06", "COMMON", "Prepared-state record integrity", test_pst06},
     {"CFG01", "COMMON", "Configuration rejection and physical-range validation",
      test_cfg01},
     {"CFG02", "COMMON", "Unit-conversion and dimensional-consistency test",

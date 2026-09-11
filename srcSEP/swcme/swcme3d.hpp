@@ -14,6 +14,7 @@
 #include "swcme_solarwind.hpp"
 #include "swcme_core.hpp"
 #include "swcme_shock.hpp"
+#include "swcme_prepared_integrity.hpp"
 // ============================================================================
 // swcme3d.hpp
 // ----------------------------------------------------------------------------
@@ -544,7 +545,77 @@ struct StepState {
   double cos_half_width=1.0;
   double sse_center_m=0.0;
   double sse_radius_m=0.0;
+
+  // Read-only exposure supports diagnostics and copy/move validation without
+  // allowing compatibility code to bless a modified state record.
+  swcme::ConfigurationDigest integrity_digest() const noexcept {
+    return integrity_digest_;
+  }
+
+ private:
+  swcme::ConfigurationDigest integrity_digest_ = 0;
+  friend class Model;
 };
+
+// Compute the PST06 seal over every 3-D cached value and public compatibility
+// mirror.  Arrays are serialized element-by-element and the private seal is
+// excluded, avoiding ABI padding and self-referential hashing.
+inline swcme::ConfigurationDigest prepared_state_integrity(
+    const StepState& state) noexcept {
+  swcme::ConfigurationDigestBuilder digest(false);
+  digest.add_string("SWCME_3D_PREPARED_STATE_INTEGRITY_V1");
+  digest.add_uint64(state.owner_model_identity);
+  digest.add_uint64(state.configuration_digest);
+  swcme::prepared_integrity::add_common(digest,state.common);
+  swcme::prepared_integrity::add_region_config(digest,state.region_config);
+  swcme::prepared_integrity::add_boundaries(digest,state.apex_regions);
+  swcme::prepared_integrity::add_acceleration_config(
+      digest,state.acceleration_config);
+  for (double value : state.e1) digest.add_double(value);
+  for (double value : state.e2) digest.add_double(value);
+  for (double value : state.e3) digest.add_double(value);
+  digest.add_uint64(static_cast<std::uint64_t>(state.kinematics_mode));
+  digest.add_double(state.time_s);
+  digest.add_double(state.r_sh_m);
+  digest.add_double(state.V_sh_ms);
+  digest.add_double(state.a_m);
+  digest.add_double(state.dr_sheath_m);
+  digest.add_double(state.dr_me_m);
+  digest.add_double(state.w_shock_m);
+  digest.add_double(state.w_le_m);
+  digest.add_double(state.w_te_m);
+  digest.add_double(state.r_le_m);
+  digest.add_double(state.r_te_m);
+  digest.add_double(state.V_sheath_LE_ms);
+  digest.add_double(state.V_ME_ms);
+  digest.add_double(state.V_dn_ms);
+  digest.add_bool(state.has_shock);
+  digest.add_double(state.rc);
+  digest.add_double(state.inv_dr_sheath);
+  digest.add_double(state.rc_floor);
+  digest.add_double(state.V_sw_ms);
+  digest.add_double(state.C2);
+  digest.add_double(state.C4);
+  digest.add_double(state.C6);
+  digest.add_double(state.inv2w_sh);
+  digest.add_double(state.inv2w_le);
+  digest.add_double(state.inv2w_te);
+  for (double value : state.solar_axis_hat) digest.add_double(value);
+  digest.add_double(state.solar_rotation_rate_rad_s);
+  digest.add_double(state.k_AU);
+  digest.add_double(state.Br1AU_T);
+  digest.add_double(state.a_e);
+  digest.add_double(state.b_e);
+  digest.add_double(state.c_e);
+  digest.add_double(state.inv_a2);
+  digest.add_double(state.inv_b2);
+  digest.add_double(state.inv_c2);
+  digest.add_double(state.sin_half_width);
+  digest.add_double(state.cos_half_width);
+  digest.add_double(state.sse_center_m);
+  digest.add_double(state.sse_radius_m);
+  return digest.value();
+}
 
 
 // ----------------------------------------------------------------------------
@@ -776,6 +847,10 @@ public:
     if (S.configuration_digest!=current)
       return swcme::ModelStatus::state_configuration_mismatch(
           context,current,S.configuration_digest);
+    const swcme::ConfigurationDigest computed=prepared_state_integrity(S);
+    if (computed!=S.integrity_digest())
+      return swcme::ModelStatus::stale_prepared_state(
+          context,S.integrity_digest(),computed);
     return swcme::ModelStatus::success();
   }
 

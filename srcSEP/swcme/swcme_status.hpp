@@ -45,6 +45,13 @@ using ConfigurationDigest = std::uint64_t;
 // and enum storage width cannot make diagnostics vary between builds.
 class ConfigurationDigestBuilder {
  public:
+  // Configuration fingerprints use numerical equivalence for signed zero and
+  // malformed NaN payloads.  Prepared-record integrity passes false so even a
+  // bit-level cached-value change is detectable.
+  explicit ConfigurationDigestBuilder(
+      bool canonicalize_doubles=true) noexcept
+      : canonicalize_doubles_(canonicalize_doubles) {}
+
   void add_byte(std::uint8_t value) noexcept {
     digest_ ^= value;
     digest_ *= 1099511628211ULL;
@@ -62,9 +69,9 @@ class ConfigurationDigestBuilder {
     // zero and collapse every NaN payload to one diagnostic representation.
     // Validation still rejects NaNs; canonicalization only keeps an error
     // digest reproducible when malformed input reaches the ownership guard.
-    if (value==0.0) value=0.0;
+    if (canonicalize_doubles_ && value==0.0) value=0.0;
     std::uint64_t bits=0;
-    if (std::isnan(value)) {
+    if (canonicalize_doubles_ && std::isnan(value)) {
       bits=0x7ff8000000000000ULL;
     } else {
       static_assert(sizeof(bits)==sizeof(value),
@@ -90,6 +97,7 @@ class ConfigurationDigestBuilder {
   // not a cryptographic authenticator; model ownership remains independently
   // enforced by ModelIdentity.
   ConfigurationDigest digest_=14695981039346656037ULL;
+  bool canonicalize_doubles_=true;
 };
 
 // Return a process-unique, nonzero identity for one logical Model instance.
@@ -132,7 +140,10 @@ enum class StatusCode {
   // Appended for the same compatibility reason as StateModelMismatch.  This
   // code identifies a state prepared by the same model before its mutable
   // configuration changed.
-  StateConfigurationMismatch
+  StateConfigurationMismatch,
+  // PST06 integrity failure.  Appending preserves numeric compatibility for
+  // every status introduced before prepared-state record sealing.
+  StalePreparedState
 };
 
 inline const char* status_code_name(StatusCode code) {
@@ -145,6 +156,7 @@ inline const char* status_code_name(StatusCode code) {
     case StatusCode::StateModelMismatch: return "STATE_MODEL_MISMATCH";
     case StatusCode::StateConfigurationMismatch:
       return "STATE_CONFIGURATION_MISMATCH";
+    case StatusCode::StalePreparedState: return "STALE_PREPARED_STATE";
     case StatusCode::NullPointer: return "NULL_POINTER";
     case StatusCode::NonFiniteInput: return "NONFINITE_INPUT";
     case StatusCode::OutsideModelDomain: return "OUTSIDE_MODEL_DOMAIN";
@@ -174,6 +186,9 @@ struct ModelStatus {
   ConfigurationDigest expected_configuration_digest = 0;
   ConfigurationDigest supplied_configuration_digest = 0;
   bool has_configuration_digests = false;
+  ConfigurationDigest expected_state_integrity = 0;
+  ConfigurationDigest computed_state_integrity = 0;
+  bool has_state_integrity = false;
 
   constexpr bool ok() const noexcept { return code == StatusCode::Ok; }
   constexpr bool no_surface() const noexcept {
@@ -241,6 +256,20 @@ struct ModelStatus {
     return s;
   }
 
+  // Construct the explicit PST06 rejection.  "Expected" is the private seal
+  // written by prepare_step(); "computed" is the digest of the record supplied
+  // to the consumer.  Keeping both values makes corruption diagnosable without
+  // exposing any API that can rewrite the private seal.
+  static constexpr ModelStatus stale_prepared_state(
+      const char* where, ConfigurationDigest expected,
+      ConfigurationDigest computed) noexcept {
+    ModelStatus s=make(StatusCode::StalePreparedState,where);
+    s.expected_state_integrity=expected;
+    s.computed_state_integrity=computed;
+    s.has_state_integrity=true;
+    return s;
+  }
+
   std::string summary() const {
     std::ostringstream out;
     out << status_code_name(code);
@@ -257,6 +286,12 @@ struct ModelStatus {
           << expected_configuration_digest
           << ", supplied_configuration_digest=0x" << std::setw(16)
           << supplied_configuration_digest << std::dec << ')';
+    }
+    if (has_state_integrity) {
+      out << " (expected_state_integrity=0x" << std::hex
+          << std::setw(16) << std::setfill('0') << expected_state_integrity
+          << ", computed_state_integrity=0x" << std::setw(16)
+          << computed_state_integrity << std::dec << ')';
     }
     return out.str();
   }

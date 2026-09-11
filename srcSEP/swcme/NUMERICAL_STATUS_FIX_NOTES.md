@@ -55,6 +55,7 @@ FILE_OPEN_FAILURE
 FILE_WRITE_FAILURE   (reserved for writers that distinguish write failures)
 STATE_MODEL_MISMATCH (prepared state belongs to another model instance)
 STATE_CONFIGURATION_MISMATCH (prepared state uses an obsolete configuration)
+STALE_PREPARED_STATE (prepared record failed its private integrity seal)
 ```
 
 `OK` is success.  `NO_SURFACE`, `NO_CONNECTION`, and `SOURCE_INACTIVE` are
@@ -88,6 +89,13 @@ throw before changing configuration.  `STATE_CONFIGURATION_MISMATCH` remains a
 defense-in-depth diagnostic for a corrupted or incompatible prepared-state
 record rather than the normal way to manage reconfiguration.  Callers create a
 new owner through `reconfigured(params)` instead.
+
+PST06 adds an independent prepared-record integrity layer.  `prepare_step()`
+seals every canonical cache and public compatibility mirror using explicit
+field serialization.  A consumer that recomputes a different digest returns
+`STALE_PREPARED_STATE` before physics or output mutation.  The status carries
+`expected_state_integrity`, `computed_state_integrity`, and
+`has_state_integrity`; the seal itself is private and can only be read by value.
 
 ## Checked evaluator APIs
 
