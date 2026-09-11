@@ -1,4 +1,4 @@
-// demo1d.cpp — 1-D SW+CME usage example (sanitized outputs, Tecplot profile)
+// demo1d.cpp — 1-D SW+CME usage example (explicit status, Tecplot profile)
 //
 // WHAT THIS EXAMPLE DOES (PHYSICS):
 //  • Sets a “typical fast CME”: r0=1.05 Rs, V0≈1800 km/s, ambient Vsw=400 km/s.
@@ -102,13 +102,16 @@
 //    then both can **decrease** through the sheath toward the leading edge—this is
 //    physical. Inside the ME, density is often **below ambient** and speed **lower**.
 //  • Avoid an immediate dip of density below upstream right after the shock.
-//    If you see it, decrease the shock width, ensure `sheath_comp_floor ≥ 1`,
-//    and keep `V_sheath_LE_factor ≳ 1.05`.
+//    If you see it in RESOLVED_COMPRESSION/FULL_ICME, decrease the numerical
+//    shock width and inspect the RH/sheath configuration. `sheath_comp_floor`
+//    is deprecated and intentionally cannot manufacture compression.
 //
 // NUMERICAL / IMPLEMENTATION NOTES
 // --------------------------------
-//  • The model returns *sanitized* arrays: every value in n, V, B, |B|, divV is
-//    finite; fallbacks are physically reasonable (e.g., n_up, V_sw, 0).
+//  • Checked evaluators return `swcme::ModelStatus`. Invalid, out-of-domain,
+//    or non-finite states are reported explicitly and are NOT replaced by
+//    plausible values such as ambient flow or zero. Legacy void evaluators
+//    call the same checked path and throw on failure.
 //  • Hot loops avoid pow(); smoothing uses precomputed 1/(2 w). Vectorization hint
 //    is included. The writer uses ordered Tecplot zone syntax: `I=..., F=POINT`.
 //  • Units: r [m], t [s], n [m^-3], V [m/s], Br/Bphi/|B| [T], divV [s^-1].
@@ -125,7 +128,9 @@
 // WHAT THIS EXAMPLE DOES (IMPLEMENTATION):
 //  • Uses the model’s StepState cache (constants precomputed for the time).
 //  • Calls the high-throughput evaluator (no allocations in hot path).
-//  • All arrays returned are NaN/Inf-free by design (API-level sanitation).
+//  • This example uses the checked API and aborts if any sample is invalid;
+//    successful output is therefore finite because the physics was validated,
+//    not because the writer/evaluator silently sanitized it.
 //
 // BUILD:
 //   g++ -std=c++17 -O3 -march=native demo1d.cpp -o demo1d
@@ -202,10 +207,16 @@ int main(){
   }
 
   // ------------------------------
-  // 4) Evaluate all fields (fast path; API-sanitized)
+  // 4) Evaluate all fields through the explicit-status API
   // ------------------------------
-  model.evaluate_radii_with_B_div(S, r.data(), n.data(), V.data(),
-                                  Br.data(), Bphi.data(), Bmag.data(), divV.data(), N);
+  const swcme::ModelStatus eval_status=model.evaluate_radii_with_B_div_checked(
+      S, r.data(), n.data(), V.data(), Br.data(), Bphi.data(), Bmag.data(),
+      divV.data(), N);
+  if (!eval_status.ok()) {
+    std::fprintf(stderr,"ERROR: SWCME evaluation failed: %s\n",
+                 eval_status.summary().c_str());
+    return 1;
+  }
 
   // ------------------------------
   // 5) Write Tecplot profile (POINT)

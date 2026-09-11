@@ -82,7 +82,8 @@
 //       normal shock speed, and per-cell metrics (area, rc_mean, Vsh_n_mean,
 //       centroid, geometric normals).
 // • Tecplot dataset writers for the shock surface and for a structured volume
-//   box near the apex (plus a 2-D face zone). Files are NaN/Inf-sanitized.
+//   box near the apex (plus a 2-D face zone). Non-finite physics values are
+//   rejected explicitly; output code does not sanitize them into finite data.
 //
 // Headline physics approximations
 // -------------------------------
@@ -203,7 +204,8 @@
 
 //      • volume_box     : Structured POINT, 3D grid around shock apex.
 //      • box_face_minX  : Structured POINT (2D), the plane x = minX of the box.
-//    All numeric outputs are passed through finite_or(...) to avoid NaN/Inf.
+//    Physics evaluators propagate ModelStatus on invalid/non-finite states.
+//    No numeric output is repaired after the fact.
 //
 // J) References (short list)
 //    • Parker, E.N. (1958), ApJ 128, 664 — Parker spiral magnetic field.
@@ -244,8 +246,8 @@
 //   23:cx [m], 24:cy [m], 25:cz [m]          // cell centroid
 //
 // SANITIZATION:
-//  • All numeric outputs use finite_or(v, fallback) before printing
-//    to avoid NaN/Inf in Tecplot files.
+//  • Tecplot writers reject non-finite physics data and checked writer APIs
+//    return ModelStatus; they do not substitute zeros/ambient values.
 //
 // PERFORMANCE NOTES:
 //  • StepState caches Leblanc coefficients, Parker constants, and geometry.
@@ -285,12 +287,19 @@ namespace swcme3d {
 }
 
 // --- file-local helpers ------------------------------------------------------
-static inline double finite_or(double v, double fallback=0.0){
-  return std::isfinite(v)? v : fallback;
+// Normalize only when the vector is finite and has a meaningful magnitude.
+// The former helper silently replaced a zero/invalid vector by +X, which could
+// turn a numerical failure into an apparently valid CME/shock direction.
+static inline bool normalize_checked(double v[3]){
+  const double m=std::hypot(v[0],std::hypot(v[1],v[2]));
+  const double tol=64.0*std::numeric_limits<double>::min();
+  if (!std::isfinite(m) || !(m>tol)) return false;
+  v[0]/=m; v[1]/=m; v[2]/=m;
+  return std::isfinite(v[0]) && std::isfinite(v[1]) && std::isfinite(v[2]);
 }
-static inline void safe_normalize(double v[3]){
-  const double m=std::sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
-  if (m>0){ v[0]/=m; v[1]/=m; v[2]/=m; } else { v[0]=1; v[1]=0; v[2]=0; }
+
+static inline bool finite3(const double v[3]){
+  return std::isfinite(v[0]) && std::isfinite(v[1]) && std::isfinite(v[2]);
 }
 static constexpr double MU0 = swcme::constants::VACUUM_PERMEABILITY_N_A2; // [H/m]
 static constexpr double MP  = swcme::constants::PROTON_MASS_KG;           // [kg]
@@ -322,7 +331,7 @@ static inline void rotate_about_unit_axis(const double v[3], const double axis[3
 }
 
 static inline double norm3(const double v[3]) {
-  return std::sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
+  return std::hypot(v[0],std::hypot(v[1],v[2]));
 }
 
 // Evaluate the upstream Parker field using the local 3-D spherical basis.
@@ -388,14 +397,20 @@ StepState Model::prepare_step(double t_s) const {
   // 1) Apex-aligned orthonormal basis (e1 along CME apex direction).  The CME
   // vector is guaranteed non-zero by centralized validation, so normalization
   // cannot silently substitute the legacy +X fallback here.
-  double e1[3]={P_.cme_dir[0],P_.cme_dir[1],P_.cme_dir[2]}; ::safe_normalize(e1);
+  double e1[3]={P_.cme_dir[0],P_.cme_dir[1],P_.cme_dir[2]};
+  if (!::normalize_checked(e1))
+    throw std::runtime_error("swcme3d: validated CME direction became degenerate");
   double tmp[3]={0,0,1}; if (std::fabs(e1[2])>0.9){ tmp[0]=1; tmp[1]=0; tmp[2]=0; }
   double e2[3]={ e1[1]*tmp[2]-e1[2]*tmp[1],
                  e1[2]*tmp[0]-e1[0]*tmp[2],
-                 e1[0]*tmp[1]-e1[1]*tmp[0] }; ::safe_normalize(e2);
+                 e1[0]*tmp[1]-e1[1]*tmp[0] };
+  if (!::normalize_checked(e2))
+    throw std::runtime_error("swcme3d: failed to construct CME transverse basis");
   double e3[3]={ e1[1]*e2[2]-e1[2]*e2[1],
                  e1[2]*e2[0]-e1[0]*e2[2],
-                 e1[0]*e2[1]-e1[1]*e2[0] }; ::safe_normalize(e3);
+                 e1[0]*e2[1]-e1[1]*e2[0] };
+  if (!::normalize_checked(e3))
+    throw std::runtime_error("swcme3d: failed to construct CME orthogonal basis");
   S.e1[0]=e1[0]; S.e1[1]=e1[1]; S.e1[2]=e1[2];
   S.e2[0]=e2[0]; S.e2[1]=e2[1]; S.e2[2]=e2[2];
   S.e3[0]=e3[0]; S.e3[1]=e3[1]; S.e3[2]=e3[2];
@@ -408,7 +423,7 @@ StepState Model::prepare_step(double t_s) const {
     const double ax=P_.solar_rotation_axis[0];
     const double ay=P_.solar_rotation_axis[1];
     const double az=P_.solar_rotation_axis[2];
-    const double axis_norm=std::sqrt(ax*ax+ay*ay+az*az);
+    const double axis_norm=std::hypot(ax,std::hypot(ay,az));
     S.solar_axis_hat[0]=ax/axis_norm;
     S.solar_axis_hat[1]=ay/axis_norm;
     S.solar_axis_hat[2]=az/axis_norm;
@@ -443,6 +458,14 @@ StepState Model::prepare_step(double t_s) const {
   if (S.common.apex.status!=swcme::kinematics::Status::Ok) {
     throw std::runtime_error(std::string("swcme3d kinematics: ")+
                              swcme::kinematics::status_name(S.common.apex.status));
+  }
+  if (!std::isfinite(S.common.apex.radius_m) ||
+      S.common.apex.radius_m < swcme::solarwind::MIN_RADIUS_M) {
+    throw std::runtime_error(
+        swcme::ModelStatus::make_value(
+            swcme::StatusCode::OutsideModelDomain,
+            "swcme3d::prepare_step shock radius",S.common.apex.radius_m)
+            .summary());
   }
 
   // Populate the legacy/public StepState mirrors from the common state.  No
@@ -565,7 +588,12 @@ StepState Model::prepare_step(double t_s) const {
 bool Model::shape_radius_normal(const StepState& S,
                                 double ux,double uy,double uz,
                                 double& Rdir_m,double n_hat[3]) const {
-  double u[3]={ux,uy,uz}; ::safe_normalize(u);
+  double u[3]={ux,uy,uz};
+  if (!::normalize_checked(u)) {
+    throw std::invalid_argument(
+        swcme::ModelStatus::make(swcme::StatusCode::DegenerateVector,
+                                 "swcme3d::shape_radius_normal direction").summary());
+  }
 
   // Always initialize the outputs to an explicitly nonphysical state.  This
   // ensures a caller that correctly checks the boolean cannot accidentally
@@ -598,7 +626,11 @@ bool Model::shape_radius_normal(const StepState& S,
       double ng[3]={ nloc[0]*S.e1[0]+nloc[1]*S.e2[0]+nloc[2]*S.e3[0],
                      nloc[0]*S.e1[1]+nloc[1]*S.e2[1]+nloc[2]*S.e3[1],
                      nloc[0]*S.e1[2]+nloc[1]*S.e2[2]+nloc[2]*S.e3[2] };
-      ::safe_normalize(ng);
+      if (!::normalize_checked(ng)) {
+        throw std::runtime_error(
+            swcme::ModelStatus::make(swcme::StatusCode::GeometryFailure,
+                                     "swcme3d::shape_radius_normal ellipsoid normal").summary());
+      }
       n_hat[0]=ng[0]; n_hat[1]=ng[1]; n_hat[2]=ng[2];
       return true;
     }
@@ -642,15 +674,20 @@ bool Model::shape_radius_normal(const StepState& S,
 
       // The exact outward normal is the normalized gradient of the spherical
       // level set F(x)=|x-c*e1|^2-a^2.  Since x lies on the sphere, division by
-      // a already produces a unit vector up to roundoff; safe_normalize removes
-      // the remaining floating-point drift without changing its direction.
+      // a already produces a unit vector up to roundoff; normalize_checked removes
+      // the remaining drift and reports a true degeneracy rather than inventing
+      // an arbitrary normal.
       double ng[3]={
           Rdir_m*u[0]-c*S.e1[0],
           Rdir_m*u[1]-c*S.e1[1],
           Rdir_m*u[2]-c*S.e1[2]};
       if (a<=0.0) return false;  // guarded in prepare_step(); defensive only
       ng[0]/=a; ng[1]/=a; ng[2]/=a;
-      ::safe_normalize(ng);
+      if (!::normalize_checked(ng)) {
+        throw std::runtime_error(
+            swcme::ModelStatus::make(swcme::StatusCode::GeometryFailure,
+                                     "swcme3d::shape_radius_normal SSE normal").summary());
+      }
       n_hat[0]=ng[0]; n_hat[1]=ng[1]; n_hat[2]=ng[2];
       return true;
     }
@@ -671,53 +708,92 @@ bool Model::shape_radius_normal(const StepState& S,
 //   * a finite CME surface no longer implies that a fast shock exists; and
 //   * shock strength no longer depends on the radius of an arbitrary field
 //     query ahead of the shock.
-bool Model::shock_state_direction(const StepState& S, const double u_in[3],
-                                  LocalShockState& state) const {
+swcme::ModelStatus Model::shock_state_direction_checked(
+    const StepState& S, const double u_in[3], LocalShockState& state) const {
   state=LocalShockState{};
+  if (!u_in || !std::isfinite(u_in[0]) || !std::isfinite(u_in[1]) ||
+      !std::isfinite(u_in[2])) {
+    state.status=swcme::ModelStatus::make(
+        swcme::StatusCode::NonFiniteInput,
+        "swcme3d::shock_state_direction direction");
+    return state.status;
+  }
 
   double u[3]={u_in[0],u_in[1],u_in[2]};
-  ::safe_normalize(u);
+  if (!::normalize_checked(u)) {
+    state.status=swcme::ModelStatus::make(
+        swcme::StatusCode::DegenerateVector,
+        "swcme3d::shock_state_direction direction");
+    return state.status;
+  }
+
   double Rdir=0.0,n_hat[3]={0.0,0.0,0.0};
-  if (!shape_radius_normal(S,u[0],u[1],u[2],Rdir,n_hat)) {
-    // No finite shock surface exists in this direction (for example outside
-    // the angular support of the SSE cap).  This is not a nonlinear-solver
-    // failure, so solver_converged remains true and compression remains one.
-    return false;
+  try {
+    if (!shape_radius_normal(S,u[0],u[1],u[2],Rdir,n_hat)) {
+      state.status=swcme::ModelStatus::make(
+          swcme::StatusCode::NoSurface,
+          "swcme3d::shock_state_direction finite surface");
+      return state.status;
+    }
+  } catch (const std::exception&) {
+    state.status=swcme::ModelStatus::make(
+        swcme::StatusCode::GeometryFailure,
+        "swcme3d::shock_state_direction geometry");
+    return state.status;
+  }
+
+  if (!std::isfinite(Rdir) || Rdir<swcme::solarwind::MIN_RADIUS_M ||
+      !::finite3(n_hat)) {
+    state.status=swcme::ModelStatus::make_value(
+        Rdir<swcme::solarwind::MIN_RADIUS_M
+            ? swcme::StatusCode::OutsideModelDomain
+            : swcme::StatusCode::GeometryFailure,
+        "swcme3d::shock_state_direction surface radius",Rdir);
+    return state.status;
   }
 
   state.surface_exists=true;
   state.Rdir_m=Rdir;
   state.normal[0]=n_hat[0]; state.normal[1]=n_hat[1]; state.normal[2]=n_hat[2];
 
-  // Upstream density is evaluated at the shock surface, never at the caller's
-  // sample radius.  Using the query point here made the same physical shock
-  // acquire different Mach numbers depending on where the model was sampled.
-  const double r=std::max(Rdir,swcme::solarwind::MIN_RADIUS_M);
-  const double n_up_m3=swcme::solarwind::density_m3(S.common.solar_wind,r);
+  // The upstream state is sampled at the physical shock surface.  No radius
+  // clamp is performed here: a front inside the documented solar-wind domain
+  // is an explicit OUTSIDE_MODEL_DOMAIN result.
+  const double n_up_m3=swcme::solarwind::density_m3(S.common.solar_wind,Rdir);
+  if (!std::isfinite(n_up_m3) || !(n_up_m3>0.0)) {
+    state.status=swcme::ModelStatus::make(
+        swcme::StatusCode::NonFiniteResult,
+        "swcme3d::shock_state_direction upstream density");
+    return state.status;
+  }
   state.upstream_n_m3=n_up_m3;
 
   double B_up[3]={0.0,0.0,0.0};
-  ::parker_vec_T_fast(S,u,r,B_up);
+  ::parker_vec_T_fast(S,u,Rdir,B_up);
+  if (!::finite3(B_up)) {
+    state.status=swcme::ModelStatus::make(
+        swcme::StatusCode::NonFiniteResult,
+        "swcme3d::shock_state_direction upstream magnetic field");
+    return state.status;
+  }
 
-  // Every supported geometry is self-similar with the apex radius.  The
-  // surface point on a fixed ray therefore moves radially at
-  // (Rdir/Rapex)*Vapex; the physical jump condition uses only the projection
-  // of that motion onto the local outward surface normal.
   const double radial_scale=(S.r_sh_m>0.0)? Rdir/S.r_sh_m : 0.0;
   double normal_projection=n_hat[0]*u[0]+n_hat[1]*u[1]+n_hat[2]*u[2];
   const double projection_tol=128.0*std::numeric_limits<double>::epsilon();
   if (normal_projection<0.0 && normal_projection>=-projection_tol)
-    normal_projection=0.0;
-  state.Vsh_n_m_s=finite_or(S.V_sh_ms*radial_scale*normal_projection,0.0);
+    normal_projection=0.0; // roundoff-only clamp of a mathematically nonnegative dot product
+  state.Vsh_n_m_s=S.V_sh_ms*radial_scale*normal_projection;
+  if (!std::isfinite(state.Vsh_n_m_s)) {
+    state.status=swcme::ModelStatus::make(
+        swcme::StatusCode::NonFiniteResult,
+        "swcme3d::shock_state_direction normal shock speed");
+    return state.status;
+  }
 
-  // Current SWCME thermodynamics uses a proton-only thermal pressure
-  // p=n_p k_B T_p and rho=m_p n_p.  Composition/temperature generalization is
-  // a separate work package; using the existing convention here keeps this
-  // correction focused on shock existence and MHD conservation.
   swcme::shock::PrimitiveState upstream;
-  upstream.rho_kg_m3=std::max(0.0,n_up_m3)*MP;
+  upstream.rho_kg_m3=n_up_m3*MP;
   upstream.pressure_Pa=swcme::solarwind::proton_pressure_Pa(
-      S.common.solar_wind,std::max(0.0,n_up_m3));
+      S.common.solar_wind,n_up_m3);
   upstream.velocity_m_s={{S.V_sw_ms*u[0],S.V_sw_ms*u[1],S.V_sw_ms*u[2]}};
   upstream.magnetic_T={{B_up[0],B_up[1],B_up[2]}};
   state.upstream=upstream;
@@ -732,14 +808,31 @@ bool Model::shock_state_direction(const StepState& S, const double u_in[3],
   state.fast_speed_m_s=jump.fast_speed_m_s;
   state.fast_mach=jump.fast_mach;
   state.downstream=(jump.has_shock && jump.solver_converged)? jump.downstream : upstream;
-  state.downstream_n_m3=state.has_shock && state.solver_converged
-                         ? state.compression*n_up_m3 : n_up_m3;
+  state.downstream_n_m3=(jump.has_shock && jump.solver_converged)
+                           ? jump.compression*n_up_m3 : n_up_m3;
   state.mass_residual=jump.mass_residual;
   state.normal_B_residual=jump.normal_B_residual;
   state.electric_residual=jump.electric_residual;
   state.momentum_residual=jump.momentum_residual;
   state.energy_residual=jump.energy_residual;
   state.entropy_ratio=jump.entropy_ratio;
+
+  if (jump.has_shock && !jump.solver_converged) {
+    state.status=swcme::ModelStatus::make(
+        swcme::StatusCode::ShockSolverFailure,
+        swcme::shock::solve_status_name(jump.status));
+    return state.status;
+  }
+
+  state.status=swcme::ModelStatus::success();
+  return state.status;
+}
+
+bool Model::shock_state_direction(const StepState& S, const double u[3],
+                                  LocalShockState& state) const {
+  const swcme::ModelStatus status=shock_state_direction_checked(S,u,state);
+  if (status.no_surface()) return false;
+  swcme::throw_if_error(status);
   return true;
 }
 
@@ -751,7 +844,11 @@ bool Model::shock_acceleration_state(
   if (!shock_state_direction(S,u_in,shock)) return false;
 
   double u[3]={u_in[0],u_in[1],u_in[2]};
-  ::safe_normalize(u);
+  if (!::normalize_checked(u)) {
+    throw std::runtime_error(
+        swcme::ModelStatus::make(swcme::StatusCode::DegenerateVector,
+                                 "swcme3d::shock_acceleration_state direction").summary());
+  }
   const std::array<double,3> position{{
       shock.Rdir_m*u[0],shock.Rdir_m*u[1],shock.Rdir_m*u[2]}};
   const std::array<double,3> normal{{
@@ -791,15 +888,14 @@ bool Model::parker_field_line_point(const StepState& S,
                                     const double observer_m[3],
                                     double radius_m,
                                     double point_m[3]) const {
-  if (!observer_m || !point_m || !std::isfinite(radius_m) || radius_m<=0.0 ||
+  if (!observer_m || !point_m || !std::isfinite(radius_m) ||
+      radius_m<swcme::solarwind::MIN_RADIUS_M ||
       !std::isfinite(S.V_sw_ms) || S.V_sw_ms<=0.0) {
-    if (point_m) point_m[0]=point_m[1]=point_m[2]=0.0;
     return false;
   }
 
   const double r_obs=norm3(observer_m);
-  if (!std::isfinite(r_obs) || r_obs<=0.0) {
-    point_m[0]=point_m[1]=point_m[2]=0.0;
+  if (!std::isfinite(r_obs) || r_obs<swcme::solarwind::MIN_RADIUS_M) {
     return false;
   }
 
@@ -808,7 +904,7 @@ bool Model::parker_field_line_point(const StepState& S,
   const double delta_phi=-S.solar_rotation_rate_rad_s*(radius_m-r_obs)/S.V_sw_ms;
   double u[3]={0.0,0.0,0.0};
   rotate_about_unit_axis(u_obs,S.solar_axis_hat,delta_phi,u);
-  ::safe_normalize(u);  // removes only roundoff from the orthogonal rotation
+  if (!::normalize_checked(u)) return false; // orthogonal rotation should preserve norm
 
   point_m[0]=radius_m*u[0];
   point_m[1]=radius_m*u[1];
@@ -1286,101 +1382,244 @@ static inline void evaluate_region_sample_3d(
 // maps upstream to the exact RH downstream state through the shared finite C1
 // layer in swcme_regions.hpp.  The same profile is used by 1-D and 3-D so div(V)
 // cannot acquire an artificial dimensionality-dependent shock strength.
+swcme::ModelStatus Model::evaluate_cartesian_fast_checked(
+    const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
+    std::size_t N) const {
+  if (N==0) return swcme::ModelStatus::success();
+  if (!x_m || !y_m || !z_m || !n_m3 || !Vx_ms || !Vy_ms || !Vz_ms) {
+    return swcme::ModelStatus::make(
+        swcme::StatusCode::NullPointer,"swcme3d::evaluate_cartesian_fast");
+  }
+
+  for (std::size_t i=0;i<N;++i) {
+    const double x=x_m[i],y=y_m[i],z=z_m[i];
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::NonFiniteInput,
+          "swcme3d::evaluate_cartesian_fast coordinate",i);
+    }
+    const double r=std::hypot(x,std::hypot(y,z));
+    if (!std::isfinite(r)) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::NonFiniteInput,
+          "swcme3d::evaluate_cartesian_fast radius",i);
+    }
+    if (r<swcme::solarwind::MIN_RADIUS_M) {
+      return swcme::ModelStatus::make_value(
+          swcme::StatusCode::OutsideModelDomain,
+          "swcme3d::evaluate_cartesian_fast radius",r,i);
+    }
+    const double invr=1.0/r;
+    const double u[3]={x*invr,y*invr,z*invr};
+
+    LocalShockState shock;
+    const swcme::ModelStatus shock_status=shock_state_direction_checked(S,u,shock);
+    const bool surface_exists=shock_status.ok();
+    if (shock_status.failure()) {
+      swcme::ModelStatus out=shock_status;
+      out.sample_index=i;
+      return out;
+    }
+
+    RegionalSample3D sample;
+    evaluate_region_sample_3d(P_,S,shock,surface_exists,u,r,false,sample);
+    if (!std::isfinite(sample.n_m3) || sample.n_m3<0.0 ||
+        !std::isfinite(sample.velocity_m_s[0]) ||
+        !std::isfinite(sample.velocity_m_s[1]) ||
+        !std::isfinite(sample.velocity_m_s[2])) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::NonFiniteResult,
+          "swcme3d::evaluate_cartesian_fast regional state",i);
+    }
+    n_m3[i]=sample.n_m3;
+    Vx_ms[i]=sample.velocity_m_s[0];
+    Vy_ms[i]=sample.velocity_m_s[1];
+    Vz_ms[i]=sample.velocity_m_s[2];
+  }
+  return swcme::ModelStatus::success();
+}
+
 void Model::evaluate_cartesian_fast(const StepState& S,
                                     const double* x_m,const double* y_m,const double* z_m,
                                     double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
                                     std::size_t N) const {
-  SWCME_IVDEP
-  for (std::size_t i=0;i<N;++i){
-    const double x=x_m[i], y=y_m[i], z=z_m[i];
-    const double r2=std::max(1e-12,x*x+y*y+z*z);
-    const double r=std::sqrt(r2), invr=1.0/r;
-    const double u[3]={x*invr,y*invr,z*invr};
+  swcme::throw_if_error(evaluate_cartesian_fast_checked(
+      S,x_m,y_m,z_m,n_m3,Vx_ms,Vy_ms,Vz_ms,N));
+}
 
-    LocalShockState shock;
-    const bool surface_exists=shock_state_direction(S,u,shock);
-    RegionalSample3D sample;
-    evaluate_region_sample_3d(P_,S,shock,surface_exists,u,r,false,sample);
-
-    n_m3[i]=finite_or(sample.n_m3,0.0);
-    Vx_ms[i]=finite_or(sample.velocity_m_s[0],0.0);
-    Vy_ms[i]=finite_or(sample.velocity_m_s[1],0.0);
-    Vz_ms[i]=finite_or(sample.velocity_m_s[2],0.0);
+swcme::ModelStatus Model::evaluate_cartesian_with_B_checked(
+    const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
+    double* Bx_T,double* By_T,double* Bz_T,std::size_t N) const {
+  if (N==0) return swcme::ModelStatus::success();
+  if (!x_m || !y_m || !z_m || !n_m3 || !Vx_ms || !Vy_ms || !Vz_ms ||
+      !Bx_T || !By_T || !Bz_T) {
+    return swcme::ModelStatus::make(
+        swcme::StatusCode::NullPointer,"swcme3d::evaluate_cartesian_with_B");
   }
-}
 
-// n, V, B evaluator.  In RESOLVED_COMPRESSION the numerical shock layer ends
-// at the complete MHD RH downstream state, then the sheath relaxes toward its
-// phenomenological leading-edge target.  The canonical discontinuous shock API
-// remains available separately.  SOURCE mode never embeds the RH jump in these
-// transport-facing fields, preventing source-plus-div(V) double counting.
-void Model::evaluate_cartesian_with_B(const StepState& S,
-  const double* x_m,const double* y_m,const double* z_m,
-  double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
-  double* Bx_T,double* By_T,double* Bz_T,
-  std::size_t N) const {
-
-  SWCME_IVDEP
-  for (std::size_t i=0;i<N;++i){
-    const double x=x_m[i], y=y_m[i], z=z_m[i];
-    const double r2=std::max(1e-12,x*x+y*y+z*z);
-    const double r=std::sqrt(r2), invr=1.0/r;
-    const double u[3]={x*invr,y*invr,z*invr};
-
-    LocalShockState shock;
-    const bool surface_exists=shock_state_direction(S,u,shock);
-    RegionalSample3D sample;
-    evaluate_region_sample_3d(P_,S,shock,surface_exists,u,r,true,sample);
-
-    n_m3[i]=finite_or(sample.n_m3,0.0);
-    Vx_ms[i]=finite_or(sample.velocity_m_s[0],0.0);
-    Vy_ms[i]=finite_or(sample.velocity_m_s[1],0.0);
-    Vz_ms[i]=finite_or(sample.velocity_m_s[2],0.0);
-    Bx_T[i]=finite_or(sample.magnetic_T[0],0.0);
-    By_T[i]=finite_or(sample.magnetic_T[1],0.0);
-    Bz_T[i]=finite_or(sample.magnetic_T[2],0.0);
-  }
-}
-
-void Model::evaluate_cartesian_with_B_div(const StepState& S,
-  const double* x_m,const double* y_m,const double* z_m,
-  double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
-  double* Bx_T,double* By_T,double* Bz_T,double* divVsw,
-  std::size_t N,double dr_frac) const {
-  evaluate_cartesian_with_B(S,x_m,y_m,z_m,n_m3,Vx_ms,Vy_ms,Vz_ms,Bx_T,By_T,Bz_T,N);
-  compute_divV_radial(S,x_m,y_m,z_m,divVsw,N,dr_frac);
-}
-
-// Robust radial divergence via (1/r^2) d(r^2 V_r)/dr
-void Model::compute_divV_radial(const StepState& S,
-  const double* x_m,const double* y_m,const double* z_m,
-  double* divV,std::size_t N,double dr_frac) const {
-  const double rmin=1.05*Rs, dr_min=1.0e-4*AU;
-
-  SWCME_IVDEP
-  for (std::size_t i=0;i<N;++i){
-    const double x=x_m[i], y=y_m[i], z=z_m[i];
-    const double r2=std::max(1e-12, x*x+y*y+z*z);
-    const double r =std::sqrt(r2);
+  for (std::size_t i=0;i<N;++i) {
+    const double x=x_m[i],y=y_m[i],z=z_m[i];
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::NonFiniteInput,
+          "swcme3d::evaluate_cartesian_with_B coordinate",i);
+    }
+    const double r=std::hypot(x,std::hypot(y,z));
+    if (!std::isfinite(r)) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::NonFiniteInput,
+          "swcme3d::evaluate_cartesian_with_B radius",i);
+    }
+    if (r<swcme::solarwind::MIN_RADIUS_M) {
+      return swcme::ModelStatus::make_value(
+          swcme::StatusCode::OutsideModelDomain,
+          "swcme3d::evaluate_cartesian_with_B radius",r,i);
+    }
     const double invr=1.0/r;
     const double u[3]={x*invr,y*invr,z*invr};
-    const double dr=std::max(dr_min, dr_frac*r);
-    const double rp=std::max(rmin,r+dr), rm=std::max(rmin,r-dr);
-    const double denom_r=(rp>rm)? (rp-rm): std::max(dr_min,std::abs(dr));
 
-    double xp=rp*u[0], yp=rp*u[1], zp=rp*u[2];
-    double xm=rm*u[0], ym=rm*u[1], zm=rm*u[2];
-    double n,Vxp,Vyp,Vzp,Vxm,Vym,Vzm;
-    evaluate_cartesian_fast(S,&xp,&yp,&zp,&n,&Vxp,&Vyp,&Vzp,1);
-    evaluate_cartesian_fast(S,&xm,&ym,&zm,&n,&Vxm,&Vym,&Vzm,1);
+    LocalShockState shock;
+    const swcme::ModelStatus shock_status=shock_state_direction_checked(S,u,shock);
+    const bool surface_exists=shock_status.ok();
+    if (shock_status.failure()) {
+      swcme::ModelStatus out=shock_status;
+      out.sample_index=i;
+      return out;
+    }
+
+    RegionalSample3D sample;
+    evaluate_region_sample_3d(P_,S,shock,surface_exists,u,r,true,sample);
+    if (!std::isfinite(sample.n_m3) || sample.n_m3<0.0 ||
+        !std::isfinite(sample.velocity_m_s[0]) ||
+        !std::isfinite(sample.velocity_m_s[1]) ||
+        !std::isfinite(sample.velocity_m_s[2]) ||
+        !std::isfinite(sample.magnetic_T[0]) ||
+        !std::isfinite(sample.magnetic_T[1]) ||
+        !std::isfinite(sample.magnetic_T[2])) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::NonFiniteResult,
+          "swcme3d::evaluate_cartesian_with_B regional state",i);
+    }
+    n_m3[i]=sample.n_m3;
+    Vx_ms[i]=sample.velocity_m_s[0];
+    Vy_ms[i]=sample.velocity_m_s[1];
+    Vz_ms[i]=sample.velocity_m_s[2];
+    Bx_T[i]=sample.magnetic_T[0];
+    By_T[i]=sample.magnetic_T[1];
+    Bz_T[i]=sample.magnetic_T[2];
+  }
+  return swcme::ModelStatus::success();
+}
+
+void Model::evaluate_cartesian_with_B(const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
+    double* Bx_T,double* By_T,double* Bz_T,std::size_t N) const {
+  swcme::throw_if_error(evaluate_cartesian_with_B_checked(
+      S,x_m,y_m,z_m,n_m3,Vx_ms,Vy_ms,Vz_ms,Bx_T,By_T,Bz_T,N));
+}
+
+swcme::ModelStatus Model::compute_divV_radial_checked(
+    const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* divV,std::size_t N,double dr_frac) const {
+  if (N==0) return swcme::ModelStatus::success();
+  if (!x_m || !y_m || !z_m || !divV) {
+    return swcme::ModelStatus::make(
+        swcme::StatusCode::NullPointer,"swcme3d::compute_divV_radial");
+  }
+  if (!std::isfinite(dr_frac) || dr_frac<=0.0) {
+    return swcme::ModelStatus::make_value(
+        swcme::StatusCode::InvalidNumericalStep,
+        "swcme3d::compute_divV_radial dr_frac",dr_frac);
+  }
+
+  const double rmin=swcme::solarwind::MIN_RADIUS_M;
+  const double dr_min=1.0e-4*AU;
+  for (std::size_t i=0;i<N;++i) {
+    const double x=x_m[i],y=y_m[i],z=z_m[i];
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::NonFiniteInput,
+          "swcme3d::compute_divV_radial coordinate",i);
+    }
+    const double r=std::hypot(x,std::hypot(y,z));
+    if (!std::isfinite(r) || r<rmin) {
+      return swcme::ModelStatus::make_value(
+          std::isfinite(r) ? swcme::StatusCode::OutsideModelDomain
+                           : swcme::StatusCode::NonFiniteInput,
+          "swcme3d::compute_divV_radial radius",r,i);
+    }
+    const double invr=1.0/r;
+    const double u[3]={x*invr,y*invr,z*invr};
+    const double dr=std::max(dr_min,dr_frac*r);
+    const double rp=r+dr;
+    const double rm=std::max(rmin,r-dr); // explicit one-sided boundary policy
+    if (!std::isfinite(rp) || !(rp>rm)) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::InvalidNumericalStep,
+          "swcme3d::compute_divV_radial stencil",i);
+    }
+
+    double xp=rp*u[0],yp=rp*u[1],zp=rp*u[2];
+    double xm=rm*u[0],ym=rm*u[1],zm=rm*u[2];
+    double n=0.0,Vxp=0.0,Vyp=0.0,Vzp=0.0,Vxm=0.0,Vym=0.0,Vzm=0.0;
+    swcme::ModelStatus status=evaluate_cartesian_fast_checked(
+        S,&xp,&yp,&zp,&n,&Vxp,&Vyp,&Vzp,1);
+    if (!status.ok()) { status.sample_index=i; return status; }
+    status=evaluate_cartesian_fast_checked(
+        S,&xm,&ym,&zm,&n,&Vxm,&Vym,&Vzm,1);
+    if (!status.ok()) { status.sample_index=i; return status; }
 
     const double Vrp=Vxp*u[0]+Vyp*u[1]+Vzp*u[2];
     const double Vrm=Vxm*u[0]+Vym*u[1]+Vzm*u[2];
-
-    const double num=((rp*rp)*Vrp - (rm*rm)*Vrm)/denom_r;
-    const double div_val=num/(r*r);
-    divV[i]=finite_or(div_val,0.0);
+    const double denom_r=rp-rm;
+    if (!(denom_r>0.0) || !std::isfinite(denom_r)) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::InvalidNumericalStep,
+          "swcme3d::compute_divV_radial denominator",i);
+    }
+    const double div_val=(((rp*rp)*Vrp-(rm*rm)*Vrm)/denom_r)/(r*r);
+    if (!std::isfinite(div_val)) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::NonFiniteResult,
+          "swcme3d::compute_divV_radial divergence",i);
+    }
+    divV[i]=div_val;
   }
+  return swcme::ModelStatus::success();
+}
+
+void Model::compute_divV_radial(const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* divV,std::size_t N,double dr_frac) const {
+  swcme::throw_if_error(compute_divV_radial_checked(
+      S,x_m,y_m,z_m,divV,N,dr_frac));
+}
+
+swcme::ModelStatus Model::evaluate_cartesian_with_B_div_checked(
+    const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
+    double* Bx_T,double* By_T,double* Bz_T,double* divVsw,
+    std::size_t N,double dr_frac) const {
+  swcme::ModelStatus status=evaluate_cartesian_with_B_checked(
+      S,x_m,y_m,z_m,n_m3,Vx_ms,Vy_ms,Vz_ms,Bx_T,By_T,Bz_T,N);
+  if (!status.ok()) return status;
+  return compute_divV_radial_checked(S,x_m,y_m,z_m,divVsw,N,dr_frac);
+}
+
+void Model::evaluate_cartesian_with_B_div(const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
+    double* Bx_T,double* By_T,double* Bz_T,double* divVsw,
+    std::size_t N,double dr_frac) const {
+  swcme::throw_if_error(evaluate_cartesian_with_B_div_checked(
+      S,x_m,y_m,z_m,n_m3,Vx_ms,Vy_ms,Vz_ms,Bx_T,By_T,Bz_T,divVsw,N,dr_frac));
 }
 
 bool Model::diagnose_direction(const StepState& S,const double u[3],
@@ -1425,7 +1664,11 @@ ShockMesh Model::build_shock_mesh(const StepState& S,std::size_t nTheta,std::siz
       double u[3]={ u_loc[0]*S.e1[0]+u_loc[1]*S.e2[0]+u_loc[2]*S.e3[0],
                     u_loc[0]*S.e1[1]+u_loc[1]*S.e2[1]+u_loc[2]*S.e3[1],
                     u_loc[0]*S.e1[2]+u_loc[1]*S.e2[2]+u_loc[2]*S.e3[2] };
-      ::safe_normalize(u);
+      if (!::normalize_checked(u)) {
+        throw std::runtime_error(
+            swcme::ModelStatus::make(swcme::StatusCode::GeometryFailure,
+                                     "swcme3d::build_shock_mesh direction").summary());
+      }
 
       // Build each nodal shock record from the canonical shock-surface query.
       // Earlier versions obtained the geometric point first and then called a
@@ -1444,15 +1687,20 @@ ShockMesh Model::build_shock_mesh(const StepState& S,std::size_t nTheta,std::siz
       }
 
       const double Rdir=shock.Rdir_m;
-      M.x.push_back(finite_or(Rdir*u[0],0.0));
-      M.y.push_back(finite_or(Rdir*u[1],0.0));
-      M.z.push_back(finite_or(Rdir*u[2],0.0));
-      M.n_hat_x.push_back(finite_or(shock.normal[0],0.0));
-      M.n_hat_y.push_back(finite_or(shock.normal[1],0.0));
-      M.n_hat_z.push_back(finite_or(shock.normal[2],1.0));
-      M.rc.push_back(finite_or(
-          shock.has_shock && shock.solver_converged ? shock.compression : 1.0,1.0));
-      M.Vsh_n.push_back(finite_or(shock.Vsh_n_m_s,0.0));
+      const double xyz[3]={Rdir*u[0],Rdir*u[1],Rdir*u[2]};
+      const double rc=shock.has_shock ? shock.compression : 1.0;
+      if (!::finite3(xyz) || !::finite3(shock.normal) || !std::isfinite(rc) ||
+          !std::isfinite(shock.Vsh_n_m_s)) {
+        throw std::runtime_error(
+            swcme::ModelStatus::make(swcme::StatusCode::NonFiniteResult,
+                                     "swcme3d::build_shock_mesh node").summary());
+      }
+      M.x.push_back(xyz[0]); M.y.push_back(xyz[1]); M.z.push_back(xyz[2]);
+      M.n_hat_x.push_back(shock.normal[0]);
+      M.n_hat_y.push_back(shock.normal[1]);
+      M.n_hat_z.push_back(shock.normal[2]);
+      M.rc.push_back(rc);
+      M.Vsh_n.push_back(shock.Vsh_n_m_s);
     }
   }
   const std::size_t NvPhi=nPhi+1;
@@ -1468,13 +1716,29 @@ ShockMesh Model::build_shock_mesh(const StepState& S,std::size_t nTheta,std::siz
 }
 
 void Model::compute_triangle_metrics(const ShockMesh& M, TriMetrics& T) const {
+  const std::size_t Nv=M.x.size();
   const std::size_t Ne=M.tri_i.size();
+  const bool node_sizes=(M.y.size()==Nv && M.z.size()==Nv &&
+                         M.n_hat_x.size()==Nv && M.n_hat_y.size()==Nv &&
+                         M.n_hat_z.size()==Nv && M.rc.size()==Nv &&
+                         M.Vsh_n.size()==Nv);
+  if (!node_sizes || M.tri_j.size()!=Ne || M.tri_k.size()!=Ne) {
+    throw std::runtime_error(
+        swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,
+                                 "swcme3d::compute_triangle_metrics sizes").summary());
+  }
   T.area.assign(Ne,0.0); T.nx.assign(Ne,0.0); T.ny.assign(Ne,0.0); T.nz.assign(Ne,1.0);
   T.cx.assign(Ne,0.0); T.cy.assign(Ne,0.0); T.cz.assign(Ne,0.0);
   T.rc_mean.assign(Ne,1.0); T.Vsh_n_mean.assign(Ne,0.0);
 
   for (std::size_t e=0;e<Ne;++e){
     int ia=M.tri_i[e]-1, ib=M.tri_j[e]-1, ic=M.tri_k[e]-1;
+    if (ia<0 || ib<0 || ic<0 || static_cast<std::size_t>(ia)>=Nv ||
+        static_cast<std::size_t>(ib)>=Nv || static_cast<std::size_t>(ic)>=Nv) {
+      throw std::runtime_error(
+          swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,
+                                   "swcme3d::compute_triangle_metrics connectivity",e).summary());
+    }
     double Ax=M.x[ia], Ay=M.y[ia], Az=M.z[ia];
     double Bx=M.x[ib], By=M.y[ib], Bz=M.z[ib];
     double Cx=M.x[ic], Cy=M.y[ic], Cz=M.z[ic];
@@ -1489,19 +1753,56 @@ void Model::compute_triangle_metrics(const ShockMesh& M, TriMetrics& T) const {
     double area=0.5*twiceA;
     if (twiceA>0){ nx/=twiceA; ny/=twiceA; nz/=twiceA; }
 
-    T.area[e]=finite_or(area,0.0);
-    T.nx[e]=finite_or(nx,0.0); T.ny[e]=finite_or(ny,0.0); T.nz[e]=finite_or(nz,1.0);
-    T.cx[e]=finite_or((Ax+Bx+Cx)/3.0,0.0);
-    T.cy[e]=finite_or((Ay+By+Cy)/3.0,0.0);
-    T.cz[e]=finite_or((Az+Bz+Cz)/3.0,0.0);
-    T.rc_mean[e]=finite_or((M.rc[ia]+M.rc[ib]+M.rc[ic])/3.0,1.0);
-    T.Vsh_n_mean[e]=finite_or((M.Vsh_n[ia]+M.Vsh_n[ib]+M.Vsh_n[ic])/3.0,0.0);
+    const double cx=(Ax+Bx+Cx)/3.0, cy=(Ay+By+Cy)/3.0, cz=(Az+Bz+Cz)/3.0;
+    const double rc_mean=(M.rc[ia]+M.rc[ib]+M.rc[ic])/3.0;
+    const double v_mean=(M.Vsh_n[ia]+M.Vsh_n[ib]+M.Vsh_n[ic])/3.0;
+    if (!std::isfinite(area) || !std::isfinite(nx) || !std::isfinite(ny) ||
+        !std::isfinite(nz) || !std::isfinite(cx) || !std::isfinite(cy) ||
+        !std::isfinite(cz) || !std::isfinite(rc_mean) || !std::isfinite(v_mean)) {
+      throw std::runtime_error(
+          swcme::ModelStatus::make(swcme::StatusCode::NonFiniteResult,
+                                   "swcme3d::compute_triangle_metrics",e).summary());
+    }
+    T.area[e]=area;
+    T.nx[e]=nx; T.ny[e]=ny; T.nz[e]=nz;
+    T.cx[e]=cx; T.cy[e]=cy; T.cz[e]=cz;
+    T.rc_mean[e]=rc_mean;
+    T.Vsh_n_mean[e]=v_mean;
   }
 }
 
 // --- Tecplot helpers ---------------------------------------------------------
+// Writers are not permitted to "sanitize" non-finite physics values.  They
+// reject such a dataset before opening/writing the file; checked writer APIs
+// return the corresponding status to the caller.  This keeps file-format
+// robustness separate from physics validity and preserves the original error.
+static inline bool all_finite(const std::vector<double>& values) {
+  for (double v: values) if (!std::isfinite(v)) return false;
+  return true;
+}
+
+static inline bool mesh_finite_and_sized(const swcme3d::ShockMesh& M) {
+  const std::size_t Nv=M.x.size(), Ne=M.tri_i.size();
+  return M.y.size()==Nv && M.z.size()==Nv && M.n_hat_x.size()==Nv &&
+         M.n_hat_y.size()==Nv && M.n_hat_z.size()==Nv && M.rc.size()==Nv &&
+         M.Vsh_n.size()==Nv && M.tri_j.size()==Ne && M.tri_k.size()==Ne &&
+         all_finite(M.x) && all_finite(M.y) && all_finite(M.z) &&
+         all_finite(M.n_hat_x) && all_finite(M.n_hat_y) &&
+         all_finite(M.n_hat_z) && all_finite(M.rc) && all_finite(M.Vsh_n);
+}
+
+static inline bool metrics_finite_and_sized(const swcme3d::TriMetrics& T,
+                                            std::size_t Ne) {
+  return T.area.size()==Ne && T.nx.size()==Ne && T.ny.size()==Ne &&
+         T.nz.size()==Ne && T.cx.size()==Ne && T.cy.size()==Ne &&
+         T.cz.size()==Ne && T.rc_mean.size()==Ne && T.Vsh_n_mean.size()==Ne &&
+         all_finite(T.area) && all_finite(T.nx) && all_finite(T.ny) &&
+         all_finite(T.nz) && all_finite(T.cx) && all_finite(T.cy) &&
+         all_finite(T.cz) && all_finite(T.rc_mean) && all_finite(T.Vsh_n_mean);
+}
+
 static inline void dump_array_block(std::FILE* fp, const std::vector<double>& a){
-  int cnt=0; for(double v:a){ std::fprintf(fp,"%.9e ",finite_or(v)); if(++cnt==8){std::fprintf(fp,"\n"); cnt=0;} } if(cnt) std::fprintf(fp,"\n");
+  int cnt=0; for(double v:a){ std::fprintf(fp,"%.9e ",v); if(++cnt==8){std::fprintf(fp,"\n"); cnt=0;} } if(cnt) std::fprintf(fp,"\n");
 }
 static inline void dump_zeros_block(std::FILE* fp, std::size_t count){
   int cnt=0; for(std::size_t e=0;e<count;++e){ std::fprintf(fp,"0 "); if(++cnt==8){std::fprintf(fp,"\n"); cnt=0;} } if(cnt) std::fprintf(fp,"\n");
@@ -1513,7 +1814,9 @@ bool Model::write_shock_surface_center_metrics_tecplot(
 
   TriMetrics T=T_in;
   const std::size_t Nv=M.x.size(), Ne=M.tri_i.size();
+  if (!path || !mesh_finite_and_sized(M)) return false;
   if (T.area.size()!=Ne){ compute_triangle_metrics(M,T); }
+  if (!metrics_finite_and_sized(T,Ne)) return false;
 
   std::FILE* fp=std::fopen(path,"w"); if(!fp) return false;
 
@@ -1541,6 +1844,27 @@ bool Model::write_shock_surface_center_metrics_tecplot(
   return true;
 }
 
+swcme::ModelStatus Model::write_shock_surface_center_metrics_tecplot_checked(
+    const ShockMesh& M,const TriMetrics& T,const char* path) const {
+  if (!path) return swcme::ModelStatus::make(
+      swcme::StatusCode::NullPointer,"write_shock_surface_center_metrics_tecplot path");
+  if (!mesh_finite_and_sized(M)) return swcme::ModelStatus::make(
+      swcme::StatusCode::NonFiniteResult,"write_shock_surface_center_metrics_tecplot mesh");
+  try {
+    TriMetrics checked=T;
+    if (checked.area.size()!=M.tri_i.size()) compute_triangle_metrics(M,checked);
+    if (!metrics_finite_and_sized(checked,M.tri_i.size())) return swcme::ModelStatus::make(
+        swcme::StatusCode::NonFiniteResult,"write_shock_surface_center_metrics_tecplot metrics");
+    return write_shock_surface_center_metrics_tecplot(M,checked,path)
+        ? swcme::ModelStatus::success()
+        : swcme::ModelStatus::make(swcme::StatusCode::FileOpenFailure,
+                                   "write_shock_surface_center_metrics_tecplot");
+  } catch (...) {
+    return swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,
+                                    "write_shock_surface_center_metrics_tecplot");
+  }
+}
+
 // Default apex-aligned volume box
 BoxSpec Model::default_apex_box(const StepState& S,double half_AU,int N) const {
   BoxSpec B; const double h=half_AU*AU;
@@ -1558,7 +1882,9 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_
                                          const char* path) const {
   TriMetrics T=T_in;
   const std::size_t Nv=M.x.size(), Ne=M.tri_i.size();
+  if (!path || !mesh_finite_and_sized(M)) return false;
   if (T.area.size()!=Ne){ compute_triangle_metrics(M,T); }
+  if (!metrics_finite_and_sized(T,Ne)) return false;
 
   std::FILE* fp=std::fopen(path,"w"); if(!fp) return false;
   auto p=[&](const char* fmt, auto... args){ std::fprintf(fp,fmt,args...); };
@@ -1601,11 +1927,11 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_
       "%.9e %.9e %.9e "
       "%.9e %.9e %.9e "
       "%.9e %.9e %.9e\n",
-      finite_or(M.x[i]), finite_or(M.y[i]), finite_or(M.z[i]),
+      M.x[i], M.y[i], M.z[i],
       0.0,0.0,0.0,0.0,
       0.0,0.0,0.0,0.0,
-      finite_or(M.rc[i],1.0), finite_or(M.Vsh_n[i],0.0),
-      finite_or(M.n_hat_x[i],0.0), finite_or(M.n_hat_y[i],0.0), finite_or(M.n_hat_z[i],1.0),
+      M.rc[i], M.Vsh_n[i],
+      M.n_hat_x[i], M.n_hat_y[i], M.n_hat_z[i],
       0.0,0.0,0.0,
       0.0,0.0,0.0,
       0.0,0.0,0.0
@@ -1633,9 +1959,9 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_
           "%.9e %.9e %.9e "
           "%.9e %.9e %.9e "
           "%.9e %.9e %.9e\n",
-          finite_or(xi), finite_or(yj), finite_or(zk),
-          finite_or(n), finite_or(Vx), finite_or(Vy), finite_or(Vz),
-          finite_or(Bx), finite_or(By), finite_or(Bz), finite_or(div,0.0),
+          xi, yj, zk,
+          n, Vx, Vy, Vz,
+          Bx, By, Bz, div,
           0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0
         );
       }
@@ -1666,9 +1992,9 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_
         "%.9e %.9e %.9e "
         "%.9e %.9e %.9e "
         "%.9e %.9e %.9e\n",
-        finite_or(x), finite_or(y), finite_or(z),
-        finite_or(n), finite_or(Vx), finite_or(Vy), finite_or(Vz),
-        finite_or(Bx), finite_or(By), finite_or(Bz), finite_or(div,0.0),
+        x, y, z,
+        n, Vx, Vy, Vz,
+        Bx, By, Bz, div,
         0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0
       );
     }
@@ -1682,6 +2008,7 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_
 bool Model::write_box_face_minX_tecplot_structured(const StepState& S,
                                                    const BoxSpec& B,
                                                    const char* path) const {
+  if (!path) return false;
   const int I=std::max(2,B.Nj), J=std::max(2,B.Nk);
   const double x0=B.cx-B.hx;
   const double y0=B.cy-B.hy, y1=B.cy+B.hy;
@@ -1718,15 +2045,61 @@ bool Model::write_box_face_minX_tecplot_structured(const StepState& S,
         "%.9e %.9e %.9e "
         "%.9e %.9e %.9e "
         "%.9e %.9e %.9e\n",
-        finite_or(x), finite_or(y), finite_or(z),
-        finite_or(n), finite_or(Vx), finite_or(Vy), finite_or(Vz),
-        finite_or(Bx), finite_or(By), finite_or(Bz), finite_or(div,0.0),
+        x, y, z,
+        n, Vx, Vy, Vz,
+        Bx, By, Bz, div,
         0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0, 0.0,0.0,0.0
       );
     }
   }
   std::fclose(fp);
   return true;
+}
+
+
+swcme::ModelStatus Model::write_tecplot_dataset_bundle_checked(
+    const ShockMesh& M,const TriMetrics& T,const StepState& S,const BoxSpec& B,
+    const char* path) const {
+  if (!path) return swcme::ModelStatus::make(
+      swcme::StatusCode::NullPointer,"write_tecplot_dataset_bundle path");
+  if (!mesh_finite_and_sized(M)) return swcme::ModelStatus::make(
+      swcme::StatusCode::NonFiniteResult,"write_tecplot_dataset_bundle mesh");
+  if (!std::isfinite(B.cx)||!std::isfinite(B.cy)||!std::isfinite(B.cz)||
+      !std::isfinite(B.hx)||!std::isfinite(B.hy)||!std::isfinite(B.hz) ||
+      B.Ni<1 || B.Nj<1 || B.Nk<1) {
+    return swcme::ModelStatus::make(swcme::StatusCode::NonFiniteInput,
+                                    "write_tecplot_dataset_bundle box");
+  }
+  try {
+    return write_tecplot_dataset_bundle(M,T,S,B,path)
+        ? swcme::ModelStatus::success()
+        : swcme::ModelStatus::make(swcme::StatusCode::FileOpenFailure,
+                                   "write_tecplot_dataset_bundle");
+  } catch (...) {
+    return swcme::ModelStatus::make(swcme::StatusCode::NonFiniteResult,
+                                    "write_tecplot_dataset_bundle evaluation");
+  }
+}
+
+swcme::ModelStatus Model::write_box_face_minX_tecplot_structured_checked(
+    const StepState& S,const BoxSpec& B,const char* path) const {
+  if (!path) return swcme::ModelStatus::make(
+      swcme::StatusCode::NullPointer,"write_box_face_minX_tecplot_structured path");
+  if (!std::isfinite(B.cx)||!std::isfinite(B.cy)||!std::isfinite(B.cz)||
+      !std::isfinite(B.hx)||!std::isfinite(B.hy)||!std::isfinite(B.hz) ||
+      B.Nj<1 || B.Nk<1) {
+    return swcme::ModelStatus::make(swcme::StatusCode::NonFiniteInput,
+                                    "write_box_face_minX_tecplot_structured box");
+  }
+  try {
+    return write_box_face_minX_tecplot_structured(S,B,path)
+        ? swcme::ModelStatus::success()
+        : swcme::ModelStatus::make(swcme::StatusCode::FileOpenFailure,
+                                   "write_box_face_minX_tecplot_structured");
+  } catch (...) {
+    return swcme::ModelStatus::make(swcme::StatusCode::NonFiniteResult,
+                                    "write_box_face_minX_tecplot_structured evaluation");
+  }
 }
 
 } // namespace swcme3d

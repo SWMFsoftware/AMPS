@@ -807,3 +807,49 @@ A passing test must not be obtained by merely masking `div(V)` after constructin
 an RH velocity jump in SOURCE mode.  SOURCE removes the resolved shock from the
 transport background by using SHOCK_ONLY; RESOLVED_COMPRESSION owns the single
 finite-width compression profile.
+
+## ERR01-ERR05: explicit numerical-status propagation
+
+These tests enforce the rule that the physics layer may not convert a failed
+numerical state into a plausible physical value.  They qualify the shared
+`swcme_status.hpp` status contract, the checked 1-D/3-D evaluators, the explicit
+RH solver outcome, and output-data validation.
+
+- `ERR01` — **1-D outside-domain query**.  Requests a radius below the supported
+  `1.05 R_sun` Parker/Leblanc boundary and requires
+  `OUTSIDE_MODEL_DOMAIN` with `sample_index=0`.  Sentinel outputs at the failed
+  sample must remain unchanged.  The source-compatible void evaluator must
+  throw rather than clipping the radius to the domain boundary.
+- `ERR02` — **3-D non-finite Cartesian input**.  Inserts a NaN into the second
+  point of a two-sample batch and requires `NONFINITE_INPUT` with
+  `sample_index=1`.  The failed sample must not be rewritten as zero/ambient
+  plasma, and the legacy wrapper must throw.
+- `ERR03` — **Rankine-Hugoniot outcome classification**.  A degenerate normal
+  and a non-finite upstream magnetic component must be `INVALID_INPUT`; a
+  well-formed sub-fast front must be `NO_SHOCK`; a well-conditioned fast shock
+  must be `SOLVED`.  The test prevents a bad primitive state from masquerading
+  as an unmagnetized/no-shock solution.
+- `ERR04` — **no arbitrary +X normalization fallback**.  A zero shock direction
+  must return `DEGENERATE_VECTOR`, leave `surface_exists=false`, and make the
+  old bool shock wrapper throw rather than constructing a +X surface.
+- `ERR05` — **writer rejects corrupt physics**.  A shock mesh containing NaN is
+  passed to the checked surface writer.  The writer must return
+  `NONFINITE_RESULT` before creating the requested file; substituting zero for
+  the bad coordinate is forbidden.
+
+Run the status gates directly with:
+
+```sh
+./output/test_swcme --test ERR01
+./output/test_swcme --test ERR02
+./output/test_swcme --test ERR03
+./output/test_swcme --test ERR04
+./output/test_swcme --test ERR05
+./output/test_swcme --all
+```
+
+`NO_SURFACE` and `NO_SHOCK` are deliberately not treated as numerical failures:
+they represent valid physical/geometrical outcomes.  Conversely, a solver,
+normalization, domain, or non-finite-value failure must remain visible to the
+caller and must never be made green by restoring `finite_or`, radius clipping,
+or ambient/zero substitution.

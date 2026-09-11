@@ -2,6 +2,7 @@
 
 #include "swcme_constants.hpp"
 #include "swcme_units.hpp"
+#include "swcme_status.hpp"
 #include "swcme_config.hpp"
 #include "swcme_regions.hpp"
 #include "swcme_acceleration.hpp"
@@ -96,7 +97,8 @@
 //    interior sheath relaxation remains phenomenological.
 //  • Mesh generator for the shock surface + triangle metrics (area, normals,
 //    centroids, rc_mean, Vsh_n_mean). All saved to Tecplot.
-//  • Structured-box samplers for (n, V, B, ∇·V) with NaN/Inf sanitization.
+//  • Structured-box samplers for (n, V, B, ∇·V) with explicit ModelStatus
+//    propagation; non-finite physics values are never sanitized into zeros.
 //
 // EFFICIENCY (Hot path):
 //  • StepState caches Parker/Leblanc constants and geometry helpers per time.
@@ -423,6 +425,7 @@ struct LocalShockState {
   bool surface_exists = false;
   bool has_shock = false;
   bool solver_converged = true;
+  swcme::ModelStatus status;
 
   double Rdir_m = 0.0;
   double normal[3] = {0.0,0.0,0.0};
@@ -592,6 +595,12 @@ public:
   // The upstream plasma is ALWAYS sampled at the physical shock position
   // Rdir*u; it is never sampled at an arbitrary query point.  The return value
   // is false only when the selected finite geometry has no surface along u.
+  // Checked form distinguishes NO_SURFACE from numerical failure.  New
+  // transport/AMPS adapters should prefer this method so failures can be
+  // propagated without exceptions.  The source-compatible bool wrapper below
+  // throws on numerical failure and returns false only for NO_SURFACE.
+  swcme::ModelStatus shock_state_direction_checked(
+      const StepState& S, const double u[3], LocalShockState& state) const;
   bool shock_state_direction(const StepState& S, const double u[3],
                              LocalShockState& state) const;
 
@@ -650,11 +659,28 @@ public:
                         double Rdir_m, double r_eval_m,
                         double& rc_out, double& Vsh_n_out, double& thetaBn_out) const;
 
+  // Checked batch evaluators return the first failed sample explicitly and
+  // never replace a NaN/Inf/out-of-domain query with zero or ambient flow.
+  swcme::ModelStatus evaluate_cartesian_fast_checked(
+                               const StepState& S,
+                               const double* x_m,const double* y_m,const double* z_m,
+                               double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
+                               std::size_t N) const;
+
   // Evaluate n and V (radial direction) for arrays of Cartesian points.
+  // Legacy source-compatible wrapper: throws std::runtime_error on a failed
+  // checked evaluation.
   void evaluate_cartesian_fast(const StepState& S,
                                const double* x_m,const double* y_m,const double* z_m,
                                double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
                                std::size_t N) const;
+
+  swcme::ModelStatus evaluate_cartesian_with_B_checked(
+                                 const StepState& S,
+                                 const double* x_m,const double* y_m,const double* z_m,
+                                 double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
+                                 double* Bx_T,double* By_T,double* Bz_T,
+                                 std::size_t N) const;
 
   // Evaluate n, V, and B (Parker upstream + sheath Bt amplification).
   void evaluate_cartesian_with_B(const StepState& S,
@@ -663,12 +689,24 @@ public:
                                  double* Bx_T,double* By_T,double* Bz_T,
                                  std::size_t N) const;
 
+  swcme::ModelStatus evaluate_cartesian_with_B_div_checked(
+                                     const StepState& S,
+                                     const double* x_m,const double* y_m,const double* z_m,
+                                     double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
+                                     double* Bx_T,double* By_T,double* Bz_T,double* divVsw,
+                                     std::size_t N, double dr_frac=1e-3) const;
+
   // Evaluate n, V, B, and div(V) using a robust radial finite-difference.
   void evaluate_cartesian_with_B_div(const StepState& S,
                                      const double* x_m,const double* y_m,const double* z_m,
                                      double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
                                      double* Bx_T,double* By_T,double* Bz_T,double* divVsw,
                                      std::size_t N, double dr_frac=1e-3) const;
+
+  swcme::ModelStatus compute_divV_radial_checked(
+                           const StepState& S,
+                           const double* x_m,const double* y_m,const double* z_m,
+                           double* divV,std::size_t N,double dr_frac=1e-3) const;
 
   // Compute ∇·V via (1/r^2) d(r^2 V_r)/dr with r±dr sampling along the ray.
   void compute_divV_radial(const StepState& S,
@@ -710,18 +748,31 @@ public:
   //    rc and Vsh_n are meaningful; nx,ny,nz are filled with nodal normals.
   //  • In "volume_box" (structured POINT), n,V,B,divV are meaningful; surface-
   //    specific quantities (rc, Vsh_n, normals, area, centroids) are zeros.
-  //  • All numeric outputs are NaN/Inf-sanitized before printing.
+  //  • Non-finite physics data are rejected. Checked writer APIs return the
+  //    failure status; writers never replace a bad value by zero.
   // --------------------------------------------------------------------------
+  swcme::ModelStatus write_tecplot_dataset_bundle_checked(
+                                    const ShockMesh& M,const TriMetrics& T,
+                                    const StepState& S,const BoxSpec& B,
+                                    const char* path) const;
   bool write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T,
                                     const StepState& S,const BoxSpec& B,
                                     const char* path) const;
 
   // Standalone 2-D face (min-X plane of a given BoxSpec) in Tecplot.
+  swcme::ModelStatus write_box_face_minX_tecplot_structured_checked(
+                                              const StepState& S,
+                                              const BoxSpec& B,
+                                              const char* path) const;
   bool write_box_face_minX_tecplot_structured(const StepState& S,
                                               const BoxSpec& B,
                                               const char* path) const;
 
   // Surface-only writer (cell metrics + nodal rc/Vsh_n) as a single zone.
+  swcme::ModelStatus write_shock_surface_center_metrics_tecplot_checked(
+                                                  const ShockMesh& M,
+                                                  const TriMetrics& T,
+                                                  const char* path) const;
   bool write_shock_surface_center_metrics_tecplot(const ShockMesh& M,
                                                   const TriMetrics& T,
                                                   const char* path) const;

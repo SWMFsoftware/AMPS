@@ -62,6 +62,27 @@ struct PrimitiveState {
   Vec3 magnetic_T{{0.0, 0.0, 0.0}};
 };
 
+enum class SolveStatus {
+  NoShock = 0,
+  Solved,
+  InvalidInput,
+  NoPhysicalBracket,
+  InvalidAcceptedState,
+  ConservationFailure
+};
+
+inline const char* solve_status_name(SolveStatus status) {
+  switch (status) {
+    case SolveStatus::NoShock: return "NO_SHOCK";
+    case SolveStatus::Solved: return "SOLVED";
+    case SolveStatus::InvalidInput: return "INVALID_INPUT";
+    case SolveStatus::NoPhysicalBracket: return "NO_PHYSICAL_BRACKET";
+    case SolveStatus::InvalidAcceptedState: return "INVALID_ACCEPTED_STATE";
+    case SolveStatus::ConservationFailure: return "CONSERVATION_FAILURE";
+  }
+  return "UNKNOWN";
+}
+
 struct JumpResult {
   // has_shock answers the physical shock-existence question.  A valid CME
   // surface may exist while has_shock=false if the normal relative speed is
@@ -73,6 +94,11 @@ struct JumpResult {
   // only when a super-fast state was identified but no admissible RH root was
   // found.
   bool solver_converged = true;
+
+  // Explicit reason for the solver outcome.  solver_converged is retained for
+  // source compatibility, but callers no longer need to infer whether false
+  // means malformed input, missing RH bracket, or failed admissibility.
+  SolveStatus status = SolveStatus::NoShock;
 
   double compression = 1.0;
   double theta_Bn_rad = 0.0;
@@ -114,14 +140,27 @@ inline Vec3 scale(const Vec3& a, double s) {
   return {{s*a[0], s*a[1], s*a[2]}};
 }
 
+inline bool finite_vec(const Vec3& a) {
+  return std::isfinite(a[0]) && std::isfinite(a[1]) && std::isfinite(a[2]);
+}
+
+inline bool finite_state(const PrimitiveState& state) {
+  return std::isfinite(state.rho_kg_m3) &&
+         std::isfinite(state.pressure_Pa) &&
+         finite_vec(state.velocity_m_s) && finite_vec(state.magnetic_T);
+}
+
+// hypot() is deliberately used instead of sqrt(x*x+y*y+z*z): it avoids
+// avoidable overflow/underflow and, unlike sqrt(max(0,dot)), cannot turn a NaN
+// component into an apparently valid zero norm through comparison semantics.
 inline double norm(const Vec3& a) {
-  return std::sqrt(std::max(0.0, dot(a,a)));
+  return std::hypot(a[0],std::hypot(a[1],a[2]));
 }
 
 inline Vec3 normalized(const Vec3& a) {
   const double n = norm(a);
-  return (n>0.0 && std::isfinite(n)) ? scale(a,1.0/n)
-                                     : Vec3{{0.0,0.0,0.0}};
+  return (finite_vec(a) && n>0.0 && std::isfinite(n)) ? scale(a,1.0/n)
+                                                      : Vec3{{0.0,0.0,0.0}};
 }
 
 inline Vec3 tangential(const Vec3& a, const Vec3& n) {
@@ -268,11 +307,16 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
   result.downstream = upstream;
   result.shock_normal_speed_m_s = shock_normal_speed_m_s;
 
+  // Validate every primitive component before any derived wave speed or
+  // normalization is evaluated.  In particular, a NaN magnetic component must
+  // not be interpreted as B=0 and converted into a hydrodynamic/no-shock state.
   const Vec3 n = detail::normalized(outward_normal);
-  if (detail::norm(n)==0.0 || !(upstream.rho_kg_m3>0.0) ||
-      !(upstream.pressure_Pa>0.0) || !(gamma>1.0) ||
+  if (!detail::finite_state(upstream) || !detail::finite_vec(outward_normal) ||
+      detail::norm(n)==0.0 || !(upstream.rho_kg_m3>0.0) ||
+      !(upstream.pressure_Pa>0.0) || !std::isfinite(gamma) || !(gamma>1.0) ||
       !std::isfinite(shock_normal_speed_m_s)) {
     result.solver_converged = false;
+    result.status = SolveStatus::InvalidInput;
     return result;
   }
 
@@ -289,6 +333,11 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
   }
 
   result.fast_speed_m_s = detail::fast_mode_speed(upstream,n,gamma);
+  if (!std::isfinite(result.fast_speed_m_s) || !(result.fast_speed_m_s>0.0)) {
+    result.solver_converged=false;
+    result.status=SolveStatus::InvalidInput;
+    return result;
+  }
   const double V1n = detail::dot(upstream.velocity_m_s,n);
   const double U1n = shock_normal_speed_m_s - V1n;
   result.upstream_inflow_normal_m_s = U1n;
@@ -301,6 +350,7 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
   if (!(U1n>0.0) || !(result.fast_mach>1.0+mach_tol)) {
     result.has_shock = false;
     result.compression = 1.0;
+    result.status = SolveStatus::NoShock;
     return result;
   }
 
@@ -345,6 +395,7 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
 
   if (!have_bracket) {
     result.solver_converged=false;
+    result.status=SolveStatus::NoPhysicalBracket;
     return result;
   }
 
@@ -380,6 +431,7 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
                                                gamma,compression);
   if (!accepted.valid) {
     result.solver_converged=false;
+    result.status=SolveStatus::InvalidAcceptedState;
     return result;
   }
 
@@ -447,6 +499,7 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
                           result.momentum_residual<=1.0e-8 &&
                           result.energy_residual<=1.0e-8;
   result.solver_converged=admissible;
+  result.status=admissible ? SolveStatus::Solved : SolveStatus::ConservationFailure;
   return result;
 }
 

@@ -59,10 +59,13 @@ summary of all detected fields.  Unit conversion is then deterministic and
 contains no physical clipping.  The common kinematics component retains its own
 defensive SI validation as a second internal guard.
 
-The change intentionally does not remove every legacy `finite_or()` in the 3-D
-field/region evaluators; that broader numerical-status cleanup remains a
-separate remediation task.  It does remove configuration-derived fallbacks in
-`prepare_step()` where valid parameters have already been established.
+At the time of this configuration/unit update, legacy `finite_or()` calls in
+3-D field/region evaluators were deliberately left for a separate numerical-
+status remediation rather than being mixed into configuration validation.
+That follow-on remediation is now implemented in `swcme_status.hpp` and the
+checked evaluator APIs described in `NUMERICAL_STATUS_FIX_NOTES.md`: production
+physics no longer uses `finite_or()` to turn invalid intermediate values into
+plausible field values.
 
 ## Validation
 

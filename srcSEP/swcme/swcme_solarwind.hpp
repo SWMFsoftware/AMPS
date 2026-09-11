@@ -38,11 +38,11 @@ constexpr double LEBLANC_A_CM3 = 3.3e5;
 constexpr double LEBLANC_B_CM3 = 4.1e6;
 constexpr double LEBLANC_C_CM3 = 8.0e7;
 
-// The analytical SWCME background has historically been used only outside
-// 1.05 solar radii.  The common core preserves that existing model-domain
-// guard so 1-D and 3-D cannot silently use different lower-radius policies.
-// A later explicit OUTSIDE_MODEL_DOMAIN API can replace this clamp without
-// changing the underlying density/Parker equations.
+// The analytical SWCME background is defined only outside 1.05 solar radii.
+// This constant is a DOMAIN BOUNDARY, not a clipping value.  Public model
+// evaluators now return OUTSIDE_MODEL_DOMAIN for smaller radii.  The low-level
+// formulas below assume the caller has already enforced that contract and do
+// not silently replace an out-of-domain radius with MIN_RADIUS_M.
 constexpr double MIN_RADIUS_M =
     1.05 * swcme::constants::SOLAR_RADIUS_M;
 
@@ -140,7 +140,7 @@ inline PreparedState prepare(const ConfigSI& cfg) {
 }
 
 inline double density_m3(const PreparedState& state, double radius_m) {
-  const double r = std::max(radius_m, MIN_RADIUS_M);
+  const double r = radius_m;
   const double inv2 = 1.0 / (r * r);
   const double inv4 = inv2 * inv2;
   const double inv6 = inv4 * inv2;
@@ -153,7 +153,7 @@ inline double density_m3(const PreparedState& state, double radius_m) {
 inline ParkerComponents parker_components(const PreparedState& state,
                                            double radius_m,
                                            double sin_theta_local) {
-  const double r = std::max(radius_m, MIN_RADIUS_M);
+  const double r = radius_m;
   const double r_AU = r / swcme::constants::AU_M;
   const double Br = state.Br1AU_T / (r_AU * r_AU);
   const double Bphi = -Br * state.k_AU_equatorial * r_AU * sin_theta_local;

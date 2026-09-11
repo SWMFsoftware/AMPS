@@ -61,6 +61,11 @@ void test_acc02(swcme_test::Context& context);
 void test_acc03(swcme_test::Context& context);
 void test_acc04(swcme_test::Context& context);
 void test_acc05(swcme_test::Context& context);
+void test_err01(swcme_test::Context& context);
+void test_err02(swcme_test::Context& context);
+void test_err03(swcme_test::Context& context);
+void test_err04(swcme_test::Context& context);
+void test_err05(swcme_test::Context& context);
 void test_1d_ambient_at_one_au(swcme_test::Context& context);
 void test_1d3d01(swcme_test::Context& context);
 void test_1d3d02(swcme_test::Context& context);
@@ -137,6 +142,11 @@ const swcme_test::TestCase kTests[] = {
     {"ACC03", "COMMON", "Resolved-compression C1 shock smoothing and RH endpoints", test_acc03},
     {"ACC04", "1D<->3D", "Resolved shock-profile identity in spherical radial limit", test_acc04},
     {"ACC05", "COMMON", "Resolved mode disables prescribed DSA source", test_acc05},
+    {"ERR01", "COMMON", "1-D outside-domain status and no radius clipping", test_err01},
+    {"ERR02", "3D", "Cartesian non-finite input propagation", test_err02},
+    {"ERR03", "COMMON", "Explicit Rankine-Hugoniot solver outcome status", test_err03},
+    {"ERR04", "3D", "Degenerate direction rejection without +X fallback", test_err04},
+    {"ERR05", "3D", "Tecplot writer rejects non-finite physics data", test_err05},
     {"1D_AMBIENT_01", "1D", "Ambient values at 1 AU",
      test_1d_ambient_at_one_au},
     {"1D3D01", "1D<->3D", "Common-core upstream solar-wind state identity", test_1d3d01},

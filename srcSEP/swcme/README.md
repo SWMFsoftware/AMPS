@@ -529,3 +529,49 @@ mode, and byte-identical SOURCE records in the spherical radial limit.
 
 See `SHOCK_ACCELERATION_FIX_NOTES.md` and `test/README.md` for the validation
 fixtures and implementation details.
+
+## Explicit numerical status and error propagation
+
+`swcme_status.hpp` provides the shared `swcme::ModelStatus` contract used by
+numerically sensitive 1-D/3-D evaluation paths.  The production physics layer
+no longer converts an invalid intermediate state into zero, ambient plasma, a
+clipped radius, or an arbitrary +X direction merely to keep a calculation
+running.
+
+New code should prefer the checked APIs:
+
+```cpp
+swcme1d::Model::evaluate_radii_fast_checked(...)
+swcme1d::Model::evaluate_radii_with_B_div_checked(...)
+
+swcme3d::Model::shock_state_direction_checked(...)
+swcme3d::Model::evaluate_cartesian_fast_checked(...)
+swcme3d::Model::evaluate_cartesian_with_B_checked(...)
+swcme3d::Model::evaluate_cartesian_with_B_div_checked(...)
+swcme3d::Model::compute_divV_radial_checked(...)
+```
+
+They return `ModelStatus` with an explicit code, context, and failed sample
+index for batch queries.  The existing void/bool science wrappers remain for
+source compatibility but convert numerical failures to exceptions instead of
+silently repairing the result.  `NO_SURFACE` remains an expected geometrical
+outcome for directions outside a finite front and is distinguishable from an
+actual numerical failure.
+
+The analytical Leblanc/Parker lower boundary, `1.05 R_sun`, is now a real model
+domain: science queries below it return `OUTSIDE_MODEL_DOMAIN`.  The low-level
+solar-wind equations no longer clip the caller's radius.  Vector norms use
+`std::hypot` and degenerate/non-finite vectors are rejected; the previous +X
+normalization fallback has been removed.
+
+The shared ideal-MHD jump result also carries an explicit `SolveStatus`
+(`NO_SHOCK`, `SOLVED`, `INVALID_INPUT`, `NO_PHYSICAL_BRACKET`,
+`INVALID_ACCEPTED_STATE`, or `CONSERVATION_FAILURE`).  A failed super-fast RH
+solve is propagated as `SHOCK_SOLVER_FAILURE`; it is not converted to a
+compression-one ambient state.
+
+Mesh and checked Tecplot output paths reject non-finite physics instead of
+writing a sanitized surrogate.  `ERR01`-`ERR05` protect outside-domain behavior,
+non-finite batch input, explicit RH outcomes, degenerate-vector rejection, and
+writer rejection of corrupt mesh data.  See `NUMERICAL_STATUS_FIX_NOTES.md` and
+`test/README.md` for the complete status semantics and validation fixtures.

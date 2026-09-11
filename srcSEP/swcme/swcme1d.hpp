@@ -64,7 +64,8 @@ PHYSICAL MODEL (succinct but complete)
       this intentionally simple baseline model.
 
 NUMERICAL / IMPLEMENTATION CHOICES
-  • Radii are clipped to r ≥ 1.05 R☉ for safety (no singularities of 1/r^k).
+  • r < 1.05 R☉ is outside the analytical model domain and is reported
+    explicitly; radii are never silently clipped into the supported domain.
   • Per-time quantities (DBM kinematics, Parker parameters, Leblanc scale,
     r_c, sheath/ME geometric radii & widths) are cached in StepState.
   • ∇·V = (1/r²) d/dr (r² V) evaluated by a centered finite difference with
@@ -263,7 +264,8 @@ USAGE SKETCH (more complete examples at bottom)
 
 
  NUMERICAL NOTES
-   • Sanitized outputs: n, V, B, |B|, ∇·V are finite (fallbacks applied).
+   • Explicit numerical status: invalid/out-of-domain/non-finite samples are
+    reported and are never replaced by plausible fallback values.
    • No heap allocs in evaluators; no pow() in hot paths.
    • ∇·V uses 1/r^2 · d/dr(r^2 V) with a small centered difference (dr_frac).
    • Tunable widths per edge; keep shock width ≪ sheath thickness.
@@ -343,6 +345,7 @@ USAGE SKETCH (more complete examples at bottom)
 
 #include "swcme_constants.hpp"
 #include "swcme_units.hpp"
+#include "swcme_status.hpp"
 #include "swcme_config.hpp"
 #include "swcme_regions.hpp"
 #include "swcme_acceleration.hpp"
@@ -646,6 +649,14 @@ public:
       throw std::runtime_error(std::string("swcme1d kinematics: ")+
                                swcme::kinematics::status_name(S.common.apex.status));
     }
+    if (!std::isfinite(S.common.apex.radius_m) ||
+        S.common.apex.radius_m < swcme::solarwind::MIN_RADIUS_M) {
+      throw std::runtime_error(
+          swcme::ModelStatus::make_value(
+              swcme::StatusCode::OutsideModelDomain,
+              "swcme1d::prepare_step shock radius", S.common.apex.radius_m)
+              .summary());
+    }
 
     // Legacy StepState fields are mirrors only.  Keeping them populated avoids
     // breaking existing callers while guaranteeing that both dimensional
@@ -727,7 +738,16 @@ public:
     S.shock_jump=jump;
     S.has_shock = jump.has_shock;
     S.shock_solver_converged = jump.solver_converged;
-    S.rc = (S.has_shock && S.shock_solver_converged) ? jump.compression : 1.0;
+    // A super-fast state for which the RH solve fails is a numerical failure,
+    // not a no-shock state.  Do not fall back to compression=1/ambient flow.
+    if (S.has_shock && !S.shock_solver_converged) {
+      throw std::runtime_error(
+          swcme::ModelStatus::make(
+              swcme::StatusCode::ShockSolverFailure,
+              "swcme1d::prepare_step Rankine-Hugoniot solve")
+              .summary());
+    }
+    S.rc = S.has_shock ? jump.compression : 1.0;
 
     // Cache exact boundary values for the sheath.  In the no-shock case the
     // downstream state is intentionally identical to upstream, so no jump is
@@ -792,24 +812,47 @@ public:
    *     n(s)=exp((1−s)ln n₂ + s ln n_up(R_LE)), V(s)=smoothstep(s^p; V₂→V_LE),
    *     with safety clamps n≥n_up,V≥V_sw to prevent undershoots.
    */
-  void evaluate_radii_fast(const StepState& S,
-                           const double* r_m,
-                           double* n_m3, double* V_ms,
-                           std::size_t N) const {
-    if (!r_m || !n_m3 || !V_ms || N==0) return;
+  // Checked batch evaluator.  No output value is synthesized on failure: the
+  // first invalid sample is reported through ModelStatus and the caller can
+  // decide whether to abort the AMPS step, log the event, or recover at a
+  // higher level.  The legacy void wrapper below converts the same status into
+  // an exception, preserving source compatibility without preserving silent
+  // fallback semantics.
+  swcme::ModelStatus evaluate_radii_fast_checked(
+      const StepState& S, const double* r_m, double* n_m3, double* V_ms,
+      std::size_t N) const {
+    if (N==0) return swcme::ModelStatus::success();
+    if (!r_m || !n_m3 || !V_ms) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::NullPointer,"swcme1d::evaluate_radii_fast");
+    }
+    if (S.has_shock && !S.shock_solver_converged) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::ShockSolverFailure,
+          "swcme1d::evaluate_radii_fast shock state");
+    }
 
-    const double Vsw = S.V_up_ms;
+    const double Vsw=S.V_up_ms;
+    for (std::size_t i=0;i<N;++i) {
+      const double r=r_m[i];
+      if (!std::isfinite(r)) {
+        return swcme::ModelStatus::make_value(
+            swcme::StatusCode::NonFiniteInput,
+            "swcme1d::evaluate_radii_fast radius",r,i);
+      }
+      if (r<swcme::solarwind::MIN_RADIUS_M) {
+        return swcme::ModelStatus::make_value(
+            swcme::StatusCode::OutsideModelDomain,
+            "swcme1d::evaluate_radii_fast radius",r,i);
+      }
 
-    for (std::size_t i=0;i<N;++i){
-      const double r = std::max(r_m[i], swcme::solarwind::MIN_RADIUS_M);
-      const double n_up = density_upstream(S, r);
+      const double n_up=density_upstream(S,r);
+      if (!std::isfinite(n_up) || n_up<0.0 || !std::isfinite(Vsw)) {
+        return swcme::ModelStatus::make(
+            swcme::StatusCode::NonFiniteResult,
+            "swcme1d::evaluate_radii_fast ambient state",i);
+      }
 
-      // SHOCK_ONLY is intentionally a *background* mode.  The shock geometry,
-      // connectivity and source state remain available through their dedicated
-      // APIs, but the transport-facing plasma state is exactly the analytical
-      // Parker/Leblanc wind everywhere.  This is the controlled baseline used
-      // to separate connectivity/perpendicular-diffusion effects from uncertain
-      // ICME sheath/ejecta phenomenology.
       if (S.region_config.mode==swcme::regions::Mode::ShockOnly) {
         n_m3[i]=n_up;
         V_ms[i]=Vsw;
@@ -818,14 +861,9 @@ public:
 
       const swcme::regions::Boundaries& b=S.region_boundaries;
       const swcme::regions::Location loc=swcme::regions::locate(r,b);
-
-      // Base sheath state.  A real fast shock starts from the exact MHD RH
-      // downstream state and relaxes toward the ambient state at R_LE.  A
-      // geometric CME front without a fast shock has no artificial sheath
-      // compression: its sheath base is simply the local upstream wind.
-      const auto sheath_state = [&](double rr, double& n, double& V) {
+      const auto sheath_state=[&](double rr,double& n,double& V) {
         const double n_local_up=density_upstream(S,rr);
-        if (!S.has_shock || !S.shock_solver_converged) {
+        if (!S.has_shock) {
           n=n_local_up;
           V=Vsw;
           return;
@@ -837,24 +875,14 @@ public:
         n=swcme::regions::log_lerp_positive(n2,n_le,w);
         V=swcme::regions::lerp(S.V2_shock_ms,S.V_LE_ms,w);
       };
-
-      // Magnetic-ejecta target.  Factors below unity are intentional physical
-      // inputs (density depletion and slower ejecta) and are now honored
-      // exactly; configuration validation rejects negative values instead of
-      // allowing an evaluator to clip them silently.
-      const auto ejecta_state = [&](double rr, double& n, double& V) {
+      const auto ejecta_state=[&](double rr,double& n,double& V) {
         n=S.region_config.f_ME*density_upstream(S,rr);
         V=S.region_config.V_ME_factor*Vsw;
       };
 
-      double n=n_up;
-      double V=Vsw;
+      double n=n_up,V=Vsw;
       if (loc.region==swcme::regions::Region::ShockTransition) {
-        // RESOLVED_COMPRESSION only: one symmetric C1 profile converts the
-        // exact upstream state into the exact RH downstream state.  SOURCE
-        // mode never reaches this branch because its validated SHOCK_ONLY
-        // configuration sets smooth_shock_width_m=0 and returns ambient above.
-        if (S.has_shock && S.shock_solver_converged) {
+        if (S.has_shock) {
           const double n2=S.shock_jump.downstream.rho_kg_m3/MP;
           n=swcme::regions::lerp(n_up,n2,loc.blend);
           V=swcme::regions::lerp(Vsw,S.V2_shock_ms,loc.blend);
@@ -875,13 +903,22 @@ public:
         n=swcme::regions::lerp(ne,n_up,loc.blend);
         V=swcme::regions::lerp(Ve,Vsw,loc.blend);
       }
-      // Upstream and PostICME intentionally use the undisturbed ambient state.
 
-      if (!std::isfinite(n) || n<0.0) n=0.0;
-      if (!std::isfinite(V))          V=0.0;
-      n_m3[i] = n;
-      V_ms[i] = V;
+      if (!std::isfinite(n) || n<0.0 || !std::isfinite(V)) {
+        return swcme::ModelStatus::make(
+            swcme::StatusCode::NonFiniteResult,
+            "swcme1d::evaluate_radii_fast regional state",i);
+      }
+      n_m3[i]=n;
+      V_ms[i]=V;
     }
+    return swcme::ModelStatus::success();
+  }
+
+  void evaluate_radii_fast(const StepState& S, const double* r_m,
+                           double* n_m3, double* V_ms,
+                           std::size_t N) const {
+    swcme::throw_if_error(evaluate_radii_fast_checked(S,r_m,n_m3,V_ms,N));
   }
 
   // -------------------------- Full evaluator (with B, ∇·V) -------------------
@@ -891,56 +928,50 @@ public:
    * @details The Parker field is computed from Br(1 AU) and k. The only Bφ
    * amplification occurs in the sheath and tapers r_c→1 toward the LE.
    */
-  void evaluate_radii_with_B_div(const StepState& S,
-                                 const double* r_m,
-                                 double* n_m3, double* V_ms,
-                                 double* Br_T, double* Bphi_T, double* Bmag_T,
-                                 double* divV, std::size_t N,
-                                 double dr_frac=1e-3) const {
-    if (!r_m || N==0) return;
+  swcme::ModelStatus evaluate_radii_with_B_div_checked(
+      const StepState& S, const double* r_m,
+      double* n_m3, double* V_ms,
+      double* Br_T, double* Bphi_T, double* Bmag_T,
+      double* divV, std::size_t N, double dr_frac=1e-3) const {
+    if (N==0) return swcme::ModelStatus::success();
+    if (!r_m || !n_m3 || !V_ms) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::NullPointer,"swcme1d::evaluate_radii_with_B_div");
+    }
+    if (divV && (!std::isfinite(dr_frac) || dr_frac<=0.0)) {
+      return swcme::ModelStatus::make_value(
+          swcme::StatusCode::InvalidNumericalStep,
+          "swcme1d::evaluate_radii_with_B_div dr_frac",dr_frac);
+    }
 
-    // First get n & V
-    evaluate_radii_fast(S, r_m, n_m3, V_ms, N);
+    swcme::ModelStatus status=evaluate_radii_fast_checked(S,r_m,n_m3,V_ms,N);
+    if (!status.ok()) return status;
 
-    for (std::size_t i=0;i<N;++i){
-      const double r = std::max(r_m[i], 1.05*Rs);
-      // Parker field upstream baseline from the same common scalar Parker
-      // implementation used by the 3-D model.  Only the 1-D fixed latitude
-      // supplied by Params::sin_theta is dimensionality-specific here.
-      const swcme::solarwind::ParkerComponents parker =
+    for (std::size_t i=0;i<N;++i) {
+      const double r=r_m[i];  // domain/finite checks already performed above
+      const swcme::solarwind::ParkerComponents parker=
           swcme::solarwind::parker_components(
               S.common.solar_wind,r,P.sin_theta);
       double Br=parker.Br_T;
       double Bph=parker.Bphi_T;
 
-      // FULL_ICME uses the same common region classification as n/V.  The
-      // sheath magnetic field starts at the exact MHD RH downstream vector and
-      // relaxes to the Parker field at the nominal leading edge.  This replaces
-      // the old scalar Bphi*=compression proxy and keeps B, n and V on one
-      // geometrically identical region contract.  Ejecta/PostICME retain the
-      // baseline Parker field in this deliberately simple phenomenology.
       if (S.region_config.mode==swcme::regions::Mode::FullICME) {
         const swcme::regions::Location loc=
             swcme::regions::locate(r,S.region_boundaries);
-        if (loc.region==swcme::regions::Region::ShockTransition &&
-            S.has_shock && S.shock_solver_converged) {
-          // Match the n/V resolved-compression profile: the magnetic field
-          // reaches the exact RH downstream vector at the inner edge of the
-          // same C1 shock layer.  This keeps all primitive variables on one
-          // geometrically identical transition and avoids 1-D/3-D smoothing
-          // differences.
-          Br=swcme::regions::lerp(Br,S.shock_jump.downstream.magnetic_T[0],loc.blend);
-          Bph=swcme::regions::lerp(Bph,S.shock_jump.downstream.magnetic_T[1],loc.blend);
+        if (loc.region==swcme::regions::Region::ShockTransition && S.has_shock) {
+          Br=swcme::regions::lerp(
+              Br,S.shock_jump.downstream.magnetic_T[0],loc.blend);
+          Bph=swcme::regions::lerp(
+              Bph,S.shock_jump.downstream.magnetic_T[1],loc.blend);
         } else if (loc.region==swcme::regions::Region::Sheath ||
-            loc.region==swcme::regions::Region::LeadingTransition) {
+                   loc.region==swcme::regions::Region::LeadingTransition) {
           const double w=swcme::regions::sheath_profile_weight(
               r,S.region_boundaries,S.region_config.sheath_ramp_power);
           const swcme::solarwind::ParkerComponents parker_le=
               swcme::solarwind::parker_components(
                   S.common.solar_wind,S.region_boundaries.R_le_m,P.sin_theta);
-          double Br_sheath=Br;
-          double Bph_sheath=Bph;
-          if (S.has_shock && S.shock_solver_converged) {
+          double Br_sheath=Br,Bph_sheath=Bph;
+          if (S.has_shock) {
             Br_sheath=swcme::regions::lerp(
                 S.shock_jump.downstream.magnetic_T[0],parker_le.Br_T,w);
             Bph_sheath=swcme::regions::lerp(
@@ -956,25 +987,59 @@ public:
         }
       }
 
-      const double Bmag = std::sqrt(Br*Br + Bph*Bph);
-      if (Br_T)   Br_T[i]   = std::isfinite(Br)?Br:0.0;
-      if (Bphi_T) Bphi_T[i] = std::isfinite(Bph)?Bph:0.0;
-      if (Bmag_T) Bmag_T[i] = std::isfinite(Bmag)?Bmag:0.0;
+      const double Bmag=std::hypot(Br,Bph);
+      if (!std::isfinite(Br) || !std::isfinite(Bph) || !std::isfinite(Bmag)) {
+        return swcme::ModelStatus::make(
+            swcme::StatusCode::NonFiniteResult,
+            "swcme1d::evaluate_radii_with_B_div magnetic field",i);
+      }
+      if (Br_T) Br_T[i]=Br;
+      if (Bphi_T) Bphi_T[i]=Bph;
+      if (Bmag_T) Bmag_T[i]=Bmag;
 
-      // ∇·V via centered finite difference
-      if (divV){
-        const double h = std::max(1.0e3, std::abs(dr_frac*r)); // ≥1 km
-        const double rm = std::max(1.05*Rs, r - h);
-        const double rp = r + h;
-        double n_m, V_m, n_p, V_p;
-        evaluate_radii_fast(S, &rm, &n_m, &V_m, 1);
-        evaluate_radii_fast(S, &rp, &n_p, &V_p, 1);
-        const double num = (rp*rp*V_p - rm*rm*V_m);
-        const double den = (rp - rm) * r * r;
-        double d = (den!=0.0) ? (num/den) : 0.0;
-        divV[i] = std::isfinite(d) ? d : 0.0;
+      if (divV) {
+        // A one-sided lower-domain sample is used when the centered stencil
+        // would leave the analytical model domain.  This is an explicit
+        // numerical boundary policy, not a physical-value fallback.
+        const double h=std::max(1.0e3,dr_frac*r);
+        const double rm=std::max(swcme::solarwind::MIN_RADIUS_M,r-h);
+        const double rp=r+h;
+        if (!(rp>rm) || !std::isfinite(rp)) {
+          return swcme::ModelStatus::make(
+              swcme::StatusCode::InvalidNumericalStep,
+              "swcme1d::evaluate_radii_with_B_div stencil",i);
+        }
+        double n_m=0.0,V_m=0.0,n_p=0.0,V_p=0.0;
+        status=evaluate_radii_fast_checked(S,&rm,&n_m,&V_m,1);
+        if (!status.ok()) { status.sample_index=i; return status; }
+        status=evaluate_radii_fast_checked(S,&rp,&n_p,&V_p,1);
+        if (!status.ok()) { status.sample_index=i; return status; }
+        const double den=(rp-rm)*r*r;
+        if (!(den>0.0) || !std::isfinite(den)) {
+          return swcme::ModelStatus::make(
+              swcme::StatusCode::InvalidNumericalStep,
+              "swcme1d::evaluate_radii_with_B_div denominator",i);
+        }
+        const double d=(rp*rp*V_p-rm*rm*V_m)/den;
+        if (!std::isfinite(d)) {
+          return swcme::ModelStatus::make(
+              swcme::StatusCode::NonFiniteResult,
+              "swcme1d::evaluate_radii_with_B_div divergence",i);
+        }
+        divV[i]=d;
       }
     }
+    return swcme::ModelStatus::success();
+  }
+
+  void evaluate_radii_with_B_div(const StepState& S,
+                                 const double* r_m,
+                                 double* n_m3, double* V_ms,
+                                 double* Br_T, double* Bphi_T, double* Bmag_T,
+                                 double* divV, std::size_t N,
+                                 double dr_frac=1e-3) const {
+    swcme::throw_if_error(evaluate_radii_with_B_div_checked(
+        S,r_m,n_m3,V_ms,Br_T,Bphi_T,Bmag_T,divV,N,dr_frac));
   }
 
   // ------------------------------- Tecplot writer ----------------------------
