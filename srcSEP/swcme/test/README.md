@@ -41,6 +41,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test PST02    # prepared-state ownership rejection
 ./output/test_swcme --test PST03    # configuration-state ownership rejection
 ./output/test_swcme --test PST06    # prepared-record integrity rejection
+./output/test_swcme --test PST04    # concurrent prepared-state evaluation
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -219,6 +220,61 @@ Run the gate directly with:
 
 `PST06` follows PST03 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
 through their `@ALL` expansion.
+
+## PST04: concurrent prepared-state evaluation
+
+`PST04` verifies the production usage pattern required by AMPS: configuration
+and `prepare_step()` finish on one setup thread, after which multiple workers
+read the same model and the same immutable prepared state.  It does not grant
+permission to call model mutators, prepare a new state concurrently, share
+caller-owned destination arrays, or invoke file writers from multiple threads.
+
+One 1-D and one 3-D state are each prepared once.  The fixture then exercises
+nine operation families:
+
+- scalar 1-D and 3-D AMPS background queries;
+- direct 1-D and 3-D full-field batch evaluators;
+- 1-D shock-source conversion;
+- 3-D directional shock and source evaluation;
+- 3-D Parker-line connectivity with complete cobpoint shock records; and
+- simultaneous, intentionally different 1-D/3-D failures that retain their
+  own status code, context, sample index, offending-value flag, and outputs.
+
+Every public result is serialized field by field into fixed-width words.  The
+serializer includes every `ModelStatus` field, all background/source/shock
+numbers and flags, every connectivity root, and all batch output elements.  It
+does not compare raw structure memory, so unspecified padding cannot cause a
+false race diagnosis.  Each concurrent result must be bitwise identical to a
+serial oracle; no roundoff allowance is currently required.
+
+The workload runs eight repetitions at 1, 2, 4, and 8 threads under
+forward-interleaved, reverse-interleaved, and operation-grouped job orders.  A
+one-shot start gate creates overlap, while each output slot has exactly one
+writer.  The test framework is used only after joining the workers, preventing
+the harness itself from introducing a race.  Finally, both prepared-state
+integrity seals are recomputed to prove the stress run did not mutate them.
+
+Run the normal concurrency gate with:
+
+```sh
+./output/test_swcme --test PST04
+```
+
+When the compiler and runtime support ThreadSanitizer, rebuild the entire
+executable with instrumentation so both the test and production implementation
+are observed:
+
+```sh
+make clean
+make CXXFLAGS="-O1 -g -std=c++17 -Wall -Wextra -Wpedantic -fsanitize=thread -fno-omit-frame-pointer"
+TSAN_OPTIONS=halt_on_error=1 ./output/test_swcme --test PST04
+```
+
+A supported ThreadSanitizer run must report no race.  Some container kernels
+cannot initialize ThreadSanitizer's shadow memory; that platform limitation is
+not a passing sanitizer result and should be recorded as unavailable.  `PST04`
+follows `PST06` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it through
+their `@ALL` expansion.
 
 ## Python campaign manager and reproducible run artifacts
 

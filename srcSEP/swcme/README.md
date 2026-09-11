@@ -93,9 +93,11 @@ auto status = sep.evaluate_background(step, position_m, bg);
 field `[T]`, magnetic-field magnitude `[T]`, and `div(V)` `[s^-1]`.  The 3-D
 single-point path delegates to the existing checked batch evaluator with `N=1`
 and stack scalars, so an AMPS hot loop does not require a temporary vector or a
-second status convention.  A prepared step is read-only and may be shared by
-callers whose surrounding transport implementation provides the appropriate
-thread/MPI ownership.
+second status convention.  After setup and `prepare()` complete, a prepared
+step and its owning model may be shared read-only by worker threads.  Each call
+must still own distinct destination objects/arrays; model configuration,
+preparation, and file output remain setup/coordination operations rather than
+concurrent field-query operations.  PST04 below verifies this exact contract.
 
 ### Prepared-state immutability (PST01)
 
@@ -265,6 +267,53 @@ reports `STATE_MODEL_MISMATCH`, while corrupting the configuration tag reports
 `STATE_CONFIGURATION_MISMATCH`; all other record corruption reports
 `STALE_PREPARED_STATE`.  Do not repair or reseal a rejected state—discard it and
 obtain a new state from its owning model.
+
+### Concurrent prepared-state evaluation (PST04)
+
+PST04 turns the documented read-only threading promise into an executable
+regression gate.  One 1-D state and one 3-D state are prepared before any
+worker starts.  The same owning model and prepared record are then shared by
+1, 2, 4, and 8 threads; configuration and the prepared records remain const,
+and each invocation writes only to thread-local output storage.
+
+The workload runs scalar AMPS background queries, direct full-field batches,
+1-D/3-D source conversion, a 3-D directional shock calculation, and 3-D
+Parker-line connectivity.  Separate invalid-input calls execute alongside the
+successful work so a hidden shared status buffer would be detected through a
+changed code, context, sample index, offending value, or partially written
+output.  Connectivity serialization includes all roots and their complete
+shock records, covering the allocating update-cadence path as well as the
+allocation-free scalar hot path.
+
+For each operation, PST04 explicitly serializes every public status and
+numerical field without hashing object padding.  Eight repetitions are run
+under forward-interleaved, reverse-interleaved, and operation-grouped schedules
+for every required thread count.  Every word must equal the serial oracle
+bit-for-bit; there is currently no declared roundoff relaxation.  Both private
+prepared-state seals must also remain valid after the stress run.
+
+This guarantee is deliberately scoped.  It does not make model setters,
+`prepare_step()`, caller-shared output buffers, or Tecplot writers concurrent.
+Those remain externally synchronized setup/output operations.  The ordinary
+gate is:
+
+```sh
+cd test
+make -j
+./output/test_swcme --test PST04
+```
+
+On a ThreadSanitizer-capable compiler/runtime, instrument the complete test
+executable and stop at the first reported race:
+
+```sh
+make clean
+make CXXFLAGS="-O1 -g -std=c++17 -Wall -Wextra -Wpedantic -fsanitize=thread -fno-omit-frame-pointer"
+TSAN_OPTIONS=halt_on_error=1 ./output/test_swcme --test PST04
+```
+
+ThreadSanitizer startup failures caused by unsupported container/kernel address
+layouts must be recorded as unavailable, not interpreted as a race-free pass.
 
 ### `SEPSourceState`
 
