@@ -784,6 +784,13 @@ struct TriMetrics {
   std::vector<double> Vsh_n_mean; // mean of nodal Vsh_n [m/s]
 };
 
+// OUT06 output contract: a ShockMesh must contain at least three vertices and
+// one triangle; all parallel arrays must have exact Nv/Ne sizes; nodal values
+// must be finite with unit normals, rc>=1, and Vsh_n>=0; connectivity must be
+// distinct, one-based, and in range; and every triangle must pass the canonical
+// degeneracy/orientation checks.  TriMetrics may be entirely empty to request
+// canonical computation, or complete and consistent with that computation.
+
 // Deterministic area CDF used by shock-source samplers.  The library does not
 // own a random-number generator: callers supply a U[0,1) variate to
 // sample_triangle_by_area().  This keeps reproducibility under the caller's
@@ -1106,6 +1113,10 @@ public:
   //    nonnegative half sizes, Ni/Nj/Nk >= 2, representable bounds/spans, and
   //    overflow-safe total cardinality.  Structural rejection precedes OUT05
   //    and has the same no-open/no-staging guarantee.
+  //  • OUT06 validates ShockMesh structure, nodal invariants, one-based
+  //    connectivity, cell quality, and TriMetrics consistency before OUT05 or
+  //    any output access.  A completely empty TriMetrics requests canonical
+  //    computation; partial or stale records return INVALID_MESH.
   // --------------------------------------------------------------------------
   swcme::ModelStatus write_tecplot_dataset_bundle_checked(
                                     const ShockMesh& M,const TriMetrics& T,

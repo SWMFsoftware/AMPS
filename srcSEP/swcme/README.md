@@ -451,10 +451,11 @@ OUT05 preserves the established ordering of safeguards:
 
 1. reject a foreign, reconfigured, or corrupted prepared state;
 2. reject null and malformed non-box arguments;
-3. validate the complete BoxSpec through OUT04;
-4. preflight every requested output sample and generated coordinate;
-5. create a private staging file and run the OUT02 checked-write lifecycle;
-6. publish the complete product through the OUT03 atomic commit.
+3. validate surface mesh/metrics through OUT06 where present;
+4. validate the complete BoxSpec through OUT04 where present;
+5. preflight every requested output sample and generated coordinate;
+6. create a private staging file and run the OUT02 checked-write lifecycle;
+7. publish the complete product through the OUT03 atomic commit.
 
 Legacy boolean writers delegate to their checked companions, so they return
 `false` under the same no-open domain preflight.  Checked callers additionally
@@ -498,6 +499,48 @@ Run the gate with:
 cd test
 make -j
 ./output/test_swcme --test OUT04
+```
+
+### Mesh output validation (OUT06)
+
+The surface and four-zone bundle writers now treat `ShockMesh` and
+`TriMetrics` as one validated output record rather than unrelated arrays that
+only need matching lengths.  Before model-domain traversal or output access,
+OUT06 enforces:
+
+- at least three vertices and one triangle;
+- exact `Nv` lengths for every nodal array and exact `Ne` lengths for all three
+  connectivity arrays;
+- finite nodal positions, normals, compression, and normal shock speed;
+- unit nodal normals within `1e-10`, compression `rc >= 1`, and
+  `Vsh_n >= 0`;
+- one-based, in-range, distinct indices for every triangle;
+- the existing scale-relative nondegeneracy and outward-winding checks from
+  `compute_triangle_metrics()`; and
+- one unambiguous metric mode: every `TriMetrics` vector empty to request
+  canonical computation, or every vector complete and numerically consistent
+  with a fresh canonical derivation from the supplied mesh.
+
+Complete caller-supplied metrics are compared field-by-field against the
+canonical area, normal, centroid, mean compression, and mean normal speed.
+This detects stale finite metrics after coordinates, connectivity, `rc`, or
+`Vsh_n` change—defects that size and finiteness checks cannot find.  The scaled
+tolerance is `1024*epsilon`, substantially tighter than the nine-digit Tecplot
+serialization.  Partial metrics are rejected rather than silently discarded.
+
+Structural, topology, physical-invariant, degenerate-cell, partial, and stale
+records return `INVALID_MESH`; non-finite model fields return
+`NONFINITE_RESULT`.  Where a node or connectivity/metric row is known, its
+index is carried in `sample_index`.  Both checked writers reject before
+selecting `FileOperations` or creating an OUT03 staging file.  Legacy writers
+delegate to the checked path and return `false`.
+
+Run the gate with:
+
+```sh
+cd test
+make -j
+./output/test_swcme --test OUT06
 ```
 
 ### `SEPSourceState`
@@ -605,7 +648,7 @@ Profiles are stored in `test/profiles/`:
 
 - `SMOKE` is a short development gate covering prepared-state safety, checked
   output failure propagation, transactional commit, model-domain preflight,
-  BoxSpec validation, configuration,
+  BoxSpec and mesh-output validation, configuration,
   core shock, connectivity, divergence, and SEP-interface integration;
 - `ROUTINE` runs the broad deterministic suite while excluding the slowest
   stochastic/multi-root stress cases;

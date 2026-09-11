@@ -2183,33 +2183,144 @@ std::size_t Model::sample_triangle_by_area(const AreaSamplingTable& table,
 }
 
 // --- Tecplot helpers ---------------------------------------------------------
-// Writers are not permitted to "sanitize" non-finite physics values.  They
-// reject such a dataset before opening/writing the file; checked writer APIs
-// return the corresponding status to the caller.  This keeps file-format
-// robustness separate from physics validity and preserves the original error.
-static inline bool all_finite(const std::vector<double>& values) {
-  for (double v: values) if (!std::isfinite(v)) return false;
-  return true;
+// OUT06 validates the complete mesh record before any output access.  Size and
+// connectivity defects are INVALID_MESH; non-finite model-produced fields are
+// NONFINITE_RESULT.  Nodal normals, compression, and normal speed also retain
+// their physical representation invariants so a finite but corrupt record is
+// not accepted merely because printf could serialize it.
+static swcme::ModelStatus validate_output_mesh_record(
+    const swcme3d::ShockMesh& M,const char* context) {
+  const std::size_t Nv=M.x.size(),Ne=M.tri_i.size();
+  if (Nv<3 || Ne==0 || M.y.size()!=Nv || M.z.size()!=Nv ||
+      M.n_hat_x.size()!=Nv || M.n_hat_y.size()!=Nv ||
+      M.n_hat_z.size()!=Nv || M.rc.size()!=Nv || M.Vsh_n.size()!=Nv ||
+      M.tri_j.size()!=Ne || M.tri_k.size()!=Ne) {
+    return swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,context);
+  }
+
+  for (std::size_t i=0; i<Nv; ++i) {
+    const double values[]={M.x[i],M.y[i],M.z[i],M.n_hat_x[i],M.n_hat_y[i],
+                           M.n_hat_z[i],M.rc[i],M.Vsh_n[i]};
+    for (double value : values) {
+      if (!std::isfinite(value))
+        return swcme::ModelStatus::make_value(
+            swcme::StatusCode::NonFiniteResult,context,value,i);
+    }
+    const double normal_magnitude=std::hypot(
+        M.n_hat_x[i],std::hypot(M.n_hat_y[i],M.n_hat_z[i]));
+    if (std::abs(normal_magnitude-1.0)>1.0e-10)
+      return swcme::ModelStatus::make_value(
+          swcme::StatusCode::InvalidMesh,context,normal_magnitude,i);
+    if (M.rc[i]<1.0)
+      return swcme::ModelStatus::make_value(
+          swcme::StatusCode::InvalidMesh,context,M.rc[i],i);
+    if (M.Vsh_n[i]<0.0)
+      return swcme::ModelStatus::make_value(
+          swcme::StatusCode::InvalidMesh,context,M.Vsh_n[i],i);
+  }
+
+  // Connectivity is stored in Tecplot's one-based convention.  Validate the
+  // exact serialized integers, including repeated nodes, instead of relying on
+  // a supplied TriMetrics array to imply that topology was once valid.
+  for (std::size_t e=0; e<Ne; ++e) {
+    const int a=M.tri_i[e],b=M.tri_j[e],c=M.tri_k[e];
+    if (a<1 || b<1 || c<1 || a==b || b==c || c==a ||
+        static_cast<std::size_t>(a)>Nv ||
+        static_cast<std::size_t>(b)>Nv ||
+        static_cast<std::size_t>(c)>Nv) {
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::InvalidMesh,context,e);
+    }
+  }
+  return swcme::ModelStatus::success();
 }
 
-static inline bool mesh_finite_and_sized(const swcme3d::ShockMesh& M) {
-  const std::size_t Nv=M.x.size(), Ne=M.tri_i.size();
-  return M.y.size()==Nv && M.z.size()==Nv && M.n_hat_x.size()==Nv &&
-         M.n_hat_y.size()==Nv && M.n_hat_z.size()==Nv && M.rc.size()==Nv &&
-         M.Vsh_n.size()==Nv && M.tri_j.size()==Ne && M.tri_k.size()==Ne &&
-         all_finite(M.x) && all_finite(M.y) && all_finite(M.z) &&
-         all_finite(M.n_hat_x) && all_finite(M.n_hat_y) &&
-         all_finite(M.n_hat_z) && all_finite(M.rc) && all_finite(M.Vsh_n);
+static inline bool metrics_all_empty(const swcme3d::TriMetrics& T) {
+  return T.area.empty() && T.nx.empty() && T.ny.empty() && T.nz.empty() &&
+         T.cx.empty() && T.cy.empty() && T.cz.empty() && T.rc_mean.empty() &&
+         T.Vsh_n_mean.empty();
 }
 
-static inline bool metrics_finite_and_sized(const swcme3d::TriMetrics& T,
-                                            std::size_t Ne) {
+static inline bool metrics_complete_size(const swcme3d::TriMetrics& T,
+                                         std::size_t Ne) {
   return T.area.size()==Ne && T.nx.size()==Ne && T.ny.size()==Ne &&
          T.nz.size()==Ne && T.cx.size()==Ne && T.cy.size()==Ne &&
-         T.cz.size()==Ne && T.rc_mean.size()==Ne && T.Vsh_n_mean.size()==Ne &&
-         all_finite(T.area) && all_finite(T.nx) && all_finite(T.ny) &&
-         all_finite(T.nz) && all_finite(T.cx) && all_finite(T.cy) &&
-         all_finite(T.cz) && all_finite(T.rc_mean) && all_finite(T.Vsh_n_mean);
+         T.cz.size()==Ne && T.rc_mean.size()==Ne && T.Vsh_n_mean.size()==Ne;
+}
+
+// Compare caller-supplied metrics with a fresh canonical derivation from the
+// exact mesh.  This detects stale metrics after coordinates, connectivity, rc,
+// or Vsh_n were changed.  A scaled tolerance permits independently reproduced
+// floating-point values while remaining far tighter than Tecplot's nine-digit
+// serialization precision.
+static inline bool metric_matches(double supplied,double canonical) {
+  const double scale=std::max(1.0,std::max(std::abs(supplied),
+                                           std::abs(canonical)));
+  return std::abs(supplied-canonical)<=
+      1024.0*std::numeric_limits<double>::epsilon()*scale;
+}
+
+static swcme::ModelStatus validate_output_metrics(
+    const swcme3d::TriMetrics& supplied,
+    const swcme3d::TriMetrics& canonical,const char* context) {
+  const std::size_t Ne=canonical.area.size();
+  if (!metrics_complete_size(supplied,Ne))
+    return swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,context);
+
+  for (std::size_t e=0; e<Ne; ++e) {
+    const double values[]={supplied.area[e],supplied.nx[e],supplied.ny[e],
+        supplied.nz[e],supplied.cx[e],supplied.cy[e],supplied.cz[e],
+        supplied.rc_mean[e],supplied.Vsh_n_mean[e]};
+    for (double value : values) {
+      if (!std::isfinite(value))
+        return swcme::ModelStatus::make_value(
+            swcme::StatusCode::NonFiniteResult,context,value,e);
+    }
+    const double reference[]={canonical.area[e],canonical.nx[e],
+        canonical.ny[e],canonical.nz[e],canonical.cx[e],canonical.cy[e],
+        canonical.cz[e],canonical.rc_mean[e],canonical.Vsh_n_mean[e]};
+    for (std::size_t field=0; field<9; ++field) {
+      if (!metric_matches(values[field],reference[field]))
+        return swcme::ModelStatus::make_value(
+            swcme::StatusCode::InvalidMesh,context,values[field],e);
+    }
+  }
+  return swcme::ModelStatus::success();
+}
+
+// Produce the metric record that will actually be written.  A completely empty
+// TriMetrics requests canonical computation for convenience; a partially
+// populated record is ambiguous and rejected.  Even complete supplied metrics
+// are checked against a fresh derivation, which also reuses the production
+// triangle-quality/orientation checks in compute_triangle_metrics().
+static swcme::ModelStatus prepare_output_mesh(
+    const swcme3d::Model& model,const swcme3d::ShockMesh& M,
+    const swcme3d::TriMetrics& supplied,swcme3d::TriMetrics& output,
+    const char* mesh_context,const char* metrics_context) {
+  const swcme::ModelStatus mesh_status=
+      validate_output_mesh_record(M,mesh_context);
+  if (!mesh_status.ok()) return mesh_status;
+
+  swcme3d::TriMetrics canonical;
+  try {
+    model.compute_triangle_metrics(M,canonical);
+  } catch (...) {
+    // The public metric builder already checks degeneracy and triangle winding.
+    // Convert its exception boundary back into the checked writer's status
+    // channel while still guaranteeing that no file has been opened.
+    return swcme::ModelStatus::make(
+        swcme::StatusCode::InvalidMesh,mesh_context);
+  }
+
+  if (metrics_all_empty(supplied)) {
+    output=canonical;
+    return swcme::ModelStatus::success();
+  }
+  const swcme::ModelStatus metric_status=
+      validate_output_metrics(supplied,canonical,metrics_context);
+  if (!metric_status.ok()) return metric_status;
+  output=supplied;
+  return swcme::ModelStatus::success();
 }
 
 // Multiply output-grid dimensions without allowing size_t wraparound.  The
@@ -2349,10 +2460,10 @@ static swcme::ModelStatus preflight_volume_domain(
   return swcme::ModelStatus::success();
 }
 
-// The standalone face and bundle face both force at least two points along Y
-// and Z.  Preflighting with those effective dimensions is essential when a
-// BoxSpec requests one sample: validation must cover the interpolated records
-// the writer will actually emit, not only the nominal BoxSpec dimensions.
+// OUT04 guarantees at least two BoxSpec points along every axis.  Retaining the
+// established max(2,...) expression here keeps the preflight byte-compatible
+// with the writer and defensive against any future internal caller that reaches
+// this helper without passing through the public structural validator.
 static swcme::ModelStatus preflight_min_x_face_domain(
     const swcme3d::BoxSpec& B,const char* context) {
   const int I=std::max(2,B.Nj),J=std::max(2,B.Nk);
@@ -2474,23 +2585,17 @@ swcme::ModelStatus Model::write_shock_surface_center_metrics_tecplot_checked(
     const swcme::output::FileOperations* file_operations) const {
   if (!path) return swcme::ModelStatus::make(
       swcme::StatusCode::NullPointer,"write_shock_surface_center_metrics_tecplot path");
-  if (!mesh_finite_and_sized(M)) return swcme::ModelStatus::make(
-      swcme::StatusCode::NonFiniteResult,"write_shock_surface_center_metrics_tecplot mesh");
+  TriMetrics checked;
+  const swcme::ModelStatus mesh_status=prepare_output_mesh(
+      *this,M,T,checked,"write_shock_surface_center_metrics_tecplot mesh",
+      "write_shock_surface_center_metrics_tecplot metrics");
+  if (!mesh_status.ok()) return mesh_status;
   const swcme::ModelStatus surface_domain=preflight_surface_domain(
       M,"write_shock_surface_center_metrics_tecplot vertex");
   if (!surface_domain.ok()) return surface_domain;
-  try {
-    TriMetrics checked=T;
-    if (checked.area.size()!=M.tri_i.size()) compute_triangle_metrics(M,checked);
-    if (!metrics_finite_and_sized(checked,M.tri_i.size())) return swcme::ModelStatus::make(
-        swcme::StatusCode::NonFiniteResult,"write_shock_surface_center_metrics_tecplot metrics");
-    const swcme::output::FileOperations& operations=file_operations
-        ? *file_operations : swcme::output::stdio_file_operations();
-    return write_surface_output(M,checked,path,operations);
-  } catch (...) {
-    return swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,
-                                    "write_shock_surface_center_metrics_tecplot");
-  }
+  const swcme::output::FileOperations& operations=file_operations
+      ? *file_operations : swcme::output::stdio_file_operations();
+  return write_surface_output(M,checked,path,operations);
 }
 
 // Default apex-aligned volume box
@@ -2769,8 +2874,11 @@ swcme::ModelStatus Model::write_tecplot_dataset_bundle_checked(
   if (!ownership.ok()) return ownership;
   if (!path) return swcme::ModelStatus::make(
       swcme::StatusCode::NullPointer,"write_tecplot_dataset_bundle path");
-  if (!mesh_finite_and_sized(M)) return swcme::ModelStatus::make(
-      swcme::StatusCode::NonFiniteResult,"write_tecplot_dataset_bundle mesh");
+  TriMetrics checked;
+  const swcme::ModelStatus mesh_status=prepare_output_mesh(
+      *this,M,T,checked,"write_tecplot_dataset_bundle mesh",
+      "write_tecplot_dataset_bundle metrics");
+  if (!mesh_status.ok()) return mesh_status;
   const swcme::ModelStatus box_status=validate_box_spec(
       B,"write_tecplot_dataset_bundle box");
   if (!box_status.ok()) return box_status;
@@ -2784,13 +2892,6 @@ swcme::ModelStatus Model::write_tecplot_dataset_bundle_checked(
       B,"write_tecplot_dataset_bundle face point");
   if (!face_domain.ok()) return face_domain;
   try {
-    TriMetrics checked=T;
-    if (checked.area.size()!=M.tri_i.size())
-      compute_triangle_metrics(M,checked);
-    if (!metrics_finite_and_sized(checked,M.tri_i.size()))
-      return swcme::ModelStatus::make(
-          swcme::StatusCode::NonFiniteResult,
-          "write_tecplot_dataset_bundle metrics");
     const swcme::output::FileOperations& operations=file_operations
         ? *file_operations : swcme::output::stdio_file_operations();
     return write_bundle_output(*this,M,checked,S,B,path,operations);

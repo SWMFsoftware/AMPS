@@ -18,6 +18,7 @@ void test_out02(swcme_test::Context& context);
 void test_out03(swcme_test::Context& context);
 void test_out05(swcme_test::Context& context);
 void test_out04(swcme_test::Context& context);
+void test_out06(swcme_test::Context& context);
 void test_den01(swcme_test::Context& context);
 void test_par01(swcme_test::Context& context);
 void test_par02(swcme_test::Context& context);
@@ -121,6 +122,7 @@ const swcme_test::TestCase kTests[] = {
     {"OUT03", "OUTPUT", "Transactional output commit", test_out03},
     {"OUT05", "OUTPUT", "Model-domain output preflight", test_out05},
     {"OUT04", "OUTPUT", "Box specification validation", test_out04},
+    {"OUT06", "OUTPUT", "Mesh output validation", test_out06},
     {"CFG01", "COMMON", "Configuration rejection and physical-range validation",
      test_cfg01},
     {"CFG02", "COMMON", "Unit-conversion and dimensional-consistency test",

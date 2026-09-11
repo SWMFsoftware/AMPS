@@ -676,10 +676,12 @@ void test_out05(swcme_test::Context& context) {
   bad_mesh.x[1]=0.5*minimum;
   bad_mesh.y[1]=0.0;
   bad_mesh.z[1]=0.0;
+  swcme3d::TriMetrics bad_mesh_metrics;
+  three.model.compute_triangle_metrics(bad_mesh,bad_mesh_metrics);
   FaultSink surface_domain;
   swcme::output::FileOperations surface_domain_ops=operations_for(surface_domain);
   status=three.model.write_shock_surface_center_metrics_tecplot_checked(
-      bad_mesh,three.metrics,"unused-out05-surface.dat",&surface_domain_ops);
+      bad_mesh,bad_mesh_metrics,"unused-out05-surface.dat",&surface_domain_ops);
   context.expect_true(status.code==swcme::StatusCode::OutsideModelDomain &&
                           status.sample_index==1 &&
                           surface_domain.open_attempts==0,
@@ -954,5 +956,236 @@ void test_out04(swcme_test::Context& context) {
                           read_file(preserved_path)==sentinel &&
                           count_staging_files(preserved_path)==0,
                       "production BoxSpec rejection preserves destination and staging namespace");
+  std::filesystem::remove(preserved_path,cleanup_error);
+}
+
+// OUT06: surface output must accept only one self-consistent mesh-plus-metrics
+// record.  FaultSink proves every structural, physical, topology, and stale-
+// metric rejection occurs before staging; positive cases verify both supplied
+// canonical metrics and the documented all-empty auto-compute request.
+void test_out06(swcme_test::Context& context) {
+  std::cout << "OUT06 mesh output validation\n";
+  ThreeDimensionalFixture three;
+  const std::string sentinel="PREVIOUS-COMPLETE-OUTPUT\n";
+
+  // Establish that the stricter checks accept the ordinary production record
+  // before fault cases mutate its arrays.  This also exercises comparison of
+  // complete caller-supplied metrics with their canonical derivation.
+  FaultSink supplied_metrics_success;
+  swcme::output::FileOperations supplied_metrics_success_ops=
+      operations_for(supplied_metrics_success);
+  swcme::ModelStatus status=
+      three.model.write_shock_surface_center_metrics_tecplot_checked(
+          three.mesh,three.metrics,"unused-out06-supplied-metrics.dat",
+          &supplied_metrics_success_ops);
+  context.expect_true(status.ok() &&
+                          supplied_metrics_success.open_attempts==1 &&
+                          supplied_metrics_success.commit_called,
+                      "canonical supplied mesh and metrics commit successfully");
+
+  const auto reject_surface=[&](const swcme3d::ShockMesh& mesh,
+                                const swcme3d::TriMetrics& metrics,
+                                FaultSink& sink) {
+    sink.destination_bytes=sentinel;
+    swcme::output::FileOperations operations=operations_for(sink);
+    const swcme::ModelStatus status=
+        three.model.write_shock_surface_center_metrics_tecplot_checked(
+            mesh,metrics,"unused-out06-surface.dat",&operations);
+    context.expect_true(sink.open_attempts==0 && !sink.commit_called &&
+                            !sink.remove_called &&
+                            sink.destination_bytes==sentinel,
+                        "invalid mesh record causes no output callback");
+    return status;
+  };
+
+  // Parallel nodal arrays and connectivity arrays are part of one record; a
+  // missing element must be INVALID_MESH rather than being discovered as an
+  // out-of-bounds access during serialization.
+  swcme3d::ShockMesh invalid_mesh=three.mesh;
+  invalid_mesh.n_hat_z.pop_back();
+  FaultSink nodal_size;
+  status=reject_surface(invalid_mesh,three.metrics,nodal_size);
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh,
+                      "mismatched nodal array size is INVALID_MESH");
+
+  invalid_mesh=three.mesh;
+  invalid_mesh.tri_k.pop_back();
+  FaultSink connectivity_size;
+  status=reject_surface(invalid_mesh,three.metrics,connectivity_size);
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh,
+                      "mismatched connectivity array size is INVALID_MESH");
+
+  swcme3d::ShockMesh empty_mesh;
+  swcme3d::TriMetrics empty_metrics;
+  FaultSink empty_record;
+  status=reject_surface(empty_mesh,empty_metrics,empty_record);
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh,
+                      "empty surface is rejected before output");
+
+  // Finiteness alone does not make a nodal state valid.  Normals must remain
+  // unit length, compression cannot fall below one, and outward shock-normal
+  // speed cannot be negative.  Each diagnostic retains the bad node index.
+  invalid_mesh=three.mesh;
+  invalid_mesh.n_hat_x[2]*=2.0;
+  invalid_mesh.n_hat_y[2]*=2.0;
+  invalid_mesh.n_hat_z[2]*=2.0;
+  FaultSink bad_nodal_normal;
+  status=reject_surface(invalid_mesh,three.metrics,bad_nodal_normal);
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh &&
+                          status.sample_index==2 &&
+                          status.has_offending_value,
+                      "non-unit nodal normal identifies its node");
+
+  invalid_mesh=three.mesh;
+  invalid_mesh.rc[3]=0.75;
+  FaultSink bad_compression;
+  status=reject_surface(invalid_mesh,three.metrics,bad_compression);
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh &&
+                          status.sample_index==3 &&
+                          status.offending_value==0.75,
+                      "sub-unity compression identifies its node");
+
+  invalid_mesh=three.mesh;
+  invalid_mesh.Vsh_n[4]=-1.0;
+  FaultSink bad_speed;
+  status=reject_surface(invalid_mesh,three.metrics,bad_speed);
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh &&
+                          status.sample_index==4 &&
+                          status.offending_value==-1.0,
+                      "negative normal speed identifies its node");
+
+  invalid_mesh=three.mesh;
+  invalid_mesh.rc[1]=std::numeric_limits<double>::quiet_NaN();
+  FaultSink nonfinite_node;
+  status=reject_surface(invalid_mesh,three.metrics,nonfinite_node);
+  context.expect_true(status.code==swcme::StatusCode::NonFiniteResult &&
+                          status.sample_index==1 &&
+                          std::isnan(status.offending_value),
+                      "non-finite nodal physics is NONFINITE_RESULT");
+
+  // Validate the exact one-based integers that Tecplot will receive.  Use a
+  // non-first triangle so sample_index proves the complete connectivity list
+  // is scanned rather than only its leading record.
+  invalid_mesh=three.mesh;
+  invalid_mesh.tri_i[1]=0;
+  FaultSink zero_connectivity;
+  status=reject_surface(invalid_mesh,three.metrics,zero_connectivity);
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh &&
+                          status.sample_index==1,
+                      "zero one-based connectivity identifies its triangle");
+
+  invalid_mesh=three.mesh;
+  invalid_mesh.tri_j[2]=static_cast<int>(invalid_mesh.x.size()+1);
+  FaultSink range_connectivity;
+  status=reject_surface(invalid_mesh,three.metrics,range_connectivity);
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh &&
+                          status.sample_index==2,
+                      "out-of-range connectivity identifies its triangle");
+
+  invalid_mesh=three.mesh;
+  invalid_mesh.tri_k[3]=invalid_mesh.tri_i[3];
+  FaultSink repeated_connectivity;
+  status=reject_surface(invalid_mesh,three.metrics,repeated_connectivity);
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh &&
+                          status.sample_index==3,
+                      "repeated triangle node is rejected");
+
+  // Unique indices can still form an unusable geometric cell.  Coincident
+  // coordinates exercise the production metric builder's scale-relative area
+  // and winding checks through the checked writer status boundary.
+  invalid_mesh=three.mesh;
+  invalid_mesh.x[1]=invalid_mesh.x[0];
+  invalid_mesh.y[1]=invalid_mesh.y[0];
+  invalid_mesh.z[1]=invalid_mesh.z[0];
+  FaultSink degenerate_geometry;
+  status=reject_surface(invalid_mesh,empty_metrics,degenerate_geometry);
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh,
+                      "geometrically degenerate triangle is rejected");
+
+  // TriMetrics is either completely absent (requesting canonical computation)
+  // or complete.  Partial records must not silently discard caller data.
+  swcme3d::TriMetrics partial_metrics;
+  partial_metrics.area=three.metrics.area;
+  FaultSink partial_record;
+  status=reject_surface(three.mesh,partial_metrics,partial_record);
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh,
+                      "partially populated metrics are rejected");
+
+  swcme3d::TriMetrics corrupt_metrics=three.metrics;
+  corrupt_metrics.area[1]=std::numeric_limits<double>::infinity();
+  FaultSink nonfinite_metric;
+  status=reject_surface(three.mesh,corrupt_metrics,nonfinite_metric);
+  context.expect_true(status.code==swcme::StatusCode::NonFiniteResult &&
+                          status.sample_index==1 &&
+                          std::isinf(status.offending_value),
+                      "non-finite metric identifies its triangle");
+
+  corrupt_metrics=three.metrics;
+  corrupt_metrics.area[2]*=1.01;
+  FaultSink stale_metric;
+  status=reject_surface(three.mesh,corrupt_metrics,stale_metric);
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh &&
+                          status.sample_index==2 &&
+                          status.has_offending_value,
+                      "finite stale metric is rejected against canonical geometry");
+
+  // Changing a valid nodal physical value without regenerating its cell means
+  // is another stale-record path that array-size and finiteness checks miss.
+  invalid_mesh=three.mesh;
+  invalid_mesh.rc[0]+=0.1;
+  FaultSink stale_nodal_metric;
+  status=reject_surface(invalid_mesh,three.metrics,stale_nodal_metric);
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh &&
+                          status.has_offending_value,
+                      "metrics stale after nodal-state change are rejected");
+
+  // A completely empty metrics record is the sole auto-compute request.  It
+  // must produce and commit the same valid surface rather than being confused
+  // with a malformed partial record.
+  FaultSink auto_metrics;
+  swcme::output::FileOperations auto_metrics_ops=operations_for(auto_metrics);
+  status=three.model.write_shock_surface_center_metrics_tecplot_checked(
+      three.mesh,empty_metrics,"unused-out06-auto-metrics.dat",
+      &auto_metrics_ops);
+  context.expect_true(status.ok() && auto_metrics.open_attempts==1 &&
+                          auto_metrics.commit_called &&
+                          auto_metrics.destination_bytes.find(
+                              "TITLE=\"Shock surface")==0,
+                      "all-empty metrics request canonical computation and commits");
+
+  // Hold the bundle to the same topology validator.  Its valid BoxSpec and
+  // state cannot mask a bad surface record or allow the file to open.
+  invalid_mesh=three.mesh;
+  invalid_mesh.tri_i[1]=0;
+  FaultSink bundle_mesh;
+  swcme::output::FileOperations bundle_mesh_ops=operations_for(bundle_mesh);
+  status=three.model.write_tecplot_dataset_bundle_checked(
+      invalid_mesh,three.metrics,three.step,three.box,
+      "unused-out06-bundle.dat",&bundle_mesh_ops);
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh &&
+                          status.sample_index==1 &&
+                          bundle_mesh.open_attempts==0,
+                      "bundle shares complete mesh validation before open");
+
+  // Legacy behavior maps the checked status to false and must not leave a new
+  // path.  A separate production case verifies preservation of existing bytes
+  // and absence of a transaction sibling.
+  const std::filesystem::path legacy_path="output/OUT06_legacy_invalid.dat";
+  std::error_code cleanup_error;
+  std::filesystem::remove(legacy_path,cleanup_error);
+  context.expect_true(
+      !three.model.write_shock_surface_center_metrics_tecplot(
+          invalid_mesh,three.metrics,legacy_path.string().c_str()) &&
+          !std::filesystem::exists(legacy_path),
+      "legacy surface writer rejects invalid mesh without a file");
+
+  const std::filesystem::path preserved_path="output/OUT06_preserved.dat";
+  write_file(preserved_path,sentinel);
+  status=three.model.write_shock_surface_center_metrics_tecplot_checked(
+      invalid_mesh,three.metrics,preserved_path.string().c_str());
+  context.expect_true(status.code==swcme::StatusCode::InvalidMesh &&
+                          read_file(preserved_path)==sentinel &&
+                          count_staging_files(preserved_path)==0,
+                      "production mesh rejection preserves destination and staging namespace");
   std::filesystem::remove(preserved_path,cleanup_error);
 }

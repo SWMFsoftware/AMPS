@@ -46,6 +46,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test OUT03    # transactional output commit
 ./output/test_swcme --test OUT05    # model-domain output preflight
 ./output/test_swcme --test OUT04    # BoxSpec structural validation
+./output/test_swcme --test OUT06    # mesh and metric output validation
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -534,6 +535,72 @@ Run the gate directly with:
 `OUT04` follows `OUT05` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
 through their `@ALL` expansion.
 
+## OUT06: mesh output validation
+
+### What is tested
+
+`OUT06` verifies that the surface-only and bundle writers accept only a
+complete, physically representable, topologically valid, and internally
+consistent `ShockMesh`/`TriMetrics` record.  Cases cover empty and mismatched
+arrays, non-finite nodal physics, non-unit normals, sub-unity compression,
+negative normal speed, zero/out-of-range/repeated connectivity, coincident
+vertices, partial metrics, non-finite metrics, finite stale area, and metrics
+made stale by a nodal-state change.  It also verifies canonical auto-computation
+from completely empty metrics, legacy-wrapper rejection, and production-file
+preservation.
+
+### Why it is tested
+
+Previously, writers checked only parallel-array sizes and finiteness.  If
+`T.area.size()` already equaled the triangle count, invalid connectivity and
+degenerate geometry could bypass `compute_triangle_metrics()` entirely.
+Finite but stale cell metrics could likewise be serialized after mesh geometry
+or nodal shock values changed.  Such a file is syntactically readable but no
+longer represents the supplied surface, which can corrupt area-weighted SEP
+source analysis without producing an obvious I/O failure.
+
+### How it is tested
+
+Each invalid record is submitted through the production checked writer with a
+deterministic `FaultSink`.  Every rejection must make zero open, commit, and
+remove calls and preserve the destination sentinel.  Assertions verify:
+
+- size/empty-record failures return `INVALID_MESH`;
+- non-unit normals, `rc < 1`, and `Vsh_n < 0` identify the bad node;
+- a non-finite nodal or metric value returns `NONFINITE_RESULT` with its node or
+  triangle index;
+- a bad non-first connectivity entry returns `INVALID_MESH` with its triangle
+  index for zero, out-of-range, and repeated indices;
+- coincident coordinates are rejected by canonical triangle-quality checks;
+- a partially populated metric record is rejected;
+- complete supplied metrics are compared with freshly computed area, normals,
+  centroids, mean compression, and mean speed, catching both a modified area
+  and an unchanged metric record after nodal `rc` changes;
+- an entirely empty metric record triggers canonical computation and commits a
+  valid complete surface; and
+- the bundle and legacy surface wrapper enforce the same mesh contract.
+
+A production-backend case starts with an existing sentinel file and invalid
+connectivity.  The writer must preserve the exact bytes and leave no
+`.swcme-tmp-*` sibling.
+
+### Expected result
+
+Every malformed, degenerate, partial, non-finite, or stale mesh record fails
+before output access with the documented status and available row index.  No
+invalid checked or legacy call creates or changes a destination.  Valid
+canonical supplied metrics and completely empty auto-computed metrics both
+produce a complete committed surface.
+
+Run the gate directly with:
+
+```sh
+./output/test_swcme --test OUT06
+```
+
+`OUT06` follows `OUT04` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
+through their `@ALL` expansion.
+
 ## Python campaign manager and reproducible run artifacts
 
 `run_tests.py` is the manager for multi-test development gates and validation
@@ -558,7 +625,7 @@ The named profiles are version-controlled text files in `profiles/`:
 
 - `SMOKE` is the short development gate, including prepared-state safety,
   checked output failures, transactional commit, model-domain preflight, and
-  BoxSpec validation;
+  BoxSpec and mesh-output validation;
 - `ROUTINE` is the broad deterministic gate and excludes `MSH05` and `CON05`;
 - `FULL` expands to every test in the C++ registry;
 - `EVENT` first runs FULL and then executes the supplied event-analysis JSON.
