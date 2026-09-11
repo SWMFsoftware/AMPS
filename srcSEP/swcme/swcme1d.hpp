@@ -1396,8 +1396,9 @@ public:
   // Status-returning output entry point used by AMPS and validation code.  The
   // ownership gate precedes all argument inspection and file-system access,
   // which guarantees that PST02 rejection leaves a pre-existing destination
-  // byte-for-byte unchanged.  OUT03 then writes a sibling staging file and
-  // atomically commits it only after the complete OUT02 lifecycle succeeds.
+  // byte-for-byte unchanged.  OUT05 then validates every requested row before
+  // OUT03 creates a sibling staging file, and the transaction is committed only
+  // after the complete OUT02 lifecycle succeeds.
   swcme::ModelStatus write_tecplot_radial_profile_checked(
       const StepState& S, const double* r_m, const double* n_m3,
       const double* V_ms, const double* Br_T, const double* Bphi_T,
@@ -1411,6 +1412,40 @@ public:
       return swcme::ModelStatus::make(
           swcme::StatusCode::NullPointer,
           "swcme1d::write_tecplot_radial_profile arguments");
+    if (N==0)
+      return swcme::ModelStatus::make(
+          swcme::StatusCode::InvalidConfiguration,
+          "swcme1d::write_tecplot_radial_profile sample count");
+    if (!std::isfinite(time_simulation))
+      return swcme::ModelStatus::make_value(
+          swcme::StatusCode::NonFiniteInput,
+          "swcme1d::write_tecplot_radial_profile time",time_simulation);
+
+    // OUT05 is deliberately a complete, read-only pass over the caller's
+    // dataset.  In particular, this pass occurs before FileOperations is even
+    // selected, so a bad late row cannot create a staging file or invoke an
+    // injected open callback.  Radius is an input and retains the evaluator's
+    // NONFINITE_INPUT / OUTSIDE_MODEL_DOMAIN distinction; precomputed model
+    // fields are results and therefore use NONFINITE_RESULT.  The first bad
+    // row is retained in sample_index for reproducible campaign diagnostics.
+    for (std::size_t i=0; i<N; ++i) {
+      if (!std::isfinite(r_m[i]))
+        return swcme::ModelStatus::make_value(
+            swcme::StatusCode::NonFiniteInput,
+            "swcme1d::write_tecplot_radial_profile radius",r_m[i],i);
+      if (r_m[i]<swcme::solarwind::MIN_RADIUS_M)
+        return swcme::ModelStatus::make_value(
+            swcme::StatusCode::OutsideModelDomain,
+            "swcme1d::write_tecplot_radial_profile radius",r_m[i],i);
+      const double values[]={n_m3[i],V_ms[i],Br_T[i],Bphi_T[i],Bmag_T[i],
+                             divV ? divV[i] : 0.0};
+      for (double value : values) {
+        if (!std::isfinite(value))
+          return swcme::ModelStatus::make_value(
+              swcme::StatusCode::NonFiniteResult,
+              "swcme1d::write_tecplot_radial_profile field",value,i);
+      }
+    }
 
     const swcme::output::FileOperations& operations=file_operations
         ? *file_operations : swcme::output::stdio_file_operations();
@@ -1505,8 +1540,9 @@ bool write_tecplot_shock_vs_time(double t_end_s, std::size_t N,
 
 // Status-returning companion to the legacy bool API.  OUT02 requires output
 // failures to remain distinguishable from malformed input and from kinematic
-// preparation failures; OUT03 guarantees that only a complete history replaces
-// the destination.  Callers that archive science products should use this form.
+// preparation failures; OUT05 prepares and validates the complete time series
+// before any file is opened; and OUT03 guarantees that only a complete history
+// replaces the destination.  Archival callers should use this form.
 swcme::ModelStatus write_tecplot_shock_vs_time_checked(
     double t_end_s, std::size_t N, const char* path,
     const swcme::output::FileOperations* file_operations=nullptr) const {
@@ -1517,6 +1553,46 @@ swcme::ModelStatus write_tecplot_shock_vs_time_checked(
     return swcme::ModelStatus::make_value(
         swcme::StatusCode::InvalidConfiguration,
         "swcme1d shock history range",t_end_s);
+
+  // Prepare every requested time first and retain the immutable records for
+  // the subsequent formatting pass.  This avoids both time-of-check/time-of-
+  // use drift and the former behavior where an out-of-range late data-driven
+  // sample was discovered only after a staging file and partial header existed.
+  // Computing t from the normalized sample fraction also makes the final time
+  // exactly t_end_s instead of accumulating repeated floating-point additions.
+  std::vector<StepState> states;
+  states.reserve(N);
+  try {
+    for (std::size_t i=0; i<N; ++i) {
+      const double t=(N>1)
+          ? t_end_s*(static_cast<double>(i)/static_cast<double>(N-1))
+          : t_end_s;
+      const StepState prepared=prepare_step(t);
+      const double values[]={prepared.r_sh_m,prepared.V_sh_ms,prepared.rc};
+      for (double value : values) {
+        if (!std::isfinite(value))
+          return swcme::ModelStatus::make_value(
+              swcme::StatusCode::NonFiniteResult,
+              "swcme1d shock history prepared field",value,i);
+      }
+      if (prepared.r_sh_m<swcme::solarwind::MIN_RADIUS_M)
+        return swcme::ModelStatus::make_value(
+            swcme::StatusCode::OutsideModelDomain,
+            "swcme1d shock history radius",prepared.r_sh_m,i);
+      states.push_back(prepared);
+    }
+  } catch (...) {
+    // No transaction exists at this point.  Preserve the first unprepared
+    // sample index so a data-driven campaign can identify the exact requested
+    // time that exceeded its validated interpolation/extrapolation domain.
+    const std::size_t failed_index=states.size();
+    const double failed_time=(N>1)
+        ? t_end_s*(static_cast<double>(failed_index)/
+                   static_cast<double>(N-1)) : t_end_s;
+    return swcme::ModelStatus::make_value(
+        swcme::StatusCode::NonFiniteResult,
+        "swcme1d shock history preparation",failed_time,failed_index);
+  }
 
   const swcme::output::FileOperations& operations=file_operations
       ? *file_operations : swcme::output::stdio_file_operations();
@@ -1531,35 +1607,16 @@ swcme::ModelStatus write_tecplot_shock_vs_time_checked(
   output.print("swcme1d shock history zone",swcme::ModelStatus::npos,
                "ZONE T=\"shock_vs_time\", N=%zu, F=POINT\n",N);
 
-  const double dt=(N>1) ? t_end_s/static_cast<double>(N-1) : 0.0;
-  try {
-    for (std::size_t i=0; i<N && output.good(); ++i) {
-      const double t=(N>1) ? i*dt : t_end_s;
-      const StepState S=prepare_step(t);
-      const double Rsh_Rs=S.r_sh_m/Rs;
-      const double Vsh_kms=
-          swcme::units::m_per_s_to_km_per_s(S.V_sh_ms);
-      output.print("swcme1d shock history row",i,
-                   "% .9e % .9e % .9e % .9e\n",
-                   t,Rsh_Rs,Vsh_kms,S.rc);
-    }
-  } catch (...) {
-    // Physics preparation failed before the next row could be formatted.  We
-    // cancel an otherwise healthy transaction so its incomplete header/rows
-    // cannot be committed.  Conversely, a write failure recorded before
-    // preparation remains the first failure; finish() closes and removes the
-    // staging file while retaining its exact byte/row context.
-    const bool write_failed_before_cleanup=!output.good();
-    if (write_failed_before_cleanup)
-      return output.finish(
-          "swcme1d shock history flush",
-          "swcme1d shock history stream error",
-          "swcme1d shock history close",
-          "swcme1d shock history commit");
-    output.cancel();
-    return swcme::ModelStatus::make(
-        swcme::StatusCode::NonFiniteResult,
-        "swcme1d shock history preparation");
+  for (std::size_t i=0; i<N && output.good(); ++i) {
+    const double t=(N>1)
+        ? t_end_s*(static_cast<double>(i)/static_cast<double>(N-1))
+        : t_end_s;
+    const StepState& S=states[i];
+    const double Rsh_Rs=S.r_sh_m/Rs;
+    const double Vsh_kms=swcme::units::m_per_s_to_km_per_s(S.V_sh_ms);
+    output.print("swcme1d shock history row",i,
+                 "% .9e % .9e % .9e % .9e\n",
+                 t,Rsh_Rs,Vsh_kms,S.rc);
   }
 
   return output.finish(

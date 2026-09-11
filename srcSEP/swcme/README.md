@@ -422,6 +422,52 @@ make -j
 ./output/test_swcme --test OUT03
 ```
 
+### Model-domain output preflight (OUT05)
+
+All five Tecplot products now complete their model-domain validation before
+selecting an output backend or creating an OUT03 staging file.  This closes the
+remaining gap between checked evaluation and checked publication: atomic commit
+kept an existing destination safe, but a bad late sample could still perform
+filesystem work and, in the shock-history writer, prepare only part of the
+requested series before failing.
+
+The 1-D radial-profile writer scans every radius and supplied field value.
+Non-finite radii return `NONFINITE_INPUT`, radii below
+`solarwind::MIN_RADIUS_M` return `OUTSIDE_MODEL_DOMAIN`, and non-finite
+precomputed fields return `NONFINITE_RESULT`; each status carries the first
+bad row in `sample_index`.  The shock-history writer prepares and validates the
+complete immutable time series in memory before opening output, so an invalid
+late data-driven time also identifies its requested time and row without an
+output side effect.
+
+The 3-D writers use one shared coordinate generator for preflight and emission.
+Surface nodes are checked explicitly, the bundle scans all structured volume
+points plus its min-X face, and the standalone face scans the effective grid it
+will actually write (including its minimum two-by-two dimensions).  Finite box
+parameters that overflow while generating a coordinate are rejected as
+`NONFINITE_INPUT`; finite points below the radius floor are rejected as
+`OUTSIDE_MODEL_DOMAIN`.  The boundary itself is inclusive.
+
+OUT05 preserves the established ordering of safeguards:
+
+1. reject a foreign, reconfigured, or corrupted prepared state;
+2. reject null/structurally invalid caller arguments;
+3. preflight every requested output sample and generated coordinate;
+4. create a private staging file and run the OUT02 checked-write lifecycle;
+5. publish the complete product through the OUT03 atomic commit.
+
+Legacy boolean writers delegate to their checked companions, so they return
+`false` under the same no-open domain preflight.  Checked callers additionally
+receive the precise status, offending value, context, and sample index.
+
+Run the gate with:
+
+```sh
+cd test
+make -j
+./output/test_swcme --test OUT05
+```
+
 ### `SEPSourceState`
 
 `SEPSourceState` is the stable transport-facing source record.  It contains:
@@ -526,7 +572,7 @@ python3 run_tests.py --profile EVENT --event-config event_config.example.json
 Profiles are stored in `test/profiles/`:
 
 - `SMOKE` is a short development gate covering prepared-state safety, checked
-  output failure propagation, transactional output commit, configuration,
+  output failure propagation, transactional commit, model-domain preflight, configuration,
   core shock, connectivity, divergence, and SEP-interface integration;
 - `ROUTINE` runs the broad deterministic suite while excluding the slowest
   stochastic/multi-root stress cases;

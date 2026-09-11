@@ -578,3 +578,202 @@ void test_out03(swcme_test::Context& context) {
   std::filesystem::remove(legacy_path,cleanup_error);
   std::filesystem::remove(directory_path,cleanup_error);
 }
+
+// OUT05: every point that a model writer will emit must be finite and inside
+// the shared solar-wind domain before the output backend is touched.  The
+// injected sink makes "no filesystem side effect" observable as zero open,
+// commit, and remove callbacks, while one production-file check verifies the
+// same byte-preservation and no-staging guarantee on the real backend.
+void test_out05(swcme_test::Context& context) {
+  std::cout << "OUT05 model-domain output preflight\n";
+  OneDimensionalFixture one;
+  ThreeDimensionalFixture three;
+  const double minimum=swcme::solarwind::MIN_RADIUS_M;
+  const std::string sentinel="PREVIOUS-COMPLETE-OUTPUT\n";
+
+  // Put the invalid radius in the middle of an otherwise valid profile.  This
+  // proves the implementation scans the complete request rather than checking
+  // only its first point before opening the transaction.
+  const double radii[]={one.radius,0.5*minimum,one.radius};
+  const double density[]={one.density,one.density,one.density};
+  const double velocity[]={one.velocity,one.velocity,one.velocity};
+  const double radial_field[]={one.radial_field,one.radial_field,
+                               one.radial_field};
+  const double azimuthal_field[]={one.azimuthal_field,one.azimuthal_field,
+                                  one.azimuthal_field};
+  const double magnitude[]={one.field_magnitude,one.field_magnitude,
+                            one.field_magnitude};
+  const double divergence[]={one.divergence,one.divergence,one.divergence};
+  FaultSink radial_domain;
+  radial_domain.destination_bytes=sentinel;
+  swcme::output::FileOperations radial_domain_ops=operations_for(radial_domain);
+  swcme::ModelStatus status=one.model.write_tecplot_radial_profile_checked(
+      one.step,radii,density,velocity,radial_field,azimuthal_field,magnitude,
+      divergence,3,"unused-out05-radial.dat",0.0,&radial_domain_ops);
+  context.expect_true(status.code==swcme::StatusCode::OutsideModelDomain &&
+                          status.sample_index==1 &&
+                          status.has_offending_value &&
+                          status.offending_value==radii[1],
+                      "1-D profile identifies the first out-of-domain row");
+  context.expect_true(radial_domain.open_attempts==0 &&
+                          !radial_domain.commit_called &&
+                          !radial_domain.remove_called &&
+                          radial_domain.destination_bytes==sentinel,
+                      "1-D domain rejection occurs before any output callback");
+
+  // Non-finite caller coordinates and precomputed fields are distinct failure
+  // classes.  Both must retain their row and fail before an injected open.
+  double nonfinite_radii[]={one.radius,one.radius,
+                            std::numeric_limits<double>::quiet_NaN()};
+  FaultSink nonfinite_coordinate;
+  swcme::output::FileOperations nonfinite_coordinate_ops=
+      operations_for(nonfinite_coordinate);
+  status=one.model.write_tecplot_radial_profile_checked(
+      one.step,nonfinite_radii,density,velocity,radial_field,azimuthal_field,
+      magnitude,divergence,3,"unused-out05-coordinate.dat",0.0,
+      &nonfinite_coordinate_ops);
+  context.expect_true(status.code==swcme::StatusCode::NonFiniteInput &&
+                          status.sample_index==2 &&
+                          nonfinite_coordinate.open_attempts==0,
+                      "1-D non-finite radius is rejected as input before open");
+
+  double bad_density[]={one.density,
+                        std::numeric_limits<double>::infinity(),one.density};
+  FaultSink nonfinite_field;
+  swcme::output::FileOperations nonfinite_field_ops=operations_for(nonfinite_field);
+  status=one.model.write_tecplot_radial_profile_checked(
+      one.step,nonfinite_radii,bad_density,velocity,radial_field,
+      azimuthal_field,magnitude,divergence,2,"unused-out05-field.dat",0.0,
+      &nonfinite_field_ops);
+  context.expect_true(status.code==swcme::StatusCode::NonFiniteResult &&
+                          status.sample_index==1 &&
+                          nonfinite_field.open_attempts==0,
+                      "1-D non-finite field is rejected as a result before open");
+
+  // A data-driven history can fail only at a late requested time.  Preparing
+  // the entire immutable series first prevents the earlier valid samples from
+  // causing even a temporary output artifact.
+  swcme1d::Params history_params=OneDimensionalFixture::make_params();
+  history_params.kinematics_mode=swcme::kinematics::Mode::DataDriven;
+  history_params.data_time_s={0.0,5.0};
+  history_params.data_radius_Rs={40.0,41.0};
+  swcme1d::Model history_model(history_params);
+  FaultSink history_domain;
+  swcme::output::FileOperations history_domain_ops=operations_for(history_domain);
+  status=history_model.write_tecplot_shock_vs_time_checked(
+      10.0,3,"unused-out05-history.dat",&history_domain_ops);
+  context.expect_true(status.code==swcme::StatusCode::NonFiniteResult &&
+                          status.sample_index==2 &&
+                          status.has_offending_value &&
+                          status.offending_value==10.0 &&
+                          history_domain.open_attempts==0,
+                      "late invalid history time is identified before open");
+
+  // Surface output does not evaluate the ambient background, so it needs an
+  // explicit node-domain pass.  Corrupting a non-first vertex confirms the
+  // pass records the mesh-node index and precedes metric/output work.
+  swcme3d::ShockMesh bad_mesh=three.mesh;
+  bad_mesh.x[1]=0.5*minimum;
+  bad_mesh.y[1]=0.0;
+  bad_mesh.z[1]=0.0;
+  FaultSink surface_domain;
+  swcme::output::FileOperations surface_domain_ops=operations_for(surface_domain);
+  status=three.model.write_shock_surface_center_metrics_tecplot_checked(
+      bad_mesh,three.metrics,"unused-out05-surface.dat",&surface_domain_ops);
+  context.expect_true(status.code==swcme::StatusCode::OutsideModelDomain &&
+                          status.sample_index==1 &&
+                          surface_domain.open_attempts==0,
+                      "3-D surface rejects an invalid late vertex before open");
+
+  // Endpoints at twice the lower bound are valid, but the middle point of this
+  // three-point line crosses the origin.  OUT05 must report flattened volume
+  // row one before the bundle opens or begins evaluating physics.
+  swcme3d::BoxSpec crossing_box;
+  crossing_box.cx=0.0;
+  crossing_box.cy=0.0;
+  crossing_box.cz=0.0;
+  crossing_box.hx=2.0*minimum;
+  crossing_box.hy=0.0;
+  crossing_box.hz=0.0;
+  crossing_box.Ni=3;
+  crossing_box.Nj=1;
+  crossing_box.Nk=1;
+  FaultSink bundle_domain;
+  swcme::output::FileOperations bundle_domain_ops=operations_for(bundle_domain);
+  status=three.model.write_tecplot_dataset_bundle_checked(
+      three.mesh,three.metrics,three.step,crossing_box,
+      "unused-out05-bundle.dat",&bundle_domain_ops);
+  context.expect_true(status.code==swcme::StatusCode::OutsideModelDomain &&
+                          status.sample_index==1 &&
+                          std::string(status.context).find("volume")!=
+                              std::string::npos &&
+                          bundle_domain.open_attempts==0,
+                      "3-D bundle preflights every structured volume point");
+
+  swcme3d::BoxSpec face_box=three.box;
+  face_box.cx=0.5*minimum;
+  face_box.cy=0.0;
+  face_box.cz=0.0;
+  face_box.hx=0.0;
+  face_box.hy=0.0;
+  face_box.hz=0.0;
+  FaultSink face_domain;
+  swcme::output::FileOperations face_domain_ops=operations_for(face_domain);
+  status=three.model.write_box_face_minX_tecplot_structured_checked(
+      three.step,face_box,"unused-out05-face.dat",&face_domain_ops);
+  context.expect_true(status.code==swcme::StatusCode::OutsideModelDomain &&
+                          status.sample_index==0 &&
+                          face_domain.open_attempts==0,
+                      "3-D face rejects its first invalid generated point");
+  context.expect_true(
+      !three.model.write_box_face_minX_tecplot_structured(
+          three.step,face_box,"unused-out05-legacy-face.dat"),
+      "legacy face writer delegates to the same domain preflight");
+
+  // Finite BoxSpec fields can still overflow while generating a coordinate.
+  // Detecting that arithmetic result is part of preflight, not a write-time
+  // formatting concern.
+  swcme3d::BoxSpec overflow_box=face_box;
+  overflow_box.cx=minimum;
+  overflow_box.hx=0.0;
+  overflow_box.cy=std::numeric_limits<double>::max();
+  overflow_box.hy=std::numeric_limits<double>::max();
+  FaultSink overflow_domain;
+  swcme::output::FileOperations overflow_domain_ops=operations_for(overflow_domain);
+  status=three.model.write_box_face_minX_tecplot_structured_checked(
+      three.step,overflow_box,"unused-out05-overflow.dat",&overflow_domain_ops);
+  context.expect_true(status.code==swcme::StatusCode::NonFiniteInput &&
+                          status.sample_index==0 &&
+                          overflow_domain.open_attempts==0,
+                      "generated coordinate overflow is rejected before open");
+
+  // The lower boundary is inclusive in the public evaluator contract.  A
+  // successful exact-boundary write guards against accidentally tightening
+  // OUT05 to radius > MIN_RADIUS_M.
+  swcme3d::BoxSpec boundary_box=face_box;
+  boundary_box.cx=minimum;
+  FaultSink boundary_success;
+  swcme::output::FileOperations boundary_success_ops=
+      operations_for(boundary_success);
+  status=three.model.write_box_face_minX_tecplot_structured_checked(
+      three.step,boundary_box,"unused-out05-boundary.dat",
+      &boundary_success_ops);
+  context.expect_true(status.ok() && boundary_success.open_attempts==1 &&
+                          boundary_success.commit_called,
+                      "exact domain-boundary face passes and commits");
+
+  // Finally exercise the production backend against an existing destination.
+  // A true preflight leaves both its bytes and sibling namespace untouched.
+  const std::filesystem::path preserved_path="output/OUT05_preserved.dat";
+  std::error_code cleanup_error;
+  std::filesystem::remove(preserved_path,cleanup_error);
+  write_file(preserved_path,sentinel);
+  status=one.model.write_tecplot_radial_profile_checked(
+      one.step,radii,density,velocity,radial_field,azimuthal_field,magnitude,
+      divergence,3,preserved_path.string().c_str(),0.0);
+  context.expect_true(status.code==swcme::StatusCode::OutsideModelDomain &&
+                          read_file(preserved_path)==sentinel &&
+                          count_staging_files(preserved_path)==0,
+                      "production preflight preserves destination and creates no staging");
+  std::filesystem::remove(preserved_path,cleanup_error);
+}

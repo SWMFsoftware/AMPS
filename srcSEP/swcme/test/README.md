@@ -44,6 +44,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test PST04    # concurrent prepared-state evaluation
 ./output/test_swcme --test OUT02    # checked output-failure propagation
 ./output/test_swcme --test OUT03    # transactional output commit
+./output/test_swcme --test OUT05    # model-domain output preflight
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -409,6 +410,71 @@ Run the gate directly with:
 `OUT03` follows `OUT02` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
 through their `@ALL` expansion.
 
+## OUT05: model-domain output preflight
+
+### What is tested
+
+`OUT05` verifies that every public Tecplot writer validates its complete
+requested model domain before any output backend callback or filesystem action.
+Coverage includes a non-first invalid 1-D radius, a non-finite 1-D coordinate,
+a non-finite precomputed 1-D field, a late out-of-range data-driven history
+time, a non-first invalid shock-surface vertex, an interior invalid structured
+volume point, an invalid min-X face, and finite box values whose coordinate
+arithmetic overflows.  It also checks the inclusive lower-radius boundary and
+the legacy boolean face wrapper.
+
+### Why it is tested
+
+OUT02 reports incomplete writes and OUT03 prevents incomplete staging data from
+replacing a destination, but neither guarantee by itself proves that invalid
+physics requests are side-effect free.  Preflight is important to automated
+campaigns because a late bad sample should be rejected before creating files,
+invoking a custom backend, or performing expensive partial output evaluation.
+The originating model-domain status and row must remain available so the bad
+campaign sample can be corrected without interpreting an I/O error.
+
+### How it is tested
+
+The deterministic `FaultSink` counts open, commit, and remove callbacks while
+holding a sentinel destination.  Each invalid request is passed to the same
+checked API used by production and must return with `open_attempts == 0`, no
+commit, and no cleanup callback.  Assertions verify the status class,
+`sample_index`, offending value, and zone-specific context:
+
+- radial coordinates distinguish `NONFINITE_INPUT` from
+  `OUTSIDE_MODEL_DOMAIN`, while supplied field data use `NONFINITE_RESULT`;
+- the data-driven history accepts its first two times but reports the third,
+  out-of-range request before opening;
+- the surface reports the altered mesh-node index;
+- the bundle reports the flattened interior volume row, demonstrating that the
+  entire K/J/I grid—not only endpoints—is scanned;
+- the face reports its first invalid effective-grid row, and its legacy wrapper
+  returns `false` under the same preflight;
+- coordinate-generation overflow is caught even though every `BoxSpec` member
+  is individually finite; and
+- a face exactly at `MIN_RADIUS_M` reaches open and commits successfully.
+
+A production-backend case starts with an existing regular sentinel file,
+submits the invalid middle-radius profile, and then verifies that the sentinel
+is byte-for-byte unchanged and no `.swcme-tmp-*` sibling exists.
+
+### Expected result
+
+All invalid datasets fail before the first output open.  Each checked call
+returns the domain/result status and first failing row described above; legacy
+output returns `false`; the prior destination remains unchanged; and no staging
+file is created.  The exact lower domain boundary remains writable and commits
+one complete product, proving the preflight does not reject valid edge points.
+
+Run the gate directly with:
+
+```sh
+./output/test_swcme --test OUT05
+```
+
+`OUT05` follows `OUT03` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
+through their `@ALL` expansion.
+
 ## Python campaign manager and reproducible run artifacts
 
 `run_tests.py` is the manager for multi-test development gates and validation
@@ -432,7 +498,7 @@ python3 python/test_run_tests.py
 The named profiles are version-controlled text files in `profiles/`:
 
 - `SMOKE` is the short development gate, including prepared-state safety,
-  checked output-failure handling, and transactional output commit;
+  checked output failures, transactional commit, and model-domain preflight;
 - `ROUTINE` is the broad deterministic gate and excludes `MSH05` and `CON05`;
 - `FULL` expands to every test in the C++ registry;
 - `EVENT` first runs FULL and then executes the supplied event-analysis JSON.

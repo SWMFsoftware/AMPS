@@ -2212,6 +2212,96 @@ static inline bool metrics_finite_and_sized(const swcme3d::TriMetrics& T,
          all_finite(T.cz) && all_finite(T.rc_mean) && all_finite(T.Vsh_n_mean);
 }
 
+// Generate a structured-grid coordinate in one canonical place.  OUT05 uses
+// this exact expression during preflight and the writers use it again during
+// emission, preventing validation and output from silently sampling different
+// points because of duplicated interpolation formulas.
+static inline double structured_coordinate(double center,double half_extent,
+                                           int index,int count) {
+  return center+(-half_extent+(2.0*half_extent)*
+      (index/double(std::max(1,count-1))));
+}
+
+// Validate one requested Cartesian output location without evaluating or
+// modifying model state.  The evaluator contract treats non-finite Cartesian
+// coordinates (including overflow in grid generation) as NONFINITE_INPUT and
+// a finite radius below the shared solar-wind floor as OUTSIDE_MODEL_DOMAIN.
+// Carrying the flattened output row makes the failure directly traceable to a
+// Tecplot record before any staging file is created.
+static inline swcme::ModelStatus preflight_output_point(
+    double x,double y,double z,const char* context,std::size_t row) {
+  if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+    const double bad=!std::isfinite(x) ? x : (!std::isfinite(y) ? y : z);
+    return swcme::ModelStatus::make_value(
+        swcme::StatusCode::NonFiniteInput,context,bad,row);
+  }
+  const double radius=std::hypot(x,std::hypot(y,z));
+  if (!std::isfinite(radius))
+    return swcme::ModelStatus::make_value(
+        swcme::StatusCode::NonFiniteInput,context,radius,row);
+  if (radius<swcme::solarwind::MIN_RADIUS_M)
+    return swcme::ModelStatus::make_value(
+        swcme::StatusCode::OutsideModelDomain,context,radius,row);
+  return swcme::ModelStatus::success();
+}
+
+// Surface coordinates are already-computed model results, but their requested
+// output locations must obey the same spatial floor as direct background
+// queries.  Validate all nodes, not merely the first, so a malformed late mesh
+// node cannot cause a filesystem side effect before rejection.
+static swcme::ModelStatus preflight_surface_domain(
+    const swcme3d::ShockMesh& M,const char* context) {
+  for (std::size_t i=0; i<M.x.size(); ++i) {
+    const swcme::ModelStatus status=
+        preflight_output_point(M.x[i],M.y[i],M.z[i],context,i);
+    if (!status.ok()) return status;
+  }
+  return swcme::ModelStatus::success();
+}
+
+// Scan every structured volume point in the exact K/J/I order emitted by the
+// bundle.  A separate helper keeps this potentially large but allocation-free
+// pass ahead of FileOperations selection and gives sample_index the same linear
+// row meaning it has in the resulting Tecplot zone.
+static swcme::ModelStatus preflight_volume_domain(
+    const swcme3d::BoxSpec& B,const char* context) {
+  std::size_t row=0;
+  for (int kk=0; kk<B.Nk; ++kk) {
+    const double z=structured_coordinate(B.cz,B.hz,kk,B.Nk);
+    for (int jj=0; jj<B.Nj; ++jj) {
+      const double y=structured_coordinate(B.cy,B.hy,jj,B.Nj);
+      for (int ii=0; ii<B.Ni; ++ii,++row) {
+        const double x=structured_coordinate(B.cx,B.hx,ii,B.Ni);
+        const swcme::ModelStatus status=
+            preflight_output_point(x,y,z,context,row);
+        if (!status.ok()) return status;
+      }
+    }
+  }
+  return swcme::ModelStatus::success();
+}
+
+// The standalone face and bundle face both force at least two points along Y
+// and Z.  Preflighting with those effective dimensions is essential when a
+// BoxSpec requests one sample: validation must cover the interpolated records
+// the writer will actually emit, not only the nominal BoxSpec dimensions.
+static swcme::ModelStatus preflight_min_x_face_domain(
+    const swcme3d::BoxSpec& B,const char* context) {
+  const int I=std::max(2,B.Nj),J=std::max(2,B.Nk);
+  const double x=B.cx-B.hx;
+  std::size_t row=0;
+  for (int j=0; j<J; ++j) {
+    const double z=structured_coordinate(B.cz,B.hz,j,J);
+    for (int i=0; i<I; ++i,++row) {
+      const double y=structured_coordinate(B.cy,B.hy,i,I);
+      const swcme::ModelStatus status=
+          preflight_output_point(x,y,z,context,row);
+      if (!status.ok()) return status;
+    }
+  }
+  return swcme::ModelStatus::success();
+}
+
 // Write one Tecplot BLOCK variable while retaining the element index on every
 // formatted write.  Returning immediately on failure prevents later values or
 // line breaks from obscuring the exact block element that was truncated.
@@ -2305,15 +2395,10 @@ static swcme::ModelStatus write_surface_output(
 // Surface-only: cell metrics + nodal rc/Vsh_n
 bool Model::write_shock_surface_center_metrics_tecplot(
   const ShockMesh& M, const TriMetrics& T_in, const char* path) const {
-
-  TriMetrics T=T_in;
-  const std::size_t Ne=M.tri_i.size();
-  if (!path || !mesh_finite_and_sized(M)) return false;
-  if (T.area.size()!=Ne){ compute_triangle_metrics(M,T); }
-  if (!metrics_finite_and_sized(T,Ne)) return false;
-
-  return write_surface_output(
-      M,T,path,swcme::output::stdio_file_operations()).ok();
+  // Delegate to the checked API so legacy callers receive the same OUT05
+  // no-open rejection and OUT03 transaction as status-aware integrations.
+  return write_shock_surface_center_metrics_tecplot_checked(
+      M,T_in,path).ok();
 }
 
 swcme::ModelStatus Model::write_shock_surface_center_metrics_tecplot_checked(
@@ -2323,6 +2408,9 @@ swcme::ModelStatus Model::write_shock_surface_center_metrics_tecplot_checked(
       swcme::StatusCode::NullPointer,"write_shock_surface_center_metrics_tecplot path");
   if (!mesh_finite_and_sized(M)) return swcme::ModelStatus::make(
       swcme::StatusCode::NonFiniteResult,"write_shock_surface_center_metrics_tecplot mesh");
+  const swcme::ModelStatus surface_domain=preflight_surface_domain(
+      M,"write_shock_surface_center_metrics_tecplot vertex");
+  if (!surface_domain.ok()) return surface_domain;
   try {
     TriMetrics checked=T;
     if (checked.area.size()!=M.tri_i.size()) compute_triangle_metrics(M,checked);
@@ -2440,11 +2528,11 @@ static swcme::ModelStatus write_bundle_output(
       B.Ni,B.Nj,B.Nk);
   std::size_t volume_row=0;
   for (int kk=0; kk<B.Nk && output.good(); ++kk){
-    const double zk = B.cz + (-B.hz + (2.0*B.hz) * (kk / double(std::max(1,B.Nk-1))));
+    const double zk=structured_coordinate(B.cz,B.hz,kk,B.Nk);
     for (int jj=0; jj<B.Nj && output.good(); ++jj){
-      const double yj = B.cy + (-B.hy + (2.0*B.hy) * (jj / double(std::max(1,B.Nj-1))));
+      const double yj=structured_coordinate(B.cy,B.hy,jj,B.Nj);
       for (int ii=0; ii<B.Ni && output.good(); ++ii,++volume_row){
-        const double xi = B.cx + (-B.hx + (2.0*B.hx) * (ii / double(std::max(1,B.Ni-1))));
+        const double xi=structured_coordinate(B.cx,B.hx,ii,B.Ni);
         double n,Vx,Vy,Vz,Bx,By,Bz,div;
         model.evaluate_cartesian_with_B(
             S,&xi,&yj,&zk,&n,&Vx,&Vy,&Vz,&Bx,&By,&Bz,1);
@@ -2469,17 +2557,13 @@ static swcme::ModelStatus write_bundle_output(
   // Zone 4: min-X face (structured 2-D POINT)
   const int I=std::max(2,B.Nj), J=std::max(2,B.Nk);
   const double x0=B.cx-B.hx;
-  const double y0=B.cy-B.hy, y1=B.cy+B.hy;
-  const double z0=B.cz-B.hz, z1=B.cz+B.hz;
   output.print("3D dataset face zone",swcme::ModelStatus::npos,
       "ZONE T=\"box_face_minX\", I=%d, J=%d, DATAPACKING=POINT\n",I,J);
   std::size_t face_row=0;
   for (int j=0; j<J && output.good(); ++j){
-    const double tz=(J==1)?0.0: double(j)/double(J-1);
-    const double z=z0+(z1-z0)*tz;
+    const double z=structured_coordinate(B.cz,B.hz,j,J);
     for (int i=0; i<I && output.good(); ++i,++face_row){
-      const double ty=(I==1)?0.0: double(i)/double(I-1);
-      const double y=y0+(y1-y0)*ty;
+      const double y=structured_coordinate(B.cy,B.hy,i,I);
       const double x=x0;
       double n,Vx,Vy,Vz,Bx,By,Bz,div;
       model.evaluate_cartesian_with_B(
@@ -2515,13 +2599,7 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_
   // can open/truncate `path`.  I/O failures remain the historical false return.
   swcme::throw_if_error(validate_prepared_state(
       S,"swcme3d::write_tecplot_dataset_bundle"));
-  TriMetrics T=T_in;
-  const std::size_t Ne=M.tri_i.size();
-  if (!path || !mesh_finite_and_sized(M)) return false;
-  if (T.area.size()!=Ne) compute_triangle_metrics(M,T);
-  if (!metrics_finite_and_sized(T,Ne)) return false;
-  return write_bundle_output(
-      *this,M,T,S,B,path,swcme::output::stdio_file_operations()).ok();
+  return write_tecplot_dataset_bundle_checked(M,T_in,S,B,path).ok();
 }
 
 // Emit the standalone face using the same bytes and field order as zone four
@@ -2533,8 +2611,6 @@ static swcme::ModelStatus write_face_output(
     const swcme::output::FileOperations& operations) {
   const int I=std::max(2,B.Nj), J=std::max(2,B.Nk);
   const double x0=B.cx-B.hx;
-  const double y0=B.cy-B.hy, y1=B.cy+B.hy;
-  const double z0=B.cz-B.hz, z1=B.cz+B.hz;
 
   swcme::output::CheckedTextFile output(operations);
   if (!output.open_transactional(path)) return swcme::ModelStatus::make(
@@ -2553,11 +2629,9 @@ static swcme::ModelStatus write_face_output(
 
   std::size_t row=0;
   for (int j=0; j<J && output.good(); ++j){
-    const double tz=(J==1)?0.0: double(j)/double(J-1);
-    const double z=z0+(z1-z0)*tz;
+    const double z=structured_coordinate(B.cz,B.hz,j,J);
     for (int i=0; i<I && output.good(); ++i,++row){
-      const double ty=(I==1)?0.0: double(i)/double(I-1);
-      const double y=y0+(y1-y0)*ty;
+      const double y=structured_coordinate(B.cy,B.hy,i,I);
       const double x=x0;
       double n,Vx,Vy,Vz,Bx,By,Bz,div;
       model.evaluate_cartesian_with_B(
@@ -2590,9 +2664,7 @@ bool Model::write_box_face_minX_tecplot_structured(const StepState& S,
   // exactly and cannot leave a partial Tecplot header behind.
   swcme::throw_if_error(validate_prepared_state(
       S,"swcme3d::write_box_face_minX_tecplot_structured"));
-  if (!path) return false;
-  return write_face_output(
-      *this,S,B,path,swcme::output::stdio_file_operations()).ok();
+  return write_box_face_minX_tecplot_structured_checked(S,B,path).ok();
 }
 
 
@@ -2616,6 +2688,15 @@ swcme::ModelStatus Model::write_tecplot_dataset_bundle_checked(
     return swcme::ModelStatus::make(swcme::StatusCode::NonFiniteInput,
                                     "write_tecplot_dataset_bundle box");
   }
+  const swcme::ModelStatus surface_domain=preflight_surface_domain(
+      M,"write_tecplot_dataset_bundle surface vertex");
+  if (!surface_domain.ok()) return surface_domain;
+  const swcme::ModelStatus volume_domain=preflight_volume_domain(
+      B,"write_tecplot_dataset_bundle volume point");
+  if (!volume_domain.ok()) return volume_domain;
+  const swcme::ModelStatus face_domain=preflight_min_x_face_domain(
+      B,"write_tecplot_dataset_bundle face point");
+  if (!face_domain.ok()) return face_domain;
   try {
     TriMetrics checked=T;
     if (checked.area.size()!=M.tri_i.size())
@@ -2649,6 +2730,9 @@ swcme::ModelStatus Model::write_box_face_minX_tecplot_structured_checked(
     return swcme::ModelStatus::make(swcme::StatusCode::NonFiniteInput,
                                     "write_box_face_minX_tecplot_structured box");
   }
+  const swcme::ModelStatus face_domain=preflight_min_x_face_domain(
+      B,"write_box_face_minX_tecplot_structured point");
+  if (!face_domain.ok()) return face_domain;
   try {
     const swcme::output::FileOperations& operations=file_operations
         ? *file_operations : swcme::output::stdio_file_operations();

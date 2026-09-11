@@ -1094,6 +1094,10 @@ public:
   //  • OUT03 stages each validated product beside its destination and commits
   //    it by atomic rename only after close succeeds. FILE_COMMIT_FAILURE
   //    leaves an existing regular destination unchanged.
+  //  • OUT05 scans every surface node and every structured volume/face point
+  //    before FileOperations is selected.  A non-finite coordinate or radius
+  //    below solarwind::MIN_RADIUS_M therefore returns its model-domain status
+  //    and flattened row index without creating a staging file.
   // --------------------------------------------------------------------------
   swcme::ModelStatus write_tecplot_dataset_bundle_checked(
                                     const ShockMesh& M,const TriMetrics& T,
