@@ -178,6 +178,11 @@ the maximum absolute finite correlation per driver and physical series while
 retaining the paired count, confidence limits, and status; the complete lag
 curve remains authoritative.
 
+Parallel execution assigns complete altitude/rigidity/hemisphere series to
+local processes. Each series/driver pair has a SHA-256-derived random seed based
+on the configured base seed and physical keys, making bootstrap rows invariant
+to worker count and completion order.
+
 ## `hysteresis_pairs.csv` and `hysteresis_summary.csv`
 
 Pairs use identical altitude, rigidity, hemisphere, and MLT.  `SYMH_ONLY`
@@ -195,6 +200,13 @@ The only allowed states are `AVAILABLE`, `DIAGNOSTIC_ONLY`, and
 `NOT_AVAILABLE`. A SMOKE archive is expected to contain a mixture of these
 states; sparse temporal diagnostics are never silently promoted to scientific
 inference.
+
+## `analysis_timings.csv`
+
+One row per dynamics phase records `elapsed_seconds`, `work_units`, and
+`process_workers`. Lag/bootstrap and hysteresis rows report the effective local
+process count; lightweight dependent reductions remain serial. The same worker
+request and effective count are also recorded in `dynamics_result.json`.
 
 ## Dedicated global-shell products
 

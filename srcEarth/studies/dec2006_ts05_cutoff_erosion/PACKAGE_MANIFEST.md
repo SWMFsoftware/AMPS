@@ -72,6 +72,13 @@ and reuses the splitter's strict parse. Deterministic parent-side sorting keeps
 aggregate CSV ordering identical to the serial `--postprocess-workers 1` path.
 `morphology/postprocessing_timings.csv` records the measured reduction cost.
 
+The dynamics reducer independently parallelizes complete lag/bootstrap and
+hysteresis-matching series with `--analysis-workers AUTO` (also bounded at
+eight affinity-visible CPUs). Process-local driver interpolation caches remove
+repeated table searches, while stable key-derived random streams and parent-side
+sorting make `--analysis-workers 1` and parallel products identical.
+`dynamics/analysis_timings.csv` records phase costs and effective worker counts.
+
 The independent global-map workflow uses the same multi-shell template and
 native Mode3D batching but does not consume observation tables. Its merged
 effective configuration, commands, return codes, mesh-reuse assertions,

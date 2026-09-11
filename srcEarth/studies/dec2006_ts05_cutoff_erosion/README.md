@@ -165,6 +165,16 @@ access table once before evaluating rigidity/hemisphere/MLT boundaries and
 reuses the splitter's strict parsed rows. These changes remove redundant work
 without changing the R50 or ACCESS_T50 definitions.
 
+The subsequent dynamics stage has a separate bounded process pool because its
+natural work unit is a complete physical time series rather than an epoch.
+`--analysis-workers AUTO` distributes altitude/rigidity/hemisphere lag and
+moving-block-bootstrap series, and altitude/rigidity/hemisphere/MLT hysteresis
+matching series, across at most eight affinity-visible CPUs. Driver
+interpolations are cached within each worker. Stable SHA-256-derived random
+streams make bootstrap intervals and CSV ordering identical for one or many
+workers. Use `--analysis-workers 1` as the deterministic serial reference.
+Phase progress is printed and archived in `dynamics/analysis_timings.csv`.
+
 | Layout | AMPS process contents | Purpose |
 |---|---|---|
 | `BATCHED` | Up to N epochs × both altitudes in one `SNAPSHOT_LIST` process | Default; one AMR topology allocation per batch |
@@ -402,7 +412,8 @@ calculation.
 
 ```bash
 python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py \
-  --profile FULL --postprocess-workers AUTO --amps ./amps -np 4 -nt 16
+  --profile FULL --postprocess-workers AUTO --analysis-workers AUTO \
+  --amps ./amps -np 4 -nt 16
 ```
 
 `FULL` uses a 15-minute event cadence and inserts five-minute samples within
@@ -470,7 +481,7 @@ Individual stages can be run or repeated:
 python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stage morphology --profile FULL --amps ./amps
 python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stage pamela --profile FULL --amps ./amps
 python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stage poes --profile FULL --amps ./amps
-python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stage compare --stage dynamics --stage figures
+python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py --stage compare --stage dynamics --stage figures --analysis-workers AUTO
 ```
 
 After the new cutoff-map products have been generated once, apply later
@@ -479,7 +490,7 @@ stages:
 
 ```bash
 python3 srcEarth/studies/dec2006_ts05_cutoff_erosion/scripts/run_study.py \
-  --stage dynamics --stage figures
+  --stage dynamics --stage figures --analysis-workers AUTO
 ```
 
 This reads the existing `morphology/morphology_boundaries.csv`, replaces the
@@ -580,6 +591,7 @@ test_output/dec2006_ts05_cutoff_erosion/dynamics/hysteresis_pairs.csv
 test_output/dec2006_ts05_cutoff_erosion/dynamics/hysteresis_summary.csv
 test_output/dec2006_ts05_cutoff_erosion/dynamics/analysis_availability.csv
 test_output/dec2006_ts05_cutoff_erosion/dynamics/analysis_availability.json
+test_output/dec2006_ts05_cutoff_erosion/dynamics/analysis_timings.csv
 test_output/dec2006_ts05_cutoff_erosion/dynamics/dynamics_result.json
 ```
 
@@ -697,7 +709,9 @@ assertion that AACGM coordinates preserve geographic area exactly.
 
 Accessible area is integrated only over the configured analyzed latitude band.
 Lag correlations use positive lag for a cutoff response following the driver
-and moving-block bootstrap intervals.  Hysteresis pairs main- and recovery-
+and moving-block bootstrap intervals. Each physical series/driver pair uses a
+stable key-derived random stream, so worker scheduling cannot perturb its
+confidence interval. Hysteresis pairs main- and recovery-
 phase boundary cells at equal rigidity, altitude, hemisphere, and MLT, first
 within 10 nT SYM-H and then under the stricter pressure and IMF Bz tolerances in
 `study.json`.

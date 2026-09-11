@@ -11,11 +11,15 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
+import os
 import random
 import statistics
+import time
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -36,6 +40,79 @@ from study_common import (
 # from being mistaken for the FULL analysis.
 MIN_TEMPORAL_EPOCHS_FOR_INFERENCE = 24
 EARTH_RADIUS_KM = 6371.2
+
+
+def available_local_cpus() -> int:
+    """Return CPUs available to this runner process, respecting affinity.
+
+    Batch systems commonly expose fewer CPUs than the physical node contains.
+    ``sched_getaffinity`` reflects that allocation on Linux; the portable
+    ``os.cpu_count`` fallback keeps the standalone script usable elsewhere.
+    """
+
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except (AttributeError, OSError):
+        return max(1, os.cpu_count() or 1)
+
+
+def resolve_analysis_workers(requested: str, work_units: int) -> int:
+    """Resolve ``AUTO`` or an explicit positive analysis-worker count.
+
+    Eight workers is a deliberate default ceiling. Every worker receives a
+    physical time series and the TS05 driver table, so an unbounded pool could
+    trade CPU time for memory pressure on shared login or batch nodes. Explicit
+    values remain available when a scheduler allocation supports more.
+    """
+
+    if work_units < 1:
+        return 1
+    if requested.strip().upper() == "AUTO":
+        return min(8, work_units, available_local_cpus())
+    try:
+        workers = int(requested)
+    except ValueError as exc:
+        raise ValueError(
+            "--analysis-workers must be AUTO or a positive integer"
+        ) from exc
+    if workers < 1:
+        raise ValueError("--analysis-workers must be AUTO or a positive integer")
+    return min(workers, work_units)
+
+
+def stable_analysis_seed(base_seed: int, *parts: object) -> int:
+    """Derive a process/order-independent pseudorandom seed for one series.
+
+    Python's built-in ``hash`` is intentionally randomized between processes,
+    so it cannot define a reproducible scientific bootstrap stream. A SHA-256
+    digest of the configured seed and physical keys gives the same resamples
+    for serial and parallel runs, independent of worker completion order.
+    """
+
+    payload = json.dumps(
+        [int(base_seed), *[str(part) for part in parts]],
+        separators=(",", ":"), ensure_ascii=True,
+    ).encode("utf-8")
+    return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big")
+
+
+def report_parallel_progress(label: str, completed: int, total: int,
+                             started: float) -> None:
+    """Print bounded progress for unordered process-worker completions."""
+
+    # At most about twenty intermediate messages are produced. This is enough
+    # to distinguish active analysis from a stall without flooding long batch
+    # logs when hundreds of physical series are processed.
+    interval = max(1, total // 20)
+    if completed == total or completed == 1 or completed % interval == 0:
+        elapsed = time.monotonic() - started
+        rate = completed / elapsed if elapsed > 0.0 else 0.0
+        remaining = (total - completed) / rate if rate > 0.0 else math.inf
+        eta = "--" if not math.isfinite(remaining) else f"{remaining:.1f} s"
+        print(
+            f"[DYNAMICS] {label}: {completed}/{total} series; ETA {eta}",
+            flush=True,
+        )
 
 
 def fit_two_mlt_harmonics(mlt_hours: Sequence[float], latitudes_deg: Sequence[float]
@@ -654,73 +731,173 @@ def cutoff_map_change_products(
     return spatial, evolution, summary
 
 
-def lag_products(harmonics: Sequence[Mapping[str, object]], driver: Sequence[DriverRow],
-                 config: Mapping[str, object]) -> List[Dict[str, object]]:
-    """Compute driver/mean-cutoff correlations on the configured lag grid."""
-    analysis = config["analysis"]  # type: ignore[index]
+# Process-local lag context is installed once by ProcessPoolExecutor's
+# initializer. Large immutable driver/configuration objects therefore cross
+# the process boundary once per worker, not once for every physical series.
+_LAG_DRIVER: Tuple[DriverRow, ...] = ()
+_LAG_ANALYSIS: Mapping[str, object] = {}
+_LAG_DRIVER_CACHE: Dict[Tuple[str, int], Optional[DriverRow]] = {}
+LAG_DRIVER_VARIABLES = (
+    "pdyn_npa", "bz_nt", "symh_nt", "w1", "w2", "w3", "w4", "w5", "w6"
+)
+
+
+def _initialize_lag_worker(driver: Sequence[DriverRow],
+                           analysis: Mapping[str, object]) -> None:
+    """Install immutable lag context and reset the process-local sample cache."""
+
+    global _LAG_DRIVER, _LAG_ANALYSIS, _LAG_DRIVER_CACHE
+    _LAG_DRIVER = tuple(driver)
+    _LAG_ANALYSIS = dict(analysis)
+    _LAG_DRIVER_CACHE = {}
+
+
+def _lag_driver_sample(epoch: datetime, lag_minutes: int) -> Optional[DriverRow]:
+    """Interpolate one driver state once per worker/epoch/lag combination."""
+
+    key = (format_utc(epoch), lag_minutes)
+    if key not in _LAG_DRIVER_CACHE:
+        try:
+            _LAG_DRIVER_CACHE[key] = interpolate_driver(
+                _LAG_DRIVER, epoch - timedelta(minutes=lag_minutes)
+            )
+        except ValueError:
+            _LAG_DRIVER_CACHE[key] = None
+    return _LAG_DRIVER_CACHE[key]
+
+
+def _lag_series_products(job: Tuple[
+        Tuple[object, object, object], Sequence[Mapping[str, object]],
+]) -> List[Dict[str, object]]:
+    """Evaluate every driver and lag for one independent physical series.
+
+    A physical series is uniquely identified by altitude, rigidity, and
+    hemisphere. It is the correct process-pool unit because bootstrap samples
+    never mix those keys. Keeping all nine drivers in one job also avoids
+    sending the same several-hundred-epoch series to a worker nine times.
+    """
+
+    key, input_series = job
+    analysis = _LAG_ANALYSIS
     min_minutes = int(round(float(analysis["lag_min_hours"]) * 60.0))
     max_minutes = int(round(float(analysis["lag_max_hours"]) * 60.0))
     step = int(analysis["lag_step_minutes"])
     replicates = int(analysis["bootstrap_replicates"])
     block_hours = float(analysis["bootstrap_block_hours"])
-    rng = random.Random(int(analysis["random_seed"]))
-    variables = ("pdyn_npa", "bz_nt", "symh_nt", "w1", "w2", "w3", "w4", "w5", "w6")
+    base_seed = int(analysis["random_seed"])
+    series = sorted(
+        input_series, key=lambda row: parse_utc(str(row["epoch_utc"]))
+    )
     output: List[Dict[str, object]] = []
+
+    if len(series) > 1:
+        spacings = [
+            (parse_utc(str(right["epoch_utc"])) -
+             parse_utc(str(left["epoch_utc"]))).total_seconds() / 3600.0
+            for left, right in zip(series, series[1:])
+        ]
+        nominal_hours = statistics.median(value for value in spacings if value > 0)
+    else:
+        nominal_hours = block_hours
+    block_length = max(1, int(round(block_hours / nominal_hours)))
+
+    for variable in LAG_DRIVER_VARIABLES:
+        # Each physical series/driver pair owns a stable random stream. This is
+        # what makes confidence intervals byte-for-byte identical for one or
+        # many workers even though futures finish in an arbitrary order.
+        rng = random.Random(stable_analysis_seed(
+            base_seed, "lag", key[0], key[1], key[2], variable
+        ))
+        for lag_minutes in range(min_minutes, max_minutes + 1, step):
+            x: List[float] = []
+            y: List[float] = []
+            for row in series:
+                epoch = parse_utc(str(row["epoch_utc"]))
+                sampled = _lag_driver_sample(epoch, lag_minutes)
+                if sampled is None:
+                    continue
+                x.append(float(getattr(sampled, variable)))
+                y.append(float(row["mean_latitude_deg"]))
+            correlation = pearson(x, y)
+            # A moving-block confidence interval is meaningful only after the
+            # time series has enough temporal structure. SMOKE still records
+            # the correlation for pipeline testing, but deliberately omits
+            # inferential bounds instead of manufacturing precision.
+            if len(x) >= MIN_TEMPORAL_EPOCHS_FOR_INFERENCE:
+                ci_low, ci_high = bootstrap_correlation(
+                    x, y, block_length, replicates, rng
+                )
+            else:
+                ci_low, ci_high = None, None
+            output.append({
+                "altitude_km": key[0], "rigidity_gv": key[1],
+                "hemisphere": key[2], "driver_variable": variable,
+                "lag_minutes": lag_minutes,
+                "positive_lag_means_cutoff_follows_driver": True,
+                "n_paired_epochs": len(x), "correlation": correlation,
+                "bootstrap_ci_low": ci_low, "bootstrap_ci_high": ci_high,
+                "bootstrap_block_hours": block_hours,
+                "inference_status": (
+                    "AVAILABLE"
+                    if len(x) >= MIN_TEMPORAL_EPOCHS_FOR_INFERENCE
+                    else "DIAGNOSTIC_ONLY"
+                ),
+            })
+    return output
+
+
+def lag_products(harmonics: Sequence[Mapping[str, object]],
+                 driver: Sequence[DriverRow], config: Mapping[str, object],
+                 workers: int = 1, report_progress: bool = False
+                 ) -> List[Dict[str, object]]:
+    """Compute lag correlations, parallelized by independent physical series.
+
+    ``workers=1`` uses the same keyed random streams and sorting as the process
+    path, making it a strict numerical regression oracle rather than merely a
+    similar serial implementation.
+    """
+
+    analysis = config["analysis"]  # type: ignore[index]
     grouped = defaultdict(list)
     for row in harmonics:
         mean = finite_float(row.get("mean_latitude_deg"))
         if mean is not None:
             grouped[(row["altitude_km"], row["rigidity_gv"], row["hemisphere"])].append(row)
-    for key, series in sorted(grouped.items()):
-        series.sort(key=lambda row: parse_utc(str(row["epoch_utc"])))
-        if len(series) > 1:
-            spacings = [
-                (parse_utc(str(right["epoch_utc"])) - parse_utc(str(left["epoch_utc"]))).total_seconds() / 3600.0
-                for left, right in zip(series, series[1:])
-            ]
-            nominal_hours = statistics.median(value for value in spacings if value > 0)
-        else:
-            nominal_hours = block_hours
-        block_length = max(1, int(round(block_hours / nominal_hours)))
-        for variable in variables:
-            for lag_minutes in range(min_minutes, max_minutes + 1, step):
-                x: List[float] = []
-                y: List[float] = []
-                for row in series:
-                    epoch = parse_utc(str(row["epoch_utc"]))
-                    driver_epoch = epoch - timedelta(minutes=lag_minutes)
-                    try:
-                        sampled = interpolate_driver(driver, driver_epoch)
-                    except ValueError:
-                        continue
-                    x.append(float(getattr(sampled, variable)))
-                    y.append(float(row["mean_latitude_deg"]))
-                correlation = pearson(x, y)
-                # A moving-block confidence interval is meaningful only after
-                # the time series has enough temporal structure. SMOKE still
-                # records the correlation for pipeline testing, but deliberately
-                # omits inferential bounds instead of manufacturing precision
-                # from only a handful of event landmarks.
-                if len(x) >= MIN_TEMPORAL_EPOCHS_FOR_INFERENCE:
-                    ci_low, ci_high = bootstrap_correlation(
-                        x, y, block_length, replicates, rng
+    jobs = [
+        (key, tuple(series))
+        for key, series in sorted(grouped.items())
+    ]
+    effective_workers = resolve_analysis_workers(str(workers), len(jobs))
+    output: List[Dict[str, object]] = []
+    started = time.monotonic()
+    if effective_workers == 1:
+        _initialize_lag_worker(driver, analysis)
+        for completed, job in enumerate(jobs, start=1):
+            output.extend(_lag_series_products(job))
+            if report_progress:
+                report_parallel_progress("lag/bootstrap", completed, len(jobs), started)
+    else:
+        with ProcessPoolExecutor(
+                max_workers=effective_workers,
+                initializer=_initialize_lag_worker,
+                initargs=(tuple(driver), analysis)) as executor:
+            futures = [executor.submit(_lag_series_products, job) for job in jobs]
+            for completed, future in enumerate(as_completed(futures), start=1):
+                output.extend(future.result())
+                if report_progress:
+                    report_parallel_progress(
+                        "lag/bootstrap", completed, len(futures), started
                     )
-                else:
-                    ci_low, ci_high = None, None
-                output.append({
-                    "altitude_km": key[0], "rigidity_gv": key[1],
-                    "hemisphere": key[2], "driver_variable": variable,
-                    "lag_minutes": lag_minutes,
-                    "positive_lag_means_cutoff_follows_driver": True,
-                    "n_paired_epochs": len(x), "correlation": correlation,
-                    "bootstrap_ci_low": ci_low, "bootstrap_ci_high": ci_high,
-                    "bootstrap_block_hours": block_hours,
-                    "inference_status": (
-                        "AVAILABLE"
-                        if len(x) >= MIN_TEMPORAL_EPOCHS_FOR_INFERENCE
-                        else "DIAGNOSTIC_ONLY"
-                    ),
-                })
+
+    # Future completion order is intentionally irrelevant to the scientific
+    # product. Stable sorting also makes files produced with 1 and N workers
+    # directly comparable by checksum.
+    output.sort(key=lambda row: (
+        float(row["altitude_km"]), float(row["rigidity_gv"]),
+        str(row["hemisphere"]),
+        LAG_DRIVER_VARIABLES.index(str(row["driver_variable"])),
+        int(row["lag_minutes"]),
+    ))
     return output
 
 
@@ -854,64 +1031,158 @@ def analysis_availability_products(
     ]
 
 
-def hysteresis_products(boundary_rows: Sequence[Mapping[str, str]], driver: Sequence[DriverRow],
-                        compression: datetime, main_phase: datetime,
-                        config: Mapping[str, object]) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
-    """Match main/recovery cells at similar instantaneous forcing conditions."""
-    analysis = config["analysis"]  # type: ignore[index]
+# Hysteresis uses the same process-local pattern as lag analysis. Each physical
+# cell samples identical driver epochs, so caching converts thousands of
+# repeated linear table searches into one interpolation per unique epoch in
+# each worker process.
+_HYSTERESIS_DRIVER: Tuple[DriverRow, ...] = ()
+_HYSTERESIS_COMPRESSION: Optional[datetime] = None
+_HYSTERESIS_MAIN_PHASE: Optional[datetime] = None
+_HYSTERESIS_ANALYSIS: Mapping[str, object] = {}
+_HYSTERESIS_DRIVER_CACHE: Dict[str, DriverRow] = {}
+
+
+def _initialize_hysteresis_worker(
+        driver: Sequence[DriverRow], compression: datetime,
+        main_phase: datetime, analysis: Mapping[str, object]) -> None:
+    """Install immutable matching context once in each worker process."""
+
+    global _HYSTERESIS_DRIVER, _HYSTERESIS_COMPRESSION
+    global _HYSTERESIS_MAIN_PHASE, _HYSTERESIS_ANALYSIS
+    global _HYSTERESIS_DRIVER_CACHE
+    _HYSTERESIS_DRIVER = tuple(driver)
+    _HYSTERESIS_COMPRESSION = compression
+    _HYSTERESIS_MAIN_PHASE = main_phase
+    _HYSTERESIS_ANALYSIS = dict(analysis)
+    _HYSTERESIS_DRIVER_CACHE = {}
+
+
+def _hysteresis_driver_sample(epoch: datetime) -> DriverRow:
+    """Return a cached driver interpolation for one modeled boundary epoch."""
+
+    key = format_utc(epoch)
+    if key not in _HYSTERESIS_DRIVER_CACHE:
+        _HYSTERESIS_DRIVER_CACHE[key] = interpolate_driver(
+            _HYSTERESIS_DRIVER, epoch
+        )
+    return _HYSTERESIS_DRIVER_CACHE[key]
+
+
+def _hysteresis_pair_series(job: Tuple[
+        Tuple[str, str, str, str], Sequence[Mapping[str, str]],
+]) -> List[Dict[str, object]]:
+    """Match main/recovery epochs for one altitude/rigidity/hemisphere/MLT cell.
+
+    Matching is independent between physical cells, so no worker shares mutable
+    state or competes for an output file. The parent process later combines all
+    pairs before calculating hemisphere-level summary statistics.
+    """
+
+    key, rows = job
+    analysis = _HYSTERESIS_ANALYSIS
+    if _HYSTERESIS_COMPRESSION is None or _HYSTERESIS_MAIN_PHASE is None:
+        raise RuntimeError("hysteresis worker context was not initialized")
+    compression = _HYSTERESIS_COMPRESSION
+    main_phase = _HYSTERESIS_MAIN_PHASE
     symh_tol = float(analysis["hysteresis_symh_tolerance_nt"])
     pdyn_tol = float(analysis["hysteresis_pdyn_fractional_tolerance"])
     bz_tol = float(analysis["hysteresis_bz_tolerance_nt"])
-    replicates = int(analysis["bootstrap_replicates"])
-    rng = random.Random(int(analysis["random_seed"]) + 1)
-    keys = ("altitude_km", "rigidity_gv", "hemisphere", "mlt_hour")
     pairs: List[Dict[str, object]] = []
-    for key, rows in sorted(group_rows(boundary_rows, keys).items()):
-        valid = []
-        for row in rows:
-            boundary = finite_float(row.get("boundary_aacgm_lat_deg"))
-            if boundary is None:
-                continue
-            epoch = parse_utc(row["epoch_utc"])
-            valid.append((epoch, abs(boundary), interpolate_driver(driver, epoch)))
-        # Restrict the main branch to storm development.  Pre-event quiet cells
-        # can share SYM-H with late recovery but are not part of the hysteresis
-        # loop and would bias the matched contrast toward zero.
-        main = [item for item in valid if compression <= item[0] < main_phase]
-        recovery = [item for item in valid if item[0] > main_phase]
-        available = set(range(len(recovery)))
-        for main_epoch, main_lat, main_driver in sorted(main, reverse=True):
-            candidates = []
-            for index in available:
-                rec_epoch, rec_lat, rec_driver = recovery[index]
-                symh_difference = abs(rec_driver.symh_nt - main_driver.symh_nt)
-                pdyn_fraction = abs(rec_driver.pdyn_npa - main_driver.pdyn_npa) / max(
-                    1.0e-9, abs(main_driver.pdyn_npa)
-                )
-                bz_difference = abs(rec_driver.bz_nt - main_driver.bz_nt)
-                if symh_difference <= symh_tol:
-                    score = symh_difference / symh_tol + pdyn_fraction / pdyn_tol + bz_difference / bz_tol
-                    candidates.append((score, index, pdyn_fraction, bz_difference))
-            if not candidates:
-                continue
-            _, index, pdyn_fraction, bz_difference = min(candidates)
-            available.remove(index)
+    valid = []
+    for row in rows:
+        boundary = finite_float(row.get("boundary_aacgm_lat_deg"))
+        if boundary is None:
+            continue
+        epoch = parse_utc(row["epoch_utc"])
+        valid.append((epoch, abs(boundary), _hysteresis_driver_sample(epoch)))
+    # Restrict the main branch to storm development. Pre-event quiet cells can
+    # share SYM-H with late recovery but are not part of the hysteresis loop and
+    # would bias the matched contrast toward zero.
+    main = [item for item in valid if compression <= item[0] < main_phase]
+    recovery = [item for item in valid if item[0] > main_phase]
+    available = set(range(len(recovery)))
+    for main_epoch, main_lat, main_driver in sorted(main, reverse=True):
+        candidates = []
+        for index in available:
             rec_epoch, rec_lat, rec_driver = recovery[index]
-            strict = pdyn_fraction <= pdyn_tol and bz_difference <= bz_tol
-            pairs.append({
-                "altitude_km": float(key[0]), "rigidity_gv": float(key[1]),
-                "hemisphere": key[2], "mlt_hour": float(key[3]),
-                "main_epoch_utc": format_utc(main_epoch),
-                "recovery_epoch_utc": format_utc(rec_epoch),
-                "main_boundary_deg": main_lat, "recovery_boundary_deg": rec_lat,
-                "recovery_minus_main_deg": rec_lat - main_lat,
-                "main_symh_nt": main_driver.symh_nt,
-                "recovery_symh_nt": rec_driver.symh_nt,
-                "delta_symh_nt": rec_driver.symh_nt - main_driver.symh_nt,
-                "pdyn_fractional_difference": pdyn_fraction,
-                "bz_absolute_difference_nt": bz_difference,
-                "strict_instantaneous_driver_match": strict,
-            })
+            symh_difference = abs(rec_driver.symh_nt - main_driver.symh_nt)
+            pdyn_fraction = abs(rec_driver.pdyn_npa - main_driver.pdyn_npa) / max(
+                1.0e-9, abs(main_driver.pdyn_npa)
+            )
+            bz_difference = abs(rec_driver.bz_nt - main_driver.bz_nt)
+            if symh_difference <= symh_tol:
+                score = (
+                    symh_difference / symh_tol + pdyn_fraction / pdyn_tol
+                    + bz_difference / bz_tol
+                )
+                candidates.append((score, index, pdyn_fraction, bz_difference))
+        if not candidates:
+            continue
+        _, index, pdyn_fraction, bz_difference = min(candidates)
+        available.remove(index)
+        rec_epoch, rec_lat, rec_driver = recovery[index]
+        strict = pdyn_fraction <= pdyn_tol and bz_difference <= bz_tol
+        pairs.append({
+            "altitude_km": float(key[0]), "rigidity_gv": float(key[1]),
+            "hemisphere": key[2], "mlt_hour": float(key[3]),
+            "main_epoch_utc": format_utc(main_epoch),
+            "recovery_epoch_utc": format_utc(rec_epoch),
+            "main_boundary_deg": main_lat, "recovery_boundary_deg": rec_lat,
+            "recovery_minus_main_deg": rec_lat - main_lat,
+            "main_symh_nt": main_driver.symh_nt,
+            "recovery_symh_nt": rec_driver.symh_nt,
+            "delta_symh_nt": rec_driver.symh_nt - main_driver.symh_nt,
+            "pdyn_fractional_difference": pdyn_fraction,
+            "bz_absolute_difference_nt": bz_difference,
+            "strict_instantaneous_driver_match": strict,
+        })
+    return pairs
+
+
+def hysteresis_products(boundary_rows: Sequence[Mapping[str, str]],
+                        driver: Sequence[DriverRow], compression: datetime,
+                        main_phase: datetime, config: Mapping[str, object],
+                        workers: int = 1, report_progress: bool = False
+                        ) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
+    """Match main/recovery cells with deterministic process parallelism."""
+
+    analysis = config["analysis"]  # type: ignore[index]
+    replicates = int(analysis["bootstrap_replicates"])
+    keys = ("altitude_km", "rigidity_gv", "hemisphere", "mlt_hour")
+    jobs = [
+        (key, tuple(rows))
+        for key, rows in sorted(group_rows(boundary_rows, keys).items())
+    ]
+    effective_workers = resolve_analysis_workers(str(workers), len(jobs))
+    pairs: List[Dict[str, object]] = []
+    started = time.monotonic()
+    if effective_workers == 1:
+        _initialize_hysteresis_worker(
+            driver, compression, main_phase, analysis
+        )
+        for completed, job in enumerate(jobs, start=1):
+            pairs.extend(_hysteresis_pair_series(job))
+            if report_progress:
+                report_parallel_progress(
+                    "hysteresis matching", completed, len(jobs), started
+                )
+    else:
+        with ProcessPoolExecutor(
+                max_workers=effective_workers,
+                initializer=_initialize_hysteresis_worker,
+                initargs=(tuple(driver), compression, main_phase, analysis)) as executor:
+            futures = [executor.submit(_hysteresis_pair_series, job) for job in jobs]
+            for completed, future in enumerate(as_completed(futures), start=1):
+                pairs.extend(future.result())
+                if report_progress:
+                    report_parallel_progress(
+                        "hysteresis matching", completed, len(futures), started
+                    )
+    pairs.sort(key=lambda row: (
+        float(row["altitude_km"]), float(row["rigidity_gv"]),
+        str(row["hemisphere"]), float(row["mlt_hour"]),
+        str(row["main_epoch_utc"]), str(row["recovery_epoch_utc"]),
+    ))
 
     summaries: List[Dict[str, object]] = []
     summary_groups = group_rows(
@@ -923,6 +1194,13 @@ def hysteresis_products(boundary_rows: Sequence[Mapping[str, str]], driver: Sequ
             ("SYMH_ONLY", rows),
             ("STRICT", [row for row in rows if row["strict_instantaneous_driver_match"] == "True"]),
         ):
+            # Like the lag bootstrap, each summary owns a stable key-derived
+            # stream. Worker count and future completion order therefore cannot
+            # change a confidence interval or the resulting CSV checksum.
+            rng = random.Random(stable_analysis_seed(
+                int(analysis["random_seed"]) + 1,
+                "hysteresis", key[0], key[1], key[2], label,
+            ))
             values = [float(row["recovery_minus_main_deg"]) for row in selected]
             boot = []
             n_unique_main_epochs = len({row["main_epoch_utc"] for row in selected})
@@ -959,11 +1237,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-root", type=Path, default=default_output_root() / "dynamics"
     )
+    parser.add_argument(
+        "--analysis-workers", default="AUTO",
+        help=("Independent lag/hysteresis series workers: AUTO or a positive "
+              "integer. AUTO uses up to eight affinity-visible local CPUs; "
+              "use 1 for the deterministic serial reference path."),
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    try:
+        # Syntax-check the request before reading or reducing large FULL tables.
+        # The useful worker cap is recalculated later from the actual series.
+        resolve_analysis_workers(args.analysis_workers, 1)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     root, config = load_config(args.config)
     morphology_root = resolve_output_path(args.morphology_root)
     boundary_path = morphology_root / "morphology_boundaries.csv"
@@ -975,13 +1265,75 @@ def main() -> int:
     compression = parse_utc(landmarks["compression"])
     main_phase = parse_utc(landmarks["main_phase"])
 
+    # Resolve the worker count before starting any expensive reduction. The
+    # larger of the lag and hysteresis series counts bounds useful parallelism;
+    # each child process still handles complete physical series and never
+    # writes shared files.
+    hysteresis_series_count = len(group_rows(
+        rows, ("altitude_km", "rigidity_gv", "hemisphere", "mlt_hour")
+    ))
+    timing_rows: List[Dict[str, object]] = []
+
+    def begin_phase(name: str, work_units: int, workers: int = 1) -> float:
+        """Announce a phase and return its monotonic start time."""
+
+        print(
+            f"[DYNAMICS] START {name}: {work_units} work unit(s), "
+            f"{workers} process worker(s)", flush=True,
+        )
+        return time.monotonic()
+
+    def end_phase(name: str, started: float, work_units: int,
+                  workers: int = 1) -> None:
+        """Record machine-readable timing and make long reductions observable."""
+
+        elapsed = time.monotonic() - started
+        timing_rows.append({
+            "phase": name, "elapsed_seconds": round(elapsed, 6),
+            "work_units": work_units, "process_workers": workers,
+        })
+        print(f"[DYNAMICS] DONE  {name}: {elapsed:.1f} s", flush=True)
+
+    phase_started = begin_phase("morphology_harmonics", len(rows))
     harmonics, time_series = morphology_products(rows, config)
+    end_phase("morphology_harmonics", phase_started, len(rows))
+
+    # Some nominal boundary series may have no valid harmonic mean. Resolve
+    # workers from the actual harmonic products so progress totals and worker
+    # utilization describe work that will really be submitted.
+    lag_series_count = len(group_rows(
+        [row for row in harmonics
+         if finite_float(row.get("mean_latitude_deg")) is not None],
+        ("altitude_km", "rigidity_gv", "hemisphere"),
+    ))
+    try:
+        analysis_workers = resolve_analysis_workers(
+            args.analysis_workers, max(lag_series_count, hysteresis_series_count)
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(
+        f"[DYNAMICS] analysis workers: {analysis_workers} local process(es) "
+        f"(requested {args.analysis_workers}); lag series={lag_series_count}; "
+        f"hysteresis series={hysteresis_series_count}",
+        flush=True,
+    )
+
+    phase_started = begin_phase("boundary_cells", len(rows))
     boundary_cells = boundary_cell_products(
         rows, driver, compression, main_phase, config
     )
+    end_phase("boundary_cells", phase_started, len(rows))
+
+    phase_started = begin_phase("derived_series_summaries", len(time_series))
     altitude_response = altitude_response_products(time_series)
     extrema = storm_extrema_products(time_series)
     recovery = recovery_products(time_series, main_phase)
+    end_phase("derived_series_summaries", phase_started, len(time_series))
+
+    map_manifest_path = morphology_root / "cutoff_rigidity_map_manifest.csv"
+    map_count = len(read_csv(map_manifest_path)) if map_manifest_path.is_file() else 0
+    phase_started = begin_phase("cutoff_map_change", map_count)
     cutoff_map_changes, cutoff_map_evolution, cutoff_map_summary = (
         cutoff_map_change_products(
             morphology_root,
@@ -989,10 +1341,30 @@ def main() -> int:
             compression,
         )
     )
-    lags = lag_products(harmonics, driver, config)
+    end_phase("cutoff_map_change", phase_started, map_count)
+
+    phase_started = begin_phase(
+        "lag_bootstrap", lag_series_count, analysis_workers
+    )
+    lags = lag_products(
+        harmonics, driver, config, workers=analysis_workers,
+        report_progress=True,
+    )
+    end_phase(
+        "lag_bootstrap", phase_started, lag_series_count, analysis_workers
+    )
     best_lags = best_lag_products(lags)
+
+    phase_started = begin_phase(
+        "hysteresis_matching", hysteresis_series_count, analysis_workers
+    )
     pairs, hysteresis = hysteresis_products(
-        rows, driver, compression, main_phase, config
+        rows, driver, compression, main_phase, config,
+        workers=analysis_workers, report_progress=True,
+    )
+    end_phase(
+        "hysteresis_matching", phase_started, hysteresis_series_count,
+        analysis_workers,
     )
     output = resolve_output_path(args.output_root)
     output.mkdir(parents=True, exist_ok=True)
@@ -1016,6 +1388,7 @@ def main() -> int:
     write_csv(output / "hysteresis_pairs.csv", pairs)
     write_csv(output / "hysteresis_summary.csv", hysteresis)
     write_csv(output / "analysis_availability.csv", availability)
+    write_csv(output / "analysis_timings.csv", timing_rows)
     availability_json = {
         row["analysis"]: {
             "status": row["status"], "n_epochs": row["n_epochs"],
@@ -1044,6 +1417,10 @@ def main() -> int:
         "n_lag_rows": len(lags), "n_hysteresis_pairs": len(pairs),
         "n_best_lag_rows": len(best_lags),
         "n_hysteresis_summary_rows": len(hysteresis),
+        "analysis_workers_requested": args.analysis_workers,
+        "analysis_workers_effective": analysis_workers,
+        "parallel_lag_and_hysteresis": analysis_workers > 1,
+        "analysis_phase_timings": timing_rows,
         "analysis_status_counts": status_counts,
         "event_landmarks": landmarks,
     }

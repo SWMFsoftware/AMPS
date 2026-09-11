@@ -90,7 +90,8 @@ def stage_output_problem(stage: str, output: Path,
             "cutoff_dynamics_timeseries.csv", "boundary_cell_dynamics.csv",
             "altitude_response.csv", "storm_extrema_summary.csv",
             "cutoff_map_change_summary.json",
-            "analysis_availability.json", "dynamics_result.json",
+            "analysis_availability.json", "analysis_timings.csv",
+            "dynamics_result.json",
         )
         missing = [
             output / "dynamics" / name for name in required
@@ -242,6 +243,12 @@ def parse_args() -> argparse.Namespace:
               "use 1 for the serial reference path."),
     )
     parser.add_argument(
+        "--analysis-workers", default="AUTO",
+        help=("Lag/bootstrap and hysteresis-analysis workers: AUTO or a positive "
+              "integer. AUTO uses up to eight CPUs on the runner's local node; "
+              "use 1 for deterministic serial analysis."),
+    )
+    parser.add_argument(
         "--keep", action="store_true",
         help=("Reuse a morphology AMPS launch only when every precisely named "
               "raw epoch product for that launch already exists. Postprocessing, "
@@ -339,6 +346,7 @@ def main() -> int:
             python, str(root / "scripts" / "analyze_dynamics.py"),
             "--morphology-root", str(output / "morphology"),
             "--output-root", str(output / "dynamics"),
+            "--analysis-workers", args.analysis_workers,
         ],
         "figures": [
             python, str(root / "scripts" / "make_figures.py"),
@@ -413,6 +421,8 @@ def main() -> int:
         "epochs_per_batch_group": epochs_per_batch,
         "observation_products_reused": not args.independent_observation_runs,
         "keep_complete_morphology_batches": args.keep,
+        "postprocess_workers_requested": args.postprocess_workers,
+        "analysis_workers_requested": args.analysis_workers,
         "commands": {stage: commands[stage] for stage in stages},
         "return_codes": {},
         "stage_elapsed_seconds": {},
@@ -428,6 +438,10 @@ def main() -> int:
     print(
         f"mesh layout: {args.mesh_layout}; epochs per AMPS batch: "
         f"{record['epochs_per_batch']}", flush=True,
+    )
+    print(
+        f"local workers: morphology={args.postprocess_workers}; "
+        f"dynamics={args.analysis_workers}", flush=True,
     )
     print(
         "observation AMPS products: "

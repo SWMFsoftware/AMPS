@@ -1,5 +1,20 @@
 # Change log
 
+## 2026-09-11 — parallel dynamics analysis
+
+- Added `--analysis-workers AUTO|N` to the study orchestrator and standalone
+  dynamics reducer, with affinity-aware AUTO selection and an eight-worker
+  memory guard.
+- Parallelized the expensive lag/bootstrap calculation by complete
+  altitude/rigidity/hemisphere series and hysteresis matching by complete
+  altitude/rigidity/hemisphere/MLT series.
+- Added process-local driver interpolation caches so repeated physical series
+  do not repeatedly scan the five-minute TS05 driver table.
+- Made bootstrap streams key-derived and output sorting parent-controlled, so
+  serial and parallel scientific tables are exactly reproducible.
+- Added live phase/series progress, ETA reporting, `analysis_timings.csv`,
+  manifest fields, package checks, and serial-versus-parallel regression tests.
+
 ## 2026-09-10 — parallel epoch postprocessing
 
 - Parallelized the formerly silent serial interval after each batched AMPS

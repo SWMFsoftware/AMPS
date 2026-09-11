@@ -26,7 +26,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from compare_observations import normalize_pamela, normalize_poes
 from analyze_dynamics import (
     analysis_availability_products, cutoff_map_change_products,
-    fit_two_mlt_harmonics,
+    fit_two_mlt_harmonics, hysteresis_products, lag_products,
+    resolve_analysis_workers,
 )
 from make_figures import (
     _continental_outline_segments, _datetime_plot_values, _global_field_grid,
@@ -43,7 +44,7 @@ from run_morphology import (
 from run_study import execute, independent_validation_remains
 import run_study
 from run_global_cutoff_maps import apply_profile_override, deep_merge, workload_estimate
-from study_common import read_driver
+from study_common import load_config, read_driver
 
 
 class PipelineTests(unittest.TestCase):
@@ -88,6 +89,71 @@ class PipelineTests(unittest.TestCase):
         self.assertAlmostEqual(fit["second_harmonic_amplitude_deg"], 1.75, 12)
         self.assertAlmostEqual(fit["second_harmonic_phase_mlt_hour"], phase, 12)
         self.assertLess(fit["two_harmonic_fit_rms_deg"], 1.0e-12)
+
+    def test_analysis_worker_policy_and_parallel_lag_reproducibility(self):
+        """Serial and process-worker bootstrap products must be identical."""
+
+        self.assertEqual(resolve_analysis_workers("1", 12), 1)
+        self.assertGreaterEqual(resolve_analysis_workers("AUTO", 12), 1)
+        self.assertLessEqual(resolve_analysis_workers("AUTO", 12), 8)
+        self.assertEqual(resolve_analysis_workers("16", 3), 3)
+        with self.assertRaises(ValueError):
+            resolve_analysis_workers("0", 3)
+
+        root, base_config = load_config()
+        driver = read_driver(root / base_config["data"]["driver"])
+        # Thirty epochs cross the inference threshold and therefore exercise
+        # the moving-block bootstrap, not merely the cheap SMOKE code path.
+        sample = driver[20:50]
+        harmonics = []
+        for altitude in (475.0, 850.0):
+            for index, item in enumerate(sample):
+                harmonics.append({
+                    "epoch_utc": item.epoch.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "altitude_km": altitude, "rigidity_gv": 0.5,
+                    "hemisphere": "N",
+                    "mean_latitude_deg": 60.0 + 0.01 * index,
+                })
+        config = json.loads(json.dumps(base_config))
+        config["analysis"].update({
+            "lag_min_hours": 0.0, "lag_max_hours": 0.0,
+            "lag_step_minutes": 15, "bootstrap_replicates": 20,
+        })
+        serial = lag_products(harmonics, driver, config, workers=1)
+        parallel = lag_products(harmonics, driver, config, workers=2)
+        self.assertEqual(serial, parallel)
+
+    def test_parallel_hysteresis_matches_serial_output(self):
+        """Physical-cell matching must not depend on future completion order."""
+
+        root, base_config = load_config()
+        driver = read_driver(root / base_config["data"]["driver"])
+        compression = driver[100].epoch
+        main_phase = driver[130].epoch
+        boundary = []
+        for altitude in (475.0, 850.0):
+            for mlt in (0.0, 12.0):
+                for index, item in enumerate(driver[100:170]):
+                    boundary.append({
+                        "epoch_utc": item.epoch.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "altitude_km": str(altitude), "rigidity_gv": "0.5",
+                        "hemisphere": "N", "mlt_hour": str(mlt),
+                        "boundary_aacgm_lat_deg": str(60.0 + 0.01 * index),
+                    })
+        config = json.loads(json.dumps(base_config))
+        config["analysis"].update({
+            "hysteresis_symh_tolerance_nt": 1.0e9,
+            "hysteresis_pdyn_fractional_tolerance": 1.0e9,
+            "hysteresis_bz_tolerance_nt": 1.0e9,
+            "bootstrap_replicates": 20,
+        })
+        serial = hysteresis_products(
+            boundary, driver, compression, main_phase, config, workers=1
+        )
+        parallel = hysteresis_products(
+            boundary, driver, compression, main_phase, config, workers=2
+        )
+        self.assertEqual(serial, parallel)
 
     def test_smoke_availability_prevents_temporal_overinterpretation(self):
         """Four epochs support spatial QA but not lag/recovery inference."""
@@ -190,6 +256,7 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(manifest["return_codes"]["morphology"], 0)
             self.assertEqual(manifest["return_codes"]["pamela"], 1)
             self.assertEqual(manifest["return_codes"]["poes"], 0)
+            self.assertEqual(manifest["analysis_workers_requested"], "AUTO")
 
     def test_stage_execution_tees_live_output_and_records_status(self):
         """The orchestrator must show child output without sacrificing logs."""

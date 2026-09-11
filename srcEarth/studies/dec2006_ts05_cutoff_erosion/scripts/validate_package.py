@@ -160,6 +160,9 @@ def validate_parallel_postprocessing_support(root: Path) -> None:
     global_runner = (root / "scripts" / "run_global_cutoff_maps.py").read_text(
         encoding="utf-8"
     )
+    dynamics = (root / "scripts" / "analyze_dynamics.py").read_text(
+        encoding="utf-8"
+    )
     c10 = (root / "vendor" / "C10" / "run_C10.py").read_text(encoding="utf-8")
     required = {
         "run_morphology.py": (
@@ -168,8 +171,16 @@ def validate_parallel_postprocessing_support(root: Path) -> None:
             "postprocess_epoch_product",
             'output_root / "postprocessing_timings.csv"',
         ),
-        "run_study.py": ('"--postprocess-workers"',),
+        "run_study.py": ('"--postprocess-workers"', '"--analysis-workers"'),
         "run_global_cutoff_maps.py": ('"--postprocess-workers"',),
+        "analyze_dynamics.py": (
+            "ProcessPoolExecutor",
+            '"--analysis-workers"',
+            "_lag_series_products",
+            "_hysteresis_pair_series",
+            'output / "analysis_timings.csv"',
+            "stable_analysis_seed",
+        ),
         "vendor/C10/run_C10.py": (
             "converted: Dict",
             "_prepared",
@@ -179,6 +190,7 @@ def validate_parallel_postprocessing_support(root: Path) -> None:
         "run_morphology.py": morphology,
         "run_study.py": study,
         "run_global_cutoff_maps.py": global_runner,
+        "analyze_dynamics.py": dynamics,
         "vendor/C10/run_C10.py": c10,
     }
     missing = [
@@ -276,7 +288,7 @@ def main() -> int:
 
     try:
         validate_parallel_postprocessing_support(root)
-        print("PASS bounded parallel epoch-postprocessing contract")
+        print("PASS bounded parallel morphology/dynamics processing contract")
     except Exception as exc:
         problems.append(str(exc))
 
