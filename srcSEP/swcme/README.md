@@ -80,10 +80,52 @@ The finite shock geometry is covered by `GEO01`-`GEO08` in
 `test/3d/test_geometry.cpp`.  See `test/README.md` for detailed test purposes,
 reference calculations, and acceptance criteria.
 
-## Scope of the current geometry update
+## Ideal-MHD shock existence and downstream state
 
-The geometry correction deliberately does not change the current shock
-compression proxy, downstream Rankine-Hugoniot state, DBM slow/zero-drag
-behavior, sheath/ejecta model, or shock-mesh apex/seam topology.  Those are
-separate remediation items and should be changed only together with their own
-validation tests.
+The production model now separates the existence of a geometric CME front from
+the existence of a physical fast shock.  A local surface point is classified as
+a shock only when its normal speed exceeds the upstream normal flow by more
+than the local oblique fast-mode speed.  If that criterion is not met, the
+model returns `has_shock=false`, `compression=1`, and an unchanged downstream
+state.  The legacy `sheath_comp_floor` parameter no longer changes the physical
+shock compression and therefore cannot manufacture a shock.
+
+The shared `swcme_shock.hpp` solver evaluates the ideal-MHD Rankine-Hugoniot
+conditions in the shock frame.  For a trial density compression it enforces
+mass conservation, tangential momentum conservation, and tangential electric
+field continuity; normal momentum gives the downstream pressure and a
+bracketed scalar solve enforces total-energy-flux conservation.  Accepted
+solutions must be compressive, have positive downstream pressure, increase the
+entropy proxy, and satisfy the stored conservation residual tolerances.
+
+`swcme3d::Model::shock_state_direction()` is the preferred 3-D API for local
+shock diagnostics.  It returns the shock-surface radius and normal, normal shock
+speed, fast Mach number, `theta_Bn`, density compression, complete upstream and
+downstream primitive states, and conservation residuals.  Upstream quantities
+are always evaluated at the actual shock surface rather than at an arbitrary
+query radius.
+
+The 3-D Cartesian field evaluators now use the exact MHD downstream state in
+the limit immediately behind the shock.  The shock itself is treated as a
+physical discontinuity: points at or ahead of the surface return the upstream
+state, while the limit just behind the surface returns the RH downstream state.
+The interior sheath relaxation remains phenomenological and is a separate model
+component.
+
+The 1-D model uses the same shared ideal-MHD jump solver.  Its radial direction
+is the shock normal and the Parker azimuthal field is tangential to that normal.
+This removes the former 1-D compression-floor shock and makes the downstream
+normal speed satisfy the same physical jump conditions as 3-D.
+
+The shock validation suite `SHK01`-`SHK12` covers shock/no-shock classification,
+obliquity, independent parallel and perpendicular limiting solutions, oblique
+branch continuity, mass flux, normal magnetic field, tangential electric field,
+momentum and energy fluxes, entropy/admissibility, and the weak-shock limit.
+
+## Remaining remediation items
+
+The current shock correction deliberately does **not** repair the independent
+DBM slow-CME/zero-drag issues, the 1-D ejecta density/velocity-factor bugs, the
+shock-mesh apex/seam topology, centralized configuration/unit validation, or
+magnetic connectivity/cobpoint tracking.  Those remain separate remediation
+items with their own validation gates.

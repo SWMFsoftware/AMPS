@@ -11,8 +11,8 @@ TARGET := output/test_swcme
 # Every validation remains in one deterministic executable. The common tests
 # use separate translation units so each physical contract has an auditable
 # implementation without introducing another executable or build system.
-SOURCES := core/test_swcme.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 1d/test_ambient.cpp
-OBJECTS := output/test_swcme.o output/test_config.o output/test_units.o output/test_density.o output/test_parker.o output/test_geometry.o output/test_ambient.o
+SOURCES := core/test_swcme.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_shock.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 1d/test_ambient.cpp
+OBJECTS := output/test_swcme.o output/test_config.o output/test_units.o output/test_density.o output/test_shock.o output/test_parker.o output/test_geometry.o output/test_ambient.o
 
 .PHONY: all test clean
 
@@ -37,6 +37,13 @@ output/test_units.o: core/test_units.cpp core/test_framework.hpp ../swcme_consta
 # test_config.o; this rule compiles only its independent reference and calls to
 # the public 1-D/3-D APIs, preventing duplicate production symbol definitions.
 output/test_density.o: core/test_density.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme1d.hpp ../swcme3d.hpp | output
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+# SHK01-SHK12 exercise the shared production ideal-MHD jump solver and its
+# integration into the 1-D/3-D models.  The test file contains independent
+# limiting-case references and conservation residual checks; it does not
+# duplicate the production nonlinear solver.
+output/test_shock.o: core/test_shock.cpp core/test_framework.hpp ../swcme_shock.hpp ../swcme_constants.hpp ../swcme1d.hpp ../swcme3d.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # PAR01-PAR03 exercise the public production 3-D field evaluator.  The current

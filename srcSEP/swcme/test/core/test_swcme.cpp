@@ -21,6 +21,18 @@ void test_geo05(swcme_test::Context& context);
 void test_geo06(swcme_test::Context& context);
 void test_geo07(swcme_test::Context& context);
 void test_geo08(swcme_test::Context& context);
+void test_shk01(swcme_test::Context& context);
+void test_shk02(swcme_test::Context& context);
+void test_shk03(swcme_test::Context& context);
+void test_shk04(swcme_test::Context& context);
+void test_shk05(swcme_test::Context& context);
+void test_shk06(swcme_test::Context& context);
+void test_shk07(swcme_test::Context& context);
+void test_shk08(swcme_test::Context& context);
+void test_shk09(swcme_test::Context& context);
+void test_shk10(swcme_test::Context& context);
+void test_shk11(swcme_test::Context& context);
+void test_shk12(swcme_test::Context& context);
 void test_1d_ambient_at_one_au(swcme_test::Context& context);
 
 namespace {
@@ -54,6 +66,18 @@ const swcme_test::TestCase kTests[] = {
     {"GEO06", "3D", "Analytical shock normal versus level-set gradient", test_geo06},
     {"GEO07", "3D", "Shock normal speed versus finite-difference surface motion", test_geo07},
     {"GEO08", "3D", "Rotational covariance of geometry and local scalar physics", test_geo08},
+    {"SHK01", "COMMON", "Fast-shock existence and no-shock threshold", test_shk01},
+    {"SHK02", "COMMON", "Shock obliquity angle and polarity invariance", test_shk02},
+    {"SHK03", "COMMON", "Parallel fast-shock limiting solution", test_shk03},
+    {"SHK04", "COMMON", "Perpendicular MHD-shock benchmark", test_shk04},
+    {"SHK05", "COMMON", "Oblique-MHD benchmark grid and branch continuity", test_shk05},
+    {"SHK06", "COMMON", "Rankine-Hugoniot mass-flux conservation", test_shk06},
+    {"SHK07", "COMMON", "Rankine-Hugoniot normal magnetic-field continuity", test_shk07},
+    {"SHK08", "COMMON", "Rankine-Hugoniot tangential electric-field conservation", test_shk08},
+    {"SHK09", "COMMON", "Rankine-Hugoniot momentum-flux conservation", test_shk09},
+    {"SHK10", "COMMON", "Rankine-Hugoniot total-energy-flux conservation", test_shk10},
+    {"SHK11", "COMMON", "Physical admissibility and entropy increase", test_shk11},
+    {"SHK12", "COMMON", "Near-Mach-one weak-shock conditioning", test_shk12},
     {"1D_AMBIENT_01", "1D", "Ambient values at 1 AU",
      test_1d_ambient_at_one_au},
 };

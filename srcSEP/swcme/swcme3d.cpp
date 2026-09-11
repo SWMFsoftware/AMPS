@@ -46,15 +46,16 @@
 //      rc_loc = rc_floor + (rc_oblique - rc_floor) * (1 - ξ)^p,  ξ = (Rdir - r)/dr_sheath,
 //    where p = sheath_ramp_power ≥ 1; rc_oblique from an oblique-MHD proxy.
 //
-// 6) Oblique-shock proxy (local):
-//    Compute θBn (angle between B and local normal), fast speed c_f, and
-//    local normal Mach M_f,n = (V_sh,n - V_sw,n) / c_f. If M_f,n>1, the
-//    density jump is rc = ((γ+1)M^2)/((γ-1)M^2+2), limited to ≤ 4.
+// 6) Oblique ideal-MHD shock state (local):
+//    Compute θBn, the oblique fast-mode speed, and the normal relative inflow.
+//    A geometric front is a physical shock only for M_fast>1.  The shared
+//    Rankine-Hugoniot solver then returns compression and the complete
+//    conservative downstream rho, p, V, and B state.
 //
 // 7) Magnetic field jump:
-//    Across the shock, B_n is continuous, B_t scales ≈ rc. We apply a smooth
-//    tangential amplification in the sheath proportionally to the (shock) edge
-//    smoothstep and ramp shape.
+//    The immediate downstream magnetic field is the RH solution: B_n remains
+//    continuous while B_t follows the full tangential jump conditions.  The
+//    interior sheath then relaxes phenomenologically toward the Parker field.
 //
 // 8) Divergence of V:
 //    ∇·V = (1/r^2) d/dr ( r^2 V_r ). We compute it with a robust centered
@@ -71,8 +72,8 @@
 //     - plasma number density n [m^-3]
 //     - bulk velocity V = (Vx,Vy,Vz) [m/s]
 //     - magnetic field B = (Bx,By,Bz) [Tesla], upstream is Parker; tangential
-//       field is amplified smoothly within the sheath according to the local
-//       compression proxy.
+//       field immediately behind the shock is the conservative RH downstream
+//       state and relaxes phenomenologically through the sheath.
 //     - ∇·V (divergence of bulk speed) [1/s] via a robust radial finite-diff.
 //     - a triangulated shock surface mesh with nodal normals, nodal rc, nodal
 //       normal shock speed, and per-cell metrics (area, rc_mean, Vsh_n_mean,
@@ -123,24 +124,20 @@
 //    This replaces the old ad hoc cosine flank-speed factor and also fixes the
 //    ellipsoid, whose flanks previously moved at the full apex speed.
 //
-// E) Local compression proxy rc(u, n̂):
-//    We estimate oblique fast-mode Mach number M_f,n from upstream cs and vA
-//    (Alfvén speed), using the local Parker B direction (θBn angle) and normal
-//    component of shock speed Vsh_n relative to solar wind Vsw. Then a
-//    hydrodynamic strong-shock formula (Edmiston & Kennel 1984, JPP 32:429;
-//    Priest 2014) maps M_f,n to a proxy compression ratio rc, saturated at 4.
-//    This is used to smoothly amplify density across the sheath and to
-//    increase tangential B.
+// E) Local ideal-MHD fast-shock solution:
+//    The model computes the upstream normal relative inflow and oblique
+//    fast-mode speed.  M_fast<=1 gives an explicit no-shock state with rc=1.
+//    For M_fast>1, swcme_shock.hpp solves the ideal-MHD Rankine-Hugoniot
+//    conditions and returns the complete downstream primitive state.
 //
 // F) Sheath / ejecta blending (C^1 smoothing):
 //    Three radial transitions along a given direction u:
-//      1) Upstream → Sheath ramp at shock (width w_shock_m).
+//      1) Exact upstream/downstream RH discontinuity at the shock.
 //      2) Sheath → Ejecta ramp at the leading edge r_le = r_sh - dr_sheath.
 //      3) Ejecta → Downstream ambient at the trailing edge r_te = r_le - dr_me.
 //    Each edge uses a smoothstep s(x)=x^2(3-2x) with its own width. Inside the
-//    sheath, density transitions toward rc·n_up with a user power p on the
-//    (1-xi) factor to allow sharper/softer fronts. Tangential magnetic field
-//    is gradually amplified between 1 and rc across the shock and sheath.
+//    sheath, density/velocity/B relax from the exact RH downstream state
+//    toward phenomenological leading-edge targets with a user power p.
 //    Ejecta density is a fraction f_ME of n_up (simple cavity or enhancement).
 //
 // G) Divergence of V:
@@ -520,13 +517,15 @@ StepState Model::prepare_step(double t_s) const {
     S.sse_radius_m = S.sse_center_m*S.sin_half_width;
   }
 
-  // 9) Apex diagnostic rc
+  // 9) Apex shock diagnostic.  A geometric CME front and a physical fast
+  // shock are not synonymous; cache both the explicit existence flag and the
+  // physical compression for quick time-series diagnostics.
   {
-    double n_hat_apex[3]={e1[0],e1[1],e1[2]};
-    double u_apex[3]    ={e1[0],e1[1],e1[2]};
-    double rc_ap=1.0,Vn=0.0,th=0.0;
-    local_oblique_rc(S,u_apex,n_hat_apex,S.r_sh_m,S.r_sh_m,rc_ap,Vn,th);
-    S.rc = finite_or(rc_ap,1.0);
+    double u_apex[3]={e1[0],e1[1],e1[2]};
+    LocalShockState apex;
+    const bool surface_exists=shock_state_direction(S,u_apex,apex);
+    S.has_shock=surface_exists && apex.has_shock && apex.solver_converged;
+    S.rc=S.has_shock ? apex.compression : 1.0;
   }
   return S;
 }
@@ -635,70 +634,118 @@ bool Model::shape_radius_normal(const StepState& S,
   return false;  // defensive for future enum extensions
 }
 
-// Local oblique MHD proxy: returns rc, Vsh_n, thetaBn
-void Model::local_oblique_rc(const StepState& S, const double u[3], const double n_hat[3],
-                             double Rdir_m, double r_eval_m,
-                             double& rc_out, double& Vsh_n_out, double& thetaBn_out) const {
-  const double Vsw=S.V_sw_ms;
+// Complete local shock-state evaluation.
+//
+// Geometry and shock physics are deliberately separated.  The caller supplies
+// only a direction; this routine locates the physical shock surface, evaluates
+// the upstream Parker/Leblanc state AT THAT SURFACE, computes the self-similar
+// normal shock speed, and then delegates the jump conditions to the shared
+// ideal-MHD Rankine-Hugoniot solver in swcme_shock.hpp.
+//
+// This corrects two important legacy behaviors:
+//   * a finite CME surface no longer implies that a fast shock exists; and
+//   * shock strength no longer depends on the radius of an arbitrary field
+//     query ahead of the shock.
+bool Model::shock_state_direction(const StepState& S, const double u_in[3],
+                                  LocalShockState& state) const {
+  state=LocalShockState{};
 
-  // Upstream n and mass density
-  const double r=std::max(r_eval_m, 1.05*Rs);
+  double u[3]={u_in[0],u_in[1],u_in[2]};
+  ::safe_normalize(u);
+  double Rdir=0.0,n_hat[3]={0.0,0.0,0.0};
+  if (!shape_radius_normal(S,u[0],u[1],u[2],Rdir,n_hat)) {
+    // No finite shock surface exists in this direction (for example outside
+    // the angular support of the SSE cap).  This is not a nonlinear-solver
+    // failure, so solver_converged remains true and compression remains one.
+    return false;
+  }
+
+  state.surface_exists=true;
+  state.Rdir_m=Rdir;
+  state.normal[0]=n_hat[0]; state.normal[1]=n_hat[1]; state.normal[2]=n_hat[2];
+
+  // Upstream density is evaluated at the shock surface, never at the caller's
+  // sample radius.  Using the query point here made the same physical shock
+  // acquire different Mach numbers depending on where the model was sampled.
+  const double r=std::max(Rdir,1.05*Rs);
   const double r2=r*r, inv2=1.0/r2, inv4=inv2*inv2, inv6=inv4*inv2;
-  const double n_up_m3=finite_or(S.C2*inv2 + S.C4*inv4 + S.C6*inv6, 1e6);
-  const double rho=std::max(1e-12,n_up_m3)*MP;
+  const double n_up_m3=finite_or(S.C2*inv2 + S.C4*inv4 + S.C6*inv6,0.0);
+  state.upstream_n_m3=n_up_m3;
 
-  // Sound speed, upstream B, Alfven speed, θBn
-  const double cs=std::sqrt(std::max(0.0,P_.gamma_ad)*KB*std::max(0.0,P_.T_K)/MP);
-  double B_up[3]; ::parker_vec_T_fast(S,u,r,B_up);
-  const double Bmag=std::sqrt(std::max(0.0,B_up[0]*B_up[0]+B_up[1]*B_up[1]+B_up[2]*B_up[2]));
-  // The shared SI helper preserves the existing formula while making the
-  // dimensional calculation identical and directly testable across models.
-  const double vA=swcme::physics::alfven_speed_m_s(Bmag,rho);
+  double B_up[3]={0.0,0.0,0.0};
+  ::parker_vec_T_fast(S,u,r,B_up);
 
-  double b_hat[3]={0,0,0}; if (Bmag>0){ b_hat[0]=B_up[0]/Bmag; b_hat[1]=B_up[1]/Bmag; b_hat[2]=B_up[2]/Bmag; }
-  const double cosBn=std::fabs(b_hat[0]*n_hat[0]+b_hat[1]*n_hat[1]+b_hat[2]*n_hat[2]);
-  thetaBn_out=finite_or(std::acos(std::max(-1.0,std::min(1.0,cosBn))),0.0);
-
-  // Fast speed
-  const double a=vA*vA+cs*cs;
-  const double disc=std::max(0.0, a*a - 4.0*cs*cs*vA*vA*cosBn*cosBn);
-  const double cf=std::sqrt(0.5*(a+std::sqrt(disc)));
-
-  // Local normal shock speed from self-similar geometry.
-  //
-  // Every supported shock shape scales linearly with the apex radius.  At a
-  // fixed direction u, R(u,t)=f(u)*R_apex(t), hence the surface point moves
-  // radially at dR/dt=f*V_apex=(R/R_apex)*V_apex.  The shock speed relevant to
-  // the jump conditions is the projection of that motion onto the local
-  // outward normal.  This one expression handles Sphere, Ellipsoid, and SSE
-  // consistently and fixes two legacy errors: an ad hoc cos(theta)^m speed for
-  // ConeSSE and full apex speed at ellipsoid flanks.
-  const double radial_scale=(S.r_sh_m>0.0)? Rdir_m/S.r_sh_m : 0.0;
+  // Every supported geometry is self-similar with the apex radius.  The
+  // surface point on a fixed ray therefore moves radially at
+  // (Rdir/Rapex)*Vapex; the physical jump condition uses only the projection
+  // of that motion onto the local outward surface normal.
+  const double radial_scale=(S.r_sh_m>0.0)? Rdir/S.r_sh_m : 0.0;
   double normal_projection=n_hat[0]*u[0]+n_hat[1]*u[1]+n_hat[2]*u[2];
-  // Convex outward-facing supported surfaces have a non-negative projection.
-  // Clamp only tiny negative roundoff at the SSE tangent; a substantial sign
-  // error remains visible through geometry validation rather than being folded
-  // into a positive speed.
   const double projection_tol=128.0*std::numeric_limits<double>::epsilon();
   if (normal_projection<0.0 && normal_projection>=-projection_tol)
     normal_projection=0.0;
-  Vsh_n_out=finite_or(S.V_sh_ms*radial_scale*normal_projection,0.0);
+  state.Vsh_n_m_s=finite_or(S.V_sh_ms*radial_scale*normal_projection,0.0);
 
-  // Upstream normal flow relative to the shock
-  const double Vsw_n=Vsw*(u[0]*n_hat[0]+u[1]*n_hat[1]+u[2]*n_hat[2]);
-  const double U1n = std::max(0.0, Vsh_n_out - Vsw_n);
-  const double Mfn = (cf>0.0)? (U1n/cf):0.0;
+  // Current SWCME thermodynamics uses a proton-only thermal pressure
+  // p=n_p k_B T_p and rho=m_p n_p.  Composition/temperature generalization is
+  // a separate work package; using the existing convention here keeps this
+  // correction focused on shock existence and MHD conservation.
+  swcme::shock::PrimitiveState upstream;
+  upstream.rho_kg_m3=std::max(0.0,n_up_m3)*MP;
+  upstream.pressure_Pa=std::max(0.0,n_up_m3)*KB*std::max(0.0,P_.T_K);
+  upstream.velocity_m_s={{S.V_sw_ms*u[0],S.V_sw_ms*u[1],S.V_sw_ms*u[2]}};
+  upstream.magnetic_T={{B_up[0],B_up[1],B_up[2]}};
+  state.upstream=upstream;
 
-  double rc=1.0;
-  if (Mfn>1.0){
-    const double g=std::max(1.01,P_.gamma_ad), M2=Mfn*Mfn;
-    rc=((g+1.0)*M2)/((g-1.0)*M2+2.0);
-    if (rc>4.0) rc=4.0;
+  const swcme::shock::JumpResult jump=swcme::shock::solve_ideal_mhd_fast_shock(
+      upstream,{{n_hat[0],n_hat[1],n_hat[2]}},state.Vsh_n_m_s,P_.gamma_ad);
+
+  state.has_shock=jump.has_shock;
+  state.solver_converged=jump.solver_converged;
+  state.compression=(jump.has_shock && jump.solver_converged)? jump.compression : 1.0;
+  state.theta_Bn_rad=jump.theta_Bn_rad;
+  state.fast_speed_m_s=jump.fast_speed_m_s;
+  state.fast_mach=jump.fast_mach;
+  state.downstream=(jump.has_shock && jump.solver_converged)? jump.downstream : upstream;
+  state.downstream_n_m3=state.has_shock && state.solver_converged
+                         ? state.compression*n_up_m3 : n_up_m3;
+  state.mass_residual=jump.mass_residual;
+  state.normal_B_residual=jump.normal_B_residual;
+  state.electric_residual=jump.electric_residual;
+  state.momentum_residual=jump.momentum_residual;
+  state.energy_residual=jump.energy_residual;
+  state.entropy_ratio=jump.entropy_ratio;
+  return true;
+}
+
+// Backward-compatible scalar shock diagnostic.  The legacy r_eval_m argument
+// is intentionally ignored: shock physics is a property of the shock surface,
+// not of the point where a caller happens to request n/V/B.
+void Model::local_oblique_rc(const StepState& S, const double u[3], const double n_hat[3],
+                             double Rdir_m, double r_eval_m,
+                             double& rc_out, double& Vsh_n_out, double& thetaBn_out) const {
+  (void)n_hat;
+  (void)Rdir_m;
+  (void)r_eval_m;
+  LocalShockState state;
+  const bool surface_exists=shock_state_direction(S,u,state);
+  if (!surface_exists) {
+    rc_out=1.0; Vsh_n_out=0.0; thetaBn_out=0.0;
+    return;
   }
-  rc_out=finite_or(rc,1.0);
+  rc_out=state.has_shock && state.solver_converged ? state.compression : 1.0;
+  Vsh_n_out=state.Vsh_n_m_s;
+  thetaBn_out=state.theta_Bn_rad;
 }
 
 // n, V evaluator (allocation-free; vectorization-friendly)
+//
+// The shock itself is treated as a physical discontinuity: r>=R_sh is the
+// upstream state and the limit r->R_sh^- is the Rankine-Hugoniot downstream
+// state returned by shock_state_direction().  The old implementation blended
+// upstream and sheath across the shock and therefore returned V_sw at the
+// immediate downstream boundary, violating mass conservation.  Smooth region
+// shaping remains inside the sheath/ejecta where it does not alter the jump.
 void Model::evaluate_cartesian_fast(const StepState& S,
                                     const double* x_m,const double* y_m,const double* z_m,
                                     double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
@@ -709,24 +756,15 @@ void Model::evaluate_cartesian_fast(const StepState& S,
   SWCME_IVDEP
   for (std::size_t i=0;i<N;++i){
     const double x=x_m[i], y=y_m[i], z=z_m[i];
-    const double r2=std::max(1e-12, x*x+y*y+z*z);
-    const double r =std::sqrt(r2);
-    const double invr=1.0/r;
-    double u[3]={x*invr,y*invr,z*invr};
-
-    double Rdir=0.0,n_hat[3]={0,0,0};
-    const bool has_surface=shape_radius_normal(S,u[0],u[1],u[2],Rdir,n_hat);
-
-    // Upstream density
+    const double r2=std::max(1e-12,x*x+y*y+z*z);
+    const double r=std::sqrt(r2), invr=1.0/r;
+    const double u[3]={x*invr,y*invr,z*invr};
     const double inv2=1.0/r2, inv4=inv2*inv2, inv6=inv4*inv2;
-    const double n_up=finite_or(S.C2*inv2 + S.C4*inv4 + S.C6*inv6,1e6);
+    const double n_up=finite_or(S.C2*inv2+S.C4*inv4+S.C6*inv6,1e6);
 
-    // A finite SSE shock has no sheath/ejecta extension outside its angular
-    // support.  Returning the unperturbed ambient state here is the physically
-    // important consequence of shape_radius_normal()==false; the legacy code
-    // fabricated a clamped flank and could therefore disturb/connect observers
-    // outside the configured CME width.
-    if (!has_surface) {
+    LocalShockState shock;
+    const bool surface_exists=shock_state_direction(S,u,shock);
+    if (!surface_exists || !shock.has_shock || !shock.solver_converged || r>=shock.Rdir_m) {
       n_m3[i]=n_up;
       Vx_ms[i]=finite_or(Vup*u[0],0.0);
       Vy_ms[i]=finite_or(Vup*u[1],0.0);
@@ -734,52 +772,59 @@ void Model::evaluate_cartesian_fast(const StepState& S,
       continue;
     }
 
-    // Local shock proxies
-    double rc_loc=1.0,Vsh_n=0.0,dum=0.0;
-    local_oblique_rc(S,u,n_hat,Rdir,(r>Rdir?r:Rdir),rc_loc,Vsh_n,dum);
+    const double r_le=shock.Rdir_m-dr_sheath;
+    const double r_te=r_le-dr_me;
+    if (r>=r_le && dr_sheath>0.0) {
+      const double xi=swcme3d::clamp01((shock.Rdir_m-r)/dr_sheath);
+      const double power=std::max(1.0,P_.sheath_ramp_power);
+      const double blend=smoothstep01(std::pow(xi,power));
 
-    // Sheath ramp
-    const double xi=(dr_sheath>0.0)? swcme3d::clamp01((Rdir-r)*S.inv_dr_sheath):0.0;
-    const double p=(P_.sheath_ramp_power<1.0)? 1.0 : P_.sheath_ramp_power;
-    const double ramp=(p==1.0)? (1.0-xi): std::pow(1.0-xi,p);
-    const double Csheath=S.rc_floor + (rc_loc-S.rc_floor)*ramp;
+      // Use the exact RH downstream state as the sheath's outer boundary.
+      // The inner/leading-edge target remains phenomenological and is kept
+      // radial; interpolation of the full velocity vector preserves possible
+      // tangential velocity generated by an oblique MHD jump near the shock.
+      const double r_le_safe=std::max(r_le,1.05*Rs);
+      const double inv2le=1.0/(r_le_safe*r_le_safe);
+      const double n_up_le=finite_or(S.C2*inv2le+S.C4*inv2le*inv2le+
+                                     S.C6*inv2le*inv2le*inv2le,n_up);
+      const double n2=std::max(shock.downstream_n_m3,1.0e-300);
+      const double nle=std::max(n_up_le,1.0e-300);
+      const double n_sheath=std::exp((1.0-blend)*std::log(n2)+blend*std::log(nle));
 
-    // Region targets
-    const double n_sheath=Csheath*n_up;
-    const double V_sheath=Vup + (S.V_sheath_LE_ms - Vup)*xi;
-    const double n_ejecta=(P_.f_ME>0.0? P_.f_ME:0.0)*n_up;
-    const double V_ejecta=S.V_ME_ms;
+      const double Vle_mag=std::max(Vup,P_.V_sheath_LE_factor*Vup);
+      const double Vle[3]={Vle_mag*u[0],Vle_mag*u[1],Vle_mag*u[2]};
+      const double Vx=(1.0-blend)*shock.downstream.velocity_m_s[0]+blend*Vle[0];
+      const double Vy=(1.0-blend)*shock.downstream.velocity_m_s[1]+blend*Vle[1];
+      const double Vz=(1.0-blend)*shock.downstream.velocity_m_s[2]+blend*Vle[2];
 
-    // Blend helper (C^1 smoothstep)
-    auto edge=[&](double rnow,double r0,double inv2w)->double{
-      if (inv2w<=0.0) return (rnow<=r0)? 1.0:0.0;
-      return smoothstep01( swcme3d::clamp01(0.5 + (r0-rnow)*inv2w) );
-    };
+      n_m3[i]=finite_or(n_sheath,n_up);
+      Vx_ms[i]=finite_or(Vx,Vup*u[0]);
+      Vy_ms[i]=finite_or(Vy,Vup*u[1]);
+      Vz_ms[i]=finite_or(Vz,Vup*u[2]);
+      continue;
+    }
 
-    // upstream → sheath
-    double a=(rc_loc>1.0)? edge(r,Rdir,S.inv2w_sh):0.0;
-    double n_mix=(1.0-a)*n_up + a*n_sheath;
-    double Vmag =(1.0-a)*Vup  + a*V_sheath;
+    if (r>=r_te) {
+      const double n_ejecta=std::max(0.0,P_.f_ME)*n_up;
+      const double V_ejecta=S.V_ME_ms;
+      n_m3[i]=finite_or(n_ejecta,n_up);
+      Vx_ms[i]=finite_or(V_ejecta*u[0],0.0);
+      Vy_ms[i]=finite_or(V_ejecta*u[1],0.0);
+      Vz_ms[i]=finite_or(V_ejecta*u[2],0.0);
+      continue;
+    }
 
-    // sheath → ejecta
-    a=(rc_loc>1.0)? edge(r,Rdir-dr_sheath,S.inv2w_le):0.0;
-    n_mix=(1.0-a)*n_mix + a*n_ejecta;
-    Vmag =(1.0-a)*Vmag + a*V_ejecta;
-
-    // ejecta → downstream
-    a=(rc_loc>1.0)? edge(r,Rdir-dr_sheath-dr_me,S.inv2w_te):0.0;
-    n_mix=(1.0-a)*n_mix + a*n_up;
-    Vmag =(1.0-a)*Vmag + a*Vup;
-
-    // Output (radial flow)
-    n_m3[i]=finite_or(n_mix,n_up);
-    Vx_ms[i]=finite_or(Vmag*u[0],0.0);
-    Vy_ms[i]=finite_or(Vmag*u[1],0.0);
-    Vz_ms[i]=finite_or(Vmag*u[2],0.0);
+    n_m3[i]=n_up;
+    Vx_ms[i]=finite_or(Vup*u[0],0.0);
+    Vy_ms[i]=finite_or(Vup*u[1],0.0);
+    Vz_ms[i]=finite_or(Vup*u[2],0.0);
   }
 }
 
-// n, V, B evaluator
+// n, V, B evaluator.  The plasma jump at the shock uses the complete MHD
+// downstream state; the sheath interior then relaxes toward a phenomenological
+// leading-edge target.  This guarantees that B_n, tangential electric field,
+// mass flux, momentum flux, and total-energy flux are correct at r->R_sh^-.
 void Model::evaluate_cartesian_with_B(const StepState& S,
   const double* x_m,const double* y_m,const double* z_m,
   double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
@@ -792,23 +837,16 @@ void Model::evaluate_cartesian_with_B(const StepState& S,
   SWCME_IVDEP
   for (std::size_t i=0;i<N;++i){
     const double x=x_m[i], y=y_m[i], z=z_m[i];
-    const double r2=std::max(1e-12, x*x+y*y+z*z);
-    const double r =std::sqrt(r2);
-    const double invr=1.0/r;
-    double u[3]={x*invr,y*invr,z*invr};
-
-    double Rdir=0.0,n_hat[3]={0,0,0};
-    const bool has_surface=shape_radius_normal(S,u[0],u[1],u[2],Rdir,n_hat);
-
+    const double r2=std::max(1e-12,x*x+y*y+z*z);
+    const double r=std::sqrt(r2), invr=1.0/r;
+    const double u[3]={x*invr,y*invr,z*invr};
     const double inv2=1.0/r2, inv4=inv2*inv2, inv6=inv4*inv2;
-    const double n_up=finite_or(S.C2*inv2 + S.C4*inv4 + S.C6*inv6,1e6);
-
+    const double n_up=finite_or(S.C2*inv2+S.C4*inv4+S.C6*inv6,1e6);
     double B_up[3]; ::parker_vec_T_fast(S,u,r,B_up);
 
-    // Outside a finite SSE cap the model must remain pure ambient solar wind
-    // and Parker field.  In particular, no artificial shock normal is created
-    // for magnetic-field amplification when the geometry has no surface.
-    if (!has_surface) {
+    LocalShockState shock;
+    const bool surface_exists=shock_state_direction(S,u,shock);
+    if (!surface_exists || !shock.has_shock || !shock.solver_converged || r>=shock.Rdir_m) {
       n_m3[i]=n_up;
       Vx_ms[i]=finite_or(Vup*u[0],0.0);
       Vy_ms[i]=finite_or(Vup*u[1],0.0);
@@ -819,51 +857,65 @@ void Model::evaluate_cartesian_with_B(const StepState& S,
       continue;
     }
 
-    double rc_loc=1.0,Vsh_n=0.0,dum=0.0;
-    local_oblique_rc(S,u,n_hat,Rdir,(r>Rdir?r:Rdir),rc_loc,Vsh_n,dum);
+    const double r_le=shock.Rdir_m-dr_sheath;
+    const double r_te=r_le-dr_me;
+    if (r>=r_le && dr_sheath>0.0) {
+      const double xi=swcme3d::clamp01((shock.Rdir_m-r)/dr_sheath);
+      const double power=std::max(1.0,P_.sheath_ramp_power);
+      const double blend=smoothstep01(std::pow(xi,power));
 
-    const double xi=(dr_sheath>0.0)? swcme3d::clamp01((Rdir-r)*S.inv_dr_sheath):0.0;
-    const double p=(P_.sheath_ramp_power<1.0)? 1.0 : P_.sheath_ramp_power;
-    const double ramp=(p==1.0)? (1.0-xi): std::pow(1.0-xi,p);
-    const double Csheath=S.rc_floor + (rc_loc-S.rc_floor)*ramp;
+      const double r_le_safe=std::max(r_le,1.05*Rs);
+      const double inv2le=1.0/(r_le_safe*r_le_safe);
+      const double n_up_le=finite_or(S.C2*inv2le+S.C4*inv2le*inv2le+
+                                     S.C6*inv2le*inv2le*inv2le,n_up);
+      const double n2=std::max(shock.downstream_n_m3,1.0e-300);
+      const double nle=std::max(n_up_le,1.0e-300);
+      const double n_sheath=std::exp((1.0-blend)*std::log(n2)+blend*std::log(nle));
 
-    const double n_sheath=Csheath*n_up;
-    const double V_sheath=Vup + (S.V_sheath_LE_ms - Vup)*xi;
-    const double n_ejecta=(P_.f_ME>0.0? P_.f_ME:0.0)*n_up;
-    const double V_ejecta=S.V_ME_ms;
+      const double Vle_mag=std::max(Vup,P_.V_sheath_LE_factor*Vup);
+      const double Vle[3]={Vle_mag*u[0],Vle_mag*u[1],Vle_mag*u[2]};
+      const double Vx=(1.0-blend)*shock.downstream.velocity_m_s[0]+blend*Vle[0];
+      const double Vy=(1.0-blend)*shock.downstream.velocity_m_s[1]+blend*Vle[1];
+      const double Vz=(1.0-blend)*shock.downstream.velocity_m_s[2]+blend*Vle[2];
 
-    auto edge=[&](double rnow,double r0,double inv2w)->double{
-      if (inv2w<=0.0) return (rnow<=r0)? 1.0:0.0;
-      return smoothstep01( swcme3d::clamp01(0.5 + (r0-rnow)*inv2w) );
-    };
+      // At the inner sheath edge return to the local Parker field.  This is a
+      // phenomenological relaxation, but the outer boundary is now the exact
+      // MHD B2 state rather than the old ad hoc B_t*=r_c amplification.
+      double B_le[3]; ::parker_vec_T_fast(S,u,r_le_safe,B_le);
+      const double Bx=(1.0-blend)*shock.downstream.magnetic_T[0]+blend*B_le[0];
+      const double By=(1.0-blend)*shock.downstream.magnetic_T[1]+blend*B_le[1];
+      const double Bz=(1.0-blend)*shock.downstream.magnetic_T[2]+blend*B_le[2];
 
-    double a=(rc_loc>1.0)? edge(r,Rdir,S.inv2w_sh):0.0;
-    double n_mix=(1.0-a)*n_up + a*n_sheath;
-    double Vmag =(1.0-a)*Vup  + a*V_sheath;
+      n_m3[i]=finite_or(n_sheath,n_up);
+      Vx_ms[i]=finite_or(Vx,Vup*u[0]);
+      Vy_ms[i]=finite_or(Vy,Vup*u[1]);
+      Vz_ms[i]=finite_or(Vz,Vup*u[2]);
+      Bx_T[i]=finite_or(Bx,B_up[0]);
+      By_T[i]=finite_or(By,B_up[1]);
+      Bz_T[i]=finite_or(Bz,B_up[2]);
+      continue;
+    }
 
-    a=(rc_loc>1.0)? edge(r,Rdir-dr_sheath,S.inv2w_le):0.0;
-    n_mix=(1.0-a)*n_mix + a*n_ejecta;
-    Vmag =(1.0-a)*Vmag + a*V_ejecta;
+    if (r>=r_te) {
+      const double n_ejecta=std::max(0.0,P_.f_ME)*n_up;
+      const double V_ejecta=S.V_ME_ms;
+      n_m3[i]=finite_or(n_ejecta,n_up);
+      Vx_ms[i]=finite_or(V_ejecta*u[0],0.0);
+      Vy_ms[i]=finite_or(V_ejecta*u[1],0.0);
+      Vz_ms[i]=finite_or(V_ejecta*u[2],0.0);
+      Bx_T[i]=finite_or(B_up[0],0.0);
+      By_T[i]=finite_or(B_up[1],0.0);
+      Bz_T[i]=finite_or(B_up[2],0.0);
+      continue;
+    }
 
-    a=(rc_loc>1.0)? edge(r,Rdir-dr_sheath-dr_me,S.inv2w_te):0.0;
-    n_mix=(1.0-a)*n_mix + a*n_up;
-    Vmag =(1.0-a)*Vmag + a*Vup;
-
-    // Magnetic jump model: Bn continuous, Bt amplified ~ rc in sheath
-    const double Bn_mag=B_up[0]*n_hat[0]+B_up[1]*n_hat[1]+B_up[2]*n_hat[2];
-    double Bn[3]={Bn_mag*n_hat[0],Bn_mag*n_hat[1],Bn_mag*n_hat[2]};
-    double Bt[3]={B_up[0]-Bn[0],B_up[1]-Bn[1],B_up[2]-Bn[2]};
-    const double a_shock=(rc_loc>1.0)? edge(r,Rdir,S.inv2w_sh):0.0;
-    const double amp_t=1.0 + (rc_loc-1.0)*a_shock*ramp;
-    double Bv[3]={Bn[0]+amp_t*Bt[0],Bn[1]+amp_t*Bt[1],Bn[2]+amp_t*Bt[2]};
-
-    n_m3[i]=finite_or(n_mix,n_up);
-    Vx_ms[i]=finite_or(Vmag*u[0],0.0);
-    Vy_ms[i]=finite_or(Vmag*u[1],0.0);
-    Vz_ms[i]=finite_or(Vmag*u[2],0.0);
-    Bx_T[i] =finite_or(Bv[0],0.0);
-    By_T[i] =finite_or(Bv[1],0.0);
-    Bz_T[i] =finite_or(Bv[2],0.0);
+    n_m3[i]=n_up;
+    Vx_ms[i]=finite_or(Vup*u[0],0.0);
+    Vy_ms[i]=finite_or(Vup*u[1],0.0);
+    Vz_ms[i]=finite_or(Vup*u[2],0.0);
+    Bx_T[i]=finite_or(B_up[0],0.0);
+    By_T[i]=finite_or(B_up[1],0.0);
+    Bz_T[i]=finite_or(B_up[2],0.0);
   }
 }
 

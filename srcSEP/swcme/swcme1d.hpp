@@ -35,7 +35,7 @@ PHYSICAL MODEL (succinct but complete)
       R_sh(t) = r₀ + V_sw t + ln(1 + Γ u₀ t)/Γ,
       V_sh(t) = V_sw + u(t),   Γ is the drag parameter [m⁻¹].
 
-  • Compression ratio (proxy from fast-mode Mach number)
+  • Compression and downstream state from the shared ideal-MHD fast-shock solver
       c_s = √(γ k_B T / m_p),   v_A = B/√(μ₀ ρ),  c_f = √(c_s² + v_A²),
       M_f = max(1, (V_sh−V_sw)/c_f),
       r_c = ((γ+1) M_f²)/((γ−1) M_f² + 2), clamped to [1,4] and to a user floor.
@@ -345,6 +345,7 @@ USAGE SKETCH (more complete examples at bottom)
 #include <algorithm>
 
 #include "swcme_constants.hpp"
+#include "swcme_shock.hpp"
 
 namespace swcme1d {
 
@@ -399,7 +400,11 @@ struct Params {
   double edge_smooth_te_AU_at1AU    = 0.03; // ME → ambient
 
   // Sheath / ME shaping
-  double sheath_comp_floor   = 1.10; // min rc used to build sheath profile
+  // Legacy/profile-only parameter retained for source compatibility.  It is
+  // no longer allowed to alter the physical shock compression or create a
+  // shock; the RH solver alone determines rc.  A later region-model cleanup
+  // may remove this parameter entirely.
+  double sheath_comp_floor   = 1.10;
   double sheath_ramp_power   = 2.0;  // controls steepness near shock (≥1)
   double V_sheath_LE_factor  = 1.10; // V at LE relative to V_sw (≥1)
   double f_ME                = 0.50; // ME density factor vs upstream (<1 typical)
@@ -413,7 +418,7 @@ struct Params {
  *
  * Contains: DBM kinematics & geometry (R_sh, R_LE, R_TE, widths), Parker
  * constants, Leblanc coefficients scaled to match n(1 AU), shock compression
- * ratio proxy, and *pinned* boundary values used to build a strictly monotone
+ * ratio, explicit shock-existence state, and *pinned* RH boundary values used to build a strictly monotone
  * sheath (n_up at shock & LE; V2 at shock; V at LE).
  */
 struct StepState {
@@ -437,8 +442,12 @@ struct StepState {
   double C4        = 0.0;
   double C6        = 0.0;
 
-  // Shock compression and cached boundary values
-  double rc        = 1.0;     // compression ratio used for sheath profile
+  // Shock compression and cached boundary values.  has_shock is determined
+  // from the shared ideal-MHD fast-shock criterion before any sheath shaping
+  // is applied; sheath_comp_floor can no longer manufacture a shock.
+  bool has_shock   = false;
+  bool shock_solver_converged = true;
+  double rc        = 1.0;     // physical density compression; exactly 1 if no shock
   double n_up_shock = 0.0;    // upstream density at shock radius [m⁻3]
   double n_up_le    = 0.0;    // upstream density at leading edge [m⁻3]
   double V2_shock_ms = 0.0;   // immediate downstream speed at the shock [m/s]
@@ -511,9 +520,9 @@ public:
     // Leblanc coefficients scaled to match n(1 AU)
     const double A = 3.3e5, B = 4.1e6, C = 8.0e7; // [cm⁻³]
     const double n1AU_target = std::max(0.0, P.n1AU_cm3)*1e6; // to m⁻³
-    const double base_1AU = (A + B*std::pow(Rs/AU,2) * (AU*AU/(Rs*Rs)) // keep stable
-                            ); // (write explicitly below)
-    // Compute properly (avoid accidental algebra):
+    // Evaluate the nominal Leblanc profile at one AU explicitly in solar-radius
+    // units; keeping one expression avoids a redundant intermediate that used
+    // to obscure the normalization algebra.
     const double n1AU_base = (A*std::pow(Rs/AU,2) + B*std::pow(Rs/AU,4) + C*std::pow(Rs/AU,6)) * 1e6;
     const double scale = (n1AU_base>0.0) ? (n1AU_target / n1AU_base) : 0.0;
     S.C2 = scale * (A*1e6 * (Rs*Rs));
@@ -549,38 +558,51 @@ public:
     S.w_le_m = std::max(0.0, P.edge_smooth_le_AU_at1AU)    * scale_R * AU;
     S.w_te_m = std::max(0.0, P.edge_smooth_te_AU_at1AU)    * scale_R * AU;
 
-    // Upstream |B| at shock for rc estimate
+    // Upstream Parker field at the shock.  The 1-D ray is treated as the
+    // local shock normal, while B_phi remains a tangential component.  This
+    // vector decomposition lets the same ideal-MHD jump solver used by 3-D
+    // determine both shock existence and the downstream state.
     const double Br_sh  = (S.Br1AU_T>0.0) ? (S.Br1AU_T * (AU/S.r_sh_m)*(AU/S.r_sh_m)) : 0.0;
     const double Bphi_sh= -Br_sh * (OMEGA_SUN * S.r_sh_m * P.sin_theta / Vsw);
     S.B_up_T = std::sqrt(Br_sh*Br_sh + Bphi_sh*Bphi_sh);
 
-    // Upstream density and fast‑mode speed at shock
     const double n_up_sh = density_upstream(S, S.r_sh_m);
-    const double rho     = std::max(1e-30, MP * n_up_sh);
-    // Use the shared production SI helper so 1-D and 3-D cannot drift in the
-    // dimensional implementation of the same Alfvén-speed formula.
-    const double vA      = swcme::physics::alfven_speed_m_s(S.B_up_T, rho);
-    const double cs      = std::sqrt(std::max(0.0, P.gamma_ad*KB*P.T_K/MP));
-    const double cf      = std::sqrt(cs*cs + vA*vA);
+    swcme::shock::PrimitiveState upstream;
+    upstream.rho_kg_m3 = std::max(0.0,n_up_sh)*MP;
+    upstream.pressure_Pa = std::max(0.0,n_up_sh)*KB*std::max(0.0,P.T_K);
+    upstream.velocity_m_s = {{Vsw,0.0,0.0}};
+    upstream.magnetic_T = {{Br_sh,Bphi_sh,0.0}};
 
-    // Compression ratio (proxy)
-    const double Mf = std::max(1.0, (S.V_sh_ms - Vsw) / std::max(1.0, cf));
-    double rc = ((P.gamma_ad+1.0)*Mf*Mf)/((P.gamma_ad-1.0)*Mf*Mf + 2.0);
-    rc = clamp(rc, 1.0, 4.0);
-    rc = std::max(rc, std::max(1.0, P.sheath_comp_floor));
-    S.rc = rc;
+    // A compression floor is intentionally NOT passed to the shock solver.
+    // The CME front is a physical fast shock only when its normal relative
+    // speed exceeds the upstream fast-mode speed.  This removes the legacy
+    // behavior in which sheath_comp_floor could manufacture rc>1 even for
+    // V_sh=V_sw or another sub-fast disturbance.
+    const swcme::shock::JumpResult jump =
+        swcme::shock::solve_ideal_mhd_fast_shock(
+            upstream,{{1.0,0.0,0.0}},S.V_sh_ms,P.gamma_ad);
+    S.has_shock = jump.has_shock;
+    S.shock_solver_converged = jump.solver_converged;
+    S.rc = (S.has_shock && S.shock_solver_converged) ? jump.compression : 1.0;
 
-    // Cache boundary values for a strictly monotone sheath
-    S.n_up_shock = n_up_sh;                       // upstream at shock
-    S.n_up_le    = density_upstream(S, S.r_le_m); // upstream at LE
-    S.V2_shock_ms = S.V_sh_ms + (Vsw - S.V_sh_ms)/rc; // RH proxy
+    // Cache exact boundary values for the sheath.  In the no-shock case the
+    // downstream state is intentionally identical to upstream, so no jump is
+    // fabricated and the leading-edge target also remains ambient.
+    S.n_up_shock = n_up_sh;
+    S.n_up_le = density_upstream(S,S.r_le_m);
+    S.V2_shock_ms = (S.has_shock && S.shock_solver_converged)
+                        ? jump.downstream.velocity_m_s[0] : Vsw;
 
-    // Nominal LE target from user factor (≥ Vsw)
-    const double V_LE_nom  = std::max(Vsw, P.V_sheath_LE_factor*Vsw);
-
-    // Enforce *no acceleration* across the sheath: V_LE ≤ V2(shock)
-    const double epsV = 1e-6;                        // 1 µm/s guard
-    S.V_LE_ms = std::min(V_LE_nom, S.V2_shock_ms - epsV);
+    const double V_LE_nom = std::max(Vsw,P.V_sheath_LE_factor*Vsw);
+    if (!S.has_shock || !S.shock_solver_converged) {
+      S.V_LE_ms = Vsw;
+    } else {
+      // Preserve the existing monotone-sheath convention without altering the
+      // physical RH jump.  The leading-edge phenomenology is a separate region
+      // model; it may not accelerate the flow above the exact post-shock speed.
+      S.V_LE_ms = std::min(V_LE_nom,S.V2_shock_ms);
+      S.V_LE_ms = std::max(S.V_LE_ms,Vsw);
+    }
 
     return S;
   }
@@ -624,9 +646,8 @@ public:
     const double Vsw = S.V_up_ms;
     const double rc  = S.rc;
 
-    // Shock downstream speed (Rankine‑Hugoniot mass flux proxy)
-    const double V2_shock = S.V2_shock_ms;
-    const double V_LE     = S.V_LE_ms;
+    // The cached RH downstream and leading-edge speeds are used directly in
+    // the sheath branch below; no independent local proxy is constructed here.
 
     for (std::size_t i=0;i<N;++i){
       const double r = std::max(r_m[i], 1.05*Rs);

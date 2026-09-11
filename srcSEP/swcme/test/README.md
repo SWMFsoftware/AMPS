@@ -370,7 +370,7 @@ The following deterministic tests validate the corrected geometry:
   difference surface motion at neighboring times.
 - `GEO08` — rotational covariance: rotating the CME axis, solar axis, and query
   direction together must rotate the normal while leaving radius, normal
-  speed, and scalar compression proxy unchanged.
+  speed, and scalar physical compression unchanged.
 
 The analytical/reference calculations in `3d/test_geometry.cpp` intentionally
 do not call the production geometry helper.  They are independent checks of
@@ -379,8 +379,80 @@ tolerances are roundoff- or finite-difference-level tolerances appropriate to
 each calculation and must not be loosened simply to make a production result
 pass.
 
-This change corrects geometry and kinematics only.  It does **not** yet replace
-the current hydrodynamic compression proxy with a full oblique-MHD
-Rankine-Hugoniot solution, correct the immediate downstream sheath velocity, or
-repair the shock-surface mesh apex/seam topology; those remain separate planned
-work packages so failures stay diagnostically attributable.
+The geometry tests remain diagnostically focused on shape, normals, finite
+angular support, and normal speed.  Shock existence/compression/downstream
+physics is now covered independently by `SHK01`-`SHK12` below.  Shock-surface
+mesh apex/seam topology remains a separate planned work package.
+
+
+## SHK01-SHK12: fast-shock existence and ideal-MHD Rankine-Hugoniot validation
+
+The `SHK` group validates the shared production shock solver in
+`swcme_shock.hpp` and its integration into both the 1-D and 3-D models.  The
+classification is `COMMON`: the physical jump calculation is shared even when
+geometry-specific inputs such as the 3-D surface normal are different.
+
+The solver first evaluates the upstream fast-mode speed along the shock normal.
+A geometric front is not automatically a shock.  The physical condition is
+
+```text
+U1n = Vsh,n - V1.n > c_fast,
+M_fast = U1n/c_fast > 1.
+```
+
+If this condition is not met, the result is `has_shock=false`, compression is
+exactly one, and downstream equals upstream.  No sheath compression floor is
+allowed to override this decision.
+
+For a physical fast shock, the solver works in a frame moving with the normal
+shock speed.  For a trial compression `r=rho2/rho1`, mass conservation fixes
+`u2n=u1n/r`.  Tangential electric-field and tangential momentum continuity form
+a 2x2 linear system for `B2t` and `u2t`; normal momentum determines `p2`.  A
+bracketed solve of total-energy-flux conservation selects the compressive
+fast-shock branch.  The trivial `r=1` solution is divided out of the scalar
+residual so it cannot be mistaken for the physical shock root.
+
+The individual tests are:
+
+- `SHK01` — fast-shock existence and no-shock threshold.  Includes permanent
+  1-D and 3-D regression checks proving that `sheath_comp_floor` cannot create
+  a shock when `Vsh=Vsw`.
+- `SHK02` — acute `theta_Bn` calculation and invariance under `B -> -B`.
+- `SHK03` — strictly parallel limit against the independent gas-dynamic normal
+  shock solution.
+- `SHK04` — strictly perpendicular ideal-MHD benchmark against an independent
+  test-side scalar reduction.
+- `SHK05` — oblique benchmark grid and continuity of the selected compression
+  branch as shock speed/obliquity vary.
+- `SHK06` — mass-flux conservation.  It also samples the production 3-D field
+  immediately downstream and verifies that density, velocity, and magnetic
+  field approach the exact RH downstream state instead of the ambient wind.
+- `SHK07` — continuity of the normal magnetic-field component.
+- `SHK08` — tangential ideal-MHD electric-field continuity.
+- `SHK09` — vector momentum-flux conservation.
+- `SHK10` — total ideal-MHD energy-flux conservation.
+- `SHK11` — physical admissibility: positive downstream pressure/density,
+  compressive branch, strong-shock bound for gamma=5/3, and entropy increase.
+- `SHK12` — near-Mach-one conditioning and smooth approach of compression to
+  unity without an empirical floor.
+
+The independent parallel/perpendicular references do not call the production
+nonlinear shock solver.  Conservation tests recompute the conserved fluxes from
+the returned primitive states.  This prevents a test from passing merely by
+reusing the same internal algebra that produced the result.
+
+Typical direct use is:
+
+```sh
+./output/test_swcme --test SHK01
+./output/test_swcme --test SHK04
+./output/test_swcme --test SHK10
+./output/test_swcme --all
+```
+
+A shock test failure must not be repaired by increasing the compression floor
+or loosening conservation tolerances.  Diagnose the frame transformation,
+normal direction, upstream state, root bracket, and downstream reconstruction
+first.  A super-fast state for which the nonlinear solver cannot identify an
+admissible root is reported with `solver_converged=false` and must not be used
+for SEP source physics.

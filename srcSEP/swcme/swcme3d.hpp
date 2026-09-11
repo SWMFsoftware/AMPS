@@ -1,6 +1,7 @@
 #pragma once
 
 #include "swcme_constants.hpp"
+#include "swcme_shock.hpp"
 // ============================================================================
 // swcme3d.hpp
 // ----------------------------------------------------------------------------
@@ -14,7 +15,7 @@
 // • Simple geometric containers: ShockMesh, TriMetrics, BoxSpec.
 // • Model class with:
 //   - Directional shock geometry: radius and normal.
-//   - Oblique MHD proxy for compression ratio rc and normal shock speed Vsh_n.
+//   - Oblique ideal-MHD fast-shock classification and Rankine-Hugoniot downstream state.
 //   - Field evaluators returning density (n), bulk velocity (V), magnetic
 //     field (B) and divergence ∇·V at arbitrary Cartesian points.
 //   - Shock surface meshing + per-triangle metrics (area, centroid, normal,
@@ -38,8 +39,8 @@
 //   winding everywhere else is computed from the point's actual latitude.
 // • CME apex kinematics via Drag-Based Model (DBM): Vršnak et al. (2013).
 // • Shock shape: sphere, self-similar ellipsoid, or finite true-SSE spherical cap.
-// • Local rc proxy from oblique fast Mach number (Edmiston & Kennel 1984;
-//   Priest 2014), limited to ≤ 4.
+// • Local fast-shock state from the ideal-MHD Rankine-Hugoniot conditions,
+//   including complete downstream rho, p, V, and B.
 // • Sheath / ejecta blends using C^1 smoothsteps and independent edge widths.
 // • Tangential B amplified smoothly in the sheath (Bn continuous).
 // • ∇·V by robust radial finite-difference: (1/r^2) ∂(r^2 V_r)/∂r.
@@ -79,9 +80,10 @@
 //      upstream → (shock) → sheath → (leading edge) → magnetic ejecta →
 //      (trailing edge) → downstream ambient,
 //    using C^1 smoothstep blends with independent widths at each interface.
-//  • Oblique MHD shock proxy (Edmiston & Kennel 1984; Priest 2014) to estimate
-//    (i) normal shock speed Vsh_n and (ii) density compression ratio rc.
-//  • Magnetic field jump: normal component continuous, tangential amplified ~ rc.
+//  • Oblique ideal-MHD fast-shock solver: explicit shock/no-shock state,
+//    density compression, and conservative downstream rho,p,V,B.
+//  • The immediate post-shock magnetic/velocity state is the RH solution; the
+//    interior sheath relaxation remains phenomenological.
 //  • Mesh generator for the shock surface + triangle metrics (area, normals,
 //    centroids, rc_mean, Vsh_n_mean). All saved to Tecplot.
 //  • Structured-box samplers for (n, V, B, ∇·V) with NaN/Inf sanitization.
@@ -245,7 +247,12 @@ struct StepState {
   double V_dn_ms        = 0.0; // downstream ambient (== V_sw)
 
   // Convenience
-  double rc = 1.0;             // diagnostic: apex compression
+  // Apex shock diagnostic.  has_shock is deliberately independent of the
+  // existence of the geometric CME front: a surface may exist while its
+  // normal motion is sub-fast and therefore does not support a physical fast
+  // shock.  rc is exactly 1 whenever has_shock is false.
+  bool has_shock = false;
+  double rc = 1.0;             // diagnostic: apex density compression
   double inv_dr_sheath = 0.0;  // 1 / dr_sheath
   double rc_floor = 1.0;       // min compression (from Params)
 
@@ -288,6 +295,43 @@ struct StepState {
   double sse_radius_m=0.0;
 };
 
+
+// ----------------------------------------------------------------------------
+// Complete local shock state returned by Model::shock_state_direction().
+//
+// This structure is the public bridge between geometry and shock physics.  It
+// exposes both the upstream and downstream primitive MHD states at the actual
+// shock surface, rather than forcing callers to reconstruct a jump from a
+// compression proxy.  surface_exists and has_shock are intentionally separate:
+// a finite CME surface can be present even when the relative normal speed is
+// sub-fast and no physical shock/downstream jump exists.
+// ----------------------------------------------------------------------------
+struct LocalShockState {
+  bool surface_exists = false;
+  bool has_shock = false;
+  bool solver_converged = true;
+
+  double Rdir_m = 0.0;
+  double normal[3] = {0.0,0.0,0.0};
+  double Vsh_n_m_s = 0.0;
+  double theta_Bn_rad = 0.0;
+  double fast_speed_m_s = 0.0;
+  double fast_mach = 0.0;
+  double compression = 1.0;
+
+  double upstream_n_m3 = 0.0;
+  double downstream_n_m3 = 0.0;
+  swcme::shock::PrimitiveState upstream;
+  swcme::shock::PrimitiveState downstream;
+
+  double mass_residual = 0.0;
+  double normal_B_residual = 0.0;
+  double electric_residual = 0.0;
+  double momentum_residual = 0.0;
+  double energy_residual = 0.0;
+  double entropy_ratio = 1.0;
+};
+
 // ----------------------------------------------------------------------------
 // Shock surface mesh and per-triangle metrics
 //  - tri_i/j/k are 1-based (Tecplot-friendly).
@@ -297,7 +341,7 @@ struct ShockMesh {
   // Nodal fields (size Nv)
   std::vector<double> x, y, z;                 // vertex positions [m]
   std::vector<double> n_hat_x, n_hat_y, n_hat_z; // outward unit normals at nodes
-  std::vector<double> rc;                      // nodal compression proxy
+  std::vector<double> rc;                      // nodal physical density compression
   std::vector<double> Vsh_n;                   // nodal normal shock speed [m/s]
 
   // Connectivity (1-based triangle indices)
@@ -344,8 +388,17 @@ public:
                            double ux,double uy,double uz,
                            double& Rdir_m,double n_hat[3]) const;
 
-  // Local oblique-shock proxy at radius r_eval_m (≈ shock location along u):
-  // outputs: rc (density jump), Vsh_n (normal speed), thetaBn (B–normal angle).
+  // Evaluate the complete ideal-MHD shock state along unit direction u.
+  // The upstream plasma is ALWAYS sampled at the physical shock position
+  // Rdir*u; it is never sampled at an arbitrary query point.  The return value
+  // is false only when the selected finite geometry has no surface along u.
+  bool shock_state_direction(const StepState& S, const double u[3],
+                             LocalShockState& state) const;
+
+  // Backward-compatible scalar diagnostic.  r_eval_m is retained only so older
+  // callers still compile; shock physics is now evaluated at Rdir_m regardless
+  // of r_eval_m.  New code should use shock_state_direction() to obtain the
+  // complete upstream/downstream state and explicit has_shock flag.
   void local_oblique_rc(const StepState& S, const double u[3], const double n_hat[3],
                         double Rdir_m, double r_eval_m,
                         double& rc_out, double& Vsh_n_out, double& thetaBn_out) const;
