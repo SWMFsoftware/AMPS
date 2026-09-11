@@ -13,11 +13,9 @@
 #pragma GCC diagnostic pop
 #endif
 
-#include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <iostream>
-#include <limits>
 #include <string>
 
 namespace {
@@ -41,14 +39,13 @@ constexpr double REF_SOLAR_ROTATION_RAD_S =
 
 // Physical-constant tolerances account for two CODATA standard uncertainties
 // plus half a unit in the final decimal place stored by SWCME. Exact constants
-// use zero tolerance. Calculated conversions allow only floating-point roundoff.
+// use zero tolerance. These tolerances remain part of the CFG01 constants
+// baseline even though configuration rejection itself is not yet exposed.
 constexpr double PROTON_MASS_ABS_TOL =
     2.0 * REF_PROTON_MASS_STD_UNCERTAINTY_KG + 0.5e-38;
 constexpr double MU0_ABS_TOL =
     2.0 * REF_MU0_STD_UNCERTAINTY_N_A2 + 0.5e-21;
 constexpr double SOLAR_ROTATION_ABS_TOL = 0.5e-11;
-constexpr double ROUNDOFF_REL_TOL =
-    64.0 * std::numeric_limits<double>::epsilon();
 
 enum class ToleranceKind { Absolute, Relative };
 
@@ -76,18 +73,14 @@ void check_value(swcme_test::Context& context, const std::string& quantity,
   context.record_result(pass);
 }
 
-double inferred_gamma(double upstream_speed_ms, double initial_speed_ms,
-                      double evaluated_speed_ms, double time_s) {
-  const double initial_excess = initial_speed_ms - upstream_speed_ms;
-  const double evaluated_excess = evaluated_speed_ms - upstream_speed_ms;
-  return (initial_excess / evaluated_excess - 1.0) /
-         (initial_excess * time_s);
-}
-
 }  // namespace
 
 void test_cfg01(swcme_test::Context& context) {
-  std::cout << "CFG01 quantity checks\n";
+  // CFG01 is intended to exercise explicit configuration rejection. Neither
+  // model currently exposes such an API, so the pre-existing constants checks
+  // are retained here and the missing rejection path is reported as a SKIP.
+  // Unit-conversion checks formerly below this section now live in CFG02.
+  std::cout << "CFG01 constants baseline (configuration rejection pending)\n";
 
   check_value(context, "1D astronomical unit [m]", swcme1d::AU, REF_AU_M, 0.0,
               ToleranceKind::Absolute);
@@ -141,83 +134,9 @@ void test_cfg01(swcme_test::Context& context) {
             << " swcme=N/A ref=" << std::scientific << std::setprecision(12)
             << REF_ELEMENTARY_CHARGE_C
             << " rel_err=N/A abs_err=N/A tol=N/A NOT PRESENT (not used)\n";
+  context.record_skip();
 
-  swcme1d::Params parameters_1d;
-  parameters_1d.r0_Rs = 2.0;
-  parameters_1d.V_sw_kms = 321.0;
-  parameters_1d.V0_sh_kms = 654.0;
-  parameters_1d.Gamma_kmInv = 2.5e-5;
-  parameters_1d.n1AU_cm3 = 8.0;
-  parameters_1d.B1AU_nT = 7.0;
-  const swcme1d::Model model_1d(parameters_1d);
-  const swcme1d::StepState state_1d = model_1d.prepare_step(0.0);
-  const swcme1d::StepState evolved_1d = model_1d.prepare_step(10.0);
-
-  const double radius_1d[] = {swcme1d::AU};
-  double density_1d[] = {0.0};
-  double speed_1d[] = {0.0};
-  double br_1d[] = {0.0};
-  double bphi_1d[] = {0.0};
-  double bmag_1d[] = {0.0};
-  model_1d.evaluate_radii_with_B_div(state_1d, radius_1d, density_1d,
-                                     speed_1d, br_1d, bphi_1d, bmag_1d,
-                                     nullptr, 1);
-
-  check_value(context, "1D solar-radius to metre", state_1d.r0_m,
-              1391400000.0, 0.0, ToleranceKind::Absolute);
-  check_value(context, "1D km/s to m/s", state_1d.V_up_ms, 321000.0, 0.0,
-              ToleranceKind::Absolute);
-  check_value(context, "1D cm^-3 to m^-3", density_1d[0], 8000000.0,
-              ROUNDOFF_REL_TOL, ToleranceKind::Relative);
-  check_value(context, "1D nT to T", bmag_1d[0], 7.0e-9,
-              ROUNDOFF_REL_TOL, ToleranceKind::Relative);
-  check_value(context, "1D km^-1 to m^-1",
-              inferred_gamma(state_1d.V_up_ms, 654000.0,
-                             evolved_1d.V_sh_ms, 10.0),
-              2.5e-8, ROUNDOFF_REL_TOL, ToleranceKind::Relative);
-
-  swcme3d::Params parameters_3d;
-  parameters_3d.r0_Rs = 2.0;
-  parameters_3d.V_sw_kms = 321.0;
-  parameters_3d.V0_sh_kms = 654.0;
-  parameters_3d.Gamma_kmInv = 2.5e-5;
-  parameters_3d.n1AU_cm3 = 8.0;
-  parameters_3d.B1AU_nT = 7.0;
-  const swcme3d::Model model_3d(parameters_3d);
-  const swcme3d::StepState state_3d = model_3d.prepare_step(0.0);
-  const swcme3d::StepState evolved_3d = model_3d.prepare_step(10.0);
-
-  const double x_3d[] = {swcme3d::AU};
-  const double y_3d[] = {0.0};
-  const double z_3d[] = {0.0};
-  double density_3d[] = {0.0};
-  double vx_3d[] = {0.0};
-  double vy_3d[] = {0.0};
-  double vz_3d[] = {0.0};
-  double bx_3d[] = {0.0};
-  double by_3d[] = {0.0};
-  double bz_3d[] = {0.0};
-  model_3d.evaluate_cartesian_with_B(state_3d, x_3d, y_3d, z_3d,
-                                     density_3d, vx_3d, vy_3d, vz_3d,
-                                     bx_3d, by_3d, bz_3d, 1);
-  const double bmag_3d =
-      std::sqrt(bx_3d[0] * bx_3d[0] + by_3d[0] * by_3d[0] +
-                bz_3d[0] * bz_3d[0]);
-
-  check_value(context, "3D solar-radius to metre", state_3d.r_sh_m,
-              1391400000.0, 0.0, ToleranceKind::Absolute);
-  check_value(context, "3D km/s to m/s", state_3d.V_sw_ms, 321000.0, 0.0,
-              ToleranceKind::Absolute);
-  check_value(context, "3D cm^-3 to m^-3", density_3d[0], 8000000.0,
-              ROUNDOFF_REL_TOL, ToleranceKind::Relative);
-  check_value(context, "3D nT to T", bmag_3d, 7.0e-9,
-              ROUNDOFF_REL_TOL, ToleranceKind::Relative);
-  check_value(context, "3D km^-1 to m^-1",
-              inferred_gamma(state_3d.V_sw_ms, 654000.0,
-                             evolved_3d.V_sh_ms, 10.0),
-              2.5e-8, ROUNDOFF_REL_TOL, ToleranceKind::Relative);
-  check_value(context, "3D degree to radian (40 deg)",
-              swcme3d::Params{}.half_width_rad,
-              0.69813170079773183077, ROUNDOFF_REL_TOL,
-              ToleranceKind::Relative);
+  std::cout << "configuration rejection API         SKIP — production SWCME "
+               "does not expose validation/rejection results\n";
+  context.record_skip();
 }
