@@ -48,6 +48,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test OUT04    # BoxSpec structural validation
 ./output/test_swcme --test OUT06    # mesh and metric output validation
 ./output/test_swcme --test OUT01    # independent Tecplot parsing
+./output/test_swcme --test OUT07    # build/run/parse all demonstrations
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -635,10 +636,11 @@ demonstration and observational campaigns consume the files.
 The test constructs a deterministic spherical shock mesh and a minimal valid
 `2x2x2` apex box, writes all three products through the production stdio and
 transactional-commit path, and reads them with a parser implemented solely in
-`test/core/test_output_parsing.cpp`.  The parser uses standard line and numeric
-conversion primitives and owns its expected title, variable, unit, zone, and
-layout declarations.  It does not reuse `CheckedTextFile`, writer formatting
-constants, BLOCK emitters, or any production parsing helper.
+`test/core/tecplot_parser.hpp` and `test/core/test_output_parsing.cpp`.  The
+parser uses standard line and numeric conversion primitives and owns its
+expected title, variable, unit, zone, and layout declarations.  It does not
+reuse `CheckedTextFile`, writer formatting constants, BLOCK emitters, or any
+production parsing helper.
 
 For surface zones, every declared node/element count and both copies of the
 triangle connectivity are compared with the input mesh.  Representative nodal
@@ -673,6 +675,92 @@ Run the gate directly with:
 `OUT01` follows `OUT06` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
 through their `@ALL` expansion.
 
+## OUT07: demonstration program execution
+
+### What is tested
+
+`OUT07` treats `demo1d`, `demo3d_1`, and `demo3d_2` as executable
+documentation.  It verifies that all three build with the normal strict-warning
+flags, exit successfully from a clean directory, report no stderr diagnostics,
+produce exactly the files promised in their comments, and leave no private
+transaction file.  It then independently parses every Tecplot and CSV output.
+
+For `demo1d`, the gate checks one 1,200-row, 13-variable radial POINT zone.
+Each 3-D example must produce a four-zone bundle with the documented
+24-by-48 finite-SSE surface, a 12-by-12-by-12 volume, and a 12-by-12 min-X
+face.  The extended example must also produce a six-row predefined point cloud,
+ten random samples for each surface triangle, and an ideal-MHD strength table.
+Both 3-D examples produce 72-hour plasma and shock histories at five-minute
+cadence.
+
+### Why it is tested
+
+Before OUT07, both 3-D examples placed a box face through the solar origin,
+outside SWCME's `r >= 1.05 R_sun` domain.  The checked bundle writer therefore
+rejected the request, but the examples printed a failure and still returned
+zero while claiming the missing file had been written.  The extended example
+also spent substantial time constructing a 120-by-240 mesh and ten samples per
+large-mesh triangle before reaching that failure.  Its comments described
+three output zones although the production bundle has four, and its strength
+diagnostic inferred fast Mach number from an obsolete gas-dynamic proxy rather
+than using the production ideal-MHD shock state.
+
+Examples are commonly copied into science workflows.  A compile-only test
+cannot detect unsupported geometry, ignored output status, missing products,
+stale schemas, truncated CSV streams, or comments that no longer match model
+physics.
+
+### How it is tested
+
+`make demos` builds the examples as `output/demo1d`, `output/demo3d_1`, and
+`output/demo3d_2`; both 3-D programs link the same `output/swcme3d.o` used by
+the validation executable.  OUT07 creates a unique run root and one empty
+directory per binary, fixes `LC_ALL=C`, captures stdout and stderr, and examines
+the process termination code.
+
+The gate compares each directory with an exact expected manifest.  It parses
+the radial profile, both bundles, and both point clouds with the OUT01
+validation-only parser, whose schema remains independent of production writer
+constants.  A separate strict CSV reader verifies exact ordered headers, row
+widths, numerical finiteness, final newlines, sample counts, uniform time
+spacing, and endpoints.  Surface node/element counts are derived independently
+from the documented 24 polar intervals and 48 azimuthal nodes.  Successful
+artifacts are removed; failed artifacts and captured logs are retained at
+`output/OUT07_demo_runs_<run-id>`.  Process-and-start-time-specific roots allow
+simultaneous validation campaigns without cross-run deletion or manifest
+contamination, including in containers that reuse process IDs.
+
+The examples themselves now use supported apex-centered boxes from
+`default_apex_box()`, checked bundle status, explicit CSV lifecycle checks, and
+moderate demonstration-scale grids.  `demo3d_2` writes auxiliary point clouds
+transactionally and obtains strength, Mach number, downstream magnetic change,
+and conservation residuals from `shock_state_direction_checked()`.
+
+### Expected result
+
+All three binaries compile without warnings and exit zero.  Stderr is empty;
+stdout names the expected product or current ideal-MHD diagnostic; every
+declared file exists and no undeclared or staging file remains.  All serialized
+rows are finite and complete, bundle zones/dimensions match the example source,
+the radial and point-cloud counts match their requests, and all CSV time axes
+contain 865 samples from 0 through 259,200 seconds.  Passing runs clean their
+temporary directories.
+
+Run the build-and-execute gate with:
+
+```sh
+make demo-run
+```
+
+or, after `make` has built all targets:
+
+```sh
+./output/test_swcme --test OUT07
+```
+
+`OUT07` follows `OUT01` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
+through their `@ALL` expansion.
+
 ## Python campaign manager and reproducible run artifacts
 
 `run_tests.py` is the manager for multi-test development gates and validation
@@ -696,8 +784,8 @@ python3 python/test_run_tests.py
 The named profiles are version-controlled text files in `profiles/`:
 
 - `SMOKE` is the short development gate, including prepared-state safety,
-  checked output failures, transactional commit, model-domain preflight, and
-  BoxSpec and mesh-output validation;
+  checked output failures, transactional commit, model-domain preflight,
+  BoxSpec/mesh validation, independent parsing, and executable demonstrations;
 - `ROUTINE` is the broad deterministic gate and excludes `MSH05` and `CON05`;
 - `FULL` expands to every test in the C++ registry;
 - `EVENT` first runs FULL and then executes the supplied event-analysis JSON.

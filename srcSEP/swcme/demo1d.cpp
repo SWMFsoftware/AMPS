@@ -1,12 +1,13 @@
 // demo1d.cpp — 1-D SW+CME usage example (explicit status, Tecplot profile)
 //
 // WHAT THIS EXAMPLE DOES (PHYSICS):
-//  • Sets a “typical fast CME”: r0=1.05 Rs, V0≈1800 km/s, ambient Vsw=400 km/s.
+//  • Sets a “typical fast CME”: r0=20 Rs, V0≈1800 km/s, ambient Vsw=400 km/s.
 //  • Computes a snapshot at t = 36 h using the shared sign-aware DBM apex kinematics.
 //  • Builds a radial grid 0.2–1.5 AU and evaluates:
 //       n(r), V(r), Br(r), Bphi(r), |B|(r), divV(r).
-//  • Writes a Tecplot POINT file "profile_1d.dat" with columns:
-//       R[m] n V Br Bphi |B| divV rc R_sh R_LE R_TE
+//  • Writes a Tecplot POINT file "profile_1d.dat" with 13 unit-qualified
+//    columns: r[m], R[AU], rSun[R_s], n[m^-3], V[m/s], Br[T], Bphi[T],
+//    Bmag[T], divV[s^-1], rc, R_sh[m], R_LE[m], and R_TE[m].
 //
 // HOW TO SET UP CME PARAMETERS IN THIS MODEL
 // ----------------------------------------------------------------------------
@@ -37,8 +38,9 @@
 //
 // CME LAUNCH & DRAG (DBM, APEX KINEMATICS)
 // ----------------------------------------
-//  P.r0_Rs          [R_sun] DBM reference radius. ~15-20 Rs is recommended for drag-dominated propagation.
-//                           This 1-D model usually launches at 1.05.
+//  P.r0_Rs          [R_sun] DBM reference radius. About 15–20 Rs is recommended
+//                           for drag-dominated propagation; 1.05 Rs is the
+//                           solar-wind domain floor, not the recommended DBM start.
 //
 //  P.V0_sh_kms      [km/s]  Initial shock apex speed at t=0. Typical 800–2500.
 //                           Large values produce strong early compression.
@@ -222,15 +224,20 @@ int main(){
   // ------------------------------
   // 5) Write Tecplot profile (POINT)
   // ------------------------------
-  if (!model.write_tecplot_radial_profile(S, r.data(), n.data(), V.data(),
-                                          Br.data(), Bphi.data(), Bmag.data(), divV.data(),
-                                          N, "profile_1d.dat"))
-  {
-    std::fprintf(stderr,"ERROR: failed to write profile_1d.dat\n");
+  // OUT07 treats the example as executable documentation, so use the checked
+  // API and propagate its precise validation/I/O status to the process exit
+  // code.  A demonstration must never print success after a rejected request
+  // or a partial/failed transaction.
+  const swcme::ModelStatus output_status=
+      model.write_tecplot_radial_profile_checked(
+          S,r.data(),n.data(),V.data(),Br.data(),Bphi.data(),Bmag.data(),
+          divV.data(),N,"profile_1d.dat");
+  if (!output_status.ok()) {
+    std::fprintf(stderr,"ERROR: profile output failed: %s\n",
+                 output_status.summary().c_str());
     return 1;
   }
   std::printf("Wrote Tecplot radial profile: profile_1d.dat (N=%zu)\n", N);
 
   return 0;
 }
-

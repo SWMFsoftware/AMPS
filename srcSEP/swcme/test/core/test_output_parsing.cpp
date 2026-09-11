@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "tecplot_parser.hpp"
 
 #include <swcme3d.hpp>
 
@@ -16,7 +17,7 @@
 #include <string>
 #include <vector>
 
-namespace {
+namespace swcme_test::tecplot {
 
 // OUT01 owns this schema instead of importing a string or table from the
 // production writer.  That deliberate duplication is the independence
@@ -28,27 +29,6 @@ const std::vector<std::string> kExpectedVariables={
     "nx[-]","ny[-]","nz[-]","area[m^2]","rc_mean[-]",
     "Vsh_n_mean[m/s]","tnx[-]","tny[-]","tnz[-]","cx[m]","cy[m]",
     "cz[m]"};
-
-struct ParsedZone {
-  // BLOCK zones retain one vector per declared variable; POINT zones retain
-  // one vector per physical row.  Keeping the two layouts distinct prevents a
-  // parser bug from flattening away exactly the row-width/variable-location
-  // errors that OUT01 is intended to detect.
-  std::vector<std::vector<double>> blocks;
-  std::vector<std::vector<double>> rows;
-  std::vector<std::array<std::size_t,3>> triangles;
-  std::size_t nodes=0;
-  std::size_t elements=0;
-  std::size_t ni=0;
-  std::size_t nj=0;
-  std::size_t nk=0;
-};
-
-struct ParsedDocument {
-  std::string title;
-  std::vector<std::string> variables;
-  std::vector<ParsedZone> zones;
-};
 
 // This line-oriented reader is intentionally built from standard C++ text
 // primitives, not CheckedTextFile or any writer helper.  It accepts the small
@@ -69,7 +49,9 @@ public:
   const std::string& error() const { return error_; }
 
   bool parse_surface(ParsedDocument& document) {
-    if (!parse_header("Shock surface (cell metrics + nodal rc)",document))
+    if (!parse_header(
+            "Shock surface (cell metrics + nodal rc)",kExpectedVariables,
+            document))
       return false;
     ParsedZone surface;
     if (!parse_surface_zone(surface)) return false;
@@ -78,7 +60,8 @@ public:
   }
 
   bool parse_bundle(ParsedDocument& document) {
-    if (!parse_header("SW+CME dataset",document)) return false;
+    if (!parse_header("SW+CME dataset",kExpectedVariables,document))
+      return false;
 
     ParsedZone surface;
     if (!parse_surface_zone(surface)) return false;
@@ -129,7 +112,8 @@ public:
   }
 
   bool parse_face(ParsedDocument& document) {
-    if (!parse_header("Box face (minX)",document)) return false;
+    if (!parse_header("Box face (minX)",kExpectedVariables,document))
+      return false;
     ParsedZone face;
     std::map<std::string,std::string> fields;
     std::size_t face_rows=0;
@@ -138,6 +122,30 @@ public:
         !parse_point_rows(face_rows,kExpectedVariables.size(),face.rows))
       return false;
     document.zones.push_back(face);
+    return require_end_of_file();
+  }
+
+  bool parse_point(const std::string& expected_title,
+                   const std::vector<std::string>& expected_variables,
+                   const std::string& expected_zone,
+                   const std::string& count_key,ParsedDocument& document) {
+    if (count_key!="I" && count_key!="N")
+      return fail("POINT count key must be I or N");
+    if (!parse_header(expected_title,expected_variables,document)) return false;
+    std::map<std::string,std::string> fields;
+    if (!take_zone_assignments(fields) ||
+        !require_exact_keys(fields,{"T",count_key,"F"}) ||
+        !require_value(fields,"T",expected_zone) ||
+        !require_value(fields,"F","POINT"))
+      return false;
+    ParsedZone zone;
+    std::size_t row_count=0;
+    if (!parse_positive_size(fields[count_key],row_count,"POINT row count") ||
+        !parse_point_rows(row_count,expected_variables.size(),zone.rows))
+      return false;
+    if (count_key=="I") zone.ni=row_count;
+    else zone.nodes=row_count;
+    document.zones.push_back(zone);
     return require_end_of_file();
   }
 
@@ -189,6 +197,7 @@ private:
   }
 
   bool parse_header(const std::string& expected_title,
+                    const std::vector<std::string>& expected_variables,
                     ParsedDocument& document) {
     std::string line;
     if (!take_line(line) ||
@@ -197,8 +206,8 @@ private:
     if (document.title!=expected_title) return fail("unexpected TITLE value");
     if (!take_line(line) || !parse_variable_list(line,document.variables))
       return false;
-    if (document.variables!=kExpectedVariables)
-      return fail("VARIABLES names, units, or order differ from OUT01 schema");
+    if (document.variables!=expected_variables)
+      return fail("VARIABLES names, units, or order differ from validation schema");
     return true;
   }
 
@@ -473,6 +482,18 @@ bool parse_face_text(const std::string& text,ParsedDocument& document,
   return valid;
 }
 
+bool parse_point_text(const std::string& text,const std::string& expected_title,
+                      const std::vector<std::string>& expected_variables,
+                      const std::string& expected_zone,
+                      const std::string& count_key,ParsedDocument& document,
+                      std::string& error) {
+  IndependentTecplotParser parser(text);
+  const bool valid=parser.parse_point(
+      expected_title,expected_variables,expected_zone,count_key,document);
+  error=parser.error();
+  return valid;
+}
+
 bool serialized_near(double actual,double expected) {
   // Production uses %.9e, i.e. ten significant decimal digits.  One part in
   // 1e9 safely covers final-digit rounding while remaining far tighter than a
@@ -515,7 +536,7 @@ void remove_if_present(const std::filesystem::path& path) {
   (void)std::filesystem::remove(path,error);
 }
 
-}  // namespace
+}  // namespace swcme_test::tecplot
 
 // OUT01: validate the bytes consumed by external Tecplot readers rather than
 // trusting successful writer statuses.  Three public products are written
@@ -523,6 +544,7 @@ void remove_if_present(const std::filesystem::path& path) {
 // grammar above: surface-only, the four-zone surface/volume/face bundle, and
 // the standalone min-X face.
 void test_out01(swcme_test::Context& context) {
+  using namespace swcme_test::tecplot;
   std::cout << "OUT01 independent output parsing\n";
 
   const std::filesystem::path surface_path="output/OUT01_surface.dat";

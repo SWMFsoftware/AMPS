@@ -1,25 +1,24 @@
-// demo.cpp — usage of swcme3d (SSE case) with a box whose face contains (0,0,0)
+// demo3d_1.cpp — supported-domain swcme3d SSE output example
 //
 // Build:
-//   g++ -std=c++17 -O3 -march=native demo.cpp swcme3d.cpp -o demo
+//   g++ -std=c++17 -O3 -march=native demo3d_1.cpp swcme3d.cpp -o demo3d_1
 //
 // Run:
-//   ./demo
+//   ./demo3d_1
 //
 // Outputs:
 //   • Time series at 1 AU (CSV):        ts_cone.csv
 //   • Shock kinematics (CSV):           shock_cone.csv
-//   • Tecplot dataset (3 zones):        cone_face_origin_tecplot.dat
+//   • Tecplot dataset (4 zones):        sse_apex_bundle_tecplot.dat
 //
 // Notes:
 //   - Densities are in m^-3; velocities in m/s.
-//   - The Tecplot file has:
-//       Zone 1: shock surface (nodal, FEPOINT)
-//       Zone 2: shock surface (cell-centered metrics, BLOCK)
-//       Zone 3: structured POINT volume box
-//   - In this example, the volume box has **size 0.2 AU per side**
-//     (half-size = 0.1 AU) and its **minus-Z face lies on z=0**, so that face
-//     contains the point (0,0,0). The box is axis-aligned (no rotation).
+//   - The Tecplot file has the production order: surface_cells
+//     (FETRIANGLE/BLOCK), surface_nodal (FEPOINT), volume_box
+//     (structured POINT), and box_face_minX (structured POINT).
+//   - The volume is constructed by default_apex_box() around the 6-hour shock
+//     apex.  Unlike the historical origin-crossing box, every requested point
+//     is inside the analytical model domain and the checked writer can finish.
 
 #include "swcme3d.hpp"
 #include <fstream>
@@ -27,6 +26,7 @@
 #include <iostream>
 #include <cmath>
 #include <algorithm>
+#include <stdexcept>
 #include <string>
 
 using namespace swcme3d;
@@ -65,7 +65,9 @@ int main(){
     // -------------------------------------------------------
     // Time series at 1 AU on +Z axis (observer at x=y=0, z=1 AU)
     // -------------------------------------------------------
-    const double t0 = 0.0, t1 = hours(72.0), dt = 60.0;
+    // Five-minute output remains well resolved for this usage example while
+    // keeping OUT07's full demonstration run compact and deterministic.
+    const double t0 = 0.0, t1 = hours(72.0), dt = 300.0;
     const std::size_t Nt = static_cast<std::size_t>((t1 - t0)/dt) + 1;
 
     double x_obs[1] = { 0.0 };
@@ -77,6 +79,12 @@ int main(){
 
     std::ofstream sh("shock_cone.csv");
     sh << "t_s,R_sh_AU,V_sh_km_s,rc,R_LE_AU,R_TE_AU\n";
+
+    // OUT07 runs examples in an empty directory and requires every declared
+    // product.  Fail immediately if either CSV cannot be opened rather than
+    // allowing the later Tecplot file to make the demo appear successful.
+    if (!ts.is_open() || !sh.is_open())
+      throw std::runtime_error("cannot open demo3d_1 CSV outputs");
 
     for (std::size_t k=0; k<Nt; ++k){
       const double t = t0 + k*dt;
@@ -101,52 +109,50 @@ int main(){
          << std::setprecision(10) << (S.r_te_m/AU) << '\n';
     }
 
+    // Explicit close/status checks turn delayed filesystem failures into a
+    // nonzero demo exit, matching the production Tecplot writer's lifecycle
+    // contract and making OUT07 meaningful on full or interrupted storage.
+    ts.close();
+    sh.close();
+    if (!ts || !sh)
+      throw std::runtime_error("failed to finish demo3d_1 CSV outputs");
+
     // -------------------------------------------------------
     // Visualization snapshot at 6 h:
     // - build shock surface
     // - compute cell metrics
-    // - define volume BoxSpec with size 0.2 AU and a face through (0,0,0)
+    // - define a supported apex-centered volume and its min-X face
     // -------------------------------------------------------
     const double t_mesh = hours(6.0);
     StepState Smesh = model.prepare_step(t_mesh);
 
-    // Dense-ish triangulation (keep multiples of 2 and ≥3 respectively)
-    ShockMesh surf = model.build_shock_mesh(Smesh, /*nTheta=*/120, /*nPhi=*/240);
+    // Demonstration-scale resolution keeps the executable and OUT07 fast while
+    // retaining the unique apex, periodic rings, and finite SSE boundary.
+    ShockMesh surf = model.build_shock_mesh(Smesh, /*nTheta=*/24, /*nPhi=*/48);
 
     TriMetrics tri;
     model.compute_triangle_metrics(surf, tri);
 
-    // --- BOX: size 0.2 AU => half-size = 0.1 AU on each axis ---
-    // We want **one face to contain the origin**. Choose the minus-Z face.
-    // Condition for minus-Z face to be at z=0 is: cz - hz = 0  ⇒  cz = hz.
-    // Also ensure origin lies within the face rectangle by setting cx=cy=0
-    // with |cx| ≤ hx and |cy| ≤ hy automatically satisfied.
-    BoxSpec B;
-    const double half_AU = 0.1; // half-size (AU) => full size = 0.2 AU
-    B.hx = half_AU * AU;
-    B.hy = half_AU * AU;
-    B.hz = half_AU * AU;
+    // default_apex_box() applies the same OUT04 structural rules as the writer
+    // and places this compact diagnostic grid away from the unsupported solar
+    // interior.  Twelve points per dimension keep the file useful but small.
+    const BoxSpec B=model.default_apex_box(Smesh,/*half_AU=*/0.02,/*N=*/12);
 
-    // Place the center so that the minus-Z face (z = cz - hz) is exactly 0
-    B.cx = 0.0;
-    B.cy = 0.0;
-    B.cz = B.hz; // => z_minus_face = 0; face contains (0,0,0)
-
-    // Resolution of the structured grid (I,J,K). Adjust to taste.
-    B.Ni = 80;
-    B.Nj = 80;
-    B.Nk = 80;
-
-    // Write a combined Tecplot dataset (surface + cell metrics + volume box)
-    if (!model.write_tecplot_dataset_bundle(surf, tri, Smesh, B, "cone_face_origin_tecplot.dat")) {
-      std::cerr << "Failed to write cone_face_origin_tecplot.dat\n";
+    // Use the checked API so model-domain, mesh, and I/O failures are visible
+    // in stderr and force a nonzero exit instead of the old false-success path.
+    const swcme::ModelStatus output_status=
+        model.write_tecplot_dataset_bundle_checked(
+            surf,tri,Smesh,B,"sse_apex_bundle_tecplot.dat");
+    if (!output_status.ok()) {
+      std::cerr << "Dataset output failed: " << output_status.summary() << '\n';
+      return 1;
     }
 
-    std::cout << "Done. Wrote ts_cone.csv, shock_cone.csv, cone_face_origin_tecplot.dat\n";
+    std::cout << "Done. Wrote ts_cone.csv, shock_cone.csv, "
+                 "sse_apex_bundle_tecplot.dat\n";
     return 0;
   } catch (const std::exception& e) {
     std::cerr << "Error: " << e.what() << "\n";
     return 1;
   }
 }
-

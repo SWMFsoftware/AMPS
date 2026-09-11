@@ -20,6 +20,7 @@ void test_out05(swcme_test::Context& context);
 void test_out04(swcme_test::Context& context);
 void test_out06(swcme_test::Context& context);
 void test_out01(swcme_test::Context& context);
+void test_out07(swcme_test::Context& context);
 void test_den01(swcme_test::Context& context);
 void test_par01(swcme_test::Context& context);
 void test_par02(swcme_test::Context& context);
@@ -125,6 +126,7 @@ const swcme_test::TestCase kTests[] = {
     {"OUT04", "OUTPUT", "Box specification validation", test_out04},
     {"OUT06", "OUTPUT", "Mesh output validation", test_out06},
     {"OUT01", "OUTPUT", "Independent output parsing", test_out01},
+    {"OUT07", "OUTPUT", "Demonstration program execution", test_out07},
     {"CFG01", "COMMON", "Configuration rejection and physical-range validation",
      test_cfg01},
     {"CFG02", "COMMON", "Unit-conversion and dimensional-consistency test",

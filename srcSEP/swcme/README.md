@@ -585,6 +585,59 @@ make -j
 ./output/test_swcme --test OUT01
 ```
 
+### Demonstration program execution (OUT07)
+
+The three user-facing examples are now first-class, warning-checked build
+products.  From `test/`, `make demos` builds `output/demo1d`,
+`output/demo3d_1`, and `output/demo3d_2` with the same compiler flags and 3-D
+production object used by the validation executable.  `make demo-run` builds
+the complete gate and runs OUT07.
+
+The two 3-D examples no longer construct visualization boxes whose faces pass
+through the solar origin.  They use `default_apex_box()` to create a validated
+12-by-12-by-12 box centered near the shock apex, so every volume and min-X-face
+sample is inside the supported radius.  Their demonstration meshes use 24
+polar intervals and 48 periodic azimuthal nodes: enough to exercise the unique
+apex, finite SSE boundary, connectivity, and area metrics without the former
+multi-minute, very large output.  The bundle name is now
+`sse_apex_bundle_tecplot.dat`, and comments describe its actual four zones in
+production order.
+
+Output failures are no longer advisory.  Both 3-D examples use the checked
+bundle API and terminate nonzero with the full status diagnostic if writing
+fails.  CSV streams check open and delayed close state.  The auxiliary point
+clouds in `demo3d_2` now use unit-qualified variables and the shared checked,
+transactional text-output layer.  The extended demo's strength table also
+reports the production ideal-MHD shock result—compression, fast Mach number,
+shock-frame speed, `theta_Bn`, magnetic amplification/rotation, and normalized
+conservation residuals—instead of inferring Mach number from the obsolete
+gas-dynamic compression proxy.
+
+OUT07 executes each binary in a separate freshly emptied directory with a
+fixed C locale and captured stdout/stderr.  It requires exit code zero, empty
+stderr, the exact declared artifact manifest, and no transaction staging
+files.  Every Tecplot product is parsed through the independent OUT01 grammar;
+every CSV is checked for its exact header, field count, finite values, final
+newline, 865-row five-minute time axis, and 72-hour endpoint.  Surface and box
+sizes are independently derived from the documented demo resolution.  Passing
+temporary products are removed; failed runs remain under
+`test/output/OUT07_demo_runs_<run-id>` with their logs for diagnosis.  The
+process-and-start-time identifier keeps simultaneous validation campaigns
+isolated from one another, including in containers that reuse process IDs.
+
+Run the complete demonstration gate with:
+
+```sh
+cd test
+make demo-run
+```
+
+or run it after an existing build:
+
+```sh
+./output/test_swcme --test OUT07
+```
+
 ### `SEPSourceState`
 
 `SEPSourceState` is the stable transport-facing source record.  It contains:
@@ -690,8 +743,9 @@ Profiles are stored in `test/profiles/`:
 
 - `SMOKE` is a short development gate covering prepared-state safety, checked
   output failure propagation, transactional commit, model-domain preflight,
-  BoxSpec and mesh-output validation, configuration,
-  core shock, connectivity, divergence, and SEP-interface integration;
+  BoxSpec and mesh-output validation, independent parsing, executable
+  demonstrations, configuration, core shock, connectivity, divergence, and
+  SEP-interface integration;
 - `ROUTINE` runs the broad deterministic suite while excluding the slowest
   stochastic/multi-root stress cases;
 - `FULL` runs the complete registered C++ suite and exports the default SEP

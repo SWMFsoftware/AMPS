@@ -1,17 +1,17 @@
-// demo.cpp — End-to-end demonstration of the solar-wind + CME shock model
+// demo3d_2.cpp — End-to-end demonstration of the solar-wind + CME shock model
 // ============================================================================
 // What this example shows
 // -----------------------
 // 1) **How CME “strength” is defined and measured** in this model:
 //      • Apex shock compression ratio rc(t)
-//      • Fast-mode normal Mach number M_fn(t) (inverted from rc)
-//      • Shock excess speed ΔV = V_sh − V_sw
-//      • Immediate post-shock B amplification factor |B2|/|B1| at the apex
-//      • Field rotation at the shock Δθ = atan(rc*tanψ) − ψ  (ψ: Parker pitch)
+//      • Fast-mode Mach number from the production ideal-MHD shock state
+//      • Shock-frame upstream normal speed and shock normal speed
+//      • Actual downstream/upstream |B| ratio and magnetic-field rotation
+//      • Normalized Rankine-Hugoniot conservation residuals
 // 2) **Time series at 1 AU** (n, V) + apex shock kinematics.
 // 3) **Snapshot at t = 36 h**:
 //      • Triangulated shock surface (SSE) + per-triangle metrics
-//      • A structured volume box (0.2 AU per side) whose minus-Z face is z=0
+//      • A supported apex-centered structured volume box and min-X face
 //      • Point sampling of plasma + B (with sheath tangential amplification)
 //      • 10 random points from the **first triangle** are printed to stdout
 //      • 10 random points **per triangle** written to Tecplot (POINT)
@@ -21,14 +21,14 @@
 //   strength_summary.csv                 : apex “strength” metrics vs time
 //   ts_cone.csv                          : time series at 1 AU (n, V components, |V|)
 //   shock_cone.csv                       : apex shock radius/speed + sheath/ejecta edges
-//   cone_face_origin_tecplot.dat         : Tecplot multi-zone (surface nodal + cell metrics + volume)
+//   sse_apex_bundle_tecplot.dat          : four-zone surface/volume/face bundle
 //   predefined_points_tecplot.dat        : Tecplot POINT zone (predefined samples)
 //   surface_random_samples_tecplot.dat   : Tecplot POINT zone (10 samples per triangle)
 //
 // Build & run
 // -----------
-//   g++ -std=c++17 -O3 -march=native demo.cpp swcme3d.cpp -o demo
-//   ./demo
+//   g++ -std=c++17 -O3 -march=native demo3d_2.cpp swcme3d.cpp -o demo3d_2
+//   ./demo3d_2
 //
 // Units & conventions
 // -------------------
@@ -46,9 +46,10 @@
 // • B field: Parker spiral normalized to |B|(1 AU) = B1AU_nT.
 // • Sheath/ejecta: shock jump → compressed sheath → depleted ejecta → ambient
 //   blended with C^1 smoothsteps (independent edge smoothness).
-// • Oblique MHD jump proxy for compression ratio:
-//     rc = ((γ+1) M_fn^2) / ((γ−1) M_fn^2 + 2)   (capped ≤ 4 for γ=5/3)
-//   with M_fn = U_1n / c_f(θ_Bn).  The code computes rc locally per surface node.
+// • The full ideal-MHD Rankine-Hugoniot solver returns compression, fast Mach
+//   number, and conservative downstream rho/p/V/B together with normalized
+//   mass, magnetic, electric, momentum, and energy residuals.  This example
+//   reports those values directly rather than inverting a gas-dynamic proxy.
 //
 // Magnetic field evaluator used here
 // ----------------------------------
@@ -63,7 +64,9 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <cstdio>
 #include <random>
+#include <stdexcept>
 #include <vector>
 #include <string>
 #include <cmath>
@@ -72,21 +75,6 @@
 using namespace swcme3d;
 
 static inline double hours(double h){ return h * 3600.0; }
-
-// Return sin(colatitude) of a direction relative to the solar-rotation axis
-// cached in StepState.  The production 3-D Parker field now uses this local
-// geometry rather than a single global latitude parameter, so diagnostics in
-// this example must use the same physical definition.
-static inline double local_sin_colatitude(const StepState& S, const double u[3]){
-  const double cx=S.solar_axis_hat[1]*u[2]-S.solar_axis_hat[2]*u[1];
-  const double cy=S.solar_axis_hat[2]*u[0]-S.solar_axis_hat[0]*u[2];
-  const double cz=S.solar_axis_hat[0]*u[1]-S.solar_axis_hat[1]*u[0];
-  return std::sqrt(cx*cx+cy*cy+cz*cz);
-}
-
-// Local copy of the solar rotation rate used by the Parker pitch formula.
-// (Matches the value used inside the model implementation.)
-static constexpr double OMEGA_SUN = 2.86533e-6; // rad/s
 
 // -----------------------------------------------------------------------------
 // Utility: sample a point uniformly inside a triangle using barycentric coords
@@ -110,7 +98,8 @@ static inline Vec3 bary_sample(const Vec3& A, const Vec3& B, const Vec3& C,
 // -----------------------------------------------------------------------------
 // Utility: write a Tecplot POINT zone with plasma + B + shock diagnostics
 // -----------------------------------------------------------------------------
-static bool write_points_tecplot(const char* path,
+static swcme::ModelStatus write_points_tecplot_checked(
+                                 const char* path,
                                  const std::vector<double>& X,
                                  const std::vector<double>& Y,
                                  const std::vector<double>& Z,
@@ -125,65 +114,104 @@ static bool write_points_tecplot(const char* path,
                                  const std::vector<double>& Vsh_n)
 {
   const std::size_t N = X.size();
-  if (Y.size()!=N || Z.size()!=N || n.size()!=N || Vx.size()!=N || Vy.size()!=N || Vz.size()!=N ||
-      Bx.size()!=N || By.size()!=N || Bz.size()!=N || rc.size()!=N || Vsh_n.size()!=N) return false;
+  if (!path)
+    return swcme::ModelStatus::make(
+        swcme::StatusCode::NullPointer,"demo3d_2 point-cloud path");
+  if (N==0 || Y.size()!=N || Z.size()!=N || n.size()!=N || Vx.size()!=N ||
+      Vy.size()!=N || Vz.size()!=N || Bx.size()!=N || By.size()!=N ||
+      Bz.size()!=N || rc.size()!=N || Vsh_n.size()!=N)
+    return swcme::ModelStatus::make(
+        swcme::StatusCode::InvalidConfiguration,
+        "demo3d_2 point-cloud parallel arrays");
 
-  std::FILE* fp = std::fopen(path, "w"); if(!fp) return false;
-  std::fprintf(fp, "TITLE = \"Point cloud (plasma + B + shock diagnostics)\"\n");
-  std::fprintf(fp, "VARIABLES = \"X\",\"Y\",\"Z\",\"n\",\"Vx\",\"Vy\",\"Vz\",\"Bx\",\"By\",\"Bz\",\"rc\",\"Vsh_n\"\n");
-  std::fprintf(fp, "ZONE T=\"points\", N=%zu, F=POINT\n", N);
-  for (std::size_t i=0;i<N;++i){
-    std::fprintf(fp, "%.9e %.9e %.9e %.9e %.9e %.9e %.9e %.9e %.9e %.9e %.6e %.6e\n",
-      X[i],Y[i],Z[i], n[i],Vx[i],Vy[i],Vz[i], Bx[i],By[i],Bz[i], rc[i],Vsh_n[i]);
+  // Validate every precomputed field before creating a transaction.  The
+  // point-cloud helper belongs only to this example, but it follows the same
+  // no-partial-output rule as the public writers exercised by OUT02-OUT05.
+  for (std::size_t i=0; i<N; ++i) {
+    const double values[]={X[i],Y[i],Z[i],n[i],Vx[i],Vy[i],Vz[i],Bx[i],By[i],
+                           Bz[i],rc[i],Vsh_n[i]};
+    for (double value : values)
+      if (!std::isfinite(value))
+        return swcme::ModelStatus::make_value(
+            swcme::StatusCode::NonFiniteResult,
+            "demo3d_2 point-cloud value",value,i);
   }
-  std::fclose(fp);
-  return true;
+
+  // CheckedTextFile gives auxiliary demo files the same exact-write,
+  // flush/error/close, staging cleanup, and atomic-commit behavior as the
+  // model products.  OUT07 then parses the committed bytes independently.
+  swcme::output::CheckedTextFile output(
+      swcme::output::stdio_file_operations());
+  if (!output.open_transactional(path))
+    return swcme::ModelStatus::make(
+        swcme::StatusCode::FileOpenFailure,"demo3d_2 point-cloud open");
+  output.print("demo3d_2 point-cloud title",swcme::ModelStatus::npos,
+      "TITLE = \"Point cloud (plasma + B + shock diagnostics)\"\n");
+  output.print("demo3d_2 point-cloud variables",swcme::ModelStatus::npos,
+      "VARIABLES = \"X[m]\",\"Y[m]\",\"Z[m]\",\"n[m^-3]\","
+      "\"Vx[m/s]\",\"Vy[m/s]\",\"Vz[m/s]\",\"Bx[T]\",\"By[T]\","
+      "\"Bz[T]\",\"rc[-]\",\"Vsh_n[m/s]\"\n");
+  output.print("demo3d_2 point-cloud zone",swcme::ModelStatus::npos,
+      "ZONE T=\"points\", N=%zu, F=POINT\n",N);
+  for (std::size_t i=0; i<N && output.good(); ++i)
+    output.print("demo3d_2 point-cloud row",i,
+        "%.9e %.9e %.9e %.9e %.9e %.9e %.9e %.9e %.9e %.9e %.9e %.9e\n",
+        X[i],Y[i],Z[i],n[i],Vx[i],Vy[i],Vz[i],Bx[i],By[i],Bz[i],rc[i],
+        Vsh_n[i]);
+  return output.finish(
+      "demo3d_2 point-cloud flush","demo3d_2 point-cloud stream error",
+      "demo3d_2 point-cloud close","demo3d_2 point-cloud commit");
 }
 
 // -----------------------------------------------------------------------------
-// Helper: write an apex “strength” summary over time
-// Columns: t_s, rc_apex, Mfn_apex, Vexcess_ms, theta1_rad, B2overB1, dTheta_rad
+// Helper: write the production ideal-MHD apex state over time.  The residuals
+// expose solver quality directly and avoid the historical, invalid inference
+// of fast Mach number from a gas-dynamic compression formula.
 // -----------------------------------------------------------------------------
-static void write_strength_summary_csv(const Params& P, Model& model,
-                                       double t0, double t1, double dt,
-                                       const char* path)
+static bool write_strength_summary_csv(Model& model,double t0,double t1,
+                                       double dt,const char* path)
 {
   std::ofstream out(path);
-  out << "t_s,rc_apex,Mfn_apex,Vexcess_ms,theta1_rad,B2overB1,dTheta_rad\n";
-
-  const double g = P.gamma_ad;
-  const double Vsw = P.V_sw_kms * 1e3;
+  if (!out.is_open()) return false;
+  out << "t_s,has_shock,rc_apex,M_fast,U1n_ms,Vsh_n_ms,theta_Bn_rad,"
+         "B2overB1,field_rotation_rad,mass_residual,normal_B_residual,"
+         "electric_residual,momentum_residual,energy_residual\n";
 
   for (double t=t0; t<=t1+1e-9; t+=dt){
     StepState S = model.prepare_step(t);
-
-    // Apex direction & local shock diagnostics
     double u_apex[3] = { S.e1[0], S.e1[1], S.e1[2] };
-    double Rdir, n_hat[3], rc_apex, Vsh_n_apex;
-    model.diagnose_direction(S, u_apex, Rdir, n_hat, rc_apex, Vsh_n_apex);
+    LocalShockState shock;
+    const swcme::ModelStatus status=
+        model.shock_state_direction_checked(S,u_apex,shock);
+    if (!status.ok()) return false;
 
-    // Invert rc → M_fn (fast-mode normal Mach) using RH relation
-    double M2 = (rc_apex>1.0)
-      ? 2.0*(rc_apex-1.0) / ((g+1.0) - (g-1.0)*rc_apex)
-      : 0.0;
-    double Mfn_apex = (M2>0.0)? std::sqrt(M2) : 0.0;
-
-    // Shock excess speed at apex (total, not purely normal)
-    const double Vexcess = S.V_sh_ms - Vsw;
-
-    // Parker pitch ψ at apex: tanψ = Ω r sinθ / Vsw
-    const double sin_theta_local = local_sin_colatitude(S, u_apex);
-    const double psi = std::atan( OMEGA_SUN * S.r_sh_m * sin_theta_local / Vsw );
-
-    // Immediate post-shock B rotation and amplification at the apex
-    const double B2_over_B1 = std::sqrt( std::cos(psi)*std::cos(psi)
-                                      + rc_apex*rc_apex*std::sin(psi)*std::sin(psi) );
-    const double dTheta = std::atan( rc_apex * std::tan(psi) ) - psi;
+    const double upstream_normal_velocity=
+        shock.upstream.velocity_m_s[0]*shock.normal[0]+
+        shock.upstream.velocity_m_s[1]*shock.normal[1]+
+        shock.upstream.velocity_m_s[2]*shock.normal[2];
+    const double U1n=shock.Vsh_n_m_s-upstream_normal_velocity;
+    const auto magnitude=[](const swcme::shock::Vec3& vector) {
+      return std::sqrt(vector[0]*vector[0]+vector[1]*vector[1]+
+                       vector[2]*vector[2]);
+    };
+    const double B1=magnitude(shock.upstream.magnetic_T);
+    const double B2=magnitude(shock.downstream.magnetic_T);
+    const double dot=shock.upstream.magnetic_T[0]*shock.downstream.magnetic_T[0]+
+        shock.upstream.magnetic_T[1]*shock.downstream.magnetic_T[1]+
+        shock.upstream.magnetic_T[2]*shock.downstream.magnetic_T[2];
+    const double cosine=(B1>0.0 && B2>0.0)
+        ? std::max(-1.0,std::min(1.0,dot/(B1*B2))) : 1.0;
 
     out << std::setprecision(10)
-        << t << ',' << rc_apex << ',' << Mfn_apex << ','
-        << Vexcess << ',' << psi << ',' << B2_over_B1 << ',' << dTheta << '\n';
+        << t << ',' << (shock.has_shock ? 1 : 0) << ',' << shock.compression
+        << ',' << shock.fast_mach << ',' << U1n << ',' << shock.Vsh_n_m_s
+        << ',' << shock.theta_Bn_rad << ',' << (B1>0.0 ? B2/B1 : 1.0)
+        << ',' << std::acos(cosine) << ',' << shock.mass_residual << ','
+        << shock.normal_B_residual << ',' << shock.electric_residual << ','
+        << shock.momentum_residual << ',' << shock.energy_residual << '\n';
   }
+  out.close();
+  return static_cast<bool>(out);
 }
 
 // ============================================================================
@@ -262,49 +290,50 @@ int main(){
     Model model(P);
 
     // =========================================================================
-    // 2) “Strength” summary over time (apex metrics): 0–72 h, Δt=1 min
+    // 2) “Strength” summary over time (apex metrics): 0–72 h, Δt=5 min
     // =========================================================================
     {
-      const double t0=0.0, t1=hours(72.0), dt=60.0;
-      write_strength_summary_csv(P, model, t0, t1, dt, "strength_summary.csv");
+      const double t0=0.0, t1=hours(72.0), dt=300.0;
+      if (!write_strength_summary_csv(
+              model,t0,t1,dt,"strength_summary.csv"))
+        throw std::runtime_error("failed to write strength_summary.csv");
 
       // Also print a quick apex strength readout at t=36 h (for convenience)
       StepState S = model.prepare_step(hours(36.0));
       double u_apex[3] = { S.e1[0], S.e1[1], S.e1[2] };
-      double Rdir, n_hat[3], rc_apex, Vsh_n_apex;
-      model.diagnose_direction(S, u_apex, Rdir, n_hat, rc_apex, Vsh_n_apex);
-
-      const double g = P.gamma_ad;
-      double M2 = (rc_apex>1.0)
-        ? 2.0*(rc_apex-1.0) / ((g+1.0) - (g-1.0)*rc_apex)
-        : 0.0;
-      double Mfn_apex = (M2>0.0) ? std::sqrt(M2) : 0.0;
-      const double Vsw = P.V_sw_kms*1e3;
-      const double sin_theta_local = local_sin_colatitude(S, u_apex);
-      const double psi = std::atan( OMEGA_SUN * S.r_sh_m * sin_theta_local / Vsw );
-      const double B2_over_B1 = std::sqrt( std::cos(psi)*std::cos(psi)
-                                        + rc_apex*rc_apex*std::sin(psi)*std::sin(psi) );
-      const double dTheta = std::atan( rc_apex * std::tan(psi) ) - psi;
+      LocalShockState shock;
+      const swcme::ModelStatus shock_status=
+          model.shock_state_direction_checked(S,u_apex,shock);
+      if (!shock_status.ok())
+        throw std::runtime_error("36-hour apex shock state failed: "+
+                                 shock_status.summary());
 
       std::cout << "[Strength @ apex, t=36h] "
-                << "rc=" << rc_apex
-                << ", M_fn=" << Mfn_apex
-                << ", Vexcess=" << (S.V_sh_ms - Vsw) << " m/s"
-                << ", |B2|/|B1|=" << B2_over_B1
-                << ", Δθ=" << dTheta << " rad\n";
+                << "rc=" << shock.compression
+                << ", M_fast=" << shock.fast_mach
+                << ", Vsh_n=" << shock.Vsh_n_m_s << " m/s"
+                << ", theta_Bn=" << shock.theta_Bn_rad << " rad"
+                << ", max_RH_residual="
+                << std::max({std::abs(shock.mass_residual),
+                             std::abs(shock.normal_B_residual),
+                             std::abs(shock.electric_residual),
+                             std::abs(shock.momentum_residual),
+                             std::abs(shock.energy_residual)}) << '\n';
     }
 
     // =========================================================================
     // 3) Time series at 1 AU (+Z). Observer at (0,0,1 AU)
     // =========================================================================
     {
-      const double t0=0.0, t1=hours(72.0), dt=60.0;
+      const double t0=0.0, t1=hours(72.0), dt=300.0;
       const std::size_t Nt = static_cast<std::size_t>((t1-t0)/dt)+1;
 
       double x_obs[1]={0.0}, y_obs[1]={0.0}, z_obs[1]={AU};
 
       std::ofstream ts("ts_cone.csv");    ts << "t_s,n_m3,Vx_ms,Vy_ms,Vz_ms,V_mag_ms\n";
       std::ofstream sh("shock_cone.csv"); sh << "t_s,R_sh_AU,V_sh_km_s,rc,R_LE_AU,R_TE_AU\n";
+      if (!ts.is_open() || !sh.is_open())
+        throw std::runtime_error("cannot open demo3d_2 time-series outputs");
 
       for (std::size_t k=0;k<Nt;++k){
         const double t=t0+k*dt;
@@ -321,6 +350,13 @@ int main(){
            << (S.r_sh_m/AU) << ',' << (S.V_sh_ms/1e3) << ',' << S.rc << ','
            << (S.r_le_m/AU) << ',' << (S.r_te_m/AU) << '\n';
       }
+      // CSV streams can report delayed errors only at flush/close.  Checking
+      // both here prevents OUT07 from accepting a nominally successful demo
+      // whose diagnostics were truncated.
+      ts.close();
+      sh.close();
+      if (!ts || !sh)
+        throw std::runtime_error("failed to finish demo3d_2 time-series outputs");
     }
 
     // =========================================================================
@@ -330,19 +366,21 @@ int main(){
     StepState Smesh = model.prepare_step(t_mesh);
 
     // Build the surface (unique-apex, periodic-ring triangulation of the finite SSE cap) and per-triangle metrics
-    ShockMesh  surf = model.build_shock_mesh(Smesh, /*nTheta=*/120, /*nPhi=*/240);
+    // Demonstration-grade resolution exercises finite-cap topology and random
+    // sampling without the historical multi-minute, hundreds-of-megabytes run.
+    ShockMesh  surf = model.build_shock_mesh(Smesh, /*nTheta=*/24, /*nPhi=*/48);
     TriMetrics tri;  model.compute_triangle_metrics(surf, tri);
 
-    // Volume box: FULL SIZE = 0.2 AU per side (half = 0.1 AU).
-    // Place its **minus-Z face on z=0**, so that face contains the origin (0,0,0).
-    BoxSpec B;
-    B.hx = 0.1 * AU; B.hy = 0.1 * AU; B.hz = 0.1 * AU; // half-sizes
-    B.cx = 0.0;      B.cy = 0.0;      B.cz = B.hz;     // cz − hz = 0 ⇒ minus-Z face at z=0
-    B.Ni = 80;       B.Nj = 80;       B.Nk = 80;       // grid resolution (I,J,K)
+    // Construct a small apex-centered grid through the validated factory.  The
+    // old box touched the solar origin and was outside the model domain, so its
+    // writer failed after the demo had already generated expensive samples.
+    const BoxSpec B=model.default_apex_box(Smesh,/*half_AU=*/0.02,/*N=*/12);
 
-    // Multi-zone Tecplot dataset: surface nodal, surface cell-centered, and volume
-    if (!model.write_tecplot_dataset_bundle(surf, tri, Smesh, B, "cone_face_origin_tecplot.dat"))
-      std::cerr << "Failed to write cone_face_origin_tecplot.dat\n";
+    const swcme::ModelStatus bundle_status=
+        model.write_tecplot_dataset_bundle_checked(
+            surf,tri,Smesh,B,"sse_apex_bundle_tecplot.dat");
+    if (!bundle_status.ok())
+      throw std::runtime_error("bundle output failed: "+bundle_status.summary());
 
     // =========================================================================
     // 5) Evaluate plasma + B at a set of predefined points (for quick sanity)
@@ -377,8 +415,11 @@ int main(){
         rc[i]=rc_loc; Vsh_n[i]=Vsh_n_loc;
       }
 
-      if (!write_points_tecplot("predefined_points_tecplot.dat", X,Y,Z, n,Vx,Vy,Vz, Bx,By,Bz, rc,Vsh_n))
-        std::cerr << "Failed to write predefined_points_tecplot.dat\n";
+      const swcme::ModelStatus point_status=write_points_tecplot_checked(
+          "predefined_points_tecplot.dat",X,Y,Z,n,Vx,Vy,Vz,Bx,By,Bz,rc,Vsh_n);
+      if (!point_status.ok())
+        throw std::runtime_error("predefined point output failed: "+
+                                 point_status.summary());
     }
 
     // =========================================================================
@@ -458,9 +499,12 @@ int main(){
         }
       }
 
-      if (!write_points_tecplot("surface_random_samples_tecplot.dat",
-                                SX,SY,SZ, Sn,SVx,SVy,SVz, SBx,SBy,SBz, Src,SVshn))
-        std::cerr << "Failed to write surface_random_samples_tecplot.dat\n";
+      const swcme::ModelStatus sample_status=write_points_tecplot_checked(
+          "surface_random_samples_tecplot.dat",SX,SY,SZ,Sn,SVx,SVy,SVz,
+          SBx,SBy,SBz,Src,SVshn);
+      if (!sample_status.ok())
+        throw std::runtime_error("surface sample output failed: "+
+                                 sample_status.summary());
     }
 
     std::cout << "Done. Wrote strength_summary.csv, CSV time series, and Tecplot datasets.\n";
@@ -471,4 +515,3 @@ int main(){
     return 1;
   }
 }
-
