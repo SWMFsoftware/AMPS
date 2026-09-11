@@ -11,8 +11,8 @@ TARGET := output/test_swcme
 # Every validation remains in one deterministic executable. The common tests
 # use separate translation units so each physical contract has an auditable
 # implementation without introducing another executable or build system.
-SOURCES := core/test_swcme.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp core/test_regions.cpp core/test_acceleration.cpp core/test_status.cpp core/test_divergence.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_mesh.cpp 3d/test_connectivity.cpp 3d/test_shock_surface.cpp 1d/test_ambient.cpp test_1d3d.cpp
-OBJECTS := output/swcme3d.o output/test_swcme.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_regions.o output/test_acceleration.o output/test_status.o output/test_divergence.o output/test_parker.o output/test_geometry.o output/test_mesh.o output/test_connectivity.o output/test_shock_surface.o output/test_ambient.o output/test_1d3d.o
+SOURCES := core/test_swcme.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp core/test_regions.cpp core/test_acceleration.cpp core/test_status.cpp core/test_divergence.cpp core/test_defaults.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_mesh.cpp 3d/test_connectivity.cpp 3d/test_shock_surface.cpp 1d/test_ambient.cpp test_1d3d.cpp
+OBJECTS := output/swcme3d.o output/test_swcme.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_regions.o output/test_acceleration.o output/test_status.o output/test_divergence.o output/test_defaults.o output/test_parker.o output/test_geometry.o output/test_mesh.o output/test_connectivity.o output/test_shock_surface.o output/test_ambient.o output/test_1d3d.o
 
 .PHONY: all test clean
 
@@ -26,7 +26,7 @@ $(TARGET): $(OBJECTS)
 # to obtain its symbols, which coupled the entire production implementation to
 # one unrelated test translation unit.  A normal object-library style link is
 # clearer, scales to additional tests, and prevents accidental duplicate code.
-output/swcme3d.o: ../swcme3d.cpp ../swcme3d.hpp ../swcme_constants.hpp ../swcme_units.hpp ../swcme_status.hpp ../swcme_divergence.hpp ../swcme_config.hpp ../swcme_kinematics.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_shock.hpp ../swcme_regions.hpp ../swcme_acceleration.hpp | output
+output/swcme3d.o: ../swcme3d.cpp ../swcme3d.hpp ../swcme_constants.hpp ../swcme_units.hpp ../swcme_defaults.hpp ../swcme_status.hpp ../swcme_divergence.hpp ../swcme_config.hpp ../swcme_kinematics.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_shock.hpp ../swcme_regions.hpp ../swcme_acceleration.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # Explicit rules keep source ownership obvious and let `make -j` build the
@@ -35,10 +35,10 @@ output/swcme3d.o: ../swcme3d.cpp ../swcme3d.hpp ../swcme_constants.hpp ../swcme_
 output/test_swcme.o: core/test_swcme.cpp core/test_framework.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-output/test_config.o: core/test_config.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme_units.hpp ../swcme_status.hpp ../swcme_divergence.hpp ../swcme_config.hpp ../swcme_kinematics.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_regions.hpp | output
+output/test_config.o: core/test_config.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme_units.hpp ../swcme_defaults.hpp ../swcme_status.hpp ../swcme_divergence.hpp ../swcme_config.hpp ../swcme_kinematics.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_regions.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-output/test_units.o: core/test_units.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme_units.hpp ../swcme_status.hpp ../swcme_divergence.hpp ../swcme_config.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_regions.hpp | output
+output/test_units.o: core/test_units.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme_units.hpp ../swcme_defaults.hpp ../swcme_status.hpp ../swcme_divergence.hpp ../swcme_config.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_regions.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # DEN01 calls the production 3-D implementation linked through swcme3d.o and
@@ -83,6 +83,12 @@ output/test_status.o: core/test_status.cpp core/test_framework.hpp ../swcme_stat
 # DIV01-DIV03 validate exact radial divergence, analytical radial-profile
 # derivatives, and the shared full Cartesian second-order divergence operator.
 output/test_divergence.o: core/test_divergence.cpp core/test_framework.hpp ../swcme_divergence.hpp ../swcme_regions.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_status.hpp | output
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+# DEF01-DEF04 guard the canonical shared baseline, explicit model-scope
+# convention, observer-local pre-shock validity gate, and deterministic
+# resolved-configuration metadata needed by later campaign automation.
+output/test_defaults.o: core/test_defaults.cpp core/test_framework.hpp ../swcme_defaults.hpp ../swcme1d.hpp ../swcme3d.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # PAR01-PAR03 exercise the public production 3-D field evaluator linked through

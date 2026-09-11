@@ -5,6 +5,69 @@ energetic-particle transport studies.  The 3-D model combines a Parker magnetic
 field, Leblanc density profile, analytical CME/shock kinematics, configurable
 shock geometry, and phenomenological sheath/ejecta fields.
 
+## Canonical defaults and declared model scope
+
+`swcme_defaults.hpp` is the single source of truth for dimensionality-independent
+SWCME defaults.  A default-constructed 1-D and 3-D model now use the same
+ambient plasma, Parker normalization, apex kinematics, region parameters,
+smoothing widths, and source weighting.  In particular, the common baseline is
+
+```text
+V_sw                    = 400 km/s
+n(1 AU)                 = 5 cm^-3
+|B|(1 AU, reference)    = 5 nT
+T_p                     = 1.2e5 K
+gamma                    = 5/3
+Parker reference sinθ    = 1 (equatorial normalization only)
+Omega_sun                = 2.86533e-6 rad/s model convention
+kinematics               = DBM
+DBM reference radius     = 20 R_s
+V0                       = 1500 km/s
+Gamma                    = 1e-7 km^-1
+regions                  = SHOCK_ONLY
+shock acceleration       = SOURCE
+```
+
+The default 3-D science geometry is the finite `SSE` cap with 40-degree half
+width. `Sphere` and `Ellipsoid` remain available, but a Sun-centered sphere is
+primarily a verification/reduction geometry and is no longer the default science
+front.
+
+The Parker magnetic convention is explicit. `B1AU_nT` is a **positive total
+field magnitude** at 1 AU at the documented reference latitude
+`sin(theta_ref)=1`; the common solar-wind preparation converts that value to the
+radial `Br(1 AU)` normalization.  Positive radial field means outward polarity.
+In 3-D, the public `sin_theta` member remains only for source compatibility as
+this normalization latitude; it does **not** control local Parker winding.  Local
+`sin(theta)=|Omega_hat x e_r|` is always obtained from geometry.
+
+Two model scopes are named explicitly:
+
+- `CONTROLLED_SEP_PRE_SHOCK` = `SHOCK_ONLY + SOURCE`.  This is the canonical
+  baseline for the SEP connectivity/perpendicular-diffusion study.  At a given
+  observer, its Parker/Leblanc transport background is declared in scope only
+  while the modeled shock has not reached that observer.
+- `FULL_ICME_DIAGNOSTIC` = `FULL_ICME + RESOLVED_COMPRESSION`.  This is the
+  optional phenomenological sheath/ejecta diagnostic model.  It is not a claim
+  of a validated global ICME magnetic structure; for example, the ejecta field
+  remains Parker-like.
+
+The scope is *derived* from the validated region/acceleration pair rather than
+stored as a third independent option.  `Model::model_scope()` therefore cannot
+disagree with the actual transport/source representation.  Both dimensional
+models expose `observer_scope_status(...)`; the 3-D implementation uses the same
+finite shock geometry as the production shock/connectivity routines, so an
+observer outside an SSE cap is not falsely marked post-shock merely because the
+apex has passed its heliocentric radius.
+
+`resolved_configuration_manifest(const Params&)` in both public namespaces emits
+a deterministic complete key/value snapshot of the resolved configuration,
+including inactive compatibility parameters, data-driven tables, geometry and
+the derived model scope.  This function is intended as the configuration block
+for the campaign/run manifests added by the integration layer; event-specific
+overrides should never exist only in ad-hoc driver code.  The schema/convention
+version is `SWCME_CONFIG_VERSION = 2`.
+
 ## Current 3-D shock geometries
 
 `swcme3d::ShockShape` currently provides:
@@ -12,7 +75,7 @@ shock geometry, and phenomenological sheath/ejecta fields.
 - `Sphere` — a Sun-centered spherical verification geometry;
 - `Ellipsoid` — a Sun-centered ellipsoid whose three axes scale self-similarly
   with the shock apex distance; and
-- `SSE` — the recommended finite self-similar-expansion spherical cap.
+- `SSE` — the recommended **and default** finite self-similar-expansion spherical cap.
 
 `ConeSSE` is retained as an enum alias for source compatibility but now has the
 same corrected semantics as `SSE`.  It no longer means the old

@@ -107,6 +107,36 @@ conversion literals in 1-D versus 3-D.  A failure should be investigated as a
 unit-contract or wrapper-integration defect; reference values or tolerances
 must never be changed merely to obtain PASS.
 
+## DEF01-DEF04: canonical defaults, scope, and resolved metadata
+
+`swcme_defaults.hpp` owns every dimensionality-independent default used by the
+1-D and 3-D public parameter structures.  These tests are release guards: a
+change to a science default must be deliberate, documented, and changed in one
+place rather than drifting independently between the two interfaces.
+
+- `DEF01` compares all shared default ambient, kinematic, source, region,
+  smoothing, sheath, and ejecta values between default-constructed 1-D and 3-D
+  `Params`.  It also checks that the DBM reference radius and 1-AU density come
+  from the canonical default constants.
+- `DEF02` verifies the declared science convention: `SHOCK_ONLY + SOURCE` maps
+  to `CONTROLLED_SEP_PRE_SHOCK`, the default 3-D geometry is finite `SSE`, the
+  Parker normalization is total positive |B| at the equatorial 1-AU reference,
+  radial polarity is outward, and the baseline frame name is stable.
+- `DEF03` verifies observer-local scope gating.  A pre-shock observer is in the
+  controlled Parker scope; after the modeled front reaches that observer the
+  status is explicitly out of scope.  A late-time observer outside a finite SSE
+  angular cap remains in scope because no front exists on that ray.
+- `DEF04` verifies deterministic complete resolved-configuration serialization.
+  Common fields, model-specific geometry, data-table counts, compatibility
+  parameters, derived scope, and explicit event overrides must all appear.  The
+  serialization is repeated byte-for-byte to guard deterministic campaign
+  manifests/hashes.
+
+Tests that exercise the optional `FULL_ICME/RESOLVED_COMPRESSION` path set both
+options explicitly; they no longer inherit that behavior from defaults.  This is
+important because a verification fixture should declare when it is testing an
+optional phenomenological model rather than the controlled SEP baseline.
+
 ## DEN01: Leblanc density normalization at the reference distance
 
 DEN01 is a `COMMON` physics/implementation test of the defining normalization

@@ -26,9 +26,11 @@ There are no independent source/compression enable booleans.  The enum is the
 single source of truth.
 
 `Params::shock_acceleration_mode` is available in both dimensional interfaces.
-The default is `ResolvedCompression` so existing FULL_ICME configurations retain
-a downstream flow representation, but now with a controlled finite-width shock
-instead of an unresolved discontinuity in the transport field.
+Fix 10 originally retained `ResolvedCompression` as the compatibility default.
+Fix 14 subsequently standardized the science baseline: the canonical default is
+now `SOURCE` together with `SHOCK_ONLY`.  `ResolvedCompression` remains the
+explicit `FULL_ICME_DIAGNOSTIC` alternative.  The mutual-exclusion physics and
+smoothing implementation described in this note are unchanged.
 
 ## 2. Safe mode/region combinations
 

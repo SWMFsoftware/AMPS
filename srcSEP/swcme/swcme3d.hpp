@@ -2,6 +2,7 @@
 
 #include "swcme_constants.hpp"
 #include "swcme_units.hpp"
+#include "swcme_defaults.hpp"
 #include "swcme_status.hpp"
 #include "swcme_divergence.hpp"
 #include "swcme_config.hpp"
@@ -132,6 +133,9 @@
 
 #include <vector>
 #include <cstddef>
+#include <string>
+#include <sstream>
+#include <iomanip>
 
 namespace swcme3d {
 
@@ -160,19 +164,28 @@ extern const double PI;  // π
 // ----------------------------------------------------------------------------
 enum class ShockShape { Sphere = 0, Ellipsoid = 1, SSE = 2, ConeSSE = SSE };
 
+inline const char* shock_shape_name(ShockShape shape) {
+  switch (shape) {
+    case ShockShape::Sphere: return "SPHERE";
+    case ShockShape::Ellipsoid: return "ELLIPSOID";
+    case ShockShape::SSE: return "SSE";
+  }
+  return "UNKNOWN";
+}
+
 // ----------------------------------------------------------------------------
 // Parameter pack (set at construction). All are read-only thereafter.
 // Values are consumed by prepare_step(t) which builds the StepState cache.
 // ----------------------------------------------------------------------------
 struct Params {
   // Geometry & orientation
-  ShockShape shape = ShockShape::Sphere;
-  double axis_ratio_y = 1.0;               // Ellipsoid b/a (e2-axis)
-  double axis_ratio_z = 1.0;               // Ellipsoid c/a (e3-axis)
+  ShockShape shape = ShockShape::SSE;
+  double axis_ratio_y = swcme::defaults::ELLIPSOID_AXIS_RATIO_Y;               // Ellipsoid b/a (e2-axis)
+  double axis_ratio_z = swcme::defaults::ELLIPSOID_AXIS_RATIO_Z;               // Ellipsoid c/a (e3-axis)
   // Angular half width of the finite SSE cap [rad].  For the science
   // geometry the supported range is 0 < lambda <= pi/2.  The surface exists
   // only for directions whose angular separation from cme_dir is <= lambda.
-  double half_width_rad = 40.0*PI/180.0;
+  double half_width_rad = swcme::defaults::SSE_HALF_WIDTH_RAD;
 
   // DEPRECATED compatibility field.  Older ConeSSE code used this exponent in
   // R(theta)=R_apex*cos(theta)^m and also applied it a second time to the flank
@@ -197,7 +210,7 @@ struct Params {
   // convention.  Keeping it explicit allows the Omega->0 radial-field limit to
   // be verified without altering global constants or introducing a separate
   // test-only field-line equation.
-  double solar_rotation_rate_rad_s = swcme::constants::SOLAR_ROTATION_RAD_S;
+  double solar_rotation_rate_rad_s = swcme::defaults::SOLAR_ROTATION_RATE_RAD_S;
 
   // Legacy/reference normalization latitude for B1AU_nT ONLY.  This value no
   // longer controls the local 3-D Parker pitch.  It specifies the sine of the
@@ -206,16 +219,16 @@ struct Params {
   // their 1-AU normalization, while every evaluated point now uses its own
   // geometrically correct local sin(theta).  A future API cleanup may rename
   // this field once backward compatibility is no longer required.
-  double sin_theta  = 1.0;
+  double sin_theta  = swcme::defaults::PARKER_REFERENCE_SIN_THETA;
 
   // CME/shock-apex kinematics.  The same shared common implementation is
   // consumed by swcme1d, so identical inputs produce identical apex radius
   // and speed in both dimensional interfaces.  DBM remains the default mode.
-  swcme::kinematics::Mode kinematics_mode = swcme::kinematics::Mode::DBM;
-  double r0_Rs       = 20.0;               // DBM/ballistic reference radius [Rs]
-  double V0_sh_kms   = 1500;               // initial/reference shock speed [km/s]
-  double V_sw_kms    = 400;                // ambient SW speed [km/s]
-  double Gamma_kmInv = 1e-7;               // DBM drag parameter Γ [km^-1], >=0
+  swcme::kinematics::Mode kinematics_mode = swcme::defaults::KINEMATICS_MODE;
+  double r0_Rs       = swcme::defaults::DBM_R0_RS;               // DBM/ballistic reference radius [Rs]
+  double V0_sh_kms   = swcme::defaults::V0_SH_KMS;               // initial/reference shock speed [km/s]
+  double V_sw_kms    = swcme::defaults::V_SW_KMS;                // ambient SW speed [km/s]
+  double Gamma_kmInv = swcme::defaults::DBM_GAMMA_KM_INV;               // DBM drag parameter Γ [km^-1], >=0
 
   // DATA_DRIVEN mode: strictly increasing times [s] and nondecreasing apex
   // radii [Rs].  A monotone PCHIP passes exactly through every knot and its
@@ -224,52 +237,109 @@ struct Params {
   std::vector<double> data_time_s;
   std::vector<double> data_radius_Rs;
   swcme::kinematics::ExtrapolationPolicy data_extrapolation =
-      swcme::kinematics::ExtrapolationPolicy::OutsideTime;
+      swcme::defaults::DATA_EXTRAPOLATION;
 
   // Ambient SW scalings at 1 AU
-  double n1AU_cm3 = 5.0;                   // upstream density at 1 AU [cm^-3]
-  double B1AU_nT  = 5.0;                   // |B|(1 AU) [nT] at reference sin_theta above
-  double T_K      = 1.2e5;                 // proton temperature [K]
-  double gamma_ad = 5.0/3.0;               // adiabatic index
+  double n1AU_cm3 = swcme::defaults::N1AU_CM3;                   // upstream density at 1 AU [cm^-3]
+  double B1AU_nT  = swcme::defaults::B1AU_TOTAL_NT;                   // |B|(1 AU) [nT] at reference sin_theta above
+  double T_K      = swcme::defaults::T_K;                 // proton temperature [K]
+  double gamma_ad = swcme::defaults::GAMMA_AD;               // adiabatic index
 
-  // Region mode. FULL_ICME evaluates the phenomenological sheath/ejecta;
-  // SHOCK_ONLY leaves the Parker/Leblanc background unchanged everywhere and
-  // uses the shock only for geometry/source bookkeeping.
-  swcme::regions::Mode region_mode = swcme::regions::Mode::FullICME;
+  // Region mode.  The canonical science default is SHOCK_ONLY: the
+  // Parker/Leblanc background is left unchanged and the shock is used for
+  // geometry/connectivity/source bookkeeping. FULL_ICME is an explicit
+  // phenomenological diagnostic override.
+  swcme::regions::Mode region_mode = swcme::defaults::REGION_MODE;
 
-  // Mutually exclusive shock-acceleration representation.  The default keeps
-  // the legacy FULL_ICME use case but now resolves its compression with one
-  // common C1 profile.  SOURCE is the recommended controlled SEP baseline and
-  // is validated only together with SHOCK_ONLY so DSA is not counted twice.
+  // Mutually exclusive shock-acceleration representation. SOURCE is the
+  // canonical controlled-SEP default and is validated with SHOCK_ONLY.
+  // RESOLVED_COMPRESSION is an explicit FULL_ICME diagnostic override.
   swcme::acceleration::Mode shock_acceleration_mode =
-      swcme::acceleration::Mode::ResolvedCompression;
-  double relative_source_weight_per_area = 1.0;
+      swcme::defaults::ACCELERATION_MODE;
+  double relative_source_weight_per_area = swcme::defaults::RELATIVE_SOURCE_WEIGHT_PER_AREA;
 
   // Self-similar radial thicknesses. Values are AU at a 1-AU shock and thus
   // dimensionless fractions when scaled to each local shock-surface radius.
-  double sheath_thick_AU_at1AU = 0.1;      // sheath thickness at 1 AU [AU]
-  double ejecta_thick_AU_at1AU = 0.2;      // ejecta thickness at 1 AU [AU]
+  double sheath_thick_AU_at1AU = swcme::defaults::SHEATH_THICK_AU_AT_1AU;      // sheath thickness at 1 AU [AU]
+  double ejecta_thick_AU_at1AU = swcme::defaults::EJECTA_THICK_AU_AT_1AU;      // ejecta thickness at 1 AU [AU]
 
   // Edge smoothing (C^1 smoothstep) widths, scale ∝ local R_sh.  The shock
   // width is used only by RESOLVED_COMPRESSION; SOURCE is paired with
   // SHOCK_ONLY and therefore contributes no resolved compression to V(x,t).
-  double edge_smooth_shock_AU_at1AU = 0.01;
-  double edge_smooth_le_AU_at1AU    = 0.02; // sheath→ejecta leading edge
-  double edge_smooth_te_AU_at1AU    = 0.03; // ejecta→downstream trailing edge
+  double edge_smooth_shock_AU_at1AU = swcme::defaults::EDGE_SMOOTH_SHOCK_AU_AT_1AU;
+  double edge_smooth_le_AU_at1AU    = swcme::defaults::EDGE_SMOOTH_LE_AU_AT_1AU; // sheath→ejecta leading edge
+  double edge_smooth_te_AU_at1AU    = swcme::defaults::EDGE_SMOOTH_TE_AU_AT_1AU; // ejecta→downstream trailing edge
 
   // Target speeds in regions (relative to upstream V_sw)
-  double V_sheath_LE_factor = 1.1;        // sheath speed at LE = factor*V_sw
-  double V_ME_factor        = 0.8;        // ejecta speed (bulk) = factor*V_sw
+  double V_sheath_LE_factor = swcme::defaults::V_SHEATH_LE_FACTOR;        // sheath speed at LE = factor*V_sw
+  double V_ME_factor        = swcme::defaults::V_ME_FACTOR;        // ejecta speed (bulk) = factor*V_sw
 
   // Sheath shaping
-  double sheath_ramp_power  = 2.0;        // ≥1, steeper density jump near shock
+  double sheath_ramp_power  = swcme::defaults::SHEATH_RAMP_POWER;        // ≥1, steeper density jump near shock
   // Deprecated compatibility parameter: no longer used by shock or region
   // physics.  The MHD RH solver alone determines physical compression.
-  double sheath_comp_floor  = 1.2;
+  double sheath_comp_floor  = swcme::defaults::SHEATH_COMP_FLOOR_COMPAT;
 
   // Ejecta density factor (relative to upstream)
-  double f_ME = 0.5;                      // n_ejecta = f_ME * n_up
+  double f_ME = swcme::defaults::F_ME;                      // n_ejecta = f_ME * n_up
 };
+
+// Deterministic complete 3-D resolved-configuration record.  It includes
+// inactive/deprecated compatibility fields as well as the active science
+// options so event-specific overrides remain auditable in validation output.
+inline std::string resolved_configuration_manifest(const Params& p) {
+  std::ostringstream out;
+  out << std::setprecision(17) << std::scientific;
+  out << "swcme_config_version=" << swcme::defaults::CONFIG_VERSION << '\n';
+  out << "model=3D\n";
+  out << "frame=" << swcme::defaults::FRAME_NAME << '\n';
+  out << "model_scope=" << swcme::defaults::model_scope_name(
+      swcme::defaults::model_scope(p.region_mode, p.shock_acceleration_mode)) << '\n';
+  out << "parker_normalization="
+      << swcme::defaults::PARKER_NORMALIZATION_CONVENTION << '\n';
+  out << "parker_radial_polarity=" << swcme::defaults::PARKER_RADIAL_POLARITY << '\n';
+  out << "shape=" << shock_shape_name(p.shape) << '\n';
+  out << "axis_ratio_y=" << p.axis_ratio_y << '\n';
+  out << "axis_ratio_z=" << p.axis_ratio_z << '\n';
+  out << "half_width_rad=" << p.half_width_rad << '\n';
+  out << "flank_slowdown_m=" << p.flank_slowdown_m << '\n';
+  for (int i=0; i<3; ++i) out << "cme_dir[" << i << "]=" << p.cme_dir[i] << '\n';
+  for (int i=0; i<3; ++i) out << "solar_rotation_axis[" << i << "]=" << p.solar_rotation_axis[i] << '\n';
+  out << "solar_rotation_rate_rad_s=" << p.solar_rotation_rate_rad_s << '\n';
+  out << "sin_theta=" << p.sin_theta << '\n';
+  out << "kinematics_mode=" << swcme::defaults::kinematics_mode_name(p.kinematics_mode) << '\n';
+  out << "r0_Rs=" << p.r0_Rs << '\n';
+  out << "V0_sh_kms=" << p.V0_sh_kms << '\n';
+  out << "V_sw_kms=" << p.V_sw_kms << '\n';
+  out << "Gamma_kmInv=" << p.Gamma_kmInv << '\n';
+  out << "data_extrapolation="
+      << swcme::defaults::extrapolation_policy_name(p.data_extrapolation) << '\n';
+  out << "data_time_s.count=" << p.data_time_s.size() << '\n';
+  for (std::size_t i=0; i<p.data_time_s.size(); ++i)
+    out << "data_time_s[" << i << "]=" << p.data_time_s[i] << '\n';
+  out << "data_radius_Rs.count=" << p.data_radius_Rs.size() << '\n';
+  for (std::size_t i=0; i<p.data_radius_Rs.size(); ++i)
+    out << "data_radius_Rs[" << i << "]=" << p.data_radius_Rs[i] << '\n';
+  out << "n1AU_cm3=" << p.n1AU_cm3 << '\n';
+  out << "B1AU_nT=" << p.B1AU_nT << '\n';
+  out << "T_K=" << p.T_K << '\n';
+  out << "gamma_ad=" << p.gamma_ad << '\n';
+  out << "region_mode=" << swcme::defaults::region_mode_name(p.region_mode) << '\n';
+  out << "shock_acceleration_mode="
+      << swcme::defaults::acceleration_mode_name(p.shock_acceleration_mode) << '\n';
+  out << "relative_source_weight_per_area=" << p.relative_source_weight_per_area << '\n';
+  out << "sheath_thick_AU_at1AU=" << p.sheath_thick_AU_at1AU << '\n';
+  out << "ejecta_thick_AU_at1AU=" << p.ejecta_thick_AU_at1AU << '\n';
+  out << "edge_smooth_shock_AU_at1AU=" << p.edge_smooth_shock_AU_at1AU << '\n';
+  out << "edge_smooth_le_AU_at1AU=" << p.edge_smooth_le_AU_at1AU << '\n';
+  out << "edge_smooth_te_AU_at1AU=" << p.edge_smooth_te_AU_at1AU << '\n';
+  out << "V_sheath_LE_factor=" << p.V_sheath_LE_factor << '\n';
+  out << "V_ME_factor=" << p.V_ME_factor << '\n';
+  out << "sheath_ramp_power=" << p.sheath_ramp_power << '\n';
+  out << "sheath_comp_floor=" << p.sheath_comp_floor << '\n';
+  out << "f_ME=" << p.f_ME << '\n';
+  return out.str();
+}
 
 // Validate the complete 3-D public parameter pack before any basis
 // normalization or field/shock calculation.  Common plasma, kinematic, and
@@ -343,7 +413,7 @@ struct StepState {
 
   // Apex kinematics & scale.  kinematics_mode records the common solver that
   // generated the step state and is useful when archiving validation metadata.
-  swcme::kinematics::Mode kinematics_mode = swcme::kinematics::Mode::DBM;
+  swcme::kinematics::Mode kinematics_mode = swcme::defaults::KINEMATICS_MODE;
   double time_s = 0.0;     // time since launch [s]
   double r_sh_m = 0.0;    // shock apex radius [m]
   double V_sh_ms= 0.0;    // shock apex speed [m/s]
@@ -393,7 +463,7 @@ struct StepState {
   // removes the old incorrect assumption of one fixed latitude throughout
   // the 3-D domain.
   double solar_axis_hat[3] = {0.0,0.0,1.0};
-  double solar_rotation_rate_rad_s = swcme::constants::SOLAR_ROTATION_RAD_S;
+  double solar_rotation_rate_rad_s = swcme::defaults::SOLAR_ROTATION_RATE_RAD_S;
   double k_AU = 0.0;
   double Br1AU_T = 0.0;   // Br at 1 AU [T], normalized using Params::sin_theta as reference latitude
 
@@ -611,6 +681,23 @@ public:
   // Side-effect-free validation entry point used by CFG01 and prepare_step().
   // Callers can inspect all invalid fields before starting a simulation.
   swcme::config::ValidationResult validate() const { return validate_params(P_); }
+
+  // Scope is derived from the region/acceleration pair rather than stored as
+  // another independent option.  This prevents metadata from claiming a
+  // controlled SOURCE run while the transport field actually contains a
+  // resolved FULL_ICME compression.
+  swcme::defaults::ModelScope model_scope() const {
+    return swcme::defaults::model_scope(P_.region_mode,
+                                        P_.shock_acceleration_mode);
+  }
+
+  // Observer-local scope check. For the default CONTROLLED_SEP_PRE_SHOCK
+  // configuration, the analytical Parker background is in scope only until
+  // the finite shock front reaches that observer direction/radius. If a finite
+  // SSE cap does not intersect the observer ray, the Parker background remains
+  // in scope on that ray.
+  swcme::defaults::ObserverScopeStatus observer_scope_status(
+      const StepState& S, const double observer_m[3]) const;
 
   // Build time-dependent state (and caches) for time t_s [s].
   StepState prepare_step(double t_s) const;

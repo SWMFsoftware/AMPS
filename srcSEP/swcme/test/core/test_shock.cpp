@@ -225,6 +225,11 @@ void test_shk06(swcme_test::Context& context){
   swcme3d::Params p;
   p.shape=swcme3d::ShockShape::Sphere; p.r0_Rs=20.0; p.V0_sh_kms=1200.0;
   p.V_sw_kms=400.0; p.Gamma_kmInv=1e-8; p.sin_theta=1.0;
+  // The canonical default is SOURCE/SHOCK_ONLY after Fix 14. This test is
+  // specifically a resolved-compression integration check, so both members of
+  // the alternative FULL_ICME/RESOLVED_COMPRESSION pair are explicit.
+  p.region_mode=swcme::regions::Mode::FullICME;
+  p.shock_acceleration_mode=swcme::acceleration::Mode::ResolvedCompression;
   const swcme3d::Model m(p); const auto s=m.prepare_step(0.0);
   const double u[3]={1,0,0}; swcme3d::LocalShockState js;
   context.expect_true(m.shock_state_direction(s,u,js)&&js.has_shock&&js.solver_converged,

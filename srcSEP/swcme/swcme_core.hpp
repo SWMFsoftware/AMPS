@@ -14,6 +14,7 @@
 // ============================================================================
 
 #include "swcme_kinematics.hpp"
+#include "swcme_defaults.hpp"
 #include "swcme_solarwind.hpp"
 #include "swcme_units.hpp"
 
@@ -24,24 +25,24 @@ namespace core {
 
 struct CommonConfig {
   // Ambient public units.
-  double V_sw_kms = 400.0;
-  double n1AU_cm3 = 5.0;
-  double B1AU_nT = 5.0;
-  double T_K = 1.2e5;
-  double gamma_ad = 5.0 / 3.0;
-  double parker_reference_sin_theta = 1.0;
+  double V_sw_kms = swcme::defaults::V_SW_KMS;
+  double n1AU_cm3 = swcme::defaults::N1AU_CM3;
+  double B1AU_nT = swcme::defaults::B1AU_TOTAL_NT;
+  double T_K = swcme::defaults::T_K;
+  double gamma_ad = swcme::defaults::GAMMA_AD;
+  double parker_reference_sin_theta = swcme::defaults::PARKER_REFERENCE_SIN_THETA;
   double solar_rotation_rate_rad_s =
-      swcme::constants::SOLAR_ROTATION_RAD_S;
+      swcme::defaults::SOLAR_ROTATION_RATE_RAD_S;
 
   // Common apex kinematics public units.
-  swcme::kinematics::Mode kinematics_mode = swcme::kinematics::Mode::DBM;
-  double r0_Rs = 20.0;
-  double V0_sh_kms = 1500.0;
-  double Gamma_kmInv = 1.0e-7;
+  swcme::kinematics::Mode kinematics_mode = swcme::defaults::KINEMATICS_MODE;
+  double r0_Rs = swcme::defaults::DBM_R0_RS;
+  double V0_sh_kms = swcme::defaults::V0_SH_KMS;
+  double Gamma_kmInv = swcme::defaults::DBM_GAMMA_KM_INV;
   std::vector<double> data_time_s;
   std::vector<double> data_radius_Rs;
   swcme::kinematics::ExtrapolationPolicy data_extrapolation =
-      swcme::kinematics::ExtrapolationPolicy::OutsideTime;
+      swcme::defaults::DATA_EXTRAPOLATION;
 };
 
 struct PreparedState {

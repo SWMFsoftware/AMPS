@@ -246,6 +246,7 @@ void test_reg04(swcme_test::Context& context) {
   p.solar_rotation_axis[0]=0.0; p.solar_rotation_axis[1]=0.0;
   p.solar_rotation_axis[2]=1.0;
   p.region_mode=swcme::regions::Mode::FullICME;
+  p.shock_acceleration_mode=swcme::acceleration::Mode::ResolvedCompression;
   p.sheath_thick_AU_at1AU=0.12;
   p.ejecta_thick_AU_at1AU=0.28;
   const swcme3d::Model m(p);

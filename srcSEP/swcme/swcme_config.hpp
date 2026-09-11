@@ -24,6 +24,7 @@
 #include "swcme_kinematics.hpp"
 #include "swcme_regions.hpp"
 #include "swcme_acceleration.hpp"
+#include "swcme_defaults.hpp"
 
 #include <cmath>
 #include <sstream>
@@ -160,17 +161,18 @@ struct CommonConfigView {
   double gamma_ad = 0.0;
   double sin_theta = 0.0;
 
-  swcme::kinematics::Mode kinematics_mode = swcme::kinematics::Mode::DBM;
+  swcme::kinematics::Mode kinematics_mode = swcme::defaults::KINEMATICS_MODE;
   double r0_Rs = 0.0;
   double V0_sh_kms = 0.0;
   double Gamma_kmInv = 0.0;
   const std::vector<double>* data_time_s = nullptr;
   const std::vector<double>* data_radius_Rs = nullptr;
 
-  swcme::regions::Mode region_mode = swcme::regions::Mode::FullICME;
+  swcme::regions::Mode region_mode = swcme::defaults::REGION_MODE;
   swcme::acceleration::Mode acceleration_mode =
-      swcme::acceleration::Mode::ResolvedCompression;
-  double relative_source_weight_per_area = 1.0;
+      swcme::defaults::ACCELERATION_MODE;
+  double relative_source_weight_per_area =
+      swcme::defaults::RELATIVE_SOURCE_WEIGHT_PER_AREA;
   double sheath_thick_AU_at1AU = 0.0;
   double ejecta_thick_AU_at1AU = 0.0;
   double edge_smooth_shock_AU_at1AU = 0.0;

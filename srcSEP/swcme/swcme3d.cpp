@@ -382,6 +382,35 @@ namespace swcme3d {
 
 Model::Model(const Params& P): P_(P) {}
 
+swcme::defaults::ObserverScopeStatus Model::observer_scope_status(
+    const StepState& S, const double observer_m[3]) const {
+  // Keep scope bookkeeping side-effect free and geometry-consistent: the
+  // observer direction is tested against the same production surface routine
+  // used by connectivity and shock diagnostics.  No angular-width shortcut or
+  // apex-radius proxy is used here.
+  if (observer_m == nullptr || !finite3(observer_m)) {
+    return swcme::defaults::observer_scope_status(
+        P_.region_mode, P_.shock_acceleration_mode, false, 0.0,
+        std::numeric_limits<double>::quiet_NaN());
+  }
+
+  const double r_obs = norm3(observer_m);
+  if (!std::isfinite(r_obs) || !(r_obs > 0.0)) {
+    return swcme::defaults::observer_scope_status(
+        P_.region_mode, P_.shock_acceleration_mode, false, 0.0, r_obs);
+  }
+
+  const double inv_r = 1.0 / r_obs;
+  const double u[3] = {observer_m[0] * inv_r, observer_m[1] * inv_r,
+                       observer_m[2] * inv_r};
+  double Rdir = 0.0;
+  double n_hat[3] = {0.0, 0.0, 0.0};
+  const bool exists = shape_radius_normal(S, u[0], u[1], u[2],
+                                          Rdir, n_hat);
+  return swcme::defaults::observer_scope_status(
+      P_.region_mode, P_.shock_acceleration_mode, exists, Rdir, r_obs);
+}
+
 StepState Model::prepare_step(double t_s) const {
   // Reject invalid configuration once, before any vector normalization, unit
   // conversion, or finite-value fallback can transform the caller's input.
