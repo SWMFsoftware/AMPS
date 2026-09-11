@@ -1091,6 +1091,9 @@ public:
   //    and inspect write, flush, stream-error, and close results.  Their final
   //    optional FileOperations pointer is a deterministic validation seam;
   //    normal callers omit it to select the production stdio backend.
+  //  • OUT03 stages each validated product beside its destination and commits
+  //    it by atomic rename only after close succeeds. FILE_COMMIT_FAILURE
+  //    leaves an existing regular destination unchanged.
   // --------------------------------------------------------------------------
   swcme::ModelStatus write_tecplot_dataset_bundle_checked(
                                     const ShockMesh& M,const TriMetrics& T,

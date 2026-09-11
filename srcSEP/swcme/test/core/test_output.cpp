@@ -5,6 +5,9 @@
 #include <swcme_output.hpp>
 
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <string>
 #include <vector>
@@ -17,31 +20,55 @@ namespace {
 // an exact byte.  Counters also prove that cleanup still closes the handle.
 struct FaultSink {
   bool fail_open=false;
+  unsigned open_failures_remaining=0;
   std::size_t fail_after_bytes=std::numeric_limits<std::size_t>::max();
   bool fail_flush=false;
   bool report_stream_error=false;
   bool fail_close=false;
+  bool fail_commit=false;
+  bool fail_remove=false;
   bool opened=false;
+  unsigned open_attempts=0;
   bool flushed=false;
   bool closed=false;
+  bool commit_called=false;
+  bool remove_called=false;
   std::size_t accepted_bytes=0;
+  std::string opened_path;
+  std::string opened_mode;
+  std::string committed_destination;
+  std::string temporary_bytes;
+  std::string destination_bytes="PREVIOUS-COMPLETE-OUTPUT\n";
 };
 
 // These callbacks deliberately use only the public FileOperations ABI.  The
 // model writers therefore see exactly the same call sequence as production
 // stdio without test-only branches in CheckedTextFile or the physics models.
-void* fault_open(void* user_data,const char*,const char*) {
+void* fault_open(void* user_data,const char* path,const char* mode) {
   FaultSink& sink=*static_cast<FaultSink*>(user_data);
+  ++sink.open_attempts;
   if (sink.fail_open) return nullptr;
+  if (sink.open_failures_remaining>0) {
+    --sink.open_failures_remaining;
+    return nullptr;
+  }
   sink.opened=true;
+  sink.opened_path=path ? path : "";
+  sink.opened_mode=mode ? mode : "";
+  sink.temporary_bytes.clear();
   return &sink;
 }
 
-std::size_t fault_write(void* user_data,void*,const char*,std::size_t count) {
+std::size_t fault_write(void* user_data,void*,const char* bytes,
+                        std::size_t count) {
   FaultSink& sink=*static_cast<FaultSink*>(user_data);
   if (sink.accepted_bytes>=sink.fail_after_bytes) return 0;
   const std::size_t capacity=sink.fail_after_bytes-sink.accepted_bytes;
   const std::size_t accepted=count<capacity ? count : capacity;
+  // Retain exactly the accepted prefix so OUT03 can verify that commit sees a
+  // complete staged product and that failure cleanup never modifies the
+  // simulated pre-existing destination.
+  sink.temporary_bytes.append(bytes,accepted);
   sink.accepted_bytes+=accepted;
   return accepted;
 }
@@ -63,11 +90,30 @@ int fault_close(void* user_data,void*) {
   return sink.fail_close ? -1 : 0;
 }
 
+int fault_commit(void* user_data,const char*,const char* destination_path) {
+  FaultSink& sink=*static_cast<FaultSink*>(user_data);
+  sink.commit_called=true;
+  sink.committed_destination=destination_path ? destination_path : "";
+  if (sink.fail_commit) return -1;
+  sink.destination_bytes=sink.temporary_bytes;
+  sink.temporary_bytes.clear();
+  return 0;
+}
+
+int fault_remove(void* user_data,const char*) {
+  FaultSink& sink=*static_cast<FaultSink*>(user_data);
+  sink.remove_called=true;
+  if (sink.fail_remove) return -1;
+  sink.temporary_bytes.clear();
+  return 0;
+}
+
 swcme::output::FileOperations operations_for(FaultSink& sink) {
   // Returning the table by value is intentional: CheckedTextFile copies the
   // callback pointers and user-data address, so no global mutable test state
   // is shared across cases or future parallel test execution.
-  return {&sink,fault_open,fault_write,fault_flush,fault_error,fault_close};
+  return {&sink,fault_open,fault_write,fault_flush,fault_error,fault_close,
+          fault_commit,fault_remove};
 }
 
 struct OneDimensionalFixture {
@@ -158,14 +204,30 @@ void expect_write_failure(swcme_test::Context& context,
                       label+" summary prints the byte offset");
 }
 
-template <typename Writer>
-void expect_dev_full_failure(swcme_test::Context& context,Writer&& writer,
-                             const std::string& label) {
-  const swcme::ModelStatus status=writer();
-  context.expect_true(status.code==swcme::StatusCode::FileWriteFailure,
-                      label+" detects /dev/full write failure");
-  context.expect_true(status.has_io_byte_offset,
-                      label+" reports /dev/full byte context");
+std::string read_file(const std::filesystem::path& path) {
+  std::ifstream input(path,std::ios::binary);
+  return std::string(std::istreambuf_iterator<char>(input),
+                     std::istreambuf_iterator<char>());
+}
+
+void write_file(const std::filesystem::path& path,const std::string& bytes) {
+  std::ofstream output(path,std::ios::binary|std::ios::trunc);
+  output << bytes;
+}
+
+std::size_t count_staging_files(const std::filesystem::path& destination) {
+  // Transaction names are siblings formed from the destination filename, so
+  // a directory scan can detect leaked staging files without depending on the
+  // process-global sequence number used to make each name unique.
+  const std::filesystem::path directory=destination.parent_path().empty()
+      ? std::filesystem::path(".") : destination.parent_path();
+  const std::string prefix=destination.filename().string()+".swcme-tmp-";
+  std::size_t count=0;
+  for (const std::filesystem::directory_entry& entry :
+       std::filesystem::directory_iterator(directory)) {
+    if (entry.path().filename().string().rfind(prefix,0)==0) ++count;
+  }
+  return count;
 }
 
 }  // namespace
@@ -173,8 +235,8 @@ void expect_dev_full_failure(swcme_test::Context& context,Writer&& writer,
 // OUT02: every output layer must distinguish open failure from data-loss
 // failure and must inspect delayed stdio failures at flush, stream-error, and
 // close.  The injected matrix checks exact diagnostics; /dev/full then proves
-// the production stdio backend propagates a real operating-system failure for
-// every public Tecplot product.
+// the production stdio backend propagates a real operating-system failure at
+// the shared byte-stream layer used beneath every public Tecplot product.
 void test_out02(swcme_test::Context& context) {
   std::cout << "OUT02 write failure detection and propagation\n";
   OneDimensionalFixture one;
@@ -280,54 +342,239 @@ void test_out02(swcme_test::Context& context) {
   context.expect_true(close_failure.closed,
                       "failed close was attempted exactly at cleanup");
 
-  // /dev/full is the operating-system integration check for buffered stdio:
-  // writes may appear successful until fflush, so a passing result here proves
-  // production code checks more than fopen and formatted-write return values.
+  // /dev/full is tested directly at the shared stream layer.  OUT03 model
+  // writers stage regular files rather than opening their public destination,
+  // so attempting to route them through a device would test commit policy
+  // instead of the buffered-write failure that OUT02 is designed to isolate.
   std::FILE* full_probe=std::fopen("/dev/full","w");
   if (!full_probe) {
     context.record_skip();
   } else {
     (void)std::fclose(full_probe);
-    expect_dev_full_failure(context,[&] {
-      return one.model.write_tecplot_radial_profile_checked(
-          one.step,&one.radius,&one.density,&one.velocity,&one.radial_field,
-          &one.azimuthal_field,&one.field_magnitude,&one.divergence,1,
-          "/dev/full",0.0);
-    },"1-D radial profile");
-    expect_dev_full_failure(context,[&] {
-      return one.model.write_tecplot_shock_vs_time_checked(10.0,2,"/dev/full");
-    },"1-D shock history");
-    expect_dev_full_failure(context,[&] {
-      return three.model.write_shock_surface_center_metrics_tecplot_checked(
-          three.mesh,three.metrics,"/dev/full");
-    },"3-D surface");
-    expect_dev_full_failure(context,[&] {
-      return three.model.write_tecplot_dataset_bundle_checked(
-          three.mesh,three.metrics,three.step,three.box,"/dev/full");
-    },"3-D dataset bundle");
-    expect_dev_full_failure(context,[&] {
-      return three.model.write_box_face_minX_tecplot_structured_checked(
-          three.step,three.box,"/dev/full");
-    },"3-D box face");
-
-    // The source-compatible bool APIs intentionally discard detailed status,
-    // but they must still delegate to the checked implementation and return
-    // false rather than reproducing the historical false-success behavior.
-    context.expect_true(!one.model.write_tecplot_radial_profile(
-        one.step,&one.radius,&one.density,&one.velocity,&one.radial_field,
-        &one.azimuthal_field,&one.field_magnitude,&one.divergence,1,
-        "/dev/full",0.0),"legacy 1-D radial writer rejects /dev/full");
-    context.expect_true(!one.model.write_tecplot_shock_vs_time(
-        10.0,2,"/dev/full"),"legacy 1-D history writer rejects /dev/full");
+    swcme::output::CheckedTextFile full_output(
+        swcme::output::stdio_file_operations());
+    context.expect_true(full_output.open("/dev/full"),
+                        "/dev/full opens for the OUT02 stream probe");
+    (void)full_output.print("OUT02 /dev/full record",0,
+                            "buffered output probe %d\n",42);
+    const swcme::ModelStatus full_status=full_output.finish(
+        "OUT02 /dev/full flush","OUT02 /dev/full stream error",
+        "OUT02 /dev/full close");
     context.expect_true(
-        !three.model.write_shock_surface_center_metrics_tecplot(
-            three.mesh,three.metrics,"/dev/full"),
-        "legacy 3-D surface writer rejects /dev/full");
-    context.expect_true(!three.model.write_tecplot_dataset_bundle(
-        three.mesh,three.metrics,three.step,three.box,"/dev/full"),
-        "legacy 3-D bundle writer rejects /dev/full");
-    context.expect_true(!three.model.write_box_face_minX_tecplot_structured(
-        three.step,three.box,"/dev/full"),
-        "legacy 3-D face writer rejects /dev/full");
+        full_status.code==swcme::StatusCode::FileWriteFailure &&
+            full_status.has_io_byte_offset,
+        "stdio stream detects delayed /dev/full failure");
   }
+}
+
+// OUT03: public products are invisible until every byte and lifecycle check
+// succeeds.  The deterministic backend proves commit ordering and preservation
+// without timing assumptions; real-filesystem checks then verify replacement
+// and cleanup behavior with the production backend.
+void test_out03(swcme_test::Context& context) {
+  std::cout << "OUT03 transactional output commit\n";
+  OneDimensionalFixture one;
+  ThreeDimensionalFixture three;
+  const std::string sentinel="PREVIOUS-COMPLETE-OUTPUT\n";
+
+  FaultSink success;
+  success.destination_bytes=sentinel;
+  swcme::output::FileOperations success_ops=operations_for(success);
+  swcme::ModelStatus status=one.write(success_ops);
+  context.expect_true(status.ok() && success.commit_called,
+                      "complete staged output is committed exactly once");
+  context.expect_true(success.opened_mode=="wx" &&
+                          success.opened_path.find(
+                              "unused-injected-output.dat.swcme-tmp-")==0,
+                      "writer exclusively opens a same-directory staging name");
+  context.expect_true(success.committed_destination==
+                          "unused-injected-output.dat" &&
+                          success.destination_bytes.find(
+                              "TITLE=\"1D SW+CME radial profile\"")==0,
+                      "commit replaces the destination with complete output");
+  context.expect_true(!success.remove_called && success.temporary_bytes.empty(),
+                      "successful commit needs no failure cleanup");
+
+  FaultSink collision;
+  collision.destination_bytes=sentinel;
+  collision.open_failures_remaining=1;
+  swcme::output::FileOperations collision_ops=operations_for(collision);
+  status=one.write(collision_ops);
+  context.expect_true(status.ok() && collision.open_attempts==2 &&
+                          collision.commit_called,
+                      "exclusive staging retries after one name collision");
+
+  // Exercise every remaining public product through the injected transaction
+  // boundary.  The detailed ordering checks above need not be duplicated, but
+  // each writer must demonstrably request commit after producing nonempty data.
+  FaultSink history_success;
+  swcme::output::FileOperations history_success_ops=
+      operations_for(history_success);
+  status=one.model.write_tecplot_shock_vs_time_checked(
+      10.0,2,"unused-injected-history.dat",&history_success_ops);
+  context.expect_true(status.ok() && history_success.commit_called &&
+                          history_success.destination_bytes.find(
+                              "TITLE=\"Shock kinematics vs time\"")==0,
+                      "1-D shock history commits a complete transaction");
+
+  FaultSink surface_success;
+  swcme::output::FileOperations surface_success_ops=
+      operations_for(surface_success);
+  status=three.model.write_shock_surface_center_metrics_tecplot_checked(
+      three.mesh,three.metrics,"unused-injected-surface.dat",
+      &surface_success_ops);
+  context.expect_true(status.ok() && surface_success.commit_called &&
+                          surface_success.destination_bytes.find(
+                              "TITLE=\"Shock surface")==0,
+                      "3-D surface commits a complete transaction");
+
+  FaultSink bundle_success;
+  swcme::output::FileOperations bundle_success_ops=
+      operations_for(bundle_success);
+  status=three.model.write_tecplot_dataset_bundle_checked(
+      three.mesh,three.metrics,three.step,three.box,
+      "unused-injected-bundle.dat",&bundle_success_ops);
+  context.expect_true(status.ok() && bundle_success.commit_called &&
+                          bundle_success.destination_bytes.find(
+                              "TITLE = \"SW+CME dataset\"")==0,
+                      "3-D dataset bundle commits a complete transaction");
+
+  FaultSink face_success;
+  swcme::output::FileOperations face_success_ops=operations_for(face_success);
+  status=three.write_face(face_success_ops);
+  context.expect_true(status.ok() && face_success.commit_called &&
+                          face_success.destination_bytes.find(
+                              "TITLE = \"Box face (minX)\"")==0,
+                      "3-D standalone face commits a complete transaction");
+
+  FaultSink write_failure;
+  write_failure.destination_bytes=sentinel;
+  write_failure.fail_after_bytes=57;
+  swcme::output::FileOperations write_failure_ops=operations_for(write_failure);
+  status=one.write(write_failure_ops);
+  expect_write_failure(context,status,57,"transactional partial write");
+  context.expect_true(!write_failure.commit_called &&
+                          write_failure.remove_called &&
+                          write_failure.destination_bytes==sentinel &&
+                          write_failure.temporary_bytes.empty(),
+                      "partial output is removed without changing destination");
+
+  FaultSink close_failure;
+  close_failure.destination_bytes=sentinel;
+  close_failure.fail_close=true;
+  swcme::output::FileOperations close_failure_ops=operations_for(close_failure);
+  status=one.write(close_failure_ops);
+  expect_write_failure(context,status,close_failure.accepted_bytes,
+                       "transactional close failure");
+  context.expect_true(!close_failure.commit_called &&
+                          close_failure.remove_called &&
+                          close_failure.destination_bytes==sentinel,
+                      "close failure cannot publish staged output");
+
+  FaultSink commit_failure;
+  commit_failure.destination_bytes=sentinel;
+  commit_failure.fail_commit=true;
+  swcme::output::FileOperations commit_failure_ops=operations_for(commit_failure);
+  status=three.write_face(commit_failure_ops);
+  context.expect_true(status.code==swcme::StatusCode::FileCommitFailure &&
+                          status.has_io_byte_offset &&
+                          status.io_byte_offset==commit_failure.accepted_bytes,
+                      "failed atomic replacement reports FILE_COMMIT_FAILURE");
+  context.expect_true(std::string(status.context).find("commit")!=
+                          std::string::npos &&
+                          status.summary().find("FILE_COMMIT_FAILURE")!=
+                              std::string::npos,
+                      "commit diagnostic identifies phase and staged size");
+  context.expect_true(commit_failure.commit_called &&
+                          commit_failure.remove_called &&
+                          commit_failure.destination_bytes==sentinel &&
+                          commit_failure.temporary_bytes.empty(),
+                      "failed commit preserves destination and removes staging");
+
+  FaultSink open_failure;
+  open_failure.destination_bytes=sentinel;
+  open_failure.fail_open=true;
+  swcme::output::FileOperations open_failure_ops=operations_for(open_failure);
+  status=one.write(open_failure_ops);
+  context.expect_true(status.code==swcme::StatusCode::FileOpenFailure &&
+                          !open_failure.commit_called &&
+                          !open_failure.remove_called &&
+                          open_failure.destination_bytes==sentinel,
+                      "staging-open failure leaves destination untouched");
+
+  FaultSink cleanup_failure;
+  cleanup_failure.destination_bytes=sentinel;
+  cleanup_failure.fail_after_bytes=57;
+  cleanup_failure.fail_remove=true;
+  swcme::output::FileOperations cleanup_failure_ops=operations_for(cleanup_failure);
+  status=one.write(cleanup_failure_ops);
+  context.expect_true(status.code==swcme::StatusCode::FileWriteFailure &&
+                          cleanup_failure.remove_called &&
+                          !cleanup_failure.commit_called &&
+                          cleanup_failure.destination_bytes==sentinel,
+                      "cleanup failure cannot mask the original write failure");
+
+  const std::filesystem::path file_path="output/OUT03_transaction.dat";
+  const std::filesystem::path directory_path=
+      "output/OUT03_nonregular_destination";
+  std::error_code cleanup_error;
+  std::filesystem::remove(file_path,cleanup_error);
+  std::filesystem::remove(directory_path,cleanup_error);
+  write_file(file_path,sentinel);
+
+  status=one.model.write_tecplot_radial_profile_checked(
+      one.step,&one.radius,&one.density,&one.velocity,&one.radial_field,
+      &one.azimuthal_field,&one.field_magnitude,&one.divergence,1,
+      file_path.string().c_str(),0.0);
+  const std::string committed_bytes=read_file(file_path);
+  context.expect_true(status.ok() && committed_bytes!=sentinel &&
+                          committed_bytes.find(
+                              "TITLE=\"1D SW+CME radial profile\"")==0,
+                      "production rename replaces an existing regular file");
+  context.expect_true(count_staging_files(file_path)==0,
+                      "successful production commit leaves no staging file");
+
+  const std::filesystem::path new_file_path="output/OUT03_new_product.dat";
+  std::filesystem::remove(new_file_path,cleanup_error);
+  status=three.model.write_box_face_minX_tecplot_structured_checked(
+      three.step,three.box,new_file_path.string().c_str());
+  context.expect_true(status.ok() && std::filesystem::is_regular_file(
+                          new_file_path) &&
+                          read_file(new_file_path).find(
+                              "TITLE = \"Box face (minX)\"")==0,
+                      "production commit installs a new destination file");
+  context.expect_true(count_staging_files(new_file_path)==0,
+                      "new-file commit leaves no staging file");
+
+  // Legacy boolean APIs cannot expose FILE_COMMIT_FAILURE details, but they
+  // must retain the same publish-on-success transaction as checked callers.
+  const std::filesystem::path legacy_path="output/OUT03_legacy_product.dat";
+  write_file(legacy_path,sentinel);
+  const bool legacy_ok=one.model.write_tecplot_radial_profile(
+      one.step,&one.radius,&one.density,&one.velocity,&one.radial_field,
+      &one.azimuthal_field,&one.field_magnitude,&one.divergence,1,
+      legacy_path.string().c_str(),0.0);
+  context.expect_true(legacy_ok && read_file(legacy_path)!=sentinel &&
+                          count_staging_files(legacy_path)==0,
+                      "legacy writer commits one complete replacement");
+
+  std::filesystem::create_directory(directory_path);
+  status=three.model.write_box_face_minX_tecplot_structured_checked(
+      three.step,three.box,directory_path.string().c_str());
+  context.expect_true(status.code==swcme::StatusCode::FileCommitFailure &&
+                          std::filesystem::is_directory(directory_path),
+                      "production commit refuses to replace a nonregular target");
+  context.expect_true(count_staging_files(directory_path)==0,
+                      "rejected production commit removes its staging file");
+  context.expect_true(
+      !three.model.write_box_face_minX_tecplot_structured(
+          three.step,three.box,directory_path.string().c_str()) &&
+          std::filesystem::is_directory(directory_path) &&
+          count_staging_files(directory_path)==0,
+      "legacy writer returns false without replacing nonregular target");
+
+  std::filesystem::remove(file_path,cleanup_error);
+  std::filesystem::remove(new_file_path,cleanup_error);
+  std::filesystem::remove(legacy_path,cleanup_error);
+  std::filesystem::remove(directory_path,cleanup_error);
 }

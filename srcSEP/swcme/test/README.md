@@ -43,6 +43,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test PST06    # prepared-record integrity rejection
 ./output/test_swcme --test PST04    # concurrent prepared-state evaluation
 ./output/test_swcme --test OUT02    # checked output-failure propagation
+./output/test_swcme --test OUT03    # transactional output commit
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -319,12 +320,12 @@ failed record or lifecycle phase in `context`, and close the acquired handle.
 The combined partial-write/close case proves that cleanup cannot mask the
 earlier failure.
 
-When `/dev/full` is available, a second integration matrix invokes all five
-production checked products through the default `stdio` backend.  Every call
-must report `FILE_WRITE_FAILURE`; a missing `/dev/full` is recorded as one
-explicit platform skip rather than silently weakening the deterministic fault
-matrix.  The five source-compatible boolean wrappers are then run against the
-same device and must all return `false`.
+When `/dev/full` is available, the shared direct-stream layer is exercised
+through the default `stdio` backend and must report `FILE_WRITE_FAILURE` with
+byte context.  The probe is below OUT03's regular-file transaction boundary:
+model writers stage a sibling file and never replace a device.  A missing
+`/dev/full` is recorded as one explicit platform skip rather than silently
+weakening the deterministic fault matrix.
 
 ### Expected result
 
@@ -332,8 +333,7 @@ The test passes only when open rejection is `FILE_OPEN_FAILURE`, every
 post-open failure is `FILE_WRITE_FAILURE` and never `OK`, byte/row/zone context
 identifies the first failure, and all acquired handles are closed.  Normal
 injected 1-D and 3-D writes must remain successful.  OUT02 detects partial
-output but does not claim atomic destination replacement; that is reserved for
-the planned OUT03 validation.
+output; OUT03 independently proves that such staged output is never published.
 
 Run the gate directly with:
 
@@ -342,6 +342,71 @@ Run the gate directly with:
 ```
 
 `OUT02` follows `PST04` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
+through their `@ALL` expansion.
+
+## OUT03: transactional output commit
+
+### What is tested
+
+`OUT03` verifies that all model products are written under a private,
+same-directory staging name and become visible at the requested path only
+after write, flush, stream-error, and close checks succeed.  It covers
+exclusive staging creation, collision retry, successful replacement of an
+existing regular file, creation of a new file, refusal to replace a
+non-regular object, failed atomic commit, staging cleanup, and preservation of
+the first failure when cleanup itself fails.
+
+### Why it is tested
+
+OUT02 prevents a truncated file from being labeled successful, but detection
+alone is insufficient when a writer opens the final path directly: the old
+complete product has already been truncated.  An observational campaign may
+then find a corrupt file even though the status correctly reports failure.
+OUT03 makes publication transactional so downstream readers see the previous
+complete result until a complete replacement is ready.
+
+### How it is tested
+
+The deterministic `FaultSink` models separate staging and destination byte
+stores.  Successful injected transactions are run for the 1-D radial profile,
+1-D shock history, 3-D surface, 3-D bundle, and 3-D face.  The matrix also
+verifies that:
+
+- the staging path begins with the exact destination plus `.swcme-tmp-` and is
+  opened with exclusive mode `wx`;
+- one simulated staging-name collision causes a retry and then succeeds;
+- successful close is followed by commit, with no failure cleanup;
+- partial-write and close failures skip commit, remove staging, and preserve
+  the destination sentinel byte-for-byte;
+- injected commit failure returns `FILE_COMMIT_FAILURE`, records the complete
+  staged byte count, preserves the destination, and removes staging;
+- staging-open failure never invokes commit or removal; and
+- failed cleanup cannot mask the earlier `FILE_WRITE_FAILURE`.
+
+Production-filesystem integration then replaces an existing sentinel file,
+installs a brand-new 3-D output file, and verifies that neither success leaves
+a `.swcme-tmp-*` sibling.  A legacy boolean writer must perform the same
+complete replacement.  A directory is used as a safe non-regular destination:
+the checked API must return `FILE_COMMIT_FAILURE`, the legacy API must return
+`false`, both must preserve the directory, and neither may leave staging.
+
+### Expected result
+
+Every successful checked or legacy writer exposes one complete final file and
+no staging file.  Any pre-commit failure leaves the previous destination
+unchanged and attempts staging cleanup.  Non-regular targets are never
+replaced.  Status codes distinguish staging-open, stream, and commit failures,
+and later cleanup cannot overwrite the first diagnostic.  The guarantee is
+atomic visibility on supported POSIX filesystems; crash durability through
+file and directory `fsync()` is outside OUT03.
+
+Run the gate directly with:
+
+```sh
+./output/test_swcme --test OUT03
+```
+
+`OUT03` follows `OUT02` in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
 through their `@ALL` expansion.
 
 ## Python campaign manager and reproducible run artifacts
@@ -366,8 +431,8 @@ python3 python/test_run_tests.py
 
 The named profiles are version-controlled text files in `profiles/`:
 
-- `SMOKE` is the short development gate, including prepared-state and checked
-  output-failure safety;
+- `SMOKE` is the short development gate, including prepared-state safety,
+  checked output-failure handling, and transactional output commit;
 - `ROUTINE` is the broad deterministic gate and excludes `MSH05` and `CON05`;
 - `FULL` expands to every test in the C++ registry;
 - `EVENT` first runs FULL and then executes the supplied event-analysis JSON.

@@ -1396,7 +1396,8 @@ public:
   // Status-returning output entry point used by AMPS and validation code.  The
   // ownership gate precedes all argument inspection and file-system access,
   // which guarantees that PST02 rejection leaves a pre-existing destination
-  // byte-for-byte unchanged.
+  // byte-for-byte unchanged.  OUT03 then writes a sibling staging file and
+  // atomically commits it only after the complete OUT02 lifecycle succeeds.
   swcme::ModelStatus write_tecplot_radial_profile_checked(
       const StepState& S, const double* r_m, const double* n_m3,
       const double* V_ms, const double* Br_T, const double* Bphi_T,
@@ -1414,14 +1415,14 @@ public:
     const swcme::output::FileOperations& operations=file_operations
         ? *file_operations : swcme::output::stdio_file_operations();
     swcme::output::CheckedTextFile output(operations);
-    if (!output.open(path))
+    if (!output.open_transactional(path))
       return swcme::ModelStatus::make(
           swcme::StatusCode::FileOpenFailure,
           "swcme1d::write_tecplot_radial_profile open");
 
     // Every call carries a stable phase/row context.  CheckedTextFile stops
-    // issuing writes after the first failure but finish() still closes the
-    // stream and preserves that original diagnostic.
+    // issuing writes after the first failure; finish() closes and discards the
+    // staging file while preserving that original diagnostic.
     output.print("swcme1d radial profile title",swcme::ModelStatus::npos,
                  "TITLE=\"1D SW+CME radial profile\"\n");
     output.print("swcme1d radial profile variables",swcme::ModelStatus::npos,
@@ -1452,7 +1453,8 @@ public:
     return output.finish(
         "swcme1d radial profile flush",
         "swcme1d radial profile stream error",
-        "swcme1d radial profile close");
+        "swcme1d radial profile close",
+        "swcme1d radial profile commit");
   }
 
   // Convenience wrapper from radii only
@@ -1503,8 +1505,8 @@ bool write_tecplot_shock_vs_time(double t_end_s, std::size_t N,
 
 // Status-returning companion to the legacy bool API.  OUT02 requires output
 // failures to remain distinguishable from malformed input and from kinematic
-// preparation failures, so callers that archive science products should use
-// this form.
+// preparation failures; OUT03 guarantees that only a complete history replaces
+// the destination.  Callers that archive science products should use this form.
 swcme::ModelStatus write_tecplot_shock_vs_time_checked(
     double t_end_s, std::size_t N, const char* path,
     const swcme::output::FileOperations* file_operations=nullptr) const {
@@ -1519,7 +1521,7 @@ swcme::ModelStatus write_tecplot_shock_vs_time_checked(
   const swcme::output::FileOperations& operations=file_operations
       ? *file_operations : swcme::output::stdio_file_operations();
   swcme::output::CheckedTextFile output(operations);
-  if (!output.open(path))
+  if (!output.open_transactional(path))
     return swcme::ModelStatus::make(
         swcme::StatusCode::FileOpenFailure,"swcme1d shock history open");
 
@@ -1543,16 +1545,18 @@ swcme::ModelStatus write_tecplot_shock_vs_time_checked(
     }
   } catch (...) {
     // Physics preparation failed before the next row could be formatted.  We
-    // still close the stream, but a close-only cleanup error is later in time
-    // and must not mask the earlier physics failure.  Conversely, a write
-    // failure recorded before preparation remains the first failure and keeps
-    // its exact byte/row context.
+    // cancel an otherwise healthy transaction so its incomplete header/rows
+    // cannot be committed.  Conversely, a write failure recorded before
+    // preparation remains the first failure; finish() closes and removes the
+    // staging file while retaining its exact byte/row context.
     const bool write_failed_before_cleanup=!output.good();
-    const swcme::ModelStatus io_status=output.finish(
-        "swcme1d shock history flush",
-        "swcme1d shock history stream error",
-        "swcme1d shock history close");
-    if (write_failed_before_cleanup) return io_status;
+    if (write_failed_before_cleanup)
+      return output.finish(
+          "swcme1d shock history flush",
+          "swcme1d shock history stream error",
+          "swcme1d shock history close",
+          "swcme1d shock history commit");
+    output.cancel();
     return swcme::ModelStatus::make(
         swcme::StatusCode::NonFiniteResult,
         "swcme1d shock history preparation");
@@ -1561,7 +1565,8 @@ swcme::ModelStatus write_tecplot_shock_vs_time_checked(
   return output.finish(
       "swcme1d shock history flush",
       "swcme1d shock history stream error",
-      "swcme1d shock history close");
+      "swcme1d shock history close",
+      "swcme1d shock history commit");
 }
 
 

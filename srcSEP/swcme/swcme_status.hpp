@@ -143,7 +143,11 @@ enum class StatusCode {
   StateConfigurationMismatch,
   // PST06 integrity failure.  Appending preserves numeric compatibility for
   // every status introduced before prepared-state record sealing.
-  StalePreparedState
+  StalePreparedState,
+  // OUT03 distinguishes a fully written temporary product that could not be
+  // atomically installed from failures that occurred while writing its bytes.
+  // Appending again preserves every pre-existing numeric status value.
+  FileCommitFailure
 };
 
 inline const char* status_code_name(StatusCode code) {
@@ -168,6 +172,7 @@ inline const char* status_code_name(StatusCode code) {
     case StatusCode::InvalidMesh: return "INVALID_MESH";
     case StatusCode::FileOpenFailure: return "FILE_OPEN_FAILURE";
     case StatusCode::FileWriteFailure: return "FILE_WRITE_FAILURE";
+    case StatusCode::FileCommitFailure: return "FILE_COMMIT_FAILURE";
   }
   return "UNKNOWN_STATUS";
 }
@@ -282,6 +287,18 @@ struct ModelStatus {
       const char* where, std::size_t byte_offset,
       std::size_t item_index=npos) noexcept {
     ModelStatus s=make(StatusCode::FileWriteFailure,where,item_index);
+    s.io_byte_offset=byte_offset;
+    s.has_io_byte_offset=true;
+    return s;
+  }
+
+  // Construct the OUT03 status returned after the temporary output has been
+  // written and closed but atomic replacement of the destination fails.  The
+  // byte count records the complete staged product size and remains separate
+  // from offending_value, which is reserved for invalid numerical inputs.
+  static constexpr ModelStatus file_commit_failure(
+      const char* where, std::size_t byte_offset) noexcept {
+    ModelStatus s=make(StatusCode::FileCommitFailure,where);
     s.io_byte_offset=byte_offset;
     s.has_io_byte_offset=true;
     return s;

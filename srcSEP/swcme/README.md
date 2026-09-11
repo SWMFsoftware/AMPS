@@ -325,11 +325,13 @@ exact byte-counted write.  This is necessary because a buffered `stdio` write
 can appear successful even when the destination rejects the data later during
 flush or close, as `/dev/full` does on POSIX systems.
 
-Checked writer APIs distinguish the two output failure classes:
+Checked writer APIs distinguish three output failure classes:
 
 - `StatusCode::FileOpenFailure` means that no output handle was acquired;
 - `StatusCode::FileWriteFailure` means that a handle was opened but a write,
   flush, stream-error check, or close failed.
+- `StatusCode::FileCommitFailure` means that the complete temporary product
+  was closed but could not atomically replace the requested destination.
 
 A write failure records `has_io_byte_offset=true` and `io_byte_offset`, the
 number of bytes accepted before the first failed operation.  Its stable
@@ -357,12 +359,11 @@ for deterministic validation.  Omitting it selects the immutable production
 `stdio` backend.  A test backend can fail at an exact accepted-byte count or at
 flush/error/close without changing production physics or relying on a specific
 filesystem.  OUT02 combines that injected fault matrix with real `/dev/full`
-checks for radial profiles, shock histories, surface output, the four-zone
-bundle, and the standalone face.
+probing at the shared direct-stream layer beneath all five model products.
 
-OUT02 detects and propagates an incomplete write; it does not promise that the
-destination remains unchanged after a post-open failure.  Temporary-file plus
-atomic-replacement semantics belong to the separate OUT03 recommendation.
+OUT02 detects and propagates every incomplete write.  OUT03, described next,
+adds destination preservation and atomic publication around that checked
+stream lifecycle.
 
 Run the gate with:
 
@@ -370,6 +371,55 @@ Run the gate with:
 cd test
 make -j
 ./output/test_swcme --test OUT02
+```
+
+### Transactional output commit (OUT03)
+
+Every production Tecplot writer now opens an exclusively created staging file
+whose name is formed by appending `.swcme-tmp-N` to the destination path.  The
+staging file is therefore in the destination directory and on the same
+filesystem.  The writer sends all records through the OUT02 checks, flushes,
+examines the stream error state, and closes the staging handle before calling
+`rename()` to install it.  On POSIX systems—the supported SWCME production
+environment—the same-directory rename atomically replaces an existing regular
+file, so readers observe either the previous complete product or the new
+complete product, never a partially written zone.
+
+The commit sequence is:
+
+1. validate model state and all caller inputs before filesystem access;
+2. exclusively create a unique same-directory staging file;
+3. write and validate the complete product through OUT02;
+4. close the staging handle successfully;
+5. atomically rename the staging file over an absent or regular destination;
+6. remove the staging file after any write, close, or commit failure.
+
+Commit is deliberately refused when the destination is a directory, symbolic
+link, device, FIFO, or other non-regular object.  This prevents a privileged
+validation run from replacing objects such as `/dev/full`.  If staging cannot
+be created, checked writers return `FILE_OPEN_FAILURE`; stream failures retain
+`FILE_WRITE_FAILURE`; and a failed final rename returns
+`FILE_COMMIT_FAILURE`.  The latter includes `io_byte_offset`, which in this
+case is the complete staged-product size.  A cleanup failure never masks the
+earlier write or commit diagnostic, although an operating-system refusal to
+remove may leave the private staging file for diagnosis.
+
+The optional `FileOperations` validation table now includes `commit` and
+`remove` callbacks.  Production callers continue to omit the table.  Legacy
+boolean writer APIs use the same transaction and return `false` for any open,
+write, close, or commit failure.
+
+OUT03 provides atomic namespace publication, not power-loss durability: it
+does not currently call `fsync()` on the file and containing directory.  Runs
+that require recovery across a host crash should add that separate durability
+policy at the campaign-storage layer.
+
+Run the gate with:
+
+```sh
+cd test
+make -j
+./output/test_swcme --test OUT03
 ```
 
 ### `SEPSourceState`
@@ -476,8 +526,8 @@ python3 run_tests.py --profile EVENT --event-config event_config.example.json
 Profiles are stored in `test/profiles/`:
 
 - `SMOKE` is a short development gate covering prepared-state safety, checked
-  output failure propagation, configuration, core shock, connectivity,
-  divergence, and SEP-interface integration;
+  output failure propagation, transactional output commit, configuration,
+  core shock, connectivity, divergence, and SEP-interface integration;
 - `ROUTINE` runs the broad deterministic suite while excluding the slowest
   stochastic/multi-root stress cases;
 - `FULL` runs the complete registered C++ suite and exports the default SEP

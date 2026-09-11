@@ -2249,14 +2249,15 @@ static inline bool dump_zeros_block(
 }
 
 // Emit the already validated surface dataset through the shared OUT02 stream
-// lifecycle.  Keeping this helper independent of validation lets both the
-// legacy bool wrapper and checked status API use exactly the same bytes.
+// lifecycle and OUT03 transaction.  Keeping this helper independent of
+// validation lets both the legacy bool wrapper and checked status API use
+// exactly the same staged bytes and commit behavior.
 static swcme::ModelStatus write_surface_output(
     const swcme3d::ShockMesh& M,const swcme3d::TriMetrics& T,
     const char* path,const swcme::output::FileOperations& operations) {
   const std::size_t Nv=M.x.size(),Ne=M.tri_i.size();
   swcme::output::CheckedTextFile output(operations);
-  if (!output.open(path)) return swcme::ModelStatus::make(
+  if (!output.open_transactional(path)) return swcme::ModelStatus::make(
       swcme::StatusCode::FileOpenFailure,"3D surface output open");
 
   output.print("3D surface title",swcme::ModelStatus::npos,
@@ -2297,7 +2298,8 @@ static swcme::ModelStatus write_surface_output(
 
   return output.finish("3D surface output flush",
                        "3D surface output stream error",
-                       "3D surface output close");
+                       "3D surface output close",
+                       "3D surface output commit");
 }
 
 // Surface-only: cell metrics + nodal rc/Vsh_n
@@ -2353,7 +2355,8 @@ BoxSpec Model::default_apex_box(const StepState& S,double half_AU,int N) const {
 // Write a complete four-zone dataset after the caller has validated its model
 // state, mesh, metrics, and box.  All output passes through CheckedTextFile so
 // a partial raw write and a delayed buffered-stream failure have the same
-// explicit FILE_WRITE_FAILURE contract.
+// explicit FILE_WRITE_FAILURE contract, and neither can replace the previous
+// destination before OUT03's final commit.
 static swcme::ModelStatus write_bundle_output(
     const swcme3d::Model& model,const swcme3d::ShockMesh& M,
     const swcme3d::TriMetrics& T,const swcme3d::StepState& S,
@@ -2361,7 +2364,7 @@ static swcme::ModelStatus write_bundle_output(
     const swcme::output::FileOperations& operations) {
   const std::size_t Nv=M.x.size(),Ne=M.tri_i.size();
   swcme::output::CheckedTextFile output(operations);
-  if (!output.open(path)) return swcme::ModelStatus::make(
+  if (!output.open_transactional(path)) return swcme::ModelStatus::make(
       swcme::StatusCode::FileOpenFailure,"3D dataset bundle open");
 
   output.print("3D dataset title",swcme::ModelStatus::npos,
@@ -2500,7 +2503,8 @@ static swcme::ModelStatus write_bundle_output(
 
   return output.finish("3D dataset bundle flush",
                        "3D dataset bundle stream error",
-                       "3D dataset bundle close");
+                       "3D dataset bundle close",
+                       "3D dataset bundle commit");
 }
 
 // Bundle writer: surface_cells + surface_nodal + volume_box + minX face
@@ -2521,8 +2525,8 @@ bool Model::write_tecplot_dataset_bundle(const ShockMesh& M,const TriMetrics& T_
 }
 
 // Emit the standalone face using the same bytes and field order as zone four
-// of the bundle.  The helper is separate so injected failures exercise the
-// compiled 3-D writer rather than only the generic stream utility.
+// of the bundle.  The helper is separate so injected write and commit failures
+// exercise the compiled 3-D transaction rather than only the generic utility.
 static swcme::ModelStatus write_face_output(
     const swcme3d::Model& model,const swcme3d::StepState& S,
     const swcme3d::BoxSpec& B,const char* path,
@@ -2533,7 +2537,7 @@ static swcme::ModelStatus write_face_output(
   const double z0=B.cz-B.hz, z1=B.cz+B.hz;
 
   swcme::output::CheckedTextFile output(operations);
-  if (!output.open(path)) return swcme::ModelStatus::make(
+  if (!output.open_transactional(path)) return swcme::ModelStatus::make(
       swcme::StatusCode::FileOpenFailure,"3D box face open");
   output.print("3D box face title",swcme::ModelStatus::npos,
                "TITLE = \"Box face (minX)\"\n");
@@ -2575,7 +2579,7 @@ static swcme::ModelStatus write_face_output(
     }
   }
   return output.finish("3D box face flush","3D box face stream error",
-                       "3D box face close");
+                       "3D box face close","3D box face commit");
 }
 
 // Standalone 2-D face writer (min-X plane)
