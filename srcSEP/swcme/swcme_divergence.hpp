@@ -82,7 +82,10 @@ ModelStatus cartesian_second_order(
   bool have_center=false;
   double div=0.0;
 
-  for (int axis=0;axis<3;++axis) {
+  // Array subscripts use size_type directly.  Besides satisfying the strict
+  // sign-conversion gate, this prevents a future signed axis value from being
+  // silently converted to a very large index before bounds checking.
+  for (std::size_t axis=0;axis<point_m.size();++axis) {
     std::array<double,3> plus=point_m;
     std::array<double,3> minus=point_m;
     plus[axis]+=step_m;

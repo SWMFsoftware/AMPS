@@ -29,6 +29,18 @@
 #include <system_error>
 #include <vector>
 
+// GCC and Clang can type-check calls to project-owned printf-style wrappers
+// only when the wrapper carries the same format metadata as the C library.
+// The indices include the implicit C++ `this` parameter: `format` is argument
+// four and the first variadic value is argument five.  Other compilers retain
+// identical runtime behavior and simply omit this optional diagnostic aid.
+#if defined(__GNUC__) || defined(__clang__)
+#define SWCME_OUTPUT_PRINTF_FORMAT(format_index, first_value_index) \
+  __attribute__((format(printf,format_index,first_value_index)))
+#else
+#define SWCME_OUTPUT_PRINTF_FORMAT(format_index, first_value_index)
+#endif
+
 namespace swcme {
 namespace output {
 
@@ -195,10 +207,23 @@ class CheckedTextFile {
     destination_path_.clear();
   }
 
+  // Write a compile-time-sized character array without interpreting percent
+  // characters.  This is the safe convenience path for headers, separators,
+  // and other records that require no substitutions: callers cannot
+  // accidentally pass runtime text as a printf format string.  N includes the
+  // terminating null byte, which is deliberately excluded from the file.
+  template <std::size_t N>
+  bool write_literal(const char* failure_context, std::size_t item_index,
+                     const char (&literal)[N]) noexcept {
+    static_assert(N>0,"a C string literal includes a terminating null byte");
+    return write_record(failure_context,item_index,literal,N-1U);
+  }
+
   // Format one record into an owned buffer before passing bytes to the backend.
   // This makes partial writes observable at an exact byte offset, unlike
   // fprintf's single negative return, and avoids forwarding nonliteral format
   // strings to fprintf (which also removes -Wformat-security warnings).
+  SWCME_OUTPUT_PRINTF_FORMAT(4,5)
   bool print(const char* failure_context, std::size_t item_index,
              const char* format, ...) noexcept {
     if (!failure_.ok()) return false;
@@ -231,19 +256,8 @@ class CheckedTextFile {
         return false;
       }
 
-      const std::size_t count=static_cast<std::size_t>(required);
-      const std::size_t written=operations_.write(
-          operations_.user_data,handle_,buffer.data(),count);
-      if (written!=count) {
-        // Clamp a malformed backend result before forming the diagnostic; a
-        // backend may never report more bytes than it was asked to consume.
-        const std::size_t accepted=written<count ? written : 0U;
-        record_failure(failure_context,item_index,bytes_written_+accepted);
-        bytes_written_+=accepted;
-        return false;
-      }
-      bytes_written_+=written;
-      return true;
+      return write_record(failure_context,item_index,buffer.data(),
+                          static_cast<std::size_t>(required));
     } catch (...) {
       if (arguments_active) va_end(arguments);
       record_failure(failure_context,item_index,bytes_written_);
@@ -303,6 +317,37 @@ class CheckedTextFile {
   }
 
  private:
+  // Send one already rendered record to the injected backend.  Both the
+  // literal and formatted public paths converge here, so partial-write byte
+  // accounting and first-error-wins behavior cannot drift apart.  Although
+  // production C callbacks do not throw, the catch preserves this class's
+  // noexcept contract for a validation or application-supplied backend.
+  bool write_record(const char* failure_context,std::size_t item_index,
+                    const char* bytes,std::size_t count) noexcept {
+    if (!failure_.ok()) return false;
+    if (!handle_ || (!bytes && count!=0U)) {
+      record_failure(failure_context,item_index,bytes_written_);
+      return false;
+    }
+    try {
+      const std::size_t written=operations_.write(
+          operations_.user_data,handle_,bytes,count);
+      if (written!=count) {
+        // Clamp a malformed backend result before forming the diagnostic; a
+        // backend may never report more bytes than it was asked to consume.
+        const std::size_t accepted=written<count ? written : 0U;
+        record_failure(failure_context,item_index,bytes_written_+accepted);
+        bytes_written_+=accepted;
+        return false;
+      }
+      bytes_written_+=written;
+      return true;
+    } catch (...) {
+      record_failure(failure_context,item_index,bytes_written_);
+      return false;
+    }
+  }
+
   void record_failure(const char* context, std::size_t item_index,
                       std::size_t byte_offset) noexcept {
     if (!failure_.ok()) return;
@@ -325,3 +370,7 @@ class CheckedTextFile {
 
 }  // namespace output
 }  // namespace swcme
+
+// Keep the compiler-specific implementation detail private to this header;
+// consumers should use CheckedTextFile rather than depend on its annotation.
+#undef SWCME_OUTPUT_PRINTF_FORMAT

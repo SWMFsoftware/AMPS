@@ -52,6 +52,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test PST07    # direct/AMPS adapter equivalence
 ./output/test_swcme --test PST05    # prepared-state lifetime and relocation
 ./output/test_swcme --test PST08    # state-ownership performance guardrails
+./output/test_swcme --test OUT08    # strict-writer record semantics
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -960,6 +961,82 @@ AMPS queries allocate exactly zero bytes through C++ allocation APIs.
 PST08 follows PST05 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it through
 their `@ALL` expansion.
 
+## OUT08: strict warning writer build
+
+### What is tested
+
+OUT08 validates compilation of the shared status/output layer, the header-only
+1-D writer, the compiled 3-D writers, and `demo1d`, `demo3d_1`, and `demo3d_2`
+under the project's strict warning policy. It builds independent debug
+(`-O0 -g3`) and optimized (`-O3 -DNDEBUG`) products. The policy enables extra,
+pedantic, level-two format, format-security, conversion, sign-conversion, and
+shadow diagnostics and promotes every selected warning to an error.
+
+The registered runtime half also exercises the two writer entry points. A
+literal containing `100%`, `%s`, and `%zu` must be copied byte-for-byte without
+format interpretation; a separate typed formatted record must render the
+expected integer and `std::size_t` values and complete the full checked stream
+lifecycle.
+
+### Why it is tested
+
+Variadic output code sits at a hazardous boundary: a format/argument mismatch
+is undefined behavior, runtime text used as a format creates a format-string
+vulnerability, and implicit narrowing can corrupt large mesh or grid counts.
+Optimized compilation can also reveal output values that are only conditionally
+assigned. Ordinary `-Wall` builds did not inspect calls through the project's
+custom formatter and previously diagnosed the 3-D volume/face values only in
+some optimized compiler configurations. OUT08 makes these defects deterministic
+CI failures.
+
+### How it is tested
+
+`CheckedTextFile::print()` is annotated as a GCC/Clang printf-like function, so
+the compiler checks its format string and variadic arguments exactly as it
+checks `printf`. `write_literal()` is a compile-time-sized array overload for
+records requiring no substitution; it bypasses formatting and shares the same
+raw checked-write implementation. The in-memory OUT08 probe proves both paths
+produce the intended bytes without relying on production formatter constants.
+
+The 3-D bundle and standalone-face writers initialize every scalar and call the
+checked field/divergence interfaces. If evaluation fails, the writer attaches
+the global row index, cancels the staging transaction, and returns the original
+physics status before formatting the row. Mesh connectivity is checked while
+signed, then converted once to `std::size_t`; array-axis and demonstration
+index-to-time conversions are explicit. No pragma or command-line suppression
+is used.
+
+The phony target always compiles fresh isolated products, preventing an object
+created with normal flags from satisfying the gate accidentally:
+
+```sh
+make -j
+./output/test_swcme --test OUT08
+make out08-strict CXX=g++
+# In the supported Clang CI job:
+make out08-strict CXX=clang++
+```
+
+The local compiler is selected through the standard overridable `CXX`
+variable. CI runs the same target separately for every supported compiler; a
+host does not need all compiler families installed for one invocation.
+
+### Expected result
+
+Both debug and optimized builds complete with zero warnings, all six
+demonstration binaries/objects are produced in their isolated directories, and
+the debug and optimized runtime probes each pass three assertions. Any format,
+format-security, implicit conversion, sign conversion, shadowing, extra, or
+pedantic diagnostic fails `make`. The literal record is preserved exactly, the
+formatted record matches its expected bytes, and open/close state is complete.
+No suppression is accepted unless a future exception is narrowly scoped,
+documented at its call site, and covered by this test.
+
+OUT08 follows PST08 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include its
+registered runtime assertion through `@ALL`. CI and release validation must run
+`make out08-strict` in addition to the selected runtime profile because a
+running executable cannot verify the flags used to compile itself.
+
 ## Python campaign manager and reproducible run artifacts
 
 `run_tests.py` is the manager for multi-test development gates and validation
@@ -984,7 +1061,8 @@ The named profiles are version-controlled text files in `profiles/`:
 
 - `SMOKE` is the short development gate, including prepared-state safety,
   checked output failures, transactional commit, model-domain preflight,
-  BoxSpec/mesh validation, independent parsing, and executable demonstrations;
+  BoxSpec/mesh validation, independent parsing, executable demonstrations,
+  state-ownership performance, and strict writer record semantics;
 - `ROUTINE` is the broad deterministic gate and excludes `MSH05` and `CON05`;
 - `FULL` expands to every test in the C++ registry;
 - `EVENT` first runs FULL and then executes the supplied event-analysis JSON.

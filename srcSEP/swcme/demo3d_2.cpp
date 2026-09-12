@@ -336,7 +336,9 @@ int main(){
         throw std::runtime_error("cannot open demo3d_2 time-series outputs");
 
       for (std::size_t k=0;k<Nt;++k){
-        const double t=t0+k*dt;
+        // The explicit cast documents the intentional discrete-to-continuous
+        // conversion and keeps the demonstration inside OUT08's warning gate.
+        const double t=t0+static_cast<double>(k)*dt;
         StepState S = model.prepare_step(t);
 
         double n,Vx,Vy,Vz;
@@ -427,7 +429,12 @@ int main(){
     // =========================================================================
     if (!surf.tri_i.empty()){
       std::mt19937_64 rng(42);
-      int ia = surf.tri_i[0]-1, ib = surf.tri_j[0]-1, ic = surf.tri_k[0]-1;
+      // Generated mesh connectivity is validated, positive, and one-based.
+      // Convert it once to the vector index type instead of allowing implicit
+      // signed-to-unsigned conversions at every coordinate access.
+      const std::size_t ia=static_cast<std::size_t>(surf.tri_i[0]-1);
+      const std::size_t ib=static_cast<std::size_t>(surf.tri_j[0]-1);
+      const std::size_t ic=static_cast<std::size_t>(surf.tri_k[0]-1);
       Vec3 A{surf.x[ia], surf.y[ia], surf.z[ia]};
       Vec3 Bv{surf.x[ib], surf.y[ib], surf.z[ib]};
       Vec3 Cv{surf.x[ic], surf.y[ic], surf.z[ic]};
@@ -473,7 +480,9 @@ int main(){
       Src.reserve(Ns); SVshn.reserve(Ns);
 
       for (std::size_t e=0;e<Ne;++e){
-        int i = surf.tri_i[e]-1, j = surf.tri_j[e]-1, k = surf.tri_k[e]-1;
+        const std::size_t i=static_cast<std::size_t>(surf.tri_i[e]-1);
+        const std::size_t j=static_cast<std::size_t>(surf.tri_j[e]-1);
+        const std::size_t k=static_cast<std::size_t>(surf.tri_k[e]-1);
         Vec3 A{surf.x[i], surf.y[i], surf.z[i]};
         Vec3 Bv{surf.x[j], surf.y[j], surf.z[j]};
         Vec3 Cv{surf.x[k], surf.y[k], surf.z[k]};

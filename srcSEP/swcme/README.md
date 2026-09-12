@@ -798,6 +798,57 @@ complete timing record. Absolute nanosecond values are hardware- and load-
 dependent; the budgets and same-process before/after ratios are the release
 gate. PST08 follows PST05 in `SMOKE`; other profiles include it through `@ALL`.
 
+### Strict-warning writer build (OUT08)
+
+OUT08 turns compiler diagnostics for the output boundary into a release gate.
+The dedicated target builds the shared status/output headers, compiled 3-D
+writers, header-only 1-D writer, and all three demonstrations twice: once with
+`-O0 -g3` and once with `-O3 -DNDEBUG`. Both variants enable `-Wall`,
+`-Wextra`, `-Wpedantic`, `-Wformat=2`, `-Wformat-security`, `-Wconversion`,
+`-Wsign-conversion`, and `-Wshadow`; `-Werror` makes every selected diagnostic
+fatal, with `-Werror=format-security` retained explicitly in the command line
+so the security requirement remains visible in CI logs.
+
+The checked variadic formatter now carries a GCC/Clang `printf` format
+annotation. Consequently the compiler verifies every production format literal
+against its argument types instead of treating `CheckedTextFile::print()` as an
+opaque project function. Records without substitutions can use the templated
+`write_literal()` path, which accepts a compile-time-sized character array and
+never interprets percent tokens. Both paths share one checked raw-record helper,
+so partial-write byte accounting and first-error-wins behavior remain identical.
+
+The strict optimized build exposed possible use of uninitialized scalars in the
+3-D volume and face writers. Those writers now initialize every output field,
+call status-returning field and divergence evaluators, remap a failure to the
+global output-row index, and cancel the staging transaction before returning.
+The fix therefore addresses the underlying control-flow ambiguity rather than
+suppressing the warning. Signed mesh connectivity is likewise validated before
+one explicit conversion to `std::size_t`; array-axis loops and demonstration
+time/grid conversions now use explicit, type-correct boundaries. OUT08 contains
+no warning suppression.
+
+Run the registered record-semantics assertion and strict compiler gate with:
+
+```sh
+cd test
+make -j
+./output/test_swcme --test OUT08
+make out08-strict CXX=g++
+# Run the same compiler-independent target in a Clang CI job when available:
+make out08-strict CXX=clang++
+```
+
+`out08-strict` creates isolated `output/out08-debug/` and
+`output/out08-optimized/` products, compiles every target from source rather
+than reusing normal objects, and runs the same literal/format assertion in both
+configurations. The runtime assertion verifies that `%` sequences remain
+verbatim through `write_literal()` and that a correctly typed formatted record
+still follows the checked open/write/flush/error/close lifecycle. Acceptance
+requires both builds and both assertions to pass without a diagnostic. OUT08
+follows PST08 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include its registered
+runtime half through `@ALL`, while CI/release jobs must additionally invoke the
+compile-time `out08-strict` target.
+
 ### `SEPSourceState`
 
 `SEPSourceState` is the stable transport-facing source record.  It contains:
@@ -906,8 +957,9 @@ Profiles are stored in `test/profiles/`:
 - `SMOKE` is a short development gate covering prepared-state safety, checked
   output failure propagation, transactional commit, model-domain preflight,
   BoxSpec and mesh-output validation, independent parsing, executable
-  demonstrations, state-ownership performance, configuration, core shock,
-  connectivity, divergence, and SEP-interface integration;
+  demonstrations, state-ownership performance, strict writer record semantics,
+  configuration, core shock, connectivity, divergence, and SEP-interface
+  integration;
 - `ROUTINE` runs the broad deterministic suite while excluding the slowest
   stochastic/multi-root stress cases;
 - `FULL` runs the complete registered C++ suite and exports the default SEP

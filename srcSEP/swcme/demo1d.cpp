@@ -205,7 +205,11 @@ int main(){
 
   const double rmin = 0.2*AU, rmax = 1.5*AU;
   for (std::size_t i=0;i<N;++i){
-    const double s = (i + 0.5) / double(N);
+    // Convert the discrete index explicitly at the numerical boundary.  This
+    // makes the intentional floating-point grid parameterization visible to
+    // reviewers and lets OUT08 reject any accidental implicit narrowing.
+    const double s = (static_cast<double>(i) + 0.5) /
+                     static_cast<double>(N);
     r[i] = rmin + s*(rmax - rmin);
   }
 

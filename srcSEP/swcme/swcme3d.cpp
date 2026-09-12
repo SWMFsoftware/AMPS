@@ -1442,7 +1442,10 @@ static inline void evaluate_region_sample_3d(
     // used by 1-D, eliminating dimension-dependent numerical acceleration.
     if (shock.has_shock && shock.solver_converged) {
       out.n_m3=swcme::regions::lerp(out.n_m3,shock.downstream_n_m3,loc.blend);
-      for (int k=0;k<3;++k) {
+      // Use the container's unsigned index type at the boundary between the
+      // legacy C arrays and std::array shock primitives.  The loop bounds make
+      // the conversion safe, but avoiding it entirely keeps that proof local.
+      for (std::size_t k=0;k<shock.downstream.velocity_m_s.size();++k) {
         out.velocity_m_s[k]=swcme::regions::lerp(
             out.velocity_m_s[k],shock.downstream.velocity_m_s[k],loc.blend);
         if (need_B) {
@@ -1474,7 +1477,7 @@ static inline void evaluate_region_sample_3d(
     const double Vle_mag=swcme::regions::leading_edge_speed(
         S.V_sw_ms,V2_rad,P.V_sheath_LE_factor);
     const double Vle[3]={Vle_mag*u[0],Vle_mag*u[1],Vle_mag*u[2]};
-    for (int k=0;k<3;++k) {
+    for (std::size_t k=0;k<shock.downstream.velocity_m_s.size();++k) {
       state.velocity_m_s[k]=swcme::regions::lerp(
           shock.downstream.velocity_m_s[k],Vle[k],w);
     }
@@ -1482,7 +1485,7 @@ static inline void evaluate_region_sample_3d(
     if (need_B) {
       double B_le[3];
       ::parker_vec_T_fast(S,u,b.R_le_m,B_le);
-      for (int k=0;k<3;++k) {
+      for (std::size_t k=0;k<shock.downstream.magnetic_T.size();++k) {
         state.magnetic_T[k]=swcme::regions::lerp(
             shock.downstream.magnetic_T[k],B_le[k],w);
       }
@@ -2120,14 +2123,26 @@ void Model::compute_triangle_metrics(const ShockMesh& M, TriMetrics& T) const {
   T.rc_mean.assign(Ne,0.0); T.Vsh_n_mean.assign(Ne,0.0);
 
   for (std::size_t e=0;e<Ne;++e){
-    const int ia=M.tri_i[e]-1, ib=M.tri_j[e]-1, ic=M.tri_k[e]-1;
-    if (ia<0 || ib<0 || ic<0 || ia==ib || ib==ic || ic==ia ||
-        static_cast<std::size_t>(ia)>=Nv || static_cast<std::size_t>(ib)>=Nv ||
-        static_cast<std::size_t>(ic)>=Nv) {
+    const int ia_input=M.tri_i[e]-1;
+    const int ib_input=M.tri_j[e]-1;
+    const int ic_input=M.tri_k[e]-1;
+    if (ia_input<0 || ib_input<0 || ic_input<0 ||
+        ia_input==ib_input || ib_input==ic_input || ic_input==ia_input ||
+        static_cast<std::size_t>(ia_input)>=Nv ||
+        static_cast<std::size_t>(ib_input)>=Nv ||
+        static_cast<std::size_t>(ic_input)>=Nv) {
       throw std::runtime_error(
           swcme::ModelStatus::make(swcme::StatusCode::InvalidMesh,
                                    "swcme3d::compute_triangle_metrics connectivity",e).summary());
     }
+
+    // Connectivity is stored as signed, one-based Tecplot indices.  Validate
+    // that representation first, then convert exactly once to the vector index
+    // type; every subsequent access is consequently free of implicit signed-
+    // to-unsigned narrowing.
+    const std::size_t ia=static_cast<std::size_t>(ia_input);
+    const std::size_t ib=static_cast<std::size_t>(ib_input);
+    const std::size_t ic=static_cast<std::size_t>(ic_input);
 
     const double A[3]={M.x[ia],M.y[ia],M.z[ia]};
     const double B[3]={M.x[ib],M.y[ib],M.z[ib]};
@@ -2828,10 +2843,28 @@ static swcme::ModelStatus write_bundle_output(
       const double yj=structured_coordinate(B.cy,B.hy,jj,B.Nj);
       for (int ii=0; ii<B.Ni && output.good(); ++ii,++volume_row){
         const double xi=structured_coordinate(B.cx,B.hx,ii,B.Ni);
-        double n,Vx,Vy,Vz,Bx,By,Bz,div;
-        model.evaluate_cartesian_with_B(
-            S,&xi,&yj,&zk,&n,&Vx,&Vy,&Vz,&Bx,&By,&Bz,1);
-        model.compute_divV_radial(S,&xi,&yj,&zk,&div,1,1e-3);
+        // Initialize every formatted scalar and use status-returning queries.
+        // The former throwing wrappers assigned these values only on success;
+        // optimized interprocedural analysis could not prove that contract and
+        // correctly warned that a future nonthrowing failure path might expose
+        // indeterminate bytes to the variadic formatter.  A failed query now
+        // cancels the transaction before any row containing that sample can be
+        // published, while the explicit initialization provides defense in
+        // depth against later control-flow changes.
+        double n=0.0,Vx=0.0,Vy=0.0,Vz=0.0;
+        double Bx=0.0,By=0.0,Bz=0.0,div=0.0;
+        swcme::ModelStatus sample_status=
+            model.evaluate_cartesian_with_B_checked(
+                S,&xi,&yj,&zk,&n,&Vx,&Vy,&Vz,&Bx,&By,&Bz,1);
+        if (sample_status.ok()) {
+          sample_status=model.compute_divV_radial_checked(
+              S,&xi,&yj,&zk,&div,1,1e-3);
+        }
+        if (!sample_status.ok()) {
+          sample_status.sample_index=volume_row;
+          output.cancel();
+          return sample_status;
+        }
         output.print("3D dataset volume row",volume_row,"%.9e %.9e %.9e "
           "%.9e %.9e %.9e %.9e "
           "%.9e %.9e %.9e %.9e "
@@ -2860,10 +2893,19 @@ static swcme::ModelStatus write_bundle_output(
     for (int i=0; i<I && output.good(); ++i,++face_row){
       const double y=structured_coordinate(B.cy,B.hy,i,I);
       const double x=x0;
-      double n,Vx,Vy,Vz,Bx,By,Bz,div;
-      model.evaluate_cartesian_with_B(
+      double n=0.0,Vx=0.0,Vy=0.0,Vz=0.0;
+      double Bx=0.0,By=0.0,Bz=0.0,div=0.0;
+      swcme::ModelStatus sample_status=model.evaluate_cartesian_with_B_checked(
           S,&x,&y,&z,&n,&Vx,&Vy,&Vz,&Bx,&By,&Bz,1);
-      model.compute_divV_radial(S,&x,&y,&z,&div,1,1e-3);
+      if (sample_status.ok()) {
+        sample_status=model.compute_divV_radial_checked(
+            S,&x,&y,&z,&div,1,1e-3);
+      }
+      if (!sample_status.ok()) {
+        sample_status.sample_index=face_row;
+        output.cancel();
+        return sample_status;
+      }
       output.print("3D dataset face row",face_row,"%.9e %.9e %.9e "
         "%.9e %.9e %.9e %.9e "
         "%.9e %.9e %.9e %.9e "
@@ -2923,10 +2965,22 @@ static swcme::ModelStatus write_face_output(
     for (int i=0; i<I && output.good(); ++i,++row){
       const double y=structured_coordinate(B.cy,B.hy,i,I);
       const double x=x0;
-      double n,Vx,Vy,Vz,Bx,By,Bz,div;
-      model.evaluate_cartesian_with_B(
+      // Mirror the bundle's explicit-status path.  Keeping the standalone
+      // writer identical prevents a compiler-clean face product from hiding a
+      // stale uninitialized-output defect in the combined dataset writer.
+      double n=0.0,Vx=0.0,Vy=0.0,Vz=0.0;
+      double Bx=0.0,By=0.0,Bz=0.0,div=0.0;
+      swcme::ModelStatus sample_status=model.evaluate_cartesian_with_B_checked(
           S,&x,&y,&z,&n,&Vx,&Vy,&Vz,&Bx,&By,&Bz,1);
-      model.compute_divV_radial(S,&x,&y,&z,&div,1,1e-3);
+      if (sample_status.ok()) {
+        sample_status=model.compute_divV_radial_checked(
+            S,&x,&y,&z,&div,1,1e-3);
+      }
+      if (!sample_status.ok()) {
+        sample_status.sample_index=row;
+        output.cancel();
+        return sample_status;
+      }
       output.print("3D box face row",row,"%.9e %.9e %.9e "
         "%.9e %.9e %.9e %.9e "
         "%.9e %.9e %.9e %.9e "

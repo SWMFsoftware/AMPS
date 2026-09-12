@@ -87,7 +87,9 @@ int main(){
       throw std::runtime_error("cannot open demo3d_1 CSV outputs");
 
     for (std::size_t k=0; k<Nt; ++k){
-      const double t = t0 + k*dt;
+      // Time is continuous while the loop index is discrete; spell out the
+      // intentional conversion so strict builds cannot hide a narrowing site.
+      const double t = t0 + static_cast<double>(k)*dt;
       StepState S = model.prepare_step(t);
 
       double n,Vx,Vy,Vz;
