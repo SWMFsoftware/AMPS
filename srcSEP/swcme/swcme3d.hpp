@@ -866,7 +866,10 @@ public:
   // transactional and diagnostics retain both the expected and supplied IDs.
   swcme::ModelStatus validate_prepared_state(
       const StepState& S, const char* context) const noexcept {
-    const swcme::ConfigurationDigest current=configuration_digest(P_);
+    // Construction/copy/move assignment maintain this cached complete Params
+    // fingerprint.  Since 3-D Params cannot mutate in place, validation reads
+    // one scalar rather than reserializing the configuration in every hot call.
+    const swcme::ConfigurationDigest current=configuration_digest_;
     // Instance provenance remains the primary error.  Configuration digests
     // are still attached so a foreign-state diagnostic distinguishes equal
     // models from gamma/geometry/Parker/kinematic/region mismatches.
@@ -1174,6 +1177,32 @@ public:
                                                   const char* path) const;
 
 private:
+  // PST08 private validated kernels.  Every public state-consuming API first
+  // authenticates model identity, configuration digest, and record integrity.
+  // Composite calls and per-sample loops then use these helpers under that
+  // single validation lease.  Keeping the helpers private prevents external
+  // callers from bypassing the safety contract while eliminating accidental
+  // O(N) digest work from an N-point field query.
+  bool shape_radius_normal_after_validation(
+      const StepState& S,double ux,double uy,double uz,
+      double& Rdir_m,double n_hat[3]) const;
+  swcme::ModelStatus shock_state_direction_after_validation(
+      const StepState& S,const double u[3],LocalShockState& state) const;
+  swcme::ModelStatus evaluate_cartesian_fast_after_validation(
+      const StepState& S,const double* x_m,const double* y_m,const double* z_m,
+      double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
+      std::size_t N) const;
+  swcme::ModelStatus evaluate_cartesian_with_B_after_validation(
+      const StepState& S,const double* x_m,const double* y_m,const double* z_m,
+      double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
+      double* Bx_T,double* By_T,double* Bz_T,std::size_t N) const;
+  swcme::ModelStatus compute_divV_cartesian_after_validation(
+      const StepState& S,const double* x_m,const double* y_m,const double* z_m,
+      double* divV,std::size_t N,double dr_frac) const;
+  swcme::ModelStatus compute_divV_after_validation(
+      const StepState& S,const double* x_m,const double* y_m,const double* z_m,
+      double* divV,std::size_t N,double dr_frac) const;
+
   // Copy assignment is the only legacy operation capable of replacing a 3-D
   // model's private Params.  Reject it after preparation with the same PST01
   // lifecycle rule used by the 1-D fluent setters.
@@ -1190,6 +1219,10 @@ private:
   // It is deliberately unrelated to configuration values so independently
   // constructed but numerically identical models remain distinct owners.
   swcme::ModelIdentity model_identity_;
+  // PST08 setup-time cache of the complete deterministic Params digest.
+  // PST03 semantics are unchanged; only repeated hot-path recomputation is
+  // removed after configuration becomes immutable.
+  swcme::ConfigurationDigest configuration_digest_;
   // The atomic lifecycle flag permits concurrent read-only queries after a
   // successful prepare without exposing any path back to mutable Params.
   mutable std::atomic<bool> configuration_locked_;

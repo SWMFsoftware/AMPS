@@ -51,6 +51,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test OUT07    # build/run/parse all demonstrations
 ./output/test_swcme --test PST07    # direct/AMPS adapter equivalence
 ./output/test_swcme --test PST05    # prepared-state lifetime and relocation
+./output/test_swcme --test PST08    # state-ownership performance guardrails
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -889,6 +890,74 @@ direct/AMPS evaluations pass with exact results, and AddressSanitizer reports no
 use-after-free or invalid access. An optional LeakSanitizer run reports no leak.
 
 PST05 follows PST07 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it through
+their `@ALL` expansion.
+
+## PST08: state ownership performance
+
+### What is tested
+
+PST08 measures the runtime and memory overhead of model-identity,
+configuration-digest, and prepared-state-integrity validation. It separately
+times `prepare_step()`, the complete state guard, direct scalar queries, AMPS
+scalar background queries, a 16,384-point 1-D fast batch, and a 256-point 3-D
+fast batch. Every timed category reports a median and nearest-rank p95 after
+warm-up. A C++17 allocation probe verifies the warmed validation, direct, and
+adapter hot paths.
+
+### Why it is tested
+
+PST02, PST03, and PST06 require strong validation before physics or output
+mutation. Recomputing those digests in a nested evaluator—or once for every
+sample in a batch—preserves correctness but can make particle coupling
+unnecessarily expensive. Before PST08, the 1-D AMPS scalar path authenticated
+the same state three times, and a 3-D batch re-entered checked directional shock
+and geometry methods for every point. The test prevents that topology from
+returning and ensures safety checks do not introduce hidden heap traffic.
+
+### How it is tested
+
+The ordinary registered test uses the project's optimized build. The dedicated
+`pst08-performance` target rebuilds only `swcme3d.cpp`, the benchmark, and its
+minimal runner with pinned C++17, `-O3`, `-DNDEBUG`, warning, and pthread flags.
+Preparation uses a fresh model in each timing iteration and is never included
+in per-query throughput. Cheap scalar operations execute in inner loops so
+clock resolution does not dominate; representative batches execute from
+preallocated coordinate and destination arrays.
+
+The corrected paths are compared with an emulated pre-PST08 topology in the
+same process. The emulation calls the exact current state validator at each
+redundant outer/nested/per-sample location removed by PST08, then calls the
+corrected physics path. It therefore isolates validation topology without
+keeping obsolete physics, weakening state checks, or exposing a public bypass.
+All return codes and numerical outputs feed a volatile checksum to prevent
+dead-code elimination.
+
+For memory, the test executable instruments scalar, array, sized, and aligned
+`operator new`. Counting is enabled only after benchmark storage and iostreams
+are warm and only around public production calls. This makes any new allocation
+below a digest, status, model evaluator, or AMPS record assembly visible while
+leaving the production library's allocator unchanged.
+
+Run both forms with:
+
+```sh
+make -j
+./output/test_swcme --test PST08
+make pst08-performance
+```
+
+### Expected result
+
+Complete state-validation p95 is no more than 10 microseconds. Direct/AMPS
+scalar p95 budgets are 20/25 microseconds in 1-D and 500/600 microseconds in
+3-D. Corrected p95 batch targets are 5 milliseconds for 16,384 1-D points and
+100 milliseconds for 256 3-D points; one validation contributes at most 5% of
+either batch runtime. The corrected 1-D direct median must be at least 20%
+faster than the emulated two-validation path, and the AMPS median at least 40%
+faster than the emulated three-validation path. Warmed validation and direct/
+AMPS queries allocate exactly zero bytes through C++ allocation APIs.
+
+PST08 follows PST05 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it through
 their `@ALL` expansion.
 
 ## Python campaign manager and reproducible run artifacts

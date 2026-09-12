@@ -76,6 +76,18 @@ struct SourceSurface {
   std::vector<SEPSourceState> patches;
 };
 
+// State-authentication failures are the only adapter failures required to
+// preserve a caller's previous record verbatim.  PST08 routes hot adapter calls
+// directly through one checked Model boundary, then uses this classifier to
+// retain PST02/PST03/PST06 transactionality without performing a duplicate
+// adapter-side digest.  Ordinary coordinate/physics errors still publish their
+// status in a cleared result record as before.
+inline bool is_prepared_state_validation_failure(StatusCode code) noexcept {
+  return code==StatusCode::StateModelMismatch ||
+         code==StatusCode::StateConfigurationMismatch ||
+         code==StatusCode::StalePreparedState;
+}
+
 inline std::string spectrum_configuration_manifest(const SpectrumConfig& c) {
   std::ostringstream out;
   out.setf(std::ios::scientific);
@@ -154,40 +166,44 @@ public:
   ModelStatus evaluate_background(const PreparedStep& step,
                                   double radius_m,
                                   BackgroundState& out) const {
-    // Reject a foreign prepared state before clearing the caller's output.
-    // This ordering is part of PST02: an ownership failure is transactional
-    // and cannot erase a previously valid AMPS background record.
-    const ModelStatus ownership=model_.validate_prepared_state(
-        step,"SEP Interface1D background");
-    if (!ownership.ok()) return ownership;
-    out=BackgroundState{};
-    out.owner_model_identity=step.owner_model_identity;
-    out.configuration_digest=step.configuration_digest;
-    out.position_m={{radius_m,0.0,0.0}};
+    // Assemble into a local candidate.  The checked Model call authenticates
+    // the state before writing the stack scalars, so the adapter does not need
+    // to repeat the digest merely to preserve `out` on ownership failure.
+    BackgroundState candidate;
+    candidate.owner_model_identity=step.owner_model_identity;
+    candidate.configuration_digest=step.configuration_digest;
+    candidate.position_m={{radius_m,0.0,0.0}};
     double n=0.0,V=0.0,Br=0.0,Bphi=0.0,Bmag=0.0,divV=0.0;
     const ModelStatus status=model_.evaluate_radii_with_B_div_checked(
         step,&radius_m,&n,&V,&Br,&Bphi,&Bmag,&divV,1);
-    out.status=status;
-    if (status.failure()) return status;
-    out.density_m3=n;
-    out.pressure_Pa=solarwind::proton_pressure_Pa(
+    if (status.failure()) {
+      if (is_prepared_state_validation_failure(status.code)) return status;
+      candidate.status=status;
+      out=candidate;
+      return status;
+    }
+    candidate.status=status;
+    candidate.density_m3=n;
+    candidate.pressure_Pa=solarwind::proton_pressure_Pa(
         step.common.solar_wind,n);
-    out.velocity_m_s={{V,0.0,0.0}};
+    candidate.velocity_m_s={{V,0.0,0.0}};
     // In the +X equatorial reference used by the common 1-D/3-D regression,
     // the Parker azimuthal basis is +Y; signed Bphi therefore maps directly to
     // the Y component and preserves the production Parker polarity.
-    out.magnetic_T={{Br,Bphi,0.0}};
-    out.magnetic_magnitude_T=Bmag;
-    out.div_velocity_s_inv=divV;
-    out.focusing_length_m=solarwind::parker_focusing_length_m(
+    candidate.magnetic_T={{Br,Bphi,0.0}};
+    candidate.magnetic_magnitude_T=Bmag;
+    candidate.div_velocity_s_inv=divV;
+    candidate.focusing_length_m=solarwind::parker_focusing_length_m(
         step.common.solar_wind,radius_m,
         step.common.solar_wind.reference_sin_theta);
-    if (!std::isfinite(out.pressure_Pa) || !(out.pressure_Pa>0.0) ||
-        !std::isfinite(out.focusing_length_m) ||
-        !(out.focusing_length_m>0.0)) {
-      out.status=ModelStatus::make(StatusCode::NonFiniteResult,
-                                   "SEP Interface1D transport context");
+    if (!std::isfinite(candidate.pressure_Pa) ||
+        !(candidate.pressure_Pa>0.0) ||
+        !std::isfinite(candidate.focusing_length_m) ||
+        !(candidate.focusing_length_m>0.0)) {
+      candidate.status=ModelStatus::make(
+          StatusCode::NonFiniteResult,"SEP Interface1D transport context");
     }
+    out=candidate;
     return out.status;
   }
 
@@ -250,45 +266,49 @@ public:
   ModelStatus evaluate_background(const PreparedStep& step,
                                   const std::array<double,3>& position_m,
                                   BackgroundState& out) const {
-    // Perform ownership validation before resetting `out`, preserving the
-    // previous record exactly when an AMPS caller accidentally mixes adapters.
-    const ModelStatus ownership=model_.validate_prepared_state(
-        step,"SEP Interface3D background");
-    if (!ownership.ok()) return ownership;
-    out=BackgroundState{};
-    out.owner_model_identity=step.owner_model_identity;
-    out.configuration_digest=step.configuration_digest;
-    out.position_m=position_m;
+    // Use a transactional candidate so the one direct checked call is also the
+    // one state-authentication point.  This removes duplicate hashing from the
+    // per-particle adapter without weakening mismatch output preservation.
+    BackgroundState candidate;
+    candidate.owner_model_identity=step.owner_model_identity;
+    candidate.configuration_digest=step.configuration_digest;
+    candidate.position_m=position_m;
     const double x=position_m[0],y=position_m[1],z=position_m[2];
     double n=0.0,vx=0.0,vy=0.0,vz=0.0,bx=0.0,by=0.0,bz=0.0,divV=0.0;
     const ModelStatus status=model_.evaluate_cartesian_with_B_div_checked(
         step,&x,&y,&z,&n,&vx,&vy,&vz,&bx,&by,&bz,&divV,1);
-    out.status=status;
-    if (status.failure()) return status;
-    out.density_m3=n;
-    out.pressure_Pa=solarwind::proton_pressure_Pa(
+    if (status.failure()) {
+      if (is_prepared_state_validation_failure(status.code)) return status;
+      candidate.status=status;
+      out=candidate;
+      return status;
+    }
+    candidate.status=status;
+    candidate.density_m3=n;
+    candidate.pressure_Pa=solarwind::proton_pressure_Pa(
         step.common.solar_wind,n);
-    out.velocity_m_s={{vx,vy,vz}};
-    out.magnetic_T={{bx,by,bz}};
-    out.magnetic_magnitude_T=std::hypot(bx,std::hypot(by,bz));
-    out.div_velocity_s_inv=divV;
+    candidate.velocity_m_s={{vx,vy,vz}};
+    candidate.magnetic_T={{bx,by,bz}};
+    candidate.magnetic_magnitude_T=std::hypot(bx,std::hypot(by,bz));
+    candidate.div_velocity_s_inv=divV;
     const double radius_m=std::hypot(x,std::hypot(y,z));
     const std::array<double,3> radial_hat={{x/radius_m,y/radius_m,z/radius_m}};
     const std::array<double,3> solar_axis_hat={{
         step.solar_axis_hat[0],step.solar_axis_hat[1],step.solar_axis_hat[2]}};
     const double sin_theta=solarwind::parker_sin_colatitude(
         solar_axis_hat,radial_hat);
-    out.focusing_length_m=solarwind::parker_focusing_length_m(
+    candidate.focusing_length_m=solarwind::parker_focusing_length_m(
         step.common.solar_wind,radius_m,sin_theta);
-    if (!std::isfinite(out.magnetic_magnitude_T) ||
-        !std::isfinite(out.pressure_Pa) || !(out.pressure_Pa>0.0) ||
-        !std::isfinite(out.focusing_length_m) ||
-        !(out.focusing_length_m>0.0)) {
-      out.status=ModelStatus::make(StatusCode::NonFiniteResult,
-                                   "SEP Interface3D transport context");
-      return out.status;
+    if (!std::isfinite(candidate.magnetic_magnitude_T) ||
+        !std::isfinite(candidate.pressure_Pa) ||
+        !(candidate.pressure_Pa>0.0) ||
+        !std::isfinite(candidate.focusing_length_m) ||
+        !(candidate.focusing_length_m>0.0)) {
+      candidate.status=ModelStatus::make(
+          StatusCode::NonFiniteResult,"SEP Interface3D transport context");
     }
-    return status;
+    out=candidate;
+    return out.status;
   }
 
   ModelStatus source_at_direction(const PreparedStep& step,
@@ -296,17 +316,15 @@ public:
                                   SEPSourceState& out,
                                   std::size_t source_id=0,
                                   double patch_area_m2=0.0) const {
-    // Guard the outer interface so the caller's source record remains
-    // byte-for-byte unchanged on mismatch.  The model repeats the check at its
-    // checked physics boundary as defense in depth for direct users.
-    const ModelStatus ownership=model_.validate_prepared_state(
-        step,"SEP Interface3D directional source");
-    if (!ownership.ok()) return ownership;
     acceleration::ShockAccelerationState acceleration_state;
     const double u[3]={direction[0],direction[1],direction[2]};
     const ModelStatus acceleration_status=
         model_.shock_acceleration_state_checked(step,u,acceleration_state);
     if (!acceleration_status.ok()) {
+      // The direct checked model call has not touched acceleration_state on a
+      // provenance failure, so retain the caller's prior adapter output too.
+      if (is_prepared_state_validation_failure(acceleration_status.code))
+        return acceleration_status;
       out=SEPSourceState{};
       out.status=acceleration_status;
       return out.status;

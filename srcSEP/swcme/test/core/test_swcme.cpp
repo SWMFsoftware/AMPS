@@ -23,6 +23,7 @@ void test_out01(swcme_test::Context& context);
 void test_out07(swcme_test::Context& context);
 void test_pst07(swcme_test::Context& context);
 void test_pst05(swcme_test::Context& context);
+void test_pst08(swcme_test::Context& context);
 void test_den01(swcme_test::Context& context);
 void test_par01(swcme_test::Context& context);
 void test_par02(swcme_test::Context& context);
@@ -131,6 +132,7 @@ const swcme_test::TestCase kTests[] = {
     {"OUT07", "OUTPUT", "Demonstration program execution", test_out07},
     {"PST07", "INTEGRATION", "AMPS adapter equivalence", test_pst07},
     {"PST05", "COMMON", "Prepared-state lifetime contract", test_pst05},
+    {"PST08", "PERFORMANCE", "State ownership performance", test_pst08},
     {"CFG01", "COMMON", "Configuration rejection and physical-range validation",
      test_cfg01},
     {"CFG02", "COMMON", "Unit-conversion and dimensional-consistency test",

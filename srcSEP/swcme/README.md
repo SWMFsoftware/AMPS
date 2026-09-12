@@ -736,6 +736,68 @@ untraced host, enable it with
 PST05 follows PST07 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
 through `@ALL`.
 
+### State-ownership performance (PST08)
+
+PST08 makes prepared-state safety a bounded-cost contract. Public APIs still
+validate model identity, the complete configuration digest, and the PST06
+state-integrity seal before inspecting arguments or modifying outputs. The
+implementation now guarantees that this complete authentication occurs once
+per outer public call—never once per nested evaluator, divergence stencil, or
+batch sample.
+
+Two changes enforce that rule. First, each model caches its complete
+configuration digest during construction or guarded setup. The 1-D fluent
+setters refresh the cache before preparation; the first successful preparation
+then freezes both parameters and digest. Copy and move operations preserve the
+PST02/PST05 identity rules while maintaining the matching cached digest.
+Validation therefore compares one scalar instead of serializing the complete
+parameter bundle in every particle query.
+
+Second, composite operations use private `*_after_validation` kernels. These
+kernels are inaccessible to callers and are entered only after an outer public
+method has authenticated the state. The 1-D full-field evaluator no longer
+re-enters the checked fast evaluator, the 3-D field loop no longer revalidates
+inside directional shock/geometry calls, and Cartesian divergence stencils no
+longer hash the same record for each velocity sample. The AMPS adapters build a
+candidate output locally and delegate authentication to one checked Model call;
+state failures still leave the caller's prior record unchanged.
+
+The dedicated benchmark separates `prepare_step()` from evaluation and reports
+median and nearest-rank p95 timing after warm-up. It measures complete state
+validation, direct and AMPS scalar queries, and representative 1-D/3-D batches.
+An emulated pre-PST08 topology repeats the exact current validation at the
+locations removed by the correction, providing an on-host before/after cost
+comparison without exposing an unsafe unvalidated API. A test-only global
+allocation probe covers scalar, array, sized, and aligned C++17 allocation and
+requires zero allocations in warmed validation and direct/AMPS hot paths.
+
+The declared acceptance budgets are intentionally conservative for shared CI:
+
+- complete validation p95 is at most 10 microseconds;
+- 1-D direct and AMPS scalar p95 are at most 20 and 25 microseconds;
+- 3-D direct and AMPS scalar p95 are at most 500 and 600 microseconds;
+- a 16,384-point 1-D batch completes within 5 milliseconds p95;
+- a 256-point 3-D batch completes within 100 milliseconds p95;
+- one validation is at most 5% of either representative batch runtime;
+- corrected 1-D direct and AMPS medians improve materially over their emulated
+  duplicate-validation topology; and
+- warmed ownership, direct, and AMPS hot paths allocate no memory.
+
+Run PST08 through the ordinary suite or its pinned optimized target:
+
+```sh
+cd test
+make -j
+./output/test_swcme --test PST08
+make pst08-performance
+```
+
+The pinned target compiles only the production 3-D implementation and PST08
+with C++17, `-O3`, `-DNDEBUG`, warnings, and pthread support, then prints the
+complete timing record. Absolute nanosecond values are hardware- and load-
+dependent; the budgets and same-process before/after ratios are the release
+gate. PST08 follows PST05 in `SMOKE`; other profiles include it through `@ALL`.
+
 ### `SEPSourceState`
 
 `SEPSourceState` is the stable transport-facing source record.  It contains:
@@ -844,8 +906,8 @@ Profiles are stored in `test/profiles/`:
 - `SMOKE` is a short development gate covering prepared-state safety, checked
   output failure propagation, transactional commit, model-domain preflight,
   BoxSpec and mesh-output validation, independent parsing, executable
-  demonstrations, configuration, core shock, connectivity, divergence, and
-  SEP-interface integration;
+  demonstrations, state-ownership performance, configuration, core shock,
+  connectivity, divergence, and SEP-interface integration;
 - `ROUTINE` runs the broad deterministic suite while excluding the slowest
   stochastic/multi-root stress cases;
 - `FULL` runs the complete registered C++ suite and exports the default SEP

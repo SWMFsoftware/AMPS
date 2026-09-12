@@ -742,9 +742,11 @@ inline swcme::ConfigurationDigest prepared_state_integrity(
 class Model {
 public:
   Model() : P{}, model_identity_(swcme::next_model_identity()),
+            configuration_digest_(swcme1d::configuration_digest(P)),
             configuration_locked_(false) {}
   explicit Model(const Params& p)
       : P(p), model_identity_(swcme::next_model_identity()),
+        configuration_digest_(swcme1d::configuration_digest(P)),
         configuration_locked_(false) {}
 
   // A copied Model is a new owner even when its Params are identical.  Giving
@@ -753,6 +755,7 @@ public:
   // a hidden token together with the public configuration.
   Model(const Model& other)
       : P(other.P), model_identity_(swcme::next_model_identity()),
+        configuration_digest_(other.configuration_digest_),
         configuration_locked_(false) {}
   Model& operator=(const Model& other) {
     if (this!=&other) {
@@ -762,6 +765,7 @@ public:
       // it still changes the logical model and therefore receives a fresh
       // identity consistent with PST02's instance-provenance contract.
       model_identity_=swcme::next_model_identity();
+      configuration_digest_=other.configuration_digest_;
       configuration_locked_.store(false,std::memory_order_release);
     }
     return *this;
@@ -778,9 +782,11 @@ public:
   Model(Model&& other) noexcept(
       std::is_nothrow_move_constructible<Params>::value)
       : P(std::move(other.P)), model_identity_(other.model_identity_),
+        configuration_digest_(other.configuration_digest_),
         configuration_locked_(
             other.configuration_locked_.load(std::memory_order_acquire)) {
     other.model_identity_=swcme::next_model_identity();
+    other.configuration_digest_=swcme1d::configuration_digest(other.P);
     other.configuration_locked_.store(false,std::memory_order_release);
   }
 
@@ -793,10 +799,12 @@ public:
       require_configuration_mutable("move operator=");
       P=std::move(other.P);
       model_identity_=other.model_identity_;
+      configuration_digest_=other.configuration_digest_;
       configuration_locked_.store(
           other.configuration_locked_.load(std::memory_order_acquire),
           std::memory_order_release);
       other.model_identity_=swcme::next_model_identity();
+      other.configuration_digest_=swcme1d::configuration_digest(other.P);
       other.configuration_locked_.store(false,std::memory_order_release);
     }
     return *this;
@@ -804,13 +812,15 @@ public:
 
   // Parameter setters (fluent)
   Model& SetParams(const Params& p){
-    require_configuration_mutable("SetParams"); P=p; return *this; }
+    require_configuration_mutable("SetParams"); P=p;
+    refresh_configuration_digest(); return *this; }
   Model& SetCME(double r0_Rs,double V0_sh_kms,double Gamma_kmInv){
     require_configuration_mutable("SetCME");
-    P.r0_Rs=r0_Rs; P.V0_sh_kms=V0_sh_kms; P.Gamma_kmInv=Gamma_kmInv; return *this; }
+    P.r0_Rs=r0_Rs; P.V0_sh_kms=V0_sh_kms; P.Gamma_kmInv=Gamma_kmInv;
+    refresh_configuration_digest(); return *this; }
   Model& SetKinematicsMode(swcme::kinematics::Mode mode){
     require_configuration_mutable("SetKinematicsMode");
-    P.kinematics_mode=mode; return *this; }
+    P.kinematics_mode=mode; refresh_configuration_digest(); return *this; }
   Model& SetDataDrivenKinematics(const std::vector<double>& time_s,
                                  const std::vector<double>& radius_Rs,
                                  swcme::kinematics::ExtrapolationPolicy policy=
@@ -818,33 +828,38 @@ public:
     require_configuration_mutable("SetDataDrivenKinematics");
     P.kinematics_mode=swcme::kinematics::Mode::DataDriven;
     P.data_time_s=time_s; P.data_radius_Rs=radius_Rs; P.data_extrapolation=policy;
+    refresh_configuration_digest();
     return *this; }
   Model& SetAmbient(double V_sw_kms,double n1AU_cm3,double B1AU_nT,double T_K,
                     double gamma_ad=swcme::defaults::GAMMA_AD,
                     double sin_theta=swcme::defaults::PARKER_REFERENCE_SIN_THETA){
     require_configuration_mutable("SetAmbient");
     P.V_sw_kms=V_sw_kms; P.n1AU_cm3=n1AU_cm3; P.B1AU_nT=B1AU_nT; P.T_K=T_K;
-    P.gamma_ad=gamma_ad; P.sin_theta=sin_theta; return *this; }
+    P.gamma_ad=gamma_ad; P.sin_theta=sin_theta;
+    refresh_configuration_digest(); return *this; }
   Model& SetRegionMode(swcme::regions::Mode mode){
     require_configuration_mutable("SetRegionMode");
-    P.region_mode=mode; return *this; }
+    P.region_mode=mode; refresh_configuration_digest(); return *this; }
   Model& SetShockAccelerationMode(swcme::acceleration::Mode mode){
     require_configuration_mutable("SetShockAccelerationMode");
-    P.shock_acceleration_mode=mode; return *this; }
+    P.shock_acceleration_mode=mode; refresh_configuration_digest(); return *this; }
   Model& SetGeometry(double sheath_thick_AU_at1AU,double ejecta_thick_AU_at1AU){
     require_configuration_mutable("SetGeometry");
     P.sheath_thick_AU_at1AU=sheath_thick_AU_at1AU;
-    P.ejecta_thick_AU_at1AU=ejecta_thick_AU_at1AU; return *this; }
+    P.ejecta_thick_AU_at1AU=ejecta_thick_AU_at1AU;
+    refresh_configuration_digest(); return *this; }
   Model& SetSmoothing(double w_sh,double w_le,double w_te){
     require_configuration_mutable("SetSmoothing");
     P.edge_smooth_shock_AU_at1AU=w_sh;
     P.edge_smooth_le_AU_at1AU   =w_le;
-    P.edge_smooth_te_AU_at1AU   =w_te; return *this; }
+    P.edge_smooth_te_AU_at1AU   =w_te;
+    refresh_configuration_digest(); return *this; }
   Model& SetSheathEjecta(double sheath_comp_floor,double sheath_ramp_power,
                          double V_sheath_LE_factor,double f_ME,double V_ME_factor){
     require_configuration_mutable("SetSheathEjecta");
     P.sheath_comp_floor=sheath_comp_floor; P.sheath_ramp_power=sheath_ramp_power;
-    P.V_sheath_LE_factor=V_sheath_LE_factor; P.f_ME=f_ME; P.V_ME_factor=V_ME_factor;
+    P.V_sheath_LE_factor=V_sheath_LE_factor; P.f_ME=f_ME;
+    P.V_ME_factor=V_ME_factor; refresh_configuration_digest();
     return *this; }
 
   const Params& GetParams() const { return P; }
@@ -875,7 +890,10 @@ public:
   // caller sentinels and makes a rejected mixed-model call transactional.
   swcme::ModelStatus validate_prepared_state(
       const StepState& S, const char* context) const noexcept {
-    const swcme::ConfigurationDigest current=configuration_digest(P);
+    // Params is mutable only during setup, where each setter refreshes this
+    // cache.  Successful preparation freezes both values, so hot validation
+    // reads one scalar instead of serializing the complete configuration.
+    const swcme::ConfigurationDigest current=configuration_digest_;
     // Preserve PST02 precedence: a foreign instance is always an ownership
     // error, while its digests explain whether the configurations also differ.
     if (S.owner_model_identity!=model_identity_)
@@ -954,7 +972,7 @@ public:
     // Capture the exact configuration only after validation succeeds.  PST01
     // freezes supported mutation when this preparation returns; the digest
     // remains a defense-in-depth check before any consumer modifies outputs.
-    S.configuration_digest=configuration_digest(P);
+    S.configuration_digest=configuration_digest_;
     S.time_s=t_s;
 
     // Build the dimensionality-independent core configuration in public units
@@ -1185,6 +1203,26 @@ public:
     const swcme::ModelStatus ownership=validate_prepared_state(
         S,"swcme1d::evaluate_radii_fast");
     if (!ownership.ok()) return ownership;
+    return evaluate_radii_fast_after_validation(S,r_m,n_m3,V_ms,N);
+  }
+
+private:
+  // Configuration digesting is setup work.  Centralizing refreshes here keeps
+  // the public setter contract auditable and guarantees that PST03 diagnostics
+  // remain exact while PST08 removes repeated parameter serialization from
+  // every particle/background query.
+  void refresh_configuration_digest() noexcept {
+    configuration_digest_=swcme1d::configuration_digest(P);
+  }
+
+  // PST08 validation lease for the 1-D batch kernel.  This helper is private,
+  // so callers cannot bypass ownership/configuration/integrity checks.  A
+  // public composite method validates once and may then reuse this kernel;
+  // validation is consequently O(1) per API call instead of being repeated by
+  // every nested evaluator.  No state or output pointer is retained here.
+  swcme::ModelStatus evaluate_radii_fast_after_validation(
+      const StepState& S, const double* r_m, double* n_m3, double* V_ms,
+      std::size_t N) const {
     if (N==0) return swcme::ModelStatus::success();
     if (!r_m || !n_m3 || !V_ms) {
       return swcme::ModelStatus::make(
@@ -1278,6 +1316,8 @@ public:
     return swcme::ModelStatus::success();
   }
 
+public:
+
   void evaluate_radii_fast(const StepState& S, const double* r_m,
                            double* n_m3, double* V_ms,
                            std::size_t N) const {
@@ -1311,7 +1351,11 @@ public:
     }
     (void)dr_frac; // analytical 1-D divergence; kept in the API for compatibility
 
-    swcme::ModelStatus status=evaluate_radii_fast_checked(S,r_m,n_m3,V_ms,N);
+    // The outer guard above has already authenticated the complete state.
+    // Calling the private kernel avoids a second full digest while preserving
+    // the exact argument, domain, numerical-status, and output behavior.
+    swcme::ModelStatus status=
+        evaluate_radii_fast_after_validation(S,r_m,n_m3,V_ms,N);
     if (!status.ok()) return status;
 
     for (std::size_t i=0;i<N;++i) {
@@ -1688,6 +1732,9 @@ private:
   // It is intentionally not derived from Params; identical Model instances
   // must remain distinct owners for PST02.
   swcme::ModelIdentity model_identity_;
+  // Cached complete Params fingerprint.  It changes only through guarded setup
+  // operations and is immutable once a StepState has been issued.
+  swcme::ConfigurationDigest configuration_digest_;
   // False during the legacy setup phase and permanently true after the first
   // successful prepare_step().  It is never reset on a live model.
   mutable std::atomic<bool> configuration_locked_;

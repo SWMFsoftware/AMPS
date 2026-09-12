@@ -382,10 +382,12 @@ namespace swcme3d {
 
 Model::Model(const Params& P)
     : P_(P), model_identity_(swcme::next_model_identity()),
+      configuration_digest_(swcme3d::configuration_digest(P_)),
       configuration_locked_(false) {}
 
 Model::Model(const Model& other)
     : P_(other.P_), model_identity_(swcme::next_model_identity()),
+      configuration_digest_(other.configuration_digest_),
       configuration_locked_(false) {}
 
 Model& Model::operator=(const Model& other) {
@@ -396,6 +398,7 @@ Model& Model::operator=(const Model& other) {
     // anyway because assignment replaces the logical model represented by the
     // object and PST02 ownership must not depend on configuration equality.
     model_identity_=swcme::next_model_identity();
+    configuration_digest_=other.configuration_digest_;
     configuration_locked_.store(false,std::memory_order_release);
   }
   return *this;
@@ -404,12 +407,14 @@ Model& Model::operator=(const Model& other) {
 Model::Model(Model&& other) noexcept(
     std::is_nothrow_move_constructible<Params>::value)
     : P_(std::move(other.P_)), model_identity_(other.model_identity_),
+      configuration_digest_(other.configuration_digest_),
       configuration_locked_(
           other.configuration_locked_.load(std::memory_order_acquire)) {
   // The identity transfer is the PST05 ownership hand-off: old prepared states
   // now name *this*.  Rotating the source prevents two live objects from
   // accepting one state while leaving the moved-from object safely destructible.
   other.model_identity_=swcme::next_model_identity();
+  other.configuration_digest_=swcme3d::configuration_digest(other.P_);
   other.configuration_locked_.store(false,std::memory_order_release);
 }
 
@@ -420,10 +425,12 @@ Model& Model::operator=(Model&& other) {
     require_configuration_mutable("move operator=");
     P_=std::move(other.P_);
     model_identity_=other.model_identity_;
+    configuration_digest_=other.configuration_digest_;
     configuration_locked_.store(
         other.configuration_locked_.load(std::memory_order_acquire),
         std::memory_order_release);
     other.model_identity_=swcme::next_model_identity();
+    other.configuration_digest_=swcme3d::configuration_digest(other.P_);
     other.configuration_locked_.store(false,std::memory_order_release);
   }
   return *this;
@@ -484,7 +491,7 @@ StepState Model::prepare_step(double t_s) const {
   // Record the complete, stable configuration snapshot after validation.
   // State-consuming APIs recompute this digest before touching their outputs,
   // which makes cross-configuration rejection transactional.
-  S.configuration_digest=configuration_digest(P_);
+  S.configuration_digest=configuration_digest_;
   S.time_s=t_s;
 
   // 1) Apex-aligned orthonormal basis (e1 along CME apex direction).  The CME
@@ -697,6 +704,17 @@ bool Model::shape_radius_normal(const StepState& S,
   // must leave Rdir_m and n_hat exactly as supplied by the caller.
   swcme::throw_if_error(validate_prepared_state(
       S,"swcme3d::shape_radius_normal"));
+  return shape_radius_normal_after_validation(
+      S,ux,uy,uz,Rdir_m,n_hat);
+}
+
+bool Model::shape_radius_normal_after_validation(
+    const StepState& S,double ux,double uy,double uz,
+    double& Rdir_m,double n_hat[3]) const {
+  // This private geometry kernel is reachable only after a public boundary has
+  // authenticated S.  Nested shock/batch paths use it to avoid rehashing the
+  // same immutable record for every sample while retaining identical geometry
+  // validation and exception behavior.
   double u[3]={ux,uy,uz};
   if (!::normalize_checked(u)) {
     throw std::invalid_argument(
@@ -824,6 +842,14 @@ swcme::ModelStatus Model::shock_state_direction_checked(
   const swcme::ModelStatus ownership=validate_prepared_state(
       S,"swcme3d::shock_state_direction");
   if (!ownership.ok()) return ownership;
+  return shock_state_direction_after_validation(S,u_in,state);
+}
+
+swcme::ModelStatus Model::shock_state_direction_after_validation(
+    const StepState& S,const double u_in[3],LocalShockState& state) const {
+  // PST08: the public caller or enclosing batch has already validated all
+  // provenance.  This helper performs only direction, geometry, and shock
+  // physics and never weakens the transactional public rejection boundary.
   state=LocalShockState{};
   if (!u_in || !std::isfinite(u_in[0]) || !std::isfinite(u_in[1]) ||
       !std::isfinite(u_in[2])) {
@@ -843,7 +869,8 @@ swcme::ModelStatus Model::shock_state_direction_checked(
 
   double Rdir=0.0,n_hat[3]={0.0,0.0,0.0};
   try {
-    if (!shape_radius_normal(S,u[0],u[1],u[2],Rdir,n_hat)) {
+    if (!shape_radius_normal_after_validation(
+            S,u[0],u[1],u[2],Rdir,n_hat)) {
       state.status=swcme::ModelStatus::make(
           swcme::StatusCode::NoSurface,
           "swcme3d::shock_state_direction finite surface");
@@ -960,7 +987,10 @@ swcme::ModelStatus Model::shock_acceleration_state_checked(
   if (!ownership.ok()) return ownership;
   state=swcme::acceleration::ShockAccelerationState{};
   LocalShockState shock;
-  const swcme::ModelStatus shock_status=shock_state_direction_checked(S,u_in,shock);
+  // Ownership was established above, so the private shock kernel prevents a
+  // redundant full-state digest in this composite source operation.
+  const swcme::ModelStatus shock_status=
+      shock_state_direction_after_validation(S,u_in,shock);
   if (!shock_status.ok()) return shock_status;
 
   double u[3]={u_in[0],u_in[1],u_in[2]};
@@ -1525,6 +1555,18 @@ swcme::ModelStatus Model::evaluate_cartesian_fast_checked(
   const swcme::ModelStatus ownership=validate_prepared_state(
       S,"swcme3d::evaluate_cartesian_fast");
   if (!ownership.ok()) return ownership;
+  return evaluate_cartesian_fast_after_validation(
+      S,x_m,y_m,z_m,n_m3,Vx_ms,Vy_ms,Vz_ms,N);
+}
+
+swcme::ModelStatus Model::evaluate_cartesian_fast_after_validation(
+    const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
+    std::size_t N) const {
+  // The full state digest is invariant across this loop and was checked by the
+  // enclosing public call.  Only per-point input and physics checks belong in
+  // this kernel; otherwise a batch would pay O(N) ownership-hash overhead.
   if (N==0) return swcme::ModelStatus::success();
   if (!x_m || !y_m || !z_m || !n_m3 || !Vx_ms || !Vy_ms || !Vz_ms) {
     return swcme::ModelStatus::make(
@@ -1553,7 +1595,8 @@ swcme::ModelStatus Model::evaluate_cartesian_fast_checked(
     const double u[3]={x*invr,y*invr,z*invr};
 
     LocalShockState shock;
-    const swcme::ModelStatus shock_status=shock_state_direction_checked(S,u,shock);
+    const swcme::ModelStatus shock_status=
+        shock_state_direction_after_validation(S,u,shock);
     const bool surface_exists=shock_status.ok();
     if (shock_status.failure()) {
       swcme::ModelStatus out=shock_status;
@@ -1597,6 +1640,17 @@ swcme::ModelStatus Model::evaluate_cartesian_with_B_checked(
   const swcme::ModelStatus ownership=validate_prepared_state(
       S,"swcme3d::evaluate_cartesian_with_B");
   if (!ownership.ok()) return ownership;
+  return evaluate_cartesian_with_B_after_validation(
+      S,x_m,y_m,z_m,n_m3,Vx_ms,Vy_ms,Vz_ms,Bx_T,By_T,Bz_T,N);
+}
+
+swcme::ModelStatus Model::evaluate_cartesian_with_B_after_validation(
+    const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
+    double* Bx_T,double* By_T,double* Bz_T,std::size_t N) const {
+  // As in the fast kernel, validation is deliberately outside the sample loop.
+  // Magnetic evaluation retains all numerical checks and exact output order.
   if (N==0) return swcme::ModelStatus::success();
   if (!x_m || !y_m || !z_m || !n_m3 || !Vx_ms || !Vy_ms || !Vz_ms ||
       !Bx_T || !By_T || !Bz_T) {
@@ -1626,7 +1680,8 @@ swcme::ModelStatus Model::evaluate_cartesian_with_B_checked(
     const double u[3]={x*invr,y*invr,z*invr};
 
     LocalShockState shock;
-    const swcme::ModelStatus shock_status=shock_state_direction_checked(S,u,shock);
+    const swcme::ModelStatus shock_status=
+        shock_state_direction_after_validation(S,u,shock);
     const bool surface_exists=shock_status.ok();
     if (shock_status.failure()) {
       swcme::ModelStatus out=shock_status;
@@ -1675,6 +1730,17 @@ swcme::ModelStatus Model::compute_divV_cartesian_checked(
   const swcme::ModelStatus ownership=validate_prepared_state(
       S,"swcme3d::compute_divV_cartesian");
   if (!ownership.ok()) return ownership;
+  return compute_divV_cartesian_after_validation(
+      S,x_m,y_m,z_m,divV,N,dr_frac);
+}
+
+swcme::ModelStatus Model::compute_divV_cartesian_after_validation(
+    const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* divV,std::size_t N,double dr_frac) const {
+  // Six velocity stencil evaluations per point share this authenticated state.
+  // Calling the private fast kernel is essential: re-entering the public API
+  // would recompute the complete integrity digest six times for every sample.
   if (N==0) return swcme::ModelStatus::success();
   if (!x_m || !y_m || !z_m || !divV) {
     return swcme::ModelStatus::make(
@@ -1716,7 +1782,7 @@ swcme::ModelStatus Model::compute_divV_cartesian_checked(
     auto velocity_evaluator=[&](const std::array<double,3>& q,
                                 std::array<double,3>& v) -> swcme::ModelStatus {
       double n=0.0;
-      return evaluate_cartesian_fast_checked(
+      return evaluate_cartesian_fast_after_validation(
           S,&q[0],&q[1],&q[2],&n,&v[0],&v[1],&v[2],1);
     };
 
@@ -1748,6 +1814,15 @@ swcme::ModelStatus Model::compute_divV_checked(
   const swcme::ModelStatus ownership=validate_prepared_state(
       S,"swcme3d::compute_divV");
   if (!ownership.ok()) return ownership;
+  return compute_divV_after_validation(S,x_m,y_m,z_m,divV,N,dr_frac);
+}
+
+swcme::ModelStatus Model::compute_divV_after_validation(
+    const StepState& S,
+    const double* x_m,const double* y_m,const double* z_m,
+    double* divV,std::size_t N,double dr_frac) const {
+  // This internal dispatcher preserves the analytical/full-Cartesian branch
+  // choice without entering another public ownership boundary.
   if (N==0) return swcme::ModelStatus::success();
   if (!x_m || !y_m || !z_m || !divV) {
     return swcme::ModelStatus::make(
@@ -1790,7 +1865,8 @@ swcme::ModelStatus Model::compute_divV_checked(
   // velocity and a finite SSE/ellipsoid introduces angular gradients in region
   // location.  The old ray derivative omitted both effects, so the canonical
   // path must use the full Cartesian Jacobian trace.
-  return compute_divV_cartesian_checked(S,x_m,y_m,z_m,divV,N,dr_frac);
+  return compute_divV_cartesian_after_validation(
+      S,x_m,y_m,z_m,divV,N,dr_frac);
 }
 
 void Model::compute_divV(const StepState& S,
@@ -1823,10 +1899,17 @@ swcme::ModelStatus Model::evaluate_cartesian_with_B_div_checked(
     double* n_m3,double* Vx_ms,double* Vy_ms,double* Vz_ms,
     double* Bx_T,double* By_T,double* Bz_T,double* divVsw,
     std::size_t N,double dr_frac) const {
-  swcme::ModelStatus status=evaluate_cartesian_with_B_checked(
+  // Validate exactly once at the outermost public boundary.  Both private
+  // kernels retain their complete argument/physics checks but trust this
+  // short-lived call stack to have authenticated the state.
+  const swcme::ModelStatus ownership=validate_prepared_state(
+      S,"swcme3d::evaluate_cartesian_with_B_div");
+  if (!ownership.ok()) return ownership;
+  swcme::ModelStatus status=evaluate_cartesian_with_B_after_validation(
       S,x_m,y_m,z_m,n_m3,Vx_ms,Vy_ms,Vz_ms,Bx_T,By_T,Bz_T,N);
   if (!status.ok()) return status;
-  return compute_divV_checked(S,x_m,y_m,z_m,divVsw,N,dr_frac);
+  return compute_divV_after_validation(
+      S,x_m,y_m,z_m,divVsw,N,dr_frac);
 }
 
 void Model::evaluate_cartesian_with_B_div(const StepState& S,
