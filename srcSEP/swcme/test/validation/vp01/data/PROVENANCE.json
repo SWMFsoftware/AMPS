@@ -1,0 +1,45 @@
+{
+  "validation_id": "VP01",
+  "dataset": "Helios corefit plasma dataset",
+  "record_doi": "10.5281/zenodo.1009506",
+  "record_url": "https://zenodo.org/records/1009506",
+  "record_api_url": "https://zenodo.org/api/records/1009506",
+  "creator": "David Stansby",
+  "publication_date": "2017-10-12",
+  "license": "CC-BY-SA-4.0",
+  "science_reference": {
+    "citation": "Stansby, D., Salem, C., Matteini, L., and Horbury, T. S. (2018), A New Inner Heliosphere Proton Parameter Dataset from the Helios Mission, Solar Physics, 293, 155",
+    "doi": "10.1007/s11207-018-1377-3"
+  },
+  "model_reference": {
+    "citation": "Leblanc, Y., Dulk, G. A., and Bougeret, J.-L. (1998), Tracing the Electron Density from the Corona to 1 AU, Solar Physics, 183, 165-180",
+    "doi": "10.1023/A:1005049730506"
+  },
+  "files": [
+    {
+      "name": "corefit.gz",
+      "url": "https://zenodo.org/api/records/1009506/files/corefit.gz/content",
+      "bytes": 131088147,
+      "md5": "3706615fd835c9cbdd4e5b59a8431e30",
+      "sha256": "5659d9408fe3f0c75507ab416d58cd51b91ccb243fbad9dd488721b7dd437a08",
+      "role": "Helios 1 and 2 daily CSV observations packaged as a gzip-compressed tar archive"
+    },
+    {
+      "name": "source_code.zip",
+      "url": "https://zenodo.org/api/records/1009506/files/source_code.zip/content",
+      "bytes": 890360,
+      "md5": "83e28b40c4fea3cdc2cff00a5c527a98",
+      "sha256": "a666bda15fad59a65f4c4b9a09a617a89802b3ccd63828a78d22b32e6633a841",
+      "role": "Author-supplied code and data-product user guide"
+    }
+  ],
+  "measurement_contract": {
+    "radius_column": "r_sun",
+    "radius_unit": "AU",
+    "density_column": "n_p",
+    "density_unit": "cm^-3",
+    "accepted_status": 1,
+    "status_meaning": "Successful bi-Maxwellian proton-core fit with usable magnetic-field information"
+  },
+  "interpretation_note": "The archive measures proton-core density. SWCME's Leblanc quantity is an electron-density profile; VP01 tests the radial shape after fitting the model's free 1-AU normalization and does not claim species-identical absolute density."
+}

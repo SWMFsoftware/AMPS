@@ -1,0 +1,5 @@
+# VP01 raw archives are downloaded from the immutable Zenodo record.  Keeping
+# them out of source control avoids adding a 131 MB third-party data product to
+# the repository; download_data.py verifies the archived checksum before use.
+*
+!.gitignore

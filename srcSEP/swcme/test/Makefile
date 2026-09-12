@@ -18,6 +18,14 @@ THR01_TSAN_TARGET := output/test_swcme_thr01_tsan
 OUT08_DEBUG_DIR := output/out08-debug
 OUT08_OPTIMIZED_DIR := output/out08-optimized
 SEP_REFERENCE_TARGET := output/sep_reference
+VP01_DIR := validation/vp01
+VP01_DRIVER := output/vp01_model_driver
+VALIDATION_RUNNER := validation/run_validation.py
+# Optional arguments are intentionally separate from CASE so callers can add
+# --download, --no-plots, or an explicit evidence directory without editing a
+# target.  Quoting remains the caller's responsibility at the Make boundary;
+# the Python layer launches each case from a validated argument array.
+VALIDATION_ARGS ?=
 DEMO_TARGETS := output/demo1d output/demo3d_1 output/demo3d_2
 # Every validation remains in one deterministic executable. The common tests
 # use separate translation units so each physical contract has an auditable
@@ -90,7 +98,7 @@ OUT08_WARNING_FLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Wformat=2 \
 	-Wformat-security -Wconversion -Wsign-conversion -Wshadow \
 	-Werror=format-security -Werror
 
-.PHONY: all test tools demos demo-run campaign-test pst05-sanitize pst08-performance perf01-performance thr01-tsan out08-strict san01-sanitize cov01-coverage clean
+.PHONY: all test tools demos demo-run campaign-test validation-list validation-test validation-case validation-implemented validation-campaign vp01-data vp01-test vp01-validation pst05-sanitize pst08-performance perf01-performance thr01-tsan out08-strict san01-sanitize cov01-coverage clean
 
 all: $(TARGET) demos
 
@@ -386,6 +394,50 @@ demo-run: all
 # readable reporting without duplicating production physics.
 campaign-test: all tools
 	python3 python/test_run_tests.py
+
+# The observational campaign is separate from deterministic `make test`
+# because fresh checkouts may need large immutable external datasets.  These
+# targets expose registry inspection, focused orchestration tests, one-case
+# execution, implemented-scope execution, and the complete release inventory.
+validation-list:
+	python3 $(VALIDATION_RUNNER) --list
+
+validation-test:
+	python3 validation/test_run_validation.py
+
+# CASE accepts one ID or a comma-separated list.  Fail before Python is called
+# when it is omitted so a mistaken invocation cannot expand to every case.
+validation-case:
+	@test -n "$(CASE)" || { echo "CASE is required (for example CASE=VP01)" >&2; exit 2; }
+	python3 $(VALIDATION_RUNNER) --case "$(CASE)" $(VALIDATION_ARGS)
+
+validation-implemented:
+	python3 $(VALIDATION_RUNNER) --implemented $(VALIDATION_ARGS)
+
+# The command is expected to exit 2 until every registered VP01-VP16 package is
+# implemented and complete; the generated report is still valid evidence of
+# current campaign scope and prevents partial validation from looking complete.
+validation-campaign:
+	python3 $(VALIDATION_RUNNER) --all $(VALIDATION_ARGS)
+
+# VP01 is an opt-in observational validation because its immutable Helios input
+# archive is 131 MB and requires network access on a fresh checkout.  It is not
+# folded into `make test`: an offline deterministic regression suite must never
+# change outcome merely because a remote repository is unavailable.
+vp01-data:
+	python3 $(VP01_DIR)/download_data.py
+
+# The focused gate checks the independent analytical oracle and compiles the
+# public-API model driver under the same strict warning policy used by OUT08.
+vp01-test: | output
+	python3 $(VP01_DIR)/test_reference_solution.py
+	$(CXX) $(CPPFLAGS) -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
+		$(VP01_DIR)/vp01_model_driver.cpp -o $(VP01_DRIVER)
+
+# The runner repeats its own strict build so invocation outside Make remains
+# self-contained, then emits CSV/JSON/Markdown evidence and PNG/EPS figures.
+vp01-validation: vp01-test
+	python3 $(VP01_DIR)/run_vp01.py
 
 # Build a separate fully instrumented validation executable so AddressSanitizer
 # never contaminates normal incremental objects.  Running only PST05 keeps the

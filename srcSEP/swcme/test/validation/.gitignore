@@ -1,0 +1,7 @@
+# Campaign outputs are reproducible evidence, not version-controlled source.
+output/*
+!output/.gitignore
+
+# Python import caches carry interpreter-specific bytecode.
+__pycache__/
+*.py[cod]

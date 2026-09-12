@@ -14,6 +14,7 @@ test/
   reference/  Reviewed reference/event data used by comparison tests
   profiles/   SMOKE/ROUTINE/FULL/EVENT test selections
   python/     Regression tests for the campaign manager
+  validation/ Observational/cross-model VP01-VP16 case packages and runner
   output/     Generated executables and campaign artifacts (ignored by Git)
   run_tests.py  Python campaign manager
   event_config.example.json  executable EVENT/sweep example
@@ -83,6 +84,11 @@ fail an otherwise successful test.
 
 The registry in `core/test_swcme.cpp` is the only source for `--list`, `--all`,
 and test lookup, so displayed and executed tests cannot silently diverge.
+
+Observational comparisons have a separate registry because they may require
+large external datasets, network retrieval, and publication figures. They are
+not silently included by `make -j test`; see
+[`validation/README.md`](validation/README.md) for that campaign.
 
 ## PST01: prepared-state immutability
 
@@ -1138,6 +1144,38 @@ and one or more columns with absolute and/or relative tolerances.  A plot entry
 selects a CSV, one x column and one or more y columns.  Plotting is optional;
 when Matplotlib is unavailable a non-required plot is reported as SKIP rather
 than invalidating the physics campaign.
+
+## Observational and cross-model validation runner
+
+`validation/run_validation.py` orchestrates case-owned comparisons, unlike
+`run_tests.py`, which orchestrates deterministic C++ registry tests and generic
+EVENT sweeps. The observational registry reserves stable VP01-VP16 priority
+IDs, implementation states, and dependencies. Each implemented case owns a
+`case.json`, data provenance, independent reference, production runner,
+thresholds, plots, and README beneath `validation/vpNN/`.
+
+Run from `swcme/test`:
+
+```sh
+make validation-list
+make validation-test
+make validation-case CASE=VP01
+make validation-implemented
+make validation-campaign
+```
+
+Pass acquisition or presentation options with `VALIDATION_ARGS`, for example
+`make validation-case CASE=VP01 VALIDATION_ARGS="--download --no-plots"`.
+Individual and multi-case selections run in canonical priority order. A full
+campaign returns exit 2 (`INCOMPLETE`) while a registered case remains planned
+or blocked, exit 1 on a scientific failure or orchestration error, and exit 0
+only when all selected cases pass. Common JSON/CSV/Markdown products and each
+case's untouched evidence are written to a new isolated directory under
+`validation/output/`.
+
+See [`validation/README.md`](validation/README.md) for the exact case contract,
+artifact schema, dependency semantics, current VP01-VP16 matrix, and steps for
+adding future validation packages without modifying the global runner.
 
 The Python manager itself is regression-tested in `python/test_run_tests.py`.
 Those tests cover profile expansion against the live C++ registry, exact
@@ -3225,6 +3263,43 @@ computed independently, and a deliberately bad angle set proves rejection.
 **Expected result.** Median angle error is at most 20 degrees and normalized
 density/field trends remain within factor two. Real V1 evidence must replace
 the synthetic records with quiet-interval observations and traceable hashes.
+
+#### VP01: radial solar-wind density and Leblanc profile
+
+VP01 supplies the first external-data density component needed to replace the
+synthetic portion of V1. It uses the checksum-frozen Helios corefit archive
+(Zenodo DOI `10.5281/zenodo.1009506`), retains only status-1 proton-core fits,
+and reduces each spacecraft-day to an equal-weight median before constructing
+14 radial bins from 0.29 to 1.01 AU. Bins at or above 0.85 AU estimate an
+observational 1-AU anchor without retuning the model; 11 inner bins independently
+test radial shape.
+
+The public C++ `swcme1d::Model` output is also compared to a Python reference
+that independently repeats the published Leblanc coefficients and IAU distance
+constants. This distinguishes an implementation error from disagreement with
+observations. Because Helios corefit measures proton-core density and Leblanc
+models electron density, VP01 validates radial behavior and reports the
+normalization bias without claiming exact species equality.
+
+Run the focused and full observational stages from this directory:
+
+```sh
+make vp01-data
+make vp01-test
+make vp01-validation
+```
+
+The large raw archives are not part of `make test` and are ignored by Git, so
+offline regression behavior remains deterministic. The current checked run is
+PASS: 1,829,340 accepted measurements, 3,012 daily medians, a fitted 1-AU
+density estimate of 4.6177 cm^-3 versus the frozen SWCME value of 5 cm^-3,
+observed/model exponents -2.1737/-2.0019, held-out median/worst symmetric
+factors 1.0884/1.1494, 100% held-out percentile-envelope coverage, and maximum
+C++/reference relative error `6.78e-16`. This is a component PASS; the full
+multi-mission VP01 release remains INCOMPLETE until catalog-based quiet-window
+selection and external-model comparisons are added. Complete provenance,
+threshold rationale, CLI options, and output descriptions are in
+[`validation/vp01/README.md`](validation/vp01/README.md).
 
 ### V2: CME and shock apex kinematics
 
