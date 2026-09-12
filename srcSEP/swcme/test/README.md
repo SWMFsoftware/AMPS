@@ -4,9 +4,6 @@ The validation suite is a standalone C++ executable that calls production
 SWCME interfaces. It uses the repository's existing Make-based build approach;
 no second build system or external test dependency is required.
 
-## Run tests
-make test -j 
-
 ## Directory layout
 
 ```text
@@ -33,6 +30,19 @@ make -C test clean all
 ```
 
 From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
+
+To build the test executable and demonstrations in parallel and then run the
+complete registered validation suite, run the following command from
+`srcSEP/swcme/test`:
+
+```sh
+make -j test
+```
+
+The `test` target first brings all required binaries up to date and then runs
+`output/test_swcme` in registry order. Because `-j` does not set an explicit
+job limit, use `make -jN test` instead when the build host should be limited to
+`N` concurrent compilation jobs.
 
 ## Command-line interface
 
