@@ -94,22 +94,52 @@ struct Config {
   double V_ME_factor = 0.80;
 };
 
+// CFG03 makes the historical 90-percent geometry margin an explicit input
+// contract instead of a runtime correction.  Keeping the factor and all three
+// derived limits in the region module gives configuration validation and
+// boundary construction one authoritative definition of the policy.
+constexpr double SMOOTHING_LAYER_FRACTION_LIMIT = 0.90;
+
+struct SmoothingFractionLimits {
+  double shock = 0.0;
+  double leading = 0.0;
+  double trailing = 0.0;
+};
+
+inline SmoothingFractionLimits smoothing_fraction_limits(
+    double sheath_fraction,double ejecta_fraction) noexcept {
+  // Invalid/non-finite thicknesses are diagnosed independently by the common
+  // configuration validator.  Returning zero here avoids manufacturing a
+  // meaningful limit from malformed geometry and, importantly, performs no
+  // correction of a user smoothing width.
+  const double sheath=(std::isfinite(sheath_fraction) &&
+                       sheath_fraction>0.0) ? sheath_fraction : 0.0;
+  const double ejecta=(std::isfinite(ejecta_fraction) &&
+                       ejecta_fraction>0.0) ? ejecta_fraction : 0.0;
+  SmoothingFractionLimits limits;
+  limits.shock=SMOOTHING_LAYER_FRACTION_LIMIT*sheath;
+  limits.leading=SMOOTHING_LAYER_FRACTION_LIMIT*
+                 std::min(sheath,ejecta);
+  limits.trailing=SMOOTHING_LAYER_FRACTION_LIMIT*ejecta;
+  return limits;
+}
+
 // Region boundaries along ONE physical ray.  R_sh is the local surface radius,
 // not necessarily the apex radius.  R_le and R_te are scaled from that local
 // radius, so their ratios to R_sh are independent of direction.
 //
 // smooth_le_width / smooth_te_width are TOTAL transition widths centered on the
-// nominal boundary.  They are capped at 90% of the adjacent finite layer width
-// so the leading- and trailing-edge blend zones cannot overlap or invert the
-// nominal region ordering even for aggressive user smoothing parameters.
+// nominal boundary.  Central configuration validation guarantees that each is
+// no more than 90% of its adjacent finite layer.  Boundary construction then
+// preserves the accepted request exactly; it never clips a scientific input.
 struct Boundaries {
   double R_sh_m = 0.0;
   double R_le_m = 0.0;
   double R_te_m = 0.0;
   double sheath_thickness_m = 0.0;
   double ejecta_thickness_m = 0.0;
-  // Total C1 width centered on the mathematical shock surface.  It is capped
-  // so the inner edge remains inside the sheath and cannot overlap the LE.
+  // Total C1 width centered on the mathematical shock surface.  Validation
+  // ensures its inner edge remains inside the sheath and cannot overlap LE.
   double smooth_shock_width_m = 0.0;
   double smooth_le_width_m = 0.0;
   double smooth_te_width_m = 0.0;
@@ -161,31 +191,18 @@ inline Boundaries make_boundaries(double local_shock_radius_m,
   out.sheath_thickness_m = out.R_sh_m - out.R_le_m;
   out.ejecta_thickness_m = out.R_le_m - out.R_te_m;
 
-  // The shock smoothing width is used only when the caller has selected the
-  // RESOLVED_COMPRESSION acceleration representation.  It is a TOTAL width
-  // centered on R_sh.  Capping it at 90% of the sheath thickness guarantees a
-  // finite post-transition sheath interval before R_LE.  SOURCE mode supplies
-  // shock_smooth_fraction=0, so this numerical compression profile disappears
-  // entirely and the source surface is handled only by source bookkeeping.
-  const double requested_shock = std::max(0.0, config.shock_smooth_fraction) *
-                                 local_shock_radius_m;
-  const double shock_limit = 0.90 * std::max(0.0, out.sheath_thickness_m);
-  out.smooth_shock_width_m = std::min(requested_shock, shock_limit);
-
-  // The requested LE/TE smoothing parameters are likewise specified as AU at
-  // a 1-AU shock, so numerically they are self-similar fractions of local R_sh.
-  // Limiting the TOTAL width to 90% of adjacent layers prevents the artificial
-  // transition zones from crossing or inverting the nominal region ordering.
-  const double requested_le = std::max(0.0, config.leading_smooth_fraction) *
-                              local_shock_radius_m;
-  const double le_limit = 0.90 * std::max(0.0,
-      std::min(out.sheath_thickness_m, out.ejecta_thickness_m));
-  out.smooth_le_width_m = std::min(requested_le, le_limit);
-
-  const double requested_te = std::max(0.0, config.trailing_smooth_fraction) *
-                              local_shock_radius_m;
-  const double te_limit = 0.90 * std::max(0.0, out.ejecta_thickness_m);
-  out.smooth_te_width_m = std::min(requested_te, te_limit);
+  // Configuration validation has already proved each requested fraction lies
+  // inside the explicit 90-percent limit.  Applying the values directly is the
+  // essential CFG03 behavior: a successful run's effective widths are exactly
+  // those recorded in its configuration, at every local 3-D surface radius.
+  // SOURCE supplies shock_smooth_fraction=0, so its injection surface still
+  // contributes no resolved compression layer.
+  out.smooth_shock_width_m=config.shock_smooth_fraction*
+                           local_shock_radius_m;
+  out.smooth_le_width_m=config.leading_smooth_fraction*
+                        local_shock_radius_m;
+  out.smooth_te_width_m=config.trailing_smooth_fraction*
+                        local_shock_radius_m;
   return out;
 }
 

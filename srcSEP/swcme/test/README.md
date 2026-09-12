@@ -53,6 +53,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test PST05    # prepared-state lifetime and relocation
 ./output/test_swcme --test PST08    # state-ownership performance guardrails
 ./output/test_swcme --test OUT08    # strict-writer record semantics
+./output/test_swcme --test CFG03    # smoothing-width rejection policy
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -1062,7 +1063,8 @@ The named profiles are version-controlled text files in `profiles/`:
 - `SMOKE` is the short development gate, including prepared-state safety,
   checked output failures, transactional commit, model-domain preflight,
   BoxSpec/mesh validation, independent parsing, executable demonstrations,
-  state-ownership performance, and strict writer record semantics;
+  state-ownership performance, strict writer record semantics, and smoothing-
+  width rejection/preservation;
 - `ROUTINE` is the broad deterministic gate and excludes `MSH05` and `CON05`;
 - `FULL` expands to every test in the C++ registry;
 - `EVENT` first runs FULL and then executes the supplied event-analysis JSON.
@@ -1186,6 +1188,75 @@ state, so CFG02 no longer audits duplicated `1e3`, `1e6`, `1e-9`, or `1e-3`
 conversion literals in 1-D versus 3-D.  A failure should be investigated as a
 unit-contract or wrapper-integration defect; reference values or tolerances
 must never be changed merely to obtain PASS.
+
+## CFG03: smoothing width policy
+
+### What is tested
+
+CFG03 tests all three public region-smoothing widths in both 1-D and 3-D at
+zero, representative interior values, their simultaneous exact 90-percent
+limits, one ULP above each limit, and non-finite values. It also submits all
+three oversized widths together, checks an oversized width while it is dormant
+under `SHOCK_ONLY/SOURCE`, and audits effective widths at the 1-D shock, 3-D
+apex, and an arbitrary local 3-D radius. At the exact-limit configuration it
+checks that neighboring transition intervals remain separated and each
+smoothstep center has a finite blend of one half.
+
+### Why it is tested
+
+The old region constructor accepted any non-negative width and silently used
+`min(requested, 0.90*layer)` during every boundary calculation. A campaign
+manifest therefore recorded one configuration while the field evaluator used
+another, and the amount of hidden adjustment could depend on the local 3-D
+shock radius. This is scientifically unsafe because smoothing directly controls
+resolved compression and `div(V)`, hence SEP acceleration and adiabatic energy
+change.
+
+### How it is tested
+
+The shared policy computes the maximum self-similar fractions from sheath
+fraction `f_s` and ejecta fraction `f_e`:
+
+```text
+w_shock,max = 0.90 f_s
+w_LE,max    = 0.90 min(f_s, f_e)
+w_TE,max    = 0.90 f_e
+```
+
+Central validation compares every stored width with its limit, regardless of
+whether the selected mode currently uses it. Equality must validate and prepare
+successfully. `std::nextafter(limit,+infinity)` must produce a field-specific
+`OUT_OF_RANGE` issue and make `prepare_step()` throw before constructing any
+state. NaN and positive/negative infinity must remain `NON_FINITE`, not overlap
+errors. A simultaneous invalid request must return all three issues in one
+validation result.
+
+For valid configurations, the test independently recomputes
+`width_fraction*local_radius` and compares it with each prepared boundary at a
+small roundoff-only tolerance. This would fail decisively if the historical
+90-percent `min()` returned. Direct calls to `locate()` verify the most
+restrictive accepted geometry retains finite, ordered transition regions and
+canonical center weights.
+
+Run CFG03 with:
+
+```sh
+make -j
+./output/test_swcme --test CFG03
+```
+
+### Expected result
+
+Zero, ordinary, and exact-limit inputs are accepted without modification in
+both models. Each one-ULP excess is rejected before preparation with its exact
+field name; non-finite classifications are preserved; all fields are reported
+for a combined conflict; and dormant invalid widths are rejected. Every valid
+effective width equals the recorded requested fraction times the local shock
+radius to floating-point roundoff. Transition windows remain non-overlapping,
+ordered, finite, and normalized.
+
+CFG03 follows OUT08 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it through
+their `@ALL` expansion.
 
 ## DEF01-DEF04: canonical defaults, scope, and resolved metadata
 

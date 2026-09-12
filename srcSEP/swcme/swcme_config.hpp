@@ -223,6 +223,43 @@ inline ValidationResult validate_common(const CommonConfigView& c) {
                       c.edge_smooth_shock_AU_at1AU);
   require_nonnegative(out, "edge_smooth_le_AU_at1AU", c.edge_smooth_le_AU_at1AU);
   require_nonnegative(out, "edge_smooth_te_AU_at1AU", c.edge_smooth_te_AU_at1AU);
+
+  // A successful configuration must never be modified later by the region
+  // builder.  The former implementation silently capped these inputs at 90%
+  // of an adjacent layer, so the archived Params could disagree with the
+  // effective physics.  Validate the exact same self-similar limits here,
+  // accepting equality and rejecting even the next representable value above
+  // it with the individual public field name.
+  if (finite(c.sheath_thick_AU_at1AU) &&
+      finite(c.ejecta_thick_AU_at1AU) &&
+      c.sheath_thick_AU_at1AU>=0.0 &&
+      c.ejecta_thick_AU_at1AU>=0.0) {
+    const swcme::regions::SmoothingFractionLimits limits=
+        swcme::regions::smoothing_fraction_limits(
+            c.sheath_thick_AU_at1AU,c.ejecta_thick_AU_at1AU);
+    if (finite(c.edge_smooth_shock_AU_at1AU) &&
+        c.edge_smooth_shock_AU_at1AU>=0.0 &&
+        c.edge_smooth_shock_AU_at1AU>limits.shock) {
+      out.add("edge_smooth_shock_AU_at1AU",Code::OutOfRange,
+              c.edge_smooth_shock_AU_at1AU,
+              "must be <= 0.90 * sheath_thick_AU_at1AU");
+    }
+    if (finite(c.edge_smooth_le_AU_at1AU) &&
+        c.edge_smooth_le_AU_at1AU>=0.0 &&
+        c.edge_smooth_le_AU_at1AU>limits.leading) {
+      out.add("edge_smooth_le_AU_at1AU",Code::OutOfRange,
+              c.edge_smooth_le_AU_at1AU,
+              "must be <= 0.90 * min(sheath_thick_AU_at1AU, "
+              "ejecta_thick_AU_at1AU)");
+    }
+    if (finite(c.edge_smooth_te_AU_at1AU) &&
+        c.edge_smooth_te_AU_at1AU>=0.0 &&
+        c.edge_smooth_te_AU_at1AU>limits.trailing) {
+      out.add("edge_smooth_te_AU_at1AU",Code::OutOfRange,
+              c.edge_smooth_te_AU_at1AU,
+              "must be <= 0.90 * ejecta_thick_AU_at1AU");
+    }
+  }
   require_nonnegative(out, "relative_source_weight_per_area",
                       c.relative_source_weight_per_area);
 

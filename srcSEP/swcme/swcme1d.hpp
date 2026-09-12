@@ -946,16 +946,16 @@ public:
    *  1) Parse ambient inputs; compute Parker constants k and Br(1 AU) from |B|1AU.
    *  2) Scale Leblanc coefficients to match n(1 AU) in SI form n=C2/r^2+C4/r^4+C6/r^6.
    *  3) Evaluate the shared apex kinematics mode (BALLISTIC/DBM/DATA_DRIVEN).
-   *  4) Build self-similar geometry (R_LE, R_TE) and widths; clip away from Sun.
+   *  4) Build self-similar geometry and the already validated smoothing widths.
    *  5) Evaluate upstream n and |B| at R_sh; compute c_s, v_A, c_f; estimate r_c.
    *  6) Cache *boundary values* for monotone sheath: n_up(R_sh), n_up(R_LE),
    *     V2 (RH proxy), and V_LE ≥ V_sw.
    */
   StepState prepare_step(double t_s) const {
-    // Configuration errors are rejected before any normalization, clipping,
-    // or unit conversion can hide the supplied value.  This is the key CFG01
-    // contract: invalid input fails once at setup instead of becoming a
-    // plausible-looking state in a later particle calculation.
+    // Configuration errors are rejected before any normalization, boundary
+    // construction, or unit conversion can hide the supplied value.  CFG01
+    // covers scalar admissibility and CFG03 covers smoothing/layer conflicts;
+    // invalid input fails once at setup instead of becoming a plausible state.
     const swcme::config::ValidationResult validation=validate();
     if (!validation.ok()) {
       throw std::invalid_argument(validation.summary("swcme1d"));

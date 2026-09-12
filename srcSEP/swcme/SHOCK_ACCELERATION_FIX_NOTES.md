@@ -133,9 +133,11 @@ The total shock width is self-similar:
 w_sh = edge_smooth_shock_AU_at1AU * R_sh(local)
 ```
 
-and is capped at 90% of the local sheath thickness.  The finite SSE/ellipsoid
-flanks therefore use the same dimensionless smoothing as the apex; they do not
-inherit an apex-sized absolute width.
+CFG03 validates this request at setup and rejects values above 90% of the
+sheath thickness; boundary construction no longer silently caps it.  Every
+accepted value is therefore preserved exactly as a self-similar fraction.  The
+finite SSE/ellipsoid flanks use the same dimensionless smoothing as the apex;
+they do not inherit an apex-sized absolute width.
 
 ## 6. Shared acceleration state
 

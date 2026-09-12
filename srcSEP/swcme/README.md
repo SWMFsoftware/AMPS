@@ -1203,9 +1203,11 @@ setup rather than being clipped into a plausible-looking state.
 Common checks include positive solar-wind speed, reference density and
 temperature; non-negative magnetic field and DBM drag coefficient; `gamma>1`;
 `sin(theta)` in `[0,1]`; valid region/smoothing parameters; and well-formed
-DATA_DRIVEN tables.  The 3-D interface additionally validates non-zero finite
-CME and solar-rotation axes, positive ellipsoid axis ratios, non-negative solar
-rotation rate, and SSE half width in `(0,pi/2]`.
+DATA_DRIVEN tables. Smoothing widths are validated against their adjacent
+layers even when inactive in the selected mode, so an accepted stored
+configuration contains no dormant invalid value. The 3-D interface additionally
+validates non-zero finite CME and solar-rotation axes, positive ellipsoid axis
+ratios, non-negative solar rotation rate, and SSE half width in `(0,pi/2]`.
 
 The production models now use the centralized conversion helpers when preparing
 their SI state.  This fixes the prior 1-D `V_sw` path that used
@@ -1213,8 +1215,56 @@ their SI state.  This fixes the prior 1-D `V_sw` path that used
 is now converted exactly and rejected by the configuration validator because a
 positive wind speed is required by the Parker/DBM baseline.
 
-See `CONFIGURATION_UNITS_FIX_NOTES.md` and the `CFG01`/`CFG02` sections in
+See `CONFIGURATION_UNITS_FIX_NOTES.md` and the `CFG01`-`CFG03` sections in
 `test/README.md` for the full contract and validation coverage.
+
+### Smoothing-width policy (CFG03)
+
+CFG03 removes the former silent 90-percent cap from region construction. Public
+widths are total, symmetric, self-similar fractions specified as AU at a 1-AU
+shock. For sheath fraction `f_s` and ejecta fraction `f_e`, centralized
+configuration validation now requires
+
+```text
+w_shock <= 0.90 f_s,
+w_LE    <= 0.90 min(f_s, f_e),
+w_TE    <= 0.90 f_e.
+```
+
+Equality is accepted; the next representable floating-point value above any
+limit is rejected with `OUT_OF_RANGE` and the exact public field name. Negative
+and non-finite widths retain their existing `NEGATIVE` and `NON_FINITE`
+classifications. The rule applies to every stored width, including widths
+inactive under `SHOCK_ONLY/SOURCE`, ensuring a later setup-phase mode change
+cannot activate a value that validation previously allowed only because it was
+dormant.
+
+After validation, `swcme::regions::make_boundaries()` applies each accepted
+fraction directly:
+
+```text
+W_effective(u) = w_requested R_sh(u).
+```
+
+There is no `min`, maximum, adjustment status, or hidden fallback. Thus the
+effective width in a prepared 1-D state, at the 3-D apex, and at every local
+shock-surface direction agrees with the recorded request to floating-point
+roundoff. The public `smoothing_fraction_limits()` helper is the single source
+for the 90-percent margins used by both validation and tests.
+
+Run the focused gate with:
+
+```sh
+cd test
+make -j
+./output/test_swcme --test CFG03
+```
+
+The test covers zero and ordinary widths, simultaneous exact-limit widths,
+one-ULP violations for each field, NaN and infinities, multi-field conflicts,
+inactive oversized values, exact local 1-D/3-D scaling, non-overlapping
+transition intervals, and finite half-blends. CFG03 follows OUT08 in `SMOKE`;
+the other profiles include it through `@ALL`.
 
 
 ## Shared common physics core for 1-D and 3-D
@@ -1501,10 +1551,10 @@ Consequently the shock, leading-edge, and trailing-edge surfaces remain nested
 and geometrically similar from apex to flank.  Configurations with
 `f_sheath + f_ejecta >= 1` are rejected instead of repaired by runtime clipping.
 
-The LE and TE smoothing inputs are likewise local self-similar fractions.  Each
+The LE and TE smoothing inputs are likewise local self-similar fractions. Each
 configured width is the total width of a symmetric C1 smoothstep transition
-centered on the nominal boundary and is capped so neighboring finite layers
-cannot overlap.
+centered on the nominal boundary. Oversized widths are rejected before
+preparation; accepted widths are never capped or otherwise changed.
 
 ### Sheath and magnetic-ejecta targets
 
@@ -1529,10 +1579,10 @@ the controlled one-year scope.
 
 Artificial LE and TE interfaces are C1 smooth.  The numerical shock layer is
 also C1, but only when `RESOLVED_COMPRESSION` is selected.  Its total width is
-`edge_smooth_shock_AU_at1AU * R_sh(local)` and is capped so it cannot consume the
-entire sheath.  In SOURCE mode that shock-layer width is forced to zero and the
-SHOCK_ONLY background remains analytical on both sides of the mathematical
-source surface.
+`edge_smooth_shock_AU_at1AU * R_sh(local)`; configuration validation limits the
+request so it cannot consume the entire sheath. In SOURCE mode that shock-layer
+width is forced to zero and the SHOCK_ONLY background remains analytical on
+both sides of the mathematical source surface.
 
 Validation tests `REG01`-`REG05` cover SHOCK_ONLY identity, the exact RH state at
 the inner edge of the resolved shock layer, sub-unity ejecta factors, local

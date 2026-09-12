@@ -58,8 +58,10 @@ The public configuration is rejected when `f_s+f_e >= 1`.
 
 The configured LE/TE smoothing widths are also treated as local self-similar
 fractions.  Each value denotes the **total** symmetric transition width centered
-on the nominal boundary.  The effective width is capped to 90% of the adjacent
-finite layer size, preventing transitions from overlapping or inverting layers.
+on the nominal boundary. CFG03 now rejects a request above 90% of the adjacent
+finite layer before preparation. Every accepted effective width is the exact
+requested fraction times the local shock radius; runtime construction never
+caps or otherwise changes it.
 
 The transition weight is the standard C1 polynomial
 
