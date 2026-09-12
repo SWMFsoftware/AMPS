@@ -54,6 +54,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test PST08    # state-ownership performance guardrails
 ./output/test_swcme --test OUT08    # strict-writer record semantics
 ./output/test_swcme --test CFG03    # smoothing-width rejection policy
+./output/test_swcme --test CFG04    # configured-radius domain policy
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -1257,6 +1258,60 @@ ordered, finite, and normalized.
 
 CFG03 follows OUT08 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it through
 their `@ALL` expansion.
+
+## CFG04: configured radius domain
+
+### What is tested
+
+CFG04 tests the DBM/ballistic reference radius, every data-driven PCHIP radius,
+the 3-D connectivity source/search radius, and observer radii against the
+inclusive `1.05 R_sun` analytical-domain boundary. Each input is exercised one
+ULP below, exactly at, and one ULP above the boundary. The test also covers a
+non-finite reference radius, sub-domain knots in every vector position, a
+mixed-validity table, repeated times, and equal or reversed source-observer
+ordering.
+
+### Why it is tested
+
+Previously `r0_Rs` and data-driven knots were required to be merely positive.
+Such a configuration could validate and then fail only after interpolation or
+shock preparation entered the unsupported Parker/Leblanc domain. Connectivity
+similarly accepted a positive source radius below the model boundary and could
+convert an invalid observer or empty search interval into an ordinary
+`Disconnected` result. Those late or ambiguous failures obscure the actual
+configuration defect.
+
+### How it is tested
+
+The test uses `std::nextafter` around the shared `MIN_RADIUS_RS` and
+`MIN_RADIUS_M` constants, avoiding arbitrary decimal offsets. It invokes both
+side-effect-free model validators and `prepare_step()` in 1-D and 3-D. Each bad
+PCHIP radius must appear as `data_radius_Rs[index]`; mixed-invalid input must
+report all primary knot defects in one pass while retaining independent table
+ordering diagnostics. Accepted boundary configurations are prepared at the
+first knot and their cached radius is compared exactly with the SI boundary.
+
+For connectivity, the test calls the production observer solver with source
+radii below, at, and above the boundary and then with equal/reversed bounds. It
+also checks both observer-scope APIs and the connectivity status at the three
+observer boundary points.
+
+Run CFG04 with:
+
+```sh
+make -j
+./output/test_swcme --test CFG04
+```
+
+### Expected result
+
+Every sub-domain model radius is rejected before preparation with its public
+field or knot index. Exact and above-boundary model configurations prepare
+without clipping. A sub-domain connectivity source radius and any non-strict
+source-observer ordering return `InvalidConfiguration`; a sub-domain observer
+returns `InvalidObserver`; valid boundary inputs are never mislabeled as a
+domain failure. CFG04 follows CFG03 in `SMOKE` and is included in every `@ALL`
+profile.
 
 ## DEF01-DEF04: canonical defaults, scope, and resolved metadata
 

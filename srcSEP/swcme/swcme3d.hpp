@@ -231,13 +231,16 @@ struct Params {
   // consumed by swcme1d, so identical inputs produce identical apex radius
   // and speed in both dimensional interfaces.  DBM remains the default mode.
   swcme::kinematics::Mode kinematics_mode = swcme::defaults::KINEMATICS_MODE;
-  double r0_Rs       = swcme::defaults::DBM_R0_RS;               // DBM/ballistic reference radius [Rs]
+  // DBM/ballistic reference radius [R_sun].  It is a configured physical
+  // handoff point, so CFG04 requires r0_Rs >= 1.05 before preparation.
+  double r0_Rs       = swcme::defaults::DBM_R0_RS;
   double V0_sh_kms   = swcme::defaults::V0_SH_KMS;               // initial/reference shock speed [km/s]
   double V_sw_kms    = swcme::defaults::V_SW_KMS;                // ambient SW speed [km/s]
   double Gamma_kmInv = swcme::defaults::DBM_GAMMA_KM_INV;               // DBM drag parameter Γ [km^-1], >=0
 
   // DATA_DRIVEN mode: strictly increasing times [s] and nondecreasing apex
-  // radii [Rs].  A monotone PCHIP passes exactly through every knot and its
+  // radii [R_sun], all within the r >= 1.05 R_sun analytical domain.  A
+  // monotone PCHIP passes exactly through every knot and its
   // derivative is used as V_apex.  The default policy rejects out-of-range
   // queries; ballistic endpoint continuation must be requested explicitly.
   std::vector<double> data_time_s;
@@ -686,7 +689,9 @@ struct ConnectivityOptions {
   // Inner radius of the field-line search.  The default is the lower radial
   // limit historically used by the analytical solar-wind model.  Science
   // applications may raise this (for example to a data-driven/DBM handoff
-  // radius) without changing the connectivity algorithm.
+  // radius) without changing the connectivity algorithm.  CFG04 requires the
+  // configured value to be at least the model boundary and strictly below the
+  // observer; an empty or inverted interval is InvalidConfiguration.
   double inner_radius_m = 1.05 * swcme::constants::SOLAR_RADIUS_M;
 
   // Minimum number of radial scan intervals.  The implementation can increase
@@ -966,7 +971,9 @@ public:
 
   // Intersect an observer's Parker field line with the current shock surface.
   // All geometrical roots between options.inner_radius_m and the observer are
-  // returned.  The selected cobpoint is the outermost root, while each root
+  // returned.  Both radii must be inside the r>=1.05-R_sun analytical domain,
+  // and the inner radius must be strictly smaller.  The selected cobpoint is
+  // the outermost root, while each root
   // carries the complete production LocalShockState and Parker path length.
   ConnectivityState observer_connectivity(
       const StepState& S, const double observer_m[3],

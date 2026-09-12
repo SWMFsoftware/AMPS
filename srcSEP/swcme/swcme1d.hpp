@@ -414,13 +414,16 @@ struct Params {
   // swcme::kinematics implementation, so selecting the same mode and inputs
   // produces exactly the same apex radius/speed in both models.
   swcme::kinematics::Mode kinematics_mode = swcme::defaults::KINEMATICS_MODE;
-  double r0_Rs       = swcme::defaults::DBM_R0_RS; // DBM/ballistic reference radius [R☉]
+  // DBM/ballistic reference radius [R_sun].  CFG04 requires this configured
+  // handoff point to be at or above the analytical 1.05-R_sun domain limit.
+  double r0_Rs       = swcme::defaults::DBM_R0_RS;
   double V0_sh_kms   = swcme::defaults::V0_SH_KMS; // initial/reference apex speed [km/s]
   double Gamma_kmInv = swcme::defaults::DBM_GAMMA_KM_INV; // DBM drag coefficient [1/km], must be >=0
 
   // DATA_DRIVEN mode: monotonically increasing height-time knots.  Times are
   // seconds in the same launch-relative clock used by prepare_step(); radii
-  // are solar radii.  The default OUTSIDE_TIME policy deliberately refuses to
+  // are solar radii, and every radius must be at least 1.05 R_sun.  The default
+  // OUTSIDE_TIME policy deliberately refuses to
   // extrapolate beyond the observed interval unless the caller explicitly
   // requests ballistic endpoint continuation.
   std::vector<double> data_time_s;

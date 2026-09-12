@@ -25,8 +25,10 @@
 #include "swcme_regions.hpp"
 #include "swcme_acceleration.hpp"
 #include "swcme_defaults.hpp"
+#include "swcme_solarwind.hpp"
 
 #include <cmath>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -202,7 +204,13 @@ inline ValidationResult validate_common(const CommonConfigView& c) {
   }
   require_range(out, "sin_theta", c.sin_theta, 0.0, 1.0, true, true);
 
-  require_positive(out, "r0_Rs", c.r0_Rs);
+  // r0 is not merely a positive mathematical radius: it is the physical
+  // handoff/reference point at which the analytical Parker/Leblanc model must
+  // already be valid.  Accept the exact 1.05-Rsun boundary and reject the next
+  // representable value below it before any kinematic state is prepared.
+  require_range(out,"r0_Rs",c.r0_Rs,
+                swcme::solarwind::MIN_RADIUS_RS,
+                std::numeric_limits<double>::infinity(),true,true);
   require_nonnegative(out, "V0_sh_kms", c.V0_sh_kms);
   require_nonnegative(out, "Gamma_kmInv", c.Gamma_kmInv);
 
@@ -330,20 +338,40 @@ inline ValidationResult validate_common(const CommonConfigView& c) {
       for (std::size_t i=0; i<c.data_time_s->size(); ++i) {
         const double t = (*c.data_time_s)[i];
         const double r = (*c.data_radius_Rs)[i];
-        if (!finite(t) || !finite(r) || !(r > 0.0)) {
-          out.add("data_time_s/data_radius_Rs", Code::InvalidKinematicsTable, r,
-                  "all data knots must be finite and radius must be > 0");
-          break;
+        const std::string time_field=
+            "data_time_s["+std::to_string(i)+"]";
+        const std::string radius_field=
+            "data_radius_Rs["+std::to_string(i)+"]";
+
+        // Report malformed members independently so a mixed-validity table
+        // identifies every bad knot in one setup pass.  Indexed field names
+        // are part of CFG04's diagnostic contract and prevent users from
+        // having to locate a sub-domain value by trial and error.
+        if (!finite(t)) {
+          out.add(time_field,Code::NonFinite,t,
+                  "DATA_DRIVEN knot time must be finite");
         }
-        if (i > 0 && !(t > (*c.data_time_s)[i-1])) {
+        if (!finite(r)) {
+          out.add(radius_field,Code::NonFinite,r,
+                  "DATA_DRIVEN knot radius must be finite");
+        } else if (r<swcme::solarwind::MIN_RADIUS_RS) {
+          out.add(radius_field,Code::OutOfRange,r,
+                  "DATA_DRIVEN knot radius must be >= 1.05 R_sun");
+        }
+
+        // Ordering comparisons are meaningful only for finite neighboring
+        // values.  Skipping a derivative diagnostic beside a non-finite knot
+        // avoids a misleading second error while preserving all primary knot
+        // diagnostics above.
+        if (i > 0 && finite(t) && finite((*c.data_time_s)[i-1]) &&
+            !(t > (*c.data_time_s)[i-1])) {
           out.add("data_time_s", Code::InvalidKinematicsTable, t,
                   "DATA_DRIVEN times must be strictly increasing");
-          break;
         }
-        if (i > 0 && r < (*c.data_radius_Rs)[i-1]) {
+        if (i > 0 && finite(r) && finite((*c.data_radius_Rs)[i-1]) &&
+            r < (*c.data_radius_Rs)[i-1]) {
           out.add("data_radius_Rs", Code::InvalidKinematicsTable, r,
                   "DATA_DRIVEN radius must be nondecreasing");
-          break;
         }
       }
     }

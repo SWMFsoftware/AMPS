@@ -1266,6 +1266,48 @@ inactive oversized values, exact local 1-D/3-D scaling, non-overlapping
 transition intervals, and finite half-blends. CFG03 follows OUT08 in `SMOKE`;
 the other profiles include it through `@ALL`.
 
+### Configured radius domain (CFG04)
+
+The analytical Parker/Leblanc background is defined for radii greater than or
+equal to `1.05 R_sun`. CFG04 applies that same inclusive boundary to every
+configured or public radius before downstream physics can reinterpret a domain
+error as an interpolation failure or an ordinary disconnected observer.
+
+Model validation now requires `r0_Rs >= 1.05` and checks every data-driven
+PCHIP radius independently. A bad knot is reported as
+`data_radius_Rs[index]`, so mixed-invalid tables expose every sub-domain or
+non-finite radius in one validation result. Strictly increasing time and
+nondecreasing radius constraints remain separate table-level diagnostics.
+Both 1-D and 3-D `prepare_step()` reject an invalid model configuration before
+unit conversion, interpolation, region construction, or shock evaluation.
+
+The 3-D connectivity source/search radius is
+`ConnectivityOptions::inner_radius_m`. It must satisfy
+
+```text
+1.05 R_sun <= inner_radius_m < observer_radius_m.
+```
+
+A sub-domain source radius or an empty/inverted interval returns
+`InvalidConfiguration`; a sub-domain observer returns `InvalidObserver`, never
+`Disconnected`. The observer-scope APIs use the same inclusive lower boundary.
+The shared `MIN_RADIUS_RS` and derived `MIN_RADIUS_M` constants keep validation
+in public units and SI evaluation on one authoritative domain definition.
+
+Run the focused validation with:
+
+```sh
+cd test
+make -j
+./output/test_swcme --test CFG04
+```
+
+CFG04 tests one ULP below, exactly at, and one ULP above the lower boundary for
+the reference radius, every PCHIP knot position, connectivity source radius,
+and observer. It also covers non-finite and mixed-validity tables, repeated
+times, and equal/reversed source-observer ordering. Exact-boundary model and
+PCHIP configurations prepare without clipping or extrapolation.
+
 
 ## Shared common physics core for 1-D and 3-D
 

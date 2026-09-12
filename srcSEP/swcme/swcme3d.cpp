@@ -1154,12 +1154,17 @@ swcme3d::ConnectivityState Model::observer_connectivity(
 
   const double r_obs=norm3(observer_m);
   result.observer_radius_m=r_obs;
-  if (!std::isfinite(r_obs) || r_obs<=0.0) {
+  // A finite positive radius below 1.05 R_sun is still outside the analytical
+  // model.  Classify it as an invalid observer here rather than letting the
+  // field-line sampler turn the domain failure into an ordinary disconnection.
+  if (!std::isfinite(r_obs) ||
+      r_obs<swcme::solarwind::MIN_RADIUS_M) {
     result.status=ConnectivityStatus::InvalidObserver;
     return result;
   }
   if (!std::isfinite(S.V_sw_ms) || S.V_sw_ms<=0.0 ||
-      !std::isfinite(options.inner_radius_m) || options.inner_radius_m<=0.0 ||
+      !std::isfinite(options.inner_radius_m) ||
+      options.inner_radius_m<swcme::solarwind::MIN_RADIUS_M ||
       !std::isfinite(options.radius_tolerance_m) || options.radius_tolerance_m<=0.0 ||
       !std::isfinite(options.surface_residual_tolerance_m) ||
       options.surface_residual_tolerance_m<=0.0) {
@@ -1168,8 +1173,12 @@ swcme3d::ConnectivityState Model::observer_connectivity(
   }
 
   const double r_min=options.inner_radius_m;
+  // The configured source/search surface must lie strictly inside the
+  // observer.  Equality or reversal defines an empty/inverted search domain,
+  // which is a configuration error rather than physical evidence that the
+  // observer is disconnected from the shock.
   if (r_min>=r_obs) {
-    result.status=ConnectivityStatus::Disconnected;
+    result.status=ConnectivityStatus::InvalidConfiguration;
     return result;
   }
 

@@ -44,8 +44,13 @@ constexpr double LEBLANC_C_CM3 = 8.0e7;
 // evaluators now return OUTSIDE_MODEL_DOMAIN for smaller radii.  The low-level
 // formulas below assume the caller has already enforced that contract and do
 // not silently replace an out-of-domain radius with MIN_RADIUS_M.
+// Keep the public-input threshold in solar-radius units beside its SI form.
+// CFG04 uses MIN_RADIUS_RS while validating r0_Rs and data-driven knots before
+// unit conversion; evaluators use MIN_RADIUS_M.  Deriving the latter here
+// prevents the two boundaries from drifting apart during future revisions.
+constexpr double MIN_RADIUS_RS = 1.05;
 constexpr double MIN_RADIUS_M =
-    1.05 * swcme::constants::SOLAR_RADIUS_M;
+    MIN_RADIUS_RS * swcme::constants::SOLAR_RADIUS_M;
 
 // SI input needed to prepare the ambient analytical state.  Unit conversion
 // belongs outside this layer (swcme_units.hpp / swcme_core.hpp); this keeps the

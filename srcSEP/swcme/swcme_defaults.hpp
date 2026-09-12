@@ -41,6 +41,7 @@
 // ============================================================================
 
 #include "swcme_constants.hpp"
+#include "swcme_solarwind.hpp"
 #include "swcme_kinematics.hpp"
 #include "swcme_regions.hpp"
 #include "swcme_acceleration.hpp"
@@ -210,9 +211,15 @@ inline ObserverScopeStatus observer_scope_status(
   // Scope metadata must never turn a malformed radius into a science-valid
   // result.  Numerical/model evaluators have richer status codes; this compact
   // helper simply marks malformed metadata input as outside declared scope.
-  if (!std::isfinite(observer_radius_m) || !(observer_radius_m > 0.0) ||
+  // CFG04 defines observer validity against the same analytical-domain
+  // boundary used by field evaluation.  A positive but sub-domain observer
+  // must not be advertised as scientifically in scope and then fail only when
+  // a later Parker/Leblanc query is attempted.  Equality is supported.
+  if (!std::isfinite(observer_radius_m) ||
+      observer_radius_m < swcme::solarwind::MIN_RADIUS_M ||
       (shock_surface_on_observer_ray &&
-       (!std::isfinite(shock_radius_m) || !(shock_radius_m > 0.0)))) {
+       (!std::isfinite(shock_radius_m) ||
+        shock_radius_m < swcme::solarwind::MIN_RADIUS_M))) {
     return out;
   }
   out.valid_input = true;

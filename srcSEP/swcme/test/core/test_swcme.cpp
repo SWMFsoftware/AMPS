@@ -26,6 +26,7 @@ void test_pst05(swcme_test::Context& context);
 void test_pst08(swcme_test::Context& context);
 void test_out08(swcme_test::Context& context);
 void test_cfg03(swcme_test::Context& context);
+void test_cfg04(swcme_test::Context& context);
 void test_den01(swcme_test::Context& context);
 void test_par01(swcme_test::Context& context);
 void test_par02(swcme_test::Context& context);
@@ -137,6 +138,7 @@ const swcme_test::TestCase kTests[] = {
     {"PST08", "PERFORMANCE", "State ownership performance", test_pst08},
     {"OUT08", "OUTPUT", "Strict warning writer build", test_out08},
     {"CFG03", "COMMON", "Smoothing width policy", test_cfg03},
+    {"CFG04", "COMMON", "Configured radius domain", test_cfg04},
     {"CFG01", "COMMON", "Configuration rejection and physical-range validation",
      test_cfg01},
     {"CFG02", "COMMON", "Unit-conversion and dimensional-consistency test",
