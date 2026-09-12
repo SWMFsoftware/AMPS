@@ -46,6 +46,14 @@ downstream primitive variable and the evolutionary-fast branch against twelve
 independently generated cases; `SHK06` additionally verifies the 3-D production
 evaluator's immediate downstream n/V/B state.
 
+Expanded `SHK12` now uses a frozen 80-digit full-system continuation reference
+for 48 resolved weak shocks and a two-sided 32-family sweep through
+`M_fast=1`.  The production solver follows the first compression branch
+connected to unity, reports final bracket/iteration diagnostics, and uses
+`NUMERICALLY_UNRESOLVED_WEAK_SHOCK` for physical super-fast states below its
+published binary64 resolution or near a discontinuous singular branch.  Such a
+state is never mislabeled `NO_SHOCK` and is not available to SEP source physics.
+
 The complete current suite has one pre-existing unrelated failure, `CFG02`, due
 to the 1-D zero-velocity unit/preparation path converting 0 km/s to 1 m/s. The
 shock tests themselves pass.

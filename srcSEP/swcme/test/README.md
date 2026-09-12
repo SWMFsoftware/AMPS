@@ -1890,8 +1890,9 @@ The individual tests are:
 - `SHK10` — total ideal-MHD energy-flux conservation.
 - `SHK11` — physical admissibility: positive downstream pressure/density,
   compressive branch, strong-shock bound for gamma=5/3, and entropy increase.
-- `SHK12` — near-Mach-one conditioning and smooth approach of compression to
-  unity without an empirical floor.
+- `SHK12` — two-sided near-Mach-one sweep, independent full-state continuation
+  reference, continuous compression limit, root diagnostics, and explicit
+  classification of sub-resolution or near-singular weak branches.
 - `SHK13` — shock-state independence from arbitrary query radius.  The test
   calls the legacy scalar wrapper with query radii ranging from well inside to
   far outside the front and requires identical compression, normal speed, and
@@ -1957,12 +1958,62 @@ conditioning, root-count, and residual diagnostics.  `SHK05` follows `CON10`
 in the priority-ordered `SMOKE` profile and is also included in all `@ALL`
 profiles.
 
+### SHK12 near-Mach-one shock limit
+
+**What is tested.** `SHK12` covers the two-sided limit about `M_fast=1` for
+plasma beta 0.01, 0.1, 1, and 10; `theta_Bn` values from 1 to 89 degrees; gamma
+1.4 and 5/3; nonzero tangential flow; and non-coplanar magnetic fields.  The
+frozen portion contains 48 well-conditioned states at six logarithmically
+spaced Mach excesses from 0.5 through `1e-5`.  For each state the test checks
+Mach excess, compression, density, pressure, all velocity components, all
+magnetic components, iteration count, and final compression bracket.  A
+separate 32-family runtime matrix approaches the threshold from both sides down
+to `|M_fast-1|=1e-12` and includes nearly parallel, low-beta configurations
+whose tangential system is close to singular.
+
+**Why it is tested.** The former three-point SHK12 exercised only one beta,
+angle, and gamma, and only above the threshold.  It could not detect a physical
+weak shock being reported as `NO_SHOCK`, an intermittent bracket failure, or
+selection of a finite-compression outer root.  The original outermost-bracket
+policy did exhibit that last defect, returning compression approximately 3--6
+for some low-beta states as `M_fast` approached one.  Weak shocks require an
+explicit separation between physical classification and numerical resolution
+because compression alone cannot distinguish those failures.
+
+**How it is tested.** The reviewed fixture is
+`reference/shk12_near_mach_v1.hpp`; its audit-only generator is
+`reference/generate_shk12_near_mach_v1.py`.  The generator imports only the
+independent Decimal conservation equations and linear algebra shared with the
+SHK05 reference tooling, then solves density, pressure, three velocities, and
+three magnetic components together at 80-digit precision.  Multiple initial
+compressions establish the evolutionary-fast root at `M_fast-1=0.5`, and
+fifteen continuation points follow that same branch to `1e-5`; six points per
+family are frozen.  The production solver must follow the first nontrivial
+compression bracket, publish its contracted endpoints/width and iteration
+count, and remain inside a deliberately broad weak-branch continuity envelope.
+Normal builds never regenerate the fixture.
+
+**What is expected.** Subcritical and exactly critical states return
+`NO_SHOCK`, `has_shock=false`, compression one, and the unchanged upstream
+state.  Positive Mach excesses through the published binary64 limit of `1e-6`
+return `NUMERICALLY_UNRESOLVED_WEAK_SHOCK`, `has_shock=true`, and
+`solver_converged=false`; they never become `NO_SHOCK` and never contain NaN or
+infinite payload values.  A near-singular scan that can reach only a
+discontinuous outer root receives the same explicit unresolved status.
+Well-conditioned points from `1e-5` to order unity return `SOLVED`, converge in
+at most 120 iterations, contract the bracket to the declared tolerance,
+approach compression one monotonically, and match every frozen downstream
+primitive component within `2e-7` relative error.  Reference residuals remain
+below `1e-50`.  `SHK12` follows `SHK05` in the priority-ordered `SMOKE` profile
+and is included in every `@ALL` profile.
+
 Typical direct use is:
 
 ```sh
 ./output/test_swcme --test SHK01
 ./output/test_swcme --test SHK04
 ./output/test_swcme --test SHK05
+./output/test_swcme --test SHK12
 ./output/test_swcme --test SHK10
 ./output/test_swcme --test SHK13
 ./output/test_swcme --test SHK14

@@ -47,10 +47,12 @@ $(TARGET): $(OBJECTS)
 	$(CXX) $(CXXFLAGS) $(THREAD_FLAGS) $(OBJECTS) -o $@
 
 # Both dimensional model headers include the shared explicit-field integrity
-# serializer and checked output layer.  Make every validation object observe
-# both headers so an incremental build cannot link stale inline seal or output
-# logic from an older test.
-$(OBJECTS): ../swcme_prepared_integrity.hpp ../swcme_output.hpp
+# serializer, checked output layer, and JumpResult record.  Make every
+# validation object observe all three ABI-bearing headers so an incremental
+# build cannot link a stale prepared-state layout after shock diagnostics or
+# status fields change.  SHK12 exposed this dependency because its new bracket
+# fields enlarged JumpResult while otherwise unrelated test objects remained.
+$(OBJECTS): ../swcme_prepared_integrity.hpp ../swcme_output.hpp ../swcme_shock.hpp
 
 # Compile the production 3-D implementation exactly once and link it normally.
 # Earlier validation revisions included swcme3d.cpp from test_config.cpp merely
@@ -176,12 +178,12 @@ output/test_kinematics.o: core/test_kinematics.cpp core/test_framework.hpp ../sw
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # SHK01-SHK12 exercise the shared production ideal-MHD jump solver and its
-# integration into the 1-D/3-D models.  SHK05 consumes a frozen v1 fixture from
-# an independent 80-digit, complete eight-equation RH solve; the remaining
-# tests provide analytical limiting cases and conservation residual checks.
-# The generator is listed as a dependency for audit visibility, but normal
-# builds never execute it or rewrite the reviewed reference header.
-output/test_shock.o: core/test_shock.cpp core/test_framework.hpp reference/shk05_oblique_v1.hpp reference/generate_shk05_oblique_v1.py ../swcme_shock.hpp ../swcme_constants.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_regions.hpp ../swcme_status.hpp ../swcme_divergence.hpp | output
+# integration into the 1-D/3-D models.  SHK05 and SHK12 consume frozen v1
+# fixtures from independent 80-digit, complete eight-equation RH solves; the
+# remaining tests provide analytical limiting cases and conservation checks.
+# The generators are dependencies for audit visibility, but normal builds
+# never execute them or rewrite the reviewed reference headers.
+output/test_shock.o: core/test_shock.cpp core/test_framework.hpp reference/shk05_oblique_v1.hpp reference/generate_shk05_oblique_v1.py reference/shk12_near_mach_v1.hpp reference/generate_shk12_near_mach_v1.py ../swcme_shock.hpp ../swcme_constants.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_regions.hpp ../swcme_status.hpp ../swcme_divergence.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 

@@ -40,6 +40,13 @@ inline void add_jump(ConfigurationDigestBuilder& digest,
   digest.add_double(jump.upstream_inflow_normal_m_s);
   digest.add_uint64(static_cast<std::uint64_t>(
       static_cast<std::int64_t>(jump.root_iterations)));
+  // Root-bracket diagnostics are part of the public JumpResult record and can
+  // affect failure interpretation even though they do not alter the primitive
+  // state.  Seal them explicitly so post-preparation tampering cannot forge a
+  // reassuring convergence history for an otherwise unchanged shock.
+  digest.add_double(jump.root_bracket_lower_compression);
+  digest.add_double(jump.root_bracket_upper_compression);
+  digest.add_double(jump.root_bracket_width);
   add_primitive(digest,jump.upstream);
   add_primitive(digest,jump.downstream);
   digest.add_double(jump.mass_residual);

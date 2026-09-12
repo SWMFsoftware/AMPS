@@ -55,6 +55,16 @@ namespace shock {
 
 using Vec3 = std::array<double, 3>;
 
+// The scalar compression scan begins at r-1=1e-9.  A fast-Mach excess below
+// 1e-8 produces a physical compression jump of the same order and cannot be
+// bracketed with a reliable separation from the trivial r=1 solution in
+// binary64.  Empirical cross-checks against the 80-digit SHK12 fixture show
+// that a 1e-6 Mach guard is needed to keep roundoff in the divided energy
+// residual from producing intermittent brackets.  Exposing this policy lets
+// validation and downstream callers
+// distinguish a supported numerical limit from an ordinary physical no-shock.
+inline constexpr double WEAK_SHOCK_MACH_RESOLUTION = 1.0e-6;
+
 struct PrimitiveState {
   double rho_kg_m3 = 0.0;
   double pressure_Pa = 0.0;
@@ -68,13 +78,18 @@ enum class SolveStatus {
   InvalidInput,
   NoPhysicalBracket,
   InvalidAcceptedState,
-  ConservationFailure
+  ConservationFailure,
+  // Appended to preserve the numeric values of all previously public status
+  // members for callers that serialize the enum rather than its stable name.
+  NumericallyUnresolvedWeakShock
 };
 
 inline const char* solve_status_name(SolveStatus status) {
   switch (status) {
     case SolveStatus::NoShock: return "NO_SHOCK";
     case SolveStatus::Solved: return "SOLVED";
+    case SolveStatus::NumericallyUnresolvedWeakShock:
+      return "NUMERICALLY_UNRESOLVED_WEAK_SHOCK";
     case SolveStatus::InvalidInput: return "INVALID_INPUT";
     case SolveStatus::NoPhysicalBracket: return "NO_PHYSICAL_BRACKET";
     case SolveStatus::InvalidAcceptedState: return "INVALID_ACCEPTED_STATE";
@@ -106,7 +121,14 @@ struct JumpResult {
   double fast_mach = 0.0;
   double shock_normal_speed_m_s = 0.0;
   double upstream_inflow_normal_m_s = 0.0;
+
+  // Nonzero bracket diagnostics are available for a solved scalar RH root.
+  // They make weak-shock failures reproducible without exposing internal
+  // candidate objects or requiring callers to infer convergence from r alone.
   int root_iterations = 0;
+  double root_bracket_lower_compression = 0.0;
+  double root_bracket_upper_compression = 0.0;
+  double root_bracket_width = 0.0;
 
   PrimitiveState upstream;
   PrimitiveState downstream;
@@ -344,10 +366,11 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
   result.fast_mach = (result.fast_speed_m_s>0.0) ? U1n/result.fast_speed_m_s : 0.0;
 
   // The CME surface and the fast shock are deliberately separate concepts.
-  // Equality at M_fast=1 is classified as no shock; no empirical compression
-  // floor is permitted to override this criterion.
-  const double mach_tol = 64.0*std::numeric_limits<double>::epsilon();
-  if (!(U1n>0.0) || !(result.fast_mach>1.0+mach_tol)) {
+  // Equality at M_fast=1 is classified as no shock; any representable positive
+  // excess is physically super-fast and proceeds to either a solved state or
+  // the explicit weak-resolution status below.  A tolerance here would
+  // incorrectly relabel small but positive Mach excesses as physical NoShock.
+  if (!(U1n>result.fast_speed_m_s)) {
     result.has_shock = false;
     result.compression = 1.0;
     result.status = SolveStatus::NoShock;
@@ -355,6 +378,25 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
   }
 
   result.has_shock = true;
+  // A mathematically super-fast state can lie closer to M_fast=1 than the
+  // binary64 compression bracket can resolve.  Reporting that condition as
+  // NoShock would erase the distinction between physical classification and
+  // numerical resolution; attempting the ordinary scan can instead latch
+  // onto an unrelated finite-compression branch.  The 1e-8 guard is tied to
+  // the solver's 1e-9 minimum compression offset and the independently
+  // observed cancellation range of the divided energy residual.
+  // The returned primitive payload remains the finite upstream state, while
+  // has_shock=true and the explicit status tell callers why no downstream
+  // jump is available.
+  const double relative_fast_excess =
+      (U1n-result.fast_speed_m_s)/result.fast_speed_m_s;
+  if (relative_fast_excess<=WEAK_SHOCK_MACH_RESOLUTION*
+         (1.0+128.0*std::numeric_limits<double>::epsilon())) {
+    result.solver_converged=false;
+    result.status=SolveStatus::NumericallyUnresolvedWeakShock;
+    return result;
+  }
+
   const double rmax = (gamma+1.0)/(gamma-1.0);
   const double eps_r = 1.0e-9;
   const int scan_points = 800;
@@ -379,12 +421,13 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
     const double q=c.energy_residual/(r-1.0);
     if (!std::isfinite(q)) continue;
 
-    if (have_previous && (q==0.0 || q_prev==0.0 || (q_prev<0.0)!=(q<0.0))) {
-      // Keep the outermost physical bracket found by the scan.  The trivial
-      // branch was divided out; choosing the outermost remaining root selects
-      // the compressive fast-shock branch for the supported solar-wind regime
-      // and avoids lower-compression intermediate/switch branches when they
-      // occur in pathological parameter sets.
+    if (!have_bracket && have_previous &&
+        (q==0.0 || q_prev==0.0 || (q_prev<0.0)!=(q<0.0))) {
+      // Keep the first nontrivial bracket above r=1.  This is the branch that
+      // is continuous with the linear fast mode and therefore approaches the
+      // identity state as M_fast approaches one.  Retaining the old outermost
+      // sign change selected finite-amplitude switch/intermediate branches in
+      // low-beta, nearly parallel cases and violated the weak-shock limit.
       have_bracket=true;
       r_lo=r_prev; q_lo=q_prev;
       r_hi=r;
@@ -418,7 +461,15 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
     result.root_iterations=iter+1;
 
     if (std::abs(r_hi-r_lo)<=2.0e-13*std::max(1.0,r_mid)) break;
-    if (q_mid==0.0) break;
+    if (q_mid==0.0) {
+      // Binary64 cancellation can make the divided energy residual exactly
+      // zero before the interval-width test, especially for weak shocks.
+      // Collapse both endpoints onto that evaluated root so the published
+      // bracket truthfully represents exact scalar convergence.
+      r_lo=r_mid;
+      r_hi=r_mid;
+      break;
+    }
     if ((q_lo<0.0)!=(q_mid<0.0)) {
       r_hi=r_mid;
     } else {
@@ -427,6 +478,12 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
   }
 
   const double compression=0.5*(r_lo+r_hi);
+  // Publish the contracted bracket, not merely its midpoint, so tests and
+  // failure reports can verify that convergence was obtained at the stated
+  // precision rather than accepting a fortuitous candidate value.
+  result.root_bracket_lower_compression=r_lo;
+  result.root_bracket_upper_compression=r_hi;
+  result.root_bracket_width=r_hi-r_lo;
   accepted=detail::candidate_for_compression(upstream,n,shock_normal_speed_m_s,
                                                gamma,compression);
   if (!accepted.valid) {
@@ -484,6 +541,25 @@ inline JumpResult solve_ideal_mhd_fast_shock(const PrimitiveState& upstream,
   const double K2=result.downstream.pressure_Pa/
                   std::pow(result.downstream.rho_kg_m3,gamma);
   result.entropy_ratio=(K1>0.0)? K2/K1 : 0.0;
+
+  // A weak branch connected continuously to r=1 has compression proportional
+  // to M_fast-1.  Near the tangential-system singularity, skipped candidates
+  // can hide that branch and leave only a distant finite-amplitude root.  The
+  // deliberately broad factor-eight envelope cannot reject an ordinary weak
+  // solution (the independently generated SHK12 slopes are below two), but it
+  // prevents a discontinuous outer root from masquerading as the near-Mach-one
+  // fast shock.  Preserve the finite candidate and bracket diagnostics for
+  // investigation while returning the same explicit unresolved status used
+  // when the root is below scalar-bracket resolution.
+  constexpr double weak_continuity_range = 0.2;
+  constexpr double weak_compression_envelope = 8.0;
+  if (relative_fast_excess<=weak_continuity_range &&
+      result.compression-1.0>
+          weak_compression_envelope*relative_fast_excess) {
+    result.solver_converged=false;
+    result.status=SolveStatus::NumericallyUnresolvedWeakShock;
+    return result;
+  }
 
   // A mathematical root is not accepted unless it is a compressive,
   // entropy-increasing forward shock and satisfies the conserved quantities at

@@ -1496,6 +1496,37 @@ well-conditioned Jacobian and a high-precision residual below `1e-50`.
 Normal builds never regenerate the header; changing reference values requires
 running the generator deliberately and reviewing the new versioned fixture.
 
+### Near-Mach-one shock limit and numerical classification
+
+Priority test `SHK12` validates the two-sided limit at `M_fast=1`.  States at
+or below the fast-mode speed return the physical `NO_SHOCK` classification.
+A representably super-fast state whose Mach excess is at or below the published
+binary64 resolution `WEAK_SHOCK_MACH_RESOLUTION=1e-6` instead returns
+`NUMERICALLY_UNRESOLVED_WEAK_SHOCK`: `has_shock` remains true,
+`solver_converged` is false, and the finite primitive payload is retained.
+This prevents a physical weak shock from masquerading as an ordinary no-shock
+state and prevents an unresolved jump from entering SEP source calculations.
+
+For resolved shocks the scalar scan now selects the first nontrivial bracket
+above compression one, following the branch connected continuously to the
+linear fast mode.  The previous outermost-root rule could select a
+finite-amplitude switch/intermediate branch in low-beta, nearly parallel cases
+even as `M_fast` approached one.  A broad continuity envelope rejects any
+remaining discontinuous outer root with the explicit unresolved status.  Each
+solved result publishes its final compression-bracket endpoints, bracket width,
+and iteration count for reproducible diagnostics.
+
+The frozen fixture `test/reference/shk12_near_mach_v1.hpp` is produced by the
+audit-only `test/reference/generate_shk12_near_mach_v1.py`.  The generator uses
+80-digit arithmetic, solves all eight Rankine-Hugoniot unknowns simultaneously,
+and follows the independently classified evolutionary-fast branch by
+logarithmic continuation from `M_fast-1=0.5` to `1e-5`.  Forty-eight retained
+cases cover four decades of plasma beta, obliquities from 15 to 89 degrees, and
+gamma values 1.4 and 5/3.  Production compression and every downstream
+primitive component must agree with the independent reference within `2e-7`.
+An additional two-sided runtime sweep reaches `|M_fast-1|=1e-12` across 32
+beta/angle/gamma families, including near-singular one-degree geometries.
+
 `swcme3d::Model::shock_state_direction()` is the preferred 3-D API for local
 shock diagnostics.  It returns the shock-surface radius and normal, normal shock
 speed, fast Mach number, `theta_Bn`, density compression, complete upstream and
@@ -1872,10 +1903,10 @@ solar-wind equations no longer clip the caller's radius.  Vector norms use
 normalization fallback has been removed.
 
 The shared ideal-MHD jump result also carries an explicit `SolveStatus`
-(`NO_SHOCK`, `SOLVED`, `INVALID_INPUT`, `NO_PHYSICAL_BRACKET`,
-`INVALID_ACCEPTED_STATE`, or `CONSERVATION_FAILURE`).  A failed super-fast RH
-solve is propagated as `SHOCK_SOLVER_FAILURE`; it is not converted to a
-compression-one ambient state.
+(`NO_SHOCK`, `SOLVED`, `NUMERICALLY_UNRESOLVED_WEAK_SHOCK`, `INVALID_INPUT`,
+`NO_PHYSICAL_BRACKET`, `INVALID_ACCEPTED_STATE`, or `CONSERVATION_FAILURE`).
+A failed or numerically unresolved super-fast RH solve is propagated as
+`SHOCK_SOLVER_FAILURE`; it is not converted to a compression-one ambient state.
 
 Mesh and checked Tecplot output paths reject non-finite physics instead of
 writing a sanitized surrogate.  `ERR01`-`ERR05` protect outside-domain behavior,

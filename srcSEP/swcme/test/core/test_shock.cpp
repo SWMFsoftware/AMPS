@@ -1,5 +1,6 @@
 #include "test_framework.hpp"
 #include "../reference/shk05_oblique_v1.hpp"
+#include "../reference/shk12_near_mach_v1.hpp"
 
 #include <swcme1d.hpp>
 #include <swcme3d.hpp>
@@ -390,17 +391,162 @@ void test_shk11(swcme_test::Context& context){
 }
 
 void test_shk12(swcme_test::Context& context){
-  std::cout<<"SHK12 near-Mach-one weak-shock conditioning\n";
-  const Primitive up=fixture(60.0);
+  std::cout<<"SHK12 two-sided near-Mach-one shock limit\n";
+  namespace reference=swcme_test::shk12_reference_v1;
+  constexpr std::size_t case_count=sizeof(reference::CASES)/
+                                   sizeof(reference::CASES[0]);
   const Vec3 n={{1,0,0}};
-  const double cf=reference_fast_speed(up,n), V1=up.velocity_m_s[0];
-  double previous=10.0;
-  for(double delta : {1e-2,5e-3,1e-3}){
-    const auto r=swcme::shock::solve_ideal_mhd_fast_shock(up,n,V1+(1.0+delta)*cf,GAMMA);
-    context.expect_true(r.has_shock&&r.solver_converged,"weak super-fast shock converged");
-    context.expect_true(r.compression>1.0,"weak shock compression above one");
-    context.expect_true(r.compression<previous,"compression approaches unity as M_fast approaches one");
-    previous=r.compression;
+
+  // The frozen values are generated with an 80-digit, eight-variable Newton
+  // solve and logarithmic continuation.  Pinning the schema and matrix size
+  // prevents a future fixture edit from silently reducing the required beta,
+  // obliquity, gamma, or Mach-excess coverage.
+  context.expect_true(reference::FIXTURE_VERSION==1,
+                      "SHK12 fixture schema/version is pinned to v1");
+  context.expect_true(reference::DECIMAL_PRECISION_DIGITS>=50,
+                      "SHK12 reference uses at least 50 decimal digits");
+  context.expect_true(case_count>=48,
+                      "SHK12 reference contains eight six-point families");
+
+  double previous_compression=0.0;
+  double previous_excess=0.0;
+  for(std::size_t index=0;index<case_count;++index){
+    const reference::Case& expected=reference::CASES[index];
+    Primitive upstream;
+    upstream.rho_kg_m3=expected.upstream_rho_kg_m3;
+    upstream.pressure_Pa=expected.upstream_pressure_Pa;
+    for(int component=0;component<3;++component){
+      upstream.velocity_m_s[component]=expected.upstream_velocity_m_s[component];
+      upstream.magnetic_T[component]=expected.upstream_magnetic_T[component];
+    }
+    const auto actual=swcme::shock::solve_ideal_mhd_fast_shock(
+        upstream,n,expected.shock_speed_m_s,expected.gamma);
+    const std::string prefix=std::string("SHK12 ")+expected.id+" ";
+
+    // Reference conditioning and residual metadata are executable acceptance
+    // criteria.  A changed fixture therefore cannot hide a poorly converged
+    // high-precision solve behind rounded binary64 values.
+    context.expect_true(expected.reference_max_residual<1.0e-50,
+                        prefix+"reference residual is below 1e-50");
+    context.expect_true(expected.minimum_newton_pivot>1.0e-12,
+                        prefix+"reference Jacobian remains conditioned");
+    context.expect_true(actual.status==swcme::shock::SolveStatus::Solved &&
+                            actual.has_shock && actual.solver_converged,
+                        prefix+"well-conditioned weak branch is solved");
+
+    // The plan requires the full primitive state, not compression alone.  The
+    // 2e-7 component tolerance leaves a small binary64 bracket margin while
+    // remaining independent of and much tighter than visually smooth trends.
+    expect_rel(context,prefix+"Mach excess",actual.fast_mach-1.0,
+               expected.mach_excess,2.0e-7,1.0e-15);
+    expect_rel(context,prefix+"compression",actual.compression,
+               expected.compression,2.0e-7);
+    expect_rel(context,prefix+"downstream density",actual.downstream.rho_kg_m3,
+               expected.downstream_rho_kg_m3,2.0e-7,1.0e-30);
+    expect_rel(context,prefix+"downstream pressure",actual.downstream.pressure_Pa,
+               expected.downstream_pressure_Pa,2.0e-7,1.0e-30);
+    for(int component=0;component<3;++component){
+      expect_rel(context,prefix+"downstream velocity["+
+                     std::to_string(component)+"]",
+                 actual.downstream.velocity_m_s[component],
+                 expected.downstream_velocity_m_s[component],2.0e-7,1.0);
+      expect_rel(context,prefix+"downstream magnetic["+
+                     std::to_string(component)+"]",
+                 actual.downstream.magnetic_T[component],
+                 expected.downstream_magnetic_T[component],2.0e-7,1.0e-15);
+    }
+
+    // Published iteration/bracket diagnostics prove scalar convergence and
+    // make any future weak-limit regression directly reproducible.
+    context.expect_true(actual.root_iterations>0 && actual.root_iterations<=120,
+                        prefix+"iteration count is bounded");
+    context.expect_true(actual.root_bracket_lower_compression<=actual.compression &&
+                            actual.compression<=actual.root_bracket_upper_compression &&
+                            actual.root_bracket_width>=0.0 &&
+                            actual.root_bracket_width<=3.0e-13*
+                                std::max(1.0,actual.compression),
+                        prefix+"final bracket contains the reported root");
+
+    // Each family is stored from larger to smaller Mach excess.  Compression
+    // must decrease toward one without an empirical floor; the final 1e-5
+    // reference is close enough to expose even a small imposed compression.
+    if(index%6!=0){
+      context.expect_true(expected.mach_excess<previous_excess &&
+                              actual.compression<previous_compression,
+                          prefix+"compression approaches one monotonically");
+    }
+    if(index%6==5){
+      context.expect_true(actual.compression-1.0<2.0e-5,
+                          prefix+"smallest resolved shock approaches identity");
+    }
+    previous_excess=expected.mach_excess;
+    previous_compression=actual.compression;
   }
-  context.expect_true(previous<1.02,"near-Mach-one compression remains close to unity without floor");
+
+  auto make_sweep_state=[](double beta,double theta_deg){
+    Primitive state;
+    const double B=5.0e-9;
+    const double theta=theta_deg*swcme::constants::PI/180.0;
+    const double phi=25.0*swcme::constants::PI/180.0;
+    state.rho_kg_m3=5.0e6*MP;
+    state.pressure_Pa=beta*B*B/(2.0*MU0);
+    // Zero normal flow makes the exactly critical floating-point fixture
+    // unambiguous; nonzero tangential flow still exercises the vector jump.
+    state.velocity_m_s={{0.0,2.0e4,-1.0e4}};
+    state.magnetic_T={{B*std::cos(theta),
+                       B*std::sin(theta)*std::cos(phi),
+                       B*std::sin(theta)*std::sin(phi)}};
+    return state;
+  };
+
+  // Sweep both sides of Mfast=1 down to 1e-12 for every beta/angle/gamma
+  // family.  Subcritical and exactly critical states are physical NoShock;
+  // small positive excesses are physical shocks that are explicitly marked
+  // numerically unresolved, never silently folded into NoShock.
+  for(double beta : {0.01,0.1,1.0,10.0}){
+    for(double theta : {1.0,30.0,60.0,89.0}){
+      for(double gamma : {1.4,5.0/3.0}){
+        const Primitive upstream=make_sweep_state(beta,theta);
+        const double fast=reference_fast_speed(upstream,n,gamma);
+        for(double excess : {-0.5,-0.1,-1.0e-2,-1.0e-4,-1.0e-8,-1.0e-12,0.0}){
+          const auto result=swcme::shock::solve_ideal_mhd_fast_shock(
+              upstream,n,(1.0+excess)*fast,gamma);
+          context.expect_true(result.status==swcme::shock::SolveStatus::NoShock &&
+                                  !result.has_shock && result.solver_converged &&
+                                  result.compression==1.0,
+                              "SHK12 subcritical/critical state is NoShock");
+        }
+        for(double excess : {1.0e-12,1.0e-10,1.0e-8,1.0e-7,1.0e-6}){
+          const auto result=swcme::shock::solve_ideal_mhd_fast_shock(
+              upstream,n,(1.0+excess)*fast,gamma);
+          context.expect_true(
+              result.status==swcme::shock::SolveStatus::NumericallyUnresolvedWeakShock &&
+                  result.has_shock && !result.solver_converged &&
+                  std::isfinite(result.downstream.rho_kg_m3) &&
+                  std::isfinite(result.downstream.pressure_Pa),
+              "SHK12 sub-resolution supercritical state is explicitly unresolved");
+        }
+      }
+    }
+  }
+
+  // These low-beta, nearly parallel points expose a near-singular tangential
+  // system.  The old outermost-root rule returned a discontinuous r~4--6
+  // state.  They must retain a finite diagnostic candidate but carry the
+  // unresolved status so downstream SEP physics cannot consume that branch.
+  for(const auto parameters :
+      {std::array<double,3>{{0.01,1.4,1.0e-2}},
+       std::array<double,3>{{0.01,5.0/3.0,1.0e-1}}}){
+    const Primitive upstream=make_sweep_state(parameters[0],1.0);
+    const double fast=reference_fast_speed(upstream,n,parameters[1]);
+    const auto result=swcme::shock::solve_ideal_mhd_fast_shock(
+        upstream,n,(1.0+parameters[2])*fast,parameters[1]);
+    context.expect_true(
+        result.status==swcme::shock::SolveStatus::NumericallyUnresolvedWeakShock &&
+            result.has_shock && !result.solver_converged &&
+            std::isfinite(result.compression) &&
+            std::isfinite(result.downstream.rho_kg_m3) &&
+            std::isfinite(result.downstream.pressure_Pa),
+        "SHK12 discontinuous near-singular branch is explicitly unresolved");
+  }
 }

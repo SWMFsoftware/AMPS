@@ -86,9 +86,9 @@ void test_err02(swcme_test::Context& context) {
                       "legacy 3-D evaluator throws on checked failure");
 }
 
-// ERR03: shock solver outcome is explicit.  INVALID_INPUT, NO_SHOCK, and
-// SOLVED are distinct states rather than all being inferred from compression=1
-// or one boolean convergence flag.
+// ERR03: shock solver outcome is explicit.  INVALID_INPUT, NO_SHOCK,
+// NUMERICALLY_UNRESOLVED_WEAK_SHOCK, and SOLVED are distinct states rather
+// than all being inferred from compression=1 or one boolean convergence flag.
 void test_err03(swcme_test::Context& context) {
   using namespace swcme::shock;
   PrimitiveState up;
@@ -119,6 +119,20 @@ void test_err03(swcme_test::Context& context) {
   context.expect_true(no_shock.status==SolveStatus::NoShock &&
                       !no_shock.has_shock && no_shock.solver_converged,
                       "sub-fast state reports NO_SHOCK explicitly");
+
+  // A representably super-fast state inside the published binary64 weak-shock
+  // resolution is physical (has_shock=true) but has no trustworthy RH jump.
+  // It must not be confused with the physical sub-fast case above.
+  const JumpResult threshold_probe=solve_ideal_mhd_fast_shock(
+      up,{{1.0,0.0,0.0}},8.0e5,5.0/3.0);
+  const double unresolved_speed=up.velocity_m_s[0]+threshold_probe.fast_speed_m_s*
+      (1.0+0.5*WEAK_SHOCK_MACH_RESOLUTION);
+  const JumpResult unresolved=solve_ideal_mhd_fast_shock(
+      up,{{1.0,0.0,0.0}},unresolved_speed,5.0/3.0);
+  context.expect_true(
+      unresolved.status==SolveStatus::NumericallyUnresolvedWeakShock &&
+          unresolved.has_shock && !unresolved.solver_converged,
+      "sub-resolution super-fast state reports explicit unresolved status");
 
   const JumpResult solved=solve_ideal_mhd_fast_shock(
       up,{{1.0,0.0,0.0}},1.2e6,5.0/3.0);

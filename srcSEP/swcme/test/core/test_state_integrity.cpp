@@ -162,6 +162,11 @@ void test_pst06(swcme_test::Context& context) {
       {"1-D solver flag",[](auto& s){
          s.shock_solver_converged=!s.shock_solver_converged; }},
       {"1-D RH record",[](auto& s){ s.shock_jump.compression+=0.1; }},
+      // SHK12 added public convergence diagnostics to JumpResult.  Corrupt one
+      // independently so PST06 proves those non-primitive fields are sealed,
+      // rather than relying only on its existing compression mutation.
+      {"1-D RH bracket diagnostic",[](auto& s){
+         s.shock_jump.root_bracket_width+=1.0e-6; }},
       {"1-D compression mirror",[](auto& s){ s.rc+=0.1; }},
       {"1-D shock density",[](auto& s){ s.n_up_shock+=1.0; }},
       {"1-D leading density",[](auto& s){ s.n_up_le+=1.0; }},
