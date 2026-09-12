@@ -142,6 +142,20 @@ void print_timing(const char* label,const TimingSummary& timing,
 void test_pst08(swcme_test::Context& context) {
   std::cout << "PST08 state ownership performance\n";
 
+  // Coverage instrumentation uses non-production optimization and inserts a
+  // counter update around basic blocks.  Timing that binary against the
+  // optimized PST08 budgets would test gcov overhead, not SWCME performance.
+  // COV01 still compiles this complete translation unit and records the
+  // explicit exclusion branch; the dedicated `pst08-performance` target and
+  // ordinary optimized registry remain the authoritative performance gates.
+  const char* coverage_child=std::getenv("SWCME_COV01_CHILD");
+  if (coverage_child!=nullptr && coverage_child[0]=='1' &&
+      coverage_child[1]=='\0') {
+    context.expect_true(true,
+        "PST08 timing excluded from unoptimized coverage execution");
+    return;
+  }
+
   constexpr std::size_t scalar_inner=256;
   constexpr std::size_t three_scalar_inner=8;
   constexpr std::size_t one_batch_size=16384;

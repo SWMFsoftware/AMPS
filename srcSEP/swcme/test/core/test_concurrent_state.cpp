@@ -2,7 +2,9 @@
 
 #include <swcme_sep_interface.hpp>
 
+#include <algorithm>
 #include <array>
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
@@ -43,6 +45,10 @@ struct Snapshot {
       add_uint64(static_cast<unsigned char>(value[i]));
   }
 };
+
+bool operator==(const Snapshot& lhs,const Snapshot& rhs) {
+  return lhs.words==rhs.words;
+}
 
 // ModelStatus is returned by value, and every field is part of the concurrent
 // contract.  In particular, serializing context text rather than its pointer
@@ -440,6 +446,91 @@ struct ConcurrentRun {
   std::vector<std::string> worker_errors;
 };
 
+// THR01 uses an atomic work distributor rather than the deterministic strided
+// ownership used by PST04.  The returned ledger records how many times each
+// canonical job was executed; this makes a scheduler bug visible even when a
+// duplicated calculation happens to overwrite a result with identical bits.
+struct DynamicRun {
+  std::vector<Snapshot> results;
+  std::vector<unsigned int> visits;
+  std::vector<std::string> worker_errors;
+};
+
+DynamicRun run_dynamically(const Fixture& fixture,
+                           std::size_t thread_count,
+                           std::size_t repetitions,
+                           std::size_t chunk_size,
+                           bool reverse_within_chunk) {
+  const std::size_t total=kOperationCount*repetitions;
+  DynamicRun run;
+  run.results.resize(total);
+  run.visits.resize(total,0U);
+  run.worker_errors.resize(thread_count);
+  std::atomic<std::size_t> next{0};
+  StartGate gate(thread_count);
+  std::vector<std::thread> workers;
+  workers.reserve(thread_count);
+
+  for (std::size_t thread=0; thread<thread_count; ++thread) {
+    workers.emplace_back([&,thread] {
+      try {
+        gate.arrive_and_wait();
+        for (;;) {
+          // fetch_add models a dynamic OpenMP/AMPS work queue.  Each claimed
+          // half-open interval is disjoint; the explicit visit ledger below
+          // verifies that this remains true for partial final chunks too.
+          const std::size_t begin=next.fetch_add(chunk_size);
+          if (begin>=total) break;
+          const std::size_t end=std::min(total,begin+chunk_size);
+          for (std::size_t offset=0; offset<end-begin; ++offset) {
+            const std::size_t position=reverse_within_chunk
+                ? end-1-offset : begin+offset;
+            const std::size_t job=canonical_job(
+                position,repetitions,Schedule::OperationGrouped);
+            const Operation operation=static_cast<Operation>(
+                job%kOperationCount);
+            run.results[job]=evaluate_operation(fixture,operation);
+            // Exactly one worker owns this slot by construction, so no atomic
+            // is needed for the ledger itself.  A defective distributor would
+            // be reported after join rather than hidden by a data race here.
+            ++run.visits[job];
+            if (((position+thread)&3U)==0U) std::this_thread::yield();
+          }
+        }
+      } catch (const std::exception& error) {
+        run.worker_errors[thread]=error.what();
+      } catch (...) {
+        run.worker_errors[thread]="unknown THR01 worker exception";
+      }
+    });
+  }
+  for (std::thread& worker : workers) worker.join();
+  return run;
+}
+
+// Fold serialized records in canonical job order.  Scheduler completion order
+// is deliberately excluded: consumers receive an index-addressed result set,
+// so a reproducible reduction must use that stable order rather than racing
+// floating-point additions in worker completion order.
+std::uint64_t canonical_record_hash(const std::vector<Snapshot>& records) {
+  std::uint64_t hash=1469598103934665603ULL;
+  for (const Snapshot& record : records) {
+    for (std::uint64_t word : record.words) {
+      hash^=word;
+      hash*=1099511628211ULL;
+    }
+  }
+  return hash;
+}
+
+long double canonical_numeric_reduction(const std::vector<Snapshot>& records) {
+  long double sum=0.0L;
+  for (const Snapshot& record : records)
+    for (std::uint64_t word : record.words)
+      sum+=static_cast<long double>(word&0xffffU);
+  return sum;
+}
+
 ConcurrentRun run_concurrently(const Fixture& fixture,
                                std::size_t thread_count,
                                std::size_t repetitions,
@@ -575,4 +666,83 @@ void test_pst04(swcme_test::Context& context) {
       swcme3d::prepared_state_integrity(fixture.three_state)==
           fixture.three_state.integrity_digest(),
       "concurrent reuse preserves the 3-D prepared-state seal");
+}
+
+// THR01: exercise the same public prepared-state/background/shock/source/
+// connectivity records through a dynamic scheduler.  PST04 proves concurrent
+// API safety for fixed ownership; THR01 additionally qualifies the scheduler
+// boundary, exact work accounting, and order-independent campaign reduction.
+void test_thr01(swcme_test::Context& context) {
+  std::cout << "THR01 thread and scheduler reproducibility\n";
+
+  swcme1d::Params p1;
+  p1.kinematics_mode=swcme::kinematics::Mode::Ballistic;
+  p1.r0_Rs=20.0;
+  p1.V0_sh_kms=1450.0;
+  p1.V_sw_kms=400.0;
+  p1.region_mode=swcme::regions::Mode::ShockOnly;
+  p1.shock_acceleration_mode=swcme::acceleration::Mode::Source;
+
+  swcme3d::Params p3;
+  p3.shape=swcme3d::ShockShape::Sphere;
+  p3.kinematics_mode=p1.kinematics_mode;
+  p3.r0_Rs=p1.r0_Rs;
+  p3.V0_sh_kms=p1.V0_sh_kms;
+  p3.V_sw_kms=p1.V_sw_kms;
+  p3.region_mode=p1.region_mode;
+  p3.shock_acceleration_mode=p1.shock_acceleration_mode;
+  p3.cme_dir[0]=1.0; p3.cme_dir[1]=0.0; p3.cme_dir[2]=0.0;
+
+  const Fixture fixture(p1,p3);
+  constexpr std::size_t repetitions=11;
+  std::vector<Snapshot> oracle(kOperationCount*repetitions);
+  for (std::size_t job=0; job<oracle.size(); ++job)
+    oracle[job]=evaluate_operation(
+        fixture,static_cast<Operation>(job%kOperationCount));
+  const std::uint64_t oracle_hash=canonical_record_hash(oracle);
+  const long double oracle_sum=canonical_numeric_reduction(oracle);
+
+  const std::array<std::size_t,4> thread_counts{{1,2,4,8}};
+  const std::array<std::size_t,4> chunk_sizes{{1,3,7,19}};
+  for (std::size_t repeat=0; repeat<3; ++repeat) {
+    for (std::size_t thread_count : thread_counts) {
+      for (std::size_t chunk_size : chunk_sizes) {
+        const bool reverse=((repeat+thread_count+chunk_size)&1U)!=0U;
+        const DynamicRun run=run_dynamically(
+            fixture,thread_count,repetitions,chunk_size,reverse);
+        const std::string label="repeat="+std::to_string(repeat)+
+            ", threads="+std::to_string(thread_count)+
+            ", chunk="+std::to_string(chunk_size);
+
+        bool workers_ok=true;
+        for (const std::string& error : run.worker_errors)
+          workers_ok=workers_ok && error.empty();
+        context.expect_true(workers_ok,label+" completes without worker error");
+
+        bool exactly_once=true;
+        for (unsigned int visits : run.visits)
+          exactly_once=exactly_once && visits==1U;
+        context.expect_true(exactly_once,label+" visits every job exactly once");
+        context.expect_true(run.results==oracle,
+                            label+" preserves every serialized result bit");
+        context.expect_true(canonical_record_hash(run.results)==oracle_hash,
+                            label+" preserves canonical record hash");
+        context.expect_true(canonical_numeric_reduction(run.results)==oracle_sum,
+                            label+" preserves canonical ordered reduction");
+      }
+    }
+  }
+
+  context.expect_true(
+      swcme1d::prepared_state_integrity(fixture.one_state)==
+          fixture.one_state.integrity_digest(),
+      "THR01 preserves the shared 1-D prepared-state seal");
+  context.expect_true(
+      swcme3d::prepared_state_integrity(fixture.three_state)==
+          fixture.three_state.integrity_digest(),
+      "THR01 preserves the shared 3-D prepared-state seal");
+
+  std::cout << "  jobs=" << oracle.size()
+            << " schedules=" << 3*thread_counts.size()*chunk_sizes.size()
+            << " canonical_hash=" << oracle_hash << '\n';
 }

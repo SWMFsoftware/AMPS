@@ -3086,8 +3086,193 @@ shifts, alignment faults, or other undefined behavior.
 -fno-omit-frame-pointer`, executes `--all`, and runs each demo in an isolated
 directory. A child marker prevents only recursive SAN01 orchestration.
 
-**Expected result.** Compilation, 116 registered validations, and all demos
+**Expected result.** Compilation, 126 registered validations, and all demos
 finish with no sanitizer-origin diagnostic. Leak enumeration is explicitly
 disabled by default in ptrace/container environments; set
 `SAN01_ASAN_OPTIONS=detect_leaks=1:halt_on_error=1` on a compatible untraced
 host to add LeakSanitizer.
+
+## Priorities 50-59: execution, evidence, and observational campaign gates
+
+The registered `V1`-`V5` cases use clearly labelled `SYNTHETIC_REGRESSION`
+fixtures to test calculations and acceptance logic. They are not a substitute
+for an observational data package. `EVT01` enforces that distinction: a
+`RELEASE_VALIDATION` campaign cannot pass without traceable observational
+provenance and complete evidence for every layer.
+
+### THR01: thread and scheduler reproducibility
+
+**What is tested.** Prepared-state evaluation under 1, 2, 4, and 8 workers,
+static and atomic dynamic work distribution, four chunk sizes, reversed
+within-chunk order, repeated interleavings, per-job status/results, work counts,
+canonical record hashes, reductions, and unchanged prepared-state seals.
+
+**Why it is tested.** A race, duplicate/missing job, order-dependent reduction,
+or mutable cache may appear only under one scheduler even if serial results pass.
+
+**How it is tested.** Ninety-nine heterogeneous jobs are first evaluated by a
+serial oracle, then by 48 schedule combinations. Workers write disjoint slots;
+the post-join comparison and reduction always use canonical job order.
+
+**Expected result.** Every slot and status is exact, every job is visited once,
+hashes match, reductions are bitwise equal or within roundoff, and state seals
+remain unchanged. The suite is also compiled and run by SAN01 for race-adjacent
+lifetime diagnostics. `make thr01-tsan` builds and runs the same matrix with
+ThreadSanitizer on a TSan-capable CI executor.
+
+### COV01: line and branch coverage closure
+
+**What is tested.** Source-only statement and branch coverage, including
+invalid input, singular limits, boundary logic, and writer cleanup paths.
+
+**Why it is tested.** Passing numerical fixtures can leave rejection and
+cleanup code unexecuted, making regressions in safety behavior hard to detect.
+
+**How it is tested.** `make cov01-coverage` performs a fresh GCC coverage build,
+runs a reviewable nonredundant registry set, merges JSON gcov records by source
+and line/branch identity, and writes `output/cov01/coverage.json`. Tests,
+generated references, and physics exclusions are not counted as production.
+
+**Expected result.** Production coverage exceeds the frozen 72% line and 40%
+branch gates. The current verified result is 89.60% (3887/4338) lines and
+57.83% (2202/3808) branches; future modified production paths must remain
+covered rather than being excluded.
+
+### PERF01: performance and scaling guardrails
+
+**What is tested.** Preparation, scalar/batch evaluation, 32 shock solves,
+mesh plus output preflight, integrated source construction, connectivity, and
+field batches at 1/2/4/8 threads; median, nearest-rank p95, environment, and an
+observable checksum are reported.
+
+**Why it is tested.** Accidental repeated preparation, per-point allocation,
+quadratic loops, or lost parallel sharing can preserve answers while making a
+campaign impractical.
+
+**How it is tested.** The registered parent builds a fresh `-O3 -DNDEBUG`
+standalone child. Each workload is warmed and sampled 7 or 9 times; timing is
+explicitly excluded from sanitizer/coverage binaries.
+
+**Expected result.** P95 remains below 100 ms for preparation/batch, 3 s for
+shock/mesh, and 5 s for source/connectivity. Each parallel median is less than
+2.5 times the serial median and the checksum is finite. These portable CI
+ceilings catch severe regressions; controlled release hardware should retain a
+separate frozen baseline for tighter trend monitoring.
+
+### REP01: fixture and campaign reproducibility
+
+**What is tested.** Path-ordered input inventory, source/config/event hashes,
+seed, selected tests, compiler contract, and the canonical campaign fingerprint.
+
+**Why it is tested.** A result without input/tool identity cannot be recreated
+or distinguished from a silently changed fixture.
+
+**How it is tested.** Manifest schema v2 hashes all reference, profile, example,
+and Python manager inputs. REP01 builds the same manifest twice and requires
+identical fingerprints despite timestamp/host metadata, then changes the seed
+and requires a different fingerprint.
+
+**Expected result.** Identical defining inputs reproduce the fingerprint and
+inventory byte-for-byte; any defining seed/source/config/fixture/tool-contract
+change changes it. Output reference exports retain their own SHA-256.
+
+### EVT01: campaign schema and completeness
+
+**What is tested.** Schema versioning, known keys, provenance, layer presence,
+evidence, metrics, uncertainty, convergence, valid NA rationale, and the exact
+`PASS`/`FAIL`/`INCOMPLETE`/`NOT_APPLICABLE`/`ERROR` states.
+
+**Why it is tested.** Execution success is not scientific completeness; the old
+empty EVENT arrays could incorrectly aggregate to PASS.
+
+**How it is tested.** The Python contract receives complete and deliberately
+damaged packages: wrong versions, unknown keys, missing V layers, empty metrics,
+synthetic-only release provenance, and a threshold failure. Analysis commands
+are not launched when schema state is ERROR or INCOMPLETE.
+
+**Expected result.** Malformed packages are ERROR, missing science is
+INCOMPLETE, complete threshold violations are FAIL, justified NA is accepted
+only for nonrelease self-tests, and only a complete package can PASS.
+
+### V1: background Parker and Leblanc validation
+
+**What is tested.** The observational metric pipeline for density, magnetic
+field magnitude, and Parker angle from 0.30 to 1.40 AU.
+
+**Why it is tested.** Event conclusions require the upstream background to be
+credible before CME/shock differences are interpreted.
+
+**How it is tested.** Production 3-D Parker/Leblanc queries are compared with a
+fixed synthetic reference perturbation. Ratios and median angular error are
+computed independently, and a deliberately bad angle set proves rejection.
+
+**Expected result.** Median angle error is at most 20 degrees and normalized
+density/field trends remain within factor two. Real V1 evidence must replace
+the synthetic records with quiet-interval observations and traceable hashes.
+
+### V2: CME and shock apex kinematics
+
+**What is tested.** DATA_DRIVEN height knots, DBM propagation, and held-arrival
+absolute and relative error metrics.
+
+**Why it is tested.** A correct local shock solver cannot compensate for an
+incorrect apex trajectory or biased arrival time.
+
+**How it is tested.** Production PCHIP states are evaluated at every supplied
+synthetic knot. A production DBM trajectory is independently bisected at 0.96
+AU and compared with a held synthetic arrival offset.
+
+**Expected result.** Knot errors are below `1e-12`; arrival error is at most six
+hours and 15%. A real campaign also records the useful 12-hour/25% tier and
+uses independently sourced height-time and held arrival observations.
+
+### V3: in-situ shock jump validation
+
+**What is tested.** Compression, downstream speed and field, shock obliquity,
+and all five normalized Rankine-Hugoniot residuals.
+
+**Why it is tested.** A plausible arrival does not establish a conservative or
+physically admissible local shock jump.
+
+**How it is tested.** The production ideal-MHD solver evaluates a fixed oblique
+state; independent metric code compares its result with controlled synthetic
+measurement offsets and aggregates the maximum conservation residual.
+
+**Expected result.** Residual is at most `1e-8`; compression, speed, field, and
+theta-Bn errors are at most 25%, 15%, 30%, and 15 degrees. Observational PASS
+requires actual upstream/downstream windows and uncertainty records.
+
+### V4: shock geometry and encounter validation
+
+**What is tested.** Multi-observer hit/miss classification, apex-to-flank
+ordering, arrival timing, and the uncertainty decision.
+
+**Why it is tested.** An apex trajectory may be accurate while width or flank
+geometry predicts the wrong spacecraft encounter.
+
+**How it is tested.** Four synthetic observer longitudes bracket a 45-degree
+front; a transparent cosine-flank proxy produces ordered arrivals compared
+with independent synthetic times and an eight-hour uncertainty.
+
+**Expected result.** All hit/miss decisions and ordering are correct and every
+arrival is inside uncertainty. Real evidence must provide ephemerides, local
+normal estimates, and documented timing uncertainty.
+
+### V5: magnetic connectivity benchmark
+
+**What is tested.** Qualitative connection histories, transition counting,
+four-hour sampling sensitivity, required observers, and multi-event plumbing.
+
+**Why it is tested.** Connectivity is a time-history classification; one
+cobpoint or event-specific tuning cannot validate onset and loss behavior.
+
+**How it is tested.** The required 2010-09-09 STA-stays-connected and
+STB-connects-then-loses constraints from Tao et al. (2025, ApJ 995:77,
+doi:10.3847/1538-4357/ae17bd) seed the qualitative comparator. SOHO and two
+additional histories are synthetic, and shifted sampling checks transition
+stability without event-specific production tuning.
+
+**Expected result.** History classes and transitions match and survive the
+sampling perturbation. The bundled test remains scientifically INCOMPLETE;
+release PASS requires traceable STA/STB/SOHO observations for the mandatory
+event plus at least two independent observed events and sensitivity evidence.

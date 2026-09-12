@@ -1,24 +1,28 @@
 {
-  "event_id": "example_cme_campaign",
-  "sweeps": [
-    {
-      "name": "apex_radius_vs_launch_speed",
-      "parameters": {
-        "v0_kms": [1200.0, 1500.0, 1800.0]
-      },
-      "command": [
-        "{test_dir}/output/sep_reference",
-        "--probe-time-hours", "24",
-        "--v0-kms", "{v0_kms}"
-      ],
-      "metric_regex": "SHOCK_RADIUS_AU=([0-9eE+.-]+)",
-      "metric_name": "shock_radius_AU",
-      "metric_min": 0.1,
-      "metric_max": 1.5,
-      "timeout_s": 60
-    }
+  "schema_version": 2,
+  "event_id": "example_cme_schema_self_test",
+  "campaign_purpose": "SCHEMA_SELF_TEST",
+  "description": "Executable synthetic example; it demonstrates orchestration and is not observational validation.",
+  "provenance": [{
+    "id": "synthetic-example-v1", "source_kind": "SYNTHETIC_REGRESSION",
+    "source": "test/event_config.example.json", "citation": "SWCME internal campaign-schema fixture",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "retrieved_utc": "2026-01-01T00:00:00Z", "processing": "Analytic/synthetic example values only"
+  }],
+  "events": [{"id":"synthetic-event","start_utc":"2026-01-01T00:00:00Z","end_utc":"2026-01-02T00:00:00Z","description":"schema exercise"}],
+  "observers": [{"id":"synthetic-observer","mission":"internal","position_frame":"HCI","description":"schema exercise"}],
+  "validation_layers": [
+    {"id":"V1","status":"PASS","description":"Synthetic background pipeline exercise","evidence":[{"fixture":"analytic Parker/Leblanc"}],"metrics":[{"name":"pipeline","value":1}],"uncertainties":[{"type":"synthetic","value":0}],"convergence":[{"type":"exact"}],"provenance_ids":["synthetic-example-v1"]},
+    {"id":"V2","status":"PASS","description":"Synthetic apex-kinematics pipeline exercise","evidence":[{"fixture":"analytic trajectory"}],"metrics":[{"name":"pipeline","value":1}],"uncertainties":[{"type":"synthetic","value":0}],"convergence":[{"type":"exact"}],"provenance_ids":["synthetic-example-v1"]},
+    {"id":"V3","status":"PASS","description":"Synthetic shock-jump pipeline exercise","evidence":[{"fixture":"Rankine-Hugoniot state"}],"metrics":[{"name":"pipeline","value":1}],"uncertainties":[{"type":"synthetic","value":0}],"convergence":[{"type":"exact"}],"provenance_ids":["synthetic-example-v1"]},
+    {"id":"V4","status":"PASS","description":"Synthetic geometry pipeline exercise","evidence":[{"fixture":"analytic hit/miss geometry"}],"metrics":[{"name":"pipeline","value":1}],"uncertainties":[{"type":"synthetic","value":0}],"convergence":[{"type":"exact"}],"provenance_ids":["synthetic-example-v1"]},
+    {"id":"V5","status":"PASS","description":"Synthetic connectivity pipeline exercise","evidence":[{"fixture":"analytic connection history"}],"metrics":[{"name":"pipeline","value":1}],"uncertainties":[{"type":"synthetic","value":0}],"convergence":[{"type":"exact"}],"provenance_ids":["synthetic-example-v1"]}
   ],
-  "convergence": [],
-  "comparisons": [],
-  "plots": []
+  "sweeps": [{
+    "name": "apex_radius_vs_launch_speed", "parameters": {"v0_kms": [1200.0, 1500.0, 1800.0]},
+    "command": ["{test_dir}/output/sep_reference", "--probe-time-hours", "24", "--v0-kms", "{v0_kms}"],
+    "metric_regex": "SHOCK_RADIUS_AU=([0-9eE+.-]+)", "metric_name": "shock_radius_AU",
+    "metric_min": 0.1, "metric_max": 1.5, "timeout_s": 60
+  }],
+  "convergence": [], "comparisons": [], "plots": []
 }

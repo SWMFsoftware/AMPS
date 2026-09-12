@@ -989,6 +989,25 @@ and `3` = build failure.  `test/python/test_run_tests.py` regression-tests the
 profile expansion, convergence fitting, sweep engine, CSV comparison/event
 aggregation, manifest/report production, and command-error exit code.
 
+### Campaign assurance priorities 50-59
+
+The validation registry now includes `THR01`, `COV01`, `PERF01`, `REP01`,
+`EVT01`, and `V1`-`V5`. THR01 covers deterministic 1/2/4/8-thread static and
+dynamic scheduling. COV01 provides a fresh source-only GCC line/branch gate.
+PERF01 runs warmed optimized median/p95 workloads and scaling ceilings. REP01
+upgrades campaign manifests to schema v2 with a content-addressed fixture
+inventory and canonical fingerprint. EVT01 validates versioned EVENT packages
+and separates malformed, incomplete, failed, not-applicable, and passing
+science outcomes before running analyses.
+
+The bundled V1-V5 fixtures validate metric and production-interface plumbing
+for background Parker/Leblanc behavior, apex kinematics, in-situ jumps,
+geometry/encounters, and magnetic-connectivity histories. They are explicitly
+`SYNTHETIC_REGRESSION` fixtures and log `science_release=INCOMPLETE`.
+Observational release status requires schema-v2 packages with traceable
+observations, uncertainties, convergence evidence, and all five completed
+layers. See `test/README.md` for each acceptance threshold and focused command.
+
 ## Current 3-D shock geometries
 
 `swcme3d::ShockShape` currently provides:

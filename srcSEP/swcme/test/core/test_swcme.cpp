@@ -123,6 +123,16 @@ void test_1d3d02(swcme_test::Context& context);
 void test_1d3d03(swcme_test::Context& context);
 void test_cross01(swcme_test::Context& context);
 void test_san01(swcme_test::Context& context);
+void test_thr01(swcme_test::Context& context);
+void test_cov01(swcme_test::Context& context);
+void test_perf01(swcme_test::Context& context);
+void test_rep01(swcme_test::Context& context);
+void test_evt01(swcme_test::Context& context);
+void test_v1(swcme_test::Context& context);
+void test_v2(swcme_test::Context& context);
+void test_v3(swcme_test::Context& context);
+void test_v4(swcme_test::Context& context);
+void test_v5(swcme_test::Context& context);
 
 namespace {
 
@@ -202,6 +212,16 @@ const swcme_test::TestCase kTests[] = {
     {"REG01", "COMMON", "Region boundary and smoothing convergence", test_reg01},
     {"CON11", "3D", "Connectivity random stress and transition convergence", test_con11},
     {"SAN01", "SANITIZER", "Memory and undefined-behavior validation", test_san01},
+    {"THR01", "PARALLEL", "Thread and scheduler reproducibility", test_thr01},
+    {"COV01", "COVERAGE", "Line and branch coverage closure", test_cov01},
+    {"PERF01", "PERFORMANCE", "Performance and scaling guardrails", test_perf01},
+    {"REP01", "CAMPAIGN", "Fixture and campaign reproducibility", test_rep01},
+    {"EVT01", "CAMPAIGN", "Campaign schema and completeness", test_evt01},
+    {"V1", "OBSERVATIONAL", "Background Parker and Leblanc validation", test_v1},
+    {"V2", "OBSERVATIONAL", "CME and shock apex kinematics", test_v2},
+    {"V3", "OBSERVATIONAL", "In-situ shock jump validation", test_v3},
+    {"V4", "OBSERVATIONAL", "Shock geometry and encounter validation", test_v4},
+    {"V5", "OBSERVATIONAL", "Magnetic connectivity benchmark", test_v5},
     {"GEO02", "3D", "True SSE front at the CME apex", test_geo02},
     {"GEO03", "3D", "SSE tangent-flank boundary behavior", test_geo03},
     {"GEO04", "3D", "Strict enforcement of finite SSE angular width", test_geo04},
