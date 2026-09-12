@@ -136,6 +136,16 @@ public:
     if (!model_status.ok()) throw std::invalid_argument(model_status.summary("swcme SEP 1D"));
   }
 
+  // Adapter special members deliberately inherit the Model lifetime contract.
+  // Copying creates a new owner that rejects the source adapter's states;
+  // moving transfers the embedded Model identity so those states remain valid
+  // at the AMPS boundary.  Declaring all four operations prevents the explicit
+  // move declarations from accidentally deleting established copy support.
+  Interface1D(const Interface1D&) = default;
+  Interface1D& operator=(const Interface1D&) = default;
+  Interface1D(Interface1D&&) = default;
+  Interface1D& operator=(Interface1D&&) = default;
+
   const swcme1d::Model& model() const noexcept { return model_; }
   const SpectrumConfig& spectrum_config() const noexcept { return spectrum_; }
 
@@ -219,6 +229,15 @@ public:
     const swcme::config::ValidationResult model_status=model_.validate();
     if (!model_status.ok()) throw std::invalid_argument(model_status.summary("swcme SEP 3D"));
   }
+
+  // Model is the first data member, so a rejected move/copy assignment into a
+  // prepared adapter throws before params_ or spectrum_ can change.  Successful
+  // moves transfer the logical owner and its states; copies preserve PST02's
+  // independent-owner behavior while retaining source compatibility.
+  Interface3D(const Interface3D&) = default;
+  Interface3D& operator=(const Interface3D&) = default;
+  Interface3D(Interface3D&&) = default;
+  Interface3D& operator=(Interface3D&&) = default;
 
   const swcme3d::Model& model() const noexcept { return model_; }
   const SpectrumConfig& spectrum_config() const noexcept { return spectrum_; }

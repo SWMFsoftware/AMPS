@@ -13,15 +13,21 @@ DEMO_TARGETS := output/demo1d output/demo3d_1 output/demo3d_2
 # Every validation remains in one deterministic executable. The common tests
 # use separate translation units so each physical contract has an auditable
 # implementation without introducing another executable or build system.
-SOURCES := core/test_swcme.cpp core/test_state_immutability.cpp core/test_prepared_state.cpp core/test_configuration_state.cpp core/test_state_integrity.cpp core/test_concurrent_state.cpp core/test_output.cpp core/test_output_parsing.cpp core/test_demo_execution.cpp core/test_adapter_equivalence.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp core/test_regions.cpp core/test_acceleration.cpp core/test_status.cpp core/test_divergence.cpp core/test_defaults.cpp core/test_sep_interface.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_mesh.cpp 3d/test_connectivity.cpp 3d/test_shock_surface.cpp 1d/test_ambient.cpp test_1d3d.cpp
-OBJECTS := output/swcme3d.o output/test_swcme.o output/test_state_immutability.o output/test_prepared_state.o output/test_configuration_state.o output/test_state_integrity.o output/test_concurrent_state.o output/test_output.o output/test_output_parsing.o output/test_demo_execution.o output/test_adapter_equivalence.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_regions.o output/test_acceleration.o output/test_status.o output/test_divergence.o output/test_defaults.o output/test_sep_interface.o output/test_parker.o output/test_geometry.o output/test_mesh.o output/test_connectivity.o output/test_shock_surface.o output/test_ambient.o output/test_1d3d.o
+SOURCES := core/test_swcme.cpp core/test_state_immutability.cpp core/test_prepared_state.cpp core/test_configuration_state.cpp core/test_state_integrity.cpp core/test_concurrent_state.cpp core/test_output.cpp core/test_output_parsing.cpp core/test_demo_execution.cpp core/test_adapter_equivalence.cpp core/test_state_lifetime.cpp core/test_config.cpp core/test_units.cpp core/test_density.cpp core/test_kinematics.cpp core/test_shock.cpp core/test_regions.cpp core/test_acceleration.cpp core/test_status.cpp core/test_divergence.cpp core/test_defaults.cpp core/test_sep_interface.cpp 3d/test_parker.cpp 3d/test_geometry.cpp 3d/test_mesh.cpp 3d/test_connectivity.cpp 3d/test_shock_surface.cpp 1d/test_ambient.cpp test_1d3d.cpp
+OBJECTS := output/swcme3d.o output/test_swcme.o output/test_state_immutability.o output/test_prepared_state.o output/test_configuration_state.o output/test_state_integrity.o output/test_concurrent_state.o output/test_output.o output/test_output_parsing.o output/test_demo_execution.o output/test_adapter_equivalence.o output/test_state_lifetime.o output/test_config.o output/test_units.o output/test_density.o output/test_kinematics.o output/test_shock.o output/test_regions.o output/test_acceleration.o output/test_status.o output/test_divergence.o output/test_defaults.o output/test_sep_interface.o output/test_parker.o output/test_geometry.o output/test_mesh.o output/test_connectivity.o output/test_shock_surface.o output/test_ambient.o output/test_1d3d.o
 
 # POSIX thread support is isolated behind one overridable variable.  PST04's
 # translation unit needs the compile flag on implementations that expose
 # std::thread through pthreads, and the final executable needs the link flag.
 THREAD_FLAGS ?= -pthread
 
-.PHONY: all test tools demos demo-run campaign-test clean
+# LeakSanitizer cannot inspect threads when the test process is itself observed
+# through ptrace (as in several CI/container runners).  Keep the mandatory
+# address/use-after-free gate portable; an untraced host can opt into leak
+# scanning with `make PST05_ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 ...`.
+PST05_ASAN_OPTIONS ?= detect_leaks=0:halt_on_error=1
+
+.PHONY: all test tools demos demo-run campaign-test pst05-sanitize clean
 
 all: $(TARGET) demos
 
@@ -108,6 +114,12 @@ output/test_demo_execution.o: core/test_demo_execution.cpp core/tecplot_parser.h
 # both dimensions without importing any adapter-private implementation detail.
 output/test_adapter_equivalence.o: core/test_adapter_equivalence.cpp core/test_framework.hpp ../swcme_status.hpp ../swcme_solarwind.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_sep_source.hpp ../swcme_sep_interface.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+# PST05 exercises destruction, model/adapter moves, rejected assignment into a
+# frozen destination, vector relocation, and asynchronous evaluation.  It uses
+# pthread at compile time because std::async is an explicit part of the test.
+output/test_state_lifetime.o: core/test_state_lifetime.cpp core/test_framework.hpp ../swcme_status.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_sep_interface.hpp | output
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(THREAD_FLAGS) -c $< -o $@
 
 output/test_config.o: core/test_config.cpp core/test_framework.hpp ../swcme_constants.hpp ../swcme_units.hpp ../swcme_defaults.hpp ../swcme_status.hpp ../swcme_divergence.hpp ../swcme_config.hpp ../swcme_kinematics.hpp ../swcme1d.hpp ../swcme3d.hpp ../swcme_solarwind.hpp ../swcme_core.hpp ../swcme_regions.hpp | output
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
@@ -242,6 +254,15 @@ demo-run: all
 campaign-test: all tools
 	python3 python/test_run_tests.py
 
+# Build a separate fully instrumented validation executable so AddressSanitizer
+# never contaminates normal incremental objects.  Running only PST05 keeps the
+# dedicated lifetime gate fast while every production/test translation unit is
+# compiled with identical ASan instrumentation. Leak scanning is opt-in because
+# LeakSanitizer is incompatible with ptrace-based CI runners.
+pst05-sanitize: | output
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -O1 -g -fsanitize=address -fno-omit-frame-pointer $(THREAD_FLAGS) ../swcme3d.cpp $(SOURCES) -o output/test_swcme_pst05_asan
+	ASAN_OPTIONS=$(PST05_ASAN_OPTIONS) ./output/test_swcme_pst05_asan --test PST05
+
 output:
 	mkdir -p $@
 
@@ -249,4 +270,4 @@ test: all
 	./$(TARGET)
 
 clean:
-	rm -f $(TARGET) $(SEP_REFERENCE_TARGET) $(DEMO_TARGETS) $(OBJECTS)
+	rm -f $(TARGET) $(SEP_REFERENCE_TARGET) $(DEMO_TARGETS) $(OBJECTS) output/test_swcme_pst05_asan

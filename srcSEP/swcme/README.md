@@ -99,8 +99,9 @@ convention.  After setup and `prepare()` complete, a prepared step and its
 owning model may be shared read-only by worker threads.  Each call must still
 own distinct destination objects/arrays; model configuration, preparation, and
 file output remain setup/coordination operations rather than concurrent
-field-query operations.  PST04 verifies thread safety, and PST07 verifies
-direct/adapter equivalence for this complete record.
+field-query operations. PST04 verifies thread safety, PST07 verifies
+direct/adapter equivalence for this complete record, and PST05 verifies that
+the state/owner relationship remains defined across moves and destruction.
 
 ### Prepared-state immutability (PST01)
 
@@ -675,6 +676,65 @@ make -j
 
 PST07 follows OUT07 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it through
 their `@ALL` expansion.
+
+### Prepared-state lifetime contract (PST05)
+
+`StepState` is a self-contained value record. Neither the 1-D nor 3-D record
+contains a pointer or reference to its preparing `Model`; all Parker, density,
+kinematic, geometry, region, acceleration, and shock data needed by an
+evaluation are owned by value. A state may consequently be copied, moved,
+archived in memory, inspected, and destroyed after its original model has gone
+out of scope without accessing released storage.
+
+Self-contained storage does not make a state an independent evaluator. Every
+checked physics or AMPS-adapter call still requires a live logical model owner.
+Constructing a new model with numerically identical parameters creates a new
+`ModelIdentity`, so it rejects a state whose original owner was destroyed with
+`STATE_MODEL_MISMATCH` before modifying caller-owned output. This is the
+documented use-after-owner behavior; SWCME never attempts to find or silently
+rebuild the destroyed owner.
+
+Move construction and move assignment are different from copying: they
+relocate the same logical owner. The model identity and its prepared/frozen
+phase transfer to the destination, and states prepared before the move remain
+valid there with bitwise-identical results. The moved-from object receives a
+fresh identity and is unlocked; it is safe to destroy or assign and cannot
+consume the transferred states. Its remaining parameter value is the normal
+C++ valid-but-unspecified result of a move and must not be used as a configured
+physics model unless it is assigned a complete configuration again.
+
+Move assignment into a destination that has already prepared a state remains
+forbidden by PST01. It throws `std::logic_error` before either source or
+destination changes, preserving both owners and all their existing states.
+Model move construction is conditionally `noexcept` from `Params`, and the
+current value-only parameter bundles satisfy that condition. Standard
+containers therefore relocate models and adapters through the ownership-
+transferring move path instead of the independent-owner copy path.
+
+The same rules apply to `Interface1D` and `Interface3D`: adapter copies own new
+models and reject source states, whereas adapter moves transfer the embedded
+model identity. Asynchronous evaluation is supported only while the relocated
+owner remains alive, with the model and prepared state shared read-only and
+each task owning separate output storage. No contract permits a worker to
+retain a model reference beyond the model's lifetime.
+
+Run the ordinary and AddressSanitizer lifetime gates with:
+
+```sh
+cd test
+make -j
+./output/test_swcme --test PST05
+make pst05-sanitize
+```
+
+`pst05-sanitize` compiles a separate fully instrumented executable with
+`-fsanitize=address` and fail-fast behavior, then runs PST05. It does not reuse
+or alter normal incremental objects. LeakSanitizer is disabled by default
+because it cannot run under ptrace-based CI/container supervisors. On an
+untraced host, enable it with
+`make PST05_ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 pst05-sanitize`.
+PST05 follows PST07 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it
+through `@ALL`.
 
 ### `SEPSourceState`
 

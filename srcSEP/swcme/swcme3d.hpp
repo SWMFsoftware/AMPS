@@ -140,6 +140,8 @@
 #include <string>
 #include <sstream>
 #include <iomanip>
+#include <type_traits>
+#include <utility>
 
 namespace swcme3d {
 
@@ -449,6 +451,12 @@ inline swcme::config::ValidationResult validate_params(const Params& p) {
 // CACHES everything required by hot loops (n,V,B,divV evaluators).
 // ----------------------------------------------------------------------------
 struct StepState {
+  // PST05 lifetime contract: all cached arrays and records below are owned by
+  // value.  StepState never points back into its preparing Model, so retaining
+  // or relocating the snapshot after Model destruction cannot dereference
+  // freed storage.  Evaluation nevertheless requires a live Model with the
+  // same transferred logical identity; a separately constructed equal Model
+  // rejects the orphan deterministically through validate_prepared_state().
   // Process-local identity of the exact Model instance that prepared this
   // cache.  Zero denotes an unprepared/default state.  The token is verified
   // before geometry or physics uses any cached value, preventing a foreign
@@ -827,6 +835,18 @@ public:
   // token, which makes PST02's instance boundary explicit.
   Model(const Model&);
   Model& operator=(const Model&);
+
+  // A move is a relocation of one logical model owner.  Its identity and
+  // prepared/configuration phase travel to the destination, keeping previously
+  // issued StepStates usable after return-by-value or container relocation.
+  // The moved-from object receives a fresh identity and may only be destroyed,
+  // assigned, or otherwise treated as a normal valid-but-unspecified C++ value.
+  Model(Model&&) noexcept(std::is_nothrow_move_constructible<Params>::value);
+
+  // Assignment into a prepared destination is rejected before mutation by the
+  // same PST01 guard as copy assignment.  Assignment into an unprepared target
+  // transfers ownership so existing states follow the moved logical model.
+  Model& operator=(Model&&);
 
   swcme::ModelIdentity model_identity() const noexcept {
     return model_identity_;

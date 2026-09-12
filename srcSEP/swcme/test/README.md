@@ -50,6 +50,7 @@ From `srcSEP/swcme/test`, the equivalent command is `make clean all`.
 ./output/test_swcme --test OUT01    # independent Tecplot parsing
 ./output/test_swcme --test OUT07    # build/run/parse all demonstrations
 ./output/test_swcme --test PST07    # direct/AMPS adapter equivalence
+./output/test_swcme --test PST05    # prepared-state lifetime and relocation
 ./output/test_swcme --test CFG01    # run exactly CFG01
 ./output/test_swcme --test CFG02    # run exactly CFG02
 ./output/test_swcme --test DEN01    # run exactly DEN01
@@ -817,6 +818,77 @@ make -j
 ```
 
 PST07 follows OUT07 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it through
+their `@ALL` expansion.
+
+## PST05: prepared-state lifetime contract
+
+### What is tested
+
+PST05 tests the lifetime boundary between a prepared 1-D/3-D `StepState`, its
+logical `Model` owner, and the AMPS-facing `Interface1D`/`Interface3D` adapters.
+It covers model destruction, move construction, move assignment, rejected move
+assignment into a prepared destination, standard-container relocation, moved-
+from rejection, copied state records, and asynchronous read-only evaluation.
+Both direct field APIs and adapter background APIs participate in the matrix.
+
+### Why it is tested
+
+A cached state that secretly refers to model-owned memory can become a dangling
+record when its model leaves scope or is relocated by a return value or
+container. Conversely, treating a move as an independent copy can invalidate
+otherwise safe states during ordinary C++ object relocation. Either defect can
+produce use-after-free, nondeterministic physics, or a plausible result from the
+wrong owner. PST05 converts these implicit C++ lifetime assumptions into a
+public, executable ownership rule.
+
+### How it is tested
+
+The test first verifies that both state types retain copy/move value semantics
+and that both current parameter bundles give their models non-throwing move
+construction. A prepared 1-D model is move-constructed and a prepared 3-D
+model is move-assigned into an unprepared target; the destination must inherit
+the original identity, frozen phase, and bitwise-identical field result. Calls
+through each moved-from model must return `STATE_MODEL_MISMATCH`, report both
+identities, and preserve sentinel outputs.
+
+A second assignment attempts to overwrite an already prepared destination.
+The required `std::logic_error` must occur before either identity changes, and
+both pre-existing states must still evaluate successfully. Separate scoped
+owners are then destroyed. Their retained states must remain safely copyable
+with unchanged integrity seals, while new equal direct/adapter owners must
+reject them transactionally rather than resurrecting permission from matching
+parameters.
+
+For relocation, vectors are deliberately reserved for one element and grown to
+two after the first model/adapter has prepared a state. The relocated first
+element must retain its identity and exact direct or AMPS output. Finally,
+copies of the prepared states are captured by value in `std::async` tasks while
+their relocated owners stay alive; the returned fields must exactly match the
+serial pre-move records. A dedicated build compiles the full production and
+validation source set under AddressSanitizer:
+
+```sh
+make -j
+./output/test_swcme --test PST05
+make pst05-sanitize
+```
+
+LeakSanitizer is disabled in that target by default because it cannot inspect
+threads under ptrace-based CI/container supervisors. An untraced host can add
+leak scanning with
+`make PST05_ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 pst05-sanitize`.
+
+### Expected result
+
+Prepared states remain valid inert values after owner destruction, with no
+invalid memory access or leak. A moved-to owner accepts all of its pre-move
+states and produces identical output; the moved-from object and any newly
+constructed equal owner reject them deterministically. Frozen-destination
+assignment changes neither object. Container relocation and asynchronous
+direct/AMPS evaluations pass with exact results, and AddressSanitizer reports no
+use-after-free or invalid access. An optional LeakSanitizer run reports no leak.
+
+PST05 follows PST07 in `SMOKE`; `ROUTINE`, `FULL`, and `EVENT` include it through
 their `@ALL` expansion.
 
 ## Python campaign manager and reproducible run artifacts

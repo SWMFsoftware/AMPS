@@ -353,6 +353,8 @@ USAGE SKETCH (more complete examples at bottom)
 #include <string>
 #include <sstream>
 #include <iomanip>
+#include <type_traits>
+#include <utility>
 
 #include "swcme_constants.hpp"
 #include "swcme_units.hpp"
@@ -602,6 +604,12 @@ inline swcme::config::ValidationResult validate_params(const Params& p) {
  * sheath (n_up at shock & LE; V2 at shock; V at LE).
  */
 struct StepState {
+  // PST05 lifetime contract: this record owns every value needed by checked
+  // evaluation and never stores a pointer/reference to its preparing Model.
+  // It may therefore be copied, moved, inspected, or destroyed after that
+  // Model's lifetime ends.  Numerical evaluation still requires a live Model
+  // carrying the same logical identity; a newly constructed equal Model has a
+  // different identity and deterministically rejects this orphaned snapshot.
   // Identity of the exact Model instance that prepared this cache.  Zero means
   // that the object was default-constructed and was never prepared.  The
   // identity is metadata only; it is checked before physics and is never used
@@ -755,6 +763,41 @@ public:
       // identity consistent with PST02's instance-provenance contract.
       model_identity_=swcme::next_model_identity();
       configuration_locked_.store(false,std::memory_order_release);
+    }
+    return *this;
+  }
+
+  // Moving transfers the logical owner, not merely the numerical Params.
+  // Consequently, every StepState prepared before the move remains valid with
+  // the destination object.  The source is rotated to a fresh identity and
+  // unlocked, so it cannot consume those states and remains safe to destroy or
+  // assign.  Params uses standard value members (including default-allocator
+  // vectors), making its move construction non-throwing; that guarantee lets
+  // std::vector relocate prepared Models without falling back to copy semantics
+  // (which intentionally create a distinct PST02 owner).
+  Model(Model&& other) noexcept(
+      std::is_nothrow_move_constructible<Params>::value)
+      : P(std::move(other.P)), model_identity_(other.model_identity_),
+        configuration_locked_(
+            other.configuration_locked_.load(std::memory_order_acquire)) {
+    other.model_identity_=swcme::next_model_identity();
+    other.configuration_locked_.store(false,std::memory_order_release);
+  }
+
+  // Move assignment follows PST01 as well as PST05.  A destination that has
+  // already issued a state is immutable and is rejected before either object
+  // changes.  An unprepared destination assumes the source identity and lock
+  // state, while the moved-from source receives a new, unprepared lifetime.
+  Model& operator=(Model&& other) {
+    if (this!=&other) {
+      require_configuration_mutable("move operator=");
+      P=std::move(other.P);
+      model_identity_=other.model_identity_;
+      configuration_locked_.store(
+          other.configuration_locked_.load(std::memory_order_acquire),
+          std::memory_order_release);
+      other.model_identity_=swcme::next_model_identity();
+      other.configuration_locked_.store(false,std::memory_order_release);
     }
     return *this;
   }

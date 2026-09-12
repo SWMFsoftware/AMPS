@@ -401,6 +401,34 @@ Model& Model::operator=(const Model& other) {
   return *this;
 }
 
+Model::Model(Model&& other) noexcept(
+    std::is_nothrow_move_constructible<Params>::value)
+    : P_(std::move(other.P_)), model_identity_(other.model_identity_),
+      configuration_locked_(
+          other.configuration_locked_.load(std::memory_order_acquire)) {
+  // The identity transfer is the PST05 ownership hand-off: old prepared states
+  // now name *this*.  Rotating the source prevents two live objects from
+  // accepting one state while leaving the moved-from object safely destructible.
+  other.model_identity_=swcme::next_model_identity();
+  other.configuration_locked_.store(false,std::memory_order_release);
+}
+
+Model& Model::operator=(Model&& other) {
+  if (this!=&other) {
+    // Check before moving Params or identity so a failed assignment is fully
+    // transactional for both the prepared destination and the source owner.
+    require_configuration_mutable("move operator=");
+    P_=std::move(other.P_);
+    model_identity_=other.model_identity_;
+    configuration_locked_.store(
+        other.configuration_locked_.load(std::memory_order_acquire),
+        std::memory_order_release);
+    other.model_identity_=swcme::next_model_identity();
+    other.configuration_locked_.store(false,std::memory_order_release);
+  }
+  return *this;
+}
+
 swcme::defaults::ObserverScopeStatus Model::observer_scope_status(
     const StepState& S, const double observer_m[3]) const {
   // This legacy value-returning API has no status channel.  Reject a foreign
