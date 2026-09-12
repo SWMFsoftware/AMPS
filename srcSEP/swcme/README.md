@@ -185,6 +185,15 @@ incomplete pending quiet-window and external-model comparisons.
 See [`test/validation/vp01/README.md`](test/validation/vp01/README.md) for the
 species caveat, data provenance, thresholds, runners, and PNG/EPS figures.
 
+The rest of the implemented background layer is split by observable. `VP02`
+tests sector-folded Parker angle and winding polarity against the same
+checksummed Helios archive, while `VP03` tests speed, proton pressure, sound
+speed, Alfvén speed, and a scalar fast-mode proxy. Each case compares a strict
+C++ production driver with an independently coded equation before interpreting
+the observational residual; see
+[`vp02/README.md`](test/validation/vp02/README.md) and
+[`vp03/README.md`](test/validation/vp03/README.md).
+
 ### Composition, pressure, and sound speed
 
 `ThermodynamicClosure::ProtonOnly` is the compatibility default. It treats the
@@ -926,13 +935,19 @@ To limit compilation concurrency, use `make -jN test`. Focused commands include:
 ./output/test_swcme --all
 ```
 
-The observational VP01 density campaign is deliberately opt-in because its
-Helios archive is about 125 MiB and requires network access on first use:
+The VP01-VP05 observational campaign is deliberately opt-in because it uses
+external archives and produces publication figures. VP01-VP03 share the
+checksummed 125 MiB Helios corefit archive; VP04 and VP05 use small pinned CDAW
+and LineupCAT products:
 
 ```sh
 make vp01-data        # download and checksum immutable Zenodo inputs
 make vp01-test        # test the independent oracle and strict-build the driver
 make vp01-validation  # run the comparison and create CSV/JSON/PNG/EPS evidence
+make vp02-validation  # Parker angle and polarity
+make vp03-validation  # pressure and characteristic speeds
+make vp04-validation  # CDAW height-time interpolation
+make vp05-validation  # multipoint DBM arrival time and speed
 ```
 
 The scalable observational runner registers VP01-VP16, keeps every case's
@@ -947,9 +962,9 @@ make validation-implemented                  # run all available cases
 make validation-campaign                     # assess the full VP01-VP16 scope
 ```
 
-The complete campaign currently reports `INCOMPLETE` because VP02-VP16 are
-registered roadmap cases rather than implementations; this is distinct from a
-VP01 component PASS. See
+The complete campaign currently reports `INCOMPLETE` because VP06-VP16 are
+registered roadmap cases rather than implementations; `--implemented` runs
+VP01-VP05 in priority order and can pass independently. See
 [`test/validation/README.md`](test/validation/README.md) for the directory and
 case contracts, dependency behavior, status semantics, and extension steps.
 

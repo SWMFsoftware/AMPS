@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "validation_id": "VP05",
+  "dataset": "HELIO4CAST LineupCAT multipoint catalog v3.0",
+  "catalog_url": "https://helioforecast.space/lineups",
+  "repository": "https://github.com/EvaWeiler/LineupCAT",
+  "doi": "10.6084/m9.figshare.25869190",
+  "license": "CC BY 4.0",
+  "version_date": "2025-07-22",
+  "file": {
+    "name": "HELIO4CAST_multipoint_v30.csv",
+    "bytes": 50510,
+    "sha256": "d55bdfce703606d68c90681d47486807b1d51582dff0f757e33660186c9183b9"
+  },
+  "retrieval": "Run python3 download_data.py; raw catalog bytes are ignored by source control."
+}

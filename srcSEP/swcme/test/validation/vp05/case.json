@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "id": "VP05",
+  "description": "Global-runner contract for the case-owned VP05 implementation.",
+  "runner": ["{python}", "{case_dir}/run_vp05.py", "--output-dir", "{output_dir}"],
+  "result_file": "vp05_result.json",
+  "download_argument": "--download",
+  "no_plots_argument": "--no-plots"
+}

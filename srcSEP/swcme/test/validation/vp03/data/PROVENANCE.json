@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "validation_id": "VP03",
+  "dataset": "Helios proton core-fit magnetic-field and plasma archive",
+  "record": "Zenodo 1009506",
+  "doi": "10.5281/zenodo.1009506",
+  "license": "CC BY 4.0",
+  "file": {
+    "name": "corefit.gz",
+    "bytes": 131088147,
+    "md5": "3706615fd835c9cbdd4e5b59a8431e30",
+    "sha256": "5659d9408fe3f0c75507ab416d58cd51b91ccb243fbad9dd488721b7dd437a08"
+  },
+  "closure_note": "Observed pressure and characteristic speeds use the gyrotropic proton-core scalar temperature and a proton-only closure.",
+  "retrieval": "Run python3 download_data.py; raw bytes are ignored by source control."
+}

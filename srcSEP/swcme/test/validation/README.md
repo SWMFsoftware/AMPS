@@ -20,7 +20,11 @@ test/validation/
 ├── run_validation.py         model-independent global comparison runner
 ├── test_run_validation.py    focused orchestration and exit-code tests
 ├── output/                    ignored timestamped campaign evidence
-└── vp01/                     case-specific VP01 package
+├── vp01/                     radial density/Leblanc case
+├── vp02/                     Parker angle/polarity case
+├── vp03/                     background thermodynamics case
+├── vp04/                     CDAW height-time case
+└── vp05/                     LineupCAT multipoint DBM case
     ├── README.md              scientific question, method, and thresholds
     ├── case.json              global-runner launch/result contract
     ├── data/
@@ -28,13 +32,13 @@ test/validation/
     │   └── raw/               downloaded, ignored upstream archives
     ├── download_data.py       atomic checksummed data acquisition
     ├── reference_solution.py  independent published-equation oracle
-    ├── vp01_model_driver.cpp  public SWCME API evaluator
-    ├── run_vp01.py            case reduction, comparison, and plots
+    ├── vpNN_model_driver.cpp  production SWCME physics evaluator
+    ├── run_vpNN.py            case reduction, comparison, and plots
     ├── test_reference_solution.py
     └── output/                direct-case evidence and figures
 ```
 
-Future cases use sibling lowercase directories (`vp02/`, `vp03/`, ...). Data,
+Future cases use sibling lowercase directories (`vp06/`, `vp07/`, ...). Data,
 reference logic, case-specific tests, figures, and documentation remain in that
 case directory; no case-specific equation or threshold belongs in the global
 runner.
@@ -97,9 +101,9 @@ registry's priority order rather than command-line order.
 
 The global process returns `0` for PASS, `1` for FAIL, `2` for INCOMPLETE, and
 `3` for a registry, selection, or setup error. A full campaign therefore exits
-`2` today: VP01 is implemented, but VP02-VP16 remain planned. This is deliberate
-and prevents one successful component from being reported as complete release
-validation.
+`2` today: VP01-VP05 are implemented, but VP06-VP16 remain planned. This is
+deliberate and prevents five successful components from being reported as
+complete release validation.
 
 ## Common evidence products
 
@@ -180,10 +184,10 @@ executables, caches, logs, and transient campaign output must remain ignored.
 | Priority | Case | Layer | Current state | Comparison objective |
 | ---: | --- | --- | --- | --- |
 | 1 | VP01 | V1 | Implemented | Radial solar-wind density and normalized Leblanc profile. |
-| 2 | VP02 | V1 | Planned | Parker magnetic vector, spiral angle, and polarity. |
-| 3 | VP03 | V1 | Planned | Background speed, pressure, sound speed, and fast-mode speed. |
-| 4 | VP04 | V2 | Planned | CME/shock apex height-time and speed evolution. |
-| 5 | VP05 | V2 | Planned | Multi-spacecraft shock arrival time and speed. |
+| 2 | VP02 | V1 | Implemented | Parker magnetic vector, spiral angle, and polarity. |
+| 3 | VP03 | V1 | Implemented | Background speed, pressure, sound speed, and fast-mode speed. |
+| 4 | VP04 | V2 | Implemented | CME/shock apex height-time and speed evolution. |
+| 5 | VP05 | V2 | Implemented | Multi-spacecraft shock arrival time and speed. |
 | 6 | VP06 | V3 | Planned | In-situ Rankine-Hugoniot jumps and flux conservation. |
 | 7 | VP07 | V3 | Planned | Shock normal, obliquity, and acceleration geometry. |
 | 8 | VP08 | V4 | Planned | Reconstructed 3-D shock front and observer intersections. |

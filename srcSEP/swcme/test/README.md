@@ -1160,11 +1160,13 @@ Run from `swcme/test`:
 make validation-list
 make validation-test
 make validation-case CASE=VP01
+make validation-case CASE=VP02,VP03
 make validation-implemented
 make validation-campaign
 ```
 
-Pass acquisition or presentation options with `VALIDATION_ARGS`, for example
+VP01-VP05 are implemented; VP06-VP16 remain registered as planned. Pass
+acquisition or presentation options with `VALIDATION_ARGS`, for example
 `make validation-case CASE=VP01 VALIDATION_ARGS="--download --no-plots"`.
 Individual and multi-case selections run in canonical priority order. A full
 campaign returns exit 2 (`INCOMPLETE`) while a registered case remains planned
@@ -3301,6 +3303,29 @@ selection and external-model comparisons are added. Complete provenance,
 threshold rationale, CLI options, and output descriptions are in
 [`validation/vp01/README.md`](validation/vp01/README.md).
 
+#### VP02: Parker magnetic-vector angle and polarity
+
+VP02 independently reduces status-1 Helios RTN magnetic vectors to equal-weight
+daily medians after field-variability and sector-boundary filtering. It compares
+the sector-folded observed angle with a public `swcme1d::Model` evaluated at the
+measured median radius, speed, and latitude, then compares that C++ result with
+an independently coded Parker equation. Frozen gates require at least 2,000
+days, ten bins, no more than 20 degrees median daily angle error, and at least
+65% Parker-quadrant agreement. The current checked run passes with 2,865 days,
+12.49 degrees, and 73.0%, respectively. See
+[`validation/vp02/README.md`](validation/vp02/README.md).
+
+#### VP03: background pressure and characteristic speeds
+
+VP03 uses the same immutable archive but a separate reduction and oracle. It
+forms scalar proton-core temperature from the gyrotropic tensor, derives
+observed pressure, sound, Alfvén, and perpendicular fast-proxy speeds, and
+compares their radial-bin medians with the untouched SWCME defaults. It also
+requires a strict production/reference match for the Leblanc, Parker,
+thermodynamic, and characteristic-speed equations. The current checked run
+passes with median factors 1.02 (speed), 1.50 (pressure), 1.24 (sound), and 1.18
+(fast proxy). See [`validation/vp03/README.md`](validation/vp03/README.md).
+
 ### V2: CME and shock apex kinematics
 
 **What is tested.** DATA_DRIVEN height knots, DBM propagation, and held-arrival
@@ -3316,6 +3341,28 @@ AU and compared with a held synthetic arrival offset.
 **Expected result.** Knot errors are below `1e-12`; arrival error is at most six
 hours and 15%. A real campaign also records the useful 12-hour/25% tier and
 uses independently sourced height-time and held arrival observations.
+
+#### VP04: CDAW height-time tracks
+
+VP04 supplies the external-data height-time component. Six checksummed
+SOHO/LASCO CDAW leading-edge traces are fit with first/last and alternating
+knots; the intervening measurements are blind validation points. The shared
+production kinematics API is compared with an independent monotone PCHIP for
+both radius and derivative. The current run passes with 39 held-out points,
+0.189 solar-radii median error, exact knot recovery, and production/reference
+differences below `4e-15 R_sun` and `4e-12 km/s`. Plane-of-sky projection is an
+explicit limitation. See [`validation/vp04/README.md`](validation/vp04/README.md).
+
+#### VP05: multipoint DBM propagation
+
+VP05 uses checksummed HELIO4CAST LineupCAT v3.0 observations. Every chronological
+in-situ pair separated by at least 0.08 AU and no more than 12 degrees longitude
+is retained when both speeds exist. Only the inner radius/speed and outer target
+radius reach SWCME; outer time and speed remain held out. Production DBM transit
+and arrival speed are first sealed against an independent sign-aware equation,
+then scored against observations. The current 21-pair run passes with 5.76-hour
+median arrival error and 7.0% median speed error. See
+[`validation/vp05/README.md`](validation/vp05/README.md).
 
 ### V3: in-situ shock jump validation
 

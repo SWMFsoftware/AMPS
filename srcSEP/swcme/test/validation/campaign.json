@@ -17,7 +17,7 @@
       "priority": 2,
       "layer": "V1",
       "title": "Parker magnetic-vector angle and polarity",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp02",
       "dependencies": []
     },
@@ -26,7 +26,7 @@
       "priority": 3,
       "layer": "V1",
       "title": "Background speed pressure and characteristic speeds",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp03",
       "dependencies": []
     },
@@ -35,7 +35,7 @@
       "priority": 4,
       "layer": "V2",
       "title": "CME and shock apex height-time kinematics",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp04",
       "dependencies": ["VP01", "VP02", "VP03"]
     },
@@ -44,7 +44,7 @@
       "priority": 5,
       "layer": "V2",
       "title": "Multi-spacecraft arrival time and speed",
-      "state": "planned",
+      "state": "implemented",
       "case_dir": "vp05",
       "dependencies": ["VP01", "VP02", "VP03"]
     },

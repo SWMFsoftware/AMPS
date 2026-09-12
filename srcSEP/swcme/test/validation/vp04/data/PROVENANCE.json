@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "validation_id": "VP04",
+  "dataset": "SOHO/LASCO CDAW CME Catalog digital height-time measurements",
+  "catalog_url": "https://cdaw.gsfc.nasa.gov/CME_list/",
+  "measurement_type": "manually selected fastest leading-edge height in the plane of sky",
+  "license_note": "NASA scientific data; cite the CDAW Data Center and original LASCO instrument team",
+  "selection": "Six quality-index-5 halo events spanning 2013, 2014, and 2017; exact filenames, sizes, and SHA-256 values are frozen in download_data.py.",
+  "retrieval": "Run python3 download_data.py; raw YHT files are ignored by source control."
+}

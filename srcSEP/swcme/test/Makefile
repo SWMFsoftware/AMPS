@@ -20,6 +20,14 @@ OUT08_OPTIMIZED_DIR := output/out08-optimized
 SEP_REFERENCE_TARGET := output/sep_reference
 VP01_DIR := validation/vp01
 VP01_DRIVER := output/vp01_model_driver
+VP02_DIR := validation/vp02
+VP02_DRIVER := output/vp02_model_driver
+VP03_DIR := validation/vp03
+VP03_DRIVER := output/vp03_model_driver
+VP04_DIR := validation/vp04
+VP04_DRIVER := output/vp04_model_driver
+VP05_DIR := validation/vp05
+VP05_DRIVER := output/vp05_model_driver
 VALIDATION_RUNNER := validation/run_validation.py
 # Optional arguments are intentionally separate from CASE so callers can add
 # --download, --no-plots, or an explicit evidence directory without editing a
@@ -98,7 +106,12 @@ OUT08_WARNING_FLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Wformat=2 \
 	-Wformat-security -Wconversion -Wsign-conversion -Wshadow \
 	-Werror=format-security -Werror
 
-.PHONY: all test tools demos demo-run campaign-test validation-list validation-test validation-case validation-implemented validation-campaign vp01-data vp01-test vp01-validation pst05-sanitize pst08-performance perf01-performance thr01-tsan out08-strict san01-sanitize cov01-coverage clean
+.PHONY: all test tools demos demo-run campaign-test validation-list validation-test \
+	validation-case validation-implemented validation-campaign \
+	vp01-data vp01-test vp01-validation vp02-data vp02-test vp02-validation \
+	vp03-data vp03-test vp03-validation vp04-data vp04-test vp04-validation \
+	vp05-data vp05-test vp05-validation pst05-sanitize pst08-performance \
+	perf01-performance thr01-tsan out08-strict san01-sanitize cov01-coverage clean
 
 all: $(TARGET) demos
 
@@ -438,6 +451,55 @@ vp01-test: | output
 # self-contained, then emits CSV/JSON/Markdown evidence and PNG/EPS figures.
 vp01-validation: vp01-test
 	python3 $(VP01_DIR)/run_vp01.py
+
+# VP02 and VP03 reuse independently checksummed Helios corefit bytes but own
+# separate reduction/oracle/driver contracts for magnetic and thermodynamic
+# comparisons. Their data targets may hard-link an existing verified cache.
+vp02-data:
+	python3 $(VP02_DIR)/download_data.py
+
+vp02-test: | output
+	python3 $(VP02_DIR)/test_reference_solution.py
+	$(CXX) $(CPPFLAGS) -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
+		$(VP02_DIR)/vp02_model_driver.cpp -o $(VP02_DRIVER)
+
+vp02-validation: vp02-test
+	python3 $(VP02_DIR)/run_vp02.py
+
+vp03-data:
+	python3 $(VP03_DIR)/download_data.py
+
+vp03-test: | output
+	python3 $(VP03_DIR)/test_reference_solution.py
+	$(CXX) $(CPPFLAGS) -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
+		$(VP03_DIR)/vp03_model_driver.cpp -o $(VP03_DRIVER)
+
+vp03-validation: vp03-test
+	python3 $(VP03_DIR)/run_vp03.py
+
+# VP04 freezes six CDAW leading-edge tracks and validates DATA_DRIVEN PCHIP;
+# VP05 freezes LineupCAT v3.0 and validates fixed-parameter DBM propagation.
+vp04-data:
+	python3 $(VP04_DIR)/download_data.py
+
+vp04-test: | output
+	python3 $(VP04_DIR)/test_reference_solution.py
+	$(CXX) $(CPPFLAGS) -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
+		$(VP04_DIR)/vp04_model_driver.cpp -o $(VP04_DRIVER)
+
+vp04-validation: vp04-test
+	python3 $(VP04_DIR)/run_vp04.py
+
+vp05-data:
+	python3 $(VP05_DIR)/download_data.py
+
+vp05-test: | output
+	python3 $(VP05_DIR)/test_reference_solution.py
+	$(CXX) $(CPPFLAGS) -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
+		$(VP05_DIR)/vp05_model_driver.cpp -o $(VP05_DRIVER)
+
+vp05-validation: vp05-test
+	python3 $(VP05_DIR)/run_vp05.py
 
 # Build a separate fully instrumented validation executable so AddressSanitizer
 # never contaminates normal incremental objects.  Running only PST05 keeps the
